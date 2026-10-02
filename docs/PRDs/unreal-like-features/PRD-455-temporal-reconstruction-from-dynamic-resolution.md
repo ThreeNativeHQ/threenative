@@ -321,3 +321,9 @@ bilinear history reprojection causes the thin-edge blur. They add 32 actual capt
 unchanged original 176-frame corpus and use the same numerical evaluator; all original gates
 remain authoritative. The control changes only the history texture sampler. Nearest sampling can
 snap under subpixel motion, so it is a causal experiment, not an adopted filter or product mode.
+
+
+Hosted draw diagnostic `37005814851` stopped at the bridge's JSON-safety guard: the installed
+InstancedBufferAttribute exposes numeric `id`, not `uuid`. Direct construction reproduces the
+undefined field. The diagnostic now records `matrixId`; no renderer, history or quality logic
+changes. The earlier combined 176-frame evidence remains valid; this diagnostic run is incomplete.

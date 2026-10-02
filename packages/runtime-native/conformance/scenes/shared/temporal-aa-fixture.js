@@ -125,7 +125,7 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
       instanceDraw = {
         frame: frame + 1,
         objectUuid: instances.uuid,
-        matrixUuid: instances.instanceMatrix.uuid,
+        matrixId: instances.instanceMatrix.id,
         vertexShader: state.vertexShader,
         beforeEvents: state.updateBeforeNodes.map((node) => node.eventType ?? node.constructor.name),
         attributes: state.nodeAttributes.filter(({ node }) => node?.attribute?.data?.stride === 16).map(({ name, node }) => ({
