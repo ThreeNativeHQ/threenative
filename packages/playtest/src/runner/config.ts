@@ -189,6 +189,8 @@ export function formatUsage(): string {
     "                        no browser, no display, no capture lock",
     "                        exits 1 when a check failed, 2 when it could not run, and 69 when",
     "                        ffmpeg is absent — \"could not check\" is never a green 0",
+    "  tone <png...>          print mean, p1, p50, p99, clip%, black% per PNG and an average row",
+    "                        no browser or display; empty/unreadable inputs exit 2",
     "  record-to-scenario    convert a replay recording into a scenario",
     "                        (requires --oracle <json> and --out <json>)",
     "",
