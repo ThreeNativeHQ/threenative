@@ -266,7 +266,8 @@ export function createVolumetricFog(camera: PerspectiveCamera, supplied: IVolume
             ) {
               const projected = lightShadowMatrix(sun).mul(vec4(position, 1));
               const coordinate = projected.xyz.div(projected.w).toVar();
-              const visibility = float(0).toVar();
+              // Outside the finite shadow map, Three treats the directional source as unshadowed.
+              const visibility = float(1).toVar();
               If(
                 coordinate.greaterThanEqual(0).all().and(coordinate.lessThanEqual(1).all()),
                 () => {

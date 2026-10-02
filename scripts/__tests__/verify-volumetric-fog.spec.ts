@@ -7,6 +7,7 @@ import {
   fogCaptureIsValid,
   fogCaptureScenario,
   fogCaptureScenarios,
+  fogFrameCost,
   fogLightPixelMetrics,
   fogTextureBaselineMatches,
 } from "../verify-volumetric-fog.js";
@@ -204,5 +205,76 @@ it("presents each intermediate lifecycle graph before the following transition",
     expect(boundary?.waitForResource).toEqual({ id: "state", path: "stableTextureFrames", gte: 3 });
     expect(boundary?.label).toMatch(/rendered$/);
     expect((inputs[at + 1] ?? steps.length) - 1).toBeGreaterThan(index);
+  }
+});
+
+it("keeps original arms and adds retained camera, streamed-depth and scene transitions", async () => {
+  const scenarios = await fogCaptureScenarios();
+  for (const mode of [
+    "scatterOutside",
+    "scatterOutsideSunOff",
+    "scatterOutsidePointOff",
+    "cameraCut",
+    "cameraRestore",
+    "streamWallOut",
+    "streamWallIn",
+    "sceneReentry",
+    "sceneRepeatedOff",
+  ])
+    expect(
+      scenarios.find((entry) => entry.mode === mode),
+      mode,
+    ).toBeDefined();
+  for (const mode of ["cameraCut", "cameraRestore", "streamWallOut", "streamWallIn"]) {
+    const scenario = scenarios.find((entry) => entry.mode === mode)?.scenario;
+    expect(scenario?.assert?.components).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ component: "createdTargets", equals: 1 }),
+        expect.objectContaining({ component: "releasedTargets", equals: 0 }),
+      ]),
+    );
+  }
+});
+
+it("records a clean measured frame-cost window and refuses missing or mixed-window evidence", () => {
+  const metric = { mean: 3, p50: 2.8, p95: 4 };
+  const window = {
+    window: 3,
+    frames: 30,
+    frame: metric,
+    phases: { render: metric },
+    surface: { drawingBufferWidth: 640, drawingBufferHeight: 400 },
+  };
+  const logs = [1, 2, 3].map((n) => ({
+    text: `TN_FRAME_BUDGET:${JSON.stringify({ ...window, window: n })}`,
+  }));
+  expect(fogFrameCost(logs)).toMatchObject({ frames: 30, renderMs: metric, gpuMs: undefined });
+  expect(() => fogFrameCost([])).toThrow(/windows/);
+  expect(() => fogFrameCost(logs.slice(0, 2))).toThrow(/windows/);
+  for (const change of [
+    { frames: 0 },
+    { frames: undefined },
+    { window: 1 },
+    { gpuMs: -1 },
+    { phases: {} },
+    { surface: { ...window.surface, compiling: true } },
+  ])
+    expect(() =>
+      fogFrameCost([
+        ...logs.slice(0, 2),
+        { text: `TN_FRAME_BUDGET:${JSON.stringify({ ...window, ...change })}` },
+      ]),
+    ).toThrow(/frame-cost|windows/);
+  expect(() => fogFrameCost([{ text: "TN_FRAME_BUDGET:{broken" }])).toThrow(/MALFORMED/);
+});
+it("waits for actual render observations before the three dedicated cost captures", async () => {
+  const scenarios = await fogCaptureScenarios();
+  for (const mode of ["costOff", "costFull", "costHalf"]) {
+    const scenario = scenarios.find((entry) => entry.mode === mode)?.scenario;
+    expect(scenario?.steps).toContainEqual(
+      expect.objectContaining({
+        waitForResource: { id: "state", path: "settledRenderFrames", gte: 90 },
+      }),
+    );
   }
 });

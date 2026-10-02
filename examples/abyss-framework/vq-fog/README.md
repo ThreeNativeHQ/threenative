@@ -13,6 +13,10 @@ This opt-in fixture uses the starter's generated `volumetricFog.ts` and `WorldEn
 - R / T: resize the existing render target to 320×240 / restore 640×400
 - L / K / J: scattering-only black-surface control, then directional / point light off
 - N: black no-fog control (exact zero RGB in the 500×400 fog evaluation area)
+- 1 / 2 / 3: scattering with the shadow map entirely away from the volume, then sun / point off
+- 4 / 5: cut the camera inside / restore outside without replacing the fog controller
+- 6 / 7: remove / reinsert the foreground wall without replacing the fog controller
+- 8: exit and re-enter through the real scene owner, returning to off
 
 The four scattering controls share a visible gradient calibration card outside the measured fog area, with an identical-pixel check, so a working black control still satisfies the runner's normal nonblank guard.
 
@@ -50,3 +54,6 @@ THREENATIVE_RUNTIME_BINARY=/absolute/path/to/mystral node --import tsx scripts/v
 ```
 
 It bundles the same `src/game.ts`, uses the public desktop mailbox runner, and retains host/game hashes plus native screenshots under `artifacts/volumetric-fog-native/`. Native scenarios use resources/startup; unsupported browser diagnostics/visual assertion families are replaced by mandatory native host-console/readiness/provenance checks and the same external pixel gates. Native `renderer.setSize` changes the backing surface, so the small-target PNG is 320×240; the restored PNG remains 640×400. The integration workflow's native job reuses the normal ARM Linux host setup after browser proof passes. A separate `VQ_FOG_RESIZE_CONTROL=1` invocation isolates the same renderer/scene resize path with fog off and requires zero fog allocations. It writes `artifacts/volumetric-fog-native-resize-control/`. Both the diagnostic control and the unchanged original sequence are required by the native workflow. The external native guard now applies the same authored 5% whole-frame nonblank threshold using the existing playtest pixel metric; the native runner’s generic dark-frame exemption does not replace that assertion.
+
+
+The verifier preserves the original seventeen arms and appends twelve qualification arms. Retained camera/occluder transitions must match freshly constructed reference pixels exactly, and repeated scene re-entry must restore the off image and renderer allocation baseline. Dedicated off/full/half cost arms wait for ninety actual observed render intervals and record a clean thirty-frame window from the existing `TN_FRAME_BUDGET` meter. Host frame/render durations are measured separately from GPU timing; an absent timestamp observation is not zero and software-adapter cost does not qualify a hardware tier. These added arms require a fresh hosted run before they are evidence.

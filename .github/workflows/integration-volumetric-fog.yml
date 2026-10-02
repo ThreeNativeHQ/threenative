@@ -14,6 +14,7 @@ on:
       - 'packages/runtime-native/include/mystral/webgpu_compat.h'
       - 'packages/runtime-native/src/webgpu/bindings_presentation.cpp'
       - 'packages/runtime-native/tests/surface_texture_status_test.cpp'
+      - 'packages/runtime-native/tests/canvas_presentation_test.cpp'
       - '.github/workflows/integration-volumetric-fog.yml'
 permissions:
   contents: read
@@ -96,6 +97,10 @@ jobs:
         run: |
           cmake --build packages/runtime-native/build/tn-linux --target threenative-surface-texture-status-test --parallel 2
           packages/runtime-native/build/tn-linux/threenative-surface-texture-status-test
+      - name: Verify rendered presentation destination pixels
+        run: |
+          cmake --build packages/runtime-native/build/tn-linux --target threenative-canvas-presentation-test --parallel 2
+          packages/runtime-native/build/tn-linux/threenative-canvas-presentation-test
       - name: Isolate native resize with no fog allocation
         id: resize-control
         # Preserve the original fog sequence even when this diagnostic reproduces the abort.

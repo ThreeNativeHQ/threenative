@@ -168,6 +168,7 @@ const BUG_REPORT_SKILL_PATHS = [
 // starter fog source; no preset enables fog. Recomputed from the generated trees after those edits.
 // Recomputed for VQ07 merged with develop 6c8858d74: retain receipt source and optional fog,
 // plus the new 0.2.8 template package pins and rain verifier .ts import.
+// VQ07 outside-shadow-map correction changes only starter volumetricFog.ts; remeasured by this spec.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-01 on the merge of develop a602467db (PRD-458/473): every template's frame
   // budget now comes from resolveTargetFps, so ten trees move and `rts` does not; the capability reference (365 -> 368 entries) then moved all eleven, because it ships in every scaffold.
@@ -199,7 +200,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   sailing: "de49b937ed7a230d1b6c5bf8384965433c0d1d8f29b8f88b4258cf7b6e6bf994",
   shooter: "9b3c07fcaa70a98fb855fa4266e7441b790d6e0371eca660a1ef551dbac3997b",
   snow: "ca5f3335961fd637e75e5cea1086793e8889ed374abad75c38a35edb1ac4de5e",
-  starter: "4e91581ddde12ec8a30986dcc7f9d83929f37bac7badd71cbb3c44c88c61ef77",
+  starter: "9e4c17cfa2bcc2028453ba6b7a12305f7955836f5c5ddadccfff58fb96041fa5",
   "tower-defense": "48c2d3b50ac7ba2c1e8937b9b9137963c8cdb26ed7832d9684c9de9e02acf876",
 };
 
@@ -766,6 +767,14 @@ describe("create-threenative", () => {
     // than what the config file says — and the web bake of the same config stays compressed.
     const root = await makeTempDir("threenative-scaffold-mobile-");
     try {
+      // The web compiler resolves the transcoder from this project's own Three install.
+      // Keep this isolated fixture independent of accidental dependencies above /tmp.
+      await mkdir(path.join(root, "node_modules"), { recursive: true });
+      await symlink(
+        await realpath("packages/create-threenative/node_modules/three"),
+        path.join(root, "node_modules/three"),
+        "dir",
+      );
       await mkdir(path.join(root, "assets"), { recursive: true });
       await cp(path.join(TEMPLATE_ROOT, "starter", "assets"), path.join(root, "assets"), {
         recursive: true,

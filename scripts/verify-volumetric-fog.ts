@@ -5,7 +5,6 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { PNG } from "pngjs";
 import { type IPlaytestScenario, loadPlaytestScenario } from "../packages/playtest/dist/index.js";
-import { regionMetrics } from "../packages/playtest/src/runner/steps.js";
 // Use the built public runner: source-runner browser callbacks under tsx may capture __name.
 import {
   type IStandalonePlaytestReport,
@@ -13,6 +12,8 @@ import {
   runDesktopPlaytest,
   runStandalonePlaytest,
 } from "../packages/playtest/dist/runner/index.js";
+import { parsePerformanceMarkers } from "../packages/playtest/src/runner/perf.js";
+import { regionMetrics } from "../packages/playtest/src/runner/steps.js";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const fixture = path.join(root, "examples/abyss-framework/vq-fog");
@@ -77,8 +78,8 @@ export function fogCaptureScenario(mode: string, key: string): IPlaytestScenario
           allowTrivial: "Resource counts must be observed stable over completed rendered frames.",
         })),
         ...[
-          ["sun", mode !== "sunOff" && mode !== "scatterSunOff"],
-          ["point", mode !== "pointOff" && mode !== "scatterPointOff"],
+          ["sun", mode !== "sunOff" && !mode.endsWith("SunOff")],
+          ["point", mode !== "pointOff" && !mode.endsWith("PointOff")],
           ["scatteringOnly", mode.startsWith("scatter") || mode === "blackOff"],
         ].map(([component, equals]) => ({
           entity: "fog",
@@ -178,7 +179,122 @@ export async function fogCaptureScenarios() {
     );
     result.push({ mode, scenario });
   }
+  // Extend, rather than replace, the original seventeen frozen controls.
+  for (const [mode, key] of [
+    ["scatterOutside", "Digit1"],
+    ["scatterOutsideSunOff", "Digit2"],
+    ["scatterOutsidePointOff", "Digit3"],
+  ] as const) {
+    const scenario = fogCaptureScenario(mode, key);
+    scenario.assert?.components?.push({
+      entity: "fog",
+      component: "shadowOutside",
+      equals: true,
+      allowTrivial: "The whole volume lies outside the ordinary directional shadow coverage.",
+    });
+    result.push({ mode, scenario });
+  }
+  for (const [mode, keys] of [
+    ["cameraCut", ["Digit4"]],
+    ["cameraRestore", ["Digit4", "Digit5"]],
+    ["streamWallOut", ["Digit6"]],
+    ["streamWallIn", ["Digit6", "Digit7"]],
+    ["sceneReentry", ["Digit8"]],
+    ["sceneRepeatedOff", ["Digit8", "KeyF", "Digit8"]],
+  ] as const) {
+    const scenario = fogCaptureScenario(mode.startsWith("scene") ? "off" : "fog", "KeyF");
+    scenario.name = `vq-volumetric-fog-${mode}`;
+    for (const key of keys)
+      scenario.steps.push(
+        { press: [key], holdTicks: 1, release: true },
+        { kind: "wait", waitFrames: 60, release: true },
+        textureBoundary,
+      );
+    const predicates = mode.startsWith("scene")
+      ? [
+          ["sceneEntries", mode === "sceneRepeatedOff" ? 3 : 2],
+          ["sceneExits", mode === "sceneRepeatedOff" ? 2 : 1],
+          ["exitReleasedTargets", 1],
+          ["exitReleasedMaterials", 1],
+          ["createdTargets", 0],
+          ["liveTargets", 0],
+        ]
+      : [
+          ["createdTargets", 1],
+          ["releasedTargets", 0],
+          ["liveTargets", 1],
+          ["inside", mode === "cameraCut"],
+          ["streamedWall", mode === "streamWallOut"],
+        ];
+    scenario.assert?.components?.push(
+      ...predicates.map(([component, equals]) => ({
+        entity: "fog",
+        component: String(component),
+        equals,
+        allowTrivial:
+          "Observe retained-controller transitions or actual scene-owner teardown and re-entry.",
+      })),
+    );
+    result.push({ mode, scenario });
+  }
+  for (const [mode, variant, key] of [
+    ["costOff", "off", "KeyO"],
+    ["costFull", "fog", "KeyF"],
+    ["costHalf", "half", "KeyH"],
+  ] as const) {
+    const scenario = fogCaptureScenario(variant, key);
+    scenario.name = `vq-volumetric-fog-${mode}`;
+    scenario.steps.splice(scenario.steps.length - 1, 0, {
+      waitForResource: { id: "state", path: "settledRenderFrames", gte: 90 },
+      timeoutMs: 120_000,
+      release: true,
+    });
+    scenario.assert?.components?.push({
+      entity: "fog",
+      component: "settledRenderFrames",
+      gte: 90,
+      allowTrivial:
+        "Measure at least three thirty-frame meter windows after this fixed graph rendered.",
+    });
+    result.push({ mode, scenario });
+  }
   return result;
+}
+
+export function fogFrameCost(consoleEntries: unknown) {
+  if (!Array.isArray(consoleEntries)) throw new Error("VQ07 measured frame windows are missing.");
+  const { budgets } = parsePerformanceMarkers(consoleEntries.map((entry) => entry.text).join("\n"));
+  const measured = budgets.at(-1);
+  if (budgets.length < 3 || measured === undefined)
+    throw new Error("VQ07 requires three measured frame windows.");
+  const render = measured.phases?.render;
+  const frame = measured.frame;
+  if (
+    !Number.isInteger(measured.window) ||
+    measured.window < 3 ||
+    !Number.isInteger(measured.frames) ||
+    measured.frames < 30 ||
+    (measured.gpuMs !== undefined && (!Number.isFinite(measured.gpuMs) || measured.gpuMs < 0)) ||
+    measured.surface === undefined ||
+    measured.surface.compiling === true ||
+    measured.surface.drawingBufferWidth !== 640 ||
+    measured.surface.drawingBufferHeight !== 400 ||
+    [render, frame].some(
+      (metric) =>
+        metric === undefined ||
+        [metric.mean, metric.p50, metric.p95].some((value) => !Number.isFinite(value) || value < 0),
+    )
+  )
+    throw new Error("VQ07 invalid or compilation-contaminated frame-cost window.");
+  return {
+    window: measured.window,
+    frames: measured.frames,
+    frameMs: frame,
+    renderMs: render,
+    gpuMs: measured.gpuMs,
+    qualification:
+      "Same-fixture host frame/render duration; software adapters do not establish hardware cost or tier admission.",
+  };
 }
 
 // A one-variable diagnostic: retain this fixture's geometry, renderer and resize path,
@@ -600,6 +716,19 @@ async function main(): Promise<void> {
         throw new Error(
           `VQ07 ${mode}: actual screenshot dimensions do not match the declared capture viewport.`,
         );
+      if (mode.startsWith("cost")) {
+        const measured = fogFrameCost(
+          JSON.parse(await readFile(path.join(directory, "console.json"), "utf8")),
+        );
+        results.push({
+          assertion: `${mode} measured per-frame cost`,
+          ...measured,
+          transportPixels: mode === "costOff" ? 0 : mode === "costHalf" ? 64000 : 256000,
+          raySteps: mode === "costOff" ? 0 : 48,
+          directionalLights: 1,
+          localLights: 1,
+        });
+      }
       if (nativeRuntime !== undefined) {
         const metrics = fogNativePixelMetrics(png);
         results.push({ assertion: `${mode} authored whole-frame nonblank ratio`, ...metrics });
@@ -610,8 +739,9 @@ async function main(): Promise<void> {
       }
     }
     if (resizeControl) {
+      if (nativeRuntime === undefined) throw new Error("Missing native resize-control executable.");
       if (
-        (await hash(nativeRuntime!)) !== summary.nativeArtifacts?.runtimeSha256 ||
+        (await hash(nativeRuntime)) !== summary.nativeArtifacts?.runtimeSha256 ||
         (await hash(nativeBundle)) !== summary.nativeArtifacts?.bundleSha256
       )
         throw new Error("VQ07 native executable or game bundle changed during resize control.");
@@ -654,6 +784,31 @@ async function main(): Promise<void> {
     )
       throw new Error("VQ07 target resize restore did not recover the exact fog pixels.");
     results.push({ assertion: "target/depth resize restores exact pixels", pass: true });
+    for (const [mode, reference] of [
+      ["cameraCut", "inside"],
+      ["cameraRestore", "fog"],
+      ["streamWallOut", "wallOff"],
+      ["streamWallIn", "fog"],
+      ["sceneReentry", "off"],
+      ["sceneRepeatedOff", "off"],
+    ] as const) {
+      const frame = PNG.sync.read(await readFile(path.join(artifacts, mode, "after.png")));
+      const expected = PNG.sync.read(await readFile(path.join(artifacts, reference, "after.png")));
+      if (!frame.data.equals(expected.data))
+        throw new Error(`VQ07 ${mode} differs from fresh ${reference} pixels.`);
+      results.push({ assertion: `${mode} matches fresh ${reference} pixels`, pass: true });
+      if (mode.startsWith("scene")) {
+        const resources = results.find((result) => result.mode === mode)?.resources as
+          | Record<string, unknown>
+          | undefined;
+        if (
+          !resources ||
+          !baselineResources ||
+          !fogTextureBaselineMatches(baselineResources, resources)
+        )
+          throw new Error(`VQ07 ${mode} did not restore renderer texture allocations.`);
+      }
+    }
     const lightFrames = await Promise.all(
       ["blackOff", "scatter", "scatterSunOff", "scatterPointOff"].map(async (mode) =>
         PNG.sync.read(await readFile(path.join(artifacts, mode, "after.png"))),
@@ -666,6 +821,18 @@ async function main(): Promise<void> {
     results.push({ assertion: "isolated light-scattering pixels", ...metrics });
     if (!metrics.pass)
       throw new Error("VQ07 isolated light-scattering/black-control pixel gates failed.");
+    const outsideFrames = await Promise.all(
+      ["scatterOutside", "scatterOutsideSunOff", "scatterOutsidePointOff"].map(async (mode) =>
+        PNG.sync.read(await readFile(path.join(artifacts, mode, "after.png"))),
+      ),
+    );
+    const [outside, outsideSunOff, outsidePointOff] = outsideFrames;
+    if (!outside || !outsideSunOff || !outsidePointOff)
+      throw new Error("Missing outside-shadow-map control.");
+    const outsideMetrics = fogLightPixelMetrics(black, outside, outsideSunOff, outsidePointOff);
+    results.push({ assertion: "unshadowed light outside directional map", ...outsideMetrics });
+    if (!outsideMetrics.pass)
+      throw new Error("VQ07 outside-shadow-map light-response gates failed.");
     if (
       nativeRuntime !== undefined &&
       ((await hash(nativeRuntime)) !== summary.nativeArtifacts?.runtimeSha256 ||

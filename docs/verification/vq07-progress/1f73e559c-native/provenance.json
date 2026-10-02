@@ -184,11 +184,7 @@
     "releasedTargetsAfterOff": 4,
     "liveTargetsAfterOff": 0,
     "matchingMaterialReleaseCounts": true,
-    "rendererTexturesOffActiveReturnedOff": [
-      5,
-      10,
-      5
-    ],
+    "rendererTexturesOffActiveReturnedOff": [5, 10, 5],
     "minimumObservedStableRenderIntervals": 3
   },
   "resizeFailure": {

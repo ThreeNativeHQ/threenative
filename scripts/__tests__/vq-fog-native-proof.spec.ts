@@ -73,7 +73,26 @@ it("isolates native resize with fog off while preserving the original fog sequen
   expect(
     controls[1]?.scenario.steps.some((step) => "press" in step && step.press?.includes("KeyT")),
   ).toBe(true);
-  expect(original).toHaveLength(17);
+  expect(original.slice(0, 17).map(({ mode }) => mode)).toEqual([
+    "off",
+    "zero",
+    "fog",
+    "inside",
+    "sunOff",
+    "pointOff",
+    "overlap",
+    "half",
+    "wallOff",
+    "blackOff",
+    "scatter",
+    "scatterSunOff",
+    "scatterPointOff",
+    "lifecycle",
+    "lifecycleOff",
+    "resizeSmall",
+    "resizeRestore",
+  ]);
+  expect(original).toHaveLength(29);
   expect(original.find(({ mode }) => mode === "resizeSmall")?.scenario.steps[0]).toMatchObject({
     press: ["KeyF"],
   });
@@ -172,7 +191,9 @@ it("declares the native backing-surface size for the small-target capture withou
   if (authored === undefined) throw new Error("Missing small-target scenario");
   const viewport = { width: 320, height: 240 };
   expect(nativeFogScenario(authored, viewport).viewport).toEqual(viewport);
-  const small = { ...report(), capture: { ...report().capture!, viewport } };
+  const capture = report().capture;
+  if (!capture) throw new Error("Missing native capture fixture");
+  const small = { ...report(), capture: { ...capture, viewport } };
   expect(fogNativeCaptureIsValid(small, consoleEvidence)).toBe(false);
   expect(fogNativeCaptureIsValid(small, consoleEvidence, viewport)).toBe(true);
 });

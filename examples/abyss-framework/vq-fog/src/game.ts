@@ -41,6 +41,12 @@ const initialState = {
   sun: true,
   point: true,
   overlaps: false,
+  shadowOutside: false,
+  streamedWall: false,
+  sceneEntries: 0,
+  sceneExits: 0,
+  exitReleasedTargets: 0,
+  exitReleasedMaterials: 0,
 };
 type FogState = typeof initialState;
 type FogCtx = ICtx<FogState>;
@@ -62,6 +68,9 @@ const modes = [
   "scatterSunOff",
   "scatterPointOff",
   "blackOff",
+  "scatterOutside",
+  "scatterOutsideSunOff",
+  "scatterOutsidePointOff",
 ] as const;
 type Mode = (typeof modes)[number];
 
@@ -79,6 +88,8 @@ export class FogProbe extends GameScene<FogState> {
   #fog: ReturnType<typeof createVolumetricFog>;
   #release: (() => void) | undefined;
   #mode: Mode = "off";
+  #cameraCut = false;
+  #streamedWall = false;
   #applied: Mode | undefined;
   #builds = 0;
   #disposedGraphs = 0;
@@ -91,6 +102,7 @@ export class FogProbe extends GameScene<FogState> {
   #stableTextureFrames = 0;
 
   override enter(ctx: FogCtx): void {
+    ctx.state.set({ sceneEntries: ctx.state.getState().sceneEntries + 1 });
     ctx.scene.background = this.#background;
     ctx.scene.fog = null;
     // Same calibration card in every scattering-control arm, outside the measured room ROI.
@@ -120,6 +132,7 @@ export class FogProbe extends GameScene<FogState> {
     box(new Vector3(3.6, 4, -5), new Vector3(2.8, 0.3, 10));
     box(new Vector3(-1.4, 1, -5), new Vector3(1, 2, 1));
     this.#wall = box(new Vector3(0.4, 1.6, 3.6), new Vector3(2, 3.2, 0.4));
+    this.#wall.name = "fog-wall";
     this.#sun.name = "fog-directional";
     this.#point.name = "fog-point";
     this.#sun.position.set(-3, 7, 1);
@@ -147,6 +160,21 @@ export class FogProbe extends GameScene<FogState> {
   }
 
   override update(ctx: FogCtx): void {
+    if (ctx.input.justPressed("reenter")) {
+      ctx.goto("fog");
+      return;
+    }
+    for (const action of ["cameraCut", "cameraRestore", "streamWallOut", "streamWallIn"]) {
+      if (!ctx.input.justPressed(action)) continue;
+      if (action === "cameraCut" || action === "cameraRestore")
+        this.#cameraCut = action === "cameraCut";
+      else {
+        this.#streamedWall = action === "streamWallOut";
+        if (this.#streamedWall) this.#wall?.removeFromParent();
+        else if (this.#wall !== undefined) ctx.add(this.#wall);
+      }
+      this.#resetObservation(ctx);
+    }
     for (const mode of modes) if (ctx.input.justPressed(mode)) this.#mode = mode;
     if (ctx.input.justPressed("rebuild")) this.#applied = undefined;
     if (ctx.input.justPressed("resizeSmall")) this.#resize(ctx, 320, 240);
@@ -156,8 +184,16 @@ export class FogProbe extends GameScene<FogState> {
     ctx.scene.overrideMaterial = scatteringOnly ? this.#black : null;
     this.#calibration.visible = scatteringOnly;
     ctx.scene.background = scatteringOnly ? this.#blackBackground : this.#background;
-    this.#sun.intensity = this.#mode === "sunOff" || this.#mode === "scatterSunOff" ? 0 : 3;
-    this.#point.intensity = this.#mode === "pointOff" || this.#mode === "scatterPointOff" ? 0 : 30;
+    const shadowOutside = this.#mode.startsWith("scatterOutside");
+    Object.assign(
+      this.#sun.shadow.camera,
+      shadowOutside
+        ? { left: 30, right: 31, top: 31, bottom: 30 }
+        : { left: -9, right: 9, top: 9, bottom: -9 },
+    );
+    this.#sun.shadow.camera.updateProjectionMatrix();
+    this.#sun.intensity = this.#mode === "sunOff" || this.#mode.endsWith("SunOff") ? 0 : 3;
+    this.#point.intensity = this.#mode === "pointOff" || this.#mode.endsWith("PointOff") ? 0 : 30;
     if (this.#wall !== undefined) this.#wall.visible = this.#mode !== "wallOff";
     // Warm the ordinary directional shadow map with the first real scene frame before composing.
     if (this.#applied !== this.#mode && this.#sun.shadow.map !== null) this.#compose(ctx);
@@ -191,7 +227,9 @@ export class FogProbe extends GameScene<FogState> {
       targets: observation?.renderTargets ?? 0,
       pixels: observation?.pixels ?? 0,
       steps: observation?.steps ?? 0,
-      inside: this.#mode === "inside",
+      inside: this.#mode === "inside" || this.#cameraCut,
+      shadowOutside,
+      streamedWall: this.#streamedWall,
       sun: this.#sun.intensity > 0,
       point: this.#point.intensity > 0,
       overlaps: this.#mode === "overlap",
@@ -199,7 +237,7 @@ export class FogProbe extends GameScene<FogState> {
   }
 
   #positionCamera(ctx: FogCtx): void {
-    if (this.#mode === "inside") ctx.camera.position.set(0, 1.5, -1);
+    if (this.#mode === "inside" || this.#cameraCut) ctx.camera.position.set(0, 1.5, -1);
     else ctx.camera.position.set(6.5, 3, 11);
     ctx.camera.lookAt(0, 1.4, -5);
     const camera = ctx.camera as PerspectiveCamera;
@@ -307,8 +345,13 @@ export class FogProbe extends GameScene<FogState> {
     this.#fog = undefined;
     this.#disposedGraphs += 1;
   }
-  override exit(): void {
+  override exit(ctx: FogCtx): void {
     this.#disposeGraph();
+    ctx.state.set({
+      sceneExits: ctx.state.getState().sceneExits + 1,
+      exitReleasedTargets: this.#releasedTargets,
+      exitReleasedMaterials: this.#releasedMaterials,
+    });
     this.#geometry.dispose();
     this.#material.dispose();
     this.#black.dispose();
@@ -323,6 +366,7 @@ export class FogProbe extends GameScene<FogState> {
 export default defineGame<FogState>({
   camera: { far: 80, near: 0.1, fov: 52, projection: "perspective" },
   initialState,
+  frameBudget: { reportEvery: 30 },
   input: {
     fog: { keys: ["KeyF"] },
     off: { keys: ["KeyO"] },
@@ -340,6 +384,14 @@ export default defineGame<FogState>({
     resizeSmall: { keys: ["KeyR"] },
     resizeRestore: { keys: ["KeyT"] },
     rebuild: { keys: ["KeyC"] },
+    scatterOutside: { keys: ["Digit1"] },
+    scatterOutsideSunOff: { keys: ["Digit2"] },
+    scatterOutsidePointOff: { keys: ["Digit3"] },
+    cameraCut: { keys: ["Digit4"] },
+    cameraRestore: { keys: ["Digit5"] },
+    streamWallOut: { keys: ["Digit6"] },
+    streamWallIn: { keys: ["Digit7"] },
+    reenter: { keys: ["Digit8"] },
   },
   plugins: [playtest<FogState>()],
   renderer: { preferWebGPU: true, resolutionScale: 1, pixelRatio: 1 },

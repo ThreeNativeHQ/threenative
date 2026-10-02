@@ -90,9 +90,9 @@ test("should fail when a declared test target is not executed", () => {
   // cache contract; +1 for PRD-399's presentation-pacing contract; +1 for PRD-465 Phase 2's
   // MetaHuman facial rig bindings contract; +1 for VQ07's surface acquisition status contract.
   // Bump alongside any new add_executable contract target.
-  // 46 since VQ07 registered threenative-surface-texture-status-test. The next assertion pins this against CMakeLists
+  // 47 since VQ07 also registered threenative-canvas-presentation-test. The next assertion pins this against CMakeLists
   // itself, so the literal is a tripwire for an unreviewed target, not the source of truth.
-  assert.equal(discovered.length, 46);
+  assert.equal(discovered.length, 47);
   assert.deepEqual(discovered, declaredTargets(cmake));
   assert.doesNotThrow(() => validateExecutionContracts(discovered, executionContracts));
 

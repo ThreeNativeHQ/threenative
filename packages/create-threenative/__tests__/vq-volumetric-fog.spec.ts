@@ -183,7 +183,15 @@ it.each([false, true])("builds the actual depth-clipped transport WGSL (lights=%
   expect(flow.code).toContain("exp(");
   expect(flow.code).toContain("for (");
   expect(flow.code).toContain("32");
-  if (lights) expect(flow.code).toContain("textureSampleCompare");
+  if (lights) {
+    expect(flow.code).toContain("textureSampleCompare");
+    const sampled = /([A-Za-z_][A-Za-z_0-9]*) = textureSampleCompare/.exec(flow.code)?.[1];
+    const visibility = new RegExp(`([A-Za-z_][A-Za-z_0-9]*) = ${sampled};`).exec(flow.code)?.[1];
+    expect(visibility).toBeDefined();
+    // Match the actual generated shader default, not a second JavaScript implementation.
+    // Outside ordinary shadow coverage the directional source stays unshadowed, like Three.
+    expect(flow.code).toContain(`${visibility} = 1.0;`);
+  }
   fog.dispose();
   scenePass.dispose();
   options.sun?.shadow.map?.dispose();

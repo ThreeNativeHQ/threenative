@@ -23,6 +23,7 @@
   "devDependencies": {
     "@tailwindcss/vite": "catalog:",
     "@threenative/assets": "workspace:*",
+    "@threenative/playtest": "workspace:*",
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
     "@types/three": "0.185.3",
