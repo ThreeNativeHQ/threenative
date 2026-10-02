@@ -400,11 +400,13 @@ export function mountRecoveredEditor({
       else
         html += `<div class="swatch-grid">${MATERIAL_IDS.map((id, i) => `<button class="swatch${o.material === id ? " active" : ""}" data-material="${id}" title="${id}"><i style="background:rgb(${materialColors[i].map((c) => Math.round(c * 255)).join(",")})"></i><span>${id}</span></button>`).join("")}</div>`;
     }
-    if (active === "scatter")
+    if (active === "scatter") {
+      const assets = view.propAssets?.() ?? ["pine", "boulder", "grass"];
       html = `${
-        optionSelect("Asset ID", "asset", ["pine", "boulder", "grass"], o.asset) +
+        optionSelect("Asset ID", "asset", assets, assets.includes(o.asset) ? o.asset : assets[0]) +
         optionNumber("Requested instances", "count", o.count)
-      }<label class="field-label"><span><input type="checkbox" data-option="erase"${o.erase ? " checked" : ""}> Erase this asset inside brush</span></label><p class="small muted">Starter assets are proxies. Register your own Three.js meshes through the adapter.</p>`;
+      }<label class="field-label"><span><input type="checkbox" data-option="erase"${o.erase ? " checked" : ""}> Erase this asset inside brush</span></label><p class="small muted">The palette is this project's own assets; register another through the view.</p>`;
+    }
     if (active === "spline")
       html = `${
         optionSelect("Spline type", "kind", ["road", "river"], o.kind) +

@@ -35,7 +35,6 @@ try {
   const activation = await plugin.activate();
   const controller = new TerrainEditorController(activation.editorUrl);
   assert.deepEqual(await controller.activate(), activation);
-  const initial = await controller.snapshot();
   let captured = false;
   const config = parseStandalonePlaytestArgs([
     "--scenario",
@@ -359,12 +358,19 @@ try {
   // editor and the same document, so the shared-file claim is tested across two browser sessions
   // rather than inside one.
   assert(captured, "The integration session must finish before the tool-group session");
-  await withBrowserCapture(config, async (session) => {
-    await session.page.waitForFunction(() => window.strata?.state && !window.strata.busy, {}, {
-      timeout: 10000,
-    });
+  // Dozens of committed edits, each one a full rebuild with its own save and undo, take far longer
+  // than the other stages of this proof, so this session carries its own budget rather than
+  // shortening the work to fit the first stage's.
+  await withBrowserCapture({ ...config, timeoutMs: 900000 }, async (session) => {
+    await session.page.waitForFunction(
+      () => window.strata?.state && !window.strata.busy,
+      {},
+      {
+        timeout: 30000,
+      },
+    );
     await advanceFixedStep(session.page, session.bridge, 2);
-    await verifyToolGroups(session, controller, initial);
+    await verifyToolGroups(session, controller);
   });
   const report = await runStandalonePlaytest(config);
   assert(report.assertionResults?.length > 0, "Scenario assertions were not observed");
