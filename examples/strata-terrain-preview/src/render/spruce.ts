@@ -69,13 +69,16 @@ export const SPRUCE = {
  */
 class MeshBuffer {
   readonly index: number[] = [];
+  /** How far a vertex is from the crown's interior, 0 at the trunk and 1 at a branch tip. */
+  readonly inner: number[] = [];
   readonly normal: number[] = [];
   readonly position: number[] = [];
   readonly sway: number[] = [];
   readonly uv: number[] = [];
 
-  vertex(point: Vector3, normal: Vector3, u: number, v: number, weight: number): number {
+  vertex(point: Vector3, normal: Vector3, u: number, v: number, weight: number, inner = 1): number {
     this.position.push(point.x, point.y, point.z);
+    this.inner.push(inner);
     this.normal.push(normal.x, normal.y, normal.z);
     this.uv.push(u, v);
     this.sway.push(weight);
@@ -87,11 +90,12 @@ class MeshBuffer {
     normal: Vector3,
     texture: readonly (readonly [number, number])[],
     weight: number,
+    shape?: { readonly normals: readonly Vector3[]; readonly inner: readonly number[] },
   ): void {
     const base = this.sway.length;
     corners.forEach((point, i) => {
       const [u, v] = texture[i] as readonly [number, number];
-      this.vertex(point, normal, u, v, weight);
+      this.vertex(point, shape?.normals[i] ?? normal, u, v, weight, shape?.inner[i] ?? 1);
     });
     this.index.push(base, base + 1, base + 2, base, base + 2, base + 3);
   }
@@ -102,6 +106,7 @@ class MeshBuffer {
     geometry.setAttribute("normal", new BufferAttribute(new Float32Array(this.normal), 3));
     geometry.setAttribute("uv", new BufferAttribute(new Float32Array(this.uv), 2));
     geometry.setAttribute("sway", new BufferAttribute(new Float32Array(this.sway), 1));
+    geometry.setAttribute("inner", new BufferAttribute(new Float32Array(this.inner), 1));
     geometry.setIndex(this.index);
     geometry.computeBoundingSphere();
     return geometry;
@@ -229,50 +234,86 @@ function branch(
     const cardAzimuth = azimuth + (random() - 0.5) * 0.42 * (c + 1);
     const cardLength = length * share;
     const outward = new Vector3(Math.cos(cardAzimuth), 0, Math.sin(cardAzimuth));
-    // The card is rolled about its own axis, because a card that always lies in the horizontal plane
-    // disappears when the camera looks along it, and one that always stands vertical reads as a fin.
-    const across = new Vector3(-Math.sin(cardAzimuth), 0, Math.cos(cardAzimuth))
-      .multiplyScalar(Math.cos(cardRoll))
-      .add(new Vector3(0, 1, 0).multiplyScalar(Math.sin(cardRoll)))
-      .normalize();
     // A spruce branch is a catenary: it leaves the trunk nearly level and falls away as it goes out.
     const cardDroop = droop * (0.85 + random() * 0.35);
-    const reach = (at: number) => origin.clone().addScaledVector(outward, cardLength * at);
+    // A little disagreement between cards, so the bent shading has grain instead of being one smooth
+    // gradient painted over the crown.
+    const tilt = (random() - 0.5) * 0.5;
     const drop = (at: number) => cardDroop * cardLength * at * at;
-    // Tapered, and pinched at the trunk: a branch is a wedge, not a rectangle, and the pinch is what
-    // stops the card's own leading edge from reading as a line across the crown.
+    // The branch's own curve, falling as it goes out. It used to leave the drop out of the position and
+    // keep it only in the wind weight, which drew every branch dead level: a crown of horizontal tiers.
+    const along = (at: number) =>
+      origin.clone().addScaledVector(outward, cardLength * at).setY(origin.y - drop(at));
+    // Tapered, and pinched at the trunk: a branch is a wedge, not a rectangle.
     const halfWidth = (at: number) =>
       (width * share * (1 - at * 0.7) * Math.min(1, 0.18 + at * 1.9)) / 2;
-    // The card's own UV window slides along the cell rather than filling it, so two cards on the same
-    // branch are never the same picture of it.
-    const uSpan = (0.62 + random() * 0.34) / CLUSTER;
-    const uFrom = (c / CLUSTER) * (1 - uSpan * CLUSTER) + random() * 0.08;
+    const side = new Vector3(-Math.sin(cardAzimuth), 0, Math.cos(cardAzimuth));
+    // Separate sprays along the branch, each a whole twig picture with its own roll, rather than one
+    // strip bent along it. A strip's mipped alpha closes into one leaf-shaped paddle as long as the
+    // branch; three short sprays close into three small ones at different angles, which is what reads
+    // as foliage from across a meadow. Same triangles, three times the silhouettes.
     for (let i = 0; i < segments; i += 1) {
-      const at0 = i / segments;
-      const at1 = (i + 1) / segments;
-      const a = reach(at0).addScaledVector(across, -halfWidth(at0));
-      const b = reach(at0).addScaledVector(across, halfWidth(at0));
-      const c2 = reach(at1).addScaledVector(across, halfWidth(at1));
-      const d = reach(at1).addScaledVector(across, -halfWidth(at1));
+      const at = (i + 0.5) / segments;
+      const centre = along(at);
+      const slope = 2 * cardDroop * cardLength * at;
+      const direction = outward.clone().multiplyScalar(cardLength).setY(-slope).normalize();
+      const lift = new Vector3().crossVectors(side, direction).normalize();
+      const sprayRoll = cardRoll + (random() - 0.5) * 1.3;
+      const across = side
+        .clone()
+        .multiplyScalar(Math.cos(sprayRoll))
+        .addScaledVector(lift, Math.sin(sprayRoll))
+        .normalize();
+      const half = (cardLength / segments) * 0.72;
+      const wide = halfWidth(at) * 1.25;
+      const back = centre.clone().addScaledVector(direction, -half);
+      const front = centre.clone().addScaledVector(direction, half);
+      const a = back.clone().addScaledVector(across, -wide * 0.5);
+      const b = back.clone().addScaledVector(across, wide * 0.5);
+      const c2 = front.clone().addScaledVector(across, wide);
+      const d = front.clone().addScaledVector(across, -wide);
       const normal = new Vector3()
         .subVectors(b, a)
         .cross(new Vector3().subVectors(d, a))
         .normalize();
-      const u0 = cell.u0 + (cell.u1 - cell.u0) * (uFrom + uSpan * at0);
-      const u1 = cell.u0 + (cell.u1 - cell.u0) * (uFrom + uSpan * at1);
+      // Mirror half the sprays across the twig, so neighbours are never the same picture.
+      const [vA, vB] = random() < 0.5 ? [cell.v0, cell.v1] : [cell.v1, cell.v0];
+      const inner = 0.3 + 0.7 * at ** 0.8;
       buffer.quad(
         [a, b, c2, d],
         normal,
         [
-          [u0, cell.v0],
-          [u0, cell.v1],
-          [u1, cell.v1],
-          [u1, cell.v0],
+          [cell.u0, vA],
+          [cell.u0, vB],
+          [cell.u1, vB],
+          [cell.u1, vA],
         ],
-        envelope((origin.y - drop(at0)) / height),
+        envelope(centre.y / height),
+        {
+          normals: [a, b, c2, d].map((point) => crownNormal(point, origin.y, height, tilt)),
+          inner: [inner, inner, inner, inner],
+        },
       );
     }
   }
+}
+
+/**
+ * The normal a crown card is lit with: the crown's, not the card's.
+ *
+ * Lit by its own plane, every card is a paddle — a flat facet that is either sunlit or not, so the
+ * crown reads as a stack of light and dark plates however good its alpha is. A real canopy is lit as
+ * a volume: its sun side is bright, its far side and its underside dark, and the change is a gradient
+ * across the whole tree. So a card carries the outward direction of the crown at its own position,
+ * tipped up by how far up the tree it is, and the alpha keeps the needles at the edge.
+ */
+function crownNormal(point: Vector3, whorlY: number, height: number, tilt: number): Vector3 {
+  const radial = new Vector3(point.x, 0, point.z);
+  const reach = radial.length();
+  if (reach > 1e-4) radial.divideScalar(reach);
+  // Up-tilt grows towards the leader, where the crown is a spire and its surface faces the sky.
+  const up = 0.45 + 0.5 * (whorlY / height) + tilt;
+  return radial.add(new Vector3(0, up, 0)).normalize();
 }
 
 /** The whole crown: whorls of branches from the top of the bare trunk to the leader. */
@@ -316,7 +357,9 @@ function crown(height: number, seed: number): BufferGeometry {
               : ATLAS_CELLS.dense,
         // Lower branches hang hardest; the leader's barely fall at all. The variance here is what
         // makes a crown look like a spruce rather than a set of flat plates stacked on a pole.
-        droop: 0.22 + taper * 0.62 + random() * 0.2,
+        // Now that the droop is real geometry rather than a wind weight, these are a spruce's: the lower
+        // branches fall about thirty degrees by their tips, the upper ones barely at all.
+        droop: 0.1 + taper * 0.36 + random() * 0.12,
         height,
         length: reach,
         origin: new Vector3(0, at * height, 0),
