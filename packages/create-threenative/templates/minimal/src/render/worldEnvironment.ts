@@ -513,9 +513,9 @@ export class WorldEnvironment {
     const releaseGraph = (): void => {
       if (released) return;
       released = true;
-      // convertToTexture creates an RTT only for a non-texture expression. An already supplied
-      // texture belongs to its caller; its lifetime must not be stolen by this environment.
-      if (baseTexture !== base) {
+      // Only a newly created RTT is ours. A PassNode converts to a borrowed PassTextureNode;
+      // supplied TextureNodes/RTTs belong to the caller even when their resources are shared.
+      if (baseTexture !== base && Reflect.get(baseTexture, "isRTTNode") === true) {
         const owned = baseTexture as unknown as {
           renderTarget: { dispose(): void };
           _quadMesh: { material: { dispose(): void } };

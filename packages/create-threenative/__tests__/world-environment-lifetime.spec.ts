@@ -1,5 +1,6 @@
-import { PerspectiveCamera, Scene } from "three";
+import { PerspectiveCamera, Scene, Texture } from "three";
 import BloomNode from "three/addons/tsl/display/BloomNode.js";
+import { rtt, texture, vec4 } from "three/tsl";
 import type { Node } from "three/webgpu";
 import { expect, it, vi } from "vitest";
 import { type OutputRenderer, WorldEnvironment } from "../template-assets/worldEnvironment.js";
@@ -48,10 +49,10 @@ it("owns the direct base-colour graph without requiring an unrelated post stage"
     kind: "webgpu",
     raw: {},
     clearOutputNode,
-    setOutputNode(node: Node, worldPass?: unknown) {
+    setOutputNode(node: unknown, worldPass?: unknown) {
       outputs.push(node);
       worldPasses.push(worldPass);
-      node.traverse((candidate) => {
+      (node as Node).traverse((candidate) => {
         if (Reflect.get(candidate, "isRTTNode") !== true) return;
         const scratch = candidate as unknown as {
           renderTarget: { dispose(): void };
@@ -95,4 +96,37 @@ it("refuses a direct graph on an unsupported renderer without invoking its alloc
   );
   expect(baseColour).not.toHaveBeenCalled();
   expect(applied.dropped).toEqual([{ name: "baseColour", reason: "renderer:webgl2" }]);
+});
+
+it("disposes a base-colour PassNode without mistaking its borrowed texture for an owned RTT", () => {
+  let releasePass: ReturnType<typeof vi.fn> | undefined;
+  const applied = new WorldEnvironment({ bloomEnabled: false, screenSpaceAA: "disabled" }).apply(
+    { kind: "webgpu", raw: {}, setOutputNode: () => {}, clearOutputNode: () => {} },
+    new Scene(),
+    new PerspectiveCamera(),
+    {
+      baseColour(scenePass) {
+        releasePass = vi.spyOn(scenePass, "dispose");
+        return scenePass;
+      },
+    },
+  );
+  expect(() => applied.dispose?.()).not.toThrow();
+  applied.dispose?.();
+  expect(releasePass).toHaveBeenCalledTimes(1);
+});
+
+it.each(["texture", "rtt"])("leaves caller-owned %s resources alive", (kind) => {
+  const supplied = kind === "rtt" ? rtt(vec4(0.2, 0.3, 0.4, 1)) : texture(new Texture());
+  const release = vi.spyOn(supplied.value, "dispose");
+  const applied = new WorldEnvironment({ bloomEnabled: false, screenSpaceAA: "disabled" }).apply(
+    { kind: "webgpu", raw: {}, setOutputNode: () => {}, clearOutputNode: () => {} },
+    new Scene(),
+    new PerspectiveCamera(),
+    { baseColour: () => supplied },
+  );
+  applied.dispose?.();
+  applied.dispose?.();
+  expect(release).not.toHaveBeenCalled();
+  supplied.value.dispose();
 });
