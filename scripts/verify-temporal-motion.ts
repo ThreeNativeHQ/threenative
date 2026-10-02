@@ -32,6 +32,7 @@ const velocityDiagnostics: Record<
   Array<{ label: string; velocity: IVelocityProbe | null }>
 > = {};
 let poses: unknown[] | undefined;
+let recompileObserved = false;
 for (const variant of [
   "supersampled",
   "reference",
@@ -39,6 +40,8 @@ for (const variant of [
   "zero-velocity",
   "unchecked-history",
   "dynamic-instances",
+  "strict-rejection",
+  "recompile",
 ]) {
   const artifactDirectory = path.join(output, variant);
   await mkdir(artifactDirectory, { recursive: true });
@@ -139,6 +142,13 @@ for (const variant of [
     label,
     velocity: (snapshots.temporal as { velocityProbe: IVelocityProbe | null }).velocityProbe,
   }));
+  if (variant === "recompile") {
+    const observed = series.at(-1)?.snapshots.temporal as {
+      setupCount: number;
+      setupDuringJitter: number;
+    };
+    recompileObserved = observed.setupCount > 1 && observed.setupDuringJitter > 0;
+  }
   provenance.push({ variant, capture: report.capture, hashes });
 }
 const reference = frames.supersampled;
@@ -166,6 +176,12 @@ for (const { velocity } of temporalVelocity) {
 // Pinned before the first runtime measurement. These are a narrow-fixture experimental bar,
 // not a claim of general image quality, native qualification or saved GPU time.
 const checks = {
+  recompileObserved,
+  recompileVelocity:
+    velocityDiagnostics.recompile?.every(({ velocity }) => {
+      const rigid = velocity?.samples.find(({ name }) => name === "rigid");
+      return velocity?.projectionError === 0 && rigid !== undefined && rigid.errorPixels < 0.01;
+    }) === true,
   velocityProjection: temporalVelocity.every(({ velocity }) => {
     const rigid = velocity?.samples.find(({ name }) => name === "rigid");
     return velocity?.projectionError === 0 && rigid !== undefined && rigid.errorPixels < 0.01;
@@ -204,7 +220,7 @@ const summary = {
   velocityDiagnostics,
 };
 await writeFile(path.join(output, "summary.json"), `${JSON.stringify(summary, null, 2)}\n`);
-console.log(JSON.stringify({ checks, results, velocityDiagnostics }, null, 2));
+console.log(JSON.stringify({ checks, results }, null, 2));
 assert.ok(
   summary.pass,
   `Temporal motion quality remains unqualified: ${JSON.stringify(checks)}; actual frames and full measurements retained at ${output}`,

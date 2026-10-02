@@ -147,10 +147,26 @@ pixel across all 16 frames; the first input-pass material compiled while Velocit
 projection was still null. The helper now primes TRAA's own unjittered matrix during setup, before
 the dependency can compile that material, without applying camera jitter early. A real
 VelocityNode.setup regression fails before the fix and passes afterward; the maintained GPU
-oracle now requires rigid velocity error below 0.01 pixel. Hosted repair measurement is pending.
+oracle now requires rigid velocity error below 0.01 pixel. Hosted run `36998277547` at
+`0564aaaf0a45e7f51e901c63bccd3753debc0322` passes that MRT check across all 16 matched frames;
+the image-quality gate remains red (edge error 0.06070, instability 0.03196, reveal residue 22.6%
+after one frame).
+The repaired rigid velocity's maximum oracle error is 0.000308 pixel;
+[exact runtime record](../../verification/prd455/projection-fixed.json) and
+[actual frame 30](../../verification/prd455/projection-fixed.png) preserve this partial result.
+That run's no-AA frame 30 is byte-identical to the linked earlier reference. All 96 screenshot
+hashes were verified and every arm's diagnostics are empty; the repaired frame was inspected.
 Separately, instanced velocity has 9.34-pixel mean error, and a dynamic-buffer control reduces this
 to 1.00 pixel but leaves timing error. The shipped previous-instance attribute upload/ordering
 defect belongs to PRD-269/PR393 and is not patched here. All original quality thresholds remain.
+
+A re-setup regression also reproduced copying an active camera jitter into the saved projection.
+The helper now tracks its own active view offset, preserves the unjittered matrix during setup,
+and avoids applying the same frame jitter twice. The maintained recompile arm changes the public
+renderer context-node version and must observe both a repeated setup during jitter and correct
+MRT velocity; runtime verification is pending. A separate fixture-only strict-rejection arm sets
+TRAA edgeDepthDiff to 1 to test its documented depth-edge exception without changing blend weights,
+any quality threshold, or generated appearance policy.
 
 - [ ] A fixed camera route containing thin fences, foliage, sub-pixel edges, a moving character and an instanced moving object stays within pinned temporal-stability/ghosting thresholds against a full-resolution reference. **proof:** automated frame-sequence report records edge flicker, rejected-history ratio and image delta for full-res, low-res spatial upscale and temporal reconstruction; the temporal arm must beat the spatial arm on the named stability metric.
 - [ ] Newly revealed surfaces do not inherit stale colour after occlusion/disocclusion events. **proof:** foreground-occluder fixture reveals a contrasting background and asserts stale-history pixels decay within the declared frame bound; disabling disocclusion rejection makes it fail.

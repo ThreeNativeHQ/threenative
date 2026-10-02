@@ -61,6 +61,8 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
   const pipeline = new THREE.RenderPipeline(renderer);
   const tracker = new VelocityTracker();
   let temporal;
+  let setupCount = 0;
+  let setupDuringJitter = 0;
   const chain = new RenderChain({
     renderer: { kind: "webgpu", raw: renderer, setOutputNode: (node) => { pipeline.outputNode = node; }, clearOutputNode: () => {} },
     input: scenePass.getTextureNode("output"), worldPass: scenePass,
@@ -69,17 +71,22 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
       name: "traa",
       build: (input, context) => {
         temporal = createTemporalAA(input, scenePass.getTextureNode("depth"), context.velocityNode, camera);
-        if (variant === "unchecked-history") {
+        // Diagnostic: normalized depth range is at most 1, so only the upstream edge bypass
+        // is disabled. Its disocclusion threshold and history blend remain identical.
+        if (variant === "strict-rejection") temporal.node.edgeDepthDiff = 1;
+        const setup = temporal.node.setup.bind(temporal.node);
+        temporal.node.setup = (builder) => {
+          setupCount++;
+          if (camera.view?.enabled) setupDuringJitter++;
+          const result = setup(builder);
+          if (variant === "unchecked-history") {
           // Fixture-only negative control: actually render an unchecked 95% history blend.
           // This bypasses depth rejection AND neighbourhood clipping; it is not a product mode
           // and does not isolate either mechanism's individual contribution.
-          const setup = temporal.node.setup.bind(temporal.node);
-          temporal.node.setup = (builder) => {
-            const result = setup(builder);
             temporal.node._resolveMaterial.colorNode = temporal.node.beautyNode.mul(0.05).add(texture(temporal.node._historyRenderTarget.texture).mul(0.95));
-            return result;
-          };
-        }
+          }
+          return result;
+        };
         return temporal.node;
       },
       dispose: () => temporal?.dispose(),
@@ -105,7 +112,7 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
   let lastReset = null;
   const observation = () => ({
     frame, resets, lastReset, aa: temporal?.report() ?? null,
-    measurement, variant, occluderVisible: measurement && occluder.visible,
+    measurement, variant, setupCount, setupDuringJitter, occluderVisible: measurement && occluder.visible,
     pose: { cameraX: camera.position.x, rigidX: rigid.position.x, limbZ: limb.rotation.z },
     velocityProbe: velocityProbe?.observation() ?? null,
     historyValues: measurement ? {
@@ -120,6 +127,7 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
     instancedHistory: readVelocityPreviousMatrices(instances) !== undefined,
   });
   const render = () => {
+    if (variant === "recompile" && frame === 22) renderer.contextNode.needsUpdate = true;
     if (measurement) occluder.visible = frame < 28;
     rigid.position.x = -1.5 + Math.sin(frame / 18) * 0.65;
     limb.rotation.z = Math.sin(frame / 13) * 0.7;

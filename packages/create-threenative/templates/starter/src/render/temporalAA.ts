@@ -50,7 +50,9 @@ export function createTemporalAA(
       setProjectionMatrix(matrix: Matrix4 | null): void;
     } | null;
     setViewOffset(width: number, height: number): void;
+    clearViewOffset(): void;
   };
+  let ownedViewOffset: { width: number; height: number } | null = null;
   const setup = node.setup.bind(node);
   node.setup = (builder) => {
     // NodeBuilder schedules child passes before this update only when setup declares them.
@@ -69,8 +71,10 @@ export function createTemporalAA(
     // The declared input pass runs before TRAA.updateBefore on the first frame. VelocityNode
     // permanently selects its projection source when that pass's material first compiles.
     // Prime the same unjittered matrix TRAA owns so it never compiles the jittered-camera route.
-    camera.updateProjectionMatrix();
-    internals._originalProjectionMatrix.copy(camera.projectionMatrix);
+    if (ownedViewOffset === null) {
+      camera.updateProjectionMatrix();
+      internals._originalProjectionMatrix.copy(camera.projectionMatrix);
+    }
     if (internals._velocityNode === null)
       throw new Error("Temporal AA requires a velocity accessor.");
     internals._velocityNode.setProjectionMatrix(internals._originalProjectionMatrix);
@@ -90,11 +94,23 @@ export function createTemporalAA(
   };
   const updateBefore = node.updateBefore.bind(node);
   const setViewOffset = internals.setViewOffset.bind(node);
+  const clearViewOffset = internals.clearViewOffset.bind(node);
+  internals.clearViewOffset = () => {
+    try {
+      clearViewOffset();
+    } finally {
+      ownedViewOffset = null;
+    }
+  };
   internals.setViewOffset = (width, height) => {
+    // A node rebuild can request the initial sync after the pipeline already applied jitter.
+    if (ownedViewOffset?.width === width && ownedViewOffset.height === height) return;
+    if (ownedViewOffset !== null) camera.clearViewOffset();
     camera.updateProjectionMatrix();
     if (!camera.projectionMatrix.equals(projection)) pending ??= "projection-change";
     projection.copy(camera.projectionMatrix);
     setViewOffset(width, height);
+    ownedViewOffset = { width, height };
   };
   node.updateBefore = (frame) => {
     if (disposed) throw new Error("Temporal AA is disposed.");
@@ -147,8 +163,10 @@ export function createTemporalAA(
       if (disposed) return;
       disposed = true;
       // A graph can be disposed after setup but before its first pipeline draw clears context.
-      if (internals._velocityNode?.projectionMatrix === internals._originalProjectionMatrix)
-        internals._velocityNode.setProjectionMatrix(null);
+      if (internals._velocityNode?.projectionMatrix === internals._originalProjectionMatrix) {
+        if (ownedViewOffset !== null) internals.clearViewOffset();
+        else internals._velocityNode.setProjectionMatrix(null);
+      }
       node.dispose();
       // convertToTexture allocates an RTT only when the caller did not already supply a texture.
       if (internals.beautyNode !== colour && internals.beautyNode.isRTTNode) {

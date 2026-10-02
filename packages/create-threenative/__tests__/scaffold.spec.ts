@@ -196,7 +196,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   shooter: "386f6bca602b4939bf9d860d5cadba0ede803adef95222faedbdc8e33d205590",
   snow: "f6555492e02901960b8d733568f4f9c07ae1e11baa03e95b9b498d24c3eee1c6",
   // PRD-455: measured combined develop 0.2.8 plus starter temporal helper/source contract.
-  starter: "73a24fa2909360f7aaae85e195b3a498d9f33e6a0914aaa1f7c0e35fcb9c89e8",
+  starter: "455cbcc5233a0d0de8d323c3d0312f72fb3a474497738cf6cb4f6970f87b3654",
   "tower-defense": "2967805234d96f52d79a398463ddb980658a53efafecf4b7a8ecf33ad1a5679f",
 };
 
