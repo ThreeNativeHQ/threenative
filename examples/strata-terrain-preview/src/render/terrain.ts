@@ -94,16 +94,14 @@ interface ILayerMaps {
 /**
  * One tile of each layer, in metres — the distance over which its texture repeats.
  *
- * Grass repeats every 2.6 m so a blade pattern still reads under the player's feet; the cliff rock
- * every 9 m, because its strata are wider than the cliff they sit on; snow every 12 m, because a
- * drift has no detail at the scale of a footprint. The same numbers are recorded per map in
- * `packages/terrain/starter-assets/credits.json`.
+ * Grass repeats every 2.6 m so its detail reads underfoot; weathered stone spans 3.8 m,
+ * and snow spans 12 m. These scales belong to this world's materials.
  */
 const TILE: Record<LayerKey, number> = {
   dirt: 3.4,
   grass: 2.6,
   moss: 3.6,
-  rock: 9,
+  rock: 3.8,
   sand: 3.2,
   snow: 12,
 };
@@ -123,8 +121,8 @@ const MAPS: Record<LayerKey, { diffuse: string; normal?: string }> = {
     normal: "mossy_rock/mossy_rock_nor_gl_1k.jpg",
   },
   rock: {
-    diffuse: "cliff_side/cliff_side_diff_1k.jpg",
-    normal: "cliff_side/cliff_side_nor_gl_1k.jpg",
+    diffuse: "rock_boulder_dry/rock_boulder_dry_diff_512.jpg",
+    normal: "rock_boulder_dry/rock_boulder_dry_nor_gl_512.jpg",
   },
   sand: { diffuse: "sand_01/sand_01_diff_1k.jpg" },
   snow: { diffuse: "snow_02/snow_02_diff_1k.jpg" },
@@ -298,12 +296,11 @@ function sandRipples(): Node<"vec3"> {
  */
 function triplanarAlbedo(source: Texture, key: LayerKey): Node<"vec4"> {
   const tile = float(TILE[key]);
-  const wall = tile.mul(0.7);
   const axis = abs(normalWorldGeometry).pow(4);
   const weight = axis.div(axis.x.add(axis.y).add(axis.z));
-  const x = texture(source, positionWorld.zy.div(wall));
+  const x = texture(source, positionWorld.zy.div(tile));
   const y = texture(source, positionWorld.xz.div(tile));
-  const z = texture(source, positionWorld.xy.div(wall));
+  const z = texture(source, positionWorld.xy.div(tile));
   return weight.x.mul(x).add(weight.y.mul(y)).add(weight.z.mul(z)) as Node<"vec4">;
 }
 
@@ -429,12 +426,16 @@ export function createGroundMaterial(
     const flat = mix(texture(diffuse, tiledUV(key)), texture(diffuse, tiledUV(key, 2.35)), far);
     if (flatLayer(key)) return flat;
     const walls = triplanarAlbedo(diffuse, key);
-    const blended = mix(walls, flat, planarShare);
+    const blended = key === "rock" ? walls : mix(walls, flat, planarShare);
     // The wet band, applied to the sand only. It belongs here rather than in the layer blend below
     // because it is a *height* fact about the water's last reach, not a weight another surface has.
     if (key === "rock") {
       const grey = dot(blended.rgb, vec3(0.2126, 0.7152, 0.0722));
-      return vec4(mix(blended.rgb, vec3(grey), 0.65).mul(vec3(0.85, 0.9, 0.94)), blended.a);
+      const stone = mix(blended.rgb, vec3(grey), 0.25).mul(vec3(0.85, 0.9, 0.94));
+      // Resolved stone underfoot; broad weathering once the photograph's repeats become visible.
+      const weathering = mx_noise_float(positionWorld.mul(0.012)).mul(0.15).add(1);
+      const distant = vec3(0.3, 0.31, 0.29).mul(weathering);
+      return vec4(mix(stone, distant, smoothstep(35, 220, positionView.length())), blended.a);
     }
     if (key !== "sand" || data.waterLevel === null) return blended;
     const wet = wetness();
@@ -447,6 +448,13 @@ export function createGroundMaterial(
     const source = layer(key).normal;
     if (source === undefined) return { crevice: float(1), tilt: vec3(0) };
     held.add(source);
+    if (key === "rock") {
+      const walls = triplanarRelief(source, key);
+      return {
+        crevice: walls.crevice,
+        tilt: walls.tilt.mul(strength).mul(oneMinus(smoothstep(24, 130, positionView.length()))),
+      };
+    }
     const near = planarRelief(source, tiledUV(key), strength);
     const coarse = planarRelief(source, tiledUV(key, 2.35), strength * 0.6);
     const flat: IRelief = {
@@ -456,7 +464,7 @@ export function createGroundMaterial(
     if (flatLayer(key)) return flat;
     // Rock's strata are metres across, so its wall projection samples at its own tile size; grass and
     // dirt sample at theirs, which is why a cliff's grass fringe keeps the same grain as the meadow.
-    const walls = triplanarRelief(source, key, key === "rock" ? 1 : 0.55);
+    const walls = triplanarRelief(source, key, 0.55);
     const blended: IRelief = {
       crevice: mix(walls.crevice, flat.crevice, planarShare),
       tilt: mix(walls.tilt.mul(strength), flat.tilt, planarShare),
@@ -592,9 +600,7 @@ export function createTerrain(
  * Half float rather than byte because the range matters: a byte would quantise the sign of a
  * near-flat field into blocks, and the sign is the whole of the answer.
  *
- * This costs one sampler. That is the seventeenth the ground material would like and the sixteenth it
- * gets — it binds six albedos and four normal maps already — so it is paid for by giving up the
- * second planar albedo scale on the two layers that never need it, below.
+ * One curvature binding plus six albedos, four normals and four shadow maps is fifteen.
  */
 function buildCurvature(data: IBakedWorld): IGroundCurvature {
   const resolution = data.resolution;
