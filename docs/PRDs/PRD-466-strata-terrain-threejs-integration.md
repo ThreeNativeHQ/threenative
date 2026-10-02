@@ -1265,7 +1265,7 @@ resolution against the Gaia references: forest 3.5, coastal 4.5, alpine 3.5, des
 un-eroded smooth landforms with no cliff faces, blotchy dark AO/shadow patches, flat macro ground
 tiling, tundra sky blow-out. The judge's "posterisation" claim on `river.png` did not reproduce at 1:1
 (smooth gradients; the defect there is a featureless horizon mountain). Captures:
-`docs/verification/visuals/strata/v7-*.jpg` (v6 removed). AC-5 stays open.
+`docs/verification/visuals/strata/v7-*.jpg` (superseded by v8). AC-5 stays open.
 
 
 ### AC-5 Worlds round 3 — mesh-led rock faces (2026-10-02)
@@ -1447,3 +1447,12 @@ AC-5 remains open. Fallback proves function, not licensed visual parity.
 Delivery: final captures remain local in the requested directory; four implementation/
 diagnosis commits plus this final notes commit are local, with no push or merge.
 The worktree remains in use by the unfinished PRD/PR and retains licensed local data.
+
+#### 2026-10-02 V8 judge (merged worlds r3 + forest r11, 52e99c409)
+
+Full scenario green on both merges (exit 0, no console/network errors). Fresh judge, full resolution with
+1:1 crops: forest 4.5, coastal 4.5, alpine 2.5, desert 3.0, tundra 3.0, **overall 3.8/10** (V7 3.6).
+Crown cyan fringe gone (AO multiplied canvas alpha). Remaining: alpine crags read as a repeated boulder pile
+on a smooth cone; threshold-stencil snow; desert strata as even horizontal bands with rocks on walls;
+tundra Voronoi crack tiling; painted rock patches and lawn-like far meadow; clay-like coast land; weak
+contact shadowing. Captures: `docs/verification/visuals/strata/v8-*.jpg`. AC-5 stays open.
