@@ -2181,3 +2181,34 @@ Kite model's own silhouette, and the one remaining thing the Gaia reference has 
 `ClusteredBatch`/`ClusteredMesh` for distant stands is still unwired (`virtual: "none"` in the cook).
 The round-1 "fallback" proof was queued out; this round re-queued both final proofs behind the other
 lanes' captures.
+
+### Round 18 round 2 — final proofs and the fallback bug they found (2026-10-02)
+
+Full scenario, both worlds of art, on port 5307:
+
+| proof | checks | failed | verify-ocean | max view CPU p50 |
+| --- | --- | --- | --- | --- |
+| licensed (`artifacts/playtest/veg-final`) | 52 | 6 | exit 0 | 4.2 ms |
+| fallback, `local-assets` renamed away (`artifacts/playtest/veg-fallback2`) | 52 | 2 | exit 0 | 4.0 ms |
+
+**The fallback proof earned its keep.** It caught a round-1 regression: needle litter had a licensed
+model and `?? []` behind it, an empty part list is fatal in `createProps`, so a machine without the
+pack drew **no vegetation at all** (`propInstances` 0, six console errors, every crag check false).
+A flattened clump stands in, the way scrub and bush already do; `prepared` still wins where it
+exists, so the licensed path is byte-identical. Fallback after the fix: 3863 instances, 71 draws,
+17 views measured, max p50 4.0 ms, zero console errors.
+
+**Still failing, and it is the lane's.** `propDraws` is **87 licensed / 71 fallback against a ceiling
+of 60**. It counts every batch mesh `props.ts` builds, and it builds all of them for every world, so
+the last world measured (tundra) is charged for alpine's crags and the desert's volcanic cones that
+it never draws. The layered ecosystem is what pushed it over 60 (8 grass + 8 ground-foliage + 6 fern
++ 8 flower + 4 bush + 4 sapling + 3 litter variants, times their detail levels). The lever is one
+filter — build only the variants that have a placement in this world — and it is **not** applied
+because there was no capture budget left to prove it; an unproven cut to the species list would have
+been worse than the honest number.
+
+The residual over-budget samples are single frames, not steady state: `windowFrameMs` reads 4.5 ms at
+`grounded` and 150 ms on the single walk input step, while the closed-window medians are 1.5–4.2 ms
+across all 17 poses. The licensed run's `forest:player` median is 4.2 ms against 3.7 ms measured on
+the same build in the shorter scenario: the full run keeps that camera alive through the asset
+streaming frames.
