@@ -919,6 +919,8 @@ export type { IGPUReadbackOptions, IGPUReadbackSample } from "./gpu-readback.js"
  * @situation trail dust, exhaust, or spray behind a moving object
  * @situation emit cannon smoke and muzzle flash particles
  * @situation fire a cannonball projectile with cannon smoke particles
+ * @situation splash spray droplets with lifetime and gravity
+ * @situation spawn water droplets, mist, or foam bubbles above a fluid surface
  * @constraint geometry, color, and timing remain supplied by the game
  * @example const particles = new GPUParticles3D(particleOptions);
  */
@@ -943,6 +945,7 @@ export type { IFluidFieldOptions, IFluidFieldSampler, IFluidFieldVector2 } from 
 /**
  * Simulate liquid as GPU particles (pour, splash, dam break, waterfall) and expose positions, a density volume and a surface height while the game owns every look.
  * @situation pour, splash, or dam-break water that fills a container and flows around obstacles
+ * @situation simulate water or another liquid as particles in a fluid simulation
  * @situation drop a ball or box into liquid and let it displace and float on the water
  * @situation emit a stream or waterfall of particle fluid and drain it somewhere else
  * @situation sample particle-fluid density or surface height in a game-owned render node

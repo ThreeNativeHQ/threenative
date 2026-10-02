@@ -190,6 +190,7 @@ function basisRows(rotation: Vec4): readonly [Vec3, Vec3, Vec3] {
  * or thresholds, and `sample(x, z)` is the free-surface height a `Buoyancy3D` consumes.
  * Appearance — refraction, absorption, foam, spray — stays in the game's `src/render/` code.
  * @situation pour, splash, or dam-break water that fills a container and flows around obstacles
+ * @situation simulate water or another liquid as particles in a fluid simulation
  * @situation drop a ball or box into liquid and let it displace and float on the water
  * @situation emit a stream or waterfall of particle fluid and drain it somewhere else
  * @situation sample particle-fluid density or surface height in a game-owned render node

@@ -1514,6 +1514,7 @@
       "signature": "export class FluidParticles3D extends Group { … }",
       "situations": [
         "pour, splash, or dam-break water that fills a container and flows around obstacles",
+        "simulate water or another liquid as particles in a fluid simulation",
         "drop a ball or box into liquid and let it displace and float on the water",
         "emit a stream or waterfall of particle fluid and drain it somewhere else",
         "sample particle-fluid density or surface height in a game-owned render node"
@@ -1688,7 +1689,9 @@
         "update many small visual particles",
         "trail dust, exhaust, or spray behind a moving object",
         "emit cannon smoke and muzzle flash particles",
-        "fire a cannonball projectile with cannon smoke particles"
+        "fire a cannonball projectile with cannon smoke particles",
+        "splash spray droplets with lifetime and gravity",
+        "spawn water droplets, mist, or foam bubbles above a fluid surface"
       ],
       "summary": "Dispatch a game-owned particle surface and process function through a pooled system.",
       "supersedes": [],
