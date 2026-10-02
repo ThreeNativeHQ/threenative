@@ -351,3 +351,18 @@ installed resolve before interpreting the higher-order filter. This follows the 
 problem discussed by [Emilio López](https://www.elopezr.com/temporal-aa-and-the-quest-for-the-holy-trail/)
 and [Alex Tardif](https://alextardif.com/TAA.html); it does not establish that the proposed filter
 passes this fixture or the broader acceptance corpus.
+
+
+Before a higher-order filter is tested, the evaluator gains an additional local-reference
+excursion diagnostic: a pre-reveal pixel is outside its 3×3 reference RGB bounds by more than
+0.01. The fixed allowance exceeds one 8-bit sRGB code step in linear light. Exact/quantized
+controls score zero and an injected halo fails in a numerical red-to-green regression. This
+reports possible halos or undercoverage, not a causal classification of ringing; the original
+edge, instability and reveal scores/gates remain unchanged.
+
+The recompile diagnostic now also records attribute-wrapper identities, backend create/update
+calls, pre-existing shared GPU buffers and render-call deduplication state. It copies actual
+current/previous matrix GPU bytes through the installed renderer readback API after those same
+three draws. No extra render is introduced, and diagnostic readback remains excluded from any
+performance claim. The canonical PR393 worker is investigating a fresh-wrapper/shared-buffer
+upload hypothesis; no engine repair is duplicated here.

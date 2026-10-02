@@ -61,6 +61,20 @@ describe("temporal sequence measurements", () => {
     expect(result.reveal.every((frame) => frame.meanAbsoluteError > 0.6)).toBe(true);
   });
 
+  it("detects neighbourhood overshoot without mistaking display quantization for ringing", () => {
+    expect(measureSequence(reference, reference, 3).neighbourhoodOvershootFraction).toBe(0);
+    const quantized = reference.map((frame) => ({
+      ...frame,
+      rgb: Float64Array.from(frame.rgb, (value) => Math.min(1, value + 0.004)),
+    }));
+    expect(measureSequence(reference, quantized, 3).neighbourhoodOvershootFraction).toBe(0);
+    const halo = reference.map((frame) => ({
+      ...frame,
+      rgb: Float64Array.from(frame.rgb, (value) => Math.min(1, value + 0.1)),
+    }));
+    expect(measureSequence(reference, halo, 3).neighbourhoodOvershootFraction).toBeGreaterThan(0.5);
+  });
+
   it("detects alternating edge errors even when their signed mean cancels", () => {
     const bad = reference.map((frame, index) => ({
       ...frame,

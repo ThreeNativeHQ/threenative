@@ -116,20 +116,59 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
   }) : null;
   let frame = 0;
   let instanceDraw = null;
+  let instanceUploads = [];
+  let readbackAttributes = [];
+  const attributeIds = new WeakMap();
+  let nextAttributeId = 0;
+  const attributeId = (attribute) => {
+    if (!attributeIds.has(attribute)) attributeIds.set(attribute, ++nextAttributeId);
+    return attributeIds.get(attribute);
+  };
+  const originalCreateAttribute = renderer.backend.createAttribute;
+  const originalUpdateAttribute = renderer.backend.updateAttribute;
+  const recordUpload = (method, attribute) => {
+    const data = attribute.isInterleavedBufferAttribute ? attribute.data : attribute;
+    if (frame >= 21 && frame <= 23 && data.array.length === instances.count * 16) {
+      instanceUploads.push({
+        method, wrapperId: attributeId(attribute), callId: renderer.info.render.calls,
+        bufferExists: renderer.backend.get(data).buffer !== undefined,
+        bufferUuid: data.uuid ?? null, version: data.version,
+        isCurrent: data.array === instances.instanceMatrix.array, values: Array.from(data.array),
+      });
+    }
+  };
+  const observedCreateAttribute = function (attribute, ...args) {
+    recordUpload("create", attribute);
+    return originalCreateAttribute.call(this, attribute, ...args);
+  };
+  const observedUpdateAttribute = function (attribute, ...args) {
+    recordUpload("update", attribute);
+    return originalUpdateAttribute.call(this, attribute, ...args);
+  };
   // Fixture-only observation of the actual compiled draw. Unlike getShaderAsync(), this never
   // compiles an extra pass or advances previous-frame bookkeeping while inspecting the shader.
   const originalDraw = renderer.backend.draw;
   const observedDraw = function (renderObject, ...args) {
     if (renderObject.object === instances && frame >= 21 && frame <= 23) {
       const state = renderObject.getNodeBuilderState();
+      const matrixAttributes = state.nodeAttributes.filter(({ node }) => node?.attribute?.data?.stride === 16);
+      const unique = new Set();
+      readbackAttributes = matrixAttributes.map(({ node }) => node.attribute).filter((attribute) => {
+        if (unique.has(attribute.data)) return false;
+        unique.add(attribute.data);
+        return true;
+      });
       instanceDraw = {
-        frame: frame + 1,
+        frame: frame + 1, callId: renderer.info.render.calls,
         objectUuid: instances.uuid,
         matrixId: instances.instanceMatrix.id,
         vertexShader: state.vertexShader,
         beforeEvents: state.updateBeforeNodes.map((node) => node.eventType ?? node.constructor.name),
-        attributes: state.nodeAttributes.filter(({ node }) => node?.attribute?.data?.stride === 16).map(({ name, node }) => ({
-          name, bufferUuid: node.attribute.data.uuid, version: node.attribute.data.version,
+        attributes: matrixAttributes.map(({ name, node }) => ({
+          name, wrapperId: attributeId(node.attribute),
+          attributeCall: renderer._geometries.attributeCall.get(node.attribute) ?? null,
+          bufferCall: renderer._geometries.attributeCall.get(node.attribute.data) ?? null,
+          bufferUuid: node.attribute.data.uuid, version: node.attribute.data.version,
           isCurrent: node.attribute.data.array === instances.instanceMatrix.array,
           values: Array.from(node.attribute.data.array),
         })),
@@ -137,11 +176,15 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
     }
     return originalDraw.call(this, renderObject, ...args);
   };
-  if (variant === "recompile") renderer.backend.draw = observedDraw;
+  if (variant === "recompile") {
+    renderer.backend.draw = observedDraw;
+    renderer.backend.createAttribute = observedCreateAttribute;
+    renderer.backend.updateAttribute = observedUpdateAttribute;
+  }
   let resets = 0;
   let lastReset = null;
   const observation = () => ({
-    frame, resets, lastReset, aa: temporal?.report() ?? null, instanceDraw,
+    frame, resets, lastReset, aa: temporal?.report() ?? null, instanceDraw, instanceUploads,
     measurement, variant, setupCount, setupDuringJitter, occluderVisible: measurement && occluder.visible,
     pose: { cameraX: camera.position.x, rigidX: rigid.position.x, limbZ: limb.rotation.z },
     velocityProbe: velocityProbe?.observation() ?? null,
@@ -158,6 +201,8 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
   });
   const render = () => {
     instanceDraw = null;
+    instanceUploads = [];
+    readbackAttributes = [];
     if (variant === "recompile" && frame === 22) renderer.contextNode.needsUpdate = true;
     if (measurement) occluder.visible = frame < 28 && !variant.endsWith("-open");
     rigid.position.x = -1.5 + Math.sin(frame / 18) * 0.65;
@@ -180,9 +225,24 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
   };
   return {
     render, observation,
-    sampleVelocity: () => velocityProbe?.read(),
+    sampleVelocity: async () => {
+      await velocityProbe?.read();
+      if (instanceDraw !== null) {
+        instanceDraw.gpuValues = [];
+        for (const attribute of readbackAttributes) {
+          const bytes = await renderer.getArrayBufferAsync(attribute);
+          instanceDraw.gpuValues.push({
+            wrapperId: attributeId(attribute), bufferUuid: attribute.data.uuid,
+            isCurrent: attribute.data.array === instances.instanceMatrix.array,
+            values: Array.from(new Float32Array(bytes)),
+          });
+        }
+      }
+    },
     dispose: () => {
       if (renderer.backend.draw === observedDraw) renderer.backend.draw = originalDraw;
+      if (renderer.backend.createAttribute === observedCreateAttribute) renderer.backend.createAttribute = originalCreateAttribute;
+      if (renderer.backend.updateAttribute === observedUpdateAttribute) renderer.backend.updateAttribute = originalUpdateAttribute;
       velocityProbe?.dispose();
       chain.dispose(); tracker.clear(); scenePass.dispose(); pipeline.dispose();
       const geometries = new Set();

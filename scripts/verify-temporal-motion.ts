@@ -223,6 +223,9 @@ const summary = {
     frames: [21, 36],
     revealFrame: 29,
     edgeGradientThreshold: 0.08,
+    neighbourhoodExcursionTolerance: 0.01,
+    neighbourhoodExcursionRegion:
+      "pre-reveal pixels, local 3x3 reference RGB bounds; diagnostic proxy, not causal ringing classification",
     ghostInteriorInset: 2,
     staleColourWeightThreshold: 0.1,
     minimumRelativeImprovement: 0.05,

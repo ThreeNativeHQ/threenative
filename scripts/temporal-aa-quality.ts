@@ -122,6 +122,8 @@ export function measureSequence(
   let error = 0;
   let change = 0;
   let edgeSamples = 0;
+  let neighbourhoodPixels = 0;
+  let neighbourhoodOvershoot = 0;
   let movingError = 0;
   let movingEdgeSamples = 0;
   let changeSamples = 0;
@@ -130,6 +132,25 @@ export function measureSequence(
     const target = at(reference, index);
     const actual = at(candidate, index);
     for (let pixel = 0; pixel < first.width * first.height; pixel++) {
+      const x = pixel % first.width;
+      const y = Math.floor(pixel / first.width);
+      if (x > 0 && y > 0 && x < first.width - 1 && y < first.height - 1) {
+        let outside = false;
+        for (let channel = 0; channel < 3; channel++) {
+          let low = Number.POSITIVE_INFINITY;
+          let high = Number.NEGATIVE_INFINITY;
+          for (let dy = -1; dy <= 1; dy++)
+            for (let dx = -1; dx <= 1; dx++) {
+              const value = at(target.rgb, ((y + dy) * first.width + x + dx) * 3 + channel);
+              low = Math.min(low, value);
+              high = Math.max(high, value);
+            }
+          const value = at(actual.rgb, pixel * 3 + channel);
+          outside ||= value < low - 0.01 || value > high + 0.01;
+        }
+        neighbourhoodPixels++;
+        if (outside) neighbourhoodOvershoot++;
+      }
       if (at(masks, index)[pixel])
         for (let channel = 0; channel < 3; channel++) {
           const offset = pixel * 3 + channel;
@@ -195,6 +216,8 @@ export function measureSequence(
   });
   return {
     edgeError: error / edgeSamples,
+    // Local-reference excursion proxy, not a causal classification of ringing.
+    neighbourhoodOvershootFraction: neighbourhoodOvershoot / neighbourhoodPixels,
     residualInstability: change / changeSamples,
     edgeSamples,
     movingEdgeError: movingEdgeSamples === 0 ? null : movingError / movingEdgeSamples,
