@@ -127,7 +127,8 @@ export interface IWorldTilesOptions {
    *
    * On by default, like `validate`'s measurements are off by default only because they cost a
    * measurement a frame. `mergeTiles: false`, `?tnTerrainMerge=0` or `TN_TERRAIN_MERGE=0` turns it
-   * off for a run; a block's bytes are charged to `residentByteBudget` either way the block exists.
+   * off for a run. A block's bytes are reported as `terrainTiles.blockBytes` and are never charged to
+   * `residentByteBudget`, so the merge changes draws and no tile the budget would admit without it.
    */
   readonly mergeTiles?: boolean;
   /** Explicit game-owned measurement region used by the topology evaluator. */
@@ -190,7 +191,7 @@ interface IMergedBlock {
   readonly lod: number;
   readonly geometry: BufferGeometry;
   readonly mesh: Mesh;
-  /** This block's share of the resident byte budget; see `residentBytes`. */
+  /** This block's own geometry bytes, reported through `terrainTiles.blockBytes`. */
   bytes: number;
   /** The tile keys whose current level geometry this block holds. */
   members: Set<string>;
@@ -1844,7 +1845,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
   /** Tile key -> block key currently hiding it, so a settled member is not drawn twice. */
   readonly #mergedMembers = new Map<string, string>();
   #blockRebuilds = 0;
-  /** Merged super-tile bytes, charged to `residentBytes` beside the tiles they duplicate. */
+  /** Merged super-tile bytes, reported beside the tiles they duplicate and never charged to them. */
   #blockBytes = 0;
   #tilesToldAt = Number.NEGATIVE_INFINITY;
   readonly #mergeTiles: boolean;
@@ -1962,15 +1963,21 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
 
   /**
    * Every retained terrain byte, against `residentByteBudget`: the resident tiles with their levels
-   * and edge samples, the stitch bridges, the retained topology, and any merged super-tile. A block
-   * duplicates the level vertices of the tiles it covers — they stay, because a tile that leaves the
-   * block draws its own mesh again — so the copy is charged here rather than held for free, and a
-   * budget sized for unmerged terrain admits fewer tiles.
+   * and edge samples, the stitch bridges, and the retained topology.
+   *
+   * A merged super-tile is deliberately absent. A block duplicates the level vertices of the tiles it
+   * covers, and those tiles stay resident because a tile that leaves the block draws its own mesh
+   * again — so charging the copy made a derived artefact evict real terrain detail out of the same
+   * budget the tiles were admitted against, and a budget sized for unmerged terrain held fewer tiles
+   * with the merge on. The copy is reported as `terrainTiles.blockBytes` instead. (PRD-475.)
+   *
+   * ponytail: terrain geometry costs up to ~2x while merged; free the per-tile GPU buffers behind a
+   * block (keep the height field for queries) if that memory ever matters.
    */
   get residentBytes(): number {
     // Read four times a frame by the residency admission and the peak record, so it accumulates
     // instead of materialising the resident set.
-    let total = this.#topologyBytes + this.#stitchBytes + this.#blockBytes;
+    let total = this.#topologyBytes + this.#stitchBytes;
     for (const tile of this.#resident.values()) total += tile.bytes;
     return total;
   }
@@ -2008,9 +2015,11 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
    * a tile mid LOD morph). `draws` is `blocks` plus those individual meshes, so with the merge off
    * it is exactly the number of visible level meshes — the census the merge exists to cut. `blending`
    * counts the resident tiles mid LOD morph, which are always among the individual meshes.
-   * `rebuilds` counts the block geometries built over this residency owner's life.
+   * `rebuilds` counts the block geometries built over this residency owner's life. `blockBytes` is
+   * what the held blocks cost, reported and not charged to `residentByteBudget` — see `residentBytes`.
    */
   get terrainTiles(): {
+    readonly blockBytes: number;
     readonly blocks: number;
     readonly blending: number;
     readonly draws: number;
@@ -2024,6 +2033,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     for (const block of this.#blocks.values()) merged += block.members.size;
     const blocks = this.#blocks.size;
     return {
+      blockBytes: this.#blockBytes,
       blocks,
       blending: this.blendingTiles,
       draws: individual + blocks,
@@ -3040,17 +3050,21 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
 
   /**
    * `TN_TERRAIN_TILES`, every `TERRAIN_TILE_MARKER_MS`, with the merge on or off: the same census
-   * before and after is the only way to read what the merge cut.
+   * before and after is the only way to read what the merge cut. A run that asked for validation also
+   * gets the seam and LOD-pop maxima it is paying to measure, so a browser console run prints them
+   * instead of only an in-process accessor ever reading them.
    */
   #reportTileMarker(): void {
     const now = this.#now();
     if (now - this.#tilesToldAt < TERRAIN_TILE_MARKER_MS) return;
     this.#tilesToldAt = now;
     const stats = this.terrainTiles;
+    const measurements = this.#validate
+      ? ` maxSeamGap=${String(this.maxSeamGap)} maxLodPop=${String(this.maxLodPop)} ` +
+        `maxVisualSeamGap=${String(this.maxVisualSeamGap)}`
+      : "";
     console.info(
-      `TN_TERRAIN_TILES tiles=${String(stats.tiles)} blocks=${String(stats.blocks)} ` +
-        `draws=${String(stats.draws)} blending=${String(stats.blending)} ` +
-        `rebuilds=${String(stats.rebuilds)}`,
+      `TN_TERRAIN_TILES tiles=${String(stats.tiles)} blocks=${String(stats.blocks)} draws=${String(stats.draws)} blending=${String(stats.blending)} rebuilds=${String(stats.rebuilds)} blockBytes=${String(stats.blockBytes)}${measurements}`,
     );
   }
 

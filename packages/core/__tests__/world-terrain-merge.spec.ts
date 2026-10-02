@@ -1,5 +1,5 @@
 import { type BufferGeometry, Mesh, MeshBasicMaterial } from "three";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { TerrainTiles } from "../src/world-tiles.js";
 
 const sampleHeight = (x: number, z: number): number =>
@@ -24,15 +24,6 @@ function terrain(mergeTiles: boolean, overrides: Record<string, unknown> = {}): 
 function blockMeshes(tiles: TerrainTiles): Mesh[] {
   return tiles.children.filter(
     (child): child is Mesh => child instanceof Mesh && child.name.startsWith(BLOCK_PREFIX),
-  );
-}
-
-function geometryBytes(mesh: Mesh): number {
-  const index = mesh.geometry.getIndex();
-  return (
-    mesh.geometry.getAttribute("position").array.byteLength +
-    mesh.geometry.getAttribute("normal").array.byteLength +
-    (index?.array.byteLength ?? 0)
   );
 }
 
@@ -208,19 +199,78 @@ describe("TerrainTiles merge", () => {
     }
   });
 
-  it("charges a merged block's bytes to the resident budget instead of holding both for free", () => {
-    const walk = (mergeTiles: boolean): number => {
+  it("reports a merged block's bytes without charging them to the tiles they duplicate", () => {
+    const walk = (mergeTiles: boolean): { blockBytes: number; tileBytes: number } => {
       const tiles = terrain(mergeTiles);
       try {
         tiles.follow({ x: 16, z: 16 });
-        const held = blockMeshes(tiles).reduce((total, mesh) => total + geometryBytes(mesh), 0);
-        return tiles.residentBytes - held;
+        return {
+          blockBytes: tiles.terrainTiles.blockBytes,
+          tileBytes: tiles.residentBytes,
+        };
       } finally {
         tiles.dispose();
       }
     };
-    // Nine tiles cost the same resident bytes merged or not, once the block's own copy is charged.
-    expect(walk(true)).toBe(walk(false));
+    const merged = walk(true);
+    const unmerged = walk(false);
+    // A block holds a copy of level vertices its tiles already hold, so the copy is reported as its
+    // own stat and never charged to admission: `residentBytes` is the nine tiles either way.
+    expect(merged.blockBytes).toBeGreaterThan(0);
+    expect(unmerged.blockBytes).toBe(0);
+    expect(merged.tileBytes).toBe(unmerged.tileBytes);
+  });
+
+  it("admits the same ring with the merge on as with it off, at a budget sized for unmerged terrain", () => {
+    const walk = [16, 24, 40, 56, 72, 88, 104, 120, 136, 152];
+    const tiles = (mergeTiles: boolean, residentByteBudget = 64_000_000): TerrainTiles =>
+      terrain(mergeTiles, { residentByteBudget, streamRadius: 4 });
+    /** Resident bytes and the fewest tiles resident at any step: a ring only partly admitted
+     * mid-walk is what losing terrain detail looks like from the game's side of the seam. */
+    const walkRing = (mergeTiles: boolean, residentByteBudget?: number) => {
+      const ring = tiles(mergeTiles, residentByteBudget);
+      try {
+        let minimumTiles = 0;
+        let peakBytes = 0;
+        for (const x of walk) {
+          for (let frame = 0; frame < 6; frame += 1) ring.follow({ x, z: 16 });
+          minimumTiles =
+            minimumTiles === 0
+              ? ring.residentTileCount
+              : Math.min(minimumTiles, ring.residentTileCount);
+          peakBytes = Math.max(peakBytes, ring.residentBytes);
+        }
+        return { minimumTiles, peakBytes };
+      } finally {
+        ring.dispose();
+      }
+    };
+    // A budget sized for the unmerged walk must admit that same walk with the merge on: a block is a
+    // derived copy of tiles that are already resident, so charging it evicts real terrain detail.
+    const unmerged = walkRing(false);
+    expect(walkRing(true, unmerged.peakBytes).minimumTiles).toBe(unmerged.minimumTiles);
+  });
+
+  it("appends the seam and LOD-pop measurements to the tile marker only when validation is on", () => {
+    const marker = (validate: boolean): string => {
+      const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+      const tiles = terrain(false, { validate });
+      try {
+        tiles.follow({ x: 16, z: 16 });
+        tiles.process();
+        const line = info.mock.calls.map((call) => String(call[0]));
+        info.mockRestore();
+        const found = line.find((value) => value.startsWith("TN_TERRAIN_TILES"));
+        if (found === undefined) throw new Error("The tile marker never printed.");
+        return found;
+      } finally {
+        tiles.dispose();
+      }
+    };
+    expect(marker(true)).toContain("maxSeamGap=");
+    expect(marker(true)).toContain("maxLodPop=");
+    expect(marker(true)).toContain("maxVisualSeamGap=");
+    expect(marker(false)).not.toContain("maxSeamGap=");
   });
 
   it("leaves the draw structure untouched with the merge off", () => {

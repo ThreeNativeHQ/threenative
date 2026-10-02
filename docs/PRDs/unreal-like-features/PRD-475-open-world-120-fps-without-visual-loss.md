@@ -105,6 +105,7 @@ Budget split, to be confirmed against the baseline: shadows 2.5 ms GPU, main 5 m
 **Verification:** each cut is measured A/B against the build before it, interleaved and on a quiet machine. A cut that fails its meter, or the visual A/B, is reverted and recorded under Decisions.
 
 Cut 1 (terrain super-tiles, PRD-473 plan): landed in ec9a739ad, b9442ec5a, bc998f510, 8349962ce, 0421ed329; Machinefall A/B pending.
+Cut 1 fix: Machinefall correctness pair (same build, merge off/on) found the ring shrinking 289 → 248 because block bytes were charged to tile admission; blocks are now reported (`blockBytes`), not charged — <SHA>. Terrain draws 289 → 33–42, main draws p50 289–343 → 158–258.
 Cut 2 (memoised shadow-caster table): landed in d47a24dfc; Machinefall A/B pending.
 
 #### Phase 3: Hold 120 fps with the look intact
