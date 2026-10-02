@@ -19,6 +19,11 @@ import { compileAssets } from "@threenative/assets";
 import { BUILD_REPORT_SUFFIX, measureTreeBytes, writeBuildReport } from "./buildReport.js";
 import { writeCompressionSidecars } from "./compress.js";
 import { type IResolvedThreeNativeConfig, loadConfig } from "./config.js";
+import {
+  type INativeCssFinding,
+  describeNativeCssFindings,
+  findNativeCssViolations,
+} from "./native-css-compat.js";
 
 export type BuildTarget = "android" | "desktop" | "ios" | "web";
 type NativeBuildTarget = Exclude<BuildTarget, "web">;
@@ -338,8 +343,22 @@ export async function extractUiStylesheets(uiDir: string, outDir: string): Promi
   const assets = new Map<string, string>();
   // Resolved before anything is staged: a build that cannot ship its font must not leave half a
   // `ui/` behind for the packager to find and a player to run.
+  const findings: INativeCssFinding[] = [];
   for (const file of sheets) {
-    collectStylesheetAssets(uiDir, file, await readFile(file, "utf8"), assets);
+    const css = await readFile(file, "utf8");
+    collectStylesheetAssets(uiDir, file, css, assets);
+    findings.push(...findNativeCssViolations(path.relative(uiDir, file), css));
+  }
+  // The report is written even when clean, so "no findings" is something a build produced rather
+  // than the absence of a check; a failure names every finding, not just the first.
+  await writeFile(
+    path.join(path.dirname(outDir), "native-css-compat.json"),
+    `${JSON.stringify({ profile: "core", findings }, null, 2)}\n`,
+  );
+  if (findings.length > 0) {
+    throw new Error(
+      `TN_CSS_UI_UNSUPPORTED_CSS: ${findings.length} active rule(s) outside the native-css Core profile (docs/guides/native-css-support.md):\n${describeNativeCssFindings(findings)}`,
+    );
   }
   for (const file of sheets) {
     await copyFile(file, path.join(outDir, path.basename(file)));
