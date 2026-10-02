@@ -121,7 +121,7 @@ a convention missing from there does not exist.
 
 ### Phase 3 — repeatability and runtime qualification
 
-- [ ] Bright/dark and disabled fixture scenarios exercise the real reduction and adaptation path. proof: PRD-339 exposure fixture playtest, with source-SHA and adapter-tagged canvas screenshots on this PR
+- [x] Bright/dark and disabled fixture scenarios exercise the real reduction and adaptation path. proof: [run 36998395106](https://github.com/ThreeNativeHQ/threenative/actions/runs/36998395106) — all five browser scenarios pass with inspected, SHA-tagged SwiftShader canvas screenshots; native remains open.
 - [ ] Settle and cold-boot tone assertions meet acceptance criteria 1–3 using PRD-341's tone gate. proof: exposure fixture playtest plus ten cold boots using `assert.tone`
 
 ### Current verification
@@ -189,6 +189,18 @@ rejects stale pre-cut samples, and reports consumed seconds. Three guard regress
 then green; 40 exposure tests, root types and the isolated fixture build pass. Runtime rerun is
 pending. Links/citations and the real evidence cap pass; two evidence-budget subprocess tests
 cannot launch the tsx CLI because the environment rejects its Unix socket with EPERM.
+
+The corrected clock [run 36998395106](https://github.com/ThreeNativeHQ/threenative/actions/runs/36998395106)
+at `5c3b1762477d4a0f076b3779e22212c737ed5583` passes all five cases on SwiftShader WebGPU.
+All five actual 640×360 images were inspected: adapted dark/sunlight and one-/eleven-stop forward
+cuts match as readable coloured blocks and floor. The deliberately fixed exposure stays bright;
+its marker still measures luminance 3.8961, reports `applied=false`, and applies exactly 0 stops.
+The eleven-stop cut's settled readback arrives by 21 actual GPU updates / 1.0619 consumed seconds;
+the one-stop cut by 13 / 0.5360. Both stay inside the same 180-update budget without changing rates.
+[Original PNGs, per-file digests and complete adapter/run provenance](../../verification/prd339-exposure-proof/live-clock-5c3b176.json)
+are retained. Every report passes with an empty diagnostic list. This completes the fixture box,
+not the full acceptance: reverse cuts, raw-luminance and disabled early-return mutations,
+ten cold boots with the shared tone gate, lifecycle integration and native proof remain open.
 
 ## Implementation decisions
 
