@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-481 — CI does each piece of work once
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS — phase 3 complete, phase 2 in progress, phase 1 blocked on the merge queue
 **Complexity:** 5 (HIGH)
 **Owner:** CI tooling
 **Depends on:** None ([PRD-480](PRD-480-linux-ci-runs-on-the-owner-machine.md) and
@@ -129,12 +129,19 @@ skip it.
 
 #### Phase 3: Triggers fire only when they prove something
 
-**Status:** NOT STARTED
+**Status:** COMPLETE
 **Files:** EDIT `.github/workflows/pipeline-cache.yml`, `.github/workflows/integration-*.yml`,
 `scripts/__tests__/ci-structure.spec.ts` (workflow-file allow-list, so per-branch workflows cannot land
 unreviewed).
 
-- [ ] `pipeline-cache.yml` fires only on paths its proof reads, with no dead branch. proof:
-  `pnpm exec vitest run scripts/__tests__/ci-structure.spec.ts`.
-- [ ] Integration workflows skip drafts and fire once per commit. proof: `pnpm exec vitest run
-  scripts/__tests__/ci-structure.spec.ts`, rejecting a `push` plus `pull_request` pair.
+- [x] `pipeline-cache.yml` fires only on paths its proof reads, with no dead branch. proof:
+  `pnpm exec vitest run scripts/__tests__/ci-structure.spec.ts`. Evidence: 2026-10-02, 126 passed;
+  the new assertion fails on the pre-change file and passes after `feat/prd-368-persistent-pipeline-cache`
+  is gone from `push.branches`.
+- [x] Integration workflows skip drafts and fire once per commit. proof: `pnpm exec vitest run
+  scripts/__tests__/ci-structure.spec.ts`, rejecting a `push` plus `pull_request` pair. Evidence:
+  2026-10-02, 126 passed; the pair case is a fixture in the spec and the assertion fails on the
+  pre-change files. `integration-csg`'s unfiltered `push` and `integration-decals`' per-branch `push`
+  (pull request #394 merged 2026-10-02) are both removed; every integration job now carries
+  `!github.event.pull_request.draft`, and each trigger gained `ready_for_review` so that guard cannot
+  silence the lane.

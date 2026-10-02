@@ -418,6 +418,92 @@ const workflows = [
   ".github/workflows/npm-release.yml",
 ] as const;
 
+/**
+ * Every workflow file on disk, read off the directory rather than off a hand-kept list of "the ones
+ * that matter". A workflow file that lands without being named here is a set of triggers, runners
+ * and required checks nobody in this repository has read, and the audit that found
+ * `feat/prd-368-persistent-pipeline-cache` still holding a 31-minute job could only see it by
+ * reading the files. Naming the file here is the review.
+ */
+const reviewedWorkflows = [
+  ".github/workflows/build-quiche-owned.yml",
+  ".github/workflows/ci.yml",
+  ".github/workflows/integration-csg.yml",
+  ".github/workflows/integration-decals.yml",
+  ".github/workflows/integration-ik.yml",
+  ".github/workflows/integration-tone.yml",
+  ".github/workflows/integration-vegetation.yml",
+  ".github/workflows/native-platforms.yml",
+  ".github/workflows/native-release.yml",
+  ".github/workflows/npm-release.yml",
+  ".github/workflows/performance-regression.yml",
+  ".github/workflows/pipeline-cache.yml",
+  ".github/workflows/release-candidate.yml",
+  ".github/workflows/site-docs.yml",
+] as const;
+
+/**
+ * Triggers that test one commit more than once, or that outlive the pull request they were added for.
+ *
+ * A `push` with no `branches:` filter fires for the PR's own head commit as well as for the
+ * `pull_request` event carrying it, so `integration-csg` ran its proof twice for every commit it had
+ * a pull request for. Narrowing `push` to `main` is not that defect: it fires for the merge, which is
+ * a different commit, and both `ci.yml` and `pipeline-cache` rely on it to prove the promotion. What
+ * is never legitimate is a *feature* branch in a `push` filter — `integration-decals` carried
+ * `fix/vq11-decal-material-lifetime` for a pull request that merged, and `pipeline-cache` listed the
+ * branch PRD-368 landed on three weeks earlier, each spending a long native lane on pushes nobody
+ * reads.
+ */
+function duplicateCommitTriggers(source: string): readonly string[] {
+  const triggers = commandText(triggerSection(source));
+  const findings: string[] = [];
+  const push = /^ {2}push:\n(?: {4}.*\n)*/mu.exec(triggers)?.[0] ?? "";
+  if (/^ {2}pull_request:/mu.test(triggers) && push !== "" && !/\n {4}branches:/u.test(push)) {
+    findings.push("push + pull_request: one commit runs this workflow twice");
+  }
+  const inline = /branches: \[([^\]]*)\]/mu.exec(push)?.[1] ?? "";
+  const block = /\n {4}branches:\n((?: {6}- .*\n)*)/mu.exec(push)?.[1] ?? "";
+  for (const branch of `${inline}\n${block}`
+    .split("\n")
+    .map((line) =>
+      line
+        .replace(/^ {6}- /u, "")
+        .trim()
+        .replace(/^["']|["']$/gu, ""),
+    )
+    .filter((name) => name !== "")) {
+    if (!/^(?:main|develop)$/u.test(branch)) {
+      findings.push(`push narrowed to ${branch}: the lane outlives its pull request`);
+    }
+  }
+  return findings;
+}
+
+/** Every `paths:` entry in a workflow's triggers, in file order. */
+function triggerPaths(source: string): readonly string[] {
+  const triggers = commandText(triggerSection(source));
+  const entries: string[] = [];
+  let reading = false;
+  for (const line of triggers.split("\n")) {
+    if (/^ {4}paths:/u.test(line)) {
+      reading = true;
+      continue;
+    }
+    if (!reading) continue;
+    if (!/^ {6}- /u.test(line)) {
+      reading = false;
+      continue;
+    }
+    entries.push(
+      line
+        .replace(/^ {6}- /u, "")
+        .trim()
+        .replace(/^["']|["']$/gu, ""),
+    );
+  }
+  return entries;
+}
+
 function jobSections(source: string): readonly [string, string][] {
   const jobsIndex = source.indexOf("\njobs:\n");
   if (jobsIndex < 0) throw new Error("CI workflow did not include a jobs mapping.");
@@ -924,6 +1010,126 @@ describe("CI pipeline structure", () => {
     );
     expect(ci).toContain("name: Change scope\n    if: ${{ !github.event.pull_request.draft }}");
     expect(ci).toContain("if: ${{ always() && !github.event.pull_request.draft }}");
+  });
+
+  // The audit behind PRD-481 cost 2.4k runner-minutes on one workflow that was still listed against
+  // a branch whose lane landed three weeks earlier, and ran a second time for every commit that
+  // also opened a pull request. Neither shape is visible from the workflow file alone, which is why
+  // they are stated as rules here rather than left to whoever reads the next one.
+  it("names every workflow file so none lands unreviewed", async () => {
+    const onDisk = (await readdir(path.join(repo, ".github/workflows")))
+      .filter((name) => /\.ya?ml$/u.test(name))
+      .map((name) => `.github/workflows/${name}`)
+      .sort();
+    expect(onDisk).toEqual([...reviewedWorkflows].sort());
+  });
+
+  it("runs each integration lane once per commit and never on a draft", async () => {
+    const integrations = reviewedWorkflows.filter((name) => name.includes("/integration-"));
+    expect(integrations.length, "the integration lanes went unreviewed").toBeGreaterThanOrEqual(5);
+
+    for (const relative of integrations) {
+      const source = await readFile(path.join(repo, relative), "utf8");
+      expect(duplicateCommitTriggers(source), relative).toEqual([]);
+      // Skipping drafts only saves a runner if the event that ends the draft is one this workflow
+      // listens for. Without `ready_for_review` the guard turns the lane off rather than cheap.
+      expect(triggerSection(source), relative).toContain(
+        "types: [opened, synchronize, reopened, ready_for_review]",
+      );
+      for (const [job, section] of jobSections(source)) {
+        // A job behind another job of the same workflow is skipped when that one is, so the guard
+        // belongs on the entry points only.
+        if (/^ {4}needs:/mu.test(section)) continue;
+        expect(section, `${relative} ${job} runs on a draft`).toContain(
+          "if: ${{ !github.event.pull_request.draft }}",
+        );
+      }
+    }
+  });
+
+  it("rejects a push trigger that would fire beside pull_request, or for one branch", () => {
+    expect(
+      duplicateCommitTriggers(
+        [
+          "name: fixture",
+          "on:",
+          "  pull_request:",
+          "    paths:",
+          "      - 'examples/a/**'",
+          "  push:",
+          "    paths:",
+          "      - 'examples/a/**'",
+          "",
+          "jobs:",
+          "  test:",
+          "    runs-on: ubuntu-latest",
+          "",
+        ].join("\n"),
+      ),
+    ).toEqual(["push + pull_request: one commit runs this workflow twice"]);
+    expect(
+      duplicateCommitTriggers(
+        [
+          "name: fixture",
+          "on:",
+          "  pull_request:",
+          "    paths:",
+          "      - 'examples/a/**'",
+          "  push:",
+          "    branches: ['fix/vq11-decal-material-lifetime']",
+          "",
+          "jobs:",
+          "  test:",
+          "    runs-on: ubuntu-latest",
+          "",
+        ].join("\n"),
+      ),
+    ).toEqual([
+      "push narrowed to fix/vq11-decal-material-lifetime: the lane outlives its pull request",
+    ]);
+    // `push` alone is how a workflow follows its own branch after a merge, and how ci.yml hears
+    // about main. The rule is the pair, not the trigger.
+    expect(
+      duplicateCommitTriggers(
+        [
+          "name: fixture",
+          "on:",
+          "  push:",
+          "    branches: [main]",
+          "",
+          "jobs:",
+          "  test:",
+          "    runs-on: ubuntu-latest",
+          "",
+        ].join("\n"),
+      ),
+    ).toEqual([]);
+  });
+
+  it("keeps the pipeline-cache proof's triggers on what that proof reads", async () => {
+    const relative = ".github/workflows/pipeline-cache.yml";
+    const source = await readFile(path.join(repo, relative), "utf8");
+    const commands = commandText(source);
+
+    // Every path it fires on has to be a path its own steps open, or the lane runs a 45-minute
+    // native proof for a commit that cannot have moved it. The workflow file itself is the one
+    // exemption: GitHub reads it to decide, and every lane lists itself.
+    const entries = triggerPaths(source);
+    expect(
+      entries.length,
+      "the pipeline-cache lane stopped narrowing its triggers",
+    ).toBeGreaterThan(0);
+    for (const entry of entries) {
+      if (entry === relative) continue;
+      expect(commands, `${relative} fires on ${entry}, which its steps never read`).toContain(
+        entry.replace(/\/?\*\*$/u, "/"),
+      );
+    }
+
+    // `push` on a protected branch only, and never beside `pull_request`. The branch it listed
+    // until now — `feat/prd-368-persistent-pipeline-cache` — kept compiling an android-arm64 ABI
+    // job for 41 runs and 2.4k runner-minutes after the lane it was opened for had landed.
+    expect(duplicateCommitTriggers(source), relative).toEqual([]);
   });
 
   it("preserves main qualification while enabling develop PRs and serializes release lanes", async () => {

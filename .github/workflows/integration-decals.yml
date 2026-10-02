@@ -1,14 +1,19 @@
 name: Integration bounded decals
 on:
   pull_request:
+    # `ready_for_review` is what makes the draft guard below safe: without it the workflow never
+    # fires on the event that un-skips the job, and the lane goes quiet instead of cheap.
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - 'packages/create-threenative/templates/shooter/src/render/decals.ts'
       - 'packages/create-threenative/templates/shooter/src/scenes/Play.ts'
       - 'packages/create-threenative/__tests__/shooter-decals*.spec.ts'
       - 'packages/create-threenative/__tests__/fixtures/bounded-decals/**'
       - '.github/workflows/integration-decals.yml'
-  push:
-    branches: ['fix/vq11-decal-material-lifetime']
+  # The `push: branches: ['fix/vq11-decal-material-lifetime']` this replaces ran this lane a second
+  # time for every commit that also had a pull request, and it outlived pull request #394 by as long
+  # as the branch existed. The pull request trigger above already proves every commit the branch
+  # contributes; a per-branch push trigger is the shape that keeps a 30-minute lane alive for nobody.
 permissions:
   contents: read
 concurrency:
@@ -16,6 +21,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   decals:
+    if: ${{ !github.event.pull_request.draft }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:

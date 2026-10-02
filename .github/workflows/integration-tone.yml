@@ -1,6 +1,9 @@
 name: Integration tone exposure
 on:
   pull_request:
+    # `ready_for_review` is what makes the draft guard below safe: without it the workflow never
+    # fires on the event that un-skips the job, and the lane goes quiet instead of cheap.
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - 'packages/playtest/**'
       - 'examples/abyss-framework/src/render/toneCalibration.ts'
@@ -22,6 +25,7 @@ permissions:
   contents: read
 jobs:
   exposure:
+    if: ${{ !github.event.pull_request.draft }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
