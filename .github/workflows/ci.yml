@@ -768,7 +768,8 @@ jobs:
     # display setup inside it — so the number of shards is set by the slowest slice plus that
     # overhead, not by the total.
     #
-    # Per-scenario seconds on run 37049488719, and the slowest slice each count predicts:
+    # Per-scenario seconds on run 37049488719 — sailing again on 37071464562, which measured its
+    # two slices at 168s and 467s — and the slowest slice each count predicts:
     #   platformer 15 at ~20s -> 3 -> ~150s measured.        starter 24 -> 3 -> ~210s measured.
     #   puzzle    10, 399s of work -> 2 -> ~197s measured.   runner/snow/rts/racing/tower-defense/
     #   action-rpg/minimal keep one leg each; all measured under 280s.
@@ -777,9 +778,10 @@ jobs:
     #   rain 5 at 331/202/222/78/61 -> 5 -> 396s. Five is its floor: five scenarios, so one per
     #     slice, and its heaviest scenario alone is 331s of software rendering. It cannot reach six
     #     minutes at any shard count and is left honest rather than split past its scenario count.
-    #   sailing 6 at 17/163/23/75/22/44 -> 2 -> 347s. Two slices put the 163s hull test with 119s of
-    #     sailing; a third would balance it to 250s and is the change worth making if 347s ever
-    #     measures over.
+    #   sailing 6 at 55/247/30/98/28/59 -> 2 -> 467s measured, 3 -> 335s. The second slice is
+    #     the change: at two it carried the 247s float-after-the-run-ends alone with the sails and
+    #     win scenarios for 404s of scenario work, 63s over the leg budget. Three puts one of the
+    #     heavy scenarios on each leg and the worst of them at ~275s of work plus ~60s of overhead.
     #
     # Every scenario still runs. `shard` selects a slice of the same classifier output the whole
     # lane has always used, and the step fails closed if the slices do not add back up to the list.
@@ -804,8 +806,9 @@ jobs:
           - { template: rain, shard: "5/5" }
           - { template: rts, shard: "1/1" }
           - { template: runner, shard: "1/1" }
-          - { template: sailing, shard: "1/2" }
-          - { template: sailing, shard: "2/2" }
+          - { template: sailing, shard: "1/3" }
+          - { template: sailing, shard: "2/3" }
+          - { template: sailing, shard: "3/3" }
           - { template: shooter, shard: "1/6" }
           - { template: shooter, shard: "2/6" }
           - { template: shooter, shard: "3/6" }

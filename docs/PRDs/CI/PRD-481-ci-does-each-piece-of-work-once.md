@@ -158,6 +158,16 @@ skip it.
 - [ ] The native host cache restores on a PR from a `develop`-warmed key. proof: a `test-native` log with a
   cache hit and a build time under 60 s.
 - [ ] No template or unit shard runs longer than 6 min. proof: per-job durations of one full CI run.
+  Measured on run 37071464562, two legs were over: `test-unit (4/4)` at 481s and
+  `template-nonvisual (sailing, 2/2)` at 467s, with `rain (3/5)` 358s and `rain (2/5)` 299s next and
+  every other unit and template leg under 360s. This commit takes sailing from two slices to three
+  — its `float-after-the-run-ends` scenario measured 247s and sat alone on the second slice with
+  two more scenarios, 404s of work against a ~63s overhead — and splits
+  `template-assets-compile.spec.ts`, 317s of test time in one file, into the two halves of the
+  template list, which is the one thing `vitest --shard` cannot divide. Replaying vitest's own
+  `sha1(path)` partition over that run's per-file durations puts every unit leg at ~137-240s of
+  test time and sailing's worst slice at ~335s. The box stays unticked: its proof is a full CI run's
+  per-job durations, and nothing here has run on GitHub.
 
 #### Phase 3: Triggers fire only when they prove something
 

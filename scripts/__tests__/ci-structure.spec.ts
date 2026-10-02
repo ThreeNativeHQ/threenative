@@ -1476,11 +1476,13 @@ describe("CI pipeline structure", () => {
   });
 
   // The counts are measurements, not preferences: each one below is the shard count that puts that
-  // template's slowest slice inside the run's six-minute leg budget on run 37049488719's timings.
+  // template's slowest slice inside the run's six-minute leg budget, from the per-scenario
+  // timestamps in run 37049488719 (puzzle, rain, shooter) and run 37071464562 (sailing, whose two
+  // slices measured 168s and 467s — one scenario over budget, which is what the third slice is for).
   // Raising one without a new measurement is how a lane goes back to eating the run.
   it.each([
     ["puzzle", 2],
-    ["sailing", 2],
+    ["sailing", 3],
     ["rain", 5],
     ["shooter", 6],
   ])("keeps the measured %s lane split into %i shards", async (template, count) => {
