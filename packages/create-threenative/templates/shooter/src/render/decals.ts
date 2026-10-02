@@ -129,6 +129,14 @@ const scratchRoll = new Quaternion();
 const scratchNormal = new Vector3();
 
 type DecalMesh = Mesh<BufferGeometry, MeshBasicMaterial>;
+type DecalFade = { duration: number; opacity: (progress: number) => number };
+
+function fadeOpacity(fade: DecalFade, progress: number): number {
+  const opacity = fade.opacity(progress);
+  if (!Number.isFinite(opacity) || opacity < 0 || opacity > 1)
+    throw new Error("Invalid decal opacity: the authored curve must return a value in [0, 1].");
+  return opacity;
+}
 
 /** Projection is deliberately limited to static opaque triangles under rigid/uniform transforms. */
 function validateReceiver(receiver: Mesh, geometry: BufferGeometry): void {
@@ -232,7 +240,10 @@ export class DecalField<TVariant extends string> {
   readonly #geometry: PlaneGeometry;
   readonly #parent: Object3D;
   readonly #size: number;
-  readonly #projected = new Map<DecalMesh, { receiver: Mesh; removed: () => void }>();
+  readonly #projected = new Map<
+    DecalMesh,
+    { receiver: Mesh; removed: () => void; elapsed: number; fade?: DecalFade }
+  >();
   readonly #offset: number;
   #placed = 0;
   #capacity = 0;
@@ -352,7 +363,9 @@ export class DecalField<TVariant extends string> {
    * `point`, `normal`, `depth` and the size multiplier are world-space. Returns false on a miss or
    * absent slot. Only this receiver is clipped; nearby objects are never projected onto. The
    * upstream corner/overlap distortion remains: keep depth narrow for thin or concave surfaces.
-   * Call `update` each frame to clean receivers removed through an ancestor subtree.
+   * `uvRect` selects normalized atlas bounds without mutating the borrowed map. Optional fade
+   * duration is seconds; its authored opacity curve receives normalized progress in [0, 1).
+   * Call `update(dt)` each frame for expiry and receivers removed through an ancestor subtree.
    */
   project(
     receiver: Mesh,
@@ -360,7 +373,12 @@ export class DecalField<TVariant extends string> {
     point: Vector3,
     normal: Vector3,
     variant: TVariant,
-    options: { depth: number; scale?: number },
+    options: {
+      depth: number;
+      scale?: number;
+      uvRect?: readonly [number, number, number, number];
+      fade?: DecalFade;
+    },
   ): boolean {
     const family = this.#variants.get(variant);
     const mesh = family?.slots[family.cursor % family.slots.length];
@@ -387,6 +405,29 @@ export class DecalField<TVariant extends string> {
         "Invalid decal projector: finite point/normal and positive size/depth required.",
       );
     }
+    if (this.#offset < 0 || this.#offset > options.depth / 2)
+      throw new Error("Invalid decal bias: offset must be in [0, projector depth / 2].");
+    const rect = options.uvRect;
+    if (
+      rect !== undefined &&
+      (rect.length !== 4 ||
+        !rect.every(Number.isFinite) ||
+        rect[0] < 0 ||
+        rect[1] < 0 ||
+        rect[2] > 1 ||
+        rect[3] > 1 ||
+        rect[0] >= rect[2] ||
+        rect[1] >= rect[3])
+    )
+      throw new Error("Invalid decal atlas rectangle: ordered UV bounds in [0, 1] required.");
+    // Snapshot timing so mutating a caller's options cannot invalidate a live mark.
+    const fade = options.fade === undefined ? undefined : { ...options.fade };
+    if (
+      fade !== undefined &&
+      (!Number.isFinite(fade.duration) || fade.duration <= 0 || typeof fade.opacity !== "function")
+    )
+      throw new Error("Invalid decal fade: positive finite duration and opacity curve required.");
+    const opacity = fade === undefined ? 1 : fadeOpacity(fade, 0);
     validateReceiver(receiver, geometry);
     if (!this.#contains(receiver))
       throw new Error("Unsupported receiver: mesh is outside the field's parent.");
@@ -410,6 +451,15 @@ export class DecalField<TVariant extends string> {
       return false;
     }
     projected.setIndex(indices);
+    if (rect !== undefined) {
+      const uv = projected.getAttribute("uv");
+      for (let i = 0; i < uv.count; i += 1)
+        uv.setXY(
+          i,
+          rect[0] + uv.getX(i) * (rect[2] - rect[0]),
+          rect[1] + uv.getY(i) * (rect[3] - rect[1]),
+        );
+    }
     projected.translate(
       direction.x * this.#offset,
       direction.y * this.#offset,
@@ -422,9 +472,10 @@ export class DecalField<TVariant extends string> {
     mesh.quaternion.identity();
     mesh.scale.setScalar(1);
     mesh.visible = true;
+    mesh.material.opacity = opacity;
     receiver.add(mesh);
     const removed = (): void => this.#releaseProjection(mesh);
-    this.#projected.set(mesh, { receiver, removed });
+    this.#projected.set(mesh, { receiver, removed, elapsed: 0, fade });
     receiver.addEventListener("removed", removed);
     mesh.updateWorldMatrix(true, false);
     family.cursor += 1;
@@ -439,10 +490,22 @@ export class DecalField<TVariant extends string> {
     }
   }
 
-  /** A direct removal fires synchronously; this bounded sweep also observes removed ancestors. */
-  update(): void {
+  /** Advance authored fades and clean detached ancestors, visiting at most the slot capacity. */
+  update(dt = 0): void {
+    if (!Number.isFinite(dt) || dt < 0)
+      throw new Error("Invalid decal timestep: finite nonnegative seconds required.");
     for (const [mesh, entry] of this.#projected) {
-      if (!this.#contains(entry.receiver)) this.#releaseProjection(mesh);
+      if (!this.#contains(entry.receiver)) {
+        this.#releaseProjection(mesh);
+        continue;
+      }
+      if (entry.fade === undefined) continue;
+      const elapsed = Math.min(entry.elapsed + dt, entry.fade.duration);
+      if (elapsed >= entry.fade.duration) this.#releaseProjection(mesh);
+      else {
+        mesh.material.opacity = fadeOpacity(entry.fade, elapsed / entry.fade.duration);
+        entry.elapsed = elapsed;
+      }
     }
   }
 
@@ -465,6 +528,7 @@ export class DecalField<TVariant extends string> {
     mesh.quaternion.identity();
     mesh.scale.setScalar(0.0001);
     mesh.visible = false;
+    mesh.material.opacity = 1;
   }
 
   /** Registered as an entity so a scenario can assert that a round actually left a mark. */

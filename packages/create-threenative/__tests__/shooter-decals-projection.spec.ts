@@ -14,6 +14,7 @@ import {
 } from "three";
 import { DecalGeometry } from "three/addons/geometries/DecalGeometry.js";
 import { describe, expect, it, vi } from "vitest";
+import { Registry } from "../../core/src/entities.js";
 import { baseGeometryOf } from "../../core/src/model-lod.js";
 import { DecalField } from "../templates/shooter/src/render/decals.js";
 
@@ -42,6 +43,173 @@ function fixture(count = 2) {
 const normal = new Vector3(0, 0, 1);
 
 describe("game-owned receiver decal projection", () => {
+  it("releases fading projected buffers exactly once across 20 registry lifecycles", () => {
+    let created = 0;
+    let disposed = 0;
+    for (let cycle = 0; cycle < 20; cycle += 1) {
+      const { receiver, field, slots, map } = fixture(4);
+      const registry = new Registry();
+      registry.add("decals", field);
+      registry.add("map", map);
+      const borrowedDisposed = vi.fn();
+      receiver.geometry.addEventListener("dispose", borrowedDisposed);
+      for (let shot = 0; shot < 12; shot += 1) {
+        field.project(receiver, receiver.geometry, new Vector3(), normal, "stone", {
+          depth: 0.2,
+          fade: { duration: 1, opacity: (p) => 1 - p },
+        });
+        created += 1;
+        slots[shot % 4]?.geometry.addEventListener("dispose", () => {
+          disposed += 1;
+        });
+        field.update(0.1);
+      }
+      field.update(0.5);
+      receiver.removeFromParent();
+      field.update(1);
+      registry.clear();
+      registry.clear();
+      expect(receiver.children).toHaveLength(0);
+      expect(borrowedDisposed).not.toHaveBeenCalled();
+      expect(disposed).toBe(created);
+    }
+    expect(created).toBe(240);
+  });
+  it("maps only owned projected UVs into an authored atlas rectangle", () => {
+    const a = fixture(1);
+    const b = fixture(1);
+    const borrowedUvs = Array.from(a.receiver.geometry.getAttribute("uv").array);
+    a.field.project(a.receiver, a.receiver.geometry, new Vector3(), normal, "stone", {
+      depth: 0.2,
+      uvRect: [0.5, 0.25, 1, 0.75],
+    });
+    b.field.project(b.receiver, b.receiver.geometry, new Vector3(), normal, "stone", {
+      depth: 0.2,
+    });
+    const atlas = a.slots[0]?.geometry.getAttribute("uv");
+    const full = b.slots[0]?.geometry.getAttribute("uv");
+    if (atlas === undefined || full === undefined) throw new Error("Missing atlas UVs");
+    for (let i = 0; i < full.count; i += 1) {
+      expect(atlas.getX(i)).toBeCloseTo(0.5 + full.getX(i) * 0.5, 6);
+      expect(atlas.getY(i)).toBeCloseTo(0.25 + full.getY(i) * 0.5, 6);
+    }
+    expect(Array.from(a.receiver.geometry.getAttribute("uv").array)).toEqual(borrowedUvs);
+    expect(a.slots[0]?.material.map).toBe(a.map);
+    expect(a.map.offset.toArray()).toEqual([0, 0]);
+    expect(a.map.repeat.toArray()).toEqual([1, 1]);
+    a.field.dispose();
+    b.field.dispose();
+  });
+
+  it("uses the authored opacity curve and expires owned geometry once without retiring the slot", () => {
+    const { root, receiver, field, slots, map } = fixture(1);
+    const slot = slots[0];
+    if (slot === undefined) throw new Error("Missing slot");
+    const plane = slot.geometry;
+    const materialDisposed = vi.fn();
+    const mapDisposed = vi.fn();
+    slot.material.addEventListener("dispose", materialDisposed);
+    map.addEventListener("dispose", mapDisposed);
+    field.project(receiver, receiver.geometry, new Vector3(), normal, "stone", {
+      depth: 0.2,
+      fade: { duration: 2, opacity: (progress: number) => (1 - progress) ** 2 },
+    });
+    const geometryDisposed = vi.fn();
+    slot.geometry.addEventListener("dispose", geometryDisposed);
+    field.update(0.5);
+    expect(slot.material.opacity).toBe(0.5625);
+    field.update(0.5);
+    expect(slot.material.opacity).toBe(0.25);
+    field.update(1);
+    field.update(10);
+    expect(geometryDisposed).toHaveBeenCalledTimes(1);
+    expect(receiver.children).toHaveLength(0);
+    expect(slot.parent).toBe(root);
+    expect(slot.geometry).toBe(plane);
+    expect(slot.visible).toBe(false);
+    expect(slot.material.opacity).toBe(1);
+    expect(materialDisposed).not.toHaveBeenCalled();
+    expect(mapDisposed).not.toHaveBeenCalled();
+    field.dispose();
+    field.dispose();
+    expect(geometryDisposed).toHaveBeenCalledTimes(1);
+    expect(materialDisposed).toHaveBeenCalledTimes(1);
+    expect(mapDisposed).not.toHaveBeenCalled();
+  });
+
+  it("resets fade on projected or legacy reuse and keeps unconfigured marks persistent", () => {
+    const { receiver, field, slots } = fixture(1);
+    const fading = { depth: 0.2, fade: { duration: 2, opacity: (p: number) => 1 - p } };
+    field.project(receiver, receiver.geometry, new Vector3(), normal, "stone", fading);
+    field.update(1);
+    expect(slots[0]?.material.opacity).toBe(0.5);
+    field.project(receiver, receiver.geometry, new Vector3(), normal, "stone", { depth: 0.2 });
+    field.update(1000);
+    expect(receiver.children).toHaveLength(1);
+    expect(slots[0]?.material.opacity).toBe(1);
+    field.project(receiver, receiver.geometry, new Vector3(), normal, "stone", fading);
+    field.update(1);
+    field.place(new Vector3(), normal, "stone");
+    field.update(1000);
+    expect(slots[0]?.material.opacity).toBe(1);
+    expect(slots[0]?.visible).toBe(true);
+    field.dispose();
+  });
+
+  it.each([
+    { uvRect: [-0.1, 0, 1, 1] },
+    { uvRect: [0.5, 0, 0.5, 1] },
+    { uvRect: [0, 0, 1.1, 1] },
+    { uvRect: [0, 0, 1, Number.NaN] },
+    { fade: { duration: 0, opacity: () => 1 } },
+    { fade: { duration: Number.POSITIVE_INFINITY, opacity: () => 1 } },
+    { fade: { duration: 1, opacity: () => Number.NaN } },
+    { fade: { duration: 1, opacity: () => 1.1 } },
+  ])("refuses malformed authored controls without evicting a live mark: %j", (controls) => {
+    const { receiver, field, slots } = fixture(1);
+    field.project(receiver, receiver.geometry, new Vector3(), normal, "stone", { depth: 0.2 });
+    const geometry = slots[0]?.geometry;
+    expect(() =>
+      field.project(receiver, receiver.geometry, new Vector3(), normal, "stone", {
+        depth: 0.2,
+        ...controls,
+      } as Parameters<typeof field.project>[5]),
+    ).toThrow(/decal/i);
+    expect(slots[0]?.geometry).toBe(geometry);
+    expect(field.placed).toBe(1);
+    field.dispose();
+  });
+
+  it("rejects invalid time or curve values without advancing a live fade", () => {
+    const { receiver, field, slots } = fixture(1);
+    let invalid = false;
+    field.project(receiver, receiver.geometry, new Vector3(), normal, "stone", {
+      depth: 0.2,
+      fade: { duration: 2, opacity: (p: number) => (invalid ? Number.NaN : 1 - p) },
+    });
+    for (const dt of [-1, Number.NaN, Number.POSITIVE_INFINITY])
+      expect(() => field.update(dt)).toThrow(/decal/i);
+    field.update(0.5);
+    expect(slots[0]?.material.opacity).toBe(0.75);
+    invalid = true;
+    expect(() => field.update(0.5)).toThrow(/decal/i);
+    expect(slots[0]?.material.opacity).toBe(0.75);
+    invalid = false;
+    field.update(0.5);
+    expect(slots[0]?.material.opacity).toBe(0.5);
+    field.dispose();
+  });
+
+  it("refuses projection bias beyond the projector half-depth before recycling", () => {
+    const { receiver, field, slots } = fixture(1);
+    field.project(receiver, receiver.geometry, new Vector3(), normal, "stone", { depth: 0.2 });
+    const geometry = slots[0]?.geometry;
+    expect(() =>
+      field.project(receiver, receiver.geometry, new Vector3(), normal, "stone", { depth: 0.01 }),
+    ).toThrow(/bias/i);
+    expect(slots[0]?.geometry).toBe(geometry);
+    field.dispose();
+  });
   it("uses upstream projection on only the selected receiver with authored UVs and bias", () => {
     const { root, receiver, field, slots } = fixture();
     const other = new Mesh(new PlaneGeometry(8, 8), new MeshBasicMaterial());

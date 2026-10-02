@@ -24,14 +24,31 @@ if (!process.argv.includes("--build-only")) {
     "bin/vite.js",
   );
   const results = [];
-  for (const name of ["static", "motion", "teardown", "restart", "hidden-decals"]) {
-    const hidden = name === "hidden-decals";
+  for (const name of [
+    "static",
+    "motion",
+    "teardown",
+    "restart",
+    "atlas",
+    "fading",
+    "expired",
+    "lifecycle",
+    "hidden-decals",
+    "hidden-fading",
+  ]) {
+    const hiddenFading = name === "hidden-fading";
+    const hidden = name === "hidden-decals" || hiddenFading;
+    const atlasFade = ["atlas", "fading", "expired", "hidden-fading"].includes(name);
+    const expired = name === "expired";
     const directory = join(artifacts, name);
     const report = await runStandalonePlaytest({
       artifactDirectory: directory,
       projectPath: fixture,
-      scenarioPath: join(fixture, `${hidden ? "static" : name}.playtest.json`),
-      url: `http://127.0.0.1:4173/${hidden ? "?hideDecals=1" : ""}`,
+      scenarioPath: join(
+        fixture,
+        `${hiddenFading ? "fading" : hidden ? "static" : name}.playtest.json`,
+      ),
+      url: `http://127.0.0.1:4173/${hiddenFading ? "?atlasFade=1&hideFading=1" : hidden ? "?hideDecals=1" : atlasFade ? "?atlasFade=1" : ""}`,
       port: 0,
       server: {
         command: `${JSON.stringify(process.execPath)} ${JSON.stringify(vite)} preview --host 127.0.0.1 --port $PORT --strictPort --outDir ${JSON.stringify(site)}`,
@@ -70,13 +87,13 @@ if (!process.argv.includes("--build-only")) {
       disallowedDiagnostics.length === 0 &&
       screenshotPresent &&
       measurement !== undefined &&
-      measurement.active === (name === "teardown" ? 128 : 256) &&
+      measurement.active === (expired ? 0 : name === "teardown" ? 128 : 256) &&
       measurement.capacity === 256 &&
       measurement.created >= 321 &&
       measurement.lodHit === true &&
       measurement.renderTriangles === 2 &&
       Number.isFinite(measurement.geometryBytes) &&
-      measurement.geometryBytes > 0 &&
+      (expired ? measurement.geometryBytes === 0 : measurement.geometryBytes > 0) &&
       Number.isFinite(measurement.maxDrawCalls) &&
       measurement.maxDrawCalls > 0 &&
       Number.isFinite(measurement.motionError) &&
@@ -91,7 +108,11 @@ if (!process.argv.includes("--build-only")) {
       // Require both receiver interiors to lose their mark pixels while every counter,
       // LOD, runtime and whole-frame assertion still passes. A crash is not a control.
       JSON.stringify(failedAssertions?.map(({ id }) => id).sort()) ===
-        JSON.stringify(["visual.1.region.darkPixels", "visual.2.region.darkPixels"]) &&
+        JSON.stringify(
+          hiddenFading
+            ? ["visual.3.region.darkPixels", "visual.4.region.darkPixels"]
+            : ["visual.1.region.darkPixels", "visual.2.region.darkPixels"],
+        ) &&
       report.diagnostics.length === 2 &&
       report.diagnostics.every(({ code }) => code === "TN_PLAYTEST_REGION_DARK_PIXEL_RATIO_FAILED");
     results.push({
@@ -112,13 +133,13 @@ if (!process.argv.includes("--build-only")) {
   }
   if (
     results.some((result) =>
-      result.name === "hidden-decals" ? !result.negativeControlPassed : !result.qualified,
+      result.name.startsWith("hidden-") ? !result.negativeControlPassed : !result.qualified,
     )
   )
     throw new Error(
       "VQ11 runtime qualification failed; retained frames are diagnostic only. Inspect artifacts/vq11-decals/summary.json.",
     );
   console.info(
-    `VQ11_DECAL_PROOF ${JSON.stringify({ sourceSha, captures: results.length, hiddenDecalsRejected: true, correctnessOnly: true })}`,
+    `VQ11_DECAL_PROOF ${JSON.stringify({ sourceSha, captures: results.length, hiddenDecalsRejected: true, hiddenFadingRejected: true, correctnessOnly: true })}`,
   );
 }

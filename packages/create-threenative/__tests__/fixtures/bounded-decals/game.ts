@@ -3,11 +3,14 @@ import {
   BoxGeometry,
   type BufferGeometry,
   Color,
+  DataTexture,
   DirectionalLight,
   Mesh,
   MeshStandardMaterial,
   type Object3D,
   type PerspectiveCamera,
+  RGBAFormat,
+  UnsignedByteType,
   Vector3,
 } from "three";
 import type { WebGPURenderer } from "three/webgpu";
@@ -16,8 +19,10 @@ import { playtest } from "../../../../core/dist/playtest.js";
 import { DecalField, bulletHoleTexture } from "../../../templates/shooter/src/render/decals.js";
 
 /** Portable, opt-in runtime proof. Neither the shooter entry nor its authored look is changed. */
-export function createDecalFixture(hideDecals = false) {
+export function createDecalFixture(hideDecals = false, atlasFade = false, hideDuringFade = false) {
   let generation = 0;
+  const residency: { generation: number; geometries: number; textures: number; bytes: number }[] =
+    [];
   class DecalRoom extends Scene {
     #source: Object3D | undefined;
     #dispose = () => {};
@@ -54,7 +59,24 @@ export function createDecalFixture(hideDecals = false) {
       sun.position.set(2, 7, 8);
       ctx.add(sun);
       ctx.add(new AmbientLight(0xdbeaff, 1.5));
-      const map = bulletHoleTexture(64);
+      let map = bulletHoleTexture(64) as DataTexture;
+      if (atlasFade) {
+        // A two-cell authored atlas: impact on the left, a solid environment mark on the right.
+        // Their different pixel coverage makes selecting the wrong atlas region observable.
+        const data = new Uint8Array(128 * 64 * 4);
+        const impact = map.image.data;
+        if (impact === null) throw new Error("Decal fixture impact pixels are unavailable.");
+        for (let y = 0; y < 64; y += 1) {
+          for (let x = 0; x < 64; x += 1) {
+            const target = (y * 128 + x) * 4;
+            data.set(impact.subarray((y * 64 + x) * 4, (y * 64 + x + 1) * 4), target);
+            data.set([20, 20, 20, x >= 3 && x < 61 && y >= 3 && y < 61 ? 255 : 0], target + 256);
+          }
+        }
+        map.dispose();
+        map = new DataTexture(data, 128, 64, RGBAFormat, UnsignedByteType);
+        map.needsUpdate = true;
+      }
       const field = new DecalField(ctx.scene, {
         countPerVariant: 256,
         map,
@@ -82,6 +104,12 @@ export function createDecalFixture(hideDecals = false) {
         if (
           !field.project(receiver, baseGeometryOf(receiver), hit.point, normal, "impact", {
             depth: 0.1,
+            ...(atlasFade
+              ? {
+                  uvRect: receiver === left ? ([0, 0, 0.5, 1] as const) : ([0.5, 0, 1, 1] as const),
+                  fade: { duration: 2, opacity: (progress: number) => 1 - progress },
+                }
+              : {}),
           })
         ) {
           throw new Error("Decal fixture projection unexpectedly missed.");
@@ -105,6 +133,7 @@ export function createDecalFixture(hideDecals = false) {
         );
       }
       let moving = false;
+      let fading = false;
       let elapsed = 0;
       let frames = 0;
       let motionError = 0;
@@ -114,12 +143,15 @@ export function createDecalFixture(hideDecals = false) {
       if (base.index?.count !== 384)
         throw new Error("Decal fixture LOD0 must contain 128 triangles.");
       const observation = () => {
+        const baseline = residency[1];
         let geometryBytes = 0;
         let active = 0;
+        let opacitySum = 0;
         for (const receiver of [left, right]) {
           for (const child of receiver.children) {
             if (!(child instanceof Mesh)) continue;
             active += 1;
+            opacitySum += child.material.opacity;
             const geometry: BufferGeometry = child.geometry;
             for (const attribute of Object.values(geometry.attributes)) {
               geometryBytes += attribute.array.byteLength;
@@ -140,6 +172,27 @@ export function createDecalFixture(hideDecals = false) {
           lodHit,
           renderTriangles: (left.geometry.index?.count ?? 0) / 3,
           receiverRemoved: right.parent === null,
+          atlasFade,
+          averageOpacity: active === 0 ? 0 : opacitySum / active,
+          residency,
+          residencySamples: residency.length,
+          // Compare after the first reset, so one-time renderer startup caches are warmed.
+          ...(baseline === undefined
+            ? {}
+            : {
+                geometryGrowth: Math.max(
+                  0,
+                  ...residency.slice(1).map((sample) => sample.geometries - baseline.geometries),
+                ),
+                textureGrowth: Math.max(
+                  0,
+                  ...residency.slice(1).map((sample) => sample.textures - baseline.textures),
+                ),
+                memoryGrowth: Math.max(
+                  0,
+                  ...residency.slice(1).map((sample) => sample.bytes - baseline.bytes),
+                ),
+              }),
         };
       };
       ctx.entities.add("decals", { debug: observation });
@@ -155,6 +208,16 @@ export function createDecalFixture(hideDecals = false) {
           (ctx.renderer.raw as WebGPURenderer).info.render.drawCalls,
         );
         if (frame.input.justPressed("motion")) moving = !moving;
+        if (frame.input.justPressed("fade")) {
+          fading = true;
+          // Suppress rendering only after the control has shown its real marks. The opacity
+          // curve and owned geometry continue normally, so only positive fade pixels can reject it.
+          if (hideDuringFade)
+            for (const receiver of [left, right]) {
+              for (const child of receiver.children)
+                if (child instanceof Mesh) child.material.visible = false;
+            }
+        }
         if (frame.input.justPressed("remove")) right.removeFromParent();
         if (frame.input.justPressed("reset")) {
           void frame.goto("room");
@@ -165,7 +228,7 @@ export function createDecalFixture(hideDecals = false) {
           right.rotation.y = Math.sin(elapsed) * 0.5;
           right.position.y = 2.4 + Math.sin(elapsed * 1.5) * 0.35;
         }
-        field.update();
+        field.update(fading ? dt : 0);
         right.updateWorldMatrix(true, true);
         const mark = right.children[0];
         if (mark instanceof Mesh) {
@@ -183,6 +246,19 @@ export function createDecalFixture(hideDecals = false) {
           lodHit = true;
         }
         frames += 1;
+        if (frames === 60) {
+          const memory = (ctx.renderer.raw as WebGPURenderer).info.memory;
+          if (![memory.geometries, memory.textures, memory.total].every(Number.isFinite))
+            throw new Error("Decal fixture renderer residency is unavailable.");
+          residency.push({
+            generation,
+            geometries: memory.geometries,
+            textures: memory.textures,
+            bytes: memory.total,
+          });
+          // Retain the warm baseline and the latest samples even during manual repeated resets.
+          if (residency.length > 8) residency.splice(2, 1);
+        }
         if (frames % 30 === 0) console.info(`TN_DECAL_FIXTURE:${JSON.stringify(observation())}`);
       };
     }
@@ -196,7 +272,12 @@ export function createDecalFixture(hideDecals = false) {
     camera: { far: 100, fov: 48, near: 0.1, projection: "perspective" },
     display: { maxFps: 60 },
     initialState: {},
-    input: { motion: { keys: ["KeyM"] }, remove: { keys: ["KeyX"] }, reset: { keys: ["KeyR"] } },
+    input: {
+      motion: { keys: ["KeyM"] },
+      remove: { keys: ["KeyX"] },
+      reset: { keys: ["KeyR"] },
+      fade: { keys: ["KeyF"] },
+    },
     plugins: [playtest({ holdUntilAttached: true })],
     renderer: { preferWebGPU: true },
     scenes: { room: DecalRoom },
