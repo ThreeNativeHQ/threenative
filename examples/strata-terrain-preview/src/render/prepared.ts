@@ -60,6 +60,16 @@ interface IPreparedFile {
 const SCATTER_PREPARED_FIR = false;
 
 /**
+ * Whether the licensed Fab pine is scattered on a machine that prepared it.
+ *
+ * `false` after three judged rounds: cut to the six-thousand-triangle budget, its crown of small
+ * sparse leaf cards reads as a bare tree with confetti, a dark inner cone reads as a cone, and the
+ * cross-card reads as a striped tower at distance. The preparation and the loader stay, because
+ * they are how the next source is measured; this constant is what keeps the meadow on the spruce.
+ */
+const SCATTER_FAB_PINE = false;
+
+/**
  * The prepared files, in the order they are asked for.
  *
  * Three rocks at both of their levels, the two firs behind the constant above, and the pine at all
@@ -84,9 +94,13 @@ const PREPARED: readonly IPreparedFile[] = [
   // scattered, and the measurement is in that script's own summary: ScotsPine_01's crown is 18.3 m
   // across on a 7.5 m spacing, which is a closed canopy rather than a meadow, and scattering it
   // would also cost the five draws the draw ceiling does not have.
-  { asset: "spruce", level: 0, path: `${PINE}/pine-tall-near.glb`, variant: 0 },
-  { asset: "spruce", level: 1, path: `${PINE}/pine-tall-mid.glb`, variant: 0 },
-  { asset: "spruce", level: 2, path: `${PINE}/pine-tall-impostor.glb`, variant: 0 },
+  ...(SCATTER_FAB_PINE
+    ? [
+        { asset: "spruce", level: 0, path: `${PINE}/pine-tall-near.glb`, variant: 0 },
+        { asset: "spruce", level: 1, path: `${PINE}/pine-tall-mid.glb`, variant: 0 },
+        { asset: "spruce", level: 2, path: `${PINE}/pine-tall-impostor.glb`, variant: 0 },
+      ]
+    : []),
   ...(SCATTER_PREPARED_FIR
     ? [
         { asset: "spruce", level: 0, path: `${FIR}/fir-b-near.glb`, variant: 1 },
