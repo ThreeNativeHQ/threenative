@@ -202,6 +202,27 @@ are retained. Every report passes with an empty diagnostic list. This completes 
 not the full acceptance: reverse cuts, raw-luminance and disabled early-return mutations,
 ten cold boots with the shared tone gate, lifecycle integration and native proof remain open.
 
+The next fixture increment adds live-clock reverse cuts and isolated build mutations for raw
+luminance interpolation, disabled early-return, doubled metering and the wrong bridge clock.
+Each negative arm requires clean runtime diagnostics and actual nonblank pixels before its one
+named expected failure can count. Mutated module digests are recorded; shipped source is untouched.
+Because 180 simulated ticks delivered fewer rendered updates on SwiftShader, the raw/log comparison
+has a separate, explicitly deterministic per-render arm: exactly 180 completed GPU reductions,
+adaptations and readbacks at 1/60 adaptation seconds each. An independent public NodeFrame snapshot
+preserves the real frame object; real NodeFrame sums and elapsed seconds are recorded separately.
+Resource waits observe completed GPU samples and freeze each pose's terminal history. Unit guards
+reject mismatched counts/clocks and stale pre-cut readings. This is correctness proof, not hardware
+timing; acceptance 1 stays open until the hosted matching-budget red/green pair actually runs.
+
+Review regressions exposed missing terminal validation and late disposed-readback callbacks in
+that unpublished fixture increment. The corrected guard pairs every actual readback with its
+production-accepted observation through update 360, validates terminal measurement/applied state,
+luminance and the new target before accepting only an unsettled result, and rejects unrelated
+mutation failures. Disposed pending readbacks cannot publish fixture progress. The six focused
+exposure test files pass 76 tests on 2026-10-02; root TypeScript passes. These are CPU guard and
+lifecycle results only; the expanded hosted scenarios and their pixels remain unverified.
+
+
 ## Implementation decisions
 
 - 2026-10-02: the current core contract says all exposure, TSL and post-processing are generated

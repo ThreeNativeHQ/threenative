@@ -9,35 +9,19 @@ import {
   type PerspectiveCamera,
 } from "three";
 import { pass } from "three/tsl";
-import type { NodeFrame, WebGPURenderer } from "three/webgpu";
+import type { WebGPURenderer } from "three/webgpu";
 import { type ICtx, Scene, defineGame } from "../../../../core/dist/index.js";
 import { playtest } from "../../../../core/dist/playtest.js";
-import { AutoExposureNode, applyExposure } from "../../../template-assets/autoExposure.js";
+import { applyExposure } from "../../../template-assets/autoExposure.js";
 import { exposureSettings } from "../../../template-assets/exposure.js";
+import { ObservedExposureNode } from "./observedExposure.js";
 
 export interface IExposureFixtureOptions {
   enabled: boolean;
   bright: boolean;
   stops: number;
   snapGain: number;
-}
-
-/** Counts actual GPU-node updates, independently of the playtest's simulated gameplay ticks. */
-class ObservedExposureNode extends AutoExposureNode {
-  timing = { updates: 0, consumedSeconds: 0, nodeFrameId: 0, nodeTime: 0, deltaSeconds: 0 };
-
-  override updateBefore(frame: NodeFrame): undefined {
-    super.updateBefore(frame);
-    this.timing = {
-      updates: this.timing.updates + 1,
-      consumedSeconds:
-        this.timing.consumedSeconds + Math.min(frame.deltaTime, this.settings.maxDelta),
-      nodeFrameId: frame.frameId,
-      nodeTime: frame.time,
-      deltaSeconds: frame.deltaTime,
-    };
-    console.info(`TN_EXPOSURE_TIMING:${JSON.stringify(this.timing)}`);
-  }
+  deterministic?: boolean;
 }
 
 /** Portable scene and engine loop. The browser entry only supplies controls and mounts the canvas. */
@@ -91,10 +75,12 @@ export function createExposureFixture(options: IExposureFixtureOptions) {
           ...exposureSettings,
           enabled: options.enabled,
           snapGain: options.snapGain,
-          reportInterval: 0.1,
+          reportInterval: options.deterministic === true ? 1e-6 : 0.1,
         },
         1,
       );
+      exposure.deterministic = options.deterministic === true;
+      exposure.onProgress = () => ctx.state.set(exposure.getProgress());
       ctx.renderer.setOutputNode(applyExposure(colour, exposure.exposureNode), worldPass);
       ctx.entities.add("exposure", {
         debug: () => ({
@@ -114,6 +100,7 @@ export function createExposureFixture(options: IExposureFixtureOptions) {
       };
       return (frame: ICtx) => {
         if (frame.input.justPressed("cut")) {
+          exposure.beginCut();
           bright = !bright;
           applyLight();
           console.info(
@@ -133,7 +120,7 @@ export function createExposureFixture(options: IExposureFixtureOptions) {
   return defineGame({
     camera: { far: 100, fov: 48, near: 0.1, projection: "perspective" },
     display: { maxFps: 60 },
-    initialState: {},
+    initialState: { sampleFrames: 0, cutSampleFrames: 0 },
     input: { cut: { keys: ["KeyC"] }, disable: { keys: ["KeyD"] }, reset: { keys: ["KeyR"] } },
     plugins: [playtest({ holdUntilAttached: true })],
     renderer: { preferWebGPU: true },

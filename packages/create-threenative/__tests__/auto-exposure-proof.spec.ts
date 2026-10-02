@@ -1,6 +1,12 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { assertExposureProof, exposureCutTiming } from "./fixtures/auto-exposure/proof.js";
+import {
+  assertDeterministicExposureBudget,
+  assertExposureClock,
+  assertExposureProof,
+  exposureCutTiming,
+  qualifyExposureCase,
+} from "./fixtures/auto-exposure/proof.js";
 
 function report() {
   return {
@@ -17,7 +23,209 @@ function report() {
   };
 }
 
+function deterministicReport(settled = false) {
+  const value = report();
+  const cut = {
+    updates: 180,
+    consumedSeconds: 3,
+    realConsumedSeconds: 5,
+    nodeTime: 8,
+    nodeFrameId: 200,
+    clock: "deterministic-per-render",
+    targetStops: -4.5,
+    settled: true,
+  };
+  value.observations.console = [
+    { text: 'TN_EXPOSURE_CLOCK:{"mode":"wall-clock"}' },
+    { text: `TN_EXPOSURE_CUT:${JSON.stringify(cut)}` },
+    ...Array.from({ length: 180 }, (_, i) => {
+      const measurement = {
+        measured: true,
+        applied: true,
+        luminance: 0.002,
+        exposureStops: settled ? 6.5 : 3,
+        targetStops: 6.5,
+        settled,
+      };
+      const timing = {
+        ...cut,
+        updates: 181 + i,
+        consumedSeconds: 3 + (i + 1) / 60,
+        realConsumedSeconds: 5 + (i + 1) / 30,
+        nodeTime: 8 + (i + 1) / 20,
+        nodeFrameId: 201 + i,
+      };
+      return [
+        { text: `TN_EXPOSURE_TIMING:${JSON.stringify(timing)}` },
+        { text: `TN_AUTO_EXPOSURE:${JSON.stringify(measurement)}` },
+        { text: `TN_EXPOSURE_SAMPLE:${JSON.stringify({ ...timing, measurement })}` },
+      ];
+    }).flat(),
+  ];
+  return value;
+}
+
+const deterministicExpectation = {
+  deterministic: true,
+  applied: true,
+  expectedLuminance: 0.002,
+  cutStops: 11,
+  reject: "TN_EXPOSURE_NOT_SETTLED",
+};
+
 describe("runtime exposure proof", () => {
+  it("requires a valid terminal observation before accepting the settlement mutation", () => {
+    expect(qualifyExposureCase(deterministicReport(), deterministicExpectation)).toMatchObject({
+      expectedFailure: expect.stringContaining("TN_EXPOSURE_NOT_SETTLED:"),
+    });
+    for (const changes of [
+      { measured: false },
+      { applied: false },
+      { luminance: 99 },
+      { targetStops: -4.5 },
+    ]) {
+      const value = deterministicReport();
+      value.observations.console = value.observations.console.map(({ text }) => {
+        if (text.startsWith("TN_AUTO_EXPOSURE:"))
+          return {
+            text: `TN_AUTO_EXPOSURE:${JSON.stringify({ ...JSON.parse(text.slice(17)), ...changes })}`,
+          };
+        if (text.startsWith("TN_EXPOSURE_SAMPLE:")) {
+          const sample = JSON.parse(text.slice(19));
+          return {
+            text: `TN_EXPOSURE_SAMPLE:${JSON.stringify({ ...sample, measurement: { ...sample.measurement, ...changes } })}`,
+          };
+        }
+        return { text };
+      });
+      expect(() => qualifyExposureCase(value, deterministicExpectation)).toThrow();
+    }
+  });
+  it("rejects sample stamps without accepted exposure observations in a negative arm", () => {
+    const value = deterministicReport();
+    value.observations.console = value.observations.console.filter(
+      ({ text }) => !text.startsWith("TN_AUTO_EXPOSURE:"),
+    );
+    expect(() => qualifyExposureCase(value, deterministicExpectation)).toThrow(
+      /paired|measurement/i,
+    );
+  });
+  it("requires the terminal accepted observation even if an early sample was settled", () => {
+    const value = deterministicReport(true);
+    const expectation = { ...deterministicExpectation, reject: undefined };
+    expect(qualifyExposureCase(value, expectation)).toMatchObject({
+      measurement: { settled: true },
+    });
+    value.observations.console.splice(-2, 1);
+    expect(() => qualifyExposureCase(value, expectation)).toThrow(/paired|terminal/i);
+  });
+  it("rejects an unpaired or stale terminal sample observation", () => {
+    for (const changes of [{ exposureStops: 99 }, { targetStops: -4.5 }]) {
+      const value = deterministicReport(true);
+      const last = value.observations.console.at(-1);
+      if (last === undefined) throw new Error("terminal missing");
+      const sample = JSON.parse(last.text.slice(19));
+      last.text = `TN_EXPOSURE_SAMPLE:${JSON.stringify({ ...sample, measurement: { ...sample.measurement, ...changes } })}`;
+      expect(() =>
+        qualifyExposureCase(value, { ...deterministicExpectation, reject: undefined }),
+      ).toThrow(/paired|terminal/i);
+    }
+  });
+  it("requires the fixed warmup and terminal update identities, not a shifted 180-sample window", () => {
+    const value = deterministicReport(true);
+    value.observations.console = value.observations.console.map(({ text }) => {
+      const prefix = ["TN_EXPOSURE_CUT:", "TN_EXPOSURE_TIMING:", "TN_EXPOSURE_SAMPLE:"].find(
+        (prefix) => text.startsWith(prefix),
+      );
+      if (prefix === undefined) return { text };
+      const observation = JSON.parse(text.slice(prefix.length));
+      return {
+        text: `${prefix}${JSON.stringify({ ...observation, updates: observation.updates + 1 })}`,
+      };
+    });
+    expect(() => assertDeterministicExposureBudget(value)).toThrow(/warmup|terminal/i);
+  });
+  it("refuses a clock mutation accompanied by an unrelated missing measurement", () => {
+    const value = report();
+    value.observations.console = [{ text: 'TN_EXPOSURE_CLOCK:{"mode":"fixed-step"}' }];
+    expect(() =>
+      qualifyExposureCase(value, {
+        applied: true,
+        expectedLuminance: 0.002,
+        reject: "TN_EXPOSURE_WRONG_CLOCK",
+      }),
+    ).toThrow(/TN_EXPOSURE_MEASUREMENT_MISSING/);
+  });
+  it("requires the same 180 completed GPU readbacks under the declared render clock", () => {
+    const value = deterministicReport(true);
+    expect(assertDeterministicExposureBudget(value).renderedUpdates).toBe(180);
+    const terminal = value.observations.console.at(-1);
+    if (terminal === undefined) throw new Error("fixture samples missing");
+    const sample = JSON.parse(terminal.text.slice(19));
+    terminal.text = `TN_EXPOSURE_SAMPLE:${JSON.stringify({ ...sample, updates: 359 })}`;
+    expect(() => assertDeterministicExposureBudget(value)).toThrow(/Mismatched GPU updates/);
+    terminal.text = `TN_EXPOSURE_SAMPLE:${JSON.stringify(sample)}`;
+    value.observations.console.splice(-3);
+    expect(() => assertDeterministicExposureBudget(value)).toThrow(/TN_EXPOSURE_FRAME_BUDGET/);
+    const cut = value.observations.console[1];
+    if (cut === undefined) throw new Error("cut missing");
+    cut.text = cut.text.replace("deterministic-per-render", "live");
+    expect(() => assertDeterministicExposureBudget(value)).toThrow(/clock provenance/);
+  });
+  it("accepts only the named mutation failure after clean runtime proof", () => {
+    const value = report();
+    value.observations.console = [{ text: 'TN_EXPOSURE_CLOCK:{"mode":"wall-clock"}' }];
+    expect(
+      qualifyExposureCase(value, {
+        applied: false,
+        expectedLuminance: 0.002,
+        reject: "TN_EXPOSURE_MEASUREMENT_MISSING",
+      }),
+    ).toEqual({
+      expectedFailure: "TN_EXPOSURE_MEASUREMENT_MISSING: GPU exposure observation missing.",
+    });
+    value.pass = false;
+    value.diagnostics.push({ code: "TN_BROWSER_CONSOLE_ERROR" });
+    expect(() =>
+      qualifyExposureCase(value, {
+        applied: false,
+        expectedLuminance: 0.002,
+        reject: "TN_EXPOSURE_MEASUREMENT_MISSING",
+      }),
+    ).toThrow(/scenario failed/);
+  });
+  it("refuses an unrelated negative-arm failure and a mutation that unexpectedly passes", () => {
+    const value = report();
+    value.observations.console.push({ text: 'TN_EXPOSURE_CLOCK:{"mode":"wall-clock"}' });
+    expect(() =>
+      qualifyExposureCase(value, {
+        applied: true,
+        expectedLuminance: 0.002,
+        reject: "TN_EXPOSURE_METER_RANGE",
+      }),
+    ).toThrow(/unexpectedly passed/);
+    expect(() =>
+      qualifyExposureCase(value, {
+        applied: false,
+        expectedLuminance: 0.001,
+        reject: "TN_EXPOSURE_METER_RANGE",
+      }),
+    ).toThrow(/measurement failed/);
+  });
+  it("rejects the real bridge reporting simulated ticks as the render clock", () => {
+    const value = report();
+    value.observations.console.push({ text: 'TN_EXPOSURE_CLOCK:{"mode":"fixed-step"}' });
+    expect(() => assertExposureClock(value)).toThrow(/TN_EXPOSURE_WRONG_CLOCK/);
+    value.observations.console.push({ text: 'TN_EXPOSURE_CLOCK:{"mode":"wall-clock"}' });
+    expect(() => assertExposureClock(value)).not.toThrow();
+  });
+  it("rejects a missing observed render clock", () => {
+    expect(() => assertExposureClock(report())).toThrow(/TN_EXPOSURE_CLOCK_MISSING/);
+  });
+  it("rejects a doubled meter even if its adaptation claims to be settled", () => {
+    expect(() => assertExposureProof(report(), true, 0.001)).toThrow(/TN_EXPOSURE_METER_RANGE/);
+    expect(() => assertExposureProof(report(), true, 0.002)).not.toThrow();
+  });
   it("counts actual GPU updates to the first settled new target and reports consumed time", () => {
     const value = report();
     value.observations.console = [

@@ -7,14 +7,168 @@ import {
   WEBGPU_BROWSER_ARGS,
   runStandalonePlaytest,
 } from "../../../../playtest/dist/runner/index.js";
-import { assertExposureProof, exposureCutTiming } from "./proof.js";
+import { type ExposureMutation, exposureMutationPlugin } from "./mutations.js";
+import { type IExposureCaseProof, qualifyExposureCase } from "./proof.js";
 
 const fixture = dirname(fileURLToPath(import.meta.url));
 const root = resolve(fixture, "../../../../..");
 const artifacts = join(root, "artifacts/prd339-exposure");
-const site = join(artifacts, "site");
+interface IFixtureCase extends IExposureCaseProof {
+  name: string;
+  query: string;
+  scenario: "static" | "cut" | "cut-frames";
+  mutation?: ExposureMutation;
+}
+// Scene-linear reference readings from the inspected 5c3b176 fixture, independently of adaptation.
+// This pins the meter against a constant/doubled-meter bug; display-tone metrics remain PRD341-owned.
+const darkLuminance = 0.0019189472077414393;
+const sunlightLuminance = 3.896103858947754;
+const cases: IFixtureCase[] = [
+  {
+    name: "dark-adapted",
+    query: "bright=0",
+    scenario: "static",
+    applied: true,
+    expectedLuminance: darkLuminance,
+  },
+  {
+    name: "sunlight-adapted",
+    query: "bright=1",
+    scenario: "static",
+    applied: true,
+    expectedLuminance: sunlightLuminance,
+  },
+  {
+    name: "eleven-stop-cut",
+    query: "bright=0&stops=11&snapGain=0",
+    scenario: "cut",
+    cutStops: 11,
+    applied: true,
+    expectedLuminance: sunlightLuminance,
+  },
+  {
+    name: "one-stop-cut",
+    query: "bright=0&stops=1&snapGain=0",
+    scenario: "cut",
+    cutStops: 1,
+    applied: true,
+    expectedLuminance: darkLuminance * 2,
+  },
+  {
+    name: "eleven-stop-reverse",
+    query: "bright=1&stops=11&snapGain=0",
+    scenario: "cut",
+    cutStops: 11,
+    applied: true,
+    expectedLuminance: darkLuminance,
+  },
+  {
+    name: "one-stop-reverse",
+    query: "bright=1&stops=1&snapGain=0",
+    scenario: "cut",
+    cutStops: 1,
+    applied: true,
+    expectedLuminance: darkLuminance,
+  },
+  {
+    name: "fixed-exposure",
+    query: "enabled=0&bright=1",
+    scenario: "static",
+    applied: false,
+    expectedLuminance: sunlightLuminance,
+  },
+  {
+    name: "deterministic-eleven-reverse",
+    query: "bright=1&stops=11&snapGain=0&deterministic=1",
+    scenario: "cut-frames",
+    cutStops: 11,
+    deterministic: true,
+    applied: true,
+    expectedLuminance: darkLuminance,
+  },
+  {
+    name: "deterministic-one-reverse",
+    query: "bright=1&stops=1&snapGain=0&deterministic=1",
+    scenario: "cut-frames",
+    cutStops: 1,
+    deterministic: true,
+    applied: true,
+    expectedLuminance: darkLuminance,
+  },
+  {
+    name: "linear-one-stop",
+    query: "bright=1&stops=1&snapGain=0&deterministic=1",
+    scenario: "cut-frames",
+    deterministic: true,
+    cutStops: 1,
+    applied: true,
+    expectedLuminance: darkLuminance,
+    mutation: "linear",
+  },
+  {
+    name: "linear-eleven-stop",
+    query: "bright=1&stops=11&snapGain=0&deterministic=1",
+    scenario: "cut-frames",
+    deterministic: true,
+    cutStops: 11,
+    applied: true,
+    expectedLuminance: darkLuminance,
+    mutation: "linear",
+    reject: "TN_EXPOSURE_NOT_SETTLED",
+  },
+  {
+    name: "disabled-unmeasured",
+    query: "enabled=0&bright=1",
+    scenario: "static",
+    applied: false,
+    expectedLuminance: sunlightLuminance,
+    mutation: "disabled",
+    reject: "TN_EXPOSURE_MEASUREMENT_MISSING",
+  },
+  {
+    name: "doubled-meter",
+    query: "bright=1",
+    scenario: "static",
+    applied: true,
+    expectedLuminance: sunlightLuminance,
+    mutation: "meter",
+    reject: "TN_EXPOSURE_METER_RANGE",
+  },
+  {
+    name: "wrong-clock",
+    query: "bright=1",
+    scenario: "static",
+    applied: true,
+    expectedLuminance: sunlightLuminance,
+    mutation: "clock",
+    reject: "TN_EXPOSURE_WRONG_CLOCK",
+  },
+];
 await mkdir(artifacts, { recursive: true });
-await build({ configFile: false, root: fixture, build: { outDir: site, emptyOutDir: true } });
+const sites = new Map<string, string>();
+for (const mutation of [undefined, "linear", "disabled", "meter", "clock"] as const) {
+  const name = mutation ?? "normal";
+  const site = join(artifacts, "sites", name);
+  let mutationReceipt: unknown;
+  await build({
+    configFile: false,
+    root: fixture,
+    plugins:
+      mutation === undefined
+        ? []
+        : [
+            exposureMutationPlugin(mutation, (receipt) => {
+              mutationReceipt = receipt;
+            }),
+          ],
+    build: { outDir: site, emptyOutDir: true },
+  });
+  if (mutation !== undefined && mutationReceipt === undefined)
+    throw new Error(`${mutation}: mutation receipt missing.`);
+  if (mutationReceipt !== undefined)
+    await writeFile(join(site, "mutation.json"), `${JSON.stringify(mutationReceipt, null, 2)}\n`);
+  sites.set(name, site);
+}
 if (!process.argv.includes("--build-only")) {
   const sourceSha = execFileSync("git", ["rev-parse", "HEAD"], {
     cwd: root,
@@ -24,20 +178,10 @@ if (!process.argv.includes("--build-only")) {
     dirname(fileURLToPath(import.meta.resolve("vite/package.json"))),
     "bin/vite.js",
   );
-  const cases = [
-    { name: "dark-adapted", query: "bright=0", scenario: "static", applied: true },
-    { name: "sunlight-adapted", query: "bright=1", scenario: "static", applied: true },
-    {
-      name: "eleven-stop-cut",
-      query: "bright=0&stops=11&snapGain=0",
-      scenario: "cut",
-      applied: true,
-    },
-    { name: "one-stop-cut", query: "bright=0&stops=1&snapGain=0", scenario: "cut", applied: true },
-    { name: "fixed-exposure", query: "enabled=0&bright=1", scenario: "static", applied: false },
-  ];
   const results = [];
   for (const item of cases) {
+    const site = sites.get(item.mutation ?? "normal");
+    if (site === undefined) throw new Error(`${item.name}: fixture build missing.`);
     const directory = join(artifacts, item.name);
     await mkdir(directory, { recursive: true });
     const report = await runStandalonePlaytest({
@@ -60,21 +204,17 @@ if (!process.argv.includes("--build-only")) {
     });
     await writeFile(
       join(directory, "report.json"),
-      `${JSON.stringify({ sourceSha, ...report }, null, 2)}\n`,
+      `${JSON.stringify({ sourceSha, mutation: item.mutation ?? null, ...report }, null, 2)}\n`,
     );
-    const cutTiming =
-      item.scenario === "cut"
-        ? exposureCutTiming(report, item.name === "one-stop-cut" ? 1 : 11, 180)
-        : undefined;
-    const measurement = assertExposureProof(report, item.applied);
     const screenshot = join(directory, "after.png");
     if ((await stat(screenshot)).size === 0)
       throw new Error(`${item.name}: runtime screenshot missing.`);
+    const result = qualifyExposureCase(report, item);
     results.push({
       name: item.name,
       sourceSha,
-      measurement,
-      cutTiming,
+      mutation: item.mutation ?? null,
+      ...result,
       capture: report.capture,
       screenshot,
     });

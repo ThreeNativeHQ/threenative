@@ -14,6 +14,91 @@ interface IExposureMeasurement {
   settled: boolean;
 }
 
+export interface IExposureCaseProof {
+  applied: boolean;
+  expectedLuminance: number;
+  cutStops?: number;
+  reject?: string;
+  deterministic?: boolean;
+}
+
+/** A negative control may fail its one named gate; runtime errors never qualify the mutation. */
+export function qualifyExposureCase(report: IExposureProofReport, expectation: IExposureCaseProof) {
+  assertExposureRuntime(report);
+  const frameBudget =
+    expectation.deterministic === true ? assertDeterministicExposureBudget(report) : undefined;
+  // Terminal integrity is mandatory for both deterministic arms. An expected settlement
+  // failure can never stand in for a missing, stale, unapplied or incorrect GPU measurement.
+  const terminal =
+    expectation.deterministic === true
+      ? assertExposureProof(report, expectation.applied, expectation.expectedLuminance, false)
+      : undefined;
+  if (terminal !== undefined) assertTerminalCutTarget(report, expectation, terminal);
+  const failures: Error[] = [];
+  const check = <T>(gate: () => T): T | undefined => {
+    try {
+      return gate();
+    } catch (error) {
+      if (!(error instanceof Error)) throw error;
+      failures.push(error);
+      return undefined;
+    }
+  };
+  check(() => assertExposureClock(report));
+  const measurement =
+    terminal ??
+    check(() => assertExposureProof(report, expectation.applied, expectation.expectedLuminance));
+  const cutTiming =
+    expectation.cutStops === undefined
+      ? undefined
+      : check(() => {
+          if (terminal !== undefined && terminal.settled !== true)
+            throw new Error(
+              "TN_EXPOSURE_NOT_SETTLED: Terminal GPU measurement remains unsettled after 180 rendered updates.",
+            );
+          return exposureCutTiming(report, expectation.cutStops as number, 180);
+        });
+  if (failures.length > 0) {
+    const [error] = failures;
+    if (
+      failures.length === 1 &&
+      expectation.reject !== undefined &&
+      error?.message.startsWith(`${expectation.reject}:`)
+    )
+      return {
+        expectedFailure: error.message,
+        ...(frameBudget === undefined ? {} : { frameBudget }),
+      };
+    throw new Error(failures.map((error) => error.message).join("\n"));
+  }
+  if (expectation.reject !== undefined)
+    throw new Error(`Exposure mutation unexpectedly passed ${expectation.reject}.`);
+  return { measurement, cutTiming, ...(frameBudget === undefined ? {} : { frameBudget }) };
+}
+
+function assertTerminalCutTarget(
+  report: IExposureProofReport,
+  expectation: IExposureCaseProof,
+  terminal: IExposureMeasurement,
+): void {
+  const { cut } = cutEntries(report);
+  if (
+    expectation.cutStops === undefined ||
+    Math.abs(Math.abs(terminal.targetStops - cut.targetStops) - expectation.cutStops) > 0.25
+  )
+    throw new Error("Exposure terminal measurement does not match the new cut target.");
+}
+
+interface IExposureSample {
+  updates: number;
+  consumedSeconds: number;
+  realConsumedSeconds: number;
+  nodeTime: number;
+  nodeFrameId: number;
+  clock: string;
+  measurement: IExposureMeasurement;
+}
+
 function settledAtNewTarget(
   value: { settled: boolean; targetStops: number },
   start: number,
@@ -50,6 +135,82 @@ function cutEntries(report: IExposureProofReport) {
   return { cut, after: entries.slice(entries.indexOf(cutEntry) + 1) };
 }
 
+function pairedExposureSamples(entries: readonly { text: string }[]): IExposureSample[] {
+  const samples: IExposureSample[] = [];
+  let accepted: IExposureMeasurement | undefined;
+  for (const { text } of entries) {
+    if (text.startsWith("TN_AUTO_EXPOSURE:")) {
+      if (accepted !== undefined)
+        throw new Error("TN_EXPOSURE_FRAME_BUDGET: Unpaired accepted exposure measurement.");
+      accepted = JSON.parse(text.slice("TN_AUTO_EXPOSURE:".length));
+    }
+    if (!text.startsWith("TN_EXPOSURE_SAMPLE:")) continue;
+    const sample = JSON.parse(text.slice("TN_EXPOSURE_SAMPLE:".length));
+    if (
+      accepted === undefined ||
+      sample.measurement === undefined ||
+      Object.keys(accepted).some(
+        (key) => accepted?.[key as keyof IExposureMeasurement] !== sample.measurement[key],
+      ) ||
+      Object.keys(accepted).length !== Object.keys(sample.measurement).length
+    )
+      throw new Error(
+        "TN_EXPOSURE_FRAME_BUDGET: Sample lacks its paired accepted exposure measurement.",
+      );
+    samples.push(sample);
+    accepted = undefined;
+  }
+  if (accepted !== undefined)
+    throw new Error("TN_EXPOSURE_FRAME_BUDGET: Unpaired terminal exposure measurement.");
+  return samples;
+}
+
+/** Pin the terminal readback, not just submissions, to the same 180-update controlled clock. */
+export function assertDeterministicExposureBudget(report: IExposureProofReport) {
+  const { cut, after } = cutEntries(report);
+  if (cut.clock !== "deterministic-per-render")
+    throw new Error("TN_EXPOSURE_FRAME_BUDGET: Incorrect cut clock provenance.");
+  if (
+    cut.updates !== 180 ||
+    Math.abs(cut.consumedSeconds - 3) > 1e-9 ||
+    ![cut.realConsumedSeconds, cut.nodeTime, cut.nodeFrameId].every(Number.isFinite)
+  )
+    throw new Error(
+      "TN_EXPOSURE_FRAME_BUDGET: Expected the 180-update warmup before terminal update 360.",
+    );
+  const samples = pairedExposureSamples(after);
+  if (samples.length !== 180)
+    throw new Error(
+      `TN_EXPOSURE_FRAME_BUDGET: Expected 180 completed GPU samples; observed ${samples.length}.`,
+    );
+  let previous = cut;
+  for (const [index, value] of samples.entries()) {
+    if (
+      value.clock !== cut.clock ||
+      value.updates !== cut.updates + index + 1 ||
+      !Number.isInteger(value.nodeFrameId) ||
+      value.nodeFrameId <= previous.nodeFrameId ||
+      !Number.isFinite(value.nodeTime) ||
+      value.nodeTime <= previous.nodeTime ||
+      !Number.isFinite(value.realConsumedSeconds) ||
+      value.realConsumedSeconds < previous.realConsumedSeconds ||
+      !Number.isFinite(value.consumedSeconds) ||
+      Math.abs(value.consumedSeconds - cut.consumedSeconds - (index + 1) / 60) > 1e-9
+    )
+      throw new Error(
+        "TN_EXPOSURE_FRAME_BUDGET: Mismatched GPU updates, readback or clock provenance.",
+      );
+    previous = value;
+  }
+  return {
+    renderedUpdates: 180,
+    adaptationSeconds: previous.consumedSeconds - cut.consumedSeconds,
+    realConsumedSeconds: previous.realConsumedSeconds - cut.realConsumedSeconds,
+    realElapsedSeconds: previous.nodeTime - cut.nodeTime,
+    clock: cut.clock,
+  };
+}
+
 /** Readback arrival is a conservative upper bound on the frame that produced the settled value. */
 export function exposureCutTiming(
   report: IExposureProofReport,
@@ -73,20 +234,17 @@ export function exposureCutTiming(
     if (!settledAtNewTarget(value, cut.targetStops, stops)) continue;
     if (elapsed.renderedUpdates > frameBudget)
       throw new Error(
-        `Exposure settled after ${elapsed.renderedUpdates} rendered updates; budget ${frameBudget}.`,
+        `TN_EXPOSURE_NOT_SETTLED: Exposure settled after ${elapsed.renderedUpdates} rendered updates; budget ${frameBudget}.`,
       );
     return elapsed;
   }
   throw new Error(
-    `Exposure did not settle within ${frameBudget} rendered updates; observed ${elapsed.renderedUpdates} updates and ${elapsed.consumedSeconds} seconds.`,
+    `TN_EXPOSURE_NOT_SETTLED: Exposure did not settle within ${frameBudget} rendered updates; observed ${elapsed.renderedUpdates} updates and ${elapsed.consumedSeconds} seconds.`,
   );
 }
 
 /** A downgraded lost software device can pass harness plumbing, but never pixel qualification. */
-export function assertExposureProof(
-  report: IExposureProofReport,
-  applied: boolean,
-): IExposureMeasurement {
+export function assertExposureRuntime(report: IExposureProofReport): void {
   if (report.diagnostics.some(({ code }) => code === "TN_PLAYTEST_SOFTWARE_DEVICE_LOST"))
     throw new Error(
       "Exposure proof rejected software device loss; these pixels are not render evidence.",
@@ -98,10 +256,31 @@ export function assertExposureProof(
     !Object.values(report.capture.adapter).some((value) => value.length > 0)
   )
     throw new Error("Exposure proof requires observed WebGPU adapter provenance.");
+}
+
+export function assertExposureClock(report: IExposureProofReport): void {
+  const marker = report.observations?.console
+    .filter(({ text }) => text.startsWith("TN_EXPOSURE_CLOCK:"))
+    .at(-1);
+  if (marker === undefined)
+    throw new Error("TN_EXPOSURE_CLOCK_MISSING: Bridge clock was not observed.");
+  const { mode } = JSON.parse(marker.text.slice("TN_EXPOSURE_CLOCK:".length));
+  if (mode !== "wall-clock")
+    throw new Error(`TN_EXPOSURE_WRONG_CLOCK: Expected wall-clock; observed ${String(mode)}.`);
+}
+
+export function assertExposureProof(
+  report: IExposureProofReport,
+  applied: boolean,
+  expectedLuminance?: number,
+  requireSettled = true,
+): IExposureMeasurement {
+  assertExposureRuntime(report);
   const last = report.observations?.console
     .filter(({ text }) => text.startsWith("TN_AUTO_EXPOSURE:"))
     .at(-1);
-  if (last === undefined) throw new Error("GPU exposure observation missing.");
+  if (last === undefined)
+    throw new Error("TN_EXPOSURE_MEASUREMENT_MISSING: GPU exposure observation missing.");
   const measurement = JSON.parse(last.text.slice("TN_AUTO_EXPOSURE:".length));
   if (
     measurement.measured !== true ||
@@ -111,10 +290,19 @@ export function assertExposureProof(
     ) ||
     measurement.luminance <= 0 ||
     (applied &&
-      (measurement.settled !== true ||
-        Math.abs(measurement.targetStops - measurement.exposureStops) > 0.25)) ||
+      (typeof measurement.settled !== "boolean" ||
+        measurement.settled !==
+          Math.abs(measurement.targetStops - measurement.exposureStops) <= 0.25 ||
+        (requireSettled && measurement.settled !== true))) ||
     (!applied && measurement.exposureStops !== 0)
   )
     throw new Error(`Exposure measurement failed: ${JSON.stringify(measurement)}`);
+  if (
+    expectedLuminance !== undefined &&
+    Math.abs(measurement.luminance / expectedLuminance - 1) > 0.02
+  )
+    throw new Error(
+      `TN_EXPOSURE_METER_RANGE: Luminance ${measurement.luminance} differs from this fixture's ${expectedLuminance} reference by more than 2%.`,
+    );
   return measurement;
 }
