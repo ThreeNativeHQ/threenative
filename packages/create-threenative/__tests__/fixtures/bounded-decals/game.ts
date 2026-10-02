@@ -47,6 +47,7 @@ export function createDecalFixture(hideDecals = false, atlasFade = false, hideDu
   class DecalRoom extends Scene {
     #source: Object3D | undefined;
     #dispose = () => {};
+    #observeRenderedFrame = () => {};
 
     override async load(ctx: ICtx): Promise<void> {
       const model = await ctx.assets.model<{ scene: Object3D }>("receiver.glb");
@@ -169,6 +170,22 @@ export function createDecalFixture(hideDecals = false, atlasFade = false, hideDu
         textures: -1,
         bytes: -1,
       };
+      let rendered: (ResidencySample & { drawCalls: number; ready: boolean }) | undefined;
+      // This fixture has no depth-coupled output: Scene.render runs after its world draw.
+      // Capture before Three's Animation callback can reset per-frame draw counters again.
+      this.#observeRenderedFrame = () => {
+        const info = (ctx.renderer.raw as WebGPURenderer).info;
+        if (info.render.calls === residencyObservation.renderCalls) return;
+        rendered = {
+          renderCalls: info.render.calls,
+          drawCalls: info.render.drawCalls,
+          geometries: info.memory.geometries,
+          textures: info.memory.textures,
+          bytes: info.memory.total,
+          ready:
+            lodHit && left.geometry.index?.count === 6 && info.render.drawCalls >= field.capacity,
+        };
+      };
       const base = baseGeometryOf(left);
       if (base.index?.count !== 384)
         throw new Error("Decal fixture LOD0 must contain 128 triangles.");
@@ -234,10 +251,14 @@ export function createDecalFixture(hideDecals = false, atlasFade = false, hideDu
         for (const material of materials) material.dispose();
       };
       return (frame: ICtx, dt: number) => {
-        maxDrawCalls = Math.max(
-          maxDrawCalls,
-          (ctx.renderer.raw as WebGPURenderer).info.render.drawCalls,
-        );
+        // Consume only on the next update. Native replays/submits the previous RAF stream
+        // before its next timer/mailbox/update iteration; fixed ticks alone cannot advance this.
+        if (rendered !== undefined) {
+          const { drawCalls, ready, ...sample } = rendered;
+          maxDrawCalls = Math.max(maxDrawCalls, drawCalls);
+          observeResidency(residencyObservation, sample, ready);
+          rendered = undefined;
+        }
         if (frame.input.justPressed("motion")) moving = !moving;
         if (frame.input.justPressed("fade")) {
           fading = true;
@@ -277,17 +298,6 @@ export function createDecalFixture(hideDecals = false, atlasFade = false, hideDu
           lodHit = true;
         }
         frames += 1;
-        const info = (ctx.renderer.raw as WebGPURenderer).info;
-        observeResidency(
-          residencyObservation,
-          {
-            renderCalls: info.render.calls,
-            geometries: info.memory.geometries,
-            textures: info.memory.textures,
-            bytes: info.memory.total,
-          },
-          lodHit && left.geometry.index?.count === 6 && info.render.drawCalls >= field.capacity,
-        );
         if (!residencySampled && residencyObservation.stableFrames >= 3) {
           residency.push({
             generation,
@@ -305,7 +315,12 @@ export function createDecalFixture(hideDecals = false, atlasFade = false, hideDu
       };
     }
 
+    override render(): void {
+      this.#observeRenderedFrame();
+    }
+
     override exit(): void {
+      this.#observeRenderedFrame = () => {};
       this.#dispose();
       this.#dispose = () => {};
     }
