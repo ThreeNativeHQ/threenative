@@ -44,6 +44,11 @@ export function createTemporalAA(
     };
     _historyRenderTarget: RenderTarget;
     _resolveRenderTarget: RenderTarget;
+    _originalProjectionMatrix: Matrix4;
+    _velocityNode: {
+      projectionMatrix: Matrix4 | null;
+      setProjectionMatrix(matrix: Matrix4 | null): void;
+    } | null;
     setViewOffset(width: number, height: number): void;
   };
   const setup = node.setup.bind(node);
@@ -60,7 +65,16 @@ export function createTemporalAA(
     properties.temporalColour = node.beautyNode;
     properties.temporalDepth = depth;
     properties.temporalVelocity = velocity;
-    return setup(builder);
+    const output = setup(builder);
+    // The declared input pass runs before TRAA.updateBefore on the first frame. VelocityNode
+    // permanently selects its projection source when that pass's material first compiles.
+    // Prime the same unjittered matrix TRAA owns so it never compiles the jittered-camera route.
+    camera.updateProjectionMatrix();
+    internals._originalProjectionMatrix.copy(camera.projectionMatrix);
+    if (internals._velocityNode === null)
+      throw new Error("Temporal AA requires a velocity accessor.");
+    internals._velocityNode.setProjectionMatrix(internals._originalProjectionMatrix);
+    return output;
   };
   const projection = new Matrix4().copy(camera.projectionMatrix);
   let pending: TemporalResetReason | null = "initial";
@@ -132,6 +146,9 @@ export function createTemporalAA(
     dispose: (): void => {
       if (disposed) return;
       disposed = true;
+      // A graph can be disposed after setup but before its first pipeline draw clears context.
+      if (internals._velocityNode?.projectionMatrix === internals._originalProjectionMatrix)
+        internals._velocityNode.setProjectionMatrix(null);
       node.dispose();
       // convertToTexture allocates an RTT only when the caller did not already supply a texture.
       if (internals.beautyNode !== colour && internals.beautyNode.isRTTNode) {

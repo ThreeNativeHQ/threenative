@@ -12,6 +12,11 @@ import {
 import { requireTemporalRenderEvidence } from "./temporal-aa-evidence.js";
 import { type ILinearFrame, linearFrame, measureSequence } from "./temporal-aa-quality.js";
 
+interface IVelocityProbe {
+  projectionError: number | null;
+  samples: Array<{ name: string; errorPixels: number }>;
+}
+
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const output = path.join(root, "artifacts/temporal-aa/motion");
 const scenario = JSON.parse(
@@ -22,7 +27,10 @@ const scenario = JSON.parse(
 );
 const frames: Record<string, ILinearFrame[]> = {};
 const provenance = [];
-const velocityDiagnostics: Record<string, unknown> = {};
+const velocityDiagnostics: Record<
+  string,
+  Array<{ label: string; velocity: IVelocityProbe | null }>
+> = {};
 let poses: unknown[] | undefined;
 for (const variant of [
   "supersampled",
@@ -129,7 +137,7 @@ for (const variant of [
   else poses = currentPoses;
   velocityDiagnostics[variant] = series.map(({ label, snapshots }) => ({
     label,
-    velocity: (snapshots.temporal as { velocityProbe: unknown }).velocityProbe,
+    velocity: (snapshots.temporal as { velocityProbe: IVelocityProbe | null }).velocityProbe,
   }));
   provenance.push({ variant, capture: report.capture, hashes });
 }
@@ -149,9 +157,19 @@ assert.ok(
   temporal.movingEdgeError !== null && zeroVelocity.movingEdgeError !== null,
   "Moving-object edges must be measurable",
 );
+const temporalVelocity = velocityDiagnostics.temporal;
+assert.ok(temporalVelocity && temporalVelocity.length === 16);
+for (const { velocity } of temporalVelocity) {
+  assert.ok(velocity && velocity.samples.length === 3, "Three actual MRT surface probes required");
+  assert.ok(velocity.samples.every((sample) => Number.isFinite(sample.errorPixels)));
+}
 // Pinned before the first runtime measurement. These are a narrow-fixture experimental bar,
 // not a claim of general image quality, native qualification or saved GPU time.
 const checks = {
+  velocityProjection: temporalVelocity.every(({ velocity }) => {
+    const rigid = velocity?.samples.find(({ name }) => name === "rigid");
+    return velocity?.projectionError === 0 && rigid !== undefined && rigid.errorPixels < 0.01;
+  }),
   edgeImprovement: temporal.edgeError < baseline.edgeError * 0.95,
   stabilityImprovement: temporal.residualInstability < baseline.residualInstability * 0.95,
   revealRecovery: temporal.reveal.slice(1).every((frame) => frame.staleFraction <= 0.01),
@@ -175,6 +193,7 @@ const summary = {
     maximumStaleFractionAfterOneFrame: 0.01,
     zeroVelocityMinimumRelativeDegradation: 0.02,
     movingEdgeRegion: "reference RGB saturation above 0.25 excluding the red reveal marker",
+    maximumRigidVelocityErrorPixels: 0.01,
   },
   negativeControl:
     "unchecked-history renders a 95% unchecked history blend; it bypasses both depth rejection and neighbourhood clipping and does not isolate their individual effects",

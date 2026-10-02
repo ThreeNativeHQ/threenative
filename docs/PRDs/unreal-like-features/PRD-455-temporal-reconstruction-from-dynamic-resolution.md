@@ -141,6 +141,17 @@ This tests NDC sign, grid scale and previous/current timing before changing blen
 The fixture-only readback is explicitly excluded from performance claims. Its TypeScript uses
 the existing `@types/three` 0.185.3 development cohort; the Three runtime pin remains 0.185.1.
 
+Probe run `36997077219`, source `dd541a46d871e5bf871d179d694d5ef7b54858db`, confirms two separate
+input defects. The rigid velocity error matches the exact current Halton jitter within 0.000290
+pixel across all 16 frames; the first input-pass material compiled while VelocityNode's explicit
+projection was still null. The helper now primes TRAA's own unjittered matrix during setup, before
+the dependency can compile that material, without applying camera jitter early. A real
+VelocityNode.setup regression fails before the fix and passes afterward; the maintained GPU
+oracle now requires rigid velocity error below 0.01 pixel. Hosted repair measurement is pending.
+Separately, instanced velocity has 9.34-pixel mean error, and a dynamic-buffer control reduces this
+to 1.00 pixel but leaves timing error. The shipped previous-instance attribute upload/ordering
+defect belongs to PRD-269/PR393 and is not patched here. All original quality thresholds remain.
+
 - [ ] A fixed camera route containing thin fences, foliage, sub-pixel edges, a moving character and an instanced moving object stays within pinned temporal-stability/ghosting thresholds against a full-resolution reference. **proof:** automated frame-sequence report records edge flicker, rejected-history ratio and image delta for full-res, low-res spatial upscale and temporal reconstruction; the temporal arm must beat the spatial arm on the named stability metric.
 - [ ] Newly revealed surfaces do not inherit stale colour after occlusion/disocclusion events. **proof:** foreground-occluder fixture reveals a contrasting background and asserts stale-history pixels decay within the declared frame bound; disabling disocclusion rejection makes it fail.
 
