@@ -11,7 +11,7 @@
 // comes back by fresnel instead, which is what a moving river surface mostly shows anyway.
 import { WaterSurface3D } from "@threenative/core";
 import type { Heightfield } from "@threenative/core/world";
-import { BufferAttribute, BufferGeometry, Mesh } from "three";
+import { BufferAttribute, BufferGeometry, CircleGeometry, Mesh } from "three";
 import {
   attribute,
   cameraPosition,
@@ -38,6 +38,15 @@ export interface IBakedRiver {
   readonly points: readonly (readonly number[])[];
   readonly width: number;
 }
+
+/**
+ * The layer water draws on, and the only one the lake's mirror leaves out.
+ *
+ * Water reads the frame's depth to know how deep it is, and inside the mirror pass that depth is the
+ * mirror's own single-sampled target: drawing a water surface into the mirror fails WebGPU validation
+ * and takes the frame down with it. Water in a lake's reflection is the lake itself anyway.
+ */
+export const WATER_LAYER = 1;
 
 /** The river's look. Every number is this game's. */
 const RIVER = {
@@ -215,7 +224,100 @@ export function createRivers(
   material.opacityNode = smoothstep(float(0), float(0.12), thickness);
 
   const mesh = new Mesh(geometry, material);
+  mesh.layers.set(WATER_LAYER);
   mesh.name = "river-surface";
+  mesh.receiveShadow = true;
+  return {
+    mesh,
+    advance(elapsed) {
+      time.value = elapsed;
+    },
+    dispose() {
+      surface.dispose();
+      geometry.dispose();
+      material.dispose();
+    },
+  };
+}
+
+/** One lake as the bake records it: where its flood fill was seeded, how far it may reach, its level. */
+export interface IBakedLake {
+  readonly id: string;
+  readonly at: readonly number[];
+  readonly radius: number;
+  readonly level: number;
+}
+
+/** The lake's look. Still water: the reflection is most of it. */
+const LAKE = {
+  /** Mirror pixels as a share of the frame's, and how often it is redrawn. */
+  mirror: { resolutionScale: 0.5, refreshInterval: 2 },
+  murk: 3.5,
+  ripple: 0.09,
+  bedTint: 0x8fa080,
+  deep: 0x1c3533,
+} as const;
+
+/**
+ * Draw every baked lake as a flat disc at its level, mirrored and seen through.
+ *
+ * Unlike the river a lake *is* level, so it gets a real planar reflection: the shore, the spruces and
+ * the sky upside down in it is what makes still water read as water at all. The disc is the bake's
+ * flood radius and the terrain hides the parts of it that are dry land, so the shoreline is the
+ * ground's own contour.
+ */
+export function createLakes(lakes: readonly IBakedLake[]): IRiverWater | undefined {
+  const lake = lakes[0];
+  if (lake === undefined) return undefined;
+  if (lakes.length > 1) throw new Error("The Temperate lake surface draws one lake; got more.");
+  const geometry = new CircleGeometry(lake.radius, 128);
+  geometry.rotateX(-Math.PI / 2);
+  const surface = new WaterSurface3D({
+    level: lake.level,
+    maxThickness: LAKE.murk * 2,
+    // Everything but water: the camera sees layer 0 and WATER_LAYER, the mirror only layer 0.
+    reflection: { ...LAKE.mirror, layers: 1 },
+  });
+  const time = uniform(0);
+  // Cat's-paws: two slow drifting noises, barely tilting the surface, so the mirror wavers instead of
+  // being a sheet of glass.
+  const ripple = (x: Node<"float">, z: Node<"float">): Node<"float"> =>
+    mx_noise_float(vec3(x.mul(0.22).add(time.mul(0.05)), z.mul(0.22), time.mul(0.08)))
+      .mul(0.6)
+      .add(
+        mx_noise_float(vec3(x.mul(1.1), z.mul(1.1).sub(time.mul(0.12)), time.mul(0.2))).mul(0.4),
+      ) as Node<"float">;
+  const step = 0.3;
+  const px = positionWorld.x;
+  const pz = positionWorld.z;
+  const h0 = ripple(px, pz);
+  const gx = ripple(px.add(step), pz).sub(h0).div(step);
+  const gz = ripple(px, pz.add(step)).sub(h0).div(step);
+  const normal = normalize(vec3(gx.mul(-LAKE.ripple), float(1), gz.mul(-LAKE.ripple)));
+  const offset = normal.xz.mul(0.04);
+  const thickness = surface.thicknessAt();
+  const bed = surface.refractionAt(offset).mul(color(LAKE.bedTint));
+  const water = mix(bed, color(LAKE.deep), smoothstep(float(0), float(LAKE.murk), thickness));
+  const view = normalize(cameraPosition.sub(positionWorld));
+  const facing = clamp(dot(normal, view), 0, 1);
+  const fresnel = float(0.02).add(pow(float(1).sub(facing), 5).mul(0.98));
+  const mirrored = surface.reflectionAt(offset);
+  const material = new MeshStandardNodeMaterial({
+    metalness: 0,
+    roughness: 0.05,
+    transparent: true,
+    depthWrite: false,
+  });
+  material.colorNode = color(0x000000);
+  // A little of the mirror shows even looking straight down: still water reflects a few per cent at
+  // normal incidence, and a lake with none reads as tinted glass.
+  material.emissiveNode = mix(water, mirrored, fresnel.mul(0.85).add(0.06));
+  material.normalNode = transformNormalToView(normal);
+  material.opacityNode = smoothstep(float(0), float(0.15), thickness);
+  const mesh = new Mesh(geometry, material);
+  mesh.layers.set(WATER_LAYER);
+  mesh.position.set(lake.at[0] ?? 0, lake.level, lake.at[1] ?? 0);
+  mesh.name = "lake-surface";
   mesh.receiveShadow = true;
   return {
     mesh,

@@ -18,7 +18,7 @@ import {
   createProps,
   flatPropMaterials,
 } from "./render/props.js";
-import { type IRiverWater, createRivers } from "./render/river.js";
+import { type IRiverWater, WATER_LAYER, createLakes, createRivers } from "./render/river.js";
 import { type IPlacementField, scatterProps } from "./render/scatter.js";
 import { type IOutdoorSky, createOutdoorSky } from "./render/sky.js";
 import { createTerrain } from "./render/terrain.js";
@@ -74,7 +74,8 @@ const BENCHMARK: Record<"coastal" | "forest", IBenchmark> = {
       overview: { at: [96, 168], eye: 92, look: [190, 40], lookUp: 8 },
       // On the east bank, standing height, looking upstream along the water as it comes round the
       // bend: the framing that says whether the river reads as moving water or as a blue strip.
-      river: { at: [83, 74], eye: 1.7, look: [72, -16], lookUp: -1 },
+      // On the stream's bank where it reaches the lake, looking west over the water to the far shore.
+      river: { at: [-20, -150], eye: 1.7, look: [-110, -175], lookUp: 0 },
     },
     views: ["player", "meadow-close", "overview", "river"],
   },
@@ -160,6 +161,7 @@ function terrainScene(world: "forest" | "coastal"): new () => Scene<TerrainState
     #sky: IOutdoorSky | undefined;
     #ocean: ReturnType<typeof createOcean> | undefined;
     #river: IRiverWater | undefined;
+    #lake: IRiverWater | undefined;
 
     override enter(ctx: TerrainCtx): void {
       ctx.add(ctx.camera);
@@ -285,12 +287,20 @@ function terrainScene(world: "forest" | "coastal"): new () => Scene<TerrainState
           },
         });
       }
-      // The water in the channels the bake carved. A world with no river gets nothing.
+      // The water in the channels the bake carved. A world with no river gets nothing. Water draws on
+      // its own layer so the lake's mirror can leave it out; the eye sees both.
+      ctx.camera.layers.enable(WATER_LAYER);
       const river = createRivers(data.rivers, field);
       this.#river = river;
       if (river) {
         ctx.add(river.mesh);
         ctx.entities.add("river", { mesh: river.mesh, dispose: () => river.dispose() });
+      }
+      const lake = createLakes(data.lakes);
+      this.#lake = lake;
+      if (lake) {
+        ctx.add(lake.mesh);
+        ctx.entities.add("lake", { mesh: lake.mesh, dispose: () => lake.dispose() });
       }
       // --- the meadow's props -------------------------------------------------------------------
       //
@@ -571,6 +581,7 @@ function terrainScene(world: "forest" | "coastal"): new () => Scene<TerrainState
       }
       this.#ocean?.advance(this.#elapsed);
       this.#river?.advance(this.#elapsed);
+      this.#lake?.advance(this.#elapsed);
       if (ctx.input.justPressed("light")) this.#sky?.setSunX(this.#sky.sunX < 0 ? 180 : -180);
       const player = this.#player;
       if (!player) return;

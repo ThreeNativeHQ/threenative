@@ -624,6 +624,9 @@ export async function createPropSurfaces(assets?: IAssetLoader): Promise<IPropSu
     // comes out exactly 0.14, and a crown whose texels all share one brightness is a flat paddle with
     // the needle detail scaled away.
     floor: 0.03,
+    // Half the shared glow: with the crown lit as a volume its sun side already faces the light, and
+    // the full translucency on top of that washed the near trees out to pale grey-green.
+    light: 0.05,
     tint: [0.5, 0.7, 0.6],
     tip: [1.08, 1.14, 1.04],
   });

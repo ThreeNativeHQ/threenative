@@ -243,7 +243,10 @@ function branch(
     // The branch's own curve, falling as it goes out. It used to leave the drop out of the position and
     // keep it only in the wind weight, which drew every branch dead level: a crown of horizontal tiers.
     const along = (at: number) =>
-      origin.clone().addScaledVector(outward, cardLength * at).setY(origin.y - drop(at));
+      origin
+        .clone()
+        .addScaledVector(outward, cardLength * at)
+        .setY(origin.y - drop(at));
     // Tapered, and pinched at the trunk: a branch is a wedge, not a rectangle.
     const halfWidth = (at: number) =>
       (width * share * (1 - at * 0.7) * Math.min(1, 0.18 + at * 1.9)) / 2;
@@ -311,8 +314,10 @@ function crownNormal(point: Vector3, whorlY: number, height: number, tilt: numbe
   const radial = new Vector3(point.x, 0, point.z);
   const reach = radial.length();
   if (reach > 1e-4) radial.divideScalar(reach);
-  // Up-tilt grows towards the leader, where the crown is a spire and its surface faces the sky.
-  const up = 0.45 + 0.5 * (whorlY / height) + tilt;
+  // Up-tilt grows towards the leader, where the crown is a spire and its surface faces the sky. Kept
+  // low: a crown tipped toward the sky is lit by the sky's pale blue fill, and at 0.45-0.95 the whole
+  // sun side of a near tree washed out to grey.
+  const up = 0.12 + 0.3 * (whorlY / height) + tilt * 0.5;
   return radial.add(new Vector3(0, up, 0)).normalize();
 }
 
