@@ -3,12 +3,14 @@ import {
   BoxGeometry,
   Color,
   DirectionalLight,
+  Float32BufferAttribute,
   Group,
   HemisphereLight,
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
   type PerspectiveCamera,
+  PlaneGeometry,
   PointLight,
   Vector3,
 } from "three";
@@ -61,6 +63,7 @@ export class FogProbe extends GameScene<FogState> {
   #black = new MeshBasicMaterial({ color: 0x000000 });
   #background = new Color(0x131e2a);
   #blackBackground = new Color(0x000000);
+  #calibration = new Mesh(new PlaneGeometry(1, 1), new MeshBasicMaterial({ vertexColors: true }));
   #sun = new DirectionalLight(0xffedce, 3);
   #point = new PointLight(0xffad60, 30, 8);
   #wall: Mesh | undefined;
@@ -77,6 +80,17 @@ export class FogProbe extends GameScene<FogState> {
   override enter(ctx: FogCtx): void {
     ctx.scene.background = this.#background;
     ctx.scene.fog = null;
+    // Same calibration card in every scattering-control arm, outside the measured room ROI.
+    // It satisfies the ordinary nonblank capture guard without altering any proof threshold.
+    this.#calibration.name = "fog-calibration";
+    this.#calibration.material.allowOverride = false;
+    this.#calibration.geometry.setAttribute(
+      "color",
+      new Float32BufferAttribute([0.3, 0.3, 0.3, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.9, 0.9, 0.9], 3),
+    );
+    this.#calibration.visible = false;
+    ctx.camera.add(this.#calibration);
+    ctx.add(ctx.camera);
     const box = (position: Vector3, scale: Vector3): Mesh => {
       const mesh = new Mesh(this.#geometry, this.#material);
       mesh.position.copy(position);
@@ -125,6 +139,7 @@ export class FogProbe extends GameScene<FogState> {
     this.#positionCamera(ctx);
     const scatteringOnly = this.#mode.startsWith("scatter") || this.#mode === "blackOff";
     ctx.scene.overrideMaterial = scatteringOnly ? this.#black : null;
+    this.#calibration.visible = scatteringOnly;
     ctx.scene.background = scatteringOnly ? this.#blackBackground : this.#background;
     this.#sun.intensity = this.#mode === "sunOff" || this.#mode === "scatterSunOff" ? 0 : 3;
     this.#point.intensity = this.#mode === "pointOff" || this.#mode === "scatterPointOff" ? 0 : 30;
@@ -156,6 +171,15 @@ export class FogProbe extends GameScene<FogState> {
     if (this.#mode === "inside") ctx.camera.position.set(0, 1.5, -1);
     else ctx.camera.position.set(6.5, 3, 11);
     ctx.camera.lookAt(0, 1.4, -5);
+    const camera = ctx.camera as PerspectiveCamera;
+    const halfHeight = Math.tan((camera.fov * Math.PI) / 360);
+    const halfWidth = halfHeight * camera.aspect;
+    this.#calibration.position.set(
+      ((570 / 640) * 2 - 1) * halfWidth,
+      (1 - (80 / 400) * 2) * halfHeight,
+      -1,
+    );
+    this.#calibration.scale.set((120 / 640) * 2 * halfWidth, (120 / 400) * 2 * halfHeight, 1);
   }
 
   #compose(ctx: FogCtx): void {
@@ -241,6 +265,9 @@ export class FogProbe extends GameScene<FogState> {
     this.#geometry.dispose();
     this.#material.dispose();
     this.#black.dispose();
+    this.#calibration.removeFromParent();
+    this.#calibration.geometry.dispose();
+    this.#calibration.material.dispose();
     this.#sun.dispose();
     this.#point.dispose();
   }

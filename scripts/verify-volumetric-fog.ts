@@ -79,11 +79,24 @@ export function fogCaptureScenario(mode: string, key: string): IPlaytestScenario
             y: 0,
             width: 640,
             height: 400,
-            ...(mode === "blackOff"
-              ? { minNonblankPixelRatio: 0, minDarkPixelRatio: 1, maxLuminance: 0 }
-              : { minNonblankPixelRatio: 0.05 }),
+            minNonblankPixelRatio: 0.05,
           },
         },
+        ...(mode === "blackOff"
+          ? [
+              {
+                region: {
+                  x: 0,
+                  y: 0,
+                  width: 500,
+                  height: 400,
+                  minNonblankPixelRatio: 0,
+                  minDarkPixelRatio: 1,
+                  maxLuminance: 0,
+                },
+              },
+            ]
+          : []),
       ],
     },
     artifacts: { screenshots: "after", console: true, runtimeTrace: true },
@@ -125,6 +138,8 @@ interface IPixelFrame {
 // Pinned before capture: room interior excludes the foreground plate (x < 238),
 // while the second patch lies wholly inside that plate. No single bright pixel can pass.
 const SCATTER_ROI = { x: 260, y: 155, width: 150, height: 90 };
+const FOG_EVALUATION_ROI = { x: 0, y: 0, width: 500, height: 400 };
+const CALIBRATION_ROI = { x: 515, y: 25, width: 110, height: 110 };
 const WALL_ROI = { x: 184, y: 216, width: 18, height: 18 };
 export function fogLightPixelMetrics(
   black: IPixelFrame,
@@ -164,7 +179,21 @@ export function fogLightPixelMetrics(
     const pixels = SCATTER_ROI.width * SCATTER_ROI.height;
     return { meanRgbDelta: total / (pixels * 3), changedPixelRatio: changed / pixels };
   };
-  const baselineMaxRgb = maxRgb(black, { x: 0, y: 0, width: 640, height: 400 });
+  const baselineMaxRgb = maxRgb(black, FOG_EVALUATION_ROI);
+  let calibrationMinimum = 255;
+  let calibrationMaxDifference = 0;
+  for (let y = CALIBRATION_ROI.y; y < CALIBRATION_ROI.y + CALIBRATION_ROI.height; y += 1)
+    for (let x = CALIBRATION_ROI.x; x < CALIBRATION_ROI.x + CALIBRATION_ROI.width; x += 1)
+      for (let c = 0; c < 3; c += 1) {
+        const i = (y * 640 + x) * 4 + c;
+        const reference = black.data[i] ?? Number.NaN;
+        calibrationMinimum = Math.min(calibrationMinimum, reference);
+        for (const image of images)
+          calibrationMaxDifference = Math.max(
+            calibrationMaxDifference,
+            Math.abs((image.data[i] ?? Number.NaN) - reference),
+          );
+      }
   const wallMaxRgb = Math.max(...images.map((image) => maxRgb(image, WALL_ROI)));
   const sun = delta(sunOff);
   const point = delta(pointOff);
@@ -173,11 +202,23 @@ export function fogLightPixelMetrics(
     wallMaxRgb,
     roi: SCATTER_ROI,
     wallRoi: WALL_ROI,
+    evaluationRoi: FOG_EVALUATION_ROI,
+    calibrationRoi: CALIBRATION_ROI,
+    calibrationMinimum,
+    calibrationMaxDifference,
     sun,
     point,
-    thresholds: { minMeanRgbDelta: 1, minChangedPixelRatio: 0.1, maxBlackRgb: 0 },
+    thresholds: {
+      minMeanRgbDelta: 1,
+      minChangedPixelRatio: 0.1,
+      maxBlackRgb: 0,
+      minCalibrationRgb: 32,
+      maxCalibrationDifference: 0,
+    },
     pass:
       baselineMaxRgb === 0 &&
+      calibrationMinimum >= 32 &&
+      calibrationMaxDifference === 0 &&
       wallMaxRgb === 0 &&
       [sun, point].every((metric) => metric.meanRgbDelta >= 1 && metric.changedPixelRatio >= 0.1),
   };

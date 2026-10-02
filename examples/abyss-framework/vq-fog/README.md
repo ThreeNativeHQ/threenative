@@ -11,7 +11,9 @@ This opt-in fixture uses the starter's generated `volumetricFog.ts` and `WorldEn
 - W: remove the foreground wall so current depth changes
 - C: dispose and rebuild the current graph
 - L / K / J: scattering-only black-surface control, then directional / point light off
-- N: black no-fog control (exact zero RGB expected)
+- N: black no-fog control (exact zero RGB in the 500×400 fog evaluation area)
+
+The four scattering controls share a visible gradient calibration card outside the measured fog area, with an identical-pixel check, so a working black control still satisfies the runner's normal nonblank guard.
 
 The medium replaces scene fog, aerial haze and god rays. The only local light admitted here is an unshadowed finite-range point source. No temporal history is retained. The source rejects orthographic, logarithmic and reversed-depth configurations rather than pretending they are qualified.
 

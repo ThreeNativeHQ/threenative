@@ -65,6 +65,12 @@ describe("fog qualification fixture", () => {
     const f = fixture();
     const meshes = f.scene.children.filter((object) => object instanceof Mesh);
     f.select("scatter");
+    const calibration = f.scene.getObjectByName("fog-calibration");
+    expect(calibration).toBeInstanceOf(Mesh);
+    expect((calibration as Mesh).material).toBeInstanceOf(MeshBasicMaterial);
+    expect(((calibration as Mesh).material as MeshBasicMaterial).allowOverride).toBe(false);
+    expect(calibration?.castShadow).toBe(false);
+    expect(calibration?.visible).toBe(true);
     expect(f.scene.overrideMaterial).toBeInstanceOf(MeshBasicMaterial);
     expect((f.scene.overrideMaterial as MeshBasicMaterial).color.getHex()).toBe(0);
     expect((f.scene.background as Color).getHex()).toBe(0);

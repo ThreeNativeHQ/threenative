@@ -49,7 +49,7 @@ describe("volumetric fog runtime evidence", () => {
         const file = path.join(root, `${mode}.playtest.json`);
         await writeFile(file, JSON.stringify(authored));
         const scenario = await loadPlaytestScenario(root, file);
-        expect(scenario.assert?.visual).toHaveLength(1);
+        expect(scenario.assert?.visual).toHaveLength(mode === "blackOff" ? 2 : 1);
         expect(scenario.artifacts?.screenshots).toBe("after");
       }
     } finally {
@@ -71,7 +71,7 @@ it("uses an inline favicon instead of the confirmed missing /favicon.ico", async
 });
 
 it("requires a black no-fog control without weakening the positive-arm visual guard", () => {
-  expect(fogCaptureScenario("blackOff", "KeyN").assert?.visual?.[0]?.region).toMatchObject({
+  expect(fogCaptureScenario("blackOff", "KeyN").assert?.visual?.[1]?.region).toMatchObject({
     maxLuminance: 0,
     minDarkPixelRatio: 1,
   });
@@ -87,6 +87,10 @@ it("qualifies both lights in a fixed scattering ROI and rejects stray-pixel evid
   const both = frame();
   const sunOff = frame();
   const pointOff = frame();
+  for (const image of [black, both, sunOff, pointOff])
+    for (let y = 25; y < 135; y += 1)
+      for (let x = 515; x < 625; x += 1)
+        for (let c = 0; c < 3; c += 1) image.data[(y * 640 + x) * 4 + c] = 128;
   for (let y = 155; y < 245; y += 1)
     for (let x = 260; x < 410; x += 1) {
       const i = (y * 640 + x) * 4;
@@ -98,15 +102,18 @@ it("qualifies both lights in a fixed scattering ROI and rejects stray-pixel evid
     }
   expect(fogLightPixelMetrics(black, both, sunOff, pointOff).pass).toBe(true);
   expect(fogLightPixelMetrics(black, both, both, pointOff).pass).toBe(false);
-  const stray = frame();
+  const stray = { ...black, data: Buffer.from(black.data) };
   stray.data[(180 * 640 + 300) * 4] = 255;
   expect(fogLightPixelMetrics(black, stray, black, black).pass).toBe(false);
-  const outside = frame();
+  const outside = { ...black, data: Buffer.from(black.data) };
   outside.data[(10 * 640 + 10) * 4] = 255;
   expect(fogLightPixelMetrics(black, outside, black, black).pass).toBe(false);
   both.data[(224 * 640 + 193) * 4] = 1;
   expect(fogLightPixelMetrics(black, both, sunOff, pointOff).pass).toBe(false);
   both.data[(224 * 640 + 193) * 4] = 0;
+  both.data[(30 * 640 + 520) * 4] = 127;
+  expect(fogLightPixelMetrics(black, both, sunOff, pointOff).pass).toBe(false);
+  both.data[(30 * 640 + 520) * 4] = 128;
   black.data[0] = 1;
   expect(fogLightPixelMetrics(black, both, sunOff, pointOff).pass).toBe(false);
   expect(() => fogLightPixelMetrics({ ...black, width: 1 }, both, sunOff, pointOff)).toThrow(/640/);
