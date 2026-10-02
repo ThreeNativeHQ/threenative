@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { pathToFileURL } from "node:url";
 import { mkdir, writeFile } from "node:fs/promises";
+import { pathToFileURL } from "node:url";
 import { Mask, Terrain, bakeMesh } from "@threenative/terrain";
 import { terrainPalette } from "../src/render/palette.js";
 
@@ -11,7 +11,15 @@ export const forest = new Terrain({ size: 512, resolution: 257, seed: 73 })
   // Billow folds give the rounded shoulders and troughs of a worn landscape; the hydraulic pass then
   // finds the troughs and turns them into drainage, which is what makes the land read as eroded
   // rather than as smooth noise with a peak on it.
-  .noise({ id: "valleys", base: 0, amplitude: 14, scale: 110, warp: 25, octaves: 3, mode: "billow" })
+  .noise({
+    id: "valleys",
+    base: 0,
+    amplitude: 14,
+    scale: 110,
+    warp: 25,
+    octaves: 3,
+    mode: "billow",
+  })
   .stamp({
     id: "eroded-hill",
     at: [-40, -60],
@@ -102,7 +110,15 @@ export const coastal = new Terrain({ size: 512, resolution: 257, seed: 73 })
     island: true,
     coastDepth: 23,
   })
-  .noise({ id: "valleys", base: 0, amplitude: 13, scale: 105, warp: 22, octaves: 3, mode: "billow" })
+  .noise({
+    id: "valleys",
+    base: 0,
+    amplitude: 13,
+    scale: 105,
+    warp: 22,
+    octaves: 3,
+    mode: "billow",
+  })
   .stamp({
     id: "massif",
     at: [-23, -12],
@@ -130,7 +146,15 @@ export const coastal = new Terrain({ size: 512, resolution: 257, seed: 73 })
 // snow that holds on the flatter high ground while the steep faces stay bare rock.
 export const alpine = new Terrain({ size: 512, resolution: 257, seed: 41 })
   .noise({ id: "foothills", base: 12, amplitude: 26, scale: 160, warp: 40, octaves: 6 })
-  .noise({ id: "valleys", base: 0, amplitude: 18, scale: 100, warp: 30, octaves: 3, mode: "billow" })
+  .noise({
+    id: "valleys",
+    base: 0,
+    amplitude: 18,
+    scale: 100,
+    warp: 30,
+    octaves: 3,
+    mode: "billow",
+  })
   .stamp({
     id: "summit",
     at: [30, -40],
@@ -286,7 +310,9 @@ const drawn = new Set(["forest", "coastal"]);
 const outputDir = new URL("../src/world/", import.meta.url);
 const { readFile, stat } = await import("node:fs/promises");
 const fingerprint = createHash("sha256")
-  .update(JSON.stringify(Object.fromEntries(Object.entries(recipes).map(([n, t]) => [n, t.toJSON()]))))
+  .update(
+    JSON.stringify(Object.fromEntries(Object.entries(recipes).map(([n, t]) => [n, t.toJSON()]))),
+  )
   .update(JSON.stringify(terrainPalette))
   .update(await readFile(new URL("../../../packages/terrain/dist/index.js", import.meta.url)))
   .digest("hex");

@@ -3,13 +3,21 @@ import type { ITerrainState } from "@threenative/terrain";
 import { describe, expect, it } from "vitest";
 
 const NEIGHBOURS: readonly [number, number][] = [
-  [-1, -1], [0, -1], [1, -1],
-  [-1, 0], [1, 0],
-  [-1, 1], [0, 1], [1, 1],
+  [-1, -1],
+  [0, -1],
+  [1, -1],
+  [-1, 0],
+  [1, 0],
+  [-1, 1],
+  [0, 1],
+  [1, 1],
 ];
 
 /** A sloped, noisy hill — the landform whose default weathering is under-dosed today. */
-const hill = (resolution: number, erosion?: { droplets: number; maxSteps: number; erosion?: number }): Terrain => {
+const hill = (
+  resolution: number,
+  erosion?: { droplets: number; maxSteps: number; erosion?: number },
+): Terrain => {
   const recipe = new Terrain({ size: 512, resolution, seed: 73 })
     .noise({ id: "hills", base: 30, amplitude: 34, scale: 190, warp: 35, octaves: 5 })
     .stamp({
@@ -78,7 +86,8 @@ function spikeCount(state: ITerrainState): number {
         if (v > max) max = v;
         sum += v;
       }
-      if ((state.height[i] as number) > max && (state.height[i] as number) - sum / 8 > 1) count += 1;
+      if ((state.height[i] as number) > max && (state.height[i] as number) - sum / 8 > 1)
+        count += 1;
     }
   return count;
 }
