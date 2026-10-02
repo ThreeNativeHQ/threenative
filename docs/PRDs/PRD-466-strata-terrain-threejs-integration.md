@@ -589,7 +589,23 @@ shorter grass. Meadow eyes now have 16 m clearings. Rock distance culling lowere
 submitted totals to 34,482,893 meadow / 14,064,346 overview triangles across all passes, at
 **2.3 ms / 2.1 ms** respectively; **54 batches**, only the known shadow diagnostic failed.
 Example typecheck, lint and the compact scatter/edit check pass at this checkpoint.
-Final repeated performance and licensed-folder-absent proof are still pending.
+The third checkpoint adds 28 cm near-cover sampling (139,460 grass; 41,785 ground clumps;
+6,320 ferns; 4,144 saplings; 1,317 flowers; 795 boulders; 54 river rocks; 55 scree; 3 cliffs,
+plus 3,200 spruces). Ground foliage has its own relief/tint and lower emission. A culled prop
+moved into view now invalidates distance assignments even with a stationary camera; its
+runnable check reproduces the failure and passes after the fix. Batch bounds refresh with
+compaction so an edited subset cannot leave later camera movement using stale bounds.
+Two WebGPU repeats (`artifacts/playtest/cover-final-a/`, `cover-final-b2/`) recorded
+**2.2/2.2 ms and 2.2/2.1 ms** meadow/overview, **54 batches**, **54,157,614 / 14,204,708**
+submitted triangles. Only the known destroyed `ShadowDepthTexture` diagnostic fails;
+zero network/runtime diagnostic errors. The later bounds refresh still needs a final capture.
+With the entire `local-assets` folder moved away, `artifacts/playtest/fallback/` renders the
+procedural forest, cover and flowers and passes every behavioural assertion: **40 batches**,
+**1.6/1.6 ms**, only the same shadow diagnostic. The folder is restored. The cooked subset is
+**111,163,436 bytes**, below 120 MB; no licensed asset is tracked.
+Visual review: substantially denser, with photographed rocks and lit canopies, but the foreground
+still has pale/wiry stalks and hard shading compared with Gaia. Further basal grass fill is being
+measured; the reference-quality claim remains unfulfilled.
 **AC-5 remains open**; this is a Temperate increment and no Unreal-level verdict is claimed.
 
 #### Terrain relief pass (2026-10-02), Evidence: measured, plus four engine bugs

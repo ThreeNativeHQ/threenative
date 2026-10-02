@@ -69,6 +69,13 @@ for (const draw of props.meshes) {
     assert.ok(props.byId.get(id)?.parts.some((part) => part.mesh === draw && part.index === index));
   }
 }
+const hidden = props.byId.get("rock:2");
+assert.ok(hidden);
+assert.equal(hidden.parts.length, 0);
+const revealed = { ...readPropTransform(hidden), position: [15, 0, 0] as [number, number, number] };
+writePropTransform(hidden, preparePropTransform(hidden, revealed, ground));
+props.setLevels(new Vector3(0.3, 0, 0));
+assert.ok(hidden.parts.length > 0, "A moved culled prop must reappear without camera movement");
 props.dispose();
 materials.dispose();
 for (const list of parts.values()) for (const part of list) part.geometry.dispose();

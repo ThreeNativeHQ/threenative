@@ -240,8 +240,8 @@ export function scatterProps(
       cover(x + (random() - 0.5) * 1.5, z + (random() - 0.5) * 1.5, 0.7);
   const eyes = [focus, ...clearings.map(([x, z]) => ({ x, z }))];
   for (const eye of eyes) {
-    for (let dz = -40; dz < 40; dz += 0.42)
-      for (let dx = -40; dx < 40; dx += 0.42) {
+    for (let dz = -40; dz < 40; dz += 0.28)
+      for (let dx = -40; dx < 40; dx += 0.28) {
         const distance = Math.hypot(dx, dz);
         if (distance > 40) continue;
         const density = Math.max(0.08, 1 - Math.max(0, distance - SCATTER.grassFull) / 22);

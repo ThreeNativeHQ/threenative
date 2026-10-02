@@ -77,9 +77,10 @@ const gust = sin(time.mul(0.1).add(phase));
 function surface(source: MeshStandardMaterial, asset: string): MeshStandardNodeMaterial {
   const stone = STONE.has(asset);
   const cutout = !stone && source.alphaTest > 0;
+  const canopy = asset === "spruce" || asset === "sapling";
   const material = new MeshStandardNodeMaterial({
     map: source.map,
-    normalMap: stone || asset === "poppy" ? source.normalMap : null,
+    normalMap: canopy ? null : source.normalMap,
     roughness: stone ? 0.88 : 0.92,
     metalness: 0,
   });
@@ -89,10 +90,10 @@ function surface(source: MeshStandardMaterial, asset: string): MeshStandardNodeM
     // These atlases were authored for Unreal exposure. A small lift and leaf transmission retain
     // shaded needle detail under this game's AgX curve without washing bark or flowers white.
     const tint =
-      cutout && (asset === "spruce" || asset === "sapling")
+      cutout && canopy
         ? ([0.45, 1.25, 0.6] as const)
         : cutout && asset !== "poppy"
-          ? ([0.95, 1.1, 0.85] as const)
+          ? ([0.55, 0.82, 0.42] as const)
           : asset === "poppy"
             ? ([0.7, 0.7, 0.7] as const)
             : ([1, 1, 1] as const);
@@ -101,10 +102,17 @@ function surface(source: MeshStandardMaterial, asset: string): MeshStandardNodeM
       material.side = DoubleSide;
       material.shadowSide = DoubleSide;
       // Needle cards shade as a soft canopy volume, independent of their planar face normals.
-      if (asset !== "poppy")
+      if (canopy) {
         material.normalNode = vec3(positionGeometry.x.mul(0.12), 1, positionGeometry.z.mul(0.12))
           .normalize()
           .transformDirection(cameraViewMatrix);
+      } else if (asset !== "poppy" && source.normalMap) {
+        // Ground foliage keeps photographed relief around its bent, upward leaf normal.
+        const relief = texture(source.normalMap, uv()).xy.mul(2).sub(1).mul(0.45);
+        material.normalNode = vec3(relief.x, 1, relief.y)
+          .normalize()
+          .transformDirection(cameraViewMatrix);
+      }
       const image = source.map.image as { width?: number; height?: number };
       const size = vec2(image?.width ?? 2048, image?.height ?? 2048);
       const mip = max(
@@ -113,7 +121,7 @@ function surface(source: MeshStandardMaterial, asset: string): MeshStandardNodeM
       );
       material.alphaTestNode = float(0.42).div(float(1).add(mip.mul(0.25)));
       material.opacityNode = sampled.a;
-      if (asset !== "poppy") material.emissiveNode = sampled.rgb.mul(0.14);
+      if (asset !== "poppy") material.emissiveNode = sampled.rgb.mul(canopy ? 0.14 : 0.035);
     }
   }
   if (!stone) {

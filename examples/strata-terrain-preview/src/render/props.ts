@@ -341,11 +341,14 @@ export function preparePropTransform(
     throw new Error(`Prop '${instance.placement.id}' has a multi-material draw`);
   return preparePose(instance.geometry, material, instance.placement, transform, groundAt);
 }
+let poseVersion = 0;
+
 export function writePropTransform(
   instance: IPropInstance,
   prepared: ReturnType<typeof preparePropTransform>,
 ): void {
   instance.pose.copy(prepared.matrix);
+  poseVersion++;
   // A spruce is a trunk draw and a crown draw, so a transform write has to reach both or the tree
   // comes apart when the editor drags it.
   for (const part of instance.parts) {
@@ -625,13 +628,16 @@ export function createProps(
      * copies for a forest, against a sort that would move a tree's editor index every frame.
      */
     const seenFrom = new Vector3(Number.NaN, 0, 0);
+    let seenPoseVersion = poseVersion;
     const setLevels = (camera: Vector3): void => {
       // Only when the eye has actually moved. A benchmark framing holds the camera still for
       // hundreds of frames and the assignment cannot change, and every refill re-uploads each
       // level's whole instance buffer — which is a cost the frame pays whether the answer moved
       // or not.
-      if (seenFrom.distanceToSquared(camera) < 0.25 ** 2) return;
+      const edited = seenPoseVersion !== poseVersion;
+      if (!edited && seenFrom.distanceToSquared(camera) < 0.25 ** 2) return;
       seenFrom.copy(camera);
+      seenPoseVersion = poseVersion;
       for (const group of banded) {
         const levels = levelCount.get(group) ?? 0;
         const counts = new Array<number>(levels).fill(0);
@@ -661,6 +667,7 @@ export function createProps(
           for (const mesh of list) {
             mesh.count = counts[level] ?? 0;
             mesh.instanceMatrix.needsUpdate = true;
+            mesh.computeBoundingSphere();
           }
         }
       }
