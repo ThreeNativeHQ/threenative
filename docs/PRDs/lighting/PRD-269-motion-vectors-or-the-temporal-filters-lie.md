@@ -94,18 +94,19 @@ build no mirror and perform no eligibility scan; temporal-off must retain no his
 
 ### Phase 3 — close original image-space acceptance
 
-- [ ] Add a playtest fixture for an authored moving BatchedMesh with projection disabled. proof: `pnpm exec tsx scripts/verify-velocity-history.ts` runs the actual WebGPU fixture and missing-history control
+- [x] Add a playtest fixture for an authored moving BatchedMesh with projection disabled. proof: hosted run `36992451504` passed at `095eca85`; `pnpm exec tsx scripts/verify-velocity-history.ts` runs the actual WebGPU fixture and missing-history control
 - [ ] Add the original animated-character ghosting playtest with a measured rejection-fraction assertion. proof: scenario drives the active temporal stage and fails if the velocity source is removed
 
-The two Phase 3 fixtures remain implementation work; existing CPU software rasterization is not
-GPU image-space or native proof. The original acceptance and mutation descriptions are preserved
+The authored BatchedMesh fixture has actual browser GPU readback and screenshot proof. The
+animated-character ghosting fixture remains implementation work; CPU software rasterization is not
+a substitute for that image-space or native proof. The original acceptance and mutation descriptions are preserved
 below and remain unqualified wherever no real lane has run.
 
 ## Blocked on
 
 Actual relevant runtime screenshots must be attached to the PR before merge (owner requirement,
-2026-10-02). They remain unverified; software-rasterizer output and test-log screenshots do not
-satisfy this gate.
+2026-10-02). The authored-batch browser pair below now satisfies the relevant screenshot-progress
+requirement; full skinned/instanced, ghosting, frame-cost and native acceptance remain open.
 
 Browser/native GPU execution requires a working WebGPU device or supported native host. This
 cloud environment has no `/dev/dri`, Android device tooling or `/dev/kvm`; the batch's attempted
@@ -208,3 +209,11 @@ PRD-270. `pnpm tsx scripts/count-loc.ts` runs against this one specifically — 
 game could write portably in fewer lines than the framework's version is the kill switch, and the
 defence is the per-instance and per-bone bookkeeping, counted across every call site rather than
 one.
+
+
+2026-10-02 actual authored-batch GPU proof at `095eca855ea9f27260a761a72cba0d4d423087ec`:
+
+- [Hosted run 36992451504](https://github.com/ThreeNativeHQ/threenative/actions/runs/36992451504) passed. Artifact `11219953627` SHA-256 `32d6cd4e60b6e244c397178b656126f073c47e1691870932ff80996ed7949083` verified after download. [Runtime provenance](../../verification/prd269/runtime-36992451504.json) records exact source, adapter, metrics and diagnostics.
+- Actual 960 × 540 Google SwiftShader WebGPU screenshots: [tracked history](../../verification/prd269/tracked-36992451504.png), [missing-history control](../../verification/prd269/without-history-36992451504.png). Both were independently visually inspected: matching lit spheres occupy the beauty half; only tracked moving sub-draws produce the red velocity silhouette. Images are unchanged runtime PNG bytes.
+- Four actual RAF-separated rendered frames per arm. Both start with zero velocity; tracked final moving footprint has 25,676 nonzero pixels and maximum 0.0999755859375, static footprint maximum 0. The missing-history control remains zero and fails exactly `resource.motion.movingPixels`; positive diagnostics are empty, with no device-loss warning in either arm. The control disables actual history production rather than rewriting observations.
+- This closes only the bounded authored-BatchedMesh fixture item. InstancedMesh/skinned GPU cases, active temporal ghosting/rejection measurements, frame-cost/native proof and full acceptance remain open. Software-adapter correctness is not hardware performance proof; PR remains draft.
