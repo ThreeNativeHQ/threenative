@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-455 — Fewer rendered pixels reconstruct into a stable full-resolution frame
 
-**Status:** IN PROGRESS — full-resolution temporal-AA milestone first (owner, 2026-10-02).  
+**Status:** IN PROGRESS — full-resolution opt-in runtime milestone verified on browser software WebGPU; reconstruction remains open (2026-10-02).  
 **Priority:** highest-value rendering project after the streaming quick wins.  
 **Complexity:** 8 → HIGH. The renderer already has the difficult prerequisites; the remaining risk is history correctness and proving reconstruction wins more GPU time than it costs.  
 **Depends on:** the landed motion-history implementation from PRD-269 (`packages/core/src/render/velocity.ts`, commit `3630847a`), the existing `RenderChain`, and [PRD-384 adaptive resolution](../PRD-384-adaptive-resolution-gpu-headroom.md).
@@ -73,7 +73,7 @@ experimental path or mark the draft ready before the outstanding acceptance evid
 
 ### Phase 1 — Define history correctness before chasing image quality
 
-- [ ] Full-resolution temporal AA is opt-in generated source, uses the existing velocity source and resets history on discontinuity. **proof:** focused TRAANode/RenderChain tests and the deterministic runtime temporal fixture with actual screenshots; native qualification remains separately reported.
+- [x] Full-resolution temporal AA is opt-in generated source, uses the existing velocity source and resets history on discontinuity. **proof:** hosted run `36990452407` at `9b6a3c6164602cfc710f04e0ea8f078832e3cd23` passes all five real runtime variants; 24 actual AA resolves, cut/projection/resize resets at frame 21, valid history by frame 24; exact source tests and actual screenshots below. Browser SwiftShader correctness only; native and visual-quality/performance superiority remain unqualified.
 
   Partial, 2026-10-02: the installed TRAANode setup/jitter regression reproduced
   `setProjectionMatrix is not a function` because RenderChain supplied a sampled texture where
@@ -146,6 +146,23 @@ colour and is correctly rejected, while the clean reference has 1,641 colours an
 thresholds. Pending hosted execution must establish the repaired temporal arm before acceptance.
 
 ## Runtime screenshot progress
+
+[Verified full-resolution runtime provenance](../../verification/prd455/fullres-runtime.json):
+source `9b6a3c6164602cfc710f04e0ea8f078832e3cd23`, run `36990452407`, SwiftShader/google.
+All five final PNGs were inspected; all report diagnostics are empty. The reference and temporal
+arms share frame 24 and matching poses; temporal resolves also count exactly 24.
+
+- [No-AA reference](../../verification/prd455/fullres-reference.png)
+- [Opt-in temporal AA](../../verification/prd455/fullres-temporal.png)
+- [Camera-cut recovery](../../verification/prd455/fullres-cut.png)
+- [Projection-change recovery](../../verification/prd455/fullres-projection.png)
+- [Raster-resize recovery](../../verification/prd455/fullres-resize.png): 960×540 input **and output**,
+  presented on the 1280×720 canvas; this is the baseline resize path, not reconstruction.
+
+This verifies runtime operation/reset recovery in the narrow fixture. Edge-flicker/ghosting
+thresholds, same-frame reset image comparisons, native execution and hardware frame-time wins
+remain open. The PR stays draft and no shipped quality tier enables this helper.
+
 
 - [Diagnostic no-AA reference](../../verification/prd455/diagnostic-reference.png), hosted run
   `36986673556`, source `bbbf93ca8c10a30b168fdb984d31a7567ebeccaf`. Actual canvas PNG inspected;
