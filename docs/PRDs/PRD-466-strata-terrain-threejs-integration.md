@@ -2116,3 +2116,89 @@ Local checkpoints: **aaa0c4b62**, **a9c844015**, **83f612795**, followed by the
 final notes commit. The checkout remains at `.worktrees/prd-466-468-assets/`
 (**6.4 GiB**): it is unmerged and holds requested local licensed assets/captures,
 so it cannot be removed under the cleanup rules.
+### Round 17 — playable erosion and transport surfaces (2026-10-02)
+
+**Delivered mechanics; performance repeatability remains open.** The last licensed
+run passes **54/54** with the installed browser CPU profiler enabled, all 17 view
+p50s ≤**3.9 ms**. Standard fallback passes **54/54**, all p50s ≤**2.5 ms**. The
+preceding unprofiled licensed run fails player/river/max-view CPU assertions,
+reaching **5.2 ms**; it passes every behaviour and render-chain assertion. This
+is not an unconditional ≤4 ms release claim. AC-5 remains open; no fresh independent
+judge or native game run is claimed. No push or merge.
+
+Complexity: 3 → LOW; risk override: none. The headless **engine** owns transport
+observations and the shared hydraulic correction; the **example** owns appearance,
+recipes, masks and placement. Canopy-owned files and tree/cover loops, and
+sun/sky/haze/grade values, are untouched.
+
+1. Hydraulic pickup previously removed material already below the downstream bed;
+   live droplets also dumped suspended load when their step budget expired. The
+   original seeded 80 m mesa control reaches **−39.29 m**; bounded actual pickup
+   keeps it at **0.10–31.27 m**, with 34° settling prominence **1.68 m**. Wet cutoff
+   retains suspended outflow rather than pretending water dried. The regression
+   hash intentionally pins the new algorithm; noise is unchanged.
+2. All five playable recipes now use dense hydraulic rainfall and thermal settling.
+   Alpine upper bedrock keeps the 55° pass; 35° scree is confined below 65 m and a
+   connected shelf precedes weathering. Desert rainfall follows caprock construction,
+   with 34° apron settling and a final rill pass. Extreme pre-repair bakes (alpine
+   264 m/desert 1,189 m) were rejected, not shipped.
+3. Canonical-grid flow, carried sediment, deposition and talus are retained, with
+   mask/opacity scaling and prefix-cache isolation, then baked at 0.001 precision.
+   One existing RGBA mask sampler supplies slope/flow scour, deposited gravel and
+   sheltered moss. Rocks/scree share the surface deposit helper. Shared alpine snow
+   and tundra snow use crisp height/slope/exposure retention. Render/collision heights
+   remain one canonical buffer; the continuation-ring mechanism is unchanged.
+4. The existing cache now includes the bake script hash alongside recipes, palette
+   and terrain build. The GUI producer refreshed its erosion-sensitive saved fixture
+   through real controls and proved live/GLB equality; consumer tolerances are unchanged.
+
+**Final bake:** cold **48.35 s** including continuation; warm `pnpm bake` **1.504 s**,
+all output modification times unchanged. Continuation: **10.35 s / 1,695,575 bytes**.
+Total world/ring JSON on disk: **34,659,688 bytes** (forest/coast share one file).
+Grades below are self-grades against native-pixel crops and the supplied Gaia refs,
+not a new V11 judge. Broad layered alpine cliffs still fall short of Gaia; vegetation
+remains the canopy lane's work.
+
+| World | Bake s | World JSON bytes | Self-grade /10 | Licensed CPU p50 ms | Fallback CPU p50 ms |
+| --- | ---: | ---: | ---: | --- | --- |
+| Forest | 6.63 | 6,585,597 | 4.5 | 3.9 / 2.3 / 2.6 / 3.5 | 2.5 / 1.7 / 2.1 / 2.5 |
+| Coastal | 6.62 | 6,613,383 | 4.0 | 3.7 / 2.6 / 3.1 / 2.3 | 1.6 / 1.8 / 1.8 / 1.6 |
+| Alpine | 8.62 | 6,731,560 | 3.5 | 2.0 / 2.1 / 2.3 | 1.5 / 1.5 / 1.6 |
+| Desert | 9.77 | 6,485,543 | 4.5 | 1.3 / 1.3 / 1.3 | 1.1 / 1.1 / 1.1 |
+| Tundra | 5.85 | 6,548,008 | 3.5 | 2.4 / 2.1 / 2.1 | 2.1 / 2.4 / 2.0 |
+
+CPU order: player/feature/overview; forest player/meadow/overview/river;
+coast player/meadow/overview/horizon. Licensed values are from the profiled full
+scenario. The preceding unprofiled values are forest **4.7/2.6/3.3/5.0**, coast
+**2.3/3.4/2.1/2.3**, alpine **2.3/2.2/2.2**, desert **1.9/1.6/1.3**, tundra
+**5.2/3.3/2.1**. A three-physical-core affinity experiment did not resolve the
+budget and caused auto-tier AO removal (`tier:low`); no render policy was weakened.
+The shared host reached load 26–29 on 24 logical CPUs. Contention is observed,
+but the exact cause of the variation is not isolated. Profile is retained for review.
+
+**Verification:** example tsc and root example Biome pass; terrain Vitest **71/71**,
+terrain build/publint/typecheck, temperate placement/contact checks and current-source
+`test:consumer` pass. The packed install reproduces all five canonical height hashes
+and terrain/water GLBs; the edited-world handoff passes on NVIDIA Turing WebGPU.
+Both final scenarios use showcase mode on **5297**, NVIDIA Turing, **1920×1080**;
+water/lake placement, contacts, flow bindings, all 17 view windows and render stages
+pass. Both `verify-ocean` runs pass. All **22** captures per arm meet the normalized
+0.5 luminance-quantile bound against the pre-change licensed baseline; maximum
+licensed **0.333244**, fallback **0.253218**. No baseline fallback quality claim is made.
+Docs and the **180/180** selected doc checks pass. Root lint passes with existing
+warnings; root typecheck fails on existing glb.mjs/png.mjs fixture declarations,
+and root test fails on missing native binaries (21 checks) plus temporary-directory
+accounting. These are not passing gates.
+
+Captures: `examples/strata-terrain-preview/artifacts/playtest/erosion-final/`,
+**22 licensed + 22 fallback**, with unscaled before/after crops. Installed profiler
+output: `erosion-final/runtime.cpuprofile`; preceding unprofiled captures remain
+in `erosion-standard-failed/`. Procedural fallback is reproduced with the local
+`artifacts/erosion-fallback.vite.config.mts`, which calls the existing loaders
+without asset access; licensed bytes remain ignored/local-only.
+
+Task owner: Codex Round 17; branch `feat/prd-466-468-erosion`, base **615b9a9de**.
+Retained checkout:
+`/home/joao/projects/threenative/threenative-engine/.worktrees/prd-466-468-ground`,
+**6.3 GiB** (`du`), because commits are unmerged and requested captures/local assets must
+be preserved. Capture/dev processes on 5297 stopped. No forced cleanup.

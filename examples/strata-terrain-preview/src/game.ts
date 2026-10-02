@@ -174,6 +174,9 @@ const initialState = {
   showcase: false,
   world: "forest",
   groundBiome: "baked",
+  terrainTransportBound: false,
+  erosionFlowSamples: 0,
+  erosionDepositSamples: 0,
   frames: 0,
   travel: 0,
   grounded: false,
@@ -427,9 +430,13 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
       // world where the ground is need a world that has been stepped: the ray query walks the
       // heightfield's own triangles and the collider is not in the space until the solver runs.
       // Asking in `enter` returns "no ground here" for every prop on a perfectly solid hillside.
+      const erosionFlowSamples = data.erosion?.flow.filter((value) => value > 0).length ?? 0;
+      const erosionDepositSamples =
+        data.erosion?.deposition.filter((value) => value > 0).length ?? 0;
       const propField: IPlacementField = {
         world,
         colors: data.colors,
+        erosion: data.erosion,
         field,
         resolution: data.size === 0 ? 0 : field.rows,
         size: data.size,
@@ -756,6 +763,12 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
           measuredViewCount: viewFrameP50s.filter((group) => group.windows > 0).length,
           world,
           groundBiome: (mesh.material as MeshStandardMaterial).userData.biome ?? "baked",
+          terrainTransportBound:
+            (mesh.material as MeshStandardMaterial).userData.erosion === true &&
+            erosionFlowSamples > 1000 &&
+            erosionDepositSamples > 100,
+          erosionFlowSamples,
+          erosionDepositSamples,
           sunX: sky.sunX,
           frames,
           travel,

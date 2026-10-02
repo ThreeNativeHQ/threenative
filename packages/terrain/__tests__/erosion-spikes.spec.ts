@@ -59,6 +59,26 @@ const withAndWithoutErosion = (recipe: Terrain): { before: IProminence; after: I
 };
 
 describe("hydraulic erosion", () => {
+  it("bounds pickup by the downstream bed and settles mesa debris at the talus angle", () => {
+    const recipe = new Terrain({ size: 128, resolution: 65, seed: 97 })
+      .stamp({ id: "mesa", at: [0, 0], radius: 35, amplitude: 80, shape: "mesa", roughness: 0 })
+      .erode({
+        id: "rain",
+        method: "hydraulic",
+        droplets: 20000,
+        maxSteps: 40,
+        capacity: 7,
+        erosion: 0.22,
+      });
+    const state = recipe.evaluate();
+    expect(Math.min(...state.height)).toBeGreaterThanOrEqual(0);
+    expect(Math.max(...state.height)).toBeLessThanOrEqual(80);
+    const settled = recipe
+      .erode({ id: "talus", method: "thermal", talus: 34, iterations: 80 })
+      .evaluate();
+    expect(prominence(settled).worst).toBeLessThan(3);
+  });
+
   it("leaves no single-cell spike standing on a mountain", () => {
     const after = prominence(weathered("mesa", 0).evaluate());
     expect(after.spikes).toEqual([]);

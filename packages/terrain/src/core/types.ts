@@ -434,6 +434,19 @@ export interface ITerrainState {
   instances: IPlacement[];
   waters: IWaterBody[];
   diagnostics: string[];
+  /** Measured transport summed over erosion passes, on the canonical vertex grid. */
+  erosion?: IErosionMaps;
+}
+
+export interface IErosionMaps {
+  /** Droplet water visits, bilinearly distributed at each step. */
+  flow: Float32Array;
+  /** Carried sediment visits, in metres of equivalent terrain height. */
+  sediment: Float32Array;
+  /** Hydraulic material deposited, in metres. */
+  deposition: Float32Array;
+  /** Thermal material received from unstable neighbours, in metres. */
+  talus: Float32Array;
 }
 
 /** Options for one evaluation call. */

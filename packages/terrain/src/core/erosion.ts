@@ -1,4 +1,5 @@
 import { clamp, lerp, random } from "./math.js";
+import type { IErosionMaps } from "./types.js";
 
 export interface IThermalOptions {
   iterations?: number;
@@ -26,6 +27,7 @@ export function thermal(
   n: number,
   size: number,
   { iterations = 20, talus = 32, rate = 0.22 }: IThermalOptions = {},
+  observations?: IErosionMaps,
 ): Float32Array {
   const h = height.slice();
   const delta = new Float64Array(h.length);
@@ -52,6 +54,8 @@ export function thermal(
           const transfer = (diff - limit) * rate;
           delta[i] = (delta[i] as number) - transfer;
           delta[best] = (delta[best] as number) + transfer;
+          if (observations)
+            observations.talus[best] = (observations.talus[best] as number) + transfer;
         }
       }
     }
@@ -120,27 +124,43 @@ export function hydraulic(
     seed = 1,
     brushRadius = 3,
   }: IHydraulicOptions = {},
+  observations?: IErosionMaps,
 ): Float32Array {
   const h = Float64Array.from(height);
   const rnd = random(seed);
   const cell = size / (n - 1);
   const cells = brush(brushRadius);
   /** Adds `amount` over the brush around one cell, renormalised where the field ends. */
-  const spread = (x: number, z: number, amount: number): void => {
+  const spread = (
+    x: number,
+    z: number,
+    amount: number,
+    floor = Number.NEGATIVE_INFINITY,
+  ): number => {
     let total = 0;
     for (const c of cells) {
       const ix = x + c.dx;
       const iz = z + c.dz;
       if (ix >= 0 && ix < n && iz >= 0 && iz < n) total += c.weight;
     }
-    if (total <= 0) return;
+    if (total <= 0) return 0;
+    let moved = 0;
     for (const c of cells) {
       const ix = x + c.dx;
       const iz = z + c.dz;
       if (ix < 0 || ix >= n || iz < 0 || iz >= n) continue;
       const i = iz * n + ix;
-      h[i] = (h[i] as number) + (amount * c.weight) / total;
+      const share = (amount * c.weight) / total;
+      // A brush cell below the downstream bed has no soil the droplet can pick up. Taking it
+      // anyway digs pits deeper than the channel and leaves unsupported pillars between paths.
+      const change = amount < 0 ? -Math.min(-share, Math.max(0, (h[i] as number) - floor)) : share;
+      h[i] = (h[i] as number) + change;
+      moved += change;
+      if (observations && amount > 0)
+        observations.deposition[i] =
+          (observations.deposition[i] as number) + (amount * c.weight) / total;
     }
+    return moved;
   };
   const get = (x: number, z: number): IHydraulicProbe => {
     const ix = Math.min(n - 2, Math.floor(x));
@@ -180,6 +200,20 @@ export function hydraulic(
     let sediment = 0;
     for (let step = 0; step < maxSteps; step += 1) {
       const old = get(x, z);
+      if (observations) {
+        const tx = x - old.ix;
+        const tz = z - old.iz;
+        const i = old.iz * n + old.ix;
+        for (let oz = 0; oz < 2; oz++) {
+          for (let ox = 0; ox < 2; ox++) {
+            const index = i + oz * n + ox;
+            const weight = (ox ? tx : 1 - tx) * (oz ? tz : 1 - tz);
+            observations.flow[index] = (observations.flow[index] as number) + water * weight;
+            observations.sediment[index] =
+              (observations.sediment[index] as number) + sediment * weight;
+          }
+        }
+      }
       dx = dx * inertia - old.dx * (1 - inertia);
       dz = dz * inertia - old.dz * (1 - inertia);
       let length = Math.hypot(dx, dz);
@@ -206,8 +240,7 @@ export function hydraulic(
         sediment -= amount;
       } else {
         const amount = Math.max(0, Math.min((cap - sediment) * erosion, -dh));
-        spread(old.ix, old.iz, -amount);
-        sediment += amount;
+        sediment -= spread(old.ix, old.iz, -amount, next.value);
       }
       speed = Math.sqrt(Math.max(0.01, speed * speed - dh * 3));
       water *= 1 - evaporation;
@@ -215,7 +248,9 @@ export function hydraulic(
       z = nz;
       if (water < 0.02) break;
     }
-    if (sediment > 0) {
+    // A live droplet at the integration cutoff is still carrying its load. Dumping that entire
+    // load here builds artificial sediment pillars; only evaporation settles the remainder.
+    if (sediment > 0 && water < 0.02) {
       const end = get(clamp(x, 0, n - 1.001), clamp(z, 0, n - 1.001));
       spread(end.ix, end.iz, sediment);
     }

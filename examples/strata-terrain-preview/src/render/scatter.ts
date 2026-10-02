@@ -13,6 +13,7 @@ import type { Heightfield } from "@threenative/core/world";
 import type { IPlacement } from "@threenative/terrain";
 import { ImprovedNoise } from "three/addons/math/ImprovedNoise.js";
 import type { WorldName } from "./biomes.js";
+import { type IBakedWorld, depositAtIndex } from "./terrain.js";
 
 const tundraNoise = new ImprovedNoise();
 const tundraCover = (x: number, z: number): number =>
@@ -25,6 +26,7 @@ const tundraCover = (x: number, z: number): number =>
 /** A field the placement rule reads: the world's own baked colours plus its sampled geometry. */
 export interface IPlacementField {
   readonly colors: readonly number[];
+  readonly erosion?: IBakedWorld["erosion"];
   readonly field: Heightfield;
   readonly resolution: number;
   readonly size: number;
@@ -169,8 +171,20 @@ export function scatterProps(
         Math.hypot(x - (lake.at[0] ?? 0), z - (lake.at[1] ?? 0)) < lake.radius &&
         clampedHeight(data, x, z) < lake.level + 0.35,
     );
+  const depositsAt = (x: number, z: number): number => {
+    const column = Math.max(
+      0,
+      Math.min(data.resolution - 1, Math.round((x / data.size + 0.5) * (data.resolution - 1))),
+    );
+    const row = Math.max(
+      0,
+      Math.min(data.resolution - 1, Math.round((z / data.size + 0.5) * (data.resolution - 1))),
+    );
+    return depositAtIndex(data, row * data.resolution + column);
+  };
   const put = (asset: string, x: number, z: number, scale: number, suffix = "") => {
     if (!inside(x, z) || (asset !== "riverrock" && wet(x, z))) return;
+    if (data.erosion && asset === "scree" && depositsAt(x, z) < 0.08) return;
     if (asset === "cliff") {
       // Stones normalize their largest dimension to 18 m. This envelope covers every yaw.
       const reach = 18 * Math.SQRT1_2 * scale;
@@ -290,9 +304,9 @@ export function scatterProps(
       for (let x = -half + 48; x < half - 48; x += 24) {
         const sx = x + (random() - 0.5) * 12;
         const sz = z + (random() - 0.5) * 12;
-        if (slopeDegrees(data, sx, sz) < 32 || clampedHeight(data, sx, sz) < 48 || random() > 0.82)
+        if (slopeDegrees(data, sx, sz) < 40 || clampedHeight(data, sx, sz) < 65 || random() > 0.55)
           continue;
-        const metres = 30 + random() * 50;
+        const metres = 14 + random() * 22;
         put("mountain", sx, sz, metres / 24);
         const fall = data.field.normalAt(sx, sz);
         const length = Math.hypot(fall.x, fall.z) || 1;
@@ -323,17 +337,26 @@ export function scatterProps(
       }
   }
   // Rock clusters follow exposed slopes rather than evenly spaced lawn ornaments.
-  for (let i = 0; i < (temperate ? 1500 : 2400); i++) {
+  for (let i = 0; i < (temperate ? 1100 : 2400); i++) {
     const x = (random() - 0.5) * data.size;
     const z = (random() - 0.5) * data.size;
     if (!inside(x, z) || wet(x, z)) continue;
     const slope = slopeDegrees(data, x, z);
-    if (slope < (tundra ? 3 : desert ? 8 : 15) || random() > 0.38 || nearEye(x, z)) continue;
+    const deposits = depositsAt(x, z);
+    if (
+      (slope < (tundra ? 3 : desert ? 8 : 15) && deposits < 0.18) ||
+      random() > 0.38 ||
+      nearEye(x, z)
+    )
+      continue;
     if (slope > 43) {
       if (temperate && random() < 0.22) put("cliff", x, z, 0.65 + random() * 0.5);
       continue;
     }
-    if (slope > (temperate ? 28 : 18) && random() < 0.45) put("scree", x, z, 0.7 + random() * 0.7);
+    if (deposits > 0.12 && slope < 40 && random() < 0.65) {
+      for (let k = 0; k < 3; k++)
+        put("scree", x + (random() - 0.5) * 8, z + (random() - 0.5) * 8, 0.12 + random() * 0.3);
+    }
     if (alpine && slope > 18 && slope < 38) {
       for (let k = 0; k < 8; k++) {
         const sx = x + (random() - 0.5) * 14;

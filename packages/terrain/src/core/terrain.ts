@@ -90,6 +90,7 @@ export class TerrainEvaluator {
       const bytes =
         state.height.byteLength +
         state.splat.byteLength +
+        Object.values(state.erosion ?? {}).reduce((n, a) => n + a.byteLength, 0) +
         Object.values(state.biomes).reduce((n, a) => n + a.byteLength, 0);
       if (bytes <= this.limit) {
         while (this.bytes + bytes > this.limit && this.cache.size) {
