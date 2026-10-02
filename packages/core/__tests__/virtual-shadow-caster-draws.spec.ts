@@ -295,3 +295,94 @@ describe("the memoised caster set", () => {
     node.dispose();
   });
 });
+
+/**
+ * PRD-475: a level holds its map until something asks it to redraw, and a caster that leaves or joins
+ * the world is something. These three ask for the ask — no `needsUpdate`, no `invalidateAll`, no
+ * `invalidateRegion`, nothing but the tree itself changing — because that is exactly what a streamed
+ * cell eviction and admission do, and a level that keeps its map across one keeps a ghost shadow of
+ * geometry the world no longer holds.
+ */
+describe("a level and the casters that changed", () => {
+  /**
+   * Two cluster casters inside the finest window against three wide ones, so the level picks the
+   * cluster half and its bill is those two plus the terrain. A change to the casters is then a
+   * change in the bill, which is what these three read.
+   */
+  function twoCasters(): {
+    b: Mesh;
+    camera: PerspectiveCamera;
+    light: DirectionalLight;
+    scene: Scene;
+  } {
+    const { camera, light, scene } = shadowWorld();
+    caster(scene, VIRTUAL_SHADOW_CASTER_LAYER, "A");
+    const b = caster(scene, VIRTUAL_SHADOW_CASTER_LAYER, "B");
+    caster(scene, VIRTUAL_SHADOW_WIDE_CASTER_LAYER, "wide-1");
+    caster(scene, VIRTUAL_SHADOW_WIDE_CASTER_LAYER, "wide-2");
+    caster(scene, VIRTUAL_SHADOW_WIDE_CASTER_LAYER, "wide-3");
+    caster(scene, 0, "terrain");
+    scene.updateMatrixWorld(true);
+    return { b, camera, light, scene };
+  }
+
+  /**
+   * Every level mapped and settled, then one frame that asks for nothing and must be served from
+   * cache. The finest level's row is returned from the frame it rendered on, since a level that
+   * keeps its map reports no draws of its own.
+   */
+  function settled(node: VirtualShadowNode, camera: PerspectiveCamera): { draws: number } {
+    let row = { draws: 0 };
+    for (let frame = 0; frame < 3; frame += 1) {
+      node.updateBefore(frameFor(camera));
+      if ((node.stats.perLevel[0]?.rendered ?? 0) === 1)
+        row = { draws: node.stats.perLevel[0]?.draws ?? 0 };
+    }
+    node.updateBefore(frameFor(camera));
+    expect(node.stats).toMatchObject({ rendered: 0, cached: 2 });
+    expect(row.draws).toBe(3);
+    return row;
+  }
+
+  it("re-renders and drops a caster that left the tree", () => {
+    const { b, camera, light, scene } = twoCasters();
+    const node = nodeFor(light);
+    settled(node, camera);
+
+    // What a cell eviction is: the parent drops it, and nothing sets a flag anywhere.
+    scene.remove(b);
+    scene.updateMatrixWorld(true);
+    node.updateBefore(frameFor(camera));
+
+    expect(node.stats.perLevel[0]).toMatchObject({ rendered: 1, invalidated: 1 });
+    expect(node.stats.perLevel[0]?.draws).toBe(2);
+    node.dispose();
+  });
+
+  it("re-renders and draws a caster that joined the tree", () => {
+    const { camera, light, scene } = twoCasters();
+    const node = nodeFor(light);
+    settled(node, camera);
+
+    caster(scene, VIRTUAL_SHADOW_CASTER_LAYER, "C");
+    scene.updateMatrixWorld(true);
+    node.updateBefore(frameFor(camera));
+
+    expect(node.stats.perLevel[0]).toMatchObject({ rendered: 1, invalidated: 1 });
+    expect(node.stats.perLevel[0]?.draws).toBe(4);
+    node.dispose();
+  });
+
+  it("re-renders a level whose caster stopped casting", () => {
+    const { b, camera, light, scene } = twoCasters();
+    const node = nodeFor(light);
+    settled(node, camera);
+
+    b.castShadow = false;
+    node.updateBefore(frameFor(camera));
+
+    expect(node.stats.perLevel[0]).toMatchObject({ rendered: 1, invalidated: 1 });
+    expect(node.stats.perLevel[0]?.draws).toBe(2);
+    node.dispose();
+  });
+});

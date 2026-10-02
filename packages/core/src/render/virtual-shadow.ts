@@ -560,6 +560,12 @@ const _direction = new Vector3();
 const _center = new Vector3();
 const _sphere = new Sphere();
 const _box = new Box3();
+const _size = new Vector3();
+
+/** What a caster is doing as far as a shadow level is concerned: 1 visible, 2 casting. */
+function casterFlag(mesh: { castShadow?: boolean; visible?: boolean }): number {
+  return (mesh.visible === true ? 1 : 0) | (mesh.castShadow === true ? 2 : 0);
+}
 
 /** The per-level entry of a scalar-or-array option, the last entry standing in for the rest. */
 function at(values: readonly number[], level: number): number {
@@ -737,12 +743,29 @@ export class VirtualShadowNode extends ShadowBaseNode {
   /** The memo described by `CASTER_KEY_STRIDE`: per caster, the key it was computed from and the answer. */
   #casterMemo = new Float64Array(CASTER_STRIDE * 128);
   /**
+   * What `#pollCasters` last read off each table entry: 1 for `visible`, 2 for `castShadow`. Sized and
+   * filled by `#ensureCasters`, so the first poll after a build reports what the build already saw.
+   */
+  #casterFlags = new Uint8Array(0);
+  /**
    * `childadded` and `childremoved` on every object the table was built over, which is how the table
    * learns the tree changed without walking it to find out. Shared by every object so the build
    * allocates one listener rather than one per mesh.
+   *
+   * The change is also an ask, not only a rebuild: a level that keeps its map across a caster
+   * arriving or leaving keeps the shadow of geometry the world no longer holds, which is the ghost a
+   * camera jump leaves behind when the cells under it were evicted. Marking the table stale only
+   * decides what the *next* render reads, and a level that never renders is the whole problem. So the
+   * child is measured and the levels covering it are asked, on the same event.
    */
-  #onTreeChanged = (): void => {
+  #onTreeChanged = (event: { child?: Object3D; type?: string }): void => {
     this.#casterStale = true;
+    const child = event.child;
+    if (child === undefined) return;
+    // A removed caster's world matrix is the one it last drew with — the one the stale maps hold —
+    // so it is read as it stands. An added one has not been composed into its parent yet.
+    if (event.type !== "childremoved") child.updateWorldMatrix(true, false);
+    this.#askAboutCaster(child);
   };
   /** Casters the current level's size gate hid, restored the moment that render is over. */
   #hidden: Object3D[] = [];
@@ -1066,6 +1089,79 @@ export class VirtualShadowNode extends ShadowBaseNode {
       grown.set(this.#casterMemo);
       this.#casterMemo = grown;
     }
+    // Filled from what the build just read, so the first `#pollCasters` after it reports only what
+    // changed since — a caster that arrived asked already, on the event that added it.
+    this.#casterFlags = new Uint8Array(this.#casterTable.length);
+    for (let entry = 0; entry < this.#casterTable.length; entry += 1) {
+      const mesh = this.#casterTable[entry];
+      if (mesh === undefined) continue;
+      this.#casterFlags[entry] = casterFlag(mesh);
+    }
+  }
+
+  /**
+   * The world box a changed caster occupies, in the shape `invalidateRegion` takes. Its own bounds
+   * where it publishes any — a world cluster's sphere is its whole grid square, which is the only
+   * thing that measures where an evicted cell's instances stood — and its geometry's otherwise. A
+   * caster that measures as nothing (a bare group) has no region to name, and asks every level.
+   */
+  #casterBounds(object: Object3D): IBoundsLike | undefined {
+    const mesh = object as ICasterMesh;
+    const own = mesh.isMesh === true ? mesh.boundingSphere : undefined;
+    const sphere = own ?? (mesh as Partial<Mesh>).geometry?.boundingSphere;
+    if (sphere === null || sphere === undefined) {
+      // A group, or a mesh whose geometry nobody measured: the long way, once per change.
+      _box.setFromObject(object, false);
+      if (_box.isEmpty()) return undefined;
+    } else {
+      _sphere.copy(sphere).applyMatrix4(mesh.matrixWorld);
+      _box.setFromCenterAndSize(
+        _sphere.center,
+        _size.set(_sphere.radius, _sphere.radius, _sphere.radius),
+      );
+    }
+    return {
+      max: { x: _box.max.x, y: _box.max.y, z: _box.max.z },
+      min: { x: _box.min.x, y: _box.min.y, z: _box.min.z },
+    };
+  }
+
+  /** Ask the levels covering one changed caster to redraw. */
+  #askAboutCaster(object: Object3D): void {
+    if (this.#levels.length === 0) return;
+    // Nothing that casts: the level lights this node parents into the scene are `Object3D`s with a
+    // shadow slot and no geometry, and asking for all three levels redraws on their arrival. A group
+    // is asked — its children arrive on their own events, so a group added empty and filled after is
+    // still asked about each mesh that lands in it.
+    if ((object as { isMesh?: boolean }).isMesh !== true && object.children.length === 0) return;
+    const bounds = this.#casterBounds(object);
+    if (bounds === undefined) this.invalidateAll();
+    else this.invalidateRegion(bounds);
+  }
+
+  /**
+   * What a game can change about a caster without touching the tree: its `visible` and its
+   * `castShadow`. A level that keeps its map across either keeps the shadow of geometry that casts
+   * nothing any more, which is the same ghost an eviction leaves and just as wrong. Both are read
+   * here, per frame, off the memoised table — one flag pair per caster, no matrix and no bounds —
+   * and a change asks for the levels covering that caster. The table is what cut 2 made cheap; this
+   * reads it, it does not walk the world.
+   *
+   * It runs before `#probe`'s own writes (`#restoreHidden` and the mover exclusion both set these
+   * flags and put them back inside the same call), so what it compares is what the game last said.
+   */
+  #pollCasters(): void {
+    const table = this.#casterTable;
+    const flags = this.#casterFlags;
+    if (flags.length !== table.length) return;
+    for (let entry = 0; entry < table.length; entry += 1) {
+      const mesh = table[entry];
+      if (mesh === undefined) continue;
+      const flag = casterFlag(mesh);
+      if (flags[entry] === flag) continue;
+      flags[entry] = flag;
+      this.#askAboutCaster(mesh);
+    }
   }
 
   /** Drops the table and its listeners, which is what a disposed node owes the scene it read. */
@@ -1076,6 +1172,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
     }
     this.#casterObjects.length = 0;
     this.#casterTable.length = 0;
+    this.#casterFlags = new Uint8Array(0);
     this.#casterRoot = null;
     this.#casterStale = false;
   }
@@ -1820,6 +1917,10 @@ export class VirtualShadowNode extends ShadowBaseNode {
     this.#centerV.value = this.clipmap.centerLight.v;
     this.#basisU.value.set(this.clipmap.basisU.x, this.clipmap.basisU.y, this.clipmap.basisU.z);
     this.#basisV.value.set(this.clipmap.basisV.x, this.clipmap.basisV.y, this.clipmap.basisV.z);
+    // A caster that stopped casting, or stopped being visible, changed what the levels hold without
+    // changing the tree, so nothing else on the frame would say so. Asked here, before this frame's
+    // own writes to those flags, which is what `#probe` and the mover exclusion below both do.
+    this.#pollCasters();
 
     // Movers leave the cached maps and are drawn into the mover maps below. A child attached
     // after `trackCaster` — a loaded mesh under a placeholder group — picks up the layer here.
