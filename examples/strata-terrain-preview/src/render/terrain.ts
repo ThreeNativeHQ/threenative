@@ -23,7 +23,7 @@ import {
   mix,
   mx_fractal_noise_float,
   mx_noise_float,
-  normalWorld,
+  normalWorldGeometry,
   normalize,
   oneMinus,
   positionView,
@@ -130,15 +130,6 @@ const MAPS: Record<LayerKey, { diffuse: string; normal?: string }> = {
   snow: { diffuse: "snow_02/snow_02_diff_1k.jpg" },
 };
 
-/**
- * How far a crevice darkens its layer, as a share of the normal map's own up-facing channel.
- *
- * The blue channel of a tangent-space normal is 1 on a texel facing straight up and falls away on
- * every crease, undercut and hollow in the surface it was cooked from — which is what an ambient
- * occlusion map is, drawn into the map that was already bound for the tilt.
- */
-const OCCLUSION = 0.5;
-
 /** Where the snow line sits, in metres, and the slope above which it cannot settle. */
 const SNOW = { from: 145, to: 195, sheds: 0.22 };
 
@@ -181,7 +172,7 @@ const WET_SAND = {
 const MEADOW = vec3(0.43, 0.76, 0.38);
 
 /** Continuous stochastic warp: no hard cell boundaries in colour or normals. */
-function tiledUV(key: LayerKey, _tiles: number, scale = 1): Node<"vec2"> {
+function tiledUV(key: LayerKey, scale = 1): Node<"vec2"> {
   const base = positionWorld.xz.div(TILE[key] * scale);
   const warp = vec2(
     mx_noise_float(positionWorld.mul(0.035)),
@@ -207,9 +198,10 @@ interface IRelief {
 
 function planarRelief(source: Texture, uv: Node<"vec2">, strength: number): IRelief {
   const sample = texture(source, uv);
+  const tangent = rotateUV(sample.xy.mul(2).sub(1), float(-0.38), vec2(0));
   return {
     crevice: sample.z,
-    tilt: vec3(sample.x.mul(2).sub(1), 0, sample.y.mul(2).sub(1)).mul(strength),
+    tilt: vec3(tangent.x, 0, tangent.y).mul(strength),
   };
 }
 
@@ -229,14 +221,14 @@ function triplanarRelief(source: Texture, key: LayerKey, roughnessScale = 1): IR
   const x = texture(source, positionWorld.zy.div(tile)).xyz.mul(2).sub(1);
   const y = texture(source, positionWorld.xz.div(tile)).xyz.mul(2).sub(1);
   const z = texture(source, positionWorld.xy.div(tile)).xyz.mul(2).sub(1);
-  const axis = abs(normalWorld).pow(4);
+  const axis = abs(normalWorldGeometry).pow(4);
   const weight = axis.div(axis.x.add(axis.y).add(axis.z));
   return {
     crevice: float(1),
     tilt: weight.x
-      .mul(vec3(0, x.y, x.x.mul(sign(normalWorld.x))))
+      .mul(vec3(0, x.y, x.x.mul(sign(normalWorldGeometry.x))))
       .add(weight.y.mul(vec3(y.x, 0, y.y)))
-      .add(weight.z.mul(vec3(z.x.mul(sign(normalWorld.z)), z.y, 0))),
+      .add(weight.z.mul(vec3(z.x.mul(sign(normalWorldGeometry.z)), z.y, 0))),
   };
 }
 
@@ -249,7 +241,8 @@ function triplanarRelief(source: Texture, key: LayerKey, roughnessScale = 1): IR
  * where that smear stops being invisible — below it the slope is gentle enough that the detail still
  * reads, above it the triplanar takes over.
  */
-const TRIPLANAR_SLOPE = 0.57;
+// Slope is 1 − cos(angle): 0.18 is 35°, not the sine of 35°.
+const TRIPLANAR_SLOPE = 0.18;
 
 /**
  * The sand's own relief: shore-aligned ripples, as a tilt in world space.
@@ -275,7 +268,7 @@ const RIPPLE = {
 
 function sandRipples(): Node<"vec3"> {
   // Downhill, in world xz. Normalised so the ripple amplitude does not change with the slope.
-  const fall = vec2(normalWorld.x, normalWorld.z);
+  const fall = vec2(normalWorldGeometry.x, normalWorldGeometry.z);
   const downhill = fall.length().max(float(0.0001));
   const across = vec2(fall.x.div(downhill), fall.y.div(downhill));
   // Distance across the shore, in metres, with a slow noise on the frequency so the crest spacing is
@@ -306,7 +299,7 @@ function sandRipples(): Node<"vec3"> {
 function triplanarAlbedo(source: Texture, key: LayerKey): Node<"vec4"> {
   const tile = float(TILE[key]);
   const wall = tile.mul(0.7);
-  const axis = abs(normalWorld).pow(4);
+  const axis = abs(normalWorldGeometry).pow(4);
   const weight = axis.div(axis.x.add(axis.y).add(axis.z));
   const x = texture(source, positionWorld.zy.div(wall));
   const y = texture(source, positionWorld.xz.div(tile));
@@ -355,7 +348,7 @@ export function createGroundMaterial(
   };
 
   // --- where each surface sits -------------------------------------------------------------
-  const slope = normalWorld.y.abs().oneMinus();
+  const slope = normalWorldGeometry.y.abs().oneMinus();
   const breakUp = mx_fractal_noise_float(positionWorld.mul(0.05), 3);
   const steep = clamp(slope.add(breakUp.mul(0.05)), 0, 1);
   // +1 in a hollow, -1 on a rib. The two ends of the ground's own shape, which slope cannot tell
@@ -365,7 +358,7 @@ export function createGroundMaterial(
     oneMinus(smoothstep(data.size / 2, data.size / 2 + 28, outside)),
   );
   // Material placement follows the actual landform, never the bake's brown blob palette.
-  const drainage = smoothstep(0.08, 0.5, hollow).mul(smoothstep(0.004, 0.07, steep));
+  const drainage = smoothstep(0.04, 0.3, hollow).mul(smoothstep(0.003, 0.05, steep));
   const rib = smoothstep(-0.02, -0.45, hollow);
   const alpine = smoothstep(38, 66, positionWorld.y.add(breakUp.mul(5)));
   // No recorded sea level means an inland world, and an inland world has no beach.
@@ -391,7 +384,7 @@ export function createGroundMaterial(
   const weights: Record<LayerKey, Node<"float">> = {
     // The bake painted its beach in the same red-over-green as its dirt, so the height rule above
     // has to be the one that speaks for the shore; painted dirt steps aside where it does.
-    dirt: drainage.mul(0.88).mul(sand.oneMinus()),
+    dirt: drainage.mul(0.4).mul(sand.oneMinus()),
     grass: float(1),
     moss: drainage.mul(smoothstep(0.02, 0.14, steep)).mul(0.48),
     sand,
@@ -433,11 +426,7 @@ export function createGroundMaterial(
   const albedoOf = (key: LayerKey): Node<"vec4"> => {
     const { diffuse } = layer(key);
     held.add(diffuse);
-    const flat = mix(
-      texture(diffuse, tiledUV(key, 4)),
-      texture(diffuse, tiledUV(key, 7, 2.35).add(vec2(0.37, 0.19))),
-      far,
-    );
+    const flat = mix(texture(diffuse, tiledUV(key)), texture(diffuse, tiledUV(key, 2.35)), far);
     if (flatLayer(key)) return flat;
     const walls = triplanarAlbedo(diffuse, key);
     const blended = mix(walls, flat, planarShare);
@@ -458,8 +447,8 @@ export function createGroundMaterial(
     const source = layer(key).normal;
     if (source === undefined) return { crevice: float(1), tilt: vec3(0) };
     held.add(source);
-    const near = planarRelief(source, tiledUV(key, 4), strength);
-    const coarse = planarRelief(source, tiledUV(key, 7, 2.35), strength * 0.6);
+    const near = planarRelief(source, tiledUV(key), strength);
+    const coarse = planarRelief(source, tiledUV(key, 2.35), strength * 0.6);
     const flat: IRelief = {
       crevice: mix(near.crevice, coarse.crevice, far),
       tilt: mix(near.tilt, coarse.tilt, far),
@@ -491,7 +480,6 @@ export function createGroundMaterial(
   let normal = grassRelief.tilt.mul(weights.grass).add(microGrain().mul(weights.grass));
   // The crevice term follows the surface the eye is actually looking at, so it is blended by the
   // same weights as the colour rather than applied to every layer at once.
-  let crevice = grassRelief.crevice;
   for (const key of LAYERS) {
     const weight = weights[key];
     // A surface takes the ground over once it *is* most of the ground. Blending every layer by a
@@ -505,17 +493,19 @@ export function createGroundMaterial(
     const over = smoothstep(0.12, 0.82, weight.add(reliefHeight));
     albedo = mix(albedo, surface, over);
     normal = mix(normal, relief.tilt, over);
-    crevice = mix(crevice, relief.crevice, over);
   }
-  albedo = albedo.mul(mix(float(1), crevice, OCCLUSION));
+  // Concavity occludes sky bounce, leaving direct sunlight physically separate.
+  material.aoNode = mix(float(1), float(0.65), smoothstep(0.12, 0.8, hollow));
 
   // 50–200 metre vegetation tones survive texture mipmapping in the overview.
   const macro = mx_fractal_noise_float(positionWorld.mul(0.006), 3);
-  const tone = mix(vec3(0.78, 0.87, 0.68), vec3(1.12, 1.05, 0.86), macro.mul(0.5).add(0.5));
-  material.colorNode = albedo.rgb.mul(tone);
+  const dryness = smoothstep(-0.18, 0.22, macro.sub(hollow.mul(0.16)).add(alpine.mul(0.06)));
+  const tone = mix(vec3(0.52, 0.82, 0.46), vec3(1.23, 1.06, 0.83), dryness);
+  const vegetation = oneMinus(max(max(weights.rock, weights.snow), weights.sand));
+  material.colorNode = albedo.rgb.mul(mix(vec3(1), tone, vegetation));
   // Detail is tangential; it must not rotate the whole hillside towards a fixed diagonal.
-  const tangent = normal.sub(normalWorld.mul(dot(normalWorld, normal)));
-  material.normalNode = transformNormalToView(normalize(normalWorld.add(tangent)));
+  const tangent = normal.sub(normalWorldGeometry.mul(dot(normalWorldGeometry, normal)));
+  material.normalNode = transformNormalToView(normalize(normalWorldGeometry.add(tangent)));
   material.addEventListener("dispose", () => {
     for (const source of held) source.dispose();
   });
@@ -550,7 +540,24 @@ export function createTerrain(
   const mesh: Mesh = new Mesh(geometry, material);
   mesh.name = "authored-terrain";
   mesh.receiveShadow = true;
-  const horizon: Mesh = new Mesh(createHorizonGeometry(data), material);
+  const horizonGeometry = createHorizonGeometry(data);
+  const edgePositions = horizonGeometry.getAttribute("position");
+  const edgeNormals = horizonGeometry.getAttribute("normal");
+  const groundNormals = geometry.getAttribute("normal");
+  for (let vertex = 0; vertex < (data.resolution - 1) * 4; vertex++) {
+    const column = Math.round(
+      (edgePositions.getX(vertex) / data.size + 0.5) * (data.resolution - 1),
+    );
+    const row = Math.round((edgePositions.getZ(vertex) / data.size + 0.5) * (data.resolution - 1));
+    const edge = row * data.resolution + column;
+    edgeNormals.setXYZ(
+      vertex,
+      groundNormals.getX(edge),
+      groundNormals.getY(edge),
+      groundNormals.getZ(edge),
+    );
+  }
+  const horizon: Mesh = new Mesh(horizonGeometry, material);
   horizon.name = "temperate-distant-ridges";
   horizon.receiveShadow = true;
   mesh.add(horizon);
@@ -602,15 +609,14 @@ function buildCurvature(data: IBakedWorld): IGroundCurvature {
   for (let row = 0; row < resolution; row += 1) {
     for (let column = 0; column < resolution; column += 1) {
       const laplacian =
-        at(row, column - 1) +
-        at(row, column + 1) +
-        at(row - 1, column) +
-        at(row + 1, column) -
+        at(row, column - 4) +
+        at(row, column + 4) +
+        at(row - 4, column) +
+        at(row + 4, column) -
         4 * at(row, column);
-      // Divided by the spacing squared to become a curvature, then gained up and clamped: a hollow
-      // with a twenty-metre radius is a laplacian of about 0.05, which is invisible unclamped.
+      // An eight-metre neighbourhood picks out channels and hollows, suppressing tiny baked bumps.
       pixels[row * resolution + column] = DataUtils.toHalfFloat(
-        Math.max(-1, Math.min(1, (laplacian / (spacing * spacing)) * 18)),
+        Math.max(-1, Math.min(1, (laplacian / (spacing * spacing * 16)) * 36)),
       );
     }
   }

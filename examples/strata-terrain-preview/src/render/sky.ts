@@ -112,7 +112,7 @@ const CLOUDS = {
   /** The band of sky the deck occupies: its base just above the horizon, thinning towards the zenith. */
   band: [0.02, 0.1, 0.99, 0.5],
   /** Peak opacity of a fully covered patch of sky. */
-  opacity: 0.95,
+  opacity: 0.76,
   /** Sunlit crown, shaded underside, and the silver a thin fringe takes when it faces the sun. */
   tint: { lit: 0xf7f8f9, shade: 0xc8d3de, silver: 0xfff2d4 },
   /** How much a dense core is darkened relative to a thin fringe. */
@@ -122,7 +122,7 @@ const CLOUDS = {
    * times above one, so a cloud written as plain white came out darker than the blue around it —
    * grey blobs — once the rig stopped fogging its own dome.
    */
-  radiance: 3.2,
+  radiance: 1.9,
 } as const;
 
 /**
@@ -230,6 +230,7 @@ export function createOutdoorSky(camera: Object3D): IOutdoorSky {
     sunIntensity: 0,
   });
   // The physical sky's radiance is calibrated separately from ground irradiance.
+  daylight.sky.cloudCoverage.value = 0; // This game owns one cloud deck.
   const skyMaterial = daylight.sky.material;
   if (skyMaterial.colorNode) skyMaterial.colorNode = skyMaterial.colorNode.mul(0.32);
   daylight.sun.visible = false;
@@ -237,9 +238,9 @@ export function createOutdoorSky(camera: Object3D): IOutdoorSky {
 
   const sunDirection = SUN_VECTOR;
   // The deck rides inside the rig's own sky box, so it needs no follow of its own: the box is put
-  // back on the eye every frame and the dome is its child. 32 by 16 is enough, because the pattern
+  // back on the eye every frame and the dome is its child. 64 by 32 is enough, because the pattern
   // is per fragment and nothing here is shaded from the dome's own normals.
-  const deck = new Mesh(new SphereGeometry(1, 32, 16), cloudDome(sunDirection));
+  const deck = new Mesh(new SphereGeometry(1, 64, 32), cloudDome(sunDirection));
   deck.name = "cumulus-deck";
   deck.scale.setScalar(0.9);
   deck.frustumCulled = false;
