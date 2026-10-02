@@ -132,7 +132,11 @@ try {
     url: "",
   });
   await write("report.json", report);
-  assertNativeAssetCapture(report);
+  assert.equal(report.pass, true, JSON.stringify(report.diagnostics));
+  const nativeConsole: unknown = JSON.parse(
+    await readFile(path.join(output, "console.json"), "utf8"),
+  );
+  assertNativeAssetCapture(report, nativeConsole);
   const bytes = await readFile(path.join(output, "after.png"));
   const pixels = inspectNativeAssetScreenshot(bytes);
   assert.deepEqual(await hashArtifact(executable), packaged);
@@ -142,6 +146,8 @@ try {
     runId: process.env.GITHUB_RUN_ID,
     qualification:
       "Packaged Linux QuickJS fallback correctness on a named hosted software adapter. No Android, iOS, native compressed-codec admission or hardware-performance claim.",
+    observability:
+      "Native host console, live readiness and resource observations; runtime.diagnostics is not exposed by this bridge.",
     runtime: capabilities,
     packaged,
     models,
