@@ -138,15 +138,9 @@ function surface(
               : ([1, 1, 1] as const);
 
     material.colorNode = sampled.rgb.mul(vec3(...tint));
-    if (world === "forest" && canopy && cutout) {
-      const grain = dot(sampled.rgb, vec3(0.2126, 0.7152, 0.0722));
-      const wood = smoothstep(0.04, 0.16, sampled.r.sub(sampled.g));
-      material.colorNode = mix(
-        grain.mul(vec3(0.28, 0.72, 0.54)),
-        sampled.rgb.mul(vec3(0.24, 0.22, 0.14)),
-        wood,
-      );
-    }
+    // The Kite pine's photographed needles are already a pine green; a cool shift, not a repaint.
+    if (world === "forest" && canopy && cutout)
+      material.colorNode = sampled.rgb.mul(vec3(0.82, 0.96, 0.88));
     if (!otherBiome && canopy && !cutout && !kite)
       material.colorNode = sampled.rgb.mul(vec3(0.42, 0.27, 0.15));
     if (!otherBiome && (asset === "grass" || asset === "scrub")) {
@@ -238,22 +232,24 @@ function surface(
     if (cutout) {
       // Shadow overrides and VirtualShadowNode classify cutouts by this scalar, not the node.
       material.alphaTest = source.alphaTest;
+      // The scene pass is 4x MSAA: coverage from alpha smooths card edges that a hard test speckles.
+      material.alphaToCoverage = true;
       material.side = DoubleSide;
       material.shadowSide = DoubleSide;
       // Keep Three's DoubleSide back-face normal flip; overriding it lights undersides as sky faces.
       if (canopy) {
         const inner = attribute<"float">("inner", "float");
         material.colorNode = material.colorNode.mul(
-          mix(otherBiome ? 0.42 : 0.48, 1, otherBiome ? inner : inner.pow(2)),
+          mix(
+            otherBiome ? 0.42 : world === "forest" ? 0.6 : 0.48,
+            1,
+            otherBiome ? inner : inner.pow(2),
+          ),
         );
-        if (world === "forest")
-          material.colorNode = material.colorNode.mul(
-            mix(0.3, 1, smoothstep(0.35, 0.9, sampled.a)),
-          );
         material.aoNode = otherBiome
           ? mix(0.12, 0.58, inner)
           : world === "forest"
-            ? mix(0.06, 0.85, inner.pow(2))
+            ? mix(0.35, 1, inner)
             : mix(0.26, 0.72, inner.pow(2));
         if (world === "forest") material.normalNode = normalViewGeometry;
       } else if (asset === "poppy") {
@@ -282,10 +278,7 @@ function surface(
       material.opacityNode = sampled.a;
       if (canopy) {
         lightNeedles(material, material.aoNode as Node<"float">);
-        if (!otherBiome)
-          material.emissiveNode = (material.emissiveNode as Node<"vec3">).mul(
-            world === "forest" ? 0.05 : 0.18,
-          );
+        if (!otherBiome) material.emissiveNode = (material.emissiveNode as Node<"vec3">).mul(0.18);
         if (world === "alpine" && material.emissiveNode)
           material.emissiveNode = (material.emissiveNode as Node<"vec3">).mul(0.4);
       } else if (asset !== "poppy") material.emissiveNode = material.colorNode.mul(0.025);
@@ -364,9 +357,17 @@ export async function loadPack(
     selected.map(async (one) => {
       if (!assets) return undefined;
       try {
+        // The distant level must be the same Kite pine, or far stands read as a second species.
+        if (world === "forest" && one.asset === "spruce" && one.level) {
+          const far = await assets
+            .model<{ scene?: Group }>("prepared/pine-tall-mid.glb")
+            .catch(() => undefined);
+          if (far) return far;
+        }
         if (world === "forest" && one.asset === "spruce" && !one.level) {
           const pine = await assets
-            .model<{ scene?: Group }>("temperate/kite-spruce/0.glb")
+            // Two Kite pines (tall and broad) alternate so a stand is not one tree repeated.
+            .model<{ scene?: Group }>(`temperate/kite-spruce/${one.variant % 2}.glb`)
             .catch(() => undefined);
           if (pine) return pine;
         }

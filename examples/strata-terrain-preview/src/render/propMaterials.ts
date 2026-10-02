@@ -565,6 +565,7 @@ function needleMaterial(
     side: DoubleSide,
   });
   material.alphaTest = cutout;
+  material.alphaToCoverage = true;
   if (atlas === undefined) {
     material.colorNode = vec3(0.09, 0.24, 0.11);
     // A needle is waxy, not varnished, and rougher than the bark below it on purpose.
@@ -673,6 +674,7 @@ function frondMaterial(
   } else {
     const shade = attribute<"vec3">("color", "vec3");
     material.alphaTest = 0.4;
+    material.alphaToCoverage = true;
     material.alphaTestNode = mipCompensatedCutoff(mipLevels(alpha).worst, 0.4);
     // A touch cooler and darker than the scan: under a spruce a fern is in the canopy's shade.
     material.colorNode = vec4(
@@ -868,6 +870,7 @@ export async function createPropSurfaces(
     side: DoubleSide,
   });
   petalMaterial.alphaTest = CUTOUT;
+  petalMaterial.alphaToCoverage = true;
   if (atlas === undefined) petalMaterial.colorNode = vec3(0.72, 0.09, 0.08);
   else {
     // A poppy is five centimetres across: at any distance past twenty metres its petal is a handful
