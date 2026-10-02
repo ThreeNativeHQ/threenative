@@ -1635,7 +1635,7 @@ forest 4.2, coastal 4.5, alpine 3.0, desert 3.5, tundra 3.0, **overall 3.9/10** 
 embedded as ribs, layered desert beds with foot talus, tundra grass fringe gone (AO multiplied canvas alpha),
 rocky coast shoreline. Structural defects that persist across rounds: card-spruce shading (olive, no
 transmission), smooth un-eroded continuation mountains, noise-blob snow, coarse far shadow cascade
-(stair-stepping), flat light, visible player capsule. Captures: `docs/verification/visuals/strata/v9-*.jpg`.
+(stair-stepping), flat light, visible player capsule. Captures: `docs/verification/visuals/strata/v9-*.jpg` (superseded by v10).
 AC-5 stays open.
 
 
@@ -1946,3 +1946,14 @@ notes commit; no push/merge. Captures are inside the example at
 licensed bytes were committed. Worktree retained at the authorized
 `.worktrees/prd-466-468-ground` path, **5.7 GB**, because its commits are unmerged
 and it holds the requested captures and local licensed assets. No forced removal.
+
+### V10 judge (light + form lanes merged, 2026-10-02)
+
+Fresh judge, 1:1 crops against the Gaia refs: forest 4.5, coastal 4.0, alpine 3.0, desert 3.5, tundra 3.0,
+weighted **3.84/10** (V9 3.9 — flat). Light/haze/grade and the eroded continuation ring did not move the score;
+the judge's ranked levers are (1) hydraulic + thermal erosion of the playable heightfields at bake time with
+slope/flow-driven rock, scree and snow, (2) spruce colour/lighting and cutout anti-aliasing, (3) clustered
+ground cover that hides the soil plus shadow-cascade coverage (hard shadow edge on forest-walk). Scenario on
+the merged tip: rc=0, 0 failed checks, `verify-ocean` green; `test:terrain:web` now opens `?showcase=1`, the
+mode whose capsule assertion the scenario carries. Captures: `docs/verification/visuals/strata/v10-*.jpg`.
+AC-5 stays open.
