@@ -134,6 +134,8 @@ const initialState = {
   propDraws: 0,
   propInstances: 0,
   propTriangles: 0,
+  preparedLodBaseSpread: 0,
+  preparedLevelsWithoutSolid: 0,
   view: "player",
   windowDrawCalls: 0,
   windowFrameMs: 0,
@@ -299,6 +301,10 @@ function terrainScene(world: "forest" | "coastal"): new () => Scene<TerrainState
       let props: ReturnType<typeof createProps> | undefined;
       let building = false;
       let preparedDispose: (() => void) | undefined;
+      // What the prepared files measured on load. Published rather than thrown on, because a
+      // number in the run report says which level is off the ground and a stack trace does not.
+      let preparedLodBaseSpread = 0;
+      let preparedLevelsWithoutSolid = 0;
       let released = false;
       let surfacesDispose: (() => void) | undefined;
       // Ground contact is a ray query against the drawn terrain and the terrain's collider, never
@@ -332,6 +338,8 @@ function terrainScene(world: "forest" | "coastal"): new () => Scene<TerrainState
       const buildProps = async (): Promise<void> => {
         const prepared = await loadPreparedProps(ctx.assets);
         preparedDispose = prepared.dispose;
+        preparedLodBaseSpread = prepared.lodBaseSpread;
+        preparedLevelsWithoutSolid = prepared.levelsWithoutSolid;
         propParts = buildPropVariants(prepared.parts);
         if (released) {
           prepared.dispose();
@@ -491,6 +499,8 @@ function terrainScene(world: "forest" | "coastal"): new () => Scene<TerrainState
               (sum, draw) => sum + (draw.count * (draw.geometry.index?.count ?? 0)) / 3,
               0,
             ) ?? 0,
+          preparedLodBaseSpread,
+          preparedLevelsWithoutSolid,
           windowDrawCalls: budget.drawCalls,
           windowFrameMs: budget.frameMs,
           // The two framings the trees are judged from, published as plain state so the run report

@@ -161,9 +161,63 @@ function addSway(geometry: BufferGeometry, height: number): void {
   geometry.setAttribute("sway", new BufferAttribute(sway, 1));
 }
 
+/**
+ * Both prepared-tree defects, measured on the geometries the starter will actually draw.
+ *
+ * The flattened mesh is the only place either is visible: `GroundSnap` reads the trunk a
+ * level's own geometry puts lowest, and the prep wrote a node translation per level that is
+ * exactly as easy to get wrong as a base offset. Neither is a diff you can read.
+ */
+function measureLevels(parts: ReadonlyMap<string, IPropPart[]>): {
+  lodBaseSpread: number;
+  levelsWithoutSolid: number;
+} {
+  let lodBaseSpread = 0;
+  let levelsWithoutSolid = 0;
+  for (const chosen of parts.values()) {
+    const base = new Map<number, number>();
+    const solid = new Set<number>();
+    for (const part of chosen) {
+      const level = part.level ?? 0;
+      part.geometry.computeBoundingBox();
+      const min = part.geometry.boundingBox?.min.y ?? 0;
+      base.set(level, Math.min(base.get(level) ?? Number.POSITIVE_INFINITY, min));
+      if (part.role === "bark" || part.role === "stone") solid.add(level);
+    }
+    // The far card is one quad whose trunk is baked into its own pixels, so a level made only
+    // of impostor parts is not a headless tree.
+    const cards = new Set(
+      chosen.filter((part) => part.role === "impostor").map((part) => part.level ?? 0),
+    );
+    for (const [level, min] of base) {
+      lodBaseSpread = Math.max(lodBaseSpread, min - Math.min(...base.values()));
+      if (!solid.has(level) && !cards.has(level)) levelsWithoutSolid += 1;
+    }
+  }
+  return { lodBaseSpread, levelsWithoutSolid };
+}
+
 export interface IPreparedProps {
   /** Parts keyed the same way `buildPropVariants` keys them: `asset:variant`. */
   readonly parts: Map<string, IPropPart[]>;
+  /**
+   * The widest gap, in metres, between any two detail levels' own base Y in one variant.
+   *
+   * A prop's grounding puts the *lowest point of its trunk* on the terrain and every
+   * level is drawn with that one matrix, so a level authored a little off the ground is
+   * a tree whose crown floats above it while its neighbours stand correctly — and it is
+   * invisible in a diff and obvious in a capture. The gate is five centimetres, which is
+   * the width of the shadow a trunk casts at the near band and nothing more.
+   */
+  readonly lodBaseSpread: number;
+  /**
+   * How many detail levels carry no solid part at all.
+   *
+   * A level with only cutout geometry is a crown with nothing holding it up, which is
+   * the same failure seen from the other side. The far cross-card is exempt: its trunk
+   * is baked into its own card, so there is no second mesh to carry one.
+   */
+  readonly levelsWithoutSolid: number;
   readonly dispose: () => void;
 }
 
@@ -177,7 +231,8 @@ export interface IPreparedProps {
 export async function loadPreparedProps(assets?: IAssetLoader): Promise<IPreparedProps> {
   const parts = new Map<string, IPropPart[]>();
   const geometries: BufferGeometry[] = [];
-  if (assets === undefined) return { parts, dispose: () => undefined };
+  if (assets === undefined)
+    return { parts, dispose: () => undefined, lodBaseSpread: 0, levelsWithoutSolid: 0 };
 
   const loaded = await Promise.all(
     PREPARED.map(async (file) => {
@@ -225,8 +280,12 @@ export async function loadPreparedProps(assets?: IAssetLoader): Promise<IPrepare
     // dispose anything the file brought with it.
   }
 
+  const measured = measureLevels(parts);
+
   return {
     parts,
+    lodBaseSpread: measured.lodBaseSpread,
+    levelsWithoutSolid: measured.levelsWithoutSolid,
     dispose: () => {
       for (const geometry of geometries) geometry.dispose();
       geometries.length = 0;

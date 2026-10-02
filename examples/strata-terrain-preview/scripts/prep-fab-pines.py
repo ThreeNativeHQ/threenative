@@ -53,6 +53,7 @@ non-zero. Nothing is reported that was not measured on disk.
 
 import argparse
 import json
+import math
 import os
 import re
 import sys
@@ -381,6 +382,167 @@ def card_size(width_m, height_m, long_px):
     return width, height
 
 
+# The crown's inner mass: a lathe of fifty triangles, joined into the crown's own mesh.
+#
+# A pine's crown is 12% needle by area out of an atlas that is 12% opaque, and that is
+# the arithmetic behind every "airy spray" in the captures. Growing cards fixes the
+# *silhouette* — the previous round's 100% coverage measurement — and cannot fix the
+# *interior*, because the interior is a property of how much solid colour the atlas
+# carries, not of how many cards are drawn: at the near band's twenty-two metres the
+# cards are already big enough that growing them more only bleaches their own alpha.
+#
+# So the missing half of a conifer is added as geometry. It costs fifty triangles out
+# of six thousand, and it costs *no draw*: it is joined into the crown mesh before the
+# export, so it is the crown's own primitive, in the crown's own batch, with the crown's
+# own material. What it samples is the one trick here — see `solid_texel_uv`.
+MASS_SEGMENTS = 14
+
+# Radius at each ring, base to apex. A conifer is widest just above its lowest limbs
+# and tapers from there, so this is a crown's profile and not a cone's: a cone has a
+# straight silhouette and reads as a party hat the moment it is visible at all.
+MASS_PROFILE = ((0.0, 1.0), (0.26, 0.94), (0.55, 0.62), (0.8, 0.3), (1.0, 0.0))
+
+# How much of the crown's own width the mass spans, and how far up the crown it starts.
+# Inside the envelope on purpose: the sprays are the outside of a pine and this is its
+# dark interior, so anything of the volume that pokes through a card is a bug in the fit.
+# A fifth, and measured rather than guessed. At a third of the crown's width the volume is
+# opaque enough to *be* the silhouette: the captures came back with faceted olive kites
+# where the pines were, which is the same "geometric blob" failure the far band had, one
+# scale in. A fifth is a dark core the sprays hang off and only ever shows through the gaps
+# between cards, which is the whole point of it.
+MASS_WIDTH = 0.18
+MASS_BASE = 0.16
+
+# How far each ring's radius wobbles, per segment. Deterministic, so a re-run bakes the
+# same tree: a lathe whose silhouette is a perfect curve says "geometry" at every
+# distance, and the ten degrees of wobble is the difference between a pine and a cone.
+MASS_WOBBLE = 0.1
+
+
+def solid_texel_uv(atlas, score):
+    """One opaque texel of the atlas, as the UV every vertex of a solid volume collapses onto.
+
+    `score` ranks a candidate by its linear colour and returns "lower is better". Only
+    fully opaque texels are eligible, because a volume that samples a half-empty one is
+    a volume with holes in it.
+
+    Collapsing the UVs onto a single texel is what makes the volume work, and it is a
+    property of the *derivative*: a quad whose four corners carry the same UV has a UV
+    footprint of zero, so the sampler stays on mip zero at any distance. A volume with a
+    real UV rect behaves like a card does — its alpha minifies into the atlas average the
+    moment the tree is thirty metres away, which is the entire failure this volume exists
+    to repair, so a volume with a real UV rect would fail at exactly the distance it was
+    added for.
+    """
+    import numpy as np
+
+    pixels, width, height = atlas
+    flat = pixels.reshape(-1, 4)
+    eligible = np.flatnonzero(flat[:, 3] >= 0.95)
+    if eligible.size == 0:
+        raise SystemExit("prep-fab-pines: the atlas carries no opaque texel to cut a solid volume from")
+    colours = flat[eligible, :3]
+    winner = int(eligible[int(np.argmin(score(colours, colours.max(axis=1))))])
+    row, column = divmod(winner, width)
+    # `atlas_view` hands back Blender's bottom-up buffer, and glTF's V runs the other
+    # way, so the row is flipped here rather than in both callers.
+    return ((column + 0.5) / width, 1.0 - (row + 0.5) / height)
+
+
+def crown_mass(crown, uv, material):
+    """The dark volume inside a crown's own envelope, collapsed onto one atlas texel.
+
+    `material` is the crown's own, and it is not optional: a mesh that joins the crown
+    carrying no material is exported as a second primitive of the same mesh, and the
+    starter's role is read from the *material name*, so an unnamed primitive comes back
+    as `stone` — a mossy rock inside every pine, and two more draws than the ceiling has
+    room for. Sharing the slot is what keeps it one primitive, one role and one draw.
+    """
+    import bpy
+
+    lo, hi = prep_trees.bounds(crown)
+    height = max(hi[2] - lo[2], 1e-6)
+    base = lo[2] + height * MASS_BASE
+    radius = max(hi[0] - lo[0], hi[1] - lo[1]) * MASS_WIDTH
+    centre = ((lo[0] + hi[0]) * 0.5, (lo[1] + hi[1]) * 0.5)
+    vertices = []
+    rings = []
+    for fraction, width in MASS_PROFILE:
+        z = base + height * (1.0 - MASS_BASE) * fraction
+        if width <= 0.0:
+            rings.append([len(vertices)])
+            vertices.append((centre[0], centre[1], z))
+            continue
+        ring = []
+        for step in range(MASS_SEGMENTS):
+            angle = step * 2.0 * math.pi / MASS_SEGMENTS
+            # Strongest at the base: a pine's lowest branches are the ragged edge of its
+            # crown, and a lathe that starts on a level ring draws a shelf across it.
+            r = radius * width * (
+                1.0
+                + MASS_WOBBLE
+                * (1.0 + 2.0 * (1.0 - fraction))
+                * math.sin(step * 2.3 + fraction * 11.0)
+            )
+            ring.append(len(vertices))
+            vertices.append(
+                (centre[0] + r * math.cos(angle), centre[1] + r * math.sin(angle), z)
+            )
+        rings.append(ring)
+    faces = []
+    for index in range(len(rings) - 1):
+        lower, upper = rings[index], rings[index + 1]
+        for step in range(MASS_SEGMENTS):
+            following = (step + 1) % MASS_SEGMENTS
+            if len(upper) == 1:
+                faces.append((lower[step], lower[following], upper[0]))
+                continue
+            faces.append((lower[step], lower[following], upper[following]))
+            faces.append((lower[step], upper[following], upper[step]))
+    mesh = bpy.data.meshes.new("mass")
+    mesh.from_pydata(vertices, [], faces)
+    mesh.update()
+    for polygon in mesh.polygons:
+        # Smooth, because a fourteen-sided lathe shaded flat is a faceted solid and the
+        # facets are the one thing about it that cannot be called foliage.
+        polygon.use_smooth = True
+    layer = mesh.uv_layers.new(name="UVMap")
+    for entry in layer.data:
+        entry.uv = uv
+    obj = bpy.data.objects.new("mass", mesh)
+    bpy.context.scene.collection.objects.link(obj)
+    prep_trees.assign_material(obj, material)
+    return obj
+
+
+def flat_copy(obj, name, uv):
+    """`obj` again with every UV collapsed onto one texel, so it rasterises as a solid.
+
+    The far card is a *picture*, and a picture of a tree has to contain its trunk: the
+    card is the only representation a tree past the last band has, so a card baked from
+    the crown's atlas alone is a crown hanging in the air three metres above the ground
+    with nothing holding it up. That is exactly what the round-2 captures show, and the
+    cause is not the placement — every level's exported geometry has its base at y=0
+    (near -0.0004 m, mid 0.0000 m, impostor 0.0000 m, measured on the files themselves).
+    It is that `rasterise_front` cuts against the *leaf* atlas, and the trunk's bark
+    unwrap samples that atlas at random and rasterises to nothing.
+
+    So the impostor bake re-points the real trunk at an opaque bark-coloured texel and
+    lets the shared rasteriser draw it. Modelled trunk, modelled root flare, no extra
+    geometry in the exported file, and the card stops being a blob.
+    """
+    import bpy
+
+    copy = bpy.data.objects.new(name, obj.data.copy())
+    copy.matrix_world = obj.matrix_world.copy()
+    bpy.context.scene.collection.objects.link(copy)
+    layer = copy.data.uv_layers.active or copy.data.uv_layers.new(name="UVMap")
+    for entry in layer.data:
+        entry.uv = uv
+    copy.data.update()
+    return copy
+
+
 def bake_impostor(args, objects, top, bottom, atlas, width_m, height_m):
     """The far cross-card: the *uncut* crown, supersampled and area-averaged.
 
@@ -444,8 +606,41 @@ def bake_impostor(args, objects, top, bottom, atlas, width_m, height_m):
             f"prep-fab-pines: the impostor card carries alpha over {solid * 100:.2f}% of "
             f"itself, under 80% of the {reference * 100:.2f}% the same tree covers"
         )
+    # The card is written upside down, and the gate is how that stopped being invisible.
+    #
+    # `write_card` hands the array to Blender's bottom-up pixel buffer, so the raster's
+    # row 0 lands at the *bottom* of the file — and `rasterise_front` puts the top of the
+    # tree in row 0. Measured on round 2's own file: the alpha ran from 24% below the top
+    # to 11% above the base, which is the two ends exchanged; a Scots pine's crown is its
+    # top two thirds and its bare trunk is the bottom quarter, and the file had them the
+    # wrong way round. The game samples this card with `flipY` set, so the file's bottom
+    # row is the quad's bottom corner, so the far band has been drawing every distant
+    # pine upside down with its crown in the air and its leader on the ground.
+    #
+    # Which is most of what the overview capture's "dark blobs floating in the air" was.
+    # Not the placement: every level's exported geometry has its base at y=0, measured on
+    # the files themselves (near -0.0004 m, mid 0.0000 m, impostor 0.0000 m).
+    rows = np.flatnonzero((averaged[:, :, 3] >= 0.5).any(axis=1))
+    if rows.size == 0:
+        raise SystemExit("prep-fab-pines: the impostor card rasterised to nothing at all")
+    top_gap = float(rows[0]) / averaged.shape[0]
+    bottom_gap = float(averaged.shape[0] - 1 - rows[-1]) / averaged.shape[0]
+    log(
+        f"impostor: silhouette from {top_gap * 100:.1f}% below the card's top to "
+        f"{bottom_gap * 100:.1f}% above its base"
+    )
+    if bottom_gap > 0.04:
+        raise SystemExit(
+            f"prep-fab-pines: the impostor card stops {bottom_gap * 100:.1f}% short of its own "
+            "base, so the far band draws a crown hanging in the air with nothing under it"
+        )
+    if top_gap > 0.2:
+        raise SystemExit(
+            f"prep-fab-pines: the impostor card's silhouette starts {top_gap * 100:.1f}% below "
+            "its own top, so the far band draws a pine with no leader"
+        )
     name = f"{args.species}-impostor.png"
-    prep_trees.write_card(averaged, os.path.join(args.out, name))
+    prep_trees.write_card(averaged[::-1], os.path.join(args.out, name))
     size = os.path.getsize(os.path.join(args.out, name))
     log(f"impostor: {name} {card_px[0]}x{card_px[1]}, {size} bytes")
     if size > TEXTURE_MAX_BYTES:
@@ -454,6 +649,16 @@ def bake_impostor(args, objects, top, bottom, atlas, width_m, height_m):
     # tree; the rasteriser fitted the tree into the card, so the card's metres are
     # the tree's metres and the quad takes them directly.
     return name, height * card_px[0] / card_px[1]
+
+
+# The linear colours the two solid texels are chosen to be *nearest*, measured off the
+# atlas's own opaque texels rather than picked: the opaque needles run from linear 0.041
+# (5th percentile) through 0.063/0.060/0.019 (25th) to 0.112/0.084/0.025 (median), and
+# the crown's own shading multiplies the sampled colour by `PINE_LOOK.tint` before the
+# frame is lit. So the target is a percentile of the atlas rather than a colour someone
+# liked: the mass wants the 25th percentile's green and the trunk a bark brown below it.
+MASS_TINT = (0.046, 0.042, 0.013)
+TRUNK_TINT = (0.055, 0.035, 0.013)
 
 
 def main(argv):
@@ -533,6 +738,26 @@ def main(argv):
     source_atlas = atlas_view(atlas)
     prep_trees.ATLAS[0] = source_atlas
     prep_trees.TOP[0], prep_trees.BOTTOM[0] = hi[2], lo[2]
+
+    # The two solid texels the volumes cut from, found once and reused by all three
+    # levels. Green for the crown's interior and bark-brown for the trunk, both from the
+    # same opaque pool and both scored for a mid-dark peak rather than the darkest texel
+    # available: the pine's material lifts a texel by `floor / peak`, so a texel darker
+    # than the floor comes back *multiplied*, and a volume cut from the darkest needle in
+    # the atlas is a brighter cone than the crown it is supposed to sit inside.
+    import numpy as np
+
+    mass_uv = solid_texel_uv(source_atlas, lambda colour, _peak: abs(colour - MASS_TINT).sum(axis=1))
+    trunk_uv = solid_texel_uv(source_atlas, lambda colour, _peak: abs(colour - TRUNK_TINT).sum(axis=1))
+    for label, uv in (("mass", mass_uv), ("trunk", trunk_uv)):
+        texel = source_atlas[0][
+            min(int((1.0 - uv[1]) * source_atlas[1]), source_atlas[1] - 1),
+            min(int(uv[0] * source_atlas[2]), source_atlas[2] - 1),
+        ]
+        log(
+            f"solid {label}: atlas texel at uv {uv[0]:.5f},{uv[1]:.5f} is linear "
+            f"({texel[0]:.4f}, {texel[1]:.4f}, {texel[2]:.4f}) at alpha {texel[3]:.2f}"
+        )
     # Both elevations, because one is a picture of half the problem. A crown stratified
     # only across its width covers a front view at any budget and collapses into a slab
     # seen from the side; ScotsPineTall_01's crown is nearly as deep as it is wide, so
@@ -600,7 +825,15 @@ def main(argv):
             )[1]
 
         before = {"front": coverage(False), "side": coverage(True)}
-        stats = prep_trees.thin_needles(crown, budget - prep_trees.triangle_count(wood))
+        # The mass comes out of the crown's own share rather than on top of the budget:
+        # `export_level` re-reads the file it wrote and fails on any triangle over the cap,
+        # so fifty triangles added after the cut would fail the gate rather than trade
+        # against fifty cards. The cards lose exactly the mass's cost, which is under one
+        # per cent of the level and inside the solve's own slack.
+        mass_budget = MASS_SEGMENTS * (2 * (len(MASS_PROFILE) - 2) + 1)
+        stats = prep_trees.thin_needles(
+            crown, budget - prep_trees.triangle_count(wood) - mass_budget
+        )
         # The target is the *worse* of the two elevations, so the solve cannot buy a full
         # front view with a bare side one, and the gate below cannot be passed by a crown
         # that has collapsed into a slab.
@@ -674,6 +907,14 @@ def main(argv):
 
         prep_trees.stand_on_ground()
         lo, hi = prep_trees.scene_bounds()
+        # Joined in *after* the coverage gate, because the gate is about the cards: the
+        # mass has full coverage by construction and would pass any silhouette bar while
+        # saying nothing about the cut. It is fitted to the cut crown's own bounds, so
+        # what the solve kept is what the volume sits inside.
+        mass = crown_mass(crown, mass_uv, crown_material)
+        crown = prep_trees.join([crown, mass], "crown")
+        crown.data.name = "crown"
+        stats["massTriangles"] = mass_budget
         stats["boundsMetres"] = [round(v, 4) for v in (*lo, *hi)]
         stats["heightM"] = round(hi[2] - lo[2], 4)
         stats.update(
@@ -691,9 +932,18 @@ def main(argv):
         obj.data = pristine[obj.name].copy()
     lo, hi = prep_trees.scene_bounds()
     prep_trees.TOP[0], prep_trees.BOTTOM[0] = hi[2], lo[2]
+    # The card is a picture of a whole tree, so the picture gets a whole tree: the
+    # uncut crown's sprays, the mass that gives them something to hang off, and the
+    # trunk re-pointed at an opaque bark texel so the cross-card is a pine standing on
+    # the ground rather than a crown hanging in the air three metres above it.
+    impostor_parts = [
+        crown,
+        crown_mass(crown, mass_uv, crown_material),
+        flat_copy(wood, "impostor_wood", trunk_uv),
+    ]
     card, quad_width = bake_impostor(
         args,
-        prep_trees.mesh_objects(),
+        impostor_parts,
         hi[2],
         lo[2],
         atlas_view(atlas),

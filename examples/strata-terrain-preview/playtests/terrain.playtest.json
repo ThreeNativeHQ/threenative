@@ -235,6 +235,18 @@
       },
       {
         "id": "GameState",
+        "path": "preparedLodBaseSpread",
+        "lte": 0.05,
+        "allowTrivial": "The widest gap between two detail levels' own base Y in one prepared variant, measured on the geometry that is actually drawn. A level authored off the ground draws a crown floating above a neighbour that stands correctly, and grounding cannot fix it because grounding measures the trunk the levels share. Zero on a machine with no prepared art, which is why this is a ceiling and not a floor."
+      },
+      {
+        "id": "GameState",
+        "path": "preparedLevelsWithoutSolid",
+        "lte": 0,
+        "allowTrivial": "Detail levels carrying no bark or stone part at all. A cutout-only level is a crown with nothing holding it up, which is the same defect seen from the other side; the far cross-card is exempt because its trunk is baked into its own pixels. Fails closed on a prep that drops a trunk, which no diff shows and every capture does."
+      },
+      {
+        "id": "GameState",
         "path": "meadowFrameP50",
         "gte": 0.01,
         "allowTrivial": "Frame cost at the meadow framing, the nearest look at the trees. A real measurement needs at least one closed budget window at that view; zero means the window never closed while it was on screen."
