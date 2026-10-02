@@ -10,6 +10,7 @@
       "packages/metahuman/wasm/**",
       "artifacts/**",
       "examples/strata-terrain-preview/src/world/baked.json",
+      "examples/strata-terrain-preview/local-assets/**",
       "build/**",
       "release-native/**",
       ".linchpin/**",
