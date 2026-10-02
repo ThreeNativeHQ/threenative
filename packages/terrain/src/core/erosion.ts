@@ -103,8 +103,10 @@ export function hydraulic(
   n: number,
   size: number,
   {
-    droplets = 5000,
-    maxSteps = 40,
+    droplets = Math.round(1.5 * n * n),
+    // A droplet has to be able to cross the world, so its step budget scales with the grid: a
+    // fixed 40 barely leaves a 257 world while a 65 world would walk off it in a few steps.
+    maxSteps = Math.round(Math.min(64, Math.max(24, n / 4))),
     inertia = 0.2,
     capacity = 4,
     erosion = 0.25,
