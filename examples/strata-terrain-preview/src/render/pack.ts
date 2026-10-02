@@ -102,6 +102,7 @@ function surface(
     specularIntensity: canopy || (world === "tundra" && cutout) ? 0 : cutout ? 0.02 : 0.3,
     metalness: 0,
   });
+  if (!otherBiome && canopy && !cutout) material.normalMap = source.normalMap;
   if (source.map) {
     source.map.anisotropy = 8;
     const sampled = texture(source.map, uv());
@@ -122,6 +123,18 @@ function surface(
               : ([1, 1, 1] as const);
 
     material.colorNode = sampled.rgb.mul(vec3(...tint));
+    if (!otherBiome && canopy && !cutout)
+      material.colorNode = sampled.rgb.mul(vec3(0.42, 0.27, 0.15));
+    if (!otherBiome && (asset === "grass" || asset === "scrub")) {
+      const tip = smoothstep(0.008, asset === "grass" ? 0.34 : 0.065, positionGeometry.y);
+      const dry = smoothstep(0.65, 0.92, sin(phase).mul(0.5).add(0.5));
+      const dune = world === "coastal" ? smoothstep(7.5, 2.2, positionWorld.y) : float(0);
+      const green = mix(vec3(0.32, 0.48, 0.18), vec3(0.84, 0.92, 0.46), tip);
+      const straw = mix(vec3(0.4, 0.29, 0.12), vec3(1.18, 0.94, 0.48), tip);
+      const grain = dot(sampled.rgb, vec3(0.2126, 0.7152, 0.0722));
+      material.colorNode = mix(sampled.rgb.mul(green), straw.mul(grain), dry.max(dune));
+      material.aoNode = mix(0.35, 0.95, tip);
+    }
     if (otherBiome && stone)
       material.colorNode = sampled.rgb.mul(
         world === "desert"
@@ -184,9 +197,9 @@ function surface(
       if (canopy) {
         const inner = attribute<"float">("inner", "float");
         material.colorNode = material.colorNode.mul(
-          mix(otherBiome ? 0.42 : 0.3, 1, otherBiome ? inner : inner.pow(2)),
+          mix(otherBiome ? 0.42 : 0.48, 1, otherBiome ? inner : inner.pow(2)),
         );
-        material.aoNode = otherBiome ? mix(0.12, 0.58, inner) : mix(0.1, 0.72, inner.pow(2));
+        material.aoNode = otherBiome ? mix(0.12, 0.58, inner) : mix(0.26, 0.72, inner.pow(2));
       } else if (asset === "poppy") {
         // Keep the photographed red petals; lift only the nearly black stems/seed pods.
         const dark = smoothstep(0.045, 0.008, sampled.r.max(sampled.g).max(sampled.b));
@@ -209,8 +222,10 @@ function surface(
       material.alphaTestNode =
         world === "tundra" && !canopy ? float(0.5) : float(0.42).div(float(1).add(mip.mul(0.25)));
       material.opacityNode = sampled.a;
-      if (canopy) lightNeedles(material, material.aoNode as Node<"float">);
-      else if (asset !== "poppy") material.emissiveNode = material.colorNode.mul(0.025);
+      if (canopy) {
+        lightNeedles(material, material.aoNode as Node<"float">);
+        if (!otherBiome) material.emissiveNode = (material.emissiveNode as Node<"vec3">).mul(0.18);
+      } else if (asset !== "poppy") material.emissiveNode = material.colorNode.mul(0.025);
     }
   }
   if (!stone) {
@@ -250,6 +265,13 @@ export async function loadPack(
       (world === "desert" &&
         ["grass", "scrub", "boulder", "scree", "riverrock"].includes(one.asset)),
   );
+  if (world === "forest" || world === "coastal")
+    selected.push(
+      ...WORLD_ROCKS.filter((one) => one.asset === "mountain").map((one) => ({
+        ...one,
+        path: one.path.replace(/^temperate\//, "").replace(/\.glb$/, ""),
+      })),
+    );
   if (world === "alpine" || world === "desert")
     selected.push(
       ...WORLD_ROCKS.filter((one) =>
@@ -288,11 +310,14 @@ export async function loadPack(
       if (!source.map) return;
       // One whole-model scale/base for all sections: scaling each part separately detached crowns.
       const geometry = mesh.geometry.clone().applyMatrix4(mesh.matrixWorld);
-      geometry.translate(0, -box.min.y, 0);
+      const centre = box.getCenter(new Vector3());
+      const centredStone = stone && (world === "forest" || world === "coastal");
+      geometry.translate(centredStone ? -centre.x : 0, -box.min.y, centredStone ? -centre.z : 0);
       geometry.scale(factor, factor, factor);
       if (world === "tundra" && one.asset === "grass") geometry.scale(1.35, 0.5, 1.35);
       if (world === "tundra" && one.asset === "scrub") geometry.scale(2.8, 1.2, 2.8);
       if (one.asset === "spruce") geometry.scale(1.12, 1, 1.12);
+      if (world === "coastal" && one.asset === "grass") geometry.scale(0.55, 1.35, 0.55);
       // spruce_full_03_low ships zero normals. Repair the optional art, including existing cooks.
       const normals = geometry.getAttribute("normal");
       if (!normals || Math.hypot(normals.getX(0), normals.getY(0), normals.getZ(0)) < 0.01)

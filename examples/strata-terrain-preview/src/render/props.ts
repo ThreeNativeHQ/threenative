@@ -378,7 +378,13 @@ function preparePose(
         ? box.clone().applyMatrix4(model.matrix).getSize(new Vector3()).y
         : (box.max.y - box.min.y) * model.scale.y;
       model.position.y -=
-        (placement.asset === "mountain" ? 0.7 : crag ? 0.55 : BOULDER_BURIAL) * height;
+        (placement.id.endsWith(":outcrop")
+          ? 0.35
+          : placement.asset === "mountain"
+            ? 0.7
+            : crag
+              ? 0.55
+              : BOULDER_BURIAL) * height;
     }
   }
   model.updateMatrix();
@@ -438,6 +444,7 @@ export function readPropTransform(instance: IPropInstance): IPlacementOverride {
 export function variantFor(placement: IPlacement, asset: string): number {
   const count = PROP_ASSETS[asset];
   if (count === undefined) throw new Error(`Unregistered prop asset '${asset}'`);
+  if (asset === "mountain" && placement.id.endsWith(":outcrop")) return 0;
   let hash = 0x811c9dc5;
   for (let i = 0; i < placement.id.length; i += 1) {
     hash ^= placement.id.charCodeAt(i);

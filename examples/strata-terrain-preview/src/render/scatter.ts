@@ -44,6 +44,11 @@ export function grassWeight(data: IPlacementField, x: number, z: number): number
   // terrain.ts now blends by actual landform, not the bake's old brown palette.
   // Match its meadow/rock/alpine and beach reaches so a green surface grows real cover.
   const height = clampedHeight(data, x, z);
+  if (data.world === "coastal" && data.waterLevel !== null)
+    return (
+      clamp01((height - data.waterLevel - 1.8) / 5.7) *
+      clamp01((42 - slopeDegrees(data, x, z)) / 20)
+    );
   if (data.waterLevel !== null && height < data.waterLevel + 7.5) return 0;
   const slope = slopeDegrees(data, x, z);
   if (data.world === "alpine") return clamp01((38 - slope) / 22) * clamp01((88 - height) / 40);
@@ -173,8 +178,9 @@ export function scatterProps(
     }
     const index = counts[asset] ?? 0;
     const crag = asset === "mountain" || asset === "volcanic" || asset === "reveal";
-    const normal = crag ? data.field.normalAt(x, z) : undefined;
-    if (normal) {
+    const bedded = temperate && ["boulder", "riverrock", "scree"].includes(asset);
+    const normal = crag || bedded ? data.field.normalAt(x, z) : undefined;
+    if (crag && normal) {
       normal.y += 0.65;
       normal.normalize();
     }
@@ -182,9 +188,9 @@ export function scatterProps(
       asset,
       id: `temperate-${asset}:${index}${suffix}`,
       layer: `temperate-${asset}`,
-      alignToNormal: crag || (temperate && (asset === "spruce" || asset === "sapling")),
+      alignToNormal: crag || bedded || (temperate && (asset === "spruce" || asset === "sapling")),
       normal:
-        crag && normal
+        (crag || bedded) && normal
           ? normal.toArray()
           : temperate && (asset === "spruce" || asset === "sapling")
             ? [Math.sin(x * 1.17 + z) * 0.045, 1, Math.cos(z * 1.31 - x) * 0.045]
@@ -214,6 +220,9 @@ export function scatterProps(
       wet(x, z) ||
       nearEye(x, z) ||
       slopeDegrees(data, x, z) > 32 ||
+      (temperate &&
+        data.waterLevel !== null &&
+        clampedHeight(data, x, z) < data.waterLevel + 7.5) ||
       (data.world === "alpine" && clampedHeight(data, x, z) > 52) ||
       grassWeight(data, x, z) < (temperate ? 0.3 : 0.18) ||
       forestWeight(x, z) < (temperate ? 0.3 : 0.42)
@@ -345,7 +354,14 @@ export function scatterProps(
       "grass",
       x,
       z,
-      (temperate ? 0.8 : tundra ? 0.25 : 0.55) + random() * (temperate ? 0.65 : tundra ? 0.3 : 0.5),
+      (data.world === "coastal" && clampedHeight(data, x, z) < (data.waterLevel ?? 0) + 7.5
+        ? 2.2
+        : temperate
+          ? 0.8
+          : tundra
+            ? 0.25
+            : 0.55) +
+        random() * (temperate ? 0.65 : tundra ? 0.3 : 0.5),
     );
     if (!desert && random() < (tundra ? 0.85 : 0.3))
       put(
@@ -407,6 +423,26 @@ export function scatterProps(
         put("poppy", x, z, 0.8 + random() * 0.4);
       }
     }
+  }
+  if (temperate) {
+    // Separate seed: dressing the rock/shore never reshuffles the established stands.
+    const dressing = createRandom(SCATTER.seed + 12);
+    for (let z = -half + 12; z < half - 12; z += 12)
+      for (let x = -half + 12; x < half - 12; x += 12) {
+        const sx = x + (dressing() - 0.5) * 10;
+        const sz = z + (dressing() - 0.5) * 10;
+        const slope = slopeDegrees(data, sx, sz);
+        const height = clampedHeight(data, sx, sz);
+        const shore =
+          data.waterLevel !== null &&
+          height > data.waterLevel + 0.4 &&
+          height < data.waterLevel + 7;
+        if (nearEye(sx, sz) || wet(sx, sz)) continue;
+        if (shore && slope > 12 && dressing() < 0.65)
+          put("mountain", sx, sz, (5 + dressing() * 10) / 24, ":outcrop");
+        else if (slope > 30 && slope < 64 && dressing() < 0.6)
+          put("mountain", sx, sz, (10 + dressing() * 10) / 24, ":outcrop");
+      }
   }
   return { counts, placements };
 }
