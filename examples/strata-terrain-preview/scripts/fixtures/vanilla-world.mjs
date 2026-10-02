@@ -34,11 +34,21 @@ camera.position
   );
 camera.lookAt(at);
 const placements = [];
+const water = [];
 let meshes = 0;
 let pbrMaps = 0;
 gltf.scene.traverse((object) => {
   if (object.userData.placementId)
     placements.push({ id: object.userData.placementId, matrix: object.matrixWorld.toArray() });
+  // A glTF node name cannot carry a colon in three's loader: it strips reserved characters on the
+  // way in, so the exported `water:river` arrives as `waterriver`. Matching the prefix is what an
+  // ordinary consumer can actually do, so that is what this one does.
+  if (typeof object.name === "string" && object.name.startsWith("water"))
+    water.push({
+      id: object.name.slice("water".length).replace(/^:/, ""),
+      triangles:
+        (object.geometry.index?.count ?? object.geometry.getAttribute("position").count) / 3,
+    });
   if (object instanceof Mesh) {
     meshes++;
     for (const material of Array.isArray(object.material) ? object.material : [object.material]) {
@@ -54,6 +64,7 @@ window.portableWorld = {
   meshes,
   placements,
   pbrMaps,
+  water,
   cameras: gltf.cameras.length,
   animations: gltf.animations.length,
   frames: 0,

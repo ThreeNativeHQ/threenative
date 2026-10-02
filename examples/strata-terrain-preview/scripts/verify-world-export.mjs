@@ -23,6 +23,9 @@ try {
   const producer = await createServer({
     root,
     configFile: false,
+    // The project's own Vite config serves the CC0 starter sets from the terrain package; this
+    // standalone server has to be told, or the export would be proven with no art loaded at all.
+    publicDir: resolve("../../packages/terrain/starter-assets"),
     server: { host: "127.0.0.1", port: 5197 },
     plugins: [plugin],
     optimizeDeps: { exclude: ["@threenative/terrain/editor"] },
@@ -108,29 +111,20 @@ try {
         (revision) => window.strata.view.inspect().renderedRevision === revision,
         accepted.revision,
       );
-      // An unresolved river may never silently disappear from a purported full-world export.
-      const missingWater = await session.page.evaluate(async () => {
-        const { exportFixtureWorld } = await import("/scripts/fixtures/export-world.mjs");
-        try {
-          await exportFixtureWorld();
-          return null;
-        } catch (error) {
-          return error.message;
-        }
-      });
-      assert.match(missingWater, /Water 'river'.*baked snapshot/);
-      assert.equal((await controller.snapshot()).revision, accepted.revision);
-      const dry = await controller.commit({
-        baseRevision: accepted.revision,
-        commands: [{ op: "remove", id: "river" }],
-      });
-      await session.page.waitForFunction(
-        (revision) =>
-          window.strata.view.inspect().renderedRevision === revision && !window.strata.busy,
-        dry.revision,
-      );
-      await advanceFixedStep(session.page, session.bridge, 2);
+      // The authored world keeps its river: a full-world export that quietly drops water is not a
+      // full-world export, so the export must bake the river rather than the recipe losing it.
       const expected = await session.page.evaluate(() => window.strata.view.inspectProps());
+      const dry = accepted;
+      const liveWater = await session.page.evaluate(() => window.strata.view.inspectWater());
+      assert.deepEqual(
+        liveWater.map((entry) => entry.id),
+        ["river"],
+        "The live editor must draw the authored river",
+      );
+      assert(
+        liveWater.every((entry) => entry.triangles > 0),
+        "Every authored water body must be real geometry in the live scene",
+      );
       const result = await session.page.evaluate(async () =>
         (await import("/scripts/fixtures/export-world.mjs")).exportFixtureWorld(),
       );
@@ -149,7 +143,20 @@ try {
       const bytes = Buffer.from(base64, "base64");
       const length = bytes.readUInt32LE(12);
       const json = JSON.parse(bytes.subarray(20, 20 + length).toString("utf8"));
-      assert((json.images?.length ?? 0) >= 4);
+      // The exported world's PBR images must be this game's own starter maps, not a fixture's 16x16
+      // checkers: the container is already proven, so the art is what this handoff carries. A 1K map
+      // is tens of kilobytes of pixels; the fixture's checkers were a few hundred bytes each.
+      const bufferView = (index) => json.bufferViews[index].byteLength;
+      const imageBytes = (json.images ?? []).map((image) => bufferView(image.bufferView));
+      assert(
+        imageBytes.length >= 4,
+        `Expected the ground's four PBR maps, got ${imageBytes.length}`,
+      );
+      assert(
+        imageBytes.every((bytes) => bytes > 20_000),
+        `Every exported image must be a real starter map, got ${JSON.stringify(imageBytes)}`,
+      );
+      assert.deepEqual(result.report.waterIds, ["river"], "The authored river must travel");
       assert(json.images.every((image) => image.bufferView !== undefined && !image.uri));
       assert(json.buffers.every((buffer) => !buffer.uri));
       assert(!json.extensionsRequired?.includes("EXT_mesh_gpu_instancing"));
@@ -164,10 +171,13 @@ try {
           descendants.push(...(node.children ?? []));
         }
       }
+      // A spruce is a trunk draw and a crown draw, and the starter hashes placements across two variants,
+      // so 100 placement nodes reference exactly four shared geometries: per-placement nodes, shared
+      // mesh data.
       assert.equal(
         modelMeshes.size,
-        1,
-        "100 ordinary placement nodes must share their one model's mesh data",
+        4,
+        "100 placement nodes must share their variants' trunk and crown mesh data",
       );
       writeFileSync(join(isolated, "public/world.glb"), bytes);
       const artifact = resolve(config.artifactDirectory, "world.glb");
@@ -190,7 +200,18 @@ try {
       );
       const loaded = await session.page.evaluate(() => window.portableWorld);
       assert.equal(loaded.placements.length, 100);
-      assert(loaded.meshes >= 101 && loaded.pbrMaps >= 4);
+      // The baked river must survive into an ordinary game, with real triangles and no second
+      // material authority: the receiving scene supplies its own light and draws what arrived.
+      assert.deepEqual(
+        loaded.water.map((entry) => entry.id),
+        ["river"],
+        "The authored river must reach an ordinary receiving game",
+      );
+      assert(loaded.water[0].triangles > 0, "The exported river must carry real triangles");
+      // 202 meshes: the terrain, two draws for each of the 100 placements and the river. 404 PBR
+      // maps: the ground's four, plus this game's bark, stone and needle sets on the props.
+      assert.equal(loaded.meshes, 202);
+      assert.equal(loaded.pbrMaps, 404);
       assert.equal(loaded.cameras, 0);
       assert.equal(loaded.animations, 0);
       assert.equal(loaded.rootExtras.terrainRevision, dry.revision);
