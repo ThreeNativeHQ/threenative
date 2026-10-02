@@ -143,6 +143,30 @@ function expectContainsEveryVertex(mesh: Mesh): void {
 }
 
 describe("TerrainTiles settled-frame cost", () => {
+  it("reads the active blend count without walking the resident ring", () => {
+    const tiles = ring(2, 17, 32, 25, 64_000_000);
+    try {
+      const before = renderedPositions(tiles);
+      const values = vi.spyOn(Map.prototype, "values");
+      expect(tiles.blendingTiles).toBe(0);
+      expect(values).not.toHaveBeenCalled();
+      values.mockRestore();
+      tiles.process();
+      expect(renderedPositions(tiles)).toEqual(before);
+      for (let frame = 1; frame <= 60; frame += 1) {
+        tiles.follow({ x: frame * 0.3, z: 0 });
+        tiles.process();
+      }
+      for (let frame = 0; frame < 4; frame += 1) tiles.process();
+      expect(tiles.blendingTiles).toBe(0);
+      tiles.dispose();
+      expect(tiles.blendingTiles).toBe(0);
+    } finally {
+      vi.restoreAllMocks();
+      tiles.dispose();
+    }
+  });
+
   // A still camera must not rebuild per-sample seam coverage. `bridgeCoverageAt` revalidated the
   // whole bridge topology and re-derived three world matrices *for every sample of every pair*,
   // which is what turned a 25-tile ring into a 289-tile frame cost.

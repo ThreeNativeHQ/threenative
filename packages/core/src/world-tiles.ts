@@ -1841,6 +1841,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
   #peakBytes = 0;
   #peakTiles = 0;
   #lodTransitions = 0;
+  readonly #blending = new Set<IResidentTile>();
   /** Merged super-tiles by block key, and the blocks a LOD or residency change left to rebuild. */
   readonly #blocks = new Map<string, IMergedBlock>();
   readonly #dirtyBlocks = new Set<string>();
@@ -2052,9 +2053,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
    * `process` while its follow point is standing still would freeze every blend on frame one.
    */
   get blendingTiles(): number {
-    let blending = 0;
-    for (const tile of this.#resident.values()) if (tile.lodTransition !== undefined) blending += 1;
-    return blending;
+    return this.#blending.size;
   }
 
   /**
@@ -2563,6 +2562,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
       return;
     }
     this.#lodTransitions += 1;
+    this.#blending.add(tile);
     tile.lodTransition = {
       elapsedFrames: 0,
       from: previousLevel,
@@ -2632,7 +2632,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
   }
 
   #advanceLodTransitions(): void {
-    for (const tile of this.#resident.values()) {
+    for (const tile of this.#blending) {
       const transition = tile.lodTransition;
       if (transition === undefined) continue;
       const from = tile.levels[transition.from];
@@ -2657,6 +2657,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
       );
       this.#restoreLodTransition(tile, transition);
       tile.lodTransition = undefined;
+      this.#blending.delete(tile);
       setManualLodLevel(tile.lod, transition.to);
       this.#setLodVisibility(tile);
       // The end of a blend is the one moment a tile rejoins its settled block.
@@ -2766,6 +2767,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     this.#maxLodTransitionFrames = Math.max(this.#maxLodTransitionFrames, transition.elapsedFrames);
     this.#restoreLodTransition(tile, transition);
     tile.lodTransition = undefined;
+    this.#blending.delete(tile);
     setManualLodLevel(tile.lod, transition.to);
     this.#setLodVisibility(tile);
   }
@@ -3099,6 +3101,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
   }
 
   #evict(tile: IResidentTile): void {
+    this.#blending.delete(tile);
     if (this.#mergeTiles) {
       this.#releaseStaleBlock(tile.lodLevel, tile.tileX, tile.tileZ);
       this.#mergedMembers.delete(tile.key);
