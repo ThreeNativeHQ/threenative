@@ -193,7 +193,9 @@ interface IMergedBlock {
   readonly mesh: Mesh;
   /** This block's own geometry bytes, reported through `terrainTiles.blockBytes`. */
   bytes: number;
-  /** The tile keys whose current level geometry this block holds. */
+  /** The tile keys whose current level geometry this block holds, kept equal to what its geometry
+   * actually holds: a record the geometry has moved past double-draws the tiles that left and hides
+   * the ones that joined. */
   members: Set<string>;
 }
 
@@ -2014,7 +2016,9 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
    * merged super-tiles plus one mesh each for the tiles that are not merged (a lone block member or
    * a tile mid LOD morph). `draws` is `blocks` plus those individual meshes, so with the merge off
    * it is exactly the number of visible level meshes — the census the merge exists to cut. `blending`
-   * counts the resident tiles mid LOD morph, which are always among the individual meshes.
+   * counts the resident tiles mid LOD morph, which are always among the individual meshes. A block
+   * whose tile just left stops being drawn until its rebuild lands, and those tiles are counted as the
+   * individual meshes they went back to — see `#releaseStaleBlock`.
    * `rebuilds` counts the block geometries built over this residency owner's life. `blockBytes` is
    * what the held blocks cost, reported and not charged to `residentByteBudget` — see `residentBytes`.
    */
@@ -2546,8 +2550,9 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     const next = tile.levels[selectable];
     if (previous === undefined || next === undefined)
       throw new Error("TerrainTiles LOD transition references a missing level.");
-    // The tile leaves its old level's block and joins the new level's; both memberships changed.
-    this.#markBlockDirty(previousLevel, tile.tileX, tile.tileZ);
+    // The tile leaves its old level's block and joins the new level's: the old one is now holding
+    // ground this tile is no longer at, and the new one is waiting to be built.
+    this.#releaseStaleBlock(previousLevel, tile.tileX, tile.tileZ);
     tile.lodLevel = selectable;
     this.#markBlockDirty(selectable, tile.tileX, tile.tileZ);
     this.#ringEpoch += 1;
@@ -2929,6 +2934,23 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
   }
 
   /**
+   * Let go of a block one of its tiles has left.
+   *
+   * A departure is the one ring change a rebuild cannot hide: the block's geometry still holds the
+   * tile that just left, so it would draw that ground a second time — at the level the tile has left
+   * — until this frame's one rebuild could replace it, and one rebuild a frame does not arrive before
+   * the next departure. So the block stops being drawn the frame the departure happens, every tile it
+   * still holds goes back to its own mesh, and the rebuild queue brings the block back whole. It is
+   * dirty either way: the block has to be rebuilt whatever this does to it. (PRD-475.)
+   */
+  #releaseStaleBlock(lod: number, tileX: number, tileZ: number): void {
+    if (!this.#mergeTiles) return;
+    const blockKey = blockKeyFor(lod, tileX, tileZ);
+    this.#markBlockDirty(lod, tileX, tileZ);
+    if (this.#blocks.has(blockKey)) this.#dissolveBlock(blockKey);
+  }
+
+  /**
    * Rebuild one dirty block, charging it to the frame's admission budget like any other streamed
    * work. One, per frame, whatever the budget still holds: a rebuild concatenates a K×K block of
    * settled tile levels, and a follow that paid for every block its own streaming churn left dirty
@@ -2993,13 +3015,17 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
       this.#blocks.set(blockKey, { bytes, geometry, key: blockKey, lod, members, mesh });
       this.add(mesh);
     } else {
+      const left = existing.members;
       existing.geometry.dispose();
       existing.bytes = bytes;
       existing.mesh.geometry = geometry;
+      // The record follows the geometry: the loop below restores the tiles this rebuild dropped, and
+      // `terrainTiles` counts what the blocks hold, so a stale record here is a tile drawn twice or
+      // not at all (PRD-475).
+      existing.members = members;
       this.#blocks.set(blockKey, existing);
+      for (const key of left) if (!members.has(key)) this.#showTile(key, blockKey);
     }
-    if (existing !== undefined)
-      for (const key of existing.members) if (!members.has(key)) this.#showTile(key, blockKey);
     for (const key of members) {
       this.#mergedMembers.set(key, blockKey);
       const tile = this.#resident.get(key);
@@ -3070,7 +3096,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
 
   #evict(tile: IResidentTile): void {
     if (this.#mergeTiles) {
-      this.#markTileDirty(tile);
+      this.#releaseStaleBlock(tile.lodLevel, tile.tileX, tile.tileZ);
       this.#mergedMembers.delete(tile.key);
     }
     if (this.#resident.get(tile.key) === tile) this.#resident.delete(tile.key);
