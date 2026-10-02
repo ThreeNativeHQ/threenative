@@ -144,8 +144,11 @@ before `gh variable set TN_RUNNER --body tn-local`. `down` deletes the variable 
 the stack. The script fails closed when the env file or token is missing.
 
 
-- [ ] `scripts/ci-runners.sh up` brings 4 runners online with label `tn-local`. proof:
-  `scripts/ci-runners.sh status` lists 4 online runners. Not started: `status` reports
+- [x] `scripts/ci-runners.sh up` brings 4 runners online with label `tn-local`. proof:
+  `scripts/ci-runners.sh status` lists 4 online runners. Evidence: 2026-10-02, `up` printed "4 online;
+  TN_RUNNER=tn-local" and `status` listed tn-23e70acfd553, tn-365ab3636a2e, tn-4d83d32a4c75 and
+  tn-6071a30e949e, all online. The first `up` timed out with 0 online (wrong WORKDIR), cleared the
+  variable and stopped the pool, which is the fail-closed path working. Not started: `status` reports
   `TN_RUNNER=unset`, 0 containers, 0 online runners on 2026-10-02.
 - [ ] A runner container recreates itself after its job and keeps no state from it. proof: two
   consecutive dispatched jobs report different container hostnames and an empty `/tmp`.

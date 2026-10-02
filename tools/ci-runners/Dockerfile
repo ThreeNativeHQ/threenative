@@ -27,9 +27,9 @@ RUN apt-get update \
       libx11-6 libxcb1 libxcomposite1 libxdamage1 libxext6 libxfixes3 libxkbcommon0 libxrandr2 \
  && rm -rf /var/lib/apt/lists/*
 
-COPY entrypoint.sh /actions-runner/entrypoint.sh
-RUN chmod 0755 /actions-runner/entrypoint.sh
+COPY entrypoint.sh /home/runner/entrypoint.sh
+RUN chmod 0755 /home/runner/entrypoint.sh
 
 USER runner
-WORKDIR /actions-runner
-ENTRYPOINT ["/actions-runner/entrypoint.sh"]
+WORKDIR /home/runner
+ENTRYPOINT ["/home/runner/entrypoint.sh"]
