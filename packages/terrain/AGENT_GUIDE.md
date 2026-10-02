@@ -11,7 +11,7 @@ Prefer stable semantic IDs: `base`, `north-peak`, `camp-pad`, `access-road`, `ri
 ## Workflow
 
 1. Establish world size, seed, and a low preview resolution. Add base noise and large landforms.
-2. Add erosion before fine roads/building pads. Use explicit road/river elevation profiles.
+2. Add erosion before fine roads/building pads. Roads and pads take their elevation from the ground they cross unless you pin one.
 3. Add surface/biome rules and population. Put rules after the geometry changes whose slopes they should see. Road painting can override earlier surface rules; a later reset-material pass can also erase a road's paint.
 4. Inspect the result and diagnostics. Modify known IDs, keeping the source stack small.
 5. Export the recipe and derived runtime data at an explicit resolution. Verify the high-resolution result; resolution-dependent simulation is not guaranteed to match the preview exactly.
@@ -46,6 +46,8 @@ t.erode({ id: 'hydraulic', method: 'hydraulic', droplets: 5000, maxSteps: 40 });
 t.terrace({ id: 'strata', step: 8, softness: .22, strength: .7 });
 ```
 
+A `flatten` with no `height` levels the pad to the ground already under it and lets the blend reach as far as its deepest cut or fill, so it is a bench rather than a mesa.
+
 Stroke tools accept `at` or a polyline `points`. Brush radius is a **radius**, not diameter. Strength is signed metres for sculpt; `0..1` for smoothing, flattening and paint. Stroke coverage uses maximum falloff coverage, not repeated accumulation at every mouse event. Holding a brush stationary does not keep adding height. Points are interpolated at `2 * radius * spacing`; jitter is seeded. Procedural stamps use `amplitude` in metres. `opacity` is available on every layer.
 
 Masks are serializable expressions, never callbacks:
@@ -79,10 +81,10 @@ t.paint({ id: 'camp-dirt', at: [-70,50], radius: 27, material: 'dirt', strength:
 
 ## Roads, rivers and water
 
-Roads use explicit elevation profiles; they do not infer engineering grades. Horizontal spline interpolation is Catmull–Rom; vertical interpolation is linear between controls to avoid vertical overshoot. Use `smooth:false` for a polyline.
+A road, river or ramp **grades itself to the ground it crosses** when a control point leaves its elevation out (`null`, or `NaN` in code) or when it sets `followTerrain: true`. The elevation is sampled along the centreline, low-passed along arc length, then held inside `maxGrade` (default 0.12) and `maxCut`/`maxFill` (default 2.5 m / 1.5 m); the shoulder widens into a batter with the cut or fill, so a corridor never stands on a retaining step. Leaving the ground is the hard limit: where the ground itself is steeper than `maxGrade`, the road is steep too. Absolute elevations are still honoured exactly, so existing documents keep their meaning. Horizontal spline interpolation is Catmull–Rom; vertical interpolation is linear between controls to avoid vertical overshoot. Use `smooth:false` for a polyline.
 
 ```js
-t.road({ id: 'access-road', points: [[-220,10,100],[-150,17,70],[-70,22,50]], width: 12, shoulder: 8 });
+t.road({ id: 'access-road', points: [[-220,null,100],[-150,null,70],[-70,null,50]], width: 12, shoulder: 8 });
 t.river({ id: 'river-main', points: [[20,14,-240],[35,8,0],[80,3,240]], width: 18, depth: 4, enforceDownhill: true });
 t.water({ id: 'lake', kind: 'lake', at: [80,210], radius: 75, level: 4 });
 ```

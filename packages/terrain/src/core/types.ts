@@ -146,7 +146,8 @@ export interface ISmoothParams extends IBrushParams {
 }
 
 export interface IFlattenParams extends IBrushParams {
-  readonly height?: number;
+  /** Absolute metres; omitted or null levels the pad to the ground already under it. */
+  readonly height?: number | null;
 }
 
 export interface IPaintParams extends IBrushParams {
@@ -237,8 +238,27 @@ export interface IClearParams extends IOperationBase {
   readonly name?: string;
 }
 
-export interface IRoadParams extends IOperationBase {
-  readonly points: readonly (readonly [number, number, number])[];
+/** A spline control point; a null elevation means the spline reads the ground it crosses there. */
+export type SplinePoint = readonly [number, number | null, number];
+
+/**
+ * Grading shared by roads, rivers and ramps. A following spline takes its elevation from the
+ * terrain it crosses — low-passed along arc length, then held inside the grade and cut/fill limits
+ * — so a corridor is a bench cut into a hillside rather than a causeway pinned above it.
+ */
+export interface IGradeParams {
+  /** Defaults to true when a control point omits its elevation; absolute points keep their meaning. */
+  readonly followTerrain?: boolean;
+  /** Maximum rise per metre travelled along the centreline; default 0.12. */
+  readonly maxGrade?: number;
+  /** Maximum metres the centreline may cut below the ground it crosses; default 2.5. */
+  readonly maxCut?: number;
+  /** Maximum metres it may fill above it; default 1.5. */
+  readonly maxFill?: number;
+}
+
+export interface IRoadParams extends IOperationBase, IGradeParams {
+  readonly points: readonly SplinePoint[];
   readonly width?: number;
   readonly shoulder?: number;
   readonly material?: MaterialId;
@@ -254,9 +274,9 @@ export interface IRiverParams extends IRoadParams {
   readonly enforceDownhill?: boolean;
 }
 
-export interface IRampParams extends IOperationBase {
-  readonly from: readonly [number, number, number];
-  readonly to: readonly [number, number, number];
+export interface IRampParams extends IOperationBase, IGradeParams {
+  readonly from: SplinePoint;
+  readonly to: SplinePoint;
   readonly width?: number;
   readonly shoulder?: number;
   readonly material?: MaterialId;
