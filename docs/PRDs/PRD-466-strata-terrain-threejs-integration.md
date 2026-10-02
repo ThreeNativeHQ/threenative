@@ -1957,3 +1957,45 @@ ground cover that hides the soil plus shadow-cascade coverage (hard shadow edge 
 the merged tip: rc=0, 0 failed checks, `verify-ocean` green; `test:terrain:web` now opens `?showcase=1`, the
 mode whose capsule assertion the scenario carries. Captures: `docs/verification/visuals/strata/v10-*.jpg`.
 AC-5 stays open.
+
+### Round 17 — playable erosion and transport surfaces (2026-10-02)
+
+Complexity: 3 → LOW; risk override: none. Example landform/surface recipes own
+appearance; the headless terrain engine owns retaining its measured transport.
+Canopy assets/materials, tree/cover scatter and lighting/sky/haze/grade are excluded.
+
+1. Retain hydraulic flow/sediment/deposition and thermal deposits through the public
+   evaluator, including masks and prefix-cache isolation. proof: terrain Vitest suite.
+2. Strengthen all five playable recipes; bake vertex transport and surface weights,
+   consume the same deposits for rocks, and key the existing cache on the script.
+   proof: cold/warm bake, example tsc and root Biome.
+3. Inspect full-resolution crops against the supplied Gaia references; run licensed
+   and fallback full scenarios on 5297, ocean verification and packed world export.
+   proof: erosion-final captures, all view CPU p50 ≤4 ms, test:consumer.
+
+Status: IN PROGRESS. The first transport consumer test fails because evaluated
+state has no erosion observations. Baseline capture queued on the shared GPU lock.
+
+First verified increment: headless erosion retains canonical-grid flow, carried
+sediment, hydraulic deposition and thermal deposits. Mask/opacity scaling,
+determinism and caller-owned prefix-cache arrays are covered. Terrain build +
+publint and package typecheck pass; terrain Vitest **71/71** passes.
+
+Aggressive erosion exposed two shared algorithm defects: brush pickup removed
+material already below the downstream bed, and live droplets dumped their entire
+suspended load when their step budget ended. The original seeded 80 m mesa
+control cuts to **−39.29 m**; bounded pickup keeps it at **0.10–31.27 m** and
+34° thermal settling limits local prominence to **1.68 m**. The erosion hash
+intentionally changes to pin this correction; noise remains unchanged. Strong
+bake rejected before repair: alpine max 264.3 m, desert max 1,189.3 m. Repaired
+candidate: alpine max 124.7 m, desert max 90 m, tundra zero >1 m spikes.
+The final cutoff retains suspended material as outflow from this finite droplet
+integration; it does not pretend that water dried at a fixed step count.
+
+Baseline licensed scenario PASS (69 assertions), NVIDIA Turing, 1920×1080;
+`verify-ocean` PASS. Root `pnpm lint` passes with existing warnings. Root
+`pnpm typecheck` fails on missing declarations for existing glb.mjs/png.mjs test
+fixtures; root `pnpm test` fails on absent native test binaries (21 native checks)
+and the suite temporary-directory accounting check. Those are not passing gates.
+Example tsc/Biome and the placement check pass; final visual/scenario/export
+qualification is pending.

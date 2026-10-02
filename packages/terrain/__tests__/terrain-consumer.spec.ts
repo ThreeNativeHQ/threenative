@@ -14,6 +14,27 @@ import { BufferGeometry, Mesh, MeshBasicMaterial, Raycaster, Vector3 } from "thr
 import { describe, expect, it } from "vitest";
 
 describe("public terrain consumer", () => {
+  it("returns measured erosion transport, respects masks and isolates cached arrays", () => {
+    const terrain = new Terrain({ size: 64, resolution: 33, seed: 123 })
+      .noise({ id: "hills", amplitude: 30, scale: 20 })
+      .erode({ id: "rain", method: "hydraulic", droplets: 3000, erosion: 0.15 })
+      .erode({ id: "talus", method: "thermal", iterations: 12, talus: 25 });
+    const state = terrain.evaluate();
+    expect(state.erosion).toBeDefined();
+    for (const values of Object.values(state.erosion ?? {})) {
+      expect(values.length).toBe(state.height.length);
+      expect(values.every((value: number) => Number.isFinite(value) && value >= 0)).toBe(true);
+      expect(values.some((value: number) => value > 0)).toBe(true);
+    }
+    expect(Terrain.fromJSON(terrain.toJSON()).evaluate().erosion).toEqual(state.erosion);
+    state.erosion?.flow.fill(999);
+    expect(terrain.evaluate().erosion?.flow.some((value) => value === 999)).toBe(false);
+    terrain.update("rain", { mask: Mask.none() });
+    terrain.update("talus", { opacity: 0 });
+    expect(
+      Object.values(terrain.evaluate().erosion ?? {}).every((a) => a.every((v: number) => v === 0)),
+    ).toBe(true);
+  });
   it("applies a brush operation over the whole world when no brush is given", () => {
     // A layer with no `at`/`points` means "everywhere", not "nowhere": the whole-grid fallback
     // used to allocate an uninitialised Float32Array, which is all zeros, so a brushless `smooth`
@@ -137,19 +158,16 @@ describe("public terrain consumer", () => {
     expect(terrain.evaluate().height.some((height) => height === 999)).toBe(false);
   });
 
-  it("preserves the supplied noise and erosion output exactly", () => {
+  it("pins seeded noise and physically bounded erosion output", () => {
     const state = new Terrain({ size: 64, resolution: 33, seed: 123 })
       .noise({ id: "hills", amplitude: 12, scale: 30, warp: 7 })
       .erode({ id: "erode", method: "hydraulic", droplets: 90, maxSteps: 15 })
       .erode({ id: "talus", method: "thermal", iterations: 3, talus: 32 })
       .evaluate();
-    // Generated from the supplied source, not from this port. The hydraulic pass changed when
-    // erosion and deposition moved onto a brush (it used to leave single-cell spikes), and again
-    // when the per-step erosion default dropped from 0.25 to 0.03 so a dense droplet budget cuts
-    // shallow lines instead of dimples; the noise coefficients that feed it are untouched, and
-    // this recipe pins its own droplets and maxSteps.
+    // Round 17 bounds brush pickup by the downstream bed and retains suspended sediment at the
+    // integration cutoff. This intentionally changes erosion; seeded noise remains unchanged.
     expect(createHash("sha256").update(state.height).digest("hex")).toBe(
-      "4d620f3aed39b13716f6f2fa31e65c0f757e74cd39e059a65de24b2325973c21",
+      "95f7ac78b3fdd4d0c50077b83dbe6e0e9209861316a81ee8da9c682972a699b3",
     );
   });
 

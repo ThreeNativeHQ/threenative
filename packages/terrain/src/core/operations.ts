@@ -542,27 +542,41 @@ export function applyOperation(s: ITerrainState, layer: Layer): void {
       break;
     }
     case "erode": {
+      const observations = {
+        flow: new Float32Array(s.height.length),
+        sediment: new Float32Array(s.height.length),
+        deposition: new Float32Array(s.height.length),
+        talus: new Float32Array(s.height.length),
+      };
+      s.erosion ??= structuredClone(observations);
       const eroded =
         p.method === "hydraulic"
-          ? hydraulic(s.height, n, s.size, {
-              seed,
-              droplets: p.droplets,
-              maxSteps: p.maxSteps,
-              inertia: p.inertia,
-              capacity: p.capacity,
-              erosion: p.erosion,
-              deposition: p.deposition,
-              evaporation: p.evaporation,
-            })
-          : thermal(s.height, n, s.size, p);
+          ? hydraulic(
+              s.height,
+              n,
+              s.size,
+              {
+                seed,
+                droplets: p.droplets,
+                maxSteps: p.maxSteps,
+                inertia: p.inertia,
+                capacity: p.capacity,
+                erosion: p.erosion,
+                deposition: p.deposition,
+                evaporation: p.evaporation,
+              },
+              observations,
+            )
+          : thermal(s.height, n, s.size, p, observations);
       let influence = mask;
       if (p.at || p.points) influence = brushWeights(s, p, mask, seed);
-      for (let i = 0; i < s.height.length; i += 1)
-        s.height[i] = lerp(
-          s.height[i] as number,
-          eroded[i] as number,
-          (influence?.[i] ?? 1) * opacity * (p.strength ?? 1),
-        );
+      for (let i = 0; i < s.height.length; i += 1) {
+        const alpha = (influence?.[i] ?? 1) * opacity * (p.strength ?? 1);
+        s.height[i] = lerp(s.height[i] as number, eroded[i] as number, alpha);
+        for (const key of ["flow", "sediment", "deposition", "talus"] as const)
+          s.erosion[key][i] =
+            (s.erosion[key][i] as number) + (observations[key][i] as number) * alpha;
+      }
       break;
     }
     case "terrace": {
