@@ -137,6 +137,12 @@ const CLOUDS = {
   /** How much a dense core is darkened relative to a thin fringe. */
   core: 0.78,
   /**
+   * The deck's brightness against the physical sky behind it. The sky is in radiance units several
+   * times above one, so a cloud written as plain white came out darker than the blue around it —
+   * grey blobs — once the rig stopped fogging its own dome.
+   */
+  radiance: 4.5,
+  /**
    * How far below the horizon the deck's own haze reaches, and how far it has faded by then.
    *
    * A landscape seen from a hillside has a bottom to it: past the last ridge there is nothing but
@@ -201,7 +207,10 @@ function cloudDome(sun: Node<"vec3">): MeshBasicNodeMaterial {
     .mul(float(1).sub(coverage))
     .mul(float(0.55));
   material.colorNode = mix(
-    lit.add(fringe).mul(mix(float(1), float(CLOUDS.core), coverage)),
+    lit
+      .add(fringe)
+      .mul(mix(float(1), float(CLOUDS.core), coverage))
+      .mul(CLOUDS.radiance),
     color(HAZE),
     floor,
   );
