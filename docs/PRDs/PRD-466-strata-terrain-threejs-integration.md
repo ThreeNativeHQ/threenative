@@ -1256,3 +1256,37 @@ notches; restore the already-green recipe. AC-5 stays open; Unreal quality is un
 Decisions: reuse existing ridged noise and pond mirrors; spring-thaw tundra water;
 desert atmospheric haze without heat-shimmer distortion; retain stable broad landforms.
 Worktree retained (3.2 GiB): active PR, unpushed increments and licensed local data.
+
+### AC-5 forest/coast round 11 — 2026-10-02 (in progress)
+
+Complexity 2 → LOW (six existing appearance/preparation files, no new system);
+consumer wiring unchanged. Scope: forest/coastal only; no `biomes.ts` or other
+biome bake recipes. Reuse existing atlas cook, material layers, seeded scatter,
+GroundSnap, InstancedBatch, horizon noise and SpectralOcean. Licensed source
+library stays read-only and all cooked bytes remain ignored.
+
+1. Diagnose pale crowns and hillside blobs with full-resolution baseline and
+   isolated atlas/lighting/shadow ablations; preserve other-biome materials.
+2. Repair confirmed causes; add forest macro surfaces, clustered age/lean, eroded
+   horizon relief, shoreline detail and footprint-aware stone contact.
+3. Run example typecheck, root Biome errors, terrain Vitest, existing temperate
+   checks, licensed and absent-licensed shared scenarios, ocean visual checks.
+   Forest view p50 must be ≤4 ms; other-biome capture luminance quantiles must
+   stay within 0.5 of this checkout's baseline. Final full-resolution captures:
+   `examples/strata-terrain-preview/artifacts/playtest/forest-r11-final/`.
+
+Baseline supplied six captures and Gaia reference inspected at original resolution.
+Opaque spruce needle RGB mean 93/84/24; transparent RGB 110/102/53 (not white).
+Normal/specular already disabled on crowns; atlas bleed remains a hypothesis,
+large interior patches need isolated ablation. No visual acceptance claimed.
+
+Diagnostic increment: cooked spruce atlas RGBA decoded with the shipped Basis
+transcoder: 2048², 12 mips, real alpha. At mips 0–5 visible white RGB fraction
+3.1e-6/0/0/0/0/0; blue mean rises only 26→38. White/cyan interiors are not
+explained by undilated white atlas RGB. Live flat-colour ablation retains pale
+patches; removing emissive alone in a fresh scene retains grey patches.
+Sequential hook edits are not accepted as isolated proof; fresh-browser direct
+and fill controls pending. Initial full baseline was interrupted by signal after
+forest/coast; no full-baseline PASS claimed. Doctor passes Node/Chromium/Xvfb.
+Terrain unit tests 69/69 PASS; doc links (2,386) and six document test files
+(180 tests) PASS.
