@@ -151,7 +151,7 @@ describe("PRD-477 world capture fixture", () => {
     expect(scenario.target).toBe("web");
     const moving = scenario.steps.filter((step) => step.press === "KeyF");
     expect(moving).toHaveLength(32);
-    expect(moving.every((step) => step.waitTicks === 10 && step.release)).toBe(true);
+    expect(moving.every((step) => step.waitTicks === 9 && step.release)).toBe(true);
     expect(moving.map((step) => step.screenshot)).toEqual(
       Array.from(
         { length: 32 },
@@ -161,6 +161,29 @@ describe("PRD-477 world capture fixture", () => {
     expect(scenario.steps.every((step) => step.label === step.screenshot)).toBe(true);
     expect(scenario.steps[0]?.screenshot).toBe("phase477-pose-start");
     expect(scenario.steps.at(-1)?.screenshot).toBe("phase477-pose-end");
+  });
+
+  it("keeps every captured walking pose forward-moving through the actual release cadence", async () => {
+    const scenario = await loadPlaytestScenario(
+      root,
+      `${fixture}/playtests/phase477-world-capture.playtest.json`,
+    );
+    const run = await probe();
+    let previous = -160;
+    for (const step of scenario.steps.filter((row) => row.press === "KeyF")) {
+      run.fly(true);
+      // The hosted runner observes one release-boundary tick after each held step.
+      // Reproduce that observed cadence, without changing the scene or importer contract.
+      for (let tick = 0; tick < (step.waitTicks ?? 0) + 1; tick++)
+        run.scene.update(run.ctx, 1 / 60);
+      run.fly(false);
+      const position = run.debug()?.cameraPosition as number[];
+      const x = position[0];
+      if (x === undefined) throw new Error("WorldProbe camera x was not observed");
+      expect(x).toBeGreaterThan(previous);
+      previous = x;
+    }
+    expect(previous).toBe(180);
   });
 
   it.each([
