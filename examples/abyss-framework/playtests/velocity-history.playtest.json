@@ -1,0 +1,68 @@
+{
+  "name": "authored-batch-and-instance-velocity-history",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 960,
+    "height": 540
+  },
+  "warmupFrames": 2,
+  "artifacts": {
+    "screenshots": "after"
+  },
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "moved",
+      "waitTicks": 8
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true
+    },
+    "resources": [
+      {
+        "id": "motion",
+        "path": "frame",
+        "gte": 9,
+        "allowTrivial": "One initial GPU frame and eight requested deterministic frames must complete, including reversals and a stop.",
+        "changed": true
+      },
+      {
+        "id": "motion",
+        "path": "firstFrameMax",
+        "gte": 0,
+        "lte": 1e-5,
+        "allowTrivial": "The first actual GPU frame has current equal to previous."
+      },
+      {
+        "id": "motion",
+        "path": "staticMax",
+        "lte": 1e-5,
+        "allowTrivial": "The static sub-draw must have zero measured velocity."
+      },
+      {
+        "id": "motion",
+        "path": "movingPixels",
+        "gte": 100,
+        "allowTrivial": "The moved authored sub-draw must cover at least 100 non-zero velocity pixels."
+      },
+      {
+        "id": "motion",
+        "path": "oracleMaxErrorPixels",
+        "gte": 0,
+        "lte": 0.05,
+        "allowTrivial": "Every rendered frame must match signed current-minus-previous NDC within 0.05 pixel, allowing half-float quantization."
+      },
+      {
+        "id": "motion",
+        "path": "stoppedMax",
+        "gte": 0,
+        "lte": 1e-5,
+        "allowTrivial": "The moving instance stops on frame seven; no extra stale frame of motion is allowed."
+      }
+    ]
+  }
+}

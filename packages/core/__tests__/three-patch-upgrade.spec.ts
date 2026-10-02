@@ -1,5 +1,8 @@
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
+import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
+import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 
@@ -120,5 +123,82 @@ describe("the Three.js patch on a project that upgrades from the previous releas
     );
     // Refused means refused: the recognisable hunks are not written either.
     await expect(readFile(target, "utf8")).resolves.toBe(tampered.join("\n"));
+  });
+});
+
+// These are the actual Git blobs after applying develop 416ffd7c's dcbc5131 patch to Three
+// 0.185.1. The inverse migration materializes those exact bytes from the installed candidate.
+const PRIOR_BLOBS = {
+  "build/three.webgpu.js": "7aa62adb9e78ba8f0a67709d3141bf93c67419cc",
+  "build/three.webgpu.nodes.js": "b8a7b2fd0a2e95911e7e12fd5674592107f012de",
+  "src/nodes/accessors/Instance.js": "ed00e75ba4fd7b49343cfada26eacdef8940a4f4",
+  "src/renderers/common/Renderer.js": "89b33efb80ca1dcb9db931071dfda62ffdba3526",
+};
+
+function blobHash(contents: string): string {
+  return createHash("sha1")
+    .update(`blob ${Buffer.byteLength(contents)}\0`)
+    .update(contents)
+    .digest("hex");
+}
+
+async function previousInstalledPackage(crlf = false) {
+  const root = await tempRoot();
+  const threeRoot = join(root, "three");
+  const packageRoot = resolve("packages/core");
+  await cp(join(packageRoot, "node_modules/three"), threeRoot, {
+    dereference: true,
+    recursive: true,
+  });
+  await promisify(execFile)(
+    "patch",
+    [
+      "--reverse",
+      "--batch",
+      "--fuzz=0",
+      "--silent",
+      "-p1",
+      "-i",
+      join(packageRoot, "patches/three@0.185.1-prd269-upgrade.patch"),
+    ],
+    { cwd: threeRoot },
+  );
+  for (const [file, hash] of Object.entries(PRIOR_BLOBS)) {
+    const contents = await readFile(join(threeRoot, file), "utf8");
+    expect(blobHash(contents)).toBe(hash);
+    if (crlf) await writeFile(join(threeRoot, file), contents.replaceAll("\n", "\r\n"));
+  }
+  return { packageRoot, threeRoot };
+}
+
+describe("actual previously shipped Three files", () => {
+  it.each([false, true])(
+    "upgrades the exact prior patch and remains idempotent (CRLF=%s)",
+    async (crlf) => {
+      const { packageRoot, threeRoot } = await previousInstalledPackage(crlf);
+      await expect(applyThreePatch({ packageRoot, threeRoot })).resolves.toBe("patched");
+      for (const file of Object.keys(PRIOR_BLOBS)) {
+        expect(await readFile(join(threeRoot, file), "utf8")).toBe(
+          await readFile(join(packageRoot, "node_modules/three", file), "utf8"),
+        );
+      }
+      await expect(applyThreePatch({ packageRoot, threeRoot })).resolves.toBe("unchanged");
+    },
+  );
+
+  it("refuses a one-byte custom edit before writing any recognised file", async () => {
+    const { packageRoot, threeRoot } = await previousInstalledPackage();
+    const changed = join(threeRoot, "src/renderers/common/Renderer.js");
+    await writeFile(changed, `${await readFile(changed, "utf8")} `);
+    const before = await Promise.all(
+      Object.keys(PRIOR_BLOBS).map((file) => readFile(join(threeRoot, file), "utf8")),
+    );
+    await expect(applyThreePatch({ packageRoot, threeRoot })).rejects.toThrow(
+      /TN_THREE_PATCH_PARTIAL/,
+    );
+    const after = await Promise.all(
+      Object.keys(PRIOR_BLOBS).map((file) => readFile(join(threeRoot, file), "utf8")),
+    );
+    expect(after).toEqual(before);
   });
 });

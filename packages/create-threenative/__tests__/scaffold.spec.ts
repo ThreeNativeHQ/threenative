@@ -184,20 +184,22 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-01 on the merge of develop (PRD-470/471/472/474) into the rain + snow
   // branch (PRD-469, PRD-473): the merged tree carries both sides' engine and manifest bytes, so
   // all thirteen trees, rain and snow included, were re-measured through createProject.
-  "action-rpg": "7303ff74e0a1e38346f7907924b3e7a8c5bc87b71991ae7468321d7d1cfdcc95",
-  minimal: "ba165bc6b0cf67d083a0c5bfe1377bef851e7b47e50579b680fa53126a8bd4c8",
-  platformer: "6d1b064fc45436c3202e4e3c7b3425ac3e42733ba73c2c5bc723e83073703713",
-  puzzle: "f5e6efac3f4414a9d70fa4fc7caeddb729b5c780d7e609988cf601d7b0a87896",
-  racing: "32320ec0aafa27374a88bf4e2de4f364a859cf1cb414f10a5e70a2f0b951ff24",
-  rain: "8c9872de6f9d1447feea9facbd9a7f7f92c862a753780d15238fa946332085ef",
-  rts: "45a4cd67b5c4e6dbba60ea6813636effc6ecaa294acc9f5ae49262fc64141b1c",
-  runner: "3348101ae79785e5e286df38628f13e747b91f1ea6527fa71acd9d62f767d3a3",
-  sailing: "69b54c3c07cf4fe65f4cd06f1ce315750d198332129425b031853f1022d2e99b",
-  shooter: "386f6bca602b4939bf9d860d5cadba0ede803adef95222faedbdc8e33d205590",
-  snow: "f6555492e02901960b8d733568f4f9c07ae1e11baa03e95b9b498d24c3eee1c6",
-  // PRD-455: measured combined develop 0.2.8 plus starter temporal helper/source contract.
-  starter: "455cbcc5233a0d0de8d323c3d0312f72fb3a474497738cf6cb4f6970f87b3654",
-  "tower-defense": "2967805234d96f52d79a398463ddb980658a53efafecf4b7a8ecf33ad1a5679f",
+  // Recomputed 2026-10-02 for PRD-269 instance history uploads. All thirteen generated trees
+  // return to their exact previous hashes when only patches/three@0.185.1.patch is restored.
+  "action-rpg": "199ce9462268b8b5c7376862286d92ffec1680ef52db13163f7bdfca27edd886",
+  minimal: "d224a39ebbf7779d7db7cf029898ba8998b68ea87d7761ba22d57dd198f7577c",
+  platformer: "224263d3b140f62d914f1faac32d6f1fa2a888c482ad6638bfae004b6d140e74",
+  puzzle: "76b5179d2b4e32c4491073096e28975768e9afa722805ac1f80969bb75a89124",
+  racing: "f23d3c20c4590012f035b1d20b7ba57c880dd733185845a429bc0a608554d387",
+  rain: "c8873dee80df70afa0bff7f9749850631eea38d1fb22b95e4cfd26a79c26dcef",
+  rts: "3b1d4303741a0613c76ef430c0c529f014cc7393fcfd3ca8d59c1b8717f7acd5",
+  runner: "dc94415473665f07592c90758218bb2ccb5468f8ef56fd3753812b5c8d3d9494",
+  sailing: "c985a62a617a6e0dfb95dcc95cac15716fcc4be7e7475764f4a27bee6cbf560e",
+  shooter: "796246a9183426c22979bb9c49903c3956be1a8940c608f5486a01d7435fb760",
+  snow: "af162bb24db940f4bd7f7c598f354a4a9505d3ea269cf1256690281a3148c88c",
+  // PRD-455: measured combined PRD-269 patch and starter temporal helper.
+  starter: "53bed98864239d87dda3f1d3df7b8333a812987a18de8db2e3afb4af338e4e97",
+  "tower-defense": "0a3e86fdac6ab2e0c68d7cab9247f74fb8f3d33f02f675111752341e57838763",
 };
 
 const GENERATED_SCAFFOLD_METADATA =

@@ -7,7 +7,7 @@ prd_contract: v1
 **Status:** IN PROGRESS — full-resolution opt-in runtime milestone verified on browser software WebGPU; reconstruction remains open (2026-10-02).  
 **Priority:** highest-value rendering project after the streaming quick wins.  
 **Complexity:** 8 → HIGH. The renderer already has the difficult prerequisites; the remaining risk is history correctness and proving reconstruction wins more GPU time than it costs.  
-**Depends on:** the landed motion-history implementation from PRD-269 (`packages/core/src/render/velocity.ts`, commit `3630847a`), the existing `RenderChain`, and [PRD-384 adaptive resolution](../PRD-384-adaptive-resolution-gpu-headroom.md).
+**Depends on:** the landed motion-history implementation from PRD-269 (`packages/core/src/render/velocity.ts`, commit `3630847a`), its pending canonical [PR393 repair](https://github.com/ThreeNativeHQ/threenative/pull/393) at `47e188e41601a64decb4fe0f580037546d63b543`, the existing `RenderChain`, and [PRD-384 adaptive resolution](../PRD-384-adaptive-resolution-gpu-headroom.md).
 
 ## Problem
 
@@ -188,6 +188,22 @@ and the [actual matched open-history frame](../../verification/prd455/causal-ope
 retain this diagnostic. Frame bytes/hashes were checked and the selected control was inspected.
 The new causal diagnostic does not replace or weaken the original gate. Appearance experiments
 pause here until PR393's verified instance-history fix is consumed and the fixed benchmark reruns.
+
+Dependency integration, 2026-10-02: PR398 explicitly merges the exact reviewed PR393 commit
+`47e188e41601a64decb4fe0f580037546d63b543`, preserving the canonical patch and its ancestry.
+Its separate signed WebGPU oracle run `37003076606` passed; combined temporal quality remains
+pending until this branch reruns all 176 frames with the original thresholds and controls.
+The merge also includes landed tone gate `924b92f825d602485ef4e682f434b4757a825cd7`.
+PR393 must land before PR398 can become ready or merge, and PR398 must then refresh onto the
+resulting develop so its final diff excludes the prerequisite repair. No acceptance box changes.
+Frozen offline installation accepts the new Three patch and retains runtime pin 0.185.1; all 87
+focused helper, scaffold, numerical quality, evidence and velocity-probe tests pass. Actual
+generation changes only the starter hash relative to the PR393 hashes, as expected from this
+branch's generated temporal helper. Fresh combined core validation passes 176 files and 2,222 tests, with two skipped. Root types,
+error-level lint, documentation links and the unchanged evidence budget pass. Core rebuild and
+public playtest build/publint pass; the latter uses the identical assertion-generator check via
+`node --import tsx` because the package-script tsx CLI hits the local IPC restriction. Hosted
+measurement follows; the complete repository board remains unqualified.
 Evidence validation: 29 documentation/citation/budget tests pass; two CLI-launch tests hit the
 known environment prohibition on tsx IPC pipes. Their unchanged 1,200-line and 701-file CLI
 fixtures both pass through `node --import tsx`. The real tracked evidence budget also passes.
