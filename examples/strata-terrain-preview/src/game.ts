@@ -10,6 +10,7 @@ import {
 } from "@threenative/physics";
 import { CapsuleGeometry, Mesh, MeshStandardMaterial, Vector3 } from "three";
 import { createOcean, createWaterMesh } from "./render/ocean.js";
+import { loadPack } from "./render/pack.js";
 import { loadPreparedProps } from "./render/prepared.js";
 import { createPropSurfaces } from "./render/propMaterials.js";
 import {
@@ -364,18 +365,26 @@ function terrainScene(world: "forest" | "coastal"): new () => Scene<TerrainState
           offset: originY - field.heightAt(originX, originZ),
         };
       };
-      // The prepared CC0 art is asked for here rather than in `enter`, and the variants it fills
-      // are not built again: a game with the prepared models has real firs and real boulders, a
-      // game without them has the procedural spruce and the procedural boulder, and neither waits
-      // on the other. One load, because `afterPhysics` runs every frame.
+      // The prepared art is asked for here rather than in `enter`, and the variants it fills are
+      // not built again: a game with the licensed Landscape Pro models has the pack's own pines,
+      // shrubs and photoscanned stone, a game without them has the procedural spruce, the
+      // procedural boulder and the starter's own clumps, and neither waits on the other. Both
+      // loaders run together and fail soft per file, so one missing species costs that species and
+      // nothing else. One load, because `afterPhysics` runs every frame.
       const buildProps = async (): Promise<void> => {
-        const prepared = await loadPreparedProps(ctx.assets);
-        preparedDispose = prepared.dispose;
+        const [prepared, pack] = await Promise.all([
+          loadPreparedProps(ctx.assets),
+          loadPack(ctx.assets),
+        ]);
+        preparedDispose = () => {
+          prepared.dispose();
+          pack.dispose();
+        };
         preparedLodBaseSpread = prepared.lodBaseSpread;
         preparedLevelsWithoutSolid = prepared.levelsWithoutSolid;
-        propParts = buildPropVariants(prepared.parts);
+        propParts = buildPropVariants(new Map([...prepared.parts, ...pack.parts]));
         if (released) {
-          prepared.dispose();
+          preparedDispose();
           return;
         }
         props = createProps(scatter.placements, groundAt, propParts, flat);
@@ -387,10 +396,13 @@ function terrainScene(world: "forest" | "coastal"): new () => Scene<TerrainState
           object: props.object,
           debug: () => ({
             boulders: scatter.counts.boulder,
+            bushes: scatter.counts.bush,
             ferns: scatter.counts.fern,
             draws: props?.meshes.length ?? 0,
             grass: scatter.counts.grass,
             poppies: scatter.counts.poppy,
+            saplings: scatter.counts.sapling,
+            scrub: scatter.counts.scrub,
             spruces: scatter.counts.spruce,
             totalInstances: props?.meshes.reduce((sum, draw) => sum + draw.count, 0) ?? 0,
             triangles:
@@ -419,6 +431,10 @@ function terrainScene(world: "forest" | "coastal"): new () => Scene<TerrainState
             return;
           }
           for (const draw of props?.meshes ?? []) {
+            // A pack species wears the material its own atlas shipped with, and swapping that for a
+            // starter surface would be the thing `pack.ts` refuses to do. `ownMaterial` is what the
+            // batch recorded when it built the draw.
+            if (draw.userData.ownMaterial === true) continue;
             const role = draw.name.split(":").at(-1) as keyof typeof surfaces.materials;
             draw.material = surfaces.materials[role];
           }

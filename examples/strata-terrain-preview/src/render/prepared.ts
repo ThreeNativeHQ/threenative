@@ -26,18 +26,6 @@ import type { IAssetLoader } from "@threenative/core";
 import { BufferAttribute, type BufferGeometry, type Group, type Mesh, type Object3D } from "three";
 import type { IPropPart, PropRole } from "./props.js";
 
-/** Where the prepared CC0 art lives, relative to the served starter-asset root. */
-const FIR = "fir_tree_01";
-const ROCKS = "rocks";
-
-/**
- * Where the prepared pine lives, relative to the served root.
- *
- * A second static root, added by `preparedAssets()` in `vite.config.ts`, because the bytes are
- * licensed and cannot sit in the committed starter-asset folder the CC0 art is served from.
- */
-const PINE = "prepared";
-
 /** One prepared file: the path it is served at, the variant it is, and its level. */
 interface IPreparedFile {
   readonly asset: string;
@@ -47,69 +35,22 @@ interface IPreparedFile {
 }
 
 /**
- * Whether the prepared fir is scattered, or only prepared.
- *
- * `false`, and the reason is a measurement rather than a preference. `scripts/prep-trees.py`
- * rasterises the front view of what it cut and reports the coverage: fir_tree_01's crown is 437,376
- * needle cards about a centimetre across, the six-thousand-triangle near budget buys four hundred
- * of them, and that is 0.3% of the silhouette — a bare tree with a haze on it. At the mid level's
- * fifteen hundred triangles it is 2.2% even with the cards enlarged twenty-four times, which is
- * still a bare tree at forty metres. So the starter keeps its procedural spruce, the prepared fir
- * ships as prepared art with its credits, and this is the one constant that puts it in the world.
- */
-const SCATTER_PREPARED_FIR = false;
-
-/**
- * Whether the licensed Fab pine is scattered on a machine that prepared it.
- *
- * `false` after three judged rounds: cut to the six-thousand-triangle budget, its crown of small
- * sparse leaf cards reads as a bare tree with confetti, a dark inner cone reads as a cone, and the
- * cross-card reads as a striped tower at distance. The preparation and the loader stay, because
- * they are how the next source is measured; this constant is what keeps the meadow on the spruce.
- */
-const SCATTER_FAB_PINE = false;
-
-/**
  * The prepared files, in the order they are asked for.
  *
- * Three rocks at both of their levels, the two firs behind the constant above, and the pine at all
- * three of its levels. Every level of one variant is asked for together, because a variant with a
- * near level and no mid level is a variant whose middle distance pops. Three rocks, because a
- * fourth is a tenth draw for a boulder the eye cannot tell from the other three at meadow distance,
- * and the starter's draw budget is a playtest assertion rather than a preference.
+ * **Nothing on this list any more.** The three CC0 rocks and the two prepared firs were replaced by
+ * the licensed Landscape Pro species in `src/render/pack.ts` — real photoscanned stone at 7,178
+ * triangles where the CC0 set's were 1–2k, and real pines where the fir's crown measured 0.3% of
+ * its own silhouette at the tree budget (`credits.json` has that number, and it is why the starter
+ * kept its procedural spruce). The list and its loader stay because they are how the next source is
+ * measured, and because a prepared file that is not there is not an error: this map is empty on CI,
+ * on a fresh clone and in a review, and the procedural variants are what draw there.
  *
- * The pine's three levels are near, mid and the far cross-card, and the bands that pick between
- * them are `LOD_BANDS` in `props.ts`. The pine is the only variant with three, which is why the
- * other two variants are the procedural spruce: a pine at three levels is five draws, a procedural
- * spruce at one is two, and the starter's ceiling is twenty-four prop draws for the whole meadow.
+ * A species that IS added back comes in as one entry per detail level, because a variant with a near
+ * level and no mid level is a variant whose middle distance pops. Three rocks at both of their levels
+ * was six draws for stone the eye cannot tell apart at meadow distance, against the starter's
+ * twenty-four-draw ceiling for the whole meadow — which is the trade this list now records.
  */
-const PREPARED: readonly IPreparedFile[] = [
-  { asset: "boulder", level: 0, path: `${ROCKS}/rock01-near.glb`, variant: 0 },
-  { asset: "boulder", level: 1, path: `${ROCKS}/rock01-mid.glb`, variant: 0 },
-  { asset: "boulder", level: 0, path: `${ROCKS}/rock04-near.glb`, variant: 1 },
-  { asset: "boulder", level: 1, path: `${ROCKS}/rock04-mid.glb`, variant: 1 },
-  { asset: "boulder", level: 0, path: `${ROCKS}/boulder-near.glb`, variant: 2 },
-  { asset: "boulder", level: 1, path: `${ROCKS}/boulder-mid.glb`, variant: 2 },
-  // ScotsPineTall_01, prepared by `scripts/prep-fab-pines.py`. The other prepared pine is not
-  // scattered, and the measurement is in that script's own summary: ScotsPine_01's crown is 18.3 m
-  // across on a 7.5 m spacing, which is a closed canopy rather than a meadow, and scattering it
-  // would also cost the five draws the draw ceiling does not have.
-  ...(SCATTER_FAB_PINE
-    ? [
-        { asset: "spruce", level: 0, path: `${PINE}/pine-tall-near.glb`, variant: 0 },
-        { asset: "spruce", level: 1, path: `${PINE}/pine-tall-mid.glb`, variant: 0 },
-        { asset: "spruce", level: 2, path: `${PINE}/pine-tall-impostor.glb`, variant: 0 },
-      ]
-    : []),
-  ...(SCATTER_PREPARED_FIR
-    ? [
-        { asset: "spruce", level: 0, path: `${FIR}/fir-b-near.glb`, variant: 1 },
-        { asset: "spruce", level: 1, path: `${FIR}/fir-b-mid.glb`, variant: 1 },
-        { asset: "spruce", level: 0, path: `${FIR}/fir-c-near.glb`, variant: 2 },
-        { asset: "spruce", level: 1, path: `${FIR}/fir-c-mid.glb`, variant: 2 },
-      ]
-    : []),
-];
+const PREPARED: readonly IPreparedFile[] = [];
 
 /**
  * Which role a prepared material name draws with.
