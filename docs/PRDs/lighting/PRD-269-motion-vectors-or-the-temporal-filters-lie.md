@@ -107,7 +107,6 @@ Actual relevant runtime screenshots must be attached to the PR before merge (own
 2026-10-02). They remain unverified; software-rasterizer output and test-log screenshots do not
 satisfy this gate.
 
-
 Browser/native GPU execution requires a working WebGPU device or supported native host. This
 cloud environment has no `/dev/dri`, Android device tooling or `/dev/kvm`; the batch's attempted
 Xvfb launch failed with `EPERM`. Keep the PR draft until the original image-space and native
@@ -116,28 +115,32 @@ is inferred from the CPU tests.
 
 ## Acceptance criteria
 
-1. **A moving skinned mesh produces non-zero velocity where it moved, and zero where it did not.**
+- [ ] **A moving skinned mesh produces non-zero velocity where it moved, and zero where it did not.** proof: PR #393 GPU fixture capture and velocity-buffer assertions (pending).
    A fixture animates one skinned mesh in front of a static wall; the velocity buffer is non-zero
    over the mesh's screen footprint and zero over the wall, within tolerance. *Mutation:* write the
    current world matrix into the previous-transform slot and the spec fails with a zero buffer over
    the mesh.
 
-2. **Per-instance motion is per-instance.** With an `InstancedMesh` where one instance moves and the
+- [ ] **Per-instance motion is per-instance.** proof: PR #393 `InstancedMesh` and `BatchedMesh` per-instance GPU assertions (pending).
+   With an `InstancedMesh` where one instance moves and the
    rest are still, velocity is non-zero only over the moving instance. *Mutation:* track one
    transform for the whole `InstancedMesh` and the spec fails by marking every instance as moving.
    The same case is asserted for `BatchedMesh` sub-draws.
 
-3. **Ghosting is measured, not judged by eye.** A playtest drives a character across a
+- [ ] **Ghosting is measured, not judged by eye.** proof: PR #393 ghosting playtest with a pinned threshold and zero-velocity control (pending).
+   A playtest drives a character across a
    GI-lit background and asserts the disocclusion-rejection fraction stays below a pinned threshold
    while the temporal stage remains active. *Mutation:* feed the temporal node a zero velocity
    buffer and the assertion fails on the rejection fraction — the failing number is pasted in the
    PRD's red before the fix lands.
 
-4. **No temporal stage requested, no velocity cost.** With every temporal stage off, no velocity
+- [ ] **No temporal stage requested, no velocity cost.** proof: `pnpm exec vitest run packages/core/__tests__/render-velocity.spec.ts` plus PR #393 temporal-off/on frame-cost measurement (pending).
+   With every temporal stage off, no velocity
    target is allocated and the `render` phase is unchanged within noise. *Mutation:* allocate it
    unconditionally and the allocation spec fails naming the target.
 
-5. **Bookkeeping is frame-ordered, not incidental.** Moving an object after the velocity update
+- [ ] **Bookkeeping is frame-ordered, not incidental.** proof: `pnpm exec vitest run packages/core/__tests__/render-velocity.spec.ts` plus PR #393 live colour/velocity ordering assertions (pending).
+   Moving an object after the velocity update
    point within the same frame produces a velocity consistent with the colour pass — the two agree
    or the frame is wrong. *Mutation:* update previous transforms at draw time instead of at the
    scheduled point and the ordering spec fails.
@@ -166,8 +169,9 @@ before completing. `pnpm test` exits 2 before assertions because tsx cannot open
 (`listen EPERM`). A direct core typecheck/build additionally needs the playtest package's missing
 built declarations; its normal build reaches the same tsx IPC restriction. Running the same
 validator with `node --import tsx` followed by the package's tsup build succeeds, after which
-`tsc --noEmit -p packages/core/tsconfig.json` passes. The root typecheck/full test/core package
-build remain unverified. `node packages/playtest/dist/runner/cli.js doctor --text` exits 2:
+`tsc --noEmit -p packages/core/tsconfig.json` passes. After that dependency was available,
+`pnpm --filter @threenative/core build` was rerun serially and passes ESM, DTS and publint
+(exit 0). The root typecheck and full test suite remain unverified. `node packages/playtest/dist/runner/cli.js doctor --text` exits 2:
 `TN_PLAYTEST_RUNNER_FAILED`, adb not found.
 
 2026-10-02 qualification start: existing `render-velocity.spec.ts` passes 11/11 CPU tests.
