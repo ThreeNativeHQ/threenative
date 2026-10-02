@@ -85,6 +85,7 @@ const BUG_REPORT_SKILL_PATHS = [
 // capability reference derived from it, and every scaffold embeds both, so exporting one public
 // symbol moves every template's bytes. Six of the seven moved for that reason alone; platformer
 // also carries its chasers' route change.
+// Recomputed 2026-10-02 for create-threenative 0.2.8: every template pins the scaffolder version.
 // Recomputed 2026-08-31 from the values CI measured, not from a local run.
 //
 // These were updated three times in a row and were wrong all three times, because they were
@@ -173,7 +174,8 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // trees move on each of the last two. `starter` is unchanged throughout — its setupPost hands the
   // whole environment to createAdaptiveQuality and its quality.ts already carried the chain tier.
   // Values measured through createProject by the spec that asserts them, not by hand.
-  // PRD339: remeasured from clean 39f1bf628 for opt-in exposure source and its authoring recipe.
+  // PRD339: remeasured from clean da22c919e after merging develop 6c8858d7; exposure source and
+  // instructions combine with the 0.2.8 template package pins. No source bytes are waived.
   // Recomputed again 2026-10-01 for `sailing` alone: `sailMotion` is a range across landed cloth
   // readbacks, and one landed copy makes that range zero by arithmetic, so the sails scenario now
   // holds long enough for two copies to arrive on a CPU rasteriser and asserts the landed count
@@ -184,19 +186,19 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-01 on the merge of develop (PRD-470/471/472/474) into the rain + snow
   // branch (PRD-469, PRD-473): the merged tree carries both sides' engine and manifest bytes, so
   // all thirteen trees, rain and snow included, were re-measured through createProject.
-  "action-rpg": "28e14532b64b814812a0c965c95d3a64abcf78641d54db95283c16d06413a594",
-  minimal: "a4944565ad609b90e9d8b9d72ad8b7e4c3a17c9e2349a07099d5279f7d2205dc",
-  platformer: "a081093e3adc273984fd3f6fb32b5d26540cc569fdafb0efe81196ed6b7f36af",
-  puzzle: "b2199da41faaa247e3d79e65ba7200ecee8eb862f8a03d9b383ae45f4c366b99",
-  racing: "1fc5d8f4e55447708bd51d40e2c315d22fbed732ea8f212b0203011b18beea57",
-  rain: "afbed02aea298e66a87105307484db82c212e8a16e57313b6f1160962a54ce8f",
-  rts: "a29e66a8cd6a6b81c661341d66101a6875681c5a4235dc3ae6b7a0a1cdb18b4a",
-  runner: "aa3f1dc7e486838d5ddc939f186ac73b609078e0543b3b66cda36662b463bd89",
-  sailing: "85e4033d972c24e38437cfd447fbee8d8138f958e1962e3c69597d24bff08023",
-  shooter: "8e101887cebf079d5833210c62b36c8ed848c43fffe24bd7b3bf5fb102907d26",
-  snow: "3b2d9cafbf8eb30a71af22bd2ffff230ebc67b36020a40f7dbb1084f8c018cc8",
-  starter: "1eb67692db33ea4f55eb5b142007fcba6c8c96f03d158f733346d30227e5c559",
-  "tower-defense": "f4eb7a3f95670f2d3ec9d4ba3bcb1b79f75098d98e978b6b79011b4910569b3f",
+  "action-rpg": "0005f27d15960e072d741b00e9ec9fa6989a2c220aafb6d0b1c6d9c95a6b45ea",
+  minimal: "b43574b287325f3fb4f11ca6db40ec585fa8351c64f5e7a86aefe87f8bfddfd9",
+  platformer: "1e73a0e982af664b23509bee2cd6ee4fd498960d056292e9917b14ea860455d6",
+  puzzle: "7fec060eab41947888633aee4a08b1679f1a554ac732ea018ecafa2ec7460fb4",
+  racing: "2334d5efa5a5269ee6a636cd791f8a5914297356bd0132d3234a69fb5aa1aee3",
+  rain: "85ed650c9a5cc859a386abad89dacd138ee490598a2bf1c8fff242ba54da9627",
+  rts: "0838930e677b91f5f8b0dc1a4c04a9f565023c4b954bc1151d2093e28e423b1e",
+  runner: "e63461a6fb2707eb4c14f251b78f2a3d59454f24e083d001fcc7e0ce588d05da",
+  sailing: "bd993bbb95c0d31cc6c74129cb4fbba1565c532fb7b0bd5c3948cca3425d7202",
+  shooter: "a39600082f233ffea1c4cbadcd45fb1219c66bff7c0d97cdf82b2397b9cffbc3",
+  snow: "60d7dae7ab9eac8ab503f172f70f8682b30454898c4df235f17768ef20f0527f",
+  starter: "437709f6194572d99dcb2689dd658fcc7c01aff9abc1283709b4c349a1bbe4e2",
+  "tower-defense": "419482e4087d3f564ab05eeeeb284ddf1c31f3e02df0a4849f4994fb21f7984c",
 };
 
 const GENERATED_SCAFFOLD_METADATA =

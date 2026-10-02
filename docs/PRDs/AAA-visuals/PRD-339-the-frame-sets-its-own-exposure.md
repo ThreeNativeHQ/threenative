@@ -171,6 +171,14 @@ The one-stop and disabled cases were not reached. Full
 are retained; no acceptance box is ticked from this partial run. A fresh published-source run of
 128 focused/scaffold/mirror tests passes; native and complete dynamics qualification remain open.
 
+The lane now merges develop `6c8858d7` without rewriting history. Its only conflict was the
+scaffold fingerprint table, remeasured from the clean combined tree; 128 focused/scaffold/mirror
+tests, root TypeScript and the isolated Vite fixture build pass. The cut fixture now records actual
+exposure-node update counts, NodeFrame ids, raw deltas and the clamped delta sum at the cut and
+after each GPU update. This diagnostic leaves the rates, thresholds and scripted frame budget
+unchanged. The runner's fixed-step path batches `waitFrames` as simulation ticks; whether the
+failed cut consumed enough rendered time remains under investigation.
+
 ## Implementation decisions
 
 - 2026-10-02: the current core contract says all exposure, TSL and post-processing are generated

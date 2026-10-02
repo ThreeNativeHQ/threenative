@@ -9,7 +9,7 @@ import {
   type PerspectiveCamera,
 } from "three";
 import { pass } from "three/tsl";
-import type { WebGPURenderer } from "three/webgpu";
+import type { NodeFrame, WebGPURenderer } from "three/webgpu";
 import { type ICtx, Scene, defineGame } from "../../../../core/dist/index.js";
 import { playtest } from "../../../../core/dist/playtest.js";
 import { AutoExposureNode, applyExposure } from "../../../template-assets/autoExposure.js";
@@ -20,6 +20,24 @@ export interface IExposureFixtureOptions {
   bright: boolean;
   stops: number;
   snapGain: number;
+}
+
+/** Counts actual GPU-node updates, independently of the playtest's simulated gameplay ticks. */
+class ObservedExposureNode extends AutoExposureNode {
+  timing = { updates: 0, consumedSeconds: 0, nodeFrameId: 0, nodeTime: 0, deltaSeconds: 0 };
+
+  override updateBefore(frame: NodeFrame): undefined {
+    super.updateBefore(frame);
+    this.timing = {
+      updates: this.timing.updates + 1,
+      consumedSeconds:
+        this.timing.consumedSeconds + Math.min(frame.deltaTime, this.settings.maxDelta),
+      nodeFrameId: frame.frameId,
+      nodeTime: frame.time,
+      deltaSeconds: frame.deltaTime,
+    };
+    console.info(`TN_EXPOSURE_TIMING:${JSON.stringify(this.timing)}`);
+  }
 }
 
 /** Portable scene and engine loop. The browser entry only supplies controls and mounts the canvas. */
@@ -67,7 +85,7 @@ export function createExposureFixture(options: IExposureFixtureOptions) {
       renderer.toneMappingExposure = 1;
       const worldPass = pass(ctx.scene, ctx.camera);
       const colour = worldPass.getTextureNode("output");
-      const exposure = new AutoExposureNode(
+      const exposure = new ObservedExposureNode(
         colour,
         {
           ...exposureSettings,
@@ -79,7 +97,12 @@ export function createExposureFixture(options: IExposureFixtureOptions) {
       );
       ctx.renderer.setOutputNode(applyExposure(colour, exposure.exposureNode), worldPass);
       ctx.entities.add("exposure", {
-        debug: () => ({ ...exposure.getObservation(), bright, stops: options.stops }),
+        debug: () => ({
+          ...exposure.getObservation(),
+          ...exposure.timing,
+          bright,
+          stops: options.stops,
+        }),
       });
       this.#dispose = () => {
         ctx.renderer.clearOutputNode?.();
@@ -93,7 +116,9 @@ export function createExposureFixture(options: IExposureFixtureOptions) {
         if (frame.input.justPressed("cut")) {
           bright = !bright;
           applyLight();
-          console.info(`TN_EXPOSURE_CUT:${JSON.stringify({ bright, stops: options.stops })}`);
+          console.info(
+            `TN_EXPOSURE_CUT:${JSON.stringify({ bright, stops: options.stops, ...exposure.timing })}`,
+          );
         }
         if (frame.input.justPressed("disable")) exposure.setEnabled(false);
         if (frame.input.justPressed("reset")) exposure.reset();
