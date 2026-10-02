@@ -14,13 +14,14 @@
 //! Rust signature so it can be tested without a process boundary.
 //!
 //! **Scope of this slice.** Static document construction from JSON mutation batches, hover and
-//! pointer state, and `click`. No keyboard traversal, no scrolling, no `@font-face`: text is
-//! laid out with Parley's system-font context.
+//! pointer state, and `click`. No keyboard traversal, no scrolling. Text is laid out with Parley,
+//! from the device's system fonts and from any `@font-face` font or `<img>` the `ui/` directory
+//! ships — see [`Assets`].
 
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use blitz_dom::{
     local_name, ns, BaseDocument, Document, DocumentConfig, EventDriver, EventHandler, LocalName,
@@ -30,6 +31,7 @@ use blitz_traits::events::{
     BlitzPointerEvent, BlitzPointerId, DomEvent, EventState, MouseEventButton, MouseEventButtons,
     PointerCoords, PointerDetails, UiEvent,
 };
+use blitz_traits::net::{Bytes, NetHandler, NetProvider, Request, Url};
 use blitz_traits::shell::{ColorScheme, ShellProvider, Viewport};
 use serde_json::Value;
 
@@ -78,6 +80,122 @@ const EVENTS: &[&str] = &[
     "focus",
     "blur",
 ];
+
+/// The scheme every relative `url()` in a `ui/` document resolves against. Blitz has no base URL
+/// of its own worth using — the default is a `data:` document, and resolving anything relative
+/// against one panics — and a real one would invite a `file://` fetch. This scheme cannot be
+/// fetched by anything but [`Assets`], which only knows the directory the game packaged.
+const ASSET_SCHEME: &str = "tncss";
+/// The base [`ASSET_SCHEME`] URL: `url(x.png)` becomes `tncss://ui/x.png`, whose one path segment
+/// is the file name.
+const BASE_URL: &str = "tncss://ui/";
+
+/// What a `ui/` directory ships beside its stylesheets: fonts and images, by extension. These are
+/// the two things a CSS `url()` (or an `<img src>`) can name, and the only two this crate serves.
+const ASSET_EXTENSIONS: &[&str] = &[
+    "ttf", "otf", "woff", "woff2", "png", "jpg", "jpeg", "webp", "gif",
+];
+
+/// The packaged `ui/` directory, as the one source of bytes a `url()` can reach.
+///
+/// Blitz resolves every reference against [`BASE_URL`] before asking, so a reference is either one
+/// name in `files` or nothing: our own scheme, exactly one path segment, no `..`, no `http(s)`,
+/// nothing outside the directory. A reference that is none of those is recorded by name in
+/// `failures`, because the one failure a screenshot cannot show is a `@font-face` that silently
+/// fell back to a system face and a HUD that shipped the wrong words at the right size.
+#[derive(Default)]
+struct Assets {
+    inner: Mutex<AssetsDir>,
+}
+
+#[derive(Default)]
+struct AssetsDir {
+    /// File name -> path in the packaged directory.
+    files: HashMap<String, PathBuf>,
+    /// Named reasons a reference resolved to nothing, in the order they were asked for.
+    failures: Vec<String>,
+}
+
+impl Assets {
+    /// Index every file of `names` in `root` as servable.
+    fn register(&self, root: &Path, names: &[String]) {
+        let mut inner = self.inner.lock().expect("assets lock");
+        inner.files = names
+            .iter()
+            .map(|name| (name.clone(), root.join(name)))
+            .collect();
+        inner.failures.clear();
+    }
+
+    /// The file `url` names, or the named reason it names none.
+    fn lookup(&self, url: &Url) -> Result<PathBuf, String> {
+        if url.scheme() != ASSET_SCHEME {
+            return Err(format!("asset {url} is not a file in the ui directory"));
+        }
+        // One segment and nothing else: `tncss://ui/x.png` resolves, and so does nothing that
+        // climbed out of it (`../` lands on the host, a deeper path has more segments).
+        let Some(mut segments) = url.path_segments() else {
+            return Err(format!("asset {url} is not a file in the ui directory"));
+        };
+        let Some(name) = segments.next_back().filter(|name| !name.is_empty()) else {
+            return Err(format!("asset {url} names no file"));
+        };
+        if segments.next().is_some() {
+            return Err(format!("asset {url} leaves the ui directory"));
+        }
+        self.inner
+            .lock()
+            .expect("assets lock")
+            .files
+            .get(name)
+            .cloned()
+            .ok_or_else(|| format!("asset {url} is not a file in the ui directory"))
+    }
+
+    /// Reject a reference the `ui/` directory cannot answer, before a batch applies anything. `data:`
+    /// carries its own bytes and `#fragment` names none, so neither needs a file.
+    fn require(&self, reference: &str) -> Result<(), String> {
+        if reference.starts_with("data:") || reference.starts_with('#') {
+            return Ok(());
+        }
+        // Resolved the way blitz will, so one rule covers `x.png`, `./x.png` and `../x.png`.
+        let Ok(url) = Url::parse(BASE_URL).and_then(|base| base.join(reference)) else {
+            return Err(format!("src \"{reference}\" is not a file in the ui directory"));
+        };
+        self.lookup(&url)
+            .map(|_| ())
+            .map_err(|_| format!("src \"{reference}\" is not a file in the ui directory"))
+    }
+
+    fn fail(&self, message: String) {
+        self.inner.lock().expect("assets lock").failures.push(message);
+    }
+
+    /// Take the named failures since the last call, so one is reported once.
+    fn take_failures(&self) -> Vec<String> {
+        std::mem::take(&mut self.inner.lock().expect("assets lock").failures)
+    }
+}
+
+impl NetProvider for Assets {
+    fn fetch(&self, _doc_id: usize, request: Request, handler: Box<dyn NetHandler>) {
+        let url = request.url;
+        // A `data:` URI carries its own bytes and a `#fragment` names none: blitz 0.3 decodes
+        // neither, so there was never a file here and there is nothing to report as missing.
+        if url.scheme() == "data" || url.fragment().is_some() {
+            return;
+        }
+        let resolved = url.as_str().to_string();
+        let file = match self.lookup(&url) {
+            Ok(file) => file,
+            Err(reason) => return self.fail(reason),
+        };
+        match std::fs::read(&file) {
+            Ok(bytes) => handler.bytes(resolved, Bytes::from(bytes)),
+            Err(e) => self.fail(format!("asset {}: {e}", file.display())),
+        }
+    }
+}
 
 /// Blitz asks for a repaint through the shell seam whenever anything it considers visual changed
 /// — a mutation, a hover change, an active-state change. This turns that into the one flag
@@ -253,6 +371,7 @@ pub struct CssUi {
     scale: f32,
     ua_css: String,
     redraw: Arc<Redraw>,
+    assets: Arc<Assets>,
     dirty: bool,
     counter: u64,
     pixels: Vec<u8>,
@@ -269,9 +388,10 @@ impl CssUi {
         check_frame_size(width, height, scale)?;
 
         let redraw = Arc::new(Redraw::default());
-        // ponytail: Parley's system-font context is enough for this slice. Shipping the game's
-        // own `@font-face` payload is a later phase; until then a UI renders with the device's
-        // fonts, which is what the browser arm does too.
+        // The packaged `ui/` directory is the document's only source of bytes: the system font
+        // context still backs every family the game did not ship, but a `@font-face` url and an
+        // `<img src>` resolve here or nowhere.
+        let assets = Arc::new(Assets::default());
         let mut doc = BaseDocument::new(DocumentConfig {
             viewport: Some(Viewport::new(
                 (width as f32 * scale) as u32,
@@ -279,8 +399,10 @@ impl CssUi {
                 scale,
                 ColorScheme::Light,
             )),
+            base_url: Some(BASE_URL.to_string()),
             font_ctx: Some(parley::FontContext::new()),
             shell_provider: Some(redraw.clone()),
+            net_provider: Some(assets.clone()),
             ..Default::default()
         });
 
@@ -307,6 +429,7 @@ impl CssUi {
             scale,
             ua_css: String::new(),
             redraw,
+            assets,
             dirty: true,
             counter: 0,
             pixels: Vec::new(),
@@ -320,17 +443,23 @@ impl CssUi {
         Ok(ui)
     }
 
-    /// Load every `*.css` in `root`, sorted by file name, as one stylesheet each. A missing
-    /// directory is not an error: a game may ship its styles inside its bundle instead. The
-    /// count is how many loaded, so a caller can tell an empty directory from a missing one —
-    /// a game whose stylesheets never shipped paints an unstyled HUD either way.
+    /// Load every `*.css` in `root`, sorted by file name, as one stylesheet each, and register
+    /// every font and image beside them so a `url()` naming one resolves without a network. A
+    /// missing directory is not an error: a game may ship its styles inside its bundle instead.
+    /// The count is how many stylesheets loaded, so a caller can tell an empty directory from a
+    /// missing one — a game whose stylesheets never shipped paints an unstyled HUD either way.
+    ///
+    /// A `url()` naming a file that is not in `root` fails here by name, rather than leaving the
+    /// document to fall back to a system font: attach is the one moment the host can still be told
+    /// the difference between the HUD it shipped and the one it wanted.
     pub fn load_sheet_dir(&mut self, root: &Path) -> Result<usize, String> {
         let entries = match std::fs::read_dir(root) {
             Ok(entries) => entries,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(0),
             Err(e) => return Err(format!("sheet dir {}: {e}", root.display())),
         };
-        let mut files: Vec<String> = Vec::new();
+        let mut sheets: Vec<String> = Vec::new();
+        let mut assets: Vec<String> = Vec::new();
         for entry in entries {
             let entry = entry.map_err(|e| format!("sheet dir {}: {e}", root.display()))?;
             let name = entry.file_name().to_string_lossy().into_owned();
@@ -338,19 +467,31 @@ impl CssUi {
             // `Theme.CSS`, and a file visible on the author's machine must not vanish here. The
             // sort below is on the name as written, so the cascade does not depend on the
             // directory's own order.
-            if name
-                .rsplit_once('.')
-                .is_some_and(|(_, ext)| ext.eq_ignore_ascii_case("css"))
-            {
-                files.push(name);
+            match name.rsplit_once('.').map(|(_, ext)| ext) {
+                Some(ext) if ext.eq_ignore_ascii_case("css") => sheets.push(name),
+                Some(ext)
+                    if ASSET_EXTENSIONS
+                        .iter()
+                        .any(|known| ext.eq_ignore_ascii_case(known)) =>
+                {
+                    assets.push(name)
+                }
+                _ => {}
             }
         }
-        files.sort();
-        let count = files.len();
-        for key in files {
+        sheets.sort();
+        assets.sort();
+        // Registered before the sheets, because reading a stylesheet is what asks for its fonts.
+        self.assets.register(root, &assets);
+        let count = sheets.len();
+        for key in sheets {
             let css = std::fs::read_to_string(root.join(&key))
                 .map_err(|e| format!("sheet {key}: {e}"))?;
             self.set_sheet(&key, &css);
+        }
+        let failures = self.assets.take_failures();
+        if !failures.is_empty() {
+            return Err(failures.join("; "));
         }
         self.sync_dirty();
         Ok(count)
@@ -530,10 +671,17 @@ impl CssUi {
                     need(*id)?;
                     tree.detach(*id);
                 }
-                Op::Attr { id, name, .. } => {
+                Op::Attr { id, name, value } => {
                     need(*id)?;
                     if !is_allowed_attr(name) {
                         return Err(format!("attr: unsupported attribute \"{name}\""));
+                    }
+                    // An `<img src>` is resolved as the batch applies, so the only moment to name a
+                    // file that is not there is here, where nothing has been touched yet.
+                    if name == "src" {
+                        if let Some(value) = value {
+                            self.assets.require(value)?;
+                        }
                     }
                 }
                 Op::Sheet { key, .. } => {
@@ -715,6 +863,20 @@ impl CssUi {
     pub fn hit_test(&mut self, nx: f32, ny: f32) -> bool {
         self.doc.resolve(0.0);
         self.hit_test_at(nx * self.width as f32, ny * self.height as f32)
+    }
+
+    /// The box of a node the host created, in CSS pixels: `[x, y, width, height]`. An inline node
+    /// reports the line box its text laid out to, so this is where a font's own advances are read
+    /// back. Layout is resolved first, so it answers even before the first `render`.
+    pub fn node_box(&mut self, id: u32) -> Option<[f64; 4]> {
+        self.doc.resolve(0.0);
+        let node = *self.ids.get(&id)?;
+        // A text node has no layout of its own to ask: blitz panics rather than answering.
+        if !self.doc.get_node(node)?.is_element() {
+            return None;
+        }
+        let rect = self.doc.get_client_bounding_rect(node)?;
+        Some([rect.x, rect.y, rect.width, rect.height])
     }
 
     fn hit_test_at(&self, x: f32, y: f32) -> bool {

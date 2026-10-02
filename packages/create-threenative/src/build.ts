@@ -1,6 +1,6 @@
 import { spawn, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import {
   copyFile,
   mkdir,
@@ -307,7 +307,9 @@ export async function buildUi(cwd: string, config: IResolvedThreeNativeConfig): 
 
 /**
  * Copy just the stylesheets out of a built `src/ui/` into a flat directory the native CSS engine
- * reads, dropping the HTML and the JS of the web page.
+ * reads, dropping the HTML and the JS of the web page — and copying the fonts and images those
+ * stylesheets name, because the engine serves those by file name out of the same directory and has
+ * no other source of bytes.
  *
  * Only `*.css`, wherever Vite put it (`assets/index-<hash>.css`), copied flat under their own
  * names so the packaged `ui/` carries no page and no bundle. The previous contents go first
@@ -332,22 +334,40 @@ export async function extractUiStylesheets(uiDir: string, outDir: string): Promi
     );
   }
   // Sorted so two builds of one game stage the same names in the same order.
-  for (const file of stylesheets.sort()) {
-    assertStylesheetAssetsAreInline(file, await readFile(file, "utf8"));
+  const sheets = stylesheets.sort();
+  const assets = new Map<string, string>();
+  // Resolved before anything is staged: a build that cannot ship its font must not leave half a
+  // `ui/` behind for the packager to find and a player to run.
+  for (const file of sheets) {
+    collectStylesheetAssets(uiDir, file, await readFile(file, "utf8"), assets);
+  }
+  for (const file of sheets) {
     await copyFile(file, path.join(outDir, path.basename(file)));
+  }
+  // Flat, because the engine looks an asset up by name: two files of one name cannot both travel,
+  // and silently shipping the wrong one is the failure this refuses.
+  for (const [name, source] of assets) {
+    await copyFile(source, path.join(outDir, name));
   }
   return readdir(outDir);
 }
 
 /**
- * Refuse a stylesheet that reaches for a file the native CSS engine has no way to load.
+ * The fonts and images a stylesheet names, keyed by the flat name the engine serves them under.
  *
- * `url()` is the only such reach in CSS, and only `data:` URIs, `#fragment` references and the
- * empty string resolve without a filesystem or an asset pipeline — everything else is a font or
- * an image, and shipping a native HUD that silently drops them is worse than refusing the build.
- * Comments are stripped first so a documented example cannot fail the build.
+ * `url()` is the only reach in CSS. A `data:` URI, a `#fragment` and the empty string resolve
+ * without a file, so they are left alone; a relative name is a file in the build, which travels
+ * beside its stylesheet. Anything else — a scheme, a protocol-relative or absolute path, a `../`
+ * out of the build, or a relative name no file answers to — fails the build here rather than
+ * shipping a HUD whose font silently fell back to the machine's.
  */
-function assertStylesheetAssetsAreInline(file: string, css: string): void {
+function collectStylesheetAssets(
+  build: string,
+  file: string,
+  css: string,
+  assets: Map<string, string>,
+): void {
+  // Comments are stripped first so a documented example cannot fail the build.
   const source = css.replaceAll(/\/\*[\s\S]*?\*\//gu, "");
   for (const match of source.matchAll(/url\(([^)]*)\)/giu)) {
     const target = (match[1] ?? "")
@@ -355,10 +375,37 @@ function assertStylesheetAssetsAreInline(file: string, css: string): void {
       .replace(/^["']|["']$/gu, "")
       .trim();
     if (target === "" || target.startsWith("data:") || target.startsWith("#")) continue;
-    throw new Error(
-      `TN_CSS_UI_ASSET_UNSUPPORTED: ${file} references ${target}; fonts and images are not shipped by native-css yet`,
-    );
+    const resolved = resolveStylesheetAsset(build, file, target);
+    const name = path.basename(resolved);
+    const claimed = assets.get(name);
+    if (claimed !== undefined && claimed !== resolved) {
+      throw new Error(
+        `TN_CSS_UI_ASSET_AMBIGUOUS: ${file} references ${target} as ${name}, which ${path.relative(build, claimed)} already claimed`,
+      );
+    }
+    assets.set(name, resolved);
   }
+}
+
+/** The file in `build` that a stylesheet's `url()` names, or the reason there is none. */
+function resolveStylesheetAsset(build: string, file: string, target: string): string {
+  const offMachine = "only a file inside the UI build ships with it";
+  const refuse = (why: string): never => {
+    throw new Error(`TN_CSS_UI_ASSET_UNSUPPORTED: ${file} references ${target}; ${why}`);
+  };
+  if (/^[a-z][a-z0-9+.-]*:/iu.test(target) || target.startsWith("//")) return refuse(offMachine);
+  if (path.isAbsolute(target)) return refuse(offMachine);
+  const resolved = path.resolve(path.dirname(file), target);
+  // A `../` that stays inside the build is how a stylesheet in `assets/` reaches its own assets;
+  // one that leaves it is a reach off the machine.
+  const inside = path.relative(build, resolved);
+  if (inside === "" || inside.startsWith("..") || path.isAbsolute(inside)) {
+    return refuse(offMachine);
+  }
+  if (!existsSync(resolved) || !statSync(resolved).isFile()) {
+    return refuse(`the UI build holds no ${target}`);
+  }
+  return resolved;
 }
 
 /**

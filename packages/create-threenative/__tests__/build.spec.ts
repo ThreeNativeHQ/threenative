@@ -1,5 +1,5 @@
 import { execFile, spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { mkdir, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -639,19 +639,77 @@ cpSync("public", out, { recursive: true });
     );
   });
 
-  it("refuses a stylesheet that reaches for a font or an image", async () => {
+  it("copies the fonts and images a stylesheet url() names, flat beside it", async () => {
+    const root = await makeTempDir("threenative-ui-css-asset-");
+    roots.push(root);
+    const built = path.join(root, "built-ui");
+    await mkdir(path.join(built, "assets"), { recursive: true });
+    // Vite writes a stylesheet into `assets/` and reaches its own assets from there, which is a
+    // `../` that stays inside the build — not an escape.
+    await writeFile(
+      path.join(built, "assets", "index-abc123.css"),
+      '@font-face{font-family:I;src:url(../assets/inter-xyz.woff2) format("woff2")}' +
+        ".hud{background:url(../assets/dot-abc.png)}",
+    );
+    await writeFile(path.join(built, "assets", "inter-xyz.woff2"), "wOF2notreally");
+    await writeFile(path.join(built, "assets", "dot-abc.png"), "pngnotreally");
+
+    const out = path.join(root, "ui-css");
+    expect(await extractUiStylesheets(built, out)).toEqual([
+      "dot-abc.png",
+      "index-abc123.css",
+      "inter-xyz.woff2",
+    ]);
+    await expect(readFile(path.join(out, "inter-xyz.woff2"), "utf8")).resolves.toBe(
+      "wOF2notreally",
+    );
+    await expect(readFile(path.join(out, "dot-abc.png"), "utf8")).resolves.toBe("pngnotreally");
+  });
+
+  it("refuses a stylesheet that reaches for a font or an image off the machine", async () => {
     const root = await makeTempDir("threenative-ui-css-url-");
     roots.push(root);
     const built = path.join(root, "built-ui");
     await mkdir(built, { recursive: true });
     await writeFile(
       path.join(built, "index-abc123.css"),
-      '@font-face{src:url("./assets/inter.woff2") format("woff2")}',
+      '@font-face{src:url("https://fonts.example.com/inter.woff2") format("woff2")}',
     );
 
     await expect(extractUiStylesheets(built, path.join(root, "ui-css"))).rejects.toThrow(
-      /TN_CSS_UI_ASSET_UNSUPPORTED: [\s\S]*index-abc123\.css references \.\/assets\/inter\.woff2; fonts and images are not shipped by native-css yet/u,
+      /TN_CSS_UI_ASSET_UNSUPPORTED: [\s\S]*index-abc123\.css references https:\/\/fonts\.example\.com\/inter\.woff2;[\s\S]*only a file inside the UI build ships with it/u,
     );
+  });
+
+  it("refuses a stylesheet whose url() leaves the UI build or names nothing", async () => {
+    // One stylesheet per case: the first reference that cannot ship fails the build, so a single
+    // stylesheet carrying all four would only ever report one of them.
+    for (const target of [
+      "../../../../etc/passwd",
+      "/assets/x.png",
+      "//cdn.example.com/x.png",
+      "nope.ttf",
+    ]) {
+      const root = await makeTempDir("threenative-ui-css-escape-");
+      roots.push(root);
+      const built = path.join(root, "built-ui");
+      await mkdir(path.join(built, "assets"), { recursive: true });
+      await writeFile(
+        path.join(built, "assets", "index-abc123.css"),
+        `@font-face{src:url(${target})}`,
+      );
+
+      await expect(extractUiStylesheets(built, path.join(root, "ui-css"))).rejects.toThrow(
+        new RegExp(
+          `TN_CSS_UI_ASSET_UNSUPPORTED: [\\s\\S]*index-abc123\\.css references ${target.replaceAll(
+            /[.*+?^${}()|[\]\\]/gu,
+            String.raw`\$&`,
+          )}`,
+          "u",
+        ),
+      );
+      expect(readdirSync(path.join(root, "ui-css"))).toEqual([]);
+    }
   });
 
   it("allows a stylesheet whose only url() targets are data URIs, fragments and comments", async () => {

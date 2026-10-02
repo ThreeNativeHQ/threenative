@@ -215,6 +215,75 @@ fn a_sheet_directory_loads_sorted_by_file_name() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// A `@font-face` naming a file the `ui/` dir does not hold is a named failure, never a quiet
+/// fall back to whatever the machine has: an unstyled HUD and a HUD whose font never shipped look
+/// identical on screen, so the second one has to be told apart instead of being guessed at.
+#[test]
+fn a_font_face_that_names_a_missing_file_is_a_named_failure() {
+    let dir = temp_dir("threenative-css-ui-missing-font");
+    std::fs::write(
+        dir.join("hud.css"),
+        "@font-face{font-family:Bundled;src:url(Missing-Regular.ttf)}\nspan{font-family:Bundled}",
+    )
+    .expect("write");
+
+    assert_eq!(
+        tn_css_ui_attach(c(dir.to_str().unwrap()).as_ptr(), 480, 320),
+        -5,
+        "{}",
+        last_error()
+    );
+    assert!(last_error().contains("Missing-Regular.ttf"), "{}", last_error());
+    // Nothing was attached, so the UI is not half-installed.
+    assert_eq!(tn_css_ui_post(c("{}").as_ptr()), -1);
+    assert!(last_error().contains("not attached"), "{}", last_error());
+
+    assert_eq!(tn_css_ui_detach(), 0);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// An `<img src>` naming a file the `ui/` dir does not hold is refused by name, and the batch that
+/// carried it applies nothing.
+#[test]
+fn an_image_that_names_a_missing_file_is_refused_before_anything_applies() {
+    let dir = temp_dir("threenative-css-ui-missing-image");
+    std::fs::write(dir.join("hud.css"), "img{width:8px;height:8px}").expect("write");
+
+    assert_eq!(
+        tn_css_ui_attach(c(dir.to_str().unwrap()).as_ptr(), 480, 320),
+        0,
+        "{}",
+        last_error()
+    );
+    assert_eq!(
+        tn_css_ui_post(
+            c(
+                r#"{"ops":[{"op":"create","id":1,"tag":"img"},
+                    {"op":"attr","id":1,"name":"src","value":"missing.png"},
+                    {"op":"append","parent":0,"child":1}]}"#
+            )
+            .as_ptr()
+        ),
+        -6,
+        "{}",
+        last_error()
+    );
+    assert!(last_error().contains("missing.png"), "{}", last_error());
+    // Id 1 was never created, so the same id is still free.
+    assert_eq!(
+        tn_css_ui_post(
+            c(r#"{"ops":[{"op":"create","id":1,"tag":"img"},{"op":"append","parent":0,"child":1}]}"#)
+                .as_ptr()
+        ),
+        0,
+        "{}",
+        last_error()
+    );
+
+    assert_eq!(tn_css_ui_detach(), 0);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// Keeps the unused-import warning away for the raw pointer types the ABI signatures mention.
 const _SIGNATURES: (Option<*const c_char>, c_int) = (None, 0);
 
