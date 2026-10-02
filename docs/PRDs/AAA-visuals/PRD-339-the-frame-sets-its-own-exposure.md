@@ -298,6 +298,23 @@ pass, including rejection of both previously accepted reorder traces. The ten-ru
 unchanged 10% limit. The mutation must empirically exceed that limit; no qualification is claimed
 from its expected behavior. The prepared source awaits review and hosted execution.
 
+Hosted cold-boot source `d1500603f7f1c8ab0ec07c2bd2662770375b69d7`,
+[run 37021404660](https://github.com/ThreeNativeHQ/threenative/actions/runs/37021404660), executed
+all twenty independent launches with empty diagnostics and exactly three accepted live GPU
+updates. The corrected p99 range was 234–238 (1.7094% spread); zero-gain was 238–244 (2.5210%).
+Both were below 10%, so the verifier correctly failed the required negative control and acceptance
+2 remains open. [Reports, exact timing, PNG hashes and four min/max frames](../../verification/prd339-exposure-proof/cold-boots-d1500603.json)
+are preserved. All sixty PNGs form twenty byte-identical before/boot/after triplets; each unique
+frame was inspected and shows the bright scene without blank/corrupt output.
+
+The zero-stop initialization seed is active, not a direct adoption of measured exposure. Both
+arms' GPU observations match their authored adaptation recurrence using observed deltas within
+0.00000054 stops. Corrected consumed time spans 0.1445–0.1767 seconds; zero-gain spans
+0.1484–0.1951, with long second deltas clamped to the authored 0.1-second maximum. The mutation
+changes exposure, but its p99 spread does not exceed the requirement. This is an ineffective
+negative control for repeatability in this measured fixture, not a passing acceptance or grounds
+to retune the age, scene, timing or 10% bar. Camera-pose qualification remains a separate open task.
+
 ## Implementation decisions
 
 - 2026-10-02: the current core contract says all exposure, TSL and post-processing are generated
@@ -314,7 +331,7 @@ from its expected behavior. The prepared source awaits review and hosted executi
   this fresh cloud executor has no GPU/KVM, and the manager
   re-probed Unix socket creation on 2026-10-02: EPERM. Native contract registration
   and portable fixture work remain in scope; no native success is claimed from browser pixels.
-- Cold-boot qualification now consumes the landed PRD-341 tone gate; its twenty corrected/mutated launches remain unrun.
+- Cold-boot qualification now consumes the landed PRD-341 tone gate; twenty corrected/mutated launches ran cleanly, but the required zero-gain spread failure did not occur.
 
 ## Acceptance criteria
 
