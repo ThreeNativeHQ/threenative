@@ -424,7 +424,16 @@ profiles, forms/IME and additional platform certification are separate decisions
 ## Verification
 
 Phase 1 evidence is in the boxes above. Gates run on the delivering branch: `pnpm typecheck`, `pnpm lint`
-(exit 0), `cargo test --release` in `packages/runtime-native/native/css-ui` (26 tests), the `react-css`
-(12) and ui-bridge (3, red-green) specs, the packaging specs, and the two host contract lanes
-(`threenative-css-ui-overlay-test` with the backend on and off). Not run: Android emulator, iOS,
-macOS, Windows, any performance budget, and the Phase 2 browser-oracle corpus.
+and `pnpm budgets` (all exit 0; the native coverage record and census were regenerated, coverage with
+LLVM 23.1.1 minus the `--fatal-warnings` flag it no longer accepts), `cargo test --release` in
+`packages/runtime-native/native/css-ui` (30 tests), the `react-css`, ui-bridge and packaging specs, and
+the host contract lane in three configurations (CSS on/web overlay off, CSS off, both on).
+
+Full `pnpm test` is not green on this branch. Attributed: one failure was this branch's (a `main.cpp`
+length backstop, fixed); nine pass in isolation or once their test executables are built (load flakes,
+unbuilt `tn-linux` targets); the rest are not caused by this diff and were not baseline-run: three
+`tn-linux-quickjs` lane tests need a QuickJS host build directory that does not exist here, two SBOM tests
+need the downloaded `third_party` receipts, `ios-packaging` expects a workflow edit that landed on
+`develop` after this branch's base, and the generated-shooter input proof fails on a static scenario check
+in files this branch does not touch. Not run: Android emulator, iOS, macOS, Windows, any performance
+budget, and the Phase 2 browser-oracle corpus.
