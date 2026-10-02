@@ -153,6 +153,33 @@ const placements = [0, 20, 200].map((x, index) => ({
   rotation: 0,
   scale: 1,
 }));
+// Footprint support may be four metres downhill; the dressed crag must still emerge.
+const beddedCrag = createProps(
+  [
+    {
+      asset: "mountain",
+      id: "check:outcrop",
+      layer: "temperate-mountain",
+      position: [0, 0, 0],
+      normal: [0, 1, 0],
+      alignToNormal: false,
+      rotation: 0,
+      scale: 0.7,
+    },
+  ],
+  () => ({ height: -4, offset: 0 }),
+  parts,
+  materials,
+);
+const beddedInstance = beddedCrag.byId.get("check:outcrop");
+assert.ok(beddedInstance);
+beddedInstance.geometry.computeBoundingBox();
+assert.ok(
+  (beddedInstance.geometry.boundingBox?.clone().applyMatrix4(beddedInstance.pose).max.y ?? -1) >
+    0.5,
+  "Footprint grounding plus old burial hides the entire outcrop",
+);
+beddedCrag.dispose();
 const props = createProps(placements, ground, parts, materials);
 props.setLevels(new Vector3());
 const instance = props.byId.get("rock:0");

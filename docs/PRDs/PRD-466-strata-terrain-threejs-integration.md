@@ -1448,16 +1448,16 @@ Delivery: final captures remain local in the requested directory; four implement
 diagnosis commits plus this final notes commit are local, with no push or merge.
 The worktree remains in use by the unfinished PRD/PR and retains licensed local data.
 
-### AC-5 forest/coast round 12 — 2026-10-02 (in progress; AC-5 open)
+### AC-5 forest/coast round 12 — 2026-10-02 (verified iteration; AC-5 open)
 
 Forest/coast source appearance only, from merged forest-round-11/worlds-round-3 tip.
 Reuse WORLD_ROCKS, resident ground layers, deterministic scatter and GroundSnap.
 Water, biomes.ts, otherBiome branches and other-world recipes are fixed.
 Licensed originals are read-only; cooked bytes remain local and ignored.
 
-- [ ] Replace flat temperate rock patches with sunk 5–20 m cooked outcrops and matched ground; proof: full-resolution licensed overview/coast captures and temperate placement check.
-- [ ] Vary meadow/grass and repair bark/crown illumination and downhill boulder contact; proof: full-resolution reference comparison, bounded ablation and shared playtest.
-- [ ] Complete licensed/fallback full scenarios on 5293, ocean check and protected quantiles ≤0.5; proof: final captures, forest CPU p50 ≤4 ms, example tsc, root Biome and terrain Vitest.
+- [x] Replace flat temperate rock patches with sunk 5–20 m cooked outcrops and matched ground; proof: final 1920×1080 overview/coast captures, 223 forest outcrops, one shared draw and green downhill-footprint exposure check.
+- [x] Vary meadow/grass and repair bark/crown illumination and downhill boulder contact; proof: pass 2 42/42 PASS, crown-only control and final 1920×1080 meadow/walk inspection; brown trunks, root/tip/straw variation and slope-aligned foreground rock.
+- [x] Complete licensed/fallback full scenarios on 5293, ocean check and protected quantiles ≤0.5; proof: both 42/42 PASS, both ocean checks PASS, licensed/fallback maximum protected quantile deltas 0.0506/0.0216, all forest CPU p50 ≤4 ms, example tsc, full-repo Biome and terrain Vitest 69/69 PASS.
 
 Merged-tip baselines: licensed and absent-licensed **42/42 PASS**, forest
 meadow/overview/river/player CPU p50 **2.3/2.5/3.0/3.3 ms** licensed and
@@ -1484,3 +1484,49 @@ raycast footprint support query. Other worlds retain their model transforms.
 Wrack now follows a narrow, broken high-water contour; dune grass is taller and
 straw uses photographed luminance rather than retaining the green atlas hue.
 Pass 2 licensed/fallback final proof and visual grading remain pending.
+
+Pass 2 **42/42 PASS**, forest CPU p50 **2.3/2.4/3.1/3.3 ms**. Full-resolution
+inspection and the new downhill-footprint check expose compounded burial: minimum
+footprint support plus the old 70% mountain sink can hide the whole crag. The check
+fails before the fix and passes with **35%** burial for `:outcrop` placements only;
+other-world crags retain their burial. Final forest overview/walk captures show
+exposed scans seated into the slope, with the foreground slab's downhill shelf closed.
+Final tsc, full-repo Biome error gate (2,655 files), terrain Vitest **69/69** and
+temperate placement regressions PASS; licensed/fallback final scenario proof pending.
+
+Final licensed shared scenario `artifacts/playtest/forest-r12-final/`: **42/42 PASS**,
+zero console errors or runtime diagnostics, NVIDIA Turing WebGPU, 1920×1080.
+Forest CPU frame-window p50 meadow/overview/river/player **2.3/2.5/3.3/3.2 ms**,
+all ≤4 ms. Coastal ocean/horizon capture-window p50 **2.4/2.2 ms**. These are
+CPU frame metrics; no GPU frame-time or presented-FPS claim. All six protected
+alpine/desert/tundra display-luminance p05/p50/p95 absolute deltas **≤0.0506**
+against the matching merged-tip licensed baseline (tolerance 0.5). Ocean visual
+verifier PASS: waves **62.28%**, sun **54.24%**, sheltered-water blue **100%**.
+Water source is untouched. Final absent-licensed results follow below.
+
+Full-resolution licensed grades against the supplied Gaia reference and shore brief:
+
+| View | Round 12 | Remaining visual limitation |
+| --- | --- | --- |
+| overview | 6/10 | Dry/lush/soil/flower variation and exposed outcrops improve the field; far cover remains too sparse and the heightfield slopes still read broad. |
+| meadow-close | 6.5/10 | Bark is brown, roots/tips/straw vary and interior illumination is bounded; hanging card forms and dark interiors still differ from Gaia. |
+| coastal-ocean / horizon-sea | 6.5/10 | Kite headlands, lighter sand, wrack and dune tufts now frame the unchanged water; distant dunes need richer cover. |
+| forest-walk | 6/10 | Foreground stone follows the slope and outcrops have grounded relief; the near meadow still exposes sparse cover. |
+
+AC-5 remains open: this bounded iteration improves the reviewed defects, not the
+complete starter's Gaia/Unreal visual acceptance. No native, push or merge claim.
+
+Final absent-licensed shared scenario `artifacts/playtest/forest-r12-final/fallback/`:
+**42/42 PASS**, zero console errors or runtime diagnostics. Forest CPU frame-window
+p50 meadow/overview/river/player **1.7/2.0/2.2/2.1 ms**, all ≤4 ms; coastal
+ocean/horizon **1.8/1.6 ms**. All six protected display-luminance p05/p50/p95
+absolute deltas **≤0.0216** against the matching absent-licensed merged-tip baseline.
+Ocean verifier PASS: waves **65.55%**, sun **51.59%**, sheltered blue **100%**.
+The runner waited for the existing capture lock and acquired it; no timeout was
+counted as a failure or bypassed. Licensed folders were restored by the shell trap.
+
+Fallback original-resolution grades overview/meadow/coast/walk **4.5/4.5/4.5/4.0**:
+procedural needles and faceted untextured crags retain obvious fallback geometry.
+The absent-licensed lane proves functionality, not visual parity. Final documentation
+link check PASS (**2,386 links**); no licensed bytes, ocean source, biomes.ts,
+otherBiome appearance branch or bake recipe is committed.

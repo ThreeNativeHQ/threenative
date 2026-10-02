@@ -378,7 +378,13 @@ function preparePose(
         ? box.clone().applyMatrix4(model.matrix).getSize(new Vector3()).y
         : (box.max.y - box.min.y) * model.scale.y;
       model.position.y -=
-        (placement.asset === "mountain" ? 0.7 : crag ? 0.55 : BOULDER_BURIAL) * height;
+        (placement.id.endsWith(":outcrop")
+          ? 0.35
+          : placement.asset === "mountain"
+            ? 0.7
+            : crag
+              ? 0.55
+              : BOULDER_BURIAL) * height;
     }
   }
   model.updateMatrix();
