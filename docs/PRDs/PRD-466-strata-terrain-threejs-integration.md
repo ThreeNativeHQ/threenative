@@ -1365,3 +1365,85 @@ because an increment was committed during its build; no root test pass is claime
 Root builds also invalidated one capture; the final licensed run had no overlapping
 build. Licensed/fallback directories are restored automatically after the final
 fallback run, whose result is pending here until the runner completes.
+### AC-5 forest/coast round 11 — 2026-10-02 (verified iteration; AC-5 open)
+
+Bounded existing-source appearance work: forest/coastal only; no `biomes.ts`,
+other-biome bake recipes or new rendering system. Reused material layers, seeded
+scatter, GroundSnap, InstancedBatch, horizon noise and SpectralOcean. Licensed
+source library stayed read-only; cooked bytes remain ignored. AC-5 stays open.
+
+- [x] Inspect reference and isolate crown contamination; proof: full-resolution
+  baseline, cooked mips and direct-MRT/raw-AO/alpha-preserved controls.
+- [x] Repair confirmed causes and grade the final licensed views; proof: 38/38
+  scenario assertions and original-resolution captures reviewed below.
+- [x] Finish fallback and ocean/protected-biome checks; proof: both final scenarios
+  38/38 PASS, both ocean verifiers PASS and protected quantile deltas ≤0.0678.
+
+**Confirmed crown root cause:** the game-authored AO composition multiplied RGBA
+by occlusion, lowering canvas alpha and leaking the pale backdrop through dark
+crowns. Same-camera fresh MRT controls: direct colour clears the panels; raw AO
+retains them; multiplying by `vec4(vec3(occlusion), 1)` clears them with AO/denoise
+still installed. Left-crown cyan pixel share falls 31.99% → 5.83% (remaining sky
+gaps); luminance median falls 54.60 → 18.13. Atlas white bleed is ruled out:
+cooked 2048² spruce RGBA has 12 mips; visible white fraction at mips 0–5 is
+3.1e-6/0/0/0/0/0. No atlas cook, normal-map or transmission changes retained.
+Other worlds retain their original composition; original AO stage assertions pass.
+
+Ground lawn appearance came from saturated uniform material blends and sparse
+mid-distance cover. Temperate materials now use existing macro noise for dirt/moss,
+roughness and muted colour; grass cell spacing is 1.2 m. Tree scale spans 0.6–1.4
+in clustered age classes, with seeded lean and denser stand-edge saplings. Thin
+bare trunks and mid/far cover still need visual judgment, not a completion claim.
+
+Hillside smudges persist without AO, received shadows and normal relief: dark
+shaded rock faces, not cloud shadows. Weathered rock colour and appearance bounce
+soften them. Horizon mountain crests get existing noise-driven notches and erosion,
+with grey rock instead of brown. Coastal foam coverage and wet-sand bands broaden;
+coastal stones use existing scatter/props. Stone grounding now samples the scaled
+footprint and sinks the base, avoiding the centre-only support that left overhangs.
+Protected other-biome branches remain unchanged.
+
+Final licensed shared scenario `artifacts/playtest/forest-r11-final/`: **PASS**,
+zero failed assertions. Forest CPU frame p50 meadow/overview/river/player aggregate
+is **2.5/2.5/3.4/3.7 ms**, all ≤4 ms. This measures CPU frame windows, not GPU
+frame time. Six protected alpine/desert/tundra captures have luminance p05/p50/p95
+absolute deltas **≤0.0678**, within 0.5 of supplied round-11 controls.
+
+Example `pnpm exec tsc --noEmit`, root example Biome error gate, terrain tests
+**69/69**, and temperate age/lean placement checks **PASS** on final source.
+Earlier document checks: 2,386 links and six document test files (180 tests) PASS.
+Licensed ocean visual check **PASS**: waves changed 63.82%, sun changed 53.40%,
+sheltered-water blue fraction 100%. Baseline absent-licensed scenario **36/36 PASS**.
+Final absent-licensed scenario `artifacts/playtest/forest-r11-final/fallback/`
+**38/38 PASS**, zero diagnostics. Forest CPU p50 meadow/overview/river/player
+aggregate **2.0/2.4/2.4/2.6 ms**, all ≤4 ms. Fallback ocean verifier **PASS**:
+waves changed 66.61%, sun changed 53.61%, sheltered blue fraction 100%.
+
+All six fallback protected-world capture luminance p05/p50/p95 absolute deltas
+are **≤0.0650** against a separate absent-licensed `bdb719570` full-scenario
+baseline. Alpine/desert/tundra therefore remain unchanged within the requested
+0.5 tolerance in both asset modes. The local packs were moved reversibly to an
+ignored folder outside asset lookup, then restored; final source was restored
+before the candidate run. No licensed bytes, `biomes.ts` or bake recipes committed.
+Coastal CPU window medians at ocean/horizon captures are **2.3/2.5 ms** licensed,
+**1.7/1.6 ms** fallback; these are capture-window observations, not forest budgets.
+
+Final view grades against Gaia/Unreal; both asset modes inspected at 1920×1080:
+
+| View | Licensed | Fallback | Remaining visual limitation |
+| --- | --- | --- | --- |
+| meadow-close | 7/10 | 4.5/10 | Dark crowns repaired; sparse flower cover and visibly built horizon slopes. |
+| forest-walk | 5.5/10 | 4/10 | Muted ground still reads lawn-like at distance; exposed trunks and hill smudges remain. |
+| overview | 6/10 | 4.5/10 | Age variation reads; canopy clumps and smooth distant ground still look procedural. |
+| river | 7/10 | 4.5/10 | Clear crowns/reflections; uniform far slopes and partly bare bank cover. |
+| coastal-ocean | 6.5/10 | 6/10 | Water/foam work; rounded shore relief and dark slope patches remain. |
+| coastal-horizon-sea | 7/10 | 7/10 | Sheltered water preserved; shore still needs finer sediment and wet-band definition. |
+
+The lower-crown/trunk concealment and hillside shading repairs are partial. The
+forest-walk foreground stone is better embedded but retains a visible shelf on
+its downhill side. The requested Unreal-level visual acceptance is **not met**;
+AC-5 remains open. Fallback proves function, not licensed visual parity.
+
+Delivery: final captures remain local in the requested directory; four implementation/
+diagnosis commits plus this final notes commit are local, with no push or merge.
+The worktree remains in use by the unfinished PRD/PR and retains licensed local data.

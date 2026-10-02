@@ -264,15 +264,15 @@ export function createWaterMesh(ocean: SpectralOcean, data: IBakedWorld): Mesh {
     .mul(0.5)
     .add(0.5);
   const shoreFoam = float(1)
-    .sub(smoothstep(0.2, 1.2, depth))
+    .sub(smoothstep(0.25, 1.8, depth))
     .mul(smoothstep(0.015, 0.08, depth))
-    .mul(float(1).sub(smoothstep(0.5, 3, shore.g)))
-    .mul(smoothstep(0.25, 0.65, surf))
+    .mul(float(1).sub(smoothstep(1, 5.5, shore.g)))
+    .mul(smoothstep(0.25, 0.65, surf).mul(0.7).add(0.3))
     .mul(shore.b)
     .mul(local)
     .mul(0.8);
   material.colorNode = mix(water, color(FOAM), shoreFoam);
-  material.opacityNode = smoothstep(-0.03, 0.35, depth);
+  material.opacityNode = smoothstep(-0.03, 0.35, depth).max(shoreFoam.mul(0.9));
   material.roughnessNode = mix(
     float(0.12).add(smoothstep(70, 700, eyeDistance).mul(0.07)),
     float(0.7),

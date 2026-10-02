@@ -598,14 +598,14 @@
         "path": "meadowFrameP50",
         "gte": 0.01,
         "allowTrivial": "Frame cost at the meadow framing, the nearest look at the trees. A real measurement needs at least one closed budget window at that view; zero means the window never closed while it was on screen.",
-        "lte": 8
+        "lte": 4
       },
       {
         "id": "GameState",
         "path": "overviewFrameP50",
         "gte": 0.01,
         "allowTrivial": "Frame cost at the overview framing, where the far impostor band carries most of the forest. Zero means no window closed at that view.",
-        "lte": 8
+        "lte": 4
       },
       {
         "id": "GameState",
@@ -752,6 +752,18 @@
         "gte": 0.01,
         "lte": 4,
         "changed": true
+      },
+      {
+        "id": "GameState",
+        "path": "riverFrameP50",
+        "gte": 0.01,
+        "lte": 4
+      },
+      {
+        "id": "GameState",
+        "path": "playerFrameP50",
+        "gte": 0.01,
+        "lte": 4
       }
     ],
     "renderChain": {

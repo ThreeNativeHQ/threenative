@@ -43,6 +43,19 @@ const scatter = scatterProps({ ...data, field }, { x: 186, z: 76 }, [
 ]);
 assert.ok(scatter.counts.spruce >= 2000 && scatter.counts.spruce <= 5000);
 assert.equal(new Set(scatter.placements.map((one) => one.id)).size, scatter.placements.length);
+const trees = scatter.placements.filter((one) => one.asset === "spruce");
+assert.ok(
+  trees.some((one) => one.scale < 0.8) && trees.some((one) => one.scale > 1.2),
+  "The stand needs young and mature age classes",
+);
+assert.ok(trees.every((one) => one.scale >= 0.6 && one.scale <= 1.4));
+assert.ok(
+  trees.every((one) => one.alignToNormal && Math.hypot(one.normal[0], one.normal[2]) < 0.064),
+);
+assert.ok(
+  new Set(trees.map((one) => one.normal.join(","))).size > 100,
+  "Tree lean must vary within a stand",
+);
 for (const [x, z] of [
   [176, 84],
   [-20, -150],

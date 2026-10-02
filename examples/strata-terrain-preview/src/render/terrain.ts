@@ -120,9 +120,9 @@ const SHORE = { beach: 7.5, wet: 1 };
  */
 const WET_SAND = {
   /** Height above sea level over which the band fades out, in metres. */
-  band: 1.6,
+  band: 2.8,
   /** How much darker and how much more saturated the wet sand is. */
-  darken: vec3(0.52, 0.5, 0.55),
+  darken: vec3(0.38, 0.4, 0.42),
   /** The grain the band adds: wet sand is smooth and packed, so the ripples flatten in it. */
   calm: 0.45,
 } as const;
@@ -134,7 +134,7 @@ const WET_SAND = {
  * wants June, so this trades red for green on that one layer and leaves the texture's own detail,
  * its normal map and every other surface alone.
  */
-const MEADOW = vec3(0.43, 0.76, 0.38);
+const MEADOW = vec3(0.47, 0.72, 0.4);
 
 /** Continuous stochastic warp: no hard cell boundaries in colour or normals. */
 function tiledUV(key: LayerKey, scale = 1): Node<"vec2"> {
@@ -313,6 +313,10 @@ export function createGroundMaterial(
     return found;
   };
 
+  const otherBiome = biome !== undefined && biome.world !== "forest" && biome.world !== "coastal";
+  const macro = mx_fractal_noise_float(vec3(positionWorld.x, 0, positionWorld.z).mul(0.014), 3);
+  const mottling = mx_noise_float(vec3(positionWorld.x, 0, positionWorld.z).mul(0.045));
+
   // --- where each surface sits -------------------------------------------------------------
   const slope = normalWorldGeometry.y.abs().oneMinus();
   const breakUp = mx_fractal_noise_float(positionWorld.mul(0.05), 3);
@@ -345,7 +349,9 @@ export function createGroundMaterial(
     if (data.waterLevel === null) return float(0);
     const above = positionWorld.y.sub(float(data.waterLevel));
     const wander = mx_fractal_noise_float(positionWorld.mul(0.06), 3).mul(0.55).add(0.5);
-    return float(1).sub(smoothstep(float(0), float(WET_SAND.band), above.div(wander)));
+    return float(1).sub(
+      smoothstep(float(0), float(otherBiome ? 1.6 : WET_SAND.band), above.div(wander)),
+    );
   };
   const weights: Record<LayerKey, Node<"float">> = {
     // The bake painted its beach in the same red-over-green as its dirt, so the height rule above
@@ -373,6 +379,17 @@ export function createGroundMaterial(
   };
 
   if (biome) Object.assign(weights, biomeWeights(biome, steep, hollow, breakUp));
+  if (!otherBiome) {
+    // Real surface patches survive the cover cull; colour noise alone left an uninterrupted lawn.
+    const dry = smoothstep(0.14, 0.42, macro.add(mottling.mul(0.85)).sub(hollow.mul(0.12)));
+    weights.dirt = max(weights.dirt, dry.mul(0.44)).mul(sand.oneMinus());
+    weights.moss = max(
+      weights.moss,
+      smoothstep(-0.14, -0.38, macro.add(mottling.mul(0.4))).mul(0.42),
+    )
+      .mul(sand.oneMinus())
+      .mul(oneMinus(weights.rock));
+  }
 
   // --- how each surface looks -------------------------------------------------------------
   // The layers that cover most of a meadow take a second, larger scale faded in with distance: one
@@ -397,7 +414,6 @@ export function createGroundMaterial(
    * two are blended rather than switched so the crossover has no seam to find.
    */
   const flatLayer = (key: LayerKey): boolean => key !== "rock" && key !== "sand";
-  const otherBiome = biome !== undefined && biome.world !== "forest" && biome.world !== "coastal";
 
   // Keep colour and tangent relief on the same rotated projections and scales.
   const rockTap = (source: Texture, plane: Node<"vec2">, relief = false): Node<"vec4"> => {
@@ -446,7 +462,7 @@ export function createGroundMaterial(
     if (key === "rock") {
       const grey = dot(blended.rgb, vec3(0.2126, 0.7152, 0.0722));
       let stone = mix(blended.rgb, vec3(grey), otherBiome ? 0.25 : 0.35).mul(
-        vec3(...(biome?.stoneTint ?? [0.48, 0.44, 0.39])),
+        vec3(...(otherBiome ? biome.stoneTint : [0.66, 0.67, 0.64])),
       );
       if (otherBiome && biome.world === "desert") {
         const band = positionWorld.y
@@ -471,7 +487,9 @@ export function createGroundMaterial(
       }
       // Resolved stone underfoot; broad weathering once the photograph's repeats become visible.
       const weathering = mx_noise_float(positionWorld.mul(0.012)).mul(0.15).add(1);
-      const distant = vec3(...(biome?.distantStone ?? [0.115, 0.105, 0.088])).mul(weathering);
+      const distant = vec3(...(otherBiome ? biome.distantStone : [0.16, 0.17, 0.155])).mul(
+        weathering,
+      );
       return vec4(
         mix(
           stone,
@@ -483,7 +501,12 @@ export function createGroundMaterial(
     }
     if (key !== "sand" || data.waterLevel === null) return blended;
     const wet = wetness();
-    return vec4(blended.rgb.mul(mix(float(1), WET_SAND.darken, wet)), blended.a);
+    return vec4(
+      blended.rgb
+        .mul(otherBiome ? vec3(1) : vec3(1.28, 1.22, 1.05))
+        .mul(mix(float(1), otherBiome ? vec3(0.52, 0.5, 0.55) : WET_SAND.darken, wet)),
+      blended.a,
+    );
   };
 
   // The relief takes the same scales as the colour, or the ground keeps its detail underfoot and goes
@@ -545,7 +568,7 @@ export function createGroundMaterial(
   const cover = mx_fractal_noise_float(vec3(positionWorld.x, 0, positionWorld.z).mul(0.75), 2)
     .mul(0.55)
     .add(1);
-  const farGrass = vec3(0.055, 0.1, 0.019).mul(cover);
+  const farGrass = vec3(0.055, 0.09, 0.035).mul(cover);
   // Beyond readable blades, keep their green in the ground instead of exposing olive thatch.
   // Other biomes keep their own ground tint; the green far-field belongs to the temperate meadow.
   let albedo: Node<"vec4"> = otherBiome
@@ -604,8 +627,6 @@ export function createGroundMaterial(
   material.aoNode = mix(float(1), float(0.88), smoothstep(0.2, 0.85, hollow));
 
   // 50–200 metre vegetation tones survive texture mipmapping in the overview.
-  const macro = mx_fractal_noise_float(vec3(positionWorld.x, 0, positionWorld.z).mul(0.014), 3);
-  const mottling = mx_noise_float(vec3(positionWorld.x, 0, positionWorld.z).mul(0.045));
   const dryness = otherBiome
     ? smoothstep(
         -0.18,
@@ -621,7 +642,7 @@ export function createGroundMaterial(
       );
   const tone = otherBiome
     ? mix(vec3(0.92, 0.94, 0.91), vec3(1.08, 1.03, 0.95), dryness)
-    : mix(vec3(0.48, 0.76, 0.34), vec3(1.05, 1.13, 0.72), dryness);
+    : mix(vec3(0.72, 0.82, 0.63), vec3(1.08, 1.08, 0.88), dryness);
   const vegetation = oneMinus(max(max(weights.rock, weights.snow), weights.sand));
   const continuation = smoothstep(data.size / 2 + 60, data.size / 2 + 280, outside);
   const strata = mx_fractal_noise_float(positionWorld.mul(vec3(0.018, 0.035, 0.018)), 3);
@@ -630,7 +651,7 @@ export function createGroundMaterial(
     .rgb.mul(MEADOW)
     .mul(mix(0.5, 0.85, breakUp.add(0.5)));
   const crag = triplanarAlbedo(layer("rock").diffuse, "rock", 6)
-    .rgb.mul(vec3(0.48, 0.44, 0.39))
+    .rgb.mul(vec3(0.62, 0.66, 0.67))
     .mul(strata.mul(0.35).add(1));
   const treeline = smoothstep(110, 240, positionWorld.y.add(breakUp.mul(24)));
   const face = smoothstep(0.14, 0.3, steep.add(strata.mul(0.055)));
@@ -644,7 +665,22 @@ export function createGroundMaterial(
     otherBiome ? albedo.rgb : mountain,
     continuation,
   ).mul(mix(vec3(1), vec3(0.42, 0.46, 0.42), curvature.wetBank));
-  material.roughnessNode = mix(0.94, 0.48, curvature.wetBank);
+  material.roughnessNode = mix(
+    otherBiome ? float(0.94) : mix(0.84, 0.98, dryness),
+    0.48,
+    curvature.wetBank,
+  );
+  if (!otherBiome) {
+    material.roughnessNode = mix(
+      material.roughnessNode as Node<"float">,
+      0.52,
+      sand.mul(wetness()),
+    );
+    // A little albedo-coloured bounce keeps unlit rock faces legible without changing the sky rig.
+    material.emissiveNode = (material.colorNode as Node<"vec3">).mul(
+      weights.rock.max(continuation).mul(0.22),
+    );
+  }
   // Distant faces resolve broad rock strata, rather than subpixel meadow normals.
   const rockNormal = layer("rock").normal;
   const mountainTilt =

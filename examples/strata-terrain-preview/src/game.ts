@@ -19,6 +19,7 @@ import {
   buildPropVariants,
   createProps,
   flatPropMaterials,
+  variantFor,
 } from "./render/props.js";
 import { type IRiverWater, WATER_LAYER, createLakes, createRivers } from "./render/river.js";
 import { type IPlacementField, scatterProps } from "./render/scatter.js";
@@ -196,6 +197,8 @@ const initialState = {
   view: "player",
   windowDrawCalls: 0,
   windowFrameMs: 0,
+  riverFrameP50: 0,
+  playerFrameP50: 0,
   meadowFrameP50: 0,
   meadowFrameP99: 0,
   meadowTriangles: 0,
@@ -475,9 +478,40 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
           from: { x, y: top + 2, z },
           to: { x, y: -100, z },
         });
+        let height = visual?.point.y ?? physical?.position.y ?? null;
+        if (
+          height !== null &&
+          (world === "forest" || world === "coastal") &&
+          ["boulder", "riverrock", "scree"].includes(placement.asset)
+        ) {
+          const stone = propParts
+            .get(`${placement.asset}:${variantFor(placement, placement.asset)}`)
+            ?.find((part) => part.role === "stone")?.geometry;
+          stone?.computeBoundingBox();
+          const box = stone?.boundingBox;
+          if (box) {
+            // GroundSnap's single lowest point left the downhill footprint hanging on thin stones.
+            const reach =
+              Math.max(box.max.x - box.min.x, box.max.z - box.min.z) * placement.scale * 0.28;
+            for (const [dx, dz] of [
+              [-reach, 0],
+              [reach, 0],
+              [0, -reach],
+              [0, reach],
+            ]) {
+              const foot = ctx.raycast({
+                direction: new Vector3(0, -1, 0),
+                origin: new Vector3(x + (dx ?? 0), top + 2, z + (dz ?? 0)),
+                targets: [mesh],
+              });
+              if (foot) height = Math.min(height, foot.point.y);
+            }
+            height -= (box.max.y - box.min.y) * placement.scale * 0.12;
+          }
+        }
         const [originX, originY, originZ] = placement.position;
         return {
-          height: visual?.point.y ?? physical?.position.y ?? null,
+          height,
           offset: originY - field.heightAt(originX, originZ),
         };
       };
@@ -694,8 +728,10 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
           preparedLevelsWithoutSolid,
           windowDrawCalls: budget.drawCalls,
           windowFrameMs: budget.frameMs,
-          // The two framings the trees are judged from, published as plain state so the run report
+          // Forest camera costs, published as plain state so the run report
           // carries the numbers rather than a console ring buffer that outlives neither run.
+          riverFrameP50: median(viewBudgets.get("forest:river")?.p50s ?? []),
+          playerFrameP50: median(viewBudgets.get("forest:player")?.p50s ?? []),
           meadowFrameP50: median(viewBudgets.get("forest:meadow-close")?.p50s ?? []),
           meadowFrameP99: Math.max(0, ...(viewBudgets.get("forest:meadow-close")?.p99s ?? [])),
           meadowTriangles: median(viewBudgets.get("forest:meadow-close")?.triangles ?? []),

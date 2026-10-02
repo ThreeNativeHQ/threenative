@@ -45,6 +45,7 @@ import {
   smoothstep,
   uniform,
   vec3,
+  vec4,
 } from "three/tsl";
 import type { Node } from "three/webgpu";
 import { MeshBasicNodeMaterial } from "three/webgpu";
@@ -300,6 +301,9 @@ export function installOutdoorOcclusion(
     float(1).sub(float(1).sub(distanceHaze).mul(float(1).sub(valleyHaze))),
   );
   scene.fogNode = heightFog;
+  // AO must darken RGB, not canvas alpha: lowered alpha leaked the backdrop through dark crowns.
+  // Preserve the other worlds' existing output for this forest/coast round.
+  const otherBiome = biome !== undefined && biome.world !== "forest" && biome.world !== "coastal";
   const world = pass(scene, camera);
   world.setMRT(mrt({ output, normal: normalView }));
   const depth = world.getTextureNode("depth");
@@ -322,13 +326,17 @@ export function installOutdoorOcclusion(
         minimumTier: "medium",
         build: (input) =>
           (input as Node<"vec4">).mul(
-            mix(
-              1,
-              occlusion.r,
-              biome?.world === "alpine" || biome?.world === "tundra"
-                ? float(0.65).mul(float(1).sub(smoothstep(30, 100, world.getViewZNode().negate())))
-                : 0.65,
-            ),
+            otherBiome
+              ? mix(
+                  1,
+                  occlusion.r,
+                  biome?.world === "alpine" || biome?.world === "tundra"
+                    ? float(0.65).mul(
+                        float(1).sub(smoothstep(30, 100, world.getViewZNode().negate())),
+                      )
+                    : 0.65,
+                )
+              : vec4(vec3(mix(1, occlusion.r, 0.65)), 1),
           ),
       },
     ],

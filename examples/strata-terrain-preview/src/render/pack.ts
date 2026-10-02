@@ -94,6 +94,7 @@ function surface(
   const stone = STONE.has(asset);
   const cutout = !stone && source.alphaTest > 0;
   const canopy = asset === "spruce" || asset === "sapling";
+  const otherBiome = world !== "forest" && world !== "coastal";
   const material = new MeshPhysicalNodeMaterial({
     map: source.map,
     normalMap: canopy ? null : source.normalMap,
@@ -107,15 +108,19 @@ function surface(
     // Cooked albedo is already sRGB (KTX2 DFD transfer=2); never apply a second decode or lift.
     const tint =
       cutout && canopy
-        ? ([0.34, 0.95, 0.18] as const)
+        ? otherBiome
+          ? ([0.34, 0.95, 0.18] as const)
+          : ([0.6, 0.78, 0.34] as const)
         : cutout && asset !== "poppy"
-          ? ([0.55, 0.82, 0.42] as const)
+          ? otherBiome
+            ? ([0.55, 0.82, 0.42] as const)
+            : ([0.6, 0.78, 0.45] as const)
           : asset === "poppy"
             ? ([1, 1, 0.85] as const)
             : canopy && source.name === "branch"
               ? ([0.45, 0.38, 0.25] as const)
               : ([1, 1, 1] as const);
-    const otherBiome = world !== "forest" && world !== "coastal";
+
     material.colorNode = sampled.rgb.mul(vec3(...tint));
     if (otherBiome && stone)
       material.colorNode = sampled.rgb.mul(
@@ -178,8 +183,10 @@ function surface(
       // Keep Three's DoubleSide back-face normal flip; overriding it lights undersides as sky faces.
       if (canopy) {
         const inner = attribute<"float">("inner", "float");
-        material.colorNode = material.colorNode.mul(mix(0.42, 1, inner));
-        material.aoNode = mix(0.12, 0.58, inner);
+        material.colorNode = material.colorNode.mul(
+          mix(otherBiome ? 0.42 : 0.3, 1, otherBiome ? inner : inner.pow(2)),
+        );
+        material.aoNode = otherBiome ? mix(0.12, 0.58, inner) : mix(0.1, 0.72, inner.pow(2));
       } else if (asset === "poppy") {
         // Keep the photographed red petals; lift only the nearly black stems/seed pods.
         const dark = smoothstep(0.045, 0.008, sampled.r.max(sampled.g).max(sampled.b));
