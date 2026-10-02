@@ -1466,7 +1466,7 @@ licensed asset bytes are protected; no push/merge or purchases.
    fallback scenarios on port 5297. Judge six full-resolution captures; per-view
    CPU p50 ≤4 ms, protected forest/coast luminance p05/p50/p95 delta ≤0.5.
 
-Final licensed results below; absent-licensed run pending. Final captures:
+Final licensed and absent-licensed results below. Final captures:
 `artifacts/playtest/worlds-r4-final/`.
 
 Baseline licensed and absent-licensed full scenarios PASS (42/42 each), terrain
@@ -1519,4 +1519,21 @@ wall varnish, foot/rim rocks, dry clustered cover, dune ripples and a dry tribut
 distant sand tiling and rounded mesa outlines remain. Tundra has connected bare
 gravel between sedge/lichen/shrub patches and no white/blue blade bases; dark
 broadleaf cutouts and sparse distant cover remain. These are improvements, not
-AAA acceptance; AC-5 stays open. Absent-licensed final proof is running.
+AAA acceptance; AC-5 stays open.
+
+Final absent-licensed full scenario: **44/44 PASS**, zero diagnostics. CPU p50:
+alpine ridge/overview 1.5/1.4 ms, desert mesa/overview 1.2/1.2 ms, tundra
+plain/overview 1.9/1.8 ms. All ten per-view CPU assertions are ≤4 ms; fallback
+crag contact also reports 128 instances, 2,048 probes, maximum clearance −0.5 m.
+The nine protected absent-licensed forest/coast captures pass all three luminance
+quantiles, maximum absolute delta **0.0532** (limit0.5). Both final runs use
+hardware NVIDIA Turing WebGPU and 1920×1080 captures. Full-resolution fallback
+grades: alpine 3/10 (faceted light-grey ribs), desert 5/10 (orange faceted talus,
+dark procedural grass), tundra 5/10 (black faceted stones, clustered sedge without
+white roots). Fallback qualifies function; it does not qualify licensed art parity.
+
+Delivery: captures and harness console output remain local at
+`artifacts/playtest/worlds-r4-final/` and `fallback/`; licensed packs restored with
+no hidden leftovers, no purchases or asset-byte changes. Implementation commits
+`ca278ae0e`, `658b8a0ba`, `b3c158951` plus the final notes commit are local only;
+no push/merge. Worktree retained for the unmerged branch and unfinished AC-5.
