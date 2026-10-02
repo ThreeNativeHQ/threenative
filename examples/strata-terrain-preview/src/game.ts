@@ -136,6 +136,7 @@ const initialState = {
   waveSamples: 0,
   waveRange: 0,
   sampleSlopeRange: 0,
+  lakePlacementError: 1,
   sunX: -180,
   propDraws: 0,
   propInstances: 0,
@@ -304,6 +305,14 @@ function terrainScene(world: "forest" | "coastal"): new () => Scene<TerrainState
       const lake = createLakes(data.lakes, field);
       this.#lake = lake;
       if (lake) {
+        const centre = lake.mesh.geometry.getAttribute("position");
+        const at = data.lakes[0]?.at;
+        ctx.state.set({
+          lakePlacementError: Math.hypot(
+            centre.getX(0) - (at?.[0] ?? 0),
+            centre.getZ(0) - (at?.[1] ?? 0),
+          ),
+        });
         ctx.add(lake.mesh);
         ctx.entities.add("lake", { mesh: lake.mesh, dispose: () => lake.dispose() });
       }

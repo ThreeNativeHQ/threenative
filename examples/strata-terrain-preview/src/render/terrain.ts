@@ -10,7 +10,7 @@ import {
   LinearFilter,
   Mesh,
   MeshStandardMaterial,
-  RedFormat,
+  RGFormat,
   RepeatWrapping,
   type Texture,
 } from "three";
@@ -53,6 +53,7 @@ import { MeshStandardNodeMaterial } from "three/webgpu";
 //
 // Texture budget: six albedos + four normals + curvature + two shadow levels × two = 15/16.
 import { createHorizonGeometry } from "./horizon.js";
+import { type IBakedLake, type IBakedRiver, surfaceHeights, waterlineRadius } from "./river.js";
 
 export interface IBakedWorld {
   size: number;
@@ -60,6 +61,8 @@ export interface IBakedWorld {
   heights: number[];
   colors: number[];
   waterLevel: number | null;
+  lakes?: readonly IBakedLake[];
+  rivers?: readonly IBakedRiver[];
 }
 
 /**
@@ -79,6 +82,7 @@ export interface IGroundCurvature {
   /** +1 in a hollow, -1 on a rib, ~0 on flat ground. */
   readonly node: Node<"float">;
   readonly texture: DataTexture;
+  readonly wetBank: Node<"float">;
 }
 
 type LayerKey = "grass" | "dirt" | "rock" | "moss" | "sand" | "snow";
@@ -539,7 +543,12 @@ export function createGroundMaterial(
     oneMinus(smoothstep(0.18, 0.42, steep)),
   );
   const mountain = mix(mix(forest, crag, max(treeline, face)), vec3(0.72, 0.76, 0.78), cap);
-  material.colorNode = mix(albedo.rgb.mul(mix(vec3(1), tone, vegetation)), mountain, continuation);
+  material.colorNode = mix(
+    albedo.rgb.mul(mix(vec3(1), tone, vegetation)),
+    mountain,
+    continuation,
+  ).mul(mix(vec3(1), vec3(0.42, 0.46, 0.42), curvature.wetBank));
+  material.roughnessNode = mix(0.94, 0.48, curvature.wetBank);
   // Detail is tangential; it must not rotate the whole hillside towards a fixed diagonal.
   const tangent = normal.sub(normalWorldGeometry.mul(dot(normalWorldGeometry, normal)));
   material.normalNode = transformNormalToView(normalize(normalWorldGeometry.add(tangent)));
@@ -600,7 +609,7 @@ export function createTerrain(
   mesh.add(horizon);
   geometry.addEventListener("dispose", () => horizon.geometry.dispose());
 
-  const curvature = buildCurvature(data);
+  const curvature = buildCurvature(data, field);
   if (assets !== undefined)
     void loadGroundMaps(assets)
       .then((maps) => createGroundMaterial(data, maps, curvature))
@@ -631,7 +640,7 @@ export function createTerrain(
  *
  * One curvature binding plus six albedos, four normals and four shadow maps is fifteen.
  */
-function buildCurvature(data: IBakedWorld): IGroundCurvature {
+function buildCurvature(data: IBakedWorld, field: Heightfield): IGroundCurvature {
   const resolution = data.resolution;
   const heights = data.heights;
   const spacing = data.size / (resolution - 1);
@@ -640,7 +649,20 @@ function buildCurvature(data: IBakedWorld): IGroundCurvature {
       Math.min(resolution - 1, Math.max(0, row)) * resolution +
         Math.min(resolution - 1, Math.max(0, column))
     ] as number;
-  const pixels = new Uint16Array(resolution * resolution);
+  const lakes = (data.lakes ?? []).map((lake) => ({
+    ...lake,
+    reach: waterlineRadius(field, lake.at, lake.level),
+  }));
+  const rivers = (data.rivers ?? []).flatMap((river) => {
+    const levels = surfaceHeights(field, river.points);
+    return river.points.map(([x = 0, , z = 0], index) => ({
+      x,
+      z,
+      level: levels[index] as number,
+    }));
+  });
+  // Both channels share one sampler: measured concavity and the water's actual wet margin.
+  const pixels = new Uint16Array(resolution * resolution * 2);
   for (let row = 0; row < resolution; row += 1) {
     for (let column = 0; column < resolution; column += 1) {
       const laplacian =
@@ -650,12 +672,28 @@ function buildCurvature(data: IBakedWorld): IGroundCurvature {
         at(row + 4, column) -
         4 * at(row, column);
       // An eight-metre neighbourhood picks out channels and hollows, suppressing tiny baked bumps.
-      pixels[row * resolution + column] = DataUtils.toHalfFloat(
+      const index = (row * resolution + column) * 2;
+      pixels[index] = DataUtils.toHalfFloat(
         Math.max(-1, Math.min(1, (laplacian / (spacing * spacing * 16)) * 36)),
       );
+      const x = column * spacing - data.size / 2;
+      const z = row * spacing - data.size / 2;
+      const height = at(row, column);
+      const margin = (level: number): number =>
+        Math.max(0, Math.min(1, (level + 1.1 - height) / 1.1));
+      let wet = 0;
+      for (const lake of lakes) {
+        const distance = Math.hypot(x - (lake.at[0] ?? 0), z - (lake.at[1] ?? 0));
+        if (distance <= lake.reach + 3) wet = Math.max(wet, margin(lake.level));
+      }
+      for (const station of rivers) {
+        if (Math.hypot(x - station.x, z - station.z) <= 13)
+          wet = Math.max(wet, margin(station.level));
+      }
+      pixels[index + 1] = DataUtils.toHalfFloat(wet);
     }
   }
-  const cooked = new DataTexture(pixels, resolution, resolution, RedFormat, HalfFloatType);
+  const cooked = new DataTexture(pixels, resolution, resolution, RGFormat, HalfFloatType);
   cooked.minFilter = LinearFilter;
   cooked.magFilter = LinearFilter;
   cooked.wrapS = ClampToEdgeWrapping;
@@ -665,7 +703,8 @@ function buildCurvature(data: IBakedWorld): IGroundCurvature {
     positionWorld.x.div(float(data.size)).add(0.5),
     positionWorld.z.div(float(data.size)).add(0.5),
   );
-  return { node: texture(cooked, uv).r, texture: cooked };
+  const sampled = texture(cooked, uv);
+  return { node: sampled.r, texture: cooked, wetBank: sampled.g };
 }
 
 /**

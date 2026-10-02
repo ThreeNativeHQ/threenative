@@ -626,6 +626,25 @@ keep appearance in game source, leave the collider and other lanes untouched. Gu
 water and contact AO remain the next increments; the mountains still need stronger relief.
 **AC-5 remains open; this is an improvement, not an Unreal-level verdict.**
 
+Second increment: forest hydraulic inertia/load/bite are reduced, with a 34° talus and
+16 settling iterations. `node scripts/measure-spikes.mjs`: **1 spike, worst 1.7 m** (was 3).
+The stream's existing curved route still ends in the same basin: measured rendered stream
+end **10.55 m**, lake bed **10.26 m**, level **12.4 m**; its 4,540 m² connected flooded
+component reaches no world edge. No engine package changed. A game bug was reproduced:
+the bake stores lake centres as `[x,z]`, while the renderer read `[x,y,z]`, drawing at
+z=0 or returning no lake. Both consumers now read the actual centre; shore tracing stays
+inside the resident heightfield and stops at the first bank. The existing playtest now
+fails on missing/misplaced lake geometry (`lakePlacementError`, observed **0 m**).
+Wet banks share the curvature texture's second channel, with lower roughness and darker
+soil. The stream uses the lake's existing radiance composite without a second PBR glint;
+foam and shallow-edge opacity are reduced. Inspected `artifacts/playtest/round2-water/`
+captures now show a reflective lake in its basin; **the small upstream white strip remains**,
+so this does not claim the stream defect finished. Meadow/overview frame p50 **3.2/4.0 ms**;
+full-frame display Y p05/p50/p95: meadow **0.225/0.434/0.738**, overview
+**0.209/0.402/0.483**, walk **0.070/0.386/0.493**, river **0.181/0.411/0.822**.
+All resource assertions pass; only known coastal shadow-texture `diagnostics` fails.
+Example typecheck, root lint (warnings only) and terrain tests **60/60** pass.
+
 - [ ] AC-5 [local, actor: implementing agent]: The five editable starter environments satisfy their defining terrain/art coverage and Unreal-like visual rubric. proof: planned `pnpm exec vitest run packages/terrain/__tests__/starter-assets.spec.ts` plus AC-3/AC-4 benchmark captures — Evidence: partial (terrain half; see the relief pass above). Terrain relief, drainage, talus and mesa benches are measured and the temperate captures inspected; still pending: the four non-temperate defining views, final art and atmosphere, and the 25 MiB cooked budget per starter with no runtime fetches. Asset tests or nonblank captures alone cannot tick this visual criterion.
 - [ ] AC-6 [local, actor: implementing agent]: A consumer completely replaces starter materials and placement models without generator edits. proof: `pnpm --filter strata-terrain-preview test:terrain:custom` — Evidence: pending; planned script runs the existing scenario with custom local material/model mappings, verifies the new model/material identities, zero starter asset requests, and unchanged terrain/collision arrays; a missing referenced asset fails by name.
 - [ ] AC-7 [local, actor: implementing agent]: Installed capability lookup leads an agent to the actual public terrain authoring API. proof: `pnpm build` plus `pnpm capabilities:check` and packed-consumer capability lookup in `test:consumer` — Evidence: pending; request/individual-mechanic queries resolve installed imports and truthful constraints, including units, seed, resolution, synchronous evaluation, and custom art ownership. Fresh create-threenative output includes the optional terrain/editor install and workflow instructions, linked to the shipped addon guide; verify the generated AGENTS/CLAUDE mirrors and packed editor entry without adding authoring dependencies to ordinary game runtime.
