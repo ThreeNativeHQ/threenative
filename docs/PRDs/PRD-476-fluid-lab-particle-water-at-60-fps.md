@@ -131,6 +131,10 @@ Phase boxes below are the acceptance criteria; each names its proof.
 | Native host | Conformance registry case on the desktop host | New case beside `77-fluid-field` | Phase 2 box 2 |
 | Discovery | `engine_search_capabilities` → manifest built by `pnpm build` | Adds `@situation` tags; no hand-edited JSON | Phase 3 box 1 |
 
+## Blocked on
+
+- A valid presentation lane for the two frame-time boxes: on this machine the private Xvfb presents a trivial WebGPU page at 17–20 fps, headless Chromium falls to SwiftShader, and the real display is off limits for captures by owner directive. Unblocks: the owner allows one window on the desktop for a 60 s run, or a GPU-accelerated virtual display exists. A quiet host (other agents idle) is also needed: the runs above shared it at load average 14–50.
+
 ## Decisions
 
 - 2026-10-01 (planning agent, proposed; owner may overturn): GPU compute, not an optimised CPU
@@ -144,6 +148,12 @@ Phase boxes below are the acceptance criteria; each names its proof.
   water without slowing.
 - 2026-10-01 (planning agent, proposed): name `FluidParticles3D`, pairing `FluidField2D` and
   `GPUParticles3D`; Godot has no fluid node to borrow.
+- 2026-10-01 (implementation agent): floating bodies carry one centre hull point (heave only).
+  Four to eight points fed splash noise into torque and tumbled the box (ejected to 27 m) because
+  Rapier angular damping is not on the body options; `sample` box-filters open columns for the
+  same reason.
+- 2026-10-01 (implementation agent): the lab's HUD is a DOM readout, not scene-drawn; spray is a
+  `GPUParticles3D` that borrows fast fluid particles' state; the volume raymarch is game source.
 - Out of scope: Android/iOS frame-rate claims (no result here claims a platform it did not run
   on); a follow-up PRD takes the Pixel 8 measurement once Phase 3 lands.
 
@@ -189,7 +199,7 @@ projects particles out of them; the column-height grid feeds `heightAt` through 
 
 #### Phase 3: agents find it, and the sandbox Fluid Lab runs all eight experiments at 60 fps
 
-**Status:** NOT STARTED
+**Status:** PARTIAL (2 of 3 boxes)
 **Files:** `packages/core/src/index.ts` (`@situation` tags for `FluidParticles3D`; spray/droplet
 situations on `GPUParticles3D`), `packages/create-threenative/templates/sailing/AGENTS.md` or the
 capability reference the scaffold reads (one line, inside the template caps),
@@ -201,9 +211,10 @@ the shared `.packages`), scaffold `fluid-lab`, port the eight experiments onto
 from `shaders.js` into `src/render/`. Commit and push the game to the sandbox remote as soon as it
 runs, per the sandbox `AGENTS.md`.
 
-- [ ] `engine_search_capabilities` returns `FluidParticles3D` first for "pour water into a tank and drop a ball in it" and `GPUParticles3D` for "splash spray droplets with lifetime and gravity"; template caps still pass. proof: `pnpm build && pnpm test`, then both searches
-- [ ] A playtest cycles all eight scenes through keys 1–8 and asserts each is non-blank, changes over time, and reports a non-zero particle or wave state. proof: `node packages/playtest/dist/runner/cli.js ../sandbox/fluid-lab/playtests/experiments.playtest.json --url <preview url> --browser-recipe webgpu`
+- [x] `engine_search_capabilities` returns `FluidParticles3D` first for "pour water into a tank and drop a ball in it" and `GPUParticles3D` for "splash spray droplets with lifetime and gravity"; template caps still pass. proof: `pnpm build && pnpm test`, then both searches — `searchCapabilities` over the regenerated `packages/core/capabilities.json`: "pour water into a tank and drop a ball in it" → FluidParticles3D (0.70) first; "splash spray droplets with lifetime and gravity" → GPUParticles3D (3.60) first. `pnpm build` ok; `pnpm test` (create-threenative + scripts + the new spec, 2,457 tests) 2,456 pass; the one red (`quality-json.spec`, 3 unwaived suppressions in `fluid-particles.ts`) was fixed and rerun green; `pnpm typecheck`, `pnpm lint` (0 errors) and `pnpm budgets` exit 0
+- [x] A playtest cycles all eight scenes through keys 1–8 and asserts each is non-blank, changes over time, and reports a non-zero particle or wave state. proof: `node packages/playtest/dist/runner/cli.js ../sandbox/fluid-lab/playtests/experiments.playtest.json --url <preview url> --browser-recipe webgpu --headed` — pass on `nvidia/turing` (`../sandbox/fluid-lab`, pushed as ThreeNativeHQ/examples 0cdeb86): per scene `experiment`, `alive` (particles or wave energy) and `moved` (speed over 0.2 m/s or wave energy) hold at every step; the eight per-scene screenshots are 5-11 % non-background pixels (ocean 90 %); 0 console errors
 - [ ] The sandbox Splash Tank at the High preset holds steady-state frame p95 ≤ 16.7 ms on the Linux desktop browser with a hardware WebGPU adapter — the case the source drops to 30 fps. proof: `measure-steady-state-fps` skill lane against the sandbox build + preview
+  Open: the High preset (4,896 particles) steps in 2.8–5.8 ms to GPU completion and uncapped frame intervals read p95 8.5–13.4 ms over ~5,000–6,500 frames, but the host was shared with other agents (load average 14–50) and a control scene with no fluid already showed p99 14–16 ms, so the run is not clean enough to tick; no presented-frame lane exists (see Blocked on).
 
 **Verification:** the three proofs; `score-build-experience` on the finished sandbox build goes
 in the PR body, not a box.
