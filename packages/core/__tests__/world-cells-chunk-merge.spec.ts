@@ -35,6 +35,7 @@ import {
   VIRTUAL_SHADOW_WIDE_CASTER_LAYER,
   VirtualShadowNode,
 } from "../src/render/virtual-shadow.js";
+import { SceneRenderProjection } from "../src/renderProjection.js";
 import type { IRendererLike } from "../src/renderer.js";
 import { isStatic } from "../src/static-transform.js";
 import { type IWorldPackage, WorldCells } from "../src/world.js";
@@ -180,9 +181,9 @@ function meshesIn(root: Object3D): Mesh[] {
 
 /** Observe the real level probe's draw inputs at three's shadow-render boundary, without a GPU. */
 function shadowDraws(
-  world: WorldCells,
+  world: Object3D,
   half: "cluster" | "wide",
-  observe?: (meshes: Mesh[], level: number) => void,
+  observe?: (meshes: Mesh[], level: number, depth: { near: number; far: number }) => void,
 ): Mesh[][] {
   const scene = new Scene();
   const camera = new PerspectiveCamera(60, 1, 0.1, 900);
@@ -252,7 +253,16 @@ function shadowDraws(
           mesh.material as Material,
           null as never,
         );
-      observe?.(draws[index] as Mesh[], index);
+      observe?.(draws[index] as Mesh[], index, { near: shadowCamera.near, far: shadowCamera.far });
+      for (const mesh of draws[index] as Mesh[])
+        mesh.onAfterRender(
+          {} as never,
+          scene,
+          shadowCamera,
+          mesh.geometry,
+          mesh.material as Material,
+          null as never,
+        );
     };
   });
   for (const mover of node.moverNodes)
@@ -512,6 +522,52 @@ function shadowChunkModel(): {
 }
 
 describe("a hand-placed chunk merged by material", () => {
+  it.each(["cluster", "wide"] as const)(
+    "instances preserved parts with identical triangles and shadow-camera depth on %s levels",
+    async (half) => {
+      const group = new Group();
+      group.position.copy(CHUNK_ORIGIN);
+      for (let copy = 0; copy < 8; copy += 1) {
+        const geometry = new BoxGeometry(2, 2, 2);
+        geometry.setAttribute(
+          "color",
+          new BufferAttribute(
+            new Float32Array(geometry.getAttribute("position").count * 3).fill(0.75),
+            3,
+          ),
+        );
+        const mesh = new Mesh(
+          geometry,
+          new MeshBasicMaterial({ color: copy % 2 ? 0x00ff00 : 0xff0000, vertexColors: true }),
+        );
+        mesh.position.x = (copy - 4) * 8;
+        if (copy === 4) mesh.scale.setScalar(1 / 10000);
+        group.add(mesh);
+      }
+      const { world } = await attached(group, { shadows: { cast: true, receive: true } });
+      const before: { triangles: string[]; near: number; far: number }[] = [];
+      shadowDraws(world, half, (drawn, level, depth) => {
+        before[level] = { triangles: trianglesOf(drawn), ...depth };
+      });
+      const scene = new Scene();
+      scene.add(world);
+      const projection = new SceneRenderProjection(scene, {
+        minMeshes: 1,
+        onReport: () => undefined,
+      });
+      projection.reconcile();
+      projection.reconcile();
+      expect(projection.deoptimized).toBe(false);
+      const after: typeof before = [];
+      const draws = shadowDraws(projection.root, half, (drawn, level, depth) => {
+        after[level] = { triangles: trianglesOf(drawn), ...depth };
+      });
+      expect(draws.every((drawn) => drawn.length === 1)).toBe(true);
+      expect(after).toEqual(before);
+      projection.dispose();
+      world.dispose();
+    },
+  );
   it("uploads the merged buffers during admission, not on the first draw", async () => {
     vi.spyOn(console, "info").mockImplementation(() => undefined);
     const { group } = chunkModel();

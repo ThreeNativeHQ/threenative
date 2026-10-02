@@ -1,7 +1,10 @@
 import {
   BatchedMesh,
+  Box3,
   type BufferGeometry,
   type Color,
+  DynamicDrawUsage,
+  Frustum,
   InstancedMesh,
   LOD,
   type Light,
@@ -16,12 +19,16 @@ import {
   Points,
   Scene,
   SkinnedMesh,
+  Sphere,
   type SpotLight,
   Sprite,
   type SpriteMaterial,
 } from "three";
+import { StorageInstancedBufferAttribute } from "three/webgpu";
 
+import { isEngineRenderHook } from "./engine-render-hook.js";
 import type { IGeometryOwnership } from "./geometry-capture.js";
+import { chunkGeometry, chunkInstanceSource, syncChunkInstanceView } from "./projection-plan.js";
 import { MIN_BATCH_MEMBERS, isLight } from "./projection-plan.js";
 import type {
   IProjectionBatchGroup,
@@ -39,6 +46,14 @@ import {
   setBatchedMeshMatrixWithVelocity,
   setBatchedMeshPreviousMatrix,
 } from "./render/batched-velocity.js";
+import {
+  VELOCITY_PREVIOUS_INSTANCE_MATRICES,
+  readVelocityPreviousMatrices,
+} from "./render/velocity.js";
+import {
+  VIRTUAL_SHADOW_CASTER_LAYER,
+  VIRTUAL_SHADOW_WIDE_CASTER_LAYER,
+} from "./render/virtual-shadow.js";
 import type { ProjectionExactReason, ProjectionMaterialChecks } from "./renderProjection.js";
 
 /**
@@ -131,6 +146,142 @@ interface IBatch {
   dirty: boolean;
   /** Whether an instance colour was written this frame, flagged once per batch for the same reason. */
   colorsDirty: boolean;
+}
+
+/** Bounds and camera decisions stay those of the original meshes, including whole EXT groups. */
+function chunkSourceSphere(source: Mesh, sphere: Sphere): Sphere {
+  if (source instanceof InstancedMesh) {
+    if (source.boundingSphere === null) source.computeBoundingSphere();
+    return sphere.copy(source.boundingSphere as Sphere).applyMatrix4(source.matrixWorld);
+  }
+  if (source.geometry.boundingSphere === null) source.geometry.computeBoundingSphere();
+  return sphere.copy(source.geometry.boundingSphere as Sphere).applyMatrix4(source.matrixWorld);
+}
+
+function selectChunkInstances(batch: IBatch): void {
+  const mesh = batch.mesh as InstancedMesh & {
+    chunkShadowProxy?: boolean;
+    casterMinDiameter?: number;
+  };
+  mesh.chunkShadowProxy = true;
+  // Storage matrices bypass Three's once-per-frame attribute mirror; the existing world GPU
+  // scene uses this same buffer path. Colours use per-draw dynamic attributes without vec3 padding.
+  mesh.instanceMatrix = new StorageInstancedBufferAttribute(mesh.instanceMatrix.array, 16).setUsage(
+    DynamicDrawUsage,
+  );
+  mesh.instanceColor?.setUsage(DynamicDrawUsage);
+  const frustum = new Frustum();
+  const projection = new Matrix4();
+  const sphere = new Sphere();
+  const fullMatrices = new Float32Array(mesh.instanceMatrix.array.length);
+  const fullColours = mesh.instanceColor ? new Float32Array(mesh.instanceColor.array.length) : null;
+  const drawPrevious = new Float32Array(fullMatrices.length);
+  let previous: Float32Array | undefined;
+  let fullCount = 0;
+  mesh.onBeforeRender = (_renderer, _scene, camera) => {
+    fullMatrices.set(mesh.instanceMatrix.array);
+    if (fullColours && mesh.instanceColor) fullColours.set(mesh.instanceColor.array);
+    fullCount = mesh.count;
+    previous = readVelocityPreviousMatrices(mesh);
+    frustum.setFromProjectionMatrix(
+      projection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse),
+      camera.coordinateSystem,
+      camera.reversedDepth,
+    );
+    const gate =
+      camera.layers.isEnabled(VIRTUAL_SHADOW_CASTER_LAYER) ||
+      camera.layers.isEnabled(VIRTUAL_SHADOW_WIDE_CASTER_LAYER)
+        ? (mesh.casterMinDiameter ?? 0)
+        : 0;
+    let slot = 0;
+    for (const [object, stableSlot] of batch.instances) {
+      const member = object as Mesh;
+      const source = chunkInstanceSource(member);
+      let visible = true;
+      for (let parent: Object3D | null = source; parent !== null; parent = parent.parent)
+        if (!parent.visible) visible = false;
+      chunkSourceSphere(source, sphere);
+      if (
+        !visible ||
+        sphere.radius * 2 < gate ||
+        (source.frustumCulled && !frustum.intersectsSphere(sphere))
+      )
+        continue;
+      mesh.setMatrixAt(slot, member.matrixWorld);
+      if (batch.uniform) mesh.setColorAt(slot, baseColorOf(member.material as Material) as Color);
+      if (previous)
+        drawPrevious.set(previous.subarray(stableSlot * 16, stableSlot * 16 + 16), slot * 16);
+      slot += 1;
+    }
+    mesh.count = slot;
+    mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    if (previous) Reflect.set(mesh, VELOCITY_PREVIOUS_INSTANCE_MATRICES, drawPrevious);
+  };
+  // A pass's compacted order must never become the next frame's stable velocity history.
+  mesh.onAfterRender = () => {
+    mesh.instanceMatrix.array.set(fullMatrices);
+    if (fullColours && mesh.instanceColor) mesh.instanceColor.array.set(fullColours);
+    mesh.count = fullCount;
+    if (previous) Reflect.set(mesh, VELOCITY_PREVIOUS_INSTANCE_MATRICES, previous);
+    else Reflect.deleteProperty(mesh, VELOCITY_PREVIOUS_INSTANCE_MATRICES);
+  };
+}
+
+function chunkBatchBounds(batch: IBatch): void {
+  const mesh = batch.mesh as InstancedMesh & {
+    casterSourceBounds?: Float64Array;
+    casterSourceBoundsCount?: number;
+  };
+  const sphere = new Sphere();
+  const sourceBox = new Box3();
+  const bounds = mesh.boundingSphere ?? new Sphere();
+  const box = mesh.boundingBox ?? new Box3();
+  bounds.makeEmpty();
+  box.makeEmpty();
+  const sources = new Set<Mesh>();
+  const records =
+    mesh.casterSourceBounds && mesh.casterSourceBounds.length >= batch.instances.size * 7
+      ? mesh.casterSourceBounds
+      : new Float64Array(batch.instances.size * 7);
+  let count = 0;
+  for (const member of batch.instances.keys()) {
+    const source = chunkInstanceSource(member as Mesh);
+    if (sources.has(source)) continue;
+    sources.add(source);
+    let visible = true;
+    for (let parent: Object3D | null = source; parent; parent = parent.parent)
+      if (!parent.visible) visible = false;
+    if (!visible) continue;
+    chunkSourceSphere(source, sphere);
+    bounds.union(sphere);
+    if (source instanceof InstancedMesh) {
+      if (source.boundingBox === null) source.computeBoundingBox();
+      sourceBox.copy(source.boundingBox as Box3);
+    } else {
+      if (source.geometry.boundingBox === null) source.geometry.computeBoundingBox();
+      sourceBox.copy(source.geometry.boundingBox as Box3);
+    }
+    sourceBox.applyMatrix4(source.matrixWorld);
+    box.union(sourceBox);
+    // Keep the shadow camera's depth derivation exactly on the original per-source volumes.
+    records.set(
+      [
+        sphere.center.x,
+        sphere.center.y,
+        sphere.center.z,
+        sphere.radius,
+        source.castShadow ? 1 : 0,
+        sourceBox.min.y,
+        sourceBox.max.y,
+      ],
+      count++ * 7,
+    );
+  }
+  mesh.casterSourceBounds = records;
+  mesh.casterSourceBoundsCount = count;
+  mesh.boundingSphere = bounds;
+  mesh.boundingBox = box;
 }
 
 /**
@@ -949,6 +1100,7 @@ export class ProjectionMirror {
    * found in, and costs a settled frame nothing.
    */
   #syncBatched(target: IBatch, mesh: Mesh): ProjectionExactReason | undefined {
+    syncChunkInstanceView(mesh);
     const material = mesh.material as Material;
     const geometry = mesh.geometry;
     let state = this.#state.get(mesh);
@@ -959,7 +1111,8 @@ export class ProjectionMirror {
     if (
       target.uniform &&
       state !== undefined &&
-      (this.#materialChecks === "everyFrame"
+      (this.#materialChecks === "everyFrame" ||
+      Reflect.get(target.mesh, "chunkShadowProxy") === true
         ? !uniformUnchanged(material)
         : this.#drifted.size > 0 && this.#drifted.has(material))
     ) {
@@ -1057,6 +1210,7 @@ export class ProjectionMirror {
    */
   #flushBatch(batch: IBatch): void {
     batch.mesh.count = batch.used;
+    if (Reflect.get(batch.mesh, "chunkShadowProxy") === true) chunkBatchBounds(batch);
     if (batch.dirty) {
       batch.dirty = false;
       batch.mesh.instanceMatrix.needsUpdate = true;
@@ -1102,7 +1256,7 @@ export class ProjectionMirror {
       : (first.material as Material);
     let mesh: InstancedMesh;
     try {
-      mesh = new InstancedMesh(first.geometry, material, capacity);
+      mesh = new InstancedMesh(group.geometry, material, capacity);
     } catch {
       return undefined;
     }
@@ -1126,7 +1280,7 @@ export class ProjectionMirror {
     const batch: IBatch = {
       mesh,
       group,
-      geometry: first.geometry,
+      geometry: group.geometry,
       material,
       uniform,
       instances: new Map(),
@@ -1136,6 +1290,7 @@ export class ProjectionMirror {
       dirty: false,
       colorsDirty: false,
     };
+    if (chunkGeometry(first.geometry) !== first.geometry) selectChunkInstances(batch);
     this.#batches.set(group, batch);
     this.scene.add(mesh);
     this.#compileMs += (globalThis.performance?.now() ?? 0) - startedAt;
@@ -1331,6 +1486,7 @@ export class ProjectionMirror {
    * in the authored scene where it belongs.
    */
   #syncProxy(object: Object3D): void {
+    if ((object as Mesh).isMesh === true) syncChunkInstanceView(object as Mesh);
     let proxy = this.#proxies.get(object);
     let fresh = false;
     if (proxy === undefined) {
@@ -1366,6 +1522,12 @@ export class ProjectionMirror {
     target.receiveShadow = object.receiveShadow;
     target.frustumCulled = object.frustumCulled;
     target.layers.mask = object.layers.mask;
+    // Engine depth selectors must run on the exact proxy too. They read the camera passed to
+    // this draw and the shared geometry; their per-level gate belongs to the object being drawn.
+    if (isEngineRenderHook(object.onBeforeRender)) target.onBeforeRender = object.onBeforeRender;
+    if (isEngineRenderHook(object.onAfterRender)) target.onAfterRender = object.onAfterRender;
+    if (Reflect.get(source, "chunkShadowProxy") === true)
+      Reflect.set(target, "chunkShadowProxy", true);
     // Added only once it is fully populated, never before.
     //
     // A `SkinnedMesh` built by its constructor has no `skeleton` until one is assigned, and

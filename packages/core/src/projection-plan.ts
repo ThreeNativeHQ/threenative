@@ -1,18 +1,21 @@
-import type {
-  BufferAttribute,
-  BufferGeometry,
-  InterleavedBufferAttribute,
-  Light,
+import {
+  type BufferAttribute,
+  type BufferGeometry,
+  InstancedMesh,
+  type InterleavedBufferAttribute,
+  type Light,
   Material,
+  Matrix4,
   Mesh,
   Object3D,
-  Scene,
-  SkinnedMesh,
+  type Scene,
+  type SkinnedMesh,
 } from "three";
 
 import { isEngineRenderHook } from "./engine-render-hook.js";
-import { skinnedMaterialBlocked } from "./projection-skinned.js";
-import { uniformSignatureOf } from "./projection-uniform.js";
+import { lodChainOf } from "./model-lod.js";
+import { isSimilarityTransform, skinnedMaterialBlocked } from "./projection-skinned.js";
+import { uniformEligible, uniformSignatureOf } from "./projection-uniform.js";
 import type { ProjectionExactReason, ProjectionReasonCode } from "./renderProjection.js";
 
 /**
@@ -239,6 +242,9 @@ function laneReasonOf(
   // is wrong there, or lost. The mesh keeps its own draw and its own matrix; the skinned lane
   // refuses these materials for the same reason (`skinnedMaterialBlocked`).
   if (displacesVertices(material)) return "vertexDisplaced";
+  if (chunkGeometry(geometry) !== geometry && !chunkMaterialCompatible(material))
+    return "unsupportedGeometry";
+  if (!chunkTransformCompatible(candidate)) return "nonUniformScale";
   return undefined;
 }
 
@@ -700,10 +706,11 @@ function flagGroupsOf(
 ): Map<number, IProjectionBatchGroup> {
   const geometry = mesh.geometry;
   const material = mesh.material as Material;
-  let byMaterial = index.get(geometry);
+  const keyGeometry = chunkGeometry(geometry);
+  let byMaterial = index.get(keyGeometry);
   if (byMaterial === undefined) {
     byMaterial = new WeakMap();
-    index.set(geometry, byMaterial);
+    index.set(keyGeometry, byMaterial);
   }
   let byFlags = byMaterial.get(material);
   if (byFlags === undefined) {
@@ -720,7 +727,7 @@ function activeGroupOf(
   mesh: Mesh,
   scanNumber: number,
 ): IProjectionBatchGroup {
-  const geometry = mesh.geometry;
+  const geometry = chunkGeometry(mesh.geometry);
   const material = mesh.material as Material;
   let group = byFlags.get(key);
   if (group === undefined) {
@@ -809,7 +816,7 @@ function addToUniformGroup(
   mesh: Mesh,
   scanNumber: number,
 ): void {
-  const geometry = mesh.geometry;
+  const geometry = chunkGeometry(mesh.geometry);
   const material = mesh.material as Material;
   const signature = uniformSignatureOf(material);
   if (signature === undefined) return;
@@ -1005,6 +1012,17 @@ function visitProjectionObject(
   }
   if (!isRenderable(object)) return;
   state.renderables += 1;
+  const chunkViews =
+    (object as { isInstancedMesh?: boolean }).isInstancedMesh === true
+      ? chunkInstanceViews(object as InstancedMesh)
+      : undefined;
+  if (chunkViews?.every((view) => walkLaneReason(view) === undefined)) {
+    for (const view of chunkViews) {
+      workspace.seen.add(view);
+      workspace.eligible[workspace.eligibleCount++] = view;
+    }
+    return;
+  }
   workspace.seen.add(object);
   if ((object as SkinnedMesh).isSkinnedMesh === true) {
     const skinnedReason = skinnedLaneReason(object);
@@ -1043,7 +1061,15 @@ function walkProjection(source: Scene, workspace: IProjectionScanWorkspace): IPr
 
 function groupEligibleMeshes(workspace: IProjectionScanWorkspace, scanNumber: number): void {
   for (let index = 0; index < workspace.eligibleCount; index += 1) {
-    addToBatchGroup(workspace, workspace.eligible[index] as Mesh, scanNumber);
+    const mesh = workspace.eligible[index] as Mesh;
+    // Content-shared chunk shapes may arrive as several already-instanced paint groups. Give
+    // their colours one uniform lane before the identity floor locks each cooked group in place.
+    if (
+      chunkGeometry(mesh.geometry) !== mesh.geometry &&
+      uniformSignatureOf(mesh.material as Material) !== undefined
+    )
+      addToUniformGroup(workspace, mesh, scanNumber);
+    else addToBatchGroup(workspace, mesh, scanNumber);
   }
   for (let index = 0; index < workspace.skinnedCount; index += 1) {
     addToSkinnedGroup(workspace, workspace.skinned[index] as SkinnedMesh, scanNumber);
@@ -1102,7 +1128,16 @@ function predictDraws(workspace: IProjectionScanWorkspace): number {
   // here so the same source cannot be drawn twice — once as an instance and once on the exact lane.
   for (let index = 0; index < workspace.activeUniformGroupCount; index += 1) {
     const group = workspace.activeUniformGroups[index] as IProjectionUniformGroup;
-    if (group.memberCount < MIN_BATCH_MEMBERS) continue;
+    if (group.memberCount < MIN_BATCH_MEMBERS) {
+      // Chunk members entered this lane directly, so an unshared shape/side must still draw.
+      const first = group.members[0] as Mesh;
+      if (chunkGeometry(first.geometry) !== first.geometry) {
+        for (let member = 0; member < group.memberCount; member += 1)
+          workspace.belowFloor[workspace.belowFloorCount++] = group.members[member];
+        predictedDraws += group.memberCount;
+      }
+      continue;
+    }
     workspace.batchGroups[workspace.batchGroupCount] = group;
     workspace.batchGroupCount += 1;
     predictedDraws += 1;
@@ -1254,4 +1289,307 @@ export function scanProjection(
     renderables: state.renderables,
     seen: workspace.seen,
   };
+}
+
+// Exact identities for preserved resident chunk parts.
+interface IShape {
+  readonly geometry: BufferGeometry;
+  readonly header: string;
+  readonly bytes: readonly Uint8Array[];
+  references: number;
+}
+
+interface IBinding {
+  readonly owner: ChunkInstanceShapes;
+  readonly shape: IShape;
+  references: number;
+  readonly version: number;
+  readonly attributes: readonly (BufferAttribute | InterleavedBufferAttribute)[];
+  readonly names: readonly string[];
+  readonly arrays: readonly ArrayLike<number>[];
+  readonly range: readonly [number, number];
+}
+
+// Core and the world subpath are bundled separately. They must agree on these private identities.
+const key = Symbol.for("threenative.chunkInstanceShapes");
+const host = globalThis as Record<symbol, unknown>;
+const bindings = (host[key] ?? new WeakMap<BufferGeometry, IBinding>()) as WeakMap<
+  BufferGeometry,
+  IBinding
+>;
+host[key] = bindings;
+const copies = new WeakMap<Mesh, { source: InstancedMesh; slot: number }>();
+const views = new WeakMap<InstancedMesh, Mesh[]>();
+
+function buffers(geometry: BufferGeometry):
+  | {
+      header: string;
+      bytes: Uint8Array[];
+      attributes: (BufferAttribute | InterleavedBufferAttribute)[];
+    }
+  | undefined {
+  if (geometry.drawRange.start !== 0 || geometry.drawRange.count !== Number.POSITIVE_INFINITY)
+    return undefined;
+  const attributes = Object.keys(geometry.attributes)
+    .sort()
+    .map((name) => geometry.getAttribute(name));
+  if (geometry.index) attributes.push(geometry.index);
+  const layout: unknown[] = [
+    Object.keys(geometry.attributes).sort(),
+    geometry.index !== null,
+    geometry.drawRange,
+    geometry.groups,
+  ];
+  const bytes: Uint8Array[] = [];
+  for (const attribute of attributes) {
+    if (
+      Reflect.get(attribute, "isInstancedBufferAttribute") === true ||
+      !ArrayBuffer.isView(attribute.array)
+    )
+      return undefined;
+    const interleaved = "isInterleavedBufferAttribute" in attribute ? attribute : undefined;
+    if (interleaved && Reflect.get(interleaved.data, "isInstancedInterleavedBuffer") === true)
+      return undefined;
+    const array = attribute.array;
+    layout.push([
+      array.constructor.name,
+      Reflect.get(attribute, "isFloat16BufferAttribute"),
+      attribute.itemSize,
+      attribute.normalized,
+      attribute.count,
+      Reflect.get(attribute, "gpuType"),
+      interleaved?.data.stride,
+      interleaved?.offset,
+    ]);
+    bytes.push(new Uint8Array(array.buffer, array.byteOffset, array.byteLength));
+  }
+  return { header: JSON.stringify(layout), bytes, attributes };
+}
+
+/** An exact content key for immutable resident chunk buffers, never for arbitrary live geometry. */
+export function chunkGeometry(geometry: BufferGeometry): BufferGeometry {
+  const binding = bindings.get(geometry);
+  if (
+    !binding ||
+    binding.version !== geometryVersionSum(geometry) ||
+    geometry.index !== (binding.attributes[binding.names.length] ?? null) ||
+    binding.range[0] !== geometry.drawRange.start ||
+    binding.range[1] !== geometry.drawRange.count
+  )
+    return geometry;
+  if (Object.keys(geometry.attributes).length !== binding.names.length) return geometry;
+  for (let at = 0; at < binding.attributes.length; at += 1) {
+    const name = binding.names[at];
+    const attribute = name === undefined ? geometry.index : geometry.getAttribute(name);
+    const canonical =
+      name === undefined ? binding.shape.geometry.index : binding.shape.geometry.getAttribute(name);
+    if (
+      !attribute ||
+      !canonical ||
+      attribute !== binding.attributes[at] ||
+      attribute.array !== binding.arrays[at] ||
+      attribute.itemSize !== canonical.itemSize ||
+      attribute.normalized !== canonical.normalized ||
+      attribute.count !== canonical.count ||
+      Reflect.get(attribute, "isFloat16BufferAttribute") !==
+        Reflect.get(canonical, "isFloat16BufferAttribute") ||
+      Reflect.get(attribute, "gpuType") !== Reflect.get(canonical, "gpuType") ||
+      Reflect.get(attribute, "offset") !== Reflect.get(canonical, "offset")
+    )
+      return geometry;
+    if (
+      "isInterleavedBufferAttribute" in attribute &&
+      "isInterleavedBufferAttribute" in canonical &&
+      attribute.data.stride !== canonical.data.stride
+    )
+      return geometry;
+  }
+  return binding.shape.geometry;
+}
+
+/** A source whose normals can use Three's instance-matrix path without a shear or reflection. */
+export function chunkTransformCompatible(mesh: Mesh): boolean {
+  return (
+    copies.has(mesh) ||
+    mesh.geometry === undefined ||
+    chunkGeometry(mesh.geometry) === mesh.geometry ||
+    (mesh.matrixWorld.elements.every(
+      (value) => Number.isFinite(value) && Math.fround(value) === value,
+    ) &&
+      isSimilarityTransform(mesh.matrixWorld.elements, 0))
+  );
+}
+
+export function chunkMaterialCompatible(material: Material): boolean {
+  return (
+    uniformEligible(material) && material.onBeforeCompile === Material.prototype.onBeforeCompile
+  );
+}
+
+/** World-owned canonical copies survive eviction of the chunk that first supplied a shape. */
+export class ChunkInstanceShapes {
+  readonly #shapes = new Map<number, IShape[]>();
+  readonly #chunks = new Map<Object3D, Set<BufferGeometry>>();
+
+  add(root: Object3D, parts?: readonly Mesh[]): void {
+    if (this.#chunks.has(root)) return;
+    const held = new Set<BufferGeometry>();
+    this.#chunks.set(root, held);
+    const addPart = (node: Object3D): void => {
+      if (
+        !(node instanceof Mesh) ||
+        !node.layers.isEnabled(0) ||
+        Reflect.get(node, "isSkinnedMesh") === true ||
+        Array.isArray(node.material) ||
+        !uniformEligible(node.material) ||
+        node.material.onBeforeCompile !== Material.prototype.onBeforeCompile ||
+        Reflect.get(node.geometry, "isInstancedBufferGeometry") === true ||
+        lodChainOf(node.geometry) ||
+        Object.keys(node.geometry.morphAttributes).length !== 0 ||
+        held.has(node.geometry)
+      )
+        return;
+      const existing = bindings.get(node.geometry);
+      if (existing) {
+        if (existing.owner === this) {
+          existing.references += 1;
+          existing.shape.references += 1;
+          held.add(node.geometry);
+        }
+        return;
+      }
+      const source = buffers(node.geometry);
+      if (!source) return;
+      // The hash only narrows the search. A collision still compares every byte before sharing.
+      let hash = 2166136261;
+      for (const bytes of source.bytes)
+        for (const byte of bytes) hash = Math.imul(hash ^ byte, 16777619);
+      const bucket = this.#shapes.get(hash) ?? [];
+      let shape = bucket.find(
+        (entry) =>
+          entry.header === source.header &&
+          entry.bytes.length === source.bytes.length &&
+          entry.bytes.every(
+            (bytes, index) =>
+              bytes.length === source.bytes[index]?.length &&
+              bytes.every((byte, at) => byte === source.bytes[index]?.[at]),
+          ),
+      );
+      if (!shape) {
+        const geometry = node.geometry.clone();
+        shape = {
+          geometry,
+          header: source.header,
+          bytes: buffers(geometry)?.bytes ?? [],
+          references: 0,
+        };
+        bucket.push(shape);
+        this.#shapes.set(hash, bucket);
+      }
+      shape.references += 1;
+      held.add(node.geometry);
+      bindings.set(node.geometry, {
+        owner: this,
+        references: 1,
+        shape,
+        version: geometryVersionSum(node.geometry),
+        attributes: source.attributes,
+        names: Object.keys(node.geometry.attributes).sort(),
+        arrays: source.attributes.map((attribute) => attribute.array),
+        range: [node.geometry.drawRange.start, node.geometry.drawRange.count],
+      });
+    };
+    if (parts) for (const part of parts) addPart(part);
+    else root.traverse(addPart);
+  }
+
+  remove(root: Object3D): number {
+    let failed = 0;
+    for (const geometry of this.#chunks.get(root) ?? []) {
+      const binding = bindings.get(geometry);
+      if (!binding) continue;
+      binding.shape.references -= 1;
+      if (binding.shape.references === 0) {
+        try {
+          binding.shape.geometry.dispose();
+        } catch {
+          failed += 1;
+        }
+      }
+      binding.references -= 1;
+      if (binding.references === 0) bindings.delete(geometry);
+    }
+    this.#chunks.delete(root);
+    for (const [hash, bucket] of this.#shapes) {
+      const live = bucket.filter((shape) => shape.references > 0);
+      if (live.length === 0) this.#shapes.delete(hash);
+      else this.#shapes.set(hash, live);
+    }
+    return failed;
+  }
+}
+
+/** Reuse the projection's rigid and colour lanes for EXT groups; the authored group stays intact. */
+export function chunkInstanceViews(source: InstancedMesh): readonly Mesh[] | undefined {
+  // Folding model × instance into one float32 matrix can round differently. An identity model
+  // reuses the authored instance bytes and exactly the same GPU multiplication as the source.
+  if (
+    !source.matrixWorld.equals(identity) ||
+    source.constructor !== InstancedMesh ||
+    source.customDepthMaterial !== undefined ||
+    source.customDistanceMaterial !== undefined ||
+    source.onBeforeRender !== Object3D.prototype.onBeforeRender ||
+    source.onAfterRender !== Object3D.prototype.onAfterRender ||
+    chunkGeometry(source.geometry) === source.geometry ||
+    source.count < 4 ||
+    source.instanceColor !== null ||
+    source.morphTexture !== null
+  )
+    return undefined;
+  let list = views.get(source);
+  if (!list) {
+    list = [];
+    views.set(source, list);
+  }
+  while (list.length < source.count) {
+    const view = new Mesh(source.geometry, source.material);
+    view.parent = source;
+    view.matrixAutoUpdate = false;
+    copies.set(view, { source, slot: list.length });
+    list.push(view);
+  }
+  list.length = source.count;
+  for (const view of list) syncChunkInstanceView(view);
+  return list;
+}
+
+const instance = new Matrix4();
+const identity = new Matrix4();
+
+export function chunkInstanceVersion(mesh: Mesh): number | undefined {
+  const source = mesh as InstancedMesh;
+  if (source.isInstancedMesh !== true || chunkGeometry(source.geometry) === source.geometry)
+    return undefined;
+  return source.matrixWorld.equals(identity) ? source.instanceMatrix.version : -1;
+}
+
+export function syncChunkInstanceView(view: Mesh): void {
+  const copy = copies.get(view);
+  if (!copy) return;
+  const source = copy.source;
+  source.getMatrixAt(copy.slot, instance);
+  view.matrixWorld.multiplyMatrices(source.matrixWorld, instance);
+  view.geometry = source.geometry;
+  view.material = source.material;
+  view.visible = source.visible;
+  view.castShadow = source.castShadow;
+  view.receiveShadow = source.receiveShadow;
+  view.frustumCulled = source.frustumCulled;
+  view.renderOrder = source.renderOrder;
+  view.layers.mask = source.layers.mask;
+}
+
+/** An EXT group's original bounds decide its draw, just as before its copies were combined. */
+export function chunkInstanceSource(view: Mesh): Mesh {
+  return copies.get(view)?.source ?? view;
 }

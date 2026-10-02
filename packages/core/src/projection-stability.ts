@@ -1,4 +1,9 @@
-import type { BufferGeometry, Material, Object3D, Scene } from "three";
+import type { BufferGeometry, Material, Mesh, Object3D, Scene } from "three";
+import {
+  chunkGeometry,
+  chunkInstanceVersion,
+  chunkTransformCompatible,
+} from "./projection-plan.js";
 
 import {
   type IProjectionExactEntry,
@@ -49,6 +54,11 @@ interface IWatchedRenderable {
   kind: number;
   /** Whether the game wants this drawn, ancestors included. */
   visible: boolean;
+  count: number | undefined;
+  chunkInstanceVersion: number | undefined;
+  instanceColor: unknown;
+  morphTexture: unknown;
+  chunkTransformCompatible: boolean;
 }
 
 /** One distinct material's lane predicates, compared once a frame however many objects share it. */
@@ -62,6 +72,7 @@ interface IWatchedGeometry {
   geometry: BufferGeometry;
   lane: number;
   version: number;
+  chunkGeometry: BufferGeometry;
 }
 
 const KIND_LIGHT = 1;
@@ -97,6 +108,9 @@ type ProjectionCandidate = Object3D & {
   castShadow?: boolean;
   receiveShadow?: boolean;
   frustumCulled?: boolean;
+  count?: number;
+  instanceColor?: unknown;
+  morphTexture?: unknown;
   layers: { mask: number };
 };
 
@@ -221,6 +235,11 @@ export class ProjectionStability {
             renderOrder: 0,
             kind: 0,
             visible: true,
+            count: undefined,
+            chunkInstanceVersion: undefined,
+            instanceColor: undefined,
+            morphTexture: undefined,
+            chunkTransformCompatible: true,
           };
           this.#watched[watched] = watch;
         }
@@ -232,6 +251,11 @@ export class ProjectionStability {
         watch.renderOrder = candidate.renderOrder ?? 0;
         watch.kind = kind;
         watch.visible = visibleInWorld;
+        watch.count = candidate.count;
+        watch.chunkInstanceVersion = chunkInstanceVersion(candidate as Mesh);
+        watch.instanceColor = candidate.instanceColor;
+        watch.morphTexture = candidate.morphTexture;
+        watch.chunkTransformCompatible = chunkTransformCompatible(candidate as Mesh);
         watched += 1;
         if (geometry !== undefined && !this.#geometrySet.has(geometry)) {
           this.#geometrySet.add(geometry);
@@ -239,6 +263,7 @@ export class ProjectionStability {
             geometry,
             lane: geometryLane(geometry),
             version: geometryVersionSum(geometry),
+            chunkGeometry: chunkGeometry(geometry),
           });
         }
         if (
@@ -288,6 +313,7 @@ export class ProjectionStability {
       const watched = this.#geometries[index] as IWatchedGeometry;
       if (watched.lane !== geometryLane(watched.geometry)) return false;
       if (watched.version !== geometryVersionSum(watched.geometry)) return false;
+      if (watched.chunkGeometry !== chunkGeometry(watched.geometry)) return false;
     }
     const stack = this.#stack;
     const stackVisible = this.#stackVisible;
@@ -330,6 +356,11 @@ export class ProjectionStability {
         watch.layersMask !== candidate.layers.mask ||
         watch.renderOrder !== (candidate.renderOrder ?? 0) ||
         watch.kind !== kind ||
+        watch.count !== candidate.count ||
+        watch.chunkInstanceVersion !== chunkInstanceVersion(candidate as Mesh) ||
+        watch.instanceColor !== candidate.instanceColor ||
+        watch.morphTexture !== candidate.morphTexture ||
+        watch.chunkTransformCompatible !== chunkTransformCompatible(candidate as Mesh) ||
         watch.visible !== visibleInWorld
       )
         return false;

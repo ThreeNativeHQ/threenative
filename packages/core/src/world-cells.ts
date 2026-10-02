@@ -24,6 +24,7 @@ import { markEngineRenderHook } from "./engine-render-hook.js";
 import { InstancedBatch } from "./instanced-batch.js";
 import { mergeByMaterial } from "./merge-parts.js";
 import { type ILodChain, biasedLodDistance, lodChainOf, setLodBias } from "./model-lod.js";
+import { ChunkInstanceShapes } from "./projection-plan.js";
 import { displacesVertices } from "./projection-plan.js";
 import { cutoutSurface } from "./render/foliage-alpha.js";
 import { materialKey } from "./render/material-key.js";
@@ -2363,6 +2364,8 @@ function disposeModel(model: Object3D): number {
 
 /** What one chunk's merge did, for `TN_WORLD_CHUNK_MERGE`. */
 interface IChunkMerge {
+  /** Original parts kept intact, eligible for exact cross-chunk geometry sharing. */
+  readonly preserved: readonly Mesh[];
   /** Meshes the chunk held before, and the ones its subtree submits after. */
   readonly meshes: number;
   readonly draws: number;
@@ -2553,7 +2556,7 @@ function selectChunkShadowParts(proxy: Mesh, sources: readonly Mesh[]): void {
   const frustum = new Frustum();
   const projection = new Matrix4();
   const sphere = new Sphere();
-  proxy.onBeforeRender = (_renderer, _scene, camera) => {
+  proxy.onBeforeRender = function (_renderer, _scene, camera) {
     frustum.setFromProjectionMatrix(
       projection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse),
       camera.coordinateSystem,
@@ -2570,7 +2573,8 @@ function selectChunkShadowParts(proxy: Mesh, sources: readonly Mesh[]): void {
         if (!node.visible) visible = false;
       const draws =
         visible &&
-        sphere.radius * 2 >= (caster.casterMinDiameter ?? 0) &&
+        sphere.radius * 2 >=
+          ((this as Mesh & { casterMinDiameter?: number }).casterMinDiameter ?? 0) &&
         (!source.frustumCulled || frustum.intersectsObject(source));
       const next = draws ? 1 : 0;
       if (selected[part] !== next) changed = true;
@@ -2592,6 +2596,7 @@ function selectChunkShadowParts(proxy: Mesh, sources: readonly Mesh[]): void {
     }
     geometry.setDrawRange(0, count);
   };
+  markEngineRenderHook(proxy.onBeforeRender);
 }
 
 /**
@@ -2653,6 +2658,16 @@ function mergeChunk(
       return;
     }
     if (mesh.isInstancedMesh === true) instanced += 1;
+    // The material merge only keeps position/normal/uv. Preserve every other authored channel
+    // intact so the projection can instance these shapes without losing vertex colour or tangents.
+    if (
+      Object.keys(mesh.geometry.attributes).some(
+        (name) => !["position", "normal", "uv"].includes(name),
+      )
+    ) {
+      skipped.add(mesh);
+      return;
+    }
   });
   const before = meshes.length;
   let result: Mesh[];
@@ -2667,7 +2682,9 @@ function mergeChunk(
     return undefined;
   }
   const kept = new Set(skipped);
-  let keptInstanced = 0;
+  let keptInstanced = [...skipped].filter(
+    (mesh) => (mesh as InstancedMesh).isInstancedMesh === true,
+  ).length;
   for (const mesh of result) {
     if ((mesh as Mesh & { isInstancedMesh?: boolean }).isInstancedMesh !== true) continue;
     kept.add(mesh);
@@ -2733,6 +2750,7 @@ function mergeChunk(
       )
     : undefined;
   return {
+    preserved: [...kept],
     bytes: mergedBytes(result, kept),
     draws: meshesOf(chunk),
     expanded: instanced - keptInstanced,
@@ -3568,6 +3586,7 @@ export class WorldCells extends Group implements IComputeDriven {
    * `worldOwned`: a chunk teardown must not release another chunk's shadow surface.
    */
   readonly #proxyMaterials = new Map<number, Material>();
+  readonly #chunkInstanceShapes = new ChunkInstanceShapes();
   /**
    * The renderer and camera of the last frame that ran, kept so a chunk streamed in between frames
    * can be compiled before it is attached. `update(renderer, camera)` is the only place either is
@@ -7875,7 +7894,11 @@ export class WorldCells extends Group implements IComputeDriven {
     let attached = 0;
     // Merged and shaped, not yet in the world: the compile below runs between the two, and a cell
     // that left the ring in the middle takes its prepared chunks with it.
-    const prepared: { readonly object: Object3D; readonly proxies: number }[] = [];
+    const prepared: {
+      readonly object: Object3D;
+      readonly proxies: number;
+      readonly preserved: readonly Mesh[] | undefined;
+    }[] = [];
     try {
       const report = await addInSlices(
         models,
@@ -7922,14 +7945,14 @@ export class WorldCells extends Group implements IComputeDriven {
               node.receiveShadow = this.#receiveShadow;
             });
           }
-          prepared.push({ object, proxies: merge?.shadowDraws ?? 0 });
+          prepared.push({ object, proxies: merge?.shadowDraws ?? 0, preserved: merge?.preserved });
         },
         { marker: false, while: live },
       );
       if (report.stopped)
         for (let i = report.added; i < models.length; i += 1)
           this.#failures += this.#disposeLoaded(models[i] as Object3D);
-      for (const { object, proxies } of prepared) {
+      for (const { object, proxies, preserved } of prepared) {
         // The compile is the whole point of the wait, and the wait is the only thing between the
         // merge and the attach. Everything the world does not own is released when the cell that
         // asked for the chunk is gone, so a chunk that arrives after its cell left is torn down here
@@ -7941,6 +7964,7 @@ export class WorldCells extends Group implements IComputeDriven {
         }
         cell.chunks.push(object);
         this.add(object);
+        this.#chunkInstanceShapes.add(object, preserved);
         // A loaded chunk is placed once and never rewritten: its transforms, geometry and material
         // are the ones the export gave it, so it is the one subtree here with nothing to announce.
         markStatic(object);
@@ -7993,6 +8017,7 @@ export class WorldCells extends Group implements IComputeDriven {
     this.#shadowRecordsMoved(this.#changedBounds(cell.batches, []));
     cell.batches.length = 0;
     for (const chunk of cell.chunks) {
+      this.#failures += this.#chunkInstanceShapes.remove(chunk);
       chunk.removeFromParent();
       this.#failures += this.#disposeLoaded(chunk);
     }
