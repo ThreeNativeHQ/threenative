@@ -347,6 +347,19 @@ rebuild/reset and full required CI remain open. Software pixels make no hardware
 
 ### Completion qualification and remaining cold-boot decision
 
+Reviewed completion source `388e8acea5ac86e9c4d8526df61a82a0f21dd595` preserves the incoming
+`a7b718b` develop merge. [Source, nonce, binary/report/PNG hashes and all 720 lifecycle samples](../../verification/prd339-exposure-proof/completion-388e8a.json)
+retain the actual hardware evidence. The [native before](../../verification/prd339-exposure-proof/native-before-388e8a.png)
+and [native after](../../verification/prd339-exposure-proof/native-after-388e8a.png) show readable blocks and floor.
+[Lifecycle before](../../verification/prd339-exposure-proof/lifecycle-before-388e8a.png) and
+[resized/reset after](../../verification/prd339-exposure-proof/lifecycle-after-388e8a.png) retain the real output.
+The camera experiment's [gain-one endpoint](../../verification/prd339-exposure-proof/snap-gain-1-after-388e8a.png)
+and [gain-zero endpoint](../../verification/prd339-exposure-proof/snap-gain-0-after-388e8a.png) are terminal
+180-update frames; first-update qualification is the paired numeric evidence, not those endpoint images.
+Independent review accepted native and lifecycle source and actual proof. Reconciled-head full
+TypeScript, lint, 376 focused tests, documentation links and tracked evidence budget pass.
+Phase progress is 5/6 boxes (75%); acceptance is 4/5. The original cold-boot requirement remains open.
+
 A fresh hardware run of the unchanged twenty-launch cold-boot experiment at source
 `08b039c64c6d95d017ac856f74cfc881ae11fdb1` gives corrected p99 235–239 (1.7021%) and
 zero-gain p99 239–245 (2.5105%). Both remain inside the unchanged 10% limit.
