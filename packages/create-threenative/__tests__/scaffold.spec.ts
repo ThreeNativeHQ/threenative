@@ -189,19 +189,22 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-01 on the merge of develop (PRD-470/471/472/474) into the rain + snow
   // branch (PRD-469, PRD-473): the merged tree carries both sides' engine and manifest bytes, so
   // all thirteen trees, rain and snow included, were re-measured through createProject.
-  "action-rpg": "a328d16b75f3cd48c6a83a92afff1f221c703ad51a196902c8e554078620c898",
-  minimal: "0babe7d6f6ec7cb4e710c1b1cabde51631492ba8a79a27921b9d957740e85dd1",
-  platformer: "e423e7bb8ceb8792b0b7939811960a1ec1680e5ab07ce780a68f1a5a91d4296e",
-  puzzle: "50bd0e8f2c435f66072c38e5025154389052ef3214f6c61723cc6d3d84e8a892",
-  racing: "5940b9fbac204a8ecacd8cd178cdb09ebe38cdc6e1c46755aaf802077154d14d",
-  rain: "7475c4d992e53df28061be04138406cd67945d43c374e8e2794e37a78e75e201",
-  rts: "e0de5dd8ab5718524b7cd7d8afa6535575cf39da1cb65335e880abd88cec29d5",
-  runner: "9332ee71fe37686a9b92da51db0a625300079e59b76d058dc93bcbc758562858",
-  sailing: "de49b937ed7a230d1b6c5bf8384965433c0d1d8f29b8f88b4258cf7b6e6bf994",
-  shooter: "9b3c07fcaa70a98fb855fa4266e7441b790d6e0371eca660a1ef551dbac3997b",
-  snow: "ca5f3335961fd637e75e5cea1086793e8889ed374abad75c38a35edb1ac4de5e",
-  starter: "9e4c17cfa2bcc2028453ba6b7a12305f7955836f5c5ddadccfff58fb96041fa5",
-  "tower-defense": "48c2d3b50ac7ba2c1e8937b9b9137963c8cdb26ed7832d9684c9de9e02acf876",
+  // Recomputed 2026-10-02 on the merge of develop 114e268ef into VQ07: the merged tree carries
+  // both sides' template and shared-skill bytes, so every one of the thirteen trees moved and none
+  // of either side's prior values survived. Measured through createProject by the spec below.
+  "action-rpg": "6c31917e83955f7b958d29005d6e8784209886fd8ea9c1faf281cb2633811eb6",
+  minimal: "a86416c02209b9a6b234043f26acfabb0587b5ad2773f9646f429c9802375107",
+  platformer: "5ae2186281a66f17f95b01feeafd56cccb7e9a368cfc6f27edfb33a3d2cdf14b",
+  puzzle: "6b324a9894931bcb77f3e1f8e54fd246f5090427dfdb59e30f1b0f5cbb52e029",
+  racing: "fef1b38d85130f54b946216ed90d97eda45835b12f65560424126668dd482f6f",
+  rain: "5e084d77ddce963dc2af41b534e0b5fa994569a4a8c12e82b5bf5b5212dcf199",
+  rts: "c383888c81d1379b5057ad588b8c169e54a080bd87e574d6d1dd895539550253",
+  runner: "479829316b5c7cd06d9ece447d2858636e381fff1dcbbdb9c1d85488cf64cbad",
+  sailing: "16b65ddbec34ebaaa305262128673dc495d3b75629b7cf2e62f0a47113a87f7f",
+  shooter: "47d8ba38bd786f793adbef24d1b368b08c72f119ebdba2fb49840a278150e7aa",
+  snow: "db821248cb3d0cc6059a052be0d958107fc1ac79d9b7a25b5e23dc9081554e1a",
+  starter: "0b6ac6e24974f3328c2776ee0155aaad79b157e7e17b7e600634893ee007bc80",
+  "tower-defense": "f0c1d76e4706ca16128035a12821f90b12052e5962fd651568c7672f08b96af6",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
