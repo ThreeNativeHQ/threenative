@@ -1,6 +1,6 @@
 # PRD-479 — Fluid particle motion and sampling regressions
 
-**Status:** PARTIAL — source regressions repaired; runtime qualification pending.
+**Status:** DONE — genuine browser/native GPU and unchanged-consumer acceptance qualified; merge requires green exact-head CI.
 **Owner:** Core / particle-fluid regression follow-up.
 **Depends on:** Merged [PR #389](https://github.com/ThreeNativeHQ/threenative/pull/389).
 
@@ -19,8 +19,7 @@ still contains three reproducible correctness defects at develop `569fdb267538c5
 
 The actual merged source matches blob `44159cd07db98a88bc5d0e3b4d46bd542d574dba`.
 The new generated-WGSL/sampler regressions fail three tests against those exact bytes;
-the repaired source passes all 15 fluid tests. The numeric collision still requires a
-real GPU readback before it is qualified.
+the repaired source passes all 15 fluid tests. The completed qualification below observes actual GPU particle buffers.
 
 This is a focused regression follow-up with its own PR. It does not rewrite the merged
 PRD, redesign the solver, change its neighbor passes, add public API, or qualify new
@@ -50,16 +49,16 @@ host for rendered evidence, with actual particle-buffer readbacks and no CPU sol
 ### Phase 2 — Qualify actual GPU behavior
 
 - [x] Browser WebGPU keeps the default-speed particle on the correct side of the gate and preserves unobstructed motion and both speed limits. proof: [run 37054997796](https://github.com/ThreeNativeHQ/threenative/actions/runs/37054997796) at `b149762d`; actual SwiftShader readbacks pass all 11 positive assertions and the missing-gate control fails only `collisionPassed`. All nine source hashes and four screenshots match the [retained provenance](../../verification/prd479/b149762d-browser/provenance.json). Software correctness only.
-- [ ] Linux native executes the same authored four-arm probe with the same numeric bounds. proof: `node --import tsx scripts/verify-fluid-collision-native.ts` in the maintained `Linux native fluid correctness` hosted job, with the current-source fixture and runtime hash.
+- [x] Linux native executes the same authored four-arm probe with the same numeric bounds. proof: source-built QuickJS/wgpu host `a051263c…a2a2b`, native tree `3b9b34c2`, actual NVIDIA RTX 2080; [retained native proof](../../verification/prd479/76d0c96c-native/provenance.json), four exact-source PNGs and real validation scopes before1/after2/errors0. Positive all assertions pass; disabled gate fails only collision. The maintained hosted job must also pass in exact-head CI before merge.
 
 ### Phase 3 — Preserve the existing consumer
 
-- [ ] The existing browser dam-break and coupling scenarios pass their unchanged state and nonblank-image criteria on this source. proof: `sh scripts/xvfb.sh pnpm exec tsx scripts/verify-fluid-consumers.ts`, which runs `fluid-particles.playtest.json` and `fluid-particles-coupling.playtest.json` unchanged through the public runner.
+- [x] The existing browser dam-break and coupling scenarios pass their unchanged state and nonblank-image criteria on this source. proof: `node --import tsx scripts/verify-fluid-consumers.ts` exits0 at `ab9fa10f`; all18 assertions and all8 nonblank 1280×720 captures pass, independently source/hash/visual audited. [Retained consumer proof](../../verification/prd479/ab9fa10f-consumers/provenance.json); scenarios and budgets unchanged.
 
 ## Acceptance criteria
 
-- [ ] The four-arm GPU fixture verifies the regression repair on both qualified runtimes with finite actual buffer values and the specified speed bounds. proof: completed Phase 2 browser/native results above, with exact source and image hashes.
-- [ ] The public fluid API and existing dam-break/coupling behavior remain compatible. proof: completed Phase 3 results plus full core tests, typecheck and unchanged API-surface validation.
+- [x] The four-arm GPU fixture verifies the regression repair on both qualified runtimes with finite actual buffer values and the specified speed bounds. proof: [final browser actual scope/readback proof](../../verification/prd479/ab9fa10f-browser/provenance.json) plus native Phase2 proof above; all source/image hashes and visual/numeric bounds independently audited. Both actual producers complete validation before1/after2/errors0; real injected invalid-buffer control rejects startup.
+- [x] The public fluid API and existing dam-break/coupling behavior remain compatible. proof: completed Phase 3 results plus full core tests, typecheck and unchanged API-surface validation.
 
 ## Verification notes
 
@@ -100,3 +99,5 @@ At `6e37e817a`, the source-built QuickJS/wgpu host passes the same four-arm posi
 The genuine validation-scope native proof is retained with [provenance](../../verification/prd479/dfe9e142d-native/provenance.json), [positive before](../../verification/prd479/dfe9e142d-native/gate-before.png), [positive after](../../verification/prd479/dfe9e142d-native/gate-after.png), [missing-gate after](../../verification/prd479/dfe9e142d-native/gate-disabled-after.png), and the actual [invalid-descriptor control receipt](../../verification/prd479/dfe9e142d-native/validation-control.json).
 
 The actual browser positive/control run at `dd7d236c` passes after the real-scope fixture repair; nine source hashes and four images were independently audited ([browser provenance](../../verification/prd479/dd7d236c-browser/provenance.json)). Its fixture awaits real validation scopes, but that summary does not retain scope counts and is not claimed as an explicit resource-count audit. The later bounded verifier change asserts browser before/after scope completion 1/2 and errors0 and retains these observations for both runtimes; 19 proof tests and root typecheck pass, and [actual native provenance at `76d0c96c`](../../verification/prd479/76d0c96c-native/provenance.json) retains the observed counts. The unchanged consumer attempt then reaches its supported 600-second capture-resource deadline behind another task's live GI terrain lease; scenario, server and assertion budgets remain unchanged. No lease is overridden. Consumer completion and the browser's final explicit-resource verification need capture-owner coordination before readiness; no 100% or green-CI claim is made.
+
+Final acceptance at `ab9fa10f`: the live capture owner releases naturally, the unchanged consumers pass all18 predicates and eight images, and the browser positive/control probe passes with retained real GPU validation resources. All nine browser source hashes and four images, all consumer image hashes/dimensions and visual captures, and the native actual producer/control evidence receive fresh independent acceptance review. The native qualifier's eight source inputs remain identical to `76d0c96c`; the final changes are proof/docs only. API contracts remain unchanged, focused regressions and root/workspace typecheck/lint/budgets pass, and the existing serial retries retain their original limits. The PRD is100% from actual acceptance evidence, not tests alone. Ready state starts the full board; exact-head CI and merge-queue qualification remain mandatory before merge, and local stale SBOM receipts are not a native-suite pass.
