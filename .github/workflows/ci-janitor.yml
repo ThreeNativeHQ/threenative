@@ -9,6 +9,11 @@ name: CI janitor
 on:
   pull_request:
     types: [closed]
+  # A failed CI run whose every failure is a known environmental flake reruns only its failed jobs,
+  # once. Runs from the default branch's copy of this file (a workflow_run rule).
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
 
 # Cancelling a run is an Actions write, and this is the one workflow here that asks for one. A
 # token that cannot do it reports a green job while cancelling nothing, which is the exact
@@ -17,11 +22,42 @@ permissions:
   actions: write
 
 jobs:
+  retry-flakes:
+    if: >-
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.conclusion == 'failure' &&
+      github.event.workflow_run.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Rerun the failed jobs once when every failure is a known flake
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          # Environmental signatures seen on 2026-10-02/03: SwiftShader device loss, a bridge call
+          # outliving its budget, an unreadable WebGPU adapter, a dev server not up yet, a 5xx on a
+          # download, and a runner shut down under its job. Anything else is a real failure.
+          FLAKE: TN_PLAYTEST_SOFTWARE_DEVICE_LOST|Bridge operation '[a-z]+' exceeded|TN_PLAYTEST_CAPTURE_PROVENANCE_MISSING|TN_GOLDEN_PATH_DEV_UNAVAILABLE|ERR_CONNECTION_REFUSED|HTTP 50[0-9]|runner has received a shutdown signal
+        run: |
+          set -euo pipefail
+          # Aggregates (ci-required, golden-path, run-summary) only echo another job's failure.
+          failed="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/jobs?filter=latest&per_page=100" --paginate \
+            --jq '.jobs[] | select(.conclusion == "failure") | select(.name | test("^(ci-required|golden-path|run-summary)$") | not) | .id')"
+          [ -n "$failed" ] || { echo "No primary job failed; nothing to retry."; exit 0; }
+          for id in $failed; do
+            if ! gh api "repos/$GITHUB_REPOSITORY/actions/jobs/$id/logs" 2>/dev/null | grep -qE "$FLAKE"; then
+              echo "Job $id failed for a reason that is not a known flake; leaving the run red."
+              exit 0
+            fi
+          done
+          gh run rerun "$RUN_ID" --failed --repo "$GITHUB_REPOSITORY"
+          echo "Reran the failed jobs of run $RUN_ID once: every failure matched a known flake." >> "$GITHUB_STEP_SUMMARY"
+
   cancel:
     # A fork's runs live in another repository, and its runs cannot be cancelled from here. Trying
     # would put a red check on every fork PR close, so the guard is the whole job.
     # A promotion PR's head is `develop`: its runs are develop's own CI, never a lane to sweep.
-    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref != 'develop' && github.event.pull_request.head.ref != 'main'
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref != 'develop' && github.event.pull_request.head.ref != 'main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

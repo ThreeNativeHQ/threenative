@@ -1390,6 +1390,18 @@ describe("CI pipeline structure", () => {
     expect(concurrency).toContain("cancel-in-progress: false");
   });
 
+  it("reruns only a failed CI run's failed jobs, once, and only for known flakes", async () => {
+    const janitor = await readFile(path.join(repo, ".github/workflows/ci-janitor.yml"), "utf8");
+    expect(janitor).toMatch(/workflow_run:\n\s+workflows: \[CI\]\n\s+types: \[completed\]/u);
+    // Once: a second failure of the same run is a real signal, never retried again.
+    expect(janitor).toContain("github.event.workflow_run.run_attempt == 1");
+    expect(janitor).toContain("github.event.workflow_run.conclusion == 'failure'");
+    // Only the failed jobs, and only when every primary failure matches a flake signature.
+    expect(janitor).toContain('gh run rerun "$RUN_ID" --failed');
+    expect(janitor).toMatch(/FLAKE: TN_PLAYTEST_SOFTWARE_DEVICE_LOST\|/u);
+    expect(janitor).toContain("not a known flake; leaving the run red");
+  });
+
   it("cancels a closed pull request's runs without injecting its head ref into a shell", async () => {
     const janitor = await readFile(path.join(repo, ".github/workflows/ci-janitor.yml"), "utf8");
     // Merged or closed, nothing the head ref is still doing can change the outcome, and those
@@ -1419,7 +1431,7 @@ describe("CI pipeline structure", () => {
     // A fork's runs belong to another repository; its token cannot cancel them, and trying would
     // fail a red check on every fork PR close.
     expect(cancel).toMatch(
-      /if: github\.event\.pull_request\.head\.repo\.full_name == github\.repository/u,
+      /github\.event\.pull_request\.head\.repo\.full_name == github\.repository/u,
     );
     // The promotion PR's head is `develop`: closing it must not cancel develop's own CI runs.
     expect(cancel).toMatch(
