@@ -18,7 +18,7 @@ remain unmet. PRD-360 stays PARTIAL; the raw receipt and red/green regression ar
 [follow-up verification record](../../verification/prd-360-warmup-cache-2026-09-07/README.md).
 **Complexity:** 2 (6–10 files) + 2 (async startup) + 2 (core/native) = 6 → MEDIUM mode.
 **Estimate:** 6–10 engineering hours plus native build/device time.
-**Parent:** [Existing owning PRD](critical/PRD-339-the-compile-walk-leaves-the-main-thread.md). This document is its bounded delivery slice, not a competing implementation.
+**Parent:** [Existing owning PRD](critical/PRD-495-the-compile-walk-leaves-the-main-thread.md). This document is its bounded delivery slice, not a competing implementation.
 
 ## Problem, scope and grounding
 
@@ -26,9 +26,9 @@ The September 3 physical Android runs recorded first presentation at 14,776 ms, 
 
 Evidence: [inspected source or dated measurement](../../verification/runtime-perf-state.md). Historical device results were not rerun during planning.
 
-Deliver the responsive compile walk and startup integration portion of PRD-339, also advancing PRD-327's failed device acceptance. Persistent cross-launch pipeline caching remains outside this slice. Core/native own scheduling and compilation; the game owns loading appearance.
+Deliver the responsive compile walk and startup integration portion of PRD-495, also advancing PRD-327's failed device acceptance. Persistent cross-launch pipeline caching remains outside this slice. Core/native own scheduling and compilation; the game owns loading appearance.
 
-Files analyzed and incumbents: `packages/core/src/warmup.ts`, `packages/runtime-native/src/runtime-scripts/scheduler-yield.js`, PRD-339 and the recorded PRD-327 device runs. Existing scene/object granularity, timeouts and native async compile bindings are incumbents to reuse.
+Files analyzed and incumbents: `packages/core/src/warmup.ts`, `packages/runtime-native/src/runtime-scripts/scheduler-yield.js`, PRD-495 and the recorded PRD-327 device runs. Existing scene/object granularity, timeouts and native async compile bindings are incumbents to reuse.
 
 ## Integration ledger
 

@@ -2,7 +2,7 @@
 prd_contract: v1
 ---
 
-# PRD-339 — The loading screen is bytes, not files
+# PRD-496 — The loading screen is bytes, not files
 
 **Status:** PARTIAL, filed 2026-09-03 from a measured probe of the asset path. Phases 1, 2, 4 and 5
 are implemented in the filing branch with negative controls observed red. Phase 3 (`preload`) is

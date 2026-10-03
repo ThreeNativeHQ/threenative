@@ -2,7 +2,7 @@
 prd_contract: v1
 ---
 
-# PRD-339 — the compile walk leaves the main thread, and compiled pipelines survive a relaunch
+# PRD-495 — the compile walk leaves the main thread, and compiled pipelines survive a relaunch
 
 **Status:** PROPOSED, filed 2026-09-03 from PRD-327's device session. Planning and evidence in
 `docs/verification/runtime-perf-state.md` §5a (Phase 2's device acceptance section).
