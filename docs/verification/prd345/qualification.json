@@ -53,11 +53,7 @@
     "edgeMargin": 30,
     "fillP1Max": 5,
     "fillP99Min": 30,
-    "negativeControls": [
-      "rimGain-zero",
-      "black-fill",
-      "omitted-report"
-    ]
+    "negativeControls": ["rimGain-zero", "black-fill", "omitted-report"]
   },
   "cases": [
     {
@@ -67,11 +63,7 @@
       "marker": {
         "status": "measured",
         "meanRadiance": 0,
-        "meanRGB": [
-          0,
-          0,
-          0
-        ],
+        "meanRGB": [0, 0, 0],
         "reason": "Solid-angle-weighted linear source radiance, with active environment intensity.",
         "scope": "scene environment source availability; not material-specific reflected contribution",
         "environmentState": "dark",
@@ -80,11 +72,7 @@
           "requestedGain": 1,
           "admitted": false,
           "effectiveGain": 0,
-          "color": [
-            0.13286832154414627,
-            0.19806931954941637,
-            0.3371636150376657
-          ],
+          "color": [0.13286832154414627, 0.19806931954941637, 0.3371636150376657],
           "blackColorOverride": false,
           "reason": "not admitted by this qualification"
         },
@@ -170,34 +158,19 @@
           "after": 720
         },
         "cameraPosition": {
-          "before": [
-            0,
-            1.35,
-            6
-          ],
-          "after": [
-            0,
-            1.35,
-            6
-          ]
+          "before": [0, 1.35, 6],
+          "after": [0, 1.35, 6]
         }
       }
     },
     {
       "name": "edge-rim-zero",
       "pass": false,
-      "expectedFailures": [
-        "tone.0.compare",
-        "tone.1.compare"
-      ],
+      "expectedFailures": ["tone.0.compare", "tone.1.compare"],
       "marker": {
         "status": "measured",
         "meanRadiance": 0,
-        "meanRGB": [
-          0,
-          0,
-          0
-        ],
+        "meanRGB": [0, 0, 0],
         "reason": "Solid-angle-weighted linear source radiance, with active environment intensity.",
         "scope": "scene environment source availability; not material-specific reflected contribution",
         "environmentState": "dark",
@@ -206,11 +179,7 @@
           "requestedGain": 1,
           "admitted": false,
           "effectiveGain": 0,
-          "color": [
-            0.13286832154414627,
-            0.19806931954941637,
-            0.3371636150376657
-          ],
+          "color": [0.13286832154414627, 0.19806931954941637, 0.3371636150376657],
           "blackColorOverride": false,
           "reason": "not admitted by this qualification"
         },
@@ -296,16 +265,8 @@
           "after": 720
         },
         "cameraPosition": {
-          "before": [
-            0,
-            1.35,
-            6
-          ],
-          "after": [
-            0,
-            1.35,
-            6
-          ]
+          "before": [0, 1.35, 6],
+          "after": [0, 1.35, 6]
         }
       }
     },
@@ -316,11 +277,7 @@
       "marker": {
         "status": "measured",
         "meanRadiance": 0,
-        "meanRGB": [
-          0,
-          0,
-          0
-        ],
+        "meanRGB": [0, 0, 0],
         "reason": "Solid-angle-weighted linear source radiance, with active environment intensity.",
         "scope": "scene environment source availability; not material-specific reflected contribution",
         "environmentState": "dark",
@@ -329,11 +286,7 @@
           "requestedGain": 1,
           "admitted": true,
           "effectiveGain": 1,
-          "color": [
-            0.13286832154414627,
-            0.19806931954941637,
-            0.3371636150376657
-          ],
+          "color": [0.13286832154414627, 0.19806931954941637, 0.3371636150376657],
           "blackColorOverride": false,
           "reason": "analytic fill enabled by caller; contribution still needs pixel qualification"
         },
@@ -403,34 +356,19 @@
           "after": 720
         },
         "cameraPosition": {
-          "before": [
-            0,
-            1.35,
-            6
-          ],
-          "after": [
-            0,
-            1.35,
-            6
-          ]
+          "before": [0, 1.35, 6],
+          "after": [0, 1.35, 6]
         }
       }
     },
     {
       "name": "fill-fill-black",
       "pass": false,
-      "expectedFailures": [
-        "tone.0.p99",
-        "tone.1.p99"
-      ],
+      "expectedFailures": ["tone.0.p99", "tone.1.p99"],
       "marker": {
         "status": "measured",
         "meanRadiance": 0,
-        "meanRGB": [
-          0,
-          0,
-          0
-        ],
+        "meanRGB": [0, 0, 0],
         "reason": "Solid-angle-weighted linear source radiance, with active environment intensity.",
         "scope": "scene environment source availability; not material-specific reflected contribution",
         "environmentState": "dark",
@@ -439,11 +377,7 @@
           "requestedGain": 1,
           "admitted": true,
           "effectiveGain": 1,
-          "color": [
-            0,
-            0,
-            0
-          ],
+          "color": [0, 0, 0],
           "blackColorOverride": true,
           "reason": "disabled by black fillColor override"
         },
@@ -513,16 +447,8 @@
           "after": 720
         },
         "cameraPosition": {
-          "before": [
-            0,
-            1.35,
-            6
-          ],
-          "after": [
-            0,
-            1.35,
-            6
-          ]
+          "before": [0, 1.35, 6],
+          "after": [0, 1.35, 6]
         }
       }
     }
