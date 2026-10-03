@@ -35,3 +35,7 @@ raymarched shader is explicitly unqualified; native/mobile/software/WebGL retain
 | puzzle | ![Before](puzzle/before.png) | ![After](puzzle/after.png) |
 | sailing | ![Before](sailing/before.png) | ![After](sailing/after.png) |
 | snow | ![Before](snow/before.png) | ![After](snow/after.png) |
+
+[Effective mechanisms, named zero controls and remaining original acceptance](mechanisms.md)
+separate authored illumination from the new grazing/disc terms; palette-preserving boot proof
+does not establish equivalent difficult-light behavior in every template.

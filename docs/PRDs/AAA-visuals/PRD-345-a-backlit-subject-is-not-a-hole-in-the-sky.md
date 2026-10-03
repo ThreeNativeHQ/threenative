@@ -300,6 +300,14 @@ attempt retained 21 missing-native-binary failures; the complete root gate must 
 prerequisites and capture jobs finish. All thirteen generated gameplay gates and matched native
 conservative-fallback capture are in progress; no unexecuted result is claimed.
 
+The [explicit per-template mechanism map](../../benchmark/prd345/final-template-matrix/mechanisms.md)
+distinguishes useful authored illumination from the requested new terms. Puzzle/tower additions
+are disabled; runner/snow analytic fill is disabled. Their authored directional rim/hemisphere
+sources are not mathematically equivalent to the grazing/disc expressions. This is an open
+qualification requirement, not an automatic exception or a reason to stack duplicate ambient.
+Isolated replacement candidates are not admitted defaults until actual behavior, palette and
+performance proof passes.
+
 Rain is a custom raymarched shader with authored flash rim/hemisphere fill and cloud render-target
 reflections. Ordinary standard-material conversion does not apply; its cloud radiance remains
 unknown until separately sampled. Its explicit instruction exception is not blanket all-template
