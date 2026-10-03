@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "name": "instanced-defaults-strata",
+  "subject": "Engine instanced LOD and water mirror triangle budgets without game defaults",
+  "viewport": {
+    "width": 1920,
+    "height": 1080
+  },
+  "warmupFrames": 90,
+  "artifacts": {
+    "screenshots": true,
+    "console": true
+  },
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "forest-start",
+      "release": true,
+      "screenshot": "forest-defaults",
+      "waitFrames": 240
+    }
+  ],
+  "assert": {
+    "performance": {
+      "maxPassTriangles": {
+        "main": 20000000,
+        "reflection": 2000000
+      }
+    },
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    }
+  }
+}

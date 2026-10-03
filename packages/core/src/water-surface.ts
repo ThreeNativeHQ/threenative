@@ -1,4 +1,4 @@
-import { type Camera, type Object3D, Quaternion, Vector3 } from "three";
+import { Box3, type Camera, type Mesh, type Object3D, Quaternion, Vector3 } from "three";
 import {
   cameraFar,
   cameraNear,
@@ -32,20 +32,13 @@ export interface IWaterReflectionOptions {
   /** Whether this surface may appear in other reflectors' passes. Off is one pass; on is n². */
   readonly bounces?: boolean;
   /**
-   * Which layers the mirrored pass draws, as a three `Layers` mask. Omit to draw everything the
-   * scene camera draws, which is the default and what a reflection means when nothing says
-   * otherwise.
-   *
-   * This is how much *world* the second pass costs, and on a crowded scene it is the whole bill.
-   * The mirrored pass is a second draw of everything, so a frame with sixty-eight aircraft in it
-   * pays for sixty-eight aircraft twice — once where the player can see them and once in the water,
-   * where they are a few pixels and half of them are behind the camera anyway. Put the big
-   * silhouettes a player actually reads in the water on their own layer and name it here.
-   *
-   * The mask decides what appears in the mirror, so the game owns it: this only carries the number
-   * through to the pass, and a game that omits it gets the whole world reflected as before.
+   * Explicit Three Layers mask. Wins over automatic selection, including `1` (all layer-0 props).
+   * Omit to reflect terrain-sized surfaces and large non-instanced shadow casters. Instanced and
+   * skinned props are excluded automatically; sky/background and lighting remain available.
    */
   readonly layers?: number;
+  /** Minimum world-space extent for automatic terrain/casters, in metres. Default 10. */
+  readonly minSize?: number;
   /**
    * How often the mirrored pass redraws, in presented frames.
    *
@@ -85,7 +78,10 @@ export interface IWaterSurfaceOptions {
  */
 interface IReflectorPass {
   getVirtualCamera(camera: Camera): Camera;
-  updateBefore(frame: unknown): void;
+  updateBefore(frame: IReflectionFrame): void;
+}
+interface IReflectionFrame {
+  readonly scene: Object3D;
 }
 interface IReflectorWithPass {
   _reflectorBaseNode: IReflectorPass;
@@ -155,7 +151,7 @@ export class WaterSurface3D {
       this.target = undefined;
       return;
     }
-    if (typeof reflection !== "object")
+    if (reflection === null || typeof reflection !== "object")
       throw new Error("WaterSurface3D.reflection must be an object.");
     const resolutionScale = finite("reflection.resolutionScale", reflection.resolutionScale);
     if (resolutionScale <= 0 || resolutionScale > 1)
@@ -188,6 +184,50 @@ export class WaterSurface3D {
         return virtual;
       };
     }
+    if (reflection.layers === undefined) {
+      const minSize = finite("reflection.minSize", reflection.minSize ?? 10);
+      if (minSize <= 0) throw new Error("WaterSurface3D.reflection.minSize must be positive.");
+      const render = pass.updateBefore.bind(pass);
+      const bounds = new Box3();
+      const size = new Vector3();
+      let reported = false;
+      pass.updateBefore = (frame: IReflectionFrame): void => {
+        const hidden: { object: Object3D; mask: number }[] = [];
+        let included = 0;
+        // Layer filtering is pass-local: the main scene and every explicit-layer mirror keep their set.
+        // Reject only the mesh, retaining children such as the terrain's distant horizon.
+        frame.scene.traverse((object) => {
+          const mesh = object as Mesh & { isInstancedMesh?: boolean; isSkinnedMesh?: boolean };
+          if (mesh.isMesh !== true || !mesh.visible) return;
+          let keep = false;
+          if (mesh.isInstancedMesh !== true && mesh.isSkinnedMesh !== true) {
+            if (mesh.geometry.boundingBox === null) mesh.geometry.computeBoundingBox();
+            if (mesh.geometry.boundingBox !== null) {
+              bounds.copy(mesh.geometry.boundingBox).applyMatrix4(mesh.matrixWorld).getSize(size);
+              const horizontal = Math.max(size.x, size.z);
+              const terrain = horizontal >= minSize && size.y <= Math.min(size.x, size.z) * 0.5;
+              keep = terrain || (mesh.castShadow && Math.max(size.x, size.y, size.z) >= minSize);
+            }
+          }
+          if (keep) included += 1;
+          else {
+            hidden.push({ object: mesh, mask: mesh.layers.mask });
+            mesh.layers.mask = 0;
+          }
+        });
+        if (!reported) {
+          console.info(
+            `TN_WATER_REFLECTION_DEFAULT: ${JSON.stringify({ included, excluded: hidden.length, minSize })}`,
+          );
+          reported = true;
+        }
+        try {
+          render(frame);
+        } finally {
+          for (const { object, mask } of hidden) object.layers.mask = mask;
+        }
+      };
+    }
     if (refreshInterval > 1) {
       // Every frame the pass redraws the world into its target and binds the result. The render is
       // the expensive part; the binding is not. Skipping the whole `updateBefore` on the frames
@@ -197,7 +237,7 @@ export class WaterSurface3D {
       // default, and the node only updates once per frame for it.
       const render = pass.updateBefore.bind(pass);
       let calls = 0;
-      pass.updateBefore = (frame: unknown): void => {
+      pass.updateBefore = (frame: IReflectionFrame): void => {
         if (calls % refreshInterval === 0) render(frame);
         calls += 1;
       };
@@ -225,7 +265,7 @@ export class WaterSurface3D {
     );
   }
 
-  /** What the mirrored pass draws, as the mask the game supplied. Undefined means everything. */
+  /** Explicit mask supplied by the game. Undefined means automatic terrain/large-caster selection. */
   readonly reflectionLayers: number | undefined;
 
   /** How often the mirrored pass redraws, in presented frames. `1` is every frame, the default. */

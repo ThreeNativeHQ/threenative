@@ -1396,8 +1396,8 @@ export class InstancedBatch { … }
 ```
 
 - **Use when:** draw hundreds of repeated props without hundreds of draw calls · draw thousands of identical instanced blocks or obstacles in one mesh · place repeated props when the count is not known until the layout has been walked · build a chain, railing, cable, or tie rod out of point-to-point segments
-- **Constraints:** geometry and material are required and come from the game; the batch chooses neither · span stretches along +Y, so its geometry must be unit-height and centred on the origin · placing after build() throws, and build() returns undefined when nothing was placed
-- **Overrides:** castShadow and receiveShadow pass through to the built mesh and default to Three.js's own false
+- **Constraints:** geometry and material are required and come from the game; the batch chooses neither · span stretches along +Y, so its geometry must be unit-height and centred on the origin · placing after build() throws, and build() returns undefined when nothing was placed · baked AutoLOD chains survive geometry clone/transform preparation and partition instances automatically in the engine frame loop at 4 px projected error; public instance slots remain stable · unavailable authored levels report TN_INSTANCED_LOD_FAILED once naming the batch; a million-triangle batch with no chain reports TN_INSTANCED_LOD_UNAVAILABLE
+- **Overrides:** autoLod: false leaves selection to the game; autoLod.maxPixelError and hysteresis override the measured-camera budget; lods supplies authored distance/geometry levels and wins over the baked chain · castShadow and receiveShadow pass through to the built mesh and default to Three.js's own false
 
 ```ts
 const curbs = new InstancedBatch({ geometry: new BoxGeometry(1, 1, 1), material });
@@ -2544,11 +2544,11 @@ export class WaterSurface3D { … }
 ```
 
 - **Use when:** reflect the sky and the shoreline in a lake, pond or river · see the bed through the water and have the shallows fade at the shore · know how deep the water is under a pixel without a second render pass · stop a water surface repeating in visible bands or stripes · keep a crowd of small actors out of the water's reflection so the frame can afford it · stop the water reflection redrawing the whole world every frame
-- **Constraints:** it draws nothing; the game supplies the mesh, the material and every colour · the material must be transparent so the frame beneath it is already drawn · thickness is metres, saturating at maxThickness; sky behind the surface reads deep · one reflection is a second draw of the world; resolutionScale is its pixels only · on a crowded scene the mirrored pass is draw-bound: name reflection.layers or pay twice · reflection.refreshInterval is in presented frames; 1 is every frame, and the default · the mirror plane is level, from level alone; do not parent target to a scaled mesh
+- **Constraints:** it draws nothing; the game supplies the mesh, the material and every colour · the material must be transparent so the frame beneath it is already drawn · thickness is metres, saturating at maxThickness; sky behind the surface reads deep · one reflection is a second draw of the world; resolutionScale is its pixels only · omitted reflection.layers automatically reflects terrain-sized surfaces and large non-instanced casters, excluding instanced/skinned props; TN_WATER_REFLECTION_DEFAULT reports the set once · reflection.refreshInterval is in presented frames; 1 is every frame, and the default · the mirror plane is level, from level alone; do not parent target to a scaled mesh
+- **Overrides:** reflection.layers is an explicit Three Layers mask and wins over automatic filtering, including layer-0 mask 1; reflection.minSize overrides the default 10 metre minimum extent
 
 ```ts
-const REFLECTED = 1; // the layer the big silhouettes sit on
-const surface = new WaterSurface3D({ level: 0, maxThickness: 3, reflection: { resolutionScale: 0.5, layers: (1 << 0) | (1 << REFLECTED) } });
+const surface = new WaterSurface3D({ level: 0, maxThickness: 3, reflection: { resolutionScale: 0.5 } });
 material.colorNode = mix(surface.refractionAt(offset), surface.reflectionAt(offset), fresnel);
 ```
 
