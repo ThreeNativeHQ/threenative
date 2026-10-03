@@ -65,6 +65,7 @@ import { RenderPassBudget } from "./render-pass-budget.js";
 import { SceneRenderProjection } from "./renderProjection.js";
 import {
   resolveMatrixWorldMode,
+  resolvePlatformResolutionFloor,
   resolveRendererAlphaAntialiasing,
   resolveRendererAntialias,
   resolveRendererScaleSetting,
@@ -1381,15 +1382,26 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     );
     this.#scene = new SceneType();
     this.#sceneName = bootSceneName;
-    // The scaler exists only when the game asked for one. A pinned number leaves this undefined,
-    // which is what makes "pinned" a guarantee rather than a preference the loop may overrule.
-    // `maxFps: 0` removes the ceiling, and a scaler with no budget is not a scaler with a loose
-    // one, so an uncapped game simply does not get adaptive scaling.
+    // The scaler exists whenever the scale is automatic, which now includes a game that said
+    // nothing about it. A pinned number leaves this undefined, which is what makes "pinned" a
+    // guarantee rather than a preference the loop may overrule. `maxFps: 0` removes the ceiling,
+    // and a scaler with no budget is not a scaler with a loose one, so an uncapped game simply
+    // does not get adaptive scaling.
     const initialTarget = resolveTargetFps(this.#config, getPlatform());
     let heldTargetFps = initialTarget.targetFps;
     const scaler =
       renderer.surface().scaleSource === "auto" && initialTarget.targetFps > 0
-        ? new ResolutionScaler({ targetFps: initialTarget.targetFps })
+        ? new ResolutionScaler({
+            // Phones keep the device ladder; a desktop stops before its bottom, where a picture
+            // with nothing reconstructing it stops being a faster frame and becomes a blur.
+            minScale: resolvePlatformResolutionFloor(getPlatform().os),
+            targetFps: initialTarget.targetFps,
+            // The renderer publishes no active-stage list, so this reads the one core-owned seam
+            // that is set exactly while the installed chain runs a stage consuming temporal
+            // motion data: while that is true the floor is lifted, and the deep rungs — the ones
+            // only a reconstruction can pay for — are reachable.
+            temporalUpscale: () => renderer.renderChainUsesPerObjectVelocity?.() === true,
+          })
         : undefined;
     // The panel's own rate, once a window of presented frames can say it. The native host's
     // present counter is the only series there that counts displays rather than loop iterations;

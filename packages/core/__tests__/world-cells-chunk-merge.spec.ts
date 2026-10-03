@@ -677,11 +677,10 @@ describe("a hand-placed chunk merged by material", () => {
     world.dispose();
   });
 
-  // A merged slab cast into a wide (coarse) level's large texels self-shadows as acne stripes:
-  // Machinefall's bridge deck, PRD-475. The wide half keeps develop's look and drops it.
+  // Covered originals no longer cast: both scatter granularities must retain the proxy.
   it.each([
     ["cluster", true],
-    ["wide", false],
+    ["wide", true],
   ] as const)(
     "a level selecting %s casters draws the merged chunk proxy: %s",
     async (half, drawn) => {
@@ -929,8 +928,10 @@ describe("a hand-placed chunk merged by material", () => {
       "TN_WORLD_CHUNK_MERGE meshes=16 draws=5 bytes=13440 uploaded=0 instancedExpanded=0 keptInstanced=0 shadowDraws=1",
     ]);
     expect(meshesIn(chunk)).toHaveLength(5);
-    // On the cluster caster half only, and off the main camera's layer.
-    expect(proxy.layers.mask).toBe(1 << VIRTUAL_SHADOW_CASTER_LAYER);
+    // On both caster halves, and off the main camera's layer.
+    expect(proxy.layers.mask).toBe(
+      (1 << VIRTUAL_SHADOW_CASTER_LAYER) | (1 << VIRTUAL_SHADOW_WIDE_CASTER_LAYER),
+    );
     expect(proxy.castShadow).toBe(true);
     expect(proxy.receiveShadow).toBe(false);
     // The group's own material, by reference: the side it is grouped by is that material's own
