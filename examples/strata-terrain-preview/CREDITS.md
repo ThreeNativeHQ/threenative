@@ -107,3 +107,27 @@ vertically, with no vertical exaggeration. The bake adds a light transport pass;
 these modifications are the example's, and are not approved or endorsed by USGS.
 `node scripts/dem/crop.mjs <download-directory>` reproduces the crops. `geotiff`
 and `proj4` are example-only development tools; games load baked arrays.
+
+### Remaining surveyed worlds (DEM round 2)
+
+- Forest: Sprague Lake / Glacier Creek valley, Rocky Mountain National Park, Colorado;
+  `USGS_1M_13_x44y447_CO_DRCOG_2020_B20`, temporal extent 2020-05-26–2021-03-13.
+- Coastal: Sand Beach / Great Head, Acadia National Park, Maine;
+  `USGS_1M_19_x56y491_ME_MidCoast_2021_B21`, temporal extent 2021-05-09–2022-05-11.
+- Tundra: Trail Ridge alpine basin, Rocky Mountain National Park, Colorado;
+  `USGS_1M_13_x43y448_CO_NorthwestCO_2020_D20`, temporal extent 2020-06-20–2021-08-28.
+
+All three detail sources are 1 m lidar; committed 2 m vertices use the same 2×2
+area filter as round 1. Forest/tundra surrounding tile: `USGS_13_n41w106_20221118`;
+coastal: `USGS_13_n45w069_20260521`. These are USGS public-domain 3DEP products
+under the collection citations above, accessed October 3, 2026. Same-site 5 km
+continuations contain no procedural peaks. Each crop has its own bbox/CRS/date/URL/hash
+sidecar in `scripts/dem/`. Supply matching `forest.tif`, `coastal.tif`, `tundra.tif`
+and `<world>-horizon-current.tif` files to the existing crop command; optional trailing
+world names rebuild only those crops.
+
+The Sprague Lake survey is hydro-flattened: shallow lake bathymetry and a creek are
+authored into the measured surface by the existing bake stages. Tundra retains two
+authored ponds and connecting meltwater channels at elevations fitted to its survey.
+These water beds are example modifications, not measured lidar bathymetry. Coastal
+water retains the example's 1.5 m sea level; the survey's marine flat is not bathymetry.

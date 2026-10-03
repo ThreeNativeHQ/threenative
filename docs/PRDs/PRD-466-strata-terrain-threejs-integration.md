@@ -2681,3 +2681,54 @@ Gaia acceptance or overall PRD completion is claimed.
 Source commits: `41cff09ac`, `19a0e88e4`, `b6b365f76`; this final note is committed
 separately. No push, merge or PR comment. Unmerged checkout retained with local
 licensed art and captures; it is ineligible for merged-worktree cleanup.
+
+### 2026-10-03 UTC — DEM round 2 lane
+
+- [x] Three public-domain 1 m survey crops/provenance committed. proof: GeoTIFF/proj4 commands: `node scripts/dem/crop.mjs /tmp/strata-dem2 forest coastal`, then `node scripts/dem/crop.mjs /tmp/strata-dem2 tundra`. Cold bake/cache PASS; all five 66,049-entry flow/sediment/deposition/talus arrays finite.
+- [x] Independent surveyed surroundings and 384-band rings framed for all five worlds. proof: scratch `dem2-pass6` and focused real-display `dem2-timing-licensed` both PASS 4/4, zero errors; 1,024 seam samples at 0 m. 1:1 crops inspected against Gaia and round 1 alpine.
+- [ ] Full final gates. proof: licensed aborts on bridge `advance` timeout (20,250 ms) during coastal return, before assertions/timing; actual fallback completes 55/57. Failures remain presented-p95 and forest crags, plus the pre-existing full consumer failure.
+
+Forest: Sprague Lake / Glacier Creek valley, `USGS_1M_13_x44y447_CO_DRCOG_2020_B20`.
+Coastal: Sand Beach / Great Head, Acadia, `USGS_1M_19_x56y491_ME_MidCoast_2021_B21`.
+Tundra: Trail Ridge basin, `USGS_1M_13_x43y448_CO_NorthwestCO_2020_D20`, 48.1 m relief.
+All are 1 m lidar filtered to 2 m playable samples. Five independent 5 km rings use
+1/3 arc-second 3DEP: `USGS_13_n41w106_20221118` (forest/alpine/tundra),
+`USGS_13_n45w069_20260521` (coastal), `USGS_13_n38w110_20241031` (desert).
+BBox/CRS/tile/date/citation/hash JSON and public-domain credits are beside the crops.
+
+Installed Terrain heightmap/hydraulic/thermal/flatten/river, bakeTerrain and Heightfield
+reused; no engine changes. Invented detail surfaces/shared noise cones are replaced
+by measured geology. Forest lake/creek and tundra pond/braid beds remain explicitly
+authored, not surveyed bathymetry. Alpine/desert detail unchanged. No vegetation or
+material edits; additive game.ts starts/cameras and existing water-footprint limits only.
+
+CPU p50s (ms, camera order), whole-frame self-grades, and same-run median one-minute
+load below; 24 logical CPUs. Licensed values are the focused run, not the aborted full
+run. Max presented p95: licensed focused **100.1 ms**, full fallback **116.8 ms**,
+both fail ≤16.7 ms. Active load range/median: licensed focused 7.32–16.23/10.54;
+full fallback 17.70–51.82/41.27; aborted licensed 21.17–74.35/63.78.
+
+| World / camera order | Licensed p50s / load 10.54 | Fallback p50s / load 41.27 | Self-grade |
+| --- | --- | --- | --- |
+| forest: player, meadow, overview, river | 3/3.1/4.2/3.1 | 4.1/4.2/7.8/4.1 | 4.8/10 |
+| coastal: player, meadow, overview, horizon | 2/2.3/2.6/2 | 2.1/3.2/3.2/3.4 | 5.0/10 |
+| alpine: player, ridge, overview | 1.2/1/0.8 | 1.5/1.2/1 | 7.0/10 |
+| desert: player, mesa, overview | 1.4/1.4/1.3 | 1.4/1.3/1.4 | 6.5/10 |
+| tundra: player, plain, overview | 2.5/2.4/2.7 | 2.5/3.3/3 | 5.1/10 |
+
+Both full capture folders pass `verify-ocean` 3/3 and have zero console/network errors;
+fallback runtime diagnostics 0. Fallback lake placement/footprint errors 0 m,
+contact error 0.00002955 m, all measured seams 0 m. Forest crags: zero mountain
+placements because the unchanged scatter requires steep slopes; no assertion weakened.
+Example tsc PASS; root Biome 84 files PASS; terrain Vitest 71/71 PASS; doc links 2,509
+PASS; whitespace/cache PASS. Full consumer still fails on the existing rain-template
+terrain-workflow pointer; focused five-world exact-height/131,072-triangle/water/installed
+handoff replay PASS. No independent judge, Gaia acceptance or final gate PASS claimed.
+
+1:1 1280×720 crops, no resizing: before forest/coastal/tundra in
+`artifacts/playtest/dem2-before/`, alpine/desert in `dem-final-licensed-v2/`; after/final
+folders `dem2-final-licensed/` and `dem2-final-fallback/`. Compare `overview-crop.png`,
+`coastal-horizon-sea-crop.png`, `alpine-ridge-crop.png`, `desert-mesa-crop.png`, and
+`tundra-overview-crop.png`. Actual asset absence verified; restoration trap restored
+`local-assets`, hidden path absent. Port 5297/owned display forwarder stopped and socket
+removed. Unmerged 6.8 GB checkout retained with licensed art/captures. No push/merge/PR comment.
