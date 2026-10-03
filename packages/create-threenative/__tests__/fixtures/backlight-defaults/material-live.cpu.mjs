@@ -40,6 +40,9 @@ m.emissiveNode.traverse((n) => {
 });
 assert.ok(numeric.length >= 4);
 const update = () => {
+  // Simulate the engine boundary, including an unattached target owned by the game.
+  scene.updateMatrixWorld(true);
+  key.target.updateMatrixWorld(true);
   for (const n of numeric) n.update({ camera });
 };
 const gains = () => numeric.map((n) => n.value);

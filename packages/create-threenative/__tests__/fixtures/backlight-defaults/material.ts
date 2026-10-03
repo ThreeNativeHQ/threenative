@@ -67,8 +67,9 @@ function validateControls(controls: BacklightControls) {
 }
 function resolveKey(controls: BacklightControls, direction: Vector3, target: Vector3) {
   validateControls(controls);
-  controls.key.updateWorldMatrix(true, false);
-  controls.key.target.updateWorldMatrix(true, false);
+  // Read the renderer/game-updated matrices, as upstream Three light uniforms do.
+  // Targets outside the scene must be updated by their owner before rendering.
+  // Never mutate shared light/ancestor matrices inside a material render callback.
   target.setFromMatrixPosition(controls.key.target.matrixWorld);
   direction.setFromMatrixPosition(controls.key.matrixWorld).sub(target);
   if (!direction.toArray().every(Number.isFinite)) throw new Error("Key endpoints must be finite.");

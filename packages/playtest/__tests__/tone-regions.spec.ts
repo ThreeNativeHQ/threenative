@@ -56,7 +56,7 @@ test.each([
 });
 test.each([
   { region: right, metric: "typo", minDelta: 1 },
-  { region: right, metric: "p99", minDelta: Infinity },
+  { region: right, metric: "p99", minDelta: Number.POSITIVE_INFINITY },
   { region: right, metric: "p99", minDelta: 256 },
 ])("rejects malformed compare %j", (compare) => {
   expect(() => scenario([{ region: left, compare }])).toThrow();

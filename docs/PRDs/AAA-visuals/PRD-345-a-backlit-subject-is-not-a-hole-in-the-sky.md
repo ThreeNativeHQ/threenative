@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-345 — a backlit subject is not a hole in the sky
 
-**Status:** PARTIAL — starter defaults integrated and qualified on web desktop WebGPU; all-template/native gates remain open. Originally filed 2026-09-03, measured at `43d03e6a`. Batch:
+**Status:** PARTIAL — generated material defaults integrated across conventional templates; eleven matched web desktop pairs are palette-stable. Racing expression, all-template gameplay/root/native gates remain open. Originally filed 2026-09-03, measured at `43d03e6a`. Batch:
 [docs/PRDs/AAA-visuals](./README.md). **Ships as generated user source, not as a package** — it
 decides how things look, and rule 1(b) vetoes 1(a) at any size. Source studied:
 [TheLongSilence](https://github.com/achimala/TheLongSilence) `src/gfx/greeble.js:37`, the
@@ -96,7 +96,7 @@ P1, PRD-345. The workbook remains unchanged.
 ### Phase 2 — admit measured generated defaults
 
 - [ ] Apply only qualified conventions to the actual starter/material source and all required templates, preserving per-template appearance, low/mobile/software fallbacks and named overrides. proof: matched per-template screenshots and actual frame/startup cost
-- [ ] Add the concise convention/override rows to generated instructions with mirrors kept in sync. proof: primary-docs and instruction-budget tests
+- [x] Add the concise convention/override rows to generated instructions with mirrors kept in sync. proof: all thirteen template rows, explicit rain exception, primary-docs/instruction-budget seventeen tests and scaffold/doc eighty-three tests pass; unchanged instruction caps
 
 ### Phase 3 — clean starter and platform validation
 
@@ -227,23 +227,69 @@ which is not a full-readiness timing claim.
 Validation: full final clean generated starter TypeScript passes. Lifecycle 28/28, existing quality
 40/40, looks 19/19 and primary-docs/instruction-budget 16/16 pass. Independent review caught and
 verified repairs for array downshift/recovery edits, stale same-texture updates, live override
-reporting, hung readback and actual WebGL-backend fallback. The starter-only scaffold fingerprint
-was measured by the existing gate; combined exposure bytes must be remeasured at merge.
-Other twelve templates, required native execution, repeatable cold-start/per-frame budgets and the
-complete templates/root gate remain unfinished; this draft stays partial.
+reporting, hung readback and actual WebGL-backend fallback. All thirteen scaffold fingerprints were measured by the existing gate after this isolated
+extension; combined exposure bytes must be remeasured at merge. Required native execution,
+final-head startup/per-frame budgets and complete templates/root gates remain unfinished; this
+draft stays partial.
+
+## Bounded startup and plural-template follow-up
+
+The published starter checkpoint `bd5d9d599` has a balanced ABBA series of 80 fresh Chromium
+launches, 40 per arm, with no failures and unchanged generated trees. Nearest-rank engine-readiness
+p95 is 2664.5 → 2905.6 ms (+241.1 ms, 9.05%); scene-load-to-ready p95 is 2067.9 → 2289.6 ms.
+Medians are 2548.55 → 2743.75 ms. This is an empirical fresh-process comparison: page/HTTP caches
+are fresh, while OS and driver shader caches are uncontrolled. It proves no shader-cold or
+compile-completion claim. The dynamic-enrollment/template extension requires its own final-head
+qualification; these results describe the named published checkpoint only.
+[Summary](../../benchmark/prd345/startup-p95-bd5d9d599/summary.json),
+[all samples](../../benchmark/prd345/startup-p95-bd5d9d599/samples.json.gz), and
+[frozen source manifests](../../benchmark/prd345/startup-p95-bd5d9d599/frozen-trees.json.gz)
+retain every attempted launch and measured timeline.
+
+Minimal now has a matched generated-source default-camera pair at 1280×720, hardware NVIDIA Turing
+WebGPU, identical fixed clock/camera/backend/MSAA and cooked assets. Both source builds and
+captures pass. Five standard materials are converted; actual bright photo IBL suppresses extra
+fill. Pixel inspection retains the original sunny palette and avoids a floor wash; the effect in
+this front-lit opening is subtle. The original difficult-backlight controls above remain the
+isolated visible improvement proof.
+
+| Minimal default opening | Before | After |
+| --- | --- | --- |
+| Matched generated source | ![Before](../../benchmark/prd345/template-matrix/minimal/before.png) | ![After](../../benchmark/prd345/template-matrix/minimal/after.png) |
+
+Eleven actual generated template pairs now pass strict matched readiness captures and retain
+their authored palettes: minimal, starter, platformer, runner, shooter, snow, action-RPG, RTS,
+tower-defense, puzzle and sailing. The full unscaled PNG pairs and complete source/runtime
+manifests are [retained here](../../benchmark/prd345/template-matrix/README.md). Earlier
+worker/WASM/readiness failures remain retained beside successful fresh retries; doctor results
+were not treated as acceptance. Fixed gameplay clock does not fix wall-time flag/smoke phases,
+which are disclosed and not claimed as improvements. Dynamic enrollment covers newly spawned
+RTS armies, action-RPG loot, runner chunks and tower/enemy upgrade/recycling; thirty-three
+lifecycle tests cover restoration, sharing and owned disposal.
+
+Racing remains held: matched startup controls isolate broad road/shadow changes to the added
+emissive expression, even with both gains zero. GPU sampling and bare upstream node-material
+copy independently preserve baseline pixels. The exact cause and final qualified fix remain
+open; successful boot alone does not admit this look. Full template gameplay/playtests and
+final-head cost qualification remain pending. Rain is a
+custom raymarched shader with authored flash rim/hemisphere fill and cloud render-target
+reflections. Ordinary standard-material conversion does not apply; its cloud radiance remains
+unknown until separately sampled. Its explicit instruction exception is not blanket all-template
+acceptance. Native retains original materials and no GPU sampling; native appearance admission
+remains unqualified.
 
 ## Acceptance criteria
 
-- [ ] **A backlit subject has a lit limb.** A playtest scenario poses a template's character between proof: `matched backlit character tone crop and rimGain-zero red-green`
+- [x] **A backlit subject has a lit limb.** A playtest scenario poses a template's character between proof: `docs/verification/prd345/qualification.json; actual starter mannequin: edge-enabled-acceptance1 passes, edge-rim-zero-acceptance1 fails only tone margin; paired TN_RIM pixel uplift reported for both arms`
    the camera and the key light; `assert.tone` (PRD-341) over a crop of the silhouette edge asserts
    a p99 above the body's p99 by a stated margin.
    *Red-green:* set `rimGain: 0` in the scenario's setup; the same assertion fails, and the run still
    prints the measured rim contribution — the proof that measurement survives the override. Paste
    both.
-- [ ] **A dark environment is reported, not hidden.** A scenario with a near-black environment asserts proof: `near-black actual environment report and missing-marker mutation`
+- [x] **A dark environment is reported, not hidden.** A scenario with a near-black environment asserts proof: `docs/verification/prd345/qualification.json; marker positive passes; omitted marker fails exactly TN_ENVIRONMENT_MARKER_MISSING_OR_DUPLICATE; near-black DataTexture reports actual source mean0`
    `TN_ENVIRONMENT_CONTRIBUTION` names IBL as non-contributing and names the analytic fill.
    *Red-green:* delete the report; the marker assertion goes red.
-- [ ] **The scene is not flat without a sun.** The same scenario with the key light removed asserts, proof: `no-sun fill range and black-fill red-green`
+- [x] **The scene is not flat without a sun.** The same scenario with the key light removed asserts, proof: `docs/verification/prd345/qualification.json; fill-enabled-acceptance1 passes p1/p99 range, fill-fill-black-acceptance1 fails exactly body p99 at0; key absent in both`
    via `assert.tone`, that `p1` and `p99` remain separated — a scene lit only by the fill still has
    range.
    *Red-green:* set the analytic fill to black; the range assertion goes red.

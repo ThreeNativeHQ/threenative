@@ -186,23 +186,24 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // all thirteen trees, rain and snow included, were re-measured through createProject.
   // Recomputed 2026-10-02 rebasing the FabCLI manual-login fallback onto develop: the shared
   // threenative-assets skill ships in every scaffold, so all thirteen trees move.
-  "action-rpg": "0b06ad9bbcddcb702497985eaaa855c5bfbc66d43809e720f2f9b445172b6dd3",
-  minimal: "531c452baae7bbeb08a511f8cc06c2d94b5886b1de70c31de5968462584c82bd",
-  platformer: "616d63fb1b0fe888c39a4dbbae651ecd3e85b61d5fd396bc0f77fde122bef585",
-  puzzle: "f0a302958d7607eb8438ddedea79241bf87f04620d28fe04d92dc8c5bd887742",
-  racing: "39c2eb35911939484c4be5c35b8b1fb1be2ccaa8fdb4c2269a7e7943f61ca93f",
-  rain: "80a2c0297f451b096950bcdb7a7710776e063c4819c6b1b543f0bc320edda41c",
-  rts: "df5e7ef2ff5dedb7c234239141afbaae2d32f8d6f9e58be89e0731b47f857572",
-  runner: "cbeb5578241eab87a38307dd27f4ede42bf4058774d6dea4cf848fde0fd50bb2",
-  sailing: "adf775fd15287af4cc00b675264e157e0555b027e3bd32ad9a5e8aebbcd1f64d",
+  "action-rpg": "5c7126edb2426c1b26e7e9bde017cbd6e382c0448383a695e67b8c2ff7b2aad2",
+  minimal: "258f021ab15b23bdd6b7422e5c0af5d883eaf5414a17817f4df47367957b7a6a",
+  platformer: "7faad48cdf9672f1990183914f41d22a4c9bfc03f11977b8627fb43434d9c4df",
+  puzzle: "2bdea54f8d65bfd9aacd0d161bfb89ae03b361da532189fb066fcbb2338cb313",
+  racing: "48056766cc1e77674bd35f5bb006f5f704fb8bd327001edcb4efb9fdaafc52b5",
+  rain: "cfb46e29ea5e3a91ec5f83ccd65686737ed7156e363824662b945a8a70d2e8e6",
+  rts: "133f2159f8f1919a404d3389aebf982a49da002b142d5f4b6910bdf1a92dc369",
+  runner: "9e5ab9896bdf701d9a35bf3d397fea86d400551797a2dd6f81f76beae76c0844",
+  sailing: "fe35915c640024922bf937ff96d675f162eb138cf82f9b96ffd3c1d02acb5c05",
   // VQ11 after merge of develop 416ffd7: measured through createProject, only shooter changed.
-  shooter: "0b9dadf239d441709f214da3035792741f791fdf5349e44c063f619b048a3484",
-  snow: "f3d4878829cf14ebee6355e720c223171529d550e8cafc9cd6328285a8000d3b",
-  // Measured 2026-10-03 through createProject after PRD-345's starter-only generated material
-  // convention, bounded source sampler/cache, platform guard, lifecycle wiring and doc rows.
-  // Other template fingerprints remain unchanged; remeasure combined exposure bytes at merge.
-  starter: "70d5ca7ab9530f405ea7e572fdd9394e74f81b2d52463fcb017da83fb4ca7e61",
-  "tower-defense": "68ce595b3857e5ca3e94c7b4dc09f29cb0e16459b6642c235f391b7312da365e",
+  shooter: "4e13da04cbf25c4381368ca08b20c7defd29b627fde92a708f2a1841f9f30d6b",
+  snow: "b5086843044228de51e911ccd09195287533e93f0826dc0f6a8d31121cff2cf5",
+  // Measured 2026-10-03 through createProject on the isolated PRD-345 branch: twelve generated
+  // material integrations/dynamic lifetimes, read-only render-time light matrices, and thirteen
+  // instruction rows including rain's unqualified shader exception. Recompute combined exposure
+  // bytes after coordinated merge.
+  starter: "580e880c7974f926d135941dd7c3d82685f305a9cc3d11c9a90b4383303f474f",
+  "tower-defense": "fd2552145614663a030ee45e50b00aac7c33209879667966ff5d170e97654539",
 };
 
 const GENERATED_SCAFFOLD_METADATA =

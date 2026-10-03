@@ -1,9 +1,7 @@
 <!-- Generated mirror of AGENTS.md. Do not edit; edit AGENTS.md. -->
 
 # AGENTS.md — __PROJECT_NAME__ starter
-
 Instructions for the AI agent in this game. `CLAUDE.md` mirrors this file; edit `AGENTS.md`.
-
 ## Ownership
 
 ThreeNative owns bootstrap, renderer, fixed-step loop, input, loading, physics bindings, and the state bridge. This repository owns gameplay and every visible choice in `src/render/`, `src/entities/`,
