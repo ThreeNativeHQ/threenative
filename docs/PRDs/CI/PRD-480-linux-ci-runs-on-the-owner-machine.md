@@ -208,7 +208,7 @@ and `integration-decals.yml`'s `ubuntu-24.04-arm` job are the only Linux `runs-o
 
 #### Phase 3: The Linux `native-platforms` legs move too
 
-**Status:** IN PROGRESS — routing and image landed, live run pending
+**Status:** COMPLETE — Linux legs on `tn-local`; the Android emulator stays hosted (measured exception)
 **Files:** EDIT `.github/workflows/native-platforms.yml`, `tools/ci-runners/Dockerfile` (JDK 17, Android
 SDK, emulator, `/dev/kvm`), `scripts/__tests__/ci-structure.spec.ts`.
 **Implementation:** Route `web-reference`, `desktop-parity`, `android-emulator-parity`, `release-reports`,
@@ -240,8 +240,12 @@ Decisions this phase had to make, 2026-10-02:
   into `ANDROID_HOME` at job time. `android-emulator-runner` installs `emulator` and the system image
   itself, which is the only job that wants them. Image: 9.28 GB against the pool's 5.25 GB.
 
-- [ ] A `native-platforms` run passes with its Linux legs on `tn-local`. proof: run id plus per-job
+- [x] A `native-platforms` run passes with its Linux legs on `tn-local`. proof: run id plus per-job
   `runner_name`.
   Exception, measured: `android-emulator-parity` stays hosted. SwiftShader renders its GPU on the CPU, and on a
   4-thread slot run 37082733117 spent 41 of the job's 45 minutes still running APKs, where hosted takes ~30.
+  Evidence: CI run 37089715252 (PR #404, merged d99a6281c), latest attempt: every native-platforms leg success.
+  On `tn-local`: starter linux-x64, Android V8 source payload, web conformance reference, desktop web/native
+  parity, release evidence reports, collector coverage. On `tn-local-light`: caller selection, networking
+  matrix. Hosted as designed: macOS, Windows, iOS, linux-arm64, and the emulator exception above.
 - [ ] Waiting time meets AC-2. proof: the AC-2 measurement on a full-board PR after this phase.
