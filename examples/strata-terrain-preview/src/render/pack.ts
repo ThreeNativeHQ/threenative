@@ -446,7 +446,14 @@ export async function loadPack(
         source.map = rockface[0];
         source.normalMap = rockface[1] ?? null;
       }
-      if (!source.map) return;
+      // The reduced Kite GLB keeps UVs but carries no textures. Reuse the matching near surface;
+      // skipping those parts kept all 3,200 trees at full detail, even in the aerial view.
+      const role: PropRole = stone ? "stone" : source.alphaTest > 0 ? "pine" : "bark";
+      const inherited =
+        one.asset === "spruce" && one.level
+          ? entry.find((part) => (part.level ?? 0) === 0 && part.role === role)?.material
+          : undefined;
+      if (!source.map && !(inherited instanceof MeshPhysicalNodeMaterial)) return;
       // One whole-model scale/base for all sections: scaling each part separately detached crowns.
       const geometry = baseGeometryOf(mesh).clone().applyMatrix4(mesh.matrixWorld);
       const centre = box.getCenter(new Vector3());
@@ -498,10 +505,12 @@ export async function loadPack(
           geometry.setAttribute("normal", new BufferAttribute(crownNormals, 3));
         }
       }
-      const material = surface(source, one.asset, world, rockface[2]);
+      const material =
+        inherited instanceof MeshPhysicalNodeMaterial
+          ? inherited
+          : surface(source, one.asset, world, rockface[2]);
       if (stone) rockGround?.apply(material);
       if (source !== mesh.material) source.dispose();
-      const role: PropRole = stone ? "stone" : source.alphaTest > 0 ? "pine" : "bark";
       built.push({ geometry, material });
       entry.push({ geometry, material, role, level: one.level ?? 0, variant: one.variant });
     });

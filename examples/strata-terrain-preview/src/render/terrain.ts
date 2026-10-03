@@ -57,7 +57,13 @@ import { alpineRockColor, alpineRockTap, desertRockColor } from "./biomes.js";
 // Texture budget: six albedos + four normals + curvature + two shadow levels × two = 15/16.
 import { BIOMES, type IBiome, biomeWeights } from "./biomes.js";
 import { createHorizonGeometry } from "./horizon.js";
-import { type IBakedLake, type IBakedRiver, surfaceHeights, waterlineRadius } from "./river.js";
+import {
+  type IBakedLake,
+  type IBakedRiver,
+  REFLECTED_LAYER,
+  surfaceHeights,
+  waterlineRadius,
+} from "./river.js";
 
 export interface IBakedWorld {
   size: number;
@@ -881,6 +887,7 @@ export function createTerrain(
   const material = new MeshStandardMaterial({ vertexColors: true, roughness: 0.95 });
   const mesh: Mesh = new Mesh(geometry, material);
   mesh.name = "authored-terrain";
+  mesh.layers.enable(REFLECTED_LAYER);
   mesh.receiveShadow = true;
   mesh.castShadow =
     biome?.world === "alpine" || biome?.world === "desert" || biome?.world === "tundra";
@@ -910,6 +917,7 @@ export function createTerrain(
   mesh.userData.horizonSeamSamples = (data.resolution - 1) * 4;
   const horizon: Mesh = new Mesh(horizonGeometry, material);
   horizon.name = "temperate-distant-ridges";
+  horizon.layers.enable(REFLECTED_LAYER);
   horizon.receiveShadow = true;
   mesh.add(horizon);
   geometry.addEventListener("dispose", () => horizon.geometry.dispose());

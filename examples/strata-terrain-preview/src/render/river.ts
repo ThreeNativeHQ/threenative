@@ -77,6 +77,8 @@ export interface IBakedRiver {
  * and takes the frame down with it. Water in a lake's reflection is the lake itself anyway.
  */
 export const WATER_LAYER = 1;
+/** What the water mirror redraws: the ground and its distant ring, not every tree and blade again. */
+export const REFLECTED_LAYER = 3;
 
 /** The stream's shape. Its reach is also the lake's exclusion corridor; see `createLakes`. */
 const RIVER = {
@@ -113,7 +115,7 @@ const RIVER = {
 /** The lake's shape, and how its mirror is taken. Every number here is this game's. */
 const LAKE = {
   /** Mirror pixels as a share of the frame's, how often it redraws, and the layer mask it draws. */
-  mirror: { resolutionScale: 1, refreshInterval: 2, layers: 1 },
+  mirror: { resolutionScale: 1, refreshInterval: 2, layers: 1 << REFLECTED_LAYER },
   /** Rings and spokes in the disc the basin is meshed as. */
   rings: 44,
   spokes: 88,
