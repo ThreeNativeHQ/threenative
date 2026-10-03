@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-380 — A pull request never starves the runner pool
 
-**Status:** NOT STARTED
+**Status:** PARTIAL — phases 1 and 2 complete; phase 3's janitor is in and its proof is a live merged PR
 **Complexity:** 6 → MEDIUM-HIGH (+1 workflow triggers, +1 reduced PR matrix, +1 scheduled janitor, +1 shared release concurrency, +1 guarded specs, +1 npm-release wiring).
 **Owner:** CI release tooling.
 **Problem:** The org's GitHub-hosted runner concurrency is small (roughly three runs at once) and it is consumed by matrices that a pull request does not need. On 2026-09-12 thirteen CI runs sat queued, five of them `main` pushes, while three heavy runs held the pool; a two-minute `build` join waited over an hour. Three multipliers: `native-release.yml` runs its macOS/Windows/Linux proof on **every** PR that touches one of four paths (including `native-platform-workflow.test.mjs`, which ordinary runtime-native PRs touch), `ci.yml` runs the **full** `native-platforms` matrix for any `selection == 'full'` PR, and nothing cancels a run whose PR has already merged, so dead runs keep holding runners. The owner's ask: pushing to a branch must not restart or stall the whole board.
@@ -47,14 +47,32 @@ Baseline: `develop`. [PRD-373](../done/PRD-373-selective-ci-and-develop-promotio
 
 ### Phase 2 — PRs run a reduced native matrix; the full matrix stays on main and nightly
 
-**Status:** NOT STARTED — waits on another PRD; untouched by this branch.
+**Status:** COMPLETE
 
 **Files:** `.github/workflows/ci.yml`, `.github/workflows/native-platforms.yml`,
-`scripts/__tests__/ci-efficiency.spec.ts`.
+`scripts/ci-change-scope.mjs`, `scripts/ci-required.mjs`,
+`scripts/__tests__/ci-efficiency.spec.ts`, `scripts/__tests__/ci-needs.spec.ts`,
+`packages/runtime-native/tests/starter-desktop.test.mjs`.
 
-- [ ] An ordinary PR selection emits only the Linux native rows. proof: `pnpm exec vitest run scripts/__tests__/ci-efficiency.spec.ts`.
-- [ ] `main` pushes, the nightly and `promotion/*` PRs keep the full matrix. proof: `pnpm exec vitest run
+- [x] An ordinary PR selection emits only the Linux native rows. proof: `pnpm exec vitest run scripts/__tests__/ci-efficiency.spec.ts`.
+  Evidence: `pnpm exec vitest run scripts/__tests__/ci-efficiency.spec.ts scripts/__tests__/ci-structure.spec.ts scripts/__tests__/ci-needs.spec.ts`
+  2026-10-02, 216 passed; 2 new assertions and 4 `ci-needs` cases red before the change, plus
+  `packages/runtime-native` `native-platform-workflow` + `starter-desktop` 79 passed after it.
+  The plan carries `nativeTier` (`full` | `reduced` | `none`), decided once in
+  `scripts/ci-change-scope.mjs` from the change's native reach and its target branch, and
+  `native-platforms.yml` reads it: `desktop` (macOS, Windows) and `ios-simulator` skip unless it is
+  `full`, and `starter-linux` runs `linux-x64` alone — the arm64 row is shaped into the matrix by
+  the `scope` job, because a job's `if` cannot read `matrix`. `web-reference`, `android-v8-source`,
+  `android-emulator-parity` and `desktop-parity` are Linux rows and still run.
+- [x] `main` pushes, the nightly and pull requests into `main` keep the full matrix. proof: `pnpm exec vitest run
   scripts/__tests__/ci-efficiency.spec.ts`, which also asserts no label exempts it.
+  Evidence: same run as above, 2026-10-02, 216 passed; the case fails on the pre-change files.
+  (This box read `promotion/*` PRs; phase 1 retired that ref, so the promotion route is
+  `base.ref == 'main'` — see the 2026-10-02 phase-1 decision.) A `main` push, the nightly, an
+  explicit `workflow_dispatch` and any merge group or pull request into `main` all classify
+  `nativeTier: full`, no job in `native-platforms.yml` reads a pull-request label, and
+  `ci-required` records the tier in its verdict — a reduced pass can therefore never stand in for a
+  full requirement (PRD-481), which `ci-needs.spec.ts` proves in three cases.
 
 ### Phase 3 — A merged or closed PR stops spending runners
 

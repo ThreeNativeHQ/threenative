@@ -356,8 +356,10 @@ interface IReuseFixture {
  * `A` seeds the history, `B` adds a runtime file, `C` is an empty commit on top of it (the same tree
  * at a new commit, which is what a re-push or a promotion produces) and `D` adds one more file.
  * HEAD is parked back on `C`, so the verdict job's own candidate assertion has something to check.
+ * `native: true` puts the change under `packages/runtime-native/`, which is what makes the run owe
+ * the native lane at all — and therefore the tier PRD-380 halves on an ordinary pull request.
  */
-function reuseFixture(): IReuseFixture {
+function reuseFixture({ native = false }: { native?: boolean } = {}): IReuseFixture {
   const root = makeTempDirSync("threenative-tree-reuse-");
   const git = (...args: string[]) =>
     spawnSync("git", args, {
@@ -382,7 +384,15 @@ function reuseFixture(): IReuseFixture {
   };
   expect(git("init", "--quiet", "--initial-branch", "develop").status).toBe(0);
   const base = commit({ "seed.txt": "seed\n" }, "base");
-  const source = commit({ "src/runtime.ts": "export {};\n" }, "runtime");
+  const source = commit(
+    native
+      ? {
+          "src/runtime.ts": "export {};\n",
+          "packages/runtime-native/src/host.cpp": "// host\n",
+        }
+      : { "src/runtime.ts": "export {};\n" },
+    "runtime",
+  );
   expect(git("commit", "--quiet", "--allow-empty", "-m", "same tree").status).toBe(0);
   const candidate = git("rev-parse", "HEAD").stdout.trim();
   const moved = commit({ "src/other.ts": "export {};\n" }, "one more file");
@@ -424,6 +434,11 @@ interface IStubApi {
   verdict?: string;
   /** Board legs the source run's job list never ran at all. */
   missing?: string[];
+  /**
+   * The source run's `native-platforms` verdict. `skipped` is how a run that owed no native lane
+   * records itself, and it proves `none` on the native axis rather than `reduced` or `full`.
+   */
+  nativeConclusion?: string;
   /** The runner class the source run's board jobs used. */
   sourceLabels?: string[];
   /** The runner class this run routes to. */
@@ -485,7 +500,13 @@ function fakeActionsApi(fixture: IReuseFixture, api: IStubApi = {}): void {
         stubJob("Change scope", "success", sourceLabels),
         ...boardLegs()
           .filter((name) => !(api.missing ?? []).includes(name))
-          .map((name) => stubJob(name, "success", sourceLabels)),
+          .map((name) =>
+            stubJob(
+              name,
+              name === "native-platforms" ? (api.nativeConclusion ?? "success") : "success",
+              sourceLabels,
+            ),
+          ),
         stubJob("ci-required", api.verdict ?? "success", sourceLabels),
         stubJob("run-summary", "success", sourceLabels),
       ]),
@@ -619,6 +640,8 @@ describe("PRD-481 a tree is tested once", () => {
     });
     const jobs = plan.jobs as Record<string, { required: boolean }>;
     expect(Object.values(jobs).some((job) => job.required)).toBe(false);
+    // The diff touched no native path, so this run owes no rows and its source has to prove none.
+    expect(plan.nativeTier).toBe("none");
   });
 
   it("runs the full board for a tree that changed by one file", () => {
@@ -739,5 +762,40 @@ describe("PRD-481 a reused verdict has to cover this run's validation profile", 
     const plan = classifyCandidate(fixture, fixture.candidate);
     expect(plan).toMatchObject({ selection: "reused", reusedRunId: REUSED_RUN_ID });
     expect(plan.reason).toContain(`CI run ${String(REUSED_RUN_ID)}`);
+  });
+
+  it("runs the full board when a reduced native pass is cited for a run that owes the full matrix", () => {
+    // The same tree and the same target strength, one tier apart: PRD-380 phase 2 gives an ordinary
+    // pull request only the Linux rows, and a push still owes every one of them.
+    const fixture = reuseFixture({ native: true });
+    fakeActionsApi(fixture, { base: "develop" });
+    listSourceRun(fixture);
+    const plan = classifyCandidate(fixture, fixture.candidate, { event: "push", target: "" });
+    expect(plan).toMatchObject({ selection: "full", nativeTier: "full" });
+    expect(plan.reason).toContain("proved native reduced, this run requires full");
+  });
+
+  it("runs the full board when the source skipped the lane this pull request owes", () => {
+    const fixture = reuseFixture({ native: true });
+    // A develop source that skipped native-platforms proves nothing about native code.
+    fakeActionsApi(fixture, { base: "develop", nativeConclusion: "skipped" });
+    listSourceRun(fixture);
+    const plan = classifyCandidate(fixture, fixture.candidate);
+    expect(plan).toMatchObject({ selection: "full", nativeTier: "reduced" });
+    expect(plan.reason).toContain("proved native none, this run requires reduced");
+  });
+
+  it("records the reduced tier in the verdict, so the gate cannot accept a weaker source", () => {
+    const fixture = reuseFixture({ native: true });
+    fakeActionsApi(fixture, { base: "main" });
+    listSourceRun(fixture);
+    const plan = classifyCandidate(fixture, fixture.candidate);
+    expect(plan).toMatchObject({ selection: "reused", nativeTier: "reduced" });
+    // The source's lane disappears after the scope job made its verdict: `none` no longer covers
+    // the Linux rows this run owes, and ci-required re-reads the run instead of trusting the plan.
+    fakeActionsApi(fixture, { base: "main", nativeConclusion: "skipped" });
+    const refused = verifyReusedPlan(fixture, plan);
+    expect(refused.status).toBe(1);
+    expect(refused.stderr).toContain("proved native none, this run requires reduced");
   });
 });

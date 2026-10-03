@@ -385,10 +385,16 @@ test('native workflow proves the Linux release container on x64 and arm64', () =
   const workflow = readFileSync('../../.github/workflows/native-platforms.yml', 'utf8');
   const starter = workflow.match(/ {2}starter-linux:\n([\s\S]*?)\n {2}ios-simulator:/u)?.[1];
   assert.ok(starter);
-  // The arm64 leg is the point of the matrix: a free hosted ARM runner, the same release steps,
-  // and the same scope selection as the x64 leg because it is the same job.
-  assert.match(starter, /- platform: linux-x64\n\s+runner: ubuntu-24\.04/u);
-  assert.match(starter, /- platform: linux-arm64\n\s+runner: ubuntu-24\.04-arm/u);
+  // The arm64 leg is the point of the matrix: a free hosted ARM runner and the same release steps
+  // as the x64 leg, because it is the same job. The rows are shaped by the scope job — a job's
+  // `if` cannot read `matrix` — and an ordinary pull request's reduced matrix (PRD-380 phase 2)
+  // keeps x64 alone.
+  const rows = workflow.match(/ {2}scope:\n([\s\S]*?)\n {2}web-reference:/u)?.[1];
+  assert.ok(rows);
+  assert.match(rows, /\{ platform: "linux-x64", runner: "ubuntu-24\.04" \}/u);
+  assert.match(rows, /\{ platform: "linux-arm64", runner: "ubuntu-24\.04-arm" \}/u);
+  assert.match(rows, /rows\.slice\(0, 1\)/u);
+  assert.match(starter, /matrix: \$\{\{ fromJSON\(needs\.scope\.outputs\.starter_rows\) \}\}/u);
   assert.match(starter, /runs-on: \$\{\{ matrix\.runner \}\}/u);
   // The runner has no GPU, so the software Vulkan ICD and its X display are provisioned.
   assert.match(starter, /mesa-vulkan-drivers/u);

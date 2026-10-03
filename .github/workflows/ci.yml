@@ -57,7 +57,9 @@ jobs:
         name: Classify the complete pull-request diff
         env:
           TN_CI_EVENT: ${{ github.event_name }}
-          TN_CI_TARGET: ${{ github.base_ref }}
+          # A merge group reports no `base_ref`; its target is on the event. Passing it is what keeps
+          # a develop merge group on the reduced native matrix and a main one on the full matrix.
+          TN_CI_TARGET: ${{ github.base_ref || github.event.merge_group.base_ref }}
           TN_CI_FORCE_FULL: ${{ vars.TN_CI_FORCE_FULL }}
           TN_CI_BASE: ${{ github.event.pull_request.base.sha }}
           TN_CI_HEAD: ${{ github.event.pull_request.head.sha }}

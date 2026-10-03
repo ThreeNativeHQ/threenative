@@ -68,6 +68,7 @@ export function selectionPlan(
   candidateSha = "",
   native = false,
   reusedRunId = 0,
+  target = "",
 ) {
   const full = selection === "full";
   const reused = selection === "reused";
@@ -128,6 +129,13 @@ export function selectionPlan(
           "Exempt: a clean develop pull request whose diff provably touches no native path; the matrix is skipped rather than awaited or run",
         ),
   };
+  // PRD-380 phase 2: how much of the matrix this run owes. Decided here, from whether the change
+  // reached native code plus the branch it targets, and read from the plan by both the reusable
+  // workflow's job gates and the reuse profile — so a run that owes the Linux rows and a run that
+  // owes all of them can never disagree about which one this is. A reused plan keeps the `native`
+  // flag of the full plan it stands in for, because what it owes did not change when it stopped
+  // running the work itself.
+  const nativeTier = validationProfile({ baseRef: target, nativeRequired: native }).native;
   return {
     version: 1,
     files,
@@ -137,6 +145,8 @@ export function selectionPlan(
     candidateSha,
     reusedRunId,
     native,
+    target,
+    nativeTier,
     checks,
     jobs,
   };
@@ -154,6 +164,8 @@ export function validatePlan(value) {
     !Array.isArray(value.files) ||
     value.files.some((file) => typeof file !== "string" || !file || file.includes("\0")) ||
     typeof value.native !== "boolean" ||
+    typeof value.target !== "string" ||
+    !["full", "reduced", "none"].includes(value.nativeTier) ||
     !Number.isInteger(value.reusedRunId) ||
     value.reusedRunId < 0 ||
     // A reused plan without a source run, or a source run without a reused selection, is the one
@@ -173,8 +185,9 @@ export function validatePlan(value) {
     value.candidateSha,
     value.native,
     value.reusedRunId,
+    value.target,
   );
-  for (const field of ["scope", "checks", "jobs"]) {
+  for (const field of ["scope", "checks", "jobs", "nativeTier"]) {
     if (JSON.stringify(value[field]) !== JSON.stringify(expected[field])) {
       throw new Error(`CI_SCOPE_INVALID_PLAN: ${field} does not match the selected check families`);
     }
@@ -584,8 +597,13 @@ export function classify(options) {
     options.candidateSha ?? git(options.root, ["rev-parse", "HEAD"]).stdout.trim();
   // A full selection reached without a resolved pull-request diff cannot prove the change avoids
   // native code, so it is native-blocking by default. Only the clean-diff path below may clear it.
+  const target = options.target ?? "";
   const full = (reason, files = [], native = true) =>
-    reuseOrKeep(selectionPlan("full", reason, files, candidateSha, native), options, candidateSha);
+    reuseOrKeep(
+      selectionPlan("full", reason, files, candidateSha, native, 0, target),
+      options,
+      candidateSha,
+    );
   if (options.full) return full("explicit full verification requested");
   if (options.eventName !== undefined && options.eventName !== "pull_request")
     return full(`event ${JSON.stringify(options.eventName)} requires complete verification`);
@@ -614,7 +632,7 @@ export function classify(options) {
   // Prose is already covered by lint's doc lane, so prose plus instructions is `instructions`.
   const selection = families.has("instructions") ? "instructions" : "prose";
   const reason = `all ${String(parsed.paths.length)} changed path(s) match explicit ${[...families].sort().join(" + ")} dependency rules`;
-  return selectionPlan(selection, reason, parsed.paths, candidateSha, false);
+  return selectionPlan(selection, reason, parsed.paths, candidateSha, false, 0, target);
 }
 
 /**
@@ -633,6 +651,8 @@ function reuseOrKeep(plan, options, candidateSha) {
       plan.files,
       candidateSha,
       plan.native,
+      0,
+      plan.target,
     );
   if (!("runId" in found)) return unavailable(found.error);
   const current = currentRun({
@@ -652,8 +672,11 @@ function reuseOrKeep(plan, options, candidateSha) {
     `whole-repo tree ${found.tree} already passed in CI run ${String(found.runId)}, which proves a ${verdict.profile.target}/${verdict.profile.native} profile on this run's runner class`,
     plan.files,
     candidateSha,
-    false,
+    // What this run owes did not change when it stopped running the work itself, so the tier
+    // travels with the verdict: a reused develop pull request still owes the Linux rows.
+    plan.native,
     found.runId,
+    plan.target,
   );
 }
 
@@ -663,6 +686,7 @@ function output(result, format) {
     for (const key of ["scope", "selection", "reason"]) console.log(`${key}=${result[key]}`);
     console.log(`candidate_sha=${result.candidateSha}`);
     console.log(`reused_run_id=${result.reusedRunId}`);
+    console.log(`native_tier=${result.nativeTier}`);
     console.log(`plan=${JSON.stringify(result)}`);
     return;
   }
