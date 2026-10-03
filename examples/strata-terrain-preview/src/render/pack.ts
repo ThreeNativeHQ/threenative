@@ -139,7 +139,20 @@ function surface(
     metalness: 0,
   });
   if (!otherBiome && canopy && !cutout) material.normalMap = source.normalMap;
-  if (source.map) {
+  if (cutout && source.map) {
+    // Imported foliage draws as imported: its albedo, its normal map, its own cutoff, both faces.
+    const sampled = texture(source.map, uv());
+    source.map.anisotropy = 8;
+    material.normalMap = source.normalMap;
+    material.roughness = 0.92;
+    material.specularIntensity = 1;
+    material.colorNode = sampled.rgb;
+    material.alphaTest = source.alphaTest;
+    material.alphaTestNode = float(source.alphaTest);
+    material.opacityNode = sampled.a;
+    material.side = DoubleSide;
+    material.shadowSide = DoubleSide;
+  } else if (source.map) {
     source.map.anisotropy = 8;
     const sampled = texture(source.map, uv());
     // Cooked albedo is already sRGB (KTX2 DFD transfer=2); never apply a second decode or lift.
@@ -493,17 +506,6 @@ export async function loadPack(
           ),
         );
         geometry.setAttribute("inner", new BufferAttribute(inner, 1));
-        if (world === "forest") {
-          const crownNormals = new Float32Array(positions.count * 3);
-          const direction = new Vector3();
-          for (let i = 0; i < positions.count; i++) {
-            direction
-              .set(positions.getX(i), Math.max(0.1, radii[band(i)] ?? 0) * 0.45, positions.getZ(i))
-              .normalize();
-            direction.toArray(crownNormals, i * 3);
-          }
-          geometry.setAttribute("normal", new BufferAttribute(crownNormals, 3));
-        }
       }
       const material =
         inherited instanceof MeshPhysicalNodeMaterial
