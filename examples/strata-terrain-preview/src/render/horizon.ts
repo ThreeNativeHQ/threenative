@@ -5,21 +5,30 @@ import distant from "../world/horizon.json";
 import type { IBakedWorld } from "./terrain.js";
 
 // Installed authoring erosion runs in bake.mjs; scenery queries only this retained buffer.
-const continuation = new Heightfield({
-  rows: distant.resolution,
-  columns: distant.resolution,
-  width: distant.size,
-  depth: distant.size,
-  origin: { x: 0, z: 0 },
-  heights: new Float32Array(distant.heights),
-});
-
+const continuationFields = [distant, distant.alpine, distant.desert].map(
+  (source) =>
+    new Heightfield({
+      rows: source.resolution,
+      columns: source.resolution,
+      width: source.size,
+      depth: source.size,
+      origin: { x: 0, z: 0 },
+      heights: new Float32Array(source.heights),
+    }),
+);
+const continuation = continuationFields[0] as Heightfield;
 /** Decorative land beyond the collider; the inner ring uses the bake's exact edge vertices. */
 export function createHorizonGeometry(
   data: IBakedWorld,
   landform: "mountain" | "alpine" | "mesa" | "plain" = "mountain",
   field?: Heightfield,
 ): BufferGeometry {
+  const surveyed =
+    landform === "alpine"
+      ? continuationFields[1]
+      : landform === "mesa"
+        ? continuationFields[2]
+        : undefined;
   const segments = data.resolution - 1;
   const perimeter = segments * 4;
   // Subdivide eroded land; retain the coastal world's original submerged collar.
@@ -123,7 +132,16 @@ export function createHorizonGeometry(
         (data.heights[edge] as number) * detail +
         (coarseEdge[vertex] as number) * (1 - detail) +
         (landform === "plain" ? slope * distance * detail : 0);
-      positions.push(x, inherited * (1 - blend) + height * blend, z);
+      // Match the exact detail boundary; fade only the resolution/erosion difference over 40 m.
+      // Unlike the procedural collar, all surveyed relief immediately beyond that seam is real.
+      const edgeX = (column / segments - 0.5) * data.size;
+      const edgeZ = (row / segments - 0.5) * data.size;
+      const surveyedHeight = surveyed
+        ? surveyed.heightAt(x, z) +
+          ((data.heights[edge] as number) - surveyed.heightAt(edgeX, edgeZ)) *
+            Math.exp(-distance / 40)
+        : 0;
+      positions.push(x, surveyed ? surveyedHeight : inherited * (1 - blend) + height * blend, z);
       colors.push(
         data.colors[edge * 3] as number,
         data.colors[edge * 3 + 1] as number,

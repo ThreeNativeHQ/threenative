@@ -138,7 +138,7 @@ export function scatterProps(
   const desert = data.world === "desert";
   const tundra = data.world === "tundra";
   const alpine = data.world === "alpine";
-  const treeLimit = temperate ? SCATTER.spruceCount : desert ? 0 : tundra ? 55 : 600;
+  const treeLimit = temperate ? SCATTER.spruceCount : desert || alpine ? 0 : tundra ? 55 : 600;
   const placements: IPlacement[] = [];
   const counts: Record<string, number> = Object.fromEntries(
     [
@@ -197,7 +197,12 @@ export function scatterProps(
   };
   const put = (asset: string, x: number, z: number, scale: number, suffix = "") => {
     if (!inside(x, z) || (asset !== "riverrock" && wet(x, z))) return;
-    if (data.erosion && asset === "scree" && depositsAt(x, z) < 0.08) return;
+    if (data.erosion && asset === "scree" && depositsAt(x, z) < 0.08) {
+      // The light DEM transport pass is bounded to <1 m. Existing surveyed talus remains scree
+      // even when this tiny additional pass deposited almost nothing on it.
+      const slope = slopeDegrees(data, x, z);
+      if (!(alpine || desert) || slope < 18 || slope > 38) return;
+    }
     if (asset === "cliff") {
       // Stones normalize their largest dimension to 18 m. This envelope covers every yaw.
       const reach = 18 * Math.SQRT1_2 * scale;
@@ -223,8 +228,8 @@ export function scatterProps(
         [0, -18],
         [0, 18],
       ].map(([dx, dz]) => clampedHeight(data, x + (dx ?? 0), z + (dz ?? 0)));
-      const foot = height < 30 && slope < 35 && Math.max(...neighbours) > height + 12;
-      const rim = height > 40 && slope < 24 && Math.min(...neighbours) < height - 12;
+      const foot = slope < 35 && Math.max(...neighbours) > height + 8;
+      const rim = slope < 24 && Math.min(...neighbours) < height - 8;
       if (!foot && !rim) return;
     }
     const index = counts[asset] ?? 0;
@@ -382,7 +387,7 @@ export function scatterProps(
       }
     }
   }
-  // Ribs overlap along fall lines; the ground remains visible as gullies and snow shelves.
+  // Metre-scale outcrops follow the surveyed walls; the DEM owns every ridge and couloir.
   if (alpine) {
     for (let z = -half + 48; z < half - 48; z += 24)
       for (let x = -half + 48; x < half - 48; x += 24) {
@@ -390,7 +395,7 @@ export function scatterProps(
         const sz = z + (random() - 0.5) * 12;
         if (slopeDegrees(data, sx, sz) < 40 || clampedHeight(data, sx, sz) < 65 || random() > 0.55)
           continue;
-        const metres = 14 + random() * 22;
+        const metres = 2 + random() * 3;
         put("mountain", sx, sz, metres / 24);
         const fall = data.field.normalAt(sx, sz);
         const length = Math.hypot(fall.x, fall.z) || 1;
@@ -400,7 +405,7 @@ export function scatterProps(
           clampedHeight(data, overlapX, overlapZ) > 42 &&
           slopeDegrees(data, overlapX, overlapZ) > 28
         )
-          put("mountain", overlapX, overlapZ, Math.max(30, metres * 0.85) / 24);
+          put("mountain", overlapX, overlapZ, (metres * 0.85) / 24);
         // A broad toe of small angular debris, widening downhill from each exposed wall.
         for (let k = 0; k < 28; k++) {
           const down = 16 + random() * 24;
@@ -416,8 +421,8 @@ export function scatterProps(
       for (let x = -half + 18; x < half - 18; x += 9) {
         const sx = x + (random() - 0.5) * 7;
         const sz = z + (random() - 0.5) * 7;
-        if (random() < 0.7) put("volcanic", sx, sz, 0.24 + random() * 0.48);
-        if (random() < 0.5) put("reveal", sx, sz, 0.4 + random() * 0.6);
+        if (random() < 0.7) put("volcanic", sx, sz, 0.06 + random() * 0.12);
+        if (random() < 0.5) put("reveal", sx, sz, 0.15 + random() * 0.2);
       }
   }
   // Rock clusters follow exposed slopes rather than evenly spaced lawn ornaments.

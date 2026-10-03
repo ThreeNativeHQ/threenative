@@ -84,3 +84,26 @@ folder's `credits.json`.
 Use `node scripts/prep-fab-temperate.mjs --worlds` to update only crags/RockFace003.
 It cooks into a separate staging output before merging; existing forest/coast species
 and intentionally missing aliases remain untouched. The default command rebuilds the full set.
+
+## Surveyed alpine and desert geology — USGS 3DEP (public domain)
+
+U.S. Geological Survey, **3D Elevation Program (3DEP), The National Map**, 1 meter
+and 1/3 arc-second Digital Elevation Models, accessed October 3, 2026.
+[USGS 1 m collection and public-domain designation](https://data.usgs.gov/datacatalog/data/USGS:77ae0551-c61e-4979-aedd-d797abdcde0e)
+and [1/3 arc-second collection](https://data.usgs.gov/datacatalog/data/USGS:3a81321b-c153-416f-98b7-cc8e5f0e17c3).
+
+- Alpine: Longs Peak's Diamond / Chasm Lake headwall, Colorado;
+  `USGS_1M_13_x44y446_CO_DRCOG_2020_B20`, project temporal extent 2020-05-26–2021-03-13;
+  surroundings `USGS_13_n41w106_20221118`.
+- Desert: Setting Hen Butte, Valley of the Gods, Utah;
+  `USGS_1M_12_x60y413_UT_WestEast_B22`, project temporal extent 2022-06-04–2023-10-04;
+  surroundings `USGS_13_n38w110_20241031`.
+
+The committed `scripts/dem/*.bin` crops are 512 m / 257² detail and 5 km / 513²
+surroundings, with complete bbox, NAD83 UTM CRS, NAVD88 elevation offset, source URLs,
+filter and SHA-256 sidecars. Detail uses a 2×2 area filter; surrounding samples are
+reprojected and bilinearly reconstructed. Both are quantized to 0.1 m, translated
+vertically, with no vertical exaggeration. The bake adds a light transport pass;
+these modifications are the example's, and are not approved or endorsed by USGS.
+`node scripts/dem/crop.mjs <download-directory>` reproduces the crops. `geotiff`
+and `proj4` are example-only development tools; games load baked arrays.

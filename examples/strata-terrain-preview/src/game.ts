@@ -75,18 +75,18 @@ interface IBenchmark {
 
 const BENCHMARK: Record<WorldName, IBenchmark> = {
   alpine: {
-    focus: { x: 100, z: 120 },
+    focus: { x: 180, z: -190 },
     poses: {
-      ridge: { at: [140, 156], eye: 24, look: [30, -40], lookUp: -8 },
-      overview: { at: [160, 190], eye: 120, look: [-20, -20], lookUp: 12 },
+      ridge: { at: [200, -210], eye: 18, look: [-90, 40], lookUp: 30 },
+      overview: { at: [230, -240], eye: 540, look: [-55, 35], lookUp: 35 },
     },
     views: ["player", "ridge", "overview"],
   },
   desert: {
-    focus: { x: 95, z: 110 },
+    focus: { x: 170, z: 180 },
     poses: {
-      mesa: { at: [65, 55], eye: 3.2, look: [-140, -60], lookUp: 0, lookY: 38 },
-      overview: { at: [170, 180], eye: 105, look: [-65, -80], lookUp: 10 },
+      mesa: { at: [195, 190], eye: 3.2, look: [-35, -30], lookUp: 20 },
+      overview: { at: [200, 200], eye: 165, look: [-40, -30], lookUp: 10 },
     },
     views: ["player", "mesa", "overview"],
   },
@@ -294,7 +294,13 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
         new MeshStandardMaterial({ color: 0xffc76d }),
       );
       const start =
-        world === "forest" ? [-190, 160] : world === "coastal" ? [180, 100] : [180, 160];
+        world === "forest"
+          ? [-190, 160]
+          : world === "coastal"
+            ? [180, 100]
+            : world === "alpine"
+              ? [180, -190]
+              : [180, 160];
       actor.position.set(
         start[0] as number,
         field.heightAt(start[0] as number, start[1] as number) + 2,

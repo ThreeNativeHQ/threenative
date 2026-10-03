@@ -2569,3 +2569,23 @@ local licensed assets and captures; it is not eligible for merged-worktree clean
 Final source: TypeScript passes; Biome checks 73 files and passes after assets
 were restored. Fallback has no completed world capture; the renderer exited during capture
 (`TN_PLAYTEST_PAGE_CRASHED`). Final source has no completed full playtest.
+
+### 2026-10-03 UTC — DEM lane (owner-approved real geology)
+
+Complexity: 3 → LOW; risk override: none. Example-owned authoring and appearance;
+installed `Terrain.heightmap`/data stamp imports numerical heights. No package change.
+110-minute lane, branch `feat/prd-466-468-dem`, base `2cbf316ca`; no push/merge/PR comment.
+
+- [x] Crop public-domain 3DEP 1 m geology to 257²/512 m and same-site 1/3 arc-second surroundings. proof: `node scripts/dem/crop.mjs` — PASS: four int16 crops, 1,316,872 bytes total; no missing samples, source/project dates, CRS/bbox/USGS citation and SHA-256 sidecars.
+- [ ] Integrate DEM bases and real continuation; preserve transport, collision/render identity, cache and packed export. proof: `node scripts/bake.mjs` and `pnpm test:consumer`.
+- [ ] Frame real landforms, verify snow/scree/strata, licensed and fallback full scenarios, ocean and gates. proof: full `terrain.playtest.json`, `verify-ocean`, example TypeScript, root Biome and terrain Vitest.
+
+DEM checkpoint: first cold bake 29.44 s; bounded-transport bake 28.20 s.
+Maximum DEM change: alpine 0.479 m, desert 0.092 m. All four transport buffers
+have 257² finite samples; alpine/desert waters and rivers are empty. Cache reuse
+passes. Example TypeScript passes; root Biome checks 78 files (warnings only);
+terrain Vitest 71/71 passes. First scratch run crashed in the renderer after a
+hardware WebGPU start; second capture is pending. `test:consumer` fails before
+export at the pre-existing rain template's missing terrain workflow pointer;
+no procedural-shape fixture expectations changed. A focused packed-export run
+will exclude only that unrelated template-pointer assertion and is not a full-gate PASS.
