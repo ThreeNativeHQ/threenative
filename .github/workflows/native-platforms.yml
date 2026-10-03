@@ -106,7 +106,12 @@ jobs:
             ];
             // Reduced only when the tier says so: an unreadable tier keeps every row.
             const reduced = process.env.TN_NATIVE_TIER === "reduced";
-            process.stdout.write(`starter_rows=${JSON.stringify(reduced ? rows.slice(0, 1) : rows)}\n`);
+            // A keyed object, never a bare array. GitHub expands `strategy.matrix` from an axis
+            // vector or from `include`, and run 37100382876 wrote the array: the rows were set, the
+            // step passed, and `starter-linux` never started — no job, no error — while the reusable
+            // workflow still concluded failure, so `ci-required` read a red native lane with every
+            // leg green. `{"include":[…]}` is the same two rows in the shape GitHub expands.
+            process.stdout.write(`starter_rows=${JSON.stringify({ include: reduced ? rows.slice(0, 1) : rows })}\n`);
           ' >> "$GITHUB_OUTPUT"
 
   web-reference:
@@ -1810,7 +1815,10 @@ jobs:
       # resolved, so this job runs linux-x64 alone on a reduced run and both rows otherwise. The
       # routing values live beside the shaping, on the runner PRD-480 fixed: the movable x64 leg
       # goes through the TN_RUNNER switch and falls back to the same hosted image, arm64 stays
-      # hosted because the owner's machine is x64.
+      # hosted because the owner's machine is x64. That shaping is never empty — a run owing no
+      # native lane at all is skipped at the call site in ci.yml, so the tiers that reach this job
+      # always owe x64 — and a leg the tier does drop is skipped by the `desktop` and
+      # `ios-simulator` `if:` gates, which GitHub reports as skipped, not failed.
       matrix: ${{ fromJSON(needs.scope.outputs.starter_rows) }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 50
