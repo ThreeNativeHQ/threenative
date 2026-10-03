@@ -22,15 +22,20 @@ flowchart TD
 
 ## Order
 
-| # | Work | Why here | Blocked on | Size |
-|---|---|---|---|---|
-| 1 | [PRD-482](../tooling/PRD-482-the-local-agent-loop-costs-only-what-it-catches.md) phase 1 | The pre-push hook is red on clean `develop`, so the local backlog cannot be pushed without skipping it | — | ~30 min |
-| 2 | [PRD-480](PRD-480-linux-ci-runs-on-the-owner-machine.md) | Biggest wall-clock win: no queue. Its routing expression is what every later workflow edit builds on | fork-PR approval setting, before the first job is routed | ~2 h |
-| 2 | [PRD-481](PRD-481-ci-does-each-piece-of-work-once.md) phase 2 | Independent of 480. It edits `ci.yml` jobs, not `runs-on`, so it runs in parallel | — | ~3 h |
-| 2 | PRD-481 phase 3 | Small trigger trims, independent | — | ~1 h |
-| 3 | PRD-481 phase 1 | Reuse only an equivalent validation (see review below); cheapest to prove once runs are short and stable | merge queue, enabled only after `merge_group` is on `develop` | ~4 h |
-| 3 | [PRD-380](PRD-380-a-pull-request-never-starves-the-runner-pool.md) | After 480, its native-matrix phase only has to cover the hosted macOS, Windows and iOS legs | — | ~3 h |
-| 4 | PRD-482 phase 2 | The push rule and dropping the local full board only make sense once the runners are proven | PRD-480 AC-1 | ~1 h |
+| # | Work | State (2026-10-03) | Blocked on |
+|---|---|---|---|
+| 1 | [PRD-482](../tooling/PRD-482-the-local-agent-loop-costs-only-what-it-catches.md) phase 1 | Done in #403: hook green, 9 s | — |
+| 2 | [PRD-480](PRD-480-linux-ci-runs-on-the-owner-machine.md) phases 1–2 | Done in #404: AC-1 green, run 37070815769 (33 jobs on `tn-local`, 5 on the light lane) | — |
+| 2 | PRD-481 phases 2–3 | Merged (#405): dist built once, shards under 6 min, one `integration.yml` | native cache box: `develop` must warm the new key |
+| 3 | PRD-481 phase 1 | Merged (#405): reuse only for an identical tree whose validation profile covers this run; merge queue on | live reuse and merge-group proofs |
+| 3 | [PRD-380](PRD-380-a-pull-request-never-starves-the-runner-pool.md) phases 1 and 3 | #406 in the merge queue | phase 2 (reduced PR native matrix) not started |
+| 3 | PRD-480 phase 3 | In #404: Linux native legs routed; the Android emulator stays hosted (CPU-bound SwiftShader overran its 45 min) | a green `native-platforms` run |
+| 4 | PRD-482 phase 2 | Done in #403: push rule, ponytail once per session, playtest AGENTS.md 1,113 words | — |
+| 5 | Flaky template lanes | NEW. `tower-defense` (SwiftShader `DEVICE_LOST`, timeouts) and `rain` (`CAPTURE_PROVENANCE_MISSING`) fail about half the time on hosted and local. They have bounced the merge queue three times. Needs a fix in the template or the playtest bridge, not a quarantine | an owner for the lane |
+
+Each PRD's 7-day runner-minute acceptance (PRD-380, 481, 482 AC-1) can only be measured a week after its phases land.
+PRD-480 AC-2 (summed queue wait < 60 min) is measured and not met: 317 min, with 42 min wall against 39 hosted.
+It needs an owner call: more slots, or overflow part of the board to hosted runners.
 
 Rows with the same number can run as parallel lanes. Before parallel lanes edit `ci.yml`, they agree on
 which jobs each one touches.
