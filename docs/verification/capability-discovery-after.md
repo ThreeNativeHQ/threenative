@@ -102,7 +102,7 @@ The prior failed cohorts remain preserved and are not silently replaced:
 - [prior valid run 2](capability-discovery-after-valid-run-2.jsonl)
 - [prior valid run 3](capability-discovery-after-valid-run-3.jsonl)
 
-The earlier [invalid after run](capability-discovery-after-final-run-1.jsonl) and other aborted
+The earlier [invalid after run](https://github.com/ThreeNativeHQ/threenative/blob/c7ce7500d72ea3304c20c385a8273ad4a7defe8e/docs/verification/capability-discovery-after-final-run-1.jsonl) and other aborted
 records remain in the evidence directory as well; none are counted here.
 
 ## Measurements
