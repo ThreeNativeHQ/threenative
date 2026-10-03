@@ -17,7 +17,7 @@ import { type IFogVolumeGraph, composeFogVolume } from "./volumetricFogVolume.js
 export type { IFogVolume, IVolumetricFogOptions };
 
 /** The owned medium a composed graph exposes: one controller, one graph, one owned target. */
-export type IFogMedium = Exclude<ReturnType<typeof createVolumetricFog>, undefined>;
+export type FogMedium = Exclude<ReturnType<typeof createVolumetricFog>, undefined>;
 
 /**
  * This game's mist — the one flag, density, colour, bounds and step count, all in this folder

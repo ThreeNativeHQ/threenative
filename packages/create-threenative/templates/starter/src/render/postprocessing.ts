@@ -18,7 +18,7 @@ import {
   formatQualityAdaptation,
 } from "./adaptiveQuality.js";
 import { type QualityTier, qualityPreset } from "./quality.js";
-import type { IFogMedium } from "./volumetricFog.js";
+import type { FogMedium } from "./volumetricFog.js";
 import { type OutputRenderer, WorldEnvironment } from "./worldEnvironment.js";
 
 interface IPostController {
@@ -50,14 +50,14 @@ export function setupPost(
      * replaces the graph, and a fog controller owns one graph, so it is released and rebuilt here
      * rather than composed twice. Omit it and the chain starts from the beauty pass unchanged.
      */
-    fog?: () => IFogMedium | undefined;
+    fog?: () => FogMedium | undefined;
   } = {},
 ): IPostController {
   const policy = createAdaptiveQuality(environment, environment);
   active?.dispose();
   let disposed = false;
   let disposeGraph: (() => void) | undefined;
-  let medium: IFogMedium | undefined;
+  let medium: FogMedium | undefined;
   let observation: Record<string, unknown> = {
     tier: policy.tier,
     source: policy.pinned ? "pinned" : "auto",

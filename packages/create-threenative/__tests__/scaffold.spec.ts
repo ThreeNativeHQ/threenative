@@ -184,7 +184,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // `scene.fog` only while the medium still holds the slot, so a fog the game authors while the
   // medium lives survives disposal. One file, one line, starter only; the other twelve trees are
   // untouched and still match develop's measurements, which is the ablation for this change.
-  starter: "9c0d409abeaf363be77bb8e762e36fe6794743f6010d5d3c036758c6c7605f42",
+  starter: "d51d898f4f15403bf2e20a734ddeba972aca595df6c12d854ce5b0d4b8fb94d6",
   "tower-defense": "5f56275cfff3b81607c6aca3662d776df0052fed462ff00e93568ab50ecbc789",
 };
 
