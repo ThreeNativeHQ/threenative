@@ -87,6 +87,8 @@ const DRAW_REACH: Record<string, number> = {
  */
 const VARIANT_REACH: Record<string, number> = {};
 const NO_SHADOW_ASSETS = new Set(["sapling", "scrub", "grass", "fern", "poppy", "litter"]);
+/** The species whose cover thins out with distance instead of switching off at a fixed reach. */
+const FADED_ASSETS = new Set(["grass", "scrub", "fern"]);
 
 /** One drawable piece of a prop: its geometry, and the role that decides its material. */
 /** The share of a boulder's height that sits below the ground. */
@@ -784,7 +786,6 @@ function* propWork(
         }
       yield;
     }
-    const origin = new Vector3();
     const levelCount = new Map<IVariantGroup, number>();
 
     // Swap-delete only band crossings. Stable members retain their GPU buffer slot and editor
@@ -797,9 +798,19 @@ function* propWork(
       if (!edited && seenFrom.distanceToSquared(camera) < 0.75 ** 2) return;
       seenFrom.copy(camera);
       seenPoseVersion = poseVersion;
+      const cx = camera.x;
+      const cy = camera.y;
+      const cz = camera.z;
       for (const group of banded) {
         const levels = levelCount.get(group) ?? 0;
         const dirty = new Set<InstancedMesh>();
+        // Per group, so the walk below is three reads and arithmetic. `entries.entries()` allocated a
+        // pair per placement and the fade test allocated a literal array per placement, which on a
+        // forest of this size is half a million short-lived arrays on every camera move.
+        const poses = group.entries;
+        const reach = VARIANT_REACH[group.key] ?? DRAW_REACH[group.asset];
+        const thins = reach !== undefined && FADED_ASSETS.has(group.asset);
+        const fadeEnd = reach ?? 0;
         const bindSlot = (index: number, level: number, slot: number): void => {
           const entry = group.entries[index];
           if (!entry) throw new Error(`Missing prop slot '${group.key}:${index}'`);
@@ -816,13 +827,19 @@ function* propWork(
           }
           group.slots[index] = slot;
         };
-        for (const [index, entry] of group.entries.entries()) {
-          origin.setFromMatrixPosition(entry.pose);
-          const distance = origin.distanceTo(camera);
-          const reach = VARIANT_REACH[group.key] ?? DRAW_REACH[group.asset];
+        for (let index = 0; index < poses.length; index++) {
+          // The pose's own translation rather than `setFromMatrixPosition`: a Matrix4 decompose per
+          // placement is what made this the most expensive function in a walk.
+          const entry = poses[index];
+          if (!entry) throw new Error(`Missing prop placement '${group.key}:${index}'`);
+          const elements = entry.pose.elements;
+          const dx = elements[12] - cx;
+          const dy = elements[13] - cy;
+          const dz = elements[14] - cz;
+          const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
           let visible = reach === undefined || distance <= reach;
-          if (visible && reach !== undefined && ["grass", "scrub", "fern"].includes(group.asset)) {
-            const fade = Math.max(0, (distance - 28) / (reach - 28));
+          if (visible && thins) {
+            const fade = Math.max(0, (distance - 28) / (fadeEnd - 28));
             const seed = (Math.imul(index + 1, 2654435761) >>> 0) / 4294967296;
             visible = seed <= (1 - fade) ** 2;
           }
