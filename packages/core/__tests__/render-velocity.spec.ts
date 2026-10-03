@@ -437,7 +437,12 @@ describe("velocity provisioning on the shipped path", () => {
     // handing it the pass texture threw on every frame of every game that requested `traa`.
     const scenePass = pass(new Scene(), new PerspectiveCamera());
     let output: unknown;
-    const renderer = { ...stubRenderer(), setOutputNode: (node: unknown) => (output = node) };
+    const renderer = {
+      ...stubRenderer(),
+      setOutputNode: (node: unknown) => {
+        output = node;
+      },
+    };
     new RenderChain({
       renderer,
       input: scenePass.getTextureNode("output"),
