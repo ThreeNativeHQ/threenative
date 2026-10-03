@@ -121,6 +121,36 @@ test("wheel input delivers exactly one browser input sample", async () => {
   expect(syntheticDispatches).toHaveLength(0);
 });
 
+test("browser wheel turns at the step's point, and media emulation reaches the page", async () => {
+  const calls: unknown[] = [];
+  const page = {
+    context: () => ({ newCDPSession: async () => ({ send: async () => undefined }) }),
+    emulateMedia: async (media: unknown) => calls.push(["media", media]),
+    evaluate: async () => undefined,
+    keyboard: { down: async () => undefined, up: async () => undefined },
+    mouse: {
+      down: async () => undefined,
+      move: async (x: number, y: number) => calls.push(["move", x, y]),
+      up: async () => undefined,
+      wheel: async (deltaX: number, deltaY: number) => calls.push(["wheel", deltaX, deltaY]),
+    },
+  } as unknown as Page;
+
+  await runStep(
+    page,
+    undefined,
+    { media: { colorScheme: "dark" }, release: true, waitFrames: 1, wheel: { deltaY: 50, x: 0.25, y: 0.5 } } as never,
+    { height: 360, width: 640 },
+    undefined,
+    [],
+    { heldKeys: new Set(), pointerButtons: 0, pointers: new Map() },
+    undefined,
+    true,
+  );
+
+  expect(calls).toEqual([["media", { colorScheme: "dark" }], ["move", 160, 180], ["wheel", 0, 50]]);
+});
+
 test("entity click without a bridge fails with a named pointer diagnostic", async () => {
   const page = {
     context: () => ({ newCDPSession: async () => ({ send: async () => undefined }) }),
@@ -198,16 +228,23 @@ test.each(["android", "desktop", "ios"] as const)(
   },
 );
 
-test.each(["android", "desktop", "ios"] as const)(
-  "native %s wheel input fails closed before startup",
-  async (target) => {
-    const projectPath = await makeTempDir(`playtest-${target}-wheel-`);
+test.each([
+  ["android", "wheel"],
+  ["ios", "wheel"],
+  ["android", "media"],
+  ["ios", "media"],
+] as const)(
+  "native %s %s input fails closed before startup",
+  async (target, input) => {
+    const projectPath = await makeTempDir(`playtest-${target}-${input}-`);
     await writeFile(join(projectPath, "scenario.json"), JSON.stringify({
       artifacts: { screenshots: false },
       assert: { diagnostics: { runtimeReady: true } },
       name: "native-wheel",
       schemaVersion: 1,
-      steps: [{ release: true, waitTicks: 1, wheel: { deltaY: -32 } }],
+      steps: [input === "wheel"
+        ? { release: true, waitTicks: 1, wheel: { deltaY: -32 } }
+        : { media: { colorScheme: "dark" }, release: true, waitTicks: 1 }],
       target: "web",
       viewport: { height: 100, width: 100 },
     }));
@@ -250,7 +287,7 @@ test.each(["android", "desktop", "ios"] as const)(
     expect(report.diagnostics).toContainEqual(expect.objectContaining({
       code: "TN_PLAYTEST_UNSUPPORTED_ON_TARGET",
       fix: { instruction: expect.stringContaining("browser") },
-      message: expect.stringContaining("wheel input steps"),
+      message: expect.stringContaining(input === "wheel" ? "wheel input steps" : "media steps"),
     }));
     expect(prepared).toBe(false);
     expect(started).toBe(false);

@@ -2,15 +2,16 @@
 // over the grammar the runner really has, run it, and compare the observations with the list
 // `corpus/interaction.mjs` produces in Chromium (`CHROMIUM_ONLY=1`).
 //
-// Three things the grammar cannot say, said out loud rather than approximated:
-//   - a wheel step: the desktop runner has no wheel injector and refuses the step by name;
-//   - `Shift+Tab`: the synthetic key reaches `tn_css_ui_key` as the literal string the scenario
-//     pressed, and there is no modifier channel to pair with it, so every observation after one is
-//     unreachable (the prefix before it is still compared);
-//   - `env` and a touch pointer: neither `prefers-color-scheme`/`prefers-reduced-motion` nor a finger
-//     can be injected, because both come from the host's own environment.
+// Time is the host's fixed UI clock (`TN_CSS_UI_FIXED_STEP_MS`, one millisecond per tick here), so
+// Chromium's virtual `advance` becomes a tick count: every runner step costs the ticks it advances,
+// and the translation waits out exactly the rest so a mid-transition pixel lands on Chromium's
+// moment. Keys carry modifiers as a held set (`["Shift","Tab"]`), a mouse is `pointerPosition`, a
+// finger is `pointers`, a wheel is `wheel` at its point, and `env` is a step's `media`.
 //
-// Focus is the fourth thing the grammar cannot report: the engine records `focus` in its listener
+// One thing the grammar still cannot say, said out loud rather than approximated: a scroll offset.
+// The host has no channel that reports one, so a `scroll` observation is a named failure.
+//
+// Focus is the other thing the grammar cannot report: the engine records `focus` in its listener
 // table but registers no DOM listener for it, so no `onFocus` ever reaches the game's JS realm and
 // `tn_css_ui_focused_id` is host-side only. Focus is therefore read the only way the host can show it
 // — as pixels: which candidate control's box changed against the untouched baseline frame is the one
@@ -21,9 +22,12 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { here } from "./shared.mjs";
 
-/** Fixed-step ticks per input step: 30 ticks at the harness's 1/60 s step is 500 ms of real time. */
-const SETTLE_TICKS = 30;
-const KEY_HOLD_TICKS = 2;
+/**
+ * Milliseconds of UI clock per tick: the host's `TN_CSS_UI_FIXED_STEP_MS` for these runs. A tenth of
+ * a millisecond, so the ticks an input or a capture costs where Chromium spends none skew a capture
+ * by tenths of a millisecond rather than by whole ones.
+ */
+export const CLOCK_STEP_MS = 0.1;
 /** Chromium's pixel tolerance, from `corpus/interaction.mjs`; an AA edge may need the wider one. */
 export const PIXEL_TOLERANCE = 3;
 export const PIXEL_TOLERANCE_AA = 8;
@@ -41,6 +45,14 @@ export function settleMs(css) {
     );
   }
   return worst;
+}
+
+/** The shortest transition duration in this stylesheet, or 0 when it has none. */
+export function fastestMs(css) {
+  const all = [...css.matchAll(/transition(?:-[a-z-]+)?\s*:\s*([^;}]+)/gu)].flatMap((match) =>
+    [...match[1].matchAll(/(\d+(?:\.\d+)?)ms/gu)].slice(0, 1).map((part) => Number(part[1])),
+  );
+  return all.length === 0 ? 0 : Math.min(...all);
 }
 
 /** Blitz's own focusability: a non-disabled `<button>`, or anything with `tabindex` >= 0. */
@@ -150,108 +162,154 @@ export async function scenarioBoxes(browser, scenario, samplePoints = []) {
  * Translate one script into playtest steps plus the observation list that goes with them.
  *
  * The observation list is positional with the oracle's: entry `i` here is entry `i` of the expected
- * list, in the order the script observes. An entry the host cannot be asked for carries the reason
- * and is left out of the comparison, and everything after the first unreachable step carries the same
- * reason. `samples` is the per-pixel settle time measured in Chromium (see `scenarioBoxes`).
+ * list, in the order the script observes. An entry the host cannot be asked for carries the reason,
+ * and the driver counts it as a failure, never as a pass.
+ *
+ * The clock: Chromium spends no time on an input or an observation, and the runner spends ticks on
+ * both (an input step advances at least one, a key or a tap two, a capture one unless it rides a
+ * wait). The transition an input starts begins at the clock the input arrived on, so before every
+ * input and capture the translation waits until the host's time since the last input equals
+ * Chromium's. What it cannot take back is the few ticks an input or a capture costs where Chromium
+ * spent none: that is the capture's `clockSkewMs` against every input whose transitions may still be
+ * running, and a skew that could move a channel of the sheet's fastest transition by more than one
+ * level is a named failure rather than a comparison.
  */
-export function translate(scenario, expected, { screenshots = true, samples = [] } = {}) {
+export function translate(scenario, expected, { screenshots = true } = {}) {
   const [width, height] = scenario.size;
+  const settle = settleMs(scenario.css);
+  const fastest = fastestMs(scenario.css);
   const shot = (label) => (screenshots ? { screenshot: label } : {});
-  const steps = [{ label: "baseline", waitTicks: 60, ...shot("baseline") }];
+  const ticksOf = (ms) => Math.round(ms / CLOCK_STEP_MS);
+  // The oracle's page opens in Chromium's default environment, light and with no motion preference,
+  // while the host reads its colour scheme from the OS; the run states the oracle's environment
+  // rather than inheriting whatever the machine it runs on says.
+  const steps = [
+    {
+      label: "baseline",
+      media: { colorScheme: "light", reducedMotion: "no-preference" },
+      waitTicks: 60,
+      ...shot("baseline"),
+    },
+  ];
   const observations = [];
-  let sinceInput = 0;
-  let unreachable;
   let observed = 0;
-  const at = (x, y, buttons) => ({ id: 1, x: x / width, y: y / height, buttons });
+  // Both clocks in ticks: Chromium's virtual time, the host's fixed clock, and every input on both.
+  let chromium = 0;
+  let host = 60;
+  const inputs = [];
+  let lastCapture;
+  let unreachable;
+  // Whether the last input that can move focus was a pointer press rather than a key.
+  let pointerFocus = false;
+  const behind = () => {
+    const last = inputs.at(-1);
+    return last === undefined ? 0 : chromium - last.chromium - (host - last.host);
+  };
   const record = (obs, extra = {}) => {
-    observations.push({
-      index: observed,
-      obs,
-      ...(unreachable === undefined ? {} : { why: unreachable }),
-      ...extra,
-    });
+    observations.push({ index: observed, obs, ...extra });
     observed += 1;
   };
+  const push = (step, cost) => {
+    steps.push(step);
+    host += cost;
+    lastCapture = undefined;
+  };
+  const input = (step, cost) => {
+    const wait = behind();
+    if (wait > 0) push({ waitTicks: wait }, wait);
+    inputs.push({ chromium, host });
+    push(step, cost);
+  };
+  /** The worst clock disagreement at a capture, against inputs whose transitions may still run. */
+  const skewMs = () =>
+    inputs
+      .filter((at) => (chromium - at.chromium) * CLOCK_STEP_MS < settle)
+      .reduce(
+        (worst, at) =>
+          Math.max(worst, Math.abs(host - at.host - (chromium - at.chromium)) * CLOCK_STEP_MS),
+        0,
+      );
   for (const step of scenario.script) {
-    if (unreachable !== undefined) {
-      if (step.obs !== undefined) record("unreachable");
-      continue;
-    }
     if (step.obs !== undefined) {
-      const label = `obs-${observed}`;
       if (step.obs === "scroll") {
         record("scroll", {
-          why: "a wheel step: the desktop runner has no wheel injector, so nothing reached this point",
+          why: "a scroll offset: the host exposes no channel that reports one (the CSS UI's C ABI has no scroll-offset entry point)",
         });
-        unreachable = "a wheel step: the desktop runner has no wheel injector";
         continue;
       }
-      // A pixel observation is comparable only where the element under it has finished its
-      // transition: the host's clock is real, so a mid-transition moment cannot be reproduced, and
-      // comparing a settled host frame against a half-way expected pixel would be a false failure.
-      const settle =
-        step.obs === "pixel" ? (samples[observed]?.settleMs ?? settleMs(scenario.css)) : 0;
-      const settled = sinceInput >= settle;
+      if (unreachable !== undefined) {
+        record(step.obs, { why: unreachable });
+        continue;
+      }
+      if (step.obs === "focus" && pointerFocus) {
+        record("focus", {
+          why: "focus a click gave: `:focus-visible` does not match it, so no pixel shows it, and the host reports focus to no channel the run reads",
+        });
+        continue;
+      }
+      const pixels = step.obs === "pixel" || step.obs === "focus";
+      const at = step.obs === "pixel" ? { at: [step.x, step.y] } : {};
+      // A capture already taken at this instant serves every observation made at it.
+      if (pixels && lastCapture !== undefined) {
+        record(step.obs, { label: lastCapture.label, clockSkewMs: lastCapture.skew, ...at });
+        continue;
+      }
+      const label = `obs-${observed}`;
       // A pixel or focus observation is read off a capture at that exact step, so it carries one. A
-      // click observation is read out of the game's own state, so it does not: the run keeps a single
-      // visual frame at the end instead, which is where a low-colour scenario would otherwise be
-      // refused by the runner's blank-capture guard before any observation was taken.
-      steps.push({
-        label,
-        waitTicks: 1,
-        ...(step.obs === "pixel" || step.obs === "focus" ? shot(label) : {}),
-      });
+      // click observation is read out of the game's own state, so it does not.
+      const waitTicks = Math.max(1, behind());
+      push({ label, waitTicks, ...(pixels ? shot(label) : {}) }, waitTicks);
+      const skew = Number(skewMs().toFixed(3));
+      const levels = fastest === 0 ? 0 : (255 * skew) / fastest;
+      if (pixels && screenshots) lastCapture = { label, skew };
       record(step.obs, {
         label,
-        ...(settled
-          ? {}
-          : { why: `mid-transition: ${sinceInput}ms elapsed of the ${settle}ms this sheet takes` }),
-        ...(step.obs === "pixel" ? { at: [step.x, step.y] } : {}),
+        clockSkewMs: skew,
+        ...(pixels && levels > 1
+          ? {
+              why: `mid-transition: the capture is ${skew}ms off Chromium's moment, up to ${levels.toFixed(1)} levels of the sheet's ${fastest}ms transition`,
+            }
+          : {}),
+        ...at,
       });
-      continue;
-    }
-    if (step.t === "key") {
-      if (step.shift === true) {
-        unreachable =
-          "Shift+Tab: the synthetic key reaches the UI as the literal string pressed, with no modifier channel";
-        continue;
-      }
-      steps.push({ press: step.key, holdTicks: KEY_HOLD_TICKS, release: true });
-      steps.push({ waitTicks: SETTLE_TICKS });
-      sinceInput = 0;
-      continue;
-    }
-    if (step.t === "pointer") {
-      if (step.pointerType === "touch") {
-        unreachable =
-          "a finger: the host decides the pointer kind and the runner injects no touch pointer";
-        continue;
-      }
-      // A move is a `pointerPosition` with no buttons: the runner's `input.pointers` request rejects a
-      // zero-button pointer and defaults an absent one to a press, so hover has exactly one channel
-      // and this is it. A press is the held set with one button, and a release is the empty set.
-      steps.push(
-        step.type === "up"
-          ? { pointers: [], release: true }
-          : step.type === "down"
-            ? { pointers: [at(step.x, step.y, 1)], release: false }
-            : { pointerPosition: { x: step.x / width, y: step.y / height }, release: false },
-      );
-      steps.push({ waitTicks: SETTLE_TICKS });
-      sinceInput = 0;
-      continue;
-    }
-    if (step.t === "wheel") {
-      unreachable = "a wheel step: the desktop runner has no wheel injector";
       continue;
     }
     if (step.t === "advance") {
-      sinceInput += step.ms;
+      chromium += ticksOf(step.ms);
+      lastCapture = undefined;
       continue;
     }
-    // Anything else in the grammar is an environment the host reports for itself.
-    unreachable =
-      "prefers-color-scheme/reduced-motion: the host reports its own environment and the runner injects neither";
+    if (unreachable !== undefined) continue;
+    const point = { x: step.x / width, y: step.y / height };
+    if (step.t === "key") {
+      const press = step.shift === true ? ["Shift", step.key] : step.key;
+      pointerFocus = false;
+      // One tick held, then the release's own tick.
+      input({ press, holdTicks: 1, release: true }, 2);
+    } else if (step.t === "pointer" && step.pointerType === "touch") {
+      if (step.type === "down") pointerFocus = true;
+      // Chromium's tap is down and up in one gesture on the `down` step; the `up` step is that tap's.
+      if (step.type === "down") input({ pointers: [{ id: 1, ...point }], release: true }, 2);
+      else if (step.type !== "up")
+        unreachable = `a touch ${step.type}: Chromium's oracle only taps`;
+    } else if (step.t === "pointer") {
+      if (step.type === "move") input({ pointerPosition: point, release: false }, 1);
+      else if (step.type === "down") {
+        pointerFocus = true;
+        input({ pointerPosition: { ...point, buttons: 1 }, release: false }, 1);
+      } else if (step.type === "up") input({ pointerPosition: point, release: true }, 1);
+      else unreachable = `a pointer ${step.type}: the runner has no step for it`;
+    } else if (step.t === "wheel") {
+      input({ wheel: { deltaX: step.dx ?? 0, deltaY: step.dy, ...point } }, 1);
+    } else if (step.t === "env") {
+      const media = {
+        ...(step.dark === undefined ? {} : { colorScheme: step.dark ? "dark" : "light" }),
+        ...(step.reducedMotion === undefined
+          ? {}
+          : { reducedMotion: step.reducedMotion ? "reduce" : "no-preference" }),
+      };
+      input({ media }, 1);
+    } else unreachable = `a ${JSON.stringify(step)} step: the translation has no mapping for it`;
   }
   if (observed !== expected.length)
     throw new Error(
@@ -259,6 +317,24 @@ export function translate(scenario, expected, { screenshots = true, samples = []
     );
   steps.push({ label: "final", waitTicks: 1, ...shot("final") });
   return { steps, observations };
+}
+
+/**
+ * The same script cut at one capture, with that capture the only screenshot in it.
+ *
+ * The runner refuses a capture with fewer than eight distinct colours and stops the run there, and a
+ * flat scenario has fewer by construction. The PNG is written before the guard reads it, so a run
+ * whose last step is the capture keeps it, and the fixed clock makes the cut run reach the same frame.
+ */
+export function prefixFor(translated, label) {
+  const end = translated.steps.findIndex((step) => step.label === label);
+  if (end < 0) throw new Error(`TN_DESKTOP_INTERACTION_PREFIX: no step labelled ${label}`);
+  const steps = translated.steps.slice(0, end + 1).map((step) => {
+    if (step.screenshot === undefined || step.label === label) return step;
+    const { screenshot: _dropped, ...rest } = step;
+    return rest;
+  });
+  return { ...translated, steps };
 }
 
 /**

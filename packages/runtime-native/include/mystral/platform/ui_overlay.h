@@ -213,6 +213,35 @@ bool uiOverlayRouteWheel(float nx, float ny, float dx, float dy);
  */
 void uiOverlaySetPointerKind(bool touch);
 
+/** The modifier keys a synthetic key sequence is holding, as the DOM names them. */
+struct UiKeyModifiers {
+    bool shift = false;
+    bool ctrl = false;
+    bool alt = false;
+    bool meta = false;
+};
+
+/**
+ * Track a synthetic modifier: true when `key` is `Shift`, `Control`, `Alt` or `Meta`, which then
+ * sets or clears that flag in `mods`. A playtest presses a chord as a held set (`["Shift","Tab"]`),
+ * so the host has to remember the modifier the way SDL's mod state does for a real keyboard.
+ */
+bool uiOverlayTrackModifier(const std::string& key, bool down, UiKeyModifiers& mods);
+
+/**
+ * Override `prefers-color-scheme` and `prefers-reduced-motion` for the CSS document: 1 sets, 0
+ * clears, -1 keeps. The host reads the colour scheme from the OS once at attach; this is the
+ * playtest's channel to state a different environment. False when no CSS backend is attached.
+ */
+bool uiOverlaySetEnvironment(int dark, int reducedMotion);
+
+/**
+ * Advance the CSS animation clock by `ticks` fixed steps. Only with `TN_CSS_UI_FIXED_STEP_MS=<ms>`
+ * set at attach, which makes the clock move here and nowhere else, so a mid-transition frame is
+ * reproducible by tick count. False (and nothing moves) when the clock is real time, the default.
+ */
+bool uiOverlayAdvanceClock(int ticks);
+
 /**
  * Decide which side a pointer event belongs to, and remember that answer for the rest of the
  * gesture. Returns true when the page owns the event and the game must not see it.

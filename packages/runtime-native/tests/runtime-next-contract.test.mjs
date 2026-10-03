@@ -208,11 +208,25 @@ test('native host publishes explicit platform facts before the game bundle', () 
   assert.match(pointerHost, /pointerId\s*=\s*args\.size\(\) >= 5/u);
   assert.match(pointerHost, /pointerType\s*=\s*args\.size\(\) >= 6/u);
   assert.match(pointerHost, /isPrimary\s*=\s*args\.size\(\) >= 7/u);
+  // A touch pointer marks the UI's pointer kind, as a real finger does in `pollEvents`.
+  assert.match(pointerHost, /uiOverlaySetPointerKind\(event\.pointerType == "touch"\)/u);
+  const playtestInput = runtime.slice(runtime.indexOf('auto playtestHost = jsEngine_->newObject();'), pointerEnd);
+  // A held `Shift` reaches the UI's key route, so `["Shift","Tab"]` is Shift+Tab.
+  assert.match(playtestInput, /uiOverlayTrackModifier\(event\.key, event\.type == "keydown", held\)/u);
+  assert.match(playtestInput, /uiOverlayRouteKey\(event\.key\.c_str\(\), event\.type == "keydown", event\.shiftKey\)/u);
+  for (const [name, seam] of [['wheel', 'uiOverlayRouteWheel'], ['media', 'uiOverlaySetEnvironment'], ['advanceClock', 'uiOverlayAdvanceClock']]) {
+    const start = playtestInput.indexOf(`setProperty(playtestHost, "${name}"`);
+    assert.ok(start >= 0, `native playtest ${name} input is missing`);
+    assert.ok(playtestInput.indexOf(seam, start) > start, `native playtest ${name} must reach ${seam}`);
+  }
 
   const deviceBridge = read('../playtest/src/three/device.ts');
   assert.match(deviceBridge, /method === "input\.pointers"/u);
   assert.match(deviceBridge, /"pointerdown"[\s\S]*"pointerup"/u);
   assert.match(deviceBridge, /pointer\.id[\s\S]*"touch"/u);
+  assert.match(deviceBridge, /method === "input\.wheel"/u);
+  assert.match(deviceBridge, /method === "input\.media"/u);
+  assert.match(deviceBridge, /playtestInput\?\.advanceClock\?\.\(ticks\)/u);
 
   const smoke = read('../../examples/native-smoke/src/game.ts');
   for (const helper of ['getPlatform', 'isWeb', 'isNative', 'isMobile', 'isTouchscreenAvailable']) {

@@ -188,6 +188,7 @@ async function dispatch(
       | undefined;
     if (typeof operation !== "function") throw new Error(`Bridge operation '${request.method}' is unavailable.`);
     const result = await operation.call(bridge, request.argument as never);
+    if (request.method === "advance") advanceHostClock(result);
     if (result !== undefined) assertBounded(result);
     return { id: request.id, ...(result === undefined ? {} : { result: result as JsonValue }) };
   } catch (error) {
@@ -213,6 +214,8 @@ function dispatchInput(
           pointerType?: string,
           isPrimary?: boolean,
         ): void;
+        wheel?(x: number, y: number, deltaX: number, deltaY: number): boolean;
+        media?(dark: number, reducedMotion: number): boolean;
       };
     };
   }).__THREENATIVE_NATIVE__?.playtestInput;
@@ -232,6 +235,25 @@ function dispatchInput(
     if (typeof host?.pointer !== "function") throw new Error("Native playtest pointer input is unavailable.");
     const type = argument.type === "down" ? "pointerdown" : argument.type === "up" ? "pointerup" : "pointermove";
     host.pointer(type, argument.x, argument.y, argument.buttons);
+    return null;
+  }
+  if (method === "input.wheel") {
+    const { x, y, deltaX, deltaY } = argument;
+    if (![x, y, deltaX, deltaY].every((value) => typeof value === "number" && Number.isFinite(value))) {
+      throw new Error("Device input.wheel requires finite x, y, deltaX and deltaY.");
+    }
+    if (typeof host?.wheel !== "function") throw new Error("Native playtest wheel input is unavailable.");
+    host.wheel(x as number, y as number, deltaX as number, deltaY as number);
+    return null;
+  }
+  if (method === "input.media") {
+    const { dark, reducedMotion } = argument;
+    if (![dark, reducedMotion].every((value) => value === -1 || value === 0 || value === 1)) {
+      throw new Error("Device input.media requires dark and reducedMotion as -1, 0 or 1.");
+    }
+    if (typeof host?.media !== "function" || !host.media(dark as number, reducedMotion as number)) {
+      throw new Error("Native playtest media emulation is unavailable: the host has no native-css UI attached to take it.");
+    }
     return null;
   }
   if (method === "input.pointers") {
@@ -287,6 +309,19 @@ function dispatchInput(
     return null;
   }
   throw new Error(`Device input operation '${method}' is unavailable.`);
+}
+
+/**
+ * Tell the host how many ticks a run just advanced. A host on a fixed UI clock
+ * (`TN_CSS_UI_FIXED_STEP_MS`) moves its CSS animation clock by exactly that many steps, which is what
+ * makes a mid-transition frame reproducible by tick count; every other host ignores it or lacks it.
+ */
+function advanceHostClock(result: unknown): void {
+  const ticks = isRecord(result) ? result.ticks : undefined;
+  if (typeof ticks !== "number" || !Number.isInteger(ticks) || ticks <= 0) return;
+  (globalThis as typeof globalThis & {
+    __THREENATIVE_NATIVE__?: { playtestInput?: { advanceClock?(ticks: number): boolean } };
+  }).__THREENATIVE_NATIVE__?.playtestInput?.advanceClock?.(ticks);
 }
 
 function parseNativePointers(value: unknown): INativePointer[] {

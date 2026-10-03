@@ -106,6 +106,15 @@ mailbox and passes its root to the native host through `TN_PLAYTEST_MAILBOX_ROOT
 an assertion that only
 means something on one target is a fork of the harness.
 
+Desktop input goes through the host's own UI routing (`playtestInput` in `runtime.cpp`): a `press`
+held set carries modifiers (`["Shift","Tab"]` is Shift+Tab), `pointers` are touch (no hover) and
+`pointerPosition` is the mouse, `wheel` turns at its optional normalized `x`/`y` (the viewport centre
+otherwise, as in the browser), and a step's `media` (`colorScheme`, `reducedMotion`) restyles a
+native-css UI; Android and iOS refuse `wheel` and `media`. With `TN_CSS_UI_FIXED_STEP_MS=<ms>` in the
+host's environment the native-css animation clock moves `<ms>` per advanced tick and never with the
+wall clock (the host logs `TN_CSS_UI_CLOCK`), so a mid-transition frame is reproducible; unset, it is
+real time.
+
 A device target that cannot be reached fails `TN_PLAYTEST_DEVICE_FAILED`; it never degrades
 to a browser run. Where a target genuinely lacks an observer — device transport has no CDP
 network observer — the assertion **errors and names the working target**, it does not skip.

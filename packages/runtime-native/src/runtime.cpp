@@ -3640,6 +3640,14 @@ private:
                 event.type = jsEngine_->toString(args[0]);
                 event.key = jsEngine_->toString(args[1]);
                 event.code = jsEngine_->toString(args[2]);
+                // A chord arrives as a held set (`["Shift","Tab"]`), one key at a time, so the held
+                // modifiers are remembered here the way SDL's mod state is for a real keyboard.
+                static platform::UiKeyModifiers held;
+                platform::uiOverlayTrackModifier(event.key, event.type == "keydown", held);
+                event.shiftKey = held.shift;
+                event.ctrlKey = held.ctrl;
+                event.altKey = held.alt;
+                event.metaKey = held.meta;
                 // A synthetic key is offered to the UI first, exactly as a real one is by the SDL
                 // filter, and a key the UI consumed is not also a game event. Without this a
                 // playtest that pressed Tab into a focused control would drive the game's own Tab
@@ -3701,6 +3709,9 @@ private:
                 // ones the OS route is built from, so a playtest cannot disagree with a real click;
                 // without an overlay attached this is a plain game dispatch.
                 if (platform::uiOverlayAttached() && width_ > 0 && height_ > 0) {
+                    // The pointer kind follows the event, as `pollEvents` does for a real mouse or
+                    // finger: a touch pointer does not hover, so a tap leaves no `:hover` behind.
+                    platform::uiOverlaySetPointerKind(event.pointerType == "touch");
                     const float nx = std::clamp(
                         static_cast<float>(event.clientX) / static_cast<float>(width_), 0.0f, 1.0f);
                     const float ny = std::clamp(
@@ -3721,6 +3732,49 @@ private:
                 }
                 dispatchPointerEvent(event);
                 return jsEngine_->newUndefined();
+            })
+        );
+        // wheel(x, y, deltaX, deltaY): viewport pixels and DOM wheel deltas, offered to the UI first
+        // exactly as `routeWheelToUi` offers a real one; a scroller that took it is not a game wheel.
+        jsEngine_->setProperty(playtestHost, "wheel",
+            jsEngine_->newFunction("wheel", [this](void*, const std::vector<js::JSValueHandle>& args) {
+                if (args.size() < 4) return jsEngine_->newBoolean(false);
+                platform::WheelEventData event{};
+                event.type = "wheel";
+                event.clientX = jsEngine_->toNumber(args[0]);
+                event.clientY = jsEngine_->toNumber(args[1]);
+                event.deltaX = jsEngine_->toNumber(args[2]);
+                event.deltaY = jsEngine_->toNumber(args[3]);
+                if (platform::uiOverlayAttached() && width_ > 0 && height_ > 0) {
+                    platform::uiOverlaySetPointerKind(false);
+                    const float nx = static_cast<float>(event.clientX) / static_cast<float>(width_);
+                    const float ny = static_cast<float>(event.clientY) / static_cast<float>(height_);
+                    const bool took = platform::uiOverlayRouteWheel(
+                        nx, ny, static_cast<float>(event.deltaX), static_cast<float>(event.deltaY));
+                    std::cout << "TN_UI_WHEEL_ROUTE:{\"nx\":" << nx << ",\"ny\":" << ny
+                              << ",\"dy\":" << event.deltaY << ",\"hit\":" << (took ? "true" : "false")
+                              << "}" << std::endl;
+                    if (took) return jsEngine_->newBoolean(true);
+                }
+                dispatchWheelEvent(event);
+                return jsEngine_->newBoolean(true);
+            })
+        );
+        // media(dark, reducedMotion): 1 sets, 0 clears, -1 keeps; false when no CSS UI can take it.
+        jsEngine_->setProperty(playtestHost, "media",
+            jsEngine_->newFunction("media", [this](void*, const std::vector<js::JSValueHandle>& args) {
+                if (args.size() < 2) return jsEngine_->newBoolean(false);
+                return jsEngine_->newBoolean(platform::uiOverlaySetEnvironment(
+                    static_cast<int>(jsEngine_->toNumber(args[0])),
+                    static_cast<int>(jsEngine_->toNumber(args[1]))));
+            })
+        );
+        // advanceClock(ticks): the fixed CSS clock moves with the run's ticks (TN_CSS_UI_FIXED_STEP_MS).
+        jsEngine_->setProperty(playtestHost, "advanceClock",
+            jsEngine_->newFunction("advanceClock", [this](void*, const std::vector<js::JSValueHandle>& args) {
+                if (args.empty()) return jsEngine_->newBoolean(false);
+                return jsEngine_->newBoolean(
+                    platform::uiOverlayAdvanceClock(static_cast<int>(jsEngine_->toNumber(args[0]))));
             })
         );
         jsEngine_->setProperty(nativeHost, "playtestInput", playtestHost);

@@ -396,6 +396,22 @@ async function runDevicePlaytestInternal(
           await setDevicePointers(target, transport, step.pointers, scenario.viewport);
           pointerCount = step.pointers.length;
         }
+        if (step.media !== undefined) {
+          await transport.call("input.media", {
+            dark: step.media.colorScheme === undefined ? -1 : step.media.colorScheme === "dark" ? 1 : 0,
+            reducedMotion: step.media.reducedMotion === undefined ? -1 : step.media.reducedMotion === "reduce" ? 1 : 0,
+          });
+        }
+        if (step.wheel !== undefined) {
+          // Viewport pixels, like every other device pointer; the centre when the step names no point,
+          // which is where the browser lane turns the wheel too.
+          await transport.call("input.wheel", {
+            deltaX: step.wheel.deltaX ?? 0,
+            deltaY: step.wheel.deltaY,
+            x: (step.wheel.x ?? 0.5) * scenario.viewport.width,
+            y: (step.wheel.y ?? 0.5) * scenario.viewport.height,
+          });
+        }
         if (typeof pressed === "string") {
           if (!heldKeys.has(pressed)) {
             await transport.call("input.keyDown", { key: pressed });
@@ -1043,10 +1059,17 @@ function unsupportedAssertion(
       target,
     );
   }
-  if (scenario.steps.some((step) => step.wheel !== undefined)) {
+  if (target !== "desktop" && scenario.steps.some((step) => step.wheel !== undefined)) {
     return unsupportedDiagnostic(
       "wheel input steps",
-      "Run wheel input steps on --target browser; Android, desktop, and iOS runners have no wheel injector and will not skip the sample.",
+      "Run wheel input steps on --target browser or desktop; the Android and iOS runners have no wheel injector and will not skip the sample.",
+      target,
+    );
+  }
+  if (target !== "desktop" && scenario.steps.some((step) => step.media !== undefined)) {
+    return unsupportedDiagnostic(
+      "media steps",
+      "Run media steps on --target browser or desktop (native-css UI); the Android and iOS runners cannot emulate media features and will not skip the step.",
       target,
     );
   }

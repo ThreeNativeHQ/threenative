@@ -91,9 +91,9 @@ constexpr const char* kInputBatch = R"({"ops":[
 /**
  * The environment seam, called the way `attachDesktopCssUi` calls it: from the OS setting, once.
  *
- * Declared rather than routed through the header because the host has no runtime setter for it by
- * design — a playtest must not be able to change what a player's desktop says. What is under test is
- * that the entry point the host calls reaches the document, so the call is made here directly.
+ * Declared rather than routed through the header because what is under test first is that the entry
+ * point the attach calls reaches the document, so the call is made here directly. The playtest's own
+ * override, `uiOverlaySetEnvironment`, is asserted after it.
  */
 extern "C" int tn_css_ui_set_env(int dark, int reduced_motion);
 
@@ -261,9 +261,97 @@ void wheelClockAndEnvironmentContract(const mystral::platform::UiOverlayFrame& s
     check(mystral::platform::uiOverlayFrame(dark), "the restyled document still has a frame");
     checkColour(dark, 260, 40, magenta, "prefers-color-scheme: dark follows the environment");
     check(tn_css_ui_set_env(0, 0) == 0, "and back again");
+
+    // The playtest's override of that environment: one setting at a time, the other kept.
+    check(mystral::platform::uiOverlaySetEnvironment(1, -1), "the environment override is accepted");
+    mystral::platform::UiOverlayFrame overridden = {};
+    check(mystral::platform::uiOverlayFrame(overridden), "the overridden document has a frame");
+    checkColour(overridden, 260, 40, magenta, "the override reaches prefers-color-scheme");
+    check(mystral::platform::uiOverlaySetEnvironment(-1, 1), "reduced motion alone is accepted");
+    mystral::platform::UiOverlayFrame kept = {};
+    check(mystral::platform::uiOverlayFrame(kept), "and the document still has a frame");
+    checkColour(kept, 260, 40, magenta, "and -1 keeps the colour scheme it did not name");
+    check(mystral::platform::uiOverlaySetEnvironment(0, 0), "and back to the default environment");
+    mystral::platform::UiOverlayFrame light = {};
+    check(mystral::platform::uiOverlayFrame(light), "the light document has a frame");
+    checkColour(light, 260, 40, green, "clearing the override restores the light styling");
+    check(!mystral::platform::uiOverlayAdvanceClock(10),
+          "the real-time clock is the default, and a tick count does not move it");
+}
+
+void setEnvironment(const char* name, const char* value) {
+#if defined(_WIN32)
+    _putenv_s(name, value == nullptr ? "" : value);
+#else
+    if (value == nullptr) unsetenv(name);
+    else setenv(name, value, 1);
+#endif
+}
+
+/**
+ * The opt-in fixed clock: with `TN_CSS_UI_FIXED_STEP_MS` the transition moves by ticks and by nothing
+ * else, so a mid-transition pixel is the same on every run; a malformed step refuses the backend.
+ */
+void fixedClockContract() {
+    setEnvironment("TN_CSS_UI_FIXED_STEP_MS", "ten");
+    check(!mystral::platform::attachDesktopCssUi("/nonexistent-css-ui-root"),
+          "a malformed fixed clock step refuses the backend");
+    check(!mystral::platform::uiOverlayAttached(), "and leaves no overlay attached");
+    setEnvironment("TN_CSS_UI_FIXED_STEP_MS", "10");
+    check(mystral::platform::attachDesktopCssUi("/nonexistent-css-ui-root"),
+          "a fixed clock step attaches the backend");
+    check(mystral::platform::postUiMessage(kInputBatch), "the input fixture reaches the fixed-clock document");
+    mystral::platform::UiOverlayFrame sized = {};
+    check(mystral::platform::uiOverlayFrame(sized), "and painted");
+    const float width = static_cast<float>(sized.width);
+    const float height = static_cast<float>(sized.height);
+    mystral::platform::uiOverlayRoutePointer("pointermove", 340.0f / width, 40.0f / height, 0, 1);
+    mystral::platform::pumpUiOverlay();
+    mystral::platform::UiOverlayFrame start = {};
+    check(mystral::platform::uiOverlayFrame(start), "the hover on the transition box painted");
+    check(mystral::platform::uiOverlayAdvanceClock(10), "ten ticks advance the fixed clock");
+    mystral::platform::pumpUiOverlay();
+    mystral::platform::UiOverlayFrame half = {};
+    check(mystral::platform::uiOverlayFrame(half), "the mid-transition frame exists");
+    const uint8_t midway[3] = {128, 0, 128};
+    checkColour(half, 340, 40, midway, "100ms of a 200ms transition is exactly half way");
+    std::this_thread::sleep_for(std::chrono::milliseconds(250));
+    mystral::platform::pumpUiOverlay();
+    mystral::platform::pumpUiOverlay();
+    mystral::platform::UiOverlayFrame waited = {};
+    check(mystral::platform::uiOverlayFrame(waited), "the frame after a wall-clock wait exists");
+    checkColour(waited, 340, 40, midway, "wall-clock time does not move the fixed clock");
+    check(mystral::platform::uiOverlayAdvanceClock(10), "ten more ticks");
+    mystral::platform::pumpUiOverlay();
+    mystral::platform::UiOverlayFrame done = {};
+    check(mystral::platform::uiOverlayFrame(done), "the settled frame exists");
+    const uint8_t red[3] = {255, 0, 0};
+    checkColour(done, 340, 40, red, "and the transition ends on the tick its duration names");
+    mystral::platform::detachDesktopUiOverlay();
+    setEnvironment("TN_CSS_UI_FIXED_STEP_MS", nullptr);
+}
+
+/** The held-modifier tracker the playtest keyboard uses to turn `["Shift","Tab"]` into Shift+Tab. */
+void modifierContract() {
+    mystral::platform::UiKeyModifiers mods;
+    check(mystral::platform::uiOverlayTrackModifier("Shift", true, mods) && mods.shift,
+          "Shift down is held");
+    check(!mystral::platform::uiOverlayTrackModifier("Tab", true, mods) && mods.shift,
+          "Tab is not a modifier and leaves Shift held");
+    check(mystral::platform::uiOverlayTrackModifier("Control", true, mods) && mods.ctrl, "Control");
+    check(mystral::platform::uiOverlayTrackModifier("Alt", true, mods) && mods.alt, "Alt");
+    check(mystral::platform::uiOverlayTrackModifier("Meta", true, mods) && mods.meta, "Meta");
+    check(mystral::platform::uiOverlayTrackModifier("Shift", false, mods) && !mods.shift,
+          "Shift up releases it");
+    check(!mystral::platform::uiOverlayTrackModifier("ShiftLeft", true, mods) && !mods.shift,
+          "only the DOM key name counts");
 }
 
 int runCssBackend() {
+    setEnvironment("TN_CSS_UI_FIXED_STEP_MS", nullptr);
+    modifierContract();
+    check(!mystral::platform::uiOverlaySetEnvironment(1, 0),
+          "no environment override reaches a document that is not attached");
     check(mystral::platform::attachDesktopCssUi("/nonexistent-css-ui-root"),
           "attachDesktopCssUi returns false only when the document could not be created");
     check(mystral::platform::uiOverlayAttached(), "the CSS backend reports itself attached");
@@ -372,6 +460,7 @@ int runCssBackend() {
     check(!mystral::platform::uiOverlayRouteWheel(0.5f, 0.5f, 0.0f, 120.0f), "and no wheel");
     check(!mystral::platform::uiOverlayKeyboardCaptured(), "and holds no key");
 
+    fixedClockContract();
     return failures;
 }
 
@@ -394,6 +483,11 @@ int runCssBackend() {
     mystral::platform::uiOverlaySetPointerKind(true);
     check(!mystral::platform::uiOverlayKeyboardCaptured(),
           "declaring a pointer kind does not invent an overlay");
+    check(!mystral::platform::uiOverlaySetEnvironment(1, 1), "and no environment override lands");
+    check(!mystral::platform::uiOverlayAdvanceClock(10), "and no clock moves");
+    mystral::platform::UiKeyModifiers mods;
+    check(mystral::platform::uiOverlayTrackModifier("Shift", true, mods) && mods.shift,
+          "the modifier tracker needs no backend");
     return failures;
 }
 

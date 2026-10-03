@@ -14,8 +14,9 @@
  * batch — because a host that logged the backend and dropped every frame would otherwise pass.
  *
  * Interaction scenarios from `interactions.mjs` run the same way, as playtests over the grammar the
- * runner really has (keys, pointers, holds, screenshots); `interactions-desktop.mjs` translates the
- * scripts and says out loud which steps that grammar cannot express.
+ * runner really has (keys with modifiers, mouse and touch pointers, wheels, media, screenshots) on the
+ * host's fixed UI clock; `interactions-desktop.mjs` translates the scripts and names what the host
+ * still cannot report.
  *
  * Usage: node corpus/desktop.mjs [fixture ...]    Output: corpus/out-desktop/ (gitignored) + report.json
  */
@@ -28,12 +29,14 @@ import { chromium } from "@playwright/test";
 import { PNG } from "pngjs";
 import { FIXTURES, FONT } from "./fixtures.mjs";
 import {
+  CLOCK_STEP_MS,
   PIXEL_TOLERANCE,
   PIXEL_TOLERANCE_AA,
   chromiumExpected,
   focusCandidates,
   focusedFrom,
   pixelAt,
+  prefixFor,
   resourceAt,
   scenarioBoxes,
   scenarioJson,
@@ -121,8 +124,12 @@ function frameScenario(name, [width, height]) {
   };
 }
 
-function run(command, args, cwd) {
-  const result = spawnSync(command, args, { cwd, encoding: "utf8" });
+function run(command, args, cwd, env) {
+  const result = spawnSync(command, args, {
+    cwd,
+    encoding: "utf8",
+    ...(env === undefined ? {} : { env: { ...process.env, ...env } }),
+  });
   return {
     status: result.status,
     output: `${result.stdout ?? ""}${result.stderr ?? ""}`.trim(),
@@ -136,7 +143,13 @@ function run(command, args, cwd) {
  * playtest's own verdict travels back as `played` so each caller can weigh it against the pixels it
  * is about to compare.
  */
-function runProject(subject, scenario, listen = [], fontCss = FONT) {
+function runProject(subject, scenario, listen = [], fontCss = FONT, env = undefined) {
+  const built = buildProject(subject, scenario, listen, fontCss);
+  return built.fail === undefined ? play(built.dir, built.executable, scenario, env) : built;
+}
+
+/** Generate, build and package one project; the executable is reusable for several playtests. */
+function buildProject(subject, scenario, listen, fontCss) {
   const dir = projectDir(subject.name);
   writeProject(dir, subject, { fontCss, listen, scenario });
   const build = run(process.execPath, [threenative, "build", "--target", "desktop"], dir);
@@ -178,7 +191,14 @@ function runProject(subject, scenario, listen = [], fontCss = FONT) {
   );
   if (!existsSync(executable))
     return { dir, fail: `packaging failed: ${packaged.output.slice(-600)}` };
+  return { dir, executable };
+}
+
+/** Run one playtest against a packaged project, with `env` reaching the host through the runner. */
+function play(dir, executable, scenario, env) {
+  writeFileSync(join(dir, "playtest.json"), `${JSON.stringify(scenario, null, 2)}\n`);
   const artifacts = join(dir, "artifacts", "playtest");
+  rmSync(artifacts, { force: true, recursive: true });
   const played = run(
     process.execPath,
     [
@@ -192,6 +212,7 @@ function runProject(subject, scenario, listen = [], fontCss = FONT) {
       artifacts,
     ],
     dir,
+    env,
   );
   const consolePath = join(artifacts, "console.json");
   const console_ = existsSync(consolePath) ? JSON.parse(readFileSync(consolePath, "utf8")) : [];
@@ -309,11 +330,11 @@ function captureStats(png) {
 
 /**
  * One interaction scenario: the oracle's expected observations, a playtest that walks the script over
- * the grammar the desktop runner has, and a comparison of every observation the host can be asked
- * for.
+ * the grammar the desktop runner has, and a comparison of every observation.
  *
- * A scenario whose every observation is unreachable is a failure, not a quiet skip: the run reached
- * nothing to compare, which is the empty-observation case the rules name.
+ * The host runs on its fixed UI clock (`TN_CSS_UI_FIXED_STEP_MS`), which the run proves from the
+ * host's own `TN_CSS_UI_CLOCK` line rather than assuming the variable arrived. An observation the
+ * host cannot be asked for is a named failure of the scenario, never a skip.
  */
 async function runInteraction(scenario, browser) {
   const entry = {
@@ -324,33 +345,37 @@ async function runInteraction(scenario, browser) {
     comparedObservations: [],
     skippedObservations: [],
   };
-  const names = [scenario.name];
-  const expected = chromiumExpected(names).get(scenario.name);
-  const samplePoints = scenario.script
-    .filter((step) => step.obs === "pixel")
-    .map((step) => ({ x: step.x, y: step.y }));
-  const { boxes, samples } = await scenarioBoxes(browser, scenario, samplePoints);
-  const translated = translate(scenario, expected, { samples });
+  const expected = chromiumExpected([scenario.name]).get(scenario.name);
+  const { boxes } = await scenarioBoxes(browser, scenario);
+  const translated = translate(scenario, expected);
   entry.observations = translated.observations.length;
   entry.skipped = translated.observations.filter((item) => item.why !== undefined).length;
-  if (translated.observations.every((item) => item.why !== undefined)) {
-    skips.push({ name: scenario.name, why: translated.observations[0].why });
-    return {
-      ...entry,
-      pass: false,
-      compared: 0,
-      why: `nothing comparable: ${translated.observations[0].why}`,
-    };
-  }
+  entry.maxClockSkewMs = Math.max(
+    0,
+    ...translated.observations.map((item) => item.clockSkewMs ?? 0),
+  );
   const listen = scenario.listen ?? [];
-  let run_ = runProject(
+  // biome-ignore lint/style/useNamingConvention: TN_CSS_UI_FIXED_STEP_MS is the host's own variable name.
+  const env = { TN_CSS_UI_FIXED_STEP_MS: String(CLOCK_STEP_MS) };
+  const built = buildProject(
     scenario,
     scenarioJson(scenario, translated, expected),
     listen,
     INTERACTION_FONT,
   );
+  if (built.fail !== undefined) return { ...entry, pass: false, compared: 0, why: built.fail };
+  const playOnce = (playtest) => {
+    const played = play(built.dir, built.executable, playtest, env);
+    const clock = played.lines.find((line) => line.startsWith("TN_CSS_UI_CLOCK:"));
+    if (clock === undefined || JSON.parse(clock.slice(16)).stepMs !== CLOCK_STEP_MS)
+      played.identity.problems.push(
+        `the host did not run the fixed UI clock: ${clock ?? "no TN_CSS_UI_CLOCK line"}`,
+      );
+    played.identity.ok = played.identity.problems.length === 0;
+    return played;
+  };
+  let run_ = playOnce(scenarioJson(scenario, translated, expected));
   entry.playtestExit = run_.played.status;
-  if (run_.fail !== undefined) return { ...entry, pass: false, compared: 0, why: run_.fail };
   entry.identity = {
     backend: run_.identity.backend,
     attached: run_.identity.attached,
@@ -358,13 +383,24 @@ async function runInteraction(scenario, browser) {
     rejected: run_.identity.rejected,
     problems: run_.identity.problems,
   };
-  const artifacts = run_.artifacts;
-  const read = (name) => {
+  entry.wheelRoutes = run_.lines
+    .filter((line) => line.startsWith("TN_UI_WHEEL_ROUTE:"))
+    .map((line) => JSON.parse(line.slice(18)));
+  // Every capture this run has to compare, copied out before a later run reuses the directory.
+  const captures = new Map();
+  const keep = (artifacts, name) => {
     const file = join(artifacts, `${name}.png`);
-    return existsSync(file) ? PNG.sync.read(readFileSync(file)) : undefined;
+    if (existsSync(file) && !captures.has(name))
+      captures.set(name, PNG.sync.read(readFileSync(file)));
   };
-  const baseline = read("baseline") ?? read("final");
-  const candidates = focusCandidates(scenario.tree);
+  const labels = [
+    ...new Set([
+      "baseline",
+      "final",
+      ...translated.observations.map((item) => item.label).filter(Boolean),
+    ]),
+  ];
+  for (const name of labels) keep(run_.artifacts, name);
   const parses = (output) => {
     try {
       return JSON.parse(output.slice(output.indexOf("{")));
@@ -375,25 +411,42 @@ async function runInteraction(scenario, browser) {
   let runnerReport = parses(run_.played.output);
   // The runner refuses a capture with fewer than eight distinct colours, which a flat corpus scenario
   // cannot have, and the refusal aborts the whole run — including the report its observations would
-  // have been in. The file is written before the guard reads it, so the frame survives; the state
-  // observations need a second run of the same script with no screenshot at all.
+  // have been in. The file is written before the guard reads it, so the frame survives; every later
+  // capture comes from the same script cut at it (the fixed clock makes the cut reach the same frame),
+  // and the state observations from a run of the whole script with no screenshot at all.
   const tripped = run_.played.status !== 0 && run_.played.output.includes("TN_CAPTURE_BLANK");
-  const stats = captureStats(read("final") ?? baseline ?? new PNG({ width: 1, height: 1 }));
   if (tripped) {
+    const stats = captureStats(captures.get("baseline") ?? new PNG({ width: 1, height: 1 }));
     if (stats.uniform)
       return {
         ...entry,
         pass: false,
         compared: 0,
-        why: `the runner's blank-capture guard fired and the frame is uniform in luminance: nothing painted`,
+        why: "the runner's blank-capture guard fired and the frame is uniform in luminance: nothing painted",
       };
     entry.obstruction = `the runner's blank-capture guard (${stats.distinctColors} distinct colours, floor ${GUARD_COLOUR_FLOOR})`;
-    const withoutShots = translate(scenario, expected, { screenshots: false });
-    const second = runProject(
-      scenario,
-      scenarioJson(scenario, withoutShots, expected),
-      listen,
-      INTERACTION_FONT,
+    entry.prefixRuns = [];
+    const needed = [
+      ...new Set(
+        translated.observations
+          .filter(
+            (item) => item.why === undefined && (item.obs === "pixel" || item.obs === "focus"),
+          )
+          .map((item) => item.label),
+      ),
+    ];
+    if (translated.observations.some((item) => item.obs === "focus")) needed.unshift("baseline");
+    for (const label of needed.filter((name) => !captures.has(name))) {
+      const cut = playOnce(scenarioJson(scenario, prefixFor(translated, label), expected));
+      entry.prefixRuns.push({ label, exit: cut.played.status, problems: cut.identity.problems });
+      if (!cut.identity.ok)
+        entry.identity.problems.push(
+          ...cut.identity.problems.map((problem) => `${label}: ${problem}`),
+        );
+      keep(cut.artifacts, label);
+    }
+    const second = playOnce(
+      scenarioJson(scenario, translate(scenario, expected, { screenshots: false }), expected),
     );
     entry.rerunExit = second.played.status;
     if (second.played.status !== 0)
@@ -403,34 +456,47 @@ async function runInteraction(scenario, browser) {
         compared: 0,
         why: `the rerun without screenshots exited ${second.played.status}: ${second.played.output.slice(-400)}`,
       };
+    if (!second.identity.ok) entry.identity.problems.push(...second.identity.problems);
     run_ = second;
     runnerReport = parses(second.played.output);
-    entry.identity.problems = second.identity.problems;
-  } else if (run_.played.status !== 0) {
-    return { ...entry, pass: false, compared: 0, why: `the playtest exited ${run_.played.status}` };
+  } else if (
+    run_.played.status !== 0 &&
+    !(run_.played.status === 1 && runnerReport !== undefined)
+  ) {
+    // Exit 1 is the run's own click-ledger assertion failing: its report is complete, and the
+    // comparison below names the observation that differs rather than stopping here.
+    return {
+      ...entry,
+      pass: false,
+      compared: 0,
+      why: `the playtest exited ${run_.played.status}: ${run_.played.output.slice(-400)}`,
+    };
   }
+  const baseline = captures.get("baseline");
+  const candidates = focusCandidates(scenario.tree);
   let compared = 0;
   for (const item of translated.observations) {
     const want = expected[item.index];
     if (item.why !== undefined) {
-      entry.skippedObservations.push({ index: item.index, why: item.why });
+      entry.skippedObservations.push({
+        index: item.index,
+        obs: item.obs,
+        expected: want,
+        why: item.why,
+      });
       continue;
     }
     let actual;
     let why;
     if (item.obs === "focus" || item.obs === "pixel") {
-      const capture = read(item.label);
-      if (capture === undefined) {
+      const capture = captures.get(item.label);
+      if (capture === undefined || (item.obs === "focus" && baseline === undefined)) {
         entry.mismatches.push({
           index: item.index,
           obs: item.obs,
           expected: want,
           actual: null,
-          why: `no capture at ${item.label}: ${
-            tripped
-              ? "the run stopped on the capture guard before this point"
-              : "the host wrote no file"
-          }`,
+          why: `no capture at ${item.label}${item.obs === "focus" ? " or baseline" : ""}`,
         });
         continue;
       }
@@ -445,7 +511,13 @@ async function runInteraction(scenario, browser) {
       actual = ledger === undefined ? null : ledger.split(",").filter(Boolean).map(Number);
     }
     compared += 1;
-    entry.comparedObservations.push({ index: item.index, obs: item.obs, expected: want, actual });
+    entry.comparedObservations.push({
+      index: item.index,
+      obs: item.obs,
+      expected: want,
+      actual,
+      clockSkewMs: item.clockSkewMs,
+    });
     const same =
       item.obs === "pixel"
         ? Array.isArray(actual) &&
@@ -471,10 +543,17 @@ async function runInteraction(scenario, browser) {
     });
   }
   entry.compared = compared;
-  entry.pass = entry.mismatches.length === 0 && run_.identity.ok;
-  if (!run_.identity.ok) entry.why = `host identity: ${run_.identity.problems.join("; ")}`;
-  else if (entry.mismatches.length > 0)
-    entry.why = `${entry.mismatches.length} observation(s) differ from Chromium`;
+  const identityOk = entry.identity.problems.length === 0;
+  entry.pass = entry.mismatches.length === 0 && entry.skipped === 0 && identityOk;
+  const reasons = [];
+  if (!identityOk) reasons.push(`host identity: ${entry.identity.problems.join("; ")}`);
+  if (entry.mismatches.length > 0)
+    reasons.push(`${entry.mismatches.length} observation(s) differ from Chromium`);
+  if (entry.skipped > 0)
+    reasons.push(
+      `${entry.skipped} observation(s) not observable: ${[...new Set(entry.skippedObservations.map((item) => item.why))].join("; ")}`,
+    );
+  if (reasons.length > 0) entry.why = reasons.join("; ");
   return entry;
 }
 
@@ -583,7 +662,7 @@ try {
     const entry = await runInteraction(scenario, browser);
     report.push(entry);
     console.log(
-      `${entry.pass ? "PASS " : "FAIL "} ${entry.name}  ${entry.observations} observations, ${entry.compared} compared, ${entry.skipped} not expressible, ${entry.mismatches.length} mismatch(es)`,
+      `${entry.pass ? "PASS " : "FAIL "} ${entry.name}  ${entry.observations} observations, ${entry.compared} compared, ${entry.skipped} not observable, ${entry.mismatches.length} mismatch(es)`,
     );
   }
 } finally {

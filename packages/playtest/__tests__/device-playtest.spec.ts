@@ -273,6 +273,57 @@ test("native screenshot evidence fails closed when the driver does not produce a
   )).rejects.toThrow(/ENOENT|no such file/u);
 });
 
+test("desktop wheel, media and the fixed UI clock reach the native host", async () => {
+  const moving = movingBridge();
+  const wheels: number[][] = [];
+  const media: number[][] = [];
+  const clock: number[] = [];
+  const host = globalThis as typeof globalThis & INativeHost;
+  const previous = host.__THREENATIVE_NATIVE__;
+  host.__THREENATIVE_NATIVE__ = {
+    playtestInput: {
+      advanceClock: (ticks: number) => { clock.push(ticks); return true; },
+      keyboard: () => undefined,
+      media: (dark: number, reducedMotion: number) => { media.push([dark, reducedMotion]); return true; },
+      pointer: () => undefined,
+      wheel: (x: number, y: number, deltaX: number, deltaY: number) => { wheels.push([x, y, deltaX, deltaY]); return true; },
+    },
+  } as never;
+  try {
+    const result = await runDesktopDevice(new FakeAndroidDriver(moving.bridge), [
+      { media: { colorScheme: "dark" }, waitTicks: 1 },
+      { wheel: { deltaY: 50, x: 0.25, y: 0.5 }, waitTicks: 7 },
+      { media: { reducedMotion: "reduce" }, wheel: { deltaX: 3, deltaY: -20 }, waitTicks: 1 },
+    ]);
+    expect(result.pass).toBe(true);
+    expect(wheels).toEqual([[160, 180, 0, 50], [320, 180, 3, -20]]);
+    expect(media).toEqual([[1, -1], [-1, 1]]);
+    // Every advance the run made is handed to the host clock, tick for tick.
+    expect(clock).toContain(7);
+    expect(clock.reduce((sum, ticks) => sum + ticks, 0)).toBe(moving.tick());
+  } finally {
+    if (previous === undefined) delete host.__THREENATIVE_NATIVE__;
+    else host.__THREENATIVE_NATIVE__ = previous;
+  }
+});
+
+test("a desktop media step fails closed when the host has no CSS UI to take it", async () => {
+  const host = globalThis as typeof globalThis & INativeHost;
+  const previous = host.__THREENATIVE_NATIVE__;
+  host.__THREENATIVE_NATIVE__ = {
+    playtestInput: { keyboard: () => undefined, media: () => false, pointer: () => undefined },
+  } as never;
+  try {
+    const outcome = await runDesktopDevice(new FakeAndroidDriver(movingBridge().bridge), [
+      { media: { colorScheme: "dark" }, waitTicks: 1 },
+    ]).then((report) => JSON.stringify(report), (error: unknown) => String(error));
+    expect(outcome).toMatch(/media emulation is unavailable/u);
+  } finally {
+    if (previous === undefined) delete host.__THREENATIVE_NATIVE__;
+    else host.__THREENATIVE_NATIVE__ = previous;
+  }
+});
+
 test("buttonless native pointer movement drives anonymous evidence", async () => {
   const moving = movingBridge({ clearHeldAfterAdvance: true });
   const pointerEvents: string[] = [];
@@ -941,6 +992,40 @@ async function runDevice(
     url: "http://127.0.0.1:5173",
   };
   return runAndroidPlaytest(config, { driver, transport: new DeviceBridgeTransport(endpoint) });
+}
+
+async function runDesktopDevice(driver: FakeAndroidDriver, steps: unknown[]) {
+  const projectPath = await makeTempDir("playtest-desktop-device-");
+  await writeFile(join(projectPath, "scenario.json"), JSON.stringify({
+    artifacts: { screenshots: false },
+    assert: { movement: { entity: "player", maxDistance: 10 } },
+    name: "desktop-device-input",
+    schemaVersion: 1,
+    steps,
+    subject: "player",
+    target: "desktop",
+    viewport: { height: 360, width: 640 },
+    warmupFrames: 0,
+  }));
+  const port = await availablePort();
+  const endpoint = `http://127.0.0.1:${port}/playtest`;
+  return runDevicePlaytest({
+    artifactDirectory: join(projectPath, "artifacts"),
+    endpoint,
+    headless: true,
+    projectPath,
+    scenarioPath: "scenario.json",
+    target: "desktop",
+    timeoutMs: 1_000,
+    trace: false,
+    url: "http://127.0.0.1:5173",
+  }, {
+    driver,
+    mailboxPaths: { request: "request", response: "response" },
+    name: "desktop",
+    processName: "desktop-input-test",
+    transport: new DeviceBridgeTransport(endpoint),
+  });
 }
 
 async function runDeviceScenario(

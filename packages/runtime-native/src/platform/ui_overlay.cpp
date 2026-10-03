@@ -323,17 +323,31 @@ bool cssRouteWheel(float nx, float ny, float dx, float dy) {
 std::chrono::steady_clock::time_point g_cssAttachedAt{};
 
 /**
+ * The opt-in test clock: `TN_CSS_UI_FIXED_STEP_MS` milliseconds per playtest tick, or 0 for real time.
+ * When set, `uiOverlayAdvanceClock` is the only thing that moves the clock, so a frame sampled N ticks
+ * after a hover shows exactly N*step of its transition however long the run took to get there.
+ */
+double g_cssFixedStepMs = 0.0;
+double g_cssFixedClockMs = 0.0;
+
+/** The environment the document is styled for, kept so one override can leave the other alone. */
+int g_cssDark = 0;
+int g_cssReducedMotion = 0;
+
+/**
  * The CSS document's slice of a frame: the animation clock, then the events that frame queued.
  *
  * The clock is real time rather than a frame count because that is what a CSS duration resolves
  * against — a transition moves on every frame it is alive and arrives when the wall clock says so,
  * not after N of them. It is fed here rather than in `tn_css_ui_frame` because the document only
  * resolves against it when the host asks for a frame, and this runs once per pump on either side of
- * the `TN_ENABLE_UI_OVERLAY` split.
+ * the `TN_ENABLE_UI_OVERLAY` split. The fixed test clock is the one exception, and it is opt-in.
  */
 void cssPump() {
     const auto elapsed = std::chrono::steady_clock::now() - g_cssAttachedAt;
-    tn_css_ui_set_time(std::chrono::duration<double, std::milli>(elapsed).count());
+    tn_css_ui_set_time(g_cssFixedStepMs > 0.0
+                           ? g_cssFixedClockMs
+                           : std::chrono::duration<double, std::milli>(elapsed).count());
     cssTakeEventsIntoQueue();
 }
 
@@ -943,6 +957,22 @@ bool attachDesktopCssUi(const std::string& uiRoot) {
     int width = 1280;
     int height = 720;
     if (auto* window = getSDLWindow()) SDL_GetWindowSizeInPixels(window, &width, &height);
+    // The test clock is read before anything attaches, so a malformed value refuses the backend by
+    // name rather than quietly running on real time under a run that asked for a fixed one.
+    g_cssFixedStepMs = 0.0;
+    g_cssFixedClockMs = 0.0;
+    if (const char* step = std::getenv("TN_CSS_UI_FIXED_STEP_MS"); step != nullptr && *step != '\0') {
+        char* end = nullptr;
+        const double parsed = std::strtod(step, &end);
+        if (end == step || *end != '\0' || !(parsed > 0.0) || parsed > 1000.0) {
+            std::cout << "ui overlay: native-css refused TN_CSS_UI_FIXED_STEP_MS=" << step
+                      << " (a fixed clock step is a number of milliseconds in (0, 1000])" << std::endl;
+            std::cout << "TN_UI_OVERLAY:{\"attached\":false,\"renderer\":\"native-css\",\"reason\":"
+                         "\"TN_CSS_UI_FIXED_STEP_MS is malformed\"}" << std::endl;
+            return false;
+        }
+        g_cssFixedStepMs = parsed;
+    }
     const int code = tn_css_ui_attach(uiRoot.c_str(), static_cast<uint32_t>(width),
                                       static_cast<uint32_t>(height));
     const bool attached = code == 0;
@@ -954,9 +984,15 @@ bool attachDesktopCssUi(const std::string& uiRoot) {
         // such source here — SDL exposes none, and the desktop setting behind it lives in a settings
         // daemon this host must not shell out to — so it stays off, which is the setting the CSS
         // default is written against rather than a claim about the player's preferences.
-        tn_css_ui_set_env(SDL_GetSystemTheme() == SDL_SYSTEM_THEME_DARK ? 1 : 0, 0);
+        g_cssDark = SDL_GetSystemTheme() == SDL_SYSTEM_THEME_DARK ? 1 : 0;
+        g_cssReducedMotion = 0;
+        tn_css_ui_set_env(g_cssDark, g_cssReducedMotion);
         // The animation clock counts from here, and is fed from `cssPump` once per frame.
         g_cssAttachedAt = std::chrono::steady_clock::now();
+        if (g_cssFixedStepMs > 0.0) {
+            std::cout << "TN_CSS_UI_CLOCK:{\"mode\":\"fixed\",\"stepMs\":" << g_cssFixedStepMs << "}"
+                      << std::endl;
+        }
         std::cout << "ui overlay: native-css backend=" << tn_css_ui_backend() << " (no WebView)"
                   << std::endl;
         std::cout << "TN_UI_OVERLAY:{\"attached\":true,\"renderer\":\"native-css\"}" << std::endl;
@@ -975,6 +1011,43 @@ bool attachDesktopCssUi(const std::string& uiRoot) {
               << std::endl;
     std::cout << "TN_UI_OVERLAY:{\"attached\":false,\"renderer\":\"native-css\",\"reason\":"
                  "\"this build has no native-css backend\"}" << std::endl;
+    return false;
+#endif
+}
+
+bool uiOverlayTrackModifier(const std::string& key, bool down, UiKeyModifiers& mods) {
+    bool* flag = key == "Shift"     ? &mods.shift
+                 : key == "Control" ? &mods.ctrl
+                 : key == "Alt"     ? &mods.alt
+                 : key == "Meta"    ? &mods.meta
+                                    : nullptr;
+    if (flag == nullptr) return false;
+    *flag = down;
+    return true;
+}
+
+bool uiOverlaySetEnvironment(int dark, int reducedMotion) {
+#if TN_ENABLE_CSS_UI
+    if (!g_cssBackend || !uiOverlayAttached()) return false;
+    if (dark >= 0) g_cssDark = dark != 0 ? 1 : 0;
+    if (reducedMotion >= 0) g_cssReducedMotion = reducedMotion != 0 ? 1 : 0;
+    std::cout << "TN_CSS_UI_ENV:{\"dark\":" << g_cssDark << ",\"reducedMotion\":" << g_cssReducedMotion
+              << "}" << std::endl;
+    return tn_css_ui_set_env(g_cssDark, g_cssReducedMotion) == 0;
+#else
+    (void)dark;
+    (void)reducedMotion;
+    return false;
+#endif
+}
+
+bool uiOverlayAdvanceClock(int ticks) {
+#if TN_ENABLE_CSS_UI
+    if (!g_cssBackend || !uiOverlayAttached() || g_cssFixedStepMs <= 0.0 || ticks <= 0) return false;
+    g_cssFixedClockMs += g_cssFixedStepMs * ticks;
+    return tn_css_ui_set_time(g_cssFixedClockMs) == 0;
+#else
+    (void)ticks;
     return false;
 #endif
 }
