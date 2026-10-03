@@ -8,14 +8,7 @@ import {
   RigidBody3D,
   rapier,
 } from "@threenative/physics";
-import {
-  CapsuleGeometry,
-  EquirectangularReflectionMapping,
-  Mesh,
-  MeshStandardMaterial,
-  Vector3,
-} from "three";
-import { HDRLoader } from "three/addons/loaders/HDRLoader.js";
+import { CapsuleGeometry, Mesh, MeshStandardMaterial, Vector3 } from "three";
 import { BIOMES, type WorldName } from "./render/biomes.js";
 import { createOcean, createWaterMesh } from "./render/ocean.js";
 import { loadPack } from "./render/pack.js";
@@ -321,18 +314,6 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
       ctx.add(sky.atmosphere);
       ctx.add(sky.sun);
       this.#sky = sky;
-      // Image-based light, as Wildwood lights the same Fab packs: without it the only ambient is
-      // the hemisphere fill, and every shaded needle card falls to one flat dark value.
-      void ctx.assets
-        .resolve("prepared/kloofendal_48d_2k.hdr")
-        .then(async ([url]) => {
-          if (!url) return;
-          const sky = await new HDRLoader().loadAsync(url);
-          sky.mapping = EquirectangularReflectionMapping;
-          ctx.scene.environment = sky;
-          ctx.scene.environmentIntensity = 1.13;
-        })
-        .catch(() => undefined);
       ctx.entities.add("sun", {
         object: sky.sun,
         debug: () => ({ x: sky.sunX }),

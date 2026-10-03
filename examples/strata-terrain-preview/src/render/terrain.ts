@@ -884,13 +884,7 @@ export function createTerrain(
   if (data.colors.length !== geometry.getAttribute("position").count * 3)
     throw new RangeError("Baked terrain colours do not match the heightfield");
   geometry.setAttribute("color", new Float32BufferAttribute(data.colors, 3));
-  // The ground's albedo is tuned to the hemisphere fill alone; under the scene's sky environment it
-  // washes to white, so it opts out until it is retuned for image-based light.
-  const material = new MeshStandardMaterial({
-    vertexColors: true,
-    roughness: 0.95,
-    envMapIntensity: 0,
-  });
+  const material = new MeshStandardMaterial({ vertexColors: true, roughness: 0.95 });
   const mesh: Mesh = new Mesh(geometry, material);
   mesh.name = "authored-terrain";
   mesh.layers.enable(REFLECTED_LAYER);

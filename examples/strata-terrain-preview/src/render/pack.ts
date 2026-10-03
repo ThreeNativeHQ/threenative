@@ -5,6 +5,7 @@ import {
   BufferAttribute,
   type BufferGeometry,
   DoubleSide,
+  EquirectangularReflectionMapping,
   type Group,
   type Material,
   type Mesh,
@@ -13,6 +14,7 @@ import {
   type Texture,
   Vector3,
 } from "three";
+import { HDRLoader } from "three/addons/loaders/HDRLoader.js";
 import {
   attribute,
   cameraViewMatrix,
@@ -124,6 +126,7 @@ function surface(
   asset: string,
   world: WorldName,
   snowMap?: Texture,
+  skyLight?: Texture,
 ): MeshPhysicalNodeMaterial {
   const stone = STONE.has(asset);
   const cutout = !stone && source.alphaTest > 0;
@@ -346,7 +349,29 @@ function surface(
     material.positionNode = offset;
     material.castShadowPositionNode = offset;
   }
+  // Image-based sky light, as Wildwood lights the same Fab packs (Kloofendal at 1.8 × 0.629).
+  // Without it a shaded needle card gets only the hemisphere fill and falls to one flat dark value.
+  // Per material, not `scene.environment`: the ground is tuned to the fill alone and cannot opt out.
+  if (skyLight && !stone) {
+    material.envMap = skyLight;
+    material.envMapIntensity = 1.13;
+  }
   return material;
+}
+
+let skyLight: Promise<Texture | undefined> | undefined;
+/** The CC0 sky photograph, loaded once; absent locally, vegetation keeps the fill alone. */
+function loadSkyLight(assets: IAssetLoader): Promise<Texture | undefined> {
+  skyLight ??= assets
+    .resolve("prepared/kloofendal_48d_2k.hdr")
+    .then(async ([url]) => {
+      if (!url) return undefined;
+      const sky = await new HDRLoader().loadAsync(url);
+      sky.mapping = EquirectangularReflectionMapping;
+      return sky;
+    })
+    .catch(() => undefined);
+  return skyLight;
 }
 
 export interface IPackProps {
@@ -412,6 +437,7 @@ export async function loadPack(
         )
       : [];
   const rockGround = await createRockGround(assets, ground, BIOMES[world]);
+  const sky = assets ? await loadSkyLight(assets) : undefined;
   const loaded = await Promise.all(
     selected.map(async (one) => {
       if (!assets) return undefined;
@@ -510,7 +536,7 @@ export async function loadPack(
       const material =
         inherited instanceof MeshPhysicalNodeMaterial
           ? inherited
-          : surface(source, one.asset, world, rockface[2]);
+          : surface(source, one.asset, world, rockface[2], sky);
       if (stone) rockGround?.apply(material);
       if (source !== mesh.material) source.dispose();
       built.push({ geometry, material });
