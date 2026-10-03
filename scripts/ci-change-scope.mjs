@@ -301,8 +301,9 @@ export function findReusableRun(root, candidateSha) {
  * PRD-380 gives an ordinary pull request a reduced native matrix and this planner already lets a
  * clean develop pull request skip the lane, so the source run has to prove what this run proves —
  * the same or a stronger target tier and native tier, every job and matrix leg this run requires,
- * and the same runner class. Nothing in a tree carries a repository variable or a runner image, so
- * all of it comes back from the Actions API, and every gap is a miss that runs the board.
+ * and the same runner class for every job. Nothing in a tree carries a repository variable or a
+ * runner image, so all of it comes back from the Actions API, and every gap is a miss that runs the
+ * board.
  */
 export function sourceVerdict({ runId, current }) {
   const record = ghApi(`actions/runs/${runId}`);
@@ -355,20 +356,24 @@ export function sourceVerdict({ runId, current }) {
 }
 
 /**
- * What this run demands of a source: its profile, the runner class its routing chose, and the board
- * jobs and matrix legs its own job graph carries. `exempt` names the board jobs the plan waived —
- * the native lane on a clean develop pull request — so the requirement set is the plan's, not the
- * job graph's, because a waived job is still listed, as a skip.
+ * What this run demands of a source: its profile, the runner class each of its jobs routes to, and
+ * the board jobs and matrix legs its own job graph carries. `exempt` names the board jobs the plan
+ * waived — the native lane on a clean develop pull request — so the requirement set is the plan's,
+ * not the job graph's, because a waived job is still listed, as a skip.
  */
 export function currentRun({ eventName, baseRef = "", exempt = [] }) {
   const listed = runJobs(process.env.GITHUB_RUN_ID ?? "");
   if ("error" in listed) return listed;
   const jobs = listed.jobs;
-  // One class across every job this run was given a runner. Two classes would mean a per-job routing
-  // this check cannot model, so it is a miss until that mapping exists (PRD-480).
-  const classes = new Set(jobs.map(runnerClass).filter((value) => value !== "unknown"));
-  if (classes.size !== 1) {
-    return { error: "this run's jobs do not report a single runner class" };
+  // Per job, not per run: `supply-chain` is always hosted, the small joins always run on
+  // `tn-local-light` and the platform legs are hosted, so a board is mixed on purpose and one class
+  // for the whole run is a routing this check cannot model — which was PRD-480. Labels are known
+  // before a job starts, so each job's own class is read from its own record and a job that has not
+  // been assigned a runner yet is left out.
+  const runnerClasses = new Map();
+  for (const job of jobs) {
+    const value = runnerClass(job);
+    if (value !== "unknown") runnerClasses.set(job.name, value);
   }
   return {
     profile: validationProfile({
@@ -376,7 +381,7 @@ export function currentRun({ eventName, baseRef = "", exempt = [] }) {
       baseRef,
       nativeRequired: !exempt.includes("native-platforms"),
     }),
-    runnerClass: [...classes][0],
+    runnerClasses,
     required: jobs
       .map((job) => job.name)
       .filter((name) => boardName(name) !== null && !exempt.includes(boardName(name))),
@@ -394,11 +399,25 @@ export function coverageMiss(current, source) {
       return `the source run's ${name} concluded ${String(ran.conclusion)}`;
     }
     const on = runnerClass(ran);
-    if (on !== current.runnerClass) {
-      return `the source run's ${name} ran on ${on} while this run routes to ${current.runnerClass}`;
+    // This run's class for that job, or the class most of its known jobs report when the job's own is
+    // unassigned — a reuse run skips every leg it replaces, and a skipped leg reports no runner. That
+    // stand-in is the only routing this run can prove for such a job, so a leg that disagrees with it
+    // is a miss, and one that agrees is judged by the same fail-closed rule.
+    const routes = current.runnerClasses.get(name) ?? dominantClass(current.runnerClasses);
+    if (on === "unknown" || on !== routes) {
+      return `the source run's ${name} ran on ${on} while this run routes to ${routes}`;
     }
   }
   return "";
+}
+
+/** The class most of a run's known jobs report, `unknown` when none does. A tie keeps the first seen. */
+function dominantClass(classes) {
+  const counts = new Map();
+  for (const value of classes.values()) counts.set(value, (counts.get(value) ?? 0) + 1);
+  let best = "unknown";
+  for (const [value, count] of counts) if (count > (counts.get(best) ?? 0)) best = value;
+  return best;
 }
 
 /**
@@ -649,7 +668,7 @@ function reuseOrKeep(plan, options, candidateSha) {
   if (!("succeeded" in verdict)) return unavailable(verdict.error);
   return selectionPlan(
     "reused",
-    `whole-repo tree ${found.tree} already passed in CI run ${String(found.runId)}, which proves a ${verdict.profile.target}/${verdict.profile.native} profile on this run's runner class`,
+    `whole-repo tree ${found.tree} already passed in CI run ${String(found.runId)}, which proves a ${verdict.profile.target}/${verdict.profile.native} profile on this run's per-job runner classes`,
     plan.files,
     candidateSha,
     false,

@@ -428,6 +428,10 @@ interface IStubApi {
   sourceLabels?: string[];
   /** The runner class this run routes to. */
   selfLabels?: string[];
+  /** A board leg's runner labels, where they differ from the flat class both lists default to. */
+  sourceJobLabels?: Record<string, string[]>;
+  /** This run's board legs are queued on these labels, which a queued job already reports. */
+  selfJobLabels?: Record<string, string[]>;
   /** Every read refuses. */
   fail?: boolean;
 }
@@ -485,7 +489,7 @@ function fakeActionsApi(fixture: IReuseFixture, api: IStubApi = {}): void {
         stubJob("Change scope", "success", sourceLabels),
         ...boardLegs()
           .filter((name) => !(api.missing ?? []).includes(name))
-          .map((name) => stubJob(name, "success", sourceLabels)),
+          .map((name) => stubJob(name, "success", api.sourceJobLabels?.[name] ?? sourceLabels)),
         stubJob("ci-required", api.verdict ?? "success", sourceLabels),
         stubJob("run-summary", "success", sourceLabels),
       ]),
@@ -496,8 +500,12 @@ function fakeActionsApi(fixture: IReuseFixture, api: IStubApi = {}): void {
     JSON.stringify(
       page([
         stubJob("Change scope", "success", selfLabels),
-        // A reuse run carries every board leg, skipped by its own `if:`.
-        ...boardLegs().map((name) => stubJob(name, "skipped", [])),
+        // A reuse run carries every board leg, skipped by its own `if:`; a named routing override
+        // states the labels such a leg is queued on, which the API reports before it has a runner.
+        ...boardLegs().map((name) => {
+          const labels = api.selfJobLabels?.[name] ?? [];
+          return stubJob(name, labels.length === 0 ? "skipped" : "queued", labels);
+        }),
         stubJob("ci-required", "in_progress", selfLabels),
         stubJob("run-summary", "skipped", []),
       ]),
@@ -739,5 +747,42 @@ describe("PRD-481 a reused verdict has to cover this run's validation profile", 
     const plan = classifyCandidate(fixture, fixture.candidate);
     expect(plan).toMatchObject({ selection: "reused", reusedRunId: REUSED_RUN_ID });
     expect(plan.reason).toContain(`CI run ${String(REUSED_RUN_ID)}`);
+  });
+});
+
+/** Every board leg routed locally, which is what the ordinary joins run on. */
+function localRouting(): Record<string, string[]> {
+  return Object.fromEntries(boardLegs().map((name) => [name, LOCAL]));
+}
+
+/** `supply-chain` is always hosted; the small joins are always local. A board is mixed by design. */
+function mixedRouting(): Record<string, string[]> {
+  return Object.fromEntries(
+    boardLegs().map((name) => [name, name === "supply-chain" ? HOSTED : LOCAL]),
+  );
+}
+
+describe("PRD-481 the runner class is compared per job, because every board is mixed", () => {
+  it("reuses a run that passed the same mix of runner classes", () => {
+    const fixture = reuseFixture();
+    fakeActionsApi(fixture, { sourceJobLabels: mixedRouting(), selfJobLabels: mixedRouting() });
+    listSourceRun(fixture);
+    const plan = classifyCandidate(fixture, fixture.candidate);
+    expect(plan).toMatchObject({ selection: "reused", reusedRunId: REUSED_RUN_ID });
+  });
+
+  it("runs the full board when one job of the mix ran on another runner class", () => {
+    const fixture = reuseFixture();
+    fakeActionsApi(fixture, {
+      sourceLabels: LOCAL,
+      sourceJobLabels: { test: HOSTED },
+      selfJobLabels: localRouting(),
+    });
+    listSourceRun(fixture);
+    const plan = classifyCandidate(fixture, fixture.candidate);
+    expect(plan).toMatchObject({ selection: "full" });
+    expect(plan.reason).toContain(
+      "the source run's test ran on hosted while this run routes to tn-local",
+    );
   });
 });
