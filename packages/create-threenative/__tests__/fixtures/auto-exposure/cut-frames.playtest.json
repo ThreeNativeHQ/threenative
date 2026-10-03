@@ -23,9 +23,7 @@
     },
     {
       "holdTicks": 1,
-      "press": [
-        "KeyC"
-      ],
+      "press": ["KeyC"],
       "release": true
     },
     {

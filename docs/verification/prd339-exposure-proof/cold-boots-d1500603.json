@@ -747,9 +747,7 @@
               "sha256": "ac6e9b1f9b0b48c1a71d937631a44ab6246c9f0e371e5b00e071894631bca3ef"
             }
           ],
-          "durableImages": [
-            "cold-snap-1-minimum-d1500603.png"
-          ]
+          "durableImages": ["cold-snap-1-minimum-d1500603.png"]
         },
         {
           "launch": 6,
@@ -873,9 +871,7 @@
               "sha256": "24470eb5bbd37bd65adf28a3549c83dd0d8d80eaad2649d813f3e64509ad8d2d"
             }
           ],
-          "durableImages": [
-            "cold-snap-1-maximum-d1500603.png"
-          ]
+          "durableImages": ["cold-snap-1-maximum-d1500603.png"]
         },
         {
           "launch": 7,
@@ -1993,9 +1989,7 @@
               "sha256": "3632baa4e7cbb85bf8e2ab95150b36f79afc62d0bd0657e14dc08dd123429e8e"
             }
           ],
-          "durableImages": [
-            "cold-snap-0-maximum-d1500603.png"
-          ]
+          "durableImages": ["cold-snap-0-maximum-d1500603.png"]
         },
         {
           "launch": 6,
@@ -2119,9 +2113,7 @@
               "sha256": "6c664c9b22db8a48487a40bddddc16487fdf00b1e152397c617cf89c0bc0111e"
             }
           ],
-          "durableImages": [
-            "cold-snap-0-minimum-d1500603.png"
-          ]
+          "durableImages": ["cold-snap-0-minimum-d1500603.png"]
         },
         {
           "launch": 7,
@@ -2504,8 +2496,8 @@
     "initialExposureStops": 0,
     "targetStops": -4.435963153839111,
     "recurrenceMaxErrorStops": {
-      "snapGain1": 3.6594064356521017e-07,
-      "snapGain0": 5.342959714660367e-07
+      "snapGain1": 3.6594064356521017e-7,
+      "snapGain0": 5.342959714660367e-7
     },
     "interpretation": "Readbacks follow the authored recurrence from the zero-stop seed; the mutation is active. Stable startup timing and the 0.1-second clamp limit consumed-time variability. The high p99 values compress exposure differences near display white. This experiment does not demonstrate the required mutation spread failure."
   }
