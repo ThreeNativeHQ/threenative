@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-481 — CI does each piece of work once
 
-**Status:** IN PROGRESS — phase 3 complete, phase 2 in progress, phase 1 blocked on the merge queue
+**Status:** PARTIAL — all three phases landed (#405) and the merge queue is on; live reuse, merge-group and cache-hit proofs pending; AC-1 audits the 7 days from 2026-10-03
 **Complexity:** 5 (HIGH)
 **Owner:** CI tooling
 **Depends on:** None ([PRD-480](PRD-480-linux-ci-runs-on-the-owner-machine.md) and
@@ -149,7 +149,7 @@ skip it.
 
 #### Phase 2: Each run does each piece of work once
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS — dist built once and shards under 6 min proven; the cache box needs a `develop`-warmed key
 **Files:** EDIT `.github/workflows/ci.yml`, `.github/actions/workspace-dist/action.yml`,
 `.github/workflows/native-platforms.yml` (the Linux host built once), `scripts/__tests__/ci-structure.spec.ts`.
 
@@ -160,7 +160,7 @@ skip it.
   "Take the compiled workspace from this run's producer" (download-artifact).
 - [ ] The native host cache restores on a PR from a `develop`-warmed key. proof: a `test-native` log with a
   cache hit and a build time under 60 s.
-- [ ] No template or unit shard runs longer than 6 min. proof: per-job durations of one full CI run.
+- [x] No template or unit shard runs longer than 6 min. proof: per-job durations of one full CI run.
   Measured on run 37071464562, two legs were over: `test-unit (4/4)` at 481s and
   `template-nonvisual (sailing, 2/2)` at 467s, with `rain (3/5)` 358s and `rain (2/5)` 299s next and
   every other unit and template leg under 360s. This commit takes sailing from two slices to three
@@ -171,6 +171,8 @@ skip it.
   `sha1(path)` partition over that run's per-file durations puts every unit leg at ~137-240s of
   test time and sailing's worst slice at ~335s. The box stays unticked: its proof is a full CI run's
   per-job durations, and nothing here has run on GitHub.
+  Evidence: hosted CI run 37078784853 (PR #405 head 8e1436307, 2026-10-02): slowest legs test-unit (1/4) 329 s,
+  rain 4/5 319 s, sailing 2/3 289 s; every template and unit shard under 360 s.
 
 #### Phase 3: Triggers fire only when they prove something
 
