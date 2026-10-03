@@ -983,7 +983,8 @@ const game = defineGame<TerrainState, IPhysicsContext>({
     reportEvery: 10,
   },
   plugins: [rapier({ deterministicRestart: true }), playtest()],
-  render: { preferWebGPU: true },
+  // HiDPI displays ask for 2-3x the pixels; the engine scaler trims to what the GPU affords.
+  render: { preferWebGPU: true, resolutionScale: "auto" },
   scenes: {
     forest: terrainScene("forest"),
     coastal: terrainScene("coastal"),
