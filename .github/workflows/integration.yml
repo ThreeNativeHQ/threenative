@@ -44,6 +44,7 @@ jobs:
       ik: ${{ steps.filter.outputs.ik }}
       tone: ${{ steps.filter.outputs.tone }}
       vegetation: ${{ steps.filter.outputs.vegetation }}
+      velocity: ${{ steps.filter.outputs.velocity }}
     steps:
       - id: filter
         env:
@@ -59,6 +60,7 @@ jobs:
           lane ik '^examples/integrations/ik/.*$|^\.github/workflows/integration\.yml$'
           lane tone '^packages/playtest/.*$|^examples/abyss-framework/src/render/toneCalibration\.ts$|^examples/abyss-framework/src/tone-main\.ts$|^examples/abyss-framework/tone\.html$|^examples/abyss-framework/tone\.vite\.config\.ts$|^examples/abyss-framework/playtests/tone\.playtest\.json$|^examples/abyss-framework/package\.json$|^scripts/verify-tone-exposure\.ts$|^scripts/tone-capture-proof\.ts$|^scripts/__tests__/tone-capture-proof\.spec\.ts$|^scripts/non-visual-scenarios\.mjs$|^package\.json$|^pnpm-lock\.yaml$|^\.github/actions/pnpm/.*$|^\.github/actions/playwright-chromium/.*$|^\.github/workflows/integration\.yml$'
           lane vegetation '^examples/integrations/vegetation/.*$|^\.github/workflows/integration\.yml$'
+          lane velocity '^packages/core/src/renderProjection\.ts$|^packages/core/src/render/velocity\.ts$|^packages/core/src/render/batched-velocity\.ts$|^packages/core/__tests__/render-velocity\.spec\.ts$|^packages/core/__tests__/instance-velocity-upload\.spec\.ts$|^packages/core/__tests__/velocity-coverage-proof\.spec\.ts$|^packages/core/__tests__/skinned-velocity-bind-history\.spec\.ts$|^packages/core/patches/three@0\.185\.1\.patch$|^packages/playtest/.*$|^examples/abyss-framework/velocity-main\.ts$|^examples/abyss-framework/velocity-cost-main\.ts$|^examples/abyss-framework/velocity-cost\.html$|^examples/abyss-framework/src/render/velocityCost\.ts$|^examples/abyss-framework/playtests/velocity-cost\.playtest\.json$|^scripts/__tests__/velocity-cost-proof\.spec\.ts$|^examples/abyss-framework/src/render/velocityReadback\.ts$|^examples/abyss-framework/src/render/velocityCoverage\.ts$|^examples/abyss-framework/velocity\.html$|^examples/abyss-framework/velocity\.vite\.config\.ts$|^examples/abyss-framework/velocity\.tsconfig\.json$|^examples/abyss-framework/playtests/velocity-history\.playtest\.json$|^scripts/verify-velocity-history\.ts$|^scripts/velocity-capture-proof\.ts$|^scripts/__tests__/velocity-capture-proof\.spec\.ts$|^pnpm-lock\.yaml$|^\.github/workflows/integration\.yml$'
 
   csg:
     name: csg
@@ -243,4 +245,38 @@ jobs:
         with:
           name: tone-exposure-${{ github.event.pull_request.head.sha }}
           path: artifacts/tone-exposure
+          if-no-files-found: error
+
+  velocity:
+    name: velocity
+    if: ${{ !github.event.pull_request.draft && needs.paths.outputs.velocity == 'true' }}
+    needs: paths
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: ./.github/actions/pnpm
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/playwright-chromium
+      - name: Build this commit's public bridge and runner
+        run: pnpm --filter @threenative/playtest build
+      - name: Verify motion history and fail-closed capture guards
+        run: pnpm exec vitest run --maxWorkers=1 scripts/__tests__/velocity-capture-proof.spec.ts scripts/__tests__/velocity-cost-proof.spec.ts packages/core/__tests__/velocity-coverage-proof.spec.ts packages/core/__tests__/skinned-velocity-bind-history.spec.ts packages/core/__tests__/render-velocity.spec.ts packages/core/__tests__/instance-velocity-upload.spec.ts packages/core/__tests__/three-static-settled.spec.ts packages/core/__tests__/batched-velocity.spec.ts packages/core/__tests__/render-projection-pipeline.spec.ts packages/core/__tests__/renderProjection.spec.ts
+      - name: Check the exact source-wired fixture types
+        run: pnpm exec tsc --noEmit -p examples/abyss-framework/velocity.tsconfig.json
+      - name: Render actual authored batch velocity and missing-history control
+        run: pnpm exec tsx scripts/verify-velocity-history.ts
+      - name: Retain runtime PNGs, readbacks and exact adapter provenance
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: velocity-history-${{ github.event.pull_request.head.sha }}
+          path: artifacts/velocity-history
           if-no-files-found: error

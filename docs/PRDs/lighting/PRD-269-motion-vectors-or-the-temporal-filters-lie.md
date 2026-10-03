@@ -174,7 +174,7 @@ with `projection: false`, then reads the actual velocity MRT. Its left panel is 
 attachment and its right panel is absolute x/y velocity amplified 20 times. Each deterministic
 step crosses a RAF boundary. The separate `without-history` run removes bookkeeping and must
 fail only the moving-pixel bound, while static velocity and first-frame identity stay zero.
-`integration-velocity-history.yml` retains runtime PNGs, measured resources, source SHA and
+The `velocity` lane of `integration.yml` retains runtime PNGs, measured resources, source SHA and
 adapter provenance even on failure. Local build and 263 focused tests pass; local capture
 cannot start because this reset environment has no usable X display or Xvfb. Hosted image-space
 results and screenshots are still pending, so no acceptance box is newly ticked here.
