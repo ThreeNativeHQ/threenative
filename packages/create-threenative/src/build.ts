@@ -349,6 +349,23 @@ export async function extractUiStylesheets(uiDir: string, outDir: string): Promi
     collectStylesheetAssets(uiDir, file, css, assets);
     findings.push(...findNativeCssViolations(path.relative(uiDir, file), css));
   }
+  // Raster images the UI build emitted: an image imported from JSX is referenced by the bundle, not
+  // by any stylesheet, so nothing above names it. They sit in Vite's `assets/`, and stage flat by
+  // name like the CSS-referenced files; the engine resolves `assets/<name>` to that name.
+  const emitted = path.join(uiDir, "assets");
+  if (existsSync(emitted)) {
+    for (const entry of await readdir(emitted, { withFileTypes: true })) {
+      if (!entry.isFile() || !/\.(png|jpe?g|webp|gif)$/iu.test(entry.name)) continue;
+      const source = path.join(emitted, entry.name);
+      const claimed = assets.get(entry.name);
+      if (claimed !== undefined && claimed !== source) {
+        throw new Error(
+          `TN_CSS_UI_ASSET_AMBIGUOUS: ${source} and ${path.relative(uiDir, claimed)} would both ship as ${entry.name}`,
+        );
+      }
+      assets.set(entry.name, source);
+    }
+  }
   // The report is written even when clean, so "no findings" is something a build produced rather
   // than the absence of a check; a failure names every finding, not just the first.
   await writeFile(

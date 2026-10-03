@@ -32,6 +32,8 @@ parley = "0.11.1"
 # reader already exists as a C ABI, so a serde derive tree would be one more thing to keep in
 # step for no gain.
 serde_json = "1"
+# Already in the closure through blitz; named here because the net provider decodes `data:` URIs.
+data-url = "0.3.2"
 
 [dev-dependencies]
 # The tests build their batches as JSON text, and the sheet fixture contains both quotes and

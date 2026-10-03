@@ -134,16 +134,20 @@ impl Assets {
         if url.scheme() != ASSET_SCHEME {
             return Err(format!("asset {url} is not a file in the ui directory"));
         }
-        // One segment and nothing else: `tncss://ui/x.png` resolves, and so does nothing that
-        // climbed out of it (`../` lands on the host, a deeper path has more segments).
+        // One segment, optionally behind Vite's own `assets/` directory: `tncss://ui/x.png` and
+        // `tncss://ui/assets/x.png` (what an image imported from JSX is emitted as) resolve, and so
+        // does nothing that climbed out of the directory (`../` lands on the host, any other
+        // deeper path has more segments).
         let Some(mut segments) = url.path_segments() else {
             return Err(format!("asset {url} is not a file in the ui directory"));
         };
         let Some(name) = segments.next_back().filter(|name| !name.is_empty()) else {
             return Err(format!("asset {url} names no file"));
         };
-        if segments.next().is_some() {
-            return Err(format!("asset {url} leaves the ui directory"));
+        match segments.next() {
+            None => {}
+            Some("assets") if segments.next().is_none() => {}
+            Some(_) => return Err(format!("asset {url} leaves the ui directory")),
         }
         self.inner
             .lock()
@@ -182,9 +186,26 @@ impl Assets {
 impl NetProvider for Assets {
     fn fetch(&self, _doc_id: usize, request: Request, handler: Box<dyn NetHandler>) {
         let url = request.url;
-        // A `data:` URI carries its own bytes and a `#fragment` names none: blitz 0.3 decodes
-        // neither, so there was never a file here and there is nothing to report as missing.
-        if url.scheme() == "data" || url.fragment().is_some() {
+        // A `data:` URI carries its own bytes, and blitz 0.3 does not decode it itself once a net
+        // provider is installed: an `<img src="data:...">` painted nothing. Vite inlines every asset
+        // under 4 KiB as exactly such a URI, so a small icon imported from JSX arrives this way.
+        if url.scheme() == "data" {
+            let resolved = url.as_str().to_string();
+            let decoded = data_url::DataUrl::process(&resolved)
+                .map_err(|e| format!("data URI is malformed: {e}"))
+                .and_then(|data| {
+                    data.decode_to_vec()
+                        .map(|(bytes, _fragment)| bytes)
+                        .map_err(|e| format!("data URI is not decodable: {e}"))
+                });
+            match decoded {
+                Ok(bytes) => handler.bytes(resolved, Bytes::from(bytes)),
+                Err(reason) => self.fail(reason),
+            }
+            return;
+        }
+        // A `#fragment` names no file: there is nothing here to report as missing.
+        if url.fragment().is_some() {
             return;
         }
         let resolved = url.as_str().to_string();

@@ -92,4 +92,18 @@ describe("extractUiStylesheets compatibility gate", () => {
       await rm(root, { force: true, recursive: true });
     }
   });
+
+  it("stages the raster images the UI build emitted, which no stylesheet names", async () => {
+    const { root, run } = await build(".a{display:flex}\n");
+    try {
+      await writeFile(
+        path.join(root, "ui", "assets", "icon-abc123.png"),
+        Buffer.from([137, 80, 78, 71]),
+      );
+      await writeFile(path.join(root, "ui", "assets", "index-xyz.js"), "export {}");
+      expect((await run()).sort()).toEqual(["icon-abc123.png", "index.css"]);
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
 });

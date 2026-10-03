@@ -195,3 +195,4 @@ examples/auto-lod/public/
 packages/create-threenative/template-assets/patches/
 examples/native-css-hud/corpus/out/
 examples/native-css-hud/corpus/out-interaction/
+examples/native-css-hud/corpus/out-desktop/

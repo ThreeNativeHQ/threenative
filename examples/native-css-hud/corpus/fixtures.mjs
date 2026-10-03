@@ -593,4 +593,10 @@ export const FIXTURES = [
       h("p", {}, t("p"), h("span", { class: "pl" }, t("q")), t("r")),
     ],
   },
+  {
+    name: "image-data-uri",
+    size: [200, 100],
+    css: "img{display:block;width:128px;height:64px;margin:8px;object-fit:fill}",
+    tree: [h("img", { src: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAAAgCAYAAACinX6EAAABQ0lEQVR4AeXBu3FbMRBA0bs7LIExEiNYdoAAEStxaexFCNCBEEAB0ch6NMNIY1ui9Mj3O0ccd3ZM2bkDN292Yg7ny5E5XNML75SdUz6IrbEnygfdjNgae6H8RTcjtsYeKP/QzYitsXXKf3QzYmtsmfKJbkZsja1SvqCbEVtji5Qv6mbE1tiaAze/Xl/5jAMigrszlSvzUu7k7ogIW6F8g7sjImzBgZu304l7dDNEhG7GT5wvR+Zw5YV3B27OlyP3CmRiKoSa+a76+8KclB8KNTNSYa2UCYSaGamwRspEQs2MVFgbZUKhZkYqrIkysVAzIxXWQnmAUDMjFdZAeZBQMyMVlk55oFAzIxWWTHmwUDMjFZZKeYJQMyMVlkh5klAzIxWWRnmiUDMjFZZEebJQMyMVlkIcd2YgCI4zN2UmjiMIc/sDzS9kRE2qiacAAAAASUVORK5CYII=", alt: "" })],
+  },
 ];

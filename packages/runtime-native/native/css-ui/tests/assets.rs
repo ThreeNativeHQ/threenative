@@ -130,3 +130,56 @@ fn an_image_from_the_dir_paints_in_its_box() {
 
     clean_up(&dir);
 }
+
+/// Vite inlines every asset under 4 KiB as a `data:` URI, so a small icon imported from JSX reaches
+/// the engine as one. Blitz decodes none once a net provider is installed; the provider must.
+#[test]
+fn an_image_from_a_data_uri_paints_in_its_box() {
+    let dir = ui_dir("data-uri", "img.dot{position:absolute;left:0;top:0;width:32px;height:32px}");
+    let mut ui = CssUi::new(120, 120, 1.0).expect("document");
+    ui.load_sheet_dir(&dir).expect("stylesheet loads");
+
+    ui.post(
+        r#"{"ops":[{"op":"create","id":1,"tag":"img"},
+             {"op":"attr","id":1,"name":"class","value":"dot"},
+             {"op":"attr","id":1,"name":"src","value":"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAAEklEQVR42mP4z8DwHxkzkC4AADxAH+Ea86VIAAAAAElFTkSuQmCC"},
+             {"op":"append","parent":0,"child":1}]}"#,
+    )
+    .expect("a data URI needs no file in the dir");
+    assert!(ui.render(), "first paint");
+
+    let at = |x: u32, y: u32| -> [u8; 4] {
+        let i = ((y * ui.frame_width() + x) * 4) as usize;
+        ui.pixels()[i..i + 4].try_into().expect("four bytes")
+    };
+    assert_eq!(at(16, 16), [255, 0, 0, 255], "the decoded image paints inside its box");
+    assert_eq!(at(40, 40), [0, 0, 0, 0], "and nothing outside it");
+
+    clean_up(&dir);
+}
+
+/// An image imported from JSX is emitted under Vite's `assets/`; the reference keeps that prefix.
+/// It resolves to the file staged flat in the directory, and no other nested path does.
+#[test]
+fn an_image_behind_the_vite_assets_prefix_resolves_and_nothing_deeper_does() {
+    let dir = ui_dir("assets-prefix", "img{width:8px;height:8px}");
+    let mut ui = CssUi::new(60, 60, 1.0).expect("document");
+    ui.load_sheet_dir(&dir).expect("stylesheet loads");
+    for (id, src) in ["assets/dot.png", "/assets/dot.png", "./assets/dot.png"].iter().enumerate() {
+        let batch = format!(
+            r#"{{"ops":[{{"op":"create","id":{id1},"tag":"img"}},{{"op":"attr","id":{id1},"name":"src","value":"{src}"}}]}}"#,
+            id1 = id + 1
+        );
+        ui.post(&batch).unwrap_or_else(|e| panic!("{src} should resolve: {e}"));
+    }
+    // `../` cannot climb above the root: the URL resolves it to the root itself, so it names a file
+    // in the directory or nothing. Anything else with a directory in it is refused by name.
+    for (id, src) in ["assets/nested/dot.png", "other/dot.png", "assets/other/dot.png"].iter().enumerate() {
+        let batch = format!(
+            r#"{{"ops":[{{"op":"create","id":{id1},"tag":"img"}},{{"op":"attr","id":{id1},"name":"src","value":"{src}"}}]}}"#,
+            id1 = id + 10
+        );
+        assert!(ui.post(&batch).is_err(), "{src} must be refused by name");
+    }
+    clean_up(&dir);
+}

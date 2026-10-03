@@ -1996,6 +1996,7 @@ dependencies = [
  "blitz-dom",
  "blitz-paint",
  "blitz-traits",
+ "data-url",
  "parley",
  "serde_json",
 ]
