@@ -512,7 +512,8 @@ function round1(value: number): number {
  *
  * The caller is the frame loop; the sequence per frame is
  * `beginFrame` → `markSimulationEnd` → (`addRender` / `addOverlay` / `addUi`) → `endFrame`.
- * Calling them out of order throws rather than producing a plausible-looking split.
+ * Calling them out of order throws rather than producing a plausible-looking split. The one
+ * exception is `addSimulation`, which reports simulation that ran outside any frame — see it.
  */
 export class FrameBudget {
   readonly reportEvery: number;
@@ -626,13 +627,8 @@ export class FrameBudget {
    * @param timestampMs the frame timestamp the host handed the callback — the presented-frame
    *   clock, which is not the same as `nowMs` and is what the interval between frames comes from.
    * @param nowMs the monotonic clock at callback entry.
-   * @param presented whether this frame reached the display. False for a counted tick batch: it is
-   *   metered like any other frame, but it presents nothing, so it contributes no present interval,
-   *   counts no present, and can never be a hitch however long the batch blocked. Its timestamp
-   *   still moves the clock forward, or that blocking cost would land on the next live frame as a
-   *   present gap and drop it whole.
    */
-  beginFrame(timestampMs: number, nowMs: number, presented = true): void {
+  beginFrame(timestampMs: number, nowMs: number): void {
     if (this.#open)
       throw new Error("FrameBudget.beginFrame called before the previous frame ended.");
     this.#open = true;
@@ -648,22 +644,51 @@ export class FrameBudget {
     this.#gpuBucketThisFrame = {};
     this.#hostGap = this.#lastFrameEnd === undefined ? 0 : Math.max(0, nowMs - this.#lastFrameEnd);
     this.#presentedDelta =
-      !presented || this.#lastTimestamp === undefined
-        ? 0
-        : Math.max(0, timestampMs - this.#lastTimestamp);
+      this.#lastTimestamp === undefined ? 0 : Math.max(0, timestampMs - this.#lastTimestamp);
     this.#lastTimestamp = timestampMs;
-  }
-
-  /** True between `beginFrame` and `endFrame`. */
-  get open(): boolean {
-    return this.#open;
   }
 
   /** The boundary between the fixed-step simulation and everything the render phase does. */
   markSimulationEnd(nowMs: number, substeps: number): void {
     if (!this.#open) throw new Error("FrameBudget.markSimulationEnd called outside a frame.");
     this.#simulationEnd = nowMs;
-    this.#substepCount = substeps;
+    // Accumulated, not assigned: `addSimulation` may already have charged a counted batch that ran
+    // inside this frame, and that batch's steps are this frame's.
+    this.#substepCount += substeps;
+  }
+
+  /**
+   * Charges one counted simulation batch — the loop's `advance(ticks)`, which is how a tick-counted
+   * playtest run simulates at all — to this window's `update` and `substeps`.
+   *
+   * A batch is not a frame. It presents nothing, so it must not count as one: no frame in the
+   * window, no present interval, no GPU sample, no hitch however long it blocked, and no window
+   * boundary. Opening a metered frame around it instead put half of a fixed-step run's windows into
+   * the frame and render percentiles as zero-millisecond frames that drew nothing, and closed a
+   * "300-frame" window on 300 metered frames rather than 300 presented ones — which is how a
+   * 300-frame window came to hold ~20 GPU timestamp samples instead of ~37.
+   *
+   * Inside a live frame — the frozen prime's settle, which is `advance()` called from inside the
+   * frame that armed it — the batch's milliseconds are already inside that frame's own measurement
+   * and are not charged a second time; only its steps are added, so the frame reports it exactly
+   * once. Its blocking cost reaches the window either way: through the enclosing frame's `update`,
+   * or here.
+   */
+  addSimulation(ms: number, ticks: number): void {
+    if (!Number.isFinite(ms) || ms < 0)
+      throw new Error(
+        `Frame budget simulation ms must be a non-negative number, received ${String(ms)}.`,
+      );
+    if (!Number.isInteger(ticks) || ticks < 0)
+      throw new Error(
+        `Frame budget simulation ticks must be a non-negative integer, received ${String(ticks)}.`,
+      );
+    if (this.#open) {
+      this.#substepCount += ticks;
+      return;
+    }
+    this.#phaseRings.update.push(ms);
+    this.#substeps.push(ticks);
   }
 
   addRender(ms: number): void {
