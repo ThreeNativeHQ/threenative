@@ -66,6 +66,12 @@ runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'u
 - **Light lane:** `scope`, `ci-required`, `run-summary` and other small joins run on one more,
   unpinned `tn-local-light` runner (`--cpus 1`, 2 GB) that heavy jobs never select. Otherwise a 20-minute
   build on every heavy slot holds a 10-second join in the queue.
+- **Runs itself:** the operator installs `scripts/ci-runners.sh up`/`down` as a boot service (a user
+  service with lingering on Linux) that first checks out the latest `develop`. So the pool starts with
+  the machine, takes image fixes on the next start, and clears `TN_RUNNER` on shutdown. `up` and `down`
+  also delete offline `tn-local*` registrations: an idle runner that is stopped never deregisters.
+  `pnpm ci:runners:install` does the whole setup; the operator guide is
+  [tools/ci-runners/README.md](../../../tools/ci-runners/README.md).
 - **Ephemeral:** each container takes one job, exits and is recreated by a host-side `docker run --rm`
   loop. No `/tmp`, port, Xvfb display or workspace state crosses jobs.
 
