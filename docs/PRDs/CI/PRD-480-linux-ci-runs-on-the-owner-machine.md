@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-480 — Linux CI runs on the owner's machine
 
-**Status:** NOT STARTED
+**Status:** PARTIAL — phases 1 and 3 verified (#404, #410); AC-1 green; AC-2 measured, needs the owner's call
 **Complexity:** 5 (HIGH)
 **Owner:** CI tooling
 **Depends on:** None
@@ -150,7 +150,7 @@ while `TN_RUNNER` is set: jobs queue until the switch is cleared.
 ## Execution Phases
 
 #### Phase 1: The runner stack comes up and takes jobs
-**Status:** IN PROGRESS — stack files built, runners not yet brought up
+**Status:** COMPLETE — `pnpm ci:runners:install` runs it as a boot service
 **Files:** NEW `tools/ci-runners/Dockerfile`, NEW `tools/ci-runners/entrypoint.sh`, NEW
 `scripts/ci-runners.sh` (`up [N]`, `down`, `status`; default N = 4, read from the env file).
 
