@@ -836,9 +836,10 @@ jobs:
           - { template: starter, shard: "2/3" }
           - { template: starter, shard: "3/3" }
           - { template: tower-defense, shard: "1/1" }
-    # Balanced like the rest: the pool advertises itself only while a runner is idle, so these legs
-    # take local slots when free and overflow to hosted otherwise, never queueing behind the pool.
-    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    # Hosted on purpose: a board releases ~25 template legs at once, and one routing variable sends a
+    # burst to a single pool. Pinned here, they fill hosted while the balancer routes builds and tests
+    # to the local pool, so every board uses both (run 37107207898: legs waited 27 min, local idle).
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
