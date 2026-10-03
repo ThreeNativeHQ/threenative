@@ -12,6 +12,7 @@
  * Usage: node corpus/oracle.mjs [fixture-name ...]    Output: corpus/out/ (gitignored) + report.json
  */
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
   copyFileSync,
   existsSync,
@@ -165,6 +166,7 @@ mkdirSync(out, { recursive: true });
 // oracle setting, recorded here, not a tolerance.
 const browser = await chromium.launch({ args: ["--font-render-hinting=none"] });
 const report = [];
+const browserVersion = browser.version();
 try {
   for (const fixture of fixtures) {
     const [width, height] = fixture.size;
@@ -283,6 +285,24 @@ try {
 }
 
 writeFileSync(join(out, "report.json"), JSON.stringify(report, null, 2));
+// What the PRD asks a reference capture to record: exact sources, hashes, tool and platform versions.
+const sha = (buffer) => createHash("sha256").update(buffer).digest("hex");
+const manifest = {
+  chromium: browserVersion,
+  chromiumArgs: ["--font-render-hinting=none"],
+  platform: `${process.platform}-${process.arch}`,
+  node: process.version,
+  thresholds: { edgePx: EDGE_PX, ssim: SSIM_MIN, ssimGlyphs: SSIM_MIN_GLYPHS },
+  fonts: Object.fromEntries(FONT_FILES.map((f) => [f, sha(readFileSync(join(fontDir, f)))])),
+  images: Object.fromEntries(IMAGE_FILES.map((f) => [f, sha(readFileSync(join(imageDir, f)))])),
+  fixtures: Object.fromEntries(
+    fixtures.map((f) => [
+      f.name,
+      { size: f.size, dpr: f.dpr ?? 1, source: sha(JSON.stringify([f.css, f.tree])) },
+    ]),
+  ),
+};
+writeFileSync(join(out, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
 for (const r of report) {
   if (r.error) console.log(`ERROR ${r.name}: ${r.error}`);
   else
