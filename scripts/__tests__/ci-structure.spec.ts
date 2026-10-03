@@ -546,16 +546,23 @@ function triggerSection(source: string): string {
 }
 
 function kvmProvisioning(source: string): readonly string[] {
-  return source
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(
-      (line) =>
-        line.includes('KERNEL=="kvm"') ||
-        line === "| sudo tee /etc/udev/rules.d/99-kvm4all.rules" ||
-        line === "sudo udevadm control --reload-rules" ||
-        line === "sudo udevadm trigger --name-match=kvm",
-    );
+  return (
+    source
+      .split("\n")
+      .map((line) => line.trim())
+      // A trailing `|| true` is not part of the provisioning. native-platforms.yml's copy carries one
+      // because it is the lane PRD-480 routes onto the `tn-local` container, where no udev runs and
+      // /sys is read-only, so the commands cannot succeed there — while native-release.yml stays
+      // hosted and keeps them strict. The two lanes must still provision KVM the same way.
+      .map((line) => line.replace(/ \|\| true$/u, ""))
+      .filter(
+        (line) =>
+          line.includes('KERNEL=="kvm"') ||
+          line === "| sudo tee /etc/udev/rules.d/99-kvm4all.rules" ||
+          line === "sudo udevadm control --reload-rules" ||
+          line === "sudo udevadm trigger --name-match=kvm",
+      )
+  );
 }
 
 function commandText(section: string): string {
@@ -1011,6 +1018,116 @@ describe("CI pipeline structure", () => {
       for (const [job, section] of jobSections(source)) {
         if (section.includes("runs-on:"))
           expect(section, `${relative} ${job}`).toContain("timeout-minutes:");
+      }
+    }
+  });
+
+  // PRD-480. Every Linux job that can move picks its runner from one expression, so the pool is
+  // changed by setting or deleting a repository variable and nothing else. A job left at a bare
+  // `ubuntu-latest` still runs, which is exactly why this has to be a spec: the pool comes up and
+  // the queue does not shrink, and nothing in a run says which half of the board ignored it.
+  const routing =
+    "${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}";
+  const lightRouting =
+    "${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER_LIGHT) && 'ubuntu-24.04' || vars.TN_RUNNER_LIGHT }}";
+  // The hosted jobs that stay hosted, per workflow. `supply-chain` runs gitleaks through
+  // `docker run`; a self-hosted container would need the host Docker socket mounted to do that,
+  // which would hand every job root on the owner's machine. `publish-android-v8` is the release
+  // publish itself — `permissions: contents: write` and a `gh release upload` — and PRD-480 keeps
+  // release writes on GitHub's own machines.
+  const hosted = new Map<string, ReadonlySet<string>>([
+    [".github/workflows/ci.yml", new Set(["supply-chain"])],
+    [
+      ".github/workflows/native-platforms.yml",
+      // publish-android-v8 writes the release; android-emulator-parity is CPU-bound SwiftShader that
+      // overran its 45-minute budget on a pinned 4-thread slot (run 37082733117).
+      new Set(["android-emulator-parity", "publish-android-v8"]),
+    ],
+  ]);
+  // PRD-480's light lane: the jobs whose whole work is a script or a summary — no workspace build,
+  // no `pnpm install` and no test suite. `scope` classifies the diff, `build` and `golden-path`
+  // assert an upstream verdict, `ci-required` is the merge verdict and `run-summary` writes the
+  // report; in native-platforms.yml `networking-matrix` is the one join that needs no toolchain at
+  // all. They join on `tn-local-light` (1 CPU, 2 GB) so a ten-second verdict does not queue behind
+  // five twenty-minute builds. Both directions are load-bearing and both are asserted below: a
+  // heavy job here would build the workspace in one core, and a light job off the list would queue
+  // behind the heavy pool — which is the wait the lane exists to remove.
+  const light = new Set([
+    "build",
+    "ci-required",
+    "golden-path",
+    "networking-matrix",
+    "paths",
+    "run-summary",
+    "scope",
+  ]);
+
+  // A matrix job routes per row: `runs-on: ${{ matrix.runner }}` is only a pointer, and what decides
+  // where a leg lands is the `runner:` value inside `strategy.matrix.include`. Both native
+  // matrices carry hosted rows next to movable ones (`linux-x64` moves, `linux-arm64` cannot), so
+  // the row is named `job/row` here and that is the key the hosted allow-list would use.
+  function matrixRunnerRows(job: string, section: string): readonly (readonly [string, string])[] {
+    const rows: [string, string][] = [];
+    for (const row of section.split(/^ {10}- /mu).slice(1)) {
+      const runner = row.match(/^ {12}runner: (.+)$/mu)?.[1];
+      if (runner !== undefined) {
+        const platform = row.match(/^\s*platform: (.+)$/mu)?.[1] ?? runner;
+        rows.push([`${job}/${platform}`, runner]);
+      }
+    }
+    return rows;
+  }
+
+  it("routes every movable Linux job through exactly one TN_RUNNER switch", async () => {
+    const directory = path.join(repo, ".github/workflows");
+    const routed = [
+      ".github/workflows/ci.yml",
+      ".github/workflows/native-platforms.yml",
+      ...(await readdir(directory))
+        .filter(
+          (entry) =>
+            entry === "integration.yml" ||
+            (entry.startsWith("integration-") && entry.endsWith(".yml")),
+        )
+        .map((entry) => `.github/workflows/${entry}`),
+    ].sort();
+    expect(routed.length).toBeGreaterThan(2);
+    for (const relative of routed) {
+      const keepHosted = hosted.get(relative) ?? new Set<string>();
+      const source = await readFile(path.join(repo, relative), "utf8");
+      for (const [job, section] of jobSections(source)) {
+        const runsOn = section.match(/^\s+runs-on:.*$/mu)?.[0].trim();
+        if (runsOn === undefined) continue;
+        const rows = matrixRunnerRows(job, section);
+        const targets: readonly (readonly [string, string])[] =
+          rows.length > 0 ? rows : [[job, runsOn.replace(/^runs-on: /u, "")]];
+        for (const [name, runner] of targets) {
+          const target = `${relative} ${name}`;
+          // macOS, Windows and arm64 have no tn-local counterpart, so the expression must never
+          // appear on one of them.
+          if (/macos|windows|arm/u.test(runner)) {
+            expect(runner, `${target} is not Linux`).not.toContain(routing);
+            expect(runner, `${target} is not Linux`).not.toContain(lightRouting);
+            continue;
+          }
+          const onHeavy = runner === routing;
+          const onLight = runner === lightRouting;
+          if (keepHosted.has(name)) {
+            expect(
+              onHeavy || onLight,
+              `${target} is on the hosted allow-list but selects ${runner}`,
+            ).toBe(false);
+            continue;
+          }
+          expect(
+            onHeavy || onLight,
+            `${target} runs on \`${runner}\`: use the TN_RUNNER routing expression, or name it on the hosted allow-list`,
+          ).toBe(true);
+          expect(
+            light.has(name),
+            `${target} is ${onLight ? "on" : "off"} the light lane: only ${[...light].join(", ")} may select tn-local-light`,
+          ).toBe(onLight);
+        }
       }
     }
   });
@@ -1493,7 +1610,10 @@ describe("CI pipeline structure", () => {
     // Runs on every event since 2026-09-01 (owner call): the PR skip reported nothing on the
     // branch where the regression was written, and the merge that shipped it reported too late.
     expect(job).not.toContain("github.event_name == 'push'");
-    expect(job).not.toContain("pull_request");
+    // An `if:` gate naming the event, not any mention of it: the TN_RUNNER routing expression
+    // (PRD-480) reads `github.event.pull_request.head.repo.fork` in every routed job and gates
+    // nothing on it. What this forbids is a gate that skips pull requests.
+    expect(job).not.toMatch(/^\s+if:.*pull_request/mu);
     expect(job).toContain('TN_PLAYTEST_ALLOW_SOFTWARE: "1"');
     expect(job).toContain("non-visual-scenarios.mjs");
     expect(job).toContain("threenative-playtest");
