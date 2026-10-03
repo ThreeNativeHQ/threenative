@@ -30,7 +30,10 @@ VARIABLE=TN_RUNNER
 LIGHT_VARIABLE=TN_RUNNER_LIGHT
 ENV_FILE="${TN_RUNNERS_ENV:-${XDG_CONFIG_HOME:-$HOME/.config}/threenative/runners.env}"
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/threenative/ci-runners"
-DEFAULT_SLOTS=5
+DEFAULT_SLOTS=6
+THREADS_PER_SLOT=3
+# 6 x 9 GB heavy + 3 x 2 GB light stays under 62 GB even if every slot hits its cap at once.
+SLOT_MEMORY=9g
 # Cores never given to a slot, so the owner's desktop stays responsive under a full board.
 HOST_CORES=2
 ONLINE_TIMEOUT_SECONDS=300
@@ -146,20 +149,24 @@ up() {
   # A leftover stop file from a previous teardown would make every loop exit before it starts.
   rm -f "$STATE_DIR/stop"
 
-  # Pinned CPUs, not a `--cpus 4` quota: under a quota `nproc` and os.availableParallelism() still
+  # Pinned CPUs, not a `--cpus N` quota: under a quota `nproc` and os.availableParallelism() still
   # report every host CPU, so vitest sized its pool for 24 cores inside a 4-core budget and three
-  # unit tests timed out (PR #404). Each slot takes two whole cores, both hyperthreads, as a hosted
-  # 4-vCPU runner does.
+  # unit tests timed out (PR #404). Threads are handed out core by core (both hyperthreads of a core
+  # before the next), THREADS_PER_SLOT to a slot, never touching the HOST_CORES left for the desktop.
+  # Three threads a slot (nproc 3) rather than four buys a sixth slot from the same 20 threads; most
+  # CI time is installs, downloads and browser waits, so parallel jobs beat fatter ones.
   # ponytail: assumes Linux's usual sibling numbering (CPU k and k + nproc/2 share a core); read
   # /sys/devices/system/cpu/cpu*/topology/thread_siblings_list if a host numbers them otherwise.
-  local half=$(( $(nproc) / 2 ))
-  [ $(( slots * 2 + HOST_CORES )) -le "$half" ] \
-    || fail 2 "$slots slots need $(( slots * 2 )) cores plus $HOST_CORES for the host; this host has $half"
-  local slot base
+  local half=$(( $(nproc) / 2 )) core threads=()
+  for core in $(seq 0 $(( half - HOST_CORES - 1 ))); do threads+=("$core" "$(( core + half ))"); done
+  [ $(( slots * THREADS_PER_SLOT )) -le "${#threads[@]}" ] \
+    || fail 2 "$slots slots of $THREADS_PER_SLOT threads need $(( slots * THREADS_PER_SLOT )); this host has ${#threads[@]} after $HOST_CORES cores for the desktop"
+  local slot cpus first
   for slot in $(seq 1 "$slots"); do
-    base=$(( (slot - 1) * 2 ))
+    first=$(( (slot - 1) * THREADS_PER_SLOT ))
+    cpus="$(IFS=,; echo "${threads[*]:$first:$THREADS_PER_SLOT}")"
     start_slot "slot-$slot" "$STATE_DIR" "$ENV_FILE" "$repo" \
-      "--cpuset-cpus $base,$(( base + 1 )),$(( base + half )),$(( base + half + 1 )) --memory 12g --memory-swap 12g --oom-score-adj 800 $KVM_SHAPE" \
+      "--cpuset-cpus $cpus --memory ${SLOT_MEMORY} --memory-swap ${SLOT_MEMORY} --oom-score-adj 800 $KVM_SHAPE" \
       "$LABEL"
   done
   # One light slot, unpinned and quota-limited, labelled so heavy jobs cannot select it: a 10-second
