@@ -5,15 +5,14 @@ import { denoise } from "three/addons/tsl/display/DenoiseNode.js";
 import { ao } from "three/addons/tsl/display/GTAONode.js";
 import {
   abs,
-  ambientOcclusion,
   cameraPosition,
-  diffuseColor,
   dot,
   float,
   getViewPosition,
   max,
   mix,
   mrt,
+  normalView,
   normalize,
   output,
   pass,
@@ -22,21 +21,13 @@ import {
   screenSize,
   screenUV,
   smoothstep,
-  transformDirection,
-  transformedNormalView,
   uniform,
   vec2,
   vec3,
   vec4,
 } from "three/tsl";
 import type { Node } from "three/webgpu";
-import {
-  aerialPerspective,
-  cloudDome,
-  createAtmosphere,
-  skyColour,
-  skyRadiance,
-} from "./atmosphere.js";
+import { aerialPerspective, cloudDome, createAtmosphere, skyColour } from "./atmosphere.js";
 import { BIOMES, type IBiome } from "./biomes.js";
 import { setCanopySun } from "./propMaterials.js";
 
@@ -222,57 +213,12 @@ export function installOutdoorOcclusion(
   scene.fog = null;
   // AO darkens RGB only; multiplying alpha leaked the backdrop through dark alpine crags.
   const world = pass(scene, camera);
-  world.setMRT(
-    mrt({
-      output,
-      positionWorld,
-      normal: transformedNormalView,
-      albedo: vec4(diffuseColor.rgb, ambientOcclusion),
-    }),
-  );
+  world.setMRT(mrt({ output, normal: normalView }));
+  const daylight = scene.children.find((child) => child instanceof Daylight);
   const depth = world.getTextureNode("depth");
   // An uncovered MSAA depth sample must not leave a one-pixel terrain edge against the sky.
   const airDepth = depth.r.min(depth.sample(screenUV.add(vec2(0, screenSize.y.reciprocal()))).r);
   const cameraWorld = uniform(camera.matrixWorld);
-  // The terrain already spends all 16 samplers (including Three's DFG LUT). Read the sky
-  // LUTs in the screen pass instead: the extra albedo attachment adds no material sampler.
-  const daylight = scene.children.find((child) => child instanceof Daylight);
-  if (!(daylight instanceof Daylight)) throw new Error("Outdoor irradiance requires daylight");
-  const oldSky = vec3(daylight.fill.color.r, daylight.fill.color.g, daylight.fill.color.b);
-  const oldGround = vec3(
-    daylight.fill.groundColor.r,
-    daylight.fill.groundColor.g,
-    daylight.fill.groundColor.b,
-  );
-  const luminance = vec3(0.2126, 0.7152, 0.0722);
-  const sky = skyRadiance(atmosphere, vec3(0, 1, 0), SUN_VECTOR, look)
-    .add(skyRadiance(atmosphere, vec3(0.8, 0.6, 0), SUN_VECTOR, look))
-    .add(skyRadiance(atmosphere, vec3(-0.8, 0.6, 0), SUN_VECTOR, look))
-    .div(3);
-  // Preserve each biome's calibrated fill energy while taking the physical sky's spectrum.
-  const skyFill = sky.mul(oldSky.dot(luminance).div(sky.dot(luminance).max(0.0001)));
-  const groundColour = new Color(look.sun.color).multiply(new Color(0x746450));
-  const warm = vec3(groundColour.r, groundColour.g, groundColour.b);
-  const groundFill = warm.mul(oldGround.dot(luminance).div(warm.dot(luminance)));
-  const hemisphere = transformDirection(world.getTextureNode("normal").xyz, cameraWorld)
-    .y.mul(0.5)
-    .add(0.5)
-    .clamp(0, 1);
-  const difference = mix(oldGround, oldSky, hemisphere);
-  const replacement = mix(mix(oldGround, groundFill, 0.3), mix(oldSky, skyFill, 0.6), hemisphere);
-  const albedo = world.getTextureNode("albedo");
-  const lit = vec4(
-    world.getTextureNode("output").rgb.add(
-      replacement
-        .sub(difference)
-        .mul(daylight.fill.intensity / Math.PI)
-        .mul(albedo.rgb)
-        .mul(albedo.a)
-        // The sky box writes depth too; surface fill must never recolour it.
-        .mul(float(1).sub(smoothstep(350, 1200, world.getViewZNode().negate()))),
-    ),
-    world.getTextureNode("output").a,
-  );
   const surface = cameraWorld.mul(
     vec4(getViewPosition(screenUV, airDepth, uniform(camera.projectionMatrixInverse)), 1),
   ).xyz;
@@ -283,7 +229,7 @@ export function installOutdoorOcclusion(
     !omitted.has("haze"),
     surface,
     cameraWorld.mul(vec4(0, 0, 0, 1)).xyz,
-    lit,
+    world.getTextureNode("output"),
   );
   const airOutput = mix(
     air,
@@ -348,7 +294,7 @@ export function installOutdoorOcclusion(
     if (scene.fog === null) scene.fog = previousClassicFog;
     // The example owns these shadow maps. Removing the lights alone retained their targets.
     const sun = scene.getObjectByName("temperate-sun");
-    for (const light of [sun, daylight.sun]) {
+    for (const light of [sun, daylight instanceof Daylight ? daylight.sun : undefined]) {
       if (!(light instanceof DirectionalLight)) continue;
       if (light.shadow.shadowNode instanceof VirtualShadowNode) light.shadow.shadowNode.dispose();
       light.dispose();

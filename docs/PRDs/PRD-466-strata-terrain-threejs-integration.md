@@ -2525,3 +2525,36 @@ also recoloured sky pixels and was rejected. Atmosphere parameters, exposure
 and 4× MSAA/alpha-to-coverage stay as authored. No SSGI/bloom/TRAА change.
 Example TypeScript and Biome (73 files) pass; terrain Vitest **71/71 PASS**.
 Full safe runtime control and final licensed/fallback scenarios are still pending.
+
+2026-10-03 UTC GI2 final correction: **the LUT-fill candidate is withdrawn**.
+The five-world atmosphere comparison did not pass; forest foreground p95 was
+0.2993 versus 0.2224. Its reference forest also differs geometrically, so this
+comparison cannot establish causality or non-regression. Restored the original
+world MRT/normal and air input; no probe, albedo attachment or sky-fill delta is
+retained. Final source changes are the 208–256 m outer-shadow fade and explicit
+virtual-shadow/light disposal on world exit. Reuses Daylight, VirtualShadowNode,
+the existing Atmosphere/aerial perspective and 4x MSAA; no package source changed.
+
+The preceding full licensed runtime control completed all scenario steps with
+zero console errors and zero runtime diagnostics (diagnostics assertions only).
+Its per-world maximum CPU p50: forest 4.3 ms, coastal 4.2 ms, alpine 3.4 ms,
+desert 2.2 ms, tundra 4.6 ms; **the 4 ms gate fails**. These timings belong to the
+withdrawn fill candidate, not the final source. Original full licensed final
+was stopped to withdraw that candidate; all three ocean checks passed on its
+partial coastal captures. Fallback original full scenario was attempted under
+the remaining wall limit; completion is not claimed. Final capture locations:
+`artifacts/playtest/gi2-final/` and `gi2-final-fallback/` (partial).
+
+Inspected 1:1 candidate crops: `gi2-census/forest-start-crop.png` before and
+`gi2-final/forest-start-crop.png` after (candidate withdrawn); other inspected
+crops in `gi2-safe-check/`: alpine-ridge, desert-overview, tundra-overview,
+coastal-ocean. Subjective grades of these licensed candidate captures:
+forest 3.8, coastal 4.0, alpine 4.2, desert 4.3, tundra 3.7 / 10. Gaia acceptance
+and five-world non-regression remain open. Terrain tests 71/71 and 2386 doc
+links passed; final source TypeScript/Biome checks are recorded below.
+No push, merge or PR comment. Unmerged checkout retained (2.7 GiB), containing
+local licensed assets and captures; it is not eligible for merged-worktree cleanup.
+
+Final source: TypeScript passes; Biome checks 73 files and passes after assets
+were restored. Fallback has no completed world capture; the renderer exited during capture
+(`TN_PLAYTEST_PAGE_CRASHED`). Final source has no completed full playtest.
