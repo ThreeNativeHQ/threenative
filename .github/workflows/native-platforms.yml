@@ -1254,8 +1254,12 @@ jobs:
           # The release container is a ZIP on macOS and Windows and desktop-distribution.mjs shells
           # out to `zip -r -q`. A missing archiver must be a red job, never a silent pass.
           if [ "${{ matrix.platform }}" = "Windows" ]; then
-            choco install zip -y --no-progress
-            choco install nsis --version=3.11.0 -y --no-progress
+            # The community feed drops requests now and then ("package was not found" for a listed
+            # version, run 37079046851). Retry twice; makensis -VERSION below still fails closed.
+            for attempt in 1 2 3; do
+              choco install zip -y --no-progress && choco install nsis --version=3.11.0 -y --no-progress && break
+              [ "$attempt" = 3 ] || sleep 30
+            done
             nsis='/c/Program Files (x86)/NSIS'
             "$nsis/makensis.exe" -VERSION
             cygpath -w "$nsis" >> "$GITHUB_PATH"
