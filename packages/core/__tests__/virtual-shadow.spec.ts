@@ -21,8 +21,26 @@ import {
   SphereGeometry,
   Vector3,
 } from "three";
-import { float, mix, vec4 } from "three/tsl";
-import { type Node, type NodeBuilder, type NodeFrame, WGSLNodeBuilder } from "three/webgpu";
+import {
+  Fn,
+  float,
+  lightingContext,
+  lights,
+  mix,
+  nodeObject,
+  property,
+  vec3,
+  vec4,
+} from "three/tsl";
+import {
+  DirectionalLightNode,
+  LightingModel,
+  type Node,
+  type NodeBuilder,
+  type NodeFrame,
+  PhysicalLightingModel,
+  WGSLNodeBuilder,
+} from "three/webgpu";
 import { describe, expect, it, vi } from "vitest";
 import { VIRTUAL_SHADOW_MOVER_LAYER as PUBLIC_VIRTUAL_SHADOW_MOVER_LAYER } from "../src/index.js";
 import {
@@ -127,8 +145,12 @@ interface IShaderGraphBuilder extends NodeBuilder {
 function shadowGraphBuilder(): IShaderGraphBuilder {
   const object = new Mesh(new BoxGeometry(), new MeshBasicMaterial());
   const renderer = {
-    backend: { isWebGPUBackend: true },
+    backend: {
+      isWebGPUBackend: true,
+      utils: { getTextureSampleData: () => ({ primarySamples: 1 }) },
+    },
     hasCompatibility: () => true,
+    hasFeature: () => false,
     library: { fromMaterial: () => null },
     shadowMap: { enabled: true, type: 1 },
   };
@@ -139,6 +161,146 @@ function shadowGraphBuilder(): IShaderGraphBuilder {
   graphBuilder.setShaderStage("fragment");
   return graphBuilder;
 }
+
+/** Compile the real selection and stock frustum filter, without textures or a GPU. */
+function levelDebugGraph(search: string, uv = [0.25, 0.75]) {
+  vi.stubGlobal("location", { search });
+  const { light } = world();
+  const node = new VirtualShadowNode(light, { clipExtents: [8, 32, 128, 512], marker: false });
+  const graphBuilder = shadowGraphBuilder();
+  const outgoingLight = property("vec3", "testOutgoingLight");
+  const lightingModel = new LightingModel();
+  graphBuilder.context = { lightingModel, outgoingLight };
+  const root = node.setup(graphBuilder) as Node;
+  for (const shadowNode of [...node.levelNodes, ...node.moverNodes]) {
+    const stock = shadowNode as Node & {
+      setup: (builder: NodeBuilder) => Node;
+      setupShadowFilter: (builder: NodeBuilder, inputs: object) => Node;
+    };
+    vi.spyOn(stock, "setup").mockImplementation(() =>
+      vec4(
+        stock.setupShadowFilter(graphBuilder, {
+          filterFn: () => float(0.6),
+          shadowCoord: vec3(uv[0], uv[1], 0.5),
+        }) as never,
+      ),
+    );
+  }
+  const flow = graphBuilder.flowStagesNode(
+    Fn(() => {
+      const value = vec4(root as never).toVar("testShadowResult");
+      outgoingLight.assign(vec3(0.4, 0.5, 0.6).mul(value.rgb));
+      lightingModel.finish(graphBuilder);
+      return vec4(outgoingLight, value.a);
+    })() as unknown as Node,
+    "vec4",
+  );
+  node.dispose();
+  return { code: flow.code, nodes: (graphBuilder as unknown as { nodes: Set<Node> }).nodes.size };
+}
+
+describe("virtual shadow level diagnostic", () => {
+  it("should preserve the original graph when the URL flag is off", () => {
+    try {
+      const original = levelDebugGraph("");
+      expect(original.nodes).toBe(358);
+      expect(original.code).not.toContain("virtualShadowLevelTint");
+      expect(levelDebugGraph("?tnShadowLevels=0")).toEqual(original);
+      expect(levelDebugGraph("?tnShadowLevels=false")).toEqual(original);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("should tint the selected sampler lookup without changing its shadow factor", () => {
+    try {
+      const original = levelDebugGraph("");
+      const debug = levelDebugGraph("?scene=map-walk&tnShadowLevels=1");
+      expect(debug.nodes).toBeGreaterThan(original.nodes);
+      expect(debug.code).toContain("virtualShadowLevelTint");
+      for (const rgb of ["1.0, 0.0, 0.0", "0.0, 1.0, 0.0", "0.0, 0.0, 1.0", "1.0, 1.0, 0.0"]) {
+        expect(debug.code).toContain(`vec3<f32>( ${rgb} )`);
+      }
+      expect(debug.code).toContain("vec3<f32>( 0.0, 1.0, 1.0 )");
+      expect(debug.code).toContain("vec3<f32>( 1.0, 0.0, 1.0 )");
+      expect(
+        debug.code.replace(/nodeVar\d+/gu, "nodeVar").match(/virtualShadowValue = [^;]+;/gu),
+      ).toEqual(
+        original.code.replace(/nodeVar\d+/gu, "nodeVar").match(/virtualShadowValue = [^;]+;/gu),
+      );
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("should read the URL once at setup, before the shader graph is built", () => {
+    let reads = 0;
+    vi.stubGlobal("location", {
+      get search() {
+        reads += 1;
+        return "?tnShadowLevels=1";
+      },
+    });
+    const { light } = world();
+    const node = new VirtualShadowNode(light, { marker: false });
+    try {
+      node.setup(builder);
+      node.setup(builder);
+      expect(reads).toBe(1);
+    } finally {
+      node.dispose();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it.each(["basic", "physical"] as const)(
+    "should overlay the final colour through Three's %s lighting context",
+    (mode) => {
+      vi.stubGlobal("location", { search: "?tnShadowLevels=1" });
+      const { light, camera } = world();
+      const node = new VirtualShadowNode(light, { clipExtents: [8], marker: false });
+      const graphBuilder = shadowGraphBuilder();
+      (graphBuilder as unknown as { camera: PerspectiveCamera }).camera = camera;
+      graphBuilder.context = {
+        setupNormal: () => vec3(0, 1, 0),
+        setupClearcoatNormal: () => vec3(0, 1, 0),
+        setupPositionView: () => vec3(0, 0, -1),
+        setupModelViewProjection: () => vec4(0, 0, 0, 1),
+      };
+      node.setup(graphBuilder);
+      light.shadow.shadowNode = node;
+      graphBuilder.object.receiveShadow = true;
+      const renderer = graphBuilder.renderer as unknown as {
+        library: { getLightNodeClass: () => typeof DirectionalLightNode };
+      };
+      renderer.library.getLightNodeClass = () => DirectionalLightNode;
+      for (const stock of [...node.levelNodes, ...node.moverNodes]) {
+        vi.spyOn(
+          stock as Node & { setup: (builder: NodeBuilder) => Node },
+          "setup",
+        ).mockReturnValue(vec4(0.6));
+      }
+      const model = mode === "physical" ? new PhysicalLightingModel(true) : new LightingModel();
+      if (mode === "basic") {
+        model.direct = ({ lightColor, reflectedLight }) => {
+          nodeObject(reflectedLight.directDiffuse as Node<"vec3">).addAssign(lightColor as never);
+        };
+      }
+      try {
+        const flow = graphBuilder.flowStagesNode(
+          vec4(lightingContext(lights([light]), model) as never, 1) as unknown as Node,
+          "vec4",
+        );
+        expect(flow.code).toMatch(
+          /(nodeVar\d+) = mix\( outgoingLight, virtualShadowLevelTint\w*, 0\.5 \);\s*outgoingLight = \1;\s*$/u,
+        );
+      } finally {
+        node.dispose();
+        vi.unstubAllGlobals();
+      }
+    },
+  );
+});
 
 describe("VirtualShadowNode", () => {
   it("should expose the mover layer from the main core entry point", () => {

@@ -19,13 +19,17 @@ import {
   getShadowMaterial,
   max,
   min,
+  mix,
+  nodeObject,
   positionWorld,
+  property,
   shadow,
   uniform,
   vec3,
   vec4,
 } from "three/tsl";
 import {
+  AssignNode,
   type Node,
   type NodeBuilder,
   type NodeFrame,
@@ -721,6 +725,9 @@ export class VirtualShadowNode extends ShadowBaseNode {
   #coalesced = 0;
   /** Read from the URL once, for the `?tnShadowStats=1` marker cadence. */
   #statsRequested: boolean | undefined;
+  /** URL-only, web-only diagnostic; native hosts have no URL switch or alternate path. */
+  #levelsRequested: boolean | undefined;
+  #levelTint: ReturnType<typeof property<"vec3">> | undefined;
   #stats: IVirtualShadowStats;
   #initialised = false;
   /** 1 when each level derives its own light-space depth, 0 when `lightDistance`/`depthRange` pin it. */
@@ -1747,6 +1754,36 @@ export class VirtualShadowNode extends ShadowBaseNode {
       light.name = `VirtualShadowLevel${String(index)}`;
       // quality-allow: the stock shadow node reads only position, target and shadow off its light
       const node = shadow(light as unknown as DirectionalLight, levelShadow);
+      const tint = this.#levelTint;
+      if (tint !== undefined) {
+        // Observe the stock sampler's actual coordinate, including normal bias and any received
+        // shadow position override. Selection-space u/v cannot diagnose a projection mismatch.
+        const stock = node as typeof node & {
+          setupShadowFilter: (
+            builder: NodeBuilder,
+            inputs: { shadowCoord: ReturnType<typeof vec3> },
+          ) => Node;
+        };
+        const filter = stock.setupShadowFilter;
+        stock.setupShadowFilter = (builder, inputs) => {
+          const uv = inputs.shadowCoord;
+          const inside = and(
+            and(uv.x.greaterThanEqual(0), uv.x.lessThanEqual(1)),
+            and(uv.y.greaterThanEqual(0), uv.y.lessThanEqual(1)),
+          );
+          const colour =
+            index === 0
+              ? vec3(1, 0, 0)
+              : index === 1
+                ? vec3(0, 1, 0)
+                : index === 2
+                  ? vec3(0, 0, 1)
+                  : vec3(1, 1, 0);
+          return nodeObject(filter.call(stock, builder, inputs)).bypass(
+            tint.assign(inside.select(colour, vec3(1, 0, 1))),
+          );
+        };
+      }
       // Stock shadow colours are identical, but their node identities split the shader cache.
       // Share only that constant; each level keeps its material, camera and render bindings.
       const material = getShadowMaterial(node.light);
@@ -1791,7 +1828,27 @@ export class VirtualShadowNode extends ShadowBaseNode {
 
   override setup(builder: NodeBuilder): Node | null | undefined {
     if (builder.renderer.shadowMap.enabled === false) return null;
+    // Read once, like tnShadowStats. Build no diagnostic nodes unless the URL switch is on.
+    this.#levelsRequested ??= /[?&]tnShadowLevels=(?!0(?:&|$))(?!false(?:&|$))[^&]/u.test(
+      globalThis.location?.search ?? "",
+    );
+    if (this.#levelsRequested && this.#levelTint === undefined) {
+      this.#levelTint = property("vec3", `virtualShadowLevelTint${String(this.id)}`);
+    }
     this.#init();
+    const tint = this.#levelTint;
+    if (tint !== undefined) {
+      const context = builder.context as { outgoingLight?: Node<"vec3"> };
+      const outgoing = context.outgoingLight;
+      if (outgoing !== undefined) {
+        // Three has assembled the lighting stack before building this shadow dependency. Append
+        // after its final assignments so the overlay retains every light and the shadow result.
+        const stack = (
+          builder as NodeBuilder & { getActiveStack(): { nodes: Node[] } | undefined }
+        ).getActiveStack();
+        stack?.nodes.push(new AssignNode(outgoing, mix(outgoing, tint, 0.5)));
+      }
+    }
     const levels = this.#levels;
     const centerU = this.#centerU;
     const centerV = this.#centerV;
@@ -1806,6 +1863,8 @@ export class VirtualShadowNode extends ShadowBaseNode {
       if (coarsest === undefined) return vec4(1, 1, 1, 1);
       const moverResult = (level: ILevel) =>
         moversActive.greaterThan(0).select(vec4(level.moverNode as never), vec4(1, 1, 1, 1));
+      // The coarsest fallback can be unmapped; finer unmapped levels never win selection.
+      if (tint !== undefined) tint.assign(vec3(0, 1, 1));
       // Every level is read through its own `mapped` gate. A level whose map this node has not
       // drawn yet contributes nothing rather than being sampled: with one level rendered per frame
       // the coarse levels trail the fine one, and their targets hold nothing to compare against.
