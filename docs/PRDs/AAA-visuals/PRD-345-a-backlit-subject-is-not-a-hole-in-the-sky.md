@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-345 — a backlit subject is not a hole in the sky
 
-**Status:** PROPOSED — filed 2026-09-03, measured at `43d03e6a`. Batch:
+**Status:** PARTIAL — isolated generated-source qualification; no default admitted. Originally filed 2026-09-03, measured at `43d03e6a`. Batch:
 [docs/PRDs/AAA-visuals](./README.md). **Ships as generated user source, not as a package** — it
 decides how things look, and rule 1(b) vetoes 1(a) at any size. Source studied:
 [TheLongSilence](https://github.com/achimala/TheLongSilence) `src/gfx/greeble.js:37`, the
@@ -80,25 +80,128 @@ instruction-budget vitest spec, not in `pnpm budgets` — check it before adding
   package owns a lighting term the framework owns the look.
 - No area lights, no clustered lighting, no IBL replacement.
 
+## Implementation phases (2026-10-03 qualification)
+
+Current starter source deliberately uses one sun plus photographed IBL, without an ambient or
+hemisphere stacked over it. Some other templates already have explicit rim/fill lights. This
+work must qualify the material convention against that actual source and each template's palette,
+not substitute the historical four-light description for current code. Tracker G09 is row 13,
+P1, PRD-345. The workbook remains unchanged.
+
+### Phase 1 — isolated material and measurement qualification
+
+- [x] Implement bounded game-owned grazing/backlight and directional analytic-fill terms with explicit `rimGain`/fill overrides, preserving original emissive and material maps. proof: retained `docs/verification/prd345/qualification.json`, CPU fidelity/live-control checks, real WebGPU positive/zero controls; generated defaults remain separately open
+- [ ] Measure the environment actually in use and report contribution even with overrides zero; unsupported measurement must report unknown, never invent a mean or infer black from an unreadable image. proof: actual near-black/bright texture report and override controls
+
+### Phase 2 — admit measured generated defaults
+
+- [ ] Apply only qualified conventions to the actual starter/material source and all required templates, preserving per-template appearance, low/mobile/software fallbacks and named overrides. proof: matched per-template screenshots and actual frame/startup cost
+- [ ] Add the concise convention/override rows to generated instructions with mirrors kept in sync. proof: primary-docs and instruction-budget tests
+
+### Phase 3 — clean starter and platform validation
+
+- [ ] Verify generated clean starters/simple scenes and template visual gates including dark environment/no-sun and backlit character controls. proof: `pnpm test:templates`, tone crops and red-green captures
+- [ ] Complete required root and native qualification without claiming unexecuted targets. proof: `pnpm typecheck && pnpm lint && pnpm test` and targeted native fixture
+
+## Qualification design
+
+The initial scope is isolated generated Three.js source and fixtures. No engine look helper,
+core composer, dependency/Three patch, scaffold generator or exposure source changes are admitted.
+`MeshStandardNodeMaterial` is the upstream portable TSL counterpart of the current standard
+material: use its existing PBR/normal/maps and preserve `materialEmissive`. WebGPU does not offer
+`onBeforeCompile` as a portable way to augment a standard material, so a WebGL-only shader string
+patch is excluded. Conversion and material identity/animation must be checked, especially for
+the starter mannequin's skinned material, before integration.
+
+The proposed grazing term uses the view/normal Fresnel edge with a gate for the key behind the
+subject, tinted by the authored key. It must not brighten a front-lit face, discard the original
+emissive, or make all orientations equally bright. The analytic fill uses game-authored key/fill directions, colours and fill angular size,
+with a roughness-aware reflected response as well as directional diffuse. Its black-colour
+override is named alongside gain. This is needed for the metallic mannequin as well as the
+dielectric props. Use live key uniforms so moving/removing the key removes its contribution.
+The analytic fill is directional and low gain;
+its black override must remove the effect while keeping the measured report. Bright photographed
+IBL is the existing baseline, so stacking a fill that flattens it is a rejection condition.
+
+The report requires actual linear-radiance samples of `scene.environment`, including active
+intensity and texture color space. A hard-coded asset mean, requested exposure, an unreadable
+HTML image, or a background mean is not that measurement. First qualify known byte/float
+DataTextures deterministically. For arbitrary photographed environments, a small once-at-setup
+GPU sample/readback needs explicit capability and startup-cost proof; unsupported platforms
+must report unknown and retain the qualified conservative fallback. No native readback/buffer
+contract edits are in this lane. The full original reporting criterion stays open until proven. Source mean describes available
+scene radiance, not the contribution of every material: explicit material environment maps and
+`envMapIntensity` need separate treatment. Missing, measured-dark, measured-bright and unreadable
+sources remain distinct. Existing rain/snow authored fill is retained; never stack a generic floor
+over it without measurement.
+
+Material qualification includes the actual loaded animated mannequin, not just exported prop
+materials. Cache converted supported standard materials to preserve sharing and array slots,
+retain upstream skinning/normal/PBR paths, and verify maps/transparency/sidedness/emissive/disposal.
+Unsupported physical/custom/basic materials remain intact with honest exclusions.
+
+The CPU path refuses unreadable, unsupported or over-budget textures; the photographed JPEG
+remains unknown. Real WebGPU runs now qualify the actual animated starter mannequin at fixed
+poses. Regional `assert.tone` adds physical PNG crops and same-image reference comparisons;
+legacy whole-frame assertions retain their existing metrics and acquisition path. Native regional
+capture remains unimplemented and fails closed. No default or all-template acceptance is claimed.
+
+### Retained visual and red-green proof
+
+All captures use the same character, camera `[0, 1.35, 6]`, content and 1280 × 720 buffer on web
+WebGPU, NVIDIA Turing. The fixed end pose is 90 ticks / 1.5 seconds; the rest capture preserves
+that pose. Crop coordinates were frozen before assertion captures in the fixture's
+`proof-crops.json`. The retained report aliases preserve decoded RGBA hashes and identify
+byte-identical end/rest images; compressed reports retain their full original fields.
+
+| Control | Before | Enabled |
+| --- | --- | --- |
+| Backlit character, measured black IBL, authored sun | ![Zero rim](../../verification/prd345/rim-zero.png) | ![Enabled rim](../../verification/prd345/rim-enabled.png) |
+| No sun, measured black IBL | ![Black fill](../../verification/prd345/fill-black.png) | ![Enabled fill](../../verification/prd345/fill-enabled.png) |
+
+Run `node --import tsx packages/create-threenative/__tests__/fixtures/backlight-defaults/qualify.mjs docs/verification/prd345`.
+Result: PASS actual decoded-PNG/report agreement and strict scene/camera/pose provenance.
+Enabled rim edge/body p99 is 52/2 (margin 50, required 30); zero rim is 7/0 and fails exactly
+`tone.0.compare` and `tone.1.compare`. The bounded paired-image `TN_RIM_CONTRIBUTION` report
+prints for both arms: available edge uplift 45, body uplift 2, margin uplift 43. This is a fixture
+pixel measurement, not a runtime BRDF energy claim. Enabled no-sun fill p1/p99 is 0/43; black
+fill is 0/0 and fails exactly the two p99 assertions. The strict serialized
+`TN_ENVIRONMENT_CONTRIBUTION` verifier passes the actual zero-radiance map and fails the omitted
+marker with `TN_ENVIRONMENT_MARKER_MISSING_OR_DUPLICATE`; measurement survives named overrides.
+Full reports and qualification are retained in [the evidence bundle](../../verification/prd345/qualification.json).
+
+Actual engine GPU timestamp windows 3–5 average about 11.36 ms baseline and 12.10 ms enabled
+(+0.74 ms / about 6.5%). Each window spans 60 frames with 7–8 fresh timestamp samples. These
+cost runs use the initial static pose. Private-display FPS, shader compilation completion,
+startup, native/mobile and per-template cost remain unqualified. Initial broad rim was rejected
+for floor wash; the retained selective rim gates that response by surface orientation. Front-lit,
+bright photographed IBL, dark and missing environment control runs pass their fixture gates.
+
+Use one matched backlit subject/camera/content/resolution for baseline, enabled rim, and
+`rimGain: 0`; a second matched dark-environment/no-sun pair for enabled fill and black fill.
+Retain silhouette-edge/body crop coordinates before inspecting results. Repeat front-lit/bright
+IBL control to reject washout. Record draw/compile/startup and actual GPU timestamp windows,
+with existing material cost as baseline. No default is admitted from a metric alone.
+
 ## Acceptance criteria
 
-1. **A backlit subject has a lit limb.** A playtest scenario poses a template's character between
+- [ ] **A backlit subject has a lit limb.** A playtest scenario poses a template's character between proof: `matched backlit character tone crop and rimGain-zero red-green`
    the camera and the key light; `assert.tone` (PRD-341) over a crop of the silhouette edge asserts
    a p99 above the body's p99 by a stated margin.
    *Red-green:* set `rimGain: 0` in the scenario's setup; the same assertion fails, and the run still
    prints the measured rim contribution — the proof that measurement survives the override. Paste
    both.
-2. **A dark environment is reported, not hidden.** A scenario with a near-black environment asserts
+- [ ] **A dark environment is reported, not hidden.** A scenario with a near-black environment asserts proof: `near-black actual environment report and missing-marker mutation`
    `TN_ENVIRONMENT_CONTRIBUTION` names IBL as non-contributing and names the analytic fill.
    *Red-green:* delete the report; the marker assertion goes red.
-3. **The scene is not flat without a sun.** The same scenario with the key light removed asserts,
+- [ ] **The scene is not flat without a sun.** The same scenario with the key light removed asserts, proof: `no-sun fill range and black-fill red-green`
    via `assert.tone`, that `p1` and `p99` remain separated — a scene lit only by the fill still has
    range.
    *Red-green:* set the analytic fill to black; the range assertion goes red.
-4. **Every template has both, and says so.** `scripts/__tests__/primary-docs.spec.ts` and the
+- [ ] **Every template has both, and says so.** `scripts/__tests__/primary-docs.spec.ts` and the proof: `primary-docs and generated convention rows`
    templates' own gate assert each template's `AGENTS.md` names both conventions and both override
    names.
-5. **The templates gate is green on the templates that currently pass it.** Note the known red lane:
+- [ ] **The templates gate is green on the templates that currently pass it.** Note the known red lane: proof: `complete template gate with explicit lane outcomes`
    the templates gate aborts at the first failing template, so the shooter's deterministic capture
    red will hide everything after it. Fix or skip past it deliberately and say which — never report
    a template as passing because the gate stopped before reaching it.

@@ -1,4 +1,4 @@
-import type { IPlaytestToneObservation } from "../tone.js";
+import type { IPlaytestToneCaptureObservation } from "../tone.js";
 import { waitFrames, captureVisualSurface, runStep, sampleVisualElementBounds, screenshotObservations, sampleAfterTransition } from "./steps.js";
 import type { StepInputState } from "./steps.js";
 import { withPerformanceBudget } from "./buildReport.js";
@@ -46,7 +46,7 @@ import {
   type PlaytestVec3,
 } from "../index.js";
 import type { IPlaytestObservationSnapshot } from "../protocol.js";
-import { assertCaptureNotBlank, CaptureGuardError } from "../capture.js";
+import { assertCaptureNotBlank, CaptureGuardError, collectRegionalTone } from "../capture.js";
 import { chromium, type Browser, type BrowserContext, type CDPSession, type Page } from "playwright";
 
 import { connectPlaytestBridge, PlaytestBridgeError, type IPlaytestBridgeClient } from "./bridgeClient.js";
@@ -480,7 +480,7 @@ async function runStandalonePlaytestInternal(
     // measured. Collected whenever a movement assertion exists, which is what pays for them.
     const capturesMovementSamples = capturesAnonymousMovement || scenario.assert?.movement !== undefined;
     const movementSamples: IMovementSampleInterval[] = [];
-    const tone: IPlaytestToneObservation[] = [];
+    const tone: IPlaytestToneCaptureObservation[] = [];
     const wantsFinalTone = scenario.assert?.tone?.some(({ atStep }) => atStep === undefined) === true;
     const wantsVisual = (scenario.assert?.visual?.length ?? 0) > 0;
     const visualAssertions = scenario.assert?.visual ?? [];
@@ -552,6 +552,7 @@ async function runStandalonePlaytestInternal(
       try {
         const stats = assertCaptureNotBlank(png, label);
         if (stats.tone !== undefined) tone.push({ code: "TN_TONE", label, ...(atStep === undefined ? {} : { atStep }), ...stats.tone });
+        tone.push(...collectRegionalTone(png, scenario.assert?.tone ?? [], label, atStep));
         return { ...(elementRegions === undefined ? {} : { elementRegions }), image: png };
       } catch (error) {
         if (!(error instanceof CaptureGuardError)) throw error;
@@ -565,6 +566,7 @@ async function runStandalonePlaytestInternal(
         try {
           const stats = assertCaptureNotBlank(png, label);
           if (stats.tone !== undefined) tone.push({ code: "TN_TONE", label, ...(atStep === undefined ? {} : { atStep }), ...stats.tone });
+          tone.push(...collectRegionalTone(png, scenario.assert?.tone ?? [], label, atStep));
           return { ...(elementRegions === undefined ? {} : { elementRegions }), image: png };
         } catch (error2) {
           if (!(error2 instanceof CaptureGuardError)) throw error2;
@@ -598,6 +600,7 @@ async function runStandalonePlaytestInternal(
         }
         const stats = assertCaptureNotBlank(png, label);
         if (stats.tone !== undefined) tone.push({ code: "TN_TONE", label, ...(atStep === undefined ? {} : { atStep }), ...stats.tone });
+        tone.push(...collectRegionalTone(png, scenario.assert?.tone ?? [], label, atStep));
         return { image: png };
       } catch (error) {
         if (!(error instanceof CaptureGuardError)) throw error;
@@ -607,6 +610,7 @@ async function runStandalonePlaytestInternal(
           if (retry !== undefined) {
             const stats = assertCaptureNotBlank(retry, label);
             if (stats.tone !== undefined) tone.push({ code: "TN_TONE", label, ...(atStep === undefined ? {} : { atStep }), ...stats.tone });
+            tone.push(...collectRegionalTone(retry, scenario.assert?.tone ?? [], label, atStep));
             return { image: retry };
           }
         } catch (error2) {
