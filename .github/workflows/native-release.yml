@@ -15,11 +15,14 @@ on:
     tags:
       - "runtime-native-v*"
   pull_request:
-    paths:
-      - ".github/workflows/native-release.yml"
-      - "scripts/__tests__/native-release-proof.spec.ts"
-      - "scripts/__tests__/native-release-android-staging.spec.ts"
-      - "packages/runtime-native/tests/native-platform-workflow.test.mjs"
+    # The proof is the most expensive board in this repository (macOS, Windows, Linux and a
+    # 210-minute Android producer) and an ordinary PR push never needed it: over 2026-09-18 to
+    # 10-02 it cost 7.0k runner-minutes against a pool that holds about three runs. It runs for
+    # a promotion PR into main, or when a PR carries the `release-proof` label - `labeled` is
+    # what makes that route reachable, and the open/reopen events are what make a promotion PR
+    # reach it. The `paths` filter is gone: it was the thing that re-ran the board on every push
+    # to four files, one of them touched by ordinary runtime-native PRs.
+    types: [opened, synchronize, reopened, labeled]
   workflow_dispatch:
 
 permissions:
@@ -27,24 +30,24 @@ permissions:
   actions: read
 
 concurrency:
-  # Measured over this workflow's entire history, re-counted 2026-09-11: 41 runs, 18 cancelled,
-  # 17 failed, 4 succeeded. The four successes are PRD-078's non-publishing hosted proof, and they
-  # arrived only after this setting stopped evicting them - the earlier count behind this choice was
-  # 18 runs with zero successes. Every cancellation was a proof run killed by the next push to its
-  # own branch. `clean-consumer` sits behind a ~20 minute build matrix, so on an actively-pushed
-  # branch it cannot reach its own first line no matter what its timeout is - which is why this sits
-  # alongside the timeout raise rather than instead of it. Evidence here is candidate-keyed, so a
-  # superseded run's output is still valid for the SHA it was produced from and is worth letting
-  # finish.
-  # `github.event_name` is in the group because a manual proof on main and an automatic one would
-  # otherwise share `native-release-refs/heads/main` and evict each other.
-  # `github.event.workflow_run.head_sha` is in the group because every `workflow_run` run shares
-  # `github.ref` (the default branch) and `github.event_name` (`workflow_run`): without the head
-  # SHA they all serialize behind each other in one group while the Actions queue drains. A new CI
-  # completion for a newer main SHA gets its own group instead of queueing behind a superseded
-  # evidence run; a re-run for the same SHA still shares its group. Tag publication stays
-  # per-ref as before.
-  group: native-release-${{ github.event_name }}-${{ github.event.workflow_run.head_sha }}-${{ github.ref }}
+  # One group for every run of this workflow, whatever triggered it. It used to carry
+  # `github.event_name`, the triggering CI head SHA and `github.ref`, so a promotion PR, a manual
+  # dispatch, a tag push and each main CI completion each held a runner simultaneously - and a
+  # two-minute `build` join waited over an hour behind them (PRD-380).
+  #
+  # What that keying bought: a new CI completion for a newer main SHA got its own group instead of
+  # queueing behind a superseded evidence run. That is now the intended trade - the queue behind a
+  # superseded proof is a few minutes of one runner, where running them beside each other was the
+  # whole pool.
+  #
+  # `cancel-in-progress: false` is unchanged and load-bearing: every cancellation in this
+  # workflow's history was a proof run killed by the next push to its own branch, and a
+  # candidate-keyed result is still valid for the SHA it was produced from.
+  #
+  # Only a run that will prove joins the shared group. Every ordinary PR push still starts this
+  # workflow (its `gates` job then refuses it), and in one shared group those no-op runs would queue
+  # behind a real proof and replace a pending one, since a group keeps a single pending run.
+  group: ${{ (github.event_name != 'pull_request' || github.event.pull_request.base.ref == 'main' || contains(github.event.pull_request.labels.*.name, 'release-proof')) && 'native-release-proof' || format('native-release-skip-{0}', github.run_id) }}
   cancel-in-progress: false
 
 jobs:
@@ -117,8 +120,15 @@ jobs:
   gates:
     needs: validate-tag
     # Scheduled/manual CI also completes on main, but only push CI qualifies a release.
+    # And the pull_request trigger fires on every push now (the label needs `labeled`), so this
+    # job is where an ordinary PR is refused: PRD-373 retired the `promotion/<sha>` ref, so a PR
+    # targeting main is the promotion, and `release-proof` is the owner's manual route for any
+    # other PR. Every proof job below needs `gates`, so refusing here spends nothing.
     if: >-
       ${{ !cancelled() &&
+      (github.event_name != 'pull_request' ||
+      github.event.pull_request.base.ref == 'main' ||
+      contains(github.event.pull_request.labels.*.name, 'release-proof')) &&
       (github.event_name != 'workflow_run' || github.event.workflow_run.event == 'push') &&
       (github.ref_type != 'tag' || needs.validate-tag.result == 'success') }}
     runs-on: ubuntu-24.04
