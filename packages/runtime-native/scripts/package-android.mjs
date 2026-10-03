@@ -792,15 +792,32 @@ export function stageAndroidAssets(
 /**
  * Flatten `ui.renderer` for the Android host, which reads a flat string.
  *
- * `native-css` is the desktop CSS backend and has no Android build, so it is refused by name
- * rather than flattened to `native`: a game that asked for a CSS HUD would launch with none and
- * nothing in the logs would say why.
+ * `native-css` survives the flattening: the activity reads it to extract the staged stylesheets
+ * and hand them to the runtime's CSS UI instead of attaching a WebView. Whether the runtime has
+ * that backend at all is `androidCssUiGradleArgs`'s question.
  */
 export function mobileUiRenderer(renderer) {
-  if (renderer === 'native-css') {
-    throw new Error('TN_UI_RENDERER_UNSUPPORTED: ui.renderer "native-css" is desktop-only');
-  }
+  if (renderer === 'native-css') return 'native-css';
   return renderer === 'web' ? 'web' : 'native';
+}
+
+/**
+ * The Gradle switch a `native-css` game needs, or a named refusal.
+ *
+ * The CSS UI is linked only when the runtime is compiled with `-PthreenativeCssUi=true`, which only
+ * a source build can do: no published Android prebuilt carries it, and a game packaged against one
+ * would install, launch and paint no HUD with clean logs.
+ */
+export function androidCssUiGradleArgs(renderer, sourceCheckout) {
+  if (renderer !== 'native-css') return [];
+  if (!sourceCheckout) {
+    throw new Error(
+      'TN_CSS_UI_HOST_MISSING: ui.renderer is "native-css" but the prebuilt Android runtime was not built with ' +
+        'TN_ENABLE_CSS_UI (no published prebuilt has the CSS backend); build from a runtime source checkout ' +
+        'with --allow-source-build, or choose another renderer.',
+    );
+  }
+  return ['-PthreenativeCssUi=true'];
 }
 
 /**
@@ -813,7 +830,7 @@ export function mobileUiRenderer(renderer) {
  */
 export function stageAndroidUi(ui, renderer, destination) {
   rmSync(destination, { force: true, recursive: true });
-  if (renderer !== 'web') {
+  if (renderer !== 'web' && renderer !== 'native-css') {
     if (ui) {
       throw new Error(
         `TN_UI_BUNDLE_UNEXPECTED: a UI bundle was staged for a game whose ui.renderer is '${renderer}'. ` +
@@ -824,13 +841,20 @@ export function stageAndroidUi(ui, renderer, destination) {
   }
   if (!ui || !existsSync(ui)) {
     throw new Error(
-      `TN_UI_BUNDLE_MISSING: ui.renderer is "web" but no built UI was found at ${ui ?? '(not provided)'}. ` +
+      `TN_UI_BUNDLE_MISSING: ui.renderer is "${renderer}" but no built UI was found at ${ui ?? '(not provided)'}. ` +
         'Build the UI before packaging, or set ui.renderer to "native".',
     );
   }
   if (!statSync(ui).isDirectory()) throw new Error(`TN_UI_BUNDLE_MISSING: not a directory: ${ui}`);
   const files = listFiles(ui);
-  if (!files.includes('index.html')) {
+  // `native-css` stages stylesheets (and the fonts and images beside them) that the runtime's CSS
+  // engine paints; there is no page to load.
+  if (renderer === 'native-css' && !files.some((file) => file.endsWith('.css'))) {
+    throw new Error(
+      `TN_UI_BUNDLE_MISSING: ui.renderer is "native-css" but ${ui} has no .css, which is what the native CSS engine paints.`,
+    );
+  }
+  if (renderer === 'web' && !files.includes('index.html')) {
     throw new Error(
       `TN_UI_BUNDLE_MISSING: ${ui} has no index.html, which is the page the overlay loads.`,
     );
@@ -1046,6 +1070,7 @@ export async function packageAndroid(
   }
   const declared = configValue(config, orientation);
   orientationValue(declared.display.orientation);
+  const cssUiGradleArgs = androidCssUiGradleArgs(declared.ui.renderer, sourceCheckout);
   const gradlew = join(androidRoot, process.platform === 'win32' ? 'gradlew.bat' : 'gradlew');
   if (!existsSync(gradlew)) throw new Error(`Android Gradle wrapper is missing: ${gradlew}`);
   if (!existsSync(bundle)) throw new Error(`Missing native bundle: ${bundle}`);
@@ -1104,6 +1129,7 @@ export async function packageAndroid(
       '-x',
       'buildAndroidFirstProofBundle',
       ...androidAbiGradleArgs(request.mode, extraGradleArgs),
+      ...cssUiGradleArgs,
       ...extraGradleArgs,
     ];
     const args = process.platform === 'win32' ? baseArgs : [gradlew, ...baseArgs];

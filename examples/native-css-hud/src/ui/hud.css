@@ -1,4 +1,6 @@
 @import "tailwindcss";
+/* The corpus harness is not UI source: a word in its comments ("table") became a utility rule. */
+@source not "../../corpus";
 
 @theme {
   --font-sans: ui-sans-serif, system-ui, sans-serif; /* bundled font is a later phase */

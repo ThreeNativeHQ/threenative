@@ -120,17 +120,18 @@ export function assertNativeUiRendererCompatible(
   renderer: IResolvedThreeNativeConfig["ui"]["renderer"],
   platform: NodeJS.Platform = process.platform,
 ): void {
-  // `native-css` is Linux desktop only in this release: the CSS backend and the only fixtures
-  // that prove it run there. It is refused by name rather than silently downgraded to the WebView
-  // renderer: a game that asked for no web view would get one.
+  // `native-css` runs on Linux desktop and Android (a runtime source build; the Android packager
+  // refuses a prebuilt with TN_CSS_UI_HOST_MISSING) in this release: the hosts that have run its
+  // fixtures. It is refused by name rather than silently downgraded to the WebView renderer: a
+  // game that asked for no web view would get one.
   if (renderer === "native-css") {
-    if (target === "desktop" && platform === "linux") return;
+    if (target === "android" || (target === "desktop" && platform === "linux")) return;
     const targetName =
       target === "desktop"
         ? `desktop on ${platform}`
-        : `${target} (the CSS backend is Linux desktop only)`;
+        : `${target} (the CSS backend runs on Linux desktop and Android only)`;
     throw new Error(
-      `TN_UI_RENDERER_UNSUPPORTED: ui.renderer is "native-css", which is supported on Linux desktop only in this release; set ui.renderer to "native" or "web" for ${targetName}.`,
+      `TN_UI_RENDERER_UNSUPPORTED: ui.renderer is "native-css", which is supported on Linux desktop and Android only in this release; set ui.renderer to "native" or "web" for ${targetName}.`,
     );
   }
   if (renderer === "native" || target === "android" || target === "ios") return;

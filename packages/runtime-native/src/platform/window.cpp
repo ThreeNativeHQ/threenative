@@ -387,6 +387,28 @@ bool routePointerToUi(const SDL_Event& event) {
     return hit;
 }
 
+#if defined(__ANDROID__)
+/**
+ * Offer one finger to the UI. Android has no mouse, so the finger is the pointer: routed through the
+ * same gesture latch as a click, and a press the UI owns never also reaches the game. SDL reports
+ * finger positions already normalised to the window. SDL's mouse copy of the touch is skipped in
+ * `pollEvents`, so the UI sees each touch once.
+ */
+bool routeFingerToUi(const SDL_Event& event) {
+    const char* type = event.type == SDL_EVENT_FINGER_DOWN       ? "pointerdown"
+                       : event.type == SDL_EVENT_FINGER_UP       ? "pointerup"
+                       : event.type == SDL_EVENT_FINGER_CANCELED ? "pointercancel"
+                                                                 : "pointermove";
+    const int buttons = event.type == SDL_EVENT_FINGER_DOWN || event.type == SDL_EVENT_FINGER_MOTION;
+    const bool hit = uiOverlayRoutePointer(type, event.tfinger.x, event.tfinger.y, buttons, 1);
+    if (event.type == SDL_EVENT_FINGER_DOWN) {
+        std::cout << "TN_UI_POINTER_ROUTE:{\"source\":\"touch\",\"hit\":" << (hit ? "true" : "false")
+                  << ",\"x\":" << event.tfinger.x << ",\"y\":" << event.tfinger.y << "}" << std::endl;
+    }
+    return hit;
+}
+#endif
+
 /**
  * Tell the offscreen UI how many pixels the game window has now.
  *
@@ -482,6 +504,10 @@ bool pollEvents() {
                 case SDL_EVENT_MOUSE_MOTION:
                 case SDL_EVENT_MOUSE_BUTTON_DOWN:
                 case SDL_EVENT_MOUSE_BUTTON_UP:
+#if defined(__ANDROID__)
+                    // SDL's mouse copy of a touch; the finger itself is routed below.
+                    if (event.motion.which == SDL_TOUCH_MOUSEID) break;
+#endif
                     uiOverlaySetPointerKind(false);
                     if (routePointerToUi(event)) continue;
                     break;
@@ -496,6 +522,9 @@ bool pollEvents() {
                 case SDL_EVENT_FINGER_CANCELED:
                     // A finger is not a mouse: no hover, `(pointer: coarse)`.
                     uiOverlaySetPointerKind(true);
+#if defined(__ANDROID__)
+                    if (routeFingerToUi(event)) continue;
+#endif
                     break;
                 case SDL_EVENT_KEY_DOWN:
                 case SDL_EVENT_KEY_UP:

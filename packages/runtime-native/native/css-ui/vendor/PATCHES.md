@@ -434,13 +434,17 @@ fails on its own: the strut (`box-model-and-sizing`), the order and scale of the
   height: 20px`) is 20px of top padding and every box below it lands where Chromium's does
   (5 edge misses and SSIM 0.9954 → 0.9607 with the registry's four lines restored).
 
-## `fontique-0.11.1` — 37 added code lines
+## `fontique-0.11.1` — 50 added code lines
 
 ### 1. a family name no installed font carries resolved to nothing at all
 
 * **Where:** `src/collection/mod.rs` (`Collection::family_id` asks the system backend once the
-  registered fonts have answered), `src/backend/fontconfig.rs` (`SystemFonts::family_id`,
-  `substituted_family`, and the `substituted` cache that holds the answer).
+  registered fonts and the system name map have answered), `src/backend/fontconfig.rs`
+  (`SystemFonts::family_id`, `substituted_family`, and the `substituted` cache that holds the
+  answer), and a `family_id` that answers `None` in `src/backend/{android,coretext,dwrite,mod}.rs`.
+  Those four exist because `Collection::family_id` calls the method on every platform: the first cut
+  defined it only for fontconfig and broke the Android build (`E0599`, found by the emulator run);
+  the other backends have no substitution to offer, so their lookup is exactly what it was.
 * **Why:** the family map fontique builds is the *installed* fonts' own names, so a document that
   names a family the machine has never heard of — `Arial`, `Helvetica`, anything in a design system's
   stack — matched nothing: no font, no metrics, and a silent fall through to whatever the query's

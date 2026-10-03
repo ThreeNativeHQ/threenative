@@ -514,6 +514,10 @@ export function stageIosSimulatorApp({
   const game = join(output, 'game');
   rmSync(game, { force: true, recursive: true });
   mkdirSync(game, { recursive: true });
+  // The CSS UI has an Android build and no iOS one yet: refused by name, not flattened to native.
+  if (declared.ui?.renderer === 'native-css') {
+    throw new Error('TN_UI_RENDERER_UNSUPPORTED: ui.renderer "native-css" has no iOS build');
+  }
   stageIosUi(ui, mobileUiRenderer(declared.ui?.renderer), join(output, 'ui'));
   const plist = join(output, 'Info.plist');
   const infoPlist = readIosInfoPlist(plist, convertInfoPlist);

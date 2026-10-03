@@ -9,6 +9,7 @@
 
 #include "mystral/runtime.h"
 #include "mystral/cold_start.h"
+#include "mystral/platform/ui_overlay.h"
 #include "../webgpu/pipeline_cache.h"
 #include <SDL3/SDL.h>
 #include <iostream>
@@ -271,6 +272,18 @@ extern "C" __attribute__((visibility("default"))) int SDL_main(int argc, char* a
         );
         LOGI("Device playtest mailbox configured");
     }
+    // `ui.renderer: "native-css"`: the activity extracted the packaged `ui/` stylesheets, fonts and
+    // images to a real directory (APK assets are not one) and passes it here. Attached on this
+    // thread because the document is thread-local and the game loop below is what pumps, posts to
+    // and composites it. Fail closed, as on desktop: a game that asked for a HUD and has none would
+    // look like a HUD with nothing to show.
+    if (argc > 8 && argv[8] && argv[8][0] != '\0') {
+        if (!mystral::platform::attachDesktopCssUi(argv[8])) {
+            LOGE("TN_UI_LOAD_FAILED: the requested native-css UI could not attach from %s", argv[8]);
+            return 1;
+        }
+    }
+
     // Execute the script
     LOGI("About to call evalScript...");
     // The runtime evaluates its own bootstrap scripts first, so the engine's compile markers

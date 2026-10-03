@@ -63,6 +63,11 @@ mod system {
         }
 
         #[cfg(feature = "system")]
+        pub(crate) fn family_id(&mut self, _name: &str) -> Option<FamilyId> {
+            None
+        }
+
+        #[cfg(feature = "system")]
         pub(crate) fn family(&mut self, _id: FamilyId) -> Option<FamilyInfo> {
             None
         }

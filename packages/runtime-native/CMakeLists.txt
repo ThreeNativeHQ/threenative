@@ -1634,8 +1634,19 @@ if(TN_ENABLE_CSS_UI)
         else()
             set(_tn_css_ui_name "libthreenative_css_ui.a")
         endif()
+        # Android cross-builds land in cargo's per-triple directory, one per ABI
+        # (`scripts/build-native-css-ui.mjs --target <triple>`), like native physics.
+        if(ANDROID_ABI STREQUAL "arm64-v8a")
+            set(_tn_css_ui_dir "aarch64-linux-android/release")
+        elseif(ANDROID_ABI STREQUAL "x86_64")
+            set(_tn_css_ui_dir "x86_64-linux-android/release")
+        elseif(ANDROID)
+            message(FATAL_ERROR "The CSS UI has no Android target for ABI ${ANDROID_ABI}")
+        else()
+            set(_tn_css_ui_dir "release")
+        endif()
         set(THREENATIVE_CSS_UI_LIBRARY
-            "${CMAKE_CURRENT_SOURCE_DIR}/native/css-ui/target/release/${_tn_css_ui_name}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/native/css-ui/target/${_tn_css_ui_dir}/${_tn_css_ui_name}"
         )
     endif()
     if(NOT EXISTS "${THREENATIVE_CSS_UI_LIBRARY}")

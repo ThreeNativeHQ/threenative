@@ -50,6 +50,12 @@ pub(crate) struct SystemFonts {
 }
 
 impl SystemFonts {
+    /// A family a backend substitutes for a name no installed font carries. Only the fontconfig
+    /// backend has such a notion; this one has none, so the name resolves as it always did.
+    pub(crate) fn family_id(&mut self, _name: &str) -> Option<FamilyId> {
+        None
+    }
+
     pub(crate) fn new() -> Self {
         let dwrite_fonts = DWriteSystemFonts::new(false).unwrap();
         let mut name_map = FamilyNameMap::default();

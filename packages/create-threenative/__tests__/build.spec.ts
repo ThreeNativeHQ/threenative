@@ -867,20 +867,19 @@ cpSync("public", out, { recursive: true });
   }, 60_000);
 
   // `native-css` runs the React tree in the game's own JS realm and paints it with a native CSS
-  // engine, so it needs no web view — but the engine exists for the desktop host only, and the
-  // refusal is named rather than a silent downgrade to the WebView renderer.
-  it("admits native-css on Linux desktop and refuses it everywhere else", () => {
+  // engine, so it needs no web view — but the engine exists for the Linux desktop and Android hosts
+  // only, and the refusal is named rather than a silent downgrade to the WebView renderer.
+  it("admits native-css on Linux desktop and Android and refuses it everywhere else", () => {
     expect(() => assertNativeUiRendererCompatible("desktop", "native-css", "linux")).not.toThrow();
+    expect(() => assertNativeUiRendererCompatible("android", "native-css")).not.toThrow();
     for (const platform of ["darwin", "win32", "freebsd"] as const) {
       expect(() => assertNativeUiRendererCompatible("desktop", "native-css", platform)).toThrow(
-        `TN_UI_RENDERER_UNSUPPORTED: ui.renderer is "native-css", which is supported on Linux desktop only in this release; set ui.renderer to "native" or "web" for desktop on ${platform}.`,
+        `TN_UI_RENDERER_UNSUPPORTED: ui.renderer is "native-css", which is supported on Linux desktop and Android only in this release; set ui.renderer to "native" or "web" for desktop on ${platform}.`,
       );
     }
-    for (const target of ["android", "ios"] as const) {
-      expect(() => assertNativeUiRendererCompatible(target, "native-css")).toThrow(
-        `TN_UI_RENDERER_UNSUPPORTED: ui.renderer is "native-css", which is supported on Linux desktop only in this release; set ui.renderer to "native" or "web" for ${target} (the CSS backend is Linux desktop only).`,
-      );
-    }
+    expect(() => assertNativeUiRendererCompatible("ios", "native-css")).toThrow(
+      `TN_UI_RENDERER_UNSUPPORTED: ui.renderer is "native-css", which is supported on Linux desktop and Android only in this release; set ui.renderer to "native" or "web" for ios (the CSS backend runs on Linux desktop and Android only).`,
+    );
   });
 
   it("accepts web UI bundles for every native host that stages them", () => {

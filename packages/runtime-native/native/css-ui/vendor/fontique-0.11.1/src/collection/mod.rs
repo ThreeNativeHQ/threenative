@@ -295,13 +295,14 @@ impl Inner {
         }
         #[cfg(feature = "system")]
         if let Some(system) = &self.system {
+            if let Some(found) = system.family_names.get(name) {
+                return Some(found.id());
+            }
             // Not an installed family: let the system resolve the name, so a family it
-            // substitutes for (Arial to Liberation Sans) still resolves to a font.
+            // substitutes for (Arial to Liberation Sans) still resolves to a font. Backends with
+            // no substitution to offer answer `None`, which is what the lookup above already said.
             return system.fonts.lock().unwrap().family_id(name);
         }
-        #[cfg(not(feature = "system"))]
-        return None;
-        #[allow(unreachable_code)]
         None
     }
 
