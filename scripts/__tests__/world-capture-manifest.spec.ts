@@ -90,12 +90,21 @@ async function fixture() {
   for (const label of labels) writeFileSync(path.join(root, `${label}.png`), PNG.sync.write(png));
   return { root, report, capture };
 }
-function run(root: string) {
+function run(root: string, ...flags: string[]) {
   return spawnSync(
     path.join(repo, "node_modules/.bin/tsx"),
-    ["scripts/world-capture-manifest.ts", root, "unit-test-build", "30"],
+    ["scripts/world-capture-manifest.ts", root, "unit-test-build", "30", ...flags],
     { cwd: repo, encoding: "utf8" },
   );
+}
+/** Rewrites the synthetic WorldProbe route as another game's capture, at the same sample count. */
+function asOtherWorld(report: ReturnType<typeof read>, xAt: (i: number) => number) {
+  report.scenario = "machinefall-world-capture";
+  for (const [i, sample] of report.observations.componentSeries.entries()) {
+    sample.snapshots.world.cameraPosition = [xAt(i), 6, 0];
+    sample.snapshots.world.cameraTarget = [xAt(i) + 12, 3, 0];
+  }
+  return report;
 }
 
 it("extracts actual observed values and feeds the gate without rewriting captured artifacts", async () => {
@@ -154,4 +163,35 @@ it("refuses to overwrite an existing manifest", async () => {
   writeFileSync(file, "previous evidence");
   expect(run(f.root).status).toBe(2);
   expect(readFileSync(file, "utf8")).toBe("previous evidence");
+});
+
+it("imports another game's route under the names it names", async () => {
+  const f = await fixture();
+  const report = asOtherWorld(read(path.join(f.root, "report.json")), (i) => Math.min(i, 32));
+  write(path.join(f.root, "report.json"), report);
+  const flags = ["--scenario", "machinefall-world-capture", "--world", "Machinefall"];
+  // The defaults must not silently accept another game's capture.
+  expect(run(f.root).status).toBe(2);
+  const result = run(f.root, ...flags);
+  expect(result.stderr).toBe("");
+  expect(result.status).toBe(0);
+  const manifest = read(path.join(f.root, "world-capture.json"));
+  expect(manifest.world).toBe("Machinefall");
+  expect(manifest.route).toBe("machinefall-world-capture");
+  expect(manifest.walk).toHaveLength(33);
+  expect(manifest.samePose.map((frame: { id: string }) => frame.id)).toEqual([
+    labels[0],
+    labels[8],
+    labels[16],
+    labels[24],
+  ]);
+});
+
+it("rejects another game's capture whose walk never moves", async () => {
+  const f = await fixture();
+  const report = asOtherWorld(read(path.join(f.root, "report.json")), () => 5);
+  write(path.join(f.root, "report.json"), report);
+  const result = run(f.root, "--scenario", "machinefall-world-capture", "--world", "Machinefall");
+  expect(result.status).toBe(2);
+  expect(result.stderr).toContain("Machinefall route never moved");
 });

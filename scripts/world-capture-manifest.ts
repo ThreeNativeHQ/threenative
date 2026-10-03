@@ -11,6 +11,13 @@ const LABELS = [
   ...Array.from({ length: 32 }, (_, i) => `phase477-walk-${String(i + 1).padStart(2, "0")}`),
   "phase477-pose-end",
 ];
+const DEFAULT_SCENARIO = "phase477-world-capture";
+const DEFAULT_WORLD = "WorldProbe";
+
+export interface IWorldCaptureNames {
+  scenario?: string;
+  world?: string;
+}
 function record(value: unknown): Record<string, unknown> {
   assert(
     typeof value === "object" && value !== null && !Array.isArray(value),
@@ -28,12 +35,36 @@ function vector(value: unknown): [number, number, number] {
   return [value[0], value[1], value[2]];
 }
 
+/** WorldProbe's captured route is fixed; any other world only has to prove it actually walked. */
+function assertRoute(
+  worldName: string,
+  first: { position: [number, number, number] },
+  lastWalk: { position: [number, number, number] },
+): void {
+  if (worldName !== DEFAULT_WORLD) {
+    assert(
+      !isDeepStrictEqual(first.position, lastWalk.position),
+      `${worldName} route never moved: the first and last walk positions are identical`,
+    );
+    return;
+  }
+  assert.deepEqual(
+    first.position,
+    [-160, 24, 0],
+    "route must begin at the captured WorldProbe start",
+  );
+  assert.deepEqual(lastWalk.position, [180, 24, 0], "route did not reach the WorldProbe end");
+}
+
 export function worldCaptureManifest(
   input: unknown,
   capture: unknown,
   build: string,
   nearBandMeters: number,
+  names: IWorldCaptureNames = {},
 ): IWorldCaptureManifest {
+  const scenario = names.scenario ?? DEFAULT_SCENARIO;
+  const worldName = names.world ?? DEFAULT_WORLD;
   const report = record(input);
   assert(
     report.pass === true &&
@@ -41,7 +72,7 @@ export function worldCaptureManifest(
       ["web", "browser"].includes(String(report.target)),
     "a passing web report is required",
   );
-  assert(report.scenario === "phase477-world-capture", "wrong capture scenario");
+  assert(report.scenario === scenario, `wrong capture scenario: expected ${scenario}`);
   assert(
     Array.isArray(report.assertionResults) &&
       report.assertionResults.length > 0 &&
@@ -98,13 +129,8 @@ export function worldCaptureManifest(
     first !== undefined && lastWalk !== undefined && settled !== undefined,
     "incomplete route",
   );
-  assert.deepEqual(
-    first.position,
-    [-160, 24, 0],
-    "route must begin at the captured WorldProbe start",
-  );
+  assertRoute(worldName, first, lastWalk);
   assert(first.timeMs === 0, "flight began before the baseline capture");
-  assert.deepEqual(lastWalk.position, [180, 24, 0], "route did not reach the WorldProbe end");
   assert.deepEqual(settled.position, lastWalk.position, "route moved during settle");
   assert(settled.timeMs === lastWalk.timeMs, "flight continued during settle");
   assert(
@@ -135,9 +161,9 @@ export function worldCaptureManifest(
   const observed = frames.map(({ landmarks: _landmarks, ...frame }) => frame);
   return {
     schemaVersion: 1,
-    world: "WorldProbe",
+    world: worldName,
     build,
-    route: "phase477-world-capture",
+    route: scenario,
     seed: "20260925",
     nearBandMeters,
     capture: "capture.json",
@@ -155,10 +181,20 @@ export function worldCaptureManifest(
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
     const [directory, build, nearBand, ...extra] = process.argv.slice(2);
-    assert(
-      directory && build && nearBand && extra.length === 0,
-      "usage: world-capture-manifest.ts <capture-directory> <build> <near-band-meters>",
-    );
+    const usage =
+      "usage: world-capture-manifest.ts <capture-directory> <build> <near-band-meters> [--scenario <name>] [--world <name>]";
+    assert(directory && build && nearBand, usage);
+    const names: IWorldCaptureNames = {};
+    for (let index = 0; index < extra.length; index += 2) {
+      const flag = extra[index];
+      const value = extra[index + 1];
+      assert(
+        (flag === "--scenario" || flag === "--world") && value && !value.startsWith("--"),
+        usage,
+      );
+      if (flag === "--scenario") names.scenario = value;
+      else names.world = value;
+    }
     const read = (name: string): unknown =>
       JSON.parse(readFileSync(path.join(directory, name), "utf8"));
     const manifest = worldCaptureManifest(
@@ -166,6 +202,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
       read("capture.json"),
       build,
       Number(nearBand),
+      names,
     );
     for (const label of LABELS)
       assert(
