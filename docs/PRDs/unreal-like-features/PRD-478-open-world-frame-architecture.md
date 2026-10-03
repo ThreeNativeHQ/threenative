@@ -55,11 +55,22 @@ Change where the frame's work runs, not how much of it a frame skips:
 - [ ] AC-2 [local]: the same walk's GPU p95 ≤ 8.3 ms, from timestamp-query `gpuMain + gpuShadow + gpuOther + gpuCompute`. proof: the same windows.
 - [ ] AC-3 [local]: no visual loss. 3 fresh blind raters score every map-walk and map-views pose at or above develop `a602467db`, the pop road band matches develop, and a frame-by-frame judge finds no late objects or shadows. proof: `scripts/visual-ab.ts` score plus the pop series.
 
+## Iteration method
+
+A timing round under PRD-475 cost 1–3 hours, most of it waiting for a quiet machine shared with CI runners and other lanes. Each phase iterates on load-independent signals and times on the RTX 2080 only to land:
+
+1. **Counters gate the inner loop.** Each phase names a counter that falls when its mechanism works: level re-renders per walk (Phase 1), submitted draws per level render (Phase 2), main-thread block-rebuild and seam span time (Phase 3). Counters run under any machine load; a candidate that does not move its counter gets no timing round.
+2. **One build per round.** A candidate ships behind a URL query flag for its A/B (the `?tnBundles=` pattern), so every arm is the same bundle; the flag is removed when the phase lands.
+3. **A paired walk.** map-walk replays the same route at a fixed simulation step, so the arms are compared frame by frame over the movement interval, not as two distributions of `fps < 100` windows.
+4. **Pixel diff before the judges.** Same-pose captures identical to the previous arm skip the blind raters; any difference goes to the 3 raters and the pop series.
+5. **Timing in a booked window.** Timing rounds book a slot on the `ci-pipeline` claim board (`gpu-timing`) when CI is idle, instead of polling for a quiet machine.
+
 ## Execution Phases
 
 #### Phase 1: Shadow windows move only when the camera does
 **Status:** IN PROGRESS
-**Files:** `packages/core/src/render/virtual-shadow-pages.ts`, `packages/core/src/render/virtual-shadow.ts`; `packages/core/__tests__/`
+**Files:** `packages/core/src/render/virtual-shadow-pages.ts`, `packages/core/src/render/virtual-shadow.ts`; `packages/core/__tests__/`; Machinefall `playtests/scenes/map-walk.playtest.json`
+- [ ] The iteration tooling above works on map-walk: two runs of one build with the same flag report the same level re-render count, and the paired walk compares the arms frame by frame over the movement interval. proof: two same-arm runs with equal counters plus one paired-walk report.
 - [ ] A refresh-step change with a stationary camera neither moves a level's window nor re-renders it; a real move of step + 1 texel re-renders; every origin stays on the per-level texel grid. proof: red-green `virtual-shadow-pages.spec.ts` and `virtual-shadow.spec.ts` cases (unit-green on `feat/prd-478-shadow-snap` `748348c9c`, not yet on this branch).
 - [ ] Measured on map-walk against cut12n and cut12n with `adaptiveRefresh: false`: walking render p95, GPU p95 and level re-render rate, plus AC-3's blind A/B and pop series. proof: `TN_FRAME_BUDGET` walk/idle split, `?tnFrameSpans=1`, `scripts/visual-ab.ts`.
 
