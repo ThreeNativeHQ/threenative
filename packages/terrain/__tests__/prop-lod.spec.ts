@@ -134,6 +134,10 @@ describe("preview prop distance bookkeeping", () => {
 });
 
 describe("licensed pack characterization", () => {
+  function present<T>(value: T | null | undefined): T {
+    if (value === null || value === undefined) throw new Error("Missing characterized prop value");
+    return value;
+  }
   const image = () => new DataTexture(new Uint8Array([80, 150, 50, 255]), 1, 1);
   function fixture(options: { mapped?: boolean; array?: boolean; zeroNormal?: boolean } = {}) {
     const root = new Group();
@@ -169,10 +173,10 @@ describe("licensed pack characterization", () => {
     const near = fixture();
     const pack = await loaded(near.root, fixture({ mapped: false }).root);
     try {
-      const parts = pack.parts.get("spruce:0")!;
+      const parts = present(pack.parts.get("spruce:0"));
       expect(parts).toHaveLength(2);
-      expect(parts[0]!.material).toBe(parts[1]!.material);
-      const material = parts[0]!.material as MeshPhysicalNodeMaterial;
+      expect(present(parts[0]).material).toBe(present(parts[1]).material);
+      const material = present(parts[0]).material as MeshPhysicalNodeMaterial;
       expect(material.alphaTest).toBe(0.33);
       expect(material.map).toBe(near.material.map);
       expect(material.normalMap).toBe(near.material.normalMap);
@@ -188,11 +192,14 @@ describe("licensed pack characterization", () => {
     trunk.root.add(crown.mesh);
     const pack = await loaded(trunk.root);
     try {
-      const parts = pack.parts.get("spruce:0")!;
+      const parts = present(pack.parts.get("spruce:0"));
       expect(parts).toHaveLength(2);
       for (const part of parts) part.geometry.computeBoundingBox();
       expect(
-        parts.map((part) => [part.geometry.boundingBox!.min.y, part.geometry.boundingBox!.max.y]),
+        parts.map((part) => [
+          present(part.geometry.boundingBox).min.y,
+          present(part.geometry.boundingBox).max.y,
+        ]),
       ).toEqual([
         [0, 6],
         [6, 12],
@@ -206,23 +213,23 @@ describe("licensed pack characterization", () => {
     const before = ["position", "normal", "uv"].map((key) =>
       Array.from((near.geometry.getAttribute(key) as BufferAttribute).array),
     );
-    const indices = Array.from(near.geometry.index!.array);
+    const indices = Array.from(present(near.geometry.index).array);
     const geometryDisposal = vi.fn();
     const materialDisposal = vi.fn();
     near.geometry.addEventListener("dispose", geometryDisposal);
     near.material.addEventListener("dispose", materialDisposal);
     const pack = await loaded(near.root);
-    const geometry = pack.parts.get("spruce:0")![0]!.geometry;
+    const geometry = present(present(pack.parts.get("spruce:0"))[0]).geometry;
     geometry.computeBoundingBox();
-    expect(geometry.boundingBox!.min.y).toBe(0);
-    expect(geometry.boundingBox!.max.y).toBe(12);
-    expect(geometry.boundingBox!.min.x).toBeCloseTo(10.08, 5);
+    expect(present(geometry.boundingBox).min.y).toBe(0);
+    expect(present(geometry.boundingBox).max.y).toBe(12);
+    expect(present(geometry.boundingBox).min.x).toBeCloseTo(10.08, 5);
     expect(
       ["position", "normal", "uv"].map((key) =>
         Array.from((near.geometry.getAttribute(key) as BufferAttribute).array),
       ),
     ).toEqual(before);
-    expect(Array.from(near.geometry.index!.array)).toEqual(indices);
+    expect(Array.from(present(near.geometry.index).array)).toEqual(indices);
     pack.dispose();
     expect(geometryDisposal).not.toHaveBeenCalled();
     expect(materialDisposal).not.toHaveBeenCalled();
@@ -251,7 +258,9 @@ describe("licensed pack characterization", () => {
   it("repairs zero normals beyond the first vertex", async () => {
     const pack = await loaded(fixture({ zeroNormal: true }).root);
     try {
-      const normal = pack.parts.get("spruce:0")![0]!.geometry.getAttribute("normal");
+      const normal = present(present(pack.parts.get("spruce:0"))[0]).geometry.getAttribute(
+        "normal",
+      );
       expect(Math.hypot(normal.getX(1), normal.getY(1), normal.getZ(1))).toBeGreaterThan(0.01);
     } finally {
       pack.dispose();
@@ -259,7 +268,7 @@ describe("licensed pack characterization", () => {
   });
   it("disposes shared near/far material once", async () => {
     const pack = await loaded(fixture().root, fixture({ mapped: false }).root);
-    const unique = new Set([...pack.parts.values()].flat().map((part) => part.material!));
+    const unique = new Set([...pack.parts.values()].flat().map((part) => present(part.material)));
     const spies = [...unique].map((material) => {
       const spy = vi.fn();
       material.addEventListener("dispose", spy);
