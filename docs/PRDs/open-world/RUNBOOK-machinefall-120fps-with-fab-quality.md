@@ -134,7 +134,7 @@ The gap is CPU while walking. The costs, as span p95s, which overlap and do not 
   - PRD-269 has landed (`3630847a`); **Result 2026-10-03:** PROPOSED → PARTIAL, cited to `3630847a`. Kept out of `done/` — criterion 3's playtest does not exist. proof: `git show --stat 3630847a`.
   - [PRD-461](PRD-461-view-distance-basics.md)'s `terrain.streamRadius` blocker has landed. **Result 2026-10-03:** NOT STARTED → READY, citing `4f9638c2e` (#358). proof: `git log -S streamRadius -- packages/core/src`.
 - [x] Remove the stale duplicates `meta-human/PRD-465` and the batch copy of `PRD-VQ-11`. **Result 2026-10-03:** both deleted; each was a strict prefix of its `done/` copy (465: 12 stale-only lines, all pre-execution status and unticked boxes; VQ-11: 14, all the same). No link pointed at either stale path. proof: `diff` against `docs/PRDs/done/`.
-- [ ] Update `00-REPO-GROUNDING.md` (virtual shadow maps ship) and WORLD-STREAMING.md (virtualized geometry ships; occlusion is now PRD-489's call).
+- [x] Update `00-REPO-GROUNDING.md` (virtual shadow maps ship) and WORLD-STREAMING.md (virtualized geometry ships; occlusion is now PRD-489's call). **Result 2026-10-03:** `VirtualShadowNode`/`readVirtualShadowMarker` ship from `@threenative/core` since `161d11222` (PR #46) — all three F14 rows corrected from "Nothing / greenfield" to Shipped with the page path (PRD-457) as the remaining work. The guide gained one section naming `ClusteredMesh`/`ClusteredBatch`, `gpuScene` on by default, and PRD-489 as the occlusion go/no-go. proof: `rg 'VirtualShadowNode' packages/core/src/index.ts`.
 - [ ] Refresh rows G04, G05, G11, G15 and G16 in `docs/unreal-engine/ThreeNative_Unreal_Visual_Gap_Tracker.xlsx`.
 
 ## Not on this runbook, by decision
