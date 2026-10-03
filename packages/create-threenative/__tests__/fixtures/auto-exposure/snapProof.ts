@@ -18,6 +18,7 @@ export function qualifyExposureSnap(
     first === undefined ||
     before === undefined ||
     first.updates !== 181 ||
+    Reflect.get(first, "deltaSeconds") !== 1 / 60 ||
     before.updates !== 180 ||
     Math.abs(Math.abs(first.measurement.targetStops - before.measurement.targetStops) - 11) > 0.25
   )

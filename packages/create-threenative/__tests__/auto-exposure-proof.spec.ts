@@ -1,5 +1,7 @@
 import { readFileSync } from "node:fs";
+import { PerspectiveCamera, Scene } from "three";
 import { describe, expect, it } from "vitest";
+import { createFixedExposureRooms } from "./fixtures/auto-exposure/fixedRooms.js";
 import {
   assertDeterministicExposureBudget,
   assertExposureClock,
@@ -7,6 +9,7 @@ import {
   exposureCutTiming,
   qualifyExposureCase,
 } from "./fixtures/auto-exposure/proof.js";
+import { qualifyExposureSnap } from "./fixtures/auto-exposure/snapProof.js";
 
 function report() {
   return {
@@ -436,4 +439,74 @@ describe("runtime exposure proof", () => {
   it("rejects a disabled graph that claims adaptation was applied", () => {
     expect(() => assertExposureProof(report(), false)).toThrow(/measurement/i);
   });
+});
+
+describe("approved first-update snap acceptance", () => {
+  function snapReport(errorStops: number) {
+    const value = deterministicReport(true);
+    const rooms = createFixedExposureRooms(
+      new Scene(),
+      new PerspectiveCamera(48, 16 / 9, 0.1, 100),
+      11,
+    );
+    rooms.setPose(true);
+    const before = rooms.snapshot();
+    rooms.setPose(false);
+    const after = rooms.snapshot();
+    rooms.dispose();
+    let postCut = false;
+    value.observations.console = value.observations.console.map(({ text }) => {
+      const separator = text.indexOf(":");
+      const kind = text.slice(0, separator);
+      const data = JSON.parse(text.slice(separator + 1));
+      if (kind === "TN_EXPOSURE_CUT") {
+        data.cameraCut = { before, after };
+        postCut = true;
+      }
+      if (kind === "TN_EXPOSURE_SAMPLE") data.cameraPose = postCut ? after : before;
+      if (kind === "TN_EXPOSURE_SAMPLE" || kind === "TN_EXPOSURE_TIMING")
+        data.deltaSeconds = 1 / 60;
+      return { text: `${kind}:${JSON.stringify(data)}` };
+    });
+    const firstIndex = value.observations.console.findIndex(
+      ({ text }) =>
+        text.startsWith("TN_EXPOSURE_SAMPLE:") && JSON.parse(text.slice(19)).updates === 181,
+    );
+    for (const index of [firstIndex - 1, firstIndex]) {
+      const entry = value.observations.console[index];
+      if (entry === undefined) throw new Error("First snap pair missing.");
+      const separator = entry.text.indexOf(":");
+      const data = JSON.parse(entry.text.slice(separator + 1));
+      const measurement = data.measurement ?? data;
+      measurement.exposureStops = measurement.targetStops - errorStops;
+      measurement.settled = errorStops <= 0.25;
+      entry.text = `${entry.text.slice(0, separator)}:${JSON.stringify(data)}`;
+    }
+    return value;
+  }
+  it("uses the same accuracy gate for the positive and zero-gain arms", () => {
+    expect(qualifyExposureSnap(snapReport(0.1), 1).errorStops).toBeCloseTo(0.1);
+    expect(qualifyExposureSnap(snapReport(10), 0).expectedFailure).toContain(
+      "TN_EXPOSURE_SNAP_RESPONSE_MISSING",
+    );
+    expect(() => qualifyExposureSnap(snapReport(10), 1)).toThrow(
+      "TN_EXPOSURE_SNAP_RESPONSE_MISSING",
+    );
+    expect(() => qualifyExposureSnap(snapReport(0.1), 0)).toThrow("unexpectedly met");
+  });
+  it.each([undefined, 0, 1 / 30, Number.NaN])(
+    "rejects an undeclared first-update delta %s",
+    (delta) => {
+      const value = snapReport(0.1);
+      const entry = value.observations.console.find(
+        ({ text }) =>
+          text.startsWith("TN_EXPOSURE_SAMPLE:") && JSON.parse(text.slice(19)).updates === 181,
+      );
+      if (entry === undefined) throw new Error("First snap sample missing.");
+      const data = JSON.parse(entry.text.slice(19));
+      data.deltaSeconds = delta;
+      entry.text = `TN_EXPOSURE_SAMPLE:${JSON.stringify(data)}`;
+      expect(() => qualifyExposureSnap(value, 1)).toThrow(/first paired sample/);
+    },
+  );
 });
