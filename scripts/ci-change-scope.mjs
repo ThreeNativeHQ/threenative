@@ -26,7 +26,7 @@ export const NATIVE_PATHS = [
 function isNativePath(file) {
   return NATIVE_PATHS.some((pattern) => pattern.test(file));
 }
-const SELECTIONS = new Set(["full", "prose", "instructions", "reused", "ci"]);
+const SELECTIONS = new Set(["full", "prose", "instructions", "reused", "ci", "warm"]);
 // CI configuration: the workflows, the scripts that decide and report on the board, their own specs
 // and the runner images. A diff made only of these cannot change a line of engine, template or
 // package, so the jobs with no consumer for a workflow file are the only thing it can break — and
@@ -74,6 +74,11 @@ const BOARD_JOBS = [...FULL_JOBS, "lint", "supply-chain"];
 // typecheck, test-unit and budgets are ordered behind its upload — dropping it would leave three
 // required jobs waiting on a producer that never ran.
 const CI_JOBS = new Set(["typecheck", "test-unit", "budgets", "build-artifacts"]);
+// PRD-481 phase 2: the two jobs whose product is a cache every pull request into develop reads —
+// `build-artifacts` runs the shared workspace-dist action and saves `workspace-dist-*`, and
+// `test-native` saves `native-build-*`, `native-third-party-*` and its ccache through the cache
+// action's own post step. A warm run verifies nothing else, so nothing else runs.
+const WARM_JOBS = ["build-artifacts", "test-native"];
 // Strength, not identity: a stronger source profile may serve a weaker requirement, never the reverse.
 const TARGET_RANKS = { main: 2, develop: 1, other: 0 };
 const NATIVE_RANKS = { full: 2, reduced: 1, none: 0 };
@@ -90,10 +95,12 @@ export function selectionPlan(
   const full = selection === "full";
   const reused = selection === "reused";
   const ciLane = selection === "ci";
+  const warm = selection === "warm";
   const checks = {
     docs: !reused,
     instructions: full || selection === "instructions",
-    workspace: full,
+    // A warm run builds the workspace, because publishing it is the run's whole product.
+    workspace: full || warm,
     native: full,
     templates: full,
   };
@@ -105,40 +112,47 @@ export function selectionPlan(
       : proseReason;
   const jobs = Object.fromEntries(
     FULL_JOBS.map((name) => {
-      // `ci` narrows the board to the gates that read the configuration; it never widens one, so a
-      // job outside CI_JOBS is exempt exactly as it is for prose.
-      const required = full || (ciLane && CI_JOBS.has(name));
+      // `ci` narrows the board to the gates that read the configuration and `warm` to the two cache
+      // producers; neither widens one, so any other job is exempt exactly as it is for prose.
+      const required = full || (ciLane && CI_JOBS.has(name)) || (warm && WARM_JOBS.includes(name));
       return [
         name,
         {
           required,
           reason: full
             ? `Full dependency closure: ${reason}`
-            : required
-              ? `CI configuration only: ${reason}`
-              : exemption(
-                  `Exempt: ${selection} changes do not modify runtime, package, template or shared build inputs`,
-                ),
+            : warm && required
+              ? `Cache warm only: ${reason}`
+              : required
+                ? `CI configuration only: ${reason}`
+                : exemption(
+                    `Exempt: ${selection} changes do not modify runtime, package, template or shared build inputs`,
+                  ),
         },
       ];
     }),
   );
   const proseOnly = selection === "prose";
-  const exemptLane = proseOnly || reused;
+  const exemptLane = proseOnly || reused || warm;
+  // A warm run verifies nothing at all, so its exemptions say what this run really is instead of
+  // borrowing the prose lane's reason: every develop push would otherwise report that it skipped a
+  // gate because it changed only Markdown.
+  const exemptReason = (what) =>
+    warm
+      ? `Exempt: a develop push publishes the base-branch caches and runs no gate; ${what} run at promotion`
+      : exemption(
+          "Exempt: a Markdown-only change runs no gate; docs are re-validated on the develop nightly and at promotion",
+        );
   jobs.lint = {
     required: !exemptLane || ciLane,
     reason: exemptLane
-      ? exemption(
-          "Exempt: a Markdown-only change runs no gate; docs are re-validated on the develop nightly and at promotion",
-        )
+      ? exemptReason("docs are")
       : "Documentation, formatting and selected instruction contracts",
   };
   jobs["supply-chain"] = {
     required: !exemptLane || ciLane,
     reason: exemptLane
-      ? exemption(
-          "Exempt: a Markdown-only change runs no gate; secrets and dependency review are re-validated on the develop nightly and at promotion",
-        )
+      ? exemptReason("secrets and dependency review are")
       : "Changed prose can still contain credentials; dependency review remains applicable",
   };
   // The native matrix blocks the merge in exactly three cases: a full selection that touches a
@@ -293,6 +307,17 @@ function ghApi(pathname) {
 }
 
 /**
+ * A develop push is the cache-warm lane and nothing else, so it proves nothing: it ran no gate and
+ * required only the two jobs that publish caches. `head_branch` is the branch the run was pushed to,
+ * and `ci.yml` names develop on `push` only for this lane — so a push whose branch is develop is a
+ * warm run by construction. Both the scan and the verdict consult it: the scan has to keep looking
+ * past it rather than select it and then refuse.
+ */
+function isWarmRun(run) {
+  return run?.event === "push" && run?.head_branch === "develop";
+}
+
+/**
  * The successful CI run that tested this exact tree, newest first.
  *
  * The key is a whole repository tree read out of git, never a name, label or artifact a job could
@@ -323,6 +348,7 @@ export function findReusableRun(root, candidateSha) {
     if (String(id) === process.env.GITHUB_RUN_ID) continue;
     examined += 1;
     if (examined > REUSE_CANDIDATES) break;
+    if (isWarmRun(run)) continue;
     if (treeOf(root, sha) === candidateTree) return { runId: id, tree: candidateTree };
     // A promotion, a re-push or a queue entry names a commit this full-history clone already has,
     // so the fetch below is the exception rather than the rule.
@@ -360,6 +386,13 @@ export function sourceVerdict({ runId, current }) {
       code: "CI_REQUIRED_SOURCE_COVERAGE",
     };
   }
+  // A warm run published caches and verified nothing, so it cannot stand in for a board.
+  if (isWarmRun(run)) {
+    return {
+      error: `CI run ${runId} is the develop cache-warm lane, which is never a reuse source`,
+      code: "CI_REQUIRED_SOURCE_COVERAGE",
+    };
+  }
   const listed = runJobs(runId);
   if ("error" in listed) return { error: listed.error, code: "CI_REQUIRED_SOURCE_UNKNOWN" };
   const jobs = listed.jobs;
@@ -393,6 +426,16 @@ export function sourceVerdict({ runId, current }) {
   return { succeeded: true, conclusion: verdict.conclusion, profile: source.profile };
 }
 
+// Actions can report only a skipped reusable-workflow stub or an incomplete matrix graph.
+// Even two matching expanded graphs can omit the same leg. Until an authoritative expansion and
+// per-leg routing exists, these boards must execute normally rather than reuse an unproven pass.
+const UNPROVEN_REUSE_BOARDS = new Set([
+  "test-unit",
+  "golden-path-template",
+  "template-nonvisual",
+  "native-platforms",
+]);
+
 /**
  * What this run demands of a source: its profile, the runner class each of its jobs routes to, and
  * the board jobs and matrix legs its own job graph carries. `exempt` names the board jobs the plan
@@ -403,6 +446,16 @@ export function currentRun({ eventName, baseRef = "", exempt = [] }) {
   const listed = runJobs(process.env.GITHUB_RUN_ID ?? "");
   if ("error" in listed) return listed;
   const jobs = listed.jobs;
+  const requiredBoards = BOARD_JOBS.filter((name) => !exempt.includes(name));
+  const unproven = requiredBoards.find((name) => UNPROVEN_REUSE_BOARDS.has(name));
+  if (unproven !== undefined) {
+    return {
+      error: `required matrix/reusable board ${unproven} has no authoritative complete expansion and routing; run the normal full board`,
+    };
+  }
+  const missing = requiredBoards.find((name) => !jobs.some((job) => boardName(job.name) === name));
+  if (missing !== undefined)
+    return { error: `the current run has not materialized required board ${missing}` };
   // Per job, not per run: `supply-chain` is always hosted, the small joins always run on
   // `tn-local-light` and the platform legs are hosted, so a board is mixed on purpose and one class
   // for the whole run is a routing this check cannot model — which was PRD-480. Labels are known
@@ -430,6 +483,10 @@ export function currentRun({ eventName, baseRef = "", exempt = [] }) {
 export function coverageMiss(current, source) {
   const weaker = profileMiss(current.profile, source.profile);
   if (weaker !== "") return weaker;
+  const unproven = current.required.find((name) => UNPROVEN_REUSE_BOARDS.has(boardName(name)));
+  if (unproven !== undefined)
+    return `required matrix/reusable board ${unproven} has no authoritative complete expansion and routing`;
+  if (current.required.length === 0) return "the current run has no proven required job graph";
   for (const name of current.required) {
     const ran = source.jobs.find((job) => job.name === name);
     if (ran === undefined) return `the source run never ran ${name}`;
@@ -437,25 +494,13 @@ export function coverageMiss(current, source) {
       return `the source run's ${name} concluded ${String(ran.conclusion)}`;
     }
     const on = runnerClass(ran);
-    // This run's class for that job, or the class most of its known jobs report when the job's own is
-    // unassigned — a reuse run skips every leg it replaces, and a skipped leg reports no runner. That
-    // stand-in is the only routing this run can prove for such a job, so a leg that disagrees with it
-    // is a miss, and one that agrees is judged by the same fail-closed rule.
-    const routes = current.runnerClasses.get(name) ?? dominantClass(current.runnerClasses);
+    // Only this job's own known routing is evidence; another job's runner is never its proxy.
+    const routes = current.runnerClasses.get(name) ?? "unknown";
     if (on === "unknown" || on !== routes) {
       return `the source run's ${name} ran on ${on} while this run routes to ${routes}`;
     }
   }
   return "";
-}
-
-/** The class most of a run's known jobs report, `unknown` when none does. A tie keeps the first seen. */
-function dominantClass(classes) {
-  const counts = new Map();
-  for (const value of classes.values()) counts.set(value, (counts.get(value) ?? 0) + 1);
-  let best = "unknown";
-  for (const [value, count] of counts) if (count > (counts.get(best) ?? 0)) best = value;
-  return best;
 }
 
 /**
@@ -650,6 +695,21 @@ export function classify(options) {
       candidateSha,
     );
   if (options.full) return full("explicit full verification requested");
+  // PRD-481 phase 2. A pull request's caches are scoped to `refs/pull/N/merge`, which no other pull
+  // request reads, so only a run on the base branch publishes something every pull request into
+  // develop reads — and before this lane nothing ran on develop at all, so every pull request paid
+  // a full native rebuild. The lane exists only to publish those caches; it verifies nothing.
+  if (options.eventName === "push" && options.target === "develop") {
+    return selectionPlan(
+      "warm",
+      "a develop push publishes the base-branch caches every pull request into develop reads, and verifies nothing",
+      [],
+      candidateSha,
+      false,
+      0,
+      target,
+    );
+  }
   // Every event except a pull request stays full, and so does every target but develop. A merge
   // group is the queue testing the exact tree a merge would produce, so it runs the whole board
   // before anything lands — the narrowings below are for reviewing a change, never for qualifying a
