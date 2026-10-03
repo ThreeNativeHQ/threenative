@@ -564,6 +564,28 @@ describe("VirtualShadowNode", () => {
     },
   );
 
+  it("measures an aerial view focus without raycasting received triangles each frame", () => {
+    // A streamed world holds thousands of receiving meshes: a per-frame triangle raycast over
+    // them blocked Machinefall's main thread for seconds on its aerial views.
+    const { camera, light, scene } = world();
+    const ground = new Mesh(new BoxGeometry(512, 1, 512), new MeshBasicMaterial());
+    ground.position.y = 19.5;
+    ground.receiveShadow = true;
+    scene.add(ground);
+    camera.position.set(0, 140, 0);
+    camera.lookAt(0, 20, -150);
+    scene.updateMatrixWorld(true);
+    const node = setupNode(light, { clipExtents: [24, 96, 320], mapSize: 512 });
+    const raycast = vi.spyOn(Mesh.prototype, "raycast");
+    settle(node, camera);
+    for (let frame = 0; frame < 10; frame += 1) node.updateBefore(frameFor(camera));
+    expect(raycast, "aerial focus must not raycast every receiving mesh").not.toHaveBeenCalled();
+    const expected = node.clipmap.project(new Vector3(0, 20, -150));
+    expect(node.clipmap.centerLight.v).toBeCloseTo(expected.v, 2);
+    raycast.mockRestore();
+    node.dispose();
+  });
+
   it("keeps a walking camera on eye follow with unchanged render and draw counts", () => {
     const { camera, light, scene } = world();
     scene.add(

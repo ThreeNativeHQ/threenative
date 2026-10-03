@@ -8,7 +8,6 @@ import {
   type OrthographicCamera,
   PCFShadowMap,
   PCFSoftShadowMap,
-  Raycaster,
   type RenderTarget,
   Sphere,
   Vector3,
@@ -564,7 +563,6 @@ const _box = new Box3();
 const _size = new Vector3();
 const _focus = new Vector3();
 const _forward = new Vector3();
-const _focusRay = new Raycaster();
 
 /** What a caster is doing as far as a shadow level is concerned: 1 visible, 2 casting. */
 function casterFlag(mesh: { castShadow?: boolean; visible?: boolean }): number {
@@ -2024,25 +2022,20 @@ export class VirtualShadowNode extends ShadowBaseNode {
     const far = (camera as Camera & { far?: number }).far ?? Number.POSITIVE_INFINITY;
     // Solve against the stored height, including terrain relief along the ray. Flat terrain
     // converges in one query; a bounded iteration avoids scanning terrain triangles every frame.
-    let distance = (height - eye.y) / _forward.y;
-    for (let step = 0; step < 16 && distance > 0 && distance <= far; step += 1) {
-      _focus.copy(eye).addScaledVector(_forward, distance);
+    // Never raycast received triangles here: a streamed world holds thousands of receiving
+    // meshes, and a per-frame scan of them blocked the main thread for seconds. The windows carry
+    // guard bands, so the ray's hit on the received height (or the plane under the eye where no
+    // numerical height exists) is focus enough.
+    let distance = Math.min((height - eye.y) / _forward.y, far);
+    if (!(distance > 0)) return _focus;
+    _focus.copy(eye).addScaledVector(_forward, distance);
+    for (let step = 0; step < 16; step += 1) {
       const received = this.#heightAt(_focus.x, _focus.z);
-      if (received === undefined) break;
-      if (Math.abs(_focus.y - received) <= 0.001) return _focus;
-      distance = (received - eye.y) / _forward.y;
-    }
-    _focusRay.set(eye, _forward);
-    _focusRay.far = far;
-    let nearest = far;
-    _focus.copy(eye);
-    for (const mesh of this.#casterTable) {
-      if (!mesh.visible || !mesh.receiveShadow) continue;
-      const hit = _focusRay.intersectObject(mesh, false)[0];
-      if (hit !== undefined && hit.distance < nearest) {
-        nearest = hit.distance;
-        _focus.copy(hit.point);
-      }
+      if (received === undefined || Math.abs(_focus.y - received) <= 0.001) break;
+      const next = (received - eye.y) / _forward.y;
+      if (!(next > 0) || next > far) break;
+      distance = next;
+      _focus.copy(eye).addScaledVector(_forward, distance);
     }
     return _focus;
   }
