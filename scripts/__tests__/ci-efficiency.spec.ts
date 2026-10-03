@@ -252,12 +252,15 @@ describe("PRD-380 an ordinary pull request owes only the Linux native rows", () 
     expect(executable.get("desktop")).toContain("needs.scope.outputs.native_tier == 'full'");
     expect(executable.get("ios-simulator")).toContain("needs.scope.outputs.native_tier == 'full'");
     // A job's `if` cannot read `matrix`, so the arm64 row drops through the matrix itself, shaped
-    // from the same tier: linux-x64 survives a reduced run and both rows survive anything else.
+    // from the same tier: linux-x64 survives a reduced run and both rows survive anything else. The
+    // x64 row keeps the routing expression every movable Linux job uses (PRD-480).
     const scope = executable.get("scope") ?? "";
     expect(scope).toContain("native_tier: ${{ steps.classify.outputs.native_tier }}");
     expect(scope).toContain("starter_rows: ${{ steps.rows.outputs.starter_rows }}");
-    expect(scope).toContain('platform: "linux-x64", runner: "ubuntu-24.04"');
-    expect(scope).toContain('platform: "linux-arm64", runner: "ubuntu-24.04-arm"');
+    expect(scope).toContain(
+      '{ platform: "linux-x64", runner: "${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && \'ubuntu-24.04\' || vars.TN_RUNNER }}"',
+    );
+    expect(scope).toContain('{ platform: "linux-arm64", runner: "ubuntu-24.04-arm" }');
     expect(scope).toContain("rows.slice(0, 1)");
     expect(executable.get("starter-linux")).toContain(
       "matrix: ${{ fromJSON(needs.scope.outputs.starter_rows) }}",

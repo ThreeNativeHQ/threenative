@@ -53,7 +53,10 @@ jobs:
   # The caller is the single selection authority. Dispatch has no exemption inputs and is full.
   scope:
     name: Validate caller selection and candidate
-    runs-on: ubuntu-latest
+    # PRD-480. `github.event` inside a `workflow_call` is the caller's event payload, so this
+    # expression reads the same `pull_request` fork flag ci.yml did when it called this file: a fork
+    # PR falls through to hosted runners and never reaches the owner's machine.
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER_LIGHT) && 'ubuntu-24.04' || vars.TN_RUNNER_LIGHT }}
     timeout-minutes: 5
     outputs:
       scope: ${{ steps.classify.outputs.scope }}
@@ -89,7 +92,8 @@ jobs:
       # Linux arm64 (kuoruan/libv8 ships Linux x64 only; Dawn's ubuntu-latest asset is x64) and a
       # source V8 build is not allowed in CI — so that host is built with QuickJS over wgpu-native,
       # the one WebGPU backend publishing an arm64 Linux archive, which scripts/download-deps.mjs
-      # and scripts/native-build.mjs select from `process.arch`. A reduced run keeps x64 alone.
+      # and scripts/native-build.mjs select from `process.arch`. A reduced run keeps x64 alone, and
+      # x64 routes through the same TN_RUNNER switch every other movable Linux job uses (PRD-480).
       - id: rows
         env:
           TN_NATIVE_TIER: ${{ steps.classify.outputs.native_tier }}
@@ -97,7 +101,7 @@ jobs:
           set -euo pipefail
           node -e '
             const rows = [
-              { platform: "linux-x64", runner: "ubuntu-24.04" },
+              { platform: "linux-x64", runner: "${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}" },
               { platform: "linux-arm64", runner: "ubuntu-24.04-arm" },
             ];
             // Reduced only when the tier says so: an unreadable tier keeps every row.
@@ -115,7 +119,7 @@ jobs:
     if: >-
       needs.scope.outputs.selection == 'full' &&
       inputs.ios_only == false
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 30
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
@@ -162,7 +166,7 @@ jobs:
     name: Android V8 source payload
     needs: scope
     if: needs.scope.outputs.selection == 'full' && inputs.ios_only != true
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     # 180-minute build ceiling plus 30 minutes for actions/cache/save, per the action's note.
     timeout-minutes: 210
     outputs:
@@ -212,6 +216,9 @@ jobs:
       needs.android-v8-source.outputs.published == 'false' &&
       github.event_name != 'pull_request' &&
       (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
+    # PRD-480 leaves this one on GitHub's machines: it is the release write itself — `contents:
+    # write` and a `gh release upload` below — and no pool container is handed a token that can
+    # publish. It is named on the hosted allow-list in ci-structure.spec.ts.
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -239,7 +246,7 @@ jobs:
     name: Native collector evidence coverage
     needs: [scope, android-emulator-parity, desktop-parity, desktop, ios-simulator]
     if: ${{ !cancelled() && needs.scope.outputs.selection == 'full' }}
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 5
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
@@ -274,7 +281,7 @@ jobs:
     name: Networking qualification matrix
     needs: [scope, android-emulator-parity, desktop-parity, desktop, ios-simulator]
     if: ${{ always() && needs.scope.outputs.selection == 'full' }}
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER_LIGHT) && 'ubuntu-24.04' || vars.TN_RUNNER_LIGHT }}
     timeout-minutes: 5
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
@@ -342,6 +349,8 @@ jobs:
       needs.scope.outputs.selection == 'full' &&
       inputs.ios_only != true &&
       needs.android-v8-source.result == 'success'
+    # Hosted, measured: SwiftShader renders the emulator's GPU on the CPU, and on a 4-thread tn-local
+    # slot run 37082733117 spent 41 min of this job's 45 still running APKs (hosted finishes in ~30).
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
@@ -473,8 +482,14 @@ jobs:
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
             | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
+          # `|| true` on both udev calls, because the routed `tn-local` container cannot do what
+          # they do: no udev is running in it and its /sys is read-only, so `udevadm trigger`
+          # fails there for a reason that has nothing to do with acceleration. The container does
+          # not need them — `scripts/ci-runners.sh` passes `--device /dev/kvm` and the image's
+          # entrypoint sets its mode before the job starts — and a step that fails on the way to
+          # the report below costs this lane the whole emulator run.
+          sudo udevadm control --reload-rules || true
+          sudo udevadm trigger --name-match=kvm || true
           # Report the mode, never assert it. `test -w /dev/kvm` as the last line of this step —
           # copied from native-release.yml, where nothing has exercised it — turned "this runner
           # has no KVM" into a failed job, which is worse than the slow boot it was meant to fix.
@@ -766,7 +781,7 @@ jobs:
     if: >-
       needs.scope.outputs.selection != 'prose' &&
       inputs.ios_only == false
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 20
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
@@ -838,7 +853,7 @@ jobs:
     if: >-
       needs.scope.outputs.selection == 'full' &&
       inputs.ios_only != true
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 75
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
@@ -1270,8 +1285,12 @@ jobs:
           # The release container is a ZIP on macOS and Windows and desktop-distribution.mjs shells
           # out to `zip -r -q`. A missing archiver must be a red job, never a silent pass.
           if [ "${{ matrix.platform }}" = "Windows" ]; then
-            choco install zip -y --no-progress
-            choco install nsis --version=3.11.0 -y --no-progress
+            # The community feed drops requests now and then ("package was not found" for a listed
+            # version, run 37079046851). Retry twice; makensis -VERSION below still fails closed.
+            for attempt in 1 2 3; do
+              choco install zip -y --no-progress && choco install nsis --version=3.11.0 -y --no-progress && break
+              [ "$attempt" = 3 ] || sleep 30
+            done
             nsis='/c/Program Files (x86)/NSIS'
             "$nsis/makensis.exe" -VERSION
             cygpath -w "$nsis" >> "$GITHUB_PATH"
@@ -1788,7 +1807,10 @@ jobs:
       # The arm64 row is not a row an ordinary pull request owes: it is the free hosted
       # `ubuntu-24.04-arm`, kept for main, the nightly and an explicit audit so the arm64 host keeps
       # proving itself on the branch that ships it. `scope` shapes the rows from the tier it
-      # resolved, so this job runs linux-x64 alone on a reduced run and both rows otherwise.
+      # resolved, so this job runs linux-x64 alone on a reduced run and both rows otherwise. The
+      # routing values live beside the shaping, on the runner PRD-480 fixed: the movable x64 leg
+      # goes through the TN_RUNNER switch and falls back to the same hosted image, arm64 stays
+      # hosted because the owner's machine is x64.
       matrix: ${{ fromJSON(needs.scope.outputs.starter_rows) }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 50
