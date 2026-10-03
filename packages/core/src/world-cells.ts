@@ -3050,8 +3050,6 @@ const LOD_BIAS_RISE = 1.08;
 const LOD_BIAS_DECAY = 0.95;
 /** Seconds between rise or decay steps; a change is never larger than one step. */
 const LOD_BIAS_STEP_SECONDS = 0.5;
-/** Seconds of run ignored before the bias adapts, so compiles and the first frames are not judged. */
-const LOD_BIAS_WARMUP_SECONDS = 2;
 /** Below this share of the affordable budget the bias decays; between it and the budget it holds. */
 const LOD_BIAS_DECAY_SHARE = 0.6;
 /** Default fraction of a 60 fps frame the main pass may take before the bias rises. */
@@ -3738,7 +3736,7 @@ export class WorldCells extends Group implements IComputeDriven {
   readonly #mainGpuShare: number;
   /** The distance multiplier both selection paths are using right now. */
   #lodBias = LOD_BIAS_MIN;
-  /** The clock the warm-up and the step cadence are measured from. */
+  /** The clock the step cadence and the first marker line are measured from. */
   readonly #lodBiasStartedAt: number;
   /** The last time a rise or decay step ran. */
   #lodBiasStepAt: number;
@@ -4677,9 +4675,10 @@ export class WorldCells extends Group implements IComputeDriven {
    * The adaptive LOD bias control loop. Reads the main pass's smoothed GPU time from the renderer
    * and, once per `LOD_BIAS_STEP_SECONDS`, raises the shared bias while that pass is over its share
    * of the frame and decays it back toward 1 while it is comfortably under; between the two it
-   * holds, which is the band that keeps a level sitting on the budget from oscillating. The first
-   * `LOD_BIAS_WARMUP_SECONDS` are ignored, so shader compiles and the first resident frames are not
-   * judged, and a window with no fresh sample is a hold, never a rise on a stale number.
+   * holds, which is the band that keeps a level sitting on the budget from oscillating. A window with
+   * no fresh sample is a hold, never a rise on a stale number, and a rise needs the world itself to be
+   * the thing being drawn — see {@link #biasOverBudget}, which is also what replaced the warmup
+   * seconds. The decay is never gated: a world that can afford its main pass gives the bias back.
    */
   #adaptLodBias(renderer: IRendererLike | undefined): void {
     if (this.#adaptiveLod === false) {
@@ -4693,7 +4692,6 @@ export class WorldCells extends Group implements IComputeDriven {
     // it judges pass its own test. A held or clock-less update is just the cap.
     const frameMs = Math.min(Math.max(0, now - this.#lodBiasFrameAt), 1000 / DEFAULT_TARGET_FPS);
     this.#lodBiasFrameAt = now;
-    if (now - this.#lodBiasStartedAt < LOD_BIAS_WARMUP_SECONDS * 1000) return;
     if (now - this.#lodBiasStepAt < LOD_BIAS_STEP_SECONDS * 1000) return;
     const gpuMs = (renderer ?? this.#renderer)?.gpuMainMs?.();
     if (gpuMs === undefined) return;
@@ -4702,7 +4700,7 @@ export class WorldCells extends Group implements IComputeDriven {
     if (!(affordableMs > 0)) return;
     const bias =
       gpuMs > affordableMs
-        ? Math.min(LOD_BIAS_MAX, this.#lodBias * LOD_BIAS_RISE)
+        ? this.#biasOverBudget()
         : gpuMs < LOD_BIAS_DECAY_SHARE * affordableMs
           ? Math.max(LOD_BIAS_MIN, this.#lodBias * LOD_BIAS_DECAY)
           : this.#lodBias;
@@ -4717,6 +4715,31 @@ export class WorldCells extends Group implements IComputeDriven {
           `tris=${triangles === undefined ? "n/a" : String(triangles)}`,
       );
     }
+  }
+
+  /**
+   * The next bias while the main pass is over its share of the frame, or the bias unchanged when the
+   * world is not what that pass is drawing.
+   *
+   * A load's GPU time is shader compiles, buffer uploads and the prewarm — none of it main-pass world
+   * geometry, so a coarser selection cannot take any of it back. What it costs is the first playable
+   * frame: every tree selects the level authored for its distance times the bias, the coarsest levels
+   * hold almost nothing, and the shadow casters, which take no bias, leave a band of tree shadows with
+   * no trees 80-300 m out. Measured on Machinefall (RTX 2080, WebGPU), the bias climbed 1.08 → 2.33
+   * over six `TN_LOD_BIAS` steps, all of them before the loading overlay dropped.
+   *
+   * So the rise waits for the two measurements that say the world is being drawn: the prewarm gate —
+   * what a game's loading screen waits on, and `stats().pendingPrewarm` as the same thing as a number
+   * — and the main pass's own GPU-selected triangle tally, where a tally that landed and says zero is
+   * a world drawn as nothing. A world with no tally at all (no GPU scene, or nothing landed yet) has no
+   * opinion about its own triangles, so the prewarm speaks for it alone. Both are measurements of the
+   * thing being judged, which is what the warmup seconds were standing in for.
+   */
+  #biasOverBudget(): number {
+    if (this.#prewarmQueue.length > 0 || this.#prewarmOwed > this.#prewarmDrawn)
+      return this.#lodBias;
+    if (this.gpuSceneTally()?.triangles === 0) return this.#lodBias;
+    return Math.min(LOD_BIAS_MAX, this.#lodBias * LOD_BIAS_RISE);
   }
 
   /** Writes the bias to both selection paths: the shared CPU multiplier and the GPU uniform. */

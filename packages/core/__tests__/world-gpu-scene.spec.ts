@@ -3431,7 +3431,55 @@ describe("WorldCells adaptive LOD bias", () => {
     world.dispose();
   });
 
-  it("pins the bias at 1 when disabled, unmeasured, or still warming up", async () => {
+  it("holds the bias through the load and rises once the main pass draws the world", async () => {
+    // A load's GPU time is shader compiles, buffer uploads and the prewarm, which a coarser selection
+    // cannot reduce: the bias bought there is paid for at the first playable frame, where every tree
+    // selects the level authored for its distance times that bias while the unbiased casters still
+    // draw their shadows — a band of shadows with no trees. So the rise waits for the measurement that
+    // says the world is being drawn, and the fixed warmup seconds are gone with it.
+    let clock = 0;
+    // The GPU's own main-pass tally, stubbed the way `WorldGpuScene` reads it: index count, instance
+    // count. Zero instances is what an indirect world reports before its first draw.
+    let instances = 0;
+    const world = await loadWorldAt(() => clock, { gpuSceneTally: true });
+    const renderer = {
+      compute: (): void => {},
+      gpuMainMs: (): number => 40,
+      kind: "webgpu",
+      log: (): void => {},
+      raw: { backend: { hasFeature: (): boolean => true } },
+      readback: (): Promise<ArrayBuffer> =>
+        Promise.resolve(Uint32Array.from([36, instances, 0, 0, 0]).buffer.slice(0)),
+    } as unknown as IRendererLike;
+    const camera = playerCamera();
+
+    // Loading: 3.2 s of a main pass four times over budget, with the prewarm holding batches the
+    // gate is still waiting on. Nothing projects the world, which is why no batch has drawn.
+    for (let frame = 0; frame < 200; frame += 1) {
+      clock += 16;
+      world.update(renderer, camera);
+      await flush(2);
+    }
+    expect(world.stats().prewarmMinted, "the fixture prewarmed a batch").toBeGreaterThan(0);
+    expect(world.stats().pendingPrewarm, "the prewarm is still owed a draw").toBeGreaterThan(0);
+    expect(lodBias(), "the bias rose during the load").toBe(1);
+
+    // Playing: in a scene, so the gate's draws can come, the prewarm settles and the main pass reports
+    // triangles. The same reading now buys a coarser world.
+    new Group().add(world);
+    instances = 5;
+    for (let frame = 0; frame < 200 && lodBias() === 1; frame += 1) {
+      clock += 16;
+      world.update(renderer, camera);
+      await flush(2);
+    }
+    expect(world.stats().pendingPrewarm, "the settled gate is owed nothing").toBe(0);
+    expect(world.gpuSceneTally()?.triangles, "the main pass reported triangles").toBeGreaterThan(0);
+    expect(lodBias(), "the bias never rose on a drawn world").toBeGreaterThan(1);
+    world.dispose();
+  });
+
+  it("pins the bias at 1 when disabled or unmeasured", async () => {
     // Disabled: an over-budget reading changes nothing, byte-identical to the authored selection.
     let clock = 0;
     const off = await loadWorldAt(() => clock, { adaptiveLod: false });
@@ -3458,16 +3506,6 @@ describe("WorldCells adaptive LOD bias", () => {
     }
     expect(lodBias()).toBe(1);
     blind.dispose();
-
-    // The first two seconds are the world's own: over budget from the first frame, still 1.
-    clock = 0;
-    const warm = await loadWorldAt(() => clock);
-    for (let frame = 0; frame < 100; frame += 1) {
-      clock += 16;
-      warm.update(hot, playerCamera());
-    }
-    expect(lodBias()).toBe(1);
-    warm.dispose();
   });
 
   it("holds the bias on a window with no fresh GPU sample", async () => {
