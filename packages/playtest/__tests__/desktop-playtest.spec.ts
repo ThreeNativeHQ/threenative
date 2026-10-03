@@ -737,7 +737,7 @@ class FakeDesktopDriver implements IDevicePlaytestDriver {
   private installation?: IDeviceBridgeInstallation;
   prepareCalls = 0;
   stopped = false;
-  screenshots: Array<{ path: string; tick: number }> = [];
+  screenshots: Array<{ path: string; tick: number | undefined }> = [];
 
   constructor(
     private readonly bridge: IPlaytestBridgeV1,
