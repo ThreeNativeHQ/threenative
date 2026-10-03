@@ -98,15 +98,27 @@ export interface IPropScatter {
   readonly counts: Record<string, number>;
 }
 
-/** Stand density is world-space and seeded; broad irregular patches leave connected meadows. */
+/**
+ * Stand density, 0..1, as value noise rather than a sum of sines.
+ *
+ * The old mask was `0.52 + 0.27·sin(0.035x + 0.018z) + …`: three plane waves, which is a stripe
+ * generator. A threshold through it puts the trees on diagonals at one spacing and one height, and
+ * that regularity — not the tree model — is what read as "Tree Tree Tree" from the air. Two octaves
+ * of value noise give stands with lobed, irregular edges instead.
+ */
+const standNoise = new ImprovedNoise();
 export function forestWeight(x: number, z: number): number {
   return clamp01(
-    0.52 +
-      0.27 * Math.sin(x * 0.035 + z * 0.018) +
-      0.24 * Math.sin(z * 0.043 - x * 0.017 + 1.3) +
-      0.12 * Math.sin(x * 0.071 + z * 0.061),
+    0.5 +
+      0.3 * standNoise.noise(x * 0.0075, 3.1, z * 0.0075) +
+      0.2 * standNoise.noise(x * 0.026, 8.7, z * 0.026),
   );
 }
+/** An independent field for anything that must not track the stand mask: age, moisture, gaps. */
+const fieldNoise = new ImprovedNoise();
+const sample01 = (x: number, y: number, z: number): number =>
+  clamp01(fieldNoise.noise(x, y, z) * 0.5 + 0.5);
+
 export const SCATTER = {
   spruceSpacing: 4.6,
   spruceCount: 3200,
@@ -134,6 +146,7 @@ export function scatterProps(
       "bush",
       "fern",
       "grass",
+      "litter",
       "poppy",
       "sapling",
       "scrub",
@@ -244,8 +257,29 @@ export function scatterProps(
   };
   const nearEye = (x: number, z: number) =>
     clearings.some(([cx, cz, radius]) => Math.hypot(x - cx, z - cz) < radius * 1.6);
-  const cells = new Map<string, [number, number]>();
+  const cells = new Map<string, [number, number, number][]>();
+  const CELL = 7;
+  // Poisson disc whose radius follows the stand mask: a closed core packs tight, an edge opens out.
+  // There is no per-cell occupancy, because one tree per cell IS the lattice the old rule drew.
+  const crowded = (x: number, z: number, reach: number) => {
+    const cx = Math.floor(x / CELL);
+    const cz = Math.floor(z / CELL);
+    for (let dz = -1; dz <= 1; dz++)
+      for (let dx = -1; dx <= 1; dx++)
+        for (const [tx, tz, tr] of cells.get(`${cx + dx},${cz + dz}`) ?? [])
+          if (Math.hypot(tx - x, tz - z) < Math.max(reach, tr)) return true;
+    return false;
+  };
   const treeAsset = temperate || alpine ? "spruce" : "sapling";
+  // Moisture is measured, not painted: a hollow sits below its neighbours and holds water, and that
+  // is where ferns, litter and the riparian species go.
+  const hollow = (x: number, z: number): number => {
+    const here = clampedHeight(data, x, z);
+    const around = [-26, -13, 13, 26].map(
+      (d) => (clampedHeight(data, x + d, z) + clampedHeight(data, x, z + d)) / 2,
+    );
+    return clamp01(((Math.max(...around) - here) / 3.5 + 0.15) * 0.5);
+  };
   for (
     let tries = 0;
     (counts[treeAsset] ?? 0) < treeLimit && tries < SCATTER.spruceAttempts;
@@ -266,37 +300,87 @@ export function scatterProps(
       forestWeight(x, z) < (temperate ? 0.3 : 0.42)
     )
       continue;
-    const cx = Math.floor(x / SCATTER.spruceSpacing);
-    const cz = Math.floor(z / SCATTER.spruceSpacing);
-    let crowded = false;
-    for (let dz = -1; dz <= 1; dz++)
-      for (let dx = -1; dx <= 1; dx++) {
-        const tree = cells.get(`${cx + dx},${cz + dz}`);
-        if (tree && Math.hypot(tree[0] - x, tree[1] - z) < 3.4) crowded = true;
-      }
-    const key = `${cx},${cz}`;
-    if (crowded || cells.has(key)) continue;
-    cells.set(key, [x, z]);
+    const stand = forestWeight(x, z);
+    const reach = temperate ? 6.4 - 3.2 * clamp01((stand - 0.28) / 0.5) : 3.4;
+    if (crowded(x, z, reach)) continue;
+    const key = `${Math.floor(x / CELL)},${Math.floor(z / CELL)}`;
+    const bucket = cells.get(key) ?? [];
+    bucket.push([x, z, reach]);
+    cells.set(key, bucket);
+    // Age structure from its own field, so a dense core is not one height: most of a stand is
+    // mid-sized, a few are veterans, and the young crowd the light gaps.
+    const age = sample01(x * 0.021, 7, z * 0.021);
     put(
       treeAsset,
       x,
       z,
       temperate
-        ? 0.6 + 0.8 * clamp01((forestWeight(x * 0.4, z * 0.4) - 0.15) * 0.7 + random() * 0.4)
+        ? 0.42 + 1.18 * age ** 1.6 + random() * 0.16
         : (tundra ? 0.25 : 0.55) + random() * 0.35,
     );
     // Regeneration at stand edges; ferns stay under established crowns.
-    const edge = forestWeight(x, z) < 0.57;
+    const edge = stand < 0.57;
     for (let i = 0; i < (tundra ? 0 : edge ? 2 : 1); i++) {
       const angle = random() * Math.PI * 2;
-      const reach = 2 + random() * 4;
-      const sx = x + Math.cos(angle) * reach;
-      const sz = z + Math.sin(angle) * reach;
+      const reachOut = 2 + random() * 4;
+      const sx = x + Math.cos(angle) * reachOut;
+      const sz = z + Math.sin(angle) * reachOut;
       if (!nearEye(sx, sz) && grassWeight(data, sx, sz) > 0.25)
-        put("sapling", sx, sz, 0.7 + random() * 0.65);
+        put("sapling", sx, sz, 0.55 + random() * 0.9);
     }
-    for (let i = 0; i < (temperate ? 2 : 0); i++)
-      put("fern", x + (random() - 0.5) * 7, z + (random() - 0.5) * 7, 0.7 + random() * 0.6);
+    if (temperate)
+      for (let i = 0; i < 2; i++)
+        put("fern", x + (random() - 0.5) * 7, z + (random() - 0.5) * 7, 0.6 + random() * 0.75);
+  }
+  if (temperate) {
+    // The understorey is the layer the wood was missing: bracken and needle litter under a closed
+    // canopy, thickets in the light gaps and along the wet ground, all keyed to the same stand mask.
+    // Needle litter is a half-metre twig: it is worth 9000 of them and no more, because past sixteen
+    // metres it is sub-pixel and the count is pure host cost.
+    for (let i = 0; i < 14000; i++) {
+      const x = (random() - 0.5) * data.size;
+      const z = (random() - 0.5) * data.size;
+      if (!inside(x, z) || wet(x, z) || nearEye(x, z)) continue;
+      if (slopeDegrees(data, x, z) > 30) continue;
+      const stand = forestWeight(x, z);
+      const damp = hollow(x, z);
+      const open = grassWeight(data, x, z);
+      if (open < 0.28) continue;
+      // Litter: the floor of a closed stand, thickest where the canopy is and under the drip line.
+      if (stand > 0.44 && random() < (stand - 0.4) * 1.9 + damp * 0.25)
+        put("litter", x, z, 0.65 + random() * 1.1);
+      // Bracken: shade and damp, not open meadow.
+      if (stand > 0.4 && damp > 0.25 && random() < damp * 0.55)
+        put("fern", x, z, 0.7 + random() * 0.8);
+      // Thickets: the light gaps, the stand edge and the wet hollow — where a wood lets a bush in.
+      if (stand < 0.66 && random() < 0.05 + damp * 0.16 + (stand < 0.5 ? 0.06 : 0))
+        put("bush", x, z, 0.5 + random() * 1.1);
+      // Meadow flowers want light and a little soil, so they take the gaps, not the canopy floor.
+      if (stand < 0.58 && damp > 0.18 && random() < 0.02 + damp * 0.05)
+        put("poppy", x, z, 0.75 + random() * 0.6);
+    }
+  }
+  // Tundra and desert are not carpets. Both grow in clumps with bare ground between them, and both
+  // read as a mown lawn when every plant sits on its own lattice point — so each grows a cluster of
+  // tufts around a chosen centre instead of one plant per cell.
+  if (tundra || desert) {
+    for (let i = 0; i < (tundra ? 1100 : 900); i++) {
+      const cx = (random() - 0.5) * data.size;
+      const cz = (random() - 0.5) * data.size;
+      if (!inside(cx, cz)) continue;
+      // Tundra follows its own mat field; desert follows the washes, which are the low ground.
+      const bias = tundra
+        ? clamp01((tundraCover(cx, cz) - 0.42) / 0.3)
+        : clamp01((hollow(cx, cz) - 0.1) * 1.5);
+      if (random() > 0.3 + bias * 0.65) continue;
+      const radius = tundra ? 1.2 + random() * 3 : 1.8 + random() * 4.5;
+      const tufts = tundra ? 8 + Math.floor(random() * 14) : 5 + Math.floor(random() * 9);
+      for (let k = 0; k < tufts; k++) {
+        const angle = random() * Math.PI * 2;
+        const out = radius * Math.sqrt(random());
+        cover(cx + Math.cos(angle) * out, cz + Math.sin(angle) * out, 0.85);
+      }
+    }
   }
   // Ribs overlap along fall lines; the ground remains visible as gullies and snow shelves.
   if (alpine) {
@@ -398,7 +482,7 @@ export function scatterProps(
       }
     }
   }
-  const cover = (x: number, z: number, density: number) => {
+  function cover(x: number, z: number, density: number): void {
     if (
       !inside(x, z) ||
       wet(x, z) ||
@@ -447,7 +531,7 @@ export function scatterProps(
       );
     if (tundra && random() < 0.02)
       put("bush", x + (random() - 0.5) * 2, z + (random() - 0.5) * 2, 0.6 + random() * 0.45);
-  };
+  }
   // A cheap carpet on every grass cell; dense detail at all walking/benchmark eyes, not one disc.
   for (
     let z = -half + 3;

@@ -35,13 +35,14 @@ const POPPY_PETAL = { u0: 0.5, v0: 0, u1: 1, v1: 0.5 };
 /** How many variants of each prop the starter builds, and the seed they are built from. */
 export const VARIANTS = {
   boulder: 3,
-  bush: 1,
-  fern: 2,
+  bush: 2,
+  fern: 3,
   grass: 4,
   poppy: 4,
   sapling: 3,
   scrub: 3,
   spruce: 5,
+  litter: 2,
   seed: 0x9e3779b9,
 } as const;
 
@@ -68,6 +69,7 @@ const DRAW_REACH: Record<string, number> = {
   poppy: 65,
   sapling: 160,
   bush: 120,
+  litter: 16,
   boulder: 170,
   riverrock: 100,
   scree: 190,
@@ -76,7 +78,15 @@ const DRAW_REACH: Record<string, number> = {
   volcanic: 400,
   reveal: 260,
 };
-const NO_SHADOW_ASSETS = new Set(["sapling", "scrub", "grass", "fern", "poppy"]);
+/**
+ * Variants whose own reach is shorter than their asset's.
+ *
+ * Empty on measurement: cutting the three low mats' reach bought nothing once the band stopped
+ * rebuilding every third frame, and it cost the far meadow its grass. A variant named here draws
+ * less far.
+ */
+const VARIANT_REACH: Record<string, number> = {};
+const NO_SHADOW_ASSETS = new Set(["sapling", "scrub", "grass", "fern", "poppy", "litter"]);
 
 /** One drawable piece of a prop: its geometry, and the role that decides its material. */
 /** The share of a boulder's height that sits below the ground. */
@@ -262,6 +272,19 @@ export function buildPropVariants(
       { geometry: cluster.stems, role: "stem", variant: i },
       { geometry: cluster.petals, role: "petal", variant: i },
     ]);
+  }
+  for (let i = 0; i < VARIANTS.litter; i += 1) {
+    const ready = prepared?.get(`litter:${i}`);
+    if (ready) {
+      variants.set(`litter:${i}`, [...ready]);
+      continue;
+    }
+    // Needle litter has no procedural model, and an empty part list throws away the whole prop
+    // build: a machine without the licensed pack then draws no vegetation at all, because the
+    // floor of the wood was the one layer with nothing behind it. A flattened clump stands in.
+    const twig = grassClump((VARIANTS.seed ^ (i * 0x9e3779b1)) >>> 0);
+    twig.scale(1.7, 0.22, 1.7);
+    variants.set(`litter:${i}`, [{ geometry: twig, role: "grass", variant: i }]);
   }
   for (const asset of ["riverrock", "scree", "cliff", "mountain", "volcanic", "reveal"])
     for (
@@ -508,8 +531,9 @@ export function variantFor(placement: IPlacement, asset: string): number {
     hash ^= placement.id.charCodeAt(i);
     hash = Math.imul(hash, 0x01000193) >>> 0;
   }
-  // Full trees dominate; the two half-crown forms are occasional stand variation.
-  return asset === "spruce" ? ([0, 1, 2, 0, 1, 2, 0, 1, 2, 3, 4][hash % 11] ?? 0) : hash % count;
+  // Full trees dominate; the half-crown forms are occasional stand variation, and the mix leans on
+  // the two Kite pines evenly — pack.ts reads the variant through `variant % 2`.
+  return asset === "spruce" ? ([0, 1, 0, 1, 2, 0, 1, 0, 1, 3, 4][hash % 11] ?? 0) : hash % count;
 }
 
 export interface IPropMaterials {
@@ -572,6 +596,8 @@ export function flatPropMaterials(): IPropMaterials & { dispose: () => void } {
 /** One variant's placements, their poses, and the draws each detail level of it owns. */
 interface IVariantGroup {
   readonly entries: { instance: IPropInstance; pose: Matrix4 }[];
+  /** This variant's `asset:variant` key, which a per-variant draw reach is named by. */
+  readonly key: string;
   /** One mesh per level per role, so a level is one draw and the matrix write reaches all of them. */
   readonly levels: Map<number, InstancedMesh[]>;
   /** Which level each placement drew last frame. The hysteresis reads it and writes it. */
@@ -729,6 +755,7 @@ export function createProps(
       // for whichever subset a frame happens to draw, and computed once.
       banded.push({
         asset: key.split(":")[0] ?? "",
+        key,
         entries,
         levels: byLevel,
         state: new Uint8Array(entries.length),
@@ -753,12 +780,13 @@ export function createProps(
     const seenFrom = new Vector3(Number.NaN, 0, 0);
     let seenPoseVersion = poseVersion;
     const setLevels = (camera: Vector3): void => {
-      // Only when the eye has actually moved. A benchmark framing holds the camera still for
-      // hundreds of frames and the assignment cannot change, and every refill re-uploads each
-      // level's whole instance buffer — which is a cost the frame pays whether the answer moved
-      // or not.
+      // Only when the eye has actually moved, and a walk moves it every frame. 0.75 m of slack: at
+      // 5 m/s that is one refill every nine frames instead of every three, which is what put the
+      // player view's CPU p50 over the 4 ms gate — the band is rebuilt and every instanced bounding
+      // sphere recomputed from scratch, and that price is the number of plants within reach. A tree
+      // still standing at the same LOD band after three quarters of a metre of walking is invisible.
       const edited = seenPoseVersion !== poseVersion;
-      if (!edited && seenFrom.distanceToSquared(camera) < 0.25 ** 2) return;
+      if (!edited && seenFrom.distanceToSquared(camera) < 0.75 ** 2) return;
       seenFrom.copy(camera);
       seenPoseVersion = poseVersion;
       for (const group of banded) {
@@ -770,7 +798,7 @@ export function createProps(
           entry.instance.parts = [];
           origin.setFromMatrixPosition(entry.pose);
           const distance = origin.distanceTo(camera);
-          const reach = DRAW_REACH[group.asset];
+          const reach = VARIANT_REACH[group.key] ?? DRAW_REACH[group.asset];
           if (reach !== undefined && distance > reach) continue;
           if (reach !== undefined && ["grass", "scrub", "fern"].includes(group.asset)) {
             // Stable density falloff: survivors keep their authored scale, never shrink into the floor.

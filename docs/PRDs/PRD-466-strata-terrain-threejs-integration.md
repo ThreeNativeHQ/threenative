@@ -2242,3 +2242,99 @@ absent/present/malformed/seam scratch checks PASS, `git diff --check` PASS.
 No engine source or licensed bytes changed; no push, merge or PR comment.
 Checkout retained: `.worktrees/prd-466-468-material/` (**1.3 GiB**) holds unmerged
 commits and requested local assets/captures; merge evidence is absent. Tracked tree clean.
+
+### Round 18 — lane `veg`: the vegetation ecosystem
+
+**2026-10-02.** The external read was "layered detail + distance treatment", and specifically that
+forests are one tree repeated, grass is one species on a lattice, and crowns wear rust. Three
+separable root causes, all fixed at the root rather than at the picture:
+
+1. **Striped stands.** `forestWeight` was three plane waves, so a threshold through it put the
+   canopy on diagonals; and one accepted tree per 4.6 m cell is a lattice whatever the mask says.
+   It is now two octaves of value noise, and placement is a Poisson disc whose radius follows the
+   stand mask, with no per-cell occupancy. Verified on the full-resolution `overview` and
+   `meadow-close` crops: the ranks and the row spacing are gone.
+2. **One age per stand.** Size read `forestWeight(x*0.4, z*0.4)` — the same field density came
+   from — so a dense core was one height. Age now reads an independent noise field, 0.42–1.6 with
+   a skew toward mid-size and a few veterans.
+3. **A missing understorey.** Needle litter, bracken, thickets and meadow flowers now key off the
+   same stand mask plus a *measured* hollow term (a hollow sits below its neighbours, so it holds
+   water), which is what puts ferns and litter where the ground is actually damp. Tundra and desert
+   grow around cluster centres rather than one plant per lattice cell.
+
+Kite's pine atlas is half live needles and half dead, so rust dots and pale bare-branch spikes came
+from the texture, not the geometry: a texel warmer than its own green is dead wood. The first mask
+was gated on the cutout and missed the bare lower branches, which are the one opaque part of that
+model — that is fixed in the second commit, and the fix is **not** verified on a capture (see
+below).
+
+Licensed art stays local-only and inside budget: every new layer comes from a pack the canopy
+already cooks, so each adds a mesh and no atlas — `prep-fab-temperate.mjs --understory` reports
+**29 models, 121.1 MiB** of a 130 MB budget. 8 grass species, 8 ground-foliage mounds, 6 ferns,
+8 flowers, 4 understorey conifers, 4 saplings, 3 needle-litter twigs.
+
+**Not finished.** Distant-forest virtual geometry (`ClusteredBatch`/`ClusteredMesh`) is not wired:
+it needs a cluster table baked by `assets.models.virtual`, and the cook here runs `virtual: "none"`.
+Deadwood (stumps, fallen logs) is absent — the only licensed stumps are Kite's, and each brings its
+own ~2 MB bark atlas against 9 MiB of headroom. The **fallback** proof (`local-assets` renamed
+away) was not run: the shared capture lock was queued behind five other lanes for the last hour.
+
+### Round 18 round 2 — lane `veg`: the CPU p50 was a refill, not a plant (2026-10-02)
+
+Round 1 was written from numbers nobody had measured on a capture. This round measures them, and
+the first measurement moved the target: with the world switches restored to the scenario, on an
+NVIDIA adapter, the temperate player view sat at a **4.7 ms CPU p50** against a 4 ms gate while
+every held framing sat at 3.0–3.1 ms.
+
+The difference between those two numbers is that the player view is the only camera that moves.
+`setLevels` skipped a refill while the eye stayed inside **0.25 m**, so walking rebuilt every
+variant's detail levels and recomputed every instanced bounding sphere every third frame, and that
+price scales with the number of plants inside their reach. Raising the slack to **0.75 m** amortises
+the same work nine ways; a level band lagging three quarters of a metre of walking is invisible, and
+`forest:player` fell to **3.7 ms**. **14 measured views, max 3.8 ms, all under the gate.**
+
+That headroom then answered the open question from round 1: `VARIANT_REACH` is now **empty**. The
+three low grass mats used to draw only 34–46 m so that eight grass species stayed affordable;
+they no longer need to, and the far meadow keeps its grass.
+
+**One pine.** The forest alternated `kite-spruce/0` (tall) with `kite-spruce/1` (the broad
+ScotsPine), which read as a gnarled broadleaf orchard beside a conifer. All five spruce variants now
+draw `kite-spruce/0` and take their height from their own `metres` (10–14 m) plus the placement's
+scale, rotation and lean — five heights out of one model.
+
+**Not finished, and visible at 1:1:** the pines are still bare poles under a lollipop crown — the
+Kite model's own silhouette, and the one remaining thing the Gaia reference has that this does not.
+`ClusteredBatch`/`ClusteredMesh` for distant stands is still unwired (`virtual: "none"` in the cook).
+The round-1 "fallback" proof was queued out; this round re-queued both final proofs behind the other
+lanes' captures.
+
+### Round 18 round 2 — final proofs and the fallback bug they found (2026-10-02)
+
+Full scenario, both worlds of art, on port 5307:
+
+| proof | checks | failed | verify-ocean | max view CPU p50 |
+| --- | --- | --- | --- | --- |
+| licensed (`artifacts/playtest/veg-final`) | 52 | 6 | exit 0 | 4.2 ms |
+| fallback, `local-assets` renamed away (`artifacts/playtest/veg-fallback2`) | 52 | 2 | exit 0 | 4.0 ms |
+
+**The fallback proof earned its keep.** It caught a round-1 regression: needle litter had a licensed
+model and `?? []` behind it, an empty part list is fatal in `createProps`, so a machine without the
+pack drew **no vegetation at all** (`propInstances` 0, six console errors, every crag check false).
+A flattened clump stands in, the way scrub and bush already do; `prepared` still wins where it
+exists, so the licensed path is byte-identical. Fallback after the fix: 3863 instances, 71 draws,
+17 views measured, max p50 4.0 ms, zero console errors.
+
+**Still failing, and it is the lane's.** `propDraws` is **87 licensed / 71 fallback against a ceiling
+of 60**. It counts every batch mesh `props.ts` builds, and it builds all of them for every world, so
+the last world measured (tundra) is charged for alpine's crags and the desert's volcanic cones that
+it never draws. The layered ecosystem is what pushed it over 60 (8 grass + 8 ground-foliage + 6 fern
++ 8 flower + 4 bush + 4 sapling + 3 litter variants, times their detail levels). The lever is one
+filter — build only the variants that have a placement in this world — and it is **not** applied
+because there was no capture budget left to prove it; an unproven cut to the species list would have
+been worse than the honest number.
+
+The residual over-budget samples are single frames, not steady state: `windowFrameMs` reads 4.5 ms at
+`grounded` and 150 ms on the single walk input step, while the closed-window medians are 1.5–4.2 ms
+across all 17 poses. The licensed run's `forest:player` median is 4.2 ms against 3.7 ms measured on
+the same build in the shorter scenario: the full run keeps that camera alive through the asset
+streaming frames.

@@ -23,14 +23,17 @@ if (!LIBRARY) throw new Error("Set FAB_TEMPERATE to the imported Fab library.");
 const OUT = join(EXAMPLE, "local-assets/temperate");
 const worldsOnly = process.argv.includes("--worlds");
 const canopyOnly = process.argv.includes("--canopy");
-const incremental = worldsOnly || canopyOnly;
+const understoryOnly = process.argv.includes("--understory");
+const incremental = worldsOnly || canopyOnly || understoryOnly;
 const STAGE = join(
   EXAMPLE,
   canopyOnly
     ? "local-assets/.canopy-stage"
     : worldsOnly
       ? "local-assets/.worlds-stage"
-      : "local-assets/.temperate-stage",
+      : understoryOnly
+        ? "local-assets/.understory-stage"
+        : "local-assets/.temperate-stage",
 );
 const requireAssets = createRequire(join(REPO, "packages/assets/package.json"));
 const sharp = requireAssets("sharp");
@@ -65,6 +68,7 @@ const atlases = {
   "conifer-bushes-saplings-1": set("Spruce_A", null, "Spruce_AORO", 2),
 };
 const models = [];
+const UNDERSTORY = /^(field|mat|tuft|bracken|bloom|thicket|sprout|litter)\//;
 const add = (pack, name, logical) => models.push({ pack, name, logical });
 for (let i = 0; i < 3; i++) add("spruce-forest", `spruce_full_0${i + 1}_low`, `spruce/${i}`);
 for (let i = 0; i < 2; i++) add("spruce-forest", `spruce_half_0${i + 1}_low`, `spruce/${i + 3}`);
@@ -83,6 +87,33 @@ for (let i = 0; i < 2; i++) add("fern-collection", `fern_0${i + 1}_01`, `fern/${
 add("open-world-demo", "ScotsPineTall_01", "kite-spruce/0");
 add("open-world-demo", "SM_FieldGrass_01", "fieldgrass/0");
 add("conifer-bushes-saplings-1", "Spruce_08", "needle-spruce/0");
+// The understorey layers. Every one of these comes out of a pack the canopy already cooks, so each
+// adds a mesh and no atlas — which is the whole reason the wood can be layered inside the byte budget.
+// Only the Spruce_* models: that pack binds every material to the Spruce atlas, and the Pine and
+// Larch atlases are different sheets, so those models would sample a leaf they were not authored on.
+for (const [pack, logicals, names] of [
+  [
+    "grass-library",
+    "field",
+    ["grass_02_01_mesh", "grass_05_03_mesh", "grass_09_05_mesh", "grass_12_04_mesh"],
+  ],
+  ["grass-library", "mat", ["lowGrass_03_02_SM", "lowGrass_06_02_SM", "lowGrass_09_02_SM"]],
+  [
+    "ground-foliage",
+    "tuft",
+    ["ground_04_02", "ground_07_03", "ground_09_04", "ground_11_02", "ground_13_03"],
+  ],
+  ["fern-collection", "bracken", ["fern_03_01", "fern_05_02", "fern_06_01", "fern_07_02"]],
+  ["meadow-flowers", "bloom", ["flower_03_02", "flower_08_01", "flower_11_02", "flower_16_03"]],
+  ["conifer-bushes-saplings-1", "thicket", ["Spruce_01", "Spruce_04", "Spruce_06", "Spruce_07"]],
+  ["conifer-bushes-saplings-1", "sprout", ["Spruce_02", "Spruce_05"]],
+  [
+    "conifer-bushes-saplings-1",
+    "litter",
+    ["Spruce_GroundTwig_01", "Spruce_GroundTwig_02", "Spruce_GroundTwig_03"],
+  ],
+])
+  for (const [i, name] of names.entries()) add(pack, name, `${logicals}/${i}`);
 for (const [name, logical] of [
   ["SM_Boulder05a", "boulder/0"],
   ["SM_LargePlainsBoulder002", "boulder/1"],
@@ -305,7 +336,9 @@ const selected = worldsOnly
   ? models.filter(({ logical }) => /^(mountain|volcanic|reveal)\//.test(logical))
   : canopyOnly
     ? models.filter(({ logical }) => /^(kite-spruce|needle-spruce|fieldgrass)\//.test(logical))
-    : models;
+    : understoryOnly
+      ? models.filter(({ logical }) => UNDERSTORY.test(logical))
+      : models;
 for (const { pack, name, logical } of selected) {
   const report = JSON.parse(readFileSync(join(LIBRARY, pack, "import-report.json"), "utf8"));
   const model = report.models.find((entry) => entry.name === name);
@@ -324,7 +357,14 @@ const previous = existsSync(join(OUT, "assets.manifest.json"))
   ? JSON.parse(readFileSync(join(OUT, "assets.manifest.json"), "utf8"))
   : null;
 const cooked = incremental
-  ? join(EXAMPLE, canopyOnly ? "local-assets/.canopy-cooked" : "local-assets/.worlds-cooked")
+  ? join(
+      EXAMPLE,
+      canopyOnly
+        ? "local-assets/.canopy-cooked"
+        : understoryOnly
+          ? "local-assets/.understory-cooked"
+          : "local-assets/.worlds-cooked",
+    )
   : OUT;
 await compileAssets({
   source: ".",

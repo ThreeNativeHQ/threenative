@@ -79,11 +79,13 @@ for (let i = 0; i < 5; i++) {
   });
 }
 for (const [asset, heights] of Object.entries({
-  sapling: [1.1, 2.1, 3.0],
-  grass: [0.28, 0.4, 0.5, 0.32],
+  sapling: [1.1, 2.1, 3.0, 1.6],
+  grass: [0.3, 0.55, 0.75, 0.45],
   scrub: [0.085, 0.065, 0.018],
   poppy: [0.38, 0.5, 0.42, 0.4],
-  fern: [0.7, 0.6],
+  fern: [0.7, 0.6, 0.85],
+  bush: [0.9, 0.55],
+  litter: [0.42, 0.55],
   boulder: [2.1, 5.2, 2.5],
   riverrock: [0.8],
   scree: [5.8],
@@ -95,6 +97,25 @@ for (const [asset, heights] of Object.entries({
 }
 const STONE = new Set(["boulder", "riverrock", "scree", "cliff"]);
 for (const one of WORLD_ROCKS) STONE.add(one.asset);
+
+/**
+ * Which licensed model each variant of a temperate understory layer draws.
+ *
+ * The table is the game's, not the bake's: a species is a line here and the variant index is what
+ * the placement hash picks, so a wood grows four grass species, three ground-foliage mounds, three
+ * ferns, four flower species and four understorey conifers (one draw per species) without any placement rule knowing a
+ * filename. Every entry names a model out of a pack the canopy already cooks, so a layer costs a
+ * mesh and no atlas.
+ */
+const TEMPERATE_PATHS: Record<string, readonly string[]> = {
+  grass: ["fieldgrass/0", "field/0", "field/1", "field/2"],
+  scrub: ["scrub/0", "scrub/1", "scrub/2"],
+  fern: ["fern/0", "fern/1", "bracken/0"],
+  poppy: ["poppy/0", "poppy/1", "poppy/2", "poppy/3"],
+  bush: ["thicket/0", "thicket/1"],
+  sapling: ["needle-spruce/0", "sapling/0", "sapling/1", "sprout/0"],
+  litter: ["litter/0", "litter/1"],
+};
 const phase = float(instanceIndex).mul(12.9898).sin().mul(43758.545).fract().mul(6.2831);
 const gust = sin(time.mul(0.1).add(phase));
 
@@ -141,8 +162,31 @@ function surface(
     // The Kite pine's photographed needles are already a pine green; a cool shift, not a repaint.
     if (world === "forest" && canopy && cutout)
       material.colorNode = sampled.rgb.mul(vec3(0.82, 0.96, 0.88));
+    // Kite's pine atlas is half live needles and half dead: cells 4 and 5 and the bare lower-branch
+    // card are rust brown, so every crown wears rust dots and every trunk wears a tan spiky burst.
+    // Colour decides, not geometry — a texel warmer than its own green is dead wood. This is not
+    // gated on the cutout: the bare lower branches are the one part of the pine drawn opaque, so a
+    // cutout-only mask left the worst of the tan spikes standing.
+    if (kite && canopy) {
+      const dead = smoothstep(0.008, 0.075, sampled.r.sub(sampled.g));
+      const damp = material.colorNode as Node<"vec3">;
+      material.colorNode = mix(
+        damp,
+        damp.rgb.mul(vec3(0.3, 0.42, 0.27)),
+        dead.mul(cutout ? 0.94 : 0.8),
+      );
+    }
     if (!otherBiome && canopy && !cutout && !kite)
       material.colorNode = sampled.rgb.mul(vec3(0.42, 0.27, 0.15));
+    if (!otherBiome && asset === "litter") {
+      // Needle litter is the spruce atlas photographed dry: pull it toward bark brown and lay it
+      // flat, so the forest floor carries a dead layer instead of more green.
+      const grain = dot(sampled.rgb, vec3(0.2126, 0.7152, 0.0722));
+      material.colorNode = mix(sampled.rgb.mul(vec3(0.72, 0.5, 0.28)), sampled.rgb, 0.18).mul(
+        grain.mul(6).clamp(0.45, 1.3),
+      );
+      material.aoNode = mix(0.28, 0.9, smoothstep(0.0, 0.14, positionGeometry.y).oneMinus());
+    }
     if (!otherBiome && (asset === "grass" || asset === "scrub")) {
       const tip = smoothstep(0.008, asset === "grass" ? 0.34 : 0.065, positionGeometry.y);
       const dry = smoothstep(0.65, 0.92, sin(phase).mul(0.5).add(0.5));
@@ -303,26 +347,33 @@ export async function loadPack(
 ): Promise<IPackProps> {
   const parts = new Map<string, IPropPart[]>();
   const built: { geometry: BufferGeometry; material: Material }[] = [];
-  const selected = species.filter(
-    (one) =>
-      world === "forest" ||
-      world === "coastal" ||
-      (world === "alpine" &&
-        ["spruce", "sapling", "grass", "scrub", "boulder", "scree", "riverrock"].includes(
-          one.asset,
-        )) ||
-      (world === "tundra" &&
-        ["scrub", "sapling", "boulder", "scree", "riverrock"].includes(one.asset)) ||
-      (world === "desert" &&
-        ["grass", "scrub", "boulder", "scree", "riverrock"].includes(one.asset)),
-  );
-  if (world === "forest" || world === "coastal")
+  const selected = species
+    .filter(
+      (one) =>
+        world === "forest" ||
+        world === "coastal" ||
+        (world === "alpine" &&
+          ["spruce", "sapling", "grass", "scrub", "boulder", "scree", "riverrock"].includes(
+            one.asset,
+          )) ||
+        (world === "tundra" &&
+          ["scrub", "sapling", "boulder", "scree", "riverrock"].includes(one.asset)) ||
+        (world === "desert" &&
+          ["grass", "scrub", "boulder", "scree", "riverrock"].includes(one.asset)),
+    )
+    // The temperate understorey is the licensed species set; every other world keeps its own.
+    .map((one) => {
+      const path = TEMPERATE_PATHS[one.asset]?.[one.variant];
+      return path && (world === "forest" || world === "coastal") ? { ...one, path } : one;
+    });
+  if (world === "forest" || world === "coastal") {
     selected.push(
       ...WORLD_ROCKS.filter((one) => one.asset === "mountain").map((one) => ({
         ...one,
         path: one.path.replace(/^temperate\//, "").replace(/\.glb$/, ""),
       })),
     );
+  }
   if (world === "tundra")
     selected.push({ asset: "bush", variant: 0, path: "scrub/0", metres: 0.45 });
   if (world === "alpine" || world === "desert")
@@ -361,22 +412,12 @@ export async function loadPack(
         }
         if (world === "forest" && one.asset === "spruce" && !one.level) {
           const pine = await assets
-            // ScotsPine_01 (19 m wide, gnarled) read as a broadleaf orchard at forest scale; tall only.
+            // One Kite pine for the whole wood. The broad ScotsPine beside it reads as a gnarled
+            // broadleaf, so the variety comes from each variant's own `metres` plus the placement's
+            // scale, rotation and lean — five heights out of one model, not two species.
             .model<{ scene?: Group }>("temperate/kite-spruce/0.glb")
             .catch(() => undefined);
           if (pine) return pine;
-        }
-        if (world === "forest" && one.asset === "sapling") {
-          const spruce = await assets
-            .model<{ scene?: Group }>("temperate/needle-spruce/0.glb")
-            .catch(() => undefined);
-          if (spruce) return spruce;
-        }
-        if (world === "forest" && one.asset === "grass") {
-          const grass = await assets
-            .model<{ scene?: Group }>("temperate/fieldgrass/0.glb")
-            .catch(() => undefined);
-          if (grass) return grass;
         }
         return await assets.model<{ scene?: Group }>(`temperate/${one.path}.glb`);
       } catch {
