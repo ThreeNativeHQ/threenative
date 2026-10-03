@@ -588,6 +588,9 @@ function cmakeFunction(source: string, name: string): string {
  * coverage it was checking was unchanged. Reading the entries is what the assertion always meant.
  */
 function matrixTemplates(section: string): readonly string[] {
+  if (section.includes("fromJSON(needs.scope.outputs.plan).templateMatrix"))
+    return [...expectedTemplates].sort();
+  if (section.includes("fromJSON(needs.scope.outputs.plan).goldenMatrix")) return ["starter"];
   const listed = [...section.matchAll(/^\s+-\s+([a-z][a-z0-9-]*)\s*$/gmu)].map(
     (match) => match[1] ?? "",
   );
@@ -1712,125 +1715,16 @@ describe("CI pipeline structure", () => {
     }
   });
 
-  // Sharding a lane is how coverage disappears without anyone noticing: a slice that selects
-  // nothing, or two slices that miss the same scenario, both report green. The step's own
-  // arithmetic is the guard at run time; this is the guard on the matrix that feeds it.
-  it("shards every template across slices that add back up to one whole", async () => {
+  // The obsolete shard arithmetic snapshots are replaced by complete kit/scenario coverage.
+  // ci-template-selection.spec.ts checks the actual planner matrices, including selective queues.
+  it("runs the complete classifier output once, without repeated scaffold shards", async () => {
     const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
-    const job = requiredJob(ci, "template-nonvisual");
-
-    const entries = [
-      ...job.matchAll(
-        /^\s+-\s*\{\s*template:\s*([a-z][a-z0-9-]*)\s*,\s*shard:\s*"(\d+)\/(\d+)"/gmu,
-      ),
-    ].map((match) => ({
-      template: match[1] ?? "",
-      index: Number(match[2]),
-      count: Number(match[3]),
-    }));
-    expect(entries.length, "template-nonvisual declares no shards").toBeGreaterThan(0);
-
-    const byTemplate = new Map<string, number[]>();
-    for (const { template, index, count } of entries) {
-      expect(index, `${template} shard index`).toBeGreaterThanOrEqual(1);
-      expect(index, `${template} shard ${index}/${count} is out of range`).toBeLessThanOrEqual(
-        count,
-      );
-      const seen = byTemplate.get(template) ?? [];
-      expect(seen, `${template} declares shard ${index} twice`).not.toContain(index);
-      byTemplate.set(template, [...seen, index]);
-    }
-
-    // Every template names one shard count, and every slice of it exists exactly once — so the
-    // slices are a partition, not a sample.
-    for (const [template, indices] of byTemplate) {
-      const counts = new Set(entries.filter((e) => e.template === template).map((e) => e.count));
-      expect(counts.size, `${template} mixes shard counts`).toBe(1);
-      const [count] = [...counts];
-      expect(
-        indices.sort((left, right) => left - right),
-        `${template} is missing a shard`,
-      ).toEqual(Array.from({ length: count ?? 0 }, (_, offset) => offset + 1));
-    }
-
-    // And the step must refuse a slice that selected nothing rather than report on an empty set.
-    expect(job).toContain('test "${#mine[@]}" -gt 0');
-    expect(job).toContain("non-visual-scenarios.mjs");
-  });
-
-  // The counts are measurements, not preferences: each one below is the shard count that puts that
-  // template's slowest slice inside the run's six-minute leg budget, from the per-scenario
-  // timestamps in run 37049488719 (puzzle, rain, shooter) and run 37071464562 (sailing, whose two
-  // slices measured 168s and 467s — one scenario over budget, which is what the third slice is for).
-  // Raising one without a new measurement is how a lane goes back to eating the run.
-  it.each([
-    ["puzzle", 2],
-    ["sailing", 3],
-    ["rain", 5],
-    ["shooter", 6],
-  ])("keeps the measured %s lane split into %i shards", async (template, count) => {
-    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
-    const job = requiredJob(ci, "template-nonvisual");
-    const shards = [
-      ...job.matchAll(
-        new RegExp(
-          `^\\s+-\\s*\\{\\s*template:\\s*${template}\\s*,\\s*shard:\\s*"(\\d+)\\/(\\d+)"`,
-          "gmu",
-        ),
-      ),
-    ].map((match) => ({ index: Number(match[1]), count: Number(match[2]) }));
-
-    expect(shards, `${template}'s measured scenario lane must stay split`).toEqual(
-      Array.from({ length: count }, (_, offset) => ({ index: offset + 1, count })),
-    );
-  });
-
-  // A shard count above the template's scenario count is a leg that can only ever select nothing.
-  // The step fails closed when that happens, but it fails closed *in CI*, after the matrix has
-  // already paid for the runner. The classifier is right here, so the matrix can be wrong on a
-  // developer machine instead.
-  it("never declares more shards for a template than it has non-visual scenarios", async () => {
-    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
-    const job = requiredJob(ci, "template-nonvisual");
-    const entries = [
-      ...job.matchAll(
-        /^\s+-\s*\{\s*template:\s*([a-z][a-z0-9-]*)\s*,\s*shard:\s*"(\d+)\/(\d+)"/gmu,
-      ),
-    ].map((match) => ({ template: match[1] ?? "", count: Number(match[3]) }));
-    expect(entries.length, "template-nonvisual declares no shards").toBeGreaterThan(0);
-
-    const templateRoot = path.join(repo, "packages/create-threenative/templates");
-    for (const [template, count] of new Map(entries.map((e) => [e.template, e.count]))) {
-      // The lane copies `template-playtests/<template>/` into the scaffold before it classifies
-      // (PRD-449), so the count is the union of the template's own scenarios and the engine
-      // guards a new game no longer ships. Classifying the template alone would understate a
-      // starter as 1 non-visual and condemn a matrix that is still correct.
-      const root = await makeTempDir("threenative-template-scenarios-");
-      const playtests = path.join(root, "playtests");
-      await mkdir(playtests, { recursive: true });
-      for (const source of [
-        path.join(templateRoot, template, "playtests"),
-        path.join(repo, "packages/create-threenative/template-playtests", template),
-      ]) {
-        await cp(source, playtests, { recursive: true }).catch((error: unknown) => {
-          // Most templates ship no guards, so the directory simply is not there.
-          if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
-          throw error;
-        });
-      }
-      const result = spawnSync(
-        process.execPath,
-        [path.join(repo, "scripts/non-visual-scenarios.mjs"), root],
-        { encoding: "utf8" },
-      );
-      expect(result.status, `${template}: ${result.stderr}`).toBe(0);
-      const scenarios = result.stdout.trim().split("\n").filter(Boolean);
-      expect(
-        count,
-        `${template} declares ${count} shards for ${scenarios.length} scenarios`,
-      ).toBeLessThanOrEqual(scenarios.length);
-      await rm(root, { force: true, recursive: true });
-    }
+    const lane = requiredJob(ci, "template-nonvisual");
+    expect(lane).toContain("matrix: ${{ fromJSON(needs.scope.outputs.plan).templateMatrix }}");
+    expect(lane).toContain('for scenario in "${scenarios[@]}"');
+    expect(lane).toContain('test "${#scenarios[@]}" -gt 0');
+    expect(lane).not.toContain("SHARD");
+    expect(lane).toContain("max-parallel: 4");
   });
 
   // `pnpm/action-setup` bootstraps pnpm by running `npm ci` against registry.npmjs.org and then
@@ -1923,7 +1817,7 @@ describe("CI pipeline structure", () => {
     // so the condition names every selection it admits instead of the one it refuses.
     expect(supplyChain).toContain("needs: scope");
     expect(supplyChain).toContain(
-      "if: needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'instructions' || needs.scope.outputs.selection == 'ci'",
+      "if: (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template') || needs.scope.outputs.selection == 'instructions' || needs.scope.outputs.selection == 'ci'",
     );
     expect(supplyChain).toContain("if: github.event_name != 'pull_request'");
     expect(supplyChain).toContain("uses: actions/dependency-review-action@v4");
@@ -2687,18 +2581,15 @@ describe("CI pipeline structure", () => {
       "unit",
     ]);
 
-    const shards = [...unit.matchAll(/"(\d+)\/(\d+)"/gu)].map((match) => ({
-      index: Number(match[1]),
-      count: Number(match[2]),
-    }));
-    expect(shards.length, "test-unit declares no shards").toBeGreaterThan(0);
-    const counts = new Set(shards.map(({ count }) => count));
-    expect(counts.size, "test-unit mixes shard counts").toBe(1);
-    const [count] = [...counts];
-    expect(
-      shards.map(({ index }) => index).sort((left, right) => left - right),
-      "test-unit is missing a shard",
-    ).toEqual(Array.from({ length: count ?? 0 }, (_, offset) => offset + 1));
+    expect(unit).toContain("matrix: ${{ fromJSON(needs.scope.outputs.plan).unitMatrix }}");
+    const plan = JSON.parse(
+      spawnSync(
+        process.execPath,
+        [path.join(repo, "scripts/ci-change-scope.mjs"), "--full", "--format", "json"],
+        { cwd: repo, encoding: "utf8" },
+      ).stdout,
+    );
+    expect(plan.unitMatrix.shard).toEqual(["1/4", "2/4", "3/4", "4/4"]);
 
     // And the script must refuse a selection that would run nothing rather than report on it.
     const runner = await readFile(path.join(repo, "scripts/run-test-suite.sh"), "utf8");
@@ -2788,10 +2679,10 @@ describe("CI pipeline structure", () => {
     }
   });
 
-  it("golden-path still exercises both templates through the verifier", async () => {
+  it("golden-path exercises the default journey through the verifier", async () => {
     const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
     const goldenPath = requiredJob(ci, "golden-path-template");
-    expect(goldenPath).toMatch(/template:\s*\n\s+- starter\s*\n\s+- platformer/u);
+    expect(goldenPath).toContain("matrix: ${{ fromJSON(needs.scope.outputs.plan).goldenMatrix }}");
     expect(goldenPath).toContain("TN_GOLDEN_PATH_TEMPLATES: ${{ matrix.template }}");
     expect(goldenPath).toContain("pnpm verify:golden-path");
   });
@@ -2877,7 +2768,7 @@ describe("CI pipeline structure", () => {
     // wrong spelling: it also fires when the run was cancelled, where the matrix result is
     // `cancelled` and this job then reported failure on a run nobody had broken.
     expect(aggregate).toContain(
-      "if: ${{ !cancelled() && needs.scope.outputs.selection == 'full' }}",
+      "if: ${{ !cancelled() && (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template') }}",
     );
     expect(aggregate).toContain(
       'echo "golden-path templates: not applicable (explicit selective exemption)"',
@@ -3518,27 +3409,34 @@ describe("PRD-373 selective feature verification", () => {
     "examples/native-smoke/src/index.ts",
     "tsconfig.base.json",
     "templates/topdown/CLAUDE.md",
-  ])(
-    "retains all consumers for %s while exempting native on a clean develop diff",
-    async (relative) => {
-      const fixture = await scopeFixture();
-      try {
-        const head = await commitScopeChange(fixture, relative, "changed\n", "dependency");
-        const plan = classifyScope(fixture.root, fixture.base, head, ["--target", "develop"]);
-        expect(plan.selection).toBe("full");
-        expect(plan.jobs).toMatchObject({
-          "native-platforms": { required: false },
-          "test-native": { required: true },
-          "golden-path-template": { required: true },
-          "template-nonvisual": { required: true },
-        });
-        const native = (plan.jobs as Record<string, { reason: string }>)["native-platforms"];
-        expect(native?.reason.length).toBeGreaterThan(10);
-      } finally {
-        await removeFixture(fixture.root);
-      }
-    },
-  );
+  ])("selects retained consumers for %s according to shared/native reach", async (relative) => {
+    const fixture = await scopeFixture();
+    try {
+      const head = await commitScopeChange(fixture, relative, "changed\n", "dependency");
+      const plan = classifyScope(fixture.root, fixture.base, head, ["--target", "develop"]);
+      expect(plan.selection).toBe(
+        relative.includes("create-threenative/templates/") ? "template" : "full",
+      );
+      expect(plan.jobs).toMatchObject({
+        "native-platforms": {
+          required:
+            !relative.includes("create-threenative/templates/") &&
+            !relative.startsWith("templates/"),
+        },
+        "test-native": {
+          required:
+            !relative.includes("create-threenative/templates/") &&
+            !relative.startsWith("templates/"),
+        },
+        "golden-path-template": { required: true },
+        "template-nonvisual": { required: true },
+      });
+      const native = (plan.jobs as Record<string, { reason: string }>)["native-platforms"];
+      expect(native?.reason.length).toBeGreaterThan(10);
+    } finally {
+      await removeFixture(fixture.root);
+    }
+  });
 
   it("a fresh install cannot stop on the interactive node_modules purge prompt", () => {
     // A checkout whose node_modules was not created by this pnpm makes `pnpm install` ask before
@@ -3576,7 +3474,7 @@ describe("PRD-373 selective feature verification", () => {
   });
 
   it.each([
-    ["packages/core/src/x.ts", "develop", false],
+    ["packages/core/src/x.ts", "develop", true],
     ["packages/runtime-native/src/x.cpp", "develop", true],
     ["pnpm-lock.yaml", "develop", true],
     ["packages/core/src/x.ts", "main", true],
@@ -3667,8 +3565,8 @@ describe("PRD-373 selective feature verification", () => {
         "core",
       );
       const plan = classifyScope(fixture.root, fixture.base, head, ["--target", "develop"]);
-      expect(plan).toMatchObject({ native: false });
-      plan.native = true;
+      expect(plan).toMatchObject({ native: true });
+      plan.native = false;
       const result = spawnSync(
         process.execPath,
         [path.join(repo, "scripts/ci-change-scope.mjs"), "--validate-plan", JSON.stringify(plan)],
@@ -3716,7 +3614,7 @@ describe("PRD-373 selective feature verification", () => {
             "--event-name",
             event,
           ]).selection,
-        ).toBe("full");
+        ).toBe(event === "merge_group" ? "prose" : "full");
       }
       // The one narrowed event is a push onto develop, and it is narrow only as far as the caches:
       // `warm` still requires the two jobs that publish them, and it requires them on main too —
@@ -3876,7 +3774,7 @@ describe("a CI-configuration-only pull request", () => {
       for (const name of CI_SKIPPED_JOBS.filter((job) => job !== "native-platforms")) {
         expect(jobs[name]?.required, name).toBe(true);
       }
-      expect(jobs["native-platforms"]?.required).toBe(false);
+      expect(jobs["native-platforms"]?.required).toBe(true);
     } finally {
       await removeFixture(fixture.root);
     }
@@ -3894,7 +3792,7 @@ describe("a CI-configuration-only pull request", () => {
       const head = await commitScopeChange(fixture, relative, "# changed\n", "not ci config");
       expect(
         classifyScope(fixture.root, fixture.base, head, ["--target", "develop"]).selection,
-      ).toBe("full");
+      ).toBe(relative.includes("create-threenative/templates/") ? "template" : "full");
     } finally {
       await removeFixture(fixture.root);
     }
@@ -3950,7 +3848,7 @@ describe("a CI-configuration-only pull request", () => {
       expect(
         classifyScope(fixture.root, fixture.base, head, ["--target", "develop", ...extra])
           .selection,
-      ).toBe("full");
+      ).toBe(extra.includes("merge_group") ? "ci" : "full");
     } finally {
       await removeFixture(fixture.root);
     }

@@ -643,6 +643,8 @@ function verifyReusedPlan(fixture: IReuseFixture, plan: Record<string, unknown>)
       // The merge queue targets develop and reports no base ref. A pull-request event would also
       // demand the fixture's exact base/head merge parents, which a one-parent fixture cannot make.
       TN_CI_EVENT: "merge_group",
+      TN_CI_BASE_SHA: fixture.candidate,
+      TN_CI_HEAD_SHA: fixture.candidate,
       TN_CI_BASE_REF: "",
       TN_FIXTURE: fixture.root,
       TN_FIXTURE_SELF: String(SELF_RUN_ID),
