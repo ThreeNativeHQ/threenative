@@ -302,17 +302,24 @@ it("declares the second density bound and measures that it changes the image", (
       expect.objectContaining({ component: "overlaps", equals: mode === "overlap" }),
     );
   }
-  const frame = { width: 2, height: 1, data: new Uint8Array(8) };
-  const second = { width: 2, height: 1, data: new Uint8Array([0, 0, 0, 255, 0, 0, 0, 255]) };
-  expect(fogOverlapPixelMetrics(frame, second)).toMatchObject({
+  const black = { width: 2, height: 1, data: new Uint8Array(8) };
+  expect(fogOverlapPixelMetrics(black, black)).toMatchObject({
     changedPixelRatio: 0,
     maxChannelDelta: 0,
     pass: false,
   });
+  // Added extinction can only add scattering, so a darker overlap frame is not a pass either.
+  const lit = { width: 2, height: 1, data: new Uint8Array([0, 0, 0, 255, 200, 200, 200, 255]) };
   expect(
-    fogOverlapPixelMetrics(frame, {
-      ...second,
-      data: new Uint8Array([0, 0, 0, 255, 0, 9, 0, 255]),
+    fogOverlapPixelMetrics(lit, {
+      ...lit,
+      data: new Uint8Array([0, 0, 0, 255, 190, 200, 200, 255]),
+    }),
+  ).toMatchObject({ pass: false });
+  expect(
+    fogOverlapPixelMetrics(lit, {
+      ...lit,
+      data: new Uint8Array([0, 0, 0, 255, 209, 200, 200, 255]),
     }),
   ).toMatchObject({ pass: true });
 });

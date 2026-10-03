@@ -481,8 +481,9 @@ export function fogLightPixelMetrics(
   };
 }
 
-// Overlapping bounds are only qualified if the second one actually changes the image: the same
-// camera and lights, one extra nested density bound, a difference too large to be noise.
+// Overlapping bounds are only qualified if the second one actually composes: same camera, same
+// lights, one extra nested positive-density bound. Added extinction can only add scattering, so
+// the frame must get brighter, and by more than 8-bit dithering can fake.
 export function fogOverlapPixelMetrics(single: IPixelFrame, overlap: IPixelFrame) {
   if (
     single.width !== overlap.width ||
@@ -490,24 +491,27 @@ export function fogOverlapPixelMetrics(single: IPixelFrame, overlap: IPixelFrame
     single.data.length !== overlap.data.length
   )
     throw new Error("VQ07 overlap evidence requires equally sized frames.");
-  const pixels = single.width * single.height;
+  const channels = single.width * single.height * 3;
   let changed = 0;
+  let signed = 0;
   let maxChannelDelta = 0;
-  for (let i = 0; i < pixels; i += 1)
-    for (let c = 0; c < 3; c += 1) {
-      const at = i * 4 + c;
-      const difference = Math.abs(
-        (overlap.data[at] ?? Number.NaN) - (single.data[at] ?? Number.NaN),
-      );
-      maxChannelDelta = Math.max(maxChannelDelta, difference);
-      if (difference > 2) changed += 1;
-    }
-  const changedPixelRatio = changed / (pixels * 3);
+  for (let y = 0; y < single.height; y += 1)
+    for (let x = 0; x < single.width; x += 1)
+      for (let c = 0; c < 3; c += 1) {
+        const at = (y * single.width + x) * 4 + c;
+        const difference = (overlap.data[at] ?? Number.NaN) - (single.data[at] ?? Number.NaN);
+        signed += difference;
+        maxChannelDelta = Math.max(maxChannelDelta, Math.abs(difference));
+        if (Math.abs(difference) > 2) changed += 1;
+      }
+  const changedPixelRatio = changed / channels;
+  const meanChannelDelta = signed / channels;
   return {
     changedPixelRatio,
+    meanChannelDelta,
     maxChannelDelta,
-    thresholds: { minChangedPixelRatio: 0.05, minMaxChannelDelta: 4 },
-    pass: changedPixelRatio >= 0.05 && maxChannelDelta >= 4,
+    thresholds: { minChangedPixelRatio: 0.01, minMaxChannelDelta: 4 },
+    pass: changedPixelRatio >= 0.01 && maxChannelDelta >= 4 && meanChannelDelta > 0,
   };
 }
 
