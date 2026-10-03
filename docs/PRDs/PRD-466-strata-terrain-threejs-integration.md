@@ -2234,3 +2234,34 @@ licensed/fallback scenarios and ocean checks remain pending. No Gaia acceptance
 box has been ticked. Source restoration overlapping a capture startup destroyed
 that browser context; stable-source retry passed. One subsequent
 `TN_PLAYTEST_BRIDGE_MISSING` startup flake was retried once.
+
+2026-10-03 shadow correction: the darkest near-terrain mean hid a desert
+mesa-wall regression (30.81° → 248.96°). Added a fixed wall ROI to the same
+measurement script and restored the biome's local aerosol tint above 150 m,
+before the remote LUT column. Foreground remains clear below 150 m. Final
+licensed proof is running; fallback follows with asset restoration on exit.
+An interrupted preliminary capture left its owned Vite listener on 5303;
+it was cleared before restarting. No source edits occur during final capture.
+
+2026-10-03 UTC final licensed result: **51/52 checks**, zero console errors,
+all 17 camera CPU p50s ≤ **3.7 ms**. The sole failed check is the first
+`grounded` CPU window (**4.5 ms**, threshold 4); no threshold was changed.
+Ocean verification passes all three checks. Fallback is still running.
+Mesa wall hue is now **30.81° → 22.76°** (−8.05°); its earlier purple result
+was not accepted. Near and mid-shadow hue means pass in all five worlds.
+
+| World | Sky saturation before→after | Blue dominance before→after | Near linear Y p05/p50/p95 before→after | Far local contrast before→after |
+| --- | --- | --- | --- | --- |
+| forest | 0.290→0.315 | 0.155→0.165 | 0.0022 / 0.0644 / 0.2213 → 0.0022 / 0.0641 / 0.2224 | 0.00681→0.00165 |
+| coastal | 0.110→0.257 | 0.058→0.154 | 0.0138 / 0.0889 / 0.3158 → 0.0107 / 0.0871 / 0.3431 | 0.00198→0.00781 |
+| alpine | 0.436→0.503 | 0.207→0.267 | 0.0298 / 0.1426 / 0.1691 → 0.0273 / 0.1417 / 0.1683 | 0.04677→0.02915 |
+| desert | 0.352→0.401 | 0.188→0.230 | 0.1626 / 0.2242 / 0.3088 → 0.1615 / 0.2238 / 0.3086 | 0.00414→0.00152 |
+| tundra | 0.273→0.305 | 0.120→0.186 | 0.0106 / 0.0555 / 0.1598 → 0.0095 / 0.0540 / 0.1407 | 0.00942→0.00455 |
+
+Coast uses the initial player/ocean view with the original sun, matching
+`atmosphere-before-extra/coastal-player.png`. Its far mask is ocean rather
+than a ridge, and measured far-water contrast increased; four far-land
+comparisons decrease and shift toward horizon sky. Final 1:1 crops are
+`artifacts/playtest/atmosphere-round2-final-verified/*-crop.png`, cropped
+at (400,0) to 1000×550 pixels, matching the baseline crops. The two Gaia
+references were inspected at full resolution. Gaia acceptance remains open.

@@ -120,7 +120,24 @@ export function aerialPerspective(
     ? zenith.max(0.0001).pow(opticalDistance.div(8)).mul(boundary.oneMinus())
     : vec3(1);
   const scattering = skyRadiance(air, direction, sun, look);
-  return vec4(input.rgb.mul(transmission).add(scattering.mul(transmission.oneMinus())), input.a);
+  // Local aerosol tint preserves soil-coloured shadows; the remote column is the LUT sky.
+  const localAmount = enabled
+    ? ray
+        .length()
+        .mul(look.haze.density)
+        .pow(2)
+        .negate()
+        .exp()
+        .oneMinus()
+        .mul(smoothstep(150, 250, ray.length()))
+    : float(0);
+  const localTint = mix(
+    color(look.haze.color),
+    color(look.sun.color).mul(1.4),
+    dot(direction, sun).max(0).pow(6).mul(look.haze.sunScatter),
+  );
+  const localColour = mix(input.rgb, localTint, localAmount);
+  return vec4(localColour.mul(transmission).add(scattering.mul(transmission.oneMinus())), input.a);
 }
 
 /** The cumulus deck. Every number is this game's weather. */
