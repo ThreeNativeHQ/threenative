@@ -1401,15 +1401,19 @@ describe("CI pipeline structure", () => {
     const cancel = jobSections(janitor).find(([name]) => name === "cancel")?.[1] ?? "";
     expect(cancel, "ci-janitor declares no cancel job").not.toBe("");
     // The head ref is attacker-controlled branch text: interpolated straight into `run:` it is a
-    // command injection on a job holding `actions: write`.
+    // command injection on a job holding `actions: write`. So is the base ref the merge-group
+    // prefix is built from, and the number inside it.
     expect(cancel).toMatch(
       /env:\n(?:\x20{10}[A-Z_]+: .*\n)*\x20{10}HEAD_REF: \$\{\{ github\.event\.pull_request\.head\.ref \}\}/u,
     );
+    expect(cancel).toMatch(
+      /\x20{10}BASE_REF: \$\{\{ github\.event\.pull_request\.base\.ref \}\}\n\x20{10}PR_NUMBER: \$\{\{ github\.event\.pull_request\.number \}\}/u,
+    );
     for (const line of cancel.split("\n")) {
-      if (/^\x20*#/u.test(line) || !line.includes("head_ref")) continue;
+      if (/^\x20*#/u.test(line) || !/(?:head[._]ref|base\.ref|\.number)/u.test(line)) continue;
       expect(
         line,
-        "the head ref is interpolated into a shell instead of passed as env",
+        "a github.* context is interpolated into a shell instead of passed as env",
       ).not.toMatch(/run:/u);
     }
     // A fork's runs belong to another repository; its token cannot cancel them, and trying would
@@ -1423,6 +1427,16 @@ describe("CI pipeline structure", () => {
     );
     expect(cancel).toContain('gh run list --repo "$GITHUB_REPOSITORY" --branch "$HEAD_REF"');
     expect(cancel).toContain("--json databaseId,status");
+    // A merge-group run reports its branch as `gh-readonly-queue/<base>/pr-<number>-<sha>`. GitHub
+    // drops the pull request from the queue on close but never cancels the run it already started,
+    // so #404's run 37093098790 held nine self-hosted jobs after #404 had merged: the head ref's
+    // cancel never reaches it. The prefix is built from the event's own base ref and number, so the
+    // sweep reaches that pull request's group and no other.
+    expect(cancel).toContain('group_prefix="gh-readonly-queue/${BASE_REF}/pr-${PR_NUMBER}-"');
+    expect(cancel).toContain("startswith($prefix)");
+    expect(cancel).toContain(
+      'gh run list --repo "$GITHUB_REPOSITORY" --json databaseId,status,headBranch --limit 100',
+    );
     // The run-sweeping predecessor this replaced reached across every branch in the repository;
     // every cancel here is scoped to the event's own repository and the closed PR's own ref.
     expect(cancel).toContain('gh run cancel "$run_id" --repo "$GITHUB_REPOSITORY"');
