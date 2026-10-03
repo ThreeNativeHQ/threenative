@@ -26,7 +26,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # The per-lane trigger filters these five files used to carry, as one gate: the pull request's own
+  # The per-lane trigger filters these lane files used to carry, as one gate: the pull request's own
   # changed paths decide which lanes run, and a lane this commit does not touch is skipped rather than
   # spending a runner. Editing this workflow keeps every lane's gate true, which is what
   # `.github/workflows/integration-<lane>.yml` did for each of them.
@@ -39,6 +39,7 @@ jobs:
       contents: read
       pull-requests: read
     outputs:
+      animation: ${{ steps.filter.outputs.animation }}
       csg: ${{ steps.filter.outputs.csg }}
       decals: ${{ steps.filter.outputs.decals }}
       ik: ${{ steps.filter.outputs.ik }}
@@ -54,6 +55,7 @@ jobs:
           set -euo pipefail
           files="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR/files" --paginate --jq '.[].filename')"
           lane() { if grep -qE "$2" <<<"$files"; then echo "$1=true"; else echo "$1=false"; fi >> "$GITHUB_OUTPUT"; }
+          lane animation '^packages/core/src/animation\.ts$|^packages/core/__tests__/animation[^/]*\.spec\.ts$|^examples/abyss-framework/src/render/animation-reversal[^/]*\.ts$|^examples/abyss-framework/src/animation-reversal-main\.ts$|^examples/abyss-framework/animation-reversal\.html$|^examples/abyss-framework/playtests/animation-reversal\.playtest\.json$|^scripts/verify-animation-reversal\.ts$|^\.github/workflows/integration\.yml$'
           lane csg '^examples/integrations/csg/.*$|^\.github/workflows/integration\.yml$'
           lane decals '^packages/create-threenative/templates/shooter/src/render/decals\.ts$|^packages/create-threenative/templates/shooter/src/scenes/Play\.ts$|^packages/create-threenative/__tests__/shooter-decals[^/]*\.spec\.ts$|^packages/create-threenative/__tests__/fixtures/bounded-decals/.*$|^\.github/workflows/integration\.yml$'
           lane ik '^examples/integrations/ik/.*$|^\.github/workflows/integration\.yml$'
@@ -243,4 +245,36 @@ jobs:
         with:
           name: tone-exposure-${{ github.event.pull_request.head.sha }}
           path: artifacts/tone-exposure
+          if-no-files-found: error
+
+  animation:
+    name: animation
+    if: ${{ needs.paths.outputs.animation == 'true' && !github.event.pull_request.draft }}
+    needs: paths
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: ./.github/actions/pnpm
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/workspace-dist
+        with:
+          pack-archives: 'false'
+          save-bundles: 'false'
+      - uses: ./.github/actions/playwright-chromium
+      - run: pnpm exec vitest run --maxWorkers=1 packages/core/__tests__/animation.spec.ts packages/core/__tests__/animation-reversal-fixture.spec.ts
+      - name: Capture real mannequin gait reversals on headed WebGPU
+        run: node --import tsx scripts/verify-animation-reversal.ts
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: vq04-animation-${{ github.event.pull_request.head.sha || github.sha }}
+          path: artifacts/vq04-animation
           if-no-files-found: error
