@@ -121,10 +121,14 @@ export interface IWorldTilesOptions {
    */
   readonly validate?: boolean;
   /**
-   * Merge settled same-LOD terrain tiles into super-tiles: one mesh per K×K block, rebuilt from the
-   * resident tiles through the admission budget. It changes how many draws the main pass submits,
-   * never how the ground looks — a merged vertex lands on the world position its tile's vertex did.
-   * Off by default; `mergeTiles: true`, `?tnTerrainMerge=1` or `TN_TERRAIN_MERGE=1` turns it on.
+   * Merge settled same-LOD terrain tiles into super-tiles: one mesh per K×K block, one block rebuilt
+   * per frame. It changes how many draws the main pass submits, never how the ground looks — a merged
+   * vertex lands on the world position its tile's vertex did, on the same game-owned `surface`.
+   *
+   * On by default, like `validate`'s measurements are off by default only because they cost a
+   * measurement a frame. `mergeTiles: false`, `?tnTerrainMerge=0` or `TN_TERRAIN_MERGE=0` turns it
+   * off for a run. A block's bytes are reported as `terrainTiles.blockBytes` and are never charged to
+   * `residentByteBudget`, so the merge changes draws and no tile the budget would admit without it.
    */
   readonly mergeTiles?: boolean;
   /** Explicit game-owned measurement region used by the topology evaluator. */
@@ -187,7 +191,11 @@ interface IMergedBlock {
   readonly lod: number;
   readonly geometry: BufferGeometry;
   readonly mesh: Mesh;
-  /** The tile keys whose current level geometry this block holds. */
+  /** This block's own geometry bytes, reported through `terrainTiles.blockBytes`. */
+  bytes: number;
+  /** The tile keys whose current level geometry this block holds, kept equal to what its geometry
+   * actually holds: a record the geometry has moved past double-draws the tiles that left and hides
+   * the ones that joined. */
   members: Set<string>;
 }
 
@@ -209,29 +217,29 @@ const LOD_TRANSITION_FRAMES = 3;
 /** Tiles per side in a merged super-tile block. Small, because a block is culled as one object. */
 const TERRAIN_MERGE_BLOCK = 4;
 const TERRAIN_MERGE_FLAG = "TN_TERRAIN_MERGE";
-const TERRAIN_MERGE_MARKER_MS = 5_000;
+const TERRAIN_TILE_MARKER_MS = 5_000;
 const BRIDGE_COORDINATE_EPSILON = 1e-4;
 
 /**
- * Whether `TN_TERRAIN_MERGE` asks for terrain tile merging on this launch.
+ * Whether this launch asked for terrain tile merging to be turned off.
  *
- * Off by default: the merge exists to cut the main pass's terrain draws on a wide streamed ring, and
- * a run that never asked for it must submit exactly the meshes it always did. Read the three ways
- * every other launch switch is: a native launch sets the environment variable, a browser asks with
- * the query string, and a test or harness sets the global. Only `1` and `true` count, so an old URL
- * that never mentioned the switch stays off.
+ * The merge is on by default, so this only has to hear the three ways every other launch switch is
+ * read: a native launch sets the environment variable, a browser asks with the query string, and a
+ * test or harness sets the global. Only `0` and `false` count, so a URL that never mentioned the
+ * switch — or one that still carries the `=1` that used to ask for the merge — stays on.
  */
-function terrainMergeRequested(): boolean {
+function terrainMergeOptedOut(): boolean {
   const host = globalThis as { process?: { env?: Record<string, unknown> } } & Record<
     string,
     unknown
   >;
   const fromEnv = host.process?.env?.[TERRAIN_MERGE_FLAG];
-  if (fromEnv === "1" || fromEnv === "true") return true;
+  if (fromEnv === "0" || fromEnv === "false") return true;
   const query = globalThis.location?.search;
-  if (typeof query === "string" && /[?&]tnTerrainMerge=(?:1|true)(?:&|$)/u.test(query)) return true;
+  if (typeof query === "string" && /[?&]tnTerrainMerge=(?:0|false)(?:&|$)/u.test(query))
+    return true;
   return (
-    host.__tnTerrainMerge === true || host.__tnTerrainMerge === 1 || host.__tnTerrainMerge === "1"
+    host.__tnTerrainMerge === false || host.__tnTerrainMerge === 0 || host.__tnTerrainMerge === "0"
   );
 }
 
@@ -1803,7 +1811,7 @@ function setManualLodLevel(lod: LOD, level: number): void {
  * @constraint sampleHeight and surface are required game choices; no landform or surface preset is installed
  * @constraint residentTileBudget and residentByteBudget are hard caps; a tile that cannot fit throws
  * @constraint seam gap, LOD pop and the rendered-vertex finiteness scan are measurements that are off by default; TN_TERRAIN_VALIDATE=1, ?tnTerrainValidate=1 or validate: true runs them, and maxSeamGap, maxVisualSeamGap and maxLodPop report undefined while they are off
- * @override tileSize, tileResolution, lodFactors, lodDistances, skirtDepth, streamRadius, colliderRadius, validate, and budgets
+ * @override tileSize, tileResolution, lodFactors, lodDistances, skirtDepth, streamRadius, colliderRadius, mergeTiles, validate, and budgets
  * @example const tiles = new TerrainTiles({ sampleHeight, surface: gameSurface(), tileSize: 256, tileResolution: 129, residentTileBudget: 25, residentByteBudget: 32_000_000 });
  */
 export class TerrainTiles extends Object3D implements IComputeDriven {
@@ -1833,13 +1841,16 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
   #peakBytes = 0;
   #peakTiles = 0;
   #lodTransitions = 0;
+  readonly #blending = new Set<IResidentTile>();
   /** Merged super-tiles by block key, and the blocks a LOD or residency change left to rebuild. */
   readonly #blocks = new Map<string, IMergedBlock>();
   readonly #dirtyBlocks = new Set<string>();
   /** Tile key -> block key currently hiding it, so a settled member is not drawn twice. */
   readonly #mergedMembers = new Map<string, string>();
   #blockRebuilds = 0;
-  #mergeToldAt = Number.NEGATIVE_INFINITY;
+  /** Merged super-tile bytes, reported beside the tiles they duplicate and never charged to them. */
+  #blockBytes = 0;
+  #tilesToldAt = Number.NEGATIVE_INFINITY;
   readonly #mergeTiles: boolean;
   // The last `follow` ran out of admission budget before it wanted everything, so the next one
   // has to run even if the follow point has not moved. Cleared at the top of `follow`.
@@ -1903,7 +1914,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     if (options.surface === undefined || options.surface === null)
       throw new Error("TerrainTiles surface is required and must be game-owned.");
     this.#validate = options.validate ?? terrainValidationRequested();
-    this.#mergeTiles = options.mergeTiles ?? terrainMergeRequested();
+    this.#mergeTiles = options.mergeTiles ?? !terrainMergeOptedOut();
     this.#sampleHeight = options.sampleHeight;
     if (typeof options.sampleHeight !== "function")
       throw new Error("TerrainTiles sampleHeight is required.");
@@ -1953,6 +1964,19 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     return this.#resident.size;
   }
 
+  /**
+   * Every retained terrain byte, against `residentByteBudget`: the resident tiles with their levels
+   * and edge samples, the stitch bridges, and the retained topology.
+   *
+   * A merged super-tile is deliberately absent. A block duplicates the level vertices of the tiles it
+   * covers, and those tiles stay resident because a tile that leaves the block draws its own mesh
+   * again — so charging the copy made a derived artefact evict real terrain detail out of the same
+   * budget the tiles were admitted against, and a budget sized for unmerged terrain held fewer tiles
+   * with the merge on. The copy is reported as `terrainTiles.blockBytes` instead. (PRD-475.)
+   *
+   * ponytail: terrain geometry costs up to ~2x while merged; free the per-tile GPU buffers behind a
+   * block (keep the height field for queries) if that memory ever matters.
+   */
   get residentBytes(): number {
     // Read four times a frame by the residency admission and the peak record, so it accumulates
     // instead of materialising the resident set.
@@ -1992,11 +2016,17 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
    * What the main pass submits for terrain levels right now: `tiles` surfaces, held as `blocks`
    * merged super-tiles plus one mesh each for the tiles that are not merged (a lone block member or
    * a tile mid LOD morph). `draws` is `blocks` plus those individual meshes, so with the merge off
-   * it is exactly the number of visible level meshes — the census the merge exists to cut. `rebuilds`
-   * counts the block geometries built over this residency owner's life.
+   * it is exactly the number of visible level meshes — the census the merge exists to cut. `blending`
+   * counts the resident tiles mid LOD morph, which are always among the individual meshes. A block
+   * whose tile just left stops being drawn until its rebuild lands, and those tiles are counted as the
+   * individual meshes they went back to — see `#releaseStaleBlock`.
+   * `rebuilds` counts the block geometries built over this residency owner's life. `blockBytes` is
+   * what the held blocks cost, reported and not charged to `residentByteBudget` — see `residentBytes`.
    */
   get terrainTiles(): {
+    readonly blockBytes: number;
     readonly blocks: number;
+    readonly blending: number;
     readonly draws: number;
     readonly rebuilds: number;
     readonly tiles: number;
@@ -2008,7 +2038,9 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     for (const block of this.#blocks.values()) merged += block.members.size;
     const blocks = this.#blocks.size;
     return {
+      blockBytes: this.#blockBytes,
       blocks,
+      blending: this.blendingTiles,
       draws: individual + blocks,
       rebuilds: this.#blockRebuilds,
       tiles: individual + merged,
@@ -2021,9 +2053,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
    * `process` while its follow point is standing still would freeze every blend on frame one.
    */
   get blendingTiles(): number {
-    let blending = 0;
-    for (const tile of this.#resident.values()) if (tile.lodTransition !== undefined) blending += 1;
-    return blending;
+    return this.#blending.size;
   }
 
   /**
@@ -2173,7 +2203,8 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     this.#recordPeaks();
     this.#updateColliders(centerX, centerZ, budget);
     this.#applyLodTargets(targets);
-    this.#coordinateNeighborLods(hadFocus);
+    // Retargeting already coordinates the resident ring; only newly admitted tiles can owe it.
+    if (built > 0) this.#coordinateNeighborLods(hadFocus);
     this.#seamPass();
     // After every LOD target is settled, so a block is built from the levels this pass left behind.
     this.#rebuildDirtyBlocks(budget);
@@ -2214,7 +2245,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     this.#seamPass();
     if (lodFrame !== undefined) this.#recordLodPopAfterReconciliation(lodFrame);
     this.#recordPeaks();
-    this.#reportMergeMarker();
+    this.#reportTileMarker();
   }
 
   debug(): Record<string, unknown> {
@@ -2270,6 +2301,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
       residentTileBudget: this.residentTileBudget,
       topologyBytes: this.#topologyBytes,
       lodTransitions: this.#lodTransitions,
+      terrainTiles: this.terrainTiles,
       maxLodPop: this.maxLodPop,
       stitchedEdges: this.#stitchedEdges,
       skirtVertexCount: [...this.#resident.values()].reduce(
@@ -2518,8 +2550,9 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     const next = tile.levels[selectable];
     if (previous === undefined || next === undefined)
       throw new Error("TerrainTiles LOD transition references a missing level.");
-    // The tile leaves its old level's block and joins the new level's; both memberships changed.
-    this.#markBlockDirty(previousLevel, tile.tileX, tile.tileZ);
+    // The tile leaves its old level's block and joins the new level's: the old one is now holding
+    // ground this tile is no longer at, and the new one is waiting to be built.
+    this.#releaseStaleBlock(previousLevel, tile.tileX, tile.tileZ);
     tile.lodLevel = selectable;
     this.#markBlockDirty(selectable, tile.tileX, tile.tileZ);
     this.#ringEpoch += 1;
@@ -2530,6 +2563,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
       return;
     }
     this.#lodTransitions += 1;
+    this.#blending.add(tile);
     tile.lodTransition = {
       elapsedFrames: 0,
       from: previousLevel,
@@ -2599,7 +2633,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
   }
 
   #advanceLodTransitions(): void {
-    for (const tile of this.#resident.values()) {
+    for (const tile of this.#blending) {
       const transition = tile.lodTransition;
       if (transition === undefined) continue;
       const from = tile.levels[transition.from];
@@ -2624,6 +2658,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
       );
       this.#restoreLodTransition(tile, transition);
       tile.lodTransition = undefined;
+      this.#blending.delete(tile);
       setManualLodLevel(tile.lod, transition.to);
       this.#setLodVisibility(tile);
       // The end of a blend is the one moment a tile rejoins its settled block.
@@ -2733,6 +2768,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     this.#maxLodTransitionFrames = Math.max(this.#maxLodTransitionFrames, transition.elapsedFrames);
     this.#restoreLodTransition(tile, transition);
     tile.lodTransition = undefined;
+    this.#blending.delete(tile);
     setManualLodLevel(tile.lod, transition.to);
     this.#setLodVisibility(tile);
   }
@@ -2901,34 +2937,51 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
   }
 
   /**
-   * Rebuild at most one dirty block, charging it to the frame's admission budget like any other
-   * streamed work. A rebuild concatenates a K×K block of settled tile levels, so it is bounded and
-   * never one long task; a refused rebuild stays dirty and the next `follow` runs it. With no budget
-   * every dirty block rebuilds, which is what a test or a one-shot harness wants.
+   * Let go of a block one of its tiles has left.
+   *
+   * A departure is the one ring change a rebuild cannot hide: the block's geometry still holds the
+   * tile that just left, so it would draw that ground a second time — at the level the tile has left
+   * — until this frame's one rebuild could replace it, and one rebuild a frame does not arrive before
+   * the next departure. So the block stops being drawn the frame the departure happens, every tile it
+   * still holds goes back to its own mesh, and the rebuild queue brings the block back whole. It is
+   * dirty either way: the block has to be rebuilt whatever this does to it. (PRD-475.)
+   */
+  #releaseStaleBlock(lod: number, tileX: number, tileZ: number): void {
+    if (!this.#mergeTiles) return;
+    const blockKey = blockKeyFor(lod, tileX, tileZ);
+    this.#markBlockDirty(lod, tileX, tileZ);
+    if (this.#blocks.has(blockKey)) this.#dissolveBlock(blockKey);
+  }
+
+  /**
+   * Rebuild one dirty block, charging it to the frame's admission budget like any other streamed
+   * work. One, per frame, whatever the budget still holds: a rebuild concatenates a K×K block of
+   * settled tile levels, and a follow that paid for every block its own streaming churn left dirty
+   * is the frame-time spike this cap exists to prevent — the plan's `TN_FRAME_SPANS` check watches
+   * for exactly that. A refused rebuild stays dirty and the next `follow` runs it, so N dirty blocks
+   * take N frames and a still follow point converges.
    */
   #rebuildDirtyBlocks(budget: IAdmissionBudget | undefined): void {
-    if (!this.#mergeTiles || this.#dirtyBlocks.size === 0) return;
-    while (this.#dirtyBlocks.size > 0) {
-      let key: string | undefined;
-      for (const candidate of this.#dirtyBlocks)
-        if (key === undefined || candidate < key) key = candidate;
-      if (key === undefined) return;
-      const dirty = key;
-      const run = (): void => {
-        this.#dirtyBlocks.delete(dirty);
-        this.#rebuildBlock(dirty);
-      };
-      // With no budget every dirty block rebuilds; with one, a refusal stops the loop and leaves the
-      // rest dirty for a later frame, so no single `follow` pays for more than the frame's allowance.
-      if (budget === undefined) {
-        run();
-        continue;
-      }
-      if (!budget.admit(run)) {
-        this.#deferredAdmissions = 1;
-        return;
-      }
+    if (!this.#mergeTiles) return;
+    const dirty = this.#nextDirtyBlock();
+    if (dirty === undefined) return;
+    const run = (): void => {
+      this.#dirtyBlocks.delete(dirty);
+      this.#rebuildBlock(dirty);
+    };
+    if (budget === undefined) {
+      run();
+      return;
     }
+    if (!budget.admit(run)) this.#deferredAdmissions = 1;
+  }
+
+  /** The lowest block key still waiting, so the one rebuild a frame spends is the same every time. */
+  #nextDirtyBlock(): string | undefined {
+    let first: string | undefined;
+    for (const candidate of this.#dirtyBlocks)
+      if (first === undefined || candidate < first) first = candidate;
+    return first;
   }
 
   /**
@@ -2955,20 +3008,31 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
       z: blockZ * TERRAIN_MERGE_BLOCK * this.tileSize,
     };
     const geometry = mergeLevelGeometry(parts, blockOrigin);
+    const bytes = geometryBytes(geometry);
+    this.#blockBytes += bytes - (existing?.bytes ?? 0);
     if (existing === undefined) {
       const mesh = new Mesh(geometry, this.#surface);
       mesh.frustumCulled = true;
       mesh.name = `tn-terrain-block:${blockKey}`;
+      // The merged geometry is written relative to the block origin, so the mesh carries it. Without
+      // this the block drew a whole `blockOrigin` away from the tiles it replaced: floating slabs and
+      // a hole where the ground is, at any block that is not at (0, 0). (PRD-475.)
+      mesh.position.set(blockOrigin.x, 0, blockOrigin.z);
       mesh.receiveShadow = this.#receiveShadow;
-      this.#blocks.set(blockKey, { geometry, key: blockKey, lod, members, mesh });
+      this.#blocks.set(blockKey, { bytes, geometry, key: blockKey, lod, members, mesh });
       this.add(mesh);
     } else {
+      const left = existing.members;
       existing.geometry.dispose();
+      existing.bytes = bytes;
       existing.mesh.geometry = geometry;
-      this.#blocks.set(blockKey, { geometry, key: blockKey, lod, members, mesh: existing.mesh });
+      // The record follows the geometry: the loop below restores the tiles this rebuild dropped, and
+      // `terrainTiles` counts what the blocks hold, so a stale record here is a tile drawn twice or
+      // not at all (PRD-475).
+      existing.members = members;
+      this.#blocks.set(blockKey, existing);
+      for (const key of left) if (!members.has(key)) this.#showTile(key, blockKey);
     }
-    if (existing !== undefined)
-      for (const key of existing.members) if (!members.has(key)) this.#showTile(key, blockKey);
     for (const key of members) {
       this.#mergedMembers.set(key, blockKey);
       const tile = this.#resident.get(key);
@@ -3007,6 +3071,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     if (block === undefined) return;
     this.#blocks.delete(blockKey);
     this.remove(block.mesh);
+    this.#blockBytes -= block.bytes;
     block.geometry.dispose();
     for (const key of block.members) this.#showTile(key, blockKey);
   }
@@ -3016,22 +3081,30 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     return typeof host.performance?.now === "function" ? host.performance.now() : Date.now();
   }
 
-  /** `TN_TERRAIN_MERGE`, every `TERRAIN_MERGE_MARKER_MS` while the merge is on. */
-  #reportMergeMarker(): void {
-    if (!this.#mergeTiles) return;
+  /**
+   * `TN_TERRAIN_TILES`, every `TERRAIN_TILE_MARKER_MS`, with the merge on or off: the same census
+   * before and after is the only way to read what the merge cut. A run that asked for validation also
+   * gets the seam and LOD-pop maxima it is paying to measure, so a browser console run prints them
+   * instead of only an in-process accessor ever reading them.
+   */
+  #reportTileMarker(): void {
     const now = this.#now();
-    if (now - this.#mergeToldAt < TERRAIN_MERGE_MARKER_MS) return;
-    this.#mergeToldAt = now;
+    if (now - this.#tilesToldAt < TERRAIN_TILE_MARKER_MS) return;
+    this.#tilesToldAt = now;
     const stats = this.terrainTiles;
+    const measurements = this.#validate
+      ? ` maxSeamGap=${String(this.maxSeamGap)} maxLodPop=${String(this.maxLodPop)} ` +
+        `maxVisualSeamGap=${String(this.maxVisualSeamGap)}`
+      : "";
     console.info(
-      `TN_TERRAIN_MERGE tiles=${String(stats.tiles)} blocks=${String(stats.blocks)} ` +
-        `draws=${String(stats.draws)} rebuilds=${String(stats.rebuilds)}`,
+      `TN_TERRAIN_TILES tiles=${String(stats.tiles)} blocks=${String(stats.blocks)} draws=${String(stats.draws)} blending=${String(stats.blending)} rebuilds=${String(stats.rebuilds)} blockBytes=${String(stats.blockBytes)}${measurements}`,
     );
   }
 
   #evict(tile: IResidentTile): void {
+    this.#blending.delete(tile);
     if (this.#mergeTiles) {
-      this.#markTileDirty(tile);
+      this.#releaseStaleBlock(tile.lodLevel, tile.tileX, tile.tileZ);
       this.#mergedMembers.delete(tile.key);
     }
     if (this.#resident.get(tile.key) === tile) this.#resident.delete(tile.key);

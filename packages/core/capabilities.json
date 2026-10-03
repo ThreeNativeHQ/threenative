@@ -3810,7 +3810,7 @@
       "importPath": "@threenative/core/world",
       "kind": "class",
       "overrides": [
-        "tileSize, tileResolution, lodFactors, lodDistances, skirtDepth, streamRadius, colliderRadius, validate, and budgets"
+        "tileSize, tileResolution, lodFactors, lodDistances, skirtDepth, streamRadius, colliderRadius, mergeTiles, validate, and budgets"
       ],
       "package": "@threenative/core",
       "signature": "export class TerrainTiles extends Object3D implements IComputeDriven { … }",
