@@ -90,5 +90,7 @@
     "scaffoldTests": 66,
     "ciFast": "pass",
     "exactHeadCI": "pending normal publication"
-  }
+  },
+  "publicationBaseSha": "9cf95535565b5621ea73029ad4810396d08cdad6",
+  "publicationBaseDelta": "The later9f41\u21929cf develop advance adds11 PRD/runbook documents only. Qualified core, playtest, native, exposure templates, dependencies and actual fixture producer behavior remain unchanged; no captures or coverage receipts are restamped."
 }
