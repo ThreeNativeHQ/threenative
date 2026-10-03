@@ -408,7 +408,7 @@ describe("formatPerfReport", () => {
     const withPassesBody = (gpu: boolean): string =>
       `"passes":{"main":{"frames":300,"draws":{"mean":30,"p50":30,"p95":30},` +
       `"triangles":{"mean":338000000,"p50":338000000,"p95":338000000}` +
-      (gpu ? `,"gpuTriangles":402000}}` : `}}`);
+      (gpu ? `,"gpuTriangles":402000}}` : "}}");
 
     const gpuText = formatPerfReport(
       assessPerfMarkers(parsePerformanceMarkers(withPasses(true)), { requireWindows: 1 }, "log"),

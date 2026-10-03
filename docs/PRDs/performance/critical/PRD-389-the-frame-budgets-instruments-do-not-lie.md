@@ -125,6 +125,23 @@ sample from being presented as a frame's cost.
 attribution (the ~17.6 ms figure); assert staleness and unavailable-not-zero in focused unit tests.
 Native via `pnpm native:verify:desktop`. Report actual runs or "unverified".
 
+### Phase 4 — the 2026-10-03 Machinefall probe's gaps
+
+A tick-counted probe on Machinefall read four instruments that could not all be true at once: one
+window at boot and nothing after it, `phases.update` at 0 ms, `passes.main.triangles` at 338 M for
+402 k triangles actually drawn, and ~15 GPU timestamps in a 300-frame window. Each box below is the
+root cause found in the shipping tree and the red-green spec that pins it. They stay **unticked**:
+a unit spec is not the probe, and the fixed-step run has not been re-measured on the game.
+
+- [ ] `advance()` closes one metered frame around a counted tick batch, so a fixed-step run reports `frames`, `phases.update > 0` and `substeps` instead of one boot window followed by `TN_FRAME_HITCH` — the batch no longer rides the hitch detector and reports no present. proof: `packages/core/__tests__/loop.spec.ts` "meters a counted tick batch as one frame charged to update", red before `14bdef1ee`, green after.
+- [ ] The batch's own cost reaches `update` exactly once, including when the frozen prime advances inside a live frame rather than opening a second one. proof: `packages/core/__tests__/loop.spec.ts` "charges a counted batch once when a frozen prime advances inside a live frame", red before `14bdef1ee`, green after.
+- [ ] The window's main pass carries the GPU-selected triangles beside three's CPU capacity figure, and `threenative-playtest perf` prints the GPU one, naming the CPU one as the ceiling. proof: `packages/core/__tests__/render-pass-budget.spec.ts` "reports the GPU-selected main-pass triangles beside the CPU capacity figure" and `packages/playtest/__tests__/perf.spec.ts` "prints the GPU-selected main-pass triangle count and names the CPU capacity figure", red before `de745df4c`, green after.
+- [ ] The 1-in-N GPU timestamp sampler counts the frames the engine draws, so 40 frames track 5 and the resolved frame id advances with them. proof: `packages/core/__tests__/gpu-timestamp-resolve-cadence.spec.ts` "tracks one frame in eight and reads a strictly advancing sample without three's animation loop", red before `c18b00687`, green after.
+
+**Still owed to this phase:** a real tick-counted run of Machinefall (or a template) with a named
+WebGPU adapter, showing a window per 300 counted steps, a non-zero `update`, a `gpuTriangles` near the
+drawn triangle count, and a GPU series with samples near `reportEvery / 8` rather than 15.
+
 ## 5. Completion boundary and references
 
 Complete only when the shipping tree reports series with declared staleness and
