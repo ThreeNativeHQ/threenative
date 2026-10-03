@@ -1036,7 +1036,11 @@ describe("CI pipeline structure", () => {
   // publish itself — `permissions: contents: write` and a `gh release upload` — and PRD-480 keeps
   // release writes on GitHub's own machines.
   const hosted = new Map<string, ReadonlySet<string>>([
-    [".github/workflows/ci.yml", new Set(["supply-chain"])],
+    // Template legs run hosted so the board uses both pools at once (wall time, run 37070815769).
+    [
+      ".github/workflows/ci.yml",
+      new Set(["golden-path-template", "supply-chain", "template-nonvisual"]),
+    ],
     [
       ".github/workflows/native-platforms.yml",
       // publish-android-v8 writes the release; android-emulator-parity is CPU-bound SwiftShader that
