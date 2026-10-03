@@ -165,44 +165,27 @@ const BUG_REPORT_SKILL_PATHS = [
 // arrive through the templating step rather than a verbatim copy, which is why a content-hash
 // matcher does not list them and this ablation is the evidence instead.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
-  // Recomputed 2026-10-01 on the merge of develop a602467db (PRD-458/473): every template's frame
-  // budget now comes from resolveTargetFps, so ten trees move and `rts` does not; the capability reference (365 -> 368 entries) then moved all eleven, because it ships in every scaffold.
-  // Recomputed 2026-10-01, three times, each by a real run that found the previous tree wrong:
-  // the first gave each quality.ts a software adapter policy; the second found ten of eleven
-  // setupPost callers never forwarded the adapter fact to it; the third found no template but
-  // `starter` set `renderChainTier`, so a low preset still ran the high render chain. The same ten
-  // trees move on each of the last two. `starter` is unchanged throughout — its setupPost hands the
-  // whole environment to createAdaptiveQuality and its quality.ts already carried the chain tier.
-  // Values measured through createProject by the spec that asserts them, not by hand.
-  // Recomputed again 2026-10-01 for `sailing` alone: `sailMotion` is a range across landed cloth
-  // readbacks, and one landed copy makes that range zero by arithmetic, so the sails scenario now
-  // holds long enough for two copies to arrive on a CPU rasteriser and asserts the landed count
-  // beside it. Only the two sailing template files changed, so only this one tree moves.
-  // Recomputed again 2026-10-01 after merging the quality/post chain into this branch and landing
-  // the rts sim's order, queue and event-record fixes: `rts` alone moves, and it is the only one of
-  // the eleven that carries `src/sim/`. Measured through createProject on the merged tree.
-  // Recomputed 2026-10-01 on the merge of develop (PRD-470/471/472/474) into the rain + snow
-  // branch (PRD-469, PRD-473): the merged tree carries both sides' engine and manifest bytes, so
-  // all thirteen trees, rain and snow included, were re-measured through createProject.
-  // Recomputed 2026-10-02 rebasing the FabCLI manual-login fallback onto develop: the shared
-  // threenative-assets skill ships in every scaffold, so all thirteen trees move.
-  // PRD-479: each scaffold embeds the reviewed compute-only Storage3DTexture Three patch.
-  // A clean-tree audit matched all13 prior hashes, then changed only the copied patch and
-  // reproduced all13 CI received hashes. No template, version or other scaffold bytes changed.
-  "action-rpg": "115e31cd5a319cf1407d94486a839304ca26cc6c532384129f6a3e8e7f1a3e36",
-  minimal: "4149749167f26a50c4fe67b801cc71e3d9e26d737f7e43766813f69ac5804900",
-  platformer: "87dc88a3a6d50e88c476cf80c5be501bca62ce27474aed5d8155e02d8e729c90",
-  puzzle: "fc5d88b24b78db3830510360fe2a4e53a7d0805737ddc07047fb6530b23009bb",
-  racing: "502373fe0d07d97dca2bab70929ead5f7bafac123d3b97c2ae49b4a919e5124e",
-  rain: "731042034a9c73824998c919137aa7002d75cac031713e6d309bc8301f8b4088",
-  rts: "2b875e1041e0e533d17f5bd5104094e11f8fbbdd06aef1e0156cba80fc21585b",
-  runner: "b66c2056b1256773911c0f6e46bea6c2f705cc3acbb2b8e2aa3ee8c461938cff",
-  sailing: "2d1ec2373e3697afa0d8f6341260911c24f988315dc2942d1328c0ddbd848011",
-  // VQ11 after merge of develop 416ffd7: measured through createProject, only shooter changed.
-  shooter: "2a4a5cb0b4c91b2cc7578df8bee854d3fa66ffd58f85a8c840964c5549cecc54",
-  snow: "7b634782b3bc6eff9cc9b15141bbe5bba9d1014e034d2a2e8859e785911a6424",
-  starter: "212b3f23c97b60ad8475a9418a6f4eeb87202ebad570b424cab83ff6c3c4ef17",
-  "tower-defense": "b72a0736abbcd3b2007852684b9298dc6d2069c8130337f140f15fb48f341511",
+  // Recomputed 2026-10-03 on the merge of develop c18a42bea into VQ07: the merged tree carries
+  // develop's copied Storage3DTexture patch and shared-skill bytes beside VQ07's receipt source and
+  // four-module starter fog, so all thirteen trees moved. Measured through createProject by the spec
+  // below; the previous table matched none of them, which is what proves the merge is in the tree.
+  "action-rpg": "444f6123d2f6055f1c4a46b0d35003d1f45b8a2bbc94b90355d6655a37a356ba",
+  minimal: "a37c5190035c8fba71f31d6510a9df8f17fb40e2c032509a1a83f9b4ffb80e45",
+  platformer: "5e73de346450aa81f0b7531d5349f15b29dcd25bc25e880933aa0d688291a22f",
+  puzzle: "c362aff80fad0bfb06d4425922762dfda9cb2b4169acce6525be790029716f89",
+  racing: "02fe5731ddfbbcfef2ff9d07db68199682d5dc8f2a46dba21fca8e9e2e297b9e",
+  rain: "5b989a9acbecad9a973df6937aded660f8c84c63cbf32de5cd7d012c1d1533dd",
+  rts: "5200d85876eb561337007f59ae27967191d4896ee4ac3987f30a5186bee2c210",
+  runner: "9e5798c74c3ff7bb59011928a42014a21f8bf7bf665419f12a5cfd85162ebdd3",
+  sailing: "0a70a652dd128e56be83863ac45dab52c5aa05d7944f584108d0f7b5900c829e",
+  shooter: "b13ae63da5e591296d68b4e419780f5bd6f640d79702910cdbb71a4e25bf88cd",
+  snow: "7a0f7d84d2c0591fe87ad23756ec3fc6e1566247a12337899a6dde2071b75454",
+  // VQ07 again, for the fog ownership rule alone: `volumetricFog.ts` restores the captured
+  // `scene.fog` only while the medium still holds the slot, so a fog the game authors while the
+  // medium lives survives disposal. One file, one line, starter only; the other twelve trees are
+  // untouched and still match develop's measurements, which is the ablation for this change.
+  starter: "9c0d409abeaf363be77bb8e762e36fe6794743f6010d5d3c036758c6c7605f42",
+  "tower-defense": "5f56275cfff3b81607c6aca3662d776df0052fed462ff00e93568ab50ecbc789",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
@@ -300,6 +283,10 @@ const STARTER_PATHS = [
   "src/render/lighting.ts",
   "src/render/postprocessing.ts",
   "src/render/worldEnvironment.ts",
+  "src/render/volumetricFog.ts",
+  "src/render/volumetricFogOptions.ts",
+  "src/render/volumetricFogVolume.ts",
+  "src/render/volumetricFogTransport.ts",
   "src/render/palette.ts",
   "src/render/materials.ts",
   "src/render/arena.ts",

@@ -954,7 +954,8 @@ static js::JSValueHandle getCurrentCanvasTexture(
     // acquisition/view bookkeeping as the main canvas or endFrame never presents them.
     const auto canvas = state->engine->getProperty(canvasContext, "canvas");
     if (!syncSurfaceSizeToCanvas(state, canvas)) {
-        state->engine->throwException("Canvas dimensions must be positive integer pixels");
+        if (!state->engine->hasException())
+            state->engine->throwException("Canvas dimensions must be positive integer pixels");
         return state->engine->newUndefined();
     }
 
@@ -2778,7 +2779,7 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
 #endif
 
 /** Initialize WebGPU bindings in the JS engine. */
-bool initBindings(BindingsState* state, js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void* wgpuQueue, void* wgpuSurface, uint32_t surfaceFormat, uint32_t presentMode, uint32_t width, uint32_t height, bool debug, void* wgpuAdapter) {
+bool initBindings(BindingsState* state, js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void* wgpuQueue, void* wgpuSurface, uint32_t surfaceFormat, uint32_t presentMode, uint32_t width, uint32_t height, bool debug, void* wgpuAdapter, void* surfaceNativeHandle) {
     if (!state || !engine) {
         std::cerr << "[WebGPU] No JS engine provided for bindings" << std::endl;
         return false;
@@ -2802,6 +2803,9 @@ bool initBindings(BindingsState* state, js::Engine* engine, void* wgpuInstance, 
     // Set canvas dimensions from window size
     state->presentation.canvasWidth = width;
     state->presentation.canvasHeight = height;
+    state->presentation.surfaceWidth = width;
+    state->presentation.surfaceHeight = height;
+    state->presentation.surfaceNativeHandle = surfaceNativeHandle;
     state->presentation.nativeSurfaceFormat = (WGPUTextureFormat)surfaceFormat;
     state->presentation.requiresSrgbPresentationBridge =
         state->surface != nullptr && isSrgbSurfaceFormat(state->presentation.nativeSurfaceFormat);

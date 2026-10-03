@@ -799,7 +799,7 @@ public:
         bindingsState_ = webgpu::createBindingsState();
         bindingsState_->pipelineCache.identity.app = config_.pipelineCacheAppIdentity;
         bindingsState_->pipelineCache.identity.shaders = config_.pipelineCacheSourceIdentity;
-        if (!webgpu::initBindings(bindingsState_, jsEngine_.get(), webgpu_->getInstance(), webgpu_->getDevice(), webgpu_->getQueue(), surface, webgpu_->getPreferredFormat(), webgpu_->getPresentMode(), width_, height_, config_.debug, webgpu_->getAdapter())) {
+        if (!webgpu::initBindings(bindingsState_, jsEngine_.get(), webgpu_->getInstance(), webgpu_->getDevice(), webgpu_->getQueue(), surface, webgpu_->getPreferredFormat(), webgpu_->getPresentMode(), width_, height_, config_.debug, webgpu_->getAdapter(), webgpu_->getSurfaceNativeHandle())) {
             std::cerr << "[Mystral] Failed to initialize WebGPU bindings" << std::endl;
             webgpu::destroyBindingsState(bindingsState_);
             bindingsState_ = nullptr;
@@ -1300,7 +1300,8 @@ public:
 
         webgpu::republishSurface(bindingsState_, webgpu_->getSurface(),
                                  webgpu_->getPreferredFormat(), webgpu_->getPresentMode(),
-                                 static_cast<uint32_t>(width_), static_cast<uint32_t>(height_));
+                                 static_cast<uint32_t>(width_), static_cast<uint32_t>(height_),
+                                 webgpu_->getSurfaceNativeHandle());
 
         std::ostringstream marker;
         marker << "TN_LIFECYCLE_SURFACE:{\"event\":\"revalidated\",\"previousWindow\":\""

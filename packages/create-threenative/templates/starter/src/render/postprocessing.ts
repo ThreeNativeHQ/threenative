@@ -18,6 +18,7 @@ import {
   formatQualityAdaptation,
 } from "./adaptiveQuality.js";
 import { type QualityTier, qualityPreset } from "./quality.js";
+import type { IFogMedium } from "./volumetricFog.js";
 import { type OutputRenderer, WorldEnvironment } from "./worldEnvironment.js";
 
 interface IPostController {
@@ -44,12 +45,19 @@ export function setupPost(
     software?: boolean;
     /** Forces a tier while keeping its costs observed. Unknown names throw. */
     tier?: QualityTier;
+    /**
+     * The bounded participating medium from `volumetricFog.ts`, built once per graph: a tier change
+     * replaces the graph, and a fog controller owns one graph, so it is released and rebuilt here
+     * rather than composed twice. Omit it and the chain starts from the beauty pass unchanged.
+     */
+    fog?: () => IFogMedium | undefined;
   } = {},
 ): IPostController {
   const policy = createAdaptiveQuality(environment, environment);
   active?.dispose();
   let disposed = false;
   let disposeGraph: (() => void) | undefined;
+  let medium: IFogMedium | undefined;
   let observation: Record<string, unknown> = {
     tier: policy.tier,
     source: policy.pinned ? "pinned" : "auto",
@@ -57,10 +65,15 @@ export function setupPost(
   function apply(): void {
     // Replacement is serialized: no old graph or subscription remains alive beside the new one.
     disposeGraph?.();
+    medium?.dispose();
+    medium = environment.fog?.();
+    const composed = medium;
     const settings = qualityPreset(policy.tier);
     const world = new WorldEnvironment(settings);
     const applied = world.apply(renderer, scene, camera, {
       godraysLight: environment.godraysLight,
+      // Ahead of exposure and every stage, which is the only place a participating medium can go.
+      baseColour: composed === undefined ? undefined : (scenePass) => composed.compose(scenePass),
     });
     disposeGraph = applied.dispose;
     observation = { ...observation, stages: applied.stages, dropped: applied.dropped };
@@ -91,6 +104,8 @@ export function setupPost(
       disposed = true;
       disposeGraph?.();
       disposeGraph = undefined;
+      medium?.dispose();
+      medium = undefined;
       if (active === controller) active = undefined;
     },
   };
