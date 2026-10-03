@@ -4,6 +4,12 @@ on:
   push:
     branches:
       - main
+      # PRD-481 phase 2: the cache-warm lane. A pull request's caches are scoped to
+      # `refs/pull/N/merge`, which no other pull request can read, so without a run on the base
+      # branch every pull request into develop rebuilt the native host and the workspace dist. A
+      # push here selects `warm`: build-artifacts and test-native publish those caches, nothing else
+      # runs, and no push cancels another (see `concurrency` below).
+      - develop
   pull_request:
     branches:
       - main
@@ -59,7 +65,9 @@ jobs:
           TN_CI_EVENT: ${{ github.event_name }}
           # A merge group reports no `base_ref`; its target is on the event. Passing it is what keeps
           # a develop merge group on the reduced native matrix and a main one on the full matrix.
-          TN_CI_TARGET: ${{ github.base_ref || github.event.merge_group.base_ref }}
+          # A push reports neither, and its target is the branch it landed on — which is what selects
+          # the cache-warm lane on develop and keeps a push to main full.
+          TN_CI_TARGET: ${{ github.base_ref || github.event.merge_group.base_ref || (github.event_name == 'push' && github.ref_name) || '' }}
           TN_CI_FORCE_FULL: ${{ vars.TN_CI_FORCE_FULL }}
           TN_CI_BASE: ${{ github.event.pull_request.base.sha }}
           TN_CI_HEAD: ${{ github.event.pull_request.head.sha }}
@@ -264,7 +272,10 @@ jobs:
 
   test-native:
     needs: [scope, build-artifacts]
-    if: ${{ needs.scope.outputs.selection == 'full' }}
+    # `warm` too: this job saves `native-build-*`, `native-third-party-*` and its ccache through the
+    # cache action's post step, which is the product every pull request into develop reads. No step
+    # below is gated on a full selection, so a develop push warms them.
+    if: ${{ needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'warm' }}
     runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 75
     env:
@@ -1020,7 +1031,9 @@ jobs:
   # the protected build join above requires both this producer and the complete native lane.
   build-artifacts:
     needs: scope
-    if: ${{ needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'ci' }}
+    # `warm` too: this job runs the shared workspace-dist action as the run's only saver, and the
+    # `workspace-dist-*` entry it publishes is what every pull request into develop restores.
+    if: ${{ needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'ci' || needs.scope.outputs.selection == 'warm' }}
     runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 20
     env:
@@ -1316,7 +1329,7 @@ jobs:
       - ci-required
     # `!cancelled()` and not `always()`, for the reason golden-path gives above: a cancelled run
     # has nothing to report and its summary would only describe the cancellation.
-    if: ${{ !cancelled() && (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'ci') }}
+    if: ${{ !cancelled() && (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'ci' || needs.scope.outputs.selection == 'warm') }}
     runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER_LIGHT) && 'ubuntu-24.04' || vars.TN_RUNNER_LIGHT }}
     timeout-minutes: 5
     permissions:
