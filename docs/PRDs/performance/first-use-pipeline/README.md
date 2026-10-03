@@ -9,7 +9,7 @@ native main thread. Land PR #98's findings after renumbering its compile-walk fo
 off-loop gates pass. Do not open another PRD for the same stall.
 
 `PRD-339` is already assigned to
-[automatic exposure](../../AAA-visuals/PRD-339-the-frame-sets-its-own-exposure.md) on `main`.
+[automatic exposure](../../done/PRD-339-the-frame-sets-its-own-exposure.md) on `main`.
 
 ## The target
 

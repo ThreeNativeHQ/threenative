@@ -4,10 +4,10 @@ prd_contract: v1
 
 # PRD-339 — the frame sets its own exposure
 
-**Status:** IN PROGRESS — implementation started 2026-10-02 from `d7277838`; original
+**Status:** DONE — acceptance qualified 2026-10-03; required exact-head CI and merge are tracked separately. Implementation started 2026-10-02 from `d7277838`; original
 measurement at `43d03e6a`. Batch:
-[docs/PRDs/AAA-visuals](./README.md). Judged with
-[PRD-341](../done/PRD-341-a-frames-tone-is-a-number-and-the-number-is-a-gate.md), which is the only way to
+[docs/PRDs/AAA-visuals](../AAA-visuals/README.md). Judged with
+[PRD-341](./PRD-341-a-frames-tone-is-a-number-and-the-number-is-a-gate.md), which is the only way to
 tell whether this landed. Source studied: [TheLongSilence](https://github.com/achimala/TheLongSilence)
 `src/gfx/PostFX.js`, the `LUM_FRAG` / `REDUCE_FRAG` / `ADAPT_FRAG` chain.
 
@@ -122,7 +122,7 @@ a convention missing from there does not exist.
 ### Phase 3 — repeatability and runtime qualification
 
 - [x] Bright/dark and disabled fixture scenarios exercise the real reduction and adaptation path. proof: [run 36998395106](https://github.com/ThreeNativeHQ/threenative/actions/runs/36998395106) — all five browser scenarios pass with inspected, SHA-tagged SwiftShader canvas screenshots; native remains open.
-- [ ] Settle and cold-boot tone assertions meet acceptance criteria 1–3 using PRD-341's tone gate. proof: exposure fixture playtest plus ten cold boots using `assert.tone`
+- [x] Settle and cold-boot tone assertions meet acceptance criteria 1–3 using PRD-341's tone gate. proof: all 18 current-harness exposure cases qualify; ten gain-one cold boots have a 3.7815% p99 band; approved first-update response is 0.000000476837 stops with gain one and rejects gain zero at 10.553099394 stops under the same 0.25-stop gate. Actual GPU/camera/clock traces are linked below.
 
 ### Current verification
 
@@ -422,10 +422,9 @@ that decision.
   actual runtime evidence qualifies the path. A software adapter can prove correctness pixels,
   never hardware performance or native parity.
 
-## Blocked on
+## Merge qualification still required
 
-- Full required checks remain incomplete: the shared native dependency acquisition receipts are stale against the unchanged lock, so the local SBOM suite rejects them. The native source was rebuilt in this isolated checkout; actual V8/QuickJS GPU correctness below does not claim a green supply-chain board. No shared receipt or pipeline policy was changed.
-- Cold-boot qualification now consumes the landed PRD-341 tone gate; twenty corrected/mutated launches ran cleanly, but the required zero-gain spread failure did not occur.
+All acceptance criteria below are qualified. Repository-wide test revalidation is running after genuine pinned dependency reacquisition into this checkout's independent cache. Final independent source/evidence review and green exact-head CI are required before merge; auto-merge has not been enabled. No shared cache, receipt hash, pipeline policy or security setting was edited.
 
 ## Acceptance criteria
 
@@ -435,7 +434,7 @@ that decision.
    *Red-green:* replace the `log2` interpolation in `auto-exposure.ts` with `mix(prev, cur, rate)` on
    raw luminance; the eleven-stop leg must fail with the measured settle time in the failure text
    while the one-stop leg still passes. Paste both.
-- [ ] **A cold boot into a pose is repeatable.** proof: `ten exposure fixture cold boots and PRD-341 assert.tone`. Ten runs of the same scenario at the same pose report
+- [x] **A cold boot into a pose is repeatable.** proof: `ten exposure fixture cold boots and PRD-341 assert.tone`. Ten runs of the same scenario at the same pose report
    p99 luminance within a 10% band (PRD-341's `assert.tone` supplies the number).
    *Red-green:* independently cut the actual camera eleven stops with a controlled 1/60-second adaptation delta. With authored snap gain one, the first accepted GPU readback must be within 0.25 stops of its measured target; with snap gain zero, that same first-update accuracy gate must fail. The ten-boot 10% repeatability gate remains unchanged.
 - [x] **Off does not mean unmeasured.** proof: `disabled exposure playtest`. With `enabled: false`, `TN_AUTO_EXPOSURE` still prints a
@@ -460,3 +459,11 @@ Local tonemapping, bloom threshold coupling, and lens/iris simulation.
 ### Approved AC2 correction (2026-10-03)
 
 The owner explicitly approved the proposed AC2 replacement. Repeatability retains ten independent cold boots, the same pose and the 10% p99 band. Snap responsiveness is qualified separately at the first actual GPU update after the unchanged eleven-stop camera cut, using 1/60-second adaptation time and the existing 0.25-stop accuracy tolerance. The original twenty-launch measurements and ineffective spread mutation above remain historical evidence. Current-harness qualification and final checks are in progress; no new acceptance box is claimed yet.
+
+### Current-harness acceptance qualification (2026-10-03)
+
+[Current proof, source identities, clocks and image hashes](../../verification/prd339-exposure-proof/completion-current-55b5313.json) records actual captures at `55b53130603959bf1274b90acdad6f91f745f7b9`, using the rebuilt merged playtest harness. Ten gain-one boots produce p99 values 238–247, a 3.7815% band within the unchanged 10% limit. Ten diagnostic gain-zero boots also pass repeatability (249–251, 0.8032%); this is not a spread mutation red claim. The separate approved camera response observes gain-one first-update error 0.000000476837 stops and gain-zero error 10.553099394 stops at actual update 181 with delta 1/60. Only the same 0.25-stop response gate rejects gain zero.
+
+All 18 browser cases and their behavioral mutations qualify with the original scene, ages and tolerances. The current lifecycle capture qualifies 720 actual paired samples, output rebuild, real 320×180 target resize and reset adoption of a new eleven-stop target. Current desktop proof qualifies 180 actual paired samples, matched raw state, three actual null GPU error scopes, nonblank before/after images and the actual invalid-GPU negative control. It transparently reuses the source-identical rebuilt V8 executable; no whole-tree CI verdict is reused. Independent review inspected 34 matrix/snap/lifecycle/native images and all 20 boot tone frames. Complete exposure traces are retained losslessly in the linked xz dataset, including 545 native markers taken from the actual captured host console.
+
+The full instrumented coverage workload found the omitted negative CTest invocation; both real exposure contract invocations now pass after its registration repair. An unrelated worker contract timed out once, then passed the unchanged 120-second isolated reproduction in 0.79 seconds. The complete instrumented rerun passed: 43 runnable native contract targets, 47 actual raw profiles, 19,206 of 24,373 instrumented lines covered (78.80%). Optional metahuman, native physics and video remain explicitly configured off in this existing lane. The source digest and profile/report receipts are recorded in the current proof. Final local checks and exact-head CI remain separately required before merge.

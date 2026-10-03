@@ -8,7 +8,7 @@ Baseline inspected: `d72778382b134ef8763f58825cb4d4fd8cc0f6e3` on `develop`. Old
 |---|---|---|---|---|
 | Wave 0 | [PRD-269](https://github.com/ThreeNativeHQ/threenative/blob/develop/docs/PRDs/lighting/PRD-269-motion-vectors-or-the-temporal-filters-lie.md) | Velocity/history correctness | Source exists; reconcile old PROPOSED text with current velocity code. Qualify gaps; do not rebuild it. | Before 455, VQ-13 and temporal hair/fog consumers. |
 | Wave 1 | [PRD-455](https://github.com/ThreeNativeHQ/threenative/blob/develop/docs/PRDs/unreal-like-features/PRD-455-temporal-reconstruction-from-dynamic-resolution.md) | Temporal AA and dynamic-resolution reconstruction | Reuse existing owner. Same-resolution temporal qualification is its first bounded milestone; an upstream TRAA node is not by itself an upscaler. | 269; coordinate MSAA, jitter, camera cuts and instance identity. |
-| Wave 1 | [PRD-339](https://github.com/ThreeNativeHQ/threenative/blob/develop/docs/PRDs/AAA-visuals/PRD-339-the-frame-sets-its-own-exposure.md) | Auto exposure / eye adaptation | Reuse; adapt the current generated-source exposure seam, not a second tone mapper. | VQ-02 output correctness; include dark/bright transition traces. |
+| Wave 1 | [PRD-339](https://github.com/ThreeNativeHQ/threenative/blob/develop/docs/PRDs/done/PRD-339-the-frame-sets-its-own-exposure.md) | Auto exposure / eye adaptation | Reuse; adapt the current generated-source exposure seam, not a second tone mapper. | VQ-02 output correctness; include dark/bright transition traces. |
 | Wave 1 | [PRD-460](https://github.com/ThreeNativeHQ/threenative/blob/develop/docs/PRDs/unreal-like-features/PRD-460-invisible-streaming-transitions.md) | Prop arrival and LOD crossfades | Reuse; terrain morphing already exists. Apply the remaining work to CPU and GPU-selected scatter routes. | Existing WorldCells and PR #375; coordinate temporal reactive/disocclusion behavior. |
 | Wave 2 | [PRD-456](https://github.com/ThreeNativeHQ/threenative/blob/develop/docs/PRDs/unreal-like-features/PRD-456-distant-world-cell-proxies.md) | Distant cell HLOD / silhouettes | Reuse; do not confuse per-asset impostors or shadow proxies with cell HLOD. | Existing world-resource accounting; 460 handoffs. |
 | Wave 2 | [PRD-457](https://github.com/ThreeNativeHQ/threenative/blob/develop/docs/PRDs/unreal-like-features/PRD-457-virtual-shadows-scale-by-measurement.md) | Shadow scheduling, sparse-page admission, local-light boundary | Reuse. Directional virtual shadows already exist; phase 3 also owns local-light work. | Coordinate VQ-06; preserve a correct cached-level fallback. |
@@ -22,7 +22,7 @@ Baseline inspected: `d72778382b134ef8763f58825cb4d4fd8cc0f6e3` on `develop`. Old
 ```text
 docs/PRDs/lighting/PRD-269-motion-vectors-or-the-temporal-filters-lie.md
 docs/PRDs/unreal-like-features/PRD-455-temporal-reconstruction-from-dynamic-resolution.md
-docs/PRDs/AAA-visuals/PRD-339-the-frame-sets-its-own-exposure.md
+docs/PRDs/done/PRD-339-the-frame-sets-its-own-exposure.md
 docs/PRDs/unreal-like-features/PRD-460-invisible-streaming-transitions.md
 docs/PRDs/unreal-like-features/PRD-456-distant-world-cell-proxies.md
 docs/PRDs/unreal-like-features/PRD-457-virtual-shadows-scale-by-measurement.md
