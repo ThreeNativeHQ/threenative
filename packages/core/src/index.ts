@@ -513,7 +513,7 @@ export type {
   IFrameBudgetWindow,
   IFramePhaseSample,
 } from "./frame-budget.js";
-export type { FramePassKind, IRenderPassSample } from "./render-pass-budget.js";
+export type { FramePassKind, IRenderPassSample, MainDrawSource } from "./render-pass-budget.js";
 /**
  * Read what frame rate a game gets when its config does not say, and why.
  *

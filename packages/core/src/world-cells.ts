@@ -2459,6 +2459,10 @@ function buildChunkShadowProxies(
     const proxy = new Mesh(shadowProxyGeometry(group.meshes, label, chunk), material);
     if (selectParts) selectChunkShadowParts(proxy, group.meshes);
     proxy.name = `${CHUNK_NAME}-shadow`;
+    // The origin a draw of this mesh is counted under (`RenderPassBudget`). A proxy on the caster
+    // layers never reaches the main pass, so this only says anything where the world's own cull
+    // left one on layer 0 — and it is written here rather than inferred, so the tag cannot rot.
+    proxy.userData.tnDrawSource = "proxies";
     proxy.layers.set(VIRTUAL_SHADOW_CASTER_LAYER);
     proxy.layers.enable(VIRTUAL_SHADOW_WIDE_CASTER_LAYER);
     proxy.castShadow = true;
@@ -6105,6 +6109,10 @@ export class WorldCells extends Group implements IComputeDriven {
     // yet carries no parts and the dispatch draws that level nowhere. Re-registering is a no-op while
     // the table holds, and a rewrite when a key joined it.
     scene.slot(key.asset, this.#gatesOf(key.asset, asset));
+    // The origin this key's main-pass draws are counted under, read off the object at the draw
+    // (`RenderPassBudget`). Written after the mesh swap above, so a re-dressed fresh object carries
+    // it, and before `#bundleIn`, which supersedes it with `tnBundled` for a world with bundles on.
+    shared.mesh.userData.tnDrawSource = "gpuScene";
     // The bundle the last settled frame replayed is now wrong: this pass minted or regrown a key,
     // swapped the geometry, or took a fresh mesh object onto the scene's new buffers. Reaching here
     // is one of the three, which is why this is the only place a re-record happens — the fast path
@@ -7253,6 +7261,9 @@ export class WorldCells extends Group implements IComputeDriven {
     mesh.frustumCulled = false;
     mesh.instanceMatrix.setUsage(DynamicDrawUsage);
     mesh.name = `tn-far:${assetId}`;
+    // Drawn on layer 0, so this is a main-pass draw the frame budget counts under the impostor
+    // aggregate's own source rather than under `other` (`RenderPassBudget`).
+    mesh.userData.tnDrawSource = "proxies";
     if (surface.cull) this.#attachFarCull(surface.geometry, capacity);
     // Far trees cast like near ones, into the coarse wide caster layer. The same mesh draws the main
     // pass (layer 0) and the virtual-shadow levels (wide layer), so one representation covers both

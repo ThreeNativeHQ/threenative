@@ -476,6 +476,17 @@ function fieldStep(field: Heightfield, resolution: number): number {
   return step;
 }
 
+/**
+ * Tags a mesh as terrain, so the frame budget counts its main-pass draw under `terrain` instead of
+ * under the `other` every mesh no world system claimed lands in. Every mesh this file creates goes
+ * through here — a tile level, a stitch bridge and a merged block — because a source that is tagged
+ * at three of the four places it exists is a split nobody can reconcile.
+ */
+function terrainMesh(mesh: Mesh): Mesh {
+  mesh.userData.tnDrawSource = "terrain";
+  return mesh;
+}
+
 function buildLevel(
   field: Heightfield,
   resolution: number,
@@ -566,7 +577,7 @@ function buildLevel(
   return {
     edgeSamples: edgeSamplesFor(heights, resolution),
     geometry,
-    mesh: new Mesh(geometry, surface),
+    mesh: terrainMesh(new Mesh(geometry, surface)),
     resolution,
     skirtDepth: skirt.depth,
     skirtVertexCount: skirt.vertexCount,
@@ -1778,7 +1789,7 @@ function reconcileNeighborPair(
   const data = stitchGeometryData(finer, finerLevel, finerSide, coarser, coarserLevel, coarserSide);
   if (existingBridge === undefined) {
     const geometry = stitchGeometry(data);
-    const mesh = new Mesh(geometry, surface);
+    const mesh = terrainMesh(new Mesh(geometry, surface));
     mesh.frustumCulled = true;
     return {
       bytes: geometryBytes(geometry),
@@ -3011,7 +3022,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     const bytes = geometryBytes(geometry);
     this.#blockBytes += bytes - (existing?.bytes ?? 0);
     if (existing === undefined) {
-      const mesh = new Mesh(geometry, this.#surface);
+      const mesh = terrainMesh(new Mesh(geometry, this.#surface));
       mesh.frustumCulled = true;
       mesh.name = `tn-terrain-block:${blockKey}`;
       // The merged geometry is written relative to the block origin, so the mesh carries it. Without

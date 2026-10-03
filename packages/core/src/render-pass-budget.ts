@@ -17,6 +17,10 @@
  * Measurement, not policy: installing this alters no draw. `install` answers `undefined` on a
  * renderer whose `info.render` cannot be read, and a consumer must then report the pass split as
  * absent rather than zero.
+ *
+ * The main pass's own draws are also split by where their mesh came from, counted at the one place
+ * a draw is counted — `info.update`, which every backend calls per submitted draw with the object
+ * that owns it — so the sources sum to `draws` by construction instead of by an estimate beside it.
  */
 
 /** The named kinds of a render pass. Closed on purpose: a consumer bounds a known kind. */
@@ -24,17 +28,70 @@ export const FRAME_PASS_KINDS = ["main", "shadow", "reflection", "nested"] as co
 
 export type FramePassKind = (typeof FRAME_PASS_KINDS)[number];
 
-/** One render call's own submissions, attributed to its innermost active render call. */
+/**
+ * Where a main-pass draw's mesh came from. Closed, and `other` is the default: a character, a prop,
+ * water and the sky are every mesh that no world system claimed, and they are what is left once the
+ * systems that can be counted are counted.
+ */
+export const MAIN_DRAW_SOURCES = ["gpuScene", "bundles", "terrain", "proxies", "other"] as const;
+
+export type MainDrawSource = (typeof MAIN_DRAW_SOURCES)[number];
+
+/**
+ * One render call's own submissions, attributed to its innermost active render call.
+ *
+ * `drawsBySource` is `main`'s own draws by origin, in the frame's counts rather than in percentiles:
+ * it sums to `draws` for the frame, which is the claim the split exists to answer. Absent when the
+ * renderer named no object for one of those draws, because a split that guessed where a draw came
+ * from would read as a measurement.
+ */
 export interface IRenderPassSample {
   readonly draws: number;
+  readonly drawsBySource?: Readonly<Partial<Record<MainDrawSource, number>>>;
   readonly kind: FramePassKind;
   readonly triangles: number;
+}
+
+/** Whether a tag names a source this file counts. Anything else is `other`. */
+function isMainDrawSource(tag: unknown): tag is MainDrawSource {
+  return (MAIN_DRAW_SOURCES as readonly unknown[]).includes(tag);
+}
+
+/**
+ * The source a drawn object belongs to, read from the two tags its creator set on it.
+ *
+ * `tnBundled` is the marker `WorldCells` already keeps, and it wins: a bundled mesh is a mesh the
+ * world drew through a recorded `BundleGroup` rather than one it submitted per object, so counting
+ * it as a GPU-scene key as well would name the same draw twice.
+ */
+function drawSourceOf(object: unknown): MainDrawSource | undefined {
+  const userData =
+    typeof object === "object" && object !== null
+      ? (object as { readonly userData?: Record<string, unknown> }).userData
+      : undefined;
+  if (typeof userData !== "object" || userData === null) return undefined;
+  if (userData.tnBundled === true) return "bundles";
+  const tagged = userData.tnDrawSource;
+  return isMainDrawSource(tagged) ? tagged : "other";
 }
 
 interface IRenderCounters {
   readonly drawCalls?: number;
   readonly calls?: number;
   readonly triangles?: number;
+}
+
+/**
+ * Three's own per-frame counters, the surface this file reads and wraps.
+ *
+ * `update` is three's per-draw counter, not one of the aggregates: WebGPU's `WebGPUInfo` and the
+ * WebGL2 fallback inside it both call it once per submitted draw with the object that owns it, and
+ * a standalone `WebGLRenderer` calls it with a vertex count instead — which is why a draw this
+ * cannot read a `userData` off is left unattributed rather than guessed at.
+ */
+interface IInfoCounters {
+  readonly render?: IRenderCounters | undefined;
+  update?(object: unknown, count: number, instanceCount: number): void;
 }
 
 /**
@@ -58,7 +115,7 @@ export interface ITimestampQueryPool {
  * deliberately structural so the unit test can stand in a fake that nests exactly as three does.
  */
 export interface IRenderPassTarget {
-  readonly info?: { render?: IRenderCounters } | undefined;
+  readonly info?: IInfoCounters | undefined;
   /**
    * Three's backend, for per-pass GPU time. Optional: a WebGL2 fallback and a test double may
    * carry no timestamp pool, and every GPU read is then absent rather than zero.
@@ -89,6 +146,10 @@ interface IPassFrame {
   childTriangles: number;
   /** Timestamp uids the nested calls this pass made allocated, in allocation order. */
   childUids?: string[];
+  /** This pass's own draws per origin, held only for a main pass and dropped the moment one is unclassifiable. */
+  drawsBySource?: Partial<Record<MainDrawSource, number>>;
+  /** A draw named no object to read, so {@link drawsBySource} would be a partial answer. */
+  unclassifiable?: boolean;
 }
 
 function readCounters(target: IRenderPassTarget): { draws: number; triangles: number } | undefined {
@@ -174,8 +235,10 @@ export class RenderPassBudget {
             parent.childDraws += totalDraws;
             parent.childTriangles += totalTriangles;
           }
+          const drawsBySource = frame.unclassifiable === true ? undefined : frame.drawsBySource;
           this.#frame.push({
             draws: Math.max(0, totalDraws - frame.childDraws),
+            ...(drawsBySource === undefined ? {} : { drawsBySource }),
             kind: frame.kind,
             triangles: Math.max(0, totalTriangles - frame.childTriangles),
           });
@@ -184,7 +247,34 @@ export class RenderPassBudget {
       }
     };
     target.render = instrumented;
+    this.#instrumentDraws(target.info);
     installed.add(target);
+  }
+
+  /**
+   * Attributes each counted draw to the origin of the object behind it.
+   *
+   * Only a draw the main pass itself submitted is counted, because a nested render's draws are
+   * subtracted out of `main`: counting them here too would put shadow work in the main pass's split
+   * and break the sum the split exists to reconcile. The original `update` still runs, so
+   * `info.render.drawCalls` — the number everything else is read against — is untouched.
+   */
+  #instrumentDraws(info: IInfoCounters | undefined): void {
+    const update = info?.update;
+    if (info === undefined || typeof update !== "function") return;
+    info.update = (object: unknown, count: number, instanceCount: number): void => {
+      const frame = this.#stack[this.#stack.length - 1];
+      if (frame?.kind === "main" && frame.unclassifiable !== true) {
+        const source = drawSourceOf(object);
+        if (source === undefined) frame.unclassifiable = true;
+        else {
+          frame.drawsBySource ??= {};
+          const drawsBySource = frame.drawsBySource;
+          drawsBySource[source] = (drawsBySource[source] ?? 0) + 1;
+        }
+      }
+      update.call(info, object, count, instanceCount);
+    };
   }
 
   /**
