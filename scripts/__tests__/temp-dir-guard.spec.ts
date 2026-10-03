@@ -96,10 +96,6 @@ const allowedProductionCreators = new Map<string, string>([
     "The presentation contract compiles a standalone probe with the system compiler into a scratch root and removes it in a finally, for the same reason as the decode contract above.",
   ],
   [
-    "scripts/__tests__/verify-volumetric-fog.spec.ts",
-    "The fog verifier round-trips its generated scenarios through the public loader and removes the scratch root in a finally.",
-  ],
-  [
     "scripts/capture-blender-mcp-tools.ts",
     "The tool-snapshot gate packs and installs into scratch roots removed in finally.",
   ],

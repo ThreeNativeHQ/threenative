@@ -288,7 +288,7 @@ export class FogProbe extends GameScene<FogState> {
       logarithmicDepthBuffer?: boolean;
       reversedDepthBuffer?: boolean;
     };
-    const fog = createVolumetricFog(ctx.camera as PerspectiveCamera, {
+    const fog = createVolumetricFog(ctx.scene, ctx.camera as PerspectiveCamera, {
       enabled: this.#mode !== "off" && this.#mode !== "blackOff",
       renderer: ctx.renderer.kind,
       logarithmicDepth: raw.logarithmicDepthBuffer,
@@ -301,7 +301,7 @@ export class FogProbe extends GameScene<FogState> {
       anisotropy: 0.35,
       sun: this.#sun,
       points: [this.#point],
-      environment: { aerialPerspective: false, godRays: false, sceneFog: false },
+      environment: { aerialPerspective: false, godRays: false },
     });
     const world = new WorldEnvironment({
       bloomEnabled: false,

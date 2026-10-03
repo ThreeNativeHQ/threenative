@@ -11,15 +11,12 @@ import {
 } from "@threenative/core";
 import { Area3D, CollisionShape3D, type IPhysicsContext, RigidBody3D } from "@threenative/physics";
 import {
-  Box3,
   BufferAttribute,
-  Color,
   Group,
   Mesh,
   NearestFilter,
   type PerspectiveCamera,
   type Texture,
-  Vector3,
 } from "three";
 import config from "../../threenative.config.js";
 import { Crate } from "../entities/Crate.js";
@@ -35,7 +32,7 @@ import { setupPost } from "../render/postprocessing.js";
 import { ball, block, spike, tube } from "../render/shapes.js";
 import { setupSky } from "../render/sky.js";
 import { TouchControls } from "../render/touch-controls.js";
-import { type IVolumetricFogOptions, createVolumetricFog } from "../render/volumetricFog.js";
+import { STARTER_MIST, createVolumetricFog } from "../render/volumetricFog.js";
 import type { GameState } from "../state.js";
 
 export type GameCtx = ICtx<GameState, IPhysicsContext>;
@@ -46,31 +43,6 @@ const FLOOR_SURFACE_Y = 0;
 const FLOOR_BOUNDS = { maxX: 5, minX: -5, maxZ: 2, minZ: -2 } as const;
 /** The near platform's own footprint, which the support surface below answers for. */
 const FLOOR_SIZE = { depth: 4.2, width: 10 } as const;
-/**
- * The starter's bounded mist, off in every shipped tier. `createVolumetricFog` returns before it
- * allocates a target or a material, so this costs nothing and changes no pixel. Set `enabled` and
- * the `volumes` box the course to get depth-correct mist the sun and any local lights light up.
- * Density, colour and step count are look decisions and belong here, not in a package.
- */
-const MIST: IVolumetricFogOptions = {
-  enabled: false,
-  renderer: "webgpu",
-  steps: 32,
-  resolutionScale: 0.5,
-  volumes: [
-    {
-      bounds: new Box3(new Vector3(-9, 0, -6), new Vector3(9, 3, 6)),
-      density: 0.06,
-      baseHeight: 0,
-      heightFalloff: 0.5,
-    },
-  ],
-  albedo: new Color("#cfd8e3"),
-  ambient: new Color("#0b1016"),
-  anisotropy: 0.3,
-  // The medium and the sky's aerial perspective are the same air; two would double it.
-  environment: { aerialPerspective: false, godRays: false, sceneFog: false },
-};
 
 export class Play extends Scene<GameState, IPhysicsContext> {
   #assetProof: Mesh | undefined;
@@ -186,12 +158,13 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         targetFps: resolveTargetFps(config, getPlatform()).targetFps,
         ready: () => ctx.startup.phase === "ready",
         // Rebuilt per graph, so a tier change that replaces the chain cannot compose one medium
-        // twice. With `MIST.enabled` false the factory returns undefined and nothing is allocated.
-        fog: () => {
-          this.#mist?.dispose();
-          this.#mist = createVolumetricFog(ctx.camera as PerspectiveCamera, MIST);
-          return this.#mist;
-        },
+        // twice. The look and the flag are `STARTER_MIST`'s, in `volumetricFog.ts`; only the
+        // backend is wired here, and with `enabled` false nothing is allocated at all.
+        fog: () =>
+          createVolumetricFog(ctx.scene, ctx.camera as PerspectiveCamera, {
+            ...STARTER_MIST,
+            renderer: ctx.renderer.kind,
+          }),
       }),
     );
     const loading = createLoadingScreen(ctx);
@@ -386,13 +359,11 @@ export class Play extends Scene<GameState, IPhysicsContext> {
   }
 
   #post: ReturnType<typeof setupPost> | undefined;
-  #mist: ReturnType<typeof createVolumetricFog>;
 
   override exit(ctx: GameCtx): void {
+    // Also releases the medium `setupPost` built, with the graph it composed into.
     this.#post?.dispose();
     this.#post = undefined;
-    this.#mist?.dispose();
-    this.#mist = undefined;
     super.exit(ctx);
   }
 }

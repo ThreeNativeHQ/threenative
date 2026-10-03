@@ -1,8 +1,8 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { loadPlaytestScenario } from "../../packages/playtest/dist/index.js";
+import { makeTempDir } from "../../test-support/temp-dir.js";
 import {
   fogCaptureIsValid,
   fogCaptureScenario,
@@ -54,17 +54,13 @@ describe("volumetric fog runtime evidence", () => {
     expect(fogCaptureIsValid({ ...good, pass: false })).toBe(false);
   });
   it("loads the generated pixel-bearing scenario with the public validator", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "vq07-scenario-"));
-    try {
-      for (const { mode, scenario: authored } of await fogCaptureScenarios()) {
-        const file = path.join(root, `${mode}.playtest.json`);
-        await writeFile(file, JSON.stringify(authored));
-        const scenario = await loadPlaytestScenario(root, file);
-        expect(scenario.assert?.visual).toHaveLength(mode === "blackOff" ? 2 : 1);
-        expect(scenario.artifacts?.screenshots).toBe("after");
-      }
-    } finally {
-      await rm(root, { recursive: true, force: true });
+    const root = await makeTempDir("vq07-scenario-");
+    for (const { mode, scenario: authored } of await fogCaptureScenarios()) {
+      const file = path.join(root, `${mode}.playtest.json`);
+      await writeFile(file, JSON.stringify(authored));
+      const scenario = await loadPlaytestScenario(root, file);
+      expect(scenario.assert?.visual).toHaveLength(mode === "blackOff" ? 2 : 1);
+      expect(scenario.artifacts?.screenshots).toBe("after");
     }
   });
   it("loads the committed repeated-lifecycle scenario", async () => {

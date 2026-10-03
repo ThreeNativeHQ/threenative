@@ -1,9 +1,12 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import {
   Box3,
   BoxGeometry,
   Color,
   DepthTexture,
   DirectionalLight,
+  FogExp2,
   Mesh,
   MeshBasicMaterial,
   OrthographicCamera,
@@ -42,7 +45,7 @@ function settings(): IVolumetricFogOptions {
     albedo: new Color(0.8, 0.8, 0.8),
     ambient: new Color(0.1, 0.1, 0.1),
     anisotropy: 0,
-    environment: { aerialPerspective: false, godRays: false, sceneFog: false },
+    environment: { aerialPerspective: false, godRays: false },
   };
 }
 
@@ -55,71 +58,103 @@ describe("opt-in generated volumetric fog", () => {
       if (reason === "unsupported") options.renderer = "webgl2";
       if (reason === "zero") required(options.volumes[0]).density = 0;
       if (reason === "empty") options.volumes = [];
-      expect(createVolumetricFog(new PerspectiveCamera(), options)).toBeUndefined();
+      expect(createVolumetricFog(new Scene(), new PerspectiveCamera(), options)).toBeUndefined();
     },
   );
   it.each([0, -1, 8.5, 129, Number.NaN])("rejects invalid steps %s", (steps) => {
-    expect(() => createVolumetricFog(new PerspectiveCamera(), { ...settings(), steps })).toThrow(
-      /steps/,
-    );
+    expect(() =>
+      createVolumetricFog(new Scene(), new PerspectiveCamera(), { ...settings(), steps }),
+    ).toThrow(/steps/);
   });
   it.each([0, 0.25, 2, Number.NaN])("rejects unsupported resolution %s", (resolutionScale) => {
     expect(() =>
-      createVolumetricFog(new PerspectiveCamera(), { ...settings(), resolutionScale }),
+      createVolumetricFog(new Scene(), new PerspectiveCamera(), { ...settings(), resolutionScale }),
     ).toThrow(/resolutionScale/);
   });
   it("refuses unqualified camera and depth encodings", () => {
     expect(() =>
-      createVolumetricFog(new OrthographicCamera() as unknown as PerspectiveCamera, settings()),
+      createVolumetricFog(
+        new Scene(),
+        new OrthographicCamera() as unknown as PerspectiveCamera,
+        settings(),
+      ),
     ).toThrow(/perspective/);
     expect(() =>
-      createVolumetricFog(new PerspectiveCamera(), { ...settings(), logarithmicDepth: true }),
+      createVolumetricFog(new Scene(), new PerspectiveCamera(), {
+        ...settings(),
+        logarithmicDepth: true,
+      }),
     ).toThrow(/depth/);
     expect(() =>
-      createVolumetricFog(new PerspectiveCamera(), { ...settings(), reversedDepth: true }),
+      createVolumetricFog(new Scene(), new PerspectiveCamera(), {
+        ...settings(),
+        reversedDepth: true,
+      }),
     ).toThrow(/depth/);
   });
   it("rejects double-counted atmosphere or shafts before allocation", () => {
-    for (const name of ["aerialPerspective", "godRays", "sceneFog"] as const) {
+    for (const name of ["aerialPerspective", "godRays"] as const) {
       const options = settings();
       options.environment[name] = true;
-      expect(() => createVolumetricFog(new PerspectiveCamera(), options)).toThrow(/same medium/);
+      expect(() => createVolumetricFog(new Scene(), new PerspectiveCamera(), options)).toThrow(
+        /same medium/,
+      );
     }
   });
   it("rejects invalid density, bounds, albedo and phase", () => {
     const options = settings();
     required(options.volumes[0]).density = -1;
-    expect(() => createVolumetricFog(new PerspectiveCamera(), options)).toThrow(/density/);
+    expect(() => createVolumetricFog(new Scene(), new PerspectiveCamera(), options)).toThrow(
+      /density/,
+    );
     required(options.volumes[0]).density = 0.2;
     required(options.volumes[0]).bounds.makeEmpty();
-    expect(() => createVolumetricFog(new PerspectiveCamera(), options)).toThrow(/bounds/);
+    expect(() => createVolumetricFog(new Scene(), new PerspectiveCamera(), options)).toThrow(
+      /bounds/,
+    );
     expect(() =>
-      createVolumetricFog(new PerspectiveCamera(), { ...settings(), anisotropy: 1 }),
+      createVolumetricFog(new Scene(), new PerspectiveCamera(), { ...settings(), anisotropy: 1 }),
     ).toThrow(/anisotropy/);
     expect(() =>
-      createVolumetricFog(new PerspectiveCamera(), { ...settings(), albedo: new Color(2, 0, 0) }),
+      createVolumetricFog(new Scene(), new PerspectiveCamera(), {
+        ...settings(),
+        albedo: new Color(2, 0, 0),
+      }),
     ).toThrow(/albedo/);
   });
   it("refuses missing directional maps and unsupported local-light shadows", () => {
     const sun = new DirectionalLight();
     sun.castShadow = true;
-    expect(() => createVolumetricFog(new PerspectiveCamera(), { ...settings(), sun })).toThrow(
-      /shadow map/,
-    );
+    expect(() =>
+      createVolumetricFog(new Scene(), new PerspectiveCamera(), { ...settings(), sun }),
+    ).toThrow(/shadow map/);
     const point = new PointLight();
     expect(() =>
-      createVolumetricFog(new PerspectiveCamera(), { ...settings(), points: [point] }),
+      createVolumetricFog(new Scene(), new PerspectiveCamera(), { ...settings(), points: [point] }),
     ).toThrow(/finite-range/);
     point.distance = 5;
     point.castShadow = true;
     expect(() =>
-      createVolumetricFog(new PerspectiveCamera(), { ...settings(), points: [point] }),
+      createVolumetricFog(new Scene(), new PerspectiveCamera(), { ...settings(), points: [point] }),
     ).toThrow(/unshadowed/);
+  });
+  it("owns the scene's fog while it lives and puts the authored fog back", () => {
+    // The starter's `sky.ts` installs a FogExp2 on `scene.fog`; two air densities would double it.
+    const scene = new Scene();
+    const authored = new FogExp2(0xcfd8e3, 0.003);
+    scene.fog = authored;
+    const camera = new PerspectiveCamera();
+    const fog = required(createVolumetricFog(scene, camera, settings()));
+    expect(scene.fog).toBeNull();
+    expect(() => fog.compose(pass(scene, camera))).not.toThrow();
+    fog.dispose();
+    expect(scene.fog).toBe(authored);
   });
   it("owns no history and disposes its own target and material exactly once", () => {
     const camera = new PerspectiveCamera();
-    const fog = required(createVolumetricFog(camera, settings()));
-    const scenePass = pass(new Scene(), camera);
+    const scene = new Scene();
+    const fog = required(createVolumetricFog(scene, camera, settings()));
+    const scenePass = pass(scene, camera);
     expect(fog.compose(scenePass)).toBeDefined();
     expect(fog.diagnostics()).toMatchObject({
       steps: 32,
@@ -152,7 +187,7 @@ it.each([false, true])("builds the actual depth-clipped transport WGSL (lights=%
     options.sun = sun;
     options.points = [new PointLight(0xffffff, 1, 4)];
   }
-  const fog = required(createVolumetricFog(camera, options));
+  const fog = required(createVolumetricFog(new Scene(), camera, options));
   const scenePass = pass(new Scene(), camera);
   fog.compose(scenePass);
   const object = new Mesh(new BoxGeometry(), new MeshBasicMaterial());
@@ -195,4 +230,31 @@ it.each([false, true])("builds the actual depth-clipped transport WGSL (lights=%
   fog.dispose();
   scenePass.dispose();
   options.sun?.shadow.map?.dispose();
+});
+
+/**
+ * The shipped wiring, as source. Two ways this regressed are both silent at runtime: a look that
+ * lives in a scene file breaks `src/render/` ownership, and a hardcoded backend builds a medium on
+ * a WebGL fallback that then silently allocates nothing.
+ */
+describe("the starter's shipped mist", () => {
+  const source = (relative: string) =>
+    readFile(path.join("packages/create-threenative/templates/starter/src", relative), "utf8").then(
+      (text) => text,
+    );
+
+  it("keeps its flag in the fog source and names no backend of its own", async () => {
+    const fog = await source("render/volumetricFog.ts");
+    expect(fog).toMatch(/export const STARTER_MIST: Omit<IVolumetricFogOptions, "renderer">/u);
+    expect(fog).toMatch(/enabled: false/u);
+    expect(fog).not.toMatch(/renderer: "webgpu"/u);
+  });
+
+  it("keeps the authored look out of the scene and wires the live backend once", async () => {
+    const play = await source("scenes/Play.ts");
+    expect(play).not.toMatch(/IVolumetricFogOptions|volumes:|albedo:/u);
+    expect(play).toMatch(
+      /createVolumetricFog\(ctx\.scene, ctx\.camera as PerspectiveCamera, \{\s*\.\.\.STARTER_MIST,\s*renderer: ctx\.renderer\.kind,?\s*\}\)/u,
+    );
+  });
 });

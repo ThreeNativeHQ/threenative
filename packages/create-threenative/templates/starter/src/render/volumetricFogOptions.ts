@@ -11,6 +11,7 @@ export interface IFogVolume {
 }
 export interface IVolumetricFogOptions {
   enabled: boolean;
+  /** The live renderer's backend, `renderer.kind`. Anything but `webgpu` allocates nothing. */
   renderer: string;
   /** Explicit unqualified budget, 8–128. No automatic tier admission before measurements. */
   steps: number;
@@ -19,12 +20,21 @@ export interface IVolumetricFogOptions {
   albedo: Color;
   ambient: Color;
   anisotropy: number;
+  /**
+   * A shadow-casting `DirectionalLight` whose `shadow.map` is already initialized — there is no
+   * other shadow source this graph can read, and none is created for it.
+   */
   sun?: DirectionalLight;
   /** At most four unshadowed finite-range PointLights; spot/cube shadows are excluded. */
   points?: PointLight[];
   logarithmicDepth?: boolean;
   reversedDepth?: boolean;
-  environment: { aerialPerspective: boolean; godRays: boolean; sceneFog: boolean };
+  /**
+   * What else is already drawing the same air. Both false is the only qualified answer: the
+   * medium takes `scene.fog` over while it lives and puts it back on disposal, so only aerial
+   * perspective and god rays have to stay off — either would add its contribution a second time.
+   */
+  environment: { aerialPerspective: boolean; godRays: boolean };
 }
 function finite(name: string, value: number, low: number, high = Number.POSITIVE_INFINITY): void {
   if (!Number.isFinite(value) || value < low || value > high)
@@ -61,9 +71,9 @@ export function validateFogOptions(
   validateVolumes(options.volumes);
   for (const channel of options.albedo.toArray()) finite("albedo", channel, 0, 1);
   for (const channel of options.ambient.toArray()) finite("ambient", channel, 0);
-  if (Object.values(options.environment).some(Boolean))
+  if (options.environment.aerialPerspective || options.environment.godRays)
     throw new Error(
-      "volumetricFog: disable aerial perspective, scene fog and god rays for the same medium.",
+      "volumetricFog: aerial perspective and god rays must be off — this graph renders the same medium.",
     );
   const sun = options.sun;
   if (

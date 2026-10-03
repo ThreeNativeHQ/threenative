@@ -180,11 +180,11 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   sailing: "0a70a652dd128e56be83863ac45dab52c5aa05d7944f584108d0f7b5900c829e",
   shooter: "b13ae63da5e591296d68b4e419780f5bd6f640d79702910cdbb71a4e25bf88cd",
   snow: "7a0f7d84d2c0591fe87ad23756ec3fc6e1566247a12337899a6dde2071b75454",
-  // VQ07: only starter moved again — Play.ts now calls createVolumetricFog through setupPost's
-  // per-graph `fog` factory and postprocessing.ts forwards it as WorldEnvironment's baseColour,
-  // so the shipped medium is reachable instead of dead generated source. Twelve prior trees
-  // still match develop's measurements, which is the ablation for this one-line change.
-  starter: "4727b687158dc0e9563cbde84f99443d76a31dd75fdb87e5f8fc5be9aad1cf7c",
+  // VQ07: only starter moved again — the authored mist now lives in the fog render source as
+  // `STARTER_MIST` (its single `enabled` flag, and no backend of its own) instead of a `MIST`
+  // block in the scene, and Play.ts passes the live `ctx.renderer.kind` beside it. Twelve prior
+  // trees still match develop's measurements, which is the ablation for this change.
+  starter: "a0abaf94bb926590b7b806855945782b31dc5b5003b8d0579f00e0736d108d2c",
   "tower-defense": "5f56275cfff3b81607c6aca3662d776df0052fed462ff00e93568ab50ecbc789",
 };
 
