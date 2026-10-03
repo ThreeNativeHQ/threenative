@@ -49,6 +49,13 @@ describe("Daylight", () => {
     expect(daylight.released).toBe(true);
   });
 
+  it("keeps its own sky out of its own haze", () => {
+    // The dome sits half a sky size from the eye; at any useful haze density that distance is fully
+    // fogged, and a fogged dome is a flat haze-coloured sky instead of the physical one.
+    const daylight = new Daylight(options(new Object3D()));
+    expect((daylight.sky.material as { fog: boolean }).fog).toBe(false);
+  });
+
   it("refuses a missing exposure or sky size instead of inventing one", () => {
     expect(() => new Daylight(options(new Object3D(), { exposure: 0 }))).toThrow(/exposure/u);
     expect(() => new Daylight(options(new Object3D(), { skySize: 0 }))).toThrow(/skySize/u);

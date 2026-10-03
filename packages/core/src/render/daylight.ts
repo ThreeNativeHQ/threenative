@@ -102,6 +102,9 @@ export class Daylight extends Group implements IComputeDriven {
     this.sky.rayleigh.value = options.sky.rayleigh;
     this.sky.mieCoefficient.value = options.sky.mieCoefficient;
     this.sky.mieDirectionalG.value = options.sky.mieDirectionalG;
+    // The haze is for the world in front of the sky, not for the sky: the dome is half a sky size
+    // from the eye, fully fogged at any useful density, and a fogged dome is a flat grey sky.
+    this.sky.material.fog = false;
     this.sky.sunPosition.value.copy(this.#sunDirection);
     this.add(this.sky);
 

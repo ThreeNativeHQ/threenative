@@ -165,6 +165,9 @@ const BUG_REPORT_SKILL_PATHS = [
 // arrive through the templating step rather than a verbatim copy, which is why a content-hash
 // matcher does not list them and this ablation is the evidence instead.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
+  // Recomputed 2026-10-01 on merging develop (#375, #376) into the PRD-466/467/468 branch: every
+  // template AGENTS/CLAUDE pair keeps the optional terrain reference sentence. Values are the
+  // observed no-install createProject trees of the merged tree.
   // Recomputed 2026-10-01 on the merge of develop a602467db (PRD-458/473): every template's frame
   // budget now comes from resolveTargetFps, so ten trees move and `rts` does not; the capability reference (365 -> 368 entries) then moved all eleven, because it ships in every scaffold.
   // Recomputed 2026-10-01, three times, each by a real run that found the previous tree wrong:
@@ -186,20 +189,23 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // all thirteen trees, rain and snow included, were re-measured through createProject.
   // Recomputed 2026-10-02 rebasing the FabCLI manual-login fallback onto develop: the shared
   // threenative-assets skill ships in every scaffold, so all thirteen trees move.
-  "action-rpg": "0b06ad9bbcddcb702497985eaaa855c5bfbc66d43809e720f2f9b445172b6dd3",
-  minimal: "531c452baae7bbeb08a511f8cc06c2d94b5886b1de70c31de5968462584c82bd",
-  platformer: "616d63fb1b0fe888c39a4dbbae651ecd3e85b61d5fd396bc0f77fde122bef585",
-  puzzle: "f0a302958d7607eb8438ddedea79241bf87f04620d28fe04d92dc8c5bd887742",
-  racing: "39c2eb35911939484c4be5c35b8b1fb1be2ccaa8fdb4c2269a7e7943f61ca93f",
+  // Recomputed 2026-10-02 on the merge of develop 114e268ef into the strata branch
+  // (PRD-466/467/468): the merged tree carries both sides' template bytes, so eleven trees were
+  // re-measured through createProject. Rain and snow carry none of this branch's template changes
+  // and kept develop's values.
+  "action-rpg": "80e39454ec8df22690bd5651b785852271db7b2b0f02ab58598750feafd7cdac",
+  minimal: "6fa8bd0f9cc725da5794b79a923fc25c489940fb532d22a8854f4a521d212707",
+  platformer: "a4801cdf8fc1a8ad9df8538ea273c65b816919e0439ada77eb071991ba4da0bc",
+  puzzle: "519e09423d69b11533c1da0e9296c608f51d426f0de70747fe4be1db38e081f4",
+  racing: "4f71dfc47f646c91b5e61168ca3b1e90aee89a65f135037011c663a5c9b3bb8e",
   rain: "80a2c0297f451b096950bcdb7a7710776e063c4819c6b1b543f0bc320edda41c",
-  rts: "df5e7ef2ff5dedb7c234239141afbaae2d32f8d6f9e58be89e0731b47f857572",
-  runner: "cbeb5578241eab87a38307dd27f4ede42bf4058774d6dea4cf848fde0fd50bb2",
-  sailing: "adf775fd15287af4cc00b675264e157e0555b027e3bd32ad9a5e8aebbcd1f64d",
-  // VQ11 after merge of develop 416ffd7: measured through createProject, only shooter changed.
-  shooter: "0b9dadf239d441709f214da3035792741f791fdf5349e44c063f619b048a3484",
+  rts: "3024689c18f23d8203c123f04e8a4e314a2a8382087fc9c482a10c356d42ad9a",
+  runner: "f9a8551a3d5be52c2794256b606809d25ca279dad2a2ae9a3bfca69bfeecbdb8",
+  sailing: "3ac26e697d0539ba50600a40e2d825393437957c3a40741f75c96b8311af8e62",
+  shooter: "8c52c5c9219286f1ec261c9e84773dc0b84787e093f4c40dbad6c97a1c03d4b9",
   snow: "f3d4878829cf14ebee6355e720c223171529d550e8cafc9cd6328285a8000d3b",
-  starter: "fae9ee908d5c9370fdf95c1314f6845be5fcb9fd64114af21082331b21e53579",
-  "tower-defense": "68ce595b3857e5ca3e94c7b4dc09f29cb0e16459b6642c235f391b7312da365e",
+  starter: "902063f368357b9a31f7089b075559f2215a80b8f110482c5bb103fb59697ba9",
+  "tower-defense": "7e540fc40b2ce89aced524d691579e49fdaee2c29289dbda9f56765f744a07bb",
 };
 
 const GENERATED_SCAFFOLD_METADATA =

@@ -2,7 +2,7 @@ import type { MRTNode, Node } from "three/webgpu";
 
 import type { IFrameBudgetWindow } from "../frame-budget.js";
 import type { RendererKind } from "../renderer.js";
-import { velocityTexture, withVelocityContext } from "./velocity.js";
+import { VELOCITY_OUTPUT_NAME, velocityTexture, withVelocityContext } from "./velocity.js";
 import type { IVelocityRenderPass } from "./velocity.js";
 
 /** The marker shared by render-chain logs, playtests, and native diagnostics. */
@@ -416,8 +416,13 @@ export class RenderChain {
     const hasActiveVelocityStage = stages.some((name) =>
       requiresVelocityFor(this.#stageDefinitions.get(name), name),
     );
+    // Temporal nodes jitter the scene-side velocity node (TRAANode calls setProjectionMatrix on
+    // it); the pass texture is what a stage samples, so it stays on the build context only.
     if (velocityNode !== undefined && hasActiveVelocityStage)
-      node = withVelocityContext(node, velocityNode);
+      node = withVelocityContext(
+        node,
+        this.#requestVelocity.pass?.getMRT()?.get(VELOCITY_OUTPUT_NAME) ?? velocityNode,
+      );
 
     if (stages.length > 0) {
       try {

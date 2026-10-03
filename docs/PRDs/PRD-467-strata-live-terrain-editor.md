@@ -1,10 +1,10 @@
 # PRD-467 — Live terrain editor, shape editing, and spatial surface diagnostics
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **Complexity:** 9 (HIGH); risk override: none
 **Owner:** ThreeNative maintainers
 **Depends on:** PRD-466 phases 1–2 public authoring/rendering contract
-**Progress:** 0/9 required boxes verified
+**Progress:** 9/9 required boxes verified
 **Required companion:** [PRD-468 — atmosphere, cameras, and asset imports](PRD-468-strata-world-controls-and-asset-imports.md)
 
 ## Context
@@ -22,7 +22,7 @@ part of the editor and headless inspection path, not a separate verification app
 This is a required companion to [PRD-466](PRD-466-strata-terrain-threejs-integration.md),
 not an optional later feature. Both plans must be verified before claiming the
 whole requested integration is delivered, including PRD-468's world controls and
-on-demand imports. This request authorizes planning only.
+on-demand imports. The execution request authorizes implementing all three PRDs in the shared worktree and draft PR #381.
 Complexity: 3 for 11+ implementation files (mostly recovered editor modules),
 2 for the authoring tool, 2 for worker/revision concurrency, and 2 for the
 addon/consumer build boundary.
@@ -271,7 +271,7 @@ without hiding it in the existing GUI tool claim.
 All are `local`, actor: implementing agent. New scripts/tests are implementation
 targets, not commands that currently exist.
 
-- [ ] AC-8 [local, actor: implementing agent]: A GUI-polished world survives reload and exports as the same portable GLB content. proof: planned `pnpm --filter strata-terrain-preview test:consumer` with the editor-authored fixture — Evidence: pending; compare terrain samples and stable placement transforms after refresh, JSON round trip, and vanilla GLTFLoader import without editor globals/localStorage.
+- [x] AC-8 [local, actor: implementing agent]: A GUI-polished world survives reload and exports as the same portable GLB content. proof: `pnpm --filter strata-terrain-preview test:consumer` with the editor-authored fixture — Evidence: PASS 2026-10-02. `pnpm --filter strata-terrain-preview test:terrain:authored` (`RECORD=1` rewrites, otherwise it must reproduce; both exit 0, WebGPU NVIDIA/turing, private Xvfb) polishes the forest world through the editor's real controls: a sculpt drag (`sculpt-1`), a scatter-brush drag of 12 spruce (`scatter-1`) and the numeric transform panel on one of its placements (position Y 55, rotation Y 45, scale 2/0.5/1.5, ground off), then saves a sun/fill/sky/haze/exposure look through the environment API (the settings PRD-468 AC-8 hands to a game). A fresh page then opens the saved document: terrain samples (13 heights, five of them on the sculpt stroke) and all 105 placement transforms equal the pre-reload values exactly, the exported GLB's terrain vertices equal the live heights, every live placement is a GLB node, the document JSON-round-trips to a commit that keeps the same revision (`70744865…`), and the reproduction is deterministic (second run matches the committed fixture). `scripts/fixtures/editor-authored.json` (12 KB: document, revision, samples, placement positions, the posed matrix) is that record. `test:consumer` then re-evaluates the fixture document with only the packed `@threenative/terrain` in a plain browser page and loads its full-world GLB with a vanilla `GLTFLoader`: the 13 terrain samples and exported vertices match the editor within 1e-6, the 105 placement ids are identical, the hand-posed matrix matches within 1e-4, every unedited placement's x/z matches within 1e-3 and its y within 0.084 m (the editor grounds on the triangle under it, the headless pose is the bilinear height; asserted under 0.25 m), the river id travels, no external URI, no editor global and empty `localStorage`. Negative control: changing the sculpt layer's opacity in the fixture fails by name (`terrain sample[8]: 30.82 vs 37.75`). Limit: the packed consumer supplies stand-in appearance, so the exported pixels are not compared here; the real starter art and placement-grounded matrices are covered by `test:terrain:export`.
 
 ## Integration Ledger
 
@@ -308,30 +308,146 @@ do not invent future line numbers.
 
 ### Phase 1: Shared document and live editor URL
 
-**Status:** NOT STARTED
-**Files:** recovered `packages/terrain/editor/app.*`/worker, `editor/server.ts`,
+**Status:** VERIFIED
+**Files:** recovered `packages/terrain/src/editor/app.js`/worker, `src/editor/server.ts`,
 preview Vite config/editor entry/document, `__tests__/editor-document.spec.ts`.
 **Implementation:** Recover UI/worker; attach to the shared document and preview.
 Reuse middleware, file watching, SSE, atomic validation and revision ownership.
 
-- [ ] AC-1 [local, actor: implementing agent]: The activation-returned live link opens the current project and renders successive agent revisions without refresh. proof: planned `pnpm --filter strata-terrain-preview test:terrain:editor` — Evidence: pending; follow the returned `editorUrl` rather than constructing a test URL, verify bound-port/readiness and same-project reuse, observe three distinct geometry revisions, and measure simple-edit latency within 2 seconds on the named fixture. Startup/forwarding failures must not advertise a ready unreachable URL.
-- [ ] AC-2 [local, actor: implementing agent]: Malformed/stale writes cannot replace the valid document. proof: planned `pnpm exec vitest run packages/terrain/__tests__/editor-document.spec.ts` through real middleware — Evidence: pending; conflict/error response, unchanged disk data, path/origin restrictions, valid subsequent recovery, and canceled/stale job rejection.
+- [x] AC-1 [local, actor: implementing agent]: The activation-returned live link opens the current project and renders successive agent revisions without refresh. proof: `pnpm --filter strata-terrain-preview test:terrain:editor` — Evidence: PASS 2026-10-01 — the public controller follows the plugin-returned bound URL and same project/session, including reactivation at the latest GUI revision. The runner-owned WebGPU browser renders three successive amplitude revisions (30/80/50) without refresh on a 512 m / 129-vertex grid with 100 actual instanced pine props (38,800 prop triangles). Measured mesh-height sums differ; first draw follows acceptance in 106–137 ms on NVIDIA/turing RTX 2080. The real GUI name edit saves to the shared document and a fresh scene run reads the latest recipe. Startup/missing-route rejection and a configured private HTTP forward are tested, including failed-forward rejection. This proves the measured latency fixture, not final starter art or mobile performance.
+- [x] AC-2 [local, actor: implementing agent]: Malformed/stale writes cannot replace the valid document. proof: `pnpm exec vitest run packages/terrain/__tests__/editor-document.spec.ts` through real middleware — Evidence: PASS 2026-10-01 — seven public-import document tests use real loopback Vite middleware: multi-command rollback, stale 409, invalid external-save retention/recovery, hostile host/origin and client path rejection, malformed/media-type/64 MiB boundary errors, actual-port readiness and same-session reuse, live SSE/file-watch updates, and trusted private-forward writes/readiness with foreign-origin rejection and failure recovery. The browser integration terminates an active 200,000-droplet worker through the recovered Cancel button, retains the prior mesh, then renders the latest accepted recovery revision; older results cannot replace it. The original seven numerical/Three consumer tests still pass. An unregistered model now reports its asset ID, releases the busy state and retains the last valid scene; removing it recovers successfully without a page error.
+
+Actual entry points: `packages/terrain/src/editor/server.ts` owns the fixed-file
+revision authority and optional Vite middleware; `src/editor/index.ts` owns the
+HTTP controller and recovered GUI mount. The original app/icons/presets/worker
+and static shell are recovered under `src/editor/` to match normal capability
+export discovery. Browser/headless root and geometry imports remain separate.
+The preview uses `src/editor.ts`, project-owned `src/render/editorView.ts`,
+`terrain/world.json`, and `/terrain-editor/index.html`. The authoring scene uses
+the same terrain/ocean render helpers and normal ThreeNative game loop.
+
+`test:terrain:editor` reuses withBrowserCapture for real agent/API/GUI/cancel
+checks, then runStandalonePlaytest for the executable scene scenario. Its
+changed-only frame observation avoids declaring already-rendered warmup geometry
+an independent transition. The initial preview-resolution mismatch is corrected
+by selecting the saved recipe resolution. No synthetic failed state is created.
+All supplied controls are retained; selection/gizmos, calibrated spatial modes,
+complete exports and shared undo/conflict polish remain their later phase boxes.
+
+Initial shared-editor milestone checks (2026-10-01, commit `9cf0daa07`): root typecheck/lint/budgets and documentation links pass.
+The full `pnpm test` command passes workspace package builds/checks and 521 root
+test files / 6,483 tests (12 skips); the suite temporary directory count does not
+grow. Public terrain imports pass 14 tests, including the real private forward.
+`test:terrain:editor` passes on WebGPU NVIDIA/turing with actual GUI save, three
+rendered agent revisions, cancellation/recovery and the executable scene scenario.
+The existing browser and Linux desktop terrain/ocean regression scenarios pass
+with this editor Vite config. The native host renders 300 frames with 226
+presentations. Actual editor screenshots are tracked for draft PR #381; no mobile,
+steady-state FPS, 100-prop latency or complete-editor claim is made.
+
+The 100-prop milestone uses the supplied pine/boulder/grass shapes in editable
+`src/render/props.ts`, with installed `mergeParts` and `InstancedBatch`. Ground
+positions come from actual terrain-triangle picks, with transformed model bounds
+and authored offsets preserved. Scene observations count actual instance buffers
+and geometry triangles; these are not GPU timing measurements. The editor badge
+reads the actual renderer kind. The missing-model and cancellation checks both
+wait for completed worker recovery, including content-hash reuse.
+
+100-prop/scatter milestone checks (2026-10-01): root typecheck, lint, budgets,
+documentation links and 180 documentation tests pass. The full `pnpm test`
+command passes workspace package builds/checks and 522 root test files / 6,485
+tests (12 skips), with no suite temporary-directory growth. The final real
+WebGPU editor run passes the 100-instance/38,800-triangle observations and
+three distinct rendered terrain revisions in 106–137 ms, GUI persistence,
+latest-revision reactivation, missing-model failure/recovery and cancellation.
+The scene scenario also counts the actual 100 instances. This milestone does
+not claim native editor props, final PBR starter art or steady-state FPS.
 
 ### Phase 2: Individual selection and persistent gizmos
 
-**Status:** NOT STARTED
-**Files:** `editor/selection.ts`, `editor/transforms.ts`, authoring validation and
-stable-key evaluation, `__tests__/placement-overrides.spec.ts`, editor scenario.
+**Status:** PARTIAL
+**Files:** game-owned `src/render/selection.ts`, `landforms.ts`, `editorView.ts`
+and `props.ts`; addon `core/placements.ts`, operation types/validation/evaluation;
+public consumer/override tests and the editor browser scenario.
 **Implementation:** Reuse picker/gizmo, preserve instance identity, persist one
 transaction per drag, and consume overrides in bake/export. Preserve recipe
 intent for landforms. Invalidate only affected static/instance data during drag.
 
-- [ ] AC-3 [local, actor: implementing agent]: One selected instance is translated/rotated/scaled through actual gizmo interactions. proof: planned `pnpm --filter strata-terrain-preview test:terrain:editor` — Evidence: pending; chosen stable key/matrix changes, sibling matrices unchanged, numeric inputs select the same object, and unsupported landform axes are explicit.
-- [ ] AC-4 [local, actor: implementing agent]: Manual overrides retain identity after re-evaluation. proof: planned `pnpm exec vitest run packages/terrain/__tests__/placement-overrides.spec.ts` — Evidence: pending; change rejection order, assert no retargeting, retained unmatched diagnostics, round-trip transforms, and invalid-input rejection.
+- [x] AC-3 [local, actor: implementing agent]: One selected instance is translated/rotated/scaled through actual gizmo interactions. proof: `pnpm --filter strata-terrain-preview test:terrain:editor` — Evidence: PASS — a real mesh click selects one durable placement key; actual translate X, rotate Y and nonuniform scale X drags change only that instance, suspend Orbit and save once. Escape saves nothing. Stamp selection reuses the same proxy with a terrain-following footprint; actual translate X/Y, rotate Y and vertical-gain Y drags change the stable recipe layer, rebuild on commit and retain selection. Numeric inputs change anisotropic stamp half-extents and bounded heightmap/paste footprints; layer-list clicks select those stable layers. X/Z rotation controls and handles are disabled with the heightfield-overhang reason; other unsupported rotation handles reject before a gesture. Landform Escape saves nothing and selective undo preserves another actor's layer name and roughness. The full real browser integration and standalone scene scenario pass on WebGPU NVIDIA/turing.
+- [x] AC-4 [local, actor: implementing agent]: Manual overrides retain identity after re-evaluation, and the editor-authored world exports with its own water and art. proof: `pnpm exec vitest run packages/terrain/__tests__/placement-overrides.spec.ts` (13 passed) and `pnpm --filter strata-terrain-preview test:terrain:editor` (exit 0, WebGPU NVIDIA/turing) and `pnpm --filter strata-terrain-preview test:terrain:export` (exit 0) — Evidence: PASS 2026-10-01 (commit 90d69cc35) — public tests cover stable candidates across rejection changes, saved nonuniform transforms, unit quaternion/finite/positive-scale validation, atomic rejection (including explicit null grounding), retained unmatched diagnostics and transform records in `bakeTerrain`. The real browser restores every actual instance pose on reload; an unrelated layer edit retains the override, a stale drag preserves the newer actor edit and retains an explicit reapply draft, and selective undo retains the other actor's layer edit. Unmatched override removal works through the GUI. Installed `GroundSnap` uses the actual model bounds and terrain-triangle query; grounding on reaches clearance below 1e-4 m, while a real Y-handle lift records `grounding: false` and reports 2.5549 m clearance. GUI reassignment is now exercised: it transfers an unmatched override to the selected fresh durable key, preserves the other override, changes actual position/scale without terrain evaluation, and survives reload. The editor-authored world export now runs at all, where it previously failed before its own assertions: the props draw through node materials, so the encoder rejected the world outright. `src/render/water.ts` bakes every evaluated river and flooded body as static `MeshStandardMaterial` geometry coloured by metres of depth, the editor draws that same bake, and the recipe keeps its river rather than the fixture deleting it — `report.waterIds` is `[river]` and the vanilla GLTFLoader consumer reads one water node with 4,360 triangles. `src/render/portable.ts` binds this project's own CC0 1K ground maps plus its bark, stone and needle sets, so the eight embedded images are 20 KB+ starter maps rather than a fixture's 16x16 checkers, and the consumer counts 202 meshes and 404 PBR maps. `IWorldGLBInput` gained an optional per-placement `models` map, unit-tested for precedence and for failing closed on an unmatched key, and each placement carries every draw it owns, so 100 spruce nodes share four geometries instead of exporting one hundred poles. The export dialog's new `world` card calls the live view rather than the terrain-only worker export.
+
+Prop transforms use one ordinary Three.js `TransformControls` proxy around the
+project scene. The measurement mesh is never rendered; updates write only the
+selected instance buffer. Initial creation and later edits write the same prepared
+matrix, avoiding Euler round-trip differences when resetting a placement. Stable
+authoring records keep requested transforms and the named grounding choice;
+unmatched keys are not silently redirected. Public root and `/three` remain
+headless. The recovered view contract receives the existing controller and applies
+metadata through `setDocument`, separately from the evaluator worker.
+
+Gizmo milestone checks (2026-10-01): all 20 public terrain tests and the real
+WebGPU browser integration pass, including the fresh standalone scene scenario.
+The three simple 100-prop terrain revisions draw in 141–167 ms on NVIDIA/turing
+RTX 2080. Root typecheck, lint, budgets, documentation links and 180 documentation
+tests pass. The full board's documentation/build/package-test phases pass; its
+unit phase is green through the existing `pnpm gate:resume` path: 523 files /
+6,489 tests pass (12 skips), with no temporary-directory growth. The earlier unit
+attempt lost the asset-budget worker; that file passes all 26 tests alone and the
+entire resumed suite passes. The worker exit's cause remains unconfirmed. Actual
+selection/scale/grounding screenshots accompany this draft milestone. This proves
+browser editor behavior, not native editor props, final starter art or FPS.
+
+Revision-label follow-up (2026-10-01): the real browser reproduces metadata
+incorrectly advancing the GUI and renderer revision after a missing-asset rebuild.
+Both paths now compare against the recipe that successfully produced the scene.
+While that recipe differs, metadata retains both rendered labels and all 100
+instance matrices; the accepted metadata applies after successful recovery.
+The same check passes during active 200,000-droplet erosion: metadata does not
+restart the worker, cancellation retains the previous scene, and recovery applies
+the latest accepted pose. The standalone scene scenario remains green. An actual
+retained-preview screenshot shows the unrendered saved recipe and named asset
+error. Landform handles, reassignment and portable bake/export consumption remain
+open, so phase 2 remains partial.
+
+Revision-guard verification (2026-10-01): root typecheck, lint, budgets,
+documentation links and 180 documentation tests pass. The complete `pnpm test`
+command passes documentation/build/package checks and 523 test files / 6,489 tests
+(12 skips), with no suite temporary-directory growth. The real browser integration
+and standalone scene scenario pass at this source state; no resumed test verdict
+is needed for this follow-up.
+
+Landform milestone (2026-10-01): game-owned `src/render/landforms.ts` maps stamp,
+paste and heightmap recipe parameters to the existing proxy. The line marks a
+footprint on the actual rendered triangles; no independent landform solid moves
+inside an eroded heightfield. Positive vertical gain applies before metre offset;
+additive stamp/paste now honor offset. Heightmaps retain their original full-world
+sampler unless optional footprint fields are present, then reuse the existing
+paste sampler. Public tests reject missing/nonnumeric height samples atomically,
+exercise every blend and rotated anisotropic footprints, round-trip recipes and
+compare baked collision arrays. The supplied noise/erosion golden remains exact.
+
+All 24 public terrain tests and the expanded browser integration pass, including
+stamp gizmo drags, numeric heightmap/paste edits, layer selection, preserved prop
+behavior, cancellation/conflicts/recovery and the fresh standalone scene. The
+100-prop revision observations draw in 164–188 ms on NVIDIA/turing RTX 2080.
+WebGPU rejects `LineLoop`, so both the footprint and brush ring use ordinary
+closed `Line` geometry. The expanded harness has a bounded 120-second callback;
+individual simple-edit latency assertions still require less than two seconds.
+Prop-only grounding/reset controls remain hidden on landforms despite the recovered
+CSS, with actual visibility assertions. Object-list values distinguish placements
+from layers even when a scatter rule is named `landform`; saved IDs are unchanged.
+Phase 2 remains partial: reassignment and complete portable bake/export
+consumption are still AC-4 work. Root typecheck, lint, budgets, documentation links
+and 180 documentation tests pass. The complete `pnpm test` command passes
+documentation/build/package checks and 523 files / 6,493 tests (12 skips), with no
+suite temporary-directory growth. Browser and Linux desktop terrain/ocean consumer
+regressions pass; the inspected nonblank desktop capture renders 300 frames with
+202 presentations. Four actual 1440 × 900 WebGPU landform screenshots are tracked
+for PR #381. This does not claim native editor props, final PBR starter art or FPS.
 
 ### Phase 3: GUI polish and GLB handoff
 
-**Status:** NOT STARTED
+**Status:** PARTIAL
 **Files:** recovered tools/inspectors, shared history/export integration, addon
 agent guide, `editor/referenceOverlay.ts`, `editor/spatialInspector.ts`,
 `__tests__/spatial-inspection.spec.ts`, `playtests/terrain-editor.playtest.json`,
@@ -343,10 +459,10 @@ sampling/topographic mechanisms. Keep GUI and agent results on the same revision
 measure actual surface errors and calibration residuals rather than visual guesses.
 Use the existing harness; no new E2E framework or verification-report file.
 
-- [ ] AC-5 [local, actor: implementing agent]: GUI tool groups edit the shared authoring recipe. proof: planned `pnpm --filter strata-terrain-preview test:terrain:editor` — Evidence: pending; use controls from each tool group, inspect saved semantic changes, and retain remaining supplied tools wired through the same validated transaction path.
-- [ ] AC-6 [local, actor: implementing agent]: Drag/cancel/undo operate as single edits without losing agent revisions. proof: planned `pnpm --filter strata-terrain-preview test:terrain:editor` — Evidence: pending; actual interaction, conflict handling, selection retention, and saved revision/file consistency.
-- [ ] AC-7 [local, actor: implementing agent]: Packaged editor tooling stays optional to headless/runtime consumers. proof: planned `pnpm --filter strata-terrain-preview test:consumer` — Evidence: pending; root and `/three` imports exclude DOM/server modules, the editor loads through its tooling entry, and the edited document reaches the full-world GLB export.
-- [ ] AC-9 [local, actor: implementing agent]: Embedded spatial inspection gives calibrated, revision-bound terrain feedback usable for reconstruction. proof: planned `pnpm exec vitest run packages/terrain/__tests__/spatial-inspection.spec.ts` through public inspection/middleware plus `test:terrain:editor` — Evidence: pending; use a known asymmetric terrain and synthetic map with two fit controls plus an independent checkpoint, recover point height within 0.01 m and slope within 0.1 degree, report a deliberately displaced checkpoint's actual residual, and compare GUI/headless profile results. Reject degenerate/out-of-bounds queries, label unscaled/perspective references and unknown datum, distinguish bilinear/triangle values, preserve registration after reload, and keep debug overlays out of the GLB.
+- [x] AC-5 [local, actor: implementing agent]: GUI tool groups edit the shared authoring recipe. proof: `pnpm --filter strata-terrain-preview test:terrain:editor` — Evidence: PASS 2026-10-02 (exit 0, WebGPU NVIDIA/turing) — a second real browser session drives every supplied tool group through its own controls against the same live editor and reads the shared document off disk after each commit, never an internal helper. Landforms: sculpt, smooth, flatten, stamp, erode and ramp each add their own new named layer (`sculpt-1`, `smooth-1`, `building-pad`, `eroded-hill`, `weathering`, `ramp-1`). Surface/population: material paint (`pad-surface`), biome paint (`biome-1`, naming the option's own `forest`), scatter (`scatter-1`, asset `spruce` and count 12 taken from their own controls, 103 actual instances in the scene) and clear (`clear-1`, naming the asset it erases). Paths/water: road (`road-1`, width 12 from its own option), river (`river-1`, depth 6 and `enforceDownhill` true) and water (`water-1`, saved body kind). Document: the eye disables and re-enables a layer on disk, move-earlier reorders the stack, duplicate names its copy `water-1-copy-1`, delete removes it, undo restores it and redo deletes it again, the opacity slider and the JSON parameter box each save one layer's own values (`opacity` 0.5, `params.level` 7), a malformed JSON edit is refused with a message and no revision change, importing the project's own recipe round-trips it exactly, and the project-recipe export card downloads `terrain-recipe.json` (3482 bytes). That session's four captures are `docs/verification/visuals/strata/467-tools-{ramp,scatter,water,document}.png`. 44 commits went through `POST /api/document` and 21 undos returned the recipe to exactly the layer ids the session found. The proof found and this change fixes two real defects: the recovered paint target select was discarded in material mode, so biome paint was unreachable from the GUI, and the scatter palette was a hardcoded starter list — it now asks the project view (`IEditorView.propAssets()`), which returns this project's own `PROP_ASSETS`. Heightmap/copy/paste remain wired through the same transaction path but are exercised by the landform session, not from a tool button.
+- [x] AC-6 [local, actor: implementing agent]: Drag/cancel/undo operate as single edits without losing agent revisions. proof: `pnpm --filter strata-terrain-preview test:terrain:editor` — Evidence: PASS 2026-10-02 (exit 0, WebGPU NVIDIA/turing) — three real gizmo drags (translate X, rotate Y, nonuniform scale X) on one selected instance save exactly `guiTransactions: 5` for three modes plus their two resets, and Escape saves nothing (`cancelledRevision` `710f15c3…`). A stale drag against a newer agent edit keeps the newer actor's layer edit (`conflictPreserved` `74f00a04…`) and retains an explicit reapply draft; selective undo retains the other actor's layer edit (`selectiveUndoLayer: "Other actor keeps this layer edit"`); an unrelated layer edit retains the prop override and every pose survives reload (`persistedReload` `eb07221b…`). The landform proxy behaves the same way: four completed drags on the stable recipe layer, Escape saving nothing, and selective undo restoring another actor's roughness while keeping its own changed offset/rotation/scale. Cancel terminates a running 200,000-droplet build, keeps the previously rendered mesh and renders the accepted recovery revision afterwards. Across the tool-group session every edit is one transaction and 21 undos take the shared file back to the identical layer list, so no session's history can discard another's revision.
+- [x] AC-7 [local, actor: implementing agent]: Packaged editor tooling stays optional to headless/runtime consumers. proof: `pnpm --filter strata-terrain-preview test:consumer` — Evidence: PASS 2026-10-02 (exit 0, ~15 s). The consumer installs the packed `@threenative/terrain` and `three` outside the workspace and walks the installed `dist/index.js` and `dist/three.js` import graphs: each is one file whose only import is `three` (the root has none), and neither names an editor/server module or touches `document`, `localStorage`, `FileReader`, `Worker` or a `node:` builtin; both import in a Node process with no DOM. A fresh `createProject` scaffold is created inside that install and the shipped `terrain-authoring.md` is run in it: its first code block executes verbatim (257x257 evaluate, `bakeMesh`, `bakeTerrain`, recipe saved as `terrain/world.json`); its editor block runs against a real Vite server with the project-owned `/terrain-editor/` route, `await editor.activate()` returns a loopback `editorUrl`, and the printed `TerrainEditorController` patch (`hills` amplitude 35) lands in the shared document, followed by a scatter layer and a `validatePlacementOverrides` pose; a commit on the first revision is refused as stale; and the file on disk equals the committed document. That edited document is then exported as a full-world GLB in a plain browser page (chromium, import map onto the installed tarballs, no Vite, no editor global, empty `localStorage`) and read back by a vanilla `GLTFLoader`: 257x257 terrain, 6 placements, the posed placement's world matrix equal to the saved override (1e-4), the sampled terrain heights equal the evaluated state, no external URI, no camera, no page error or off-origin request. `vite` is the optional peer and is symlinked from the workspace because it cannot be installed offline; every `@threenative` module in the run is the tarball. The page supplies its own stand-in appearance (1x1 maps, boxes, a quad for the river), because appearance belongs to the game; the real starter art is carried by `test:terrain:export`.
+- [x] AC-9 [local, actor: implementing agent]: Embedded spatial inspection gives calibrated, revision-bound terrain feedback usable for reconstruction. proof: planned `pnpm exec vitest run packages/terrain/__tests__/spatial-inspection.spec.ts` through public inspection/middleware plus `test:terrain:editor` — Evidence: PASS 2026-10-01 (commits 7e205e0cb, dd329a80b) — spatial-inspection.spec.ts (public entry points, red first) passes with the terrain suite (35 tests); `test:terrain:editor` passes on WebGPU NVIDIA/turing with GUI `window.strata.inspect` deep-equal to headless `api/inspect` on one rendered revision. No rendered reference overlay is built, so none can enter the GLB. Original plan: use a known asymmetric terrain and synthetic map with two fit controls plus an independent checkpoint, recover point height within 0.01 m and slope within 0.1 degree, report a deliberately displaced checkpoint's actual residual, and compare GUI/headless profile results. Reject degenerate/out-of-bounds queries, label unscaled/perspective references and unknown datum, distinguish bilinear/triangle values, preserve registration after reload, and keep debug overlays out of the GLB.
 
 ## Verification and delivery
 
@@ -362,3 +478,37 @@ One draft implementation PR targets `develop` from an owning-repository worktree
 Archive only after all nine boxes pass. Planning does not authorize deployment
 or npm publication, and does not claim implemented editor behavior. The overall
 integration also requires PRD-468's camera/environment/import criteria.
+
+
+Export/reassignment follow-up (2026-10-01): the expanded real editor integration
+and standalone scene scenario pass, including explicit orphan reassignment and
+removal, all actual reloaded poses, prior conflict/cancellation/grounding behavior
+and landform operations. The 100-instance revisions draw in 187–199 ms on
+WebGPU NVIDIA/turing. The new renderer export method rejects an accepted revision
+that differs from the actually rendered document, reuses its real geometry and
+final instance matrices, and adds canonical UVs on an owned export copy. The
+separate public encoder needs caller-prepared PBR surfaces and exact-time baked
+water. Successful dry-fixture vanilla/native consumers are described in PRD-466;
+this does not tick the default full-world GUI handoff or AC-8. Reassignment and
+actual export-consumer screenshots join PR #381's development captures.
+
+Spatial inspection (2026-10-01, AC-9): `packages/terrain/src/editor/spatialInspector.ts`
+answers read-only point, profile and saved-reference queries from the evaluated
+arrays, labels `bilinear-heightfield` and `evaluated-triangle` separately with
+their difference, and rejects non-finite, malformed and out-of-extent queries.
+A top-down reference registers through the smallest 2D similarity from two
+distinct controls; the synthetic 0.5 m/px, 30° sheet reports
+`scaleMetresPerPixel` 0.5 and `rotationDegrees` 30, control residuals below
+1e-9 m, and its deliberately displaced checkpoint residual of 5.000000 m against
+a 1 m tolerance, so `calibrated` stays false. Perspective screenshots, one-control
+maps and unknown datums are labelled and never fitted. References are stored beside
+the recipe in the authoring document, reload with it, and reach neither the
+evaluated state nor the GLB, whose JSON carries one node and no landmark names.
+`packages/terrain/__tests__/spatial-inspection.spec.ts` (5 cases) runs through the
+public inspection API, the real Vite middleware and `TerrainEditorController`:
+`pnpm exec vitest run packages/terrain` passes 6 files / 35 tests. The editor lane's
+`window.strata.inspect` profile and the headless `api/inspect` profile are asserted
+equal on one rendered revision by `pnpm --filter strata-terrain-preview test:terrain:editor`,
+which exits 0 on WebGPU NVIDIA/turing with 100-prop revisions drawing in 120–146 ms;
+root `pnpm typecheck` and `pnpm lint` exit 0. Region statistics and a rendered
+map/grid overlay are not part of this milestone.

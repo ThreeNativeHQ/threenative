@@ -615,6 +615,42 @@ function syncLevelShadowSettings(
   }
 }
 
+/** The stock node's target factory, which three calls once from `setupShadow`. */
+interface IStockShadowTarget {
+  setupRenderTarget(
+    shadow: unknown,
+    builder: NodeBuilder,
+  ): { shadowMap: RenderTarget; depthTexture: unknown };
+}
+
+/**
+ * Register a stock shadow node's render target with the renderer the moment the node creates it,
+ * inside the material build and before any bind group can sample its depth texture.
+ *
+ * three re-versions a target's depth texture on the target's *first* registration — the size
+ * branch of `Textures.updateRenderTarget`, which finds no recorded size — and when a bind group
+ * already holds that texture the re-version destroys its GPUTexture. Every submit through that bind
+ * group then fails with `Destroyed texture [Texture "ShadowDepthTexture"] used in a submit`, and a
+ * settled static object never rebuilds its bind group, so nothing is presented again. A level whose
+ * first render comes after the main pass bound its map — every level but the one drawn in the first
+ * frame, every mover map, and every level a warm-up compile binds — hit it once per scene.
+ * Registering at creation makes that first registration happen before anything is bound.
+ */
+function registeredOnCreate<T>(node: T): T {
+  const stock = node as unknown as IStockShadowTarget;
+  const create = stock.setupRenderTarget.bind(stock);
+  stock.setupRenderTarget = (lightShadow, builder) => {
+    const made = create(lightShadow, builder);
+    // A renderer without three's texture manager (a test double) registers on first render.
+    const host = builder.renderer as unknown as {
+      _textures?: { updateRenderTarget?(target: RenderTarget): void };
+    };
+    host._textures?.updateRenderTarget?.(made.shadowMap);
+    return made;
+  };
+  return node;
+}
+
 /** The stock node's render entry, called here so the mover exclusion brackets exactly one render. */
 interface IRenderingShadowNode {
   updateShadow(frame: NodeFrame): void;
@@ -1753,7 +1789,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
       const light = new LevelLight(levelShadow);
       light.name = `VirtualShadowLevel${String(index)}`;
       // quality-allow: the stock shadow node reads only position, target and shadow off its light
-      const node = shadow(light as unknown as DirectionalLight, levelShadow);
+      const node = registeredOnCreate(shadow(light as unknown as DirectionalLight, levelShadow));
       // Stock shadow colours are identical, but their node identities split the shader cache.
       // Share only that constant; each level keeps its material, camera and render bindings.
       const material = getShadowMaterial(node.light);
@@ -1788,7 +1824,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
         moverShadow,
         // One placeholder light serves both maps: the stock node reads only its placement.
         // quality-allow: the stock shadow node reads only position, target and shadow off its light
-        moverNode: shadow(light as unknown as DirectionalLight, moverShadow),
+        moverNode: registeredOnCreate(shadow(light as unknown as DirectionalLight, moverShadow)),
         node,
         shadow: levelShadow,
       });
@@ -1839,45 +1875,9 @@ export class VirtualShadowNode extends ShadowBaseNode {
           },
         );
       }
-      // Every level's target is registered here, once the stock nodes above have created it and
-      // before the material's bind groups are built, so each depth texture exists at the size and
-      // version it keeps for the session. See `#settleTargets`.
-      this.#settleTargets(builder.renderer);
       return result;
       // quality-allow: Three's Fn invocation loses the concrete node type.
     })() as unknown as Node;
-  }
-
-  /**
-   * Register every level's shadow target with the renderer's texture manager while this material is
-   * being built, which is before the main pass can name its depth texture in a bind group.
-   *
-   * three re-versions a render target's depth texture on its *first* registration — the `version++`
-   * `Textures.updateRenderTarget` does when it finds the target's recorded size is new — and the
-   * main pass builds its bind groups first. So the level's first render re-versions a depth texture
-   * whose GPUTexture a bind group already holds, and the re-version branch destroys it: every draw
-   * through that bind group then submits a destroyed texture, which is the
-   * `GPUValidationError: Destroyed texture [Texture "ShadowDepthTexture"] used in a submit` a
-   * map-walk logged hundreds of times a session. Dropping the cached bind groups does not help,
-   * because `Bindings` reuses a bind group it already has and never asks the backend to rebuild it.
-   *
-   * Registering here makes the first registration a no-op instead: the depth texture's GPUTexture is
-   * created once, at the settled size, and the bind groups that follow are built against it.
-   */
-  #settleTargets(renderer: unknown): void {
-    const manager = renderer as
-      | { _textures?: { updateRenderTarget?: (target: RenderTarget) => void } }
-      | undefined;
-    const textures = manager?._textures;
-    // A renderer that does not expose the manager (a test double, the native host) settles itself.
-    if (typeof textures?.updateRenderTarget !== "function") return;
-    for (const node of [
-      ...this.#levels.map((level) => level.node),
-      ...this.#levels.map((level) => level.moverNode),
-    ]) {
-      const target = (node as { shadowMap?: RenderTarget | null }).shadowMap;
-      if (target) textures.updateRenderTarget(target);
-    }
   }
 
   override updateBefore(frame: NodeFrame): undefined {
