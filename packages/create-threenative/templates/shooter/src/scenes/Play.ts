@@ -392,9 +392,10 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     // Bullet holes. They stay put: a mark that fades tells the player their rounds went nowhere.
     // What colour the crushed rim comes out is per material — steel burns bare and cold, plaster
     // and stone go pale, wood darkens. See `decals.ts` for why the pool is shaped this way.
+    const decalTexture = bulletHoleTexture();
     const decals = new DecalField(ctx.scene, {
       countPerVariant: 56,
-      map: bulletHoleTexture(),
+      map: decalTexture,
       size: 0.13,
       tints: {
         plaster: 0xf3ead8,
@@ -404,7 +405,11 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       },
     });
     ctx.entities.remove("decals");
+    ctx.entities.remove("decal-texture");
     ctx.entities.add("decals", decals);
+    // The field borrows its map. Register the scene-owned texture after its borrowers so
+    // registry teardown releases their materials first, then the texture, exactly once.
+    ctx.entities.add("decal-texture", decalTexture);
     // `hit.face.normal` is object-local; transform it into world space before any
     // spawn math, or rotated meshes send their bursts into the wall.
     const impactNormal = new Vector3();

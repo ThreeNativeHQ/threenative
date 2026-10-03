@@ -121,7 +121,9 @@ lifecycle.
 | `tower-defense` | Four tower types, three upgrade levels, twelve waves and an orbital strike on a polished diorama |
 | `racing` | Three laps, checklines, rescue sectors, boost pads |
 | `sailing` | Wind, waves, buoyancy, and an ordered course |
+| `rain` | A procedural coastal storm, weather controls, and a free-fly camera |
 | `shooter` | Hitscan and projectile weapons, hunting targets, timed pickups |
+| `snow` | Deformable snow footprints, a ball that carves its own track, blizzard weather |
 
 Details in [`create-threenative`](packages/create-threenative/README.md).
 

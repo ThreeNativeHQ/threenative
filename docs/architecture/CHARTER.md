@@ -280,7 +280,11 @@ geometry, placement, colour and material all come from the game); **`clipPoseErr
 `clipTrackBindings`, `clipBoneCoverage`, `boneContact`** (instruments that drive a clip, read the
 pose and report degrees, names and metres — they select no clip and move nothing); and
 **`Heightfield`** (one row-major buffer, interpolation, normals, and the ordering physics consumes;
-every height comes from the game's own sampler); **`FlightModel`** (lift, drag, thrust, stall,
+every height comes from the game's own sampler); **`SnowField`** (indentation, displaced bank,
+compaction and disturbance channels over one canonical `Heightfield`, load-dependent penetration
+and bounded sparse recovery; the game supplies the terrain, the snow depth, the contact footprint,
+the load and every response coefficient, and no renderer or GPU encoding is involved);
+**`FlightModel`** (lift, drag, thrust, stall,
 control moments and the carrier-deck run for a fixed-wing aircraft; every mass, wing area, power,
 inertia, wind and damage multiplier comes from the game, which the model moves but never dresses);
 and **automatic discrete LOD** (error-driven level selection for a model the asset cook baked a

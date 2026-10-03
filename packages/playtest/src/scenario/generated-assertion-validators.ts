@@ -11,6 +11,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 export const GENERATED_ASSERTION_FIELD_VALIDATORS: Readonly<Record<string, Readonly<Record<string, GeneratedAssertionFieldValidator>>>> = Object.freeze({
+  "tone": Object.freeze({
+    "atStep": (value: unknown) => typeof value === "string" && value.trim() !== "",
+    "mean": (value: unknown) => isRecord(value),
+    "p1": (value: unknown) => isRecord(value),
+    "p50": (value: unknown) => isRecord(value),
+    "p99": (value: unknown) => isRecord(value),
+    "clipFraction": (value: unknown) => isRecord(value),
+    "blackFraction": (value: unknown) => isRecord(value),
+  }),
   "deviceMetrics": Object.freeze({
     "maxTemperatureRiseC": (value: unknown) => typeof value === "number" && Number.isFinite(value) && value >= 0,
     "maxThermalStatus": (value: unknown) => typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 6,

@@ -1,4 +1,5 @@
 import { PNG } from "pngjs";
+import type { IToneMetrics } from "./tone.js";
 
 export const CAPTURE_GUARD_LIMITS = {
   brightLuminance: 0.05,
@@ -11,6 +12,7 @@ export const CAPTURE_GUARD_LIMITS = {
 } as const;
 
 export interface ICaptureFrameStats {
+  readonly tone?: IToneMetrics;
   readonly distinctColors: number;
   readonly brightPixelRatio: number;
   readonly height: number;
@@ -47,6 +49,8 @@ export class CaptureGuardError extends Error {
 export function inspectFrame(png: Buffer): ICaptureFrameStats {
   const image = PNG.sync.read(png);
   const colors = new Set<number>();
+  const histogram = new Uint32Array(256);
+  let toneTotal = 0;
   let luminanceTotal = 0;
   let luminanceSquaredTotal = 0;
   let brightPixels = 0;
@@ -61,6 +65,9 @@ export function inspectFrame(png: Buffer): ICaptureFrameStats {
     colors.add(((red << 24) | (green << 16) | (blue << 8) | alpha) >>> 0);
     if (alpha === 0) continue;
     const luminance = (0.2126 * red + 0.7152 * green + 0.0722 * blue) / 255;
+    const bin = Math.round(luminance * 255);
+    histogram[bin] = (histogram[bin] ?? 0) + 1;
+    toneTotal += bin;
     visiblePixels += 1;
     maxLuminance = Math.max(maxLuminance, luminance);
     if (luminance > CAPTURE_GUARD_LIMITS.brightLuminance) brightPixels += 1;
@@ -70,7 +77,24 @@ export function inspectFrame(png: Buffer): ICaptureFrameStats {
 
   const mean = visiblePixels === 0 ? 0 : luminanceTotal / visiblePixels;
   const variance = visiblePixels === 0 ? 0 : luminanceSquaredTotal / visiblePixels - mean * mean;
+  const percentile = (fraction: number): number => {
+    const rank = Math.ceil(visiblePixels * fraction);
+    let count = 0;
+    for (let bin = 0; bin < histogram.length; bin += 1) {
+      count += histogram[bin] ?? 0;
+      if (count >= rank) return bin;
+    }
+    return 255;
+  };
   return {
+    ...(visiblePixels === 0 ? {} : { tone: {
+      mean: toneTotal / visiblePixels,
+      p1: percentile(0.01),
+      p50: percentile(0.5),
+      p99: percentile(0.99),
+      clipFraction: (histogram[255] ?? 0) / visiblePixels,
+      blackFraction: (histogram[0] ?? 0) / visiblePixels,
+    } }),
     distinctColors: colors.size,
     brightPixelRatio: image.data.length === 0 ? 0 : brightPixels / (image.data.length / 4),
     height: image.height,

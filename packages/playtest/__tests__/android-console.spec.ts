@@ -25,6 +25,88 @@ test("Android console starts after stopping the previous process and keeps new l
   expect(await driver.captureConsole()).toEqual([{ text: launchError, type: "error" }]);
 });
 
+/**
+ * One dropped adb transport is not a game failure.
+ *
+ * A hosted SwiftShader emulator drops the adb transport mid-dump: `adb logcat -d` prints part of
+ * the buffer, exits non-zero on the truncated line, and the run failed TN_PLAYTEST_RUNNER_FAILED on
+ * a game whose assertions had all passed (CI `clean-consumer`, 5th of 6 sequential runs). The same
+ * class was already fixed twice on the native side — #310 and b12becde6 — by re-reading after
+ * `wait-for-device`; mirroring that shape here keeps the two harnesses answering a dropped transport
+ * the same way.
+ */
+test("Android console capture retries a dropped logcat transport instead of failing the run", async () => {
+  const calls: Array<readonly string[]> = [];
+  let logcatAttempts = 0;
+  const driver = new AdbAndroidDriver({
+    activity: "com.threenative.runtime.MystralActivity",
+    adbPath: "/nonexistent/adb",
+    packageName: "com.example.game",
+    user: "0",
+  });
+  (driver as unknown as { adb: (args: readonly string[]) => Promise<string> }).adb = async (args) => {
+    calls.push(args);
+    if (args[0] === "logcat" && args[1] === "-d") {
+      logcatAttempts += 1;
+      if (logcatAttempts === 1) throw new Error("adb logcat -d -v brief failed: I/SDL     ( 8001): [Mystral] Runtime ini");
+      return "I/SDL     ( 8001): [Mystral] Runtime initialized\nE/SDL     ( 8001): [Mystral] authored script failed\n";
+    }
+    return "";
+  };
+
+  expect(await driver.captureConsole()).toEqual([
+    { text: "I/SDL     ( 8001): [Mystral] Runtime initialized", type: "log" },
+    { text: "E/SDL     ( 8001): [Mystral] authored script failed", type: "error" },
+  ]);
+  expect(logcatAttempts).toBe(2);
+  expect(calls.filter((args) => args[0] === "wait-for-device")).toHaveLength(1);
+});
+
+test("Android console capture fails with a bounded excerpt once the transport is gone", async () => {
+  let logcatAttempts = 0;
+  const driver = new AdbAndroidDriver({
+    activity: "com.threenative.runtime.MystralActivity",
+    adbPath: "/nonexistent/adb",
+    packageName: "com.example.game",
+    user: "0",
+  });
+  (driver as unknown as { adb: (args: readonly string[]) => Promise<string> }).adb = async (args) => {
+    if (args[0] === "logcat" && args[1] === "-d") {
+      logcatAttempts += 1;
+      throw new Error(`adb logcat -d -v brief failed: ${"E/SDL     ( 8001): noise\n".repeat(4_000)}`);
+    }
+    return "";
+  };
+
+  // The failing report embedded an 82 KB logcat in the message; the excerpt keeps the complaint
+  // (the tail, where the truncation is visible) and drops the rest.
+  const failure = await driver.captureConsole().then(() => undefined, (error: Error) => error);
+  expect(failure?.message).toMatch(/^adb logcat -d -v brief failed: /u);
+  expect(failure?.message.length ?? 0).toBeLessThanOrEqual(2_200);
+  expect(failure?.message).toMatch(/noise/u);
+  expect(logcatAttempts).toBe(2);
+});
+
+test("Android console capture does not retry a device that refuses the command", async () => {
+  let logcatAttempts = 0;
+  const driver = new AdbAndroidDriver({
+    activity: "com.threenative.runtime.MystralActivity",
+    adbPath: "/nonexistent/adb",
+    packageName: "com.example.game",
+    user: "0",
+  });
+  (driver as unknown as { adb: (args: readonly string[]) => Promise<string> }).adb = async (args) => {
+    if (args[0] === "logcat" && args[1] === "-d") {
+      logcatAttempts += 1;
+      throw new Error("adb logcat -d -v brief failed: KO: unknown command");
+    }
+    return "";
+  };
+
+  await expect(driver.captureConsole()).rejects.toThrow(/unknown command/u);
+  expect(logcatAttempts).toBe(1);
+});
+
 test("Android console ignores SurfaceSyncGroup framework noise that names MystralActivity", () => {
   const entries = parseAndroidConsole([
     "E/SurfaceSyncGroup( 4270): Failed to receive transaction ready for VRI[MystralActivity]",

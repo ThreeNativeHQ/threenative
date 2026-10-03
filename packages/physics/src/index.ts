@@ -100,6 +100,13 @@ export type {
  * @example const cloth = new SoftBody3D(mesh, { ...options, collision: softBodyCollision(wall) });
  */
 export { softBodyCollision } from "./softbody-collision.js";
+// Capability metadata for the snow binding lives on its declarations in snow.ts.
+export { attachSnowPhysics, boxFootprint, capsuleFootprint } from "./snow.js";
+export type {
+  ISnowPhysicsBinding,
+  ISnowPhysicsObservation,
+  ISnowPhysicsOptions,
+} from "./snow.js";
 export type {
   IIntersectPointOptions,
   IIntersectRayOptions,
