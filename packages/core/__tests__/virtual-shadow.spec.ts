@@ -60,6 +60,7 @@ import {
   VirtualShadowNode,
   readVirtualShadowMarker,
 } from "../src/render/virtual-shadow.js";
+import { Heightfield } from "../src/world.js";
 import { WorldImpostorSurface } from "../src/render/world-impostor-surface.js";
 import { WorldImpostorAtlas } from "../src/render/world-impostor.js";
 
@@ -488,6 +489,74 @@ describe("VirtualShadowNode", () => {
     expect(flow.code).not.toMatch(/vec4<f32>[^\n]*\*\s*vec4<f32>/u);
     expect(flow.code).toContain("0.35");
     expect(flow.code).toContain("vec4<f32>( 1.0, 1.0, 1.0, 1.0 )");
+  });
+
+  it.each(["receiver", "heightfield"] as const)(
+    "centres fine levels on a 120 m aerial camera's view focus using %s height",
+    (surface) => {
+      const { camera, light, scene } = world();
+      const groundY = 20;
+      if (surface === "heightfield") {
+        scene.add(
+          Heightfield.fromSampler({
+            rows: 3,
+            columns: 3,
+            width: 512,
+            depth: 512,
+            origin: { x: 0, z: 0 },
+            sampleHeight: (_x, z) => groundY - z * 0.05,
+          }),
+        );
+      } else {
+        const ground = new Mesh(new BoxGeometry(512, 1, 512), new MeshBasicMaterial());
+        ground.position.y = groundY - 0.5;
+        ground.receiveShadow = true;
+        scene.add(ground);
+      }
+      const focus = new Vector3(0, surface === "heightfield" ? 27.5 : groundY, -150);
+      camera.position.set(0, groundY + 120, 0);
+      camera.lookAt(focus);
+      scene.updateMatrixWorld(true);
+      const node = setupNode(light, { clipExtents: [24, 96, 320], mapSize: 512 });
+      settle(node, camera);
+      const expected = node.clipmap.project(focus);
+      expect(node.clipmap.centerLight.u).toBeCloseTo(expected.u, 2);
+      expect(
+        node.clipmap.centerLight.v,
+        "the fine window follows the framed ground, not the eye",
+      ).toBeCloseTo(expected.v, 2);
+      expect(node.clipmap.centerLight.w).toBeCloseTo(expected.w, 2);
+      node.updateBefore(frameFor(camera));
+      expect(node.stats.rendered).toBe(0);
+      node.dispose();
+    },
+  );
+
+  it("keeps a walking camera on eye follow with unchanged render and draw counts", () => {
+    const { camera, light, scene } = world();
+    scene.add(
+      Heightfield.fromSampler({
+        rows: 3,
+        columns: 3,
+        width: 512,
+        depth: 512,
+        origin: { x: 0, z: 0 },
+        sampleHeight: () => 70,
+      }),
+    );
+    camera.position.set(0, 72, 0);
+    camera.lookAt(0, 70, -150);
+    const node = setupNode(light, { clipExtents: [24, 96, 320], mapSize: 512 });
+    settle(node, camera);
+    const renders = node.stats.rendersTotal;
+    for (let frame = 0; frame < 60; frame += 1) {
+      node.updateBefore(frameFor(camera));
+      expect(node.clipmap.centerLight).toEqual(node.clipmap.project(camera.position));
+      expect(node.stats.rendered).toBe(0);
+      expect(node.stats.perLevel.map((level) => level.draws)).toEqual([0, 0, 0]);
+    }
+    expect(node.stats.rendersTotal).toBe(renders);
+    node.dispose();
   });
 
   it("should re-render only the level whose window moved by a whole texel", () => {

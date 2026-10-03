@@ -7,6 +7,7 @@ import {
   Object3D,
   type OrthographicCamera,
   type RenderTarget,
+  Raycaster,
   Sphere,
   Vector3,
 } from "three";
@@ -180,6 +181,10 @@ export interface IVirtualShadowOptions {
    * cover's own, not its silhouette's. Set 0 to draw every caster into every level.
    */
   readonly minCasterTexels?: number;
+  /** Follow the framed receiving surface when the eye is more than one fine extent above it.
+   * Default true; false keeps eye follow for every camera. Walking cameras keep eye follow.
+   */
+  readonly followViewFocus?: boolean;
   /**
    * Draw registered AutoLOD chains with their coarsest geometry past the finest level, default true.
    * Alpha-tested and transparent casters keep casting on every level that resolves their bounds;
@@ -551,6 +556,9 @@ const _center = new Vector3();
 const _sphere = new Sphere();
 const _box = new Box3();
 const _size = new Vector3();
+const _focus = new Vector3();
+const _forward = new Vector3();
+const _focusRay = new Raycaster();
 
 /** What a caster is doing as far as a shadow level is concerned: 1 visible, 2 casting. */
 function casterFlag(mesh: { castShadow?: boolean; visible?: boolean }): number {
@@ -719,6 +727,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
   #casterTable: ICasterMesh[] = [];
   /** Every object the table was built over, so its tree listeners can come off on the next build. */
   #casterObjects: Object3D[] = [];
+  #heightSources: (Object3D & { heightAt(x: number, z: number): number })[] = [];
   /** The root `#casterTable` was walked from; a re-parented light changes it. */
   #casterRoot: Object3D | null = null;
   /** Set by `childadded` / `childremoved`, which three dispatches on the object that changed. */
@@ -886,6 +895,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
       refreshStep: steps,
       selectionGuard: guardedExtent,
       shadowLodBias: options.shadowLodBias ?? true,
+      followViewFocus: options.followViewFocus ?? true,
     };
     this.#stats = {
       byInvalidation: 0,
@@ -1054,11 +1064,14 @@ export class VirtualShadowNode extends ShadowBaseNode {
       object.removeEventListener("childremoved", this.#onTreeChanged);
     }
     this.#casterObjects.length = 0;
+    this.#heightSources.length = 0;
     this.#casterTable.length = 0;
     root.traverse((object) => {
       object.addEventListener("childadded", this.#onTreeChanged);
       object.addEventListener("childremoved", this.#onTreeChanged);
       this.#casterObjects.push(object);
+      if (typeof (object as { heightAt?: unknown }).heightAt === "function")
+        this.#heightSources.push(object as Object3D & { heightAt(x: number, z: number): number });
       if ((object as { isMesh?: boolean }).isMesh === true)
         this.#casterTable.push(object as ICasterMesh);
     });
@@ -1153,6 +1166,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
       object.removeEventListener("childremoved", this.#onTreeChanged);
     }
     this.#casterObjects.length = 0;
+    this.#heightSources.length = 0;
     this.#casterTable.length = 0;
     this.#casterFlags = new Uint8Array(0);
     this.#casterRoot = null;
@@ -1903,6 +1917,70 @@ export class VirtualShadowNode extends ShadowBaseNode {
     return undefined;
   }
 
+  /** Resident numerical terrain owns elevation; an unloaded region is not a zero-height plane. */
+  #heightAt(x: number, z: number): number | undefined {
+    for (const source of this.#heightSources) {
+      try {
+        const height = source.heightAt(x, z);
+        if (!Number.isFinite(height))
+          throw new Error("Virtual shadow focus received non-finite terrain height.");
+        return height;
+      } catch (error) {
+        if (!(error instanceof Error) || !error.message.endsWith("is outside its resident region."))
+          throw error;
+      }
+    }
+    return undefined;
+  }
+
+  /** Aerial windows follow the forward ray's received surface, without changing walking follow. */
+  #viewFocus(camera: Camera, eye: Vector3): Vector3 {
+    _focus.copy(eye);
+    if (!this.options.followViewFocus) return _focus;
+    camera.getWorldDirection(_forward);
+    if (_forward.y >= 0) return _focus;
+    this.#ensureCasters();
+    let height = this.#heightAt(eye.x, eye.z);
+    // Generic received geometry has no numerical height API. Bounds only decide whether the
+    // camera is aerial; the forward ray below measures its actual surface, not a box plane.
+    if (height === undefined) {
+      for (const mesh of this.#casterTable) {
+        if (!mesh.visible || !mesh.receiveShadow) continue;
+        if (mesh.geometry.boundingBox === null) mesh.geometry.computeBoundingBox();
+        if (mesh.geometry.boundingBox === null) continue;
+        _box.copy(mesh.geometry.boundingBox).applyMatrix4(mesh.matrixWorld);
+        if (eye.x < _box.min.x || eye.x > _box.max.x || eye.z < _box.min.z || eye.z > _box.max.z)
+          continue;
+        height = Math.max(height ?? Number.NEGATIVE_INFINITY, _box.max.y);
+      }
+    }
+    if (height === undefined || eye.y - height <= (this.options.clipExtents[0] ?? 0)) return _focus;
+    const far = (camera as Camera & { far?: number }).far ?? Number.POSITIVE_INFINITY;
+    // Solve against the stored height, including terrain relief along the ray. Flat terrain
+    // converges in one query; a bounded iteration avoids scanning terrain triangles every frame.
+    let distance = (height - eye.y) / _forward.y;
+    for (let step = 0; step < 16 && distance > 0 && distance <= far; step += 1) {
+      _focus.copy(eye).addScaledVector(_forward, distance);
+      const received = this.#heightAt(_focus.x, _focus.z);
+      if (received === undefined) break;
+      if (Math.abs(_focus.y - received) <= 0.001) return _focus;
+      distance = (received - eye.y) / _forward.y;
+    }
+    _focusRay.set(eye, _forward);
+    _focusRay.far = far;
+    let nearest = far;
+    _focus.copy(eye);
+    for (const mesh of this.#casterTable) {
+      if (!mesh.visible || !mesh.receiveShadow) continue;
+      const hit = _focusRay.intersectObject(mesh, false)[0];
+      if (hit !== undefined && hit.distance < nearest) {
+        nearest = hit.distance;
+        _focus.copy(hit.point);
+      }
+    }
+    return _focus;
+  }
+
   #updateFrame(frame: NodeFrame): undefined {
     if (!this.#initialised) return undefined;
     const camera = frame.camera as Camera | null;
@@ -1936,11 +2014,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
     // whatever the frame rate is. Read once, here, because the levels below all measure against it.
     const now = (frame as { time?: number }).time ?? 0;
     this.#adaptiveTrails(frame, now);
-    const windows = this.clipmap.updateCenter({
-      x: cameraPosition.x,
-      y: cameraPosition.y,
-      z: cameraPosition.z,
-    });
+    const windows = this.clipmap.updateCenter(this.#viewFocus(camera, cameraPosition));
     this.#centerU.value = this.clipmap.centerLight.u;
     this.#centerV.value = this.clipmap.centerLight.v;
     this.#basisU.value.set(this.clipmap.basisU.x, this.clipmap.basisU.y, this.clipmap.basisU.z);
