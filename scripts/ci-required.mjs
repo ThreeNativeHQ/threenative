@@ -40,6 +40,15 @@ try {
       );
     }
   }
+  if (process.env.TN_CI_EVENT === "merge_group") {
+    const base = process.env.TN_CI_BASE_SHA ?? "";
+    const head = process.env.TN_CI_HEAD_SHA ?? "";
+    const ancestor = spawnSync("git", ["merge-base", "--is-ancestor", base, plan.candidateSha]);
+    if (!/^[0-9a-f]{40}$/u.test(base) || head !== plan.candidateSha || ancestor.status !== 0)
+      throw new Error(
+        "CI_REQUIRED_QUEUE_CANDIDATE_MISMATCH: expected the exact merge-group head and ancestor base",
+      );
+  }
   // PRD-481. The scope job proved the source run tested this exact tree and covered this run's
   // profile; what only the API can settle is whether that run's own verdict went green and whether
   // it really did conclude every leg, and a reuse this job cannot confirm is not a pass.
