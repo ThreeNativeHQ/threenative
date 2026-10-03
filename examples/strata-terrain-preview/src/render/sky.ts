@@ -4,13 +4,19 @@ import { Color, DirectionalLight, Mesh, type Object3D, SphereGeometry, Vector3 }
 import { denoise } from "three/addons/tsl/display/DenoiseNode.js";
 import { ao } from "three/addons/tsl/display/GTAONode.js";
 import {
+  abs,
+  cameraPosition,
+  dot,
   float,
   getViewPosition,
+  max,
   mix,
   mrt,
   normalView,
+  normalize,
   output,
   pass,
+  positionWorld,
   saturation,
   screenSize,
   screenUV,
@@ -111,11 +117,28 @@ export function createOutdoorSky(camera: Object3D, biome?: IBiome): IOutdoorSky 
   sun.shadow.radius = biome?.sun.shadowRadius ?? BIOMES.forest.sun.shadowRadius;
   if (omitted.has("sun")) sun.intensity = 0;
   const farShadows = biome?.world === "alpine" || biome?.world === "desert";
-  sun.shadow.shadowNode = new VirtualShadowNode(sun, {
+  const shadows = new VirtualShadowNode(sun, {
     clipExtents: [...rig.shadowExtents],
     mapSize: farShadows ? 4096 : 2048,
     ...(farShadows ? { refreshStep: [0.2, 0.125] } : {}),
   });
+  // Fade the outer cascade before its cached window ends, including its refresh trail.
+  const shadowSetup = shadows.setup.bind(shadows);
+  shadows.setup = (builder) => {
+    const value = shadowSetup(builder);
+    if (!value) return value;
+    const right = normalize(SUN_VECTOR.cross(vec3(0, 1, 0)));
+    const up = normalize(right.cross(SUN_VECTOR));
+    const offset = positionWorld.sub(cameraPosition);
+    const distance = max(abs(dot(offset, right)), abs(dot(offset, up)));
+    const extent = rig.shadowExtents[rig.shadowExtents.length - 1] ?? 320;
+    return mix(
+      vec4(value as Node<"vec4">),
+      vec4(1),
+      smoothstep(extent * 0.65, extent * 0.8, distance),
+    );
+  };
+  sun.shadow.shadowNode = shadows;
   // A fixed world-origin target keeps the L-key direction independent of the following sky.
   sun.position.copy(direction);
 
@@ -191,6 +214,7 @@ export function installOutdoorOcclusion(
   // AO darkens RGB only; multiplying alpha leaked the backdrop through dark alpine crags.
   const world = pass(scene, camera);
   world.setMRT(mrt({ output, normal: normalView }));
+  const daylight = scene.children.find((child) => child instanceof Daylight);
   const depth = world.getTextureNode("depth");
   // An uncovered MSAA depth sample must not leave a one-pixel terrain edge against the sky.
   const airDepth = depth.r.min(depth.sample(screenUV.add(vec2(0, screenSize.y.reciprocal()))).r);
@@ -268,6 +292,13 @@ export function installOutdoorOcclusion(
   return () => {
     if (scene.fogNode === null) scene.fogNode = previousFog;
     if (scene.fog === null) scene.fog = previousClassicFog;
+    // The example owns these shadow maps. Removing the lights alone retained their targets.
+    const sun = scene.getObjectByName("temperate-sun");
+    for (const light of [sun, daylight instanceof Daylight ? daylight.sun : undefined]) {
+      if (!(light instanceof DirectionalLight)) continue;
+      if (light.shadow.shadowNode instanceof VirtualShadowNode) light.shadow.shadowNode.dispose();
+      light.dispose();
+    }
     chain.dispose();
     world.dispose();
     contact.dispose();

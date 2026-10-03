@@ -2501,3 +2501,71 @@ stair-step. Proof on the merged tip: licensed all checks pass with the prop-draw
 view CPU p50 ≤ 4 ms, `verify-ocean` green); fallback had transition-only window spikes (4.1–8 ms) while another
 lane captured concurrently — re-measure pending. Captures: `docs/verification/visuals/strata/v11-*.jpg`. AC-5
 stays open.
+### 2026-10-03 — Round 18 GI round 2 checkpoint
+
+Lane `feat/prd-466-468-gi2` starts at merged tip `2d75df9ed`.
+Measured live cached WGSL at the tip: terrain **16 samplers / 16 textures**,
+canopy **6**, bark **7**, blended rocks **12**, ocean **6**; the existing air/AO
+screen composite has **5 samplers / 7 textures**. Counts include four virtual
+shadow bindings and Three's **DFG LUT**, which the previous terrain estimate
+omitted. Census: `/tmp/gi2-census.json`, `/tmp/gi2-census-coastal.json`;
+control captures: `artifacts/playtest/gi2-census/`, `gi2-census-coastal/`.
+Terrain cannot receive another material sampler without freeing a slot.
+
+Rebuilt the stale terrain dist and forced the existing bake to populate erosion
+arrays; no erosion source or recipe changed. The unchanged full control stopped
+at coastal startup with WebGPU `createBuffer` allocation failure (262144 bytes).
+RTX 2080 free VRAM was 1.9 GiB while Blender used 2.7 GiB and Warcraft 1.4 GiB.
+The sky-fill candidate reuses `Atmosphere` LUT radiance and the existing world
+pass, adding an albedo MRT instead of terrain samplers. Visual acceptance,
+ProbeVolume bounce, shadow-edge fade and final licensed/fallback proof remain
+unverified; no acceptance box is ticked.
+
+GI2 runtime correction: **ProbeVolume is not retained**. Its prop shaders fit
+(7 canopy, 8 bark, 13 rock samplers), but no bake reached `ready`; measured first
+work items were 213.2, 304.3 and 866.7 ms against a 32 ms budget. Raising that
+budget would not prove the requested CPU ceiling. The engine's scene-warmup
+escape after two seconds is a suspected contributor, not a verified fix.
+
+Retained game-owned changes: LUT-derived diffuse sky spectrum with warm ground
+fill at the biome's existing luminance; fade the outer shadow window over
+208–256 m; dispose the example's virtual-shadow targets when a world exits.
+The added albedo MRT costs no terrain sampler. Surface correction fades before
+1200 m because the sky box itself writes depth; the earlier unbounded candidate
+also recoloured sky pixels and was rejected. Atmosphere parameters, exposure
+and 4× MSAA/alpha-to-coverage stay as authored. No SSGI/bloom/TRAА change.
+Example TypeScript and Biome (73 files) pass; terrain Vitest **71/71 PASS**.
+Full safe runtime control and final licensed/fallback scenarios are still pending.
+
+2026-10-03 UTC GI2 final correction: **the LUT-fill candidate is withdrawn**.
+The five-world atmosphere comparison did not pass; forest foreground p95 was
+0.2993 versus 0.2224. Its reference forest also differs geometrically, so this
+comparison cannot establish causality or non-regression. Restored the original
+world MRT/normal and air input; no probe, albedo attachment or sky-fill delta is
+retained. Final source changes are the 208–256 m outer-shadow fade and explicit
+virtual-shadow/light disposal on world exit. Reuses Daylight, VirtualShadowNode,
+the existing Atmosphere/aerial perspective and 4x MSAA; no package source changed.
+
+The preceding full licensed runtime control completed all scenario steps with
+zero console errors and zero runtime diagnostics (diagnostics assertions only).
+Its per-world maximum CPU p50: forest 4.3 ms, coastal 4.2 ms, alpine 3.4 ms,
+desert 2.2 ms, tundra 4.6 ms; **the 4 ms gate fails**. These timings belong to the
+withdrawn fill candidate, not the final source. Original full licensed final
+was stopped to withdraw that candidate; all three ocean checks passed on its
+partial coastal captures. Fallback original full scenario was attempted under
+the remaining wall limit; completion is not claimed. Final capture locations:
+`artifacts/playtest/gi2-final/` and `gi2-final-fallback/` (partial).
+
+Inspected 1:1 candidate crops: `gi2-census/forest-start-crop.png` before and
+`gi2-final/forest-start-crop.png` after (candidate withdrawn); other inspected
+crops in `gi2-safe-check/`: alpine-ridge, desert-overview, tundra-overview,
+coastal-ocean. Subjective grades of these licensed candidate captures:
+forest 3.8, coastal 4.0, alpine 4.2, desert 4.3, tundra 3.7 / 10. Gaia acceptance
+and five-world non-regression remain open. Terrain tests 71/71 and 2386 doc
+links passed; final source TypeScript/Biome checks are recorded below.
+No push, merge or PR comment. Unmerged checkout retained (2.7 GiB), containing
+local licensed assets and captures; it is not eligible for merged-worktree cleanup.
+
+Final source: TypeScript passes; Biome checks 73 files and passes after assets
+were restored. Fallback has no completed world capture; the renderer exited during capture
+(`TN_PLAYTEST_PAGE_CRASHED`). Final source has no completed full playtest.
