@@ -53,6 +53,7 @@ The unit proof paths and the desktop fallback scenario now exist. Browser and An
 ### Phase 3 — Qualify the visible result
 
 - [ ] The unchanged web fixture renders each codec correctly, with named adapter and no loader/GPU diagnostics. proof: `node packages/playtest/dist/runner/cli.js examples/abyss-framework/playtests/vq-native-asset-capabilities.playtest.json --url ${VQ_URL:?} --browser-recipe webgpu`.
+  Runner: `sh scripts/vq01-web-proof.sh <dir>` generates the authored GLBs/PNG, cooks the fixture for web and serves it on `127.0.0.1:5193` for that command. Unrun here: this lane has no browser.
 - [ ] The packaged Android V8 fixture decodes the admitted codecs on an emulator; unsupported codecs remain explicitly refused and the QuickJS decoder-free fixture still runs. proof: `node packages/playtest/dist/runner/cli.js examples/abyss-framework/playtests/vq-native-asset-capabilities.playtest.json --target android --device ${VQ_ANDROID_DEVICE:?}`.
 
 ## Acceptance criteria
