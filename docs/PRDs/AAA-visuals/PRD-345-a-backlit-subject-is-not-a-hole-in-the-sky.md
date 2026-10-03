@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-345 — a backlit subject is not a hole in the sky
 
-**Status:** PARTIAL — generated material defaults integrated across conventional templates; eleven matched web desktop pairs are palette-stable. Racing expression, all-template gameplay/root/native gates remain open. Originally filed 2026-09-03, measured at `43d03e6a`. Batch:
+**Status:** PARTIAL — generated material defaults integrated across conventional templates; twelve final matched web desktop pairs are palette-stable, including corrected racing. All-template gameplay/full-root/native appearance and rain admission remain open. Originally filed 2026-09-03, measured at `43d03e6a`. Batch:
 [docs/PRDs/AAA-visuals](./README.md). **Ships as generated user source, not as a package** — it
 decides how things look, and rule 1(b) vetoes 1(a) at any size. Source studied:
 [TheLongSilence](https://github.com/achimala/TheLongSilence) `src/gfx/greeble.js:37`, the
@@ -267,16 +267,45 @@ which are disclosed and not claimed as improvements. Dynamic enrollment covers n
 RTS armies, action-RPG loot, runner chunks and tower/enemy upgrade/recycling; thirty-three
 lifecycle tests cover restoration, sharing and owned disposal.
 
-Racing remains held: matched startup controls isolate broad road/shadow changes to the added
-emissive expression, even with both gains zero. GPU sampling and bare upstream node-material
-copy independently preserve baseline pixels. The exact cause and final qualified fix remain
-open; successful boot alone does not admit this look. Full template gameplay/playtests and
-final-head cost qualification remain pending. Rain is a
-custom raymarched shader with authored flash rim/hemisphere fill and cloud render-target
+The final runtime checkpoint `dca2d8d4b` now qualifies all twelve conventional matched boot
+pairs. Racing controls traced the road/shadow regression to `updateWorldMatrix` inside the
+render-time material callback: the identical expression with those two writes removed restores
+the original road and shadows. Sampling-only and upstream material-copy controls independently
+preserve baseline pixels. Callbacks now read the matrices maintained by the engine/game boundary;
+34 focused lifecycle/matrix tests verify that rendering cannot mutate shared light matrices.
+[Final full pairs and source/runtime manifests](../../benchmark/prd345/final-template-matrix/README.md)
+and [retained rejected candidate and controls](../../benchmark/prd345/racing-regression/README.md)
+preserve the causal evidence. Full gameplay acceptance remains distinct from these boot captures.
+
+The current-source final ABBA startup series passes 80/80 launches, 40 per arm, with unchanged
+source trees. Ready p95 is 2649.7 → 2831.0 ms (+181.3 ms, 6.84%); medians are 2560.3 → 2760.0 ms.
+Scene-load-to-ready p95 is 2036.9 → 2241.7 ms (+204.8 ms). Fresh process/context/page and HTTP
+cache are controlled; OS/filesystem and driver shader caches are not. This is not shader-cold,
+compile-complete or a precise population-tail estimate.
+[Summary and complete retained samples](../../benchmark/prd345/startup-p95-dca2d8d4b/summary.json).
+
+Current-source difficult-lighting fixture qualification passes all six intended positive/negative
+arms on NVIDIA Turing hardware WebGPU. Edge p99 is 53 with rim versus 7 without; body p99 is 2
+versus 0. Zero-rim and black-fill controls fail only their intended tone assertions; omitted
+report fails exactly the marker assertion. [Full frames and raw qualification](../../benchmark/prd345/final-fixture/README.md).
+Actual GPU timestamp windows 3–5 measure dark fill 11.0467 → 11.7467 ms (+0.700 ms, 6.34%).
+Backlit 11.6033 → 11.2267 ms is a noisy negative delta, not a speedup claim. Each arm has only
+23 asynchronous timestamp samples across three 60-frame windows in one serial run.
+[Raw cost windows](../../benchmark/prd345/final-cost/README.md).
+
+Affected CPU verification passes 65 files / 1011 tests; root typecheck and lint pass. The isolated
+native host and V8/QuickJS contract prerequisites build, and actual native unit tests pass
+1531 with 62 skipped. None of those results admits native appearance. The initial full-root
+attempt retained 21 missing-native-binary failures; the complete root gate must be rerun after
+prerequisites and capture jobs finish. All thirteen generated gameplay gates and matched native
+conservative-fallback capture are in progress; no unexecuted result is claimed.
+
+Rain is a custom raymarched shader with authored flash rim/hemisphere fill and cloud render-target
 reflections. Ordinary standard-material conversion does not apply; its cloud radiance remains
 unknown until separately sampled. Its explicit instruction exception is not blanket all-template
 acceptance. Native retains original materials and no GPU sampling; native appearance admission
-remains unqualified.
+remains unqualified. Bare-engine automatic material treatment is not claimed: the repository's
+source-first architecture requires an explicit coherent policy change before package hooks.
 
 ## Acceptance criteria
 

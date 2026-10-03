@@ -6,7 +6,7 @@ import {
   runStandalonePlaytest,
 } from "../../../../playtest/dist/runner/index.js";
 const root = process.cwd();
-const base = resolve("artifacts/backlight-defaults/final-fixture1");
+const base = resolve("artifacts/backlight-defaults/final-fixture2");
 const fixture = resolve("packages/create-threenative/__tests__/fixtures/backlight-defaults");
 const flags = [
   "--ozone-platform=x11",
@@ -32,6 +32,7 @@ for (const [name, scenario, arm, shot, omit] of cases) {
   await mkdir(output, { recursive: true });
   const url = `http://127.0.0.1:5193/packages/create-threenative/__tests__/fixtures/backlight-defaults/index.html?arm=${arm}&shot=${shot}${omit ? "&omitReport=1" : ""}`;
   const config = parseStandalonePlaytestArgs([
+    "--headed",
     "--project",
     root,
     "--scenario",

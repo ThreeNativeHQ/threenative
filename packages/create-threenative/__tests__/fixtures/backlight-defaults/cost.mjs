@@ -9,7 +9,8 @@ const arm = process.argv[2];
 const view = process.argv[3] ?? "backlit";
 if (!["baseline", "enabled"].includes(arm) || !["backlit", "dark"].includes(view))
   throw new Error("Expected baseline|enabled and backlit|dark");
-const out = resolve(`artifacts/backlight-defaults/live-${view}-${arm}`);
+// Optional explicit output preserves earlier measurements; defaults remain backward compatible.
+const out = resolve(process.argv[4] ?? `artifacts/backlight-defaults/live-${view}-${arm}`);
 const url = `http://127.0.0.1:5193/packages/create-threenative/__tests__/fixtures/backlight-defaults/index.html?arm=${arm}&shot=${view}&liveCost=1`;
 const flags = [
   "--ozone-platform=x11",

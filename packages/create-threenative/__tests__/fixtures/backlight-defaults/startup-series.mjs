@@ -1,78 +1,16 @@
 // Task-owned serial startup proof. No screenshots, scene restart or camera mutations.
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
-import { mkdir, readFile, readdir, readlink, writeFile } from "node:fs/promises";
-import { relative, resolve } from "node:path";
+import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-export function launchOrder(count = 40) {
-  assert.ok(Number.isSafeInteger(count) && count > 0 && count % 2 === 0);
-  return Array.from({ length: count / 2 }, () => ["before", "after", "after", "before"]).flat();
-}
-export function statistics(values) {
-  assert.ok(values.length > 0 && values.every((value) => Number.isFinite(value) && value >= 0));
-  const sorted = [...values].sort((a, b) => a - b);
-  const middle = Math.floor(sorted.length / 2);
-  return {
-    count: sorted.length,
-    median: sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2,
-    p95: sorted[Math.ceil(sorted.length * 0.95) - 1],
-    maximum: sorted.at(-1),
-    method: "nearest rank ceil(0.95*n), one-based",
-  };
-}
-async function treeFingerprint(root) {
-  const files = [];
-  async function walk(directory) {
-    for (const entry of (await readdir(directory, { withFileTypes: true })).sort((a, b) =>
-      a.name.localeCompare(b.name),
-    )) {
-      if (["node_modules", ".git", "dist", ".vite", "artifacts"].includes(entry.name)) continue;
-      const path = resolve(directory, entry.name);
-      if (entry.isDirectory()) await walk(path);
-      else if (entry.isFile())
-        files.push({
-          path: relative(root, path),
-          sha256: createHash("sha256")
-            .update(await readFile(path))
-            .digest("hex"),
-        });
-      else if (entry.isSymbolicLink())
-        files.push({
-          path: relative(root, path),
-          symlinkTarget: await readlink(path),
-          policy: "target text retained; never traversed",
-        });
-      else throw new Error(`Unqualified source-tree entry: ${path}`);
-    }
-  }
-  await walk(root);
-  return { root, files, sha256: createHash("sha256").update(JSON.stringify(files)).digest("hex") };
-}
-export function validateSample(provenance, readiness, observed) {
-  assert.equal(provenance.rendererKind, "webgpu");
-  assert.equal(provenance.target, "web");
-  assert.equal(provenance.adapter.vendor, "nvidia");
-  assert.equal(provenance.adapter.architecture, "turing");
-  assert.deepEqual(provenance.viewport, { width: 1280, height: 720 });
-  assert.equal(readiness.rule, "sustained-frames");
-  const startup = readiness.startup;
-  assert.equal(startup.phase, "ready");
-  const { readyMs, loadStartedMs } = startup.timeline;
-  assert.ok(
-    Number.isFinite(readyMs) &&
-      Number.isFinite(loadStartedMs) &&
-      readyMs >= loadStartedMs &&
-      loadStartedMs >= 0,
-  );
-  assert.equal(observed.backendWebGL, false);
-  assert.equal(observed.width, 1280);
-  assert.equal(observed.height, 720);
-  assert.equal(observed.samples, 4);
-  assert.ok(!startup.holds?.some((hold) => hold.expired));
-  assert.ok((startup.warmup?.observed?.failed ?? 0) === 0, "Reported startup compilation failed");
-  return { navigationReadyMs: readyMs, sceneLoadToReadyMs: readyMs - loadStartedMs };
-}
+import {
+  launchOrder,
+  statistics,
+  treeFingerprint,
+  validateSample,
+} from "./startup-series-proof.mjs";
+export { launchOrder, statistics, validateSample } from "./startup-series-proof.mjs";
 async function run() {
   const { parseStandalonePlaytestArgs, withBrowserCapture } = await import(
     "../../../../playtest/dist/runner/index.js"
@@ -82,8 +20,12 @@ async function run() {
   // Refuse accidentally replacing an existing series.
   assert.equal((await readdir(output)).length, 0, "Output directory must be empty");
   const roots = {
-    before: resolve("artifacts/backlight-defaults/clean-starter-before2"),
-    after: resolve("artifacts/backlight-defaults/clean-starter-after3"),
+    before: resolve(process.argv[3] ?? "artifacts/backlight-defaults/clean-starter-before2"),
+    after: resolve(process.argv[4] ?? "artifacts/backlight-defaults/clean-starter-after3"),
+  };
+  const urls = {
+    before: process.argv[5] ?? "http://127.0.0.1:5194/",
+    after: process.argv[6] ?? "http://127.0.0.1:5195/",
   };
   const frozen = {
     before: await treeFingerprint(roots.before),
@@ -115,7 +57,7 @@ async function run() {
         "--scenario",
         "packages/create-threenative/__tests__/fixtures/backlight-defaults/cost.playtest.json",
         "--url",
-        `http://127.0.0.1:${arm === "before" ? 5194 : 5195}/`,
+        urls[arm],
         "--timeout",
         "60000",
         "--artifacts",
