@@ -413,6 +413,7 @@ it("approved baseline binds provenance while allowing a fresh candidate", () => 
 });
 const workflows = [
   ".github/workflows/ci.yml",
+  ".github/workflows/ci-janitor.yml",
   ".github/workflows/native-platforms.yml",
   ".github/workflows/native-release.yml",
   ".github/workflows/npm-release.yml",
@@ -428,6 +429,7 @@ const workflows = [
 const reviewedWorkflows = [
   ".github/workflows/build-quiche-owned.yml",
   ".github/workflows/ci.yml",
+  ".github/workflows/ci-janitor.yml",
   ".github/workflows/integration.yml",
   ".github/workflows/native-platforms.yml",
   ".github/workflows/native-release.yml",
@@ -544,16 +546,23 @@ function triggerSection(source: string): string {
 }
 
 function kvmProvisioning(source: string): readonly string[] {
-  return source
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(
-      (line) =>
-        line.includes('KERNEL=="kvm"') ||
-        line === "| sudo tee /etc/udev/rules.d/99-kvm4all.rules" ||
-        line === "sudo udevadm control --reload-rules" ||
-        line === "sudo udevadm trigger --name-match=kvm",
-    );
+  return (
+    source
+      .split("\n")
+      .map((line) => line.trim())
+      // A trailing `|| true` is not part of the provisioning. native-platforms.yml's copy carries one
+      // because it is the lane PRD-480 routes onto the `tn-local` container, where no udev runs and
+      // /sys is read-only, so the commands cannot succeed there — while native-release.yml stays
+      // hosted and keeps them strict. The two lanes must still provision KVM the same way.
+      .map((line) => line.replace(/ \|\| true$/u, ""))
+      .filter(
+        (line) =>
+          line.includes('KERNEL=="kvm"') ||
+          line === "| sudo tee /etc/udev/rules.d/99-kvm4all.rules" ||
+          line === "sudo udevadm control --reload-rules" ||
+          line === "sudo udevadm trigger --name-match=kvm",
+      )
+  );
 }
 
 function commandText(section: string): string {
@@ -929,8 +938,12 @@ describe("CI pipeline structure", () => {
       expect(source, `${relative} cancels its own run`).not.toContain(
         "actions/runs/$GITHUB_RUN_ID/cancel",
       );
-      // Nothing left here calls the Actions API, so nothing may ask to write to it.
-      expect(source, `${relative} needs no actions: write`).not.toContain("actions: write");
+      // Nothing calls the Actions API to cancel its own run, so nothing may ask to write to it.
+      // `ci-janitor.yml` is the single named exception: it cancels *other* runs, on a closed PR,
+      // never from a failure step, and never its own run id — all four pinned in its own case.
+      if (relative !== ".github/workflows/ci-janitor.yml") {
+        expect(source, `${relative} needs no actions: write`).not.toContain("actions: write");
+      }
     }
 
     // Fail-fast that keeps its evidence: a matrix reports every leg, and an expensive job is
@@ -1005,6 +1018,116 @@ describe("CI pipeline structure", () => {
       for (const [job, section] of jobSections(source)) {
         if (section.includes("runs-on:"))
           expect(section, `${relative} ${job}`).toContain("timeout-minutes:");
+      }
+    }
+  });
+
+  // PRD-480. Every Linux job that can move picks its runner from one expression, so the pool is
+  // changed by setting or deleting a repository variable and nothing else. A job left at a bare
+  // `ubuntu-latest` still runs, which is exactly why this has to be a spec: the pool comes up and
+  // the queue does not shrink, and nothing in a run says which half of the board ignored it.
+  const routing =
+    "${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}";
+  const lightRouting =
+    "${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER_LIGHT) && 'ubuntu-24.04' || vars.TN_RUNNER_LIGHT }}";
+  // The hosted jobs that stay hosted, per workflow. `supply-chain` runs gitleaks through
+  // `docker run`; a self-hosted container would need the host Docker socket mounted to do that,
+  // which would hand every job root on the owner's machine. `publish-android-v8` is the release
+  // publish itself — `permissions: contents: write` and a `gh release upload` — and PRD-480 keeps
+  // release writes on GitHub's own machines.
+  const hosted = new Map<string, ReadonlySet<string>>([
+    [".github/workflows/ci.yml", new Set(["supply-chain"])],
+    [
+      ".github/workflows/native-platforms.yml",
+      // publish-android-v8 writes the release; android-emulator-parity is CPU-bound SwiftShader that
+      // overran its 45-minute budget on a pinned 4-thread slot (run 37082733117).
+      new Set(["android-emulator-parity", "publish-android-v8"]),
+    ],
+  ]);
+  // PRD-480's light lane: the jobs whose whole work is a script or a summary — no workspace build,
+  // no `pnpm install` and no test suite. `scope` classifies the diff, `build` and `golden-path`
+  // assert an upstream verdict, `ci-required` is the merge verdict and `run-summary` writes the
+  // report; in native-platforms.yml `networking-matrix` is the one join that needs no toolchain at
+  // all. They join on `tn-local-light` (1 CPU, 2 GB) so a ten-second verdict does not queue behind
+  // five twenty-minute builds. Both directions are load-bearing and both are asserted below: a
+  // heavy job here would build the workspace in one core, and a light job off the list would queue
+  // behind the heavy pool — which is the wait the lane exists to remove.
+  const light = new Set([
+    "build",
+    "ci-required",
+    "golden-path",
+    "networking-matrix",
+    "paths",
+    "run-summary",
+    "scope",
+  ]);
+
+  // A matrix job routes per row: `runs-on: ${{ matrix.runner }}` is only a pointer, and what decides
+  // where a leg lands is the `runner:` value inside `strategy.matrix.include`. Both native
+  // matrices carry hosted rows next to movable ones (`linux-x64` moves, `linux-arm64` cannot), so
+  // the row is named `job/row` here and that is the key the hosted allow-list would use.
+  function matrixRunnerRows(job: string, section: string): readonly (readonly [string, string])[] {
+    const rows: [string, string][] = [];
+    for (const row of section.split(/^ {10}- /mu).slice(1)) {
+      const runner = row.match(/^ {12}runner: (.+)$/mu)?.[1];
+      if (runner !== undefined) {
+        const platform = row.match(/^\s*platform: (.+)$/mu)?.[1] ?? runner;
+        rows.push([`${job}/${platform}`, runner]);
+      }
+    }
+    return rows;
+  }
+
+  it("routes every movable Linux job through exactly one TN_RUNNER switch", async () => {
+    const directory = path.join(repo, ".github/workflows");
+    const routed = [
+      ".github/workflows/ci.yml",
+      ".github/workflows/native-platforms.yml",
+      ...(await readdir(directory))
+        .filter(
+          (entry) =>
+            entry === "integration.yml" ||
+            (entry.startsWith("integration-") && entry.endsWith(".yml")),
+        )
+        .map((entry) => `.github/workflows/${entry}`),
+    ].sort();
+    expect(routed.length).toBeGreaterThan(2);
+    for (const relative of routed) {
+      const keepHosted = hosted.get(relative) ?? new Set<string>();
+      const source = await readFile(path.join(repo, relative), "utf8");
+      for (const [job, section] of jobSections(source)) {
+        const runsOn = section.match(/^\s+runs-on:.*$/mu)?.[0].trim();
+        if (runsOn === undefined) continue;
+        const rows = matrixRunnerRows(job, section);
+        const targets: readonly (readonly [string, string])[] =
+          rows.length > 0 ? rows : [[job, runsOn.replace(/^runs-on: /u, "")]];
+        for (const [name, runner] of targets) {
+          const target = `${relative} ${name}`;
+          // macOS, Windows and arm64 have no tn-local counterpart, so the expression must never
+          // appear on one of them.
+          if (/macos|windows|arm/u.test(runner)) {
+            expect(runner, `${target} is not Linux`).not.toContain(routing);
+            expect(runner, `${target} is not Linux`).not.toContain(lightRouting);
+            continue;
+          }
+          const onHeavy = runner === routing;
+          const onLight = runner === lightRouting;
+          if (keepHosted.has(name)) {
+            expect(
+              onHeavy || onLight,
+              `${target} is on the hosted allow-list but selects ${runner}`,
+            ).toBe(false);
+            continue;
+          }
+          expect(
+            onHeavy || onLight,
+            `${target} runs on \`${runner}\`: use the TN_RUNNER routing expression, or name it on the hosted allow-list`,
+          ).toBe(true);
+          expect(
+            light.has(name),
+            `${target} is ${onLight ? "on" : "off"} the light lane: only ${[...light].join(", ")} may select tn-local-light`,
+          ).toBe(onLight);
+        }
       }
     }
   });
@@ -1205,13 +1328,10 @@ describe("CI pipeline structure", () => {
     expect(ci).toMatch(/push:\n\s+branches:\n\s+- main/u);
     expect(ci).toMatch(/pull_request:\n\s+branches:\n\s+- main/u);
     expect(ci).toContain("group: ci-${{ github.event_name }}-${{ github.ref }}");
-    // Main evidence arrives via CI completion, never via the push itself: every
-    // `workflow_run` run shares `github.ref` (the default branch), so the group also
-    // keys on the triggering CI head SHA - a new completion for a newer main SHA gets
-    // its own group instead of queueing behind a superseded evidence run.
-    expect(native).toContain(
-      "group: native-release-${{ github.event_name }}-${{ github.event.workflow_run.head_sha }}-${{ github.ref }}",
-    );
+    // Every release proof shares one group now, whatever triggered it: a per-ref or per-SHA key
+    // is what let a promotion PR, a manual dispatch and a main CI completion hold the pool at
+    // once. `native-release-proof.spec.ts` owns the setting; this is the structural backstop.
+    expect(native).toContain("&& 'native-release-proof' ||");
     expect(native).toContain("cancel-in-progress: false");
     const triggers = triggerSection(native);
     expect(triggers).toContain("workflow_run:");
@@ -1228,6 +1348,78 @@ describe("CI pipeline structure", () => {
     // Tag publication and manual proof keep the single-shot lookup they always had.
     expect(native).toMatch(/gh run list .*--workflow ci\.yml --commit/u);
     expect(npm).toContain('gh release view "runtime-native-v${native_version}"');
+  });
+
+  it("holds every release proof in one cross-branch concurrency group", async () => {
+    const native = await readFile(path.join(repo, ".github/workflows/native-release.yml"), "utf8");
+    const concurrency = triggerSection(native).split("\nconcurrency:\n")[1] ?? "";
+    expect(concurrency, "native-release declares no concurrency block").not.toBe("");
+    // Exactly one, and carrying nothing event-derived. A `${{ github.ref }}` or
+    // `${{ github.event.workflow_run.head_sha }}` suffix is a second proof running beside the
+    // first, which is exactly the starvation this group exists to end (PRD-380: 7.0k
+    // runner-minutes of PR proof against a pool of about three).
+    const groups = [...concurrency.matchAll(/^\x20{2}group: (.*)$/gmu)].map((match) => match[1]);
+    // Proof-eligible runs share `native-release-proof`; every other run (an ordinary PR push that
+    // `gates` refuses) gets a group of its own so it can never displace a pending proof.
+    expect(groups).toEqual([
+      "${{ (github.event_name != 'pull_request' || github.event.pull_request.base.ref == 'main' || contains(github.event.pull_request.labels.*.name, 'release-proof')) && 'native-release-proof' || format('native-release-skip-{0}', github.run_id) }}",
+    ]);
+    // `false`, not a conditional: a superseded run still lets its queued consumer finish.
+    expect(concurrency).toContain("cancel-in-progress: false");
+  });
+
+  it("cancels a closed pull request's runs without injecting its head ref into a shell", async () => {
+    const janitor = await readFile(path.join(repo, ".github/workflows/ci-janitor.yml"), "utf8");
+    // Merged or closed, nothing the head ref is still doing can change the outcome, and those
+    // runs went on holding runners for another 5.0k runner-minutes over 2026-09-18 to 10-02.
+    expect(triggerSection(janitor)).toMatch(/pull_request:\n\x20{4}types: \[closed\]/u);
+    // Cancelling a run is an Actions write; a token that cannot do it reports success while
+    // cancelling nothing.
+    expect(janitor).toMatch(/permissions:\n\x20{2}actions: write/u);
+    const cancel = jobSections(janitor).find(([name]) => name === "cancel")?.[1] ?? "";
+    expect(cancel, "ci-janitor declares no cancel job").not.toBe("");
+    // The head ref is attacker-controlled branch text: interpolated straight into `run:` it is a
+    // command injection on a job holding `actions: write`.
+    expect(cancel).toMatch(
+      /env:\n(?:\x20{10}[A-Z_]+: .*\n)*\x20{10}HEAD_REF: \$\{\{ github\.event\.pull_request\.head\.ref \}\}/u,
+    );
+    for (const line of cancel.split("\n")) {
+      if (/^\x20*#/u.test(line) || !line.includes("head_ref")) continue;
+      expect(
+        line,
+        "the head ref is interpolated into a shell instead of passed as env",
+      ).not.toMatch(/run:/u);
+    }
+    // A fork's runs belong to another repository; its token cannot cancel them, and trying would
+    // fail a red check on every fork PR close.
+    expect(cancel).toMatch(
+      /if: github\.event\.pull_request\.head\.repo\.full_name == github\.repository/u,
+    );
+    // The promotion PR's head is `develop`: closing it must not cancel develop's own CI runs.
+    expect(cancel).toMatch(
+      /head\.ref != 'develop' && github\.event\.pull_request\.head\.ref != 'main'/u,
+    );
+    expect(cancel).toContain('gh run list --repo "$GITHUB_REPOSITORY" --branch "$HEAD_REF"');
+    expect(cancel).toContain("--json databaseId,status");
+    // The run-sweeping predecessor this replaced reached across every branch in the repository;
+    // every cancel here is scoped to the event's own repository and the closed PR's own ref.
+    expect(cancel).toContain('gh run cancel "$run_id" --repo "$GITHUB_REPOSITORY"');
+    // Never a failure handler: cancelling from the gate that went red is what erased which
+    // gate went red, on 2026-09-02.
+    expect(cancel, "the janitor must not be a failure handler").not.toContain("failure()");
+    // Only the runs still holding a runner, and never the janitor's own.
+    for (const status of ["queued", "in_progress"]) {
+      expect(cancel).toContain(`.status == "${status}"`);
+    }
+    expect(cancel).toMatch(/SELF_RUN_ID/gu);
+    expect(cancel).toMatch(/gh run cancel "\$run_id"/u);
+    // A run that finished between the list and the cancel is the expected race, not a failure:
+    // the cancel is a guarded command, so its non-zero exit is reported rather than propagated.
+    expect(cancel).toContain('if gh run cancel "$run_id"');
+    // And the lookup itself fails closed, so a broken call cannot report success having
+    // cancelled nothing.
+    expect(cancel).toContain("set -euo pipefail");
+    expect(cancel).toMatch(/runs="\$\(gh run list/u);
   });
 
   // A `gh` call infers its repository from a git checkout. A job that never checks out has
@@ -1418,7 +1610,10 @@ describe("CI pipeline structure", () => {
     // Runs on every event since 2026-09-01 (owner call): the PR skip reported nothing on the
     // branch where the regression was written, and the merge that shipped it reported too late.
     expect(job).not.toContain("github.event_name == 'push'");
-    expect(job).not.toContain("pull_request");
+    // An `if:` gate naming the event, not any mention of it: the TN_RUNNER routing expression
+    // (PRD-480) reads `github.event.pull_request.head.repo.fork` in every routed job and gates
+    // nothing on it. What this forbids is a gate that skips pull requests.
+    expect(job).not.toMatch(/^\s+if:.*pull_request/mu);
     expect(job).toContain('TN_PLAYTEST_ALLOW_SOFTWARE: "1"');
     expect(job).toContain("non-visual-scenarios.mjs");
     expect(job).toContain("threenative-playtest");
