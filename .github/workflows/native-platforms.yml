@@ -53,7 +53,10 @@ jobs:
   # The caller is the single selection authority. Dispatch has no exemption inputs and is full.
   scope:
     name: Validate caller selection and candidate
-    runs-on: ubuntu-latest
+    # PRD-480. `github.event` inside a `workflow_call` is the caller's event payload, so this
+    # expression reads the same `pull_request` fork flag ci.yml did when it called this file: a fork
+    # PR falls through to hosted runners and never reaches the owner's machine.
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER_LIGHT) && 'ubuntu-24.04' || vars.TN_RUNNER_LIGHT }}
     timeout-minutes: 5
     outputs:
       scope: ${{ steps.classify.outputs.scope }}
@@ -61,6 +64,10 @@ jobs:
       reason: ${{ steps.classify.outputs.reason }}
       plan: ${{ steps.classify.outputs.plan }}
       candidate_sha: ${{ steps.classify.outputs.candidate_sha }}
+      # PRD-380 phase 2: `full` for a main push, the nightly, an explicit audit, a merge group or pull
+      # request into main; `reduced` for an ordinary pull request, which runs the Linux rows only.
+      native_tier: ${{ steps.classify.outputs.native_tier }}
+      starter_rows: ${{ steps.rows.outputs.starter_rows }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -78,6 +85,34 @@ jobs:
           fi
           grep -Fx "candidate_sha=$candidate" "$RUNNER_TEMP/ci-scope.outputs"
           cat "$RUNNER_TEMP/ci-scope.outputs" >> "$GITHUB_OUTPUT"
+      # A job's `if` cannot read `matrix` (GitHub's context table lists github, needs, vars and
+      # inputs there), so a row an ordinary pull request does not owe is dropped by shaping the
+      # matrix instead. x64 and arm64 run the identical release-container proof; the arm64 leg is
+      # GitHub's free hosted `ubuntu-24.04-arm` runner, because there is no V8 or Dawn prebuilt for
+      # Linux arm64 (kuoruan/libv8 ships Linux x64 only; Dawn's ubuntu-latest asset is x64) and a
+      # source V8 build is not allowed in CI — so that host is built with QuickJS over wgpu-native,
+      # the one WebGPU backend publishing an arm64 Linux archive, which scripts/download-deps.mjs
+      # and scripts/native-build.mjs select from `process.arch`. A reduced run keeps x64 alone, and
+      # x64 routes through the same TN_RUNNER switch every other movable Linux job uses (PRD-480).
+      - id: rows
+        env:
+          TN_NATIVE_TIER: ${{ steps.classify.outputs.native_tier }}
+        run: |
+          set -euo pipefail
+          node -e '
+            const rows = [
+              { platform: "linux-x64", runner: "${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}" },
+              { platform: "linux-arm64", runner: "ubuntu-24.04-arm" },
+            ];
+            // Reduced only when the tier says so: an unreadable tier keeps every row.
+            const reduced = process.env.TN_NATIVE_TIER === "reduced";
+            // A keyed object, never a bare array. GitHub expands `strategy.matrix` from an axis
+            // vector or from `include`, and run 37100382876 wrote the array: the rows were set, the
+            // step passed, and `starter-linux` never started — no job, no error — while the reusable
+            // workflow still concluded failure, so `ci-required` read a red native lane with every
+            // leg green. `{"include":[…]}` is the same two rows in the shape GitHub expands.
+            process.stdout.write(`starter_rows=${JSON.stringify({ include: reduced ? rows.slice(0, 1) : rows })}\n`);
+          ' >> "$GITHUB_OUTPUT"
 
   web-reference:
     needs: scope
@@ -89,7 +124,7 @@ jobs:
     if: >-
       needs.scope.outputs.selection == 'full' &&
       inputs.ios_only == false
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 30
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
@@ -136,7 +171,7 @@ jobs:
     name: Android V8 source payload
     needs: scope
     if: needs.scope.outputs.selection == 'full' && inputs.ios_only != true
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     # 180-minute build ceiling plus 30 minutes for actions/cache/save, per the action's note.
     timeout-minutes: 210
     outputs:
@@ -186,6 +221,9 @@ jobs:
       needs.android-v8-source.outputs.published == 'false' &&
       github.event_name != 'pull_request' &&
       (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
+    # PRD-480 leaves this one on GitHub's machines: it is the release write itself — `contents:
+    # write` and a `gh release upload` below — and no pool container is handed a token that can
+    # publish. It is named on the hosted allow-list in ci-structure.spec.ts.
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -213,7 +251,7 @@ jobs:
     name: Native collector evidence coverage
     needs: [scope, android-emulator-parity, desktop-parity, desktop, ios-simulator]
     if: ${{ !cancelled() && needs.scope.outputs.selection == 'full' }}
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 5
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
@@ -248,7 +286,7 @@ jobs:
     name: Networking qualification matrix
     needs: [scope, android-emulator-parity, desktop-parity, desktop, ios-simulator]
     if: ${{ always() && needs.scope.outputs.selection == 'full' }}
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER_LIGHT) && 'ubuntu-24.04' || vars.TN_RUNNER_LIGHT }}
     timeout-minutes: 5
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
@@ -316,6 +354,8 @@ jobs:
       needs.scope.outputs.selection == 'full' &&
       inputs.ios_only != true &&
       needs.android-v8-source.result == 'success'
+    # Hosted, measured: SwiftShader renders the emulator's GPU on the CPU, and on a 4-thread tn-local
+    # slot run 37082733117 spent 41 min of this job's 45 still running APKs (hosted finishes in ~30).
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
@@ -447,8 +487,14 @@ jobs:
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
             | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
+          # `|| true` on both udev calls, because the routed `tn-local` container cannot do what
+          # they do: no udev is running in it and its /sys is read-only, so `udevadm trigger`
+          # fails there for a reason that has nothing to do with acceleration. The container does
+          # not need them — `scripts/ci-runners.sh` passes `--device /dev/kvm` and the image's
+          # entrypoint sets its mode before the job starts — and a step that fails on the way to
+          # the report below costs this lane the whole emulator run.
+          sudo udevadm control --reload-rules || true
+          sudo udevadm trigger --name-match=kvm || true
           # Report the mode, never assert it. `test -w /dev/kvm` as the last line of this step —
           # copied from native-release.yml, where nothing has exercised it — turned "this runner
           # has no KVM" into a failed job, which is worse than the slow boot it was meant to fix.
@@ -740,7 +786,7 @@ jobs:
     if: >-
       needs.scope.outputs.selection != 'prose' &&
       inputs.ios_only == false
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 20
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
@@ -812,7 +858,7 @@ jobs:
     if: >-
       needs.scope.outputs.selection == 'full' &&
       inputs.ios_only != true
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 75
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
@@ -1003,9 +1049,11 @@ jobs:
     name: ${{ matrix.platform }} desktop core
     needs: scope
     # Runs on every event since 2026-09-01 (owner call) — see android-emulator-parity. The only
-    # remaining gate is the manual `ios_only` dispatch toggle, which exists to run the iOS lane
-    # alone; it is not a skip of the default flow.
-    if: needs.scope.outputs.selection == 'full' && inputs.ios_only != true
+    # remaining gates are the manual `ios_only` dispatch toggle, which exists to run the iOS lane
+    # alone, and the tier: macOS and Windows are not Linux rows, so an ordinary pull request's
+    # reduced matrix (PRD-380 phase 2) skips them rather than holding two hosted runners per push.
+    # No label exempts them, and main, the nightly and an audit keep the full tier.
+    if: needs.scope.outputs.selection == 'full' && inputs.ios_only != true && needs.scope.outputs.native_tier == 'full'
     strategy:
       fail-fast: false
       matrix:
@@ -1242,8 +1290,12 @@ jobs:
           # The release container is a ZIP on macOS and Windows and desktop-distribution.mjs shells
           # out to `zip -r -q`. A missing archiver must be a red job, never a silent pass.
           if [ "${{ matrix.platform }}" = "Windows" ]; then
-            choco install zip -y --no-progress
-            choco install nsis --version=3.11.0 -y --no-progress
+            # The community feed drops requests now and then ("package was not found" for a listed
+            # version, run 37079046851). Retry twice; makensis -VERSION below still fails closed.
+            for attempt in 1 2 3; do
+              choco install zip -y --no-progress && choco install nsis --version=3.11.0 -y --no-progress && break
+              [ "$attempt" = 3 ] || sleep 30
+            done
             nsis='/c/Program Files (x86)/NSIS'
             "$nsis/makensis.exe" -VERSION
             cygpath -w "$nsis" >> "$GITHUB_PATH"
@@ -1757,18 +1809,17 @@ jobs:
     if: needs.scope.outputs.selection == 'full' && inputs.ios_only != true
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          # x64 and arm64 run the identical release-container proof. The arm64 leg is GitHub's
-          # free hosted `ubuntu-24.04-arm` runner: there is no V8 or Dawn prebuilt for Linux arm64
-          # (kuoruan/libv8 ships Linux x64 only; Dawn's ubuntu-latest asset is x64) and a source V8
-          # build is not allowed in CI, so the arm64 host is built with QuickJS over wgpu-native —
-          # the one WebGPU backend that publishes an arm64 Linux archive. scripts/download-deps.mjs
-          # and scripts/native-build.mjs select that route from `process.arch`.
-          - platform: linux-x64
-            runner: ubuntu-24.04
-          - platform: linux-arm64
-            runner: ubuntu-24.04-arm
+      # The arm64 row is not a row an ordinary pull request owes: it is the free hosted
+      # `ubuntu-24.04-arm`, kept for main, the nightly and an explicit audit so the arm64 host keeps
+      # proving itself on the branch that ships it. `scope` shapes the rows from the tier it
+      # resolved, so this job runs linux-x64 alone on a reduced run and both rows otherwise. The
+      # routing values live beside the shaping, on the runner PRD-480 fixed: the movable x64 leg
+      # goes through the TN_RUNNER switch and falls back to the same hosted image, arm64 stays
+      # hosted because the owner's machine is x64. That shaping is never empty — a run owing no
+      # native lane at all is skipped at the call site in ci.yml, so the tiers that reach this job
+      # always owe x64 — and a leg the tier does drop is skipped by the `desktop` and
+      # `ios-simulator` `if:` gates, which GitHub reports as skipped, not failed.
+      matrix: ${{ fromJSON(needs.scope.outputs.starter_rows) }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 50
     env:
@@ -2002,7 +2053,10 @@ jobs:
   ios-simulator:
     name: iOS simulator runtime and no-Xcode consumer handoff
     needs: scope
-    if: needs.scope.outputs.selection == 'full'
+    # A macOS-15 runner and an Apple toolchain are the opposite of a Linux row, so an ordinary pull
+    # request's reduced matrix (PRD-380 phase 2) skips this leg. It still runs on main, the nightly,
+    # an explicit audit and any merge group or pull request into main.
+    if: needs.scope.outputs.selection == 'full' && needs.scope.outputs.native_tier == 'full'
     # Runs on every event since 2026-09-01 (owner call) — see android-emulator-parity.
     runs-on: macos-15
     timeout-minutes: 60
