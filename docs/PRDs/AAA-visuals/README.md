@@ -16,7 +16,7 @@ rather than arguable.
 | # | PRD | Layer | Cost | Why it is here |
 | --- | --- | --- | --- | --- |
 | 1 | [341 — a frame's tone is a number, and the number is a gate](../done/PRD-341-a-frames-tone-is-a-number-and-the-number-is-a-gate.md) | `playtest` | LOW | `assert.tone`: mean, p1/p50/p99, clip%, black%. "It looks flat" stops being an opinion. |
-| 2 | [339 — the frame sets its own exposure](../done/PRD-339-the-frame-sets-its-own-exposure.md) | `core` + templates | MEDIUM | Done: generated opt-in exposure, real GPU/native proof and approved repeatability/response gates. |
+| 2 | [339 — the frame sets its own exposure](./PRD-339-the-frame-sets-its-own-exposure.md) | `core` + templates | MEDIUM | Fixture proof qualified; final shipped-template integration repair in progress. |
 | 3 | [342 — where the frame goes: pass-cost ablation](./PRD-342-where-the-frame-goes-pass-cost-ablation.md) | `playtest` | LOW-MED | Every `quality.ts` tier is currently an unmeasured guess. |
 | 4 | [340 — evaluate a scatter once per instance](./PRD-340-evaluate-a-scatter-once-per-instance.md) | `core` | MED-HIGH | Density is most of the AAA exterior, and the naive form is vertex-bound where the resolution scaler cannot reach it. |
 | 5 | [344 — contact occlusion baked from the geometry it ships with](./PRD-344-contact-occlusion-baked-from-the-geometry-it-ships-with.md) | `core` | MEDIUM | Free at runtime, tier-independent, and captures the scale screen-space AO never will. |

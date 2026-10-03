@@ -4,10 +4,10 @@ prd_contract: v1
 
 # PRD-339 — the frame sets its own exposure
 
-**Status:** DONE — acceptance qualified 2026-10-03; required exact-head CI and merge are tracked separately. Implementation started 2026-10-02 from `d7277838`; original
+**Status:** IN PROGRESS — final full-suite checks revealed incomplete shipped-template integration at `2c77070b8`; fixture acceptance remains qualified. Implementation started 2026-10-02 from `d7277838`; original
 measurement at `43d03e6a`. Batch:
-[docs/PRDs/AAA-visuals](../AAA-visuals/README.md). Judged with
-[PRD-341](./PRD-341-a-frames-tone-is-a-number-and-the-number-is-a-gate.md), which is the only way to
+[docs/PRDs/AAA-visuals](./README.md). Judged with
+[PRD-341](../done/PRD-341-a-frames-tone-is-a-number-and-the-number-is-a-gate.md), which is the only way to
 tell whether this landed. Source studied: [TheLongSilence](https://github.com/achimala/TheLongSilence)
 `src/gfx/PostFX.js`, the `LUM_FRAG` / `REDUCE_FRAG` / `ADAPT_FRAG` chain.
 
@@ -117,7 +117,7 @@ a convention missing from there does not exist.
 ### Phase 2 — opt-in GPU graph and lifecycle
 
 - [x] A generated GPU reduction and ping-pong exposure graph reuses the world pass before bloom and the sole output transform. proof: focused node/lifetime tests pass; actual 720 paired GPU samples cover output-graph rebuild, drawing-buffer resize from 640×360 to 320×180, and reset without stale history. Exact-source capture/provenance is recorded below.
-- [x] Every template ships editable exposure controls and documents the opt-in, without a default picture change before qualification. proof: `pnpm exec vitest run --maxWorkers=1 packages/create-threenative/__tests__/scaffold.spec.ts packages/create-threenative/__tests__/auto-exposure-scaffold.spec.ts packages/create-threenative/__tests__/shared-render-sources.spec.ts` — 83 tests pass; all 13 instruction budgets and mirror checks pass.
+- [ ] Every template ships editable exposure controls and documents the opt-in, without a default picture change before qualification. proof: `pnpm exec vitest run --maxWorkers=1 packages/create-threenative/__tests__/scaffold.spec.ts packages/create-threenative/__tests__/auto-exposure-scaffold.spec.ts packages/create-threenative/__tests__/shared-render-sources.spec.ts` — 83 tests pass; all 13 instruction budgets and mirror checks pass.
 
 ### Phase 3 — repeatability and runtime qualification
 
@@ -467,3 +467,7 @@ The owner explicitly approved the proposed AC2 replacement. Repeatability retain
 All 18 browser cases and their behavioral mutations qualify with the original scene, ages and tolerances. The current lifecycle capture qualifies 720 actual paired samples, output rebuild, real 320×180 target resize and reset adoption of a new eleven-stop target. Current desktop proof qualifies 180 actual paired samples, matched raw state, three actual null GPU error scopes, nonblank before/after images and the actual invalid-GPU negative control. It transparently reuses the source-identical rebuilt V8 executable; no whole-tree CI verdict is reused. Independent review inspected 34 matrix/snap/lifecycle/native images and all 20 boot tone frames. Complete exposure traces are retained losslessly in the linked xz dataset, including 545 native markers taken from the actual captured host console.
 
 The full instrumented coverage workload found the omitted negative CTest invocation; both real exposure contract invocations now pass after its registration repair. An unrelated worker contract timed out once, then passed the unchanged 120-second isolated reproduction in 0.79 seconds. The complete instrumented rerun passed: 43 runnable native contract targets, 47 actual raw profiles, 19,206 of 24,373 instrumented lines covered (78.80%). Optional metahuman, native physics and video remain explicitly configured off in this existing lane. The source digest and profile/report receipts are recorded in the current proof. Final local checks and exact-head CI remain separately required before merge.
+
+### Final-suite integration repair
+
+The full suite at completion checkpoint `2c77070b8` exposed missing shipped-template imports/calls and a generated source file above the unchanged 200-line readability gate. Fixture GPU/native evidence does not qualify missing consumer wiring. This phase is reopened until the game-owned opt-in path uses the existing world pass, retains the default picture, and qualifies its lifetime on the actual generated consumer. The native build-matrix registration and action-rpg instruction newline guard also require repair. No invariant or acceptance tolerance is weakened.
