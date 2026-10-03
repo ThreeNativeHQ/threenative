@@ -2509,3 +2509,19 @@ The sky-fill candidate reuses `Atmosphere` LUT radiance and the existing world
 pass, adding an albedo MRT instead of terrain samplers. Visual acceptance,
 ProbeVolume bounce, shadow-edge fade and final licensed/fallback proof remain
 unverified; no acceptance box is ticked.
+
+GI2 runtime correction: **ProbeVolume is not retained**. Its prop shaders fit
+(7 canopy, 8 bark, 13 rock samplers), but no bake reached `ready`; measured first
+work items were 213.2, 304.3 and 866.7 ms against a 32 ms budget. Raising that
+budget would not prove the requested CPU ceiling. The engine's scene-warmup
+escape after two seconds is a suspected contributor, not a verified fix.
+
+Retained game-owned changes: LUT-derived diffuse sky spectrum with warm ground
+fill at the biome's existing luminance; fade the outer shadow window over
+208–256 m; dispose the example's virtual-shadow targets when a world exits.
+The added albedo MRT costs no terrain sampler. Surface correction fades before
+1200 m because the sky box itself writes depth; the earlier unbounded candidate
+also recoloured sky pixels and was rejected. Atmosphere parameters, exposure
+and 4× MSAA/alpha-to-coverage stay as authored. No SSGI/bloom/TRAА change.
+Example TypeScript and Biome (73 files) pass; terrain Vitest **71/71 PASS**.
+Full safe runtime control and final licensed/fallback scenarios are still pending.
