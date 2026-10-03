@@ -578,4 +578,19 @@ export const FIXTURES = [
       ),
     ],
   },
+  {
+    name: "inline-margins",
+    size: [360, 120],
+    css: `
+      p{margin:0;width:340px;background:#2a2a30}
+      .m{margin:0 20px;background:#2563eb}
+      .ib{display:inline-block;width:40px;height:20px;margin:0 10px 0 30px;background:#16a34a}
+      .pl{padding:0 12px;background:#ca8a04}
+    `,
+    tree: [
+      h("p", {}, t("a"), h("span", { class: "m" }, t("b")), t("c")),
+      h("p", {}, t("x"), h("span", { class: "ib" }), t("y")),
+      h("p", {}, t("p"), h("span", { class: "pl" }, t("q")), t("r")),
+    ],
+  },
 ];
