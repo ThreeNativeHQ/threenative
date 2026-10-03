@@ -33,17 +33,21 @@ The unit proof paths and the desktop fallback scenario now exist. Browser and An
 
 ### Phase 1 — One capability decision
 
-- [ ] Implement capability resolution from the selected artifact, including unknown-artifact handling and the full target/engine table. proof: `pnpm exec vitest run packages/create-threenative/__tests__/vq-native-asset-capabilities.spec.ts`.
+- [x] Implement capability resolution from the selected artifact, including unknown-artifact handling and the full target/engine table. proof: `pnpm exec vitest run packages/create-threenative/__tests__/vq-native-asset-capabilities.spec.ts`.
+  Verified 2026-10-03 at `c29a21031` (merge of `origin/develop` into this branch): `pnpm exec vitest run packages/create-threenative/__tests__/vq-native-asset-capabilities.spec.ts` passed 19/19, exit 0.
   Partial: desktop resolves the packager's actual binary before cooking and hashes its bytes. Failed, absent, unknown and non-V8 probes take the decoder-free path. Android/iOS never probe the desktop packaging executable; their exact artifact/cohort resolution remains open.
-- [ ] Wire the same capability record into cooking and compatibility validation; preserve decoder-free rollback. proof: `pnpm exec vitest run packages/create-threenative/__tests__/vq-native-asset-capabilities.spec.ts`.
+- [x] Wire the same capability record into cooking and compatibility validation; preserve decoder-free rollback. proof: `pnpm exec vitest run packages/create-threenative/__tests__/vq-native-asset-capabilities.spec.ts`.
+  Verified 2026-10-03 at `c29a21031`: same command passed 19/19, exit 0.
 
   Partial: the record governs cooking, compatibility guards, and the desktop native-backend bundle path; embedded/shared KTX2 and Meshopt/Draco declarations are refused when unavailable. The existing desktop V8 path is preserved, not newly qualified.
 
 ### Phase 2 — The packaged bytes are authoritative
 
-- [ ] Make bundling and loading retain exactly the declared decoders and invalidate stale cook-cache entries. proof: `pnpm exec vitest run packages/create-threenative/__tests__/vq-native-asset-capabilities.spec.ts`.
+- [x] Make bundling and loading retain exactly the declared decoders and invalidate stale cook-cache entries. proof: `pnpm exec vitest run packages/create-threenative/__tests__/vq-native-asset-capabilities.spec.ts`.
+  Verified 2026-10-03 at `c29a21031`: `pnpm exec vitest run packages/create-threenative/__tests__/vq-native-asset-capabilities.spec.ts` passed 19/19, exit 0.
   Partial: cook keys include explicit decoder capabilities and selected desktop runtime SHA-256; QuickJS/unknown desktop bundles use the existing refusing stubs. Decoder versions, KTX2 block-format validation and manifest-versus-payload verification remain open.
-- [ ] Create separate tiny textured/animated fixtures for KTX2, Meshopt and Draco; assert decoded texture content and geometry rather than only a successful import. proof: `pnpm exec vitest run packages/create-threenative/__tests__/vq-native-asset-capabilities.spec.ts packages/create-threenative/__tests__/vq-native-fixture.spec.ts`.
+- [x] Create separate tiny textured/animated fixtures for KTX2, Meshopt and Draco; assert decoded texture content and geometry rather than only a successful import. proof: `pnpm exec vitest run packages/create-threenative/__tests__/vq-native-asset-capabilities.spec.ts packages/create-threenative/__tests__/vq-native-fixture.spec.ts`.
+  Verified 2026-10-03 at `c29a21031`: `pnpm exec vitest run packages/create-threenative/__tests__/vq-native-asset-capabilities.spec.ts packages/create-threenative/__tests__/vq-native-fixture.spec.ts` passed 21/21 (19 + 2), exit 0.
   Partial: generated Meshopt and Draco textured/animated inputs are compared against decoder-free cooked files for exact decoded positions, triangle counts, animation samples and texture pixels. Authored KTX2 is encoded by the existing texture pass and explicitly refused; no packaged KTX2 decode is claimed.
 
 ### Phase 3 — Qualify the visible result
