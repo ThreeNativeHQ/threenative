@@ -2816,3 +2816,20 @@ it); every template AGENTS.md states the convention. Open: retire `prep-fab-temp
 decimation) in favour of asset-MCP imports; the MCP import has no progress signal and exceeded
 the client's 30-minute idle timeout on Common Hazel (it still finished: 64 GLBs, 850 MB uncooked).
 The shore lane was merged, judged worse (surf line lost) and dropped.
+
+### 2026-10-03 — authorized PR381 takeover and test-first characterization
+
+The owner explicitly approved PR381 inspection/takeover and stopping competing PR381 writers.
+The historical task was interrupted/not loaded and no exact-checkout process remained; no process
+was killed. Preserved HEAD `a9acd775d` and all 13 unpublished commits in a verified Git bundle,
+plus the dirty material experiment (SHA256 `8692e726985c80b9c6355ab80500284fa009a154d3a3bad32af6f4a772a76752`)
+and binary working diff in the task workspace. Licensed local assets remain intact.
+
+Before production edits, focused `prop-lod.spec.ts` ran against actual source: 6 PASS / 4 FAIL.
+Existing scheduling/LOD checks and new material identity, whole-model alignment, source ownership
+and optional-model fallback checks pass. Proposed material-array, untextured-near-mesh, later-zero-normal
+and unique-material-disposal guarantees fail. These are bounded CPU facts, not an explanation of
+the pictured visual regression; the untextured-mesh guarantee needs its optional-art policy assessed.
+Original v14/v18 forest-start pixels were inspected and reproduce dark rounded versus pale skeletal
+canopies. The prior HDRI investigation changed several material terms together and reported a worse
+distant overview; isolated matched captures are still required. AC-5 remains open.
