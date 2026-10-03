@@ -17,7 +17,8 @@ import { createPropSurfaces } from "./render/propMaterials.js";
 import {
   type PropGroundQuery,
   buildPropVariants,
-  createProps,
+  type createProps,
+  createPropsInSlices,
   flatPropMaterials,
   variantFor,
 } from "./render/props.js";
@@ -121,7 +122,17 @@ const BENCHMARK: Record<WorldName, IBenchmark> = {
 };
 
 /** The last closed frame-budget window, published into state by the scene. */
-const budget = { drawCalls: 0, frameMs: 0 };
+const budget = {
+  drawCalls: 0,
+  frameMs: 0,
+  tasksAvailable: false,
+  longestTaskMs: -1,
+  afterFirstFrameTaskMs: -1,
+};
+const launchedAt =
+  typeof performance !== "undefined" && Number.isFinite(performance.timeOrigin)
+    ? performance.timeOrigin
+    : Date.now();
 
 /**
  * Per-view frame cost, latched across the windows that closed while that camera was up.
@@ -139,9 +150,18 @@ interface IViewWindow {
   /** Presented-frame interval p95 per window: the whole frame the player sees, GPU included. */
   readonly presentedP95s: number[];
   readonly triangles: number[];
+  readonly gpuMs: number[];
+  readonly gpuMain: number[];
+  readonly gpuShadow: number[];
+  readonly gpuOther: number[];
+  readonly passes: Record<string, { triangles: number; draws: number }>[];
+  readonly surfaces: { scale: number; samples: number }[];
 }
 const viewBudgets = new Map<string, IViewWindow>();
 let currentView = "";
+let reportedView = "";
+let measuredView = "";
+let firstViewGpuFrame = Number.POSITIVE_INFINITY;
 const renderedFrames: Record<WorldName, number> = {
   forest: 0,
   coastal: 0,
@@ -164,6 +184,24 @@ function median(values: readonly number[]): number {
 
 const initialState = {
   showcase: false,
+  worldReady: false,
+  timeToReadyMs: -1,
+  tasksAvailable: false,
+  longestLoadTaskMs: -1,
+  afterFirstFrameTaskMs: -1,
+  maxViewGpuMs: -1,
+  measuredGpuViewCount: 0,
+  viewGpu: [] as {
+    view: string;
+    gpuMs: number;
+    gpuMain: number;
+    gpuShadow: number;
+    gpuOther: number;
+    windows: number;
+    passes: Record<string, { triangles: number; draws: number }>;
+    scale: number;
+    samples: number;
+  }[],
   world: "forest",
   groundBiome: "baked",
   terrainTransportBound: false,
@@ -241,7 +279,7 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
       const data = this.#data;
       if (!data) throw new Error(`World ${world} was not loaded`);
       // ctx.goto carries state; camera names from the outgoing biome must not carry with it.
-      ctx.state.set({ view: "player" });
+      ctx.state.set({ view: "player", worldReady: false });
       const biome = BIOMES[world];
       const { field, mesh } = createTerrain(data, ctx.assets, biome);
       ctx.add(mesh);
@@ -479,6 +517,16 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
       let preparedLevelsWithoutSolid = 0;
       let released = false;
       let surfacesDispose: (() => void) | undefined;
+      ctx.entities.add("props-lifetime", {
+        dispose: () => {
+          released = true;
+          surfacesDispose?.();
+          flat.dispose();
+          preparedDispose?.();
+          props?.dispose();
+          for (const parts of propParts.values()) for (const part of parts) part.geometry.dispose();
+        },
+      });
       // Ground contact is a ray query against the drawn terrain and the terrain's collider, never
       // the bilinear sampler: a spruce floating a centimetre above the visible surface reads as a
       // mistake at exactly the distance a player spends most of their time at.
@@ -551,6 +599,10 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
           prepared.dispose();
           pack.dispose();
         };
+        if (released) {
+          preparedDispose();
+          return;
+        }
         preparedLodBaseSpread = prepared.lodBaseSpread;
         preparedLevelsWithoutSolid = prepared.levelsWithoutSolid;
         const parts = new Map([...prepared.parts, ...pack.parts]);
@@ -559,15 +611,23 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
         if (world === "desert" && dryStone && !pack.parts.has("boulder:0"))
           parts.set("boulder:0", dryStone);
         propParts = buildPropVariants(parts, fallbackSaplingHeight);
+        props = await createPropsInSlices(
+          scatter.placements,
+          groundAt,
+          propParts,
+          flat,
+          () => !released,
+        );
+        if (!props) return;
         if (released) {
-          preparedDispose();
+          props.dispose();
           return;
         }
-        props = createProps(scatter.placements, groundAt, propParts, flat);
         ctx.add(props.object);
         // The props never move either: the wind is a vertex shader and a distance band changes which
         // instances draw, not where any object is.
         markStatic(props.object);
+
         const alpineCrags =
           world === "alpine"
             ? [...props.byId.values()].filter((instance) => instance.placement.asset === "mountain")
@@ -631,20 +691,11 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
                 0,
               ) ?? 0,
           }),
-          dispose: () => {
-            released = true;
-            surfacesDispose?.();
-            flat.dispose();
-            preparedDispose?.();
-            props?.dispose();
-            for (const parts of propParts.values())
-              for (const part of parts) part.geometry.dispose();
-          },
         });
         // The lit surfaces and the maps arrive asynchronously; when they do every mesh swaps its
         // material by role. Until then the props draw on flat stand-ins, so a slow or absent asset
         // server costs this world its bark and its needles rather than its trees.
-        void createPropSurfaces(ctx.assets, data, biome).then((surfaces) => {
+        await createPropSurfaces(ctx.assets, data, biome).then((surfaces) => {
           this.#surfaces = surfaces;
           if (released) {
             surfaces.dispose();
@@ -660,6 +711,13 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
           }
           surfacesDispose = surfaces.dispose;
         });
+        if (!released) {
+          ctx.state.set({ worldReady: true });
+          if (ctx.state.getState().timeToReadyMs < 0)
+            void ctx.startup.whenReady().then(() => {
+              if (!released) ctx.state.set({ timeToReadyMs: Date.now() - launchedAt });
+            });
+        }
       };
 
       let frames = 0;
@@ -671,6 +729,12 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
         p99s: [],
         presentedP95s: [],
         triangles: [],
+        gpuMs: [],
+        gpuMain: [],
+        gpuShadow: [],
+        gpuOther: [],
+        passes: [],
+        surfaces: [],
       });
       const previous = actor.position.clone();
       let contactSamples = 0;
@@ -755,7 +819,9 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
         // solver has run once.
         if (props === undefined && !building) {
           building = true;
-          void buildProps();
+          const work = buildProps();
+          if (ctx.startup.phase !== "ready") ctx.startup.hold("strata-props", work);
+          void work;
         }
         frames++;
         const viewFrameP50s = [...viewBudgets.values()].map((group) => ({
@@ -764,7 +830,34 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
           presentedP95: median(group.presentedP95s),
           windows: group.p50s.length,
         }));
+        const viewGpu = [...viewBudgets.values()]
+          .filter((group) => group.gpuMs.length > 0)
+          .map((group) => ({
+            view: group.view,
+            gpuMs: median(group.gpuMs),
+            gpuMain: group.gpuMain.length ? median(group.gpuMain) : -1,
+            gpuShadow: group.gpuShadow.length ? median(group.gpuShadow) : -1,
+            gpuOther: group.gpuOther.length ? median(group.gpuOther) : -1,
+            windows: group.gpuMs.length,
+            passes: Object.fromEntries(
+              Object.keys(group.passes[0] ?? {}).map((pass) => [
+                pass,
+                {
+                  triangles: median(group.passes.map((window) => window[pass]?.triangles ?? 0)),
+                  draws: median(group.passes.map((window) => window[pass]?.draws ?? 0)),
+                },
+              ]),
+            ),
+            scale: median(group.surfaces.map((surface) => surface.scale)),
+            samples: median(group.surfaces.map((surface) => surface.samples)),
+          }));
         ctx.state.set({
+          viewGpu,
+          maxViewGpuMs: viewGpu.length ? Math.max(...viewGpu.map((group) => group.gpuMs)) : -1,
+          measuredGpuViewCount: viewGpu.length,
+          tasksAvailable: budget.tasksAvailable,
+          longestLoadTaskMs: budget.longestTaskMs,
+          afterFirstFrameTaskMs: budget.afterFirstFrameTaskMs,
           viewFrameP50s,
           maxViewFrameP50: Math.max(0, ...viewFrameP50s.map((group) => group.p50)),
           maxViewPresentedP95: Math.max(0, ...viewFrameP50s.map((group) => group.presentedP95)),
@@ -833,6 +926,23 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
         new Vector3(x, field.heightAt(x, z) + up, z);
       ctx.beforeRender(() => {
         renderedFrames[world]++;
+        if (
+          measuredView !== currentView ||
+          !ctx.state.getState().worldReady ||
+          ctx.startup.phase !== "ready"
+        ) {
+          measuredView = currentView;
+          firstViewGpuFrame = Number.POSITIVE_INFINITY;
+        }
+        if (
+          firstViewGpuFrame === Number.POSITIVE_INFINITY &&
+          ctx.state.getState().worldReady &&
+          ctx.startup.phase === "ready"
+        ) {
+          const sample = ctx.renderer.gpuFrameSample?.();
+          const age = ctx.renderer.gpuFrameAge?.();
+          if (sample && age !== undefined) firstViewGpuFrame = sample.frame + age + 1;
+        }
         const view = ctx.state.getState().view;
         actor.material.visible = view === "player" && !ctx.state.getState().showcase;
         if (view === "player") {
@@ -897,6 +1007,12 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
             p99s: [],
             presentedP95s: [],
             triangles: [],
+            gpuMs: [],
+            gpuMain: [],
+            gpuShadow: [],
+            gpuOther: [],
+            passes: [],
+            surfaces: [],
           });
         ctx.state.set({ view: next });
       }
@@ -950,12 +1066,48 @@ const game = defineGame<TerrainState, IPhysicsContext>({
     // draw count and frame cost into the run report rather than only on a console line.
     onWindow: (window) => {
       budget.drawCalls = Object.values(window.passes ?? {}).reduce(
-        (sum, pass) => sum + pass.draws.p50,
+        (sum, pass) => sum + (pass.draws.mean * pass.frames) / window.frames,
         0,
       );
       budget.frameMs = window.frame.p50;
+      budget.tasksAvailable = window.longTasks.available;
+      if (window.longTasks.available) {
+        budget.longestTaskMs = window.longTasks.longestMs;
+        budget.afterFirstFrameTaskMs = window.longTasks.afterFirstFrameMs;
+      }
       const group = viewBudgets.get(currentView);
-      if (group) {
+      const sameView = reportedView === currentView;
+      reportedView = currentView;
+      if (group && sameView) {
+        if (
+          window.gpuMs !== undefined &&
+          window.gpuFrames &&
+          window.gpuFrames.first >= firstViewGpuFrame &&
+          window.surface?.compiling !== true
+        ) {
+          group.gpuMs.push(window.gpuMs);
+          if (window.gpuMain !== undefined) group.gpuMain.push(window.gpuMain);
+          if (window.gpuShadow !== undefined) group.gpuShadow.push(window.gpuShadow);
+          if (window.gpuOther !== undefined) group.gpuOther.push(window.gpuOther);
+          group.passes.push(
+            Object.fromEntries(
+              Object.entries(window.passes ?? {}).map(([pass, counts]) => [
+                pass,
+                // A kind can run several times per frame (world + fullscreen AO are nested).
+                // Summarising individual calls' p50 hides the world behind the one-triangle quads.
+                {
+                  triangles: Math.round((counts.triangles.mean * counts.frames) / window.frames),
+                  draws: (counts.draws.mean * counts.frames) / window.frames,
+                },
+              ]),
+            ),
+          );
+          if (window.surface)
+            group.surfaces.push({
+              scale: window.surface.resolutionScale,
+              samples: window.surface.sampleCount,
+            });
+        }
         group.p50s.push(window.frame.p50);
         group.p99s.push(window.frame.p99);
         group.presentedP95s.push(window.presented.p95);

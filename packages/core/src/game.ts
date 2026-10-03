@@ -2142,6 +2142,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     const failures: unknown[] = [];
     this.#disconnectUi();
     this.#loop?.stop();
+    this.#frameBudget?.dispose();
     this.#afterPhysicsPhase?.clear();
     this.#beforeRenderCallbacks.clear();
     if (this.#sceneEntered && ctx !== undefined) this.#scene?.exit(ctx);

@@ -2732,3 +2732,59 @@ folders `dem2-final-licensed/` and `dem2-final-fallback/`. Compare `overview-cro
 `tundra-overview-crop.png`. Actual asset absence verified; restoration trap restored
 `local-assets`, hidden path absent. Port 5297/owned display forwarder stopped and socket
 removed. Unmerged 6.8 GB checkout retained with licensed art/captures. No push/merge/PR comment.
+
+
+### 2026-10-03 UTC — perf lane (120-minute execution window)
+
+Complexity: 3 → LOW for this bounded game-side slice; engine defects, if demonstrated,
+require a package spec. Owner-authorized branch `feat/prd-466-468-perf` at `72e0edb16`;
+port 5311, commits by path every 30 minutes, no push/merge. Reuse installed FrameBudget,
+loadAll, addInSlices and startup readiness. Appearance/density, WorldCells,
+auto-LOD/mirror defaults, shadow detail and terrain material are owned by other lanes.
+
+1. Instrument and baseline:
+   - [ ] Publish per-view GPU time and per-pass triangles/draws plus ready/load hitch measurements; scenario rejects missing observations and caps GPU at 12 ms, tasks at 250 ms and warm readiness at 15 s. proof: full terrain scenario on hardware WebGPU under private Xvfb.
+2. Optimize measured costs:
+   - [ ] Reduce measured load/LOD cost without changing art or density. proof: comparable licensed before/after terrain scenario and focused prop check.
+   - [ ] Measure MSAA/scaler GPU tradeoff and retain a demonstrated improvement. proof: same-view timestamp-query comparisons.
+3. Deliver:
+   - [ ] Licensed and trap-restored fallback scenarios, verify-ocean, example tsc, root Biome, terrain Vitest and affected package specs pass. proof: named commands recorded below.
+
+Blocked on: stable 60 fps on the owner's actual 60 Hz display requires a real-display
+measurement; private-Xvfb timestamps qualify GPU work, never displayed frame rate.
+Trace diagnosis: main-thread HandlePostMessage totals 24,030.6 ms over 43 messages,
+with ONE 23,877.1 ms handler (RunMicrotasks), not 310 ms per message. Worker handlers
+total approximately 5.1 s. Investigating the microtask continuation before altering
+transcode, which already uses shared engine KTX2 workers.
+
+Perf checkpoint 1 (2026-10-03 06:56 UTC): engine layer `pose-measure.ts` now computes
+only the exact minimum world Y needed for calibration; upright static meshes use
+shared geometry bounds, tilted static meshes retain exact per-vertex Y, skins/morphs/
+instances keep the precise path. Focused 600-copy/33,153-vertex tilted benchmark:
+379.1 → 139.1 ms, maximum measured clearance error 0 in both. Red spec observed
+24 needless vertex visits on one upright copy; grounding/skinned specs now 13/13 PASS.
+FrameBudget Long Tasks specs red → green; native/unsupported reports unavailable,
+never zero. Package budget/grounding regression subset 62/62 PASS. Game LOD red →
+green and sliced/synchronous builder equivalence 2/2 PASS; example tsc PASS.
+Runtime proof remains pending: shared GPU queue plus one capture-lock publication
+race (`mkdtemp lock/.holder-*` ENOENT), not a game verdict. Baseline server has file
+watching/HMR disabled and warmed transforms for original props/core plus telemetry;
+subsequent source edits cannot alter its cached modules. No GPU/FPS claim yet.
+
+Perf checkpoint 2 (2026-10-03 07:24 UTC): game layer uses installed `addInSlices`
+for prop placement/build and swap-deletes only distance-band crossings; authored density,
+materials, thresholds and hysteresis are unchanged. CPU comparison: 6,000 instances,
+100 moving-camera updates, 944.2 → 202.1 ms. Slice/synchronous equivalence and repeated
+band-crossing editor slots PASS; terrain suite 73/73 PASS. FrameBudget now keeps the
+first-frame task boundary for its entire lifetime and publishes resolved GPU frame
+ranges; stale bucket results and camera-transition windows cannot enter a new view.
+Red/green regression confirmed each measurement defect; bounded reviewer PASS.
+Engine layer: the automatically created browser canvas has CSS bounds independent
+of drawing-buffer attributes, preventing ResizeObserver's scale-to-one-pixel feedback.
+Renderer spec red → green, 34/34 PASS; core budget/grounding subset 45/45 PASS.
+Full baseline on NVIDIA Turing/RTX 2080 completed: startup ready 34,130.8 ms;
+longest observed main-thread task 8,162 ms. It FAILed: canvas collapsed to 1×1,
+so later GPU/view values are INVALID, not an improvement. Licensed comparison now
+renders full viewport frames and is running. Core build/publint and example tsc PASS;
+repo-root Biome on example and changed package paths PASS (existing warnings only).
+Runtime budget boxes stay open pending licensed/fallback runs. No FPS claim or push.
