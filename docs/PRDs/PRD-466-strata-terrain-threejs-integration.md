@@ -2489,3 +2489,23 @@ at (400,0) to 1000×550 pixels, matching the baseline crops. The two Gaia
 references were inspected at full resolution. Gaia acceptance remains open.
 
 2026-10-03 UTC fallback finished: 49/52 checks. Failed assertions: resource.GameState.windowFrameMs.throughoutSteps, renderChain.stages.includes, renderChain.contributions.graphOutputChanged. All three ocean checks pass; assets are restored. Captures: `artifacts/playtest/atmosphere-round2-final-fallback/`. Per-view CPU p50s: [{'view': 'forest:player', 'p50': 3.1, 'windows': 27}, {'view': 'forest:meadow-close', 'p50': 2.5, 'windows': 8}, {'view': 'forest:overview', 'p50': 3.4, 'windows': 9}, {'view': 'forest:river', 'p50': 3.7, 'windows': 9}, {'view': 'coastal:player', 'p50': 3.4, 'windows': 22}, {'view': 'coastal:meadow-close', 'p50': 3.2, 'windows': 20}, {'view': 'coastal:overview', 'p50': 2.3, 'windows': 11}, {'view': 'coastal:horizon-sea', 'p50': 2.1, 'windows': 10}, {'view': 'alpine:player', 'p50': 2.2, 'windows': 21}, {'view': 'alpine:ridge', 'p50': 2.2, 'windows': 9}, {'view': 'alpine:overview', 'p50': 1.8, 'windows': 8}, {'view': 'desert:player', 'p50': 1.5, 'windows': 21}, {'view': 'desert:mesa', 'p50': 1.5, 'windows': 7}, {'view': 'desert:overview', 'p50': 1.4, 'windows': 8}, {'view': 'tundra:player', 'p50': 2.5, 'windows': 20}, {'view': 'tundra:plain', 'p50': 3.8, 'windows': 18}, {'view': 'tundra:overview', 'p50': 4, 'windows': 7}]. TypeScript/Biome, 100 terrain/core tests, 2386 doc links and 180 doc tests pass. The zero-failure gate remains open; no push/merge/PR comment. Unmerged checkout retained (1.4 GiB).
+
+### 2026-10-03 — Round 18 GI round 2 checkpoint
+
+Lane `feat/prd-466-468-gi2` starts at merged tip `2d75df9ed`.
+Measured live cached WGSL at the tip: terrain **16 samplers / 16 textures**,
+canopy **6**, bark **7**, blended rocks **12**, ocean **6**; the existing air/AO
+screen composite has **5 samplers / 7 textures**. Counts include four virtual
+shadow bindings and Three's **DFG LUT**, which the previous terrain estimate
+omitted. Census: `/tmp/gi2-census.json`, `/tmp/gi2-census-coastal.json`;
+control captures: `artifacts/playtest/gi2-census/`, `gi2-census-coastal/`.
+Terrain cannot receive another material sampler without freeing a slot.
+
+Rebuilt the stale terrain dist and forced the existing bake to populate erosion
+arrays; no erosion source or recipe changed. The unchanged full control stopped
+at coastal startup with WebGPU `createBuffer` allocation failure (262144 bytes).
+RTX 2080 free VRAM was 1.9 GiB while Blender used 2.7 GiB and Warcraft 1.4 GiB.
+The sky-fill candidate reuses `Atmosphere` LUT radiance and the existing world
+pass, adding an albedo MRT instead of terrain samplers. Visual acceptance,
+ProbeVolume bounce, shadow-edge fade and final licensed/fallback proof remain
+unverified; no acceptance box is ticked.
