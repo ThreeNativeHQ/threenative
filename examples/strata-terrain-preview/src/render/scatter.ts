@@ -62,7 +62,7 @@ export function grassWeight(data: IPlacementField, x: number, z: number): number
     );
   if (data.waterLevel !== null && height < data.waterLevel + 7.5) return 0;
   const slope = slopeDegrees(data, x, z);
-  if (data.world === "alpine") return clamp01((38 - slope) / 22) * clamp01((88 - height) / 40);
+  if (data.world === "alpine") return 0; // This 3690 m glacial shoulder is above the treeline.
   if (data.world === "desert") return clamp01((24 - slope) / 20) * 0.32;
   if (data.world === "tundra")
     return clamp01((30 - slope) / 22) * clamp01((forestWeight(x * 9.8, z * 8.7) - 0.47) / 0.3);

@@ -130,7 +130,7 @@ export const BIOMES: Record<WorldName, IBiome> = {
     stoneTint: [0.86, 0.88, 0.9],
     snowTint: [1.9, 1.93, 2],
     distantStone: [0.23, 0.225, 0.215],
-    snow: [80, 240, 0.39],
+    snow: [50, 180, 0.39],
     maps: {
       ...GROUND_MAPS,
       snow: { ...GROUND_MAPS.snow, normal: "snow_02/snow_02_nor_gl_1k.jpg" },
@@ -362,8 +362,8 @@ export function alpineRockColor(sample: Node<"vec3">): Node<"vec3"> {
 /** Snow respects world elevation and upward faces, including tilted instanced scans. */
 export function alpineSnowCover(hollow: Node<"float"> = float(0)): Node<"float"> {
   const exposure = normalWorldGeometry.x.mul(0.65).add(normalWorldGeometry.z.mul(0.4)).max(0);
-  const retention = smoothstep(80, 240, positionWorld.y.add(hollow.max(0).mul(110)))
-    .mul(smoothstep(0.45, 0.78, normalWorldGeometry.y))
+  const retention = smoothstep(50, 180, positionWorld.y.add(hollow.max(0).mul(110)))
+    .mul(smoothstep(0.35, 0.72, normalWorldGeometry.y))
     .mul(float(1).sub(exposure.mul(0.28)))
     .mul(float(1).sub(hollow.min(0).negate().mul(0.65)));
   return smoothstep(0.36, 0.42, retention);

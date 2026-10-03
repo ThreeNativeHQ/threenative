@@ -2589,3 +2589,18 @@ hardware WebGPU start; second capture is pending. `test:consumer` fails before
 export at the pre-existing rain template's missing terrain workflow pointer;
 no procedural-shape fixture expectations changed. A focused packed-export run
 will exclude only that unrelated template-pointer assertion and is not a full-gate PASS.
+
+2026-10-03 UTC DEM runtime checkpoint: revised scratch scenario PASS (all alpine/desert
+steps, walk distances, transport-bound materials, grounded outcrops, zero diagnostics,
+1,024/1,024 exact seam samples; maximum contact error 0.0000611 m). Current snow follows
+cirque hollows and ledges; exposed convex faces shed it. Tree/grass scatter is removed
+from the selected 3690 m glacial shoulder. Cameras face the surveyed headwall and butte.
+A wide alpine overview uses an explicit absolute eye above the real surroundings.
+
+Focused packed proof PASS: `/tmp/strata-dem/consumer-world-proof.mjs` replays the existing
+consumer script, excluding only the pre-existing rain/snow template-pointer assertions.
+All five exported worlds preserve the game's 66,049 heights and 131,072 triangles;
+alpine/desert have no water. The installed scaffold/game handoff passes with no authoring
+package. Full `test:consumer` remains FAIL on rain; no world-shape expectations changed.
+Exported recipes still contain no prop scatter layers (reported as incomplete full-world
+art by the existing proof), as before this lane. Final licensed/fallback scenarios pending.
