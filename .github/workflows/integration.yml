@@ -26,7 +26,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # The per-lane trigger filters these five files used to carry, as one gate: the pull request's own
+  # The per-lane trigger filters these six files used to carry, as one gate: the pull request's own
   # changed paths decide which lanes run, and a lane this commit does not touch is skipped rather than
   # spending a runner. Editing this workflow keeps every lane's gate true, which is what
   # `.github/workflows/integration-<lane>.yml` did for each of them.
@@ -42,6 +42,7 @@ jobs:
       csg: ${{ steps.filter.outputs.csg }}
       decals: ${{ steps.filter.outputs.decals }}
       ik: ${{ steps.filter.outputs.ik }}
+      native-assets: ${{ steps.filter.outputs.native-assets }}
       tone: ${{ steps.filter.outputs.tone }}
       vegetation: ${{ steps.filter.outputs.vegetation }}
     steps:
@@ -57,6 +58,7 @@ jobs:
           lane csg '^examples/integrations/csg/.*$|^\.github/workflows/integration\.yml$'
           lane decals '^packages/create-threenative/templates/shooter/src/render/decals\.ts$|^packages/create-threenative/templates/shooter/src/scenes/Play\.ts$|^packages/create-threenative/__tests__/shooter-decals[^/]*\.spec\.ts$|^packages/create-threenative/__tests__/fixtures/bounded-decals/.*$|^\.github/workflows/integration\.yml$'
           lane ik '^examples/integrations/ik/.*$|^\.github/workflows/integration\.yml$'
+          lane native-assets '^packages/create-threenative/src/build\.ts$|^packages/create-threenative/src/buildReport\.ts$|^packages/create-threenative/__tests__/vq-native-[^/]*\.spec\.ts$|^packages/assets/src/.*$|^packages/core/src/assets\.ts$|^packages/runtime-native/scripts/bundle\.mjs$|^packages/runtime-native/scripts/package-desktop\.mjs$|^packages/runtime-native/scripts/native-build\.mjs$|^packages/runtime-native/scripts/download-deps\.mjs$|^examples/abyss-framework/vq-assets/.*$|^examples/abyss-framework/playtests/vq-native-asset-capabilities\.playtest\.json$|^scripts/verify-native-asset-capabilities\.ts$|^scripts/native-asset-capture-proof\.ts$|^scripts/__tests__/native-asset-capture-proof\.spec\.ts$|^\.github/workflows/integration\.yml$'
           lane tone '^packages/playtest/.*$|^examples/abyss-framework/src/render/toneCalibration\.ts$|^examples/abyss-framework/src/tone-main\.ts$|^examples/abyss-framework/tone\.html$|^examples/abyss-framework/tone\.vite\.config\.ts$|^examples/abyss-framework/playtests/tone\.playtest\.json$|^examples/abyss-framework/package\.json$|^scripts/verify-tone-exposure\.ts$|^scripts/tone-capture-proof\.ts$|^scripts/__tests__/tone-capture-proof\.spec\.ts$|^scripts/non-visual-scenarios\.mjs$|^package\.json$|^pnpm-lock\.yaml$|^\.github/actions/pnpm/.*$|^\.github/actions/playwright-chromium/.*$|^\.github/workflows/integration\.yml$'
           lane vegetation '^examples/integrations/vegetation/.*$|^\.github/workflows/integration\.yml$'
 
@@ -244,3 +246,11 @@ jobs:
           name: tone-exposure-${{ github.event.pull_request.head.sha }}
           path: artifacts/tone-exposure
           if-no-files-found: error
+
+  packaged-quickjs:
+    name: packaged native asset fallback
+    if: ${{ !github.event.pull_request.draft && needs.paths.outputs.native-assets == 'true' }}
+    needs: paths
+    # Match native-platforms starter-linux: this architecture selects QuickJS/wgpu without
+    # changing any runtime default. Native dependencies use the repository's locked provisioner.
+    runs-on: ubuntu-24.04-arm
