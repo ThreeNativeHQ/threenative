@@ -5,7 +5,7 @@ prd_contract: v1
 # PRD-VQ-04 — Locomotion blends by speed and direction without restarting its gait
 
 **Status:** PARTIAL — 2026-10-02. The existing crossfade interruption defect is repaired and unit-tested; continuous blend spaces and platform qualification remain open.
-**Batch:** [Visual quality execution batch](https://github.com/ThreeNativeHQ/threenative/blob/docs/visual-quality-batch-2026-10-01/docs/PRDs/batch-2026-10-01-visual-quality/README.md). **Wave:** 1 / character motion.
+**Batch:** [Visual quality execution batch](README.md). **Wave:** 1 / character motion.
 **Dependencies:** Uses existing AnimationPlayer, SkeletalMesh3D and stride synchronization. Coordinate its action ownership with VQ-05.
 
 ## Grounding and intended outcome
@@ -29,7 +29,7 @@ Idle/walk/run and four-direction locomotion only. No motion matching, full Anima
 
 ## Execution phases
 
-All proof paths below are **planned implementation targets**, not existing passing tests. Reuse an existing equivalent test or scenario after inspecting current code, and update the canonical proof path rather than adding a duplicate. Follow [EXECUTE.md](https://github.com/ThreeNativeHQ/threenative/blob/docs/visual-quality-batch-2026-10-01/docs/PRDs/batch-2026-10-01-visual-quality/EXECUTE.md) for fixture setup, variables, review and repository gates.
+All proof paths below are **planned implementation targets**, not existing passing tests. Reuse an existing equivalent test or scenario after inspecting current code, and update the canonical proof path rather than adding a duplicate. Follow [EXECUTE.md](EXECUTE.md) for fixture setup, variables, review and repository gates.
 
 ### Phase 1 — Continuous weights with explicit boundaries
 

@@ -118,16 +118,24 @@ describe("CI efficiency without lost evidence", () => {
     },
   );
 
-  it.each(["benchmark", "budgets", "performance-contracts"])(
-    "%s starts after scope rather than waiting for artifacts it never downloads",
+  // These two used to sit at `needs: scope` and restore the workspace key, which meant they started
+  // beside the only job that saves it, missed every time and compiled the workspace themselves —
+  // 71-95s each. PRD-481 gives them the producer's upload instead, so the edge is real work.
+  it.each(["benchmark", "budgets"])(
+    "%s downloads this run's workspace rather than compiling its own",
     (name) => {
-      expect(declaredNeeds(job(name))).toEqual(["scope"]);
+      expect(declaredNeeds(job(name))).toEqual(["scope", "build-artifacts"]);
+      expect(job(name)).toContain("uses: ./.github/actions/workspace-dist");
+      expect(job(name)).toContain("shared-artifact: workspace-packages");
       expect(ancestors(name).has("native-platforms")).toBe(false);
-      if (name !== "performance-contracts") {
-        expect(job(name)).toContain("uses: ./.github/actions/workspace-dist");
-      }
     },
   );
+
+  it("performance-contracts starts after scope rather than waiting for artifacts it never downloads", () => {
+    expect(declaredNeeds(job("performance-contracts"))).toEqual(["scope"]);
+    expect(ancestors("performance-contracts").has("native-platforms")).toBe(false);
+    expect(job("performance-contracts")).not.toContain("uses: ./.github/actions/workspace-dist");
+  });
 
   it("reports the new producer as well as every pre-existing job", () => {
     const graph = ciJobGraph(source);
@@ -367,7 +375,9 @@ describe("PRD-373 fail-closed required verdict", () => {
 describe("PRD-373 fixed full candidates and current package products", () => {
   it("pins every worker checkout to the captured candidate, including reusable native jobs", () => {
     expect(job("scope")).toContain("vars.TN_DEVELOP_CI_ENABLED == 'true' && 'develop'");
-    expect(source).toContain("github.event_name == 'pull_request' && 'latest' || github.run_id");
+    expect(source).toContain(
+      "github.event_name == 'pull_request' && !github.event.pull_request.draft && 'latest' || github.run_id",
+    );
     for (const relative of [".github/workflows/ci.yml", ".github/workflows/native-platforms.yml"]) {
       const workflow = readFileSync(path.join(repo, relative), "utf8");
       for (const [name, section] of jobSections(workflow)) {

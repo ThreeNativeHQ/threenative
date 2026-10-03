@@ -862,6 +862,52 @@ describe("WorldCells GPU-driven main pass", () => {
  * test is the wiring and the counters, not a draw.
  */
 describe("WorldCells with the GPU-driven main pass", () => {
+  it("keeps every multi-part placement drawable after partial eviction and readmission", async () => {
+    stubManifestFetch(true);
+    const follow = { position: { ...cellCentre(0, 1), y: 0 } };
+    const keyed = vi.spyOn(WorldGpuScene.prototype, "key");
+    const world = await WorldCells.load({
+      admissionBudgetMs: Number.POSITIVE_INFINITY,
+      budgets,
+      follow,
+      gpuScene: true,
+      loadModel: async () => multiPartModel(),
+      prefetchSeconds: 0,
+      ring: 0,
+      surface,
+      url: "/world/world.json",
+    });
+    const renderer = gpuRendererStub();
+    const camera = playerCamera();
+    for (const x of [0, 1, 2]) {
+      Object.assign(follow.position, cellCentre(x, 1));
+      world.update(renderer, camera);
+      await flushed(world);
+    }
+    const scene = keyed.mock.contexts.at(-1) as WorldGpuScene;
+    expect(world.stats().evictions).toBeGreaterThan(0);
+    const slot = scene.gates().findIndex((_, index) => scene.slotAsset(index) === "pine");
+    const expected = pineIn("1,1", "2,1");
+    expect(scene.placements.filter((one) => one.slot === slot)).toHaveLength(expected);
+    // Put every resident pine in the far level: any LOD can receive every placement this frame.
+    const result = cullAndSelect({
+      camera: { planes: new Float32Array(24), x: 0, y: 0, z: -1000 },
+      count: scene.placements.length,
+      placements: scene.placements,
+      regionCount: scene.regions.length,
+      regions: scene.regions,
+      slots: scene.gates(),
+    });
+    for (const mesh of mainLevel(world, "pine", 1)) {
+      const region = scene.regionOf(mesh.name) as IRegion;
+      expect(result.counts[region.argsIndex], mesh.name).toBe(expected);
+      expect(region.capacity, mesh.name).toBeGreaterThanOrEqual(expected);
+      expect(mesh.instanceMatrix).toBe(scene.drawn);
+      expect(mesh.geometry.indirect).toBe(scene.args);
+    }
+    world.dispose();
+  });
+
   it("spends no regroup and no refilter, feeds the source buffer, and dresses every main key", async () => {
     stubManifestFetch();
     const follow = { position: { ...cellCentre(0, 1), y: 0 } as { x: number; z: number } };
@@ -2057,6 +2103,92 @@ describe("WorldCells GPU-driven main pass, against the CPU path's own drawn set"
 });
 
 describe("WorldCells whose GPU scene comes up under a built ring", () => {
+  it.each([1, 3, 5, 8])(
+    "seeds source records for a build sliced before the renderer arrived (%i CPU units)",
+    async (units) => {
+      stubManifestFetch();
+      const follow = { position: { ...cellCentre(1, 1), y: 0 } };
+      const keyed = vi.spyOn(WorldGpuScene.prototype, "key");
+      const logged = vi.spyOn(console, "info");
+      let clock = 0;
+      const world = await WorldCells.load({
+        admissionBudgetMs: 1,
+        admissionNow: () => {
+          clock += 10_000;
+          return clock;
+        },
+        budgets,
+        follow,
+        freshMeshesPerUpdate: 1,
+        gpuScene: true,
+        loadModel: async () => plainModel(),
+        prefetchSeconds: 0,
+        ring: 0,
+        shadows: { cast: true },
+        surface,
+        url: "/world/world.json",
+      });
+      world.update();
+      await flush();
+      // Enable during placement slicing or mesh publication, including a pending pine build.
+      for (let unit = 0; unit < units; unit += 1) world.update();
+      expect(world.stats().admission.backlog).toBeGreaterThan(0);
+      expect(world.stats().admission.deferred).toBeGreaterThan(0);
+      world.update(gpuRendererStub(), playerCamera());
+      await flushed(world);
+      const mainReport = logged.mock.calls
+        .map(([line]) => String(line))
+        .filter((line) => line.startsWith("TN_WORLD_MAIN_CULL "))
+        .at(-1);
+
+      const cpu = await WorldCells.load({
+        admissionBudgetMs: Number.POSITIVE_INFINITY,
+        budgets,
+        follow,
+        gpuScene: false,
+        loadModel: async () => plainModel(),
+        prefetchSeconds: 0,
+        ring: 0,
+        surface,
+        url: "/world/world.json",
+      });
+      cpu.update();
+      await flushed(cpu);
+      const expected = mainKeys(cpu).reduce((sum, mesh) => sum + mesh.count, 0);
+      expect(world.stats().gpuScene.instances).toBe(expected);
+      expect(mainReport).toContain(`instances=${String(expected)} `);
+      const matrices = mainKeys(cpu)
+        .flatMap((mesh) =>
+          Array.from({ length: mesh.count }, (_, index) =>
+            mesh.instanceMatrix.array.slice(index * 16, (index + 1) * 16).join(","),
+          ),
+        )
+        .sort();
+      const scene = keyed.mock.contexts.at(-1) as WorldGpuScene;
+      const assertSources = (): void => {
+        expect(
+          scene.placements
+            .filter((one) => one.slot >= 0)
+            .map((one) => one.matrix.join(","))
+            .sort(),
+        ).toEqual(matrices);
+      };
+      assertSources();
+      Object.assign(follow.position, cellCentre(6, 1));
+      world.update();
+      await flushed(world);
+      expect(world.stats().gpuScene.instances).toBe(0);
+      Object.assign(follow.position, cellCentre(1, 1));
+      world.update();
+      await flushed(world);
+      expect(world.stats().evictions).toBeGreaterThan(0);
+      assertSources();
+      expect(world.stats().failures).toBe(0);
+      cpu.dispose();
+      world.dispose();
+    },
+  );
+
   /** A world over the same package, the same ring and the same camera, built the way the test asks. */
   async function build(framesWithoutARenderer: number): Promise<WorldCells> {
     stubManifestFetch();
