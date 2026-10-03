@@ -29,7 +29,7 @@ Start VQ-01 and VQ-02 independently. In parallel, qualify the unresolved PRD-269
 | 1 / character motion | [VQ-04](PRD-VQ-04-locomotion-blend-spaces.md) | Locomotion blends by speed and direction without restarting its gait | Existing animation/stride player |
 | 1 / character motion | [VQ-05](PRD-VQ-05-masked-additive-animation.md) | Upper-body actions and additive reactions compose over locomotion | Coordinate with VQ-04; IK ordering |
 | 2 / scalable lighting | [VQ-06](PRD-VQ-06-many-local-lights.md) | Many local lights use a qualified upstream tiled or clustered path | Installed upstream pin; PRD-457 for shadows |
-| 2 / atmosphere | [VQ-07](PRD-VQ-07-volumetric-fog.md) | Local volumetric fog composes with depth, lights and existing atmosphere | Existing atmosphere/kit and upstream volume path |
+| 2 / atmosphere | [VQ-07](../done/PRD-VQ-07-volumetric-fog.md) | Local volumetric fog composes with depth, lights and existing atmosphere | Existing atmosphere/kit and upstream volume path |
 | 2 / atmosphere | [VQ-08](PRD-VQ-08-clouds-and-overhead-transmittance.md) | Clouds and their ground attenuation share one authored field | Merged rain kit; PRD-381 overhead field |
 | 3 / gated GI extension | [VQ-09](PRD-VQ-09-incremental-diffuse-relighting.md) | Diffuse probes refresh bounded changed regions without a visible half-bake | Qualify PRD-268 first |
 | 3 / memory-gated | [VQ-10](PRD-VQ-10-texture-mip-residency.md) | Texture residency releases real GPU memory rather than only biasing sampling | PRD-454 resource accounting; VQ-01 |
