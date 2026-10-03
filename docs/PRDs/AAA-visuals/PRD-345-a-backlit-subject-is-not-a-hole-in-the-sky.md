@@ -342,3 +342,5 @@ source-first architecture requires an explicit coherent policy change before pac
 
 Anything in `packages/`, and any change to the tonemapper — PRD-339 and PRD-343 own exposure and the
 white point.
+
+Historical GPU evidence limitation: lease ownership is scoped to process TMPDIR; durable-temp runs used private namespaces and manual own-job serialization. Shared global exclusion was not established. See benchmark PRD-345 capture coordination notes; future timing uses an explicit outer shared lease. Original acceptance remains partial.

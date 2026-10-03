@@ -44,3 +44,7 @@ failures and doctor results remain retained. Doctor checks alone were not treate
 Rain uses a custom raymarched shader, so standard-material conversion does not apply and
 cloud radiance remains unknown. Native/mobile/software/WebGL keep original materials;
 those fallback policies are covered by CPU checks, with native execution still open.
+
+## Historical capture coordination limitation
+
+A reported `held` capture lease establishes ownership within that process's temporary namespace. `defaultCaptureLockRoot()` derives its path from `TMPDIR`; durable-TMPDIR gameplay/native-opening and matched performance runs used private namespaces. We manually serialized our own jobs, but shared global GPU exclusion and external workload isolation were not established for those historical runs. Their measured outcomes remain retained with this limitation; they must not be described as globally exclusive qualification. Future timing runs use an explicit outer existing-API shared `/tmp/threenative-playtest-capture` lease and durable child temps.

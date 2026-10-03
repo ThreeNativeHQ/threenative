@@ -39,3 +39,7 @@ raymarched shader is explicitly unqualified; native/mobile/software/WebGL retain
 [Effective mechanisms, named zero controls and remaining original acceptance](mechanisms.md)
 separate authored illumination from the new grazing/disc terms; palette-preserving boot proof
 does not establish equivalent difficult-light behavior in every template.
+
+## Historical capture coordination limitation
+
+A reported `held` capture lease establishes ownership within that process's temporary namespace. `defaultCaptureLockRoot()` derives its path from `TMPDIR`; durable-TMPDIR gameplay/native-opening and matched performance runs used private namespaces. We manually serialized our own jobs, but shared global GPU exclusion and external workload isolation were not established for those historical runs. Their measured outcomes remain retained with this limitation; they must not be described as globally exclusive qualification. Future timing runs use an explicit outer existing-API shared `/tmp/threenative-playtest-capture` lease and durable child temps.
