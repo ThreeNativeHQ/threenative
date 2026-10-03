@@ -1,5 +1,5 @@
 diff --git a/build/three.webgpu.js b/build/three.webgpu.js
-index 7aa62adb9e78ba8f0a67709d3141bf93c67419cc..148869ee7f18c62570ac1eafb7df5775e5a89581 100644
+index 7aa62adb9e78ba8f0a67709d3141bf93c67419cc..efd0e16719cc7bbef1fbc18c241948e25eb85881 100644
 --- a/build/three.webgpu.js
 +++ b/build/three.webgpu.js
 @@ -18539,7 +18539,7 @@ const instance = /*@__PURE__*/ Fn( ( [ matrices, colors = null ], builder ) => {
@@ -23,10 +23,10 @@ index 7aa62adb9e78ba8f0a67709d3141bf93c67419cc..148869ee7f18c62570ac1eafb7df5775
 +			previousInstanceMatrix.needsUpdate = true;
 +			const interleaved = _matrixBuffers.get( previousInstanceMatrix );
 +			if ( interleaved !== undefined ) interleaved.needsUpdate = true;
++
++		};
  
 -			const previousInstanceData = _previousInstanceMatrices.get( object );
-+		};
-+
 +		// Scheduled history must reach the GPU in this draw, before the geometry uploads.
 +		OnBeforeObjectUpdate( ( { object } ) => {
  
@@ -43,7 +43,24 @@ index 7aa62adb9e78ba8f0a67709d3141bf93c67419cc..148869ee7f18c62570ac1eafb7df5775
  
  		} );
  
-@@ -63161,8 +63177,8 @@ class Renderer {
+@@ -18844,7 +18860,15 @@ function getPreviousSkinnedPosition( skinnedMesh, bindMatrixNode, bindMatrixInve
+ 
+ 	}
+ 
+-	return getSkinnedPosition( data.node, positionPrevious, bindMatrixNode, bindMatrixInverseNode, skinIndexNode, skinWeightNode );
++	// The previous bones and world matrix must use the same frame's bind inverse.
++	const previousBindMatrixInverse = uniform( skinnedMesh.bindMatrixInverse, 'mat4' ).onObjectUpdate( ( { object } ) => {
++
++		const mesh = object?.isSkinnedMesh === true ? object : skinnedMesh;
++		return mesh[ Symbol.for( 'threenative.velocity.previousBindMatrixInverse' ) ] ?? mesh.bindMatrixInverse;
++
++	} );
++
++	return getSkinnedPosition( data.node, positionPrevious, bindMatrixNode, previousBindMatrixInverse, skinIndexNode, skinWeightNode );
+ 
+ }
+ 
+@@ -63161,8 +63185,8 @@ class Renderer {
  		// attribute scan - because each of those answers for itself, and a step left out here
  		// cannot: a group a node added after this object's first draw still has to be created, and
  		// the pipeline reads that group's layout whatever this draw decided to do with it.
@@ -53,7 +70,7 @@ index 7aa62adb9e78ba8f0a67709d3141bf93c67419cc..148869ee7f18c62570ac1eafb7df5775
  		this._nodes.updateForRender( renderObject );
  		this._bindings.updateForRender( renderObject );
  
-@@ -81386,6 +81402,15 @@ class WebGPUAttributeUtils {
+@@ -81386,6 +81410,15 @@ class WebGPUAttributeUtils {
  			buffer.unmap();
  
  			bufferData.buffer = buffer;
@@ -69,7 +86,7 @@ index 7aa62adb9e78ba8f0a67709d3141bf93c67419cc..148869ee7f18c62570ac1eafb7df5775
  
  		}
  
-@@ -81406,6 +81431,11 @@ class WebGPUAttributeUtils {
+@@ -81406,6 +81439,11 @@ class WebGPUAttributeUtils {
  		const bufferData = backend.get( bufferAttribute );
  		const buffer = backend.get( bufferAttribute ).buffer;
  
@@ -81,7 +98,7 @@ index 7aa62adb9e78ba8f0a67709d3141bf93c67419cc..148869ee7f18c62570ac1eafb7df5775
  		let array = bufferAttribute.array;
  
  		const itemSize = bufferData._itemSize;
-@@ -81487,6 +81517,9 @@ class WebGPUAttributeUtils {
+@@ -81487,6 +81525,9 @@ class WebGPUAttributeUtils {
  
  		}
  
@@ -92,7 +109,7 @@ index 7aa62adb9e78ba8f0a67709d3141bf93c67419cc..148869ee7f18c62570ac1eafb7df5775
  
  	/**
 diff --git a/build/three.webgpu.nodes.js b/build/three.webgpu.nodes.js
-index b8a7b2fd0a2e95911e7e12fd5674592107f012de..81c24b2e05e5047e1a02410a2056949d39b1a05c 100644
+index b8a7b2fd0a2e95911e7e12fd5674592107f012de..1b3a6e96291af0077f7f247040e657cf4aa0cb33 100644
 --- a/build/three.webgpu.nodes.js
 +++ b/build/three.webgpu.nodes.js
 @@ -18539,7 +18539,7 @@ const instance = /*@__PURE__*/ Fn( ( [ matrices, colors = null ], builder ) => {
@@ -118,11 +135,12 @@ index b8a7b2fd0a2e95911e7e12fd5674592107f012de..81c24b2e05e5047e1a02410a2056949d
 +			if ( interleaved !== undefined ) interleaved.needsUpdate = true;
 +
 +		};
-+
+ 
+-			const previousInstanceData = _previousInstanceMatrices.get( object );
 +		// Scheduled history must reach the GPU in this draw, before the geometry uploads.
 +		OnBeforeObjectUpdate( ( { object } ) => {
  
--			const previousInstanceData = _previousInstanceMatrices.get( object );
+-			previousInstanceData.previousInstanceMatrix.array.set( matrices.array );
 +			const scheduledPrevious = object[ Symbol.for( 'threenative.velocity.previousInstanceMatrices' ) ];
 +			if ( scheduledPrevious !== undefined ) updatePrevious( object, scheduledPrevious );
 +
@@ -130,13 +148,29 @@ index b8a7b2fd0a2e95911e7e12fd5674592107f012de..81c24b2e05e5047e1a02410a2056949d
 +
 +		// Without a scheduler, retain Three's draw-time snapshot for the next draw.
 +		OnObjectUpdate( ( { object } ) => {
- 
--			previousInstanceData.previousInstanceMatrix.array.set( matrices.array );
++
 +			if ( object[ Symbol.for( 'threenative.velocity.previousInstanceMatrices' ) ] === undefined ) updatePrevious( object, matrices.array );
  
  		} );
  
-@@ -63104,8 +63121,8 @@ class Renderer {
+@@ -18829,7 +18846,15 @@ function getPreviousSkinnedPosition( skinnedMesh, bindMatrixNode, bindMatrixInve
+ 
+ 	}
+ 
+-	return getSkinnedPosition( data.node, positionPrevious, bindMatrixNode, bindMatrixInverseNode, skinIndexNode, skinWeightNode );
++	// The previous bones and world matrix must use the same frame's bind inverse.
++	const previousBindMatrixInverse = uniform( skinnedMesh.bindMatrixInverse, 'mat4' ).onObjectUpdate( ( { object } ) => {
++
++		const mesh = object?.isSkinnedMesh === true ? object : skinnedMesh;
++		return mesh[ Symbol.for( 'threenative.velocity.previousBindMatrixInverse' ) ] ?? mesh.bindMatrixInverse;
++
++	} );
++
++	return getSkinnedPosition( data.node, positionPrevious, bindMatrixNode, previousBindMatrixInverse, skinIndexNode, skinWeightNode );
+ 
+ }
+ 
+@@ -63104,8 +63129,8 @@ class Renderer {
  		// attribute scan - because each of those answers for itself, and a step left out here
  		// cannot: a group a node added after this object's first draw still has to be created, and
  		// the pipeline reads that group's layout whatever this draw decided to do with it.
@@ -146,7 +180,7 @@ index b8a7b2fd0a2e95911e7e12fd5674592107f012de..81c24b2e05e5047e1a02410a2056949d
  		this._nodes.updateForRender( renderObject );
  		this._bindings.updateForRender( renderObject );
  
-@@ -81325,6 +81342,15 @@ class WebGPUAttributeUtils {
+@@ -81325,6 +81350,15 @@ class WebGPUAttributeUtils {
  			buffer.unmap();
  
  			bufferData.buffer = buffer;
@@ -162,7 +196,7 @@ index b8a7b2fd0a2e95911e7e12fd5674592107f012de..81c24b2e05e5047e1a02410a2056949d
  
  		}
  
-@@ -81345,6 +81371,11 @@ class WebGPUAttributeUtils {
+@@ -81345,6 +81379,11 @@ class WebGPUAttributeUtils {
  		const bufferData = backend.get( bufferAttribute );
  		const buffer = backend.get( bufferAttribute ).buffer;
  
@@ -174,7 +208,7 @@ index b8a7b2fd0a2e95911e7e12fd5674592107f012de..81c24b2e05e5047e1a02410a2056949d
  		let array = bufferAttribute.array;
  
  		const itemSize = bufferData._itemSize;
-@@ -81426,6 +81457,9 @@ class WebGPUAttributeUtils {
+@@ -81426,6 +81465,9 @@ class WebGPUAttributeUtils {
  
  		}
  
@@ -302,10 +336,27 @@ index 83bbe189915c8450c4e14108e6a3f4ed98c4b016..16bd72d0c0f1d693481efc98140a0f1b
  
  	/**
 diff --git a/build/three.webgpu.js b/build/three.webgpu.js
-index bdffb9b4069f7beafa85913b155e92d3e83f12d0..148869ee7f18c62570ac1eafb7df5775e5a89581 100644
+index bdffb9b4069f7beafa85913b155e92d3e83f12d0..efd0e16719cc7bbef1fbc18c241948e25eb85881 100644
 --- a/build/three.webgpu.js
 +++ b/build/three.webgpu.js
-@@ -81402,6 +81402,15 @@ class WebGPUAttributeUtils {
+@@ -18860,7 +18860,15 @@ function getPreviousSkinnedPosition( skinnedMesh, bindMatrixNode, bindMatrixInve
+ 
+ 	}
+ 
+-	return getSkinnedPosition( data.node, positionPrevious, bindMatrixNode, bindMatrixInverseNode, skinIndexNode, skinWeightNode );
++	// The previous bones and world matrix must use the same frame's bind inverse.
++	const previousBindMatrixInverse = uniform( skinnedMesh.bindMatrixInverse, 'mat4' ).onObjectUpdate( ( { object } ) => {
++
++		const mesh = object?.isSkinnedMesh === true ? object : skinnedMesh;
++		return mesh[ Symbol.for( 'threenative.velocity.previousBindMatrixInverse' ) ] ?? mesh.bindMatrixInverse;
++
++	} );
++
++	return getSkinnedPosition( data.node, positionPrevious, bindMatrixNode, previousBindMatrixInverse, skinIndexNode, skinWeightNode );
+ 
+ }
+ 
+@@ -81402,6 +81410,15 @@ class WebGPUAttributeUtils {
  			buffer.unmap();
  
  			bufferData.buffer = buffer;
@@ -321,7 +372,7 @@ index bdffb9b4069f7beafa85913b155e92d3e83f12d0..148869ee7f18c62570ac1eafb7df5775
  
  		}
  
-@@ -81422,6 +81431,11 @@ class WebGPUAttributeUtils {
+@@ -81422,6 +81439,11 @@ class WebGPUAttributeUtils {
  		const bufferData = backend.get( bufferAttribute );
  		const buffer = backend.get( bufferAttribute ).buffer;
  
@@ -333,7 +384,7 @@ index bdffb9b4069f7beafa85913b155e92d3e83f12d0..148869ee7f18c62570ac1eafb7df5775
  		let array = bufferAttribute.array;
  
  		const itemSize = bufferData._itemSize;
-@@ -81503,6 +81517,9 @@ class WebGPUAttributeUtils {
+@@ -81503,6 +81525,9 @@ class WebGPUAttributeUtils {
  
  		}
  
@@ -344,10 +395,27 @@ index bdffb9b4069f7beafa85913b155e92d3e83f12d0..148869ee7f18c62570ac1eafb7df5775
  
  	/**
 diff --git a/build/three.webgpu.nodes.js b/build/three.webgpu.nodes.js
-index 1245f0da9bb6a0f731b8c75a64490d7c91238700..81c24b2e05e5047e1a02410a2056949d39b1a05c 100644
+index 1245f0da9bb6a0f731b8c75a64490d7c91238700..1b3a6e96291af0077f7f247040e657cf4aa0cb33 100644
 --- a/build/three.webgpu.nodes.js
 +++ b/build/three.webgpu.nodes.js
-@@ -81342,6 +81342,15 @@ class WebGPUAttributeUtils {
+@@ -18846,7 +18846,15 @@ function getPreviousSkinnedPosition( skinnedMesh, bindMatrixNode, bindMatrixInve
+ 
+ 	}
+ 
+-	return getSkinnedPosition( data.node, positionPrevious, bindMatrixNode, bindMatrixInverseNode, skinIndexNode, skinWeightNode );
++	// The previous bones and world matrix must use the same frame's bind inverse.
++	const previousBindMatrixInverse = uniform( skinnedMesh.bindMatrixInverse, 'mat4' ).onObjectUpdate( ( { object } ) => {
++
++		const mesh = object?.isSkinnedMesh === true ? object : skinnedMesh;
++		return mesh[ Symbol.for( 'threenative.velocity.previousBindMatrixInverse' ) ] ?? mesh.bindMatrixInverse;
++
++	} );
++
++	return getSkinnedPosition( data.node, positionPrevious, bindMatrixNode, previousBindMatrixInverse, skinIndexNode, skinWeightNode );
+ 
+ }
+ 
+@@ -81342,6 +81350,15 @@ class WebGPUAttributeUtils {
  			buffer.unmap();
  
  			bufferData.buffer = buffer;
@@ -363,7 +431,7 @@ index 1245f0da9bb6a0f731b8c75a64490d7c91238700..81c24b2e05e5047e1a02410a2056949d
  
  		}
  
-@@ -81362,6 +81371,11 @@ class WebGPUAttributeUtils {
+@@ -81362,6 +81379,11 @@ class WebGPUAttributeUtils {
  		const bufferData = backend.get( bufferAttribute );
  		const buffer = backend.get( bufferAttribute ).buffer;
  
@@ -375,7 +443,7 @@ index 1245f0da9bb6a0f731b8c75a64490d7c91238700..81c24b2e05e5047e1a02410a2056949d
  		let array = bufferAttribute.array;
  
  		const itemSize = bufferData._itemSize;
-@@ -81443,6 +81457,9 @@ class WebGPUAttributeUtils {
+@@ -81443,6 +81465,9 @@ class WebGPUAttributeUtils {
  
  		}
  
@@ -385,3 +453,66 @@ index 1245f0da9bb6a0f731b8c75a64490d7c91238700..81c24b2e05e5047e1a02410a2056949d
  	}
  
  	/**
+diff --git a/src/nodes/accessors/Skinning.js b/src/nodes/accessors/Skinning.js
+index aaeea633a8ece291be5faf868e312867ddad01b6..76303e765bc29853cfd7f139dd3ec76545b70798 100644
+--- a/src/nodes/accessors/Skinning.js
++++ b/src/nodes/accessors/Skinning.js
+@@ -117,7 +117,15 @@ function getPreviousSkinnedPosition( skinnedMesh, bindMatrixNode, bindMatrixInve
+ 
+ 	}
+ 
+-	return getSkinnedPosition( data.node, positionPrevious, bindMatrixNode, bindMatrixInverseNode, skinIndexNode, skinWeightNode );
++	// The previous bones and world matrix must use the same frame's bind inverse.
++	const previousBindMatrixInverse = uniform( skinnedMesh.bindMatrixInverse, 'mat4' ).onObjectUpdate( ( { object } ) => {
++
++		const mesh = object?.isSkinnedMesh === true ? object : skinnedMesh;
++		return mesh[ Symbol.for( 'threenative.velocity.previousBindMatrixInverse' ) ] ?? mesh.bindMatrixInverse;
++
++	} );
++
++	return getSkinnedPosition( data.node, positionPrevious, bindMatrixNode, previousBindMatrixInverse, skinIndexNode, skinWeightNode );
+ 
+ }
+ 
+diff --git a/build/three.webgpu.js b/build/three.webgpu.js
+index 148869ee7f18c62570ac1eafb7df5775e5a89581..efd0e16719cc7bbef1fbc18c241948e25eb85881 100644
+--- a/build/three.webgpu.js
++++ b/build/three.webgpu.js
+@@ -18860,7 +18860,15 @@ function getPreviousSkinnedPosition( skinnedMesh, bindMatrixNode, bindMatrixInve
+ 
+ 	}
+ 
+-	return getSkinnedPosition( data.node, positionPrevious, bindMatrixNode, bindMatrixInverseNode, skinIndexNode, skinWeightNode );
++	// The previous bones and world matrix must use the same frame's bind inverse.
++	const previousBindMatrixInverse = uniform( skinnedMesh.bindMatrixInverse, 'mat4' ).onObjectUpdate( ( { object } ) => {
++
++		const mesh = object?.isSkinnedMesh === true ? object : skinnedMesh;
++		return mesh[ Symbol.for( 'threenative.velocity.previousBindMatrixInverse' ) ] ?? mesh.bindMatrixInverse;
++
++	} );
++
++	return getSkinnedPosition( data.node, positionPrevious, bindMatrixNode, previousBindMatrixInverse, skinIndexNode, skinWeightNode );
+ 
+ }
+ 
+diff --git a/build/three.webgpu.nodes.js b/build/three.webgpu.nodes.js
+index 81c24b2e05e5047e1a02410a2056949d39b1a05c..1b3a6e96291af0077f7f247040e657cf4aa0cb33 100644
+--- a/build/three.webgpu.nodes.js
++++ b/build/three.webgpu.nodes.js
+@@ -18846,7 +18846,15 @@ function getPreviousSkinnedPosition( skinnedMesh, bindMatrixNode, bindMatrixInve
+ 
+ 	}
+ 
+-	return getSkinnedPosition( data.node, positionPrevious, bindMatrixNode, bindMatrixInverseNode, skinIndexNode, skinWeightNode );
++	// The previous bones and world matrix must use the same frame's bind inverse.
++	const previousBindMatrixInverse = uniform( skinnedMesh.bindMatrixInverse, 'mat4' ).onObjectUpdate( ( { object } ) => {
++
++		const mesh = object?.isSkinnedMesh === true ? object : skinnedMesh;
++		return mesh[ Symbol.for( 'threenative.velocity.previousBindMatrixInverse' ) ] ?? mesh.bindMatrixInverse;
++
++	} );
++
++	return getSkinnedPosition( data.node, positionPrevious, bindMatrixNode, previousBindMatrixInverse, skinIndexNode, skinWeightNode );
+ 
+ }
+ 

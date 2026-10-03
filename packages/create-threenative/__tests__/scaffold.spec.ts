@@ -188,20 +188,22 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // The rebuild candidate was measured through createProject; restoring its embedded patch
   // to published 455ed1dd restores all thirteen previous hashes exactly. All generated trees
   // return to their exact previous hashes when only patches/three@0.185.1.patch is restored.
-  "action-rpg": "85a2ab701b2fa91bc4f42a5681b49441250eaf6434d4730073686251c9e2cfe4",
-  minimal: "9f7d1428fce786536b41b5816045e62bc8b31c54826747b5476a585f18fc7280",
-  platformer: "83a7709e5c7556d77785fb12e9158bf0f70585f034bc3759d66a51f033a403bb",
-  puzzle: "0a661a571c8a6b27685533bf54cd3a720a8856793dd2268a922c74896cecebcc",
-  racing: "80c58dc42bf3fabec5451b52986fb47083d24ad2cc7a0ad15379bc0409c02cd6",
-  rain: "f52f468bbe8c2a85cf77a9809effa40b3e531ab136e932c83a6cb3982907e6e1",
-  rts: "c729e51aef0a85ff1e9305295319881bc531a0a82fad7dd0d961cf32d7e91254",
-  runner: "9b68d78a9543ff7d78681135914dced931e1140067440a0316e716093a838757",
-  sailing: "c9eecbcb834a798c0e25ccab12db66ede7e5f8c748f1d64582aa688dadfaeb0b",
-  shooter: "ca1be259a30ea384c357f75d383dd3f89ed7f03f06ea44d06410f19796b63c8d",
-  snow: "cf3ebc053e6593542a1bc9f6c2e264f55006aac0ae23eebf88ce8bb153f39403",
-  // PRD-455: measured combined PRD-269 uploader patch and generated temporal source.
-  starter: "ddd9b483534f7f9b82ccba6ec228d077148cbb5f91768e3ad3b08deb0f125385",
-  "tower-defense": "8cceaa559322107fd42b7fadfebc5c0e84c669cda74b5b354c7812adca45d6f4",
+  // Recomputed 2026-10-02 for the per-mesh previous bind inverse repair. All thirteen measured
+  // trees restore to published 085c977b when only the embedded Three patch bytes are restored.
+  "action-rpg": "abc31a97dba1e3aca780c8afb360ae4840c5e8dab40acd1e299e2a455a890b67",
+  minimal: "842203e522b55e9604d607ea040af9770b76c3044ba531ffa17407fbc894afdf",
+  platformer: "9a84d6518f66e5b8c3dd4d0cd095ecacd958e806417b35a65724168b0bd51995",
+  puzzle: "88f6a359cc066076f5fa4c5b11fc91f3882ded3b7807e2252a041635a3fda3dc",
+  racing: "55bab35d00a04a2cd92720cacff472f02c4b814588a34612086b7fdb1114416f",
+  rain: "68d3692128ef510a5db7240c4dbfab22b6dcf736b2d3d8c5bf559a3ae22096ad",
+  rts: "77dcb063312dd7f307300d27dd268b7c22b02ca3095f21f458e0dfef9618a356",
+  runner: "c95855d54e9dca301006f06d603fb6df29f76be2253f6b2441af5f37e309e2e8",
+  sailing: "2bd0dd68e1ffa058fb21071c6d733be364a56e02a8decd7b27f7fe610fd5d28f",
+  shooter: "6c3ed9c35bce8c640fcf267f0973d2b6d8b45286535df234f210aa7c88629f29",
+  snow: "a707820d84c25ac5b3b2c143be20ccc73e1b58dbef570e69667a75d125fedb4b",
+  // PRD-269/455 consolidation: measured latest bind-inverse patch plus temporal source.
+  starter: "91d46cee0e8bc9c15d568e59b81f7453b4076e2612e013381ec508da48812c41",
+  "tower-defense": "4344f42f4e8ff870273af06153ecdce74c6acbd1ba4673516eb64454c6f51051",
 };
 
 const GENERATED_SCAFFOLD_METADATA =

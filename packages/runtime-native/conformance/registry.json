@@ -846,6 +846,21 @@
       "required": true
     },
     {
+      "id": "fluid-particles",
+      "title": "GPU particle fluid dam drop settles",
+      "category": "webgpu-tsl",
+      "status": "implemented",
+      "scene": "../../examples/prd476-fluid-particles/src/conformance.js",
+      "browserRecipe": "webgpu",
+      "requiresHardwareAdapter": true,
+      "tolerance": {
+        "pixelMismatchRatio": 0.08,
+        "perceptualDeltaE": 6.0
+      },
+      "desktopGate": true,
+      "required": true
+    },
+    {
       "id": "78-wave-field",
       "title": "analytic wave field CPU and TSL displacement",
       "category": "webgpu-tsl",
