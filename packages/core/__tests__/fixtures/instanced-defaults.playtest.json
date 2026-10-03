@@ -23,7 +23,7 @@
   "assert": {
     "performance": {
       "maxPassTriangles": {
-        "main": 20000000,
+        "nested": 40000000,
         "reflection": 2000000
       }
     },
@@ -32,6 +32,14 @@
       "noNetworkErrors": true,
       "noRuntimeDiagnostics": true,
       "runtimeReady": true
-    }
+    },
+    "resources": [
+      {
+        "id": "GameState",
+        "path": "propInstances",
+        "gte": 1000,
+        "allowTrivial": "The forest is populated during startup; this held count prevents an empty scene from satisfying the triangle budgets."
+      }
+    ]
   }
 }

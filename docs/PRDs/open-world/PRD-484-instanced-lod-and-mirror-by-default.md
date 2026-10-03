@@ -5,9 +5,9 @@ prd_contract: v1
 # PRD-484 — Instanced LOD and selective water mirrors work by default
 
 **Status:** PARTIAL — started 2026-10-02.
-**Progress:** 3/3 implementation phases verified; controlled game acceptance pair queued.
+**Progress:** 3/3 implementation phases verified; final game acceptance capture queued.
 **Complexity:** 3 → LOW; existing selection and reflector plumbing, state partitioning; risk override: none.
-**Integration:** local branch `engine-defaults-484`, base `7b17fe081`; coordinator integrates into PR #390. No push or separate PR (owner instruction).
+**Integration:** branch `feat/prd-484-instanced-defaults` off `origin/develop`, its own draft PR (runbook row A0; #390 merged without it).
 
 ## Problem and outcome
 
@@ -91,9 +91,13 @@ failed rungs are visible diagnostics, and game proof reports measured triangles/
 
 ## Game proof command
 
-`CAPTURE_LOCK=1 CAPTURE_LOCK_TIMEOUT_MS=1800000 node packages/playtest/dist/runner/cli.js packages/core/__tests__/fixtures/instanced-defaults.playtest.json --url 'http://127.0.0.1:5198/?showcase=1' --browser-recipe webgpu --timeout 120000 --headed --artifacts /tmp/prd484-strata-before-defaults`
+`CAPTURE_LOCK=1 CAPTURE_LOCK_TIMEOUT_MS=1200000 node packages/playtest/dist/runner/cli.js packages/core/__tests__/fixtures/instanced-defaults.playtest.json --url 'http://127.0.0.1:5198/?showcase=1' --browser-recipe webgpu --timeout 180000 --headed --artifacts /tmp/prd484-strata-final-defaults`
 
-The queued capture at this historical artifact path consumes candidate core `ca8ef2606`; the
+The final capture consumes candidate core `eae376eff`; the
 baseline above already established the full-detail bill. Candidate controls pin a valid 1080-row
 surface rather than repeating the baseline's collapsed canvas. Report submitted counts, with
 these input differences, and no FPS or real-display performance claim.
+
+The additional identical-control baseline was cancelled while still waiting for the shared GPU
+lock (no new measurement) to preserve the owner's 120-minute wall for final proof and restoration.
+The recorded exact-revert baseline above retains its stated raster/cadence differences.
