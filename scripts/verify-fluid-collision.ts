@@ -66,6 +66,20 @@ try {
       trace: false,
       url: `http://127.0.0.1:5173/proof.html${variant === "gate-disabled" ? "?gate=off" : ""}`,
     });
+    for (const [phase, completedScopes] of [
+      ["before", 1],
+      ["after", 2],
+    ] as const) {
+      const gpu = report.observations?.resources.FluidGPU?.[phase] as
+        | Record<string, unknown>
+        | undefined;
+      assert.equal(
+        gpu?.completedScopes,
+        completedScopes,
+        "Actual GPU validation must complete before sampling",
+      );
+      assert.equal(gpu?.errors, 0, "Actual GPU validation must be clean");
+    }
     const images = [];
     for (const filename of ["before.png", "after.png"]) {
       const bytes = await readFile(path.join(artifactDirectory, filename));
@@ -80,6 +94,7 @@ try {
       assertions: report.assertionResults?.map(({ id, pass }) => ({ id, pass })),
       diagnostics: report.diagnostics.map(({ code }) => code),
       measurements: report.observations?.resources.FluidCollision,
+      gpuValidation: report.observations?.resources.FluidGPU,
       images,
     });
     await writeFile(

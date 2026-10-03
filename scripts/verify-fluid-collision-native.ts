@@ -445,6 +445,7 @@ async function main(): Promise<void> {
         assertions: report.assertionResults?.map(({ id, pass }) => ({ id, pass })),
         diagnostics: report.diagnostics.map(({ code }) => code),
         measurements: report.observations?.resources.FluidCollision,
+        gpuValidation: report.observations?.resources.FluidGPU,
         images,
       });
       await writeFile(
