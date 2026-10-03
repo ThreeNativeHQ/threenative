@@ -14,7 +14,7 @@ last execution covered **0 rows**.
 **Depends on:** nothing to start. Overlaps
 [PRD-295](../done/PRD-295-the-native-platform-lane-has-never-been-green.md) (which made the lane
 advisory and is fixing its desktop legs) and
-[PRD-303](../CI/PRD-303.md) (which pays for added CI coverage from measured minutes). **This PRD
+[PRD-303](../done/PRD-303.md) (which pays for added CI coverage from measured minutes). **This PRD
 owns the Android leg only**; it does not promote the lane to required — that is PRD-295's call —
 and it must not duplicate PRD-303's nightly-schedule work.
 
