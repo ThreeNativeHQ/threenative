@@ -280,6 +280,7 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
       // mapping at all; the numbers behind all of that now live in `src/render/sky.ts`.
       const sky = createOutdoorSky(ctx.camera, biome);
       ctx.add(sky.daylight);
+      ctx.add(sky.atmosphere);
       ctx.add(sky.sun);
       this.#sky = sky;
       ctx.entities.add("sun", {

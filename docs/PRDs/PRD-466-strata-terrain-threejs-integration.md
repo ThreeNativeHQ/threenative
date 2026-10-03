@@ -2338,3 +2338,154 @@ The residual over-budget samples are single frames, not steady state: `windowFra
 across all 17 poses. The licensed run's `forest:player` median is 4.2 ms against 3.7 ms measured on
 the same build in the shorter scenario: the full run keeps that camera alive through the asset
 streaming frames.
+
+
+### Round 18 atmosphere lane — 2026-10-02 (licensed verified; fallback unverified)
+
+Complexity: 3 → LOW; risk override: none. Reuse the installed `Atmosphere` and its
+`AtmosphereLuts`; appearance stays in `src/render/atmosphere.ts`. Existing
+`createOutdoorSky` and `installOutdoorOcclusion` reach the shared five-world scene.
+Replace the Preetham colour override and fixed-colour height fog with LUT-derived
+sky, solar transmittance, sunward scattering and height-aware surface extinction.
+Keep the GI chain/shadows/exposure unchanged. Biome additions own weather tuning.
+
+- [x] Physical sky, halo and clouds share the biome sun; proof: 1920×1080 scratch playtest captures (`atmosphere-candidate-3`, `atmosphere-edge`), 3/3 checks each, and 1:1 reference crops. Whole-scene Gaia parity remains open.
+- [ ] All fog-enabled lit surfaces share LUT air; proof: full licensed and fallback `terrain.playtest.json`, `verify-ocean.mjs`, every view CPU p50 ≤4 ms.
+- [x] Required local checks pass; proof: example `tsc --noEmit` exit 0; Biome 73 files exit 0; terrain vitest 69/69; core atmosphere spec 31/31, core build exit 0.
+
+Engine defect: `sampleLut` used integer `textureLoad`, bypassing `LinearFilter`;
+filtered reads now use an explicit mip level on fragment and compute paths.
+Regression: new sampler assertion red (false), then 31/31 atmosphere specs green;
+`pnpm --filter @threenative/core build` passed. The missing physics dist was rebuilt
+without source changes. Baseline/final captures remain pending.
+
+The material budget is 15/16 sampled textures before atmosphere, so the air
+composite reconstructs world position from the existing scene depth instead of
+adding two LUT bindings to every ground/prop shader. The GI chain gets the
+result as its input; AO/grade, exposure, shadows and MSAA stay unchanged.
+Minimal shared wiring: one `ctx.add(sky.atmosphere)` in `game.ts`. GI integration
+must preserve `airOutput` around its scene colour.
+
+Baseline 1:1 crops: `artifacts/playtest/atmosphere-before/*-crop.png` and
+`atmosphere-before-extra/*-crop.png` under the example. The first high-density
+candidate was discarded after foreground washout; its scratch run also observed
+4.2 ms CPU windows (one resource assertion failed, no console/runtime errors).
+Lower-density tuning is being captured in `atmosphere-candidate-2`; full licensed
+and fallback proof remain pending. The main Gaia acceptance stays open.
+
+Third scratch candidate: **3/3 checks PASS**, no console/runtime errors, every
+observed CPU window ≤4 ms. `atmosphere-candidate-3/*-crop.png` keeps near detail
+and clearer alpine peaks, with smaller cloud cells towards the horizon. The
+finite decorative continuation fades to the same sky radiance; its 2.3 km
+ceiling is named in source. Both node and classic material fog are now cleared
+while the air composite is active, then restored on disposal. A remaining
+one-pixel MSAA edge is being checked with a conservative neighbouring depth
+sample in `atmosphere-edge`; full asset-mode proof remains pending.
+
+Final edge scratch proof: **3/3 checks PASS**, no console/runtime errors;
+`atmosphere-edge/desert-overview-crop.png` removes the remaining pixel line.
+The full licensed run is queued on port 5303; a lock-only exit 75 was retried
+after 30 seconds. No thresholds or scenario steps were changed.
+
+2026-10-02 23:03 UTC checkpoint: the full licensed capture has not started;
+two attempts returned lock-only exit 75, including a 600-second wait. A third
+attempt was interrupted by a termination signal while queued; restarted in a
+terminal session. Full licensed/fallback
+and ocean verification are still unverified; the fallback runner will move
+assets only after it owns the capture lock and restore them on exit. Local
+source gates are green. The shared lock, not a shader error, is the remaining
+validation constraint.
+
+2026-10-02 final licensed proof: **52/52 checks PASS**, zero console errors,
+17 measured views, maximum per-view CPU p50 **3.8 ms**. Ocean verification
+passed waves, changed sun direction and sheltered water. Capture folder:
+`examples/strata-terrain-preview/artifacts/playtest/atmosphere-final/`.
+The full original scenario and its thresholds were unchanged.
+
+| World | Whole-scene self-grade /10 | Licensed CPU p50 range (ms) | 1:1 crop |
+| --- | --- | --- | --- |
+| Forest | 4.1 | 2.3–3.8 | `overview-crop.png` |
+| Coast | 4.1 | 2.2–2.7 | `coastal-overview-crop.png` |
+| Alpine | 4.4 | 2.2–2.7 | `alpine-ridge-crop.png` |
+| Desert | 4.0 | 1.6–1.7 | `desert-overview-crop.png` |
+| Tundra | 4.0 | 2.8–3.0 | `tundra-plain-crop.png` |
+
+These are lane self-grades, not an independent judge or a Gaia acceptance.
+Crop names above are in the final folder, use the same 1000×550 pixel crop
+at 1:1 as `atmosphere-before/` (forest/alpine/desert) and
+`atmosphere-before-extra/` (coast/tundra). The coastal final scenario flips
+the sun, so that coast comparison does not isolate atmospheric changes.
+Distance separation and the desert MSAA pixel improve; the broad finite
+horizon, cloud detail and the visible white tundra sun disc still fall short
+of the references. The physical halo is broad rather than a bloom flare;
+GI bloom must see HDR sky before grading clamps it.
+
+Fallback attempt: startup returned `TN_PLAYTEST_BRIDGE_MISSING` before any
+frames or screenshots; ocean verification consequently could not read its
+input PNGs. Assets were restored successfully. A retry used the exact
+`pnpm dev` command with saved startup output, but was cancelled while queued
+to remain within the 115-minute wall. No fallback frames were recorded.
+Fallback startup/runtime/performance proof remains unverified, and its checkbox
+stays open. No renderer or vegetation changes were made to conceal this failure.
+
+Final cleanup: licensed `local-assets/temperate` is back in place, the temporary
+held-assets directory is absent, and port 5303 has no listener. The unmerged
+checkout `.worktrees/prd-466-468-atmos/` is retained (**1.2 GiB**) with requested
+local assets and captures; removal is not authorized. No push, merge or PR
+comment was made. Documentation checks passed: 2386 links and six suites,
+180/180 tests. `prd:progress` remains `prd:75%`, Gaia acceptance 0/1.
+
+### 2026-10-02 — Round 18 atmosphere retuning (round 2 checkpoint)
+
+Reused `Atmosphere`/`AtmosphereLuts`; retained core LUT filtering fix `09897a984`.
+Removed the 4× grey sky contribution, excluded absorption from single-scattered
+radiance, gated air below 150 m, and reduced distanceScale from 8–20 to 1–2.5.
+Rayleigh coefficients and kilometre-distance haze ramps are game-owned biome values.
+No exposure, shadow, or GI-chain change. Measurement script is outside the repository:
+`/tmp/measure-atmosphere-round2.py`, with actual <150 m/>800 m depth masks in
+`artifacts/playtest/atmosphere-round2-depth/`. Sky uses matched blue pixels in the
+top 30%, retaining the most saturated 40% of baseline sky to exclude clouds;
+luminance is linear sRGB/Rec.709, shadow hue is a circular HSV mean on the darkest
+20% of near surfaces (excluding blue water), and contrast is a four-pixel local
+luminance difference. Coast has no ridge beyond 800 m: its far mask observes ocean.
+
+TypeScript and example Biome pass; terrain plus core atmosphere specs: **100/100 PASS**.
+Two colour iterations passed **3/3 runtime checks**, but sky-colour measurements
+remained below baseline in some worlds. Third tuning is being measured; full
+licensed/fallback scenarios and ocean checks remain pending. No Gaia acceptance
+box has been ticked. Source restoration overlapping a capture startup destroyed
+that browser context; stable-source retry passed. One subsequent
+`TN_PLAYTEST_BRIDGE_MISSING` startup flake was retried once.
+
+2026-10-03 shadow correction: the darkest near-terrain mean hid a desert
+mesa-wall regression (30.81° → 248.96°). Added a fixed wall ROI to the same
+measurement script and restored the biome's local aerosol tint above 150 m,
+before the remote LUT column. Foreground remains clear below 150 m. Final
+licensed proof is running; fallback follows with asset restoration on exit.
+An interrupted preliminary capture left its owned Vite listener on 5303;
+it was cleared before restarting. No source edits occur during final capture.
+
+2026-10-03 UTC final licensed result: **51/52 checks**, zero console errors,
+all 17 camera CPU p50s ≤ **3.7 ms**. The sole failed check is the first
+`grounded` CPU window (**4.5 ms**, threshold 4); no threshold was changed.
+Ocean verification passes all three checks. Fallback is still running.
+Mesa wall hue is now **30.81° → 22.76°** (−8.05°); its earlier purple result
+was not accepted. Near and mid-shadow hue means pass in all five worlds.
+
+| World | Sky saturation before→after | Blue dominance before→after | Near linear Y p05/p50/p95 before→after | Far local contrast before→after |
+| --- | --- | --- | --- | --- |
+| forest | 0.290→0.315 | 0.155→0.165 | 0.0022 / 0.0644 / 0.2213 → 0.0022 / 0.0641 / 0.2224 | 0.00681→0.00165 |
+| coastal | 0.110→0.257 | 0.058→0.154 | 0.0138 / 0.0889 / 0.3158 → 0.0107 / 0.0871 / 0.3431 | 0.00198→0.00781 |
+| alpine | 0.436→0.503 | 0.207→0.267 | 0.0298 / 0.1426 / 0.1691 → 0.0273 / 0.1417 / 0.1683 | 0.04677→0.02915 |
+| desert | 0.352→0.401 | 0.188→0.230 | 0.1626 / 0.2242 / 0.3088 → 0.1615 / 0.2238 / 0.3086 | 0.00414→0.00152 |
+| tundra | 0.273→0.305 | 0.120→0.186 | 0.0106 / 0.0555 / 0.1598 → 0.0095 / 0.0540 / 0.1407 | 0.00942→0.00455 |
+
+Coast uses the initial player/ocean view with the original sun, matching
+`atmosphere-before-extra/coastal-player.png`. Its far mask is ocean rather
+than a ridge, and measured far-water contrast increased; four far-land
+comparisons decrease and shift toward horizon sky. Final 1:1 crops are
+`artifacts/playtest/atmosphere-round2-final-verified/*-crop.png`, cropped
+at (400,0) to 1000×550 pixels, matching the baseline crops. The two Gaia
+references were inspected at full resolution. Gaia acceptance remains open.
+
+2026-10-03 UTC fallback finished: 49/52 checks. Failed assertions: resource.GameState.windowFrameMs.throughoutSteps, renderChain.stages.includes, renderChain.contributions.graphOutputChanged. All three ocean checks pass; assets are restored. Captures: `artifacts/playtest/atmosphere-round2-final-fallback/`. Per-view CPU p50s: [{'view': 'forest:player', 'p50': 3.1, 'windows': 27}, {'view': 'forest:meadow-close', 'p50': 2.5, 'windows': 8}, {'view': 'forest:overview', 'p50': 3.4, 'windows': 9}, {'view': 'forest:river', 'p50': 3.7, 'windows': 9}, {'view': 'coastal:player', 'p50': 3.4, 'windows': 22}, {'view': 'coastal:meadow-close', 'p50': 3.2, 'windows': 20}, {'view': 'coastal:overview', 'p50': 2.3, 'windows': 11}, {'view': 'coastal:horizon-sea', 'p50': 2.1, 'windows': 10}, {'view': 'alpine:player', 'p50': 2.2, 'windows': 21}, {'view': 'alpine:ridge', 'p50': 2.2, 'windows': 9}, {'view': 'alpine:overview', 'p50': 1.8, 'windows': 8}, {'view': 'desert:player', 'p50': 1.5, 'windows': 21}, {'view': 'desert:mesa', 'p50': 1.5, 'windows': 7}, {'view': 'desert:overview', 'p50': 1.4, 'windows': 8}, {'view': 'tundra:player', 'p50': 2.5, 'windows': 20}, {'view': 'tundra:plain', 'p50': 3.8, 'windows': 18}, {'view': 'tundra:overview', 'p50': 4, 'windows': 7}]. TypeScript/Biome, 100 terrain/core tests, 2386 doc links and 180 doc tests pass. The zero-failure gate remains open; no push/merge/PR comment. Unmerged checkout retained (1.4 GiB).

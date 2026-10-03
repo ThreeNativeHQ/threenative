@@ -1,57 +1,27 @@
-// The sky, the sun and the weather over the Temperate starter.
-//
-// Every number here is appearance and all of it is this game's: the sun's angle and colour, the
-// Preetham parameters that decide how blue the zenith is, the haze the far ridges fade into, the
-// exposure, and the cumulus over the top. `Daylight` is the mechanism underneath it — it owns the
-// physical sky, the hemisphere fill, the haze plumbing and the AgX curve, and it creates no mesh,
-// material or light of its own choosing — so this file is the whole of the look, handed over as
-// options. The one thing the rig cannot do is be swung: it puts its own sun back on the eye every
-// frame, so the `L` key's sun lives in this file and the rig's copy is switched off. Everything
-// else about that sun is the rig's job — the clipmap shadow windows that follow the eye, the fill,
-// the tone curve — and the capabilities call the sky's own uniforms live precisely so a game can
-// move the sun under them.
-//
-// The existing cloud dome samples a soft density field and its sunward neighbourhood for shading.
-import { Daylight, type ICtx, VirtualShadowNode } from "@threenative/core";
-import {
-  BackSide,
-  Color,
-  DirectionalLight,
-  Mesh,
-  type Object3D,
-  SphereGeometry,
-  Vector3,
-} from "three";
+// Game-owned sun, shadows and daylight; atmosphere.ts owns the LUT sky and surface air.
+import { Atmosphere, Daylight, type ICtx, VirtualShadowNode } from "@threenative/core";
+import { Color, DirectionalLight, Mesh, type Object3D, SphereGeometry, Vector3 } from "three";
 import { denoise } from "three/addons/tsl/display/DenoiseNode.js";
 import { ao } from "three/addons/tsl/display/GTAONode.js";
 import {
-  cameraPosition,
-  color,
-  densityFogFactor,
-  dot,
-  exponentialHeightFogFactor,
   float,
-  fog,
-  max,
+  getViewPosition,
   mix,
   mrt,
-  mx_fractal_noise_float,
-  mx_noise_float,
   normalView,
-  normalize,
   output,
   pass,
-  positionLocal,
-  positionWorld,
-  pow,
   saturation,
+  screenSize,
+  screenUV,
   smoothstep,
   uniform,
+  vec2,
   vec3,
   vec4,
 } from "three/tsl";
 import type { Node } from "three/webgpu";
-import { MeshBasicNodeMaterial } from "three/webgpu";
+import { aerialPerspective, cloudDome, createAtmosphere, skyColour } from "./atmosphere.js";
 import { BIOMES, type IBiome } from "./biomes.js";
 import { setCanopySun } from "./propMaterials.js";
 
@@ -104,109 +74,12 @@ const RIG = {
   shadowExtents: [24, 320],
 } as const;
 
-/** The cumulus deck. Every number is this game's weather. */
-const CLOUDS = {
-  /** Noise cells across the whole sky. Fewer is a bigger, calmer deck. */
-  scale: 5.5,
-  /**
-   * Vertical stretch of the field, and it is a stretch and not a squash for the reason it looks like
-   * one: the field is sampled in view *direction*, so multiplying y up by three makes each cell
-   * three times wider than it is tall, which is what a cumulus deck seen from underneath is —
-   * puffs with flat bases. Squash it and every cell becomes a column, and the sky fills with smoke.
-   */
-  stretch: 1.8,
-  /**
-   * Where the bank field runs from bare sky to solid deck, and where the puff field runs from
-   * nothing to solid on top of it. Both ramps are narrow on purpose: a wide one is a smear, and a
-   * smear across the whole sky is a fog bank, not a cumulus.
-   */
-  bank: [-0.2, 0.22],
-  coverage: [-0.03, 0.4],
-  /** The band of sky the deck occupies: its base just above the horizon, thinning towards the zenith. */
-  band: [0.02, 0.1, 0.99, 0.5],
-  /** Peak opacity of a fully covered patch of sky. */
-  opacity: 0.76,
-  /** Sunlit crown, shaded underside, and the silver a thin fringe takes when it faces the sun. */
-  tint: { lit: 0xf7f8f9, shade: 0xc8d3de, silver: 0xfff2d4 },
-  /** How much a dense core is darkened relative to a thin fringe. */
-  core: 0.68,
-  /**
-   * The deck's brightness against the physical sky behind it. The sky is in radiance units several
-   * times above one, so a cloud written as plain white came out darker than the blue around it —
-   * grey blobs — once the rig stopped fogging its own dome.
-   */
-  radiance: 2.25,
-} as const;
-
-/**
- * The cloud deck: a dome inside the rig's sky box, alpha-blended over the physical sky.
- *
- * Lit by one dot product against the sun rather than by a volume integral, because a volume is a
- * compute pass per frame and this is a fragment shader over the sky's own pixels. What sells it is
- * the shading, not the integration: sun side white, away side blue-grey, a silver lining where the
- * coverage is thin and the sun is behind, and every core darkened — which is the same read a
- * volumetric integral gives at this size, for one noise field and one `dot`.
- */
-function cloudDome(sun: Node<"vec3">, opacity: number = CLOUDS.opacity): MeshBasicNodeMaterial {
-  const material = new MeshBasicNodeMaterial({
-    // Seen from the inside, and never written to depth: the deck is behind everything else in the
-    // world and must not occlude a single blade of grass in front of it.
-    depthWrite: false,
-    fog: false,
-    side: BackSide,
-    transparent: true,
-  });
-  // The only coordinate a sky has is the direction to the fragment.
-  const direction = normalize(positionLocal);
-  const field = vec3(direction.x, direction.y.mul(CLOUDS.stretch), direction.z).mul(CLOUDS.scale);
-  const puff = mx_fractal_noise_float(field, 5, 2, 0.5);
-  const bank = mx_fractal_noise_float(field.mul(0.3), 2, 2, 0.5);
-  // Density sampled towards the live sun approximates self-shadow inside each soft puff.
-  const lightDepth = mx_fractal_noise_float(field.add(sun.mul(0.55)), 3, 2, 0.5).add(
-    mx_fractal_noise_float(field.add(sun.mul(1.1)), 2, 2, 0.5).mul(0.5),
-  );
-  const crown = smoothstep(-0.12, 0.24, puff.sub(lightDepth.mul(0.65)));
-  const coverage = smoothstep(float(CLOUDS.coverage[0]), float(CLOUDS.coverage[1]), puff);
-  const deck = smoothstep(float(CLOUDS.band[0]), float(CLOUDS.band[1]), direction.y).mul(
-    smoothstep(float(CLOUDS.band[2]), float(CLOUDS.band[3]), direction.y),
-  );
-  const toSun = max(dot(direction, sun), 0);
-  const lit = mix(
-    color(CLOUDS.tint.shade),
-    color(CLOUDS.tint.lit),
-    smoothstep(float(0), float(0.55), toSun).max(crown.mul(0.85)),
-  );
-  // The lining: thin coverage facing the sun, and only there.
-  const fringe = color(CLOUDS.tint.silver)
-    .mul(pow(toSun, float(8)))
-    .mul(float(1).sub(coverage))
-    .mul(float(0.55));
-  material.colorNode = lit
-    .add(fringe)
-    .mul(mix(float(1), float(CLOUDS.core), coverage))
-    .mul(CLOUDS.radiance);
-  // Optical thickness leaves translucent wisps instead of a hard clipped noise contour.
-  const density = coverage
-    .mul(smoothstep(float(CLOUDS.bank[0]), float(CLOUDS.bank[1]), bank))
-    .mul(deck);
-  material.opacityNode = float(1).sub(density.mul(-2.4).exp()).mul(opacity);
-  return material;
-}
-
-/** One air colour at both sides of the horizon avoids a sky/ocean seam. */
-function atmosphericTint(direction: Node<"vec3">, look: IBiome): Node<"vec3"> {
-  const towardSun = dot(direction, SUN_VECTOR).max(0).pow(6);
-  return mix(
-    color(new Color(look.haze.color)),
-    color(new Color(look.sun.color)).mul(1.4),
-    omitted.has("scatter") ? float(0) : towardSun.mul(look.haze.sunScatter),
-  );
-}
-
 /** The rig, the sun that can be swung, and the one call that moves both. */
 export interface IOutdoorSky {
-  /** The installed rig: physical sky, fill, haze and the AgX curve. Add it to the scene. */
+  /** Installed follow, fill, shadows and tone mapping. Add it to the scene. */
   readonly daylight: Daylight;
+  /** Add through ctx.add so its LUT kernels warm before the first world draw. */
+  readonly atmosphere: Atmosphere;
   /** This game's sun, with the rig's clipmap shadows on it. Add it to the scene. */
   readonly sun: DirectionalLight;
   /** The sun's x in the sun's own metres: what the `L` key swings and the playtest reads. */
@@ -214,14 +87,7 @@ export interface IOutdoorSky {
   setSunX(x: number): void;
 }
 
-/**
- * Build the Temperate starter's whole outdoor light rig: sky, sun, shadows, haze and clouds.
- *
- * The rig's own sun is created and then switched off, because it is this file's sun that the `L` key
- * moves and a rig that puts its sun back on the eye every frame cannot be moved. That is the whole
- * of the substitution; the sky, the fill, the haze and the tone curve are the rig's, and they are
- * what a flat `Color` background and a hand-set `FogExp2` were standing in for.
- */
+/** Shared daylight plumbing with game-owned LUT sky, clouds and surface air. */
 export function createOutdoorSky(camera: Object3D, biome?: IBiome): IOutdoorSky {
   const direction = biome ? new Vector3(...biome.sun.direction) : SUN.direction;
   const sunColor = biome ? new Color(biome.sun.color) : SUN.colour;
@@ -265,18 +131,10 @@ export function createOutdoorSky(camera: Object3D, biome?: IBiome): IOutdoorSky 
     sunDirection: direction,
     sunIntensity: 0,
   });
-  // The physical sky's radiance is calibrated separately from ground irradiance.
-  daylight.sky.cloudCoverage.value = 0; // This game owns one cloud deck.
-  const skyMaterial = daylight.sky.material;
-  if (skyMaterial.colorNode) {
-    const skyDirection = normalize(positionLocal);
-    const horizon = skyDirection.y.add(mx_noise_float(skyDirection.mul(14)).mul(0.012));
-    skyMaterial.colorNode = mix(
-      (skyMaterial.colorNode as Node<"vec3">).mul(biome?.skyRadiance ?? BIOMES.forest.skyRadiance),
-      atmosphericTint(skyDirection, biome ?? BIOMES.forest),
-      omitted.has("haze") ? float(0) : smoothstep(0.065, 0, horizon),
-    );
-  }
+  const atmosphere = createAtmosphere(biome ?? BIOMES.forest);
+  atmosphere.setSunDirection(direction);
+  daylight.sky.cloudCoverage.value = 0;
+  daylight.sky.material.colorNode = skyColour(atmosphere, SUN_VECTOR, biome ?? BIOMES.forest);
   daylight.sun.visible = false;
   daylight.add(sun.target);
 
@@ -284,7 +142,10 @@ export function createOutdoorSky(camera: Object3D, biome?: IBiome): IOutdoorSky 
   // The deck rides inside the rig's own sky box, so it needs no follow of its own: the box is put
   // back on the eye every frame and the dome is its child. 64 by 32 is enough, because the pattern
   // is per fragment and nothing here is shaded from the dome's own normals.
-  const deck = new Mesh(new SphereGeometry(1, 64, 32), cloudDome(sunDirection, biome?.clouds));
+  const deck = new Mesh(
+    new SphereGeometry(1, 64, 32),
+    cloudDome(atmosphere, sunDirection, biome ?? BIOMES.forest),
+  );
   deck.name = "cumulus-deck";
   deck.scale.setScalar(0.9);
   deck.frustumCulled = false;
@@ -294,12 +155,14 @@ export function createOutdoorSky(camera: Object3D, biome?: IBiome): IOutdoorSky 
     sun.position.set(x, direction.y, direction.z);
     // The sky's sun disc, its brightest quadrant and the cloud deck's lighting all follow the light.
     daylight.sky.sunPosition.value.copy(sun.position).normalize();
+    atmosphere.setSunDirection(sun.position);
     (sunDirection as unknown as { value: Vector3 }).value.copy(sun.position).normalize();
     // And so does the light coming through the needles, which reads the same vector.
     setCanopySun(sun.position);
   }
   setSunX(direction.x);
   return {
+    atmosphere,
     daylight,
     get sunX() {
       return sun.position.x;
@@ -318,24 +181,37 @@ export function installOutdoorOcclusion(
   if (renderer.kind !== "webgpu" || renderer.createRenderChain === undefined) return () => {};
   const look = biome ?? BIOMES.forest;
   const previousFog = scene.fogNode;
-  const distanceHaze = densityFogFactor(float(look.haze.density));
-  const valleyHaze = exponentialHeightFogFactor(
-    float(look.haze.valleyDensity),
-    float(look.haze.height),
-  ) as Node<"float">;
-  // The installed height fog keeps peaks clear. Its sunward tint follows the L key.
-  const hazeColor = atmosphericTint(normalize(positionWorld.sub(cameraPosition)), look);
-  const heightFog = fog(
-    hazeColor,
-    omitted.has("haze")
-      ? float(0)
-      : float(1).sub(distanceHaze.oneMinus().mul(valleyHaze.oneMinus())),
-  );
-  scene.fogNode = heightFog;
+  const previousClassicFog = scene.fog;
+  const atmosphere = scene.getObjectByName("world-atmosphere");
+  if (!(atmosphere instanceof Atmosphere))
+    throw new Error("Outdoor sky must be added before its air.");
+  // Disable the rig's legacy material fog; air is composited once after the lit scene.
+  scene.fogNode = null;
+  scene.fog = null;
   // AO darkens RGB only; multiplying alpha leaked the backdrop through dark alpine crags.
   const world = pass(scene, camera);
   world.setMRT(mrt({ output, normal: normalView }));
   const depth = world.getTextureNode("depth");
+  // An uncovered MSAA depth sample must not leave a one-pixel terrain edge against the sky.
+  const airDepth = depth.r.min(depth.sample(screenUV.add(vec2(0, screenSize.y.reciprocal()))).r);
+  const cameraWorld = uniform(camera.matrixWorld);
+  const surface = cameraWorld.mul(
+    vec4(getViewPosition(screenUV, airDepth, uniform(camera.projectionMatrixInverse)), 1),
+  ).xyz;
+  const air = aerialPerspective(
+    atmosphere,
+    SUN_VECTOR,
+    look,
+    !omitted.has("haze"),
+    surface,
+    cameraWorld.mul(vec4(0, 0, 0, 1)).xyz,
+    world.getTextureNode("output"),
+  );
+  const airOutput = mix(
+    air,
+    world.getTextureNode("output"),
+    airDepth.greaterThanEqual(1).toFloat(),
+  );
   const normals = world.getTextureNode("normal");
   const contact = ao(depth, normals, camera);
   contact.radius.value = 0.85;
@@ -345,7 +221,7 @@ export function installOutdoorOcclusion(
   const filtered = denoise(contact.getTextureNode(), depth, normals, camera);
   const occlusion = filtered as unknown as Node<"vec4">;
   const chain = renderer.createRenderChain({
-    input: world.getTextureNode("output"),
+    input: airOutput,
     worldPass: world,
     request: {
       stages: ["ambientOcclusion", "grade"].filter((name) => !omitted.has(name)),
@@ -390,7 +266,8 @@ export function installOutdoorOcclusion(
     ],
   });
   return () => {
-    if (scene.fogNode === heightFog) scene.fogNode = previousFog;
+    if (scene.fogNode === null) scene.fogNode = previousFog;
+    if (scene.fog === null) scene.fog = previousClassicFog;
     chain.dispose();
     world.dispose();
     contact.dispose();
