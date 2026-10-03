@@ -2654,6 +2654,10 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     tn_register_contract_test(threenative-stall-budget-hitch-test)
     tn_register_contract_test(threenative-timestamp-query-test)
     tn_register_contract_test(threenative-exposure-graph-test)
+    add_test(NAME threenative-exposure-graph-test-validation-negative
+        COMMAND $<TARGET_FILE:threenative-exposure-graph-test> --inject-validation)
+    set_tests_properties(threenative-exposure-graph-test-validation-negative
+        PROPERTIES LABELS "native-contract")
     if(TN_ENABLE_VIDEO)
         tn_register_contract_test(threenative-video-recorder-state-test)
     else()
