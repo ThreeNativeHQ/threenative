@@ -2689,7 +2689,7 @@ Scope: measured forest/coastal/tundra surfaces and same-site surroundings for al
 explicit authored lake/stream beds where hydro-flattened lidar has no bathymetry. No vegetation edits.
 
 - [x] Three bounded 1 m survey crops and provenance prepared; bake and cache reuse PASS (8.93 s cold), all arrays finite. proof: `node scripts/dem/crop.mjs /tmp/strata-dem2 forest coastal tundra`, `node scripts/bake.mjs`.
-- [ ] Frame real landforms and continuous high-resolution rings. proof: 1920×1080 scratch playtest on port 5297, inspect 1:1 crops against Gaia and round 1 alpine.
+- [x] Real landforms and 384-ring continuations framed; scratch PASS 4/4 assertions, zero console/network/runtime errors, contact error 0.0000446 m and 1,024 exact seam samples. proof: 1920×1080 `artifacts/playtest/dem2-pass6`, inspected 1:1 crops against Gaia and round 1 alpine; `verify-ocean` 3/3 PASS.
 - [ ] Preserve water/collision/export contracts and run final licensed/fallback gates. proof: full terrain scenario + `verify-ocean`, example tsc, root Biome, terrain Vitest, `test:consumer`.
 
 DEM round 2 checkpoint: all five worlds export finite 66,049-entry flow/sediment/deposition/talus
@@ -2700,3 +2700,13 @@ pointer. The existing focused packed replay (excluding rain/snow pointer asserti
 passes all five exact height arrays, 131,072 triangles each, baked waters, and installed game
 handoff; it is supplementary, not a full consumer PASS. First scratch capture failed on
 transient ERR_NETWORK_CHANGED texture requests; fresh capture pending.
+
+2026-10-03 UTC visual checkpoint: corrected scratch `dem2-pass6` PASS (4/4),
+`verify-ocean` PASS (3/3), NVIDIA Turing at 1920×1080, zero console/network/runtime
+errors. 1:1 1280×720 crops (no resizing) are beside those captures; measured valley,
+contained lake, actual coastal headlands and low-relief tundra improve on the round 1
+procedural counterparts. Vegetation/material/sky differences from Gaia remain outside
+this lane. Forest lake/river calls use the existing footprint limit so isolated lower
+terrain is not flooded. Private-Xvfb trace shows GPU 17.1% busy / main thread 72.4%
+idle and explicitly rejects its apparent frame rate as a display artifact; final
+performance proof is moving to the live Xwayland host display. No engine code changed.
