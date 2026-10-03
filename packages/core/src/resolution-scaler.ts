@@ -24,6 +24,19 @@ export const RESOLUTION_SCALER = {
    */
   rungs: [1.0, 0.85, 0.72, 0.61, 0.52, 0.44, 0.38, 0.32, 0.27, 0.23] as const,
   /**
+   * The lowest rung a desktop may take while nothing in the render chain reconstructs a
+   * full-resolution frame from the smaller one.
+   *
+   * The ladder above is the device arm's, and it ends at 0.23 because a phone buys the pixels back
+   * differently. A desktop has nothing: no temporal stage, no reconstruction, just 5% of the
+   * pixels stretched across the panel, which is blocky mush rather than a slow frame — and the
+   * report at that point claims the budget was met. 0.61 is where surrendering more pixels stops
+   * buying frame time worth what it costs to look at, and it is reported as `atFloor` rather than
+   * passed in silence. A host whose chain *does* reconstruct the frame says so, and the deep
+   * rungs come back; `renderer-config.ts` decides which floor a platform starts with.
+   */
+  desktopFloorScale: 0.61,
+  /**
    * The signal is **fps against the configured target**, not the presented interval.
    *
    * Amended 2026-08-28 from a device arm, before the second implementation. The original triggers
@@ -142,11 +155,33 @@ export const RESOLUTION_SCALE_INSENSITIVE_MARKER = "TN_RESOLUTION_SCALE_INSENSIT
 /** Pixels retained per rung: 0.85 linear on each axis. */
 const RUNG_PIXEL_RATIO = 0.85 * 0.85;
 
+/** One rung value to its index, failing closed on anything the ladder does not contain. */
+function rungIndex(value: number, label: string): number {
+  const index = RESOLUTION_SCALER.rungs.indexOf(value as never);
+  if (index < 0)
+    throw new Error(
+      `ResolutionScaler ${label} must be one of the pre-registered rung values, received ${String(value)}.`,
+    );
+  return index;
+}
+
 export interface IResolutionScalerOptions {
   /** The `display.maxFps` the loop is holding the budget against. */
   readonly targetFps: number;
   /** Which rung to start on. Must be one of the rungs; defaults to the ceiling. */
   readonly start?: number;
+  /**
+   * The lowest rung this platform may take, and the rung `atFloor` is reported at. Must be one of
+   * the rungs; defaults to the last one, which is the whole ladder the device arm measured with.
+   * A desktop host passes `RESOLUTION_SCALER.desktopFloorScale`.
+   */
+  readonly minScale?: number;
+  /**
+   * Read whenever the floor is consulted, so the scaler can see a render chain that arrived or
+   * changed under it: a chain that reconstructs a display-resolution frame from these pixels
+   * lifts the floor for as long as it is installed.
+   */
+  readonly temporalUpscale?: () => boolean;
 }
 
 /** A closed frame-budget window's presentation distribution and optional GPU observation. */
@@ -183,6 +218,9 @@ export class ResolutionScaler {
   /** presented p95 above this is dropping frames, whatever the mean says. */
   tailMs = 0;
   #index: number;
+  /** The lowest rung this platform may take; the whole ladder's last index when it states none. */
+  readonly #minIndex: number;
+  readonly #temporalUpscale: (() => boolean) | undefined;
   #scaleSource: Exclude<ScaleSource, "pinned"> = "auto";
   #cleanWindows = 0;
   #cooldown = 0;
@@ -218,14 +256,12 @@ export class ResolutionScaler {
   #lastInsensitiveMarker = Number.NEGATIVE_INFINITY;
 
   constructor(options: IResolutionScalerOptions) {
-    const { start, targetFps } = options;
+    const { minScale, start, targetFps, temporalUpscale } = options;
     this.retarget(targetFps);
-    const index = start === undefined ? 0 : RESOLUTION_SCALER.rungs.indexOf(start as never);
-    if (index < 0)
-      throw new Error(
-        `ResolutionScaler start must be one of the pre-registered rung values, received ${String(start)}.`,
-      );
-    this.#index = index;
+    this.#index = start === undefined ? 0 : rungIndex(start, "start");
+    this.#minIndex =
+      minScale === undefined ? RESOLUTION_SCALER.rungs.length - 1 : rungIndex(minScale, "minScale");
+    this.#temporalUpscale = temporalUpscale;
   }
 
   /**
@@ -249,6 +285,14 @@ export class ResolutionScaler {
   /** The scale the renderer should be applying right now. */
   get scale(): number {
     return RESOLUTION_SCALER.rungs[this.#index] ?? 1;
+  }
+
+  /**
+   * The lowest rung the scaler may take right now. The platform's own floor, lifted for as long
+   * as the render chain reconstructs the frame from the pixels it is being asked to surrender.
+   */
+  get #limitIndex(): number {
+    return this.#temporalUpscale?.() === true ? RESOLUTION_SCALER.rungs.length - 1 : this.#minIndex;
   }
 
   get scaleSource(): Exclude<ScaleSource, "pinned"> {
@@ -328,7 +372,7 @@ export class ResolutionScaler {
       // does not become pixel-bound just because this window lost its GPU timestamp.
       if (this.#insensitiveHold > 0 || this.#insensitiveFloor >= 0) return undefined;
       if (gpuMs === undefined) return this.#probeUnknown(window);
-      if (this.#index >= RESOLUTION_SCALER.rungs.length - 1) {
+      if (this.#index >= this.#limitIndex) {
         this.#atFloor = true;
         return undefined;
       }
@@ -450,14 +494,14 @@ export class ResolutionScaler {
         this.#probeBlind = true;
         return this.#step(-1, false);
       }
-      if (this.#index >= RESOLUTION_SCALER.rungs.length - 1) {
+      if (this.#index >= this.#limitIndex) {
         this.#atFloor = true;
         return undefined;
       }
       this.#probeFps = window.fps;
       return this.#step(1);
     }
-    if (this.#index >= RESOLUTION_SCALER.rungs.length - 1) {
+    if (this.#index >= this.#limitIndex) {
       this.#atFloor = true;
       return undefined;
     }
@@ -535,10 +579,10 @@ export class ResolutionScaler {
   #step(direction: number, countGuard = true): number {
     // The boundary a fall from rung n crosses is the same one the climb back to n crosses.
     const boundary = direction > 0 ? this.#index : this.#index - 1;
-    this.#index = Math.min(
-      RESOLUTION_SCALER.rungs.length - 1,
-      Math.max(0, this.#index + direction),
-    );
+    // The platform's floor is a limit, not a step count: a jump sized on a deficit can ask for
+    // more rungs than the floor allows, and it must land on the floor rather than past it.
+    const next = this.#index + direction;
+    this.#index = direction > 0 ? Math.min(next, this.#limitIndex) : Math.max(0, next);
     this.#cooldown = RESOLUTION_SCALER.cooldownWindows;
     // A refund is a measurement correction, not workload oscillation: counting it would let
     // probe/refund cycles pin the scaler at a rung pixels were just proven not to earn.
