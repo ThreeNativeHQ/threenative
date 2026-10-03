@@ -61,8 +61,8 @@ The unit proof paths and the desktop fallback scenario now exist. Browser and An
 
 ## Acceptance criteria
 
-- [ ] All admitted codecs are demonstrated through the packaged loader, not merely through WASM availability; all refused combinations retain actionable build errors. proof: the completed Phase 3 scenario outputs, with the named fixture, package/cohort and adapter recorded inline here.
-- [ ] The feature preserves its documented inactive/fallback path and releases owned resources after repeated lifecycle transitions. proof: `pnpm exec vitest run packages/create-threenative/__tests__/vq-native-asset-capabilities.spec.ts` plus the Phase 3 lifecycle scenario.
+- [x] All admitted codecs are demonstrated through the packaged loader, not merely through WASM availability; all refused combinations retain actionable build errors. proof: the completed Phase 3 scenario outputs, with the named fixture, package/cohort and adapter recorded inline here. **Result 2026-10-03:** fixture `examples/abyss-framework/vq-assets` (Meshopt cube, Draco torus, PNG→KTX2 panel). Web: `sh scripts/vq01-web-proof.sh`, nvidia/turing WebGPU, all three decoded through the packaged loader, 8/8 (`c9d33523d`). Android V8 (emulator-5554, API 35 x86_64, APK `com.threenative.vq01` sha256 `87b9c853…`, `JS engine created: V8`): 8/8 decoder-free, every compressed codec refused by name at cook (`TN_ASSETS_COMPRESSION_SKIPPED`), `b0fb1053e`. Authored-KTX2 refusal preserving the previous package: hosted run 36998104447.
+- [ ] The feature preserves its documented inactive/fallback path and releases owned resources after repeated lifecycle transitions. proof: `pnpm exec vitest run packages/create-threenative/__tests__/vq-native-asset-capabilities.spec.ts` plus the Phase 3 lifecycle scenario. **Open 2026-10-03:** the spec passes (19/19), but no Phase 3 scenario repeats lifecycle transitions yet; the web/Android runs load once.
 
 ## Performance and promotion
 
