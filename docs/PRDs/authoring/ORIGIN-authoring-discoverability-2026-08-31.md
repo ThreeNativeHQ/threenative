@@ -76,7 +76,7 @@ self-improvement loop, not just the phase.
 | 2 | [PRD-298 — search that fails closed and can say "not ours"](./PRD-298-capability-search-fails-closed.md) | OPEN | The cheapest correction, and the only one that removes harm rather than adding reach. Eight wrong answers is a defect today. |
 | 3 | [PRD-300 — one capability, many phrasings](./PRD-300-capability-vocabulary-expansion.md) | OPEN | Widens recall inside the existing mechanism. Runs after 298 so the new hits are thresholded, not added to the noise. |
 | 4 | [PRD-301 — every shipped package is in the manifest](./PRD-301-manifest-covers-every-shipped-package.md) | OPEN | Closes the holes 297 exposes. Independent of 299; can run in parallel with 300. |
-| 5 | [PRD-299 — a request decomposes into mechanics before it searches](./PRD-299-request-decomposition-index.md) | OPEN, **needs an owner ruling first** | The largest change and the one nearest the closed door. Runs last so it is built on a measured, thresholded, fully-covered search rather than compensating for one. |
+| 5 | [PRD-299 — a request decomposes into mechanics before it searches](../BLOCKED/requires-owner-decision/PRD-299-request-decomposition-index.md) | OPEN, **needs an owner ruling first** | The largest change and the one nearest the closed door. Runs last so it is built on a measured, thresholded, fully-covered search rather than compensating for one. |
 
 PRD-297 is a hard dependency of all four others: each of them states its acceptance in terms of
 the corpus recall number, and none of them may be filed done without a before/after from
