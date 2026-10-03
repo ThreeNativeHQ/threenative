@@ -144,13 +144,14 @@ interface IShaderGraphBuilder extends NodeBuilder {
   flowStagesNode(node: Node, output: "vec4"): { code: string };
 }
 
-function shadowGraphBuilder(): IShaderGraphBuilder {
+function shadowGraphBuilder(reversedDepthBuffer = false): IShaderGraphBuilder {
   const object = new Mesh(new BoxGeometry(), new MeshBasicMaterial());
   const renderer = {
     backend: {
       isWebGPUBackend: true,
       utils: { getTextureSampleData: () => ({ primarySamples: 1 }) },
     },
+    reversedDepthBuffer,
     hasCompatibility: () => true,
     hasFeature: () => false,
     library: { fromMaterial: () => null },
@@ -165,11 +166,20 @@ function shadowGraphBuilder(): IShaderGraphBuilder {
 }
 
 /** Compile the real selection and stock frustum filter, without textures or a GPU. */
-function levelDebugGraph(search: string, uv = [0.25, 0.75]) {
+function levelDebugGraph(
+  search: string,
+  uv = [0.25, 0.75],
+  options = {},
+  reversedDepthBuffer = false,
+) {
   vi.stubGlobal("location", { search });
   const { light } = world();
-  const node = new VirtualShadowNode(light, { clipExtents: [8, 32, 128, 512], marker: false });
-  const graphBuilder = shadowGraphBuilder();
+  const node = new VirtualShadowNode(light, {
+    clipExtents: [8, 32, 128, 512],
+    marker: false,
+    ...options,
+  });
+  const graphBuilder = shadowGraphBuilder(reversedDepthBuffer);
   const outgoingLight = property("vec3", "testOutgoingLight");
   const lightingModel = new LightingModel();
   graphBuilder.context = { lightingModel, outgoingLight };
@@ -182,7 +192,8 @@ function levelDebugGraph(search: string, uv = [0.25, 0.75]) {
     vi.spyOn(stock, "setup").mockImplementation(() =>
       vec4(
         stock.setupShadowFilter(graphBuilder, {
-          filterFn: () => float(0.6),
+          filterFn: ({ shadowCoord }: { shadowCoord: ReturnType<typeof vec3> }) =>
+            float(0.6).add(shadowCoord.z.mul(0.01)),
           shadowCoord: vec3(uv[0], uv[1], 0.5),
         }) as never,
       ),
@@ -198,7 +209,10 @@ function levelDebugGraph(search: string, uv = [0.25, 0.75]) {
     "vec4",
   );
   node.dispose();
-  return { code: flow.code, nodes: (graphBuilder as unknown as { nodes: Set<Node> }).nodes.size };
+  return {
+    code: flow.code.replace(/virtualShadowReceiverSlope\d+/gu, "virtualShadowReceiverSlope"),
+    nodes: (graphBuilder as unknown as { nodes: Set<Node> }).nodes.size,
+  };
 }
 
 it("blends the fine shadow contribution continuously before its guard edge", () => {
@@ -206,6 +220,23 @@ it("blends the fine shadow contribution continuously before its guard edge", () 
   expect(flow).toContain("smoothstep(");
   expect(flow).toMatch(/virtualShadowValue = mix\(/u);
 });
+
+it.each([false, true])(
+  "biases coarse PCF comparisons by measured receiver slope (reversed depth: %s)",
+  (reversed) => {
+    const code = levelDebugGraph("", [0.25, 0.75], {}, reversed).code;
+    expect(code).toContain("virtualShadowReceiverSlope");
+    expect(code).toContain("dpdx(");
+    expect(code).toContain("dpdy(");
+    expect(code.indexOf("dpdx(")).toBeLessThan(code.indexOf("if ("));
+    expect(code).toMatch(
+      reversed ? /\.z \+ .*virtualShadowReceiverSlope/u : /\.z - .*virtualShadowReceiverSlope/u,
+    );
+    const optedOut = levelDebugGraph("", [0.25, 0.75], { receiverPlaneBias: false }).code;
+    expect(optedOut).not.toContain("virtualShadowReceiverSlope");
+    expect(optedOut).not.toContain("dpdx(");
+  },
+);
 
 describe("virtual shadow level diagnostic", () => {
   it("should preserve the original graph when the URL flag is off", () => {

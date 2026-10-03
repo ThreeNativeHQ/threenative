@@ -5,6 +5,8 @@ import {
   type DirectionalLight,
   type Mesh,
   Object3D,
+  PCFShadowMap,
+  PCFSoftShadowMap,
   type OrthographicCamera,
   type RenderTarget,
   Raycaster,
@@ -16,15 +18,20 @@ import {
   If,
   abs,
   and,
+  dFdx,
+  dFdy,
   float,
   getShadowMaterial,
+  length,
   max,
   min,
   mix,
   nodeObject,
   positionWorld,
   property,
+  reference,
   shadow,
+  shadowPositionWorld,
   smoothstep,
   uniform,
   vec3,
@@ -185,6 +192,10 @@ export interface IVirtualShadowOptions {
    * Default true; false keeps eye follow for every camera. Walking cameras keep eye follow.
    */
   readonly followViewFocus?: boolean;
+  /** Measure receiver-plane slope across each level's texel footprint to prevent coarse acne.
+   * Default true; false preserves only the authored bias. Custom filterNode owns its footprint.
+   */
+  readonly receiverPlaneBias?: boolean;
   /**
    * Draw registered AutoLOD chains with their coarsest geometry past the finest level, default true.
    * Alpha-tested and transparent casters keep casting on every level that resolves their bounds;
@@ -691,6 +702,8 @@ export class VirtualShadowNode extends ShadowBaseNode {
   #moversActive: UniformNode<"float", number> = uniform(0);
   #basisU: UniformNode<"vec3", Vector3> = uniform(new Vector3(1, 0, 0));
   #basisV: UniformNode<"vec3", Vector3> = uniform(new Vector3(0, 0, 1));
+  #basisW: UniformNode<"vec3", Vector3> = uniform(new Vector3(0, 1, 0));
+  #receiverSlope = property("float", `virtualShadowReceiverSlope${String(this.id)}`);
   #frame = 0;
   /** 1 while this node is inside `#updateFrame`; a level render re-enters `updateBefore`. */
   #updating = false;
@@ -896,6 +909,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
       selectionGuard: guardedExtent,
       shadowLodBias: options.shadowLodBias ?? true,
       followViewFocus: options.followViewFocus ?? true,
+      receiverPlaneBias: options.receiverPlaneBias ?? true,
     };
     this.#stats = {
       byInvalidation: 0,
@@ -1715,6 +1729,50 @@ export class VirtualShadowNode extends ShadowBaseNode {
       light.name = `VirtualShadowLevel${String(index)}`;
       // quality-allow: the stock shadow node reads only position, target and shadow off its light
       const node = shadow(light as unknown as DirectionalLight, levelShadow);
+      // quality-allow: the stock shadow node reads only position, target and shadow off its light
+      const moverNode = shadow(light as unknown as DirectionalLight, moverShadow);
+      if (this.options.receiverPlaneBias) {
+        for (const entry of [
+          { node, map: levelShadow },
+          { node: moverNode, map: moverShadow },
+        ]) {
+          const stock = entry.node as typeof node & {
+            setupShadowFilter: (
+              builder: NodeBuilder,
+              inputs: { shadowCoord: ReturnType<typeof vec3> },
+            ) => Node;
+          };
+          const filter = stock.setupShadowFilter;
+          stock.setupShadowFilter = (builder, inputs) => {
+            // A custom filter owns its sampling footprint; leave it and all authored biases intact.
+            if ((entry.map as ShadowWithFilter).filterNode)
+              return filter.call(stock, builder, inputs);
+            const type = builder.renderer.shadowMap.type;
+            const footprint =
+              type === PCFSoftShadowMap
+                ? float(2)
+                : type === PCFShadowMap
+                  ? max(reference("radius", "float", entry.map), 0).add(1)
+                  : float(0.5);
+            const span = reference("far", "float", entry.map.camera).sub(
+              reference("near", "float", entry.map.camera),
+            );
+            const bias = this.#receiverSlope
+              .mul(2 * extent)
+              .div(reference("mapSize", "vec2", entry.map).x)
+              .div(span)
+              .mul(footprint);
+            const coord = inputs.shadowCoord;
+            return filter.call(stock, builder, {
+              ...inputs,
+              shadowCoord: vec3(
+                coord.xy,
+                builder.renderer.reversedDepthBuffer ? coord.z.add(bias) : coord.z.sub(bias),
+              ),
+            });
+          };
+        }
+      }
       const tint = this.#levelTint;
       if (tint !== undefined) {
         // Observe the stock sampler's actual coordinate, including normal bias and any received
@@ -1779,8 +1837,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
         ),
         moverShadow,
         // One placeholder light serves both maps: the stock node reads only its placement.
-        // quality-allow: the stock shadow node reads only position, target and shadow off its light
-        moverNode: shadow(light as unknown as DirectionalLight, moverShadow),
+        moverNode,
         node,
         shadow: levelShadow,
       });
@@ -1818,6 +1875,17 @@ export class VirtualShadowNode extends ShadowBaseNode {
     const basisV = this.#basisV;
     return Fn(() => {
       this.setupShadowPosition(builder);
+      if (this.options.receiverPlaneBias) {
+        // Derivatives must execute before the non-uniform level branches. A shared geometric
+        // receiver plane supplies world-depth slope; each map scales it by its own texel and span.
+        const normal = dFdx(shadowPositionWorld).cross(dFdy(shadowPositionWorld)).toVar();
+        const along = max(abs(normal.dot(this.#basisW)), max(length(normal).mul(0.0001), 1e-12));
+        this.#receiverSlope.assign(
+          abs(normal.dot(basisU))
+            .add(abs(normal.dot(basisV)))
+            .div(along),
+        );
+      }
       const u = positionWorld.dot(vec3(basisU as never)).sub(centerU as never);
       const v = positionWorld.dot(vec3(basisV as never)).sub(centerV as never);
       const coarsest = levels[levels.length - 1];
@@ -2019,6 +2087,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
     this.#centerV.value = this.clipmap.centerLight.v;
     this.#basisU.value.set(this.clipmap.basisU.x, this.clipmap.basisU.y, this.clipmap.basisU.z);
     this.#basisV.value.set(this.clipmap.basisV.x, this.clipmap.basisV.y, this.clipmap.basisV.z);
+    this.#basisW.value.set(this.clipmap.basisW.x, this.clipmap.basisW.y, this.clipmap.basisW.z);
     // A caster that stopped casting, or stopped being visible, changed what the levels hold without
     // changing the tree, so nothing else on the frame would say so. Asked here, before this frame's
     // own writes to those flags, which is what `#probe` and the mover exclusion below both do.
