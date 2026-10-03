@@ -398,6 +398,34 @@ describe("formatPerfReport", () => {
     expect(text).toContain("late sync compile: none — every window reported pipelineCompileCalls 0");
   });
 
+  it("prints the GPU-selected main-pass triangle count and names the CPU capacity figure", () => {
+    // Three counts an indirect batch at its merged geometry's capacity, so the CPU figure is the
+    // ceiling over what the kernel can select. Quoting only that one put 338 million triangles on
+    // a scene that drew 402 thousand.
+    const withPasses = (gpu: boolean): string =>
+      `${budgetLine(1, 30, 40, 20)}\n` +
+      `TN_FRAME_BUDGET:{"window":2,"frames":300,"hitches":0,"fps":30,${withPassesBody(gpu)}}\n`;
+    const withPassesBody = (gpu: boolean): string =>
+      `"passes":{"main":{"frames":300,"draws":{"mean":30,"p50":30,"p95":30},` +
+      `"triangles":{"mean":338000000,"p50":338000000,"p95":338000000}` +
+      (gpu ? `,"gpuTriangles":402000}}` : `}}`);
+
+    const gpuText = formatPerfReport(
+      assessPerfMarkers(parsePerformanceMarkers(withPasses(true)), { requireWindows: 1 }, "log"),
+    );
+    expect(gpuText).toContain("main pass triangles: 402,000 GPU-selected, 338,000,000 CPU capacity");
+
+    const cpuText = formatPerfReport(
+      assessPerfMarkers(parsePerformanceMarkers(withPasses(false)), { requireWindows: 1 }, "log"),
+    );
+    expect(cpuText).toContain("the GPU-selected count was not reported");
+  });
+
+  it("prints no triangle line for a window that submitted no pass", () => {
+    const text = formatPerfReport(assessPerfMarkers(parsePerformanceMarkers(sampleStream()), { requireWindows: 1 }, "log"));
+    expect(text).not.toContain("main pass triangles");
+  });
+
   it("prints no hitch section for a stream without hitch lines", () => {
     const parsed = parsePerformanceMarkers(sampleStream());
     const text = formatPerfReport(assessPerfMarkers(parsed, { requireWindows: 2 }, "test"));

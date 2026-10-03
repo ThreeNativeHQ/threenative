@@ -201,7 +201,17 @@ export interface IFrameBudgetPassSummary {
   readonly draws: IFrameBudgetSummary;
   /** Frames in the window that submitted a pass of this kind. */
   readonly frames: number;
+  /**
+   * Three's CPU figure: `instanceCount * count / 3` per draw, where an indirect batch's `count` is
+   * the merged geometry's capacity. An upper bound over what the GPU could select.
+   */
   readonly triangles: IFrameBudgetSummary;
+  /**
+   * What the GPU selected, main pass only: the streamed world's own indirect tally, beside the
+   * figure above so a reader of the pass record can tell which of the two it is holding. Absent
+   * rather than zero when the world reported no tally — see `mainGpuTriangles`.
+   */
+  readonly gpuTriangles?: number;
 }
 
 /**
@@ -865,18 +875,21 @@ export class FrameBudget {
     const share = (value: number): number =>
       presented.mean === 0 ? 0 : Math.round((value / presented.mean) * 1_000) / 1_000;
     const passes: Partial<Record<FramePassKind, IFrameBudgetPassSummary>> = {};
+    const gpuTally = this.#readGpuTally?.();
     for (const kind of FRAME_PASS_KINDS) {
       if (this.#passFrames[kind] === 0) continue;
       passes[kind] = {
         draws: this.#passDrawRings[kind].summarize(this.#scratch),
         frames: this.#passFrames[kind],
         triangles: this.#passTriangleRings[kind].summarize(this.#scratch),
+        // Main pass only, and beside three's CPU figure rather than instead of it: the same window
+        // that says `triangles 338,000,000` has to say what the kernel actually selected.
+        ...(kind === "main" && gpuTally !== undefined ? { gpuTriangles: gpuTally.triangles } : {}),
       };
     }
     const surface =
       this.#readSurface === undefined ? undefined : requireSurface(this.#readSurface());
     const gpuAgeFrames = this.#readGpuAgeFrames?.();
-    const gpuTally = this.#readGpuTally?.();
     if (gpuAgeFrames !== undefined && (!Number.isInteger(gpuAgeFrames) || gpuAgeFrames < 0))
       throw new Error(
         `Frame budget gpuAgeFrames must be a non-negative integer, received ${String(gpuAgeFrames)}.`,

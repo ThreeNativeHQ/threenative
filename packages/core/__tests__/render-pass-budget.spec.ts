@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { FrameBudget } from "../src/frame-budget.js";
 import {
   FRAME_PASS_KINDS,
   type IRenderPassSample,
@@ -157,5 +158,34 @@ describe("render pass budget", () => {
     pool.timestamps.set(mainUid, 5.5); // main
     // Main must not absorb the shadow's pass: the split is 5.5 and 2.25, not 7.75 and 0.
     expect(budget.gpuPassMs(frame)).toEqual({ main: 5.5, shadow: 2.25 });
+  });
+
+  it("reports the GPU-selected main-pass triangles beside the CPU capacity figure", () => {
+    // Three adds `instanceCount * (count / 3)` per draw, and for an indirect batch `count` is the
+    // merged geometry's capacity, not what the GPU selected -- so a streamed world reads as hundreds
+    // of millions of triangles for a few hundred thousand drawn. The window already carries the
+    // honest number as `mainGpuTriangles`; a reader who only has the pass record cannot see which
+    // of the two they are holding, so the GPU figure belongs beside the CPU one in the pass too.
+    const raw = fakeRenderer();
+    const passBudget = RenderPassBudget.install(raw) as RenderPassBudget;
+    const budget = new FrameBudget({
+      readGpuTally: () => ({ instances: 12_000, triangles: 402_000 }),
+      report: () => undefined,
+      reportEvery: 1000,
+    });
+    let now = 0;
+    for (let frame = 0; frame < 4; frame += 1) {
+      now += 16.7;
+      budget.beginFrame(now, now);
+      passBudget.beginFrame();
+      raw.render({ ...MAIN, submissions: { draws: 30, triangles: 338_000_000 } }, {});
+      budget.addRenderPasses(passBudget.passes());
+      budget.markSimulationEnd(now, 1);
+      budget.endFrame(now + 1);
+    }
+
+    const main = budget.window().passes?.main;
+    expect(main?.triangles.p50).toBe(338_000_000);
+    expect(main?.gpuTriangles).toBe(402_000);
   });
 });
