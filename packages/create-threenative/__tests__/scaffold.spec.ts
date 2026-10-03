@@ -169,6 +169,9 @@ const BUG_REPORT_SKILL_PATHS = [
 // Recomputed for VQ07 merged with develop 6c8858d74: retain receipt source and optional fog,
 // plus the new 0.2.8 template package pins and rain verifier .ts import.
 // VQ07 outside-shadow-map correction changes only starter volumetricFog.ts; remeasured by this spec.
+// VQ07 file-length split: starter's one 350-line src/render/volumetricFog.ts becomes four files
+// (the same source, same public API, same generated WGSL) that each stay under the 200-line cap in
+// looks.spec.ts. No other template carries the fog, so only starter's tree moves; remeasured by this spec.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-01 on the merge of develop a602467db (PRD-458/473): every template's frame
   // budget now comes from resolveTargetFps, so ten trees move and `rts` does not; the capability reference (365 -> 368 entries) then moved all eleven, because it ships in every scaffold.
@@ -203,7 +206,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   sailing: "16b65ddbec34ebaaa305262128673dc495d3b75629b7cf2e62f0a47113a87f7f",
   shooter: "47d8ba38bd786f793adbef24d1b368b08c72f119ebdba2fb49840a278150e7aa",
   snow: "db821248cb3d0cc6059a052be0d958107fc1ac79d9b7a25b5e23dc9081554e1a",
-  starter: "0b6ac6e24974f3328c2776ee0155aaad79b157e7e17b7e600634893ee007bc80",
+  starter: "d9d8c504b76a29f1b23818cdde9197b3a3d5f773a2389c8d9720075f73c6882d",
   "tower-defense": "f0c1d76e4706ca16128035a12821f90b12052e5962fd651568c7672f08b96af6",
 };
 
@@ -303,6 +306,9 @@ const STARTER_PATHS = [
   "src/render/postprocessing.ts",
   "src/render/worldEnvironment.ts",
   "src/render/volumetricFog.ts",
+  "src/render/volumetricFogOptions.ts",
+  "src/render/volumetricFogVolume.ts",
+  "src/render/volumetricFogTransport.ts",
   "src/render/palette.ts",
   "src/render/materials.ts",
   "src/render/arena.ts",
