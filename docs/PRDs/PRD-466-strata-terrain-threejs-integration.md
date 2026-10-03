@@ -2698,8 +2698,8 @@ cache reuse PASS. Example tsc PASS, root Biome 84 files PASS, terrain Vitest 71/
 Full `test:consumer` still fails before export on the existing rain template terrain-workflow
 pointer. The existing focused packed replay (excluding rain/snow pointer assertions only)
 passes all five exact height arrays, 131,072 triangles each, baked waters, and installed game
-handoff; it is supplementary, not a full consumer PASS. First scratch capture failed on
-transient ERR_NETWORK_CHANGED texture requests; fresh capture pending.
+handoff; it is supplementary, not a full consumer PASS. The initial transient texture
+request failure is superseded by the zero-error `dem2-pass6` capture below.
 
 2026-10-03 UTC visual checkpoint: corrected scratch `dem2-pass6` PASS (4/4),
 `verify-ocean` PASS (3/3), NVIDIA Turing at 1920×1080, zero console/network/runtime
@@ -2710,3 +2710,12 @@ this lane. Forest lake/river calls use the existing footprint limit so isolated 
 terrain is not flooded. Private-Xvfb trace shows GPU 17.1% busy / main thread 72.4%
 idle and explicitly rejects its apparent frame rate as a display artifact; final
 performance proof is moving to the live Xwayland host display. No engine code changed.
+
+2026-10-03 UTC final licensed checkpoint: `dem2-final-licensed` captured all five worlds
+on the live Xwayland display (NVIDIA Turing, 1920×1080). `verify-ocean` PASS 3/3;
+zero console and network errors. The bridge `advance` operation timed out at 20,250 ms
+during the return to coastal before the assertion/evidence snapshot, so the full
+scenario is FAIL (not evaluated), with no valid final p50 or presented-p95 verdict.
+One-minute load during this run: 18.77–74.35, median 63.07 across 24 logical CPUs;
+contention is recorded, not proven causal. Final fallback is running with the actual
+asset directory renamed away under an EXIT/INT/TERM restoration trap.
