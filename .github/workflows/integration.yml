@@ -33,7 +33,7 @@ jobs:
   paths:
     name: lanes this pull request touches
     if: ${{ !github.event.pull_request.draft }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER_LIGHT) && 'ubuntu-24.04' || vars.TN_RUNNER_LIGHT }}
     timeout-minutes: 5
     permissions:
       contents: read
@@ -68,7 +68,7 @@ jobs:
     name: csg
     if: ${{ needs.paths.outputs.csg == 'true' && !github.event.pull_request.draft }}
     needs: paths
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 10
     defaults:
       run:
@@ -91,7 +91,7 @@ jobs:
     name: ik
     if: ${{ needs.paths.outputs.ik == 'true' && !github.event.pull_request.draft }}
     needs: paths
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 10
     defaults:
       run:
@@ -110,7 +110,7 @@ jobs:
     name: vegetation
     if: ${{ needs.paths.outputs.vegetation == 'true' && !github.event.pull_request.draft }}
     needs: paths
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 10
     defaults:
       run:
@@ -129,7 +129,7 @@ jobs:
     name: decals
     if: ${{ needs.paths.outputs.decals == 'true' && !github.event.pull_request.draft }}
     needs: paths
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -221,7 +221,7 @@ jobs:
     name: exposure
     if: ${{ needs.paths.outputs.tone == 'true' && !github.event.pull_request.draft }}
     needs: paths
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
