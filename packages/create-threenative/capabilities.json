@@ -1813,7 +1813,7 @@
         "geometry and material are required and come from the game; the batch chooses neither",
         "span stretches along +Y, so its geometry must be unit-height and centred on the origin",
         "placing after build() throws, and build() returns undefined when nothing was placed",
-        "baked AutoLOD chains survive geometry clone/transform preparation and partition instances automatically in the engine frame loop at 4 px projected error; public instance slots remain stable",
+        "baked AutoLOD chains survive geometry clone/transform preparation and partition instances automatically into spatially bounded draws in the engine frame loop at 4 px projected error; public instance slots remain stable",
         "unavailable authored levels report TN_INSTANCED_LOD_FAILED once naming the batch; a million-triangle batch with no chain reports TN_INSTANCED_LOD_UNAVAILABLE"
       ],
       "example": "const curbs = new InstancedBatch({ geometry: new BoxGeometry(1, 1, 1), material });\ncurbs.place({ position: [x, 0.08, z], rotation: [0, angle, 0], scale: [length, 0.18, 0.42] });\ncurbs.build({ castShadow: true, name: \"curbs\", parent: ctx.scene });",
@@ -1828,6 +1828,7 @@
       "situations": [
         "draw hundreds of repeated props without hundreds of draw calls",
         "draw thousands of identical instanced blocks or obstacles in one mesh",
+        "automatically select instanced prop detail from projected screen error using baked AutoLOD chains",
         "place repeated props when the count is not known until the layout has been walked",
         "build a chain, railing, cable, or tie rod out of point-to-point segments"
       ],
@@ -3294,7 +3295,8 @@
         "know how deep the water is under a pixel without a second render pass",
         "stop a water surface repeating in visible bands or stripes",
         "keep a crowd of small actors out of the water's reflection so the frame can afford it",
-        "stop the water reflection redrawing the whole world every frame"
+        "stop the water reflection redrawing the whole world every frame",
+        "automatically reflect terrain and large casters without redrawing instanced small props"
       ],
       "summary": "Give a horizontal water surface the world mirrored in it, the world beneath it, and the metres of water between them.",
       "supersedes": [],

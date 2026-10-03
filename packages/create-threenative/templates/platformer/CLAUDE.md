@@ -60,8 +60,9 @@ For online play only, import `connect` from `@threenative/core/net` with an HTTP
 ## Engine detail and mirror defaults
 
 `InstancedBatch` automatically partitions a baked AutoLOD chain by each instance's projected error
-(default 4 raster pixels, using the render camera and actual viewport). The chain survives geometry
-cloning and transform baking. `autoLod: false` delegates detail to the game; `autoLod.maxPixelError`
+(default 4 raster pixels, using the render camera and actual viewport). Spatial partitions have
+their own bounds for each render camera; public slots and offscreen shadow casters remain intact.
+The chain survives geometry cloning and transform baking. `autoLod: false` delegates detail to the game; `autoLod.maxPixelError`
 and `hysteresis` override selection, and authored `lods` distance/geometry levels win. Missing
 rungs report `TN_INSTANCED_LOD_FAILED` with the batch name; a million-triangle batch without a
 chain reports `TN_INSTANCED_LOD_UNAVAILABLE`. Cook the asset rather than writing a second LOD loop.

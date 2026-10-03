@@ -3,6 +3,7 @@ import {
   BufferAttribute,
   Color,
   CylinderGeometry,
+  Frustum,
   Group,
   InstancedMesh,
   Matrix4,
@@ -300,6 +301,52 @@ describe("InstancedBatch automatic LOD", () => {
     root.add(mesh);
     expect(updateModelLods(root, lodCamera(), 1080)).toBe(24);
     expect(draws(root).map((draw) => draw.count)).toEqual([2]);
+  });
+
+  it("keeps empty render partitions visible across LOD changes so projection lights remain stable", async () => {
+    const props = new InstancedBatch({
+      geometry: await bakedGeometry(),
+      material: new MeshBasicMaterial(),
+    });
+    props.place({ position: [0, 0, -100] });
+    const root = new Group();
+    const mesh = props.build({ parent: root, castShadow: true, receiveShadow: true });
+    if (mesh === undefined) throw new Error("missing batch");
+    expect(mesh.children.every((child) => child.castShadow && child.receiveShadow)).toBe(true);
+    expect(mesh.children.every((child) => child.visible)).toBe(true);
+    updateModelLods(root, lodCamera(), 1080);
+    expect(mesh.children.every((child) => child.visible)).toBe(true);
+    mesh.setMatrixAt(0, new Matrix4().makeTranslation(0, 0, -5));
+    updateModelLods(root, lodCamera(), 1080);
+    expect(mesh.children.every((child) => child.visible)).toBe(true);
+  });
+
+  it("spatially bounds broad LOD batches while retaining offscreen shadow casters", async () => {
+    const props = new InstancedBatch({
+      geometry: await bakedGeometry(),
+      material: new MeshBasicMaterial(),
+    });
+    for (const x of [100, 0, -100, 80, -1, -80, 60, 1, -60]) props.place({ position: [x, 0, -10] });
+    const root = new Group();
+    const mesh = props.build({ parent: root, castShadow: true });
+    if (mesh === undefined) throw new Error("missing batch");
+    const camera = lodCamera();
+    updateModelLods(root, camera, 1080);
+    const frustum = new Frustum().setFromProjectionMatrix(
+      new Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse),
+    );
+    const partitions = draws(root);
+    const visible = partitions.filter(
+      (child) =>
+        child.boundingSphere !== null &&
+        frustum.intersectsSphere(child.boundingSphere.clone().applyMatrix4(child.matrixWorld)),
+    );
+    expect(visible.reduce((sum, child) => sum + child.count * 12, 0)).toBeLessThanOrEqual(60);
+    expect(partitions.reduce((sum, child) => sum + child.count, 0)).toBe(9);
+    expect(partitions.every((child) => child.castShadow && child.visible)).toBe(true);
+    const read = new Matrix4();
+    mesh.getMatrixAt(0, read);
+    expect(read.elements[12]).toBe(100);
   });
 
   it("projects scaled parents and camera movement, and retains a cloned transformed chain", async () => {

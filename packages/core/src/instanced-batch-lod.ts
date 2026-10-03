@@ -30,6 +30,42 @@ export interface IInstancedLodOptions {
   }[];
 }
 
+/** Split a broad instance set along its measured longest axis; each leaf owns stable public slots. */
+function spatialPartitions(mesh: InstancedMesh): number[][] {
+  const limit = Math.ceil(Math.sqrt(mesh.count));
+  const matrices = mesh.instanceMatrix.array;
+  const groups: number[][] = [];
+  const split = (indices: number[]): void => {
+    if (indices.length <= limit) {
+      groups.push(indices);
+      return;
+    }
+    let axis = 12;
+    let extent = -1;
+    for (const component of [12, 13, 14]) {
+      let min = Number.POSITIVE_INFINITY;
+      let max = Number.NEGATIVE_INFINITY;
+      for (const index of indices) {
+        const value = matrices[index * 16 + component] as number;
+        min = Math.min(min, value);
+        max = Math.max(max, value);
+      }
+      if (max - min > extent) {
+        extent = max - min;
+        axis = component;
+      }
+    }
+    indices.sort(
+      (a, b) => (matrices[a * 16 + axis] as number) - (matrices[b * 16 + axis] as number),
+    );
+    const middle = Math.floor(indices.length / 2);
+    split(indices.slice(0, middle));
+    split(indices.slice(middle));
+  };
+  split(Array.from({ length: mesh.count }, (_, index) => index));
+  return groups;
+}
+
 /** Attach to the engine's existing LOD tracker; the returned mesh retains every public instance slot. */
 export function attachInstancedLod(mesh: InstancedMesh, options: IInstancedLodOptions): void {
   if (
@@ -106,6 +142,12 @@ export function attachInstancedLod(mesh: InstancedMesh, options: IInstancedLodOp
   carrier.setIndex([]);
   carrier.setDrawRange(0, 0);
   mesh.geometry = carrier;
+  const groups = spatialPartitions(mesh);
+  const spareCapacity = mesh.instanceMatrix.count - mesh.count;
+  const partitionOf = new Uint32Array(mesh.instanceMatrix.count);
+  groups.forEach((indices, partition) => {
+    for (const index of indices) partitionOf[index] = partition;
+  });
   const states = new Uint16Array(mesh.instanceMatrix.count);
   const cameraPosition = new Vector3();
   const matrix = new Matrix4();
@@ -115,17 +157,26 @@ export function attachInstancedLod(mesh: InstancedMesh, options: IInstancedLodOp
   let triangles = 0;
   function ensureChildren(): void {
     if (children.length > 0) return;
-    children = levels.map((geometry, index) => {
-      const child = new InstancedMesh(geometry, mesh.material, mesh.instanceMatrix.count);
-      child.name = `${mesh.name || "unnamed"}:lod${index}`;
-      child.count = 0;
-      child.visible = false;
-      child.frustumCulled = true;
-      child.boundingSphere = mesh.boundingSphere;
-      child.raycast = (): void => {}; // Render partitions have no public placement identity.
-      mesh.add(child);
-      return child;
-    });
+    children = groups.flatMap((indices, partition) =>
+      levels.map((geometry, index) => {
+        const child = new InstancedMesh(
+          geometry,
+          mesh.material,
+          indices.length + (partition === 0 ? spareCapacity : 0),
+        );
+        child.name = `${mesh.name || "unnamed"}:cell${partition}:lod${index}`;
+        child.count = 0;
+        child.castShadow = mesh.castShadow;
+        child.receiveShadow = mesh.receiveShadow;
+        child.layers.mask = mesh.layers.mask;
+        // Zero-count partitions stay visible: projection keys must not churn as detail changes.
+        child.visible = true;
+        child.frustumCulled = true;
+        child.raycast = (): void => {}; // Render partitions have no public placement identity.
+        mesh.add(child);
+        return child;
+      }),
+    );
     mesh.geometry = carrier;
   }
   const controller: IModelLodController = {
@@ -144,7 +195,6 @@ export function attachInstancedLod(mesh: InstancedMesh, options: IInstancedLodOp
         child.layers.mask = mesh.layers.mask;
         child.castShadow = mesh.castShadow;
         child.receiveShadow = mesh.receiveShadow;
-        child.boundingSphere = mesh.boundingSphere;
         child.matrixWorld.copy(mesh.matrixWorld);
       }
       for (let index = 0; index < mesh.count; index += 1) {
@@ -181,12 +231,14 @@ export function attachInstancedLod(mesh: InstancedMesh, options: IInstancedLodOp
           );
         }
         states[index] = level;
-        const child = children[level] as InstancedMesh;
+        const child = children[
+          (partitionOf[index] as number) * levels.length + level
+        ] as InstancedMesh;
         child.setMatrixAt(child.count, matrix);
         if (mesh.instanceColor !== null) {
           const color =
             child.instanceColor ??
-            new InstancedBufferAttribute(mesh.instanceColor.array.slice(), 3);
+            new InstancedBufferAttribute(new Float32Array(child.instanceMatrix.count * 3), 3);
           child.instanceColor = color;
           for (let component = 0; component < 3; component += 1)
             color.array[child.count * 3 + component] = mesh.instanceColor.array[
@@ -197,8 +249,8 @@ export function attachInstancedLod(mesh: InstancedMesh, options: IInstancedLodOp
         child.count += 1;
       }
       for (const child of children) {
-        child.visible = child.count > 0;
         child.instanceMatrix.needsUpdate = true;
+        if (child.count > 0) child.computeBoundingSphere();
         triangles +=
           ((child.geometry.index?.count ?? child.geometry.getAttribute("position")?.count ?? 0) /
             3) *
