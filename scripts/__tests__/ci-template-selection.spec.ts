@@ -289,3 +289,12 @@ describe("impact-driven template coverage", () => {
     }
   });
 });
+
+it("keeps the exhaustive board at one complete job per manifest plus both retained golden journeys", () => {
+  const plan = selectionPlan("full", "qualification", [], "a".repeat(40), true);
+  expect(plan.templateMatrix.template).toEqual(TEMPLATE_NAMES);
+  expect(plan.goldenMatrix.template).toEqual(["starter", "platformer"]);
+  expect(plan.templateMatrix.template.length + plan.goldenMatrix.template.length).toBe(
+    TEMPLATE_NAMES.length + 2,
+  );
+});

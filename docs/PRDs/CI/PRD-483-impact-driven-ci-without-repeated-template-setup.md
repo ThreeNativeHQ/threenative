@@ -44,11 +44,11 @@ There are 13 kit manifests, not a hardcoded CI count.
 | Inert docs | no product jobs / full board | no product jobs / no product jobs |
 | CI configuration | 4 full unit shards, no template jobs / full board | 1 CI-contract unit job, no template jobs / same |
 | One kit | 4 full unit shards + 31 template jobs / full board | 1 scaffolder-contract unit job + 2 template jobs / same |
-| Shared runtime, generator, unknown meaningful code; main/nightly | exhaustive 31 template jobs | exhaustive 13 scenario jobs + 1 journey job |
+| Shared runtime, generator, unknown meaningful code; main/nightly | exhaustive 31 template jobs | exhaustive 13 scenario jobs + 2 journey jobs |
 
 The template cap stays four. Baseline's nonvisual slot-work lower bound is 94.6 / 4 = 23.6 minutes;
 removing 16 repeated setups at the workflow's documented ~65s estimates 17.3 runner-min saved,
-plus the removed 111s generic platformer journey. That gives ~81.7 template runner-min before the retained platformer production-build step, an estimate,
+retaining both existing golden journeys. That gives ~83.6 template runner-min, an estimate,
 not measured after-change wall time. Individual exhaustive template jobs will be longer (shooter
 roughly 18 minutes using baseline work minus repeated setup); the 30-minute timeout is retained.
 Queue contention can improve while a single heavy leg lengthens; live CI must settle wall time.
@@ -57,7 +57,7 @@ Full unit shards keep their existing `pnpm test` with `TN_SUITE_PHASES=unit`; it
 | Removed work | Why it adds little marginal value | Remaining proof |
 |---|---|---|
 | 16 per-template scaffold/install/typecheck/cook copies | Same template and exact run tarballs; only scenario partition differed | One setup per template, all classifier scenarios, template compilation/contracts |
-| Duplicate platformer golden setup/journey | Its unique production build/artifact check moves into the existing installed platformer scenario job | Same production CLI and nonempty dist/index.html guard; when golden drives platformer the added step skips |
+| Both full-board golden journeys retained | Distinct starter and platformer proofs remain qualified | In selective multi-kit coverage where platformer is not the chosen golden kit, its existing installed scenario job verifies the production CLI and nonempty artifact |
 | Four shard-count snapshot cases and obsolete partition arithmetic | Assert old scheduling constants; do not prove product behavior | Manifest-derived complete matrix, whole classifier execution, empty selection rejection, direct impact fixtures |
 | CI structure/needs checks repeated by lint and CI unit lane | Same candidate/contracts in two jobs | CI lane targeted unit run; instructions-only lint retains contracts when no unit job runs |
 | Full product units on CI-only changes | No runtime/package/template source changed | CI contracts plus existing typecheck, budgets, lint and supply-chain gates |
@@ -75,3 +75,7 @@ modules covered. Renames include both endpoints. The selector introduction itsel
 lanes; unrelated failures are not hidden. Normal CI run 37141675755 on review-fix head 38ee061be
 passed with one relevant unit job, zero template jobs and no native jobs; final integration head still
 requires its own normal CI and independent review.
+
+Parent review corrected the full-board count to 15 (13 scenario jobs plus both retained golden journeys); no golden journey saving is claimed. Unsupported output expressions, including bracket access or `||` fallbacks, fail the paths job visibly instead of emitting a partial lane decision.
+
+Final bounded parent-review fixtures pass: 333 focused tests (318 CI contracts and 15 primary-docs/mirror checks). Output inventory spans blank/comment lines, validates filter/root completeness, and fails visibly on deleted outputs or unsupported expressions.

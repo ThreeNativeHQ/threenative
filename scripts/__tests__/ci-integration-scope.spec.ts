@@ -119,14 +119,37 @@ describe("integration work applies to the changed source", () => {
     ["unknown dependency", "needs: [fluid-collision]", "needs: [missing-job]"],
     ["cycle", "needs: [fluid-collision]", "needs: [fluid-collision-native]"],
     ["ambiguous needs", "needs: [fluid-collision]", "needs: ${{ inputs.jobs }}"],
-    [
-      "orphan output",
-      "tone: ${{ steps.filter.outputs.tone }}",
-      "tone: ${{ steps.filter.outputs.unknown }}",
-    ],
     ["unknown shape", "  tone:\n", "  tone: &alias\n"],
   ])("fails closed for %s edits", (_name, before, after) => {
     expect(select(workflow.replace(before, after))).toEqual(all);
+  });
+  it.each(["\n", "    # output comment\n"])(
+    "inventories outputs beyond blank/comment lines: %s",
+    (prefix) => {
+      expect(
+        select(
+          workflow.replace(
+            "      tone: ${{ steps.filter.outputs.tone }}",
+            `${prefix}      tone: \${{ steps.filter.outputs.tone }}`,
+          ),
+        ),
+      ).toEqual(all);
+    },
+  );
+  it("fails visibly if a declared lane loses its output", () => {
+    expect(() =>
+      select(workflow.replace("      tone: ${{ steps.filter.outputs.tone }}\n", "")),
+    ).toThrow("incomplete integration output inventory");
+  });
+  it.each([
+    "tone: ${{ steps.filter.outputs.tone || 'false' }}",
+    "tone: ${{ steps.filter.outputs.unknown }}",
+    "tone: 'false'",
+    "tone: ${{ steps.filter.outputs['tone'] }}",
+  ])("fails visibly instead of skipping an unsupported output: %s", (expression) => {
+    expect(() =>
+      select(workflow.replace("tone: ${{ steps.filter.outputs.tone }}", expression)),
+    ).toThrow("unsupported integration output expression");
   });
   it("fails closed when the shared selector changes", () => {
     expect(select(workflow, ["scripts/ci-integration-scope.mjs"])).toEqual(all);

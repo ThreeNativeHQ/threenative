@@ -77,10 +77,42 @@ function parse(source) {
 }
 
 export function integrationSelection({ files, before, after }) {
-  const outputNames = [
-    ...after.matchAll(/^ {6}([a-z][a-z-]*): \$\{\{ steps\.filter\.outputs\.[a-z][a-z-]* \}\}$/gmu),
-  ].map((m) => m[1]);
-  if (!outputNames.length) throw new Error("no integration outputs; cannot safely schedule");
+  // An unsupported output expression can override even a true step output. Fail the paths
+  // job visibly rather than emit a partial fallback that Actions could treat as a skipped lane.
+  const pathsAt = after.indexOf("\n  paths:\n");
+  if (pathsAt < 0) throw new Error("missing paths output owner");
+  const rest = after.slice(pathsAt + 1);
+  const nextJob = /^ {2}[a-z][a-z0-9-]*:/mu.exec(rest.slice(1));
+  const paths = nextJob ? rest.slice(0, nextJob.index + 1) : rest;
+  const outputHeader = /^ {4}outputs:\n/mu.exec(paths);
+  if (!outputHeader) throw new Error("missing integration outputs");
+  const outputRest = paths.slice(outputHeader.index + outputHeader[0].length);
+  const sibling = /^ {4}[a-z][a-z0-9-]*:/mu.exec(outputRest);
+  if (!sibling) throw new Error("unbounded integration outputs");
+  const outputBlock = outputRest.slice(0, sibling.index);
+  const outputNames = outputBlock
+    .split("\n")
+    .filter((line) => line.trim() && !line.trimStart().startsWith("#"))
+    .map((line) => {
+      const match =
+        /^ {6}([a-z][a-z-]*): \$\{\{ steps\.filter\.outputs\.([a-z][a-z-]*) \}\}$/u.exec(line);
+      if (!match || match[1] !== match[2])
+        throw new Error("unsupported integration output expression");
+      return match[1];
+    });
+  if (!outputNames.length) throw new Error("no integration outputs");
+  if (new Set(outputNames).size !== outputNames.length)
+    throw new Error("duplicate integration outputs");
+  const declaredLanes = new Set([
+    ...[...paths.matchAll(/^ {12}([a-z][a-z-]*) /gmu)].map((m) => m[1]),
+    ...[...after.matchAll(/needs\.paths\.outputs\.([a-z][a-z-]*)/gu)].map((m) => m[1]),
+  ]);
+  if (
+    declaredLanes.size !== outputNames.length ||
+    outputNames.some((name) => !declaredLanes.has(name))
+  ) {
+    throw new Error("incomplete integration output inventory");
+  }
   const all = (reason) => ({
     lanes: Object.fromEntries(outputNames.map((n) => [n, true])),
     reason,
@@ -119,6 +151,7 @@ export function integrationSelection({ files, before, after }) {
       reason: "source filters and bounded job/dependency comparison",
     };
   } catch (error) {
+    if (error.message === "unknown root gate") throw error;
     return all(`fail closed: ${error.message}`);
   }
 }
