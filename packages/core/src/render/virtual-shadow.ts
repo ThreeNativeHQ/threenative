@@ -15,6 +15,7 @@ import {
 import {
   Fn,
   If,
+  Stack,
   abs,
   and,
   dFdx,
@@ -714,7 +715,16 @@ export class VirtualShadowNode extends ShadowBaseNode {
   #statsRequested: boolean | undefined;
   /** URL-only, web-only diagnostic; native hosts have no URL switch or alternate path. */
   #levelsRequested: boolean | undefined;
-  #levelTint: ReturnType<typeof property<"vec3">> | undefined;
+  /**
+   * The diagnostic's tint, one per material build, keyed weakly by the builder that owns it.
+   *
+   * It cannot live on the builder's own node cache: three replaces that cache for the duration of
+   * every `flowStagesNode` build, so a tint written during `setup` and read while the stock
+   * samplers run would be two different objects. Nor can it live on this node — one shadow node
+   * feeds every material compiled against it, and a `var` the first material declared is not the
+   * next one's.
+   */
+  #levelTints = new WeakMap<NodeBuilder, Node<"vec3">>();
   #stats: IVirtualShadowStats;
   #initialised = false;
   #onLightRemoved = (): void => this.dispose();
@@ -1768,8 +1778,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
           };
         }
       }
-      const tint = this.#levelTint;
-      if (tint !== undefined) {
+      if (this.#levelsRequested) {
         // Observe the stock sampler's actual coordinate, including normal bias and any received
         // shadow position override. Selection-space u/v cannot diagnose a projection mismatch.
         const stock = node as typeof node & {
@@ -1780,6 +1789,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
         };
         const filter = stock.setupShadowFilter;
         stock.setupShadowFilter = (builder, inputs) => {
+          const levelTint = this.#levelTints.get(builder);
           const uv = inputs.shadowCoord;
           const inside = and(
             and(uv.x.greaterThanEqual(0), uv.x.lessThanEqual(1)),
@@ -1793,9 +1803,11 @@ export class VirtualShadowNode extends ShadowBaseNode {
                 : index === 2
                   ? vec3(0, 0, 1)
                   : vec3(1, 1, 0);
-          return nodeObject(filter.call(stock, builder, inputs)).bypass(
-            tint.assign(inside.select(colour, vec3(1, 0, 1))),
-          );
+          // No tint recorded yet means this build is not one the diagnostic set up; the stock
+          // shadow then stands alone rather than reading a declaration that is not there.
+          if (levelTint === undefined) return filter.call(stock, builder, inputs);
+          Stack(new AssignNode(levelTint, inside.select(colour, vec3(1, 0, 1))));
+          return filter.call(stock, builder, inputs);
         };
       }
       // Stock shadow colours are identical, but their node identities split the shader cache.
@@ -1845,14 +1857,21 @@ export class VirtualShadowNode extends ShadowBaseNode {
     this.#levelsRequested ??= /[?&]tnShadowLevels=(?!0(?:&|$))(?!false(?:&|$))[^&]/u.test(
       globalThis.location?.search ?? "",
     );
-    if (this.#levelsRequested && this.#levelTint === undefined) {
-      this.#levelTint = property("vec3", `virtualShadowLevelTint${String(this.id)}`);
-    }
     this.#init();
-    const tint = this.#levelTint;
-    if (tint !== undefined) {
-      const context = builder.context as { outgoingLight?: Node<"vec3"> };
-      const outgoing = context.outgoingLight;
+    const levels = this.#levels;
+    const centerU = this.#centerU;
+    const centerV = this.#centerV;
+    const moversActive = this.#moversActive;
+    const basisU = this.#basisU;
+    const basisV = this.#basisV;
+    let tint: Node<"vec3"> | undefined;
+    if (this.#levelsRequested) {
+      // Declared here, outside the returned function, because three runs that function's body at
+      // the setup stage — which is the only stage at which the lighting stack below is still
+      // accepting nodes. A `var` declared inside it lands after every use of it.
+      tint = vec3(0, 1, 1).toVar(`virtualShadowLevelTint${String(this.id)}`);
+      this.#levelTints.set(builder, tint);
+      const outgoing = (builder.context as { outgoingLight?: Node<"vec3"> }).outgoingLight;
       if (outgoing !== undefined) {
         // Three has assembled the lighting stack before building this shadow dependency. Append
         // after its final assignments so the overlay retains every light and the shadow result.
@@ -1862,12 +1881,6 @@ export class VirtualShadowNode extends ShadowBaseNode {
         stack?.nodes.push(new AssignNode(outgoing, mix(outgoing, tint, 0.5)));
       }
     }
-    const levels = this.#levels;
-    const centerU = this.#centerU;
-    const centerV = this.#centerV;
-    const moversActive = this.#moversActive;
-    const basisU = this.#basisU;
-    const basisV = this.#basisV;
     return Fn(() => {
       this.setupShadowPosition(builder);
       if (this.options.receiverPlaneBias) {
@@ -1888,8 +1901,10 @@ export class VirtualShadowNode extends ShadowBaseNode {
       if (coarsest === undefined) return vec4(1, 1, 1, 1);
       const moverResult = (level: ILevel) =>
         moversActive.greaterThan(0).select(vec4(level.moverNode as never), vec4(1, 1, 1, 1));
-      // The coarsest fallback can be unmapped; finer unmapped levels never win selection.
+      // Cyan is the answer for a fragment no level sampled, so the default is written here rather
+      // than left to whichever level branch a fragment happens to take.
       if (tint !== undefined) tint.assign(vec3(0, 1, 1));
+      // The coarsest fallback can be unmapped; finer unmapped levels never win selection.
       // Every level is read through its own `mapped` gate. A level whose map this node has not
       // drawn yet contributes nothing rather than being sampled: with one level rendered per frame
       // the coarse levels trail the fine one, and their targets hold nothing to compare against.

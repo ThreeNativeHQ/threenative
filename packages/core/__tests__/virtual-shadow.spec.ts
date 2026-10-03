@@ -12,6 +12,7 @@ import {
   Matrix4,
   Mesh,
   MeshBasicMaterial,
+  MeshPhysicalMaterial,
   MeshStandardMaterial,
   type Object3D,
   type OrthographicCamera,
@@ -42,6 +43,7 @@ import {
   type NodeFrame,
   PhysicalLightingModel,
   WGSLNodeBuilder,
+  WebGPURenderer,
 } from "three/webgpu";
 import { describe, expect, it, vi } from "vitest";
 import { VIRTUAL_SHADOW_MOVER_LAYER as PUBLIC_VIRTUAL_SHADOW_MOVER_LAYER } from "../src/index.js";
@@ -240,6 +242,75 @@ it.each([false, true])(
 );
 
 describe("virtual shadow level diagnostic", () => {
+  it.each([{ transmission: 0.8 }, { alphaTest: 0.5 }])(
+    "should declare tint before every use in physical material builds (%j)",
+    (parameters) => {
+      vi.stubGlobal("location", { search: "?tnShadowLevels=1" });
+      const { light, camera, scene } = world();
+      const node = new VirtualShadowNode(light, { clipExtents: [8, 32], marker: false });
+      node.setup(builder);
+      light.shadow.shadowNode = node;
+      const renderer = new WebGPURenderer({ canvas: new EventTarget() as HTMLCanvasElement });
+      renderer.shadowMap.enabled = true;
+      vi.spyOn(renderer, "hasFeature").mockReturnValue(false);
+      vi.spyOn(renderer, "hasCompatibility").mockReturnValue(true);
+      vi.spyOn(
+        Reflect.get(renderer.backend, "capabilities"),
+        "getUniformBufferLimit",
+      ).mockReturnValue(65_536);
+      for (const stock of [...node.levelNodes, ...node.moverNodes]) {
+        const sampler = stock as Node & {
+          setup: (builder: NodeBuilder) => Node;
+          setupShadowFilter: (builder: NodeBuilder, inputs: object) => Node;
+        };
+        vi.spyOn(sampler, "setup").mockImplementation((materialBuilder) =>
+          vec4(
+            sampler.setupShadowFilter(materialBuilder, {
+              filterFn: () => float(0.6),
+              shadowCoord: vec3(0.25, 0.75, 0.5),
+            }) as never,
+          ),
+        );
+      }
+      try {
+        // The same shadow node is shared by independently compiled imported materials.
+        for (let index = 0; index < 2; index += 1) {
+          const material = new MeshPhysicalMaterial(parameters);
+          const mesh = new Mesh(new BoxGeometry(), material);
+          mesh.receiveShadow = true;
+          // A real material build, reached through the same cast this file's other builders use:
+          // the members a full material drives are not on the builder's published type.
+          const materialBuilder = new WGSLNodeBuilder(mesh, renderer) as unknown as {
+            build(): void;
+            camera: PerspectiveCamera;
+            fragmentShader: string;
+            lightsNode: Node;
+            scene: Scene;
+          };
+          materialBuilder.camera = camera;
+          materialBuilder.scene = scene;
+          materialBuilder.lightsNode = lights([light]);
+          materialBuilder.build();
+          const code = materialBuilder.fragmentShader;
+          expect(code.match(/^\s*virtualShadowLevelTint\w*;\s*$/mu)).toBeNull();
+          const uses = [...code.matchAll(/\bvirtualShadowLevelTint\w*\b/gu)];
+          expect(uses.length).toBeGreaterThan(1);
+          // Three declares a fragment `toVar` in module scope with an address space, so the
+          // declaration reads `var<private> name : type;` and the bare `var name` this used to
+          // look for was a shape three never emits — for any tint, correct or not.
+          for (const use of uses.slice(1)) {
+            expect(code.slice(0, use.index)).toContain(`var<private> ${use[0]} : vec3<f32>;`);
+          }
+          mesh.geometry.dispose();
+          material.dispose();
+        }
+      } finally {
+        node.dispose();
+        vi.unstubAllGlobals();
+      }
+    },
+  );
+
   it("should preserve the original graph when the URL flag is off", () => {
     try {
       const original = levelDebugGraph("");
