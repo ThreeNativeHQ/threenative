@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-480 — Linux CI runs on the owner's machine
 
-**Status:** NOT STARTED
+**Status:** PARTIAL — phases 1 and 3 verified (#404, #410); AC-1 green; AC-2 measured, needs the owner's call
 **Complexity:** 5 (HIGH)
 **Owner:** CI tooling
 **Depends on:** None
@@ -129,6 +129,12 @@ while `TN_RUNNER` is set: jobs queue until the switch is cleared.
 
 ## Decisions
 
+- 2026-10-03 (measured): the pool is overflow capacity, not the default. The repository is public, so
+  hosted runners cost nothing and run ~20 jobs at once; routing every Linux job to 5 local slots made
+  boards slower (run 37099132853: 20 min in, 15 jobs queued locally). A balancer advertises
+  `TN_RUNNER`/`TN_RUNNER_LIGHT` only while a runner is idle (two polls in a row) and withdraws them at once
+  when none is.
+
 - 2026-10-02 (João, during the first live runs): use more of the machine, but never at the cost of
   desktop stability. Five pinned slots of two cores each, two cores reserved for the host, 12 GB caps
   with CI as the OOM victim, and a reserved light lane (review by Astra the same day).
@@ -150,7 +156,7 @@ while `TN_RUNNER` is set: jobs queue until the switch is cleared.
 ## Execution Phases
 
 #### Phase 1: The runner stack comes up and takes jobs
-**Status:** IN PROGRESS — stack files built, runners not yet brought up
+**Status:** COMPLETE — `pnpm ci:runners:install` runs it as a boot service
 **Files:** NEW `tools/ci-runners/Dockerfile`, NEW `tools/ci-runners/entrypoint.sh`, NEW
 `scripts/ci-runners.sh` (`up [N]`, `down`, `status`; default N = 4, read from the env file).
 
@@ -180,7 +186,7 @@ the stack. The script fails closed when the env file or token is missing.
 
 #### Phase 2: `ci.yml` and the integration workflows route through the switch
 
-**Status:** IN PROGRESS
+**Status:** COMPLETE
 **Files:** EDIT `.github/workflows/ci.yml`, `.github/workflows/integration-*.yml`,
 `scripts/__tests__/ci-structure.spec.ts`; the `integration-*.yml` template wherever agents copy it from;
 `AGENTS.md` ("Nearest lane first, CI last") plus its regenerated `CLAUDE.md` mirror.
@@ -209,12 +215,15 @@ and `integration-decals.yml`'s `ubuntu-24.04-arm` job are the only Linux `runs-o
   whose `ci-required` starts within 60 s of its last `needs` finishing): `scope`, `golden-path`, `build`,
   `ci-required` and `run-summary` route to `tn-local-light`, and no heavy job can.
   Evidence: ci-structure.spec.ts routing case (red with `typecheck` on the light lane), and CI run 37070815769 (PR #404, head 94732de65, 2026-10-02): `ci-required` started 22:48:50Z, 3 s after the last job it needs finished at 22:48:47Z.
-- [ ] With `TN_RUNNER` unset, the same workflow runs fully hosted. proof: `workflow_dispatch` run id with
+- [x] With `TN_RUNNER` unset, the same workflow runs fully hosted. proof: `workflow_dispatch` run id with
   every `runner_name` hosted.
+  Evidence: `workflow_dispatch` run 37093694594 on `develop` with both variables deleted: all 43 jobs that started
+  ran hosted (38 `ubuntu-24.04`, 1 `ubuntu-latest`, 1 arm64, 2 macOS, 1 Windows), none on `tn-local`. Cancelled
+  after that proof so it would stop holding the hosted pool.
 
 #### Phase 3: The Linux `native-platforms` legs move too
 
-**Status:** IN PROGRESS — routing and image landed, live run pending
+**Status:** COMPLETE — Linux legs on `tn-local`; the Android emulator stays hosted (measured exception)
 **Files:** EDIT `.github/workflows/native-platforms.yml`, `tools/ci-runners/Dockerfile` (JDK 17, Android
 SDK, emulator, `/dev/kvm`), `scripts/__tests__/ci-structure.spec.ts`.
 **Implementation:** Route `web-reference`, `desktop-parity`, `android-emulator-parity`, `release-reports`,
@@ -246,8 +255,12 @@ Decisions this phase had to make, 2026-10-02:
   into `ANDROID_HOME` at job time. `android-emulator-runner` installs `emulator` and the system image
   itself, which is the only job that wants them. Image: 9.28 GB against the pool's 5.25 GB.
 
-- [ ] A `native-platforms` run passes with its Linux legs on `tn-local`. proof: run id plus per-job
+- [x] A `native-platforms` run passes with its Linux legs on `tn-local`. proof: run id plus per-job
   `runner_name`.
   Exception, measured: `android-emulator-parity` stays hosted. SwiftShader renders its GPU on the CPU, and on a
   4-thread slot run 37082733117 spent 41 of the job's 45 minutes still running APKs, where hosted takes ~30.
+  Evidence: CI run 37089715252 (PR #404, merged d99a6281c), latest attempt: every native-platforms leg success.
+  On `tn-local`: starter linux-x64, Android V8 source payload, web conformance reference, desktop web/native
+  parity, release evidence reports, collector coverage. On `tn-local-light`: caller selection, networking
+  matrix. Hosted as designed: macOS, Windows, iOS, linux-arm64, and the emulator exception above.
 - [ ] Waiting time meets AC-2. proof: the AC-2 measurement on a full-board PR after this phase.
