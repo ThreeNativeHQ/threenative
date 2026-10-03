@@ -106,6 +106,16 @@ stop_slots() {
   docker ps -q --filter label=tn-ci-runner=1 | xargs -r docker stop
 }
 
+# A runner stopped while idle stays registered offline forever: ephemeral runners deregister only
+# after taking a job. Delete those so the runner list shows real capacity.
+forget_offline() {
+  gh api "repos/$1/actions/runners" --paginate --jq \
+    '.runners[] | select(.status == "offline") | select(any(.labels[]; .name | startswith("tn-local"))) | .id' \
+    2>/dev/null | while read -r id; do
+      gh api -X DELETE "repos/$1/actions/runners/$id" >/dev/null 2>&1 || true
+    done
+}
+
 online_count() {
   gh api "repos/$1/actions/runners" --paginate --jq "
     [.runners[] | select(.status == \"online\") | select(any(.labels[]; .name == \"$2\"))] | length
@@ -122,6 +132,7 @@ up() {
   local repo
   repo="$(repo_name)"
 
+  forget_offline "$repo"
   docker build -t "$IMAGE" tools/ci-runners
   mkdir -p "$STATE_DIR"
   # A leftover stop file from a previous teardown would make every loop exit before it starts.
@@ -186,6 +197,7 @@ down() {
   done
   mkdir -p "$STATE_DIR"
   stop_slots
+  forget_offline "$repo"
   printf '%s and %s cleared; runners stopping\n' "$VARIABLE" "$LIGHT_VARIABLE"
 }
 
