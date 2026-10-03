@@ -2569,3 +2569,115 @@ local licensed assets and captures; it is not eligible for merged-worktree clean
 Final source: TypeScript passes; Biome checks 73 files and passes after assets
 were restored. Fallback has no completed world capture; the renderer exited during capture
 (`TN_PLAYTEST_PAGE_CRASHED`). Final source has no completed full playtest.
+
+### 2026-10-03 UTC — DEM lane (owner-approved real geology)
+
+Complexity: 3 → LOW; risk override: none. Example-owned authoring and appearance;
+installed `Terrain.heightmap`/data stamp imports numerical heights. No package change.
+110-minute lane, branch `feat/prd-466-468-dem`, base `2cbf316ca`; no push/merge/PR comment.
+
+- [x] Crop public-domain 3DEP 1 m geology to 257²/512 m and same-site 1/3 arc-second surroundings. proof: `node scripts/dem/crop.mjs` — PASS: four int16 crops, 1,316,872 bytes total; no missing samples, source/project dates, CRS/bbox/USGS citation and SHA-256 sidecars.
+- [ ] Integrate DEM bases and real continuation; preserve transport, collision/render identity, cache and packed export. proof: `node scripts/bake.mjs` and `pnpm test:consumer`.
+- [ ] Frame real landforms, verify snow/scree/strata, licensed and fallback full scenarios, ocean and gates. proof: full `terrain.playtest.json`, `verify-ocean`, example TypeScript, root Biome and terrain Vitest.
+
+DEM checkpoint: first cold bake 29.44 s; bounded-transport bake 28.20 s.
+Maximum DEM change: alpine 0.479 m, desert 0.092 m. All four transport buffers
+have 257² finite samples; alpine/desert waters and rivers are empty. Cache reuse
+passes. Example TypeScript passes; root Biome checks 78 files (warnings only);
+terrain Vitest 71/71 passes. First scratch run crashed in the renderer after a
+hardware WebGPU start; second capture is pending. `test:consumer` fails before
+export at the pre-existing rain template's missing terrain workflow pointer;
+no procedural-shape fixture expectations changed. A focused packed-export run
+will exclude only that unrelated template-pointer assertion and is not a full-gate PASS.
+
+2026-10-03 UTC DEM runtime checkpoint: revised scratch scenario PASS (all alpine/desert
+steps, walk distances, transport-bound materials, grounded outcrops, zero diagnostics,
+1,024/1,024 exact seam samples; maximum contact error 0.0000611 m). Current snow follows
+cirque hollows and ledges; exposed convex faces shed it. Tree/grass scatter is removed
+from the selected 3690 m glacial shoulder. Cameras face the surveyed headwall and butte.
+A wide alpine overview uses an explicit absolute eye above the real surroundings.
+
+Focused packed proof PASS: `/tmp/strata-dem/consumer-world-proof.mjs` replays the existing
+consumer script, excluding only the pre-existing rain/snow template-pointer assertions.
+All five exported worlds preserve the game's 66,049 heights and 131,072 triangles;
+alpine/desert have no water. The installed scaffold/game handoff passes with no authoring
+package. Full `test:consumer` remains FAIL on rain; no world-shape expectations changed.
+Exported recipes still contain no prop scatter layers (reported as incomplete full-world
+art by the existing proof), as before this lane. Final licensed/fallback scenarios pending.
+
+2026-10-03 UTC DEM framing checkpoint: alpine's forced horizon fade now begins at
+1,800 m and ends at 3,300 m, so the camera can frame the surveyed headwall without
+the previous near-range cutoff. Final alpine/desert scratch scenario PASS, including
+world switches/loaded steps and exact continuation seams. Example TypeScript and
+root Biome PASS (78 files, existing warnings); terrain Vitest remains 71/71 PASS.
+`pnpm check:docs` PASS: 2,498 relative links. Inspected final licensed 1:1 ridge,
+overview and mesa crops against the Gaia reference: real continuous headwall,
+snow on ledges/hollows and a natural butte skirt; far alpine haze remains stronger
+than the reference. No new judge score or Gaia acceptance is claimed. Full final
+licensed and fallback gates remain pending at this checkpoint.
+
+### 2026-10-03 UTC — DEM lane final results
+
+Implementation complete on `feat/prd-466-468-dem`; no package source changed.
+Sites: Longs Peak Diamond / Chasm Lake headwall, EPSG:26913 bbox
+`[447614,4455994,448126,4456506]`, `USGS_1M_13_x44y446_CO_DRCOG_2020_B20`;
+Setting Hen Butte, Valley of the Gods, EPSG:26912 bbox
+`[605514,4125374,606026,4125886]`, `USGS_1M_12_x60y413_UT_WestEast_B22`.
+Same-site 5 km surroundings: `USGS_13_n41w106_20221118` and
+`USGS_13_n38w110_20241031`. Public-domain USGS citations, acquisition/project
+temporal extents, source URLs and hashes are in `scripts/dem/*.json` and CREDITS.
+Example-only dev dependencies: `geotiff` and `proj4`; no installed GIS reader was available.
+
+Bounded cold bake: 28.20 s (first cold bake 29.44 s); cache reuse PASS before
+every capture. Baked JSON bytes: alpine 6,094,781; desert 5,974,914; combined
+continuation 10,144,458. Four committed int16 sources: 1,316,872 bytes. No
+vertical exaggeration; light erosion changes alpine by at most 0.479 m and
+desert by 0.092 m. Transport buffers remain finite 257² arrays; no alpine/desert
+water or river is created. Render/collision identity and all 1,024 seam samples
+pass in the full scenarios; maximum measured contact error is 0.0000586 m.
+
+Final licensed full scenario: **FAIL on timing only**, all behavior, material,
+render-stage, collision/seam and diagnostic assertions PASS. Final valid fallback
+full scenario: **PASS, every assertion**. `verify-ocean` PASS in both: waves, sun
+change and sheltered-water checks. Both use hardware NVIDIA Turing WebGPU at
+1920×1080. Console/network/runtime errors: zero in both. Earlier fallback attempts
+used a stale local transform matching the old two-argument `loadPack` signature
+and are excluded from this proof. Corrected the local fallback config to replace
+`loadPack(ctx.assets, world, data)`; verified all three asset-loading calls are
+`undefined` in the served module. Final fallback prop triangles are 3,139,276
+versus licensed 7,432,934; automatic render tier remains high in the valid run.
+
+CPU p50s below are milliseconds in camera order. Each cell gives its same-run
+median one-minute load average (sampled every 5 s). Licensed load range
+32.74–57.19; fallback load range 33.75–49.67. These are loaded-machine observations,
+not proof that contention alone caused a timing failure.
+
+| World / camera order | Licensed p50s / load | Valid fallback p50s / load |
+| --- | --- | --- |
+| forest: player, meadow, overview, river | 6/3.9/5.1/8.8 / load 39.62 | 3.2/2.6/3/2.6 / load 38.81 |
+| coastal: player, meadow, overview, horizon | 3.3/3.7/3.4/2.7 / load 39.62 | 2/2.3/1.9/2 / load 38.81 |
+| alpine: player, ridge, overview | 1.5/1.4/1.5 / load 39.62 | 1.1/1.1/1.1 / load 38.81 |
+| desert: player, mesa, overview | 2.7/2.6/2.4 / load 39.62 | 1.3/1.4/1.4 / load 38.81 |
+| tundra: player, plain, overview | 4.8/4.7/8.7 / load 39.62 | 2.8/2.1/2.4 / load 38.81 |
+
+Example TypeScript PASS; root Biome PASS (78 files, 49 existing warnings); terrain
+Vitest 71/71 PASS; documentation links 2,498 PASS; `git diff --check` PASS. Full
+`test:consumer` remains FAIL before export on the existing rain template terrain
+workflow pointer (snow also fails the same pointer check). Focused five-world
+packed replay and installed game handoff PASS, excluding only those unrelated
+assertions: exact height arrays, GLB bounds and triangle count preserved. No
+old procedural-shape expectations were changed. The integration/final gate
+checkboxes above remain open for the full consumer and licensed timing failures.
+
+1:1 crops (1280×720 pixels, no scaling): before in
+`examples/strata-terrain-preview/artifacts/playtest/dem-before/`; after licensed in
+`dem-final-licensed-v2/`; after fallback in `dem-final-fallback-valid/`. Each has
+`alpine-ridge-crop.png`, `alpine-overview-crop.png`, `desert-mesa-crop.png`,
+`desert-overview-crop.png`. Inspected against the Gaia alpine reference: continuous
+real headwall/couloirs, snow on hollows/ledges and genuine butte skirts/bedding;
+alpine overview haze remains stronger than the reference. No new judge score,
+Gaia acceptance or overall PRD completion is claimed.
+
+Source commits: `41cff09ac`, `19a0e88e4`, `b6b365f76`; this final note is committed
+separately. No push, merge or PR comment. Unmerged checkout retained with local
+licensed art and captures; it is ineligible for merged-worktree cleanup.

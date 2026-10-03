@@ -54,6 +54,8 @@ interface IBenchmarkPose {
   /** World x and z of the eye, and the height above the terrain under it. */
   readonly at: readonly [number, number];
   readonly eye: number;
+  /** Absolute elevation for an overview over surveyed scenery beyond the playable collider. */
+  readonly eyeY?: number;
   /** World x and z to look at, and the height above the terrain under *that*. */
   readonly look: readonly [number, number];
   readonly lookUp: number;
@@ -75,18 +77,18 @@ interface IBenchmark {
 
 const BENCHMARK: Record<WorldName, IBenchmark> = {
   alpine: {
-    focus: { x: 100, z: 120 },
+    focus: { x: 180, z: -190 },
     poses: {
-      ridge: { at: [140, 156], eye: 24, look: [30, -40], lookUp: -8 },
-      overview: { at: [160, 190], eye: 120, look: [-20, -20], lookUp: 12 },
+      ridge: { at: [220, -220], eye: 150, look: [-75, 40], lookUp: 0, lookY: 320 },
+      overview: { at: [850, -1000], eye: 0, eyeY: 760, look: [-55, 35], lookUp: 0, lookY: 330 },
     },
     views: ["player", "ridge", "overview"],
   },
   desert: {
-    focus: { x: 95, z: 110 },
+    focus: { x: 170, z: 180 },
     poses: {
-      mesa: { at: [65, 55], eye: 3.2, look: [-140, -60], lookUp: 0, lookY: 38 },
-      overview: { at: [170, 180], eye: 105, look: [-65, -80], lookUp: 10 },
+      mesa: { at: [195, 190], eye: 3.2, look: [-35, -30], lookUp: 20 },
+      overview: { at: [200, 200], eye: 165, look: [-40, -30], lookUp: 10 },
     },
     views: ["player", "mesa", "overview"],
   },
@@ -297,7 +299,13 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
         new MeshStandardMaterial({ color: 0xffc76d }),
       );
       const start =
-        world === "forest" ? [-190, 160] : world === "coastal" ? [180, 100] : [180, 160];
+        world === "forest"
+          ? [-190, 160]
+          : world === "coastal"
+            ? [180, 100]
+            : world === "alpine"
+              ? [180, -190]
+              : [180, 160];
       actor.position.set(
         start[0] as number,
         field.heightAt(start[0] as number, start[1] as number) + 2,
@@ -842,7 +850,19 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
         if (view === "player") {
           const offset = world === "coastal" ? new Vector3(28, 18, 34) : new Vector3(28, 24, 42);
           ctx.camera.position.copy(actor.position).add(offset);
-          ctx.camera.lookAt(actor.position.x, actor.position.y + 2, actor.position.z - 12);
+          if (world === "alpine")
+            ctx.camera.lookAt(
+              actor.position.x - 200,
+              actor.position.y + 170,
+              actor.position.z + 170,
+            );
+          else if (world === "desert")
+            ctx.camera.lookAt(
+              actor.position.x - 180,
+              actor.position.y + 30,
+              actor.position.z - 160,
+            );
+          else ctx.camera.lookAt(actor.position.x, actor.position.y + 2, actor.position.z - 12);
           props?.setLevels(ctx.camera.position);
           return;
         }
@@ -851,7 +871,11 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
         // defence against a state that arrived from somewhere else.
         const pose = poses[view] ?? poses.overview;
         if (pose === undefined) throw new RangeError(`World '${world}' has no overview framing`);
-        ctx.camera.position.copy(at(pose.at[0], pose.at[1], pose.eye));
+        ctx.camera.position.copy(
+          pose.eyeY === undefined
+            ? at(pose.at[0], pose.at[1], pose.eye)
+            : new Vector3(pose.at[0], pose.eyeY, pose.at[1]),
+        );
         ctx.camera.lookAt(
           pose.lookY === undefined
             ? at(pose.look[0], pose.look[1], pose.lookUp)

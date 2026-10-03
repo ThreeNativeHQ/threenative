@@ -26,6 +26,8 @@
   "devDependencies": {
     "@threenative/terrain": "workspace:*",
     "@types/three": "catalog:",
+    "geotiff": "^3.0.5",
+    "proj4": "^2.22.0",
     "typescript": "catalog:",
     "vite": "catalog:"
   }

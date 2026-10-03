@@ -1,10 +1,34 @@
+import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import { Mask, Terrain, bakeMesh } from "@threenative/terrain";
 import { terrainPalette } from "../src/render/palette.js";
 
 // Authoring runs before either runtime is bundled. The game imports only the baked JSON.
+
+// Public-domain surveyed elevations; one offset and orientation are shared by detail and horizon.
+const dem = {};
+for (const name of ["alpine", "desert", "alpine-horizon", "desert-horizon"]) {
+  const meta = JSON.parse(await readFile(new URL(`dem/${name}.json`, import.meta.url), "utf8"));
+  const bytes = await readFile(new URL(`dem/${name}.bin`, import.meta.url));
+  assert.equal(meta.encoding, "int16-le-decimetres-relative-to-elevationOffset");
+  assert.equal(bytes.length, meta.resolution ** 2 * 2, `${name}: truncated DEM`);
+  assert.equal(
+    createHash("sha256").update(bytes).digest("hex"),
+    meta.sha256,
+    `${name}: DEM hash mismatch`,
+  );
+  dem[name] = {
+    size: meta.size,
+    resolution: meta.resolution,
+    data: {
+      width: meta.resolution,
+      height: meta.resolution,
+      values: Array.from({ length: meta.resolution ** 2 }, (_, i) => bytes.readInt16LE(i * 2) / 10),
+    },
+  };
+}
 
 export const forest = new Terrain({ size: 512, resolution: 257, seed: 73 })
   .noise({ id: "hills", base: 22, amplitude: 34, scale: 175, warp: 45, octaves: 6 })
@@ -176,390 +200,44 @@ export const coastal = new Terrain({ size: 512, resolution: 257, seed: 73 })
     ],
   })
   .water({ id: "ocean", kind: "ocean", level: 1.5, radius: 512 });
-// Alpine: intersecting arêtes, cirque headwalls and a glacial trough. Settle talus below
-// the exposed faces without relaxing the entire massif to the scree angle.
+// Real glaciated granite and bedded sandstone. Only a light transport pass follows the survey:
+// no fabricated ridges, shelves, dunes, river cuts or smoothing of the measured landform.
 export const alpine = new Terrain({ size: 512, resolution: 257, seed: 41 })
-  .noise({ id: "foothills", base: 16, amplitude: 18, scale: 180, warp: 35, octaves: 4 })
-  .stamp({
-    id: "snow-shelf",
-    at: [0, -60],
-    radius: [172, 145],
-    data: mesaProfile(102),
-    falloff: 0,
-    blend: "max",
-    offset: 16,
-  })
-  .stamp({
-    id: "main-arete",
-    at: [15, -65],
-    radius: [165, 120],
-    amplitude: 132,
-    shape: "ridge",
-    rotation: -22,
-    roughness: 0.025,
-    blend: "max",
-    offset: 16,
-  })
-  .stamp({
-    id: "side-arete",
-    at: [-100, 15],
-    radius: [150, 90],
-    amplitude: 112,
-    shape: "ridge",
-    rotation: 58,
-    roughness: 0.03,
-    blend: "max",
-    offset: 16,
-  })
-  .stamp({
-    id: "east-horn",
-    at: [55, -95],
-    radius: [120, 90],
-    amplitude: 140,
-    shape: "ridge",
-    rotation: 78,
-    roughness: 0.08,
-    blend: "max",
-    offset: 20,
-  })
-  .stamp({
-    id: "west-horn",
-    at: [-80, -40],
-    radius: [130, 85],
-    amplitude: 125,
-    shape: "ridge",
-    rotation: -38,
-    roughness: 0.075,
-    blend: "max",
-    offset: 16,
-  })
-  .stamp({
-    id: "cirque-east",
-    at: [90, -12],
-    radius: [78, 84],
-    amplitude: 36,
-    shape: "valley",
-    roughness: 0.04,
-  })
-  .stamp({
-    id: "cirque-west",
-    at: [-40, 10],
-    radius: [75, 84],
-    amplitude: 32,
-    shape: "valley",
-    roughness: 0.04,
-  })
-  .noise({
-    id: "crags",
-    base: 0,
-    amplitude: 12,
-    scale: 95,
-    warp: 14,
-    octaves: 3,
-    persistence: 0.4,
-    mode: "ridged",
-    mask: Mask.height(45, 1e9, 18),
-  })
-  .noise({
-    id: "fractures",
-    base: 0,
-    amplitude: 4,
-    scale: 35,
-    warp: 12,
-    octaves: 3,
-    persistence: 0.45,
-    mode: "ridged",
-    mask: Mask.and(Mask.height(48, 1e9, 12), Mask.slope(20, 80, 12)),
-  })
-  // A connected snow shelf survives between the cirques; rainfall carves its rim next.
-  .flatten({ id: "shelf-core", at: [-35, -60], radius: 68, height: 104, falloff: 0.18 })
-  .terrace({
-    id: "rock-ledges",
-    step: 18,
-    softness: 0.24,
-    strength: 0.65,
-    mask: Mask.and(Mask.height(55, 170, 12), Mask.slope(26, 70, 12)),
-  })
+  .heightmap({ id: "usgs-3dep", data: dem.alpine.data })
   .erode({
-    id: "weathering",
+    id: "surface-runoff",
     method: "hydraulic",
-    inertia: 0.05,
-    capacity: 6,
-    erosion: 0.2,
-    strength: 0.7,
+    droplets: 20000,
+    maxSteps: 45,
+    capacity: 2,
+    erosion: 0.015,
+    strength: 0.002,
     deposition: 0.2,
     evaporation: 0.035,
-    droplets: 200000,
-    maxSteps: 110,
   })
-  // Resistant upper bedrock keeps steep walls, but sheds unsupported hydraulic remnants.
-  .erode({ id: "cap-weathering", method: "thermal", talus: 55, iterations: 50, rate: 0.2 })
-  .erode({
-    id: "scree",
-    method: "thermal",
-    talus: 35,
-    iterations: 65,
-    rate: 0.2,
-    mask: Mask.height(-1e9, 65, 12),
-  })
-  // Rain reopens drainage after debris has settled, without the old below-bed pickup.
-  .erode({
-    id: "rills",
-    method: "hydraulic",
-    droplets: 100000,
-    maxSteps: 100,
-    inertia: 0.05,
-    capacity: 4,
-    erosion: 0.07,
-    deposition: 0.3,
-    evaporation: 0.025,
-  })
-  .smooth({ id: "settle", iterations: 1, strength: 0.12 })
-  .river({
-    id: "glacial-trough",
-    followTerrain: true,
-    points: [
-      [-240, null, 155],
-      [-100, null, 110],
-      [20, null, 95],
-      [230, null, 130],
-    ],
-    width: 38,
-    depth: 6,
-    shoulder: 42,
-    water: false,
-    material: "rock",
-  })
+  .erode({ id: "loose-talus", method: "thermal", talus: 48, iterations: 1, rate: 0.004 })
   .materials({
     id: "surfaces",
     rules: [
-      { material: "dirt", mask: Mask.noise(38, 0.7, 41, 0.25), strength: 0.25 },
-      { material: "rock", mask: Mask.height(48, 1e9, 22), strength: 0.65 },
-      { material: "rock", mask: Mask.slope(30, 90, 8) },
-      { material: "snow", mask: Mask.and(Mask.height(70, 1e9, 18), Mask.slope(0, 36, 7)) },
+      { material: "rock", mask: Mask.all() },
+      { material: "dirt", mask: Mask.slope(20, 38, 6), strength: 0.4 },
+      { material: "snow", mask: Mask.and(Mask.height(80, 1e9, 60), Mask.slope(0, 42, 8)) },
     ],
   });
-// Desert: resistant caprock plateaux, stepped walls, loose aprons and wind-shaped dunes.
-// Data stamps reuse the installed operation; the built-in mesa's half-radius shoulder is too round.
-function mesaProfile(height) {
-  const width = 129;
-  return {
-    width,
-    height: width,
-    values: Array.from({ length: width * width }, (_, i) => {
-      const x = ((i % width) / (width - 1) - 0.5) * 2;
-      const z = (Math.floor(i / width) / (width - 1) - 0.5) * 2;
-      const angle = Math.atan2(z, x) + height * 0.17;
-      // Connected lobes and deep re-entrants, rather than a perturbed circular rim.
-      const boundary =
-        0.83 +
-        0.12 * Math.sin(angle * 3 + 0.7) +
-        0.08 * Math.sin(angle * 5 - 1.2) +
-        0.045 * Math.sin(angle * 9 + 2);
-      const notch =
-        0.19 * Math.exp(-(((angle - 0.45) / 0.19) ** 2)) +
-        0.16 * Math.exp(-(((angle + 1.6) / 0.22) ** 2));
-      const channel = Math.max(0, Math.sin(angle * 19 + Math.sin(angle * 7) * 1.8)) ** 8;
-      const radius = Math.hypot(x, z);
-      const d =
-        radius / (boundary - notch) +
-        channel * 0.07 * Math.max(0, Math.min(1, (radius - 0.4) / 0.3));
-      const cap =
-        d <= 0.72
-          ? 1
-          : d < 0.79
-            ? 1 - ((d - 0.72) / 0.07) * 0.82
-            : Math.max(0, (1 - d) / 0.21) * 0.18;
-      return height * cap;
-    }),
-  };
-}
 export const desert = new Terrain({ size: 512, resolution: 257, seed: 97 })
-  .noise({ id: "plain", base: 8, amplitude: 4, scale: 220, warp: 30, octaves: 3 })
-  .stamp({
-    id: "mesa-west",
-    at: [-140, -60],
-    radius: [82, 65],
-    data: mesaProfile(66),
-    falloff: 0,
-  })
-  .stamp({
-    id: "mesa-north",
-    at: [40, -170],
-    radius: [68, 88],
-    data: mesaProfile(82),
-    falloff: 0,
-  })
-  .stamp({
-    id: "butte",
-    at: [-30, 60],
-    radius: [36, 31],
-    data: mesaProfile(48),
-    falloff: 0,
-  })
-  .stamp({
-    id: "detached-west-butte",
-    at: [-57, -92],
-    radius: [12, 18],
-    data: mesaProfile(41),
-    falloff: 0,
-  })
-  .stamp({
-    id: "west-fin",
-    at: [-113, 18],
-    radius: [7, 24],
-    rotation: -0.28,
-    data: mesaProfile(29),
-    falloff: 0,
-  })
-  .stamp({
-    id: "north-fin",
-    at: [111, -143],
-    radius: [8, 26],
-    rotation: 0.4,
-    data: mesaProfile(46),
-    falloff: 0,
-  })
-  .stamp({
-    id: "west-cleft",
-    at: [-77, -45],
-    radius: [21, 32],
-    amplitude: 16,
-    shape: "valley",
-    roughness: 0.08,
-  })
-  .stamp({
-    id: "north-cleft",
-    at: [4, -217],
-    radius: [25, 22],
-    amplitude: 12,
-    shape: "valley",
-    roughness: 0.06,
-  })
-  .terrace({
-    id: "benches",
-    step: 13,
-    softness: 0.42,
-    strength: 0.45,
-    offset: 2,
-    mask: Mask.and(Mask.height(18, 1e9, 6), Mask.noise(66, 0.62, 97, 0.12)),
-  })
-  .flatten({ id: "west-caprock", at: [-140, -60], radius: 42, height: 74, falloff: 0.15 })
-  .flatten({ id: "north-caprock", at: [40, -170], radius: 40, height: 90, falloff: 0.15 })
-  .flatten({ id: "butte-caprock", at: [-30, 60], radius: 17, height: 56, falloff: 0.12 })
+  .heightmap({ id: "usgs-3dep", data: dem.desert.data })
   .erode({
-    id: "weathering",
+    id: "surface-runoff",
     method: "hydraulic",
-    droplets: 200000,
-    maxSteps: 100,
-    inertia: 0.06,
-    capacity: 7,
-    erosion: 0.22,
-    deposition: 0.3,
-    evaporation: 0.025,
-    mask: Mask.slope(3, 90, 3),
+    droplets: 20000,
+    maxSteps: 45,
+    capacity: 2,
+    erosion: 0.015,
+    strength: 0.002,
+    deposition: 0.2,
+    evaporation: 0.035,
   })
-  .erode({ id: "cap-weathering", method: "thermal", talus: 60, iterations: 50, rate: 0.2 })
-  .erode({
-    id: "aprons",
-    method: "thermal",
-    talus: 34,
-    iterations: 100,
-    rate: 0.22,
-    mask: Mask.height(-1e9, 45, 12),
-  })
-  .erode({
-    id: "rills",
-    method: "hydraulic",
-    droplets: 100000,
-    maxSteps: 100,
-    inertia: 0.05,
-    capacity: 4,
-    erosion: 0.07,
-    deposition: 0.3,
-    evaporation: 0.025,
-    mask: Mask.slope(8, 90, 4),
-  })
-  .smooth({ id: "cliff-settle", iterations: 1, strength: 0.12 })
-  .smooth({ id: "sand-settle", iterations: 1, strength: 0.25, mask: Mask.height(-1e9, 22, 5) })
-  .stamp({
-    id: "wind-roll",
-    at: [80, 40],
-    radius: [100, 18],
-    amplitude: 2,
-    shape: "ridge",
-    rotation: -32,
-    roughness: 0.04,
-    mask: Mask.height(-1e9, 22, 4),
-  })
-  .stamp({
-    id: "dune-west",
-    at: [80, 95],
-    radius: [135, 24],
-    amplitude: 5,
-    shape: "ridge",
-    rotation: -32,
-    roughness: 0.05,
-  })
-  .stamp({
-    id: "dune-east",
-    at: [125, 155],
-    radius: [140, 27],
-    amplitude: 7,
-    shape: "ridge",
-    rotation: -32,
-    roughness: 0.05,
-  })
-  .stamp({
-    id: "dune-far",
-    at: [175, 205],
-    radius: [120, 28],
-    amplitude: 6,
-    shape: "ridge",
-    rotation: -32,
-    roughness: 0.06,
-  })
-  .stamp({
-    id: "dune-hollow",
-    at: [145, 145],
-    radius: [36, 70],
-    amplitude: 3,
-    shape: "valley",
-    rotation: 18,
-    roughness: 0.05,
-  })
-  .river({
-    id: "wash",
-    followTerrain: true,
-    points: [
-      [-240, null, 190],
-      [-100, null, 130],
-      [30, null, 0],
-      [240, null, -80],
-    ],
-    width: 12,
-    depth: 3,
-    shoulder: 12,
-    water: false,
-    material: "sand",
-    enforceDownhill: true,
-  })
-  .river({
-    id: "wash-tributary",
-    followTerrain: true,
-    points: [
-      [160, null, 45],
-      [95, null, 30],
-      [55, null, 10],
-      [20, null, -5],
-    ],
-    width: 4,
-    depth: 1.2,
-    shoulder: 6,
-    water: false,
-    material: "sand",
-    enforceDownhill: true,
-  })
+  .erode({ id: "loose-talus", method: "thermal", talus: 60, iterations: 1, rate: 0.004 })
   .materials({
     id: "surfaces",
     rules: [
@@ -725,12 +403,30 @@ const continuation = new Terrain({ size: 5000, resolution: 513, seed: 150466 })
 // to the initial page module.
 const drawn = new Set(["forest", "coastal"]);
 const outputDir = new URL("../src/world/", import.meta.url);
-const { readFile, stat } = await import("node:fs/promises");
+const realContinuation = Object.fromEntries(
+  ["alpine", "desert"].map((name) => {
+    const source = dem[`${name}-horizon`];
+    return [
+      name,
+      new Terrain({ size: source.size, resolution: source.resolution, seed: 1 }).heightmap({
+        id: "usgs-surroundings",
+        data: source.data,
+      }),
+    ];
+  }),
+);
 const fingerprint = createHash("sha256")
   .update(
     JSON.stringify(Object.fromEntries(Object.entries(recipes).map(([n, t]) => [n, t.toJSON()]))),
   )
   .update(JSON.stringify(continuation.toJSON()))
+  .update(
+    JSON.stringify(
+      Object.fromEntries(
+        Object.entries(realContinuation).map(([name, terrain]) => [name, terrain.toJSON()]),
+      ),
+    ),
+  )
   .update(JSON.stringify(terrainPalette))
   .update(await readFile(new URL(import.meta.url)))
   .update(await readFile(new URL("../../../packages/terrain/dist/index.js", import.meta.url)))
@@ -773,6 +469,23 @@ if (!baked) {
   for (const [name, terrain] of Object.entries(recipes)) {
     const started = performance.now();
     const state = terrain.evaluate();
+    if (dem[name]) {
+      const maxDelta = state.height.reduce(
+        (max, height, i) => Math.max(max, Math.abs(height - dem[name].data.values[i])),
+        0,
+      );
+      assert(maxDelta < 1, `${name}: transport changed surveyed geology by ${maxDelta} m`);
+      assert.equal(state.waters.length, 0, `${name}: this surveyed crop has no authored water`);
+      for (const channel of ["flow", "sediment", "deposition", "talus"]) {
+        assert.equal(
+          state.erosion?.[channel]?.length,
+          state.height.length,
+          `${name}: missing ${channel}`,
+        );
+        assert(state.erosion[channel].every(Number.isFinite), `${name}: nonfinite ${channel}`);
+      }
+      console.log(`${name}: maximum DEM change ${maxDelta.toFixed(3)} m`);
+    }
     const mesh = bakeMesh(state, { palette: terrainPalette });
     worlds[name] = {
       size: state.size,
@@ -803,10 +516,19 @@ if (!baked) {
     size: distant.size,
     resolution: distant.resolution,
     heights: Array.from(distant.height, (height) => Math.round(height * 100) / 100),
+    ...Object.fromEntries(
+      Object.entries(realContinuation).map(([name, terrain]) => {
+        const state = terrain.evaluate();
+        return [
+          name,
+          { size: state.size, resolution: state.resolution, heights: Array.from(state.height) },
+        ];
+      }),
+    ),
   });
   await writeFile(new URL("horizon.json", outputDir), horizon);
   console.log(
-    `Continuation erosion: ${((performance.now() - started) / 1000).toFixed(2)} s; ${Buffer.byteLength(horizon)} JSON bytes`,
+    `Continuation (forest erosion; alpine/desert DEM): ${((performance.now() - started) / 1000).toFixed(2)} s; ${Buffer.byteLength(horizon)} JSON bytes`,
   );
   await writeFile(
     new URL("../src/world/baked.json", import.meta.url),
