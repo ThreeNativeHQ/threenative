@@ -5893,6 +5893,12 @@ export class WorldCells extends Group implements IComputeDriven {
     mesh.layers.set(0);
     mesh.castShadow = false;
     mesh.receiveShadow = receiveShadow;
+    // The origin a draw of this mesh is counted under until the GPU scene dresses it
+    // (`RenderPassBudget`). `#dressGpu` runs straight after this and overwrites it with `gpuScene`
+    // when the key really is dressed, so what survives here is a main batch the CPU path draws per
+    // object — a backend with no compute, `gpuScene: false`, or a dress that gave up. A caster half
+    // returns above and keeps no origin: it lives off layer 0, so the main pass never counts it.
+    mesh.userData.tnDrawSource = "instanced";
     // Nothing to hang off a main mesh: the window is narrowed by `#cullMainPass` for the whole set,
     // because a batch that drew nothing is hidden and three never reaches an invisible mesh's own
     // hooks — a mesh that could only re-narrow itself in its `onBeforeRender` would stay hidden for
@@ -7936,6 +7942,15 @@ export class WorldCells extends Group implements IComputeDriven {
             this.#castShadowLevels > 0,
             this.#proxyMaterials,
           );
+          // Where the frame budget counts this chunk's main-pass draws (`RenderPassBudget`). Written
+          // after the bake and over the whole subtree, because that is the only point where all three
+          // outcomes exist at once: a merged group, an instanced mesh the bake kept, and a chunk it
+          // refused whole are all one chunk's draws. The proxies the bake built are off layer 0 and
+          // keep the `proxies` origin they were given.
+          object.traverse((node) => {
+            if ((node as Mesh).isMesh === true && node.layers.isEnabled(0))
+              node.userData.tnDrawSource = "chunks";
+          });
           // The buffers the bake just made, uploaded here rather than on the chunk's first draw,
           // which is the frame that uploads them today: 228.8 MB over 826 `createAttribute` calls
           // in a browser walk, and up to 230 ms inside the frames that first submitted them.

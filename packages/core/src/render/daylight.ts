@@ -105,6 +105,10 @@ export class Daylight extends Group implements IComputeDriven {
     this.sky.mieCoefficient.value = options.sky.mieCoefficient;
     this.sky.mieDirectionalG.value = options.sky.mieDirectionalG;
     this.sky.sunPosition.value.copy(this.#sunDirection);
+    // Where the frame budget counts this mesh's main-pass draw (`RenderPassBudget`). One draw, on
+    // the main camera's own layer, and no world system owns it — so without the origin it is a line
+    // in the `other` bucket that reads as a prop rather than as the sky.
+    this.sky.userData.tnDrawSource = "sky";
     this.add(this.sky);
 
     this.fill = new HemisphereLight(options.fill.sky, options.fill.ground, options.fill.intensity);

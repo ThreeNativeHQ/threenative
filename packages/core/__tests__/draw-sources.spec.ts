@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { FRAME_BUDGET_MARKER, FrameBudget, type IFrameBudgetWindow } from "../src/frame-budget.js";
-import { MAIN_DRAW_SOURCES, RenderPassBudget } from "../src/render-pass-budget.js";
+import {
+  MAIN_DRAW_SOURCES,
+  type MainDrawSource,
+  RenderPassBudget,
+} from "../src/render-pass-budget.js";
 
 /**
  * A drawn mesh carrying exactly the two `userData` fields the classifier reads, set the way the
@@ -129,6 +133,20 @@ function drivePasses(frames: number, scene: IFakeScene, reportEvery = frames): I
   return JSON.parse((lines[0] ?? "").slice(`${FRAME_BUDGET_MARKER}:`.length)) as IFrameBudgetWindow;
 }
 
+/**
+ * A world whose main pass draws `count` meshes from one system alone, so the split either names that
+ * system or says nothing at all: a tag the classifier does not know lands in `other`, which is the
+ * answer this exists to rule out.
+ */
+function only(source: MainDrawSource, count: number): IFakeScene {
+  return {
+    name: "",
+    objects: Array.from({ length: count }, (_, index) =>
+      mesh(`${source}:${String(index)}`, { tnDrawSource: source }),
+    ),
+  };
+}
+
 describe("main-pass draws by source", () => {
   it("counts every source and sums to the pass's own draws", () => {
     const window = drivePasses(4, BUNDLES_OFF);
@@ -150,6 +168,34 @@ describe("main-pass draws by source", () => {
       0,
     );
     expect(summed).toBe(main?.draws.p50);
+  });
+
+  it("counts a hand-placed chunk's meshes under chunks, not under other", () => {
+    // The measure this split was extended for: on the map-walk `other` was the largest source left,
+    // and a hand-placed chunk was one draw per material inside it, indistinguishable from a prop.
+    const window = drivePasses(2, only("chunks", 9));
+    const bySource = window.passes?.main?.drawsBySource;
+
+    expect(bySource?.chunks?.p50).toBe(9);
+    expect(bySource?.other).toBeUndefined();
+  });
+
+  it("counts an instanced prop batch the GPU scene never dressed under instanced", () => {
+    // A renderer with no compute, or a world with `gpuScene: false`: the main mesh still draws, one
+    // draw per key, and that per-draw path is exactly what this has to name.
+    const window = drivePasses(2, only("instanced", 34));
+    const bySource = window.passes?.main?.drawsBySource;
+
+    expect(bySource?.instanced?.p50).toBe(34);
+    expect(bySource?.other).toBeUndefined();
+  });
+
+  it("counts the daylight rig's sky box under sky", () => {
+    const window = drivePasses(2, only("sky", 1));
+    const bySource = window.passes?.main?.drawsBySource;
+
+    expect(bySource?.sky?.p50).toBe(1);
+    expect(bySource?.other).toBeUndefined();
   });
 
   it("counts a bundled mesh once, under the bundle, whatever else it is tagged", () => {

@@ -203,7 +203,11 @@ async function flushed(
 
 /** A world on the committed package, walked the way the GPU-scene spec walks it. */
 async function world(
-  options: { readonly bundles?: boolean; readonly rockInWest?: boolean } = {},
+  options: {
+    readonly bundles?: boolean;
+    readonly gpuScene?: boolean;
+    readonly rockInWest?: boolean;
+  } = {},
 ): Promise<{
   follow: { position: { x: number; z: number; y: number } };
   renderer: IRendererLike;
@@ -366,6 +370,25 @@ describe("the main pass's draw bundles", () => {
     for (const mesh of dressed) expect(mesh.parent).toBe(cells);
     // The GPU scene is still on either way: the option is about the draw commands, not the cull.
     expect(cells.stats().gpuScene.on).toBe(true);
+    cells.dispose();
+  });
+
+  it("names a main batch the GPU scene never dressed as instanced", async () => {
+    // The CPU path is where `other` was largest and least explainable: one draw per key per frame,
+    // submitted per object, with no indirect record behind it to tell it from a dressed key. The
+    // origin is written where the mesh is dressed for the main pass, and the GPU-scene dress
+    // overwrites it, so the tag says which of the two a batch actually took.
+    const { renderer, world: cells } = await world({ gpuScene: false });
+    cells.update(renderer, playerCamera());
+    await flushed(cells, renderer, playerCamera());
+
+    expect(cells.stats().gpuScene.on).toBe(false);
+    const dressed = mainKeys(cells);
+    expect(dressed.length).toBeGreaterThan(0);
+    for (const mesh of dressed) expect(mesh.userData.tnDrawSource).toBe("instanced");
+    // The caster halves are off layer 0, so the main pass never counts them; they stay unnamed.
+    for (const mesh of worldMeshes(cells).filter((one) => one.name.includes("@")))
+      expect(mesh.userData.tnDrawSource).toBeUndefined();
     cells.dispose();
   });
 });

@@ -208,7 +208,9 @@ export interface IFrameBudgetPassSummary {
    * the percentiles below do not have to, because a source that draws on some frames and not others
    * has a median over its own frames rather than over the window's. A source no frame drew is
    * absent. Absent altogether — never a set of zeros — when the renderer named no object behind one
-   * of the pass's draws, which is the same rule the pass record itself follows.
+   * of the pass's draws, which is the same rule the pass record itself follows. One exception to the
+   * sum: a world with bundles on counts its replays here, and three never traverses a replay, so the
+   * sources can exceed `draws`; the sum holds for the sources that went through the per-draw path.
    */
   readonly drawsBySource?: Readonly<Partial<Record<MainDrawSource, IFrameBudgetSummary>>>;
   /** Frames in the window that submitted a pass of this kind. */
@@ -624,9 +626,12 @@ export class FrameBudget {
     };
     this.#passDrawSourceRings = {
       bundles: new Ring(capacity),
+      chunks: new Ring(capacity),
       gpuScene: new Ring(capacity),
+      instanced: new Ring(capacity),
       other: new Ring(capacity),
       proxies: new Ring(capacity),
+      sky: new Ring(capacity),
       terrain: new Ring(capacity),
     };
     this.#passTriangleRings = {

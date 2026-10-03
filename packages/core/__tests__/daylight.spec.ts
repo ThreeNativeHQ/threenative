@@ -61,6 +61,16 @@ describe("Daylight", () => {
     );
   });
 
+  it("names the sky box as the sky in the frame budget's per-source split", () => {
+    // One draw, on the main camera's own layer, and no world system would otherwise claim it — which
+    // is why a rig like this one was a line item in the `other` bucket PRD-494 reads.
+    const daylight = new Daylight(options(new Object3D()));
+
+    expect(daylight.sky.layers.mask).toBe(1);
+    expect(daylight.sky.userData.tnDrawSource).toBe("sky");
+    daylight.detach();
+  });
+
   it("refuses a missing exposure or sky size instead of inventing one", () => {
     expect(() => new Daylight(options(new Object3D(), { exposure: 0 }))).toThrow(/exposure/u);
     expect(() => new Daylight(options(new Object3D(), { skySize: 0 }))).toThrow(/skySize/u);

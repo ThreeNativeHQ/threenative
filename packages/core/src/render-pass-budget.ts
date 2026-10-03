@@ -29,11 +29,27 @@ export const FRAME_PASS_KINDS = ["main", "shadow", "reflection", "nested"] as co
 export type FramePassKind = (typeof FRAME_PASS_KINDS)[number];
 
 /**
- * Where a main-pass draw's mesh came from. Closed, and `other` is the default: a character, a prop,
- * water and the sky are every mesh that no world system claimed, and they are what is left once the
- * systems that can be counted are counted.
+ * Where a main-pass draw's mesh came from. Closed, and `other` is the default.
+ *
+ * Each entry is a system that owns its meshes and writes the origin on them, so the split reads as
+ * an answer about systems rather than about geometry: `gpuScene` and `bundles` are `WorldCells`' two
+ * ways of drawing one main batch (a GPU-dressed key, and the same mesh replayed from the world's
+ * bundle), `terrain` is every mesh `world-tiles.ts` creates, `proxies` is the shadow halves and the
+ * whole-map impostor aggregates, `chunks` is a hand-placed chunk's own draws, `instanced` is a main
+ * batch the GPU scene never dressed, and `sky` is a daylight rig's sky box. What is left in `other`
+ * is a mesh no world system claimed — a character, a prop, a water surface the game loaded — which is
+ * the bucket that has to be small enough to be worth naming one draw at a time.
  */
-export const MAIN_DRAW_SOURCES = ["gpuScene", "bundles", "terrain", "proxies", "other"] as const;
+export const MAIN_DRAW_SOURCES = [
+  "gpuScene",
+  "bundles",
+  "terrain",
+  "proxies",
+  "chunks",
+  "instanced",
+  "sky",
+  "other",
+] as const;
 
 export type MainDrawSource = (typeof MAIN_DRAW_SOURCES)[number];
 
