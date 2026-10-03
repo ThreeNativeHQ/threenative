@@ -71,7 +71,7 @@ Scenes use `load`, `enter`, `update`, `exit`, `render`; physics nodes are Godot-
 The vault is one fixed three-quarter shot that drifts a fraction of a metre toward the warden, so the
 camera reads the body in the frame function; a trailing follow camera is a different game.
 `input.vector("move").y` is +up, so forward uses one explicit `-move.y` conversion. Rigged assets: put a `.glb` in `assets/`, await `ctx.assets.model("hero.glb")` in `Scene.load()`, then drive
-`AnimationPlayer` beside its entity. `ctx.goto(name)` rebuilds without resetting game state; from
+`AnimationPlayer` beside its entity. Imported foliage (Fab/Megascans cutouts) draws with its own albedo, normal map and alpha cutoff under the scene's environment light — never tint it, fake its emission or flatten its normals to make up for missing light; `TN_UNLIT_FOLIAGE` names cutout materials drawn with no environment. `ctx.goto(name)` rebuilds without resetting game state; from
 a frame function `goto` and then `return`; `ctx.state.set({ /* copy this game's initial-state shape */ })`
 is a partial patch. `game.goto("<scene-name>")` also rebuilds the scene, but it resets the game's
 state. Seeded randomness is deterministic only when `defineGame({ seed })` is configured.

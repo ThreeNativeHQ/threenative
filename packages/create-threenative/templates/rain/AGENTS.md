@@ -53,7 +53,7 @@ the `distance / 343` thunder delay; `src/scenes/Boot.ts` runs the simulation clo
 (gated on cloud cover above 0.35) and publishes everything the UI reads. The coast, clouds, rain
 and bloom/grade are shaders generated from `tools/tempest-*.frag` by `node tools/generate-shaders.mjs`;
 edit the `.frag`, never a generated `*-shader.ts`. Their named colours and lights live in
-`src/render/palette.ts`, `sky.ts`, `lighting.ts` and `materials.ts`, the bolt in `lightning.ts`.
+`src/render/palette.ts`, `sky.ts`, `lighting.ts` and `materials.ts`, the bolt in `lightning.ts`. Imported foliage (Fab/Megascans cutouts) draws with its own albedo, normal map and alpha cutoff under the scene's environment light — never tint it, fake its emission or flatten its normals to make up for missing light; `TN_UNLIT_FOLIAGE` names cutout materials drawn with no environment.
 The coast is one ray-marched screen quad, so it is marked with `alwaysRender`; so are the rain and
 the bolt, whose quads are projected by their own vertex stage. Sound is three clips baked by
 `tools/make-storm-audio.mjs` and played through `AudioBus` in `src/audio/storm.ts`; audio starts on a

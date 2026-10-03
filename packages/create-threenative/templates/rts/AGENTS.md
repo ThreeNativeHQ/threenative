@@ -77,7 +77,7 @@ colour (re-aim `SUN_DIRECTION` when you swap it, and re-tune the fog density: it
 map); WebGPU adds a `VirtualShadowNode`. The sky is the light, not the backdrop: the rig is wider than
 the map at its widest zoom, so `terrain.ts` draws a plain under it (grow it with `ZOOM_RANGE.far` or
 the horizon goes with it) and `materials.ts` tiles the ground grid every 16 m — a 4 m line, a faint 1 m
-one inside each square — because a metre grid crosshatches the map into wireframe. Every model is a
+one inside each square — because a metre grid crosshatches the map into wireframe. Imported foliage (Fab/Megascans cutouts) draws with its own albedo, normal map and alpha cutoff under the environment light `sky.ts` makes — never tint it, fake its emission or flatten its normals to make up for missing light; `TN_UNLIT_FOLIAGE` names cutout materials drawn with no environment. Every model is a
 custom TSL material, so an instanced batch's geometry is what you see — change `render/models.ts`, not
 the material. `src/render/quality.ts` owns `low`, `medium`, `high`; `isMobile()` chooses `low`,
 otherwise `high`; override with `setupPost(..., { tier: "low" })`. Unknown tiers throw and

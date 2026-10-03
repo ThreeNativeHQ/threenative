@@ -16,6 +16,9 @@ Read `/AGENTS.md` first. This example consumes build-baked arrays, not runtime r
   repairs atlas/opacity bindings and calls the installed asset cook. Set `FAB_TEMPERATE` to the
   imported library. Licensed bytes are LOCAL-ONLY and never committed; provenance is in `CREDITS.md`.
   Missing models keep the procedural spruce, rock, fern, grass and flower fallback drawing.
+  Cutout vegetation draws with its imported albedo, normal map and cutoff, lit by the CC0
+  Kloofendal HDRI as each material's `envMap` (`local-assets/prepared/kloofendal_48d_2k.hdr`,
+  local-only); without it core prints `TN_UNLIT_FOLIAGE`. Never tint or flatten foliage to fix light.
   All model sections share one whole-model scale/base. `src/render/props.ts` uses `InstancedBatch`
   with cooked reduced full-spruce geometry at distance and culls small cover beyond its readable range.
   `src/render/scatter.ts` plants noise-masked stands, clearings, edge saplings, and grass over the

@@ -83,7 +83,7 @@ cancel and an axis-rolled limb is caught where a bone-direction check reads zero
 `src/render/` is yours to edit and is where the base look lives: the prototype test scene, a metre
 grid in world UVs over a light floor and a dark structure, `palette.ts`'s five roles with exactly one
 saturated `accent` for anything you can touch, `sky.ts`'s photograph behind everything, and bevelled
-`RoundedBoxGeometry` sunk by its bevel radius. Torch point lights are the only warm light.
+`RoundedBoxGeometry` sunk by its bevel radius. Torch point lights are the only warm light. Imported foliage (Fab/Megascans cutouts) draws with its own albedo, normal map and alpha cutoff under the environment light `sky.ts` makes — never tint it, fake its emission or flatten its normals to make up for missing light; `TN_UNLIT_FOLIAGE` names cutout materials drawn with no environment.
 `quality.ts` defines `low`, `medium`, and `high`; `isMobile()` selects `low`, otherwise `high`, and
 `setupPost(..., { tier: "low" })` is the named override — unknown tiers throw and `TN_QUALITY_TIER`
 reports the source. VFX appearance belongs in `src/render/vfx.ts`: keep its TSL material, geometry,
