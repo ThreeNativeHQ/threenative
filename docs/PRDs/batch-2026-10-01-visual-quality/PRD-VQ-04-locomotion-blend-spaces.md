@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-VQ-04 — Locomotion blends by speed and direction without restarting its gait
 
-**Status:** PROPOSED — 2026-10-01. No implementation or qualification is claimed.
+**Status:** PARTIAL — 2026-10-02. The existing crossfade interruption defect is repaired and unit-tested; continuous blend spaces and platform qualification remain open.
 **Batch:** [Visual quality execution batch](README.md). **Wave:** 1 / character motion.
 **Dependencies:** Uses existing AnimationPlayer, SkeletalMesh3D and stride synchronization. Coordinate its action ownership with VQ-05.
 
@@ -35,6 +35,7 @@ All proof paths below are **planned implementation targets**, not existing passi
 
 - [ ] Implement and test deterministic 1D and 2D weight evaluation, including degenerate and out-of-domain inputs. proof: `pnpm exec vitest run packages/core/__tests__/vq-locomotion-blend-spaces.spec.ts`.
 - [ ] Integrate weighted action ownership and phase synchronization without breaking existing play/once/stride behavior. proof: `pnpm exec vitest run packages/core/__tests__/vq-locomotion-blend-spaces.spec.ts`.
+  - Bounded prerequisite verified on 2026-10-02: returning to a still-contributing loop keeps its weight and playback phase; rapid requests before a frame advances no longer manufacture a full-weight outgoing action. `node node_modules/vitest/vitest.mjs run packages/core/__tests__/animation.spec.ts`: 51 tests passed. Continuous 1D/2D weighting and cross-clip gait phase synchronization are not implemented, so this box remains open.
 
 ### Phase 2 — Two real locomotion consumers
 
@@ -57,8 +58,35 @@ Count active actions and allocations. Keep nonparticipants at the existing Anima
 
 ## Blocked on
 
-A license-clear multi-clip rig is required. Use repository-owned fixtures where possible; downloading commercial animations is not assumed.
+The repository-owned Quaternius CC0 mannequin provides Idle/Walk/Jog/Sprint loops and is now reused for the bounded reversal fixture. Compatible directional clips and two actual game consumers remain open for the full 2D blend-space scope; downloading commercial animations is not assumed.
 
 ## Completion record
 
+### Bounded interruption repair — 2026-10-02
+
+- Engine layer: reuse `AnimationPlayer` and its existing Three mixer; no public API, state machine, clip choices, second updater, dependency or shared blend-space helper was added. Capability search and details resolved `AnimationPlayer`/`SkeletalMesh3D`; the installed Three pin is 0.185.1.
+- Red/green: 44 pre-existing animation tests passed. Two new regressions failed first (returning idle weight fell from 0.5 to 0; a zero-frame idle/walk/run sequence summed to 2). The repaired suite passes 51 tests, including sampled real Three bone poses, deterministic repeated reversals, one-shot/mode replay, immediate cuts, fresh/restarted fades and disposal.
+- Fresh/fully faded-out clips and zero-duration cuts still restart. Returning loops retain time only while contributing to a requested fade; explicit one-shots and mode changes still restart.
+- Opt-in synthetic fixture: `examples/abyss-framework/?animation-reversal`, scenario `examples/abyss-framework/playtests/animation-reversal.playtest.json`. It records nine requests, weight-sum error, zero-time sampled-bone pose/phase jumps and actual mixer disposal counts. It is a regression fixture, not a licensed real-rig locomotion or aesthetic qualification.
+- Browser command (attempted, exit 2: no usable X display/Xvfb, so the runner refused to render): `node packages/playtest/dist/runner/cli.js examples/abyss-framework/playtests/animation-reversal.playtest.json --url 'http://127.0.0.1:5184/?animation-reversal' --server-command 'pnpm --filter abyss-framework dev --host 127.0.0.1 --port 5184 --strictPort' --browser-recipe webgpu`. The portable game entry is `examples/abyss-framework/src/render/animation-reversal-game.ts`; the native bundler produced `dist/animation-reversal-native.js` successfully (96 modules). This proves bundle compatibility only; Linux-native execution is unverified.
+- Verification: core build (including declarations, bundled MCP and publint), core/example TypeScript, full repository Biome lint (warnings retained), documentation links (2,395), capability manifest (378 entries) and public API surface (352 symbols) passed. `pnpm test` was attempted with pinned pnpm 10.25.0 and stopped at the lifecycle preflight with `tsx` Unix-socket `EPERM`, before its phases. A separate broad Vitest attempt exposed environment/build-prerequisite failures and is not a passing aggregate gate.
+- Runtime screenshot evidence is required before readiness. The scenario names transition-frame captures, but no screenshots were produced in this environment; generated images or test logs are not visual proof.
+- All original phase and acceptance boxes remain open. Full blend spaces still need the two-consumer/less-code admission and a license-clear real rig; GPU/native proof and human visual review have not been supplied by these CPU tests.
+
 Update the phase boxes and this PRD only after the named proof runs. Record actual results inline, including any remaining exclusions. A merged planning or implementation PR alone is not proof that every acceptance criterion passed. Archive according to the parent PRD filing rules when the work is genuinely complete.
+
+### Actual mannequin capture preparation — 2026-10-02
+
+- Replaced the synthetic proxy capture with the repository's CC0 `mannequin.glb`, through the real `SkeletalMesh3D`/`AnimationPlayer`. The trace measures all 65 bones across nine Idle/Walk/Jog requests and seven returns to contributing actions. It begins on scenario input and freezes at the requested fixed tick, independent of startup/warmup duration.
+- `node node_modules/vitest/vitest.mjs run --maxWorkers=1 packages/core/__tests__/animation-reversal-fixture.spec.ts packages/core/__tests__/animation.spec.ts`: 52 passed. Restoring the pre-fix engine source makes the real-rig check fail (weight error 1). Float32 quaternions are normalized only in diagnostic copies before angular comparison; raw self-angle was 0.000523 radians, not actual pose movement.
+- `node --import tsx scripts/verify-animation-reversal.ts --build-only`: the real-rig capture site builds. `tsc --noEmit -p examples/abyss-framework/tsconfig.json` passes. Quality scanning adds no double casts or suppressions.
+- Hosted proof target: `Integration animation reversal` runs the maintained public runner on headed WebGPU and records exact source SHA, adapter, per-frame screenshot SHA-256 and measured weights/phases. It rejects errors, missing/non-WebGPU adapters, blank frames and device-loss warnings. Runtime screenshots are pending this job, not claimed by local CPU/build checks. Full blend-space and platform acceptance remains open.
+
+- First real runtime frame: [diagnostic tick 24](../../verification/vq04/diagnostic-tick24.png), [report](../../verification/vq04/diagnostic-report.json), [source/run/adapter/digests](../../verification/vq04/diagnostic-provenance.json). Source `691e917ebb870445415417c5566025f47c81e6a1`, hosted run `36995945428`, SwiftShader WebGPU. Visually inspected the actual full mannequin and gait; the strict run **failed** on one asset-manifest 404 console error. This is diagnostic progress, not qualified proof. The capture build now writes its actual emitted mannequin manifest, and a silhouette-region brightness bound was added; no 404 is suppressed.
+
+### Verified real-rig browser screenshots — 2026-10-02
+
+- Hosted [run 36996637583](https://github.com/ThreeNativeHQ/threenative/actions/runs/36996637583) **passed** at source `a53db062fec7b1b3ae99268470dfa06d15ee3494`, including 53 animation/fixture tests and the strict headed-WebGPU capture verifier. Adapter: Google SwiftShader; this is rendered correctness, not hardware performance or Linux-native execution.
+- Actual immutable PNGs: [tick 24](../../verification/vq04/tick-24.png), [tick 25: return to live idle](../../verification/vq04/tick-25.png), [tick 26](../../verification/vq04/tick-26.png), [tick 48](../../verification/vq04/tick-48.png), [tick 108: settled idle](../../verification/vq04/tick-108.png). Each was visually inspected and copied byte-for-byte from the Actions artifact. All five reports pass with zero diagnostics; the bright mannequin silhouette is bounded separately from the floor/background.
+- [Runtime measurements and adapter](../../verification/vq04/runtime-summary.json); [source/run/artifact and per-image SHA-256 provenance](../../verification/vq04/provenance.json). Artifact `11222156451`, ZIP SHA-256 `ba1e0cff8e340330f98096695bd9e84840a3e0c15f5659a00e70a08475c91e08` verified on download. Across 65 bones/nine requests/seven returning actions: maximum weight-sum error `2.220446049250313e-16`; phase and local-position jumps `0`; normalized-quaternion jump `4.2146848510894035e-8` radians. Final weights `[1, 0, 0]`, one active action.
+- This closes the bounded reversal screenshot milestone only. Continuous 1D/2D blend spaces, two actual game consumers, compatible-gait cross-clip phase synchronization and native qualification remain open. No original phase or acceptance checkbox is ticked from this narrower proof.
