@@ -219,6 +219,15 @@ export interface IFrameBudgetPassSummary {
  * it were a player's — `threenative-playtest perf` refuses to (`TN_PERF_VIRTUAL_DISPLAY`).
  */
 export interface IFrameBudgetWindow {
+  /** Browser Long Tasks, independent of vsync/GPU waits. Unavailable on hosts without this API. */
+  readonly longTasks:
+    | { readonly available: false }
+    | {
+        readonly available: true;
+        readonly count: number;
+        readonly longestMs: number;
+        readonly afterFirstFrameMs: number;
+      };
   /** 1 for the first reported window, incrementing thereafter. */
   readonly window: number;
   /** Loop frames counted in this window, hitches excluded — one per present on the web. */
@@ -505,6 +514,10 @@ function round1(value: number): number {
  * Calling them out of order throws rather than producing a plausible-looking split.
  */
 export class FrameBudget {
+  #taskObserver: PerformanceObserver | undefined;
+  #taskCount = 0;
+  #longestTaskMs = 0;
+  #afterFirstFrameTaskMs = 0;
   readonly reportEvery: number;
   readonly hitchMs: number;
   #report: (line: string) => void;
@@ -576,6 +589,17 @@ export class FrameBudget {
     this.#readPresentCount = options.readPresentCount ?? hostPresentCountReader();
     this.#readGpuAgeFrames = options.readGpuAgeFrames;
     this.#readGpuTally = options.readGpuTally;
+    if (globalThis.PerformanceObserver?.supportedEntryTypes.includes("longtask")) {
+      this.#taskObserver = new PerformanceObserver((list) => {
+        for (const entry of list.getEntries()) {
+          this.#taskCount++;
+          this.#longestTaskMs = Math.max(this.#longestTaskMs, entry.duration);
+          if (this.#firstFrameStart !== undefined && entry.startTime >= this.#firstFrameStart)
+            this.#afterFirstFrameTaskMs = Math.max(this.#afterFirstFrameTaskMs, entry.duration);
+        }
+      });
+      this.#taskObserver.observe({ type: "longtask", buffered: true });
+    }
     this.#scratch = new Float64Array(capacity);
     this.#presented = new Ring(capacity);
     this.#frame = new Ring(capacity);
@@ -617,6 +641,11 @@ export class FrameBudget {
    *   clock, which is not the same as `nowMs` and is what the interval between frames comes from.
    * @param nowMs the monotonic clock at callback entry.
    */
+  dispose(): void {
+    this.#taskObserver?.disconnect();
+    this.#taskObserver = undefined;
+  }
+
   beginFrame(timestampMs: number, nowMs: number): void {
     if (this.#open)
       throw new Error("FrameBudget.beginFrame called before the previous frame ended.");
@@ -903,6 +932,15 @@ export class FrameBudget {
     const target = this.#readTarget === undefined ? undefined : (this.#readTarget() ?? undefined);
     const resolvedTarget = target === undefined ? undefined : requireTarget(target);
     return {
+      longTasks:
+        this.#taskObserver === undefined
+          ? { available: false }
+          : {
+              available: true,
+              count: this.#taskCount,
+              longestMs: this.#longestTaskMs,
+              afterFirstFrameMs: this.#afterFirstFrameTaskMs,
+            },
       fps: presented.mean === 0 ? 0 : round(1_000 / presented.mean),
       frame: this.#frame.summarize(this.#scratch),
       frames: this.#framesInWindow,
