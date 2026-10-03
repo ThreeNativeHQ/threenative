@@ -4,6 +4,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { makeTempDir } from "../../test-support/temp-dir.js";
 import { allTemplates } from "../../test-support/templates.js";
+import { declaredNeeds } from "../ci-workflow.js";
 import { parsePerformanceLaneManifest } from "../engine-load-test/report.js";
 import {
   collectorCoverage,
@@ -879,7 +880,7 @@ describe("CI pipeline structure", () => {
     }
   });
 
-  it("classifies workflow-only changes as full CI with no prose skip", async () => {
+  it("classifies a workflow-only change as the `ci` selection, not prose and not full", async () => {
     const fixture = await scopeFixture();
     try {
       const workflowHead = await commitScopeChange(
@@ -889,12 +890,18 @@ describe("CI pipeline structure", () => {
         "workflow-only change",
       );
 
-      expect(classifyScope(fixture.root, fixture.base, workflowHead)).toMatchObject({
+      const plan = classifyScope(fixture.root, fixture.base, workflowHead, ["--target", "develop"]);
+      expect(plan).toMatchObject({
         files: [".github/workflows/ci.yml"],
-        reason: '".github/workflows/ci.yml" is a non-Markdown path',
-        scope: "full",
-        selection: "full",
+        selection: "ci",
+        nativeTier: "none",
       });
+      expect(
+        Object.entries(plan.jobs as Record<string, { required: boolean }>)
+          .filter(([, job]) => job.required)
+          .map(([name]) => name)
+          .sort(),
+      ).toEqual(["budgets", "build-artifacts", "lint", "supply-chain", "test-unit", "typecheck"]);
     } finally {
       await removeFixture(fixture.root);
     }
@@ -1036,11 +1043,8 @@ describe("CI pipeline structure", () => {
   // publish itself — `permissions: contents: write` and a `gh release upload` — and PRD-480 keeps
   // release writes on GitHub's own machines.
   const hosted = new Map<string, ReadonlySet<string>>([
-    // Template legs run hosted so the board uses both pools at once (wall time, run 37070815769).
-    [
-      ".github/workflows/ci.yml",
-      new Set(["golden-path-template", "supply-chain", "template-nonvisual"]),
-    ],
+    // golden-path-template runs hosted: its dev server twice failed to answer on a local slot (run 37089715252).
+    [".github/workflows/ci.yml", new Set(["golden-path-template", "supply-chain"])],
     [
       ".github/workflows/native-platforms.yml",
       // publish-android-v8 writes the release; android-emulator-parity is CPU-bound SwiftShader that
@@ -1082,6 +1086,24 @@ describe("CI pipeline structure", () => {
     return rows;
   }
 
+  // `starter-linux` has no `include` rows at all: a job's `if` cannot read `matrix`, so the arm64 leg
+  // an ordinary pull request does not owe is dropped by shaping the matrix in `scope` instead. The
+  // rows therefore still name their runners, one job earlier. Following the pointer is what stops a
+  // moved row from escaping the switch by moving — the values are asserted in the same place.
+  function shapedRunnerRows(
+    job: string,
+    section: string,
+    source: string,
+  ): readonly (readonly [string, string])[] {
+    if (!/^\s+matrix: \$\{\{ fromJSON\(needs\.scope\.outputs\./mu.test(section)) return [];
+    const scope = source.match(/^ {2}scope:\n([\s\S]*?)(?=^ {2}\S)/mu)?.[1] ?? "";
+    const rows: [string, string][] = [];
+    for (const row of scope.matchAll(/\{ platform: "([^"]+)", runner: ("[^"]+") \}/gu)) {
+      rows.push([`${job}/${row[1] ?? ""}`, (row[2] ?? "").slice(1, -1)]);
+    }
+    return rows;
+  }
+
   it("routes every movable Linux job through exactly one TN_RUNNER switch", async () => {
     const directory = path.join(repo, ".github/workflows");
     const routed = [
@@ -1102,7 +1124,7 @@ describe("CI pipeline structure", () => {
       for (const [job, section] of jobSections(source)) {
         const runsOn = section.match(/^\s+runs-on:.*$/mu)?.[0].trim();
         if (runsOn === undefined) continue;
-        const rows = matrixRunnerRows(job, section);
+        const rows = [...matrixRunnerRows(job, section), ...shapedRunnerRows(job, section, source)];
         const targets: readonly (readonly [string, string])[] =
           rows.length > 0 ? rows : [[job, runsOn.replace(/^runs-on: /u, "")]];
         for (const [name, runner] of targets) {
@@ -1372,6 +1394,18 @@ describe("CI pipeline structure", () => {
     expect(concurrency).toContain("cancel-in-progress: false");
   });
 
+  it("reruns only a failed CI run's failed jobs, once, and only for known flakes", async () => {
+    const janitor = await readFile(path.join(repo, ".github/workflows/ci-janitor.yml"), "utf8");
+    expect(janitor).toMatch(/workflow_run:\n\s+workflows: \[CI\]\n\s+types: \[completed\]/u);
+    // Once: a second failure of the same run is a real signal, never retried again.
+    expect(janitor).toContain("github.event.workflow_run.run_attempt == 1");
+    expect(janitor).toContain("github.event.workflow_run.conclusion == 'failure'");
+    // Only the failed jobs, and only when every primary failure matches a flake signature.
+    expect(janitor).toContain('gh run rerun "$RUN_ID" --failed');
+    expect(janitor).toMatch(/FLAKE: TN_PLAYTEST_SOFTWARE_DEVICE_LOST\|/u);
+    expect(janitor).toContain("not a known flake; leaving the run red");
+  });
+
   it("cancels a closed pull request's runs without injecting its head ref into a shell", async () => {
     const janitor = await readFile(path.join(repo, ".github/workflows/ci-janitor.yml"), "utf8");
     // Merged or closed, nothing the head ref is still doing can change the outcome, and those
@@ -1383,21 +1417,25 @@ describe("CI pipeline structure", () => {
     const cancel = jobSections(janitor).find(([name]) => name === "cancel")?.[1] ?? "";
     expect(cancel, "ci-janitor declares no cancel job").not.toBe("");
     // The head ref is attacker-controlled branch text: interpolated straight into `run:` it is a
-    // command injection on a job holding `actions: write`.
+    // command injection on a job holding `actions: write`. So is the base ref the merge-group
+    // prefix is built from, and the number inside it.
     expect(cancel).toMatch(
       /env:\n(?:\x20{10}[A-Z_]+: .*\n)*\x20{10}HEAD_REF: \$\{\{ github\.event\.pull_request\.head\.ref \}\}/u,
     );
+    expect(cancel).toMatch(
+      /\x20{10}BASE_REF: \$\{\{ github\.event\.pull_request\.base\.ref \}\}\n\x20{10}PR_NUMBER: \$\{\{ github\.event\.pull_request\.number \}\}/u,
+    );
     for (const line of cancel.split("\n")) {
-      if (/^\x20*#/u.test(line) || !line.includes("head_ref")) continue;
+      if (/^\x20*#/u.test(line) || !/(?:head[._]ref|base\.ref|\.number)/u.test(line)) continue;
       expect(
         line,
-        "the head ref is interpolated into a shell instead of passed as env",
+        "a github.* context is interpolated into a shell instead of passed as env",
       ).not.toMatch(/run:/u);
     }
     // A fork's runs belong to another repository; its token cannot cancel them, and trying would
     // fail a red check on every fork PR close.
     expect(cancel).toMatch(
-      /if: github\.event\.pull_request\.head\.repo\.full_name == github\.repository/u,
+      /github\.event\.pull_request\.head\.repo\.full_name == github\.repository/u,
     );
     // The promotion PR's head is `develop`: closing it must not cancel develop's own CI runs.
     expect(cancel).toMatch(
@@ -1405,9 +1443,21 @@ describe("CI pipeline structure", () => {
     );
     expect(cancel).toContain('gh run list --repo "$GITHUB_REPOSITORY" --branch "$HEAD_REF"');
     expect(cancel).toContain("--json databaseId,status");
+    // A merge-group run reports its branch as `gh-readonly-queue/<base>/pr-<number>-<sha>`. GitHub
+    // drops the pull request from the queue on close but never cancels the run it already started,
+    // so #404's run 37093098790 held nine self-hosted jobs after #404 had merged: the head ref's
+    // cancel never reaches it. The prefix is built from the event's own base ref and number, so the
+    // sweep reaches that pull request's group and no other.
+    expect(cancel).toContain('group_prefix="gh-readonly-queue/${BASE_REF}/pr-${PR_NUMBER}-"');
+    expect(cancel).toContain("startswith($prefix)");
+    expect(cancel).toContain(
+      'gh run list --repo "$GITHUB_REPOSITORY" --json databaseId,status,headBranch --limit 100',
+    );
     // The run-sweeping predecessor this replaced reached across every branch in the repository;
     // every cancel here is scoped to the event's own repository and the closed PR's own ref.
-    expect(cancel).toContain('gh run cancel "$run_id" --repo "$GITHUB_REPOSITORY"');
+    expect(cancel).toContain(
+      'gh api -X POST "repos/$GITHUB_REPOSITORY/actions/runs/$run_id/force-cancel"',
+    );
     // Never a failure handler: cancelling from the gate that went red is what erased which
     // gate went red, on 2026-09-02.
     expect(cancel, "the janitor must not be a failure handler").not.toContain("failure()");
@@ -1416,10 +1466,12 @@ describe("CI pipeline structure", () => {
       expect(cancel).toContain(`.status == "${status}"`);
     }
     expect(cancel).toMatch(/SELF_RUN_ID/gu);
-    expect(cancel).toMatch(/gh run cancel "\$run_id"/u);
+    expect(cancel).toMatch(/actions\/runs\/\$run_id\/force-cancel/u);
     // A run that finished between the list and the cancel is the expected race, not a failure:
     // the cancel is a guarded command, so its non-zero exit is reported rather than propagated.
-    expect(cancel).toContain('if gh run cancel "$run_id"');
+    expect(cancel).toContain(
+      'if gh api -X POST "repos/$GITHUB_REPOSITORY/actions/runs/$run_id/force-cancel"',
+    );
     // And the lookup itself fails closed, so a broken call cannot report success having
     // cancelled nothing.
     expect(cancel).toContain("set -euo pipefail");
@@ -1844,11 +1896,11 @@ describe("CI pipeline structure", () => {
     const supplyChain = requiredJob(ci, "supply-chain");
     // Markdown-only PRs skip the scan entirely (owner call 2026-09-12): the nightly develop run
     // and promotions still scan the full git history, so an inert prose PR spends no runner here.
-    // PRD-481 added the reused tree to the exempt set, so the condition names both selections it
-    // admits instead of the one it refuses.
+    // PRD-481 added the reused tree to the exempt set and the `ci` selection to the admitted one,
+    // so the condition names every selection it admits instead of the one it refuses.
     expect(supplyChain).toContain("needs: scope");
     expect(supplyChain).toContain(
-      "if: needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'instructions'",
+      "if: needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'instructions' || needs.scope.outputs.selection == 'ci'",
     );
     expect(supplyChain).toContain("if: github.event_name != 'pull_request'");
     expect(supplyChain).toContain("uses: actions/dependency-review-action@v4");
@@ -3442,7 +3494,6 @@ describe("PRD-373 selective feature verification", () => {
     "packages/physics/src/index.ts",
     "examples/native-smoke/src/index.ts",
     "tsconfig.base.json",
-    ".github/workflows/ci.yml",
     "templates/topdown/CLAUDE.md",
   ])(
     "retains all consumers for %s while exempting native on a clean develop diff",
@@ -3662,6 +3713,226 @@ describe("PRD-373 selective feature verification", () => {
         classifyScope(fixture.root, fixture.base, head, ["--target", "develop", "--local"])
           .selection,
       ).toBe("full");
+    } finally {
+      await removeFixture(fixture.root);
+    }
+  });
+});
+
+/**
+ * A pull request whose whole diff is CI configuration. The rules that shape it:
+ *
+ *   - qualifying paths are the workflows, the `ci-*` scripts, their own specs and the runner
+ *     images, plus anything already classified prose or instructions. Everything else keeps
+ *     `full`: `.github/actions/**` is consumed by every board job including the native matrix,
+ *     and a package, a template or a lockfile is the whole point of the board.
+ *   - the merge queue runs the full board before anything lands, so a queue entry, a push, the
+ *     nightly, an explicit audit and a promotion into main are never narrowed — they are the
+ *     places where a tree is qualified rather than a change reviewed.
+ *   - what stays required is what reads the configuration: the classifier itself, lint, typecheck,
+ *     the unit shards (every `ci-*.spec.ts` is one of them), the budgets that hold the invariant,
+ *     the secrets scan, and `build-artifacts` because three of those jobs consume its upload.
+ */
+const CI_KEPT_JOBS = [
+  "budgets",
+  "build-artifacts",
+  "lint",
+  "supply-chain",
+  "test-unit",
+  "typecheck",
+];
+
+const CI_SKIPPED_JOBS = [
+  "benchmark",
+  "build",
+  "golden-path",
+  "golden-path-template",
+  "native-platforms",
+  "performance-contracts",
+  "template-nonvisual",
+  "test",
+  "test-browser",
+  "test-native",
+  "test-playtest",
+];
+
+describe("a CI-configuration-only pull request", () => {
+  it.each([
+    ".github/workflows/ci.yml",
+    ".github/workflows/integration.yml",
+    "scripts/ci-change-scope.mjs",
+    "scripts/ci-local.sh",
+    "scripts/ci-workflow.ts",
+    "scripts/__tests__/ci-needs.spec.ts",
+    "tools/ci-runners/entrypoint.sh",
+    "tools/ci-runners/scripts/balance.mjs",
+  ])("selects `ci` for %s and requires exactly the jobs that read it", async (relative) => {
+    const fixture = await scopeFixture();
+    try {
+      const head = await commitScopeChange(fixture, relative, "# changed\n", "ci configuration");
+      const plan = classifyScope(fixture.root, fixture.base, head, ["--target", "develop"]);
+      expect(plan).toMatchObject({ selection: "ci", nativeTier: "none" });
+      expect(
+        Object.entries(plan.jobs as Record<string, { required: boolean }>)
+          .filter(([, job]) => job.required)
+          .map(([name]) => name)
+          .sort(),
+      ).toEqual(CI_KEPT_JOBS);
+    } finally {
+      await removeFixture(fixture.root);
+    }
+  });
+
+  it("keeps one package file in the same diff at full", async () => {
+    const fixture = await scopeFixture();
+    try {
+      await commitScopeChange(fixture, ".github/workflows/ci.yml", "name: CI\njobs: {}\n", "ci");
+      const head = await commitScopeChange(
+        fixture,
+        "packages/core/src/change.ts",
+        "export const changed = true;\n",
+        "one package file",
+      );
+      const plan = classifyScope(fixture.root, fixture.base, head, ["--target", "develop"]);
+      expect(plan).toMatchObject({ selection: "full" });
+      expect(plan.reason).toContain("packages/core/src/change.ts");
+      const jobs = plan.jobs as Record<string, { required: boolean }>;
+      expect(Object.values(jobs).filter((job) => job.required).length).toBeGreaterThan(6);
+      // Every gate the `ci` selection skipped comes back. `native-platforms` is the one a clean
+      // develop diff legitimately waives, and this diff does not touch a native path.
+      for (const name of CI_SKIPPED_JOBS.filter((job) => job !== "native-platforms")) {
+        expect(jobs[name]?.required, name).toBe(true);
+      }
+      expect(jobs["native-platforms"]?.required).toBe(false);
+    } finally {
+      await removeFixture(fixture.root);
+    }
+  });
+
+  it.each([
+    ".github/actions/pnpm/action.yml",
+    "pnpm-lock.yaml",
+    "scripts/lib/not-ci.ts",
+    "scripts/__tests__/something-else.spec.ts",
+    "packages/create-threenative/templates/starter/src/game.ts",
+  ])("keeps %s at full, because no CI-config rule covers it", async (relative) => {
+    const fixture = await scopeFixture();
+    try {
+      const head = await commitScopeChange(fixture, relative, "# changed\n", "not ci config");
+      expect(
+        classifyScope(fixture.root, fixture.base, head, ["--target", "develop"]).selection,
+      ).toBe("full");
+    } finally {
+      await removeFixture(fixture.root);
+    }
+  });
+
+  // `.github/workflows/*.yml` qualifies, and `native-platforms.yml` is the one that must not: it is
+  // the matrix's own definition, so narrowing it would exempt the very lane that has to prove it.
+  it("keeps the native matrix's own workflow at full", async () => {
+    const fixture = await scopeFixture();
+    try {
+      const head = await commitScopeChange(
+        fixture,
+        ".github/workflows/native-platforms.yml",
+        "name: native\njobs: {}\n",
+        "native matrix",
+      );
+      expect(
+        classifyScope(fixture.root, fixture.base, head, ["--target", "develop"]),
+      ).toMatchObject({ selection: "full", native: true, nativeTier: "reduced" });
+    } finally {
+      await removeFixture(fixture.root);
+    }
+  });
+
+  it("folds a doc or an AGENTS.md edit into the same `ci` selection", async () => {
+    const fixture = await scopeFixture();
+    try {
+      await commitScopeChange(fixture, ".github/workflows/ci.yml", "name: CI\njobs: {}\n", "ci");
+      await commitScopeChange(fixture, "AGENTS.md", "# agents\n", "instructions");
+      const head = await commitScopeChange(fixture, "docs/PRDs/inert.md", "# prose\n", "docs");
+      expect(
+        classifyScope(fixture.root, fixture.base, head, ["--target", "develop"]).selection,
+      ).toBe("ci");
+    } finally {
+      await removeFixture(fixture.root);
+    }
+  });
+
+  it.each([
+    [["--event-name", "merge_group", "--target", "develop"]],
+    [["--event-name", "push", "--target", "develop"]],
+    [["--event-name", "schedule", "--target", "develop"]],
+    [["--event-name", "workflow_dispatch", "--target", "develop"]],
+    [["--target", "main"]],
+  ])("never narrows %j", async (extra) => {
+    const fixture = await scopeFixture();
+    try {
+      const head = await commitScopeChange(
+        fixture,
+        ".github/workflows/ci.yml",
+        "name: CI\njobs: {}\n",
+        "ci configuration",
+      );
+      expect(
+        classifyScope(fixture.root, fixture.base, head, ["--target", "develop", ...extra])
+          .selection,
+      ).toBe("full");
+    } finally {
+      await removeFixture(fixture.root);
+    }
+  });
+
+  it("runs the kept jobs on `ci` and leaves every other gate on `full` alone", async () => {
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    const sections = new Map(jobSections(ci));
+    // `scope` produces the selection and `ci-required` reads the plan on `always()`; neither is
+    // gated by one, so neither can name it.
+    for (const name of [...CI_KEPT_JOBS, "run-summary"]) {
+      expect(sections.get(name), name).toContain("needs.scope.outputs.selection == 'ci'");
+    }
+    for (const name of CI_SKIPPED_JOBS) {
+      expect(sections.get(name), name).not.toContain("needs.scope.outputs.selection == 'ci'");
+      expect(sections.get(name), name).toContain("needs.scope.outputs.selection == 'full'");
+    }
+    // `build-artifacts` produces the upload three kept jobs consume; skipping it would leave them
+    // ordered behind a job that never ran.
+    for (const name of ["typecheck", "test-unit", "budgets"]) {
+      expect(declaredNeeds(sections.get(name) ?? ""), name).toContain("build-artifacts");
+    }
+  });
+
+  it("validates a `ci` plan and rejects one whose kept jobs were flipped", async () => {
+    const fixture = await scopeFixture();
+    try {
+      const head = await commitScopeChange(
+        fixture,
+        ".github/workflows/ci.yml",
+        "name: CI\njobs: {}\n",
+        "ci configuration",
+      );
+      const plan = classifyScope(fixture.root, fixture.base, head, ["--target", "develop"]);
+      const validate = (value: unknown) =>
+        spawnSync(
+          process.execPath,
+          [
+            path.join(repo, "scripts/ci-change-scope.mjs"),
+            "--validate-plan",
+            JSON.stringify(value),
+          ],
+          { encoding: "utf8", env: isolatedGitEnvironment() },
+        );
+      expect(validate(plan).status).toBe(0);
+      const forged = JSON.parse(JSON.stringify(plan)) as {
+        jobs: Record<string, { required: boolean }>;
+      };
+      const unit = forged.jobs["test-unit"];
+      expect(unit).toBeDefined();
+      (unit as { required: boolean }).required = false;
+      const refused = validate(forged);
+      expect(refused.status).toBe(2);
+      expect(refused.stderr).toContain("CI_SCOPE_INVALID_PLAN");
     } finally {
       await removeFixture(fixture.root);
     }
