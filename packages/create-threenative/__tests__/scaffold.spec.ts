@@ -170,24 +170,26 @@ const BUG_REPORT_SKILL_PATHS = [
 // and token-identical instruction whitespace changed. Default cost remains off; actual
 // consumer GPU captures are byte-identical to the qualified public images. Measurement:
 // docs/verification/prd339-exposure-proof/completion-consumer-8bf16f4.json.
+// Current develop c18a42b integration: all13 actual generated trees were byte-compared
+// against reviewed 8bf trees; only the copied Three compute-only Storage3DTexture patch changed.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-02 on the merge of develop into PRD-339 auto-exposure: all thirteen
   // trees move, because every template gained src/render/exposure.ts + autoExposure.ts and the
   // merged tree also carries develop's shared threenative-assets skill bytes. Measured through
   // createProject on the merged tree by the spec that asserts them.
-  "action-rpg": "ac45303b74f9daab0faebc8caa4c6cd4826419997b8baf1949feb30695e41da6",
-  minimal: "8b8127a3228e91e49dd54c9990ef3f1e9ed83d3c8a0383a310542469e3d17098",
-  platformer: "02adfd2b349ede31af2589488974ff7cc3fe5548b56284ec460738b1be2a3a07",
-  puzzle: "1f0fd9280fb629766dd8508cbd842afe3e86aaa04f0a9d3b63a11b77acceca74",
-  racing: "7dfe8c0f8c1501490216d8cb8b59bc44ec8144df7b897077de5a781a9af9e6d7",
-  rain: "717ab2324392a83f8a3b7d9e7640647af82ba8f0d1937668990c5300b96a824b",
-  rts: "611552b795122611fa8d515e1632aaf3b1c043f0538459ea1811ddb58e8064ad",
-  runner: "5e44aeb29248a63f93648716cbdfe861dd758eb8db65dbea0ad0f6002c09136a",
-  sailing: "90df74708eedb1ccac4a8a6a260f2ce91ab7e45246ae373364c5bfd1b9e0d268",
-  shooter: "96aaf05c134c9643867a9b9653deb534b8e34c8f77f20e2d6d472705ea1f3709",
-  snow: "481eeb617fd4948e4473618b51247e9848c6b583285d795e5af87339f3dda9c6",
-  starter: "c434168b09b7e6baba24e2d95ed4abcf03ce41c3067aedbeeca7083ec4c992ca",
-  "tower-defense": "02554a3279225373e6d39fcdd41f95edffa832804a49f816d593598dad2b64c5",
+  "action-rpg": "b65c7a7018b0b794daaf599f5cd4c1f8494315c8373b56db7f73c7e167560e21",
+  minimal: "1796b47ecf2393cec713bb9504f7f798f3771cf1c15034390673b83cf9996130",
+  platformer: "59087ce62a3b63f733422c68a0ae08ca294953855fef72cb9a84670344b20848",
+  puzzle: "4f496ed9b446502b3f4be66b5a0017af9438c6237ae20ee34b96152904a4f455",
+  racing: "424f8e17486d788a8ac81ec2494b1bad0294aa4ba99aacdf74c653a15d5569c0",
+  rain: "6fbe91ced6efcd39b20ccb6c359344909eebf06415b998174fcf61ed4e31ba40",
+  rts: "358297ced78d5bfae393fe2f8fb8bb350e512e0dd5a70151bcbc84066051b93b",
+  runner: "2eacc8c33047613f470dc4093e04aad67ca1bc455ceca2b278693a4d1de9823c",
+  sailing: "79e8ebf02059da6a4271c7c32ae8a3b571e4c1f8043169914624030913453c32",
+  shooter: "44e43c1993ecfefbedaecb52548c390a44ca65eb1c93b708c0c1ec28e7f97798",
+  snow: "10b8c2bbc3d1d64dc2c388a2040f8968c7ce3a238a5754a7cd245ada8f591f75",
+  starter: "7a0bbaa8772e646271c796ae7716211b7d53260a04d63a8c323fcab40e01c880",
+  "tower-defense": "7940af1bba17a9a3db47991ee4b1d8d1e3d46250d25571d3e6e943af09810c81",
 };
 
 const GENERATED_SCAFFOLD_METADATA =

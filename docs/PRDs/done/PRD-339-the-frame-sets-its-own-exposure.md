@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-339 — the frame sets its own exposure
 
-**Status:** IN PROGRESS — actual generated-consumer integration is qualified at `8bf16f4c3`; final evidence budget and publication remain pending. The earlier incomplete integration at `2c77070b8` is preserved below. Implementation started 2026-10-02 from `d7277838`; original
+**Status:** DONE — actual generated-consumer integration is qualified at `8bf16f4c3`, with current develop source-scoped integration and approved lossless evidence preservation verified. Exact-head remote CI and auto-merge remain separate publication gates. The earlier incomplete integration at `2c77070b8` is preserved below. Implementation started 2026-10-02 from `d7277838`; original
 measurement at `43d03e6a`. Batch:
 [docs/PRDs/AAA-visuals](./README.md). Judged with
 [PRD-341](../done/PRD-341-a-frames-tone-is-a-number-and-the-number-is-a-gate.md), which is the only way to
@@ -117,7 +117,7 @@ a convention missing from there does not exist.
 ### Phase 2 — opt-in GPU graph and lifecycle
 
 - [x] A generated GPU reduction and ping-pong exposure graph reuses the world pass before bloom and the sole output transform. proof: focused node/lifetime tests pass; actual 720 paired GPU samples cover output-graph rebuild, drawing-buffer resize from 640×360 to 320×180, and reset without stale history. Exact-source capture/provenance is recorded below.
-- [ ] Every template ships editable exposure controls and documents the opt-in, without a default picture change before qualification. proof: `pnpm exec vitest run --maxWorkers=1 packages/create-threenative/__tests__/scaffold.spec.ts packages/create-threenative/__tests__/auto-exposure-scaffold.spec.ts packages/create-threenative/__tests__/shared-render-sources.spec.ts` — 83 tests pass; all 13 instruction budgets and mirror checks pass.
+- [x] Every template ships editable exposure controls and documents the opt-in, without a default picture change before qualification. proof: `pnpm exec vitest run --maxWorkers=1 packages/create-threenative/__tests__/scaffold.spec.ts packages/create-threenative/__tests__/auto-exposure-scaffold.spec.ts packages/create-threenative/__tests__/shared-render-sources.spec.ts` — 83 tests pass; all 13 instruction budgets and mirror checks pass.
 
 ### Phase 3 — repeatability and runtime qualification
 
@@ -483,4 +483,4 @@ The actual owned consumer also passes all 720 paired lifecycle samples, real 320
 
 The genuine full instrumented native workload executes 43 targets and produces 47 raw profiles: 19,217 of 24,373 lines, 78.85%, source digest `26e52aa0d7cade3c712d4e4054e9a014d7f07709558b3146196827780580d713`. Earlier profiles and the failed measurement remain preserved. Full typecheck and lint pass. The full suite passes 7,411 root tests plus 1,532 native tests with existing skips, and exposes only the expected scaffold identity change. All thirteen baseline/current scaffold trees were then byte-compared; only the bounded render integration and instruction whitespace changed. The unchanged complete scaffold spec passes all 66 tests after genuine measured pin updates.
 
-Final publication is held for the unchanged combined evidence byte budget. No historical proof compression or unrelated PNG writes have been authorized or applied. PRD progress remains open; exact-head remote CI, public publication and auto-merge are still pending separately. No acceptance threshold, clock age, hardware requirement, or pipeline setting is waived.
+The owner approved the exact fourteen-PNG lossless recompression and twelve own JSON whitespace compactions. All filtered PNG scanlines, non-IDAT chunks, JSON tokens and historical values are preserved; immutable original anchors are retained in [the preservation receipt](../../verification/prd339-exposure-proof/approved-lossless-preservation.json). The combined evidence remains below the unchanged 72MiB cap. Current develop integration changes only the copied Three compute-only 3D guard in all thirteen generated trees; actual exposure 2D, readback, clock, native and harness source closures are unchanged. [Current source qualification](../../verification/prd339-exposure-proof/current-base-c18a42b.json) records measured pins and honest scoped evidence reuse. Typecheck, lint, dependency SBOM checks, 82 scaffold/Three tests, 281 exposure tests, 198 host desktop/CI tests and two red/green routing regression tests pass. Exact-head remote CI and auto-merge remain pending separately. No acceptance threshold, clock age, hardware requirement, or pipeline setting is waived.

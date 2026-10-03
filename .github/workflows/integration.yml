@@ -43,6 +43,7 @@ jobs:
       csg: ${{ steps.filter.outputs.csg }}
       decals: ${{ steps.filter.outputs.decals }}
       exposure: ${{ steps.filter.outputs.exposure }}
+      fluid-particles: ${{ steps.filter.outputs.fluid-particles }}
       ik: ${{ steps.filter.outputs.ik }}
       tone: ${{ steps.filter.outputs.tone }}
       vegetation: ${{ steps.filter.outputs.vegetation }}
@@ -56,10 +57,11 @@ jobs:
           set -euo pipefail
           files="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR/files" --paginate --jq '.[].filename')"
           lane() { if grep -qE "$2" <<<"$files"; then echo "$1=true"; else echo "$1=false"; fi >> "$GITHUB_OUTPUT"; }
-          lane cold-boot '^packages/create-threenative/template-assets/autoExposure\.ts$|^packages/create-threenative/template-assets/exposure\.ts$|^packages/create-threenative/__tests__/auto-exposure[^/]*\.spec\.ts$|^packages/create-threenative/__tests__/fixtures/auto-exposure/.*$|^\.github/workflows/integration\.yml$'
+          lane cold-boot '^packages/create-threenative/template-assets/(autoExposure|exposureGraph|exposureReadback|worldEnvironment)\.ts$|^packages/create-threenative/templates/[^/]+/src/render/(autoExposure|exposure|exposureGraph|exposureReadback|worldEnvironment)\.ts$|^packages/create-threenative/template-assets/exposure\.ts$|^packages/create-threenative/__tests__/auto-exposure[^/]*\.spec\.ts$|^packages/create-threenative/__tests__/fixtures/auto-exposure/.*$|^\.github/workflows/integration\.yml$'
           lane csg '^examples/integrations/csg/.*$|^\.github/workflows/integration\.yml$'
           lane decals '^packages/create-threenative/templates/shooter/src/render/decals\.ts$|^packages/create-threenative/templates/shooter/src/scenes/Play\.ts$|^packages/create-threenative/__tests__/shooter-decals[^/]*\.spec\.ts$|^packages/create-threenative/__tests__/fixtures/bounded-decals/.*$|^\.github/workflows/integration\.yml$'
-          lane exposure '^packages/create-threenative/template-assets/autoExposure\.ts$|^packages/create-threenative/template-assets/exposure\.ts$|^packages/create-threenative/__tests__/auto-exposure[^/]*\.spec\.ts$|^packages/create-threenative/__tests__/fixtures/auto-exposure/.*$|^\.github/workflows/integration\.yml$'
+          lane exposure '^packages/create-threenative/template-assets/(autoExposure|exposureGraph|exposureReadback|worldEnvironment)\.ts$|^packages/create-threenative/templates/[^/]+/src/render/(autoExposure|exposure|exposureGraph|exposureReadback|worldEnvironment)\.ts$|^packages/create-threenative/template-assets/exposure\.ts$|^packages/create-threenative/__tests__/auto-exposure[^/]*\.spec\.ts$|^packages/create-threenative/__tests__/fixtures/auto-exposure/.*$|^\.github/workflows/integration\.yml$'
+          lane fluid-particles '^packages/core/src/fluid-particles\.ts$|^packages/core/src/gpu-readback\.ts$|^packages/core/__tests__/fluid-particles\.spec\.ts$|^packages/core/patches/.*$|^packages/playtest/.*$|^examples/prd476-fluid-particles/.*$|^scripts/verify-fluid-collision\.ts$|^scripts/verify-fluid-consumers\.ts$|^scripts/verify-fluid-collision-native\.ts$|^scripts/__tests__/fluid-collision-native-proof\.spec\.ts$|^packages/runtime-native/.*$|^\.github/actions/workspace-dist/.*$|^scripts/fluid-collision-proof\.ts$|^scripts/__tests__/fluid-collision-proof\.spec\.ts$|^scripts/__tests__/fluid-collision-view\.spec\.ts$|^pnpm-lock\.yaml$|^\.github/actions/pnpm/.*$|^\.github/actions/playwright-chromium/.*$|^\.github/workflows/integration\.yml$'
           lane ik '^examples/integrations/ik/.*$|^\.github/workflows/integration\.yml$'
           lane tone '^packages/playtest/.*$|^examples/abyss-framework/src/render/toneCalibration\.ts$|^examples/abyss-framework/src/tone-main\.ts$|^examples/abyss-framework/tone\.html$|^examples/abyss-framework/tone\.vite\.config\.ts$|^examples/abyss-framework/playtests/tone\.playtest\.json$|^examples/abyss-framework/package\.json$|^scripts/verify-tone-exposure\.ts$|^scripts/tone-capture-proof\.ts$|^scripts/__tests__/tone-capture-proof\.spec\.ts$|^scripts/non-visual-scenarios\.mjs$|^package\.json$|^pnpm-lock\.yaml$|^\.github/actions/pnpm/.*$|^\.github/actions/playwright-chromium/.*$|^\.github/workflows/integration\.yml$'
           lane vegetation '^examples/integrations/vegetation/.*$|^\.github/workflows/integration\.yml$'
@@ -315,4 +317,130 @@ jobs:
           path: |
             artifacts/prd339-cold-boot
             artifacts/prd339-snap-response
+  fluid-collision:
+    name: fluid collision
+    if: ${{ needs.paths.outputs.fluid-particles == 'true' && !github.event.pull_request.draft }}
+    needs: paths
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: ./.github/actions/pnpm
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/playwright-chromium
+      - name: Build the public core and its workspace dependency closure
+        run: pnpm --filter '@threenative/core...' --workspace-concurrency=1 build
+      - name: Validate solver and fail-closed proof contracts
+        run: pnpm exec vitest run --maxWorkers=1 packages/core/__tests__/fluid-particles.spec.ts packages/core/__tests__/gpu-readback.spec.ts scripts/__tests__/fluid-collision-proof.spec.ts scripts/__tests__/fluid-collision-view.spec.ts
+      - name: Render real GPU readbacks and the missing-gate control
+        run: sh scripts/xvfb.sh pnpm exec tsx scripts/verify-fluid-collision.ts
+      - name: Retain captured pixels and minimal source provenance
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fluid-collision-${{ github.event.pull_request.head.sha }}
+          path: |
+            artifacts/fluid-collision/**/*.png
+            artifacts/fluid-collision/summary.json
+            artifacts/fluid-collision/failure.json
+          if-no-files-found: error
+
+  fluid-collision-native:
+    name: Linux native fluid correctness
+    needs: [fluid-collision]
+    # Established native-platforms ARM QuickJS/wgpu route; no default backend change.
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    env:
+      CMAKE_BUILD_PARALLEL_LEVEL: '2'
+      TN_PLAYTEST_ALLOW_SOFTWARE: '1'
+      TN_PLAYTEST_NATIVE_SCREENSHOT_TIMEOUT_MS: '30000'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: ./.github/actions/pnpm
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+          cache: pnpm
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - run: pnpm install --frozen-lockfile
+      - name: Build this source's public JavaScript packages
+        uses: ./.github/actions/workspace-dist
+        with:
+          save-bundles: 'false'
+          pack-archives: 'false'
+      - name: Verify native preflight and capture rejection controls
+        run: pnpm exec vitest run scripts/__tests__/fluid-collision-proof.spec.ts scripts/__tests__/fluid-collision-native-proof.spec.ts --maxWorkers=1
+      - name: Restore checksum-provisioned native dependencies
+        uses: actions/cache/restore@v4
+        with:
+          path: packages/runtime-native/third_party
+          key: native-third-party-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/runtime-native/scripts/download-deps.mjs', 'packages/runtime-native/scripts/package-android.mjs') }}
+      - name: Install the existing native lane's system prerequisites
+        run: >-
+          sudo apt-get update && sudo apt-get install -y
+          libasound2-dev libcurl4-openssl-dev libfontconfig1-dev libfreetype6-dev
+          libpulse-dev libudev-dev libx11-dev libxext-dev libxrandr-dev
+          libxcursor-dev libxi-dev libxfixes-dev libxss-dev libxkbcommon-dev
+          libgtk-3-dev libwebkit2gtk-4.1-dev libxcomposite-dev xcompmgr
+          libvulkan1 mesa-vulkan-drivers vulkan-tools xvfb zlib1g-dev
+      - name: Build the ordinary ARM desktop host from this source
+        run: pnpm --filter @threenative/runtime-native native:build
+      - name: Run the same authored four-arm proof and missing-gate control
+        env:
+          THREENATIVE_RUNTIME_BINARY: ${{ github.workspace }}/packages/runtime-native/build/tn-linux/mystral
+        run: node --import tsx scripts/verify-fluid-collision-native.ts
+      - name: Retain native pixels and minimal source provenance
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fluid-collision-native-${{ github.event.pull_request.head.sha }}
+          path: |
+            artifacts/fluid-collision-native/**/*.png
+            artifacts/fluid-collision-native/summary.json
+            artifacts/fluid-collision-native/failure.json
+          if-no-files-found: error
+
+  fluid-consumers:
+    name: fluid consumers
+    needs: [fluid-collision]
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: ./.github/actions/pnpm
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/playwright-chromium
+      - name: Build current fluid consumer dependencies
+        run: pnpm tsx scripts/workspace-packages.ts build
+      - name: Run unchanged dam-break and coupling assertions
+        run: sh scripts/xvfb.sh pnpm exec tsx scripts/verify-fluid-consumers.ts
+      - name: Retain actual consumer pixels and minimal provenance
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fluid-consumers-${{ github.event.pull_request.head.sha }}
+          path: |
+            artifacts/fluid-consumers/**/*.png
+            artifacts/fluid-consumers/summary.json
+            artifacts/fluid-consumers/failure.json
           if-no-files-found: error
