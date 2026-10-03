@@ -16,9 +16,5 @@
   "edgeMargin": 30,
   "fillP1Max": 5,
   "fillP99Min": 30,
-  "negativeControls": [
-    "rimGain-zero",
-    "black-fill",
-    "omitted-report"
-  ]
+  "negativeControls": ["rimGain-zero", "black-fill", "omitted-report"]
 }

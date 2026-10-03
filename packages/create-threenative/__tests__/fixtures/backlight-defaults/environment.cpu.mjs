@@ -83,7 +83,10 @@ check("zero overrides preserve measured report and do not admit a fill", () => {
     assert.equal(report.analyticFill.admitted, false);
     assert.equal(report.analyticFill.effectiveGain, 0);
     assert.ok(calls[0][0].startsWith("TN_ENVIRONMENT_CONTRIBUTION:"));
-    assert.equal(JSON.parse(calls[0][0].slice("TN_ENVIRONMENT_CONTRIBUTION:".length)).ibl, "non-contributing");
+    assert.equal(
+      JSON.parse(calls[0][0].slice("TN_ENVIRONMENT_CONTRIBUTION:".length)).ibl,
+      "non-contributing",
+    );
   } finally {
     console.info = original;
   }

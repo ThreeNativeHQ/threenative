@@ -108,14 +108,8 @@
     "renderChain": {
       "tier": "high",
       "stages": {
-        "includes": [
-          "ambientOcclusion",
-          "bloom",
-          "vignette"
-        ],
-        "excludes": [
-          "ssgi"
-        ]
+        "includes": ["ambientOcclusion", "bloom", "vignette"],
+        "excludes": ["ssgi"]
       }
     },
     "tone": [

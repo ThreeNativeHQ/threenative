@@ -109,7 +109,8 @@ class QualificationScene extends Scene {
     if (shot === "missing") ctx.scene.environment = null;
     const key = new DirectionalLight(0xffeed0, 4.5);
     key.position.set(0, 2, shot === "frontlit" ? 3 : -3);
-    if (shot === "backlit" || shot === "backlit-black-ibl" || shot === "frontlit") ctx.scene.add(key);
+    if (shot === "backlit" || shot === "backlit-black-ibl" || shot === "frontlit")
+      ctx.scene.add(key);
     const controls: BacklightControls = {
       key,
       scene: ctx.scene,
