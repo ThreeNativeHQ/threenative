@@ -8,7 +8,11 @@ import {
   WEBGPU_BROWSER_ARGS,
   runStandalonePlaytest,
 } from "../packages/playtest/dist/runner/index.js";
-import { assertFluidCapture, fluidConsumerFailureDiagnostics } from "./fluid-collision-proof.js";
+import {
+  assertFluidCapture,
+  fluidConsumerFailureDiagnostics,
+  fluidConsumerFailureEvidence,
+} from "./fluid-collision-proof.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const project = path.join(root, "examples/prd476-fluid-particles");
@@ -27,12 +31,14 @@ const qualification =
   "Existing consumer correctness on browser WebGPU; no hardware frame-time claim.";
 const variants = [];
 let activeVariant: "dam" | "coupling" | undefined;
+let lastReport: Parameters<typeof fluidConsumerFailureEvidence>[0];
 let failureDiagnostics: ReturnType<typeof fluidConsumerFailureDiagnostics> = null;
 try {
   execFileSync("pnpm", ["exec", "vite", "build"], { cwd: project, stdio: "inherit" });
   for (const variant of ["dam", "coupling"] as const) {
     activeVariant = variant;
     failureDiagnostics = null;
+    lastReport = undefined;
     const directory = path.join(output, variant);
     const scenario =
       variant === "dam"
@@ -54,6 +60,7 @@ try {
       },
       url: `http://127.0.0.1:5173/${variant === "coupling" ? "?scene=coupling" : ""}`,
     });
+    lastReport = report;
     failureDiagnostics = fluidConsumerFailureDiagnostics(report.diagnostics);
     assertFluidCapture(report);
     const filenames = (await readdir(directory)).filter((name) => name.endsWith(".png"));
@@ -94,7 +101,7 @@ try {
 } catch (error) {
   await writeFile(
     path.join(output, "failure.json"),
-    `${JSON.stringify({ sourceSha, qualification, pass: false, variant: activeVariant, diagnostics: failureDiagnostics }, null, 2)}\n`,
+    `${JSON.stringify({ sourceSha, qualification, pass: false, variant: activeVariant, diagnostics: failureDiagnostics, evidence: fluidConsumerFailureEvidence(lastReport, error) }, null, 2)}\n`,
   );
   throw error;
 }

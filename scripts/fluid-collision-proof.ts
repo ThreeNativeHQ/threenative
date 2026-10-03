@@ -28,6 +28,79 @@ export function fluidConsumerFailureDiagnostics(
   );
 }
 
+/** Bounded technical failure evidence; full raw console remains in the local artifact directory. */
+export function fluidConsumerFailureEvidence(
+  report:
+    | {
+        capture?: { rendererKind?: string; adapter?: object };
+        observations?: { console?: readonly { source?: string; type: string; text: string }[] };
+        assertionResults?: readonly { id?: string; pass: boolean }[];
+      }
+    | undefined,
+  error: unknown,
+) {
+  const console = report?.observations?.console;
+  const lossConsole =
+    console?.filter(({ text }) =>
+      /TN_DEVICE_LOST|WebGPU Device Lost|A valid external Instance reference no longer exists|Instance dropped in popErrorScope/iu.test(
+        text,
+      ),
+    ) ?? [];
+  return {
+    reportReturned: report !== undefined,
+    consoleAvailable: console !== undefined,
+    lossConsoleTruncated: lossConsole.length > 16,
+    lossConsole: lossConsole.slice(0, 16).map(({ source, type, text }) => ({
+      source:
+        source === "browser-console" || source === "page-error" ? source : "unrecognized-source",
+      type: ["error", "assert", "pageerror", "warning"].includes(type) ? type : "unrecognized-type",
+      text: sanitizeFluidFailureText(text, 1024),
+    })),
+    rendererKind: report?.capture?.rendererKind ?? null,
+    adapter:
+      report?.capture?.adapter === undefined
+        ? null
+        : Object.fromEntries(
+            Object.entries(report.capture.adapter)
+              .filter(
+                ([key, value]) =>
+                  ["vendor", "architecture", "device", "description"].includes(key) &&
+                  typeof value === "string",
+              )
+              .map(([key, value]) => [key, sanitizeFluidFailureText(String(value), 256)]),
+          ),
+    assertions:
+      report?.assertionResults?.slice(0, 32).map(({ id, pass }) => ({ id, pass })) ?? null,
+    thrownError:
+      error === undefined
+        ? null
+        : {
+            name: error instanceof Error ? sanitizeFluidFailureText(error.name, 128) : "NonError",
+            message: sanitizeFluidFailureText(
+              error instanceof Error ? error.message : String(error),
+              2048,
+            ),
+            stack:
+              error instanceof Error && error.stack !== undefined
+                ? sanitizeFluidFailureText(error.stack, 4096)
+                : null,
+          },
+  };
+}
+
+function sanitizeFluidFailureText(value: string, limit: number): string {
+  return value
+    .replace(/authorization\s*[=:][^\r\n]*/giu, "authorization: <redacted>")
+    .replace(
+      /((?:token|password|secret|api[_-]?key)\s*[=:]\s*)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s,;]+)/giu,
+      "$1<redacted>",
+    )
+    .replace(/(?:https?:|file:)\/\/[^\s"'<>]+/giu, "<redacted-url>")
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/giu, "<redacted-email>")
+    .replace(/[A-Z]:[\\/][^\s"'<>]+|(?:\.{1,2}\/|\/)[^\s"'<>]+/giu, "<redacted-path>")
+    .slice(0, limit);
+}
+
 /** Software rendering can prove the solver result, never the hardware frame-time criterion. */
 export function assertFluidOutcome(
   report: {

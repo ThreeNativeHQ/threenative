@@ -1,5 +1,9 @@
 import { expect, test } from "vitest";
-import { assertFluidCapture, fluidConsumerFailureDiagnostics } from "../fluid-collision-proof.js";
+import {
+  assertFluidCapture,
+  fluidConsumerFailureDiagnostics,
+  fluidConsumerFailureEvidence,
+} from "../fluid-collision-proof.js";
 
 const clean = {
   pass: true,
@@ -104,4 +108,71 @@ test("negative control cannot conceal another assertion or device loss", () => {
       collisionId,
     ),
   ).toThrow("TN_PLAYTEST_SOFTWARE_DEVICE_LOST");
+});
+
+test("consumer failure evidence retains actual loss text and sanitized thrown error", () => {
+  const error = new Error(
+    "failed /home/private/game at https://private.test/?token=abc user@example.test",
+  );
+  const evidence = fluidConsumerFailureEvidence(
+    {
+      capture: clean.capture,
+      observations: {
+        console: [
+          {
+            type: "error",
+            source: "browser-console",
+            text: "TN_DEVICE_LOST: The GPU device was lost (unknown): GPU process crashed",
+          },
+          {
+            type: "warning",
+            source: "browser-console",
+            text: "A valid external Instance reference no longer exists.",
+          },
+          {
+            type: "log",
+            source: "browser-console",
+            text: "private-secret user@example.test /home/private/game",
+          },
+        ],
+      },
+      assertionResults: [{ id: "resource.GameState.count", pass: false }],
+    },
+    error,
+  );
+  expect(evidence.reportReturned).toBe(true);
+  expect(evidence.consoleAvailable).toBe(true);
+  expect(evidence.lossConsole.map(({ text }) => text)).toEqual([
+    "TN_DEVICE_LOST: The GPU device was lost (unknown): GPU process crashed",
+    "A valid external Instance reference no longer exists.",
+  ]);
+  expect(evidence.thrownError?.name).toBe("Error");
+  expect(JSON.stringify(evidence)).not.toMatch(
+    /private-secret|private.test|user@example|home\/private/u,
+  );
+  expect(evidence.assertions).toEqual([{ id: "resource.GameState.count", pass: false }]);
+});
+
+test("consumer failure evidence names absent report and console without fabricating a loss", () => {
+  const beforeReport = fluidConsumerFailureEvidence(undefined, new Error("browser launch failed"));
+  expect(beforeReport.reportReturned).toBe(false);
+  expect(beforeReport.consoleAvailable).toBe(false);
+  expect(beforeReport.lossConsole).toEqual([]);
+  expect(beforeReport.adapter).toBeNull();
+  const emptyReport = fluidConsumerFailureEvidence({ observations: { console: [] } }, undefined);
+  expect(emptyReport.reportReturned).toBe(true);
+  expect(emptyReport.consoleAvailable).toBe(true);
+  expect(emptyReport.lossConsole).toEqual([]);
+  expect(emptyReport.thrownError).toBeNull();
+});
+
+test("consumer failure evidence redacts bearer credentials, quoted secrets and path forms", () => {
+  const error = new Error(
+    'Authorization: Bearer abc-credential\npassword="quoted secret words"\ntoken=plain-token /secret C:/private/file C:\\private\\file ./relative/private ../private/file',
+  );
+  const evidence = JSON.stringify(fluidConsumerFailureEvidence(undefined, error));
+  expect(evidence).not.toMatch(
+    /abc-credential|quoted secret words|plain-token|\/secret|private|relative/u,
+  );
+  expect(evidence).toContain("redacted");
 });
