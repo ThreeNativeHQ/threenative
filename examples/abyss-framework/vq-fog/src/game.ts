@@ -113,6 +113,9 @@ export class FogProbe extends GameScene<FogState> {
       "color",
       new Float32BufferAttribute([0.3, 0.3, 0.3, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.9, 0.9, 0.9], 3),
     );
+    // This card must cost zero draws outside the scattering controls, whose arms assert renderer draw
+    // and texture counts; a zero-opacity visible card would add a draw to every measured arm.
+    // engine-override: a hidden calibration reference, never a rendered surface to prewarm
     this.#calibration.visible = false;
     ctx.camera.add(this.#calibration);
     ctx.add(ctx.camera);
