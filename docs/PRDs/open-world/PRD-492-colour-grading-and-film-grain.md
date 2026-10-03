@@ -3,11 +3,11 @@
 **Status:** PROPOSED
 **Complexity:** 1 (LOW) — 1–5 files, all generated template source; no package change expected; risk override: none
 **Owner:** João
-**Depends on:** [PRD-VQ-02](../batch-2026-10-01-visual-quality/PRD-VQ-02-native-postprocessing-parity.md) (a post stage must not blank the native frame; this PRD adds two more stages to the same chain)
+**Depends on:** [PRD-VQ-02](../native/PRD-VQ-02-native-postprocessing-parity.md) (a post stage must not blank the native frame; this PRD adds two more stages to the same chain)
 
 ## Context
 
-`RENDER_CHAIN_STAGE_ORDER` in `packages/core/src/render/chain.ts` includes bloom, motion blur, god rays, vignette, lens distortion and sharpen. It has no colour grade and no film grain, and no template or example uses either one. Depth of field is out of scope: [PRD-VQ-13](../batch-2026-10-01-visual-quality/PRD-VQ-13-cinematic-stage-integration.md) owns it.
+`RENDER_CHAIN_STAGE_ORDER` in `packages/core/src/render/chain.ts` includes bloom, motion blur, god rays, vignette, lens distortion and sharpen. It has no colour grade and no film grain, and no template or example uses either one. Depth of field is out of scope: [PRD-VQ-13](../rendering/PRD-VQ-13-cinematic-stage-integration.md) owns it.
 
 No engine mechanism is missing. The pinned `three@0.185.1` ships:
 - `lut3D(node, lut, size, intensity)` in `examples/jsm/tsl/display/Lut3DNode.js`

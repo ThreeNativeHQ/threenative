@@ -9,7 +9,7 @@
 
 No occlusion culling exists: no depth pyramid, no HZB, nothing in `packages/core/src` reads a previous frame's depth to skip geometry. It was declined twice:
 - [PRD-284](../done/nanite-like/PRD-284-the-frame-does-not-draw-what-the-frame-already-hid.md) declined two-pass occlusion on the quarry because the clustered arm's whole GPU cost was 1.28 ms at 1080p; it left open how much of three's WebGPU path a depth pyramid can reach without a fork, and said reopening needs "a scene where the cut is still expensive".
-- [WORLD-STREAMING.md](./WORLD-STREAMING.md) lists occlusion culling as out of scope for 2 km worlds.
+- WORLD-STREAMING.md lists occlusion culling as out of scope for 2 km worlds.
 
 Machinefall's `?scene=map-walk` may be that scene. [PRD-475](./PRD-475-open-world-120-fps-without-visual-loss.md) records the main pass drawing 16–27 M triangles, with GPU p95 11.3 ms (main 5.6 ms) against an 8.3 ms target. Since PRD-473, the world's scattered props are drawn by the GPU scene in `packages/core/src/world-gpu-scene.ts` (`WorldGpuScene`, on by default for `WorldCells`): a compute kernel (`#buildKernel`, dispatched in `renderer.compute(kernel.cull)`) tests each placement's bounding sphere against six frustum planes, picks a level by distance, and writes the indirect args. That kernel is the place an occlusion test goes. It only removes GPU work, though: a GPU-scene key with zero visible instances still submits its indirect draw, so occlusion saves no per-draw JS, which is the CPU tail [PRD-478](./PRD-478-open-world-frame-architecture.md) is working on.
 

@@ -15,7 +15,7 @@
 - **No per-layer roughness or AO.** The material hard-codes `MeshStandardNodeMaterial({ metalness: 0, roughness: 0.92 })`. That is a look constant in package code, and every layer gets it. Megascans-grade layers ship albedo + normal + ORM.
 - **Cost grows with layer count.** Every pixel samples every layer through the `mix` chain, and triplanar layers sample three times.
 
-Out of scope: virtual texturing ([WORLD-STREAMING.md](./WORLD-STREAMING.md)) and texture residency ([PRD-VQ-10](../batch-2026-10-01-visual-quality/PRD-VQ-10-texture-mip-residency.md)).
+Out of scope: virtual texturing (WORLD-STREAMING.md) and texture residency ([PRD-VQ-10](../performance/PRD-VQ-10-texture-mip-residency.md)).
 
 ## Solution
 

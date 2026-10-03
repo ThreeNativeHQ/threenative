@@ -83,7 +83,7 @@ The gap is CPU while walking. The costs, as span p95s, which overlap and do not 
 - [ ] **A6 · PRD-478 Phase 3: terrain merges and seams run in a worker.** After: A5. ⏱🌍👁
   - The settled terrain must be byte-identical to the inline path.
 - [ ] **A7 · No pipeline compiles mid-walk:** [PRD-459](PRD-459-smooth-streaming-one-admission-budget-per-frame.md) AC-3 with [PRD-387](../performance/critical/PRD-387-shader-variants-are-prepared-off-frame-and-bounded.md). After: A6. ⏱🌍👁
-- [ ] **A8 · [PRD-455](PRD-455-temporal-reconstruction-from-dynamic-resolution.md): temporal reconstruction closes the GPU gap.** After: A7. ⏱🌍👁
+- [ ] **A8 · [PRD-455](../rendering/PRD-455-temporal-reconstruction-from-dynamic-resolution.md): temporal reconstruction closes the GPU gap.** After: A7. ⏱🌍👁
 - [ ] **A9 · PRD-478 acceptance.** After: A8. ⏱🌍👁
   - Done when: AC-1, AC-2 and AC-3 are ticked on a quiet host 🙋, and PRD-478 is in `done/`.
 - [ ] **A10 · PRD-477 Phases 2–3 and AC-1: budgets and switches become engine decisions.** After: A9. ⏱🌍👁
@@ -92,11 +92,11 @@ The gap is CPU while walking. The costs, as span p95s, which overlap and do not 
 
 ## Lane B — Fab-quality assets at that frame rate
 
-- [ ] **B1 · [VQ-01](../batch-2026-10-01-visual-quality/PRD-VQ-01-native-asset-capabilities.md): native asset capability guard.** After: nothing.
+- [ ] **B1 · [VQ-01](../assets/PRD-VQ-01-native-asset-capabilities.md): native asset capability guard.** After: nothing.
   - It already has a draft PR, #396. `assertNativeAssetsCompatible` currently rejects KTX2 and meshopt on every Android and iOS build.
 - [ ] **B2 · [PRD-485](PRD-485-high-quality-assets-go-through-the-cook.md): high-quality assets go through the cook.** After: B1 for its Android box only. 🎨👁
   - fab-import-proof, lumen-hall and metahuman-lab drop their escape hatches.
-- [ ] **B3 · Texture residency:** [VQ-10](../batch-2026-10-01-visual-quality/PRD-VQ-10-texture-mip-residency.md) together with [PRD-454](PRD-454-worldcells-budget-real-resources.md). After: B2. ⏱🌍👁
+- [ ] **B3 · Texture residency:** [VQ-10](../performance/PRD-VQ-10-texture-mip-residency.md) together with [PRD-454](PRD-454-worldcells-budget-real-resources.md). After: B2. ⏱🌍👁
   - Machinefall's 1024 texture cap is lifted to 2048 inside a hard GPU byte budget, with no black frames.
 - [ ] **B4 · [PRD-377](../assets/PRD-377-auto-lod-is-on-by-default.md) Phase 4: AutoLOD on by default.** After: B2. ⏱🎨👁
 - [ ] **B5 · [PRD-486](PRD-486-characters-get-a-lod-chain.md): characters get a LOD chain.** After: B4. ⏱🎨👁
@@ -107,14 +107,14 @@ The gap is CPU while walking. The costs, as span p95s, which overlap and do not 
 
 ## Lane C — look and native parity (independent; any free session)
 
-- [ ] **C1 · [PRD-339](../AAA-visuals/PRD-339-the-frame-sets-its-own-exposure.md): auto exposure.** 🎨👁
+- [ ] **C1 · [PRD-339](../rendering/PRD-339-the-frame-sets-its-own-exposure.md): auto exposure.** 🎨👁
   - Draft PR #397 already exists. Add its phase boxes first, since `prd:progress` exits 1 without them.
 - [ ] **C2 · [PRD-492](PRD-492-colour-grading-and-film-grain.md): colour grading and film grain.** 🎨👁
 - [ ] **C3 · [PRD-493](PRD-493-terrain-layers-past-sixteen-textures.md): terrain layers past sixteen textures.** ⏱🌍👁
 - [ ] **C4 · [PRD-491](PRD-491-water-and-atmosphere-run-native.md): water and atmosphere run native.** 👁
   - Compare native frames against web frames with the same judges.
 - [ ] **C5 · [PRD-490](PRD-490-cluster-lod-wins-on-native.md): cluster LOD wins on native.** ⏱👁
-- [ ] **C6 · Off-screen GI:** [PRD-245](../feature-mining/HIGH/PRD-245-indirect-light-is-a-node-the-game-composites.md), [PRD-267](../useful-defaults/PRD-267-screen-space-gi-ships-in-the-templates.md), [PRD-268](../lighting/PRD-268-light-that-comes-from-off-screen.md), [PRD-270](../useful-defaults/PRD-270-no-lighting-node-ships-web-only.md). After: A4. ⏱🎨👁
+- [ ] **C6 · Off-screen GI:** [PRD-245](../rendering/PRD-245-indirect-light-is-a-node-the-game-composites.md), [PRD-267](../useful-defaults/PRD-267-screen-space-gi-ships-in-the-templates.md), [PRD-268](../rendering/PRD-268-light-that-comes-from-off-screen.md), [PRD-270](../useful-defaults/PRD-270-no-lighting-node-ships-web-only.md). After: A4. ⏱🎨👁
   - All four have been PROPOSED since 2026-08-29 with 0 boxes. Merge or split them into at most 3 phases before starting.
 
 ## Housekeeping (any session; docs-only, commit straight to `develop` per AGENTS.md)
@@ -125,7 +125,7 @@ The gap is CPU while walking. The costs, as span p95s, which overlap and do not 
   - PRD-269 has landed (`3630847a`);
   - [PRD-461](PRD-461-view-distance-basics.md)'s `terrain.streamRadius` blocker has landed.
 - [ ] Remove the stale duplicates `meta-human/PRD-465` and the batch copy of `PRD-VQ-11`.
-- [ ] Update `00-REPO-GROUNDING.md` (virtual shadow maps ship) and [WORLD-STREAMING.md](WORLD-STREAMING.md) (virtualized geometry ships; occlusion is now PRD-489's call).
+- [ ] Update `00-REPO-GROUNDING.md` (virtual shadow maps ship) and WORLD-STREAMING.md (virtualized geometry ships; occlusion is now PRD-489's call).
 - [ ] Refresh rows G04, G05, G11, G15 and G16 in `docs/unreal-engine/ThreeNative_Unreal_Visual_Gap_Tracker.xlsx`.
 
 ## Not on this runbook, by decision
