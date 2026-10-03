@@ -93,7 +93,7 @@ jobs:
   # The cheap gates now start together, and the expensive ones name the gate they wait on.
   typecheck:
     needs: [scope, build-artifacts]
-    if: ${{ needs.scope.outputs.selection == 'full' }}
+    if: ${{ needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'ci' }}
     runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 15
     env:
@@ -123,7 +123,7 @@ jobs:
     # at promotion, so this job is skipped rather than spending a runner on inert prose. A reused
     # tree skips it too — every gate it would run here already passed in the run that tested this
     # exact tree, and `!= 'prose'` would otherwise have bought a second full lint.
-    if: needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'instructions'
+    if: needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'instructions' || needs.scope.outputs.selection == 'ci'
     runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 10
     env:
@@ -226,7 +226,7 @@ jobs:
   # one more runner, so four is the whole of it.
   test-unit:
     needs: [scope, build-artifacts]
-    if: ${{ needs.scope.outputs.selection == 'full' }}
+    if: ${{ needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'ci' }}
     runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 30
     strategy:
@@ -1021,7 +1021,7 @@ jobs:
   # the protected build join above requires both this producer and the complete native lane.
   build-artifacts:
     needs: scope
-    if: ${{ needs.scope.outputs.selection == 'full' }}
+    if: ${{ needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'ci' }}
     runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 20
     env:
@@ -1131,7 +1131,7 @@ jobs:
 
   budgets:
     needs: [scope, build-artifacts]
-    if: ${{ needs.scope.outputs.selection == 'full' }}
+    if: ${{ needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'ci' }}
     runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 15
     env:
@@ -1190,7 +1190,7 @@ jobs:
     # Skipped for Markdown-only PRs: the nightly develop run and promotions still scan the full
     # git history, so an inert prose PR does not spend a runner here. Skipped for a reused tree for
     # the same reason every other gate is: the run that tested this exact tree already scanned it.
-    if: needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'instructions'
+    if: needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'instructions' || needs.scope.outputs.selection == 'ci'
     # PR-only until 2026-09-01 (owner call): a push to main skipped the whole job, so the board
     # read a skip where the secrets scan should have been. Pushes now scan the repository's full
     # git history — gitleaks' default git mode — which is strictly stronger than the incremental
@@ -1317,7 +1317,7 @@ jobs:
       - ci-required
     # `!cancelled()` and not `always()`, for the reason golden-path gives above: a cancelled run
     # has nothing to report and its summary would only describe the cancellation.
-    if: ${{ !cancelled() && needs.scope.outputs.selection == 'full' }}
+    if: ${{ !cancelled() && (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'ci') }}
     runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER_LIGHT) && 'ubuntu-24.04' || vars.TN_RUNNER_LIGHT }}
     timeout-minutes: 5
     permissions:
