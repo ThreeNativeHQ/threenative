@@ -260,6 +260,23 @@ it("records a clean measured frame-cost window and refuses missing or mixed-wind
   ]);
   expect(sparse).toMatchObject({ gpuMs: 174.78, gpuSamples: 4, gpuStaleFrames: 26 });
   expect(sparse.qualification).toMatch(/4 of 30 frames/);
+  // A gpu mean over a count the meter never measured is the same silent lie in its own field.
+  const measuredGpu = { mean: 174.78, p50: 174.69, p95: 179.36, samples: 4 };
+  for (const gpu of [
+    { gpu: { ...measuredGpu, samples: "many" }, gpuMs: 174.78 },
+    { gpu: { ...measuredGpu, samples: -4 }, gpuMs: 174.78 },
+    { gpu: { ...measuredGpu, samples: 31 }, gpuMs: 174.78 },
+    { gpuStale: -26 },
+    { gpu: undefined, gpuStale: 30 },
+  ])
+    expect(() =>
+      fogFrameCost([
+        ...logs.slice(0, 2),
+        {
+          text: `TN_FRAME_BUDGET:${JSON.stringify({ ...window, gpuMs: 174.78, gpuStale: 26, ...gpu })}`,
+        },
+      ]),
+    ).toThrow(/gpu sample count/);
   expect(() => fogFrameCost([])).toThrow(/windows/);
   expect(() => fogFrameCost(logs.slice(0, 2))).toThrow(/windows/);
   for (const change of [

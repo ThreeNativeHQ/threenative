@@ -326,8 +326,21 @@ export function fogFrameCost(consoleEntries: unknown) {
     .filter((line) => line.includes("TN_FRAME_BUDGET:"))
     .at(-1);
   const raw = marker === undefined ? {} : JSON.parse(marker.split("TN_FRAME_BUDGET:")[1] ?? "{}");
-  const gpuSamples = Number(raw.gpu?.samples ?? 0);
-  const gpuStaleFrames = Number(raw.gpuStale ?? 0);
+  const gpuSamples = raw.gpu?.samples ?? 0;
+  const gpuStaleFrames = raw.gpuStale ?? 0;
+  // A count the meter cannot have measured is a malformed meter, not an absent one: `NaN`, a negative
+  // or an over-window count would print as a mean over frames nobody answered for. A window with no GPU
+  // query stays an explicit zero and is unmeasured; a `gpuMs` without a positive count is rejected
+  // rather than reported as a mean over zero frames.
+  if (
+    [gpuSamples, gpuStaleFrames].some(
+      (count) => !Number.isInteger(count) || count < 0 || count > measured.frames,
+    ) ||
+    (measured.gpuMs !== undefined && gpuSamples === 0)
+  )
+    throw new Error(
+      `VQ07 gpu sample counts must be nonnegative integers within the ${measured.frames}-frame window.`,
+    );
   return {
     window: measured.window,
     frames: measured.frames,
