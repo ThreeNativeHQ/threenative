@@ -428,8 +428,12 @@ export class FluidParticles3D extends Group {
     const dt = float(timeStep);
     const live = (index: TslNode): TslNode => positions.element(index).w.greaterThan(0.5);
     const guard = (): void => {
-      If(instanceIndex.greaterThanEqual(this.#slots), () => Return());
-      If(live(instanceIndex).not(), () => Return());
+      If(instanceIndex.greaterThanEqual(this.#slots), () => {
+        Return();
+      });
+      If(live(instanceIndex).not(), () => {
+        Return();
+      });
     };
 
     const cellOf = (point: TslNode) =>
@@ -543,7 +547,9 @@ export class FluidParticles3D extends Group {
 
     this.#inject = computeKernel("fluidParticles.inject", capacity, () => {
       const slot = instanceIndex;
-      If(slot.greaterThanEqual(uint(capacity)), () => Return());
+      If(slot.greaterThanEqual(uint(capacity)), () => {
+        Return();
+      });
       const body = positions.element(slot);
       const motion = velocities.element(slot);
       Loop({ start: uint(0), end: this.#drainCount, type: "uint" }, ({ i }: { i: TslNode }) => {
@@ -643,7 +649,9 @@ export class FluidParticles3D extends Group {
     });
 
     this.#gridClear = computeKernel("fluidParticles.grid.clear", cells, () => {
-      If(instanceIndex.greaterThanEqual(uint(cells)), () => Return());
+      If(instanceIndex.greaterThanEqual(uint(cells)), () => {
+        Return();
+      });
       atomicStore(cellCount.element(instanceIndex), uint(0));
     });
     this.#gridBuild = computeKernel("fluidParticles.grid.build", capacity, () => {
@@ -799,7 +807,9 @@ export class FluidParticles3D extends Group {
     });
 
     this.#statsClear = computeKernel("fluidParticles.stats.clear", STAT_WORDS, () => {
-      If(instanceIndex.greaterThanEqual(uint(STAT_WORDS)), () => Return());
+      If(instanceIndex.greaterThanEqual(uint(STAT_WORDS)), () => {
+        Return();
+      });
       const word = instanceIndex;
       atomicStore(
         stats.element(word),
@@ -807,7 +817,9 @@ export class FluidParticles3D extends Group {
       );
     });
     this.#statsFinalize = computeKernel("fluidParticles.stats.finalize", STAT_WORDS, () => {
-      If(instanceIndex.greaterThanEqual(uint(STAT_WORDS)), () => Return());
+      If(instanceIndex.greaterThanEqual(uint(STAT_WORDS)), () => {
+        Return();
+      });
       const word = instanceIndex;
       const count = float(atomicLoad(stats.element(0)));
       const raw = float(atomicLoad(stats.element(word)));
@@ -831,7 +843,9 @@ export class FluidParticles3D extends Group {
     });
 
     this.#volume = computeKernel("fluidParticles.volume", voxels, () => {
-      If(instanceIndex.greaterThanEqual(uint(voxels)), () => Return());
+      If(instanceIndex.greaterThanEqual(uint(voxels)), () => {
+        Return();
+      });
       const ix = instanceIndex.mod(uint(vx));
       const iy = instanceIndex.div(uint(vx)).mod(uint(vy));
       const iz = instanceIndex.div(uint(vx * vy));
@@ -880,7 +894,9 @@ export class FluidParticles3D extends Group {
     };
 
     this.#columnHeights = computeKernel("fluidParticles.columns", vx * vz, () => {
-      If(instanceIndex.greaterThanEqual(uint(vx * vz)), () => Return());
+      If(instanceIndex.greaterThanEqual(uint(vx * vz)), () => {
+        Return();
+      });
       const ix = instanceIndex.mod(uint(vx));
       const iz = instanceIndex.div(uint(vx));
       const top = nodeVar(float(min3[1]));

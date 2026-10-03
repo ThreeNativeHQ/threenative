@@ -57,6 +57,17 @@ function computeSource(water: FluidParticles3D, name: string): string {
 }
 
 describe("FluidParticles3D", () => {
+  it("emits one terminal return per compute guard for native WGSL validation", () => {
+    const water = new FluidParticles3D({ capacity: 1 });
+    try {
+      for (const name of ["predict", "grid.clear", "grid.build", "stats.clear", "stats.finalize"]) {
+        expect(computeSource(water, `fluidParticles.${name}`)).not.toMatch(/return;\s*return;/);
+      }
+    } finally {
+      water.detach();
+    }
+  });
+
   it("generates a vector speed limit and radius-bounded prediction segments", () => {
     const water = new FluidParticles3D({ capacity: 1 });
     try {
