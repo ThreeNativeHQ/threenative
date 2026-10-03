@@ -107,7 +107,7 @@ The gap is CPU while walking. The costs, as span p95s, which overlap and do not 
 
 ## Lane C — look and native parity (independent; any free session)
 
-- [ ] **C1 · [PRD-339](../rendering/PRD-339-the-frame-sets-its-own-exposure.md): auto exposure.** 🎨👁
+- [ ] **C1 · [PRD-339](../done/PRD-339-the-frame-sets-its-own-exposure.md): auto exposure.** 🎨👁
   - Draft PR #397 already exists. Add its phase boxes first, since `prd:progress` exits 1 without them.
 - [ ] **C2 · [PRD-492](PRD-492-colour-grading-and-film-grain.md): colour grading and film grain.** 🎨👁
 - [ ] **C3 · [PRD-493](PRD-493-terrain-layers-past-sixteen-textures.md): terrain layers past sixteen textures.** ⏱🌍👁
