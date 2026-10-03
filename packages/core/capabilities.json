@@ -544,7 +544,7 @@
       "importPath": "@threenative/core",
       "kind": "function",
       "overrides": [
-        "sliceSize defaults to 256; `marker: false` silences the TN_ADD_SLICES line, not the report"
+        "a slice ends on an 8 ms budget unless the game gives `sliceSize`, and the reported sliceSize is then the measured average; `marker: false` silences the TN_ADD_SLICES line, not the report"
       ],
       "package": "@threenative/core",
       "signature": "export async function addInSlices<T>( objects: Iterable<T>, add: (object: T, index: number) => void, options: IAddInSlicesOptions = { … }",

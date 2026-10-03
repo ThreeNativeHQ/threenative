@@ -427,7 +427,7 @@ export async function addInSlices<T>( objects: Iterable<T>, add: (object: T, ind
 
 - **Use when:** add hundreds of built objects to the scene without one multi-second frame · stream a detail tier in behind a loading curtain without the page looking hung
 - **Constraints:** the objects, and where each one goes, stay the game's; this decides only when each joins the graph · input order is the attach order and cannot be changed · a false `while` stops the run and is reported as `stopped`, never thrown
-- **Overrides:** sliceSize defaults to 256; `marker: false` silences the TN_ADD_SLICES line, not the report
+- **Overrides:** a slice ends on an 8 ms budget unless the game gives `sliceSize`, and the reported sliceSize is then the measured average; `marker: false` silences the TN_ADD_SLICES line, not the report
 
 ```ts
 const report = await addInSlices(objects, (object) => ctx.add(object), {

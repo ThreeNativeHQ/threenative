@@ -845,7 +845,7 @@ export type { IVirtualShadowOptions, IVirtualShadowStats } from "./render/virtua
  * @constraint the objects, and where each one goes, stay the game's; this decides only when each joins the graph
  * @constraint input order is the attach order and cannot be changed
  * @constraint a false `while` stops the run and is reported as `stopped`, never thrown
- * @override sliceSize defaults to 256; `marker: false` silences the TN_ADD_SLICES line, not the report
+ * @override a slice ends on an 8 ms budget unless the game gives `sliceSize`, and the reported sliceSize is then the measured average; `marker: false` silences the TN_ADD_SLICES line, not the report
  * @example const report = await addInSlices(objects, (object) => ctx.add(object), {
  *   onProgress: ({ added, total }) => setProgress(added / total),
  *   while: () => generation.live,

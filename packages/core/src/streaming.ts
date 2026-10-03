@@ -82,12 +82,12 @@ export interface IAddInSlicesReport {
   readonly added: number;
   /** Objects the run was given. */
   readonly total: number;
-  /** Slices the work was cut into, and therefore the frames the loop got to present, plus one. */
+  /** Slices the work was cut into: one host turn between each, several of which can share a frame. */
   readonly slices: number;
   /** Wall-clock milliseconds the run took, attaching and yielding together. */
   readonly elapsedMs: number;
   /**
-   * Objects per presented frame this run actually landed on: the count the game chose, or — when
+   * Objects per slice this run actually landed on: the count the game chose, or — when
    * the budget chose — the measured average, which is the number a caller copies into `sliceSize`.
    */
   readonly sliceSize: number;
