@@ -238,10 +238,9 @@ void runContract(bool disableStreamControl) {
     expect(state->profiling.frameOpStreamLastOrder == expectedSameFrameOrder,
            "the copy and its submit left at mapAsync, leaving only the deferred destroy");
 
-    // The same map, with a command encoder left half-recorded across it. The cut has to land
-    // before that encoder was created — replaying a stream whose encoder is never finished is a
-    // hard "frame ended with unfinished GPU objects" — so the tail keeps recording and drains at
-    // the frame boundary, intact and in order.
+    // Exposure readback runs inside an outer render pass. The readback copy is submitted
+    // after that pass opened, so no clean prefix includes it. Keep the backend map pending
+    // until end-frame replays the whole interleaved stream and submits its copy.
     expect(engine->evalScript(
         R"JS((() => {
           const device = globalThis.__tnDevice;
@@ -249,14 +248,14 @@ void runContract(bool disableStreamControl) {
           const dst = device.createBuffer({size: 16, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ});
           requestAnimationFrame(() => {
             device.queue.writeBuffer(src, 0, new Uint32Array([9, 10, 11, 12]));
-            const first = device.createCommandEncoder();
-            first.copyBufferToBuffer(src, 0, dst, 0, 16);
-            device.queue.submit([first.finish()]);
             const second = device.createCommandEncoder();
             const pass = second.beginRenderPass({colorAttachments: [{
               view: globalThis.__tnRenderView, loadOp: "clear", storeOp: "store",
               clearValue: [0, 0, 0, 1],
             }]});
+            const first = device.createCommandEncoder();
+            first.copyBufferToBuffer(src, 0, dst, 0, 16);
+            device.queue.submit([first.finish()]);
             const mapping = dst.mapAsync(GPUMapMode.READ, 0, 16);
             mapping.then(() => {
               globalThis.__tnSplitReadback = Array.from(new Uint32Array(dst.getMappedRange(0, 16)));
@@ -281,7 +280,8 @@ void runContract(bool disableStreamControl) {
             engine->toString(engine->evalScriptWithResult(
                 "JSON.stringify(__tnSplitReadback)", "tn-split-report.js")));
     const std::vector<std::string> expectedSplitTailOrder = {
-        "createCommandEncoder", "beginRenderPass", "render.end", "finish", "submit"};
+        "createCommandEncoder", "beginRenderPass", "createCommandEncoder", "copyBufferToBuffer",
+        "finish", "submit", "render.end", "finish", "submit"};
     if (splitTailOrder != expectedSplitTailOrder) {
         std::cerr << "observed split tail order:";
         for (const auto& op : splitTailOrder)

@@ -111,12 +111,12 @@ a convention missing from there does not exist.
 
 ### Phase 1 — authored adaptation and metering contract
 
-- [ ] Generated exposure controls validate inputs and adapt in log2 with authored asymmetric rates, cut response, reset and disabled measurement. proof: `pnpm exec vitest run packages/create-threenative/__tests__/auto-exposure.spec.ts`
+- [x] Generated exposure controls validate inputs and adapt in log2 with authored asymmetric rates, cut response, reset and disabled measurement. proof: 151 focused exposure/lifecycle/lifetime tests pass; actual 720-sample GPU lifecycle run exercises reset to a new eleven-stop target. Camera/raw and disabled runtime evidence below retains the original acceptance tolerances.
 - [x] Reduction dimensions follow the drawing buffer without invalidating 1×1 history. proof: `pnpm exec vitest run --maxWorkers=1 packages/create-threenative/__tests__/auto-exposure.spec.ts packages/create-threenative/__tests__/auto-exposure-node.spec.ts` — 28 tests pass on 2026-10-02; renderer-stub lifetime proof only, no GPU execution claim.
 
 ### Phase 2 — opt-in GPU graph and lifecycle
 
-- [ ] A generated GPU reduction and ping-pong exposure graph reuses the world pass before bloom and the sole output transform. proof: `pnpm exec vitest run packages/create-threenative/__tests__/auto-exposure-node.spec.ts packages/create-threenative/__tests__/world-environment-lifetime.spec.ts`
+- [x] A generated GPU reduction and ping-pong exposure graph reuses the world pass before bloom and the sole output transform. proof: focused node/lifetime tests pass; actual 720 paired GPU samples cover output-graph rebuild, drawing-buffer resize from 640×360 to 320×180, and reset without stale history. Exact-source capture/provenance is recorded below.
 - [x] Every template ships editable exposure controls and documents the opt-in, without a default picture change before qualification. proof: `pnpm exec vitest run --maxWorkers=1 packages/create-threenative/__tests__/scaffold.spec.ts packages/create-threenative/__tests__/auto-exposure-scaffold.spec.ts packages/create-threenative/__tests__/shared-render-sources.spec.ts` — 83 tests pass; all 13 instruction budgets and mirror checks pass.
 
 ### Phase 3 — repeatability and runtime qualification
@@ -345,6 +345,60 @@ camera reports remained valid. This correction changes validation only, not the 
 AC1 and AC5 are qualified at this source; AC2's ineffective mutation, native, actual lifecycle
 rebuild/reset and full required CI remain open. Software pixels make no hardware timing claim.
 
+### Completion qualification and remaining cold-boot decision
+
+A fresh hardware run of the unchanged twenty-launch cold-boot experiment at source
+`08b039c64c6d95d017ac856f74cfc881ae11fdb1` gives corrected p99 235–239 (1.7021%) and
+zero-gain p99 239–245 (2.5105%). Both remain inside the unchanged 10% limit.
+[All twenty launch measurements, clocks and hashes](../../verification/prd339-exposure-proof/cold-boots-08b039c.json)
+retain the negative-control failure rather than converting it into acceptance. Four min/max
+frames are preserved alongside the record. This is RTX 2080 correctness evidence, not a timing benchmark.
+
+Engineering recommendation, awaiting the user's criterion decision: keep ten independent boots
+and their 10% repeatability limit, and test cut responsiveness separately. Setting gain to zero
+removes the authored cut boost; it does not introduce randomness, so failure on boot spread is
+not entailed by the intended mechanism. The existing three-update boot age and ACES shoulder
+also compress the displayed p99 differences. Changing age, scene or threshold to manufacture
+spread would change the experiment rather than prove the requirement.
+
+The proposed separate red-green contract is analytically declared from the existing authored
+`snapHi=8` and `snapGain=1`: an eleven-stop actual fixed-light camera cut must be within the
+existing 0.25-stop tolerance on its first accepted GPU update at controlled delta 1/60.
+Past eight stops, authored smoothstep is one, so gain one adopts the target on that update;
+gain zero retains the ordinary exponential adaptation. The experimental actual pair observes
+10.9108 stops between its camera targets. Gain one first-update error is 0.000000476837 stops;
+gain zero error is 10.553099394 stops and fails only
+`TN_EXPOSURE_SNAP_RESPONSE_MISSING`. Both original 180-update camera scenarios remain qualified.
+Their endpoint PNGs depict the terminal frame after 180 updates, not the first-update measurement.
+This experiment does not alter or satisfy the currently written cold-boot mutation criterion.
+
+Native desktop qualification now passes the same bright-room fixture on an actual RTX 2080 Vulkan
+adapter: 180 paired accepted GPU measurements, terminal applied exposure -4.435490608 versus
+measured target -4.435517788, and both 640×360 before/after PNGs with nonblank ratio 1.0.
+Raw native state matches the paired terminal measurement. Three actual GPU error scopes return
+null; captured host console contains no validation/device-loss errors. The native `device.lost`
+stub resolves without loss information and is explicitly unavailable as an observation; it is
+never normalized into a successful loss-free report. The injected real invalid buffer produces
+“Buffer usages must not be 0” and prevents readiness. The strict qualifier rejects its 180-sample
+trace on GPU validation, rather than accepting the blocked startup.
+
+The headless contract executes the production reduction graph with nonuniform 65×33 input,
+including its odd edges, and compares an independent weighted CPU oracle. Its actual targets
+are 17×9 → 5×3 → 2×1 → 1×1. Both native engines report luminance 2.065428257 versus CPU
+2.065428175, exposure -3.519190788, and applied output pixel 0.174440756 after 120 updates.
+Actual injected GPU validation is rejected. The existing CMake target definition, CTest
+registration, execution pass lines, discovery count and missing-registration guard are updated;
+the actual verifier function rejects the omitted execution registration. The focused V8/QuickJS
+native suite passes 80 tests with one existing skip. An actual interleaved readback regression
+failed on the original freshly built host before the bounded deferred-map fix and passes after it.
+
+Exact proposed criterion change for approval: retain the first two cold-boot sentences and replace
+only its red-green sentence with: “Separately, cut the actual camera eleven stops with a controlled
+1/60-second adaptation delta. With authored snap gain one, the first accepted GPU readback must be
+within 0.25 stops of its measured target; with snap gain zero, that same first-update accuracy gate
+must fail. Preserve both measurements and the named failure.” No acceptance box changes without
+that decision.
+
 ## Implementation decisions
 
 - 2026-10-02: the current core contract says all exposure, TSL and post-processing are generated
@@ -357,10 +411,7 @@ rebuild/reset and full required CI remain open. Software pixels make no hardware
 
 ## Blocked on
 
-- Native desktop runtime proof (acceptance criterion 4) requires a working native host/display lane;
-  this fresh cloud executor has no GPU/KVM, and the manager
-  re-probed Unix socket creation on 2026-10-02: EPERM. Native contract registration
-  and portable fixture work remain in scope; no native success is claimed from browser pixels.
+- Full required checks remain incomplete: the shared native dependency acquisition receipts are stale against the unchanged lock, so the local SBOM suite rejects them. The native source was rebuilt in this isolated checkout; actual V8/QuickJS GPU correctness below does not claim a green supply-chain board. No shared receipt or pipeline policy was changed.
 - Cold-boot qualification now consumes the landed PRD-341 tone gate; twenty corrected/mutated launches ran cleanly, but the required zero-gain spread failure did not occur.
 
 ## Acceptance criteria
@@ -377,7 +428,7 @@ rebuild/reset and full required CI remain open. Software pixels make no hardware
 - [x] **Off does not mean unmeasured.** proof: `disabled exposure playtest`. With `enabled: false`, `TN_AUTO_EXPOSURE` still prints a
    measured luminance and `applied=false`, and the frame's exposure is exactly the game's constant.
    *Red-green:* early-return from `update()` when disabled; the marker assertion fails.
-- [ ] **It runs on native.** proof: `desktop exposure playtest and verify-native-contracts.mjs`. A `--target desktop` playtest of the same scenario reports the same
+- [x] **It runs on native.** proof: `desktop exposure playtest and verify-native-contracts.mjs`. A `--target desktop` playtest of the same scenario reports the same
    applied exposure within tolerance, and a native contract test covers the reduction chain without
    a display (see the native contract lane in `packages/runtime-native/AGENTS.md`).
    *Red-green:* the contract case is registered in all five places a new native target needs; a

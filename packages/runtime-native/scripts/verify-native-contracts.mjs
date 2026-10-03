@@ -23,6 +23,12 @@ const metahumanTarget = "threenative-metahuman-bindings-test";
 const videoTarget = "threenative-video-recorder-state-test";
 
 export const executionContracts = {
+  "threenative-exposure-graph-test": {
+    invocations: [
+      { args: [], passLine: "native exposure graph contract passed" },
+      { args: ["--inject-validation"], passLine: "native exposure validation negative control passed" },
+    ],
+  },
   "threenative-pipeline-cache-test": {
     invocations: [{ args: [], passLine: "pipeline cache filesystem contract passed:" }],
   },

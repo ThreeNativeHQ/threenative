@@ -25,6 +25,8 @@ export interface IExposureFixtureOptions {
   deterministic?: boolean;
   coldBoot?: boolean;
   cameraCut?: boolean;
+  nativeValidation?: boolean;
+  nativeValidationInject?: boolean;
 }
 
 /** Portable scene and engine loop. The browser entry only supplies controls and mounts the canvas. */
@@ -84,6 +86,38 @@ export function createExposureFixture(options: IExposureFixtureOptions) {
         disposeRoom = () => fixedRooms.dispose();
       }
       const renderer = ctx.renderer.raw as WebGPURenderer;
+      const validationDevice =
+        options.nativeValidation === true
+          ? (
+              renderer.backend as typeof renderer.backend & {
+                device?: {
+                  lost: Promise<{ reason: string; message: string }>;
+                  pushErrorScope(filter: "internal" | "out-of-memory" | "validation"): void;
+                  popErrorScope(): Promise<{ message: string } | null>;
+                  createBuffer(descriptor: { size: number; usage: number }): unknown;
+                };
+              }
+            ).device
+          : undefined;
+      let activeScene = true;
+      let deviceLost = false;
+      void validationDevice?.lost.then((info) => {
+        if (
+          info === undefined ||
+          info === null ||
+          typeof info.reason !== "string" ||
+          typeof info.message !== "string"
+        )
+          return;
+        deviceLost = true;
+        console.error(`TN_EXPOSURE_NATIVE_DEVICE_LOST:${info.reason}:${info.message}`);
+      });
+      const validationScopes = ["internal", "out-of-memory", "validation"] as const;
+      if (options.nativeValidation === true && validationDevice === undefined)
+        throw new Error("Native exposure GPU validation device is unavailable.");
+      for (const scope of validationScopes) validationDevice?.pushErrorScope(scope);
+      if (options.nativeValidationInject === true)
+        validationDevice?.createBuffer({ size: 4, usage: 0 });
       renderer.toneMapping = ACESFilmicToneMapping;
       renderer.toneMappingExposure = 1;
       const worldPass = pass(ctx.scene, ctx.camera);
@@ -103,7 +137,43 @@ export function createExposureFixture(options: IExposureFixtureOptions) {
       exposure.coldBoot = options.coldBoot === true;
       if (exposure.coldBoot) exposure.observeColdBootStartup(ctx.startup);
       if (exposure.deterministic) exposure.holdStartup(ctx.startup);
-      exposure.onProgress = () => ctx.state.set(exposure.getProgress());
+      let releaseValidation: (() => void) | undefined;
+      if (validationDevice !== undefined)
+        ctx.startup.hold(
+          "exposure-native-validation",
+          new Promise<void>((resolve) => {
+            releaseValidation = resolve;
+          }),
+        );
+      let validationPending = validationDevice !== undefined;
+      let validationDone = false;
+      exposure.onProgress = () => {
+        const progress = exposure.getProgress();
+        ctx.state.set({ ...progress, validationDone, exposure: exposure.getObservation() });
+        if (validationPending && progress.sampleFrames === 180) {
+          validationPending = false;
+          void Promise.all(validationScopes.map(() => validationDevice?.popErrorScope()))
+            .then((errors) => {
+              if (!activeScene || deviceLost) return;
+              if (errors.some((error) => error !== null)) {
+                console.error(
+                  `TN_EXPOSURE_NATIVE_VALIDATION:${JSON.stringify({ updates: 180, errors: errors.map((error) => error?.message ?? String(error)) })}`,
+                );
+                return;
+              }
+              console.info(
+                `TN_EXPOSURE_NATIVE_VALIDATION:${JSON.stringify({ updates: 180, scopes: validationScopes, errors })}`,
+              );
+              validationDone = true;
+              exposure.onProgress();
+              ctx.state.flush();
+              releaseValidation?.();
+            })
+            .catch((error: unknown) =>
+              console.error(`TN_EXPOSURE_NATIVE_VALIDATION_FAILED:${String(error)}`),
+            );
+        }
+      };
       ctx.renderer.setOutputNode(applyExposure(colour, exposure.exposureNode), worldPass);
       ctx.entities.add("exposure", {
         debug: () => ({
@@ -114,6 +184,7 @@ export function createExposureFixture(options: IExposureFixtureOptions) {
         }),
       });
       this.#dispose = () => {
+        activeScene = false;
         ctx.renderer.clearOutputNode?.();
         exposure.dispose();
         worldPass.dispose();
@@ -133,7 +204,37 @@ export function createExposureFixture(options: IExposureFixtureOptions) {
           );
         }
         if (frame.input.justPressed("disable")) exposure.setEnabled(false);
-        if (frame.input.justPressed("reset")) exposure.reset();
+        if (frame.input.justPressed("reset")) {
+          console.info(
+            `TN_EXPOSURE_RESET:${JSON.stringify({ ...exposure.timing, ...exposure.getObservation() })}`,
+          );
+          exposure.beginCut();
+          exposure.reset();
+        }
+        if (frame.input.justPressed("resize")) {
+          ctx.renderer.setSize(320, 180, false);
+          console.info(
+            `TN_EXPOSURE_RESIZE:${JSON.stringify({ ...exposure.timing, ...exposure.getObservation() })}`,
+          );
+          exposure.beginCut();
+        }
+        if (frame.input.justPressed("resetCut")) {
+          bright = !bright;
+          if (fixedRooms === undefined) applyLight();
+          else fixedRooms.setPose(bright);
+          console.info(
+            `TN_EXPOSURE_RESET_CUT:${JSON.stringify({ ...exposure.timing, ...exposure.getObservation() })}`,
+          );
+          exposure.beginCut();
+          exposure.reset();
+        }
+        if (frame.input.justPressed("rebuild")) {
+          console.info(
+            `TN_EXPOSURE_REBUILD:${JSON.stringify({ ...exposure.timing, ...exposure.getObservation() })}`,
+          );
+          exposure.beginCut();
+          ctx.renderer.setOutputNode(applyExposure(colour, exposure.exposureNode), worldPass);
+        }
       };
     }
 
@@ -145,8 +246,15 @@ export function createExposureFixture(options: IExposureFixtureOptions) {
   return defineGame({
     camera: { far: 100, fov: 48, near: 0.1, projection: "perspective" },
     display: { maxFps: 60 },
-    initialState: { sampleFrames: 0, cutSampleFrames: 0 },
-    input: { cut: { keys: ["KeyC"] }, disable: { keys: ["KeyD"] }, reset: { keys: ["KeyR"] } },
+    initialState: { sampleFrames: 0, cutSampleFrames: 0, validationDone: false },
+    input: {
+      cut: { keys: ["KeyC"] },
+      disable: { keys: ["KeyD"] },
+      reset: { keys: ["KeyR"] },
+      rebuild: { keys: ["KeyB"] },
+      resize: { keys: ["KeyZ"] },
+      resetCut: { keys: ["KeyT"] },
+    },
     plugins: [playtest({ holdUntilAttached: true })],
     renderer: { preferWebGPU: true },
     scenes: { room: ExposureRoom },

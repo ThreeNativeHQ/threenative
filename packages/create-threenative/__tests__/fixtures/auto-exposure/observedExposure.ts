@@ -1,4 +1,5 @@
-import { NodeFrame } from "three/webgpu";
+import { Vector2 } from "three";
+import { type NodeBuilder, NodeFrame } from "three/webgpu";
 import type { ICtx } from "../../../../core/dist/index.js";
 import { AutoExposureNode } from "../../../template-assets/autoExposure.js";
 
@@ -9,6 +10,16 @@ export function exposureFrameSnapshot(frame: NodeFrame): NodeFrame {
 
 /** Diagnostic instrumentation around the actual generated GPU graph, never a CPU exposure model. */
 export class ObservedExposureNode extends AutoExposureNode {
+  setupCount = 0;
+  override setup(builder: NodeBuilder) {
+    const result = super.setup(builder);
+    this.setupCount++;
+    console.info(
+      `TN_EXPOSURE_SETUP:${JSON.stringify({ ...this.timing, setupCount: this.setupCount })}`,
+    );
+    return result;
+  }
+
   deterministic = false;
   coldBoot = false;
   capturePose: (() => unknown) | undefined;
@@ -67,6 +78,7 @@ export class ObservedExposureNode extends AutoExposureNode {
 
   beginCut(): void {
     this.#cutStart = this.timing.updates;
+    this.onProgress();
   }
 
   getProgress() {
@@ -84,7 +96,13 @@ export class ObservedExposureNode extends AutoExposureNode {
     const limit = this.coldBoot ? 3 : 180;
     if (bounded && (this.#pending || this.timing.updates - (this.#cutStart ?? 0) >= limit)) return;
     const input = this.deterministic ? exposureFrameSnapshot(frame) : frame;
+    const renderer = frame.renderer;
+    if (renderer === null) throw new Error("Exposure fixture renderer missing.");
+    const size = renderer.getDrawingBufferSize(new Vector2());
     const next = {
+      width: size.x,
+      height: size.y,
+      setupCount: this.setupCount,
       updates: this.timing.updates + 1,
       consumedSeconds:
         this.timing.consumedSeconds + Math.min(input.deltaTime, this.settings.maxDelta),
@@ -94,8 +112,6 @@ export class ObservedExposureNode extends AutoExposureNode {
       deltaSeconds: input.deltaTime,
       clock: this.deterministic ? "deterministic-per-render" : "live",
     };
-    const renderer = frame.renderer;
-    if (renderer === null) throw new Error("Exposure fixture renderer missing.");
     const read = renderer.readRenderTargetPixelsAsync;
     let sampleRead: ReturnType<typeof read> | undefined;
     if (bounded) {

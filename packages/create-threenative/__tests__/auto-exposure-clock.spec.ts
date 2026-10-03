@@ -241,3 +241,14 @@ describe("exposure deterministic render clock", () => {
     expect(frame.deltaTime).toBe(0.07);
   });
 });
+
+it("publishes the zero post-cut sample baseline synchronously", () => {
+  const node = new ObservedExposureNode(texture(new Texture()), exposureSettings, 1);
+  let progress: unknown;
+  node.onProgress = () => {
+    progress = node.getProgress();
+  };
+  node.beginCut();
+  expect(progress).toEqual({ sampleFrames: 0, cutSampleFrames: 0 });
+  node.dispose();
+});
