@@ -1,0 +1,331 @@
+import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { PNG } from "pngjs";
+import { assertCaptureNotBlank } from "../packages/playtest/dist/capture.js";
+import {
+  WEBGPU_BROWSER_ARGS,
+  runStandalonePlaytest,
+} from "../packages/playtest/dist/runner/index.js";
+import {
+  requireTemporalRenderEvidence,
+  writeTemporalMotionSummary,
+} from "./temporal-aa-evidence.js";
+import {
+  type ILinearFrame,
+  linearFrame,
+  measureBlueProfile,
+  measureCausalReveal,
+  measureSequence,
+} from "./temporal-aa-quality.js";
+
+interface IVelocityProbe {
+  projectionError: number | null;
+  samples: Array<{ name: string; errorPixels: number }>;
+}
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const output = path.join(root, "artifacts/temporal-aa/motion");
+const scenario = JSON.parse(
+  await readFile(
+    path.join(root, "examples/abyss-framework/playtests/temporal-motion.playtest.json"),
+    "utf8",
+  ),
+);
+const frames: Record<string, ILinearFrame[]> = {};
+const provenance = [];
+const velocityDiagnostics: Record<
+  string,
+  Array<{ label: string; velocity: IVelocityProbe | null }>
+> = {};
+let poses: unknown[] | undefined;
+let recompileObserved = false;
+for (const variant of [
+  "supersampled",
+  "reference",
+  "temporal",
+  "zero-velocity",
+  "unchecked-history",
+  "dynamic-instances",
+  "strict-rejection",
+  "recompile",
+  "temporal-open",
+  "strict-rejection-open",
+  "unchecked-history-open",
+  "nearest-history",
+  "nearest-history-open",
+  "resolve-linear",
+  "resolve-cubic",
+  "resolve-cubic-open",
+  "resolve-cubic-strict",
+  "resolve-cubic-strict-open",
+  "resolve-cubic-strict-zero",
+  "resolve-cubic-strict-ordinary",
+  "resolve-cubic-strict-ordinary-open",
+  "resolve-cubic-strict-ordinary-zero",
+]) {
+  const artifactDirectory = path.join(output, variant);
+  await mkdir(artifactDirectory, { recursive: true });
+  const scale = variant === "supersampled" ? 4 : 1;
+  const scenarioPath = path.join(artifactDirectory, "scenario.json");
+  await writeFile(
+    scenarioPath,
+    JSON.stringify({ ...scenario, viewport: { width: 640 * scale, height: 360 * scale } }, null, 2),
+  );
+  const report = await runStandalonePlaytest({
+    allowSoftwareAdapter: true,
+    artifactDirectory,
+    browserArgs: [...WEBGPU_BROWSER_ARGS],
+    headless: false,
+    port: 0,
+    projectPath: path.join(root, "examples/abyss-framework"),
+    scenarioPath,
+    server: {
+      command:
+        "pnpm exec vite build --config temporal.vite.config.ts && pnpm exec vite preview --config temporal.vite.config.ts --host 127.0.0.1 --port $PORT --strictPort",
+      timeoutMs: 60_000,
+    },
+    timeoutMs: 120_000,
+    trace: false,
+    url: `http://127.0.0.1:5173/temporal.html?measure&variant=${variant}`,
+  }).catch(async (error: unknown) => {
+    await writeFile(
+      path.join(artifactDirectory, "failure.json"),
+      JSON.stringify(
+        { variant, error: error instanceof Error ? error.stack : String(error) },
+        null,
+        2,
+      ),
+    );
+    throw error;
+  });
+  await writeFile(path.join(artifactDirectory, "report.json"), JSON.stringify(report, null, 2));
+  requireTemporalRenderEvidence(report, variant);
+  const series = report.observations?.resourceSeries;
+  assert.ok(series);
+  assert.equal(series.length, 16, `${variant}: every captured frame needs an observation`);
+  const currentPoses = [];
+  const hashes = [];
+  const currentFrames: ILinearFrame[] = [];
+  frames[variant] = currentFrames;
+  for (let index = 0; index < 16; index++) {
+    const frame = index + 21;
+    const sample: { label: string; tick: number; snapshots: Record<string, unknown> } | undefined =
+      series[index];
+    assert.ok(sample);
+    const observed = sample.snapshots.temporal as {
+      frame: number;
+      pose: unknown;
+      occluderVisible: boolean;
+      aa: {
+        frame: number;
+        inputWidth: number;
+        inputHeight: number;
+        outputWidth: number;
+        outputHeight: number;
+        resetReason: string | null;
+      } | null;
+    };
+    assert.equal(sample.label, `frame-${frame}`);
+    assert.equal(sample.tick, frame);
+    assert.equal(observed.frame, frame);
+    assert.equal(observed.occluderVisible, frame <= 28 && !variant.endsWith("-open"));
+    currentPoses.push(observed.pose);
+    if (variant !== "supersampled" && variant !== "reference") {
+      assert.ok(observed.aa);
+      assert.equal(observed.aa.frame, frame, `${variant}: actual resolves must match simulation`);
+      assert.deepEqual(
+        [
+          observed.aa.inputWidth,
+          observed.aa.inputHeight,
+          observed.aa.outputWidth,
+          observed.aa.outputHeight,
+        ],
+        [640, 360, 640, 360],
+      );
+      assert.equal(
+        observed.aa.resetReason,
+        null,
+        "Disocclusion must not be hidden by a global reset",
+      );
+    } else assert.equal(observed.aa, null);
+    const filename = `frame-${frame}.png`;
+    const bytes = await readFile(path.join(artifactDirectory, filename));
+    const stats = assertCaptureNotBlank(bytes, `${variant}/${filename}`);
+    assert.deepEqual([stats.width, stats.height], [640 * scale, 360 * scale]);
+    currentFrames.push(linearFrame(PNG.sync.read(bytes), 640, 360));
+    hashes.push({ frame, filename, sha256: createHash("sha256").update(bytes).digest("hex") });
+  }
+  if (poses)
+    assert.deepEqual(currentPoses, poses, `${variant}: exact same camera/object poses required`);
+  else poses = currentPoses;
+  velocityDiagnostics[variant] = series.map(({ label, snapshots }) => ({
+    label,
+    velocity: (snapshots.temporal as { velocityProbe: IVelocityProbe | null }).velocityProbe,
+  }));
+  if (variant === "recompile") {
+    const observed = series.at(-1)?.snapshots.temporal as {
+      setupCount: number;
+      setupDuringJitter: number;
+    };
+    recompileObserved = observed.setupCount > 1 && observed.setupDuringJitter > 0;
+  }
+  provenance.push({ variant, capture: report.capture, hashes });
+}
+const reference = frames.supersampled;
+assert.ok(reference);
+const results = Object.fromEntries(
+  Object.entries(frames)
+    .filter(([name]) => name !== "supersampled" && !name.endsWith("-open"))
+    .map(([name, frames]) => [name, measureSequence(reference, frames, 8)]),
+);
+const causalReveals = Object.fromEntries(
+  [
+    "temporal",
+    "strict-rejection",
+    "unchecked-history",
+    "nearest-history",
+    "resolve-cubic",
+    "resolve-cubic-strict",
+    "resolve-cubic-strict-ordinary",
+  ].map((policy) => {
+    const candidate = frames[policy];
+    const open = frames[`${policy}-open`];
+    assert.ok(candidate && open, `Matched open-history control missing: ${policy}`);
+    return [policy, measureCausalReveal(reference, candidate, open, 8)];
+  }),
+);
+const temporal = results.temporal;
+const baseline = results.reference;
+const unchecked = results["unchecked-history"]?.reveal[1];
+const zeroVelocity = results["zero-velocity"];
+assert.ok(temporal && baseline && unchecked && zeroVelocity);
+assert.ok(
+  temporal.movingEdgeError !== null && zeroVelocity.movingEdgeError !== null,
+  "Moving-object edges must be measurable",
+);
+const temporalVelocity = velocityDiagnostics.temporal;
+assert.ok(temporalVelocity && temporalVelocity.length === 16);
+for (const { velocity } of temporalVelocity) {
+  assert.ok(velocity && velocity.samples.length === 3, "Three actual MRT surface probes required");
+  assert.ok(velocity.samples.every((sample) => Number.isFinite(sample.errorPixels)));
+}
+// Pinned before the first runtime measurement. These are a narrow-fixture experimental bar,
+// not a claim of general image quality, native qualification or saved GPU time.
+const checks = {
+  causalNegativeControl:
+    causalReveals["unchecked-history"]?.every((frame) => frame.redTintFraction > 0.1) === true,
+  recompileObserved,
+  recompileVelocity:
+    velocityDiagnostics.recompile?.every(({ velocity }) => {
+      const rigid = velocity?.samples.find(({ name }) => name === "rigid");
+      return velocity?.projectionError === 0 && rigid !== undefined && rigid.errorPixels < 0.01;
+    }) === true,
+  velocityProjection: temporalVelocity.every(({ velocity }) => {
+    const rigid = velocity?.samples.find(({ name }) => name === "rigid");
+    return velocity?.projectionError === 0 && rigid !== undefined && rigid.errorPixels < 0.01;
+  }),
+  edgeImprovement: temporal.edgeError < baseline.edgeError * 0.95,
+  stabilityImprovement: temporal.residualInstability < baseline.residualInstability * 0.95,
+  revealRecovery: temporal.reveal.slice(1).every((frame) => frame.staleFraction <= 0.01),
+  uncheckedHistoryDetected: unchecked.staleFraction > 0.1,
+  zeroVelocityDetected: zeroVelocity.movingEdgeError > temporal.movingEdgeError * 1.02,
+};
+const linearProof = provenance.find((arm) => arm.variant === "resolve-linear");
+const installedProof = provenance.find((arm) => arm.variant === "temporal");
+assert.ok(linearProof && installedProof);
+const authoredLinearEquivalent = linearProof.hashes.every(
+  (frame, index) => frame.sha256 === installedProof.hashes[index]?.sha256,
+);
+const candidates = Object.fromEntries(
+  ["resolve-cubic", "resolve-cubic-strict", "resolve-cubic-strict-ordinary"].map((name) => {
+    const result = results[name];
+    assert.ok(result);
+    return [
+      name,
+      {
+        qualification:
+          name === "resolve-cubic"
+            ? "Diagnostic only: no matched zero-velocity control; excluded from qualification"
+            : name === "resolve-cubic-strict-ordinary"
+              ? "Diagnostic ordinary-blend experiment with matched open-history and zero-velocity controls; all original quality bars retained"
+              : "Candidate measurement with a matched zero-velocity control; all reported checks still required",
+        authoredLinearEquivalent,
+        edgeImprovement: result.edgeError < baseline.edgeError * 0.95,
+        stabilityImprovement: result.residualInstability < baseline.residualInstability * 0.95,
+        revealRecovery: result.reveal.slice(1).every((frame) => frame.staleFraction <= 0.01),
+        causalRedRecovery: causalReveals[name]
+          ?.slice(1)
+          .every((frame) => frame.redTintFraction <= 0.01),
+        // Both comparisons are reported: a sharper edge alone is insufficient for qualification.
+        excursionsNoWorseThanNoAA:
+          result.neighbourhoodOvershootFraction <= baseline.neighbourhoodOvershootFraction,
+        excursionsNoWorseThanInstalled:
+          result.neighbourhoodOvershootFraction <= temporal.neighbourhoodOvershootFraction,
+        matchedZeroVelocityDetected:
+          name !== "resolve-cubic"
+            ? (results[`${name}-zero`]?.movingEdgeError ?? 0) >
+              (result.movingEdgeError ?? Number.POSITIVE_INFINITY) * 1.02
+            : null,
+      },
+    ];
+  }),
+);
+const fenceRegion = { x: 165, y: 140, width: 55, height: 55 };
+const fenceProfiles = Object.fromEntries(
+  Object.entries(frames).map(([name, sequence]) => [
+    name,
+    sequence.map((frame, index) => ({
+      frame: index + 21,
+      ...measureBlueProfile(frame, fenceRegion, reference[index]?.rgb[2] ?? Number.NaN),
+    })),
+  ]),
+);
+const summary = {
+  qualification:
+    "Matched full-resolution AA measurement only. Software WebGPU; no native, reconstruction or GPU performance claim. Rejection fraction remains unmeasured.",
+  method: {
+    width: 640,
+    height: 360,
+    referenceRasterScale: 4,
+    colourSpace: "linear RGB decoded from opaque sRGB screenshots",
+    frames: [21, 36],
+    revealFrame: 29,
+    edgeGradientThreshold: 0.08,
+    neighbourhoodExcursionTolerance: 0.01,
+    neighbourhoodExcursionRegion:
+      "pre-reveal pixels, local 3x3 reference RGB bounds; diagnostic proxy, not causal ringing classification",
+    ghostInteriorInset: 2,
+    staleColourWeightThreshold: 0.1,
+    minimumRelativeImprovement: 0.05,
+    maximumStaleFractionAfterOneFrame: 0.01,
+    zeroVelocityMinimumRelativeDegradation: 0.02,
+    movingEdgeRegion: "reference RGB saturation above 0.25 excluding the red reveal marker",
+    maximumRigidVelocityErrorPixels: 0.01,
+    fenceProfile: {
+      region: fenceRegion,
+      method:
+        "Diagnostic only: mean linear blue per column, then sum(columnMean - matching reference pixel(0,0).blue); signed deficits are not clamped. All 16 frames reported; no change to quality gates.",
+    },
+  },
+  negativeControl:
+    "unchecked-history renders a 95% unchecked history blend; it bypasses both depth rejection and neighbourhood clipping and does not isolate their individual effects",
+  causalMethod:
+    "Each policy is paired with the same temporal sequence whose red marker was never drawn. Positive red excess subtracts any positive shared green/blue change, normalised by marker red minus control red. This diagnostic separates red tint from neutral brightening/darkening; the original projection score and gate remain unchanged.",
+  ordinaryBlendExperiment:
+    "resolve-cubic-strict-ordinary changes only the final blend from luminance-reweighted flickerReduction to mix(clippedHistoryColor, currentColor, currentWeight). The previously computed currentWeight, sampling, clipping, rejection, jitter and history are identical. Fence profiles are diagnostic; a local contrast gain cannot qualify the whole image.",
+  authoredLinearEquivalent,
+  candidates,
+  fenceProfiles,
+  checks,
+  results,
+  causalReveals,
+  provenance,
+  velocityDiagnostics,
+};
+console.log(
+  JSON.stringify({ checks, authoredLinearEquivalent, candidates, results, causalReveals }, null, 2),
+);
+await writeTemporalMotionSummary(path.join(output, "summary.json"), summary);

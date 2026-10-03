@@ -1,0 +1,5 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": { "rootDir": "../.." },
+  "include": ["velocity-main.ts", "velocity-cost-main.ts"]
+}
