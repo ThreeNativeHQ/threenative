@@ -298,6 +298,24 @@ export function levelAtGates(
 }
 
 /**
+ * The last level at or below `level` that the scene can actually draw, which is where a placement
+ * goes when the gates name one the prewarm has not minted keys for.
+ *
+ * `WorldCells#gatesOf` names every level of an asset from the moment it is adopted and fills in the
+ * keys minted so far, so a chain that has widened holds `parts: 2,0,0,0` while the loading screen is
+ * up. The CPU path draws `asset.levels[level]` whatever the gates name and always has a shape there;
+ * a dispatch that took the named level would loop its zero keys and draw the placement nowhere, and
+ * with the bias raised the placements past the last source gate are exactly the far ones — a forest
+ * 80-300 m out standing in its own shadows, while the shadow halves, which take no bias and key
+ * themselves, still draw. One level down is the finest shape the scene holds, which is the level the
+ * prewarm is one frame from minting.
+ */
+function drawableLevel(slot: Pick<IAssetSlot, "levels">, level: number): number {
+  for (let at = level; at > 0; at -= 1) if ((slot.levels[at]?.parts ?? 0) > 0) return at;
+  return 0;
+}
+
+/**
  * One representable Float32 step past a gate: `g * (1 + 2^-22)`, two f32 ULPs at `g`'s exponent.
  *
  * A floored terminal gate must start strictly after the source gate it is floored by and must stay
@@ -361,7 +379,7 @@ export function cullAndSelect(input: IKernelInput): IKernelResult {
     // Cull above is the authored distance; the level below is the biased one, the same multiplier
     // the kernel's uniform carries, so the reference and the dispatch cross a switch together.
     const lodDistance = biasedLodDistance(distance);
-    const level = levelAtGates(slot, lodDistance, placement.scale ?? 1);
+    const level = drawableLevel(slot, levelAtGates(slot, lodDistance, placement.scale ?? 1));
     const gate = slot.levels[level];
     if (gate === undefined) continue;
     for (let part = 0; part < gate.parts; part += 1) {
@@ -2310,8 +2328,15 @@ export class WorldGpuScene {
           const floor = previous.add(abs(previous).mul(GATE_STEP));
           threshold.assign(max(floor, candidate.x.mul(scale)));
         });
+        // A level the prewarm has minted no key for is not taken: the gate table names every level of
+        // an asset from the moment it is adopted, and the draw loop below would run this level's
+        // zero keys, so the placement would be selected and drawn nowhere while the CPU path drew it
+        // and its shadow halves drew under it. The last level that has keys keeps it. See
+        // `drawableLevel`, which the reference mirrors.
         If(lodDistance.greaterThan(threshold), () => {
-          level.assign(i as never);
+          If(candidate.z.greaterThan(0.5), () => {
+            level.assign(i as never);
+          });
         });
       });
       const at = levels.element(gate.x.add(level));

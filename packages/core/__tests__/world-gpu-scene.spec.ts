@@ -3223,6 +3223,81 @@ describe("WorldGpuScene gate tables against the owner's own distances", () => {
     expect(expected.get("pine:0:0")?.[13]).toBe(0);
     scene.dispose();
   });
+
+  /**
+   * A level whose keys are not minted yet is a level the dispatch cannot draw, and the biased
+   * selection must not land on one.
+   *
+   * `WorldCells#gatesOf` names every level of an asset from the moment it is adopted and fills in the
+   * keys the prewarm has minted so far, so a chain widens to `parts=2,0,0,0` and holds `2,2,0,0` and
+   * `2,2,2,0` while the loading screen is still up — measured on a four-level chain through the
+   * world. The CPU path draws `asset.levels[level]` for whatever level the gates name, so it always
+   * has a shape there; the kernel selects the level and then loops `at.z` times, which is zero times,
+   * and the placement is drawn nowhere. With the bias at 2.5 the far placements are exactly the ones
+   * past the last source gate, so a forest 80-300 m out stands in its own shadows.
+   */
+  it("draws the last source level that has keys when the biased gate names one that has none", () => {
+    setLodBias(2.5);
+    try {
+      const distances = [0, 20, 60];
+      const live: ILiveAsset = {
+        cull: undefined,
+        distances,
+        id: "pine",
+        locals: [[LOCAL], [LOCAL], [LOCAL]],
+      };
+      // 100 m is past 60 m itself and 25 m past it once, and a half, are — so both paths name the
+      // last source level here, and the CPU path's own answer says which key that is.
+      const at = (z: number): Map<string, Float32Array> =>
+        liveKeyInstances(
+          [placement(0, 0, z, 0)],
+          (slot: number) => (slot === 0 ? live : undefined),
+          { planes: cameraAt(0, 0).planes, x: 0, y: 0, z: 0 },
+        );
+      expect(at(100).has("pine:2:0")).toBe(true);
+
+      /** The three levels, with the top one keyed or not, exactly as `#gatesOf` writes them. */
+      const chain = (topKeyed: boolean): WorldGpuScene => {
+        const scene = pine();
+        for (const level of [1, 2]) {
+          if (level === 2 && topKeyed === false) break;
+          scene.key(`pine:${String(level)}:0`, LOCAL, 64, {
+            group: `pine:${String(level)}`,
+            part: 0,
+            parts: 1,
+          });
+        }
+        scene.slot("pine", {
+          cull: undefined,
+          distances,
+          levels: [0, 1, 2].map(
+            (level) => scene.levelKeys(`pine:${String(level)}`) ?? { firstKey: 0, parts: 0 },
+          ),
+        });
+        scene.place(0, new Matrix4().makeTranslation(0, 0, 100), 0, 0, 100, 0.5);
+        return scene;
+      };
+
+      // Every level keyed: the dispatch answers the CPU path's level, the last source one.
+      const keyed = chain(true);
+      expect(run(keyed).counts[keyOf(keyed, "pine:2:0")]).toBe(1);
+      expect(run(keyed).counts[keyOf(keyed, "pine:1:0")]).toBe(0);
+      keyed.dispose();
+
+      // The top level named but not minted: the last level that has keys, so the tree is drawn.
+      const unkeyed = chain(false);
+      const drawn = run(unkeyed);
+      expect(unkeyed.gates()[0]?.levels[2]?.parts).toBe(0);
+      expect(drawn.counts[keyOf(unkeyed, "pine:0:0")]).toBe(0);
+      expect(drawn.counts[keyOf(unkeyed, "pine:1:0")]).toBe(1);
+      // And the placement is drawn at all: the sum is zero while the gates name a level with no key,
+      // which is the tree that stands in its own shadow.
+      expect([...drawn.counts].reduce((sum, count) => sum + count, 0)).toBe(1);
+      unkeyed.dispose();
+    } finally {
+      setLodBias(1);
+    }
+  });
 });
 
 /**
