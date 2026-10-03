@@ -72,7 +72,8 @@ restart or reboot.
   `gh`, Rust, JDK 17, Android SDK and platform-tools, build tools, Xvfb and Playwright's dependencies.
 - 5 heavy slots, each pinned to 2 whole cores (`nproc` reads 4, like a hosted runner) with 12 GB of
   memory and no extra swap. Under memory pressure the kernel kills a CI job before anything else.
-- 1 light slot: 1 CPU and 2 GB, for joins only.
+- 3 light slots: 1 CPU and 2 GB each, for joins only. One slot serialised every pull request's scope and
+  verdict, because an ephemeral runner takes 30-60 s to re-register after each job.
 - The admin token mints one registration token per container and is unset before the job starts, so no
   job can read it.
 

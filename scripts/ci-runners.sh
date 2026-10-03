@@ -38,6 +38,9 @@ ONLINE_TIMEOUT_SECONDS=300
 # 2 GB, and the highest OOM score of any container, so a small join is what gets killed under
 # memory pressure rather than a 20-minute build.
 LIGHT_SHAPE="--cpus 1 --memory 2g --memory-swap 2g --oom-score-adj 900"
+# Several light slots: an ephemeral runner needs 30-60 s to re-register after each job, and every
+# board brings ~7 joins, so one light slot serialised every pull request's scope and verdict.
+LIGHT_SLOTS=3
 # `/dev/kvm` for the heavy slots, and only where the host has one: `android-emulator-parity` boots a
 # checksum-locked APK under `reactivecircus/android-emulator-runner`, which reads the device for
 # read and write and otherwise falls back to a software boot. No KVM, no flag — a host without it
@@ -162,8 +165,10 @@ up() {
   # One light slot, unpinned and quota-limited, labelled so heavy jobs cannot select it: a 10-second
   # join behind five 20-minute builds is the wait this lane exists to remove. It never reserves a
   # core, so the check above still describes exactly the cores this pool owns.
-  start_slot light "$STATE_DIR" "$ENV_FILE" "$repo" "$LIGHT_SHAPE" "$LIGHT_LABEL"
-  printf '%s heavy + 1 light runner container(s) starting; logs in %s\n' "$slots" "$STATE_DIR"
+  for slot in $(seq 1 "$LIGHT_SLOTS"); do
+    start_slot "light-$slot" "$STATE_DIR" "$ENV_FILE" "$repo" "$LIGHT_SHAPE" "$LIGHT_LABEL"
+  done
+  printf '%s heavy + %s light runner container(s) starting; logs in %s\n' "$slots" "$LIGHT_SLOTS" "$STATE_DIR"
 
   # Only advertise the labels once the runners are really there: TN_RUNNER set with an empty pool
   # is a queue that never drains. Both labels wait, because a light runner that never came online
@@ -173,7 +178,7 @@ up() {
   while :; do
     online="$(online_count "$repo" "$LABEL")"
     light_online="$(online_count "$repo" "$LIGHT_LABEL")"
-    if [ "$online" -ge "$slots" ] && [ "$light_online" -ge 1 ]; then break; fi
+    if [ "$online" -ge "$slots" ] && [ "$light_online" -ge "$LIGHT_SLOTS" ]; then break; fi
     if [ "$(date +%s)" -ge "$deadline" ]; then
       gh variable delete "$VARIABLE" --repo "$repo" 2>/dev/null || true
       gh variable delete "$LIGHT_VARIABLE" --repo "$repo" 2>/dev/null || true
