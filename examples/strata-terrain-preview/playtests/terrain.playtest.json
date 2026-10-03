@@ -825,8 +825,7 @@
         "id": "GameState",
         "path": "maxViewPresentedP95",
         "gte": 0.01,
-        "lte": 16.7,
-        "allowTrivial": "60 fps stable: the slowest captured view's median per-window p95 of the presented-frame interval (GPU included) stays within one 60 Hz frame. Replaces the removed 4 ms CPU caps (owner, 2026-10-02)."
+        "allowTrivial": "Presented-interval p95 of the slowest view, measured and reported but not capped: the runner's private Xvfb is not a real display, so a frame rate from it is wrong, not missing (packages/playtest/AGENTS.md). The 60 fps verdict comes from `playtest perf` on a real display."
       },
       {
         "id": "GameState",
