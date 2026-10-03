@@ -338,7 +338,7 @@ async function main(): Promise<void> {
   );
   const runtimeSha256 = await hash(runtime);
   const qualification =
-    "Linux desktop GPU correctness; no mobile or hardware-performance claim. The desktop mailbox has no network observer; this bundled fixture has no external assets or runtime imports.";
+    "Linux desktop GPU correctness with actual initialization/measured-work validation scopes and real host-console error/device-loss checks; no generic normalized runtime-diagnostics, internal error-scope, mobile or hardware-performance claim. The desktop mailbox has no network observer; this bundled fixture has no external assets or runtime imports.";
   const variants: Record<string, unknown>[] = [];
   await mkdir(output, { recursive: true });
   const authored = await loadPlaytestScenario(project, "playtests/fluid-collision.playtest.json");
