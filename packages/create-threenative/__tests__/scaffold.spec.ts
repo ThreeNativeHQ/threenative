@@ -189,20 +189,20 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // PRD-479: each scaffold embeds the reviewed compute-only Storage3DTexture Three patch.
   // A clean-tree audit matched all13 prior hashes, then changed only the copied patch and
   // reproduced all13 CI received hashes. No template, version or other scaffold bytes changed.
-  "action-rpg": "115e31cd5a319cf1407d94486a839304ca26cc6c532384129f6a3e8e7f1a3e36",
-  minimal: "4149749167f26a50c4fe67b801cc71e3d9e26d737f7e43766813f69ac5804900",
-  platformer: "87dc88a3a6d50e88c476cf80c5be501bca62ce27474aed5d8155e02d8e729c90",
-  puzzle: "fc5d88b24b78db3830510360fe2a4e53a7d0805737ddc07047fb6530b23009bb",
-  racing: "502373fe0d07d97dca2bab70929ead5f7bafac123d3b97c2ae49b4a919e5124e",
-  rain: "731042034a9c73824998c919137aa7002d75cac031713e6d309bc8301f8b4088",
-  rts: "2b875e1041e0e533d17f5bd5104094e11f8fbbdd06aef1e0156cba80fc21585b",
-  runner: "b66c2056b1256773911c0f6e46bea6c2f705cc3acbb2b8e2aa3ee8c461938cff",
-  sailing: "2d1ec2373e3697afa0d8f6341260911c24f988315dc2942d1328c0ddbd848011",
+  "action-rpg": "4d4723e7d29b5a9ad6211ea46fe2bba41a03d20bda485e4b87458d61198d59f4",
+  minimal: "dc021c3dd3b24e0050c9c51b5fec066ab4af0f3bb52f70baa335083745c99225",
+  platformer: "fc58e9bdba0a581074d45316b3f0459c126ec15300a00819268209551d8bc996",
+  puzzle: "67b549fb539a13d38678e686c8264e418b625adaa66a73a0f8f7677cc7fbaf17",
+  racing: "7aeef7b9185ca6148b6d76f9aefcb95d4dc88c46e59f33f50ec19489af1d8b3b",
+  rain: "e671ddd24215184964ba5a0e99ac246ddb03a8911b18d492092569fada546bdb",
+  rts: "0f11c3beacf28ed1281a598a25de67562f569130188b2d0bfb623b74746d1b03",
+  runner: "9fab0f1f978c7316f8e896699e98897225d0bffa2c9a8d4f22d809afd2bcced4",
+  sailing: "6d18a722d2a3595cada3fbb2101f44e10a3cef0577dd19e61b989c02bda21cde",
   // VQ11 after merge of develop 416ffd7: measured through createProject, only shooter changed.
-  shooter: "2a4a5cb0b4c91b2cc7578df8bee854d3fa66ffd58f85a8c840964c5549cecc54",
-  snow: "7b634782b3bc6eff9cc9b15141bbe5bba9d1014e034d2a2e8859e785911a6424",
-  starter: "212b3f23c97b60ad8475a9418a6f4eeb87202ebad570b424cab83ff6c3c4ef17",
-  "tower-defense": "b72a0736abbcd3b2007852684b9298dc6d2069c8130337f140f15fb48f341511",
+  shooter: "829cfe5f9219e84bfc98d222e168a9e2fd16bd9035a327373bba1b30bbf5ce46",
+  snow: "cde8ff29048a08b0e87e99003649b17154871f232a9a8291260ea186d1b4d7cf",
+  starter: "9d59c9b4484249fc0bad333d3f6d4586d129c173d1d1203892fdb8b09df806c2",
+  "tower-defense": "34a5957c86aec9723e25a4ab51f5ddf1a90faf60c1aaff0072673f76316094e9",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
