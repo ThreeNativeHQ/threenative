@@ -121,6 +121,7 @@
         "@threenative/core#exposeDebug": "export function exposeDebug(name: string, value: unknown): void { … }",
         "@threenative/core#FlightModel": "export class FlightModel<TState extends IFlightState = IFlightState> { … }",
         "@threenative/core#FluidField2D": "export class FluidField2D extends Group { … }",
+        "@threenative/core#FluidParticles3D": "export class FluidParticles3D extends Group { … }",
         "@threenative/core#formatSceneWarning": "export function formatSceneWarning(warning: ISceneWarning): string { … }",
         "@threenative/core#formatSpansWindow": "export function formatSpansWindow(window: ISpanWindow): string { … }",
         "@threenative/core#formatValidationReport": "export function formatValidationReport(report: IValidationReport): string { … }",

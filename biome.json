@@ -1,5 +1,6 @@
 {
   "$schema": "https://biomejs.dev/schemas/1.9.4/schema.json",
+  "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
   "files": {
     "ignore": [
       "**/dist/**",
@@ -16,6 +17,7 @@
       ".worktrees/**",
       ".claude/worktrees/**",
       ".opencode/**",
+      ".leanpi/**",
       ".linchpin/**",
       ".tnshots/**",
       ".mcp.json",
