@@ -465,6 +465,65 @@ describe("embedded EXT_texture_webp", () => {
     expectColours(PNG.sync.read(image).data, 4, 1);
   });
 
+  it("should convert a WebP even when its KTX2 is larger", async () => {
+    // The real-game case: a flat-colour 256x256 WebP costs far fewer bytes than the KTX2
+    // container around it, so the keep-smaller-source guard retained the original and the
+    // cooked model still required `EXT_texture_webp` — which the decoder-free native targets
+    // cannot read. A container only an extension-reading loader understands is never kept.
+    const authored = (await readOutput(await fixtureWithWebp(256)))
+      .getRoot()
+      .listTextures()
+      .find((texture) => texture.getName() === "checker")
+      ?.getImage()?.byteLength;
+
+    const { buffer, entry } = await compiled(await fixtureWithWebp(256));
+    const summary = entry.embeddedTextures as
+      | {
+          readonly bytesAfter: number;
+          readonly bytesBefore: number;
+          readonly formats: Readonly<Record<string, string>>;
+          readonly skippedCompression: Readonly<Record<string, string>>;
+        }
+      | undefined;
+
+    // Proof the not-smaller guard really held here: the cook grew the payload, and the row it
+    // grew is the one the size report already prints.
+    expect(summary?.bytesAfter ?? 0).toBeGreaterThan(summary?.bytesBefore ?? 0);
+    expect(summary?.skippedCompression?.checker).toBeUndefined();
+    expect(summary?.formats.checker).toBe("etc1s");
+
+    const json = JSON.parse(buffer.subarray(20, 20 + buffer.readUInt32LE(12)).toString("utf8")) as {
+      extensionsRequired?: string[];
+      extensionsUsed?: string[];
+      images: { mimeType?: string }[];
+    };
+    expect(json.images.some((image) => image.mimeType === "image/webp")).toBe(false);
+    expect(json.extensionsUsed ?? []).not.toContain("EXT_texture_webp");
+    expect(json.extensionsRequired ?? []).not.toContain("EXT_texture_webp");
+    expect(json.extensionsRequired ?? []).toContain("KHR_texture_basisu");
+    // The image itself, not just the extension name, got bigger: that is the cost this test
+    // buys, and it is the number a reader of the build report sees.
+    const cooked = (await readOutput(buffer))
+      .getRoot()
+      .listTextures()
+      .find((texture) => texture.getName() === "checker");
+    expect(cooked?.getMimeType()).toBe("image/ktx2");
+    expect(cooked?.getImage()?.byteLength ?? 0).toBeGreaterThan(authored ?? 0);
+  });
+
+  it("should still keep a PNG whose KTX2 would be larger", async () => {
+    // The other half of the same rule, and the reason it is a container test rather than a size
+    // test: PNG and JPEG need no extension, so retaining them costs a reader nothing.
+    const { buffer, entry } = await compiled(await fixtureWithTextures({ width: 4 }));
+    const summary = entry.embeddedTextures as {
+      readonly skippedCompression: Readonly<Record<string, string>>;
+    };
+    expect(summary.skippedCompression.checker).toBe("not-smaller");
+    for (const texture of (await readOutput(buffer)).getRoot().listTextures()) {
+      expect(texture.getMimeType()).toBe("image/png");
+    }
+  });
+
   it("should still fail closed on a container that is not an image", async () => {
     const document = buildFixtureDocument();
     document

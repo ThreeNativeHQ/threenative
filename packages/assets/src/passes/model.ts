@@ -819,7 +819,10 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
               decoderFree: options.textures?.decoderFree ?? false,
               encoder: KTX2_ENCODER_VERSION,
               maxSize: options.textures?.maxSize ?? null,
-              keepSmallerSource: true,
+              // Retention is now conditioned on the container, so it is spelled out rather than
+              // named by a boolean: a warm cache keyed on the old rule would keep shipping the
+              // WebP-requiring models this replaced.
+              keepSmallerSource: "universal-containers",
               overrides: options.textures?.overrides ?? [],
               quality: options.textures?.quality ?? null,
             },
@@ -1079,7 +1082,7 @@ function sharedSettings(
         : {
             decoderFree: textureOptions.decoderFree ?? false,
             encoder: KTX2_ENCODER_VERSION,
-            keepSmallerSource: true,
+            keepSmallerSource: "universal-containers",
             maxSize: textureOptions.maxSize ?? null,
             overrides: textureOptions.overrides ?? [],
             quality: textureOptions.quality ?? null,
