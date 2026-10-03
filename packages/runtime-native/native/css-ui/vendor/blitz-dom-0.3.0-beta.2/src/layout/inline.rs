@@ -295,6 +295,17 @@ impl BaseDocument {
 
         // Update inline boxes
         for ibox in inline_layout.layout.inline_boxes_mut() {
+            // A non-atomic inline's edge: no box of its own to lay out, just the space its
+            // margin, border and padding take on that side, resting on the baseline.
+            if let Some(edge) = ibox.edge {
+                let node = &self.nodes[NodeId::from_u64(ibox.id)];
+                let cb_width = child_inputs.parent_size.width.unwrap_or(0.0);
+                let (m, bp) = node
+                    .inline_decoration(cb_width)
+                    .map_or((0.0, 0.0), |d| d.edge(edge == parley::InlineBoxEdge::Start));
+                (ibox.width, ibox.height, ibox.baseline) = ((m + bp) * scale, 0.0, 0.0);
+                continue;
+            }
             let style = self.nodes[NodeId::from_u64(ibox.id)].style();
             let margin = style
                 .margin
@@ -744,6 +755,9 @@ impl BaseDocument {
         for line in inline_layout.layout.lines() {
             for item in line.items() {
                 if let parley::layout::PositionedLayoutItem::InlineBox(ibox) = item {
+                    if ibox.edge.is_some() {
+                        continue;
+                    }
                     let node = &mut self.nodes[NodeId::from_u64(ibox.id)];
                     let padding = node
                         .style()

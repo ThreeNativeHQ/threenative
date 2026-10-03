@@ -821,13 +821,7 @@ impl ElementCx<'_, '_> {
 
             // Render inline element backgrounds (e.g. `<span style="background: ...">`)
             // behind the text and selection highlight.
-            crate::text::draw_inline_backgrounds(
-                scene,
-                painted.lines(),
-                self.context.dom,
-                transform,
-                self.node.id,
-            );
+            self.draw_inline_decorations(scene, painted, transform);
 
             // Render text selection highlight (if any) using cached selection ranges
             if let Some(&(sel_start, sel_end)) = self.context.selection_ranges.get(&self.node.id) {
@@ -845,6 +839,106 @@ impl ElementCx<'_, '_> {
                 self.node.id,
                 &mut draw_text_context,
             );
+        }
+    }
+
+    /// The background and border of every non-atomic inline element in this inline root,
+    /// outermost first, as one box per line fragment (blitz-dom's `inline_fragments`, which is
+    /// `box-decoration-break: slice`): only the first fragment has the start side's border,
+    /// padding and corner radii, and only the last the end side's.
+    fn draw_inline_decorations(
+        &self,
+        scene: &mut impl PaintScene,
+        layout: &parley::Layout<blitz_dom::node::TextBrush>,
+        transform: Affine,
+    ) {
+        use parley::PositionedLayoutItem;
+        let dom = self.context.dom;
+        let root = self.node.id;
+        let mut ids: Vec<NodeId> = Vec::new();
+        for line in layout.lines() {
+            for item in line.items() {
+                let first = match item {
+                    PositionedLayoutItem::GlyphRun(run) => Some(run.style().brush.id),
+                    PositionedLayoutItem::InlineBox(b) if b.edge.is_some() => {
+                        Some(NodeId::from_u64(b.id))
+                    }
+                    PositionedLayoutItem::InlineBox(b) => {
+                        dom.get_node(NodeId::from_u64(b.id)).and_then(|n| n.parent)
+                    }
+                };
+                let (at, mut cur) = (ids.len(), first);
+                while let Some(id) = cur.filter(|id| *id != root && !ids.contains(id)) {
+                    ids.insert(at, id);
+                    cur = dom.get_node(id).and_then(|n| n.parent);
+                }
+            }
+        }
+
+        let root_layout = self.node.final_layout();
+        let cb_width = root_layout.size.width
+            - (root_layout.padding + root_layout.border)
+                .horizontal_components()
+                .sum();
+        for id in ids {
+            let Some(node) = dom.get_node(id) else { continue };
+            let Some(style) = node.primary_styles() else { continue };
+            let Some(deco) = node.inline_decoration(cb_width) else { continue };
+            let b = deco.border;
+            let has_border = b.left + b.right + b.top + b.bottom > 0.0;
+            let bg = style.get_background();
+            let bg_color = bg.background_color.resolve_to_absolute(&style.clone_color());
+            let has_background = bg_color.as_srgb_color() != Color::TRANSPARENT
+                || bg.background_image.0.iter().any(|i| {
+                    !matches!(i, style::values::computed::Image::None)
+                });
+            if !style.clone_display().is_inline_flow()
+                || style.get_inherited_box().visibility != StyloVisibility::Visible
+                || !(has_border || has_background)
+            {
+                continue;
+            }
+
+            let fragments = dom.inline_fragments(layout, self.node, id);
+            let last = fragments.len().saturating_sub(1);
+            for (i, r) in fragments.iter().enumerate() {
+                let (start, end) = (i == 0, i == last);
+                let (left, right) = if deco.rtl { (end, start) } else { (start, end) };
+                let (mut border, mut padding) = (deco.border, deco.padding);
+                if !left {
+                    (border.left, padding.left) = (0.0, 0.0);
+                }
+                if !right {
+                    (border.right, padding.right) = (0.0, 0.0);
+                }
+                let fragment = Layout {
+                    size: taffy::Size {
+                        width: (r.width() / self.scale) as f32,
+                        height: (r.height() / self.scale) as f32,
+                    },
+                    border,
+                    padding,
+                    ..Layout::new()
+                };
+                let mut cx = self.context.element_cx(
+                    node,
+                    fragment,
+                    transform * Affine::translate((r.x0, r.y0)),
+                    None,
+                );
+                let f = &cx.frame;
+                let mut radii = f.border_radii;
+                if !left {
+                    (radii.top_left, radii.bottom_left) = (Vec2::ZERO, Vec2::ZERO);
+                }
+                if !right {
+                    (radii.top_right, radii.bottom_right) = (Vec2::ZERO, Vec2::ZERO);
+                }
+                let (border_box, border, padding) = (f.border_box, f.border_width, f.padding_width);
+                cx.frame = CssBox::new(border_box, border, padding, 0.0, 0.0, radii);
+                cx.draw_background(scene);
+                cx.draw_border(scene);
+            }
         }
     }
 

@@ -628,6 +628,7 @@ impl<B: Brush> LayoutData<B> {
         let mut running_max_width = 0.0;
         let mut text_wrap_mode = TextWrapMode::Wrap;
         let mut prev_cluster: Option<&ClusterData> = None;
+        let mut start_edges = 0.0;
         let is_rtl = self.base_level & 1 == 1;
         for item in &self.items {
             match item.kind {
@@ -655,7 +656,7 @@ impl<B: Brush> LayoutData<B> {
                                 running_max_width = 0.0;
                             }
                         }
-                        running_min_width += cluster.advance;
+                        running_min_width += cluster.advance + core::mem::take(&mut start_edges);
                         running_max_width += cluster.advance;
                         if !is_rtl {
                             prev_cluster = Some(cluster);
@@ -666,7 +667,14 @@ impl<B: Brush> LayoutData<B> {
                 }
                 LayoutItemKind::InlineBox => {
                     let ibox = &self.inline_boxes[item.index];
-                    if ibox.kind == InlineBoxKind::InFlow {
+                    if let Some(edge) = ibox.edge {
+                        // An edge is no break opportunity: it joins the word it opens or closes.
+                        running_max_width += ibox.width;
+                        match edge {
+                            crate::InlineBoxEdge::Start => start_edges += ibox.width,
+                            crate::InlineBoxEdge::End => running_min_width += ibox.width,
+                        }
+                    } else if ibox.kind == InlineBoxKind::InFlow {
                         running_max_width += ibox.width;
                         if text_wrap_mode == TextWrapMode::Wrap {
                             let trailing_whitespace = whitespace_advance(prev_cluster);
@@ -677,7 +685,9 @@ impl<B: Brush> LayoutData<B> {
                             running_min_width += ibox.width;
                         }
                     }
-                    prev_cluster = None;
+                    if ibox.edge.is_none() {
+                        prev_cluster = None;
+                    }
                 }
             }
             let trailing_whitespace = whitespace_advance(prev_cluster);
@@ -685,7 +695,7 @@ impl<B: Brush> LayoutData<B> {
         }
 
         let trailing_whitespace = whitespace_advance(prev_cluster);
-        min_width = min_width.max(running_min_width - trailing_whitespace);
+        min_width = min_width.max(running_min_width + start_edges - trailing_whitespace);
 
         ContentWidths {
             min: min_width,

@@ -2268,8 +2268,6 @@ impl BaseDocument {
     /// the containing inline root's text layout. Returns `None` for nodes that have
     /// their own layout box (which should use `get_client_bounding_rect` instead).
     pub fn inline_fragment_rects(&self, node_id: NodeId) -> Option<Vec<BoundingRect>> {
-        use parley::PositionedLayoutItem;
-
         let node = self.get_node(node_id)?;
 
         // Only non-atomic inline elements lack their own layout box: they are
@@ -2286,6 +2284,43 @@ impl BaseDocument {
         let inline_root = node.inline_root_ancestor()?;
         let inline_layout = inline_root.element_data()?.inline_layout_data.as_ref()?;
         let layout = &inline_layout.layout;
+        let scale = layout.scale() as f64;
+
+        // Fragment rects are relative to the inline root's content box.
+        let root_layout = inline_root.final_layout();
+        let root_pos = inline_root.absolute_position(0.0, 0.0);
+        let origin_x = root_pos.x as f64
+            + (root_layout.padding.left + root_layout.border.left) as f64
+            - self.viewport_scroll.x;
+        let origin_y = root_pos.y as f64
+            + (root_layout.padding.top + root_layout.border.top) as f64
+            - self.viewport_scroll.y;
+
+        let rects = self.inline_fragments(layout, inline_root, node_id);
+        Some(
+            rects
+                .into_iter()
+                .map(|r| BoundingRect {
+                    x: origin_x + r.x0 / scale,
+                    y: origin_y + r.y0 / scale,
+                    width: (r.x1 - r.x0) / scale,
+                    height: (r.y1 - r.y0) / scale,
+                })
+                .collect(),
+        )
+    }
+
+    /// The border box of a non-atomic inline element, one fragment per line it is on, in
+    /// `layout`'s own coordinates (relative to `inline_root`'s content box, scaled). The first
+    /// fragment carries the start edge and the last the end edge, which is
+    /// `box-decoration-break: slice`, the browsers' default.
+    pub fn inline_fragments(
+        &self,
+        layout: &parley::Layout<TextBrush>,
+        inline_root: &Node,
+        node_id: NodeId,
+    ) -> Vec<parley::BoundingBox> {
+        use parley::PositionedLayoutItem;
         let scale = layout.scale() as f64;
 
         // Walk up the DOM parent chain from `id` to check whether it is (or is
@@ -2305,28 +2340,25 @@ impl BaseDocument {
             }
         };
 
-        // Fragment rects are relative to the inline root's content box.
         let root_layout = inline_root.final_layout();
-        let root_pos = inline_root.absolute_position(0.0, 0.0);
-        let origin_x = root_pos.x as f64
-            + (root_layout.padding.left + root_layout.border.left) as f64
-            - self.viewport_scroll.x;
-        let origin_y = root_pos.y as f64
-            + (root_layout.padding.top + root_layout.border.top) as f64
-            - self.viewport_scroll.y;
+        let cb_width = root_layout.size.width
+            - root_layout.padding.left
+            - root_layout.padding.right
+            - root_layout.border.left
+            - root_layout.border.right;
+        let deco = self.get_node(node_id).and_then(|n| n.inline_decoration(cb_width));
 
-        let mut rects: Vec<BoundingRect> = Vec::new();
+        let mut rects = Vec::new();
         for line in layout.lines() {
             let line_metrics = line.metrics();
-            // Union all of the target's fragments on this line into a single rect
-            let mut line_rect: Option<(f64, f64, f64, f64)> = None;
-            let mut add = |x0: f64, y0: f64, x1: f64, y1: f64| {
-                line_rect = Some(match line_rect {
-                    Some((lx0, ly0, lx1, ly1)) => {
-                        (lx0.min(x0), ly0.min(y0), lx1.max(x1), ly1.max(y1))
-                    }
-                    None => (x0, y0, x1, y1),
-                });
+            let content_end = (line_metrics.inline_min_coord + line_metrics.offset
+                + line_metrics.advance
+                - line_metrics.trailing_whitespace) as f64;
+            // Union all of the target's fragments on this line: x from every item, y only from
+            // those with a block extent (an edge has none).
+            let (mut xs, mut ys): (Option<(f64, f64)>, Option<(f64, f64)>) = (None, None);
+            let union = |r: &mut Option<(f64, f64)>, a: f64, b: f64| {
+                *r = Some(r.map_or((a, b), |(lo, hi)| (lo.min(a), hi.max(b))));
             };
 
             for item in line.items() {
@@ -2336,45 +2368,70 @@ impl BaseDocument {
                             continue;
                         }
                         let x0 = glyph_run.offset() as f64;
-                        let x1 = x0 + glyph_run.advance() as f64;
+                        // The whitespace a line ends with hangs outside every box on it.
+                        let x1 = (x0 + glyph_run.advance() as f64).min(content_end);
                         // A non-atomic inline's box is the font box of its text: the run's own
                         // ascent and descent either side of the line's baseline, with no
                         // line-height leading. Using the line box's block extent here instead
                         // (the leading-included extent text selection highlights use) made every
                         // inline element report its line's height, which is not what
-                        // `getClientRects()` returns in a browser.
+                        // `getClientRects()` returns in a browser. Chromium rounds the ascent and
+                        // descent at the CSS font size, as parley's own line metrics do.
                         let run_metrics = glyph_run.run().metrics();
-                        let y0 = (line_metrics.baseline - run_metrics.ascent) as f64;
-                        let y1 = (line_metrics.baseline + run_metrics.descent) as f64;
-                        add(x0, y0, x1, y1);
+                        let round = |v: f32| (v as f64 / scale).round() * scale;
+                        let y0 = line_metrics.baseline as f64 - round(run_metrics.ascent);
+                        let y1 = line_metrics.baseline as f64 + round(run_metrics.descent);
+                        union(&mut xs, x0, x1);
+                        union(&mut ys, y0, y1);
                     }
                     PositionedLayoutItem::InlineBox(inline_box) => {
                         if !is_in_target(NodeId::from_u64(inline_box.id)) {
                             continue;
                         }
                         let x0 = inline_box.x as f64;
-                        let y0 = inline_box.y as f64;
-                        add(
-                            x0,
-                            y0,
-                            x0 + inline_box.width as f64,
-                            y0 + inline_box.height as f64,
-                        );
+                        let x1 = x0 + inline_box.width as f64;
+                        match (inline_box.edge, deco) {
+                            // The element's own edge: its margin is outside the border box.
+                            (Some(edge), Some(d)) if inline_box.id == node_id.as_u64() => {
+                                let start = edge == parley::InlineBoxEdge::Start;
+                                let m = d.edge(start).0 as f64 * scale;
+                                if start != d.rtl {
+                                    union(&mut xs, x0 + m, x1);
+                                } else {
+                                    union(&mut xs, x0, x1 - m);
+                                }
+                            }
+                            (Some(_), _) => union(&mut xs, x0, x1),
+                            (None, _) => {
+                                union(&mut xs, x0, x1);
+                                let y0 = inline_box.y as f64;
+                                union(&mut ys, y0, y0 + inline_box.height as f64);
+                            }
+                        }
                     }
                 }
             }
 
-            if let Some((x0, y0, x1, y1)) = line_rect {
-                rects.push(BoundingRect {
-                    x: origin_x + x0 / scale,
-                    y: origin_y + y0 / scale,
-                    width: (x1 - x0) / scale,
-                    height: (y1 - y0) / scale,
+            if let Some((x0, x1)) = xs {
+                // A line with only edges on it takes the line's own font box.
+                let (y0, y1) = ys.unwrap_or((
+                    (line_metrics.baseline - line_metrics.ascent) as f64,
+                    (line_metrics.baseline + line_metrics.descent) as f64,
+                ));
+                // Vertical padding and border paint around the font box without moving it.
+                let (top, bottom) = deco.map_or((0.0, 0.0), |d| {
+                    (d.border.top + d.padding.top, d.border.bottom + d.padding.bottom)
                 });
+                rects.push(parley::BoundingBox::new(
+                    x0,
+                    y0 - top as f64 * scale,
+                    x1,
+                    y1 + bottom as f64 * scale,
+                ));
             }
         }
 
-        Some(rects)
+        rects
     }
 
     /// The first element in tree order with the given tag name. The root element and

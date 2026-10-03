@@ -18,7 +18,7 @@ use crate::layout::{
     LineMetrics, Run,
 };
 use crate::style::Brush;
-use crate::{InlineBoxKind, OverflowWrap, TextWrapMode};
+use crate::{InlineBoxEdge, InlineBoxKind, OverflowWrap, TextWrapMode};
 
 use core::ops::Range;
 
@@ -168,6 +168,9 @@ pub struct BreakerState {
     prev_boundary: Option<PrevBoundaryState>,
     /// Saved breaker state for the last emergency line-breaking opportunity
     emergency_boundary: Option<PrevBoundaryState>,
+    /// The state before the start edges (`InlineBoxEdge::Start`) appended since the last
+    /// cluster: a text break opportunity right after them is taken before them.
+    start_edge_boundary: Option<PrevBoundaryState>,
 }
 
 impl Default for BreakerState {
@@ -186,6 +189,7 @@ impl Default for BreakerState {
             line: LineState::default(),
             prev_boundary: None,
             emergency_boundary: None,
+            start_edge_boundary: None,
         }
     }
 }
@@ -198,6 +202,7 @@ impl BreakerState {
         self.cluster_idx += 1;
         self.line.x = next_x;
         self.add_line_height(clusters_height);
+        self.start_edge_boundary = None;
     }
 
     /// Add inline box to line
@@ -350,6 +355,7 @@ impl<'a, B: Brush> BreakLines<'a, B> {
         self.state.line.running_line_height = 0.;
         self.state.prev_boundary = None;
         self.state.emergency_boundary = None;
+        self.state.start_edge_boundary = None;
 
         self.finish_line(self.lines.lines.len() - 1, self.state.line.running_line_height);
         // The strut, and each item's own half-leading, can make a line taller than the largest
@@ -526,12 +532,33 @@ impl<'a, B: Brush> BreakLines<'a, B> {
                     if next_x <= max_advance || self.state.line.text_wrap_mode != TextWrapMode::Wrap
                     {
                         // println!("BOX FITS");
+                        if inline_box.edge == Some(InlineBoxEdge::Start)
+                            && self.state.line.x != 0.0
+                            && self.state.start_edge_boundary.is_none()
+                        {
+                            self.state.start_edge_boundary = Some(PrevBoundaryState {
+                                item_idx: self.state.item_idx,
+                                run_idx: self.state.run_idx,
+                                cluster_idx: self.state.cluster_idx,
+                                state: self.state.line.clone(),
+                            });
+                        }
 
                         self.state
                             .append_inline_box_to_line(next_x, height_contribution);
 
-                        // We can always line break after an inline box
-                        self.state.mark_line_break_opportunity();
+                        // We can always line break after an inline box, but not after an edge
+                        if inline_box.edge.is_none() {
+                            self.state.start_edge_boundary = None;
+                            self.state.mark_line_break_opportunity();
+                        }
+                    } else if inline_box.edge == Some(InlineBoxEdge::End)
+                        && self.state.prev_boundary.is_some()
+                    {
+                        // An end edge stays with the content it closes.
+                        let prev = self.state.prev_boundary.take().unwrap();
+                        self.state.reset_to(prev);
+                        return self.start_new_line(BreakReason::Regular, max_advance, line_indent);
                     } else {
                         // If we're at the start of the line, this box will never fit, so consume it and accept the overflow.
                         let reason = if self.state.line.x == 0.0 {
@@ -579,7 +606,9 @@ impl<'a, B: Brush> BreakLines<'a, B> {
                             //
                             // We also don't record boundaries when the advance is 0. As we do not want overflowing content to cause extra consecutive
                             // line breaks. We should accept the overflowing fragment in that scenario.
-                            if !is_ligature_continuation && self.state.line.x != 0.0 {
+                            if let Some(edge) = self.state.start_edge_boundary.take() {
+                                self.state.prev_boundary = Some(edge);
+                            } else if !is_ligature_continuation && self.state.line.x != 0.0 {
                                 self.state.mark_line_break_opportunity();
                                 // break_opportunity = true;
                             }

@@ -26,7 +26,8 @@ blank lines and the licence files excluded:
 `diff -ru -x Cargo.lock -x .cargo-ok -x 'LICENSE*' ~/.cargo/registry/src/*/<crate> vendor/<crate>`,
 counting the `+` lines that are neither blank nor a comment.
 
-Two hunks are over the ~80-line guideline: parley hunk 1 below, and blitz-dom hunk 11. Hunk 11 is
+Four hunks are over the ~80-line guideline: parley hunk 1 below, blitz-dom hunk 11, and the two
+halves of the inline box decoration (blitz-dom hunk 14, blitz-paint hunk 3). Hunk 11 is
 the hit-test clip, and the overage is the rounded-rectangle test (~20 of those lines): a
 `border-radius` may round a corner to an ellipse, so one point needs both radii to be answered, and
 answering it in the shared walk is what keeps a click in a clipped-away corner from being one hit
@@ -36,8 +37,13 @@ radius half working for the element's own box only. Parley hunk 1 is ~130 lines,
 shared `leading_box` helper that replaced two copies of the same half-leading arithmetic; four
 fixtures now depend on it (`box-model-and-sizing`, `inline-runs`, `text-line-height-normal`,
 `dpr-2-layout-and-paint`), and its three separable parts each fail one of them on their own.
+Blitz-dom hunk 14 is ~164 lines, of which ~50 are `Node::inline_decoration` (twelve sides resolved
+from Stylo, because a span is never a Taffy node and so has no Taffy style to read) and ~35 are the
+old `inline_fragment_rects` loop moved into `inline_fragments` so paint can share it; blitz-paint
+hunk 3 is ~94, almost all of it `draw_inline_decorations`, and deletes the 40-line
+`draw_inline_backgrounds` it replaces.
 
-## `blitz-paint-0.3.0-beta.2` — 31 added code lines
+## `blitz-paint-0.3.0-beta.2` — 125 added code lines
 
 ### 1. `outline-offset` was ignored: the outline was drawn inside the border box
 
@@ -64,7 +70,26 @@ fixtures now depend on it (`box-model-and-sizing`, `inline-runs`, `text-line-hei
   the uncut line, which is what keeps a resize honest.
 * **Proves it:** `text-ellipsis` — SSIM 0.9603 → 0.9947, fixture passes on the strict 0.99 bar.
 
-## `blitz-dom-0.3.0-beta.2` — 336 added code lines
+### 3. a non-atomic inline painted a text-width background and no border at all
+
+* **Where:** `src/render.rs` (the new `ElementCx::draw_inline_decorations`, called from
+  `draw_inline_layout`), `src/text.rs` (`draw_inline_backgrounds` deleted).
+* **Why:** an inline element's background was one rectangle per glyph run, the run's own font box
+  and nothing else: no padding, no border, no `border-radius`, and an inline nested in another left
+  a hole in its parent's background. Each inline element in the layout is now painted per line
+  fragment (blitz-dom hunk 14's `inline_fragments`) through the same `ElementCx` a block box uses —
+  `create_css_rect`, `draw_background`, `draw_border` — on a `taffy::Layout` built for the fragment.
+  The sides are `box-decoration-break: slice`, Chromium's default: only the first fragment carries
+  the start side's border, padding and corner radii, only the last the end side's (swapped for
+  `direction: rtl`). Outermost elements paint first. An element with no background and no border
+  costs one style read. Box shadows and outlines of inlines are still not painted.
+* **Proves it:** `inline-margins` (SSIM 0.9532 → 0.9964), `inline-borders-radius` (0.9892: a
+  different colour per border side and a pill radius) and `inline-margins-wrap` (0.9806: a rounded,
+  bordered span sliced across two lines), plus
+  `tests/inline_box.rs::an_inline_paints_its_border_and_its_padding_box`, which fails against the
+  previous vendor sources.
+
+## `blitz-dom-0.3.0-beta.2` — 493 added code lines
 
 ### 1. hoisted (`z-index`) children were painted one frame late, at the wrong offset
 
@@ -263,12 +288,42 @@ fixtures now depend on it (`box-model-and-sizing`, `inline-runs`, `text-line-hei
   Latin-only one 22px (SSIM 0.5536 with `FontSizeRelative(1.2)`), and `ua-defaults`' bare `<button>`
   is its 21px, which is what the UA sheet's `line-height: normal` is for.
 
-## `parley-0.11.1` — 183 added code lines
+### 14. a non-atomic inline's horizontal margin, border and padding took no space in the line
+
+* **Where:** `src/layout/construct.rs` (the non-replaced `(Inline, Flow)` branch pushes an edge box
+  either side of the span's content; `edge: None` on the two existing `InlineBox` literals),
+  `src/layout/inline.rs` (the inline-box sizing loop sizes an
+  edge from the element's decoration instead of laying out a node; the placement loop skips it),
+  `src/node/node.rs` (the new `InlineDecoration` and `Node::inline_decoration`), `src/document.rs`
+  (`inline_fragment_rects` now delegates to the new `inline_fragments`, which paint shares).
+* **Why:** a `<span>` is a style span in its inline root's parley layout, and parley has no inline
+  start/end spacing, so `a<span style="margin:0 20px">b</span>c` and `padding: 0 12px` both laid out
+  as `abc` with nothing between — every Tailwind badge (`px-2 rounded bg-…` on a span) came out
+  text-tight. Each span whose start or end side has a non-zero margin + border + padding now gets a
+  zero-height `parley::InlineBox` at that edge (`edge: Some(Start | End)`, parley hunk 4), whose
+  width is that sum, resolved in `inline.rs` with percentages against the inline root's content
+  width (the containing block; 0 while that width is indefinite, i.e. during intrinsic sizing).
+  `direction: rtl` puts the start edge's sum on the right side. `inline_fragments` is the old
+  per-line union, with the element's own edges counted minus their margin, its vertical padding and
+  border added around the font box (which paints without moving the line, as in a browser), the
+  whitespace a line ends with excluded (it hangs outside every box), and the run's ascent and
+  descent rounded at the CSS font size as Chromium rounds them — so `getClientRects()`/`node_box`
+  is the border box, margin excluded.
+* **Proves it:** `inline-margins` — 2 edge misses → 0, SSIM 0.9532 → 0.9964, fixture passes;
+  `inline-borders-radius` and `inline-margins-wrap` (0 edge misses each). Unrounded ascent/descent
+  puts the wrapped fragment's bottom border a device pixel low (`inline-margins-wrap` 0.9806 →
+  0.9765), and counting the hanging space draws the first fragment 3px too wide (→ 0.9794).
+  `tests/inline_box.rs::an_inline_reserves_its_margin_border_and_padding_in_the_line` fails against
+  the previous vendor sources. Known limits: a click on a span's padding hits the inline root rather
+  than the span (parley's cluster hit test skips inline boxes), and RTL is implemented but no
+  fixture measures it.
+
+## `parley-0.11.1` — 240 added code lines
 
 Hunk 1 is the one over the guideline and it is separable in three pieces, each of which a fixture
 fails on its own: the strut (`box-model-and-sizing`), the order and scale of the quantisation
 (`inline-runs`, `dpr-2-layout-and-paint`) and the metrics-relative line height
-(`text-line-height-normal`). Hunk 2 is 10 lines and hunk 3 ~40, each on its own.
+(`text-line-height-normal`). Hunk 2 is 10 lines, hunk 3 ~40 and hunk 4 ~57, each on its own.
 
 ### 1. line boxes had no strut, and the half-leading was quantised in the wrong order and at the wrong scale
 
@@ -342,6 +397,25 @@ fails on its own: the strut (`box-model-and-sizing`), the order and scale of the
   0.9847; 0.839 with two edge misses when `finish_line` reads `ascent`/`descent` instead of
   `box_ascent`/`box_descent`). `text-line-height-normal` is the other half and stays green either
   way, which is what makes the exception in this hunk a measured one rather than an assumption.
+
+### 4. an inline element's edges had no way into a line
+
+* **Where:** `src/inline_box.rs` (`InlineBox::edge` and the new `InlineBoxEdge`, re-exported from
+  `src/lib.rs`), `src/layout/line.rs` (`PositionedInlineBox::edge`), `src/builder.rs`
+  (`TreeBuilder::push_inline_edge`), `src/layout/line_break.rs` (`start_edge_boundary`, and no
+  break opportunity after an edge), `src/layout/data.rs` (`calculate_content_widths`).
+* **Why:** blitz-dom hunk 14 reserves a span's margin, border and padding as inline boxes, and an
+  ordinary inline box is wrong three ways for that. It is a break opportunity after itself, so a
+  span wrapping at its first word left its start edge — padding and border — stranded at the end of
+  the line above; a browser breaks *before* the edge, because the break opportunity belongs to the
+  text and the edge travels with the content it opens. So a text break that lands right after one
+  or more start edges is taken before them (`start_edge_boundary`), and no edge marks a break of its
+  own; an end edge that overflows takes the last break before the content it closes. It also resets
+  white-space collapsing, so `a <span> b</span>` would keep both spaces; `push_inline_edge` leaves
+  that state alone (an end edge commits the span's text as its last, as popping it would). And it
+  splits the min-content width, where an edge now joins the word it opens or closes.
+* **Proves it:** `inline-margins-wrap`'s second paragraph wraps at the span's first word: with the
+  start-edge boundary disabled it is 1 edge miss and SSIM 0.9202 (0.9806 with it, fixture passes).
 
 ## `taffy-0.14.0` — 4 added code lines
 

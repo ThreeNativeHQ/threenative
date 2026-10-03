@@ -239,6 +239,16 @@ impl<'b, B: Brush> TreeBuilder<'b, B> {
         self.lcx.inline_boxes.push(inline_box);
     }
 
+    /// Push an [`InlineBox::edge`] box. Unlike [`Self::push_inline_box`] it leaves white-space
+    /// collapsing as it was, since an inline element's edges do not separate its text from its
+    /// neighbours'; an end edge commits the span's text as the span's last (as popping it would).
+    pub fn push_inline_edge(&mut self, mut inline_box: InlineBox) {
+        let is_end = inline_box.edge == Some(crate::InlineBoxEdge::End);
+        self.lcx.tree_style_builder.push_uncommitted_text(is_end);
+        inline_box.index = self.lcx.tree_style_builder.current_text_len();
+        self.lcx.inline_boxes.push(inline_box);
+    }
+
     pub fn set_white_space_mode(&mut self, white_space_collapse: WhiteSpaceCollapse) {
         self.lcx
             .tree_style_builder

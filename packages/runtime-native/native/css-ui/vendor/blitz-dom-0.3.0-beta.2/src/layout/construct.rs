@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use markup5ever::{QualName, local_name, ns};
 use parley::{
-    FontContext, InlineBox, InlineBoxKind, LayoutContext, StyleProperty, TreeBuilder,
+    FontContext, InlineBox, InlineBoxEdge, InlineBoxKind, LayoutContext, StyleProperty, TreeBuilder,
     WhiteSpaceCollapse,
 };
 use style::{
@@ -1195,6 +1195,7 @@ pub(crate) fn build_inline_layout_into(
                                 width: 0.0,
                                 height: 0.0,
                                 baseline: 0.0,
+                                edge: None,
                             });
                         } else if *tag_name == local_name!("br") {
                             // node.remove_damage(CONSTRUCT_DESCENDENT | CONSTRUCT_FC | CONSTRUCT_BOX);
@@ -1226,6 +1227,29 @@ pub(crate) fn build_inline_layout_into(
                             // dbg!(&style);
 
                             builder.push_style_span(style);
+
+                            // The space the element's start and end margin, border and padding
+                            // take in the line: one edge box each side, sized in `inline.rs`.
+                            // Any percentage counts as non-zero here, whatever it resolves to.
+                            let decoration = node.inline_decoration(100.0);
+                            let push_edge = |builder: &mut TreeBuilder<TextBrush>, start: bool| {
+                                let (m, bp) = decoration.map_or((0.0, 0.0), |d| d.edge(start));
+                                if m != 0.0 || bp != 0.0 {
+                                    builder.push_inline_edge(InlineBox {
+                                        id: node_id.as_u64(),
+                                        kind: InlineBoxKind::InFlow,
+                                        index: 0,
+                                        width: 0.0,
+                                        height: 0.0,
+                                        baseline: 0.0,
+                                        edge: Some(match start {
+                                            true => InlineBoxEdge::Start,
+                                            false => InlineBoxEdge::End,
+                                        }),
+                                    });
+                                }
+                            };
+                            push_edge(builder, true);
 
                             if let Some(before_id) = node.before() {
                                 build_inline_layout_recursive(
@@ -1262,6 +1286,7 @@ pub(crate) fn build_inline_layout_into(
                                 );
                             }
 
+                            push_edge(builder, false);
                             builder.pop_style_span();
                         }
                     }
@@ -1276,6 +1301,7 @@ pub(crate) fn build_inline_layout_into(
                             width: 0.0,
                             height: 0.0,
                             baseline: 0.0,
+                            edge: None,
                         });
                     }
                 };

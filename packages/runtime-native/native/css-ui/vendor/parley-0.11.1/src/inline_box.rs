@@ -20,6 +20,20 @@ pub struct InlineBox {
     /// `height` (the bottom margin edge), which is what CSS 2.1 §10.8.1 prescribes for an atomic
     /// inline with no in-flow line boxes or a non-visible `overflow` — and for a replaced element.
     pub baseline: f32,
+    /// `Some` when the box is not content but one edge of a non-atomic inline element: the space
+    /// its start or end margin, border and padding take in the line. An edge is never a line
+    /// break opportunity of its own, and a start edge moves to the next line with the content it
+    /// opens.
+    pub edge: Option<InlineBoxEdge>,
+}
+
+/// Which edge of a non-atomic inline element an [`InlineBox`] carries.
+#[derive(PartialEq, Debug, Clone, Copy)]
+pub enum InlineBoxEdge {
+    /// The inline-start edge, glued to the content after it.
+    Start,
+    /// The inline-end edge, glued to the content before it.
+    End,
 }
 
 /// Whether a box is in-flow (takes up space in the layout) or out-of-flow (e.g. absolutely positioned)

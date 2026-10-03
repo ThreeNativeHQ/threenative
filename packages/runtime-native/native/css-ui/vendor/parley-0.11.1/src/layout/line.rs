@@ -231,6 +231,8 @@ pub struct PositionedInlineBox {
     pub height: f32,
     pub id: u64,
     pub kind: InlineBoxKind,
+    /// The input box's [`crate::InlineBox::edge`].
+    pub edge: Option<crate::InlineBoxEdge>,
 }
 
 /// Sequence of fully positioned glyphs with the same style.
@@ -325,6 +327,7 @@ impl<'a, B: Brush> Iterator for GlyphRunIter<'a, B> {
                         height: inline_box.height,
                         id: inline_box.id,
                         kind: inline_box.kind,
+                        edge: inline_box.edge,
                     }));
                 }
                 LineItem::Run(run) => {

@@ -604,4 +604,35 @@ export const FIXTURES = [
       }),
     ],
   },
+  {
+    name: "inline-borders-radius",
+    size: [360, 80],
+    css: `
+      p{margin:0 0 10px;width:340px;background:#2a2a30;color:#fff}
+      .b{border:2px solid;border-color:#ef4444 #22c55e #3b82f6 #eab308;border-radius:6px;padding:2px 8px;background:#7c3aed}
+      .t{padding:2px 8px;border-radius:9999px;background:#0ea5e9}
+    `,
+    tree: [
+      h("p", {}, t("a"), h("span", { class: "b" }, t("badge")), t("c")),
+      h("p", {}, t("Status "), h("span", { class: "t" }, t("OK")), t(" done")),
+    ],
+  },
+  {
+    name: "inline-margins-wrap",
+    size: [240, 120],
+    css: `
+      p{margin:0;width:200px;background:#2a2a30;color:#fff;line-height:24px}
+      .w{border:2px solid #f59e0b;border-radius:6px;padding:2px 8px;background:#1e3a8a}
+    `,
+    tree: [
+      h(
+        "p",
+        {},
+        t("Before text "),
+        h("span", { class: "w" }, t("several words that wrap here")),
+        t(" after."),
+      ),
+      h("p", {}, t("Long lead-in words "), h("span", { class: "w" }, t("wrapping")), t(".")),
+    ],
+  },
 ];

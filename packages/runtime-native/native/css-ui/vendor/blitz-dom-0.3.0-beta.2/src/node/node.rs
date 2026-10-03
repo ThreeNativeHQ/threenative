@@ -773,6 +773,67 @@ pub enum NodeData {
     // ProcessingInstruction { target: String, contents: String },
 }
 
+/// A non-atomic inline element's margin, border and padding in CSS px. Its horizontal sides are
+/// the space its edges (`parley::InlineBoxEdge`) take in the line; its vertical ones only paint.
+#[derive(Debug, Clone, Copy)]
+pub struct InlineDecoration {
+    pub margin: taffy::Rect<f32>,
+    pub border: taffy::Rect<f32>,
+    pub padding: taffy::Rect<f32>,
+    /// The inline axis runs right to left, so the start side is the right one.
+    pub rtl: bool,
+}
+
+impl InlineDecoration {
+    /// The margin, and the border plus padding, on the inline-start or inline-end side.
+    pub fn edge(&self, start: bool) -> (f32, f32) {
+        let (m, b, p) = (self.margin, self.border, self.padding);
+        if start != self.rtl {
+            (m.left, b.left + p.left)
+        } else {
+            (m.right, b.right + p.right)
+        }
+    }
+}
+
+impl Node {
+    /// This element's [`InlineDecoration`], percentages resolved against `cb_width` (the inline
+    /// root's content width: CSS 2.1 §8.3 resolves every side against the containing block's
+    /// width).
+    pub fn inline_decoration(&self, cb_width: f32) -> Option<InlineDecoration> {
+        use stylo_taffy::convert::{border, length_percentage, margin};
+        use taffy::ResolveOrZero as _;
+        let s = self.primary_styles()?;
+        let (m, p, b) = (s.get_margin(), s.get_padding(), s.get_border());
+        let calc = crate::layout::resolve_calc_value;
+        let cb = Some(cb_width);
+        let mar = |v| margin(v).resolve_or_zero(cb, calc);
+        let pad = |v| length_percentage(v).resolve_or_zero(cb, calc);
+        let bor = |w, s| border(w, s).resolve_or_zero(cb, calc);
+        Some(InlineDecoration {
+            margin: taffy::Rect {
+                left: mar(&m.margin_left),
+                right: mar(&m.margin_right),
+                top: mar(&m.margin_top),
+                bottom: mar(&m.margin_bottom),
+            },
+            border: taffy::Rect {
+                left: bor(&b.border_left_width, b.border_left_style),
+                right: bor(&b.border_right_width, b.border_right_style),
+                top: bor(&b.border_top_width, b.border_top_style),
+                bottom: bor(&b.border_bottom_width, b.border_bottom_style),
+            },
+            padding: taffy::Rect {
+                left: pad(&p.padding_left.0),
+                right: pad(&p.padding_right.0),
+                top: pad(&p.padding_top.0),
+                bottom: pad(&p.padding_bottom.0),
+            },
+            rtl: s.clone_direction() == style::computed_values::direction::T::Rtl,
+        })
+    }
+}
+
 impl NodeData {
     pub fn downcast_element(&self) -> Option<&ElementData> {
         match self {
