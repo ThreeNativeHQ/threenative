@@ -771,6 +771,29 @@ describe("CI pipeline structure", () => {
     expect(group).toContain("!github.event.pull_request.draft && 'latest'");
   });
 
+  it("warms the base-branch caches from a develop push, and lets no push cancel another", async () => {
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    // `develop` is the only branch a push may name besides main, and it is the base branch every
+    // pull request reads its caches from.
+    const push = /^ {2}push:\n(?: {4}.*\n)*/mu.exec(commandText(triggerSection(ci)))?.[0] ?? "";
+    expect([...push.matchAll(/^ {6}- (\S+)$/gmu)].map((match) => match[1])).toEqual([
+      "main",
+      "develop",
+    ]);
+    // The warm lane is the two jobs that publish those caches, plus the reporting job. Nothing else
+    // runs, so a develop push costs the native build once rather than a whole board.
+    for (const name of ["build-artifacts", "test-native", "run-summary"]) {
+      expect(requiredJob(ci, name), `${name} never runs on a develop push`).toContain(
+        "needs.scope.outputs.selection == 'warm'",
+      );
+    }
+    expect(duplicateCommitTriggers(ci)).toEqual([]);
+    // Each push run gets its own concurrency group (the group ends in its run id unless it is a
+    // ready pull request) and nothing but a pull request cancels in progress, so a second push to
+    // develop cannot kill the first one while it is saving.
+    expect(ci).toContain("cancel-in-progress: ${{ github.event_name == 'pull_request' }}");
+  });
+
   it("does not require skipped performance lanes on a prose-only run", async () => {
     const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
     const summary = requiredJob(ci, "run-summary");
@@ -3568,7 +3591,7 @@ describe("PRD-373 selective feature verification", () => {
     }
   });
 
-  it.each(["push", "schedule", "workflow_dispatch"])(
+  it.each(["schedule", "workflow_dispatch"])(
     "requires native for the %s event however clean the diff is",
     async (event) => {
       const fixture = await scopeFixture();
@@ -3587,6 +3610,37 @@ describe("PRD-373 selective feature verification", () => {
       }
     },
   );
+
+  it("requires native for a push to main, and warms nothing but caches on a push to develop", async () => {
+    const fixture = await scopeFixture();
+    try {
+      const head = await commitScopeChange(
+        fixture,
+        "packages/core/src/x.ts",
+        "export {};\n",
+        "core",
+      );
+      const main = classifyScope(fixture.root, fixture.base, head, [
+        "--target",
+        "main",
+        "--event-name",
+        "push",
+      ]);
+      expect(main).toMatchObject({ selection: "full", native: true });
+      // The cache-warm lane (PRD-481 phase 2) is the one narrowed push, and it owes no native row:
+      // it publishes the base-branch caches and verifies nothing.
+      const develop = classifyScope(fixture.root, fixture.base, head, [
+        "--target",
+        "develop",
+        "--event-name",
+        "push",
+      ]);
+      expect(develop).toMatchObject({ selection: "warm", native: false });
+      expect(develop.jobs).toMatchObject({ "native-platforms": { required: false } });
+    } finally {
+      await removeFixture(fixture.root);
+    }
+  });
 
   it("requires native for --full and for a diff the classifier cannot resolve", async () => {
     const fixture = await scopeFixture();
@@ -3654,7 +3708,7 @@ describe("PRD-373 selective feature verification", () => {
       ]) {
         expect(classifyScope(fixture.root, fixture.base, head, extra).selection).toBe("full");
       }
-      for (const event of ["push", "schedule", "workflow_dispatch", "merge_group"]) {
+      for (const event of ["schedule", "workflow_dispatch", "merge_group"]) {
         expect(
           classifyScope(fixture.root, fixture.base, head, [
             "--target",
@@ -3664,6 +3718,25 @@ describe("PRD-373 selective feature verification", () => {
           ]).selection,
         ).toBe("full");
       }
+      // The one narrowed event is a push onto develop, and it is narrow only as far as the caches:
+      // `warm` still requires the two jobs that publish them, and it requires them on main too —
+      // where the rest of the board joins in.
+      expect(
+        classifyScope(fixture.root, fixture.base, head, [
+          "--target",
+          "develop",
+          "--event-name",
+          "push",
+        ]).selection,
+      ).toBe("warm");
+      expect(
+        classifyScope(fixture.root, fixture.base, head, [
+          "--target",
+          "main",
+          "--event-name",
+          "push",
+        ]).selection,
+      ).toBe("full");
     } finally {
       await removeFixture(fixture.root);
     }
@@ -3862,7 +3935,6 @@ describe("a CI-configuration-only pull request", () => {
 
   it.each([
     [["--event-name", "merge_group", "--target", "develop"]],
-    [["--event-name", "push", "--target", "develop"]],
     [["--event-name", "schedule", "--target", "develop"]],
     [["--event-name", "workflow_dispatch", "--target", "develop"]],
     [["--target", "main"]],
@@ -3879,6 +3951,28 @@ describe("a CI-configuration-only pull request", () => {
         classifyScope(fixture.root, fixture.base, head, ["--target", "develop", ...extra])
           .selection,
       ).toBe("full");
+    } finally {
+      await removeFixture(fixture.root);
+    }
+  });
+
+  it("runs a develop push as the cache-warm lane, never the ci narrowing", async () => {
+    const fixture = await scopeFixture();
+    try {
+      const head = await commitScopeChange(
+        fixture,
+        ".github/workflows/ci.yml",
+        "name: CI\njobs: {}\n",
+        "ci configuration",
+      );
+      expect(
+        classifyScope(fixture.root, fixture.base, head, [
+          "--event-name",
+          "push",
+          "--target",
+          "develop",
+        ]).selection,
+      ).toBe("warm");
     } finally {
       await removeFixture(fixture.root);
     }
