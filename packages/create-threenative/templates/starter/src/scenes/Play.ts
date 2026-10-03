@@ -25,10 +25,13 @@ import { type IPlayerModel, PLAYER_STAND_Y, Player } from "../entities/Player.js
 import { createArena, platform } from "../render/arena.js";
 import { createSpringArm } from "../render/camera.js";
 import { pickupRiseEase } from "../render/easing.js";
+import { type IEnvironmentSample, sampleEnvironment } from "../render/environmentSampling.js";
 import { setupLighting } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
+import { createMaterialLighting } from "../render/materialLighting.js";
 import { createPennantMaterial, propMaterial } from "../render/materials.js";
 import { setupPost } from "../render/postprocessing.js";
+import { isWebGLFallbackRenderer, materialLightingEnabled } from "../render/quality.js";
 import { ball, block, spike, tube } from "../render/shapes.js";
 import { setupSky } from "../render/sky.js";
 import { TouchControls } from "../render/touch-controls.js";
@@ -47,6 +50,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
   #assetProof: Mesh | undefined;
   #playerModel: IPlayerModel | undefined;
   #sky: Texture | undefined;
+  #environmentSample: IEnvironmentSample | undefined;
 
   static override readonly initialState: GameState = {
     coyoteJumps: 0,
@@ -77,6 +81,14 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     ]);
     this.#playerModel = playerModel;
     this.#sky = sky;
+    setupSky(ctx.scene, sky, ctx.renderer.softwareAdapter !== undefined);
+    this.#environmentSample = await sampleEnvironment(ctx.renderer.raw, ctx.scene, {
+      web: getPlatform().runtime === "web",
+      rendererKind: ctx.renderer.kind,
+      webglFallback: isWebGLFallbackRenderer(ctx.renderer.raw),
+      mobile: isMobile(),
+      software: ctx.renderer.softwareAdapter !== undefined,
+    });
     // A 16-pixel check filtered smoothly is a grey smear at flag size; nearest keeps the
     // squares square, which is the whole reason the finish flag is legible from the ledge.
     texture.magFilter = NearestFilter;
@@ -146,10 +158,19 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       ctx.renderer.raw as Parameters<typeof setupLighting>[1],
       isMobile(),
     );
+    const materialEnvironment = {
+      web: getPlatform().runtime === "web",
+      rendererKind: ctx.renderer.kind,
+      webglFallback: isWebGLFallbackRenderer(ctx.renderer.raw),
+      mobile: isMobile(),
+      software: ctx.renderer.softwareAdapter !== undefined,
+    };
     this.#post = ctx.entities.add(
       "quality",
       setupPost(ctx.renderer, ctx.scene, ctx.camera, {
         godraysLight: key,
+        onTierChanged: (tier) =>
+          this.#materialLighting?.setEnabled(materialLightingEnabled(tier, materialEnvironment)),
         mobile: isMobile(),
         software: ctx.renderer.softwareAdapter !== undefined,
         // One rule for the frame budget, from the engine: the display refresh capped at 120,
@@ -220,6 +241,23 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     // not a debug object parked over the level. The texture and the glTF still load in
     // `load()` above, which is what the native asset gate greps for.
     const goal = ctx.entities.add("goal", new Goal(ctx, this.#assetProof));
+    // All borrowed materials, including the cloned skinned mannequin and arena, now exist.
+    this.#materialLighting = ctx.entities.add(
+      "material-lighting",
+      createMaterialLighting(ctx.scene, ctx.camera, key, {
+        ...materialEnvironment,
+        enabled: materialLightingEnabled(this.#post.tier, materialEnvironment),
+      }),
+    );
+    if (this.#environmentSample !== undefined) {
+      const { measurement, source, intensity } = this.#environmentSample;
+      this.#materialLighting.setEnvironmentMeasurement(
+        measurement,
+        source,
+        intensity,
+        this.#environmentSample,
+      );
+    }
     const supportSurfaceY = (position: { readonly x: number; readonly z: number }):
       | number
       | undefined => {
@@ -350,8 +388,11 @@ export class Play extends Scene<GameState, IPhysicsContext> {
   }
 
   #post: ReturnType<typeof setupPost> | undefined;
+  #materialLighting: ReturnType<typeof createMaterialLighting> | undefined;
 
   override exit(ctx: GameCtx): void {
+    this.#materialLighting?.dispose();
+    this.#materialLighting = undefined;
     this.#post?.dispose();
     this.#post = undefined;
     super.exit(ctx);

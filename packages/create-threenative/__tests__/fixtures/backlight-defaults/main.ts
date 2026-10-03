@@ -20,6 +20,7 @@ import {
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { type ICtx, Scene, defineGame } from "../../../../core/dist/index.js";
 import { playtest } from "../../../../core/dist/playtest.js";
+import { sampleEnvironment } from "../../../templates/starter/src/render/environmentSampling.js";
 import { qualityPreset } from "../../../templates/starter/src/render/quality.js";
 import { setupSky } from "../../../templates/starter/src/render/sky.js";
 import { WorldEnvironment } from "../../../templates/starter/src/render/worldEnvironment.js";
@@ -82,13 +83,34 @@ class QualificationScene extends Scene {
   #model: Awaited<ReturnType<GLTFLoader["loadAsync"]>> | undefined;
   #sky: Awaited<ReturnType<TextureLoader["loadAsync"]>> | undefined;
   #dispose = () => {};
-  override async load() {
+  override async load(ctx: ICtx) {
     [this.#model, this.#sky] = await Promise.all([
       new GLTFLoader().loadAsync(
         "/packages/create-threenative/template-assets/assets/mannequin.glb",
       ),
       new TextureLoader().loadAsync("/packages/create-threenative/template-assets/assets/sky.jpg"),
     ]);
+    if (params.get("gpuSample") === "1") {
+      setupSky(ctx.scene, this.#sky);
+      const started = performance.now();
+      const sample = await sampleEnvironment(ctx.renderer.raw, ctx.scene, {
+        web: true,
+        rendererKind: ctx.renderer.kind,
+        mobile: false,
+        software: ctx.renderer.softwareAdapter !== undefined,
+      });
+      const result = {
+        measurement: sample.measurement,
+        elapsedMs: performance.now() - started,
+        sourceWidth: this.#sky.image.width,
+        sourceHeight: this.#sky.image.height,
+        intensity: sample.intensity,
+      };
+      (
+        globalThis as unknown as { __BACKLIGHT_SOURCE_SAMPLE__: unknown }
+      ).__BACKLIGHT_SOURCE_SAMPLE__ = result;
+      console.info(`TN_ACTUAL_ENVIRONMENT_GPU_SAMPLE:${JSON.stringify(result)}`);
+    }
   }
   override enter(ctx: ICtx) {
     if (!this.#model || !this.#sky) throw new Error("Backlight fixture assets not loaded");

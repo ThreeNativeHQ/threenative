@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-345 — a backlit subject is not a hole in the sky
 
-**Status:** PARTIAL — isolated generated-source qualification; no default admitted. Originally filed 2026-09-03, measured at `43d03e6a`. Batch:
+**Status:** PARTIAL — starter defaults integrated and qualified on web desktop WebGPU; all-template/native gates remain open. Originally filed 2026-09-03, measured at `43d03e6a`. Batch:
 [docs/PRDs/AAA-visuals](./README.md). **Ships as generated user source, not as a package** — it
 decides how things look, and rule 1(b) vetoes 1(a) at any size. Source studied:
 [TheLongSilence](https://github.com/achimala/TheLongSilence) `src/gfx/greeble.js:37`, the
@@ -91,7 +91,7 @@ P1, PRD-345. The workbook remains unchanged.
 ### Phase 1 — isolated material and measurement qualification
 
 - [x] Implement bounded game-owned grazing/backlight and directional analytic-fill terms with explicit `rimGain`/fill overrides, preserving original emissive and material maps. proof: retained `docs/verification/prd345/qualification.json`, CPU fidelity/live-control checks, real WebGPU positive/zero controls; generated defaults remain separately open
-- [ ] Measure the environment actually in use and report contribution even with overrides zero; unsupported measurement must report unknown, never invent a mean or infer black from an unreadable image. proof: actual near-black/bright texture report and override controls
+- [x] Measure the environment actually in use and report contribution even with overrides zero; unsupported measurement must report unknown, never invent a mean or infer black from an unreadable image. proof: real 4096×2048 sky GPU estimate 0.547838 versus full-source oracle 0.547144; near-black/override marker controls and `docs/verification/prd345/actual-starter-proof.json.gz`; unsupported/timeouts fail closed
 
 ### Phase 2 — admit measured generated defaults
 
@@ -144,7 +144,7 @@ The CPU path refuses unreadable, unsupported or over-budget textures; the photog
 remains unknown. Real WebGPU runs now qualify the actual animated starter mannequin at fixed
 poses. Regional `assert.tone` adds physical PNG crops and same-image reference comparisons;
 legacy whole-frame assertions retain their existing metrics and acquisition path. Native regional
-capture remains unimplemented and fails closed. No default or all-template acceptance is claimed.
+capture remains unimplemented and fails closed. The actual starter integration below is qualified on web desktop WebGPU; all-template/native acceptance remains open.
 
 ### Retained visual and red-green proof
 
@@ -182,6 +182,55 @@ Use one matched backlit subject/camera/content/resolution for baseline, enabled 
 Retain silhouette-edge/body crop coordinates before inspecting results. Repeat front-lit/bright
 IBL control to reject washout. Record draw/compile/startup and actual GPU timestamp windows,
 with existing material cost as baseline. No default is admitted from a metric alone.
+
+### Actual generated starter defaults (first tranche)
+
+`starter/src/render/lighting.ts` now names editable `rimGain: 0.12`, dim cool fill and its black
+colour/gain overrides. The authored sun and photographed sky remain intact. Supported standard
+materials are converted after the cloned animated character, arena and props attach; maps,
+emissive and material sharing remain borrowed. Physical/custom/node materials remain original.
+Original assignments restore on quality fallback and exit, including in-place array edits.
+The convention is admitted only for high-tier web desktop hardware WebGPU. Native, mobile,
+software and WebGL fallback preserve original materials, even when high is pinned. This is generated
+editable game source; there is no core engine appearance hook or bare-engine automatic-look claim.
+
+A once-at-load 64×32 GPU estimate reads the actual environment in linear space, with spherical
+weights and active intensity. It restores renderer state before awaiting readback, times out after
+1000 ms without blocking boot, and defers scratch disposal until pending GPU work settles. Successful
+estimates cache weakly by renderer/texture and complete source provenance. Unknown results retry;
+changed versions, source image, colour space, mapping or intensity invalidate old admission.
+The starter sky is measured bright, so the analytic fill stays **off** rather than washing out its IBL.
+
+Actual clean starters were generated through `createProject`, with identical cooked assets and
+explicit local framework dependencies. Existing `camera.main` setup controls placed both arms at
+`[-6, 1.45, -2.7]`, looking at `[-2, 1.25, 0]`, without changing lighting or advancing the tick-60
+character pose. Camera, player transform, clock, render chain and adapter equality are checked.
+The original front-lit opening is nearly unchanged; the photographed IBL makes the backlit change
+subtle. These unscaled exact-pixel crops are x600/y285/w80/h263 from each 1280×720 full screenshot:
+
+| Original generated starter | Material convention enabled by default |
+| --- | --- |
+| ![Actual starter before](../../verification/prd345/actual-starter-backlit-before.webp) | ![Actual starter after](../../verification/prd345/actual-starter-backlit-after.webp) |
+
+[Retained measured camera/pose/source/startup proof](../../verification/prd345/actual-starter-proof.json.gz)
+names full source PNG hashes. Full before/after frames also remain in the capture artifacts and
+Library comparison. WebP crops are lossless and checked against original decoded RGBA. Five
+materials convert; the custom finish-flag material is explicitly excluded. Both default views
+submit 57 draws / 32,862 triangles. The actual sky estimate agrees with independent full JPEG
+spherical-linear decode within 0.13%. Initial standalone sampling took 398.7 ms including first
+compilation/readback. Matched single dev runs observed load-to-ready 1945.7 ms before / 2330.2 ms
+after; these are observations, not repeatable performance statistics or first-frame acceptance.
+[Hardware cached restart](../../verification/prd345/cached-restart.json.gz) reuses the same texture
+with **zero additional readbacks** and retains the measured report; `game.goto` returned in 21.6 ms,
+which is not a full-readiness timing claim.
+
+Validation: full final clean generated starter TypeScript passes. Lifecycle 28/28, existing quality
+40/40, looks 19/19 and primary-docs/instruction-budget 16/16 pass. Independent review caught and
+verified repairs for array downshift/recovery edits, stale same-texture updates, live override
+reporting, hung readback and actual WebGL-backend fallback. The starter-only scaffold fingerprint
+was measured by the existing gate; combined exposure bytes must be remeasured at merge.
+Other twelve templates, required native execution, repeatable cold-start/per-frame budgets and the
+complete templates/root gate remain unfinished; this draft stays partial.
 
 ## Acceptance criteria
 

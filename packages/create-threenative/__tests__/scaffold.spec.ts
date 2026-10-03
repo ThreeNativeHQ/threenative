@@ -198,7 +198,10 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // VQ11 after merge of develop 416ffd7: measured through createProject, only shooter changed.
   shooter: "0b9dadf239d441709f214da3035792741f791fdf5349e44c063f619b048a3484",
   snow: "f3d4878829cf14ebee6355e720c223171529d550e8cafc9cd6328285a8000d3b",
-  starter: "fae9ee908d5c9370fdf95c1314f6845be5fcb9fd64114af21082331b21e53579",
+  // Measured 2026-10-03 through createProject after PRD-345's starter-only generated material
+  // convention, bounded source sampler/cache, platform guard, lifecycle wiring and doc rows.
+  // Other template fingerprints remain unchanged; remeasure combined exposure bytes at merge.
+  starter: "70d5ca7ab9530f405ea7e572fdd9394e74f81b2d52463fcb017da83fb4ca7e61",
   "tower-defense": "68ce595b3857e5ca3e94c7b4dc09f29cb0e16459b6642c235f391b7312da365e",
 };
 
