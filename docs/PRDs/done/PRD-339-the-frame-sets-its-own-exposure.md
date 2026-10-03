@@ -6,7 +6,7 @@ prd_contract: v1
 
 **Status:** DONE — actual generated-consumer integration is qualified at `8bf16f4c3`, with current develop source-scoped integration and approved lossless evidence preservation verified. Exact-head remote CI and auto-merge remain separate publication gates. The earlier incomplete integration at `2c77070b8` is preserved below. Implementation started 2026-10-02 from `d7277838`; original
 measurement at `43d03e6a`. Batch:
-[docs/PRDs/AAA-visuals](./README.md). Judged with
+[docs/PRDs/AAA-visuals](../AAA-visuals/README.md). Judged with
 [PRD-341](../done/PRD-341-a-frames-tone-is-a-number-and-the-number-is-a-gate.md), which is the only way to
 tell whether this landed. Source studied: [TheLongSilence](https://github.com/achimala/TheLongSilence)
 `src/gfx/PostFX.js`, the `LUM_FRAG` / `REDUCE_FRAG` / `ADAPT_FRAG` chain.
