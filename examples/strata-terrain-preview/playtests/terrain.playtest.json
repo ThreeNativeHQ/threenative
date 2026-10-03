@@ -619,8 +619,8 @@
       {
         "id": "GameState",
         "path": "propDraws",
-        "lte": 64,
-        "allowTrivial": "A ceiling on the prop draws, which holds for every frame rather than changing at one: its value is the price of the instancing, and a run that only ever saw it once would prove nothing. 64 since the layered understorey (bush, fern, litter species at one draw each); every view CPU p50 stayed within 4 ms at 63 draws (v11 licensed)."
+        "allowTrivial": "A ceiling on the prop draws, which holds for every frame rather than changing at one: its value is the price of the instancing, and a run that only ever saw it once would prove nothing. 64 since the layered understorey (bush, fern, litter species at one draw each); every view CPU p50 stayed within 4 ms at 63 draws (v11 licensed). Measured and reported, never capped: the owner removed the CPU/draw budgets so the starter worlds can carry Gaia-level density (2026-10-02).",
+        "gte": 1
       },
       {
         "id": "GameState",
@@ -649,15 +649,13 @@
         "id": "GameState",
         "path": "meadowFrameP50",
         "gte": 0.01,
-        "allowTrivial": "Frame cost at the meadow framing, the nearest look at the trees. A real measurement needs at least one closed budget window at that view; zero means the window never closed while it was on screen.",
-        "lte": 4
+        "allowTrivial": "Frame cost at the meadow framing, the nearest look at the trees. A real measurement needs at least one closed budget window at that view; zero means the window never closed while it was on screen. Measured and reported, never capped: the owner removed the CPU/draw budgets so the starter worlds can carry Gaia-level density (2026-10-02)."
       },
       {
         "id": "GameState",
         "path": "overviewFrameP50",
         "gte": 0.01,
-        "allowTrivial": "Frame cost at the overview framing, where the far impostor band carries most of the forest. Zero means no window closed at that view.",
-        "lte": 4
+        "allowTrivial": "Frame cost at the overview framing, where the far impostor band carries most of the forest. Zero means no window closed at that view. Measured and reported, never capped: the owner removed the CPU/draw budgets so the starter worlds can carry Gaia-level density (2026-10-02)."
       },
       {
         "id": "GameState",
@@ -682,7 +680,7 @@
         "path": "alpineFrameP50",
         "gte": 0.01,
         "changed": true,
-        "lte": 4
+        "allowTrivial": "Measured and reported, never capped: the owner removed the CPU/draw budgets so the starter worlds can carry Gaia-level density (2026-10-02)."
       },
       {
         "id": "GameState",
@@ -695,7 +693,7 @@
         "path": "desertFrameP50",
         "gte": 0.01,
         "changed": true,
-        "lte": 4
+        "allowTrivial": "Measured and reported, never capped: the owner removed the CPU/draw budgets so the starter worlds can carry Gaia-level density (2026-10-02)."
       },
       {
         "id": "GameState",
@@ -708,7 +706,7 @@
         "path": "tundraFrameP50",
         "gte": 0.01,
         "changed": true,
-        "lte": 4
+        "allowTrivial": "Measured and reported, never capped: the owner removed the CPU/draw budgets so the starter worlds can carry Gaia-level density (2026-10-02)."
       },
       {
         "id": "GameState",
@@ -788,41 +786,47 @@
         "id": "GameState",
         "path": "alpineOverviewFrameP50",
         "gte": 0.01,
-        "lte": 4,
-        "changed": true
+        "changed": true,
+        "allowTrivial": "Measured and reported, never capped: the owner removed the CPU/draw budgets so the starter worlds can carry Gaia-level density (2026-10-02)."
       },
       {
         "id": "GameState",
         "path": "desertOverviewFrameP50",
         "gte": 0.01,
-        "lte": 4,
-        "changed": true
+        "changed": true,
+        "allowTrivial": "Measured and reported, never capped: the owner removed the CPU/draw budgets so the starter worlds can carry Gaia-level density (2026-10-02)."
       },
       {
         "id": "GameState",
         "path": "tundraOverviewFrameP50",
         "gte": 0.01,
-        "lte": 4,
-        "changed": true
+        "changed": true,
+        "allowTrivial": "Measured and reported, never capped: the owner removed the CPU/draw budgets so the starter worlds can carry Gaia-level density (2026-10-02)."
       },
       {
         "id": "GameState",
         "path": "riverFrameP50",
         "gte": 0.01,
-        "lte": 4
+        "allowTrivial": "Measured and reported, never capped: the owner removed the CPU/draw budgets so the starter worlds can carry Gaia-level density (2026-10-02)."
       },
       {
         "id": "GameState",
         "path": "playerFrameP50",
         "gte": 0.01,
-        "lte": 4
+        "allowTrivial": "Measured and reported, never capped: the owner removed the CPU/draw budgets so the starter worlds can carry Gaia-level density (2026-10-02)."
       },
       {
         "id": "GameState",
         "path": "maxViewFrameP50",
         "gte": 0.01,
-        "lte": 4,
-        "allowTrivial": "Maximum measured CPU p50 across every visited camera; measuredViewCount separately requires all 17 poses to close budget windows."
+        "allowTrivial": "Maximum measured CPU p50 across every visited camera; measuredViewCount separately requires all 17 poses to close budget windows. Measured and reported, never capped: the owner removed the CPU/draw budgets so the starter worlds can carry Gaia-level density (2026-10-02)."
+      },
+      {
+        "id": "GameState",
+        "path": "maxViewPresentedP95",
+        "gte": 0.01,
+        "lte": 16.7,
+        "allowTrivial": "60 fps stable: the slowest captured view's median per-window p95 of the presented-frame interval (GPU included) stays within one 60 Hz frame. Replaces the removed 4 ms CPU caps (owner, 2026-10-02)."
       },
       {
         "id": "GameState",
@@ -834,8 +838,7 @@
         "id": "GameState",
         "path": "windowFrameMs",
         "gte": 0.01,
-        "lte": 4,
-        "allowTrivial": "A closed CPU budget window at every captured view must be observed and remain within 4 ms; missing or zero observations fail.",
+        "allowTrivial": "A closed CPU budget window at every captured view must be observed and remain within 4 ms; missing or zero observations fail. Measured and reported, never capped: the owner removed the CPU/draw budgets so the starter worlds can carry Gaia-level density (2026-10-02).",
         "throughoutSteps": true
       },
       {

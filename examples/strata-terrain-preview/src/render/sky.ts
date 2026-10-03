@@ -249,9 +249,9 @@ export function installOutdoorOcclusion(
     worldPass: world,
     request: {
       stages: ["ambientOcclusion", "grade"].filter((name) => !omitted.has(name)),
-      tier: "auto",
+      tier: "high",
     },
-    targetFps: 30,
+    targetFps: 60,
     stages: [
       {
         name: "ambientOcclusion",

@@ -146,6 +146,8 @@ interface IViewWindow {
   readonly view: string;
   readonly p50s: number[];
   readonly p99s: number[];
+  /** Presented-frame interval p95 per window: the whole frame the player sees, GPU included. */
+  readonly presentedP95s: number[];
   readonly triangles: number[];
 }
 const viewBudgets = new Map<string, IViewWindow>();
@@ -201,8 +203,9 @@ const initialState = {
   view: "player",
   windowDrawCalls: 0,
   windowFrameMs: 0,
-  viewFrameP50s: [] as { view: string; p50: number; windows: number }[],
+  viewFrameP50s: [] as { view: string; p50: number; presentedP95: number; windows: number }[],
   maxViewFrameP50: 0,
+  maxViewPresentedP95: 0,
   measuredViewCount: 0,
   riverFrameP50: 0,
   playerFrameP50: 0,
@@ -666,7 +669,13 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
       let frames = 0;
       let travel = 0;
       currentView = `${world}:player`;
-      viewBudgets.set(currentView, { view: currentView, p50s: [], p99s: [], triangles: [] });
+      viewBudgets.set(currentView, {
+        view: currentView,
+        p50s: [],
+        p99s: [],
+        presentedP95s: [],
+        triangles: [],
+      });
       const previous = actor.position.clone();
       let contactSamples = 0;
       let maxContactError = 0;
@@ -756,11 +765,13 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
         const viewFrameP50s = [...viewBudgets.values()].map((group) => ({
           view: group.view,
           p50: median(group.p50s),
+          presentedP95: median(group.presentedP95s),
           windows: group.p50s.length,
         }));
         ctx.state.set({
           viewFrameP50s,
           maxViewFrameP50: Math.max(0, ...viewFrameP50s.map((group) => group.p50)),
+          maxViewPresentedP95: Math.max(0, ...viewFrameP50s.map((group) => group.presentedP95)),
           measuredViewCount: viewFrameP50s.filter((group) => group.windows > 0).length,
           world,
           groundBiome: (mesh.material as MeshStandardMaterial).userData.biome ?? "baked",
@@ -866,7 +877,13 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
         // run makes through it, so a second visit measures the same framing with more samples behind
         // it rather than starting the count from nothing.
         if (!viewBudgets.has(currentView))
-          viewBudgets.set(currentView, { view: currentView, p50s: [], p99s: [], triangles: [] });
+          viewBudgets.set(currentView, {
+            view: currentView,
+            p50s: [],
+            p99s: [],
+            presentedP95s: [],
+            triangles: [],
+          });
         ctx.state.set({ view: next });
       }
       this.#ocean?.advance(this.#elapsed);
@@ -927,6 +944,7 @@ const game = defineGame<TerrainState, IPhysicsContext>({
       if (group) {
         group.p50s.push(window.frame.p50);
         group.p99s.push(window.frame.p99);
+        group.presentedP95s.push(window.presented.p95);
         group.triangles.push(
           // The world pass is nested beneath AO; its full-screen passes submit one triangle.
           Object.values(window.passes ?? {}).reduce((sum, pass) => sum + pass.triangles.max, 0),
