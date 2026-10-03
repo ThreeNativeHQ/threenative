@@ -61,20 +61,7 @@
   "pixels": {
     "width": 960,
     "height": 640,
-    "counts": [
-      [
-        10449,
-        10750
-      ],
-      [
-        7139,
-        6688
-      ],
-      [
-        9603,
-        9746
-      ]
-    ]
+    "counts": [[10449, 10750], [7139, 6688], [9603, 9746]]
   },
   "screenshotSha256": "1ad43cda8e816431b0ab9993066b087c9283351f304ade2c1765eebf8e349c81",
   "refusedCodec": "authored KTX2",
