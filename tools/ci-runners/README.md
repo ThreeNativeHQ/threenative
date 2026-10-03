@@ -19,13 +19,17 @@ runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'u
   queue behind a 20-minute build.
 - macOS, Windows, iOS, linux-arm64, `supply-chain` and the Android emulator lane always run hosted.
 
-The pool sets the variables only once its runners are online, and clears them before it stops. A pool
-that is down therefore never strands a job.
+**The pool is extra capacity, not a replacement.** This repository is public, so hosted runners are free
+and run about 20 jobs at once. A balancer (`ci-runners.sh balance`, started by `up`) sets each variable
+only while that pool has an idle runner, and deletes it the moment none is idle. A busy pool therefore
+overflows new jobs to hosted runners instead of queueing them. Routing every Linux job here funnelled the
+team's CI into 5 slots and made boards slower. `down` stops the balancer and clears both variables, so a
+pool that is down never strands a job.
 
 ## Set it up (once, on the runner machine)
 
 Needs: Linux with systemd, Docker usable without `sudo`, `gh` logged in with admin rights on the repo,
-and at least 6 CPU cores (each slot takes 2 whole cores, and 2 stay free for the desktop).
+and enough cores for the slots (3 threads each; 2 whole cores always stay free for the desktop).
 
 1. Create a fine-grained token for this repository only, with **Administration: Read and write**. It
    mints runner registration tokens. Add **Variables: Read and write** too if the pool must also start
@@ -55,7 +59,7 @@ and at least 6 CPU cores (each slot takes 2 whole cores, and 2 stay free for the
 
 | Want | Run |
 |---|---|
-| What is running, what is routed | `pnpm ci:runners status` |
+| What is running, what is routed | `pnpm ci:runners status` (balancer log: `~/.local/state/threenative/ci-runners/balance.log`) |
 | Pick up a runner image or script change from `develop` | `systemctl --user restart threenative-ci-runners` (when no job is running; a restart kills in-flight jobs) |
 | Send every job to hosted runners now (kill switch) | `gh variable delete TN_RUNNER && gh variable delete TN_RUNNER_LIGHT` |
 | Stop the pool | `systemctl --user stop threenative-ci-runners` |
@@ -70,9 +74,10 @@ restart or reboot.
 - An ephemeral container per job (`docker run --rm`): fresh filesystem, fresh hostname, no state
   shared between jobs. The image is Ubuntu 24.04 plus what hosted `ubuntu-24.04` jobs rely on: Node 20,
   `gh`, Rust, JDK 17, Android SDK and platform-tools, build tools, Xvfb and Playwright's dependencies.
-- 5 heavy slots, each pinned to 2 whole cores (`nproc` reads 4, like a hosted runner) with 12 GB of
-  memory and no extra swap. Under memory pressure the kernel kills a CI job before anything else.
-- 1 light slot: 1 CPU and 2 GB, for joins only.
+- 6 heavy slots of 3 pinned threads each (`nproc` reads 3) with 9 GB of memory and no extra swap. More,
+  thinner slots beat fewer fat ones: most CI time is installs, downloads and browser waits. Under memory pressure the kernel kills a CI job before anything else.
+- 3 light slots: 1 CPU and 2 GB each, for joins only. One slot serialised every pull request's scope and
+  verdict, because an ephemeral runner takes 30-60 s to re-register after each job.
 - The admin token mints one registration token per container and is unset before the job starts, so no
   job can read it.
 
@@ -87,5 +92,5 @@ restart or reboot.
   flaky on both pools (see `docs/PRDs/CI/EXECUTION-ORDER.md`). Rerun the failed jobs once.
 - **The runner list shows offline `tn-*` runners.** Runners stopped while idle stay registered. `up` and
   `down` delete them.
-- **Timing.** A full board takes about as long as hosted (42 min against 39), but uses no hosted
-  minutes. Several pull requests at once queue on the 5 slots.
+- **Timing.** The pool adds about 6 slots to hosted's ~20; with several boards in flight both pools
+  saturate, and wall time follows total demand.
