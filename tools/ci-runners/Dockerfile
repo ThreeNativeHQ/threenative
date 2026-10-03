@@ -14,11 +14,17 @@ USER root
 # Playwright's Chromium dependencies are the exact `tools` and `chromium` lists Playwright 1.62.1
 # resolves for ubuntu24.04-x64 (playwright-core's bundled nativeDeps), transcribed so the apt layer
 # does not depend on the Node layer below.
+# The -dev packages and xcompmgr are what the native jobs `apt-get install` every run (52 s of
+# test-native, run 37089715252); baked in, that step finds them present. Mesa's Vulkan ICDs stay
+# per-job: baked in, they blanked the tone and decals captures.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       build-essential cmake ninja-build ccache clang lld pkg-config \
       git curl jq unzip zip xz-utils xvfb xauth python3 python3-pip \
       7zip ffmpeg imagemagick zstd file lsof procps openjdk-17-jdk-headless \
+      libasound2-dev libcurl4-openssl-dev libfontconfig1-dev libfreetype6-dev libgtk-3-dev \
+      libpulse-dev libudev-dev libwebkit2gtk-4.1-dev libx11-dev libxcomposite-dev libxcursor-dev \
+      libxext-dev libxfixes-dev libxi-dev libxkbcommon-dev libxrandr-dev libxss-dev xcompmgr zlib1g-dev \
       fonts-noto-color-emoji fonts-unifont fonts-liberation fonts-freefont-ttf \
       libfontconfig1 libfreetype6 \
       libasound2t64 libatk-bridge2.0-0t64 libatk1.0-0t64 libatspi2.0-0t64 \

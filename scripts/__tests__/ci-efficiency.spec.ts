@@ -168,6 +168,197 @@ describe("CI efficiency without lost evidence", () => {
   );
 });
 
+describe("PRD-380 an ordinary pull request owes only the Linux native rows", () => {
+  /** This repository's own candidate, so a plan built without a diff still validates. */
+  const candidate = spawnSync("git", ["rev-parse", "HEAD"], {
+    cwd: repo,
+    encoding: "utf8",
+  }).stdout.trim();
+
+  /** Classify without a merge-base diff: the plan still records the native tier each target owes. */
+  function classify(args: string[], format: "json" | "github" = "json"): string {
+    const result = spawnSync(
+      process.execPath,
+      [
+        path.join(repo, "scripts/ci-change-scope.mjs"),
+        ...args,
+        "--candidate-sha",
+        candidate,
+        "--format",
+        format,
+      ],
+      { cwd: repo, encoding: "utf8" },
+    );
+    expect(result.status, result.stderr).toBe(0);
+    return result.stdout;
+  }
+
+  const nativeJobs = new Map(
+    jobSections(readFileSync(path.join(repo, ".github/workflows/native-platforms.yml"), "utf8")),
+  );
+  /** The executable half of a job: a comment explaining the tier is not a tier. */
+  const executable = new Map(
+    [...nativeJobs].map(([name, section]) => [
+      name,
+      section
+        .split("\n")
+        .filter((line) => !line.trim().startsWith("#"))
+        .join("\n"),
+    ]),
+  );
+
+  it("gives an ordinary pull request the reduced matrix and everything else the full one", () => {
+    const ordinary = JSON.parse(
+      classify(["--event-name", "pull_request", "--target", "develop"]),
+    ) as Record<string, unknown>;
+    // The tier travels with the plan, so ci-required records it and a reuse can compare it.
+    expect(ordinary).toMatchObject({ selection: "full", native: true, nativeTier: "reduced" });
+    expect(
+      (ordinary.jobs as Record<string, { required: boolean }>)["native-platforms"]?.required,
+    ).toBe(true);
+    expect(classify(["--event-name", "pull_request", "--target", "develop"], "github")).toContain(
+      "native_tier=reduced\n",
+    );
+    // A merge group on develop is the queue testing the same tree, so it owes the same tier; ci.yml
+    // passes the queue's base branch for exactly that reason.
+    expect(
+      JSON.parse(classify(["--event-name", "merge_group", "--target", "develop"])),
+    ).toMatchObject({ nativeTier: "reduced" });
+    // main pushes, the nightly, an explicit audit and a pull request into main keep every row.
+    const full: readonly (readonly [string, string])[] = [
+      ["push", ""],
+      ["schedule", ""],
+      ["workflow_dispatch", ""],
+      ["merge_group", "main"],
+      ["pull_request", "main"],
+    ];
+    for (const [event, target] of full) {
+      expect(
+        JSON.parse(classify(["--event-name", event, "--target", target])),
+        `${event} -> ${target}`,
+      ).toMatchObject({ nativeTier: "full" });
+    }
+    // A run that owes no native lane owes no rows at all — ci-needs.spec.ts proves that case
+    // against a real narrowed diff.
+  });
+
+  it("reads the tier from the planner instead of deciding it per job", () => {
+    const gated = [...executable]
+      .filter(([name, section]) => name !== "scope" && section.includes("native_tier"))
+      .map(([name]) => name)
+      .sort();
+    // Only the macOS, Windows and iOS legs are not Linux rows.
+    expect(gated).toEqual(["desktop", "ios-simulator"]);
+    expect(executable.get("desktop")).toContain("needs.scope.outputs.native_tier == 'full'");
+    expect(executable.get("ios-simulator")).toContain("needs.scope.outputs.native_tier == 'full'");
+    // A job's `if` cannot read `matrix`, so the arm64 row drops through the matrix itself, shaped
+    // from the same tier: linux-x64 survives a reduced run and both rows survive anything else. The
+    // x64 row keeps the routing expression every movable Linux job uses (PRD-480).
+    const scope = executable.get("scope") ?? "";
+    expect(scope).toContain("native_tier: ${{ steps.classify.outputs.native_tier }}");
+    expect(scope).toContain("starter_rows: ${{ steps.rows.outputs.starter_rows }}");
+    expect(scope).toContain(
+      '{ platform: "linux-x64", runner: "${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && \'ubuntu-24.04\' || vars.TN_RUNNER }}"',
+    );
+    expect(scope).toContain('{ platform: "linux-arm64", runner: "ubuntu-24.04-arm" }');
+    expect(scope).toContain("rows.slice(0, 1)");
+    expect(executable.get("starter-linux")).toContain(
+      "matrix: ${{ fromJSON(needs.scope.outputs.starter_rows) }}",
+    );
+    expect(job("native-platforms")).toContain("selection_plan: ${{ needs.scope.outputs.plan }}");
+    // Every other job is Linux-hosted, so it runs on the reduced tier without asking.
+    for (const name of [
+      "web-reference",
+      "android-v8-source",
+      "android-emulator-parity",
+      "desktop-parity",
+      "starter-linux",
+    ]) {
+      expect(executable.get(name), name).not.toContain("native_tier");
+    }
+    // No lane exempts the full matrix by label: the tier is the planner's answer, and a label is
+    // not one of its inputs. `release-proof` is the one label exemption PRD-380 phase 1 removed.
+    const lanes = [...nativeJobs.values()]
+      .map((section) =>
+        section
+          .split("\n")
+          .filter((line) => !line.trim().startsWith("#"))
+          .join("\n"),
+      )
+      .join("\n");
+    expect(lanes).not.toContain("pull_request.labels");
+    expect(lanes).not.toContain("native-release-proof");
+  });
+
+  // Run 37100382876 (2026-10-03, `8d7c5741f`) shaped `starter_rows` as a bare array of row objects
+  // and `starter-linux` never started — no job, no error, and the reusable workflow's aggregate
+  // still concluded failure, which `ci-required` then reported as a red native lane with every leg
+  // green. The same two rows on develop's static `include:` produced both jobs, so the emitter has
+  // to write the shape GitHub expands: a keyed object, `{"include":[…]}`. Evaluating the step for
+  // each tier is what pins that, rather than asserting the source says so.
+  it("shapes starter rows GitHub can expand, for every tier the lane is called with", () => {
+    const scope = nativeJobs.get("scope") ?? "";
+    const script = scope.match(/node -e '([\s\S]*?)' >> "\$GITHUB_OUTPUT"/u)?.[1];
+    if (script === undefined) throw new Error("scope has no starter_rows step to evaluate");
+    const concrete = script.replace(/\$\{\{[\s\S]*?\}\}/gu, "tn-local");
+
+    const rows = (tier: string): Record<string, unknown>[] => {
+      const run = spawnSync(process.execPath, ["-e", concrete], {
+        cwd: repo,
+        encoding: "utf8",
+        env: { ...process.env, TN_NATIVE_TIER: tier },
+        timeout: 5_000,
+      });
+      expect(run.status, run.stderr).toBe(0);
+      const line = run.stdout.trim();
+      expect(line.startsWith("starter_rows="), line).toBe(true);
+      const matrix = JSON.parse(line.slice("starter_rows=".length)) as Record<string, unknown>;
+      // Never an empty matrix: GitHub expands `include` alone, and `[]` builds no job at all. A run
+      // that owes no native lane never reaches this job — ci.yml gates the whole call on
+      // `jobs['native-platforms'].required` — so every tier this job can see owes x64 at minimum.
+      const include = matrix.include as Record<string, unknown>[] | undefined;
+      expect(Array.isArray(include), JSON.stringify(matrix)).toBe(true);
+      expect(include?.length ?? 0).toBeGreaterThan(0);
+      for (const row of include ?? [])
+        expect(Object.keys(row).sort()).toEqual(["platform", "runner"]);
+      return include ?? [];
+    };
+
+    // The routing expression is the x64 runner's value; the substitution above is only so the step
+    // parses as JavaScript outside Actions.
+    expect(scope).toContain(
+      '{ platform: "linux-x64", runner: "${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && \'ubuntu-24.04\' || vars.TN_RUNNER }}"',
+    );
+    // Reduced: x64 alone, on the runner the expression resolves. Full: both rows, arm64 hosted.
+    expect(rows("reduced")).toEqual([{ platform: "linux-x64", runner: "tn-local" }]);
+    expect(rows("full")).toEqual([
+      { platform: "linux-x64", runner: "tn-local" },
+      { platform: "linux-arm64", runner: "ubuntu-24.04-arm" },
+    ]);
+    // An unreadable tier keeps every row rather than dropping the matrix.
+    expect(rows("")).toEqual(rows("full"));
+    // The job reads the shaped object, and the x64 leg lands where the expression points.
+    expect(executable.get("starter-linux")).toContain(
+      "matrix: ${{ fromJSON(needs.scope.outputs.starter_rows) }}",
+    );
+    expect(executable.get("starter-linux")).toContain("runs-on: ${{ matrix.runner }}");
+    // A leg the tier drops is skipped by `if:`, and a skipped leg is neither a failure nor a
+    // cascade: the two jobs that need `desktop` read `cancelled()`/`always()`, which is why the
+    // run above kept them green while `desktop` was skipped.
+    expect(executable.get("desktop")).toContain("needs.scope.outputs.native_tier == 'full'");
+    for (const [name, status] of [
+      ["performance-coverage", "cancelled()"],
+      ["networking-matrix", "always()"],
+    ] as const) {
+      const section = executable.get(name) ?? "";
+      expect(section, name).toContain(
+        "needs: [scope, android-emulator-parity, desktop-parity, desktop, ios-simulator]",
+      );
+      expect(section, name).toContain(status);
+    }
+  });
+});
+
 describe("PRD-373 fail-closed required verdict", () => {
   function fullPlan(): Record<string, unknown> {
     const result = spawnSync(
