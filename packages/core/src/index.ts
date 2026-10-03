@@ -96,15 +96,21 @@ export { onLaunchFailure } from "./launch-diagnostics.js";
 export { resetAudioCueLedger } from "./audio.js";
 export type { ILaunchFailure, LaunchFailureKind } from "./launch-diagnostics.js";
 export type { IAssetLoader, IAssetLoaderOptions, ITextureOptions } from "./assets.js";
-export type { IAudioBusOptions, IAudioPlayOptions } from "./audio.js";
+export type {
+  IAudioBusOptions,
+  IAudioCompressorOptions,
+  IAudioPlayOptions,
+} from "./audio.js";
 /**
  * Route effects through a named audio bus.
  * @situation play a sound effect with a volume bus
  * @situation mute or adjust a category of game audio
  * @situation keep a gunshot audible at 20 metres by tuning positional falloff
+ * @situation hold a loud mix below clipping with a compressor on the bus
  * @situation play cannon, wave, and ship sound effects
  * @constraint create buses before playing clips and dispose them with the game
  * @constraint refDistance and rolloffFactor tune positional falloff and apply to playAt only
+ * @constraint compressor takes threshold, knee, ratio, attack and release from the game and takes effect on the bus sum
  * @supersedes new Audio(
  * @example const effects = new AudioBus({ camera });
  */
@@ -919,6 +925,10 @@ export type { IGPUReadbackOptions, IGPUReadbackSample } from "./gpu-readback.js"
  * @situation trail dust, exhaust, or spray behind a moving object
  * @situation emit cannon smoke and muzzle flash particles
  * @situation fire a cannonball projectile with cannon smoke particles
+ * @situation splash spray droplets with lifetime and gravity
+ * @situation spawn water droplets, mist, or foam bubbles above a fluid surface
+ * @situation falling snowflakes, rain or ash around the player that thicken into a windy storm or blizzard
+ * @situation kick up a spray of powder snow or dust where a foot or a ball lands
  * @constraint geometry, color, and timing remain supplied by the game
  * @example const particles = new GPUParticles3D(particleOptions);
  */
@@ -940,6 +950,29 @@ export { GPUParticles3D } from "./particles.js";
  */
 export { FluidField2D } from "./fluid-field.js";
 export type { IFluidFieldOptions, IFluidFieldSampler, IFluidFieldVector2 } from "./fluid-field.js";
+/**
+ * Simulate liquid as GPU particles (pour, splash, dam break, waterfall) and expose positions, a density volume and a surface height while the game owns every look.
+ * @situation pour, splash, or dam-break water that fills a container and flows around obstacles
+ * @situation simulate water or another liquid as particles in a fluid simulation
+ * @situation drop a ball or box into liquid and let it displace and float on the water
+ * @situation emit a stream or waterfall of particle fluid and drain it somewhere else
+ * @situation sample particle-fluid density or surface height in a game-owned render node
+ * @constraint add the fluid through `ctx.add` so renderer attachment, fixed-step dispatch, and release are automatic
+ * @constraint a renderer without WebGPU compute throws a named error at attach; it never draws nothing
+ * @constraint `emit` recycles the oldest slot once `capacity` slots have been used; `fill` stops at capacity
+ * @constraint `sample` and `stats` read a throttled GPU copy and report `staleFrames`; they are never live
+ * @override iterations, viscosity, cohesion, vorticity, gravity and maxSpeed tune the solver without changing its pass order
+ * @example const water = new FluidParticles3D({ capacity: 6000 });
+ * ctx.add(water);
+ * water.fill([-2.8, 0.1, -1.5], [-0.6, 3, 1.5]);
+ */
+export { FluidParticles3D } from "./fluid-particles.js";
+export type {
+  IFluidBounds,
+  IFluidCollider,
+  IFluidParticlesOptions,
+  IFluidParticlesStats,
+} from "./fluid-particles.js";
 /**
  * Propagate a disturbance across a patch of water surface and let it fade.
  * @situation make a splash or explosion ripple outward across water
@@ -1015,6 +1048,7 @@ export { softCircleDataTexture } from "./textures.js";
 /**
  * Pool travelling bullet-streak meshes for hitscan shots.
  * @situation show where a hitscan round went
+ * @situation show each round a weapon fires, one tracer per trigger press
  * @situation draw incoming fire without spawning projectiles
  * @constraint the surface comes from the game; pooling, travel, and fading belong to the engine
  * @constraint update once per frame and dispose with the owning scene
@@ -1167,6 +1201,7 @@ export type {
  * @situation delay an enemy patrol transition
  * @situation run a callback every simulation tick
  * @situation tween a numeric property with a game-owned curve
+ * @situation a countdown timer: end the level when its time limit runs out
  * @alias tower defense game
  * @alias spawn waves
  * @constraint dispose returned handles when the owning scene exits

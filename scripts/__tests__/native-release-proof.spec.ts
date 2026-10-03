@@ -945,14 +945,16 @@ test("the Windows consumer proves a renderer that never presents fails the launc
 });
 
 test("the Windows consumer is a mandatory release prerequisite, not advisory", () => {
-  assert.match(
-    job("finalize"),
-    /needs: \[validate-tag, clean-consumer, clean-consumer-ios, clean-consumer-windows\]/u,
-  );
+  assert.match(job("finalize"), /needs: \[validate-tag, clean-consumer, clean-consumer-windows\]/u);
   assert.match(
     job("cleanup-failed-release"),
-    /needs: \[validate-tag, publish, clean-consumer, clean-consumer-ios, clean-consumer-windows\]/u,
+    /needs: \[validate-tag, publish, clean-consumer, clean-consumer-windows\]/u,
   );
+});
+
+test("iOS is not a supported target, so its consumer proof does not gate promotion", () => {
+  assert.doesNotMatch(job("finalize"), /clean-consumer-ios/u);
+  assert.doesNotMatch(job("cleanup-failed-release"), /clean-consumer-ios/u);
 });
 
 test("no mapping in the workflow repeats a key", () => {

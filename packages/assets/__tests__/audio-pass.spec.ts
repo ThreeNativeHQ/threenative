@@ -573,6 +573,60 @@ describe("the audio pass pass-through", () => {
     expect(compiled.outputBytes.equals(bed)).toBe(true);
   });
 
+  it("should ship a float WAV whose samples exceed 1.0 unchanged, because that is headroom", async () => {
+    // A Float32 WAV is allowed above 1.0 and a storm bed uses it: rain's own wind clip peaks at
+    // 1.053, and the headroom above full scale is deliberate mix, not a defect to normalise away.
+    // Clamping it into [-1, 1] here would make that unrepresentable in a test at all.
+    const above = wavClip({ float: true, frames: RATE, sample: () => 1.053 });
+
+    const compiled = await compileAudio("threenative-audio-float-headroom-", "wind.wav", above, {
+      audio: { overrides: [{ glob: "wind.wav", conditioning: "none" }] },
+    });
+
+    expect(compiled.outputBytes.equals(above)).toBe(true);
+    expect(compiled.entry.audio).toMatchObject({ container: "RIFF/WAVE", reencoded: false });
+    expect((compiled.entry.audio as Record<string, unknown>).peakBefore).toBeCloseTo(1.053, 6);
+    expect((compiled.entry.audio as Record<string, unknown>).peakAfter).toBeCloseTo(1.053, 6);
+  });
+
+  it("should show what the default pass does to that headroom, so the declaration is not free", async () => {
+    // A sine rather than a constant, because a constant is pure DC and the pass removes DC before
+    // it looks at the peak at all.
+    const above = wavClip({
+      float: true,
+      frames: RATE,
+      sample: (frame) => 1.053 * Math.sin((2 * Math.PI * 220 * frame) / RATE),
+    });
+
+    const cooked = await compileAudio("threenative-audio-float-drift-", "wind.wav", above);
+
+    const audio = cooked.entry.audio as Record<string, unknown>;
+    // The ceiling attenuates, and the Vorbis round trip lands a little above it, so the peak the
+    // player hears is neither the authored one nor its absence. That is the drift the declaration
+    // exists to prevent, and the tolerance here is the codec's overshoot, not a fudge.
+    expect(Number(audio.peakAfter)).toBeLessThan(1.053);
+    expect(Number(audio.peakAfter)).toBeCloseTo(10 ** (-1 / 20), 1);
+  });
+
+  it("should assert a declared float loop's seam on the bytes it ships", async () => {
+    const loop = wavClip({
+      float: true,
+      frames: RATE * 2,
+      sample: (frame) => 1.053 * Math.sin((2 * Math.PI * 80 * frame) / RATE),
+    });
+
+    const compiled = await compileAudio("threenative-audio-float-seam-", "bed.wav", loop, {
+      audio: {
+        overrides: [{ conditioning: "none", glob: "bed.wav", loop: { crossFadeMs: 0 } }],
+      },
+    });
+
+    expect(Number((compiled.entry.audio as Record<string, unknown>).seamRatio)).toBeLessThanOrEqual(
+      1.5,
+    );
+    expect(compiled.outputBytes.equals(loop)).toBe(true);
+  });
+
   it("should ship an already-conditioned Ogg source untouched instead of re-encoding it", async () => {
     // Sixteen of wildwood's nineteen clips are already mono, already under the ceiling and carry
     // no DC: re-encoding them cost about 4% more bytes and a generation of lossy Vorbis to

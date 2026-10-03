@@ -11,11 +11,16 @@ on:
     # Drafts run nothing; marking one ready for review starts the board.
     types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch: {} # Explicit full audit; never a selectable exemption.
+  # PRD-481: the merge queue. GitHub tests the exact result a merge would produce, so two PRs
+  # merged back to back can no longer put a tree on develop that nothing tested. An unchanged base
+  # means the queue's tree is the pull request's tree, and tree reuse makes that instant.
+  merge_group:
+    types: [checks_requested]
   schedule:
     - cron: "17 3 * * *"
 
 concurrency:
-  group: ci-${{ github.event_name }}-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'latest' || github.run_id }}
+  group: ci-${{ github.event_name }}-${{ github.ref }}-${{ github.event_name == 'pull_request' && !github.event.pull_request.draft && 'latest' || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # Read-only. The workflow used to hold Actions write access so a failing job could cancel its own
@@ -37,6 +42,11 @@ jobs:
       reason: ${{ steps.classify.outputs.reason }}
       plan: ${{ steps.classify.outputs.plan }}
       candidate_sha: ${{ steps.classify.outputs.candidate_sha }}
+    # PRD-481 tree reuse: the classification asks the Actions API which successful run tested this
+    # exact tree. Read-only, and nothing else in the workflow gains from it.
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v7
         with:
@@ -51,6 +61,7 @@ jobs:
           TN_CI_FORCE_FULL: ${{ vars.TN_CI_FORCE_FULL }}
           TN_CI_BASE: ${{ github.event.pull_request.base.sha }}
           TN_CI_HEAD: ${{ github.event.pull_request.head.sha }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           extra=()
@@ -79,7 +90,7 @@ jobs:
   # job that discards its own node_modules — it only added a serial edge in front of the run.
   # The cheap gates now start together, and the expensive ones name the gate they wait on.
   typecheck:
-    needs: scope
+    needs: [scope, build-artifacts]
     if: ${{ needs.scope.outputs.selection == 'full' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -97,6 +108,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - uses: ./.github/actions/workspace-dist
         with:
+          # Compiled once by build-artifacts and downloaded rather than rebuilt: this job is
+          # ordered behind it above, so the upload always exists and the cache key never misses.
+          shared-artifact: workspace-packages
           save-bundles: "false"
           pack-archives: "false"
       - run: pnpm typecheck
@@ -104,8 +118,10 @@ jobs:
   lint:
     needs: scope
     # A Markdown-only change runs no CI job: the docs lane is re-validated on the nightly run and
-    # at promotion, so this job is skipped rather than spending a runner on inert prose.
-    if: needs.scope.outputs.selection != 'prose'
+    # at promotion, so this job is skipped rather than spending a runner on inert prose. A reused
+    # tree skips it too — every gate it would run here already passed in the run that tested this
+    # exact tree, and `!= 'prose'` would otherwise have bought a second full lint.
+    if: needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'instructions'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
@@ -192,18 +208,29 @@ jobs:
   # that job that does: the docs check, the build and the package walk each make sense once.
   #
   # Every test still runs. `vitest --shard` slices the same file list, and the slices were checked
-  # to add back up: 117 + 117 + 117 = 351 files, union identical to the unsharded suite with no
-  # file in two shards. `scripts/__tests__/ci-structure.spec.ts` holds the matrix to that shape,
+  # to add back up: the slices partition the file list, union identical to the unsharded suite with
+  # no file in two shards. `scripts/__tests__/ci-structure.spec.ts` holds the matrix to that shape,
   # and `run-test-suite.sh` refuses a phase selection that would run nothing at all.
+  #
+  # Four slices, not three, because `--shard` sorts the file list by a hash of its path and slices
+  # that order, so the split is honest about file count and blind to duration. Measured on run
+  # 37049488719 the three legs ran 163s / 285s / 472s of vitest over 397s / 712s / 709s of test
+  # time, and replaying vitest's own `sha1(path)` partition over those per-file durations
+  # reproduces all three assignments exactly. At four slices the same replay predicts
+  # 80s / 114s / 211s / 320s of vitest, which with the 40-121s of job overhead measured on the same
+  # run puts three legs inside six minutes. The fourth cannot: it carries
+  # `create-threenative/__tests__/template-assets-compile.spec.ts` at 320s on its own, and no shard
+  # count splits a single file. A fifth slice would leave both of those numbers unchanged and buy
+  # one more runner, so four is the whole of it.
   test-unit:
-    needs: scope
+    needs: [scope, build-artifacts]
     if: ${{ needs.scope.outputs.selection == 'full' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        shard: ["1/3", "2/3", "3/3"]
+        shard: ["1/4", "2/4", "3/4", "4/4"]
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
       TN_SUITE_PHASES: unit
@@ -225,13 +252,16 @@ jobs:
       # this job takes the cached result rather than repeating it three times over.
       - uses: ./.github/actions/workspace-dist
         with:
+          # Compiled once by build-artifacts and downloaded rather than rebuilt: this job is
+          # ordered behind it above, so the upload always exists and the cache key never misses.
+          shared-artifact: workspace-packages
           save-bundles: "false"
           pack-archives: "false"
       - uses: ./.github/actions/playwright-chromium
       - run: pnpm test
 
   test-native:
-    needs: scope
+    needs: [scope, build-artifacts]
     if: ${{ needs.scope.outputs.selection == 'full' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 75
@@ -356,6 +386,14 @@ jobs:
       - name: Restore the compiled native tree
         uses: actions/cache@v4
         with:
+          # No `.github/workflows/ci.yml` in this key. It named this job's own workflow file, so
+          # every edit to ci.yml — this one included — produced a key no run had ever saved, and the
+          # three pull requests that followed a workflow change each compiled the whole Linux host
+          # and stored their own 1.35 GiB copy. What ci.yml actually contributes to this build is
+          # the toolchain above, and `dpkg-query -W` in that identity already covers every package
+          # this job installs. Exact key only, with no prefix fallback: a tree restored from a
+          # different commit carries objects newer than the sources `restore-source-mtimes.mjs`
+          # stamps below, and ninja would read that as up to date.
           # Cargo's output belongs here too. With the C++ compile eliminated by #78, the host build
           # step was still ~112s and all of it was Rust: `threenative_native_physics` and the
           # `ui-overlay` crate with its webkit2gtk bindings. Measured locally, physics alone is a
@@ -375,7 +413,7 @@ jobs:
             packages/runtime-native/build/tn-linux-quickjs
             packages/runtime-native/.runtime/physics-target
             packages/runtime-native/native/ui-overlay/target
-          key: native-build-${{ runner.os }}-${{ runner.arch }}-${{ steps.native-toolchain.outputs.identity }}-${{ hashFiles('packages/runtime-native/scripts/**', 'packages/runtime-native/*.json', 'pnpm-lock.yaml', '.github/workflows/ci.yml', 'packages/runtime-native/CMakeLists.txt', 'packages/runtime-native/CMakePresets.json', 'packages/runtime-native/**/*.cmake', 'packages/runtime-native/src/**', 'packages/runtime-native/include/**', 'packages/runtime-native/tests/**', 'packages/runtime-native/native/**/build.rs', 'packages/runtime-native/native/**/.cargo/**', 'packages/runtime-native/native/**/src/**', 'packages/runtime-native/native/**/Cargo.toml', 'packages/runtime-native/native/**/Cargo.lock') }}
+          key: native-build-${{ runner.os }}-${{ runner.arch }}-${{ steps.native-toolchain.outputs.identity }}-${{ hashFiles('packages/runtime-native/scripts/**', 'packages/runtime-native/*.json', 'pnpm-lock.yaml', 'packages/runtime-native/CMakeLists.txt', 'packages/runtime-native/CMakePresets.json', 'packages/runtime-native/**/*.cmake', 'packages/runtime-native/src/**', 'packages/runtime-native/include/**', 'packages/runtime-native/tests/**', 'packages/runtime-native/native/**/build.rs', 'packages/runtime-native/native/**/.cargo/**', 'packages/runtime-native/native/**/src/**', 'packages/runtime-native/native/**/Cargo.toml', 'packages/runtime-native/native/**/Cargo.lock') }}
       # `ccache --show-stats` at the end of the job reports one number for three builds, and that
       # number has been stuck at `Hits: 184 / 574 (32.06%)` on every run measured — identical
       # before and after each lane got its own restore-key namespace, and with the restore
@@ -452,6 +490,9 @@ jobs:
       #     imported from '.../packages/runtime-native/tests/production-profile.test.mjs'
       - uses: ./.github/actions/workspace-dist
         with:
+          # Compiled once by build-artifacts and downloaded rather than rebuilt: this job is
+          # ordered behind it above, so the upload always exists and the cache key never misses.
+          shared-artifact: workspace-packages
           save-bundles: "false"
       # The pump-silence observer drives the real host with the public native-smoke bundle. Keep
       # this explicit because the shared action only builds packages/*/dist, not examples/*/dist.
@@ -495,7 +536,7 @@ jobs:
           if-no-files-found: error
 
   test-browser:
-    needs: scope
+    needs: [scope, build-artifacts]
     if: ${{ needs.scope.outputs.selection == 'full' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -525,6 +566,9 @@ jobs:
       # so they build it themselves — otherwise the run dies on a missing assets/dist/index.js.
       - uses: ./.github/actions/workspace-dist
         with:
+          # Compiled once by build-artifacts and downloaded rather than rebuilt: this job is
+          # ordered behind it above, so the upload always exists and the cache key never misses.
+          shared-artifact: workspace-packages
           save-bundles: "false"
       - uses: ./.github/actions/playwright-chromium
       # `playwright.config.ts` scaffolds its starter projects from packed tarballs, and without
@@ -546,7 +590,7 @@ jobs:
           if-no-files-found: ignore
 
   test-playtest:
-    needs: scope
+    needs: [scope, build-artifacts]
     if: ${{ needs.scope.outputs.selection == 'full' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -573,6 +617,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - uses: ./.github/actions/workspace-dist
         with:
+          # Compiled once by build-artifacts and downloaded rather than rebuilt: this job is
+          # ordered behind it above, so the upload always exists and the cache key never misses.
+          shared-artifact: workspace-packages
           save-bundles: "false"
       - uses: ./.github/actions/playwright-chromium
       - run: pnpm test:playtest:ci
@@ -716,10 +763,25 @@ jobs:
     # 33734775193 `minimal` finished in 80s and `platformer` took 407s, and the run is only ever as
     # fast as its slowest leg. Timestamping platformer's step splits it as ~74s of scaffold install
     # and typecheck plus 15 scenarios at ~20s each, so the scenarios are what makes it long and
-    # they shard cleanly. Platformer and starter run in thirds. Puzzle was measured at 399s of
-    # scenario work on run 33843502361 (carry 134s, swing 255s), so it runs in two halves as well;
-    # every other template is already well under the leg it would be sharded against, and splitting
-    # them would buy nothing and pay the 74s setup twice.
+    # they shard cleanly. Every slice then has to absorb its own ~65s of leg overhead — 36-51s of
+    # checkout, install and Playwright before the step, 10-42s of target install, typecheck and
+    # display setup inside it — so the number of shards is set by the slowest slice plus that
+    # overhead, not by the total.
+    #
+    # Per-scenario seconds on run 37049488719 — sailing again on 37071464562, which measured its
+    # two slices at 168s and 467s — and the slowest slice each count predicts:
+    #   platformer 15 at ~20s -> 3 -> ~150s measured.        starter 24 -> 3 -> ~210s measured.
+    #   puzzle    10, 399s of work -> 2 -> ~197s measured.   runner/snow/rts/racing/tower-defense/
+    #   action-rpg/minimal keep one leg each; all measured under 280s.
+    #   shooter 26 at 32-47s, 922s total -> 4 -> 363s, 5 -> 356s, 6 -> 288s. Six is the count that
+    #     clears six minutes, and 65s of that is the leg overhead.
+    #   rain 5 at 331/202/222/78/61 -> 5 -> 396s. Five is its floor: five scenarios, so one per
+    #     slice, and its heaviest scenario alone is 331s of software rendering. It cannot reach six
+    #     minutes at any shard count and is left honest rather than split past its scenario count.
+    #   sailing 6 at 55/247/30/98/28/59 -> 2 -> 467s measured, 3 -> 335s. The second slice is
+    #     the change: at two it carried the 247s float-after-the-run-ends alone with the sails and
+    #     win scenarios for 404s of scenario work, 63s over the leg budget. Three puts one of the
+    #     heavy scenarios on each leg and the worst of them at ~275s of work plus ~60s of overhead.
     #
     # Every scenario still runs. `shard` selects a slice of the same classifier output the whole
     # lane has always used, and the step fails closed if the slices do not add back up to the list.
@@ -737,10 +799,23 @@ jobs:
           - { template: puzzle, shard: "1/2" }
           - { template: puzzle, shard: "2/2" }
           - { template: racing, shard: "1/1" }
+          - { template: rain, shard: "1/5" }
+          - { template: rain, shard: "2/5" }
+          - { template: rain, shard: "3/5" }
+          - { template: rain, shard: "4/5" }
+          - { template: rain, shard: "5/5" }
           - { template: rts, shard: "1/1" }
           - { template: runner, shard: "1/1" }
-          - { template: sailing, shard: "1/1" }
-          - { template: shooter, shard: "1/1" }
+          - { template: sailing, shard: "1/3" }
+          - { template: sailing, shard: "2/3" }
+          - { template: sailing, shard: "3/3" }
+          - { template: shooter, shard: "1/6" }
+          - { template: shooter, shard: "2/6" }
+          - { template: shooter, shard: "3/6" }
+          - { template: shooter, shard: "4/6" }
+          - { template: shooter, shard: "5/6" }
+          - { template: shooter, shard: "6/6" }
+          - { template: snow, shard: "1/1" }
           - { template: starter, shard: "1/3" }
           - { template: starter, shard: "2/3" }
           - { template: starter, shard: "3/3" }
@@ -861,7 +936,7 @@ jobs:
           test "$result" = "success"
 
   benchmark:
-    needs: scope
+    needs: [scope, build-artifacts]
     if: ${{ needs.scope.outputs.selection == 'full' }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -879,6 +954,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - uses: ./.github/actions/workspace-dist
         with:
+          # Compiled once by build-artifacts and downloaded rather than rebuilt: this job is
+          # ordered behind it above, so the upload always exists and the cache key never misses.
+          shared-artifact: workspace-packages
           save-bundles: "false"
           pack-archives: "false"
       - run: pnpm tsx scripts/count-loc.ts --check
@@ -1044,7 +1122,7 @@ jobs:
           if-no-files-found: warn
 
   budgets:
-    needs: scope
+    needs: [scope, build-artifacts]
     if: ${{ needs.scope.outputs.selection == 'full' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -1069,6 +1147,9 @@ jobs:
       # reads like a guarantee it does not make. The shared action is what actually supplies dist.
       - uses: ./.github/actions/workspace-dist
         with:
+          # Compiled once by build-artifacts and downloaded rather than rebuilt: this job is
+          # ordered behind it above, so the upload always exists and the cache key never misses.
+          shared-artifact: workspace-packages
           save-bundles: "false"
           pack-archives: "false"
       - run: pnpm budgets
@@ -1099,8 +1180,9 @@ jobs:
   supply-chain:
     needs: scope
     # Skipped for Markdown-only PRs: the nightly develop run and promotions still scan the full
-    # git history, so an inert prose PR does not spend a runner here.
-    if: needs.scope.outputs.selection != 'prose'
+    # git history, so an inert prose PR does not spend a runner here. Skipped for a reused tree for
+    # the same reason every other gate is: the run that tested this exact tree already scanned it.
+    if: needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'instructions'
     # PR-only until 2026-09-01 (owner call): a push to main skipped the whole job, so the board
     # read a skip where the secrets scan should have been. Pushes now scan the repository's full
     # git history — gitleaks' default git mode — which is strictly stronger than the incremental
@@ -1170,6 +1252,11 @@ jobs:
     if: ${{ always() && !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    # A reused verdict is only a pass if the run it cites passed its own ci-required job, and that
+    # is an Actions API read rather than anything this repository can compute.
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v7
         with:
@@ -1183,6 +1270,7 @@ jobs:
           TN_CI_HEAD_REF: ${{ github.head_ref }}
           TN_CI_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           TN_CI_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          GH_TOKEN: ${{ github.token }}
         run: node scripts/ci-required.mjs
 
   # PRD-296 item 3. Three gates once sat behind a permanently red one and were skipped on every

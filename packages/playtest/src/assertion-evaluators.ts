@@ -1,3 +1,4 @@
+import { emitTone } from "./evaluators/tone.js";
 // Facade for the evaluator family modules (PRD-182 Phase 2). Import paths are unchanged:
 // every existing consumer of @threenative/playtest keeps working through this entry.
 import type { IPlaytestAssertionResult, IPlaytestDiagnostic } from "./assertion-report.js";
@@ -27,6 +28,7 @@ export function evaluateRichPlaytestAssertions(input: {
   const diagnostics: IPlaytestDiagnostic[] = [];
   const scenarioAssertions = input.scenario.assert ?? {};
   const ctx: IEvaluationContext = { assertions, diagnostics, input, scenarioAssertions };
+  emitTone(ctx);
   emitDeviceMetrics(ctx);
   emitDisplayFamilies(ctx);
   emitEvidenceFamilies(ctx);

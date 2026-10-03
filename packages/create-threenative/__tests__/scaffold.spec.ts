@@ -85,6 +85,7 @@ const BUG_REPORT_SKILL_PATHS = [
 // capability reference derived from it, and every scaffold embeds both, so exporting one public
 // symbol moves every template's bytes. Six of the seven moved for that reason alone; platformer
 // also carries its chasers' route change.
+// Recomputed 2026-10-02 for create-threenative 0.2.8: every template pins the scaffolder version.
 // Recomputed 2026-08-31 from the values CI measured, not from a local run.
 //
 // These were updated three times in a row and were wrong all three times, because they were
@@ -183,17 +184,28 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed again 2026-10-01 after merging the quality/post chain into this branch and landing
   // the rts sim's order, queue and event-record fixes: `rts` alone moves, and it is the only one of
   // the eleven that carries `src/sim/`. Measured through createProject on the merged tree.
-  "action-rpg": "d551e931abdcad55c05438f33c879889771b26d9f2750f5b9576db27a47f9a33",
-  minimal: "9b5ecf6928f9560e1504b5c4c1f3b91a9238ddb4668fe6e54bab255244efd1fa",
-  platformer: "70c742fb4f235bdcb7425f8f485a81e43088fb11be36b741c9a081bce149a5ba",
-  puzzle: "1e6c00114d94f05ee7c3cdaec731b23c44a1e365078fbdff32a7399b595fd402",
-  racing: "30f4afc830f581fce188fa9fcad5f4810f701b9c7a75c7781baf53bc804d92c5",
-  rts: "c88df3c3571fbbeb8f9a57a451be0e33322f3605bf5d39fc2aa3e6e69f7a3199",
-  runner: "bbc621310625e57d54678eaaae559824ee9fd8209eb2af3eb7d78975238151cd",
-  sailing: "98bffdf9e5c5e3f07e59560eb9629258c59e69e5e16d7b91125b415bf89b876b",
-  shooter: "6d033ab36159b4d08f006db3699c833613d1ffeb83589e7317bec67d0f3037ba",
-  starter: "ec61893b5d340f9be803abe325041b3b27746d1f6073c9da4d3d48ef97b6fc1d",
-  "tower-defense": "24574a2258a6d4d9aa7df7a34a13ae86409232688d5484c8d8637e907faf1bdb",
+  // Recomputed 2026-10-01 on the merge of develop (PRD-470/471/472/474) into the rain + snow
+  // branch (PRD-469, PRD-473): the merged tree carries both sides' engine and manifest bytes, so
+  // all thirteen trees, rain and snow included, were re-measured through createProject.
+  // Recomputed 2026-10-02 rebasing the FabCLI manual-login fallback onto develop: the shared
+  // threenative-assets skill ships in every scaffold, so all thirteen trees move.
+  // Recomputed 2026-10-02 on the merge of develop 114e268ef into the strata branch
+  // (PRD-466/467/468): the merged tree carries both sides' template bytes, so eleven trees were
+  // re-measured through createProject. Rain and snow carry none of this branch's template changes
+  // and kept develop's values.
+  "action-rpg": "80e39454ec8df22690bd5651b785852271db7b2b0f02ab58598750feafd7cdac",
+  minimal: "6fa8bd0f9cc725da5794b79a923fc25c489940fb532d22a8854f4a521d212707",
+  platformer: "a4801cdf8fc1a8ad9df8538ea273c65b816919e0439ada77eb071991ba4da0bc",
+  puzzle: "519e09423d69b11533c1da0e9296c608f51d426f0de70747fe4be1db38e081f4",
+  racing: "4f71dfc47f646c91b5e61168ca3b1e90aee89a65f135037011c663a5c9b3bb8e",
+  rain: "80a2c0297f451b096950bcdb7a7710776e063c4819c6b1b543f0bc320edda41c",
+  rts: "3024689c18f23d8203c123f04e8a4e314a2a8382087fc9c482a10c356d42ad9a",
+  runner: "f9a8551a3d5be52c2794256b606809d25ca279dad2a2ae9a3bfca69bfeecbdb8",
+  sailing: "3ac26e697d0539ba50600a40e2d825393437957c3a40741f75c96b8311af8e62",
+  shooter: "8c52c5c9219286f1ec261c9e84773dc0b84787e093f4c40dbad6c97a1c03d4b9",
+  snow: "f3d4878829cf14ebee6355e720c223171529d550e8cafc9cd6328285a8000d3b",
+  starter: "902063f368357b9a31f7089b075559f2215a80b8f110482c5bb103fb59697ba9",
+  "tower-defense": "7e540fc40b2ce89aced524d691579e49fdaee2c29289dbda9f56765f744a07bb",
 };
 
 const GENERATED_SCAFFOLD_METADATA =

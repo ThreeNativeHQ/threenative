@@ -378,8 +378,30 @@ export class AdbAndroidDriver implements IAndroidDriver {
     );
   }
 
+  /**
+   * The device's own diagnostics, read once and parsed once.
+   *
+   * The read is the only step here that can fail for a reason the game did not cause: a hosted
+   * SwiftShader emulator drops the adb transport mid-dump, and `adb logcat -d` exits non-zero after
+   * printing part of the buffer — a run whose assertions all passed died on a truncated line (CI
+   * `clean-consumer`, 5th of 6 sequential runs). The native harnesses already answer that with one
+   * re-read after `wait-for-device` (#310, b12becde6); this mirrors it, including the named refusal
+   * exemption: a `KO:` reply is the device rejecting the command, and retrying it would hide that.
+   */
   async captureConsole(): Promise<Array<{ text: string; type: string }>> {
-    const output = await this.adb(["logcat", "-d", "-v", "brief"]);
+    const args = ["logcat", "-d", "-v", "brief"];
+    let output: string | undefined;
+    let lastError = "";
+    for (let attempt = 1; output === undefined && attempt <= LOGCAT_ATTEMPTS; attempt += 1) {
+      try {
+        output = await this.adb(args);
+      } catch (error) {
+        lastError = (error as Error).message;
+        if (isAdbRefusal(lastError) || attempt === LOGCAT_ATTEMPTS) break;
+        await this.adb(["wait-for-device"]).catch(() => undefined);
+      }
+    }
+    if (output === undefined) throw failedLogcat(args.join(" "), lastError);
     return parseAndroidConsole(output);
   }
 
@@ -686,6 +708,33 @@ async function waitForProcessExit(child: ChildProcess, timeoutMs: number): Promi
   });
 }
 
+/**
+ * A refusal is the device answering, not the transport dropping.
+ *
+ * `adb` reports a command it will not run as `KO:` on stdout — an unknown subcommand, a locked
+ * transport, a disabled daemon. Nothing about a retry changes that answer, and retrying it would
+ * turn a named refusal into a slower version of the same failure. Every other `adb ... failed:` is
+ * an exit status, which is the one shape a dropped transport produces.
+ */
+function isAdbRefusal(message: string): boolean {
+  return /\bKO:/u.test(message);
+}
+
+/**
+ * The tail of a failed dump, never the whole buffer.
+ *
+ * The truncation *is* the evidence — it lands mid-line — so the end is kept. The head is 82 KB of
+ * Android noise that buries the one line a reader needs, and a CI log viewer truncates it anyway.
+ */
+function failedLogcat(command: string, message: string): Error {
+  const prefix = `adb ${command} failed: `;
+  const detail = message.startsWith(prefix) ? message.slice(prefix.length) : message;
+  const excerpt = detail.length > LOGCAT_ERROR_LIMIT
+    ? `…${detail.slice(-LOGCAT_ERROR_LIMIT)}`
+    : detail;
+  return new Error(`${prefix}${excerpt}`);
+}
+
 export function parseAndroidConsole(output: string): Array<{ text: string; type: string }> {
   return output
     .split(/\r?\n/u)
@@ -722,6 +771,10 @@ function isPlatformWebViewNoise(text: string): boolean {
 }
 
 const TOUCH_AXIS_MAX = 32767;
+/** A dropped adb transport is re-read once; a device that never returns fails the run. */
+const LOGCAT_ATTEMPTS = 2;
+/** Bytes of a failed dump kept in the error, so an 82 KB logcat never becomes the report. */
+const LOGCAT_ERROR_LIMIT = 2_000;
 
 export function parseAndroidTouchViewport(output: string): IAndroidTouchViewport {
   const match = /Viewport\s+INTERNAL:\s*displayId=0,[\s\S]*?(?:orientation=(\d+),\s*)?logicalFrame=\[\s*(-?\d+),\s*(-?\d+),\s*(-?\d+),\s*(-?\d+)\s*\],\s*physicalFrame=\[\s*(-?\d+),\s*(-?\d+),\s*(-?\d+),\s*(-?\d+)\s*\],\s*deviceSize=\[\s*(\d+),\s*(\d+)\s*\]/u.exec(output);

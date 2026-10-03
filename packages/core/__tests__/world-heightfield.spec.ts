@@ -327,3 +327,59 @@ describe("Heightfield", () => {
     value.process();
   });
 });
+
+describe("Heightfield change trackers", () => {
+  const flat = () =>
+    Heightfield.fromSampler({
+      columns: 9,
+      depth: 8,
+      origin: { x: 0, z: 0 },
+      rows: 9,
+      sampleHeight: () => 0,
+      width: 8,
+    });
+
+  it("hands each tracker the union of the windows written since its own last take", () => {
+    const field = flat();
+    const first = field.trackChanges();
+    const second = field.trackChanges();
+    expect(first.take()).toBeUndefined();
+    field.updateHeights({
+      column: 1,
+      columns: 2,
+      row: 1,
+      rows: 1,
+      heights: new Float32Array([1, 1]),
+    });
+    field.updateHeights({
+      column: 5,
+      columns: 1,
+      row: 6,
+      rows: 2,
+      heights: new Float32Array([2, 2]),
+    });
+    expect(first.take()).toEqual({ column: 1, columns: 5, row: 1, rows: 7 });
+    expect(first.take()).toBeUndefined();
+    // The second tracker never took, so it still holds both writes.
+    expect(second.take()).toEqual({ column: 1, columns: 5, row: 1, rows: 7 });
+    second.dispose();
+    field.updateHeights({ column: 0, columns: 1, row: 0, rows: 1, heights: new Float32Array([3]) });
+    expect(second.take()).toBeUndefined();
+    expect(first.take()).toEqual({ column: 0, columns: 1, row: 0, rows: 1 });
+  });
+
+  it("reads one collider sample without copying the field", () => {
+    const field = flat();
+    field.updateHeights({
+      column: 3,
+      columns: 1,
+      row: 5,
+      rows: 1,
+      heights: new Float32Array([0.7]),
+    });
+    const copy = field.toColliderHeights();
+    expect(field.colliderHeight(5, 3)).toBeCloseTo(0.7, 6);
+    expect(field.colliderHeight(5, 3)).toBe(copy[3 * field.rows + 5]);
+    expect(() => field.colliderHeight(9, 0)).toThrow(/outside/);
+  });
+});

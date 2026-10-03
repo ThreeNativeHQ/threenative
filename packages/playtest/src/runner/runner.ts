@@ -1,3 +1,4 @@
+import type { IPlaytestToneObservation } from "../tone.js";
 import { waitFrames, captureVisualSurface, runStep, sampleVisualElementBounds, screenshotObservations, sampleAfterTransition } from "./steps.js";
 import type { StepInputState } from "./steps.js";
 import { withPerformanceBudget } from "./buildReport.js";
@@ -479,12 +480,14 @@ async function runStandalonePlaytestInternal(
     // measured. Collected whenever a movement assertion exists, which is what pays for them.
     const capturesMovementSamples = capturesAnonymousMovement || scenario.assert?.movement !== undefined;
     const movementSamples: IMovementSampleInterval[] = [];
+    const tone: IPlaytestToneObservation[] = [];
+    const wantsFinalTone = scenario.assert?.tone?.some(({ atStep }) => atStep === undefined) === true;
     const wantsVisual = (scenario.assert?.visual?.length ?? 0) > 0;
     const visualAssertions = scenario.assert?.visual ?? [];
     const hasElementBoundVisualRegion = visualAssertions.some(({ region }) => region !== undefined && "element" in region);
     const needsCapture = scenario.artifacts?.screenshots !== false
       || scenario.steps.some((step) => step.screenshot !== undefined)
-      || wantsVisual;
+      || wantsVisual || (scenario.assert?.tone?.length ?? 0) > 0;
     const requiresWebGpuProvenance = browserConfig.browserArgs?.includes("--enable-unsafe-webgpu") === true;
     const captureProvenance = scenario.bootFailure === undefined && (needsCapture || requiresWebGpuProvenance)
       ? await readCaptureProvenance(page, browserConfig, scenario)
@@ -519,6 +522,7 @@ async function runStandalonePlaytestInternal(
       label: string,
       requested: Parameters<Page["screenshot"]>[0],
       captureElementBounds = false,
+      atStep?: string,
     ): Promise<IVisualPageCapture | undefined> => {
       // Playwright's 30s default is sized for a machine with a GPU. A CPU rasteriser — SwiftShader
       // on a CI runner, llvmpipe on a headless box — composites the same frame one to two orders
@@ -546,7 +550,8 @@ async function runStandalonePlaytestInternal(
         }
       }
       try {
-        assertCaptureNotBlank(png, label);
+        const stats = assertCaptureNotBlank(png, label);
+        if (stats.tone !== undefined) tone.push({ code: "TN_TONE", label, ...(atStep === undefined ? {} : { atStep }), ...stats.tone });
         return { ...(elementRegions === undefined ? {} : { elementRegions }), image: png };
       } catch (error) {
         if (!(error instanceof CaptureGuardError)) throw error;
@@ -558,7 +563,8 @@ async function runStandalonePlaytestInternal(
           // The first shot stands; its blank verdict is what gets reported below.
         }
         try {
-          assertCaptureNotBlank(png, label);
+          const stats = assertCaptureNotBlank(png, label);
+          if (stats.tone !== undefined) tone.push({ code: "TN_TONE", label, ...(atStep === undefined ? {} : { atStep }), ...stats.tone });
           return { ...(elementRegions === undefined ? {} : { elementRegions }), image: png };
         } catch (error2) {
           if (!(error2 instanceof CaptureGuardError)) throw error2;
@@ -570,12 +576,14 @@ async function runStandalonePlaytestInternal(
     const captureVisualPage = async (
       label: string,
       artifactPath: string | undefined,
+      atStep?: string,
     ): Promise<IVisualPageCapture | undefined> => {
       if (scenario.bootFailure !== undefined || hasElementBoundVisualRegion) {
         return capturePage(
           label,
           artifactPath === undefined ? {} : { path: artifactPath },
           hasElementBoundVisualRegion,
+          atStep,
         );
       }
       try {
@@ -588,7 +596,8 @@ async function runStandalonePlaytestInternal(
           };
           return undefined;
         }
-        assertCaptureNotBlank(png, label);
+        const stats = assertCaptureNotBlank(png, label);
+        if (stats.tone !== undefined) tone.push({ code: "TN_TONE", label, ...(atStep === undefined ? {} : { atStep }), ...stats.tone });
         return { image: png };
       } catch (error) {
         if (!(error instanceof CaptureGuardError)) throw error;
@@ -596,7 +605,8 @@ async function runStandalonePlaytestInternal(
         try {
           const retry = await captureVisualSurface(activePage, artifactPath);
           if (retry !== undefined) {
-            assertCaptureNotBlank(retry, label);
+            const stats = assertCaptureNotBlank(retry, label);
+            if (stats.tone !== undefined) tone.push({ code: "TN_TONE", label, ...(atStep === undefined ? {} : { atStep }), ...stats.tone });
             return { image: retry };
           }
         } catch (error2) {
@@ -718,8 +728,11 @@ async function runStandalonePlaytestInternal(
           : [];
         labeledSamples.push({ label: step.label, signals, snapshot });
       }
+      const wantsStepTone = step.label !== undefined && scenario.assert?.tone?.some(({ atStep }) => atStep === step.label) === true;
       if (step.screenshot !== undefined) {
-        await capturePage(`${safePart(step.screenshot)}.png`, { path: join(activeConfig.artifactDirectory, `${safePart(step.screenshot)}.png`) });
+        await capturePage(`${safePart(step.screenshot)}.png`, { path: join(activeConfig.artifactDirectory, `${safePart(step.screenshot)}.png`) }, false, step.label);
+      } else if (wantsStepTone) {
+        await captureVisualPage(`tone-${index}.png`, join(activeConfig.artifactDirectory, `tone-${index}.png`), step.label);
       }
     }
     const afterSnapshot = await sampleAfterTransition(page, bridge, sampleRequest);
@@ -728,8 +741,8 @@ async function runStandalonePlaytestInternal(
       if (position !== undefined) pathPositions.push(position);
     }
     const afterHud = await sampleHud(page, hudAssertions);
-    const afterScreenshot = (scenario.artifacts?.screenshots !== false && artifactFrames) || wantsVisual
-      ? wantsVisual
+    const afterScreenshot = (scenario.artifacts?.screenshots !== false && artifactFrames) || wantsVisual || wantsFinalTone
+      ? wantsVisual || wantsFinalTone
         ? await captureVisualPage(
             "after.png",
             scenario.artifacts?.screenshots === false
@@ -773,6 +786,8 @@ async function runStandalonePlaytestInternal(
       startupOutcome === undefined
         ? undefined
         : { ...startupOutcome.startup, rule: startupOutcome.rule },
+      undefined,
+      tone,
     );
     await writeObservationArtifacts(activeConfig.artifactDirectory, scenario.artifacts, {
       console: consoleEntries,
