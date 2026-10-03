@@ -70,6 +70,8 @@ runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'u
   service with lingering on Linux) that first checks out the latest `develop`. So the pool starts with
   the machine, takes image fixes on the next start, and clears `TN_RUNNER` on shutdown. `up` and `down`
   also delete offline `tn-local*` registrations: an idle runner that is stopped never deregisters.
+  `pnpm ci:runners:install` does the whole setup; the operator guide is
+  [tools/ci-runners/README.md](../../../tools/ci-runners/README.md).
 - **Ephemeral:** each container takes one job, exits and is recreated by a host-side `docker run --rm`
   loop. No `/tmp`, port, Xvfb display or workspace state crosses jobs.
 
