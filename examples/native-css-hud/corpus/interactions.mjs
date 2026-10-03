@@ -213,4 +213,53 @@ export const INTERACTIONS = [
       { obs: "pixel", x: 50, y: 130 },
     ],
   },
+  {
+    name: "group-and-peer-variants",
+    size: [320, 160],
+    css: `${BASE}
+      .col{display:flex;flex-direction:column;gap:10px;padding:10px}
+      .grp{box-sizing:border-box;width:140px;height:50px;padding:15px;background:#222}
+      .grp > .kid{width:60px;height:20px;background:#0000ff}
+      .grp:hover > .kid{background:#ff0000}
+      .p{display:block;width:100px;height:30px;border:0;background:#334155}
+      .p:focus-visible ~ .q{background:#00ff00}
+      .q{width:60px;height:20px;background:#7f1d1d}`,
+    tree: [
+      h(
+        "div",
+        { class: "col" },
+        h("div", { class: "grp" }, h("div", { class: "kid" })),
+        h("button", { type: "button", class: "p" }, t("p")),
+        h("div", { class: "q" }),
+      ),
+    ],
+    script: [
+      { obs: "pixel", x: 50, y: 35 },
+      { t: "pointer", type: "move", x: 100, y: 25 },
+      { obs: "pixel", x: 50, y: 35 },
+      { t: "pointer", type: "move", x: 300, y: 150 },
+      { obs: "pixel", x: 50, y: 35 },
+      { obs: "pixel", x: 40, y: 120 },
+      { t: "key", key: "Tab" },
+      { obs: "pixel", x: 40, y: 120 },
+    ],
+  },
+  {
+    name: "transform-transition",
+    size: [320, 120],
+    css: `${BASE}
+      .m{position:absolute;left:10px;top:10px;width:40px;height:40px;background:#6366f1;transition:transform 200ms linear}
+      .stage:hover .m{transform:translate(200px,0)}
+      .stage{position:absolute;left:0;top:0;width:320px;height:120px}`,
+    tree: [h("div", { class: "stage" }, h("div", { class: "m" }))],
+    script: [
+      { t: "pointer", type: "move", x: 160, y: 100 },
+      { t: "advance", ms: 100 },
+      { obs: "pixel", x: 110, y: 30 },
+      { obs: "pixel", x: 30, y: 30 },
+      { t: "advance", ms: 150 },
+      { obs: "pixel", x: 230, y: 30 },
+      { obs: "pixel", x: 30, y: 30 },
+    ],
+  },
 ];

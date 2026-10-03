@@ -78,6 +78,8 @@ no second process — and takes its stylesheet from the same Vite build as `"web
 entry mounts the tree with `createCssUiRoot().render(<App />)` from `@threenative/core/react-css`.
 Android and iOS refuse the value by name (`TN_UI_RENDERER_UNSUPPORTED`) rather than falling back
 to a web view.
+What it paints, what it does not, and what fails the build is in
+[native-css-support.md](native-css-support.md).
 
 Three limits come with it. The host must be **built from source** with `TN_ENABLE_CSS_UI=1`: the
 published prebuilt host has no CSS backend, and desktop packaging refuses one by name
