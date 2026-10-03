@@ -30,7 +30,10 @@ VARIABLE=TN_RUNNER
 LIGHT_VARIABLE=TN_RUNNER_LIGHT
 ENV_FILE="${TN_RUNNERS_ENV:-${XDG_CONFIG_HOME:-$HOME/.config}/threenative/runners.env}"
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/threenative/ci-runners"
-DEFAULT_SLOTS=5
+DEFAULT_SLOTS=6
+THREADS_PER_SLOT=3
+# 6 x 9 GB heavy + 3 x 2 GB light stays under 62 GB even if every slot hits its cap at once.
+SLOT_MEMORY=9g
 # Cores never given to a slot, so the owner's desktop stays responsive under a full board.
 HOST_CORES=2
 ONLINE_TIMEOUT_SECONDS=300
@@ -38,6 +41,9 @@ ONLINE_TIMEOUT_SECONDS=300
 # 2 GB, and the highest OOM score of any container, so a small join is what gets killed under
 # memory pressure rather than a 20-minute build.
 LIGHT_SHAPE="--cpus 1 --memory 2g --memory-swap 2g --oom-score-adj 900"
+# Several light slots: an ephemeral runner needs 30-60 s to re-register after each job, and every
+# board brings ~7 joins, so one light slot serialised every pull request's scope and verdict.
+LIGHT_SLOTS=3
 # `/dev/kvm` for the heavy slots, and only where the host has one: `android-emulator-parity` boots a
 # checksum-locked APK under `reactivecircus/android-emulator-runner`, which reads the device for
 # read and write and otherwise falls back to a software boot. No KVM, no flag — a host without it
@@ -143,27 +149,33 @@ up() {
   # A leftover stop file from a previous teardown would make every loop exit before it starts.
   rm -f "$STATE_DIR/stop"
 
-  # Pinned CPUs, not a `--cpus 4` quota: under a quota `nproc` and os.availableParallelism() still
+  # Pinned CPUs, not a `--cpus N` quota: under a quota `nproc` and os.availableParallelism() still
   # report every host CPU, so vitest sized its pool for 24 cores inside a 4-core budget and three
-  # unit tests timed out (PR #404). Each slot takes two whole cores, both hyperthreads, as a hosted
-  # 4-vCPU runner does.
+  # unit tests timed out (PR #404). Threads are handed out core by core (both hyperthreads of a core
+  # before the next), THREADS_PER_SLOT to a slot, never touching the HOST_CORES left for the desktop.
+  # Three threads a slot (nproc 3) rather than four buys a sixth slot from the same 20 threads; most
+  # CI time is installs, downloads and browser waits, so parallel jobs beat fatter ones.
   # ponytail: assumes Linux's usual sibling numbering (CPU k and k + nproc/2 share a core); read
   # /sys/devices/system/cpu/cpu*/topology/thread_siblings_list if a host numbers them otherwise.
-  local half=$(( $(nproc) / 2 ))
-  [ $(( slots * 2 + HOST_CORES )) -le "$half" ] \
-    || fail 2 "$slots slots need $(( slots * 2 )) cores plus $HOST_CORES for the host; this host has $half"
-  local slot base
+  local half=$(( $(nproc) / 2 )) core threads=()
+  for core in $(seq 0 $(( half - HOST_CORES - 1 ))); do threads+=("$core" "$(( core + half ))"); done
+  [ $(( slots * THREADS_PER_SLOT )) -le "${#threads[@]}" ] \
+    || fail 2 "$slots slots of $THREADS_PER_SLOT threads need $(( slots * THREADS_PER_SLOT )); this host has ${#threads[@]} after $HOST_CORES cores for the desktop"
+  local slot cpus first
   for slot in $(seq 1 "$slots"); do
-    base=$(( (slot - 1) * 2 ))
+    first=$(( (slot - 1) * THREADS_PER_SLOT ))
+    cpus="$(IFS=,; echo "${threads[*]:$first:$THREADS_PER_SLOT}")"
     start_slot "slot-$slot" "$STATE_DIR" "$ENV_FILE" "$repo" \
-      "--cpuset-cpus $base,$(( base + 1 )),$(( base + half )),$(( base + half + 1 )) --memory 12g --memory-swap 12g --oom-score-adj 800 $KVM_SHAPE" \
+      "--cpuset-cpus $cpus --memory ${SLOT_MEMORY} --memory-swap ${SLOT_MEMORY} --oom-score-adj 800 $KVM_SHAPE" \
       "$LABEL"
   done
   # One light slot, unpinned and quota-limited, labelled so heavy jobs cannot select it: a 10-second
   # join behind five 20-minute builds is the wait this lane exists to remove. It never reserves a
   # core, so the check above still describes exactly the cores this pool owns.
-  start_slot light "$STATE_DIR" "$ENV_FILE" "$repo" "$LIGHT_SHAPE" "$LIGHT_LABEL"
-  printf '%s heavy + 1 light runner container(s) starting; logs in %s\n' "$slots" "$STATE_DIR"
+  for slot in $(seq 1 "$LIGHT_SLOTS"); do
+    start_slot "light-$slot" "$STATE_DIR" "$ENV_FILE" "$repo" "$LIGHT_SHAPE" "$LIGHT_LABEL"
+  done
+  printf '%s heavy + %s light runner container(s) starting; logs in %s\n' "$slots" "$LIGHT_SLOTS" "$STATE_DIR"
 
   # Only advertise the labels once the runners are really there: TN_RUNNER set with an empty pool
   # is a queue that never drains. Both labels wait, because a light runner that never came online
@@ -173,7 +185,7 @@ up() {
   while :; do
     online="$(online_count "$repo" "$LABEL")"
     light_online="$(online_count "$repo" "$LIGHT_LABEL")"
-    if [ "$online" -ge "$slots" ] && [ "$light_online" -ge 1 ]; then break; fi
+    if [ "$online" -ge "$slots" ] && [ "$light_online" -ge "$LIGHT_SLOTS" ]; then break; fi
     if [ "$(date +%s)" -ge "$deadline" ]; then
       gh variable delete "$VARIABLE" --repo "$repo" 2>/dev/null || true
       gh variable delete "$LIGHT_VARIABLE" --repo "$repo" 2>/dev/null || true
@@ -183,18 +195,55 @@ up() {
     sleep 10
   done
 
-  gh variable set "$VARIABLE" --body "$LABEL" --repo "$repo"
-  gh variable set "$LIGHT_VARIABLE" --body "$LIGHT_LABEL" --repo "$repo"
-  printf '%s %s + %s %s online; %s=%s and %s=%s, so deleting either routes its jobs back\n' \
-    "$online" "$LABEL" "$light_online" "$LIGHT_LABEL" \
-    "$VARIABLE" "$LABEL" "$LIGHT_VARIABLE" "$LIGHT_LABEL"
+  # The balancer owns the routing variables from here: it advertises a label only while that pool
+  # has an idle runner, so a full pool overflows new jobs to hosted runners instead of queueing them.
+  setsid nohup bash scripts/ci-runners.sh balance >"$STATE_DIR/balance.log" 2>&1 &
+  echo "$!" >"$STATE_DIR/balance.pid"
+  printf '%s %s + %s %s online; the balancer routes jobs here while a runner is idle\n' \
+    "$online" "$LABEL" "$light_online" "$LIGHT_LABEL"
+}
+
+# Hosted runners are free for a public repository and run ~20 jobs at once; this pool adds a few
+# more. Routing every Linux job here funnelled the team's CI into 5 slots and made boards slower
+# (run 37099132853 sat 20 min with 15 jobs queued). So the pool is overflow-in-reverse: a label is
+# advertised while it has an idle runner and withdrawn the moment it has none.
+balance() {
+  need gh
+  local repo want_heavy want_light have_heavy="" have_light="" idle seen_heavy=0 seen_light=0
+  repo="$(repo_name)"
+  while [ ! -e "$STATE_DIR/stop" ]; do
+    idle="$(gh api "repos/$repo/actions/runners" --paginate --jq \
+      '[.runners[] | select(.status == "online" and .busy == false) | .labels[].name] | join(" ")' \
+      2>/dev/null)" || { sleep 20; continue; }
+    # Off at once when no runner is idle; on only after two polls in a row (~40 s) found one. A runner
+    # that just re-registered in a saturated pool is idle for seconds before it takes a queued job, and
+    # that blip must not route more work here.
+    case " $idle " in *" $LABEL "*) seen_heavy=$((seen_heavy + 1)) ;; *) seen_heavy=0 ;; esac
+    case " $idle " in *" $LIGHT_LABEL "*) seen_light=$((seen_light + 1)) ;; *) seen_light=0 ;; esac
+    want_heavy=off; want_light=off
+    [ "$seen_heavy" -ge 2 ] && want_heavy=on
+    [ "$seen_light" -ge 2 ] && want_light=on
+    if [ "$want_heavy" != "$have_heavy" ]; then
+      if [ "$want_heavy" = on ]; then gh variable set "$VARIABLE" --body "$LABEL" --repo "$repo"
+      else gh variable delete "$VARIABLE" --repo "$repo" 2>/dev/null || true; fi
+      have_heavy="$want_heavy"; printf '%s %s=%s\n' "$(date -u +%H:%M:%S)" "$VARIABLE" "$want_heavy"
+    fi
+    if [ "$want_light" != "$have_light" ]; then
+      if [ "$want_light" = on ]; then gh variable set "$LIGHT_VARIABLE" --body "$LIGHT_LABEL" --repo "$repo"
+      else gh variable delete "$LIGHT_VARIABLE" --repo "$repo" 2>/dev/null || true; fi
+      have_light="$want_light"; printf '%s %s=%s\n' "$(date -u +%H:%M:%S)" "$LIGHT_VARIABLE" "$want_light"
+    fi
+    sleep 20
+  done
 }
 
 down() {
   need gh
   local repo
   repo="$(repo_name)"
-  # First, so no job is ever routed to a pool that is on its way out.
+  # Stop the balancer before clearing the variables, or it could re-advertise a pool on its way out.
+  if [ -f "$STATE_DIR/balance.pid" ]; then kill "$(cat "$STATE_DIR/balance.pid")" 2>/dev/null || true; fi
+  # Then the variables, so no job is ever routed to a pool that is on its way out.
   local variable
   for variable in "$VARIABLE" "$LIGHT_VARIABLE"; do
     gh variable delete "$variable" --repo "$repo" 2>/dev/null \
@@ -311,7 +360,8 @@ case "${1:-}" in
   up) shift; up "${1:-}" ;;
   down) down ;;
   status) status ;;
+  balance) balance ;;
   install) install ;;
   uninstall) uninstall ;;
-  *) fail 2 "usage: ci-runners.sh up [N] | down | status | install | uninstall" ;;
+  *) fail 2 "usage: ci-runners.sh up [N] | down | status | balance | install | uninstall" ;;
 esac

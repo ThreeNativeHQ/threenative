@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-481 — CI does each piece of work once
 
-**Status:** IN PROGRESS — phase 3 complete, phase 2 in progress, phase 1 blocked on the merge queue
+**Status:** PARTIAL — all three phases landed (#405) and the merge queue is on; live reuse, merge-group and cache-hit proofs pending; AC-1 audits the 7 days from 2026-10-03
 **Complexity:** 5 (HIGH)
 **Owner:** CI tooling
 **Depends on:** None ([PRD-480](PRD-480-linux-ci-runs-on-the-owner-machine.md) and
@@ -149,7 +149,7 @@ skip it.
 
 #### Phase 2: Each run does each piece of work once
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS — dist built once and shards under 6 min proven; the cache box needs a `develop`-warmed key
 **Files:** EDIT `.github/workflows/ci.yml`, `.github/actions/workspace-dist/action.yml`,
 `.github/workflows/native-platforms.yml` (the Linux host built once), `scripts/__tests__/ci-structure.spec.ts`.
 
