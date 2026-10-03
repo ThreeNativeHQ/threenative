@@ -1955,7 +1955,7 @@ the judge's ranked levers are (1) hydraulic + thermal erosion of the playable he
 slope/flow-driven rock, scree and snow, (2) spruce colour/lighting and cutout anti-aliasing, (3) clustered
 ground cover that hides the soil plus shadow-cascade coverage (hard shadow edge on forest-walk). Scenario on
 the merged tip: rc=0, 0 failed checks, `verify-ocean` green; `test:terrain:web` now opens `?showcase=1`, the
-mode whose capsule assertion the scenario carries. Captures: `docs/verification/visuals/strata/v10-*.jpg`.
+mode whose capsule assertion the scenario carries. Captures: `docs/verification/visuals/strata/v10-*.jpg` (superseded by v11).
 AC-5 stays open.
 
 
@@ -2489,3 +2489,15 @@ at (400,0) to 1000×550 pixels, matching the baseline crops. The two Gaia
 references were inspected at full resolution. Gaia acceptance remains open.
 
 2026-10-03 UTC fallback finished: 49/52 checks. Failed assertions: resource.GameState.windowFrameMs.throughoutSteps, renderChain.stages.includes, renderChain.contributions.graphOutputChanged. All three ocean checks pass; assets are restored. Captures: `artifacts/playtest/atmosphere-round2-final-fallback/`. Per-view CPU p50s: [{'view': 'forest:player', 'p50': 3.1, 'windows': 27}, {'view': 'forest:meadow-close', 'p50': 2.5, 'windows': 8}, {'view': 'forest:overview', 'p50': 3.4, 'windows': 9}, {'view': 'forest:river', 'p50': 3.7, 'windows': 9}, {'view': 'coastal:player', 'p50': 3.4, 'windows': 22}, {'view': 'coastal:meadow-close', 'p50': 3.2, 'windows': 20}, {'view': 'coastal:overview', 'p50': 2.3, 'windows': 11}, {'view': 'coastal:horizon-sea', 'p50': 2.1, 'windows': 10}, {'view': 'alpine:player', 'p50': 2.2, 'windows': 21}, {'view': 'alpine:ridge', 'p50': 2.2, 'windows': 9}, {'view': 'alpine:overview', 'p50': 1.8, 'windows': 8}, {'view': 'desert:player', 'p50': 1.5, 'windows': 21}, {'view': 'desert:mesa', 'p50': 1.5, 'windows': 7}, {'view': 'desert:overview', 'p50': 1.4, 'windows': 8}, {'view': 'tundra:player', 'p50': 2.5, 'windows': 20}, {'view': 'tundra:plain', 'p50': 3.8, 'windows': 18}, {'view': 'tundra:overview', 'p50': 4, 'windows': 7}]. TypeScript/Biome, 100 terrain/core tests, 2386 doc links and 180 doc tests pass. The zero-failure gate remains open; no push/merge/PR comment. Unmerged checkout retained (1.4 GiB).
+
+### V11 judge (erosion, material, veg and atmosphere lanes merged, 2026-10-02)
+
+Fresh judge, 1:1 crops against the Gaia refs: forest 4.5, coastal 4.0, alpine 2.5, desert 3.5, tundra 2.5,
+weighted **3.71/10** (V10 3.84). Near-ground forest (meadow-close) is the strongest view (~5.5); mountain form is
+the binding gap: alpine peaks read as identical spikes with snow on the tips, desert mesas as extruded stumps.
+Judge's ranked levers: (1) geological mountain form with layered rock and slope/curvature snow, (2) mid/far ground
+cover and macro variation for aerial views, (3) crushed-black alpha grass, posterised clouds, tundra shadow
+stair-step. Proof on the merged tip: licensed all checks pass with the prop-draw ceiling at 64 (63 draws, every
+view CPU p50 ≤ 4 ms, `verify-ocean` green); fallback had transition-only window spikes (4.1–8 ms) while another
+lane captured concurrently — re-measure pending. Captures: `docs/verification/visuals/strata/v11-*.jpg`. AC-5
+stays open.
