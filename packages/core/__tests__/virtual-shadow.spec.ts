@@ -5,6 +5,7 @@ import {
   BufferGeometry,
   DirectionalLight,
   FloatType,
+  Frustum,
   HalfFloatType,
   InstancedMesh,
   type Material,
@@ -1012,6 +1013,101 @@ describe("VirtualShadowNode derived depth and caster size gate", () => {
   const _view = new Matrix4();
   const _projected = new Vector3();
 
+  it.each(["wide", "horizon"] as const)(
+    "should retain a %s pine's receiver column at both window placements (PRD-478)",
+    (kind) => {
+      const { camera, light, scene } = world();
+      const sun = new Vector3(0, 0.3, Math.sqrt(1 - 0.3 ** 2));
+      light.position.copy(sun).multiplyScalar(200);
+      const extent = 24;
+      const pineZ = (30 * sun.z) / sun.y;
+      const centreZ = kind === "wide" ? (10 * sun.z) / sun.y : pineZ * 2 + extent * Math.SQRT2;
+      const centre = new Vector3(0, (centreZ * sun.y) / sun.z, centreZ);
+      const geometry = new BoxGeometry(4, 30, 4);
+      const material = new MeshStandardMaterial();
+      const pine =
+        kind === "wide" ? new InstancedMesh(geometry, material, 2) : new Mesh(geometry, material);
+      if (pine instanceof InstancedMesh) {
+        pine.setMatrixAt(0, new Matrix4().makeTranslation(0, 15, pineZ));
+        pine.setMatrixAt(1, new Matrix4().makeTranslation(256, 15, pineZ));
+      } else pine.position.set(0, 15, pineZ);
+      pine.castShadow = true;
+      // Keep a local depth contributor when the old ground-distance filter drops the pine.
+      const anchor = new Mesh(new BoxGeometry(2, 2, 2), material);
+      anchor.position.copy(centre).x = 12;
+      anchor.castShadow = true;
+      const receiver = new Mesh(new BoxGeometry(4, 2, 4), material);
+      receiver.position.y = -1;
+      receiver.castShadow = true;
+      scene.add(pine, anchor, receiver);
+      scene.updateMatrixWorld(true);
+      const node = setupNode(light, {
+        clipExtents: [extent],
+        mapSize: 64,
+        minCasterTexels: 0,
+        adaptiveRefresh: false,
+        adaptiveCasterGate: false,
+      });
+      const stock = node.levelNodes[0] as unknown as {
+        light: DirectionalLight;
+        shadow: DirectionalLight["shadow"];
+        updateShadow(frame: NodeFrame): void;
+      };
+      const submitted: number[][] = [];
+      const depths: number[][] = [];
+      const points = [new Vector3(-2, 30, pineZ - 2), new Vector3(2, 30, pineZ + 2), new Vector3()];
+      stock.updateShadow = () => {
+        stock.shadow.updateMatrices(stock.light);
+        const frustum = new Frustum().setFromProjectionMatrix(
+          new Matrix4().multiplyMatrices(
+            stock.shadow.camera.projectionMatrix,
+            stock.shadow.camera.matrixWorldInverse,
+          ),
+        );
+        submitted.push(
+          [pine, anchor, receiver]
+            .filter(
+              (mesh) =>
+                mesh.visible &&
+                mesh.castShadow &&
+                mesh.layers.test(stock.shadow.camera.layers) &&
+                frustum.intersectsObject(mesh),
+            )
+            .map((mesh) => mesh.id),
+        );
+        depths.push(points.map((point) => point.clone().applyMatrix4(stock.shadow.matrix).z));
+      };
+      try {
+        for (const shift of [-8, 8]) {
+          camera.position.copy(centre).addScaledVector(new Vector3(0, sun.z, -sun.y), shift);
+          node.invalidateAll();
+          node.updateBefore(frameFor(camera));
+          for (const point of points) {
+            const projected = point.clone().sub(stock.light.target.position);
+            expect(Math.abs(projected.dot(new Vector3(0, sun.z, -sun.y)))).toBeLessThan(extent);
+          }
+        }
+        expect(submitted, "both windows must submit the pine above the shared receiver").toEqual([
+          [pine.id, anchor.id, receiver.id],
+          [pine.id, anchor.id, receiver.id],
+        ]);
+        for (const [placement, column] of depths.entries())
+          for (const depth of column) {
+            expect(
+              depth,
+              `placement ${String(placement)} clips the receiver column before near`,
+            ).toBeGreaterThanOrEqual(0);
+            expect(
+              depth,
+              `placement ${String(placement)} clips the receiver column beyond far`,
+            ).toBeLessThanOrEqual(1);
+          }
+      } finally {
+        node.dispose();
+      }
+    },
+  );
+
   it.each([
     ["cached", 20],
     ["cached", -20],
@@ -1124,11 +1220,11 @@ describe("VirtualShadowNode derived depth and caster size gate", () => {
         return [along(mesh.position) - radius, along(mesh.position) + radius] as const;
       });
     const low = Math.min(
-      (mass.position.y - 1 - centre.y) * 0.6157 - side * 0.788,
+      (mass.position.y - 1 - centre.y - 24 * 0.788) / 0.6157,
       ...spans.map(([from]) => from),
     );
     const high = Math.max(
-      (mass.position.y + 1 - centre.y) * 0.6157 + side * 0.788,
+      (mass.position.y + 1 - centre.y + 24 * 0.788) / 0.6157,
       ...spans.map(([, to]) => to),
     );
     expect(levelCamera(node, 0).far - levelCamera(node, 0).near).toBeCloseTo(high - low, 1);
@@ -1137,9 +1233,8 @@ describe("VirtualShadowNode derived depth and caster size gate", () => {
     expect(holds(node, 0, new Vector3(0, 0, 0))).toBe(true);
     expect(holds(node, 0, new Vector3(10, 10 + TALL_RADIUS, 0))).toBe(true);
     expect(holds(node, 0, new Vector3(0, 10 + TALL_RADIUS, side))).toBe(true);
-    // And the column stops where the last caster that could reach it does: 20 m of ground below the
-    // window's own, which the fixed 400 m range covered and nothing ever casts into.
-    expect(holds(node, 0, new Vector3(0, -20, -25.6))).toBe(false);
+    // A point just beyond the last caster's depth is outside, even at the window's u/v centre.
+    expect(holds(node, 0, centre.clone().addScaledVector(SUN, low - 1))).toBe(false);
     node.dispose();
   });
 

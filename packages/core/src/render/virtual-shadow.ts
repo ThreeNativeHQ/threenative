@@ -400,9 +400,8 @@ const DEFAULT_MIN_CASTER_TEXELS = 1.5;
  */
 const DEFAULT_EXPENSIVE_REFRESH_SHARE = 0.4;
 /**
- * The floor on a light's horizontal magnitude, so a sun on the horizon divides by a `cos` that is
- * not zero: the reach of a caster grows without limit as the sun sets, and a level that spans the
- * sky is the one this whole change exists to stop drawing.
+ * The floor on a light's vertical magnitude: a horizontal window's height-to-depth conversion
+ * grows without limit as the sun sets.
  */
 const MIN_SUN_COSINE = 0.05;
 
@@ -1619,10 +1618,8 @@ export class VirtualShadowNode extends ShadowBaseNode {
 
   /**
    * The light-space depth one level needs, from what can actually shadow its window: every caster
-   * whose own extent reaches the window, turned into light space along the sun. A caster `h` above
-   * the ground throws its shadow `h / tan` of a metre away, so that is how far past the window a
-   * caster has to be kept, and a caster that cannot reach the window is then outside the frustum
-   * and three's cull drops it for free.
+   * whose own extent reaches the window, turned into light space along the sun. A caster and its
+   * receiver share u/v, so overlap on those axes is sufficient, regardless of the centre's depth.
    *
    * The u/v box is what bounds the window sideways, so the depth is the only free axis, and every
    * object that overlaps that box has already been found: the pool is the whole candidate set and
@@ -1643,11 +1640,9 @@ export class VirtualShadowNode extends ShadowBaseNode {
     // ever hold is the height of its box.
     const fits = extent * 2 * MAX_MASS_WINDOW_WIDTHS;
     const sin = basisW.y;
-    // A sun on or below the horizon: the shadow of a caster an inch tall then reaches an inch
-    // divided by a `cos` that is nearly nothing, and the one honest span is the widest there is.
+    // A sun on or below the horizon needs the fallback span rather than division by almost zero.
     if (sin < MIN_SUN_COSINE) return;
-    const cos = Math.hypot(basisW.x, basisW.z);
-    const tan = sin / cos;
+    const heightReach = extent * (Math.abs(basisU.y) + Math.abs(basisV.y));
     // Everything that writes depth: the casters whose bounding sphere reaches into the window's
     // u/v box. A receiver writes no depth, so a piece of ground that only receives is not in the
     // frustum at all, however tall it is — that is the whole reason this is not a fixed range.
@@ -1668,19 +1663,15 @@ export class VirtualShadowNode extends ShadowBaseNode {
       const boxHigh = pool[at + 6] as number;
       if (radius * 2 > fits) {
         // A mass, not a caster in the window: the only part of it this frustum can hold is the
-        // height of its box. Its own span along the light would be the whole world's, which is the
-        // range this change exists to stop drawing.
-        if ((boxLow - centre.y) * sin - side * cos < low)
-          low = (boxLow - centre.y) * sin - side * cos;
-        if ((boxHigh - centre.y) * sin + side * cos > high)
-          high = (boxHigh - centre.y) * sin + side * cos;
+        // height of its box. Solve y = centre.y + u*U.y + v*V.y + w*W.y across the window;
+        // multiplying by W.y instead clips tall instances inside a wide batch at low sun angles.
+        const from = (boxLow - centre.y - heightReach) / sin;
+        const to = (boxHigh - centre.y + heightReach) / sin;
+        if (from < low) low = from;
+        if (to > high) high = to;
         continue;
       }
-      // A caster standing in the window, or shadowing into it from up-sun, is worth depth only if
-      // its shadow still reaches back to the window's down-sun edge: a caster `h` tall throws that
-      // shadow `h / tan` of a metre past its own position along the ground.
-      const horizon = (along - dy * sin) / cos;
-      if (horizon + (boxHigh - boxLow) / tan < -side) continue;
+      // The u/v overlap already includes every caster in a receiver's light-space column.
       if (along - radius < low) low = along - radius;
       if (along + radius > high) high = along + radius;
     }
