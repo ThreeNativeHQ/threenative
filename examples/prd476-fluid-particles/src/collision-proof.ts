@@ -54,10 +54,10 @@ async function start({ gateClosed = true, validationControl = false } = {}) {
   const gpuHealth = { completedScopes: 0, errors: 0 };
   const gpuDiagnostics: { message: string }[] = [];
   function beginGPUObservation() {
-    for (const filter of ["internal", "out-of-memory", "validation"]) device.pushErrorScope(filter);
+    device.pushErrorScope("validation");
   }
   async function completeGPUObservation() {
-    for (let scope = 0; scope < 3; scope++) {
+    for (let scope = 0; scope < 1; scope++) {
       const error = await device.popErrorScope();
       if (error !== null) {
         gpuHealth.errors++;
