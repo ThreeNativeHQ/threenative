@@ -1439,7 +1439,9 @@ describe("CI pipeline structure", () => {
     );
     // The run-sweeping predecessor this replaced reached across every branch in the repository;
     // every cancel here is scoped to the event's own repository and the closed PR's own ref.
-    expect(cancel).toContain('gh run cancel "$run_id" --repo "$GITHUB_REPOSITORY"');
+    expect(cancel).toContain(
+      'gh api -X POST "repos/$GITHUB_REPOSITORY/actions/runs/$run_id/force-cancel"',
+    );
     // Never a failure handler: cancelling from the gate that went red is what erased which
     // gate went red, on 2026-09-02.
     expect(cancel, "the janitor must not be a failure handler").not.toContain("failure()");
@@ -1448,10 +1450,12 @@ describe("CI pipeline structure", () => {
       expect(cancel).toContain(`.status == "${status}"`);
     }
     expect(cancel).toMatch(/SELF_RUN_ID/gu);
-    expect(cancel).toMatch(/gh run cancel "\$run_id"/u);
+    expect(cancel).toMatch(/actions\/runs\/\$run_id\/force-cancel/u);
     // A run that finished between the list and the cancel is the expected race, not a failure:
     // the cancel is a guarded command, so its non-zero exit is reported rather than propagated.
-    expect(cancel).toContain('if gh run cancel "$run_id"');
+    expect(cancel).toContain(
+      'if gh api -X POST "repos/$GITHUB_REPOSITORY/actions/runs/$run_id/force-cancel"',
+    );
     // And the lookup itself fails closed, so a broken call cannot report success having
     // cancelled nothing.
     expect(cancel).toContain("set -euo pipefail");

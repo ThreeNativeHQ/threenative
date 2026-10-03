@@ -59,7 +59,9 @@ jobs:
             [ "$run_id" != "$SELF_RUN_ID" ] || continue
             # A run that completed between the list and the cancel is the normal race, not a
             # failure: the point of the cancel is already satisfied.
-            if gh run cancel "$run_id" --repo "$GITHUB_REPOSITORY"; then
+            # force-cancel, not `gh run cancel`: a plain cancel can hang on a job still queued for a
+            # self-hosted label and keep the run's concurrency slot (run 37098559814).
+            if gh api -X POST "repos/$GITHUB_REPOSITORY/actions/runs/$run_id/force-cancel" >/dev/null; then
               cancelled=$((cancelled + 1))
               printf 'Cancelled run %s on %s.\n' "$run_id" "$branch"
             else
