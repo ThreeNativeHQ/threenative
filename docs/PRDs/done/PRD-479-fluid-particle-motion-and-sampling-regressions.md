@@ -48,7 +48,7 @@ host for rendered evidence, with actual particle-buffer readbacks and no CPU sol
 
 ### Phase 2 — Qualify actual GPU behavior
 
-- [x] Browser WebGPU keeps the default-speed particle on the correct side of the gate and preserves unobstructed motion and both speed limits. proof: [run 37054997796](https://github.com/ThreeNativeHQ/threenative/actions/runs/37054997796) at `b149762d`; actual SwiftShader readbacks pass all 11 positive assertions and the missing-gate control fails only `collisionPassed`. All nine source hashes and four screenshots match the [retained provenance](../../verification/prd479/b149762d-browser/provenance.json). Software correctness only.
+- [x] Browser WebGPU keeps the default-speed particle on the correct side of the gate and preserves unobstructed motion and both speed limits. proof: `node --import tsx scripts/verify-fluid-collision.ts` exits0 at `ab9fa10f`; all11 positive assertions pass and the missing-gate control fails only collision, with actual validation before1/after2/errors0. All nine source hashes and four PNGs receive independent hash/visual audit ([retained proof](../../verification/prd479/ab9fa10f-browser/provenance.json)).
 - [x] Linux native executes the same authored four-arm probe with the same numeric bounds. proof: source-built QuickJS/wgpu host `a051263c…a2a2b`, native tree `3b9b34c2`, actual NVIDIA RTX 2080; [retained native proof](../../verification/prd479/76d0c96c-native/provenance.json), four exact-source PNGs and real validation scopes before1/after2/errors0. Positive all assertions pass; disabled gate fails only collision. The maintained hosted job must also pass in exact-head CI before merge.
 
 ### Phase 3 — Preserve the existing consumer
