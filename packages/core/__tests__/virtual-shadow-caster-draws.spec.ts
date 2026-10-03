@@ -139,7 +139,7 @@ describe("a level's reported caster draws", () => {
     node.dispose();
   });
 
-  it("reports none of the wide half when the cluster half is chosen, and none of the small layer past the finest level", () => {
+  it("reports none of the wide half when clustered, while keeping resolved small-layer casters", () => {
     const { camera, light, scene } = shadowWorld();
     caster(scene, VIRTUAL_SHADOW_CASTER_LAYER, "cluster");
     caster(scene, VIRTUAL_SHADOW_CASTER_LAYER, "world-chunk-shadow");
@@ -159,12 +159,12 @@ describe("a level's reported caster draws", () => {
     const by = coarse?.drawsBy;
     expect(by).toBeDefined();
     if (by === undefined || coarse === undefined) return;
-    expect(by.small).toBe(0);
+    expect(by.small).toBe(1);
     expect(by.cluster).toBe(1);
     expect(by.chunkProxy).toBe(1);
     expect(by.layer0).toBe(1);
     expect(by.wide).toBe(0);
-    expect(coarse.draws).toBe(3);
+    expect(coarse.draws).toBe(4);
     node.dispose();
   });
 });
@@ -214,6 +214,7 @@ describe("the memoised caster set", () => {
       if (half === "cluster") {
         const secondWide = caster(scene, VIRTUAL_SHADOW_WIDE_CASTER_LAYER, "oak-trunk@*");
         loaded.add(secondWide);
+        loaded.add(caster(scene, VIRTUAL_SHADOW_WIDE_CASTER_LAYER, "birch-trunk@*"));
       }
       cells.add(loaded);
       const receiver = caster(scene, 0, "terrain-block");
@@ -231,8 +232,8 @@ describe("the memoised caster set", () => {
           if (level === 0) continue;
           const coarse = node.stats.perLevel[level];
           expect(coarse?.rendered).toBe(1);
-          expect(coarse?.drawsBy[half]).toBe(1);
-          expect(coarse?.draws).toBe(1);
+          expect(coarse?.drawsBy[half]).toBe(half === "cluster" ? 2 : 1);
+          expect(coarse?.draws).toBe(half === "cluster" ? 2 : 1);
           const shadowLight = node.levelLights[level] as DirectionalLight;
           shadowLight.shadow.updateMatrices(shadowLight);
           const shadowCamera = shadowLight.shadow.camera;

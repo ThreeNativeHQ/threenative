@@ -12,14 +12,13 @@ const workflow = readFileSync(
 function select(after: string, files = [".github/workflows/integration.yml"]) {
   return integrationSelection({ before: workflow, after, files }).lanes;
 }
-const none = {
-  csg: false,
-  decals: false,
-  "fluid-particles": false,
-  ik: false,
-  tone: false,
-  vegetation: false,
-};
+const none = Object.fromEntries(
+  [
+    ...workflow.matchAll(
+      /^ {6}([a-z][a-z-]*): \$\{\{ steps\.filter\.outputs\.[a-z][a-z-]* \}\}$/gmu,
+    ),
+  ].map((match) => [match[1], false]),
+);
 const all = Object.fromEntries(Object.keys(none).map((key) => [key, true]));
 describe("integration work applies to the changed source", () => {
   it("runs exposure alone for an exposure workflow step edit", () => {
@@ -63,6 +62,7 @@ describe("integration work applies to the changed source", () => {
   it("retains shared playtest and workspace action consumers", () => {
     expect(select(workflow, ["packages/playtest/src/capture.ts"])).toEqual({
       ...none,
+      "world-capture": true,
       decals: true,
       tone: true,
       "fluid-particles": true,
@@ -74,6 +74,7 @@ describe("integration work applies to the changed source", () => {
     });
     expect(select(workflow, [".github/actions/playwright-chromium/action.yml"])).toEqual({
       ...none,
+      "world-capture": true,
       decals: true,
       tone: true,
       "fluid-particles": true,
@@ -188,5 +189,52 @@ describe("integration exact Git source selection", () => {
       process.chdir(cwd);
       rmSync(root, { recursive: true, force: true });
     }
+  });
+});
+
+describe("merged world capture lane relevance", () => {
+  it("retains its exact runtime source filter", () => {
+    expect(Object.keys(none)).toContain("world-capture");
+    for (const file of [
+      "packages/core/src/world-cells.ts",
+      "packages/assets/src/index.ts",
+      "scripts/verify-world-capture.ts",
+    ]) {
+      expect(select(workflow, [file])).toEqual({ ...none, "world-capture": true });
+    }
+  });
+  it("selects world capture alone for its workflow job edit", () => {
+    expect(
+      select(
+        workflow.replace(
+          "pnpm exec tsx scripts/verify-world-capture.ts",
+          "pnpm exec tsx scripts/verify-world-capture.ts --example",
+        ),
+      ),
+    ).toEqual({ ...none, "world-capture": true });
+  });
+  it("selects world capture alone for its source-filter edit", () => {
+    expect(
+      select(
+        workflow.replace(
+          "world-capture ^packages/core/src/world",
+          "world-capture ^packages/core/src/new-world",
+        ),
+      ),
+    ).toEqual({ ...none, "world-capture": true });
+  });
+  it("selects its owning lane for a transitive dependent edit", () => {
+    const before = `${workflow}\n  world-dependent:\n    needs: [capture]\n    name: old proof\n`;
+    const after = before.replace("name: old proof", "name: updated proof");
+    expect(
+      integrationSelection({ files: [".github/workflows/integration.yml"], before, after }).lanes,
+    ).toEqual({ ...none, "world-capture": true });
+  });
+  it("fails closed for an unknown world dependency shape", () => {
+    const after = workflow.replace(
+      /( {2}capture:\n[\s\S]*?) {4}needs: paths/u,
+      "$1    needs: [missing-world-job]",
+    );
+    expect(select(after)).toEqual(all);
   });
 });

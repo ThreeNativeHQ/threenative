@@ -134,6 +134,16 @@ async function run(
 }
 
 describe('resolutionScale: "auto"', () => {
+  it("scales a game that said nothing about resolution", async () => {
+    // The owner rule, in plain words: if the engine can measure a value where it is used, it
+    // decides. A game that never wrote the key used to get a pinned full-resolution buffer and no
+    // scaler at all — on a HiDPI desktop that is a 4527x2207 drawing buffer at 4x MSAA until the
+    // GPU device is lost. Silence now resolves to auto, and `scaleSource` is where a harness sees
+    // that it happened: "pinned" here would mean the loop was never built.
+    const result = await run({}, 40, 6);
+    expect(result).toEqual({ scale: 1, scaleSource: "auto" });
+  });
+
   it("resumes automatic scaling on clean windows after between-frame compilation", async () => {
     // Six compiling windows the scaler skips, then six over-budget windows with no GPU timing:
     // a probe rung is spent, refunded when fewer pixels earn nothing, and then held. The
@@ -179,7 +189,9 @@ describe('resolutionScale: "auto"', () => {
   it("reports atFloor once the scaler has run out of rungs and the frame is still over budget", async () => {
     // Measured on a physical Pixel 8 the same day: Bayview walked all ten rungs to 0.23 and was
     // still under 60 fps. A window reporting 0.23 and nothing else would read as a budget met at a
-    // low resolution.
+    // low resolution. A desktop stops earlier — the floor is 0.61, because nothing reconstructs a
+    // frame from 5% of its pixels — and the phone walk itself is covered in
+    // resolution-scaler.spec.ts and resolution-scaler-desktop-floor.spec.ts.
     //
     // Reaching the floor takes measured GPU cost that genuinely falls with the pixels: an fps
     // deficit alone only ever probes, and a *constant* GPU cost is now the insensitivity guard's
@@ -228,10 +240,10 @@ describe('resolutionScale: "auto"', () => {
     try {
       await game.start();
       if (frame === undefined) throw new Error("Game did not start its loop.");
-      // Ten rungs at one step plus one cooldown window each, then a few windows at the floor.
+      // Thirty windows is many more rungs than the scaler needs to reach its floor.
       for (let index = 1; index <= 30; index += 1) frame(index * 60);
       const last = windows.at(-1);
-      expect(last?.surface?.resolutionScale).toBe(0.23);
+      expect(last?.surface?.resolutionScale).toBe(0.61);
       expect(last?.surface?.atFloor).toBe(true);
       expect(windows[0]?.surface?.atFloor).toBe(false);
     } finally {
