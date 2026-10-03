@@ -128,12 +128,12 @@ The gap is CPU while walking. The costs, as span p95s, which overlap and do not 
 
 ## Housekeeping (any session; docs-only, commit straight to `develop` per AGENTS.md)
 
-- [ ] Three PRDs share the number 339: AAA-visuals auto exposure, performance loading screen, critical compile walk. Renumber two of them and fix their links.
-- [ ] Fix status drift:
-  - critical [PRD-386](../performance/critical/PRD-386-gpu-driven-rendering-compute-culling-and-indirect-draws.md) and [PRD-390](../performance/critical/PRD-390-do-not-submit-what-the-render-camera-cannot-resolve.md) say NOT STARTED, but their mechanisms shipped in PRD-473 and #263;
-  - PRD-269 has landed (`3630847a`);
-  - [PRD-461](PRD-461-view-distance-basics.md)'s `terrain.streamRadius` blocker has landed.
-- [ ] Remove the stale duplicates `meta-human/PRD-465` and the batch copy of `PRD-VQ-11`.
+- [x] Three PRDs share the number 339: AAA-visuals auto exposure, performance loading screen, critical compile walk. Renumber two of them and fix their links. **Result 2026-10-03:** auto exposure keeps 339 (PR #397); the other two are now 495 (compile walk) and 496 (loading screen), max before this was 494. proof: `git mv` + `rg --no-ignore 'PRD-339'` returns only auto-exposure mentions.
+- [x] Fix status drift:
+  - critical [PRD-386](../performance/critical/PRD-386-gpu-driven-rendering-compute-culling-and-indirect-draws.md) and [PRD-390](../performance/critical/PRD-390-do-not-submit-what-the-render-camera-cannot-resolve.md) say NOT STARTED, but their mechanisms shipped in PRD-473 and #263; **Result 2026-10-03:** both now read PARTIAL and cite `8c182343f` (#263) and `a602467db` (#375, PRD-473 Phase 1). proof: `git show --stat 8c182343f a602467db`.
+  - PRD-269 has landed (`3630847a`); **Result 2026-10-03:** PROPOSED → PARTIAL, cited to `3630847a`. Kept out of `done/` — criterion 3's playtest does not exist. proof: `git show --stat 3630847a`.
+  - [PRD-461](PRD-461-view-distance-basics.md)'s `terrain.streamRadius` blocker has landed. **Result 2026-10-03:** NOT STARTED → READY, citing `4f9638c2e` (#358). proof: `git log -S streamRadius -- packages/core/src`.
+- [x] Remove the stale duplicates `meta-human/PRD-465` and the batch copy of `PRD-VQ-11`. **Result 2026-10-03:** both deleted; each was a strict prefix of its `done/` copy (465: 12 stale-only lines, all pre-execution status and unticked boxes; VQ-11: 14, all the same). No link pointed at either stale path. proof: `diff` against `docs/PRDs/done/`.
 - [ ] Update `00-REPO-GROUNDING.md` (virtual shadow maps ship) and WORLD-STREAMING.md (virtualized geometry ships; occlusion is now PRD-489's call).
 - [ ] Refresh rows G04, G05, G11, G15 and G16 in `docs/unreal-engine/ThreeNative_Unreal_Visual_Gap_Tracker.xlsx`.
 
