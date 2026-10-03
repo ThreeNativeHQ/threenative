@@ -9,7 +9,7 @@ Repository `/home/joao/projects/threenative/threenative-engine`, remote
 `https://github.com/ThreeNativeHQ/threenative.git`, branch `main`, baseline HEAD
 `e8754ab24e8e227ab472690a3d8d7b6d2cd53550`. Binding charter:
 [`docs/architecture/CHARTER.md`](../../../architecture/CHARTER.md). Parent batch:
-[feature-mining](../../feature-mining/README.md).
+feature-mining.
 
 **Blocking evidence:** the required real many-soldier consumer is not reproducibly runnable from
 its committed source. A detached `sandbox/fps-framework` at `e2652889` requests
