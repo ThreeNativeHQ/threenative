@@ -9,6 +9,7 @@ import {
   fogCaptureScenarios,
   fogFrameCost,
   fogLightPixelMetrics,
+  fogOverlapPixelMetrics,
   fogTextureBaselineMatches,
 } from "../verify-volumetric-fog.js";
 
@@ -273,4 +274,45 @@ it("waits for actual render observations before the three dedicated cost capture
       }),
     );
   }
+});
+
+it("observes the realized transport target instead of trusting the request", async () => {
+  const scenarios = await fogCaptureScenarios();
+  for (const [mode, width, height, steps] of [
+    ["half", 320, 200, 48],
+    ["costFull", 640, 400, 48],
+    ["costHalf", 320, 200, 48],
+    ["costOff", 0, 0, 0],
+  ] as const) {
+    const components = scenarios.find((entry) => entry.mode === mode)?.scenario.assert?.components;
+    expect(components, mode).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ component: "targetWidth", equals: width }),
+        expect.objectContaining({ component: "targetHeight", equals: height }),
+        expect.objectContaining({ component: "pixels", equals: width * height }),
+        expect.objectContaining({ component: "steps", equals: steps }),
+      ]),
+    );
+  }
+});
+
+it("declares the second density bound and measures that it changes the image", () => {
+  for (const mode of ["overlap", "fog"]) {
+    expect(fogCaptureScenario(mode, "KeyF").assert?.components).toContainEqual(
+      expect.objectContaining({ component: "overlaps", equals: mode === "overlap" }),
+    );
+  }
+  const frame = { width: 2, height: 1, data: new Uint8Array(8) };
+  const second = { width: 2, height: 1, data: new Uint8Array([0, 0, 0, 255, 0, 0, 0, 255]) };
+  expect(fogOverlapPixelMetrics(frame, second)).toMatchObject({
+    changedPixelRatio: 0,
+    maxChannelDelta: 0,
+    pass: false,
+  });
+  expect(
+    fogOverlapPixelMetrics(frame, {
+      ...second,
+      data: new Uint8Array([0, 0, 0, 255, 0, 9, 0, 255]),
+    }),
+  ).toMatchObject({ pass: true });
 });

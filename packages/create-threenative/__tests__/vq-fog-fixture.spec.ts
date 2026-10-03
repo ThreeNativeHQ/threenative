@@ -11,7 +11,11 @@ import {
   Scene,
 } from "three";
 import { describe, expect, it } from "vitest";
-import { FogProbe } from "../../../examples/abyss-framework/vq-fog/src/game.js";
+import {
+  FogProbe,
+  ROOM_BOUNDS,
+  fogInsideShadowMap,
+} from "../../../examples/abyss-framework/vq-fog/src/game.js";
 import { Registry } from "../../core/src/entities.js";
 import { createGameStore } from "../../core/src/state.js";
 
@@ -177,6 +181,27 @@ it("moves shadow coverage away while preserving the isolated light controls", ()
   expect(f.sun.shadow.camera.left).toBe(-9);
   f.probe.exit(f.ctx);
 });
+it("observes real shadow-map coverage instead of the authored mode name", () => {
+  const sun = new DirectionalLight(0xffffff, 3);
+  sun.position.set(-3, 7, 1);
+  sun.target.position.set(0, 0, -5);
+  sun.target.updateMatrixWorld();
+  sun.shadow.camera.updateProjectionMatrix();
+  Object.assign(sun.shadow.camera, { left: -9, right: 9, top: 9, bottom: -9, near: 0.1, far: 30 });
+  sun.shadow.camera.updateProjectionMatrix();
+  expect(fogInsideShadowMap(sun, ROOM_BOUNDS)).toBe(true);
+  Object.assign(sun.shadow.camera, { left: 30, right: 31, top: 31, bottom: 30 });
+  sun.shadow.camera.updateProjectionMatrix();
+  expect(fogInsideShadowMap(sun, ROOM_BOUNDS)).toBe(false);
+  const f = fixture();
+  f.select("scatter");
+  f.select("scatterOutside");
+  expect(f.state.getState()).toMatchObject({ shadowOutside: true });
+  f.select("fog");
+  expect(f.state.getState()).toMatchObject({ shadowOutside: false });
+  f.probe.exit(f.ctx);
+});
+
 it("cuts the camera and streams the wall on the same controller", () => {
   const f = fixture();
   f.select("fog");

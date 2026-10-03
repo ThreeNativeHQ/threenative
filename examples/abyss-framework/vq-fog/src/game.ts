@@ -19,6 +19,30 @@ import { playtest } from "../../../../packages/core/src/playtest.js";
 import { createVolumetricFog } from "../../../../packages/create-threenative/templates/starter/src/render/volumetricFog.js";
 import { WorldEnvironment } from "../../../../packages/create-threenative/templates/starter/src/render/worldEnvironment.js";
 
+export const ROOM_BOUNDS = new Box3(new Vector3(-4.5, 0, -9.5), new Vector3(4.5, 4, 3));
+
+// Coverage, not intent: does any corner of `bounds` land inside this light's shadow-map NDC box?
+// A mode name cannot answer that, and a mode name is exactly what a flag would echo.
+export function fogInsideShadowMap(light: DirectionalLight, bounds: Box3): boolean {
+  const camera = light.shadow.camera;
+  camera.updateMatrixWorld(true);
+  for (let corner = 0; corner < 8; corner += 1) {
+    const projected = new Vector3(
+      corner & 1 ? bounds.max.x : bounds.min.x,
+      corner & 2 ? bounds.max.y : bounds.min.y,
+      corner & 4 ? bounds.max.z : bounds.min.z,
+    ).project(camera);
+    if (
+      Math.abs(projected.x) <= 1 &&
+      Math.abs(projected.y) <= 1 &&
+      projected.z >= -1 &&
+      projected.z <= 1
+    )
+      return true;
+  }
+  return false;
+}
+
 const initialState = {
   mode: "off",
   ready: false,
@@ -187,10 +211,10 @@ export class FogProbe extends GameScene<FogState> {
     ctx.scene.overrideMaterial = scatteringOnly ? this.#black : null;
     this.#calibration.visible = scatteringOnly;
     ctx.scene.background = scatteringOnly ? this.#blackBackground : this.#background;
-    const shadowOutside = this.#mode.startsWith("scatterOutside");
+    const outsideShadowMap = this.#mode.startsWith("scatterOutside");
     Object.assign(
       this.#sun.shadow.camera,
-      shadowOutside
+      outsideShadowMap
         ? { left: 30, right: 31, top: 31, bottom: 30 }
         : { left: -9, right: 9, top: 9, bottom: -9 },
     );
@@ -231,7 +255,7 @@ export class FogProbe extends GameScene<FogState> {
       pixels: observation?.pixels ?? 0,
       steps: observation?.steps ?? 0,
       inside: this.#mode === "inside" || this.#cameraCut,
-      shadowOutside,
+      shadowOutside: !fogInsideShadowMap(this.#sun, ROOM_BOUNDS),
       streamedWall: this.#streamedWall,
       sun: this.#sun.intensity > 0,
       point: this.#point.intensity > 0,
@@ -274,7 +298,7 @@ export class FogProbe extends GameScene<FogState> {
     this.#disposeGraph();
     const volumes = [
       {
-        bounds: new Box3(new Vector3(-4.5, 0, -9.5), new Vector3(4.5, 4, 3)),
+        bounds: ROOM_BOUNDS,
         density: this.#mode === "zero" ? 0 : 0.18,
         baseHeight: 0.5,
         heightFalloff: 0.35,

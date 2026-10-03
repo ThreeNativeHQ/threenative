@@ -77,6 +77,12 @@ export function fogCaptureScenario(mode: string, key: string): IPlaytestScenario
           gte: 3,
           allowTrivial: "Resource counts must be observed stable over completed rendered frames.",
         })),
+        {
+          entity: "fog",
+          component: "overlaps",
+          equals: mode === "overlap",
+          allowTrivial: "Only the overlap arm installs a second, nested density bound.",
+        },
         ...[
           ["sun", mode !== "sunOff" && !mode.endsWith("SunOff")],
           ["point", mode !== "pointOff" && !mode.endsWith("PointOff")],
@@ -121,9 +127,35 @@ export function fogCaptureScenario(mode: string, key: string): IPlaytestScenario
 }
 
 export async function fogCaptureScenarios() {
+  // A requested resolution is not a realized one: these arms must observe their authored transport
+  // target, so a half-resolution request that silently rendered full size fails instead of passing.
+  const transportTargets: Record<string, readonly [number, number, number]> = {
+    half: [320, 200, 48],
+    costFull: [640, 400, 48],
+    costHalf: [320, 200, 48],
+    costOff: [0, 0, 0],
+  };
+  const observeTransport = (scenario: IPlaytestScenario, mode: string): IPlaytestScenario => {
+    const target = transportTargets[mode];
+    if (target === undefined) return scenario;
+    scenario.assert?.components?.push(
+      ...[
+        ["targetWidth", target[0]],
+        ["targetHeight", target[1]],
+        ["pixels", target[0] * target[1]],
+        ["steps", target[2]],
+      ].map(([component, equals]) => ({
+        entity: "fog",
+        component: String(component),
+        equals,
+        allowTrivial: "The transport target must realize this arm's authored resolution and steps.",
+      })),
+    );
+    return scenario;
+  };
   const result = cases.map(([mode, key]) => ({
     mode: String(mode),
-    scenario: fogCaptureScenario(mode, key),
+    scenario: observeTransport(fogCaptureScenario(mode, key), String(mode)),
   }));
   const { sourcePath: _sourcePath, ...lifecycle } = await loadPlaytestScenario(
     root,
@@ -242,7 +274,7 @@ export async function fogCaptureScenarios() {
     ["costFull", "fog", "KeyF"],
     ["costHalf", "half", "KeyH"],
   ] as const) {
-    const scenario = fogCaptureScenario(variant, key);
+    const scenario = observeTransport(fogCaptureScenario(variant, key), mode);
     scenario.name = `vq-volumetric-fog-${mode}`;
     scenario.steps.splice(scenario.steps.length - 1, 0, {
       waitForResource: { id: "state", path: "settledRenderFrames", gte: 90 },
@@ -446,6 +478,36 @@ export function fogLightPixelMetrics(
       calibrationMaxDifference === 0 &&
       wallMaxRgb === 0 &&
       [sun, point].every((metric) => metric.meanRgbDelta >= 1 && metric.changedPixelRatio >= 0.1),
+  };
+}
+
+// Overlapping bounds are only qualified if the second one actually changes the image: the same
+// camera and lights, one extra nested density bound, a difference too large to be noise.
+export function fogOverlapPixelMetrics(single: IPixelFrame, overlap: IPixelFrame) {
+  if (
+    single.width !== overlap.width ||
+    single.height !== overlap.height ||
+    single.data.length !== overlap.data.length
+  )
+    throw new Error("VQ07 overlap evidence requires equally sized frames.");
+  const pixels = single.width * single.height;
+  let changed = 0;
+  let maxChannelDelta = 0;
+  for (let i = 0; i < pixels; i += 1)
+    for (let c = 0; c < 3; c += 1) {
+      const at = i * 4 + c;
+      const difference = Math.abs(
+        (overlap.data[at] ?? Number.NaN) - (single.data[at] ?? Number.NaN),
+      );
+      maxChannelDelta = Math.max(maxChannelDelta, difference);
+      if (difference > 2) changed += 1;
+    }
+  const changedPixelRatio = changed / (pixels * 3);
+  return {
+    changedPixelRatio,
+    maxChannelDelta,
+    thresholds: { minChangedPixelRatio: 0.05, minMaxChannelDelta: 4 },
+    pass: changedPixelRatio >= 0.05 && maxChannelDelta >= 4,
   };
 }
 
@@ -723,8 +785,10 @@ async function main(): Promise<void> {
         results.push({
           assertion: `${mode} measured per-frame cost`,
           ...measured,
-          transportPixels: mode === "costOff" ? 0 : mode === "costHalf" ? 64000 : 256000,
-          raySteps: mode === "costOff" ? 0 : 48,
+          transportPixels: observedState?.pixels,
+          transportWidth: observedState?.targetWidth,
+          transportHeight: observedState?.targetHeight,
+          raySteps: observedState?.steps,
           directionalLights: 1,
           localLights: 1,
         });
@@ -784,6 +848,13 @@ async function main(): Promise<void> {
     )
       throw new Error("VQ07 target resize restore did not recover the exact fog pixels.");
     results.push({ assertion: "target/depth resize restores exact pixels", pass: true });
+    const overlapMetrics = fogOverlapPixelMetrics(
+      fog,
+      PNG.sync.read(await readFile(path.join(artifacts, "overlap/after.png"))),
+    );
+    results.push({ assertion: "overlapping density bounds change the image", ...overlapMetrics });
+    if (!overlapMetrics.pass)
+      throw new Error("VQ07 the overlapping density bound did not measurably change the image.");
     for (const [mode, reference] of [
       ["cameraCut", "inside"],
       ["cameraRestore", "fog"],
