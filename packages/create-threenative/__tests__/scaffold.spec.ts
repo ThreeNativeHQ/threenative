@@ -164,24 +164,30 @@ const BUG_REPORT_SKILL_PATHS = [
 // all ten hashes to the values above, so nothing else in this lane reaches a scaffold. The docs
 // arrive through the templating step rather than a verbatim copy, which is why a content-hash
 // matcher does not list them and this ablation is the evidence instead.
+// Recomputed 2026-10-03 for PRD-339's opt-in exposure integration at 8bf16f4c3.
+// All thirteen actual no-install baseline52/current trees were byte-compared: only the
+// generated worldEnvironment/autoExposure/quality wiring, two GPU/readback helper modules,
+// and token-identical instruction whitespace changed. Default cost remains off; actual
+// consumer GPU captures are byte-identical to the qualified public images. Measurement:
+// docs/verification/prd339-exposure-proof/completion-consumer-8bf16f4.json.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-02 on the merge of develop into PRD-339 auto-exposure: all thirteen
   // trees move, because every template gained src/render/exposure.ts + autoExposure.ts and the
   // merged tree also carries develop's shared threenative-assets skill bytes. Measured through
   // createProject on the merged tree by the spec that asserts them.
-  "action-rpg": "b7f054b47c662c77372335279fe81a916d45afed60a39d12e6054f35a31f4fc6",
-  minimal: "5147f37e55f3c6524b7d2489b1bda46b7276fad825465be825ceaa87aa718b42",
-  platformer: "40342e5fcaaf682d486878d12dbe42cf08ebd3a97b927025a85f2a58e227e2f8",
-  puzzle: "649e38d75110dee453fda27b68fd4e2428520f1cebbab8d182d05aea7d97fe9a",
-  racing: "c5375fd0ca297f309ab7e8d121a86b6815a20cdd5b00ef4ad695452da35c5b9b",
-  rain: "3fc0a3879815321f51e8d886db9f2c9a2832c0ddff6aa7a25b30ff6fe7e02e8f",
-  rts: "c04d8fbbcfad0fa962055202df3223d62a80361a2779863127b0e49debe8d2eb",
-  runner: "82edfe3f91964d74a727a5a32719cf97170bf8484bc82bfd3626efe9d7964d0e",
-  sailing: "205d7eb3b82d743d3dcd1bef2e23290cf0576f4ce377c1d93bafb3a089a2baa5",
-  shooter: "39eaa2254eaa77038b19c1ba0b8cf50665d8b9e6e96223f76131d97b1835de82",
-  snow: "d322ab60a23e146ca729348db119c2491c54cc1f949bd394676d3dd4ff2aa294",
-  starter: "d7ec4b02ffb446b33666f52ccd9db0e034a17d5961ea3b2caa17012a481e73a8",
-  "tower-defense": "e5980d5a22836b591f3ac5853c5dd522aa8bcb090722a71e1afcc122defa8ad0",
+  "action-rpg": "ac45303b74f9daab0faebc8caa4c6cd4826419997b8baf1949feb30695e41da6",
+  minimal: "8b8127a3228e91e49dd54c9990ef3f1e9ed83d3c8a0383a310542469e3d17098",
+  platformer: "02adfd2b349ede31af2589488974ff7cc3fe5548b56284ec460738b1be2a3a07",
+  puzzle: "1f0fd9280fb629766dd8508cbd842afe3e86aaa04f0a9d3b63a11b77acceca74",
+  racing: "7dfe8c0f8c1501490216d8cb8b59bc44ec8144df7b897077de5a781a9af9e6d7",
+  rain: "717ab2324392a83f8a3b7d9e7640647af82ba8f0d1937668990c5300b96a824b",
+  rts: "611552b795122611fa8d515e1632aaf3b1c043f0538459ea1811ddb58e8064ad",
+  runner: "5e44aeb29248a63f93648716cbdfe861dd758eb8db65dbea0ad0f6002c09136a",
+  sailing: "90df74708eedb1ccac4a8a6a260f2ce91ab7e45246ae373364c5bfd1b9e0d268",
+  shooter: "96aaf05c134c9643867a9b9653deb534b8e34c8f77f20e2d6d472705ea1f3709",
+  snow: "481eeb617fd4948e4473618b51247e9848c6b583285d795e5af87339f3dda9c6",
+  starter: "c434168b09b7e6baba24e2d95ed4abcf03ce41c3067aedbeeca7083ec4c992ca",
+  "tower-defense": "02554a3279225373e6d39fcdd41f95edffa832804a49f816d593598dad2b64c5",
 };
 
 const GENERATED_SCAFFOLD_METADATA =

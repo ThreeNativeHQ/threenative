@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-339 — the frame sets its own exposure
 
-**Status:** IN PROGRESS — final full-suite checks revealed incomplete shipped-template integration at `2c77070b8`; fixture acceptance remains qualified. Implementation started 2026-10-02 from `d7277838`; original
+**Status:** IN PROGRESS — actual generated-consumer integration is qualified at `8bf16f4c3`; final evidence budget and publication remain pending. The earlier incomplete integration at `2c77070b8` is preserved below. Implementation started 2026-10-02 from `d7277838`; original
 measurement at `43d03e6a`. Batch:
 [docs/PRDs/AAA-visuals](./README.md). Judged with
 [PRD-341](../done/PRD-341-a-frames-tone-is-a-number-and-the-number-is-a-gate.md), which is the only way to
@@ -471,3 +471,16 @@ The full instrumented coverage workload found the omitted negative CTest invocat
 ### Final-suite integration repair
 
 The full suite at completion checkpoint `2c77070b8` exposed missing shipped-template imports/calls and a generated source file above the unchanged 200-line readability gate. Fixture GPU/native evidence does not qualify missing consumer wiring. This phase is reopened until the game-owned opt-in path uses the existing world pass, retains the default picture, and qualifies its lifetime on the actual generated consumer. The native build-matrix registration and action-rpg instruction newline guard also require repair. No invariant or acceptance tolerance is weakened.
+
+
+### Generated-consumer qualification and publication hold (2026-10-03)
+
+[Actual consumer proof, public image aliases and source receipts](../../verification/prd339-exposure-proof/completion-consumer-8bf16f4.json) qualifies the generated `WorldEnvironment` opt-in at source `8bf16f4c320748403dd091e4fd7da394da314bff`. All thirteen quality presets explicitly keep its cost flag false; the default picture is unchanged. Metering uses the existing unexposed world-pass colour, applies exposure before the chain, and releases its own targets with that pass. Four shared generated files are byte-identical across all thirteen kits and stay within their unchanged readability checks.
+
+The actual consumer passes the approved first-update camera gate: gain one error is 0.000000476837 stops, while gain zero fails only the same 0.25-stop response gate at 10.553099394 stops. A disposable source mutation removes the generated environment's meter; its manual fixture fallback still adapts correctly, but only the consumer ownership gate rejects it. Exact source/mutation digests and actual ownership markers are retained in the lossless trace. There is no claim that the mutant pixels lacked adaptation.
+
+The actual owned consumer also passes all 720 paired lifecycle samples, real 320×180 resize and immediate target adoption on reset. Desktop qualifies 180 paired samples, nonblank captures, three actual null GPU error scopes and the injected validation control. Rebuilt V8 and QuickJS displayless contracts both pass positive and actual registered negative invocations. All ten current consumer PNGs are byte-identical to existing public images: hashes and aliases preserve their original provenance, with no new screenshot or hardware claim. Independent code, trace, image and coverage audits pass.
+
+The genuine full instrumented native workload executes 43 targets and produces 47 raw profiles: 19,217 of 24,373 lines, 78.85%, source digest `26e52aa0d7cade3c712d4e4054e9a014d7f07709558b3146196827780580d713`. Earlier profiles and the failed measurement remain preserved. Full typecheck and lint pass. The full suite passes 7,411 root tests plus 1,532 native tests with existing skips, and exposes only the expected scaffold identity change. All thirteen baseline/current scaffold trees were then byte-compared; only the bounded render integration and instruction whitespace changed. The unchanged complete scaffold spec passes all 66 tests after genuine measured pin updates.
+
+Final publication is held for the unchanged combined evidence byte budget. No historical proof compression or unrelated PNG writes have been authorized or applied. PRD progress remains open; exact-head remote CI, public publication and auto-merge are still pending separately. No acceptance threshold, clock age, hardware requirement, or pipeline setting is waived.
