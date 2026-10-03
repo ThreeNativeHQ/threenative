@@ -1,0 +1,91 @@
+# Self-hosted CI runners (`tn-local`)
+
+Linux CI jobs can run on one owner machine instead of GitHub's hosted runners. Hosted runners stay the
+fallback for everything, so **contributors need none of this**: a clone, a fork or a pull request works
+the same with or without it. The design and its measurements are in
+[PRD-480](../../docs/PRDs/CI/PRD-480-linux-ci-runs-on-the-owner-machine.md).
+
+## How routing works
+
+Every movable Linux job picks its runner from one expression:
+
+```yaml
+runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+```
+
+- `TN_RUNNER` (repository variable) set to `tn-local` → the job runs on this pool. Unset → hosted.
+- A pull request from a fork always runs hosted, so outside code never reaches the machine.
+- Small join jobs (`scope`, `ci-required`, summaries) use `TN_RUNNER_LIGHT` the same way, so they never
+  queue behind a 20-minute build.
+- macOS, Windows, iOS, linux-arm64, `supply-chain` and the Android emulator lane always run hosted.
+
+The pool sets the variables only once its runners are online, and clears them before it stops. A pool
+that is down therefore never strands a job.
+
+## Set it up (once, on the runner machine)
+
+Needs: Linux with systemd, Docker usable without `sudo`, `gh` logged in with admin rights on the repo,
+and at least 6 CPU cores (each slot takes 2 whole cores, and 2 stay free for the desktop).
+
+1. Create a fine-grained token for this repository only, with **Administration: Read and write**. It
+   mints runner registration tokens. Add **Variables: Read and write** too if the pool must also start
+   before anyone logs in (see Troubleshooting).
+2. Store it outside the repository, readable only by you:
+
+   ```sh
+   mkdir -p ~/.config/threenative
+   printf 'RUNNER_ADMIN_TOKEN=%s\n' '<token>' > ~/.config/threenative/runners.env
+   chmod 600 ~/.config/threenative/runners.env
+   ```
+
+3. In the repository settings, set Actions → General → "Fork pull request workflows from outside
+   collaborators" to **Require approval for all outside collaborators**.
+4. Install:
+
+   ```sh
+   pnpm ci:runners:install
+   ```
+
+   It checks the prerequisites and creates `.worktrees/ci-runners` (a checkout the service owns). It
+   then installs and starts a systemd user service, `threenative-ci-runners`, enabling lingering so the
+   service starts at boot. The pool comes up and the variables are set. Nothing else to run, now or
+   after a reboot.
+
+## Day to day
+
+| Want | Run |
+|---|---|
+| What is running, what is routed | `pnpm ci:runners status` |
+| Pick up a runner image or script change from `develop` | `systemctl --user restart threenative-ci-runners` (when no job is running; a restart kills in-flight jobs) |
+| Send every job to hosted runners now (kill switch) | `gh variable delete TN_RUNNER && gh variable delete TN_RUNNER_LIGHT` |
+| Stop the pool | `systemctl --user stop threenative-ci-runners` |
+| Remove everything | `pnpm ci:runners uninstall` |
+| Run without the service (any OS with Docker) | `pnpm ci:runners up [N]` / `pnpm ci:runners down` |
+
+Every start re-checks out the latest `develop`, so fixes to `tools/ci-runners/` deploy on the next
+restart or reboot.
+
+## What a slot is
+
+- An ephemeral container per job (`docker run --rm`): fresh filesystem, fresh hostname, no state
+  shared between jobs. The image is Ubuntu 24.04 plus what hosted `ubuntu-24.04` jobs rely on: Node 20,
+  `gh`, Rust, JDK 17, Android SDK and platform-tools, build tools, Xvfb and Playwright's dependencies.
+- 5 heavy slots, each pinned to 2 whole cores (`nproc` reads 4, like a hosted runner) with 12 GB of
+  memory and no extra swap. Under memory pressure the kernel kills a CI job before anything else.
+- 1 light slot: 1 CPU and 2 GB, for joins only.
+- The admin token mints one registration token per container and is unset before the job starts, so no
+  job can read it.
+
+## Troubleshooting
+
+- **The pool did not come up after a reboot.** `gh` may keep its token in a desktop keyring that stays
+  locked until you log in. The service retries every minute and comes up at login; until then jobs run
+  hosted. For starts before login, give the runner token Variables write (step 1).
+- **Jobs are stuck "Waiting for a runner" with the machine off.** The machine went down without a clean
+  stop (power loss, crash), so `TN_RUNNER` is still set. Run the kill switch above, or boot the machine.
+- **A template lane fails with a capture or GPU-device error.** `tower-defense` and `rain` are known
+  flaky on both pools (see `docs/PRDs/CI/EXECUTION-ORDER.md`). Rerun the failed jobs once.
+- **The runner list shows offline `tn-*` runners.** Runners stopped while idle stay registered. `up` and
+  `down` delete them.
+- **Timing.** A full board takes about as long as hosted (42 min against 39), but uses no hosted
+  minutes. Several pull requests at once queue on the 5 slots.

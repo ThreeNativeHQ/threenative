@@ -25,6 +25,8 @@ One source, two runtimes: browser WebGPU and an owned C++ host for desktop/Andro
 - Branch from `origin/develop` (not a local branch that may be ahead of it), target `develop`, squash-merge. Set `git config threenative.integrationBranch develop` per checkout.
 - The commit that finishes a PRD also `git mv`s it to `docs/PRDs/done/`.
 - `main` takes only the ordinary full-checked `develop -> main` PR, merged with a merge commit, never squash or rebase.
+- **Push once per run**: while your PR's CI runs, commit locally; push to fix that run or after it finishes. A PRD tick rides with the next code push, never alone.
+- **No workflow file per feature**: add its CI proof as a job in an existing workflow.
 - Before retargeting, inventory `gh pr list` and `pnpm worktree:status`; retarget in-flight PRs one at a time and never rewrite another worktree.
 
 ## Where a change goes
@@ -87,7 +89,7 @@ TypeScript 5.9 `strict`, **ESM only**; relative imports end in `.js`. Versions c
 Results go in the existing PRD, PR or response; a separate evidence file only when the user asks or a workflow consumes it. Prose edits need only the doc checks and mirror regeneration — no implementation checkpoints or artificial negative controls.
 
 **Fail closed**: malformed input throws, a missing observation fails, an empty assertion set fails. `pnpm test` proves units; **a playtest scenario proves the game** — every runtime-behaviour change gets one, rerun on each later change to that behaviour.
-**Nearest lane first, CI last.** A CI round trip costs over an hour; prove it locally (unit test, playtest, emulator, attached device) and push once green. **Prefer an emulator over hardware** when it can hold the claim; a stopped emulator means start it, not "blocked". Never call `xvfb-run` (its exit status is its own cleanup kill; `sh scripts/xvfb.sh <cmd>` is the wrapper). An unnamed WebGPU adapter may be SwiftShader: pass `--browser-recipe webgpu` and check `adapter.info`. Free a port with `lsof -ti tcp:<port> | xargs -r kill`; `pkill -f vite` kills your own shell.
+**Nearest lane first, CI last.** A CI round trip costs over an hour; prove it locally (unit test, playtest, emulator, attached device) and push once green. While `TN_RUNNER` is set, run only the focused checks for what you changed and push: the full board runs once, on `tn-local`. **Prefer an emulator over hardware** when it can hold the claim; a stopped emulator means start it, not "blocked". Never call `xvfb-run` (its exit status is its own cleanup kill; `sh scripts/xvfb.sh <cmd>` is the wrapper). An unnamed WebGPU adapter may be SwiftShader: pass `--browser-recipe webgpu` and check `adapter.info`. Free a port with `lsof -ti tcp:<port> | xargs -r kill`; `pkill -f vite` kills your own shell.
 Long gates write `artifacts/gates/status.json`: read it with `pnpm gate:status`, probe a stale phase with `pnpm gate:doctor`; `pnpm gate:resume` continues only while worktree, branch, HEAD, lease and artifact still match. None of them repair or remove a worktree.
 
 ## Working outside the repo

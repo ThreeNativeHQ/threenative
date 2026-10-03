@@ -5,6 +5,7 @@ import {
   BufferGeometry,
   DirectionalLight,
   FloatType,
+  Frustum,
   HalfFloatType,
   InstancedMesh,
   type Material,
@@ -20,8 +21,26 @@ import {
   SphereGeometry,
   Vector3,
 } from "three";
-import { float, mix, vec4 } from "three/tsl";
-import { type Node, type NodeBuilder, type NodeFrame, WGSLNodeBuilder } from "three/webgpu";
+import {
+  Fn,
+  float,
+  lightingContext,
+  lights,
+  mix,
+  nodeObject,
+  property,
+  vec3,
+  vec4,
+} from "three/tsl";
+import {
+  DirectionalLightNode,
+  LightingModel,
+  type Node,
+  type NodeBuilder,
+  type NodeFrame,
+  PhysicalLightingModel,
+  WGSLNodeBuilder,
+} from "three/webgpu";
 import { describe, expect, it, vi } from "vitest";
 import { VIRTUAL_SHADOW_MOVER_LAYER as PUBLIC_VIRTUAL_SHADOW_MOVER_LAYER } from "../src/index.js";
 import {
@@ -126,8 +145,12 @@ interface IShaderGraphBuilder extends NodeBuilder {
 function shadowGraphBuilder(): IShaderGraphBuilder {
   const object = new Mesh(new BoxGeometry(), new MeshBasicMaterial());
   const renderer = {
-    backend: { isWebGPUBackend: true },
+    backend: {
+      isWebGPUBackend: true,
+      utils: { getTextureSampleData: () => ({ primarySamples: 1 }) },
+    },
     hasCompatibility: () => true,
+    hasFeature: () => false,
     library: { fromMaterial: () => null },
     shadowMap: { enabled: true, type: 1 },
   };
@@ -138,6 +161,146 @@ function shadowGraphBuilder(): IShaderGraphBuilder {
   graphBuilder.setShaderStage("fragment");
   return graphBuilder;
 }
+
+/** Compile the real selection and stock frustum filter, without textures or a GPU. */
+function levelDebugGraph(search: string, uv = [0.25, 0.75]) {
+  vi.stubGlobal("location", { search });
+  const { light } = world();
+  const node = new VirtualShadowNode(light, { clipExtents: [8, 32, 128, 512], marker: false });
+  const graphBuilder = shadowGraphBuilder();
+  const outgoingLight = property("vec3", "testOutgoingLight");
+  const lightingModel = new LightingModel();
+  graphBuilder.context = { lightingModel, outgoingLight };
+  const root = node.setup(graphBuilder) as Node;
+  for (const shadowNode of [...node.levelNodes, ...node.moverNodes]) {
+    const stock = shadowNode as Node & {
+      setup: (builder: NodeBuilder) => Node;
+      setupShadowFilter: (builder: NodeBuilder, inputs: object) => Node;
+    };
+    vi.spyOn(stock, "setup").mockImplementation(() =>
+      vec4(
+        stock.setupShadowFilter(graphBuilder, {
+          filterFn: () => float(0.6),
+          shadowCoord: vec3(uv[0], uv[1], 0.5),
+        }) as never,
+      ),
+    );
+  }
+  const flow = graphBuilder.flowStagesNode(
+    Fn(() => {
+      const value = vec4(root as never).toVar("testShadowResult");
+      outgoingLight.assign(vec3(0.4, 0.5, 0.6).mul(value.rgb));
+      lightingModel.finish(graphBuilder);
+      return vec4(outgoingLight, value.a);
+    })() as unknown as Node,
+    "vec4",
+  );
+  node.dispose();
+  return { code: flow.code, nodes: (graphBuilder as unknown as { nodes: Set<Node> }).nodes.size };
+}
+
+describe("virtual shadow level diagnostic", () => {
+  it("should preserve the original graph when the URL flag is off", () => {
+    try {
+      const original = levelDebugGraph("");
+      expect(original.nodes).toBe(358);
+      expect(original.code).not.toContain("virtualShadowLevelTint");
+      expect(levelDebugGraph("?tnShadowLevels=0")).toEqual(original);
+      expect(levelDebugGraph("?tnShadowLevels=false")).toEqual(original);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("should tint the selected sampler lookup without changing its shadow factor", () => {
+    try {
+      const original = levelDebugGraph("");
+      const debug = levelDebugGraph("?scene=map-walk&tnShadowLevels=1");
+      expect(debug.nodes).toBeGreaterThan(original.nodes);
+      expect(debug.code).toContain("virtualShadowLevelTint");
+      for (const rgb of ["1.0, 0.0, 0.0", "0.0, 1.0, 0.0", "0.0, 0.0, 1.0", "1.0, 1.0, 0.0"]) {
+        expect(debug.code).toContain(`vec3<f32>( ${rgb} )`);
+      }
+      expect(debug.code).toContain("vec3<f32>( 0.0, 1.0, 1.0 )");
+      expect(debug.code).toContain("vec3<f32>( 1.0, 0.0, 1.0 )");
+      expect(
+        debug.code.replace(/nodeVar\d+/gu, "nodeVar").match(/virtualShadowValue = [^;]+;/gu),
+      ).toEqual(
+        original.code.replace(/nodeVar\d+/gu, "nodeVar").match(/virtualShadowValue = [^;]+;/gu),
+      );
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("should read the URL once at setup, before the shader graph is built", () => {
+    let reads = 0;
+    vi.stubGlobal("location", {
+      get search() {
+        reads += 1;
+        return "?tnShadowLevels=1";
+      },
+    });
+    const { light } = world();
+    const node = new VirtualShadowNode(light, { marker: false });
+    try {
+      node.setup(builder);
+      node.setup(builder);
+      expect(reads).toBe(1);
+    } finally {
+      node.dispose();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it.each(["basic", "physical"] as const)(
+    "should overlay the final colour through Three's %s lighting context",
+    (mode) => {
+      vi.stubGlobal("location", { search: "?tnShadowLevels=1" });
+      const { light, camera } = world();
+      const node = new VirtualShadowNode(light, { clipExtents: [8], marker: false });
+      const graphBuilder = shadowGraphBuilder();
+      (graphBuilder as unknown as { camera: PerspectiveCamera }).camera = camera;
+      graphBuilder.context = {
+        setupNormal: () => vec3(0, 1, 0),
+        setupClearcoatNormal: () => vec3(0, 1, 0),
+        setupPositionView: () => vec3(0, 0, -1),
+        setupModelViewProjection: () => vec4(0, 0, 0, 1),
+      };
+      node.setup(graphBuilder);
+      light.shadow.shadowNode = node;
+      graphBuilder.object.receiveShadow = true;
+      const renderer = graphBuilder.renderer as unknown as {
+        library: { getLightNodeClass: () => typeof DirectionalLightNode };
+      };
+      renderer.library.getLightNodeClass = () => DirectionalLightNode;
+      for (const stock of [...node.levelNodes, ...node.moverNodes]) {
+        vi.spyOn(
+          stock as Node & { setup: (builder: NodeBuilder) => Node },
+          "setup",
+        ).mockReturnValue(vec4(0.6));
+      }
+      const model = mode === "physical" ? new PhysicalLightingModel(true) : new LightingModel();
+      if (mode === "basic") {
+        model.direct = ({ lightColor, reflectedLight }) => {
+          nodeObject(reflectedLight.directDiffuse as Node<"vec3">).addAssign(lightColor as never);
+        };
+      }
+      try {
+        const flow = graphBuilder.flowStagesNode(
+          vec4(lightingContext(lights([light]), model) as never, 1) as unknown as Node,
+          "vec4",
+        );
+        expect(flow.code).toMatch(
+          /(nodeVar\d+) = mix\( outgoingLight, virtualShadowLevelTint\w*, 0\.5 \);\s*outgoingLight = \1;\s*$/u,
+        );
+      } finally {
+        node.dispose();
+        vi.unstubAllGlobals();
+      }
+    },
+  );
+});
 
 describe("VirtualShadowNode", () => {
   it("should expose the mover layer from the main core entry point", () => {
@@ -350,6 +513,69 @@ describe("VirtualShadowNode", () => {
     camera.position.set(1.5, 5, 0);
     node.updateBefore(frameFor(camera));
     expect(node.stats).toMatchObject({ moved: 1, rendered: 1 });
+  });
+
+  it("should keep stationary windows cached when their refresh steps change", () => {
+    const { camera, light } = world();
+    const node = setupNode(light, {
+      clipExtents: [96, 320],
+      mapSize: 512,
+      refreshStep: [0.128, 0.128],
+      adaptiveRefresh: false,
+    });
+    camera.position.copy(node.clipmap.unproject({ u: 100, v: -100 }));
+    settle(node, camera);
+    const origins = node.options.clipExtents.map((_, level) => node.clipmap.getWindow(level));
+    const renders = node.stats.rendersTotal;
+    try {
+      for (const step of [0.164, 0.128, 0]) {
+        node.clipmap.setRefreshStep(1, step);
+        node.updateBefore(frameFor(camera));
+        expect(node.stats, `stationary refreshStep=${String(step)}`).toMatchObject({
+          moved: 0,
+          rendered: 0,
+          deferred: 0,
+          rendersTotal: renders,
+        });
+        for (const [level, origin] of origins.entries()) {
+          expect(node.clipmap.getWindow(level)).toMatchObject({
+            minX: origin.minX,
+            minY: origin.minY,
+          });
+        }
+      }
+    } finally {
+      node.dispose();
+    }
+  });
+
+  it("should re-render after moving exactly a refresh step plus one texel", () => {
+    const { camera, light } = world();
+    const extent = 320;
+    const step = 0.164;
+    const node = setupNode(light, {
+      clipExtents: [extent],
+      mapSize: 512,
+      refreshStep: step,
+      adaptiveRefresh: false,
+    });
+    camera.position.copy(node.clipmap.unproject({ u: 100, v: -100 }));
+    settle(node, camera);
+    const origin = node.clipmap.getWindow(0);
+    const renders = node.stats.rendersTotal;
+    try {
+      camera.position.copy(
+        node.clipmap.unproject({ u: 100 + step * extent + origin.pageWorldSize, v: -100 }),
+      );
+      node.updateBefore(frameFor(camera));
+      expect(node.stats).toMatchObject({ moved: 1, rendered: 1, rendersTotal: renders + 1 });
+      expect(node.clipmap.getWindow(0).minX).not.toBe(origin.minX);
+      expect(node.clipmap.getWindow(0).minY).toBe(origin.minY);
+      node.updateBefore(frameFor(camera));
+      expect(node.stats).toMatchObject({ moved: 0, rendered: 0, cached: 1 });
+    } finally {
+      node.dispose();
+    }
   });
 
   it("should refuse a refreshStep that would cost the selection guard its trailing edge", () => {
@@ -949,6 +1175,184 @@ describe("VirtualShadowNode derived depth and caster size gate", () => {
   const _view = new Matrix4();
   const _projected = new Vector3();
 
+  it.each(["wide", "horizon"] as const)(
+    "should retain a %s pine's receiver column at both window placements (PRD-478)",
+    (kind) => {
+      const { camera, light, scene } = world();
+      const sun = new Vector3(0, 0.3, Math.sqrt(1 - 0.3 ** 2));
+      light.position.copy(sun).multiplyScalar(200);
+      const extent = 24;
+      const pineZ = (30 * sun.z) / sun.y;
+      const centreZ = kind === "wide" ? (10 * sun.z) / sun.y : pineZ * 2 + extent * Math.SQRT2;
+      const centre = new Vector3(0, (centreZ * sun.y) / sun.z, centreZ);
+      const geometry = new BoxGeometry(4, 30, 4);
+      const material = new MeshStandardMaterial();
+      const pine =
+        kind === "wide" ? new InstancedMesh(geometry, material, 2) : new Mesh(geometry, material);
+      if (pine instanceof InstancedMesh) {
+        pine.setMatrixAt(0, new Matrix4().makeTranslation(0, 15, pineZ));
+        pine.setMatrixAt(1, new Matrix4().makeTranslation(256, 15, pineZ));
+      } else pine.position.set(0, 15, pineZ);
+      pine.castShadow = true;
+      // Keep a local depth contributor when the old ground-distance filter drops the pine.
+      const anchor = new Mesh(new BoxGeometry(2, 2, 2), material);
+      anchor.position.copy(centre).x = 12;
+      anchor.castShadow = true;
+      const receiver = new Mesh(new BoxGeometry(4, 2, 4), material);
+      receiver.position.y = -1;
+      receiver.castShadow = true;
+      scene.add(pine, anchor, receiver);
+      scene.updateMatrixWorld(true);
+      const node = setupNode(light, {
+        clipExtents: [extent],
+        mapSize: 64,
+        minCasterTexels: 0,
+        adaptiveRefresh: false,
+        adaptiveCasterGate: false,
+      });
+      const stock = node.levelNodes[0] as unknown as {
+        light: DirectionalLight;
+        shadow: DirectionalLight["shadow"];
+        updateShadow(frame: NodeFrame): void;
+      };
+      const submitted: number[][] = [];
+      const depths: number[][] = [];
+      const points = [new Vector3(-2, 30, pineZ - 2), new Vector3(2, 30, pineZ + 2), new Vector3()];
+      stock.updateShadow = () => {
+        stock.shadow.updateMatrices(stock.light);
+        const frustum = new Frustum().setFromProjectionMatrix(
+          new Matrix4().multiplyMatrices(
+            stock.shadow.camera.projectionMatrix,
+            stock.shadow.camera.matrixWorldInverse,
+          ),
+        );
+        submitted.push(
+          [pine, anchor, receiver]
+            .filter(
+              (mesh) =>
+                mesh.visible &&
+                mesh.castShadow &&
+                mesh.layers.test(stock.shadow.camera.layers) &&
+                frustum.intersectsObject(mesh),
+            )
+            .map((mesh) => mesh.id),
+        );
+        depths.push(points.map((point) => point.clone().applyMatrix4(stock.shadow.matrix).z));
+      };
+      try {
+        for (const shift of [-8, 8]) {
+          camera.position.copy(centre).addScaledVector(new Vector3(0, sun.z, -sun.y), shift);
+          node.invalidateAll();
+          node.updateBefore(frameFor(camera));
+          for (const point of points) {
+            const projected = point.clone().sub(stock.light.target.position);
+            expect(Math.abs(projected.dot(new Vector3(0, sun.z, -sun.y)))).toBeLessThan(extent);
+          }
+        }
+        expect(submitted, "both windows must submit the pine above the shared receiver").toEqual([
+          [pine.id, anchor.id, receiver.id],
+          [pine.id, anchor.id, receiver.id],
+        ]);
+        for (const [placement, column] of depths.entries())
+          for (const depth of column) {
+            expect(
+              depth,
+              `placement ${String(placement)} clips the receiver column before near`,
+            ).toBeGreaterThanOrEqual(0);
+            expect(
+              depth,
+              `placement ${String(placement)} clips the receiver column beyond far`,
+            ).toBeLessThanOrEqual(1);
+          }
+      } finally {
+        node.dispose();
+      }
+    },
+  );
+
+  it.each([
+    ["cached", 20],
+    ["cached", -20],
+    ["delayed", 20],
+    ["delayed", -20],
+    ["deferred", 20],
+    ["deferred", -20],
+  ] as const)(
+    "should sample %s maps at their rendered depth after light-axis motion of %s",
+    (mode, delta) => {
+      const { camera, light, tall } = shadowWorld();
+      const node = setupNode(light, {
+        clipExtents: [24, 96, 320],
+        mapSize: 64,
+        adaptiveRefresh: false,
+        invalidationDelay: [10, 10, 10],
+      });
+      node.trackCaster(tall);
+      const rendered = new Map<Node, Matrix4>();
+      for (const shadowNode of [...node.levelNodes, ...node.moverNodes]) {
+        const stock = shadowNode as unknown as {
+          light: DirectionalLight;
+          shadow: DirectionalLight["shadow"];
+          updateShadow(frame: NodeFrame): void;
+        };
+        // Keep three's real render-time camera/matrix update; stub only the GPU draw.
+        stock.updateShadow = () => {
+          stock.shadow.updateMatrices(stock.light);
+          rendered.set(shadowNode, stock.shadow.matrix.clone());
+        };
+      }
+      try {
+        settle(node, camera);
+        const time = clock + 20;
+        node.invalidateAll();
+        for (let frame = 0; frame < 3; frame += 1) node.updateBefore(frameFor(camera, time));
+        const renders = node.stats.rendersTotal;
+        const { x, y, z } = node.clipmap.basisW;
+        camera.position.addScaledVector(new Vector3(x, y, z), delta);
+        if (mode !== "cached") node.invalidateAll();
+        node.updateBefore(frameFor(camera, time + (mode === "deferred" ? 20 : 0.01)));
+        expect(node.stats).toMatchObject({
+          moved: 0,
+          rendered: mode === "deferred" ? 1 : 0,
+          deferred: mode === "deferred" ? 2 : 0,
+          held: mode === "delayed" ? 3 : 0,
+          rendersTotal: renders + (mode === "deferred" ? 1 : 0),
+          moverRenders: 3,
+        });
+        const receiver = new Vector3(0, 0, 0);
+        for (const [index, shadowNode] of node.levelNodes.entries()) {
+          const stock = shadowNode as unknown as {
+            light: DirectionalLight;
+            shadow: DirectionalLight["shadow"];
+          };
+          const drawn = rendered.get(shadowNode);
+          expect(drawn).toBeDefined();
+          const drawnDepth = receiver.clone().applyMatrix4(drawn as Matrix4).z;
+          // Both stock nodes sample through light.shadow.matrix, including the mover map.
+          const sampledDepth = receiver.clone().applyMatrix4(stock.light.shadow.matrix).z;
+          const moverMatrix = rendered.get(node.moverNodes[index] as Node);
+          expect(moverMatrix).toBeDefined();
+          const moverDepth = receiver.clone().applyMatrix4(moverMatrix as Matrix4).z;
+          expect(
+            sampledDepth,
+            `${mode} level ${String(index)} samples its rendered depth`,
+          ).toBeCloseTo(drawnDepth, 12);
+          expect(
+            moverDepth,
+            `${mode} level ${String(index)} mover map uses cached sampling depth`,
+          ).toBeCloseTo(sampledDepth, 12);
+          expect(new Vector3().setFromMatrixPosition(stock.light.matrixWorld)).toEqual(
+            stock.shadow.camera.position,
+          );
+          expect(stock.shadow.matrix.elements).toEqual(drawn?.elements);
+          expect(moverMatrix?.elements).toEqual(drawn?.elements);
+        }
+      } finally {
+        node.dispose();
+      }
+    },
+  );
+
   /** One level render per frame, recording which of the world's casters were visible for each. */
   function watchCasters(node: VirtualShadowNode, small: Mesh, tall: Mesh): string[] {
     const seen: string[] = [];
@@ -978,11 +1382,11 @@ describe("VirtualShadowNode derived depth and caster size gate", () => {
         return [along(mesh.position) - radius, along(mesh.position) + radius] as const;
       });
     const low = Math.min(
-      (mass.position.y - 1 - centre.y) * 0.6157 - side * 0.788,
+      (mass.position.y - 1 - centre.y - 24 * 0.788) / 0.6157,
       ...spans.map(([from]) => from),
     );
     const high = Math.max(
-      (mass.position.y + 1 - centre.y) * 0.6157 + side * 0.788,
+      (mass.position.y + 1 - centre.y + 24 * 0.788) / 0.6157,
       ...spans.map(([, to]) => to),
     );
     expect(levelCamera(node, 0).far - levelCamera(node, 0).near).toBeCloseTo(high - low, 1);
@@ -991,9 +1395,8 @@ describe("VirtualShadowNode derived depth and caster size gate", () => {
     expect(holds(node, 0, new Vector3(0, 0, 0))).toBe(true);
     expect(holds(node, 0, new Vector3(10, 10 + TALL_RADIUS, 0))).toBe(true);
     expect(holds(node, 0, new Vector3(0, 10 + TALL_RADIUS, side))).toBe(true);
-    // And the column stops where the last caster that could reach it does: 20 m of ground below the
-    // window's own, which the fixed 400 m range covered and nothing ever casts into.
-    expect(holds(node, 0, new Vector3(0, -20, -25.6))).toBe(false);
+    // A point just beyond the last caster's depth is outside, even at the window's u/v centre.
+    expect(holds(node, 0, centre.clone().addScaledVector(SUN, low - 1))).toBe(false);
     node.dispose();
   });
 
