@@ -14,6 +14,9 @@ import { type IFogVolumeGraph, composeFogVolume } from "./volumetricFogVolume.js
 
 export type { IFogVolume, IVolumetricFogOptions };
 
+/** The owned medium a composed graph exposes: one controller, one graph, one owned target. */
+export type IFogMedium = Exclude<ReturnType<typeof createVolumetricFog>, undefined>;
+
 /** Off, unsupported and zero-density return before allocating any graph/target/material. */
 export function createVolumetricFog(camera: PerspectiveCamera, supplied: IVolumetricFogOptions) {
   if (!supplied.enabled || supplied.renderer !== "webgpu") return undefined;
