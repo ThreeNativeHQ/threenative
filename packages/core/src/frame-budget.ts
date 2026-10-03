@@ -616,8 +616,13 @@ export class FrameBudget {
    * @param timestampMs the frame timestamp the host handed the callback — the presented-frame
    *   clock, which is not the same as `nowMs` and is what the interval between frames comes from.
    * @param nowMs the monotonic clock at callback entry.
+   * @param presented whether this frame reached the display. False for a counted tick batch: it is
+   *   metered like any other frame, but it presents nothing, so it contributes no present interval,
+   *   counts no present, and can never be a hitch however long the batch blocked. Its timestamp
+   *   still moves the clock forward, or that blocking cost would land on the next live frame as a
+   *   present gap and drop it whole.
    */
-  beginFrame(timestampMs: number, nowMs: number): void {
+  beginFrame(timestampMs: number, nowMs: number, presented = true): void {
     if (this.#open)
       throw new Error("FrameBudget.beginFrame called before the previous frame ended.");
     this.#open = true;
@@ -633,8 +638,15 @@ export class FrameBudget {
     this.#gpuBucketThisFrame = {};
     this.#hostGap = this.#lastFrameEnd === undefined ? 0 : Math.max(0, nowMs - this.#lastFrameEnd);
     this.#presentedDelta =
-      this.#lastTimestamp === undefined ? 0 : Math.max(0, timestampMs - this.#lastTimestamp);
+      !presented || this.#lastTimestamp === undefined
+        ? 0
+        : Math.max(0, timestampMs - this.#lastTimestamp);
     this.#lastTimestamp = timestampMs;
+  }
+
+  /** True between `beginFrame` and `endFrame`. */
+  get open(): boolean {
+    return this.#open;
   }
 
   /** The boundary between the fixed-step simulation and everything the render phase does. */
