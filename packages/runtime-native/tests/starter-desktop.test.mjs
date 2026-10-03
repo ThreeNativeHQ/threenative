@@ -387,7 +387,11 @@ test('native workflow proves the Linux release container on x64 and arm64', () =
   assert.ok(starter);
   // The arm64 leg is the point of the matrix: a free hosted ARM runner, the same release steps,
   // and the same scope selection as the x64 leg because it is the same job.
-  assert.match(starter, /- platform: linux-x64\n\s+runner: ubuntu-24\.04/u);
+  // linux-x64 routes through the TN_RUNNER switch (PRD-480) and falls back to the same hosted image.
+  assert.match(
+    starter,
+    /- platform: linux-x64\n\s+runner: \$\{\{ \(github\.event\.pull_request\.head\.repo\.fork \|\| !vars\.TN_RUNNER\) && 'ubuntu-24\.04' \|\| vars\.TN_RUNNER \}\}/u,
+  );
   assert.match(starter, /- platform: linux-arm64\n\s+runner: ubuntu-24\.04-arm/u);
   assert.match(starter, /runs-on: \$\{\{ matrix\.runner \}\}/u);
   // The runner has no GPU, so the software Vulkan ICD and its X display are provisioned.
