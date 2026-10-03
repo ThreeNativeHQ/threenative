@@ -58,6 +58,11 @@ import {
   sceneWarning,
 } from "./profiling/scene-warning.js";
 import { installSpanProbes } from "./profiling/span-probes.js";
+import {
+  UNLIT_FOLIAGE_FIX,
+  formatUnlitFoliageWarning,
+  unlitFoliageWarning,
+} from "./profiling/unlit-foliage-warning.js";
 import { formatProjectionWindow } from "./projection-marker.js";
 import { type IRandom, createRandom } from "./random.js";
 import { RenderCameraCull } from "./render-camera-cull.js";
@@ -888,6 +893,14 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     if (this.#scene !== scene) return false;
     this.#sceneFrame = typeof frame === "function" ? frame : undefined;
     this.#sceneEntered = true;
+    // Cutout PBR with no image-based light renders as cardboard, and the compensating tint the
+    // author reaches for is invisible in a screenshot review. Once per scene entry, right after
+    // `enter()`: `load()` and `enter()` are where the game builds its meshes and sets its own
+    // environment, so an earlier read would be a census of an empty scene and a later one would be
+    // a census of a scene the author already fixed.
+    const unlit = unlitFoliageWarning(ctx.scene);
+    if (unlit !== undefined)
+      console.warn(`${formatUnlitFoliageWarning(unlit)} ${UNLIT_FOLIAGE_FIX}`);
     return true;
   }
 
@@ -1193,6 +1206,10 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       // than on five in-budget frames, so a fast 300-frame run finishes before the world is shown
       // and captures the loading state. The native screenshot path waits on this flag.
       (globalThis as Record<string, unknown>)[STARTUP_READY_GLOBAL] = true;
+      // Again at ready: a world that streams its foliage in under `startup.hold` has none at entry.
+      const unlit = unlitFoliageWarning(threeScene);
+      if (unlit !== undefined)
+        console.warn(`${formatUnlitFoliageWarning(unlit)} ${UNLIT_FOLIAGE_FIX}`);
     });
     const warmUp = async (marker: string, budgetMs: number, stamp: boolean): Promise<void> => {
       if (this.#aborted || this.#renderer === undefined) return;

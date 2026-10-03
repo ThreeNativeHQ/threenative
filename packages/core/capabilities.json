@@ -1571,6 +1571,28 @@
     {
       "aliases": [],
       "constraints": [
+        "derived from the scene graph, not from a constant: cutout PBR with no environment in the scene and none on the material",
+        "it changes nothing and never throws — the environment is appearance, so setting it stays the game's decision"
+      ],
+      "example": "defineGame({ scenes: { Forest } }); // one TN_UNLIT_FOLIAGE line when the forest has no sky",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [
+        "`material.userData.tnUnlitOk = true` on a material a game deliberately renders unlit (the same `userData.tn*` naming the alpha and impostor conventions use)"
+      ],
+      "package": "@threenative/core",
+      "signature": "export function formatUnlitFoliageWarning(warning: IUnlitFoliageWarning): string { … }",
+      "situations": [
+        "catch the \"why does my forest look like cardboard\" question before a human plays it",
+        "audit a scene a game built from imported GLB foliage"
+      ],
+      "summary": "Tell the agent that built the scene that its imported foliage is drawing with no image-based light: an alpha-cutout `MeshStandardMaterial` (or its Node twin) with `scene.environment` unset and no `envMap` of its own gets a hemisphere fill and one flat dark value, which is cardboard. Printed once per scene entry as `TN_UNLIT_FOLIAGE`, after `enter()`, with the fix in the same line.",
+      "supersedes": [],
+      "symbol": "formatUnlitFoliageWarning"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "off by default and expensive by construction — it does the work it is checking, twice",
         "it throws on the first divergence rather than logging; a validation mode that continues is one nobody reads",
         "it proves the frames it ran on and nothing else"
@@ -3082,6 +3104,28 @@
       "summary": "Pool travelling bullet-streak meshes for hitscan shots.",
       "supersedes": [],
       "symbol": "TracerPool3D"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "derived from the scene graph, not from a constant: cutout PBR with no environment in the scene and none on the material",
+        "it changes nothing and never throws — the environment is appearance, so setting it stays the game's decision"
+      ],
+      "example": "defineGame({ scenes: { Forest } }); // one TN_UNLIT_FOLIAGE line when the forest has no sky",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [
+        "`material.userData.tnUnlitOk = true` on a material a game deliberately renders unlit (the same `userData.tn*` naming the alpha and impostor conventions use)"
+      ],
+      "package": "@threenative/core",
+      "signature": "export function unlitFoliageWarning( scene: Object3D & { … }",
+      "situations": [
+        "catch the \"why does my forest look like cardboard\" question before a human plays it",
+        "audit a scene a game built from imported GLB foliage"
+      ],
+      "summary": "Tell the agent that built the scene that its imported foliage is drawing with no image-based light: an alpha-cutout `MeshStandardMaterial` (or its Node twin) with `scene.environment` unset and no `envMap` of its own gets a hemisphere fill and one flat dark value, which is cardboard. Printed once per scene entry as `TN_UNLIT_FOLIAGE`, after `enter()`, with the fix in the same line.",
+      "supersedes": [],
+      "symbol": "unlitFoliageWarning"
     },
     {
       "aliases": [],

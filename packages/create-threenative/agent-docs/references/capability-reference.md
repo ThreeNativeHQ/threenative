@@ -1218,6 +1218,22 @@ export function formatSpansWindow(window: ISpanWindow): string { … }
 if (spansRequested()) setSpanRecorder(new SpanRecorder());
 ```
 
+### `formatUnlitFoliageWarning`
+
+`function` — Tell the agent that built the scene that its imported foliage is drawing with no image-based light: an alpha-cutout `MeshStandardMaterial` (or its Node twin) with `scene.environment` unset and no `envMap` of its own gets a hemisphere fill and one flat dark value, which is cardboard. Printed once per scene entry as `TN_UNLIT_FOLIAGE`, after `enter()`, with the fix in the same line.
+
+```ts
+export function formatUnlitFoliageWarning(warning: IUnlitFoliageWarning): string { … }
+```
+
+- **Use when:** catch the "why does my forest look like cardboard" question before a human plays it · audit a scene a game built from imported GLB foliage
+- **Constraints:** derived from the scene graph, not from a constant: cutout PBR with no environment in the scene and none on the material · it changes nothing and never throws — the environment is appearance, so setting it stays the game's decision
+- **Overrides:** `material.userData.tnUnlitOk = true` on a material a game deliberately renders unlit (the same `userData.tn*` naming the alpha and impostor conventions use)
+
+```ts
+defineGame({ scenes: { Forest } }); // one TN_UNLIT_FOLIAGE line when the forest has no sky
+```
+
 ### `formatValidationReport`
 
 `function` — Prove that nothing a cache skipped changed the picture: `TN_RENDERLIST_VALIDATE=1` recomputes every world matrix the long way, every frame, and throws on the first element that disagrees with what the frame is about to draw.
@@ -2382,6 +2398,22 @@ export class TracerPool3D { … }
 ```ts
 const tracers = new TracerPool3D(ctx.scene, tracerOptions);
 tracers.spawn(muzzle, shotDirection, hit.distance);
+```
+
+### `unlitFoliageWarning`
+
+`function` — Tell the agent that built the scene that its imported foliage is drawing with no image-based light: an alpha-cutout `MeshStandardMaterial` (or its Node twin) with `scene.environment` unset and no `envMap` of its own gets a hemisphere fill and one flat dark value, which is cardboard. Printed once per scene entry as `TN_UNLIT_FOLIAGE`, after `enter()`, with the fix in the same line.
+
+```ts
+export function unlitFoliageWarning( scene: Object3D & { … }
+```
+
+- **Use when:** catch the "why does my forest look like cardboard" question before a human plays it · audit a scene a game built from imported GLB foliage
+- **Constraints:** derived from the scene graph, not from a constant: cutout PBR with no environment in the scene and none on the material · it changes nothing and never throws — the environment is appearance, so setting it stays the game's decision
+- **Overrides:** `material.userData.tnUnlitOk = true` on a material a game deliberately renders unlit (the same `userData.tn*` naming the alpha and impostor conventions use)
+
+```ts
+defineGame({ scenes: { Forest } }); // one TN_UNLIT_FOLIAGE line when the forest has no sky
 ```
 
 ### `unmarkStatic`
