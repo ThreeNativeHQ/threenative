@@ -71,7 +71,7 @@ elif [ "$selection" = ci ] || [ "$selection" = template ]; then
     add test 'pnpm exec vitest run scripts/__tests__/ci-*.spec.ts'
   else
     export TN_CI_CONTRACTS="$(node --input-type=module -e 'import {readFileSync} from "node:fs"; console.log(JSON.parse(readFileSync(process.argv[1], "utf8")).checks.ci)' "$log_root/selection.json")"
-    add test 'pnpm exec vitest run packages/create-threenative/__tests__ scripts/__tests__/verify-golden-path.spec.ts && if [ "$TN_CI_CONTRACTS" = true ]; then pnpm exec vitest run scripts/__tests__/ci-*.spec.ts; fi' 
+    add test 'pnpm exec vitest run packages/create-threenative/__tests__ scripts/__tests__/verify-golden-path.spec.ts && if [ "$TN_CI_CONTRACTS" = true ]; then pnpm exec vitest run scripts/__tests__/ci-*.spec.ts; fi'
     selected_templates="$(node --input-type=module -e 'import {readFileSync} from "node:fs"; console.log(JSON.parse(readFileSync(process.argv[1], "utf8")).templateMatrix.template.join(","))' "$log_root/selection.json")"
     export TN_GOLDEN_PATH_TEMPLATES="$selected_templates"
     add golden-path 'TN_PLAYTEST_ALLOW_SOFTWARE=1 pnpm verify:golden-path'

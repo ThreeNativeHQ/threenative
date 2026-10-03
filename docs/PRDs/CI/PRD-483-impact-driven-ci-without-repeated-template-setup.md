@@ -64,3 +64,14 @@ Full unit shards keep their existing `pnpm test` with `TN_SUITE_PHASES=unit`; it
 | Full unit command retained | Existing unit phase already excluded build | Units execute freshly; existing exact-run producer artifact is consumed |
 
 No rendering PR acceptance tests, security checks or required protection settings are removed.
+
+
+Integration relevance also compares exact candidate Git objects. A bounded parser validates lane filters,
+output identity and transitive job dependencies; an exposure-only job/filter edit selects exposure,
+while a native dependent edit selects its root and dependent consumers. Shared scheduling, selector,
+header or ambiguous graph changes select every lane. Existing runtime source filters remain applicable,
+with native host/action reach retained for decals and fluid and all five canonical/generated exposure
+modules covered. Renames include both endpoints. The selector introduction itself runs all integration
+lanes; unrelated failures are not hidden. Normal CI run 37141675755 on review-fix head 38ee061be
+passed with one relevant unit job, zero template jobs and no native jobs; final integration head still
+requires its own normal CI and independent review.

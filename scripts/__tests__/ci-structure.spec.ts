@@ -1266,7 +1266,7 @@ describe("CI pipeline structure", () => {
     }
     // One gate, one output per lane, and every lane job reads its own. A lane folded in without its
     // filter would run on every pull request; a filter with no job behind it would silently stop.
-    const lanes = [...source.matchAll(/^ {10}lane ([a-z][a-z-]*) '/gmu)].map((match) => match[1]);
+    const lanes = [...source.matchAll(/^ {12}([a-z][a-z-]*) \^/gmu)].map((match) => match[1]);
     expect(lanes.length, "a lane lost its trigger filter").toBeGreaterThanOrEqual(5);
     for (const lane of lanes) {
       const gated = sections.filter(([, section]) =>
