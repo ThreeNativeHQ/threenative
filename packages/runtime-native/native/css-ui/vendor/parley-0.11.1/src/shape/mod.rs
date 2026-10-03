@@ -492,6 +492,7 @@ fn shape_item<'a, B: Brush>(
             segment_infos,
             (text_range.start + segment_start_offset)..(text_range.start + segment_end_offset),
             harf_shaper.coords(),
+            font_selector.primary_font().map(|f| FontData::new(f.blob.clone(), f.index)),
         );
 
         // Replace buffer to reuse allocation in next iteration.
@@ -533,6 +534,10 @@ struct FontSelector<'a, 'b, B: Brush> {
     attrs: fontique::Attributes,
     variations: &'a [FontVariation],
     features: &'a [FontFeature],
+    /// The first font the current style's family list resolves to, which is the font of
+    /// the inline box itself. Later candidates in that iteration are *fallbacks*: they
+    /// supply glyphs the inline box's own font does not have, and do not change its font.
+    primary_font: Option<QueryFont>,
 }
 
 impl<'a, 'b, B: Brush> FontSelector<'a, 'b, B> {
@@ -568,6 +573,7 @@ impl<'a, 'b, B: Brush> FontSelector<'a, 'b, B> {
             attrs,
             variations,
             features,
+            primary_font: None,
         }
     }
 
@@ -608,10 +614,18 @@ impl<'a, 'b, B: Brush> FontSelector<'a, 'b, B> {
             self.features = self.rcx.features(style.font_features).unwrap_or(&[]);
         }
         let mut selected_font = None;
+        // Remember the first font the style's family list resolves to: that is the inline
+        // box's own font, whose ascent and descent the half-leading is distributed around.
+        // A font picked for a *later* cluster is a fallback, and a fallback's glyphs do not
+        // get a leading box of their own (see `push_run`).
+        let mut primary_font = None;
         self.query.matches_with(|font| {
             let Some(charmap) = font.charmap() else {
                 return fontique::QueryStatus::Continue;
             };
+            if primary_font.is_none() {
+                primary_font = Some(font.clone());
+            }
 
             let map_status = cluster.map(
                 |ch| {
@@ -656,7 +670,13 @@ impl<'a, 'b, B: Brush> FontSelector<'a, 'b, B> {
                 }
             }
         });
+        self.primary_font = primary_font;
         selected_font
+    }
+
+    /// The inline box's own font: the first font its family list resolved to.
+    fn primary_font(&self) -> Option<&QueryFont> {
+        self.primary_font.as_ref()
     }
 }
 

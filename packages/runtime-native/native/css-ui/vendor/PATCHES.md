@@ -1,9 +1,15 @@
 # Vendored patches
 
-Three upstream crates are vendored here and wired with `[patch.crates-io]` in this crate's
+Five upstream crates are vendored here and wired with `[patch.crates-io]` in this crate's
 `Cargo.toml`. Each is a pinned version copied from the crates.io registry source unchanged apart
 from the hunks below; `LICENSE-MIT` / `LICENSE-APACHE` are the upstream licences, which the
 published `.crate` archives omit.
+
+A crate is vendored only where the defect is inside a dependency this crate does not own and no
+public API of it reaches the behaviour: four of taffy's percentage-padding call sites resolve the
+block axis against the container's height, and fontique resolves a family name through a map of
+*installed* families, so a document naming `Arial` gets nothing at all. Both are reachable only by
+carrying the crate.
 
 Every hunk is here because a measurement proves the behaviour it fixes — almost always a fixture in
 the browser oracle in `examples/native-css-hud/corpus`, which each hunk names — and each is kept to
@@ -15,12 +21,21 @@ Run `cd examples/native-css-hud && node corpus/oracle.mjs` for the measurements 
 `node corpus/interaction.mjs` for the interaction scenarios (hunks 8-12), which is the oracle an
 interaction hunk is proved against.
 
+Each crate heading counts added lines against the crates.io source of the same version, comments,
+blank lines and the licence files excluded:
+`diff -ru -x Cargo.lock -x .cargo-ok -x 'LICENSE*' ~/.cargo/registry/src/*/<crate> vendor/<crate>`,
+counting the `+` lines that are neither blank nor a comment.
+
 Two hunks are over the ~80-line guideline: parley hunk 1 below, and blitz-dom hunk 11. Hunk 11 is
 the hit-test clip, and the overage is the rounded-rectangle test (~20 of those lines): a
 `border-radius` may round a corner to an ellipse, so one point needs both radii to be answered, and
 answering it in the shared walk is what keeps a click in a clipped-away corner from being one hit
 per ancestor. The separable part is the `clip` argument on `hit_inner`; dropping it leaves the
-radius half working for the element's own box only.
+radius half working for the element's own box only. Parley hunk 1 is ~130 lines, 49 of them
+`strut_metrics` — a strut needs its own font query, which the shaper's does not expose — and 24 the
+shared `leading_box` helper that replaced two copies of the same half-leading arithmetic; four
+fixtures now depend on it (`box-model-and-sizing`, `inline-runs`, `text-line-height-normal`,
+`dpr-2-layout-and-paint`), and its three separable parts each fail one of them on their own.
 
 ## `blitz-paint-0.3.0-beta.2` — 31 added code lines
 
@@ -49,7 +64,7 @@ radius half working for the element's own box only.
   the uncut line, which is what keeps a resize honest.
 * **Proves it:** `text-ellipsis` — SSIM 0.9603 → 0.9947, fixture passes on the strict 0.99 bar.
 
-## `blitz-dom-0.3.0-beta.2` — 328 added code lines
+## `blitz-dom-0.3.0-beta.2` — 336 added code lines
 
 ### 1. hoisted (`z-index`) children were painted one frame late, at the wrong offset
 
@@ -234,22 +249,36 @@ radius half working for the element's own box only.
 * **Proves it:** `focus-traversal-and-activation` — Tab visits 1, 3, 4 and 6 and never the disabled
   2 — and `tests/interaction.rs::tab_stops_at_focusable_elements_in_document_order`.
 
-## `parley-0.11.1` — 124 added code lines
+### 13. `line-height: normal` was 1.2 of the font size
 
-The overage here is honest: ~25 of hunk 1's lines are the shared `leading_box` helper, which
-replaced two copies of the same half-leading arithmetic. Hunk 1 is the separable one — dropping it
-reverts `box-model-and-sizing` and changes nothing else — and hunk 2 below is 10 lines on its own.
+* **Where:** `src/stylo_to_parley.rs` (`style`: `stylo::LineHeight::Normal` now maps to
+  `parley::LineHeight::MetricsRelative(1.0)`).
+* **Why:** `normal` is the used font's own line height — its ascent, descent and line gap — and not
+  an approximation in ems. `FontSizeRelative(1.2)` is right for a font whose metrics happen to be
+  1.2 em and wrong for every other face: Noto Sans is 1.362 em and Noto Sans Arabic 2.112 em, so a
+  `normal` line came out shorter than its own text at one size and taller at another, and a fallback
+  face's metrics never reached the line box at all. `MetricsRelative` is parley's own variant for
+  exactly this, and parley hunk 1 below is what makes it resolve to Chromium's number.
+* **Proves it:** `text-line-height-normal` — the mixed-script paragraph is Chromium's 34px and the
+  Latin-only one 22px (SSIM 0.5536 with `FontSizeRelative(1.2)`), and `ua-defaults`' bare `<button>`
+  is its 21px, which is what the UA sheet's `line-height: normal` is for.
 
-Line counts are added lines against the crates.io source of the same version, comments and blank
-lines excluded: `diff -ru ~/.cargo/registry/src/*/<crate> <crate>`.
+## `parley-0.11.1` — 183 added code lines
 
-### 1. line boxes had no strut and distributed half-leading once per line
+Hunk 1 is the one over the guideline and it is separable in three pieces, each of which a fixture
+fails on its own: the strut (`box-model-and-sizing`), the order and scale of the quantisation
+(`inline-runs`, `dpr-2-layout-and-paint`) and the metrics-relative line height
+(`text-line-height-normal`). Hunk 2 is 10 lines and hunk 3 ~40, each on its own.
+
+### 1. line boxes had no strut, and the half-leading was quantised in the wrong order and at the wrong scale
 
 * **Where:** `src/layout/line_break.rs` (`finish_line`, `start_new_line`),
-  `src/layout/data.rs` (`LayoutData::strut_ascent`/`strut_descent`), `src/layout/line.rs` (the new
-  `leading_box`, and `InlineBox` placement in `line.rs`'s item iterator), `src/inline_box.rs` (the
-  new `InlineBox::baseline`), `src/builder.rs` (`strut_metrics`, called from `build_into_layout`),
-  `src/resolve/tree.rs` (`begin` now puts the root style at style-table index 0).
+  `src/layout/data.rs` (`LayoutData::strut_ascent`/`strut_descent`, and the metrics-relative line
+  height in `push_run`), `src/layout/line.rs` (the new `leading_box`, and `InlineBox` placement in
+  `line.rs`'s item iterator), `src/layout/mod.rs` (`leading_box` is now crate-visible),
+  `src/inline_box.rs` (the new `InlineBox::baseline`), `src/builder.rs` (`strut_metrics`, called
+  from `build_into_layout`), `src/resolve/tree.rs` (`begin` now puts the root style at style-table
+  index 0).
 * **Why:** parley computed a line's height as the largest `line-height` on it and then split the
   remaining leading once for the whole line. CSS 2.1 §10.8.1 is per inline box: each one's
   half-leading sits around *its* baseline, and every line also carries a strut built from the block
@@ -260,8 +289,28 @@ lines excluded: `diff -ru ~/.cargo/registry/src/*/<crate> <crate>`.
   font it is `(0, 0)` and line boxes stay as tall as their content. The root style is now always
   style-table entry 0, because a layout with no text never commits a span and the strut is measured
   before line breaking.
+
+  Three details of Chromium's arithmetic are what `leading_box` now follows, and each one was
+  measured against it rather than inferred. **Rounding order:** Chromium rounds the ascent and
+  descent before it splits the leading and gives the larger half below (`NGLineHeightMetrics`, and
+  the comment this crate already carried in its own line-level metrics). That order is what a run
+  smaller than the block's own font turns on: at 12px in a `line-height: 24px` line the leading box
+  is 16 above and 8 below, where rounding each side once it has its share of an *unrounded* split
+  gives 17 and 7 — and a line holding both a 16px and a 12px run then comes out 25px where Chromium
+  has 26. **Scale:** a browser's font metrics and line boxes come out the same number of CSS px at
+  every device scale factor, so the rounding and the split happen at the CSS font size and the
+  result is scaled; quantizing in device pixels moves a line by half a CSS px as soon as the scale
+  is not 1, which at dpr 2 is a whole device pixel of the baseline. **A metrics-relative line
+  height** is the font's own, so it is built from those same rounded numbers: 16px Noto Sans is
+  17 + 5 = 22 and not the 21.792 skrifa reports, and the 0.208 that rounding takes away would
+  otherwise come back as negative leading whose floored half lands a pixel above the baseline of
+  every `line-height: normal` line.
 * **Proves it:** `box-model-and-sizing` — the `div` holding two inline-blocks is 42px, matching
-  Chromium (fixture passes, SSIM 1.0), and `inline-runs`' paragraph is 50px (was 48px).
+  Chromium (fixture passes, SSIM 1.0), and `inline-runs`' paragraph is 50px. `inline-runs` is also
+  what fails if the split rounds after the leading is divided rather than before: 0.9882 → 0.9446,
+  with its second line a pixel low. `dpr-2-layout-and-paint` fails if the quantisation happens in
+  device pixels: 0.9939 → 0.9836, the 18px `h3`'s baseline half a CSS px low. `text-line-height-normal`
+  fails if the metrics-relative height is left unrounded: 0.9906 → 0.9068, every glyph a pixel high.
 
 ### 2. a line box could not be moved along the block axis
 
@@ -273,3 +322,60 @@ lines excluded: `diff -ru ~/.cargo/registry/src/*/<crate> <crate>`.
   The layout's own `height()` is left alone: it is the extent of the content, not of the box.
 * **Proves it:** `button-centring` and `state-selectors-and-environment` (0.9769 and 0.9650 without
   it, both fixtures fail).
+
+### 3. a fallback run stretched the line it borrowed glyphs for
+
+* **Where:** `src/shape/mod.rs` (`FontSelector` remembers the first font the style's family list
+  resolves to, and `shape_item` hands it to `push_run`), `src/layout/data.rs` (`push_run` takes the
+  inline box's own font and derives `box_ascent`/`box_descent` from it when the run's face is a
+  fallback), `src/layout/run.rs` (the two new `RunMetrics` fields), `src/layout/line_break.rs`
+  (`finish_line` reads them).
+* **Why:** the half-leading of a specified `line-height` belongs to the *inline box*, and an inline
+  box's font is the first one its family list resolved to — not a fallback that merely supplied
+  glyphs that font lacks. Without this, a paragraph that fixed `line-height: 24px` and mixed in
+  Arabic from a fallback face 2.1 em tall grew its line boxes to 25px, because that run's own
+  leading box (17 above, 7 below) outgrew the strut's (18 above, 6 below) on the block axis. A
+  `line-height: normal` line is the exception and is left alone: there the run's own metrics *are*
+  what set the line height, so they still apply — which is why the same fallback face takes
+  `text-line-height-normal`'s first paragraph from 22px to Chromium's 34px.
+* **Proves it:** `text-mixed-direction` — its three 24px lines are Chromium's 24px again (SSIM
+  0.9847; 0.839 with two edge misses when `finish_line` reads `ascent`/`descent` instead of
+  `box_ascent`/`box_descent`). `text-line-height-normal` is the other half and stays green either
+  way, which is what makes the exception in this hunk a measured one rather than an assumption.
+
+## `taffy-0.14.0` — 4 added code lines
+
+### 1. four of twenty-eight call sites resolved a percentage padding against the container's *height*
+
+* **Where:** `src/compute/block.rs:806` (the aspect-ratio block container's padding and border) and
+  `src/compute/flexbox.rs:2061` (the same pair in the `max-width` aspect-ratio transfer).
+* **Why:** CSS 2.1 §8.3 resolves a percentage `padding`/`border-width` against the containing
+  block's width on all four sides. taffy resolves a `Rect` against a `Size`, so a caller that passes
+  the whole size hands the block axis the container's height: in a 400×340 block,
+  `padding-top: 5%` came out 17px instead of 20px, and every percentage `border-width` with it.
+  Twenty-four of the crate's own padding and border call sites already pass
+  `node_inner_size.width`; these four were the only ones passing the size, and matching them is the
+  whole fix.
+* **Proves it:** `intrinsic-sizing-and-margins` — the `.pp` rule (`width: 50%; padding: 5% 0 0;
+  height: 20px`) is 20px of top padding and every box below it lands where Chromium's does
+  (5 edge misses and SSIM 0.9954 → 0.9607 with the registry's four lines restored).
+
+## `fontique-0.11.1` — 37 added code lines
+
+### 1. a family name no installed font carries resolved to nothing at all
+
+* **Where:** `src/collection/mod.rs` (`Collection::family_id` asks the system backend once the
+  registered fonts have answered), `src/backend/fontconfig.rs` (`SystemFonts::family_id`,
+  `substituted_family`, and the `substituted` cache that holds the answer).
+* **Why:** the family map fontique builds is the *installed* fonts' own names, so a document that
+  names a family the machine has never heard of — `Arial`, `Helvetica`, anything in a design system's
+  stack — matched nothing: no font, no metrics, and a silent fall through to whatever the query's
+  script fallback happened to offer. fontconfig is what decides what stands in for such a name
+  (`fc-match Arial` is Liberation Sans here), and Chromium on this platform asks fontconfig the same
+  question, so this asks it too and takes the identifier of the family it substituted. The answer is
+  cached, negative results included: a stylesheet names every family in its stack on every element it
+  matches, and an uncached `FcFontMatch` per name per element turns laying out a thousand nodes into
+  seconds of FFI round-trips.
+* **Proves it:** `ua-defaults` — its bare `<button>` takes the UA sheet's `font: 400 13.3333px
+  Arial`, and with this hunk its 21px line box is the one Chromium measures on Liberation Sans;
+  without it the button is 3.09px tall at the bottom and the column above it with it (2 edge misses).

@@ -109,25 +109,47 @@ impl<'a, B: Brush> Line<'a, B> {
 /// distributed around them (CSS 2.1 §10.8.1). A line box is the union of its items' leading
 /// boxes plus its strut, so it can be taller than any one of them.
 ///
-/// Chromium rounds ascent and descent separately and gives the larger half of the remaining
-/// leading below the baseline (`NGLineHeightMetrics`), which is what `quantize` reproduces.
+/// Chromium rounds a font's ascent and descent to whole pixels before anything is derived from
+/// them, then splits the leading the `line-height` leaves over with the larger half below
+/// (`NGLineHeightMetrics::AddLeading`, and the same arithmetic as this crate's own line-level
+/// metrics in `finish_line`). That order is the one `quantize` reproduces, and it is load-bearing
+/// for a run whose font is smaller than the block's own: at 12px in a `line-height: 24px` line,
+/// rounding first puts the leading box at 16 above and 8 below, where rounding each side once it
+/// has its share of an unrounded split puts it at 17 and 7, and a line holding both a 16px and a
+/// 12px run comes out a pixel shorter than Chromium's.
+///
+/// It also rounds and splits at the **CSS** font size, not the device one: a browser's font
+/// metrics and its line boxes come out the same number of CSS px at every scale factor, so
+/// dividing by `scale` before quantizing and multiplying back after is what keeps a line where
+/// Chromium puts it once the device scale is not 1.
 pub(crate) fn leading_box(
     ascent: f32,
     descent: f32,
     line_height: f32,
     quantize: bool,
+    scale: f32,
 ) -> (f32, f32) {
+    let (ascent, descent) = (
+        ascent / scale,
+        descent / scale,
+    );
     let (ascent, descent) = if quantize {
         (ascent.round(), descent.round())
     } else {
         (ascent, descent)
     };
-    let leading = line_height - (ascent + descent);
+    let leading = line_height / scale - (ascent + descent);
     if quantize {
         let above = (leading * 0.5).floor();
-        (ascent + above, descent + leading.round() - above)
+        (
+            (ascent + above) * scale,
+            (descent + leading.round() - above) * scale,
+        )
     } else {
-        (ascent + leading * 0.5, descent + leading * 0.5)
+        (
+            (ascent + leading * 0.5) * scale,
+            (descent + leading * 0.5) * scale,
+        )
     }
 }
 

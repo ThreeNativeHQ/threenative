@@ -12,7 +12,15 @@
  * Usage: node corpus/oracle.mjs [fixture-name ...]    Output: corpus/out/ (gitignored) + report.json
  */
 import { spawnSync } from "node:child_process";
-import { copyFileSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "@playwright/test";
@@ -24,9 +32,17 @@ const example = resolve(here, "..");
 const repo = resolve(example, "..", "..");
 const crate = join(repo, "packages", "runtime-native", "native", "css-ui");
 const fontDir = join(example, "src", "ui", "fonts");
+const imageDir = join(example, "src", "ui", "images");
 const out = join(here, "out");
 const EDGE_PX = 1;
 const FONT_FILES = readdirSync(fontDir).filter((f) => f.endsWith(".ttf"));
+// A `url()` a fixture names has to resolve on both sides: flat into the Chromium page directory
+// (where it is a sibling of page.html) and flat into the native `ui` directory (where the engine
+// resolves it against its one asset root). Images are staged exactly like fonts, by name, so a
+// fixture and its engine agree on the path without either side rewriting it.
+const IMAGE_FILES = existsSync(imageDir)
+  ? readdirSync(imageDir).filter((f) => f.endsWith(".png"))
+  : [];
 // Whole-frame SSIM bar. 0.99 is the PRD's target; a fixture that draws glyphs gets 0.98. The two
 // rasterisers (FreeType in Chromium, vello_cpu here) anti-alias glyph edges differently, which costs
 // ~0.01 of SSIM on a text-heavy frame with every box and line break identical. That amendment was
@@ -157,6 +173,10 @@ try {
     for (const font of FONT_FILES) {
       copyFileSync(join(fontDir, font), join(dir, "ui", font));
       copyFileSync(join(fontDir, font), join(dir, font));
+    }
+    for (const image of IMAGE_FILES) {
+      copyFileSync(join(imageDir, image), join(dir, "ui", image));
+      copyFileSync(join(imageDir, image), join(dir, image));
     }
     const count = number(fixture.tree);
 

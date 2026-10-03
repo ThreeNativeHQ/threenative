@@ -1401,12 +1401,14 @@ fn root_box_css(width: u32, height: u32) -> String {
 /// `h1`-`h6`, `p`, `ul`/`ol`/`li`, `label`, `a` and the inline emphasis tags already agree between
 /// the two sheets, which the `ua-defaults` fixture is what proves.
 ///
-/// Chromium sizes form controls with the border box and sets them in the platform control font
-/// (`font: 400 13.3333px Arial`, whose `line-height: normal` is what makes its buttons 21px tall);
-/// Gecko's sheet leaves both at their defaults. What is left after this rule is which face each
-/// engine resolves "Arial" to — Chromium asks fontconfig, this engine asks fontique — which is a
-/// font-stack question rather than a user-agent one, and the corpus cannot pin it.
-const UA_CSS: &str = "button { box-sizing: border-box; font: 400 13.3333px Arial; }";
+/// Chromium sizes form controls with the border box, draws their border 2px outset, and sets
+/// them in the platform control font (`font: 400 13.3333px Arial`, whose `line-height: normal`
+/// is what makes its buttons 21px tall); Gecko's sheet leaves all three at their defaults, and
+/// its 1px border is 2px of the button's height. Which face "Arial" resolves to is not a
+/// user-agent question: fontconfig substitutes it to Liberation Sans, and fontique now resolves
+/// the same substitution (see `vendor/PATCHES.md`), so both sides measure one face.
+const UA_CSS: &str = "button { box-sizing: border-box; border-width: 2px; border-style: outset; \
+     font: 400 13.3333px Arial; }";
 
 /// What `prefers-reduced-motion: reduce` asks for, as a user-agent sheet: no transition and no
 /// animation takes any time, delays included (a transition that keeps its delay is still a

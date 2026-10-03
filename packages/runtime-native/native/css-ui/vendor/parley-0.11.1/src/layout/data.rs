@@ -403,10 +403,23 @@ impl<B: Brush> LayoutData<B> {
         char_infos: &[(CharInfo, u16)], // From text analysis
         text_range: Range<usize>,       // The text range this run covers
         coords: &[harfrust::NormalizedCoord],
+        primary_font: Option<FontData>, // The inline box's own font, when this run is a fallback
     ) {
         let coords_start = self.coords.len();
         self.coords.extend(coords.iter().map(|c| c.to_bits()));
         let coords_end = self.coords.len();
+
+        // The half-leading of a specified `line-height` belongs to the *inline box*, and an
+        // inline box's font is the first one its family list resolved to — not a fallback
+        // that merely supplied glyphs for characters that font lacks. A fallback run
+        // therefore contributes no leading box of its own, so glyphs from a taller fallback
+        // face do not stretch a line whose `line-height` is already fixed. A
+        // `line-height: normal` (metrics-relative) line is the exception: there the run's own
+        // font is what sets the line height, so its metrics do apply.
+        let primary_font = match primary_font {
+            Some(primary) if primary != font => Some(primary),
+            _ => None,
+        };
 
         let font_index = self
             .fonts
@@ -447,14 +460,54 @@ impl<B: Brush> LayoutData<B> {
                 LineHeight::Absolute(value) => value,
                 LineHeight::FontSizeRelative(value) => value * font_size,
                 LineHeight::MetricsRelative(value) => {
-                    (metrics.ascent - metrics.descent + metrics.leading) * value
+                    // A metrics-relative `line-height` is the font's own line height, built from
+                    // the ascent, descent and line gap Chromium measures at the CSS font size:
+                    // 22px for 16px Noto Sans, not the 21.792 skrifa reports. Unrounded, the
+                    // 0.208 that rounding takes away comes back as negative leading whose
+                    // floored half lands a pixel above the baseline of every
+                    // `line-height: normal` line. See `builder::strut_metrics` for the strut's
+                    // half of the same rule and `leading_box` for why the CSS size.
+                    if self.quantize {
+                        let scale = self.scale;
+                        ((metrics.ascent / scale).round() - (metrics.descent / scale).round()
+                            + (metrics.leading / scale).round())
+                            * value
+                            * scale
+                    } else {
+                        (metrics.ascent - metrics.descent + metrics.leading) * value
+                    }
                 }
+            };
+
+            // The ascent and descent the half-leading is distributed around come from the
+            // inline box's own font, which for a fallback run is not the face that shaped the
+            // glyphs. `line-height: normal` is metrics-relative, so there the run's own
+            // metrics are what set the line height and they stay.
+            let box_metrics = match (&primary_font, style.line_height) {
+                (Some(primary), LineHeight::Absolute(_) | LineHeight::FontSizeRelative(_)) => {
+                    skrifa::FontRef::from_index(primary.data.as_ref(), primary.index).ok().map(
+                        |font_ref| {
+                            skrifa::metrics::Metrics::new(
+                                &font_ref,
+                                skrifa::prelude::Size::new(font_size),
+                                coords,
+                            )
+                        },
+                    )
+                }
+                _ => None,
+            };
+            let (box_ascent, box_descent) = match &box_metrics {
+                Some(primary) => (primary.ascent, -primary.descent),
+                None => (metrics.ascent, -metrics.descent),
             };
 
             RunMetrics {
                 ascent: metrics.ascent,
                 descent: -metrics.descent,
                 leading: metrics.leading,
+                box_ascent,
+                box_descent,
                 underline_offset,
                 underline_size,
                 strikethrough_offset,

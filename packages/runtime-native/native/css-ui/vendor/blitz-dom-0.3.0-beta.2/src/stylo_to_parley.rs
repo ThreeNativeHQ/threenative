@@ -298,8 +298,11 @@ pub(crate) fn style(
 
     // Convert font size and line height
     let font_size = font_styles.font_size.used_size.0.px();
+    // `normal` is the font's own metrics (its ascent, descent and line gap), not an
+    // approximation in ems: that is what makes it grow for a face with taller metrics,
+    // which a `1.2`-of-the-font-size shortcut never does.
     let line_height = match font_styles.line_height {
-        stylo::LineHeight::Normal => parley::LineHeight::FontSizeRelative(1.2),
+        stylo::LineHeight::Normal => parley::LineHeight::MetricsRelative(1.0),
         stylo::LineHeight::Number(num) => parley::LineHeight::FontSizeRelative(num.0),
         stylo::LineHeight::Length(value) => parley::LineHeight::Absolute(value.0.px()),
     };

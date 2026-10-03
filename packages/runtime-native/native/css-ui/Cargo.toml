@@ -38,13 +38,17 @@ serde_json = "1"
 # newlines, so it needs a real encoder rather than string concatenation.
 serde_json = "1"
 
-# Upstream layout, paint and lifetime gaps that cannot be closed from this crate alone: a hoisted
-# `z-index` box painted a frame late, an inline's box reported as its line box, `outline-offset`
-# ignored, line boxes without a strut, a record of every node ever created, a `<button>`'s content
-# top-aligned in its content box, and `text-overflow: ellipsis` painting nothing.
+# Upstream layout, paint, text and lifetime gaps that cannot be closed from this crate alone: a
+# hoisted `z-index` box painted a frame late, an inline's box reported as its line box,
+# `outline-offset` ignored, line boxes without a strut, a record of every node ever created, a
+# `<button>`'s content top-aligned in its content box, `text-overflow: ellipsis` painting nothing,
+# percentage padding resolved against the containing block's height, and a family name no installed
+# font carries (`Arial`) resolving to no font at all.
 # `vendor/PATCHES.md` carries the hunk-by-hunk diff, why each exists, and the measurement that
 # proves it; each fix is one property, so dropping a patch is a one-line change here.
 [patch.crates-io]
 blitz-dom = { path = "vendor/blitz-dom-0.3.0-beta.2" }
 blitz-paint = { path = "vendor/blitz-paint-0.3.0-beta.2" }
 parley = { path = "vendor/parley-0.11.1" }
+taffy = { path = "vendor/taffy-0.14.0" }
+fontique = { path = "vendor/fontique-0.11.1" }

@@ -10,7 +10,15 @@
  * Usage: node corpus/interaction.mjs [scenario-name ...]    Output: corpus/out-interaction/
  */
 import { spawnSync } from "node:child_process";
-import { copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "@playwright/test";
@@ -26,6 +34,12 @@ const crate = join(
   "css-ui",
 );
 const fontDir = join(resolve(here, ".."), "src", "ui", "fonts");
+// Same staging rule as the oracle: an asset a scenario names is copied flat into both the
+// Chromium page directory and the native `ui` directory, so both sides resolve the same path.
+const imageDir = join(resolve(here, ".."), "src", "ui", "images");
+const IMAGE_FILES = existsSync(imageDir)
+  ? readdirSync(imageDir).filter((f) => f.endsWith(".png"))
+  : [];
 const out = join(here, "out-interaction");
 const PIXEL_TOLERANCE = 3;
 
@@ -176,6 +190,10 @@ try {
     for (const font of ["NotoSans-Regular.ttf", "NotoSans-Bold.ttf"]) {
       copyFileSync(join(fontDir, font), join(dir, "ui", font));
       copyFileSync(join(fontDir, font), join(dir, font));
+    }
+    for (const image of IMAGE_FILES) {
+      copyFileSync(join(imageDir, image), join(dir, "ui", image));
+      copyFileSync(join(imageDir, image), join(dir, image));
     }
     const FONT =
       "@font-face{font-family:Noto;font-weight:400;src:url(NotoSans-Regular.ttf)}@font-face{font-family:Noto;font-weight:700;src:url(NotoSans-Bold.ttf)}";

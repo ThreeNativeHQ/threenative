@@ -977,10 +977,11 @@ impl<'a, B: Brush> BreakLines<'a, B> {
                     // (CSS 2.1 §10.8.1, leading distribution).
                     let run = &self.layout.data.runs[line_item.index];
                     let (above, below) = leading_box(
-                        run.metrics.ascent,
-                        run.metrics.descent,
+                        run.metrics.box_ascent,
+                        run.metrics.box_descent,
                         run.metrics.line_height,
                         quantize,
+                        self.layout.data.scale,
                     );
                     line.metrics.ascent = line.metrics.ascent.max(above);
                     line.metrics.descent = line.metrics.descent.max(below);

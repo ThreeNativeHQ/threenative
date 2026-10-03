@@ -35,7 +35,9 @@ Vendored under `native/css-ui/vendor/` (see `vendor/PATCHES.md`; upstream licenc
 
 - `blitz-dom` 0.3.0-beta.2 — MIT OR Apache-2.0
 - `blitz-paint` 0.3.0-beta.2 — MIT OR Apache-2.0
+- `fontique` 0.11.1 — Apache-2.0 OR MIT
 - `parley` 0.11.1 — Apache-2.0 OR MIT
+- `taffy` 0.14.0 — MIT
 
 ## By licence
 

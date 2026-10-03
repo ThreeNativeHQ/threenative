@@ -459,7 +459,7 @@ export const FIXTURES = [
 
   {
     name: "intrinsic-sizing-and-margins",
-    size: [400, 300],
+    size: [400, 340],
     css: `
       .fc{width:fit-content;background:#2563eb;padding:4px 8px;margin-bottom:6px}
       .mx{width:max-content;max-width:150px;background:#16a34a;margin-bottom:6px}
@@ -467,6 +467,11 @@ export const FIXTURES = [
       .auto{width:120px;height:20px;margin:0 auto 6px;background:#9333ea}
       .neg{width:100px;height:20px;margin:-10px 0 16px 30px;background:#dc2626}
       .pp{width:50%;padding:5% 0 0;height:20px;background:#0891b2}
+      /* Percentage margins resolve against the containing block's WIDTH on all four sides
+         (CSS 2.1 §8.3), so in this 400px-wide, 340px-tall fixture 8%/4%/6%/5% are
+         32px/16px/24px/20px — never a fraction of the 340px height, which would make them
+         27.2/13.6/20.4/17. The .pp rule above proves the same for padding. */
+      .pm{width:60px;height:20px;margin:8% 4% 6% 5%;background:#0f766e}
       .row{display:flex;width:240px;background:#222;margin-top:6px}
       .row > p{margin:0;background:#4b5563}
       .row > p + p{background:#6b7280;min-width:0}
@@ -478,6 +483,7 @@ export const FIXTURES = [
       h("div", { class: "auto" }),
       h("div", { class: "neg" }),
       h("div", { class: "pp" }),
+      h("div", { class: "pm" }),
       h(
         "div",
         { class: "row" },
@@ -487,6 +493,10 @@ export const FIXTURES = [
     ],
   },
   {
+    // A specified `line-height` against a fallback font. The half-leading belongs to the inline
+    // box, and an inline box's font is the first one its family list resolved to; a fallback
+    // face supplying glyphs that font lacks (Noto Sans has no Arabic) contributes no leading box
+    // of its own. So all three paragraphs stay exactly 24px however much script they mix.
     name: "text-mixed-direction",
     size: [360, 140],
     css: `
@@ -497,6 +507,75 @@ export const FIXTURES = [
       h("p", {}, t("Latin text مرحبا بالعالم and more Latin")),
       h("p", { class: "rtl" }, t("مرحبا بالعالم Hello world")),
       h("p", {}, t("Olá, mundo — ação e coração")),
+    ],
+  },
+  {
+    // The other half of the same rule: `line-height: normal` takes its value from the run's own
+    // font, so there the fallback's metrics *do* apply and the line grows. Noto Sans Arabic's
+    // ascent+descent (1.374 + 0.738 em at 16px) is 34px against Noto Sans's (1.069 + 0.293 em)
+    // 22px, which is the whole difference between the first and second line here.
+    //
+    // The mixed line leads with Latin so the paragraph stays LTR: a paragraph whose first strong
+    // character is Arabic has the engine place the line at the right edge where Chromium puts it
+    // at the left, a base-direction bug of its own that reproduces on the unpatched crates. The
+    // boxes match either way; only the glyphs move.
+    name: "text-line-height-normal",
+    size: [360, 74],
+    css: `
+      p{margin:0 0 6px;width:300px;line-height:normal;background:#2a2a30}
+    `,
+    tree: [h("p", {}, t("Latin text مرحبا")), h("p", {}, t("Latin text only"))],
+  },
+  {
+    // Replaced content. `pattern.png` is 64×32 and deliberately lopsided — a 2px magenta frame,
+    // three differently coloured quadrants, a white band at y=12..14 and a black diagonal — so a
+    // crop, a flip, a non-uniform scale or a misplaced object-position is a visible difference and
+    // not a wash of similar colour. sha256
+    // 982c538061934e052544aaa8c06db2f0014738b5c165bb8a587b1806aa3256a3.
+    //
+    // The 120×40 boxes are a 3:1 shape against the image's 2:1, which is what makes `fill` distort
+    // it, `contain` letterbox it and `cover` crop it; `none` must draw it at 64×32 where it falls
+    // inside the box. The last row asks for the intrinsic sizes: `auto`/`auto` is 64×32, a width
+    // alone keeps the 2:1 ratio, and a height alone keeps it too.
+    name: "images-object-fit",
+    size: [480, 180],
+    css: `
+      .row{display:flex;gap:10px;margin-bottom:10px;align-items:flex-start}
+      img{display:block;flex:none;background:#101014}
+      .box{width:120px;height:40px}
+      .fill{object-fit:fill}
+      .contain{object-fit:contain}
+      .cover{object-fit:cover}
+      .none{object-fit:none}
+      .br{object-fit:cover;object-position:right bottom}
+      .tl{object-fit:contain;object-position:left top}
+      .round{border-radius:14px;overflow:hidden}
+      .w{width:96px}
+      .h{height:80px}
+    `,
+    tree: [
+      h(
+        "div",
+        { class: "row" },
+        h("img", { class: "box fill", src: "pattern.png" }),
+        h("img", { class: "box contain", src: "pattern.png" }),
+        h("img", { class: "box cover", src: "pattern.png" }),
+      ),
+      h(
+        "div",
+        { class: "row" },
+        h("img", { class: "box none", src: "pattern.png" }),
+        h("img", { class: "box br", src: "pattern.png" }),
+        h("img", { class: "box tl", src: "pattern.png" }),
+      ),
+      h(
+        "div",
+        { class: "row" },
+        h("img", { class: "round box", src: "pattern.png" }),
+        h("img", { src: "pattern.png" }),
+        h("img", { class: "w", src: "pattern.png" }),
+        h("img", { class: "h", src: "pattern.png" }),
+      ),
     ],
   },
 ];

@@ -15,6 +15,7 @@ use core::ops::{Bound, Range, RangeBounds};
 use crate::InlineBoxKind;
 use crate::break_overrides::LineBreakOverrideFn;
 use crate::inline_box::InlineBox;
+use crate::layout::line::leading_box;
 use crate::resolve::{ResolvedStyle, StyleRun, tree::ItemKind};
 
 /// Builder for constructing a text layout with ranged attributes.
@@ -328,7 +329,7 @@ fn build_into_layout<B: Brush>(
     // container's own font and line-height (CSS 2.1 §10.8.1), so measure it from the default
     // style — the one the tree builder was created with, which is style table entry 0.
     if let Some(root) = lcx.style_table.first() {
-        let strut = strut_metrics(fcx, lcx, root, quantize);
+        let strut = strut_metrics(fcx, lcx, root, quantize, scale);
         layout.data.strut_ascent = strut.0;
         layout.data.strut_descent = strut.1;
     }
@@ -385,6 +386,7 @@ fn strut_metrics<B: Brush>(
     lcx: &LayoutContext<B>,
     style: &ResolvedStyle<B>,
     quantize: bool,
+    scale: f32,
 ) -> (f32, f32) {
     use crate::fontique::{Attributes, QueryFont, QueryStatus};
     use skrifa::prelude::Size;
@@ -422,23 +424,24 @@ fn strut_metrics<B: Brush>(
     let font_size = style.font_size;
     let metrics =
         skrifa::metrics::Metrics::new(&font_ref, Size::new(font_size), &[] as &[skrifa::instance::NormalizedCoord]);
-    let ascent = metrics.ascent;
-    let descent = -metrics.descent;
     let line_height = match style.line_height {
         crate::LineHeight::Absolute(value) => value,
         crate::LineHeight::FontSizeRelative(value) => value * font_size,
+        // A metrics-relative `line-height` is the font's own line height, and Chromium builds
+        // that from the ascent, descent and line gap it measures at the CSS font size: 17 + 5 =
+        // 22 at 16px Noto Sans, not the 21.792 skrifa reports. Left unrounded, the 0.208 that
+        // rounding takes away comes back as negative leading whose floored half lands a pixel
+        // above the baseline of every `line-height: normal` line.
         crate::LineHeight::MetricsRelative(value) => {
-            (metrics.ascent - metrics.descent + metrics.leading) * value
+            if quantize {
+                ((metrics.ascent / scale).round() - (metrics.descent / scale).round()
+                    + (metrics.leading / scale).round())
+                    * value
+                    * scale
+            } else {
+                (metrics.ascent - metrics.descent + metrics.leading) * value
+            }
         }
     };
-    let (ascent, descent) = if quantize {
-        (ascent.round(), descent.round())
-    } else {
-        (ascent, descent)
-    };
-    let leading = line_height - (ascent + descent);
-    // Chromium gives the larger half of the leading below the baseline (NGLineHeightMetrics).
-    let above = (leading * 0.5).floor();
-    let below = leading.round() - above;
-    (ascent + above, descent + below)
+    leading_box(metrics.ascent, -metrics.descent, line_height, quantize, scale)
 }

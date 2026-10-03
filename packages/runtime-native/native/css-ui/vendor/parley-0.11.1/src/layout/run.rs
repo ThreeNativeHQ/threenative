@@ -238,6 +238,13 @@ pub struct RunMetrics {
     pub strikethrough_size: f32,
     /// The line height
     pub line_height: f32,
+    /// Ascent of the inline box's own font, which the half-leading of a specified
+    /// `line-height` is distributed around. Equals `ascent` unless this run was shaped with
+    /// a fallback face.
+    pub box_ascent: f32,
+    /// Descent of the inline box's own font. Equals `descent` unless this run was shaped
+    /// with a fallback face.
+    pub box_descent: f32,
     /// Distance from the baseline to the top of short lowercase letters.
     pub x_height: Option<f32>,
     /// Distance from the baseline to the top of capital letters.
