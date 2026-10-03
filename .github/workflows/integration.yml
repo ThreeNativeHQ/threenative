@@ -26,7 +26,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # The per-lane trigger filters these five files used to carry, as one gate: the pull request's own
+  # The per-lane trigger filters these six files used to carry, as one gate: the pull request's own
   # changed paths decide which lanes run, and a lane this commit does not touch is skipped rather than
   # spending a runner. Editing this workflow keeps every lane's gate true, which is what
   # `.github/workflows/integration-<lane>.yml` did for each of them.
@@ -45,6 +45,7 @@ jobs:
       ik: ${{ steps.filter.outputs.ik }}
       tone: ${{ steps.filter.outputs.tone }}
       vegetation: ${{ steps.filter.outputs.vegetation }}
+      world-capture: ${{ steps.filter.outputs.world-capture }}
     steps:
       - id: filter
         env:
@@ -61,6 +62,7 @@ jobs:
           lane ik '^examples/integrations/ik/.*$|^\.github/workflows/integration\.yml$'
           lane tone '^packages/playtest/.*$|^examples/abyss-framework/src/render/toneCalibration\.ts$|^examples/abyss-framework/src/tone-main\.ts$|^examples/abyss-framework/tone\.html$|^examples/abyss-framework/tone\.vite\.config\.ts$|^examples/abyss-framework/playtests/tone\.playtest\.json$|^examples/abyss-framework/package\.json$|^scripts/verify-tone-exposure\.ts$|^scripts/tone-capture-proof\.ts$|^scripts/__tests__/tone-capture-proof\.spec\.ts$|^scripts/non-visual-scenarios\.mjs$|^package\.json$|^pnpm-lock\.yaml$|^\.github/actions/pnpm/.*$|^\.github/actions/playwright-chromium/.*$|^\.github/workflows/integration\.yml$'
           lane vegetation '^examples/integrations/vegetation/.*$|^\.github/workflows/integration\.yml$'
+          lane world-capture '^packages/core/src/world[^/]*\.ts$|^packages/core/__tests__/world-capture-fixture\.spec\.ts$|^packages/playtest/.*$|^packages/assets/.*$|^examples/abyss-framework/src/scenes/WorldProbe\.ts$|^examples/abyss-framework/src/world-main\.ts$|^examples/abyss-framework/src/style\.css$|^examples/abyss-framework/assets/world/.*$|^examples/abyss-framework/index\.html$|^examples/abyss-framework/vite\.config\.ts$|^examples/abyss-framework/threenative\.config\.ts$|^examples/abyss-framework/playtests/phase477-world-capture\.playtest\.json$|^examples/abyss-framework/package\.json$|^scripts/verify-world-capture\.ts$|^scripts/world-capture-manifest\.ts$|^scripts/world-visual-gate\.ts$|^scripts/capture-guard\.ts$|^scripts/__tests__/verify-world-capture\.spec\.ts$|^scripts/__tests__/world-capture-manifest\.spec\.ts$|^scripts/__tests__/world-visual-gate\.spec\.ts$|^package\.json$|^pnpm-lock\.yaml$|^pnpm-workspace\.yaml$|^\.github/actions/pnpm/.*$|^\.github/actions/playwright-chromium/.*$|^\.github/workflows/integration\.yml$'
 
   csg:
     name: csg
@@ -246,6 +248,44 @@ jobs:
           name: tone-exposure-${{ github.event.pull_request.head.sha }}
           path: artifacts/tone-exposure
           if-no-files-found: error
+
+  capture:
+    name: capture
+    if: ${{ !github.event.pull_request.draft && needs.paths.outputs.world-capture == 'true' }}
+    needs: paths
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Record exact source before setup
+        run: |
+          mkdir -p artifacts/world-capture
+          git rev-parse HEAD > artifacts/world-capture/source-sha.txt
+      - uses: ./.github/actions/pnpm
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/playwright-chromium
+      - name: Build runner, runtime, and Vite asset cooker from this commit
+        run: pnpm --filter '@threenative/playtest...' --filter '@threenative/core...' --filter '@threenative/assets...' --filter '@threenative/physics...' --filter '@threenative/ui...' --workspace-concurrency=1 build
+      - name: Verify capture rejection and importer contracts
+        run: pnpm exec vitest run --maxWorkers=1 scripts/__tests__/verify-world-capture.spec.ts scripts/__tests__/world-capture-manifest.spec.ts scripts/__tests__/world-visual-gate.spec.ts packages/core/__tests__/world-capture-fixture.spec.ts
+      - name: Capture 34 real frames and confirm strict software rejection
+        env:
+          EXPECTED_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+        # The headed runner provisions its private Xvfb. Software is diagnostic only.
+        run: pnpm exec tsx scripts/verify-world-capture.ts
+      - name: Retain screenshots, reports, importer result, and strict gate outcome
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: world-capture-diagnostic-${{ github.event.pull_request.head.sha }}
+          path: artifacts/world-capture
 
   fluid-collision:
     name: fluid collision
