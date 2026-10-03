@@ -825,10 +825,9 @@ jobs:
           - { template: starter, shard: "2/3" }
           - { template: starter, shard: "3/3" }
           - { template: tower-defense, shard: "1/1" }
-    # Hosted on purpose: ~25 short template legs run all at once on hosted runners while builds and
-    # tests hold the local pool. On 5 local slots these legs waited 17-25 min for a runner (run
-    # 37070815769); sharing the board across both pools is what shortens wall time.
-    runs-on: ubuntu-24.04
+    # Balanced like the rest: the pool advertises itself only while a runner is idle, so these legs
+    # take local slots when free and overflow to hosted otherwise, never queueing behind the pool.
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 30
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
