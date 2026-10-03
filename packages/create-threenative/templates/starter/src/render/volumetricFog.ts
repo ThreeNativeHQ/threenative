@@ -58,7 +58,8 @@ export const STARTER_MIST: Omit<IVolumetricFogOptions, "renderer"> = {
  * Off, unsupported and zero-density return before allocating any graph/target/material.
  *
  * While a medium lives it owns the scene's fog: `sky.ts` renders the same air through
- * `scene.fog`, so two of them would double it. Disposal puts the authored fog back.
+ * `scene.fog`, so two of them would double it. Disposal puts the authored fog back, unless
+ * the game authored a new one while the medium lived — that later fog is then the live one.
  */
 export function createVolumetricFog(
   scene: Scene,
@@ -109,7 +110,7 @@ export function createVolumetricFog(
       graph?.target.dispose();
       graph?.material.dispose();
       graph = undefined;
-      scene.fog = authoredFog;
+      if (scene.fog == null) scene.fog = authoredFog;
     },
   };
 }

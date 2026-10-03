@@ -150,6 +150,17 @@ describe("opt-in generated volumetric fog", () => {
     fog.dispose();
     expect(scene.fog).toBe(authored);
   });
+  it("leaves a fog the game authored while the medium lived", () => {
+    const scene = new Scene();
+    scene.fog = new FogExp2(0xcfd8e3, 0.003);
+    const camera = new PerspectiveCamera();
+    const fog = required(createVolumetricFog(scene, camera, settings()));
+    expect(() => fog.compose(pass(scene, camera))).not.toThrow();
+    const later = new FogExp2(0x101418, 0.02);
+    scene.fog = later;
+    fog.dispose();
+    expect(scene.fog).toBe(later);
+  });
   it("owns no history and disposes its own target and material exactly once", () => {
     const camera = new PerspectiveCamera();
     const scene = new Scene();
