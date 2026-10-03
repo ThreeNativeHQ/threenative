@@ -59,6 +59,10 @@ function report() {
           before: { measuredSteps: 0, totalSteps: 1 },
           after: { measuredSteps: 1, totalSteps: 2, gateClosed: true },
         },
+        FluidGPU: {
+          before: { completedScopes: 1, errors: 0 },
+          after: { completedScopes: 2, errors: 0 },
+        },
         FluidAdapter: { before: { description: "llvmpipe" }, after: { description: "llvmpipe" } },
       },
     },
@@ -74,15 +78,17 @@ test("accepts observed native provenance without fabricating a capture record", 
     { target: "web" },
     { observations: undefined },
     { assertionResults: [] },
-    { observations: { ...report().observations, runtimeDiagnostics: undefined } },
-    { observations: { ...report().observations, runtimeDiagnostics: {} } },
-    { observations: { ...report().observations, runtimeDiagnosticsBefore: undefined } },
-    {
+    ...[
+      undefined,
+      {},
+      { before: { completedScopes: 0, errors: 0 }, after: { completedScopes: 2, errors: 0 } },
+      { before: { completedScopes: 1, errors: 0 }, after: { completedScopes: 2, errors: 1 } },
+    ].map((FluidGPU) => ({
       observations: {
         ...report().observations,
-        runtimeDiagnosticsBefore: { recentRuntimeErrors: ["unhandled GPU error"] },
+        resources: { ...report().observations.resources, FluidGPU },
       },
-    },
+    })),
   ])
     expect(() =>
       assertNativeFluidCapture(
@@ -261,14 +267,20 @@ function responses() {
         method: "sample",
         result: {
           diagnostics: [],
-          resources: { FluidCollision: report().observations.resources.FluidCollision.before },
+          resources: {
+            FluidCollision: report().observations.resources.FluidCollision.before,
+            FluidGPU: report().observations.resources.FluidGPU.before,
+          },
         },
       },
       {
         method: "sample",
         result: {
           diagnostics: [],
-          resources: { FluidCollision: report().observations.resources.FluidCollision.after },
+          resources: {
+            FluidCollision: report().observations.resources.FluidCollision.after,
+            FluidGPU: report().observations.resources.FluidGPU.after,
+          },
         },
       },
     ].map(({ method, result }, index) => ({

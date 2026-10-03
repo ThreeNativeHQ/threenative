@@ -31,7 +31,10 @@ async function start({ gateClosed = true } = {}) {
         requestAdapter(): Promise<{
           info: Record<string, string>;
           features: { has(name: string): boolean };
-          requestDevice(descriptor: { requiredFeatures: string[] }): Promise<object>;
+          requestDevice(descriptor: { requiredFeatures: string[] }): Promise<{
+            pushErrorScope(filter: string): void;
+            popErrorScope(): Promise<null | { message: string }>;
+          }>;
         } | null>;
       };
     }
@@ -45,6 +48,25 @@ async function start({ gateClosed = true } = {}) {
       ? ["core-features-and-limits"]
       : [],
   });
+  if (typeof device.pushErrorScope !== "function" || typeof device.popErrorScope !== "function")
+    throw new Error("Fluid proof requires actual GPU error scopes.");
+  const gpuHealth = { completedScopes: 0, errors: 0 };
+  const gpuDiagnostics: { message: string }[] = [];
+  function beginGPUObservation() {
+    for (const filter of ["internal", "out-of-memory", "validation"]) device.pushErrorScope(filter);
+  }
+  async function completeGPUObservation() {
+    for (let scope = 0; scope < 3; scope++) {
+      const error = await device.popErrorScope();
+      if (error !== null) {
+        gpuHealth.errors++;
+        gpuDiagnostics.push({ message: String(error?.message ?? "Malformed GPU scope result") });
+      }
+    }
+    gpuHealth.completedScopes++;
+    if (gpuHealth.errors !== 0) throw new Error("Fluid GPU error scope reported an error.");
+  }
+  beginGPUObservation();
   const adapterInfo = Object.fromEntries(
     ["architecture", "description", "device", "vendor"].map((field) => [
       field,
@@ -134,6 +156,7 @@ async function start({ gateClosed = true } = {}) {
   wall.position.set(...gate.center);
   scene.add(wall);
   await renderer.renderAsync(scene, camera);
+  await completeGPUObservation();
   // Native screenshot requests capture a future present; this loop never advances the solver.
   renderer.setAnimationLoop(() => renderer.render(scene, camera));
 
@@ -155,10 +178,12 @@ async function start({ gateClosed = true } = {}) {
   };
   installThreePlaytestBridge({
     camera,
-    diagnostics: () => [],
+    diagnostics: () => gpuDiagnostics,
     fixedStep: async (ticks) => {
       // Subsequent fixture ticks hold the single measured step for a stable after screenshot.
-      if (results.measuredSteps === 0) {
+      const measured = results.measuredSteps === 0;
+      if (measured) {
+        beginGPUObservation();
         for (const { arm, water } of cases) {
           water.setColliders(arm.colliders);
           water.emit(arm.start, arm.velocity);
@@ -204,10 +229,17 @@ async function start({ gateClosed = true } = {}) {
       }
       tick += ticks;
       await renderer.renderAsync(scene, camera);
+      if (measured) await completeGPUObservation();
       return ticks;
     },
     renderer,
-    resources: { read: () => ({ FluidCollision: results, FluidAdapter: adapterInfo }) },
+    resources: {
+      read: () => ({
+        FluidCollision: results,
+        FluidAdapter: adapterInfo,
+        FluidGPU: { ...gpuHealth },
+      }),
+    },
     scene,
     tick: () => tick,
   });

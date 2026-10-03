@@ -39,13 +39,19 @@ export function assertNativeFluidCapture(
   assertFluidOutcome(report, expectedFailure);
   assert.equal(report.runtime, "native", "Fluid collision requires the actual native runtime");
   assert.equal(report.target, "desktop", "Fluid collision requires the desktop target");
-  for (const key of ["runtimeDiagnosticsBefore", "runtimeDiagnostics"] as const) {
-    const observed = report.observations?.[key] as { recentRuntimeErrors?: unknown } | undefined;
-    assert.deepEqual(
-      observed?.recentRuntimeErrors,
-      [],
-      "Native runtime errors must be observed and clean before and after",
+  for (const [phase, completedScopes] of [
+    ["before", 1],
+    ["after", 2],
+  ] as const) {
+    const gpu = report.observations?.resources.FluidGPU?.[phase] as
+      | Record<string, unknown>
+      | undefined;
+    assert.equal(
+      gpu?.completedScopes,
+      completedScopes,
+      "Actual GPU scopes must complete before sampling",
     );
+    assert.equal(gpu?.errors, 0, "Actual GPU scopes must be clean");
   }
   const before = report.observations?.resources.FluidCollision?.before as
     | Record<string, unknown>
@@ -145,8 +151,10 @@ export function assertNativeFluidResponses(
   );
   const capabilities = replies[0]?.result.capabilities;
   assert.ok(
-    Array.isArray(capabilities) && capabilities.includes("runtime.diagnostics"),
-    "Native producer must expose runtime.diagnostics",
+    Array.isArray(capabilities) &&
+      capabilities.includes("runtime.resources") &&
+      capabilities.includes("runtime.diagnostics"),
+    "Native producer must expose actual resources",
   );
   const readyIndex = replies.findIndex(({ method }) => method === "ready");
   const firstSampleIndex = replies.findIndex(({ method }) => method === "sample");
@@ -173,6 +181,11 @@ export function assertNativeFluidResponses(
   ] as const) {
     const resources = sample?.resources as Record<string, unknown> | undefined;
     assert.ok(resources?.FluidCollision !== undefined, "Raw native fluid measurements are missing");
+    assert.deepEqual(
+      resources.FluidGPU,
+      report.observations?.resources.FluidGPU?.[phase],
+      "Raw GPU scope observations must match",
+    );
     assert.deepEqual(
       resources.FluidCollision,
       report.observations?.resources.FluidCollision?.[phase],

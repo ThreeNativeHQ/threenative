@@ -40,8 +40,7 @@ const sourceFiles = await Promise.all(
       .digest("hex"),
   })),
 );
-const qualification =
-  "Rendered browser GPU correctness; no native or hardware-performance claim.";
+const qualification = "Rendered browser GPU correctness; no native or hardware-performance claim.";
 const variants = [];
 try {
   execFileSync("pnpm", ["exec", "vite", "build", "--config", "proof.vite.config.ts"], {

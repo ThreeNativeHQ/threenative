@@ -1,7 +1,7 @@
 import { Data3DTexture, HalfFloatType, RGBAFormat } from "three";
-import { Storage3DTexture, StorageTexture } from "three/webgpu";
 // @ts-expect-error Three does not declare its internal texture descriptor builder.
 import WebGPUTextureUtils from "three/src/renderers/webgpu/utils/WebGPUTextureUtils.js";
+import { Storage3DTexture, StorageTexture } from "three/webgpu";
 import { afterEach, expect, it, vi } from "vitest";
 
 const usage = {
