@@ -1,0 +1,95 @@
+{
+  "schemaVersion": 1,
+  "name": "vq01-native-asset-lifecycle",
+  "target": "desktop",
+  "viewport": {
+    "width": 960,
+    "height": 640
+  },
+  "warmupFrames": 30,
+  "steps": [
+    {
+      "waitForResource": {
+        "id": "state",
+        "path": "settled",
+        "equals": 2
+      },
+      "timeoutMs": 120000
+    },
+    {
+      "waitForResource": {
+        "id": "state",
+        "path": "settled",
+        "equals": 3
+      },
+      "timeoutMs": 120000
+    },
+    {
+      "waitForResource": {
+        "id": "state",
+        "path": "settled",
+        "equals": 4
+      },
+      "timeoutMs": 120000
+    }
+  ],
+  "artifacts": {
+    "screenshots": true,
+    "console": true
+  },
+  "assert": {
+    "resources": [
+      {
+        "id": "state",
+        "path": "entries",
+        "equals": 4,
+        "allowTrivial": "The first load publishes entries 1; only three further enters of the same scene publish 4."
+      },
+      {
+        "id": "state",
+        "path": "loadedModels",
+        "equals": 2,
+        "allowTrivial": "Both real normalized GLBs reload and finish before every observation, including the fourth enter's."
+      },
+      {
+        "id": "state",
+        "path": "texturedMeshes",
+        "equals": 2,
+        "allowTrivial": "A texture image on each reloaded GLB is counted before the observation."
+      },
+      {
+        "id": "state",
+        "path": "ownedGeometries",
+        "gte": 1,
+        "allowTrivial": "The renderer's live geometry tally is only published once a settle window has uploaded the stage."
+      },
+      {
+        "id": "state",
+        "path": "geometryGrowth",
+        "equals": 0,
+        "allowTrivial": "The exit path's disposal is exactly what makes the tally return to the first enter's baseline; the baseline is 0 growth by construction and only a leak can move it."
+      },
+      {
+        "id": "state",
+        "path": "ownedTextures",
+        "gte": 1,
+        "allowTrivial": "The renderer's live texture tally is only published once a settle window has uploaded the KTX2 and panel textures."
+      },
+      {
+        "id": "state",
+        "path": "textureGrowth",
+        "equals": 0,
+        "allowTrivial": "The exit path's disposal is exactly what makes the tally return to the first enter's baseline; the baseline is 0 growth by construction and only a leak can move it."
+      },
+      {
+        "id": "state",
+        "path": "frames",
+        "changed": true
+      }
+    ],
+    "startup": {
+      "maxEnteredMs": 120000,
+      "maxReadyMs": 120000
+    }
+  }
+}
