@@ -84,7 +84,8 @@ experimental path or mark the draft ready before the outstanding acceptance evid
 
   Partial, 2026-10-02: starter-only generated `temporalAA.ts` now reuses TRAANode and owns
   explicit cut/reset, projection/size invalidation, raster-size guards and disposal. The shared
-  fixture exercises moving rigid/skinned/instanced content; `integration-temporal.yml` captures
+  fixture exercises moving rigid/skinned/instanced content; the `temporal` lane of
+  `integration.yml` captures
   reference, temporal, cut, projection and resize variants through the existing headed playtest
   runner. Fresh focused checks: 297/297 source/scaffold/workflow tests, 67/67 native-conformance
   contract tests, root TypeScript check, core build, fixture web build and shared native bundle
