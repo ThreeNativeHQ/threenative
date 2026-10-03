@@ -25,6 +25,8 @@ export interface IDaylightOptions {
   readonly sunIntensity: number;
   /** Half-widths of the shadow windows in world units, finest first, strictly increasing. */
   readonly shadowExtents: readonly number[];
+  /** Texels per shadow level edge; a level's texel is `2 * extent / shadowMapSize`. Default: the sun's `shadow.mapSize.width` (512). */
+  readonly shadowMapSize?: number;
   /**
    * How far a window may trail the camera before it re-renders, as a fraction of its own extent:
    * one value for every level, or one per level finest first, the last entry standing in for the
@@ -116,6 +118,7 @@ export class Daylight extends Group implements IComputeDriven {
       // A game that wants the fine level on a different cadence than the coarse two says so here,
       // per level, instead of taking one step for all of them.
       ...(options.refreshStep === undefined ? {} : { refreshStep: options.refreshStep }),
+      ...(options.shadowMapSize === undefined ? {} : { mapSize: options.shadowMapSize }),
     });
     this.add(this.sun);
     this.add(this.sun.target);

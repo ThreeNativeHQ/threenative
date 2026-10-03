@@ -243,8 +243,8 @@ export interface IDirectionalClipmapOptions {
   readonly selectionGuard?: number | readonly number[];
   /**
    * Fraction of an extent a level's window may trail its followed centre by before it re-renders,
-   * `[0, 1)`, default 0.125. Rounded to a whole number of the level's texels, so `0` keeps the
-   * old one-texel step. Larger steps re-render a level less often as the camera walks. One value
+   * `[0, 1)`, default 0.125. Rounded to whole texels with one texel reserved for a deferred render;
+   * `0` keeps the old one-texel step. Larger steps re-render a level less often as the camera walks. One value
    * for every level, or one per level finest first, the last entry standing in for the rest.
    */
   readonly refreshStep?: number | readonly number[];
@@ -365,7 +365,7 @@ export class DirectionalClipmap {
     }
     this.clipExtents = [...clipExtents];
     this.pagesPerAxis = pagesPerAxis;
-    this.refreshStep = steps;
+    this.refreshStep = clipExtents.map((_, level) => this.#perLevel(steps, level));
     this.selectionGuard = guards;
     this.levelCount = clipExtents.length;
     this.basisW = normalize(direction);
@@ -384,6 +384,7 @@ export class DirectionalClipmap {
       Math.abs(this.basisW.y) > 0.95 ? { x: 0, y: 0, z: 1 } : { x: 0, y: 1, z: 0 };
     this.basisU = normalize(cross(this.basisW, reference));
     this.basisV = normalize(cross(this.basisW, this.basisU));
+    if (!unchanged) this.#windows = [];
     this.updateCenter(this.centerWorld);
     return !unchanged;
   }
@@ -415,30 +416,41 @@ export class DirectionalClipmap {
     if (!Number.isFinite(step) || step < 0 || step >= 1) {
       throw new RangeError(`refreshStep must stay in the range [0, 1), got ${String(step)}`);
     }
-    this.refreshStep[Math.min(level, this.refreshStep.length - 1)] = step;
+    this.refreshStep[level] = step;
   }
 
   updateCenter(worldPoint: IVector3Like): readonly IClipWindow[] {
     assertFiniteVector("worldPoint", worldPoint);
+    const previousCenter = this.centerLight;
     this.centerWorld = { x: worldPoint.x, y: worldPoint.y, z: worldPoint.z };
     this.centerLight = this.project(worldPoint);
     const halfPages = Math.floor(this.pagesPerAxis / 2);
     this.#windows = this.clipExtents.map((extent, level) => {
       const pageWorldSize = (extent * 2) / this.pagesPerAxis;
-      // Hysteresis. The window used to re-centre on every single page boundary, so walking
-      // re-rendered a level about every texel of it — a 512² depth pass per texel of ground
-      // crossed. It now holds still until the followed centre has moved `refreshStep` of the
-      // level's extent, rounded to a whole number of this level's own texels: a whole step is
-      // `refreshStep * pagesPerAxis / 2` pages (32 of 512 at the default), so the window origin
-      // still lands on one fixed world grid and the shadow texels never drift against it.
-      // `refreshStep: 0` restores the old one-page step. Per level, so a fine level a walking camera
-      // re-renders most can step further than the coarse one behind it.
+      // The step is a drift threshold, never the grid spacing. Changing it alone cannot move a
+      // stationary window. When either axis crosses the threshold, recenter the whole window on
+      // this level's fixed texel grid; `refreshStep: 0` keeps the old one-page floor addressing.
       const step = this.#perLevel(this.refreshStep, level);
+      // Begin the refresh one texel inside the trail: the node grants one level render per frame,
+      // so a coarse window may wait behind the fine one while the followed centre keeps moving.
       const refreshPages =
-        step === 0 ? 1 : Math.max(1, Math.round((step * extent) / pageWorldSize));
-      const snapWorldSize = pageWorldSize * refreshPages;
-      const minX = Math.floor(this.centerLight.u / snapWorldSize) * refreshPages - halfPages;
-      const minY = Math.floor(this.centerLight.v / snapWorldSize) * refreshPages - halfPages;
+        step === 0 ? 1 : Math.max(1, Math.round((step * extent) / pageWorldSize) - 1);
+      const previous = this.#windows[level];
+      const minX = Math.floor(this.centerLight.u / pageWorldSize) - halfPages;
+      const minY = Math.floor(this.centerLight.v / pageWorldSize) - halfPages;
+      if (
+        previous &&
+        ((this.centerLight.u === previousCenter.u && this.centerLight.v === previousCenter.v) ||
+          (Math.max(Math.abs(minX - previous.minX), Math.abs(minY - previous.minY)) <
+            refreshPages &&
+            Math.max(
+              Math.abs(this.centerLight.u - (previous.minX + halfPages) * pageWorldSize),
+              Math.abs(this.centerLight.v - (previous.minY + halfPages) * pageWorldSize),
+            ) <
+              refreshPages * pageWorldSize))
+      ) {
+        return { ...previous, refreshPages };
+      }
       return {
         level,
         extent,

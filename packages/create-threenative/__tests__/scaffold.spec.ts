@@ -186,20 +186,23 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // all thirteen trees, rain and snow included, were re-measured through createProject.
   // Recomputed 2026-10-02 rebasing the FabCLI manual-login fallback onto develop: the shared
   // threenative-assets skill ships in every scaffold, so all thirteen trees move.
-  "action-rpg": "0b06ad9bbcddcb702497985eaaa855c5bfbc66d43809e720f2f9b445172b6dd3",
-  minimal: "531c452baae7bbeb08a511f8cc06c2d94b5886b1de70c31de5968462584c82bd",
-  platformer: "616d63fb1b0fe888c39a4dbbae651ecd3e85b61d5fd396bc0f77fde122bef585",
-  puzzle: "f0a302958d7607eb8438ddedea79241bf87f04620d28fe04d92dc8c5bd887742",
-  racing: "39c2eb35911939484c4be5c35b8b1fb1be2ccaa8fdb4c2269a7e7943f61ca93f",
-  rain: "80a2c0297f451b096950bcdb7a7710776e063c4819c6b1b543f0bc320edda41c",
-  rts: "df5e7ef2ff5dedb7c234239141afbaae2d32f8d6f9e58be89e0731b47f857572",
-  runner: "cbeb5578241eab87a38307dd27f4ede42bf4058774d6dea4cf848fde0fd50bb2",
-  sailing: "adf775fd15287af4cc00b675264e157e0555b027e3bd32ad9a5e8aebbcd1f64d",
+  // PRD-479: each scaffold embeds the reviewed compute-only Storage3DTexture Three patch.
+  // A clean-tree audit matched all13 prior hashes, then changed only the copied patch and
+  // reproduced all13 CI received hashes. No template, version or other scaffold bytes changed.
+  "action-rpg": "115e31cd5a319cf1407d94486a839304ca26cc6c532384129f6a3e8e7f1a3e36",
+  minimal: "4149749167f26a50c4fe67b801cc71e3d9e26d737f7e43766813f69ac5804900",
+  platformer: "87dc88a3a6d50e88c476cf80c5be501bca62ce27474aed5d8155e02d8e729c90",
+  puzzle: "fc5d88b24b78db3830510360fe2a4e53a7d0805737ddc07047fb6530b23009bb",
+  racing: "502373fe0d07d97dca2bab70929ead5f7bafac123d3b97c2ae49b4a919e5124e",
+  rain: "731042034a9c73824998c919137aa7002d75cac031713e6d309bc8301f8b4088",
+  rts: "2b875e1041e0e533d17f5bd5104094e11f8fbbdd06aef1e0156cba80fc21585b",
+  runner: "b66c2056b1256773911c0f6e46bea6c2f705cc3acbb2b8e2aa3ee8c461938cff",
+  sailing: "2d1ec2373e3697afa0d8f6341260911c24f988315dc2942d1328c0ddbd848011",
   // VQ11 after merge of develop 416ffd7: measured through createProject, only shooter changed.
-  shooter: "0b9dadf239d441709f214da3035792741f791fdf5349e44c063f619b048a3484",
-  snow: "f3d4878829cf14ebee6355e720c223171529d550e8cafc9cd6328285a8000d3b",
-  starter: "fae9ee908d5c9370fdf95c1314f6845be5fcb9fd64114af21082331b21e53579",
-  "tower-defense": "68ce595b3857e5ca3e94c7b4dc09f29cb0e16459b6642c235f391b7312da365e",
+  shooter: "2a4a5cb0b4c91b2cc7578df8bee854d3fa66ffd58f85a8c840964c5549cecc54",
+  snow: "7b634782b3bc6eff9cc9b15141bbe5bba9d1014e034d2a2e8859e785911a6424",
+  starter: "212b3f23c97b60ad8475a9418a6f4eeb87202ebad570b424cab83ff6c3c4ef17",
+  "tower-defense": "b72a0736abbcd3b2007852684b9298dc6d2069c8130337f140f15fb48f341511",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
@@ -456,12 +459,19 @@ describe("create-threenative", () => {
 
   it("keeps every no-install scaffold tree byte-stable against the PRD parent", async () => {
     const root = await makeTempDir("threenative-scaffold-stability-");
+    const canonicalPatch = await readFile(
+      path.resolve("packages/core/patches/three@0.185.1.patch"),
+    );
     try {
       const actual: Record<string, string> = {};
       for (const template of ALL_TEMPLATES) {
         const { target } = await createProject(
           { install: false, target: template, template },
           root,
+        );
+        // A stale prepack copy previously masked this intentional patch change locally.
+        expect(await readFile(path.join(target, "patches/three@0.185.1.patch"))).toEqual(
+          canonicalPatch,
         );
         expect(PRD_201_PARENT_SCAFFOLD_HASHES[template]).toBeDefined();
         actual[template] = await scaffoldTreeHash(target);
