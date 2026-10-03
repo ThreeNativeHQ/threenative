@@ -7,6 +7,11 @@
 #                                  integration-*.yml send Linux jobs here
 #   scripts/ci-runners.sh down     clear both variables first, then stop everything
 #   scripts/ci-runners.sh status   what is set, what is running, what is online
+#   scripts/ci-runners.sh install  one-time operator setup: check prerequisites, create the runner
+#                                  worktree, install and start a boot service (Linux, systemd user)
+#   scripts/ci-runners.sh uninstall stop the service, clear the variables, remove service + worktree
+#
+# Operator guide: tools/ci-runners/README.md. Contributors need none of this.
 #
 # `down` deletes the variables before it stops anything, so the kill switch is the same command as
 # the teardown: jobs go back to hosted runners the moment it is deleted, whether or not the
@@ -106,6 +111,16 @@ stop_slots() {
   docker ps -q --filter label=tn-ci-runner=1 | xargs -r docker stop
 }
 
+# A runner stopped while idle stays registered offline forever: ephemeral runners deregister only
+# after taking a job. Delete those so the runner list shows real capacity.
+forget_offline() {
+  gh api "repos/$1/actions/runners" --paginate --jq \
+    '.runners[] | select(.status == "offline") | select(any(.labels[]; .name | startswith("tn-local"))) | .id' \
+    2>/dev/null | while read -r id; do
+      gh api -X DELETE "repos/$1/actions/runners/$id" >/dev/null 2>&1 || true
+    done
+}
+
 online_count() {
   gh api "repos/$1/actions/runners" --paginate --jq "
     [.runners[] | select(.status == \"online\") | select(any(.labels[]; .name == \"$2\"))] | length
@@ -122,6 +137,7 @@ up() {
   local repo
   repo="$(repo_name)"
 
+  forget_offline "$repo"
   docker build -t "$IMAGE" tools/ci-runners
   mkdir -p "$STATE_DIR"
   # A leftover stop file from a previous teardown would make every loop exit before it starts.
@@ -186,6 +202,7 @@ down() {
   done
   mkdir -p "$STATE_DIR"
   stop_slots
+  forget_offline "$repo"
   printf '%s and %s cleared; runners stopping\n' "$VARIABLE" "$LIGHT_VARIABLE"
 }
 
@@ -206,9 +223,95 @@ status() {
   done
 }
 
+SERVICE=threenative-ci-runners.service
+UNIT_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
+
+# The checkout every worktree belongs to, so the service never runs from a lane that gets deleted.
+primary_root() {
+  dirname -- "$(cd "$(git rev-parse --git-common-dir)" && pwd)"
+}
+
+install() {
+  command -v systemctl >/dev/null 2>&1 && systemctl --user show-environment >/dev/null 2>&1 \
+    || fail 2 "install needs Linux with a systemd user session; elsewhere run 'up'/'down' by hand"
+  need docker
+  need gh
+  need git
+  docker info >/dev/null 2>&1 || fail 2 "docker is not usable without sudo; add $USER to the docker group and log in again"
+  gh auth status >/dev/null 2>&1 || fail 2 "gh is not logged in; run 'gh auth login' first"
+  load_config
+  local branch root worktree
+  branch="$(git config --get threenative.integrationBranch || echo develop)"
+  root="$(primary_root)"
+  worktree="$root/.worktrees/ci-runners"
+  git -C "$root" fetch -q origin "$branch"
+  if [ ! -d "$worktree" ]; then
+    git -C "$root" worktree add -q --detach "$worktree" "origin/$branch"
+  fi
+  mkdir -p "$UNIT_DIR"
+  cat >"$UNIT_DIR/$SERVICE" <<UNIT
+[Unit]
+Description=ThreeNative tn-local GitHub Actions runner pool (PRD-480)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=$worktree
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+# Start from the latest $branch, so runner image and script fixes deploy on the next start.
+ExecStartPre=/usr/bin/env git fetch -q origin $branch
+ExecStartPre=/usr/bin/env git checkout -q --detach origin/$branch
+ExecStart=/usr/bin/env bash scripts/ci-runners.sh up
+# down clears TN_RUNNER first, so jobs fall back to hosted runners whenever this pool is not up.
+ExecStop=/usr/bin/env bash scripts/ci-runners.sh down
+TimeoutStartSec=1200
+TimeoutStopSec=300
+# gh may keep its token in a desktop keyring that is locked until login; retry until it opens.
+Restart=on-failure
+RestartSec=60
+
+[Install]
+WantedBy=default.target
+UNIT
+  # Lingering starts user services at boot, before anyone logs in.
+  if [ "$(loginctl show-user "$USER" -p Linger --value 2>/dev/null)" != yes ]; then
+    loginctl enable-linger "$USER" 2>/dev/null \
+      || printf 'TN_CI_RUNNERS: run "sudo loginctl enable-linger %s" so the pool starts at boot\n' "$USER" >&2
+  fi
+  systemctl --user daemon-reload
+  systemctl --user enable "$SERVICE" >/dev/null 2>&1
+  if systemctl --user is-active --quiet "$SERVICE"; then
+    printf 'Service already running. Apply changes when no job is running:\n  systemctl --user restart %s\n' "$SERVICE"
+  else
+    systemctl --user start "$SERVICE"
+  fi
+  printf 'Installed: %s runs %s from %s at every boot.\n' "$SERVICE" "origin/$branch" "$worktree"
+  status
+}
+
+uninstall() {
+  if [ -f "$UNIT_DIR/$SERVICE" ]; then
+    systemctl --user disable --now "$SERVICE" >/dev/null 2>&1 || true
+    rm -f "$UNIT_DIR/$SERVICE"
+    systemctl --user daemon-reload
+  fi
+  down
+  local worktree
+  worktree="$(primary_root)/.worktrees/ci-runners"
+  if [ -d "$worktree" ]; then
+    git -C "$(primary_root)" worktree remove "$worktree" \
+      || printf 'TN_CI_RUNNERS: %s has local changes; remove it yourself once checked\n' "$worktree" >&2
+  fi
+  printf 'Uninstalled; every job now runs on hosted runners.\n'
+}
+
 case "${1:-}" in
   up) shift; up "${1:-}" ;;
   down) down ;;
   status) status ;;
-  *) fail 2 "usage: ci-runners.sh up [N] | down | status" ;;
+  install) install ;;
+  uninstall) uninstall ;;
+  *) fail 2 "usage: ci-runners.sh up [N] | down | status | install | uninstall" ;;
 esac
