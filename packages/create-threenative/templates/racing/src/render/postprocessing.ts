@@ -26,8 +26,10 @@ export function setupPost(
     software?: boolean;
     /** Forces a tier, ignoring `mobile`. An unknown name throws rather than falling back. */
     tier?: QualityTier;
+    /** Scene-owned material assignments follow the resolved tier. */
+    onTierChanged?: (tier: QualityTier) => void;
   } = {},
-): void {
+): { readonly tier: QualityTier; dispose(): void } {
   const tier = resolveQualityTier({
     mobile: environment.mobile,
     software: environment.software,
@@ -40,5 +42,15 @@ export function setupPost(
     } source=${source}`,
   );
   const world = new WorldEnvironment(qualityPreset(tier));
-  world.apply(renderer, scene, camera, { godraysLight: environment.godraysLight });
+  const applied = world.apply(renderer, scene, camera, { godraysLight: environment.godraysLight });
+  environment.onTierChanged?.(tier);
+  let disposed = false;
+  return {
+    tier,
+    dispose(): void {
+      if (disposed) return;
+      disposed = true;
+      applied.dispose?.();
+    },
+  };
 }

@@ -21,6 +21,7 @@ import { type QualityTier, qualityPreset } from "./quality.js";
 import { type OutputRenderer, WorldEnvironment } from "./worldEnvironment.js";
 
 interface IPostController {
+  readonly tier: QualityTier;
   debug(): Record<string, unknown>;
   observe(window: IQualityWindow): void;
   dispose(): void;
@@ -44,6 +45,8 @@ export function setupPost(
     software?: boolean;
     /** Forces a tier while keeping its costs observed. Unknown names throw. */
     tier?: QualityTier;
+    /** Scene-owned material assignments follow the same resolved tier. */
+    onTierChanged?: (tier: QualityTier) => void;
   } = {},
 ): IPostController {
   const policy = createAdaptiveQuality(environment, environment);
@@ -64,6 +67,7 @@ export function setupPost(
     });
     disposeGraph = applied.dispose;
     observation = { ...observation, stages: applied.stages, dropped: applied.dropped };
+    environment.onTierChanged?.(policy.tier);
   }
   apply();
   const source = environment.tier === undefined ? "platform" : "override";
@@ -73,6 +77,9 @@ export function setupPost(
     } source=${source}`,
   );
   const controller = {
+    get tier(): QualityTier {
+      return policy.tier;
+    },
     debug: () => observation,
     observe(window: IQualityWindow): void {
       if (disposed) return;
