@@ -147,7 +147,7 @@ describe("FrameBudget", () => {
       },
     );
     try {
-      const budget = new FrameBudget({ report: () => {} });
+      const budget = new FrameBudget({ report: () => {}, reportEvery: 1 });
       budget.beginFrame(100, 100);
       budget.endFrame(101);
       deliver({

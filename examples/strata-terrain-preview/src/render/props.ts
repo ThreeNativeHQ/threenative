@@ -11,7 +11,7 @@
 // Every prop keeps the same contract the editor has always relied on: a placement resolves to a
 // prepared matrix, that matrix is written into the instanced mesh by index, and the editor can read
 // it back and overwrite it. Adding a variant changes the shape, never that contract.
-import { GroundSnap, InstancedBatch, createRandom } from "@threenative/core";
+import { GroundSnap, InstancedBatch, addInSlices, createRandom } from "@threenative/core";
 import type { IPlacement, IPlacementOverride } from "@threenative/terrain";
 import {
   type BufferGeometry,
@@ -603,6 +603,8 @@ interface IVariantGroup {
   /** Which level each placement drew last frame. The hysteresis reads it and writes it. */
   readonly state: Uint8Array;
   readonly asset: string;
+  readonly members: number[][];
+  readonly slots: Int32Array;
 }
 
 /**
@@ -635,7 +637,7 @@ export function levelFor(distance: number, current: number, levelCount: number):
  * role, and {@link setPropLevels} refills them from the camera each frame; a variant with one never
  * touches its matrices again.
  */
-export function createProps(
+function* propWork(
   placements: readonly IPlacement[],
   groundAt: PropGroundQuery,
   parts: Map<string, IPropPart[]>,
@@ -682,6 +684,7 @@ export function createProps(
       pose: pose.matrix,
     });
     groups.set(key, entries);
+    yield;
   }
 
   function dispose(): void {
@@ -693,6 +696,7 @@ export function createProps(
   }
   /** Every variant with more than one detail level, which is the only thing that refills. */
   const banded: IVariantGroup[] = [];
+  let completed = false;
   try {
     for (const [key, entries] of groups) {
       const chosen = parts.get(key);
@@ -759,80 +763,164 @@ export function createProps(
         entries,
         levels: byLevel,
         state: new Uint8Array(entries.length),
+        members: levels.map((level) => (level === 0 ? entries.map((_, i) => i) : [])),
+        slots: Int32Array.from(entries.map((_, i) => i)),
       });
       for (const entry of entries) {
         if (entry.instance.mesh === undefined)
           throw new Error(`Prop '${entry.instance.placement.id}' built no body draw`);
+        entry.instance.parts = (byLevel.get(0) ?? []).map((mesh) => ({
+          mesh,
+          index: entry.instance.index,
+        }));
+        const body = byLevel.get(0)?.find((mesh) => mesh.userData.body);
+        if (body) entry.instance.mesh = body;
         byId.set(entry.instance.placement.id, entry.instance);
       }
+      for (const [level, list] of byLevel)
+        for (const mesh of list) {
+          mesh.count = level === 0 ? entries.length : 0;
+          if (level !== 0) mesh.userData.placementIds = [];
+        }
+      yield;
     }
     const origin = new Vector3();
     const levelCount = new Map<IVariantGroup, number>();
 
-    /**
-     * Refill every banded variant from the camera.
-     *
-     * One pass over the placements per variant, one matrix write per draw the placement lands in,
-     * and the draw counts follow. A frame that changes nothing still writes the same matrices,
-     * which is the price of not sorting the placements by level: the work is a few hundred matrix
-     * copies for a forest, against a sort that would move a tree's editor index every frame.
-     */
+    // Swap-delete only band crossings. Stable members retain their GPU buffer slot and editor
+    // handle; initial bounds cover every possible member, so moving the eye never rebuilds them.
     const seenFrom = new Vector3(Number.NaN, 0, 0);
     let seenPoseVersion = poseVersion;
     const setLevels = (camera: Vector3): void => {
-      // Only when the eye has actually moved, and a walk moves it every frame. 0.75 m of slack: at
-      // 5 m/s that is one refill every nine frames instead of every three, which is what put the
-      // player view's CPU p50 over the 4 ms gate — the band is rebuilt and every instanced bounding
-      // sphere recomputed from scratch, and that price is the number of plants within reach. A tree
-      // still standing at the same LOD band after three quarters of a metre of walking is invisible.
+      // The existing 0.75 m camera slack and authored hysteresis remain unchanged.
       const edited = seenPoseVersion !== poseVersion;
       if (!edited && seenFrom.distanceToSquared(camera) < 0.75 ** 2) return;
       seenFrom.copy(camera);
       seenPoseVersion = poseVersion;
       for (const group of banded) {
         const levels = levelCount.get(group) ?? 0;
-        const counts = new Array<number>(levels).fill(0);
-        for (const list of group.levels.values())
-          for (const mesh of list) mesh.userData.placementIds = [];
-        for (const [index, entry] of group.entries.entries()) {
+        const dirty = new Set<InstancedMesh>();
+        const bindSlot = (index: number, level: number, slot: number): void => {
+          const entry = group.entries[index];
+          if (!entry) throw new Error(`Missing prop slot '${group.key}:${index}'`);
           entry.instance.parts = [];
-          origin.setFromMatrixPosition(entry.pose);
-          const distance = origin.distanceTo(camera);
-          const reach = VARIANT_REACH[group.key] ?? DRAW_REACH[group.asset];
-          if (reach !== undefined && distance > reach) continue;
-          if (reach !== undefined && ["grass", "scrub", "fern"].includes(group.asset)) {
-            // Stable density falloff: survivors keep their authored scale, never shrink into the floor.
-            const fade = Math.max(0, (distance - 28) / (reach - 28));
-            const seed = (Math.imul(index + 1, 2654435761) >>> 0) / 4294967296;
-            if (seed > (1 - fade) ** 2) continue;
-          }
-          const level = levelFor(distance, group.state[index] ?? 0, levels);
-          group.state[index] = level;
-          const slot = counts[level] ?? 0;
           for (const mesh of group.levels.get(level) ?? []) {
             mesh.setMatrixAt(slot, entry.pose);
-            mesh.userData.placementIds.push(entry.instance.placement.id);
+            mesh.userData.placementIds[slot] = entry.instance.placement.id;
             entry.instance.parts.push({ mesh, index: slot });
             if (mesh.userData.body) {
               entry.instance.mesh = mesh;
               entry.instance.index = slot;
             }
+            dirty.add(mesh);
           }
-          counts[level] = slot + 1;
+          group.slots[index] = slot;
+        };
+        for (const [index, entry] of group.entries.entries()) {
+          origin.setFromMatrixPosition(entry.pose);
+          const distance = origin.distanceTo(camera);
+          const reach = VARIANT_REACH[group.key] ?? DRAW_REACH[group.asset];
+          let visible = reach === undefined || distance <= reach;
+          if (visible && reach !== undefined && ["grass", "scrub", "fern"].includes(group.asset)) {
+            const fade = Math.max(0, (distance - 28) / (reach - 28));
+            const seed = (Math.imul(index + 1, 2654435761) >>> 0) / 4294967296;
+            visible = seed <= (1 - fade) ** 2;
+          }
+          const previous = group.state[index] ?? 0;
+          const level = levelFor(distance, previous, levels);
+          const slot = group.slots[index] ?? -1;
+          if (slot >= 0 === visible && (!visible || previous === level)) continue;
+          if (slot >= 0) {
+            const members = group.members[previous];
+            if (!members) throw new Error(`Missing prop band '${group.key}:${previous}'`);
+            const last = members.pop();
+            if (last !== undefined && last !== index) {
+              members[slot] = last;
+              bindSlot(last, previous, slot);
+            }
+            for (const mesh of group.levels.get(previous) ?? []) {
+              mesh.userData.placementIds.length = members.length;
+              dirty.add(mesh);
+            }
+          }
+          entry.instance.parts = [];
+          group.slots[index] = -1;
+          if (visible) {
+            const members = group.members[level];
+            if (!members) throw new Error(`Missing prop band '${group.key}:${level}'`);
+            bindSlot(index, level, members.length);
+            members.push(index);
+            group.state[index] = level;
+          }
         }
         for (const [level, list] of group.levels) {
           for (const mesh of list) {
-            mesh.count = counts[level] ?? 0;
-            mesh.instanceMatrix.needsUpdate = true;
-            mesh.computeBoundingSphere();
+            mesh.count = group.members[level]?.length ?? 0;
+            if (dirty.has(mesh)) mesh.instanceMatrix.needsUpdate = true;
+            // The build's sphere already bounds ALL placements, not just this band's subset.
+            // A transform edit may extend it; camera movement cannot.
+            if (edited) {
+              const sphere = mesh.boundingSphere;
+              if (sphere)
+                for (const entry of group.entries) {
+                  if (mesh.geometry.boundingSphere === null) mesh.geometry.computeBoundingSphere();
+                  const local = mesh.geometry.boundingSphere?.clone().applyMatrix4(entry.pose);
+                  if (local) sphere.union(local);
+                }
+            }
           }
         }
       }
     };
     for (const group of banded) levelCount.set(group, group.levels.size);
+    completed = true;
     return { object, meshes, byId, dispose, setLevels };
+  } finally {
+    if (!completed) dispose();
+  }
+}
+
+export function createProps(
+  placements: readonly IPlacement[],
+  groundAt: PropGroundQuery,
+  parts: Map<string, IPropPart[]>,
+  materials: IPropMaterials,
+) {
+  const work = propWork(placements, groundAt, parts, materials);
+  for (;;) {
+    const step = work.next();
+    if (step.done) return step.value;
+  }
+}
+
+export async function createPropsInSlices(
+  placements: readonly IPlacement[],
+  groundAt: PropGroundQuery,
+  parts: Map<string, IPropPart[]>,
+  materials: IPropMaterials,
+  whileCurrent?: () => boolean,
+) {
+  const work = propWork(placements, groundAt, parts, materials);
+  const groups = new Set(
+    placements.map((placement) => `${placement.asset}:${variantFor(placement, placement.asset)}`),
+  );
+  try {
+    const report = await addInSlices(
+      Array.from({ length: placements.length + groups.size }),
+      () => {
+        work.next();
+      },
+      { while: whileCurrent },
+    );
+    if (report.stopped) {
+      work.return(undefined as never);
+      return undefined;
+    }
+    const result = work.next();
+    if (!result.done) throw new Error("Prop build did not finish its scheduled work");
+    return result.value;
   } catch (error) {
-    dispose();
+    work.return(undefined as never);
     throw error;
   }
 }

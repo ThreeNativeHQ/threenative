@@ -13,6 +13,16 @@
   },
   "steps": [
     {
+      "label": "forest-assets-ready",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "worldReady",
+        "equals": true
+      },
+      "timeoutMs": 60000,
+      "release": true
+    },
+    {
       "kind": "wait",
       "label": "grounded",
       "waitTicks": 120,
@@ -110,6 +120,16 @@
       "release": true
     },
     {
+      "label": "coastal-assets-ready",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "worldReady",
+        "equals": true
+      },
+      "timeoutMs": 60000,
+      "release": true
+    },
+    {
       "kind": "wait",
       "label": "ocean-early",
       "waitTicks": 180,
@@ -187,6 +207,16 @@
         "equals": "alpine"
       },
       "timeoutMs": 15000,
+      "release": true
+    },
+    {
+      "label": "alpine-assets-ready",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "worldReady",
+        "equals": true
+      },
+      "timeoutMs": 60000,
       "release": true
     },
     {
@@ -269,6 +299,16 @@
       "release": true
     },
     {
+      "label": "desert-assets-ready",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "worldReady",
+        "equals": true
+      },
+      "timeoutMs": 60000,
+      "release": true
+    },
+    {
       "label": "desert-ground-ready",
       "waitForResource": {
         "id": "GameState",
@@ -345,6 +385,16 @@
         "equals": "tundra"
       },
       "timeoutMs": 15000,
+      "release": true
+    },
+    {
+      "label": "tundra-assets-ready",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "worldReady",
+        "equals": true
+      },
+      "timeoutMs": 60000,
       "release": true
     },
     {
@@ -454,6 +504,16 @@
         "equals": "coastal"
       },
       "timeoutMs": 15000,
+      "release": true
+    },
+    {
+      "label": "coastal-return-assets-ready",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "worldReady",
+        "equals": true
+      },
+      "timeoutMs": 60000,
       "release": true
     },
     {
@@ -879,6 +939,39 @@
         "path": "erosionDepositSamples",
         "gte": 100,
         "allowTrivial": "Counts actual hydraulic deposition samples from each played heightfield."
+      },
+      {
+        "id": "GameState",
+        "path": "tasksAvailable",
+        "equals": true,
+        "allowTrivial": "Long Tasks must actually be observed; unavailable is not zero."
+      },
+      {
+        "id": "GameState",
+        "path": "afterFirstFrameTaskMs",
+        "gte": 0,
+        "lte": 250,
+        "allowTrivial": "Longest actual main-thread task after the first frame, across loading and play; presentation waits are excluded."
+      },
+      {
+        "id": "GameState",
+        "path": "timeToReadyMs",
+        "gte": 1,
+        "lte": 15000,
+        "allowTrivial": "Warm launch to the complete prop tier, not framework readiness before assets land."
+      },
+      {
+        "id": "GameState",
+        "path": "measuredGpuViewCount",
+        "gte": 17,
+        "allowTrivial": "Every fixed view needs a resolved timestamp window; absent GPU timings fail."
+      },
+      {
+        "id": "GameState",
+        "path": "maxViewGpuMs",
+        "gte": 0.01,
+        "lte": 12,
+        "allowTrivial": "Worst per-view median timestamp-query GPU cost, valid under Xvfb; this is not a displayed-fps claim."
       }
     ],
     "renderChain": {

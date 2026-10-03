@@ -15,6 +15,33 @@ function testCanvas(): HTMLCanvasElement {
 }
 
 describe("createRenderer", () => {
+  it("keeps its browser-created canvas layout independent of drawing-buffer scale", async () => {
+    const canvas = testCanvas();
+    const style = { width: "", height: "" };
+    Object.defineProperty(canvas, "style", { value: style });
+    const documentDescriptor = Object.getOwnPropertyDescriptor(globalThis, "document");
+    Object.defineProperty(globalThis, "document", {
+      configurable: true,
+      value: { createElement: () => canvas },
+    });
+    let renderer: Awaited<ReturnType<typeof createRenderer>> | undefined;
+    try {
+      renderer = await createRenderer({
+        preferWebGPU: false,
+        resolutionScale: 0.5,
+        webgl2Factory: () => ({
+          domElement: canvas,
+          render: () => undefined,
+          setSize: () => undefined,
+        }),
+      });
+      expect(style).toEqual({ width: "100%", height: "100%" });
+    } finally {
+      renderer?.dispose();
+      if (documentDescriptor) Object.defineProperty(globalThis, "document", documentDescriptor);
+      else Reflect.deleteProperty(globalThis, "document");
+    }
+  });
   it("reports the age of the resolved GPU frame without treating a repeated duration as fresh", async () => {
     const canvas = testCanvas();
     const info = { frame: 10, render: { timestamp: 6.25 } };

@@ -2719,3 +2719,21 @@ Runtime proof remains pending: shared GPU queue plus one capture-lock publicatio
 race (`mkdtemp lock/.holder-*` ENOENT), not a game verdict. Baseline server has file
 watching/HMR disabled and warmed transforms for original props/core plus telemetry;
 subsequent source edits cannot alter its cached modules. No GPU/FPS claim yet.
+
+Perf checkpoint 2 (2026-10-03 07:24 UTC): game layer uses installed `addInSlices`
+for prop placement/build and swap-deletes only distance-band crossings; authored density,
+materials, thresholds and hysteresis are unchanged. CPU comparison: 6,000 instances,
+100 moving-camera updates, 944.2 → 202.1 ms. Slice/synchronous equivalence and repeated
+band-crossing editor slots PASS; terrain suite 73/73 PASS. FrameBudget now keeps the
+first-frame task boundary for its entire lifetime and publishes resolved GPU frame
+ranges; stale bucket results and camera-transition windows cannot enter a new view.
+Red/green regression confirmed each measurement defect; bounded reviewer PASS.
+Engine layer: the automatically created browser canvas has CSS bounds independent
+of drawing-buffer attributes, preventing ResizeObserver's scale-to-one-pixel feedback.
+Renderer spec red → green, 34/34 PASS; core budget/grounding subset 45/45 PASS.
+Full baseline on NVIDIA Turing/RTX 2080 completed: startup ready 34,130.8 ms;
+longest observed main-thread task 8,162 ms. It FAILed: canvas collapsed to 1×1,
+so later GPU/view values are INVALID, not an improvement. Licensed comparison now
+renders full viewport frames and is running. Core build/publint and example tsc PASS;
+repo-root Biome on example and changed package paths PASS (existing warnings only).
+Runtime budget boxes stay open pending licensed/fallback runs. No FPS claim or push.

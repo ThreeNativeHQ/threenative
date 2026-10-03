@@ -1042,6 +1042,13 @@ export async function createRenderer(options: IRendererOptions = {}): Promise<IR
     throw new Error("renderer.resolutionScale must be finite and positive.");
   const applied = { height: 1, width: 1 };
   const canvas = options.canvas ?? source?.createCanvas() ?? document.createElement("canvas");
+  // An intrinsic canvas follows its width/height attributes. Scaling that buffer then changes
+  // clientWidth, so ResizeObserver scales it again until it is one pixel. Own the layout only
+  // for the browser canvas we created; supplied canvases and platform surfaces own theirs.
+  if (options.canvas === undefined && source === undefined && canvas.style !== undefined) {
+    canvas.style.width = "100%";
+    canvas.style.height = "100%";
+  }
   const preferWebGPU = options.preferWebGPU ?? true;
   // `trackTimestamp` is on so GPU time is measured, not inferred from wall clock; it is inert on an
   // adapter without `timestamp-query`, and `gpuTimestampFrameInterval` samples it (PRD-446).

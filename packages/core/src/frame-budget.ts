@@ -322,6 +322,8 @@ export interface IFrameBudgetWindow {
    * one series rather than a second instantaneous read.
    */
   readonly gpuMs?: number;
+  /** Resolved renderer-frame range behind this window; unavailable for unframed samples. */
+  readonly gpuFrames?: { readonly first: number; readonly last: number };
   /** Age of the most recent resolved GPU timestamp in Three.js frame IDs; absent means unobservable. */
   readonly gpuAgeFrames?: number;
   /**
@@ -551,6 +553,10 @@ export class FrameBudget {
   // previous window's resolved frame.
   #lastGpuFrame: number | undefined;
   #gpuThisFrame: number | undefined;
+  #gpuFrameThisFrame: number | undefined;
+  #gpuFirstFrame = Number.POSITIVE_INFINITY;
+  #gpuLastFrame = Number.NEGATIVE_INFINITY;
+  #gpuUnframed = false;
   #gpuStaleThisFrame = false;
   #gpuStaleInWindow = 0;
   #open = false;
@@ -572,6 +578,7 @@ export class FrameBudget {
   #presentsInWindow = 0;
   #presentsUnreadable = false;
   #firstFrameStart: number | undefined;
+  #firstTaskFrameStart: number | undefined;
 
   constructor(options: IFrameBudgetOptions = {}) {
     this.reportEvery = requirePositiveInteger(
@@ -594,7 +601,10 @@ export class FrameBudget {
         for (const entry of list.getEntries()) {
           this.#taskCount++;
           this.#longestTaskMs = Math.max(this.#longestTaskMs, entry.duration);
-          if (this.#firstFrameStart !== undefined && entry.startTime >= this.#firstFrameStart)
+          if (
+            this.#firstTaskFrameStart !== undefined &&
+            entry.startTime >= this.#firstTaskFrameStart
+          )
             this.#afterFirstFrameTaskMs = Math.max(this.#afterFirstFrameTaskMs, entry.duration);
         }
       });
@@ -652,12 +662,14 @@ export class FrameBudget {
     this.#open = true;
     this.#frameStart = nowMs;
     if (this.#firstFrameStart === undefined) this.#firstFrameStart = nowMs;
+    this.#firstTaskFrameStart ??= nowMs;
     this.#simulationEnd = undefined;
     this.#renderMs = 0;
     this.#overlayMs = 0;
     this.#uiMs = 0;
     this.#substepCount = 0;
     this.#gpuThisFrame = undefined;
+    this.#gpuFrameThisFrame = undefined;
     this.#gpuStaleThisFrame = false;
     this.#gpuBucketThisFrame = {};
     this.#hostGap = this.#lastFrameEnd === undefined ? 0 : Math.max(0, nowMs - this.#lastFrameEnd);
@@ -722,6 +734,7 @@ export class FrameBudget {
       this.#lastGpuFrame = frame;
     }
     this.#gpuThisFrame = ms;
+    this.#gpuFrameThisFrame = frame;
   }
 
   /**
@@ -845,10 +858,18 @@ export class FrameBudget {
     this.#phaseRings.overlay.push(this.#overlayMs);
     this.#phaseRings.residual.push(residual);
     this.#phaseRings.ui.push(this.#uiMs);
-    if (this.#gpuThisFrame !== undefined) this.#gpu.push(this.#gpuThisFrame);
+    if (this.#gpuThisFrame !== undefined) {
+      this.#gpu.push(this.#gpuThisFrame);
+      if (this.#gpuFrameThisFrame === undefined) this.#gpuUnframed = true;
+      else {
+        this.#gpuFirstFrame = Math.min(this.#gpuFirstFrame, this.#gpuFrameThisFrame);
+        this.#gpuLastFrame = Math.max(this.#gpuLastFrame, this.#gpuFrameThisFrame);
+      }
+    }
     for (const bucket of FRAME_GPU_BUCKETS) {
       const ms = this.#gpuBucketThisFrame[bucket];
-      if (ms !== undefined) this.#gpuBucketRings[bucket].push(ms);
+      if (ms !== undefined && this.#gpuThisFrame !== undefined)
+        this.#gpuBucketRings[bucket].push(ms);
     }
     this.#gpuBucketThisFrame = {};
     if (this.#gpuStaleThisFrame) this.#gpuStaleInWindow += 1;
@@ -971,6 +992,9 @@ export class FrameBudget {
       ...(gpu === undefined ? {} : { gpu }),
       gpuStale: this.#gpuStaleInWindow,
       ...(gpu === undefined ? {} : { gpuMs: gpu.mean }),
+      ...(gpu === undefined || this.#gpuUnframed
+        ? {}
+        : { gpuFrames: { first: this.#gpuFirstFrame, last: this.#gpuLastFrame } }),
       ...(gpuAgeFrames === undefined ? {} : { gpuAgeFrames }),
       ...(resolvedTarget === undefined
         ? {}
@@ -1041,6 +1065,9 @@ export class FrameBudget {
     this.#frame.reset();
     this.#substeps.reset();
     this.#gpu.reset();
+    this.#gpuFirstFrame = Number.POSITIVE_INFINITY;
+    this.#gpuLastFrame = Number.NEGATIVE_INFINITY;
+    this.#gpuUnframed = false;
     for (const bucket of FRAME_GPU_BUCKETS) this.#gpuBucketRings[bucket].reset();
     this.#hostCalls.reset();
     this.#gpuBytes.reset();
