@@ -1,5 +1,5 @@
 import type { Document, Texture } from "@gltf-transform/core";
-import { KHRTextureBasisu } from "@gltf-transform/extensions";
+import { EXTTextureWebP, KHRTextureBasisu } from "@gltf-transform/extensions";
 import { getTextureColorSpace, listTextureInfo, listTextureSlots } from "@gltf-transform/functions";
 import { read as readKTX2 } from "ktx-parse";
 import { PNG } from "pngjs";
@@ -582,6 +582,13 @@ export async function compressEmbeddedTextures(
     // Required, not merely used: a reader with no Basis transcoder cannot draw this model,
     // and a glTF that pretends otherwise fails at the first frame instead of at load.
     document.createExtension(KHRTextureBasisu).setRequired(true);
+  }
+  // A glTF writer emits every extension still attached, so a model authored with WebP images
+  // would keep *requiring* EXT_texture_webp after the cook replaced those images. Dropped only
+  // once no image is left in the container: an over-cap image the project chose to keep as
+  // authored is still a WebP a reader has to understand.
+  if (!textures.some((texture) => texture.getMimeType() === "image/webp")) {
+    document.disposeExtension(EXTTextureWebP.EXTENSION_NAME);
   }
   return {
     bytesAfter,
