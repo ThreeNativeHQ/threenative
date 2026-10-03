@@ -322,7 +322,9 @@ jobs:
       needs.scope.outputs.selection == 'full' &&
       inputs.ios_only != true &&
       needs.android-v8-source.result == 'success'
-    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    # Hosted, measured: SwiftShader renders the emulator's GPU on the CPU, and on a 4-thread tn-local
+    # slot run 37082733117 spent 41 min of this job's 45 still running APKs (hosted finishes in ~30).
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}

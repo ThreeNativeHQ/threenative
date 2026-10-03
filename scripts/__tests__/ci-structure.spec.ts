@@ -1031,7 +1031,12 @@ describe("CI pipeline structure", () => {
   // release writes on GitHub's own machines.
   const hosted = new Map<string, ReadonlySet<string>>([
     [".github/workflows/ci.yml", new Set(["supply-chain"])],
-    [".github/workflows/native-platforms.yml", new Set(["publish-android-v8"])],
+    [
+      ".github/workflows/native-platforms.yml",
+      // publish-android-v8 writes the release; android-emulator-parity is CPU-bound SwiftShader that
+      // overran its 45-minute budget on a pinned 4-thread slot (run 37082733117).
+      new Set(["android-emulator-parity", "publish-android-v8"]),
+    ],
   ]);
   // PRD-480's light lane: the jobs whose whole work is a script or a summary — no workspace build,
   // no `pnpm install` and no test suite. `scope` classifies the diff, `build` and `golden-path`

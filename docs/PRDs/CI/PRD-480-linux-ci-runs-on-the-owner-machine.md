@@ -242,4 +242,6 @@ Decisions this phase had to make, 2026-10-02:
 
 - [ ] A `native-platforms` run passes with its Linux legs on `tn-local`. proof: run id plus per-job
   `runner_name`.
+  Exception, measured: `android-emulator-parity` stays hosted. SwiftShader renders its GPU on the CPU, and on a
+  4-thread slot run 37082733117 spent 41 of the job's 45 minutes still running APKs, where hosted takes ~30.
 - [ ] Waiting time meets AC-2. proof: the AC-2 measurement on a full-board PR after this phase.
