@@ -677,6 +677,34 @@ describe("PRD-373 fixed full candidates and current package products", () => {
     expect(cache).not.toContain("restore-keys:");
   });
 
+  it("publishes both base-branch caches from a develop push, ungated by the selection", () => {
+    // A pull request's cache is scoped to its own merge ref and no other pull request reads it, so
+    // the only thing that can warm the base branch is a run on the base branch — and only if these
+    // two jobs actually save when they run there.
+    const producer = job("build-artifacts");
+    expect(producer).toContain("uses: ./.github/actions/workspace-dist");
+    expect(producer).not.toContain('save-bundles: "false"');
+    // The shared action publishes on a cache miss, which is the same condition on develop as on any
+    // other branch. A gate naming the selection or the branch is what would stop the warm lane.
+    const action = readFileSync(
+      path.join(repo, ".github/actions/workspace-dist/action.yml"),
+      "utf8",
+    );
+    const save = action.slice(action.indexOf("- name: Save validated workspace bundles"));
+    expect(save).toContain("steps.dist.outputs.cache-hit != 'true'");
+    expect(save).not.toMatch(/selection|main|develop/u);
+  });
+
+  it("leaves the native cache saves to the cache action's own post step", () => {
+    const native = job("test-native");
+    for (const key of ["native-third-party-", "native-ccache-ci-test-native-", "native-build-"]) {
+      expect(native, `the warm lane no longer publishes ${key}`).toContain(`key: ${key}`);
+    }
+    // `actions/cache` saves in its post step on any successful run, so no step here may be gated on
+    // a full selection — that is the gate that would silently stop the develop push from warming.
+    expect(native).not.toMatch(/^ {6}if:.*selection == 'full'/mu);
+  });
+
   it("repacks changed template bytes even when compiled bundles remain unchanged", () => {
     const root = makeTempDirSync("ci-repack-");
     try {
