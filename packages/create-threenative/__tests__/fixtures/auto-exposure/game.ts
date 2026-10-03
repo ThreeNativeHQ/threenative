@@ -286,7 +286,8 @@ export function createExposureFixture(options: IExposureFixtureOptions) {
       resetCut: { keys: ["KeyT"] },
     },
     plugins: [playtest({ holdUntilAttached: true })],
-    renderer: { preferWebGPU: true },
+    // Preserve the experiment's historical full-size drawing buffer as production defaults evolve.
+    renderer: { preferWebGPU: true, resolutionScale: 1 },
     scenes: { room: ExposureRoom },
     seed: 339,
     start: "room",
