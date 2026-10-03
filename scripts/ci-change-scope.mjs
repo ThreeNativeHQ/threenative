@@ -426,6 +426,16 @@ export function sourceVerdict({ runId, current }) {
   return { succeeded: true, conclusion: verdict.conclusion, profile: source.profile };
 }
 
+// Actions can report only a skipped reusable-workflow stub or an incomplete matrix graph.
+// Even two matching expanded graphs can omit the same leg. Until an authoritative expansion and
+// per-leg routing exists, these boards must execute normally rather than reuse an unproven pass.
+const UNPROVEN_REUSE_BOARDS = new Set([
+  "test-unit",
+  "golden-path-template",
+  "template-nonvisual",
+  "native-platforms",
+]);
+
 /**
  * What this run demands of a source: its profile, the runner class each of its jobs routes to, and
  * the board jobs and matrix legs its own job graph carries. `exempt` names the board jobs the plan
@@ -436,6 +446,16 @@ export function currentRun({ eventName, baseRef = "", exempt = [] }) {
   const listed = runJobs(process.env.GITHUB_RUN_ID ?? "");
   if ("error" in listed) return listed;
   const jobs = listed.jobs;
+  const requiredBoards = BOARD_JOBS.filter((name) => !exempt.includes(name));
+  const unproven = requiredBoards.find((name) => UNPROVEN_REUSE_BOARDS.has(name));
+  if (unproven !== undefined) {
+    return {
+      error: `required matrix/reusable board ${unproven} has no authoritative complete expansion and routing; run the normal full board`,
+    };
+  }
+  const missing = requiredBoards.find((name) => !jobs.some((job) => boardName(job.name) === name));
+  if (missing !== undefined)
+    return { error: `the current run has not materialized required board ${missing}` };
   // Per job, not per run: `supply-chain` is always hosted, the small joins always run on
   // `tn-local-light` and the platform legs are hosted, so a board is mixed on purpose and one class
   // for the whole run is a routing this check cannot model — which was PRD-480. Labels are known
@@ -463,6 +483,10 @@ export function currentRun({ eventName, baseRef = "", exempt = [] }) {
 export function coverageMiss(current, source) {
   const weaker = profileMiss(current.profile, source.profile);
   if (weaker !== "") return weaker;
+  const unproven = current.required.find((name) => UNPROVEN_REUSE_BOARDS.has(boardName(name)));
+  if (unproven !== undefined)
+    return `required matrix/reusable board ${unproven} has no authoritative complete expansion and routing`;
+  if (current.required.length === 0) return "the current run has no proven required job graph";
   for (const name of current.required) {
     const ran = source.jobs.find((job) => job.name === name);
     if (ran === undefined) return `the source run never ran ${name}`;
@@ -470,25 +494,13 @@ export function coverageMiss(current, source) {
       return `the source run's ${name} concluded ${String(ran.conclusion)}`;
     }
     const on = runnerClass(ran);
-    // This run's class for that job, or the class most of its known jobs report when the job's own is
-    // unassigned — a reuse run skips every leg it replaces, and a skipped leg reports no runner. That
-    // stand-in is the only routing this run can prove for such a job, so a leg that disagrees with it
-    // is a miss, and one that agrees is judged by the same fail-closed rule.
-    const routes = current.runnerClasses.get(name) ?? dominantClass(current.runnerClasses);
+    // Only this job's own known routing is evidence; another job's runner is never its proxy.
+    const routes = current.runnerClasses.get(name) ?? "unknown";
     if (on === "unknown" || on !== routes) {
       return `the source run's ${name} ran on ${on} while this run routes to ${routes}`;
     }
   }
   return "";
-}
-
-/** The class most of a run's known jobs report, `unknown` when none does. A tie keeps the first seen. */
-function dominantClass(classes) {
-  const counts = new Map();
-  for (const value of classes.values()) counts.set(value, (counts.get(value) ?? 0) + 1);
-  let best = "unknown";
-  for (const [value, count] of counts) if (count > (counts.get(best) ?? 0)) best = value;
-  return best;
 }
 
 /**

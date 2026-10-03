@@ -406,9 +406,10 @@ function boardLegs(): string[] {
     "typecheck",
     "lint",
     "test",
-    "test-unit (1/3)",
-    "test-unit (2/3)",
-    "test-unit (3/3)",
+    "test-unit (1/4)",
+    "test-unit (2/4)",
+    "test-unit (3/4)",
+    "test-unit (4/4)",
     "test-native",
     "test-browser",
     "test-playtest",
@@ -653,18 +654,18 @@ function verifyReusedPlan(fixture: IReuseFixture, plan: Record<string, unknown>)
 }
 
 describe("PRD-481 a tree is tested once", () => {
-  it("reuses a successful run that tested this exact tree, citing its run id", () => {
+  it("runs the normal board even for the same tree when matrix coverage is unproven", () => {
     const fixture = reuseFixture();
     fakeActionsApi(fixture);
     listSourceRun(fixture);
     const plan = classifyCandidate(fixture, fixture.candidate);
     expect(plan).toMatchObject({
-      selection: "reused",
-      reusedRunId: REUSED_RUN_ID,
+      selection: "full",
+      reusedRunId: 0,
       candidateSha: fixture.candidate,
     });
     const jobs = plan.jobs as Record<string, { required: boolean }>;
-    expect(Object.values(jobs).some((job) => job.required)).toBe(false);
+    expect(Object.values(jobs).some((job) => job.required)).toBe(true);
     // The diff touched no native path, so this run owes no rows and its source has to prove none.
     expect(plan.nativeTier).toBe("none");
   });
@@ -706,10 +707,10 @@ describe("PRD-481 a tree is tested once", () => {
     listSourceRun(fixture);
     const plan = classifyCandidate(fixture, fixture.candidate);
     expect(plan).toMatchObject({ selection: "full" });
-    expect(plan.reason).toContain("workflow_dispatch");
+    expect(plan.reason).toContain("no authoritative complete expansion");
   });
 
-  it("keeps Sunday's nightly full and lets Monday's reuse", () => {
+  it("keeps the nightly full and declines Monday's unproven matrix reuse", () => {
     // The nightly's subject is the runner image and the network, neither of which an unchanged
     // tree can vouch for. Six days of the week may reuse; Sunday may not. A scheduled run reports no
     // base ref, so `--target ""` is what the workflow actually passes it.
@@ -729,20 +730,20 @@ describe("PRD-481 a tree is tested once", () => {
         target: "",
         dayOfWeek: 1,
       }),
-    ).toMatchObject({ selection: "reused", reusedRunId: REUSED_RUN_ID });
+    ).toMatchObject({ selection: "full", reusedRunId: 0 });
   });
 
-  it("passes a reused verdict only when the source run passed its own", () => {
+  it("never passes a skipped full board even when the source verdict passed", () => {
     const fixture = reuseFixture();
     fakeActionsApi(fixture);
     listSourceRun(fixture);
     const plan = classifyCandidate(fixture, fixture.candidate);
     const passed = verifyReusedPlan(fixture, plan);
-    expect(passed.status, passed.stdout + passed.stderr).toBe(0);
+    expect(passed.status, passed.stdout + passed.stderr).toBe(1);
     fakeActionsApi(fixture, { verdict: "failure" });
     const failed = verifyReusedPlan(fixture, plan);
     expect(failed.status).toBe(1);
-    expect(failed.stderr).toContain("CI_REQUIRED_SOURCE_NOT_SUCCESS");
+    expect(failed.stderr).toContain("CI_REQUIRED_JOB_NOT_SUCCESS");
   });
 });
 
@@ -756,7 +757,7 @@ describe("PRD-481 a reused verdict has to cover this run's validation profile", 
     const plan = classifyCandidate(fixture, fixture.candidate, { target: "main" });
     expect(plan).toMatchObject({ selection: "full" });
     expect(plan.reason).toContain("tree reuse unavailable");
-    expect(plan.reason).toContain("target develop");
+    expect(plan.reason).toContain("no authoritative complete expansion");
   });
 
   it("runs the full board when the source never ran a matrix leg this run requires", () => {
@@ -765,7 +766,7 @@ describe("PRD-481 a reused verdict has to cover this run's validation profile", 
     listSourceRun(fixture);
     const plan = classifyCandidate(fixture, fixture.candidate);
     expect(plan).toMatchObject({ selection: "full" });
-    expect(plan.reason).toContain("template-nonvisual (rain, 1/1)");
+    expect(plan.reason).toContain("no authoritative complete expansion");
   });
 
   it("runs the full board when the source ran on a different runner class", () => {
@@ -776,7 +777,7 @@ describe("PRD-481 a reused verdict has to cover this run's validation profile", 
     listSourceRun(fixture);
     const plan = classifyCandidate(fixture, fixture.candidate);
     expect(plan).toMatchObject({ selection: "full" });
-    expect(plan.reason).toContain("this run routes to tn-local");
+    expect(plan.reason).toContain("no authoritative complete expansion");
   });
 
   it("never lets a `ci`-selection run stand in for a full requirement", () => {
@@ -802,17 +803,17 @@ describe("PRD-481 a reused verdict has to cover this run's validation profile", 
     const plan = classifyCandidate(fixture, fixture.candidate);
     expect(plan).toMatchObject({ selection: "full" });
     expect(plan.reason).toContain("tree reuse unavailable");
-    expect(plan.reason).toMatch(/the source run never ran \S+/u);
+    expect(plan.reason).toContain("no authoritative complete expansion");
   });
 
-  it("reuses a promotion pass for an ordinary develop pull request", () => {
+  it("runs the ordinary board rather than crediting unproven promotion matrix coverage", () => {
     // Stronger covers weaker: the promotion proved the full board on this exact tree.
     const fixture = reuseFixture();
     fakeActionsApi(fixture, { base: "main" });
     listSourceRun(fixture);
     const plan = classifyCandidate(fixture, fixture.candidate);
-    expect(plan).toMatchObject({ selection: "reused", reusedRunId: REUSED_RUN_ID });
-    expect(plan.reason).toContain(`CI run ${String(REUSED_RUN_ID)}`);
+    expect(plan).toMatchObject({ selection: "full", reusedRunId: 0 });
+    expect(plan.reason).toContain("no authoritative complete expansion");
   });
 
   it("runs the full board when a reduced native pass is cited for a run that owes the full matrix", () => {
@@ -823,7 +824,7 @@ describe("PRD-481 a reused verdict has to cover this run's validation profile", 
     listSourceRun(fixture);
     const plan = classifyCandidate(fixture, fixture.candidate, { event: "push", target: "" });
     expect(plan).toMatchObject({ selection: "full", nativeTier: "full" });
-    expect(plan.reason).toContain("proved native reduced, this run requires full");
+    expect(plan.reason).toContain("no authoritative complete expansion");
   });
 
   it("runs the full board when the source skipped the lane this pull request owes", () => {
@@ -833,7 +834,7 @@ describe("PRD-481 a reused verdict has to cover this run's validation profile", 
     listSourceRun(fixture);
     const plan = classifyCandidate(fixture, fixture.candidate);
     expect(plan).toMatchObject({ selection: "full", nativeTier: "reduced" });
-    expect(plan.reason).toContain("proved native none, this run requires reduced");
+    expect(plan.reason).toContain("no authoritative complete expansion");
   });
 
   it("records the reduced tier in the verdict, so the gate cannot accept a weaker source", () => {
@@ -841,13 +842,13 @@ describe("PRD-481 a reused verdict has to cover this run's validation profile", 
     fakeActionsApi(fixture, { base: "main" });
     listSourceRun(fixture);
     const plan = classifyCandidate(fixture, fixture.candidate);
-    expect(plan).toMatchObject({ selection: "reused", nativeTier: "reduced" });
+    expect(plan).toMatchObject({ selection: "full", nativeTier: "reduced" });
     // The source's lane disappears after the scope job made its verdict: `none` no longer covers
     // the Linux rows this run owes, and ci-required re-reads the run instead of trusting the plan.
     fakeActionsApi(fixture, { base: "main", nativeConclusion: "skipped" });
     const refused = verifyReusedPlan(fixture, plan);
     expect(refused.status).toBe(1);
-    expect(refused.stderr).toContain("proved native none, this run requires reduced");
+    expect(refused.stderr).toContain("CI_REQUIRED_JOB_NOT_SUCCESS");
   });
 });
 
@@ -864,12 +865,12 @@ function mixedRouting(): Record<string, string[]> {
 }
 
 describe("PRD-481 the runner class is compared per job, because every board is mixed", () => {
-  it("reuses a run that passed the same mix of runner classes", () => {
+  it("declines matrix reuse even when the recorded runner mix matches", () => {
     const fixture = reuseFixture();
     fakeActionsApi(fixture, { sourceJobLabels: mixedRouting(), selfJobLabels: mixedRouting() });
     listSourceRun(fixture);
     const plan = classifyCandidate(fixture, fixture.candidate);
-    expect(plan).toMatchObject({ selection: "reused", reusedRunId: REUSED_RUN_ID });
+    expect(plan).toMatchObject({ selection: "full", reusedRunId: 0 });
   });
 
   it("runs the full board when one job of the mix ran on another runner class", () => {
@@ -882,9 +883,7 @@ describe("PRD-481 the runner class is compared per job, because every board is m
     listSourceRun(fixture);
     const plan = classifyCandidate(fixture, fixture.candidate);
     expect(plan).toMatchObject({ selection: "full" });
-    expect(plan.reason).toContain(
-      "the source run's test ran on hosted while this run routes to tn-local",
-    );
+    expect(plan.reason).toContain("no authoritative complete expansion");
   });
 });
 
@@ -957,7 +956,7 @@ describe("PRD-481 a develop push only warms the caches every pull request reads"
     for (const event of ["pull_request", "merge_group"]) {
       expect(
         classifyCandidate(fixture, fixture.candidate, { event, target: "develop" }),
-      ).toMatchObject({ selection: "reused", reusedRunId: REUSED_RUN_ID });
+      ).toMatchObject({ selection: "full", reusedRunId: 0 });
     }
   });
 
@@ -970,7 +969,7 @@ describe("PRD-481 a develop push only warms the caches every pull request reads"
       target: "develop",
     });
     expect(plan.selection).toBe("full");
-    expect(plan.reason).toContain("cache-warm");
+    expect(plan.reason).toContain("no authoritative complete expansion");
   });
 
   it("looks past a warm run to the run that really tested the tree", () => {
@@ -990,8 +989,8 @@ describe("PRD-481 a develop push only warms the caches every pull request reads"
       ...listSourceRuns(fixture),
     ]);
     expect(classifyCandidate(fixture, fixture.candidate)).toMatchObject({
-      selection: "reused",
-      reusedRunId: REUSED_RUN_ID,
+      selection: "full",
+      reusedRunId: 0,
     });
   });
 
@@ -1011,5 +1010,121 @@ describe("PRD-481 a develop push only warms the caches every pull request reads"
     const red = verifyWarmPlan(fixture, plan, { "build-artifacts": "success" });
     expect(red.status).toBe(1);
     expect(red.stderr).toContain("CI_REQUIRED_JOB_NOT_SUCCESS: test-native");
+  });
+});
+
+describe("unproven matrix reuse runs the normal board", () => {
+  it("declines even an apparently complete matching matrix graph", () => {
+    const fixture = reuseFixture();
+    fakeActionsApi(fixture);
+    listSourceRun(fixture);
+    expect(classifyCandidate(fixture, fixture.candidate)).toMatchObject({
+      selection: "full",
+      reusedRunId: 0,
+    });
+  });
+
+  it("declines an early scope-only graph rather than proving an empty requirement set", () => {
+    const fixture = reuseFixture({ native: true });
+    fakeActionsApi(fixture);
+    writeFileSync(
+      path.join(fixture.root, "self-jobs.json"),
+      JSON.stringify({
+        total_count: 1,
+        jobs: [stubJob("Change scope", "success", HOSTED)],
+      }),
+    );
+    listSourceRun(fixture);
+    expect(classifyCandidate(fixture, fixture.candidate)).toMatchObject({
+      selection: "full",
+      reusedRunId: 0,
+    });
+  });
+});
+
+function coverageResult(
+  required: string[],
+  routes: [string, string][],
+  jobs: object[],
+  sourceProfile = { target: "develop", native: "none" },
+): string {
+  const program = `import {coverageMiss} from ${JSON.stringify(path.join(repo, "scripts/ci-change-scope.mjs"))};
+    console.log(coverageMiss({profile:{target:"develop",native:"none"},required:${JSON.stringify(required)},runnerClasses:new Map(${JSON.stringify(routes)})}, {profile:${JSON.stringify(sourceProfile)},jobs:${JSON.stringify(jobs)}}));`;
+  const result = spawnSync(process.execPath, ["--input-type=module", "-e", program], {
+    encoding: "utf8",
+  });
+  expect(result.status, result.stderr).toBe(0);
+  return result.stdout.trim();
+}
+
+describe("only explicit non-matrix coverage can be affirmed", () => {
+  it("accepts complete exact-name successful non-matrix coverage with its own known route", () => {
+    expect(
+      coverageResult(
+        ["typecheck"],
+        [["typecheck", "hosted"]],
+        [stubJob("typecheck", "success", HOSTED)],
+      ),
+    ).toBe("");
+  });
+  it("rejects empty, missing, skipped, failed, unknown and wrong-runner coverage", () => {
+    expect(coverageResult([], [], [])).not.toBe("");
+    for (const jobs of [
+      [],
+      [stubJob("typecheck", "skipped", HOSTED)],
+      [stubJob("typecheck", "failure", HOSTED)],
+      [stubJob("typecheck", "success", [])],
+      [stubJob("typecheck", "success", LOCAL)],
+    ]) {
+      expect(coverageResult(["typecheck"], [["typecheck", "hosted"]], jobs)).not.toBe("");
+    }
+    expect(
+      coverageResult(
+        ["typecheck"],
+        [["lint", "hosted"]],
+        [stubJob("typecheck", "success", HOSTED)],
+      ),
+    ).not.toBe("");
+    expect(
+      coverageResult(
+        ["typecheck"],
+        [["typecheck", "hosted"]],
+        [stubJob("typecheck", "success", HOSTED)],
+        { target: "other", native: "none" },
+      ),
+    ).not.toBe("");
+  });
+  it("declines all four observed bare queue stubs and complete or partial expanded matrix shapes", () => {
+    for (const name of [
+      "native-platforms",
+      "test-unit",
+      "golden-path-template",
+      "template-nonvisual",
+      "native-platforms / Scaffolded starter desktop artifact (linux-x64)",
+      "test-unit (1/4)",
+      "golden-path-template (starter)",
+      "template-nonvisual (rain, 1/5)",
+    ]) {
+      for (const conclusion of ["success", "skipped", "failure"]) {
+        expect(
+          coverageResult([name], [[name, "hosted"]], [stubJob(name, conclusion, HOSTED)]),
+        ).toContain("no authoritative complete expansion");
+      }
+    }
+    const units = [1, 2, 3, 4].map((n) => `test-unit (${n}/4)`);
+    expect(
+      coverageResult(
+        units,
+        units.map((n) => [n, "hosted"]),
+        units.map((n) => stubJob(n, "success", HOSTED)),
+      ),
+    ).not.toBe("");
+    expect(
+      coverageResult(
+        units.slice(0, 3),
+        units.slice(0, 3).map((n) => [n, "hosted"]),
+        units.slice(0, 3).map((n) => stubJob(n, "success", HOSTED)),
+      ),
+    ).not.toBe("");
   });
 });
