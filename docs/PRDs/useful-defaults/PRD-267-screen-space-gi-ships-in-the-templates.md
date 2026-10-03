@@ -5,7 +5,7 @@ prd_contract: v1
 # PRD-267 — screen-space GI, reflections and their denoiser ship in the templates
 
 **Status:** PROPOSED — filed 2026-08-29, measured at `7e5a9fe1`. Depends on
-[PRD-266](./PRD-266-the-render-chain-names-the-tier-it-actually-ran.md). Batch:
+PRD-266. Batch:
 [docs/PRDs/lighting](./README.md).
 
 **Updated 2026-08-30.** The abstraction PRD-266 ships is named `WorldEnvironment`, after

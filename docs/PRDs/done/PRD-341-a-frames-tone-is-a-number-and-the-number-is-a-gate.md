@@ -9,7 +9,7 @@ SwiftShader WebGPU at `0ea7e29a0ff18717d33b8bce3300ec0568fea842`; required full 
 still pending before merge. No native or hardware-performance qualification is claimed.
 Implementation started 2026-10-02 from `d7277838`; original proposal
 filed 2026-09-03, measured at `43d03e6a`. Batch:
-[docs/PRDs/AAA-visuals](../AAA-visuals/README.md). **Land this first** — it is what makes every other PRD in the
+[docs/PRDs/AAA-visuals](../rendering/aaa-visuals-notes.md). **Land this first** — it is what makes every other PRD in the
 batch judgeable, and it is the cheapest thing here. Source studied:
 [TheLongSilence](https://github.com/achimala/TheLongSilence) `tools/levels.mjs`, `tools/judgeset.mjs`.
 
