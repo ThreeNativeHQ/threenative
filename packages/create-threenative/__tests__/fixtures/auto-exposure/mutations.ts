@@ -45,7 +45,9 @@ export function exposureMutationPlugin(
       const suffix =
         mutation === "clock"
           ? "/fixtures/auto-exposure/main.ts"
-          : "/template-assets/autoExposure.ts";
+          : mutation === "disabled"
+            ? "/template-assets/autoExposure.ts"
+            : "/template-assets/exposureGraph.ts";
       if (!id.endsWith(suffix)) return;
       const code = mutateExposureSource(source, mutation);
       count++;

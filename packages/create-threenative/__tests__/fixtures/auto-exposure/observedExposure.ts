@@ -9,10 +9,42 @@ export function exposureFrameSnapshot(frame: NodeFrame): NodeFrame {
 }
 
 /** Diagnostic instrumentation around the actual generated GPU graph, never a CPU exposure model. */
-export class ObservedExposureNode extends AutoExposureNode {
+export class ObservedExposureNode {
+  readonly node: AutoExposureNode;
+  readonly #setup: AutoExposureNode["setup"];
+  readonly #updateBefore: AutoExposureNode["updateBefore"];
+  readonly #dispose: AutoExposureNode["dispose"];
+
+  constructor(node: AutoExposureNode);
+  constructor(...args: ConstructorParameters<typeof AutoExposureNode>);
+  constructor(...args: [AutoExposureNode] | ConstructorParameters<typeof AutoExposureNode>) {
+    this.node = args.length === 1 ? args[0] : new AutoExposureNode(...args);
+    this.#setup = this.node.setup.bind(this.node);
+    this.#updateBefore = this.node.updateBefore.bind(this.node);
+    this.#dispose = this.node.dispose.bind(this.node);
+    this.node.setup = this.setup.bind(this);
+    this.node.updateBefore = this.updateBefore.bind(this);
+    this.node.dispose = this.dispose.bind(this);
+  }
+
+  get settings() {
+    return this.node.settings;
+  }
+  get exposureNode() {
+    return this.node.exposureNode;
+  }
+  reset(...args: Parameters<AutoExposureNode["reset"]>) {
+    this.node.reset(...args);
+  }
+  setEnabled(enabled: boolean) {
+    this.node.setEnabled(enabled);
+  }
+  getObservation() {
+    return this.node.getObservation();
+  }
   setupCount = 0;
-  override setup(builder: NodeBuilder) {
-    const result = super.setup(builder);
+  setup(builder: NodeBuilder) {
+    const result = this.#setup(builder);
     this.setupCount++;
     console.info(
       `TN_EXPOSURE_SETUP:${JSON.stringify({ ...this.timing, setupCount: this.setupCount })}`,
@@ -89,7 +121,7 @@ export class ObservedExposureNode extends AutoExposureNode {
     };
   }
 
-  override updateBefore(frame: NodeFrame): undefined {
+  updateBefore(frame: NodeFrame): undefined {
     // Bound each deterministic pose to exactly 180 actual graph updates. Wait for its real
     // GPU readback before the next update, including the terminal update; then hold that history.
     const bounded = this.deterministic || this.coldBoot;
@@ -122,11 +154,11 @@ export class ObservedExposureNode extends AutoExposureNode {
       };
     }
     try {
-      super.updateBefore(input);
+      this.#updateBefore(input);
       this.timing = next;
       console.info(`TN_EXPOSURE_TIMING:${JSON.stringify(this.timing)}`);
       if (sampleRead !== undefined) {
-        // Subscribe after super has attached its production acceptance callback. Returning the
+        // Subscribe after the node has attached its production acceptance callback. Returning the
         // original promise preserves that order even for an already resolved GPU readback.
         void sampleRead
           .then(
@@ -172,8 +204,8 @@ export class ObservedExposureNode extends AutoExposureNode {
     }
   }
 
-  override dispose(): void {
+  dispose(): void {
     this.#disposed = true;
-    super.dispose();
+    this.#dispose();
   }
 }

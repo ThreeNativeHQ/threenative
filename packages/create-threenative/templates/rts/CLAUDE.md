@@ -5,13 +5,11 @@
 Instructions for the AI agent in this game. `CLAUDE.md` mirrors this file; edit `AGENTS.md`.
 
 ## Ownership
-
 ThreeNative owns bootstrap, renderer, fixed-step loop, input, loading, and the state bridge. This repository owns the rules in `src/sim/`, every visible choice in
 `src/render/`, the scene in `src/scenes/`, and the HUD in `src/ui/`; `src/game.ts` is portable and React mounts from `src/main.ts`. Nothing in `@threenative/*` reads or chooses
 their appearance, and this kit loads no physics plugin: `src/sim/` does its own collision and A*, which is what makes a match replayable and headless-testable. The render camera also skips an object that projects under **0.5 px** in it; `renderer.minimumProjectedPixels` raises that threshold (`false` disables the cut, not the count) and `alwaysRender(object)` exempts an object, while camera-attached objects and shadow casters are kept. The engine also owns the per-frame world-matrix walk, and by default it does not descend into a hidden subtree — so a game that reads a hidden object's `matrixWorld` directly must use `getWorldPosition` (or call `object.updateWorldMatrix(true, false)`) first; `renderer.matrixWorld: "all"` restores three's every-node walk, and `TN_PROJECTION` reports the visited-node count either way.
 
 ## Start every change
-
 1. **Critical planning gate:** invoke `threenative-capabilities` before `prd-creator`. Search
    `engine_search_capabilities` for the full request and each concrete mechanic, inspect relevant
    matches with `engine_capability_detail`, and record a capability or no-match for the plan. Apply the `ponytail` ladder before writing code; never hand-write what the capability search already installs.

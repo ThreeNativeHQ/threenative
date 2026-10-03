@@ -3,14 +3,16 @@ import { describe, expect, it } from "vitest";
 import { mutateExposureSource } from "./fixtures/auto-exposure/mutations.js";
 
 const source = readFileSync(new URL("../template-assets/autoExposure.ts", import.meta.url), "utf8");
+const graph = readFileSync(new URL("../template-assets/exposureGraph.ts", import.meta.url), "utf8");
 const entry = readFileSync(new URL("./fixtures/auto-exposure/main.ts", import.meta.url), "utf8");
 
 describe("exposure mutation controls", () => {
   it.each(["linear", "disabled", "meter"] as const)(
     "changes exactly one declared %s shader seam",
     (mutation) => {
-      const mutated = mutateExposureSource(source, mutation);
-      expect(mutated).not.toBe(source);
+      const target = mutation === "disabled" ? source : graph;
+      const mutated = mutateExposureSource(target, mutation);
+      expect(mutated).not.toBe(target);
       expect(() => mutateExposureSource(mutated, mutation)).toThrow(/exactly one/);
     },
   );
@@ -21,6 +23,6 @@ describe("exposure mutation controls", () => {
   });
   it("fails closed if the target disappeared or became ambiguous", () => {
     expect(() => mutateExposureSource("unrelated", "linear")).toThrow(/exactly one/);
-    expect(() => mutateExposureSource(source + source, "linear")).toThrow(/exactly one/);
+    expect(() => mutateExposureSource(graph + graph, "linear")).toThrow(/exactly one/);
   });
 });

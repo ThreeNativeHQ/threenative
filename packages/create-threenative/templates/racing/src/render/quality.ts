@@ -94,6 +94,7 @@ const shared: IWorldEnvironmentOptions = {
   bloomRadius: 0.55,
   bloomStrength: 0.26,
   bloomThreshold: 1,
+  autoExposureEnabled: false,
   exposure: 0.66,
   tonemapMode: "aces",
   vignetteAmount: 0.26,

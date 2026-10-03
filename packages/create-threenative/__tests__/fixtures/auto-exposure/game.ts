@@ -14,10 +14,12 @@ import { type ICtx, Scene, defineGame } from "../../../../core/dist/index.js";
 import { playtest } from "../../../../core/dist/playtest.js";
 import { applyExposure } from "../../../template-assets/autoExposure.js";
 import { exposureSettings } from "../../../template-assets/exposure.js";
+import { WorldEnvironment } from "../../../template-assets/worldEnvironment.js";
 import { createFixedExposureRooms } from "./fixedRooms.js";
 import { ObservedExposureNode } from "./observedExposure.js";
 
 export interface IExposureFixtureOptions {
+  consumer?: boolean;
   enabled: boolean;
   bright: boolean;
   stops: number;
@@ -120,17 +122,41 @@ export function createExposureFixture(options: IExposureFixtureOptions) {
         validationDevice?.createBuffer({ size: 4, usage: 0 });
       renderer.toneMapping = ACESFilmicToneMapping;
       renderer.toneMappingExposure = 1;
-      const worldPass = pass(ctx.scene, ctx.camera);
+      const policy = {
+        ...exposureSettings,
+        enabled: options.enabled,
+        snapGain: options.snapGain,
+        reportInterval: options.deterministic === true || options.coldBoot === true ? 1e-6 : 0.1,
+      };
+      let ownedWorldPass: ReturnType<typeof pass> | undefined;
+      const installation =
+        options.consumer === true
+          ? new WorldEnvironment({
+              autoExposureEnabled: true,
+              bloomEnabled: false,
+              exposurePolicy: policy,
+              screenSpaceAA: "disabled",
+              exposure: 1,
+            }).apply(ctx.renderer, ctx.scene, ctx.camera, {
+              baseColour: (ownedPass) => {
+                ownedWorldPass = ownedPass;
+                return ownedPass.getTextureNode("output");
+              },
+            })
+          : undefined;
+      if (installation === undefined) ownedWorldPass = pass(ctx.scene, ctx.camera);
+      if (ownedWorldPass === undefined) throw new Error("Exposure consumer world pass is missing.");
+      const worldPass = ownedWorldPass;
       const colour = worldPass.getTextureNode("output");
-      const exposure = new ObservedExposureNode(
-        colour,
-        {
-          ...exposureSettings,
-          enabled: options.enabled,
-          snapGain: options.snapGain,
-          reportInterval: options.deterministic === true || options.coldBoot === true ? 1e-6 : 0.1,
-        },
-        1,
+      const exposure =
+        installation?.exposure === undefined
+          ? new ObservedExposureNode(colour, policy, 1)
+          : new ObservedExposureNode(installation.exposure);
+      console.info(
+        `TN_EXPOSURE_CONSUMER:${JSON.stringify({
+          installed: installation !== undefined,
+          owned: installation?.exposure !== undefined,
+        })}`,
       );
       exposure.capturePose = fixedRooms?.snapshot;
       exposure.deterministic = options.deterministic === true;
@@ -174,7 +200,8 @@ export function createExposureFixture(options: IExposureFixtureOptions) {
             );
         }
       };
-      ctx.renderer.setOutputNode(applyExposure(colour, exposure.exposureNode), worldPass);
+      if (installation === undefined)
+        ctx.renderer.setOutputNode(applyExposure(colour, exposure.exposureNode), worldPass);
       ctx.entities.add("exposure", {
         debug: () => ({
           ...exposure.getObservation(),
@@ -186,8 +213,10 @@ export function createExposureFixture(options: IExposureFixtureOptions) {
       this.#dispose = () => {
         activeScene = false;
         ctx.renderer.clearOutputNode?.();
-        exposure.dispose();
-        worldPass.dispose();
+        if (installation === undefined) {
+          exposure.dispose();
+          worldPass.dispose();
+        } else installation.dispose?.();
         disposeRoom();
       };
       return (frame: ICtx) => {

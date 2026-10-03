@@ -2316,6 +2316,8 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
             --target desktop --output "${TN_EXPOSURE_BUNDLE}"
         DEPENDS "${TN_EXPOSURE_FIXTURE}/native-contract.ts"
             "${CMAKE_CURRENT_SOURCE_DIR}/../create-threenative/template-assets/autoExposure.ts"
+            "${CMAKE_CURRENT_SOURCE_DIR}/../create-threenative/template-assets/exposureGraph.ts"
+            "${CMAKE_CURRENT_SOURCE_DIR}/../create-threenative/template-assets/exposureReadback.ts"
             "${CMAKE_CURRENT_SOURCE_DIR}/../create-threenative/template-assets/exposure.ts"
             "${CMAKE_CURRENT_SOURCE_DIR}/scripts/bundle.mjs"
             "${CMAKE_CURRENT_SOURCE_DIR}/../../pnpm-lock.yaml")

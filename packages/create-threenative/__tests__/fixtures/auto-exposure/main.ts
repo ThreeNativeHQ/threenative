@@ -12,6 +12,7 @@ const snapGain = Number(query.get("snapGain") ?? 1);
 if (![1, 11].includes(stops) || ![0, 1].includes(snapGain))
   throw new Error("Unsupported exposure fixture policy.");
 const game = createExposureFixture({
+  consumer: query.get("consumer") === "1",
   enabled: query.get("enabled") !== "0",
   bright: query.get("bright") === "1",
   stops,

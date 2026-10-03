@@ -395,3 +395,16 @@ export function assertExposureProof(
     );
   return measurement;
 }
+
+/** Consumer qualification requires the generated environment's actual owned node. */
+export function assertExposureConsumer(report: Pick<IExposureProofReport, "observations">): void {
+  const markers = (report.observations?.console ?? []).filter(({ text }) =>
+    text.startsWith("TN_EXPOSURE_CONSUMER:"),
+  );
+  const installed = markers[0];
+  if (markers.length !== 1 || installed === undefined)
+    throw new Error("Exposure consumer requires one actual installation.");
+  const state = JSON.parse(installed.text.slice("TN_EXPOSURE_CONSUMER:".length));
+  if (state.installed !== true || state.owned !== true)
+    throw new Error("Exposure consumer did not own the generated environment's actual graph.");
+}

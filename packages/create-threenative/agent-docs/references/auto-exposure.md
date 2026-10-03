@@ -3,8 +3,8 @@
 `src/render/exposure.ts` owns the metric, luminance floor/clamp, spatial weight, target grey,
 exposure limits, asymmetric response rates, cut thresholds and marker cadence. It is game source,
 not engine configuration. `enabled: false` is the qualification default; no shipped picture changes
-merely because these files exist. Browser fixture pixels have been captured; native parity and the
-full transition/cold-boot acceptance remain unqualified.
+merely because these files exist. The generated quality presets additionally keep
+`autoExposureEnabled: false`, avoiding GPU metering cost until the game explicitly opts in.
 
 `autoExposure.ts` reduces the existing unexposed colour texture in 4×4 blocks and adapts in log2
 space on separate 1×1 ping-pong targets. Odd-sized edge blocks are masked rather than repeated.
@@ -16,23 +16,15 @@ browser composites its reduced alpha onto the page.
 For an existing WorldEnvironment chain, its `baseColour` callback already supplies the world pass:
 
 ```ts
-const settings = qualityPreset("high");
-let eye: AutoExposureNode | undefined;
-const world = new WorldEnvironment({ ...settings, exposure: 1 });
-const applied = world.apply(renderer, scene, camera, {
-  baseColour(worldPass) {
-    const colour = worldPass.getTextureNode("output");
-    eye = new AutoExposureNode(
-      colour,
-      { ...exposureSettings, enabled: true },
-      settings.exposure ?? 1,
-    );
-    return applyExposure(colour, eye.exposureNode);
-  },
+const world = new WorldEnvironment({
+  ...qualityPreset("high"),
+  autoExposureEnabled: true,
+  exposurePolicy: { ...exposureSettings, enabled: true },
 });
-// On scene exit, release both owners; do not recreate eye for a viewport resize.
+const applied = world.apply(renderer, scene, camera);
+const eye = applied.exposure;
+// The installed graph owns the meter and its existing world pass.
 applied.dispose?.();
-eye?.dispose();
 ```
 
 Import the classes/functions from this game's `src/render/` files. If a baseColour composition
@@ -40,8 +32,8 @@ already exists (for example aerial perspective), meter that scene-referred compo
 existing texture; do not create a second scene pass. Keep the existing chain's output cleanup.
 
 - `eye.setEnabled(false)` keeps measuring and tracking the hypothetical adaptation while returning
-  exactly the supplied constant. The graph must remain attached, so quality opt-out never silences
-  measurement. `quality.ts` decides when to apply the convention; this file decides its look.
+  exactly the supplied constant. The graph must remain attached, so application opt-out never silences
+  measurement. The separate `autoExposureEnabled: false` cost flag omits the graph entirely. `quality.ts` decides when to apply the convention; this file decides its look.
 - `eye.reset()` adopts the next measured target; `eye.reset(value)` seeds a known cut. Reset only
   for an authored cut/level load. Resizing changes meter targets but preserves the 1×1 history.
 - `eye.getObservation()` and `TN_AUTO_EXPOSURE` report actual GPU luminance, applied stops, target

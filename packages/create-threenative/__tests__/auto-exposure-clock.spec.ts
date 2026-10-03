@@ -1,7 +1,8 @@
 import { Color, Texture } from "three";
 import { texture } from "three/tsl";
-import { NodeFrame, QuadMesh, type Renderer, RendererUtils } from "three/webgpu";
+import { type NodeBuilder, NodeFrame, QuadMesh, type Renderer, RendererUtils } from "three/webgpu";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { AutoExposureNode } from "../template-assets/autoExposure.js";
 import { exposureSettings } from "../template-assets/exposure.js";
 import {
   ObservedExposureNode,
@@ -49,6 +50,34 @@ describe("exposure deterministic render clock", () => {
     } as unknown as Renderer;
     return { node, frame, read };
   }
+
+  it("observes the environment's existing node through its actual instance methods", () => {
+    const real = new AutoExposureNode(texture(new Texture()), exposureSettings, 1);
+    const output = real.exposureNode;
+    const setup = vi.spyOn(real, "setup").mockReturnValue(output);
+    const update = vi.spyOn(real, "updateBefore").mockReturnValue(undefined);
+    const dispose = vi.spyOn(real, "dispose");
+    const observed = new ObservedExposureNode(real);
+    const builder = {} as NodeBuilder;
+    const frame = new NodeFrame();
+    frame.deltaTime = 0.07;
+    frame.renderer = {
+      getDrawingBufferSize: (size: { set(x: number, y: number): void }) => size.set(4, 4),
+    } as unknown as Renderer;
+    expect(observed.node).toBe(real);
+    expect(observed.settings).toBe(real.settings);
+    expect(observed.exposureNode).toBe(output);
+    expect(real.setup(builder)).toBe(output);
+    real.updateBefore(frame);
+    expect(setup).toHaveBeenCalledWith(builder);
+    expect(update).toHaveBeenCalledWith(frame);
+    expect(observed.setupCount).toBe(1);
+    expect(observed.timing.updates).toBe(1);
+    observed.setEnabled(true);
+    expect(observed.getObservation()).toEqual(real.getObservation());
+    real.dispose();
+    expect(dispose).toHaveBeenCalledOnce();
+  });
 
   it("freezes a cold boot after exactly three accepted live-clock GPU samples", async () => {
     const { node, frame, read } = harness();

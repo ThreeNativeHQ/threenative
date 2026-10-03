@@ -17,6 +17,7 @@ const fixture = dirname(fileURLToPath(import.meta.url));
 const project = resolve(fixture, "../../..");
 const root = resolve(project, "../..");
 const runId = randomUUID();
+const consumer = process.env.TN_EXPOSURE_CONSUMER === "1";
 const output = join(root, "artifacts/prd339-native-exposure", runId);
 const sourceSha = execFileSync("git", ["rev-parse", "HEAD"], {
   cwd: root,
@@ -132,7 +133,7 @@ async function runVariant(inject: boolean) {
   const entry = join(artifacts, "entry.ts");
   await writeFile(
     entry,
-    `import { createExposureFixture } from ${JSON.stringify(join(fixture, "game.ts"))};\nconsole.info("TN_EXPOSURE_CAPTURE_RUN:" + JSON.stringify(${JSON.stringify({ runId, variant: inject ? "validation-negative" : "positive" })}));\nexport default createExposureFixture({ enabled:true, bright:true, stops:11, snapGain:0, deterministic:true, nativeValidation:true, nativeValidationInject:${inject} });\n`,
+    `import { createExposureFixture } from ${JSON.stringify(join(fixture, "game.ts"))};\nconsole.info("TN_EXPOSURE_CAPTURE_RUN:" + JSON.stringify(${JSON.stringify({ runId, variant: inject ? "validation-negative" : "positive" })}));\nexport default createExposureFixture({ enabled:true, bright:true, stops:11, snapGain:0, deterministic:true, nativeValidation:true, consumer:${consumer}, nativeValidationInject:${inject} });\n`,
   );
   const bundle = join(artifacts, "game.js");
   execFileSync(
@@ -218,6 +219,10 @@ async function runVariant(inject: boolean) {
   const consoleEntries = JSON.parse(
     await readFile(join(artifacts, "console.json"), "utf8"),
   ) as ConsoleEntry[];
+  if (consumer) {
+    const observed = marker(consoleEntries, "TN_EXPOSURE_CONSUMER:");
+    assert.deepEqual(observed, { installed: true, owned: true });
+  }
   assert.deepEqual(
     marker(consoleEntries, "TN_EXPOSURE_CAPTURE_RUN:"),
     {
@@ -277,6 +282,7 @@ await writeFile(
     {
       runId,
       sourceSha,
+      consumer,
       positive,
       negative,
       runtimeSha256,

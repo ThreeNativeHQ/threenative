@@ -125,6 +125,8 @@ export function stampLoadingSource(canonical: string, template: string): string 
 export const SHARED_RENDER_SOURCES = [
   path.join("src", "render", "worldEnvironment.ts"),
   path.join("src", "render", "autoExposure.ts"),
+  path.join("src", "render", "exposureGraph.ts"),
+  path.join("src", "render", "exposureReadback.ts"),
 ] as const;
 
 export function canonicalRenderSourcePath(relativePath: string, root = templateRoot()): string {
