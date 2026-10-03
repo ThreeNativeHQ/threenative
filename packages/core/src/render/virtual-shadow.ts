@@ -482,6 +482,8 @@ interface ILevel {
   depthFar: number;
   minX: number;
   minY: number;
+  /** Light-space depth of the window centre when this level's map was last rendered. */
+  centerW: number;
   /**
    * 1 once this level's map has been rendered at least once, 0 until then. A fragment never
    * samples a map this level has not drawn yet: with one render per frame the coarse levels are
@@ -1779,6 +1781,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
         mapped: uniform(0),
         minX: Number.NaN,
         minY: Number.NaN,
+        centerW: Number.NaN,
         pending: REASON_NONE,
         offsetU: uniform(0),
         offsetV: uniform(0),
@@ -2048,6 +2051,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
         if (grant) {
           level.minX = window.minX;
           level.minY = window.minY;
+          level.centerW = this.clipmap.centerLight.w;
           level.mapped.value = 1;
           level.pending = REASON_NONE;
           level.lastRender = now;
@@ -2093,12 +2097,12 @@ export class VirtualShadowNode extends ShadowBaseNode {
             ? { minX: level.minX, minY: level.minY, pageWorldSize: window.pageWorldSize }
             : window;
         const { cu: hu, cv: hv } = centreOf(held as IClipWindow);
-        // The window's centre in light space, snapped to whole texels, back in world space at the
-        // camera's own depth along the light — that is what keeps the map stable under motion.
+        // Hold all three coordinates of the rendered centre: its derived depth and the mover
+        // map's shared sampling matrix are relative to this depth, not the followed camera's.
         const centre = this.clipmap.unproject({
           u: hu,
           v: hv,
-          w: this.clipmap.centerLight.w,
+          w: level.mapped.value === 1 ? level.centerW : this.clipmap.centerLight.w,
         });
         level.offsetU.value = this.clipmap.centerLight.u - hu;
         level.offsetV.value = this.clipmap.centerLight.v - hv;

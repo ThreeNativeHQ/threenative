@@ -1012,6 +1012,89 @@ describe("VirtualShadowNode derived depth and caster size gate", () => {
   const _view = new Matrix4();
   const _projected = new Vector3();
 
+  it.each([
+    ["cached", 20],
+    ["cached", -20],
+    ["delayed", 20],
+    ["delayed", -20],
+    ["deferred", 20],
+    ["deferred", -20],
+  ] as const)(
+    "should sample %s maps at their rendered depth after light-axis motion of %s",
+    (mode, delta) => {
+      const { camera, light, tall } = shadowWorld();
+      const node = setupNode(light, {
+        clipExtents: [24, 96, 320],
+        mapSize: 64,
+        adaptiveRefresh: false,
+        invalidationDelay: [10, 10, 10],
+      });
+      node.trackCaster(tall);
+      const rendered = new Map<Node, Matrix4>();
+      for (const shadowNode of [...node.levelNodes, ...node.moverNodes]) {
+        const stock = shadowNode as unknown as {
+          light: DirectionalLight;
+          shadow: DirectionalLight["shadow"];
+          updateShadow(frame: NodeFrame): void;
+        };
+        // Keep three's real render-time camera/matrix update; stub only the GPU draw.
+        stock.updateShadow = () => {
+          stock.shadow.updateMatrices(stock.light);
+          rendered.set(shadowNode, stock.shadow.matrix.clone());
+        };
+      }
+      try {
+        settle(node, camera);
+        const time = clock + 20;
+        node.invalidateAll();
+        for (let frame = 0; frame < 3; frame += 1) node.updateBefore(frameFor(camera, time));
+        const renders = node.stats.rendersTotal;
+        const { x, y, z } = node.clipmap.basisW;
+        camera.position.addScaledVector(new Vector3(x, y, z), delta);
+        if (mode !== "cached") node.invalidateAll();
+        node.updateBefore(frameFor(camera, time + (mode === "deferred" ? 20 : 0.01)));
+        expect(node.stats).toMatchObject({
+          moved: 0,
+          rendered: mode === "deferred" ? 1 : 0,
+          deferred: mode === "deferred" ? 2 : 0,
+          held: mode === "delayed" ? 3 : 0,
+          rendersTotal: renders + (mode === "deferred" ? 1 : 0),
+          moverRenders: 3,
+        });
+        const receiver = new Vector3(0, 0, 0);
+        for (const [index, shadowNode] of node.levelNodes.entries()) {
+          const stock = shadowNode as unknown as {
+            light: DirectionalLight;
+            shadow: DirectionalLight["shadow"];
+          };
+          const drawn = rendered.get(shadowNode);
+          expect(drawn).toBeDefined();
+          const drawnDepth = receiver.clone().applyMatrix4(drawn as Matrix4).z;
+          // Both stock nodes sample through light.shadow.matrix, including the mover map.
+          const sampledDepth = receiver.clone().applyMatrix4(stock.light.shadow.matrix).z;
+          const moverMatrix = rendered.get(node.moverNodes[index] as Node);
+          expect(moverMatrix).toBeDefined();
+          const moverDepth = receiver.clone().applyMatrix4(moverMatrix as Matrix4).z;
+          expect(
+            sampledDepth,
+            `${mode} level ${String(index)} samples its rendered depth`,
+          ).toBeCloseTo(drawnDepth, 12);
+          expect(
+            moverDepth,
+            `${mode} level ${String(index)} mover map uses cached sampling depth`,
+          ).toBeCloseTo(sampledDepth, 12);
+          expect(new Vector3().setFromMatrixPosition(stock.light.matrixWorld)).toEqual(
+            stock.shadow.camera.position,
+          );
+          expect(stock.shadow.matrix.elements).toEqual(drawn?.elements);
+          expect(moverMatrix?.elements).toEqual(drawn?.elements);
+        }
+      } finally {
+        node.dispose();
+      }
+    },
+  );
+
   /** One level render per frame, recording which of the world's casters were visible for each. */
   function watchCasters(node: VirtualShadowNode, small: Mesh, tall: Mesh): string[] {
     const seen: string[] = [];
