@@ -619,8 +619,8 @@
       {
         "id": "GameState",
         "path": "propDraws",
-        "lte": 60,
-        "allowTrivial": "A ceiling on the prop draws, which holds for every frame rather than changing at one: its value is the price of the instancing, and a run that only ever saw it once would prove nothing."
+        "lte": 64,
+        "allowTrivial": "A ceiling on the prop draws, which holds for every frame rather than changing at one: its value is the price of the instancing, and a run that only ever saw it once would prove nothing. 64 since the layered understorey (bush, fern, litter species at one draw each); every view CPU p50 stayed within 4 ms at 63 draws (v11 licensed)."
       },
       {
         "id": "GameState",
