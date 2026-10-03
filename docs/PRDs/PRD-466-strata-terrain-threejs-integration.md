@@ -2788,3 +2788,31 @@ so later GPU/view values are INVALID, not an improvement. Licensed comparison no
 renders full viewport frames and is running. Core build/publint and example tsc PASS;
 repo-root Biome on example and changed package paths PASS (existing warnings only).
 Runtime budget boxes stay open pending licensed/fallback runs. No FPS claim or push.
+
+### 2026-10-03 — paperboard foliage root cause, real-display FPS, guardrails
+
+Owner report: imported Fab pines read as flat tan "paperboard" cards with black blotches, while
+the same packs look right in Wildwood. Cause, measured by single-change A/B captures (v14→v18):
+the vegetation had **no image-based light** (no `scene.environment`, no `envMap`; only a 0.72
+hemisphere fill), and the example compensated with tints, a fake emissive, a dead-needle recolour
+and radial crown normals. Fix: cutout vegetation draws with its imported albedo, normal map and
+cutoff, and carries the CC0 Kloofendal HDRI as its own `envMap` at 1.13 (Wildwood's value). A
+`scene.environment` washed the ground white (three r185 WebGPU applies `envMapIntensity` only to a
+material's own `envMap`) and was reverted. Fresh judge: vegetation 3.5 → 5/10; overview 4 → 3
+(distant canopy pale). AC-5 stays open.
+
+Real display (Xwayland :0, RTX 2080/turing, 1920×1080 @ 59.96 Hz, vsync on, control p50 16.7 ms,
+8 s settle, 30 s walking): forest p50 100 ms (10 FPS) → 16.7 ms (60 FPS), mean ~10 → 36 FPS,
+45% of frames over 20 ms. Cause of the 10 FPS: `setLevels` allocated per placement over ~216k
+placements per camera move (66% of main thread). Prop placement went through `addInSlices` at
+256/frame (845 frames, ~1 min of bare terrain); core now time-budgets slices at 8 ms: forest
+218,839 props in 9.0 s. Still red in the scenario: GPU ≤ 12 ms (28.8 ms coastal/alpine), longest
+task ≤ 250 ms (4.4 s unsliced grass batch build), ready ≤ 15 s under Xvfb, `crags` at overview.
+
+Guardrails: core prints `TN_UNLIT_FOLIAGE` (scene entry and startup ready) for cutout PBR drawn
+with no environment; red→green on this game (26 materials/31 meshes without the HDRI, silent with
+it); every template AGENTS.md states the convention. Open: retire `prep-fab-temperate.mjs` /
+`prep-fab-pines.py` hand prep (rebuilt materials, forced cutoff, stripped normals, 21%/5% card
+decimation) in favour of asset-MCP imports; the MCP import has no progress signal and exceeded
+the client's 30-minute idle timeout on Common Hazel (it still finished: 64 GLBs, 850 MB uncooked).
+The shore lane was merged, judged worse (surf line lost) and dropped.
