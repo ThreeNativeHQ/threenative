@@ -6,8 +6,8 @@ import {
   DirectionalLight,
   Mesh,
   MeshStandardMaterial,
-  Vector2,
   type PerspectiveCamera,
+  Vector2,
 } from "three";
 import { pass } from "three/tsl";
 import type { WebGPURenderer } from "three/webgpu";
