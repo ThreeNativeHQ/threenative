@@ -1,5 +1,5 @@
 import { execFile, spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { mkdir, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -14,6 +14,7 @@ import {
   build,
   buildUi,
   buildWeb,
+  extractUiStylesheets,
   nativeOrientation,
   parseBuildArgs,
   publishStagedArtifact,
@@ -612,6 +613,132 @@ cpSync("public", out, { recursive: true });
     expect(existsSync(path.join(root, "dist", "ghost.22222222.png"))).toBe(false);
   }, 60_000);
 
+  // The native-css renderer ships stylesheets only: the React tree runs in the game's own JS realm,
+  // so the page and its bundle that `buildUi` emitted have no consumer and must not be packaged.
+  it("extracts only the stylesheets out of a built UI, flat and deterministic", async () => {
+    const root = await makeTempDir("threenative-ui-css-");
+    roots.push(root);
+    const built = path.join(root, "built-ui");
+    await mkdir(path.join(built, "assets"), { recursive: true });
+    await writeFile(path.join(built, "index.html"), "<div id='tn-ui'></div>");
+    await writeFile(path.join(built, "assets", "index-abc123.css"), ".hud{color:#fff}");
+    await writeFile(path.join(built, "assets", "index-abc123.js"), "console.log(1)");
+    await mkdir(path.join(root, "previous"), { recursive: true });
+    await writeFile(path.join(root, "previous", "stale.css"), "old");
+
+    const out = path.join(root, "ui-css");
+    await mkdir(path.join(root, "ui-css"), { recursive: true });
+    await writeFile(path.join(out, "stale.css"), "left over from a previous build");
+
+    expect(await extractUiStylesheets(built, out)).toEqual(["index-abc123.css"]);
+    expect(existsSync(path.join(out, "stale.css"))).toBe(false);
+    expect(existsSync(path.join(out, "index.html"))).toBe(false);
+    expect(existsSync(path.join(out, "assets"))).toBe(false);
+    await expect(readFile(path.join(out, "index-abc123.css"), "utf8")).resolves.toBe(
+      ".hud{color:#fff}",
+    );
+  });
+
+  it("copies the fonts and images a stylesheet url() names, flat beside it", async () => {
+    const root = await makeTempDir("threenative-ui-css-asset-");
+    roots.push(root);
+    const built = path.join(root, "built-ui");
+    await mkdir(path.join(built, "assets"), { recursive: true });
+    // Vite writes a stylesheet into `assets/` and reaches its own assets from there, which is a
+    // `../` that stays inside the build — not an escape.
+    await writeFile(
+      path.join(built, "assets", "index-abc123.css"),
+      '@font-face{font-family:I;src:url(../assets/inter-xyz.woff2) format("woff2")}' +
+        ".hud{background:url(../assets/dot-abc.png)}",
+    );
+    await writeFile(path.join(built, "assets", "inter-xyz.woff2"), "wOF2notreally");
+    await writeFile(path.join(built, "assets", "dot-abc.png"), "pngnotreally");
+
+    const out = path.join(root, "ui-css");
+    expect(await extractUiStylesheets(built, out)).toEqual([
+      "dot-abc.png",
+      "index-abc123.css",
+      "inter-xyz.woff2",
+    ]);
+    await expect(readFile(path.join(out, "inter-xyz.woff2"), "utf8")).resolves.toBe(
+      "wOF2notreally",
+    );
+    await expect(readFile(path.join(out, "dot-abc.png"), "utf8")).resolves.toBe("pngnotreally");
+  });
+
+  it("refuses a stylesheet that reaches for a font or an image off the machine", async () => {
+    const root = await makeTempDir("threenative-ui-css-url-");
+    roots.push(root);
+    const built = path.join(root, "built-ui");
+    await mkdir(built, { recursive: true });
+    await writeFile(
+      path.join(built, "index-abc123.css"),
+      '@font-face{src:url("https://fonts.example.com/inter.woff2") format("woff2")}',
+    );
+
+    await expect(extractUiStylesheets(built, path.join(root, "ui-css"))).rejects.toThrow(
+      /TN_CSS_UI_ASSET_UNSUPPORTED: [\s\S]*index-abc123\.css references https:\/\/fonts\.example\.com\/inter\.woff2;[\s\S]*only a file inside the UI build ships with it/u,
+    );
+  });
+
+  it("refuses a stylesheet whose url() leaves the UI build or names nothing", async () => {
+    // One stylesheet per case: the first reference that cannot ship fails the build, so a single
+    // stylesheet carrying all four would only ever report one of them.
+    for (const target of [
+      "../../../../etc/passwd",
+      "/assets/x.png",
+      "//cdn.example.com/x.png",
+      "nope.ttf",
+    ]) {
+      const root = await makeTempDir("threenative-ui-css-escape-");
+      roots.push(root);
+      const built = path.join(root, "built-ui");
+      await mkdir(path.join(built, "assets"), { recursive: true });
+      await writeFile(
+        path.join(built, "assets", "index-abc123.css"),
+        `@font-face{src:url(${target})}`,
+      );
+
+      await expect(extractUiStylesheets(built, path.join(root, "ui-css"))).rejects.toThrow(
+        new RegExp(
+          `TN_CSS_UI_ASSET_UNSUPPORTED: [\\s\\S]*index-abc123\\.css references ${target.replaceAll(
+            /[.*+?^${}()|[\]\\]/gu,
+            String.raw`\$&`,
+          )}`,
+          "u",
+        ),
+      );
+      expect(readdirSync(path.join(root, "ui-css"))).toEqual([]);
+    }
+  });
+
+  it("allows a stylesheet whose only url() targets are data URIs, fragments and comments", async () => {
+    const root = await makeTempDir("threenative-ui-css-inline-");
+    roots.push(root);
+    const built = path.join(root, "built-ui");
+    await mkdir(built, { recursive: true });
+    await writeFile(
+      path.join(built, "index-abc123.css"),
+      '/* url("./dropped.woff2") */.hud{background:url("data:image/png;base64,AAA")}svg{fill:url(#grad)}i{cursor:url()}',
+    );
+
+    expect(await extractUiStylesheets(built, path.join(root, "ui-css"))).toEqual([
+      "index-abc123.css",
+    ]);
+  });
+
+  it("refuses a UI build that emitted no stylesheet", async () => {
+    const root = await makeTempDir("threenative-ui-css-empty-");
+    roots.push(root);
+    const built = path.join(root, "built-ui");
+    await mkdir(built, { recursive: true });
+    await writeFile(path.join(built, "index.html"), "<div id='tn-ui'></div>");
+
+    await expect(extractUiStylesheets(built, path.join(root, "ui-css"))).rejects.toThrow(
+      "TN_CSS_UI_NO_STYLESHEET: the UI build emitted no .css; import your stylesheet from src/ui/main.tsx",
+    );
+  });
+
   it("emits index.html for the native overlay loader", async () => {
     const root = await makeTempDir("threenative-ui-build-");
     roots.push(root);
@@ -738,6 +865,23 @@ cpSync("public", out, { recursive: true });
       theme: "root-theme",
     });
   }, 60_000);
+
+  // `native-css` runs the React tree in the game's own JS realm and paints it with a native CSS
+  // engine, so it needs no web view — but the engine exists for the desktop host only, and the
+  // refusal is named rather than a silent downgrade to the WebView renderer.
+  it("admits native-css on Linux desktop and refuses it everywhere else", () => {
+    expect(() => assertNativeUiRendererCompatible("desktop", "native-css", "linux")).not.toThrow();
+    for (const platform of ["darwin", "win32", "freebsd"] as const) {
+      expect(() => assertNativeUiRendererCompatible("desktop", "native-css", platform)).toThrow(
+        `TN_UI_RENDERER_UNSUPPORTED: ui.renderer is "native-css", which is supported on Linux desktop only in this release; set ui.renderer to "native" or "web" for desktop on ${platform}.`,
+      );
+    }
+    for (const target of ["android", "ios"] as const) {
+      expect(() => assertNativeUiRendererCompatible(target, "native-css")).toThrow(
+        `TN_UI_RENDERER_UNSUPPORTED: ui.renderer is "native-css", which is supported on Linux desktop only in this release; set ui.renderer to "native" or "web" for ${target} (the CSS backend is Linux desktop only).`,
+      );
+    }
+  });
 
   it("accepts web UI bundles for every native host that stages them", () => {
     expect(() => assertNativeUiRendererCompatible("android", "web")).not.toThrow();

@@ -1,7 +1,17 @@
 import { spawn, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
-import { mkdir, open, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
+import { existsSync, statSync } from "node:fs";
+import {
+  copyFile,
+  mkdir,
+  open,
+  readFile,
+  readdir,
+  rename,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -105,6 +115,19 @@ export function assertNativeUiRendererCompatible(
   renderer: IResolvedThreeNativeConfig["ui"]["renderer"],
   platform: NodeJS.Platform = process.platform,
 ): void {
+  // `native-css` is Linux desktop only in this release: the CSS backend and the only fixtures
+  // that prove it run there. It is refused by name rather than silently downgraded to the WebView
+  // renderer: a game that asked for no web view would get one.
+  if (renderer === "native-css") {
+    if (target === "desktop" && platform === "linux") return;
+    const targetName =
+      target === "desktop"
+        ? `desktop on ${platform}`
+        : `${target} (the CSS backend is Linux desktop only)`;
+    throw new Error(
+      `TN_UI_RENDERER_UNSUPPORTED: ui.renderer is "native-css", which is supported on Linux desktop only in this release; set ui.renderer to "native" or "web" for ${targetName}.`,
+    );
+  }
   if (renderer === "native" || target === "android" || target === "ios") return;
   if (
     target === "desktop" &&
@@ -244,7 +267,7 @@ export async function buildUi(cwd: string, config: IResolvedThreeNativeConfig): 
     if (!(await stat(entry)).isFile()) throw new Error("not a file");
   } catch {
     throw new Error(
-      `TN_UI_ENTRY_MISSING: ui.renderer is "${config.ui.renderer}" but ${UI_ENTRY} does not exist. It is the entry every platform's web view loads; create it, or set ui.renderer to "native".`,
+      `TN_UI_ENTRY_MISSING: ui.renderer is "${config.ui.renderer}" but ${UI_ENTRY} does not exist. It is the entry every platform's web view loads, and the file the native-css renderer imports its stylesheet from; create it, or set ui.renderer to "native".`,
     );
   }
   const buildRoot = path.join(cwd, ".threenative", "build");
@@ -280,6 +303,109 @@ export async function buildUi(cwd: string, config: IResolvedThreeNativeConfig): 
   const index = path.join(output, "index.html");
   await rename(generatedPage, index);
   return output;
+}
+
+/**
+ * Copy just the stylesheets out of a built `src/ui/` into a flat directory the native CSS engine
+ * reads, dropping the HTML and the JS of the web page — and copying the fonts and images those
+ * stylesheets name, because the engine serves those by file name out of the same directory and has
+ * no other source of bytes.
+ *
+ * Only `*.css`, wherever Vite put it (`assets/index-<hash>.css`), copied flat under their own
+ * names so the packaged `ui/` carries no page and no bundle. The previous contents go first
+ * through `mkdir` on a directory that must be gone, so a stale stylesheet from a previous build
+ * can never be packaged beside the new one.
+ */
+export async function extractUiStylesheets(uiDir: string, outDir: string): Promise<string[]> {
+  await rm(outDir, { force: true, recursive: true });
+  await mkdir(outDir);
+  const stylesheets: string[] = [];
+  const walk = async (dir: string): Promise<void> => {
+    for (const entry of await readdir(dir, { withFileTypes: true })) {
+      const child = path.join(dir, entry.name);
+      if (entry.isDirectory()) await walk(child);
+      else if (entry.isFile() && /\.css$/iu.test(entry.name)) stylesheets.push(child);
+    }
+  };
+  await walk(uiDir);
+  if (stylesheets.length === 0) {
+    throw new Error(
+      "TN_CSS_UI_NO_STYLESHEET: the UI build emitted no .css; import your stylesheet from src/ui/main.tsx",
+    );
+  }
+  // Sorted so two builds of one game stage the same names in the same order.
+  const sheets = stylesheets.sort();
+  const assets = new Map<string, string>();
+  // Resolved before anything is staged: a build that cannot ship its font must not leave half a
+  // `ui/` behind for the packager to find and a player to run.
+  for (const file of sheets) {
+    collectStylesheetAssets(uiDir, file, await readFile(file, "utf8"), assets);
+  }
+  for (const file of sheets) {
+    await copyFile(file, path.join(outDir, path.basename(file)));
+  }
+  // Flat, because the engine looks an asset up by name: two files of one name cannot both travel,
+  // and silently shipping the wrong one is the failure this refuses.
+  for (const [name, source] of assets) {
+    await copyFile(source, path.join(outDir, name));
+  }
+  return readdir(outDir);
+}
+
+/**
+ * The fonts and images a stylesheet names, keyed by the flat name the engine serves them under.
+ *
+ * `url()` is the only reach in CSS. A `data:` URI, a `#fragment` and the empty string resolve
+ * without a file, so they are left alone; a relative name is a file in the build, which travels
+ * beside its stylesheet. Anything else — a scheme, a protocol-relative or absolute path, a `../`
+ * out of the build, or a relative name no file answers to — fails the build here rather than
+ * shipping a HUD whose font silently fell back to the machine's.
+ */
+function collectStylesheetAssets(
+  build: string,
+  file: string,
+  css: string,
+  assets: Map<string, string>,
+): void {
+  // Comments are stripped first so a documented example cannot fail the build.
+  const source = css.replaceAll(/\/\*[\s\S]*?\*\//gu, "");
+  for (const match of source.matchAll(/url\(([^)]*)\)/giu)) {
+    const target = (match[1] ?? "")
+      .trim()
+      .replace(/^["']|["']$/gu, "")
+      .trim();
+    if (target === "" || target.startsWith("data:") || target.startsWith("#")) continue;
+    const resolved = resolveStylesheetAsset(build, file, target);
+    const name = path.basename(resolved);
+    const claimed = assets.get(name);
+    if (claimed !== undefined && claimed !== resolved) {
+      throw new Error(
+        `TN_CSS_UI_ASSET_AMBIGUOUS: ${file} references ${target} as ${name}, which ${path.relative(build, claimed)} already claimed`,
+      );
+    }
+    assets.set(name, resolved);
+  }
+}
+
+/** The file in `build` that a stylesheet's `url()` names, or the reason there is none. */
+function resolveStylesheetAsset(build: string, file: string, target: string): string {
+  const offMachine = "only a file inside the UI build ships with it";
+  const refuse = (why: string): never => {
+    throw new Error(`TN_CSS_UI_ASSET_UNSUPPORTED: ${file} references ${target}; ${why}`);
+  };
+  if (/^[a-z][a-z0-9+.-]*:/iu.test(target) || target.startsWith("//")) return refuse(offMachine);
+  if (path.isAbsolute(target)) return refuse(offMachine);
+  const resolved = path.resolve(path.dirname(file), target);
+  // A `../` that stays inside the build is how a stylesheet in `assets/` reaches its own assets;
+  // one that leaves it is a reach off the machine.
+  const inside = path.relative(build, resolved);
+  if (inside === "" || inside.startsWith("..") || path.isAbsolute(inside)) {
+    return refuse(offMachine);
+  }
+  if (!existsSync(resolved) || !statSync(resolved).isFile()) {
+    return refuse(`the UI build holds no ${target}`);
+  }
+  return resolved;
 }
 
 /**
@@ -735,7 +861,18 @@ async function buildNative(
   const assets = assetRoot(cwd, config);
   // The UI is built only when the game asked for the web renderer, so a `native` game ships no
   // web view, no UI bundle and no extra process — acceptance criterion 5 of PRD-217.
-  const ui = config.ui.renderer === "web" ? await buildUi(cwd, config) : undefined;
+  // `native-css` runs the same Vite build and keeps only its stylesheets: the React tree runs in
+  // the game's own JS realm, so the page and its JS are dead weight in the package.
+  let ui: string | undefined;
+  if (config.ui.renderer !== "native") {
+    const built = await buildUi(cwd, config);
+    if (config.ui.renderer === "native-css") {
+      ui = path.join(cwd, ".threenative", "build", "ui-css");
+      await extractUiStylesheets(built, ui);
+    } else {
+      ui = built;
+    }
+  }
   if (target === "ios") {
     const output = path.join(cwd, "dist-native", `${await projectName(cwd)}.app`);
     await packageStaged(

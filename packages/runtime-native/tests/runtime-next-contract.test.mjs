@@ -776,7 +776,8 @@ test('CLI build tools are separate units behind an unchanged dispatch surface', 
   // deriving the pipeline-cache identity from the embedded bundle - which is runtime wiring, not a
   // tool body, so the cap moves with it rather than the split being loosened. PRD-400 adds runtime
   // web-UI readiness/deadline wiring here; the direct split assertions below remain the contract.
-  assert.ok(main.split('\n').length <= 1885, 'main.cpp still contains a build-time tool body');
+  // The native-css renderer adds 17 lines of the same kind: choosing which overlay backend attaches.
+  assert.ok(main.split('\n').length <= 1902, 'main.cpp still contains a build-time tool body');
   assert.doesNotMatch(main, /static int (compileBundle|bakeLightmaps)\(/u);
   assert.match(main, /dispatchBuildTool\(argc, argv\)/u);
   assert.match(dispatcher, /mystral::vfs::getExecutablePath\(\)[\s\S]*mystral-tools/u);

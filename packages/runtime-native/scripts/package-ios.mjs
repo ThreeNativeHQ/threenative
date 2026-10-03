@@ -20,6 +20,7 @@ import { createRequire } from 'node:module';
 import { spawnSync } from 'node:child_process';
 import { assertNativeAssetsDecodable, deriveIosWebpSupport } from './asset-preflight.mjs';
 import { listFiles, selectManifestAssets } from './asset-manifest.mjs';
+import { mobileUiRenderer } from './package-android.mjs';
 import { downloadReleaseArtifact } from './install-prebuilt.mjs';
 
 export const NATIVE_ORIENTATIONS = ['landscape', 'portrait', 'sensor'];
@@ -513,7 +514,7 @@ export function stageIosSimulatorApp({
   const game = join(output, 'game');
   rmSync(game, { force: true, recursive: true });
   mkdirSync(game, { recursive: true });
-  stageIosUi(ui, declared.ui?.renderer === 'web' ? 'web' : 'native', join(output, 'ui'));
+  stageIosUi(ui, mobileUiRenderer(declared.ui?.renderer), join(output, 'ui'));
   const plist = join(output, 'Info.plist');
   const infoPlist = readIosInfoPlist(plist, convertInfoPlist);
   writeFileSync(plist, renderIosInfoPlist(infoPlist.source, declared));
