@@ -306,9 +306,13 @@ jobs:
       - run: pnpm exec vitest run --maxWorkers=1 packages/create-threenative/__tests__/auto-exposure.spec.ts packages/create-threenative/__tests__/auto-exposure-node.spec.ts packages/create-threenative/__tests__/auto-exposure-proof.spec.ts packages/create-threenative/__tests__/auto-exposure-mutations.spec.ts packages/create-threenative/__tests__/auto-exposure-clock.spec.ts packages/create-threenative/__tests__/auto-exposure-cold-boot.spec.ts
       - name: Capture twenty independent exposure cold boots
         run: node --import tsx packages/create-threenative/__tests__/fixtures/auto-exposure/verifyColdBoot.ts
+      - name: Qualify first-update snap response and zero-gain expected failure
+        run: node --import tsx packages/create-threenative/__tests__/fixtures/auto-exposure/verifySnap.ts
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: prd339-cold-boot-${{ github.sha }}
-          path: artifacts/prd339-cold-boot
+          path: |
+            artifacts/prd339-cold-boot
+            artifacts/prd339-snap-response
           if-no-files-found: error

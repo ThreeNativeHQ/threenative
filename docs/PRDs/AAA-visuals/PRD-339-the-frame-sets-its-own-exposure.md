@@ -437,7 +437,7 @@ that decision.
    while the one-stop leg still passes. Paste both.
 - [ ] **A cold boot into a pose is repeatable.** proof: `ten exposure fixture cold boots and PRD-341 assert.tone`. Ten runs of the same scenario at the same pose report
    p99 luminance within a 10% band (PRD-341's `assert.tone` supplies the number).
-   *Red-green:* set `snapGain` to 0 so the cut response never engages; the run must go red on spread.
+   *Red-green:* independently cut the actual camera eleven stops with a controlled 1/60-second adaptation delta. With authored snap gain one, the first accepted GPU readback must be within 0.25 stops of its measured target; with snap gain zero, that same first-update accuracy gate must fail. The ten-boot 10% repeatability gate remains unchanged.
 - [x] **Off does not mean unmeasured.** proof: `disabled exposure playtest`. With `enabled: false`, `TN_AUTO_EXPOSURE` still prints a
    measured luminance and `applied=false`, and the frame's exposure is exactly the game's constant.
    *Red-green:* early-return from `update()` when disabled; the marker assertion fails.
@@ -456,3 +456,7 @@ that decision.
 ## Out of scope
 
 Local tonemapping, bloom threshold coupling, and lens/iris simulation.
+
+### Approved AC2 correction (2026-10-03)
+
+The owner explicitly approved the proposed AC2 replacement. Repeatability retains ten independent cold boots, the same pose and the 10% p99 band. Snap responsiveness is qualified separately at the first actual GPU update after the unchanged eleven-stop camera cut, using 1/60-second adaptation time and the existing 0.25-stop accuracy tolerance. The original twenty-launch measurements and ineffective spread mutation above remain historical evidence. Current-harness qualification and final checks are in progress; no new acceptance box is claimed yet.

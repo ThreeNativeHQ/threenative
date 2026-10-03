@@ -1,3 +1,5 @@
+import { execFileSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,7 +11,12 @@ import {
 import { qualifyExposureSnap } from "./snapProof.js";
 const fixture = dirname(fileURLToPath(import.meta.url));
 const root = resolve(fixture, "../../../../..");
-const artifacts = join(root, "artifacts/prd339-snap-response");
+const sourceSha = execFileSync("git", ["rev-parse", "HEAD"], {
+  cwd: root,
+  encoding: "utf8",
+}).trim();
+const runId = randomUUID();
+const artifacts = join(root, "artifacts/prd339-snap-response", runId);
 const site = join(artifacts, "site");
 await mkdir(artifacts, { recursive: true });
 await build({ configFile: false, root: fixture, build: { outDir: site, emptyOutDir: true } });
@@ -36,11 +43,14 @@ for (const snapGain of [1, 0] as const) {
     allowSoftwareAdapter: true,
     captureArtifactScreenshots: true,
   });
-  await writeFile(join(directory, "report.json"), `${JSON.stringify(report, null, 2)}\n`);
+  await writeFile(
+    join(directory, "report.json"),
+    `${JSON.stringify({ sourceSha, runId, snapGain, ...report }, null, 2)}\n`,
+  );
   results.push({ snapGain, ...qualifyExposureSnap(report, snapGain), capture: report.capture });
 }
 await writeFile(
   join(artifacts, "summary.json"),
-  `${JSON.stringify({ experimental: true, firstUpdateBudget: 1, adaptationDelta: 1 / 60, toleranceStops: 0.25, results }, null, 2)}\n`,
+  `${JSON.stringify({ sourceSha, runId, criterion: "owner-approved AC2 first-update response", firstUpdateBudget: 1, adaptationDelta: 1 / 60, toleranceStops: 0.25, results }, null, 2)}\n`,
 );
 console.info(`PRD339_SNAP_RESPONSE_PROOF ${JSON.stringify(results)}`);
