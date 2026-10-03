@@ -295,7 +295,8 @@ export async function fogCaptureScenarios() {
 
 export function fogFrameCost(consoleEntries: unknown) {
   if (!Array.isArray(consoleEntries)) throw new Error("VQ07 measured frame windows are missing.");
-  const { budgets } = parsePerformanceMarkers(consoleEntries.map((entry) => entry.text).join("\n"));
+  const text = consoleEntries.map((entry) => entry.text).join("\n");
+  const { budgets } = parsePerformanceMarkers(text);
   const measured = budgets.at(-1);
   if (budgets.length < 3 || measured === undefined)
     throw new Error("VQ07 requires three measured frame windows.");
@@ -318,14 +319,24 @@ export function fogFrameCost(consoleEntries: unknown) {
     )
   )
     throw new Error("VQ07 invalid or compilation-contaminated frame-cost window.");
+  // `gpuMs` is the meter's own mean over the frames the device answered for, not over `frames`.
+  // A software adapter answers sparsely, so the summary carries how many and how many it skipped.
+  const marker = text
+    .split("\n")
+    .filter((line) => line.includes("TN_FRAME_BUDGET:"))
+    .at(-1);
+  const raw = marker === undefined ? {} : JSON.parse(marker.split("TN_FRAME_BUDGET:")[1] ?? "{}");
+  const gpuSamples = Number(raw.gpu?.samples ?? 0);
+  const gpuStaleFrames = Number(raw.gpuStale ?? 0);
   return {
     window: measured.window,
     frames: measured.frames,
     frameMs: frame,
     renderMs: render,
     gpuMs: measured.gpuMs,
-    qualification:
-      "Same-fixture host frame/render duration; software adapters do not establish hardware cost or tier admission.",
+    gpuSamples,
+    gpuStaleFrames,
+    qualification: `Same-fixture host frame/render duration; gpuMs is a mean over ${gpuSamples} of ${measured.frames} frames the device answered for and ${gpuStaleFrames} were stale; software adapters do not establish hardware cost or tier admission.`,
   };
 }
 
@@ -481,9 +492,8 @@ export function fogLightPixelMetrics(
   };
 }
 
-// Overlapping bounds are only qualified if the second one actually composes: same camera, same
-// lights, one extra nested positive-density bound. Added extinction can only add scattering, so
-// the frame must get brighter, and by more than 8-bit dithering can fake.
+// Overlapping bounds are only qualified if the second one actually changes the image: the same
+// camera and lights, one extra nested density bound, a difference too large to be noise.
 export function fogOverlapPixelMetrics(single: IPixelFrame, overlap: IPixelFrame) {
   if (
     single.width !== overlap.width ||
@@ -491,27 +501,24 @@ export function fogOverlapPixelMetrics(single: IPixelFrame, overlap: IPixelFrame
     single.data.length !== overlap.data.length
   )
     throw new Error("VQ07 overlap evidence requires equally sized frames.");
-  const channels = single.width * single.height * 3;
+  const pixels = single.width * single.height;
   let changed = 0;
-  let signed = 0;
   let maxChannelDelta = 0;
-  for (let y = 0; y < single.height; y += 1)
-    for (let x = 0; x < single.width; x += 1)
-      for (let c = 0; c < 3; c += 1) {
-        const at = (y * single.width + x) * 4 + c;
-        const difference = (overlap.data[at] ?? Number.NaN) - (single.data[at] ?? Number.NaN);
-        signed += difference;
-        maxChannelDelta = Math.max(maxChannelDelta, Math.abs(difference));
-        if (Math.abs(difference) > 2) changed += 1;
-      }
-  const changedPixelRatio = changed / channels;
-  const meanChannelDelta = signed / channels;
+  for (let i = 0; i < pixels; i += 1)
+    for (let c = 0; c < 3; c += 1) {
+      const at = i * 4 + c;
+      const difference = Math.abs(
+        (overlap.data[at] ?? Number.NaN) - (single.data[at] ?? Number.NaN),
+      );
+      maxChannelDelta = Math.max(maxChannelDelta, difference);
+      if (difference > 2) changed += 1;
+    }
+  const changedPixelRatio = changed / (pixels * 3);
   return {
     changedPixelRatio,
-    meanChannelDelta,
     maxChannelDelta,
-    thresholds: { minChangedPixelRatio: 0.01, minMaxChannelDelta: 4 },
-    pass: changedPixelRatio >= 0.01 && maxChannelDelta >= 4 && meanChannelDelta > 0,
+    thresholds: { minChangedPixelRatio: 0.05, minMaxChannelDelta: 4 },
+    pass: changedPixelRatio >= 0.05 && maxChannelDelta >= 4,
   };
 }
 

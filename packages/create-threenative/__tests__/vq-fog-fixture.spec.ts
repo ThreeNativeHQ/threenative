@@ -202,6 +202,34 @@ it("observes real shadow-map coverage instead of the authored mode name", () => 
   f.probe.exit(f.ctx);
 });
 
+it("sees a shadow map the volume wholly swallows, which no corner of the volume enters", () => {
+  // The same transforms the renderer hands the shadow camera, so this is coverage and not intent.
+  const sun = new DirectionalLight(0xffffff, 3);
+  const aim = (z: number) => {
+    sun.position.set(-4, 1.5, z);
+    sun.target.position.set(-4, 1.5, z + 3);
+    sun.updateMatrixWorld(true);
+    sun.target.updateMatrixWorld(true);
+    sun.shadow.updateMatrices(sun);
+  };
+  Object.assign(sun.shadow.camera, {
+    left: -0.2,
+    right: 0.2,
+    top: 0.2,
+    bottom: -0.2,
+    near: 0.1,
+    far: 3,
+  });
+  sun.shadow.camera.updateProjectionMatrix();
+  // A 40 cm map inside a 9 m room: the map is entirely within the volume, and not one of the
+  // volume's eight corners is within the map. A corner test calls this fog unshadowed.
+  aim(-3);
+  expect(fogInsideShadowMap(sun, ROOM_BOUNDS)).toBe(true);
+  // The same map translated clear of the room. A conservative test may over-report, never miss.
+  aim(-60);
+  expect(fogInsideShadowMap(sun, ROOM_BOUNDS)).toBe(false);
+});
+
 it("cuts the camera and streams the wall on the same controller", () => {
   const f = fixture();
   f.select("fog");

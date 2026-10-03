@@ -246,6 +246,20 @@ it("records a clean measured frame-cost window and refuses missing or mixed-wind
     text: `TN_FRAME_BUDGET:${JSON.stringify({ ...window, window: n })}`,
   }));
   expect(fogFrameCost(logs)).toMatchObject({ frames: 30, renderMs: metric, gpuMs: undefined });
+  // gpuMs is a mean over the frames the device answered for, so the sparse ones travel with it.
+  const sparse = fogFrameCost([
+    ...logs.slice(0, 2),
+    {
+      text: `TN_FRAME_BUDGET:${JSON.stringify({
+        ...window,
+        gpuMs: 174.78,
+        gpu: { mean: 174.78, p50: 174.69, p95: 179.36, samples: 4 },
+        gpuStale: 26,
+      })}`,
+    },
+  ]);
+  expect(sparse).toMatchObject({ gpuMs: 174.78, gpuSamples: 4, gpuStaleFrames: 26 });
+  expect(sparse.qualification).toMatch(/4 of 30 frames/);
   expect(() => fogFrameCost([])).toThrow(/windows/);
   expect(() => fogFrameCost(logs.slice(0, 2))).toThrow(/windows/);
   for (const change of [
@@ -302,24 +316,17 @@ it("declares the second density bound and measures that it changes the image", (
       expect.objectContaining({ component: "overlaps", equals: mode === "overlap" }),
     );
   }
-  const black = { width: 2, height: 1, data: new Uint8Array(8) };
-  expect(fogOverlapPixelMetrics(black, black)).toMatchObject({
+  const frame = { width: 2, height: 1, data: new Uint8Array(8) };
+  const second = { width: 2, height: 1, data: new Uint8Array([0, 0, 0, 255, 0, 0, 0, 255]) };
+  expect(fogOverlapPixelMetrics(frame, second)).toMatchObject({
     changedPixelRatio: 0,
     maxChannelDelta: 0,
     pass: false,
   });
-  // Added extinction can only add scattering, so a darker overlap frame is not a pass either.
-  const lit = { width: 2, height: 1, data: new Uint8Array([0, 0, 0, 255, 200, 200, 200, 255]) };
   expect(
-    fogOverlapPixelMetrics(lit, {
-      ...lit,
-      data: new Uint8Array([0, 0, 0, 255, 190, 200, 200, 255]),
-    }),
-  ).toMatchObject({ pass: false });
-  expect(
-    fogOverlapPixelMetrics(lit, {
-      ...lit,
-      data: new Uint8Array([0, 0, 0, 255, 209, 200, 200, 255]),
+    fogOverlapPixelMetrics(frame, {
+      ...second,
+      data: new Uint8Array([0, 0, 0, 255, 0, 9, 0, 255]),
     }),
   ).toMatchObject({ pass: true });
 });

@@ -6,6 +6,7 @@ import {
   Float32BufferAttribute,
   Group,
   HemisphereLight,
+  Matrix4,
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
@@ -13,6 +14,7 @@ import {
   PlaneGeometry,
   PointLight,
   Vector3,
+  WebGPUCoordinateSystem,
 } from "three";
 import { Scene as GameScene, type ICtx, defineGame } from "../../../../packages/core/src/index.js";
 import { playtest } from "../../../../packages/core/src/playtest.js";
@@ -21,26 +23,23 @@ import { WorldEnvironment } from "../../../../packages/create-threenative/templa
 
 export const ROOM_BOUNDS = new Box3(new Vector3(-4.5, 0, -9.5), new Vector3(4.5, 4, 3));
 
-// Coverage, not intent: does any corner of `bounds` land inside this light's shadow-map NDC box?
-// A mode name cannot answer that, and a mode name is exactly what a flag would echo.
+// Coverage, not intent: does the fog volume reach this light's shadow-map bounds? A bounding volume
+// can enclose the whole shadow box with no corner of itself inside it, so sampling corners answers
+// `false` for an overlap that is really there. Project the volume by the shadow camera's own
+// view-projection and intersect the conservative clip-space AABB — never false "outside". The depth
+// range is the camera's, not a constant: Three maps near/far to 0..1 on WebGPU and -1..1 on WebGL.
 export function fogInsideShadowMap(light: DirectionalLight, bounds: Box3): boolean {
   const camera = light.shadow.camera;
   camera.updateMatrixWorld(true);
-  for (let corner = 0; corner < 8; corner += 1) {
-    const projected = new Vector3(
-      corner & 1 ? bounds.max.x : bounds.min.x,
-      corner & 2 ? bounds.max.y : bounds.min.y,
-      corner & 4 ? bounds.max.z : bounds.min.z,
-    ).project(camera);
-    if (
-      Math.abs(projected.x) <= 1 &&
-      Math.abs(projected.y) <= 1 &&
-      projected.z >= -1 &&
-      projected.z <= 1
-    )
-      return true;
-  }
-  return false;
+  const viewProjection = new Matrix4().multiplyMatrices(
+    camera.projectionMatrix,
+    camera.matrixWorldInverse,
+  );
+  const clip = new Box3(
+    new Vector3(-1, -1, camera.coordinateSystem === WebGPUCoordinateSystem ? 0 : -1),
+    new Vector3(1, 1, 1),
+  );
+  return bounds.clone().applyMatrix4(viewProjection).intersectsBox(clip);
 }
 
 const initialState = {
@@ -304,12 +303,15 @@ export class FogProbe extends GameScene<FogState> {
         heightFalloff: 0.35,
       },
     ];
+    // The overlap control's second bound is pinned to the room's whole lit interior, not a sliver:
+    // a nested volume that hides behind one prop measures nothing about composition. Nested inside
+    // ROOM_BOUNDS on every axis, denser and slower-falling than the primary bound above.
     if (this.#mode === "overlap")
       volumes.push({
-        bounds: new Box3(new Vector3(-2, 0, -7), new Vector3(3, 2.5, 1)),
-        density: 0.14,
+        bounds: new Box3(new Vector3(-4.2, 0, -9.2), new Vector3(4.2, 3, 2.6)),
+        density: 0.28,
         baseHeight: 0.5,
-        heightFalloff: 0.6,
+        heightFalloff: 0.32,
       });
     const raw = ctx.renderer.raw as {
       logarithmicDepthBuffer?: boolean;
