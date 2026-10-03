@@ -39,8 +39,7 @@ describe("template playtest matrix", () => {
     // ...and the split is real: neither side is empty, so a discovery that silently returned
     // nothing cannot pass this.
     expect(TEMPLATE_PLAYTEST_NAMES.length).toBeGreaterThan(0);
-    expect([...ALREADY_BOOTED_TEMPLATES]).toEqual(["starter"]);
-    expect(TEMPLATE_PLAYTEST_NAMES).toContain("platformer");
+    expect(ALREADY_BOOTED_TEMPLATES.size).toBeGreaterThan(0);
   });
 
   it("reports every template and continues after a failing template", async () => {

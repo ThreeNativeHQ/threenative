@@ -668,8 +668,8 @@ describe("PRD-481 a tree is tested once", () => {
     });
     const jobs = plan.jobs as Record<string, { required: boolean }>;
     expect(Object.values(jobs).some((job) => job.required)).toBe(true);
-    // The diff touched no native path, so this run owes no rows and its source has to prove none.
-    expect(plan.nativeTier).toBe("none");
+    // The unclassified executable diff keeps native coverage rather than guessing it is web-only.
+    expect(plan.nativeTier).toBe("reduced");
   });
 
   it("runs the full board for a tree that changed by one file", () => {

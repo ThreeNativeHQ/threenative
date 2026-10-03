@@ -128,6 +128,7 @@ export function selectionPlan(
   const template = selection === "template";
   const checks = {
     docs: !reused,
+    ci: files.some((file) => CI_CONFIG_PATHS.some((pattern) => pattern.test(file))),
     instructions:
       full ||
       selection === "instructions" ||
@@ -226,7 +227,9 @@ export function selectionPlan(
     templateMatrix: {
       template: full ? TEMPLATE_NAMES : template ? changedTemplates(files) : ["starter"],
     },
-    goldenMatrix: { template: template ? changedTemplates(files).slice(0, 1) : ["starter"] },
+    goldenMatrix: {
+      template: template ? changedTemplates(files).slice(0, 1) : ["starter", "platformer"],
+    },
     checks,
     jobs,
   };
@@ -806,7 +809,18 @@ export function classify(input) {
   if (native !== undefined) return full(`${JSON.stringify(native)} is a native path`, parsed.paths);
   const narrowed = diffSelection(parsed.paths, options.target === "develop");
   if (narrowed.blocked !== undefined)
-    return full(`${JSON.stringify(narrowed.blocked)} is ${narrowed.family}`, parsed.paths, false);
+    return full(
+      `${JSON.stringify(narrowed.blocked)} is ${narrowed.family}`,
+      parsed.paths,
+      // These two scripts operate on generated web projects and the browser-only sweep; all other
+      // unknown executable families retain native evidence until their consumer boundary is proved.
+      !parsed.paths.every(
+        (file) =>
+          ["prose", "instructions", "ci", "template"].includes(pathFamily(file, true)) ||
+          /^scripts\/(?:__tests__\/)?verify-template-playtests(?:\.spec)?\.ts$/u.test(file),
+      ),
+    );
+
   const reason = `all ${String(parsed.paths.length)} changed path(s) match explicit ${[...narrowed.families].sort().join(" + ")} dependency rules`;
   return selectionPlan(narrowed.selection, reason, parsed.paths, candidateSha, false, 0, target);
 }

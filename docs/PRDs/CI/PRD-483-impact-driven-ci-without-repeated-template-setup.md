@@ -23,13 +23,13 @@ prd_contract: v1
 
 ### Phase 1 — Remove duplication and select retained coverage
 
-- [x] Exact template paths map to shipped kit identities; shared/unknown inputs retain the full matrix; docs and CI lanes apply to PR and merge-group diffs. proof: `pnpm exec vitest run scripts/__tests__/ci-template-selection.spec.ts`, 13 passed locally on 2026-10-03.
+- [x] Exact template paths map to shipped kit identities; shared/unknown inputs retain the full matrix; docs and CI lanes apply to PR and merge-group diffs. proof: `pnpm exec vitest run scripts/__tests__/ci-template-selection.spec.ts`, 19 passed locally on 2026-10-03.
 - [x] Every nonvisual scenario runs once per selected template, with empty coverage rejected and the matrix derived from kit manifests. proof: `pnpm exec vitest run scripts/__tests__/ci-structure.spec.ts scripts/__tests__/ci-template-selection.spec.ts`, green in the 264-test focused run on 2026-10-03.
-- [x] CI/template unit contracts run once; full unit shards adopt the producer build; native tests honor shared/native reach; the final verdict checks exact queue source identity. proof: `pnpm exec vitest run scripts/__tests__/ci-*.spec.ts scripts/__tests__/verify-template-playtests.spec.ts scripts/__tests__/sync-agent-docs.spec.ts scripts/__tests__/primary-docs.spec.ts`, 303 passed on 2026-10-03.
+- [x] CI/template unit contracts preserve mixed-scope unions; full unit shards retain their existing unit-only command; native tests honor shared/native reach; the final verdict checks exact queue source identity, with full history at the verdict checkout. proof: `pnpm exec vitest run scripts/__tests__/ci-*.spec.ts scripts/__tests__/verify-template-playtests.spec.ts scripts/__tests__/sync-agent-docs.spec.ts scripts/__tests__/primary-docs.spec.ts`, 303 passed on 2026-10-03.
 
 ### Phase 2 — Qualify the smaller pipeline
 
-- [x] Final typecheck, lint, docs and relevant unit checks pass. proof: `pnpm build`, `pnpm typecheck`, `pnpm lint`, `pnpm check:docs` exit 0; 303 focused unit tests passed, 2026-10-03.
+- [x] Final typecheck, lint, docs and relevant unit checks pass. proof: `pnpm build`, `pnpm typecheck`, `pnpm lint`, `pnpm check:docs` exit 0; 303 focused tests passed, 2026-10-03.
 - [ ] Normal CI passes on this cleanup PR before ready/merge. proof: PR check run; no bypass authorized.
 
 ## Coverage and cost
@@ -48,20 +48,19 @@ There are 13 kit manifests, not a hardcoded CI count.
 
 The template cap stays four. Baseline's nonvisual slot-work lower bound is 94.6 / 4 = 23.6 minutes;
 removing 16 repeated setups at the workflow's documented ~65s estimates 17.3 runner-min saved,
-plus the redundant 111s platformer journey. That gives ~81.7 template runner-min, an estimate,
-not measured after-change wall time. This is gross savings: adding platformer to the existing browser sweep preserves its previously delegated boot coverage and has unmeasured marginal cost. Individual exhaustive template jobs will be longer (shooter
+plus the removed 111s generic platformer journey. That gives ~81.7 template runner-min before the retained platformer production-build step, an estimate,
+not measured after-change wall time. Individual exhaustive template jobs will be longer (shooter
 roughly 18 minutes using baseline work minus repeated setup); the 30-minute timeout is retained.
 Queue contention can improve while a single heavy leg lengthens; live CI must settle wall time.
-Four downloaded-dist unit shards now use `test:ci`, removing another four redundant workspace
-builds (historical 71–95s each). CI-only avoids those product suites entirely.
+Full unit shards keep their existing `pnpm test` with `TN_SUITE_PHASES=unit`; it already excluded builds. No full-unit rebuild saving is claimed. CI-only avoids those product suites entirely.
 
 | Removed work | Why it adds little marginal value | Remaining proof |
 |---|---|---|
 | 16 per-template scaffold/install/typecheck/cook copies | Same template and exact run tarballs; only scenario partition differed | One setup per template, all classifier scenarios, template compilation/contracts |
-| Second generic golden journey on full board | Same scaffolder/install/dev/build chain already driven by default starter | Default end-to-end journey, per-kit nonvisual/typecheck; existing browser template sweep now includes platformer, with no additional job |
+| Duplicate platformer golden setup/journey | Its unique production build/artifact check moves into the existing installed platformer scenario job | Same production CLI and nonempty dist/index.html guard; when golden drives platformer the added step skips |
 | Four shard-count snapshot cases and obsolete partition arithmetic | Assert old scheduling constants; do not prove product behavior | Manifest-derived complete matrix, whole classifier execution, empty selection rejection, direct impact fixtures |
 | CI structure/needs checks repeated by lint and CI unit lane | Same candidate/contracts in two jobs | CI lane targeted unit run; instructions-only lint retains contracts when no unit job runs |
 | Full product units on CI-only changes | No runtime/package/template source changed | CI contracts plus existing typecheck, budgets, lint and supply-chain gates |
-| Workspace rebuild in each full unit shard | Producer's exact run artifact already downloaded | Prebuilt missing-output checks; units still execute freshly |
+| Full unit command retained | Existing unit phase already excluded build | Units execute freshly; existing exact-run producer artifact is consumed |
 
 No rendering PR acceptance tests, security checks or required protection settings are removed.

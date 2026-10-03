@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { makeTempDirSync } from "../../test-support/temp-dir.js";
@@ -154,6 +154,104 @@ describe("impact-driven template coverage", () => {
       }
     } finally {
       rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+  it("retains CI contracts for a queue containing CI and template changes", () => {
+    const f = fixture();
+    try {
+      f.change("scripts/ci-required.mjs");
+      const head = f.change("packages/create-threenative/templates/shooter/src/x.ts");
+      const plan = classify({
+        root: f.root,
+        base: f.base,
+        head,
+        candidateSha: head,
+        target: "develop",
+        eventName: "merge_group",
+      });
+      expect(plan.selection).toBe("template");
+      expect(plan.checks.ci).toBe(true);
+      expect(plan.templateMatrix.template).toEqual(["shooter"]);
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+  it.each([
+    "packages/core/tsup.config.ts",
+    "scripts/workspace-packages.ts",
+    "scripts/xvfb.sh",
+    "unknown/meaningful.ts",
+  ])("retains native evidence for unproven shared consumer %s", (file) => {
+    const f = fixture();
+    try {
+      const head = f.change(file);
+      const plan = classify({
+        root: f.root,
+        base: f.base,
+        head,
+        candidateSha: head,
+        target: "develop",
+        eventName: "pull_request",
+      });
+      expect(plan.jobs["test-native"].required).toBe(true);
+      expect(plan.jobs["native-platforms"].required).toBe(true);
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+  it("requires resolved history for the queue verdict, then accepts a complete checkout", () => {
+    const f = fixture();
+    const clone = makeTempDirSync("ci-shallow-queue-");
+    try {
+      const head = f.change("docs/x.md");
+      const plan = classify({
+        root: f.root,
+        base: f.base,
+        head,
+        candidateSha: head,
+        target: "develop",
+        eventName: "merge_group",
+      });
+      const cloned = spawnSync(
+        "git",
+        ["clone", "--quiet", "--depth", "1", `file://${f.root}`, clone],
+        { encoding: "utf8" },
+      );
+      expect(cloned.status, cloned.stderr).toBe(0);
+      const needs = {
+        scope: { result: "success", outputs: { plan: JSON.stringify(plan) } },
+        ...Object.fromEntries(Object.keys(plan.jobs).map((name) => [name, { result: "skipped" }])),
+      };
+      const run = () =>
+        spawnSync(process.execPath, [new URL("../ci-required.mjs", import.meta.url).pathname], {
+          cwd: clone,
+          encoding: "utf8",
+          env: {
+            ...process.env,
+            TN_CI_EVENT: "merge_group",
+            TN_CI_BASE_SHA: f.base,
+            TN_CI_HEAD_SHA: head,
+            TN_CI_NEEDS: JSON.stringify(needs),
+          },
+        });
+      expect(run().stderr).toContain("CI_REQUIRED_QUEUE_CANDIDATE_MISMATCH");
+      const fetched = spawnSync("git", ["fetch", "--quiet", "--unshallow", "origin"], {
+        cwd: clone,
+        encoding: "utf8",
+      });
+      expect(fetched.status, fetched.stderr).toBe(0);
+      const verified = run();
+      expect(verified.status, verified.stderr).toBe(0);
+      const workflow = readFileSync(
+        new URL("../.github/workflows/ci.yml", new URL("../", import.meta.url)),
+        "utf8",
+      );
+      expect(workflow.slice(workflow.indexOf("  ci-required:"))).toMatch(
+        /with:\s*\n\s+fetch-depth: 0/u,
+      );
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+      rmSync(clone, { recursive: true, force: true });
     }
   });
   it("covers all kit identities without duplicate matrix entries and rejects tampering", () => {

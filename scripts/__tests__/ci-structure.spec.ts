@@ -1727,6 +1727,19 @@ describe("CI pipeline structure", () => {
     expect(lane).toContain("max-parallel: 4");
   });
 
+  it("preserves platformer's unique production artifact in its installed scenario job", async () => {
+    const lane = requiredJob(
+      await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8"),
+      "template-nonvisual",
+    );
+    expect(lane).toContain("name: Verify the platformer production artifact");
+    expect(lane).toContain(
+      "!contains(fromJSON(needs.scope.outputs.plan).goldenMatrix.template, 'platformer')",
+    );
+    expect(lane).toContain('pnpm --dir "$target" exec threenative build --target web');
+    expect(lane).toContain('test -s "$target/dist/index.html"');
+  });
+
   // `pnpm/action-setup` bootstraps pnpm by running `npm ci` against registry.npmjs.org and then
   // self-updating to the pinned version. Every job in this repository does that — 56 times per
   // run — so a slow registry is a slow run for a reason that has nothing to do with the change
@@ -2679,7 +2692,7 @@ describe("CI pipeline structure", () => {
     }
   });
 
-  it("golden-path exercises the default journey through the verifier", async () => {
+  it("golden-path retains the default end-to-end journey through the verifier", async () => {
     const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
     const goldenPath = requiredJob(ci, "golden-path-template");
     expect(goldenPath).toContain("matrix: ${{ fromJSON(needs.scope.outputs.plan).goldenMatrix }}");
@@ -3419,14 +3432,10 @@ describe("PRD-373 selective feature verification", () => {
       );
       expect(plan.jobs).toMatchObject({
         "native-platforms": {
-          required:
-            !relative.includes("create-threenative/templates/") &&
-            !relative.startsWith("templates/"),
+          required: !relative.includes("create-threenative/templates/"),
         },
         "test-native": {
-          required:
-            !relative.includes("create-threenative/templates/") &&
-            !relative.startsWith("templates/"),
+          required: !relative.includes("create-threenative/templates/"),
         },
         "golden-path-template": { required: true },
         "template-nonvisual": { required: true },

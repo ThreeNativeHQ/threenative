@@ -273,8 +273,13 @@ jobs:
         run: |
           case '${{ needs.scope.outputs.selection }}' in
             ci) pnpm exec vitest run scripts/__tests__/ci-*.spec.ts ;;
-            template) pnpm exec vitest run packages/create-threenative/__tests__ scripts/__tests__/verify-golden-path.spec.ts ;;
-            full) pnpm test:ci ;;
+            template)
+              pnpm exec vitest run packages/create-threenative/__tests__ scripts/__tests__/verify-golden-path.spec.ts
+              if [ '${{ fromJSON(needs.scope.outputs.plan).checks.ci }}' = true ]; then
+                pnpm exec vitest run scripts/__tests__/ci-*.spec.ts
+              fi
+              ;;
+            full) pnpm test ;;
             *) echo 'CI_UNIT_SELECTION_INVALID' >&2; exit 1 ;;
           esac
 
@@ -850,6 +855,14 @@ jobs:
           pnpm --dir "$target" exec threenative-playtest "${scenario_args[@]}" \
             --browser-recipe webgpu --headed --no-screenshots --server-timeout 120000 \
             --server-command "pnpm dev --host 127.0.0.1 --port \$PORT --strictPort"
+      # The former second golden leg uniquely built platformer's production artifact. Retain that
+      # proof on its already-installed scaffold, without repeating the generic install/dev journey.
+      - name: Verify the platformer production artifact
+        if: matrix.template == 'platformer' && !contains(fromJSON(needs.scope.outputs.plan).goldenMatrix.template, 'platformer')
+        run: |
+          target="$RUNNER_TEMP/threenative-platformer"
+          pnpm --dir "$target" exec threenative build --target web
+          test -s "$target/dist/index.html"
 
   # `golden-path` is a required status check in the `main protection` ruleset, and required checks
   # match the reported context by exact string. A matrix job does not report its own name — it
@@ -1215,6 +1228,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          fetch-depth: 0
           ref: ${{ needs.scope.outputs.candidate_sha || github.sha }}
       - name: Reject every unsuccessful or missing selected job
         env:
