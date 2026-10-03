@@ -114,8 +114,7 @@ export function selectionPlan(
     FULL_JOBS.map((name) => {
       // `ci` narrows the board to the gates that read the configuration and `warm` to the two cache
       // producers; neither widens one, so any other job is exempt exactly as it is for prose.
-      const required =
-        full || (ciLane && CI_JOBS.has(name)) || (warm && WARM_JOBS.includes(name));
+      const required = full || (ciLane && CI_JOBS.has(name)) || (warm && WARM_JOBS.includes(name));
       return [
         name,
         {

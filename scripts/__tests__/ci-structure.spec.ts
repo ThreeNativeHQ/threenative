@@ -3935,7 +3935,6 @@ describe("a CI-configuration-only pull request", () => {
 
   it.each([
     [["--event-name", "merge_group", "--target", "develop"]],
-    [["--event-name", "push", "--target", "develop"]],
     [["--event-name", "schedule", "--target", "develop"]],
     [["--event-name", "workflow_dispatch", "--target", "develop"]],
     [["--target", "main"]],
@@ -3952,6 +3951,28 @@ describe("a CI-configuration-only pull request", () => {
         classifyScope(fixture.root, fixture.base, head, ["--target", "develop", ...extra])
           .selection,
       ).toBe("full");
+    } finally {
+      await removeFixture(fixture.root);
+    }
+  });
+
+  it("runs a develop push as the cache-warm lane, never the ci narrowing", async () => {
+    const fixture = await scopeFixture();
+    try {
+      const head = await commitScopeChange(
+        fixture,
+        ".github/workflows/ci.yml",
+        "name: CI\njobs: {}\n",
+        "ci configuration",
+      );
+      expect(
+        classifyScope(fixture.root, fixture.base, head, [
+          "--event-name",
+          "push",
+          "--target",
+          "develop",
+        ]).selection,
+      ).toBe("warm");
     } finally {
       await removeFixture(fixture.root);
     }
