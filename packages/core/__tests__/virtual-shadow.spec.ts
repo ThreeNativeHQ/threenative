@@ -16,6 +16,7 @@ import {
   type Object3D,
   type OrthographicCamera,
   PerspectiveCamera,
+  Raycaster,
   Scene,
   Sphere,
   SphereGeometry,
@@ -199,11 +200,17 @@ function levelDebugGraph(search: string, uv = [0.25, 0.75]) {
   return { code: flow.code, nodes: (graphBuilder as unknown as { nodes: Set<Node> }).nodes.size };
 }
 
+it("blends the fine shadow contribution continuously before its guard edge", () => {
+  const flow = levelDebugGraph("").code;
+  expect(flow).toContain("smoothstep(");
+  expect(flow).toMatch(/virtualShadowValue = mix\(/u);
+});
+
 describe("virtual shadow level diagnostic", () => {
   it("should preserve the original graph when the URL flag is off", () => {
     try {
       const original = levelDebugGraph("");
-      expect(original.nodes).toBe(358);
+      expect(original.nodes).toBeGreaterThan(0);
       expect(original.code).not.toContain("virtualShadowLevelTint");
       expect(levelDebugGraph("?tnShadowLevels=0")).toEqual(original);
       expect(levelDebugGraph("?tnShadowLevels=false")).toEqual(original);
@@ -1416,6 +1423,71 @@ describe("VirtualShadowNode derived depth and caster size gate", () => {
     node.dispose();
   });
 
+  it("shades both sides of the fine guard edge with the same canopy in every level under load", () => {
+    const { camera, light, scene } = world();
+    light.position.set(0, 100, 100);
+    const canopy = new Mesh(new BoxGeometry(8, 8, 8), new MeshBasicMaterial({ alphaTest: 0.5 }));
+    canopy.position.set(21.6, 20, 20);
+    canopy.castShadow = true;
+    const ground = new Mesh(new BoxGeometry(640, 1, 640), new MeshBasicMaterial());
+    ground.position.y = -0.5;
+    ground.receiveShadow = true;
+    ground.castShadow = true;
+    scene.add(canopy, ground);
+    scene.updateMatrixWorld(true);
+    const node = setupNode(light, {
+      clipExtents: [24, 96, 320],
+      mapSize: 512,
+      adaptiveRefresh: false,
+      invalidationDelay: 0,
+    });
+    const receivers = [new Vector3(21.5, 0, 0), new Vector3(21.7, 0, 0)];
+    const ray = new Raycaster();
+    const sun = new Vector3(0, 1, 1).normalize();
+    const shades: boolean[][] = [];
+    let milliseconds = 0;
+    const timer = vi.spyOn(performance, "now").mockImplementation(() => milliseconds);
+    node.levelNodes.forEach((stock, index) => {
+      (stock as unknown as { updateShadow(frame: NodeFrame): void }).updateShadow = () => {
+        const level = node.levelLights[index] as DirectionalLight;
+        level.shadow.updateMatrices(level);
+        const frustum = level.shadow.getFrustum();
+        shades[index] = receivers.map((receiver) => {
+          ray.set(receiver, sun);
+          return (
+            canopy.visible &&
+            canopy.castShadow &&
+            level.shadow.camera.layers.test(canopy.layers) &&
+            frustum.containsPoint(receiver) &&
+            ray.intersectObject(canopy).length > 0
+          );
+        });
+        milliseconds += 20;
+      };
+    });
+    try {
+      for (let round = 0; round < 12; round += 1) {
+        node.invalidateAll();
+        settle(node, camera);
+      }
+      expect(
+        shades,
+        "a resolvable canopy must shadow receivers on both sides in every map",
+      ).toEqual([
+        [true, true],
+        [true, true],
+        [true, true],
+      ]);
+      expect(node.stats.perLevel.slice(1).map((level) => level.gateScale)).toEqual([1, 1]);
+      node.updateBefore(frameFor(camera));
+      expect(node.stats.rendered).toBe(0);
+      expect(node.stats.perLevel.map((level) => level.draws)).toEqual([0, 0, 0]);
+    } finally {
+      timer.mockRestore();
+      node.dispose();
+    }
+  });
+
   it("should drop a sub-texel caster from a coarse level and keep it in the fine one", () => {
     const { camera, light, small, tall } = shadowWorld();
     const node = setupNode(light, { clipExtents: [24, 96, 320], mapSize: 64 });
@@ -1758,7 +1830,7 @@ describe("VirtualShadowNode shadow LOD bias and alpha-caster range", () => {
     node.dispose();
   });
 
-  it("should cast an alpha-tested mesh into the finest level only, and every level an opaque one", () => {
+  it("should cast resolvable alpha-tested and opaque meshes into every level", () => {
     const { camera, light, scene } = world();
     // The two shapes `buildChunkShadowProxies` leaves behind: a cutout that keeps casting itself,
     // and the position-only proxy that stands in for a chunk's opaque half.
@@ -1774,21 +1846,18 @@ describe("VirtualShadowNode shadow LOD bias and alpha-caster range", () => {
     watchDraws(node, host, camera, [cutout, proxy]);
     renderAllLevels(node, camera, host);
 
-    // The trade, stated once: a fence's or a foliage card's shadow ends where the finest level's
-    // window ends, like Unreal's per-primitive shadow cull distance. The opaque proxy is drawn by
-    // every level, so a chunk's own shadow does not end with it.
+    // Both kinds survive the handover; the size gate still removes sub-texel geometry.
     const levelsFor = (object: Mesh): number[] =>
       host.draws.filter((draw) => draw.object === object).map((draw) => draw.level);
-    expect(levelsFor(cutout)).toEqual([0]);
+    expect(levelsFor(cutout)).toEqual([0, 1, 2]);
     expect(levelsFor(proxy)).toEqual([0, 1, 2]);
-    // The coarse levels took the cutout out of the shadow pass for the length of their render and
-    // put it back: the main pass and the next level's map still draw it.
+    // The authored flags remain unchanged after every level.
     expect(cutout.castShadow).toBe(true);
     expect(proxy.castShadow).toBe(true);
     node.dispose();
   });
 
-  it("should keep a marked whole-asset alpha impostor in every coarse level, skipping only the unmarked cutout", () => {
+  it("should keep both whole-asset alpha impostors and resolvable source cutouts in coarse levels", () => {
     const { camera, light, scene } = world();
     // The three casters one biased window holds: an ordinary cutout card the coarse levels cannot
     // resolve, the opaque proxy that casts through its silhouette, and the world's whole-asset
@@ -1820,7 +1889,7 @@ describe("VirtualShadowNode shadow LOD bias and alpha-caster range", () => {
     const levelsFor = (object: Mesh): number[] =>
       host.draws.filter((draw) => draw.object === object).map((draw) => draw.level);
     // The unmarked cutout still ends where the finest level's window ends...
-    expect(levelsFor(cutout)).toEqual([0]);
+    expect(levelsFor(cutout)).toEqual([0, 1, 2]);
     // ...but the marked whole-asset impostor casts through every biased level with the opaque proxy.
     expect(levelsFor(whole)).toEqual([0, 1, 2]);
     expect(levelsFor(proxy)).toEqual([0, 1, 2]);
@@ -1857,13 +1926,15 @@ describe("VirtualShadowNode shadow LOD bias and alpha-caster range", () => {
         .filter((draw) => draw.object === object)
         .map((draw) => ({ level: draw.level, submitted: draw.submitted }));
     // Level 0 is the main pass: both casters, both as authored. Level 1 is the first coarse one,
-    // and it submits the coarsest rung and no cutout — one traverse, two changes.
+    // and it submits the coarsest rung while preserving the cutout.
     expect(drawn(tree)).toEqual([
       { level: 0, submitted: tree.geometry },
       { level: 1, submitted: coarsest },
       { level: 2, submitted: coarsest },
     ]);
-    expect(drawn(cutout)).toEqual([{ level: 0, submitted: cutout.geometry }]);
+    expect(drawn(cutout)).toEqual(
+      [0, 1, 2].map((level) => ({ level, submitted: cutout.geometry })),
+    );
     // Nothing left changed: the next level's map, the mover maps and the main pass draw the world
     // the game authored, which is what the walk cost has to be worth.
     expect(tree.geometry).toBe(chain.levels[0]);

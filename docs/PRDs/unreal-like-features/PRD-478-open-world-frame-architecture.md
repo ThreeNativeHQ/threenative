@@ -79,6 +79,15 @@ First candidate (2026-10-02, `748348c9c` on `feat/prd-478-shadow-snap`): unit-gr
 
 Follow-up (2026-10-02): `eb803490d` keeps a held level's render-time depth (it fixed the road leak's growth). `0ef0f51b9` corrects the wide-caster depth span, which multiplied by `W.y` instead of dividing, and stops dropping casters by their ground distance from the window centre. Both are correct by spec, but the camp wedge stayed. A stock-shadow reference capture showed why: in aerial views the virtual shadows miss most shadow on develop as well (canopy, buildings, the watchtower, fences). The levels follow the eye at half-widths 24, 96 and 320 m with 512² maps, so a high camera leaves the scene in the coarsest level, at about 1.25 m per texel. The wedge is real tree shadow, cut where a finer level's square ends. The owner decided the coverage fix belongs in this phase (box above).
 
+CPU repair pass (owner request, 2026-10-02): keep `VirtualShadowNode`, work only in this checkout, four separate local commits; no push, browser or GPU execution. Reuse the existing CPU frame and shader-graph fixtures. Repair complexity: 3 → LOW (two implementation files and existing level state); integration remains source shadow slot → `setup` / `updateBefore` / `dispose`.
+
+- [x] Boundary coverage: retain resolvable canopy and both-half chunk proxies; blend the finer map across its guard edge. proof: CPU receiver-ray and WGSL specs: 95 focused tests passed; post-commit core gate follows. Coarse scale now stays 1 (base gates 0.141/0.563/1.875 m at 512, previously up to 1.125/4.5/15 m); alpha omission removed; merged proxies go from one caster half to both. Fine fixture stays 4 draws/render, idle 0; resolved coarse omissions now draw.
+- [ ] Aerial focus: measure the view's intersection with received terrain; preserve walking eye follow. proof: raised-camera frame spec plus the core suite with two workers.
+- [ ] Stair steps: isolate projection/filter/bias cause and test the measurable correction. proof: CPU shader/depth spec plus the core suite with two workers.
+- [ ] Resource lifetime: release every level/mover target on dispose and source removal, count targets and bytes. proof: disposal-count spec, core suite with two workers, `pnpm typecheck`, `pnpm lint`, `pnpm quality`.
+
+Visual parity and GPU performance remain unverified in this pass because the owner prohibits GPU execution. The original visual/performance boxes stay open.
+
 #### Phase 2: Fewer shadow submissions
 **Status:** NOT STARTED
 **Files:** `packages/core/src/render/virtual-shadow.ts`, `packages/core/src/world-gpu-scene.ts`

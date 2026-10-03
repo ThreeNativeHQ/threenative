@@ -24,6 +24,7 @@ import {
   positionWorld,
   property,
   shadow,
+  smoothstep,
   uniform,
   vec3,
   vec4,
@@ -128,7 +129,7 @@ export interface IVirtualShadowOptions {
    */
   readonly expensiveRefreshShare?: number;
   /**
-   * Raise a level's texel size gate while its own render is too expensive for the frame, default
+   * Raise the finest level's texel size gate while its own render is too expensive for the frame, default
    * true.
    *
    * The same measurement adaptive refresh reads — the smoothed cost of the level's own last render,
@@ -139,6 +140,7 @@ export interface IVirtualShadowOptions {
    * drops the tiniest props first and never a building, and a level that is cheap is never touched:
    * it stays at scale 1 and submits exactly what it did before.
    *
+   * Coarse levels always stay at scale 1 so resolved casters survive the handover.
    * `false` pins every level at scale 1, which is also what a harness that wants today's draw
    * counts uses.
    */
@@ -179,30 +181,10 @@ export interface IVirtualShadowOptions {
    */
   readonly minCasterTexels?: number;
   /**
-   * Draw every level past the finest one with less geometry than the main pass would, default true.
-   *
-   * Two defaults, both Unreal's and both applied in one place — the pass a level render already
-   * makes over the casters in its window, where each of the two is a change to the object three
-   * draws from and is put back the moment that render is over:
-   *
-   * 1. **Shadow LOD bias.** A mesh whose geometry carries a registered AutoLOD chain
-   *    (`lodChainOf`) is submitted with the chain's *coarsest* geometry. A level 2 window cannot
-   *    resolve a tree's needles, so drawing LOD0 there is a texel of needles per texel of shadow;
-   *    the coarse level's own texel is metres wide. Level 0 draws what the main pass draws.
-   * 2. **Alpha-caster range.** An alpha-tested (`alphaTest > 0`) or transparent mesh casts into the
-   *    finest level only. Its cutout is its own texture: a coarse level either drops it — the
-   *    level's texel is wider than the card, so the fence is sub-texel — or keeps resolving a
-   *    texture it cannot afford. This is a per-primitive shadow cull distance, and the trade is
-   *    honest and one-sided: a fence's or a foliage card's shadow ends where the finest level's
-   *    window ends, and a wide level shows bare ground where it stood. Opaque casters — a merged
-   *    chunk's position-only proxy, a tree's silhouette — are drawn on every level as before.
-   *
-   * Neither is left changed: a hidden caster's `castShadow` and a coarse mesh's `geometry` are put
-   * back before the next level, before the mover maps and before the main pass, which see the world
-   * exactly as the game authored it. Mover maps keep full detail — a 256² map over the level's own
-   * window, drawing only the tracked casters.
-   * `false` puts every level back on stock full-detail draws, which is what the node did before
-   * either default existed.
+   * Draw registered AutoLOD chains with their coarsest geometry past the finest level, default true.
+   * Alpha-tested and transparent casters keep casting on every level that resolves their bounds;
+   * dropping their whole shadow at the fine window edge loses canopy and fences.
+   * Geometry swaps are restored before the next level, mover map and main pass.
    */
   readonly shadowLodBias?: boolean;
   /** Print the `TN_VIRTUAL_SHADOW` line every `markerEvery` frames; `false` silences it. Default 300. */
@@ -626,16 +608,6 @@ interface IRenderingShadowNode {
 }
 
 /**
- * Whether a caster's shadow is its own texture rather than its silhouette's — `alphaTest` against a
- * map, or `transparent`. A multi-material mesh is one caster to the probe, so any one of its
- * materials answering true takes the whole mesh out of the coarse levels.
- */
-function isAlphaCaster(material: Mesh["material"]): boolean {
-  if (Array.isArray(material)) return material.some(isAlphaCaster);
-  return material.transparent === true || material.alphaTest > 0;
-}
-
-/**
  * One directional shadow for a whole open world: camera-centred clip levels, each snapped to its
  * own texel grid and re-rendered only when its window moves. Movers never touch that cache: a
  * tracked caster draws into a second, per-level mover map every frame, and a fragment takes the
@@ -780,8 +752,6 @@ export class VirtualShadowNode extends ShadowBaseNode {
   };
   /** Casters the current level's size gate hid, restored the moment that render is over. */
   #hidden: Object3D[] = [];
-  /** Alpha casters `#probe` took out of the coarse levels' shadow pass, with `castShadow` to restore. */
-  #alphaHidden: Mesh[] = [];
   /** Chained meshes `#probe` put on their coarsest chain level, and the geometry each was holding. */
   #coarsened: { mesh: Mesh; geometry: BufferGeometry }[] = [];
 
@@ -1229,7 +1199,6 @@ export class VirtualShadowNode extends ShadowBaseNode {
     const window = level.extent * Math.SQRT2;
     this.#poolCount = 0;
     this.#hidden.length = 0;
-    this.#alphaHidden.length = 0;
     this.#coarsened.length = 0;
     // Past the finest level, every level draws less of what it can. Set on the world here, on the
     // pass that is already reading this window's casters, and put back by `#restoreHidden` when
@@ -1264,26 +1233,8 @@ export class VirtualShadowNode extends ShadowBaseNode {
       // Read before the gates below: the level is going to render both caster layers either way, and
       // a caster too small for this level's texels is still one the prewarm owes a draw.
       if (mesh.casterPrewarmOwed === true) prewarming = true;
-      // What a coarse level submits less of, in the same pass: an alpha caster casts nothing — its
-      // cutout is its own texture and the level's texel is wider than the card — and a chained mesh
-      // is submitted with the chain's coarsest geometry, which is metres per texel where LOD0 is
-      // needles. Both are the renderer's own business to submit nothing for and the coarse geometry
-      // for, and both are undone before this render ends. `castShadow` is already the flag three's
-      // draw gate reads, and `object.geometry` is what its cached render object re-reads, so this
-      // needs no seam of its own. Not in the pool either: neither draws into this level, so neither
-      // reaches as far as this level's depth has to cover.
-      // The whole-asset impostor is the far shadow's own coarse silhouette — an alpha caster whose
-      // cutout is the coarsest representation, not a source card the level cannot resolve — so it
-      // stays. The surface marks its own material (`WorldImpostorSurface`); every other alpha caster
-      // is still taken out here.
-      const wholeAsset =
-        !Array.isArray(mesh.material) && mesh.material.userData.tnWholeAssetImpostor === true;
-      if (biased && mesh.castShadow === true && !wholeAsset) {
-        if (isAlphaCaster(mesh.material)) {
-          mesh.castShadow = false;
-          this.#alphaHidden.push(mesh);
-          continue;
-        }
+      // Reduce geometry, never the caster's presence: alpha cutouts carry canopy and fences.
+      if (biased && mesh.castShadow === true) {
         const chain = lodChainOf(mesh.geometry);
         const coarsest = chain?.levels[chain.levels.length - 1];
         if (coarsest !== undefined && coarsest !== mesh.geometry) {
@@ -1458,18 +1409,13 @@ export class VirtualShadowNode extends ShadowBaseNode {
       clustered || prewarming ? VIRTUAL_SHADOW_CASTER_LAYER : VIRTUAL_SHADOW_WIDE_CASTER_LAYER,
     );
     if (prewarming) level.shadow.camera.layers.enable(VIRTUAL_SHADOW_WIDE_CASTER_LAYER);
-    // The small casters are not in either bill above, and deliberately so: a wide level renders
-    // neither this layer nor the meshes on it, and a fine level renders it beside whichever
-    // granularity it picked, so counting them would only skew a choice they do not take part in.
-    // Finest-first order is the node's own contract, so index 0 is the level whose window is a
-    // player's reach; the prewarm owes their draw too, exactly as it owes both caster layers'.
-    if (index === 0 || prewarming)
-      level.shadow.camera.layers.enable(VIRTUAL_SHADOW_SMALL_CASTER_LAYER);
-    // The bill the chosen layers will actually submit: a half that was not picked submits none of
-    // its meshes. Merged chunk proxies go with the cluster half; retained ones submit either way.
+    // Small casters use the same texel gate as every other layer; their authored height is
+    // not a reason to lose a resolved shadow when the fine window ends.
+    level.shadow.camera.layers.enable(VIRTUAL_SHADOW_SMALL_CASTER_LAYER);
+    // Proxies belong to both halves: their covered originals no longer cast.
     const chosenCluster = clustered || prewarming;
     const chosenWide = !clustered || prewarming;
-    const chosenSmall = index === 0 || prewarming;
+    const chosenSmall = true;
     const by = stat.drawsBy;
     by.cluster = chosenCluster ? nCluster : 0;
     by.chunkProxy = nChunkBoth + (chosenCluster ? nChunk : 0);
@@ -1482,16 +1428,14 @@ export class VirtualShadowNode extends ShadowBaseNode {
   }
 
   /**
-   * Put back every caster `#probe` changed: the ones its texel gate hid, the alpha casters it took
-   * out of the shadow pass, and the geometry it swapped for a coarser chain level. The next camera
+   * Put back every caster `#probe` changed: the ones its texel gate hid and the geometry
+   * it swapped for a coarser chain level. The next camera
    * — the next level's map, a mover map, the main pass — sees the world as it was authored.
    */
   #restoreHidden(): void {
     for (const object of this.#hidden) object.visible = true;
-    for (const mesh of this.#alphaHidden) mesh.castShadow = true;
     for (const held of this.#coarsened) held.mesh.geometry = held.geometry;
     this.#hidden.length = 0;
-    this.#alphaHidden.length = 0;
     this.#coarsened.length = 0;
   }
 
@@ -1604,6 +1548,9 @@ export class VirtualShadowNode extends ShadowBaseNode {
    * that has not rendered has no reading and is never touched.
    */
   #adaptGate(level: ILevel, index: number, affordableMs: number, now: number): void {
+    // A coarse texel is already the resolution gate. Cost must not raise it to 12 texels
+    // (15 m at 320@512), which erases resolved canopy when the fine map hands over.
+    if (index > 0) return;
     if (level.lastRender === Number.NEGATIVE_INFINITY) return;
     if (level.gatedRender === level.lastRender) return;
     level.gatedRender = level.lastRender;
@@ -1888,7 +1835,14 @@ export class VirtualShadowNode extends ShadowBaseNode {
             distance.lessThanEqual(level.extentUniform.mul(level.guardUniform)),
           ),
           () => {
-            result.assign(min(vec4(level.node as never), moverResult(level)));
+            const edge = level.extentUniform.mul(level.guardUniform);
+            // Use the existing unused map margin, with at least two texels for guard=1.
+            const band = max(
+              level.extentUniform.sub(edge),
+              level.extentUniform.mul(4 / this.options.mapSize),
+            );
+            const weight = smoothstep(edge.sub(band), edge, distance).oneMinus();
+            result.assign(mix(result, min(vec4(level.node as never), moverResult(level)), weight));
           },
         );
       }
