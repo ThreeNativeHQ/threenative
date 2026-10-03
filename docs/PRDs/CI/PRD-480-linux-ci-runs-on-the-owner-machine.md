@@ -129,6 +129,12 @@ while `TN_RUNNER` is set: jobs queue until the switch is cleared.
 
 ## Decisions
 
+- 2026-10-03 (measured): the pool is overflow capacity, not the default. The repository is public, so
+  hosted runners cost nothing and run ~20 jobs at once; routing every Linux job to 5 local slots made
+  boards slower (run 37099132853: 20 min in, 15 jobs queued locally). A balancer advertises
+  `TN_RUNNER`/`TN_RUNNER_LIGHT` only while a runner is idle (two polls in a row) and withdraws them at once
+  when none is.
+
 - 2026-10-02 (João, during the first live runs): use more of the machine, but never at the cost of
   desktop stability. Five pinned slots of two cores each, two cores reserved for the host, 12 GB caps
   with CI as the OOM victim, and a reserved light lane (review by Astra the same day).

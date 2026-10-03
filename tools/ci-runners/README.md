@@ -19,8 +19,12 @@ runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'u
   queue behind a 20-minute build.
 - macOS, Windows, iOS, linux-arm64, `supply-chain` and the Android emulator lane always run hosted.
 
-The pool sets the variables only once its runners are online, and clears them before it stops. A pool
-that is down therefore never strands a job.
+**The pool is extra capacity, not a replacement.** This repository is public, so hosted runners are free
+and run about 20 jobs at once. A balancer (`ci-runners.sh balance`, started by `up`) sets each variable
+only while that pool has an idle runner, and deletes it the moment none is idle. A busy pool therefore
+overflows new jobs to hosted runners instead of queueing them. Routing every Linux job here funnelled the
+team's CI into 5 slots and made boards slower. `down` stops the balancer and clears both variables, so a
+pool that is down never strands a job.
 
 ## Set it up (once, on the runner machine)
 
@@ -55,7 +59,7 @@ and at least 6 CPU cores (each slot takes 2 whole cores, and 2 stay free for the
 
 | Want | Run |
 |---|---|
-| What is running, what is routed | `pnpm ci:runners status` |
+| What is running, what is routed | `pnpm ci:runners status` (balancer log: `~/.local/state/threenative/ci-runners/balance.log`) |
 | Pick up a runner image or script change from `develop` | `systemctl --user restart threenative-ci-runners` (when no job is running; a restart kills in-flight jobs) |
 | Send every job to hosted runners now (kill switch) | `gh variable delete TN_RUNNER && gh variable delete TN_RUNNER_LIGHT` |
 | Stop the pool | `systemctl --user stop threenative-ci-runners` |
