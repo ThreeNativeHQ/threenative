@@ -20,19 +20,34 @@ Baseline: `develop`. [PRD-373](../done/PRD-373-selective-ci-and-develop-promotio
   [PRD-480](PRD-480-linux-ci-runs-on-the-owner-machine.md), so phase 2 is mainly about the hosted
   macOS, Windows and iOS legs. Measured 2026-09-18 to 10-02: native-release PR runs cost 7.0k
   runner-min, and runs still going after their PR merged or closed cost 5.0k.
+- 2026-10-02 (phase 1): a promotion PR is `develop -> main`. PRD-373 retired the `promotion/<sha>`
+  ref on 2026-09-12, so the proof's PR route keys on `github.event.pull_request.base.ref == 'main'`
+  (which also covers the `hotfix/` emergency path, that branch's own full qualification) rather than
+  on a branch prefix. The one shared concurrency group reverses the `head_sha`-in-the-group choice
+  above on purpose: a superseded proof now queues instead of running beside a live one.
 
 ### Phase 1 — The release proof stops running on every PR push
+
+**Status:** COMPLETE
 
 **Files:** `.github/workflows/native-release.yml`, `.github/workflows/npm-release.yml`,
 `.github/workflows/release-candidate.yml`, `scripts/__tests__/native-release-proof.spec.ts`,
 `scripts/__tests__/ci-structure.spec.ts`.
 
-- [ ] Release proof never runs on an ordinary PR push. proof: `pnpm exec vitest run scripts/__tests__/native-release-proof.spec.ts`,
+- [x] Release proof never runs on an ordinary PR push. proof: `pnpm exec vitest run scripts/__tests__/native-release-proof.spec.ts`,
   which also asserts it still runs on a promotion PR, the `release-proof` label, manual dispatch and an npm `v*` release.
-- [ ] At most one release proof holds runners at a time across branches. proof: `pnpm exec vitest run
+  Evidence: `native-release-proof.spec.ts` 2026-10-02, 61 passed; 3 new assertions red before the workflow change.
+  The `pull_request.paths` filter is replaced by `types: [opened, synchronize, reopened, labeled]`, and
+  `gates` — which every proof job `needs:` — now refuses an ordinary develop PR, so the whole board costs nothing.
+  npm-release.yml and release-candidate.yml trigger no part of this proof and are unchanged.
+- [x] At most one release proof holds runners at a time across branches. proof: `pnpm exec vitest run
   scripts/__tests__/ci-structure.spec.ts`, with a case asserting the shared concurrency group.
+  Evidence: `ci-structure.spec.ts` 2026-10-02, 2 assertions red before the workflow change, 123 passed after.
+  `group: native-release-proof`, `cancel-in-progress: false` kept.
 
 ### Phase 2 — PRs run a reduced native matrix; the full matrix stays on main and nightly
+
+**Status:** NOT STARTED — waits on another PRD; untouched by this branch.
 
 **Files:** `.github/workflows/ci.yml`, `.github/workflows/native-platforms.yml`,
 `scripts/__tests__/ci-efficiency.spec.ts`.
@@ -43,11 +58,21 @@ Baseline: `develop`. [PRD-373](../done/PRD-373-selective-ci-and-develop-promotio
 
 ### Phase 3 — A merged or closed PR stops spending runners
 
+**Status:** IN PROGRESS — janitor landed, live proof pending.
+
 **Files:** NEW `.github/workflows/ci-janitor.yml` (`pull_request: types: [closed]`, cancels the head
 ref's queued and in-progress runs with `gh run cancel`), `scripts/__tests__/ci-structure.spec.ts`.
 
 - [ ] Closing or merging a PR cancels its head ref's in-flight runs within a minute. proof: the janitor run id
   and the cancelled run ids on one merged PR.
+  The workflow and its guards are in: `ci-structure.spec.ts` 2026-10-02, 124 passed (the case was red
+  with no `ci-janitor.yml`). Box stays open — the proof is a live merged PR, and until one merges the
+  only executed evidence is a local `gh` stub, which is not the claim.
+
+`ci-janitor.yml` is the one workflow here holding `actions: write`, so the existing "no job cancels
+its own run" guard now names it as its single exception rather than dropping the ban: the janitor
+fires on `closed`, never from a failure step, scopes every cancel to the event's own repository, and
+skips its own run id.
 
 ## Acceptance criteria
 

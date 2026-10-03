@@ -25,6 +25,8 @@ One source, two runtimes: browser WebGPU and an owned C++ host for desktop/Andro
 - Branch from `origin/develop` (not a local branch that may be ahead of it), target `develop`, squash-merge. Set `git config threenative.integrationBranch develop` per checkout.
 - The commit that finishes a PRD also `git mv`s it to `docs/PRDs/done/`.
 - `main` takes only the ordinary full-checked `develop -> main` PR, merged with a merge commit, never squash or rebase.
+- **Push once per run**: while your PR's CI runs, commit locally; push to fix that run or after it finishes. A PRD tick rides with the next code push, never alone.
+- **No workflow file per feature**: add its CI proof as a job in an existing workflow.
 - Before retargeting, inventory `gh pr list` and `pnpm worktree:status`; retarget in-flight PRs one at a time and never rewrite another worktree.
 
 ## Where a change goes
