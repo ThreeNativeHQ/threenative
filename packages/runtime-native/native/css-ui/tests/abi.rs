@@ -358,3 +358,118 @@ fn an_existing_ui_root_with_no_stylesheet_is_its_own_code() {
     assert_eq!(tn_css_ui_detach(), 0);
     let _ = std::fs::remove_dir_all(&empty);
 }
+
+/// A key is the UI's only while the UI can use it: the host drops what comes back as consumed, and
+/// a game with no focusable control keeps every key it owns.
+#[test]
+fn keys_are_consumed_only_while_the_ui_can_use_them() {
+    assert_eq!(tn_css_ui_key(c("Tab").as_ptr(), 1, 0), -1, "before attach");
+    assert_eq!(tn_css_ui_set_time(16.0), -1);
+    assert_eq!(tn_css_ui_wheel(0.5, 0.5, 0.0, 40.0), -1);
+    assert_eq!(tn_css_ui_set_env(1, 0), -1);
+    assert_eq!(tn_css_ui_set_pointer_kind(1), -1);
+    assert_eq!(tn_css_ui_focused_id(), 0, "no document, no focus");
+
+    assert_eq!(tn_css_ui_attach(c("/nonexistent").as_ptr(), 480, 320), 0);
+    assert_eq!(tn_css_ui_post(c(&fixture()).as_ptr()), 0);
+    let mut frame = TnCssFrame {
+        pixels: std::ptr::null(),
+        length: 0,
+        width: 0,
+        height: 0,
+        stride: 0,
+        counter: 0,
+    };
+    assert_eq!(tn_css_ui_frame(&mut frame), 1, "lay the UI out before routing keys");
+
+    assert_eq!(tn_css_ui_focused_id(), 0, "nothing focused yet");
+    assert_eq!(tn_css_ui_key(c("a").as_ptr(), 1, 0), 0, "a key with no use is the game's");
+    assert_eq!(tn_css_ui_key(std::ptr::null(), 1, 0), -5, "a null key is an error, not a game key");
+
+    assert_eq!(tn_css_ui_key(c("Tab").as_ptr(), 1, 0), 1, "Tab is the UI's");
+    assert_eq!(tn_css_ui_focused_id(), 2, "and it landed on the button");
+    assert_eq!(tn_css_ui_key(c("Enter").as_ptr(), 1, 0), 1, "Enter activates it");
+    assert_eq!(tn_css_ui_key(c("Enter").as_ptr(), 0, 0), 1, "and the release is the button's too");
+    assert_eq!(tn_css_ui_key(c(" ").as_ptr(), 0, 0), 1, "so is the space key");
+    assert_eq!(tn_css_ui_key(c("Escape").as_ptr(), 1, 0), 1, "Escape is the UI's while it holds focus");
+    assert_eq!(tn_css_ui_focused_id(), 0, "and drops it");
+    assert_eq!(tn_css_ui_key(c("Enter").as_ptr(), 1, 0), 0, "with no focus, Enter is the game's");
+
+    let raw = tn_css_ui_take();
+    assert!(!raw.is_null(), "two activations were queued");
+    // Safety: `take` hands over a CString the host releases with `tn_css_ui_free`.
+    let events = unsafe { CStr::from_ptr(raw) }.to_string_lossy().into_owned();
+    assert_eq!(events, r#"{"type":"click","id":2}
+{"type":"click","id":2}"#);
+    unsafe { tn_css_ui_free(raw) };
+
+    assert_eq!(tn_css_ui_detach(), 0);
+}
+
+/// The clock, the environment and the pointer kind: the host drives them, and each one is visible
+/// in what the document does with the frame.
+#[test]
+fn the_host_drives_the_clock_the_environment_and_the_pointer_kind() {
+    assert_eq!(tn_css_ui_attach(c("/nonexistent").as_ptr(), 480, 320), 0);
+    assert_eq!(tn_css_ui_post(c(&fixture()).as_ptr()), 0);
+    assert_eq!(tn_css_ui_set_time(0.0), 0);
+    assert_eq!(tn_css_ui_set_env(0, 0), 0);
+    assert_eq!(tn_css_ui_set_pointer_kind(0), 0);
+
+    // A scroller the fixture does not have yet: the wheel only moves when something can take it.
+    let sheet = serde_json::to_string(
+        "html,body{margin:0;padding:0}body{background:#000}\
+         .box{position:fixed;left:0;top:0;width:100px;height:60px;overflow:auto;background:#111}\
+         .pad{height:400px}",
+    )
+    .expect("css encodes");
+    assert_eq!(
+        tn_css_ui_post(
+            c(&format!(
+                r#"{{"ops":[
+                    {{"op":"sheet","key":"s","css":{sheet}}},
+                    {{"op":"create","id":10,"tag":"div"}},
+                    {{"op":"attr","id":10,"name":"class","value":"box"}},
+                    {{"op":"create","id":11,"tag":"div"}},
+                    {{"op":"attr","id":11,"name":"class","value":"pad"}},
+                    {{"op":"append","parent":10,"child":11}},
+                    {{"op":"append","parent":0,"child":10}}
+                ]}}"#
+            ))
+            .as_ptr()
+        ),
+        0,
+        "{}",
+        last_error()
+    );
+    assert_eq!(tn_css_ui_wheel(0.1, 0.1, 0.0, 40.0), 1, "a scroller took the delta");
+    // The last tick takes what is left and stops there, rather than latching the rest onto the page.
+    assert_eq!(tn_css_ui_wheel(0.1, 0.1, 0.0, 4000.0), 1);
+    assert_eq!(tn_css_ui_wheel(0.1, 0.1, 0.0, 40.0), 0, "a scroller at its limit takes nothing");
+    assert_eq!(tn_css_ui_wheel(0.9, 0.9, 0.0, 40.0), 0, "nothing over the empty page moves");
+    assert_eq!(tn_css_ui_wheel(0.1, 0.1, 0.0, 0.0), 0, "a zero delta is nothing");
+
+    // The clock moves the document forward, and never back: a frame time that went backwards must
+    // not rewind a running transition.
+    let mut frame = TnCssFrame {
+        pixels: std::ptr::null(),
+        length: 0,
+        width: 0,
+        height: 0,
+        stride: 0,
+        counter: 0,
+    };
+    assert_eq!(tn_css_ui_frame(&mut frame), 1);
+    let settled = frame.counter;
+    assert_eq!(tn_css_ui_set_time(-1000.0), 0, "a backwards time is accepted and ignored");
+    assert_eq!(tn_css_ui_frame(&mut frame), 1);
+    assert_eq!(frame.counter, settled, "and it did not rewind anything");
+
+    // `prefers-color-scheme: dark` and the pointer kind are both a restyle of the document.
+    assert_eq!(tn_css_ui_set_env(1, 1), 0);
+    assert_eq!(tn_css_ui_frame(&mut frame), 1);
+    assert!(frame.counter > settled, "the environment restyled the document");
+    assert_eq!(tn_css_ui_set_pointer_kind(1), 0);
+
+    assert_eq!(tn_css_ui_detach(), 0);
+}

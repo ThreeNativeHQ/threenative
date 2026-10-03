@@ -5,6 +5,24 @@
 //! [`CssUi`]: this is a game-thread object, and owning it on a worker thread would mean a channel
 //! and a second copy of every frame for no gain.
 //!
+//! | entry point | what the host gets |
+//! | --- | --- |
+//! | `tn_css_ui_attach` | a document over `ui_root`, or the code saying why there is none |
+//! | `tn_css_ui_post` | one mutation batch, applied whole or refused whole |
+//! | `tn_css_ui_take` / `tn_css_ui_free` | the queued outbound events, newline separated |
+//! | `tn_css_ui_frame` | the latest premultiplied RGBA8 raster and its counter |
+//! | `tn_css_ui_set_size` | the surface's new size, in CSS pixels |
+//! | `tn_css_ui_pointer` / `tn_css_ui_hit_test` | a pointer action, and whether the UI claims a point |
+//! | `tn_css_ui_key` | a key press or release, and whether the UI consumed it |
+//! | `tn_css_ui_wheel` | a wheel scroll, and whether a scroller took it |
+//! | `tn_css_ui_set_time` | the animation clock, in milliseconds since attach |
+//! | `tn_css_ui_set_env` | `prefers-color-scheme` and `prefers-reduced-motion` |
+//! | `tn_css_ui_set_pointer_kind` | whether the pointer is a finger rather than a mouse |
+//! | `tn_css_ui_focused_id` | the focused element's id, or `0` when nothing has focus |
+//! | `tn_css_ui_detach` | nothing; the document is gone |
+//! | `tn_css_ui_backend` | which engine produced the frames |
+//! | `tn_css_ui_last_error` | the message behind the last non-zero code |
+//!
 //! Error codes, shared by every entry point:
 //!
 //! | code | meaning |
@@ -270,6 +288,83 @@ pub extern "C" fn tn_css_ui_hit_test(nx: f32, ny: f32) -> c_int {
         })
     })
     .unwrap_or_else(|code| code)
+}
+
+/// Deliver one key press or release. `key` is a `KeyboardEvent.key` value. `1` when the UI
+/// consumed it — that is, when the game must not also act on it — `0` when it did not.
+#[no_mangle]
+pub extern "C" fn tn_css_ui_key(key: *const c_char, down: c_int, shift: c_int) -> c_int {
+    guard(|| {
+        let key = host_str(key, "tn_css_ui_key: key")?;
+        with_ui("tn_css_ui_key", Fail::Rejected, |ui| {
+            Ok(ui.key(key, down != 0, shift != 0) as c_int)
+        })
+    })
+    .unwrap_or_else(|code| code)
+}
+
+/// Deliver a wheel scroll at normalised viewport coordinates, in CSS pixels. `1` when a scroller
+/// took the delta, which is the host's signal not to also treat it as a camera or zoom.
+#[no_mangle]
+pub extern "C" fn tn_css_ui_wheel(nx: f32, ny: f32, dx: f32, dy: f32) -> c_int {
+    guard(|| {
+        with_ui("tn_css_ui_wheel", Fail::Rejected, |ui| {
+            Ok(ui.wheel(nx, ny, dx, dy) as c_int)
+        })
+    })
+    .unwrap_or_else(|code| code)
+}
+
+/// The animation clock, in milliseconds since attach. Monotonic: a time before the one already
+/// passed is ignored rather than rewinding a running transition.
+#[no_mangle]
+pub extern "C" fn tn_css_ui_set_time(ms: f64) -> c_int {
+    guard(|| {
+        with_ui("tn_css_ui_set_time", Fail::Arg, |ui| {
+            ui.set_time(ms);
+            Ok(0)
+        })
+    })
+    .unwrap_or_else(|code| code)
+}
+
+/// `prefers-color-scheme: dark` and `prefers-reduced-motion: reduce`, as the host's environment
+/// reports them. Non-zero means set.
+#[no_mangle]
+pub extern "C" fn tn_css_ui_set_env(dark: c_int, reduced_motion: c_int) -> c_int {
+    guard(|| {
+        with_ui("tn_css_ui_set_env", Fail::Arg, |ui| {
+            ui.set_env(dark != 0, reduced_motion != 0);
+            Ok(0)
+        })
+    })
+    .unwrap_or_else(|code| code)
+}
+
+/// Whether the pointer is a finger rather than a mouse, which decides `(hover: none)` and
+/// `(pointer: coarse)` for the stylesheet. Non-zero means a finger.
+#[no_mangle]
+pub extern "C" fn tn_css_ui_set_pointer_kind(touch: c_int) -> c_int {
+    guard(|| {
+        with_ui("tn_css_ui_set_pointer_kind", Fail::Arg, |ui| {
+            ui.set_pointer_kind(touch != 0);
+            Ok(0)
+        })
+    })
+    .unwrap_or_else(|code| code)
+}
+
+/// The id of the focused element, or `0` when nothing in the document has focus. That is the host's
+/// authority on whether the UI holds the keyboard: a game asking it gets one answer, not a guess.
+#[no_mangle]
+pub extern "C" fn tn_css_ui_focused_id() -> c_int {
+    let focused = UI.with(|slot| {
+        slot.borrow()
+            .as_ref()
+            .and_then(|ui| ui.focused_id())
+            .unwrap_or(0)
+    });
+    focused as c_int
 }
 
 /// Drop the document.

@@ -3,6 +3,7 @@
 #include "mystral/cold_start.h"
 
 #include <atomic>
+#include <chrono>
 #include <cstdlib>
 #include <cstring>
 #include <charconv>
@@ -97,6 +98,12 @@ int tn_css_ui_frame(TnCssFrame* out);
 int tn_css_ui_set_size(uint32_t width, uint32_t height);
 int tn_css_ui_pointer(const char* type, float nx, float ny, int buttons);
 int tn_css_ui_hit_test(float nx, float ny);
+int tn_css_ui_key(const char* key, int down, int shift);
+int tn_css_ui_wheel(float nx, float ny, float dx, float dy);
+int tn_css_ui_set_time(double ms);
+int tn_css_ui_set_env(int dark, int reduced_motion);
+int tn_css_ui_set_pointer_kind(int touch);
+int tn_css_ui_focused_id();
 void tn_css_ui_detach();
 const char* tn_css_ui_backend();
 }
@@ -293,6 +300,41 @@ bool cssInjectPointer(const char* type, float nx, float ny, int buttons) {
     else if (name == "pointerup") kind = "up";
     else if (name == "pointercancel" || nx < 0.0f || ny < 0.0f) kind = "leave";
     return tn_css_ui_pointer(kind, nx, ny, buttons) >= 0;
+}
+
+/**
+ * Deliver one key, and report whether the UI consumed it.
+ *
+ * The same three answers the document has for every key, and the host needs no more: the UI moved
+ * focus, the UI activated something, or the key was none of its business and belongs to the game.
+ * A negative code is an error, which is not consumption: a failed call leaves the key with the game
+ * rather than swallowing it, because a lost key reads as a HUD that ignored the player.
+ */
+bool cssRouteKey(const char* key, bool down, bool shift) {
+    return tn_css_ui_key(key, down ? 1 : 0, shift ? 1 : 0) == 1;
+}
+
+/** Deliver a wheel scroll, and report whether a scroller took it. */
+bool cssRouteWheel(float nx, float ny, float dx, float dy) {
+    return tn_css_ui_wheel(nx, ny, dx, dy) == 1;
+}
+
+/** The moment the document was attached, so the clock below counts from there. */
+std::chrono::steady_clock::time_point g_cssAttachedAt{};
+
+/**
+ * The CSS document's slice of a frame: the animation clock, then the events that frame queued.
+ *
+ * The clock is real time rather than a frame count because that is what a CSS duration resolves
+ * against — a transition moves on every frame it is alive and arrives when the wall clock says so,
+ * not after N of them. It is fed here rather than in `tn_css_ui_frame` because the document only
+ * resolves against it when the host asks for a frame, and this runs once per pump on either side of
+ * the `TN_ENABLE_UI_OVERLAY` split.
+ */
+void cssPump() {
+    const auto elapsed = std::chrono::steady_clock::now() - g_cssAttachedAt;
+    tn_css_ui_set_time(std::chrono::duration<double, std::milli>(elapsed).count());
+    cssTakeEventsIntoQueue();
 }
 
 #endif  // TN_ENABLE_CSS_UI
@@ -557,7 +599,7 @@ void pumpUiOverlay() {
     if (!uiOverlayAttached()) return;
 #if TN_ENABLE_CSS_UI
     if (g_cssBackend) {
-        cssTakeEventsIntoQueue();
+        cssPump();
         return;
     }
 #endif
@@ -683,18 +725,51 @@ bool uiOverlayInjectKey(uint32_t keycode, uint32_t modifiers, uint32_t group,
 }
 
 /**
- * Whether the page holds the keyboard. The web view's own focus is the authority; the CSS UI's
- * ABI has no text editing behind it, so it never claims a key and the game keeps every one.
+ * Whether the page holds the keyboard. The web view's own focus is the authority; the CSS UI answers
+ * the same question from the focused element its document reports, which is the only place a Tab, an
+ * Enter or a wheel can have gone.
  */
 bool uiOverlayKeyboardCaptured() {
 #if TN_ENABLE_CSS_UI
-    if (g_cssBackend) return false;
+    if (g_cssBackend) return tn_css_ui_focused_id() != 0;
 #endif
 #if defined(__linux__) && !defined(__ANDROID__)
     if (!uiOverlayAttached()) return false;
     return tn_ui_overlay_keyboard_captured() == 1;
 #else
     return false;
+#endif
+}
+
+bool uiOverlayRouteKey(const char* key, bool down, bool shift) {
+#if TN_ENABLE_CSS_UI
+    if (g_cssBackend && key != nullptr) return cssRouteKey(key, down, shift);
+#else
+    (void)key;
+    (void)down;
+    (void)shift;
+#endif
+    // The web overlay reads real X11 keys through its own filter, and the synthetic ones the playtest
+    // bridge injects have always gone to the game. This route is the CSS backend's.
+    return false;
+}
+
+bool uiOverlayRouteWheel(float nx, float ny, float dx, float dy) {
+#if TN_ENABLE_CSS_UI
+    if (g_cssBackend) return cssRouteWheel(nx, ny, dx, dy);
+#else
+    (void)nx;
+    (void)ny;
+    (void)dx;
+    (void)dy;
+#endif
+    return false;
+}
+void uiOverlaySetPointerKind(bool touch) {
+#if TN_ENABLE_CSS_UI
+    if (g_cssBackend) tn_css_ui_set_pointer_kind(touch ? 1 : 0);
+#else
+    (void)touch;
 #endif
 }
 
@@ -717,7 +792,7 @@ bool attachDesktopUiOverlay(const std::string& uiRoot) {
 }
 void pumpUiOverlay() {
 #if TN_ENABLE_CSS_UI
-    if (g_cssBackend) cssTakeEventsIntoQueue();
+    if (g_cssBackend) cssPump();
 #endif
 }
 bool uiOverlayFrame(UiOverlayFrame& frame) {
@@ -794,7 +869,41 @@ bool uiOverlayInjectKey(uint32_t keycode, uint32_t modifiers, uint32_t group,
     return false;
 #endif
 }
-bool uiOverlayKeyboardCaptured() { return false; }
+bool uiOverlayKeyboardCaptured() {
+#if TN_ENABLE_CSS_UI
+    // The CSS backend's own answer: a focused element is the only thing that can hold a key.
+    if (g_cssBackend) return tn_css_ui_focused_id() != 0;
+#endif
+    return false;
+}
+bool uiOverlayRouteKey(const char* key, bool down, bool shift) {
+#if TN_ENABLE_CSS_UI
+    if (g_cssBackend && key != nullptr) return cssRouteKey(key, down, shift);
+#else
+    (void)key;
+    (void)down;
+    (void)shift;
+#endif
+    return false;
+}
+bool uiOverlayRouteWheel(float nx, float ny, float dx, float dy) {
+#if TN_ENABLE_CSS_UI
+    if (g_cssBackend) return cssRouteWheel(nx, ny, dx, dy);
+#else
+    (void)nx;
+    (void)ny;
+    (void)dx;
+    (void)dy;
+#endif
+    return false;
+}
+void uiOverlaySetPointerKind(bool touch) {
+#if TN_ENABLE_CSS_UI
+    if (g_cssBackend) tn_css_ui_set_pointer_kind(touch ? 1 : 0);
+#else
+    (void)touch;
+#endif
+}
 bool uiOverlayRoutePointer(const char* type, float nx, float ny, int buttons, int pointerId) {
 #if TN_ENABLE_CSS_UI
     if (!g_cssBackend || !uiOverlayAttached() || type == nullptr) return false;
@@ -840,6 +949,14 @@ bool attachDesktopCssUi(const std::string& uiRoot) {
     g_cssBackend = attached;
     setUiOverlayAttached(attached);
     if (attached) {
+        // The device it is styled for, read once because it does not change under a running game.
+        // `dark` is the system's own answer (SDL reads the desktop setting). Reduced motion has no
+        // such source here — SDL exposes none, and the desktop setting behind it lives in a settings
+        // daemon this host must not shell out to — so it stays off, which is the setting the CSS
+        // default is written against rather than a claim about the player's preferences.
+        tn_css_ui_set_env(SDL_GetSystemTheme() == SDL_SYSTEM_THEME_DARK ? 1 : 0, 0);
+        // The animation clock counts from here, and is fed from `cssPump` once per frame.
+        g_cssAttachedAt = std::chrono::steady_clock::now();
         std::cout << "ui overlay: native-css backend=" << tn_css_ui_backend() << " (no WebView)"
                   << std::endl;
         std::cout << "TN_UI_OVERLAY:{\"attached\":true,\"renderer\":\"native-css\"}" << std::endl;

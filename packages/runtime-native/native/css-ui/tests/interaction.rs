@@ -209,18 +209,53 @@ fn enter_activates_on_the_key_press_and_space_on_the_release() {
     ui.key("Tab", true, false);
     assert_eq!(ui.focused_id(), Some(3));
 
+    // Both halves of both keys are the button's, so a game acting on key-up as well as key-down
+    // cannot handle the same activation twice; only the half a browser fires on clicks.
     assert!(ui.key("Enter", true, false), "Enter activates the button");
     assert_eq!(clicks(&mut ui).len(), 1);
-    assert!(!ui.key("Enter", false, false), "a held Enter does not repeat");
-    assert!(clicks(&mut ui).is_empty());
+    assert!(ui.key("Enter", false, false), "the release is the button's too");
+    assert!(clicks(&mut ui).is_empty(), "and a held Enter does not repeat");
 
-    assert!(!ui.key(" ", true, false), "the space key waits for its release");
-    assert!(clicks(&mut ui).is_empty());
+    assert!(ui.key(" ", true, false), "the space key press is the button's");
+    assert!(clicks(&mut ui).is_empty(), "it waits for its release");
     assert!(ui.key(" ", false, false), "and activates there");
     assert_eq!(clicks(&mut ui).len(), 1);
 
     // The focus activation left alone, so the next Tab carries on from it.
     assert_eq!(ui.focused_id(), Some(3));
+}
+
+/// The keys a focused control owns, and the ones that stay with the game whatever has focus.
+#[test]
+fn a_key_is_consumed_only_while_the_ui_can_use_it() {
+    let mut ui = focusable();
+    // Nothing focused yet: activation keys are the game's, and Escape has no focus to drop.
+    assert!(!ui.key("Enter", true, false), "Enter with no focus is the game's");
+    assert!(!ui.key(" ", false, false), "and so is the space key");
+    assert!(!ui.key("Escape", true, false), "Escape blurs nothing");
+
+    ui.key("Tab", true, false);
+    ui.key("Tab", true, false);
+    assert_eq!(ui.focused_id(), Some(3));
+    assert!(ui.key("Enter", true, false), "Enter on a focused button is the button's");
+    assert!(ui.key("Escape", true, false), "Escape is the UI's while the UI holds focus");
+    assert_eq!(ui.focused_id(), None, "and it drops that focus");
+    assert!(!ui.key("Escape", false, false), "the blur's own release is the game's");
+    assert!(!ui.key("Enter", true, false), "with the focus gone, Enter is the game's again");
+}
+
+/// A HUD with no focusable control is not in the keyboard's way at all.
+#[test]
+fn a_document_with_nothing_to_focus_consumes_no_key() {
+    let mut ui = ui(200, 120, &[create(1, "div"), text(10, "no controls here"), append(1, 10), append(0, 1)]);
+    assert_eq!(ui.focused_id(), None);
+    assert!(!ui.key("Tab", true, false), "Tab has nowhere to go");
+    assert!(!ui.key("Tab", true, true), "nor backwards");
+    assert_eq!(ui.focused_id(), None);
+    assert!(!ui.key("Enter", true, false));
+    assert!(!ui.key(" ", false, false));
+    assert!(!ui.key("Escape", true, false));
+    assert!(clicks(&mut ui).is_empty());
 }
 
 #[test]
@@ -551,6 +586,31 @@ fn an_interrupted_transition_reverses_from_where_it_was() {
     assert_eq!(rgb(&ui, 50, 30), [0, 0, 255], "and home");
 }
 
+/// A host states its pointer's kind on every pointer event and its environment more than once, so a
+/// repeat must not be a repaint — the cost of saying it again is zero.
+#[test]
+fn restating_the_environment_is_not_a_change() {
+    let mut ui = environment();
+    hover(&mut ui, 50.0, 30.0);
+    // Settle first: a hover's restyle can be reported by the document on the frame after the one
+    // that painted it, so the loop below starts where a render reports nothing left to do.
+    for _ in 0..5 {
+        if !ui.render() {
+            break;
+        }
+    }
+    let settled = ui.counter();
+    for _ in 0..5 {
+        ui.set_pointer_kind(false);
+        ui.set_env(false, false);
+        assert!(!ui.render(), "nothing the stylesheet can see changed");
+    }
+    assert_eq!(ui.counter(), settled, "and the frame counter stayed where it was");
+    // A kind that really changes still restyles, and the hover rule stops matching.
+    ui.set_pointer_kind(true);
+    assert!(ui.render(), "a finger is a different device");
+}
+
 #[test]
 fn an_idle_ui_does_not_repaint_and_a_running_transition_does() {
     let mut ui = transitions();
@@ -691,7 +751,3 @@ fn reduced_motion_makes_a_transition_arrive_at_once() {
     ui.render();
     assert_eq!(rgb(&ui, 50, 130), [64, 0, 191], "a quarter of the way to red");
 }
-
-
-
-

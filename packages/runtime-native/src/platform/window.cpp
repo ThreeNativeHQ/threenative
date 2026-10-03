@@ -407,6 +407,59 @@ void uiOverlayResizeToWindow() {
 }
 
 /**
+ * The `KeyboardEvent.key` value for the four keys the CSS UI models, or nullptr for anything else.
+ *
+ * Read from the scancode rather than `event.key`, because a synthetic event carries a key derived
+ * from the scancode with no keyboard layout applied, and a real one carries both: the scancode is the
+ * same physical key either way, and these four are not affected by the layout. Everything else is
+ * nullptr, which is the answer that leaves the key with the game.
+ */
+const char* cssUiKeyName(SDL_Scancode scancode) {
+    switch (scancode) {
+        case SDL_SCANCODE_TAB: return "Tab";
+        case SDL_SCANCODE_RETURN:
+        case SDL_SCANCODE_KP_ENTER: return "Enter";
+        case SDL_SCANCODE_SPACE: return " ";
+        case SDL_SCANCODE_ESCAPE: return "Escape";
+        default: return nullptr;
+    }
+}
+
+/**
+ * Offer one key to the UI, and report whether it took it.
+ *
+ * The UI is asked before the game sees the key, exactly as a pointer is, and a key it consumed does
+ * not reach `processKeyboardEvent`: keyboard focus must not also drive game controls. `uiOverlayRouteKey`
+ * is the single authority, so a real key and a playtest's synthetic one cannot be routed by different
+ * rules, and the web overlay — which reads real keys through the X11 filter above — answers no here.
+ */
+bool routeKeyToUi(const SDL_Event& event) {
+    if (event.key.windowID != SDL_GetWindowID(g_window.sdlWindow)) return false;
+    const char* key = cssUiKeyName(event.key.scancode);
+    if (key == nullptr) return false;
+    const bool down = event.type == SDL_EVENT_KEY_DOWN;
+    return uiOverlayRouteKey(key, down, (event.key.mod & SDL_KMOD_SHIFT) != 0);
+}
+
+/**
+ * Offer one wheel scroll to the UI.
+ *
+ * A scroller that took the delta owns the gesture, so the game does not also zoom or scroll: the same
+ * rule the pointer route follows, and the reason a list the player is scrolling does not also drive a
+ * camera. Returns whether the UI consumed it.
+ */
+bool routeWheelToUi(const SDL_MouseWheelEvent& wheel) {
+    float nx = 0.0f;
+    float ny = 0.0f;
+    if (!uiViewportPoint(wheel.mouse_x, wheel.mouse_y, nx, ny)) return false;
+    // The same two corrections `processMouseWheel` makes for the DOM, because the document wants the
+    // same contract the game's own wheel listener gets: a tick is 120 pixels, and SDL's vertical sign
+    // is the opposite of `deltaY`. A FLIPPED device (natural scrolling) has both inverted already.
+    const float scale = wheel.direction == SDL_MOUSEWHEEL_FLIPPED ? -120.0f : 120.0f;
+    return uiOverlayRouteWheel(nx, ny, wheel.x * scale, wheel.y * -scale);
+}
+
+/**
  * Poll SDL events
  * @return false if quit event received
  */
@@ -429,7 +482,24 @@ bool pollEvents() {
                 case SDL_EVENT_MOUSE_MOTION:
                 case SDL_EVENT_MOUSE_BUTTON_DOWN:
                 case SDL_EVENT_MOUSE_BUTTON_UP:
+                    uiOverlaySetPointerKind(false);
                     if (routePointerToUi(event)) continue;
+                    break;
+                case SDL_EVENT_MOUSE_WHEEL:
+                    // A scroller that took the delta owns the gesture, so the game does not also scroll.
+                    uiOverlaySetPointerKind(false);
+                    if (routeWheelToUi(event.wheel)) continue;
+                    break;
+                case SDL_EVENT_FINGER_DOWN:
+                case SDL_EVENT_FINGER_MOTION:
+                case SDL_EVENT_FINGER_UP:
+                case SDL_EVENT_FINGER_CANCELED:
+                    // A finger is not a mouse: no hover, `(pointer: coarse)`.
+                    uiOverlaySetPointerKind(true);
+                    break;
+                case SDL_EVENT_KEY_DOWN:
+                case SDL_EVENT_KEY_UP:
+                    if (routeKeyToUi(event)) continue;
                     break;
                 case SDL_EVENT_WINDOW_MOUSE_LEAVE:
                     // The pointer left the window, so no further move will carry the hover off the

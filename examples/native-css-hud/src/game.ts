@@ -5,12 +5,15 @@ import { BoxGeometry, Color, Mesh, MeshStandardMaterial, PointLight } from "thre
 /**
  * Everything the playtest and the HUD agree on.
  *
- * `closeClicks` is the only field the HUD writes: the button's `onClick` is a real intent reaching
- * the game's own store, so a click that never arrived cannot read as a click that did.
+ * `closeClicks` is the only field the HUD writes: a button's `onClick` is a real intent reaching
+ * the game's own store, so a click that never arrived cannot read as a click that did. `gameKeys`
+ * counts presses of a key the HUD has no use for, which is how a scenario proves the UI did not
+ * swallow every key on the way to it.
  */
 export type GameState = {
   frames: number;
   closeClicks: number;
+  gameKeys: number;
   uiReady: boolean;
 };
 
@@ -26,6 +29,7 @@ class Cube extends Scene<GameState> {
   static override readonly initialState: GameState = {
     frames: 0,
     closeClicks: 0,
+    gameKeys: 0,
     uiReady: false,
   };
 
@@ -40,6 +44,14 @@ class Cube extends Scene<GameState> {
     return (frameCtx: ICtx<GameState>, dt: number) => {
       cube.rotation.x += dt * 0.6;
       cube.rotation.y += dt;
+      // A game control the HUD never claims. The host gives the UI every key first and passes on
+      // only what it did not take, so this counter is the other half of the keyboard contract: a
+      // Tab that moved focus inside the HUD must not also arrive here. `justPressed` is the edge,
+      // so one key press is one count rather than one per frame it is held for.
+      if (frameCtx.input.justPressed("poke")) {
+        const state = frameCtx.state.getState();
+        frameCtx.state.set({ gameKeys: state.gameKeys + 1 });
+      }
       frameCtx.state.set({ frames: frameCtx.state.getState().frames + 1 });
     };
   }
@@ -48,6 +60,9 @@ class Cube extends Scene<GameState> {
 const game: ReturnType<typeof defineGame<GameState>> = defineGame<GameState>({
   canvas: hostCanvas,
   inputTarget: hostCanvas,
+  // `KeyJ` is a game control, not a HUD one: nothing in the UI is bound to it, so the host must
+  // pass it through even while the HUD holds the keyboard.
+  input: { poke: { keys: ["KeyJ"] } },
   plugins: [playtest()],
   scenes: { cube: Cube },
   start: "cube",

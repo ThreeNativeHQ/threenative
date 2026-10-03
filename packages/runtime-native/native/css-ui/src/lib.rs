@@ -804,6 +804,11 @@ impl CssUi {
     /// [`REDUCED_MOTION_CSS`]. A game's own `!important` still wins, which is the same
     /// precedence a browser gives it.
     pub fn set_env(&mut self, dark: bool, reduced_motion: bool) {
+        if dark == self.dark && reduced_motion == self.reduced_motion {
+            // Nothing the stylesheet can see has changed, so nothing is repainted: a host states its
+            // environment more than once and the second statement is not a repaint.
+            return;
+        }
         self.dark = dark;
         self.reduced_motion = reduced_motion;
         self.doc.set_viewport(Viewport::new(
@@ -833,6 +838,12 @@ impl CssUi {
     /// pointer for the whole UI: a host with both a mouse and a touchscreen picks which one the
     /// game is being driven by.
     pub fn set_pointer_kind(&mut self, touch: bool) {
+        if touch == self.touch {
+            // A host states the pointer's kind on every pointer event it delivers, so this runs per
+            // mouse move. A kind that has not changed restyles nothing, and a repaint per mouse move
+            // is the difference between a HUD that costs nothing when idle and one that does not.
+            return;
+        }
         self.touch = touch;
         self.doc.set_touch(touch);
         self.dirty = true;
@@ -994,51 +1005,94 @@ impl CssUi {
     }
 
     /// Deliver a key press or release, and report whether the UI consumed it — that is, whether
-    /// it moved focus or activated anything. `key` is a `KeyboardEvent.key` value; only `Tab`,
-    /// `Enter` and the space key (`" "`) are modelled, and any other key is left to the game.
+    /// the game must not also act on it. `key` is a `KeyboardEvent.key` value; only `Tab`,
+    /// `Enter`, the space key (`" "`) and `Escape` are modelled, and every other key is left to
+    /// the game.
+    ///
+    /// A key is consumed only while the UI can use it, so a game with no focusable UI loses
+    /// nothing and a focused control never doubles as a game control:
+    ///
+    /// - `Tab`/`Shift+Tab` while there is at least one tab stop, or focus is already inside the
+    ///   document. A document with nothing to focus consumes no Tab at all.
+    /// - `Enter` and the space key, on the press and the release, while something that would
+    ///   activate holds focus. Activation is the browser's own split — `Enter` fires the click on
+    ///   the press, the space key on the release — so a held key does not repeat its click, and
+    ///   the other half is consumed too so a game acting on key-up does not handle one activation
+    ///   a second time.
+    /// - `Escape` while the UI holds focus, which it then drops. A browser returns focus to the
+    ///   document from a control that took it.
     ///
     /// `Tab` and `Shift+Tab` move focus through the focusable elements in document order: a
     /// non-disabled `<button>`, anything with `tabindex` `>= 0`, an `<a href>`, a text input.
     /// Like a browser, running off either end takes focus out of the document (which is
     /// [`None`] from [`CssUi::focused_id`]) and the next Tab re-enters at the far end, rather
     /// than wrapping silently.
-    ///
-    /// Activation is the browser's own split: `Enter` fires the click on the key press and the
-    /// space key on the key release, so a held space key does not repeat its click.
     pub fn key(&mut self, key: &str, down: bool, shift: bool) -> bool {
         match key {
             "Tab" => {
                 if down {
-                    self.tab(shift);
-                    true
+                    self.tab(shift)
                 } else {
-                    // A Tab release moves nothing; only its press traverses.
+                    // A Tab release moves nothing, so it belongs to the game even when the press
+                    // was the UI's.
                     false
                 }
             }
-            "Enter" => {
-                // Key press only: a browser activates here, so holding Enter does not repeat.
-                down && self.activate()
-            }
-            " " => {
-                // Key release only: the other half of the same rule.
-                !down && self.activate()
-            }
+            "Enter" => self.activate_key(down, true),
+            " " => self.activate_key(down, false),
+            "Escape" => down && self.blur(),
             _ => false,
         }
     }
 
+    /// The two activation keys, which differ only in which half fires the click. Nothing is
+    /// consumed unless the focus is on something that would activate, so `Enter` on a page with no
+    /// buttons is the game's key.
+    fn activate_key(&mut self, down: bool, fires_on_press: bool) -> bool {
+        if !self.will_activate() {
+            return false;
+        }
+        if down == fires_on_press {
+            self.activate();
+        }
+        true
+    }
+
+    /// Take focus out of the document. Returns whether there was any to take.
+    fn blur(&mut self) -> bool {
+        if self.focused_id().is_none() {
+            return false;
+        }
+        self.doc.clear_focus();
+        self.dirty = true;
+        self.sync_dirty();
+        true
+    }
+
     /// The id of the focused element, or [`None`] when nothing in the document has focus.
+    ///
+    /// The body counts as nothing: blitz parks focus there when no element has taken it, and a
+    /// caller asking this wants to know whether a control has the keyboard, not which node is
+    /// standing in for one.
     pub fn focused_id(&self) -> Option<u32> {
         let node = self.doc.get_focussed_node_id()?;
-        self.callers.get(&node).copied()
+        let id = *self.callers.get(&node)?;
+        if id == BODY_ID {
+            None
+        } else {
+            Some(id)
+        }
     }
 
     /// Move focus one element forwards (`shift` for backwards), or out of the document when
-    /// there is nowhere left to go.
-    fn tab(&mut self, shift: bool) {
+    /// there is nowhere left to go. Returns whether the document had a use for the key: nothing
+    /// to focus and no focus to move is a game that owns its own Tab, not a UI that swallowed one.
+    fn tab(&mut self, shift: bool) -> bool {
         let stops = self.tab_stops();
         let current = self.doc.get_focussed_node_id();
+        if stops.is_empty() && self.focused_id().is_none() {
+            return false;
+        }
         let next = match current.and_then(|node| stops.iter().position(|stop| *stop == node)) {
             // Focus is on a stop: the next one in document order, or none — a browser does not
             // wrap from the last stop to the first, it moves focus out of the document.
@@ -1069,6 +1123,7 @@ impl CssUi {
         }
         self.dirty = true;
         self.sync_dirty();
+        true
     }
 
     /// Every element a Tab stops at, in document order: blitz's own focusability, which is a
@@ -1091,17 +1146,30 @@ impl CssUi {
         stops
     }
 
+    /// Whether activation would fire a click here: a non-disabled `<button>` is the only
+    /// thing in this document that Enter or the space key activates, so this is what decides
+    /// whether either key is the UI's.
+    fn will_activate(&self) -> bool {
+        self.doc
+            .get_focussed_node_id()
+            .is_some_and(|node| self.is_activatable(node))
+    }
+
+    fn is_activatable(&self, node: NodeId) -> bool {
+        let is_button = self
+            .doc
+            .get_node(node)
+            .is_some_and(|n| tag_name(n) == local_name!("button"));
+        is_button && !is_disabled(&self.doc, node)
+    }
+
     /// Fire one `click` on the focused element if a browser would: Enter and the space key
     /// activate a button, and nothing else here.
     fn activate(&mut self) -> bool {
         let Some(node) = self.doc.get_focussed_node_id() else {
             return false;
         };
-        let is_button = self
-            .doc
-            .get_node(node)
-            .is_some_and(|n| tag_name(n) == local_name!("button"));
-        if !is_button || is_disabled(&self.doc, node) {
+        if !self.is_activatable(node) {
             return false;
         }
         // The click goes to the same listeners a pointer click would, and stops there: the

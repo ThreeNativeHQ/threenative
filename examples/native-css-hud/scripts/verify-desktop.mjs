@@ -97,6 +97,24 @@ run(
   [playtest, `playtests/${name}.playtest.json`, "--target", "desktop", "--executable", executable],
   "desktop playtest",
 );
+// The keyboard half, and only for the Tailwind arm (the plain arm's panel is not the PRD component):
+// one Tab and an Enter must activate Close with no pointer, and the key the HUD never claims must
+// still reach the game.
+if (!plain) {
+  run(
+    process.execPath,
+    [
+      playtest,
+      "playtests/native-css-input.playtest.json",
+      "--target",
+      "desktop",
+      "--executable",
+      executable,
+    ],
+    "desktop keyboard playtest",
+  );
+  console.log("keyboard activation verified: closeClicks 0 -> 1 with no pointer, gameKeys 1");
+}
 
 const console_ = JSON.parse(
   readFileSync(join(example, "artifacts", "playtest", "console.json"), "utf8"),
@@ -129,9 +147,11 @@ console.log(`native-css verified: ${backend}`);
 const NEAR = 8;
 const BLUE = [37, 99, 235];
 const CLEAR = [24, 24, 27];
-// The plain arm's `.close:hover` is `rgb(37 99 235 / 80%)` over the panel's #27272a. The pointer is
-// still over the button after the click, so the capture must show the blend: a hover rule that
-// never applied would leave BLUE and fail here.
+// Both arms' hover rule is `rgb(37 99 235 / 80%)` over the HUD's own background, so the capture
+// after the click must show that blend and not BLUE: a hover rule that never applied would leave
+// BLUE and fail here. The Tailwind arm reaches it through `transition-colors`, so this also is the
+// proof that the host feeds the animation clock — without a moving clock the transition never left
+// its first frame and this stayed BLUE.
 const HOVER = [37, 87, 196];
 
 function countNear(image, box, colour, tolerance) {
@@ -168,12 +188,7 @@ for (const capture of ["hud-before", "hud-after-click"]) {
     process.exit(1);
   }
   const image = PNG.sync.read(readFileSync(file));
-  const button = countNear(
-    image,
-    BUTTON,
-    plain && capture === "hud-after-click" ? HOVER : BLUE,
-    NEAR,
-  );
+  const button = countNear(image, BUTTON, capture === "hud-after-click" ? HOVER : BLUE, NEAR);
   const panel = countDifferent(image, PANEL, CLEAR, NEAR);
   painted[capture] = { button, panel };
   const failed = [];
@@ -187,3 +202,26 @@ for (const capture of ["hud-before", "hud-after-click"]) {
   }
 }
 console.log(`native-css pixels verified: ${JSON.stringify(painted)}`);
+
+/**
+ * Keyboard focus has to be visible, and "visible" is a pixel claim: the Close button is brand blue
+ * until a Tab focuses it, and amber (`#f59e0b`) after. A scenario that asserted the click reached
+ * the game without this would pass on a HUD whose focus ring never painted.
+ */
+if (!plain) {
+  const FOCUS = [245, 158, 11];
+  const focusFile = join(example, "artifacts", "playtest", "input-after-tab.png");
+  if (!existsSync(focusFile)) {
+    console.error(`TN_NATIVE_CSS_VERIFY_FAILED: the focus capture is missing: ${focusFile}`);
+    process.exit(1);
+  }
+  const focused = PNG.sync.read(readFileSync(focusFile));
+  const ring = countNear(focused, BUTTON, FOCUS, NEAR);
+  if (ring < 1500) {
+    console.error(
+      `TN_NATIVE_CSS_VERIFY_FAILED: the Close button shows no keyboard focus after Tab (${ring} px of ${FOCUS}).`,
+    );
+    process.exit(1);
+  }
+  console.log(`focus-visible pixels verified: ${ring} px of ${FOCUS} inside the Close button`);
+}

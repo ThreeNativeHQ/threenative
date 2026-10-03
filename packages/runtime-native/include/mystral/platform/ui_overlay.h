@@ -170,13 +170,48 @@ bool uiOverlayInjectKey(uint32_t keycode, uint32_t modifiers, uint32_t group,
 /**
  * Whether the page holds the keyboard, so the host knows where a key belongs.
  *
- * True while the page has a focused input, textarea, select or open list. A published rectangle
- * says where a press landed and says nothing about who should receive `ArrowUp`, so the page's own
- * focus is the only honest authority; without this the host could only guess, and guessing wrong
- * either swallows a game's keys or leaves a focused control deaf. False when nothing is attached
- * and on every platform whose web view is a real window and gets keys from the OS itself.
+ * True while the page has a focused input, textarea, select or open list, and — for the CSS backend —
+ * while a control in the document has focus, which is the same question asked of a document with no
+ * text editing behind it. A published rectangle says where a press landed and says nothing about who
+ * should receive `ArrowUp`, so the page's own focus is the only honest authority; without this the host
+ * could only guess, and guessing wrong either swallows a game's keys or leaves a focused control deaf.
+ * False when nothing is attached and on every platform whose web view is a real window and gets keys
+ * from the OS itself.
  */
 bool uiOverlayKeyboardCaptured();
+
+/**
+ * Deliver one key press or release to the UI, and report whether it consumed it. Returns true when
+ * the UI owns the key and the game must not also act on it.
+ *
+ * `key` is a `KeyboardEvent.key` value. Only the CSS backend answers here: its document is CPU-side
+ * with no OS key window to be handed a key, so the host asks it directly and drops what it consumed —
+ * which is a Tab that moved focus, an Enter or the space key on a focused control, and an Escape while
+ * the UI holds focus. Every other key, and every key at all when the document has nothing focusable,
+ * stays with the game, because a UI that swallowed keys it did not use is worse than one that ignored
+ * them. The web overlay reads real keys through the platform's own filter and is not routed here.
+ */
+bool uiOverlayRouteKey(const char* key, bool down, bool shift);
+
+/**
+ * Deliver one wheel scroll to the UI, and report whether it consumed it: `true` when a scroller under
+ * the point took the delta, in CSS pixels, at a position normalized to the viewport. A false return
+ * leaves the scroll for the game, which is what keeps a wheel over a list from also zooming the camera.
+ *
+ * The CSS backend answers this; the web overlay's page scrolls itself and the host never routes one.
+ */
+bool uiOverlayRouteWheel(float nx, float ny, float dx, float dy);
+
+/**
+ * Tell the UI whether the pointer driving it is a finger or a mouse.
+ *
+ * One pointer for the whole document: a finger does not hover, so the UI reports `(hover: none)` and
+ * `(pointer: coarse)` and a tap leaves no hover behind — which is what makes a `hover:` rule guarded
+ * by `@media (hover:hover)` disappear on a touchscreen. A host with both a mouse and a touchscreen
+ * declares which one the game is being driven by as its events arrive. A no-op on the web overlay,
+ * which is a real browser window with its own media queries.
+ */
+void uiOverlaySetPointerKind(bool touch);
 
 /**
  * Decide which side a pointer event belongs to, and remember that answer for the rest of the

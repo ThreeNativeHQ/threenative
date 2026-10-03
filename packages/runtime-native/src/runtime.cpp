@@ -3640,6 +3640,14 @@ private:
                 event.type = jsEngine_->toString(args[0]);
                 event.key = jsEngine_->toString(args[1]);
                 event.code = jsEngine_->toString(args[2]);
+                // A synthetic key is offered to the UI first, exactly as a real one is by the SDL
+                // filter, and a key the UI consumed is not also a game event. Without this a
+                // playtest that pressed Tab into a focused control would drive the game's own Tab
+                // binding at the same moment, and a HUD could only be proven keyboard-driven by a
+                // run where the game never saw the key it was pressed with.
+                if (platform::uiOverlayRouteKey(event.key.c_str(), event.type == "keydown", event.shiftKey)) {
+                    return jsEngine_->newUndefined();
+                }
                 dispatchKeyboardEvent(event);
                 return jsEngine_->newUndefined();
             })
