@@ -6,6 +6,7 @@ import {
   DirectionalLight,
   Mesh,
   MeshStandardMaterial,
+  Vector2,
   type PerspectiveCamera,
 } from "three";
 import { pass } from "three/tsl";
@@ -173,8 +174,26 @@ export function createExposureFixture(options: IExposureFixtureOptions) {
         );
       let validationPending = validationDevice !== undefined;
       let validationDone = false;
+      const reportedSurfaces = new Set<number>();
       exposure.onProgress = () => {
         const progress = exposure.getProgress();
+        if (
+          [1, 180, 181, 360, 361, 540, 541, 720].includes(progress.sampleFrames) &&
+          !reportedSurfaces.has(progress.sampleFrames)
+        ) {
+          reportedSurfaces.add(progress.sampleFrames);
+          console.info(
+            `TN_EXPOSURE_SURFACE:${JSON.stringify({
+              updates: progress.sampleFrames,
+              requestedResolutionScale: 1,
+              surface: ctx.renderer.surface(),
+              drawingBuffer: renderer.getDrawingBufferSize(new Vector2()).toArray(),
+              rendererSize: renderer.getSize(new Vector2()).toArray(),
+              pixelRatio: renderer.getPixelRatio(),
+              canvas: [renderer.domElement.width, renderer.domElement.height],
+            })}`,
+          );
+        }
         ctx.state.set({ ...progress, validationDone, exposure: exposure.getObservation() });
         if (validationPending && progress.sampleFrames === 180) {
           validationPending = false;
