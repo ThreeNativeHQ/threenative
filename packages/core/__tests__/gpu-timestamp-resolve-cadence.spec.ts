@@ -1,5 +1,7 @@
+import { PerspectiveCamera, Scene as ThreeScene } from "three";
 import { describe, expect, it } from "vitest";
 import { defineGame } from "../src/game.js";
+import { createRenderer } from "../src/renderer.js";
 import { Scene } from "../src/scene.js";
 
 function testCanvas(): HTMLCanvasElement {
@@ -100,6 +102,63 @@ describe("GPU timestamp queries are resolved often enough to stay readable", () 
         value: requestFrame,
       });
       await game.stop();
+    }
+  });
+});
+
+/**
+ * Three writes `info.frame` only inside its own animation loop, and the engine deliberately does
+ * not run it -- the game drives frames through the wrapper. So the 1-in-N sampler that derived its
+ * frame from `raw.info.frame` read 0 forever, `0 % 8 === 0` tracked a timestamp on *every* frame, the
+ * 2048-query pool filled in ~38 frames, and every reading after that was null: about 15 timestamps
+ * in a 300-frame window where 37 were asked for. The sampler has to count the frames the wrapper
+ * drew.
+ */
+describe("the GPU timestamp sampler counts the frames the engine draws", () => {
+  it("tracks one frame in eight and reads a strictly advancing sample without three's animation loop", async () => {
+    const canvas = testCanvas();
+    const tracked: boolean[] = [];
+    // Nothing advances `info.frame` but the wrapper: exactly what the engine's own frame loop not
+    // running looks like. The pool is modelled as three's own shape — it keys every query by
+    // `info.frame`, so the frames it resolves are the ones that recorded.
+    const info = { frame: 0, render: { timestamp: 0 } };
+    const resolved: number[] = [];
+    const backend = { getTimestampFrames: () => resolved.slice(-1), trackTimestamp: false };
+    const raw = {
+      backend,
+      domElement: canvas,
+      info,
+      init: async () => {
+        backend.trackTimestamp = true;
+      },
+      render: () => {
+        tracked.push(backend.trackTimestamp);
+        if (backend.trackTimestamp) resolved.push(info.frame);
+        info.render.timestamp = 5 + resolved.length * 0.01;
+      },
+      setSize: () => undefined,
+    };
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    Object.defineProperty(globalThis, "navigator", { configurable: true, value: { gpu: {} } });
+    try {
+      const renderer = await createRenderer({ canvas, webgpuFactory: () => raw });
+      const samples: Array<number | undefined> = [];
+      const frames = 40;
+      for (let frame = 0; frame < frames; frame += 1) {
+        renderer.render(new ThreeScene(), new PerspectiveCamera());
+        samples.push(renderer.gpuFrameSample?.()?.frame);
+      }
+
+      expect(tracked.filter(Boolean)).toHaveLength(frames / 8);
+      // The id has to move with the recording frames, or every read is a repeat of the first one
+      // and the frame budget counts the rest stale: ~15 readings in a 300-frame window.
+      const distinct = [...new Set(samples)];
+      expect(distinct).toEqual([...tracked.keys()].filter((index) => tracked[index] === true));
+      expect(samples.at(-1)).toBe(tracked.lastIndexOf(true));
+      renderer.dispose();
+    } finally {
+      if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
+      else Object.defineProperty(globalThis, "navigator", descriptor);
     }
   });
 });
