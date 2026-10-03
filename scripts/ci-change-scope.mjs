@@ -26,7 +26,19 @@ export const NATIVE_PATHS = [
 function isNativePath(file) {
   return NATIVE_PATHS.some((pattern) => pattern.test(file));
 }
-const SELECTIONS = new Set(["full", "prose", "instructions", "reused"]);
+const SELECTIONS = new Set(["full", "prose", "instructions", "reused", "ci"]);
+// CI configuration: the workflows, the scripts that decide and report on the board, their own specs
+// and the runner images. A diff made only of these cannot change a line of engine, template or
+// package, so the jobs with no consumer for a workflow file are the only thing it can break — and
+// the `ci` selection is exactly those. Deliberately narrow: `.github/actions/**` is excluded because
+// the native matrix consumes it, and `pnpm-lock.yaml`/`pnpm-workspace.yaml` because they change what
+// every job installs. Both keep `full`.
+const CI_CONFIG_PATHS = [
+  /^\.github\/workflows\/[^/]+\.yml$/u,
+  /^scripts\/ci-[^/]+\.(?:mjs|sh|ts)$/u,
+  /^scripts\/__tests__\/ci-[^/]+\.spec\.ts$/u,
+  /^tools\/ci-runners\//u,
+];
 // PRD-481. Reuse replaces a full board only, and only for a tree a successful CI run already
 // tested. `workflow_dispatch` is the explicit audit a person asked for, so it stays full; the
 // Sunday nightly is always full too, because its subject is the runner image and the network
@@ -57,6 +69,11 @@ const FULL_JOBS = [
 // Every check the plan can require, in the order the plan declares it. A reused run has to have
 // concluded every leg of the set its own profile requires; the reporting jobs are not evidence.
 const BOARD_JOBS = [...FULL_JOBS, "lint", "supply-chain"];
+// What a `ci` selection still owes: the gates that read CI configuration. `test-unit` is here
+// because the unit shards are where every `ci-*.spec.ts` runs, and `build-artifacts` because
+// typecheck, test-unit and budgets are ordered behind its upload — dropping it would leave three
+// required jobs waiting on a producer that never ran.
+const CI_JOBS = new Set(["typecheck", "test-unit", "budgets", "build-artifacts"]);
 // Strength, not identity: a stronger source profile may serve a weaker requirement, never the reverse.
 const TARGET_RANKS = { main: 2, develop: 1, other: 0 };
 const NATIVE_RANKS = { full: 2, reduced: 1, none: 0 };
@@ -72,6 +89,7 @@ export function selectionPlan(
 ) {
   const full = selection === "full";
   const reused = selection === "reused";
+  const ciLane = selection === "ci";
   const checks = {
     docs: !reused,
     instructions: full || selection === "instructions",
@@ -86,22 +104,29 @@ export function selectionPlan(
       ? `Reused: CI run ${String(reusedRunId)} already passed this identical whole-repo tree`
       : proseReason;
   const jobs = Object.fromEntries(
-    FULL_JOBS.map((name) => [
-      name,
-      {
-        required: full,
-        reason: full
-          ? `Full dependency closure: ${reason}`
-          : exemption(
-              `Exempt: ${selection} changes do not modify runtime, package, template or shared build inputs`,
-            ),
-      },
-    ]),
+    FULL_JOBS.map((name) => {
+      // `ci` narrows the board to the gates that read the configuration; it never widens one, so a
+      // job outside CI_JOBS is exempt exactly as it is for prose.
+      const required = full || (ciLane && CI_JOBS.has(name));
+      return [
+        name,
+        {
+          required,
+          reason: full
+            ? `Full dependency closure: ${reason}`
+            : required
+              ? `CI configuration only: ${reason}`
+              : exemption(
+                  `Exempt: ${selection} changes do not modify runtime, package, template or shared build inputs`,
+                ),
+        },
+      ];
+    }),
   );
   const proseOnly = selection === "prose";
   const exemptLane = proseOnly || reused;
   jobs.lint = {
-    required: !exemptLane,
+    required: !exemptLane || ciLane,
     reason: exemptLane
       ? exemption(
           "Exempt: a Markdown-only change runs no gate; docs are re-validated on the develop nightly and at promotion",
@@ -109,7 +134,7 @@ export function selectionPlan(
       : "Documentation, formatting and selected instruction contracts",
   };
   jobs["supply-chain"] = {
-    required: !exemptLane,
+    required: !exemptLane || ciLane,
     reason: exemptLane
       ? exemption(
           "Exempt: a Markdown-only change runs no gate; secrets and dependency review are re-validated on the develop nightly and at promotion",
@@ -570,6 +595,7 @@ function pathFamily(file, selective) {
   }
   if (EXCLUDED_MARKDOWN.some((pattern) => pattern.test(file)))
     return "a Markdown file consumed by an executable fixture, parser or gate";
+  if (CI_CONFIG_PATHS.some((pattern) => pattern.test(file))) return "ci";
   // Any Markdown the executable fixtures do not consume is inert: a .md-only PR runs no CI job.
   // Doc links, evidence budgets and secret scans are re-validated on the develop nightly run and
   // at promotion. AGENTS.md/CLAUDE.md are instruction consumers and are handled above.
@@ -624,6 +650,11 @@ export function classify(options) {
       candidateSha,
     );
   if (options.full) return full("explicit full verification requested");
+  // Every event except a pull request stays full, and so does every target but develop. A merge
+  // group is the queue testing the exact tree a merge would produce, so it runs the whole board
+  // before anything lands — the narrowings below are for reviewing a change, never for qualifying a
+  // tree, which is why the queue, a push, the nightly, an explicit audit and a promotion into main
+  // are all excluded here rather than narrowed further downstream.
   if (options.eventName !== undefined && options.eventName !== "pull_request")
     return full(`event ${JSON.stringify(options.eventName)} requires complete verification`);
   if (options.target !== undefined && options.target !== "develop")
@@ -639,19 +670,37 @@ export function classify(options) {
   }
   const parsed = changedPaths(options);
   if ("error" in parsed) return full(parsed.error);
-  // Computed over the whole diff: a native file sorted after a non-native one must still block.
-  const touchesNative = parsed.paths.some(isNativePath);
+  // `native-platforms.yml` is the one workflow the CI-configuration rule would otherwise narrow, and
+  // it is the matrix's own definition: exempting it would waive the very lane that has to prove the
+  // change. Any native path therefore keeps `full`, not merely `native: true`. Computed over the
+  // whole diff — a native file sorted after a non-native one must still block.
+  const native = parsed.paths.find(isNativePath);
+  if (native !== undefined) return full(`${JSON.stringify(native)} is a native path`, parsed.paths);
+  const narrowed = diffSelection(parsed.paths, options.target === "develop");
+  if (narrowed.blocked !== undefined)
+    return full(`${JSON.stringify(narrowed.blocked)} is ${narrowed.family}`, parsed.paths, false);
+  const reason = `all ${String(parsed.paths.length)} changed path(s) match explicit ${[...narrowed.families].sort().join(" + ")} dependency rules`;
+  return selectionPlan(narrowed.selection, reason, parsed.paths, candidateSha, false, 0, target);
+}
+
+/**
+ * The selection a complete diff earns, or the first path that keeps the whole board. Every path has
+ * to be in an accepted family: one `packages/` file sorted after a workflow still decides the board.
+ * Prose is already covered by lint's doc lane, so prose plus instructions is `instructions`; `ci`
+ * outranks both — it is the narrower set by a wide margin, so a diff mixing a workflow with a doc
+ * must not drop typecheck or the unit shards to gain lint alone.
+ */
+function diffSelection(paths, selective) {
   const families = new Set();
-  for (const file of parsed.paths) {
-    const family = pathFamily(file, options.target === "develop");
-    if (!["prose", "instructions"].includes(family))
-      return full(`${JSON.stringify(file)} is ${family}`, parsed.paths, touchesNative);
+  for (const file of paths) {
+    const family = pathFamily(file, selective);
+    if (!["prose", "instructions", "ci"].includes(family)) return { blocked: file, family };
     families.add(family);
   }
-  // Prose is already covered by lint's doc lane, so prose plus instructions is `instructions`.
-  const selection = families.has("instructions") ? "instructions" : "prose";
-  const reason = `all ${String(parsed.paths.length)} changed path(s) match explicit ${[...families].sort().join(" + ")} dependency rules`;
-  return selectionPlan(selection, reason, parsed.paths, candidateSha, false, 0, target);
+  return {
+    families,
+    selection: families.has("ci") ? "ci" : families.has("instructions") ? "instructions" : "prose",
+  };
 }
 
 /**

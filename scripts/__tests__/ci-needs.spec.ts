@@ -762,6 +762,32 @@ describe("PRD-481 a reused verdict has to cover this run's validation profile", 
     expect(plan.reason).toContain("this run routes to tn-local");
   });
 
+  it("never lets a `ci`-selection run stand in for a full requirement", () => {
+    // A `ci` run concludes the gates that read CI configuration and skips the rest, so it is the
+    // weakest successful run this workflow can produce. It still tests an exact tree, which is why
+    // reuse has to refuse it on the jobs it skipped rather than on the tree.
+    const fixture = reuseFixture();
+    fakeActionsApi(fixture);
+    listSourceRun(fixture);
+    // Same tree, same target, same runner class — the source concluded only the `ci` lane, so its
+    // job list carries none of the legs a full requirement demands.
+    const kept = new Set([
+      "typecheck",
+      "lint",
+      "budgets",
+      "test-unit",
+      "build-artifacts",
+      "supply-chain",
+    ]);
+    fakeActionsApi(fixture, {
+      missing: boardLegs().filter((name) => !kept.has(name)),
+    });
+    const plan = classifyCandidate(fixture, fixture.candidate);
+    expect(plan).toMatchObject({ selection: "full" });
+    expect(plan.reason).toContain("tree reuse unavailable");
+    expect(plan.reason).toMatch(/the source run never ran \S+/u);
+  });
+
   it("reuses a promotion pass for an ordinary develop pull request", () => {
     // Stronger covers weaker: the promotion proved the full board on this exact tree.
     const fixture = reuseFixture();
