@@ -290,6 +290,9 @@ async function runDevicePlaytestInternal(
     } as const;
     const tone: IPlaytestToneObservation[] = [];
     const before = await bridge.sample(sampleRequest);
+    if (scenario.artifacts?.screenshots === "before-after" && config.captureArtifactScreenshots !== false) {
+      await captureDeviceScreenshot(target, join(config.artifactDirectory, "before.png"), tone, "before.png");
+    }
     const pathEntity = scenario.assert?.movement?.pathLength === undefined
       ? undefined
       : scenario.assert.movement.entity ?? scenario.subject;
