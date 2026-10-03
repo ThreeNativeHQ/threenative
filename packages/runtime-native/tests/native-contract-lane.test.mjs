@@ -90,9 +90,13 @@ test("should fail when a declared test target is not executed", () => {
   // cache contract; +1 for PRD-399's presentation-pacing contract; +1 for PRD-465 Phase 2's
   // MetaHuman facial rig bindings contract.
   // Bump alongside any new add_executable contract target.
-  // 45 since PRD-465 registered threenative-metahuman-bindings-test. The next assertion pins this against CMakeLists
+  // 46 with the generated GPU exposure graph contract. The next assertion pins this against CMakeLists
   // itself, so the literal is a tripwire for an unreviewed target, not the source of truth.
-  assert.equal(discovered.length, 45);
+  assert.equal(discovered.length, 46);
+  const missingExposure = { ...executionContracts };
+  Reflect.deleteProperty(missingExposure, "threenative-exposure-graph-test");
+  assert.throws(() => validateExecutionContracts(discovered, missingExposure),
+    /missing execution contracts: threenative-exposure-graph-test/u);
   assert.deepEqual(discovered, declaredTargets(cmake));
   assert.doesNotThrow(() => validateExecutionContracts(discovered, executionContracts));
 

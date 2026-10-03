@@ -47,6 +47,8 @@ import {
   vec2,
 } from "three/tsl";
 import type { Node } from "three/webgpu";
+import { AutoExposureNode, applyExposure } from "./autoExposure.js";
+import { type IExposureSettings, exposureSettings } from "./exposure.js";
 
 /** Godot's `Viewport.screen_space_aa`: which post-process antialiasing smooths the frame's edges. */
 export type ScreenSpaceAA = "smaa" | "fxaa" | "disabled";
@@ -243,6 +245,10 @@ export interface IWorldEnvironmentOptions {
    * class falls back to that scalar; when any stage runs, this multiply is the shutter.
    */
   readonly exposure?: number;
+  /** Cost opt-in. False retains the direct constant-exposure path. */
+  readonly autoExposureEnabled?: boolean;
+  /** Editable game policy; disabled application still measures when cost is opted in. */
+  readonly exposurePolicy?: Readonly<IExposureSettings>;
 }
 
 export interface IWorldEnvironmentTarget {
@@ -335,7 +341,7 @@ export type OutputRenderer = {
    * stage is off: the chain installs nothing for an empty stage list, and dropping the game's
    * own composition on the floor would be the silent no-op this class exists to prevent.
    */
-  setOutputNode?: (node: unknown) => void;
+  setOutputNode?: (node: unknown, worldPass?: unknown) => void;
   createRenderChain?: (options: {
     input?: unknown;
     worldPass?: unknown;
@@ -415,6 +421,8 @@ export class WorldEnvironment {
       renderChainTier,
       tonemapMode,
       exposure: options.exposure ?? 1,
+      autoExposureEnabled: options.autoExposureEnabled ?? false,
+      exposurePolicy: options.exposurePolicy ?? exposureSettings,
     };
   }
 
@@ -431,6 +439,7 @@ export class WorldEnvironment {
     dropped: readonly { name: string; reason: string }[];
     stages: readonly string[];
     dispose?: () => void;
+    exposure?: AutoExposureNode;
   } {
     const options = this.#options;
     const raw = renderer.raw as { toneMapping?: number; toneMappingExposure?: number };
@@ -461,11 +470,13 @@ export class WorldEnvironment {
     // applied as a multiply on the scene pass instead: scene-referred, so every downstream
     // stage sees the exposed image and the bloom threshold means the same thing at any
     // exposure. Both land at the same point in the graph — before the tone curve.
-    if (requested.length === 0 && target.baseColour === undefined) {
+    if (requested.length === 0 && target.baseColour === undefined && !options.autoExposureEnabled) {
       raw.toneMappingExposure = options.exposure;
       this.#reportApplied([], []);
       return { dropped: [], stages: [] };
     }
+    if (options.autoExposureEnabled && renderer.kind !== "webgpu")
+      throw new Error(`Automatic exposure requires WebGPU; renderer:${renderer.kind}`);
     raw.toneMappingExposure = 1;
 
     const scenePass = pass(scene, camera);
@@ -500,7 +511,14 @@ export class WorldEnvironment {
     const view = camera as PerspectiveCamera;
 
     const base = target.baseColour?.(scenePass) ?? scenePass.getTextureNode("output");
-    const exposed = convertToTexture(base).mul(options.exposure);
+    const colour = convertToTexture(base);
+    const exposure = options.autoExposureEnabled
+      ? new AutoExposureNode(colour, options.exposurePolicy, options.exposure)
+      : undefined;
+    const exposed =
+      exposure === undefined
+        ? colour.mul(options.exposure)
+        : applyExposure(colour, exposure.exposureNode);
     const giDenoise = (node: ChainNode): ChainNode =>
       options.denoiseEnabled ? denoised(denoise(node, depth(), normal(), view)) : node;
 
@@ -733,9 +751,17 @@ export class WorldEnvironment {
       }
       if (renderer.setOutputNode === undefined)
         throw new Error("setOutputNode is unavailable, so the composed base colour cannot run.");
-      renderer.setOutputNode(exposed);
+      renderer.setOutputNode(exposed, scenePass);
       this.#reportApplied([], []);
-      return { dropped: [], stages: [] };
+      return {
+        dropped: [],
+        stages: [],
+        exposure,
+        dispose: () => {
+          exposure?.dispose();
+          scenePass.dispose();
+        },
+      };
     }
 
     if (renderer.createRenderChain === undefined) throw new Error("RenderChain is unavailable.");
@@ -747,10 +773,12 @@ export class WorldEnvironment {
     });
     this.#reportApplied(chain.applied.stages, chain.applied.dropped);
     return {
+      exposure,
       dropped: chain.applied.dropped,
       stages: chain.applied.stages,
       dispose: () => {
         chain.dispose();
+        exposure?.dispose();
         scenePass.dispose();
       },
     };

@@ -109,6 +109,7 @@ struct BufferMapRequest {
     WGPUMapMode mode = WGPUMapMode_None;
     uint64_t offset = 0;
     uint64_t size = 0;
+    bool started = false;
     bool completed = false;
     WGPUBufferMapAsyncStatus_Compat status = WGPUBufferMapAsyncStatus_Unknown_Compat;
     std::string errorMessage;
@@ -383,6 +384,7 @@ struct FrameProfiling {
     bool disableFrameOpStreamForTesting = false;
     // Set while a mid-frame flush is replaying, so a nested flush cannot re-enter the drain.
     bool frameOpStreamFlushing = false;
+    bool frameOpStreamPendingOps = false;
     uint64_t frameOpStreamReplayCrossings = 0;
     uint64_t frameOpStreamDirectCommandCalls = 0;
     uint64_t frameOpStreamLastOpCount = 0;

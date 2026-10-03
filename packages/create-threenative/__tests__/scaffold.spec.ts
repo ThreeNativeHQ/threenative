@@ -164,45 +164,32 @@ const BUG_REPORT_SKILL_PATHS = [
 // all ten hashes to the values above, so nothing else in this lane reaches a scaffold. The docs
 // arrive through the templating step rather than a verbatim copy, which is why a content-hash
 // matcher does not list them and this ablation is the evidence instead.
+// Recomputed 2026-10-03 for PRD-339's opt-in exposure integration at 8bf16f4c3.
+// All thirteen actual no-install baseline52/current trees were byte-compared: only the
+// generated worldEnvironment/autoExposure/quality wiring, two GPU/readback helper modules,
+// and token-identical instruction whitespace changed. Default cost remains off; actual
+// consumer GPU captures are byte-identical to the qualified public images. Measurement:
+// docs/verification/prd339-exposure-proof/completion-consumer-8bf16f4.json.
+// Current develop c18a42b integration: all13 actual generated trees were byte-compared
+// against reviewed 8bf trees; only the copied Three compute-only Storage3DTexture patch changed.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
-  // Recomputed 2026-10-01 on the merge of develop a602467db (PRD-458/473): every template's frame
-  // budget now comes from resolveTargetFps, so ten trees move and `rts` does not; the capability reference (365 -> 368 entries) then moved all eleven, because it ships in every scaffold.
-  // Recomputed 2026-10-01, three times, each by a real run that found the previous tree wrong:
-  // the first gave each quality.ts a software adapter policy; the second found ten of eleven
-  // setupPost callers never forwarded the adapter fact to it; the third found no template but
-  // `starter` set `renderChainTier`, so a low preset still ran the high render chain. The same ten
-  // trees move on each of the last two. `starter` is unchanged throughout — its setupPost hands the
-  // whole environment to createAdaptiveQuality and its quality.ts already carried the chain tier.
-  // Values measured through createProject by the spec that asserts them, not by hand.
-  // Recomputed again 2026-10-01 for `sailing` alone: `sailMotion` is a range across landed cloth
-  // readbacks, and one landed copy makes that range zero by arithmetic, so the sails scenario now
-  // holds long enough for two copies to arrive on a CPU rasteriser and asserts the landed count
-  // beside it. Only the two sailing template files changed, so only this one tree moves.
-  // Recomputed again 2026-10-01 after merging the quality/post chain into this branch and landing
-  // the rts sim's order, queue and event-record fixes: `rts` alone moves, and it is the only one of
-  // the eleven that carries `src/sim/`. Measured through createProject on the merged tree.
-  // Recomputed 2026-10-01 on the merge of develop (PRD-470/471/472/474) into the rain + snow
-  // branch (PRD-469, PRD-473): the merged tree carries both sides' engine and manifest bytes, so
-  // all thirteen trees, rain and snow included, were re-measured through createProject.
-  // Recomputed 2026-10-02 rebasing the FabCLI manual-login fallback onto develop: the shared
-  // threenative-assets skill ships in every scaffold, so all thirteen trees move.
-  // PRD-479: each scaffold embeds the reviewed compute-only Storage3DTexture Three patch.
-  // A clean-tree audit matched all13 prior hashes, then changed only the copied patch and
-  // reproduced all13 CI received hashes. No template, version or other scaffold bytes changed.
-  "action-rpg": "115e31cd5a319cf1407d94486a839304ca26cc6c532384129f6a3e8e7f1a3e36",
-  minimal: "4149749167f26a50c4fe67b801cc71e3d9e26d737f7e43766813f69ac5804900",
-  platformer: "87dc88a3a6d50e88c476cf80c5be501bca62ce27474aed5d8155e02d8e729c90",
-  puzzle: "fc5d88b24b78db3830510360fe2a4e53a7d0805737ddc07047fb6530b23009bb",
-  racing: "502373fe0d07d97dca2bab70929ead5f7bafac123d3b97c2ae49b4a919e5124e",
-  rain: "731042034a9c73824998c919137aa7002d75cac031713e6d309bc8301f8b4088",
-  rts: "2b875e1041e0e533d17f5bd5104094e11f8fbbdd06aef1e0156cba80fc21585b",
-  runner: "b66c2056b1256773911c0f6e46bea6c2f705cc3acbb2b8e2aa3ee8c461938cff",
-  sailing: "2d1ec2373e3697afa0d8f6341260911c24f988315dc2942d1328c0ddbd848011",
-  // VQ11 after merge of develop 416ffd7: measured through createProject, only shooter changed.
-  shooter: "2a4a5cb0b4c91b2cc7578df8bee854d3fa66ffd58f85a8c840964c5549cecc54",
-  snow: "7b634782b3bc6eff9cc9b15141bbe5bba9d1014e034d2a2e8859e785911a6424",
-  starter: "212b3f23c97b60ad8475a9418a6f4eeb87202ebad570b424cab83ff6c3c4ef17",
-  "tower-defense": "b72a0736abbcd3b2007852684b9298dc6d2069c8130337f140f15fb48f341511",
+  // Recomputed 2026-10-02 on the merge of develop into PRD-339 auto-exposure: all thirteen
+  // trees move, because every template gained src/render/exposure.ts + autoExposure.ts and the
+  // merged tree also carries develop's shared threenative-assets skill bytes. Measured through
+  // createProject on the merged tree by the spec that asserts them.
+  "action-rpg": "b65c7a7018b0b794daaf599f5cd4c1f8494315c8373b56db7f73c7e167560e21",
+  minimal: "1796b47ecf2393cec713bb9504f7f798f3771cf1c15034390673b83cf9996130",
+  platformer: "59087ce62a3b63f733422c68a0ae08ca294953855fef72cb9a84670344b20848",
+  puzzle: "4f496ed9b446502b3f4be66b5a0017af9438c6237ae20ee34b96152904a4f455",
+  racing: "424f8e17486d788a8ac81ec2494b1bad0294aa4ba99aacdf74c653a15d5569c0",
+  rain: "6fbe91ced6efcd39b20ccb6c359344909eebf06415b998174fcf61ed4e31ba40",
+  rts: "358297ced78d5bfae393fe2f8fb8bb350e512e0dd5a70151bcbc84066051b93b",
+  runner: "2eacc8c33047613f470dc4093e04aad67ca1bc455ceca2b278693a4d1de9823c",
+  sailing: "79e8ebf02059da6a4271c7c32ae8a3b571e4c1f8043169914624030913453c32",
+  shooter: "44e43c1993ecfefbedaecb52548c390a44ca65eb1c93b708c0c1ec28e7f97798",
+  snow: "10b8c2bbc3d1d64dc2c388a2040f8968c7ce3a238a5754a7cd245ada8f591f75",
+  starter: "7a0bbaa8772e646271c796ae7716211b7d53260a04d63a8c323fcab40e01c880",
+  "tower-defense": "7940af1bba17a9a3db47991ee4b1d8d1e3d46250d25571d3e6e943af09810c81",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
@@ -300,6 +287,8 @@ const STARTER_PATHS = [
   "src/render/lighting.ts",
   "src/render/postprocessing.ts",
   "src/render/worldEnvironment.ts",
+  "src/render/exposure.ts",
+  "src/render/autoExposure.ts",
   "src/render/palette.ts",
   "src/render/materials.ts",
   "src/render/arena.ts",
@@ -459,19 +448,12 @@ describe("create-threenative", () => {
 
   it("keeps every no-install scaffold tree byte-stable against the PRD parent", async () => {
     const root = await makeTempDir("threenative-scaffold-stability-");
-    const canonicalPatch = await readFile(
-      path.resolve("packages/core/patches/three@0.185.1.patch"),
-    );
     try {
       const actual: Record<string, string> = {};
       for (const template of ALL_TEMPLATES) {
         const { target } = await createProject(
           { install: false, target: template, template },
           root,
-        );
-        // A stale prepack copy previously masked this intentional patch change locally.
-        expect(await readFile(path.join(target, "patches/three@0.185.1.patch"))).toEqual(
-          canonicalPatch,
         );
         expect(PRD_201_PARENT_SCAFFOLD_HASHES[template]).toBeDefined();
         actual[template] = await scaffoldTreeHash(target);

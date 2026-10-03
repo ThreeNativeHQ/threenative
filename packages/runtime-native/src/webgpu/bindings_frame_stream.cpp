@@ -1215,6 +1215,8 @@ bool flushRecordedFrameOps(BindingsState* state) {
         if (!replayed && !state->engine->hasException())
             state->engine->throwException("frame op stream: replay failed");
     }
+    state->profiling.frameOpStreamPendingOps = state->engine->toBoolean(
+        state->engine->getProperty(state->profiling.frameOpStreamDrain, "pendingOps"));
     state->profiling.frameOpStreamFlushing = false;
     return replayed;
 }

@@ -2924,6 +2924,10 @@ void endDawnFrame(BindingsState* state) {
                 state->profiling.androidJsNativeProfile.frameOpReplayNs += replayEndCpuNs - replayStartCpuNs;
             }
 #endif
+            if (replayed) {
+                state->profiling.frameOpStreamPendingOps = false;
+                startDeferredBufferMaps(state);
+            }
             if (!replayed && !state->engine->hasException()) {
                 state->engine->throwException("frame op stream: replay failed");
             }
