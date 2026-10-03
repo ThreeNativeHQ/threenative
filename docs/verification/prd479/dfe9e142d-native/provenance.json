@@ -190,9 +190,7 @@
           "pass": true
         }
       ],
-      "diagnostics": [
-        "TN_PLAYTEST_RESOURCE_ASSERTION_FAILED"
-      ],
+      "diagnostics": ["TN_PLAYTEST_RESOURCE_ASSERTION_FAILED"],
       "measurements": {
         "before": {
           "gateClosed": false,
