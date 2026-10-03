@@ -23,7 +23,7 @@ export function createParticleView(water: FluidParticles3D) {
   return particle;
 }
 
-async function start({ gateClosed = true } = {}) {
+async function start({ gateClosed = true, validationControl = false } = {}) {
   // The renderer consumes this exact device on both runtimes, so its adapter identity is observed.
   const gpu = (
     navigator as Navigator & {
@@ -32,6 +32,7 @@ async function start({ gateClosed = true } = {}) {
           info: Record<string, string>;
           features: { has(name: string): boolean };
           requestDevice(descriptor: { requiredFeatures: string[] }): Promise<{
+            createBuffer(descriptor: { size: number; usage: number }): unknown;
             pushErrorScope(filter: string): void;
             popErrorScope(): Promise<null | { message: string }>;
           }>;
@@ -67,6 +68,8 @@ async function start({ gateClosed = true } = {}) {
     if (gpuHealth.errors !== 0) throw new Error("Fluid GPU error scope reported an error.");
   }
   beginGPUObservation();
+  // Deliberately invalid actual WebGPU usage verifies that the scope producer rejects errors.
+  if (validationControl) device.createBuffer({ size: 4, usage: 0 });
   const adapterInfo = Object.fromEntries(
     ["architecture", "description", "device", "vendor"].map((field) => [
       field,
