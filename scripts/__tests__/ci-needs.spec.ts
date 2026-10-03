@@ -430,6 +430,8 @@ interface IStubApi {
   base?: string;
   /** The source run's own event. */
   event?: string;
+  /** The branch the source run pushed to or opened against; `develop` is the cache-warm lane. */
+  headBranch?: string;
   /** The source run's own `ci-required` conclusion. */
   verdict?: string;
   /** Board legs the source run's job list never ran at all. */
@@ -489,6 +491,8 @@ function fakeActionsApi(fixture: IReuseFixture, api: IStubApi = {}): void {
     JSON.stringify({
       id: REUSED_RUN_ID,
       event: api.event ?? "pull_request",
+      // The branch the run was pushed to or opened against. A develop push is the cache-warm lane.
+      head_branch: api.headBranch ?? null,
       // Every run record in this repository reports a null base_ref, so the base is read from the
       // commit's pull requests instead.
       base_ref: null,
@@ -550,13 +554,26 @@ esac
   chmodSync(path.join(bin, "gh"), 0o755);
 }
 
-function listRuns(root: string, runs: { id: number; head_sha: string; conclusion: string }[]) {
+function listRuns(
+  root: string,
+  runs: {
+    id: number;
+    head_sha: string;
+    conclusion: string;
+    event?: string;
+    head_branch?: string;
+  }[],
+) {
   writeFileSync(path.join(root, "runs.json"), JSON.stringify({ workflow_runs: runs }));
 }
 
 /** One successful CI run of the tree under test, which is what every reuse case here starts from. */
 function listSourceRun(fixture: IReuseFixture) {
-  listRuns(fixture.root, [{ id: REUSED_RUN_ID, head_sha: fixture.source, conclusion: "success" }]);
+  listRuns(fixture.root, listSourceRuns(fixture));
+}
+
+function listSourceRuns(fixture: IReuseFixture) {
+  return [{ id: REUSED_RUN_ID, head_sha: fixture.source, conclusion: "success" as const }];
 }
 
 function classifyCandidate(
@@ -868,5 +885,131 @@ describe("PRD-481 the runner class is compared per job, because every board is m
     expect(plan.reason).toContain(
       "the source run's test ran on hosted while this run routes to tn-local",
     );
+  });
+});
+
+/** The verdict gate on a non-reuse plan, with every job's own result supplied by the caller. */
+function verifyWarmPlan(
+  fixture: IReuseFixture,
+  plan: Record<string, unknown>,
+  results: Record<string, string>,
+) {
+  const jobs = plan.jobs as Record<string, { required: boolean }>;
+  const needs = {
+    scope: { result: "success", outputs: { plan: JSON.stringify(plan) } },
+    ...Object.fromEntries(
+      Object.entries(jobs).map(([name]) => [name, { result: results[name] ?? "skipped" }]),
+    ),
+  };
+  return spawnSync(process.execPath, [path.join(repo, "scripts/ci-required.mjs")], {
+    cwd: fixture.root,
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      TN_CI_NEEDS: JSON.stringify(needs),
+      TN_CI_EVENT: "push",
+      TN_CI_BASE_REF: "",
+      GITHUB_ACTIONS: "true",
+      GITHUB_REPOSITORY: "three-native/fixture",
+      GITHUB_RUN_ID: String(SELF_RUN_ID),
+    },
+  });
+}
+
+describe("PRD-481 a develop push only warms the caches every pull request reads", () => {
+  // GitHub scopes a pull request's cache to `refs/pull/N/merge`, which no other pull request can
+  // read. Only a run on the base branch publishes something every pull request into develop reads,
+  // and before this lane nothing ran on develop at all — so every pull request paid a full native
+  // rebuild (199 s of host plus ~120 s of V8/QuickJS contract executables) and a workspace dist
+  // build of its own.
+  it("selects warm on a develop push, with only the two cache producers required", () => {
+    const fixture = reuseFixture();
+    fakeActionsApi(fixture);
+    listSourceRun(fixture);
+    const plan = classifyCandidate(fixture, fixture.candidate, {
+      event: "push",
+      target: "develop",
+    });
+    expect(plan).toMatchObject({ selection: "warm", reusedRunId: 0 });
+    const jobs = plan.jobs as Record<string, { required: boolean }>;
+    expect(
+      Object.entries(jobs)
+        .filter(([, job]) => job.required)
+        .map(([name]) => name)
+        .sort(),
+    ).toEqual(["build-artifacts", "test-native"]);
+    // No gate ran, so the run owes no native matrix and asks for no reused verdict.
+    expect(plan.nativeTier).toBe("none");
+  });
+
+  it("keeps a push to main on the full board", () => {
+    const fixture = reuseFixture();
+    // No successful-run listing, so the board is what the miss path owes.
+    fakeActionsApi(fixture);
+    const plan = classifyCandidate(fixture, fixture.candidate, { event: "push", target: "main" });
+    expect(plan).toMatchObject({ selection: "full", nativeTier: "full" });
+  });
+
+  it("leaves a pull request and the merge queue on develop exactly as they were", () => {
+    const fixture = reuseFixture();
+    fakeActionsApi(fixture);
+    listSourceRun(fixture);
+    for (const event of ["pull_request", "merge_group"]) {
+      expect(
+        classifyCandidate(fixture, fixture.candidate, { event, target: "develop" }),
+      ).toMatchObject({ selection: "reused", reusedRunId: REUSED_RUN_ID });
+    }
+  });
+
+  it("never lets a warm run stand in as a reused verdict", () => {
+    const fixture = reuseFixture();
+    fakeActionsApi(fixture, { event: "push", headBranch: "develop" });
+    listSourceRun(fixture);
+    const plan = classifyCandidate(fixture, fixture.candidate, {
+      event: "pull_request",
+      target: "develop",
+    });
+    expect(plan.selection).toBe("full");
+    expect(plan.reason).toContain("cache-warm");
+  });
+
+  it("looks past a warm run to the run that really tested the tree", () => {
+    // The warm run tested the same tree and is listed first, because GitHub lists newest first.
+    // Picking it and then refusing would turn a runnable reuse into a full board; the scan has to
+    // skip it and keep looking.
+    const fixture = reuseFixture();
+    fakeActionsApi(fixture);
+    listRuns(fixture.root, [
+      {
+        id: REUSED_RUN_ID + 1,
+        head_sha: fixture.source,
+        conclusion: "success",
+        event: "push",
+        head_branch: "develop",
+      },
+      ...listSourceRuns(fixture),
+    ]);
+    expect(classifyCandidate(fixture, fixture.candidate)).toMatchObject({
+      selection: "reused",
+      reusedRunId: REUSED_RUN_ID,
+    });
+  });
+
+  it("passes the warm verdict on its two producers and fails without them", () => {
+    const fixture = reuseFixture();
+    fakeActionsApi(fixture);
+    const plan = classifyCandidate(fixture, fixture.candidate, {
+      event: "push",
+      target: "develop",
+    });
+    const green = verifyWarmPlan(fixture, plan, {
+      "build-artifacts": "success",
+      "test-native": "success",
+    });
+    expect(green.status, green.stdout + green.stderr).toBe(0);
+    expect(green.stdout).toContain("build-artifacts: required (success)");
+    const red = verifyWarmPlan(fixture, plan, { "build-artifacts": "success" });
+    expect(red.status).toBe(1);
+    expect(red.stderr).toContain("CI_REQUIRED_JOB_NOT_SUCCESS: test-native");
   });
 });

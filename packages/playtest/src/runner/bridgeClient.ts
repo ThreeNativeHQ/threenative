@@ -137,7 +137,7 @@ export async function connectPlaytestBridge(
 }
 
 /**
- * How long to wait for the page to install its playtest bridge.
+ * How long to wait for the page to install its playtest bridge — and for the handshake to answer.
  *
  * The bridge appears during application startup, not during a request/response round trip, so
  * `operationTimeoutMs` is the wrong budget for it by construction — the same mistake, in the same
@@ -177,7 +177,11 @@ export async function connectPlaytestBridgeTransport(
   const setupApplication = scenario.setup === undefined
     ? undefined
     : await applySetupBeforeDescribe(transport, scenario);
-  const description = await transport.call<IPlaytestBridgeDescription>("describe");
+  // The handshake answers while the page is still booting, so it gets the startup budget for the
+  // same reason `waitForBridge` does. Left on the plain operation budget it equalled the
+  // first-use compile bound exactly, and `tower-defense` timed out on `ready` at `frames: 0` —
+  // a software-GPU shader compile that ran out of time inside a request and a reply.
+  const description = await transport.call<IPlaytestBridgeDescription>("describe", undefined, timeoutMs);
   const unknown = unknownPlaytestCapabilities(description.capabilities);
   if (unknown.length > 0) {
     throw new PlaytestBridgeError(playtestDiagnostic(
@@ -194,7 +198,7 @@ export async function connectPlaytestBridgeTransport(
       "Install matching @threenative/playtest and adapter package versions.",
     ));
   }
-  const ready = await transport.call<IPlaytestBridgeReady>("ready");
+  const ready = await transport.call<IPlaytestBridgeReady>("ready", undefined, timeoutMs);
   if (!ready.ready) {
     throw new PlaytestBridgeError(playtestDiagnostic(
       "TN_PLAYTEST_BRIDGE_NOT_READY",
