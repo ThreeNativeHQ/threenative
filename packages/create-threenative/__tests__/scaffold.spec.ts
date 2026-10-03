@@ -184,26 +184,22 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-01 on the merge of develop (PRD-470/471/472/474) into the rain + snow
   // branch (PRD-469, PRD-473): the merged tree carries both sides' engine and manifest bytes, so
   // all thirteen trees, rain and snow included, were re-measured through createProject.
-  // Recomputed 2026-10-02 for PRD-269 instance history uploads and attribute rebuilds.
-  // The rebuild candidate was measured through createProject; restoring its embedded patch
-  // to published 455ed1dd restores all thirteen previous hashes exactly. All generated trees
-  // return to their exact previous hashes when only patches/three@0.185.1.patch is restored.
-  // Recomputed 2026-10-02 for the per-mesh previous bind inverse repair. All thirteen measured
-  // trees restore to published 085c977b when only the embedded Three patch bytes are restored.
-  "action-rpg": "abc31a97dba1e3aca780c8afb360ae4840c5e8dab40acd1e299e2a455a890b67",
-  minimal: "842203e522b55e9604d607ea040af9770b76c3044ba531ffa17407fbc894afdf",
-  platformer: "9a84d6518f66e5b8c3dd4d0cd095ecacd958e806417b35a65724168b0bd51995",
-  puzzle: "88f6a359cc066076f5fa4c5b11fc91f3882ded3b7807e2252a041635a3fda3dc",
-  racing: "55bab35d00a04a2cd92720cacff472f02c4b814588a34612086b7fdb1114416f",
-  rain: "68d3692128ef510a5db7240c4dbfab22b6dcf736b2d3d8c5bf559a3ae22096ad",
-  rts: "77dcb063312dd7f307300d27dd268b7c22b02ca3095f21f458e0dfef9618a356",
-  runner: "c95855d54e9dca301006f06d603fb6df29f76be2253f6b2441af5f37e309e2e8",
-  sailing: "2bd0dd68e1ffa058fb21071c6d733be364a56e02a8decd7b27f7fe610fd5d28f",
-  shooter: "6c3ed9c35bce8c640fcf267f0973d2b6d8b45286535df234f210aa7c88629f29",
-  snow: "a707820d84c25ac5b3b2c143be20ccc73e1b58dbef570e69667a75d125fedb4b",
-  // PRD-269/455 consolidation: measured latest bind-inverse patch plus temporal source.
-  starter: "91d46cee0e8bc9c15d568e59b81f7453b4076e2612e013381ec508da48812c41",
-  "tower-defense": "4344f42f4e8ff870273af06153ecdce74c6acbd1ba4673516eb64454c6f51051",
+  // Recomputed 2026-10-02 on the merge of origin/develop into PRD-455/269: the merged tree carries
+  // both sides' template and agent-file bytes, so all thirteen trees were re-measured through
+  // createProject on it rather than taken from either side.
+  "action-rpg": "39674d54c30266f521c0b19b295d74f6feeb1d07bd71b1cbd3bcc88c9042352a",
+  minimal: "ccb4b8c21409035c693e22fa99709a24f1d3f3a76eb4d5e8d76dde877165ce08",
+  platformer: "44eb2484a40ffedb169573419d21587978c74d3d53a26ae1127bc2143c13f5f3",
+  puzzle: "1725a00337641ad750b0a81372e99eb5194fda68260e426678badee834872494",
+  racing: "0cdc163329b3f616f2e481d9f9672825ea2d38c0f0fc26b978f42f259358d874",
+  rain: "7d1b2848f17c66f9bec14c8ee6451a75a0bffb5b0f43c94c1e2a654adbb90d10",
+  rts: "a19b3ab924256161a3ca73bb0898ff55d22bccc89849350a54d3622bf50e3a95",
+  runner: "a02893802e1cc472a396754b0b2e15d43cbd370a028dbc8782ae8f1bd4cef658",
+  sailing: "7eb775cb5a2d2b379d8b9a4073f96ccee4e52d9bcccb13f6adb00fc53f8efb15",
+  shooter: "a3f9b0a795b4ec77e84ce091065ea76202b2ccc136a2235ccf657023387713c3",
+  snow: "ab1e4c8b28ea0c17369c639634ecbcd92a4cdeefe2ff98b3b747ac04ba0e7b7e",
+  starter: "d908e02b1082dda6eb9f5e1b59a3bf865a5e7f9d13fb2e9f42f47902b50f1842",
+  "tower-defense": "69a18fe53816b879911603e48364992de0f6e13dce4762020e7fe82909c592b1",
 };
 
 const GENERATED_SCAFFOLD_METADATA =

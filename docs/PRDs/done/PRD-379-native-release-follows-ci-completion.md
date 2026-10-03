@@ -1,6 +1,6 @@
 # PRD-379 — native-release follows CI completion instead of polling for it
 
-**Status:** PARTIAL (Phase 1 landed + verified locally; Phase 2 needs merge to main + observation)
+**Status:** DONE (Phase 2 observed on `main` 2026-09-25; recorded 2026-10-02)
 **Complexity:** 3 → LOW; risk override: none (release-gate sensitivity is carried by fail-closed ACs, not extra process)
 **Owner:** jonit-dev
 **Depends on:** None (follows PRD-373, which owns the develop→main flow this plugs into)
@@ -30,7 +30,7 @@ Risks: `workflow_run` always reads the workflow file from the default branch, so
 - [x] AC-1 [local; actor: agent]: A main-push CI completion starts native-release via `workflow_run`, with no `push`-to-`main` trigger left on the evidence path — Evidence: `workflow_run: workflows: [CI], types: [completed], branches: [main]` in `.github/workflows/native-release.yml:10-13`; push block is tags-only; proven by `main evidence arrives via CI completion` spec + E1 green.
 - [x] AC-2 [local; actor: agent]: No `gates` job polls or holds a runner beyond a short verdict (no `sleep 60` loop, no 150-min wait); it reads conclusion + head SHA from `github.event.workflow_run` and refuses anything but exact-candidate success — Evidence: `gates` timeout-minutes 5, `Require the triggering CI completion` step, `rg "sleep 60"` clean; proven by `the main prerequisite verdict reads the event` + 5 `runWorkflowRunGate` specs + E1 green.
 - [x] AC-3 [local; actor: agent]: Tag publish path and PR proof-without-publication path behave exactly as before — Evidence: tag `push: tags` trigger, `validate-tag`/`publish`/`finalize` conditions untouched; `Require a green CI run for this commit` script byte-identical (single-shot, wait deleted); existing `runGate` accept/refuse specs unchanged + green. Host proof: native-release PR run 34673827042 (first push of PR #209) fully green — `gates`, all three desktop builds, `build-android`, `clean-consumer` success on the `pull_request` event with the new workflow file. (Second-push run 34673874789 hit a transient `fetch failed` on `libuv`/`quiche` dep downloads with identical code; assets verified reachable, failed jobs re-run.)
-- [ ] AC-4 [shared; actor: CI on merge to main]: After merge, one CI completion on `main` triggers exactly one native-release run whose `gates` job finishes in minutes with no polling step — Evidence: pending (run URLs).
+- [x] AC-4 [shared; actor: CI on merge to main]: After merge, one CI completion on `main` triggers exactly one native-release run whose `gates` job finishes in minutes with no polling step — Evidence: CI push run 36134527157 on `main` (`279adb2c`) completed twice (run_attempt 2); each completion triggered exactly one `workflow_run` native-release run: 36140281930 (attempt 1) and 36142531873 (attempt 2); `gates` in 36142531873 ran 39 s (13:41:18–13:41:57Z), and its steps contain no wait or poll.
 - [x] AC-5 [local; actor: agent]: Main evidence runs no longer serialize behind superseded pushes in a shared `native-release-*` group — Evidence: `group: native-release-${{ github.event_name }}-${{ github.event.workflow_run.head_sha }}-${{ github.ref }}` (per-SHA groups for evidence, per-ref as before otherwise); proven by extended concurrency spec + E1 green.
 
 ## Integration Ledger
@@ -67,7 +67,7 @@ Risks: `workflow_run` always reads the workflow file from the default branch, so
 
 #### Phase 2: Prove one real main completion flows through
 
-**Status:** NOT STARTED
+**Status:** DONE
 **ACs:** AC-4
 **Files:** none (observation only)
 **Implementation:**
@@ -79,5 +79,5 @@ Risks: `workflow_run` always reads the workflow file from the default branch, so
 **Checkpoint:** pending
 
 - [x] Draft PR opened, `prd:` label applied from `pnpm prd:progress` — PR #209 (draft vs develop, `prd:50%`)
-- [ ] Post-merge CI completion triggered exactly one native-release run (URLs recorded)
-- [ ] Triggered run's `gates` finished in minutes with no polling step
+- [x] Post-merge CI completion triggered exactly one native-release run (URLs recorded) — CI push run 36134527157 on `main` (`279adb2c`) completed twice (run_attempt 2); each completion triggered exactly one `workflow_run` native-release run: 36140281930 (attempt 1) and 36142531873 (attempt 2).
+- [x] Triggered run's `gates` finished in minutes with no polling step — 39 s in 36142531873; steps run from "Require the triggering CI completion" to the end, with no wait or poll step.

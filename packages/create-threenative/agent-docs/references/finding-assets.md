@@ -162,6 +162,21 @@ What the import will and will not do:
   copy, print, or persist cookies or tokens; interact with the login page instead.
   Searching and `fab_get_asset` stay anonymous, so the licence check never depends on the
   authenticated path it is guarding.
+- **If the WebView login fails, use the manual paste flow.** On Wayland the WebView dies with Gdk
+  "Error 71 (Protocol error)", and `GDK_BACKEND=x11` still may not let the user sign in.
+  `fabcli auth login --manual` refuses a non-TTY stdin, so run it under a pty fed by a FIFO:
+  `mkfifo f; (sleep 1200 > f &); (script -qfec "fabcli auth login --manual" /dev/null < f > log &)`.
+  The user opens Epic's redirect endpoint
+  (`https://www.epicgames.com/id/api/redirect?clientId=<fabcli's client id>&responseType=code`;
+  `strings "$(command -v fabcli)" | grep epicgames.com/id/login` prints the full login URL) in
+  their own signed-in browser. It returns JSON with an `authorizationCode`; the user pastes that
+  value to the agent (or, when asked, the agent reads it from the page through browser control),
+  and the agent writes it with `printf '%s\n' "$CODE" > f` without echoing it. The pty echoes the
+  code into `log`, so keep that file private and delete it once `fabcli auth status` reports
+  `authenticated: true`. The separate Fab web session can still read `session_present: false`;
+  `fab_import_asset` resolves ownership through the library and works regardless. Never run
+  `pkill -f <pattern>` in the same shell command that names the pattern: it matches its own
+  command line and kills the shell.
 - **Two external tools install themselves on first use** (FabCLI and UE Viewer). Set
   `THREENATIVE_TOOLCHAIN_AUTOINSTALL=0` to require you install them instead. Linux and Windows only.
 - **`packages` is not optional in practice.** A marketplace pack converts to many gigabytes of

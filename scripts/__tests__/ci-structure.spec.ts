@@ -418,6 +418,88 @@ const workflows = [
   ".github/workflows/npm-release.yml",
 ] as const;
 
+/**
+ * Every workflow file on disk, read off the directory rather than off a hand-kept list of "the ones
+ * that matter". A workflow file that lands without being named here is a set of triggers, runners
+ * and required checks nobody in this repository has read, and the audit that found
+ * `feat/prd-368-persistent-pipeline-cache` still holding a 31-minute job could only see it by
+ * reading the files. Naming the file here is the review.
+ */
+const reviewedWorkflows = [
+  ".github/workflows/build-quiche-owned.yml",
+  ".github/workflows/ci.yml",
+  ".github/workflows/integration.yml",
+  ".github/workflows/native-platforms.yml",
+  ".github/workflows/native-release.yml",
+  ".github/workflows/npm-release.yml",
+  ".github/workflows/performance-regression.yml",
+  ".github/workflows/pipeline-cache.yml",
+  ".github/workflows/release-candidate.yml",
+  ".github/workflows/site-docs.yml",
+] as const;
+
+/**
+ * Triggers that test one commit more than once, or that outlive the pull request they were added for.
+ *
+ * A `push` with no `branches:` filter fires for the PR's own head commit as well as for the
+ * `pull_request` event carrying it, so `integration-csg` ran its proof twice for every commit it had
+ * a pull request for. Narrowing `push` to `main` is not that defect: it fires for the merge, which is
+ * a different commit, and both `ci.yml` and `pipeline-cache` rely on it to prove the promotion. What
+ * is never legitimate is a *feature* branch in a `push` filter — `integration-decals` carried
+ * `fix/vq11-decal-material-lifetime` for a pull request that merged, and `pipeline-cache` listed the
+ * branch PRD-368 landed on three weeks earlier, each spending a long native lane on pushes nobody
+ * reads.
+ */
+function duplicateCommitTriggers(source: string): readonly string[] {
+  const triggers = commandText(triggerSection(source));
+  const findings: string[] = [];
+  const push = /^ {2}push:\n(?: {4}.*\n)*/mu.exec(triggers)?.[0] ?? "";
+  if (/^ {2}pull_request:/mu.test(triggers) && push !== "" && !/\n {4}branches:/u.test(push)) {
+    findings.push("push + pull_request: one commit runs this workflow twice");
+  }
+  const inline = /branches: \[([^\]]*)\]/mu.exec(push)?.[1] ?? "";
+  const block = /\n {4}branches:\n((?: {6}- .*\n)*)/mu.exec(push)?.[1] ?? "";
+  for (const branch of `${inline}\n${block}`
+    .split("\n")
+    .map((line) =>
+      line
+        .replace(/^ {6}- /u, "")
+        .trim()
+        .replace(/^["']|["']$/gu, ""),
+    )
+    .filter((name) => name !== "")) {
+    if (!/^(?:main|develop)$/u.test(branch)) {
+      findings.push(`push narrowed to ${branch}: the lane outlives its pull request`);
+    }
+  }
+  return findings;
+}
+
+/** Every `paths:` entry in a workflow's triggers, in file order. */
+function triggerPaths(source: string): readonly string[] {
+  const triggers = commandText(triggerSection(source));
+  const entries: string[] = [];
+  let reading = false;
+  for (const line of triggers.split("\n")) {
+    if (/^ {4}paths:/u.test(line)) {
+      reading = true;
+      continue;
+    }
+    if (!reading) continue;
+    if (!/^ {6}- /u.test(line)) {
+      reading = false;
+      continue;
+    }
+    entries.push(
+      line
+        .replace(/^ {6}- /u, "")
+        .trim()
+        .replace(/^["']|["']$/gu, ""),
+    );
+  }
+  return entries;
+}
+
 function jobSections(source: string): readonly [string, string][] {
   const jobsIndex = source.indexOf("\njobs:\n");
   if (jobsIndex < 0) throw new Error("CI workflow did not include a jobs mapping.");
@@ -519,6 +601,9 @@ interface IScopeFixture {
 function isolatedGitEnvironment(): NodeJS.ProcessEnv {
   const environment = { ...process.env };
   for (const variable of [
+    // A fixture repo is never a CI run: inherited from the CI job, this turned on the live tree-reuse
+    // lookup and the plan grew an Actions API error.
+    "GITHUB_ACTIONS",
     "GIT_ALTERNATE_OBJECT_DIRECTORIES",
     "GIT_COMMON_DIR",
     "GIT_DIR",
@@ -665,6 +750,15 @@ describe("CI pipeline structure", () => {
     expect(triggers).toContain("workflow_call:");
     expect(triggers).toContain("ios_only:");
     expect(triggers).not.toMatch(/\n\s{2}(?:push|pull_request|schedule):/u);
+  });
+
+  it("never lets a draft pull request run cancel a ready one", async () => {
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    const group = /^concurrency:\n {2}group: (.*)$/mu.exec(ci)?.[1] ?? "";
+    // A push then `gh pr ready` fires a synchronize run whose payload still says draft. In the
+    // shared `latest` group with cancel-in-progress, that skipped run cancelled the real one
+    // (#403, run 37075825121). Only a non-draft pull request run joins the shared group.
+    expect(group).toContain("!github.event.pull_request.draft && 'latest'");
   });
 
   it("does not require skipped performance lanes on a prose-only run", async () => {
@@ -924,6 +1018,184 @@ describe("CI pipeline structure", () => {
     );
     expect(ci).toContain("name: Change scope\n    if: ${{ !github.event.pull_request.draft }}");
     expect(ci).toContain("if: ${{ always() && !github.event.pull_request.draft }}");
+  });
+
+  // PRD-481 adds a fourth selection and a fourth trigger. Every gate's condition has to name what it
+  // admits rather than what it excludes: `!= 'prose'` reads a reused tree as "not prose" and runs a
+  // second full lint on a tree CI already passed.
+  it("runs the merge group and admits no gate on a reused tree", async () => {
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    expect(triggerSection(ci)).toContain("merge_group:\n    types: [checks_requested]");
+    for (const [name, section] of jobSections(ci)) {
+      // ci-required is the verdict, not a gate: it runs on `always()` and reads the plan instead.
+      // scope is the decision that produces the selection.
+      if (name === "ci-required" || name === "scope") continue;
+      expect(section, `${name} does not name the selection it admits`).toContain(
+        "selection == 'full'",
+      );
+      expect(section, `${name} would run on a reused tree`).not.toContain("selection != 'prose'");
+    }
+    // A merge group carries no pull_request object, so `!github.event.pull_request.draft` is true
+    // for it. That has to stay true, or the queue waits forever on a check nobody will report.
+    expect(requiredJob(ci, "scope")).toContain("if: ${{ !github.event.pull_request.draft }}");
+    expect(requiredJob(ci, "ci-required")).toContain(
+      "if: ${{ always() && !github.event.pull_request.draft }}",
+    );
+    // Both jobs that consult the Actions API, and only with a read-only token.
+    for (const name of ["scope", "ci-required"]) {
+      expect(requiredJob(ci, name)).toContain("actions: read");
+      expect(requiredJob(ci, name)).toContain("GH_TOKEN: ${{ github.token }}");
+    }
+  });
+
+  // The audit behind PRD-481 cost 2.4k runner-minutes on one workflow that was still listed against
+  // a branch whose lane landed three weeks earlier, and ran a second time for every commit that
+  // also opened a pull request. Neither shape is visible from the workflow file alone, which is why
+  // they are stated as rules here rather than left to whoever reads the next one.
+  it("names every workflow file so none lands unreviewed", async () => {
+    const onDisk = (await readdir(path.join(repo, ".github/workflows")))
+      .filter((name) => /\.ya?ml$/u.test(name))
+      .map((name) => `.github/workflows/${name}`)
+      .sort();
+    expect(onDisk).toEqual([...reviewedWorkflows].sort());
+    // The owner's rule: no workflow file per feature. A new lane is a job in an existing workflow
+    // with its own paths gate, not a new set of triggers, permissions and required checks. The
+    // allow-list above already rejects an unnamed file; this names the shape it rejects.
+    expect(
+      onDisk.filter((name) => /integration-[^/]+\.ya?ml$/u.test(name)),
+      "a per-feature integration workflow is back; add its proof as a job in integration.yml",
+    ).toEqual([]);
+  });
+
+  it("keeps every integration lane in one workflow, each with its own paths gate", async () => {
+    const integrations = reviewedWorkflows.filter((name) => name.includes("/integration"));
+    expect(
+      integrations,
+      "the integration lanes are one workflow, not one file per feature",
+    ).toEqual([".github/workflows/integration.yml"]);
+    const source = await readFile(path.join(repo, ".github/workflows/integration.yml"), "utf8");
+    expect(duplicateCommitTriggers(source)).toEqual([]);
+    // Skipping drafts only saves a runner if the event that ends the draft is one this workflow
+    // listens for. Without `ready_for_review` the guard turns the lanes off rather than cheap.
+    expect(triggerSection(source)).toContain(
+      "types: [opened, synchronize, reopened, ready_for_review]",
+    );
+    const sections = jobSections(source);
+    // A job behind another job of the same workflow is skipped when that one is, so the guard belongs
+    // on the entry points only.
+    for (const [job, section] of sections) {
+      if (/^ {4}needs:/mu.test(section)) continue;
+      expect(section, `${job} runs on a draft`).toContain(
+        "if: ${{ !github.event.pull_request.draft }}",
+      );
+    }
+    // One gate, one output per lane, and every lane job reads its own. A lane folded in without its
+    // filter would run on every pull request; a filter with no job behind it would silently stop.
+    const lanes = [...source.matchAll(/^ {10}lane ([a-z][a-z-]*) '/gmu)].map((match) => match[1]);
+    expect(lanes.length, "a lane lost its trigger filter").toBeGreaterThanOrEqual(5);
+    for (const lane of lanes) {
+      const gated = sections.filter(([, section]) =>
+        section.includes(`needs.paths.outputs.${lane} == 'true'`),
+      );
+      expect(gated.length, `no job runs the ${lane} gate`).toBeGreaterThanOrEqual(1);
+      for (const [job, section] of gated) {
+        expect(section, `${job} runs the ${lane} gate on a draft`).toContain(
+          "!github.event.pull_request.draft",
+        );
+      }
+      expect(source, `the ${lane} gate is not exposed as a job output`).toContain(
+        `${lane}: \${{ steps.filter.outputs.${lane} }}`,
+      );
+    }
+    for (const [job, section] of sections) {
+      if (job === "paths" || /^ {4}needs:/mu.test(section)) continue;
+      expect(section, `${job} is not behind a per-lane gate`).toContain("needs: paths");
+    }
+  });
+
+  it("rejects a push trigger that would fire beside pull_request, or for one branch", () => {
+    expect(
+      duplicateCommitTriggers(
+        [
+          "name: fixture",
+          "on:",
+          "  pull_request:",
+          "    paths:",
+          "      - 'examples/a/**'",
+          "  push:",
+          "    paths:",
+          "      - 'examples/a/**'",
+          "",
+          "jobs:",
+          "  test:",
+          "    runs-on: ubuntu-latest",
+          "",
+        ].join("\n"),
+      ),
+    ).toEqual(["push + pull_request: one commit runs this workflow twice"]);
+    expect(
+      duplicateCommitTriggers(
+        [
+          "name: fixture",
+          "on:",
+          "  pull_request:",
+          "    paths:",
+          "      - 'examples/a/**'",
+          "  push:",
+          "    branches: ['fix/vq11-decal-material-lifetime']",
+          "",
+          "jobs:",
+          "  test:",
+          "    runs-on: ubuntu-latest",
+          "",
+        ].join("\n"),
+      ),
+    ).toEqual([
+      "push narrowed to fix/vq11-decal-material-lifetime: the lane outlives its pull request",
+    ]);
+    // `push` alone is how a workflow follows its own branch after a merge, and how ci.yml hears
+    // about main. The rule is the pair, not the trigger.
+    expect(
+      duplicateCommitTriggers(
+        [
+          "name: fixture",
+          "on:",
+          "  push:",
+          "    branches: [main]",
+          "",
+          "jobs:",
+          "  test:",
+          "    runs-on: ubuntu-latest",
+          "",
+        ].join("\n"),
+      ),
+    ).toEqual([]);
+  });
+
+  it("keeps the pipeline-cache proof's triggers on what that proof reads", async () => {
+    const relative = ".github/workflows/pipeline-cache.yml";
+    const source = await readFile(path.join(repo, relative), "utf8");
+    const commands = commandText(source);
+
+    // Every path it fires on has to be a path its own steps open, or the lane runs a 45-minute
+    // native proof for a commit that cannot have moved it. The workflow file itself is the one
+    // exemption: GitHub reads it to decide, and every lane lists itself.
+    const entries = triggerPaths(source);
+    expect(
+      entries.length,
+      "the pipeline-cache lane stopped narrowing its triggers",
+    ).toBeGreaterThan(0);
+    for (const entry of entries) {
+      if (entry === relative) continue;
+      expect(commands, `${relative} fires on ${entry}, which its steps never read`).toContain(
+        entry.replace(/\/?\*\*$/u, "/"),
+      );
+    }
+
+    // `push` on a protected branch only, and never beside `pull_request`. The branch it listed
+    // until now — `feat/prd-368-persistent-pipeline-cache` — kept compiling an android-arm64 ABI
+    // job for 41 runs and 2.4k runner-minutes after the lane it was opened for had landed.
+    expect(duplicateCommitTriggers(source), relative).toEqual([]);
   });
 
   it("preserves main qualification while enabling develop PRs and serializes release lanes", async () => {
@@ -1212,17 +1484,31 @@ describe("CI pipeline structure", () => {
     expect(job).toContain("non-visual-scenarios.mjs");
   });
 
-  it("keeps the measured puzzle lane split into two shards", async () => {
+  // The counts are measurements, not preferences: each one below is the shard count that puts that
+  // template's slowest slice inside the run's six-minute leg budget, from the per-scenario
+  // timestamps in run 37049488719 (puzzle, rain, shooter) and run 37071464562 (sailing, whose two
+  // slices measured 168s and 467s — one scenario over budget, which is what the third slice is for).
+  // Raising one without a new measurement is how a lane goes back to eating the run.
+  it.each([
+    ["puzzle", 2],
+    ["sailing", 3],
+    ["rain", 5],
+    ["shooter", 6],
+  ])("keeps the measured %s lane split into %i shards", async (template, count) => {
     const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
     const job = requiredJob(ci, "template-nonvisual");
-    const puzzleShards = [
-      ...job.matchAll(/^\s+-\s*\{\s*template:\s*puzzle\s*,\s*shard:\s*"(\d+)\/(\d+)"/gmu),
+    const shards = [
+      ...job.matchAll(
+        new RegExp(
+          `^\\s+-\\s*\\{\\s*template:\\s*${template}\\s*,\\s*shard:\\s*"(\\d+)\\/(\\d+)"`,
+          "gmu",
+        ),
+      ),
     ].map((match) => ({ index: Number(match[1]), count: Number(match[2]) }));
 
-    expect(puzzleShards, "puzzle's measured scenario lane must stay split").toEqual([
-      { index: 1, count: 2 },
-      { index: 2, count: 2 },
-    ]);
+    expect(shards, `${template}'s measured scenario lane must stay split`).toEqual(
+      Array.from({ length: count }, (_, offset) => ({ index: offset + 1, count })),
+    );
   });
 
   // A shard count above the template's scenario count is a leg that can only ever select nothing.
@@ -1359,9 +1645,12 @@ describe("CI pipeline structure", () => {
     const supplyChain = requiredJob(ci, "supply-chain");
     // Markdown-only PRs skip the scan entirely (owner call 2026-09-12): the nightly develop run
     // and promotions still scan the full git history, so an inert prose PR spends no runner here.
+    // PRD-481 added the reused tree to the exempt set, so the condition names both selections it
+    // admits instead of the one it refuses.
     expect(supplyChain).toContain("needs: scope");
-    expect(supplyChain).toContain("if: needs.scope.outputs.selection != 'prose'");
-    expect(supplyChain).not.toContain("needs.scope.outputs.selection == 'full'");
+    expect(supplyChain).toContain(
+      "if: needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'instructions'",
+    );
     expect(supplyChain).toContain("if: github.event_name != 'pull_request'");
     expect(supplyChain).toContain("uses: actions/dependency-review-action@v4");
     // ...but the dependency diff itself stays pull_request-only: it needs a base ref and a head
@@ -1803,6 +2092,58 @@ describe("CI pipeline structure", () => {
     expect(order, "sources are dated after the build has already run").toBeLessThan(
       native.indexOf("native:build"),
     );
+  });
+
+  // Within one run the workspace dist compiled about nine times, at 71-95s each. Every consumer
+  // declared `needs: scope` only, so all eight started beside the one job that saves the key, all
+  // eight looked for an entry nobody had published yet, and all eight compiled it themselves. The
+  // action grows a mode that takes this run's upload instead; a job that keeps the cache path next
+  // to a producer it is ordered behind is the arrangement that put the nine builds back.
+  it("compiles the workspace dist once and hands the upload to every consumer", async () => {
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    const producer = requiredJob(ci, "build-artifacts");
+    expect(producer).toContain("uses: ./.github/actions/workspace-dist");
+    expect(producer, "the producer no longer publishes what consumers download").toContain(
+      "name: workspace-packages",
+    );
+    expect(producer).toMatch(/^\s+packages\/\*\/dist$/mu);
+
+    const shared = "shared-artifact: workspace-packages";
+    for (const [name, section] of jobSections(ci)) {
+      if (name === "build-artifacts") continue;
+      // The action is what compiles; this job is about which of them compile it themselves.
+      if (!section.includes("uses: ./.github/actions/workspace-dist")) continue;
+      // `lint` keeps the cache path on purpose: its dist lane runs on the `instructions` selection,
+      // where `build-artifacts` is skipped and there is no upload to take. Everything that runs on
+      // `full` downloads instead.
+      if (name === "lint") continue;
+      expect(section, `${name} restores a key nobody saved before it`).toContain(
+        "needs: [scope, build-artifacts]",
+      );
+      expect(section, `${name} compiles the workspace instead of downloading it`).toContain(shared);
+    }
+
+    const action = await readFile(
+      path.join(repo, ".github/actions/workspace-dist/action.yml"),
+      "utf8",
+    );
+    // Fail closed on the download exactly as on the restore: a partial upload must not be imported
+    // from, and the producer's step order — build, validate, publish — is what keeps it complete.
+    expect(action).toContain("Take the compiled workspace from this run's producer");
+    expect(action).toContain("uses: actions/download-artifact@v4");
+    expect(action).toContain("TN_WORKSPACE_DIST_INCOMPLETE");
+    for (const step of [
+      "Restore the compiled workspace",
+      "Build missing workspace bundles",
+      "Pack current workspace files",
+    ]) {
+      const entry = action
+        .split(/(?=^ {4}- name:)/mu)
+        .find((block) => block.startsWith(`    - name: ${step}\n`));
+      expect(entry, `the shared download does not gate ${step}`).toContain(
+        "inputs.shared-artifact == ''",
+      );
+    }
   });
 
   // Six jobs need `packages/*/dist` and each compiled it from scratch — measured at 49-65s per
