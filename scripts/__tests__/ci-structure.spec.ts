@@ -429,6 +429,7 @@ const workflows = [
 const reviewedWorkflows = [
   ".github/workflows/build-quiche-owned.yml",
   ".github/workflows/ci.yml",
+  ".github/workflows/ci-janitor.yml",
   ".github/workflows/integration.yml",
   ".github/workflows/native-platforms.yml",
   ".github/workflows/native-release.yml",
