@@ -180,7 +180,7 @@ the stack. The script fails closed when the env file or token is missing.
 
 #### Phase 2: `ci.yml` and the integration workflows route through the switch
 
-**Status:** IN PROGRESS
+**Status:** COMPLETE
 **Files:** EDIT `.github/workflows/ci.yml`, `.github/workflows/integration-*.yml`,
 `scripts/__tests__/ci-structure.spec.ts`; the `integration-*.yml` template wherever agents copy it from;
 `AGENTS.md` ("Nearest lane first, CI last") plus its regenerated `CLAUDE.md` mirror.
@@ -209,8 +209,11 @@ and `integration-decals.yml`'s `ubuntu-24.04-arm` job are the only Linux `runs-o
   whose `ci-required` starts within 60 s of its last `needs` finishing): `scope`, `golden-path`, `build`,
   `ci-required` and `run-summary` route to `tn-local-light`, and no heavy job can.
   Evidence: ci-structure.spec.ts routing case (red with `typecheck` on the light lane), and CI run 37070815769 (PR #404, head 94732de65, 2026-10-02): `ci-required` started 22:48:50Z, 3 s after the last job it needs finished at 22:48:47Z.
-- [ ] With `TN_RUNNER` unset, the same workflow runs fully hosted. proof: `workflow_dispatch` run id with
+- [x] With `TN_RUNNER` unset, the same workflow runs fully hosted. proof: `workflow_dispatch` run id with
   every `runner_name` hosted.
+  Evidence: `workflow_dispatch` run 37093694594 on `develop` with both variables deleted: all 43 jobs that started
+  ran hosted (38 `ubuntu-24.04`, 1 `ubuntu-latest`, 1 arm64, 2 macOS, 1 Windows), none on `tn-local`. Cancelled
+  after that proof so it would stop holding the hosted pool.
 
 #### Phase 3: The Linux `native-platforms` legs move too
 
