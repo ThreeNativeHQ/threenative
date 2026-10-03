@@ -97,8 +97,11 @@ export function worldCaptureManifest(
     Number.isFinite(nearBandMeters) && nearBandMeters > 0,
     "near band must be positive meters",
   );
-  const samples = record(report.observations).componentSeries;
-  assert(Array.isArray(samples) && samples.length === LABELS.length, "incomplete capture labels");
+  const series = record(report.observations).componentSeries;
+  assert(Array.isArray(series), "incomplete capture labels");
+  // Setup steps (a loading overlay, a drain) sample too; only the capture labels are frames.
+  const samples = series.filter((value) => LABELS.includes(String(record(value).label)));
+  assert(samples.length === LABELS.length, "incomplete capture labels");
   const frames = samples.map((value, index) => {
     const sample = record(value);
     const id = LABELS[index];
@@ -131,7 +134,14 @@ export function worldCaptureManifest(
   );
   assertRoute(worldName, first, lastWalk);
   assert(first.timeMs === 0, "flight began before the baseline capture");
-  assert.deepEqual(settled.position, lastWalk.position, "route moved during settle");
+  // A game's camera may ease its height after the walk stops; the route itself must not advance.
+  let travelled: number[] = settled.position;
+  let walked: number[] = lastWalk.position;
+  if (worldName !== DEFAULT_WORLD) {
+    travelled = [settled.position[0], settled.position[2]];
+    walked = [lastWalk.position[0], lastWalk.position[2]];
+  }
+  assert.deepEqual(travelled, walked, "route moved during settle");
   assert(settled.timeMs === lastWalk.timeMs, "flight continued during settle");
   assert(
     Array.isArray(first.landmarks) && first.landmarks.length > 0,
