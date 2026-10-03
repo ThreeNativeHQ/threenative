@@ -41,7 +41,7 @@ const sourceFiles = await Promise.all(
   })),
 );
 const qualification =
-  "Rendered software-GPU correctness only; no native or hardware-performance claim.";
+  "Rendered browser GPU correctness; no native or hardware-performance claim.";
 const variants = [];
 try {
   execFileSync("pnpm", ["exec", "vite", "build", "--config", "proof.vite.config.ts"], {

@@ -24,7 +24,7 @@ const sourceSha = execFileSync("git", ["rev-parse", "HEAD"], {
   encoding: "utf8",
 }).trim();
 const qualification =
-  "Existing consumer correctness on software WebGPU; no hardware frame-time claim.";
+  "Existing consumer correctness on browser WebGPU; no hardware frame-time claim.";
 const variants = [];
 let activeVariant: "dam" | "coupling" | undefined;
 let failureDiagnostics: ReturnType<typeof fluidConsumerFailureDiagnostics> = null;
