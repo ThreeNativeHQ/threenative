@@ -95,38 +95,26 @@ const BENCHMARK: Record<WorldName, IBenchmark> = {
   tundra: {
     focus: { x: 150, z: 160 },
     poses: {
-      plain: { at: [166, 180], eye: 2.2, look: [-60, -40], lookUp: 2 },
+      plain: { at: [166, 180], eye: 2.2, look: [-65, -50], lookUp: 2 },
       overview: { at: [180, 180], eye: 62, look: [-20, -50], lookUp: 2 },
     },
     views: ["player", "plain", "overview"],
   },
   forest: {
-    // Eleven metres along the meadow-close camera's own line of sight, which is what makes the
-    // meadow a place the camera is *in* rather than a disc it looks across: the blades that fill the
-    // bottom of the frame are the ones this point scatters, and the ones thinning towards the ridge
-    // are the same blades a hundred metres further off.
-    focus: { x: 186, z: 76 },
+    focus: { x: 150, z: -100 },
     poses: {
-      "meadow-close": { at: [176, 84], eye: 1.7, look: [214, 44], lookUp: 2.2 },
-      overview: { at: [96, 168], eye: 92, look: [190, 40], lookUp: 8 },
-      // On the east bank, standing height, looking upstream along the water as it comes round the
-      // bend: the framing that says whether the river reads as moving water or as a blue strip.
-      // On the stream's bank where it reaches the lake, looking west over the water to the far shore.
-      river: { at: [-20, -150], eye: 1.7, look: [-110, -175], lookUp: 0 },
+      "meadow-close": { at: [165, -95], eye: 1.7, look: [-70, -180], lookUp: 2.2 },
+      overview: { at: [190, 170], eye: 65, look: [-70, 25], lookUp: 5 },
+      river: { at: [-145, -120], eye: 1.7, look: [-110, -185], lookUp: 0 },
     },
     views: ["player", "meadow-close", "overview", "river"],
   },
   coastal: {
-    focus: { x: 78, z: -128 },
+    focus: { x: 80, z: 5 },
     poses: {
-      "meadow-close": { at: [56, -108], eye: 1.7, look: [96, -146], lookUp: 2.2 },
-      overview: { at: [150, 60], eye: 110, look: [40, -80], lookUp: 6 },
-      // Six metres up on the eastern headland, looking out along the coast: sixty metres of hillside
-      // in the foreground, then open water for the four hundred after it, which is the framing that
-      // says whether the sea meets the haze or ends in a line. Eye height rather than standing
-      // height, because the heightfield resolves every two metres and a camera a metre and a half
-      // above it frames its own triangulation.
-      "horizon-sea": { at: [150, 20], eye: 6, look: [450, 65], lookUp: 0, lookY: -30 },
+      "meadow-close": { at: [110, -35], eye: 1.7, look: [155, 100], lookUp: 1.5 },
+      overview: { at: [-140, -120], eye: 75, look: [160, 115], lookUp: 0 },
+      "horizon-sea": { at: [185, 145], eye: 6, look: [220, 450], lookUp: 0, lookY: 1.5 },
     },
     views: ["player", "meadow-close", "overview", "horizon-sea"],
   },
@@ -300,9 +288,9 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
       );
       const start =
         world === "forest"
-          ? [-190, 160]
+          ? [-220, -165]
           : world === "coastal"
-            ? [180, 100]
+            ? [180, 65]
             : world === "alpine"
               ? [180, -190]
               : [180, 160];
@@ -401,7 +389,7 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
       // The water in the channels the bake carved. A world with no river gets nothing. Water draws on
       // its own layer so the lake's mirror can leave it out; the eye sees both.
       ctx.camera.layers.enable(WATER_LAYER);
-      const lake = createLakes(data.lakes ?? [], field);
+      const lake = createLakes(data.lakes ?? [], field, world === "forest");
       this.#lake = lake;
       if (lake) {
         const centre = lake.mesh.geometry.getAttribute("position");
@@ -461,7 +449,7 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
       const river = createRivers(
         data.rivers ?? [],
         field,
-        world === "tundra",
+        world === "tundra" || world === "forest",
         world === "tundra" ? lake?.reflectionAt : undefined,
       );
       this.#river = river;
@@ -850,7 +838,9 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
         if (view === "player") {
           const offset = world === "coastal" ? new Vector3(28, 18, 34) : new Vector3(28, 24, 42);
           ctx.camera.position.copy(actor.position).add(offset);
-          if (world === "alpine")
+          if (world === "coastal")
+            ctx.camera.lookAt(actor.position.x + 80, 1.5, actor.position.z + 190);
+          else if (world === "alpine")
             ctx.camera.lookAt(
               actor.position.x - 200,
               actor.position.y + 170,

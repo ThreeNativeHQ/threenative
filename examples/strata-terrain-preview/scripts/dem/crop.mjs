@@ -7,7 +7,7 @@ import { fromFile } from "geotiff";
 import proj4 from "proj4";
 
 const input = process.argv[2];
-assert(input, "Pass the directory containing the four downloaded GeoTIFFs");
+assert(input, "Pass the directory containing the downloaded detail and surrounding GeoTIFFs");
 const sites = {
   alpine: {
     site: "Longs Peak — Diamond / Chasm Lake headwall, Colorado",
@@ -39,8 +39,54 @@ const sites = {
     },
     horizonTile: "USGS_13_n38w110_20241031",
   },
+  forest: {
+    site: "Sprague Lake / Glacier Creek conifer valley, Rocky Mountain National Park, Colorado",
+    center: [448720, 4463470],
+    zone: 13,
+    elevationOffset: 2635,
+    tile: "USGS_1M_13_x44y447_CO_DRCOG_2020_B20",
+    project: "CO_DRCOG_2020_B20",
+    file: "forest.tif",
+    acquisitionDate: {
+      begin: "2020-05-26",
+      end: "2021-03-13",
+      basis: "USGS project metadata temporal extent",
+    },
+    horizonTile: "USGS_13_n41w106_20221118",
+  },
+  coastal: {
+    site: "Sand Beach / Great Head granite cove, Acadia National Park, Maine",
+    center: [565026, 4908894],
+    zone: 19,
+    elevationOffset: 0,
+    tile: "USGS_1M_19_x56y491_ME_MidCoast_2021_B21",
+    project: "ME_MidCoast_2021_B21",
+    file: "coastal.tif",
+    acquisitionDate: {
+      begin: "2021-05-09",
+      end: "2022-05-11",
+      basis: "USGS project metadata temporal extent",
+    },
+    horizonTile: "USGS_13_n45w069_20260521",
+  },
+  tundra: {
+    site: "Trail Ridge alpine tundra, Rocky Mountain National Park, Colorado",
+    center: [432798, 4475400],
+    zone: 13,
+    elevationOffset: 3420,
+    tile: "USGS_1M_13_x43y448_CO_NorthwestCO_2020_D20",
+    project: "CO_NorthwestCO_2020_D20",
+    file: "tundra.tif",
+    acquisitionDate: {
+      begin: "2020-06-20",
+      end: "2021-08-28",
+      basis: "USGS project metadata temporal extent",
+    },
+    horizonTile: "USGS_13_n41w106_20221118",
+  },
 };
 for (const [world, site] of Object.entries(sites)) {
+  if (process.argv.length > 3 && !process.argv.slice(3).includes(world)) continue;
   const crs = `+proj=utm +zone=${site.zone} +datum=NAD83 +units=m`;
   const productUrl = `https://prd-tnm.s3.amazonaws.com/StagedProducts/Elevation/1m/Projects/${site.project}/TIFF/${site.tile}.tif`;
   const horizonUrl = `https://prd-tnm.s3.amazonaws.com/StagedProducts/Elevation/13/TIFF/historical/${site.horizonTile.split("_")[2]}/${site.horizonTile}.tif`;

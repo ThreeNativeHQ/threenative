@@ -2681,3 +2681,22 @@ Gaia acceptance or overall PRD completion is claimed.
 Source commits: `41cff09ac`, `19a0e88e4`, `b6b365f76`; this final note is committed
 separately. No push, merge or PR comment. Unmerged checkout retained with local
 licensed art and captures; it is ineligible for merged-worktree cleanup.
+
+### 2026-10-03 UTC — DEM round 2 lane
+
+Complexity: 2 → LOW; existing GeoTIFF/proj4 importer, Terrain bake and Heightfield consumer.
+Scope: measured forest/coastal/tundra surfaces and same-site surroundings for all five worlds;
+explicit authored lake/stream beds where hydro-flattened lidar has no bathymetry. No vegetation edits.
+
+- [x] Three bounded 1 m survey crops and provenance prepared; bake and cache reuse PASS (8.93 s cold), all arrays finite. proof: `node scripts/dem/crop.mjs /tmp/strata-dem2 forest coastal tundra`, `node scripts/bake.mjs`.
+- [ ] Frame real landforms and continuous high-resolution rings. proof: 1920×1080 scratch playtest on port 5297, inspect 1:1 crops against Gaia and round 1 alpine.
+- [ ] Preserve water/collision/export contracts and run final licensed/fallback gates. proof: full terrain scenario + `verify-ocean`, example tsc, root Biome, terrain Vitest, `test:consumer`.
+
+DEM round 2 checkpoint: all five worlds export finite 66,049-entry flow/sediment/deposition/talus
+buffers. Cold bake 8.93 s, source-precision ring serialization 7,161,776 bytes (11.11 s rebuild),
+cache reuse PASS. Example tsc PASS, root Biome 84 files PASS, terrain Vitest 71/71 PASS.
+Full `test:consumer` still fails before export on the existing rain template terrain-workflow
+pointer. The existing focused packed replay (excluding rain/snow pointer assertions only)
+passes all five exact height arrays, 131,072 triangles each, baked waters, and installed game
+handoff; it is supplementary, not a full consumer PASS. First scratch capture failed on
+transient ERR_NETWORK_CHANGED texture requests; fresh capture pending.
