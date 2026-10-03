@@ -165,40 +165,23 @@ const BUG_REPORT_SKILL_PATHS = [
 // arrive through the templating step rather than a verbatim copy, which is why a content-hash
 // matcher does not list them and this ablation is the evidence instead.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
-  // Recomputed 2026-10-01 on the merge of develop a602467db (PRD-458/473): every template's frame
-  // budget now comes from resolveTargetFps, so ten trees move and `rts` does not; the capability reference (365 -> 368 entries) then moved all eleven, because it ships in every scaffold.
-  // Recomputed 2026-10-01, three times, each by a real run that found the previous tree wrong:
-  // the first gave each quality.ts a software adapter policy; the second found ten of eleven
-  // setupPost callers never forwarded the adapter fact to it; the third found no template but
-  // `starter` set `renderChainTier`, so a low preset still ran the high render chain. The same ten
-  // trees move on each of the last two. `starter` is unchanged throughout — its setupPost hands the
-  // whole environment to createAdaptiveQuality and its quality.ts already carried the chain tier.
-  // Values measured through createProject by the spec that asserts them, not by hand.
-  // PRD339: remeasured from clean da22c919e after merging develop 6c8858d7; exposure source and
-  // instructions combine with the 0.2.8 template package pins. No source bytes are waived.
-  // Recomputed again 2026-10-01 for `sailing` alone: `sailMotion` is a range across landed cloth
-  // readbacks, and one landed copy makes that range zero by arithmetic, so the sails scenario now
-  // holds long enough for two copies to arrive on a CPU rasteriser and asserts the landed count
-  // beside it. Only the two sailing template files changed, so only this one tree moves.
-  // Recomputed again 2026-10-01 after merging the quality/post chain into this branch and landing
-  // the rts sim's order, queue and event-record fixes: `rts` alone moves, and it is the only one of
-  // the eleven that carries `src/sim/`. Measured through createProject on the merged tree.
-  // Recomputed 2026-10-01 on the merge of develop (PRD-470/471/472/474) into the rain + snow
-  // branch (PRD-469, PRD-473): the merged tree carries both sides' engine and manifest bytes, so
-  // all thirteen trees, rain and snow included, were re-measured through createProject.
-  "action-rpg": "0005f27d15960e072d741b00e9ec9fa6989a2c220aafb6d0b1c6d9c95a6b45ea",
-  minimal: "b43574b287325f3fb4f11ca6db40ec585fa8351c64f5e7a86aefe87f8bfddfd9",
-  platformer: "1e73a0e982af664b23509bee2cd6ee4fd498960d056292e9917b14ea860455d6",
-  puzzle: "7fec060eab41947888633aee4a08b1679f1a554ac732ea018ecafa2ec7460fb4",
-  racing: "2334d5efa5a5269ee6a636cd791f8a5914297356bd0132d3234a69fb5aa1aee3",
-  rain: "85ed650c9a5cc859a386abad89dacd138ee490598a2bf1c8fff242ba54da9627",
-  rts: "0838930e677b91f5f8b0dc1a4c04a9f565023c4b954bc1151d2093e28e423b1e",
-  runner: "e63461a6fb2707eb4c14f251b78f2a3d59454f24e083d001fcc7e0ce588d05da",
-  sailing: "bd993bbb95c0d31cc6c74129cb4fbba1565c532fb7b0bd5c3948cca3425d7202",
-  shooter: "a39600082f233ffea1c4cbadcd45fb1219c66bff7c0d97cdf82b2397b9cffbc3",
-  snow: "60d7dae7ab9eac8ab503f172f70f8682b30454898c4df235f17768ef20f0527f",
-  starter: "437709f6194572d99dcb2689dd658fcc7c01aff9abc1283709b4c349a1bbe4e2",
-  "tower-defense": "419482e4087d3f564ab05eeeeb284ddf1c31f3e02df0a4849f4994fb21f7984c",
+  // Recomputed 2026-10-02 on the merge of develop into PRD-339 auto-exposure: all thirteen
+  // trees move, because every template gained src/render/exposure.ts + autoExposure.ts and the
+  // merged tree also carries develop's shared threenative-assets skill bytes. Measured through
+  // createProject on the merged tree by the spec that asserts them.
+  "action-rpg": "b7f054b47c662c77372335279fe81a916d45afed60a39d12e6054f35a31f4fc6",
+  minimal: "5147f37e55f3c6524b7d2489b1bda46b7276fad825465be825ceaa87aa718b42",
+  platformer: "40342e5fcaaf682d486878d12dbe42cf08ebd3a97b927025a85f2a58e227e2f8",
+  puzzle: "649e38d75110dee453fda27b68fd4e2428520f1cebbab8d182d05aea7d97fe9a",
+  racing: "c5375fd0ca297f309ab7e8d121a86b6815a20cdd5b00ef4ad695452da35c5b9b",
+  rain: "3fc0a3879815321f51e8d886db9f2c9a2832c0ddff6aa7a25b30ff6fe7e02e8f",
+  rts: "c04d8fbbcfad0fa962055202df3223d62a80361a2779863127b0e49debe8d2eb",
+  runner: "82edfe3f91964d74a727a5a32719cf97170bf8484bc82bfd3626efe9d7964d0e",
+  sailing: "205d7eb3b82d743d3dcd1bef2e23290cf0576f4ce377c1d93bafb3a089a2baa5",
+  shooter: "39eaa2254eaa77038b19c1ba0b8cf50665d8b9e6e96223f76131d97b1835de82",
+  snow: "d322ab60a23e146ca729348db119c2491c54cc1f949bd394676d3dd4ff2aa294",
+  starter: "d7ec4b02ffb446b33666f52ccd9db0e034a17d5961ea3b2caa17012a481e73a8",
+  "tower-defense": "e5980d5a22836b591f3ac5853c5dd522aa8bcb090722a71e1afcc122defa8ad0",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
