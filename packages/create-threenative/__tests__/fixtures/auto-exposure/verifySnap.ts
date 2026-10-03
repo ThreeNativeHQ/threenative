@@ -8,6 +8,7 @@ import {
   WEBGPU_BROWSER_ARGS,
   runStandalonePlaytest,
 } from "../../../../playtest/dist/runner/index.js";
+import { exposureMutationPlugin } from "./mutations.js";
 import { assertExposureConsumer } from "./proof.js";
 import { qualifyExposureSnap } from "./snapProof.js";
 const fixture = dirname(fileURLToPath(import.meta.url));
@@ -24,8 +25,21 @@ await mkdir(artifacts, { recursive: true });
 await build({ configFile: false, root: fixture, build: { outDir: site, emptyOutDir: true } });
 const vite = join(dirname(fileURLToPath(import.meta.resolve("vite/package.json"))), "bin/vite.js");
 const results = [];
-for (const snapGain of [1, 0] as const) {
-  const directory = join(artifacts, `gain-${snapGain}`);
+const variants = [
+  { snapGain: 1 as const, missingWire: false },
+  { snapGain: 0 as const, missingWire: false },
+];
+if (consumer) variants.push({ snapGain: 1, missingWire: true });
+for (const { snapGain, missingWire } of variants) {
+  const mutationRecords: unknown[] = [];
+  if (missingWire)
+    await build({
+      configFile: false,
+      root: fixture,
+      build: { outDir: site, emptyOutDir: true },
+      plugins: [exposureMutationPlugin("consumer", (record) => mutationRecords.push(record))],
+    });
+  const directory = join(artifacts, missingWire ? "consumer-missing-wire" : `gain-${snapGain}`);
   await mkdir(directory, { recursive: true });
   const report = await runStandalonePlaytest({
     artifactDirectory: directory,
@@ -47,10 +61,26 @@ for (const snapGain of [1, 0] as const) {
   });
   await writeFile(
     join(directory, "report.json"),
-    `${JSON.stringify({ sourceSha, runId, snapGain, ...report }, null, 2)}\n`,
+    `${JSON.stringify({ sourceSha, runId, snapGain, missingWire, mutationRecords, ...report }, null, 2)}\n`,
   );
-  if (consumer) assertExposureConsumer(report);
-  results.push({ snapGain, ...qualifyExposureSnap(report, snapGain), capture: report.capture });
+  const response = qualifyExposureSnap(report, snapGain);
+  if (missingWire) {
+    let rejected = false;
+    try {
+      assertExposureConsumer(report);
+    } catch (error) {
+      if (!(error instanceof Error) || !error.message.includes("actual graph")) throw error;
+      rejected = true;
+    }
+    if (!rejected) throw new Error("Missing-wire negative control did not fail the consumer gate.");
+  } else if (consumer) assertExposureConsumer(report);
+  results.push({
+    snapGain,
+    missingWire,
+    expectedConsumerFailure: missingWire,
+    ...response,
+    capture: report.capture,
+  });
 }
 await writeFile(
   join(artifacts, "summary.json"),

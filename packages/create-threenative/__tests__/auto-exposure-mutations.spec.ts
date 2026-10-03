@@ -4,6 +4,10 @@ import { mutateExposureSource } from "./fixtures/auto-exposure/mutations.js";
 
 const source = readFileSync(new URL("../template-assets/autoExposure.ts", import.meta.url), "utf8");
 const graph = readFileSync(new URL("../template-assets/exposureGraph.ts", import.meta.url), "utf8");
+const consumer = readFileSync(
+  new URL("../template-assets/worldEnvironment.ts", import.meta.url),
+  "utf8",
+);
 const entry = readFileSync(new URL("./fixtures/auto-exposure/main.ts", import.meta.url), "utf8");
 
 describe("exposure mutation controls", () => {
@@ -16,6 +20,12 @@ describe("exposure mutation controls", () => {
       expect(() => mutateExposureSource(mutated, mutation)).toThrow(/exactly one/);
     },
   );
+  it("removes only the generated environment's actual auto-exposure installation in the control build", () => {
+    const changed = mutateExposureSource(consumer, "consumer");
+    expect(changed).toContain("const exposure = false");
+    expect(changed).not.toContain("const exposure = options.autoExposureEnabled");
+    expect(() => mutateExposureSource(changed, "consumer")).toThrow(/exactly one/);
+  });
   it("uses the existing fixed-step clock only in the negative-control entry", () => {
     expect(mutateExposureSource(entry, "clock")).toContain(
       "Reflect.deleteProperty(globalThis, PLAYTEST_CLOCK_GLOBAL)",

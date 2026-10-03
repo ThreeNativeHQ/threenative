@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { Plugin } from "vite";
 
-export type ExposureMutation = "linear" | "disabled" | "meter" | "clock";
+export type ExposureMutation = "linear" | "disabled" | "meter" | "clock" | "consumer";
 const replacements: Record<ExposureMutation, readonly [string, string]> = {
   linear: [
     "mix(old, goal, mix(normal, float(1), cut))",
@@ -15,6 +15,7 @@ const replacements: Record<ExposureMutation, readonly [string, string]> = {
     "const luminance = decode(measure.r.div(measure.g.max(1e-20)));",
     "const luminance = decode(measure.r.div(measure.g.max(1e-20))).mul(2);",
   ],
+  consumer: ["const exposure = options.autoExposureEnabled", "const exposure = false"],
   clock: [
     'Reflect.set(globalThis, PLAYTEST_CLOCK_GLOBAL, "wall-clock");',
     "Reflect.deleteProperty(globalThis, PLAYTEST_CLOCK_GLOBAL);",
@@ -43,11 +44,13 @@ export function exposureMutationPlugin(
     enforce: "pre",
     transform(source, id) {
       const suffix =
-        mutation === "clock"
-          ? "/fixtures/auto-exposure/main.ts"
-          : mutation === "disabled"
-            ? "/template-assets/autoExposure.ts"
-            : "/template-assets/exposureGraph.ts";
+        mutation === "consumer"
+          ? "/template-assets/worldEnvironment.ts"
+          : mutation === "clock"
+            ? "/fixtures/auto-exposure/main.ts"
+            : mutation === "disabled"
+              ? "/template-assets/autoExposure.ts"
+              : "/template-assets/exposureGraph.ts";
       if (!id.endsWith(suffix)) return;
       const code = mutateExposureSource(source, mutation);
       count++;

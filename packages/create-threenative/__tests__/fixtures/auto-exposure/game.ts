@@ -200,7 +200,7 @@ export function createExposureFixture(options: IExposureFixtureOptions) {
             );
         }
       };
-      if (installation === undefined)
+      if (installation?.exposure === undefined)
         ctx.renderer.setOutputNode(applyExposure(colour, exposure.exposureNode), worldPass);
       ctx.entities.add("exposure", {
         debug: () => ({
@@ -213,9 +213,10 @@ export function createExposureFixture(options: IExposureFixtureOptions) {
       this.#dispose = () => {
         activeScene = false;
         ctx.renderer.clearOutputNode?.();
-        if (installation === undefined) {
+        if (installation?.exposure === undefined) {
           exposure.dispose();
-          worldPass.dispose();
+          if (installation === undefined) worldPass.dispose();
+          else installation.dispose?.();
         } else installation.dispose?.();
         disposeRoom();
       };
