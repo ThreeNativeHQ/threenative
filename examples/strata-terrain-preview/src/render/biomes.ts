@@ -155,7 +155,7 @@ export const BIOMES: Record<WorldName, IBiome> = {
       mie: 0.002,
       radiance: 1.6,
       distanceScale: 1,
-      horizonFade: [450, 1800],
+      horizonFade: [1800, 3300],
     },
     skyRadiance: 0.24,
     saturation: 0.86,

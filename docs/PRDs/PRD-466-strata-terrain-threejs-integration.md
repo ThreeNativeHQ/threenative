@@ -2604,3 +2604,14 @@ alpine/desert have no water. The installed scaffold/game handoff passes with no 
 package. Full `test:consumer` remains FAIL on rain; no world-shape expectations changed.
 Exported recipes still contain no prop scatter layers (reported as incomplete full-world
 art by the existing proof), as before this lane. Final licensed/fallback scenarios pending.
+
+2026-10-03 UTC DEM framing checkpoint: alpine's forced horizon fade now begins at
+1,800 m and ends at 3,300 m, so the camera can frame the surveyed headwall without
+the previous near-range cutoff. Final alpine/desert scratch scenario PASS, including
+world switches/loaded steps and exact continuation seams. Example TypeScript and
+root Biome PASS (78 files, existing warnings); terrain Vitest remains 71/71 PASS.
+`pnpm check:docs` PASS: 2,498 relative links. Inspected final licensed 1:1 ridge,
+overview and mesa crops against the Gaia reference: real continuous headwall,
+snow on ledges/hollows and a natural butte skirt; far alpine haze remains stronger
+than the reference. No new judge score or Gaia acceptance is claimed. Full final
+licensed and fallback gates remain pending at this checkpoint.
