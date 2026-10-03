@@ -5,11 +5,17 @@ import {
   BoxGeometry,
   Group,
   InstancedMesh,
+  Matrix4,
   Mesh,
   MeshBasicMaterial,
   type Object3D,
   PerspectiveCamera,
 } from "three";
+// Three's own sources, not the bundle `three` resolves to: the renderer under test is the source
+// one, and it culls with a `Frustum` of its own — a second class, so the seam below has to be that
+// one rather than the `Frustum` this file's world was built with.
+import { Frustum } from "three/src/math/Frustum.js";
+import Renderer from "three/src/renderers/common/Renderer.js";
 import { BundleGroup } from "three/webgpu";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { IRendererLike } from "../src/renderer.js";
@@ -17,7 +23,8 @@ import { type IWorldPackage, WorldCells } from "../src/world.js";
 
 /**
  * The main pass's draw bundles: every GPU-dressed batch mesh parented under one `BundleGroup`, and
- * that group re-recorded only when the set of things it draws changes.
+ * every resident cell's hand-placed chunks parented under one of their own, each re-recorded only
+ * when the set of things it draws changes.
  *
  * The claim is a count. Three fixes a bundle's render list when it records it and replays the
  * encoded draws until `bundleGroup.version` moves, so a walk that re-records every frame is a walk
@@ -116,6 +123,19 @@ function playerCamera(at: readonly [number, number] = [0, 1]): PerspectiveCamera
   return camera;
 }
 
+/**
+ * The same player camera turned east, which is where cell (1, 1) and its chunk stand: the pose a
+ * chunk's draws are visible from, and the one the west-facing camera has to lose them in.
+ */
+function eastCamera(): PerspectiveCamera {
+  const centre = cellCentre(0, 1);
+  const camera = new PerspectiveCamera(60, 1, 0.1, 1000);
+  camera.position.set(centre.x, 4, centre.z);
+  camera.lookAt(centre.x + CELL * 4, 4, centre.z);
+  camera.updateMatrixWorld();
+  return camera;
+}
+
 /** Every `InstancedMesh` under the world, wherever it hangs — including inside a bundle group. */
 function worldMeshes(world: WorldCells): InstancedMesh[] {
   const found: InstancedMesh[] = [];
@@ -128,6 +148,131 @@ function worldMeshes(world: WorldCells): InstancedMesh[] {
 /** The main pass's own meshes. A caster half carries an `@` in its key, and the main half does not. */
 function mainKeys(world: WorldCells): InstancedMesh[] {
   return worldMeshes(world).filter((one) => one.name !== "" && !one.name.includes("@"));
+}
+
+/** Whether this object is one of a hand-placed chunk's own meshes, wherever in the world it hangs. */
+function isChunk(object: Object3D): boolean {
+  return object.userData.tnDrawSource === "chunks";
+}
+
+/**
+ * The meshes' own names, sorted, so two projections are compared as sets: which meshes a frame draws
+ * is the claim, and the order three happens to hand them over in is not.
+ */
+function names(meshes: readonly Object3D[]): string[] {
+  return meshes.map((mesh) => mesh.name).sort();
+}
+
+/** Every mesh a prepared chunk drew through the main pass, in no particular order. */
+function chunkMeshes(world: WorldCells): Mesh[] {
+  const found: Mesh[] = [];
+  world.traverse((object: Object3D) => {
+    if ((object as Mesh).isMesh === true && isChunk(object)) found.push(object as Mesh);
+  });
+  return found;
+}
+
+/** The bundle groups a hand-placed chunk's draws are recorded in: one per resident cell that has one. */
+function chunkBundles(world: WorldCells): BundleGroup[] {
+  const found: BundleGroup[] = [];
+  world.traverse((object: Object3D) => {
+    if (!(object instanceof BundleGroup)) return;
+    let holdsChunk = false;
+    object.traverse((child) => {
+      if (isChunk(child)) holdsChunk = true;
+    });
+    if (holdsChunk) found.push(object);
+  });
+  return found;
+}
+
+/**
+ * Three's own projection of the world, with what it would submit per object counted.
+ *
+ * A mesh in the base render list is one `_renderObjectDirect` call a frame — the cost the draw
+ * attribution measured — and a `BundleGroup` records its children into a render list of its own and
+ * hands the frame one bundle entry instead, so `bundled` is what the replay draws in their place.
+ *
+ * The renderer is a stub holding only what `_projectObject` reads, called through three's own
+ * prototype, because a node-environment test has no renderer with a GPU behind it. The frustum is
+ * the one seam patched rather than faked: the count depends on it, since a record is culled by the
+ * same test the old per-object path was, and three keeps that frustum in a module the test cannot
+ * reach.
+ */
+/** Three's projection, which is private and whose signature the class's types do not name. */
+interface IProjector {
+  _projectObject(
+    object: Object3D,
+    camera: PerspectiveCamera,
+    groupOrder: number,
+    renderList: unknown,
+    clippingContext: unknown,
+  ): void;
+  /** Whether a recorded group has to be recorded again, which is what makes a bundle frozen. */
+  _bundleNeedsUpdate(bundleGroup: BundleGroup, renderBundleData: { version?: number }): boolean;
+}
+
+function project(
+  root: Object3D,
+  camera: PerspectiveCamera,
+): {
+  readonly bundled: readonly Object3D[];
+  readonly groups: readonly BundleGroup[];
+  readonly perObject: readonly Object3D[];
+} {
+  const perObject: Object3D[] = [];
+  const bundled: Object3D[] = [];
+  const recorded = new Map<BundleGroup, Object3D[]>();
+  const list = (into: Object3D[]): object => ({
+    begin: (): void => {},
+    finish: (): void => {},
+    push: (object: Object3D): void => {
+      into.push(object);
+    },
+    pushBundle: (): void => {},
+  });
+  const frustum = new Frustum().setFromProjectionMatrix(
+    new Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse),
+  );
+  const projector = Renderer.prototype as unknown as IProjector;
+  const renderer = {
+    _bundles: { get: (): object => ({}) },
+    // Three answers this off the recorded version, so the stub holds the real answer: a group whose
+    // `version` moved is recorded again, and one that did not is replayed as it stands.
+    _bundleNeedsUpdate: projector._bundleNeedsUpdate,
+    _currentRenderContext: {},
+    _renderLists: {
+      get: (group: BundleGroup): object => {
+        const into = recorded.get(group) ?? [];
+        recorded.set(group, into);
+        return list(into);
+      },
+    },
+    // Three recurses through `this._projectObject`, so the stub has to answer with the method itself.
+    // Every argument is forwarded: a bundle's own record is projected into the list three hands the
+    // recursion, and a stub that pinned the base list would count a record as per-object draws.
+    _projectObject(
+      this: unknown,
+      object: Object3D,
+      at: PerspectiveCamera,
+      groupOrder: number,
+      renderList: unknown,
+      clippingContext: unknown,
+    ): void {
+      projector._projectObject.call(this, object, at, groupOrder, renderList, clippingContext);
+    },
+    backend: { beginBundle: (): undefined => undefined, get: (): object => ({}) },
+    sortObjects: true,
+  };
+  const culled = Frustum.prototype.intersectsObject;
+  Frustum.prototype.intersectsObject = (object: Object3D): boolean => culled.call(frustum, object);
+  try {
+    projector._projectObject.call(renderer, root, camera, 0, list(perObject), undefined);
+  } finally {
+    Frustum.prototype.intersectsObject = culled;
+  }
+  for (const into of recorded.values()) bundled.push(...into);
+  return { bundled, groups: [...recorded.keys()], perObject };
 }
 
 /**
@@ -151,11 +296,19 @@ function watchVisible(meshes: readonly InstancedMesh[]): Map<string, { count: nu
   return writes;
 }
 
-/** The world's one `BundleGroup`, or `undefined` when it has not dressed a mesh into one. */
+/**
+ * The world's one `BundleGroup` for the GPU-dressed main meshes, or `undefined` when it has not
+ * dressed a mesh into one. Found by what it holds, because a chunk's own groups hold chunks too.
+ */
 function bundleGroup(world: WorldCells): BundleGroup | undefined {
+  const dressed = new Set(mainKeys(world));
   let found: BundleGroup | undefined;
   world.traverse((object: Object3D) => {
-    if (object instanceof BundleGroup) found = object;
+    if (
+      object instanceof BundleGroup &&
+      object.children.some((child) => dressed.has(child as never))
+    )
+      found = object;
   });
   return found;
 }
@@ -201,6 +354,21 @@ async function flushed(
   }
 }
 
+/**
+ * A chunk as the loader hands it over: one box, standing in the cell that asked for it, because a
+ * hand-placed chunk is placed by the export and a test that leaves every chunk at the origin cannot
+ * say anything about which cell's cull answer draws it.
+ */
+function chunkModelAt(url: string): Group {
+  const model = plainModel();
+  const cell = /chunks\/.*_(\d+)_(\d+)\.glb$/u.exec(url);
+  if (cell !== null) {
+    const centre = cellCentre(Number(cell[1]), Number(cell[2]));
+    model.position.set(centre.x, 0, centre.z);
+  }
+  return model;
+}
+
 /** A world on the committed package, walked the way the GPU-scene spec walks it. */
 async function world(
   options: {
@@ -219,7 +387,7 @@ async function world(
     admissionBudgetMs: Number.POSITIVE_INFINITY,
     budgets,
     follow,
-    loadModel: async () => plainModel(),
+    loadModel: async (url: string) => chunkModelAt(url),
     prefetchSeconds: 0,
     ring: 1,
     shadows: { cast: true, receive: true },
@@ -346,7 +514,10 @@ describe("the main pass's draw bundles", () => {
     const group = bundleGroup(cells);
     for (const mesh of meshes) expect(mesh.parent).toBe(group);
     expect(group?.children.length).toBe(watched.size);
-    expect(cells.stats().bundle.children).toBe(watched.size);
+    // And the stat counts every recorded object: the dressed main meshes plus one entry per chunk,
+    // because a cell's own record holds whole chunks rather than the meshes inside them.
+    const chunks = chunkBundles(cells).reduce((total, group_) => total + group_.children.length, 0);
+    expect(cells.stats().bundle.children).toBe(watched.size + chunks);
     cells.dispose();
   });
 
@@ -389,6 +560,99 @@ describe("the main pass's draw bundles", () => {
     // The caster halves are off layer 0, so the main pass never counts them; they stay unnamed.
     for (const mesh of worldMeshes(cells).filter((one) => one.name.includes("@")))
       expect(mesh.userData.tnDrawSource).toBeUndefined();
+    cells.dispose();
+  });
+
+  it("replays a hand-placed chunk instead of walking its draws, and draws the same ones", async () => {
+    // The subject of the box: chunks are the largest source left on the per-draw path with bundles
+    // on (106–194 draws a frame p50 on the map-walk), and a chunk is one mesh per material that three
+    // projects, sorts and submits every frame. The same pose in both worlds, projected by three.
+    const { renderer, world: bundled } = await world({ bundles: true });
+    bundled.update(renderer, eastCamera());
+    await flushed(bundled, renderer, eastCamera());
+    const { renderer: plain, world: walked } = await world({ bundles: false });
+    walked.update(plain, eastCamera());
+    await flushed(walked, plain, eastCamera());
+
+    const chunks = chunkMeshes(walked);
+    expect(chunks.length).toBeGreaterThan(0);
+    // What the old path submitted per object, from the world's own draw list.
+    const before = project(walked, eastCamera()).perObject.filter(isChunk);
+    expect(before.length).toBeGreaterThan(0);
+    // And what it submits now: none of them per object, and the same ones from a cell's own record.
+    const after = project(bundled, eastCamera());
+    expect(after.perObject.filter(isChunk)).toEqual([]);
+    expect(names(after.bundled.filter(isChunk))).toEqual(names(before));
+    // The same picture, and the two ways it could stop being the same: a record is fixed when it is
+    // recorded, so a mesh the record dropped is missing geometry the moment the camera turns towards
+    // it — hence never culled by the record itself — and a cell the cull can only partly see holds
+    // meshes the frustum had rejected, which rasterize nothing. Both are per-cell, not per-mesh.
+    for (const mesh of chunkMeshes(bundled)) {
+      expect(mesh.userData.tnBundled).toBe(true);
+      expect(mesh.frustumCulled).toBe(false);
+    }
+    expect(bundled.stats().failures).toBe(0);
+    expect(walked.stats().failures).toBe(0);
+    bundled.dispose();
+    walked.dispose();
+  });
+
+  it("hides a cell's chunk record while the cull cannot see the cell, and shows it again", async () => {
+    const { renderer, world: cells } = await world({ bundles: true });
+    cells.update(renderer, eastCamera());
+    await flushed(cells, renderer, eastCamera());
+
+    // One group per cell that has a chunk, and the one that holds cell (1, 1)'s is the answer the
+    // camera gets from the east: the cell is ahead, so the record is drawn.
+    const groups = chunkBundles(cells);
+    expect(groups.length).toBeGreaterThan(0);
+    cells.update(renderer, eastCamera());
+    const drawn = groups.filter((group) => group.visible);
+    expect(drawn.length).toBeGreaterThan(0);
+    const resident = names(chunkMeshes(cells));
+    // Turned west, that same cell is behind the camera and its record goes out of the frame whole —
+    // the one lever a frozen render list has, and the granularity the main cull already answers at.
+    cells.update(renderer, playerCamera());
+    for (const group of drawn) expect(group.visible).toBe(false);
+    // The chunk was never removed from the world, only unanswered: it is still there for the next
+    // frame that can see it, and it is the record, not a per-mesh `visible`, that came and went.
+    expect(names(chunkMeshes(cells))).toEqual(resident);
+    cells.update(renderer, eastCamera());
+    for (const group of drawn) expect(group.visible).toBe(true);
+    cells.dispose();
+  });
+
+  it("re-records a chunk cell when its chunks attach, and drops the record when the cell leaves", async () => {
+    const { follow, renderer, world: cells } = await world({ bundles: true });
+    cells.update(renderer, eastCamera());
+    await flushed(cells, renderer, eastCamera());
+
+    // One record per attach: the recorded list does not hold this render object, and the replay
+    // would draw the cell's chunks without it.
+    expect(chunkBundles(cells).length).toBeGreaterThan(0);
+    const settled = cells.stats().bundle;
+    expect(settled.on).toBe(true);
+    expect(settled.records).toBeGreaterThan(0);
+    expect(settled.children).toBeGreaterThan(0);
+    // A camera at rest streams nothing, so nothing re-records — including the chunk groups, whose
+    // visibility the cull answers with a write rather than with a record.
+    for (let index = 0; index < 40; index += 1) cells.update(renderer, eastCamera());
+    expect(cells.stats().bundle.records).toBe(settled.records);
+
+    // Far enough east that neither cell that owns a chunk is resident: the record goes with the cell,
+    // so no frame can replay a cell the world has released.
+    follow.position.x = cellCentre(4, 1).x;
+    for (let pass = 0; pass < 40 && cells.stats().residentKeys.includes("1:1"); pass += 1) {
+      cells.update(renderer, eastCamera());
+      await flush();
+    }
+    expect(cells.stats().residentKeys).not.toContain("1:1");
+    expect(cells.stats().residentKeys).not.toContain("0:2");
+    expect(chunkBundles(cells)).toEqual([]);
+    expect(chunkMeshes(cells)).toEqual([]);
+    // And the stat gives the chunks back rather than counting records nothing owns any more.
+    expect(cells.stats().bundle.children).toBe(bundleGroup(cells)?.children.length ?? 0);
+    expect(cells.stats().bundle.records).toBeGreaterThan(settled.records);
     cells.dispose();
   });
 });
