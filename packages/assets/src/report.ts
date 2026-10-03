@@ -587,7 +587,7 @@ export function formatSkippedCompression(rows: readonly ISkippedReportRow[]): re
       const reason =
         row.reason === "config"
           ? `assets.${row.kind}s is "none"`
-          : `this target has no WebAssembly and cannot run its ${decoders} decoder`;
+          : `this target has no qualified ${decoders} decoder`;
       return `TN_ASSETS_COMPRESSION_SKIPPED ${row.kind}: ${String(row.files)} file(s), ${(row.bytes / 1e6).toFixed(1)} MB ${action} because ${reason}.`;
     });
 }

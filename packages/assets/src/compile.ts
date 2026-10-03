@@ -265,31 +265,16 @@ export interface IAssetCompileOptions {
    */
   readonly processingOrder?: "reversed" | "sorted";
   /**
-   * The platform this bake is for, which decides whether compression can ship at all.
-   *
-   * Android and iOS run the native host without WebAssembly, so they carry no Basis transcoder
-   * and no Meshopt decoder: a `.ktx2` texture or a meshopt-compressed mesh in a mobile bundle is
-   * a black screen, and `threenative build` refuses one with `TN_NATIVE_KTX2_UNSUPPORTED`. Web
-   * and desktop decode both.
-   *
-   * Absent means web — a direct `compileAssets` call, or a project that compiles once and serves
-   * the result. `threenative build` always names its `--target`, so the passes that a platform
-   * cannot decode drop for that build and stay on for every other one. This is the whole reason
-   * `assets.textures: "none"` used to be pinned in the scaffolded config: the author was asked to
-   * choose one constant for four targets, and every game that wanted Android shipped its web
-   * build uncompressed too. The build knows its target; it decides.
+   * The conservative default decoder policy: web/desktop keep the existing loaders;
+   * Android/iOS stay decoder-free until their packaged loaders are qualified. A V8 engine
+   * alone does not establish a working Basis, Meshopt or Draco path. Absent means web.
+   * Native builds provide runtimeDecoders from their selected artifact instead.
    */
   readonly platform?: "android" | "desktop" | "ios" | "web";
-  /**
-   * What the runtime that will execute this bake can decode, when the caller has probed it.
-   *
-   * `platform` is a proxy: it answers "android and iOS have no WebAssembly" for the targets this
-   * repository ships. A desktop host can also lack WebAssembly — the Linux arm64 lane builds
-   * QuickJS over wgpu-native — and then the same meshopt/KTX2 passes it would keep produce an
-   * asset nothing can decode. `threenative build` reads the engine from the runtime binary it will
-   * package and passes the real capability here; absent, the platform-derived default stands.
-   */
+  /** Which compressed outputs the selected runtime's bundle can decode, independently of WASM. */
   readonly runtimeDecoders?: IAssetRuntimeDecoderCapabilities;
+  /** Exact selected runtime/cohort identity; changing it invalidates cooked output. */
+  readonly runtimeIdentity?: string;
   readonly source?: string;
   /** Overrides resolution of three's Basis transcoder for the copy into the output root. */
   readonly transcoder?: IBasisTranscoder;
@@ -1594,9 +1579,8 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
       `TN_ASSETS_OVERLAP: source '${sourceRoot}' and output '${outputRoot}' must be disjoint directories.`,
     );
   }
-  // Android and iOS have no WebAssembly and therefore no Basis transcoder and no Meshopt
-  // decoder. The registry uses each pass's declaration below, so decoder-free work in the mixed
-  // model pass survives on those targets.
+  // Mobile keeps the decoder-free policy until its packaged loaders are qualified.
+  // Each pass declares its decoder dependency, so decoder-free model work survives.
   const runtimeDecoderCapabilities: IAssetRuntimeDecoderCapabilities = options.runtimeDecoders ?? {
     ktx2: options.platform !== "android" && options.platform !== "ios",
     meshopt: options.platform !== "android" && options.platform !== "ios",
@@ -2534,6 +2518,14 @@ export async function compileAssets(
     const cacheKeys = included.map((pass) => pass.cacheKey ?? null);
     return JSON.stringify({
       ...(cacheKeys.some((key) => key !== null) ? { passCacheKeys: cacheKeys } : {}),
+      ...(options.runtimeIdentity === undefined && options.runtimeDecoders === undefined
+        ? {}
+        : {
+            runtime: {
+              identity: options.runtimeIdentity ?? null,
+              decoders: layout.runtimeDecoderCapabilities,
+            },
+          }),
       pipelineVersion: PIPELINE_VERSION,
       passes: included.map((pass) => pass.name),
       options: included.map((pass) => pass.configuration ?? null),

@@ -7,12 +7,23 @@ import { encodeToKTX2 } from "ktx2-encoder";
 import { afterEach, describe, expect, it } from "vitest";
 import { buildFixtureGlb } from "../../../test-support/generate-fixture-model.js";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
-import { assertNativeAssetsCompatible, assertNativeBundleCompatible, build } from "../src/build.js";
+import {
+  assertNativeAssetsCompatible,
+  assertNativeBundleCompatible,
+  build,
+  resolveRuntimeAssetCapabilities,
+} from "../src/build.js";
 import { loadConfig } from "../src/config.js";
 
 const run = promisify(execFile);
 const roots: string[] = [];
 const bundler = path.resolve("packages/runtime-native/scripts/bundle.mjs");
+const desktopV8 = () =>
+  resolveRuntimeAssetCapabilities(
+    "desktop",
+    path.resolve("packages/create-threenative/src/build.ts"),
+    (() => ({ status: 0, stdout: "+ v8 build" })) as never,
+  );
 const viteInstall = path.resolve(import.meta.dirname, "../node_modules/vite");
 
 afterEach(async () => {
@@ -43,7 +54,11 @@ export default defineGame({ scenes: {} });
   return project;
 }
 
-async function bundle(project: string, target: "android" | "desktop" | "ios"): Promise<string> {
+async function bundle(
+  project: string,
+  target: "android" | "desktop" | "ios",
+  nativeBackend = false,
+): Promise<string> {
   const output = path.join(project, `dist/${target}.js`);
   await run(
     process.execPath,
@@ -57,6 +72,7 @@ async function bundle(project: string, target: "android" | "desktop" | "ios"): P
       target,
       "--output",
       output,
+      ...(nativeBackend ? ["--native-backend"] : []),
     ],
     { cwd: project },
   );
@@ -111,12 +127,24 @@ describe("compressed assets on native targets", () => {
     }
   }, 180_000);
 
+  it("bundles decoder-free desktop QuickJS without WASM decoders", async () => {
+    const project = await gameProject("threenative-ktx2-quickjs-");
+    const output = await bundle(project, "desktop", true);
+    const source = await readFile(output, "utf8");
+    expect(source).not.toMatch(/\bWebAssembly\b/u);
+    expect(source).toContain("TN_NATIVE_KTX2_UNSUPPORTED");
+    expect(source).toContain("TN_NATIVE_MESH_COMPRESSION_UNSUPPORTED");
+    await expect(assertNativeBundleCompatible(output, "desktop")).resolves.toBeUndefined();
+  }, 180_000);
+
   it("keeps three's real decoders on desktop, which has a WASM engine", async () => {
     const project = await gameProject("threenative-ktx2-desktop-");
 
     const output = await bundle(project, "desktop");
     const source = await readFile(output, "utf8");
-    await expect(assertNativeBundleCompatible(output, "desktop")).resolves.toBeUndefined();
+    await expect(
+      assertNativeBundleCompatible(output, "desktop", desktopV8()),
+    ).resolves.toBeUndefined();
     expect(source).toMatch(/\bWebAssembly\b/u);
     expect(source).not.toContain("TN_NATIVE_KTX2_UNSUPPORTED");
   }, 180_000);
@@ -219,7 +247,9 @@ export default defineGame({ scenes: {} });
     const config = await loadConfig(project);
 
     for (const target of ["desktop", "web"] as const) {
-      await expect(assertNativeAssetsCompatible(project, target, config)).resolves.toBeUndefined();
+      await expect(
+        assertNativeAssetsCompatible(project, target, config, desktopV8()),
+      ).resolves.toBeUndefined();
     }
   }, 60_000);
 
