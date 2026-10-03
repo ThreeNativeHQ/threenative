@@ -1,3 +1,4 @@
+import { createOwnedRunResourceRelease } from "./ownedRunResources.js";
 import type { IPlaytestToneCaptureObservation } from "../tone.js";
 import { waitFrames, captureVisualSurface, runStep, sampleVisualElementBounds, screenshotObservations, sampleAfterTransition } from "./steps.js";
 import type { StepInputState } from "./steps.js";
@@ -224,6 +225,12 @@ async function runStandalonePlaytestInternal(
   let browserLaunch: Promise<Browser> | undefined;
   let context: BrowserContext | undefined;
   let page: Page | undefined;
+  let displayAcquisition: Promise<IProvidedDisplay> | undefined;
+  let leaseAcquisition: Promise<ICaptureLease> | undefined;
+  const releaseOwnedResources = createOwnedRunResourceRelease(
+    () => displayAcquisition,
+    () => leaseAcquisition,
+  );
   let teardownPromise: Promise<void> | undefined;
   let serverTeardownPromise: Promise<void> | undefined;
   const pageLifecycle: IPageLifecycle = {
@@ -283,8 +290,13 @@ async function runStandalonePlaytestInternal(
     })();
     await teardownPromise.catch(() => undefined);
     if (stopManagedServerOnTeardown) await stopServer();
+    // Signal exits do not reach finally. Await this run's pending handles before exiting too.
+    await releaseOwnedResources();
   };
   let tearingDown = false;
+  const ensureRunning = (): void => {
+    if (tearingDown) throw interruptedPlaytestError(activeConfig.target ?? "browser");
+  };
   const handleSignal = (): void => {
     // Read by the startup wait so it yields to teardown instead of polling to its own deadline.
     tearingDown = true;
@@ -306,20 +318,25 @@ async function runStandalonePlaytestInternal(
     process.stderr.write(`${JSON.stringify({ diagnostics: [preflight] })}\n`);
   }
   let providedDisplay: IProvidedDisplay | undefined;
-  let captureLease: ICaptureLease | undefined;
   try {
     if (needsPixels) {
-      captureLease = await acquireRunnerCaptureLock();
-      providedDisplay = await provideRunDisplay();
+      leaseAcquisition = acquireRunnerCaptureLock();
+      await leaseAcquisition;
+      ensureRunning();
+      displayAcquisition = provideRunDisplay();
+      providedDisplay = await displayAcquisition;
+      ensureRunning();
     }
     if (activeConfig.server !== undefined && server === undefined) {
       if (!usesFreePort) await assertManagedUrlAvailable(activeConfig.url);
+      ensureRunning();
       server = startManagedServer(activeConfig, usesFreePort ? activeConfig.port : undefined);
     }
     if (options.remoteBrowser !== undefined && server !== undefined && options.managedServer === undefined) {
       await waitForUrl(activeConfig.url, activeConfig.server?.timeoutMs ?? activeConfig.timeoutMs, server);
     }
     await options.remoteBrowser?.prepare(activeConfig);
+    ensureRunning();
     // Snapshot the profiles that already exist, so teardown can tell this run's from a sibling's.
     profilesBeforeLaunch = playwrightProfileDirectories();
     browserLaunch = options.remoteBrowser === undefined
@@ -330,9 +347,11 @@ async function runStandalonePlaytestInternal(
         })
       : options.remoteBrowser.connect(activeConfig);
     browser = await browserLaunch;
+    ensureRunning();
     if (options.remoteBrowser === undefined && server !== undefined && options.managedServer === undefined) {
       await waitForUrl(activeConfig.url, activeConfig.server?.timeoutMs ?? activeConfig.timeoutMs, server);
     }
+    ensureRunning();
     const touchBrowser = isTouchPrimaryBrowserScenario(scenario);
     // Explicit touch-control scenarios expose the same mobile signal that core's portable
     // predicate reads; keyboard and other pointer-only scenarios stay desktop.
@@ -344,6 +363,7 @@ async function runStandalonePlaytestInternal(
             : {}),
         })
       : await options.remoteBrowser.context(browser);
+    ensureRunning();
     if (touchBrowser && options.remoteBrowser === undefined) {
       // Chromium keeps desktop `userAgentData.mobile` unless full mobile emulation is enabled.
       // That emulation breaks the minimal template's WebGPU atmosphere path, so expose the one
@@ -355,10 +375,13 @@ async function runStandalonePlaytestInternal(
         });
       });
     }
+    ensureRunning();
     if (activeConfig.trace) {
       await context.tracing.start({ screenshots: true, snapshots: true });
     }
+    ensureRunning();
     page = await context.newPage();
+    ensureRunning();
     await page.addInitScript(() => {
       // Announce the runner before any game code evaluates, so an adapter can hold its loop
       // instead of racing this run's first observation.
@@ -816,10 +839,8 @@ async function runStandalonePlaytestInternal(
     process.off("SIGTERM", handleSignal);
     await stopCpuProfile(false);
     await teardown();
-    // Released last-in-first-out: the browser dies before the display it rendered on, and the
-    // display before the lock that serialises displays. Both releases swallow their own errors.
-    await providedDisplay?.release().catch(() => undefined);
-    await captureLease?.release().catch(() => undefined);
+    // Signal and normal/error teardown share the same idempotent owner-handle release.
+    await releaseOwnedResources();
   }
 }
 
