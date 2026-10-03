@@ -612,17 +612,27 @@ interface IDesktopScenarioOptions {
   onPrepare?: () => void;
   /** A caller-owned root the caller also removes, so its artifacts outlive the run. */
   projectPath?: string;
+  screenshots?: "before-after" | "after";
   screenshotError?: Error;
   signalBeforeStart?: boolean;
   stopError?: Error;
 }
+
+test("desktop before-after artifacts bracket the measured steps", async () => {
+  const { driver, report } = await runDesktopScenario(2, { screenshots: "before-after" });
+  expect(report.pass).toBe(true);
+  expect(driver.screenshots.map(({ path, tick }) => ({ name: path.split("/").at(-1), tick }))).toEqual([
+    { name: "before.png", tick: 0 },
+    { name: "after.png", tick: 3 },
+  ]);
+});
 
 async function runDesktopScenario(minDistance: number, options: IDesktopScenarioOptions = {}) {
   const ownsProjectPath = options.projectPath === undefined;
   const projectPath = options.projectPath ?? await makeTempDir("playtest-desktop-scenario-");
   const scenarioPath = join(projectPath, "scenario.json");
   await writeFile(scenarioPath, JSON.stringify({
-    artifacts: { screenshots: false },
+    artifacts: { screenshots: options.screenshots ?? false },
     assert: { movement: { entity: "player", minDistance } },
     name: "desktop-cross-target-scenario",
     schemaVersion: 1,
@@ -727,6 +737,7 @@ class FakeDesktopDriver implements IDevicePlaytestDriver {
   private installation?: IDeviceBridgeInstallation;
   prepareCalls = 0;
   stopped = false;
+  screenshots: Array<{ path: string; tick: number }> = [];
 
   constructor(
     private readonly bridge: IPlaytestBridgeV1,
@@ -743,8 +754,11 @@ class FakeDesktopDriver implements IDevicePlaytestDriver {
     this.installation = connectDevicePlaytestBridge(this.bridge, endpoint);
     this.onPrepare?.();
   }
-  async screenshot() {
+  async screenshot(path: string) {
     if (this.screenshotError !== undefined) throw this.screenshotError;
+    const snapshot = await this.bridge.sample({});
+    this.screenshots.push({ path, tick: snapshot.clock.tick });
+    await writeFile(path, Buffer.from(nonBlankPngBase64(), "base64"));
   }
   async stop() {
     this.stopped = true;
