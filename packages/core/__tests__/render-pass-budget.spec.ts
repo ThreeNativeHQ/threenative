@@ -148,7 +148,7 @@ describe("render pass budget", () => {
     budget.beginFrame();
     raw.render({ ...MAIN, submissions: { draws: 10, triangles: 100 }, nested: [SHADOW] }, {});
     // Nothing resolves until three's pool has been read back.
-    expect(budget.gpuPassMs(frame)).toBeUndefined();
+    expect(budget.nextGpuFrame()).toBeUndefined();
     const uids = [...pool.queryOffsets.keys()];
     expect(uids).toHaveLength(2);
     const [shadowUid, mainUid] = uids;
@@ -156,8 +156,16 @@ describe("render pass budget", () => {
       throw new Error("fake backend allocated fewer than two timestamp uids");
     pool.timestamps.set(shadowUid, 2.25); // nested shadow, allocated first
     pool.timestamps.set(mainUid, 5.5); // main
-    // Main must not absorb the shadow's pass: the split is 5.5 and 2.25, not 7.75 and 0.
-    expect(budget.gpuPassMs(frame)).toEqual({ main: 5.5, shadow: 2.25 });
+    // Main must not absorb the shadow's pass: the split is 5.5 and 2.25, not 7.75 and 0, and the
+    // frame's own cost is both of them rather than the one number three's resolve returns.
+    expect(budget.nextGpuFrame()).toEqual({
+      frame,
+      main: 5.5,
+      shadow: 2.25,
+      total: 7.75,
+    });
+    // One reading per frame: the same frame is not handed out twice.
+    expect(budget.nextGpuFrame()).toBeUndefined();
   });
 
   it("reports the GPU-selected main-pass triangles beside the CPU capacity figure", () => {
