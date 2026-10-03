@@ -17,6 +17,7 @@ import {
   type OrthographicCamera,
   PerspectiveCamera,
   Raycaster,
+  type RenderTarget,
   Scene,
   Sphere,
   SphereGeometry,
@@ -60,9 +61,9 @@ import {
   VirtualShadowNode,
   readVirtualShadowMarker,
 } from "../src/render/virtual-shadow.js";
-import { Heightfield } from "../src/world.js";
 import { WorldImpostorSurface } from "../src/render/world-impostor-surface.js";
 import { WorldImpostorAtlas } from "../src/render/world-impostor.js";
+import { Heightfield } from "../src/world.js";
 
 /**
  * The mechanism, without a GPU: level windows snap to their own texel grid, cached levels stay
@@ -575,6 +576,11 @@ describe("VirtualShadowNode", () => {
         sampleHeight: () => 70,
       }),
     );
+    const trunk = new Mesh(new BoxGeometry(8, 20, 8), new MeshBasicMaterial());
+    trunk.position.set(8, 80, 0);
+    trunk.castShadow = true;
+    scene.add(trunk);
+    scene.updateMatrixWorld(true);
     camera.position.set(0, 72, 0);
     camera.lookAt(0, 70, -150);
     const node = setupNode(light, { clipExtents: [24, 96, 320], mapSize: 512 });
@@ -587,6 +593,28 @@ describe("VirtualShadowNode", () => {
       expect(node.stats.perLevel.map((level) => level.draws)).toEqual([0, 0, 0]);
     }
     expect(node.stats.rendersTotal).toBe(renders);
+    const eyeFollow = setupNode(light, {
+      clipExtents: [24, 96, 320],
+      mapSize: 512,
+      followViewFocus: false,
+      receiverPlaneBias: false,
+    });
+    settle(eyeFollow, camera);
+    let draws = 0;
+    for (let frame = 0; frame < 60; frame += 1) {
+      camera.position.x = frame * 0.5;
+      node.updateBefore(frameFor(camera));
+      eyeFollow.updateBefore(frameFor(camera));
+      draws += node.stats.perLevel.reduce((total, level) => total + level.draws, 0);
+      expect(node.stats.rendered).toBe(eyeFollow.stats.rendered);
+      expect(node.stats.rendered).toBeLessThanOrEqual(1);
+      expect(node.stats.perLevel.map((level) => level.draws)).toEqual(
+        eyeFollow.stats.perLevel.map((level) => level.draws),
+      );
+      expect(node.clipmap.centerLight).toEqual(node.clipmap.project(camera.position));
+    }
+    expect(draws).toBeGreaterThan(0);
+    eyeFollow.dispose();
     node.dispose();
   });
 
@@ -1175,6 +1203,85 @@ describe("VirtualShadowNode invalidation coalescing", () => {
  * actually shadow the window, and a caster size gate in texels of that level. Neither takes a game
  * value, so the world under them is the only thing that decides.
  */
+/** Allocate the real stock target objects without registering anything with a GPU. */
+function shadowTargets(node: VirtualShadowNode): RenderTarget[] {
+  const graphBuilder = shadowGraphBuilder();
+  return [...node.levelNodes, ...node.moverNodes].map((stock) => {
+    const runtime = stock as Node & {
+      shadow: DirectionalLight["shadow"];
+      shadowMap: RenderTarget;
+      setupRenderTarget(
+        map: DirectionalLight["shadow"],
+        builder: NodeBuilder,
+      ): { shadowMap: RenderTarget };
+    };
+    const { shadowMap } = runtime.setupRenderTarget(runtime.shadow, graphBuilder);
+    // The aliases established by stock setupShadow: both handles name the same target.
+    runtime.shadowMap = shadowMap;
+    runtime.shadow.map = shadowMap;
+    return shadowMap;
+  });
+}
+
+describe("virtual shadow target lifetime", () => {
+  it.each(["node", "light"] as const)(
+    "releases every cached and mover target exactly once on %s disposal",
+    (owner) => {
+      const { camera, light, scene } = world();
+      const node = setupNode(light, { clipExtents: [24, 96, 320], mapSize: 512 });
+      const mover = new Mesh(new BoxGeometry(), new MeshBasicMaterial());
+      scene.add(mover);
+      node.trackCaster(mover);
+      settle(node, camera);
+      const stocks = [...node.levelNodes, ...node.moverNodes];
+      const targets = shadowTargets(node);
+      const disposed = targets.map(() => 0);
+      targets.forEach((target, index) =>
+        target.addEventListener("dispose", () => {
+          disposed[index] = (disposed[index] ?? 0) + 1;
+        }),
+      );
+      if (owner === "node") node.dispose();
+      else light.removeFromParent();
+      expect(disposed, "each stock target has one owner, including light removal").toEqual([
+        1, 1, 1, 1, 1, 1,
+      ]);
+      expect(node.levelNodes).toHaveLength(0);
+      expect(node.moverNodes).toHaveLength(0);
+      expect(scene.children.some((child) => child.name.startsWith("VirtualShadowLevel"))).toBe(
+        false,
+      );
+      expect(mover.layers.isEnabled(VIRTUAL_SHADOW_MOVER_LAYER)).toBe(false);
+      for (const stock of stocks)
+        expect((stock as unknown as { shadow: DirectionalLight["shadow"] }).shadow.map).toBeNull();
+      node.dispose();
+      expect(disposed).toEqual([1, 1, 1, 1, 1, 1]);
+    },
+  );
+
+  it.each([
+    [[24, 96, 320], 512, 7.5],
+    [[24, 320], 4096, 320],
+  ] as const)(
+    "accounts for the default PCF target storage of %s at %s",
+    (clipExtents, mapSize, mebibytes) => {
+      const { light } = world();
+      const node = setupNode(light, { clipExtents, mapSize });
+      const targets = shadowTargets(node);
+      // RGBA8 colour + a 4-byte allowance for depth24plus (driver packing is implementation-specific).
+      const bytes = targets.reduce((sum, target) => sum + target.width * target.height * 8, 0);
+      expect(bytes / 1024 / 1024).toBe(mebibytes);
+      expect(targets).toHaveLength(clipExtents.length * 2);
+      for (const target of targets) {
+        expect(target.texture.type).toBe(light.shadow.mapType);
+        expect(target.depthTexture).not.toBeNull();
+        expect(target.samples).toBe(0);
+      }
+      node.dispose();
+    },
+  );
+});
+
 describe("VirtualShadowNode derived depth and caster size gate", () => {
   /** A sun 38 degrees up, over the +z horizon: shadows fall to -z. */
   const SUN = new Vector3(0, 0.6157, 0.788);

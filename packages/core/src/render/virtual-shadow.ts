@@ -5,11 +5,11 @@ import {
   type DirectionalLight,
   type Mesh,
   Object3D,
+  type OrthographicCamera,
   PCFShadowMap,
   PCFSoftShadowMap,
-  type OrthographicCamera,
-  type RenderTarget,
   Raycaster,
+  type RenderTarget,
   Sphere,
   Vector3,
 } from "three";
@@ -291,7 +291,7 @@ export interface IVirtualShadowDraws {
   readonly wide: number;
   /** Small casters, submitted by the finest level and by any level rendering a prewarm. */
   readonly small: number;
-  /** Merged per-chunk shadow proxies (`<name>-shadow`), drawn with the cluster half. */
+  /** Merged per-chunk shadow proxies (`<name>-shadow`), drawn with either caster half. */
   readonly chunkProxy: number;
   /** Everything else casting from layer 0 — terrain, props — which every level draws. */
   readonly layer0: number;
@@ -372,14 +372,9 @@ export const VIRTUAL_SHADOW_CASTER_LAYER = 28;
  */
 export const VIRTUAL_SHADOW_WIDE_CASTER_LAYER = 27;
 /**
- * The wide casters too small to resolve anywhere but the finest level's own window: a fern, a tuft
- * of grass, a bush. `WorldCells` puts the wide half of any asset whose authored bounds are shorter
- * than `shadows.smallCasterMetres` here instead of on the wide layer, so a wide level submits one
- * caster draw per tree and none per tuft — the coarse levels' bill was hundreds of draws for
- * shadows a 192 m window cannot hold. Only the finest level renders this layer, and it renders it
- * beside whichever of the two caster granularities it picked, because a fern 4 m from the player
- * does have a shadow. Not on the main camera, and not a layer a game has to know about: nothing
- * chooses it but `WorldCells`.
+ * The wide half of short assets: ferns, grass and bushes. `WorldCells` classifies assets by
+ * `shadows.smallCasterMetres`; every level then applies its measured texel gate, so a resolved
+ * shadow survives the fine window's edge. The main camera never draws this internal layer.
  */
 export const VIRTUAL_SHADOW_SMALL_CASTER_LAYER = 26;
 const MIN_MOVER_MAP_SIZE = 256;
@@ -657,6 +652,7 @@ interface IRenderingShadowNode {
  * @constraint clipExtents are half-widths in world units, finest first, strictly increasing
  * @constraint call `trackCaster(object)` for movers; it enables layer `VIRTUAL_SHADOW_MOVER_LAYER` on the object and its descendants, tracking or untracking refreshes cached levels once, and subsequent mover movement refreshes only when a window moves
  * @override bias, biasNode, normalBias, intensity, radius, blurSamples, mapType and filterNode stay on `light.shadow`; mapSize and the other options here have defaults
+ * @override followViewFocus: false keeps eye follow; receiverPlaneBias: false uses only authored bias
  * @example
  * const sun = new DirectionalLight(0xffffff, 3);
  * sun.castShadow = true;
@@ -723,6 +719,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
   #levelTint: ReturnType<typeof property<"vec3">> | undefined;
   #stats: IVirtualShadowStats;
   #initialised = false;
+  #onLightRemoved = (): void => this.dispose();
   /** 1 when each level derives its own light-space depth, 0 when `lightDistance`/`depthRange` pin it. */
   #autoDepth = true;
   /**
@@ -1409,8 +1406,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
         wideDraws += 1;
       }
       // The same bill by kind, for what the level's chosen layers end up submitting. Only a caster
-      // counts, and the per-chunk proxies — named `<name>-shadow`, merged ones on the cluster half,
-      // retained ones on both —
+      // counts, and the per-chunk proxies — named `<name>-shadow`, on both caster halves —
       // are bucketed apart from the batches they stand in for so they are not counted twice. The
       // small layer and layer 0's own casters take no part in the cluster/wide choice above.
       if (mesh.castShadow === true) {
@@ -1694,6 +1690,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
     if (this.#initialised) return;
     this.#initialised = true;
     const source = this.light as DirectionalLight;
+    source.addEventListener("removed", this.#onLightRemoved);
     let shadowColor: ReturnType<typeof getShadowMaterial>["colorNode"] = null;
     this.options.clipExtents.forEach((extent, index) => {
       const levelShadow = source.shadow.clone();
@@ -1878,7 +1875,8 @@ export class VirtualShadowNode extends ShadowBaseNode {
       if (this.options.receiverPlaneBias) {
         // Derivatives must execute before the non-uniform level branches. A shared geometric
         // receiver plane supplies world-depth slope; each map scales it by its own texel and span.
-        const normal = dFdx(shadowPositionWorld).cross(dFdy(shadowPositionWorld)).toVar();
+        const received = vec3(shadowPositionWorld as never);
+        const normal = dFdx(received).cross(dFdy(received)).toVar();
         const along = max(abs(normal.dot(this.#basisW)), max(length(normal).mul(0.0001), 1e-12));
         this.#receiverSlope.assign(
           abs(normal.dot(basisU))
@@ -2335,15 +2333,31 @@ export class VirtualShadowNode extends ShadowBaseNode {
   }
 
   override dispose(): void {
+    this.light.removeEventListener("removed", this.#onLightRemoved);
     this.#regions.length = 0;
     this.#dropCasters();
     for (const level of this.#levels) {
       level.light.removeFromParent();
       level.light.target.removeFromParent();
-      level.node.dispose();
-      level.shadow.dispose();
-      level.moverNode.dispose();
-      level.moverShadow.dispose();
+      for (const entry of [
+        { node: level.node, map: level.shadow },
+        { node: level.moverNode, map: level.moverShadow },
+      ]) {
+        const stock = entry.node as typeof entry.node & {
+          shadowMap?: RenderTarget | null;
+          vsmShadowMapVertical?: RenderTarget | null;
+          vsmShadowMapHorizontal?: RenderTarget | null;
+        };
+        // Stock setup aliases shadow.map to node.shadowMap. The node owns that target and
+        // its VSM passes; LightShadow only owns any remaining non-aliased map/mapPass.
+        const owned = [stock.shadowMap, stock.vsmShadowMapVertical, stock.vsmShadowMapHorizontal];
+        entry.node.dispose();
+        if (owned.includes(entry.map.map)) entry.map.map = null;
+        if (owned.includes(entry.map.mapPass)) entry.map.mapPass = null;
+        entry.map.dispose();
+        entry.map.map = null;
+        entry.map.mapPass = null;
+      }
     }
     this.#levels = [];
     for (const id of this.#casters.keys()) this.#restoreMoverChildren(id);
