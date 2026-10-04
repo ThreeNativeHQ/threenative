@@ -2900,3 +2900,26 @@ source (bare geometry normal, relief dropped) and green after. `prop-lod` + `pro
 **17/17 PASS**; example `tsc --noEmit` clean; biome clean. The in-repo WebGPU capture is unusable on
 this box (SwiftShader drops the device), so no new pixels are claimed; the unit checks pin the
 graph, not the picture. AC-5 stays open.
+
+### 2026-10-04 — IBL A/B: scene.environment is not a net gain, keep per-material envMap
+
+Prototyped the Wildwood-shaped alternative — one `scene.environment = HDRI` at 1.13 instead of a
+per-material `envMap` — and measured it headed on the RTX 2080/Xwayland `:0` (the headless
+SwiftShader path drops the device and is unusable). Same scenario, same camera history:
+
+| view | mean luma material → scene | ΔE |
+| --- | --- | --- |
+| forest-start | 0.418 → 0.634 | 28.2 |
+| meadow-close | 0.493 → 0.532 | 8.5 |
+| overview | 0.491 → 0.581 | 13.3 |
+
+The near-ground bands are where it lands: forest-start's bottom three fifths go 0.36/0.39/0.38 →
+0.56/0.61/0.60, and mean chroma spread drops 0.115 → 0.099 — the documented ground wash, confirmed
+on real pixels. GPU cost rises too (`gpuMs` median 1.71 → 3.04 ms), because the ground now samples
+an environment it cannot opt out of. fps was rAF-throttled (unfocused window, median ~8–9) and is
+not a usable signal.
+
+Verdict: **reverted the prototype.** The per-material `envMap` is the smaller, precise route — only
+the surfaces that want IBL carry it — and the ground stays as tuned. `pack.ts` + `createPropSurfaces`
+keep `skyEnvironment()`; `scene.environment` is not retried without a ground opt-out that actually
+works.
