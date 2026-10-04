@@ -8,6 +8,7 @@ import { initStandalonePlaytest } from "../src/runner/init.js";
 import {
   connectPlaytestBridgeTransport,
   advanceTimeoutMs,
+  bridgeWaitTimeoutMs,
   type IBridgeTransport,
 } from "../src/runner/bridgeClient.js";
 import {
@@ -246,9 +247,11 @@ test("routes bulk advance and ordinary bridge calls through their intended timeo
   await client.sample({});
   await client.readiness();
 
+  // The handshake is answered while the page is still booting, so it carries the startup budget;
+  // a later readiness poll, a sample and any other round trip stay on the operation budget.
   expect(calls).toEqual([
-    { method: "describe", timeoutMs: PLAYTEST_PROTOCOL_LIMITS.operationTimeoutMs },
-    { method: "ready", timeoutMs: PLAYTEST_PROTOCOL_LIMITS.operationTimeoutMs },
+    { method: "describe", timeoutMs: bridgeWaitTimeoutMs() },
+    { method: "ready", timeoutMs: bridgeWaitTimeoutMs() },
     { argument: 600, method: "advance", timeoutMs: advanceTimeoutMs(600) },
     { argument: {}, method: "sample", timeoutMs: PLAYTEST_PROTOCOL_LIMITS.operationTimeoutMs },
     { method: "ready", timeoutMs: PLAYTEST_PROTOCOL_LIMITS.operationTimeoutMs },

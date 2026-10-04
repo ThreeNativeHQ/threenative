@@ -183,6 +183,9 @@ describe("a chunk streamed into a walking world", () => {
     const world = await WorldCells.load({
       admissionBudgetMs: Number.POSITIVE_INFINITY,
       budgets,
+      // Off: what is under test is the chunk's own shadow proxies, and a cell's BundleGroup
+      // re-parents a recorded chunk away from the `world-chunk` root they hang under.
+      bundles: false,
       follow,
       loadModel: async (url: string) => {
         const material = new MeshBasicMaterial();

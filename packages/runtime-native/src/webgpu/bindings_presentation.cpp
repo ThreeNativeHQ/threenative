@@ -302,12 +302,7 @@ static bool readCanvasDimension(
     return true;
 }
 
-/**
- * Keep the native presentation surface in lockstep with renderer.setSize().
- * Three.js changes the canvas backing dimensions directly; unlike a browser
- * GPUCanvasContext, the native surface is not reconfigured by that property
- * write, so acquire must apply the pending size before creating the color view.
- */
+/** Synchronize render resolution separately from the physical presentation extent. */
 bool syncSurfaceSizeToCanvas(BindingsState* state, js::JSValueHandle canvas) {
     if (!state->surface) return true;
 
@@ -317,32 +312,24 @@ bool syncSurfaceSizeToCanvas(BindingsState* state, js::JSValueHandle canvas) {
         !readCanvasDimension(state, canvas, "height", height)) {
         return false;
     }
+    int drawableWidth = 0;
+    int drawableHeight = 0;
+    if (!platform::getWindowDrawableSize(state->presentation.surfaceNativeHandle,
+                                         &drawableWidth, &drawableHeight)) {
+        state->engine->throwException("Native drawable dimensions are unavailable");
+        return false;
+    }
+    const uint32_t surfaceWidth = static_cast<uint32_t>(drawableWidth);
+    const uint32_t surfaceHeight = static_cast<uint32_t>(drawableHeight);
+    const bool surfaceChanged = surfaceWidth != state->presentation.surfaceWidth ||
+                                surfaceHeight != state->presentation.surfaceHeight;
+    if (!surfaceChanged && width == state->presentation.canvasWidth &&
+        height == state->presentation.canvasHeight) return true;
 
-    if (width == state->presentation.canvasWidth && height == state->presentation.canvasHeight)
-        return true;
-
-    // On a direct-presentation surface, a swapchain image acquired earlier in this scene's
-    // life may still be held in state->presentation.currentTexture — the frame boundary that presents it has
-    // not run. wgpu-native refuses to reconfigure a surface with an outstanding
-    // SurfaceOutput: its panic reads "`SurfaceOutput` must be dropped before a new `Surface`
-    // is made", and the panic aborts the process (PRD-183: the Android emulator died with a
-    // silent SIGABRT exactly here, 67 ms into the first render after renderer.setSize).
-    //
-    // Discard that image rather than presenting it: the caller is already replacing the
-    // frame's contents at the new size, an extra present would break the one-present-per-
-    // frame invariant the device gates enforce, and releasing the texture back unwinds the
-    // SurfaceOutput so the reconfigure below is accepted. Deferring the reconfigure instead
-    // is worse on both platforms — the current frame would draw new-size depth onto
-    // old-size colour, "attachments have differing sizes", the failure tier-1 day recorded
-    // on desktop.
-    //
-    // The sRGB presentation bridge never holds a raw surface output across frames
-    // (state->presentation.currentTexture is an offscreen linear texture there), so it keeps the immediate
-    // reconfigure it always had.
-    if (state->presentation.currentTexture != nullptr && !state->presentation.requiresSrgbPresentationBridge) {
-        // setSize can be called between two submits in one JavaScript turn. Replay the safe
-        // prefix before dropping view ids that the deferred stream still names, or its later
-        // frame-boundary replay fails closed with an opaque "unknown texture view id".
+    // A canvas change invalidates an offscreen frame just as it invalidates a direct frame.
+    // Replay first: deferred commands still name these view IDs. Drop the old SurfaceOutput
+    // before configuring a real window resize, without adding an extra present.
+    if (state->presentation.currentTexture != nullptr) {
         if (!flushRecordedFrameOps(state)) return false;
         state->presentation.framePresentPending = false;
         releaseCurrentSurfaceTextureViews(state);
@@ -356,27 +343,66 @@ bool syncSurfaceSizeToCanvas(BindingsState* state, js::JSValueHandle canvas) {
         state->presentation.surfaceRenderPassEnded = false;
     }
 
+    if (surfaceChanged) {
+        WGPUSurfaceConfiguration config = {};
+        config.device = state->device;
+        config.format = state->presentation.nativeSurfaceFormat;
+        config.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_CopySrc;
+        config.alphaMode = WGPUCompositeAlphaMode_Auto;
+        config.width = surfaceWidth;
+        config.height = surfaceHeight;
+        config.presentMode = state->presentation.presentMode;
+        wgpuSurfaceConfigure(state->surface, &config);
+        state->presentation.surfaceWidth = surfaceWidth;
+        state->presentation.surfaceHeight = surfaceHeight;
+    }
+    state->presentation.canvasWidth = width;
+    state->presentation.canvasHeight = height;
+    if (state->verboseLogging) {
+        std::cout << "[WebGPU] Canvas " << width << "x" << height << ", drawable "
+                  << surfaceWidth << "x" << surfaceHeight << std::endl;
+    }
+    return true;
+}
+
+bool requiresPresentationBridge(const BindingsState* state) {
+    return state->presentation.requiresSrgbPresentationBridge ||
+           state->presentation.canvasWidth != state->presentation.surfaceWidth ||
+           state->presentation.canvasHeight != state->presentation.surfaceHeight;
+}
+
+/** Recover a genuinely stale swapchain without touching the canvas being presented. */
+static bool reconfigureSurfaceForAcquire(BindingsState* state) {
+    if (!state || !state->surface || state->presentation.surfaceWidth == 0 ||
+        state->presentation.surfaceHeight == 0) return false;
+    // Direct acquisition normally has no held output; refuse to reconfigure if it does.
+    // Bridge presentation instead holds an offscreen canvas. Its source view has already
+    // been passed to the blit, so releasing its aliases here would use a freed view.
+    if (state->presentation.currentTexture && !requiresPresentationBridge(state)) return false;
+
     WGPUSurfaceConfiguration config = {};
     config.device = state->device;
     config.format = state->presentation.nativeSurfaceFormat;
     config.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_CopySrc;
     config.alphaMode = WGPUCompositeAlphaMode_Auto;
-    config.width = width;
-    config.height = height;
+    config.width = state->presentation.surfaceWidth;
+    config.height = state->presentation.surfaceHeight;
     config.presentMode = state->presentation.presentMode;
     wgpuSurfaceConfigure(state->surface, &config);
-
-    reportSurfaceFormatMarker(state->presentation.nativeSurfaceFormat,
-                              state->presentation.surfaceFormat,
-                              state->presentation.requiresSrgbPresentationBridge,
-                              state->presentation.presentMode);
-
-    state->presentation.canvasWidth = width;
-    state->presentation.canvasHeight = height;
-    if (state->verboseLogging) {
-        std::cout << "[WebGPU] Surface resized from canvas: " << width << "x" << height << std::endl;
-    }
     return true;
+}
+
+/**
+ * Acquires the current surface image, rebuilding the swapchain once when it reports itself stale.
+ * Ownership of the returned texture is the caller's, exactly as the raw call's is.
+ */
+static void acquireSurfaceImage(BindingsState* state, WGPUSurfaceTexture* surfaceTexture) {
+    wgpuSurfaceGetCurrentTexture(state->surface, surfaceTexture);
+    if (!wgpuSurfaceTextureStatusNeedsReconfigure(surfaceTexture->status)) return;
+    if (surfaceTexture->texture) wgpuTextureRelease(surfaceTexture->texture);
+    surfaceTexture->texture = nullptr;
+    if (!reconfigureSurfaceForAcquire(state)) return;
+    wgpuSurfaceGetCurrentTexture(state->surface, surfaceTexture);
 }
 
 void trackCurrentSurfaceTextureView(BindingsState* state, uint64_t viewId, WGPUTextureView view) {
@@ -436,17 +462,26 @@ static bool ensureSrgbPresentationPipeline(BindingsState* state) {
     if (state->presentation.srgbPresentationPipeline)
         return true;
 
-    const char* shaderCode = R"(
+    const std::string shaderCode = std::string("const decodeSrgb = ") +
+        (state->presentation.requiresSrgbPresentationBridge ? "true;\n" : "false;\n") + R"(
         @group(0) @binding(0) var sourceTexture: texture_2d<f32>;
+        struct VertexOutput {
+            @builtin(position) position: vec4f,
+            @location(0) uv: vec2f,
+        };
 
         @vertex
-        fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> @builtin(position) vec4f {
+        fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
             var positions = array<vec2f, 3>(
                 vec2f(-1.0, -1.0),
                 vec2f(3.0, -1.0),
                 vec2f(-1.0, 3.0)
             );
-            return vec4f(positions[vertexIndex], 0.0, 1.0);
+            let position = positions[vertexIndex];
+            var output: VertexOutput;
+            output.position = vec4f(position, 0.0, 1.0);
+            output.uv = position * vec2f(0.5, -0.5) + vec2f(0.5);
+            return output;
         }
 
         fn srgbToLinear(value: vec3f) -> vec3f {
@@ -456,15 +491,18 @@ static bool ensureSrgbPresentationPipeline(BindingsState* state) {
         }
 
         @fragment
-        fn fs_main(@builtin(position) position: vec4f) -> @location(0) vec4f {
-            let encoded = textureLoad(sourceTexture, vec2i(position.xy), 0);
-            return vec4f(srgbToLinear(encoded.rgb), encoded.a);
+        fn fs_main(input: VertexOutput) -> @location(0) vec4f {
+            let size = textureDimensions(sourceTexture);
+            let pixel = clamp(vec2i(input.uv * vec2f(size)), vec2i(0), vec2i(size) - vec2i(1));
+            let encoded = textureLoad(sourceTexture, pixel, 0);
+            if (decodeSrgb) { return vec4f(srgbToLinear(encoded.rgb), encoded.a); }
+            return encoded;
         }
     )";
 
     WGPUShaderModuleWGSLDescriptor_Compat wgslDescriptor = {};
     WGPUShaderModuleDescriptor shaderDescriptor = {};
-    setupShaderModuleWGSL(&shaderDescriptor, &wgslDescriptor, shaderCode);
+    setupShaderModuleWGSL(&shaderDescriptor, &wgslDescriptor, shaderCode.c_str());
     WGPUShaderModule shaderModule = wgpuDeviceCreateShaderModule(state->device, &shaderDescriptor);
     if (!shaderModule) return false;
 
@@ -527,28 +565,9 @@ static bool ensureSrgbPresentationPipeline(BindingsState* state) {
     return true;
 }
 
-static bool presentLinearTextureToSrgbSurface(BindingsState* state, WGPUTextureView sourceView) {
-    if (!sourceView || !ensureSrgbPresentationPipeline(state)) return false;
-
-    WGPUSurfaceTexture surfaceTexture = {};
-    wgpuSurfaceGetCurrentTexture(state->surface, &surfaceTexture);
-    if (!wgpuSurfaceTextureStatusIsSuccess(surfaceTexture.status)) return false;
-
-    WGPUTextureViewDescriptor surfaceViewDescriptor = {};
-    surfaceViewDescriptor.format = state->presentation.nativeSurfaceFormat;
-    surfaceViewDescriptor.dimension = WGPUTextureViewDimension_2D;
-    surfaceViewDescriptor.baseMipLevel = 0;
-    surfaceViewDescriptor.mipLevelCount = 1;
-    surfaceViewDescriptor.baseArrayLayer = 0;
-    surfaceViewDescriptor.arrayLayerCount = 1;
-    surfaceViewDescriptor.aspect = WGPUTextureAspect_All;
-    WGPUTextureView surfaceView =
-        wgpuTextureCreateView(surfaceTexture.texture, &surfaceViewDescriptor);
-    if (!surfaceView) {
-        wgpuTextureRelease(surfaceTexture.texture);
-        return false;
-    }
-
+bool blitPresentationTexture(BindingsState* state, WGPUTextureView sourceView,
+                             WGPUTextureView surfaceView) {
+    if (!sourceView || !surfaceView || !ensureSrgbPresentationPipeline(state)) return false;
     WGPUBindGroupEntry bindGroupEntry = {};
     bindGroupEntry.binding = 0;
     bindGroupEntry.textureView = sourceView;
@@ -558,8 +577,6 @@ static bool presentLinearTextureToSrgbSurface(BindingsState* state, WGPUTextureV
     bindGroupDescriptor.entries = &bindGroupEntry;
     WGPUBindGroup bindGroup = wgpuDeviceCreateBindGroup(state->device, &bindGroupDescriptor);
     if (!bindGroup) {
-        wgpuTextureViewRelease(surfaceView);
-        wgpuTextureRelease(surfaceTexture.texture);
         return false;
     }
 
@@ -567,8 +584,6 @@ static bool presentLinearTextureToSrgbSurface(BindingsState* state, WGPUTextureV
     WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(state->device, &encoderDescriptor);
     if (!encoder) {
         wgpuBindGroupRelease(bindGroup);
-        wgpuTextureViewRelease(surfaceView);
-        wgpuTextureRelease(surfaceTexture.texture);
         return false;
     }
     WGPURenderPassColorAttachment colorAttachment = {};
@@ -587,8 +602,6 @@ static bool presentLinearTextureToSrgbSurface(BindingsState* state, WGPUTextureV
     if (!renderPass) {
         wgpuCommandEncoderRelease(encoder);
         wgpuBindGroupRelease(bindGroup);
-        wgpuTextureViewRelease(surfaceView);
-        wgpuTextureRelease(surfaceTexture.texture);
         return false;
     }
     wgpuRenderPassEncoderSetPipeline(renderPass, state->presentation.srgbPresentationPipeline);
@@ -604,13 +617,35 @@ static bool presentLinearTextureToSrgbSurface(BindingsState* state, WGPUTextureV
     if (encoded) {
         flushUploadStaging(state);
         wgpuQueueSubmit(state->queue, 1, &commandBuffer);
-        wgpuSurfacePresent(state->surface);
     }
 
     if (commandBuffer) wgpuCommandBufferRelease(commandBuffer);
     wgpuCommandEncoderRelease(encoder);
     wgpuBindGroupRelease(bindGroup);
-    wgpuTextureViewRelease(surfaceView);
+    return encoded;
+}
+
+static void reportSurfaceAcquireFailure(uint32_t status);
+
+static bool presentLinearTextureToSrgbSurface(BindingsState* state, WGPUTextureView sourceView) {
+    if (!sourceView) return false;
+    WGPUSurfaceTexture surfaceTexture = {};
+    acquireSurfaceImage(state, &surfaceTexture);
+    if (!wgpuSurfaceTextureStatusIsSuccess(surfaceTexture.status) || !surfaceTexture.texture) {
+        if (surfaceTexture.texture) wgpuTextureRelease(surfaceTexture.texture);
+        reportSurfaceAcquireFailure(static_cast<uint32_t>(surfaceTexture.status));
+        return false;
+    }
+    WGPUTextureViewDescriptor surfaceViewDescriptor = {};
+    surfaceViewDescriptor.format = state->presentation.nativeSurfaceFormat;
+    surfaceViewDescriptor.dimension = WGPUTextureViewDimension_2D;
+    surfaceViewDescriptor.mipLevelCount = 1;
+    surfaceViewDescriptor.arrayLayerCount = 1;
+    surfaceViewDescriptor.aspect = WGPUTextureAspect_All;
+    WGPUTextureView surfaceView = wgpuTextureCreateView(surfaceTexture.texture, &surfaceViewDescriptor);
+    const bool encoded = blitPresentationTexture(state, sourceView, surfaceView);
+    if (encoded) wgpuSurfacePresent(state->surface);
+    if (surfaceView) wgpuTextureViewRelease(surfaceView);
     wgpuTextureRelease(surfaceTexture.texture);
     return encoded;
 }
@@ -713,14 +748,17 @@ WGPUTexture getCurrentSwapchainTexture(BindingsState* state) {
         return nullptr;
     }
 
-    if (state->presentation.requiresSrgbPresentationBridge) {
+    if (requiresPresentationBridge(state)) {
         return createLinearPresentationTexture(state);
     }
 
-    WGPUSurfaceTexture surfaceTexture;
-    wgpuSurfaceGetCurrentTexture(state->surface, &surfaceTexture);
+    WGPUSurfaceTexture surfaceTexture = {};
+    acquireSurfaceImage(state, &surfaceTexture);
 
-    if (!wgpuSurfaceTextureStatusIsSuccess(surfaceTexture.status)) {
+    if (!wgpuSurfaceTextureStatusIsSuccess(surfaceTexture.status) || !surfaceTexture.texture) {
+        // The API returns texture ownership even when the caller cannot use the result.
+        // Never strand an acquired image on a rejected status; null remains a named failure.
+        if (surfaceTexture.texture) wgpuTextureRelease(surfaceTexture.texture);
         // Fail by name. A surface that stops handing out images presents nothing, and the loop is
         // no longer paced by presenting, so this fires hundreds of times a second, which is
         // precisely how the resume defect looked from the outside: frames running away, presents
@@ -765,6 +803,7 @@ void detachSurfaceForRebuild(BindingsState* state) {
     state->presentation.surfaceRenderPassEnded = false;
     state->screenshot.screenshotCapturedThisFrame = false;
     state->surface = nullptr;
+    state->presentation.surfaceNativeHandle = nullptr;
 #else
     (void)state;
 #endif
@@ -777,10 +816,20 @@ void detachSurfaceForRebuild(BindingsState* state) {
  * dead one: the resume defect again, one indirection later.
  */
 void republishSurface(BindingsState* state, void* wgpuSurface, uint32_t surfaceFormat,
-                      uint32_t presentMode, uint32_t width, uint32_t height) {
+                      uint32_t presentMode, uint32_t width, uint32_t height,
+                      void* surfaceNativeHandle) {
 #if defined(MYSTRAL_WEBGPU_WGPU) || defined(MYSTRAL_WEBGPU_DAWN)
     if (!state) return;
+    if (state->presentation.nativeSurfaceFormat != static_cast<WGPUTextureFormat>(surfaceFormat)) {
+        if (state->presentation.srgbPresentationPipeline)
+            wgpuRenderPipelineRelease(state->presentation.srgbPresentationPipeline);
+        if (state->presentation.srgbPresentationBindGroupLayout)
+            wgpuBindGroupLayoutRelease(state->presentation.srgbPresentationBindGroupLayout);
+        state->presentation.srgbPresentationPipeline = nullptr;
+        state->presentation.srgbPresentationBindGroupLayout = nullptr;
+    }
     state->surface = (WGPUSurface)wgpuSurface;
+    state->presentation.surfaceNativeHandle = surfaceNativeHandle;
     state->presentation.presentMode = static_cast<WGPUPresentMode>(presentMode);
     state->presentation.nativeSurfaceFormat = (WGPUTextureFormat)surfaceFormat;
     state->presentation.requiresSrgbPresentationBridge =
@@ -788,11 +837,9 @@ void republishSurface(BindingsState* state, void* wgpuSurface, uint32_t surfaceF
     state->presentation.surfaceFormat = state->presentation.requiresSrgbPresentationBridge
                                             ? linearSurfaceFormat(state->presentation.nativeSurfaceFormat)
                                             : state->presentation.nativeSurfaceFormat;
-    // The same pairing startup makes: the canvas dimensions name the size the surface is
-    // configured at, so `syncSurfaceSizeToCanvas` reconfigures on the next frame if the game is
-    // rendering at a different one.
-    state->presentation.canvasWidth = width;
-    state->presentation.canvasHeight = height;
+    // A rebuilt drawable does not change the renderer's canvas backing resolution.
+    state->presentation.surfaceWidth = width;
+    state->presentation.surfaceHeight = height;
     reportSurfaceFormatMarker(state->presentation.nativeSurfaceFormat,
                               state->presentation.surfaceFormat,
                               state->presentation.requiresSrgbPresentationBridge,
@@ -801,6 +848,7 @@ void republishSurface(BindingsState* state, void* wgpuSurface, uint32_t surfaceF
               << " (format=" << state->presentation.surfaceFormat << ")" << std::endl;
 #else
     (void)state; (void)wgpuSurface; (void)surfaceFormat; (void)presentMode; (void)width; (void)height;
+    (void)surfaceNativeHandle;
 #endif
 }
 
@@ -838,7 +886,7 @@ void presentPendingSurface(BindingsState* state) {
             std::cout << "[WebGPU] Presenting surface" << std::endl;
         const auto presentStart = std::chrono::steady_clock::now();
         const uint64_t presentThreadCpuStart = readRenderThreadCpuNs();
-        const bool presented = state->presentation.requiresSrgbPresentationBridge
+        const bool presented = requiresPresentationBridge(state)
                                    ? presentLinearTextureToSrgbSurface(state, state->presentation.currentTextureView)
                                    : (wgpuSurfacePresent(state->surface), true);
         const uint64_t presentThreadCpuEnd = readRenderThreadCpuNs();
@@ -887,7 +935,7 @@ void presentPendingSurface(BindingsState* state) {
             reportPipelineCheckpoint(state, state->profiling.presentCount);
             pollPipelineCachePersistence(state);
         } else {
-            std::cerr << "[WebGPU] sRGB presentation bridge failed" << std::endl;
+            std::cerr << "[WebGPU] Canvas presentation bridge failed" << std::endl;
         }
     }
 
