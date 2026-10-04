@@ -4,6 +4,7 @@ import {
   Accessor,
   type Document,
   type GLTF,
+  type Mesh as GltfMesh,
   type Node as GltfNode,
   type Primitive as GltfPrimitive,
   NodeIO,
@@ -30,6 +31,7 @@ import {
 import { type IMaterialMergeSummary, mergeIdenticalMaterials } from "../foliage.js";
 import { createGltfReader, readGltfDocument } from "../gltf-io.js";
 import { KTX2_ENCODER_VERSION } from "../ktx2-encoder.js";
+import { deformingMesh, skinnedMeshes } from "../lod/eligibility.js";
 import { TNDiscreteLod } from "../lod/extension.js";
 import {
   type IModelLodOptions,
@@ -70,6 +72,7 @@ import {
   textureBindings,
   textureKeys,
 } from "./model-textures.js";
+import { quantizeStaticGeometry } from "./quantize-static.js";
 import { reorderStaticPrimitives } from "./reorder-static.js";
 import {
   type ISharedImage,
@@ -249,6 +252,13 @@ const MODEL_DEDUPE_VERSION = 1;
  * serving those files. 1 = deforming primitives keep their authored vertex order and count.
  */
 const MODEL_REORDER_VERSION = 1;
+/**
+ * Bumped when `quantize-static.ts` changes what it emits: every model cooked before this fix had its
+ * deforming positions snapped onto a quantization grid, and a warm cache entry keyed on the pass
+ * switches alone would keep serving those files. 1 = deforming POSITION and morph-target deltas
+ * stay float32 in the source metre space.
+ */
+const MODEL_QUANTIZE_VERSION = 1;
 
 /** Relative bounding-box tolerance of the self-verify check (PRD: 0.1%). */
 const BBOX_TOLERANCE = 0.001;
@@ -710,11 +720,14 @@ export function assertSimplifiedWithinBounds(
  * Snaps every scene-reachable POSITION accessor onto a uniform `2^bits` grid spanning its
  * own bounds — the destructive low-precision quantization the underlying library refuses
  * to express. Used only for configured depths below its 8-bit floor; the self-verify is
- * expected to reject the result.
+ * expected to reject the result. Deforming meshes are skipped for the same reason the
+ * quantization stage skips them: a grid that coarse moves vertices a sidecar already
+ * addresses, and holding them is the rule rather than the bit depth.
  */
-function snapPositions(root: RootOf, bits: number): void {
+function snapPositions(root: RootOf, bits: number, skinned: ReadonlySet<GltfMesh>): void {
   const levels = 2 ** bits - 1;
   for (const mesh of root.listMeshes()) {
+    if (deformingMesh(mesh, skinned)) continue;
     for (const primitive of mesh.listPrimitives()) {
       const position = primitive.getAttribute("POSITION");
       if (position === null || position.getNormalized()) continue;
@@ -812,6 +825,9 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
       // Same reason: which primitives `reorder` declines to renumber is part of the output, and a
       // warm entry from before it declined would hand a game geometry its sidecars cannot address.
       reorderVersion: MODEL_REORDER_VERSION,
+      // Same reason again: which positions keep their source metres is part of the output, and a
+      // warm entry from before they did would hand a game geometry its sidecars cannot address.
+      quantizeVersion: MODEL_QUANTIZE_VERSION,
       // `"none"` and "absent" are different cache keys on purpose: absent bakes with defaults.
       virtual:
         options.virtual === "none"
@@ -957,18 +973,23 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
         // Depths below the library's 8-bit floor are honoured by pre-rounding the floats
         // onto the coarser grid first; the self-verify then fails the build on the drift.
         const requestedBits = options.quantize?.positionBits ?? DEFAULT_POSITION_BITS;
-        if (requestedBits < 8) snapPositions(document.getRoot(), requestedBits);
+        if (requestedBits < 8)
+          snapPositions(document.getRoot(), requestedBits, skinnedMeshes(document));
         // Joint indices and weights are excluded outright: quantizing them below the
         // exporter's declaration is where skinned meshes visibly break, and the library's
         // own default narrows weights to 8 bits unless told otherwise.
-        await quantize({
-          quantizeColor: 8,
-          quantizeNormal: options.quantize?.normalBits ?? DEFAULT_NORMAL_BITS,
-          quantizePosition: Math.max(requestedBits, 8),
-          quantizeTexcoord: options.quantize?.uvBits ?? DEFAULT_UV_BITS,
-          pattern: /^(?!JOINTS|WEIGHTS)/u,
-          normalizeWeights: false,
-        })(document);
+        // Deforming geometry keeps float32 POSITION in the source metre space on top of
+        // that, so nothing a sidecar addresses moves: `quantize-static.ts`.
+        await quantizeStaticGeometry(document, () =>
+          quantize({
+            quantizeColor: 8,
+            quantizeNormal: options.quantize?.normalBits ?? DEFAULT_NORMAL_BITS,
+            quantizePosition: Math.max(requestedBits, 8),
+            quantizeTexcoord: options.quantize?.uvBits ?? DEFAULT_UV_BITS,
+            pattern: /^(?!JOINTS|WEIGHTS)/u,
+            normalizeWeights: false,
+          })(document),
+        );
       }
       // Taken after every geometry stage and before compression, so what it proves is that
       // *this* stage plus the writer preserved each binding — prune's documented drops of

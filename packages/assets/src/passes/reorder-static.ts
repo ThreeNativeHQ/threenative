@@ -17,9 +17,9 @@
 // ponytail: the library's `reorder` has no per-primitive switch, so the remap is its own ~30 lines.
 // Replace with the library's whole-document `reorder` the day it takes a predicate.
 
-import { type Accessor, type Document, type Mesh, Primitive } from "@gltf-transform/core";
+import { type Accessor, type Document, Primitive } from "@gltf-transform/core";
 import type { MeshoptEncoder } from "meshoptimizer";
-import { deforming } from "../lod/eligibility.js";
+import { deforming, skinnedMeshes } from "../lod/eligibility.js";
 
 /** One index buffer, the attributes that read through it, and the primitives that draw it. */
 interface IVertexGroup {
@@ -70,16 +70,6 @@ function vertexGroups(document: Document): Map<Accessor, IVertexGroup> {
       groups.set(indices, group);
     }
   return groups;
-}
-
-/** The meshes a skin is bound to: everything under one of those nodes is deforming. */
-function skinnedMeshes(document: Document): Set<Mesh> {
-  const skinned = new Set<Mesh>();
-  for (const node of document.getRoot().listNodes()) {
-    const mesh = node.getMesh();
-    if (mesh !== null && node.getSkin() !== null) skinned.add(mesh);
-  }
-  return skinned;
 }
 
 /** Renumber one group's vertices, and every primitive that draws them, in place. */
