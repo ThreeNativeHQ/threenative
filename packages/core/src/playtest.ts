@@ -9,9 +9,11 @@ import {
   type IPlaytestWorldObservation,
   type JsonPrimitive,
   type JsonValue,
+  PLAYTEST_CLOCK_GLOBAL,
   PLAYTEST_PROTOCOL_LIMITS,
   type PlaytestClockMode,
   assertJsonSafe,
+  requestedPlaytestClockMode,
 } from "@threenative/playtest/protocol";
 import { type IThreePlaytestEntity, installThreePlaytestBridge } from "@threenative/playtest/three";
 import { Object3D, type Object3D as ThreeObject3D, type Vector2 } from "three";
@@ -64,7 +66,13 @@ export function playtest<
     setup: async (ctx, runtime) => {
       readTick = runtime?.tick;
       const seed = runtime?.seed ?? null;
-      const clockMode = requestedClockMode();
+      // One decision, named once, for both consumers: the freeze below and the bridge's verdict on
+      // `advance`. Handing the bridge only a *requested* mode and letting it derive the rest is what
+      // let the two disagree — a frozen loop reported as the wall clock publishes a frame rate for a
+      // game that was not playing. The deterministic answer is therefore stated rather than derived,
+      // and stays `undefined` only when there is no tick producer to be fixed-step about.
+      const clockMode: PlaytestClockMode | undefined =
+        requestedPlaytestClockMode() ?? (runtime === undefined ? undefined : "fixed-step");
       const wallClock = clockMode === "wall-clock";
       const replayRuntime: IPlaytestWorldObservation["runtime"] =
         runtime?.seed === null || runtime?.seed === undefined
@@ -230,25 +238,13 @@ export const PLAYTEST_RUNNER_EXPECTED_GLOBAL = "__THREENATIVE_PLAYTEST_RUNNER_EX
 /**
  * The clock a consumer asks this game to run on, named in the protocol's own vocabulary. Set before
  * the game module evaluates — a production profile does it in the instrumentation it injects ahead
- * of the bundle, on the browser and on native alike.
- */
-export const PLAYTEST_CLOCK_GLOBAL = "__THREENATIVE_PLAYTEST_CLOCK__";
-
-/**
- * The clock the host asked for, or `undefined` for the default deterministic run.
+ * of the bundle, on the browser and on native alike, and the browser runner's `--live-clock` does it
+ * in an `addInitScript` ahead of every page script.
  *
- * `wall-clock` is the production profile's opt-in and the only one this protocol has. An
- * unrecognised value throws instead of falling back, because a misspelling that quietly left the
- * loop frozen would publish a frame rate for a game that was not playing.
+ * The read and its failure live in the protocol beside the mode they name, so the loop's clock, the
+ * bridge's verdict on it and the producer a game installs itself cannot disagree about it.
  */
-function requestedClockMode(): PlaytestClockMode | undefined {
-  const requested = (globalThis as Record<string, unknown>)[PLAYTEST_CLOCK_GLOBAL];
-  if (requested === undefined) return undefined;
-  if (requested === "wall-clock") return "wall-clock";
-  throw new Error(
-    `TN_PLAYTEST_CLOCK_UNSUPPORTED: '${PLAYTEST_CLOCK_GLOBAL}' is ${JSON.stringify(requested)}; this protocol knows 'wall-clock' and nothing else.`,
-  );
-}
+export { PLAYTEST_CLOCK_GLOBAL };
 
 /**
  * The fixed steps of extra wall time a live advance may wait past the span its own ticks name.

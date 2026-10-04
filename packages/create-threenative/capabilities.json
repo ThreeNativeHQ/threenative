@@ -4837,6 +4837,24 @@
     },
     {
       "aliases": [],
+      "constraints": [
+        "throws on an unrecognised value instead of falling back to a fixed-step run"
+      ],
+      "example": "if (requestedPlaytestClockMode() === \"wall-clock\") host.pumpDrivesTheSimulation();",
+      "importPath": "@threenative/playtest/protocol",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function requestedPlaytestClockMode(): PlaytestClockMode | undefined { … }",
+      "situations": [
+        "report which clock a playtest producer is really running on, before judging its ticks"
+      ],
+      "summary": "The clock the host asked for, or `undefined` for the default deterministic run. `wall-clock` is the production profile's opt-in and the only one this protocol has. An unrecognised value throws instead of falling back, because a misspelling that quietly left the loop frozen would publish a frame rate for a game that was not playing. Read at the moment it is needed rather than once at install: a request that arrives after the producer was installed is still a request, and a producer that missed it would judge a live frame pump by a count it never asked for.",
+      "supersedes": [],
+      "symbol": "requestedPlaytestClockMode"
+    },
+    {
+      "aliases": [],
       "constraints": ["Android evidence must name its target and transport"],
       "example": "const adb = discoverAdb(process.env);",
       "importPath": "@threenative/playtest/runner",

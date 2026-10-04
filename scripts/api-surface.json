@@ -257,6 +257,7 @@
         "@threenative/playtest/capture#inspectFrame": "export function inspectFrame(png: Buffer): ICaptureFrameStats { … }",
         "@threenative/playtest/protocol#assertJsonSafe": "export function assertJsonSafe(value: unknown, path = \"$\"): asserts value is JsonValue { … }",
         "@threenative/playtest/protocol#jsonByteLength": "export function jsonByteLength(value: JsonValue): number { … }",
+        "@threenative/playtest/protocol#requestedPlaytestClockMode": "export function requestedPlaytestClockMode(): PlaytestClockMode | undefined { … }",
         "@threenative/playtest/runner#AdbAndroidDriver": "export class AdbAndroidDriver implements IAndroidDriver { … }",
         "@threenative/playtest/runner#advanceFixedStep": "export async function advanceFixedStep( page: Page, bridge: Pick<IPlaytestBridgeClient, \"advance\">, ticks: number, ): Promise<void> { … }",
         "@threenative/playtest/runner#advanceTimeoutMs": "export function advanceTimeoutMs( ticks: number, perTickMs: number = PLAYTEST_ADVANCE_TICK_BUDGET_MS, ): number { … }",
