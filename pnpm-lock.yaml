@@ -577,6 +577,31 @@ importers:
         specifier: 'catalog:'
         version: 8.2.0(@types/node@20.19.43)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.5)
 
+  examples/prd493-terrain-splat:
+    dependencies:
+      '@threenative/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@threenative/playtest':
+        specifier: workspace:*
+        version: link:../../packages/playtest
+      three:
+        specifier: 'catalog:'
+        version: 0.185.1(patch_hash=c2e051df4c469d033b151cb9da5ce5112c90801aaaa984d6bfde0e09d80c9a66)
+    devDependencies:
+      '@threenative/runtime-native':
+        specifier: workspace:*
+        version: link:../../packages/runtime-native
+      '@types/three':
+        specifier: 0.185.3
+        version: 0.185.3
+      typescript:
+        specifier: 'catalog:'
+        version: 5.9.3
+      vite:
+        specifier: 'catalog:'
+        version: 8.2.0(@types/node@20.19.43)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.5)
+
   examples/quarry:
     dependencies:
       '@threenative/core':
