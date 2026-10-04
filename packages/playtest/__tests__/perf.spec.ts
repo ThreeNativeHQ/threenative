@@ -445,6 +445,17 @@ const drawSourceLine =
   '"frames":300}},"gpuStale":0}';
 
 describe("main-pass draws by source in the perf report", () => {
+  it("reports triangle capacity, selected work and draw origins from the same pass", () => {
+    const jointLine = drawSourceLine.replace(
+      '"main":{',
+      '"main":{"triangles":{"mean":338000000,"p50":338000000,"p95":338000000},"gpuTriangles":402000,',
+    );
+    const parsed = parsePerformanceMarkers(`${budgetLine(1, 30, 40, 20)}\n${jointLine}\n`);
+    const text = formatPerfReport(assessPerfMarkers(parsed, { requireWindows: 0 }, "log"));
+    expect(text).toContain("main pass triangles: 402,000 GPU-selected, 338,000,000 CPU capacity");
+    expect(text).toContain("gpuScene 211, terrain 62, chunks 30, other 20 — 323 draws in the pass");
+  });
+
   it("should print one line, ranked, against the pass's own draws", () => {
     const parsed = parsePerformanceMarkers(`${budgetLine(1, 30, 40, 20)}\n${drawSourceLine}\n`);
     const text = formatPerfReport(assessPerfMarkers(parsed, { requireWindows: 0 }, "log"));

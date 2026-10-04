@@ -74,8 +74,8 @@ export interface IPerfSummary {
  * `count` is its merged geometry's capacity, so a streamed world reads in the hundreds of millions.
  * `gpuTriangles` is what the kernel selected, which is the number to bound work against.
  */
-export interface IPerfPassJson {
-  readonly triangles: IPerfSummary;
+export interface IPerfPassJson extends IPassJson {
+  readonly triangles?: IPerfSummary;
   readonly gpuTriangles?: number;
 }
 
@@ -114,7 +114,6 @@ export interface IFrameBudgetWindowJson {
   readonly frames: number;
   readonly frame?: IPerfSummary;
   readonly hitches: number;
-  readonly passes?: Readonly<Record<string, IPerfPassJson>>;
   readonly phases?: Readonly<Record<string, IPerfSummary>>;
   /** Frames that reached the display in this window, when the host can count them. */
   readonly presents?: number;
@@ -124,7 +123,7 @@ export interface IFrameBudgetWindowJson {
   /** GPU milliseconds from `timestamp-query`, absent when the adapter has none. */
   readonly gpuMs?: number;
   /** Per-pass draws and triangles, absent on a runtime that measured no passes. */
-  readonly passes?: Readonly<Record<string, IPassJson>>;
+  readonly passes?: Readonly<Record<string, IPerfPassJson>>;
   readonly window: number;
 }
 
@@ -863,7 +862,7 @@ export function formatPerfReport(report: IPerfReport): string {
  */
 function formatMainPassTriangles(windows: readonly IFrameBudgetWindowJson[]): string[] {
   const main = windows.at(-1)?.passes?.main;
-  if (main === undefined) return [];
+  if (main?.triangles === undefined) return [];
   const capacity = Math.round(main.triangles.p50).toLocaleString("en-US");
   if (main.gpuTriangles === undefined)
     return [`main pass triangles: ${capacity} (three's CPU capacity figure; the GPU-selected count was not reported)`];

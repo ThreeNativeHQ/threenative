@@ -1186,6 +1186,7 @@ describe("playtest holdUntilAttached", () => {
       });
     };
     const game = lateHost(25);
+    let slow: ReturnType<typeof lateHost> | undefined;
     let stopped: ReturnType<typeof lateHost> | undefined;
 
     try {
@@ -1200,6 +1201,18 @@ describe("playtest holdUntilAttached", () => {
       // Host-driven, not stepped here: the tick the report names is one this host's pump ran.
       expect(updates).toBeGreaterThan(before);
 
+      // And a batch on a host slower than the room the wait buys past its span. The runner counts a
+      // wait in ten-tick pieces, so the 166 ms span of `advance(10)` asked a host presenting every
+      // 400 ms for a tick inside 200 ms — the failure Machinefall's map-walk standing scene reported
+      // under `--live-clock` at load average 142. A measurement whose subject is a slow machine
+      // cannot refuse to measure one.
+      slow = lateHost(400);
+      await slow.start();
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      const batched = await bridge().advance?.(10);
+      expect(batched?.clock.mode).toBe("wall-clock");
+      expect(batched?.ticks ?? 0).toBeGreaterThanOrEqual(1);
+
       // The bound is real, so a pump that has stopped is still a failed run rather than a wait: the
       // bridge reports the zero this hands back.
       stopped = lateHost(1e6);
@@ -1207,7 +1220,95 @@ describe("playtest holdUntilAttached", () => {
       await expect(bridge().advance?.(1)).rejects.toThrow(/moved no tick in 1 step/u);
     } finally {
       stopped?.stop();
+      slow?.stop();
       game.stop();
+      Object.defineProperty(globalThis, "requestAnimationFrame", {
+        configurable: true,
+        value: requestFrame,
+      });
+      Object.defineProperty(globalThis, "cancelAnimationFrame", {
+        configurable: true,
+        value: cancelFrame,
+      });
+      if (previousAnnouncement === undefined)
+        Reflect.deleteProperty(host, PLAYTEST_RUNNER_EXPECTED_GLOBAL);
+      else host[PLAYTEST_RUNNER_EXPECTED_GLOBAL] = previousAnnouncement;
+      if (previousClock === undefined)
+        Reflect.deleteProperty(globalThis, "__THREENATIVE_PLAYTEST_CLOCK__");
+      else host.__THREENATIVE_PLAYTEST_CLOCK__ = previousClock;
+    }
+  });
+
+  it("names the clock this loop really runs on, so no request can make a frozen loop report the wall clock", async () => {
+    // The browser half of the production profile: `--live-clock` puts the request in an
+    // `addInitScript`, ahead of every page script, so it is set before the game's own module
+    // evaluates — which is the only moment this decision can be taken for the whole run. Set there,
+    // the host's pump drives the loop and `advance` names the ticks that pump really ran. Set later
+    // (a page whose own script installs a bridge, a hand-edited index.html the runner never saw),
+    // the loop is already frozen, and the honest answer is still `fixed-step`: the same verdict the
+    // bridge used to derive for itself, and the only one a rate read off it deserves.
+    const host = globalThis as Record<string, unknown>;
+    const previousAnnouncement = host[PLAYTEST_RUNNER_EXPECTED_GLOBAL];
+    const previousClock = host.__THREENATIVE_PLAYTEST_CLOCK__;
+    host[PLAYTEST_RUNNER_EXPECTED_GLOBAL] = true;
+    let updates = 0;
+    class CountingScene extends Scene {
+      override update(): void {
+        updates += 1;
+      }
+    }
+    // A host whose own pump presents frames, so "the clock ran" is measurable rather than assumed.
+    const requestFrame = globalThis.requestAnimationFrame;
+    const cancelFrame = globalThis.cancelAnimationFrame;
+    let handles = 0;
+    Object.defineProperty(globalThis, "requestAnimationFrame", {
+      configurable: true,
+      value: (callback: (time: number) => void) => {
+        handles += 1;
+        const handle = handles;
+        setTimeout(() => callback(performance.now()), 16);
+        return handle;
+      },
+    });
+    Object.defineProperty(globalThis, "cancelAnimationFrame", {
+      configurable: true,
+      value: () => undefined,
+    });
+    const countingGame = () =>
+      defineGame({
+        initialState: {},
+        plugins: [playtest({ holdUntilAttached: false })],
+        renderer: stubRenderer(testCanvas()),
+        scenes: { test: CountingScene },
+        start: "test",
+      });
+    const live = countingGame();
+    const late = countingGame();
+
+    try {
+      // Set before the game starts: the wall clock, and the ticks its pump ran rather than the count
+      // asked for.
+      host.__THREENATIVE_PLAYTEST_CLOCK__ = "wall-clock";
+      await live.start();
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      const advanced = await bridge().advance?.(1);
+      expect(advanced?.clock.mode).toBe("wall-clock");
+      expect(advanced?.ticks ?? 0).toBeGreaterThanOrEqual(1);
+      live.stop();
+
+      // Set after it: the loop was frozen by the install, so the count is the exact one requested.
+      Reflect.deleteProperty(host, "__THREENATIVE_PLAYTEST_CLOCK__");
+      await late.start();
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      const frozen = updates;
+      host.__THREENATIVE_PLAYTEST_CLOCK__ = "wall-clock";
+      const stepped = await bridge().advance?.(1);
+      expect(stepped?.clock.mode).toBe("fixed-step");
+      expect(stepped?.ticks).toBe(1);
+      expect(updates).toBe(frozen + 1);
+    } finally {
+      late.stop();
+      live.stop();
       Object.defineProperty(globalThis, "requestAnimationFrame", {
         configurable: true,
         value: requestFrame,
