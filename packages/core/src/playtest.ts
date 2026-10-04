@@ -249,17 +249,20 @@ export { PLAYTEST_CLOCK_GLOBAL };
 /**
  * How long a live advance waits for the pump's own tick past the span its ticks name.
  *
- * The room this buys has to be wall time, not a number of fixed steps, because the thing being
- * waited for is a frame and a frame costs what the machine costs: four steps is 33 ms, which is half
+ * The room this buys has to be wall time, not a number of fixed slices, because the thing being
+ * waited for is a frame and a frame costs what the machine costs: four slices is 33 ms, which is half
  * a frame on the 15 fps host the old bound claimed to cover and a fraction of one on anything
- * slower. The runner counts a wait in ten-tick pieces, so each piece named a 166 ms span and then
- * 33 ms more — and Machinefall's map-walk standing scene died on exactly that at load average 142,
- * with the world plainly drawing at 20 fps in the windows either side. A measurement whose subject
- * is a slow machine cannot refuse to measure one.
+ * slower — and the 2026-10-04 CI host measured 55-59 ms, where those four slices ended at 50.0 ms
+ * and read that slow pump as a dead one. Eight slices only bought 83.3 ms, which is still named
+ * against a machine the runner was about to measure. The runner counts a wait in ten-tick pieces, so
+ * each piece named a 166 ms span and then a few more slices — and Machinefall's map-walk standing
+ * scene died on exactly that at load average 142, with the world plainly drawing at 20 fps in the
+ * windows either side. A measurement whose subject is a slow machine cannot refuse to measure one.
  *
- * It stays a bound. A second is long past any frame the wait is waiting for and short enough that a
- * pump which has genuinely stopped is a failed run carrying a zero rather than a wait that never
- * ends — which is the one thing this wait is for.
+ * A one-tick request names exactly one frame interval, so a wait that ended on that boundary ran
+ * just before the host's next frame and observed nothing: the 2026-09-28 desktop pair failed on
+ * that at 58 mean fps. The tick has to come from the pump, and only a pump that has genuinely
+ * stopped may end the wait without one.
  */
 const WALL_CLOCK_PUMP_TIMEOUT_MS = 1_000;
 

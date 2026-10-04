@@ -25,6 +25,7 @@ import { createBuoy, createIsland, getShipModel } from "../render/props.js";
 import { setupSky } from "../render/sky.js";
 import { TouchControls } from "../render/touch-controls.js";
 import type { GameState } from "../state.js";
+import { holdOceanHeight } from "./ocean-readiness.js";
 
 export type GameCtx = ICtx<GameState, IPhysicsContext>;
 
@@ -78,6 +79,7 @@ export class Sailing extends Scene<GameState, IPhysicsContext> {
   };
 
   #sea: ReturnType<typeof createWaterMesh> | undefined;
+  #stopOceanReadiness: (() => void) | undefined;
 
   // No `load()` here: `ship.glb` is fetched in `Boot.load()`, alongside the sky, so this scene's
   // `enter()` stays synchronous — a playtest runner reads the registry the instant it returns, and
@@ -107,6 +109,7 @@ export class Sailing extends Scene<GameState, IPhysicsContext> {
     // passes in the warmup set. It draws nothing — the mesh and its material are this game's, and
     // both live in `src/render/ocean.ts`.
     const ocean = ctx.add(createOcean());
+    this.#stopOceanReadiness = holdOceanHeight(ctx, ocean);
     // The mirror is constructed here and handed to the material: `src/render/` reaches the engine
     // for the wave field it draws and nothing else, so the pass that draws the world a second time
     // is built in game code from the options that file authored.
@@ -258,6 +261,8 @@ export class Sailing extends Scene<GameState, IPhysicsContext> {
   }
 
   override exit(ctx: GameCtx): void {
+    this.#stopOceanReadiness?.();
+    this.#stopOceanReadiness = undefined;
     // The mirror owns a render target and a pass. Nothing in the frame releases it, so a restart
     // — which is `goto("sailing")`, and this scene is entered again — would leak one every time.
     this.#sea?.dispose();

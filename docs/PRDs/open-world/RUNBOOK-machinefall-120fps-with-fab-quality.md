@@ -116,7 +116,7 @@ The gap is CPU while walking. The costs, as span p95s, which overlap and do not 
 
 ## Lane C — look and native parity (independent; any free session)
 
-- [ ] **C1 · [PRD-339](../rendering/PRD-339-the-frame-sets-its-own-exposure.md): auto exposure.** 🎨👁
+- [ ] **C1 · [PRD-339](../done/PRD-339-the-frame-sets-its-own-exposure.md): auto exposure.** 🎨👁
   - Draft PR #397 already exists. Add its phase boxes first, since `prd:progress` exits 1 without them.
 - [ ] **C2 · [PRD-492](PRD-492-colour-grading-and-film-grain.md): colour grading and film grain.** 🎨👁
 - [ ] **C3 · [PRD-493](PRD-493-terrain-layers-past-sixteen-textures.md): terrain layers past sixteen textures.** ⏱🌍👁
@@ -124,7 +124,7 @@ The gap is CPU while walking. The costs, as span p95s, which overlap and do not 
   - Compare native frames against web frames with the same judges.
 - [ ] **C5 · [PRD-490](PRD-490-cluster-lod-wins-on-native.md): cluster LOD wins on native.** ⏱👁
 - [ ] **C6 · Off-screen GI:** [PRD-245](../rendering/PRD-245-indirect-light-is-a-node-the-game-composites.md), [PRD-267](../useful-defaults/PRD-267-screen-space-gi-ships-in-the-templates.md), [PRD-268](../rendering/PRD-268-light-that-comes-from-off-screen.md), [PRD-270](../useful-defaults/PRD-270-no-lighting-node-ships-web-only.md). After: A4. ⏱🎨👁
-  - All four have been PROPOSED since 2026-08-29 with 0 boxes. Merge or split them into at most 3 phases before starting.
+  - Consolidated 2026-10-03: [PRD-267](../useful-defaults/PRD-267-screen-space-gi-ships-in-the-templates.md) is now the single plan in 3 phases; PRD-245, PRD-268 and PRD-270 are SUPERSEDED and folded into it. Start at PRD-267 Phase 1.
 
 ## Housekeeping (any session; docs-only, commit straight to `develop` per AGENTS.md)
 

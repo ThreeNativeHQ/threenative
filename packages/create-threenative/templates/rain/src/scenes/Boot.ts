@@ -86,6 +86,19 @@ export class Coast extends Scene<GameState> {
     weather: { ...STORM },
   };
 
+  override load(ctx: WeatherCtx): void {
+    // Pick the study's actual cloud/reflection tier before its first render and before runner
+    // setup. The post chain's low tier alone does not change these authored passes.
+    const softwareRendering = ctx.renderer.softwareAdapter !== undefined;
+    ctx.state.set({
+      softwareRendering,
+      ...(softwareRendering && ctx.state.getState().qualityExplicit !== true
+        ? { quality: "performance" as const }
+        : {}),
+    });
+    ctx.state.flush();
+  }
+
   override enter(ctx: WeatherCtx): SceneFrame<GameState> {
     const camera = ctx.camera as PerspectiveCamera;
     setupCamera(camera);

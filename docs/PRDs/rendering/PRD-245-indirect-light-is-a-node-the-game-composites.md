@@ -4,7 +4,12 @@ prd_contract: v1
 
 # PRD-245 — Indirect light is a node the game composites
 
-**Status: PROPOSED, 2026-08-28. Nothing below has been executed. Depends on
+**Status: SUPERSEDED 2026-10-03 — folded into
+[PRD-267](../useful-defaults/PRD-267-screen-space-gi-ships-in-the-templates.md) at runbook row C6,
+which carries its charter veto, its cost verdict and its borrow map as Phase 3. Kept in place with
+its text: `docs/PRDs/AGENTS.md` archives *finished* work in `done/` and a superseded proposal with 0
+ticked boxes is not finished. The file below is PROPOSED 2026-08-28. Nothing below has been
+executed. Depends on
 [PRD-242](../done/PRD-242-gpu-simulation-has-one-lifetime.md) for lifetime and
 [PRD-244](../done/PRD-244-the-scenes-bvh-reaches-the-gpu.md) for the traceable scene.**
 
