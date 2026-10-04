@@ -50,9 +50,42 @@ export function changedTemplates(files) {
   for (const file of files) {
     const match =
       /^packages\/create-threenative\/(?:templates|template-playtests)\/([^/]+)\/.+/u.exec(file);
-    if (match && TEMPLATE_NAMES.includes(match[1])) names.add(match[1]);
+    if (match && TEMPLATE_NAMES.includes(match[1]) && !file.endsWith(".md")) names.add(match[1]);
   }
   return [...names].sort();
+}
+
+// These producer families keep the existing full build/unit/browser/native board. Only the
+// redundant kit fanout narrows: each changed kit still proves itself, and starter exercises the
+// default tarball/scaffold/physics/React/asset/MCP/boot route. Unknown executables keep all kits.
+const REPRESENTATIVE_INPUTS = [
+  /^docs\/(?:verification|benchmark)\/.*\.(?:png|jpe?g|webp|json|gz|txt)$/u,
+  /^packages\/(?:core|physics|ui|assets|playtest|runtime-native|create-threenative|terrain|metahuman|raw-unreal|ueformat|engine-mcp|blender-mcp)\//u,
+  /^examples\//u,
+  /^scripts\/__tests__\/[^/]+\.spec\.ts$/u,
+  /^scripts\/(?:api-surface\.json|run-test-suite\.sh|verify-animation-reversal\.ts|temporal-aa-(?:evidence|quality)\.ts|velocity-(?:capture|cost)-proof\.ts|verify-temporal-(?:aa|motion)\.ts|verify-velocity-history\.ts)$/u,
+  /^\.github\/(?:workflows\/[^/]+\.yml|actions\/(?:workspace-dist|pnpm|playwright-chromium|scaffold-from-tarballs|android-v8-source)\/)/u,
+  /^(?:package\.json|pnpm-(?:lock|workspace)\.yaml|tsconfig(?:\.base)?\.json|biome\.json|\.gitignore)$/u,
+];
+function representativeTemplates(files, target) {
+  if (
+    files.some((file) => {
+      const kit =
+        /^packages\/create-threenative\/(?:templates|template-playtests)\/([^/]+)\//u.exec(file);
+      return kit && !TEMPLATE_NAMES.includes(kit[1]);
+    })
+  )
+    return false;
+  return (
+    target === "develop" &&
+    files.length > 0 &&
+    files.every(
+      (file) =>
+        file.endsWith(".md") ||
+        REPRESENTATIVE_INPUTS.some((pattern) => pattern.test(file)) ||
+        CI_CONFIG_PATHS.some((pattern) => pattern.test(file)),
+    )
+  );
 }
 
 const SELECTIONS = new Set(["full", "prose", "instructions", "reused", "ci", "warm", "template"]);
@@ -126,13 +159,14 @@ export function selectionPlan(
   const ciLane = selection === "ci";
   const warm = selection === "warm";
   const template = selection === "template";
+  const representative = full && representativeTemplates(files, target);
   const checks = {
     docs: !reused,
     ci: files.some((file) => CI_CONFIG_PATHS.some((pattern) => pattern.test(file))),
     instructions:
       full ||
       selection === "instructions" ||
-      (template && files.some((file) => /(?:^|\/)(?:AGENTS|CLAUDE)\.md$/u.test(file))),
+      files.some((file) => /(?:^|\/)(?:AGENTS|CLAUDE)\.md$/u.test(file)),
     // A warm run builds the workspace, because publishing it is the run's whole product.
     workspace: full || warm || ciLane || template,
     native: full && native,
@@ -225,10 +259,20 @@ export function selectionPlan(
     nativeTier,
     unitMatrix: { shard: ciLane || template ? ["1/1"] : ["1/4", "2/4", "3/4", "4/4"] },
     templateMatrix: {
-      template: full ? TEMPLATE_NAMES : template ? changedTemplates(files) : ["starter"],
+      template: full
+        ? representative
+          ? [...new Set(["starter", ...changedTemplates(files)])].sort()
+          : TEMPLATE_NAMES
+        : template
+          ? changedTemplates(files)
+          : ["starter"],
     },
     goldenMatrix: {
-      template: template ? changedTemplates(files).slice(0, 1) : ["starter", "platformer"],
+      template: template
+        ? changedTemplates(files).slice(0, 1)
+        : representative
+          ? ["starter"]
+          : ["starter", "platformer"],
     },
     checks,
     jobs,
@@ -684,6 +728,11 @@ function parseNameStatus(output) {
 }
 
 function pathFamily(file, selective) {
+  if (
+    /^packages\/create-threenative\/templates\/[^/]+\/(?:AGENTS|CLAUDE)\.md$/u.test(file) &&
+    selective
+  )
+    return "ci";
   if (/(?:^|\/)(?:AGENTS|CLAUDE)\.md$/u.test(file)) {
     // Root and playtest instruction consumers have explicit contracts in the instruction lane.
     // Shipped template/native instructions may affect scaffolding and platform contracts too.

@@ -29,7 +29,7 @@ pool that is down never strands a job.
 ## Set it up (once, on the runner machine)
 
 Needs: Linux with systemd, Docker usable without `sudo`, `gh` logged in with admin rights on the repo,
-and enough cores for the slots (3 threads each; 2 whole cores always stay free for the desktop).
+and enough cores for the slots (3 whole physical cores each; 2 whole cores stay free for the desktop).
 
 1. Create a fine-grained token for this repository only, with **Administration: Read and write**. It
    mints runner registration tokens. Add **Variables: Read and write** too if the pool must also start
@@ -57,6 +57,11 @@ and enough cores for the slots (3 threads each; 2 whole cores always stay free f
 
 ## Day to day
 
+`bash scripts/ci-runners.sh plan [N]` prints the CPU allocation without credentials or mutations.
+It groups actual socket/core identities and refuses restricted inherited affinity or insufficient
+whole cores. Activation uses the existing service restart only after the pool is drained and the
+reviewed script is on `develop`; a restart cancels active jobs.
+
 | Want | Run |
 |---|---|
 | What is running, what is routed | `pnpm ci:runners status` (balancer log: `~/.local/state/threenative/ci-runners/balance.log`) |
@@ -74,9 +79,11 @@ restart or reboot.
 - An ephemeral container per job (`docker run --rm`): fresh filesystem, fresh hostname, no state
   shared between jobs. The image is Ubuntu 24.04 plus what hosted `ubuntu-24.04` jobs rely on: Node 20,
   `gh`, Rust, JDK 17, Android SDK and platform-tools, build tools, Xvfb and Playwright's dependencies.
-- 6 heavy slots of 3 pinned threads each (`nproc` reads 3) with 9 GB of memory and no extra swap. More,
-  thinner slots beat fewer fat ones: most CI time is installs, downloads and browser waits. Under memory pressure the kernel kills a CI job before anything else.
-- 3 light slots: 1 CPU and 2 GB each, for joins only. One slot serialised every pull request's scope and
+- 3 heavy slots of 3 whole physical cores each (6 threads on a two-way SMT host), with 9 GB of memory
+  and no extra swap. Sibling threads stay in one slot. This halves job concurrency while keeping the
+  heavy pool's total CPU allocation; compare board throughput after activation.
+- 3 light slots: 1 CPU quota and 2 GB each, sharing a separate physical core, for joins only.
+  These three slots contend for two logical CPUs on a two-way SMT host. One slot serialised every pull request's scope and
   verdict, because an ephemeral runner takes 30-60 s to re-register after each job.
 - The admin token mints one registration token per container and is unset before the job starts, so no
   job can read it.
@@ -92,5 +99,5 @@ restart or reboot.
   flaky on both pools (see `docs/PRDs/CI/EXECUTION-ORDER.md`). Rerun the failed jobs once.
 - **The runner list shows offline `tn-*` runners.** Runners stopped while idle stay registered. `up` and
   `down` delete them.
-- **Timing.** The pool adds about 6 slots to hosted's ~20; with several boards in flight both pools
+- **Timing.** The pool adds 3 heavy slots plus 3 light slots to hosted's ~20; with several boards in flight both pools
   saturate, and wall time follows total demand.

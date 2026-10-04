@@ -6,6 +6,89 @@ import { pathToFileURL } from "node:url";
 const WORKFLOW = ".github/workflows/integration.yml";
 const SELECTOR = "scripts/ci-integration-scope.mjs";
 
+// The package lanes share workspace producers, unlike csg/ik/vegetation's standalone npm
+// projects. Producer configuration reaches every package lane; library source reaches its
+// runtime consumers. This inventory adds coverage before the unknown-executable fallback.
+const PACKAGE_LANES = [
+  "exposure",
+  "cold-boot",
+  "decals",
+  "fog",
+  "fluid-particles",
+  "fluid-native",
+  "native-assets",
+  "tone",
+  "world-capture",
+];
+// The fluid fixtures use FluidParticles3D, Scene/defineGame and core/playtest. These independent
+// modules are not imported by that runtime closure; their unit/build proofs stay on the CI board.
+// The dependency-boundary spec guards this exception against a new import from the exercised roots.
+export const INDEPENDENT_CORE_MODULES = [
+  "animation",
+  "clip-audit",
+  "rig-preparation",
+  "skeletal-mesh",
+  "world-tiles",
+  "world-cells",
+  "terrain-jobs",
+  "terrain-jobs-worker",
+  "world-topology",
+  "world-validate",
+];
+export const INDEPENDENT_PACKAGES = [
+  "terrain",
+  "metahuman",
+  "raw-unreal",
+  "ueformat",
+  "engine-mcp",
+  "blender-mcp",
+];
+const OWNED_PACKAGES =
+  "core|physics|playtest|assets|ui|runtime-native|create-threenative|terrain|metahuman|raw-unreal|ueformat|engine-mcp|blender-mcp";
+const PACKAGE_CONTRACT = new RegExp(
+  `^packages/(?:${OWNED_PACKAGES})/(?:__tests__/.*\\.spec\\.ts|tests/.*\\.test\\.mjs)$`,
+  "u",
+);
+const PACKAGE_PRODUCER = new RegExp(
+  `^packages/(?:${OWNED_PACKAGES})/(?:package\\.json|tsconfig[^/]*\\.json|tsup\\.config\\.ts|scripts/.*|patches/.*)$`,
+  "u",
+);
+export const INDEPENDENT_PROOFS =
+  /^scripts\/(?:run-test-suite\.sh|verify-animation-reversal\.ts|temporal-aa-(?:evidence|quality)\.ts|velocity-(?:capture|cost)-proof\.ts|verify-temporal-(?:aa|motion)\.ts|verify-velocity-history\.ts)$/u;
+function dependencyLanes(file, current) {
+  if (PACKAGE_PRODUCER.test(file)) return PACKAGE_LANES;
+  if (/^packages\/core\/src\//u.test(file)) {
+    const module = /^packages\/core\/src\/([^/]+)\.ts$/u.exec(file)?.[1];
+    return INDEPENDENT_CORE_MODULES.includes(module)
+      ? ["exposure", "cold-boot", ...(file.includes("/world-") ? ["world-capture"] : [])]
+      : ["fluid-particles", "fluid-native"];
+  }
+  if (PACKAGE_CONTRACT.test(file)) {
+    return [
+      ...new Set(
+        [...current.jobs]
+          .filter(([, body]) => body.includes(file))
+          .map(([id]) => current.lanesByJob.get(id))
+          .filter(Boolean),
+      ),
+    ];
+  }
+  if (
+    INDEPENDENT_PROOFS.test(file) ||
+    /^packages\/(?:terrain\/__tests__\/fixtures\/(?:glb|png)\.mjs|core\/__tests__\/(?:three-attributes\.d\.ts|velocity-render-fixture\.ts))$/u.test(
+      file,
+    )
+  )
+    return [];
+  // New terrain/editor and import-package sources are built/unit-tested by the ordinary board,
+  // and none of the retained integration fixtures imports these packages.
+  if (
+    /^packages\/(?:terrain|metahuman|raw-unreal|ueformat|engine-mcp|blender-mcp)\/src\//u.test(file)
+  )
+    return [];
+  return undefined;
+}
+
 function parse(source) {
   if (source.includes("\t") || source.includes("\r")) throw new Error("ambiguous indentation");
   const split = source.split("\njobs:\n");
@@ -146,7 +229,19 @@ export function integrationSelection({ files, before, after }) {
     if (files.includes(SELECTOR)) return all("shared selector changed");
     const lanes = new Set();
     for (const file of files) {
-      let matched = false;
+      const dependency = dependencyLanes(file, current);
+      if (
+        dependency === PACKAGE_LANES &&
+        [...current.filters.keys()].some(
+          (lane) => !PACKAGE_LANES.includes(lane) && !["csg", "ik", "vegetation"].includes(lane),
+        )
+      )
+        return all("unclassified additive producer consumer");
+      let matched = dependency !== undefined;
+      for (const lane of dependency ?? []) {
+        if (!current.filters.has(lane)) return all("unresolved producer lane");
+        lanes.add(lane);
+      }
       for (const [lane, pattern] of current.filters) {
         if (pattern.test(file)) {
           lanes.add(lane);
