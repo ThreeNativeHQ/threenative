@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 import { type ICtx, Scene, defineGame } from "@threenative/core";
 import { playtest } from "@threenative/core/playtest";
 import {
