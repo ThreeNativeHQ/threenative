@@ -25,6 +25,8 @@ export interface IDaylightOptions {
   readonly sunIntensity: number;
   /** Half-widths of the shadow windows in world units, finest first, strictly increasing. */
   readonly shadowExtents: readonly number[];
+  /** Texels per shadow level edge; a level's texel is `2 * extent / shadowMapSize`. Default: the sun's `shadow.mapSize.width` (512). */
+  readonly shadowMapSize?: number;
   /**
    * How far a window may trail the camera before it re-renders, as a fraction of its own extent:
    * one value for every level, or one per level finest first, the last entry standing in for the
@@ -106,6 +108,10 @@ export class Daylight extends Group implements IComputeDriven {
     // from the eye, fully fogged at any useful density, and a fogged dome is a flat grey sky.
     this.sky.material.fog = false;
     this.sky.sunPosition.value.copy(this.#sunDirection);
+    // Where the frame budget counts this mesh's main-pass draw (`RenderPassBudget`). One draw, on
+    // the main camera's own layer, and no world system owns it — so without the origin it is a line
+    // in the `other` bucket that reads as a prop rather than as the sky.
+    this.sky.userData.tnDrawSource = "sky";
     this.add(this.sky);
 
     this.fill = new HemisphereLight(options.fill.sky, options.fill.ground, options.fill.intensity);
@@ -119,6 +125,7 @@ export class Daylight extends Group implements IComputeDriven {
       // A game that wants the fine level on a different cadence than the coarse two says so here,
       // per level, instead of taking one step for all of them.
       ...(options.refreshStep === undefined ? {} : { refreshStep: options.refreshStep }),
+      ...(options.shadowMapSize === undefined ? {} : { mapSize: options.shadowMapSize }),
     });
     this.add(this.sun);
     this.add(this.sun.target);

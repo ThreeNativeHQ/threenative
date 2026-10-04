@@ -230,6 +230,7 @@ export type {
  * is returned so instances can still be animated by the index `place` and `span` hand back.
  * @situation draw hundreds of repeated props without hundreds of draw calls
  * @situation draw thousands of identical instanced blocks or obstacles in one mesh
+ * @situation automatically select instanced prop detail from projected screen error using baked AutoLOD chains
  * @situation place repeated props when the count is not known until the layout has been walked
  * @situation build a chain, railing, cable, or tie rod out of point-to-point segments
  * @alias landmarks points of interest
@@ -237,6 +238,9 @@ export type {
  * @constraint geometry and material are required and come from the game; the batch chooses neither
  * @constraint span stretches along +Y, so its geometry must be unit-height and centred on the origin
  * @constraint placing after build() throws, and build() returns undefined when nothing was placed
+ * @constraint baked AutoLOD chains survive geometry clone/transform preparation and partition instances automatically into spatially bounded draws in the engine frame loop at 4 px projected error; public instance slots remain stable
+ * @constraint unavailable authored levels report TN_INSTANCED_LOD_FAILED once naming the batch; a million-triangle batch with no chain reports TN_INSTANCED_LOD_UNAVAILABLE
+ * @override autoLod: false leaves selection to the game; autoLod.maxPixelError and hysteresis override the measured-camera budget; lods supplies authored distance/geometry levels and wins over the baked chain
  * @override castShadow and receiveShadow pass through to the built mesh and default to Three.js's own false
  * @example const curbs = new InstancedBatch({ geometry: new BoxGeometry(1, 1, 1), material });
  * curbs.place({ position: [x, 0.08, z], rotation: [0, angle, 0], scale: [length, 0.18, 0.42] });
@@ -513,7 +517,7 @@ export type {
   IFrameBudgetWindow,
   IFramePhaseSample,
 } from "./frame-budget.js";
-export type { FramePassKind, IRenderPassSample } from "./render-pass-budget.js";
+export type { FramePassKind, IRenderPassSample, MainDrawSource } from "./render-pass-budget.js";
 /**
  * Read what frame rate a game gets when its config does not say, and why.
  *
@@ -1043,15 +1047,16 @@ export type {
  * @situation stop a water surface repeating in visible bands or stripes
  * @situation keep a crowd of small actors out of the water's reflection so the frame can afford it
  * @situation stop the water reflection redrawing the whole world every frame
+ * @situation automatically reflect terrain and large casters without redrawing instanced small props
  * @constraint it draws nothing; the game supplies the mesh, the material and every colour
  * @constraint the material must be transparent so the frame beneath it is already drawn
  * @constraint thickness is metres, saturating at maxThickness; sky behind the surface reads deep
  * @constraint one reflection is a second draw of the world; resolutionScale is its pixels only
- * @constraint on a crowded scene the mirrored pass is draw-bound: name reflection.layers or pay twice
+ * @constraint omitted reflection.layers automatically reflects terrain-sized surfaces and large non-instanced casters, excluding instanced/skinned props; TN_WATER_REFLECTION_DEFAULT reports the set once
+ * @override reflection.layers is an explicit Three Layers mask and wins over automatic filtering, including layer-0 mask 1; reflection.minSize overrides the default 10 metre minimum extent
  * @constraint reflection.refreshInterval is in presented frames; 1 is every frame, and the default
  * @constraint the mirror plane is level, from level alone; do not parent target to a scaled mesh
- * @example const REFLECTED = 1; // the layer the big silhouettes sit on
- * const surface = new WaterSurface3D({ level: 0, maxThickness: 3, reflection: { resolutionScale: 0.5, layers: (1 << 0) | (1 << REFLECTED) } });
+ * @example const surface = new WaterSurface3D({ level: 0, maxThickness: 3, reflection: { resolutionScale: 0.5 } });
  * material.colorNode = mix(surface.refractionAt(offset), surface.reflectionAt(offset), fresnel);
  */
 export { WaterSurface3D } from "./water-surface.js";

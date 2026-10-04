@@ -93,6 +93,7 @@
     "test": "vitest run --config vitest.config.ts && pnpm native:physics:parity && publint --strict"
   },
   "devDependencies": {
+    "@dimforge/rapier3d-compat": "catalog:",
     "@threenative/playtest": "workspace:*",
     "esbuild": "catalog:",
     "publint": "catalog:",

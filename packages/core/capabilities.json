@@ -1834,12 +1834,15 @@
       "constraints": [
         "geometry and material are required and come from the game; the batch chooses neither",
         "span stretches along +Y, so its geometry must be unit-height and centred on the origin",
-        "placing after build() throws, and build() returns undefined when nothing was placed"
+        "placing after build() throws, and build() returns undefined when nothing was placed",
+        "baked AutoLOD chains survive geometry clone/transform preparation and partition instances automatically into spatially bounded draws in the engine frame loop at 4 px projected error; public instance slots remain stable",
+        "unavailable authored levels report TN_INSTANCED_LOD_FAILED once naming the batch; a million-triangle batch with no chain reports TN_INSTANCED_LOD_UNAVAILABLE"
       ],
       "example": "const curbs = new InstancedBatch({ geometry: new BoxGeometry(1, 1, 1), material });\ncurbs.place({ position: [x, 0.08, z], rotation: [0, angle, 0], scale: [length, 0.18, 0.42] });\ncurbs.build({ castShadow: true, name: \"curbs\", parent: ctx.scene });",
       "importPath": "@threenative/core",
       "kind": "class",
       "overrides": [
+        "autoLod: false leaves selection to the game; autoLod.maxPixelError and hysteresis override the measured-camera budget; lods supplies authored distance/geometry levels and wins over the baked chain",
         "castShadow and receiveShadow pass through to the built mesh and default to Three.js's own false"
       ],
       "package": "@threenative/core",
@@ -1847,6 +1850,7 @@
       "situations": [
         "draw hundreds of repeated props without hundreds of draw calls",
         "draw thousands of identical instanced blocks or obstacles in one mesh",
+        "automatically select instanced prop detail from projected screen error using baked AutoLOD chains",
         "place repeated props when the count is not known until the layout has been walked",
         "build a chain, railing, cable, or tie rod out of point-to-point segments"
       ],
@@ -3278,7 +3282,8 @@
       "kind": "class",
       "overrides": [
         "bias, biasNode, normalBias, intensity, radius, blurSamples, mapType and filterNode stay on `light.shadow`; mapSize and the other options here have defaults, and `marker: false` silences the TN_VIRTUAL_SHADOW line, not the measurement",
-        "bias, biasNode, normalBias, intensity, radius, blurSamples, mapType and filterNode stay on `light.shadow`; mapSize and the other options here have defaults"
+        "bias, biasNode, normalBias, intensity, radius, blurSamples, mapType and filterNode stay on `light.shadow`; mapSize and the other options here have defaults",
+        "followViewFocus: false keeps eye follow; receiverPlaneBias: false uses only authored bias"
       ],
       "package": "@threenative/core",
       "signature": "export class VirtualShadowNode extends ShadowBaseNode { … }",
@@ -3316,14 +3321,16 @@
         "the material must be transparent so the frame beneath it is already drawn",
         "thickness is metres, saturating at maxThickness; sky behind the surface reads deep",
         "one reflection is a second draw of the world; resolutionScale is its pixels only",
-        "on a crowded scene the mirrored pass is draw-bound: name reflection.layers or pay twice",
+        "omitted reflection.layers automatically reflects terrain-sized surfaces and large non-instanced casters, excluding instanced/skinned props; TN_WATER_REFLECTION_DEFAULT reports the set once",
         "reflection.refreshInterval is in presented frames; 1 is every frame, and the default",
         "the mirror plane is level, from level alone; do not parent target to a scaled mesh"
       ],
-      "example": "const REFLECTED = 1; // the layer the big silhouettes sit on\nconst surface = new WaterSurface3D({ level: 0, maxThickness: 3, reflection: { resolutionScale: 0.5, layers: (1 << 0) | (1 << REFLECTED) } });\nmaterial.colorNode = mix(surface.refractionAt(offset), surface.reflectionAt(offset), fresnel);",
+      "example": "const surface = new WaterSurface3D({ level: 0, maxThickness: 3, reflection: { resolutionScale: 0.5 } });\nmaterial.colorNode = mix(surface.refractionAt(offset), surface.reflectionAt(offset), fresnel);",
       "importPath": "@threenative/core",
       "kind": "class",
-      "overrides": [],
+      "overrides": [
+        "reflection.layers is an explicit Three Layers mask and wins over automatic filtering, including layer-0 mask 1; reflection.minSize overrides the default 10 metre minimum extent"
+      ],
       "package": "@threenative/core",
       "signature": "export class WaterSurface3D { … }",
       "situations": [
@@ -3332,7 +3339,8 @@
         "know how deep the water is under a pixel without a second render pass",
         "stop a water surface repeating in visible bands or stripes",
         "keep a crowd of small actors out of the water's reflection so the frame can afford it",
-        "stop the water reflection redrawing the whole world every frame"
+        "stop the water reflection redrawing the whole world every frame",
+        "automatically reflect terrain and large casters without redrawing instanced small props"
       ],
       "summary": "Give a horizontal water surface the world mirrored in it, the world beneath it, and the metres of water between them.",
       "supersedes": [],
@@ -4877,6 +4885,24 @@
       "summary": "Measure a payload's wire size in bytes.",
       "supersedes": [],
       "symbol": "jsonByteLength"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "throws on an unrecognised value instead of falling back to a fixed-step run"
+      ],
+      "example": "if (requestedPlaytestClockMode() === \"wall-clock\") host.pumpDrivesTheSimulation();",
+      "importPath": "@threenative/playtest/protocol",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function requestedPlaytestClockMode(): PlaytestClockMode | undefined { … }",
+      "situations": [
+        "report which clock a playtest producer is really running on, before judging its ticks"
+      ],
+      "summary": "The clock the host asked for, or `undefined` for the default deterministic run. `wall-clock` is the production profile's opt-in and the only one this protocol has. An unrecognised value throws instead of falling back, because a misspelling that quietly left the loop frozen would publish a frame rate for a game that was not playing. Read at the moment it is needed rather than once at install: a request that arrives after the producer was installed is still a request, and a producer that missed it would judge a live frame pump by a count it never asked for.",
+      "supersedes": [],
+      "symbol": "requestedPlaytestClockMode"
     },
     {
       "aliases": [],

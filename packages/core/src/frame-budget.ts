@@ -26,6 +26,8 @@ import {
   FRAME_PASS_KINDS,
   type FramePassKind,
   type IRenderPassSample,
+  MAIN_DRAW_SOURCES,
+  type MainDrawSource,
 } from "./render-pass-budget.js";
 import type { ITargetFps, TargetFpsSource } from "./target-fps.js";
 
@@ -199,9 +201,31 @@ export type IFrameGpuBucketSample = Partial<Record<FrameGpuBucket, number>>;
  */
 export interface IFrameBudgetPassSummary {
   readonly draws: IFrameBudgetSummary;
+  /**
+   * The main pass's own draws per origin, summarised like every other series in this window.
+   *
+   * The per-frame counts sum to `draws` exactly, which is the invariant the split exists to answer;
+   * the percentiles below do not have to, because a source that draws on some frames and not others
+   * has a median over its own frames rather than over the window's. A source no frame drew is
+   * absent. Absent altogether — never a set of zeros — when the renderer named no object behind one
+   * of the pass's draws, which is the same rule the pass record itself follows. One exception to the
+   * sum: a world with bundles on counts its replays here, and three never traverses a replay, so the
+   * sources can exceed `draws`; the sum holds for the sources that went through the per-draw path.
+   */
+  readonly drawsBySource?: Readonly<Partial<Record<MainDrawSource, IFrameBudgetSummary>>>;
   /** Frames in the window that submitted a pass of this kind. */
   readonly frames: number;
+  /**
+   * Three's CPU figure: `instanceCount * count / 3` per draw, where an indirect batch's `count` is
+   * the merged geometry's capacity. An upper bound over what the GPU could select.
+   */
   readonly triangles: IFrameBudgetSummary;
+  /**
+   * What the GPU selected, main pass only: the streamed world's own indirect tally, beside the
+   * figure above so a reader of the pass record can tell which of the two it is holding. Absent
+   * rather than zero when the world reported no tally — see `mainGpuTriangles`.
+   */
+  readonly gpuTriangles?: number;
 }
 
 /**
@@ -499,6 +523,11 @@ function hostPresentCountReader(): (() => number | undefined) | undefined {
   };
 }
 
+/** Whether a per-source key names a source this window counts. */
+function isMainDrawSource(source: string): source is MainDrawSource {
+  return (MAIN_DRAW_SOURCES as readonly string[]).includes(source);
+}
+
 function round(value: number): number {
   return Math.round(value * 100) / 100;
 }
@@ -513,7 +542,8 @@ function round1(value: number): number {
  *
  * The caller is the frame loop; the sequence per frame is
  * `beginFrame` → `markSimulationEnd` → (`addRender` / `addOverlay` / `addUi`) → `endFrame`.
- * Calling them out of order throws rather than producing a plausible-looking split.
+ * Calling them out of order throws rather than producing a plausible-looking split. The one
+ * exception is `addSimulation`, which reports simulation that ran outside any frame — see it.
  */
 export class FrameBudget {
   #taskObserver: PerformanceObserver | undefined;
@@ -540,6 +570,7 @@ export class FrameBudget {
   #gpuBucketRings: Record<FrameGpuBucket, Ring>;
   #gpuBucketThisFrame: IFrameGpuBucketSample = {};
   #passDrawRings: Record<FramePassKind, Ring>;
+  #passDrawSourceRings: Record<MainDrawSource, Ring>;
   #passTriangleRings: Record<FramePassKind, Ring>;
   #passFrames: Record<FramePassKind, number> = { main: 0, nested: 0, reflection: 0, shadow: 0 };
   #passesThisFrame: IRenderPassSample[] = [];
@@ -638,6 +669,16 @@ export class FrameBudget {
       reflection: new Ring(capacity),
       shadow: new Ring(capacity),
     };
+    this.#passDrawSourceRings = {
+      bundles: new Ring(capacity),
+      chunks: new Ring(capacity),
+      gpuScene: new Ring(capacity),
+      instanced: new Ring(capacity),
+      other: new Ring(capacity),
+      proxies: new Ring(capacity),
+      sky: new Ring(capacity),
+      terrain: new Ring(capacity),
+    };
     this.#passTriangleRings = {
       main: new Ring(capacity),
       nested: new Ring(capacity),
@@ -682,7 +723,43 @@ export class FrameBudget {
   markSimulationEnd(nowMs: number, substeps: number): void {
     if (!this.#open) throw new Error("FrameBudget.markSimulationEnd called outside a frame.");
     this.#simulationEnd = nowMs;
-    this.#substepCount = substeps;
+    // Accumulated, not assigned: `addSimulation` may already have charged a counted batch that ran
+    // inside this frame, and that batch's steps are this frame's.
+    this.#substepCount += substeps;
+  }
+
+  /**
+   * Charges one counted simulation batch — the loop's `advance(ticks)`, which is how a tick-counted
+   * playtest run simulates at all — to this window's `update` and `substeps`.
+   *
+   * A batch is not a frame. It presents nothing, so it must not count as one: no frame in the
+   * window, no present interval, no GPU sample, no hitch however long it blocked, and no window
+   * boundary. Opening a metered frame around it instead put half of a fixed-step run's windows into
+   * the frame and render percentiles as zero-millisecond frames that drew nothing, and closed a
+   * "300-frame" window on 300 metered frames rather than 300 presented ones — which is how a
+   * 300-frame window came to hold ~20 GPU timestamp samples instead of ~37.
+   *
+   * Inside a live frame — the frozen prime's settle, which is `advance()` called from inside the
+   * frame that armed it — the batch's milliseconds are already inside that frame's own measurement
+   * and are not charged a second time; only its steps are added, so the frame reports it exactly
+   * once. Its blocking cost reaches the window either way: through the enclosing frame's `update`,
+   * or here.
+   */
+  addSimulation(ms: number, ticks: number): void {
+    if (!Number.isFinite(ms) || ms < 0)
+      throw new Error(
+        `Frame budget simulation ms must be a non-negative number, received ${String(ms)}.`,
+      );
+    if (!Number.isInteger(ticks) || ticks < 0)
+      throw new Error(
+        `Frame budget simulation ticks must be a non-negative integer, received ${String(ticks)}.`,
+      );
+    if (this.#open) {
+      this.#substepCount += ticks;
+      return;
+    }
+    this.#phaseRings.update.push(ms);
+    this.#substeps.push(ticks);
   }
 
   addRender(ms: number): void {
@@ -876,6 +953,17 @@ export class FrameBudget {
     for (const pass of this.#passesThisFrame) {
       this.#passDrawRings[pass.kind].push(pass.draws);
       this.#passTriangleRings[pass.kind].push(pass.triangles);
+      // The main pass's per-origin counts, one sample per source the frame drew. A source the
+      // frame did not draw contributes no sample, so its percentiles describe the frames that had
+      // it — the same rule every other series here follows.
+      if (pass.drawsBySource !== undefined)
+        for (const [source, count] of Object.entries(pass.drawsBySource)) {
+          if (!isMainDrawSource(source))
+            throw new Error(
+              `FrameBudget received an unknown main draw source: ${source}. Expected one of: ${MAIN_DRAW_SOURCES.join(", ")}.`,
+            );
+          this.#passDrawSourceRings[source].push(count);
+        }
       this.#passFrames[pass.kind] += 1;
     }
     this.#passesThisFrame.length = 0;
@@ -903,18 +991,31 @@ export class FrameBudget {
     const share = (value: number): number =>
       presented.mean === 0 ? 0 : Math.round((value / presented.mean) * 1_000) / 1_000;
     const passes: Partial<Record<FramePassKind, IFrameBudgetPassSummary>> = {};
+    const gpuTally = this.#readGpuTally?.();
     for (const kind of FRAME_PASS_KINDS) {
       if (this.#passFrames[kind] === 0) continue;
+      // The split belongs to `main` alone, and it is the only kind the recorder attributes: the
+      // rings are per source rather than per kind and per source, so a summary that attached them
+      // to a shadow pass would report the main pass's origins under a nested pass's name.
+      const drawsBySource: Partial<Record<MainDrawSource, IFrameBudgetSummary>> = {};
+      if (kind === "main")
+        for (const source of MAIN_DRAW_SOURCES) {
+          const ring = this.#passDrawSourceRings[source];
+          if (ring.count > 0) drawsBySource[source] = ring.summarize(this.#scratch);
+        }
       passes[kind] = {
         draws: this.#passDrawRings[kind].summarize(this.#scratch),
+        ...(Object.keys(drawsBySource).length === 0 ? {} : { drawsBySource }),
         frames: this.#passFrames[kind],
         triangles: this.#passTriangleRings[kind].summarize(this.#scratch),
+        // Main pass only, and beside three's CPU figure rather than instead of it: the same window
+        // that says `triangles 338,000,000` has to say what the kernel actually selected.
+        ...(kind === "main" && gpuTally !== undefined ? { gpuTriangles: gpuTally.triangles } : {}),
       };
     }
     const surface =
       this.#readSurface === undefined ? undefined : requireSurface(this.#readSurface());
     const gpuAgeFrames = this.#readGpuAgeFrames?.();
-    const gpuTally = this.#readGpuTally?.();
     if (gpuAgeFrames !== undefined && (!Number.isInteger(gpuAgeFrames) || gpuAgeFrames < 0))
       throw new Error(
         `Frame budget gpuAgeFrames must be a non-negative integer, received ${String(gpuAgeFrames)}.`,
@@ -1079,6 +1180,7 @@ export class FrameBudget {
       this.#passTriangleRings[kind].reset();
       this.#passFrames[kind] = 0;
     }
+    for (const source of MAIN_DRAW_SOURCES) this.#passDrawSourceRings[source].reset();
     this.#framesInWindow = 0;
     this.#hitchesInWindow = 0;
     this.#presentsInWindow = 0;

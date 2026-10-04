@@ -67,6 +67,11 @@ describe("core constraints", () => {
           // inside "flight".
           file !== "flight.ts" &&
           file !== "instanced-batch.ts" &&
+          // The instanced LOD partitions an existing batch: every child mesh is built with the
+          // batch's own geometry chain and handed the same material instance the game already gave
+          // the parent, so recolouring the parent recolours every partition. It constructs no
+          // material, configures none and reads no property that describes how anything looks.
+          file !== "instanced-batch-lod.ts" &&
           // WorldCells streams a package: it reads the geometry and surface out of the package's
           // own GLBs and hands them to `InstancedBatch` by reference. It constructs no material,
           // light, colour or shader, and reads no appearance property — a cutout is
@@ -348,6 +353,20 @@ describe("core constraints", () => {
       /\.(color|map|roughness|metalness|emissive|opacity|envMap)\b/iu,
     );
     expect(instancedBatch.match(/#[0-9a-f]{6}\b|0x[0-9a-f]{6}\b/giu)).toBeNull();
+
+    // The instanced LOD is exempt on exactly the same terms as `instanced-batch.ts`, and the
+    // assertions below keep that true: a cell is a draw, so it must draw with the surface the game
+    // gave the parent, and that reference is the whole of its contact with appearance.
+    const instancedLod = readFileSync(path.join(sourceDirectory, "instanced-batch-lod.ts"), "utf8");
+    expect(instancedLod).not.toMatch(
+      /new\s+\w*(Material|Light)|new\s+Color|tonemapping|postprocessing|\.wgsl/iu,
+    );
+    // `(?!\()` for the same reason `geometry-capture.ts` carries it: `levels.map(...)` is an array
+    // method; a material's texture is `material.map`.
+    expect(instancedLod).not.toMatch(
+      /\.(color|map|roughness|metalness|emissive|opacity|envMap)\b(?!\()/iu,
+    );
+    expect(instancedLod.match(/#[0-9a-f]{6}\b|0x[0-9a-f]{6}\b/giu)).toBeNull();
 
     // `clustered-mesh.ts` is exempted on the same terms as `instanced-batch.ts`: deciding which
     // clusters of a mesh to submit requires naming the surface those clusters draw with. It
