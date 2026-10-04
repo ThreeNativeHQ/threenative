@@ -173,8 +173,12 @@ const BUG_REPORT_SKILL_PATHS = [
 // Current develop c18a42b integration: all13 actual generated trees were byte-compared
 // against reviewed 8bf trees; only the copied Three compute-only Storage3DTexture patch changed.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
-  // Measured through actual createProject trees after PRD-492 added the shared
-  // `afterOutputTransform` stage seat and restamped every kit's worldEnvironment.ts.
+  // Measured through actual createProject trees on the develop merge, carrying both develop's
+  // WebGPU adapter-retention Three patch and PRD-492's shared `afterOutputTransform` stage seat
+  // (which restamps every kit's worldEnvironment.ts), so all thirteen trees move again. The
+  // starter's own value also carries the neutralised default of 2026-10-04: `public/grade.cube`,
+  // `src/render/quality.ts`'s grain numbers, and the table's pivot moving to mid-grey. Values are
+  // the merged-tree measurement, not either side's.
   "action-rpg": "cdd5083785cd2412c4075ebc065c5066cf7015d9327d03843b215eded8bd1db3",
   minimal: "91160aa100c06f2a50c5617cdf3642527b6f5c5f0e1bc8dae99b1f106a289612",
   platformer: "4dd60b847cd8ad867bb00402b68d88057dd09539325159fdacd7718189315255",
@@ -183,13 +187,9 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   rain: "44b42ea26d60ef69dc37874677d35786204420ed43b276368750700711b5ddae",
   rts: "d277cef182a3cb24b847dcbdc776236836c336745d6cf97106c17606b49f4b54",
   runner: "9a652c148a765b460e885196ac18afd7e824a2703545f998485fdc93cac46d6b",
-  // Initial finite-height readiness plus its scene-owned lifecycle helper and mirrored docs.
   sailing: "f7325e140caa16beec51dcf21a4783043a2f3c59fcf8c835efe7cbf83d16fbc5",
   shooter: "631f25520770c31348c19c83c8c75fba2c582444e819728c2209093d92f09538",
   snow: "db0d2981e2eb00eeadcd67e08dcdcc363b89d5040f4f663d5519625de2d82855",
-  // Restated 2026-10-04 for PRD-492's neutralised default: `public/grade.cube` (the table itself)
-  // and `src/render/quality.ts` (the grain numbers) changed, then the table.s pivot moved to
-  // mid-grey. No other kit.s tree moved.
   starter: "c2160b5f33cd44bf116038b91c1e6ad26c5be09db09760892471c83cd93108b4",
   "tower-defense": "5920816de90126bf2426114402445087ac3ca6c7ce483d2d3d0f43c07c413973",
 };
@@ -276,7 +276,6 @@ const STARTER_PATHS = [
   "patches/three@0.185.1.patch",
   "threenative.config.ts",
   "tools/look.mjs",
-  "tools/make-grade-lut.mjs",
   "scripts/reference.mjs",
   "scripts/visual-loop.mjs",
   "index.html",
@@ -289,7 +288,6 @@ const STARTER_PATHS = [
   "src/scenes/Play.ts",
   "src/render/lighting.ts",
   "src/render/postprocessing.ts",
-  "src/render/grade.ts",
   "src/render/worldEnvironment.ts",
   "src/render/exposure.ts",
   "src/render/autoExposure.ts",
@@ -325,7 +323,6 @@ const STARTER_PATHS = [
   "assets/native-proof.glb",
   "assets/native-proof.png",
   "public/icon.png",
-  "public/grade.cube",
   "assets/pickup.wav",
   // PRD-449: no `agent-docs/` — the recipes ship in the installed `create-threenative`, and the
   // "ships no reference bundle" test is what pins that.
