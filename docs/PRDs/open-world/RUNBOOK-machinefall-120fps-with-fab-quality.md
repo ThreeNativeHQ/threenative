@@ -48,6 +48,8 @@ Created 2026-10-03, after #390 merged.
 
 Last measured 2026-10-03 against `origin/develop` `4d5e07c98`: nvidia/turing, 1280×720, DPR 1, MSAA 4×, 3 runs, noisy host (CI load).
 
+Session log of the 2026-10-03 run: PRs #420–#425 and #396; see each row's Status line.
+
 | | Walking p50 | Walking p95 | Standing p95 | Gap at p95 |
 | --- | --- | --- | --- | --- |
 | CPU render | 6.9 ms | **21.2 ms** | 4.5 ms | **12.9 ms** |
@@ -75,20 +77,26 @@ The gap is CPU while walking. The costs, as span p95s, which overlap and do not 
   - Its commits exist only on the unpushed local branch `engine-defaults-484`, plus uncommitted edits in `.worktrees/prd-484-engine-defaults`.
   - Ask the owner 🙋 whether those edits are still wanted, then rebase onto `origin/develop` and open its own draft PR. Its old plan to ride #390 is moot, because #390 merged without it.
   - Done when: its PRD is in `done/` on `develop`.
+  - Status 2026-10-03: draft PR #420 (prd:75%); world gate 0 LOSS / 1 WIN vs develop, exit 1 on the shared absolute floor; acceptance needs the Strata lane (PR #381 worktrees), not touched.
 - [ ] **A1 · [PRD-389](../performance/critical/PRD-389-the-frame-budgets-instruments-do-not-lie.md): the instrument gaps the 2026-10-03 probe hit.** After: nothing.
   - A standing scene can't be measured under `runtime.fixedStep` (it yields one window).
   - The update phase reads 0.
   - `passes.main.triangles` reads 338 M.
   - Only about 15 of 300 frames carry a GPU timestamp, too few for a GPU p95.
   - Done when: each gap has a ticked box in PRD-389.
+  - Status 2026-10-03: draft PR #421; all four probe gaps have ticked PRD-389 Phase 4 boxes with Machinefall proof (update ms, GPU-selected triangles, ~37 GPU samples/window, standing scene via `--live-clock`); awaiting merge. Release: core needs @threenative/playtest 0.3.5.
 - [ ] **A2 · [PRD-477](PRD-477-worldcells-auto-on-measured-budgets.md) Phase 1: the world gate goes red, then green.** After: nothing; runs alongside A1.
   - The gate must red on an impostors-on build (#375) and green on develop. Every later 🌍 row trusts it.
   - Done when: both Phase 1 boxes are ticked.
+  - Status 2026-10-03: draft PR #422; gate reds the impostors-on build (2 LOSS rows) and never LOSSes develop vs develop; green blocked by develop's real start-pose defect (tree shadows without trees). New `missing` check reds real regressions but also streaming jitter — persistence threshold owed.
 - [ ] **A3 · PRD-478 Phase 1: measure the shadow-window work that #390 already merged.** After: A1 and A2. ⏱🌍👁🙋
   - The owner side-by-sides the camp and highway aerials against `?refShadow=1`. The first candidate failed exactly that review.
+  - Status 2026-10-03: draft PR #423; two bias fixes landed (hold during load; drawable level), start-pose defect persists (GPU-scene path + bias ≥2 renders coarse levels invisibly); counters: `byMove` repeatable at labelled ticks. Owner side-by-side vs `?refShadow=1` still owed (🙋).
 - [ ] **A4 · [PRD-494](PRD-494-the-main-pass-fits-the-draw-budget.md): the main pass fits the draw budget.** After: A3. ⏱🌍👁
   - The largest cost. Attribute the ~323 draws by source, then take the largest source off three's per-draw path, `bundles` or a merged path.
+  - Status 2026-10-03: draft PR #424 (prd:50%); main draws 323 → 36, `draw` span −5.0 ms (3 interleaved pairs), bundles on by default, blind gate 0 LOSS; AC-1 open only for the loading window.
 - [ ] **A5 · PRD-478 Phase 2: shadow levels draw GPU-scene keys.** After: A4. ⏱🌍👁
+  - Status 2026-10-03: in PR #423 behind `?tnShadowGpuKeys` (default off); keys won 3/3 timing pairs (render p95 41.9 → 30.6 ms under load); gate red on 14 `missing` timing events.
 - [ ] **A6 · PRD-478 Phase 3: terrain merges and seams run in a worker.** After: A5. ⏱🌍👁
   - The settled terrain must be byte-identical to the inline path.
 - [ ] **A7 · No pipeline compiles mid-walk:** [PRD-459](PRD-459-smooth-streaming-one-admission-budget-per-frame.md) AC-3 with [PRD-387](../performance/critical/PRD-387-shader-variants-are-prepared-off-frame-and-bounded.md). After: A6. ⏱🌍👁
@@ -103,8 +111,10 @@ The gap is CPU while walking. The costs, as span p95s, which overlap and do not 
 
 - [ ] **B1 · [VQ-01](../assets/PRD-VQ-01-native-asset-capabilities.md): native asset capability guard.** After: nothing.
   - It already has a draft PR, #396. `assertNativeAssetsCompatible` currently rejects KTX2 and meshopt on every Android and iOS build.
+  - Status 2026-10-03: PR #396 (prd:75%); web and Android-emulator codec proofs pass, AC-1 ticked; AC-2 lifecycle growth (+2 geometries/+1 texture per re-enter) unresolved.
 - [ ] **B2 · [PRD-485](PRD-485-high-quality-assets-go-through-the-cook.md): high-quality assets go through the cook.** After: B1 for its Android box only. 🎨👁
   - fab-import-proof, lumen-hall and metahuman-lab drop their escape hatches.
+  - Status 2026-10-03: draft PR #425 (prd:75%, 7/8); lumen-hall, fab-import-proof (Hornbeam web + native desktop) and metahuman-lab cook by default after 6 engine fixes; Android box needs V8 to admit KTX2/Meshopt.
 - [ ] **B3 · Texture residency:** [VQ-10](../performance/PRD-VQ-10-texture-mip-residency.md) together with [PRD-454](PRD-454-worldcells-budget-real-resources.md). After: B2. ⏱🌍👁
   - Machinefall's 1024 texture cap is lifted to 2048 inside a hard GPU byte budget, with no black frames.
 - [ ] **B4 · [PRD-377](../assets/PRD-377-auto-lod-is-on-by-default.md) Phase 4: AutoLOD on by default.** After: B2. ⏱🎨👁
