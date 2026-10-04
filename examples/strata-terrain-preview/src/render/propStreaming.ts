@@ -2,6 +2,7 @@ import { addInSlices, createAssetLoader, type IAssetLoader } from "@threenative/
 import {
   WorldCells,
   type IWorldAsset,
+  type IShadowRegion,
   type IWorldCell,
   type IWorldCellsFollow,
   type IWorldPackage,
@@ -31,8 +32,17 @@ interface IStreamOptions {
   readonly horizonDistance?: number;
   readonly assets?: IAssetLoader;
   readonly whileCurrent: () => boolean;
-  readonly invalidateShadows?: () => void;
+  readonly invalidateShadows?: (region?: IShadowRegion) => void;
 }
+/** Keep WorldCells' changed caster bounds when forwarding to the existing shadow renderer. */
+export function invalidatePropShadows(
+  shadow: { invalidateRegion(region: IShadowRegion): void; invalidateAll(): void },
+  region?: IShadowRegion,
+): void {
+  if (region === undefined) shadow.invalidateAll();
+  else shadow.invalidateRegion(region);
+}
+
 interface IRecord {
   readonly key: string;
   readonly placement: IPlacement;
@@ -267,6 +277,7 @@ export async function createStreamedProps(options: IStreamOptions) {
         placementReach,
         gpuScene: false,
         adaptiveLod: false,
+        preserveAuthoredParts: true,
         lodHysteresis: LOD_BANDS.hysteresis,
         transparentScatter: "blend",
         admissionBudgetMs: 2 / Math.max(1, buckets.size),

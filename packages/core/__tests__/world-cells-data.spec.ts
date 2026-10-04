@@ -1,4 +1,12 @@
-import { BoxGeometry, Group, InstancedMesh, Mesh, MeshBasicMaterial, Vector3 } from "three";
+import {
+  BoxGeometry,
+  Group,
+  InstancedMesh,
+  Mesh,
+  MeshBasicMaterial,
+  Vector3,
+  PerspectiveCamera,
+} from "three";
 import { afterEach, expect, it, vi } from "vitest";
 import { createAssetLoader } from "../src/assets.js";
 import { type IWorldPackage, TerrainTiles, WorldCells } from "../src/world.js";
@@ -290,4 +298,51 @@ it.each([
     }),
   ).rejects.toThrow(/lodHysteresis/);
   expect(model).not.toHaveBeenCalled();
+});
+
+it("submits a rotated offset model when its actual geometry intersects the camera outside its source cell", async () => {
+  const geometry = new BoxGeometry(4, 2, 4).translate(132, 0, 0);
+  const surface = new MeshBasicMaterial();
+  const camera = new PerspectiveCamera(30, 1, 0.1, 10);
+  camera.position.set(32, 0, -94);
+  camera.lookAt(32, 0, -100);
+  camera.updateMatrixWorld(true);
+  const assets = createAssetLoader();
+  vi.spyOn(assets, "resolve").mockResolvedValue([]);
+  const data = new Float32Array([32, 0, 32, 0, Math.SQRT1_2, 0, Math.SQRT1_2, 1]);
+  const world = await WorldCells.load({
+    url: "world.json",
+    assets,
+    surface,
+    follow: camera,
+    ring: 10,
+    terrain: false,
+    gpuScene: false,
+    adaptiveLod: false,
+    shadows: false,
+    data: {
+      manifest: {
+        ...manifest,
+        assets: { tree: { glb: "tree.glb", bounds: { min: [130, -1, -2], max: [134, 1, 2] } } },
+        cells: [{ x: 0, z: 0, runs: [{ asset: "tree", offset: 0, count: 1 }] }],
+      },
+      placements: data.buffer,
+    },
+    budgets: { residentCells: 4, instances: 1, bytes: 32 },
+    loadModel: async () => new Group().add(new Mesh(geometry, surface)),
+  });
+  try {
+    for (let frame = 0; frame < 100; frame++) {
+      world.update(undefined, camera);
+      await Promise.resolve();
+    }
+    let submitted = 0;
+    world.traverse((node) => {
+      if (node instanceof InstancedMesh && (node.layers.mask & 1) !== 0) submitted += node.count;
+    });
+    expect(world.stats().instances).toBe(1);
+    expect(submitted).toBe(1);
+  } finally {
+    world.dispose();
+  }
 });

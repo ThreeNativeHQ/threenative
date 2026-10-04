@@ -1,5 +1,6 @@
 import {
   BoxGeometry,
+  Box3,
   Group,
   InstancedMesh,
   Matrix4,
@@ -7,13 +8,16 @@ import {
   MeshBasicMaterial,
   Vector3,
 } from "three";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { WorldCells } from "@threenative/core/world";
 import {
   createProps,
   variantFor,
 } from "../../../examples/strata-terrain-preview/src/render/props.js";
-import { createStreamedProps } from "../../../examples/strata-terrain-preview/src/render/propStreaming.js";
+import {
+  createStreamedProps,
+  invalidatePropShadows,
+} from "../../../examples/strata-terrain-preview/src/render/propStreaming.js";
 import type { IPlacement } from "../src/index.js";
 
 it("streams Strata's exact grounded transforms, seeded cover density and original placement count", async () => {
@@ -379,5 +383,166 @@ it("drains representative multi-part canopy cell admission without thousands of 
     expect(streamed.meshes.reduce((n, m) => n + m.count, 0)).toBe(placements.length * 2);
   } finally {
     streamed.dispose();
+  }
+});
+
+it("preserves authored cutout LOD parts and distinct custom shader surfaces", async () => {
+  const { MeshPhysicalNodeMaterial } = await import("three/webgpu");
+  const { float } = await import("three/tsl");
+  const materials = [0.2, 0.8, 0.5].map((opacity) => {
+    const material = new MeshPhysicalNodeMaterial({ alphaTest: 0.4 });
+    material.opacityNode = float(opacity);
+    return material;
+  });
+  const placements = [
+    {
+      id: "spruce:authored",
+      asset: "spruce",
+      position: [0, 0, 0],
+      rotation: 0,
+      scale: 1,
+      normal: [0, 1, 0],
+      alignToNormal: false,
+    },
+  ] as IPlacement[];
+  const parts = new Map([
+    [
+      `spruce:${variantFor(placements[0]!, "spruce")}`,
+      [
+        {
+          geometry: new BoxGeometry(1, 2, 1),
+          material: materials[0],
+          role: "bark" as const,
+          variant: 0,
+          level: 0,
+        },
+        {
+          geometry: new BoxGeometry(2, 2, 2),
+          material: materials[1],
+          role: "crown" as const,
+          variant: 0,
+          level: 0,
+        },
+        {
+          geometry: new BoxGeometry(3, 2, 3),
+          material: materials[2],
+          role: "bark" as const,
+          variant: 0,
+          level: 1,
+        },
+      ],
+    ],
+  ]);
+  const follow = { position: new Vector3(0, 1, 0) };
+  const original = createProps(placements, () => ({ height: 0, offset: 0 }), parts, {} as never);
+  const streamed = await createStreamedProps({
+    placements,
+    parts,
+    materials: {} as never,
+    groundAt: () => ({ height: 0, offset: 0 }),
+    follow,
+    size: 512,
+    whileCurrent: () => true,
+  });
+  if (!streamed) throw new Error("cancelled");
+  try {
+    for (const z of [0, 80, 0]) {
+      follow.position.z = z;
+      original.setLevels(follow.position);
+      for (let i = 0; i < 200; i++) {
+        for (const w of streamed.worlds) w.update();
+        await Promise.resolve();
+      }
+      const active = (meshes: InstancedMesh[]) =>
+        meshes
+          .filter((m) => m.count > 0)
+          .map((m) => ({
+            material: (m.material as MeshBasicMaterial).uuid,
+            geometry: m.geometry.getAttribute("position").array.toString(),
+            count: m.count,
+          }));
+      expect(active(streamed.meshes)).toEqual(active(original.meshes));
+    }
+  } finally {
+    streamed.dispose();
+    original.dispose();
+  }
+});
+
+it("keeps streamed caster changes regional and reserves global invalidation for an absent region", async () => {
+  let clock = 0;
+  const timer = vi.spyOn(performance, "now").mockImplementation(() => clock);
+  const shadow = { invalidateRegion: vi.fn(), invalidateAll: vi.fn() };
+  const placement = {
+    id: "spruce:regional",
+    asset: "spruce",
+    position: [0, 0, 0],
+    rotation: Math.PI / 2,
+    scale: 1,
+    normal: [0, 1, 0],
+    alignToNormal: false,
+  } as IPlacement;
+  const material = new MeshBasicMaterial();
+  const parts = new Map([
+    [
+      `spruce:${variantFor(placement, "spruce")}`,
+      [0, 1].map((level) => ({
+        geometry: new BoxGeometry(20, 3, 1).translate(4, 0, 2),
+        material,
+        role: "bark" as const,
+        variant: 0,
+        level,
+      })),
+    ],
+  ]);
+  const follow = { position: new Vector3(0, 1, 0) };
+  const streamed = await createStreamedProps({
+    placements: [placement],
+    parts,
+    materials: { bark: material } as never,
+    groundAt: () => ({ height: 0, offset: 0 }),
+    follow,
+    size: 512,
+    whileCurrent: () => true,
+    invalidateShadows: (region) => invalidatePropShadows(shadow, region),
+  });
+  if (!streamed) throw new Error("cancelled");
+  try {
+    for (const z of [0, 80, 0]) {
+      clock += 1100;
+      follow.position.z = z;
+      for (let i = 0; i < 200; i++) {
+        for (const w of streamed.worlds) w.update();
+        await Promise.resolve();
+      }
+      if (z === 0 && clock === 1100) {
+        shadow.invalidateAll.mockClear();
+        shadow.invalidateRegion.mockClear();
+      }
+    }
+    expect(shadow.invalidateRegion.mock.calls.length).toBeGreaterThan(0);
+    const geometry = parts.values().next().value![0]!.geometry;
+    geometry.computeBoundingBox();
+    const actual = geometry
+      .boundingBox!.clone()
+      .applyMatrix4(streamed.byId.get(placement.id)!.pose);
+    for (const [bounds] of shadow.invalidateRegion.mock.calls) {
+      const reported = new Box3(
+        new Vector3(bounds.min.x, bounds.min.y, bounds.min.z),
+        new Vector3(bounds.max.x, bounds.max.y, bounds.max.z),
+      );
+      // The public package encodes pose/quaternion in Float32; compare at that encoding precision.
+      for (const axis of ["x", "y", "z"] as const) {
+        expect(reported.min[axis]).toBeLessThanOrEqual(actual.min[axis] + 1e-5);
+        expect(reported.max[axis]).toBeGreaterThanOrEqual(actual.max[axis] - 1e-5);
+      }
+      expect(bounds.max.y - bounds.min.y).toBeGreaterThan(0);
+    }
+    expect(shadow.invalidateAll).not.toHaveBeenCalled();
+    invalidatePropShadows(shadow);
+    expect(shadow.invalidateAll).toHaveBeenCalledTimes(1);
+  } finally {
+    streamed.dispose();
+    timer.mockRestore();
   }
 });

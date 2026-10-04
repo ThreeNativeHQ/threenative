@@ -20,7 +20,7 @@ import {
   flatPropMaterials,
   variantFor,
 } from "./render/props.js";
-import { createStreamedProps } from "./render/propStreaming.js";
+import { createStreamedProps, invalidatePropShadows } from "./render/propStreaming.js";
 import { type IRiverWater, WATER_LAYER, createLakes, createRivers } from "./render/river.js";
 import { type IPlacementField, scatterProps } from "./render/scatter.js";
 import { type IOutdoorSky, createOutdoorSky, installOutdoorOcclusion } from "./render/sky.js";
@@ -628,9 +628,9 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
           placements: scatter.placements, groundAt, parts: propParts,
           materials: surfaces.materials, assets: ctx.assets, follow: ctx.camera, size: data.size, horizonDistance: ctx.camera instanceof PerspectiveCamera || ctx.camera instanceof OrthographicCamera ? ctx.camera.far : 5000,
           whileCurrent: () => !released,
-          invalidateShadows: () => {
+          invalidateShadows: (region) => {
             const shadows = sky.sun.shadow.shadowNode;
-            if (shadows instanceof VirtualShadowNode) shadows.invalidateAll();
+            if (shadows instanceof VirtualShadowNode) invalidatePropShadows(shadows, region);
           },
         });
         if (!props) return;

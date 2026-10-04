@@ -383,6 +383,9 @@ export interface IWorldCellsLoadOptions {
   /** Inward return margin for authored CPU LODs, in [0, 1). Requires gpuScene:false and impostors:false (the default).
    * Omitted, selection uses the existing direct gates. State survives cell eviction/revisit. */
   readonly lodHysteresis?: number;
+  /** Preserve supplied part/material identity and exact authored LOD membership.
+   * Default content sharing and missing-alpha-part coverage remain enabled when omitted. */
+  readonly preserveAuthoredParts?: boolean;
   /** Already decoded immutable world-v1 data; URL still supplies the base for model paths. */
   readonly data?: {
     readonly manifest: IWorldPackage;
@@ -915,8 +918,6 @@ function scratchFor(floats: number): Float32Array {
 /** The two scratch objects a cull builds its frustum in, and whether two square sets are the same. */
 const _cullFrustum = new Frustum();
 const _cullProjScreen = new Matrix4();
-/** The corner one visibility cell's volume is widened by, for one placement at a time. */
-const _cullPoint = new Vector3();
 /** The eye the live-state reference measures every placement's XZ distance from. */
 const _gpuEye = new Vector3();
 
@@ -3709,8 +3710,8 @@ export class WorldCells extends Group implements IComputeDriven {
   readonly #instance = new Matrix4();
   /** The authored bounds' centre, placed: the source sphere's centre. See `#addPlacements`. */
   readonly #sourceCentre = new Vector3();
-  /** The corner `#addPlacements` widens one batch's bounds box with, twice per record. */
-  readonly #recordPoint = new Vector3();
+  /** Reused transformed authored bounds for admission and conservative visibility volumes. */
+  readonly #recordBounds = new Box3();
   readonly #pressure = { cells: 0, instances: 0, bytes: 0 };
   readonly #budgetMs: number;
   readonly #now: () => number;
@@ -3764,6 +3765,7 @@ export class WorldCells extends Group implements IComputeDriven {
   readonly #bundlesWanted: boolean;
   /** `adaptiveLod` resolved against the launch override; see the option. */
   readonly #adaptiveLod: boolean;
+  readonly #preserveAuthoredParts: boolean;
   /** The main pass's allowed GPU share of a frame; see the option. */
   readonly #mainGpuShare: number;
   /** The distance multiplier both selection paths are using right now. */
@@ -3910,6 +3912,7 @@ export class WorldCells extends Group implements IComputeDriven {
     this.#impostors = init.impostors ?? false;
     this.#impostorBudgetBytes = DEFAULT_IMPOSTOR_ATLAS_BUDGET_BYTES;
     this.#adaptiveLod = init.adaptiveLod ?? adaptiveLodRequested();
+    this.#preserveAuthoredParts = init.preserveAuthoredParts ?? false;
     this.#mainGpuShare = mainGpuShare(init.mainGpuShare);
     // The warm-up and the step cadence are the world's own clock, so loading does not count as a
     // second of adaptation and a test can drive the loop with an injected `admissionNow`.
@@ -4416,6 +4419,14 @@ export class WorldCells extends Group implements IComputeDriven {
     for (const { asset, shared } of dressed) shared.applyGpuVisible(shown.get(asset) === true);
   }
 
+  /** Borrowed scratch box: consume its transformed volume before the next bounds query. */
+  #boundsAt(bounds: IWorldAsset["bounds"], matrix: Matrix4): Box3 {
+    this.#recordBounds.min.set(bounds.min[0]!, bounds.min[1]!, bounds.min[2]!);
+    this.#recordBounds.max.set(bounds.max[0]!, bounds.max[1]!, bounds.max[2]!);
+    return this.#recordBounds.applyMatrix4(matrix);
+  }
+
+
   /**
    * The one volume per resident visibility cell, shared by every key: its own XZ footprint, and in Y
    * the range its resident placements actually reach once their assets' own bounds are added to them,
@@ -4434,6 +4445,7 @@ export class WorldCells extends Group implements IComputeDriven {
    * handed the vertex stage the whole ring. This is per placement instead: a sub-square of flat
    * ground with ferns on it is the height of its ferns.
    */
+
   #cullResident(cell: IWorldCell): void {
     const per = this.#cellsPerCullCell;
     const side = per * this.#cellSize;
@@ -4469,22 +4481,14 @@ export class WorldCells extends Group implements IComputeDriven {
         const at = index * PLACEMENT_RECORD_FLOATS;
         // The placement, widened by its own asset's bounds at the scale it is drawn at, and by the
         // pad — a union, so the pad is counted once however many placements there are.
-        const scale = Math.abs(records[at + 7] as number);
-        const x = records[at] as number;
-        const y = records[at + 1] as number;
-        const z = records[at + 2] as number;
-        box.expandByPoint(
-          _cullPoint.set(
-            x - (Math.abs(bounds.min[0]) + MAIN_CULL_PAD_METRES) * scale,
-            y - Math.abs(bounds.min[1]) * scale - MAIN_CULL_PAD_METRES,
-            z - (Math.abs(bounds.min[2]) + MAIN_CULL_PAD_METRES) * scale,
-          ),
-        );
-        box.expandByPoint(
-          _cullPoint.set(
-            x + (Math.abs(bounds.max[0]) + MAIN_CULL_PAD_METRES) * scale,
-            y + Math.abs(bounds.max[1]) * scale + MAIN_CULL_PAD_METRES,
-            z + (Math.abs(bounds.max[2]) + MAIN_CULL_PAD_METRES) * scale,
+        const scale = records[at + 7] as number;
+        this.#position.set(records[at]!, records[at + 1]!, records[at + 2]!);
+        this.#rotation.set(records[at + 3]!, records[at + 4]!, records[at + 5]!, records[at + 6]!);
+        this.#scale.setScalar(scale);
+        this.#matrix.compose(this.#position, this.#rotation, this.#scale);
+        box.union(
+          this.#boundsAt(bounds, this.#matrix).expandByScalar(
+            MAIN_CULL_PAD_METRES * Math.max(1, Math.abs(scale)),
           ),
         );
       }
@@ -5747,6 +5751,9 @@ export class WorldCells extends Group implements IComputeDriven {
           z: centre.z,
         });
       }
+      // Authored bounds include model-part offsets; apply the whole placement transform so
+      // rotated, mirrored and off-centre casters cannot fall outside visibility/shadow regions.
+      this.#boundsAt(bounds, this.#matrix);
       const parts = asset.levels[level] as readonly IAssetPart[];
       const levelBatches = job.batches?.[level] as InstancedBatch[];
       const levelBoxes = job.boxes?.[level] as Box3[] | undefined;
@@ -5755,18 +5762,7 @@ export class WorldCells extends Group implements IComputeDriven {
         (levelBatches[part] as InstancedBatch).add(this.#instance);
         const box = levelBoxes?.[part];
         if (box === undefined) continue;
-        this.#recordPoint.set(
-          x + (bounds.min[0] as number) * scale,
-          y + (bounds.min[1] as number) * scale,
-          z + (bounds.min[2] as number) * scale,
-        );
-        box.expandByPoint(this.#recordPoint);
-        this.#recordPoint.set(
-          x + (bounds.max[0] as number) * scale,
-          y + (bounds.max[1] as number) * scale,
-          z + (bounds.max[2] as number) * scale,
-        );
-        box.expandByPoint(this.#recordPoint);
+        box.union(this.#recordBounds);
       }
     }
   }
@@ -6806,7 +6802,8 @@ export class WorldCells extends Group implements IComputeDriven {
     asset: IAssetState,
     levels: readonly (readonly IAssetPart[])[],
   ): readonly (readonly IAssetPart[])[] {
-    if (asset.definition.lods !== undefined) return coverAuthoredLevels(levels);
+    if (asset.definition.lods !== undefined)
+      return this.#preserveAuthoredParts ? levels : coverAuthoredLevels(levels);
     const chained = chainLevels(
       levels[0] as readonly IAssetPart[],
       this.#autoLodPixelsPerUnit,
@@ -8290,7 +8287,7 @@ export class WorldCells extends Group implements IComputeDriven {
    * with the same content is released on arrival and draws with it instead.
    */
   #surfaceFor(source: Material): { readonly key: string; readonly material: Material } {
-    const key = materialKey(source);
+    const key = this.#preserveAuthoredParts ? source.uuid : materialKey(source);
     const shared = this.#surfaces.get(key);
     if (shared !== undefined) {
       shared.users += 1;
