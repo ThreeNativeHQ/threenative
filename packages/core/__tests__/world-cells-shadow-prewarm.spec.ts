@@ -26,6 +26,7 @@ import { type NodeBuilder, type NodeFrame, NodeMaterialObserver } from "three/we
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   VIRTUAL_SHADOW_CASTER_LAYER,
+  VIRTUAL_SHADOW_KEY_LAYER,
   VIRTUAL_SHADOW_SMALL_CASTER_LAYER,
   VIRTUAL_SHADOW_WIDE_CASTER_LAYER,
   VirtualShadowNode,
@@ -247,6 +248,7 @@ describe("a streamed world's caster prewarm", () => {
       contextNode: { id: 1, version: 0 },
       currentSamples: 1,
       getMRT: () => null,
+      getRenderTarget: () => null,
     };
     const nodes = new NodeManager(render, render.backend);
     const builds: InstancedMesh[] = [];
@@ -443,6 +445,160 @@ describe("a streamed world's caster prewarm", () => {
         .map((mesh) => mesh.name),
       "no prewarmed key builds during the walk",
     ).toEqual([]);
+    world.dispose();
+    node.dispose();
+  });
+
+  /**
+   * PRD-478 phase 2 B: the same gate, with the world's shadow levels drawing its GPU-scene keys.
+   *
+   * The risk this case exists for is the prewarm's own promise. A caster's shadow-context node is
+   * built by a *shadow* render, so a key whose draw no level will ever make leaves
+   * `pendingPrewarm` positive forever and the loading gate never settles. With keys on, the caster
+   * halves are not minted at all and the shadow key meshes are what a level draws, so the draw the
+   * gate waits on is theirs — and it has to be counted by the same `onBeforeRender` a caster's is.
+   */
+  it("settles the gate on the shadow keys' own draws when a level renders them instead of the caster halves", async () => {
+    const markers: string[] = [];
+    vi.spyOn(console, "info").mockImplementation((line: unknown) => {
+      if (String(line).startsWith("TN_WORLD_PREWARM")) markers.push(String(line));
+    });
+    // The flag the world and the scene both read: off by default, so a launch without it registers
+    // no provider and mints neither a twin buffer nor a key mesh.
+    vi.stubGlobal("__tnShadowGpuKeys", 1);
+    stubFixtureFetch();
+
+    const scene = new Scene();
+    const light = new DirectionalLight(0xffffff, 1);
+    light.position.set(0, 200, 0);
+    light.castShadow = true;
+    scene.add(light, light.target);
+    const node = new VirtualShadowNode(light, {
+      clipExtents: [48, 192, 320],
+      mapSize: 256,
+      marker: false,
+      minCasterTexels: 0,
+    });
+    node.setup(builder);
+
+    const keyLayer = 1 << VIRTUAL_SHADOW_KEY_LAYER;
+    const casterLayers =
+      (1 << VIRTUAL_SHADOW_CASTER_LAYER) |
+      (1 << VIRTUAL_SHADOW_WIDE_CASTER_LAYER) |
+      (1 << VIRTUAL_SHADOW_SMALL_CASTER_LAYER);
+    const tally: IShadowTally = { counts: new Map(), first: new Map(), frame: 0 };
+    // The level render as three performs it for a shadow caster, with the key layer counted: the
+    // camera's mask decides which meshes exist for this pass, `visible` and `castShadow` decide
+    // whether they are reached, and `onBeforeRender` is the call the prewarm counts.
+    const renderer = {} as unknown as Parameters<Object3D["onBeforeRender"]>[0];
+    for (const levelNode of node.levelNodes) {
+      const level = levelNode as unknown as ILevelNode;
+      level.updateShadow = (): void => {
+        level.light.shadow.updateMatrices(level.light);
+        const camera = level.shadow.camera;
+        camera.updateMatrixWorld(true);
+        camera.matrixWorldInverse.copy(camera.matrixWorld).invert();
+        const frustum = new Frustum().setFromProjectionMatrix(
+          new Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse),
+        );
+        scene.traverse((object: Object3D) => {
+          const mesh = object as InstancedMesh;
+          if ((mesh as { isMesh?: boolean }).isMesh !== true) return;
+          if (mesh.visible !== true || mesh.castShadow !== true) return;
+          if ((mesh.layers.mask & camera.layers.mask) === 0) return;
+          if ((mesh.layers.mask & keyLayer) === 0) return;
+          if (!frustum.intersectsObject(mesh)) return;
+          tally.counts.set(mesh.name, (tally.counts.get(mesh.name) ?? 0) + 1);
+          if ((tally.counts.get(mesh.name) as number) === 1)
+            tally.first.set(mesh.name, tally.frame);
+          mesh.onBeforeRender(
+            renderer,
+            scene as unknown as Scene,
+            camera,
+            mesh.geometry,
+            mesh.material as MeshBasicMaterial,
+            mesh as unknown as Group,
+          );
+        });
+      };
+    }
+    // A renderer the GPU scene accepts, and one the world's dispatch and a level's own dispatch can
+    // submit against. The counts below are what is being proved, so nothing here needs a device.
+    const gpu = {
+      compileAsync: async (): Promise<void> => {},
+      compute: (): void => {},
+      kind: "webgpu",
+      raw: { backend: { hasFeature: () => true } },
+    } as unknown as Parameters<WorldCells["update"]>[0];
+
+    const follow = { position: { ...FOLLOW } };
+    const world = await WorldCells.load({
+      admissionBudgetMs: Number.POSITIVE_INFINITY,
+      budgets,
+      follow,
+      gpuScene: true,
+      loadModel: async () => model(),
+      prefetchSeconds: 0,
+      ring: 0,
+      shadows: { cast: true, castLevels: 2, invalidate: () => node.invalidateAll() },
+      surface,
+      url: "/world/world.json",
+    });
+    scene.add(world);
+
+    /** The meshes the gate is waiting on: the prewarm's own flag, on a layer this arm draws. */
+    const owed = (layers: number): string[] => {
+      const names: string[] = [];
+      const walk = (object: Object3D): void => {
+        if (
+          (object as { casterPrewarmOwed?: boolean }).casterPrewarmOwed === true &&
+          (object.layers.mask & layers) !== 0
+        )
+          names.push(object.name);
+        for (const child of object.children) walk(child);
+      };
+      for (const child of scene.children) walk(child);
+      return names;
+    };
+
+    const prewarmed = new Set<string>();
+    const camera = cameraAt(follow.position.x, follow.position.z);
+    let clock = 0;
+    let settled = false;
+    for (let frame = 0; frame < 200 && !settled; frame += 1) {
+      world.update(gpu, camera);
+      for (const name of owed(keyLayer)) prewarmed.add(name);
+      clock += 1;
+      tally.frame = clock;
+      node.updateBefore({ camera, renderer: gpu, time: clock } as unknown as NodeFrame);
+      await flush(4);
+      settled = markers.length > 0;
+    }
+    const settledAt = clock;
+
+    expect(settled, "the prewarm gate settled on the keys' own draws").toBe(true);
+    await world.prewarmed;
+    expect(prewarmed.size, "the prewarm minted shadow keys").toBeGreaterThan(0);
+    expect(world.stats().pendingPrewarm, "nothing is still owed a draw").toBe(0);
+    expect(markers[0]).toContain("castersUnbuilt=0");
+    // The world minted no caster half at all while the keys are on: the two are the same placements
+    // by two routes and a level's map can only draw one of them, so a caster here would be a mesh
+    // no level camera has on.
+    expect(owed(casterLayers), "no caster half was minted").toEqual([]);
+    // Every owed key drew in a level render, and drew there behind the gate rather than on the walk.
+    for (const name of prewarmed) {
+      expect(tally.counts.get(name), `${name} drew in a shadow render`).toBeGreaterThan(0);
+      expect(tally.first.get(name), `${name} first drew behind the gate`).toBeLessThan(settledAt);
+    }
+    // And the walk after the gate builds none of them: the point of prewarming them at all.
+    node.invalidateAll();
+    for (let frame = 0; frame < 4; frame += 1) {
+      clock += 1;
+      node.updateBefore({ camera, renderer: gpu, time: clock } as unknown as NodeFrame);
+    }
+    console.info(
+      `TN_SHADOW_KEY_PREWARM keys=${String(prewarmed.size)} settledAt=${String(settledAt)}`,
+    );
     world.dispose();
     node.dispose();
   });

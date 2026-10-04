@@ -1,6 +1,7 @@
 import { BoxGeometry, Mesh, MeshBasicMaterial, PerspectiveCamera, Scene, type Vector2, type WebGLRenderer } from "three";
 import { expect, test } from "vitest";
 
+import { PLAYTEST_CLOCK_GLOBAL } from "../src/protocol.js";
 import { installThreePlaytestBridge } from "../src/three/bridge.js";
 import { ThreePlaytestEntityRegistry } from "../src/three/entities.js";
 
@@ -165,6 +166,67 @@ test("fixed-step fails closed when actual updates differ from requested ticks", 
     "fixedStep advanced 2 actual ticks; expected 1.",
   );
   installation.dispose();
+});
+
+test("a wall-clock request makes the host's own pump the clock, whatever the installer passed", async () => {
+  // The browser half of the production profile: a runner asks for the wall clock before the page
+  // loads, the game's own frame pump moves the simulation, and `advance` names the span those
+  // ticks cover rather than stepping the loop itself. The bridge judged that pump a fixed-step
+  // producer and failed a healthy run with "fixedStep advanced 3 actual ticks; expected 1" — a
+  // count error about a clock nobody had chosen, thrown at a loop that was running correctly.
+  const host = globalThis as Record<string, unknown>;
+  const previous = host[PLAYTEST_CLOCK_GLOBAL];
+  host[PLAYTEST_CLOCK_GLOBAL] = "wall-clock";
+  let tick = 0;
+  // A live host, not the bridge's own stepping: the claim is that ticks arriving from somewhere
+  // else are the clock, so the pump has to be the only thing that produces them.
+  const pump = setInterval(() => { tick += 1; }, 10);
+  const installation = installThreePlaytestBridge({
+    camera: new PerspectiveCamera(),
+    fixedStep: async (ticks) => {
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      tick += ticks;
+    },
+    renderer,
+    scene: new Scene(),
+    tick: () => tick,
+  });
+
+  try {
+    const advanced = await installation.bridge.advance?.(1);
+    expect(advanced?.clock.mode).toBe("wall-clock");
+    // The ticks the pump really ran during the span, not the count the request named.
+    expect(advanced?.ticks ?? 0).toBeGreaterThan(1);
+    expect((await installation.bridge.sample({})).clock.mode).toBe("wall-clock");
+  } finally {
+    clearInterval(pump);
+    installation.dispose();
+    if (previous === undefined) Reflect.deleteProperty(host, PLAYTEST_CLOCK_GLOBAL);
+    else host[PLAYTEST_CLOCK_GLOBAL] = previous;
+  }
+});
+
+test("an unrecognised clock request fails closed instead of falling back to fixed-step", async () => {
+  const host = globalThis as Record<string, unknown>;
+  const previous = host[PLAYTEST_CLOCK_GLOBAL];
+  // A misspelling that quietly became a fixed-step run published a frame rate for a game that was
+  // not playing, which is the whole reason this switch is a name and not a boolean.
+  host[PLAYTEST_CLOCK_GLOBAL] = "wallclock";
+  const installation = installThreePlaytestBridge({
+    camera: new PerspectiveCamera(),
+    fixedStep: () => undefined,
+    renderer,
+    scene: new Scene(),
+    tick: () => 0,
+  });
+
+  try {
+    expect(() => installation.bridge.sample({})).toThrow("TN_PLAYTEST_CLOCK_UNSUPPORTED");
+  } finally {
+    installation.dispose();
+    if (previous === undefined) Reflect.deleteProperty(host, PLAYTEST_CLOCK_GLOBAL);
+    else host[PLAYTEST_CLOCK_GLOBAL] = previous;
+  }
 });
 
 test("fixed-step refuses to advertise without an authoritative tick provider", () => {

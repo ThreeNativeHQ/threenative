@@ -10,6 +10,7 @@ import {
   int,
   length,
   max,
+  min,
   storage,
   struct,
   uniform,
@@ -181,6 +182,25 @@ export interface IRegion {
   indexCount: number;
 }
 
+/**
+ * One storage attribute widened by doubling until it holds `needed`, or itself when it already does.
+ * The contents are carried over and marked as one upload range, which is what makes a regrow a copy
+ * rather than a fresh zeroed buffer.
+ */
+function growBuffer<A extends BufferAttribute>(
+  current: A,
+  needed: number,
+  make: (count: number) => A,
+): A {
+  if (current.count >= needed) return current;
+  let capacity = Math.max(1, current.count);
+  while (capacity < needed) capacity *= 2;
+  const grown = make(capacity);
+  grown.array.set(current.array as Uint32Array);
+  grown.addUpdateRange(0, current.array.length);
+  return grown;
+}
+
 /** One level's parts and the single capacity all of them are sized from. */
 interface ILevelGroup {
   capacity: number;
@@ -298,6 +318,24 @@ export function levelAtGates(
 }
 
 /**
+ * The last level at or below `level` that the scene can actually draw, which is where a placement
+ * goes when the gates name one the prewarm has not minted keys for.
+ *
+ * `WorldCells#gatesOf` names every level of an asset from the moment it is adopted and fills in the
+ * keys minted so far, so a chain that has widened holds `parts: 2,0,0,0` while the loading screen is
+ * up. The CPU path draws `asset.levels[level]` whatever the gates name and always has a shape there;
+ * a dispatch that took the named level would loop its zero keys and draw the placement nowhere, and
+ * with the bias raised the placements past the last source gate are exactly the far ones — a forest
+ * 80-300 m out standing in its own shadows, while the shadow halves, which take no bias and key
+ * themselves, still draw. One level down is the finest shape the scene holds, which is the level the
+ * prewarm is one frame from minting.
+ */
+function drawableLevel(slot: Pick<IAssetSlot, "levels">, level: number): number {
+  for (let at = level; at > 0; at -= 1) if ((slot.levels[at]?.parts ?? 0) > 0) return at;
+  return 0;
+}
+
+/**
  * One representable Float32 step past a gate: `g * (1 + 2^-22)`, two f32 ULPs at `g`'s exponent.
  *
  * A floored terminal gate must start strictly after the source gate it is floored by and must stay
@@ -312,6 +350,45 @@ function strictlyAfterGate(gate: number): number {
 }
 
 /**
+ * One shadow map's own four numbers, which is the whole of what a level render knows that the main
+ * camera does not.
+ *
+ * They are the level's, never the camera's: a map's frustum is the light's window, its distance test
+ * is measured from the window centre its own map was rendered with (`offsetU`/`offsetV` exist
+ * because a deferred level's map sits where it was drawn), its gate is the texel size it can
+ * resolve, and its base is the chain level the cluster path hands it — `#probe` swaps a coarse
+ * level's geometry for the coarsest shape, so a coarse map draws that shape whatever a placement's
+ * own distance would have selected.
+ */
+export interface IShadowLevel {
+  /** The six frustum planes of this map's own shadow camera. */
+  readonly planes: Float32Array;
+  /** The window centre this map was rendered with, in world XZ. */
+  readonly centre: { readonly x: number; readonly z: number };
+  /** This map's texel gate in world metres: a placement narrower than it casts nothing here. */
+  readonly gate: number;
+  /**
+   * The chain level this map draws at, floored over the placement's own. 0 is the placement's own
+   * LOD by distance — what the finest map draws — and the coarsest index is what every level past
+   * the first draws. A base whose keys are not minted draws nothing, which is why a caller settling
+   * the prewarm first is the contract rather than a fallback.
+   *
+   * {@link COARSEST_SHADOW_LEVEL} is past every chain, and means the coarsest shape an asset has: a
+   * map that coarsens its casters does not know how long each asset's chain is, and the floor is
+   * clamped per asset, so one number asks every chain for its own coarsest level.
+   */
+  readonly base: number;
+}
+
+/**
+ * A {@link IShadowLevel.base} past every chain: the map draws every asset's coarsest shape, whatever
+ * distance selected it. Clamped to each asset's own last level, so an owner with no level count to
+ * hand — `VirtualShadowNode`, which coarsens a coarse level's casters without knowing an asset —
+ * can still ask.
+ */
+export const COARSEST_SHADOW_LEVEL = 1 << 20;
+
+/**
  * The per-instance kernel, in plain TypeScript. The TSL kernel in {@link WorldGpuScene} is this
  * loop with the same branches, and the test proves this one against the CPU path.
  *
@@ -323,7 +400,33 @@ function strictlyAfterGate(gate: number): number {
  * the end of the buffer.
  */
 export function cullAndSelect(input: IKernelInput): IKernelResult {
+  return select(input, undefined);
+}
+
+/**
+ * The same kernel with a shadow map's own four numbers in place of the camera's, and nothing else
+ * changed: same regions, same keys, same `placement * part offset`, same capacity guard.
+ *
+ * The gate is applied to the placement's own diameter, where the cluster path applies it to the
+ * whole mesh and drops the square with it — so on a uniform-size fixture the two sets are the same
+ * set, and where a square mixes sizes this one is the finer of the two.
+ */
+export function cullAndSelectShadow(input: IKernelInput, level: IShadowLevel): IKernelResult {
+  return select(input, level);
+}
+
+/**
+ * The one loop both references share. `shadow` is what makes the second one a variant rather than a
+ * fork: the main camera's planes, eye, no gate and no base are the degenerate case, so the two can
+ * never disagree by having been edited apart.
+ */
+function select(input: IKernelInput, shadow: IShadowLevel | undefined): IKernelResult {
   const { placements, camera, regions, slots } = input;
+  const planes = shadow?.planes ?? camera.planes;
+  const eyeX = shadow?.centre.x ?? camera.x;
+  const eyeZ = shadow?.centre.z ?? camera.z;
+  const metres = shadow?.gate ?? 0;
+  const base = shadow?.base ?? 0;
   const counts = new Uint32Array(input.regionCount);
   const args = new Uint32Array(input.regionCount * DRAW_ARGS_WORDS);
   // The drawn buffer is the regions' own, so the reference allocates exactly what the GPU holds.
@@ -346,22 +449,36 @@ export function cullAndSelect(input: IKernelInput): IKernelResult {
     for (let plane = 0; plane < 6; plane += 1) {
       const offset = plane * 4;
       const signed =
-        (camera.planes[offset] as number) * (at[0] as number) +
-        (camera.planes[offset + 1] as number) * (at[1] as number) +
-        (camera.planes[offset + 2] as number) * (at[2] as number) +
-        (camera.planes[offset + 3] as number);
+        (planes[offset] as number) * (at[0] as number) +
+        (planes[offset + 1] as number) * (at[1] as number) +
+        (planes[offset + 2] as number) * (at[2] as number) +
+        (planes[offset + 3] as number);
       if (signed < -radius) {
         visible = false;
         break;
       }
     }
     if (visible === false) continue;
-    const distance = Math.hypot((at[0] as number) - camera.x, (at[2] as number) - camera.z);
+    // Sub-texel, exactly as `#probe` decides it for a mesh: a caster this map cannot resolve casts
+    // no shadow a fragment could tell from ground cover.
+    if (radius * 2 < metres) continue;
+    const distance = Math.hypot((at[0] as number) - eyeX, (at[2] as number) - eyeZ);
     if (slot.cull !== undefined && distance > slot.cull) continue;
-    // Cull above is the authored distance; the level below is the biased one, the same multiplier
-    // the kernel's uniform carries, so the reference and the dispatch cross a switch together.
-    const lodDistance = biasedLodDistance(distance);
-    const level = levelAtGates(slot, lodDistance, placement.scale ?? 1);
+    // Cull above is the authored distance; the level below is the biased one for the main pass — the
+    // same multiplier the kernel's uniform carries, so the reference and the dispatch cross a switch
+    // together. A shadow map has no frame budget of its own to be biased by, so it takes the
+    // authored distance and its own base instead.
+    const lodDistance = shadow === undefined ? biasedLodDistance(distance) : distance;
+    const level = drawableLevel(
+      slot,
+      // Clamped to the asset's own last level, so a base past the chain asks for its coarsest
+      // shape rather than walking a million empty indices to find it. Same answer either way:
+      // `drawableLevel` reads a level with no parts as one to skip.
+      Math.max(
+        levelAtGates(slot, lodDistance, placement.scale ?? 1),
+        Math.min(base, slot.levels.length - 1),
+      ),
+    );
     const gate = slot.levels[level];
     if (gate === undefined) continue;
     for (let part = 0; part < gate.parts; part += 1) {
@@ -988,6 +1105,20 @@ export interface IWorldGpuSceneReport {
   readonly gpuTallyAgeFrames?: number;
 }
 
+/**
+ * The shadow twins' two buffers: a record per key and a run per key, at the layout the main pass
+ * already gave each key. Allocated only once a provider has registered — see
+ * {@link WorldGpuScene.shadowKeysFrom}.
+ */
+interface IShadowBuffers {
+  readonly args: IndirectStorageBufferAttribute;
+  readonly drawn: StorageInstancedBufferAttribute;
+  /** Key name to the main key index it twins, so a missing twin is a missing draw, not a crash. */
+  readonly keys: Map<string, number>;
+  /** The same indices the other way, so a record write knows whether this key has a twin at all. */
+  readonly held: Set<number>;
+}
+
 interface IGpuSceneBuffers {
   readonly args: IndirectStorageBufferAttribute;
   readonly drawn: StorageInstancedBufferAttribute;
@@ -1155,17 +1286,35 @@ export function gpuSceneRequested(): boolean {
 export const BUNDLE_FLAG = "TN_BUNDLES";
 
 /**
- * Whether world draw bundles should be recorded and replayed. Opt-in, and off by default.
+ * What this launch asked for about world draw bundles: `on`, `off`, or `default` when it said
+ * nothing.
+ *
+ * @situation tell a run that set the option itself apart from one that took the default
+ * @example WorldCells.load({ ...options, bundles: bundlesAsked() !== "off" });
+ *
+ * Read the way {@link gpuSceneRequested} reads its own: a native launch sets the environment
+ * variable, a browser asks with the query string, and a test sets the global.
+ */
+export function bundlesAsked(): "default" | "off" | "on" {
+  if (askedOn(BUNDLE_FLAG, "tnBundles", "__tnBundles")) return "on";
+  return askedOff(BUNDLE_FLAG, "tnBundles", "__tnBundles") ? "off" : "default";
+}
+
+/**
+ * Whether world draw bundles should be recorded and replayed. On by default, and off unless a launch
+ * asks for the CPU path.
  *
  * @situation debug a walk whose main batches are replayed from a recorded bundle
- * @constraint off unless a launch asks for it: a bundle draws nothing a dispatch did not already
- *   decide, and the measured A/B on machinefall found no CPU p50/p95 gain (the main thread is
- *   mostly idle and the frame is GPU/present bound), so `bundles: true`, `?tnBundles=1` or
- *   `TN_BUNDLES=1` turns it on. See PRD-473 phase 2.
+ * @constraint on unless a launch asks otherwise: `bundles: false`, `?tnBundles=0` or `TN_BUNDLES=0`
+ *   turn it off. The default followed a measurement, not a preference — PRD-494 AC-2 took the walking
+ *   `draw` span from a 6.0 ms p50 median to 0.6 ms against develop over 3 interleaved runs, on a
+ *   picture a blind world gate called equal, so the answer that used to be "off, it gave no CPU
+ *   p50/p95 gain" is now "on, it is 5 ms of the walking p95". `bundles: true`, `?tnBundles=1` or
+ *   `TN_BUNDLES=1` still say so explicitly. See PRD-473 phase 2 and PRD-494 phase 2.
  * @example WorldCells.load({ ...options, bundles: bundlesRequested() });
  */
 export function bundlesRequested(): boolean {
-  return askedOn(BUNDLE_FLAG, "tnBundles", "__tnBundles");
+  return bundlesAsked() !== "off";
 }
 
 /** The validation flag. */
@@ -1199,6 +1348,25 @@ export function gpuSceneValidationRequested(): boolean {
   return host.__tnGpuSceneValidate === true || host.__tnGpuSceneValidate === "1";
 }
 
+/** The launch flag. */
+export const SHADOW_GPU_KEYS_FLAG = "TN_SHADOW_GPU_KEYS";
+
+/**
+ * Whether a shadow level may select its own set of GPU-scene keys. Opt-in, and off by default.
+ *
+ * @situation debug a walk whose shadow maps draw GPU-scene keys instead of cluster meshes
+ * @constraint off unless a launch asks for it: without a provider nothing is allocated and no
+ *   dispatch is submitted, so the flag alone cannot change a frame — `shadowGpuKeys: true`,
+ *   `?tnShadowGpuKeys=1` or `TN_SHADOW_GPU_KEYS=1` turns it on. See PRD-478 phase 2.
+ * @example world.gpuScene.shadowKeysFrom(() => keyNames);
+ *
+ * Read the way {@link bundlesRequested} reads its own: a native launch sets the environment
+ * variable, a browser asks with the query string, and a test sets the global.
+ */
+export function shadowGpuKeysRequested(): boolean {
+  return askedOn(SHADOW_GPU_KEYS_FLAG, "tnShadowGpuKeys", "__tnShadowGpuKeys");
+}
+
 /**
  * The GPU scene, owned by one `WorldCells`.
  *
@@ -1211,6 +1379,15 @@ export class WorldGpuScene {
   readonly placements: IGpuPlacement[] = [];
   readonly #regions: IRegion[] = [];
   readonly #keysByName = new Map<string, number>();
+  /**
+   * The shadow twins, allocated only once a provider has registered: their own args records and
+   * their own drawn runs, and the keys that hold them. A twin of a key is its own record and run in
+   * these buffers, at the layout the key already has — the main pass cannot have them, because its
+   * compute submits before its indirect draws and a shared record would be zeroed in between.
+   */
+  #shadow: IShadowBuffers | undefined;
+  #shadowProvider: (() => Iterable<string>) | undefined;
+  #shadowKernel: { readonly cull: unknown; readonly clear: unknown } | undefined;
   readonly #slotsByAsset = new Map<string, IAssetSlot>();
   /** One level's parts per `asset:level`, which is what keeps them the run the kernel addresses. */
   readonly #groups = new Map<string, ILevelGroup>();
@@ -1330,6 +1507,16 @@ export class WorldGpuScene {
     return this.#buffers?.args;
   }
 
+  /** The twin of {@link drawn}, once a provider has registered: a shadow key's `instanceMatrix`. */
+  get shadowDrawn(): StorageInstancedBufferAttribute | undefined {
+    return this.#shadow?.drawn;
+  }
+
+  /** The twin of {@link args}, once a provider has registered: a shadow key's indirect record. */
+  get shadowArgs(): IndirectStorageBufferAttribute | undefined {
+    return this.#shadow?.args;
+  }
+
   /**
    * Every storage buffer with the WGSL type the kernel binds it as, so the allocation can be held
    * against the declaration without reading a pipeline.
@@ -1350,6 +1537,20 @@ export class WorldGpuScene {
     ] as [BufferName, StorageType][]) {
       const buffer = this.#buffers[name] as BufferAttribute;
       out[name] = { type, count: buffer.count, bytes: buffer.array.byteLength };
+    }
+    // The twins only exist once a provider has registered, so a launch that never asked for them
+    // reads exactly the footprint it had before this class learned about shadows.
+    if (this.#shadow !== undefined) {
+      out.shadowArgs = {
+        type: "uint",
+        count: this.#shadow.args.count,
+        bytes: this.#shadow.args.array.byteLength,
+      };
+      out.shadowDrawn = {
+        type: "mat4",
+        count: this.#shadow.drawn.count,
+        bytes: this.#shadow.drawn.array.byteLength,
+      };
     }
     return out;
   }
@@ -1679,6 +1880,84 @@ export class WorldGpuScene {
    */
   setLodBias(bias: number): void {
     this.#lodBias.value = Number.isFinite(bias) && bias >= 1 ? bias : 1;
+  }
+
+  /**
+   * Register who owns the shadow keys. Until something does, nothing is allocated and
+   * {@link dispatchShadow} submits nothing.
+   *
+   * The provider is asked for the keys a shadow map draws at dispatch time rather than once here, so
+   * a key minted after the registration is a twin of the same pass that first needs it. It names the
+   * keys, not their contents: a twin is its main key's record and run in the twin buffers, at the
+   * layout that key already holds.
+   *
+   * A launch without `?tnShadowGpuKeys=1` (or the environment variable, or the global) registers
+   * nothing, so the flag alone cannot put a buffer on the device. See {@link shadowGpuKeysRequested}.
+   */
+  shadowKeysFrom(provider: () => Iterable<string>): void {
+    if (shadowGpuKeysRequested() === false) return;
+    this.#shadowProvider = provider;
+  }
+
+  /** Whether a provider has registered, which is the whole of what turns the shadow path on. */
+  get shadowKeys(): boolean {
+    return this.#shadowProvider !== undefined;
+  }
+
+  /**
+   * Name one key's shadow twin now, rather than waiting for the dispatch that first needs it: the
+   * mesh that draws it has to be dressed against a record that exists, and a record minted inside
+   * the render it would draw in is one frame late for every key.
+   *
+   * The same {@link #mintShadowKeys} the dispatch runs, for one name — idempotent, and a no-op
+   * without a registered provider, which is what keeps the flag from allocating anything on its own.
+   */
+  shadowKey(name: string): void {
+    if (this.#shadowProvider === undefined) return;
+    this.#mintShadowKeys([name]);
+  }
+
+  /** The region one key's shadow twin draws from, for the counters and the tests. */
+  shadowRegionOf(name: string): IRegion | undefined {
+    const index = this.#shadow?.keys.get(name);
+    return index === undefined ? undefined : this.#regions[index];
+  }
+
+  /**
+   * One shadow level's set: zero every twin's instance count, then cull and LOD-select every resident
+   * placement against the map's own light frustum, its own rendered window centre, its texel gate
+   * and the chain level it draws at — into the twin buffers, which the main pass cannot be holding.
+   *
+   * The twin of the main kernel branch for branch, and reading the main pass's own gate table,
+   * placements and key table: a shadow map draws the same shapes, only a different set of them.
+   * A no-op without a registered provider, which is the only way this can be switched on.
+   */
+  dispatchShadow(renderer: IRendererLike, level: IShadowLevel): void {
+    const provider = this.#shadowProvider;
+    if (provider === undefined || this.#on === false || this.#buffers === undefined) return;
+    // Minted here, so a twin is never older than the key it twins; the growth is a structural event
+    // and the kernel below is rebuilt against the buffers that replaced the old ones.
+    this.#mintShadowKeys(provider());
+    const kernel = this.#shadowKernel ?? this.#buildShadowKernel();
+    if (kernel === undefined) return;
+    for (const [index, plane] of this.#shadowPlaneVectors.entries()) {
+      const at = index * 4;
+      plane.set(
+        level.planes[at] as number,
+        level.planes[at + 1] as number,
+        level.planes[at + 2] as number,
+        level.planes[at + 3] as number,
+      );
+    }
+    this.#shadowCentre.value.set(level.centre.x, 0, level.centre.z);
+    this.#shadowGate.value = level.gate;
+    this.#shadowBase.value = level.base;
+    // `(placements, slots, keys, keys)`: the last two are the same count, and the clear dispatch is
+    // one thread per key. The main pass writes the same uniform before its own pair.
+    const keys = this.#regions.length;
+    this.#counts.value.set(this.placements.length, this.#order.length, keys, keys);
+    renderer.compute(kernel.clear);
+    renderer.compute(kernel.cull);
   }
 
   /**
@@ -2069,6 +2348,9 @@ export class WorldGpuScene {
 
   dispose(): void {
     this.#kernel = undefined;
+    this.#shadowKernel = undefined;
+    this.#shadow = undefined;
+    this.#shadowProvider = undefined;
     this.#buffers = undefined;
     this.placements.length = 0;
     this.#regions.length = 0;
@@ -2093,6 +2375,17 @@ export class WorldGpuScene {
    */
   #lodBias = uniform(1);
   #planeUniforms = this.#planeVectors.map((plane) => uniform(plane));
+  /**
+   * The shadow kernel's own four, kept apart from the camera's: a level's planes and window centre
+   * are written here and the main pass's own are never disturbed, so the two dispatches in one frame
+   * cannot read each other's uniforms. A shadow map takes no LOD bias — it has no frame budget to
+   * be biased by — and its gate and base are the level's own texel gate and chain level.
+   */
+  #shadowPlaneVectors = Array.from({ length: 6 }, () => new Vector4());
+  #shadowCentre = uniform(new Vector3());
+  #shadowGate = uniform(0);
+  #shadowBase = uniform(0);
+  #shadowPlaneUniforms = this.#shadowPlaneVectors.map((plane) => uniform(plane));
 
   #ensure(): IGpuSceneBuffers | undefined {
     if (this.#buffers !== undefined) return this.#buffers;
@@ -2127,19 +2420,16 @@ export class WorldGpuScene {
     const buffers = this.#buffers;
     if (buffers === undefined) return false;
     const current = buffers[name] as BufferAttribute;
-    if (current.count >= needed) return true;
-    let capacity = Math.max(1, current.count);
-    while (capacity < needed) capacity *= 2;
     // The allocation `#ensure` made, at the new count, so a regrow cannot land a different class or
     // a different element size than the pipeline the kernel was built against.
-    const grown =
+    const grown = growBuffer(current, needed, (capacity) =>
       name === "args"
         ? storageAttribute(IndirectStorageBufferAttribute, "uint", capacity, Uint32Array)
         : name === "drawn"
           ? storageAttribute(StorageInstancedBufferAttribute, "mat4", capacity)
-          : storageAttribute(StorageBufferAttribute, STORAGE_PLAIN[name], capacity);
-    grown.array.set(current.array as Uint32Array);
-    grown.addUpdateRange(0, current.array.length);
+          : storageAttribute(StorageBufferAttribute, STORAGE_PLAIN[name], capacity),
+    );
+    if (grown === current) return true;
     this.#buffers = { ...buffers, [name]: grown };
     // The attributes the kernel is built from changed, so the kernel is a new pipeline: a structural
     // event, and the only one this class pays a compile for.
@@ -2200,6 +2490,7 @@ export class WorldGpuScene {
     args[record + 3] = 0;
     args[record + 4] = region.start;
     buffers.args.needsUpdate = true;
+    this.#writeShadowKey(index);
   }
 
   /**
@@ -2310,8 +2601,15 @@ export class WorldGpuScene {
           const floor = previous.add(abs(previous).mul(GATE_STEP));
           threshold.assign(max(floor, candidate.x.mul(scale)));
         });
+        // A level the prewarm has minted no key for is not taken: the gate table names every level of
+        // an asset from the moment it is adopted, and the draw loop below would run this level's
+        // zero keys, so the placement would be selected and drawn nowhere while the CPU path drew it
+        // and its shadow halves drew under it. The last level that has keys keeps it. See
+        // `drawableLevel`, which the reference mirrors.
         If(lodDistance.greaterThan(threshold), () => {
-          level.assign(i as never);
+          If(candidate.z.greaterThan(0.5), () => {
+            level.assign(i as never);
+          });
         });
       });
       const at = levels.element(gate.x.add(level));
@@ -2330,6 +2628,178 @@ export class WorldGpuScene {
     cull.setName("worldGpuSceneCull");
     this.#kernel = { clear, cull };
     return this.#kernel;
+  }
+
+  /**
+   * Allocate the twins once, on the first dispatch that asks, and widen them for every key the
+   * provider names that has no twin yet.
+   *
+   * The buffers hold a record and a run per key at the layout the main pass already gave it, so a
+   * twin is a second copy of two numbers rather than a new key space: the shadow kernel reads the
+   * same `keys` table and writes at the same offsets into buffers of its own. That is the whole of
+   * the cost — the main drawn capacity again, at 64 bytes an instance slot, plus 20 bytes of record
+   * per key — and it is paid only when a provider has registered.
+   */
+  #mintShadowKeys(names: Iterable<string>): void {
+    let shadow = this.#shadow;
+    if (shadow === undefined) {
+      const args = storageAttribute(IndirectStorageBufferAttribute, "uint", DRAW_ARGS_WORDS);
+      const drawn = storageAttribute(StorageInstancedBufferAttribute, "mat4", 1);
+      shadow = { args, drawn, held: new Set(), keys: new Map() };
+      this.#shadow = shadow;
+      this.#version += 1;
+    }
+    for (const name of names) {
+      const index = this.#keysByName.get(name);
+      // A name with no main key has nothing to twin; that is the owner's to fix, not this method's.
+      if (index === undefined || shadow.keys.has(name)) continue;
+      shadow.keys.set(name, index);
+      shadow.held.add(index);
+      this.#writeShadowKey(index);
+    }
+    // Widened to the main extent whether or not a key opened: the twin clear dispatch is one thread
+    // per key, so a narrower twin args buffer would have it read a record that is not there.
+    this.#growShadow(shadow, this.#regions.length * DRAW_ARGS_WORDS, this.#drawnCapacity);
+  }
+
+  /**
+   * Widen the twins to the main buffers' own extent, by doubling as `#growOf` does. A shadow twin is
+   * a structural event exactly when its main key is one — a new pipeline, and a version bump, so a
+   * mesh dressed against the old attributes is re-dressed.
+   */
+  #growShadow(shadow: IShadowBuffers, words: number, slots: number): void {
+    if (shadow.args.count >= words && shadow.drawn.count >= slots) return;
+    this.#shadow = {
+      args: growBuffer(shadow.args, words, (count) =>
+        storageAttribute(IndirectStorageBufferAttribute, "uint", count, Uint32Array),
+      ),
+      drawn: growBuffer(shadow.drawn, slots, (count) =>
+        storageAttribute(StorageInstancedBufferAttribute, "mat4", count),
+      ),
+      held: shadow.held,
+      keys: shadow.keys,
+    };
+    // The attributes the twin kernel is built from changed, so it is a new pipeline: a structural
+    // event, like every other grow in this class.
+    this.#shadowKernel = undefined;
+    this.#version += 1;
+    // Records written while the twin was narrower than the key table went nowhere; the copy above
+    // carried every word that was in range, and this puts the rest back.
+    for (const index of shadow.held) this.#writeShadowKey(index);
+  }
+
+  /**
+   * One twin's record, which is its main record's geometry and run with the count left at zero. A key
+   * with no twin writes nothing, and a regrow that moved the main run moves this one with it —
+   * `#writeKey` is the only writer of a main record, and it calls this.
+   */
+  #writeShadowKey(index: number): void {
+    const shadow = this.#shadow;
+    const region = this.#regions[index];
+    if (shadow === undefined || region === undefined || shadow.held.has(index) === false) return;
+    const args = shadow.args.array as Uint32Array;
+    const record = region.argsIndex * DRAW_ARGS_WORDS;
+    args[record] = region.indexCount;
+    args[record + 1] = 0;
+    args[record + 2] = 0;
+    args[record + 3] = 0;
+    args[record + 4] = region.start;
+    shadow.args.needsUpdate = true;
+  }
+
+  /**
+   * The shadow twin of {@link #buildKernel}: the same clear and the same per-placement selection,
+   * reading the same source, gate, level and key tables and writing the twin records and runs.
+   *
+   * Three branches are the level's rather than the camera's — the planes it tests against, the
+   * centre it measures distance from, and its texel gate — and one is the level's base instead of
+   * the main pass's LOD bias: a shadow map is not competing for a frame budget, so it takes the
+   * authored distance and floors the level at the shape the cluster path hands it.
+   */
+  #buildShadowKernel(): { readonly cull: unknown; readonly clear: unknown } | undefined {
+    const buffers = this.#buffers;
+    const shadow = this.#shadow;
+    if (buffers === undefined || shadow === undefined) return undefined;
+    const source = nodes(storage(buffers.source, PlacementStruct, buffers.source.count));
+    const drawn = nodes(storage(shadow.drawn, "mat4", shadow.drawn.count));
+    const argsPlain = nodes(storage(shadow.args, "uint", shadow.args.count));
+    const argsAtomic = nodes(storage(shadow.args, "uint", shadow.args.count).toAtomic());
+    const keys = nodes(storage(buffers.keys, "vec4", buffers.keys.count));
+    const locals = nodes(storage(buffers.locals, "mat4", buffers.locals.count));
+    const gates = nodes(storage(buffers.gates, "vec4", buffers.gates.count));
+    const levels = nodes(storage(buffers.levels, "vec4", buffers.levels.count));
+    const counts = nodes(this.#counts);
+    // The level's window centre, in the uniform the main kernel measures the eye from: the same
+    // field, this dispatch's own number.
+    const eye = nodes(this.#shadowCentre);
+    const gate = nodes(this.#shadowGate);
+    const base = nodes(this.#shadowBase);
+    const planes = this.#shadowPlaneUniforms.map((plane) => nodes(plane));
+    const clear = Fn(() => {
+      If(instanceIndex.greaterThanEqual(counts.w), () => Return());
+      const key = keys.element(instanceIndex);
+      argsPlain.element(key.z.mul(DRAW_ARGS_WORDS).add(1)).assign(int(0));
+    })().compute(Math.max(1, buffers.keys.count));
+    const cull = Fn(() => {
+      If(instanceIndex.greaterThanEqual(counts.x), () => Return());
+      const placement = source.element(instanceIndex);
+      const centre = placement.get("centre");
+      const matrix = placement.get("matrix");
+      const slot = placement.get("info").x;
+      If(slot.lessThan(0.0), () => Return());
+      If(slot.greaterThanEqual(counts.y), () => Return());
+      const radius = centre.w;
+      for (const plane of planes)
+        If(plane.dot(centre.xyz).lessThan(radius.negate()), () => Return());
+      // Sub-texel, the level's own gate rather than a camera's: a caster this map cannot resolve
+      // casts no shadow a fragment could tell from ground cover.
+      If(gate.greaterThan(0.0).and(radius.mul(2.0).lessThan(gate)), () => Return());
+      const asset = gates.element(slot);
+      const distance = length(vec3(centre.x.sub(eye.x), 0.0, centre.z.sub(eye.z)));
+      If(asset.w.greaterThan(0.5).and(distance.greaterThan(asset.z)), () => Return());
+      // The authored distance, with no bias: this map has no frame budget to be biased by, and its
+      // base is what the cluster path hands it.
+      const level = int(0).toVar();
+      const scale = abs(placement.get("info").y);
+      Loop(
+        { start: int(1), end: asset.y, type: "int", condition: "<" },
+        ({ i }: { i: unknown }) => {
+          const candidate = levels.element(asset.x.add(i as never));
+          const threshold = nodes(candidate.x).toVar();
+          If(candidate.w.greaterThan(0.5), () => {
+            const previous = levels.element(asset.x.add(i as never).sub(1)).x;
+            const floor = previous.add(abs(previous).mul(GATE_STEP));
+            threshold.assign(max(floor, candidate.x.mul(scale)));
+          });
+          // A level the prewarm has minted no key for is not taken, as in the main kernel: see
+          // `drawableLevel`, which the reference mirrors.
+          If(distance.greaterThan(threshold), () => {
+            If(candidate.z.greaterThan(0.5), () => {
+              level.assign(i as never);
+            });
+          });
+        },
+      );
+      // Clamped to the asset's own last level, as the reference clamps it: a base past the chain
+      // asks for its coarsest shape, and reading a level outside the table is not that.
+      const at = levels.element(
+        asset.x.add(int(max(level.toFloat(), min(base as never, asset.y.sub(1.0) as never)))),
+      );
+      Loop({ start: int(0), end: at.z, type: "int", condition: "<" }, ({ i }: { i: unknown }) => {
+        const keyIndex = at.y.add(i as never);
+        const key = keys.element(keyIndex);
+        const taken = nodes(
+          atomicAdd(argsAtomic.element(key.z.mul(DRAW_ARGS_WORDS).add(1)), int(1)),
+        );
+        If(taken.toFloat().lessThan(key.y), () => {
+          drawn.element(key.x.add(taken)).assign(matrix.mul(locals.element(keyIndex)));
+        });
+      });
+    })().compute(Math.max(1, buffers.source.count));
+    clear.setName("worldGpuSceneShadowClear");
+    cull.setName("worldGpuSceneShadowCull");
+    this.#shadowKernel = { clear, cull };
+    return this.#shadowKernel;
   }
 
   #report(renderer: IRendererLike): void {

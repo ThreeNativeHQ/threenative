@@ -362,17 +362,22 @@ async function runStandalonePlaytestInternal(
       await context.tracing.start({ screenshots: true, snapshots: true });
     }
     page = await context.newPage();
-    await page.addInitScript(() => {
+    await page.addInitScript((liveClock) => {
       // Announce the runner before any game code evaluates, so an adapter can hold its loop
       // instead of racing this run's first observation.
       (globalThis as Record<string, unknown>).__THREENATIVE_PLAYTEST_RUNNER_EXPECTED__ = true;
+      // The clock request rides with it, ahead of every page script, for the same reason: read
+      // once when the producer installs, a request that arrived after the game's own bundle
+      // evaluated is one the engine never saw. The wire name is literal because the other end of
+      // it is the page's engine, not this package.
+      if (liveClock) (globalThis as Record<string, unknown>).__THREENATIVE_PLAYTEST_CLOCK__ = "wall-clock";
       window.addEventListener("unhandledrejection", (event) => {
         const reason = event.reason instanceof Error
           ? event.reason.stack || event.reason.message
           : String(event.reason);
         console.error(`__THREENATIVE_PLAYTEST_UNHANDLED_REJECTION__:${reason}`);
       });
-    });
+    }, activeConfig.liveClock === true);
     page.on("console", (entry) => {
       const text = entry.text();
       const unhandledRejection = text.startsWith(UNHANDLED_REJECTION_PREFIX);

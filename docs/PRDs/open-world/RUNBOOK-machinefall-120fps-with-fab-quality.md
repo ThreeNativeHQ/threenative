@@ -53,6 +53,15 @@ Last measured 2026-10-03 against `origin/develop` `4d5e07c98`: nvidia/turing, 12
 | CPU render | 6.9 ms | **21.2 ms** | 4.5 ms | **12.9 ms** |
 | GPU | 7.0 ms | 10.1 ms | 4.5 ms | 1.8 ms |
 
+**Update 2026-10-03 evening (PRD-494, #424):** 3 interleaved runs per arm, nvidia/turing, 1280×720, load 3.8–6.4 (quiet).
+
+| | Walking render p50 / p95 | Walking GPU p50 / p95 | Walking main draws p50 | Idle render p95 |
+| --- | --- | --- | --- | --- |
+| develop `9cf955355` | 6.9 / 23.2 ms | 8.0 / 14.7 ms | 323 | 4.8 ms |
+| PRD-494 bundles on (chunks + main batches recorded) | 4.3 / **18.3 ms** | 7.3 / 13.7 ms | **36** | 4.8 ms |
+
+The per-draw `draw` span p95 fell 5.0 ms (6.0/5.3/5.7 → 0.6/0.8/0.6), but walking render p95 is still ~10 ms over budget: the next costs are the shadow-level re-render (PRD-478 Phase 2) and streaming (Phase 3). GPU p95 here comes from the pre-PRD-389 sampler (few samples per window); #421 fixes that.
+
 The gap is CPU while walking. The costs, as span p95s, which overlap and do not add:
 - Main-pass draw submission: ~330 draws × 16–26 µs, about 7 ms every frame.
 - Shadow level re-render: ~476 draws, 4–17 ms on 2–8% of frames.

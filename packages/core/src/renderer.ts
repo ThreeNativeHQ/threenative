@@ -434,11 +434,18 @@ function wrapRenderer(
   let pendingSize: Parameters<IRendererLike["setSize"]> | undefined;
   let timestampFrame = -1;
   const setTimestampTracking = (): void => {
+    // Three writes `info.frame` only inside its own animation loop, which the engine deliberately
+    // does not run -- the game drives frames through here -- so it sat at 0 for the whole session.
+    // Everything downstream reads it: this sampler derived its frame from it, `0 % 8 === 0`
+    // recorded a timestamp on *every* frame, the 2048-query pool filled in ~38 frames and every
+    // later read was null (~15 timestamps in a 300-frame window that had asked for 37), and three
+    // keys each query uid by it, so the per-pass split filed every uid under one hot frame id. The
+    // engine owns the cadence, so the engine is what advances the clock.
+    timestampFrame += 1;
+    const rawInfo = (raw as { info?: { frame: number } | null }).info;
+    if (rawInfo !== undefined && rawInfo !== null) rawInfo.frame = timestampFrame;
     const backend = raw.backend;
     if (!timestampCapable || backend === undefined) return;
-    const frame = raw.info?.frame;
-    if (typeof frame === "number" && Number.isInteger(frame)) timestampFrame = frame;
-    else timestampFrame += 1;
     backend.trackTimestamp = timestampFrame % timestampFrameInterval === 0;
   };
 
