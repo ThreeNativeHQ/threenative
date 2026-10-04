@@ -17,9 +17,14 @@ vi.mock("node:child_process", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:child_process")>();
   const { EventEmitter } = await import("node:events");
   const spawn = ((command: string, args: readonly string[]) => {
-    calls.push(`spawn:${path.basename(command)}`);
+    const script = path.basename(args[0] ?? command);
+    calls.push(`spawn:${script}`);
     const child = new EventEmitter();
     queueMicrotask(async () => {
+      if (script === "bundle.mjs") {
+        child.emit("exit", 23);
+        return;
+      }
       // A real Vite build creates the outDir it was pointed at, and the web build refuses to
       // publish one that is still missing — so the stub has to be as complete as what it replaces.
       const index = args.indexOf("--outDir");
@@ -29,7 +34,11 @@ vi.mock("node:child_process", async (importOriginal) => {
     });
     return child;
   }) as typeof actual.spawn;
-  return { ...actual, spawn };
+  const spawnSync = (() => ({
+    status: 0,
+    stdout: "fixture + v8 build",
+  })) as typeof actual.spawnSync;
+  return { ...actual, spawn, spawnSync };
 });
 
 afterEach(() => {
@@ -40,6 +49,21 @@ async function writeProject(root: string): Promise<void> {
   await mkdir(path.join(root, "src"), { recursive: true });
   await writeFile(path.join(root, "package.json"), JSON.stringify({ name: "asset-order" }));
   await writeFile(path.join(root, "src/game.ts"), "export default { start: async () => {} };\n");
+}
+
+async function writeRuntime(root: string, available = true): Promise<void> {
+  const runtime = path.join(root, "node_modules/@threenative/runtime-native");
+  await mkdir(path.join(runtime, "scripts"), { recursive: true });
+  const binary = path.join(runtime, "fixture-runtime");
+  await writeFile(binary, "fixture runtime identity");
+  await writeFile(
+    path.join(runtime, "package.json"),
+    JSON.stringify({ name: "@threenative/runtime-native", type: "module" }),
+  );
+  await writeFile(
+    path.join(runtime, "scripts/package-desktop.mjs"),
+    `export async function resolveDesktopRuntime() { ${available ? `return ${JSON.stringify(binary)};` : 'throw new Error("TN_TEST_RUNTIME_UNAVAILABLE");'} }\n`,
+  );
 }
 
 describe("threenative build asset compilation", () => {
@@ -55,13 +79,28 @@ describe("threenative build asset compilation", () => {
     expect(spawnIndex).toBeGreaterThan(compileIndex);
   });
 
+  it("should reject an unavailable desktop runtime before cooking assets", async () => {
+    const root = await makeTempDir("threenative-build-assets-unavailable-runtime-");
+    await writeProject(root);
+    await writeRuntime(root, false);
+
+    await expect(build({ cwd: root, target: "desktop" })).rejects.toThrow(
+      "TN_TEST_RUNTIME_UNAVAILABLE",
+    );
+    expect(calls).toEqual([]);
+  });
+
   it("should compile assets before native packaging", async () => {
     const root = await makeTempDir("threenative-build-assets-native-");
     await writeProject(root);
 
-    // Packaging cannot finish in a temp project (no runtime bundle output), but wherever it
-    // stops, the asset compile must already have run.
-    await expect(build({ cwd: root, target: "desktop" })).rejects.toThrow();
-    expect(calls[0]).toBe("compile");
+    await writeRuntime(root);
+
+    // Runtime preflight succeeds; the controlled bundler failure must happen after cooking,
+    // before packaging, rather than an unrelated missing-runtime error satisfying the test.
+    await expect(build({ cwd: root, target: "desktop" })).rejects.toThrow(
+      `${path.basename(process.execPath)} exited with code 23.`,
+    );
+    expect(calls).toEqual(["compile", "spawn:bundle.mjs"]);
   });
 });
