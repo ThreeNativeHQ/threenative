@@ -1,6 +1,6 @@
 # PRD-497 — Architecture decision, scope and compatibility inventory (N00)
 
-**Status:** PROPOSED — decisions approved by the owner 2026-10-04; the record and inventory are not yet written
+**Status:** DONE 2026-10-04 — record written, inventory committed and enforced
 **Complexity:** 3 — docs and one inventory script; no runtime code, but it reverses standing product rules
 **Owner:** João
 **Work package:** N00 — [native-engine batch](README.md)
@@ -29,18 +29,18 @@ The compatibility target is the workspace-pinned `three: 0.185.1` in `pnpm-works
 ## Execution Phases
 
 #### Phase 1: The decision is recorded
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** proposed `docs/architecture/NATIVE-ENGINE-DECISION.md`; pointer lines in `docs/architecture/CHARTER.md` and `packages/runtime-native/AGENTS.md`
-- [ ] The decision record states all ten decisions below, gates E and T, the definitions, and three@0.185.1 + patch as the pinned reference. proof: `pnpm check:docs && pnpm exec vitest run scripts/__tests__/primary-docs.spec.ts`
-- [ ] AGENTS.md mirrors regenerate cleanly after the pointer edit. proof: `pnpm sync:agents --check`
+- [x] The decision record states all ten decisions below, gates E and T, the definitions, and three@0.185.1 + patch as the pinned reference. proof: `pnpm check:docs && pnpm exec vitest run scripts/__tests__/primary-docs.spec.ts` — 2026-10-04: 2709 links ok; primary-docs green. Record: `docs/architecture/NATIVE-ENGINE-DECISION.md`
+- [x] AGENTS.md mirrors regenerate cleanly after the pointer edit. proof: `pnpm sync:agents --check` — 2026-10-04: 22 mirrors in sync; pointers in CHARTER.md, NATIVE-RUNTIME.md, runtime-native AGENTS.md
 
 #### Phase 2: Every core module and every used symbol is classified
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** proposed `scripts/native-engine-inventory.ts`, `scripts/__tests__/native-engine-inventory.spec.ts`, `docs/architecture/native-engine-inventory.json`
-- [ ] The inventory script walks `packages/core/src` and its reachable imports, and fails on any module without a class and owner. proof: red-green `pnpm exec vitest run scripts/__tests__/native-engine-inventory.spec.ts`
-- [ ] The committed inventory classifies every current module with zero `unclassified` entries. proof: `pnpm tsx scripts/native-engine-inventory.ts --check`
-- [ ] Every module classed `native-engine` names an N-key that exists in the batch index. proof: `pnpm tsx scripts/native-engine-inventory.ts --check`
-- [ ] The used-symbol list covers every `three*` import in `packages/create-threenative/templates/` and `examples/`, including each `ctx.renderer.raw` property read. proof: `pnpm tsx scripts/native-engine-inventory.ts --check --symbols`
+- [x] The inventory script walks `packages/core/src` and its reachable imports, and fails on any module without a class and owner. proof: red-green `pnpm exec vitest run scripts/__tests__/native-engine-inventory.spec.ts` — 2026-10-04: 14 tests green; corrupted owner/stale/symbol rows make `--check --symbols` exit 1 naming each
+- [x] The committed inventory classifies every current module with zero `unclassified` entries. proof: `pnpm tsx scripts/native-engine-inventory.ts --check` — 2026-10-04: 130 modules (104 native-engine, 18 binding-glue, 3 build-tool, 5 unsupported)
+- [x] Every module classed `native-engine` names an N-key that exists in the batch index. proof: `pnpm tsx scripts/native-engine-inventory.ts --check` — 2026-10-04: keys parsed from the README table; green
+- [x] The used-symbol list covers every `three*` import in `packages/create-threenative/templates/` and `examples/`, including each `ctx.renderer.raw` property read. proof: `pnpm tsx scripts/native-engine-inventory.ts --check --symbols` — 2026-10-04: 277 symbols (named imports and `THREE.*` namespace reads) and 10 `renderer.raw` properties
 
 ## Decisions
 

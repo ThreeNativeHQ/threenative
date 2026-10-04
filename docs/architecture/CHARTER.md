@@ -6,6 +6,12 @@ limitations live in [`CURRENT-CHALLENGES.md`](../CURRENT-CHALLENGES.md), not her
 
 **Amendment log:** [`CHARTER-HISTORY.md`](CHARTER-HISTORY.md).
 
+**Amended and not yet reworded:** the owned native engine — ThreeNative now owns one C++ engine
+behind the Three.js API on every platform, replacing "a second renderer" and "the runtime is a host,
+not a renderer". The decision, the rules it touches and the gates are recorded in
+[`NATIVE-ENGINE-DECISION.md`](NATIVE-ENGINE-DECISION.md); this document's rule text changes in the
+commit that ships the first native-engine artifact.
+
 ---
 
 ## 1. What it is
