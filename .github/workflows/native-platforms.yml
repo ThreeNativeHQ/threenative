@@ -1829,6 +1829,9 @@ jobs:
           fi
           mkdir -p packages/runtime-native/artifacts/performance-contract/${{ matrix.platform }}
           if [ -f "$artifact" ]; then
+            # Preserve path-only source state before the profiler observes cleanliness.
+            git status --porcelain=v1 --untracked-files=all \
+              | tee "packages/runtime-native/artifacts/performance-contract/${{ matrix.platform }}/source-status.txt"
             node packages/runtime-native/scripts/profile-production.mjs \
               --profile production --target desktop --duration 1 --cold-starts 1 \
               --warmup 1 --repetitions 1 --hosted-software --prebuilt-artifact "$artifact" \

@@ -400,3 +400,51 @@ describe("actual native receipt writer, collector and protected verdict", () => 
     }
   });
 });
+
+it("rejects dirty desktop provenance even when the tracked diff hash is empty", () => {
+  const f = fixture();
+  try {
+    const leg = { job: "desktop", platform: "macOS" };
+    f.populate(leg);
+    const file = path.join(
+      f.root,
+      "packages/runtime-native/artifacts/performance-contract/macOS/production-evidence.json",
+    );
+    const report = JSON.parse(readFileSync(file, "utf8"));
+    report.source = { sha: f.sha, dirty: true, diffSha: digest("") };
+    writeFileSync(file, JSON.stringify(report));
+    const result = f.run("ci-native-receipts.mjs", ["--write"], {
+      GITHUB_JOB: leg.job,
+      TN_CI_NATIVE_PLATFORM: leg.platform,
+    });
+    expect(result.status, result.stderr).toBe(1);
+    expect(result.stderr).toContain("production report is stale or belongs to another runtime");
+  } finally {
+    f.cleanup();
+  }
+});
+
+it("excludes only the compiler cache from source dirt while exposing adjacent unexpected files", () => {
+  const root = makeTempDirSync("native-ccache-source-state-");
+  const git = (...args: string[]) => {
+    const result = spawnSync("git", args, { cwd: root, encoding: "utf8" });
+    expect(result.status, result.stderr).toBe(0);
+    return result.stdout.trim();
+  };
+  try {
+    git("init", "-q");
+    cpSync(path.join(repository, ".gitignore"), path.join(root, ".gitignore"));
+    git("add", ".gitignore");
+    git("-c", "user.name=CPU", "-c", "user.email=ci@example.invalid", "commit", "-qm", "candidate");
+    mkdirSync(path.join(root, ".cache/ccache"), { recursive: true });
+    writeFileSync(path.join(root, ".cache/ccache/stats"), "opaque compiler cache output");
+    expect(git("diff", "HEAD")).toBe("");
+    expect(git("status", "--porcelain=v1", "--untracked-files=all")).toBe("");
+    writeFileSync(path.join(root, ".cache/unexpected-source.mjs"), "unexpected source");
+    expect(git("status", "--porcelain=v1", "--untracked-files=all")).toContain(
+      ".cache/unexpected-source.mjs",
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

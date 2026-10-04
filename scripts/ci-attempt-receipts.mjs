@@ -9,18 +9,35 @@ export function readAttemptJobs({ repository, runId, runAttempt }, prefix = "CI_
     !/^[1-9]\d*$/u.test(runAttempt ?? "")
   )
     throw new Error(`${prefix}_RUN_IDENTITY: repository, run and attempt are required`);
-  const pages = JSON.parse(
-    execFileSync(
-      "gh",
-      [
-        "api",
-        "--paginate",
-        "--slurp",
-        `repos/${repository}/actions/runs/${runId}/attempts/${runAttempt}/jobs?per_page=100`,
-      ],
-      { encoding: "utf8", timeout: 30_000, maxBuffer: 16 * 1024 * 1024 },
-    ),
-  );
+  let response;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      response = execFileSync(
+        "gh",
+        [
+          "api",
+          "--paginate",
+          "--slurp",
+          `repos/${repository}/actions/runs/${runId}/attempts/${runAttempt}/jobs?per_page=100`,
+        ],
+        { encoding: "utf8", timeout: 30_000, maxBuffer: 16 * 1024 * 1024 },
+      );
+      break;
+    } catch (error) {
+      const stderr = String(error.stderr ?? "");
+      if (
+        attempt === 2 ||
+        error.status !== 1 ||
+        error.signal ||
+        !/error connecting to api\.github\.com/iu.test(stderr) ||
+        /HTTP (?:401|403|404|429)\b/iu.test(stderr)
+      )
+        throw error;
+      // Repeat only the same read endpoint; no stale page, receipt or permission fallback.
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 200 * (attempt + 1));
+    }
+  }
+  const pages = JSON.parse(response);
   if (
     !Array.isArray(pages) ||
     pages.length === 0 ||

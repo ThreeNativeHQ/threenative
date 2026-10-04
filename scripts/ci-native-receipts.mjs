@@ -56,10 +56,8 @@ export async function nativeBuildEvidence(
       maxBuffer: 256 * 1024 * 1024,
     });
     artifactSha256 = hash(library);
-    const { inspectNativeOptimization } = await import(
-      "../packages/runtime-native/scripts/measure-android-js-engine.mjs"
-    );
-    const provenance = inspectNativeOptimization("x86_64", artifactSha256, runtime);
+    const { inspectAndroidBuildProvenance } = await import("./ci-android-build-provenance.mjs");
+    const provenance = inspectAndroidBuildProvenance("x86_64", artifactSha256, runtime);
     const configs = provenance.buildNinjaFiles.map((file) =>
       validateNativeCache(
         readFileSync(path.join(path.dirname(file), "CMakeCache.txt"), "utf8"),

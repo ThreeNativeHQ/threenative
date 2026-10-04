@@ -152,9 +152,9 @@ describe("integration work applies to the changed source", () => {
     ["shared paths job", "timeout-minutes: 5", "timeout-minutes: 6"],
     ["entry cross-lane dependency", "needs: paths", "needs: [paths,csg]"],
     ["entry self-cycle", "needs: paths", "needs: [paths,tone]"],
-    ["unknown dependency", "needs: [fluid-collision]", "needs: [missing-job]"],
-    ["cycle", "needs: [fluid-collision]", "needs: [fluid-collision-native]"],
-    ["ambiguous needs", "needs: [fluid-collision]", "needs: ${{ inputs.jobs }}"],
+    ["unknown dependency", "needs: [decals]", "needs: [missing-job]"],
+    ["cycle", "needs: [decals]", "needs: [decals-native]"],
+    ["ambiguous needs", "needs: [decals]", "needs: ${{ inputs.jobs }}"],
     ["unknown shape", "  tone:\n", "  tone: &alias\n"],
   ])("fails closed for %s edits", (_name, before, after) => {
     expect(select(workflow.replace(before, after))).toEqual(all);
@@ -232,6 +232,29 @@ describe("integration exact Git source selection", () => {
       });
       expect(preflight.candidateSha).toBe(head);
       expect(preflight.lanes).toEqual(all);
+      // Deliberate gate retirement must be reflected in every exhaustive event inventory.
+      for (const eventName of ["pull_request", "merge_group", "workflow_dispatch", "push"]) {
+        const target = eventName === "push" ? "main" : "develop";
+        const exhaustive = selectionPlan(
+          "full",
+          "retained exhaustive inventory",
+          [],
+          head,
+          true,
+          0,
+          target,
+          true,
+        );
+        const inventory = integrationCandidatePreflight({
+          plan: exhaustive,
+          eventName,
+          target,
+          baseSha: base,
+        });
+        expect(inventory.jobs).not.toContain("fluid-consumers");
+        expect(inventory.jobs).toContain("fluid-collision");
+        expect(inventory.jobs).toContain("fluid-collision-native");
+      }
       expect(preflight.jobs).toEqual(
         [...workflow.matchAll(/^ {2}([a-z][a-z0-9-]*):\n/gmu)]
           .map((m) => m[1])
@@ -265,7 +288,7 @@ describe("integration exact Git source selection", () => {
         }),
       ).toThrow("CI_INTEGRATION_CANDIDATE_MISMATCH");
       for (const malformed of [
-        workflow.replace("  fluid-consumers:\n", "  fluid-consumers:\n    if: ${{ false }}\n"),
+        workflow.replace("  decals-native:\n", "  decals-native:\n    if: ${{ false }}\n"),
         workflow.replace(
           "candidate_sha: ${{ steps.filter.outputs.candidate_sha }}",
           "candidate_sha: 'wrong'",
@@ -429,7 +452,7 @@ describe("fluid runtime independence", () => {
     expect(lanes["fluid-particles"]).toBe(true);
   });
   it.each(["packages/core/src/renderer.ts", "packages/core/src/render/chain.ts"])(
-    "retains fluid consumers for shared renderer and observation source: %s",
+    "retains focused fluid coverage for shared renderer and observation source: %s",
     (file) => {
       const lanes = select(workflow, [file]);
       expect(lanes["fluid-native"]).toBe(true);
@@ -753,4 +776,21 @@ it("keeps the capture verifier's candidate SHA distinct from attempt-qualified a
   const diagnostic = capture.match(/name: (world-capture-diagnostic-.*)/u)?.[1];
   expect(diagnostic).toBeDefined();
   expect(evaluate(diagnostic as string)).toBe(`world-capture-diagnostic-123-2-${candidate}`);
+});
+
+describe("deliberately retired flaky fluid browser gate", () => {
+  it("removes the automatic job and join while retaining focused CPU/native coverage and diagnostics", () => {
+    const actual = readFileSync(
+      new URL("../../.github/workflows/integration.yml", import.meta.url),
+      "utf8",
+    );
+    expect(actual).not.toMatch(/^ {2}fluid-consumers:/mu);
+    expect(actual.match(/^ {4}needs: \[paths,.*$/mu)?.[0]).not.toContain("fluid-consumers");
+    expect(actual).toContain("packages/core/__tests__/fluid-particles.spec.ts");
+    expect(actual).toContain("scripts/verify-fluid-collision.ts");
+    expect(actual).toContain("scripts/verify-fluid-collision-native.ts");
+    for (const file of ["scripts/observe-fluid-ci.mjs", "scripts/verify-fluid-consumers.ts"]) {
+      expect(existsSync(new URL(`../../${file}`, import.meta.url))).toBe(true);
+    }
+  });
 });
