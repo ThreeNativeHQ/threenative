@@ -56,18 +56,3 @@ Recipes in the installed create-threenative: `node_modules/create-threenative/ag
 
 ## Optional multiplayer transport
 For online play only, import `connect` from `@threenative/core/net` with an HTTPS URL and nonempty identity credential; configure `connectTimeoutMs`, `maxReliableMessageBytes`, `maxQueuedReliableBytes`, and `maxQueuedDatagrams` (10s/65,536/1 MiB/256), use `reliable-ordered` for ordered reliable messages and bounded `unreliable` datagrams that may drop, and keep serialization, replication, prediction, interpolation, snapshots and rejoin in this game's `src/` and server. There is no fallback: unsupported WebTransport/native rejects with `TN_NET_UNAVAILABLE`; reference Go server: `packages/runtime-native/examples/webtransport/server`.
-
-## Engine detail and mirror defaults
-
-`InstancedBatch` automatically partitions a baked AutoLOD chain by each instance's projected error
-(default 4 raster pixels, using the render camera and actual viewport). Spatial partitions have
-their own bounds for each render camera; public slots and offscreen shadow casters remain intact.
-The chain survives geometry cloning and transform baking. `autoLod: false` delegates detail to the game; `autoLod.maxPixelError`
-and `hysteresis` override selection, and authored `lods` distance/geometry levels win. Missing
-rungs report `TN_INSTANCED_LOD_FAILED` with the batch name; a million-triangle batch without a
-chain reports `TN_INSTANCED_LOD_UNAVAILABLE`. Cook the asset rather than writing a second LOD loop.
-
-`WaterSurface3D` with omitted `reflection.layers` reflects terrain-sized surfaces and large
-non-instanced shadow casters, excluding instanced/skinned props. The default minimum world extent
-is 10 metres (`reflection.minSize` overrides it); `TN_WATER_REFLECTION_DEFAULT` reports the set.
-An explicit `reflection.layers` mask wins, including `1`, which draws layer-0 props again.
