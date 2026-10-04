@@ -735,3 +735,123 @@ describe("a level render's own submissions with and without GPU keys", () => {
     off.dispose();
   });
 });
+
+/** The frame three hands a node, as this harness can also clear: three's own is not writable here. */
+interface IFrame {
+  camera: unknown;
+  material: unknown;
+  object: unknown;
+  renderer: unknown;
+  scene: Scene | null;
+  time: number;
+}
+
+describe("a keyed level render under three's own compute", () => {
+  it("hands updateShadow the render's own scene, and the level settles instead of redrawing every frame", async () => {
+    vi.stubGlobal("__tnShadowGpuKeys", 1);
+    stubFixtureFetch();
+    const scene = new Scene();
+    const light = new DirectionalLight(0xffffff, 1);
+    light.position.set(60, 200, -40);
+    light.castShadow = true;
+    scene.add(light, light.target);
+    const node = new VirtualShadowNode(light, {
+      clipExtents: [...CLIP_EXTENTS],
+      mapSize: MAP_SIZE,
+      marker: false,
+      minCasterTexels: MIN_CASTER_TEXELS,
+    });
+    node.setup(builder);
+    const camera = cameraAt(FOLLOW.x, FOLLOW.z);
+    const frame: IFrame = { camera, material: null, object: null, renderer: null, scene, time: 0 };
+    let nullScenes = 0;
+    let renders = 0;
+    for (const levelNode of node.levelNodes) {
+      const level = levelNode as unknown as ILevelNode;
+      level.updateShadow = (at: NodeFrame): void => {
+        renders += 1;
+        if (at.scene !== scene) {
+          nullScenes += 1;
+          // What the stock node does with the frame it is handed: save the scene state before
+          // drawing it (three.webgpu.js:45602), which reads `scene.background`
+          // (three.webgpu.js:44561). On a null scene that is the reported TypeError.
+          throw new TypeError("Cannot read properties of null (reading 'background')");
+        }
+      };
+    }
+    let dispatches = 0;
+    let shadowDispatches = 0;
+    const renderer = {
+      compileAsync: async (): Promise<void> => {},
+      compute: (): void => {
+        dispatches += 1;
+        // What three's `Renderer.compute` does to the one frame every node shares: it runs the
+        // kernel's node updates through `Nodes.getNodeFrame()` (three.webgpu.js:62235 → 56359), which
+        // sets every field on that frame to its bare default — `scene` included (56215) — and
+        // restores `renderId` and nothing else (62249).
+        frame.camera = null;
+        frame.material = null;
+        frame.object = null;
+        frame.scene = null;
+      },
+      kind: "webgpu",
+      raw: { backend: { hasFeature: () => true } },
+    } as unknown as Parameters<WorldCells["update"]>[0];
+    frame.renderer = renderer;
+    const world = await WorldCells.load({
+      admissionBudgetMs: Number.POSITIVE_INFINITY,
+      budgets,
+      follow: { position: { ...FOLLOW } },
+      gpuScene: true,
+      loadModel: async (url: string) => modelFor(path.basename(url, ".glb").replace("_lod1", "")),
+      prefetchSeconds: 0,
+      ring: RING,
+      shadows: { cast: true, castLevels: CLIP_EXTENTS.length },
+      surface: new MeshBasicMaterial(),
+      url: "/world/world.json",
+    });
+    scene.add(world);
+    let failures = 0;
+    const step = async (at: number): Promise<void> => {
+      frame.time = at;
+      world.update(renderer, camera);
+      // Three re-establishes that frame from the render object before every node's `updateBefore`
+      // (`Nodes.getNodeFrameForRender`, three.webgpu.js:56224) — which is why a compute run outside a
+      // render is harmless, and why only the dispatch *inside* one takes the scene away.
+      frame.camera = camera;
+      frame.material = null;
+      frame.object = null;
+      frame.scene = scene;
+      const before = dispatches;
+      try {
+        node.updateBefore(frame as unknown as NodeFrame);
+      } catch {
+        failures += 1;
+      }
+      shadowDispatches += dispatches - before;
+      await flush();
+    };
+    for (let at = 1; at <= 40; at += 1) await step(at);
+    expect(world.stats().loadsInFlight, "the world streamed").toBe(0);
+    expect(renders, "no level rendered at all").toBeGreaterThan(0);
+    // Proof the arm under test ran: a keyed level render dispatches its own clear-and-cull pair from
+    // inside `updateBefore`, and the main pass's own pair is counted separately above.
+    expect(shadowDispatches, "a level render never dispatched its own keys").toBeGreaterThan(0);
+    expect(nullScenes, "a compute took the render's own scene off the frame").toBe(0);
+    expect(failures, "a level render threw inside the render it was dispatched from").toBe(0);
+    // The walk then holds still. Nothing moved and nothing streamed in, so a window that keeps its
+    // map has nothing to redraw: every level has settled. The throw above is what stopped this — the
+    // light's `needsUpdate` is cleared after the level loop, so a frame that threw mid-loop left it
+    // set and asked every level again, which is the 63 → 260 the walk reported.
+    const settled = renders;
+    for (let at = 41; at <= 50; at += 1) await step(at);
+    console.info(
+      `TN_SHADOW_GPU_KEYS_FRAME renders=${String(settled)} then=${String(renders - settled)} ` +
+        `dispatches=${String(dispatches)}/${String(shadowDispatches)} ` +
+        `nullScenes=${String(nullScenes)} failures=${String(failures)}`,
+    );
+    expect(renders - settled, "levels redrew with a still camera and a resident world").toBe(0);
+    world.dispose();
+    node.dispose();
+  });
+});
