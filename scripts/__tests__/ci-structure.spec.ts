@@ -1078,9 +1078,44 @@ describe("CI pipeline structure", () => {
       ".github/workflows/native-platforms.yml",
       // publish-android-v8 writes the release; android-emulator-parity is CPU-bound SwiftShader that
       // overran its 45-minute budget on a pinned 4-thread slot (run 37082733117).
-      new Set(["android-emulator-parity", "publish-android-v8"]),
+      new Set([
+        "android-emulator-parity",
+        "publish-android-v8",
+        "web-reference",
+        "android-v8-source",
+      ]),
     ],
   ]);
+  it.each([
+    ["web-reference", "native-web-reference-${{ needs.scope.outputs.candidate_sha }}"],
+    ["android-v8-source", "android-v8-${{ needs.scope.outputs.candidate_sha }}"],
+  ])(
+    "keeps native platform prerequisite %s hosted with exact candidate artifacts",
+    async (job, artifact) => {
+      const native = await readFile(
+        path.join(repo, ".github/workflows/native-platforms.yml"),
+        "utf8",
+      );
+      const section = requiredJob(native, job);
+      // An idle-pool variable is not a reservation. These producers must remain hosted even
+      // when both CI and Integration select the same advertised local capacity in a burst.
+      expect(section.match(/^ {4}runs-on: (.+)$/mu)?.[1]).toBe("ubuntu-24.04");
+      expect(declaredNeeds(section)).toEqual(["scope"]);
+      expect(section).toContain("TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}");
+      expect(section).toContain("ref: ${{ needs.scope.outputs.candidate_sha }}");
+      expect(section).toContain(`name: ${artifact}`);
+      expect(section).toContain("if-no-files-found: error");
+      const android = requiredJob(native, "android-emulator-parity");
+      expect(declaredNeeds(android)).toEqual(["scope", "web-reference", "android-v8-source"]);
+      expect(android).toContain(`name: ${artifact}`);
+      if (job === "android-v8-source") {
+        expect(section).toContain("uses: ./.github/actions/android-v8-source");
+        expect(section).toContain("recipe-hash: ${{ steps.v8.outputs.recipe-hash }}");
+        expect(section).toContain("published: ${{ steps.v8.outputs.published }}");
+      }
+    },
+  );
+
   // PRD-480's light lane: the jobs whose whole work is a script or a summary — no workspace build,
   // no `pnpm install` and no test suite. `scope` classifies the diff, `build` and `golden-path`
   // assert an upstream verdict, `ci-required` is the merge verdict and `run-summary` writes the
@@ -1727,7 +1762,9 @@ describe("CI pipeline structure", () => {
     expect(lane).toContain('for scenario in "${scenarios[@]}"');
     expect(lane).toContain('test "${#scenarios[@]}" -gt 0');
     expect(lane).not.toContain("SHARD");
-    expect(lane).toContain("max-parallel: 4");
+    expect(lane).toContain("max-parallel: 8");
+    expect(lane).toContain("fail-fast: false");
+    expect(lane).toContain("runs-on: ubuntu-24.04");
   });
 
   it("preserves platformer's unique production artifact in its installed scenario job", async () => {
