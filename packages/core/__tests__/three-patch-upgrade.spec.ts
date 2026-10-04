@@ -150,6 +150,23 @@ const RECOMPILE_BLOBS = {
   "build/three.webgpu.nodes.js": "81c24b2e05e5047e1a02410a2056949d39b1a05c",
 };
 
+// Exact published PR398 b32342b9 (63aa4b9b) and develop 15adf350 (c2e051df) blobs.
+const TEMPORAL_PUBLISHED_BLOBS = {
+  "build/three.webgpu.js": "efd0e16719cc7bbef1fbc18c241948e25eb85881",
+  "build/three.webgpu.nodes.js": "1b3a6e96291af0077f7f247040e657cf4aa0cb33",
+  "src/renderers/webgpu/WebGPUBackend.js": "69b8b67fdeec5be24de34d8382beda9020642f77",
+  "src/renderers/webgpu/utils/WebGPUTextureUtils.js": "ff8ee2dbace2816105aa7152891c04f2333f33e8",
+};
+
+const FLUID_DEVELOP_BLOBS = {
+  "build/three.webgpu.js": "5c5ef3c06885c724c1c2288295e7e68483ee1f6e",
+  "build/three.webgpu.nodes.js": "3d47c1151d563f1e0ae2bb4b92edd057fe0df2b3",
+  "src/nodes/accessors/Instance.js": "ed00e75ba4fd7b49343cfada26eacdef8940a4f4",
+  "src/nodes/accessors/Skinning.js": "aaeea633a8ece291be5faf868e312867ddad01b6",
+  "src/renderers/common/Renderer.js": "89b33efb80ca1dcb9db931071dfda62ffdba3526",
+  "src/renderers/webgpu/utils/WebGPUAttributeUtils.js": "83bbe189915c8450c4e14108e6a3f4ed98c4b016",
+};
+
 function blobHash(contents: string): string {
   return createHash("sha1")
     .update(`blob ${Buffer.byteLength(contents)}\0`)
@@ -196,6 +213,8 @@ describe.each([
   ["develop dcbc5131", PRIOR_BLOBS],
   ["published PR393 455ed1dd", PUBLISHED_BLOBS],
   ["published PR393 daef254c", RECOMPILE_BLOBS],
+  ["published PR398 63aa4b9b", TEMPORAL_PUBLISHED_BLOBS],
+  ["develop fluid c2e051df", FLUID_DEVELOP_BLOBS],
 ])("actual previously shipped Three files (%s)", (_name, priorBlobs) => {
   it.each([false, true])(
     "upgrades the exact prior patch and remains idempotent (CRLF=%s)",

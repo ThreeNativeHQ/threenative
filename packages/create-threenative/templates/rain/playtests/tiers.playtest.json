@@ -12,6 +12,21 @@
   },
   "steps": [
     {
+      "kind": "click",
+      "at": { "element": { "id": "quality" } },
+      "waitTicks": 2,
+      "release": true
+    },
+    { "kind": "input", "press": "Escape", "waitTicks": 2, "release": true },
+    { "kind": "input", "press": "End", "waitTicks": 2, "release": true },
+    {
+      "kind": "input",
+      "press": "ArrowUp",
+      "label": "requested-high",
+      "waitTicks": 2,
+      "release": true
+    },
+    {
       "kind": "wait",
       "label": "high",
       "waitTicks": 30,

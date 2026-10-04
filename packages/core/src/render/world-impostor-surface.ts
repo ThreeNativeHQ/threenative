@@ -95,6 +95,12 @@ const UNSYNCED = new Set(["_listeners", "id", "uuid", "version"]);
  * Maps a source material authored against the source geometry's UVs. Every one of them refers to a
  * UV layout the two-triangle quad does not have, so each is cleared and albedo/normals come only
  * from the baked atlas.
+ *
+ * The whole family is here, not the classic set: a physical source's `transmissionMap`, `thicknessMap`
+ * and specular/iridescence pair are sampled the same way three samples `map` — through
+ * `attribute("uv")` — and a quad with no `uv` at all makes every one of them a
+ * `Vertex attribute "uv" not found on geometry` warning on every build of that material, for a sample
+ * the sampler was already returning as zero.
  */
 const GEOMETRY_MAPS = [
   "map",
@@ -115,6 +121,11 @@ const GEOMETRY_MAPS = [
   "sheenRoughnessMap",
   "iridescenceMap",
   "anisotropyMap",
+  "iridescenceThicknessMap",
+  "specularColorMap",
+  "specularIntensityMap",
+  "thicknessMap",
+  "transmissionMap",
 ] as const;
 
 /** One `mat4` node per CPU instance-matrix attribute, derived once and kept live with its source. */

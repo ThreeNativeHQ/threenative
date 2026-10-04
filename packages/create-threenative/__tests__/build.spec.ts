@@ -17,6 +17,7 @@ import {
   nativeOrientation,
   parseBuildArgs,
   publishStagedArtifact,
+  resolveRuntimeAssetCapabilities,
   runtimeHasWebAssembly,
   stagingPath,
   writePackagingConfig,
@@ -878,7 +879,7 @@ cpSync("public", out, { recursive: true });
     );
   });
 
-  it("guards web-only UI on every native target and WASM on mobile only", async () => {
+  it("guards web-only UI on every native target and WASM without a known desktop V8 artifact", async () => {
     const root = await makeTempDir("threenative-mobile-bundle-");
     roots.push(root);
     const native = path.join(root, "native.js");
@@ -893,7 +894,15 @@ cpSync("public", out, { recursive: true });
         /TN_NATIVE_WEB_ONLY_UI.*src\/main\.ts.*PRD-051/u,
       );
     }
-    await expect(assertNativeBundleCompatible(wasm, "desktop")).resolves.toBeUndefined();
+    await expect(assertNativeBundleCompatible(wasm, "desktop")).rejects.toThrow(
+      "TN_NATIVE_WASM_UNSUPPORTED",
+    );
+    const desktopV8 = resolveRuntimeAssetCapabilities(
+      "desktop",
+      path.resolve("packages/create-threenative/src/build.ts"),
+      (() => ({ status: 0, stdout: "+ v8 build" })) as never,
+    );
+    await expect(assertNativeBundleCompatible(wasm, "desktop", desktopV8)).resolves.toBeUndefined();
     for (const target of ["android", "ios"] as const) {
       await expect(assertNativeBundleCompatible(wasm, target)).rejects.toThrow(
         /TN_NATIVE_WASM_ON_MOBILE.*src\/game\.ts.*PRD-052/u,
@@ -966,14 +975,16 @@ describe("runtime WebAssembly capability", () => {
     ).toBe(true);
   });
 
-  it("keeps the WASM desktop backend when the runtime is unknown or unreadable", () => {
-    expect(runtimeHasWebAssembly(undefined)).toBe(true);
-    expect(runtimeHasWebAssembly("/no/such/runtime")).toBe(true);
-    expect(runtimeHasWebAssembly(runtime, (() => ({ status: 1, stdout: "" })) as never)).toBe(true);
+  it("refuses WASM when the runtime is unknown or unreadable", () => {
+    expect(runtimeHasWebAssembly(undefined)).toBe(false);
+    expect(runtimeHasWebAssembly("/no/such/runtime")).toBe(false);
+    expect(runtimeHasWebAssembly(runtime, (() => ({ status: 1, stdout: "" })) as never)).toBe(
+      false,
+    );
     expect(
       runtimeHasWebAssembly(runtime, (() => {
         throw new Error("EACCES");
       }) as never),
-    ).toBe(true);
+    ).toBe(false);
   });
 });

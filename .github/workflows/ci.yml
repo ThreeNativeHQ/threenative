@@ -4,6 +4,12 @@ on:
   push:
     branches:
       - main
+      # PRD-481 phase 2: the cache-warm lane. A pull request's caches are scoped to
+      # `refs/pull/N/merge`, which no other pull request can read, so without a run on the base
+      # branch every pull request into develop rebuilt the native host and the workspace dist. A
+      # push here selects `warm`: build-artifacts and test-native publish those caches, nothing else
+      # runs, and no push cancels another (see `concurrency` below).
+      - develop
   pull_request:
     branches:
       - main
@@ -30,7 +36,7 @@ permissions:
 
 jobs:
   # This is deliberately a native-Node decision job: a pull request must prove its complete
-  # merge-base diff before it is allowed to omit the board. Every other event is full by policy.
+  # merge-base diff before it is allowed to omit the board; the queue uses its whole candidate diff.
   scope:
     name: Change scope
     if: ${{ !github.event.pull_request.draft }}
@@ -59,10 +65,12 @@ jobs:
           TN_CI_EVENT: ${{ github.event_name }}
           # A merge group reports no `base_ref`; its target is on the event. Passing it is what keeps
           # a develop merge group on the reduced native matrix and a main one on the full matrix.
-          TN_CI_TARGET: ${{ github.base_ref || github.event.merge_group.base_ref }}
+          # A push reports neither, and its target is the branch it landed on — which is what selects
+          # the cache-warm lane on develop and keeps a push to main full.
+          TN_CI_TARGET: ${{ github.base_ref || github.event.merge_group.base_ref || (github.event_name == 'push' && github.ref_name) || '' }}
           TN_CI_FORCE_FULL: ${{ vars.TN_CI_FORCE_FULL }}
-          TN_CI_BASE: ${{ github.event.pull_request.base.sha }}
-          TN_CI_HEAD: ${{ github.event.pull_request.head.sha }}
+          TN_CI_BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+          TN_CI_HEAD: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
@@ -93,7 +101,7 @@ jobs:
   # The cheap gates now start together, and the expensive ones name the gate they wait on.
   typecheck:
     needs: [scope, build-artifacts]
-    if: ${{ needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'ci' }}
+    if: ${{ (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template') || needs.scope.outputs.selection == 'ci' }}
     runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 15
     env:
@@ -123,7 +131,7 @@ jobs:
     # at promotion, so this job is skipped rather than spending a runner on inert prose. A reused
     # tree skips it too — every gate it would run here already passed in the run that tested this
     # exact tree, and `!= 'prose'` would otherwise have bought a second full lint.
-    if: needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'instructions' || needs.scope.outputs.selection == 'ci'
+    if: (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template') || needs.scope.outputs.selection == 'instructions' || needs.scope.outputs.selection == 'ci'
     runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 10
     env:
@@ -151,9 +159,10 @@ jobs:
             scripts/__tests__/check-doc-links.spec.ts \
             scripts/__tests__/evidence-budget.spec.ts \
             scripts/__tests__/evidence-citations.spec.ts \
-            scripts/__tests__/sync-agent-docs.spec.ts \
-            scripts/__tests__/ci-structure.spec.ts \
-            scripts/__tests__/ci-needs.spec.ts
+            scripts/__tests__/sync-agent-docs.spec.ts
+          if [ '${{ needs.scope.outputs.selection }}' = instructions ]; then
+            pnpm exec vitest run scripts/__tests__/ci-structure.spec.ts scripts/__tests__/ci-needs.spec.ts
+          fi
 
       - name: Prepare instruction contract dependencies
         if: ${{ needs.scope.outputs.selection != 'full' && fromJSON(needs.scope.outputs.plan).checks.instructions }}
@@ -226,13 +235,12 @@ jobs:
   # one more runner, so four is the whole of it.
   test-unit:
     needs: [scope, build-artifacts]
-    if: ${{ needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'ci' }}
+    if: ${{ (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template') || needs.scope.outputs.selection == 'ci' }}
     runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
-      matrix:
-        shard: ["1/4", "2/4", "3/4", "4/4"]
+      matrix: ${{ fromJSON(needs.scope.outputs.plan).unitMatrix }}
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
       TN_SUITE_PHASES: unit
@@ -260,11 +268,27 @@ jobs:
           save-bundles: "false"
           pack-archives: "false"
       - uses: ./.github/actions/playwright-chromium
-      - run: pnpm test
+        if: needs.scope.outputs.selection == 'full'
+      - name: Run impacted unit contracts
+        run: |
+          case '${{ needs.scope.outputs.selection }}' in
+            ci) pnpm exec vitest run scripts/__tests__/ci-*.spec.ts ;;
+            template)
+              pnpm exec vitest run packages/create-threenative/__tests__ scripts/__tests__/verify-golden-path.spec.ts
+              if [ '${{ fromJSON(needs.scope.outputs.plan).checks.ci }}' = true ]; then
+                pnpm exec vitest run scripts/__tests__/ci-*.spec.ts
+              fi
+              ;;
+            full) pnpm test ;;
+            *) echo 'CI_UNIT_SELECTION_INVALID' >&2; exit 1 ;;
+          esac
 
   test-native:
     needs: [scope, build-artifacts]
-    if: ${{ needs.scope.outputs.selection == 'full' }}
+    # `warm` too: this job saves `native-build-*`, `native-third-party-*` and its ccache through the
+    # cache action's post step, which is the product every pull request into develop reads. No step
+    # below is gated on a full selection, so a develop push warms them.
+    if: ${{ (needs.scope.outputs.selection == 'full' && fromJSON(needs.scope.outputs.plan).jobs['test-native'].required) || needs.scope.outputs.selection == 'warm' }}
     runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 75
     env:
@@ -628,13 +652,10 @@ jobs:
 
   golden-path-template:
     needs: [scope, build-artifacts]
-    if: ${{ needs.scope.outputs.selection == 'full' }}
+    if: ${{ (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template') }}
     strategy:
       fail-fast: false
-      matrix:
-        template:
-          - starter
-          - platformer
+      matrix: ${{ fromJSON(needs.scope.outputs.plan).goldenMatrix }}
     # Hosted on purpose: ~25 short template legs run all at once on hosted runners while builds and
     # tests hold the local pool. On 5 local slots these legs waited 17-25 min for a runner (run
     # 37070815769); sharing the board across both pools is what shortens wall time.
@@ -763,71 +784,16 @@ jobs:
     # non-visually on every PR too, so a template regression is reported by the PR that caused it
     # instead of by the merge that shipped it. `golden-path` above still owns the visual proof.
     needs: [scope, build-artifacts]
-    if: ${{ needs.scope.outputs.selection == 'full' }}
-    # One leg per template was one leg per *unit of naming*, not per unit of work: on run
-    # 33734775193 `minimal` finished in 80s and `platformer` took 407s, and the run is only ever as
-    # fast as its slowest leg. Timestamping platformer's step splits it as ~74s of scaffold install
-    # and typecheck plus 15 scenarios at ~20s each, so the scenarios are what makes it long and
-    # they shard cleanly. Every slice then has to absorb its own ~65s of leg overhead — 36-51s of
-    # checkout, install and Playwright before the step, 10-42s of target install, typecheck and
-    # display setup inside it — so the number of shards is set by the slowest slice plus that
-    # overhead, not by the total.
-    #
-    # Per-scenario seconds on run 37049488719 — sailing again on 37071464562, which measured its
-    # two slices at 168s and 467s — and the slowest slice each count predicts:
-    #   platformer 15 at ~20s -> 3 -> ~150s measured.        starter 24 -> 3 -> ~210s measured.
-    #   puzzle    10, 399s of work -> 2 -> ~197s measured.   runner/snow/rts/racing/tower-defense/
-    #   action-rpg/minimal keep one leg each; all measured under 280s.
-    #   shooter 26 at 32-47s, 922s total -> 4 -> 363s, 5 -> 356s, 6 -> 288s. Six is the count that
-    #     clears six minutes, and 65s of that is the leg overhead.
-    #   rain 5 at 331/202/222/78/61 -> 5 -> 396s. Five is its floor: five scenarios, so one per
-    #     slice, and its heaviest scenario alone is 331s of software rendering. It cannot reach six
-    #     minutes at any shard count and is left honest rather than split past its scenario count.
-    #   sailing 6 at 55/247/30/98/28/59 -> 2 -> 467s measured, 3 -> 335s. The second slice is
-    #     the change: at two it carried the 247s float-after-the-run-ends alone with the sails and
-    #     win scenarios for 404s of scenario work, 63s over the leg budget. Three puts one of the
-    #     heavy scenarios on each leg and the worst of them at ~275s of work plus ~60s of overhead.
-    #
-    # Every scenario still runs. `shard` selects a slice of the same classifier output the whole
-    # lane has always used, and the step fails closed if the slices do not add back up to the list.
+    if: ${{ (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template') }}
+    # One scaffold/install/typecheck/cook per template. Every nonvisual scenario still executes;
+    # splitting identical setup across 29 jobs wastes scarce slots at max-parallel 4.
     strategy:
       fail-fast: false
-      # Initial cap for the PRD-373 45-job / 6–18 minute queue baseline; measure before raising.
       max-parallel: 4
-      matrix:
-        include:
-          - { template: action-rpg, shard: "1/1" }
-          - { template: minimal, shard: "1/1" }
-          - { template: platformer, shard: "1/3" }
-          - { template: platformer, shard: "2/3" }
-          - { template: platformer, shard: "3/3" }
-          - { template: puzzle, shard: "1/2" }
-          - { template: puzzle, shard: "2/2" }
-          - { template: racing, shard: "1/1" }
-          - { template: rain, shard: "1/5" }
-          - { template: rain, shard: "2/5" }
-          - { template: rain, shard: "3/5" }
-          - { template: rain, shard: "4/5" }
-          - { template: rain, shard: "5/5" }
-          - { template: rts, shard: "1/1" }
-          - { template: runner, shard: "1/1" }
-          - { template: sailing, shard: "1/3" }
-          - { template: sailing, shard: "2/3" }
-          - { template: sailing, shard: "3/3" }
-          - { template: shooter, shard: "1/6" }
-          - { template: shooter, shard: "2/6" }
-          - { template: shooter, shard: "3/6" }
-          - { template: shooter, shard: "4/6" }
-          - { template: shooter, shard: "5/6" }
-          - { template: shooter, shard: "6/6" }
-          - { template: snow, shard: "1/1" }
-          - { template: starter, shard: "1/3" }
-          - { template: starter, shard: "2/3" }
-          - { template: starter, shard: "3/3" }
-          - { template: tower-defense, shard: "1/1" }
-    # Balanced like the rest: the pool advertises itself only while a runner is idle, so these legs
-    # take local slots when free and overflow to hosted otherwise, never queueing behind the pool.
-    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+      matrix: ${{ fromJSON(needs.scope.outputs.plan).templateMatrix }}
+    # Hosted on purpose: template legs use hosted while the balancer routes builds and tests
+    # to the local pool, avoiding one routing variable sending the whole burst to a single pool.
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
@@ -878,22 +844,9 @@ jobs:
           scenario_list=$(node "$GITHUB_WORKSPACE/scripts/non-visual-scenarios.mjs" "$target")
           mapfile -t scenarios <<< "$scenario_list"
           test "${#scenarios[@]}" -gt 0
-          # The classifier's order is stable, so a round-robin slice is deterministic and every
-          # scenario belongs to exactly one shard. Round-robin rather than a contiguous block
-          # because the expensive scenarios are not evenly distributed through the list.
-          index="${SHARD%/*}"
-          count="${SHARD#*/}"
-          test "$index" -ge 1 && test "$index" -le "$count"
-          mine=()
-          for position in "${!scenarios[@]}"; do
-            if [ "$(( position % count + 1 ))" -eq "$index" ]; then mine+=("${scenarios[$position]}"); fi
-          done
-          # A shard that selected nothing is a lane reporting green on an empty set, which is the
-          # one thing this must never do.
-          test "${#mine[@]}" -gt 0
-          echo "shard $SHARD of ${{ matrix.template }}: ${#mine[@]} of ${#scenarios[@]} scenarios"
+          echo "${{ matrix.template }}: ${#scenarios[@]} nonvisual scenarios"
           scenario_args=()
-          for scenario in "${mine[@]}"; do scenario_args+=(--scenario "$scenario"); done
+          for scenario in "${scenarios[@]}"; do scenario_args+=(--scenario "$scenario"); done
           # `--server-timeout` is the offline asset cook, not the game: a fresh scaffold's `pnpm dev`
           # now holds its port until the first cook settles (the templates await `handle.ready`), and
           # that cook is 19 s of KTX2 on a cold 4096x2048 equirect here. The runner's 15 s default is
@@ -902,8 +855,14 @@ jobs:
           pnpm --dir "$target" exec threenative-playtest "${scenario_args[@]}" \
             --browser-recipe webgpu --headed --no-screenshots --server-timeout 120000 \
             --server-command "pnpm dev --host 127.0.0.1 --port \$PORT --strictPort"
-        env:
-          SHARD: ${{ matrix.shard }}
+      # The former second golden leg uniquely built platformer's production artifact. Retain that
+      # proof on its already-installed scaffold, without repeating the generic install/dev journey.
+      - name: Verify the platformer production artifact
+        if: matrix.template == 'platformer' && !contains(fromJSON(needs.scope.outputs.plan).goldenMatrix.template, 'platformer')
+        run: |
+          target="$RUNNER_TEMP/threenative-platformer"
+          pnpm --dir "$target" exec threenative build --target web
+          test -s "$target/dist/index.html"
 
   # `golden-path` is a required status check in the `main protection` ruleset, and required checks
   # match the reported context by exact string. A matrix job does not report its own name — it
@@ -925,7 +884,7 @@ jobs:
     # by the next push, and `golden-path` the only red check on the board. A cancelled run must read
     # as cancelled, so the skip is correct there; it still cannot be mistaken for a pass, because a
     # cancelled run has no passing checks to merge on.
-    if: ${{ !cancelled() && needs.scope.outputs.selection == 'full' }}
+    if: ${{ !cancelled() && (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template') }}
     runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER_LIGHT) && 'ubuntu-24.04' || vars.TN_RUNNER_LIGHT }}
     timeout-minutes: 5
     env:
@@ -1020,7 +979,9 @@ jobs:
   # the protected build join above requires both this producer and the complete native lane.
   build-artifacts:
     needs: scope
-    if: ${{ needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'ci' }}
+    # `warm` too: this job runs the shared workspace-dist action as the run's only saver, and the
+    # `workspace-dist-*` entry it publishes is what every pull request into develop restores.
+    if: ${{ (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template') || needs.scope.outputs.selection == 'ci' || needs.scope.outputs.selection == 'warm' }}
     runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 20
     env:
@@ -1130,7 +1091,7 @@ jobs:
 
   budgets:
     needs: [scope, build-artifacts]
-    if: ${{ needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'ci' }}
+    if: ${{ (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template') || needs.scope.outputs.selection == 'ci' }}
     runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 15
     env:
@@ -1189,7 +1150,7 @@ jobs:
     # Skipped for Markdown-only PRs: the nightly develop run and promotions still scan the full
     # git history, so an inert prose PR does not spend a runner here. Skipped for a reused tree for
     # the same reason every other gate is: the run that tested this exact tree already scanned it.
-    if: needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'instructions' || needs.scope.outputs.selection == 'ci'
+    if: (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template') || needs.scope.outputs.selection == 'instructions' || needs.scope.outputs.selection == 'ci'
     # PR-only until 2026-09-01 (owner call): a push to main skipped the whole job, so the board
     # read a skip where the secrets scan should have been. Pushes now scan the repository's full
     # git history — gitleaks' default git mode — which is strictly stronger than the incremental
@@ -1267,6 +1228,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          fetch-depth: 0
           ref: ${{ needs.scope.outputs.candidate_sha || github.sha }}
       - name: Reject every unsuccessful or missing selected job
         env:
@@ -1275,8 +1237,8 @@ jobs:
           TN_CI_CUTOVER: ${{ vars.TN_DEVELOP_CI_ENABLED }}
           TN_CI_BASE_REF: ${{ github.base_ref }}
           TN_CI_HEAD_REF: ${{ github.head_ref }}
-          TN_CI_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          TN_CI_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          TN_CI_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+          TN_CI_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
           GH_TOKEN: ${{ github.token }}
         run: node scripts/ci-required.mjs
 
@@ -1316,7 +1278,7 @@ jobs:
       - ci-required
     # `!cancelled()` and not `always()`, for the reason golden-path gives above: a cancelled run
     # has nothing to report and its summary would only describe the cancellation.
-    if: ${{ !cancelled() && (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'ci') }}
+    if: ${{ !cancelled() && (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'ci' || needs.scope.outputs.selection == 'warm') }}
     runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER_LIGHT) && 'ubuntu-24.04' || vars.TN_RUNNER_LIGHT }}
     timeout-minutes: 5
     permissions:

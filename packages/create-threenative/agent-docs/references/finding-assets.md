@@ -135,6 +135,23 @@ Then load the returned path the ordinary way:
 `ctx.assets.model("fab/soul-cave/.../SM_S_Soul_Statue.glb")`. The normal asset compiler picks the
 GLBs up from `assets/` with no extra configuration.
 
+**Cook the pack with the default settings. `models: "none"` and `textures: "none"` in
+`threenative.config.ts` are not a fix, and a reason to reach for them is a bug report, not a
+workaround.** A converted Fab pack is ordinary input to that cook, and the cook is where an
+expensive import stops being expensive: embedded PNG and WebP maps are transcoded to KTX2 and
+capped, mesh attributes are quantized and Meshopt-compressed, and a `MASK` (alpha-cutout)
+primitive is handed a discrete LOD chain, so the LOD0 triangle count in the GLB is not the
+triangle count the scene pays for. One measured tree: `SM_EuropeanHornbeam_Forest_01.glb` cooks
+126,934,280 → 26,428,684 B, its six embedded PNGs → KTX2 (45.4 MB → 16.4 MB), and its
+755,677-triangle foliage primitive down to a 5.1% far rung. Turning a pass off ships every source
+byte verbatim instead, counts all of them against `assets.budget.uncooked`, and is precisely what
+makes `threenative build` fail with `TN_ASSETS_BUDGET_EXCEEDED` — read `dist.build-report.json`
+before you conclude a pack is too big. An extension the cook owns no pass for (`.dna`,
+`.strands.bin`, a vendor data file) is copied through and still resolves through the same manifest
+entry, so nothing needs `public/` to serve it. Ignore what the cook writes beside the manifest —
+`public/basis/`, `public/shared/` and `public/bake.receipt.json` are outputs too, and a
+content-addressed name is not the only output name.
+
 What the import will and will not do:
 
 - **A pack of uncooked editor assets cannot be converted at all**, and this is the common case for

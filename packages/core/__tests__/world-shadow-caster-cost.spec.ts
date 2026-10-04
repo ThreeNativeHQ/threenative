@@ -289,7 +289,7 @@ describe("a streamed world's shadow invalidation", () => {
     world.dispose();
   });
 
-  it("keeps a ground cover asset's wide caster off every wide level, and off no fine one", async () => {
+  it("keeps resolvable ground-cover shadows on coarse levels as well as the fine level", async () => {
     const scene = new Scene();
     const light = new DirectionalLight(0xffffff, 1);
     // Off vertical: a sun exactly overhead leaves the level camera's own placement degenerate,
@@ -351,16 +351,15 @@ describe("a streamed world's shadow invalidation", () => {
       "ground cover lost its caster clusters",
     ).toBe(true);
 
-    // Only the finest level renders the small-caster layer, so only it draws a fern: the tree's wide
-    // caster is a coarse level's draw and stays one.
+    // Both levels resolve this fixture's metre-wide parts; authored height cannot drop them.
     expect(
       ((draws.masks.get(0) ?? 0) & SMALL_MASK) !== 0,
       "the finest level did not render the small-caster layer",
     ).toBe(true);
     expect(
       (draws.masks.get(1) ?? 0) & SMALL_MASK,
-      "a wide level rendered the small-caster layer",
-    ).toBe(0);
+      "the coarse level lost resolved small casters",
+    ).toBe(SMALL_MASK);
     const fine = draws.submitted.get(0) ?? new Set<string>();
     const coarse = draws.submitted.get(1) ?? new Set<string>();
     expect(
@@ -369,8 +368,8 @@ describe("a streamed world's shadow invalidation", () => {
     ).toBe(true);
     expect(
       [...coarse].some((name) => name.startsWith(`${SMALL_ASSET}:`)),
-      "a wide level still drew a fern's caster",
-    ).toBe(false);
+      "the coarse level lost a resolved ground-cover caster",
+    ).toBe(true);
     expect(
       [...coarse].some((name) => name.startsWith(`${TALL_ASSET}:`)),
       "a wide level stopped drawing a tree's caster",

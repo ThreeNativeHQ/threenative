@@ -1,5 +1,69 @@
 diff --git a/build/three.webgpu.js b/build/three.webgpu.js
-index 7aa62adb9e78ba8f0a67709d3141bf93c67419cc..efd0e16719cc7bbef1fbc18c241948e25eb85881 100644
+index 148869ee7f18c62570ac1eafb7df5775e5a89581..9166d6f2dd1ac1505fa27b625f1976dff6b8ebc1 100644
+--- a/build/three.webgpu.js
++++ b/build/three.webgpu.js
+@@ -18860,7 +18860,15 @@ function getPreviousSkinnedPosition( skinnedMesh, bindMatrixNode, bindMatrixInve
+ 
+ 	}
+ 
+-	return getSkinnedPosition( data.node, positionPrevious, bindMatrixNode, bindMatrixInverseNode, skinIndexNode, skinWeightNode );
++	// The previous bones and world matrix must use the same frame's bind inverse.
++	const previousBindMatrixInverse = uniform( skinnedMesh.bindMatrixInverse, 'mat4' ).onObjectUpdate( ( { object } ) => {
++
++		const mesh = object?.isSkinnedMesh === true ? object : skinnedMesh;
++		return mesh[ Symbol.for( 'threenative.velocity.previousBindMatrixInverse' ) ] ?? mesh.bindMatrixInverse;
++
++	} );
++
++	return getSkinnedPosition( data.node, positionPrevious, bindMatrixNode, previousBindMatrixInverse, skinIndexNode, skinWeightNode );
+ 
+ }
+ 
+@@ -76896,7 +76904,12 @@ class WebGPUTextureUtils {
+ 
+ 		}
+ 
+-		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat ) {
++		// Compute-only 3D storage has no attachment or render-pass mipmap consumer.
++		// Requesting the unused attachment usage rejects the texture on wgpu-native.
++		const computeOnlyStorage3D = dimension === GPUTextureDimension.ThreeD && texture.isStorageTexture === true &&
++			texture.isRenderTargetTexture !== true && options.renderTarget === undefined && options.needsMipmaps !== true;
++
++		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat && ! computeOnlyStorage3D ) {
+ 
+ 			usage |= GPUTextureUsage.RENDER_ATTACHMENT;
+ 
+@@ -84140,6 +84153,19 @@ class WebGPUBackend extends Backend {
+ 		 */
+ 		this.gpu = null;
+ 
++		/**
++		 * A reference to the adapter this device was requested from.
++		 *
++		 * The adapter owns the wire instance every operation in flight completes on. Chromium
++		 * collects an adapter the page stops referencing and the instance goes with it, so every
++		 * operation still running completes with a shutdown the page reads as
++		 * 'A valid external Instance reference no longer exists.' and presentation stops for.
++		 *
++		 * @type {?GPUAdapter}
++		 * @default null
++		 */
++		this.adapter = null;
++
+ 		/**
+ 		 * A reference to the device.
+ 		 *
+@@ -84256,6 +84282,8 @@ class WebGPUBackend extends Backend {
+ 
+ 			const adapter = this.gpu !== null ? await this.gpu.requestAdapter( adapterOptions ) : null;
+ 
++			this.adapter = adapter;
++
+ 			if ( adapter === null ) {
+ 
+ 				throw new Error( 'THREE.WebGPUBackend: Unable to create WebGPU adapter.' );
+diff --git a/build/three.webgpu.js b/build/three.webgpu.js
+index 5c5ef3c06885c724c1c2288295e7e68483ee1f6e..9166d6f2dd1ac1505fa27b625f1976dff6b8ebc1 100644
 --- a/build/three.webgpu.js
 +++ b/build/three.webgpu.js
 @@ -18539,7 +18539,7 @@ const instance = /*@__PURE__*/ Fn( ( [ matrices, colors = null ], builder ) => {
@@ -70,7 +134,7 @@ index 7aa62adb9e78ba8f0a67709d3141bf93c67419cc..efd0e16719cc7bbef1fbc18c241948e2
  		this._nodes.updateForRender( renderObject );
  		this._bindings.updateForRender( renderObject );
  
-@@ -81386,6 +81410,15 @@ class WebGPUAttributeUtils {
+@@ -81391,6 +81415,15 @@ class WebGPUAttributeUtils {
  			buffer.unmap();
  
  			bufferData.buffer = buffer;
@@ -86,7 +150,7 @@ index 7aa62adb9e78ba8f0a67709d3141bf93c67419cc..efd0e16719cc7bbef1fbc18c241948e2
  
  		}
  
-@@ -81406,6 +81439,11 @@ class WebGPUAttributeUtils {
+@@ -81411,6 +81444,11 @@ class WebGPUAttributeUtils {
  		const bufferData = backend.get( bufferAttribute );
  		const buffer = backend.get( bufferAttribute ).buffer;
  
@@ -98,7 +162,382 @@ index 7aa62adb9e78ba8f0a67709d3141bf93c67419cc..efd0e16719cc7bbef1fbc18c241948e2
  		let array = bufferAttribute.array;
  
  		const itemSize = bufferData._itemSize;
-@@ -81487,6 +81525,9 @@ class WebGPUAttributeUtils {
+@@ -81492,6 +81530,9 @@ class WebGPUAttributeUtils {
+ 
+ 		}
+ 
++		bufferData.version = bufferAttribute.version;
++		bufferData.uploadCall = backend.renderer.info.calls;
++
+ 	}
+ 
+ 	/**
+diff --git a/build/three.webgpu.js b/build/three.webgpu.js
+index 7aa62adb9e78ba8f0a67709d3141bf93c67419cc..9166d6f2dd1ac1505fa27b625f1976dff6b8ebc1 100644
+--- a/build/three.webgpu.js
++++ b/build/three.webgpu.js
+@@ -18539,7 +18539,7 @@ const instance = /*@__PURE__*/ Fn( ( [ matrices, colors = null ], builder ) => {
+ 	// Synchronization of dynamic buffer updates per frame
+ 	if ( interleavedMatrix !== null || interleavedColor !== null ) {
+ 
+-		OnFrameUpdate( () => {
++		OnBeforeFrameUpdate( () => {
+ 
+ 			if ( interleavedMatrix !== null ) {
+ 
+@@ -18580,12 +18580,28 @@ const instance = /*@__PURE__*/ Fn( ( [ matrices, colors = null ], builder ) => {
+ 
+ 		const instancedMesh = builder.object;
+ 
+-		OnObjectUpdate( ( { object } ) => {
++		const updatePrevious = ( object, array ) => {
++
++			const { previousInstanceMatrix } = _previousInstanceMatrices.get( object );
++			previousInstanceMatrix.array.set( array );
++			previousInstanceMatrix.needsUpdate = true;
++			const interleaved = _matrixBuffers.get( previousInstanceMatrix );
++			if ( interleaved !== undefined ) interleaved.needsUpdate = true;
++
++		};
+ 
+-			const previousInstanceData = _previousInstanceMatrices.get( object );
++		// Scheduled history must reach the GPU in this draw, before the geometry uploads.
++		OnBeforeObjectUpdate( ( { object } ) => {
+ 
+ 			const scheduledPrevious = object[ Symbol.for( 'threenative.velocity.previousInstanceMatrices' ) ];
+-			previousInstanceData.previousInstanceMatrix.array.set( scheduledPrevious ?? matrices.array );
++			if ( scheduledPrevious !== undefined ) updatePrevious( object, scheduledPrevious );
++
++		} );
++
++		// Without a scheduler, retain Three's draw-time snapshot for the next draw.
++		OnObjectUpdate( ( { object } ) => {
++
++			if ( object[ Symbol.for( 'threenative.velocity.previousInstanceMatrices' ) ] === undefined ) updatePrevious( object, matrices.array );
+ 
+ 		} );
+ 
+@@ -18844,7 +18860,15 @@ function getPreviousSkinnedPosition( skinnedMesh, bindMatrixNode, bindMatrixInve
+ 
+ 	}
+ 
+-	return getSkinnedPosition( data.node, positionPrevious, bindMatrixNode, bindMatrixInverseNode, skinIndexNode, skinWeightNode );
++	// The previous bones and world matrix must use the same frame's bind inverse.
++	const previousBindMatrixInverse = uniform( skinnedMesh.bindMatrixInverse, 'mat4' ).onObjectUpdate( ( { object } ) => {
++
++		const mesh = object?.isSkinnedMesh === true ? object : skinnedMesh;
++		return mesh[ Symbol.for( 'threenative.velocity.previousBindMatrixInverse' ) ] ?? mesh.bindMatrixInverse;
++
++	} );
++
++	return getSkinnedPosition( data.node, positionPrevious, bindMatrixNode, previousBindMatrixInverse, skinIndexNode, skinWeightNode );
+ 
+ }
+ 
+@@ -63161,8 +63185,8 @@ class Renderer {
+ 		// attribute scan - because each of those answers for itself, and a step left out here
+ 		// cannot: a group a node added after this object's first draw still has to be created, and
+ 		// the pipeline reads that group's layout whatever this draw decided to do with it.
+-		this._geometries.updateForRender( renderObject );
+ 		this._nodes.updateBefore( renderObject );
++		this._geometries.updateForRender( renderObject );
+ 		this._nodes.updateForRender( renderObject );
+ 		this._bindings.updateForRender( renderObject );
+ 
+@@ -76880,7 +76904,12 @@ class WebGPUTextureUtils {
+ 
+ 		}
+ 
+-		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat ) {
++		// Compute-only 3D storage has no attachment or render-pass mipmap consumer.
++		// Requesting the unused attachment usage rejects the texture on wgpu-native.
++		const computeOnlyStorage3D = dimension === GPUTextureDimension.ThreeD && texture.isStorageTexture === true &&
++			texture.isRenderTargetTexture !== true && options.renderTarget === undefined && options.needsMipmaps !== true;
++
++		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat && ! computeOnlyStorage3D ) {
+ 
+ 			usage |= GPUTextureUsage.RENDER_ATTACHMENT;
+ 
+@@ -81386,6 +81415,15 @@ class WebGPUAttributeUtils {
+ 			buffer.unmap();
+ 
+ 			bufferData.buffer = buffer;
++			bufferData.version = bufferAttribute.version;
++			bufferData.uploadCall = backend.renderer.info.calls;
++
++		} else if ( bufferData.version < bufferAttribute.version ||
++			( bufferAttribute.usage === DynamicDrawUsage && bufferData.uploadCall !== backend.renderer.info.calls ) ) {
++
++			// A rebuilt shader can create a fresh attribute wrapper for this existing buffer.
++			// Synchronize its dirty bytes before Attributes records the wrapper as current.
++			this.updateAttribute( attribute );
+ 
+ 		}
+ 
+@@ -81406,6 +81444,11 @@ class WebGPUAttributeUtils {
+ 		const bufferData = backend.get( bufferAttribute );
+ 		const buffer = backend.get( bufferAttribute ).buffer;
+ 
++		// A fresh wrapper may already have uploaded this shared buffer in the same render or compute call.
++		// Do not repeat that write after its partial ranges have been consumed.
++		if ( bufferData.version === bufferAttribute.version &&
++			( bufferAttribute.usage !== DynamicDrawUsage || bufferData.uploadCall === backend.renderer.info.calls ) ) return;
++
+ 		let array = bufferAttribute.array;
+ 
+ 		const itemSize = bufferData._itemSize;
+@@ -81487,6 +81530,9 @@ class WebGPUAttributeUtils {
+ 
+ 		}
+ 
++		bufferData.version = bufferAttribute.version;
++		bufferData.uploadCall = backend.renderer.info.calls;
++
+ 	}
+ 
+ 	/**
+@@ -84107,6 +84153,19 @@ class WebGPUBackend extends Backend {
+ 		 */
+ 		this.gpu = null;
+ 
++		/**
++		 * A reference to the adapter this device was requested from.
++		 *
++		 * The adapter owns the wire instance every operation in flight completes on. Chromium
++		 * collects an adapter the page stops referencing and the instance goes with it, so every
++		 * operation still running completes with a shutdown the page reads as
++		 * 'A valid external Instance reference no longer exists.' and presentation stops for.
++		 *
++		 * @type {?GPUAdapter}
++		 * @default null
++		 */
++		this.adapter = null;
++
+ 		/**
+ 		 * A reference to the device.
+ 		 *
+@@ -84223,6 +84282,8 @@ class WebGPUBackend extends Backend {
+ 
+ 			const adapter = this.gpu !== null ? await this.gpu.requestAdapter( adapterOptions ) : null;
+ 
++			this.adapter = adapter;
++
+ 			if ( adapter === null ) {
+ 
+ 				throw new Error( 'THREE.WebGPUBackend: Unable to create WebGPU adapter.' );
+diff --git a/build/three.webgpu.js b/build/three.webgpu.js
+index bdffb9b4069f7beafa85913b155e92d3e83f12d0..9166d6f2dd1ac1505fa27b625f1976dff6b8ebc1 100644
+--- a/build/three.webgpu.js
++++ b/build/three.webgpu.js
+@@ -18860,7 +18860,15 @@ function getPreviousSkinnedPosition( skinnedMesh, bindMatrixNode, bindMatrixInve
+ 
+ 	}
+ 
+-	return getSkinnedPosition( data.node, positionPrevious, bindMatrixNode, bindMatrixInverseNode, skinIndexNode, skinWeightNode );
++	// The previous bones and world matrix must use the same frame's bind inverse.
++	const previousBindMatrixInverse = uniform( skinnedMesh.bindMatrixInverse, 'mat4' ).onObjectUpdate( ( { object } ) => {
++
++		const mesh = object?.isSkinnedMesh === true ? object : skinnedMesh;
++		return mesh[ Symbol.for( 'threenative.velocity.previousBindMatrixInverse' ) ] ?? mesh.bindMatrixInverse;
++
++	} );
++
++	return getSkinnedPosition( data.node, positionPrevious, bindMatrixNode, previousBindMatrixInverse, skinIndexNode, skinWeightNode );
+ 
+ }
+ 
+@@ -76896,7 +76904,12 @@ class WebGPUTextureUtils {
+ 
+ 		}
+ 
+-		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat ) {
++		// Compute-only 3D storage has no attachment or render-pass mipmap consumer.
++		// Requesting the unused attachment usage rejects the texture on wgpu-native.
++		const computeOnlyStorage3D = dimension === GPUTextureDimension.ThreeD && texture.isStorageTexture === true &&
++			texture.isRenderTargetTexture !== true && options.renderTarget === undefined && options.needsMipmaps !== true;
++
++		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat && ! computeOnlyStorage3D ) {
+ 
+ 			usage |= GPUTextureUsage.RENDER_ATTACHMENT;
+ 
+@@ -81402,6 +81415,15 @@ class WebGPUAttributeUtils {
+ 			buffer.unmap();
+ 
+ 			bufferData.buffer = buffer;
++			bufferData.version = bufferAttribute.version;
++			bufferData.uploadCall = backend.renderer.info.calls;
++
++		} else if ( bufferData.version < bufferAttribute.version ||
++			( bufferAttribute.usage === DynamicDrawUsage && bufferData.uploadCall !== backend.renderer.info.calls ) ) {
++
++			// A rebuilt shader can create a fresh attribute wrapper for this existing buffer.
++			// Synchronize its dirty bytes before Attributes records the wrapper as current.
++			this.updateAttribute( attribute );
+ 
+ 		}
+ 
+@@ -81422,6 +81444,11 @@ class WebGPUAttributeUtils {
+ 		const bufferData = backend.get( bufferAttribute );
+ 		const buffer = backend.get( bufferAttribute ).buffer;
+ 
++		// A fresh wrapper may already have uploaded this shared buffer in the same render or compute call.
++		// Do not repeat that write after its partial ranges have been consumed.
++		if ( bufferData.version === bufferAttribute.version &&
++			( bufferAttribute.usage !== DynamicDrawUsage || bufferData.uploadCall === backend.renderer.info.calls ) ) return;
++
+ 		let array = bufferAttribute.array;
+ 
+ 		const itemSize = bufferData._itemSize;
+@@ -81503,6 +81530,9 @@ class WebGPUAttributeUtils {
+ 
+ 		}
+ 
++		bufferData.version = bufferAttribute.version;
++		bufferData.uploadCall = backend.renderer.info.calls;
++
+ 	}
+ 
+ 	/**
+@@ -84123,6 +84153,19 @@ class WebGPUBackend extends Backend {
+ 		 */
+ 		this.gpu = null;
+ 
++		/**
++		 * A reference to the adapter this device was requested from.
++		 *
++		 * The adapter owns the wire instance every operation in flight completes on. Chromium
++		 * collects an adapter the page stops referencing and the instance goes with it, so every
++		 * operation still running completes with a shutdown the page reads as
++		 * 'A valid external Instance reference no longer exists.' and presentation stops for.
++		 *
++		 * @type {?GPUAdapter}
++		 * @default null
++		 */
++		this.adapter = null;
++
+ 		/**
+ 		 * A reference to the device.
+ 		 *
+@@ -84239,6 +84282,8 @@ class WebGPUBackend extends Backend {
+ 
+ 			const adapter = this.gpu !== null ? await this.gpu.requestAdapter( adapterOptions ) : null;
+ 
++			this.adapter = adapter;
++
+ 			if ( adapter === null ) {
+ 
+ 				throw new Error( 'THREE.WebGPUBackend: Unable to create WebGPU adapter.' );
+diff --git a/build/three.webgpu.js b/build/three.webgpu.js
+index efd0e16719cc7bbef1fbc18c241948e25eb85881..9166d6f2dd1ac1505fa27b625f1976dff6b8ebc1 100644
+--- a/build/three.webgpu.js
++++ b/build/three.webgpu.js
+@@ -76904,7 +76904,12 @@ class WebGPUTextureUtils {
+ 
+ 		}
+ 
+-		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat ) {
++		// Compute-only 3D storage has no attachment or render-pass mipmap consumer.
++		// Requesting the unused attachment usage rejects the texture on wgpu-native.
++		const computeOnlyStorage3D = dimension === GPUTextureDimension.ThreeD && texture.isStorageTexture === true &&
++			texture.isRenderTargetTexture !== true && options.renderTarget === undefined && options.needsMipmaps !== true;
++
++		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat && ! computeOnlyStorage3D ) {
+ 
+ 			usage |= GPUTextureUsage.RENDER_ATTACHMENT;
+ 
+@@ -84148,6 +84153,19 @@ class WebGPUBackend extends Backend {
+ 		 */
+ 		this.gpu = null;
+ 
++		/**
++		 * A reference to the adapter this device was requested from.
++		 *
++		 * The adapter owns the wire instance every operation in flight completes on. Chromium
++		 * collects an adapter the page stops referencing and the instance goes with it, so every
++		 * operation still running completes with a shutdown the page reads as
++		 * 'A valid external Instance reference no longer exists.' and presentation stops for.
++		 *
++		 * @type {?GPUAdapter}
++		 * @default null
++		 */
++		this.adapter = null;
++
+ 		/**
+ 		 * A reference to the device.
+ 		 *
+@@ -84264,6 +84282,8 @@ class WebGPUBackend extends Backend {
+ 
+ 			const adapter = this.gpu !== null ? await this.gpu.requestAdapter( adapterOptions ) : null;
+ 
++			this.adapter = adapter;
++
+ 			if ( adapter === null ) {
+ 
+ 				throw new Error( 'THREE.WebGPUBackend: Unable to create WebGPU adapter.' );
+diff --git a/build/three.webgpu.nodes.js b/build/three.webgpu.nodes.js
+index 1245f0da9bb6a0f731b8c75a64490d7c91238700..9e7c7f74be1191b761711bd70ee59cc033e586cb 100644
+--- a/build/three.webgpu.nodes.js
++++ b/build/three.webgpu.nodes.js
+@@ -18846,7 +18846,15 @@ function getPreviousSkinnedPosition( skinnedMesh, bindMatrixNode, bindMatrixInve
+ 
+ 	}
+ 
+-	return getSkinnedPosition( data.node, positionPrevious, bindMatrixNode, bindMatrixInverseNode, skinIndexNode, skinWeightNode );
++	// The previous bones and world matrix must use the same frame's bind inverse.
++	const previousBindMatrixInverse = uniform( skinnedMesh.bindMatrixInverse, 'mat4' ).onObjectUpdate( ( { object } ) => {
++
++		const mesh = object?.isSkinnedMesh === true ? object : skinnedMesh;
++		return mesh[ Symbol.for( 'threenative.velocity.previousBindMatrixInverse' ) ] ?? mesh.bindMatrixInverse;
++
++	} );
++
++	return getSkinnedPosition( data.node, positionPrevious, bindMatrixNode, previousBindMatrixInverse, skinIndexNode, skinWeightNode );
+ 
+ }
+ 
+@@ -76840,7 +76848,12 @@ class WebGPUTextureUtils {
+ 
+ 		}
+ 
+-		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat ) {
++		// Compute-only 3D storage has no attachment or render-pass mipmap consumer.
++		// Requesting the unused attachment usage rejects the texture on wgpu-native.
++		const computeOnlyStorage3D = dimension === GPUTextureDimension.ThreeD && texture.isStorageTexture === true &&
++			texture.isRenderTargetTexture !== true && options.renderTarget === undefined && options.needsMipmaps !== true;
++
++		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat && ! computeOnlyStorage3D ) {
+ 
+ 			usage |= GPUTextureUsage.RENDER_ATTACHMENT;
+ 
+@@ -81342,6 +81355,15 @@ class WebGPUAttributeUtils {
+ 			buffer.unmap();
+ 
+ 			bufferData.buffer = buffer;
++			bufferData.version = bufferAttribute.version;
++			bufferData.uploadCall = backend.renderer.info.calls;
++
++		} else if ( bufferData.version < bufferAttribute.version ||
++			( bufferAttribute.usage === DynamicDrawUsage && bufferData.uploadCall !== backend.renderer.info.calls ) ) {
++
++			// A rebuilt shader can create a fresh attribute wrapper for this existing buffer.
++			// Synchronize its dirty bytes before Attributes records the wrapper as current.
++			this.updateAttribute( attribute );
+ 
+ 		}
+ 
+@@ -81362,6 +81384,11 @@ class WebGPUAttributeUtils {
+ 		const bufferData = backend.get( bufferAttribute );
+ 		const buffer = backend.get( bufferAttribute ).buffer;
+ 
++		// A fresh wrapper may already have uploaded this shared buffer in the same render or compute call.
++		// Do not repeat that write after its partial ranges have been consumed.
++		if ( bufferData.version === bufferAttribute.version &&
++			( bufferAttribute.usage !== DynamicDrawUsage || bufferData.uploadCall === backend.renderer.info.calls ) ) return;
++
+ 		let array = bufferAttribute.array;
+ 
+ 		const itemSize = bufferData._itemSize;
+@@ -81443,6 +81470,9 @@ class WebGPUAttributeUtils {
  
  		}
  
@@ -109,7 +548,25 @@ index 7aa62adb9e78ba8f0a67709d3141bf93c67419cc..efd0e16719cc7bbef1fbc18c241948e2
  
  	/**
 diff --git a/build/three.webgpu.nodes.js b/build/three.webgpu.nodes.js
-index b8a7b2fd0a2e95911e7e12fd5674592107f012de..1b3a6e96291af0077f7f247040e657cf4aa0cb33 100644
+index 1b3a6e96291af0077f7f247040e657cf4aa0cb33..9e7c7f74be1191b761711bd70ee59cc033e586cb 100644
+--- a/build/three.webgpu.nodes.js
++++ b/build/three.webgpu.nodes.js
+@@ -76848,7 +76848,12 @@ class WebGPUTextureUtils {
+ 
+ 		}
+ 
+-		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat ) {
++		// Compute-only 3D storage has no attachment or render-pass mipmap consumer.
++		// Requesting the unused attachment usage rejects the texture on wgpu-native.
++		const computeOnlyStorage3D = dimension === GPUTextureDimension.ThreeD && texture.isStorageTexture === true &&
++			texture.isRenderTargetTexture !== true && options.renderTarget === undefined && options.needsMipmaps !== true;
++
++		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat && ! computeOnlyStorage3D ) {
+ 
+ 			usage |= GPUTextureUsage.RENDER_ATTACHMENT;
+ 
+diff --git a/build/three.webgpu.nodes.js b/build/three.webgpu.nodes.js
+index 3d47c1151d563f1e0ae2bb4b92edd057fe0df2b3..9e7c7f74be1191b761711bd70ee59cc033e586cb 100644
 --- a/build/three.webgpu.nodes.js
 +++ b/build/three.webgpu.nodes.js
 @@ -18539,7 +18539,7 @@ const instance = /*@__PURE__*/ Fn( ( [ matrices, colors = null ], builder ) => {
@@ -180,7 +637,7 @@ index b8a7b2fd0a2e95911e7e12fd5674592107f012de..1b3a6e96291af0077f7f247040e657cf
  		this._nodes.updateForRender( renderObject );
  		this._bindings.updateForRender( renderObject );
  
-@@ -81325,6 +81350,15 @@ class WebGPUAttributeUtils {
+@@ -81330,6 +81355,15 @@ class WebGPUAttributeUtils {
  			buffer.unmap();
  
  			bufferData.buffer = buffer;
@@ -196,7 +653,7 @@ index b8a7b2fd0a2e95911e7e12fd5674592107f012de..1b3a6e96291af0077f7f247040e657cf
  
  		}
  
-@@ -81345,6 +81379,11 @@ class WebGPUAttributeUtils {
+@@ -81350,6 +81384,11 @@ class WebGPUAttributeUtils {
  		const bufferData = backend.get( bufferAttribute );
  		const buffer = backend.get( bufferAttribute ).buffer;
  
@@ -208,7 +665,166 @@ index b8a7b2fd0a2e95911e7e12fd5674592107f012de..1b3a6e96291af0077f7f247040e657cf
  		let array = bufferAttribute.array;
  
  		const itemSize = bufferData._itemSize;
-@@ -81426,6 +81465,9 @@ class WebGPUAttributeUtils {
+@@ -81431,6 +81470,9 @@ class WebGPUAttributeUtils {
+ 
+ 		}
+ 
++		bufferData.version = bufferAttribute.version;
++		bufferData.uploadCall = backend.renderer.info.calls;
++
+ 	}
+ 
+ 	/**
+diff --git a/build/three.webgpu.nodes.js b/build/three.webgpu.nodes.js
+index 81c24b2e05e5047e1a02410a2056949d39b1a05c..9e7c7f74be1191b761711bd70ee59cc033e586cb 100644
+--- a/build/three.webgpu.nodes.js
++++ b/build/three.webgpu.nodes.js
+@@ -18846,7 +18846,15 @@ function getPreviousSkinnedPosition( skinnedMesh, bindMatrixNode, bindMatrixInve
+ 
+ 	}
+ 
+-	return getSkinnedPosition( data.node, positionPrevious, bindMatrixNode, bindMatrixInverseNode, skinIndexNode, skinWeightNode );
++	// The previous bones and world matrix must use the same frame's bind inverse.
++	const previousBindMatrixInverse = uniform( skinnedMesh.bindMatrixInverse, 'mat4' ).onObjectUpdate( ( { object } ) => {
++
++		const mesh = object?.isSkinnedMesh === true ? object : skinnedMesh;
++		return mesh[ Symbol.for( 'threenative.velocity.previousBindMatrixInverse' ) ] ?? mesh.bindMatrixInverse;
++
++	} );
++
++	return getSkinnedPosition( data.node, positionPrevious, bindMatrixNode, previousBindMatrixInverse, skinIndexNode, skinWeightNode );
+ 
+ }
+ 
+@@ -76840,7 +76848,12 @@ class WebGPUTextureUtils {
+ 
+ 		}
+ 
+-		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat ) {
++		// Compute-only 3D storage has no attachment or render-pass mipmap consumer.
++		// Requesting the unused attachment usage rejects the texture on wgpu-native.
++		const computeOnlyStorage3D = dimension === GPUTextureDimension.ThreeD && texture.isStorageTexture === true &&
++			texture.isRenderTargetTexture !== true && options.renderTarget === undefined && options.needsMipmaps !== true;
++
++		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat && ! computeOnlyStorage3D ) {
+ 
+ 			usage |= GPUTextureUsage.RENDER_ATTACHMENT;
+ 
+diff --git a/build/three.webgpu.nodes.js b/build/three.webgpu.nodes.js
+index b8a7b2fd0a2e95911e7e12fd5674592107f012de..9e7c7f74be1191b761711bd70ee59cc033e586cb 100644
+--- a/build/three.webgpu.nodes.js
++++ b/build/three.webgpu.nodes.js
+@@ -18539,7 +18539,7 @@ const instance = /*@__PURE__*/ Fn( ( [ matrices, colors = null ], builder ) => {
+ 	// Synchronization of dynamic buffer updates per frame
+ 	if ( interleavedMatrix !== null || interleavedColor !== null ) {
+ 
+-		OnFrameUpdate( () => {
++		OnBeforeFrameUpdate( () => {
+ 
+ 			if ( interleavedMatrix !== null ) {
+ 
+@@ -18580,11 +18580,28 @@ const instance = /*@__PURE__*/ Fn( ( [ matrices, colors = null ], builder ) => {
+ 
+ 		const instancedMesh = builder.object;
+ 
+-		OnObjectUpdate( ( { object } ) => {
++		const updatePrevious = ( object, array ) => {
++
++			const { previousInstanceMatrix } = _previousInstanceMatrices.get( object );
++			previousInstanceMatrix.array.set( array );
++			previousInstanceMatrix.needsUpdate = true;
++			const interleaved = _matrixBuffers.get( previousInstanceMatrix );
++			if ( interleaved !== undefined ) interleaved.needsUpdate = true;
++
++		};
+ 
+-			const previousInstanceData = _previousInstanceMatrices.get( object );
++		// Scheduled history must reach the GPU in this draw, before the geometry uploads.
++		OnBeforeObjectUpdate( ( { object } ) => {
+ 
+-			previousInstanceData.previousInstanceMatrix.array.set( matrices.array );
++			const scheduledPrevious = object[ Symbol.for( 'threenative.velocity.previousInstanceMatrices' ) ];
++			if ( scheduledPrevious !== undefined ) updatePrevious( object, scheduledPrevious );
++
++		} );
++
++		// Without a scheduler, retain Three's draw-time snapshot for the next draw.
++		OnObjectUpdate( ( { object } ) => {
++
++			if ( object[ Symbol.for( 'threenative.velocity.previousInstanceMatrices' ) ] === undefined ) updatePrevious( object, matrices.array );
+ 
+ 		} );
+ 
+@@ -18829,7 +18846,15 @@ function getPreviousSkinnedPosition( skinnedMesh, bindMatrixNode, bindMatrixInve
+ 
+ 	}
+ 
+-	return getSkinnedPosition( data.node, positionPrevious, bindMatrixNode, bindMatrixInverseNode, skinIndexNode, skinWeightNode );
++	// The previous bones and world matrix must use the same frame's bind inverse.
++	const previousBindMatrixInverse = uniform( skinnedMesh.bindMatrixInverse, 'mat4' ).onObjectUpdate( ( { object } ) => {
++
++		const mesh = object?.isSkinnedMesh === true ? object : skinnedMesh;
++		return mesh[ Symbol.for( 'threenative.velocity.previousBindMatrixInverse' ) ] ?? mesh.bindMatrixInverse;
++
++	} );
++
++	return getSkinnedPosition( data.node, positionPrevious, bindMatrixNode, previousBindMatrixInverse, skinIndexNode, skinWeightNode );
+ 
+ }
+ 
+@@ -63104,8 +63129,8 @@ class Renderer {
+ 		// attribute scan - because each of those answers for itself, and a step left out here
+ 		// cannot: a group a node added after this object's first draw still has to be created, and
+ 		// the pipeline reads that group's layout whatever this draw decided to do with it.
+-		this._geometries.updateForRender( renderObject );
+ 		this._nodes.updateBefore( renderObject );
++		this._geometries.updateForRender( renderObject );
+ 		this._nodes.updateForRender( renderObject );
+ 		this._bindings.updateForRender( renderObject );
+ 
+@@ -76823,7 +76848,12 @@ class WebGPUTextureUtils {
+ 
+ 		}
+ 
+-		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat ) {
++		// Compute-only 3D storage has no attachment or render-pass mipmap consumer.
++		// Requesting the unused attachment usage rejects the texture on wgpu-native.
++		const computeOnlyStorage3D = dimension === GPUTextureDimension.ThreeD && texture.isStorageTexture === true &&
++			texture.isRenderTargetTexture !== true && options.renderTarget === undefined && options.needsMipmaps !== true;
++
++		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat && ! computeOnlyStorage3D ) {
+ 
+ 			usage |= GPUTextureUsage.RENDER_ATTACHMENT;
+ 
+@@ -81325,6 +81355,15 @@ class WebGPUAttributeUtils {
+ 			buffer.unmap();
+ 
+ 			bufferData.buffer = buffer;
++			bufferData.version = bufferAttribute.version;
++			bufferData.uploadCall = backend.renderer.info.calls;
++
++		} else if ( bufferData.version < bufferAttribute.version ||
++			( bufferAttribute.usage === DynamicDrawUsage && bufferData.uploadCall !== backend.renderer.info.calls ) ) {
++
++			// A rebuilt shader can create a fresh attribute wrapper for this existing buffer.
++			// Synchronize its dirty bytes before Attributes records the wrapper as current.
++			this.updateAttribute( attribute );
+ 
+ 		}
+ 
+@@ -81345,6 +81384,11 @@ class WebGPUAttributeUtils {
+ 		const bufferData = backend.get( bufferAttribute );
+ 		const buffer = backend.get( bufferAttribute ).buffer;
+ 
++		// A fresh wrapper may already have uploaded this shared buffer in the same render or compute call.
++		// Do not repeat that write after its partial ranges have been consumed.
++		if ( bufferData.version === bufferAttribute.version &&
++			( bufferAttribute.usage !== DynamicDrawUsage || bufferData.uploadCall === backend.renderer.info.calls ) ) return;
++
+ 		let array = bufferAttribute.array;
+ 
+ 		const itemSize = bufferData._itemSize;
+@@ -81426,6 +81470,9 @@ class WebGPUAttributeUtils {
  
  		}
  
@@ -271,6 +887,27 @@ index ed00e75ba4fd7b49343cfada26eacdef8940a4f4..18e2b7943393fd07b7989b1e3a5231a6
  
  		} );
  
+diff --git a/src/nodes/accessors/Skinning.js b/src/nodes/accessors/Skinning.js
+index aaeea633a8ece291be5faf868e312867ddad01b6..76303e765bc29853cfd7f139dd3ec76545b70798 100644
+--- a/src/nodes/accessors/Skinning.js
++++ b/src/nodes/accessors/Skinning.js
+@@ -117,7 +117,15 @@ function getPreviousSkinnedPosition( skinnedMesh, bindMatrixNode, bindMatrixInve
+ 
+ 	}
+ 
+-	return getSkinnedPosition( data.node, positionPrevious, bindMatrixNode, bindMatrixInverseNode, skinIndexNode, skinWeightNode );
++	// The previous bones and world matrix must use the same frame's bind inverse.
++	const previousBindMatrixInverse = uniform( skinnedMesh.bindMatrixInverse, 'mat4' ).onObjectUpdate( ( { object } ) => {
++
++		const mesh = object?.isSkinnedMesh === true ? object : skinnedMesh;
++		return mesh[ Symbol.for( 'threenative.velocity.previousBindMatrixInverse' ) ] ?? mesh.bindMatrixInverse;
++
++	} );
++
++	return getSkinnedPosition( data.node, positionPrevious, bindMatrixNode, previousBindMatrixInverse, skinIndexNode, skinWeightNode );
+ 
+ }
+ 
 diff --git a/src/renderers/common/Renderer.js b/src/renderers/common/Renderer.js
 index 89b33efb80ca1dcb9db931071dfda62ffdba3526..51590d5a23a93365e5cd9fb0360678750270d5bf 100644
 --- a/src/renderers/common/Renderer.js
@@ -285,6 +922,39 @@ index 89b33efb80ca1dcb9db931071dfda62ffdba3526..51590d5a23a93365e5cd9fb036067875
  		this._nodes.updateForRender( renderObject );
  		this._bindings.updateForRender( renderObject );
  
+diff --git a/src/renderers/webgpu/WebGPUBackend.js b/src/renderers/webgpu/WebGPUBackend.js
+index 69b8b67fdeec5be24de34d8382beda9020642f77..927e3a1ad5a4665d77238ffbab4c57a603b86828 100644
+--- a/src/renderers/webgpu/WebGPUBackend.js
++++ b/src/renderers/webgpu/WebGPUBackend.js
+@@ -110,6 +110,19 @@ class WebGPUBackend extends Backend {
+ 		 */
+ 		this.gpu = null;
+ 
++		/**
++		 * A reference to the adapter this device was requested from.
++		 *
++		 * The adapter owns the wire instance every operation in flight completes on. Chromium
++		 * collects an adapter the page stops referencing and the instance goes with it, so every
++		 * operation still running completes with a shutdown the page reads as
++		 * 'A valid external Instance reference no longer exists.' and presentation stops for.
++		 *
++		 * @type {?GPUAdapter}
++		 * @default null
++		 */
++		this.adapter = null;
++
+ 		/**
+ 		 * A reference to the device.
+ 		 *
+@@ -226,6 +239,8 @@ class WebGPUBackend extends Backend {
+ 
+ 			const adapter = this.gpu !== null ? await this.gpu.requestAdapter( adapterOptions ) : null;
+ 
++			this.adapter = adapter;
++
+ 			if ( adapter === null ) {
+ 
+ 				throw new Error( 'THREE.WebGPUBackend: Unable to create WebGPU adapter.' );
 diff --git a/src/renderers/webgpu/utils/WebGPUAttributeUtils.js b/src/renderers/webgpu/utils/WebGPUAttributeUtils.js
 index 83bbe189915c8450c4e14108e6a3f4ed98c4b016..16bd72d0c0f1d693481efc98140a0f1b73905149 100644
 --- a/src/renderers/webgpu/utils/WebGPUAttributeUtils.js
@@ -335,184 +1005,21 @@ index 83bbe189915c8450c4e14108e6a3f4ed98c4b016..16bd72d0c0f1d693481efc98140a0f1b
  	}
  
  	/**
-diff --git a/build/three.webgpu.js b/build/three.webgpu.js
-index bdffb9b4069f7beafa85913b155e92d3e83f12d0..efd0e16719cc7bbef1fbc18c241948e25eb85881 100644
---- a/build/three.webgpu.js
-+++ b/build/three.webgpu.js
-@@ -18860,7 +18860,15 @@ function getPreviousSkinnedPosition( skinnedMesh, bindMatrixNode, bindMatrixInve
- 
- 	}
- 
--	return getSkinnedPosition( data.node, positionPrevious, bindMatrixNode, bindMatrixInverseNode, skinIndexNode, skinWeightNode );
-+	// The previous bones and world matrix must use the same frame's bind inverse.
-+	const previousBindMatrixInverse = uniform( skinnedMesh.bindMatrixInverse, 'mat4' ).onObjectUpdate( ( { object } ) => {
-+
-+		const mesh = object?.isSkinnedMesh === true ? object : skinnedMesh;
-+		return mesh[ Symbol.for( 'threenative.velocity.previousBindMatrixInverse' ) ] ?? mesh.bindMatrixInverse;
-+
-+	} );
-+
-+	return getSkinnedPosition( data.node, positionPrevious, bindMatrixNode, previousBindMatrixInverse, skinIndexNode, skinWeightNode );
- 
- }
- 
-@@ -81402,6 +81410,15 @@ class WebGPUAttributeUtils {
- 			buffer.unmap();
- 
- 			bufferData.buffer = buffer;
-+			bufferData.version = bufferAttribute.version;
-+			bufferData.uploadCall = backend.renderer.info.calls;
-+
-+		} else if ( bufferData.version < bufferAttribute.version ||
-+			( bufferAttribute.usage === DynamicDrawUsage && bufferData.uploadCall !== backend.renderer.info.calls ) ) {
-+
-+			// A rebuilt shader can create a fresh attribute wrapper for this existing buffer.
-+			// Synchronize its dirty bytes before Attributes records the wrapper as current.
-+			this.updateAttribute( attribute );
+diff --git a/src/renderers/webgpu/utils/WebGPUTextureUtils.js b/src/renderers/webgpu/utils/WebGPUTextureUtils.js
+index ff8ee2dbace2816105aa7152891c04f2333f33e8..5c999c162840d266c676c83affdd2788f2fa47eb 100644
+--- a/src/renderers/webgpu/utils/WebGPUTextureUtils.js
++++ b/src/renderers/webgpu/utils/WebGPUTextureUtils.js
+@@ -359,7 +359,12 @@ class WebGPUTextureUtils {
  
  		}
  
-@@ -81422,6 +81439,11 @@ class WebGPUAttributeUtils {
- 		const bufferData = backend.get( bufferAttribute );
- 		const buffer = backend.get( bufferAttribute ).buffer;
- 
-+		// A fresh wrapper may already have uploaded this shared buffer in the same render or compute call.
-+		// Do not repeat that write after its partial ranges have been consumed.
-+		if ( bufferData.version === bufferAttribute.version &&
-+			( bufferAttribute.usage !== DynamicDrawUsage || bufferData.uploadCall === backend.renderer.info.calls ) ) return;
+-		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat ) {
++		// Compute-only 3D storage has no attachment or render-pass mipmap consumer.
++		// Requesting the unused attachment usage rejects the texture on wgpu-native.
++		const computeOnlyStorage3D = dimension === GPUTextureDimension.ThreeD && texture.isStorageTexture === true &&
++			texture.isRenderTargetTexture !== true && options.renderTarget === undefined && options.needsMipmaps !== true;
 +
- 		let array = bufferAttribute.array;
++		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat && ! computeOnlyStorage3D ) {
  
- 		const itemSize = bufferData._itemSize;
-@@ -81503,6 +81525,9 @@ class WebGPUAttributeUtils {
- 
- 		}
- 
-+		bufferData.version = bufferAttribute.version;
-+		bufferData.uploadCall = backend.renderer.info.calls;
-+
- 	}
- 
- 	/**
-diff --git a/build/three.webgpu.nodes.js b/build/three.webgpu.nodes.js
-index 1245f0da9bb6a0f731b8c75a64490d7c91238700..1b3a6e96291af0077f7f247040e657cf4aa0cb33 100644
---- a/build/three.webgpu.nodes.js
-+++ b/build/three.webgpu.nodes.js
-@@ -18846,7 +18846,15 @@ function getPreviousSkinnedPosition( skinnedMesh, bindMatrixNode, bindMatrixInve
- 
- 	}
- 
--	return getSkinnedPosition( data.node, positionPrevious, bindMatrixNode, bindMatrixInverseNode, skinIndexNode, skinWeightNode );
-+	// The previous bones and world matrix must use the same frame's bind inverse.
-+	const previousBindMatrixInverse = uniform( skinnedMesh.bindMatrixInverse, 'mat4' ).onObjectUpdate( ( { object } ) => {
-+
-+		const mesh = object?.isSkinnedMesh === true ? object : skinnedMesh;
-+		return mesh[ Symbol.for( 'threenative.velocity.previousBindMatrixInverse' ) ] ?? mesh.bindMatrixInverse;
-+
-+	} );
-+
-+	return getSkinnedPosition( data.node, positionPrevious, bindMatrixNode, previousBindMatrixInverse, skinIndexNode, skinWeightNode );
- 
- }
- 
-@@ -81342,6 +81350,15 @@ class WebGPUAttributeUtils {
- 			buffer.unmap();
- 
- 			bufferData.buffer = buffer;
-+			bufferData.version = bufferAttribute.version;
-+			bufferData.uploadCall = backend.renderer.info.calls;
-+
-+		} else if ( bufferData.version < bufferAttribute.version ||
-+			( bufferAttribute.usage === DynamicDrawUsage && bufferData.uploadCall !== backend.renderer.info.calls ) ) {
-+
-+			// A rebuilt shader can create a fresh attribute wrapper for this existing buffer.
-+			// Synchronize its dirty bytes before Attributes records the wrapper as current.
-+			this.updateAttribute( attribute );
- 
- 		}
- 
-@@ -81362,6 +81379,11 @@ class WebGPUAttributeUtils {
- 		const bufferData = backend.get( bufferAttribute );
- 		const buffer = backend.get( bufferAttribute ).buffer;
- 
-+		// A fresh wrapper may already have uploaded this shared buffer in the same render or compute call.
-+		// Do not repeat that write after its partial ranges have been consumed.
-+		if ( bufferData.version === bufferAttribute.version &&
-+			( bufferAttribute.usage !== DynamicDrawUsage || bufferData.uploadCall === backend.renderer.info.calls ) ) return;
-+
- 		let array = bufferAttribute.array;
- 
- 		const itemSize = bufferData._itemSize;
-@@ -81443,6 +81465,9 @@ class WebGPUAttributeUtils {
- 
- 		}
- 
-+		bufferData.version = bufferAttribute.version;
-+		bufferData.uploadCall = backend.renderer.info.calls;
-+
- 	}
- 
- 	/**
-diff --git a/src/nodes/accessors/Skinning.js b/src/nodes/accessors/Skinning.js
-index aaeea633a8ece291be5faf868e312867ddad01b6..76303e765bc29853cfd7f139dd3ec76545b70798 100644
---- a/src/nodes/accessors/Skinning.js
-+++ b/src/nodes/accessors/Skinning.js
-@@ -117,7 +117,15 @@ function getPreviousSkinnedPosition( skinnedMesh, bindMatrixNode, bindMatrixInve
- 
- 	}
- 
--	return getSkinnedPosition( data.node, positionPrevious, bindMatrixNode, bindMatrixInverseNode, skinIndexNode, skinWeightNode );
-+	// The previous bones and world matrix must use the same frame's bind inverse.
-+	const previousBindMatrixInverse = uniform( skinnedMesh.bindMatrixInverse, 'mat4' ).onObjectUpdate( ( { object } ) => {
-+
-+		const mesh = object?.isSkinnedMesh === true ? object : skinnedMesh;
-+		return mesh[ Symbol.for( 'threenative.velocity.previousBindMatrixInverse' ) ] ?? mesh.bindMatrixInverse;
-+
-+	} );
-+
-+	return getSkinnedPosition( data.node, positionPrevious, bindMatrixNode, previousBindMatrixInverse, skinIndexNode, skinWeightNode );
- 
- }
- 
-diff --git a/build/three.webgpu.js b/build/three.webgpu.js
-index 148869ee7f18c62570ac1eafb7df5775e5a89581..efd0e16719cc7bbef1fbc18c241948e25eb85881 100644
---- a/build/three.webgpu.js
-+++ b/build/three.webgpu.js
-@@ -18860,7 +18860,15 @@ function getPreviousSkinnedPosition( skinnedMesh, bindMatrixNode, bindMatrixInve
- 
- 	}
- 
--	return getSkinnedPosition( data.node, positionPrevious, bindMatrixNode, bindMatrixInverseNode, skinIndexNode, skinWeightNode );
-+	// The previous bones and world matrix must use the same frame's bind inverse.
-+	const previousBindMatrixInverse = uniform( skinnedMesh.bindMatrixInverse, 'mat4' ).onObjectUpdate( ( { object } ) => {
-+
-+		const mesh = object?.isSkinnedMesh === true ? object : skinnedMesh;
-+		return mesh[ Symbol.for( 'threenative.velocity.previousBindMatrixInverse' ) ] ?? mesh.bindMatrixInverse;
-+
-+	} );
-+
-+	return getSkinnedPosition( data.node, positionPrevious, bindMatrixNode, previousBindMatrixInverse, skinIndexNode, skinWeightNode );
- 
- }
- 
-diff --git a/build/three.webgpu.nodes.js b/build/three.webgpu.nodes.js
-index 81c24b2e05e5047e1a02410a2056949d39b1a05c..1b3a6e96291af0077f7f247040e657cf4aa0cb33 100644
---- a/build/three.webgpu.nodes.js
-+++ b/build/three.webgpu.nodes.js
-@@ -18846,7 +18846,15 @@ function getPreviousSkinnedPosition( skinnedMesh, bindMatrixNode, bindMatrixInve
- 
- 	}
- 
--	return getSkinnedPosition( data.node, positionPrevious, bindMatrixNode, bindMatrixInverseNode, skinIndexNode, skinWeightNode );
-+	// The previous bones and world matrix must use the same frame's bind inverse.
-+	const previousBindMatrixInverse = uniform( skinnedMesh.bindMatrixInverse, 'mat4' ).onObjectUpdate( ( { object } ) => {
-+
-+		const mesh = object?.isSkinnedMesh === true ? object : skinnedMesh;
-+		return mesh[ Symbol.for( 'threenative.velocity.previousBindMatrixInverse' ) ] ?? mesh.bindMatrixInverse;
-+
-+	} );
-+
-+	return getSkinnedPosition( data.node, positionPrevious, bindMatrixNode, previousBindMatrixInverse, skinIndexNode, skinWeightNode );
- 
- }
+ 			usage |= GPUTextureUsage.RENDER_ATTACHMENT;
  

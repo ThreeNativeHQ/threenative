@@ -242,6 +242,23 @@ describe("packed frame op stream", () => {
     expect(drain()).toBeNull();
   });
 
+  it("reports pending readback work behind an outer render encoder", () => {
+    const { device, queue, drain } = harness();
+    const outer = device.createCommandEncoder();
+    const pass = outer.beginRenderPass({ colorAttachments: [] });
+    const readback = device.createCommandEncoder();
+    readback.copyBufferToBuffer({ _bufferId: 1 }, 0, { _bufferId: 2 }, 0, 4);
+    queue.submit([readback.finish()]);
+    expect(drain(1)).toBeNull();
+    expect(drain.pendingOps).toBe(true);
+    pass.end();
+    queue.submit([outer.finish()]);
+    expect(records(drain()).result.map(({ opcode }) => opcode)).toEqual([
+      2, 3, 2, 23, 28, 29, 17, 28, 29,
+    ]);
+    expect(drain.pendingOps).toBe(false);
+  });
+
   // The cut has to land before a half-recorded encoder: replaying a stream whose encoder is never
   // finished fails closed on the native side with "frame ended with unfinished GPU objects".
   it("leaves a half-recorded encoder behind and drains it whole at the frame boundary", () => {

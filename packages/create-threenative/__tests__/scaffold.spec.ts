@@ -164,42 +164,36 @@ const BUG_REPORT_SKILL_PATHS = [
 // all ten hashes to the values above, so nothing else in this lane reaches a scaffold. The docs
 // arrive through the templating step rather than a verbatim copy, which is why a content-hash
 // matcher does not list them and this ablation is the evidence instead.
+// Recomputed 2026-10-03 for PRD-339's opt-in exposure integration at 8bf16f4c3.
+// All thirteen actual no-install baseline52/current trees were byte-compared: only the
+// generated worldEnvironment/autoExposure/quality wiring, two GPU/readback helper modules,
+// and token-identical instruction whitespace changed. Default cost remains off; actual
+// consumer GPU captures are byte-identical to the qualified public images. Measurement:
+// docs/verification/prd339-exposure-proof/completion-consumer-8bf16f4.json.
+// Current develop c18a42b integration: all13 actual generated trees were byte-compared
+// against reviewed 8bf trees; only the copied Three compute-only Storage3DTexture patch changed.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
-  // Recomputed 2026-10-01 on the merge of develop a602467db (PRD-458/473): every template's frame
-  // budget now comes from resolveTargetFps, so ten trees move and `rts` does not; the capability reference (365 -> 368 entries) then moved all eleven, because it ships in every scaffold.
-  // Recomputed 2026-10-01, three times, each by a real run that found the previous tree wrong:
-  // the first gave each quality.ts a software adapter policy; the second found ten of eleven
-  // setupPost callers never forwarded the adapter fact to it; the third found no template but
-  // `starter` set `renderChainTier`, so a low preset still ran the high render chain. The same ten
-  // trees move on each of the last two. `starter` is unchanged throughout — its setupPost hands the
-  // whole environment to createAdaptiveQuality and its quality.ts already carried the chain tier.
-  // Values measured through createProject by the spec that asserts them, not by hand.
-  // Recomputed again 2026-10-01 for `sailing` alone: `sailMotion` is a range across landed cloth
-  // readbacks, and one landed copy makes that range zero by arithmetic, so the sails scenario now
-  // holds long enough for two copies to arrive on a CPU rasteriser and asserts the landed count
-  // beside it. Only the two sailing template files changed, so only this one tree moves.
-  // Recomputed again 2026-10-01 after merging the quality/post chain into this branch and landing
-  // the rts sim's order, queue and event-record fixes: `rts` alone moves, and it is the only one of
-  // the eleven that carries `src/sim/`. Measured through createProject on the merged tree.
-  // Recomputed 2026-10-01 on the merge of develop (PRD-470/471/472/474) into the rain + snow
-  // branch (PRD-469, PRD-473): the merged tree carries both sides' engine and manifest bytes, so
-  // all thirteen trees, rain and snow included, were re-measured through createProject.
-  // Recomputed 2026-10-02 on the merge of origin/develop into PRD-455/269: the merged tree carries
-  // both sides' template and agent-file bytes, so all thirteen trees were re-measured through
-  // createProject on it rather than taken from either side.
-  "action-rpg": "39674d54c30266f521c0b19b295d74f6feeb1d07bd71b1cbd3bcc88c9042352a",
-  minimal: "ccb4b8c21409035c693e22fa99709a24f1d3f3a76eb4d5e8d76dde877165ce08",
-  platformer: "44eb2484a40ffedb169573419d21587978c74d3d53a26ae1127bc2143c13f5f3",
-  puzzle: "1725a00337641ad750b0a81372e99eb5194fda68260e426678badee834872494",
-  racing: "0cdc163329b3f616f2e481d9f9672825ea2d38c0f0fc26b978f42f259358d874",
-  rain: "7d1b2848f17c66f9bec14c8ee6451a75a0bffb5b0f43c94c1e2a654adbb90d10",
-  rts: "a19b3ab924256161a3ca73bb0898ff55d22bccc89849350a54d3622bf50e3a95",
-  runner: "a02893802e1cc472a396754b0b2e15d43cbd370a028dbc8782ae8f1bd4cef658",
-  sailing: "7eb775cb5a2d2b379d8b9a4073f96ccee4e52d9bcccb13f6adb00fc53f8efb15",
-  shooter: "a3f9b0a795b4ec77e84ce091065ea76202b2ccc136a2235ccf657023387713c3",
-  snow: "ab1e4c8b28ea0c17369c639634ecbcd92a4cdeefe2ff98b3b747ac04ba0e7b7e",
-  starter: "d908e02b1082dda6eb9f5e1b59a3bf865a5e7f9d13fb2e9f42f47902b50f1842",
-  "tower-defense": "69a18fe53816b879911603e48364992de0f6e13dce4762020e7fe82909c592b1",
+  // Re-measured through this test after merging develop 15adf350 with the temporal branch:
+  // all trees retain exposure/fog and the combined Three patch; starter also retains temporal
+  // helpers. These values come from the actual generated trees, with no assertion weakened.
+  // Measured through actual createProject trees after exposure/fog consolidation and restamping,
+  // then again on the merge carrying the WebGPU adapter-retention Three patch: the scaffolded
+  // `patches/three@0.185.1.patch` is the only byte that moved on top of the exposure/fog tree, so
+  // all thirteen trees move again. Values below are the merged-tree measurement, not either side's.
+  "action-rpg": "4a1e7cce7edc1cc39cdaebe53c7b171a21bed2ceccb729a9ab8abf1dd0532095",
+  minimal: "0c7ac069cbbebffca4000c6a126c02c1358c8e0176c4bfaa8389b537b1e27990",
+  platformer: "82eb59d7d61357f0aa2e4f27a13139fd1d0c92e5550f65d940f099ae5c23cfae",
+  puzzle: "6eb64411e5afaacadd2b32b952bb0b1aa23cac46d766018a55824319136d6ff7",
+  racing: "cea96aca0515e1362406d75f9b2b346dfe707f43277b45fdbd79c7e857b453bd",
+  rain: "79b5ae2214571c5a03db7e01e02f276c149f436c5f1ab8095b6209c0eb356a76",
+  rts: "865b270e476e8d135146a1785662fa6beee0e7cda14c54afe970d384661d4871",
+  runner: "cc43ecb0f241c7432c3b35b63191545a6eab5eba38808209b22a0fd90e49181e",
+  // Initial finite-height readiness plus its scene-owned lifecycle helper and mirrored docs.
+  sailing: "f983606f01b4a5eafc42478abb75218f014a6bd0346335a0ccddd3eeb5027d9a",
+  shooter: "a618a5af20a39fba2e2811188e6d7a9ab8e2c91878a1c2fbf290c19bdf1fafdc",
+  snow: "973cba43709ba6594999cea6cd5fd94ff06c836e7b9b59f1e1c07cbce533c92a",
+  starter: "5f9ba6b015df2c879cc5222acf72476bbd6e8dc3189f7bd2147219636f2c4d30",
+  "tower-defense": "064ad094a1e5278bbd16a0913f65517fd052b8ebbc52ba7b94f3a1e65a5b2575",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
@@ -299,6 +293,12 @@ const STARTER_PATHS = [
   "src/render/worldEnvironment.ts",
   "src/render/temporalAA.ts",
   "src/render/temporalResolve.ts",
+  "src/render/exposure.ts",
+  "src/render/autoExposure.ts",
+  "src/render/volumetricFog.ts",
+  "src/render/volumetricFogOptions.ts",
+  "src/render/volumetricFogVolume.ts",
+  "src/render/volumetricFogTransport.ts",
   "src/render/palette.ts",
   "src/render/materials.ts",
   "src/render/arena.ts",

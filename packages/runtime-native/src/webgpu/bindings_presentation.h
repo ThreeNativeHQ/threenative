@@ -29,6 +29,10 @@ void reportSurfaceFormatMarker(
     WGPUTextureFormat renderFormat,
     bool usesSrgbBridge,
     WGPUPresentMode presentMode);
+// The same full-canvas transfer used to present to the native surface.
+bool blitPresentationTexture(BindingsState* state, WGPUTextureView sourceView,
+                             WGPUTextureView surfaceView);
+bool requiresPresentationBridge(const BindingsState* state);
 bool syncSurfaceSizeToCanvas(BindingsState* state, js::JSValueHandle canvas);
 WGPUTexture getCurrentSwapchainTexture(BindingsState* state);
 void trackCurrentSurfaceTextureView(BindingsState* state, uint64_t viewId, WGPUTextureView view);

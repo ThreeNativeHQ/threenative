@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { FrameBudget } from "../src/frame-budget.js";
 import {
   FRAME_PASS_KINDS,
   type IRenderPassSample,
@@ -147,7 +148,7 @@ describe("render pass budget", () => {
     budget.beginFrame();
     raw.render({ ...MAIN, submissions: { draws: 10, triangles: 100 }, nested: [SHADOW] }, {});
     // Nothing resolves until three's pool has been read back.
-    expect(budget.gpuPassMs(frame)).toBeUndefined();
+    expect(budget.nextGpuFrame()).toBeUndefined();
     const uids = [...pool.queryOffsets.keys()];
     expect(uids).toHaveLength(2);
     const [shadowUid, mainUid] = uids;
@@ -155,7 +156,44 @@ describe("render pass budget", () => {
       throw new Error("fake backend allocated fewer than two timestamp uids");
     pool.timestamps.set(shadowUid, 2.25); // nested shadow, allocated first
     pool.timestamps.set(mainUid, 5.5); // main
-    // Main must not absorb the shadow's pass: the split is 5.5 and 2.25, not 7.75 and 0.
-    expect(budget.gpuPassMs(frame)).toEqual({ main: 5.5, shadow: 2.25 });
+    // Main must not absorb the shadow's pass: the split is 5.5 and 2.25, not 7.75 and 0, and the
+    // frame's own cost is both of them rather than the one number three's resolve returns.
+    expect(budget.nextGpuFrame()).toEqual({
+      frame,
+      main: 5.5,
+      shadow: 2.25,
+      total: 7.75,
+    });
+    // One reading per frame: the same frame is not handed out twice.
+    expect(budget.nextGpuFrame()).toBeUndefined();
+  });
+
+  it("reports the GPU-selected main-pass triangles beside the CPU capacity figure", () => {
+    // Three adds `instanceCount * (count / 3)` per draw, and for an indirect batch `count` is the
+    // merged geometry's capacity, not what the GPU selected -- so a streamed world reads as hundreds
+    // of millions of triangles for a few hundred thousand drawn. The window already carries the
+    // honest number as `mainGpuTriangles`; a reader who only has the pass record cannot see which
+    // of the two they are holding, so the GPU figure belongs beside the CPU one in the pass too.
+    const raw = fakeRenderer();
+    const passBudget = RenderPassBudget.install(raw) as RenderPassBudget;
+    const budget = new FrameBudget({
+      readGpuTally: () => ({ instances: 12_000, triangles: 402_000 }),
+      report: () => undefined,
+      reportEvery: 1000,
+    });
+    let now = 0;
+    for (let frame = 0; frame < 4; frame += 1) {
+      now += 16.7;
+      budget.beginFrame(now, now);
+      passBudget.beginFrame();
+      raw.render({ ...MAIN, submissions: { draws: 30, triangles: 338_000_000 } }, {});
+      budget.addRenderPasses(passBudget.passes());
+      budget.markSimulationEnd(now, 1);
+      budget.endFrame(now + 1);
+    }
+
+    const main = budget.window().passes?.main;
+    expect(main?.triangles.p50).toBe(338_000_000);
+    expect(main?.gpuTriangles).toBe(402_000);
   });
 });

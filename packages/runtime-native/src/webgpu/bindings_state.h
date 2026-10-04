@@ -109,6 +109,7 @@ struct BufferMapRequest {
     WGPUMapMode mode = WGPUMapMode_None;
     uint64_t offset = 0;
     uint64_t size = 0;
+    bool started = false;
     bool completed = false;
     WGPUBufferMapAsyncStatus_Compat status = WGPUBufferMapAsyncStatus_Unknown_Compat;
     std::string errorMessage;
@@ -272,6 +273,10 @@ struct PresentationState {
     WGPUBindGroupLayout srgbPresentationBindGroupLayout = nullptr;
     uint32_t canvasWidth = 800;
     uint32_t canvasHeight = 600;
+    // Canvas backing pixels can differ from the window pixels the swapchain presents.
+    uint32_t surfaceWidth = 0;
+    uint32_t surfaceHeight = 0;
+    void* surfaceNativeHandle = nullptr;
     bool contextConfigured = false;
     WGPUTexture currentTexture = nullptr;
     WGPUTextureView currentTextureView = nullptr;
@@ -383,6 +388,7 @@ struct FrameProfiling {
     bool disableFrameOpStreamForTesting = false;
     // Set while a mid-frame flush is replaying, so a nested flush cannot re-enter the drain.
     bool frameOpStreamFlushing = false;
+    bool frameOpStreamPendingOps = false;
     uint64_t frameOpStreamReplayCrossings = 0;
     uint64_t frameOpStreamDirectCommandCalls = 0;
     uint64_t frameOpStreamLastOpCount = 0;

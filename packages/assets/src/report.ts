@@ -64,6 +64,8 @@ export interface IEmbeddedTextureRow {
 export interface IVirtualRow {
   readonly bakeSeconds: number;
   readonly clusters: number;
+  /** Primitives handed back to the discrete ladder because their DAG reduced nothing. */
+  readonly declined: number;
   readonly levels: number;
   readonly payloadBytes: number;
   readonly primitives: number;
@@ -409,19 +411,22 @@ function simplifyLine(row: IModelSizeRow): readonly string[] {
  * Names what the DAG cost and where it stopped.
  *
  * A `cap` stop is called out because it means a DAG ran out of levels rather than finishing, and a
- * bake that clustered nothing says so rather than leaving the reader to infer it from a zero.
+ * bake that clustered nothing says so rather than leaving the reader to infer it from a zero. A
+ * declined primitive is named too: "no primitive was dense enough" is the wrong reason for a body
+ * whose foliage is dense enough and whose DAG reduced nothing.
  */
 function virtualLine(row: IModelSizeRow): readonly string[] {
   const virtual = row.virtual;
   if (virtual === undefined) return [];
+  const declined = virtual.declined > 0 ? `, ${virtual.declined} declined to the LOD ladder` : "";
   if (virtual.primitives === 0)
     return [
-      `virtual ${row.logicalPath}: no primitive was dense enough to cluster (${virtual.skipped} skipped)`,
+      `virtual ${row.logicalPath}: no primitive was dense enough to cluster (${virtual.skipped} skipped${declined})`,
     ];
   const warning =
     virtual.stopReason === "cap" ? " — a DAG hit the level cap and is unfinished" : "";
   return [
-    `virtual ${row.logicalPath}: ${virtual.clusters} cluster(s) over ${virtual.levels} level(s) on ${virtual.primitives} primitive(s), ${virtual.skipped} skipped, ${virtual.payloadBytes} payload bytes, bake ${virtual.bakeSeconds.toFixed(1)} s, stopped at ${virtual.stopReason}${warning}`,
+    `virtual ${row.logicalPath}: ${virtual.clusters} cluster(s) over ${virtual.levels} level(s) on ${virtual.primitives} primitive(s), ${virtual.skipped} skipped${declined}, ${virtual.payloadBytes} payload bytes, bake ${virtual.bakeSeconds.toFixed(1)} s, stopped at ${virtual.stopReason}${warning}`,
   ];
 }
 function compactLine(row: IModelSizeRow): readonly string[] {
@@ -587,7 +592,7 @@ export function formatSkippedCompression(rows: readonly ISkippedReportRow[]): re
       const reason =
         row.reason === "config"
           ? `assets.${row.kind}s is "none"`
-          : `this target has no WebAssembly and cannot run its ${decoders} decoder`;
+          : `this target has no qualified ${decoders} decoder`;
       return `TN_ASSETS_COMPRESSION_SKIPPED ${row.kind}: ${String(row.files)} file(s), ${(row.bytes / 1e6).toFixed(1)} MB ${action} because ${reason}.`;
     });
 }

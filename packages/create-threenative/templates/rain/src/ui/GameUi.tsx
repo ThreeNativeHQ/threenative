@@ -7,8 +7,7 @@ import { Menu } from "./Menu.js";
 import { automationRequest } from "./automation.js";
 
 const TOAST_MS = 3600;
-
-/** Below this width the study asks for the cheap tier, exactly as the source study did. */
+/** Preserve the source study's one-time window-width default on hardware. */
 const NARROW_PX = 700;
 
 export function GameUi() {
@@ -138,18 +137,19 @@ function RainInterface() {
     send("setCinematic", false);
   }, [send, state]);
 
-  /** The first snapshot picks a tier from the width; a later choice is the player's and is kept. */
+  /** Scene loading owns the default; the query and later player choices override it. */
   const qualityChosen = useRef(false);
   useEffect(() => {
-    if (state === undefined || qualityChosen.current) return;
+    if (state === undefined || state.softwareRendering === undefined || qualityChosen.current)
+      return;
     qualityChosen.current = true;
-    // `?quality=` outranks the width default: an operator asking for `high` on a phone-sized
-    // window is asking for the tier, not for the guess this would otherwise make.
+    // An operator asking for high on a phone or software adapter keeps that explicit choice.
     const asked = automationRequest(window.location.search).quality;
     if (asked !== undefined) {
       send("setQuality", asked);
       return;
     }
+    if (state.qualityExplicit === true || state.softwareRendering) return;
     send("setQuality", window.innerWidth < NARROW_PX ? "performance" : "high");
   }, [send, state]);
 

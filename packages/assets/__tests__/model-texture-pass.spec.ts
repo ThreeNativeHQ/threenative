@@ -1,9 +1,11 @@
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import path from "node:path";
 import { type Document, NodeIO } from "@gltf-transform/core";
-import { ALL_EXTENSIONS } from "@gltf-transform/extensions";
+import { ALL_EXTENSIONS, EXTTextureWebP } from "@gltf-transform/extensions";
 import { read as readKTX2 } from "ktx-parse";
 import { MeshoptDecoder, MeshoptEncoder } from "meshoptimizer";
+import { PNG } from "pngjs";
 import { describe, expect, it, vi } from "vitest";
 import { buildFixtureDocument } from "../../../test-support/generate-fixture-model.js";
 import { rgbaPng } from "../../../test-support/png.js";
@@ -79,6 +81,118 @@ async function compiled(
   const result = await apply(input, options);
   if (Buffer.isBuffer(result)) throw new Error("model pass returned an unchanged buffer");
   return { buffer: result.buffer, entry: result.entry ?? {} };
+}
+
+/**
+ * Two flat halves, never one solid colour: `prune` deletes a single-colour texture and folds it
+ * into the material factor, which would leave these cases measuring a material and no image.
+ */
+const WEBP_HALVES = [
+  [200, 130, 40],
+  [20, 60, 220],
+] as const;
+
+/** A lossless WebP of the requested size, encoded by the decoder the pass uses. */
+async function tinyWebp(size = 4): Promise<Buffer> {
+  const sharp = (await import("sharp")).default;
+  const pixels = Buffer.alloc(size * size * 4);
+  for (let index = 0; index < size * size; index += 1) {
+    pixels.set([...WEBP_HALVES[index % size < size / 2 ? 0 : 1], 255], index * 4);
+  }
+  return sharp(pixels, { raw: { channels: 4, height: size, width: size } })
+    .webp({ lossless: true })
+    .toBuffer();
+}
+
+/**
+ * The shared fixture with its base colour replaced by an `EXT_texture_webp` image, which is what
+ * a Fab or McD export ships: the extension declared and required, the payload in a WebP.
+ */
+async function fixtureWithWebp(size?: number): Promise<Buffer> {
+  const document = buildFixtureDocument();
+  document.createExtension(EXTTextureWebP).setRequired(true);
+  document
+    .getRoot()
+    .listTextures()[0]
+    ?.setImage(await tinyWebp(size))
+    .setMimeType("image/webp");
+  // The writer only emits the extensions it was told about, and an undeclared `image/webp`
+  // would be the invalid document this fixture exists to avoid.
+  return Buffer.from(await new NodeIO().registerExtensions(ALL_EXTENSIONS).writeBinary(document));
+}
+
+interface IBasisModule {
+  readonly KTX2File: new (
+    bytes: Uint8Array,
+  ) => {
+    close(): void;
+    getHeight(): number;
+    getImageTranscodedSizeInBytes(mip: number, layer: number, face: number, format: number): number;
+    getWidth(): number;
+    isValid(): boolean;
+    startTranscoding(): boolean;
+    transcodeImage(
+      dst: Uint8Array,
+      mip: number,
+      layer: number,
+      face: number,
+      format: number,
+      getAlphaForOpaqueFormats: number,
+      channel0: number,
+      channel1: number,
+    ): boolean;
+  };
+  readonly initializeBasis: () => void;
+  readonly transcoder_texture_format: Readonly<Record<string, { readonly value: number }>>;
+}
+
+/**
+ * Mip 0 of a KTX2 as RGBA8, decoded by the same `basis_transcoder` the runtime ships. Three
+ * publishes it CommonJS inside an ESM package, so it is evaluated here the way its own wrapper
+ * does — the alternative is trusting the container header instead of the pixels.
+ */
+async function transcodeFirstLevel(ktx2: Uint8Array): Promise<Uint8Array> {
+  const paths = basisTranscoderPaths();
+  const directory = path.dirname(paths.javascriptPath);
+  const source = await readFile(paths.javascriptPath, "utf8");
+  const shim: { exports: unknown } = { exports: {} };
+  new Function("module", "exports", "require", "__filename", "__dirname", source)(
+    shim,
+    shim.exports,
+    createRequire(import.meta.url),
+    paths.javascriptPath,
+    directory,
+  );
+  const factory = shim.exports as (options: {
+    locateFile: (file: string) => string;
+  }) => Promise<IBasisModule>;
+  const basis = await factory({ locateFile: (file) => path.join(directory, file) });
+  basis.initializeBasis();
+  const file = new basis.KTX2File(ktx2);
+  // The emscripten bindings report booleans as numbers, so both calls are judged on truth.
+  expect(file.isValid()).toBeTruthy();
+  expect(file.startTranscoding()).toBeTruthy();
+  // The WASM enum's numbering is not three's TranscoderFormat map, so the shipped enum names it.
+  const rgba32 = basis.transcoder_texture_format.cTFRGBA32;
+  if (rgba32 === undefined) throw new Error("the shipped transcoder exposes no cTFRGBA32 format");
+  const format = rgba32.value;
+  const pixels = new Uint8Array(file.getImageTranscodedSizeInBytes(0, 0, 0, format));
+  expect(file.transcodeImage(pixels, 0, 0, 0, format, 0, -1, -1)).toBeTruthy();
+  file.close();
+  return pixels;
+}
+
+/** Every channel within `tolerance` of the source half the pixel belongs to. */
+function expectColours(pixels: Uint8Array, width: number, tolerance: number): void {
+  expect(pixels.length).toBe(width * width * 4);
+  for (let offset = 0; offset < pixels.length; offset += 4) {
+    const half = WEBP_HALVES[(offset / 4) % width < width / 2 ? 0 : 1];
+    for (let channel = 0; channel < 3; channel += 1) {
+      expect(Math.abs((pixels[offset + channel] ?? 0) - (half[channel] ?? 0))).toBeLessThanOrEqual(
+        tolerance,
+      );
+    }
+  }
 }
 
 describe("embedded model textures", () => {
@@ -288,6 +402,141 @@ describe("embedded model textures", () => {
     expect(() => assertNoTextureDrift(intact, missing, "character.glb")).toThrow(
       /TN_ASSETS_MODEL_TEXTURE_DRIFT/u,
     );
+  });
+});
+
+describe("embedded EXT_texture_webp", () => {
+  it("should cook a WebP image to KTX2 and drop the extension", async () => {
+    // A named per-slot codec also skips the keep-smaller-source guard: a 4x4 WebP is smaller
+    // than the KTX2 container around it, and the test needs the cook to have run.
+    const { buffer } = await compiled(await fixtureWithWebp(), {
+      textures: { overrides: [{ codec: "uastc", slot: "baseColorTexture" }] },
+    });
+    const json = JSON.parse(buffer.subarray(20, 20 + buffer.readUInt32LE(12)).toString("utf8")) as {
+      extensionsRequired?: string[];
+      extensionsUsed?: string[];
+    };
+    expect(json.extensionsUsed ?? []).not.toContain("EXT_texture_webp");
+    expect(json.extensionsRequired ?? []).not.toContain("EXT_texture_webp");
+    expect(json.extensionsRequired ?? []).toContain("KHR_texture_basisu");
+
+    const cooked = (await readOutput(buffer))
+      .getRoot()
+      .listTextures()
+      .find((texture) => texture.getName() === "checker");
+    expect(cooked?.getMimeType()).toBe("image/ktx2");
+    const image = cooked?.getImage() ?? new Uint8Array();
+    expect(readKTX2(image)).toMatchObject({ pixelHeight: 4, pixelWidth: 4 });
+    // UASTC is lossless for 8-bit RGBA, so the transcoded mip is the source colour: proof the
+    // WebP payload reached the encoder instead of a container that merely looked like one.
+    expectColours(await transcodeFirstLevel(image), 4, 1);
+  });
+
+  it("should cap an over-cap WebP image to PNG on a target with no transcoder", async () => {
+    const root = await makeTempDir("threenative-webp-decoder-free-");
+    await mkdir(path.join(root, "assets"));
+    // 8x8 against a 4-longest-edge cap: `cappedSize` never returns less than one 4x4 block, so
+    // only an over-cap source can reach the PNG the decoder-free path emits.
+    await writeFile(path.join(root, "assets", "prop.glb"), await fixtureWithWebp(8));
+
+    await compileAssets({
+      config: { models: { sharedImages: false, textures: { maxSize: 4 } } },
+      cwd: root,
+      platform: "android",
+    });
+
+    const manifest = JSON.parse(
+      await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
+    ) as { entries: Record<string, Record<string, unknown>> };
+    const entry = manifest.entries["prop.glb"];
+    if (entry === undefined || typeof entry.output !== "string") {
+      throw new Error("no manifest entry for 'prop.glb'");
+    }
+    expect(entry.extensions ?? []).not.toContain("EXT_texture_webp");
+
+    const cooked = (await readOutput(await readFile(path.join(root, "public", entry.output))))
+      .getRoot()
+      .listTextures()
+      .find((texture) => texture.getName() === "checker");
+    expect(cooked?.getMimeType()).toBe("image/png");
+    const image = Buffer.from(cooked?.getImage() ?? new Uint8Array());
+    expect(parsePng(image)).toMatchObject({ height: 4, width: 4 });
+    // A PNG is lossless, so the resampled colour must be the source one.
+    expectColours(PNG.sync.read(image).data, 4, 1);
+  });
+
+  it("should convert a WebP even when its KTX2 is larger", async () => {
+    // The real-game case: a flat-colour 256x256 WebP costs far fewer bytes than the KTX2
+    // container around it, so the keep-smaller-source guard retained the original and the
+    // cooked model still required `EXT_texture_webp` — which the decoder-free native targets
+    // cannot read. A container only an extension-reading loader understands is never kept.
+    const authored = (await readOutput(await fixtureWithWebp(256)))
+      .getRoot()
+      .listTextures()
+      .find((texture) => texture.getName() === "checker")
+      ?.getImage()?.byteLength;
+
+    const { buffer, entry } = await compiled(await fixtureWithWebp(256));
+    const summary = entry.embeddedTextures as
+      | {
+          readonly bytesAfter: number;
+          readonly bytesBefore: number;
+          readonly formats: Readonly<Record<string, string>>;
+          readonly skippedCompression: Readonly<Record<string, string>>;
+        }
+      | undefined;
+
+    // Proof the not-smaller guard really held here: the cook grew the payload, and the row it
+    // grew is the one the size report already prints.
+    expect(summary?.bytesAfter ?? 0).toBeGreaterThan(summary?.bytesBefore ?? 0);
+    expect(summary?.skippedCompression?.checker).toBeUndefined();
+    expect(summary?.formats.checker).toBe("etc1s");
+
+    const json = JSON.parse(buffer.subarray(20, 20 + buffer.readUInt32LE(12)).toString("utf8")) as {
+      extensionsRequired?: string[];
+      extensionsUsed?: string[];
+      images: { mimeType?: string }[];
+    };
+    expect(json.images.some((image) => image.mimeType === "image/webp")).toBe(false);
+    expect(json.extensionsUsed ?? []).not.toContain("EXT_texture_webp");
+    expect(json.extensionsRequired ?? []).not.toContain("EXT_texture_webp");
+    expect(json.extensionsRequired ?? []).toContain("KHR_texture_basisu");
+    // The image itself, not just the extension name, got bigger: that is the cost this test
+    // buys, and it is the number a reader of the build report sees.
+    const cooked = (await readOutput(buffer))
+      .getRoot()
+      .listTextures()
+      .find((texture) => texture.getName() === "checker");
+    expect(cooked?.getMimeType()).toBe("image/ktx2");
+    expect(cooked?.getImage()?.byteLength ?? 0).toBeGreaterThan(authored ?? 0);
+  });
+
+  it("should still keep a PNG whose KTX2 would be larger", async () => {
+    // The other half of the same rule, and the reason it is a container test rather than a size
+    // test: PNG and JPEG need no extension, so retaining them costs a reader nothing.
+    const { buffer, entry } = await compiled(await fixtureWithTextures({ width: 4 }));
+    const summary = entry.embeddedTextures as {
+      readonly skippedCompression: Readonly<Record<string, string>>;
+    };
+    expect(summary.skippedCompression.checker).toBe("not-smaller");
+    for (const texture of (await readOutput(buffer)).getRoot().listTextures()) {
+      expect(texture.getMimeType()).toBe("image/png");
+    }
+  });
+
+  it("should still fail closed on a container that is not an image", async () => {
+    const document = buildFixtureDocument();
+    document
+      .getRoot()
+      .listTextures()[0]
+      ?.setImage(Buffer.from("GIF89a not an image at all"))
+      .setMimeType("image/png");
+    const input = Buffer.from(await new NodeIO().writeBinary(document));
+    await expect(
+      apply(input, {
+        passes: { dedup: false, meshopt: false, prune: false, quantize: false, reorder: false },
+      }),
+    ).rejects.toThrow(/TN_ASSETS_MODEL_TEXTURE_UNDECODABLE.*TN_ASSETS_TEXTURE_CONTAINER/su);
   });
 });
 
