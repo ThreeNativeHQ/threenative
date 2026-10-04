@@ -1,6 +1,6 @@
 # PRD-502 — Handles keep identity and aliases (N04b)
 
-**Status:** PROPOSED
+**Status:** IN PROGRESS — phase 1 done
 **Complexity:** 4 — the handle and identity model every binding and engine module reads
 **Owner:** João
 **Work package:** N04 — [lifetime and numerics](README.md), [native-engine batch](../README.md)
@@ -25,10 +25,10 @@
 ## Execution Phases
 
 #### Phase 1: Generational handles
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** proposed `packages/runtime-native/src/engine/foundation/handles.{h,cpp}`, `packages/runtime-native/tests/native-engine/handles_test.cpp`
-- [ ] A freed slot reused for a new object rejects the old handle with `TN_HANDLE_STALE`. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_handles_generation`
-- [ ] Handles from another context or of another type are rejected with their named codes. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_handles_identity`
+- [x] A freed slot reused for a new object rejects the old handle with `TN_HANDLE_STALE`. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_handles_generation` — 2026-10-04: green in `build/tn-linux-engine`; red when `check()` skips the generation compare. `src/engine/foundation/handles.{h,cpp}`, target `tn_engine_foundation`
+- [x] Handles from another context or of another type are rejected with their named codes. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_handles_identity` — 2026-10-04: green; `HandleError::{Context,Type,Stale,Invalid}` — the ABI status names land with PRD-500 phase 2; a forged type field is refused because the slot's type is the truth
 
 #### Phase 2: Member aliases survive growth
 **Status:** NOT STARTED

@@ -12,6 +12,12 @@ function(tn_native_engine_target target)
     set_property(GLOBAL APPEND PROPERTY TN_NATIVE_ENGINE_TARGETS ${target})
 endfunction()
 
+# Foundation: handles and (later) math. Portable C++20 with no platform API, so the same sources
+# compile for the browser port.
+add_library(tn_engine_foundation STATIC src/engine/foundation/handles.cpp)
+tn_native_engine_target(tn_engine_foundation)
+target_include_directories(tn_engine_foundation PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+
 # Host services: the GPU context with no scripting state. The legacy runtime keeps compiling its
 # own copy, so this split adds targets and moves no behaviour of the shipped player.
 add_library(tn_host_services STATIC src/webgpu/context.cpp src/utils/stb_impl.cpp)
@@ -45,6 +51,28 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
             ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0:abort_on_error=1;UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1")
     endif()
 endif()
+
+# One executable per test file; each ctest names a case inside it.
+function(tn_native_engine_test target source)
+    add_executable(${target} EXCLUDE_FROM_ALL ${source})
+    target_link_libraries(${target} PRIVATE tn_engine_foundation)
+    tn_native_engine_target(${target})
+    foreach(case IN LISTS ARGN)
+        string(REPLACE "=" ";" pair "${case}")
+        list(GET pair 0 test_name)
+        list(GET pair 1 case_name)
+        add_test(NAME ${test_name} COMMAND $<TARGET_FILE:${target}> ${case_name})
+        set_tests_properties(${test_name} PROPERTIES LABELS "native-engine")
+    endforeach()
+    set_property(GLOBAL APPEND PROPERTY TN_NATIVE_ENGINE_TEST_TARGETS ${target})
+endfunction()
+
+tn_native_engine_test(tn-native-engine-handles-test tests/native-engine/handles_test.cpp
+    native_engine_handles_generation=generation
+    native_engine_handles_identity=identity)
+
+get_property(tn_native_engine_test_targets GLOBAL PROPERTY TN_NATIVE_ENGINE_TEST_TARGETS)
+add_custom_target(tn-native-engine-tests DEPENDS ${tn_native_engine_test_targets})
 
 # The engine target graph, recorded once every target in the project exists, so the ctest below can
 # prove no engine target reaches a JS engine, a web view or the scripting host.
