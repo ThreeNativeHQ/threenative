@@ -3730,10 +3730,10 @@
     {
       "aliases": [],
       "constraints": [
-        "the package's world.json must carry `terrain.layers.table` and `terrain.layers.splat`, written by the `export_terrain_layers.py` recipe",
-        "WebGPU allows 16 sampled textures per stage: planes + diffuse maps + normal maps must fit"
+        "the package's world.json must carry `terrain.layers.table` and `terrain.layers.splat`, written by `export_terrain_layers` in the `export_world.py` recipe",
+        "WebGPU allows 16 sampled textures per stage: same-size layers stack into one array texture per set, and `TN_TERRAIN_SPLAT samplers=<n>` reports what is left"
       ],
-      "example": "const surface = await loadTerrainSplat({ assets: ctx.assets, url: \"world/world.json\" });\nconst world = await WorldCells.load({ assets: ctx.assets, url: \"world/world.json\", surface, follow, ring: 2 });",
+      "example": "const surface = await loadTerrainSplat({ assets: ctx.assets, renderer: ctx.renderer, url: \"world/world.json\" });\nconst world = await WorldCells.load({ assets: ctx.assets, url: \"world/world.json\", surface, follow, ring: 2 });",
       "importPath": "@threenative/core/world",
       "kind": "function",
       "overrides": [

@@ -2924,11 +2924,11 @@ export async function loadTerrainSplat(options: ILoadTerrainSplatOptions): Promi
 ```
 
 - **Use when:** terrain textured by splat masks exported from Blender with the world package · the game's terrain should match the DCC's terrain material without a second copy
-- **Constraints:** the package's world.json must carry `terrain.layers.table` and `terrain.layers.splat`, written by the `export_terrain_layers.py` recipe · WebGPU allows 16 sampled textures per stage: planes + diffuse maps + normal maps must fit
+- **Constraints:** the package's world.json must carry `terrain.layers.table` and `terrain.layers.splat`, written by `export_terrain_layers` in the `export_world.py` recipe · WebGPU allows 16 sampled textures per stage: same-size layers stack into one array texture per set, and `TN_TERRAIN_SPLAT samplers=<n>` reports what is left
 - **Overrides:** every value comes from the package's table; the returned material is the game's to adjust
 
 ```ts
-const surface = await loadTerrainSplat({ assets: ctx.assets, url: "world/world.json" });
+const surface = await loadTerrainSplat({ assets: ctx.assets, renderer: ctx.renderer, url: "world/world.json" });
 const world = await WorldCells.load({ assets: ctx.assets, url: "world/world.json", surface, follow, ring: 2 });
 ```
 

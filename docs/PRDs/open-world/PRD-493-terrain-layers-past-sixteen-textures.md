@@ -40,10 +40,12 @@ The blend curve keeps its current form (mask, `lo`/`hi`, breakup push, macro noi
 ## Execution Phases
 
 #### Phase 1: Every same-size set is one sampler
-**Status:** NOT STARTED
+**Status:** LANDED
 **Files:** `packages/core/src/world-terrain-splat.ts`; `packages/core/__tests__/world-terrain-splat.spec.ts`
-- [ ] Sixteen uncompressed same-size layers with normals build a material that references one array texture per set (3 sampled textures with the splat array). Mixed sizes still fall back and the marker names the count. proof: red-green `pnpm exec vitest run packages/core/__tests__/world-terrain-splat.spec.ts`.
-- [ ] The `@constraint` and recipe name are corrected, and the regenerated manifest carries them. proof: `pnpm build` then `pnpm exec vitest run scripts/__tests__/capability-manifest.spec.ts scripts/__tests__/generate-capability-reference.spec.ts`, both exit 0.
+- [x] Sixteen uncompressed same-size layers with normals build a material that references one array texture per set (3 sampled textures with the splat array). Mixed sizes still fall back and the marker names the count. proof: red-green `pnpm exec vitest run packages/core/__tests__/world-terrain-splat.spec.ts` — 3 red (uncompressed stack `undefined`, `renderer` unknown), then 9/9 green exit 0; the 16-layer case walks the node graph and counts 3 distinct sampled textures, and `TN_TERRAIN_SPLAT layers=4 samplers=6 stacked=1` names the fallback's cost.
+- [x] The `@constraint` and recipe name are corrected, and the regenerated manifest carries them. proof: `pnpm build` exit 0, then `pnpm exec vitest run scripts/__tests__/capability-manifest.spec.ts scripts/__tests__/generate-capability-reference.spec.ts` — 28/28 green, both exit 0. `pnpm typecheck` and `pnpm lint` exit 0.
+
+Uncompressed layers stack through `renderer.copyTextureToTexture` per layer (`ILoadTerrainSplatOptions.renderer`, so a game passes `ctx.renderer`); the array itself is created with `source.dataReady = false`, so no CPU pixel read and no zero upload stand in for a copy. Without a renderer every layer keeps its own sampler and the marker says what that costs.
 
 #### Phase 2: ORM per layer
 **Status:** NOT STARTED
