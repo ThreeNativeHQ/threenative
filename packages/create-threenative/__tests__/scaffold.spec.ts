@@ -164,42 +164,33 @@ const BUG_REPORT_SKILL_PATHS = [
 // all ten hashes to the values above, so nothing else in this lane reaches a scaffold. The docs
 // arrive through the templating step rather than a verbatim copy, which is why a content-hash
 // matcher does not list them and this ablation is the evidence instead.
+// Recomputed 2026-10-03 for PRD-339's opt-in exposure integration at 8bf16f4c3.
+// All thirteen actual no-install baseline52/current trees were byte-compared: only the
+// generated worldEnvironment/autoExposure/quality wiring, two GPU/readback helper modules,
+// and token-identical instruction whitespace changed. Default cost remains off; actual
+// consumer GPU captures are byte-identical to the qualified public images. Measurement:
+// docs/verification/prd339-exposure-proof/completion-consumer-8bf16f4.json.
+// Current develop c18a42b integration: all13 actual generated trees were byte-compared
+// against reviewed 8bf trees; only the copied Three compute-only Storage3DTexture patch changed.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
-  // Recomputed 2026-10-01 on the merge of develop a602467db (PRD-458/473): every template's frame
-  // budget now comes from resolveTargetFps, so ten trees move and `rts` does not; the capability reference (365 -> 368 entries) then moved all eleven, because it ships in every scaffold.
-  // Recomputed 2026-10-01, three times, each by a real run that found the previous tree wrong:
-  // the first gave each quality.ts a software adapter policy; the second found ten of eleven
-  // setupPost callers never forwarded the adapter fact to it; the third found no template but
-  // `starter` set `renderChainTier`, so a low preset still ran the high render chain. The same ten
-  // trees move on each of the last two. `starter` is unchanged throughout — its setupPost hands the
-  // whole environment to createAdaptiveQuality and its quality.ts already carried the chain tier.
-  // Values measured through createProject by the spec that asserts them, not by hand.
-  // Recomputed again 2026-10-01 for `sailing` alone: `sailMotion` is a range across landed cloth
-  // readbacks, and one landed copy makes that range zero by arithmetic, so the sails scenario now
-  // holds long enough for two copies to arrive on a CPU rasteriser and asserts the landed count
-  // beside it. Only the two sailing template files changed, so only this one tree moves.
-  // Recomputed again 2026-10-01 after merging the quality/post chain into this branch and landing
-  // the rts sim's order, queue and event-record fixes: `rts` alone moves, and it is the only one of
-  // the eleven that carries `src/sim/`. Measured through createProject on the merged tree.
-  // Recomputed 2026-10-01 on the merge of develop (PRD-470/471/472/474) into the rain + snow
-  // branch (PRD-469, PRD-473): the merged tree carries both sides' engine and manifest bytes, so
-  // all thirteen trees, rain and snow included, were re-measured through createProject.
-  // Recomputed 2026-10-02 rebasing the FabCLI manual-login fallback onto develop: the shared
-  // threenative-assets skill ships in every scaffold, so all thirteen trees move.
-  "action-rpg": "0b06ad9bbcddcb702497985eaaa855c5bfbc66d43809e720f2f9b445172b6dd3",
-  minimal: "531c452baae7bbeb08a511f8cc06c2d94b5886b1de70c31de5968462584c82bd",
-  platformer: "616d63fb1b0fe888c39a4dbbae651ecd3e85b61d5fd396bc0f77fde122bef585",
-  puzzle: "f0a302958d7607eb8438ddedea79241bf87f04620d28fe04d92dc8c5bd887742",
-  racing: "39c2eb35911939484c4be5c35b8b1fb1be2ccaa8fdb4c2269a7e7943f61ca93f",
-  rain: "80a2c0297f451b096950bcdb7a7710776e063c4819c6b1b543f0bc320edda41c",
-  rts: "df5e7ef2ff5dedb7c234239141afbaae2d32f8d6f9e58be89e0731b47f857572",
-  runner: "cbeb5578241eab87a38307dd27f4ede42bf4058774d6dea4cf848fde0fd50bb2",
-  sailing: "adf775fd15287af4cc00b675264e157e0555b027e3bd32ad9a5e8aebbcd1f64d",
-  // VQ11 after merge of develop 416ffd7: measured through createProject, only shooter changed.
-  shooter: "0b9dadf239d441709f214da3035792741f791fdf5349e44c063f619b048a3484",
-  snow: "f3d4878829cf14ebee6355e720c223171529d550e8cafc9cd6328285a8000d3b",
-  starter: "fae9ee908d5c9370fdf95c1314f6845be5fcb9fd64114af21082331b21e53579",
-  "tower-defense": "68ce595b3857e5ca3e94c7b4dc09f29cb0e16459b6642c235f391b7312da365e",
+  // Measured through actual createProject trees after exposure/fog consolidation and restamping,
+  // then again on the merge carrying the WebGPU adapter-retention Three patch: the scaffolded
+  // `patches/three@0.185.1.patch` is the only byte that moved on top of the exposure/fog tree, so
+  // all thirteen trees move again. Values below are the merged-tree measurement, not either side's.
+  "action-rpg": "6aa05e1a9e39719f30242ddee588a91236fbfdbf6b75ec252e91d56effccb49a",
+  minimal: "ced30816bf592b829d655941da8cfb8555295fe45fd915d73ed1605a15a2a8f9",
+  platformer: "de6323b7fd05a66ce5e89415df962ed59eae765c65346a71488c609381bf14c6",
+  puzzle: "5c7eea6460b6f6718018cf3a5ffd9f9ccaeffa219fc3337cb7216008af2ef03f",
+  racing: "0e9c54935e58bacf835aa10e6d633f1360da394e759714903d7d36f6e04bf38b",
+  rain: "9b406dc1d87df403e4bff9f825fa4ad824e71cfb77dfb482d0a4da5b54f4e91b",
+  rts: "54b9ee0cdfe8d4cae460efacc348fba30ac6bf04680b282c789eeec619ed2481",
+  runner: "30695f2421a37adbeace02a2d30523da187c208b37252d93970f38f1618f064b",
+  // Initial finite-height readiness plus its scene-owned lifecycle helper and mirrored docs.
+  sailing: "a4e1a5c72086968e3137eb6b4a8168d0a74f28d292a21f4f82bcd355d9e9138e",
+  shooter: "668cb308dfaaa2cc86431bb71db895f8e5c8d9e6562bb4e333ac5a0b6618e046",
+  snow: "550ef7eff2c6df576716145d3b75c2956ac6413a24a1d5463c4d6c6c6ca9575b",
+  starter: "77d9c77d83cfc2d28e857303f07c1cca498e1135ee3474ac27fac43dfb6337a9",
+  "tower-defense": "ebed6e13a9be25ba48f6dcb41e2a23fc4798b074d46af688333c326771e919dc",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
@@ -297,6 +288,12 @@ const STARTER_PATHS = [
   "src/render/lighting.ts",
   "src/render/postprocessing.ts",
   "src/render/worldEnvironment.ts",
+  "src/render/exposure.ts",
+  "src/render/autoExposure.ts",
+  "src/render/volumetricFog.ts",
+  "src/render/volumetricFogOptions.ts",
+  "src/render/volumetricFogVolume.ts",
+  "src/render/volumetricFogTransport.ts",
   "src/render/palette.ts",
   "src/render/materials.ts",
   "src/render/arena.ts",

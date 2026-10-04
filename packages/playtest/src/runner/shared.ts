@@ -49,6 +49,13 @@ export interface IRunStepSamples {
 export interface IStandalonePlaytestReport extends IPlaytestReport {
   artifactDirectory: string;
   /**
+   * The clock this run measured on, as the protocol names it: `fixed-step` for the default
+   * tick-counted scenario, `wall-clock` when `--live-clock` put the host's own frame pump in
+   * charge. A frame rate is only the rate of the clock that produced it, so every report says
+   * which one this was — the same field the native production profile carries.
+   */
+  clock: "fixed-step" | "wall-clock";
+  /**
    * What the run waited for before it observed anything, and what it settled on.
    *
     * `rule: "compile-settled"` means the sustained in-budget frame window was not required,
@@ -131,6 +138,7 @@ export function failureReport(
   return {
     artifactDirectory: config.artifactDirectory,
     assertionResults: [failedDiagnosticsAssertion(diagnosticsPolicy)],
+    clock: config.liveClock === true ? "wall-clock" : "fixed-step",
     debugColliders: false,
     diagnostics: [item],
     diagnosticsPolicy,

@@ -148,28 +148,15 @@ function generateVFSHeader(files, outputPath) {
 }
 
 /**
- * Three's compressed-asset decoders that cannot run on a mobile native target.
- *
- * Android runs QuickJS and iOS runs JavaScriptCore without a WASM JIT: neither has
- * `WebAssembly`, so the Basis/zstd transcoder behind `KTX2Loader`, the Meshopt decoder and
- * Draco's wasm decoder have nothing to instantiate there. Their specifiers are static strings
- * inside `await import(...)`, so a bundler resolves and inlines them whether or not the game
- * ships a single compressed asset — which is how one `.ktx2`-free game came to fail
- * `TN_NATIVE_WASM_ON_MOBILE`. Replacing them here keeps that guard intact by keeping WASM out
- * of the bundle instead of by ignoring it.
- *
- * The replacements construct and configure exactly like the originals so a game that ships no
- * compressed asset boots normally (`createAssetLoader` builds the shared KTX2 loader eagerly);
- * they refuse, by name, only when asked to decode. A game whose compiled assets do need one is
- * refused earlier and louder, by `threenative build`, before this bundle is written.
+ * Decoder-free targets retain loader configuration/lifecycle but refuse actual decoding.
+ * Android V8 still lacks a qualified packaged decoder path; its engine is not the reason to
+ * enable one. Desktop QuickJS and an unknown desktop artifact use the same refusing stubs.
  */
 const MOBILE_KTX2_MESSAGE =
-  // Deliberately never spells the WASM host object: `TN_NATIVE_WASM_ON_MOBILE` greps the
-  // finished bundle for that identifier, and a refusal message must not read as the thing it
-  // refuses.
-  "TN_NATIVE_KTX2_UNSUPPORTED: this Android/iOS bundle carries no Basis transcoder, because the mobile native runtime has no WASM engine. Compiled .ktx2 textures cannot be decoded here; native compilation automatically keeps decoder-free authored textures, or keep compressed textures on the web target.";
+  // Never spell the WASM host global: the bundle guard must not mistake diagnostics for code.
+  "TN_NATIVE_KTX2_UNSUPPORTED: this decoder-free native bundle carries no qualified Basis transcoder. Compiled .ktx2 textures cannot be decoded here; native compilation keeps decoder-free authored textures, or keep compressed textures on the web target.";
 const MOBILE_MESH_MESSAGE =
-  "TN_NATIVE_MESH_COMPRESSION_UNSUPPORTED: this Android/iOS bundle carries no Meshopt or Draco decoder, because the mobile native runtime has no WASM engine. Compressed model geometry cannot be decoded here; native compilation keeps shared images and decoder-free model geometry, or keep compressed models on the web target.";
+  "TN_NATIVE_MESH_COMPRESSION_UNSUPPORTED: this decoder-free native bundle carries no qualified Meshopt or Draco decoder. Compressed model geometry cannot be decoded here; native compilation keeps shared images and decoder-free model geometry, or keep compressed models on the web target.";
 
 const MOBILE_DECODER_STUBS = [
   {
@@ -340,7 +327,7 @@ void game.start().catch((error) => console.error(
     root: absoluteProject,
     define: { 'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV) },
     plugins:
-      target === 'desktop'
+      target === 'desktop' && !nativeBackend
         ? [importMetaPlugin, nativeEntryPlugin]
         : [importMetaPlugin, mobileDecodersPlugin, nativeEntryPlugin],
     // One three, whatever the import graph looks like. The game resolves `three` beside itself

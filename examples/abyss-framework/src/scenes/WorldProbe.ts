@@ -1,5 +1,5 @@
 import { type ICtx, Scene, VirtualShadowNode } from "@threenative/core";
-import { WorldCells } from "@threenative/core/world";
+import { type IWorldCellsStats, WorldCells } from "@threenative/core/world";
 import { Color, DirectionalLight, HemisphereLight } from "three";
 import { terrainMaterial } from "../render/terrain.js";
 
@@ -46,7 +46,7 @@ const initialState = {
   shadowRendered: 0,
 };
 
-export type WorldState = typeof initialState;
+export type WorldState = typeof initialState & { stats?: IWorldCellsStats };
 type WorldCtx = ICtx<WorldState>;
 
 export class WorldProbe extends Scene<WorldState> {
@@ -56,6 +56,9 @@ export class WorldProbe extends Scene<WorldState> {
   #elapsed = 0;
   #previousResident = -1;
   #maxResident = 0;
+  #maxInstances = 0;
+  #maxAdmissionSpentMs = 0;
+  #cameraTarget: [number, number, number] = [START_X + 40, ALTITUDE - 14, 0];
   #residenceChanges = 0;
   #shadow: VirtualShadowNode | undefined;
 
@@ -96,7 +99,7 @@ export class WorldProbe extends Scene<WorldState> {
     ctx.add(sky);
     ctx.add(sun);
     ctx.entities.add("world", {
-      debug: () => this.#debug(),
+      debug: () => this.#debug(ctx),
       dispose: () => world.dispose(),
       object: world,
     });
@@ -110,7 +113,7 @@ export class WorldProbe extends Scene<WorldState> {
   override render(ctx: WorldCtx): void {
     // The shadow node's `updateBefore` runs inside the render pass, so this is the only hook where
     // its per-frame `deferred` counter is the frame that just happened rather than the one before.
-    this.#sample();
+    this.#sample(ctx);
   }
 
   #update(ctx: WorldCtx, dt: number): void {
@@ -120,14 +123,19 @@ export class WorldProbe extends Scene<WorldState> {
     if (ctx.input.pressed("fly")) this.#elapsed += dt;
     const x = Math.min(START_X + this.#elapsed * SPEED, END_X);
     ctx.camera.position.set(x, ALTITUDE, 0);
-    ctx.camera.lookAt(x + 40, ALTITUDE - 14, 0);
-    this.#sample();
+    this.#cameraTarget = [x + 40, ALTITUDE - 14, 0];
+    ctx.camera.lookAt(...this.#cameraTarget);
+    this.#sample(ctx);
   }
 
   /** Sample the residency counters per step; the stats are read at observation time. */
-  #sample(): void {
+  #sample(ctx: WorldCtx): void {
     const stats = this.#world?.stats();
     if (stats === undefined) return;
+    // Preserve the engine's complete readings, including admission overshoot and GPU fallback reason.
+    ctx.state.set({ stats });
+    this.#maxInstances = Math.max(this.#maxInstances, stats.instances);
+    this.#maxAdmissionSpentMs = Math.max(this.#maxAdmissionSpentMs, stats.admission.spentMs);
     if (stats.residentCells !== this.#previousResident) {
       this.#previousResident = stats.residentCells;
       this.#residenceChanges += 1;
@@ -143,10 +151,32 @@ export class WorldProbe extends Scene<WorldState> {
   #shadowDeferrals = 0;
   #shadowRenders = 0;
 
-  #debug(): Record<string, number> {
+  #debug(ctx: WorldCtx): Record<string, unknown> {
     const stats = this.#world?.stats();
     const shadow = this.#shadow?.stats;
     return {
+      cameraPosition: ctx.camera.position.toArray(),
+      cameraTarget: [...this.#cameraTarget],
+      flyTimeMs: this.#elapsed * 1_000,
+      // World-space transforms from the committed hand-placed chunks, not inferred screen depth.
+      landmarks: [
+        { id: "yard_crate_a", position: [-100, 1, 0] },
+        { id: "yard_crate_b", position: [-30, 1, -20] },
+      ],
+      ...(stats === undefined
+        ? {}
+        : {
+            admissionBacklog: stats.admission.backlog,
+            admissionDeferred: stats.admission.deferred,
+            admissionSpentMs: stats.admission.spentMs,
+            gpuSceneOn: stats.gpuScene.on,
+            gpuSceneReason: stats.gpuScene.reason,
+            gpuSceneDispatches: stats.gpuScene.dispatches,
+            loadsQueued: stats.loadsQueued,
+            pendingPrewarm: stats.pendingPrewarm,
+            maxAdmissionSpentMs: this.#maxAdmissionSpentMs,
+            maxInstances: this.#maxInstances,
+          }),
       evictions: stats?.evictions ?? 0,
       failures: stats?.failures ?? 0,
       instances: stats?.instances ?? 0,

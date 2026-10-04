@@ -411,6 +411,7 @@ export function buildReport(
     artifactDirectory: config.artifactDirectory,
     ...(capture === undefined ? {} : { capture }),
     assertionResults,
+    clock: config.liveClock === true ? "wall-clock" : "fixed-step",
     diagnostics: allDiagnostics,
     pass: assertionResults.every(({ pass }) => pass) && allDiagnostics.every(({ severity }) => severity !== "error"),
     runtime: "web",

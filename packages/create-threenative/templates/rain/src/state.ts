@@ -155,7 +155,7 @@ export function intentPatch(
       if (!QUALITIES.includes(payload as QualityName)) {
         throw new Error("expected performance, balanced, high or ultra");
       }
-      return { quality: payload as QualityName };
+      return { quality: payload as QualityName, qualityExplicit: true };
     case "setWeather":
       return { target: weatherTarget(payload, currentTarget) };
     case "pause":
@@ -212,6 +212,10 @@ export type GameState = {
   target: Weather;
   preset: PresetName;
   quality: QualityName;
+  /** A URL or player choice outranks the scene's first-frame default. */
+  qualityExplicit?: boolean;
+  /** Observed before scene entry; the UI must not infer an adapter from window width. */
+  softwareRendering?: boolean;
   elapsed: number;
   frame: number;
   flash: number;

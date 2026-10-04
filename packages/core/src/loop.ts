@@ -448,11 +448,23 @@ export class FixedStepLoop {
     // one more zero-dt update after every step a run counts.
     this.#clockFrozen = true;
     this.#lastTime = Number.POSITIVE_INFINITY;
+    // A counted batch is metered, because a tick-counted run — which is what a playtest run is — is
+    // simulated entirely by `advance()` and reported `update 0 ms`, `substeps 0` and one boot window
+    // followed by nothing but hitches, a blocking batch having pushed the next live timestamp past
+    // `hitchMs`. It is charged as simulation, not as a frame: it presents nothing, so counting it as
+    // one put zero-millisecond frames that drew nothing into half of every window's frame and render
+    // percentiles. `addSimulation` decides which it is from the frame it lands in, so an `advance()`
+    // from inside a live frame — the frozen prime's settle — is charged there exactly once.
+    const startedAt = this.#now();
     for (let index = 0; index < ticks; index += 1) {
       this.#onUpdate(this.step);
       this.#onAfterPhysics(this.step);
       this.#tick += 1;
     }
+    const finishedAt = this.#now();
+    const budget = this.#budget;
+    if (budget !== undefined && Number.isFinite(startedAt) && Number.isFinite(finishedAt))
+      budget.addSimulation(Math.max(0, finishedAt - startedAt), ticks);
     return ticks;
   }
 

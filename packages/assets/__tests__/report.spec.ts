@@ -121,6 +121,14 @@ describe("formatModelSizes", () => {
 });
 
 describe("formatSkippedCompression", () => {
+  it("reports missing decoders without inferring that the selected engine has no WASM", () => {
+    const lines = formatSkippedCompression([
+      { kind: "texture", files: 1, bytes: 128, reason: "platform" },
+    ]);
+    expect(lines[0]).toContain("no qualified KTX2 decoder");
+    expect(lines[0]).not.toContain("no WebAssembly");
+  });
+
   it("names the decoder capability that a target skipped without blaming dedupe", () => {
     const rows: readonly ISkippedCompressionRow[] = [
       { bytes: 240, files: 2, kind: "model", reason: "platform" },

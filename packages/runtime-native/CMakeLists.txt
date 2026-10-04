@@ -2353,6 +2353,32 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         tests/stall_budget_hitch_test.cpp)
     target_link_libraries(threenative-stall-budget-hitch-test PRIVATE mystral-runtime)
 
+    set(TN_EXPOSURE_FIXTURE "${CMAKE_CURRENT_SOURCE_DIR}/../create-threenative/__tests__/fixtures/auto-exposure")
+    set(TN_EXPOSURE_BUNDLE "${CMAKE_CURRENT_BINARY_DIR}/generated/exposure-graph.js")
+    add_custom_command(OUTPUT "${TN_EXPOSURE_BUNDLE}"
+        COMMAND "${TN_NODE_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/bundle.mjs"
+            --project "${CMAKE_CURRENT_SOURCE_DIR}/../create-threenative"
+            --entry "__tests__/fixtures/auto-exposure/native-contract.ts"
+            --target desktop --output "${TN_EXPOSURE_BUNDLE}"
+        DEPENDS "${TN_EXPOSURE_FIXTURE}/native-contract.ts"
+            "${CMAKE_CURRENT_SOURCE_DIR}/../create-threenative/template-assets/autoExposure.ts"
+            "${CMAKE_CURRENT_SOURCE_DIR}/../create-threenative/template-assets/exposureGraph.ts"
+            "${CMAKE_CURRENT_SOURCE_DIR}/../create-threenative/template-assets/exposureReadback.ts"
+            "${CMAKE_CURRENT_SOURCE_DIR}/../create-threenative/template-assets/exposure.ts"
+            "${CMAKE_CURRENT_SOURCE_DIR}/scripts/bundle.mjs"
+            "${CMAKE_CURRENT_SOURCE_DIR}/../../pnpm-lock.yaml")
+    add_executable(threenative-exposure-graph-test EXCLUDE_FROM_ALL
+        tests/exposure_graph_test.cpp "${TN_EXPOSURE_BUNDLE}")
+    target_link_libraries(threenative-exposure-graph-test PRIVATE mystral-runtime)
+    target_compile_definitions(threenative-exposure-graph-test PRIVATE
+        TN_EXPOSURE_GRAPH_BUNDLE="${TN_EXPOSURE_BUNDLE}")
+    if(MYSTRAL_USE_DAWN)
+        target_include_directories(threenative-exposure-graph-test PRIVATE ${DAWN_INCLUDE_DIR})
+    elseif(MYSTRAL_USE_WGPU AND TARGET wgpu::wgpu)
+        get_target_property(TN_EXPOSURE_WGPU_INCLUDES wgpu::wgpu INTERFACE_INCLUDE_DIRECTORIES)
+        target_include_directories(threenative-exposure-graph-test PRIVATE ${TN_EXPOSURE_WGPU_INCLUDES})
+    endif()
+
     add_executable(threenative-timestamp-query-test EXCLUDE_FROM_ALL
         tests/timestamp_query_test.cpp)
     target_link_libraries(threenative-timestamp-query-test PRIVATE mystral-runtime)
@@ -2556,11 +2582,23 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     add_executable(threenative-webgpu-comprehensive-test EXCLUDE_FROM_ALL
         tests/webgpu_comprehensive_test.cpp)
     target_link_libraries(threenative-webgpu-comprehensive-test PRIVATE mystral-runtime)
+    add_executable(threenative-canvas-presentation-test EXCLUDE_FROM_ALL
+        tests/canvas_presentation_test.cpp)
+    target_link_libraries(threenative-canvas-presentation-test PRIVATE mystral-runtime)
+    add_executable(threenative-surface-texture-status-test EXCLUDE_FROM_ALL
+        tests/surface_texture_status_test.cpp)
+    target_link_libraries(threenative-surface-texture-status-test PRIVATE mystral-runtime)
     if(MYSTRAL_USE_DAWN)
         target_include_directories(threenative-webgpu-comprehensive-test PRIVATE ${DAWN_INCLUDE_DIR})
+        target_include_directories(threenative-surface-texture-status-test PRIVATE ${DAWN_INCLUDE_DIR})
+        target_include_directories(threenative-canvas-presentation-test PRIVATE ${DAWN_INCLUDE_DIR})
     elseif(MYSTRAL_USE_WGPU AND TARGET wgpu::wgpu)
         target_include_directories(threenative-webgpu-comprehensive-test PRIVATE ${WGPU_TEST_INCLUDES})
+        target_include_directories(threenative-surface-texture-status-test PRIVATE ${WGPU_TEST_INCLUDES})
+        target_include_directories(threenative-canvas-presentation-test PRIVATE ${WGPU_TEST_INCLUDES})
     endif()
+    tn_register_contract_test(threenative-surface-texture-status-test)
+    tn_register_contract_test(threenative-canvas-presentation-test)
 
     add_executable(threenative-js-module-comprehensive-test EXCLUDE_FROM_ALL
         tests/js_module_comprehensive_test.cpp)
@@ -2676,6 +2714,11 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     tn_register_contract_test(threenative-pipeline-cache-test)
     tn_register_contract_test(threenative-stall-budget-hitch-test)
     tn_register_contract_test(threenative-timestamp-query-test)
+    tn_register_contract_test(threenative-exposure-graph-test)
+    add_test(NAME threenative-exposure-graph-test-validation-negative
+        COMMAND $<TARGET_FILE:threenative-exposure-graph-test> --inject-validation)
+    set_tests_properties(threenative-exposure-graph-test-validation-negative
+        PROPERTIES LABELS "native-contract")
     if(TN_ENABLE_VIDEO)
         tn_register_contract_test(threenative-video-recorder-state-test)
     else()

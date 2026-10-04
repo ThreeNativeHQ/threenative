@@ -41,7 +41,8 @@ bool initBindings(
     uint32_t width,
     uint32_t height,
     bool debug,
-    void* wgpuAdapter = nullptr);
+    void* wgpuAdapter = nullptr,
+    void* surfaceNativeHandle = nullptr);
 
 // Drops every reference to the live presentation surface, ahead of a rebuild. Android replaces
 // the `ANativeWindow` behind a backgrounded app rather than reconfiguring it, and wgpu-native
@@ -50,7 +51,8 @@ void detachSurfaceForRebuild(BindingsState* state);
 
 // Publishes a rebuilt surface to the bindings, which is where every present reads it from.
 void republishSurface(BindingsState* state, void* wgpuSurface, uint32_t surfaceFormat,
-                      uint32_t presentMode, uint32_t width, uint32_t height);
+                      uint32_t presentMode, uint32_t width, uint32_t height,
+                      void* surfaceNativeHandle = nullptr);
 
 void setOffscreenTexture(BindingsState* state, void* texture, void* textureView);
 void beginDawnFrame(BindingsState* state);

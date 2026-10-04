@@ -69,6 +69,7 @@ typedef WGPUBufferMapAsyncStatus WGPUBufferMapAsyncStatus_Compat;
 #define WGPU_SURFACE_TEXTURE_STATUS_TYPE WGPUSurfaceGetCurrentTextureStatus
 #define WGPUSurfaceGetCurrentTextureStatus_Success_Compat WGPUSurfaceGetCurrentTextureStatus_Success
 #define WGPUSurfaceGetCurrentTextureStatus_SuccessSuboptimal_Compat WGPUSurfaceGetCurrentTextureStatus_SuccessSuboptimal
+#define WGPUSurfaceGetCurrentTextureStatus_Outdated_Compat WGPUSurfaceGetCurrentTextureStatus_Outdated
 #define WGPUSurfaceGetCurrentTextureStatus_Error_Compat WGPUSurfaceGetCurrentTextureStatus_Error
 
 // Error types - wgpu-native has DeviceLost
@@ -173,6 +174,7 @@ typedef WGPUMapAsyncStatus WGPUBufferMapAsyncStatus_Compat;
 #define WGPU_SURFACE_TEXTURE_STATUS_TYPE WGPUSurfaceGetCurrentTextureStatus
 #define WGPUSurfaceGetCurrentTextureStatus_Success_Compat WGPUSurfaceGetCurrentTextureStatus_SuccessOptimal
 #define WGPUSurfaceGetCurrentTextureStatus_SuccessSuboptimal_Compat WGPUSurfaceGetCurrentTextureStatus_SuccessSuboptimal
+#define WGPUSurfaceGetCurrentTextureStatus_Outdated_Compat WGPUSurfaceGetCurrentTextureStatus_Outdated
 #define WGPUSurfaceGetCurrentTextureStatus_Error_Compat WGPUSurfaceGetCurrentTextureStatus_Error
 
 // Error types - Dawn removed DeviceLost as an error type (maps to Unknown)
@@ -254,8 +256,26 @@ inline void setupShaderModuleWGSL(WGPUShaderModuleDescriptor* desc,
 // ============================================================================
 
 inline bool wgpuSurfaceTextureStatusIsSuccess(int status) {
+#if defined(MYSTRAL_WEBGPU_DAWN) || defined(MYSTRAL_WEBGPU_WGPU_MODERN)
+    // Both modern backends return a usable acquired texture for either success status.
+    // Rejecting Suboptimal strands that image instead of presenting/releasing it.
+    return status == WGPUSurfaceGetCurrentTextureStatus_Success_Compat ||
+           status == WGPUSurfaceGetCurrentTextureStatus_SuccessSuboptimal_Compat;
+#else
+    // Older headers report suboptimal separately from their single Success status.
     return status == WGPUSurfaceGetCurrentTextureStatus_Success_Compat;
-    // Note: Suboptimal is also considered success on wgpu, but Dawn maps both to Success
+#endif
+}
+
+/**
+ * The swapchain has to be rebuilt before another image can be acquired.
+ *
+ * Unlike the other failures, Outdated is not a dead end: the platform's presentation system has
+ * declared the swapchain stale, and a fresh `SurfaceConfigure` is the documented way back. Callers
+ * that can reconfigure treat it as recoverable; the ones that cannot still see it as a failure.
+ */
+inline bool wgpuSurfaceTextureStatusNeedsReconfigure(int status) {
+    return status == WGPUSurfaceGetCurrentTextureStatus_Outdated_Compat;
 }
 
 #endif // MYSTRAL_WEBGPU_COMPAT_H

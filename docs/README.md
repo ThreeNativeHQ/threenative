@@ -42,20 +42,17 @@ limitations are recorded.
 - **Archive rule:** a PRD moves to `done/` in the same commit that finishes its acceptance
   evidence.
 
-Active PRD categories are [`agent-leverage/`](PRDs/agent-leverage/),
-[`experiments/`](PRDs/experiments/), [`feature-mining/`](PRDs/feature-mining/),
-[`lighting/`](PRDs/lighting/), [`mobile/`](PRDs/mobile/), [`native/`](PRDs/native/),
-[`package-naming/`](PRDs/package-naming/), [`performance/`](PRDs/performance/),
-[`starter-kits/`](PRDs/done/starter-kits/), [`studio-hosting/`](PRDs/studio-hosting/),
-[`tech-debt-code-quality/`](PRDs/tech-debt-code-quality/), [`tooling/`](PRDs/tooling/), and
-[`useful-defaults/`](PRDs/useful-defaults/).
+Active PRD categories are [`animation/`](PRDs/animation/), [`assets/`](PRDs/assets/),
+[`authoring/`](PRDs/authoring/), [`CI/`](PRDs/CI/), [`native/`](PRDs/native/),
+[`networking/`](PRDs/networking/), [`open-world/`](PRDs/open-world/),
+[`performance/`](PRDs/performance/), [`production-readiness/`](PRDs/production-readiness/),
+[`rendering/`](PRDs/rendering/), [`studio-hosting/`](PRDs/studio-hosting/),
+[`tech-debt-code-quality/`](PRDs/tech-debt-code-quality/), [`tooling/`](PRDs/tooling/),
+[`useful-defaults/`](PRDs/useful-defaults/), and [`website/`](PRDs/website/).
 The asset-pipeline series closed on 2026-08-22 as
 [`done/asset-pipeline/`](PRDs/done/asset-pipeline/README.md).
-`batch-2026-08-22-defects/` closed on 2026-08-22 as
-[`done/batch-2026-08-22-defects/`](PRDs/done/batch-2026-08-22-defects/README.md).
-Historical batch aliases and retired category names remain only in dated records; new active PRDs
-use the concern-specific folders above. The former `batch-26-08-17/` closed as
-[`done/fps-friction-26-08-17/`](PRDs/done/fps-friction-26-08-17/README.md).
+Dated batch folders (`batch-*`, `fps-friction-26-08-17/`, `refactor-2026-08-28/`) were
+flattened into `done/` on 2026-10-03; new active PRDs use the concern-specific folders above.
 
 **Studio is no longer in this repository.** It is the local agent-and-preview surface — a server
 plus one self-contained page — and on 2026-08-16 it became the paid product and moved to a private

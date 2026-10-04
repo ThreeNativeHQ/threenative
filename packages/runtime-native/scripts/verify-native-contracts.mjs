@@ -23,6 +23,12 @@ const metahumanTarget = "threenative-metahuman-bindings-test";
 const videoTarget = "threenative-video-recorder-state-test";
 
 export const executionContracts = {
+  "threenative-exposure-graph-test": {
+    invocations: [
+      { args: [], passLine: "native exposure graph contract passed" },
+      { args: ["--inject-validation"], passLine: "native exposure validation negative control passed" },
+    ],
+  },
   "threenative-pipeline-cache-test": {
     invocations: [{ args: [], passLine: "pipeline cache filesystem contract passed:" }],
   },
@@ -109,6 +115,12 @@ export const executionContracts = {
   },
   "threenative-presentation-pacing-test": {
     invocations: [{ args: [], passLine: "PRESENTATION_PACING_OK" }],
+  },
+  "threenative-canvas-presentation-test": {
+    invocations: [{ args: [], passLine: "native canvas presentation pixels passed" }],
+  },
+  "threenative-surface-texture-status-test": {
+    invocations: [{ args: [], passLine: "native surface acquisition status contract passed" }],
   },
   "threenative-local-storage-test": {
     invocations: [{ args: [], passLine: "local_storage bindings: all assertions passed" }],

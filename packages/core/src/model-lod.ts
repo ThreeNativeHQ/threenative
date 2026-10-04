@@ -743,8 +743,75 @@ const carriedChains = chainsHost[CHAINS_KEY] as
 const chains: WeakMap<BufferGeometry, IRegisteredChain> = carriedChains ?? new WeakMap();
 chainsHost[CHAINS_KEY] = chains;
 
-/** Per-mesh selection state, keyed weakly by the mesh so a disposed or dropped clone drops out. */
-const controllers = new WeakMap<Mesh, ModelLod>();
+/**
+ * Geometry preparation commonly clones and bakes a model transform before instancing. Keep the
+ * existing index-only ladder over those copied attributes; never simplify the shape a second time.
+ * Hooks belong only to chain geometries, never to Three's prototype. Error scales conservatively
+ * by the matrix's largest axis, including non-uniform transforms.
+ */
+const cloneHooks = new WeakSet<BufferGeometry>();
+function preserveChainClones(registered: IRegisteredChain): void {
+  for (const source of registered.chain.levels) {
+    if (cloneHooks.has(source)) continue;
+    cloneHooks.add(source);
+    const clone = source.clone.bind(source);
+    source.clone = (): BufferGeometry => {
+      const copy = clone();
+      const current = chains.get(source) ?? registered;
+      const chain = current.chain;
+      const sourceIndex = chain.levels.indexOf(source);
+      const levels = chain.levels.map((level, index) => {
+        const geometry = index === sourceIndex ? copy : new BufferGeometry();
+        if (geometry !== copy) {
+          for (const [name, attribute] of Object.entries(copy.attributes))
+            geometry.setAttribute(name, attribute);
+          geometry.setIndex(level.index?.clone() ?? null);
+          geometry.boundingSphere = copy.boundingSphere;
+          geometry.boundingBox = copy.boundingBox;
+        }
+        return geometry;
+      });
+      const copied: IRegisteredChain = {
+        chain: {
+          base: levels[0] as BufferGeometry,
+          errors: [...chain.errors],
+          levels,
+          sphere: chain.sphere.clone(),
+        },
+        policy: current.policy,
+      };
+      for (const geometry of levels) chains.set(geometry, copied);
+      preserveChainClones(copied);
+      const apply = copy.applyMatrix4.bind(copy);
+      copy.applyMatrix4 = (matrix: Matrix4): BufferGeometry => {
+        apply(matrix);
+        const errors = copied.chain.errors as number[];
+        const scale = matrix.getMaxScaleOnAxis();
+        for (let index = 1; index < errors.length; index += 1)
+          errors[index] = (errors[index] as number) * scale;
+        copied.chain.sphere.applyMatrix4(matrix);
+        return copy;
+      };
+      return copy;
+    };
+  }
+}
+
+/** Internal frame-tracker contract also used by InstancedBatch's partitioned draws. */
+export interface IModelLodController {
+  readonly base: BufferGeometry;
+  readonly triangles: number;
+  update(camera: Camera, viewportHeight: number): void;
+  release(): void;
+}
+
+const controllers = new WeakMap<Mesh, IModelLodController>();
+
+/** Register selection with the existing frame tracker rather than a second scene walk. */
+export function registerModelLodController(mesh: Mesh, controller: IModelLodController): void {
+  controllers.get(mesh)?.release();
+  controllers.set(mesh, controller);
+}
 
 /** True when `object` is a mesh whose geometry carries a registered chain (a clone, or the source). */
 function isChained(object: object): boolean {
@@ -760,9 +827,11 @@ function isChained(object: object): boolean {
  * the source; every later frame finds the entry already made. The entry lives in a `WeakMap`, so a
  * dropped clone is not retained, and adopts at most once, so a clone cannot double-register.
  */
-function controllerFor(mesh: Mesh): ModelLod | undefined {
+function controllerFor(mesh: Mesh): IModelLodController | undefined {
   const existing = controllers.get(mesh);
   if (existing !== undefined) return existing;
+  // A plain instanced draw cannot use the one-object selector. Its batch owns partitioning.
+  if ((mesh as Mesh & { isInstancedMesh?: boolean }).isInstancedMesh === true) return undefined;
   const registered = chains.get(mesh.geometry);
   if (registered === undefined) return undefined;
   const controller = new ModelLod(
@@ -913,6 +982,7 @@ export class DiscreteLodPlugin {
       // Every level, not just the base: a clone made after a selection already swapped the source to
       // a coarser level carries that derived geometry, and must still resolve to this chain.
       for (const geometry of levels) chains.set(geometry, registered);
+      preserveChainClones(registered);
       controllers.set(mesh, new ModelLod(mesh, registered.chain, applied));
       appliedCount += 1;
     }
@@ -1155,7 +1225,7 @@ export function updateModelLods(
 ): number {
   camera.updateMatrixWorld();
   if (!isGraphNode(root)) {
-    const entries: ModelLod[] = [];
+    const entries: IModelLodController[] = [];
     root.traverse((object) => {
       const entry = controllerFor(object as Mesh);
       if (entry !== undefined) entries.push(entry);

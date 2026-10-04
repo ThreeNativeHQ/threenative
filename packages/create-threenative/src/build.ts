@@ -1,6 +1,6 @@
 import { spawn, spawnSync } from "node:child_process";
-import { randomUUID } from "node:crypto";
-import { existsSync, statSync } from "node:fs";
+import { createHash, randomUUID } from "node:crypto";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import {
   copyFile,
   mkdir,
@@ -80,6 +80,7 @@ async function projectName(cwd: string): Promise<string> {
 export async function assertNativeBundleCompatible(
   bundle: string,
   target: NativeBuildTarget,
+  capabilities = resolveRuntimeAssetCapabilities(target),
 ): Promise<void> {
   const source = await readFile(bundle, "utf8");
   const webOnlyUi = [
@@ -91,7 +92,7 @@ export async function assertNativeBundleCompatible(
       `TN_NATIVE_WEB_ONLY_UI: ${target} bundle contains ${webOnlyUi.map(([label]) => label).join(", ")}. Keep the portable game in src/game.ts and move DOM or React mounting to src/main.ts; native UI is owned by PRD-051.`,
     );
   }
-  if (target === "desktop") return;
+  if (target === "desktop" && capabilities.webAssembly) return;
   const wasm = [
     ["WebAssembly", /\bWebAssembly\b/u],
     ["Rapier WASM", /rapier_wasm|RAPIER_VERSION|rawrapier/u],
@@ -99,7 +100,7 @@ export async function assertNativeBundleCompatible(
   ].filter(([, pattern]) => (pattern as RegExp).test(source));
   if (wasm.length === 0) return;
   throw new Error(
-    `TN_NATIVE_WASM_ON_MOBILE: ${target} bundle contains ${wasm.map(([label]) => label).join(", ")}. Move web-only WASM imports out of src/game.ts or provide a threenative-native conditional backend; mobile navigation is owned by PRD-052.`,
+    `${target === "desktop" ? "TN_NATIVE_WASM_UNSUPPORTED" : "TN_NATIVE_WASM_ON_MOBILE"}: ${target} artifact ${capabilities.artifact} (${capabilities.engine}) bundle contains ${wasm.map(([label]) => label).join(", ")}. Move web-only WASM imports out of src/game.ts or provide a threenative-native conditional backend; mobile navigation is owned by PRD-052.`,
   );
 }
 
@@ -160,30 +161,22 @@ export function assetRoot(cwd: string, config: IResolvedThreeNativeConfig): stri
   return path.resolve(cwd, config.assets?.output ?? "public");
 }
 
-/**
- * Refuses compiled assets a mobile native target cannot decode, at the first point the build
- * knows about them — after the compile step, before a bundle or an APK exists.
- *
- * Android runs QuickJS and iOS runs JavaScriptCore without a WASM JIT, so neither has
- * `WebAssembly`. Three's Basis/zstd transcoder, its Meshopt decoder and Draco's wasm decoder
- * therefore cannot run there and are not in the mobile bundle at all (they are replaced in
- * `runtime-native/scripts/bundle.mjs`, which is what keeps `TN_NATIVE_WASM_ON_MOBILE` green).
- * A game that genuinely ships such an asset must hear that here rather than discover it as a
- * missing texture on a phone.
- */
+/** Refuse compiled codecs the selected runtime/bundle cannot decode before packaging starts. */
 export async function assertNativeAssetsCompatible(
   cwd: string,
   target: BuildTarget,
   config: IResolvedThreeNativeConfig,
+  capabilities = resolveRuntimeAssetCapabilities(target),
 ): Promise<void> {
-  if (target === "desktop" || target === "web") return;
+  if (target === "web") return;
   const outputRoot = assetRoot(cwd, config);
   const manifestPath = path.join(outputRoot, "assets.manifest.json");
   let raw: string;
   try {
     raw = await readFile(manifestPath, "utf8");
-  } catch {
-    return;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+    throw error;
   }
   let parsed: unknown;
   try {
@@ -193,32 +186,46 @@ export async function assertNativeAssetsCompatible(
       `TN_NATIVE_ASSET_MANIFEST_INVALID: '${manifestPath}' is not valid JSON: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
-  const entries = (parsed as { entries?: unknown }).entries;
-  if (typeof entries !== "object" || entries === null) {
+  const entries = (parsed as { entries?: unknown } | null)?.entries;
+  if (typeof entries !== "object" || entries === null || Array.isArray(entries)) {
     throw new Error(`TN_NATIVE_ASSET_MANIFEST_INVALID: '${manifestPath}' has no 'entries' object.`);
   }
   const rows = Object.entries(entries as Record<string, unknown>).map(
     ([logical, entry]) => [logical, (entry ?? {}) as Record<string, unknown>] as const,
   );
   const ktx2 = rows
-    .filter(([, entry]) => typeof entry.output === "string" && /\.ktx2$/iu.test(entry.output))
+    .filter(
+      ([, entry]) =>
+        (typeof entry.output === "string" && /\.ktx2$/iu.test(entry.output)) ||
+        (Array.isArray(entry.extensions) && entry.extensions.includes("KHR_texture_basisu")) ||
+        (Array.isArray(entry.sharedImages) &&
+          entry.sharedImages.some(
+            (image) =>
+              image !== null &&
+              typeof image === "object" &&
+              typeof image.output === "string" &&
+              /\.ktx2$/iu.test(image.output),
+          )),
+    )
     .map(([logical]) => logical);
-  if (ktx2.length > 0) {
+  if (!capabilities.decoders.ktx2 && ktx2.length > 0) {
     throw new Error(
-      `TN_NATIVE_KTX2_UNSUPPORTED: ${target} cannot ship compiled KTX2 textures (${namedAssets(ktx2)}). The mobile native runtime has no WebAssembly and therefore no Basis transcoder, so nothing in the bundle can decode them. Replace or transcode the authored KTX2 source for mobile, or exclude it from mobile builds; keep compressed textures on the web target.`,
+      `TN_NATIVE_KTX2_UNSUPPORTED: ${target} cannot ship compiled KTX2 textures (${namedAssets(ktx2)}). Selected artifact ${capabilities.artifact} (${capabilities.engine}) has no admitted Basis/KTX2 decoder in its bundle. Replace or transcode the authored KTX2 source for ${target === "desktop" ? "this runtime" : "mobile"}, or exclude it from ${target === "desktop" ? "this runtime's" : "mobile"} builds; keep compressed textures on the web target.`,
     );
   }
   const compressedModels = rows
     .filter(([, entry]) =>
       (Array.isArray(entry.extensions) ? (entry.extensions as unknown[]) : []).some(
         (extension) =>
-          typeof extension === "string" && COMPRESSED_MODEL_EXTENSIONS.includes(extension),
+          typeof extension === "string" &&
+          COMPRESSED_MODEL_EXTENSIONS.includes(extension) &&
+          !capabilities.decoders[extension === "KHR_draco_mesh_compression" ? "draco" : "meshopt"],
       ),
     )
     .map(([logical]) => logical);
   if (compressedModels.length > 0) {
     throw new Error(
-      `TN_NATIVE_MESH_COMPRESSION_UNSUPPORTED: ${target} cannot ship compressed model geometry (${namedAssets(compressedModels)}). The mobile native runtime has no WebAssembly and therefore no Meshopt or Draco decoder. Native compilation keeps shared images and decoder-free model rewrites while omitting Meshopt output; rebuild the native target, or keep compressed models on the web target.`,
+      `TN_NATIVE_MESH_COMPRESSION_UNSUPPORTED: ${target} cannot ship compressed model geometry (${namedAssets(compressedModels)}). Selected artifact ${capabilities.artifact} (${capabilities.engine}) has no admitted ${rows.flatMap(([, entry]) => (Array.isArray(entry.extensions) ? entry.extensions.filter((extension) => COMPRESSED_MODEL_EXTENSIONS.includes(String(extension))) : [])).join(", ")} decoder in its bundle. Native compilation keeps shared images and decoder-free model rewrites while omitting Meshopt output; rebuild the native target, or keep compressed models on the web target.`,
     );
   }
 }
@@ -693,31 +700,56 @@ export async function writePackagingConfig(
   return output;
 }
 
-/**
- * Whether the runtime that will execute this build has WebAssembly.
- *
- * The engine decides it, not the target: V8 compiles WebAssembly, QuickJS and JavaScriptCore do
- * not. A desktop build is for either engine — Linux x64, Windows and macOS use V8, the Linux
- * arm64 lane builds QuickJS over wgpu-native — so the target alone cannot answer it. The runtime
- * binary the packager is handed (`THREENATIVE_RUNTIME_BINARY`, set by the same build invocation)
- * is probed for its engine; absent or unreadable, the answer is the historical desktop one, true,
- * because every published desktop prebuilt runs V8.
- */
+/** Read only the selected executable. An unrecognized or failed probe never proves WASM. */
+function runtimeEngine(
+  binary: string | undefined,
+  probe: typeof spawnSync,
+): "v8" | "quickjs" | "jsc" | "unknown" {
+  if (binary === undefined || !existsSync(binary)) return "unknown";
+  try {
+    const result = probe(binary, ["--version"], { encoding: "utf8", timeout: 10_000 });
+    if (result.status !== 0) return "unknown";
+    const engine = /\+ (\S+) build/u.exec(String(result.stdout ?? ""))?.[1]?.toLowerCase();
+    return engine === "v8" || engine === "quickjs" || engine === "jsc" ? engine : "unknown";
+  } catch {
+    return "unknown";
+  }
+}
+
 export function runtimeHasWebAssembly(
   binary: string | undefined = process.env.THREENATIVE_RUNTIME_BINARY,
   probe: typeof spawnSync = spawnSync,
 ): boolean {
-  if (binary === undefined || !existsSync(binary)) return true;
-  let result: ReturnType<typeof spawnSync>;
-  try {
-    result = probe(binary, ["--version"], { encoding: "utf8" });
-  } catch {
-    return true;
+  return runtimeEngine(binary, probe) === "v8";
+}
+
+/**
+ * One conservative decision for cooking, validation and bundling. Only desktop's selected
+ * executable is runnable here: a desktop packaging tool is never evidence about Android/iOS.
+ * Mobile stays decoder-free until its selected artifact and packaged loaders are qualified.
+ * Desktop V8 retains its existing decoder path; WASM alone does not qualify new codec targets.
+ */
+export function resolveRuntimeAssetCapabilities(
+  target: BuildTarget,
+  binary?: string,
+  probe: typeof spawnSync = spawnSync,
+) {
+  const selected = target === "desktop" ? binary : undefined;
+  const engine = target === "web" ? "browser" : runtimeEngine(selected, probe);
+  const artifact = selected === undefined ? `${target}:unresolved` : path.resolve(selected);
+  let identity = artifact;
+  if (selected !== undefined && existsSync(selected)) {
+    identity = `${target}:sha256:${createHash("sha256").update(readFileSync(selected)).digest("hex")}`;
   }
-  if (result.status !== 0) return true;
-  const engine = /\+ (\S+) build/u.exec(String(result.stdout ?? ""))?.[1] ?? "";
-  // The engine names are CMake's MYSTRAL_JS_ENGINE_NAME: v8, jsc or quickjs. Only V8 runs WASM.
-  return !/^(?:quickjs|jsc)$/iu.test(engine);
+  const webAssembly = engine === "v8" || engine === "browser";
+  const bundled = target === "web" || (target === "desktop" && webAssembly);
+  return {
+    artifact,
+    identity,
+    engine,
+    webAssembly,
+    decoders: { ktx2: bundled, meshopt: bundled, draco: bundled },
+  };
 }
 
 async function bundleNative(
@@ -837,24 +869,38 @@ async function buildNative(
   const config = await loadConfig(cwd, { target, profile });
   announceProfile(config);
   assertNativeUiRendererCompatible(target, config.ui.renderer);
-  // A native host without WebAssembly cannot run Rapier as WASM or decode meshopt/KTX2, so it
-  // takes the native physics backend and a decoder-free bake. The capability is the runtime
-  // engine, not the target: android and iOS are always QuickJS/JSC, and a desktop host is V8
-  // except on the Linux arm64 lane. `assertNativeAssetsCompatible` stays below as the backstop.
-  const webAssembly = runtimeHasWebAssembly();
+  const entry = await nativeEntry(cwd, config);
+  // Resolve the same desktop binary the packager will receive, before cooking. A default
+  // prebuilt used to be selected only after the cook had guessed from the build machine.
+  let selectedRuntime: string | undefined;
+  if (target === "desktop") {
+    const module = path.join(
+      packageRoot(cwd, "@threenative/runtime-native"),
+      "scripts",
+      "package-desktop.mjs",
+    );
+    const { resolveDesktopRuntime } = (await import(pathToFileURL(module).href)) as {
+      resolveDesktopRuntime(explicit?: string): Promise<string>;
+    };
+    const explicit = process.env.THREENATIVE_RUNTIME_BINARY;
+    selectedRuntime = await resolveDesktopRuntime(
+      explicit === undefined ? undefined : path.resolve(cwd, explicit),
+    );
+  }
+  const capabilities = resolveRuntimeAssetCapabilities(target, selectedRuntime);
   await compileAssets({
     config: config.assets,
     cwd,
     platform: target,
-    ...(webAssembly ? {} : { runtimeDecoders: { ktx2: false, meshopt: false } }),
+    runtimeDecoders: capabilities.decoders,
+    runtimeIdentity: capabilities.identity,
   });
-  await assertNativeAssetsCompatible(cwd, target, config);
-  const entry = await nativeEntry(cwd, config);
+  await assertNativeAssetsCompatible(cwd, target, config, capabilities);
   const orientation = config.display.orientation;
   const configPath = await writePackagingConfig(cwd, config);
   const runtimeRoot = packageRoot(cwd, "@threenative/runtime-native");
-  const bundle = await bundleNative(cwd, runtimeRoot, entry, target, !webAssembly);
-  await assertNativeBundleCompatible(bundle, target);
+  const bundle = await bundleNative(cwd, runtimeRoot, entry, target, !capabilities.webAssembly);
+  await assertNativeBundleCompatible(bundle, target, capabilities);
   // The compiled root the project configured, which `compileAssets` above baked into — not the
   // `public` default. A project whose cook profile writes elsewhere was packaging an empty
   // directory while its own assets sat next to it, unread.
@@ -947,9 +993,7 @@ async function buildNative(
       ...(ui === undefined ? [] : ["--ui", ui]),
       "--config",
       configPath,
-      ...(process.env.THREENATIVE_RUNTIME_BINARY
-        ? ["--runtime", path.resolve(process.env.THREENATIVE_RUNTIME_BINARY)]
-        : []),
+      ...(selectedRuntime === undefined ? [] : ["--runtime", selectedRuntime]),
       "--output",
       output,
     ],
