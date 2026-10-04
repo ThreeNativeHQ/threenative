@@ -124,7 +124,8 @@ jobs:
     if: >-
       needs.scope.outputs.selection == 'full' &&
       inputs.ios_only == false
-    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    # Keep this platform prerequisite out of the local queue during CI/Integration bursts.
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
@@ -171,7 +172,8 @@ jobs:
     name: Android V8 source payload
     needs: scope
     if: needs.scope.outputs.selection == 'full' && inputs.ios_only != true
-    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    # Keep this platform prerequisite out of the local queue during CI/Integration bursts.
+    runs-on: ubuntu-24.04
     # 180-minute build ceiling plus 30 minutes for actions/cache/save, per the action's note.
     timeout-minutes: 210
     outputs:
@@ -193,8 +195,8 @@ jobs:
       - uses: android-actions/setup-android@v4
         with:
           packages: platform-tools
-      # No Actions cache for the NDK: the runner image already carries it (this step takes two
-      # seconds on a miss), while saving it took 90 seconds and a GB-scale share of the cache budget.
+      # Install the pinned NDK on the selected runner. Caching it previously took 90 seconds
+      # and a GB-scale share of the cache budget.
       - name: Install and select the pinned Android NDK
         run: |
           set -euo pipefail
