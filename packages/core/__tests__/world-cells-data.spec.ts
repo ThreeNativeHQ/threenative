@@ -267,3 +267,27 @@ it("yields to host while validating and indexing decoded reach records before lo
     world.dispose();
   }
 });
+
+it.each([
+  { lodHysteresis: -0.1, gpuScene: false },
+  { lodHysteresis: 1, gpuScene: false },
+  { lodHysteresis: NaN, gpuScene: false },
+  { lodHysteresis: 0.2, gpuScene: true },
+  { lodHysteresis: 0.2, gpuScene: false, impostors: true },
+])("rejects unsupported authored CPU hysteresis settings before model work: %j", async (policy) => {
+  const model = vi.fn(async () => new Group());
+  await expect(
+    WorldCells.load({
+      url: "world.json",
+      surface: new MeshBasicMaterial(),
+      follow: { position: new Vector3() },
+      ring: 0,
+      terrain: false,
+      data: { manifest, placements },
+      budgets: { bytes: 128, instances: 4, residentCells: 4 },
+      loadModel: model,
+      ...policy,
+    }),
+  ).rejects.toThrow(/lodHysteresis/);
+  expect(model).not.toHaveBeenCalled();
+});

@@ -380,6 +380,9 @@ export interface IWorldCellsLoadOptions {
    * Filtered by the existing admission/refilter budget, never by a separate culler.
    */
   readonly placementReach?: Float32Array;
+  /** Inward return margin for authored CPU LODs, in [0, 1). Requires gpuScene:false and impostors:false (the default).
+   * Omitted, selection uses the existing direct gates. State survives cell eviction/revisit. */
+  readonly lodHysteresis?: number;
   /** Already decoded immutable world-v1 data; URL still supplies the base for model paths. */
   readonly data?: {
     readonly manifest: IWorldPackage;
@@ -3518,6 +3521,8 @@ export class WorldCells extends Group implements IComputeDriven {
   #lastSample: { readonly x: number; readonly z: number; readonly t: number } | undefined;
   readonly #ring: number;
   readonly #terrain: TerrainTiles | undefined;
+  readonly #lodHysteresis: number;
+  readonly #placementLevels: Uint32Array | undefined;
   readonly #placementReach: Float32Array | undefined;
   readonly #reachRanges: Map<
     IWorldCell,
@@ -3871,6 +3876,11 @@ export class WorldCells extends Group implements IComputeDriven {
     );
     this.#minZ = init.manifest.extent.minZ;
     this.#placements = init.placements;
+    this.#lodHysteresis = init.lodHysteresis ?? 0;
+    this.#placementLevels =
+      this.#lodHysteresis > 0
+        ? new Uint32Array(init.placements.byteLength / PLACEMENT_RECORD_BYTES)
+        : undefined;
     this.#placementReach = init.placementReach;
     this.#reachRanges = init.reachRanges;
     this.#rebuildsPerUpdate = positiveInteger(init.rebuildsPerUpdate ?? 16, "rebuildsPerUpdate");
@@ -3983,6 +3993,17 @@ export class WorldCells extends Group implements IComputeDriven {
   }
 
   static async load(options: IWorldCellsLoadOptions): Promise<WorldCells> {
+    if (
+      options.lodHysteresis !== undefined &&
+      (!Number.isFinite(options.lodHysteresis) ||
+        options.lodHysteresis < 0 ||
+        options.lodHysteresis >= 1 ||
+        options.gpuScene !== false ||
+        options.impostors === true)
+    )
+      throw new Error(
+        "WorldCells lodHysteresis must be in [0, 1) with gpuScene:false and impostors:false.",
+      );
     const assets = options.assets ?? createAssetLoader();
     const baseUrl = options.url.slice(0, options.url.lastIndexOf("/") + 1);
     // Logical paths, which is what the loader keys its manifest by: the authored name with no
@@ -5151,6 +5172,13 @@ export class WorldCells extends Group implements IComputeDriven {
       resolvedGlb: "",
       spilled: [],
     };
+    if (this.#lodHysteresis > 0 && definition.lods !== undefined) {
+      asset.gates = [
+        ...asset.gates,
+        ...asset.distances.slice(1).map((gate) => gate * (1 - this.#lodHysteresis)),
+      ];
+      asset.threshold = Math.min(...asset.gates);
+    }
     this.#assets.set(id, asset);
     for (const gate of asset.gates) this.#noteGate(gate);
     return asset;
@@ -5640,11 +5668,25 @@ export class WorldCells extends Group implements IComputeDriven {
       // The level is picked by the shared gate rule: authored world-metre gates directly, and a
       // whole-asset impostor's terminal gate scaled by this placement's own scale. The bias is the
       // same adaptive multiplier the dispatch carries, so a biased walk crosses a switch here too.
-      const level = levelAtGates(
+      let level = levelAtGates(
         { distances: asset.distances, impostor: asset.impostor !== undefined },
         biasedLodDistance(distance),
         scale,
       );
+      if (this.#placementLevels !== undefined && asset.definition.lods !== undefined) {
+        const record = job.run.offset + index;
+        let previous = this.#placementLevels[record] as number;
+        // Outward gates remain authored; returning inward retains the previous level until the margin.
+        if (level > previous) previous = level;
+        while (
+          previous > level &&
+          biasedLodDistance(distance) <
+            (asset.distances[previous] as number) * (1 - this.#lodHysteresis)
+        )
+          previous--;
+        level = previous;
+        this.#placementLevels[record] = level;
+      }
       // The record's own world bounds: the placement widened by the asset's authored bounds at the
       // scale it is drawn at. Read here because this loop already holds the placement and the scale,
       // and it is the one number the shadow levels' invalidation is tested against — the cell box is

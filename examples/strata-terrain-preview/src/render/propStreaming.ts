@@ -257,12 +257,15 @@ export async function createStreamedProps(options: IStreamOptions) {
         surface: options.materials.bark,
         follow: options.follow,
         ring,
-        prefetchSeconds: Number.isFinite(maxReach) ? 1.5 : 0,
+        // Models are already decoded; the reach ring includes a cell of admission headroom.
+        // Predictive centring can otherwise evict visible placements after camera jumps.
+        prefetchSeconds: 0,
         terrain: false,
         data: { manifest, placements: placements.buffer },
         placementReach,
         gpuScene: false,
         adaptiveLod: false,
+        lodHysteresis: LOD_BANDS.hysteresis,
         transparentScatter: "blend",
         admissionBudgetMs: 2 / Math.max(1, buckets.size),
         budgets: {

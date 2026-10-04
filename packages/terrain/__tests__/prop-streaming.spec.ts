@@ -1,4 +1,12 @@
-import { BoxGeometry, Group, InstancedMesh, MeshBasicMaterial, Vector3 } from "three";
+import {
+  BoxGeometry,
+  Group,
+  InstancedMesh,
+  Matrix4,
+  Quaternion,
+  MeshBasicMaterial,
+  Vector3,
+} from "three";
 import { expect, it } from "vitest";
 import { WorldCells } from "@threenative/core/world";
 import {
@@ -191,4 +199,136 @@ it("retains every unlimited canopy placement and keeps prewarm pending until sce
   }
   expect(streamed.byId.size).toBe(0);
   expect(streamed.worlds.every((world) => world.released)).toBe(true);
+});
+
+it("preserves authored LOD return hysteresis through an oscillating boundary walk and eviction/revisit", async () => {
+  const placement = {
+    id: "boulder:boundary",
+    asset: "boulder",
+    position: [0, 0, 0],
+    rotation: 0,
+    scale: 1,
+    normal: [0, 1, 0],
+    alignToNormal: false,
+  } as IPlacement;
+  const material = new MeshBasicMaterial();
+  const levels = [0, 1, 2].map((level) => ({
+    geometry: new BoxGeometry(level + 1, 3, 1),
+    material,
+    role: "bark" as const,
+    variant: 0,
+    level,
+  }));
+  const parts = new Map([[`boulder:${variantFor(placement, "boulder")}`, levels]]);
+  const materials = { bark: material } as never;
+  const original = createProps([placement], () => ({ height: 0, offset: 0 }), parts, materials);
+  const follow = { position: new Vector3() };
+  const streamed = await createStreamedProps({
+    placements: [placement],
+    parts,
+    materials,
+    groundAt: () => ({ height: 0, offset: 0 }),
+    follow,
+    size: 512,
+    whileCurrent: () => true,
+  });
+  if (!streamed) throw new Error("cancelled");
+  const active = (meshes: InstancedMesh[]) =>
+    meshes
+      .filter((mesh) => mesh.count > 0)
+      .map((mesh) => Array.from(mesh.geometry.getAttribute("position").array));
+  try {
+    for (const distance of [0, 65, 500, 55, 61, 59, 61, 59, 47, 155, 140, 151, 149, 119, 47]) {
+      follow.position.x = distance;
+      original.setLevels(follow.position);
+      for (let frame = 0; frame < 100; frame++) {
+        for (const world of streamed.worlds) world.update();
+        await Promise.resolve();
+      }
+      expect(active(streamed.meshes), `distance ${distance}`).toEqual(active(original.meshes));
+    }
+  } finally {
+    streamed.dispose();
+    original.dispose();
+  }
+});
+
+it("writes the original rendered matrices and materials for multi-part nonuniform and mirrored canopy", async () => {
+  const bark = new MeshBasicMaterial({ color: 0x553311 });
+  const crown = new MeshBasicMaterial({
+    color: 0x337733,
+    transparent: true,
+    opacity: 0.7,
+    alphaTest: 0.2,
+  });
+  const trunk = new BoxGeometry(1, 3, 1);
+  trunk.setDrawRange(3, 12);
+  const leaves = new BoxGeometry(3, 2, 3);
+  leaves.translate(0, 3, 0);
+  leaves.setDrawRange(6, 18);
+  const rotation = new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), 0.4).toArray();
+  const placements = [
+    [2, 3, 4],
+    [-2, 3, 4],
+  ].map((scale, i) => ({
+    id: `spruce:transform:${i}`,
+    layer: "canopy",
+    asset: "spruce",
+    position: [0, 0, 0],
+    rotation: 0,
+    scale: 1,
+    normal: [0, 1, 0],
+    alignToNormal: false,
+    transform: { position: [i * 20, 7, 0], quaternion: rotation, scale, grounding: false },
+  })) as IPlacement[];
+  const parts = new Map(
+    placements.map((p) => [
+      `spruce:${variantFor(p, "spruce")}`,
+      [
+        { geometry: trunk, material: bark, role: "bark" as const, variant: 0 },
+        { geometry: leaves, material: crown, role: "crown" as const, variant: 0 },
+      ],
+    ]),
+  );
+  const materials = { bark, crown } as never;
+  const original = createProps(placements, () => ({ height: 0, offset: 0 }), parts, materials);
+  const streamed = await createStreamedProps({
+    placements,
+    parts,
+    materials,
+    groundAt: () => ({ height: 0, offset: 0 }),
+    follow: { position: new Vector3(0, 7, 0) },
+    size: 512,
+    whileCurrent: () => true,
+  });
+  if (!streamed) throw new Error("cancelled");
+  function draws(meshes: InstancedMesh[], material: MeshBasicMaterial) {
+    const matrices: number[][] = [];
+    for (const mesh of meshes)
+      if (mesh.material === material) {
+        expect(mesh.geometry.drawRange).toEqual((material === bark ? trunk : leaves).drawRange);
+        for (let i = 0; i < mesh.count; i++) {
+          const matrix = new Matrix4();
+          mesh.getMatrixAt(i, matrix);
+          matrices.push(matrix.elements);
+        }
+      }
+    return matrices.sort((a, b) => a[12]! - b[12]!);
+  }
+  try {
+    for (let frame = 0; frame < 200; frame++) {
+      for (const world of streamed.worlds) world.update();
+      await Promise.resolve();
+    }
+    for (const material of [bark, crown]) {
+      const before = draws(original.meshes, material),
+        after = draws(streamed.meshes, material);
+      expect(after).toHaveLength(placements.length);
+      for (let i = 0; i < before.length; i++)
+        for (let j = 0; j < 16; j++) expect(after[i]![j]).toBeCloseTo(before[i]![j]!, 5);
+    }
+  } finally {
+    streamed.dispose();
+    original.dispose();
+  }
 });
