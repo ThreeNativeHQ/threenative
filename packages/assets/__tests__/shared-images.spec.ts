@@ -214,7 +214,12 @@ describe("shared model images", () => {
         sharedImageKey(texture.getImage() ?? new Uint8Array(), {
           colorSpace: getTextureColorSpace(texture),
           slots: [...listTextureSlots(texture)].sort(),
-          textures: { keepSmallerSource: true, maxSize: null, overrides: [], quality: null },
+          textures: {
+            keepSmallerSource: "universal-containers",
+            maxSize: null,
+            overrides: [],
+            quality: null,
+          },
         }),
       );
     const store = createSharedImageStore();

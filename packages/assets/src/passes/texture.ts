@@ -224,7 +224,7 @@ export function textureResizePass(options: ITextureResizeOptions): IAssetPass {
   };
 }
 
-/** PNG signature or JPEG SOI, the two containers `decodeImageBytes` reads. */
+/** PNG signature or JPEG SOI, the two containers the standalone pass sniffs headers for. */
 function isPngOrJpeg(bytes: Buffer): boolean {
   if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
     return true;
