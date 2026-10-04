@@ -377,6 +377,123 @@ function loadSkyLight(assets: IAssetLoader): Promise<Texture | undefined> {
   return skyLight;
 }
 
+/** A mesh's material sections: one per group for a material array, otherwise the whole mesh. */
+function meshSections(
+  mesh: Mesh,
+): { material: Material; group?: { start: number; count: number } }[] {
+  const materials = mesh.material;
+  return Array.isArray(materials)
+    ? mesh.geometry.groups.map((group) => ({
+        material: materials[group.materialIndex ?? 0] as Material,
+        group,
+      }))
+    : [{ material: materials }];
+}
+
+/** Per-world reshape for one asset, applied on top of the shared whole-model scale. */
+const WORLD_ASSET_SCALES: Record<string, Record<string, readonly [number, number, number]>> = {
+  tundra: { grass: [1.35, 1, 1.35], bush: [0.18, 1, 0.18], scrub: [1.1, 2, 1.1] },
+  coastal: { grass: [0.55, 1.35, 0.55] },
+  forest: { poppy: [1, 1.4, 1] },
+};
+/** A reshape every world applies to one asset. */
+const ASSET_SCALES: Record<string, readonly [number, number, number]> = {
+  spruce: [1.12, 1, 1.12],
+};
+
+/** Every step is a diagonal scale, so the order the reshapes run in cannot change the result. */
+function scaleGeometry(
+  geometry: BufferGeometry,
+  asset: string,
+  world: WorldName,
+  size: Vector3,
+  factor: number,
+): void {
+  geometry.scale(factor, factor, factor);
+  const worldScale = WORLD_ASSET_SCALES[world]?.[asset];
+  if (worldScale) geometry.scale(worldScale[0], worldScale[1], worldScale[2]);
+  const assetScale = ASSET_SCALES[asset];
+  if (assetScale) geometry.scale(assetScale[0], assetScale[1], assetScale[2]);
+  // Alpine peaks are pinned to a 24 m longest axis after their mountain reshape.
+  if (world === "alpine" && asset === "mountain") {
+    geometry.scale(0.65, 1.45, 1.8);
+    const longest = Math.max(size.x * 0.65, size.y * 1.45, size.z * 1.8) * factor;
+    geometry.scale(24 / longest, 24 / longest, 24 / longest);
+  }
+}
+
+/** `spruce_full_03_low` ships zero normals; repair the optional art, including existing cooks. */
+function repairNormals(geometry: BufferGeometry): void {
+  const normals = geometry.getAttribute("normal");
+  let valid = normals !== undefined;
+  for (let i = 0; valid && normals && i < normals.count; i++) {
+    const length = Math.hypot(normals.getX(i), normals.getY(i), normals.getZ(i));
+    valid = Number.isFinite(length) && length >= 0.01;
+  }
+  if (!valid) geometry.computeVertexNormals();
+}
+
+/** Radial coverage per height band: tips see sky, needles near the trunk do not. */
+function addRadialCoverage(geometry: BufferGeometry, metres: number, world: WorldName): void {
+  const positions = geometry.getAttribute("position");
+  const radii = new Float32Array(16);
+  const band = (i: number) =>
+    Math.min(15, Math.max(0, Math.floor((positions.getY(i) / metres) * 16)));
+  for (let i = 0; i < positions.count; i++)
+    radii[band(i)] = Math.max(
+      radii[band(i)] ?? 0,
+      Math.hypot(positions.getX(i), positions.getZ(i)),
+    );
+  const inner = Float32Array.from({ length: positions.count }, (_, i) =>
+    Math.min(
+      1,
+      Math.hypot(positions.getX(i), positions.getZ(i)) / Math.max(0.1, radii[band(i)] ?? 0),
+    ),
+  );
+  geometry.setAttribute("inner", new BufferAttribute(inner, 1));
+  if (world !== "forest") return;
+  // Texture cards describe a crown volume. Their planar normals flatten its lighting; modify only
+  // this owned clone, leaving the asset loader's cached geometry intact.
+  const crownNormals = new Float32Array(positions.count * 3);
+  const direction = new Vector3();
+  for (let i = 0; i < positions.count; i++) {
+    direction
+      .set(positions.getX(i), Math.max(0.1, radii[band(i)] ?? 0) * 0.45, positions.getZ(i))
+      .normalize();
+    direction.toArray(crownNormals, i * 3);
+  }
+  geometry.setAttribute("normal", new BufferAttribute(crownNormals, 3));
+}
+
+/** One whole-model base and scale for all sections: scaling each part separately detached crowns. */
+function prepareGeometry(
+  mesh: Mesh,
+  one: IPackSpecies,
+  world: WorldName,
+  stone: boolean,
+  factor: number,
+  box: Box3,
+  size: Vector3,
+  group?: { start: number; count: number },
+): BufferGeometry {
+  const geometry = baseGeometryOf(mesh).clone().applyMatrix4(mesh.matrixWorld);
+  if (group) {
+    const start = Math.max(group.start, geometry.drawRange.start);
+    const end = Math.min(
+      group.start + group.count,
+      geometry.drawRange.start + geometry.drawRange.count,
+    );
+    geometry.clearGroups();
+    geometry.setDrawRange(start, Math.max(0, end - start));
+  }
+  const centre = box.getCenter(new Vector3());
+  const centredStone = stone && (world === "forest" || world === "coastal");
+  geometry.translate(centredStone ? -centre.x : 0, -box.min.y, centredStone ? -centre.z : 0);
+  scaleGeometry(geometry, one.asset, world, size, factor);
+  repairNormals(geometry);
+  return geometry;
+}
+
 export interface IPackProps {
   readonly parts: Map<string, IPropPart[]>;
   readonly dispose: () => void;
@@ -482,14 +599,7 @@ export async function loadPack(
     root.traverse((object) => {
       const mesh = object as Mesh;
       if (!mesh.isMesh) return;
-      const materials = mesh.material;
-      const sections = Array.isArray(materials)
-        ? mesh.geometry.groups.map((group) => ({
-            material: materials[group.materialIndex ?? 0],
-            group,
-          }))
-        : [{ material: materials, group: undefined }];
-      for (const section of sections) {
+      for (const section of meshSections(mesh)) {
         if (!section.material) continue;
         let source = section.material as MeshStandardMaterial;
         if (world === "alpine" && stone && rockface[0]) {
@@ -505,76 +615,9 @@ export async function loadPack(
             ? entry.find((part) => (part.level ?? 0) === 0 && part.role === role)?.material
             : undefined;
         if (!source.map && one.level && !(inherited instanceof MeshPhysicalNodeMaterial)) continue;
-        // One whole-model scale/base for all sections: scaling each part separately detached crowns.
-        const geometry = baseGeometryOf(mesh).clone().applyMatrix4(mesh.matrixWorld);
-        if (section.group) {
-          const start = Math.max(section.group.start, geometry.drawRange.start);
-          const end = Math.min(
-            section.group.start + section.group.count,
-            geometry.drawRange.start + geometry.drawRange.count,
-          );
-          geometry.clearGroups();
-          geometry.setDrawRange(start, Math.max(0, end - start));
-        }
-        const centre = box.getCenter(new Vector3());
-        const centredStone = stone && (world === "forest" || world === "coastal");
-        geometry.translate(centredStone ? -centre.x : 0, -box.min.y, centredStone ? -centre.z : 0);
-        geometry.scale(factor, factor, factor);
-        if (world === "alpine" && one.asset === "mountain") {
-          geometry.scale(0.65, 1.45, 1.8);
-          const longest = Math.max(size.x * 0.65, size.y * 1.45, size.z * 1.8) * factor;
-          geometry.scale(24 / longest, 24 / longest, 24 / longest);
-        }
-        if (world === "tundra" && one.asset === "grass") geometry.scale(1.35, 1, 1.35);
-        if (world === "tundra" && one.asset === "bush") geometry.scale(0.18, 1, 0.18);
-        if (world === "tundra" && one.asset === "scrub") geometry.scale(1.1, 2, 1.1);
-        if (one.asset === "spruce") geometry.scale(1.12, 1, 1.12);
-        if (world === "coastal" && one.asset === "grass") geometry.scale(0.55, 1.35, 0.55);
-        if (world === "forest" && one.asset === "poppy") geometry.scale(1, 1.4, 1);
-        // spruce_full_03_low ships zero normals. Repair the optional art, including existing cooks.
-        const normals = geometry.getAttribute("normal");
-        let validNormals = normals !== undefined;
-        for (let i = 0; validNormals && normals && i < normals.count; i++) {
-          const length = Math.hypot(normals.getX(i), normals.getY(i), normals.getZ(i));
-          validNormals = Number.isFinite(length) && length >= 0.01;
-        }
-        if (!validNormals) geometry.computeVertexNormals();
-        const positions = geometry.getAttribute("position");
-        if (source.alphaTest > 0 && (one.asset === "spruce" || one.asset === "sapling")) {
-          // Radial coverage per height band: tips see sky, needles near the trunk do not.
-          const radii = new Float32Array(16);
-          const band = (i: number) =>
-            Math.min(15, Math.max(0, Math.floor((positions.getY(i) / one.metres) * 16)));
-          for (let i = 0; i < positions.count; i++)
-            radii[band(i)] = Math.max(
-              radii[band(i)] ?? 0,
-              Math.hypot(positions.getX(i), positions.getZ(i)),
-            );
-          const inner = Float32Array.from({ length: positions.count }, (_, i) =>
-            Math.min(
-              1,
-              Math.hypot(positions.getX(i), positions.getZ(i)) / Math.max(0.1, radii[band(i)] ?? 0),
-            ),
-          );
-          geometry.setAttribute("inner", new BufferAttribute(inner, 1));
-          if (world === "forest") {
-            // Texture cards describe a crown volume. Their planar normals flatten its lighting;
-            // modify only this owned clone, leaving the asset loader's cached geometry intact.
-            const crownNormals = new Float32Array(positions.count * 3);
-            const direction = new Vector3();
-            for (let i = 0; i < positions.count; i++) {
-              direction
-                .set(
-                  positions.getX(i),
-                  Math.max(0.1, radii[band(i)] ?? 0) * 0.45,
-                  positions.getZ(i),
-                )
-                .normalize();
-              direction.toArray(crownNormals, i * 3);
-            }
-            geometry.setAttribute("normal", new BufferAttribute(crownNormals, 3));
-          }
-        }
+        const geometry = prepareGeometry(mesh, one, world, stone, factor, box, size, section.group);
+        if (source.alphaTest > 0 && (one.asset === "spruce" || one.asset === "sapling"))
+          addRadialCoverage(geometry, one.metres, world);
         const material =
           inherited instanceof MeshPhysicalNodeMaterial
             ? inherited

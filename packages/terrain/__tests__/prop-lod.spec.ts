@@ -11,6 +11,7 @@ import {
 } from "three";
 import type { MeshPhysicalNodeMaterial } from "three/webgpu";
 import { describe, expect, it, vi } from "vitest";
+import type { WorldName } from "../../../examples/strata-terrain-preview/src/render/biomes.js";
 import { loadPack } from "../../../examples/strata-terrain-preview/src/render/pack.js";
 import {
   createProps,
@@ -344,6 +345,33 @@ describe("licensed pack characterization", () => {
       expect(Array.from(near.geometry.getAttribute("normal").array)).toEqual(sourceNormals);
     } finally {
       pack.dispose();
+    }
+  });
+  async function loadedWorld(world: WorldName, near: Group) {
+    const assets = {
+      resolve: async () => [],
+      model: async (path: string) => (path.startsWith("temperate/") ? { scene: near } : undefined),
+    } as unknown as IAssetLoader;
+    return loadPack(assets, world);
+  }
+  it("applies each world's asset reshape on top of the shared whole-model scale", async () => {
+    const forest = await loadedWorld("forest", fixture().root);
+    const coastal = await loadedWorld("coastal", fixture().root);
+    try {
+      const box = (pack: Awaited<ReturnType<typeof loadedWorld>>) => {
+        const part = present(present(pack.parts.get("grass:0"))[0]);
+        part.geometry.computeBoundingBox();
+        return present(part.geometry.boundingBox);
+      };
+      const plain = box(forest);
+      const reshaped = box(coastal);
+      // Coastal grass squashes in x/z and stretches in y; everything else is shared with forest.
+      expect(reshaped.max.x - reshaped.min.x).toBeCloseTo((plain.max.x - plain.min.x) * 0.55, 5);
+      expect(reshaped.max.y - reshaped.min.y).toBeCloseTo((plain.max.y - plain.min.y) * 1.35, 5);
+      expect(reshaped.max.z - reshaped.min.z).toBeCloseTo((plain.max.z - plain.min.z) * 0.55, 5);
+    } finally {
+      forest.dispose();
+      coastal.dispose();
     }
   });
   it("disposes shared near/far material once", async () => {

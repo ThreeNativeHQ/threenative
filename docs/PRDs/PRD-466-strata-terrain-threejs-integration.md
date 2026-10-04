@@ -2856,3 +2856,23 @@ than a second culler or one asset/draw per placement. Preserve original variant-
 when computing the seed; cell partitioning must not renumber them. AC-5 stays open. The owner's
 live canopy files and all other worktrees remain untouched; this lane is retained for parent
 reconciliation and has not been published.
+
+### 2026-10-04 — imported prop geometry: tests-first extraction (PR381 lane)
+
+Pinned the world-specific asset reshape that `loadPack` applied inline before moving it: a new
+`prop-lod.spec.ts` case loads one fixture in `forest` and `coastal` and asserts coastal grass is
+the forest grass scaled 0.55 / 1.35 / 0.55. It passed against the pre-refactor source, so the
+reshape was characterized first.
+
+Then a behaviour-preserving extraction in `examples/strata-terrain-preview/src/render/pack.ts`: the
+ten inline `world === … && asset === …` scale statements became the `WORLD_ASSET_SCALES` /
+`ASSET_SCALES` tables behind `scaleGeometry`, and the per-section pipeline became
+`meshSections` / `prepareGeometry` / `repairNormals` / `addRadialCoverage`. Every reshape is a
+diagonal scale, so they commute; the alpine mountain 24 m pin stays explicit because it depends on
+the source size. `prop-lod.spec.ts` **14/14 PASS**, example `tsc --noEmit` clean, biome clean
+(existing cognitive-complexity warnings on `surface` and the asset fan-out remain, unreduced).
+
+Junk audit found nothing safe to delete: no tracked source file in `packages/terrain` or the example
+is unreferenced, `measure-embankment.mjs` / `measure-light.mjs` have no by-name reference but are the
+reproducible proof tools behind AC-5 and the lighting calibration, and the 109 MB `artifacts/pr381-*`
+trees are ignored local A/B captures, not commits. No file was removed.
