@@ -1,0 +1,141 @@
+import { BoxGeometry, Group, Mesh, MeshBasicMaterial, Vector3 } from "three";
+import { afterEach, expect, it, vi } from "vitest";
+import { createAssetLoader } from "../src/assets.js";
+import { type IWorldPackage, TerrainTiles, WorldCells } from "../src/world.js";
+
+const manifest: IWorldPackage = {
+  version: 1,
+  extent: { minX: 0, minZ: 0, sizeX: 256, sizeZ: 64 },
+  cellSize: 64,
+  terrain: {
+    heightmap: "unused.u16",
+    columns: 5,
+    rows: 2,
+    spacing: 64,
+    heightMin: 0,
+    heightMax: 1,
+  },
+  placements: "unused.bin",
+  assets: { tree: { glb: "tree.glb", bounds: { min: [-1, 0, -1], max: [1, 2, 1] } } },
+  cells: Array.from({ length: 4 }, (_, x) => ({
+    x,
+    z: 0,
+    runs: [{ asset: "tree", offset: x, count: 1 }],
+  })),
+};
+afterEach(() => vi.unstubAllGlobals());
+
+const placements = new Float32Array(
+  Array.from({ length: 4 }, (_, x) => [x * 64 + 32, 0, 32, 0, 0, 0, 1, 1]).flat(),
+).buffer;
+
+it("streams already decoded placements without fetching or duplicating the caller's terrain", async () => {
+  const follow = { position: new Vector3(32, 0, 32) };
+  const assets = createAssetLoader();
+  vi.spyOn(assets, "resolve").mockResolvedValue([]);
+  const fetch = vi.fn(() => {
+    throw new Error("decoded data must not fetch");
+  });
+  vi.stubGlobal("fetch", fetch);
+  const surface = new MeshBasicMaterial();
+  const world = await WorldCells.load({
+    url: "strata/world.json",
+    assets,
+    surface,
+    follow,
+    ring: 0,
+    data: { manifest, placements },
+    terrain: false,
+    budgets: { bytes: 128, instances: 4, residentCells: 2 },
+    loadModel: async () => new Group().add(new Mesh(new BoxGeometry(1, 2, 1), surface)),
+  });
+  try {
+    expect(fetch).not.toHaveBeenCalled();
+    expect(world.children.some((child) => child instanceof TerrainTiles)).toBe(false);
+    for (let frame = 0; frame < 30; frame++) {
+      world.update();
+      await Promise.resolve();
+    }
+    expect(world.stats().instances).toBe(1);
+    expect(world.stats().residentKeys).toEqual(["0:0"]);
+    follow.position.x = 224;
+    for (let frame = 0; frame < 30; frame++) {
+      world.update();
+      await Promise.resolve();
+    }
+    expect(world.stats().residentKeys).toEqual(["3:0"]);
+    expect(world.stats().evictions).toBeGreaterThan(0);
+    expect(world.stats().failures).toBe(0);
+  } finally {
+    world.dispose();
+    vi.unstubAllGlobals();
+  }
+  expect(world.released).toBe(true);
+});
+
+it("keeps decoded prop admission within the default 2ms budget plus one final unit", async () => {
+  const count = 5000;
+  const data = new Float32Array(count * 8);
+  for (let i = 0; i < count; i++) data.set([32, 0, 32, 0, 0, 0, 1, 1], i * 8);
+  const dense: IWorldPackage = {
+    ...manifest,
+    cells: [{ x: 0, z: 0, runs: [{ asset: "tree", offset: 0, count }] }],
+  };
+  const assets = createAssetLoader();
+  vi.spyOn(assets, "resolve").mockResolvedValue([]);
+  const surface = new MeshBasicMaterial();
+  let clock = 0;
+  const world = await WorldCells.load({
+    url: "strata/world.json",
+    assets,
+    surface,
+    follow: { position: new Vector3(32, 0, 32) },
+    ring: 0,
+    data: { manifest: dense, placements: data.buffer, heightmap: new Uint16Array(10) },
+    terrain: false,
+    admissionNow: () => ++clock,
+    budgets: { bytes: count * 32, instances: count, residentCells: 1 },
+    loadModel: async () => new Group().add(new Mesh(new BoxGeometry(1, 2, 1), surface)),
+  });
+  let sawBacklog = false;
+  let admitted = false;
+  try {
+    for (let frame = 0; frame < 100; frame++) {
+      world.update();
+      await Promise.resolve();
+      const stats = world.stats();
+      expect(stats.admission.spentMs).toBeLessThanOrEqual(3);
+      sawBacklog ||= stats.admission.backlog > 0;
+      if (sawBacklog && stats.admission.backlog === 0 && stats.loadsInFlight === 0) {
+        admitted = true;
+        break;
+      }
+    }
+    expect(sawBacklog).toBe(true);
+    expect(admitted).toBe(true);
+    expect(world.stats().instances).toBe(count);
+    expect(world.stats().failures).toBe(0);
+  } finally {
+    world.dispose();
+  }
+});
+
+it("rejects malformed decoded runs before loading a model", async () => {
+  const assets = createAssetLoader();
+  vi.spyOn(assets, "resolve").mockResolvedValue([]);
+  const loadModel = vi.fn();
+  await expect(
+    WorldCells.load({
+      url: "strata/world.json",
+      assets,
+      surface: new MeshBasicMaterial(),
+      follow: { position: new Vector3() },
+      ring: 0,
+      terrain: false,
+      data: { manifest, placements: new ArrayBuffer(0), heightmap: new Uint16Array(10) },
+      budgets: { bytes: 128, instances: 4, residentCells: 2 },
+      loadModel,
+    }),
+  ).rejects.toThrow("WORLD_RUN_OUT_OF_RANGE");
+  expect(loadModel).not.toHaveBeenCalled();
+});

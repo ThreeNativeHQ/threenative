@@ -2833,3 +2833,26 @@ the pictured visual regression; the untextured-mesh guarantee needs its optional
 Original v14/v18 forest-start pixels were inspected and reproduce dark rounded versus pale skeletal
 canopies. The prior HDRI investigation changed several material terms together and reported a worse
 distant overview; isolated matched captures are still required. AC-5 remains open.
+
+### 2026-10-04 — isolated WorldCells decoded-data checkpoint
+
+At exact PR381 base `afae569863dfa781cd3e277abda31359534fe9fe`, branch
+`fix/pr381-strata-streaming` adds `WorldCells.load({ data, terrain: false })` so an existing
+terrain consumer can supply world-v1 placements without fetching or quantizing a second terrain.
+Both missing-data-fetch and missing-unused-heightmap cases were observed red before the fix.
+Focused WorldCells, admission and decoded-data suites: **55/55 PASS**, one worker. The new
+5,000-placement fixture defers work, drains fully and spends at most the default 2 ms plus one
+1 ms injected-clock work unit. Residency, eviction, disposal and malformed-run rejection pass.
+Biome passes with existing cognitive-complexity warnings. Core tsc is blocked by unbuilt
+`@threenative/playtest/protocol` and `/three` declarations; the complete suite and native proof
+have not run. No game wiring, canopy import, GPU profile or FPS improvement is claimed.
+
+Integration still needs to preserve the existing seeded grass/scrub/fern fade in `props.ts`.
+WorldCells currently has an asset-wide `maxDistance`, while the game's predicate is per placement:
+`seed <= (1 - fade)^2`, with fade starting at 28 m. It is exactly equivalent to a per-placement
+reach `28 + (assetReach - 28) * (1 - sqrt(seed))`. The smallest additional mechanism is therefore
+an optional placement-reach sidecar consumed by the existing budgeted build/refilter path, rather
+than a second culler or one asset/draw per placement. Preserve original variant-group indices
+when computing the seed; cell partitioning must not renumber them. AC-5 stays open. The owner's
+live canopy files and all other worktrees remain untouched; this lane is retained for parent
+reconciliation and has not been published.

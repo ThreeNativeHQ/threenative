@@ -373,7 +373,15 @@ export interface IWorldCellsLoadOptions {
   /** Chebyshev radius in cells to keep resident; a cell leaves only beyond `ring + 1`. */
   readonly ring: number;
   readonly budgets: IWorldCellsBudget;
-  readonly terrain?: IWorldCellsTerrainOptions;
+  /** False streams props/chunks only; the caller owns terrain geometry and collision. */
+  readonly terrain?: IWorldCellsTerrainOptions | false;
+  /** Already decoded world-v1 data; URL still supplies the base for model paths. */
+  readonly data?: {
+    readonly manifest: IWorldPackage;
+    readonly placements: ArrayBuffer;
+    /** Required when terrain is streamed; omitted with terrain: false. */
+    readonly heightmap?: Uint16Array;
+  };
   /**
    * How a scattered part whose own material is `transparent` is drawn. `"cutout"` (the default)
    * gives the part a clone of that material with `transparent: false` and an `alphaTest`, so the
@@ -3498,7 +3506,7 @@ export class WorldCells extends Group implements IComputeDriven {
   #velocityZ = 0;
   #lastSample: { readonly x: number; readonly z: number; readonly t: number } | undefined;
   readonly #ring: number;
-  readonly #terrain: TerrainTiles;
+  readonly #terrain: TerrainTiles | undefined;
   readonly #transparentScatter: "cutout" | "blend";
   readonly #baseUrl: string;
   readonly #logicalBase: string;
@@ -3915,6 +3923,7 @@ export class WorldCells extends Group implements IComputeDriven {
     this.#invalidateShadows = init.shadows?.invalidate;
     if (this.#transparentScatter !== "cutout" && this.#transparentScatter !== "blend")
       throw new Error("WorldCells transparentScatter must be 'cutout' or 'blend'.");
+    if (init.terrain === false) return;
     // Terrain can reach further than the props do, so its radius is its own option; the collider
     // radius stays on the ring, which is how far a player can actually walk into this world.
     const streamRadius = nonNegativeInteger(
@@ -3962,23 +3971,29 @@ export class WorldCells extends Group implements IComputeDriven {
     // leading slash, and the directory the manifest itself sits in as their base.
     const manifestPath = options.url.replace(/^\//u, "");
     const logicalBase = manifestPath.slice(0, manifestPath.lastIndexOf("/") + 1);
-    const manifest = await loadLogical(
-      assets,
-      manifestPath,
-      async (url) => (await (await fetchOk(url)).json()) as IWorldPackage,
-    );
-    const placements = await loadLogical(
-      assets,
-      resolveRelative(logicalBase, manifest.placements),
-      async (url) => (await fetchOk(url)).arrayBuffer(),
-    );
-    const heightmap = await loadLogical(
-      assets,
-      resolveRelative(logicalBase, manifest.terrain.heightmap),
-      loadWorldHeightmap,
-    );
+    const manifest =
+      options.data?.manifest ??
+      (await loadLogical(
+        assets,
+        manifestPath,
+        async (url) => (await (await fetchOk(url)).json()) as IWorldPackage,
+      ));
+    const placements =
+      options.data?.placements ??
+      (await loadLogical(assets, resolveRelative(logicalBase, manifest.placements), async (url) =>
+        (await fetchOk(url)).arrayBuffer(),
+      ));
+    const heightmap =
+      options.terrain === false
+        ? new Uint16Array(0)
+        : (options.data?.heightmap ??
+          (await loadLogical(
+            assets,
+            resolveRelative(logicalBase, manifest.terrain.heightmap),
+            loadWorldHeightmap,
+          )));
     const validation = validateWorldPackage(manifest, {
-      heightmapByteLength: heightmap.length * 2,
+      ...(options.terrain === false ? {} : { heightmapByteLength: heightmap.length * 2 }),
       placementsByteLength: placements.byteLength,
     });
     if (!validation.ok) {
@@ -4022,7 +4037,7 @@ export class WorldCells extends Group implements IComputeDriven {
   }
 
   get warmupNodes(): readonly unknown[] {
-    return this.#terrain.warmupNodes;
+    return this.#terrain?.warmupNodes ?? [];
   }
 
   /**
@@ -4116,8 +4131,8 @@ export class WorldCells extends Group implements IComputeDriven {
     if (this.#residencyStale(x, z)) {
       this.#residencyPoint.set(x, 0, z);
       try {
-        this.#terrain.follow({ x, z }, budget);
-        this.#terrain.process(renderer);
+        this.#terrain?.follow({ x, z }, budget);
+        this.#terrain?.process(renderer);
       } catch (error) {
         if (!(error instanceof TerrainTileBudgetError)) throw error;
         this.#pressure.bytes += 1;
@@ -4147,9 +4162,9 @@ export class WorldCells extends Group implements IComputeDriven {
       // `follow` only re-levels tiles. A follow point standing still used to skip both, so a
       // three-frame tile morph froze on its first frame until the player moved again. Only the
       // transition frames pay it: `blendingTiles` is 0 the rest of the time.
-      this.#terrain.blendingTiles > 0
+      (this.#terrain?.blendingTiles ?? 0) > 0
     ) {
-      this.#terrain.process(renderer);
+      this.#terrain?.process(renderer);
     }
     const props = new AdmissionBudget(
       this.#budgetMs - Math.min(budget.spentMs, terrainMs),
@@ -4406,7 +4421,7 @@ export class WorldCells extends Group implements IComputeDriven {
       this.#prewarmQueue.length > 0 ||
       this.#prewarmPending > 0 ||
       this.#shadowMoved === true ||
-      this.#terrain.deferredAdmissions > 0
+      (this.#terrain?.deferredAdmissions ?? 0) > 0
     );
   }
 
@@ -4767,7 +4782,7 @@ export class WorldCells extends Group implements IComputeDriven {
   }
 
   attachRenderer(renderer: IRendererLike): void {
-    this.#terrain.attachRenderer(renderer);
+    this.#terrain?.attachRenderer(renderer);
   }
 
   /** Current per-asset reference count; an asset absent from the map is `0`. */
@@ -4898,7 +4913,7 @@ export class WorldCells extends Group implements IComputeDriven {
     this.#prewarmKeys.clear();
     this.#settlePrewarm();
     drainMeshPool();
-    this.#terrain.dispose();
+    this.#terrain?.dispose();
     this.removeFromParent();
   }
 
