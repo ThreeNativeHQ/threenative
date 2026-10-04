@@ -1,9 +1,10 @@
+import type { Texture } from "three";
 import { velocity as velocityAccessor } from "three/tsl";
 import type { MRTNode, Node } from "three/webgpu";
 
 import type { IFrameBudgetWindow } from "../frame-budget.js";
 import type { RendererKind } from "../renderer.js";
-import { velocityTexture, withVelocityContext } from "./velocity.js";
+import { VELOCITY_OUTPUT_NAME, velocityTexture, withVelocityContext } from "./velocity.js";
 import type { IVelocityRenderPass } from "./velocity.js";
 
 /** The marker shared by render-chain logs, playtests, and native diagnostics. */
@@ -275,6 +276,7 @@ export class RenderChain {
     undefined;
   #ownedVelocityPass: IVelocityRenderPass | undefined = undefined;
   #ownedVelocityMrt: MRTNode | null | undefined = undefined;
+  #ownedVelocityTexture: Texture | undefined = undefined;
   #disposed = false;
   #applied: IRenderChainApplied;
 
@@ -393,9 +395,16 @@ export class RenderChain {
           velocity.source === "mrt" &&
           this.#requestVelocity.pass !== undefined
         ) {
-          velocityNode = velocityTexture(this.#requestVelocity.pass);
-          this.#ownedVelocityPass = this.#requestVelocity.pass;
+          const pass = this.#requestVelocity.pass;
+          const priorTextures = [...(pass.renderTarget?.textures ?? [])];
+          velocityNode = velocityTexture(pass);
+          this.#ownedVelocityPass = pass;
           this.#ownedVelocityMrt = originalMrt;
+          if (originalMrt?.has(VELOCITY_OUTPUT_NAME) !== true)
+            this.#ownedVelocityTexture = pass.renderTarget?.textures.find(
+              (texture) =>
+                texture.name === VELOCITY_OUTPUT_NAME && !priorTextures.includes(texture),
+            );
         }
         const buildContext = stageContext(this.#tier, velocity, velocityNode);
         const next = definition.build(node, buildContext);
@@ -566,9 +575,20 @@ export class RenderChain {
   #restoreOwnedVelocityOutput(): void {
     if (this.#ownedVelocityPass !== undefined && this.#ownedVelocityMrt !== undefined) {
       this.#ownedVelocityPass.setMRT(this.#ownedVelocityMrt);
+      const target = this.#ownedVelocityPass.renderTarget;
+      const texture = this.#ownedVelocityTexture;
+      if (target !== undefined && texture !== undefined) {
+        const index = target.textures.indexOf(texture);
+        if (index !== -1) {
+          // Three must destroy the old GPU attachment set before the cached texture is detached.
+          target.dispose();
+          target.textures.splice(index, 1);
+        }
+      }
     }
     this.#ownedVelocityPass = undefined;
     this.#ownedVelocityMrt = undefined;
+    this.#ownedVelocityTexture = undefined;
   }
 
   #disposeActiveStages(): void {

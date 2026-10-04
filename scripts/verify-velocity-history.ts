@@ -161,7 +161,7 @@ try {
     {
       name: "temporal-off-after-consumer-diagnostic",
       query: "?from-temporal",
-      failures: ["resource.cost.velocityTargets"],
+      failures: [],
     },
   ]) {
     const costDirectory = path.join(output, costVariant.name);
@@ -229,7 +229,7 @@ try {
   );
   await writeFile(
     path.join(output, "summary.json"),
-    `${JSON.stringify({ sourceSha, pass: true, qualification: "actual WebGPU velocity MRT readback and screenshots plus software-only temporal-off CPU submission cost, including a known retained-attachment diagnostic; no native, ghosting or hardware-performance claim", temporalOffCost, variants: results.map(({ variant, report }) => ({ variant, pass: report.pass, capture: report.capture, motion: report.observations?.resources.motion, diagnostics: report.diagnostics })) }, null, 2)}\n`,
+    `${JSON.stringify({ sourceSha, pass: true, qualification: "actual WebGPU velocity MRT readback and screenshots plus software-only temporal-off CPU submission cost, including three temporal-consumer on/off transitions; no native, ghosting or hardware-performance claim", temporalOffCost, variants: results.map(({ variant, report }) => ({ variant, pass: report.pass, capture: report.capture, motion: report.observations?.resources.motion, diagnostics: report.diagnostics })) }, null, 2)}\n`,
   );
   console.log(
     `Velocity history: expected motion/control outcomes observed, including exact skinned coverage and the original world-history control. Artifacts: ${output}`,

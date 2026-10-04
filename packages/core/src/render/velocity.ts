@@ -1,6 +1,6 @@
-import type { BatchedMesh, Matrix4, Object3D, SkinnedMesh } from "three";
+import type { BatchedMesh, Matrix4, Object3D, RenderTarget, SkinnedMesh } from "three";
 import { context, mrt, output, velocity } from "three/tsl";
-import type { MRTNode, Node } from "three/webgpu";
+import type { MRTNode, Node, TextureNode } from "three/webgpu";
 
 import {
   disposeBatchedMeshVelocity,
@@ -18,6 +18,8 @@ export const VELOCITY_OUTPUT_NAME = "velocity";
  * without making the game depend on either implementation.
  */
 export interface IVelocityRenderPass {
+  /** Physical attachments on Three passes; structural adapters may own them elsewhere. */
+  readonly renderTarget?: Pick<RenderTarget, "textures" | "dispose">;
   getMRT(): MRTNode | null;
   getTextureNode(name?: string): Node;
   setMRT(value: MRTNode | null): unknown;
@@ -92,7 +94,13 @@ export function ensureVelocityOutput(pass: IVelocityRenderPass): MRTNode {
  */
 export function velocityTexture(pass: IVelocityRenderPass): Node {
   ensureVelocityOutput(pass);
-  return pass.getTextureNode(VELOCITY_OUTPUT_NAME);
+  const node = pass.getTextureNode(VELOCITY_OUTPUT_NAME);
+  const target = pass.renderTarget;
+  const texture = (node as TextureNode).value;
+  // PassNode caches texture nodes after a chain detaches their physical attachment.
+  if (target !== undefined && texture?.isTexture === true && !target.textures.includes(texture))
+    target.textures.push(texture);
+  return node;
 }
 
 /**
