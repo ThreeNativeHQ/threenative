@@ -3,6 +3,8 @@ import {
   type BufferGeometry,
   type Camera,
   type DirectionalLight,
+  Frustum,
+  Matrix4,
   type Mesh,
   Object3D,
   type OrthographicCamera,
@@ -295,6 +297,13 @@ export interface IVirtualShadowDraws {
   readonly chunkProxy: number;
   /** Everything else casting from layer 0 — terrain, props — which every level draws. */
   readonly layer0: number;
+  /**
+   * GPU-scene keys: one mesh per `asset:level:part` drawn from the level's own twin of the dispatch's
+   * output, which is the whole of what a keyed map submits of the world. Zero unless a provider
+   * registered and `?tnShadowGpuKeys=1` asked, and then it replaces {@link cluster} and {@link wide}
+   * rather than adding to them: the keys draw the placements those two would have.
+   */
+  readonly keys: number;
 }
 
 /** The mutable tally `#probe` fills; the public row only ever reads it. */
@@ -304,6 +313,7 @@ interface IVirtualShadowDrawTally {
   small: number;
   chunkProxy: number;
   layer0: number;
+  keys: number;
 }
 
 export const VIRTUAL_SHADOW_MARKER = "TN_VIRTUAL_SHADOW";
@@ -377,6 +387,14 @@ export const VIRTUAL_SHADOW_WIDE_CASTER_LAYER = 27;
  * shadow survives the fine window's edge. The main camera never draws this internal layer.
  */
 export const VIRTUAL_SHADOW_SMALL_CASTER_LAYER = 26;
+/**
+ * The counterpart of both caster layers for a GPU-driven map: one mesh per `asset:level:part`
+ * drawing that key's shadow twin, so a level submits one indirect draw per key instead of one per
+ * grid square. `WorldCells` mints these instead of the two caster halves when a shadow level draws
+ * from the GPU scene (`?tnShadowGpuKeys=1`), and every level camera carries this bit, which is why
+ * it is not one half of a choice: a key is the whole of what a keyed map draws of the world.
+ */
+export const VIRTUAL_SHADOW_KEY_LAYER = 25;
 const MIN_MOVER_MAP_SIZE = 256;
 const DEFAULT_CLIP_EXTENTS: readonly number[] = [16, 48, 144];
 const DEFAULT_MARKER_EVERY = 300;
@@ -446,6 +464,29 @@ const CASTER_KEY_STRIDE = 22;
 /** World centre and radius, then the box's world height range: what the pool row is written from. */
 const CASTER_WORLD_STRIDE = 6;
 const CASTER_STRIDE = CASTER_KEY_STRIDE + CASTER_WORLD_STRIDE;
+
+/**
+ * What a world publishes on its root for a shadow level to draw a map from GPU-scene keys:
+ * `(renderer, level) => void`, the level's own four numbers and the scene that selects against them.
+ *
+ * Engine-internal and duck-typed. `WorldCells` publishes it as `tnShadowGpuKeys`; nothing in a
+ * template or a manifest names it, and this module cannot import the world package to name the type,
+ * so the contract is the call and the flag behind it.
+ */
+type IShadowKeyDispatch = (renderer: unknown, level: IShadowLevelNumbers) => void;
+
+/**
+ * One shadow map's own four numbers, duck-typed from `world-gpu-scene`'s `IShadowLevel`: the six
+ * planes of this map's own shadow camera, the window centre its map was rendered with, its texel
+ * gate in world metres, and the chain level it draws at. Typed here rather than imported for the
+ * same reason as the dispatch above.
+ */
+interface IShadowLevelNumbers {
+  readonly planes: Float32Array;
+  readonly centre: { readonly x: number; readonly z: number };
+  readonly gate: number;
+  readonly base: number;
+}
 
 /** A placeholder light per level: the stock shadow node reads position and target from it. */
 class LevelLight extends Object3D {
@@ -531,6 +572,12 @@ interface ILevel {
    */
   gateScale: number;
   /**
+   * The texel gate `#probe` last computed for this level, in world metres. Held so the level's own
+   * dispatch is handed the gate that render decided on, rather than recomputing it and risking the
+   * two answering about different numbers. 0 until the level has been probed.
+   */
+  gateMetres: number;
+  /**
    * Casters the adaptive gate hid on this level's last render, for the `TN_SHADOW_GATE` line. Not
    * reset by a frame that did not render: the line reports the render the change was read from.
    */
@@ -564,6 +611,15 @@ const _box = new Box3();
 const _size = new Vector3();
 const _focus = new Vector3();
 const _forward = new Vector3();
+/** A level's own light frustum, read once per level render and handed to its dispatch. */
+const _shadowProjection = new Matrix4();
+const _shadowFrustum = new Frustum();
+const _shadowPlanes = new Float32Array(24);
+/**
+ * `world-gpu-scene`'s `COARSEST_SHADOW_LEVEL`, duplicated rather than imported: this module must not
+ * know the world package, and the value is a level index the far side clamps to each asset's own.
+ */
+const COARSEST_SHADOW_LEVEL = 1 << 20;
 
 /** What a caster is doing as far as a shadow level is concerned: 1 visible, 2 casting. */
 function casterFlag(mesh: { castShadow?: boolean; visible?: boolean }): number {
@@ -746,6 +802,13 @@ export class VirtualShadowNode extends ShadowBaseNode {
   /** Every object the table was built over, so its tree listeners can come off on the next build. */
   #casterObjects: Object3D[] = [];
   #heightSources: (Object3D & { heightAt(x: number, z: number): number })[] = [];
+  /**
+   * The world that can hand this node a set of keys to draw instead of its caster meshes, found on
+   * the caster walk and read on the render. `undefined` unless something published
+   * `tnShadowGpuKeys`, which only happens with `?tnShadowGpuKeys=1`; every level below then reads
+   * exactly what it read before.
+   */
+  #gpuKeys: IShadowKeyDispatch | undefined;
   /** The root `#casterTable` was walked from; a re-parented light changes it. */
   #casterRoot: Object3D | null = null;
   /** Set by `childadded` / `childremoved`, which three dispatches on the object that changed. */
@@ -1085,13 +1148,21 @@ export class VirtualShadowNode extends ShadowBaseNode {
     this.#casterObjects.length = 0;
     this.#heightSources.length = 0;
     this.#casterTable.length = 0;
+    this.#gpuKeys = undefined;
     root.traverse((object) => {
       object.addEventListener("childadded", this.#onTreeChanged);
       object.addEventListener("childremoved", this.#onTreeChanged);
       this.#casterObjects.push(object);
       if (typeof (object as { heightAt?: unknown }).heightAt === "function")
         this.#heightSources.push(object as Object3D & { heightAt(x: number, z: number): number });
-      if ((object as { isMesh?: boolean }).isMesh === true)
+      // The one place a shadow level learns that a world in this scene can hand it a set of keys to
+      // draw instead of its caster meshes: a function published on the world's own root, read off
+      // the same walk and on the same cadence as everything else here. Duck-typed rather than
+      // imported — this module must not know the world package, and no template or manifest names it.
+      // The last publisher wins, as the last height source does.
+      const keys = (object as { tnShadowGpuKeys?: unknown }).tnShadowGpuKeys;
+      if (typeof keys === "function") this.#gpuKeys = keys as IShadowKeyDispatch;
+      if ((object as { isMesh?: unknown }).isMesh === true)
         this.#casterTable.push(object as ICasterMesh);
     });
     const wanted = this.#casterTable.length * CASTER_STRIDE;
@@ -1247,6 +1318,11 @@ export class VirtualShadowNode extends ShadowBaseNode {
     let nChunk = 0;
     let nChunkBoth = 0;
     let nLayer0 = 0;
+    // A world that hands this node its GPU-scene keys draws them, not its caster meshes: one mesh
+    // per key for every placement the two halves would have drawn between them. The gate below, the
+    // halves' choice and their bills are the cluster path's own and do not apply — the per-placement
+    // decisions are the dispatch's, made in the twin buffers this render is about to submit.
+    let nKeys = 0;
     // A caster still owed its prewarm draw (see `SharedBatch.awaitPrewarmDraw`): its shadow-context
     // node is built by the next shadow render that draws it, so the level that draws it here is
     // what moves the build off the render. Both layers are therefore rendered while one is owed, since
@@ -1255,6 +1331,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
     // not import this one — the same channel as the `casterInstanceScale` read below.
     let prewarming = false;
     this.#ensureCasters();
+    const keyed = this.#gpuKeys !== undefined;
     const table = this.#casterTable;
     const memo = this.#casterMemo;
     for (let entry = 0; entry < table.length; entry += 1) {
@@ -1378,6 +1455,17 @@ export class VirtualShadowNode extends ShadowBaseNode {
       pool[at + 5] = _box.min.y;
       pool[at + 6] = _box.max.y;
       this.#poolCount += 1;
+      // A key is one submission for the whole world-grid square the two caster halves split into,
+      // so every per-mesh decision below is the wrong unit for it: the texel gate would hide the
+      // world's entire forest because the key's own geometry is small, and the halves' bills count
+      // meshes this level does not draw at all. The dispatch applies this level's own gate per
+      // placement, which is the decision that has an instance to make it about. Pooled like any
+      // other caster — its bounds are the resident ring, exactly as a wide half's are — so the depth
+      // span this level derives still covers what the keys can cast.
+      if (keyed && (mesh.layers.mask & (1 << VIRTUAL_SHADOW_KEY_LAYER)) !== 0) {
+        nKeys += 1;
+        continue;
+      }
       // Sub-texel: a caster the level cannot resolve draws no shadow a fragment could tell from
       // ground cover, so it is hidden for this render and put back immediately after it.
       //
@@ -1437,26 +1525,38 @@ export class VirtualShadowNode extends ShadowBaseNode {
     // pick gets its node built before the pass.
     const clustered = clusterDraws < wideDraws;
     level.shadow.camera.layers.set(0);
-    level.shadow.camera.layers.enable(
-      clustered || prewarming ? VIRTUAL_SHADOW_CASTER_LAYER : VIRTUAL_SHADOW_WIDE_CASTER_LAYER,
-    );
-    if (prewarming) level.shadow.camera.layers.enable(VIRTUAL_SHADOW_WIDE_CASTER_LAYER);
-    // Small casters use the same texel gate as every other layer; their authored height is
-    // not a reason to lose a resolved shadow when the fine window ends.
-    level.shadow.camera.layers.enable(VIRTUAL_SHADOW_SMALL_CASTER_LAYER);
+    // A keyed world draws its keys on their own layer, which every level camera carries: there is no
+    // half to choose and no small-caster layer, because the dispatch's per-placement selection
+    // answers both questions in the twin buffers this render is about to submit. The cluster layer
+    // stays on for what is not the world's own keys — merged chunk proxies, and any caster a game put
+    // on the caster layer itself, neither of which the GPU scene knows about.
+    if (keyed) {
+      level.shadow.camera.layers.enable(VIRTUAL_SHADOW_KEY_LAYER);
+      level.shadow.camera.layers.enable(VIRTUAL_SHADOW_CASTER_LAYER);
+    } else {
+      level.shadow.camera.layers.enable(
+        clustered || prewarming ? VIRTUAL_SHADOW_CASTER_LAYER : VIRTUAL_SHADOW_WIDE_CASTER_LAYER,
+      );
+      if (prewarming) level.shadow.camera.layers.enable(VIRTUAL_SHADOW_WIDE_CASTER_LAYER);
+      // Small casters use the same texel gate as every other layer; their authored height is
+      // not a reason to lose a resolved shadow when the fine window ends.
+      level.shadow.camera.layers.enable(VIRTUAL_SHADOW_SMALL_CASTER_LAYER);
+    }
     // Proxies belong to both halves: their covered originals no longer cast.
-    const chosenCluster = clustered || prewarming;
-    const chosenWide = !clustered || prewarming;
-    const chosenSmall = true;
+    const chosenCluster = keyed === false && (clustered || prewarming);
+    const chosenWide = keyed === false && (!clustered || prewarming);
+    const chosenSmall = keyed === false;
     const by = stat.drawsBy;
     by.cluster = chosenCluster ? nCluster : 0;
-    by.chunkProxy = nChunkBoth + (chosenCluster ? nChunk : 0);
+    by.chunkProxy = nChunkBoth + (chosenCluster || keyed ? nChunk : 0);
     by.wide = chosenWide ? nWide : 0;
     by.small = chosenSmall ? nSmall : 0;
     by.layer0 = nLayer0;
-    stat.draws = by.cluster + by.wide + by.small + by.chunkProxy + by.layer0;
+    by.keys = nKeys;
+    stat.draws = by.cluster + by.wide + by.small + by.chunkProxy + by.layer0 + by.keys;
     stat.gateHidden = gateHidden;
     level.gateHidden = gateHidden;
+    level.gateMetres = gate;
   }
 
   /**
@@ -1478,9 +1578,13 @@ export class VirtualShadowNode extends ShadowBaseNode {
    * cached render object re-reads `object.geometry` itself, so only what the object holds can change
    * what a draw submits, and the renderer's own per-draw function is not ours to wrap.
    */
-  #renderLevel(frame: NodeFrame, level: ILevel, mover: boolean): void {
+  #renderLevel(frame: NodeFrame, level: ILevel, mover: boolean, index = 0): void {
     // quality-allow: Three exposes updateShadow only on its internal rendering shadow node.
     const node = (mover ? level.moverNode : level.node) as unknown as IRenderingShadowNode;
+    // The level's own keys, selected against this map's own four numbers, before the render that
+    // submits them. A mover map is never keyed: it draws the tracked casters and nothing else, so
+    // a dispatch there would put the whole world into a 256² map of one moving object.
+    if (mover === false) this.#dispatchKeys(frame, level, index);
     // What a level's own render costs, measured around the draw and smoothed over the reading
     // before it. A mover map is a handful of tracked casters and is never scheduled against, so it
     // is not measured, and with both adaptive refresh and the adaptive caster gate off nothing is:
@@ -1504,6 +1608,48 @@ export class VirtualShadowNode extends ShadowBaseNode {
           level.costMs <= 0 ? measured : level.costMs + (measured - level.costMs) * COST_SMOOTHING;
       }
     }
+  }
+
+  /**
+   * Hand this level's set to whatever published keys on the world's root, in the four numbers that
+   * are the map's own and not the main camera's: its own light frustum, the window centre its map
+   * was rendered with, the texel gate `#probe` just decided on, and the chain level it draws at.
+   *
+   * A no-op without a publisher, which is the flag's whole off state. The frustum comes from
+   * `updateMatrices`, which is what the stock node calls inside `updateShadow` and which positions
+   * this level's own shadow camera from its light — so the planes are the ones the render about to
+   * happen is made with, rather than last render's, and are read before it rather than after.
+   *
+   * `base` mirrors `#probe`: past the finest level every caster here is drawn coarsened, so the
+   * dispatch floors every asset at its own coarsest chain level. Past-the-end is clamped per asset
+   * on the far side, because no asset in this scene has told this node how long its chain is.
+   */
+  #dispatchKeys(frame: NodeFrame, level: ILevel, index: number): void {
+    const keys = this.#gpuKeys;
+    if (keys === undefined) return;
+    const shadow = level.shadow;
+    // quality-allow: the light's own shadow owns this update, and the stock node calls it too.
+    shadow.updateMatrices(level.light as unknown as DirectionalLight);
+    _shadowProjection.multiplyMatrices(
+      shadow.camera.projectionMatrix,
+      shadow.camera.matrixWorldInverse,
+    );
+    _shadowFrustum.setFromProjectionMatrix(_shadowProjection);
+    const planes = _shadowPlanes;
+    for (const [at, plane] of _shadowFrustum.planes.entries()) {
+      const offset = at * 4;
+      planes[offset] = plane.normal.x;
+      planes[offset + 1] = plane.normal.y;
+      planes[offset + 2] = plane.normal.z;
+      planes[offset + 3] = plane.constant;
+    }
+    const target = level.light.target.position;
+    keys(frame.renderer, {
+      base: index >= 1 && this.options.shadowLodBias ? COARSEST_SHADOW_LEVEL : 0,
+      centre: { x: target.x, z: target.z },
+      gate: level.gateMetres,
+      planes,
+    });
   }
 
   /**
@@ -1715,6 +1861,10 @@ export class VirtualShadowNode extends ShadowBaseNode {
       // map and not into the main pass. It also fixes this camera's layer mask, which three would
       // otherwise take from the main camera.
       levelShadow.camera.layers.enable(VIRTUAL_SHADOW_CASTER_LAYER);
+      // The same pin for the key layer a GPU-driven map draws on, which `#probe` re-asserts on
+      // every render it takes; enabling it here means a level's mask is never layer 0 alone, which
+      // three overwrites with the main camera's.
+      levelShadow.camera.layers.enable(VIRTUAL_SHADOW_KEY_LAYER);
       // Cached: the stock node renders only when asked — and not before this node has placed
       // the level, which happens in `updateBefore`. A render requested here would run on the
       // first frame from an unplaced light, and three's per-frame guard would then keep that
@@ -1822,6 +1972,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
         gatedRender: Number.NEGATIVE_INFINITY,
         gateHidden: 0,
         gateScale: 1,
+        gateMetres: 0,
         lastGateNote: Number.NEGATIVE_INFINITY,
         depthFar: this.options.lightDistance + this.options.depthRange,
         depthNear: 1,
@@ -2233,7 +2384,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
           // Filled by `#probe` on the frame's granted render, from the meshes it read; a level
           // that keeps its map submits no caster draws of its own, so it reports none.
           draws: 0,
-          drawsBy: { chunkProxy: 0, cluster: 0, layer0: 0, small: 0, wide: 0 },
+          drawsBy: { chunkProxy: 0, cluster: 0, keys: 0, layer0: 0, small: 0, wide: 0 },
           extent: level.extent,
           gateHidden: 0,
           gateScale: level.gateScale,
@@ -2271,7 +2422,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
           this.#place(level, centre);
           try {
             // Rendered here, not by flagging `needsUpdate`, so the mover exclusion above brackets it.
-            this.#renderLevel(frame, level, false);
+            this.#renderLevel(frame, level, false, index);
           } finally {
             this.#restoreHidden();
           }

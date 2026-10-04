@@ -853,7 +853,7 @@ describe("VirtualShadowNode", () => {
     expect(node.stats).toMatchObject({ deferred: 1, levels: 2, rendered: 1 });
     // Per level, finest first: the one that took the render, and the one held behind it. No caster
     // meshes are in this world, so the granted level reports a bill of zero.
-    const noDraws = { chunkProxy: 0, cluster: 0, layer0: 0, small: 0, wide: 0 };
+    const noDraws = { chunkProxy: 0, cluster: 0, keys: 0, layer0: 0, small: 0, wide: 0 };
     expect(node.stats.perLevel).toEqual([
       {
         deferred: 0,

@@ -19,6 +19,7 @@ import type { NodeBuilder, NodeFrame } from "three/webgpu";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   VIRTUAL_SHADOW_CASTER_LAYER,
+  VIRTUAL_SHADOW_KEY_LAYER,
   VIRTUAL_SHADOW_SMALL_CASTER_LAYER,
   VIRTUAL_SHADOW_WIDE_CASTER_LAYER,
   VirtualShadowNode,
@@ -499,5 +500,238 @@ describe("a shadow level's GPU-key selection against the cluster path", () => {
         `saved=${String(saved)} placements=${String(placements.length)}`,
     );
     world.dispose();
+  });
+});
+
+/** `VirtualShadowNode`'s own per-level row, paired with the bill measured inside that same render. */
+type ILevelStat = { readonly draws: number; readonly drawsBy: { readonly keys: number } };
+
+/**
+ * What one level render submitted, counted the way three counts it: the camera's layer mask decides
+ * which meshes exist for the pass, `visible` and `castShadow` decide whether they are reached, and
+ * `frustumCulled === false` is three's own exemption from the whole-mesh frustum test — which is what
+ * a GPU-dressed mesh takes, since the dispatch tested every instance instead.
+ */
+interface ILevelSubmissions {
+  keys: number;
+  casters: number;
+  proxies: number;
+  layer0: number;
+  /** Every submitted draw, and how many of them were one indirect record rather than a whole mesh. */
+  draws: number;
+  indirect: number;
+  /** The node's own row for this level, read on the same render; undefined until it has rendered. */
+  stat: ILevelStat | undefined;
+}
+
+interface IArmResult {
+  readonly perLevel: ILevelSubmissions[];
+  /** Every dispatch the world submitted, and how many of them a level render took. */
+  readonly dispatches: number;
+  readonly levelRenders: number;
+  readonly keys: InstancedMesh[];
+  dispose(): void;
+}
+
+/**
+ * One run of the package with the shadow keys on or off: a real `WorldCells` streams it, a real
+ * `VirtualShadowNode` takes its level renders, and every render is measured here rather than
+ * modelled. The GPU scene's own dispatches are counted rather than executed — nothing below needs a
+ * device, and what is being counted is what a level submits.
+ */
+async function measureSubmissions(keys: boolean): Promise<IArmResult> {
+  vi.stubGlobal("__tnShadowGpuKeys", keys ? 1 : 0);
+  stubFixtureFetch();
+  const scene = new Scene();
+  const light = new DirectionalLight(0xffffff, 1);
+  light.position.set(60, 200, -40);
+  light.castShadow = true;
+  scene.add(light, light.target);
+  const node = new VirtualShadowNode(light, {
+    clipExtents: [...CLIP_EXTENTS],
+    mapSize: MAP_SIZE,
+    marker: false,
+    minCasterTexels: MIN_CASTER_TEXELS,
+  });
+  node.setup(builder);
+  const keyLayer = 1 << VIRTUAL_SHADOW_KEY_LAYER;
+  const casterLayers =
+    (1 << VIRTUAL_SHADOW_CASTER_LAYER) |
+    (1 << VIRTUAL_SHADOW_WIDE_CASTER_LAYER) |
+    (1 << VIRTUAL_SHADOW_SMALL_CASTER_LAYER);
+  const held: ILevelSubmissions[] = [];
+  /** Which levels took this frame's render, so its published row can be paired with its bill. */
+  const rendered = CLIP_EXTENTS.map(() => false);
+  let levelRenders = 0;
+  for (const [index, levelNode] of node.levelNodes.entries()) {
+    const level = levelNode as unknown as ILevelNode;
+    level.updateShadow = (): void => {
+      level.light.shadow.updateMatrices(level.light);
+      const camera = level.shadow.camera;
+      camera.updateMatrixWorld(true);
+      camera.matrixWorldInverse.copy(camera.matrixWorld).invert();
+      const frustum = frustumOf(camera);
+      const one: ILevelSubmissions = {
+        casters: 0,
+        draws: 0,
+        indirect: 0,
+        keys: 0,
+        layer0: 0,
+        proxies: 0,
+        // The node's per-frame stats are published at the end of the frame, so the row belonging to
+        // *this* render is next frame's; that is the row a walk reads, and it is compared with the
+        // bill this render measured.
+        stat: undefined,
+      };
+      held[index] = one;
+      rendered[index] = true;
+      levelRenders += 1;
+      scene.traverse((object: Object3D) => {
+        const mesh = object as InstancedMesh;
+        if ((mesh as { isInstancedMesh?: boolean }).isInstancedMesh !== true) return;
+        if (mesh.visible !== true || mesh.castShadow !== true) return;
+        if ((mesh.layers.mask & camera.layers.mask) === 0) return;
+        if (mesh.frustumCulled !== false && !frustum.intersectsObject(mesh)) return;
+        one.draws += 1;
+        if ((mesh.layers.mask & keyLayer) !== 0) {
+          one.keys += 1;
+          if (mesh.geometry.indirect !== undefined) one.indirect += 1;
+        } else if (mesh.name.endsWith("-shadow")) one.proxies += 1;
+        else if ((mesh.layers.mask & casterLayers) !== 0) one.casters += 1;
+        else if ((mesh.layers.mask & 1) !== 0) one.layer0 += 1;
+      });
+    };
+  }
+  let dispatches = 0;
+  const renderer = {
+    compileAsync: async (): Promise<void> => {},
+    compute: (): void => {
+      dispatches += 1;
+    },
+    kind: "webgpu",
+    raw: { backend: { hasFeature: () => true } },
+  } as unknown as Parameters<WorldCells["update"]>[0];
+  const world = await WorldCells.load({
+    admissionBudgetMs: Number.POSITIVE_INFINITY,
+    budgets,
+    follow: { position: { ...FOLLOW } },
+    gpuScene: true,
+    loadModel: async (url: string) => modelFor(path.basename(url, ".glb").replace("_lod1", "")),
+    prefetchSeconds: 0,
+    // The whole package, not the nine cells the selection case reads: a per-square bill only shows
+    // what it costs when the level's window covers squares, which is the case the box is about.
+    ring: 3,
+    shadows: { cast: true, castLevels: CLIP_EXTENTS.length },
+    surface: new MeshBasicMaterial(),
+    url: "/world/world.json",
+  });
+  scene.add(world);
+  const camera = cameraAt(FOLLOW.x, FOLLOW.z);
+  for (let frame = 1; frame <= 30; frame += 1) {
+    rendered.fill(false);
+    world.update(renderer, camera);
+    node.updateBefore({ camera, renderer, time: frame } as unknown as NodeFrame);
+    // The node publishes a frame's rows before `updateBefore` returns, so the level that took this
+    // frame's render — one per frame is the budget — is read here rather than at the end, where it
+    // would be the last level's row and the rest would read zero.
+    for (const [index, one] of held.entries()) {
+      if (rendered[index] !== true || one === undefined) continue;
+      const row = node.stats.perLevel[index];
+      if (row !== undefined) one.stat = { draws: row.draws, drawsBy: { keys: row.drawsBy.keys } };
+    }
+    await flush();
+  }
+  // The live key meshes, read off the world rather than off the render history: a key whose twin
+  // regrew was replaced by a fresh object, and the replaced one is not what a frame draws.
+  const live: InstancedMesh[] = [];
+  world.traverse((object: Object3D) => {
+    const mesh = object as InstancedMesh;
+    if ((mesh.layers.mask & (1 << VIRTUAL_SHADOW_KEY_LAYER)) !== 0) live.push(mesh);
+  });
+  return {
+    dispose: (): void => {
+      world.dispose();
+      node.dispose();
+    },
+    dispatches,
+    keys: live,
+    levelRenders,
+    perLevel: held,
+  };
+}
+
+describe("a level render's own submissions with and without GPU keys", () => {
+  it("submits one indirect draw per key with the flag on, and the caster halves' own meshes with it off", async () => {
+    const off = await measureSubmissions(false);
+    const on = await measureSubmissions(true);
+    // The control is the world as it is today: every level render is a bill of caster meshes, one
+    // per world-grid square the window covers, and no key at all.
+    for (const [index, one] of off.perLevel.entries()) {
+      expect(one.keys, `level ${String(index)} submitted no key with the flag off`).toBe(0);
+      expect(one.casters, `level ${String(index)} submitted caster meshes`).toBeGreaterThan(0);
+      expect(one.indirect).toBe(0);
+    }
+    expect(off.keys, "the world minted no shadow key").toEqual([]);
+    // The claim: with the flag on the same window submits one indirect draw per key and none of the
+    // per-square caster meshes, and every level's own counter says so.
+    expect(on.perLevel.length).toBe(CLIP_EXTENTS.length);
+    for (const [index, one] of on.perLevel.entries()) {
+      expect(one.stat?.drawsBy.keys, `level ${String(index)} reported no keys`).toBe(one.keys);
+      expect(one.stat?.draws, `level ${String(index)} reported a different bill`).toBe(one.draws);
+      expect(one.casters, `level ${String(index)} still submitted caster meshes`).toBe(0);
+      expect(one.keys, `level ${String(index)} submitted a key`).toBeGreaterThan(0);
+      // Every one of them is an indirect draw against a twin record, not a whole-mesh one.
+      expect(one.indirect, `level ${String(index)} drew keys without their records`).toBe(one.keys);
+      expect(one.draws).toBe(one.keys + one.proxies + one.layer0);
+    }
+    // And the whole bill is what the box is about: one draw per key, and the same number in every
+    // level however wide its window is. The cluster path's bill is the squares each window covers —
+    // which is why this fixture's control is already small (its coarse levels take the wide half, one
+    // mesh per key, and its fine window covers a cell or two of a 256 m ring) and why the 630 the box
+    // counts are Machinefall's level-0 bill rather than this one. What this case proves is the
+    // mechanism that cuts that bill: the keyed bill is the key count, not the window's.
+    const keysDrawn = on.perLevel.reduce((sum, one) => sum + one.keys, 0);
+    const castersOff = off.perLevel.reduce((sum, one) => sum + one.casters, 0);
+    console.info(
+      `TN_SHADOW_KEY_DRAWS levels=${String(on.perLevel.length)} keys=${String(keysDrawn)} ` +
+        `draws=${String(on.perLevel.reduce((sum, one) => sum + one.draws, 0))} ` +
+        `off=${String(castersOff)} renders=${String(on.levelRenders)}/${String(off.levelRenders)} ` +
+        `dispatches=${String(on.dispatches)}/${String(off.dispatches)} ` +
+        `keysPerLevel=${on.perLevel.map((one) => one.keys).join(",")} ` +
+        `offPerLevel=${off.perLevel.map((one) => one.casters).join(",")}`,
+    );
+    expect(keysDrawn).toBeGreaterThan(0);
+    // Every dispatch the world submitted is accounted for: the main pass's own pair per update, and
+    // a keyed level render its own clear-and-cull pair, which is what fills the twin records the keys
+    // read. Nothing here executes them, so what is proved is that the flag is what asks for them and
+    // that a launch without it asks for none.
+    expect(off.levelRenders, "the control took level renders").toBeGreaterThan(0);
+    expect(on.levelRenders, "the keyed arm took level renders").toBeGreaterThan(0);
+    expect(
+      on.dispatches,
+      "a keyed level render dispatches its own selection before its draws",
+    ).toBeGreaterThan(off.dispatches);
+    // Every level drew the same keys, whatever its window: the bill is the key table, not the
+    // squares a window happens to cover.
+    const perLevel = new Set(on.perLevel.map((one) => one.keys));
+    expect([...perLevel], "the keyed bill varied with the window").toHaveLength(1);
+    expect([...perLevel][0], "every key is submitted by every level").toBe(on.keys.length);
+    // Every key is one mesh per `asset:level:part`, and they all draw from the same twin buffers:
+    // a world of per-mesh instance buffers would cost the very records this saves.
+    expect(on.keys.length).toBeGreaterThan(0);
+    for (const mesh of on.keys) {
+      expect(mesh.count, `${mesh.name} is submitted at nothing`).toBeGreaterThan(0);
+      expect(mesh.frustumCulled, `${mesh.name} is culled whole-mesh`).toBe(false);
+      expect(mesh.geometry.indirect).toBe(on.keys[0]?.geometry.indirect);
+      expect(mesh.instanceMatrix).toBe(on.keys[0]?.instanceMatrix);
+      expect(mesh.castShadow).toBe(true);
+      expect(mesh.visible).toBe(true);
+      // Never bundled: a bundle's record is fixed when it is recorded, and only the main pass's
+      // draws are replayed from it.
+      expect(mesh.userData.tnBundled).toBeFalsy();
+      expect(mesh.name.endsWith("@gpu")).toBe(true);
+    }
+    on.dispose();
+    off.dispose();
   });
 });

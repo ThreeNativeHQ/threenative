@@ -21,6 +21,7 @@ import { lodBias, setLodBias } from "../src/model-lod.js";
 import type { IRendererLike } from "../src/renderer.js";
 import { isStatic } from "../src/static-transform.js";
 import {
+  COARSEST_SHADOW_LEVEL,
   DRAW_ARGS_BYTES,
   type IGpuPlacement,
   type IKernelInput,
@@ -3789,6 +3790,43 @@ describe("a shadow level's own selection", () => {
     expect([...(byKey.get(1) ?? [])]).not.toContain(2);
     const open = drawnPlacements(cullAndSelectShadow(input, { ...level, gate: 0 }), input);
     expect([...(open.get(1) ?? [])]).toEqual([1, 2, 3]);
+  });
+
+  it("reads a base past the chain as the coarsest shape the asset has, without reading past its levels", () => {
+    const { input } = shadowFixture();
+    const level = {
+      base: COARSEST_SHADOW_LEVEL,
+      centre: { x: 0, z: 0 },
+      gate: 0,
+      planes: levelPlanes(100),
+    };
+    // A level table that refuses an index past its own end, which is what the twin's storage read
+    // does and what an out-of-range base used to ask it for. The base is clamped per asset, so one
+    // number — a node that coarsens a coarse level's casters without knowing an asset — asks every
+    // chain for its own coarsest shape.
+    const levels = input.slots[0]?.levels ?? [];
+    const guarded: IKernelInput = {
+      ...input,
+      slots: [
+        {
+          ...(input.slots[0] as { cull: undefined; distances: readonly number[] }),
+          levels: new Proxy(levels, {
+            get: (target, at) => {
+              // A property key is a string even when it was written as a number, so it is compared
+              // as one: `levels[1048576]` is the read the twin's storage buffer would refuse.
+              const index = Number(at);
+              if (!Number.isInteger(index) || index < target.length) return Reflect.get(target, at);
+              throw new RangeError(`level ${String(at)} is outside the asset's own chain.`);
+            },
+          }),
+        },
+      ],
+    };
+    const coarsest = drawnPlacements(cullAndSelectShadow(guarded, level), guarded);
+    expect([...(coarsest.get(2) ?? [])].sort()).toEqual([0, 1, 2, 3]);
+    // The same set the asset's own last level index names, which is what the base means.
+    const named = drawnPlacements(cullAndSelectShadow(input, { ...level, base: 2 }), input);
+    expect([...coarsest]).toEqual([...named]);
   });
 
   it("floors the level at the map's base, which is the shape the cluster path hands it", () => {

@@ -59,12 +59,14 @@ import {
   type IAssetSlot,
   type ILiveAsset,
   type IMeshDraw,
+  type IShadowLevel,
   WorldGpuScene,
   bundlesRequested,
   gpuSceneRequested,
   gpuSceneValidationRequested,
   levelAtGates,
   liveKeyInstances,
+  shadowGpuKeysRequested,
 } from "./world-gpu-scene.js";
 import { heightSamplerFromHeightmap, loadWorldHeightmap } from "./world-heightmap.js";
 import {
@@ -295,6 +297,19 @@ const VIRTUAL_SHADOW_WIDE_CASTER_LAYER = 27;
  * nobody has annotated still gets the cull. `shadows.smallCasterMetres` is the override.
  */
 const VIRTUAL_SHADOW_SMALL_CASTER_LAYER = 26;
+/**
+ * The layer a GPU-driven shadow map draws: one mesh per `asset:level:part`, over the shadow twin of
+ * the dispatch's own output, so a level submits a handful of indirect draws rather than one per
+ * world-grid square. Every level camera carries this bit, so it replaces both halves above rather
+ * than joining the choice between them. Duplicated from `virtual-shadow.ts` like the three above.
+ */
+const VIRTUAL_SHADOW_KEY_LAYER = 25;
+/**
+ * The name half a shadow key is minted under: `asset:level:part@gpu`, beside the main key it twins
+ * rather than in place of it, so both meshes exist — one for the main pass's compaction buffer and
+ * one for the shadow twin's, which is the whole difference between them.
+ */
+const GPU_KEY_SUFFIX = "@gpu";
 /** An asset shorter than this casts into the finest level only; see the layer above. */
 const SMALL_CASTER_METRES = 1.5;
 /** The whole ring, as one caster cluster: `@*` is every square's records in one mesh. */
@@ -817,13 +832,24 @@ interface ICellBatch {
 /** The geometry and material one batch draws; a part is one of these plus what it does not need. */
 type IBatchShape = Pick<IAssetPart, "geometry" | "material">;
 
+/** Which GPU-scene key one main batch draws: `asset:level:part`, and the part's place in the model. */
+interface IKeyDescriptor {
+  readonly asset: string;
+  readonly key: string;
+  readonly level: number;
+  readonly part: number;
+}
+
 /** One key a loaded asset's levels contributed to the prewarm queue. */
 
 /** One asset's placements, waiting to be built, or already holding their own cell's records. */
 interface IPrewarmEntry {
   readonly asset: string;
-  /** Which half of the split this mesh is: the main pass's key, its caster cluster, or its wide. */
-  readonly role: "cluster" | "main" | "wide";
+  /**
+   * Which pass this mesh is: the main pass's key, its caster cluster, its wide, or the shadow twin
+   * of the main key that a GPU-driven map draws instead of the two caster halves.
+   */
+  readonly role: "cluster" | "key" | "main" | "wide";
   readonly geometry: BufferGeometry;
   readonly key: string;
   readonly level: number;
@@ -919,7 +945,7 @@ function sameSquares(next: Set<string>, was: Set<string> | undefined): boolean {
 class SharedBatch {
   mesh: ICasterScaleMesh;
   /** The pass this batch draws in; see `#dressMesh`. Only `main` is clustered. */
-  readonly role: "cluster" | "main" | "wide";
+  readonly role: "cluster" | "key" | "main" | "wide";
   /**
    * Set by `WorldCells` from the asset's own bounds: a wide caster of ground cover goes on the
    * finest level's small-caster layer rather than the wide one. Written after construction because
@@ -1031,7 +1057,7 @@ class SharedBatch {
     segments: number,
     name: string,
     bounds: Box3,
-    role: "cluster" | "main" | "wide",
+    role: "cluster" | "key" | "main" | "wide",
   ) {
     this.role = role;
     this.#clustered = role === "main";
@@ -1756,6 +1782,13 @@ class SharedBatch {
    * prewarmed batch over the whole load, which is the cost the prewarm is for.
    */
   #publish(count: number): void {
+    // A shadow key is submitted every render of a map that covers it: its own records are the
+    // dispatch's, so an empty-looking key is one this map draws nothing of, not one to hide.
+    if (this.role === "key") {
+      this.mesh.count = this.gpuCount;
+      this.mesh.visible = true;
+      return;
+    }
     // A dressed batch's instances are the GPU scene's, and its own `count` says nothing about how
     // many the dispatch kept — a zero there makes three skip the indirect draw before the GPU reads
     // the record at all. So the mesh is submitted at its region's capacity and the record decides
@@ -3707,6 +3740,25 @@ export class WorldCells extends Group implements IComputeDriven {
    * does. See the `gpuScene` load option and `#cullMainPass`.
    */
   readonly #gpuScene = new WorldGpuScene();
+  /**
+   * How the shadow cascade reaches this world's GPU keys: a level render hands its own four numbers
+   * here and gets its set selected into the shadow twins, which the shadow key meshes on
+   * `VIRTUAL_SHADOW_KEY_LAYER` then draw. Published on this object — the world's own root, which is
+   * what `VirtualShadowNode` walks — and duck-typed there, because the world chunk and the shadow
+   * node are separate and neither names the other's package types.
+   *
+   * Published only when `?tnShadowGpuKeys=1` asked for it, which is what makes the node's own
+   * keyed path and this world's twin meshes one switch: with nothing published a level reads no
+   * keys, mints no twin and submits nothing, and every picture is the one it drew before.
+   */
+  readonly tnShadowGpuKeys: ((renderer: IRendererLike, level: IShadowLevel) => void) | undefined =
+    shadowGpuKeysRequested()
+      ? (renderer: IRendererLike, level: IShadowLevel): void => {
+          this.#gpuScene.dispatchShadow(renderer, level);
+        }
+      : undefined;
+  /** Every main key this world has minted a shadow twin for, which is what a level's dispatch asks for. */
+  readonly #shadowKeyNames = new Set<string>();
   readonly #gpuWanted: boolean;
   /** `gpuSceneValidate` as the load asked for it, before the query string and the environment. */
   readonly #gpuValidate: boolean | undefined;
@@ -4260,9 +4312,17 @@ export class WorldCells extends Group implements IComputeDriven {
     // same settled set, only when the scene changed under the first, rebinds every mesh to the final
     // buffers. Registration is idempotent and every key is already minted and sized, so this pass
     // mints nothing and cannot grow the scene again.
-    if (gpu.on && gpu.version !== version)
+    if (gpu.on && gpu.version !== version) {
       for (const shared of [...this.#shared.values()])
         if (shared.role === "main" && shared.gpu !== undefined) this.#dressGpu(shared, shared.gpu);
+      // And every shadow key, for the same reason: minting one grew the twin buffers every other
+      // key was dressed against, so a sibling dressed earlier in the loop above is holding the
+      // generation the dispatch replaced. The main key's own dress brings its twin with it; this is
+      // what closes the seam for the keys whose main key was dressed before the grow.
+      for (const shared of [...this.#shared.values()])
+        if (shared.role === "key")
+          this.#dressShadowKey(shared, shared.mesh.name.slice(0, -GPU_KEY_SUFFIX.length));
+    }
     // After every key has been dressed, so the asset's answer is the union across its levels and
     // parts.
     this.#applyGpuMain(dressed);
@@ -4483,6 +4543,13 @@ export class WorldCells extends Group implements IComputeDriven {
    * is the one the first shadow level render asks for.
    */
   #mintPrewarm(entry: IPrewarmEntry): void {
+    // A world whose shadow levels draw its keys mints no caster half: the two are the same
+    // placements by two routes, and a level's map can only draw one of them, so a prewarmed half is
+    // a build behind the gate that pays for nothing and an owed draw the gate waits on until it
+    // gives up. Decided at the mint rather than at the queue, which is filled before the first
+    // renderer hands the GPU scene over. The shadow keys are prewarmed where they are minted
+    // instead; see `#shadowKeyFor`.
+    if (entry.role !== "main" && this.#keysForShadow()) return;
     // A key the retained set is holding needs no prewarmed batch: `#batchFor` rebinds that mesh
     // when the walk comes back, and rebinding is the whole point of keeping it. The prewarm did not
     // ask, so it minted a second InstancedMesh for a key that already had one — a uuid three built a
@@ -5699,7 +5766,9 @@ export class WorldCells extends Group implements IComputeDriven {
    * culls the clusters its own window covers while the main pass keeps drawing one mesh per key.
    */
   #casterFor(assetId: string, entry: ICellBatch, cell: IResidentCell): SharedBatch | undefined {
-    if (!this.#casts(entry.level)) return undefined;
+    // A world whose shadow levels draw its keys mints no cluster: the two are the same placements by
+    // two routes, and a level's map can only draw one of them.
+    if (!this.#casts(entry.level) || this.#keysForShadow()) return undefined;
     return this.#batchFor(
       assetId,
       entry,
@@ -5718,7 +5787,8 @@ export class WorldCells extends Group implements IComputeDriven {
    * levels that cull clusters never see this layer.
    */
   #wideFor(assetId: string, entry: ICellBatch): SharedBatch | undefined {
-    if (!this.#casts(entry.level)) return undefined;
+    // As `#casterFor`: the key twin replaces both halves, so neither is minted.
+    if (!this.#casts(entry.level) || this.#keysForShadow()) return undefined;
     // A whole-asset impostor is one shape for every part and level, so its far shadow is ONE mesh per
     // asset holding one root record per placement, not one mesh per level whose records a source part
     // offset would then double. Every other asset keeps the per-key mesh its per-part shapes need.
@@ -5730,6 +5800,132 @@ export class WorldCells extends Group implements IComputeDriven {
   /** `asset:level:part`, the main pass's one mesh per key. */
   #keyOf(entry: ICellBatch): string {
     return `${entry.asset}:${String(entry.level)}:${String(entry.part)}`;
+  }
+
+  /**
+   * Whether a shadow level draws this world's keys instead of its two caster halves: the GPU scene
+   * is up *and* a provider registered on it, which `?tnShadowGpuKeys=1` is what asks for. Both, or
+   * neither — a provider with the scene off is a world whose shadow maps have nothing to draw, so
+   * the world keeps the caster path until both are true.
+   */
+  #keysForShadow(): boolean {
+    return this.#gpuScene.on && this.#gpuScene.shadowKeys;
+  }
+
+  /**
+   * The shadow twin of one main key: a second mesh on the key layer, over the shadow twin of the
+   * dispatch's output, so a level's map submits one indirect draw for this key instead of one per
+   * world-grid square the two caster halves split it into.
+   *
+   * Its records are never written — the twin buffers are the dispatch's, and this mesh's count is
+   * its region's capacity — so it holds no instance buffer of its own and is minted at one slot.
+   * Minted for the levels that cast, which is what the caster halves did and what the CPU path
+   * already meant: a placement the dispatch routes to a level with no mesh casts nothing here,
+   * exactly as it casts nothing from a caster half nobody minted.
+   */
+  #shadowKeyFor(key: IKeyDescriptor, part: IAssetPart): void {
+    // Registered here rather than at construction, because it is a question about keys that exist:
+    // a level's dispatch asks the provider for the keys a map draws, and the answer is this world's.
+    // Without a provider the scene registers nothing, which is what keeps the flag from minting
+    // anything at all; see `shadowGpuKeysRequested`.
+    this.#gpuScene.shadowKeysFrom(() => this.#shadowKeyNames);
+    if (this.#keysForShadow() === false || this.#casts(key.level) === false) return;
+    const name = `${key.key}${GPU_KEY_SUFFIX}`;
+    this.#shadowKeyNames.add(key.key);
+    let shared = this.#shared.get(name);
+    if (shared === undefined) {
+      // A released twin keeps its uuid and the node three built for it, for the same reason a
+      // caster half's does: rebinding is cheaper than a fresh mesh, and a fresh mesh is a fresh
+      // node build inside a shadow pass.
+      const released = this.#retired.get(name);
+      if (released !== undefined) {
+        this.#retired.delete(name);
+        this.#retiredBytes -= this.#heldBytes(released);
+        shared = released;
+      } else {
+        // A fresh mesh is charged against the frame's allowance like any other; the walk that runs
+        // out of it comes back for this key rather than paying its build inside a shadow render.
+        if (this.#freshThisUpdate >= this.#freshMeshesPerUpdate) return;
+        this.#freshThisUpdate += 1;
+        shared = new SharedBatch(
+          part.geometry,
+          part.material,
+          1,
+          1,
+          name,
+          this.#extentBounds,
+          "key",
+        );
+      }
+      shared.rebind(part.geometry, part.material);
+      shared.mesh.name = name;
+      this.#dressMesh(shared, false);
+      this.#shared.set(name, shared);
+      this.#attach(shared);
+      // Owed a draw, and shown because it is empty: a key is submitted by a shadow level, so the
+      // build behind the gate is the prewarm's whole job. Only while the gate is still open — a key
+      // streamed in afterwards owes nothing, exactly as a streamed caster half does not.
+      if (this.#prewarmSettled === false) this.#awaitDraw(shared);
+    }
+    this.#dressShadowKey(shared, key.key);
+  }
+
+  /**
+   * Point a shadow key's mesh at the twins, with the same shape and the same reasons as
+   * {@link #dressGpu}: the mesh's `instanceMatrix` becomes the scene's twin compaction buffer, its
+   * geometry a view carrying this key's twin record over the same attributes, and its whole-mesh
+   * frustum test off, because the dispatch tested every instance and the mesh's own bounds are the
+   * resident ring. Idempotent, so a settled walk reads one comparison — and so a regrown twin, which
+   * is a new attribute and a new pipeline like the main pass's, is re-dressed rather than left
+   * pointing at the buffer the dispatch replaced.
+   */
+  #dressShadowKey(shared: SharedBatch, key: string): void {
+    const scene = this.#gpuScene;
+    // The twin record has to exist before a mesh can be dressed against it: a record minted inside
+    // the render it would draw in is one render late for every key. Idempotent, and a no-op without
+    // a provider.
+    scene.shadowKey(key);
+    const region = scene.shadowRegionOf(key);
+    const drawn = scene.shadowDrawn;
+    const args = scene.shadowArgs;
+    const geometry = shared.mesh.geometry;
+    if (
+      drawn !== undefined &&
+      shared.mesh.instanceMatrix === drawn &&
+      shared.mesh.frustumCulled === false &&
+      shared.gpuCount === region?.capacity &&
+      geometry.indirect === args &&
+      geometry.indirectOffset === (region?.argsIndex ?? -1) * DRAW_ARGS_BYTES
+    )
+      return;
+    if (region === undefined || drawn === undefined || args === undefined) return;
+    // The submission bound: three skips an `InstancedMesh` at count 0 before the GPU reads the
+    // record, so a key with no instances of its own is submitted at its region's capacity and the
+    // record decides. See `gpuCount`.
+    shared.gpuCount = region.capacity;
+    const mesh = shared.mesh;
+    const view = indirectView(geometry, args, region.argsIndex * DRAW_ARGS_BYTES);
+    // A fresh object for the same reason the main pass needs one: three binds the `instanceMatrix`
+    // an object held when its node was built and keeps that binding for the object's whole life.
+    if (mesh.instanceMatrix !== drawn) {
+      const next = freshMeshFor(mesh, view, mesh.count) as ICasterScaleMesh;
+      redressMaterial(next);
+      this.#carryPrewarm(mesh, next);
+      this.#seat(shared.replaceMesh(next), next);
+      next.instanceMatrix = drawn;
+      next.frustumCulled = false;
+    } else {
+      mesh.geometry = view;
+      mesh.instanceMatrix = drawn;
+      mesh.frustumCulled = false;
+    }
+    // Shown and submitted whatever the records say: a key's own count is its region's capacity, and
+    // the twin record inside is what decides how many instances this map draws of it. See
+    // `SharedBatch#publish`. Never bundled — a bundle's record is fixed when it is recorded and only
+    // the main pass's draws are replayed from it, so a shadow key in the group would be drawn by the
+    // main camera's replay from the wrong buffer. See `#attach`.
+    mesh.count = shared.gpuCount;
+    mesh.visible = true;
   }
 
   /**
@@ -5777,7 +5973,7 @@ export class WorldCells extends Group implements IComputeDriven {
     return fallback;
   }
 
-  #shapeFor(entry: ICellBatch, role: "cluster" | "main" | "wide"): IBatchShape {
+  #shapeFor(entry: ICellBatch, role: "cluster" | "key" | "main" | "wide"): IBatchShape {
     if (role === "wide")
       return this.#wideShape(this.#assets.get(entry.asset), entry.level, entry.part, {
         geometry: entry.batch.geometry,
@@ -5829,7 +6025,7 @@ export class WorldCells extends Group implements IComputeDriven {
     assetId: string,
     entry: ICellBatch,
     key: string,
-    role: "cluster" | "main" | "wide",
+    role: "cluster" | "key" | "main" | "wide",
     receiveShadow: boolean,
   ): SharedBatch | undefined {
     const existing = this.#shared.get(key);
@@ -5901,9 +6097,11 @@ export class WorldCells extends Group implements IComputeDriven {
       mesh.layers.set(
         role === "cluster"
           ? VIRTUAL_SHADOW_CASTER_LAYER
-          : shared.smallCaster
-            ? VIRTUAL_SHADOW_SMALL_CASTER_LAYER
-            : VIRTUAL_SHADOW_WIDE_CASTER_LAYER,
+          : role === "key"
+            ? VIRTUAL_SHADOW_KEY_LAYER
+            : shared.smallCaster
+              ? VIRTUAL_SHADOW_SMALL_CASTER_LAYER
+              : VIRTUAL_SHADOW_WIDE_CASTER_LAYER,
       );
       mesh.castShadow = true;
       mesh.receiveShadow = false;
@@ -6031,15 +6229,7 @@ export class WorldCells extends Group implements IComputeDriven {
    * the only frame that would have retried it was one whose fast path had already found the mesh
    * dressed. A regrow replaces them, so the attribute handed to the mesh is the one a draw will read.
    */
-  #dressGpu(
-    shared: SharedBatch,
-    key: {
-      readonly asset: string;
-      readonly level: number;
-      readonly part: number;
-      readonly key: string;
-    },
-  ): void {
+  #dressGpu(shared: SharedBatch, key: IKeyDescriptor): void {
     const scene = this.#gpuScene;
     const asset = this.#assets.get(key.asset);
     const part = asset?.levels[key.level]?.[key.part];
@@ -6074,6 +6264,7 @@ export class WorldCells extends Group implements IComputeDriven {
       // A sibling may have grown the level's capacity without moving this mesh, so the submission
       // bound follows the live region rather than the dress that wrote it. See `gpuCount`.
       shared.gpuCount = held?.capacity ?? shared.gpuCount;
+      if (part !== undefined) this.#shadowKeyFor(key, part);
       return;
     }
     const region = scene.key(key.key, new Float32Array(part.local.elements), capacity, {
@@ -6134,6 +6325,10 @@ export class WorldCells extends Group implements IComputeDriven {
     // above is every other frame of the walk.
     this.#bundleIn(shared);
     this.#bumpBundle();
+    // The shadow twin of this key, minted and dressed on the same pass that named the main one: a
+    // level that draws keys finds its mesh in the same frame the main pass found its buffer, and a
+    // regrown twin is re-dressed here rather than left on the buffer the dispatch replaced.
+    this.#shadowKeyFor(key, part);
   }
 
   /**

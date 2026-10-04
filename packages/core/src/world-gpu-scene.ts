@@ -10,6 +10,7 @@ import {
   int,
   length,
   max,
+  min,
   storage,
   struct,
   uniform,
@@ -371,9 +372,21 @@ export interface IShadowLevel {
    * LOD by distance — what the finest map draws — and the coarsest index is what every level past
    * the first draws. A base whose keys are not minted draws nothing, which is why a caller settling
    * the prewarm first is the contract rather than a fallback.
+   *
+   * {@link COARSEST_SHADOW_LEVEL} is past every chain, and means the coarsest shape an asset has: a
+   * map that coarsens its casters does not know how long each asset's chain is, and the floor is
+   * clamped per asset, so one number asks every chain for its own coarsest level.
    */
   readonly base: number;
 }
+
+/**
+ * A {@link IShadowLevel.base} past every chain: the map draws every asset's coarsest shape, whatever
+ * distance selected it. Clamped to each asset's own last level, so an owner with no level count to
+ * hand — `VirtualShadowNode`, which coarsens a coarse level's casters without knowing an asset —
+ * can still ask.
+ */
+export const COARSEST_SHADOW_LEVEL = 1 << 20;
 
 /**
  * The per-instance kernel, in plain TypeScript. The TSL kernel in {@link WorldGpuScene} is this
@@ -458,7 +471,13 @@ function select(input: IKernelInput, shadow: IShadowLevel | undefined): IKernelR
     const lodDistance = shadow === undefined ? biasedLodDistance(distance) : distance;
     const level = drawableLevel(
       slot,
-      Math.max(levelAtGates(slot, lodDistance, placement.scale ?? 1), base),
+      // Clamped to the asset's own last level, so a base past the chain asks for its coarsest
+      // shape rather than walking a million empty indices to find it. Same answer either way:
+      // `drawableLevel` reads a level with no parts as one to skip.
+      Math.max(
+        levelAtGates(slot, lodDistance, placement.scale ?? 1),
+        Math.min(base, slot.levels.length - 1),
+      ),
     );
     const gate = slot.levels[level];
     if (gate === undefined) continue;
@@ -1867,6 +1886,19 @@ export class WorldGpuScene {
     return this.#shadowProvider !== undefined;
   }
 
+  /**
+   * Name one key's shadow twin now, rather than waiting for the dispatch that first needs it: the
+   * mesh that draws it has to be dressed against a record that exists, and a record minted inside
+   * the render it would draw in is one frame late for every key.
+   *
+   * The same {@link #mintShadowKeys} the dispatch runs, for one name — idempotent, and a no-op
+   * without a registered provider, which is what keeps the flag from allocating anything on its own.
+   */
+  shadowKey(name: string): void {
+    if (this.#shadowProvider === undefined) return;
+    this.#mintShadowKeys([name]);
+  }
+
   /** The region one key's shadow twin draws from, for the counters and the tests. */
   shadowRegionOf(name: string): IRegion | undefined {
     const index = this.#shadow?.keys.get(name);
@@ -2730,7 +2762,11 @@ export class WorldGpuScene {
           });
         },
       );
-      const at = levels.element(asset.x.add(int(max(level.toFloat(), base as never))));
+      // Clamped to the asset's own last level, as the reference clamps it: a base past the chain
+      // asks for its coarsest shape, and reading a level outside the table is not that.
+      const at = levels.element(
+        asset.x.add(int(max(level.toFloat(), min(base as never, asset.y.sub(1.0) as never)))),
+      );
       Loop({ start: int(0), end: at.z, type: "int", condition: "<" }, ({ i }: { i: unknown }) => {
         const keyIndex = at.y.add(i as never);
         const key = keys.element(keyIndex);
