@@ -182,7 +182,9 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   platformer: "59087ce62a3b63f733422c68a0ae08ca294953855fef72cb9a84670344b20848",
   puzzle: "4f496ed9b446502b3f4be66b5a0017af9438c6237ae20ee34b96152904a4f455",
   racing: "424f8e17486d788a8ac81ec2494b1bad0294aa4ba99aacdf74c653a15d5569c0",
-  rain: "6fbe91ced6efcd39b20ccb6c359344909eebf06415b998174fcf61ed4e31ba40",
+  // PR397 CI repair: paired actual no-install trees differ only in Rain Boot.ts, state.ts,
+  // GameUi.tsx and tiers.playtest.json; all twelve other generated trees remain identical.
+  rain: "5ffe9418f31f0567ef08128d4a01de9a30908da2644804ca4d515fe2db0426b9",
   rts: "358297ced78d5bfae393fe2f8fb8bb350e512e0dd5a70151bcbc84066051b93b",
   runner: "2eacc8c33047613f470dc4093e04aad67ca1bc455ceca2b278693a4d1de9823c",
   sailing: "79e8ebf02059da6a4271c7c32ae8a3b571e4c1f8043169914624030913453c32",

@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdir, stat, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "vite";
@@ -7,8 +7,9 @@ import {
   WEBGPU_BROWSER_ARGS,
   runStandalonePlaytest,
 } from "../../../../playtest/dist/runner/index.js";
+import { qualifyExposureCapture } from "./captureProof.js";
 import { type ExposureMutation, exposureMutationPlugin } from "./mutations.js";
-import { type IExposureCaseProof, qualifyExposureCase } from "./proof.js";
+import type { IExposureCaseProof } from "./proof.js";
 
 const fixture = dirname(fileURLToPath(import.meta.url));
 const root = resolve(fixture, "../../../../..");
@@ -246,9 +247,7 @@ if (!process.argv.includes("--build-only")) {
       `${JSON.stringify({ sourceSha, mutation: item.mutation ?? null, ...report }, null, 2)}\n`,
     );
     const screenshot = join(directory, "after.png");
-    if ((await stat(screenshot)).size === 0)
-      throw new Error(`${item.name}: runtime screenshot missing.`);
-    const result = qualifyExposureCase(report, item);
+    const result = await qualifyExposureCapture(report, item, screenshot, item.name);
     results.push({
       name: item.name,
       sourceSha,
