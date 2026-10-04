@@ -1,4 +1,4 @@
-import type { IFrameBudgetSummary } from "../../../../packages/core/src/frame-budget.js";
+import type { IFrameBudgetSummary } from "@threenative/core";
 
 export const velocityCostSamples = 150;
 
