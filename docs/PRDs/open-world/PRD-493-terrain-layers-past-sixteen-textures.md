@@ -1,6 +1,6 @@
 # PRD-493 — Terrain layers past sixteen textures
 
-**Status:** PROPOSED
+**Status:** PARTIAL — phases 1, 2 and the desktop half of 3 landed; the Android row and both Machinefall acceptance criteria are blocked on what is listed under `## Blocked on`
 **Complexity:** 3 (LOW) — 1–5 implementation files (`world-terrain-splat.ts`, the two identical `export_world.py` recipe copies) (+1); Machinefall re-exports its table and releases separately (+2); risk override: none
 **Owner:** João
 **Depends on:** None
@@ -28,8 +28,13 @@ The blend curve keeps its current form (mask, `lo`/`hi`, breakup push, macro noi
 
 ## Acceptance Criteria
 
-- [ ] AC-1 [local]: Machinefall's map-walk with ORM layers is judged at or above develop on every pose, with no seam or tiling artefact named. proof: `pnpm visuals:world --before <develop> --after <candidate>` plus 3 verdicts.
-- [ ] AC-2 [local]: the same walk's `gpuMain` p95 rises by no more than 0.5 ms over develop on the RTX 2080. proof: `TN_FRAME_BUDGET` from `node packages/playtest/dist/runner/cli.js perf`, 3 interleaved runs.
+- [ ] AC-1 [local]: Machinefall's map-walk with ORM layers is judged at or above develop on every pose, with no seam or tiling artefact named. proof: `pnpm visuals:world --before <develop> --after <candidate>` plus 3 verdicts. Not attempted: Machinefall (`apps/client`) is a private repo this tree cannot see, so there is no walk to run or to capture here; the branch's own sixteen-layer package is captured instead (`/home/joao/projects/threenative/threenative-engine/.afk/scratch/prd493-captures/phase-1-2/`, `after.png` this branch against a develop frame that never reaches one — 34 samplers against a limit of 16). A judge still has to say whether the ORM layers look right.
+- [ ] AC-2 [local]: the same walk's `gpuMain` p95 rises by no more than 0.5 ms over develop on the RTX 2080. proof: `TN_FRAME_BUDGET` from `node packages/playtest/dist/runner/cli.js perf`, 3 interleaved runs. Not attempted: same private repo, and the budget names an RTX 2080 this machine does not have.
+
+## Blocked on
+
+- **Machinefall's own walk (AC-1, AC-2)** — the private repo holding `apps/client/src/level/World.ts`; the owner has to run the walk and the three interleaved perf runs, or make it reachable.
+- **The Android conformance row** — one Android V8 build receipt on a Linux x64 host (`pnpm native:build`); without it `:app:verifyV8Dependency` refuses to bundle the APK, which is the only step the row has left.
 
 ## Integration Ledger
 
@@ -66,7 +71,11 @@ Uncompressed layers stack through `renderer.copyTextureToTexture` per layer (`IL
   layer catches the light.
 
 #### Phase 3: Native and mobile sample the arrays
-**Status:** NOT STARTED
+**Status:** LANDED (desktop) / PARTIAL (Android)
 **Files:** `packages/runtime-native/conformance/scenes/shared/terrain-splat-array.js` (new), `registry.json`
-- [ ] A conformance row renders a 16-layer uncompressed splat package (albedo, normal and ORM per layer) on desktop within tolerance of the browser reference, with `samplers=4` in its marker. proof: `pnpm parity --target desktop --only-tests terrain-splat-array`.
-- [ ] The same row on the Android emulator, which is the host without a KTX2 transcoder. proof: `pnpm parity --target android --only-tests terrain-splat-array`.
+- [x] A conformance row renders a 16-layer uncompressed splat package (albedo, normal and ORM per layer) on desktop within tolerance of the browser reference, with `samplers=4` in its marker. proof: `pnpm parity --target web --only-tests terrain-splat-array` captured the browser reference (pass, 1280x720, non-uniform), then `pnpm parity --target desktop --only-tests terrain-splat-array` — pass, 16.6 s, `metrics.pixelMismatchRatio: 0`, `metrics.perceptualDeltaE: 0`, 0 GPU validation errors; the scene throws unless the marker reads `layers=16 samplers=4 stacked=3`. `packages/runtime-native` conformance suite 76/76 green. Captures for a judge: `/home/joao/projects/threenative/threenative-engine/.afk/scratch/prd493-captures/phase-3/` (`before.png` the browser reference, `after.png` the desktop-native frame, same pose; develop has no such row to capture from).
+- [ ] The same row on the Android emulator, which is the host without a KTX2 transcoder. proof: `pnpm parity --target android --only-tests terrain-splat-array` — attempted, `fail` at `phase: build`: `:app:verifyV8Dependency` refuses to bundle because `packages/runtime-native/third_party/v8-android/build-receipt.json` does not exist, and the receipt is written only by a V8 source cross-compile for arm64-v8a + x86_64 (`pnpm native:build`, hours; `provisionAndroidV8` deletes an unverifiable cache and rebuilds). The emulator itself is up (`emulator-5554`, API 35, x86_64) and the lane got as far as gradle, so the blocker is that dependency and not the device. Unblocks when one Android V8 build has been produced on a Linux x64 host.
+
+The row builds its 48 maps as `DataTexture`s from a pure function of their cell, so both lanes
+derive the same bytes; a 4x4 mask grid gives each layer its own region, which is what makes one
+sampled texture per set visible in a single frame rather than asserted only by the marker.

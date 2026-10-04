@@ -789,6 +789,21 @@
       "required": true
     },
     {
+      "id": "terrain-splat-array",
+      "title": "sixteen-layer terrain splat through four array textures",
+      "category": "world",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/terrain-splat-array.js",
+      "browserRecipe": "webgpu",
+      "requiresHardwareAdapter": true,
+      "tolerance": {
+        "pixelMismatchRatio": 0.08,
+        "perceptualDeltaE": 10.0
+      },
+      "desktopGate": true,
+      "required": true
+    },
+    {
       "id": "100-world-field-hash",
       "title": "procedural world field hash parity",
       "category": "world",
