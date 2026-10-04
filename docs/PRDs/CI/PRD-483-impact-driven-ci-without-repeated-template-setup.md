@@ -24,7 +24,7 @@ prd_contract: v1
 
 ### Phase 1 — Remove duplication and select retained coverage
 
-- [x] Exact template paths map to shipped kit identities; shared/unknown inputs retain the full matrix; docs and CI lanes apply to PR and merge-group diffs. proof: `pnpm exec vitest run scripts/__tests__/ci-template-selection.spec.ts`, 19 passed locally on 2026-10-03.
+- [x] Exact template paths map to shipped kit identities; shared/unknown inputs retain the full matrix; docs and CI review lanes apply to ordinary PR diffs; merge groups now require exhaustive exact-candidate qualification. Original selection proof: `pnpm exec vitest run scripts/__tests__/ci-template-selection.spec.ts`, 19 passed locally on 2026-10-03; qualification follow-up proof: 404 CPU CI/mirror tests passed on 2026-10-04.
 - [x] Every nonvisual scenario runs once per selected template, with empty coverage rejected and the matrix derived from kit manifests. proof: `pnpm exec vitest run scripts/__tests__/ci-structure.spec.ts scripts/__tests__/ci-template-selection.spec.ts`, green in the 264-test focused run on 2026-10-03.
 - [x] CI/template unit contracts preserve mixed-scope unions; full unit shards retain their existing unit-only command; native tests honor shared/native reach; the final verdict checks exact queue source identity, with full history at the verdict checkout. proof: `pnpm exec vitest run scripts/__tests__/ci-*.spec.ts scripts/__tests__/verify-template-playtests.spec.ts scripts/__tests__/sync-agent-docs.spec.ts scripts/__tests__/primary-docs.spec.ts`, 303 passed on 2026-10-03.
 
@@ -42,9 +42,9 @@ There are 13 kit manifests, not a hardcoded CI count.
 
 | Change | Previous PR / queue | Proposed PR / queue |
 |---|---|---|
-| Inert docs | no product jobs / full board | no product jobs / no product jobs |
-| CI configuration | 4 full unit shards, no template jobs / full board | 1 CI-contract unit job, no template jobs / same |
-| One kit | 4 full unit shards + 31 template jobs / full board | 1 scaffolder-contract unit job + 2 template jobs / same |
+| Inert docs | no product jobs / full board | no product jobs / exhaustive qualification |
+| CI configuration | 4 full unit shards, no template jobs / full board | 1 CI-contract unit job, affected Integration / exhaustive qualification |
+| One kit | 4 full unit shards + 31 template jobs / full board | 1 scaffolder-contract unit job + 2 template jobs / exhaustive qualification |
 | Shared runtime, generator, unknown meaningful code; main/nightly | exhaustive 31 template jobs | exhaustive 13 scenario jobs + 2 journey jobs |
 
 The hosted template cap is eight; selected kits and scenarios are unchanged. The historical baseline at cap four had a nonvisual slot-work lower bound of 94.6 / 4 = 23.6 minutes;
@@ -80,3 +80,9 @@ requires its own normal CI and independent review.
 Parent review corrected the full-board count to 15 (13 scenario jobs plus both retained golden journeys); no golden journey saving is claimed. Unsupported output expressions, including bracket access or `||` fallbacks, fail the paths job visibly instead of emitting a partial lane decision.
 
 Final bounded parent-review fixtures pass: 333 focused tests (318 CI contracts and 15 primary-docs/mirror checks). Output inventory spans blank/comment lines, validates filter/root completeness, and fails visibly on deleted outputs or unsupported expressions.
+
+## Bounded qualification follow-up
+
+Ordinary develop reviews retain affected coverage and existing Android coverage. Queue, main, explicit full and unknown inputs require all templates, both golden journeys, full native tier and every Integration lane. Integration is called by CI at the exact candidate; its completion job checks selected canonical receipts against completed-success Jobs API entries for this run and attempt, and `ci-required` independently repeats inventory and identity validation. Full-tree reusable matrix verdict reuse remains disabled.
+
+CPU fixtures exercise writer→collector→protected verdict and reject missing, skipped, failed, stale and wrong-source evidence. Live reusable job-name/output behavior and a genuinely exhaustive queue cold path remain unverified; partial reruns require all selected Integration legs in the current attempt. This follow-up does not complete #430's separate rollout checkbox, defer Android, or change queue settings/timeouts.

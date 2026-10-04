@@ -2,7 +2,14 @@
 
 import { spawnSync } from "node:child_process";
 import { appendFileSync } from "node:fs";
-import { currentRun, sourceVerdict, validatePlan } from "./ci-change-scope.mjs";
+import { readAttemptJobs } from "./ci-attempt-receipts.mjs";
+import { currentRun, sourceVerdict, validateEventPlan, validatePlan } from "./ci-change-scope.mjs";
+import { readIntegrationJobs } from "./ci-integration-receipts.mjs";
+import {
+  integrationCandidatePreflight,
+  validateIntegrationReceipts,
+} from "./ci-integration-scope.mjs";
+import { nativeCandidatePreflight, validateNativeReceipts } from "./ci-native-qualification.mjs";
 
 try {
   const needs = JSON.parse(process.env.TN_CI_NEEDS ?? "null");
@@ -16,6 +23,11 @@ try {
     throw new Error(
       "CI_REQUIRED_CANDIDATE_MISMATCH: verdict must execute the classified candidate",
     );
+  validateEventPlan(plan, {
+    eventName: process.env.TN_CI_EVENT,
+    baseRef: process.env.TN_CI_BASE_REF,
+    forceFull: process.env.TN_CI_FORCE_FULL === "true",
+  });
   if (process.env.TN_CI_EVENT === "pull_request") {
     const { TN_CI_BASE_SHA: base, TN_CI_HEAD_SHA: head } = process.env;
     // The candidate is frozen by the exact base/head parent assertion below, not by the head
@@ -97,6 +109,69 @@ try {
   for (const name of Object.keys(needs)) {
     if (name !== "scope" && !Object.hasOwn(plan.jobs, name))
       failures.push(`CI_REQUIRED_UNMAPPED_JOB: ${name}`);
+  }
+  if (plan.jobs.integration.required && needs.integration?.result === "success") {
+    try {
+      const {
+        GITHUB_REPOSITORY: repository,
+        GITHUB_RUN_ID: runId,
+        GITHUB_RUN_ATTEMPT: runAttempt,
+      } = process.env;
+      const receipt = JSON.parse(process.env.TN_CI_INTEGRATION_RECEIPT ?? "null");
+      if (
+        receipt?.version !== 1 ||
+        receipt.candidateSha !== plan.candidateSha ||
+        receipt.runId !== runId ||
+        receipt.runAttempt !== runAttempt ||
+        receipt.planVersion !== plan.version
+      )
+        throw new Error(
+          "CI_INTEGRATION_RECEIPT_IDENTITY: required join has no exact current-attempt receipt",
+        );
+      const expected = {
+        ...integrationCandidatePreflight({
+          plan,
+          eventName: process.env.TN_CI_EVENT,
+          target: process.env.TN_CI_BASE_REF,
+          baseSha: process.env.TN_CI_BASE_SHA,
+          candidateSha: plan.candidateSha,
+        }),
+        runId,
+        runAttempt,
+      };
+      validateIntegrationReceipts(
+        expected,
+        receipt.receipts,
+        readIntegrationJobs({ repository, runId, runAttempt }),
+      );
+    } catch (error) {
+      failures.push(error instanceof Error ? error.message : String(error));
+    }
+  }
+  if (plan.jobs["native-platforms"].required && needs["native-platforms"]?.result === "success") {
+    try {
+      const {
+        GITHUB_REPOSITORY: repository,
+        GITHUB_RUN_ID: runId,
+        GITHUB_RUN_ATTEMPT: runAttempt,
+      } = process.env;
+      const expected = nativeCandidatePreflight({
+        plan,
+        eventName: process.env.TN_CI_EVENT,
+        target: process.env.TN_CI_BASE_REF,
+        candidateSha: plan.candidateSha,
+        runId,
+        runAttempt,
+        workflowHeadSha: process.env.TN_CI_HEAD_SHA || process.env.GITHUB_SHA,
+      });
+      validateNativeReceipts(
+        expected,
+        JSON.parse(process.env.TN_CI_NATIVE_RECEIPT ?? "null"),
+        readAttemptJobs({ repository, runId, runAttempt }, "CI_NATIVE"),
+      );
+    } catch (error) {
+      failures.push(error instanceof Error ? error.message : String(error));
+    }
   }
   console.log(lines.join("\n"));
   if (process.env.GITHUB_STEP_SUMMARY)

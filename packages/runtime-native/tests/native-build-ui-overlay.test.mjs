@@ -49,7 +49,7 @@ test.runIf(process.platform === 'linux' || process.platform === 'darwin')(
     mkdirSync(bin, { recursive: true });
     // The real plan and the real overlay build, so the library path asserted below is the one the
     // script derives rather than one the test wrote.
-    for (const name of ['native-build.mjs', 'build-native-ui-overlay.mjs']) {
+    for (const name of ['native-build.mjs', 'build-native-ui-overlay.mjs', 'native-test-lane.mjs']) {
       copyFileSync(
         new URL(`../scripts/${name}`, import.meta.url),
         join(scripts, name),
