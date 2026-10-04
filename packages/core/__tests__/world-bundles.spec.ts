@@ -16,7 +16,13 @@ import {
 // one rather than the `Frustum` this file's world was built with.
 import { Frustum } from "three/src/math/Frustum.js";
 import Renderer from "three/src/renderers/common/Renderer.js";
-import { BundleGroup } from "three/webgpu";
+import { viewportSharedTexture } from "three/tsl";
+import {
+  BundleGroup,
+  type Material,
+  MeshPhysicalNodeMaterial,
+  MeshStandardNodeMaterial,
+} from "three/webgpu";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { IRendererLike } from "../src/renderer.js";
 import { type IWorldPackage, WorldCells } from "../src/world.js";
@@ -354,8 +360,7 @@ async function flushed(
   }
 }
 
-/**
- * A chunk as the loader hands it over: one box, standing in the cell that asked for it, because a
+/** A chunk as the loader hands it over: one box, standing in the cell that asked for it, because a
  * hand-placed chunk is placed by the export and a test that leaves every chunk at the origin cannot
  * say anything about which cell's cull answer draws it.
  */
@@ -369,10 +374,48 @@ function chunkModelAt(url: string): Group {
   return model;
 }
 
+/** The cell a chunk url was exported for, so a hand-built chunk stands where the export put it. */
+function standAtCellOf(url: string, group: Group): Group {
+  const cell = /chunks\/.*_(\d+)_(\d+)\.glb$/u.exec(url);
+  if (cell === null) return group;
+  const centre = cellCentre(Number(cell[1]), Number(cell[2]));
+  group.position.set(centre.x, 0, centre.z);
+  return group;
+}
+
+/**
+ * The three surfaces a bundle answers differently, and one chunk carrying a draw for each.
+ *
+ * The second reads the framebuffer — `viewportSharedTexture` copies the bound framebuffer in its
+ * `updateBefore`, and inside a bundle the pass it would copy is a bundle encoder with no `end()` —
+ * and the third is the same sampler reached through three's own lighting model, which no structural
+ * walk of a material can see. One material per mesh, because the bake groups by material: each of
+ * these stays its own draw, and the bake hands the material on by reference.
+ */
+function mixedChunkMaterials(): readonly [Material, Material, Material] {
+  const painted = new MeshStandardNodeMaterial();
+  const refraction = new MeshStandardNodeMaterial();
+  refraction.colorNode = viewportSharedTexture().rgb;
+  const glass = new MeshPhysicalNodeMaterial();
+  glass.transmission = 0.6;
+  return [painted, refraction, glass];
+}
+
+function chunkOf(materials: readonly Material[]): Group {
+  const model = new Group();
+  for (const [index, material] of materials.entries()) {
+    const mesh = new Mesh(new BoxGeometry(2, 2, 2), material);
+    mesh.position.x = index * 3;
+    model.add(mesh);
+  }
+  return model;
+}
+
 /** A world on the committed package, walked the way the GPU-scene spec walks it. */
 async function world(
   options: {
     readonly bundles?: boolean;
+    readonly chunkModel?: (url: string) => Group;
     readonly gpuScene?: boolean;
     readonly rockInWest?: boolean;
   } = {},
@@ -387,7 +430,7 @@ async function world(
     admissionBudgetMs: Number.POSITIVE_INFINITY,
     budgets,
     follow,
-    loadModel: async (url: string) => chunkModelAt(url),
+    loadModel: async (url: string) => (options.chunkModel ?? chunkModelAt)(url),
     prefetchSeconds: 0,
     ring: 1,
     shadows: { cast: true, receive: true },
@@ -515,7 +558,8 @@ describe("the main pass's draw bundles", () => {
     for (const mesh of meshes) expect(mesh.parent).toBe(group);
     expect(group?.children.length).toBe(watched.size);
     // And the stat counts every recorded object: the dressed main meshes plus one entry per chunk,
-    // because a cell's own record holds whole chunks rather than the meshes inside them.
+    // because a cell's own record holds whole chunks where every draw in them is recordable — and
+    // the individual draws of a chunk that is not, one entry each. See `bundleSafe`.
     const chunks = chunkBundles(cells).reduce((total, group_) => total + group_.children.length, 0);
     expect(cells.stats().bundle.children).toBe(watched.size + chunks);
     cells.dispose();
@@ -595,6 +639,50 @@ describe("the main pass's draw bundles", () => {
     expect(walked.stats().failures).toBe(0);
     bundled.dispose();
     walked.dispose();
+  });
+
+  it("records only the draws a bundle can replay, and leaves the rest walking per object", async () => {
+    // The blank-frame bug, as a claim about which draws end up where. A bundle is recorded into a
+    // bundle encoder, so a draw that needs the pass it was recorded in cannot be replayed from it:
+    // three encodes it anyway and the frame comes back empty. One cell, three draws in one chunk,
+    // and the two that cannot be recorded must stay on the path they were already on.
+    const materials = mixedChunkMaterials();
+    const [painted, refraction, glass] = materials;
+    const { renderer, world: cells } = await world({
+      bundles: true,
+      chunkModel: (url) => standAtCellOf(url, chunkOf(materials)),
+    });
+    cells.update(renderer, eastCamera());
+    await flushed(cells, renderer, eastCamera());
+
+    const drawn = project(cells, eastCamera());
+    const walked = drawn.perObject.filter(isChunk);
+    const recorded = drawn.bundled.filter(isChunk);
+    // The painted surface is the whole of the record: one entry, holding the one draw it can hold.
+    expect(recorded.map((mesh) => (mesh as Mesh).material)).toEqual([painted]);
+    // The framebuffer reader and the transmissive surface are both submitted per object, which is
+    // where every chunk draw was before bundles existed.
+    expect(new Set(walked.map((mesh) => (mesh as Mesh).material))).toEqual(
+      new Set([refraction, glass]),
+    );
+    // And the marker says which of the two paths drew them, because that is what the draw-source
+    // split and the shadow texel gate read.
+    for (const mesh of recorded) expect(mesh.userData.tnBundled).toBe(true);
+    for (const mesh of walked) expect(mesh.userData.tnBundled).toBeUndefined();
+    // The same cell's record is still the record: what it holds is exactly what it replayed.
+    expect(chunkBundles(cells).length).toBeGreaterThan(0);
+    expect(new Set(drawn.groups.flatMap((group) => group.children).filter(isChunk))).toEqual(
+      new Set(recorded),
+    );
+    expect(cells.stats().failures).toBe(0);
+    // And the cell still owns what the record holds: a recorded draw left in the record outlives its
+    // chunk, and the chunk's own disposal walk only finds what is still under it.
+    const lifted = recorded[0] as Mesh;
+    const group = lifted.parent;
+    expect(lifted.userData.tnChunkRoot).toBeDefined();
+    cells.dispose();
+    expect(lifted.parent).not.toBe(group);
+    expect(lifted.parent instanceof BundleGroup).toBe(false);
   });
 
   it("hides a cell's chunk record while the cull cannot see the cell, and shows it again", async () => {

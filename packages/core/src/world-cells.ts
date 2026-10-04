@@ -2808,6 +2808,99 @@ function mergedBytes(merged: readonly Mesh[], kept: ReadonlySet<Mesh>): number {
 }
 
 /**
+ * The value `NodeUpdateType.RENDER` has, read as text so this file needs no import for it: a node
+ * whose `updateBefore` runs on every render is a node whose work happens inside the draw that
+ * recorded it, which is the whole test.
+ */
+const PER_RENDER_UPDATE = "render";
+
+/**
+ * Whether a node graph copies or renders the framebuffer, which a bundle encoder cannot be asked for.
+ *
+ * Every such node does its work in `updateBefore` and every one of them touches the *current* render
+ * pass: `ViewportTextureNode` copies the bound framebuffer into a texture, and transmission, an
+ * `RTTNode`, a `ReflectorNode` or a `PassNode` renders into one. Recorded into a bundle, the current
+ * pass is a `GPURenderBundleEncoder`, which has no `end()` to close and no framebuffer to read, so
+ * the call throws `currentPass.end is not a function` from inside the record and takes the whole
+ * bundle's frame with it.
+ *
+ * Structural, over own properties and plain sub-objects, because a material's slots are node graphs
+ * rather than one node: a `viewportSharedTexture()` under an arithmetic chain is still this. What it
+ * cannot see is a node hidden inside an `Fn` body, which is how three keeps its own transmission
+ * sampler — hence `transmission` is asked of the material itself as well.
+ */
+function samplesFramebuffer(node: unknown, seen: Set<unknown>): boolean {
+  if (node === null || typeof node !== "object" || seen.has(node)) return false;
+  seen.add(node);
+  const candidate = node as {
+    readonly isNode?: boolean;
+    readonly updateBefore?: unknown;
+    readonly updateBeforeType?: unknown;
+  };
+  if (
+    candidate.isNode === true &&
+    typeof candidate.updateBefore === "function" &&
+    candidate.updateBeforeType === PER_RENDER_UPDATE
+  )
+    return true;
+  for (const value of Object.values(node)) {
+    if (value === null || typeof value !== "object") continue;
+    if (samplesFramebuffer(value, seen)) return true;
+  }
+  return false;
+}
+
+/**
+ * Whether one mesh's draw can be recorded into a bundle and replayed from it.
+ *
+ * A bundle is an encoder, not a render pass: three fixes its render list and its draw order when it
+ * records it, and every replay runs the encoded commands with no pass of its own to ask anything of.
+ * So a mesh is bundle-safe only when nothing about its draw needs a live pass — the one question
+ * {@link samplesFramebuffer} and the checks below both ask, of the node graph and of the object.
+ *
+ * - **The framebuffer.** A viewport or screen-space refraction sample, transmission, a render target,
+ *   a reflector: `samplesFramebuffer`, plus `transmission` itself, which three's own lighting model
+ *   reaches through an `Fn` body no structural walk can see.
+ * - **Per-frame order.** A transparent mesh is sorted against its neighbours every frame; a record
+ *   froze that order when it was made, so a bundled one draws in the order it happened to be in.
+ * - **Per-object hooks.** `onBeforeRender`/`onAfterRender` are the two places a game reads the camera
+ *   and the frame for a draw, and a replay runs them once at record time and never again.
+ * - **Per-frame vertices.** A skinned or morphed mesh's positions are posed per frame from bones the
+ *   record never reads, so its encoded vertices are its rest pose forever.
+ *
+ * A mesh that fails this stays on the per-object path — the path every chunk drew before bundles
+ * existed — so a refusal costs the draw it was already paying and nothing else.
+ */
+function bundleSafe(mesh: Mesh): boolean {
+  if (mesh.onBeforeRender !== Object3D.prototype.onBeforeRender) return false;
+  if (mesh.onAfterRender !== Object3D.prototype.onAfterRender) return false;
+  if ((mesh as Mesh & { readonly isSkinnedMesh?: boolean }).isSkinnedMesh === true) return false;
+  if (mesh.morphTargetInfluences !== undefined) return false;
+  return (Array.isArray(mesh.material) ? mesh.material : [mesh.material]).every(bundleSafeMaterial);
+}
+
+/** The material half of {@link bundleSafe}: nothing it draws may need a pass it was recorded in. */
+function bundleSafeMaterial(material: Material | undefined): boolean {
+  if (material === undefined) return true;
+  if (material.transparent === true) return false;
+  // Read structurally: a `MeshPhysicalMaterial` always has the number and nothing else does, and
+  // three's transmission sampler is not a node slot, so `transmission` is the only way to see it.
+  const transmission = Reflect.get(material, "transmission");
+  if (typeof transmission === "number" && transmission > 0) return false;
+  return samplesFramebuffer(material, new Set()) === false;
+}
+
+/** Every mesh a prepared chunk draws through the main pass, in traversal order. */
+function chunkDraws(chunk: Object3D): Mesh[] {
+  const draws: Mesh[] = [];
+  chunk.traverse((node) => {
+    const mesh = node as Mesh;
+    if (mesh.isMesh === true && node.layers.isEnabled(0)) draws.push(mesh);
+  });
+  return draws;
+}
+
+/**
  * One empty batch per (level, part), so a placement is filtered and drawn together and an emptied
  * level or a part nobody placed costs one missing mesh rather than the whole cell's run.
  */
@@ -6001,9 +6094,22 @@ export class WorldCells extends Group implements IComputeDriven {
    * structural change — the recorded list does not hold this render object and the replay would draw
    * the cell's chunks without it — so this is also the one re-record. See the `bundles` option for
    * why the group is per cell.
+   *
+   * Only the draws a bundle can replay are recorded, and they carry the `tnBundled` marker and the
+   * frozen cull with them; the rest keep the per-object path. See `bundleSafe`.
    */
   #addChunk(cell: IResidentCell, chunk: Object3D): void {
     if (this.#bundlesWanted === false) {
+      this.add(chunk);
+      return;
+    }
+    // What the record can hold, and whether anything had to be left behind. A chunk whose every draw
+    // is recorded goes in whole, which is one entry per chunk; a chunk holding a draw a bundle cannot
+    // replay stays in the world and hands its safe draws to the record on their own, so one glass
+    // window does not put the whole building back on the per-object path. See `bundleSafe`.
+    const draws = chunkDraws(chunk);
+    const recorded = draws.filter((mesh) => bundleSafe(mesh));
+    if (recorded.length === 0) {
       this.add(chunk);
       return;
     }
@@ -6015,20 +6121,52 @@ export class WorldCells extends Group implements IComputeDriven {
       entry = { cluster: clusterOf(cell.x, cell.z, this.#cellsPerCullCell), group };
       this.#chunkBundles.set(cell.key, entry);
     }
-    entry.group.add(chunk);
-    this.#chunkBundleChildren += 1;
+    const whole = recorded.length === draws.length;
+    if (whole) entry.group.add(chunk);
+    else {
+      // The chunk keeps its own hierarchy around whatever it could not record, and each recorded
+      // draw is attached rather than added so it keeps the world transform it was merged at. The root
+      // it came out of travels with it, because that is what releases the draw again.
+      this.add(chunk);
+      for (const mesh of recorded) {
+        mesh.userData.tnChunkRoot = chunk;
+        entry.group.attach(mesh);
+      }
+    }
+    // A recorded draw is frozen where it stands: the group is a child of the world at identity, so
+    // its matrix will never move, and the freeze is what lets three's settled-object path skip the
+    // per-object work for the draw a frame is not re-recording anyway. See `markStatic`.
+    for (const mesh of recorded) {
+      mesh.userData.tnBundled = true;
+      mesh.frustumCulled = false;
+      if (whole === false) markStatic(mesh);
+    }
+    this.#chunkBundleChildren += whole ? 1 : recorded.length;
     this.#bumpBundle(entry.group);
   }
 
   /**
    * Take a cell's chunk record out of the world, because the cell that owned every chunk in it has
    * left: a record nothing owns must not be replayed, and the cell coming back mints its own.
+   *
+   * A chunk the bake split left its recorded draws in the group rather than under their own root, so
+   * each goes back to the root it came out of first: the caller's own disposal walk finds them there,
+   * and a draw released by neither is a buffer nothing ever asks for again.
    */
   #dropChunkBundles(cell: IResidentCell): void {
     const entry = this.#chunkBundles.get(cell.key);
     if (entry === undefined) return;
     this.#chunkBundles.delete(cell.key);
+    const roots = new Set(cell.chunks);
+    // Counted before anything leaves the group, because that is what it is holding.
     this.#chunkBundleChildren -= entry.group.children.length;
+    for (const child of entry.group.children) {
+      const root = child.userData.tnChunkRoot as Object3D | undefined;
+      if (roots.has(child) === false && root !== undefined) {
+        child.userData.tnChunkRoot = undefined;
+        root.attach(child);
+      }
+    }
     entry.group.removeFromParent();
     this.#bumpBundle(entry.group);
   }
@@ -8024,15 +8162,6 @@ export class WorldCells extends Group implements IComputeDriven {
           object.traverse((node) => {
             if ((node as Mesh).isMesh !== true || node.layers.isEnabled(0) === false) return;
             node.userData.tnDrawSource = "chunks";
-            // Bundled, so the draw-sources split names it under the record that replays it, and the
-            // shadow texel gate leaves its visibility to that record. The record is fixed when it is
-            // made, so nothing here may be culled per frame: a mesh the record dropped is missing
-            // geometry the moment the camera turns towards it. The cell's own `visible` is the lever
-            // instead. See the `bundles` option and `#addChunk`.
-            if (this.#bundlesWanted) {
-              node.userData.tnBundled = true;
-              (node as Mesh).frustumCulled = false;
-            }
           });
           // The buffers the bake just made, uploaded here rather than on the chunk's first draw,
           // which is the frame that uploads them today: 228.8 MB over 826 `createAttribute` calls
@@ -8080,6 +8209,12 @@ export class WorldCells extends Group implements IComputeDriven {
           continue;
         }
         cell.chunks.push(object);
+        // The chunk's own box, from the merged geometry's boxes rather than its vertices: a chunk
+        // is loaded once and both consumers of it are only asked to be no wider than the chunk. Read
+        // before `#addChunk`, which may hand part of the subtree to a cell's record and leave the
+        // rest behind, so the box is the chunk's whatever ends up where.
+        const box =
+          proxies > 0 || this.#bundlesWanted ? new Box3().setFromObject(object, false) : undefined;
         this.#addChunk(cell, object);
         // A loaded chunk is placed once and never rewritten: its transforms, geometry and material
         // are the ones the export gave it, so it is the one subtree here with nothing to announce.
@@ -8090,10 +8225,7 @@ export class WorldCells extends Group implements IComputeDriven {
         // the first level whose window covers the chunk submits the proxy and builds it. With one
         // material per `side` world-wide, that is one pipeline for the world's first chunk of each
         // side and a node binding for every chunk after it, not a compile per chunk.
-        if (proxies > 0 || this.#bundlesWanted) {
-          // The chunk's own box, from the merged geometry's boxes rather than its vertices: a chunk
-          // is loaded once and both consumers of it are only asked to be no wider than the chunk.
-          const box = new Box3().setFromObject(object, false);
+        if (box !== undefined) {
           if (proxies > 0) this.#shadowRecordsMoved(box);
           // A bundled chunk is drawn or not by its cell's record, and that record is answered from
           // the cell's cull volume — which is built from the cell's placements. A chunk is a cell's
