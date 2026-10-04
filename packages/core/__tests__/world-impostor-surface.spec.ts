@@ -2,6 +2,7 @@ import {
   DoubleSide,
   InstancedBufferAttribute,
   InstancedInterleavedBuffer,
+  MeshPhysicalMaterial,
   MeshStandardMaterial,
   Texture,
   Vector3,
@@ -22,7 +23,9 @@ import {
   impostorViewCamera,
 } from "../src/render/world-impostor.js";
 
-function makeSurface(source: MeshStandardMaterial = new MeshStandardMaterial()): {
+function makeSurface(
+  source: MeshStandardMaterial | MeshPhysicalMaterial = new MeshStandardMaterial(),
+): {
   readonly surface: WorldImpostorSurface;
   readonly atlas: WorldImpostorAtlas;
 } {
@@ -109,6 +112,32 @@ describe("WorldImpostorSurface material", () => {
     expect(source.map).toBe(sourceMap);
     expect(source.alphaTest).toBeCloseTo(0.42, 6);
     expect(IMPOSTOR_SURFACE_PARALLAX).toBe(false);
+    surface.dispose();
+    atlas.dispose();
+  });
+
+  it("clears the physical source's UV maps too, because the quad has no uv to sample them with", () => {
+    // A transmissive or specular source carries maps three samples through `attribute("uv")`, and the
+    // impostor quad is position-only: each one left behind is a build-time
+    // `Vertex attribute "uv" not found on geometry` warning per material per render context, for a
+    // sample the sampler was already returning as zero.
+    const maps = {
+      iridescenceThicknessMap: new Texture(),
+      specularColorMap: new Texture(),
+      specularIntensityMap: new Texture(),
+      thicknessMap: new Texture(),
+      transmissionMap: new Texture(),
+    };
+    const source = new MeshPhysicalMaterial({ transmission: 0.5, ...maps });
+    const { surface, atlas } = makeSurface(source);
+    const material = surface.material as unknown as Record<string, unknown>;
+    for (const [name, map] of Object.entries(maps)) {
+      expect(material[name]).toBeNull();
+      expect((source as unknown as Record<string, unknown>)[name]).toBe(map);
+    }
+    // The scalar the maps modulate survives: a transmissive source is still transmissive, which is
+    // what keeps a bundle from recording this draw.
+    expect((surface.material as unknown as MeshPhysicalMaterial).transmission).toBe(0.5);
     surface.dispose();
     atlas.dispose();
   });

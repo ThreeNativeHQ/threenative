@@ -49,6 +49,16 @@ export interface IStandalonePlaytestConfig {
   headless: boolean;
   ios?: { appPath?: string; bundleId: string; transport: "device" | "simulator" };
   judgeMarkerUrl?: string;
+  /**
+   * Measure the game as it plays, instead of counting the scenario's own ticks.
+   *
+   * Injects `__THREENATIVE_PLAYTEST_CLOCK__ = "wall-clock"` ahead of every page script, so the
+   * host's frame pump moves the simulation and `advance` names the span its ticks cover — the
+   * browser half of what the native production profile's `--live-clock` already does there. It is
+   * a measurement opt-in and never a scenario semantics change: a deterministic scenario is still
+   * a count of ticks, and a run that takes this flag reports the clock it measured on.
+   */
+  liveClock?: boolean;
   mailboxRoot?: string;
   /**
    * The performance ceilings the build report declared, already proved against the artifact under
@@ -99,6 +109,7 @@ export const PLAYTEST_FLAGS = {
   "--endpoint": { default: "http://127.0.0.1:41777/playtest", summary: "device bridge endpoint", takesValue: true },
   "--headed": { default: "false", summary: "show the browser window", takesValue: false },
   "--judge-marker-url": { default: "none", summary: "judge-owned loopback marker URL whose POST failures are not network errors", takesValue: true },
+  "--live-clock": { default: "false", summary: "measure the game on its own frame clock (browser target only); a standing scene is unmeasurable on counted ticks", takesValue: false },
   // `allowDashValue` so a host flag can be passed as one: `--host-arg --ui` is the UI root the
   // overlay serves, and the parser would otherwise read `--ui` as a playtest flag and reject it.
   "--host-arg": { allowDashValue: true, default: "none", repeatable: true, summary: "argument passed to the native desktop host, repeatable", takesValue: true },
@@ -287,6 +298,13 @@ export function parseStandalonePlaytestArgs(argv: readonly string[], cwd = proce
       throw new PlaytestCliUsageError("Android Chrome device runs are already visible on the device and cannot honor --headed; remove it.");
     }
   }
+  const liveClock = argv.includes("--live-clock");
+  // Fail closed rather than silently measuring on the clock nobody asked for: the native lanes take
+  // this switch from the production profile's injected instrumentation, not from this runner, so a
+  // flag here would report a wall-clock run that never happened.
+  if (liveClock && target !== "browser") {
+    throw new PlaytestCliUsageError(`--live-clock runs on the browser target only; '${target}' is driven by its own host instrumentation.`);
+  }
   const rawTouchRotation = flags.get("--touch-rotation")?.[0];
   // Fail closed rather than defaulting: a mistyped rotation that quietly became 0 would put every
   // injected touch somewhere else and report the game as broken.
@@ -356,6 +374,7 @@ export function parseStandalonePlaytestArgs(argv: readonly string[], cwd = proce
       transport: iosTransport,
     },
     ...(judgeMarkerUrl === undefined ? {} : { judgeMarkerUrl }),
+    ...(liveClock ? { liveClock: true } : {}),
     ...(flags.get("--mailbox-root")?.[0] === undefined ? {} : { mailboxRoot: flags.get("--mailbox-root")![0] }),
     ...(serverCommand === undefined
       ? effectivePort === undefined ? {} : { port: effectivePort }

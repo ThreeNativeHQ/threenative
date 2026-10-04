@@ -102,6 +102,7 @@ describe("runner orchestration (characterization)", () => {
         },
       ],
       diagnosticsPolicy: { noConsoleErrors: true, noNetworkErrors: true, noRuntimeDiagnostics: true },
+      clock: "fixed-step",
       distance: 0,
       entity: "",
       expectMoved: false,

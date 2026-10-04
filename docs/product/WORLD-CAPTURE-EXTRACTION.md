@@ -27,6 +27,11 @@ pnpm tsx scripts/world-visual-gate.ts \
 
 Bundle creation exits 2 until the independent judgments described in the linked rubric exist.
 
+Any game that records the same label set and `snapshots.world` fields can produce a manifest for
+the same gate: pass `--scenario <name>` and `--world <name>` after the three positional arguments
+(both default to `phase477-world-capture` and `WorldProbe`). Only the WorldProbe route asserts the
+captured start and end poses; another world must show a walk that actually moved.
+
 The importer requires a passing report, matching `capture.json`, all labels, finite observed
 poses and times, unchanged landmarks, and the full route. It never replaces existing evidence.
 Same-pose frames are start/08/16/24; the chronological series is start/01 through 32. The settled

@@ -248,6 +248,7 @@ describe("a streamed world's caster prewarm", () => {
       contextNode: { id: 1, version: 0 },
       currentSamples: 1,
       getMRT: () => null,
+      getRenderTarget: () => null,
     };
     const nodes = new NodeManager(render, render.backend);
     const builds: InstancedMesh[] = [];

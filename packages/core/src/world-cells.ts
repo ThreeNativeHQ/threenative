@@ -20,7 +20,8 @@ import {
 import { BundleGroup } from "three/webgpu";
 import { type IAssetLoader, createAssetLoader } from "./assets.js";
 import type { IComputeDriven } from "./compute-driven.js";
-import { markEngineRenderHook } from "./engine-render-hook.js";
+import { isEngineRenderHook, markEngineRenderHook } from "./engine-render-hook.js";
+import { INSTANCED_LOD_MAX_PIXEL_ERROR } from "./instanced-batch-lod.js";
 import { InstancedBatch } from "./instanced-batch.js";
 import { mergeByMaterial } from "./merge-parts.js";
 import { type ILodChain, biasedLodDistance, lodChainOf, setLodBias } from "./model-lod.js";
@@ -61,7 +62,7 @@ import {
   type IMeshDraw,
   type IShadowLevel,
   WorldGpuScene,
-  bundlesRequested,
+  bundlesAsked,
   gpuSceneRequested,
   gpuSceneValidationRequested,
   levelAtGates,
@@ -195,7 +196,7 @@ const DEFAULT_AUTO_LOD_VIEWPORT_HEIGHT = 1080;
  * The screen-space error budget a baked chain's levels are switched at, in pixels, when the world
  * names none. See `IWorldCellsLoadOptions.autoLod`.
  */
-const DEFAULT_AUTO_LOD_MAX_PIXEL_ERROR = 4;
+const DEFAULT_AUTO_LOD_MAX_PIXEL_ERROR = INSTANCED_LOD_MAX_PIXEL_ERROR;
 /**
  * GPU bytes of completed impostor atlases one world admits, 128 MiB. A 128 px two-attachment RGBA8
  * atlas with mips is 2,796,160 B, so 48 fit and the 49th is refused before its atlas is allocated,
@@ -562,17 +563,30 @@ export interface IWorldCellsLoadOptions {
    */
   readonly gpuSceneTally?: boolean;
   /**
-   * Record every GPU-dressed main batch mesh into one `BundleGroup` and replay the bundle instead of
-   * re-walking three's per-object path for each draw. Off by default: measured on machinefall's
-   * map-walk, bundles gave no CPU p50/p95 gain (the main thread is mostly idle and the frame is
-   * GPU/present bound), and `?tnBundles=0` stays the off path while `bundles: true` or
-   * `?tnBundles=1`/`TN_BUNDLES=1` turns it on. `stats().bundle` and the `TN_WORLD_BUNDLE` line say
-   * which way a run took.
+   * Record every GPU-dressed main batch mesh and every resident cell's hand-placed chunks into
+   * `BundleGroup`s, and replay the records instead of re-walking three's per-object path for each
+   * draw. On by default: PRD-494 AC-2 measured the walking `draw` span at a 5.0 ms lower p95 than
+   * develop over 3 interleaved runs with bundles on and a picture a blind world gate called equal,
+   * which is the measurement the old opt-in default was decided without — so `bundles: false`,
+   * `?tnBundles=0` or `TN_BUNDLES=0` is the way back to the per-object path, and `stats().bundle`
+   * and the `TN_WORLD_BUNDLE` line say which way a run took and what asked for it.
+   *
+   * A record is an encoder, not a render pass, so only a draw that needs no live pass is recorded:
+   * a framebuffer reader, a transmissive impostor, a skinned or morphed mesh and a per-object hook
+   * all stay on the path they were already on. See `bundleSafe`.
    *
    * The render list inside a bundle is fixed when it is recorded, so a bundled mesh is never hidden:
    * the dispatch draws zero instances for a key the camera cannot see, and an indirect draw of zero
    * instances costs the GPU nothing. Toggling `visible` would force a re-record instead, and the
    * shadow node's texel gate skips a bundled mesh for the same reason.
+   *
+   * A chunk has no dispatch behind it, so the two answers it needs are its own: its meshes are never
+   * culled by the record, because a mesh a record dropped is missing geometry the moment the camera
+   * turns towards it, and each cell records into its own group whose `visible` is the main cull's
+   * answer for that cell — the same coarse answer the scatter batches take, one cell wide. What that
+   * costs is the price of the option: a cell the cull cannot see is not drawn at all, which takes its
+   * chunk casters out of the shadow levels with it, and a cell it can only partly see draws the part
+   * facing away. Both rasterize nothing or nearly so; the missing shadow is the real difference.
    */
   readonly bundles?: boolean;
   /**
@@ -713,18 +727,27 @@ export interface IWorldCellsStats {
     readonly gpuTallyAgeFrames?: number;
   };
   /**
-   * What the main pass's draw bundles are doing: `children` is how many GPU-dressed meshes are
-   * parented under the one `BundleGroup`, and `records` is how many times that group has been
-   * re-recorded since the world loaded.
+   * What the main pass's draw bundles are doing: `children` is how many objects are recorded — every
+   * GPU-dressed main mesh under the one `BundleGroup`, plus every chunk of every resident cell under
+   * that cell's own group — and `records` is how many times those groups have been re-recorded since
+   * the world loaded.
    *
    * A record is a structural change and nothing else — a key minted or retired, a geometry or
-   * material swapped, or a GPU-scene buffer regrow that re-dresses its meshes. Streaming, culling and
-   * LOD do not move it, which is the whole claim: a 200-frame walk holds `records` at the number of
-   * keys that came and went, and a settled camera holds it still.
+   * material swapped, a GPU-scene buffer regrow that re-dresses its meshes, or a chunk attaching to
+   * or leaving with its cell. Streaming, culling and LOD do not move it, which is the whole claim: a
+   * 200-frame walk holds `records` at the number of keys and chunks that came and went, and a settled
+   * camera holds it still. A cell's record is gated by a `visible` write instead, which costs
+   * nothing; see the `bundles` option.
+   *
+   * `reason` is who asked: `default` is a run that set nothing, `option` is a load that named
+   * `bundles`, and `launch` is `?tnBundles` / `TN_BUNDLES` / `__tnBundles`. It is on the marker line
+   * too, because a run that turns the default off is exactly the run a reader cannot tell from a
+   * failing one without it.
    */
   readonly bundle: {
     readonly on: boolean;
     readonly children: number;
+    readonly reason: string;
     readonly records: number;
   };
   /**
@@ -993,6 +1016,18 @@ class SharedBatch {
    */
   bundled = false;
   /**
+   * Whether this batch's current mesh could be recorded at all — the answer `bundleSafe` gives, asked
+   * once per mesh object because a re-dress is the only event that can change it, and read by the
+   * settled walk instead of walking the material again every frame.
+   */
+  bundlable = false;
+  /**
+   * The instance count the world's last record of this mesh was cut at. A record freezes the draw's
+   * instance count, so a CPU-path batch's moving window is one re-record when this moves; a dressed
+   * batch submits its key's region capacity, which only the dress changes and which re-records there.
+   */
+  bundledCount = -1;
+  /**
    * The same descriptor, recorded whether or not the GPU scene is on, which is the whole of what
    * lets a mesh minted before the scene came up be dressed after it: `gpu` says the mesh draws from
    * the scene's buffers, `main` says which key it would draw. A prewarm that mints a whole ring on a
@@ -1121,6 +1156,9 @@ class SharedBatch {
     this.mesh.geometry = geometry;
     this.mesh.material = material;
     this.#localGeometry = undefined;
+    // A new surface is the one thing a rebind can bring that a mesh swap cannot, so what can be
+    // recorded has to be asked again: the answer cached for the old material is not this one's.
+    this.bundlable = false;
     if (this.#parked > 1) this.#resize(this.#parked);
     this.#rebound();
     return this;
@@ -2492,6 +2530,10 @@ function buildChunkShadowProxies(
     const proxy = new Mesh(shadowProxyGeometry(group.meshes, label, chunk), material);
     if (selectParts) selectChunkShadowParts(proxy, group.meshes);
     proxy.name = `${CHUNK_NAME}-shadow`;
+    // The origin a draw of this mesh is counted under (`RenderPassBudget`). A proxy on the caster
+    // layers never reaches the main pass, so this only says anything where the world's own cull
+    // left one on layer 0 — and it is written here rather than inferred, so the tag cannot rot.
+    proxy.userData.tnDrawSource = "proxies";
     proxy.layers.set(VIRTUAL_SHADOW_CASTER_LAYER);
     proxy.layers.enable(VIRTUAL_SHADOW_WIDE_CASTER_LAYER);
     proxy.castShadow = true;
@@ -2822,6 +2864,113 @@ function mergedBytes(merged: readonly Mesh[], kept: ReadonlySet<Mesh>): number {
     if (index !== null) bytes += index.array.byteLength;
   }
   return bytes;
+}
+
+/**
+ * The value `NodeUpdateType.RENDER` has, read as text so this file needs no import for it: a node
+ * whose `updateBefore` runs on every render is a node whose work happens inside the draw that
+ * recorded it, which is the whole test.
+ */
+const PER_RENDER_UPDATE = "render";
+
+/**
+ * Whether a node graph copies or renders the framebuffer, which a bundle encoder cannot be asked for.
+ *
+ * Every such node does its work in `updateBefore` and every one of them touches the *current* render
+ * pass: `ViewportTextureNode` copies the bound framebuffer into a texture, and transmission, an
+ * `RTTNode`, a `ReflectorNode` or a `PassNode` renders into one. Recorded into a bundle, the current
+ * pass is a `GPURenderBundleEncoder`, which has no `end()` to close and no framebuffer to read, so
+ * the call throws `currentPass.end is not a function` from inside the record and takes the whole
+ * bundle's frame with it.
+ *
+ * Structural, over own properties and plain sub-objects, because a material's slots are node graphs
+ * rather than one node: a `viewportSharedTexture()` under an arithmetic chain is still this. What it
+ * cannot see is a node hidden inside an `Fn` body, which is how three keeps its own transmission
+ * sampler — hence `transmission` is asked of the material itself as well.
+ */
+function samplesFramebuffer(node: unknown, seen: Set<unknown>): boolean {
+  if (node === null || typeof node !== "object" || seen.has(node)) return false;
+  seen.add(node);
+  const candidate = node as {
+    readonly isNode?: boolean;
+    readonly updateBefore?: unknown;
+    readonly updateBeforeType?: unknown;
+  };
+  if (
+    candidate.isNode === true &&
+    typeof candidate.updateBefore === "function" &&
+    candidate.updateBeforeType === PER_RENDER_UPDATE
+  )
+    return true;
+  for (const value of Object.values(node)) {
+    if (value === null || typeof value !== "object") continue;
+    if (samplesFramebuffer(value, seen)) return true;
+  }
+  return false;
+}
+
+/**
+ * Whether one mesh's draw can be recorded into a bundle and replayed from it.
+ *
+ * A bundle is an encoder, not a render pass: three fixes its render list and its draw order when it
+ * records it, and every replay runs the encoded commands with no pass of its own to ask anything of.
+ * So a mesh is bundle-safe only when nothing about its draw needs a live pass — the one question
+ * {@link samplesFramebuffer} and the checks below both ask, of the node graph and of the object.
+ *
+ * - **The framebuffer.** A viewport or screen-space refraction sample, transmission, a render target,
+ *   a reflector: `samplesFramebuffer`, plus `transmission` itself, which three's own lighting model
+ *   reaches through an `Fn` body no structural walk can see.
+ * - **Per-frame order.** A transparent mesh is sorted against its neighbours every frame; a record
+ *   froze that order when it was made, so a bundled one draws in the order it happened to be in.
+ * - **Per-object hooks.** `onBeforeRender`/`onAfterRender` are the two places a game reads the camera
+ *   and the frame for a draw, and a replay runs them once at record time and never again. The
+ *   engine's own borrow — the prewarm counting its batch's first submitted draw — is bookkeeping
+ *   about the draw rather than a claim on the object, so it does not refuse; `isEngineRenderHook` is
+ *   what tells them apart, the same answer `projection-plan.ts` gives.
+ * - **Per-frame vertices.** A skinned or morphed mesh's positions are posed per frame from bones the
+ *   record never reads, so its encoded vertices are its rest pose forever.
+ *
+ * A mesh that fails this stays on the per-object path — the path every chunk drew before bundles
+ * existed — so a refusal costs the draw it was already paying and nothing else.
+ */
+function bundleSafe(mesh: Mesh): boolean {
+  if (ownHook(mesh, "onBeforeRender")) return false;
+  if (ownHook(mesh, "onAfterRender")) return false;
+  if ((mesh as Mesh & { readonly isSkinnedMesh?: boolean }).isSkinnedMesh === true) return false;
+  if (mesh.morphTargetInfluences !== undefined) return false;
+  return (Array.isArray(mesh.material) ? mesh.material : [mesh.material]).every(bundleSafeMaterial);
+}
+
+/**
+ * Whether this mesh carries a render hook of its own that is the game's, which a record freezes.
+ *
+ * `Object.hasOwn`, not the prototype comparison: the engine installs its own hook as an own property
+ * on the very batches a prewarm borrowed, and refusing those would keep every batch of a streamed
+ * world on the per-object path.
+ */
+function ownHook(mesh: Mesh, name: "onAfterRender" | "onBeforeRender"): boolean {
+  return Object.hasOwn(mesh, name) && isEngineRenderHook(mesh[name]) === false;
+}
+
+/** The material half of {@link bundleSafe}: nothing it draws may need a pass it was recorded in. */
+function bundleSafeMaterial(material: Material | undefined): boolean {
+  if (material === undefined) return true;
+  if (material.transparent === true) return false;
+  // Read structurally: a `MeshPhysicalMaterial` always has the number and nothing else does, and
+  // three's transmission sampler is not a node slot, so `transmission` is the only way to see it.
+  const transmission = Reflect.get(material, "transmission");
+  if (typeof transmission === "number" && transmission > 0) return false;
+  return samplesFramebuffer(material, new Set()) === false;
+}
+
+/** Every mesh a prepared chunk draws through the main pass, in traversal order. */
+function chunkDraws(chunk: Object3D): Mesh[] {
+  const draws: Mesh[] = [];
+  chunk.traverse((node) => {
+    const mesh = node as Mesh;
+    if (mesh.isMesh === true && node.layers.isEnabled(0)) draws.push(mesh);
+  });
+  return draws;
 }
 
 /**
@@ -3780,8 +3929,30 @@ export class WorldCells extends Group implements IComputeDriven {
    */
   #bundle: BundleGroup | undefined;
   #bundleRecords = 0;
+  /**
+   * One `BundleGroup` per resident cell that has chunks attached, keyed by cell key, each with the
+   * main-cull cluster whose answer decides whether it is in the frame. Minted by the first chunk a
+   * cell attaches, so a world with no chunks pays nothing; see the `bundles` option.
+   *
+   * Per cell and not one group for the whole world: a record is fixed when it is made, so a group's
+   * own answer to "is this in view" cannot change without a re-record — which is the whole cost this
+   * is removing. A cell is the granularity the coarse cull already answers at, so `visible` on the
+   * group is a write rather than a record. See `#cullMainPass`.
+   */
+  readonly #chunkBundles = new Map<
+    string,
+    { readonly cluster: string; readonly group: BundleGroup }
+  >();
+  /** How many chunk roots those groups hold, so `stats().bundle.children` costs nothing to read. */
+  #chunkBundleChildren = 0;
   /** `bundles` as the load asked for it, before the query string and the environment. */
   readonly #bundlesWanted: boolean;
+  /**
+   * Who decided that: the load that named `bundles`, the launch that asked for `off` or `on`, or
+   * nothing at all — which is what the marker reports so a run on the default is never mistaken for
+   * one a flag turned off. See {@link bundlesAsked}.
+   */
+  readonly #bundleReason: string;
   /** `adaptiveLod` resolved against the launch override; see the option. */
   readonly #adaptiveLod: boolean;
   /** The main pass's allowed GPU share of a frame; see the option. */
@@ -3919,7 +4090,10 @@ export class WorldCells extends Group implements IComputeDriven {
     );
     this.#transparentScatter = init.transparentScatter ?? "cutout";
     this.#gpuWanted = init.gpuScene ?? gpuSceneRequested();
-    this.#bundlesWanted = init.bundles ?? bundlesRequested();
+    const asked = bundlesAsked();
+    this.#bundlesWanted = init.bundles ?? asked !== "off";
+    this.#bundleReason =
+      init.bundles === undefined ? (asked === "default" ? "default" : "launch") : "option";
     this.#impostors = init.impostors ?? false;
     this.#impostorBudgetBytes = DEFAULT_IMPOSTOR_ATLAS_BUDGET_BYTES;
     this.#adaptiveLod = init.adaptiveLod ?? adaptiveLodRequested();
@@ -4283,6 +4457,13 @@ export class WorldCells extends Group implements IComputeDriven {
       this.#cullScratch = was;
       this.#cullScratch.clear();
     }
+    // A chunk's record is frozen, so its cell's answer is the only thing that can take it out of the
+    // frame without re-recording it: a write per resident cell that has chunks, at the same
+    // granularity every other coarse gate in this pass uses. See the `bundles` option.
+    for (const entry of this.#chunkBundles.values()) {
+      const visible = this.#visibleSquares.has(entry.cluster);
+      if (entry.group.visible !== visible) entry.group.visible = visible;
+    }
     const gpu = this.#gpuScene;
     const dressed: Array<{ asset: string; shared: SharedBatch }> = [];
     const version = gpu.version;
@@ -4298,7 +4479,14 @@ export class WorldCells extends Group implements IComputeDriven {
         if (shared.bundled === false) dressed.push({ asset: shared.gpu.asset, shared });
         continue;
       }
+      // A batch the GPU scene does not own, and every one of a world without it: its own window is
+      // the CPU path's answer, and it is a per-frame answer a frozen render list never re-reads. So
+      // the record answers the gate instead of the gate writing `visible` into it — a batch the gate
+      // shows joins, one it hides leaves, and a window that moved is one more record, because the
+      // record holds the layout the move made. The same trade a cell's chunk record makes, at the
+      // granularity this gate already uses. See `#bundleIn`.
       const outcome = shared.cullFrom(this.#visibleSquares, this.#visibleEpoch);
+      this.#recordCpuMain(shared, outcome);
       if (outcome === "settled") continue;
       this.#mainCullWindows += 1;
       if (outcome === "repacked") {
@@ -4899,8 +5087,9 @@ export class WorldCells extends Group implements IComputeDriven {
     return {
       admission: { ...this.#admission },
       bundle: {
-        children: this.#bundle?.children.length ?? 0,
-        on: this.#bundlesWanted && this.#gpuScene.on,
+        children: (this.#bundle?.children.length ?? 0) + this.#chunkBundleChildren,
+        on: this.#bundlesWanted && (this.#gpuScene.on || this.#chunkBundleChildren > 0),
+        reason: this.#bundleReason,
         records: this.#bundleRecords,
       },
       evictions: this.#evictions,
@@ -5561,13 +5750,15 @@ export class WorldCells extends Group implements IComputeDriven {
         `dressed=${String(dressed)}/${String(mainMeshes)}`,
     );
     // The bundles on their own line, because the pair reads against a different question: how many
-    // meshes are recorded, and how many times the recording was thrown away and redone. A walk
-    // streaming and culling holds `records` at the keys that came and went; a walk that repacks it
-    // every frame is drawing a moving set, which is the bug a bundle cannot have.
-    const bundle = this.#bundle;
+    // objects are recorded, and how many times the recording was thrown away and redone. A walk
+    // streaming and culling holds `records` at the keys and chunks that came and went; a walk that
+    // repacks it every frame is drawing a moving set, which is the bug a bundle cannot have. `reason`
+    // is on it because the default is now on: a reader has to be able to tell a run that turned it
+    // off from a run where recording never happened.
+    const bundles = this.stats().bundle;
     console.info(
-      `TN_WORLD_BUNDLE ${this.#bundlesWanted && this.#gpuScene.on ? "on" : "off"} ` +
-        `children=${String(bundle?.children.length ?? 0)} records=${String(this.#bundleRecords)}`,
+      `TN_WORLD_BUNDLE ${bundles.on ? "on" : "off"} reason=${bundles.reason} ` +
+        `children=${String(bundles.children)} records=${String(bundles.records)}`,
     );
   }
 
@@ -6117,6 +6308,12 @@ export class WorldCells extends Group implements IComputeDriven {
     mesh.layers.set(0);
     mesh.castShadow = false;
     mesh.receiveShadow = receiveShadow;
+    // The origin a draw of this mesh is counted under until the GPU scene dresses it
+    // (`RenderPassBudget`). `#dressGpu` runs straight after this and overwrites it with `gpuScene`
+    // when the key really is dressed, so what survives here is a main batch the CPU path draws per
+    // object — a backend with no compute, `gpuScene: false`, or a dress that gave up. A caster half
+    // returns above and keeps no origin: it lives off layer 0, so the main pass never counts it.
+    mesh.userData.tnDrawSource = "instanced";
     // Nothing to hang off a main mesh: the window is narrowed by `#cullMainPass` for the whole set,
     // because a batch that drew nothing is hidden and three never reaches an invisible mesh's own
     // hooks — a mesh that could only re-narrow itself in its `onBeforeRender` would stay hidden for
@@ -6134,13 +6331,23 @@ export class WorldCells extends Group implements IComputeDriven {
    *
    * The re-record is the caller's {@link #bumpBundle}, not this one: the group is a record of what
    * the frame that just dressed these meshes drew, and it is only true once the mesh is in it.
+   *
+   * A mesh whose draw needs a live pass is refused rather than recorded — a transmissive impostor or
+   * a GPU batch reaching the framebuffer, the same answer a chunk's draws get. It keeps the per-object
+   * path and the coarse gate that hides it, which is the path it was already on. See `bundleSafe`.
    */
   #bundleIn(shared: SharedBatch): void {
     if (this.#bundlesWanted === false) return;
+    shared.bundlable = bundleSafe(shared.mesh);
+    if (shared.bundlable === false) return;
     this.#bundle ??= this.#newBundle();
     const group = this.#bundle as BundleGroup;
     if (shared.mesh.parent !== group) group.add(shared.mesh);
     shared.bundled = true;
+    shared.bundledCount = shared.mesh.count;
+    // A recorded draw was cut from this camera's frustum, so the mesh's own whole-mesh test would drop
+    // it the moment the camera turned away from a window the record still holds. Off, like a chunk's.
+    shared.mesh.frustumCulled = false;
     shared.mesh.visible = true;
     // Read by `VirtualShadowNode#probe`, which must not hide a bundled mesh: the render list a bundle
     // recorded is fixed, and `visible = false` would take the mesh out of every record after the next
@@ -6157,24 +6364,147 @@ export class WorldCells extends Group implements IComputeDriven {
   #bundleOut(shared: SharedBatch): void {
     if (shared.bundled === false) return;
     shared.bundled = false;
+    shared.bundledCount = -1;
     shared.mesh.userData.tnBundled = false;
+    // Back on the per-object path, so the mesh's own whole-mesh test is its gate again.
+    shared.mesh.frustumCulled = true;
     if (shared.mesh.parent === this.#bundle) (this.#bundle as BundleGroup).remove(shared.mesh);
     if (this.#bundle !== undefined) this.#bumpBundle();
   }
 
   /** One re-record, counted: `BundleGroup.needsUpdate` is a version bump, and nothing else. */
-  #bumpBundle(): void {
-    if (this.#bundle === undefined) return;
+  #bumpBundle(group: BundleGroup | undefined = this.#bundle): void {
+    if (group === undefined) return;
     this.#bundleRecords += 1;
-    this.#bundle.needsUpdate = true;
+    group.needsUpdate = true;
+  }
+
+  /**
+   * Put one CPU-path main batch into the world's record, or take it out, by the coarse gate's answer.
+   *
+   * A main batch the GPU scene dresses is recorded from `#dressGpu`, because its submission bound is
+   * its key's region capacity — a number only the dress writes, so the entry cannot go stale. A batch
+   * the scene does not own submits its own CPU window instead, and that window is per frame: the gate
+   * narrows it, a residency change repacks it, and a batch it narrows to nothing must draw nothing.
+   * A record fixes its render list, so all three are the record's business rather than a `visible`
+   * write the replay ignores. Hence this: the gate's answer is a join or a leave, a window that moved
+   * or a count that changed is one more record, and `frustumCulled` is off because the record's own
+   * list was cut by the same frustum when it was made.
+   *
+   * The trade is the one a cell's chunk record already makes and the visual A/B already judged: a
+   * batch whose window is half the view draws the half that faced the camera when the record was cut.
+   */
+  #recordCpuMain(shared: SharedBatch, outcome: "settled" | "narrowed" | "repacked"): void {
+    if (this.#bundlesWanted === false) return;
+    // `#publish` has just written this frame's answer onto the mesh, which is the only place it is.
+    if (shared.mesh.visible === false) {
+      this.#bundleOut(shared);
+      return;
+    }
+    this.#bundleIn(shared);
+    if (shared.bundled === false) return;
+    // The count a record freezes, and the layout behind it: a repack moves records inside the window
+    // without moving its length, so the epoch answer and the count are both read here.
+    if (outcome === "settled" && shared.mesh.count === shared.bundledCount) return;
+    shared.bundledCount = shared.mesh.count;
+    this.#bumpBundle();
   }
 
   /**
    * Where a dressed main batch's mesh belongs: the one bundle group, or the world itself when there is
-   * none — a world with bundles off, and the very first dress of a batch the mint has not attached yet.
+   * none — a world with bundles off, a draw no record can replay, and the very first dress of a batch
+   * the mint has not attached yet.
+   *
+   * It answers with the batch's own last refusal rather than re-asking, so the settled walk compares
+   * parentage without walking a material graph per key per frame. See `bundleSafe`.
    */
-  #bundleHome(): Object3D | null {
-    return this.#bundlesWanted ? (this.#bundle ?? null) : this;
+  #bundleHome(shared: SharedBatch): Object3D | null {
+    if (this.#bundlesWanted === false || shared.bundlable === false) return this;
+    return this.#bundle ?? null;
+  }
+
+  /**
+   * Attach one prepared chunk: to its cell's own record, or to the world when `bundles` is off.
+   *
+   * The group is minted with the first chunk the cell attaches, and a chunk added to it is a
+   * structural change — the recorded list does not hold this render object and the replay would draw
+   * the cell's chunks without it — so this is also the one re-record. See the `bundles` option for
+   * why the group is per cell.
+   *
+   * Only the draws a bundle can replay are recorded, and they carry the `tnBundled` marker and the
+   * frozen cull with them; the rest keep the per-object path. See `bundleSafe`.
+   */
+  #addChunk(cell: IResidentCell, chunk: Object3D): void {
+    if (this.#bundlesWanted === false) {
+      this.add(chunk);
+      return;
+    }
+    // What the record can hold, and whether anything had to be left behind. A chunk whose every draw
+    // is recorded goes in whole, which is one entry per chunk; a chunk holding a draw a bundle cannot
+    // replay stays in the world and hands its safe draws to the record on their own, so one glass
+    // window does not put the whole building back on the per-object path. See `bundleSafe`.
+    const draws = chunkDraws(chunk);
+    const recorded = draws.filter((mesh) => bundleSafe(mesh));
+    if (recorded.length === 0) {
+      this.add(chunk);
+      return;
+    }
+    let entry = this.#chunkBundles.get(cell.key);
+    if (entry === undefined) {
+      const group = new BundleGroup();
+      group.name = `${CHUNK_NAME}-bundles:${cell.key}`;
+      this.add(group);
+      entry = { cluster: clusterOf(cell.x, cell.z, this.#cellsPerCullCell), group };
+      this.#chunkBundles.set(cell.key, entry);
+    }
+    const whole = recorded.length === draws.length;
+    if (whole) entry.group.add(chunk);
+    else {
+      // The chunk keeps its own hierarchy around whatever it could not record, and each recorded
+      // draw is attached rather than added so it keeps the world transform it was merged at. The root
+      // it came out of travels with it, because that is what releases the draw again.
+      this.add(chunk);
+      for (const mesh of recorded) {
+        mesh.userData.tnChunkRoot = chunk;
+        entry.group.attach(mesh);
+      }
+    }
+    // A recorded draw is frozen where it stands: the group is a child of the world at identity, so
+    // its matrix will never move, and the freeze is what lets three's settled-object path skip the
+    // per-object work for the draw a frame is not re-recording anyway. See `markStatic`.
+    for (const mesh of recorded) {
+      mesh.userData.tnBundled = true;
+      mesh.frustumCulled = false;
+      if (whole === false) markStatic(mesh);
+    }
+    this.#chunkBundleChildren += whole ? 1 : recorded.length;
+    this.#bumpBundle(entry.group);
+  }
+
+  /**
+   * Take a cell's chunk record out of the world, because the cell that owned every chunk in it has
+   * left: a record nothing owns must not be replayed, and the cell coming back mints its own.
+   *
+   * A chunk the bake split left its recorded draws in the group rather than under their own root, so
+   * each goes back to the root it came out of first: the caller's own disposal walk finds them there,
+   * and a draw released by neither is a buffer nothing ever asks for again.
+   */
+  #dropChunkBundles(cell: IResidentCell): void {
+    const entry = this.#chunkBundles.get(cell.key);
+    if (entry === undefined) return;
+    this.#chunkBundles.delete(cell.key);
+    const roots = new Set(cell.chunks);
+    // Counted before anything leaves the group, because that is what it is holding.
+    this.#chunkBundleChildren -= entry.group.children.length;
+    for (const child of entry.group.children) {
+      const root = child.userData.tnChunkRoot as Object3D | undefined;
+      if (roots.has(child) === false && root !== undefined) {
+        child.userData.tnChunkRoot = undefined;
+        root.attach(child);
+      }
+    }
+    entry.group.removeFromParent();
+    this.#bumpBundle(entry.group);
   }
 
   /** The one group, as a child of the world so it is projected with everything else. */
@@ -6196,6 +6526,13 @@ export class WorldCells extends Group implements IComputeDriven {
     shared.mesh.userData.tnBundled = shared.bundled;
     if (shared.bundled === true) (this.#bundle as BundleGroup).add(shared.mesh);
     else this.add(shared.mesh);
+    // A record holds the object it was cut from, so a mesh that arrived by a rebind or a grow is not
+    // the one the last record named: one re-record, and the record counts this mesh from here.
+    if (shared.bundled === true) {
+      shared.mesh.frustumCulled = false;
+      shared.bundledCount = shared.mesh.count;
+      this.#bumpBundle();
+    }
   }
 
   /**
@@ -6266,7 +6603,7 @@ export class WorldCells extends Group implements IComputeDriven {
       // Where the mesh hangs is part of what this pass owns: a batch that was retired and handed back
       // by a rebind is a child of the world again, and the bundle that last recorded it no longer
       // draws it. Without this the walk would re-mint a key into a bundle that is missing it.
-      shared.mesh.parent === this.#bundleHome()
+      shared.mesh.parent === this.#bundleHome(shared)
     ) {
       // A sibling may have grown the level's capacity without moving this mesh, so the submission
       // bound follows the live region rather than the dress that wrote it. See `gpuCount`.
@@ -6326,6 +6663,10 @@ export class WorldCells extends Group implements IComputeDriven {
     // yet carries no parts and the dispatch draws that level nowhere. Re-registering is a no-op while
     // the table holds, and a rewrite when a key joined it.
     scene.slot(key.asset, this.#gatesOf(key.asset, asset));
+    // The origin this key's main-pass draws are counted under, read off the object at the draw
+    // (`RenderPassBudget`). Written after the mesh swap above, so a re-dressed fresh object carries
+    // it, and before `#bundleIn`, which supersedes it with `tnBundled` for a world with bundles on.
+    shared.mesh.userData.tnDrawSource = "gpuScene";
     // The bundle the last settled frame replayed is now wrong: this pass minted or regrown a key,
     // swapped the geometry, or took a fresh mesh object onto the scene's new buffers. Reaching here
     // is one of the three, which is why this is the only place a re-record happens — the fast path
@@ -7478,6 +7819,9 @@ export class WorldCells extends Group implements IComputeDriven {
     mesh.frustumCulled = false;
     mesh.instanceMatrix.setUsage(DynamicDrawUsage);
     mesh.name = `tn-far:${assetId}`;
+    // Drawn on layer 0, so this is a main-pass draw the frame budget counts under the impostor
+    // aggregate's own source rather than under `other` (`RenderPassBudget`).
+    mesh.userData.tnDrawSource = "proxies";
     if (surface.cull) this.#attachFarCull(surface.geometry, capacity);
     // Far trees cast like near ones, into the coarse wide caster layer. The same mesh draws the main
     // pass (layer 0) and the virtual-shadow levels (wide layer), so one representation covers both
@@ -8150,6 +8494,15 @@ export class WorldCells extends Group implements IComputeDriven {
             this.#castShadowLevels > 0,
             this.#proxyMaterials,
           );
+          // Where the frame budget counts this chunk's main-pass draws (`RenderPassBudget`). Written
+          // after the bake and over the whole subtree, because that is the only point where all three
+          // outcomes exist at once: a merged group, an instanced mesh the bake kept, and a chunk it
+          // refused whole are all one chunk's draws. The proxies the bake built are off layer 0 and
+          // keep the `proxies` origin they were given.
+          object.traverse((node) => {
+            if ((node as Mesh).isMesh !== true || node.layers.isEnabled(0) === false) return;
+            node.userData.tnDrawSource = "chunks";
+          });
           // The buffers the bake just made, uploaded here rather than on the chunk's first draw,
           // which is the frame that uploads them today: 228.8 MB over 826 `createAttribute` calls
           // in a browser walk, and up to 230 ms inside the frames that first submitted them.
@@ -8196,7 +8549,13 @@ export class WorldCells extends Group implements IComputeDriven {
           continue;
         }
         cell.chunks.push(object);
-        this.add(object);
+        // The chunk's own box, from the merged geometry's boxes rather than its vertices: a chunk
+        // is loaded once and both consumers of it are only asked to be no wider than the chunk. Read
+        // before `#addChunk`, which may hand part of the subtree to a cell's record and leave the
+        // rest behind, so the box is the chunk's whatever ends up where.
+        const box =
+          proxies > 0 || this.#bundlesWanted ? new Box3().setFromObject(object, false) : undefined;
+        this.#addChunk(cell, object);
         // A loaded chunk is placed once and never rewritten: its transforms, geometry and material
         // are the ones the export gave it, so it is the one subtree here with nothing to announce.
         markStatic(object);
@@ -8205,10 +8564,18 @@ export class WorldCells extends Group implements IComputeDriven {
         // the levels are told a caster arrived, exactly as a prewarmed caster cluster tells them:
         // the first level whose window covers the chunk submits the proxy and builds it. With one
         // material per `side` world-wide, that is one pipeline for the world's first chunk of each
-        // side and a node binding for every chunk after it, not a compile per chunk. The chunk's
-        // own box is the region, from the merged geometry's boxes rather than its vertices: a chunk
-        // is loaded once and the region is only asked to be no wider than the chunk.
-        if (proxies > 0) this.#shadowRecordsMoved(new Box3().setFromObject(object, false));
+        // side and a node binding for every chunk after it, not a compile per chunk.
+        if (box !== undefined) {
+          if (proxies > 0) this.#shadowRecordsMoved(box);
+          // A bundled chunk is drawn or not by its cell's record, and that record is answered from
+          // the cell's cull volume — which is built from the cell's placements. A chunk is a cell's
+          // other half, so a cell holding chunks and no scatter would have an empty volume and never
+          // be drawn at all. Widened here rather than shrunk on eviction: the volume outlives one cell
+          // whenever a neighbour still holds the cluster, and a stale box only ever shows a cell that
+          // is there.
+          if (this.#bundlesWanted)
+            this.#cullCells.get(clusterOf(cell.x, cell.z, this.#cellsPerCullCell))?.box.union(box);
+        }
         attached += 1;
       }
     } catch (error) {
@@ -8248,6 +8615,10 @@ export class WorldCells extends Group implements IComputeDriven {
     // ring are ground the levels were drawing, and they are named one batch at a time.
     this.#shadowRecordsMoved(this.#changedBounds(cell.batches, []));
     cell.batches.length = 0;
+    // The cell's record of those chunks goes with them, so a replay can never draw a cell the world
+    // has released — before they leave the group, which is where it counts what it holds. See
+    // `#addChunk`.
+    this.#dropChunkBundles(cell);
     for (const chunk of cell.chunks) {
       chunk.removeFromParent();
       this.#failures += this.#disposeLoaded(chunk);

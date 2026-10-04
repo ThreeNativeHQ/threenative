@@ -421,6 +421,10 @@ async function attached(
     ...options,
     admissionBudgetMs: Number.POSITIVE_INFINITY,
     budgets,
+    // Off, like the rest of this file's claims: what a merged chunk is asked to do here is keep its
+    // own hierarchy, and a cell's BundleGroup re-parents the recorded draws out of it. The record
+    // and replay it does with them is `world-bundles.spec.ts`'s subject.
+    bundles: false,
     follow: options.follow ?? { position: { ...FOLLOW } },
     loadModel: async () => model,
     prefetchSeconds: 0,
@@ -586,6 +590,25 @@ describe("a hand-placed chunk merged by material", () => {
       expect(mesh.parent).toBe(chunk);
       expect(mesh.castShadow).toBe(false);
       expect(mesh.receiveShadow).toBe(false);
+    }
+    expect(world.stats().failures).toBe(0);
+    world.dispose();
+  });
+
+  it("tags every mesh the main pass draws from the chunk as chunks", async () => {
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const { group } = chunkModel();
+    const { chunk, world } = await attached(group, {});
+
+    // A hand-placed chunk is the buildings and set dressing: one draw per material after the bake,
+    // and on the map-walk those draws were the largest part of the `other` bucket — a bridge, a wall
+    // and a water surface's cell all reading as one number. The origin is written where the chunk is
+    // prepared, so a merge that is refused and a chunk left as authored are named the same way.
+    const meshes = meshesIn(chunk);
+    expect(meshes).toHaveLength(3);
+    for (const mesh of meshes) {
+      expect(mesh.layers.isEnabled(0)).toBe(true);
+      expect(mesh.userData.tnDrawSource).toBe("chunks");
     }
     expect(world.stats().failures).toBe(0);
     world.dispose();
@@ -934,6 +957,11 @@ describe("a hand-placed chunk merged by material", () => {
     );
     expect(proxy.castShadow).toBe(true);
     expect(proxy.receiveShadow).toBe(false);
+    // Two origins on one chunk, split by the layer that decides which pass draws them: the proxy is
+    // the shadow passes' bill, the groups under it are the main pass's.
+    expect(proxy.userData.tnDrawSource).toBe("proxies");
+    for (const mesh of meshesIn(chunk).filter((one) => one.layers.isEnabled(0)))
+      expect(mesh.userData.tnDrawSource).toBe("chunks");
     // The group's own material, by reference: the side it is grouped by is that material's own
     // `side`, so the depth pass reads exactly what the covered mesh's depth material would have.
     expect(opaque).toContain(proxy.material as MeshBasicMaterial);

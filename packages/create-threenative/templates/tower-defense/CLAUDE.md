@@ -95,3 +95,18 @@ reports the source. A scenario with no assertions or missing observations fails;
 Recipes in the installed create-threenative: `node_modules/create-threenative/agent-docs/references/assertion-reference.md`, `node_modules/create-threenative/agent-docs/references/build-profiles.md`, `node_modules/create-threenative/agent-docs/references/capability-reference.md`, `node_modules/create-threenative/agent-docs/references/capture-the-frame.md`, `node_modules/create-threenative/agent-docs/references/creating-creatures.md`, `node_modules/create-threenative/agent-docs/references/ctx-cookbook.md`, `node_modules/create-threenative/agent-docs/references/debug-surface.md`, `node_modules/create-threenative/agent-docs/references/finding-assets.md`, `node_modules/create-threenative/agent-docs/references/gameplay-recipes.md`, `node_modules/create-threenative/agent-docs/references/menu-screens.md`, `node_modules/create-threenative/agent-docs/references/mobile-memory-budget.md`, `node_modules/create-threenative/agent-docs/references/performance-basics.md`, `node_modules/create-threenative/agent-docs/references/rigging-characters.md`, `node_modules/create-threenative/agent-docs/references/sculpt-from-a-reference.md`, `node_modules/create-threenative/agent-docs/references/trace-a-slow-frame.md`, `node_modules/create-threenative/agent-docs/references/visual-baseline.md`, and `node_modules/create-threenative/agent-docs/references/webview-ui.md`.
 ## Optional multiplayer transport
 For online play only, import `connect` from `@threenative/core/net` with an HTTPS URL and nonempty identity credential; configure `connectTimeoutMs`, `maxReliableMessageBytes`, `maxQueuedReliableBytes`, and `maxQueuedDatagrams` (10s/65,536/1 MiB/256), use `reliable-ordered` for ordered reliable messages and bounded `unreliable` datagrams that may drop, and keep serialization, replication, prediction, interpolation, snapshots and rejoin in this game's `src/` and server. There is no fallback: unsupported WebTransport/native rejects with `TN_NET_UNAVAILABLE`; reference Go server: `packages/runtime-native/examples/webtransport/server`.
+
+## Engine detail and mirror defaults
+
+`InstancedBatch` automatically partitions a baked AutoLOD chain by each instance's projected error
+(default 4 raster pixels, using the render camera and actual viewport). Spatial partitions have
+their own bounds for each render camera; public slots and offscreen shadow casters remain intact.
+The chain survives geometry cloning and transform baking. `autoLod: false` delegates detail to the game; `autoLod.maxPixelError`
+and `hysteresis` override selection, and authored `lods` distance/geometry levels win. Missing
+rungs report `TN_INSTANCED_LOD_FAILED` with the batch name; a million-triangle batch without a
+chain reports `TN_INSTANCED_LOD_UNAVAILABLE`. Cook the asset rather than writing a second LOD loop.
+
+`WaterSurface3D` with omitted `reflection.layers` reflects terrain-sized surfaces and large
+non-instanced shadow casters, excluding instanced/skinned props. The default minimum world extent
+is 10 metres (`reflection.minSize` overrides it); `TN_WATER_REFLECTION_DEFAULT` reports the set.
+An explicit `reflection.layers` mask wins, including `1`, which draws layer-0 props again.
