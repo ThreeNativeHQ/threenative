@@ -1072,7 +1072,13 @@ describe("CI pipeline structure", () => {
     // golden-path-template runs hosted: its dev server twice failed to answer on a local slot (run 37089715252).
     [
       ".github/workflows/ci.yml",
-      new Set(["golden-path-template", "supply-chain", "template-nonvisual"]),
+      new Set([
+        "golden-path-template",
+        "lint",
+        "performance-contracts",
+        "supply-chain",
+        "template-nonvisual",
+      ]),
     ],
     [
       ".github/workflows/native-platforms.yml",
