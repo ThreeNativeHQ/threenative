@@ -587,7 +587,7 @@ importers:
         version: link:../../packages/playtest
       three:
         specifier: 'catalog:'
-        version: 0.185.1(patch_hash=083710b3f650299016af6b9a0463e600517a5686f7f1713dead2b0f7ab9218d0)
+        version: 0.185.1(patch_hash=c2e051df4c469d033b151cb9da5ce5112c90801aaaa984d6bfde0e09d80c9a66)
     devDependencies:
       '@threenative/runtime-native':
         specifier: workspace:*
