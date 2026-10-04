@@ -11,13 +11,15 @@
 // `setupPost(renderer, scene, camera, { tier: "low" })`. Overriding does not silence the report:
 // `TN_QUALITY_TIER` names the tier that ran either way.
 import type { Camera, DirectionalLight, Scene } from "three";
+import { LUTCubeLoader } from "three/addons/loaders/LUTCubeLoader.js";
 import {
   type IAdaptiveQualityOptions,
   type IQualityWindow,
   createAdaptiveQuality,
   formatQualityAdaptation,
 } from "./adaptiveQuality.js";
-import { type QualityTier, qualityPreset } from "./quality.js";
+import { type IGradeTable, gradeStages } from "./grade.js";
+import { type QualityTier, gradePreset, qualityPreset } from "./quality.js";
 import type { FogMedium } from "./volumetricFog.js";
 import { type OutputRenderer, WorldEnvironment } from "./worldEnvironment.js";
 
@@ -26,6 +28,13 @@ interface IPostController {
   observe(window: IQualityWindow): void;
   dispose(): void;
 }
+
+/**
+ * This game's colour table, relative to the page so it resolves the same way served and packaged.
+ * `public/grade.cube` is written by `tools/make-grade-lut.mjs`, and replacing it with a `.cube`
+ * from any grading tool is the whole of "change the grade".
+ */
+const GRADE_TABLE_URL = "grade.cube";
 
 let active: IPostController | undefined;
 
@@ -58,6 +67,7 @@ export function setupPost(
   let disposed = false;
   let disposeGraph: (() => void) | undefined;
   let medium: FogMedium | undefined;
+  let table: IGradeTable | undefined;
   let observation: Record<string, unknown> = {
     tier: policy.tier,
     source: policy.pinned ? "pinned" : "auto",
@@ -69,7 +79,13 @@ export function setupPost(
     medium = environment.fog?.();
     const composed = medium;
     const settings = qualityPreset(policy.tier);
-    const world = new WorldEnvironment(settings);
+    const world = new WorldEnvironment({
+      ...settings,
+      // Two stages this game owns, not the chain's: `grade.ts` builds them, `WorldEnvironment`
+      // orders and reports them, and `quality.ts` decides whether each tier runs them.
+      authoredStageNames: ["grade", "grain"],
+      authoredStages: () => gradeStages(gradePreset(policy.tier), table),
+    });
     const applied = world.apply(renderer, scene, camera, {
       godraysLight: environment.godraysLight,
       // Ahead of exposure and every stage, which is the only place a participating medium can go.
@@ -79,6 +95,23 @@ export function setupPost(
     observation = { ...observation, stages: applied.stages, dropped: applied.dropped };
   }
   apply();
+  // The table is a file, so it lands after the chain that would read it. Until then both stages
+  // are refused with a reason rather than grading nothing, and the chain is rebuilt once it does.
+  const tableLoader = new LUTCubeLoader();
+  void tableLoader.loadAsync(GRADE_TABLE_URL).then(
+    (loaded) => {
+      table?.texture.dispose();
+      table = { size: loaded.size, texture: loaded.texture3D };
+      if (!disposed) apply();
+    },
+    (error: unknown) => {
+      // A missing table is this game's file, not the harness's: name it and leave the frame
+      // ungraded rather than reporting a stage as applied that never ran.
+      console.error(
+        `TN_GRADE_TABLE ${GRADE_TABLE_URL}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    },
+  );
   const source = environment.tier === undefined ? "platform" : "override";
   console.info(
     `TN_QUALITY_TIER ${policy.tier} mobile=${environment.mobile === true} software=${
@@ -106,6 +139,10 @@ export function setupPost(
       disposeGraph = undefined;
       medium?.dispose();
       medium = undefined;
+      // The table outlives any one chain — a tier change rebuilds the graph around the same one —
+      // so it is released here and not by a stage that would take it with the first replacement.
+      table?.texture.dispose();
+      table = undefined;
       if (active === controller) active = undefined;
     },
   };

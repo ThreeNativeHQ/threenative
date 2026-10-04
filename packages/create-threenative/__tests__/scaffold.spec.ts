@@ -173,21 +173,22 @@ const BUG_REPORT_SKILL_PATHS = [
 // Current develop c18a42b integration: all13 actual generated trees were byte-compared
 // against reviewed 8bf trees; only the copied Three compute-only Storage3DTexture patch changed.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
-  // Measured through actual createProject trees after exposure/fog consolidation and restamping.
-  "action-rpg": "e25c061a7a41de400ab6ebd5db8eb152c55282e598d2697e4e805db9971e63c2",
-  minimal: "3bf8a85a5f3fd117c724280a76e8cef7c3ddcbd52c40f5724a8fafdf104fa2c8",
-  platformer: "ad15697abbf5457e7837dfb74347225d47fbf42e25d65eecbba1a1c7b3b0455c",
-  puzzle: "f61c60c051e78aa077ffcdfdb3ecb414430c2a44e3b5ea3bc3d460453c3d170b",
-  racing: "cf943ef8baf12e003dc91660b3892e30b634338bdd785448825d4f83277e4313",
-  rain: "8f83ed441cbf32dbb5f377ef1aeea97f9801e5acf0230ca3738148aad627e8ce",
-  rts: "add3e851fbb949ce838cb3bab4d6583d4c680e5526f700bec87d3a2d5fd659b0",
-  runner: "e7361fabfb2a77a3631c35806a8c7d153b898db81681ff2e6e89fd39a2511a38",
+  // Measured through actual createProject trees after PRD-492 added the shared
+  // `afterOutputTransform` stage seat and restamped every kit's worldEnvironment.ts.
+  "action-rpg": "cdd5083785cd2412c4075ebc065c5066cf7015d9327d03843b215eded8bd1db3",
+  minimal: "91160aa100c06f2a50c5617cdf3642527b6f5c5f0e1bc8dae99b1f106a289612",
+  platformer: "4dd60b847cd8ad867bb00402b68d88057dd09539325159fdacd7718189315255",
+  puzzle: "41985ceb32ea3ac10bf31e8d49250fc8f97761a32e2b8f58b3516b6cff471dae",
+  racing: "34318cdb7f9f1f3d3fe061add9f20e366c12a01fa5f3c165d91f1a1bd5fa347e",
+  rain: "44b42ea26d60ef69dc37874677d35786204420ed43b276368750700711b5ddae",
+  rts: "d277cef182a3cb24b847dcbdc776236836c336745d6cf97106c17606b49f4b54",
+  runner: "9a652c148a765b460e885196ac18afd7e824a2703545f998485fdc93cac46d6b",
   // Initial finite-height readiness plus its scene-owned lifecycle helper and mirrored docs.
-  sailing: "eecb0f2ada58d267a42b243165bdcec05b6a9be56373e7acdede6d5323aaf911",
-  shooter: "d4002cfc6533bccf74aa6bcf46d8dbbf53a7699c62bea85135e0ba3fd495a13b",
-  snow: "363afd6cc69cfe9be73cef7516ee3a46105d369043511c5d6a5dd5a587b3bdce",
-  starter: "63420ca71607875427f80e6ae93d1778896ac63997143f65cf8a0f1d951750ae",
-  "tower-defense": "04ec210d3a1b5330cb661c04cf1829cdf3f1673c3a24a215116921d90f5bddc4",
+  sailing: "f7325e140caa16beec51dcf21a4783043a2f3c59fcf8c835efe7cbf83d16fbc5",
+  shooter: "631f25520770c31348c19c83c8c75fba2c582444e819728c2209093d92f09538",
+  snow: "db0d2981e2eb00eeadcd67e08dcdcc363b89d5040f4f663d5519625de2d82855",
+  starter: "84490b95dd218959bc49b8777094f416ef2d2cf1bec568c406fc61cf22444891",
+  "tower-defense": "5920816de90126bf2426114402445087ac3ca6c7ce483d2d3d0f43c07c413973",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
@@ -272,6 +273,7 @@ const STARTER_PATHS = [
   "patches/three@0.185.1.patch",
   "threenative.config.ts",
   "tools/look.mjs",
+  "tools/make-grade-lut.mjs",
   "scripts/reference.mjs",
   "scripts/visual-loop.mjs",
   "index.html",
@@ -284,6 +286,7 @@ const STARTER_PATHS = [
   "src/scenes/Play.ts",
   "src/render/lighting.ts",
   "src/render/postprocessing.ts",
+  "src/render/grade.ts",
   "src/render/worldEnvironment.ts",
   "src/render/exposure.ts",
   "src/render/autoExposure.ts",
@@ -319,6 +322,7 @@ const STARTER_PATHS = [
   "assets/native-proof.glb",
   "assets/native-proof.png",
   "public/icon.png",
+  "public/grade.cube",
   "assets/pickup.wav",
   // PRD-449: no `agent-docs/` — the recipes ship in the installed `create-threenative`, and the
   // "ships no reference bundle" test is what pins that.

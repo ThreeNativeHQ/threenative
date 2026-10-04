@@ -4,7 +4,7 @@ import {
   RenderChain,
   readRenderChainObservation,
 } from "../src/render/chain.js";
-import type { IRendererLike } from "../src/renderer.js";
+import type { IRenderOutputOptions, IRendererLike } from "../src/renderer.js";
 
 function renderer(
   kind: IRendererLike["kind"],
@@ -805,5 +805,94 @@ describe("RenderChain", () => {
           request: { stages: ["bloom"], tier: "high" },
         }),
     ).toThrow(/targetFps must be a finite positive number/u);
+  });
+  // PRD-492: a colour grade is a display-referred effect, so it needs a place after the tone
+  // curve and the sRGB encode. The chain owns where the transform happens and the renderer's
+  // `outputColorTransform` owns whether it applies automatically; the stage owns only its look.
+  it("runs an after-output-transform stage last and hands the renderer the transform to apply", () => {
+    const order: string[] = [];
+    const installed: { node: unknown; outputColorTransform: unknown }[] = [];
+    const current = renderer("webgpu");
+    const chain = new RenderChain(
+      {
+        ...current,
+        setOutputNode: (node: unknown, _worldPass: unknown, options?: IRenderOutputOptions) => {
+          installed.push({ node, outputColorTransform: options?.outputColorTransform });
+        },
+      } as unknown as IRendererLike,
+      {
+        input: { colour: true },
+        stages: [
+          {
+            afterOutputTransform: true,
+            build: (input) => {
+              order.push("grade");
+              return { input, name: "grade" };
+            },
+            name: "grade",
+          },
+          {
+            build: (input) => {
+              order.push("bloom");
+              return { input, name: "bloom" };
+            },
+            name: "bloom",
+          },
+        ],
+        request: { stages: ["bloom", "grade"], tier: "high" },
+      },
+    );
+
+    expect(chain.applied.stages).toEqual(["bloom", "grade"]);
+    expect(order).toEqual(["bloom", "grade"]);
+    expect(installed).toHaveLength(1);
+    expect(installed[0]?.outputColorTransform).toBe(false);
+  });
+
+  it("leaves the automatic transform on when no after-output-transform stage actually ran", () => {
+    const installed: (boolean | undefined)[] = [];
+    const current = renderer("webgpu");
+    const chain = new RenderChain(
+      {
+        ...current,
+        setOutputNode: (_node: unknown, _worldPass: unknown, options?: IRenderOutputOptions) => {
+          installed.push(options?.outputColorTransform);
+        },
+      } as unknown as IRendererLike,
+      {
+        input: { colour: true },
+        stages: [
+          {
+            afterOutputTransform: true,
+            available: () => "lut:pending",
+            build: (input) => ({ input, name: "grade" }),
+            name: "grade",
+          },
+          { build: (input) => ({ input, name: "bloom" }), name: "bloom" },
+        ],
+        request: { stages: ["bloom", "grade"], tier: "high" },
+      },
+    );
+
+    // The grade was refused, so nothing applied the transform itself and the frame would have
+    // reached the display un-tone-mapped. That is the failure this flag exists to prevent.
+    expect(chain.applied.stages).toEqual(["bloom"]);
+    expect(chain.applied.dropped).toEqual([{ name: "grade", reason: "lut:pending" }]);
+    // Undefined is the renderer keeping its own transform, which is what an untaken
+    // output transform must leave alone.
+    expect(installed).toEqual([undefined]);
+  });
+
+  it("rejects an after-output-transform stage that also declares an anchor", () => {
+    expect(
+      () =>
+        new RenderChain(renderer("webgpu"), {
+          stages: [
+            { after: "bloom", afterOutputTransform: true, build: (input) => input, name: "grade" },
+            stage("bloom", []),
+          ],
+          request: { stages: ["bloom", "grade"], tier: "high" },
+        }),
+    ).toThrow(/afterOutputTransform/u);
   });
 });

@@ -68,18 +68,19 @@
         "software": {
           "contributions": { "graphOutputChanged": ["bloom", "vignette", "antialias"] },
           "stages": {
-            "includes": ["bloom", "vignette", "antialias"],
-            "order": ["bloom", "vignette", "antialias"]
+            "includes": ["bloom", "vignette", "antialias", "grade"],
+            "excludes": ["grain"],
+            "order": ["bloom", "vignette", "antialias", "grade"]
           },
           "tier": "low"
         }
       },
       "stages": {
-        "includes": ["ambientOcclusion", "bloom", "vignette"],
-        "order": ["ambientOcclusion", "bloom", "vignette"]
+        "includes": ["ambientOcclusion", "bloom", "vignette", "grade", "grain"],
+        "order": ["ambientOcclusion", "bloom", "vignette", "grade", "grain"]
       },
       "contributions": {
-        "graphOutputChanged": ["ambientOcclusion", "bloom", "vignette"]
+        "graphOutputChanged": ["ambientOcclusion", "bloom", "vignette", "grade", "grain"]
       }
     },
     "visibility": [
