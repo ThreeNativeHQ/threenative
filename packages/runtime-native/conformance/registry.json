@@ -75,6 +75,33 @@
   ],
   "tests": [
     {
+      "id": "lut-grade",
+      "title": "colour grade table and film grain",
+      "category": "rendering",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/lut-grade.js",
+      "owner": "PRD-492",
+      "browserRecipe": "webgpu",
+      "laneRegistrations": {
+        "browser": {
+          "registered": true,
+          "target": "web",
+          "assertsAdapter": true
+        },
+        "desktop": {
+          "registered": true,
+          "target": "desktop"
+        }
+      },
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": false,
+      "required": true,
+      "reason": "A known 17^3 .cube uploaded as a Data3DTexture and sampled by lut3D, with the film grain node at zero intensity, on the host as well as the browser. The grade and grain stages are generated template source, so a host that cannot carry a 3D texture upload and a trilinear filter leaves a game broken where it ships. The table is deliberately not the identity, so a host that ignored the upload or substituted a constant fails it; the parsed texture is read back in JS against the table's own formula, and the frame is compared to the browser reference within the row's tolerance."
+    },
+    {
       "id": "01-basic-cube",
       "title": "basic cube",
       "category": "core",
