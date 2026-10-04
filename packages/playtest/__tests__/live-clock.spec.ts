@@ -1,7 +1,8 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test } from "vitest";
+
+import { makeTempDirSync } from "../../../test-support/temp-dir.js";
 
 import { parseStandalonePlaytestArgs, PlaytestCliUsageError } from "../src/runner/config.js";
 import { buildReport } from "../src/runner/runner-support.js";
@@ -16,7 +17,7 @@ import type { IPlaytestScenario } from "../src/index.js";
  * which clock it measured on, because a rate off the wrong clock is not a rate.
  */
 function project(): string {
-  const root = mkdtempSync(join(tmpdir(), "tn-live-clock-"));
+  const root = makeTempDirSync("tn-live-clock-");
   const scenarioPath = join(root, "standing.playtest.json");
   writeFileSync(scenarioPath, JSON.stringify({
     name: "standing",
