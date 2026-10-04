@@ -26,6 +26,8 @@ import {
   FRAME_PASS_KINDS,
   type FramePassKind,
   type IRenderPassSample,
+  MAIN_DRAW_SOURCES,
+  type MainDrawSource,
 } from "./render-pass-budget.js";
 import type { ITargetFps, TargetFpsSource } from "./target-fps.js";
 
@@ -199,6 +201,18 @@ export type IFrameGpuBucketSample = Partial<Record<FrameGpuBucket, number>>;
  */
 export interface IFrameBudgetPassSummary {
   readonly draws: IFrameBudgetSummary;
+  /**
+   * The main pass's own draws per origin, summarised like every other series in this window.
+   *
+   * The per-frame counts sum to `draws` exactly, which is the invariant the split exists to answer;
+   * the percentiles below do not have to, because a source that draws on some frames and not others
+   * has a median over its own frames rather than over the window's. A source no frame drew is
+   * absent. Absent altogether — never a set of zeros — when the renderer named no object behind one
+   * of the pass's draws, which is the same rule the pass record itself follows. One exception to the
+   * sum: a world with bundles on counts its replays here, and three never traverses a replay, so the
+   * sources can exceed `draws`; the sum holds for the sources that went through the per-draw path.
+   */
+  readonly drawsBySource?: Readonly<Partial<Record<MainDrawSource, IFrameBudgetSummary>>>;
   /** Frames in the window that submitted a pass of this kind. */
   readonly frames: number;
   /**
@@ -498,6 +512,11 @@ function hostPresentCountReader(): (() => number | undefined) | undefined {
   };
 }
 
+/** Whether a per-source key names a source this window counts. */
+function isMainDrawSource(source: string): source is MainDrawSource {
+  return (MAIN_DRAW_SOURCES as readonly string[]).includes(source);
+}
+
 function round(value: number): number {
   return Math.round(value * 100) / 100;
 }
@@ -536,6 +555,7 @@ export class FrameBudget {
   #gpuBucketRings: Record<FrameGpuBucket, Ring>;
   #gpuBucketThisFrame: IFrameGpuBucketSample = {};
   #passDrawRings: Record<FramePassKind, Ring>;
+  #passDrawSourceRings: Record<MainDrawSource, Ring>;
   #passTriangleRings: Record<FramePassKind, Ring>;
   #passFrames: Record<FramePassKind, number> = { main: 0, nested: 0, reflection: 0, shadow: 0 };
   #passesThisFrame: IRenderPassSample[] = [];
@@ -614,6 +634,16 @@ export class FrameBudget {
       nested: new Ring(capacity),
       reflection: new Ring(capacity),
       shadow: new Ring(capacity),
+    };
+    this.#passDrawSourceRings = {
+      bundles: new Ring(capacity),
+      chunks: new Ring(capacity),
+      gpuScene: new Ring(capacity),
+      instanced: new Ring(capacity),
+      other: new Ring(capacity),
+      proxies: new Ring(capacity),
+      sky: new Ring(capacity),
+      terrain: new Ring(capacity),
     };
     this.#passTriangleRings = {
       main: new Ring(capacity),
@@ -873,6 +903,17 @@ export class FrameBudget {
     for (const pass of this.#passesThisFrame) {
       this.#passDrawRings[pass.kind].push(pass.draws);
       this.#passTriangleRings[pass.kind].push(pass.triangles);
+      // The main pass's per-origin counts, one sample per source the frame drew. A source the
+      // frame did not draw contributes no sample, so its percentiles describe the frames that had
+      // it — the same rule every other series here follows.
+      if (pass.drawsBySource !== undefined)
+        for (const [source, count] of Object.entries(pass.drawsBySource)) {
+          if (!isMainDrawSource(source))
+            throw new Error(
+              `FrameBudget received an unknown main draw source: ${source}. Expected one of: ${MAIN_DRAW_SOURCES.join(", ")}.`,
+            );
+          this.#passDrawSourceRings[source].push(count);
+        }
       this.#passFrames[pass.kind] += 1;
     }
     this.#passesThisFrame.length = 0;
@@ -903,8 +944,18 @@ export class FrameBudget {
     const gpuTally = this.#readGpuTally?.();
     for (const kind of FRAME_PASS_KINDS) {
       if (this.#passFrames[kind] === 0) continue;
+      // The split belongs to `main` alone, and it is the only kind the recorder attributes: the
+      // rings are per source rather than per kind and per source, so a summary that attached them
+      // to a shadow pass would report the main pass's origins under a nested pass's name.
+      const drawsBySource: Partial<Record<MainDrawSource, IFrameBudgetSummary>> = {};
+      if (kind === "main")
+        for (const source of MAIN_DRAW_SOURCES) {
+          const ring = this.#passDrawSourceRings[source];
+          if (ring.count > 0) drawsBySource[source] = ring.summarize(this.#scratch);
+        }
       passes[kind] = {
         draws: this.#passDrawRings[kind].summarize(this.#scratch),
+        ...(Object.keys(drawsBySource).length === 0 ? {} : { drawsBySource }),
         frames: this.#passFrames[kind],
         triangles: this.#passTriangleRings[kind].summarize(this.#scratch),
         // Main pass only, and beside three's CPU figure rather than instead of it: the same window
@@ -1064,6 +1115,7 @@ export class FrameBudget {
       this.#passTriangleRings[kind].reset();
       this.#passFrames[kind] = 0;
     }
+    for (const source of MAIN_DRAW_SOURCES) this.#passDrawSourceRings[source].reset();
     this.#framesInWindow = 0;
     this.#hitchesInWindow = 0;
     this.#presentsInWindow = 0;

@@ -91,6 +91,19 @@ export interface IFrameSurfaceJson {
   readonly atFloor?: boolean;
 }
 
+/**
+ * One render pass's submissions, as `packages/core/src/render-pass-budget.ts` reports them.
+ *
+ * `drawsBySource` is PRD-494's per-origin split of the main pass's draws: the frame-level counts sum
+ * to `draws`, so the percentiles of two different sources need not, and the line below is read as
+ * "which origin owns the pass", not as arithmetic.
+ */
+export interface IPassJson {
+  readonly draws?: IPerfSummary;
+  readonly drawsBySource?: Readonly<Record<string, IPerfSummary>>;
+  readonly frames?: number;
+}
+
 export interface IFrameBudgetWindowJson {
   /**
    * The loop's cadence. It is the display's where the loop presents every frame — the web, via rAF —
@@ -110,6 +123,8 @@ export interface IFrameBudgetWindowJson {
   readonly surface?: IFrameSurfaceJson;
   /** GPU milliseconds from `timestamp-query`, absent when the adapter has none. */
   readonly gpuMs?: number;
+  /** Per-pass draws and triangles, absent on a runtime that measured no passes. */
+  readonly passes?: Readonly<Record<string, IPassJson>>;
   readonly window: number;
 }
 
@@ -819,6 +834,7 @@ export function formatPerfReport(report: IPerfReport): string {
         "too short to contain a present, so their frame rate is unmeasured rather than zero",
     );
   }
+  lines.push(...formatDrawSources(report.budgets));
   lines.push(...formatProjection(report.projections));
   const lastGap = report.hostGaps.at(-1);
   if (lastGap !== undefined) {
@@ -854,6 +870,29 @@ function formatMainPassTriangles(windows: readonly IFrameBudgetWindowJson[]): st
   return [
     `main pass triangles: ${main.gpuTriangles.toLocaleString("en-US")} GPU-selected, ` +
       `${capacity} CPU capacity`,
+  ];
+}
+
+
+/**
+ * Where the main pass's draws came from, from the last window that reported the split (PRD-494).
+ *
+ * One line, ranked largest first, because the question this answers is which origin owns the pass —
+ * GPU-scene keys, the world's bundle, terrain tiles, proxies, or the meshes no world system claimed.
+ * A run whose runtime predates the field is named as unreported rather than printed as an empty
+ * ranking, which would read as a measured "nothing was drawn from anywhere".
+ */
+function formatDrawSources(windows: readonly IFrameBudgetWindowJson[]): string[] {
+  const last = [...windows].reverse().find((window) => window.passes?.main?.drawsBySource !== undefined);
+  const bySource = last?.passes?.main?.drawsBySource;
+  if (last === undefined || bySource === undefined)
+    return ["main-pass draws by source: not reported — this runtime predates the per-source split"];
+  const ranked = Object.entries(bySource).sort(([, left], [, right]) => right.p50 - left.p50);
+  const draws = last.passes?.main?.draws?.p50;
+  return [
+    `main-pass draws by source, window ${String(last.window)} p50: ` +
+      ranked.map(([source, sourceSummary]) => `${source} ${sourceSummary.p50.toFixed(0)}`).join(", ") +
+      (draws === undefined ? "" : ` — ${draws.toFixed(0)} draws in the pass`),
   ];
 }
 

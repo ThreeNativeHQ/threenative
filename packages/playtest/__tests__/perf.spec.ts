@@ -433,6 +433,36 @@ describe("formatPerfReport", () => {
   });
 });
 
+/** `TN_FRAME_BUDGET` as PRD-494 reports it: the main pass split by origin, beside its own draws. */
+const drawSourceLine =
+  'TN_FRAME_BUDGET:{"window":3,"frames":300,"hitches":0,"fps":20.9,' +
+  '"passes":{"main":{"draws":{"samples":300,"mean":323.0,"p50":323,"p95":337,"p99":340,"max":344},' +
+  '"drawsBySource":{"gpuScene":{"samples":300,"mean":211.0,"p50":211,"p95":219,"p99":222,"max":228},' +
+  '"chunks":{"samples":300,"mean":30.0,"p50":30,"p95":32,"p99":33,"max":34},' +
+  '"terrain":{"samples":300,"mean":62.0,"p50":62,"p95":64,"p99":65,"max":66},' +
+  '"other":{"samples":300,"mean":20.0,"p50":20,"p95":22,"p99":23,"max":24}},"frames":300},' +
+  '"shadow":{"draws":{"samples":300,"mean":316.0,"p50":316,"p95":330,"p99":335,"max":340},' +
+  '"frames":300}},"gpuStale":0}';
+
+describe("main-pass draws by source in the perf report", () => {
+  it("should print one line, ranked, against the pass's own draws", () => {
+    const parsed = parsePerformanceMarkers(`${budgetLine(1, 30, 40, 20)}\n${drawSourceLine}\n`);
+    const text = formatPerfReport(assessPerfMarkers(parsed, { requireWindows: 0 }, "log"));
+    const line = text.split("\n").find((row) => row.includes("main-pass draws by source")) ?? "";
+
+    expect(line).toBe(
+      "main-pass draws by source, window 3 p50: gpuScene 211, terrain 62, chunks 30, other 20 — 323 draws in the pass",
+    );
+  });
+
+  it("should say the split was not reported rather than print an empty ranking", () => {
+    const parsed = parsePerformanceMarkers(`${budgetLine(1, 30, 40, 20)}\n`);
+    const text = formatPerfReport(assessPerfMarkers(parsed, { requireWindows: 0 }, "log"));
+
+    expect(text).toContain("main-pass draws by source: not reported");
+  });
+});
+
 const projectionLine =
   'TN_PROJECTION:{"drawsActual":315,"drawsPlanned":118,' +
   '"exact":{"skinned":96,"multiMaterial":12,"lod":4,"instanced":6},' +
