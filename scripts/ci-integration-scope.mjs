@@ -10,6 +10,7 @@ const SELECTOR = "scripts/ci-integration-scope.mjs";
 // projects. Producer configuration reaches every package lane; library source reaches its
 // runtime consumers. This inventory adds coverage before the unknown-executable fallback.
 const PACKAGE_LANES = [
+  "animation",
   "exposure",
   "cold-boot",
   "decals",
