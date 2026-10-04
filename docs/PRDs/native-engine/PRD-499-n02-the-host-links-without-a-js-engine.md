@@ -1,6 +1,6 @@
 # PRD-499 — The host links and runs without a JS engine (N02)
 
-**Status:** PROPOSED
+**Status:** IN PROGRESS — phase 1 done; Emscripten check waits for an engine-core target; CI box waits for the PR run
 **Complexity:** 5 — splits the native CMake tree, decouples the GPU context from scripting, and adds an artifact inspector every strict gate reuses
 **Owner:** João
 **Work package:** N02 — [native-engine batch](README.md)
@@ -30,21 +30,21 @@ Gate E needs a native application that renders with no V8, QuickJS, JavaScriptCo
 ## Execution Phases
 
 #### Phase 1: The context no longer knows about scripting
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** `packages/runtime-native/include/mystral/webgpu/context.h`, `packages/runtime-native/src/webgpu/`, proposed `packages/runtime-native/src/host/`
-- [ ] `context.h` and the extracted host services compile with no `BindingsState` reference and no `src/js/` include. proof: `rg -n "BindingsState|src/js" packages/runtime-native/src/host packages/runtime-native/include/mystral/webgpu/context.h` returns nothing, then `pnpm native:build`
-- [ ] The shipped desktop host still passes its gate after the extraction. proof: `pnpm native:verify:desktop`
+- [x] `context.h` and the extracted host services compile with no `BindingsState` reference and no `src/js/` include. proof: `rg -n "BindingsState|src/js" packages/runtime-native/src/host packages/runtime-native/include/mystral/webgpu/context.h` returns nothing, then `pnpm native:build` — 2026-10-04: rg returns nothing; the context reads frames through `host::IFrameCaptureSource` (`include/mystral/host/frame_capture.h`), which the bindings implement in `bindings_screenshot.cpp`; `pnpm native:build` green
+- [x] The shipped desktop host still passes its gate after the extraction. proof: `pnpm native:verify:desktop` — 2026-10-04: exit 0 — 300 frames 1280x720, non-blank capture, contract suite green
 
 #### Phase 2: Engine targets build and run with scripting off
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **Files:** `packages/runtime-native/CMakeLists.txt`, proposed `packages/runtime-native/tests/native-engine/gate_e_driver.cpp`
-- [ ] Engine targets configure as C++20 with `-DMYSTRAL_USE_V8=OFF -DTN_SCRIPTING=OFF`, and none links a JS engine library. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_target_graph`
-- [ ] The gate-E driver presents 300 headless frames with scripting compiled out. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_gate_e`
-- [ ] The engine targets also compile under Emscripten with threads off, compile-only. proof: `emcmake cmake -S packages/runtime-native -B packages/runtime-native/build/wasm-check -DTN_ENGINE_ONLY=ON && cmake --build packages/runtime-native/build/wasm-check`
+- [x] Engine targets configure as C++20 with `-DMYSTRAL_USE_V8=OFF -DTN_SCRIPTING=OFF`, and none links a JS engine library. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_target_graph` — 2026-10-04: the scripting-off configure is `-DTN_ENGINE_ONLY=ON -DMYSTRAL_USE_V8=OFF -DMYSTRAL_USE_QUICKJS=OFF` (`cmake/NativeEngine.cmake` is included before any JS engine is configured and the configure returns there). `native_engine_target_graph` passes there and inside the V8 `tn-linux` build; red on v8::v8, libv8.so, libquickjs, mystral-runtime, webkit2gtk, a C++17 row and an empty graph
+- [x] The gate-E driver presents 300 headless frames with scripting compiled out. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_gate_e` — 2026-10-04: passes headless with no DISPLAY on Dawn/RTX 2080 in 0.36 s; reads back the last clear through `Context::captureFrame`; red when the expected colour is off by 5 (`43` read, `48` wanted); also green under ASan/UBSan (`-DTN_ENGINE_SANITIZE=ON`)
+- [ ] The engine targets also compile under Emscripten with threads off, compile-only. proof: `emcmake cmake -S packages/runtime-native -B packages/runtime-native/build/wasm-check -DTN_ENGINE_ONLY=ON && cmake --build packages/runtime-native/build/wasm-check` — **open:** no portable engine-core target exists yet (`tn_host_services` is the Dawn/SDL host seam, which the browser port replaces), and emsdk is not installed on this machine; the check runs with the first `tn_engine_*` target (N04)
 
 #### Phase 3: JS-free status is inspected, not assumed
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **Files:** proposed `packages/runtime-native/scripts/inspect-js-free.mjs`, `packages/runtime-native/tests/inspect-js-free.test.mjs`; `.github/workflows/ci.yml`
-- [ ] The inspector fails on a binary carrying V8, QuickJS, JSC or Hermes symbols or an embedded script resource, and passes on the gate-E driver. proof: red-green `pnpm --filter @threenative/runtime-native exec vitest run tests/inspect-js-free.test.mjs`
-- [ ] The inspector writes an evidence manifest with binary hash, target, backend and capability list. proof: `node packages/runtime-native/scripts/inspect-js-free.mjs --binary <gate-e driver> --manifest artifacts/native-engine/gate-e.json`
+- [x] The inspector fails on a binary carrying V8, QuickJS, JSC or Hermes symbols or an embedded script resource, and passes on the gate-E driver. proof: red-green `pnpm --filter @threenative/runtime-native exec vitest run tests/inspect-js-free.test.mjs` — 2026-10-04: `scripts/inspect-js-free.mjs` reads nm symbols, NEEDED libraries, embedded bundler markers and packaged resources; 4 tests green, 2 red with the v8 family removed; on the real binaries the V8 `mystral` host fails with 5 findings and the gate-E driver passes
+- [x] The inspector writes an evidence manifest with binary hash, target, backend and capability list. proof: `node packages/runtime-native/scripts/inspect-js-free.mjs --binary <gate-e driver> --manifest artifacts/native-engine/gate-e.json` — 2026-10-04: `artifacts/native-engine/gate-e.json` — sha256, symbol count, NEEDED libraries, backend dawn, target, capabilities, findings []
 - [ ] CI's `test-native` job runs the gate-E driver, the inspector and the sanitizer-labelled engine tests. proof: the `test-native` job on the PRD's PR

@@ -698,6 +698,13 @@ if(MYSTRAL_USE_DAWN)
     endif()
 endif()
 
+option(TN_ENGINE_ONLY "Configure only the JS-free native engine targets" OFF)
+include(cmake/NativeEngine.cmake)
+if(TN_ENGINE_ONLY)
+    message(STATUS "TN_ENGINE_ONLY: native engine targets only, no scripting configured")
+    return()
+endif()
+
 # QuickJS-NG (actively maintained fork with MSVC/Windows support)
 if(MYSTRAL_USE_QUICKJS)
     set(QUICKJS_DIR ${THIRD_PARTY_DIR}/quickjs)

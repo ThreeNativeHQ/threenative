@@ -2,6 +2,9 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
+
+#include "mystral/host/frame_capture.h"
 
 namespace mystral {
 namespace js {
@@ -83,6 +86,8 @@ uint64_t presentCount(BindingsState* state);
 bool isScreenshotReady(BindingsState* state);
 void clearScreenshotReady(BindingsState* state);
 void requestFrameScreenshot(BindingsState* state);
+/** The bindings as the GPU context's frame-capture source; the caller owns it and drops it before the state. */
+std::unique_ptr<host::IFrameCaptureSource> makeFrameCaptureSource(BindingsState* state);
 
 void compositeCanvas2DToWebGPU(BindingsState* state);
 

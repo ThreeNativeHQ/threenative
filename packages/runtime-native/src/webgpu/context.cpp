@@ -6,7 +6,6 @@
  */
 
 #include "mystral/webgpu/context.h"
-#include "mystral/webgpu/bindings.h"
 #include <array>
 #include <cstdlib>
 #include <string>
@@ -1502,16 +1501,15 @@ static bool copyScreenshotPixels(
 }
 
 void Context::requestFrameScreenshot() {
-    // Qualified: the member name shadows the mystral::webgpu free function.
-    mystral::webgpu::requestFrameScreenshot(bindingsState_);
+    if (captureSource_) captureSource_->request();
 }
 
 bool Context::isFrameScreenshotReady() {
-    return mystral::webgpu::isScreenshotReady(bindingsState_);
+    return captureSource_ && captureSource_->ready();
 }
 
 void Context::clearFrameScreenshotReady() {
-    mystral::webgpu::clearScreenshotReady(bindingsState_);
+    if (captureSource_) captureSource_->clearReady();
 }
 
 bool Context::saveScreenshot(const char* filename) {
@@ -1521,23 +1519,24 @@ bool Context::saveScreenshot(const char* filename) {
     }
 
     // Check if screenshot buffer is ready (populated during queue.submit)
-    if (!mystral::webgpu::isScreenshotReady(bindingsState_)) {
+    if (!captureSource_ || !captureSource_->ready()) {
         std::cerr << "[Screenshot] No rendered frame available yet" << std::endl;
         return false;
     }
 
-    WGPUBuffer screenshotBuffer = (WGPUBuffer)mystral::webgpu::getScreenshotBuffer(bindingsState_);
+    const host::FrameCaptureView frame = captureSource_->view();
+    WGPUBuffer screenshotBuffer = static_cast<WGPUBuffer>(frame.buffer);
     if (!screenshotBuffer) {
         std::cerr << "[Screenshot] Screenshot buffer not available" << std::endl;
         return false;
     }
 
     // Get dimensions for screenshot
-    uint32_t width = mystral::webgpu::getCurrentTextureWidth(bindingsState_);
-    uint32_t height = mystral::webgpu::getCurrentTextureHeight(bindingsState_);
-    uint32_t bytesPerRow = mystral::webgpu::getScreenshotBytesPerRow(bindingsState_);
-    size_t bufferSize = mystral::webgpu::getScreenshotBufferSize(bindingsState_);
-    TN_CONTEXT_LOGI("renderer capture map begin %ux%u format=%u bytes=%zu", width, height, mystral::webgpu::getScreenshotFormat(bindingsState_), bufferSize);
+    uint32_t width = frame.width;
+    uint32_t height = frame.height;
+    uint32_t bytesPerRow = frame.bytesPerRow;
+    size_t bufferSize = frame.size;
+    TN_CONTEXT_LOGI("renderer capture map begin %ux%u format=%u bytes=%zu", width, height, frame.format, bufferSize);
 
     // Map the screenshot buffer (it was already populated during submit)
     auto mapData = std::make_shared<BufferMapData>();
@@ -1599,9 +1598,9 @@ bool Context::saveScreenshot(const char* filename) {
             width,
             height,
             bytesPerRow,
-            mystral::webgpu::getScreenshotFormat(bindingsState_),
+            frame.format,
             rgbaData)) {
-        std::cerr << "[Screenshot] Unsupported surface format: " << mystral::webgpu::getScreenshotFormat(bindingsState_) << std::endl;
+        std::cerr << "[Screenshot] Unsupported surface format: " << frame.format << std::endl;
         wgpuBufferUnmap(screenshotBuffer);
         return false;
     }
@@ -1628,20 +1627,21 @@ bool Context::captureFrame(std::vector<uint8_t>& outData, uint32_t& outWidth, ui
     }
 
     // Check if screenshot buffer is ready (populated during queue.submit)
-    if (!mystral::webgpu::isScreenshotReady(bindingsState_)) {
+    if (!captureSource_ || !captureSource_->ready()) {
         return false;
     }
 
-    WGPUBuffer screenshotBuffer = (WGPUBuffer)mystral::webgpu::getScreenshotBuffer(bindingsState_);
+    const host::FrameCaptureView frame = captureSource_->view();
+    WGPUBuffer screenshotBuffer = static_cast<WGPUBuffer>(frame.buffer);
     if (!screenshotBuffer) {
         return false;
     }
 
     // Get dimensions
-    outWidth = mystral::webgpu::getCurrentTextureWidth(bindingsState_);
-    outHeight = mystral::webgpu::getCurrentTextureHeight(bindingsState_);
-    uint32_t bytesPerRow = mystral::webgpu::getScreenshotBytesPerRow(bindingsState_);
-    size_t bufferSize = mystral::webgpu::getScreenshotBufferSize(bindingsState_);
+    outWidth = frame.width;
+    outHeight = frame.height;
+    uint32_t bytesPerRow = frame.bytesPerRow;
+    size_t bufferSize = frame.size;
 
     // Map the screenshot buffer
     auto mapData = std::make_shared<BufferMapData>();
@@ -1676,7 +1676,7 @@ bool Context::captureFrame(std::vector<uint8_t>& outData, uint32_t& outWidth, ui
             outWidth,
             outHeight,
             bytesPerRow,
-            mystral::webgpu::getScreenshotFormat(bindingsState_),
+            frame.format,
             outData)) {
         wgpuBufferUnmap(screenshotBuffer);
         return false;

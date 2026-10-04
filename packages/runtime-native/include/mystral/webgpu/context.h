@@ -3,6 +3,8 @@
 #include <cstdint>
 #include <vector>
 
+#include "mystral/host/frame_capture.h"
+
 // Forward declare WebGPU types to avoid header dependency
 typedef struct WGPUInstanceImpl* WGPUInstance;
 typedef struct WGPUSurfaceImpl* WGPUSurface;
@@ -12,8 +14,6 @@ typedef struct WGPUQueueImpl* WGPUQueue;
 
 namespace mystral {
 namespace webgpu {
-
-struct BindingsState;
 
 /**
  * WebGPU Context
@@ -145,7 +145,7 @@ public:
      */
     void clearFrameScreenshotReady();
 
-    void setBindingsState(BindingsState* state) { bindingsState_ = state; }
+    void setFrameCaptureSource(host::IFrameCaptureSource* source) { captureSource_ = source; }
 
     /**
      * Capture the current frame as RGBA pixel data
@@ -224,7 +224,7 @@ private:
     // Offscreen rendering (for headless mode)
     void* offscreenTexture_ = nullptr;  // WGPUTexture
     void* offscreenTextureView_ = nullptr;  // WGPUTextureView
-    BindingsState* bindingsState_ = nullptr;
+    host::IFrameCaptureSource* captureSource_ = nullptr;
 };
 
 }  // namespace webgpu
