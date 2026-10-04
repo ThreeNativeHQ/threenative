@@ -251,15 +251,17 @@ function requestedClockMode(): PlaytestClockMode | undefined {
 }
 
 /**
- * The fixed steps of extra wall time a live advance may wait past the span its own ticks name.
+ * The half-step slices of extra wall time a live advance may wait past the span its own ticks name.
  *
  * A one-tick request names exactly one frame interval, so a wait that ended on that boundary ran
  * just before the host's next frame and observed nothing: the 2026-09-28 desktop pair failed on
- * that at 58 mean fps. Four steps is enough room for a host presenting at 15 fps, and it is a
- * bound — a host that really stopped presenting returns the zero the bridge reports as a dead
- * frame pump rather than hanging the run.
+ * that at 58 mean fps. Eight slices are four whole frame intervals — 66.7 ms on top of the 16.67 ms
+ * a tick names, so 83.3 ms, which covers one frame at 15 fps and the 55-59 ms cadence the
+ * 2026-10-04 CI host measured where four slices ended at 50.0 ms and reported that slow pump as a
+ * dead one. It is a bound, not a pace: a host that really stopped presenting returns the zero the
+ * bridge reports as a dead frame pump rather than hanging the run.
  */
-const WALL_CLOCK_PUMP_STEPS = 4;
+const WALL_CLOCK_PUMP_STEPS = 8;
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 

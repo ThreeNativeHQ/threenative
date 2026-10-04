@@ -1153,6 +1153,7 @@ describe("playtest holdUntilAttached", () => {
     host[PLAYTEST_RUNNER_EXPECTED_GLOBAL] = true;
     host.__THREENATIVE_PLAYTEST_CLOCK__ = "wall-clock";
     let updates = 0;
+    let slowUpdates = 0;
     const requestFrame = globalThis.requestAnimationFrame;
     const cancelFrame = globalThis.cancelAnimationFrame;
     class CountingScene extends Scene {
@@ -1160,9 +1161,18 @@ describe("playtest holdUntilAttached", () => {
         updates += 1;
       }
     }
+    // A second host with its own frame counter, so a frame it presented is counted on it and not on
+    // whichever host happens to share the counter above.
+    class SlowCountingScene extends Scene {
+      override update(): void {
+        slowUpdates += 1;
+      }
+    }
     // A host whose own pump presents every `gapMs`. 25 ms is a third later than the 16.67 ms one
-    // tick names — the host the pair failed on — and a million is a pump that never presents again.
-    const lateHost = (gapMs: number) => {
+    // tick names — the host the pair failed on — 60 ms is the cadence the 2026-10-04 auto-exposure
+    // CI host measured before run 37183659465 refused its ninth case, and a million is a pump that
+    // never presents again. The scene is a parameter so each host is counted on its own counter.
+    const lateHost = (gapMs: number, HostScene: typeof CountingScene = CountingScene) => {
       let handles = 0;
       Object.defineProperty(globalThis, "requestAnimationFrame", {
         configurable: true,
@@ -1181,11 +1191,12 @@ describe("playtest holdUntilAttached", () => {
         initialState: {},
         plugins: [playtest({ holdUntilAttached: false })],
         renderer: stubRenderer(testCanvas()),
-        scenes: { test: CountingScene },
+        scenes: { test: HostScene },
         start: "test",
       });
     };
     const game = lateHost(25);
+    let slow: ReturnType<typeof lateHost> | undefined;
     let stopped: ReturnType<typeof lateHost> | undefined;
 
     try {
@@ -1200,6 +1211,25 @@ describe("playtest holdUntilAttached", () => {
       // Host-driven, not stepped here: the tick the report names is one this host's pump ran.
       expect(updates).toBeGreaterThan(before);
 
+      // The same one-tick request on a host presenting at 60 ms, which is the cadence the 2026-10-04
+      // CI host measured. The span a tick names is 16.67 ms, so the wait has to outlive one whole
+      // frame at that cadence and not just the 25 ms pair's: four half-step slices ended at 50 ms
+      // and the bridge read that slow pump as a dead one, failing the run on its ninth case. This
+      // host is built after the first one has been measured, because building it is what takes over
+      // the cadence of the one pump both share.
+      slow = lateHost(60, SlowCountingScene);
+      await slow.start();
+      // Read the baseline the instant this host's first frame lands rather than after a fixed
+      // settle, so the wait below always begins with a whole frame interval left to present the next
+      // one. Sleeping instead would start the advance at an arbitrary point of the 60 ms cadence and
+      // pass half the time against the four slices this case exists to fail.
+      while (slowUpdates === 0) await new Promise((resolve) => setTimeout(resolve, 1));
+      const beforeSlow = slowUpdates;
+      const slowAdvanced = await bridge().advance?.(1);
+      expect(slowAdvanced?.clock.mode).toBe("wall-clock");
+      expect(slowAdvanced?.ticks ?? 0).toBeGreaterThanOrEqual(1);
+      expect(slowUpdates).toBeGreaterThan(beforeSlow);
+
       // The bound is real, so a pump that has stopped is still a failed run rather than a wait: the
       // bridge reports the zero this hands back.
       stopped = lateHost(1e6);
@@ -1207,6 +1237,7 @@ describe("playtest holdUntilAttached", () => {
       await expect(bridge().advance?.(1)).rejects.toThrow(/moved no tick in 1 step/u);
     } finally {
       stopped?.stop();
+      slow?.stop();
       game.stop();
       Object.defineProperty(globalThis, "requestAnimationFrame", {
         configurable: true,
