@@ -1,23 +1,23 @@
+import { WorldCells } from "@threenative/core/world";
 import {
-  BoxGeometry,
   Box3,
+  BoxGeometry,
   Group,
   InstancedMesh,
   Matrix4,
-  Quaternion,
   MeshBasicMaterial,
+  Quaternion,
   Vector3,
 } from "three";
 import { expect, it, vi } from "vitest";
-import { WorldCells } from "@threenative/core/world";
-import {
-  createProps,
-  variantFor,
-} from "../../../examples/strata-terrain-preview/src/render/props.js";
 import {
   createStreamedProps,
   invalidatePropShadows,
 } from "../../../examples/strata-terrain-preview/src/render/propStreaming.js";
+import {
+  createProps,
+  variantFor,
+} from "../../../examples/strata-terrain-preview/src/render/props.js";
 import type { IPlacement } from "../src/index.js";
 
 it("streams Strata's exact grounded transforms, seeded cover density and original placement count", async () => {
@@ -111,8 +111,8 @@ it("stops stale-scene work during post-grounding package compilation", async () 
       [{ geometry: new BoxGeometry(), role: "grass" as const, material, variant: 0 }],
     ]),
   );
-  let groundCalls = 0,
-    postChecks = 0;
+  let groundCalls = 0;
+  let postChecks = 0;
   const result = await createStreamedProps({
     placements,
     parts,
@@ -317,7 +317,7 @@ it("writes the original rendered matrices and materials for multi-part nonunifor
           matrices.push(matrix.elements);
         }
       }
-    return matrices.sort((a, b) => a[12]! - b[12]!);
+    return matrices.sort((a, b) => (a[12] as number) - (b[12] as number));
   }
   try {
     for (let frame = 0; frame < 200; frame++) {
@@ -325,11 +325,12 @@ it("writes the original rendered matrices and materials for multi-part nonunifor
       await Promise.resolve();
     }
     for (const material of [bark, crown]) {
-      const before = draws(original.meshes, material),
-        after = draws(streamed.meshes, material);
+      const before = draws(original.meshes, material);
+      const after = draws(streamed.meshes, material);
       expect(after).toHaveLength(placements.length);
       for (let i = 0; i < before.length; i++)
-        for (let j = 0; j < 16; j++) expect(after[i]![j]).toBeCloseTo(before[i]![j]!, 5);
+        for (let j = 0; j < 16; j++)
+          expect(after.at(i)?.[j]).toBeCloseTo(before.at(i)?.[j] as number, 5);
     }
   } finally {
     streamed.dispose();
@@ -407,7 +408,7 @@ it("preserves authored cutout LOD parts and distinct custom shader surfaces", as
   ] as IPlacement[];
   const parts = new Map([
     [
-      `spruce:${variantFor(placements[0]!, "spruce")}`,
+      `spruce:${variantFor(placements[0] as (typeof placements)[number], "spruce")}`,
       [
         {
           geometry: new BoxGeometry(1, 2, 1),
@@ -543,11 +544,14 @@ it("keeps streamed caster changes regional and reserves global invalidation for 
       }
     }
     expect(shadow.invalidateRegion.mock.calls.length).toBeGreaterThan(0);
-    const geometry = parts.values().next().value![0]!.geometry;
+    const part = parts.values().next().value?.[0];
+    if (part === undefined) throw new Error("Expected placement geometry");
+    const geometry = part.geometry;
     geometry.computeBoundingBox();
-    const actual = geometry
-      .boundingBox!.clone()
-      .applyMatrix4(streamed.byId.get(placement.id)!.pose);
+    const instance = streamed.byId.get(placement.id);
+    if (geometry.boundingBox === null || instance === undefined)
+      throw new Error("Expected instance bounds");
+    const actual = geometry.boundingBox.clone().applyMatrix4(instance.pose);
     for (const [bounds] of shadow.invalidateRegion.mock.calls) {
       const reported = new Box3(
         new Vector3(bounds.min.x, bounds.min.y, bounds.min.z),

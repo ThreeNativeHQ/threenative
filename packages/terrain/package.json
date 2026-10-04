@@ -57,7 +57,8 @@
     "three": "catalog:",
     "tsup": "catalog:",
     "typescript": "catalog:",
-    "vite": "catalog:"
+    "vite": "catalog:",
+    "@threenative/core": "workspace:*"
   },
   "peerDependencies": {
     "three": ">=0.185.0 <0.186.0",

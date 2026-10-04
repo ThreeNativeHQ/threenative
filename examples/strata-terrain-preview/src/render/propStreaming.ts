@@ -1,25 +1,25 @@
-import { addInSlices, createAssetLoader, type IAssetLoader } from "@threenative/core";
+import { type IAssetLoader, addInSlices, createAssetLoader } from "@threenative/core";
 import {
-  WorldCells,
-  type IWorldAsset,
   type IShadowRegion,
+  type IWorldAsset,
   type IWorldCell,
   type IWorldCellsFollow,
   type IWorldPackage,
+  WorldCells,
 } from "@threenative/core/world";
 import type { IPlacement } from "@threenative/terrain";
 import { Box3, Group, InstancedMesh, Mesh, Quaternion, Vector3 } from "three";
 import {
   DRAW_REACH,
   FADED_ASSETS,
+  type IPropMaterials,
+  type IPropPart,
   LOD_BANDS,
   NO_SHADOW_ASSETS,
+  type PropGroundQuery,
   VARIANT_REACH,
   preparePose,
   variantFor,
-  type IPropMaterials,
-  type IPropPart,
-  type PropGroundQuery,
 } from "./props.js";
 
 interface IStreamOptions {
@@ -107,7 +107,7 @@ export async function createStreamedProps(options: IStreamOptions) {
       // Preserve the original variant-group index BEFORE partitioning records into cells.
       const index = variantIndices.get(variant) ?? 0;
       variantIndices.set(variant, index + 1);
-      let reach = VARIANT_REACH[variant] ?? DRAW_REACH[placement.asset] ?? Infinity;
+      let reach = VARIANT_REACH[variant] ?? DRAW_REACH[placement.asset] ?? Number.POSITIVE_INFINITY;
       if (FADED_ASSETS.has(placement.asset)) {
         const seed = (Math.imul(index + 1, 2654435761) >>> 0) / 4294967296;
         reach = 28 + (reach - 28) * (1 - Math.sqrt(seed));
@@ -124,7 +124,7 @@ export async function createStreamedProps(options: IStreamOptions) {
   const buckets = new Map<string, IRecord[]>();
   if (
     !(await compile(records, (record) => {
-      const bucket = `${record.reach === Infinity ? "horizon" : "local"}:${!NO_SHADOW_ASSETS.has(record.placement.asset)}`;
+      const bucket = `${record.reach === Number.POSITIVE_INFINITY ? "horizon" : "local"}:${!NO_SHADOW_ASSETS.has(record.placement.asset)}`;
       const list = buckets.get(bucket) ?? [];
       list.push(record);
       buckets.set(bucket, list);
@@ -140,13 +140,13 @@ export async function createStreamedProps(options: IStreamOptions) {
         for (const world of worlds) world.dispose();
         return undefined;
       }
-      let minX = -options.size / 2,
-        minZ = minX,
-        maxX = options.size / 2,
-        maxZ = maxX;
-      let minY = Infinity,
-        maxY = -Infinity,
-        maxReach = 0;
+      let minX = -options.size / 2;
+      let minZ = minX;
+      let maxX = options.size / 2;
+      let maxZ = maxX;
+      let minY = Number.POSITIVE_INFINITY;
+      let maxY = Number.NEGATIVE_INFINITY;
+      let maxReach = 0;
       if (
         !(await compile(list, (record) => {
           minX = Math.min(minX, record.position.x);
@@ -171,8 +171,8 @@ export async function createStreamedProps(options: IStreamOptions) {
       const models = new Map<string, Group>();
       if (
         !(await compile(list, (record) => {
-          const x = Math.floor((record.position.x - minX) / CELL_SIZE),
-            z = Math.floor((record.position.z - minZ) / CELL_SIZE);
+          const x = Math.floor((record.position.x - minX) / CELL_SIZE);
+          const z = Math.floor((record.position.z - minZ) / CELL_SIZE);
           const cellKey = `${x}:${z}`;
           const runs = grouped.get(cellKey) ?? new Map<string, IRecord[]>();
           const run = runs.get(record.key) ?? [];
@@ -210,8 +210,8 @@ export async function createStreamedProps(options: IStreamOptions) {
         for (const world of worlds) world.dispose();
         return undefined;
       }
-      const placements = new Float32Array(list.length * 8),
-        placementReach = new Float32Array(list.length);
+      const placements = new Float32Array(list.length * 8);
+      const placementReach = new Float32Array(list.length);
       const cells: IWorldCell[] = [];
       function* ordered() {
         let planned = 0;
@@ -223,7 +223,8 @@ export async function createStreamedProps(options: IStreamOptions) {
             planned += run.length;
             yield* run;
           }
-          cells.push({ x: x!, z: z!, runs: cellRuns });
+          if (x === undefined || z === undefined) throw new Error("Invalid placement cell key");
+          cells.push({ x, z, runs: cellRuns });
         }
       }
       let offset = 0;
@@ -234,7 +235,7 @@ export async function createStreamedProps(options: IStreamOptions) {
             offset * 8,
           );
           placementReach[offset] = record.reach;
-          if (placementReach[offset]! < record.reach)
+          if ((placementReach[offset] as number) < record.reach)
             placementReach[offset] = record.reach * (1 + 2 ** -23);
           offset++;
         }))

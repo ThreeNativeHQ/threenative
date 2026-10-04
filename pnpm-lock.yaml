@@ -1035,6 +1035,9 @@ importers:
 
   packages/terrain:
     devDependencies:
+      '@threenative/core':
+        specifier: workspace:*
+        version: link:../core
       '@types/node':
         specifier: 'catalog:'
         version: 20.19.43

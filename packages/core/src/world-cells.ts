@@ -4295,14 +4295,14 @@ export class WorldCells extends Group implements IComputeDriven {
     if (reach !== undefined) {
       // Cap each load-time unit as well as yielding between units: admission begins only after load.
       function* validationChunks() {
-        for (let start = 0; start < reach!.length; start += 512) yield start;
+        for (let start = 0; start < (reach as Float32Array).length; start += 512) yield start;
       }
       await addInSlices(
         validationChunks(),
         (start) => {
           for (let index = start; index < Math.min(start + 512, reach.length); index++) {
             const value = reach[index] as number;
-            if (!(value >= 0) || (value !== Infinity && !Number.isFinite(value)))
+            if (!(value >= 0) || (value !== Number.POSITIVE_INFINITY && !Number.isFinite(value)))
               throw new Error(
                 "WorldCells placementReach values must be nonnegative metres or Infinity.",
               );
@@ -4325,14 +4325,14 @@ export class WorldCells extends Group implements IComputeDriven {
             reachRanges.get(cell) ??
             new Map<string, { min: number; max: number; minY: number; maxY: number }>();
           const range = ranges.get(id) ?? {
-            min: Infinity,
+            min: Number.POSITIVE_INFINITY,
             max: 0,
-            minY: Infinity,
-            maxY: -Infinity,
+            minY: Number.POSITIVE_INFINITY,
+            maxY: Number.NEGATIVE_INFINITY,
           };
           for (let index = start; index < end; index++) {
             const value = reach[index] as number;
-            if (value !== Infinity) {
+            if (value !== Number.POSITIVE_INFINITY) {
               range.min = Math.min(range.min, value);
               range.max = Math.max(range.max, value);
             }
@@ -4668,11 +4668,10 @@ export class WorldCells extends Group implements IComputeDriven {
 
   /** Borrowed scratch box: consume its transformed volume before the next bounds query. */
   #boundsAt(bounds: IWorldAsset["bounds"], matrix: Matrix4): Box3 {
-    this.#recordBounds.min.set(bounds.min[0]!, bounds.min[1]!, bounds.min[2]!);
-    this.#recordBounds.max.set(bounds.max[0]!, bounds.max[1]!, bounds.max[2]!);
+    this.#recordBounds.min.fromArray(bounds.min);
+    this.#recordBounds.max.fromArray(bounds.max);
     return this.#recordBounds.applyMatrix4(matrix);
   }
-
 
   /**
    * The one volume per resident visibility cell, shared by every key: its own XZ footprint, and in Y
@@ -4729,8 +4728,8 @@ export class WorldCells extends Group implements IComputeDriven {
         // The placement, widened by its own asset's bounds at the scale it is drawn at, and by the
         // pad — a union, so the pad is counted once however many placements there are.
         const scale = records[at + 7] as number;
-        this.#position.set(records[at]!, records[at + 1]!, records[at + 2]!);
-        this.#rotation.set(records[at + 3]!, records[at + 4]!, records[at + 5]!, records[at + 6]!);
+        this.#position.fromArray(records, at);
+        this.#rotation.fromArray(records, at + 3);
         this.#scale.setScalar(scale);
         this.#matrix.compose(this.#position, this.#rotation, this.#scale);
         box.union(
@@ -5579,7 +5578,8 @@ export class WorldCells extends Group implements IComputeDriven {
             this.#followY() - job.filterY,
             this.#follow.position.z - job.filterZ,
           ) >= this.#refilterStepMetres()
-        ) this.#refilterOwed = true;
+        )
+          this.#refilterOwed = true;
       }
     }
   }
@@ -6132,7 +6132,7 @@ export class WorldCells extends Group implements IComputeDriven {
         // Where these records are, for the shadow invalidation this entry's swap hands over.
         shadowBounds: box === undefined || box.isEmpty() ? undefined : box,
         threshold: this.#reachRanges.get(cell.cell)?.has(asset.id)
-          ? Math.min(asset.threshold ?? Infinity, 6)
+          ? Math.min(asset.threshold ?? Number.POSITIVE_INFINITY, 6)
           : asset.threshold,
       });
       job.published += 1;

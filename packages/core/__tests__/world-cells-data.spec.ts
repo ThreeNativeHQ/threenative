@@ -4,8 +4,8 @@ import {
   InstancedMesh,
   Mesh,
   MeshBasicMaterial,
-  Vector3,
   PerspectiveCamera,
+  Vector3,
 } from "three";
 import { afterEach, expect, it, vi } from "vitest";
 import { createAssetLoader } from "../src/assets.js";
@@ -219,8 +219,8 @@ it("refilters placement-specific 3D reach from fully culled to visible and back 
 it.each([
   new Float32Array(3),
   new Float32Array([0, -1, 1, 1]),
-  new Float32Array([0, NaN, 1, 1]),
-  new Float32Array([0, -Infinity, 1, 1]),
+  new Float32Array([0, Number.NaN, 1, 1]),
+  new Float32Array([0, Number.NEGATIVE_INFINITY, 1, 1]),
 ])("rejects malformed placement reach before loading models: %s", async (placementReach) => {
   const assets = createAssetLoader();
   vi.spyOn(assets, "resolve").mockResolvedValue([]);
@@ -264,7 +264,7 @@ it("yields to host while validating and indexing decoded reach records before lo
     ring: 0,
     terrain: false,
     data: { manifest: dense, placements: packed.buffer },
-    placementReach: new Float32Array(count).fill(Infinity),
+    placementReach: new Float32Array(count).fill(Number.POSITIVE_INFINITY),
     budgets: { bytes: count * 32, instances: count, residentCells: 1 },
     loadModel: async () => new Group(),
   });
@@ -279,7 +279,7 @@ it("yields to host while validating and indexing decoded reach records before lo
 it.each([
   { lodHysteresis: -0.1, gpuScene: false },
   { lodHysteresis: 1, gpuScene: false },
-  { lodHysteresis: NaN, gpuScene: false },
+  { lodHysteresis: Number.NaN, gpuScene: false },
   { lodHysteresis: 0.2, gpuScene: true },
   { lodHysteresis: 0.2, gpuScene: false, impostors: true },
 ])("rejects unsupported authored CPU hysteresis settings before model work: %j", async (policy) => {
@@ -388,7 +388,7 @@ it("admits a queued run for the current camera rather than its obsolete enqueue 
     ring: 4,
     terrain: false,
     prefetchSeconds: 0,
-    admissionBudgetMs: Infinity,
+    admissionBudgetMs: Number.POSITIVE_INFINITY,
     data: {
       manifest: {
         ...manifest,
