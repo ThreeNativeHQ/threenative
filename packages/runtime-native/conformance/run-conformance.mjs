@@ -588,7 +588,8 @@ export async function bundle(entry, out, result, side, esbuildBin, dryRun, forma
   let timer;
   let compiler;
   try {
-    compiler = await (compilerPromise ??= import("esbuild"));
+    compilerPromise ??= import("esbuild");
+    compiler = await compilerPromise;
     const timeout = new Promise((_, reject) => {
       timer = setTimeout(() => reject(Object.assign(
         new Error("TN_CONFORMANCE_BUNDLE_TIMEOUT: esbuild exceeded 120000ms."),
