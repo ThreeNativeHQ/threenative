@@ -445,12 +445,26 @@ it("preserves authored cutout LOD parts and distinct custom shader surfaces", as
     whileCurrent: () => true,
   });
   if (!streamed) throw new Error("cancelled");
+  new Group().add(...streamed.worlds);
   try {
     for (const z of [0, 80, 0]) {
       follow.position.z = z;
       original.setLevels(follow.position);
       for (let i = 0; i < 200; i++) {
-        for (const w of streamed.worlds) w.update();
+        for (const w of streamed.worlds) {
+          w.update();
+          w.traverse((node) => {
+            if (node instanceof InstancedMesh && node.count > 0)
+              (node.onBeforeRender as (...args: unknown[]) => void)(
+                node,
+                null,
+                null,
+                null,
+                null,
+                null,
+              );
+          });
+        }
         await Promise.resolve();
       }
       const active = (meshes: InstancedMesh[]) =>
@@ -462,6 +476,14 @@ it("preserves authored cutout LOD parts and distinct custom shader surfaces", as
             count: m.count,
           }));
       expect(active(streamed.meshes)).toEqual(active(original.meshes));
+      for (const layer of [28, 27]) {
+        const casters: InstancedMesh[] = [];
+        for (const world of streamed.worlds)
+          world.traverse((node) => {
+            if (node instanceof InstancedMesh && node.layers.isEnabled(layer)) casters.push(node);
+          });
+        expect(active(casters)).toEqual(active(original.meshes.filter((mesh) => mesh.castShadow)));
+      }
     }
   } finally {
     streamed.dispose();

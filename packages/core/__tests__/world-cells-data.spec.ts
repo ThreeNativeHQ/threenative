@@ -346,3 +346,27 @@ it("submits a rotated offset model when its actual geometry intersects the camer
     world.dispose();
   }
 });
+
+it("rejects exact authored parts combined with whole-asset impostors before model admission", async () => {
+  const model = vi.fn();
+  const promise = WorldCells.load({
+    url: "world.json",
+    surface: new MeshBasicMaterial(),
+    follow: { position: new Vector3() },
+    terrain: false,
+    ring: 1,
+    budgets: { residentCells: 4, instances: 4, bytes: 128 },
+    data: { manifest, placements },
+    gpuScene: false,
+    preserveAuthoredParts: true,
+    impostors: true,
+    loadModel: model,
+  });
+  await expect(
+    promise.then((world) => {
+      world.dispose();
+      return world;
+    }),
+  ).rejects.toThrow(/preserveAuthoredParts.*impostors/u);
+  expect(model).not.toHaveBeenCalled();
+});

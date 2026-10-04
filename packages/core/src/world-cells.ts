@@ -383,7 +383,7 @@ export interface IWorldCellsLoadOptions {
   /** Inward return margin for authored CPU LODs, in [0, 1). Requires gpuScene:false and impostors:false (the default).
    * Omitted, selection uses the existing direct gates. State survives cell eviction/revisit. */
   readonly lodHysteresis?: number;
-  /** Preserve supplied part/material identity and exact authored LOD membership.
+  /** Preserve supplied part/material identity and exact authored LOD membership, including shadow batches. Requires impostors:false (the default).
    * Default content sharing and missing-alpha-part coverage remain enabled when omitted. */
   readonly preserveAuthoredParts?: boolean;
   /** Already decoded immutable world-v1 data; URL still supplies the base for model paths. */
@@ -3996,6 +3996,8 @@ export class WorldCells extends Group implements IComputeDriven {
   }
 
   static async load(options: IWorldCellsLoadOptions): Promise<WorldCells> {
+    if (options.preserveAuthoredParts && options.impostors)
+      throw new Error("WorldCells preserveAuthoredParts requires impostors:false.");
     if (
       options.lodHysteresis !== undefined &&
       (!Number.isFinite(options.lodHysteresis) ||
@@ -5896,6 +5898,7 @@ export class WorldCells extends Group implements IComputeDriven {
     part: number,
     fallback: IBatchShape,
   ): IBatchShape {
+    if (this.#preserveAuthoredParts) return fallback;
     const terminal = asset?.levels.at(-1);
     // The whole-asset impostor is the one case where a part index has no meaning: it is a single
     // representation of every LOD0 part, so every part routes through it. `terminal?.[0]` is only
