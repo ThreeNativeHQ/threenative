@@ -1,12 +1,12 @@
 import { makeTempDirSync } from '../../../test-support/temp-dir.js';
 import assert from "node:assert/strict";
 import childProcess, { spawnSync } from "node:child_process";
-import { syncBuiltinESMExports } from "node:module";
+import { createRequire, syncBuiltinESMExports } from "node:module";
 import * as esbuild from "esbuild";
 import { createHash } from "node:crypto";
-import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 
-import { delimiter, join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PNG } from "pngjs";
 import { afterEach, expect, test, vi } from "vitest";
@@ -1496,5 +1496,37 @@ syncBuiltinESMExports();
     assert.equal(report.summary.pass, 0);
     assert.equal(report.summary.validated, invalid ? 0 : 1);
     if (invalid) assert.match(report.results[0].native.stderr, /cleanup-missing-package/u);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+
+test("vehicle conformance resolves Rapier from its own clean catalog importer", async () => {
+  const manifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+  assert.equal(manifest.devDependencies["@dimforge/rapier3d-compat"], "catalog:");
+  const dir = makeTempDirSync("threenative-vehicle-importer-");
+  try {
+    const fixture = join(dir, "vehicle-physics.js");
+    writeFileSync(fixture, readFileSync(join(root, "conformance/scenes/shared/vehicle-physics.js")));
+    // This clean importer has only its declared Rapier dependency. No workspace root,
+    // sibling physics importer or ambient NODE_PATH can satisfy the fixture import.
+    const require = createRequire(join(root, "package.json"));
+    const rapierEntry = require.resolve("@dimforge/rapier3d-compat");
+    const dependency = join(dir, "node_modules/@dimforge");
+    mkdirSync(dependency, { recursive: true });
+    symlinkSync(dirname(rapierEntry), join(dependency, "rapier3d-compat"));
+    const result = await esbuild.build({
+      absWorkingDir: dir,
+      entryPoints: [fixture],
+      bundle: true,
+      write: false,
+      platform: "browser",
+      format: "esm",
+      nodePaths: [],
+      external: ["three/webgpu", "../../../../physics/*", "./scene-support.js"],
+      metafile: true,
+      logLevel: "silent",
+    });
+    assert.ok(Object.keys(result.metafile.inputs).some(input => input.includes("rapier")));
+    assert.ok(result.outputFiles[0].contents.length > 0);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });

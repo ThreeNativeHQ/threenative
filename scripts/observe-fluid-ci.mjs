@@ -184,6 +184,128 @@ function safeOrdinaryLine(line) {
     .slice(0, 1024);
 }
 
+async function freshJson(file, started) {
+  try {
+    const facts = await stat(file);
+    if (facts.mtimeMs < started) return { status: "stale" };
+    if (facts.size > 1048576) return { status: "oversized" };
+    const text = await readFile(file, "utf8");
+    if (Buffer.byteLength(text) > 1048576) return { status: "oversized" };
+    try {
+      return { status: "observed", value: JSON.parse(text) };
+    } catch {
+      return { status: "malformed" };
+    }
+  } catch {
+    return { status: "missing-or-unreadable" };
+  }
+}
+
+function consoleFact(text) {
+  if (typeof text !== "string" || text.length > 8192) return null;
+  if (text.startsWith("TN_FRAME_HITCH:")) {
+    try {
+      const facts = JSON.parse(text.slice("TN_FRAME_HITCH:".length));
+      const numeric = Object.fromEntries(
+        ["gapMs", "uptimeMs", "wallClock"].flatMap((key) =>
+          typeof facts?.[key] === "number" && Number.isFinite(facts[key]) && facts[key] >= 0
+            ? [[key, facts[key]]]
+            : [],
+        ),
+      );
+      return { marker: "TN_FRAME_HITCH", timestamp: null, ...numeric };
+    } catch {
+      return null;
+    }
+  }
+  const markers = [
+    "TN_DEVICE_LOST",
+    "WebGPU Device Lost",
+    "A valid external Instance reference no longer exists",
+    "Instance dropped in popErrorScope",
+    "GPUValidationError",
+  ];
+  const marker = markers.find((value) => text.startsWith(value));
+  if (marker === undefined) return null;
+  const reason =
+    marker === "TN_DEVICE_LOST" ? /\((unknown|destroyed)\)/u.exec(text)?.[1] : undefined;
+  const detail = ["GPU process crashed", "GPU process hung", "Out of memory"].find((value) =>
+    text.includes(value),
+  );
+  return {
+    marker,
+    timestamp: null,
+    ...(reason === undefined ? {} : { reason }),
+    ...(detail === undefined ? {} : { detail }),
+  };
+}
+
+function captureFacts(value) {
+  const rendererKind = ["webgpu", "webgl"].includes(value?.rendererKind)
+    ? value.rendererKind
+    : null;
+  const adapter = Object.fromEntries(
+    [
+      ["vendor", ["google", "nvidia", "amd", "intel", "apple", "qualcomm", "mesa"]],
+      [
+        "architecture",
+        ["swiftshader", "llvmpipe", "turing", "ampere", "ada", "pascal", "volta", "rdna", "gcn"],
+      ],
+    ].flatMap(([key, allowed]) =>
+      typeof value?.adapter?.[key] === "string" &&
+      allowed.includes(value.adapter[key].toLowerCase())
+        ? [[key, value.adapter[key].toLowerCase()]]
+        : [],
+    ),
+  );
+  const viewport = value?.viewport;
+  const validViewport =
+    Number.isSafeInteger(viewport?.width) &&
+    viewport.width > 0 &&
+    Number.isSafeInteger(viewport?.height) &&
+    viewport.height > 0;
+  return {
+    rendererKind,
+    adapter,
+    viewport: validViewport ? { width: viewport.width, height: viewport.height } : null,
+  };
+}
+
+/** Only fresh, bounded, known facts cross the existing public artifact boundary. */
+export async function collectFluidArtifacts(directory, started) {
+  const result = [];
+  for (const variant of Object.keys(IMAGES)) {
+    const console = await freshJson(join(directory, variant, "console.json"), started);
+    const capture = await freshJson(join(directory, variant, "capture.json"), started);
+    let projectedConsole = { status: console.status };
+    if (console.status === "observed") {
+      if (!Array.isArray(console.value)) projectedConsole = { status: "invalid-shape" };
+      else {
+        const entries = console.value.map((entry) => consoleFact(entry?.text)).filter(Boolean);
+        projectedConsole = {
+          status: "observed",
+          entries: entries.slice(-16),
+          truncated: entries.length > 16,
+          markers: [...new Set(entries.map(({ marker }) => marker))],
+        };
+      }
+    }
+    result.push({
+      variant,
+      console: projectedConsole,
+      capture:
+        capture.status === "observed"
+          ? capture.value !== null &&
+            typeof capture.value === "object" &&
+            !Array.isArray(capture.value)
+            ? { status: "observed", facts: captureFacts(capture.value) }
+            : { status: "invalid-shape" }
+          : { status: capture.status },
+    });
+  }
+  return result;
+}
+
 /** Observe only this verifier. Collector errors cannot replace its exit status. */
 export async function observeFluidCi({
   artifactDirectory = "artifacts/fluid-consumers",
@@ -191,6 +313,10 @@ export async function observeFluidCi({
   snapshot = passiveSnapshot,
   stderr = (text) => process.stderr.write(text),
   signalSource = process,
+  scheduleSampling = (callback) => {
+    const timer = setInterval(callback, 5000);
+    return () => clearInterval(timer);
+  },
 } = {}) {
   const started = Date.now();
   const monotonicStart = performance.now();
@@ -271,13 +397,17 @@ export async function observeFluidCi({
       truncated = true;
     }
   });
-  let sampling = false;
-  const timer = setInterval(async () => {
-    if (sampling || samples.length >= 24) return;
-    sampling = true;
-    samples.push({ atMs: elapsed(), facts: await sample() });
-    sampling = false;
-  }, 5000);
+  let activeSample = null;
+  const stopSampling = scheduleSampling(() => {
+    if (activeSample) return activeSample;
+    activeSample = (async () => {
+      samples.push({ atMs: elapsed(), facts: await sample() });
+      if (samples.length > 24) samples.shift();
+    })().finally(() => {
+      activeSample = null;
+    });
+    return activeSample;
+  });
   const outcome = await new Promise((finish) => {
     child.once("error", () => {
       collectionErrors.push("child-launch-failed");
@@ -285,7 +415,8 @@ export async function observeFluidCi({
     });
     child.once("close", (code, signal) => finish({ code, signal }));
   });
-  clearInterval(timer);
+  stopSampling();
+  await activeSample;
   signalSource.removeListener("SIGTERM", terminate);
   signalSource.removeListener("SIGINT", interrupt);
   if (buffer) line(buffer);
@@ -342,6 +473,7 @@ export async function observeFluidCi({
     terminalBrowserExit,
     browserEventsTruncated: truncated,
     screenshots,
+    retainedArtifacts: await collectFluidArtifacts(artifactDirectory, started),
     collectionErrors: [...new Set(collectionErrors)],
   };
   try {
