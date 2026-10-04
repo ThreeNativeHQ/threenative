@@ -851,14 +851,18 @@ describe("a level render's own submissions with and without GPU keys", () => {
     // The fixture has to carry the case at all: the far band's main mesh is the level the lod switch
     // moved placements into, and the band the regression emptied is that one.
     expect(off.mainPass.far, "the fixture holds a far band").toBeGreaterThan(0);
-    expect(off.mainPass.records, "the control published records to the main pass").toBeGreaterThan(0);
+    expect(off.mainPass.records, "the control published records to the main pass").toBeGreaterThan(
+      0,
+    );
     console.info(
       `TN_SHADOW_KEY_MAIN_PASS off=${JSON.stringify(off.mainPass)} on=${JSON.stringify(on.mainPass)}`,
     );
     expect(on.mainPass.meshes, "the flag moved the main pass's own meshes").toEqual(
       off.mainPass.meshes,
     );
-    expect(on.mainPass.records, "the flag moved the main pass's records").toBe(off.mainPass.records);
+    expect(on.mainPass.records, "the flag moved the main pass's records").toBe(
+      off.mainPass.records,
+    );
     expect(on.mainPass.far, "the flag emptied the far band").toBe(off.mainPass.far);
     on.dispose();
     off.dispose();
