@@ -26,13 +26,33 @@ const SIZE = 9;
 
 /** The grade itself, in display-referred [0, 1] — which is what a `.cube` is written against. */
 const CONTRAST = 1.06;
-const PIVOT = 0.18;
-const GAIN = { b: 0.94, g: 1, r: 1.07 };
+
+/**
+ * The pivot is mid-grey, and that is most of what makes this a default rather than a look. A pivot
+ * at 0.18 — where this table started — leaves everything above it brighter, because a contrast
+ * curve anchored low down lifts the whole middle of the range: measured on the frame, it moved
+ * mid-grey up 8 of 255 steps and the sky up 12, which is what "washed toward cream" and "muddy"
+ * read like on screen. Anchored at 0.5 it darkens below the middle, brightens above it, and keeps
+ * the blacks where they were.
+ */
+const PIVOT = 0.5;
+
+/**
+ * The channel mixer, and deliberately the smallest one that is still a grade.
+ *
+ * This started at `{ b: 0.94, g: 1, r: 1.07 }` — a 13% warm spread. A blind judge compared the
+ * starter with that table against the starter without one and preferred **no table**: grey
+ * concrete read as sandstone, the sky as cream, and the whole frame as mud. A default that makes
+ * the picture worse is not a default, so the spread is now about 1/26 of that — one 8-bit step or
+ * less on concrete and on sky alike, which is what `__tests__/grade.spec.ts` pins. A game that
+ * wants the warm look names its own gain here.
+ */
+const GAIN = { b: 0.9975, g: 1, r: 1.0025 };
 
 /**
  * Contrast about a pivot: a power function that leaves the pivot alone and darkens below it. This
- * is the one operation a grading tool would call a curve; the gain below is its channel mixer, and
- * it is why the top of the warm channels clips — a gain above one cannot brighten a pixel that is
+ * is the one operation a grading tool would call a curve; the gain above is its channel mixer, and
+ * it is why the top of the warm channel clips — a gain above one cannot brighten a pixel that is
  * already white, which is what the table above says about highlights.
  */
 const grade = (value, channel) =>

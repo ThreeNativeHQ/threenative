@@ -147,6 +147,36 @@ describe("starter grade table", () => {
   });
 });
 
+/**
+ * A default must never degrade the look it ships with (owner, PRD-492). This table first shipped
+ * with a 13% warm spread, and a blind judge compared the starter with it against the starter with
+ * no table at all and preferred **no table**: grey concrete read as sandstone, the sky as cream,
+ * the frame as mud. So the shipped numbers answer to three claims, measured here on the shipped
+ * table — arithmetic, not a capture, and `sampled()` is what the hardware returns.
+ */
+describe("the shipped grade is a default, not a look", () => {
+  const at = (value: number, channel: number): number =>
+    sampled(shipped.bytes, shipped.size, value, channel);
+
+  it("moves concrete and sky by at most one 8-bit step of hue", () => {
+    // The two surfaces the judge named. The warm spread is this r/b distance, and the shipped
+    // table stores 8-bit codes, so the claim is a count of codes — which also absorbs the 9³
+    // interpolation's own sub-step noise. The table this replaced moved concrete by 12.
+    for (const [surface, value] of [
+      ["concrete", 0.35],
+      ["sky", 0.9],
+    ] as const) {
+      const codes = Math.round(Math.abs(at(value, 0) - at(value, 2)) * 255);
+      expect(codes, surface).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it("keeps more contrast than the ungraded frame, and lifts no black", () => {
+    expect(at(0.75, 1)).toBeGreaterThan(0.75);
+    expect(at(0.05, 1)).toBeLessThan(0.05);
+  });
+});
+
 /** A table that exists. `available()` never reads it — `build()` does. */
 const LOADED: IGradeTable = { size: 9, texture: {} as IGradeTable["texture"] };
 
@@ -184,6 +214,19 @@ describe("starter grade tiers", () => {
     expect(available("grain", { ...gradePreset("high"), grainIntensity: 0 }, true)).toBe(
       "grainIntensity:0",
     );
+  });
+
+  it("keeps the shipped grain below what an 8-bit frame can show", () => {
+    // `film()` returns `base + base * clamp(noise + 0.1, 0, 1)`, so its largest move on a pixel is
+    // that pixel's own value times the intensity — at white, the intensity alone. It shipped at
+    // 0.12 and a blind judge named the result: "grain clearly visible as speckle over sky and flat
+    // walls". A default must not degrade the look, so the number stays under one step; it stays
+    // above zero so `TN_RENDER_CHAIN` can still name grain as applied at `high`.
+    for (const tier of ["low", "medium", "high"] as const) {
+      const intensity = gradePreset(tier).grainIntensity;
+      expect(intensity * 255, tier).toBeLessThanOrEqual(1);
+    }
+    expect(gradePreset("high").grainIntensity).toBeGreaterThan(0);
   });
 
   it("keeps every tier's presets reachable by name and unknown names fatal", () => {

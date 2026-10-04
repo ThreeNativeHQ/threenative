@@ -121,14 +121,22 @@ const QUALITY_PRESETS: Record<QualityTier, IWorldEnvironmentOptions> = { high, l
  * This game's colour grade and grain, per tier. The table itself lives in `public/grade.cube` and
  * the maths in `grade.ts`; these are the four numbers the look is dialled with.
  *
+ * **The grain default is 1/255, and that is the point.** `film()` scales its noise by
+ * the pixel's own value, so on mid-grey concrete this moves a channel by well under half an 8-bit
+ * step — below what the framebuffer can show. It shipped at 0.12, and a blind judge called the
+ * result "grain clearly visible as speckle over sky and flat walls and behind HUD text". A default
+ * must never degrade the look, so raise this number when you want the film look: 0.12 is a visible
+ * grain, 0.3 a heavy one.
+ *
  * A zero refuses its stage rather than running it at zero strength, so `low` — a phone, where a
  * moving grain is the first thing to go — reports `grain` as refused with its reason instead of
  * reading as applied. The grade survives there: it is one texture fetch and the frame is the
- * same frame without it.
+ * same frame without it. `high` keeps a non-zero grain on purpose, so `TN_RENDER_CHAIN` can still
+ * name it as applied there rather than reporting the stage a default deliberately declined to run.
  */
 const GRADE_PRESETS: Record<QualityTier, IGradeSettings> = {
-  high: { gradeIntensity: 1, grainAnimated: true, grainIntensity: 0.12, tier: "high" },
-  medium: { gradeIntensity: 1, grainAnimated: false, grainIntensity: 0.1, tier: "medium" },
+  high: { gradeIntensity: 1, grainAnimated: true, grainIntensity: 0.0039, tier: "high" },
+  medium: { gradeIntensity: 1, grainAnimated: false, grainIntensity: 0.0039, tier: "medium" },
   low: { gradeIntensity: 1, grainAnimated: false, grainIntensity: 0, tier: "low" },
 };
 

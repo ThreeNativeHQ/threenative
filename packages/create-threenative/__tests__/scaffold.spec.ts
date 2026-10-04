@@ -187,7 +187,10 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   sailing: "f7325e140caa16beec51dcf21a4783043a2f3c59fcf8c835efe7cbf83d16fbc5",
   shooter: "631f25520770c31348c19c83c8c75fba2c582444e819728c2209093d92f09538",
   snow: "db0d2981e2eb00eeadcd67e08dcdcc363b89d5040f4f663d5519625de2d82855",
-  starter: "04fa7a2bcec3143bd2e31a1736716b49daf0c1a8b6be8f4f58bc827f190af838",
+  // Restated 2026-10-04 for PRD-492's neutralised default: `public/grade.cube` (the table itself)
+  // and `src/render/quality.ts` (the grain numbers) changed, then the table.s pivot moved to
+  // mid-grey. No other kit.s tree moved.
+  starter: "c2160b5f33cd44bf116038b91c1e6ad26c5be09db09760892471c83cd93108b4",
   "tower-defense": "5920816de90126bf2426114402445087ac3ca6c7ce483d2d3d0f43c07c413973",
 };
 
