@@ -39,6 +39,7 @@
       "examples/abyss-vanilla/vite.config.js",
       "examples/auto-lod/public/**",
       "examples/abyss-framework/public/**",
+      "examples/prd493-terrain-splat/public/**",
       "examples/abyss-framework/vq-assets/.generated/**",
       "examples/csg-doorway/public/**",
       "docs/benchmark/sweeps/**",

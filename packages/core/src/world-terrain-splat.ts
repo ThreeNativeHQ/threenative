@@ -483,9 +483,9 @@ export async function loadTerrainSplat(options: ILoadTerrainSplatOptions): Promi
   material.aoNode = ormSample.r;
   material.roughnessNode = ormSample.g;
   material.metalnessNode = ormSample.b;
-  console.info(
-    `TN_TERRAIN_SPLAT layers=${String(all.length)} samplers=${String(samplers)} ` +
-      `stacked=${String(stackedSets)}`,
-  );
+  // One line, printed and kept on the material: what this surface costs, readable by a game that
+  // wants to assert it rather than scrape a console.
+  material.userData.TN_TERRAIN_SPLAT = `layers=${String(all.length)} samplers=${String(samplers)} stacked=${String(stackedSets)}`;
+  console.info(`TN_TERRAIN_SPLAT ${material.userData.TN_TERRAIN_SPLAT as string}`);
   return material;
 }
