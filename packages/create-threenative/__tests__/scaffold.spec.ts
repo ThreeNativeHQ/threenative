@@ -173,7 +173,7 @@ const BUG_REPORT_SKILL_PATHS = [
 // Current develop c18a42b integration: all13 actual generated trees were byte-compared
 // against reviewed 8bf trees; only the copied Three compute-only Storage3DTexture patch changed.
 // TypeScript 7 upgrade: all 13 actual generated trees recover the prior hash when only
-// package.json is restored. Compiler manifest bytes are the entire scaffold delta.
+// package.json and rain's shader API import are restored. Those compiler bytes are the full delta.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Measured through actual createProject trees after exposure/fog consolidation and restamping,
   // then again on the merge carrying the WebGPU adapter-retention Three patch: the scaffolded
@@ -184,7 +184,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   platformer: "b62f09bb1f3ffc4894af515fe2821a5b8ec6d4e75474e0de3a808084d1e3cecf",
   puzzle: "9bca4fcc9c55caa70645c1960be2f61219513ca4a1e92f7d9ef0ecd13dced69d",
   racing: "940c37919b667fbd9823e01c73a3b99b60f0815709f9bbf1d956d24392ca7030",
-  rain: "0096a3103c5e9d6bf3b43184aaa7f1fb06f5732166b3c310bc4c447a35ed90ce",
+  rain: "eb170ab0eaa78c54628698c6e934383a26c1ce7bde910a531170e44f3dbd8f41",
   rts: "d63cc1c0c0033b6d25269ecc64c5add970f3f7c2776d17ad93a2cffe68d3b015",
   runner: "250abc329712cddaf25f812d1409048136802db5070f765cb8fb7f1c76c2d92e",
   // Initial finite-height readiness plus its scene-owned lifecycle helper and mirrored docs.
