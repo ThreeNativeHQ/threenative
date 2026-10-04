@@ -215,8 +215,21 @@ describe("licensed pack characterization", () => {
         .material as MeshPhysicalNodeMaterial;
       expect(material.alphaToCoverage).toBe(true);
       expect(material.aoNode).not.toBeNull();
-      expect(material.normalNode).not.toBeNull();
       expect(material.specularIntensity).toBe(0);
+    } finally {
+      pack.dispose();
+    }
+  });
+  it("keeps the imported normal map in the forest crown normal", async () => {
+    const near = fixture();
+    const pack = await loaded(near.root);
+    try {
+      const material = present(present(pack.parts.get("spruce:0"))[0])
+        .material as MeshPhysicalNodeMaterial;
+      // The bent crown normal is the geometry's own; the imported normal map perturbs it. A custom
+      // `normalNode` replaces both, and the crown shades as one flat card.
+      expect(material.normalNode).toBeNull();
+      expect(material.normalMap).toBe(near.material.normalMap);
     } finally {
       pack.dispose();
     }

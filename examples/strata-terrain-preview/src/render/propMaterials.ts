@@ -770,9 +770,13 @@ function needleMaterial(
     if (arms === undefined) material.normalNode = bumpMap(texture(relief), float(0.55));
     else material.normalMap = relief;
   }
-  // The geometry's own normal, unflipped on the back face: the bent crown normal is the same on both
-  // sides of a card, which is the point — the far face of a sunlit branch is still on the sun side.
-  if (bent) material.normalNode = normalViewGeometry;
+  // The bent crown normal is the geometry's own (see `spruce.ts`), unflipped on the back face. The
+  // relief bump above perturbs that same geometry normal, so volume and relief are one node and
+  // the map survives. Replacing the node with the bare geometry normal after the fact discarded
+  // the relief — a crown of flat cards — so it is only the fallback for a crown whose art carries
+  // no relief at all, and never overwrites a map the art did carry.
+  if (bent && material.normalNode === null && material.normalMap === null)
+    material.normalNode = normalViewGeometry;
   if (arms !== undefined) material.roughnessNode = texture(arms).g.mul(0.35).add(0.6);
   else material.roughness = 0.96;
   // And the light coming *through* the card, which the standard shading cannot produce.
@@ -841,6 +845,20 @@ export interface IPropSurfaces {
 }
 
 /**
+ * Give a cutout surface the image-based light its silhouette needs.
+ *
+ * A cutout PBR material with no environment anywhere in the scene is what the engine prints
+ * `TN_UNLIT_FOLIAGE` for: a needle card and its back face fall on one flat hemisphere value and
+ * the crown reads as a painted board. The imported pack carries this per material because the
+ * scene's own environment was reverted (it washed the ground white); the procedural starter draws
+ * its own surfaces, so it has to carry the same light. One helper, so the two paths cannot drift.
+ */
+export function skyEnvironment(material: MeshStandardNodeMaterial, sky: Texture): void {
+  material.envMap = sky;
+  material.envMapIntensity = 1.13;
+}
+
+/**
  * Build every prop surface, loading the starter maps in the background.
  *
  * A map that never arrives leaves the prop drawn on its own colours rather than missing: the trunk is
@@ -851,6 +869,7 @@ export async function createPropSurfaces(
   assets?: IAssetLoader,
   ground?: IPropGround,
   biome?: IBiome,
+  skyLight?: Texture,
 ): Promise<IPropSurfaces> {
   const seconds = uniform(0) as unknown as Node<"float">;
   const under = ground === undefined ? undefined : groundHeight(ground);
@@ -1080,6 +1099,11 @@ export async function createPropSurfaces(
     );
   }
   rockGround?.apply(stoneMaterial);
+  // The alpha-cut, double-sided surfaces: a needle card, a frond, a petal. Without an image-based
+  // light each is a flat paddle, which is the paperboard the engine warns about at scene entry.
+  if (skyLight)
+    for (const role of ["crown", "needles", "pine", "impostor", "fern", "petal"] as const)
+      skyEnvironment(materials[role] as MeshStandardNodeMaterial, skyLight);
   let disposed = false;
   return {
     inputs: {

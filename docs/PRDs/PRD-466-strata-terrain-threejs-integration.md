@@ -2876,3 +2876,27 @@ Junk audit found nothing safe to delete: no tracked source file in `packages/ter
 is unreferenced, `measure-embankment.mjs` / `measure-light.mjs` have no by-name reference but are the
 reproducible proof tools behind AC-5 and the lighting calibration, and the 109 MB `artifacts/pr381-*`
 trees are ignored local A/B captures, not commits. No file was removed.
+
+### 2026-10-04 — paperboard foliage: two concrete causes, both red→green
+
+Owner report: trees read as poor-quality paperboard; the same packs look right in Wildwood
+(`~/projects/threenative/sandbox/wildwood`). Comparing the two surfaces' graphs gave two causes.
+
+1. **The custom foliage-normal path bypassed the imported normal map.** `pack.ts` installed the bare
+   geometry normal as `normalNode` for forest crowns, and `needleMaterial` overwrote the relief
+   `bumpMap` with `normalViewGeometry`. Three's `setupNormal()` returns `normalNode` when set, so
+   either assignment *replaces* `materialNormal` and discards the map — a crown of flat cards.
+   Wildwood's `createSharedFoliageMaterial` sets `material.normalMap` and never overrides the node.
+   Fixed the same way: the custom path now only fills in when the art carries no map
+   (`pack.ts`), and the crown keeps its relief bump (`needleMaterial`).
+2. **The procedural cutout surfaces had no image-based light.** Only `pack.ts` gave its imported
+   surfaces the Kloofendal HDRI as a per-material `envMap`; `createPropSurfaces` never did, so a
+   machine without the licensed pack drew every crown, frond and petal unlit. A shared
+   `skyEnvironment()` helper now serves both paths, applied to `crown`/`needles`/`pine`/`impostor`/
+   `fern`/`petal`, with the game passing the one loaded HDRI into `createPropSurfaces`.
+
+Evidence: new `prop-surfaces.spec.ts` and a new `prop-lod.spec.ts` case were red against the old
+source (bare geometry normal, relief dropped) and green after. `prop-lod` + `prop-surfaces`
+**17/17 PASS**; example `tsc --noEmit` clean; biome clean. The in-repo WebGPU capture is unusable on
+this box (SwiftShader drops the device), so no new pixels are claimed; the unit checks pin the
+graph, not the picture. AC-5 stays open.

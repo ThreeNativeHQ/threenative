@@ -53,7 +53,12 @@ import {
   biomeWeights,
   desertRockColor,
 } from "./biomes.js";
-import { type IPropGround, createRockGround, lightNeedles } from "./propMaterials.js";
+import {
+  type IPropGround,
+  createRockGround,
+  lightNeedles,
+  skyEnvironment,
+} from "./propMaterials.js";
 import type { IPropPart, PropRole } from "./props.js";
 
 interface IPackSpecies {
@@ -307,7 +312,13 @@ function surface(
           : world === "forest"
             ? mix(0.35, 1, inner)
             : mix(0.26, 0.72, inner.pow(2));
-        if (world === "forest") material.normalNode = normalViewGeometry;
+        // The bent crown normal is the geometry's own (radial, from `addRadialCoverage`); the
+        // imported normal map perturbs that same geometry normal. Installing the bare geometry
+        // normal as `normalNode` replaced the normal node and discarded the map, so the crown
+        // shaded as one flat card. The custom path only fills in where the art carries no map — an
+        // imported surface sets `normalMap` and leaves the node to Three, which also applies the
+        // texture's own normal packing. This mirrors the reference scene exactly.
+        if (world === "forest" && !source.normalMap) material.normalNode = normalViewGeometry;
       } else if (asset === "poppy") {
         // Keep the photographed red petals; lift only the nearly black stems/seed pods.
         const dark = smoothstep(0.045, 0.008, sampled.r.max(sampled.g).max(sampled.b));
@@ -355,16 +366,13 @@ function surface(
   // Image-based sky light, as Wildwood lights the same Fab packs (Kloofendal at 1.8 × 0.629).
   // Without it a shaded needle card gets only the hemisphere fill and falls to one flat dark value.
   // Per material, not `scene.environment`: the ground is tuned to the fill alone and cannot opt out.
-  if (skyLight && !stone) {
-    material.envMap = skyLight;
-    material.envMapIntensity = 1.13;
-  }
+  if (skyLight && !stone) skyEnvironment(material, skyLight);
   return material;
 }
 
 let skyLight: Promise<Texture | undefined> | undefined;
 /** The CC0 sky photograph, loaded once; absent locally, vegetation keeps the fill alone. */
-function loadSkyLight(assets: IAssetLoader): Promise<Texture | undefined> {
+export function loadSkyLight(assets: IAssetLoader): Promise<Texture | undefined> {
   skyLight ??= assets
     .resolve("prepared/kloofendal_48d_2k.hdr")
     .then(async ([url]) => {

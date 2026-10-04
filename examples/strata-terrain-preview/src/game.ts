@@ -8,19 +8,26 @@ import {
   RigidBody3D,
   rapier,
 } from "@threenative/physics";
-import { CapsuleGeometry, Mesh, MeshStandardMaterial, PerspectiveCamera, OrthographicCamera, Vector3 } from "three";
+import {
+  CapsuleGeometry,
+  Mesh,
+  MeshStandardMaterial,
+  OrthographicCamera,
+  PerspectiveCamera,
+  Vector3,
+} from "three";
 import { BIOMES, type WorldName } from "./render/biomes.js";
 import { createOcean, createWaterMesh } from "./render/ocean.js";
-import { loadPack } from "./render/pack.js";
+import { loadPack, loadSkyLight } from "./render/pack.js";
 import { loadPreparedProps } from "./render/prepared.js";
 import { createPropSurfaces } from "./render/propMaterials.js";
+import { createStreamedProps, invalidatePropShadows } from "./render/propStreaming.js";
 import {
   type PropGroundQuery,
   buildPropVariants,
   flatPropMaterials,
   variantFor,
 } from "./render/props.js";
-import { createStreamedProps, invalidatePropShadows } from "./render/propStreaming.js";
 import { type IRiverWater, WATER_LAYER, createLakes, createRivers } from "./render/river.js";
 import { type IPlacementField, scatterProps } from "./render/scatter.js";
 import { type IOutdoorSky, createOutdoorSky, installOutdoorOcclusion } from "./render/sky.js";
@@ -600,9 +607,10 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
       // loaders run together and fail soft per file, so one missing species costs that species and
       // nothing else. One load, because `afterPhysics` runs every frame.
       const buildProps = async (): Promise<void> => {
-        const [prepared, pack] = await Promise.all([
+        const [prepared, pack, skyLight] = await Promise.all([
           loadPreparedProps(ctx.assets),
           loadPack(ctx.assets, world, data),
+          ctx.assets ? loadSkyLight(ctx.assets) : Promise.resolve(undefined),
         ]);
         preparedDispose = () => {
           prepared.dispose();
@@ -620,13 +628,25 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
         if (world === "desert" && dryStone && !pack.parts.has("boulder:0"))
           parts.set("boulder:0", dryStone);
         propParts = buildPropVariants(parts, fallbackSaplingHeight);
-        const surfaces = await createPropSurfaces(ctx.assets, data, biome);
+        const surfaces = await createPropSurfaces(ctx.assets, data, biome, skyLight);
         this.#surfaces = surfaces;
         surfacesDispose = surfaces.dispose;
-        if (released) { surfaces.dispose(); return; }
+        if (released) {
+          surfaces.dispose();
+          return;
+        }
         props = await createStreamedProps({
-          placements: scatter.placements, groundAt, parts: propParts,
-          materials: surfaces.materials, assets: ctx.assets, follow: ctx.camera, size: data.size, horizonDistance: ctx.camera instanceof PerspectiveCamera || ctx.camera instanceof OrthographicCamera ? ctx.camera.far : 5000,
+          placements: scatter.placements,
+          groundAt,
+          parts: propParts,
+          materials: surfaces.materials,
+          assets: ctx.assets,
+          follow: ctx.camera,
+          size: data.size,
+          horizonDistance:
+            ctx.camera instanceof PerspectiveCamera || ctx.camera instanceof OrthographicCamera
+              ? ctx.camera.far
+              : 5000,
           whileCurrent: () => !released,
           invalidateShadows: (region) => {
             const shadows = sky.sun.shadow.shadowNode;
@@ -634,7 +654,10 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
           },
         });
         if (!props) return;
-        if (released) { props.dispose(); return; }
+        if (released) {
+          props.dispose();
+          return;
+        }
         // ctx.add registers render-cadence processing. Never manually update these worlds.
         for (const stream of props.worlds) ctx.add(stream);
 
@@ -688,9 +711,7 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
                 : {}),
               drawn:
                 props?.meshes.some(
-                  (draw) =>
-                    draw.count > 0 &&
-                    /(mountain|volcanic)/.test(draw.name),
+                  (draw) => draw.count > 0 && /(mountain|volcanic)/.test(draw.name),
                 ) ?? false,
             },
             totalInstances: props?.meshes.reduce((sum, draw) => sum + draw.count, 0) ?? 0,
@@ -701,7 +722,6 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
               ) ?? 0,
           }),
         });
-
       };
 
       let frames = 0;
@@ -810,7 +830,12 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
         frames++;
         const streaming = props?.stats();
         const worldReady = props?.ready ?? false;
-        if (worldReady && !released && !readyTimePending && ctx.state.getState().timeToReadyMs < 0) {
+        if (
+          worldReady &&
+          !released &&
+          !readyTimePending &&
+          ctx.state.getState().timeToReadyMs < 0
+        ) {
           readyTimePending = true;
           void ctx.startup.whenReady().then(() => {
             if (!released) ctx.state.set({ timeToReadyMs: Date.now() - launchedAt });
