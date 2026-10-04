@@ -21,6 +21,7 @@ import { BundleGroup } from "three/webgpu";
 import { type IAssetLoader, createAssetLoader } from "./assets.js";
 import type { IComputeDriven } from "./compute-driven.js";
 import { markEngineRenderHook } from "./engine-render-hook.js";
+import { INSTANCED_LOD_MAX_PIXEL_ERROR } from "./instanced-batch-lod.js";
 import { InstancedBatch } from "./instanced-batch.js";
 import { mergeByMaterial } from "./merge-parts.js";
 import { type ILodChain, biasedLodDistance, lodChainOf, setLodBias } from "./model-lod.js";
@@ -193,7 +194,7 @@ const DEFAULT_AUTO_LOD_VIEWPORT_HEIGHT = 1080;
  * The screen-space error budget a baked chain's levels are switched at, in pixels, when the world
  * names none. See `IWorldCellsLoadOptions.autoLod`.
  */
-const DEFAULT_AUTO_LOD_MAX_PIXEL_ERROR = 4;
+const DEFAULT_AUTO_LOD_MAX_PIXEL_ERROR = INSTANCED_LOD_MAX_PIXEL_ERROR;
 /**
  * GPU bytes of completed impostor atlases one world admits, 128 MiB. A 128 px two-attachment RGBA8
  * atlas with mips is 2,796,160 B, so 48 fit and the 49th is refused before its atlas is allocated,
