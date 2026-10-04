@@ -4216,6 +4216,10 @@ export class WorldCells extends Group implements IComputeDriven {
     // After the bake handoff, so a wide block it deferred to this frame's exhausted allowance is
     // claimed now; a no-op on every frame with nothing waiting.
     this.#retryWide();
+    // After the same way: a key the prewarm minted without a twin, because this update's fresh-mesh
+    // allowance was already spent when its shadow twin was asked for. Bounded by that allowance, so
+    // it is a walk frame that pays for a node build rather than a shadow render.
+    this.#mintShadowTwins();
     // After the near work, so a species no resident run has asked for still bakes and reaches the
     // far mesh without the camera ever traversing its cell. Bounded to one asset per idle frame.
     this.#pumpFarAcquisition();
@@ -5823,13 +5827,15 @@ export class WorldCells extends Group implements IComputeDriven {
    * already meant: a placement the dispatch routes to a level with no mesh casts nothing here,
    * exactly as it casts nothing from a caster half nobody minted.
    */
-  #shadowKeyFor(key: IKeyDescriptor, part: IAssetPart): void {
+  #shadowKeyFor(key: IKeyDescriptor): void {
     // Registered here rather than at construction, because it is a question about keys that exist:
     // a level's dispatch asks the provider for the keys a map draws, and the answer is this world's.
     // Without a provider the scene registers nothing, which is what keeps the flag from minting
     // anything at all; see `shadowGpuKeysRequested`.
     this.#gpuScene.shadowKeysFrom(() => this.#shadowKeyNames);
     if (this.#keysForShadow() === false || this.#casts(key.level) === false) return;
+    const part = this.#assets.get(key.asset)?.levels[key.level]?.[key.part];
+    if (part === undefined) return;
     const name = `${key.key}${GPU_KEY_SUFFIX}`;
     this.#shadowKeyNames.add(key.key);
     let shared = this.#shared.get(name);
@@ -6264,7 +6270,7 @@ export class WorldCells extends Group implements IComputeDriven {
       // A sibling may have grown the level's capacity without moving this mesh, so the submission
       // bound follows the live region rather than the dress that wrote it. See `gpuCount`.
       shared.gpuCount = held?.capacity ?? shared.gpuCount;
-      if (part !== undefined) this.#shadowKeyFor(key, part);
+      this.#shadowKeyFor(key);
       return;
     }
     const region = scene.key(key.key, new Float32Array(part.local.elements), capacity, {
@@ -6328,7 +6334,28 @@ export class WorldCells extends Group implements IComputeDriven {
     // The shadow twin of this key, minted and dressed on the same pass that named the main one: a
     // level that draws keys finds its mesh in the same frame the main pass found its buffer, and a
     // regrown twin is re-dressed here rather than left on the buffer the dispatch replaced.
-    this.#shadowKeyFor(key, part);
+    this.#shadowKeyFor(key);
+  }
+
+  /**
+   * Hand every resident main key the shadow twin it is missing, one allowance's worth per update.
+   *
+   * `#dressGpu` is where a twin is minted, and it runs when a key is minted or rebound — for a world
+   * whose ring the prewarm built before the GPU scene came up, that is one pass per key, the one that
+   * seeds it. A twin that lost that pass's fresh-mesh race was then a key no shadow level could draw:
+   * the level's own counter reported the missing ones as zero keyed draws and the forest's shadow came
+   * from the merged proxies alone. This is the pass that was missing, and it is bounded by the same
+   * allowance, so a world's whole key table is minted over as many updates as it takes slots rather than
+   * over as many as the walk happens to re-mint a key.
+   */
+  #mintShadowTwins(): void {
+    if (this.#keysForShadow() === false) return;
+    for (const shared of this.#shared.values()) {
+      if (this.#freshThisUpdate >= this.#freshMeshesPerUpdate) return;
+      if (shared.role !== "main" || shared.main === undefined) continue;
+      if (this.#shared.has(`${shared.main.key}${GPU_KEY_SUFFIX}`)) continue;
+      this.#shadowKeyFor(shared.main);
+    }
   }
 
   /**

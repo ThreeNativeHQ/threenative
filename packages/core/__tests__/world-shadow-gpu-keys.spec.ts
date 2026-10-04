@@ -504,7 +504,15 @@ describe("a shadow level's GPU-key selection against the cluster path", () => {
 });
 
 /** `VirtualShadowNode`'s own per-level row, paired with the bill measured inside that same render. */
-type ILevelStat = { readonly draws: number; readonly drawsBy: { readonly keys: number } };
+type ILevelStat = {
+  readonly draws: number;
+  readonly drawsBy: {
+    readonly cluster: number;
+    readonly keys: number;
+    readonly small: number;
+    readonly wide: number;
+  };
+};
 
 /**
  * What one level render submitted, counted the way three counts it: the camera's layer mask decides
@@ -515,6 +523,8 @@ type ILevelStat = { readonly draws: number; readonly drawsBy: { readonly keys: n
 interface ILevelSubmissions {
   keys: number;
   casters: number;
+  /** Of the caster meshes, the ones alone on the cluster layer — the half a keyed camera still draws. */
+  cluster: number;
   proxies: number;
   layer0: number;
   /** Every submitted draw, and how many of them were one indirect record rather than a whole mesh. */
@@ -539,7 +549,11 @@ interface IArmResult {
  * modelled. The GPU scene's own dispatches are counted rather than executed — nothing below needs a
  * device, and what is being counted is what a level submits.
  */
-async function measureSubmissions(keys: boolean): Promise<IArmResult> {
+async function measureSubmissions(
+  keys: boolean,
+  extents: readonly number[] = CLIP_EXTENTS,
+  gpuScene = true,
+): Promise<IArmResult> {
   vi.stubGlobal("__tnShadowGpuKeys", keys ? 1 : 0);
   stubFixtureFetch();
   const scene = new Scene();
@@ -548,20 +562,21 @@ async function measureSubmissions(keys: boolean): Promise<IArmResult> {
   light.castShadow = true;
   scene.add(light, light.target);
   const node = new VirtualShadowNode(light, {
-    clipExtents: [...CLIP_EXTENTS],
+    clipExtents: [...extents],
     mapSize: MAP_SIZE,
     marker: false,
     minCasterTexels: MIN_CASTER_TEXELS,
   });
   node.setup(builder);
   const keyLayer = 1 << VIRTUAL_SHADOW_KEY_LAYER;
+  const clusterLayer = 1 << VIRTUAL_SHADOW_CASTER_LAYER;
   const casterLayers =
-    (1 << VIRTUAL_SHADOW_CASTER_LAYER) |
+    clusterLayer |
     (1 << VIRTUAL_SHADOW_WIDE_CASTER_LAYER) |
     (1 << VIRTUAL_SHADOW_SMALL_CASTER_LAYER);
   const held: ILevelSubmissions[] = [];
   /** Which levels took this frame's render, so its published row can be paired with its bill. */
-  const rendered = CLIP_EXTENTS.map(() => false);
+  const rendered = extents.map(() => false);
   let levelRenders = 0;
   for (const [index, levelNode] of node.levelNodes.entries()) {
     const level = levelNode as unknown as ILevelNode;
@@ -573,6 +588,7 @@ async function measureSubmissions(keys: boolean): Promise<IArmResult> {
       const frustum = frustumOf(camera);
       const one: ILevelSubmissions = {
         casters: 0,
+        cluster: 0,
         draws: 0,
         indirect: 0,
         keys: 0,
@@ -597,8 +613,10 @@ async function measureSubmissions(keys: boolean): Promise<IArmResult> {
           one.keys += 1;
           if (mesh.geometry.indirect !== undefined) one.indirect += 1;
         } else if (mesh.name.endsWith("-shadow")) one.proxies += 1;
-        else if ((mesh.layers.mask & casterLayers) !== 0) one.casters += 1;
-        else if ((mesh.layers.mask & 1) !== 0) one.layer0 += 1;
+        else if ((mesh.layers.mask & casterLayers) !== 0) {
+          one.casters += 1;
+          if ((mesh.layers.mask & clusterLayer) !== 0) one.cluster += 1;
+        } else if ((mesh.layers.mask & 1) !== 0) one.layer0 += 1;
       });
     };
   }
@@ -615,13 +633,13 @@ async function measureSubmissions(keys: boolean): Promise<IArmResult> {
     admissionBudgetMs: Number.POSITIVE_INFINITY,
     budgets,
     follow: { position: { ...FOLLOW } },
-    gpuScene: true,
+    gpuScene,
     loadModel: async (url: string) => modelFor(path.basename(url, ".glb").replace("_lod1", "")),
     prefetchSeconds: 0,
     // The whole package, not the nine cells the selection case reads: a per-square bill only shows
     // what it costs when the level's window covers squares, which is the case the box is about.
     ring: 3,
-    shadows: { cast: true, castLevels: CLIP_EXTENTS.length },
+    shadows: { cast: true, castLevels: extents.length },
     surface: new MeshBasicMaterial(),
     url: "/world/world.json",
   });
@@ -637,7 +655,16 @@ async function measureSubmissions(keys: boolean): Promise<IArmResult> {
     for (const [index, one] of held.entries()) {
       if (rendered[index] !== true || one === undefined) continue;
       const row = node.stats.perLevel[index];
-      if (row !== undefined) one.stat = { draws: row.draws, drawsBy: { keys: row.drawsBy.keys } };
+      if (row !== undefined)
+        one.stat = {
+          draws: row.draws,
+          drawsBy: {
+            cluster: row.drawsBy.cluster,
+            keys: row.drawsBy.keys,
+            small: row.drawsBy.small,
+            wide: row.drawsBy.wide,
+          },
+        };
     }
     await flush();
   }
@@ -733,6 +760,43 @@ describe("a level render's own submissions with and without GPU keys", () => {
     }
     on.dispose();
     off.dispose();
+  });
+
+  /**
+   * Machinefall's shape: one shadow level, `shadowExtents: [250]`, and a launch whose GPU scene
+   * cannot come up — `gpuScene: false`, or a backend the scene refuses. The world then mints no
+   * shadow key and keeps its caster halves, while the flag still publishes the provider, so the node
+   * keys the level and its camera carries the key layer *and* the cluster layer.
+   *
+   * That is the state a real game measured: `drawsBy.keys = 0` with `cluster`, `wide` and `small` all
+   * zero too, so the row read 330 draws while the render was also submitting the forest's cluster
+   * meshes — a bill that says the keys replaced the halves when nothing had. The counter has to follow
+   * what the level's own camera submits: the key bill when the world minted keys, the cluster bill
+   * when it did not, and never a zero standing in for either.
+   */
+  it("counts the caster halves a keyed level still submits, on a single level with no keys minted", async () => {
+    const on = await measureSubmissions(true, [250], false);
+    expect(on.perLevel.length, "the one level rendered").toBe(1);
+    expect(on.keys, "a world with the scene off mints no shadow key").toEqual([]);
+    const [one] = on.perLevel;
+    // The level's own row against the meshes the render submitted, mesh for mesh.
+    expect(one?.stat?.drawsBy.keys, "a keyed level with no keys counts none").toBe(0);
+    expect(
+      one?.stat?.drawsBy.cluster,
+      "a keyed level's own camera still draws the cluster layer",
+    ).toBe(one?.cluster);
+    expect(one?.cluster, "the world kept the cluster half it minted").toBeGreaterThan(0);
+    // The wide and small halves are on layers a keyed camera does not carry, so they are not submitted
+    // and are not counted — the bill is the submissions, not the world's whole caster set.
+    expect(one?.stat?.drawsBy.wide).toBe(0);
+    expect(one?.stat?.drawsBy.small).toBe(0);
+    expect(one?.stat?.draws).toBe((one?.cluster ?? 0) + (one?.proxies ?? 0) + (one?.layer0 ?? 0));
+    console.info(
+      `TN_SHADOW_KEY_BILL keys=${String(one?.stat?.drawsBy.keys)} cluster=${String(one?.stat?.drawsBy.cluster)} ` +
+        `draws=${String(one?.stat?.draws)} submitted=${String(one?.draws)} ` +
+        `wideCasters=${String((one?.casters ?? 0) - (one?.cluster ?? 0))}`,
+    );
+    on.dispose();
   });
 });
 

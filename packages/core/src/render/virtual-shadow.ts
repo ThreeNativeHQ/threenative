@@ -1543,7 +1543,13 @@ export class VirtualShadowNode extends ShadowBaseNode {
       level.shadow.camera.layers.enable(VIRTUAL_SHADOW_SMALL_CASTER_LAYER);
     }
     // Proxies belong to both halves: their covered originals no longer cast.
-    const chosenCluster = keyed === false && (clustered || prewarming);
+    // A keyed level's camera carries the key layer *and* the cluster layer, so the cluster bill is what
+    // it submits from that layer whether or not the world minted keys: a keyed world mints no caster
+    // half and counts zero, and a world whose keys the GPU scene could not mint keeps the halves it did
+    // mint — and zeroing that bill is how a level reported 330 draws while submitting the forest's
+    // cluster meshes as well. The wide and small layers are not carried by a keyed camera, so their
+    // meshes are not submitted and stay at zero.
+    const chosenCluster = keyed === false ? clustered || prewarming : true;
     const chosenWide = keyed === false && (!clustered || prewarming);
     const chosenSmall = keyed === false;
     const by = stat.drawsBy;
