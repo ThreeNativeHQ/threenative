@@ -28,16 +28,23 @@ type State = {
 type Model = { scene: Group; animations: AnimationClip[] };
 type Owned = { geometries: number; textures: number };
 const names = ["meshopt", "draco"] as const;
-/** Frames an enter is given to upload its geometry and textures before it is measured or left. */
+/** Frames an enter is given to upload its geometry and textures before it is measured at all. */
 const SETTLE_FRAMES = 30;
+/** Sampled frames the tally has to hold still before the enter is read as settled. */
+const QUIET_FRAMES = 15;
+/** The frame an unsettled enter gives up on, so a backend that never goes quiet still cycles. */
+const MAX_FRAMES = 300;
 /** One first load plus three leave/re-enter cycles. */
 const ENTERS = 4;
+/** The action the lifecycle scenario's key step presses to arm the cycle. */
+const ARM = "lifecycle";
 
 // The lifetime ledger, at module scope because only a value that outlives the scene can count its
 // own re-entries: `ctx.goto()` keeps the published state, and every field below is re-derived on
 // each enter from the renderer's live tally.
 let enters = 0;
 let settled = 0;
+let armed = false;
 let baseline: Owned | undefined;
 const growth: Owned = { geometries: 0, textures: 0 };
 
@@ -110,7 +117,15 @@ export class AssetScene extends Scene<State> {
     let frames = 0;
     let maxPoseDelta = 0;
     let left = false;
-    return (_ctx: ICtx<State>, dt: number) => {
+    // This enter's own high-water tally and how long it has held still. `info.memory` counts what
+    // the backend has initialised, which lands over several frames, so the enter is read at the
+    // tally that stopped moving — a baseline taken on the first measured frame is smaller than the
+    // scene's own live set and every later enter reads as growth it never had.
+    const peak: Owned = { geometries: 0, textures: 0 };
+    let previous: Owned | undefined;
+    let quiet = 0;
+    return (ctx: ICtx<State>, dt: number) => {
+      if (ctx.input.justPressed(ARM)) armed = true;
       for (const player of this.#players) player.update(dt);
       for (const [index, node] of animated.entries())
         maxPoseDelta = Math.max(
@@ -119,11 +134,22 @@ export class AssetScene extends Scene<State> {
         );
       frames += 1;
       const owned = frames < SETTLE_FRAMES ? undefined : ownedResources(ctx);
+      let isSettled = false;
       if (owned !== undefined) {
-        baseline ??= owned;
-        growth.geometries = Math.max(growth.geometries, owned.geometries - baseline.geometries);
-        growth.textures = Math.max(growth.textures, owned.textures - baseline.textures);
-        settled = Math.max(settled, entry);
+        peak.geometries = Math.max(peak.geometries, owned.geometries);
+        peak.textures = Math.max(peak.textures, owned.textures);
+        quiet =
+          previous?.geometries === owned.geometries && previous.textures === owned.textures
+            ? quiet + 1
+            : 0;
+        previous = owned;
+        isSettled = quiet >= QUIET_FRAMES || frames >= MAX_FRAMES;
+        if (isSettled) {
+          baseline ??= { ...peak };
+          growth.geometries = Math.max(growth.geometries, peak.geometries - baseline.geometries);
+          growth.textures = Math.max(growth.textures, peak.textures - baseline.textures);
+          settled = Math.max(settled, entry);
+        }
       }
       ctx.state.set({
         frames,
@@ -133,14 +159,14 @@ export class AssetScene extends Scene<State> {
         ...(owned === undefined
           ? {}
           : {
-              ownedGeometries: owned.geometries,
-              ownedTextures: owned.textures,
+              ownedGeometries: peak.geometries,
+              ownedTextures: peak.textures,
               geometryGrowth: growth.geometries,
               textureGrowth: growth.textures,
             }),
       });
       // Leave once this enter has settled, so the next observation is a re-entry's, not this one's.
-      if (frames >= SETTLE_FRAMES && !left && entry < ENTERS) {
+      if (armed && isSettled && !left && entry < ENTERS) {
         left = true;
         void ctx.goto("void");
       }
@@ -185,6 +211,9 @@ export default defineGame<State>({
   scenes: { assets: AssetScene, void: VoidScene },
   start: "assets",
   plugins: [playtest()],
+  // One key arms the leave/re-enter cycle, and only the lifecycle scenario presses it: both runners
+  // deliver a `press` step as the same keydown, so this reads identically on web and on a device.
+  input: { [ARM]: { keys: ["KeyV"] } },
   display: config.display,
   render: config.renderer,
 });

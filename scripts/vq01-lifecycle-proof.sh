@@ -1,8 +1,9 @@
 #!/bin/sh
 # PRD-VQ-01 AC-2 lifecycle box: cook the unchanged examples/abyss-framework/vq-assets fixture for one
 # target, then run the leave/re-enter scenario against it. Identical to vq01-web-proof.sh and
-# vq01-android-proof.sh except for the scenario both of those name; the fixture decides when to leave
-# and re-enter, so there is no extra step to drive here.
+# vq01-android-proof.sh except for the scenario both of those name; the scenario's own first step
+# presses the fixture's lifecycle key, and both runners deliver a press step as the same keydown, so
+# the fixture leaves and re-enters on web and on the device without a URL and without a harness flag.
 #
 #   sh scripts/vq01-lifecycle-proof.sh <artifact-dir> web
 #   sh scripts/vq01-lifecycle-proof.sh <artifact-dir> android <serial>

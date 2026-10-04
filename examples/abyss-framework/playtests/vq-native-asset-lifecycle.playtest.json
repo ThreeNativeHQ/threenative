@@ -9,6 +9,14 @@
   "warmupFrames": 30,
   "steps": [
     {
+      "press": "KeyV",
+      "release": true,
+      "label": "arm the leave/re-enter cycle"
+    },
+    {
+      "waitTicks": 2
+    },
+    {
       "waitForResource": {
         "id": "state",
         "path": "settled",
@@ -61,25 +69,25 @@
         "id": "state",
         "path": "ownedGeometries",
         "gte": 1,
-        "allowTrivial": "The renderer's live geometry tally is only published once a settle window has uploaded the stage."
+        "allowTrivial": "The renderer's live geometry tally is only published once the settle window has measured a settled one; how many a backend initialises for this scene is its own business."
       },
       {
         "id": "state",
         "path": "geometryGrowth",
         "equals": 0,
-        "allowTrivial": "The exit path's disposal is exactly what makes the tally return to the first enter's baseline; the baseline is 0 growth by construction and only a leak can move it."
+        "allowTrivial": "The exit path's disposal is what makes a re-entry's settled tally return to the first enter's settled tally, and only a leak can move the difference between them."
       },
       {
         "id": "state",
         "path": "ownedTextures",
         "gte": 1,
-        "allowTrivial": "The renderer's live texture tally is only published once a settle window has uploaded the KTX2 and panel textures."
+        "allowTrivial": "The renderer's live texture tally is only published once the settle window has measured a settled one, which is after the KTX2 and panel textures have landed."
       },
       {
         "id": "state",
         "path": "textureGrowth",
         "equals": 0,
-        "allowTrivial": "The exit path's disposal is exactly what makes the tally return to the first enter's baseline; the baseline is 0 growth by construction and only a leak can move it."
+        "allowTrivial": "The exit path's disposal is what makes a re-entry's settled tally return to the first enter's settled tally, and only a leak can move the difference between them."
       },
       {
         "id": "state",
