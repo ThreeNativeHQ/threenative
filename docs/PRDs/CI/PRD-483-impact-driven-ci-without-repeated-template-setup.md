@@ -31,7 +31,7 @@ prd_contract: v1
 ### Phase 2 — Qualify the smaller pipeline
 
 - [x] Final typecheck, lint, docs and relevant unit checks pass. proof: `pnpm build`, `pnpm typecheck`, `pnpm lint`, `pnpm check:docs` exit 0; 303 focused tests passed, 2026-10-03.
-- [ ] Normal CI passes on this cleanup PR before ready/merge. proof: PR check run; no bypass authorized.
+- [ ] Normal CI passes on this cleanup PR before merge; the authorized ready transition starts qualification. proof: PR check run; no bypass authorized.
 
 ## Coverage and cost
 
@@ -86,3 +86,5 @@ Final bounded parent-review fixtures pass: 333 focused tests (318 CI contracts a
 Ordinary develop reviews retain affected coverage and existing Android coverage. Queue, main, explicit full and unknown inputs require all templates, both golden journeys, full native tier and every Integration lane. Integration is called by CI at the exact candidate; its completion job checks selected canonical receipts against completed-success Jobs API entries for this run and attempt, and `ci-required` independently repeats inventory and identity validation. Full-tree reusable matrix verdict reuse remains disabled.
 
 CPU fixtures exercise writer→collector→protected verdict and reject missing, skipped, failed, stale and wrong-source evidence. Live reusable job-name/output behavior and a genuinely exhaustive queue cold path remain unverified; partial reruns require all selected Integration legs in the current attempt. This follow-up does not complete #430's separate rollout checkbox, defer Android, or change queue settings/timeouts.
+
+PR #435's first ready run37237559625 attempt1 actually selected exhaustive qualification (all13templates, bothgoldens, full native and all Integration) at merge candidate `bb017d1cdf3a5a65f75adf131934abef0cbdd331`, distinct from workflow head `d11a545a8`. Its capture leg failed before runtime frames because the verifier's expected source input incorrectly included run/attempt artifact prefixes. The bounded repair restores the bare candidate SHA and retains attempt-qualified artifacts; proof: regression1 failing/66 passing →67/67 passing, plus299 related CPU contracts passed. Independent review approved the repair. Live corrected capture and full required joins remain unverified; no Android deferral, assertion waiver or timeout/settings change.

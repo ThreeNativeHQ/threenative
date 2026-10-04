@@ -737,3 +737,20 @@ it("fails closed when a shared producer reaches a newly added unclassified consu
   });
   expect(select(added, ["packages/core/tsup.config.ts"])).toEqual({ ...all, "new-core": true });
 });
+
+it("keeps the capture verifier's candidate SHA distinct from attempt-qualified artifacts", () => {
+  const capture =
+    (workflow.split("\n  capture:\n")[1] ?? "").split("\n  fluid-collision:\n")[0] ?? "";
+  const candidate = "b".repeat(40);
+  const evaluate = (value: string) =>
+    value
+      .replaceAll("${{ inputs.candidate_sha }}", candidate)
+      .replaceAll("${{ github.run_id }}", "123")
+      .replaceAll("${{ github.run_attempt }}", "2");
+  const expectedSource = capture.match(/EXPECTED_SOURCE_SHA: (.*)/u)?.[1];
+  expect(expectedSource).toBeDefined();
+  expect(evaluate(expectedSource as string)).toBe(candidate);
+  const diagnostic = capture.match(/name: (world-capture-diagnostic-.*)/u)?.[1];
+  expect(diagnostic).toBeDefined();
+  expect(evaluate(diagnostic as string)).toBe(`world-capture-diagnostic-123-2-${candidate}`);
+});
