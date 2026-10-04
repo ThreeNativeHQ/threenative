@@ -109,6 +109,12 @@ export const executionContracts = {
   "threenative-presentation-pacing-test": {
     invocations: [{ args: [], passLine: "PRESENTATION_PACING_OK" }],
   },
+  "threenative-canvas-presentation-test": {
+    invocations: [{ args: [], passLine: "native canvas presentation pixels passed" }],
+  },
+  "threenative-surface-texture-status-test": {
+    invocations: [{ args: [], passLine: "native surface acquisition status contract passed" }],
+  },
   "threenative-local-storage-test": {
     invocations: [{ args: [], passLine: "local_storage bindings: all assertions passed" }],
   },

@@ -333,6 +333,11 @@ function stage(definition: {
 function denoised(node: ReturnType<typeof denoise>): ChainNode {
   return node as unknown as ChainNode;
 }
+type OutputInstallation = { isCurrent(): boolean; dispose(): void };
+type OutputSetter =
+  | ((node: unknown, worldPass?: unknown) => void)
+  | ((node: unknown, worldPass?: unknown) => OutputInstallation);
+
 export type OutputRenderer = {
   kind: string;
   raw: unknown;
@@ -341,7 +346,9 @@ export type OutputRenderer = {
    * stage is off: the chain installs nothing for an empty stage list, and dropping the game's
    * own composition on the floor would be the silent no-op this class exists to prevent.
    */
-  setOutputNode?: (node: unknown, worldPass?: unknown) => void;
+  setOutputNode?: OutputSetter;
+  /** Legacy node-only clear. The returned receipt distinguishes same-node reinstalls. */
+  clearOutputNode?: (expectedNode?: unknown) => void;
   createRenderChain?: (options: {
     input?: unknown;
     worldPass?: unknown;
@@ -477,6 +484,11 @@ export class WorldEnvironment {
     }
     if (options.autoExposureEnabled && renderer.kind !== "webgpu")
       throw new Error(`Automatic exposure requires WebGPU; renderer:${renderer.kind}`);
+    if (requested.length === 0 && renderer.kind !== "webgpu") {
+      const dropped = [{ name: "baseColour", reason: `renderer:${renderer.kind}` }];
+      this.#reportApplied([], dropped);
+      return { dropped, stages: [] };
+    }
     raw.toneMappingExposure = 1;
 
     const scenePass = pass(scene, camera);
@@ -519,6 +531,23 @@ export class WorldEnvironment {
       exposure === undefined
         ? colour.mul(options.exposure)
         : applyExposure(colour, exposure.exposureNode);
+    let released = false;
+    const releaseGraph = (): void => {
+      if (released) return;
+      released = true;
+      exposure?.dispose();
+      // Only a newly created RTT is ours. A PassNode converts to a borrowed PassTextureNode;
+      // supplied TextureNodes/RTTs belong to the caller even when their resources are shared.
+      if (colour !== base && Reflect.get(colour, "isRTTNode") === true) {
+        const owned = colour as unknown as {
+          renderTarget: { dispose(): void };
+          _quadMesh: { material: { dispose(): void } };
+        };
+        owned.renderTarget.dispose();
+        owned._quadMesh.material.dispose();
+      }
+      scenePass.dispose();
+    };
     const giDenoise = (node: ChainNode): ChainNode =>
       options.denoiseEnabled ? denoised(denoise(node, depth(), normal(), view)) : node;
 
@@ -745,21 +774,34 @@ export class WorldEnvironment {
     // A composed base colour with every stage off still has to reach the frame. The chain
     // installs nothing for an empty stage list, so this is the one path that goes direct.
     if (requested.length === 0) {
-      if (renderer.kind !== "webgpu") {
-        this.#reportApplied([], [{ name: "baseColour", reason: `renderer:${renderer.kind}` }]);
-        return { dropped: [], stages: [] };
+      if (renderer.setOutputNode === undefined || renderer.clearOutputNode === undefined) {
+        releaseGraph();
+        throw new Error("Output node installation and ownership-aware disposal are required.");
       }
-      if (renderer.setOutputNode === undefined)
-        throw new Error("setOutputNode is unavailable, so the composed base colour cannot run.");
-      renderer.setOutputNode(exposed, scenePass);
+      let installation: OutputInstallation | undefined;
+      try {
+        const returned = renderer.setOutputNode(exposed, scenePass);
+        installation =
+          returned &&
+          typeof returned.isCurrent === "function" &&
+          typeof returned.dispose === "function"
+            ? returned
+            : undefined;
+      } catch (error) {
+        releaseGraph();
+        throw error;
+      }
       this.#reportApplied([], []);
       return {
+        exposure,
         dropped: [],
         stages: [],
-        exposure,
         dispose: () => {
-          exposure?.dispose();
-          scenePass.dispose();
+          if (released) return;
+          if (installation) installation.dispose();
+          // Legacy adapters returning void retain node-only, not installation-level safety.
+          else renderer.clearOutputNode?.(exposed);
+          releaseGraph();
         },
       };
     }
@@ -777,9 +819,9 @@ export class WorldEnvironment {
       dropped: chain.applied.dropped,
       stages: chain.applied.stages,
       dispose: () => {
+        if (released) return;
         chain.dispose();
-        exposure?.dispose();
-        scenePass.dispose();
+        releaseGraph();
       },
     };
   }

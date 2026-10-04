@@ -2,7 +2,7 @@
 # Native coverage — 2026-08-28
 
 Configuration: `tn-linux-coverage` with clang source-based coverage. Executed
-43 native contract targets; 3 configured
+44 native contract targets; 3 configured
 targets could not be built and are named below.
 
 | Subsystem | Instrumented lines | Covered | Line coverage |
@@ -13,20 +13,20 @@ targets could not be built and are named below.
 | `src/cli/` | 1682 | 1238 | 73.60% |
 | `src/fs/` | 235 | 189 | 80.43% |
 | `src/http/` | 410 | 377 | 91.95% |
-| `src/js/` | 2785 | 2214 | 79.50% |
-| `src/platform/` | 1284 | 928 | 72.27% |
+| `src/js/` | 2785 | 2212 | 79.43% |
+| `src/platform/` | 1293 | 936 | 72.39% |
 | `src/raytracing/` | 461 | 399 | 86.55% |
 | `src/runtime.cpp` | 2361 | 1870 | 79.20% |
 | `src/screenshot_gate.cpp` | 27 | 24 | 88.89% |
 | `src/storage/` | 327 | 286 | 87.46% |
 | `src/utils/` | 0 | 0 | 0.00% |
 | `src/vfs/` | 239 | 195 | 81.59% |
-| `src/webgpu/` | 9678 | 7421 | 76.68% |
+| `src/webgpu/` | 9724 | 7441 | 76.52% |
 | `src/webtransport/` | 1391 | 1078 | 77.50% |
 | `src/workers/` | 615 | 527 | 85.69% |
-| **TOTAL** | **24373** | **19217** | **78.85%** |
+| **TOTAL** | **24428** | **19243** | **78.77%** |
 
-Source digest: `sha256:26e52aa0d7cade3c712d4e4054e9a014d7f07709558b3146196827780580d713`
+Source digest: `sha256:43460aee6c5928c8ae0e1e283851d528a609baed495751161ffa2422b66f595d`
 
 The default `pnpm budgets` gate reads this committed measurement without configuring or compiling
 the native host. Any native source, native C++ test, CTest registration, or coverage aggregation
@@ -310,3 +310,7 @@ the focused test 1/1. Restoring the target-aware call passed that test 1/1, then
 resulting generated capability metadata changed all ten scaffold trees; the measured hashes are
 pinned in `packages/create-threenative/__tests__/scaffold.spec.ts`, whose complete suite passed
 55/55.
+
+## Rendering consolidation coverage status
+
+The generated measurement above belongs to the fog source, not the combined exposure/fog candidate. The [exposure source measurement](https://github.com/ThreeNativeHQ/threenative/blob/f54efbdc9cadac5bf8719adf3435fca98d872bb4/docs/verification/native-coverage-2026-08-28.md) remains preserved at its original commit. Combined native coverage requires a fresh opt-in measurement; no merged line count or source digest is claimed here.

@@ -273,6 +273,10 @@ struct PresentationState {
     WGPUBindGroupLayout srgbPresentationBindGroupLayout = nullptr;
     uint32_t canvasWidth = 800;
     uint32_t canvasHeight = 600;
+    // Canvas backing pixels can differ from the window pixels the swapchain presents.
+    uint32_t surfaceWidth = 0;
+    uint32_t surfaceHeight = 0;
+    void* surfaceNativeHandle = nullptr;
     bool contextConfigured = false;
     WGPUTexture currentTexture = nullptr;
     WGPUTextureView currentTextureView = nullptr;

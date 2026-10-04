@@ -43,6 +43,7 @@ jobs:
       cold-boot: ${{ steps.filter.outputs.cold-boot }}
       csg: ${{ steps.filter.outputs.csg }}
       decals: ${{ steps.filter.outputs.decals }}
+      fog: ${{ steps.filter.outputs.fog }}
       fluid-particles: ${{ steps.filter.outputs.fluid-particles }}
       fluid-native: ${{ steps.filter.outputs.fluid-native }}
       ik: ${{ steps.filter.outputs.ik }}
@@ -65,8 +66,9 @@ jobs:
             exposure ^packages/create-threenative/(template-assets|templates/[^/]+/src/render)/(autoExposure|exposure|exposureGraph|exposureReadback|worldEnvironment)\.ts$|^packages/create-threenative/__tests__/auto-exposure[^/]*\.spec\.ts$|^packages/create-threenative/__tests__/fixtures/auto-exposure/.*$|^packages/core/src/.*$|^packages/core/patches/.*$|^packages/playtest/.*$|^packages/runtime-native/.*$|^pnpm-lock\.yaml$|^scripts/xvfb\.sh$|^\.github/actions/(workspace-dist|pnpm|playwright-chromium)/.*$
             csg ^examples/integrations/csg/.*$
             decals ^packages/playtest/.*$|^packages/create-threenative/templates/shooter/src/render/decals\.ts$|^packages/create-threenative/templates/shooter/src/scenes/Play\.ts$|^packages/create-threenative/__tests__/shooter-decals[^/]*\.spec\.ts$|^packages/create-threenative/__tests__/fixtures/bounded-decals/.*$|^packages/runtime-native/.*$|^scripts/xvfb\.sh$|^\.github/actions/workspace-dist/.*$|^\.github/actions/pnpm/.*$|^\.github/actions/playwright-chromium/.*$|^pnpm-lock\.yaml$
-            fluid-particles ^packages/(core|physics|playtest)/.*$|^examples/prd476-fluid-particles/.*$|^scripts/fluid-collision-proof\.ts$|^scripts/__tests__/fluid-collision-(proof|view)\.spec\.ts$|^package\.json$|^pnpm-(lock|workspace)\.yaml$|^tsconfig[^/]*\.json$|^patches/.*$|^\.github/actions/pnpm/.*$|^scripts/workspace-packages\.ts$|^scripts/verify-fluid-(collision|consumers)\.ts$|^\.github/actions/playwright-chromium/.*$|^scripts/xvfb\.sh$
+            fluid-particles ^packages/(core|physics|playtest)/.*$|^examples/prd476-fluid-particles/.*$|^scripts/fluid-collision-proof\.ts$|^scripts/__tests__/fluid-collision-(proof|view)\.spec\.ts$|^package\.json$|^pnpm-(lock|workspace)\.yaml$|^tsconfig[^/]*\.json$|^patches/.*$|^\.github/actions/pnpm/.*$|^scripts/workspace-packages\.ts$|^scripts/verify-fluid-(collision|consumers)\.ts$|^\.github/actions/playwright-chromium/.*$|^scripts/xvfb\.sh$|^scripts/observe-fluid-ci\.mjs$|^scripts/__tests__/observe-fluid-ci\.spec\.ts$
             fluid-native ^packages/(core|physics|playtest)/.*$|^examples/prd476-fluid-particles/.*$|^scripts/fluid-collision-proof\.ts$|^scripts/__tests__/fluid-collision-(proof|view)\.spec\.ts$|^package\.json$|^pnpm-(lock|workspace)\.yaml$|^tsconfig[^/]*\.json$|^patches/.*$|^\.github/actions/pnpm/.*$|^scripts/workspace-packages\.ts$|^packages/runtime-native/.*$|^scripts/verify-fluid-collision-native\.ts$|^scripts/__tests__/fluid-collision-native-proof\.spec\.ts$|^\.github/actions/workspace-dist/.*$
+            fog ^packages/create-threenative/templates/starter/src/render/volumetricFog[A-Za-z]*\.ts$|^packages/create-threenative/templates/starter/src/render/postprocessing\.ts$|^packages/create-threenative/templates/starter/src/scenes/Play\.ts$|^packages/create-threenative/template-assets/worldEnvironment\.ts$|^packages/create-threenative/__tests__/vq-(volumetric-fog|fog-fixture)\.spec\.ts$|^packages/core/src/renderer\.ts$|^packages/core/src/render/chain\.ts$|^examples/abyss-framework/vq-fog/.*$|^examples/abyss-framework/playtests/vq-volumetric-fog\.playtest\.json$|^scripts/verify-volumetric-fog\.ts$|^scripts/__tests__/(verify-volumetric-fog|vq-fog-native-proof)\.spec\.ts$|^packages/runtime-native/include/mystral/webgpu_compat\.h$|^packages/runtime-native/src/webgpu/bindings_presentation\.cpp$|^packages/runtime-native/tests/surface_texture_status_test\.cpp$|^packages/runtime-native/tests/canvas_presentation_test\.cpp$
             ik ^examples/integrations/ik/.*$
             tone ^scripts/xvfb\.sh$|^packages/playtest/.*$|^examples/abyss-framework/src/render/toneCalibration\.ts$|^examples/abyss-framework/src/tone-main\.ts$|^examples/abyss-framework/tone\.html$|^examples/abyss-framework/tone\.vite\.config\.ts$|^examples/abyss-framework/playtests/tone\.playtest\.json$|^examples/abyss-framework/package\.json$|^scripts/verify-tone-exposure\.ts$|^scripts/tone-capture-proof\.ts$|^scripts/__tests__/tone-capture-proof\.spec\.ts$|^scripts/non-visual-scenarios\.mjs$|^package\.json$|^pnpm-lock\.yaml$|^\.github/actions/pnpm/.*$|^\.github/actions/playwright-chromium/.*$|^packages/create-threenative/(template-assets|templates/[^/]+/src/render)/(autoExposure|exposure|exposureGraph|exposureReadback|exposureSettings|worldEnvironment)\.ts$
             vegetation ^examples/integrations/vegetation/.*$
@@ -258,6 +260,116 @@ jobs:
           path: artifacts/tone-exposure
           if-no-files-found: error
 
+  fog:
+    name: fog capture
+    if: ${{ needs.paths.outputs.fog == 'true' && !github.event.pull_request.draft }}
+    needs: paths
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: ./.github/actions/pnpm
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/playwright-chromium
+      - run: pnpm --filter @threenative/playtest build
+      - run: pnpm --filter abyss-framework exec vite build --config vq-fog/vite.config.ts
+      - run: node --import tsx scripts/verify-volumetric-fog.ts
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: volumetric-fog-${{ github.event.pull_request.head.sha || github.sha }}
+          path: artifacts/volumetric-fog/
+          retention-days: 30
+          if-no-files-found: error
+
+  fog-native:
+    name: Linux native fog correctness
+    needs: [fog]
+    # Reuse the proven native-platforms / native-assets ARM QuickJS route without changing defaults.
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    env:
+      CMAKE_BUILD_PARALLEL_LEVEL: '2'
+      TN_PLAYTEST_ALLOW_SOFTWARE: '1'
+      TN_PLAYTEST_NATIVE_SCREENSHOT_TIMEOUT_MS: '30000'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: ./.github/actions/pnpm
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+          cache: pnpm
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - run: pnpm install --frozen-lockfile
+      - name: Build this source's public JavaScript packages
+        uses: ./.github/actions/workspace-dist
+        with:
+          save-bundles: 'false'
+          pack-archives: 'false'
+      - name: Verify native preflight and capture rejection controls
+        run: pnpm exec vitest run scripts/__tests__/vq-fog-native-proof.spec.ts --maxWorkers=1
+      - name: Restore checksum-provisioned native dependencies
+        uses: actions/cache/restore@v4
+        with:
+          path: packages/runtime-native/third_party
+          key: native-third-party-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/runtime-native/scripts/download-deps.mjs', 'packages/runtime-native/scripts/package-android.mjs') }}
+      - name: Install the existing native lane's system prerequisites
+        run: >-
+          sudo apt-get update && sudo apt-get install -y
+          libasound2-dev libcurl4-openssl-dev libfontconfig1-dev libfreetype6-dev
+          libpulse-dev libudev-dev libx11-dev libxext-dev libxrandr-dev
+          libxcursor-dev libxi-dev libxfixes-dev libxss-dev libxkbcommon-dev
+          libgtk-3-dev libwebkit2gtk-4.1-dev libxcomposite-dev xcompmgr
+          libvulkan1 mesa-vulkan-drivers vulkan-tools xvfb zlib1g-dev
+      - name: Build the ordinary ARM desktop host
+        run: pnpm --filter @threenative/runtime-native native:build
+      - name: Verify the compiled surface acquisition status contract
+        run: |
+          cmake --build packages/runtime-native/build/tn-linux --target threenative-surface-texture-status-test --parallel 2
+          packages/runtime-native/build/tn-linux/threenative-surface-texture-status-test
+      - name: Verify rendered presentation destination pixels
+        run: |
+          cmake --build packages/runtime-native/build/tn-linux --target threenative-canvas-presentation-test --parallel 2
+          packages/runtime-native/build/tn-linux/threenative-canvas-presentation-test
+      - name: Isolate native resize with no fog allocation
+        id: resize-control
+        # Preserve the original fog sequence even when this diagnostic reproduces the abort.
+        # The final step below still fails the job if this control fails.
+        continue-on-error: true
+        env:
+          VQ_FOG_RESIZE_CONTROL: '1'
+          THREENATIVE_RUNTIME_BINARY: ${{ github.workspace }}/packages/runtime-native/build/tn-linux/mystral
+        run: node --import tsx scripts/verify-volumetric-fog.ts
+      - name: Run the same authored fog and pixel gates on the native host
+        env:
+          THREENATIVE_RUNTIME_BINARY: ${{ github.workspace }}/packages/runtime-native/build/tn-linux/mystral
+        run: node --import tsx scripts/verify-volumetric-fog.ts
+      - name: Require the no-fog resize control
+        if: always() && steps.resize-control.outcome != 'success'
+        run: exit 1
+      - name: Retain native screenshots, host console and executable identities
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: volumetric-fog-native-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            artifacts/volumetric-fog-native/
+            artifacts/volumetric-fog-native-resize-control/
+          retention-days: 30
+          if-no-files-found: warn
+
   capture:
     name: capture
     if: ${{ !github.event.pull_request.draft && needs.paths.outputs.world-capture == 'true' }}
@@ -413,7 +525,7 @@ jobs:
       - name: Build current fluid consumer dependencies
         run: pnpm tsx scripts/workspace-packages.ts build
       - name: Run unchanged dam-break and coupling assertions
-        run: sh scripts/xvfb.sh pnpm exec tsx scripts/verify-fluid-consumers.ts
+        run: sh scripts/xvfb.sh node scripts/observe-fluid-ci.mjs
       - name: Retain actual consumer pixels and minimal provenance
         if: always()
         uses: actions/upload-artifact@v7
@@ -423,6 +535,7 @@ jobs:
             artifacts/fluid-consumers/**/*.png
             artifacts/fluid-consumers/summary.json
             artifacts/fluid-consumers/failure.json
+            artifacts/fluid-consumers/ci-diagnostics.json
           if-no-files-found: error
   exposure:
     name: auto-exposure

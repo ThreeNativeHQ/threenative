@@ -1,13 +1,15 @@
 import { makeTempDirSync } from '../../../test-support/temp-dir.js';
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import childProcess, { spawnSync } from "node:child_process";
+import { syncBuiltinESMExports } from "node:module";
+import * as esbuild from "esbuild";
 import { createHash } from "node:crypto";
 import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PNG } from "pngjs";
-import { test } from "vitest";
+import { afterEach, expect, test, vi } from "vitest";
 import { workflowBlockScalars } from "./runtime-test-utils.js";
 import { absoluteErrorRatio } from "../conformance/metrics.mjs";
 import { isMultitouchProofSatisfied } from "../conformance/multitouch-proof.mjs";
@@ -27,6 +29,7 @@ import {
   resolveParityProject,
 } from "../conformance/project-mode.mjs";
 import {
+  bundle,
   androidDeviceKind,
   androidDeathExcerpt,
   androidDependencyBlocker,
@@ -1315,4 +1318,183 @@ test("a pre-marker death excerpt carries the app's own diagnostic lines, not dea
     androidDeathExcerpt("Android process exited before the conformance marker.", ""),
     "Android process exited before the conformance marker.",
   );
+});
+
+vi.mock("esbuild", async () => {
+  const actual = await vi.importActual("esbuild");
+  return { ...actual, build: vi.fn(actual.build), stop: vi.fn(actual.stop) };
+});
+afterEach(async () => {
+  vi.useRealTimers();
+  await esbuild.stop();
+  vi.clearAllMocks();
+  vi.unstubAllEnvs();
+});
+
+function bundleFixture(body = "export const choice = import.meta.env?.DEV;") {
+  const dir = makeTempDirSync("threenative-bundle-service-");
+  const entry = join(dir, "entry.ts");
+  const out = join(dir, "output.js");
+  writeFileSync(entry, body);
+  return { dir, entry, out, compiler: join(root, "node_modules/.bin/esbuild") };
+}
+
+test("conformance API preserves changing NODE_PATH lookup, bytes and maps", async () => {
+  const fixture = bundleFixture('export { choice } from "conformance-node-path-only";');
+  try {
+    for (const value of [undefined, ""]) {
+      vi.stubEnv("NODE_PATH", value);
+      const result = {};
+      assert.equal(await bundle(fixture.entry, fixture.out, result, "browser", fixture.compiler, true), false);
+      assert.match(result.browser.stderr, /conformance-node-path-only/u);
+    }
+    for (const choice of ["first", "second"]) {
+      const modules = join(fixture.dir, choice);
+      const dependency = join(modules, "conformance-node-path-only");
+      mkdirSync(dependency, { recursive: true });
+      writeFileSync(join(dependency, "index.js"), `export const choice = ${JSON.stringify(choice)};`);
+      vi.stubEnv("NODE_PATH", [join(fixture.dir, "missing"), modules].join(delimiter));
+      const cli = spawnSync(process.execPath, [join(root, "node_modules/esbuild/bin/esbuild"), fixture.entry, "--bundle", `--outfile=${fixture.out}`, "--format=esm", "--platform=browser", "--sourcemap", "--log-level=silent"], { cwd: root, encoding: "utf8", env: { ...process.env }, timeout: 120_000 });
+      assert.equal(cli.status, 0, cli.stderr);
+      const expected = readFileSync(fixture.out);
+      const map = readFileSync(`${fixture.out}.map`);
+      assert.equal(await bundle(fixture.entry, fixture.out, {}, "browser", fixture.compiler, true), true);
+      assert.deepEqual(readFileSync(fixture.out), expected);
+      assert.deepEqual(readFileSync(`${fixture.out}.map`), map);
+    }
+  } finally { rmSync(fixture.dir, { recursive: true, force: true }); }
+});
+
+test("serial conformance bundles reuse the compiler service instead of launching each CLI", async () => {
+  const fixture = bundleFixture();
+  const calls = vi.spyOn(childProcess, "spawnSync");
+  syncBuiltinESMExports();
+  try {
+    assert.equal(await bundle(fixture.entry, fixture.out, {}, "browser", fixture.compiler, true), true);
+    assert.equal(await bundle(fixture.entry, fixture.out, {}, "native", fixture.compiler, true), true);
+    assert.equal(calls.mock.calls.filter(([command]) => command === fixture.compiler).length, 0);
+  } finally {
+    calls.mockRestore();
+    syncBuiltinESMExports();
+    rmSync(fixture.dir, { recursive: true, force: true });
+  }
+});
+
+for (const [side, format, conditions] of [
+  ["browser", "esm", []], ["native", "esm", ["threenative-native"]],
+  ["native", "iife", ["alpha", "beta"]],
+  ["browser", "esm", [""]],
+  ["browser", "esm", ["alpha,beta"]],
+]) test(`conformance API preserves CLI bytes and linked maps for ${side}/${format}/${conditions}`, async () => {
+  const fixture = bundleFixture('import choice from "choices"; export const value = [choice, import.meta.env?.DEV];');
+  const modules = join(fixture.dir, "node_modules/choices");
+  mkdirSync(modules, { recursive: true });
+  writeFileSync(join(modules, "package.json"), JSON.stringify({ type: "module", exports: { alpha: "./alpha.js", beta: "./beta.js", "threenative-native": "./native.js", module: "./module.js", default: "./default.js" } }));
+  for (const name of ["alpha", "beta", "native", "module", "default"]) writeFileSync(join(modules, `${name}.js`), `export default ${JSON.stringify(name)};`);
+  try {
+    const proc = spawnSync(fixture.compiler, [fixture.entry, "--bundle", `--outfile=${fixture.out}`, `--format=${format}`, "--platform=browser", "--sourcemap", ...(side === "native" ? ['--define:import.meta.env={"BASE_URL":"/","DEV":false,"MODE":"production","PROD":true,"SSR":false}'] : []), ...conditions.map(c => `--conditions=${c}`)], { cwd: root, encoding: "utf8", timeout: 120_000 });
+    assert.equal(proc.status, 0, proc.stderr);
+    const output = readFileSync(fixture.out);
+    const map = readFileSync(`${fixture.out}.map`);
+    assert.equal(await bundle(fixture.entry, fixture.out, {}, side, fixture.compiler, true, format, conditions), true);
+    assert.deepEqual(readFileSync(fixture.out), output);
+    assert.deepEqual(readFileSync(`${fixture.out}.map`), map);
+  } finally { rmSync(fixture.dir, { recursive: true, force: true }); }
+});
+
+test("conformance bundle errors retain the row side and primary import failure", async () => {
+  const fixture = bundleFixture('import missing from "no-such-package-for-conformance"; export default missing;');
+  try {
+    const result = {};
+    assert.equal(await bundle(fixture.entry, fixture.out, result, "native", fixture.compiler, true), false);
+    assert.equal(result.status, "fail");
+    assert.equal(result.native.phase, "bundle");
+    assert.match(result.native.stderr, /no-such-package-for-conformance/u);
+  } finally { rmSync(fixture.dir, { recursive: true, force: true }); }
+});
+
+test("an absent compiler remains a failed dry run and a blocked execution", async () => {
+  const fixture = bundleFixture();
+  try {
+    for (const dry of [true, false]) {
+      const result = {};
+      assert.equal(await bundle(fixture.entry, fixture.out, result, "browser", join(fixture.dir, "missing-esbuild"), dry), false);
+      assert.equal(result.status, dry ? "fail" : "blocked");
+      assert.match(result.blockedReason, /Install JavaScript dependencies/u);
+    }
+  } finally { rmSync(fixture.dir, { recursive: true, force: true }); }
+});
+
+test("a stuck compiler fails at the existing 120-second boundary and stops its service", async () => {
+  const fixture = bundleFixture();
+  vi.useFakeTimers();
+  esbuild.build.mockImplementationOnce(() => new Promise(() => {}));
+  try {
+    const result = {};
+    const pending = Promise.resolve(bundle(fixture.entry, fixture.out, result, "browser", fixture.compiler, true));
+    await vi.advanceTimersByTimeAsync(119_999);
+    assert.equal(result.status, undefined);
+    await vi.advanceTimersByTimeAsync(1);
+    assert.equal(await pending, false);
+    assert.equal(result.status, "fail");
+    assert.match(result.browser.stderr, /120000|ETIMEDOUT/u);
+    expect(esbuild.stop).toHaveBeenCalled();
+    assert.equal(vi.getTimerCount(), 0);
+  } finally { rmSync(fixture.dir, { recursive: true, force: true }); }
+});
+
+test("a timeout preserves its primary error when compiler cleanup also fails", async () => {
+  const fixture = bundleFixture();
+  vi.useFakeTimers();
+  esbuild.build.mockImplementationOnce(() => new Promise(() => {}));
+  esbuild.stop.mockRejectedValueOnce(new Error("cleanup failure receipt"));
+  try {
+    const result = {};
+    const pending = bundle(fixture.entry, fixture.out, result, "native", fixture.compiler, true);
+    await vi.advanceTimersByTimeAsync(120_000);
+    assert.equal(await pending, false);
+    assert.match(result.native.stderr, /TN_CONFORMANCE_BUNDLE_TIMEOUT/u);
+    assert.match(result.native.cleanupError, /cleanup failure receipt/u);
+    assert.equal(result.native.timedOut, true);
+    assert.equal(vi.getTimerCount(), 0);
+  } finally { rmSync(fixture.dir, { recursive: true, force: true }); }
+});
+
+for (const invalid of [false, true]) test(`the compiler service closes after terminal ${invalid ? "error" : "success"}`, () => {
+  const dir = makeTempDirSync("threenative-service-cleanup-");
+  const events = join(dir, "service-events.jsonl");
+  const observer = join(dir, "observer.cjs");
+  writeFileSync(observer, `
+const cp = require('node:child_process');
+const {appendFileSync} = require('node:fs');
+const {syncBuiltinESMExports} = require('node:module');
+const original = cp.spawn;
+cp.spawn = function(command, args, options) {
+  const child = original.apply(this, arguments);
+  if (args?.some(value => String(value).startsWith('--service='))) {
+    appendFileSync(${JSON.stringify(events)}, JSON.stringify({phase:'start',pid:child.pid})+'\\n');
+    // Keep this test's observer alive until close: a missing terminal stop must be detected.
+    child.unref = () => child;
+    child.on('close', (code, signal) => appendFileSync(${JSON.stringify(events)}, JSON.stringify({phase:'close',pid:child.pid,code,signal})+'\\n'));
+  }
+  return child;
+};
+syncBuiltinESMExports();
+`);
+  writeFileSync(join(dir, "package.json"), JSON.stringify({ threenative: { nativeEntry: "game.ts" } }));
+  writeFileSync(join(dir, "game.ts"), invalid ? 'import missing from "cleanup-missing-package"; export default missing;' : 'export default { start() {} };');
+  try {
+    const proc = run(["--dry-run", "--project", dir, "--out", join(dir, "report.json")], {
+      NODE_OPTIONS: `${process.env.NODE_OPTIONS || ""} --require=${observer}`,
+    });
+    assert.equal(proc.status, invalid ? 1 : 0, proc.error?.message || proc.stderr || proc.stdout);
+    const recorded = readFileSync(events, "utf8").trim().split("\n").map(line => JSON.parse(line));
+    assert.equal(recorded.filter(event => event.phase === "start").length, 1);
+    assert.equal(recorded.filter(event => event.phase === "close").length, 1);
+    assert.equal(recorded[0].pid, recorded[1].pid);
+    const report = JSON.parse(readFileSync(join(dir, "report.json"), "utf8"));
+    assert.equal(report.summary.pass, 0);
+    assert.equal(report.summary.validated, invalid ? 0 : 1);
+    if (invalid) assert.match(report.results[0].native.stderr, /cleanup-missing-package/u);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });

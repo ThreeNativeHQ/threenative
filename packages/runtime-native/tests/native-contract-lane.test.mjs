@@ -88,11 +88,11 @@ test("should fail when a declared test target is not executed", () => {
   // screenshot capture-gate ordering contract; +1 for PRD-329's surface-format selection
   // diagnostic contract; +5 for the comprehensive coverage contracts; +1 for PRD-368's pipeline
   // cache contract; +1 for PRD-399's presentation-pacing contract; +1 for PRD-465 Phase 2's
-  // MetaHuman facial rig bindings contract.
+  // MetaHuman facial rig bindings contract; +1 for VQ07's surface acquisition status contract.
   // Bump alongside any new add_executable contract target.
-  // 46 with the generated GPU exposure graph contract. The next assertion pins this against CMakeLists
+  // 48 targets include both exposure graph and fog presentation contracts.
   // itself, so the literal is a tripwire for an unreviewed target, not the source of truth.
-  assert.equal(discovered.length, 46);
+  assert.equal(discovered.length, 48);
   const missingExposure = { ...executionContracts };
   Reflect.deleteProperty(missingExposure, "threenative-exposure-graph-test");
   assert.throws(() => validateExecutionContracts(discovered, missingExposure),

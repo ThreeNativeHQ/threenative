@@ -431,3 +431,12 @@ describe("root gates bind the actual job condition", () => {
     expect(() => select(after)).toThrow("unknown root gate");
   });
 });
+
+describe("fluid CI observer ownership", () => {
+  it.each(["scripts/observe-fluid-ci.mjs", "scripts/__tests__/observe-fluid-ci.spec.ts"])(
+    "selects browser fluid for %s without native or unrelated lanes",
+    (file) => {
+      expect(select(workflow, [file])).toEqual({ ...none, "fluid-particles": true });
+    },
+  );
+});

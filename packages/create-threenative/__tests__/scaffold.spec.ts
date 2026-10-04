@@ -173,25 +173,20 @@ const BUG_REPORT_SKILL_PATHS = [
 // Current develop c18a42b integration: all13 actual generated trees were byte-compared
 // against reviewed 8bf trees; only the copied Three compute-only Storage3DTexture patch changed.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
-  // Recomputed 2026-10-02 on the merge of develop into PRD-339 auto-exposure: all thirteen
-  // trees move, because every template gained src/render/exposure.ts + autoExposure.ts and the
-  // merged tree also carries develop's shared threenative-assets skill bytes. Measured through
-  // createProject on the merged tree by the spec that asserts them.
-  "action-rpg": "b65c7a7018b0b794daaf599f5cd4c1f8494315c8373b56db7f73c7e167560e21",
-  minimal: "1796b47ecf2393cec713bb9504f7f798f3771cf1c15034390673b83cf9996130",
-  platformer: "59087ce62a3b63f733422c68a0ae08ca294953855fef72cb9a84670344b20848",
-  puzzle: "4f496ed9b446502b3f4be66b5a0017af9438c6237ae20ee34b96152904a4f455",
-  racing: "424f8e17486d788a8ac81ec2494b1bad0294aa4ba99aacdf74c653a15d5569c0",
-  // PR397 CI repair: paired actual no-install trees differ only in Rain Boot.ts, state.ts,
-  // GameUi.tsx and tiers.playtest.json; all twelve other generated trees remain identical.
-  rain: "5ffe9418f31f0567ef08128d4a01de9a30908da2644804ca4d515fe2db0426b9",
-  rts: "358297ced78d5bfae393fe2f8fb8bb350e512e0dd5a70151bcbc84066051b93b",
-  runner: "2eacc8c33047613f470dc4093e04aad67ca1bc455ceca2b278693a4d1de9823c",
-  sailing: "79e8ebf02059da6a4271c7c32ae8a3b571e4c1f8043169914624030913453c32",
-  shooter: "44e43c1993ecfefbedaecb52548c390a44ca65eb1c93b708c0c1ec28e7f97798",
-  snow: "10b8c2bbc3d1d64dc2c388a2040f8968c7ce3a238a5754a7cd245ada8f591f75",
-  starter: "7a0bbaa8772e646271c796ae7716211b7d53260a04d63a8c323fcab40e01c880",
-  "tower-defense": "7940af1bba17a9a3db47991ee4b1d8d1e3d46250d25571d3e6e943af09810c81",
+  // Measured through actual createProject trees after exposure/fog consolidation and restamping.
+  "action-rpg": "e25c061a7a41de400ab6ebd5db8eb152c55282e598d2697e4e805db9971e63c2",
+  minimal: "3bf8a85a5f3fd117c724280a76e8cef7c3ddcbd52c40f5724a8fafdf104fa2c8",
+  platformer: "ad15697abbf5457e7837dfb74347225d47fbf42e25d65eecbba1a1c7b3b0455c",
+  puzzle: "f61c60c051e78aa077ffcdfdb3ecb414430c2a44e3b5ea3bc3d460453c3d170b",
+  racing: "cf943ef8baf12e003dc91660b3892e30b634338bdd785448825d4f83277e4313",
+  rain: "8f83ed441cbf32dbb5f377ef1aeea97f9801e5acf0230ca3738148aad627e8ce",
+  rts: "add3e851fbb949ce838cb3bab4d6583d4c680e5526f700bec87d3a2d5fd659b0",
+  runner: "e7361fabfb2a77a3631c35806a8c7d153b898db81681ff2e6e89fd39a2511a38",
+  sailing: "5bada8892960aa53afde2a84b3562e914cc4b6affc6118ab1dc84cc96863ff2b",
+  shooter: "d4002cfc6533bccf74aa6bcf46d8dbbf53a7699c62bea85135e0ba3fd495a13b",
+  snow: "363afd6cc69cfe9be73cef7516ee3a46105d369043511c5d6a5dd5a587b3bdce",
+  starter: "63420ca71607875427f80e6ae93d1778896ac63997143f65cf8a0f1d951750ae",
+  "tower-defense": "04ec210d3a1b5330cb661c04cf1829cdf3f1673c3a24a215116921d90f5bddc4",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
@@ -291,6 +286,10 @@ const STARTER_PATHS = [
   "src/render/worldEnvironment.ts",
   "src/render/exposure.ts",
   "src/render/autoExposure.ts",
+  "src/render/volumetricFog.ts",
+  "src/render/volumetricFogOptions.ts",
+  "src/render/volumetricFogVolume.ts",
+  "src/render/volumetricFogTransport.ts",
   "src/render/palette.ts",
   "src/render/materials.ts",
   "src/render/arena.ts",
