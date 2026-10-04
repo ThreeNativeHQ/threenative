@@ -3,6 +3,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { loadPlaytestScenario } from "../../packages/playtest/dist/index.js";
 import { makeTempDir } from "../../test-support/temp-dir.js";
+import * as fogProof from "../verify-volumetric-fog.js";
 import {
   fogCaptureIsValid,
   fogCaptureScenario,
@@ -14,6 +15,41 @@ import {
 } from "../verify-volumetric-fog.js";
 
 describe("volumetric fog runtime evidence", () => {
+  it("qualifies both enabled responses against repeated-baseline noise and finite GPU readback", () => {
+    const qualify = Reflect.get(fogProof, "qualifyFogExposureControls");
+    expect(typeof qualify).toBe("function");
+    const arm = (value: number, exposure: boolean) => ({
+      pixels: Uint8Array.from([value, value, value, 255, value, value, value, 255]),
+      state: {
+        exposureEnabled: exposure,
+        exposureApplied: exposure,
+        exposureMeasured: exposure,
+        exposureSettled: exposure,
+        exposureLuminance: exposure ? 0.1 : 0,
+        exposureStops: exposure ? 1 : 0,
+      },
+    });
+    const controls = {
+      off: arm(10, false),
+      fog: arm(30, false),
+      exposure: arm(60, true),
+      both: arm(90, true),
+      repeat: arm(90, true),
+    };
+    expect(() => qualify(controls)).not.toThrow();
+    expect(() => qualify({ ...controls, both: controls.fog })).toThrow();
+    expect(() => qualify({ ...controls, exposure: controls.both })).toThrow();
+    expect(() => qualify({ ...controls, repeat: arm(0, true) })).toThrow();
+    expect(() =>
+      qualify({
+        ...controls,
+        both: {
+          ...controls.both,
+          state: { ...controls.both.state, exposureLuminance: Number.NaN },
+        },
+      }),
+    ).toThrow();
+  });
   it("rejects software device loss even when the runner reports a pass", () => {
     const good = {
       pass: true,

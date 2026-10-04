@@ -411,6 +411,57 @@ export function fogTextureBaselineMatches(
   );
 }
 
+interface IFogExposureControl {
+  pixels: Uint8Array;
+  state: Record<string, unknown>;
+}
+
+/** Joint effects must exceed their own repeated-capture noise, not a tuned visual floor. */
+export function qualifyFogExposureControls(controls: Record<string, IFogExposureControl>) {
+  for (const name of ["off", "fog", "exposure", "both", "repeat"]) {
+    const arm = controls[name];
+    if (arm === undefined || arm.pixels.length === 0 || arm.pixels.length % 4 !== 0)
+      throw new Error(`Missing complete joint control: ${name}`);
+    const enabled = ["exposure", "both", "repeat"].includes(name);
+    if (arm.state.exposureEnabled !== enabled || arm.state.exposureApplied !== enabled)
+      throw new Error(`Exposure installation control mismatch: ${name}`);
+    if (
+      enabled &&
+      (arm.state.exposureMeasured !== true ||
+        arm.state.exposureSettled !== true ||
+        !Number.isFinite(arm.state.exposureLuminance) ||
+        Number(arm.state.exposureLuminance) <= 0 ||
+        !Number.isFinite(arm.state.exposureStops))
+    )
+      throw new Error(`Missing finite settled GPU exposure: ${name}`);
+  }
+  const both = controls.both?.pixels;
+  if (both === undefined) throw new Error("Both-enabled control missing.");
+  const difference = (name: string) => {
+    const pixels = controls[name]?.pixels;
+    if (pixels === undefined) throw new Error(`Control missing: ${name}`);
+    if (pixels.length !== both.length) throw new Error("Joint control capture sizes differ.");
+    let total = 0;
+    let max = 0;
+    for (let i = 0; i < both.length; i++) {
+      if (i % 4 === 3) continue;
+      const delta = Math.abs((both[i] ?? Number.NaN) - (pixels[i] ?? Number.NaN));
+      total += delta;
+      max = Math.max(max, delta);
+    }
+    return { mean: total / (both.length * 0.75), max };
+  };
+  const noise = difference("repeat");
+  const fogResponse = difference("exposure");
+  const exposureResponse = difference("fog");
+  for (const response of [fogResponse, exposureResponse])
+    if (response.mean <= noise.mean || response.max <= Math.max(2, noise.max))
+      throw new Error(
+        "Joint enabled response does not exceed repeated-control/quantization noise.",
+      );
+  return { noise, fogResponse, exposureResponse };
+}
+
 interface IPixelFrame {
   width: number;
   height: number;

@@ -76,6 +76,29 @@ function fixture() {
 }
 
 describe("fog qualification fixture", () => {
+  it("controls combined fog/exposure ownership and releases it before returning to off", () => {
+    const f = fixture();
+    f.select("exposureOn");
+    expect(f.state.getState()).toMatchObject({ exposureEnabled: true, exposureApplied: true });
+    f.select("fog");
+    expect(f.state.getState()).toMatchObject({
+      targets: 1,
+      exposureEnabled: true,
+      exposureApplied: true,
+    });
+    f.select("rebuild");
+    expect(f.state.getState()).toMatchObject({ releasedExposures: 2, exposureApplied: true });
+    f.select("exposureOff");
+    expect(f.state.getState()).toMatchObject({
+      targets: 1,
+      exposureEnabled: false,
+      exposureApplied: false,
+      releasedExposures: 3,
+    });
+    f.select("off");
+    expect(f.state.getState()).toMatchObject({ liveTargets: 0, exposureApplied: false });
+    f.probe.exit(f.ctx);
+  });
   it("isolates scattering with black unlit surfaces while retaining geometry and shadow casters", () => {
     const f = fixture();
     const meshes = f.scene.children.filter((object) => object instanceof Mesh);

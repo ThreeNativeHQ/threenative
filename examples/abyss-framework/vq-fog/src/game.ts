@@ -21,6 +21,8 @@ import { playtest } from "../../../../packages/core/src/playtest.js";
 import { createVolumetricFog } from "../../../../packages/create-threenative/templates/starter/src/render/volumetricFog.js";
 import { WorldEnvironment } from "../../../../packages/create-threenative/templates/starter/src/render/worldEnvironment.js";
 
+import { exposureSettings } from "../../../../packages/create-threenative/template-assets/exposure.js";
+
 export const ROOM_BOUNDS = new Box3(new Vector3(-4.5, 0, -9.5), new Vector3(4.5, 4, 3));
 
 // Coverage, not intent: does the fog volume reach this light's shadow-map bounds? A bounding volume
@@ -43,6 +45,13 @@ export function fogInsideShadowMap(light: DirectionalLight, bounds: Box3): boole
 }
 
 const initialState = {
+  exposureEnabled: false,
+  exposureApplied: false,
+  exposureMeasured: false,
+  exposureSettled: false,
+  exposureLuminance: 0,
+  exposureStops: 0,
+  releasedExposures: 0,
   mode: "off",
   ready: false,
   builds: 0,
@@ -111,6 +120,9 @@ export class FogProbe extends GameScene<FogState> {
   #fog: ReturnType<typeof createVolumetricFog>;
   #release: (() => void) | undefined;
   #mode: Mode = "off";
+  #exposureEnabled = false;
+  #exposure: ReturnType<WorldEnvironment["apply"]>["exposure"];
+  #releasedExposures = 0;
   #cameraCut = false;
   #streamedWall = false;
   #applied: Mode | undefined;
@@ -201,6 +213,11 @@ export class FogProbe extends GameScene<FogState> {
       }
       this.#resetObservation(ctx);
     }
+    for (const action of ["exposureOn", "exposureOff"]) {
+      if (!ctx.input.justPressed(action)) continue;
+      this.#exposureEnabled = action === "exposureOn";
+      this.#applied = undefined;
+    }
     for (const mode of modes) if (ctx.input.justPressed(mode)) this.#mode = mode;
     if (ctx.input.justPressed("rebuild")) this.#applied = undefined;
     if (ctx.input.justPressed("resizeSmall")) this.#resize(ctx, 320, 240);
@@ -235,7 +252,15 @@ export class FogProbe extends GameScene<FogState> {
         info.memory.textures === this.#lastTextures ? this.#stableTextureFrames + 1 : 1;
       this.#lastTextures = info.memory.textures;
     }
+    const exposure = this.#exposure?.getObservation();
     ctx.state.set({
+      exposureEnabled: this.#exposureEnabled,
+      exposureApplied: exposure?.applied === true,
+      exposureMeasured: exposure?.measured === true,
+      exposureSettled: exposure?.settled === true,
+      exposureLuminance: Number(exposure?.luminance ?? 0),
+      exposureStops: Number(exposure?.exposureStops ?? 0),
+      releasedExposures: this.#releasedExposures,
       mode: this.#mode,
       ready: this.#applied === this.#mode,
       builds: this.#builds,
@@ -333,6 +358,8 @@ export class FogProbe extends GameScene<FogState> {
       environment: { aerialPerspective: false, godRays: false },
     });
     const world = new WorldEnvironment({
+      autoExposureEnabled: this.#exposureEnabled,
+      exposurePolicy: { ...exposureSettings, enabled: true },
       bloomEnabled: false,
       screenSpaceAA: "disabled",
       tonemapMode: "neutral",
@@ -344,12 +371,14 @@ export class FogProbe extends GameScene<FogState> {
       ctx.camera,
       fog === undefined ? {} : { baseColour: (scenePass) => fog.compose(scenePass) },
     );
+    this.#exposure = applied.exposure;
     this.#fog = fog;
     const target = fog?.target;
     const material = fog?.material;
     if (target !== undefined) this.#createdTargets += 1;
     this.#release = () => {
       applied.dispose?.();
+      if (applied.exposure !== undefined) this.#releasedExposures += 1;
       // Count actual teardown events, not resize-driven RenderTarget invalidations.
       const onTarget = () => {
         this.#releasedTargets += 1;
@@ -372,6 +401,7 @@ export class FogProbe extends GameScene<FogState> {
     this.#release();
     this.#release = undefined;
     this.#fog = undefined;
+    this.#exposure = undefined;
     this.#disposedGraphs += 1;
   }
   override exit(ctx: FogCtx): void {
@@ -397,6 +427,8 @@ export default defineGame<FogState>({
   initialState,
   frameBudget: { reportEvery: 30 },
   input: {
+    exposureOn: { keys: ["Digit9"] },
+    exposureOff: { keys: ["Digit0"] },
     fog: { keys: ["KeyF"] },
     off: { keys: ["KeyO"] },
     zero: { keys: ["KeyZ"] },
