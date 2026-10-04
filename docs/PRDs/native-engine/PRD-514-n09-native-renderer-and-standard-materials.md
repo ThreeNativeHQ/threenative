@@ -16,8 +16,8 @@
 2. **First pass set.** Opaque front-to-back, alpha-masked (alpha test plus the reference's alpha-to-coverage rule), and transparent back-to-front with the reference's sort keys and `renderOrder`. Camera `layers` and `visible` are applied. Every `render(scene, camera)` call gets its own render ID (§6.4, §12).
 3. **Ordinary shadows.** Directional, spot and point shadow maps, with the reference's bias, `castShadow`/`receiveShadow` and shadow-camera semantics. Virtual shadows belong to PRD-524.
 4. **Standard materials.** `MeshBasicMaterial`, `MeshLambertMaterial`, `MeshPhongMaterial`, `MeshStandardMaterial` and `MeshPhysicalMaterial` (the subset the representative games need, §9.3) compile through the N08 shader-package path. Advanced material features nobody has ported fail with `TN_NATIVE_MATERIAL_UNSUPPORTED` naming the property. They never fall back silently to a simpler shader.
-5. **Resize and readback** go through the N07 surface and readback services. `renderer.ts` keeps its behaviours (compile, readback, output graph, timing) as a binding consumer, and its `.raw` uses are inventoried, not assumed portable (§3).
-6. **Rollback.** The legacy upstream `WebGPURenderer` backend stays selectable. A strict artifact never falls back to it (§1).
+5. **Resize and readback** go through the N07 surface and readback services. `renderer.ts` keeps its behaviours (compile, readback, output graph, timing) as a binding consumer, and `ctx.renderer.raw` returns this compatible renderer object, covering the public fields templates read (`toneMapping`, `toneMappingExposure`, `shadowMap`); renderer-private fields and the raw GPU device are named unsupported (owner decision 7, [PRD-497](PRD-497-n00-architecture-decision-and-compatibility-inventory.md)).
+6. **Rollback.** The legacy upstream `WebGPURenderer` backend stays selectable. A native-engine artifact never falls back to it (§1).
 
 ## Out of scope
 

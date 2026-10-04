@@ -8,7 +8,7 @@
 
 ## Context
 
-§11.3 says WorldCells, WorldTiles and GPU-scene streaming cannot stay hidden TypeScript engine implementations in a strict build. The required systems are ported and their TS packages become bindings. Today: `packages/core/src/world-cells.ts` (merged chunk groups, the 4 MiB first-draw cap, chain LOD, shadow prewarm), `packages/core/src/world-tiles.ts` (tiles, colliders, admission), `packages/core/src/world-gpu-scene.ts` (placement buffer and residency), `packages/core/src/world-package.ts` (`world.json` v1 manifest), `packages/core/src/world.ts` and `world-heightmap.ts` (the shared height buffer), and `packages/core/src/world-terrain-splat.ts`. Specs: `packages/core/__tests__/world-*.spec.ts`. The cooker is `packages/assets/src/world/`. §3 (R4) notes that per-object refresh, WorldCells streaming and shadow work are measured costs today.
+§11.3 says WorldCells, WorldTiles and GPU-scene streaming cannot stay hidden TypeScript engine implementations in a native-engine build. The required systems are ported and their TS packages become bindings. Today: `packages/core/src/world-cells.ts` (merged chunk groups, the 4 MiB first-draw cap, chain LOD, shadow prewarm), `packages/core/src/world-tiles.ts` (tiles, colliders, admission), `packages/core/src/world-gpu-scene.ts` (placement buffer and residency), `packages/core/src/world-package.ts` (`world.json` v1 manifest), `packages/core/src/world.ts` and `world-heightmap.ts` (the shared height buffer), and `packages/core/src/world-terrain-splat.ts`. Specs: `packages/core/__tests__/world-*.spec.ts`. The cooker is `packages/assets/src/world/`. §3 (R4) notes that per-object refresh, WorldCells streaming and shadow work are measured costs today.
 
 ## Solution
 
@@ -16,7 +16,7 @@
 2. **Cells and tiles.** Proposed `packages/runtime-native/src/engine/world/cells/` and `.../tiles/`. Residency by camera distance, chunk merging under the byte cap, chain LOD and shadow prewarm are ported rule for rule. Admission goes through PRD-520.
 3. **Terrain and heights.** One native height buffer serves world queries, rendered geometry and the Rapier heightfield (N15). Its sample version bumps on `updateHeights`.
 4. **GPU-scene residency.** The placement buffer is written natively when residency changes. Selection runs on the PRD-519 GPU kernel.
-5. **Bindings.** `world-cells.ts`, `world-tiles.ts` and `world-gpu-scene.ts` become thin binding glue in the native profile, and the legacy backend keeps the TS (rollback). A strict build that reaches a TS world algorithm fails the artifact inspection (§15.2).
+5. **Bindings.** `world-cells.ts`, `world-tiles.ts` and `world-gpu-scene.ts` become thin binding glue in the native profile, and the legacy backend keeps the TS (rollback). A native-engine build that reaches a TS world algorithm fails the artifact inspection (§15.2).
 
 ## Out of scope
 
@@ -41,4 +41,4 @@
 **Status:** NOT STARTED
 **Files:** proposed `packages/runtime-native/src/engine/world/gpu_scene/`; `packages/core/src/world-cells.ts`, `world-tiles.ts`, `world-gpu-scene.ts` (binding glue)
 - [ ] The placement buffer after a scripted camera path matches the `world-gpu-scene.spec.ts` reference. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_world_gpu_scene`
-- [ ] The strict-build artifact inspection finds no TS world implementation reachable from the world fixture. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_strict_artifact_inspect`
+- [ ] The native-engine artifact inspection finds no TS world implementation reachable from the world fixture. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_strict_artifact_inspect`

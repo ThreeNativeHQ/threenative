@@ -9,7 +9,7 @@
 ## Context
 
 §11.3 names virtual shadows among the systems that cannot stay a hidden TypeScript implementation in
-a strict build. Today they live in `packages/core/src/render/virtual-shadow.ts` and
+a native-engine build. Today they live in `packages/core/src/render/virtual-shadow.ts` and
 `packages/core/src/render/virtual-shadow-pages.ts`. Ordinary shadows are N09's; this is the paged
 virtual shadow map path, which depends on native visibility (N12) to decide which casters render into
 which pages.

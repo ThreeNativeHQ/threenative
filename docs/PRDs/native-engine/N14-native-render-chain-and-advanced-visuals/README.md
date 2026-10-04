@@ -2,6 +2,8 @@
 
 **Status:** PROPOSED — sliced 2026-10-04 from the [native-engine batch](../README.md) (§10, §11.3, §16).
 
+**Gate:** no child PRD here starts until [PRD-534 (CP1)](../PRD-534-cp1-the-native-engine-earns-the-port.md) passes (owner decision 3, 2026-10-04).
+
 The work package is done when every advanced visual system a representative game needs — virtual
 shadows, probes, the render chain's post effects, particles and fluids — runs in the native renderer
 with no TypeScript engine implementation behind it, and every temporal effect keeps correct history

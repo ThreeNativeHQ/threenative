@@ -1,6 +1,8 @@
 # N05 — Native TypeScript compiler qualification
 
-**Status:** PROPOSED — early risk gate (§16, §17). Children carry the boxes; this file has none.
+**Status:** PROPOSED — early spike, not on the promotion path. Children carry the boxes; this file has none.
+
+**Owner decision 2 (2026-10-04, [PRD-497](../PRD-497-n00-architecture-decision-and-compatibility-inventory.md)):** game code ships on V8 first ([PRD-531 (N18)](../PRD-531-n18-v8-game-runtime-adapter.md)), and gate T is a later milestone. N05 still runs early, because the answer is cheap and informs the catalog and lifetime design. A failed corpus blocks gate T only. It never blocks N06–N16, N18–N20 or [CP1](../PRD-534-cp1-the-native-engine-earns-the-port.md).
 
 N05 decides whether gate **T** (§1) is reachable before the engine rewrite widens. It must show one
 Three-shaped TypeScript fixture, written against the familiar `three`, `three/webgpu` and

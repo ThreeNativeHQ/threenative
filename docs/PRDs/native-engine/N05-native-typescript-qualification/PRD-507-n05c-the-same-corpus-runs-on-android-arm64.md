@@ -1,6 +1,6 @@
 # PRD-507 — The same corpus runs on Android arm64 (N05c)
 
-**Status:** PROPOSED
+**Status:** PROPOSED — early spike for gate T; blocks nothing else (owner decision 2)
 **Complexity:** 4 — cross-compilation, NDK linking and packaging for a third-party compiler runtime
 **Owner:** João
 **Work package:** N05 — [native-engine batch](../README.md) · [N05 index](README.md)

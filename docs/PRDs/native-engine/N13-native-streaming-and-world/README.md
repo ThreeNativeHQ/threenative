@@ -2,6 +2,8 @@
 
 **Status:** PROPOSED — umbrella for PRD-520 … PRD-522; the boxes live in the child PRDs.
 
+**Gate:** no child PRD here starts until [PRD-534 (CP1)](../PRD-534-cp1-the-native-engine-earns-the-port.md) passes (owner decision 3, 2026-10-04).
+
 The work package must prove that a streamed world loads, walks and unloads on the native host with no TypeScript engine implementation behind it (§11.3). Streaming admission stays inside a per-frame budget. Failures and recovery are visible. Repeated bounded load/unload cycles show no sustained memory growth (§15.4). Today's systems are `packages/core/src/streaming.ts`, `world-cells.ts`, `world-tiles.ts`, `world-gpu-scene.ts`, `world-package.ts` and `world.ts`. Their baseline record is the Machinefall entry in `docs/verification/runtime-perf-state.md` (§3 R4).
 
 | Key | PRD | Depends on |
