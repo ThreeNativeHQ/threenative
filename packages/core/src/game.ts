@@ -1819,28 +1819,40 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           // single window-close read is one instantaneous, lagged `info.render.timestamp` — the
           // sample that made a 17.6 ms frame read as 2.98–10.40 ms. The sample carries the
           // resolved frame id so a resolve still in flight is counted stale, not measured twice.
-          const gpuSample = renderer.gpuFrameSample?.();
-          frameBudget?.addGpuMs(gpuSample?.ms, gpuSample?.frame);
-          // The one summed render timestamp split by pass: main and shadow come from the pass
+          //
+          // The reading is the frame's own passes out of three's per-pass map, handed out one
+          // resolved frame per presented frame. Three's resolve answers with one number for the
+          // batch — the last frame in it — so reading that instead dropped every frame a batch
+          // caught up on, and because the resolve is asked for on the same 1-in-8 stride the
+          // sampler uses, how many frames a batch caught up on was a function of frame rate.
+          // The pass recorder is what reads three's per-pass map back into per-frame numbers; a
+          // renderer it cannot instrument falls back to the batch's own single number, which is the
+          // reading there was before — one sample per resolve rather than one per sampled frame.
+          const gpuFrame = renderPassBudget?.nextGpuFrame();
+          const gpuSample = gpuFrame === undefined ? renderer.gpuFrameSample?.() : undefined;
+          frameBudget?.addGpuMs(
+            gpuFrame?.total ?? gpuSample?.ms,
+            gpuFrame?.frame ?? gpuSample?.frame,
+          );
+          // Where one resolved frame's GPU time went: main and shadow come from the pass
           // recorder's per-uid query results, and everything else in that pool (post chain,
           // reflections, HUD) is the remainder. Compute is its own pool.
-          const gpuSplit =
-            gpuSample === undefined || gpuSample.frame === undefined
-              ? undefined
-              : renderPassBudget?.gpuPassMs(gpuSample.frame);
-          if (gpuSplit !== undefined && gpuSample !== undefined) {
+          if (gpuFrame !== undefined) {
             const computeMs = renderer.gpuComputeMs?.();
             frameBudget?.addGpuBucketMs({
-              main: gpuSplit.main,
-              shadow: gpuSplit.shadow,
-              other: Math.max(0, gpuSample.ms - gpuSplit.main - gpuSplit.shadow),
+              main: gpuFrame.main,
+              shadow: gpuFrame.shadow,
+              other: Math.max(0, gpuFrame.total - gpuFrame.main - gpuFrame.shadow),
               ...(computeMs === undefined ? {} : { compute: computeMs }),
             });
+            // The main pass's own GPU series, for the adaptive LOD control loop: the frame
+            // budget's `gpuMain` bucket is the record, and this is the same number smoothed on the
+            // renderer so a world holding only the renderer can read it. Fed per delivered frame,
+            // fresh or not.
+            renderer.noteGpuMainMs?.(gpuFrame.main, gpuFrame.frame);
+          } else {
+            renderer.noteGpuMainMs?.(undefined);
           }
-          // The main pass's own GPU series, for the adaptive LOD control loop: the frame budget's
-          // `gpuMain` bucket is the record, and this is the same number smoothed on the renderer so
-          // a world holding only the renderer can read it. Fed every frame, fresh or not.
-          renderer.noteGpuMainMs?.(gpuSplit?.main, gpuSample?.frame);
           if (!depthCoupledOutput && this.#sceneEntered) this.#scene?.render(ctx);
           if (this.#sceneEntered) {
             if (!worldRendered) gameLoop.clearRuntimeDiagnostics();

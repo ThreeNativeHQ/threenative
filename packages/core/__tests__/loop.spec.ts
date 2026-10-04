@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { FRAME_BUDGET_MARKER, FrameBudget, type IFrameBudgetWindow } from "../src/frame-budget.js";
 import {
   FixedStepLoop,
   type IRenderPerformanceMetrics,
@@ -267,6 +268,109 @@ describe("FixedStepLoop", () => {
     expect(loop.clockFrozen).toBe(true);
     expect(() => loop.freezeClock(-1)).toThrow(/settleSteps/u);
     expect(() => loop.freezeClock(1.5)).toThrow(/settleSteps/u);
+  });
+
+  /**
+   * One tick-counted run of 300 presented frames, with a 10-tick `advance()` batch before every
+   * other frame when `batches` is on. The clock is frozen, so a live frame simulates nothing and the
+   * batches are the only simulation; each of a batch's 10 updates costs half a millisecond and each
+   * live frame renders a fixed 12 ms. The only difference between the two runs is the batches.
+   */
+  function runTickCountedWindow(batches: boolean): IFrameBudgetWindow[] {
+    const markers: string[] = [];
+    let clock = 0;
+    const budget = new FrameBudget({
+      report: (line) => markers.push(line),
+      reportEvery: 300,
+    });
+    const loop = new FixedStepLoop({
+      budget,
+      now: () => clock,
+      onRender: () => {
+        budget.addRender(12);
+        return undefined;
+      },
+      onUpdate: () => {
+        clock += 0.5;
+      },
+    });
+
+    loop.freezeClock(0);
+    loop.start(0);
+    for (let frame = 1; frame <= 300; frame += 1) {
+      if (batches && frame % 2 === 0) loop.advance(10);
+      loop.stepFrame(frame * 16.6667);
+    }
+    return markers
+      .filter((line) => line.startsWith(`${FRAME_BUDGET_MARKER}:`))
+      .map(
+        (line) => JSON.parse(line.slice(`${FRAME_BUDGET_MARKER}:`.length)) as IFrameBudgetWindow,
+      );
+  }
+
+  it("charges a counted tick batch to update and substeps without counting it as a frame", () => {
+    // A playtest runner counts ticks rather than milliseconds, so `advance()` is how the whole run
+    // simulates, and its cost used to run outside the meter entirely: `phases.update` read 0 ms and
+    // `substeps` read 0. Opening a metered frame around the batch fixed that reading and broke three
+    // others -- the batch drew nothing, so half of every window's frame/render percentiles were
+    // zeroes, its timestamp moved the present clock, and the window closed on 300 *metered* frames
+    // rather than 300 presented ones, which is how a 300-frame window came to hold ~20 GPU
+    // timestamp samples instead of ~37. The cost is reported; the batch is not a frame.
+    const windows = runTickCountedWindow(true);
+
+    expect(windows.length, `300 presented frames reported ${windows.length} windows`).toBe(1);
+    const window = windows[0] as IFrameBudgetWindow;
+    expect(window.frames).toBe(300);
+    // The cost of 150 batches of 10 half-millisecond updates, reported in the two series that
+    // describe simulation: 5 ms per batch, 10 steps per batch.
+    expect(window.phases.update.p95).toBe(5);
+    expect(window.substeps.max).toBe(10);
+    // One entry per presented frame *and* per batch -- 300 + 150. A batch is measured, not counted.
+    expect(window.phases.update.samples).toBe(450);
+    expect(window.substeps.samples).toBe(450);
+    // The presented-interval series holds one interval per presented frame and none for the 150
+    // batches; the first frame has no predecessor, so 299 is every presented frame's interval.
+    expect(window.presented.samples).toBe(299);
+    expect(window.hitches).toBe(0);
+  });
+
+  it("does not dilute the render percentiles of presented frames with counted batches", () => {
+    // The measured regression of opening a frame per batch: 150 batches entered the render phase as
+    // zero-millisecond frames, so the window's mean render cost read 7.4 ms on a machine that
+    // rendered 12 ms every frame, and a 120 fps acceptance reading those percentiles saw a game that
+    // renders nothing half the time. The batch's cost is reported in `update`; the frame and render
+    // series describe presented frames only, so they must read identically with and without batches.
+    const batched = runTickCountedWindow(true);
+    const plain = runTickCountedWindow(false);
+
+    expect(batched[0]?.phases.render).toEqual(plain[0]?.phases.render);
+    expect(batched[0]?.frame).toEqual(plain[0]?.frame);
+  });
+
+  it("charges a counted batch once when a frozen prime advances inside a live frame", () => {
+    // The settling pass `#primeFrame` runs is `advance()` itself, called from inside the frame that
+    // armed it -- so the batch cannot open a second metered frame on top of the open one, and its
+    // cost belongs to the enclosing frame's update exactly once.
+    let clock = 0;
+    const budget = new FrameBudget({ report: () => undefined, reportEvery: 1000 });
+    const loop = new FixedStepLoop({
+      budget,
+      now: () => clock,
+      onUpdate: () => {
+        clock += 1;
+      },
+      onRender: () => undefined,
+    });
+    loop.freezeClock(5);
+    loop.start(0);
+
+    loop.stepFrame(16.6667);
+    const window = budget.window();
+    expect(window.frames).toBe(1);
+    // Five 1 ms steps, charged to the enclosing frame's update once -- not twice, and not on a
+    // second frame opened on top of the open one.
+    expect(window.phases.update.p50).toBe(5);
+    expect(window.frame.p50).toBe(5);
   });
 
   it("reports the actual callback duration separately from presentation timestamps", () => {

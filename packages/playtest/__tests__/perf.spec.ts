@@ -175,15 +175,15 @@ describe("assessPerfMarkers", () => {
 });
 
 describe("a frame rate the run cannot vouch for", () => {
-  const VIRTUAL = { strategy: "private-xvfb", virtual: true } as const;
-  const HOST = { strategy: "host", virtual: false } as const;
+  const virtual = { strategy: "private-xvfb", virtual: true } as const;
+  const host = { strategy: "host", virtual: false } as const;
 
   it("refuses an fps bound on a private Xvfb instead of satisfying it with a wrong number", () => {
     // Measured on midway's desktop build under the capture-lock Xvfb: window 2 reported 1123.60 fps
     // and window 3 20000.00, and `--min-fps 55` PASSED. Same package's `trace` refuses to print a
     // frame rate from a private display at all (13.3 fps there against 57.7 on the real one).
     const parsed = parsePerformanceMarkers(sampleStream());
-    const report = assessPerfMarkers(parsed, { minFps: 55, requireWindows: 2 }, "test", VIRTUAL);
+    const report = assessPerfMarkers(parsed, { minFps: 55, requireWindows: 2 }, "test", virtual);
     expect(report.violations).toEqual([
       expect.objectContaining({ code: "TN_PERF_VIRTUAL_DISPLAY", observed: undefined, bound: 55 }),
     ]);
@@ -202,7 +202,7 @@ describe("a frame rate the run cannot vouch for", () => {
       parsed,
       { allowVirtualDisplay: true, minFps: 55, requireWindows: 2 },
       "test",
-      VIRTUAL,
+      virtual,
     );
     // The windows in this fixture are 20.55 and 20.9 fps, so the bound genuinely fails — the point
     // is that it is assessed rather than refused, and the number is presented.
@@ -217,7 +217,7 @@ describe("a frame rate the run cannot vouch for", () => {
 
   it("leaves a run on a vouched-for display exactly as it was", () => {
     const parsed = parsePerformanceMarkers(sampleStream());
-    const report = assessPerfMarkers(parsed, { minFps: 20, requireWindows: 2 }, "test", HOST);
+    const report = assessPerfMarkers(parsed, { minFps: 20, requireWindows: 2 }, "test", host);
     expect(report.violations).toEqual([]);
     expect(report.display).toEqual({ fpsSuppressed: false, strategy: "host", virtual: false });
     // A source that carries no display knowledge — a log file from elsewhere — is untouched.
@@ -226,7 +226,7 @@ describe("a frame rate the run cannot vouch for", () => {
 
   it("still assesses a frame-duration bound, which the run did measure", () => {
     const parsed = parsePerformanceMarkers(sampleStream());
-    const report = assessPerfMarkers(parsed, { maxFrameMsP95: 45.0, requireWindows: 2 }, "test", VIRTUAL);
+    const report = assessPerfMarkers(parsed, { maxFrameMsP95: 45.0, requireWindows: 2 }, "test", virtual);
     // Both steady windows carry a 45.7 ms frame p95, and a bound is checked against every steady
     // window rather than the median — so two violations, and the frame rate never enters it.
     expect(report.violations.map(({ code }) => code)).toEqual([
@@ -239,7 +239,7 @@ describe("a frame rate the run cannot vouch for", () => {
   it("prints no frame-rate column, and says why rather than leaving it blank", () => {
     const parsed = parsePerformanceMarkers(sampleStream());
     const text = formatPerfReport(
-      assessPerfMarkers(parsed, { minFps: 55, requireWindows: 2 }, "test", VIRTUAL),
+      assessPerfMarkers(parsed, { minFps: 55, requireWindows: 2 }, "test", virtual),
     );
     expect(text).toContain("fps suppressed");
     expect(text).toContain("private-xvfb");
@@ -256,7 +256,7 @@ describe("a frame rate the run cannot vouch for", () => {
   it("prints the frame rate again once the operator has acknowledged the display", () => {
     const parsed = parsePerformanceMarkers(sampleStream());
     const text = formatPerfReport(
-      assessPerfMarkers(parsed, { allowVirtualDisplay: true, requireWindows: 2 }, "test", VIRTUAL),
+      assessPerfMarkers(parsed, { allowVirtualDisplay: true, requireWindows: 2 }, "test", virtual),
     );
     expect(text).not.toContain("fps suppressed");
     expect(text).toMatch(/^window\s+fps/mu);
@@ -396,6 +396,34 @@ describe("formatPerfReport", () => {
     );
     const text = formatPerfReport(assessPerfMarkers(parsed, { requireWindows: 1 }, "log"));
     expect(text).toContain("late sync compile: none — every window reported pipelineCompileCalls 0");
+  });
+
+  it("prints the GPU-selected main-pass triangle count and names the CPU capacity figure", () => {
+    // Three counts an indirect batch at its merged geometry's capacity, so the CPU figure is the
+    // ceiling over what the kernel can select. Quoting only that one put 338 million triangles on
+    // a scene that drew 402 thousand.
+    const withPasses = (gpu: boolean): string =>
+      `${budgetLine(1, 30, 40, 20)}\n` +
+      `TN_FRAME_BUDGET:{"window":2,"frames":300,"hitches":0,"fps":30,${withPassesBody(gpu)}}\n`;
+    const withPassesBody = (gpu: boolean): string =>
+      `"passes":{"main":{"frames":300,"draws":{"mean":30,"p50":30,"p95":30},` +
+      `"triangles":{"mean":338000000,"p50":338000000,"p95":338000000}` +
+      (gpu ? `,"gpuTriangles":402000}}` : "}}");
+
+    const gpuText = formatPerfReport(
+      assessPerfMarkers(parsePerformanceMarkers(withPasses(true)), { requireWindows: 1 }, "log"),
+    );
+    expect(gpuText).toContain("main pass triangles: 402,000 GPU-selected, 338,000,000 CPU capacity");
+
+    const cpuText = formatPerfReport(
+      assessPerfMarkers(parsePerformanceMarkers(withPasses(false)), { requireWindows: 1 }, "log"),
+    );
+    expect(cpuText).toContain("the GPU-selected count was not reported");
+  });
+
+  it("prints no triangle line for a window that submitted no pass", () => {
+    const text = formatPerfReport(assessPerfMarkers(parsePerformanceMarkers(sampleStream()), { requireWindows: 1 }, "log"));
+    expect(text).not.toContain("main pass triangles");
   });
 
   it("prints no hitch section for a stream without hitch lines", () => {

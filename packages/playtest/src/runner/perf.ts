@@ -67,6 +67,18 @@ export interface IPerfSummary {
   readonly p95: number;
 }
 
+/**
+ * One pass's submissions in a window, as the runtime reported them.
+ *
+ * `triangles` is three's CPU figure — `instanceCount * count / 3` per draw, and an indirect batch's
+ * `count` is its merged geometry's capacity, so a streamed world reads in the hundreds of millions.
+ * `gpuTriangles` is what the kernel selected, which is the number to bound work against.
+ */
+export interface IPerfPassJson {
+  readonly triangles: IPerfSummary;
+  readonly gpuTriangles?: number;
+}
+
 /** What the window's frames were drawn at, when the loop reported it. */
 export interface IFrameSurfaceJson {
   /** Present only when the runtime measured whether asynchronous pipeline compilation remained active. */
@@ -89,6 +101,7 @@ export interface IFrameBudgetWindowJson {
   readonly frames: number;
   readonly frame?: IPerfSummary;
   readonly hitches: number;
+  readonly passes?: Readonly<Record<string, IPerfPassJson>>;
   readonly phases?: Readonly<Record<string, IPerfSummary>>;
   /** Frames that reached the display in this window, when the host can count them. */
   readonly presents?: number;
@@ -796,6 +809,7 @@ export function formatPerfReport(report: IPerfReport): string {
     );
   }
   if (report.discardedWindows.length > 0) lines.push("* discarded as startup (window 1 always lies)");
+  lines.push(...formatMainPassTriangles(report.budgets));
   // A zero in the fps column is true and easy to misread as a frozen game: name the windows where
   // the display simply showed nothing in a window of loop frames too short to contain a present.
   const presentedNothing = report.budgets.filter((window) => window.presents === 0);
@@ -820,6 +834,27 @@ export function formatPerfReport(report: IPerfReport): string {
   }
   if (report.pass) lines.push("PASS");
   return `${lines.join("\n")}\n`;
+}
+
+/**
+ * The main pass's triangle count, from the last window, and which of the two figures it is.
+ *
+ * Three counts a draw as `instanceCount * count / 3`, and for an indirect batch `count` is the
+ * merged geometry's capacity rather than what the GPU selected — a streamed world read 338 million
+ * triangles for 402 thousand actually drawn. The GPU figure is the one worth acting on, so it wins
+ * when it is there and the CPU figure is named as the ceiling it is. A window that submitted no main
+ * pass says so rather than printing a zero.
+ */
+function formatMainPassTriangles(windows: readonly IFrameBudgetWindowJson[]): string[] {
+  const main = windows.at(-1)?.passes?.main;
+  if (main === undefined) return [];
+  const capacity = Math.round(main.triangles.p50).toLocaleString("en-US");
+  if (main.gpuTriangles === undefined)
+    return [`main pass triangles: ${capacity} (three's CPU capacity figure; the GPU-selected count was not reported)`];
+  return [
+    `main pass triangles: ${main.gpuTriangles.toLocaleString("en-US")} GPU-selected, ` +
+      `${capacity} CPU capacity`,
+  ];
 }
 
 /**

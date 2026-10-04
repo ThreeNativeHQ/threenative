@@ -86,13 +86,19 @@ describe("the frame budget names the surface the game's own loop drew", () => {
       renderer: {
         canvas,
         preferWebGPU: false,
-        webgl2Factory: () => ({
-          domElement: canvas,
-          info: { frame: 10, render: { timestamp: 6.25 } },
-          backend: { getTimestampFrames: () => [2] },
-          render: () => undefined,
-          setSize: () => undefined,
-        }),
+        webgl2Factory: () => {
+          // Three's pool resolves the frames that recorded queries, keyed by the `info.frame` its
+          // own animation loop would have advanced; the engine's wrapper is what advances it. This
+          // device records on every frame, so a reading has no age.
+          const info = { frame: 0, render: { timestamp: 6.25 } };
+          return {
+            domElement: canvas,
+            info,
+            backend: { getTimestampFrames: () => [info.frame] },
+            render: () => undefined,
+            setSize: () => undefined,
+          };
+        },
       },
       scenes: { test: Empty },
       start: "test",
@@ -115,8 +121,13 @@ describe("the frame budget names the surface the game's own loop drew", () => {
       expect(marker).toBeDefined();
       expect(JSON.parse(marker?.slice(FRAME_BUDGET_MARKER.length + 1) ?? "{}")).toMatchObject({
         gpuMs: 6.25,
-        gpuAgeFrames: 8,
         frames: 2,
+      });
+      // The pool is keyed by `info.frame`, which the engine's wrapper now advances, so this stub
+      // reports the same frame it recorded on: a reading from the frame that produced it has no
+      // age. The age is a real reading only when a frame went by without recording one.
+      expect(JSON.parse(marker?.slice(FRAME_BUDGET_MARKER.length + 1) ?? "{}")).toMatchObject({
+        gpuAgeFrames: 0,
       });
     } finally {
       await game.stop();

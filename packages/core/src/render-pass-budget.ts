@@ -75,10 +75,16 @@ interface IGpuUidEntry {
   readonly uid: string;
 }
 
-/** GPU milliseconds of a frame's main and shadow render passes, summed across each kind. */
-export interface IGpuPassSplit {
+/**
+ * One resolved frame's GPU milliseconds: the frame it belongs to, its own passes, and every pass it
+ * drew. `total` is the frame's cost — three's `framesDuration` for that frame, read back from the
+ * per-pass map rather than from the single number its resolve returns.
+ */
+export interface IGpuFrameReading {
+  readonly frame: number;
   readonly main: number;
   readonly shadow: number;
+  readonly total: number;
 }
 
 interface IPassFrame {
@@ -140,6 +146,8 @@ export class RenderPassBudget {
   readonly #stack: IPassFrame[] = [];
   /** Timestamp uids each render call allocated, keyed by the Three.js frame they belong to. */
   readonly #gpuUids = new Map<number, IGpuUidEntry[]>();
+  /** The last frame `nextGpuFrame` handed out; every earlier frame has been reported. */
+  #deliveredGpuFrame = -1;
 
   private constructor(target: IRenderPassTarget) {
     this.#target = target;
@@ -223,29 +231,65 @@ export class RenderPassBudget {
   }
 
   /**
-   * GPU milliseconds of one resolved frame's own main and shadow passes, or `undefined` until the
-   * frame's queries resolve and while no timestamp pool exists.
+   * The oldest resolved frame that has not been handed out yet, and where its GPU time went.
+   *
+   * Three answers a resolve with **one** number: the summed duration of the last frame in the
+   * batch (`three.webgpu.js:83746`). Every other frame that batch measured is written to the pool's
+   * own `timestamps` map, one entry per pass, keyed by the frame its uid names, and read by nobody.
+   * A resolve that caught up on k sampled frames therefore reported one of them, and the k-1 others
+   * were gone for good, because the pool is emptied before the resolve is submitted and the next one
+   * starts from nothing.
+   *
+   * That is what made the frame budget's sample count a function of frame *rate*: the engine asked
+   * for a resolve on the same 1-in-8 stride it samples on, three skips a resolve while one is still
+   * in flight, and the stride is a frame count where the round trip is not — so the faster the game
+   * presented, the fewer samples a window carried (28 in a 300-frame window on the 2026-10-03
+   * Machinefall probe, 1-2 in its ~200 fps windows, against the ~37 the sampler asked for).
+   *
+   * The uid list per frame is already kept here, so the batch is walked instead of collapsed: one
+   * sample per presented frame, one frame per sample, which is the shape the budget's series wants.
+   * A frame whose queries never resolved — the pool overflowed, or the game stopped drawing — is
+   * stepped over rather than waited on, so one missing frame cannot stall the queue behind it.
    *
    * A kind with no pass in the frame is zero, not absent: a frame that drew a main pass and no
-   * shadow genuinely spent 0 ms on shadow, and the caller subtracts both from the frame's summed
-   * `info.render.timestamp` to leave `other` (post chain, reflection, HUD). Entries are summed per
-   * kind, so a shadow cascade's several passes are one number.
+   * shadow genuinely spent 0 ms on shadow, and the caller subtracts both from `total` to leave
+   * `other` (post chain, reflection, HUD). Passes are summed per kind, so a shadow cascade's several
+   * passes are one number, and main never absorbs the nested shadow's.
    */
-  gpuPassMs(frame: number): IGpuPassSplit | undefined {
+  nextGpuFrame(): IGpuFrameReading | undefined {
+    for (const frame of this.#gpuUids.keys()) {
+      if (frame <= this.#deliveredGpuFrame) continue;
+      const sum = this.#gpuSum(frame);
+      if (sum === undefined) continue;
+      this.#deliveredGpuFrame = frame;
+      return { frame, main: sum.main, shadow: sum.shadow, total: sum.total };
+    }
+    return undefined;
+  }
+
+  /**
+   * One frame's resolved GPU milliseconds from the pool's per-pass map, or `undefined` while none of
+   * its passes has come back. `total` is every resolved pass of the frame — main, shadow and
+   * everything else — so the frame's own cost does not have to be inferred from three's one number
+   * for the batch.
+   */
+  #gpuSum(frame: number): { main: number; shadow: number; total: number } | undefined {
     const entries = this.#gpuUids.get(frame);
     const timestamps = this.#target.backend?.timestampQueryPool?.render?.timestamps;
     if (timestamps === undefined || entries === undefined) return undefined;
     let main = 0;
     let shadow = 0;
+    let total = 0;
     let resolved = 0;
     for (const { kind, uid } of entries) {
       const ms = timestamps.get(uid);
       if (ms === undefined || !Number.isFinite(ms) || ms < 0) continue;
       resolved += 1;
+      total += ms;
       if (kind === "main") main += ms;
       else if (kind === "shadow") shadow += ms;
     }
-    return resolved === 0 ? undefined : { main, shadow };
+    return resolved === 0 ? undefined : { main, shadow, total };
   }
 
   /**
