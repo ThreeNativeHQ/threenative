@@ -791,9 +791,9 @@ jobs:
       fail-fast: false
       max-parallel: 4
       matrix: ${{ fromJSON(needs.scope.outputs.plan).templateMatrix }}
-    # Balanced like the rest: the pool advertises itself only while a runner is idle, so these legs
-    # take local slots when free and overflow to hosted otherwise, never queueing behind the pool.
-    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    # Hosted on purpose: template legs use hosted while the balancer routes builds and tests
+    # to the local pool, avoiding one routing variable sending the whole burst to a single pool.
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
