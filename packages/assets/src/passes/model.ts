@@ -18,7 +18,6 @@ import {
   listTextureSlots,
   prune,
   quantize,
-  reorder,
   simplify,
 } from "@gltf-transform/functions";
 import { MeshoptEncoder, MeshoptSimplifier } from "meshoptimizer";
@@ -71,6 +70,7 @@ import {
   textureBindings,
   textureKeys,
 } from "./model-textures.js";
+import { reorderStaticPrimitives } from "./reorder-static.js";
 import {
   type ISharedImage,
   type ISharedImageStore,
@@ -243,6 +243,12 @@ const MATERIAL_MERGE_VERSION = 1;
  * which the compile digest already hashes, so it invalidates model outputs and nothing else.
  */
 const MODEL_DEDUPE_VERSION = 1;
+/**
+ * Bumped when `reorder-static.ts` changes what it emits: every model cooked before this fix had its
+ * deforming geometry renumbered, and a warm cache entry keyed on the pass switches alone would keep
+ * serving those files. 1 = deforming primitives keep their authored vertex order and count.
+ */
+const MODEL_REORDER_VERSION = 1;
 
 /** Relative bounding-box tolerance of the self-verify check (PRD: 0.1%). */
 const BBOX_TOLERANCE = 0.001;
@@ -803,6 +809,9 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
       // content-identical sources, so a bake published before this key existed named one output
       // per copy and must not be re-served as if it had deduped.
       dedupe: MODEL_DEDUPE_VERSION,
+      // Same reason: which primitives `reorder` declines to renumber is part of the output, and a
+      // warm entry from before it declined would hand a game geometry its sidecars cannot address.
+      reorderVersion: MODEL_REORDER_VERSION,
       // `"none"` and "absent" are different cache keys on purpose: absent bakes with defaults.
       virtual:
         options.virtual === "none"
@@ -922,7 +931,10 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
         })(document);
       }
       if (enabled.reorder || enabled.meshopt) await MeshoptEncoder.ready;
-      if (enabled.reorder) await reorder({ encoder: MeshoptEncoder })(document);
+      // The last stage that moves a vertex, and the only one that does so selectively: deforming
+      // geometry keeps its authored vertex order because a vertex index into it is an address
+      // something outside this file may already hold. `reorder-static.ts`.
+      if (enabled.reorder) reorderStaticPrimitives(document, MeshoptEncoder);
       // After `reorder`, which is the last stage that moves a vertex, and before `quantize`, which
       // changes what a position is but never which vertex it is.
       const virtual =

@@ -55,6 +55,20 @@ function sharedByLevels(semantic: string): boolean {
 
 const DEFORMING_ATTRIBUTES: ReadonlySet<string> = new Set(["JOINTS_0", "WEIGHTS_0"]);
 
+/**
+ * Whether a primitive is deforming: skinned, morph-targeted, or carrying per-vertex joint data.
+ *
+ * The one definition of the word, shared by every rule that declines to rewrite geometry a rig
+ * drives — no discrete chain, no joined far rung, and no vertex reordering in the cook. A vertex
+ * index into deforming geometry is an address something outside the file may already hold, and a
+ * rig is where index-addressed data is most likely to come from: a MetaHuman sidecar records the
+ * head vertex each brow strand root rides and reads its position back every frame.
+ */
+export function deforming(primitive: Primitive, skinned: boolean): boolean {
+  if (skinned || primitive.listTargets().length > 0) return true;
+  return primitive.listSemantics().some((semantic) => DEFORMING_ATTRIBUTES.has(semantic));
+}
+
 const TRIANGLES_MODE = 4;
 
 const TRIANGLE = 3;

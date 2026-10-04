@@ -151,6 +151,96 @@ describe("modelPass", () => {
     }
   });
 
+  it("should keep a deforming primitive's vertex order and still reorder a static one", async () => {
+    // A vertex index is an address, and something outside this cook may already hold one: a
+    // MetaHuman sidecar records the head vertex each brow strand root rides, and reads the position
+    // back at that index every frame. The cook cannot know who holds an index, so deforming
+    // geometry — skinned, morph-targeted, or carrying joint data — keeps its exact vertex order and
+    // count, and everything else is still reordered for transmission size.
+    const document = buildFixtureDocument({ textured: false });
+    const root = document.getRoot();
+    const character = root.listMeshes()[0];
+    const cloth = character?.listPrimitives()[0];
+    const head = character?.listPrimitives()[1];
+    if (cloth === undefined || head === undefined) throw new Error("Fixture lost a primitive.");
+    // Both reasons in one cook: the cloth stays skinned-only, the head also gains a morph target.
+    const buffer = head.getAttribute("POSITION")?.getBuffer() ?? null;
+    head.addTarget(
+      document.createPrimitiveTarget("head-jaw-open").setAttribute(
+        "POSITION",
+        document
+          .createAccessor("head-jaw-open-deltas")
+          .setBuffer(buffer)
+          .setType("VEC3")
+          .setArray(new Float32Array(Array.from({ length: 18 }, (_, index) => (index % 3) * 0.01))),
+      ),
+    );
+    // A static mesh whose index buffer is not already in draw order, so the reorder has real work
+    // to do on it: the jumbled order below is a non-identity meshoptimizer remap.
+    const staticIndices = [6, 1, 8, 0, 7, 3, 2, 4, 5];
+    const prop = document
+      .createPrimitive()
+      .setIndices(
+        document
+          .createAccessor("prop-indices")
+          .setBuffer(buffer)
+          .setType("SCALAR")
+          .setArray(Uint32Array.from(staticIndices)),
+      )
+      .setAttribute(
+        "POSITION",
+        document
+          .createAccessor("prop-positions")
+          .setBuffer(buffer)
+          .setType("VEC3")
+          .setArray(new Float32Array(Array.from({ length: 27 }, (_, index) => index))),
+      );
+    root
+      .listScenes()[0]
+      ?.addChild(
+        document.createNode("prop-root").setMesh(document.createMesh("prop").addPrimitive(prop)),
+      );
+
+    const source = (meshName: string, primitive: number): number[] => [
+      ...(root
+        .listMeshes()
+        .find((mesh) => mesh.getName() === meshName)
+        ?.listPrimitives()
+        [primitive]?.getAttribute("POSITION")
+        ?.getArray() ?? []),
+    ];
+    const before = {
+      cloth: source("character", 0),
+      head: source("character", 1),
+      prop: source("prop", 0),
+    };
+    // Lossless options, so the only stage that can move a vertex is `reorder` itself.
+    const result = await modelPass({
+      compact: false,
+      passes: { quantize: false },
+      textures: "none",
+      virtual: "none",
+    }).apply(Buffer.from(await new NodeIO().writeBinary(document)), "character.glb");
+    if (Buffer.isBuffer(result)) throw new Error("model pass returned an unchanged buffer");
+    const output = await readVerified(result.buffer);
+    const cooked = (meshName: string, primitive: number): number[] => [
+      ...(output
+        .listMeshes()
+        .find((mesh) => mesh.getName() === meshName)
+        ?.listPrimitives()
+        [primitive]?.getAttribute("POSITION")
+        ?.getArray() ?? []),
+    ];
+
+    expect(cooked("character", 0)).toEqual(before.cloth);
+    expect(cooked("character", 1)).toEqual(before.head);
+    // And the static half of the rule: reordered, and nothing but reordered.
+    expect(cooked("prop", 0)).not.toEqual(before.prop);
+    expect([...cooked("prop", 0)].sort((a, b) => a - b)).toEqual(
+      [...before.prop].sort((a, b) => a - b),
+    );
+  });
+
   it("decodes normalized ushort joint weights by their own component type in reachableStats", async () => {
     // External exporters ship WEIGHTS_0 as normalized UNSIGNED_SHORT. reachableStats must
     // decode them /65535 like the GPU does; the hardcoded ubyte scale (/255) reads raw
