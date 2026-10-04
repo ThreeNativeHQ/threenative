@@ -1,5 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { compileAssets } from "@threenative/assets";
 import { createAssetLoader } from "@threenative/core";
@@ -12,7 +11,7 @@ import {
   Texture,
   type Group as ThreeGroup,
 } from "three";
-import { afterEach, describe, expect, it, test, vi } from "vitest";
+import { describe, expect, it, test, vi } from "vitest";
 import {
   MODEL_NAMES,
   generateNativeAssetFixture,
@@ -20,13 +19,9 @@ import {
 } from "../../../examples/abyss-framework/vq-assets/generate.js";
 import { AssetScene } from "../../../examples/abyss-framework/vq-assets/src/game.js";
 import config from "../../../examples/abyss-framework/vq-assets/threenative.config.js";
+import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { assertNativeAssetsCompatible } from "../src/build.js";
 import { loadConfig } from "../src/config.js";
-
-const roots: string[] = [];
-afterEach(async () =>
-  Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))),
-);
 
 /** One glb with the shape the fixture's models have: a node the player can find and a turn clip. */
 function fixtureModel(name: string): { scene: Group; animations: AnimationClip[] } {
@@ -112,8 +107,7 @@ async function runLifecycle(options: {
 }
 
 test("real Meshopt and Draco inputs retain decoded geometry, images and animation through the decoder-free cook", async () => {
-  const cwd = await mkdtemp(path.join(os.tmpdir(), "vq01-fixture-"));
-  roots.push(cwd);
+  const cwd = await makeTempDir("vq01-fixture-");
   const source = path.join(cwd, config.assets.source);
   const ktx2 = await generateNativeAssetFixture(source);
   await writeFile(path.join(cwd, "package.json"), '{"name":"vq-fixture","type":"module"}');
