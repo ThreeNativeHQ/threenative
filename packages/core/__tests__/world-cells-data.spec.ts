@@ -319,7 +319,7 @@ it("submits a rotated offset model when its actual geometry intersects the camer
     terrain: false,
     gpuScene: false,
     adaptiveLod: false,
-    shadows: false,
+    shadows: { cast: false, receive: false },
     data: {
       manifest: {
         ...manifest,
