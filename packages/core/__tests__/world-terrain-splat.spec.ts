@@ -3,18 +3,39 @@ import { MeshStandardNodeMaterial } from "three/webgpu";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { loadTerrainSplat, stackLayers } from "../src/world-terrain-splat.js";
 
+/** Every layer states how it responds to light: an `orm` map, or the two numbers themselves. */
 const table = {
-  base: { id: "moss", normal: true, tile: 3, tint: [0.36, 0.47, 0.27] },
+  base: {
+    id: "moss",
+    metalness: 0,
+    normal: true,
+    roughness: 0.9,
+    tile: 3,
+    tint: [0.36, 0.47, 0.27],
+  },
   breakup: { push: 0.25, scale: 0.35 },
   layers: [
-    { channel: "r", hi: 1.35, id: "litter", lo: 0.3, mask: "litter", tile: 3, tint: [1, 1, 1] },
+    {
+      channel: "r",
+      hi: 1.35,
+      id: "litter",
+      lo: 0.3,
+      mask: "litter",
+      metalness: 0,
+      roughness: 0.95,
+      tile: 3,
+      tint: [1, 1, 1],
+    },
     {
       channel: "b",
       hi: 0.75,
       id: "grass",
       lo: 0.25,
       mask: "b",
+      metalness: 0,
       normal: true,
+      orm: true,
+      roughness: 0.8,
       tile: 3.5,
       tint: [1, 1, 1],
     },
@@ -24,6 +45,8 @@ const table = {
       id: "rock",
       lo: 0.45,
       mask: "a",
+      metalness: 0.2,
+      roughness: 0.6,
       tile: 7,
       tint: [1, 1, 1],
       triplanar: true,
@@ -99,6 +122,9 @@ function sampledTextures(material: MeshStandardNodeMaterial): Set<Texture> {
   };
   walk(material.colorNode as never);
   walk(material.normalNode as never);
+  walk(material.roughnessNode as never);
+  walk(material.aoNode as never);
+  walk(material.metalnessNode as never);
   return found;
 }
 
@@ -118,16 +144,52 @@ describe("loadTerrainSplat", () => {
     expect(surface).toBeInstanceOf(MeshStandardNodeMaterial);
     expect((surface as MeshStandardNodeMaterial).colorNode).toBeTruthy();
     expect((surface as MeshStandardNodeMaterial).normalNode).toBeTruthy();
-    // Every set's albedo, and a normal only where the table asks for one.
+    // Every set's albedo, a normal and an ORM map only where the table asks for one.
     expect(requested.sort()).toEqual(
       [
         "world/terrain/tex/grass_diff.jpg",
         "world/terrain/tex/grass_nrm.jpg",
+        "world/terrain/tex/grass_orm.jpg",
         "world/terrain/tex/litter_diff.jpg",
         "world/terrain/tex/moss_diff.jpg",
         "world/terrain/tex/moss_nrm.jpg",
         "world/terrain/tex/rock_diff.jpg",
       ].sort(),
+    );
+  });
+
+  it("drives roughness, occlusion and metalness from the table and its ORM maps", async () => {
+    const { assets } = served({
+      "world/world.json": world({ splat: "terrain/splat.rgba8", table: "terrain/layers.json" }),
+      "world/terrain/layers.json": table,
+      "world/terrain/splat.rgba8": new Uint8Array(2 * 4 * 4 * 4),
+    });
+    const surface = (await loadTerrainSplat({
+      assets,
+      renderer: copyingRenderer() as never,
+      url: "world/world.json",
+    })) as MeshStandardNodeMaterial;
+    // The surface's whole light response comes from the table: no scalar left in the package.
+    expect(surface.roughnessNode).toBeTruthy();
+    expect(surface.aoNode).toBeTruthy();
+    expect(surface.metalnessNode).toBeTruthy();
+    expect(surface.roughness).toBe(1);
+    expect(surface.metalness).toBe(0);
+    // splat + albedo + normal + the single ORM layer's array.
+    expect(sampledTextures(surface).size).toBe(4);
+  });
+
+  it("refuses a layer that states neither an ORM map nor its own roughness and metalness", async () => {
+    const { assets } = served({
+      "world/world.json": world({ splat: "terrain/splat.rgba8", table: "terrain/layers.json" }),
+      "world/terrain/layers.json": {
+        ...table,
+        layers: [{ channel: "r", hi: 1, id: "rock", lo: 0, mask: "a", tile: 7, tint: [1, 1, 1] }],
+      },
+      "world/terrain/splat.rgba8": new Uint8Array(2 * 4 * 4 * 4),
+    });
+    await expect(loadTerrainSplat({ assets, url: "world/world.json" })).rejects.toThrow(
+      /'rock' declares no orm map/u,
     );
   });
 
@@ -159,7 +221,9 @@ describe("loadTerrainSplat", () => {
           id: `layer-${String(index)}`,
           lo: 0,
           mask: "a",
+          metalness: 0,
           normal: true,
+          roughness: 0.7,
           tile: 3,
           tint: [1, 1, 1],
         })),
@@ -207,9 +271,9 @@ describe("loadTerrainSplat", () => {
       renderer: copyingRenderer() as never,
       url: "world/world.json",
     })) as MeshStandardNodeMaterial;
-    // splat + 4 albedos (one layer's size the rest do not share) + 1 stacked normal set.
-    expect(sampledTextures(surface).size).toBe(6);
-    expect(info).toHaveBeenCalledWith("TN_TERRAIN_SPLAT layers=4 samplers=6 stacked=1");
+    // splat + 4 albedos (one layer's size the rest do not share) + a stacked normal and ORM set.
+    expect(sampledTextures(surface).size).toBe(7);
+    expect(info).toHaveBeenCalledWith("TN_TERRAIN_SPLAT layers=4 samplers=7 stacked=2");
     expect(warn).toHaveBeenCalledWith(expect.stringContaining("bind 4 samplers"));
   });
 });

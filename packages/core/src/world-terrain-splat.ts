@@ -35,12 +35,17 @@ import type { IWorldExtent } from "./world-package.js";
 
 type Channel = "r" | "g" | "b" | "a";
 
-/** One texture set: albedo (and optionally a normal map) tiled in metres, tinted in linear. */
+/** One texture set: albedo (and optionally a normal and ORM map) tiled in metres, tinted in linear. */
 export interface ITerrainSplatLayer {
   readonly id: string;
   readonly tile: number;
   readonly tint: readonly [number, number, number];
   readonly normal?: boolean;
+  /** `<id>_orm.jpg`: occlusion in r, roughness in g, metalness in b, read as linear data. */
+  readonly orm?: boolean;
+  /** Without an ORM map, how this layer answers light. Required unless `orm` is true. */
+  readonly metalness?: number;
+  readonly roughness?: number;
   readonly saturation?: number;
   /** Box-projected, for cliffs a top-down projection smears. */
   readonly triplanar?: boolean;
@@ -76,7 +81,7 @@ export interface ITerrainSplatTable {
     readonly planes: number;
     readonly masks: Readonly<Record<string, readonly [number, Channel | "rgb"]>>;
   };
-  /** Package-relative folder of `<id>_diff.jpg` and `<id>_nrm.jpg`. */
+  /** Package-relative folder of `<id>_diff.jpg`, `<id>_nrm.jpg` and `<id>_orm.jpg`. */
   readonly textures: string;
 }
 
@@ -294,8 +299,10 @@ export function stackLayers(
  * heightmap, so no cook moves a blend threshold), with noise-broken edges and macro brightness
  * variation. Texture sets tile in world metres on the package's ground plane (x, -z: a Z-up
  * authoring tool's x and y), cliffs can be triplanar, and the base plus any layer that asks carries
- * a normal map. Nothing here is a look choice: textures, tiles, tints, thresholds and noise scales
- * all come from the package's table, which the game authors once and its DCC shares.
+ * a normal map. Each layer answers light from its own ORM map where the table ships one and from
+ * the table's own roughness and metalness where it does not. Nothing here is a look choice:
+ * textures, tiles, tints, thresholds, surface response and noise scales all come from the package's
+ * table, which the game authors once and its DCC shares.
  *
  * @situation terrain textured by splat masks exported from Blender with the world package
  * @situation the game's terrain should match the DCC's terrain material without a second copy
@@ -335,9 +342,22 @@ export async function loadTerrainSplat(options: ILoadTerrainSplatOptions): Promi
   for (let plane = 0; plane < table.splat.planes; plane += 1)
     planes.push(texture(splat, maskUv).depth(int(plane)));
 
-  const load = async (layer: ITerrainSplatLayer, kind: "diff" | "nrm"): Promise<Texture> => {
+  const all: ITerrainSplatLayer[] = [table.base, ...table.layers];
+  for (const layer of all)
+    if (
+      layer.orm !== true &&
+      (typeof layer.roughness !== "number" || typeof layer.metalness !== "number")
+    )
+      throw new Error(
+        `loadTerrainSplat: terrain layer '${layer.id}' declares no orm map and no roughness/metalness; give it "orm": true or both numbers in the table the export recipe wrote.`,
+      );
+
+  const load = async (
+    layer: ITerrainSplatLayer,
+    kind: "diff" | "nrm" | "orm",
+  ): Promise<Texture> => {
     const map = await assets.texture(`${dir}${table.textures}/${layer.id}_${kind}.jpg`, {
-      data: kind === "nrm",
+      data: kind !== "diff",
     });
     map.wrapS = RepeatWrapping;
     map.wrapT = RepeatWrapping;
@@ -345,10 +365,11 @@ export async function loadTerrainSplat(options: ILoadTerrainSplatOptions): Promi
     map.needsUpdate = true;
     return map;
   };
-  const all: ITerrainSplatLayer[] = [table.base, ...table.layers];
   const withNormals = all.filter((layer) => layer.normal === true);
+  const withOrm = all.filter((layer) => layer.orm === true);
   const diffuseMaps = await Promise.all(all.map((layer) => load(layer, "diff")));
   const normalMaps = await Promise.all(withNormals.map((layer) => load(layer, "nrm")));
+  const ormMaps = await Promise.all(withOrm.map((layer) => load(layer, "orm")));
 
   // One sampler per set when the layers stack; separate textures (and a warning) when they do not.
   let samplers = 1;
@@ -372,6 +393,7 @@ export async function loadTerrainSplat(options: ILoadTerrainSplatOptions): Promi
   };
   const diffuseAt = sampler(diffuseMaps, "albedo");
   const normalAt = withNormals.length === 0 ? undefined : sampler(normalMaps, "normal");
+  const ormAt = withOrm.length === 0 ? undefined : sampler(ormMaps, "ORM");
 
   const ground = vec2(positionWorld.x, positionWorld.z.negate());
   const maskOf = (layer: ITerrainSplatMaskedLayer): Node<"float"> => {
@@ -412,9 +434,19 @@ export async function loadTerrainSplat(options: ILoadTerrainSplatOptions): Promi
       ? undefined
       : normalAt(slot, ground.div(layer.tile));
   };
+  /**
+   * A layer's answer to light, as occlusion in r, roughness in g and metalness in b: its ORM map
+   * where it ships one, else the two numbers the table states (and no occlusion to apply).
+   */
+  const ormOf = (layer: ITerrainSplatLayer): Node<"vec3"> => {
+    const slot = withOrm.indexOf(layer);
+    if (slot !== -1 && ormAt !== undefined) return ormAt(slot, ground.div(layer.tile));
+    return vec3(1, layer.roughness ?? 0, layer.metalness ?? 0);
+  };
 
   let color = albedo(table.base, 0);
   let normalSample: Node<"vec3"> = normalOf(table.base) ?? vec3(0.5, 0.5, 1);
+  let ormSample: Node<"vec3"> = ormOf(table.base);
   table.layers.forEach((layer, offset) => {
     const weight = clamp(
       maskOf(layer)
@@ -427,6 +459,7 @@ export async function loadTerrainSplat(options: ILoadTerrainSplatOptions): Promi
     color = mix(color, albedo(layer, offset + 1), weight);
     const nrm = normalOf(layer);
     if (nrm !== undefined) normalSample = mix(normalSample, nrm, weight);
+    ormSample = mix(ormSample, ormOf(layer), weight);
   });
   const macro = mx_noise_float(vec3(ground.mul(table.macro.scale), 0))
     .mul(0.5)
@@ -434,7 +467,9 @@ export async function loadTerrainSplat(options: ILoadTerrainSplatOptions): Promi
     .mul(table.macro.max - table.macro.min)
     .add(table.macro.min);
 
-  const material = new MeshStandardNodeMaterial({ metalness: 0, roughness: 0.92 });
+  // Every layer's own light response, blended by the same weights as its colour: the material
+  // carries no surface constant of its own.
+  const material = new MeshStandardNodeMaterial();
   material.name = "terrain-splat";
   material.colorNode = color.mul(macro);
   // A top-down projection's tangent frame: +x along u, ground +y (three -z) along v, OpenGL green
@@ -445,6 +480,9 @@ export async function loadTerrainSplat(options: ILoadTerrainSplatOptions): Promi
   const t = normalSample.mul(2).sub(1);
   const perturbed = tangent.mul(t.x).add(bitangent.mul(t.y)).add(n.mul(t.z)).normalize();
   material.normalNode = cameraViewMatrix.mul(vec4(perturbed, 0)).xyz.normalize();
+  material.aoNode = ormSample.r;
+  material.roughnessNode = ormSample.g;
+  material.metalnessNode = ormSample.b;
   console.info(
     `TN_TERRAIN_SPLAT layers=${String(all.length)} samplers=${String(samplers)} ` +
       `stacked=${String(stackedSets)}`,

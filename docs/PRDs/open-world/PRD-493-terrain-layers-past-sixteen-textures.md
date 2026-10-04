@@ -48,10 +48,22 @@ The blend curve keeps its current form (mask, `lo`/`hi`, breakup push, macro noi
 Uncompressed layers stack through `renderer.copyTextureToTexture` per layer (`ILoadTerrainSplatOptions.renderer`, so a game passes `ctx.renderer`); the array itself is created with `source.dataReady = false`, so no CPU pixel read and no zero upload stand in for a copy. Without a renderer every layer keeps its own sampler and the marker says what that costs.
 
 #### Phase 2: ORM per layer
-**Status:** NOT STARTED
+**Status:** LANDED
 **Files:** `packages/core/src/world-terrain-splat.ts`, `packages/blender-mcp/gpl/recipes/export_world.py`, `packages/core/gpl/recipes/export_world.py`
-- [ ] A table layer with `orm: true` drives roughness, AO and metalness from its map. A layer without it uses the table's values, and no numeric look constant remains in `loadTerrainSplat`. proof: red-green `world-terrain-splat.spec.ts` case.
-- [ ] The recipe writes `<id>_orm.jpg` for a layer whose material has a roughness input. proof: a red-green case in `pnpm exec vitest run packages/blender-mcp/__tests__/export-world.spec.ts`; Blender is installed here, so the case runs and does not skip.
+- [x] A table layer with `orm: true` drives roughness, AO and metalness from its map. A layer without it uses the table's values, and no numeric look constant remains in `loadTerrainSplat`. proof: red-green `world-terrain-splat.spec.ts` — 4 red (no `_orm.jpg` request, no `aoNode`/`roughnessNode`/`metalnessNode`), then 11/11 green exit 0. `MeshStandardNodeMaterial()` now takes no `metalness: 0, roughness: 0.92`, the three nodes carry the blended ORM chain, and a layer that states neither an ORM map nor both numbers throws before any texture loads.
+- [x] The recipe writes `<id>_orm.jpg` for a layer whose material has a roughness input. proof: red-green `pnpm exec vitest run packages/blender-mcp/__tests__/export-world.spec.ts` — with the recipe change stashed the case saw 3 files where it wanted 4 (red), then 9/9 green exit 0 with Blender 5.2.0 LTS (not skipped: no `TN_BLENDER_TESTS_SKIPPED`). A second case proves a table naming no `orm` source fails closed. Both copies of `export_world.py` remain byte-identical.
+
+## Decisions
+
+- **2026-10-04 — the recipe keys ORM off the table's `orm` flag, not a Blender material lookup.** The
+  table is the file the DCC's own terrain shader already reads, and it is what `normal` has always
+  keyed off, so a second source of truth (a material named after the layer id) would be a new
+  convention to keep in sync. The recipe fails closed when a layer asks for an ORM map and the table
+  names no `orm` source.
+- **2026-10-04 — a layer with neither `orm` nor `roughness`/`metalness` throws.** The alternative was
+  a neutral default inside the package, which is the look constant this PRD exists to remove; a table
+  written before ORM now fails with a message naming the recipe instead of silently changing how every
+  layer catches the light.
 
 #### Phase 3: Native and mobile sample the arrays
 **Status:** NOT STARTED
