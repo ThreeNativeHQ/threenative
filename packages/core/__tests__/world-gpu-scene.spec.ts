@@ -30,6 +30,7 @@ import {
   WorldGpuScene,
   compareMeshDraws,
   cullAndSelect,
+  cullAndSelectShadow,
   gpuSceneUnsupported,
   levelAtGates,
   liveKeyInstances,
@@ -3672,5 +3673,232 @@ describe("levelAtGates impostor terminal scale", () => {
     expect(at(400, 1).has("imp:2:0")).toBe(true);
     expect(at(3200, 8).has("imp:2:0")).toBe(true);
     expect(at(150, -0.5).has("imp:2:0")).toBe(true);
+  });
+});
+
+/**
+ * A shadow level's own selection, PRD-478 phase 2.
+ *
+ * The map is not the camera: its frustum is the light's window, its distance test is measured from
+ * the window centre its own map was rendered with, its gate is the texel size it can resolve, and
+ * its base is the chain level the cluster path hands it. A selection that took the main camera's
+ * numbers instead would draw the forest behind the player into the map and drop the shadow the
+ * player is standing in, which is why each of the four is a claim of its own here.
+ */
+
+/** Six planes of a top-down `size` box over the origin, which is what a level's light frustum is. */
+function levelPlanes(size: number, near = 1, far = 400): Float32Array {
+  const planes = new Float32Array(24);
+  const set = (index: number, x: number, y: number, z: number, d: number): void => {
+    planes[index * 4] = x;
+    planes[index * 4 + 1] = y;
+    planes[index * 4 + 2] = z;
+    planes[index * 4 + 3] = d;
+  };
+  set(0, 1, 0, 0, size);
+  set(1, -1, 0, 0, size);
+  set(2, 0, 0, 1, size);
+  set(3, 0, 0, -1, size);
+  set(4, 0, 1, 0, near);
+  set(5, 0, -1, 0, far);
+  return planes;
+}
+
+/** One asset with the committed fixture's three levels, one part each, one region per level. */
+function shadowFixture(): { input: IKernelInput; placements: IGpuPlacement[] } {
+  const slots = [
+    {
+      cull: undefined,
+      distances: DISTANCES,
+      levels: [
+        { firstKey: 0, parts: 1 },
+        { firstKey: 1, parts: 1 },
+        { firstKey: 2, parts: 1 },
+      ],
+    },
+  ];
+  const levels = slots[0]?.levels ?? [];
+  const regions: IRegion[] = levels.map((_, index) => ({
+    argsIndex: index,
+    capacity: 8,
+    indexCount: 3,
+    local: LOCAL,
+    name: `k${String(index)}`,
+    start: index * 8,
+  }));
+  // Four placements: one the main camera alone sees, one the map alone sees, one the map drops for
+  // its gate, and one it keeps.
+  const placements = [
+    placement(0, 0, 0, 0, 0.5),
+    placement(0, 0, -100, 0, 0.5),
+    placement(0, 0, -50, 0, 0.2),
+    placement(0, 0, -60, 0, 0.5),
+  ];
+  // The main camera stands 40 m back along +Z, so it sees the placement at the origin — 40 m ahead,
+  // which is the first gate, so it is the near level — and nothing at all behind it.
+  const { camera, planes } = cameraAt(0, -40);
+  return {
+    input: {
+      camera: { planes, x: camera.position.x, y: 0, z: camera.position.z },
+      count: placements.length,
+      placements,
+      regionCount: regions.length,
+      regions,
+      slots,
+    },
+    placements,
+  };
+}
+
+/** Which placements reached which key, read back out of the reference's drawn matrices. */
+function drawnPlacements(
+  result: ReturnType<typeof cullAndSelect>,
+  input: IKernelInput,
+): Map<number, number[]> {
+  return kernelDrawn(result, input);
+}
+
+describe("a shadow level's own selection", () => {
+  it("takes its planes, its centre and its gate, and never the main camera's", () => {
+    const { input } = shadowFixture();
+    // The map is a 200 m box over the origin; the placement at the origin is inside it and the main
+    // camera at 500 m back is not inside it.
+    const level = {
+      base: 0,
+      centre: { x: 0, z: 0 },
+      gate: 1,
+      planes: levelPlanes(100),
+    };
+    const shadow = cullAndSelectShadow(input, level);
+    const byKey = drawnPlacements(shadow, input);
+    const main = drawnPlacements(cullAndSelect(input), input);
+
+    // The main camera's own selection: the one placement it sees, and nothing behind it.
+    expect([...(main.get(0) ?? [])]).toEqual([0]);
+    expect([...(main.get(1) ?? [])]).toEqual([]);
+    expect([...(main.get(2) ?? [])]).toEqual([]);
+    // The map's: the placement at the origin, which the camera sees 40 m away, and the two behind
+    // the camera, which the camera cannot see at all. Its own centre is what named their levels —
+    // 100 m and 60 m from the window centre are both past the 40 m gate and short of the 120 m one,
+    // where the camera's own eye would have put all three past the coarsest level or out of frame.
+    expect([...(byKey.get(0) ?? [])]).toEqual([0]);
+    expect([...(byKey.get(1) ?? [])]).toEqual([1, 3]);
+    expect([...(byKey.get(2) ?? [])]).toEqual([]);
+    // The sub-texel placement inside the map's own frustum, dropped by its own gate: the set above
+    // holds placements 1 and 3 and not 2, and with the gate open it holds all three.
+    expect([...(byKey.get(1) ?? [])]).not.toContain(2);
+    const open = drawnPlacements(cullAndSelectShadow(input, { ...level, gate: 0 }), input);
+    expect([...(open.get(1) ?? [])]).toEqual([1, 2, 3]);
+  });
+
+  it("floors the level at the map's base, which is the shape the cluster path hands it", () => {
+    const { input } = shadowFixture();
+    const level = { base: 0, centre: { x: 0, z: 0 }, gate: 0, planes: levelPlanes(100) };
+    const fine = drawnPlacements(cullAndSelectShadow(input, level), input);
+    expect([...(fine.get(1) ?? [])]).toEqual([1, 2, 3]);
+    // A coarse map draws the coarsest shape whatever the placement's own distance selected, so every
+    // placement the frustum holds moves up to the base — the same coarsening `#probe` does to a
+    // coarse level's geometry.
+    const coarse = drawnPlacements(cullAndSelectShadow(input, { ...level, base: 2 }), input);
+    expect([...(coarse.get(1) ?? [])]).toEqual([]);
+    expect([...(coarse.get(2) ?? [])].sort((a, b) => a - b)).toEqual([0, 1, 2, 3]);
+  });
+});
+
+describe("the shadow twins of a registered provider", () => {
+  it("allocates nothing and dispatches nothing without a provider, and nothing with the flag off", () => {
+    const scene = wired([{ name: "a", levels: [...DISTANCES] }], 1, 64);
+    const renderer = {
+      kind: "webgpu",
+      raw: { backend: { hasFeature: () => true } },
+      compute: () => {},
+    } as never;
+    const before = scene.footprint();
+    const { camera, planes } = cameraAt(0, 0);
+    const level = { base: 0, centre: { x: 0, z: 0 }, gate: 0, planes };
+    // No provider: a level's own dispatch is a no-op, and says so.
+    expect(scene.shadowKeys).toBe(false);
+    scene.dispatchShadow(renderer, level);
+    expect(scene.shadowDrawn).toBeUndefined();
+    expect(scene.shadowArgs).toBeUndefined();
+    expect(scene.footprint()).toEqual(before);
+    // A provider with the flag off registers nothing, so the same dispatch is still a no-op.
+    vi.stubGlobal("__tnShadowGpuKeys", 0);
+    scene.shadowKeysFrom(() => ["a:0:0", "a:1:0", "a:2:0"]);
+    expect(scene.shadowKeys).toBe(false);
+    scene.dispatchShadow(renderer, level);
+    expect(scene.footprint()).toEqual(before);
+    // The flag on and a provider: the twins appear, and the footprint names what they cost.
+    vi.stubGlobal("__tnShadowGpuKeys", 1);
+    scene.shadowKeysFrom(() => ["a:0:0", "a:1:0", "a:2:0"]);
+    expect(scene.shadowKeys).toBe(true);
+    scene.dispatchShadow(renderer, level);
+    const after = scene.footprint();
+    expect(Object.keys(after)).toContain("shadowArgs");
+    expect(Object.keys(after)).toContain("shadowDrawn");
+    const twins = after.shadowDrawn;
+    // A twin drawn run is the main drawn capacity again, at 64 bytes an instance slot: the whole
+    // cost of the flag, and the args records are 20 bytes a key beside it.
+    const drawn = scene.regions.reduce((sum, region) => sum + region.capacity, 0);
+    expect(twins?.count).toBeGreaterThanOrEqual(drawn);
+    expect(scene.shadowDrawn?.array.byteLength).toBeGreaterThanOrEqual(drawn * 64);
+    expect(scene.shadowArgs?.array.byteLength).toBeLessThan(drawn * 64);
+    scene.dispose();
+  });
+
+  it("gives each named key a record of its own, and an unnamed key none", () => {
+    vi.stubGlobal("__tnShadowGpuKeys", 1);
+    const scene = wired([{ name: "a", levels: [...DISTANCES] }], 1, 64);
+    const renderer = {
+      kind: "webgpu",
+      raw: { backend: { hasFeature: () => true } },
+      compute: () => {},
+    } as never;
+    const { planes } = cameraAt(0, 0);
+    scene.shadowKeysFrom(() => ["a:0:0", "a:1:0"]);
+    scene.dispatchShadow(renderer, { base: 0, centre: { x: 0, z: 0 }, gate: 0, planes });
+    // The twin of a named key is the main key's own geometry and run, with the count left at zero
+    // for the clear dispatch to write.
+    const named = scene.regionOf("a:1:0") as IRegion;
+    const twin = scene.shadowRegionOf("a:1:0") as IRegion;
+    expect(twin.argsIndex).toBe(named.argsIndex);
+    expect(twin.start).toBe(named.start);
+    expect(twin.capacity).toBe(named.capacity);
+    expect(scene.shadowRegionOf("a:2:0")).toBeUndefined();
+    // A key the provider names later is a twin of the pass that first needs it.
+    scene.shadowKeysFrom(() => ["a:0:0", "a:1:0", "a:2:0"]);
+    scene.dispatchShadow(renderer, { base: 0, centre: { x: 0, z: 0 }, gate: 0, planes });
+    expect(scene.shadowRegionOf("a:2:0")?.argsIndex).toBe(
+      (scene.regionOf("a:2:0") as IRegion).argsIndex,
+    );
+    scene.dispose();
+  });
+
+  it("submits exactly two dispatches per level render, and none the main pass does not ask for", () => {
+    vi.stubGlobal("__tnShadowGpuKeys", 1);
+    const scene = wired([{ name: "a", levels: [...DISTANCES] }], 1, 64);
+    let computes = 0;
+    const renderer = {
+      kind: "webgpu",
+      raw: { backend: { hasFeature: () => true } },
+      compute: () => {
+        computes += 1;
+      },
+    } as never;
+    const { camera, planes } = cameraAt(0, 0);
+    const level = { base: 0, centre: { x: 0, z: 0 }, gate: 0, planes };
+    scene.shadowKeysFrom(() => ["a:0:0", "a:1:0", "a:2:0"]);
+    // The frame's own main dispatch is its own two, and a level render is two more.
+    scene.dispatch(renderer, camera);
+    expect(computes).toBe(2);
+    scene.dispatchShadow(renderer, level);
+    expect(computes).toBe(4);
+    scene.dispatchShadow(renderer, level);
+    expect(computes).toBe(6);
+    // The main pass's own pair is unchanged by all of it: the twins are separate buffers, and a
+    // second level render cannot zero the records the main pass is about to draw.
+    expect(scene.args).not.toBe(scene.shadowArgs);
+    expect(scene.drawn).not.toBe(scene.shadowDrawn);
+    scene.dispose();
   });
 });
