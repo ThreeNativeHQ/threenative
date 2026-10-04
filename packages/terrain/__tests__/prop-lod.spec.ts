@@ -139,14 +139,17 @@ describe("licensed pack characterization", () => {
     return value;
   }
   const image = () => new DataTexture(new Uint8Array([80, 150, 50, 255]), 1, 1);
-  function fixture(options: { mapped?: boolean; array?: boolean; zeroNormal?: boolean } = {}) {
+  function fixture(
+    options: { mapped?: boolean; array?: boolean; zeroNormal?: boolean; opaque?: boolean } = {},
+  ) {
     const root = new Group();
     const geometry = new BoxGeometry(1, 2, 1).translate(0, 1, 0);
     if (options.zeroNormal) geometry.getAttribute("normal").setXYZ(1, 0, 0, 0);
     const material = new MeshStandardMaterial({
       map: options.mapped === false ? null : image(),
       normalMap: image(),
-      alphaTest: 0.33,
+      alphaTest: options.opaque ? 0 : 0.33,
+      color: 0x286a42,
     });
     if (options.array) {
       geometry.clearGroups();
@@ -180,6 +183,62 @@ describe("licensed pack characterization", () => {
       expect(material.alphaTest).toBe(0.33);
       expect(material.map).toBe(near.material.map);
       expect(material.normalMap).toBe(near.material.normalMap);
+    } finally {
+      pack.dispose();
+    }
+  });
+  it("keeps imported canopy alpha coverage responsive to texture minification", async () => {
+    const near = fixture();
+    const pack = await loaded(near.root);
+    try {
+      const part = present(present(pack.parts.get("spruce:0"))[0]);
+      const material = part.material as MeshPhysicalNodeMaterial;
+      const methods = new Set<string>();
+      present(material.alphaTestNode).traverse((node) => {
+        if ("method" in node && typeof node.method === "string") methods.add(node.method);
+      });
+      // Both screen axes must contribute to the pixel footprint; a constant source cutoff
+      // rejects the averaged needle alpha at distance and erases the imported crown.
+      expect(methods).toContain("dFdx");
+      expect(methods).toContain("dFdy");
+      expect(material.alphaTest).toBe(near.material.alphaTest);
+    } finally {
+      pack.dispose();
+    }
+  });
+  it("shades imported forest crowns with coverage and interior depth", async () => {
+    const near = fixture();
+    const pack = await loaded(near.root);
+    try {
+      const material = present(present(pack.parts.get("spruce:0"))[0])
+        .material as MeshPhysicalNodeMaterial;
+      expect(material.alphaToCoverage).toBe(true);
+      expect(material.aoNode).not.toBeNull();
+      expect(material.normalNode).not.toBeNull();
+      expect(material.specularIntensity).toBe(0);
+    } finally {
+      pack.dispose();
+    }
+  });
+  it("lights texture-card crowns as a volume without changing cached imported normals", async () => {
+    const near = fixture();
+    const sourceNormals = Array.from(near.geometry.getAttribute("normal").array);
+    const pack = await loaded(near.root);
+    try {
+      const geometry = present(present(pack.parts.get("spruce:0"))[0]).geometry;
+      const positions = geometry.getAttribute("position");
+      const normals = geometry.getAttribute("normal");
+      for (let i = 0; i < positions.count; i++) {
+        const radial = new Vector3(positions.getX(i), 0, positions.getZ(i));
+        const normal = new Vector3(normals.getX(i), normals.getY(i), normals.getZ(i));
+        expect(normal.length()).toBeCloseTo(1, 5);
+        expect(normal.y).toBeGreaterThan(0);
+        expect(new Vector3(normal.x, 0, normal.z).normalize().dot(radial.normalize())).toBeCloseTo(
+          1,
+          5,
+        );
+      }
+      expect(Array.from(near.geometry.getAttribute("normal").array)).toEqual(sourceNormals);
     } finally {
       pack.dispose();
     }
@@ -240,28 +299,49 @@ describe("licensed pack characterization", () => {
     pack.dispose();
   });
   it("retains material-array mesh sections", async () => {
-    const pack = await loaded(fixture({ array: true }).root);
+    const near = fixture({ array: true });
+    const sourceIndices = Array.from(present(near.geometry.index).array);
+    const sourceGroups = near.geometry.groups.map((group) => ({ ...group }));
+    const pack = await loaded(near.root);
     try {
-      expect(pack.parts.get("spruce:0")?.length ?? 0).toBeGreaterThan(0);
+      const parts = present(pack.parts.get("spruce:0"));
+      expect(parts).toHaveLength(2);
+      expect(parts.map((part) => part.geometry.drawRange)).toEqual([
+        { start: 0, count: 18 },
+        { start: 18, count: 18 },
+      ]);
+      expect(Array.from(present(near.geometry.index).array)).toEqual(sourceIndices);
+      expect(near.geometry.groups).toEqual(sourceGroups);
     } finally {
       pack.dispose();
     }
   });
   it("retains a valid untextured near mesh", async () => {
-    const pack = await loaded(fixture({ mapped: false }).root);
+    const near = fixture({ mapped: false, opaque: true });
+    const pack = await loaded(near.root);
     try {
-      expect(pack.parts.get("spruce:0")?.length ?? 0).toBeGreaterThan(0);
+      const material = present(present(pack.parts.get("spruce:0"))[0])
+        .material as MeshPhysicalNodeMaterial;
+      expect(material.color.getHex()).toBe(near.material.color.getHex());
     } finally {
       pack.dispose();
     }
   });
   it("repairs zero normals beyond the first vertex", async () => {
-    const pack = await loaded(fixture({ zeroNormal: true }).root);
+    const near = fixture({ zeroNormal: true, opaque: true });
+    near.geometry.getAttribute("normal").setXYZ(2, Number.NaN, 0, 0);
+    const sourceNormals = Array.from(near.geometry.getAttribute("normal").array);
+    const pack = await loaded(near.root);
     try {
       const normal = present(present(pack.parts.get("spruce:0"))[0]).geometry.getAttribute(
         "normal",
       );
-      expect(Math.hypot(normal.getX(1), normal.getY(1), normal.getZ(1))).toBeGreaterThan(0.01);
+      for (let i = 0; i < normal.count; i++) {
+        const length = Math.hypot(normal.getX(i), normal.getY(i), normal.getZ(i));
+        expect(Number.isFinite(length)).toBe(true);
+        expect(length).toBeGreaterThan(0.01);
+      }
+      expect(Array.from(near.geometry.getAttribute("normal").array)).toEqual(sourceNormals);
     } finally {
       pack.dispose();
     }

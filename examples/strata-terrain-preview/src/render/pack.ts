@@ -136,13 +136,16 @@ function surface(
   const otherBiome = world !== "forest" && world !== "coastal";
   const material = new MeshPhysicalNodeMaterial({
     map: source.map,
-    normalMap: canopy ? null : source.normalMap,
+    color: source.color,
+    normalMap: source.normalMap,
     roughness: stone ? 0.96 : 1,
     specularIntensity: canopy || (world === "tundra" && cutout) ? 0 : cutout ? 0.02 : 0.3,
     metalness: 0,
   });
   if (!otherBiome && canopy && !cutout) material.normalMap = source.normalMap;
-  if (cutout && source.map) {
+  // Forest needle crowns need their authored interior shading and filtered alpha coverage.
+  // A plain imported PBR card erased canopy depth at the same geometry and camera.
+  if (cutout && source.map && !(world === "forest" && canopy)) {
     // Imported foliage draws as imported: its albedo, its normal map, its own cutoff, both faces.
     const sampled = texture(source.map, uv());
     source.map.anisotropy = 8;
@@ -478,69 +481,109 @@ export async function loadPack(
     const entry = parts.get(`${one.asset}:${one.variant}`) ?? [];
     root.traverse((object) => {
       const mesh = object as Mesh;
-      if (!mesh.isMesh || Array.isArray(mesh.material)) return;
-      let source = mesh.material as MeshStandardMaterial;
-      if (world === "alpine" && stone && rockface[0]) {
-        source = source.clone();
-        source.map = rockface[0];
-        source.normalMap = rockface[1] ?? null;
-      }
-      // The reduced Kite GLB keeps UVs but carries no textures. Reuse the matching near surface;
-      // skipping those parts kept all 3,200 trees at full detail, even in the aerial view.
-      const role: PropRole = stone ? "stone" : source.alphaTest > 0 ? "pine" : "bark";
-      const inherited =
-        one.asset === "spruce" && one.level
-          ? entry.find((part) => (part.level ?? 0) === 0 && part.role === role)?.material
-          : undefined;
-      if (!source.map && !(inherited instanceof MeshPhysicalNodeMaterial)) return;
-      // One whole-model scale/base for all sections: scaling each part separately detached crowns.
-      const geometry = baseGeometryOf(mesh).clone().applyMatrix4(mesh.matrixWorld);
-      const centre = box.getCenter(new Vector3());
-      const centredStone = stone && (world === "forest" || world === "coastal");
-      geometry.translate(centredStone ? -centre.x : 0, -box.min.y, centredStone ? -centre.z : 0);
-      geometry.scale(factor, factor, factor);
-      if (world === "alpine" && one.asset === "mountain") {
-        geometry.scale(0.65, 1.45, 1.8);
-        const longest = Math.max(size.x * 0.65, size.y * 1.45, size.z * 1.8) * factor;
-        geometry.scale(24 / longest, 24 / longest, 24 / longest);
-      }
-      if (world === "tundra" && one.asset === "grass") geometry.scale(1.35, 1, 1.35);
-      if (world === "tundra" && one.asset === "bush") geometry.scale(0.18, 1, 0.18);
-      if (world === "tundra" && one.asset === "scrub") geometry.scale(1.1, 2, 1.1);
-      if (one.asset === "spruce") geometry.scale(1.12, 1, 1.12);
-      if (world === "coastal" && one.asset === "grass") geometry.scale(0.55, 1.35, 0.55);
-      if (world === "forest" && one.asset === "poppy") geometry.scale(1, 1.4, 1);
-      // spruce_full_03_low ships zero normals. Repair the optional art, including existing cooks.
-      const normals = geometry.getAttribute("normal");
-      if (!normals || Math.hypot(normals.getX(0), normals.getY(0), normals.getZ(0)) < 0.01)
-        geometry.computeVertexNormals();
-      const positions = geometry.getAttribute("position");
-      if (source.alphaTest > 0 && (one.asset === "spruce" || one.asset === "sapling")) {
-        // Radial coverage per height band: tips see sky, needles near the trunk do not.
-        const radii = new Float32Array(16);
-        const band = (i: number) =>
-          Math.min(15, Math.max(0, Math.floor((positions.getY(i) / one.metres) * 16)));
-        for (let i = 0; i < positions.count; i++)
-          radii[band(i)] = Math.max(
-            radii[band(i)] ?? 0,
-            Math.hypot(positions.getX(i), positions.getZ(i)),
+      if (!mesh.isMesh) return;
+      const materials = mesh.material;
+      const sections = Array.isArray(materials)
+        ? mesh.geometry.groups.map((group) => ({
+            material: materials[group.materialIndex ?? 0],
+            group,
+          }))
+        : [{ material: materials, group: undefined }];
+      for (const section of sections) {
+        if (!section.material) continue;
+        let source = section.material as MeshStandardMaterial;
+        if (world === "alpine" && stone && rockface[0]) {
+          source = source.clone();
+          source.map = rockface[0];
+          source.normalMap = rockface[1] ?? null;
+        }
+        // The reduced Kite GLB keeps UVs but carries no textures. Reuse the matching near surface;
+        // skipping those parts kept all 3,200 trees at full detail, even in the aerial view.
+        const role: PropRole = stone ? "stone" : source.alphaTest > 0 ? "pine" : "bark";
+        const inherited =
+          one.asset === "spruce" && one.level
+            ? entry.find((part) => (part.level ?? 0) === 0 && part.role === role)?.material
+            : undefined;
+        if (!source.map && one.level && !(inherited instanceof MeshPhysicalNodeMaterial)) continue;
+        // One whole-model scale/base for all sections: scaling each part separately detached crowns.
+        const geometry = baseGeometryOf(mesh).clone().applyMatrix4(mesh.matrixWorld);
+        if (section.group) {
+          const start = Math.max(section.group.start, geometry.drawRange.start);
+          const end = Math.min(
+            section.group.start + section.group.count,
+            geometry.drawRange.start + geometry.drawRange.count,
           );
-        const inner = Float32Array.from({ length: positions.count }, (_, i) =>
-          Math.min(
-            1,
-            Math.hypot(positions.getX(i), positions.getZ(i)) / Math.max(0.1, radii[band(i)] ?? 0),
-          ),
-        );
-        geometry.setAttribute("inner", new BufferAttribute(inner, 1));
+          geometry.clearGroups();
+          geometry.setDrawRange(start, Math.max(0, end - start));
+        }
+        const centre = box.getCenter(new Vector3());
+        const centredStone = stone && (world === "forest" || world === "coastal");
+        geometry.translate(centredStone ? -centre.x : 0, -box.min.y, centredStone ? -centre.z : 0);
+        geometry.scale(factor, factor, factor);
+        if (world === "alpine" && one.asset === "mountain") {
+          geometry.scale(0.65, 1.45, 1.8);
+          const longest = Math.max(size.x * 0.65, size.y * 1.45, size.z * 1.8) * factor;
+          geometry.scale(24 / longest, 24 / longest, 24 / longest);
+        }
+        if (world === "tundra" && one.asset === "grass") geometry.scale(1.35, 1, 1.35);
+        if (world === "tundra" && one.asset === "bush") geometry.scale(0.18, 1, 0.18);
+        if (world === "tundra" && one.asset === "scrub") geometry.scale(1.1, 2, 1.1);
+        if (one.asset === "spruce") geometry.scale(1.12, 1, 1.12);
+        if (world === "coastal" && one.asset === "grass") geometry.scale(0.55, 1.35, 0.55);
+        if (world === "forest" && one.asset === "poppy") geometry.scale(1, 1.4, 1);
+        // spruce_full_03_low ships zero normals. Repair the optional art, including existing cooks.
+        const normals = geometry.getAttribute("normal");
+        let validNormals = normals !== undefined;
+        for (let i = 0; validNormals && normals && i < normals.count; i++) {
+          const length = Math.hypot(normals.getX(i), normals.getY(i), normals.getZ(i));
+          validNormals = Number.isFinite(length) && length >= 0.01;
+        }
+        if (!validNormals) geometry.computeVertexNormals();
+        const positions = geometry.getAttribute("position");
+        if (source.alphaTest > 0 && (one.asset === "spruce" || one.asset === "sapling")) {
+          // Radial coverage per height band: tips see sky, needles near the trunk do not.
+          const radii = new Float32Array(16);
+          const band = (i: number) =>
+            Math.min(15, Math.max(0, Math.floor((positions.getY(i) / one.metres) * 16)));
+          for (let i = 0; i < positions.count; i++)
+            radii[band(i)] = Math.max(
+              radii[band(i)] ?? 0,
+              Math.hypot(positions.getX(i), positions.getZ(i)),
+            );
+          const inner = Float32Array.from({ length: positions.count }, (_, i) =>
+            Math.min(
+              1,
+              Math.hypot(positions.getX(i), positions.getZ(i)) / Math.max(0.1, radii[band(i)] ?? 0),
+            ),
+          );
+          geometry.setAttribute("inner", new BufferAttribute(inner, 1));
+          if (world === "forest") {
+            // Texture cards describe a crown volume. Their planar normals flatten its lighting;
+            // modify only this owned clone, leaving the asset loader's cached geometry intact.
+            const crownNormals = new Float32Array(positions.count * 3);
+            const direction = new Vector3();
+            for (let i = 0; i < positions.count; i++) {
+              direction
+                .set(
+                  positions.getX(i),
+                  Math.max(0.1, radii[band(i)] ?? 0) * 0.45,
+                  positions.getZ(i),
+                )
+                .normalize();
+              direction.toArray(crownNormals, i * 3);
+            }
+            geometry.setAttribute("normal", new BufferAttribute(crownNormals, 3));
+          }
+        }
+        const material =
+          inherited instanceof MeshPhysicalNodeMaterial
+            ? inherited
+            : surface(source, one.asset, world, rockface[2], sky);
+        if (stone) rockGround?.apply(material);
+        if (source !== section.material) source.dispose();
+        built.push({ geometry, material });
+        entry.push({ geometry, material, role, level: one.level ?? 0, variant: one.variant });
       }
-      const material =
-        inherited instanceof MeshPhysicalNodeMaterial
-          ? inherited
-          : surface(source, one.asset, world, rockface[2], sky);
-      if (stone) rockGround?.apply(material);
-      if (source !== mesh.material) source.dispose();
-      built.push({ geometry, material });
-      entry.push({ geometry, material, role, level: one.level ?? 0, variant: one.variant });
     });
     if (entry.some((part) => (part.level ?? 0) === 0))
       parts.set(`${one.asset}:${one.variant}`, entry);
@@ -549,10 +592,8 @@ export async function loadPack(
     parts,
     dispose: () => {
       rockGround?.dispose();
-      for (const one of built) {
-        one.geometry.dispose();
-        one.material.dispose();
-      }
+      for (const one of built) one.geometry.dispose();
+      for (const material of new Set(built.map((one) => one.material))) material.dispose();
       parts.clear();
     },
   };

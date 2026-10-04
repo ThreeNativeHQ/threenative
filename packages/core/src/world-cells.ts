@@ -311,7 +311,7 @@ const ADMISSION_SLICE_PLACEMENTS = 256;
 
 /** The point a streamed world follows; an `Object3D` satisfies this shape. */
 export interface IWorldCellsFollow {
-  readonly position: { readonly x: number; readonly z: number };
+  readonly position: { readonly x: number; readonly y?: number; readonly z: number };
 }
 
 /** Hard caps on what stays resident. A cap that is reached reports pressure, it never throws. */
@@ -375,11 +375,16 @@ export interface IWorldCellsLoadOptions {
   readonly budgets: IWorldCellsBudget;
   /** False streams props/chunks only; the caller owns terrain geometry and collision. */
   readonly terrain?: IWorldCellsTerrainOptions | false;
-  /** Already decoded world-v1 data; URL still supplies the base for model paths. */
+  /** Optional immutable per-record 3D draw reach in metres, indexed like placements.
+   * Nonnegative finite values or Infinity (no extra limit); combined with asset maxDistance.
+   * Filtered by the existing admission/refilter budget, never by a separate culler.
+   */
+  readonly placementReach?: Float32Array;
+  /** Already decoded immutable world-v1 data; URL still supplies the base for model paths. */
   readonly data?: {
     readonly manifest: IWorldPackage;
     readonly placements: ArrayBuffer;
-    /** Required when terrain is streamed; omitted with terrain: false. */
+    /** Omitted values load the manifest heightmap unless terrain is false. */
     readonly heightmap?: Uint16Array;
   };
   /**
@@ -818,6 +823,7 @@ interface ICellBatch {
    * cell box, so the cell box always covered it and always redrew it.
    */
   shadowBounds: Box3 | undefined;
+  lastFilterY: number;
   lastFilterX: number;
   lastFilterZ: number;
 }
@@ -1911,6 +1917,7 @@ interface IBuildJob {
   readonly cell: IResidentCell;
   readonly run: IWorldRun;
   /** The follow position this build filters for; a deferred build keeps the answer it was queued for. */
+  readonly filterY: number;
   readonly filterX: number;
   readonly filterZ: number;
   /** A refilter's outgoing batches, drawn until this job's own batches are attached. */
@@ -2126,6 +2133,10 @@ interface IAssetState {
 }
 
 interface IWorldCellsInit extends IWorldCellsLoadOptions {
+  readonly reachRanges: Map<
+    IWorldCell,
+    Map<string, { min: number; max: number; minY: number; maxY: number }>
+  >;
   readonly manifest: IWorldPackage;
   readonly placements: ArrayBuffer;
   readonly heightmap: Uint16Array;
@@ -3507,6 +3518,11 @@ export class WorldCells extends Group implements IComputeDriven {
   #lastSample: { readonly x: number; readonly z: number; readonly t: number } | undefined;
   readonly #ring: number;
   readonly #terrain: TerrainTiles | undefined;
+  readonly #placementReach: Float32Array | undefined;
+  readonly #reachRanges: Map<
+    IWorldCell,
+    Map<string, { min: number; max: number; minY: number; maxY: number }>
+  >;
   readonly #transparentScatter: "cutout" | "blend";
   readonly #baseUrl: string;
   readonly #logicalBase: string;
@@ -3855,6 +3871,8 @@ export class WorldCells extends Group implements IComputeDriven {
     );
     this.#minZ = init.manifest.extent.minZ;
     this.#placements = init.placements;
+    this.#placementReach = init.placementReach;
+    this.#reachRanges = init.reachRanges;
     this.#rebuildsPerUpdate = positiveInteger(init.rebuildsPerUpdate ?? 16, "rebuildsPerUpdate");
     this.#autoLodPixelsPerUnit = autoLodScale(init.autoLod);
     this.#autoLodMaxPixelError = autoLodPixelError(init.autoLod);
@@ -4009,10 +4027,76 @@ export class WorldCells extends Group implements IComputeDriven {
       error.name = "WorldPackageValidationError";
       throw error;
     }
+    const reach = options.placementReach;
+    if (reach !== undefined) {
+      if (
+        !(reach instanceof Float32Array) ||
+        reach.length !== placements.byteLength / PLACEMENT_RECORD_BYTES
+      )
+        throw new Error("WorldCells placementReach length must match the placement record count.");
+    }
     // One line, at the one moment the whole package is known: how many assets it names and how many
     // of them are one model under several names. `canonical` equal to `assets` is a package with no
     // duplicates, which is most of them.
     const aliases = await assetAliases(assets, manifest, logicalBase);
+    const reachRanges = new Map<
+      IWorldCell,
+      Map<string, { min: number; max: number; minY: number; maxY: number }>
+    >();
+    if (reach !== undefined) {
+      // Cap each load-time unit as well as yielding between units: admission begins only after load.
+      function* validationChunks() {
+        for (let start = 0; start < reach!.length; start += 512) yield start;
+      }
+      await addInSlices(
+        validationChunks(),
+        (start) => {
+          for (let index = start; index < Math.min(start + 512, reach.length); index++) {
+            const value = reach[index] as number;
+            if (!(value >= 0) || (value !== Infinity && !Number.isFinite(value)))
+              throw new Error(
+                "WorldCells placementReach values must be nonnegative metres or Infinity.",
+              );
+          }
+        },
+        { sliceSize: 1, marker: false },
+      );
+      const records = new Float32Array(placements);
+      function* chunks() {
+        for (const cell of manifest.cells)
+          for (const run of cell.runs)
+            for (let start = run.offset; start < run.offset + run.count; start += 512)
+              yield { cell, run, start, end: Math.min(start + 512, run.offset + run.count) };
+      }
+      await addInSlices(
+        chunks(),
+        ({ cell, run, start, end }) => {
+          const id = aliases.get(run.asset) ?? run.asset;
+          const ranges =
+            reachRanges.get(cell) ??
+            new Map<string, { min: number; max: number; minY: number; maxY: number }>();
+          const range = ranges.get(id) ?? {
+            min: Infinity,
+            max: 0,
+            minY: Infinity,
+            maxY: -Infinity,
+          };
+          for (let index = start; index < end; index++) {
+            const value = reach[index] as number;
+            if (value !== Infinity) {
+              range.min = Math.min(range.min, value);
+              range.max = Math.max(range.max, value);
+            }
+            const y = records[index * PLACEMENT_RECORD_FLOATS + 1] as number;
+            range.minY = Math.min(range.minY, y);
+            range.maxY = Math.max(range.maxY, y);
+          }
+          ranges.set(id, range);
+          reachRanges.set(cell, ranges);
+        },
+        { sliceSize: 1, marker: false },
+      );
+    }
     const named = Object.keys(manifest.assets).length;
     console.info(
       `TN_WORLD_ASSET_ALIAS assets=${String(named)} canonical=${String(named - aliases.size)}`,
@@ -4020,6 +4104,7 @@ export class WorldCells extends Group implements IComputeDriven {
     return new WorldCells({
       ...options,
       aliases,
+      reachRanges,
       assets,
       baseUrl,
       heightmap,
@@ -4129,7 +4214,7 @@ export class WorldCells extends Group implements IComputeDriven {
     // it to reach the set it already holds. Skipped while both hold. A move, a load, a build, a
     // deferred admission or a shadow level not yet told runs the pass exactly as before.
     if (this.#residencyStale(x, z)) {
-      this.#residencyPoint.set(x, 0, z);
+      this.#residencyPoint.set(x, this.#followY(), z);
       try {
         this.#terrain?.follow({ x, z }, budget);
         this.#terrain?.process(renderer);
@@ -4153,7 +4238,7 @@ export class WorldCells extends Group implements IComputeDriven {
       // with the pass skipped, ground cover built from a cell's far side never appeared as the
       // camera walked in. With the scene on, `#staleIn` reads the cull gate alone.
       if (this.#refilterStale(x, z)) {
-        this.#refilterPoint.set(x, 0, z);
+        this.#refilterPoint.set(x, this.#followY(), z);
         this.#refilterEpoch = this.#residencyEpoch;
         this.#updateMaxDistance(x, z);
       }
@@ -4412,7 +4497,13 @@ export class WorldCells extends Group implements IComputeDriven {
    * of those, so the pass is skipped; the first update after anything changes is a full pass again.
    */
   #residencyStale(x: number, z: number): boolean {
-    if (Math.hypot(x - this.#residencyPoint.x, z - this.#residencyPoint.z) >= SETTLED_FOLLOW_METRES)
+    if (
+      Math.hypot(
+        x - this.#residencyPoint.x,
+        this.#followY() - this.#residencyPoint.y,
+        z - this.#residencyPoint.z,
+      ) >= SETTLED_FOLLOW_METRES
+    )
       return true;
     return (
       this.#limiter.inFlight > 0 ||
@@ -4436,11 +4527,19 @@ export class WorldCells extends Group implements IComputeDriven {
    * follow point has to keep coming back for them. Anything else is the same brackets, so the pass
    * is skipped and the world does nothing for that update.
    */
+  #followY(): number {
+    return this.#placementReach === undefined ? 0 : (this.#follow.position.y ?? 0);
+  }
+
   #refilterStale(x: number, z: number): boolean {
     if (this.#refilterOwed) return true;
     if (this.#refilterEpoch !== this.#residencyEpoch) return true;
     return (
-      Math.hypot(x - this.#refilterPoint.x, z - this.#refilterPoint.z) >= LEVEL_REFILTER_STEP_METRES
+      Math.hypot(
+        x - this.#refilterPoint.x,
+        this.#followY() - this.#refilterPoint.y,
+        z - this.#refilterPoint.z,
+      ) >= (this.#placementReach === undefined ? LEVEL_REFILTER_STEP_METRES : 0.75)
     );
   }
 
@@ -5109,6 +5208,7 @@ export class WorldCells extends Group implements IComputeDriven {
       cell,
       force,
       gpuByLevel: undefined,
+      filterY: this.#followY(),
       filterX: this.#follow.position.x,
       filterZ: this.#follow.position.z,
       fresh: [],
@@ -5222,6 +5322,7 @@ export class WorldCells extends Group implements IComputeDriven {
       if (at < 0) continue;
       const same = job.replaced.splice(at, 1)[0] as ICellBatch;
       this.#unchanged += 1;
+      same.lastFilterY = fresh.lastFilterY;
       same.lastFilterX = fresh.lastFilterX;
       same.lastFilterZ = fresh.lastFilterZ;
       this.#widenFilterRange(cell, fresh.lastFilterX, fresh.lastFilterZ);
@@ -5517,8 +5618,13 @@ export class WorldCells extends Group implements IComputeDriven {
       const x = records[base] as number;
       const y = records[base + 1] as number;
       const z = records[base + 2] as number;
-      const distance = Math.hypot(x - filterX, z - filterZ);
+      const distance =
+        this.#placementReach === undefined
+          ? Math.hypot(x - filterX, z - filterZ)
+          : Math.hypot(x - filterX, y - job.filterY, z - filterZ);
       if (inner !== undefined && distance > inner) continue;
+      const reach = this.#placementReach?.[job.run.offset + index];
+      if (reach !== undefined && distance > reach) continue;
       this.#position.set(x, y, z);
       this.#rotation.set(
         records[base + 3] as number,
@@ -5663,6 +5769,7 @@ export class WorldCells extends Group implements IComputeDriven {
         wide: undefined,
         wideSegment: -1,
         wideRoot: job.roots?.[level],
+        lastFilterY: job.filterY,
         lastFilterX: job.filterX,
         lastFilterZ: job.filterZ,
         level,
@@ -5672,7 +5779,9 @@ export class WorldCells extends Group implements IComputeDriven {
         shared: undefined,
         // Where these records are, for the shadow invalidation this entry's swap hands over.
         shadowBounds: box === undefined || box.isEmpty() ? undefined : box,
-        threshold: asset.threshold,
+        threshold: this.#reachRanges.get(cell.cell)?.has(asset.id)
+          ? Math.min(asset.threshold ?? Infinity, 6)
+          : asset.threshold,
       });
       job.published += 1;
       return;
@@ -7731,11 +7840,20 @@ export class WorldCells extends Group implements IComputeDriven {
     const seen = this.#staleSeen;
     seen.clear();
     for (const entry of cell.batches) {
-      if (entry.threshold === undefined || seen.has(entry.asset)) continue;
+      const reach = this.#reachRanges.get(cell.cell)?.get(entry.asset);
+      if ((entry.threshold === undefined && reach === undefined) || seen.has(entry.asset)) continue;
       // Every level of one asset was filtered from the same follow position, so the first entry
       // settles the asset and the levels behind it are already stale.
       seen.add(entry.asset);
-      if (Math.hypot(x - entry.lastFilterX, z - entry.lastFilterZ) <= entry.threshold / 8) continue;
+      if (
+        Math.hypot(
+          x - entry.lastFilterX,
+          this.#followY() - entry.lastFilterY,
+          z - entry.lastFilterZ,
+        ) <=
+        (entry.threshold ?? 6) / 8
+      )
+        continue;
       const asset = this.#assets.get(entry.asset);
       if (asset === undefined) continue;
       // With the GPU scene on the dispatch switches levels itself, so only the cull gate changes
@@ -7743,10 +7861,24 @@ export class WorldCells extends Group implements IComputeDriven {
       const cull = cullDistance(asset.definition.maxDistance);
       const gates = this.#gpuScene.on ? (cull === undefined ? [] : [cull]) : asset.gates;
       const [builtNear, builtFar] = this.#span(cell, entry.lastFilterX, entry.lastFilterZ);
-      const low = Math.min(near, builtNear);
+      let low = Math.min(near, builtNear);
       // Ends included, so a placement exactly on a gate is one of the reasons to rebuild.
-      const high = Math.max(far, builtFar);
-      if (!gates.some((gate) => gate >= low && gate <= high)) continue;
+      let high = Math.max(far, builtFar);
+      let reachCrossed = false;
+      if (reach !== undefined) {
+        const vertical = (y: number): [number, number] => [
+          Math.max(reach.minY - y, y - reach.maxY, 0),
+          Math.max(Math.abs(y - reach.minY), Math.abs(y - reach.maxY)),
+        ];
+        const current = vertical(this.#followY());
+        const previous = vertical(entry.lastFilterY);
+        const reachLow = Math.min(Math.hypot(near, current[0]), Math.hypot(builtNear, previous[0]));
+        const reachHigh = Math.max(Math.hypot(far, current[1]), Math.hypot(builtFar, previous[1]));
+        reachCrossed = reach.min <= reachHigh && reach.max >= reachLow;
+        low = reachLow;
+        high = reachHigh;
+      }
+      if (!reachCrossed && !gates.some((gate) => gate >= low && gate <= high)) continue;
       this.#stale.push({ cell, distance: near, id: entry.asset });
       this.#staleEntries += 1;
     }
@@ -7819,7 +7951,7 @@ export class WorldCells extends Group implements IComputeDriven {
       const [near, far] = this.#span(cell, x, z);
       const low = near < cell.filterNear ? near : cell.filterNear;
       const high = far > cell.filterFar ? far : cell.filterFar;
-      if (!crossesGate(this.#gates, low, high)) continue;
+      if (!this.#reachRanges.has(cell.cell) && !crossesGate(this.#gates, low, high)) continue;
       this.#staleIn(cell, x, z, near, far);
     }
   }

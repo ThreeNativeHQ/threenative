@@ -1,4 +1,4 @@
-import { BoxGeometry, Group, Mesh, MeshBasicMaterial, Vector3 } from "three";
+import { BoxGeometry, Group, InstancedMesh, Mesh, MeshBasicMaterial, Vector3 } from "three";
 import { afterEach, expect, it, vi } from "vitest";
 import { createAssetLoader } from "../src/assets.js";
 import { type IWorldPackage, TerrainTiles, WorldCells } from "../src/world.js";
@@ -65,6 +65,13 @@ it("streams already decoded placements without fetching or duplicating the calle
     }
     expect(world.stats().residentKeys).toEqual(["3:0"]);
     expect(world.stats().evictions).toBeGreaterThan(0);
+    follow.position.x = 32;
+    for (let frame = 0; frame < 30; frame++) {
+      world.update();
+      await Promise.resolve();
+    }
+    expect(world.stats().residentKeys).toEqual(["0:0"]);
+    expect(world.stats().instances).toBe(1);
     expect(world.stats().failures).toBe(0);
   } finally {
     world.dispose();
@@ -94,6 +101,7 @@ it("keeps decoded prop admission within the default 2ms budget plus one final un
     data: { manifest: dense, placements: data.buffer, heightmap: new Uint16Array(10) },
     terrain: false,
     admissionNow: () => ++clock,
+    placementReach: new Float32Array(count).fill(50),
     budgets: { bytes: count * 32, instances: count, residentCells: 1 },
     loadModel: async () => new Group().add(new Mesh(new BoxGeometry(1, 2, 1), surface)),
   });
@@ -138,4 +146,124 @@ it("rejects malformed decoded runs before loading a model", async () => {
     }),
   ).rejects.toThrow("WORLD_RUN_OUT_OF_RANGE");
   expect(loadModel).not.toHaveBeenCalled();
+});
+
+function drawn(world: WorldCells): number {
+  let count = 0;
+  world.traverse((node) => {
+    if (node instanceof InstancedMesh && node.visible && node.layers.isEnabled(0))
+      count += node.count;
+  });
+  return count;
+}
+async function settle(world: WorldCells): Promise<void> {
+  for (let frame = 0; frame < 100; frame++) {
+    world.update();
+    await Promise.resolve();
+  }
+}
+it("refilters placement-specific 3D reach from fully culled to visible and back without leaving the cell", async () => {
+  const one: IWorldPackage = {
+    ...manifest,
+    cells: [{ x: 0, z: 0, runs: [{ asset: "tree", offset: 1, count: 1 }] }],
+  };
+  const assets = createAssetLoader();
+  vi.spyOn(assets, "resolve").mockResolvedValue([]);
+  const material = new MeshBasicMaterial();
+  const follow = { position: new Vector3(40, 0, 32) };
+  // Offset 1 must select 5 metres, not the unrelated zero reach at record 0.
+  const world = await WorldCells.load({
+    url: "world.json",
+    assets,
+    surface: material,
+    follow,
+    ring: 0,
+    terrain: false,
+    data: {
+      manifest: one,
+      placements: new Float32Array([0, 0, 0, 0, 0, 0, 1, 1, 50, 0, 32, 0, 0, 0, 1, 1]).buffer,
+    },
+    placementReach: new Float32Array([0, 5]),
+    budgets: { bytes: 64, instances: 2, residentCells: 1 },
+    loadModel: async () => new Group().add(new Mesh(new BoxGeometry(1, 2, 1), material)),
+  });
+  try {
+    await settle(world);
+    expect(drawn(world)).toBe(0);
+    follow.position.x = 50;
+    await settle(world);
+    expect(drawn(world)).toBe(1);
+    follow.position.y = 10;
+    await settle(world);
+    expect(drawn(world)).toBe(0);
+    follow.position.y = 0;
+    await settle(world);
+    expect(drawn(world)).toBe(1);
+    follow.position.x = 58;
+    await settle(world);
+    expect(drawn(world)).toBe(0);
+    expect(world.stats().residentCells).toBe(1);
+    expect(world.stats().failures).toBe(0);
+  } finally {
+    world.dispose();
+  }
+});
+it.each([
+  new Float32Array(3),
+  new Float32Array([0, -1, 1, 1]),
+  new Float32Array([0, NaN, 1, 1]),
+  new Float32Array([0, -Infinity, 1, 1]),
+])("rejects malformed placement reach before loading models: %s", async (placementReach) => {
+  const assets = createAssetLoader();
+  vi.spyOn(assets, "resolve").mockResolvedValue([]);
+  const loadModel = vi.fn();
+  await expect(
+    WorldCells.load({
+      url: "world.json",
+      assets,
+      surface: new MeshBasicMaterial(),
+      follow: { position: new Vector3() },
+      ring: 0,
+      terrain: false,
+      data: { manifest, placements },
+      placementReach,
+      budgets: { bytes: 128, instances: 4, residentCells: 2 },
+      loadModel,
+    }),
+  ).rejects.toThrow("placementReach");
+  expect(loadModel).not.toHaveBeenCalled();
+});
+
+it("yields to host while validating and indexing decoded reach records before load resolves", async () => {
+  const count = 2048;
+  const packed = new Float32Array(count * 8);
+  for (let i = 0; i < count; i++) packed.set([32, 0, 32, 0, 0, 0, 1, 1], i * 8);
+  const dense = {
+    ...manifest,
+    cells: [{ x: 0, z: 0, runs: [{ asset: "tree", offset: 0, count }] }],
+  };
+  const assets = createAssetLoader();
+  vi.spyOn(assets, "resolve").mockResolvedValue([]);
+  let hostProgress = false;
+  const timer = setTimeout(() => {
+    hostProgress = true;
+  }, 0);
+  const world = await WorldCells.load({
+    url: "world.json",
+    assets,
+    surface: new MeshBasicMaterial(),
+    follow: { position: new Vector3(32, 0, 32) },
+    ring: 0,
+    terrain: false,
+    data: { manifest: dense, placements: packed.buffer },
+    placementReach: new Float32Array(count).fill(Infinity),
+    budgets: { bytes: count * 32, instances: count, residentCells: 1 },
+    loadModel: async () => new Group(),
+  });
+  try {
+    expect(hostProgress).toBe(true);
+  } finally {
+    clearTimeout(timer);
+    world.dispose();
+  }
 });

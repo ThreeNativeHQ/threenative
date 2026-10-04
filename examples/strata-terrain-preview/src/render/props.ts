@@ -62,7 +62,7 @@ export const VARIANTS = {
  * on the meadow, and the shadow of a knee-high plant under a pine is already inside it. Wildwood's
  * `LAYERS` marks the same three layers `castShadows: false`, and its numbers agree.
  */
-const DRAW_REACH: Record<string, number> = {
+export const DRAW_REACH: Record<string, number> = {
   grass: 112,
   scrub: 110,
   fern: 105,
@@ -85,10 +85,10 @@ const DRAW_REACH: Record<string, number> = {
  * rebuilding every third frame, and it cost the far meadow its grass. A variant named here draws
  * less far.
  */
-const VARIANT_REACH: Record<string, number> = {};
-const NO_SHADOW_ASSETS = new Set(["sapling", "scrub", "grass", "fern", "poppy", "litter"]);
+export const VARIANT_REACH: Record<string, number> = {};
+export const NO_SHADOW_ASSETS = new Set(["sapling", "scrub", "grass", "fern", "poppy", "litter"]);
 /** The species whose cover thins out with distance instead of switching off at a fixed reach. */
-const FADED_ASSETS = new Set(["grass", "scrub", "fern"]);
+export const FADED_ASSETS = new Set(["grass", "scrub", "fern"]);
 
 /** One drawable piece of a prop: its geometry, and the role that decides its material. */
 /** The share of a boulder's height that sits below the ground. */
@@ -351,7 +351,7 @@ export interface IPropInstance {
   /** Every draw of this placement, so a transform write reaches all of them. */
   parts: { mesh: InstancedMesh; index: number }[];
 }
-function preparePose(
+export function preparePose(
   geometry: BufferGeometry,
   material: Material,
   placement: IPlacement,

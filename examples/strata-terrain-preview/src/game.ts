@@ -1,4 +1,4 @@
-import { type ICtx, Scene, defineGame, markStatic } from "@threenative/core";
+import { type ICtx, Scene, VirtualShadowNode, defineGame, markStatic } from "@threenative/core";
 import { playtest } from "@threenative/core/playtest";
 import { Heightfield } from "@threenative/core/world";
 import {
@@ -8,7 +8,7 @@ import {
   RigidBody3D,
   rapier,
 } from "@threenative/physics";
-import { CapsuleGeometry, Mesh, MeshStandardMaterial, Vector3 } from "three";
+import { CapsuleGeometry, Mesh, MeshStandardMaterial, PerspectiveCamera, OrthographicCamera, Vector3 } from "three";
 import { BIOMES, type WorldName } from "./render/biomes.js";
 import { createOcean, createWaterMesh } from "./render/ocean.js";
 import { loadPack } from "./render/pack.js";
@@ -17,11 +17,10 @@ import { createPropSurfaces } from "./render/propMaterials.js";
 import {
   type PropGroundQuery,
   buildPropVariants,
-  type createProps,
-  createPropsInSlices,
   flatPropMaterials,
   variantFor,
 } from "./render/props.js";
+import { createStreamedProps } from "./render/propStreaming.js";
 import { type IRiverWater, WATER_LAYER, createLakes, createRivers } from "./render/river.js";
 import { type IPlacementField, scatterProps } from "./render/scatter.js";
 import { type IOutdoorSky, createOutdoorSky, installOutdoorOcclusion } from "./render/sky.js";
@@ -185,6 +184,15 @@ function median(values: readonly number[]): number {
 const initialState = {
   showcase: false,
   worldReady: false,
+  streamingResidentCells: 0,
+  streamingLoadedCells: 0,
+  streamingEvictions: 0,
+  streamingInstances: 0,
+  streamingFailures: 0,
+  streamingPendingPrewarm: 0,
+  streamingLoadsInFlight: 0,
+  streamingAdmissionMs: 0,
+  streamingAdmissionBacklog: 0,
   timeToReadyMs: -1,
   tasksAvailable: false,
   longestLoadTaskMs: -1,
@@ -508,7 +516,8 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
       const fallbackSaplingHeight = world === "alpine" ? 2 : world === "tundra" ? 1.4 : undefined;
       let propParts = buildPropVariants(undefined, fallbackSaplingHeight);
       const flat = flatPropMaterials();
-      let props: ReturnType<typeof createProps> | undefined;
+      let props: Awaited<ReturnType<typeof createStreamedProps>>;
+      let readyTimePending = false;
       let building = false;
       let preparedDispose: (() => void) | undefined;
       // What the prepared files measured on load. Published rather than thrown on, because a
@@ -611,30 +620,32 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
         if (world === "desert" && dryStone && !pack.parts.has("boulder:0"))
           parts.set("boulder:0", dryStone);
         propParts = buildPropVariants(parts, fallbackSaplingHeight);
-        props = await createPropsInSlices(
-          scatter.placements,
-          groundAt,
-          propParts,
-          flat,
-          () => !released,
-        );
+        const surfaces = await createPropSurfaces(ctx.assets, data, biome);
+        this.#surfaces = surfaces;
+        surfacesDispose = surfaces.dispose;
+        if (released) { surfaces.dispose(); return; }
+        props = await createStreamedProps({
+          placements: scatter.placements, groundAt, parts: propParts,
+          materials: surfaces.materials, assets: ctx.assets, follow: ctx.camera, size: data.size, horizonDistance: ctx.camera instanceof PerspectiveCamera || ctx.camera instanceof OrthographicCamera ? ctx.camera.far : 5000,
+          whileCurrent: () => !released,
+          invalidateShadows: () => {
+            const shadows = sky.sun.shadow.shadowNode;
+            if (shadows instanceof VirtualShadowNode) shadows.invalidateAll();
+          },
+        });
         if (!props) return;
-        if (released) {
-          props.dispose();
-          return;
-        }
-        ctx.add(props.object);
-        // The props never move either: the wind is a vertex shader and a distance band changes which
-        // instances draw, not where any object is.
-        markStatic(props.object);
+        if (released) { props.dispose(); return; }
+        // ctx.add registers render-cadence processing. Never manually update these worlds.
+        for (const stream of props.worlds) ctx.add(stream);
 
         const alpineCrags =
           world === "alpine"
             ? [...props.byId.values()].filter((instance) => instance.placement.asset === "mountain")
             : [];
         ctx.entities.add("props", {
-          object: props.object,
+          object: props.worlds[0],
           debug: () => ({
+            streaming: props?.stats(),
             boulders: scatter.counts.boulder,
             bushes: scatter.counts.bush,
             ferns: scatter.counts.fern,
@@ -679,9 +690,7 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
                 props?.meshes.some(
                   (draw) =>
                     draw.count > 0 &&
-                    draw.userData.placementIds.some((id: string) =>
-                      /temperate-(mountain|volcanic):/.test(id),
-                    ),
+                    /(mountain|volcanic)/.test(draw.name),
                 ) ?? false,
             },
             totalInstances: props?.meshes.reduce((sum, draw) => sum + draw.count, 0) ?? 0,
@@ -692,32 +701,7 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
               ) ?? 0,
           }),
         });
-        // The lit surfaces and the maps arrive asynchronously; when they do every mesh swaps its
-        // material by role. Until then the props draw on flat stand-ins, so a slow or absent asset
-        // server costs this world its bark and its needles rather than its trees.
-        await createPropSurfaces(ctx.assets, data, biome).then((surfaces) => {
-          this.#surfaces = surfaces;
-          if (released) {
-            surfaces.dispose();
-            return;
-          }
-          for (const draw of props?.meshes ?? []) {
-            // A pack species wears the material its own atlas shipped with, and swapping that for a
-            // starter surface would be the thing `pack.ts` refuses to do. `ownMaterial` is what the
-            // batch recorded when it built the draw.
-            if (draw.userData.ownMaterial === true) continue;
-            const role = draw.name.split(":").at(-1) as keyof typeof surfaces.materials;
-            draw.material = surfaces.materials[role];
-          }
-          surfacesDispose = surfaces.dispose;
-        });
-        if (!released) {
-          ctx.state.set({ worldReady: true });
-          if (ctx.state.getState().timeToReadyMs < 0)
-            void ctx.startup.whenReady().then(() => {
-              if (!released) ctx.state.set({ timeToReadyMs: Date.now() - launchedAt });
-            });
-        }
+
       };
 
       let frames = 0;
@@ -824,6 +808,14 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
           void work;
         }
         frames++;
+        const streaming = props?.stats();
+        const worldReady = props?.ready ?? false;
+        if (worldReady && !released && !readyTimePending && ctx.state.getState().timeToReadyMs < 0) {
+          readyTimePending = true;
+          void ctx.startup.whenReady().then(() => {
+            if (!released) ctx.state.set({ timeToReadyMs: Date.now() - launchedAt });
+          });
+        }
         const viewFrameP50s = [...viewBudgets.values()].map((group) => ({
           view: group.view,
           p50: median(group.p50s),
@@ -864,6 +856,16 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
           measuredViewCount: viewFrameP50s.filter((group) => group.windows > 0).length,
           world,
           groundBiome: (mesh.material as MeshStandardMaterial).userData.biome ?? "baked",
+          worldReady,
+          streamingResidentCells: streaming?.residentCells ?? 0,
+          streamingLoadedCells: streaming?.loadedCells ?? 0,
+          streamingEvictions: streaming?.evictions ?? 0,
+          streamingInstances: streaming?.instances ?? 0,
+          streamingFailures: streaming?.failures ?? 0,
+          streamingPendingPrewarm: streaming?.pendingPrewarm ?? 0,
+          streamingLoadsInFlight: streaming?.loadsInFlight ?? 0,
+          streamingAdmissionMs: streaming?.admissionMs ?? 0,
+          streamingAdmissionBacklog: streaming?.admissionBacklog ?? 0,
           terrainTransportBound:
             (mesh.material as MeshStandardMaterial).userData.erosion === true &&
             erosionFlowSamples > 1000 &&
@@ -963,7 +965,6 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
               actor.position.z - 160,
             );
           else ctx.camera.lookAt(actor.position.x, actor.position.y + 2, actor.position.z - 12);
-          props?.setLevels(ctx.camera.position);
           return;
         }
         // A view this world has no framing for falls back to its overview rather than throwing:
@@ -983,7 +984,6 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
         );
         // After the camera is placed, not before: the band is a function of where the eye is, and
         // the framing is what moved it.
-        props?.setLevels(ctx.camera.position);
       });
     }
 
