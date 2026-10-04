@@ -318,6 +318,9 @@ async function runStandalonePlaytestInternal(
     process.stderr.write(`${JSON.stringify({ diagnostics: [preflight] })}\n`);
   }
   let providedDisplay: IProvidedDisplay | undefined;
+  let observationArtifactsWritten = false;
+  const consoleEntries: IRunnerConsoleEntry[] = [];
+  const networkEntries: Array<{ method: string; url: string }> = [];
   try {
     if (needsPixels) {
       leaseAcquisition = acquireRunnerCaptureLock();
@@ -382,19 +385,22 @@ async function runStandalonePlaytestInternal(
     ensureRunning();
     page = await context.newPage();
     ensureRunning();
-    await page.addInitScript(() => {
+    await page.addInitScript((liveClock) => {
       // Announce the runner before any game code evaluates, so an adapter can hold its loop
       // instead of racing this run's first observation.
       (globalThis as Record<string, unknown>).__THREENATIVE_PLAYTEST_RUNNER_EXPECTED__ = true;
+      // The clock request rides with it, ahead of every page script, for the same reason: read
+      // once when the producer installs, a request that arrived after the game's own bundle
+      // evaluated is one the engine never saw. The wire name is literal because the other end of
+      // it is the page's engine, not this package.
+      if (liveClock) (globalThis as Record<string, unknown>).__THREENATIVE_PLAYTEST_CLOCK__ = "wall-clock";
       window.addEventListener("unhandledrejection", (event) => {
         const reason = event.reason instanceof Error
           ? event.reason.stack || event.reason.message
           : String(event.reason);
         console.error(`__THREENATIVE_PLAYTEST_UNHANDLED_REJECTION__:${reason}`);
       });
-    });
-    const consoleEntries: IRunnerConsoleEntry[] = [];
-    const networkEntries: Array<{ method: string; url: string }> = [];
+    }, activeConfig.liveClock === true);
     page.on("console", (entry) => {
       const text = entry.text();
       const unhandledRejection = text.startsWith(UNHANDLED_REJECTION_PREFIX);
@@ -821,11 +827,25 @@ async function runStandalonePlaytestInternal(
       network: networkEntries,
       runtimeTrace: normalizedRuntimeDiagnostics(afterSnapshot, scenario, consoleEntries),
     });
+    observationArtifactsWritten = true;
     await stopCpuProfile(true);
     if (options.remoteBrowser === undefined) await context.close();
     else await page.close();
     return addPreflightDiagnostic(report, preflight);
   } catch (error) {
+    // Retain already-collected observations under the existing artifact policy.
+    // A failed bridge is never queried here; artifact I/O cannot replace the primary error.
+    try {
+      if (!observationArtifactsWritten) await writeObservationArtifacts(activeConfig.artifactDirectory, scenario.artifacts, {
+        console: consoleEntries,
+        network: networkEntries,
+        runtimeTrace: normalizedRuntimeDiagnostics(undefined, scenario, consoleEntries),
+      });
+    } catch (artifactError) {
+      try {
+        process.stderr.write(`${JSON.stringify({ failureArtifactError: String(artifactError) })}\n`);
+      } catch { /* Preserve the primary failure if diagnostic logging also fails. */ }
+    }
     if (error instanceof PlaytestBridgeError || error instanceof ManagedServerError) {
       return addPreflightDiagnostic(failureReport(activeConfig, scenario, error.diagnostic), preflight);
     }

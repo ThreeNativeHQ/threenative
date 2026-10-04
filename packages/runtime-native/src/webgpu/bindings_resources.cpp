@@ -252,6 +252,30 @@ static void rejectBufferMapRequests(
     }
 }
 
+static void startBufferMapRequest(const std::shared_ptr<BufferMapRequest>& request) {
+    request->started = true;
+#if WGPU_BUFFER_MAP_USES_CALLBACK_INFO
+    WGPUBufferMapCallbackInfo info = {};
+    info.mode = WGPUCallbackMode_AllowSpontaneous;
+    info.callback = onBufferMapped;
+    info.userdata1 = new std::shared_ptr<BufferMapRequest>(request);
+    wgpuBufferMapAsync(request->buffer, request->mode, request->offset, request->size, info);
+#else
+    wgpuBufferMapAsync(request->buffer, request->mode, request->offset, request->size,
+                      onBufferMapped, new std::shared_ptr<BufferMapRequest>(request));
+#endif
+}
+
+void startDeferredBufferMaps(BindingsState* state) {
+    std::vector<std::shared_ptr<BufferMapRequest>> requests;
+    {
+        std::lock_guard<std::mutex> lock(state->asyncBufferMaps.mutex);
+        for (const auto& entry : state->asyncBufferMaps.pending)
+            if (!entry.second->started) requests.push_back(entry.second);
+    }
+    for (const auto& request : requests) startBufferMapRequest(request);
+}
+
 void drainAsyncBufferMaps(BindingsState* state) {
     if (state == nullptr || state->engine == nullptr) return;
     {
@@ -1211,20 +1235,10 @@ static js::JSValueHandle handleGpuBufferMapAsync(
                                         bufferInfo.mapPending = false;
                                         return promise;
                                     }
-#if WGPU_BUFFER_MAP_USES_CALLBACK_INFO
-                                    WGPUBufferMapCallbackInfo mapCallbackInfo = {};
-                                    mapCallbackInfo.mode = WGPUCallbackMode_AllowSpontaneous;
-                                    mapCallbackInfo.callback = onBufferMapped;
-                                    mapCallbackInfo.userdata1 =
-                                        new std::shared_ptr<BufferMapRequest>(request);
-                                    mapCallbackInfo.userdata2 = nullptr;
-                                    wgpuBufferMapAsync(
-                                        bufferInfo.buffer, mode, offset, mapSize, mapCallbackInfo);
-#else
-                                    wgpuBufferMapAsync(
-                                        bufferInfo.buffer, mode, offset, mapSize, onBufferMapped,
-                                        new std::shared_ptr<BufferMapRequest>(request));
-#endif
+                                    // An outer render pass can precede this submitted readback in
+                                    // the recorder. Its unfinished tail cannot replay until end-frame.
+                                    if (!state->profiling.frameOpStreamPendingOps)
+                                        startBufferMapRequest(request);
                                     return promise;
 }
 

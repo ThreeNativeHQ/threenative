@@ -92,6 +92,10 @@ const allowedProductionCreators = new Map<string, string>([
     "The decode contract compiles a standalone probe with the system compiler into a scratch root and removes it in afterAll; the test runs under `node --test` as well as vitest, so it cannot import the workspace temp-dir helper.",
   ],
   [
+    "packages/runtime-native/tests/resize-presentation-behavior.test.mjs",
+    "The presentation contract compiles a standalone probe with the system compiler into a scratch root and removes it in a finally, for the same reason as the decode contract above.",
+  ],
+  [
     "scripts/capture-blender-mcp-tools.ts",
     "The tool-snapshot gate packs and installs into scratch roots removed in finally.",
   ],

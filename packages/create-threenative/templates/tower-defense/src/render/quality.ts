@@ -85,6 +85,7 @@ export function resolveQualityTier(
  * smooth sky gradient into visible bands. Both are one line to turn back on for a glossy scene.
  */
 const shared: IWorldEnvironmentOptions = {
+  autoExposureEnabled: false,
   // Bloom: ~4.6 ms in the reference ablation — the second most expensive stage there.
   bloomEnabled: true,
   bloomRadius: 0.6,

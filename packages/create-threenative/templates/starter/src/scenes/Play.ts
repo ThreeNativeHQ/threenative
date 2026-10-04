@@ -35,6 +35,7 @@ import { isWebGLFallbackRenderer, materialLightingEnabled } from "../render/qual
 import { ball, block, spike, tube } from "../render/shapes.js";
 import { setupSky } from "../render/sky.js";
 import { TouchControls } from "../render/touch-controls.js";
+import { STARTER_MIST, createVolumetricFog } from "../render/volumetricFog.js";
 import type { GameState } from "../state.js";
 
 export type GameCtx = ICtx<GameState, IPhysicsContext>;
@@ -177,6 +178,14 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         // 60 on mobile. A game that names `display.maxFps` overrides it here too.
         targetFps: resolveTargetFps(config, getPlatform()).targetFps,
         ready: () => ctx.startup.phase === "ready",
+        // Rebuilt per graph, so a tier change that replaces the chain cannot compose one medium
+        // twice. The look and the flag are `STARTER_MIST`'s, in `volumetricFog.ts`; only the
+        // backend is wired here, and with `enabled` false nothing is allocated at all.
+        fog: () =>
+          createVolumetricFog(ctx.scene, ctx.camera as PerspectiveCamera, {
+            ...STARTER_MIST,
+            renderer: ctx.renderer.kind,
+          }),
       }),
     );
     const loading = createLoadingScreen(ctx);
@@ -393,6 +402,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
   override exit(ctx: GameCtx): void {
     this.#materialLighting?.dispose();
     this.#materialLighting = undefined;
+    // Also releases the medium `setupPost` built, with the graph it composed into.
     this.#post?.dispose();
     this.#post = undefined;
     super.exit(ctx);

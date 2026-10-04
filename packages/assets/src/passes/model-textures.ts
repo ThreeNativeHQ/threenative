@@ -1,5 +1,5 @@
 import type { Document, Texture } from "@gltf-transform/core";
-import { KHRTextureBasisu } from "@gltf-transform/extensions";
+import { EXTTextureWebP, KHRTextureBasisu } from "@gltf-transform/extensions";
 import { getTextureColorSpace, listTextureInfo, listTextureSlots } from "@gltf-transform/functions";
 import { read as readKTX2 } from "ktx-parse";
 import { PNG } from "pngjs";
@@ -103,6 +103,14 @@ const GPU_BYTES_PER_PIXEL: Readonly<Record<string, number>> = {
 
 /** Slots whose content is a tangent-space normal: data, and ETC1S destroys it. */
 const NORMAL_SLOTS: ReadonlySet<string> = new Set(["clearcoatNormalTexture", "normalTexture"]);
+
+/**
+ * Containers every target of this build decodes on its own, so keeping the authored bytes costs a
+ * reader nothing. `image/webp` is deliberately absent: it is only reachable through
+ * `EXT_texture_webp`, which a target without a WebP decoder cannot satisfy — retaining one would
+ * hand back a model the very requirement this stage removes.
+ */
+const UNIVERSAL_IMAGE_CONTAINERS: ReadonlySet<string> = new Set(["image/jpeg", "image/png"]);
 
 /** The five slots every glTF material declares directly; extension slots are covered by
  * the per-texture `slots` snapshot, which walks whatever parents actually reference it. */
@@ -482,23 +490,27 @@ export async function compressEmbeddedTextures(
     }
     if (decoderFree) {
       // No Basis transcoder on this target, so the cap is honoured by resampling and re-emitting
-      // a PNG. An image already within the cap keeps its authored bytes; the file is never
-      // rewritten and KHR_texture_basisu is never declared.
+      // a PNG. An image already within the cap keeps its authored bytes — unless its container is
+      // one only an extension-reading loader understands, where keeping them would ship the very
+      // requirement this path exists to remove. KHR_texture_basisu is never declared.
       const target = cappedSize(decoded.width, decoded.height, maxSize);
-      if (target.width === decoded.width && target.height === decoded.height) {
+      const downsampled = target.width !== decoded.width || target.height !== decoded.height;
+      if (!downsampled && UNIVERSAL_IMAGE_CONTAINERS.has(texture.getMimeType())) {
         bytesAfter += image.byteLength;
         gpuBytesAfter += gpuBytes(decoded.width, decoded.height, "none");
         formats[key] = "none";
         continue;
       }
-      const data = resampleRgba(
-        decoded.data,
-        decoded.width,
-        decoded.height,
-        target.width,
-        target.height,
-        getTextureColorSpace(texture) === "srgb",
-      );
+      const data = downsampled
+        ? resampleRgba(
+            decoded.data,
+            decoded.width,
+            decoded.height,
+            target.width,
+            target.height,
+            getTextureColorSpace(texture) === "srgb",
+          )
+        : decoded.data;
       const png = new PNG({ height: target.height, width: target.width });
       png.data = Buffer.from(data);
       const encoded = PNG.sync.write(png);
@@ -506,7 +518,7 @@ export async function compressEmbeddedTextures(
       bytesAfter += encoded.byteLength;
       gpuBytesAfter += gpuBytes(target.width, target.height, "none");
       formats[key] = "none";
-      resized += 1;
+      if (downsampled) resized += 1;
       continue;
     }
 
@@ -552,12 +564,16 @@ export async function compressEmbeddedTextures(
         : { isUASTC: false, qualityLevel: quality }),
     });
     // A tiny source can cost less than the KTX2 container alone. Keep its exact bytes when
-    // encoding cannot save download bytes; a named codec override still requests GPU compression.
+    // encoding cannot save download bytes *and* the authored container needs no extension to be
+    // read; a WebP costs a decoder-free target the whole model, which is never the smaller cost.
+    // A named codec override still requests GPU compression either way. The size increase is
+    // reported by the existing `bytes before -> after` row of the build report.
     if (
       encoded.byteLength >= image.byteLength &&
       target.width === decoded.width &&
       target.height === decoded.height &&
-      !explicit
+      !explicit &&
+      UNIVERSAL_IMAGE_CONTAINERS.has(texture.getMimeType())
     ) {
       bytesAfter += image.byteLength;
       gpuBytesAfter += gpuBytes(decoded.width, decoded.height, "none");
@@ -582,6 +598,13 @@ export async function compressEmbeddedTextures(
     // Required, not merely used: a reader with no Basis transcoder cannot draw this model,
     // and a glTF that pretends otherwise fails at the first frame instead of at load.
     document.createExtension(KHRTextureBasisu).setRequired(true);
+  }
+  // A glTF writer emits every extension still attached, so a model authored with WebP images
+  // would keep *requiring* EXT_texture_webp after the cook replaced those images. Dropped only
+  // once no image is left in the container: an over-cap image the project chose to keep as
+  // authored is still a WebP a reader has to understand.
+  if (!textures.some((texture) => texture.getMimeType() === "image/webp")) {
+    document.disposeExtension(EXTTextureWebP.EXTENSION_NAME);
   }
   return {
     bytesAfter,

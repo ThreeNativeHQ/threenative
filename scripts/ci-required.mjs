@@ -40,6 +40,15 @@ try {
       );
     }
   }
+  if (process.env.TN_CI_EVENT === "merge_group") {
+    const base = process.env.TN_CI_BASE_SHA ?? "";
+    const head = process.env.TN_CI_HEAD_SHA ?? "";
+    const ancestor = spawnSync("git", ["merge-base", "--is-ancestor", base, plan.candidateSha]);
+    if (!/^[0-9a-f]{40}$/u.test(base) || head !== plan.candidateSha || ancestor.status !== 0)
+      throw new Error(
+        "CI_REQUIRED_QUEUE_CANDIDATE_MISMATCH: expected the exact merge-group head and ancestor base",
+      );
+  }
   // PRD-481. The scope job proved the source run tested this exact tree and covered this run's
   // profile; what only the API can settle is whether that run's own verdict went green and whether
   // it really did conclude every leg, and a reuse this job cannot confirm is not a pass.
@@ -47,12 +56,13 @@ try {
   if (plan.reusedRunId > 0) {
     const target = process.env.TN_CI_BASE_REF ?? "";
     // A reuse plan states nothing about what was required — every job in it reads exempt — so the
-    // gate re-checks what policy owes each target. An ordinary develop pull request's native
-    // requirement is a property of its diff, which only the scope job resolved and checked there.
+    // gate re-checks what policy owes each target, and the plan's tier is that answer: a pull
+    // request that owes the Linux rows (PRD-380 phase 2) owes them even when the work was reused, so
+    // a source that skipped the lane cannot stand in for it.
     const current = currentRun({
       eventName: process.env.TN_CI_EVENT,
       baseRef: target,
-      exempt: target === "develop" ? ["native-platforms"] : [],
+      exempt: plan.nativeTier === "none" ? ["native-platforms"] : [],
     });
     if ("error" in current) throw new Error(`CI_REQUIRED_ROUTING_UNKNOWN: ${current.error}`);
     source = sourceVerdict({ runId: plan.reusedRunId, current });
@@ -64,6 +74,7 @@ try {
     "",
     `Candidate: \`${plan.candidateSha}\``,
     `Selection: \`${plan.selection}\` — ${plan.reason}`,
+    `Native matrix: \`${plan.nativeTier}\``,
     "",
   ];
   if (plan.reusedRunId > 0) {

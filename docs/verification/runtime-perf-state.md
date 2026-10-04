@@ -5306,7 +5306,7 @@ changed for it.
 
 ## Bayview startup after dependency repairs — 2026-09-07
 
-The [working-build handoff](../PRDs/batch-2026-09-05/PRD-360-FOLLOWUP-startup-performance.md)
+The [working-build handoff](../PRDs/performance/PRD-360-FOLLOWUP-startup-performance.md)
 records one physical Pixel 8 run: first frame 16,020.007 ms, pipeline compilation
 8,404.781 ms across 93 calls, and frame-stall residual 4,917.275 ms. The retained
 `artifacts/findings-fix/green-host-uninterrupted.log` also reports pump `maxGapMs:15708.693`.
@@ -5378,7 +5378,7 @@ no errors), `pnpm build`, `pnpm budgets`, and `pnpm test` (`406 passed, 2 skippe
 `TN_DEVICE_PREFLIGHT_NO_DEVICE`; no physical launch occurred. Phase 1 therefore remains open.
 The next actionable step is to choose or rebuild a clean observer-carrying Bayview subject, then
 rerun the prescribed three cold phone launches when a qualified device is reachable. See the
-[PRD-360 protocol](../PRDs/batch-2026-09-05/PRD-360-android-launch-is-playable-within-eight-seconds.md)
+[PRD-360 protocol](../PRDs/performance/PRD-360-android-launch-is-playable-within-eight-seconds.md)
 and the [tracked evaluator source](prd-360-startup-2026-09-05/validate-evaluator.mjs.txt).
 
 ## Performance loop — PRD-400

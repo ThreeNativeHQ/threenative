@@ -69,6 +69,7 @@ const high: IWorldEnvironmentOptions = {
   bloomEnabled: false,
   denoiseEnabled: false,
   // The post pass applies the weather's exposure itself, after its own bloom add.
+  autoExposureEnabled: false,
   exposure: 1,
   renderChainTier: "high",
   ssgiEnabled: false,

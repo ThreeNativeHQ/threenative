@@ -39,6 +39,7 @@
       "examples/abyss-vanilla/vite.config.js",
       "examples/auto-lod/public/**",
       "examples/abyss-framework/public/**",
+      "examples/abyss-framework/vq-assets/.generated/**",
       "examples/csg-doorway/public/**",
       "docs/benchmark/sweeps/**",
       "docs/benchmark/rounds/**",
@@ -180,6 +181,25 @@
             }
           }
         }
+      }
+    },
+    {
+      "include": [
+        "docs/verification/prd339-exposure-proof/camera-cuts-2bc1d57f.json",
+        "docs/verification/prd339-exposure-proof/cold-boots-08b039c.json",
+        "docs/verification/prd339-exposure-proof/cold-boots-d1500603.json",
+        "docs/verification/prd339-exposure-proof/completion-388e8a.json",
+        "docs/verification/prd339-exposure-proof/completion-current-55b5313.json",
+        "docs/verification/prd339-exposure-proof/controlled-cuts-9a84ee0e.json",
+        "docs/verification/prd339-exposure-proof/dark-adapted-bb34aff.json",
+        "docs/verification/prd339-exposure-proof/live-clock-5c3b176.json",
+        "docs/verification/prd339-exposure-proof/qualified-cuts-2a33c9a0.json",
+        "docs/verification/prd339-exposure-proof/reverse-cuts-ad0498e6.json",
+        "docs/verification/prd339-exposure-proof/rgb-correction-c7091c7.json",
+        "docs/verification/prd339-exposure-proof/sunlight-failed-eaa583b.json"
+      ],
+      "formatter": {
+        "enabled": false
       }
     }
   ]

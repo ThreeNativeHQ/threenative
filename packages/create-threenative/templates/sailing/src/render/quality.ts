@@ -85,6 +85,7 @@ const high: IWorldEnvironmentOptions = {
   bloomStrength: 0.38,
   // No SSGI runs here, so there is nothing for the denoiser to clean up. Off, explicitly.
   denoiseEnabled: false,
+  autoExposureEnabled: false,
   exposure: 0.9,
   // Off at every tier — see the note at the top of this file.
   ssgiEnabled: false,

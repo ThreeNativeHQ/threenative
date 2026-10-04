@@ -76,6 +76,7 @@ const shared: IWorldEnvironmentOptions = {
   bloomThreshold: 1,
   // The sky photograph arrives at 2.5x, so the curve and the exposure below are what bring it
   // back to a daylight frame instead of a white one.
+  autoExposureEnabled: false,
   exposure: 0.6,
   tonemapMode: "aces",
   vignetteAmount: 0.2,

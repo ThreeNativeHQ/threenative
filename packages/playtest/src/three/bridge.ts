@@ -14,6 +14,7 @@ import {
   type IPlaytestStartupObservation,
   type JsonValue,
   type PlaytestClockMode,
+  requestedPlaytestClockMode,
 } from "../protocol.js";
 import type { Camera, Scene } from "three";
 
@@ -87,9 +88,12 @@ export function installThreePlaytestBridge(options: IThreePlaytestBridgeOptions)
     throw new Error("A physics provider requires the authoritative tick provider, and therefore fixedStep.");
   const recorder = options.physics === undefined ? undefined : new ThreePlaytestPhysicsRecorder(options.physics);
   // The producer's own answer, with the capability-gated default every existing installation has
-  // always reported. A wall-clock producer still needs `fixedStep`, so the capability is unchanged.
+  // always reported, and the host's request read at the moment it is needed: an installer that
+  // passed a mode outranks it, and a bridge installed without one still honours a wall clock the
+  // runner asked for, rather than judging a live frame pump by a count it never chose. A
+  // wall-clock producer still needs `fixedStep`, so the capability is unchanged.
   const clockMode = (): PlaytestClockMode =>
-    options.clockMode ?? (options.fixedStep === undefined ? "render-frame" : "fixed-step");
+    options.clockMode ?? requestedPlaytestClockMode() ?? (options.fixedStep === undefined ? "render-frame" : "fixed-step");
   const host = globalThis as IPlaytestBridgeHost;
   const previous = host[PLAYTEST_BRIDGE_GLOBAL];
   const registry = new ThreePlaytestEntityRegistry();
