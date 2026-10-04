@@ -159,7 +159,8 @@ const available = (
   settings: IGradeSettings,
   tableLoaded: boolean,
 ): boolean | string | undefined =>
-  gradeStages(settings, tableLoaded ? LOADED : undefined).find((stage) => stage.name === name)
+  gradeStages(settings, tableLoaded ? LOADED : undefined)
+    .find((stage) => stage.name === name)
     ?.available?.(undefined as never);
 
 describe("starter grade tiers", () => {
