@@ -20,7 +20,7 @@ it("streams Strata's exact grounded transforms, seeded cover density and origina
   const placements = Array.from({ length: 60 }, (_, i) => ({
     id: `grass:${i}`,
     asset: "grass",
-    position: [i * 5 - 150, 0, 0],
+    position: [i * 20 - 600, 0, 0],
     rotation: 0.3,
     scale: 2,
     normal: [0.1, 0.99, 0],
@@ -36,7 +36,7 @@ it("streams Strata's exact grounded transforms, seeded cover density and origina
   const ground = () => ({ height: 4, offset: 0 });
   const materials = { grass: material } as never;
   const original = createProps(placements, ground, parts, materials);
-  const follow = { position: new Vector3(-120, 5, 0) };
+  const follow = { position: new Vector3(-480, 5, 0) };
   const streamed = await createStreamedProps({
     placements,
     groundAt: ground,
@@ -54,7 +54,7 @@ it("streams Strata's exact grounded transforms, seeded cover density and origina
       expect(streamed.byId.get(placement.id)?.pose.elements).toEqual(
         original.byId.get(placement.id)?.pose.elements,
       );
-    for (const x of [-120, 120, -120]) {
+    for (const x of [-480, 480, -480]) {
       follow.position.x = x;
       original.setLevels(follow.position);
       for (let frame = 0; frame < 150; frame++) {
@@ -330,5 +330,54 @@ it("writes the original rendered matrices and materials for multi-part nonunifor
   } finally {
     streamed.dispose();
     original.dispose();
+  }
+});
+
+it("drains representative multi-part canopy cell admission without thousands of serial jobs", async () => {
+  const placements = Array.from({ length: 625 }, (_, i) => ({
+    id: `spruce:dense:${i}`,
+    layer: "canopy",
+    asset: "spruce",
+    position: [(i % 25) * 16 - 192, 0, Math.floor(i / 25) * 16 - 192],
+    rotation: 0,
+    scale: 1,
+    normal: [0, 1, 0],
+    alignToNormal: false,
+  })) as IPlacement[];
+  const material = new MeshBasicMaterial();
+  const parts = new Map(
+    placements.map((p) => [
+      `spruce:${variantFor(p, "spruce")}`,
+      [0, 1, 2].flatMap((level) =>
+        ["bark", "crown"].map((role) => ({
+          geometry: new BoxGeometry(1, 3, 1),
+          material,
+          role: role as "bark" | "crown",
+          variant: 0,
+          level,
+        })),
+      ),
+    ]),
+  );
+  const streamed = await createStreamedProps({
+    placements,
+    parts,
+    materials: { bark: material, crown: material } as never,
+    groundAt: () => ({ height: 0, offset: 0 }),
+    follow: { position: new Vector3() },
+    size: 512,
+    whileCurrent: () => true,
+  });
+  if (!streamed) throw new Error("cancelled");
+  try {
+    for (let frame = 0; frame < 128; frame++) {
+      for (const world of streamed.worlds) world.update();
+      await Promise.resolve();
+    }
+    expect(streamed.stats().admissionBacklog).toBe(0);
+    expect(streamed.stats().failures).toBe(0);
+    expect(streamed.meshes.reduce((n, m) => n + m.count, 0)).toBe(placements.length * 2);
+  } finally {
+    streamed.dispose();
   }
 });

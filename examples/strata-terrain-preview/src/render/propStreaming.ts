@@ -43,7 +43,9 @@ interface IRecord {
   readonly quaternion: Quaternion;
   readonly scale: number;
 }
-const CELL_SIZE = 32;
+// Coarse source cells bound admission jobs; WorldCells retains its own main-pass culling.
+// Geometry, per-placement reach and LOD selection are independent of this export grouping.
+const CELL_SIZE = 128;
 
 /** Compile the game's poses/appearance into world-v1 records; WorldCells owns every streaming step. */
 export async function createStreamedProps(options: IStreamOptions) {
