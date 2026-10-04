@@ -14,7 +14,7 @@ limitations are recorded.
   evidence.
 - [CONFLICTS](strategy/CONFLICTS.md) records decisions where strategy and the binding document
   disagree.
-- [Latest round ledger](verification/round-10-2026-08-16.md) gives the current self-improvement
+- [Latest round ledger](verification/round-14-2026-09-04.md) gives the current self-improvement
   state. The [Studio hosting series](PRDs/studio-hosting/README.md) describes the proposed
   container, session broker, and production path — for the private Studio repository, not this one.
 - [Engine-load comparison](verification/runtime-perf-state.md#prd-117-browser-comparison-2026-08-14)
@@ -77,7 +77,7 @@ recorded in builder sessions, and the defect shapes reviewers keep re-finding.
 
 A round ledger records one self-improvement round's inputs, decisions, evidence, and resulting
 state. `pnpm round:next` resumes from the latest ledger, and `pnpm round:deletions` reports
-persistent unused-export evidence. The [newest ledger is round 12](verification/round-12-close-2026-08-22.md);
+persistent unused-export evidence. The [newest ledger is round 14](verification/round-14-2026-09-04.md);
 [the earlier rounds](verification/) sit beside it.
 
 ## Benchmark

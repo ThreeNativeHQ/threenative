@@ -5502,7 +5502,7 @@ export class WorldCells extends Group implements IComputeDriven {
       // skipping an entry that has its main block meant the retry never asked for its cluster, so
       // those records reached the main pass and no shadow map.
       if (entry.segment < 0) {
-        const shared = this.#sharedFor(job.asset.id, entry, cell);
+        const shared = this.#sharedFor(job.asset.id, entry);
         const segment =
           shared === undefined
             ? undefined
@@ -5550,7 +5550,7 @@ export class WorldCells extends Group implements IComputeDriven {
     // This run's near representation is attached, so the far mesh stops drawing its original roots in
     // the same synchronous block: a cell is never drawn by both and never by neither. A no-op until
     // the asset's atlas lands; see `#syncFarSegments` for the build-time half and `#restoreFar`.
-    this.#disableFar(job.cell, job.run);
+    this.#disableFar(job.run);
     return true;
   }
 
@@ -5952,7 +5952,7 @@ export class WorldCells extends Group implements IComputeDriven {
   }
 
   /** The main pass's one mesh for an asset part at a level, covering every resident cell. */
-  #sharedFor(assetId: string, entry: ICellBatch, cell: IResidentCell): SharedBatch | undefined {
+  #sharedFor(assetId: string, entry: ICellBatch): SharedBatch | undefined {
     return this.#batchFor(assetId, entry, this.#keyOf(entry), "main", this.#receiveShadow);
   }
 
@@ -7949,7 +7949,7 @@ export class WorldCells extends Group implements IComputeDriven {
   }
 
   /** The near ring has attached this run's full representation; the far mesh stops drawing it. */
-  #disableFar(cell: IResidentCell, run: IWorldRun): void {
+  #disableFar(run: IWorldRun): void {
     const aggregate = this.#farSegments.get(run);
     if (aggregate === undefined) return;
     const segment = aggregate.segments.get(run);
@@ -7959,7 +7959,7 @@ export class WorldCells extends Group implements IComputeDriven {
   }
 
   /** This run is leaving the ring; the far mesh draws it again before the near batches are cleared. */
-  #restoreFar(cell: IResidentCell, run: IWorldRun): void {
+  #restoreFar(run: IWorldRun): void {
     const aggregate = this.#farSegments.get(run);
     if (aggregate === undefined) return;
     const segment = aggregate.segments.get(run);
@@ -8596,7 +8596,7 @@ export class WorldCells extends Group implements IComputeDriven {
     // Every run this cell held goes back to the far mesh BEFORE the near batches below are cleared:
     // the far mesh owns the ORIGINAL roots and this is the same synchronous block, so no frame draws
     // the cell twice or not at all. Skipped at teardown, where the far aggregates are drained whole.
-    if (!this.#released) for (const run of cell.cell.runs) this.#restoreFar(cell, run);
+    if (!this.#released) for (const run of cell.cell.runs) this.#restoreFar(run);
     // Work queued for a cell that has left is dropped, not resumed: a later frame would build
     // batches into a graph that no longer holds the cell, and the residency slot is already gone.
     this.#jobs = this.#jobs.filter((job) => {

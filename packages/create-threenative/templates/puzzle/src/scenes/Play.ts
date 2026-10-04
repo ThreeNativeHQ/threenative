@@ -318,7 +318,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     /** V pressed before the opening drop finished: honoured as soon as it has. */
     let replayRequested = false;
 
-    const unwatch = seal.watch({
+    seal.watch({
       isCrate: (body) => crateBodies.has(body),
       onContact: (by) => {
         // The seal is switched off for the duration of the replay, so anything that reaches it
