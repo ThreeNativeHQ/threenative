@@ -411,9 +411,40 @@ function chunkOf(materials: readonly Material[]): Group {
   return model;
 }
 
+/**
+ * Two parts of one asset: a surface a record can hold, and a transmissive one it cannot.
+ *
+ * One asset with both is the whole of the claim — a refusal is per draw, so the other part of the
+ * same model is still recorded, which is what stops "unbundleable" from reading as "off".
+ */
+function mixedMainMaterials(): readonly [Material, Material] {
+  const painted = new MeshStandardNodeMaterial();
+  const glass = new MeshPhysicalNodeMaterial();
+  glass.transmission = 0.6;
+  return [painted, glass];
+}
+
+/** The clock the marker windows read, so a test can walk into the next one instead of waiting 5 s. */
+const realNow = (): number => globalThis.performance?.now() ?? Date.now();
+
+/** The `TN_WORLD_*` lines the world prints, captured until `afterEach` restores the console. */
+function captureMarkers(): string[] {
+  const lines: string[] = [];
+  vi.spyOn(console, "info").mockImplementation((line: unknown) => {
+    lines.push(String(line));
+  });
+  return lines;
+}
+
+/** The bundle line itself, or `""` when the marker window has not come round yet. */
+function bundleMarker(lines: readonly string[]): string {
+  return lines.find((line) => line.startsWith("TN_WORLD_BUNDLE ")) ?? "";
+}
+
 /** A world on the committed package, walked the way the GPU-scene spec walks it. */
 async function world(
   options: {
+    readonly admissionNow?: () => number;
     readonly bundles?: boolean;
     readonly chunkModel?: (url: string) => Group;
     readonly gpuScene?: boolean;
@@ -572,7 +603,7 @@ describe("the main pass's draw bundles", () => {
 
     // No group, and the marker and the stats say so.
     expect(bundleGroup(cells)).toBeUndefined();
-    expect(cells.stats().bundle).toEqual({ children: 0, on: false, records: 0 });
+    expect(cells.stats().bundle).toEqual({ children: 0, on: false, reason: "option", records: 0 });
     const dressed = mainKeys(cells);
     expect(dressed.length).toBeGreaterThan(0);
     for (const mesh of dressed) expect(mesh.parent).toBe(cells);
@@ -683,6 +714,121 @@ describe("the main pass's draw bundles", () => {
     cells.dispose();
     expect(lifted.parent).not.toBe(group);
     expect(lifted.parent instanceof BundleGroup).toBe(false);
+  });
+
+  it("leaves a main batch a record cannot replay on the per-object path, and records the rest", async () => {
+    // The blank-frame bug the chunk side already guards, on the main pass: a record is encoded into
+    // a bundle encoder, and a draw that needs the pass it was recorded in — an impostor's
+    // framebuffer read, a transmissive batch's transmission — cannot be replayed from one. So the
+    // refusal is that one draw and not the world: the other part of the same asset is recorded.
+    const [painted, glass] = mixedMainMaterials();
+    const materials = [painted, glass];
+    // Every model stands in cell (1, 1), the cell `eastCamera` looks at, so the assertion is about
+    // which path a draw took and not about whether the frustum kept it.
+    const at = cellCentre(1, 1);
+    const { renderer, world: cells } = await world({
+      chunkModel: (url) => {
+        const model = chunkOf(materials);
+        model.position.set(at.x, 0, at.z);
+        return standAtCellOf(url, model);
+      },
+    });
+    cells.update(renderer, eastCamera());
+    await flushed(cells, renderer, eastCamera());
+
+    const drawn = project(cells, eastCamera());
+    // By what the mesh draws, not by which material object: the GPU-scene dress gives every dressed
+    // mesh a clone of the asset's surface, so identity is not the game's material any more.
+    const transmissive = (mesh: Object3D): boolean => {
+      const transmission = Reflect.get((mesh as Mesh).material, "transmission");
+      return typeof transmission === "number" && transmission > 0;
+    };
+    const refused = mainKeys(cells).filter(transmissive);
+    const recorded = mainKeys(cells).filter((mesh) => transmissive(mesh) === false);
+    expect(refused.length).toBeGreaterThan(0);
+    expect(recorded.length).toBeGreaterThan(0);
+    // The transmissive batch is submitted per object, which is the path every main batch drew before
+    // bundles existed, and never appears in a record.
+    for (const mesh of refused) {
+      expect(drawn.perObject).toContain(mesh);
+      expect(drawn.bundled).not.toContain(mesh);
+      expect(mesh.parent).toBe(cells);
+      expect(mesh.userData.tnBundled).not.toBe(true);
+    }
+    // Its sibling is recorded, so the group is the whole of what a bundle can hold rather than a
+    // world that gave up on recording.
+    for (const mesh of recorded) expect(drawn.bundled).toContain(mesh);
+    expect(bundleGroup(cells)?.children.length).toBeGreaterThan(0);
+    // And a refused draw keeps the coarse gate that hides it, because that is the CPU path's answer:
+    // a record's render list is fixed when it was recorded and never reads `visible` again.
+    const watched = watchVisible(refused);
+    turn(cells, renderer, 20, [0, 1]);
+    for (const held of watched.values()) expect(held.count).toBeGreaterThan(0);
+    expect(cells.stats().failures).toBe(0);
+    cells.dispose();
+  });
+
+  it("records by default, and the marker says the run asked for nothing else", async () => {
+    // Phase 2 box 2: the default follows the measurement. AC-2 measured the walking `draw` span at
+    // -5.0 ms against develop over 3 interleaved runs with bundles on, so a world that says nothing
+    // is on — and says so, because the one thing a run must not hide is which path it took.
+    const lines = captureMarkers();
+    let clock = 0;
+    const { renderer, world: cells } = await world({ admissionNow: () => clock + realNow() });
+    cells.update(renderer, eastCamera());
+    await flushed(cells, renderer, eastCamera());
+    clock += 6e3;
+    cells.update(renderer, eastCamera());
+
+    expect(cells.stats().bundle.on).toBe(true);
+    expect(cells.stats().bundle.reason).toBe("default");
+    expect(bundleMarker(lines)).toContain("TN_WORLD_BUNDLE on reason=default");
+    // And the walk really is replaying: every main batch hangs in the one group.
+    const group = bundleGroup(cells);
+    expect(group).toBeDefined();
+    for (const mesh of mainKeys(cells)) expect(mesh.parent).toBe(group);
+    cells.dispose();
+  });
+
+  it("honours `bundles: false`, and the marker says the game overrode the default", async () => {
+    // The override is the named one on the same object, so it can come back to a picture a machine
+    // cannot run: the per-object path every main batch drew before this PRD, and the marker says the
+    // run is not on the default.
+    const lines = captureMarkers();
+    let clock = 0;
+    const { renderer, world: cells } = await world({
+      admissionNow: () => clock + realNow(),
+      bundles: false,
+    });
+    cells.update(renderer, eastCamera());
+    await flushed(cells, renderer, eastCamera());
+    clock += 6e3;
+    cells.update(renderer, eastCamera());
+
+    expect(cells.stats().bundle.on).toBe(false);
+    expect(cells.stats().bundle.reason).toBe("option");
+    expect(bundleMarker(lines)).toContain("TN_WORLD_BUNDLE off reason=option");
+    expect(bundleGroup(cells)).toBeUndefined();
+    cells.dispose();
+  });
+
+  it("honours a launch override, and the marker says the launch asked", async () => {
+    // The same switch from the outside — `?tnBundles=0`, `TN_BUNDLES=0` or `__tnBundles = 0` — so a
+    // machine can A/B a picture without a source change, and the line says which arm it was.
+    vi.stubGlobal("__tnBundles", 0);
+    const lines = captureMarkers();
+    let clock = 0;
+    const { renderer, world: cells } = await world({ admissionNow: () => clock + realNow() });
+    cells.update(renderer, eastCamera());
+    await flushed(cells, renderer, eastCamera());
+    clock += 6e3;
+    cells.update(renderer, eastCamera());
+
+    expect(cells.stats().bundle.on).toBe(false);
+    expect(cells.stats().bundle.reason).toBe("launch");
+    expect(bundleMarker(lines)).toContain("TN_WORLD_BUNDLE off reason=launch");
+    expect(bundleGroup(cells)).toBeUndefined();
+    cells.dispose();
   });
 
   it("hides a cell's chunk record while the cull cannot see the cell, and shows it again", async () => {

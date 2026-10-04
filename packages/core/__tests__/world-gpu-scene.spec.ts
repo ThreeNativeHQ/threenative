@@ -1578,8 +1578,9 @@ describe("WorldCells with the GPU-driven main pass", () => {
        * the near key's `#squareSizes` stays empty forever. The camera then walks in — a plain camera
        * move, no residency change and no rebuild — and the dispatch selects the near level. The near
        * mesh has no CPU cell of its own, so the old gate hid exactly the mesh the dispatch was
-       * drawing. Run with bundles both off (the default) and on: a bundled mesh is shown by its
-       * recorded bundle and never asked, so the two paths must both keep it renderable.
+       * drawing. Run with bundles both ways, which are the default and its override: a bundled mesh
+       * is shown by its recorded bundle and never asked, so the two paths must both keep it
+       * renderable.
        */
       stubManifestFetch(true);
       // Far past the 60 m switch from every resident cell, and never moved, so every build is coarse.

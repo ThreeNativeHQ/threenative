@@ -20,7 +20,7 @@ import {
 import { BundleGroup } from "three/webgpu";
 import { type IAssetLoader, createAssetLoader } from "./assets.js";
 import type { IComputeDriven } from "./compute-driven.js";
-import { markEngineRenderHook } from "./engine-render-hook.js";
+import { isEngineRenderHook, markEngineRenderHook } from "./engine-render-hook.js";
 import { InstancedBatch } from "./instanced-batch.js";
 import { mergeByMaterial } from "./merge-parts.js";
 import { type ILodChain, biasedLodDistance, lodChainOf, setLodBias } from "./model-lod.js";
@@ -60,7 +60,7 @@ import {
   type ILiveAsset,
   type IMeshDraw,
   WorldGpuScene,
-  bundlesRequested,
+  bundlesAsked,
   gpuSceneRequested,
   gpuSceneValidationRequested,
   levelAtGates,
@@ -549,10 +549,15 @@ export interface IWorldCellsLoadOptions {
   /**
    * Record every GPU-dressed main batch mesh and every resident cell's hand-placed chunks into
    * `BundleGroup`s, and replay the records instead of re-walking three's per-object path for each
-   * draw. Off by default: measured on machinefall's map-walk, bundles gave no CPU p50/p95 gain (the
-   * main thread is mostly idle and the frame is GPU/present bound), and `?tnBundles=0` stays the off
-   * path while `bundles: true` or `?tnBundles=1`/`TN_BUNDLES=1` turns it on. `stats().bundle` and the
-   * `TN_WORLD_BUNDLE` line say which way a run took.
+   * draw. On by default: PRD-494 AC-2 measured the walking `draw` span at a 5.0 ms lower p95 than
+   * develop over 3 interleaved runs with bundles on and a picture a blind world gate called equal,
+   * which is the measurement the old opt-in default was decided without — so `bundles: false`,
+   * `?tnBundles=0` or `TN_BUNDLES=0` is the way back to the per-object path, and `stats().bundle`
+   * and the `TN_WORLD_BUNDLE` line say which way a run took and what asked for it.
+   *
+   * A record is an encoder, not a render pass, so only a draw that needs no live pass is recorded:
+   * a framebuffer reader, a transmissive impostor, a skinned or morphed mesh and a per-object hook
+   * all stay on the path they were already on. See `bundleSafe`.
    *
    * The render list inside a bundle is fixed when it is recorded, so a bundled mesh is never hidden:
    * the dispatch draws zero instances for a key the camera cannot see, and an indirect draw of zero
@@ -565,8 +570,7 @@ export interface IWorldCellsLoadOptions {
    * answer for that cell — the same coarse answer the scatter batches take, one cell wide. What that
    * costs is the price of the option: a cell the cull cannot see is not drawn at all, which takes its
    * chunk casters out of the shadow levels with it, and a cell it can only partly see draws the part
-   * facing away. Both rasterize nothing or nearly so; the missing shadow is the real difference, and
-   * it is why the option stays opt-in until a map-walk capture says otherwise.
+   * facing away. Both rasterize nothing or nearly so; the missing shadow is the real difference.
    */
   readonly bundles?: boolean;
   /**
@@ -718,10 +722,16 @@ export interface IWorldCellsStats {
    * 200-frame walk holds `records` at the number of keys and chunks that came and went, and a settled
    * camera holds it still. A cell's record is gated by a `visible` write instead, which costs
    * nothing; see the `bundles` option.
+   *
+   * `reason` is who asked: `default` is a run that set nothing, `option` is a load that named
+   * `bundles`, and `launch` is `?tnBundles` / `TN_BUNDLES` / `__tnBundles`. It is on the marker line
+   * too, because a run that turns the default off is exactly the run a reader cannot tell from a
+   * failing one without it.
    */
   readonly bundle: {
     readonly on: boolean;
     readonly children: number;
+    readonly reason: string;
     readonly records: number;
   };
   /**
@@ -979,6 +989,12 @@ class SharedBatch {
    */
   bundled = false;
   /**
+   * Whether this batch's current mesh could be recorded at all — the answer `bundleSafe` gives, asked
+   * once per mesh object because a re-dress is the only event that can change it, and read by the
+   * settled walk instead of walking the material again every frame.
+   */
+  bundlable = false;
+  /**
    * The same descriptor, recorded whether or not the GPU scene is on, which is the whole of what
    * lets a mesh minted before the scene came up be dressed after it: `gpu` says the mesh draws from
    * the scene's buffers, `main` says which key it would draw. A prewarm that mints a whole ring on a
@@ -1107,6 +1123,9 @@ class SharedBatch {
     this.mesh.geometry = geometry;
     this.mesh.material = material;
     this.#localGeometry = undefined;
+    // A new surface is the one thing a rebind can bring that a mesh swap cannot, so what can be
+    // recorded has to be asked again: the answer cached for the old material is not this one's.
+    this.bundlable = false;
     if (this.#parked > 1) this.#resize(this.#parked);
     this.#rebound();
     return this;
@@ -2864,7 +2883,10 @@ function samplesFramebuffer(node: unknown, seen: Set<unknown>): boolean {
  * - **Per-frame order.** A transparent mesh is sorted against its neighbours every frame; a record
  *   froze that order when it was made, so a bundled one draws in the order it happened to be in.
  * - **Per-object hooks.** `onBeforeRender`/`onAfterRender` are the two places a game reads the camera
- *   and the frame for a draw, and a replay runs them once at record time and never again.
+ *   and the frame for a draw, and a replay runs them once at record time and never again. The
+ *   engine's own borrow — the prewarm counting its batch's first submitted draw — is bookkeeping
+ *   about the draw rather than a claim on the object, so it does not refuse; `isEngineRenderHook` is
+ *   what tells them apart, the same answer `projection-plan.ts` gives.
  * - **Per-frame vertices.** A skinned or morphed mesh's positions are posed per frame from bones the
  *   record never reads, so its encoded vertices are its rest pose forever.
  *
@@ -2872,11 +2894,22 @@ function samplesFramebuffer(node: unknown, seen: Set<unknown>): boolean {
  * existed — so a refusal costs the draw it was already paying and nothing else.
  */
 function bundleSafe(mesh: Mesh): boolean {
-  if (mesh.onBeforeRender !== Object3D.prototype.onBeforeRender) return false;
-  if (mesh.onAfterRender !== Object3D.prototype.onAfterRender) return false;
+  if (ownHook(mesh, "onBeforeRender")) return false;
+  if (ownHook(mesh, "onAfterRender")) return false;
   if ((mesh as Mesh & { readonly isSkinnedMesh?: boolean }).isSkinnedMesh === true) return false;
   if (mesh.morphTargetInfluences !== undefined) return false;
   return (Array.isArray(mesh.material) ? mesh.material : [mesh.material]).every(bundleSafeMaterial);
+}
+
+/**
+ * Whether this mesh carries a render hook of its own that is the game's, which a record freezes.
+ *
+ * `Object.hasOwn`, not the prototype comparison: the engine installs its own hook as an own property
+ * on the very batches a prewarm borrowed, and refusing those would keep every batch of a streamed
+ * world on the per-object path.
+ */
+function ownHook(mesh: Mesh, name: "onAfterRender" | "onBeforeRender"): boolean {
+  return Object.hasOwn(mesh, name) && isEngineRenderHook(mesh[name]) === false;
 }
 
 /** The material half of {@link bundleSafe}: nothing it draws may need a pass it was recorded in. */
@@ -3857,6 +3890,12 @@ export class WorldCells extends Group implements IComputeDriven {
   #chunkBundleChildren = 0;
   /** `bundles` as the load asked for it, before the query string and the environment. */
   readonly #bundlesWanted: boolean;
+  /**
+   * Who decided that: the load that named `bundles`, the launch that asked for `off` or `on`, or
+   * nothing at all — which is what the marker reports so a run on the default is never mistaken for
+   * one a flag turned off. See {@link bundlesAsked}.
+   */
+  readonly #bundleReason: string;
   /** `adaptiveLod` resolved against the launch override; see the option. */
   readonly #adaptiveLod: boolean;
   /** The main pass's allowed GPU share of a frame; see the option. */
@@ -3994,7 +4033,10 @@ export class WorldCells extends Group implements IComputeDriven {
     );
     this.#transparentScatter = init.transparentScatter ?? "cutout";
     this.#gpuWanted = init.gpuScene ?? gpuSceneRequested();
-    this.#bundlesWanted = init.bundles ?? bundlesRequested();
+    const asked = bundlesAsked();
+    this.#bundlesWanted = init.bundles ?? asked !== "off";
+    this.#bundleReason =
+      init.bundles === undefined ? (asked === "default" ? "default" : "launch") : "option";
     this.#impostors = init.impostors ?? false;
     this.#impostorBudgetBytes = DEFAULT_IMPOSTOR_ATLAS_BUDGET_BYTES;
     this.#adaptiveLod = init.adaptiveLod ?? adaptiveLodRequested();
@@ -4943,6 +4985,7 @@ export class WorldCells extends Group implements IComputeDriven {
       bundle: {
         children: (this.#bundle?.children.length ?? 0) + this.#chunkBundleChildren,
         on: this.#bundlesWanted && (this.#gpuScene.on || this.#chunkBundleChildren > 0),
+        reason: this.#bundleReason,
         records: this.#bundleRecords,
       },
       evictions: this.#evictions,
@@ -5598,10 +5641,12 @@ export class WorldCells extends Group implements IComputeDriven {
     // The bundles on their own line, because the pair reads against a different question: how many
     // objects are recorded, and how many times the recording was thrown away and redone. A walk
     // streaming and culling holds `records` at the keys and chunks that came and went; a walk that
-    // repacks it every frame is drawing a moving set, which is the bug a bundle cannot have.
+    // repacks it every frame is drawing a moving set, which is the bug a bundle cannot have. `reason`
+    // is on it because the default is now on: a reader has to be able to tell a run that turned it
+    // off from a run where recording never happened.
     const bundles = this.stats().bundle;
     console.info(
-      `TN_WORLD_BUNDLE ${bundles.on ? "on" : "off"} ` +
+      `TN_WORLD_BUNDLE ${bundles.on ? "on" : "off"} reason=${bundles.reason} ` +
         `children=${String(bundles.children)} records=${String(bundles.records)}`,
     );
   }
@@ -6044,9 +6089,15 @@ export class WorldCells extends Group implements IComputeDriven {
    *
    * The re-record is the caller's {@link #bumpBundle}, not this one: the group is a record of what
    * the frame that just dressed these meshes drew, and it is only true once the mesh is in it.
+   *
+   * A mesh whose draw needs a live pass is refused rather than recorded — a transmissive impostor or
+   * a GPU batch reaching the framebuffer, the same answer a chunk's draws get. It keeps the per-object
+   * path and the coarse gate that hides it, which is the path it was already on. See `bundleSafe`.
    */
   #bundleIn(shared: SharedBatch): void {
     if (this.#bundlesWanted === false) return;
+    shared.bundlable = bundleSafe(shared.mesh);
+    if (shared.bundlable === false) return;
     this.#bundle ??= this.#newBundle();
     const group = this.#bundle as BundleGroup;
     if (shared.mesh.parent !== group) group.add(shared.mesh);
@@ -6081,10 +6132,15 @@ export class WorldCells extends Group implements IComputeDriven {
 
   /**
    * Where a dressed main batch's mesh belongs: the one bundle group, or the world itself when there is
-   * none — a world with bundles off, and the very first dress of a batch the mint has not attached yet.
+   * none — a world with bundles off, a draw no record can replay, and the very first dress of a batch
+   * the mint has not attached yet.
+   *
+   * It answers with the batch's own last refusal rather than re-asking, so the settled walk compares
+   * parentage without walking a material graph per key per frame. See `bundleSafe`.
    */
-  #bundleHome(): Object3D | null {
-    return this.#bundlesWanted ? (this.#bundle ?? null) : this;
+  #bundleHome(shared: SharedBatch): Object3D | null {
+    if (this.#bundlesWanted === false || shared.bundlable === false) return this;
+    return this.#bundle ?? null;
   }
 
   /**
@@ -6268,7 +6324,7 @@ export class WorldCells extends Group implements IComputeDriven {
       // Where the mesh hangs is part of what this pass owns: a batch that was retired and handed back
       // by a rebind is a child of the world again, and the bundle that last recorded it no longer
       // draws it. Without this the walk would re-mint a key into a bundle that is missing it.
-      shared.mesh.parent === this.#bundleHome()
+      shared.mesh.parent === this.#bundleHome(shared)
     ) {
       // A sibling may have grown the level's capacity without moving this mesh, so the submission
       // bound follows the live region rather than the dress that wrote it. See `gpuCount`.

@@ -421,6 +421,10 @@ async function attached(
     ...options,
     admissionBudgetMs: Number.POSITIVE_INFINITY,
     budgets,
+    // Off, like the rest of this file's claims: what a merged chunk is asked to do here is keep its
+    // own hierarchy, and a cell's BundleGroup re-parents the recorded draws out of it. The record
+    // and replay it does with them is `world-bundles.spec.ts`'s subject.
+    bundles: false,
     follow: options.follow ?? { position: { ...FOLLOW } },
     loadModel: async () => model,
     prefetchSeconds: 0,

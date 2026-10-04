@@ -1155,17 +1155,35 @@ export function gpuSceneRequested(): boolean {
 export const BUNDLE_FLAG = "TN_BUNDLES";
 
 /**
- * Whether world draw bundles should be recorded and replayed. Opt-in, and off by default.
+ * What this launch asked for about world draw bundles: `on`, `off`, or `default` when it said
+ * nothing.
+ *
+ * @situation tell a run that set the option itself apart from one that took the default
+ * @example WorldCells.load({ ...options, bundles: bundlesAsked() !== "off" });
+ *
+ * Read the way {@link gpuSceneRequested} reads its own: a native launch sets the environment
+ * variable, a browser asks with the query string, and a test sets the global.
+ */
+export function bundlesAsked(): "default" | "off" | "on" {
+  if (askedOn(BUNDLE_FLAG, "tnBundles", "__tnBundles")) return "on";
+  return askedOff(BUNDLE_FLAG, "tnBundles", "__tnBundles") ? "off" : "default";
+}
+
+/**
+ * Whether world draw bundles should be recorded and replayed. On by default, and off unless a launch
+ * asks for the CPU path.
  *
  * @situation debug a walk whose main batches are replayed from a recorded bundle
- * @constraint off unless a launch asks for it: a bundle draws nothing a dispatch did not already
- *   decide, and the measured A/B on machinefall found no CPU p50/p95 gain (the main thread is
- *   mostly idle and the frame is GPU/present bound), so `bundles: true`, `?tnBundles=1` or
- *   `TN_BUNDLES=1` turns it on. See PRD-473 phase 2.
+ * @constraint on unless a launch asks otherwise: `bundles: false`, `?tnBundles=0` or `TN_BUNDLES=0`
+ *   turn it off. The default followed a measurement, not a preference — PRD-494 AC-2 took the walking
+ *   `draw` span from a 6.0 ms p50 median to 0.6 ms against develop over 3 interleaved runs, on a
+ *   picture a blind world gate called equal, so the answer that used to be "off, it gave no CPU
+ *   p50/p95 gain" is now "on, it is 5 ms of the walking p95". `bundles: true`, `?tnBundles=1` or
+ *   `TN_BUNDLES=1` still say so explicitly. See PRD-473 phase 2 and PRD-494 phase 2.
  * @example WorldCells.load({ ...options, bundles: bundlesRequested() });
  */
 export function bundlesRequested(): boolean {
-  return askedOn(BUNDLE_FLAG, "tnBundles", "__tnBundles");
+  return bundlesAsked() !== "off";
 }
 
 /** The validation flag. */
