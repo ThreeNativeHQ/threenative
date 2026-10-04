@@ -164,16 +164,8 @@
         "after": false
       },
       "linearVelocity": {
-        "before": [
-          0,
-          0.042420580983161926,
-          0
-        ],
-        "after": [
-          0,
-          3.8614704608917236,
-          0
-        ]
+        "before": [0, 0.042420580983161926, 0],
+        "after": [0, 3.8614704608917236, 0]
       },
       "normaliseFactor": {
         "before": 0.18655969261625796,
@@ -188,16 +180,8 @@
         "after": 0
       },
       "position": {
-        "before": [
-          0,
-          0.2232588678598404,
-          7
-        ],
-        "after": [
-          0,
-          -0.20480135083198547,
-          7
-        ]
+        "before": [0, 0.2232588678598404, 7],
+        "after": [0, -0.20480135083198547, 7]
       },
       "immersion": {
         "before": 0.5,
@@ -243,19 +227,11 @@
       "snapshots": {
         "player": {
           "capsized": false,
-          "linearVelocity": [
-            0,
-            1.6521852016448975,
-            0
-          ],
+          "linearVelocity": [0, 1.6521852016448975, 0],
           "normaliseFactor": 0.18655969261625796,
           "demandedSpeed": 0,
           "groundSpeed": 0,
-          "position": [
-            0,
-            0.1518602967262268,
-            7
-          ],
+          "position": [0, 0.1518602967262268, 7],
           "immersion": 0.20853529847413654,
           "seaHeight": 0.109712509157416,
           "sailBelly": 0,
@@ -274,19 +250,11 @@
       "snapshots": {
         "player": {
           "capsized": false,
-          "linearVelocity": [
-            0,
-            3.8614704608917236,
-            0
-          ],
+          "linearVelocity": [0, 3.8614704608917236, 0],
           "normaliseFactor": 0.18655969261625796,
           "demandedSpeed": 0,
           "groundSpeed": 0,
-          "position": [
-            0,
-            -0.20480135083198547,
-            7
-          ],
+          "position": [0, -0.20480135083198547, 7],
           "immersion": 0.18122098462059855,
           "seaHeight": 0.11529439627584934,
           "sailBelly": 0.8207000494003296,
