@@ -189,20 +189,24 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // PRD-479: each scaffold embeds the reviewed compute-only Storage3DTexture Three patch.
   // A clean-tree audit matched all13 prior hashes, then changed only the copied patch and
   // reproduced all13 CI received hashes. No template, version or other scaffold bytes changed.
-  "action-rpg": "115e31cd5a319cf1407d94486a839304ca26cc6c532384129f6a3e8e7f1a3e36",
-  minimal: "4149749167f26a50c4fe67b801cc71e3d9e26d737f7e43766813f69ac5804900",
-  platformer: "87dc88a3a6d50e88c476cf80c5be501bca62ce27474aed5d8155e02d8e729c90",
-  puzzle: "fc5d88b24b78db3830510360fe2a4e53a7d0805737ddc07047fb6530b23009bb",
-  racing: "502373fe0d07d97dca2bab70929ead5f7bafac123d3b97c2ae49b4a919e5124e",
-  rain: "731042034a9c73824998c919137aa7002d75cac031713e6d309bc8301f8b4088",
-  rts: "2b875e1041e0e533d17f5bd5104094e11f8fbbdd06aef1e0156cba80fc21585b",
-  runner: "b66c2056b1256773911c0f6e46bea6c2f705cc3acbb2b8e2aa3ee8c461938cff",
-  sailing: "2d1ec2373e3697afa0d8f6341260911c24f988315dc2942d1328c0ddbd848011",
+  // Recomputed 2026-10-04 for the WebGPU adapter retention the same Three patch gains: the
+  // scaffolded patch is the only byte that moved, proven by an ablation - restoring just the
+  // prior patch file returned all thirteen trees to the values below, and re-applying it moved
+  // all thirteen again. No template, version, manifest or scaffold implementation changed.
+  "action-rpg": "c7ad3511ba19474a40f12dd46a51df7df10efc0bbbfa50922cfd72bcf9c4a40b",
+  minimal: "afe0a6a23a46940b999a5bf34339c5da7b8e16f635dae589ff8bda8ba86662df",
+  platformer: "edc45d88b02c9b018691e68045123a2aebe73fc03bcbbf21baf7875de93ce624",
+  puzzle: "9a76b33bf13d835baa0821800e498e3d26ee3d2f73f9b68f37ba27436af19dd4",
+  racing: "4fb3f6f69e7cbb8abd11109aa6938c0fa23e22915a220ad67d75a482092324d0",
+  rain: "45cc18d6153d005a3a45711789f7ceb312823b88c1151af998ec215691a9f03a",
+  rts: "19a0b03f0148f6e1f7f88e16795ff54c7ca5bf0c77c1802cb13092cd1a5df9e1",
+  runner: "b0e878314873ca7b88998aeac1f4df4884165ae08292b665576874fc56a76e82",
+  sailing: "29a5e456c185584ae00d3321f8819420265df584aa5dcbb50185860ae9d70fce",
   // VQ11 after merge of develop 416ffd7: measured through createProject, only shooter changed.
-  shooter: "2a4a5cb0b4c91b2cc7578df8bee854d3fa66ffd58f85a8c840964c5549cecc54",
-  snow: "7b634782b3bc6eff9cc9b15141bbe5bba9d1014e034d2a2e8859e785911a6424",
-  starter: "212b3f23c97b60ad8475a9418a6f4eeb87202ebad570b424cab83ff6c3c4ef17",
-  "tower-defense": "b72a0736abbcd3b2007852684b9298dc6d2069c8130337f140f15fb48f341511",
+  shooter: "25559200116b7cf278bf3fc5e32dcc6f5e991fc9018d2cd48705c2c2aefaeb9d",
+  snow: "e98afab150aef190c43118705b12d491a82eabd0485da93bc54aecda4db009c1",
+  starter: "c07ef8f000e8652232d87e61970ac0714306f6e1deacb50aa64e562819fb9397",
+  "tower-defense": "ef62b4721b4b19279ed624848cfdd6e8cb3f9f97fa65fc98410753b8dba81245",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
