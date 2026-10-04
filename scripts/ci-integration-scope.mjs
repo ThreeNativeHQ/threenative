@@ -18,6 +18,8 @@ const PACKAGE_LANES = [
   "fluid-native",
   "native-assets",
   "tone",
+  "temporal",
+  "velocity",
   "world-capture",
 ];
 // The fluid fixtures use FluidParticles3D, Scene/defineGame and core/playtest. These independent

@@ -468,6 +468,26 @@ describe("fluid CI observer ownership", () => {
 });
 
 describe("reviewed producer and independent feature boundaries", () => {
+  it("registers temporal and velocity as workspace producer consumers", () => {
+    for (const file of ["packages/core/tsup.config.ts", "packages/playtest/package.json"]) {
+      const lanes = select(workflow, [file]);
+      expect(lanes.temporal, file).toBe(true);
+      expect(lanes.velocity, file).toBe(true);
+      expect(lanes.csg, file).toBe(false);
+      expect(lanes.ik, file).toBe(false);
+      expect(lanes.vegetation, file).toBe(false);
+    }
+  });
+  it("keeps independent terrain and animation modules outside temporal and velocity", () => {
+    for (const file of [
+      "packages/core/src/terrain-jobs-worker.ts",
+      "packages/core/src/animation.ts",
+    ]) {
+      const lanes = select(workflow, [file]);
+      expect(lanes.temporal, file).toBe(false);
+      expect(lanes.velocity, file).toBe(false);
+    }
+  });
   it("keeps fluid for the shared game loop and core build config", () => {
     for (const file of [
       "packages/core/src/game.ts",
