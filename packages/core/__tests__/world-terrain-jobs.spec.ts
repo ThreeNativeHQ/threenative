@@ -1,6 +1,11 @@
 import { type BufferGeometry, Mesh, MeshBasicMaterial } from "three";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { type ITerrainJob, runTerrainJob } from "../src/terrain-jobs.js";
+import {
+  type ITerrainJob,
+  type ITerrainJobResult,
+  createTerrainJobRunner,
+  runTerrainJob,
+} from "../src/terrain-jobs.js";
 import { TerrainTiles } from "../src/world-tiles.js";
 
 const sampleHeight = (x: number, z: number): number =>
@@ -115,6 +120,11 @@ class FakeWorker {
   onerror: ((event: unknown) => void) | null = null;
   onmessage: ((event: { data: unknown }) => void) | null = null;
   terminated = false;
+  /**
+   * Answers with positions stamped `mark` instead of the merged ones: a result the main thread
+   * could only have got by swapping what came back, because it never computed it itself.
+   */
+  mark = 0;
 
   constructor(url: unknown, options?: { type?: string }) {
     this.url = url;
@@ -148,7 +158,7 @@ class FakeWorker {
   async answerAndSpan(): Promise<number> {
     let span = 0;
     for (const request of this.received.splice(0)) {
-      const result = runTerrainJob(request.job);
+      const result = this.answerWith(request.job);
       // Timed from the delivery, not from here: this fake has to run the job on this thread, and
       // that is the work a real worker would have done elsewhere.
       const started = performance.now();
@@ -157,6 +167,15 @@ class FakeWorker {
       span += performance.now() - started;
     }
     return span;
+  }
+
+  /** The reply: the job's own result, or a marked one when a case is asking who computed it. */
+  answerWith(job: ITerrainJob): ITerrainJobResult {
+    const result = runTerrainJob(job);
+    if (this.mark === 0) return result;
+    const stamped = result.kind === "merge" ? [result] : result.bridges;
+    for (const part of stamped) part.positions.fill(this.mark);
+    return result;
   }
 
   /** A worker that dies mid-job: every job it owes is run on this thread instead. */
@@ -231,6 +250,59 @@ function median(samples: readonly number[]): number {
   return sorted[Math.floor(sorted.length / 2)] as number;
 }
 
+interface IWalkSpans {
+  readonly jobs: Record<ITerrainJob["kind"], number[]>;
+  readonly swaps: Record<ITerrainJob["kind"], number[]>;
+  readonly vertices: number;
+}
+
+/**
+ * Walks a ring, timing each job where a worker would run it and the reply swap this thread does.
+ *
+ * A walk, so blocks keep changing membership: one rebuild is the cap a frame spends, and a frame
+ * without a dirty block measures nothing and is not counted.
+ */
+async function walkAndSpan(tiles: TerrainTiles, frames: number): Promise<IWalkSpans> {
+  const jobs: Record<ITerrainJob["kind"], number[]> = { merge: [], seam: [] };
+  const swaps: Record<ITerrainJob["kind"], number[]> = { merge: [], seam: [] };
+  let vertices = 0;
+  for (let frame = 0; frame < frames; frame += 1) {
+    tiles.follow({ x: 16 + frame * 8, z: 16 + frame * 8 });
+    const worker = FakeWorker.latest();
+    const owed = worker.received.splice(0);
+    if (owed.length === 0) {
+      await worker.answerAndSpan();
+      continue;
+    }
+    for (const { job } of owed) {
+      if (job.kind === "merge")
+        vertices = job.parts.reduce((total, part) => total + part.positions.length / 3, 0);
+      const started = performance.now();
+      runTerrainJob(job);
+      jobs[job.kind].push(performance.now() - started);
+    }
+    // The replies are built before the clock starts: the fake has to run the job on this thread,
+    // and that is the work a real worker would have done elsewhere.
+    const replies = owed.map(({ id, job }) => ({ data: { id, result: worker.answerWith(job) } }));
+    const started = performance.now();
+    for (const reply of replies) worker.onmessage?.(reply);
+    await Promise.resolve();
+    const span = performance.now() - started;
+    for (const { job } of owed) swaps[job.kind].push(span);
+  }
+  return { jobs, swaps, vertices };
+}
+
+/** One ring, walked and disposed: the fake's worker is whichever was spawned last. */
+async function measureSpans(overrides: Record<string, unknown>, frames = 24): Promise<IWalkSpans> {
+  const tiles = terrain(overrides);
+  try {
+    return await walkAndSpan(tiles, frames);
+  } finally {
+    tiles.dispose();
+  }
+}
+
 afterEach(() => {
   vi.unstubAllGlobals();
   FakeWorker.instances.length = 0;
@@ -291,47 +363,71 @@ describe("terrain jobs", () => {
   // The spans, measured over a walk, and only the structural claim asserted: a node sample is not a
   // browser frame, so what this holds is which half of a block rebuild runs on this thread. The
   // numbers go to the PRD beside the box they belong to.
-  it("reports the main-thread span of a block rebuild while the worker builds it", async () => {
+  it("reports the main-thread span of a block rebuild and a seam pass while the worker builds them", async () => {
     vi.stubGlobal("Worker", FakeWorker);
-    const tiles = terrain({
-      lodDistances: [],
-      lodFactors: [1],
-      streamRadius: 2,
-      tileResolution: 33,
-    });
-    const jobs: number[] = [];
-    const swaps: number[] = [];
-    let vertices = 0;
+    // Two rings, because one ring cannot do both jobs: a block merges only where a whole 4x4 tile
+    // block shares one LOD tier, and a seam needs a LOD boundary inside the resident ring.
+    const merged = await measureSpans({ lodDistances: [], lodFactors: [1], streamRadius: 2 });
+    const seamed = await measureSpans(TWO_TIERS);
+    expect(merged.jobs.merge.length).toBeGreaterThan(2);
+    expect(seamed.jobs.seam.length).toBeGreaterThan(0);
+    expect(merged.swaps.merge).toHaveLength(merged.jobs.merge.length);
+    expect(seamed.swaps.seam).toHaveLength(seamed.jobs.seam.length);
+    console.log(
+      `TN_TERRAIN_JOBS rebuilds=${String(merged.jobs.merge.length)} vertices=${String(
+        merged.vertices,
+      )} mergeP50=${median(merged.jobs.merge).toFixed(2)}ms swapP50=${median(
+        merged.swaps.merge,
+      ).toFixed(2)}ms seamPasses=${String(seamed.jobs.seam.length)} seamP50=${median(
+        seamed.jobs.seam,
+      ).toFixed(2)}ms seamSwapP50=${median(seamed.swaps.seam).toFixed(2)}ms`,
+    );
+  });
+
+  // The box's structural claim, without a clock: a reply the main thread did not compute is one it
+  // could only have swapped in, so marking the worker's result marks the settled geometry too. If
+  // any of the merge ran here, the correct bytes would win over the mark and this case fails.
+  it("swaps the returned attributes and computes nothing itself", async () => {
+    vi.stubGlobal("Worker", FakeWorker);
+    const tiles = terrain();
     try {
-      // A walk, so blocks keep changing membership: one rebuild is the cap a frame spends, and a
-      // frame without a dirty block measures nothing and is not counted.
-      for (let frame = 0; frame < 24; frame += 1) {
-        tiles.follow({ x: 16 + frame * 8, z: 16 + frame * 8 });
-        const worker = FakeWorker.latest();
-        const merges = worker.received.filter(({ job }) => job.kind === "merge");
-        if (merges.length === 0) {
-          await worker.answerAndSpan();
-          continue;
-        }
-        for (const { job } of merges) {
-          if (job.kind !== "merge") throw new Error("Expected a merge job.");
-          vertices = job.parts.reduce((total, part) => total + part.positions.length / 3, 0);
-          const started = performance.now();
-          runTerrainJob(job);
-          jobs.push(performance.now() - started);
-        }
-        swaps.push(await worker.answerAndSpan());
+      tiles.follow(ISLAND);
+      const worker = FakeWorker.latest();
+      worker.mark = 1234.5;
+      await worker.answer();
+      const settled = blockMeshes(tiles);
+      expect(settled.length).toBeGreaterThan(0);
+      for (const mesh of settled) {
+        const positions = mesh.geometry.getAttribute("position").array as Float32Array;
+        expect(positions.length).toBeGreaterThan(0);
+        expect(positions.every((value) => value === 1234.5)).toBe(true);
       }
-      expect(jobs.length).toBeGreaterThan(2);
-      expect(swaps).toHaveLength(jobs.length);
-      console.log(
-        `TN_TERRAIN_JOBS rebuilds=${String(jobs.length)} vertices=${String(vertices)} mergeP50=${median(
-          jobs,
-        ).toFixed(2)}ms swapP50=${median(swaps).toFixed(2)}ms`,
-      );
     } finally {
       tiles.dispose();
     }
+  });
+
+  it("names the host it runs inline on, and reports none while a worker has the jobs", () => {
+    const inline = createTerrainJobRunner();
+    expect(inline.offThread).toBe(false);
+    expect(inline.inlineReason).toBe("no Worker on this host");
+    inline.dispose();
+
+    // The native host: its shim has a `Worker` and refuses a module source by name.
+    vi.stubGlobal("Worker", FakeWorker.refused);
+    const native = createTerrainJobRunner();
+    expect(native.offThread).toBe(false);
+    expect(native.inlineReason).toContain("TN_NATIVE_WORKER_MODULE_UNSUPPORTED");
+    native.dispose();
+
+    vi.stubGlobal("Worker", FakeWorker);
+    const offThread = createTerrainJobRunner();
+    expect(offThread.offThread).toBe(true);
+    expect(offThread.inlineReason).toBeUndefined();
+    expect(String(FakeWorker.latest().url)).toContain("terrain-jobs-worker.js");
+    expect(FakeWorker.latest().options).toEqual({ type: "module" });
+    offThread.dispose();
+    expect(FakeWorker.latest().terminated).toBe(true);
   });
 
   it("runs the same jobs inline, unchanged, where there is no Worker", () => {

@@ -255,15 +255,17 @@ export function terrainJobTransfers(result: ITerrainJobResult): Transferable[] {
  * Where the terrain jobs run.
  *
  * `offThread` is `true` only when a worker is really there: the runner keeps the same function
- * inline whenever `Worker` is missing (node, the native host's script scope) or refuses a module
- * source, and it falls back to this thread if a worker dies mid-job, so a broken worker costs the
- * main thread the work and nothing else.
+ * inline whenever `Worker` is missing (node, a native script scope) or refuses a module source, and
+ * it falls back to this thread if a worker dies mid-job, so a broken worker costs the main thread
+ * the work and nothing else. `inlineReason` names which of those it is.
  *
  * One worker, one job at a time, which is what keeps a block's older merge from answering after its
  * newer one: replies come back in the order the jobs were sent.
  */
 export interface ITerrainJobRunner {
   dispose(): void;
+  /** Why this host runs the jobs on its own thread, or `undefined` while a worker has them. */
+  readonly inlineReason: string | undefined;
   readonly offThread: boolean;
   merge(job: ITerrainMergeJob): ITerrainMergeResult | Promise<ITerrainMergeResult>;
   seam(job: ITerrainSeamJob): ITerrainSeamResult | Promise<ITerrainSeamResult>;
@@ -275,22 +277,32 @@ interface IPendingJob {
 }
 
 /**
- * The module worker next to this file. A host that cannot load it — or has no `Worker` at all —
- * leaves this `undefined` and every job runs inline from the same function.
+ * The module worker next to this file, and why there may not be one.
+ *
+ * The native host is the host that answers here: its shim installs a `Worker` that admits a classic
+ * Blob source only and refuses a module source by name (`TN_NATIVE_WORKER_MODULE_UNSUPPORTED`, see
+ * `runtime-native/src/runtime-scripts/url-worker-polyfill.js`), and the native bundle rewrites
+ * `import.meta.url` before Vite can inline a sibling worker, so there is no packaged module to load
+ * there. Both refusals are reported as a reason and every job runs inline from the same function.
  */
-function spawnTerrainWorker(): Worker | undefined {
-  if (typeof Worker === "undefined") return undefined;
+function spawnTerrainWorker(): { reason: string | undefined; worker: Worker | undefined } {
+  if (typeof Worker === "undefined") return { reason: "no Worker on this host", worker: undefined };
   try {
-    return new Worker(new URL("./terrain-jobs-worker.js", import.meta.url), { type: "module" });
-  } catch {
-    return undefined;
+    const worker = new Worker(new URL("./terrain-jobs-worker.js", import.meta.url), {
+      type: "module",
+    });
+    return { reason: undefined, worker };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return { reason: `module worker refused: ${message}`, worker: undefined };
   }
 }
 
 export function createTerrainJobRunner(): ITerrainJobRunner {
   const pending = new Map<number, IPendingJob>();
   let nextId = 0;
-  let worker = spawnTerrainWorker();
+  const spawned = spawnTerrainWorker();
+  let worker = spawned.worker;
   const abandon = (): void => {
     for (const [, job] of pending) job.resolve(job.compute());
     pending.clear();
@@ -333,6 +345,7 @@ export function createTerrainJobRunner(): ITerrainJobRunner {
       worker?.terminate();
       worker = undefined;
     },
+    inlineReason: spawned.reason,
     merge: (job) => dispatch(job, () => runTerrainJob(job)),
     offThread: worker !== undefined,
     seam: (job) => dispatch(job, () => runTerrainJob(job)),
