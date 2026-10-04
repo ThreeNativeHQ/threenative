@@ -105,6 +105,7 @@ async function createScene(): Promise<{
     },
     physics: {},
     renderer: { raw: {} },
+    startup: { phase: "ready" },
     scene: {},
     state: {
       flush: vi.fn(),

@@ -50,7 +50,10 @@ try {
       scenarioPath: `playtests/${scenario}`,
       port: 0,
       allowSoftwareAdapter: true,
-      browserArgs: [...WEBGPU_BROWSER_ARGS],
+      browserArgs: [
+        ...WEBGPU_BROWSER_ARGS,
+        ...(process.env.TN_FLUID_CI_OBSERVER === "1" ? ["--enable-logging=stderr"] : []),
+      ],
       headless: false,
       timeoutMs: 600_000,
       trace: false,
