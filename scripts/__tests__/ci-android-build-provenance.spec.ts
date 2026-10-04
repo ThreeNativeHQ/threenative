@@ -55,6 +55,31 @@ describe("exact APK compiler-to-packaging provenance", () => {
         expect(() =>
           inspectAndroidBuildProvenance("x86_64", hash("wrong-apk"), root, execute),
         ).toThrow("PROVENANCE_MISSING");
+        const metadata = put(
+          "android/app/.cxx/Debug/current/x86_64/CMakeFiles/3.22.1/CMakeCXXCompiler.cmake",
+          `set(CMAKE_CXX_COMPILER "${compiler}")\n`,
+        );
+        // Exact pinned NDK r28c normal-variable/CMake 3.22.1 producer shape:
+        // compiler absent from cache, recorded in generated compiler metadata.
+        writeFileSync(
+          cache,
+          `CMAKE_STRIP:FILEPATH=${strip}\nANDROID_NDK:UNINITIALIZED=${path.join(root, "ndk")}\n`,
+        );
+        expect(
+          inspectAndroidBuildProvenance("x86_64", hash("packaged"), root, execute).artifactSha256,
+        ).toBe(hash("packaged"));
+        writeFileSync(metadata, 'set(CMAKE_CXX_COMPILER "/different/toolchain/clang++")\n');
+        expect(() =>
+          inspectAndroidBuildProvenance("x86_64", hash("packaged"), root, execute),
+        ).toThrow("PROVENANCE_MISSING");
+        writeFileSync(
+          metadata,
+          `set(CMAKE_CXX_COMPILER "${compiler}")\nset(CMAKE_CXX_COMPILER "/different/toolchain/clang++")\n`,
+        );
+        expect(() =>
+          inspectAndroidBuildProvenance("x86_64", hash("packaged"), root, execute),
+        ).toThrow("PROVENANCE_MISSING");
+        writeFileSync(metadata, `set(CMAKE_CXX_COMPILER "${compiler}")\n`);
         writeFileSync(ninja, "FLAGS = -O0\n");
         expect(() =>
           inspectAndroidBuildProvenance("x86_64", hash("packaged"), root, execute),

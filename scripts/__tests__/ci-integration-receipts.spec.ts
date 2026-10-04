@@ -151,6 +151,7 @@ it("joins actual receipt writers, collector and protected verdict on the exact c
       path.join(root, ".github/workflows/native-platforms.yml"),
       readFileSync(path.join(repository, ".github/workflows/native-platforms.yml")),
     );
+    fixture.copyTemplateOwnership(root, repository);
     git("add", ".");
     git("commit", "-qm", "exact workflow candidate");
     const sha = git("rev-parse", "HEAD");

@@ -3,7 +3,11 @@ import { createHash } from "node:crypto";
 import { cpSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { integrationEvidence, nativeEvidence } from "../../test-support/ci-integration-fixture.js";
+import {
+  copyTemplateOwnership,
+  integrationEvidence,
+  nativeEvidence,
+} from "../../test-support/ci-integration-fixture.js";
 import { makeTempDirSync } from "../../test-support/temp-dir.js";
 const { selectionPlan } = await import(new URL("../ci-change-scope.mjs", import.meta.url).href);
 const { nativeInventory, nativeBuildProfile, validateNativeWorkflow, validateNativeReceipts } =
@@ -28,6 +32,7 @@ function fixture() {
       path.join(repository, `.github/workflows/${name}.yml`),
       path.join(root, `.github/workflows/${name}.yml`),
     );
+  copyTemplateOwnership(root, repository);
   git("add", ".");
   git("commit", "-qm", "CPU workflow candidate");
   const sha = git("rev-parse", "HEAD");
@@ -236,6 +241,31 @@ describe("actual native receipt writer, collector and protected verdict", () => 
           TN_CI_HEAD_SHA: f.sha,
         });
       expect(verdict().status, verdict().stderr).toBe(0);
+      const compiler = f.listing.find((row) => row.name === "template-nonvisual (starter)");
+      if (!compiler || !("steps" in compiler)) throw new Error("missing fixture compiler step");
+      const successfulSteps = compiler.steps;
+      compiler.steps = [];
+      f.publish();
+      expect(verdict().stderr).toContain("CI_TEMPLATE_TYPECHECK_COMPILER_NOT_SUCCESS");
+      compiler.steps = successfulSteps;
+      const scheduledSource = "b".repeat(40);
+      for (const row of f.listing) if ("head_sha" in row) row.head_sha = scheduledSource;
+      f.publish();
+      const scheduledVerdict = () =>
+        f.run("ci-required.mjs", [], {
+          TN_CI_NEEDS: JSON.stringify(needs),
+          TN_CI_NATIVE_RECEIPT: summary,
+          TN_CI_EVENT: "schedule",
+          TN_CI_HEAD_SHA: "",
+          GITHUB_SHA: scheduledSource,
+        });
+      expect(scheduledVerdict().status, scheduledVerdict().stderr).toBe(0);
+      if (!("head_sha" in compiler)) throw new Error("missing compiler SHA");
+      compiler.head_sha = f.sha;
+      f.publish();
+      expect(scheduledVerdict().stderr).toContain("CI_TEMPLATE_TYPECHECK_JOB_NOT_SUCCESS");
+      for (const row of f.listing) if ("head_sha" in row) row.head_sha = f.sha;
+      f.publish();
       const windows = f.listing.find((row) => row.name.endsWith("Windows desktop core"));
       if (!windows) throw new Error("missing fixture Windows job");
       windows.run_attempt = 1;
@@ -283,6 +313,22 @@ describe("actual native receipt writer, collector and protected verdict", () => 
           );
         const result = f.run("ci-native-receipts.mjs", ["--write"], { GITHUB_JOB: leg.job });
         expect(result.status, result.stderr).toBe(1);
+        const diagnostics = JSON.parse(
+          readFileSync(
+            path.join(
+              f.root,
+              "artifacts/ci-native-diagnostics/android-build-provenance-123-2.json",
+            ),
+            "utf8",
+          ),
+        );
+        expect(diagnostics.candidateSha).toBe(f.sha);
+        if (kind === "merged") {
+          expect(result.stderr).toContain("TN_ANDROID_JS_O2_PROVENANCE_MISSING");
+          expect(diagnostics.diagnostics).toContainEqual(
+            expect.objectContaining({ reason: "raw-merged-mismatch", rawSha256: artifactSha }),
+          );
+        }
       } finally {
         f.cleanup();
       }
@@ -302,8 +348,8 @@ describe("actual native receipt writer, collector and protected verdict", () => 
         cpSync(path.join(repository, "scripts", name), path.join(standalone, "scripts", name));
       mkdirSync(path.join(standalone, "packages/runtime-native/scripts"), { recursive: true });
       cpSync(
-        path.join(repository, "packages/runtime-native/scripts/native-test-lane.mjs"),
-        path.join(standalone, "packages/runtime-native/scripts/native-test-lane.mjs"),
+        path.join(repository, "packages/runtime-native/scripts/desktop-build-profile.mjs"),
+        path.join(standalone, "packages/runtime-native/scripts/desktop-build-profile.mjs"),
       );
       cpSync(
         path.join(repository, "packages/runtime-native/CMakePresets.json"),

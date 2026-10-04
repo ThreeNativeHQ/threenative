@@ -57,7 +57,26 @@ export async function nativeBuildEvidence(
     });
     artifactSha256 = hash(library);
     const { inspectAndroidBuildProvenance } = await import("./ci-android-build-provenance.mjs");
-    const provenance = inspectAndroidBuildProvenance("x86_64", artifactSha256, runtime);
+    const diagnosticFile = path.join(
+      root,
+      `artifacts/ci-native-diagnostics/android-build-provenance-${process.env.GITHUB_RUN_ID}-${process.env.GITHUB_RUN_ATTEMPT}.json`,
+    );
+    const diagnostics = [];
+    const provenance = inspectAndroidBuildProvenance(
+      "x86_64",
+      artifactSha256,
+      runtime,
+      execFileSync,
+      (row) => {
+        diagnostics.push(row);
+        mkdirSync(path.dirname(diagnosticFile), { recursive: true });
+        writeFileSync(
+          diagnosticFile,
+          `${JSON.stringify({ candidateSha, runId: process.env.GITHUB_RUN_ID, runAttempt: process.env.GITHUB_RUN_ATTEMPT, diagnostics }, null, 2)}\n`,
+        );
+        console.error(`CI_ANDROID_PROVENANCE_DIAGNOSTIC: ${JSON.stringify(row)}`);
+      },
+    );
     const configs = provenance.buildNinjaFiles.map((file) =>
       validateNativeCache(
         readFileSync(path.join(path.dirname(file), "CMakeCache.txt"), "utf8"),

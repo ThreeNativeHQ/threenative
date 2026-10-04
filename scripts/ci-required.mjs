@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { spawnSync } from "node:child_process";
-import { appendFileSync } from "node:fs";
+import { appendFileSync, readFileSync } from "node:fs";
 import { readAttemptJobs } from "./ci-attempt-receipts.mjs";
 import { currentRun, sourceVerdict, validateEventPlan, validatePlan } from "./ci-change-scope.mjs";
 import { readIntegrationJobs } from "./ci-integration-receipts.mjs";
@@ -10,6 +10,10 @@ import {
   validateIntegrationReceipts,
 } from "./ci-integration-scope.mjs";
 import { nativeCandidatePreflight, validateNativeReceipts } from "./ci-native-qualification.mjs";
+import {
+  discoverTypecheckTemplates,
+  validateTemplateTypechecks,
+} from "./ci-template-typecheck.mjs";
 
 try {
   const needs = JSON.parse(process.env.TN_CI_NEEDS ?? "null");
@@ -109,6 +113,33 @@ try {
   for (const name of Object.keys(needs)) {
     if (name !== "scope" && !Object.hasOwn(plan.jobs, name))
       failures.push(`CI_REQUIRED_UNMAPPED_JOB: ${name}`);
+  }
+  if (plan.qualification) {
+    try {
+      const identity = {
+        repository: process.env.GITHUB_REPOSITORY,
+        runId: process.env.GITHUB_RUN_ID,
+        runAttempt: process.env.GITHUB_RUN_ATTEMPT,
+      };
+      validateTemplateTypechecks(
+        {
+          ...identity,
+          plan,
+          candidateSha: plan.candidateSha,
+          workflowHeadSha: process.env.TN_CI_HEAD_SHA || process.env.GITHUB_SHA,
+          eventName: process.env.TN_CI_EVENT,
+          target: process.env.TN_CI_BASE_REF,
+          templates: discoverTypecheckTemplates(),
+          workflow: readFileSync(".github/workflows/ci.yml", "utf8"),
+        },
+        readAttemptJobs(identity, "CI_TEMPLATE_TYPECHECK"),
+      );
+      lines.push(
+        "- pristine template typechecks: every discovered template compiler step verified in this exact attempt",
+      );
+    } catch (error) {
+      failures.push(error instanceof Error ? error.message : String(error));
+    }
   }
   if (plan.jobs.integration.required && needs.integration?.result === "success") {
     try {

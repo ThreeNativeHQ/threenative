@@ -242,6 +242,10 @@ jobs:
       matrix: ${{ fromJSON(needs.scope.outputs.plan).unitMatrix }}
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
+      TN_CI_PLAN: ${{ needs.scope.outputs.plan }}
+      TN_CI_EVENT: ${{ github.event_name }}
+      TN_CI_BASE_REF: ${{ github.base_ref || github.event.merge_group.base_ref || (github.event_name == 'push' && github.ref_name) || '' }}
+      TN_CI_TEMPLATE_TYPECHECK_OWNER: hosted-matrix
       TN_SUITE_PHASES: unit
       TN_SUITE_UNIT_SHARD: ${{ matrix.shard }}
       # The orphan gate waits for Playwright's asynchronous profile cleanup; its 30s default is a
@@ -829,6 +833,12 @@ jobs:
           target: ${{ runner.temp }}/threenative-${{ matrix.template }}
           template: ${{ matrix.template }}
       - uses: ./.github/actions/playwright-chromium
+      - name: Typecheck pristine template
+        run: |
+          set -euo pipefail
+          target="$RUNNER_TEMP/threenative-${{ matrix.template }}"
+          pnpm --dir "$target" install
+          pnpm --dir "$target" run typecheck
       - name: Run the template's GPU-free scenarios
         run: |
           set -euo pipefail
@@ -838,8 +848,6 @@ jobs:
           # in, or this lane would quietly stop covering 21 scenarios it has always covered.
           extras="$GITHUB_WORKSPACE/packages/create-threenative/template-playtests/${{ matrix.template }}"
           if [ -d "$extras" ]; then cp -r "$extras/." "$target/playtests/"; fi
-          pnpm --dir "$target" install
-          pnpm --dir "$target" run typecheck
           scenario_list=$(node "$GITHUB_WORKSPACE/scripts/non-visual-scenarios.mjs" "$target")
           mapfile -t scenarios <<< "$scenario_list"
           test "${#scenarios[@]}" -gt 0

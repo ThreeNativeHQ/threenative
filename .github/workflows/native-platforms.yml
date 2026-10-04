@@ -802,6 +802,14 @@ jobs:
           path: artifacts/ci-native-receipts/*.json
           if-no-files-found: error
           retention-days: 2
+      - name: Preserve Android packaging provenance diagnostics
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: ci-native-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}-android-build-provenance
+          path: artifacts/ci-native-diagnostics/android-build-provenance-${{ github.run_id }}-${{ github.run_attempt }}.json
+          if-no-files-found: warn
+          retention-days: 2
 
   release-reports:
     name: Gate-schema release evidence reports

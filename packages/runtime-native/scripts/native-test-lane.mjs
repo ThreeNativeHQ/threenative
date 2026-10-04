@@ -5,17 +5,10 @@ import { fileURLToPath } from "node:url";
 
 export const runtimeRoot = join(fileURLToPath(new URL("..", import.meta.url)));
 
-export function desktopPreset(platform = process.platform) {
-  if (platform === "darwin") return "tn-macos";
-  if (platform === "win32") return "tn-windows";
+export function desktopPreset() {
+  if (process.platform === "darwin") return "tn-macos";
+  if (process.platform === "win32") return "tn-windows";
   return "tn-linux";
-}
-
-// Linux arm64 has neither a V8 nor a Dawn prebuilt. Shared by the build and CI identity proof.
-export function desktopBuildOverrides(platform = process.platform, arch = process.arch) {
-  return platform === "linux" && arch === "arm64"
-    ? { MYSTRAL_USE_V8: "OFF", MYSTRAL_USE_QUICKJS: "ON", MYSTRAL_USE_DAWN: "OFF", MYSTRAL_USE_WGPU: "ON" }
-    : {};
 }
 
 export function desktopBuildDirectory(suffix = "") {

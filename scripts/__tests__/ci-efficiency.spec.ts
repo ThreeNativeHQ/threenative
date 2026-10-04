@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { makeTempDirSync } from "../../test-support/temp-dir.js";
 import { ciJobGraph, declaredNeeds, jobSections } from "../ci-workflow.js";
 
-const { integrationEvidence } = await import(
+const { copyTemplateOwnership, integrationEvidence } = await import(
   new URL("../../test-support/ci-integration-fixture.ts", import.meta.url).href
 );
 
@@ -620,6 +620,7 @@ describe("PRD-373 fixed full candidates and current package products", () => {
         path.join(root, ".github/workflows/native-platforms.yml"),
         readFileSync(path.join(repo, ".github/workflows/native-platforms.yml")),
       );
+      copyTemplateOwnership(root, repo);
       writeFileSync(path.join(root, "seed"), "seed");
       git("add", ".");
       git("commit", "-qm", "seed");

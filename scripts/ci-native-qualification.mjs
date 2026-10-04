@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import {
   desktopBuildOverrides,
   desktopPreset,
-} from "../packages/runtime-native/scripts/native-test-lane.mjs";
+} from "../packages/runtime-native/scripts/desktop-build-profile.mjs";
 import { validateEventPlan } from "./ci-change-scope.mjs";
 
 export const NATIVE_JOBS = Object.freeze({

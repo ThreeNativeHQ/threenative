@@ -5,7 +5,7 @@ import { spawnSync } from 'node:child_process';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { desktopBuildOverrides } from './native-test-lane.mjs';
+import { desktopBuildOverrides } from './desktop-build-profile.mjs';
 import { uiOverlayLibraryPath } from './build-native-ui-overlay.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
