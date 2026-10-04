@@ -589,6 +589,9 @@ importers:
         specifier: 'catalog:'
         version: 0.185.1(patch_hash=083710b3f650299016af6b9a0463e600517a5686f7f1713dead2b0f7ab9218d0)
     devDependencies:
+      '@threenative/runtime-native':
+        specifier: workspace:*
+        version: link:../../packages/runtime-native
       '@types/three':
         specifier: 0.185.3
         version: 0.185.3

@@ -51,6 +51,7 @@ class TerrainSplatScene extends Scene {
     ctx.entities.add("splat", {
       debug: () => ({
         ...this.#costs(),
+        orbitSeconds: Number(this.#elapsed.toFixed(2)),
         residentCells: world.stats().residentCells,
       }),
       dispose: () => world.dispose(),

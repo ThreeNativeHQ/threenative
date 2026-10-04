@@ -24,6 +24,16 @@ node packages/playtest/dist/runner/cli.js examples/prd493-terrain-splat/playtest
   --browser-recipe webgpu --headed
 ```
 
+The same scenario on the native host, where the GPU copies do the same stacking:
+
+```sh
+pnpm --filter prd493-terrain-splat build:native
+node packages/playtest/dist/runner/cli.js examples/prd493-terrain-splat/playtests/terrain-splat-desktop.playtest.json \
+  --target desktop \
+  --executable examples/prd493-terrain-splat/dist-native/prd493-terrain-splat \
+  --build-report examples/prd493-terrain-splat/dist-native/prd493-terrain-splat.build-report.json
+```
+
 ## Regenerate the world package
 
 The package is what a DCC export produces, not a second format: the script writes the layer table

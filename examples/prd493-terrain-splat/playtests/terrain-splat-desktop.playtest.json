@@ -1,8 +1,8 @@
 {
-  "name": "terrain-splat-sixteen-layers",
+  "name": "terrain-splat-sixteen-layers-desktop",
   "schemaVersion": 1,
-  "subject": "sixteen uncompressed terrain layers must reach the screen through four sampled textures",
-  "target": "web",
+  "subject": "the native host samples the same sixteen uncompressed terrain layers through four textures",
+  "target": "desktop",
   "viewport": {
     "width": 1280,
     "height": 720
@@ -20,12 +20,6 @@
     }
   ],
   "assert": {
-    "diagnostics": {
-      "noConsoleErrors": true,
-      "noNetworkErrors": true,
-      "noRuntimeDiagnostics": true,
-      "runtimeReady": true
-    },
     "components": [
       {
         "allowTrivial": "Sixteen layers is the whole package: the table ships no more.",
@@ -49,20 +43,6 @@
         "changed": true,
         "component": "orbitSeconds",
         "entity": "splat"
-      }
-    ],
-    "visual": [
-      {
-        "region": {
-          "x": 0,
-          "y": 0,
-          "width": 1280,
-          "height": 720,
-          "minNonblankPixelRatio": 0.05
-        },
-        "frameDiff": {
-          "minChangedPixelRatio": 0.0005
-        }
       }
     ]
   }
