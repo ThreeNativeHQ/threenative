@@ -534,12 +534,45 @@ interface ILevelSubmissions {
   stat: ILevelStat | undefined;
 }
 
+/**
+ * What the main pass has to draw, read off the world rather than off a shadow render: the meshes it
+ * draws them from — one `asset:level:part` per level, and `far` how many of those are the level at or
+ * past the lod switch — and the resident source records behind them, which is the GPU scene's own
+ * count of the placements the main pass dispatches from. The shadow halves and the key twins are all
+ * minted under a name carrying an `@`, so what is left is the main pass's own set.
+ *
+ * `records` is the count rather than the matrices because a GPU-dressed main mesh's `count` is its
+ * key's region capacity, not what it holds (see `SharedBatch.publish`), and its records live in a GPU
+ * buffer the dispatch writes. The world's own source table is the CPU-visible truth of the same
+ * thing, and it is filled by the one call a refused swap never reaches.
+ */
+function mainPassBill(world: WorldCells): {
+  readonly far: number;
+  readonly meshes: readonly string[];
+  readonly records: number;
+} {
+  const meshes: string[] = [];
+  let far = 0;
+  world.traverse((object: Object3D) => {
+    const mesh = object as InstancedMesh;
+    if ((mesh as { isInstancedMesh?: boolean }).isInstancedMesh !== true) return;
+    if (mesh.name.includes("@")) return;
+    meshes.push(mesh.name);
+    const level = /^[^:]+:(\d+):\d+$/.exec(mesh.name)?.[1];
+    if (level !== undefined && Number(level) > 0) far += 1;
+  });
+  meshes.sort();
+  return { far, meshes, records: world.stats().gpuScene.instances };
+}
+
 interface IArmResult {
   readonly perLevel: ILevelSubmissions[];
   /** Every dispatch the world submitted, and how many of them a level render took. */
   readonly dispatches: number;
   readonly levelRenders: number;
   readonly keys: InstancedMesh[];
+  /** The main pass's own meshes and records, which the flag must not move. */
+  readonly mainPass: ReturnType<typeof mainPassBill>;
   dispose(): void;
 }
 
@@ -683,6 +716,7 @@ async function measureSubmissions(
     dispatches,
     keys: live,
     levelRenders,
+    mainPass: mainPassBill(world),
     perLevel: held,
   };
 }
@@ -758,6 +792,38 @@ describe("a level render's own submissions with and without GPU keys", () => {
       expect(mesh.userData.tnBundled).toBeFalsy();
       expect(mesh.name.endsWith("@gpu")).toBe(true);
     }
+    on.dispose();
+    off.dispose();
+  });
+
+  /**
+   * The regression the flag must not carry: the main pass is the game's picture, and the flag only
+   * changes what a shadow level submits. A walk with the flag on lost the tree band beyond the
+   * highway — bare meadow where the control draws a dense forest 220-400 m out — because nothing
+   * handed the main meshes their records at all: with keys on the world mints no caster half, and the
+   * two claims in `#swap` read "no caster half to mint" as "this frame's allowance is spent", so
+   * every swap was refused, no cell ever published its placements to the scene, and the main pass had
+   * nothing to draw from.
+   *
+   * This is that claim measured on both arms of the same package: the same `asset:level:part` meshes,
+   * holding the same source records, the far band's own mesh included. Only the shadow submission may
+   * differ.
+   */
+  it("hands the main pass the same meshes and records with the flag on as with it off", async () => {
+    const off = await measureSubmissions(false, [250]);
+    const on = await measureSubmissions(true, [250]);
+    // The fixture has to carry the case at all: the far band's main mesh is the level the lod switch
+    // moved placements into, and the band the regression emptied is that one.
+    expect(off.mainPass.far, "the fixture holds a far band").toBeGreaterThan(0);
+    expect(off.mainPass.records, "the control published records to the main pass").toBeGreaterThan(0);
+    console.info(
+      `TN_SHADOW_KEY_MAIN_PASS off=${JSON.stringify(off.mainPass)} on=${JSON.stringify(on.mainPass)}`,
+    );
+    expect(on.mainPass.meshes, "the flag moved the main pass's own meshes").toEqual(
+      off.mainPass.meshes,
+    );
+    expect(on.mainPass.records, "the flag moved the main pass's records").toBe(off.mainPass.records);
+    expect(on.mainPass.far, "the flag emptied the far band").toBe(off.mainPass.far);
     on.dispose();
     off.dispose();
   });

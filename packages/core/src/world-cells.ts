@@ -5393,6 +5393,11 @@ export class WorldCells extends Group implements IComputeDriven {
    */
   #claimCaster(assetId: string, entry: ICellBatch, cell: IResidentCell): boolean {
     if (entry.casterSegment >= 0 || !this.#casts(entry.level)) return true;
+    // Nothing to claim, and nothing to wait for: a world whose levels draw its keys mints no caster
+    // half at all (`#casterFor`), so reading that as a spent allowance refused every swap in the
+    // world — the main mesh was never attached, no cell published its placements, and the main pass
+    // drew nothing while its meshes sat there prewarmed and empty.
+    if (this.#keysForShadow()) return true;
     const caster = this.#casterFor(assetId, entry, cell);
     const at = caster === undefined ? undefined : this.#segmentIn(caster, entry.batch.count);
     if (caster === undefined || at === undefined) return false;
@@ -5411,6 +5416,8 @@ export class WorldCells extends Group implements IComputeDriven {
     // A part the asset's one whole-asset representation already covers: the entry keeps its near
     // main and cluster, and the far shadow reads part 0's one quad; see `#wideOwed`.
     if (!this.#wideOwed(assetId, entry.part)) return true;
+    // As `#claimCaster`: the key twin is this level's wide half, and there is no mesh to wait on.
+    if (this.#keysForShadow()) return true;
     const wide = this.#wideFor(assetId, entry);
     // The impostor's far half draws the placement root, not `placement * part local`, so its block
     // is sized to the root records the build kept beside the part's own; see `ICellBatch.wideRoot`.
