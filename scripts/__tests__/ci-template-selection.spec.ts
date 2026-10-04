@@ -110,7 +110,13 @@ describe("impact-driven template coverage", () => {
         eventName: "pull_request",
       });
       expect(plan.selection).toBe("full");
-      expect(plan.templateMatrix.template).toEqual(TEMPLATE_NAMES);
+      expect(plan.templateMatrix.template).toEqual(
+        file.startsWith("unknown/") ||
+          file.includes("lookalike") ||
+          file === "scripts/stamp-template-render.ts"
+          ? TEMPLATE_NAMES
+          : ["starter"],
+      );
       if (file.startsWith("packages/core/")) expect(plan.jobs["test-native"].required).toBe(true);
     } finally {
       rmSync(f.root, { recursive: true, force: true });
@@ -297,4 +303,136 @@ it("keeps the exhaustive board at one complete job per manifest plus both retain
   expect(plan.templateMatrix.template.length + plan.goldenMatrix.template.length).toBe(
     TEMPLATE_NAMES.length + 2,
   );
+});
+
+describe("representative develop smoke with exhaustive qualification", () => {
+  it.each([
+    "packages/core/src/renderer.ts",
+    "packages/core/tsup.config.ts",
+    "packages/runtime-native/src/main.cpp",
+  ])("keeps starter for the classified producer %s", (file) => {
+    const plan = selectionPlan(
+      "full",
+      "resolved dependency",
+      [file],
+      "a".repeat(40),
+      true,
+      0,
+      "develop",
+    );
+    expect(plan.templateMatrix.template).toEqual(["starter"]);
+    expect(plan.goldenMatrix.template).toEqual(["starter"]);
+    expect(validatePlan(plan)).toEqual(plan);
+    expect(() => validatePlan({ ...plan, templateMatrix: { template: ["minimal"] } })).toThrow();
+  });
+  it("unions explicit runtime kits but ignores kit instructions and inert Markdown", () => {
+    const files = [
+      "packages/core/src/game.ts",
+      "packages/create-threenative/templates/shooter/src/game.ts",
+      "packages/create-threenative/templates/snow/AGENTS.md",
+      "packages/create-threenative/templates/rain/CLAUDE.md",
+      "packages/create-threenative/templates/racing/README.md",
+    ];
+    const plan = selectionPlan(
+      "full",
+      "resolved dependency",
+      files,
+      "a".repeat(40),
+      true,
+      0,
+      "develop",
+    );
+    expect(changedTemplates(files)).toEqual(["shooter"]);
+    expect(plan.templateMatrix.template).toEqual(["shooter", "starter"]);
+    expect(plan.goldenMatrix.template).toEqual(["starter"]);
+  });
+  it.each(["main", ""])("keeps exhaustive qualification for %s", (target) => {
+    const plan = selectionPlan(
+      "full",
+      "qualification",
+      ["packages/core/src/game.ts"],
+      "a".repeat(40),
+      true,
+      0,
+      target,
+    );
+    expect(plan.templateMatrix.template).toEqual(TEMPLATE_NAMES);
+    expect(plan.goldenMatrix.template).toEqual(["starter", "platformer"]);
+  });
+  it.each([{ files: [] }, { files: ["unknown/new.ts"] }, { files: ["scripts/unclassified.ts"] }])(
+    "keeps unknown or explicit audit inputs exhaustive: %s",
+    ({ files }) => {
+      const plan = selectionPlan(
+        "full",
+        "unresolved or audit",
+        files,
+        "a".repeat(40),
+        true,
+        0,
+        "develop",
+      );
+      expect(plan.templateMatrix.template).toEqual(TEMPLATE_NAMES);
+    },
+  );
+  it("checks scaffold/instruction contracts without runtime template legs for template instruction changes", () => {
+    const f = fixture();
+    try {
+      const head = f.change("packages/create-threenative/templates/snow/AGENTS.md");
+      const plan = classify({
+        root: f.root,
+        base: f.base,
+        head,
+        candidateSha: head,
+        target: "develop",
+        eventName: "pull_request",
+      });
+      expect(plan.selection).toBe("ci");
+      expect(plan.checks.instructions).toBe(true);
+      expect(plan.jobs["template-nonvisual"].required).toBe(false);
+      expect(plan.jobs["test-unit"].required).toBe(true);
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+});
+
+it("retains both renamed kit endpoints and deleted kit source coverage", () => {
+  const f = fixture();
+  try {
+    const base = f.change("packages/create-threenative/templates/shooter/src/old.ts");
+    mkdirSync(path.join(f.root, "packages/create-threenative/templates/snow/src"), {
+      recursive: true,
+    });
+    f.git(
+      "mv",
+      "packages/create-threenative/templates/shooter/src/old.ts",
+      "packages/create-threenative/templates/snow/src/new.ts",
+    );
+    f.git("commit", "-qm", "rename");
+    const head = f.git("rev-parse", "HEAD");
+    const plan = classify({
+      root: f.root,
+      base,
+      head,
+      candidateSha: head,
+      target: "develop",
+      eventName: "merge_group",
+    });
+    expect(plan.templateMatrix.template).toEqual(["shooter", "snow"]);
+    f.git("rm", "packages/create-threenative/templates/snow/src/new.ts");
+    f.git("commit", "-qm", "delete");
+    const deleted = f.git("rev-parse", "HEAD");
+    expect(
+      classify({
+        root: f.root,
+        base: head,
+        head: deleted,
+        candidateSha: deleted,
+        target: "develop",
+        eventName: "merge_group",
+      }).templateMatrix.template,
+    ).toEqual(["snow"]);
+  } finally {
+    rmSync(f.root, { recursive: true, force: true });
+  }
 });
