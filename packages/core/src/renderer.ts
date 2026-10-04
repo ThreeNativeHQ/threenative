@@ -938,6 +938,27 @@ async function createWebGpuPipelineCensus(
 const SOFTWARE_ADAPTER =
   /swiftshader|llvmpipe|lavapipe|softwarerasterizer|software adapter|basic render/i;
 
+/**
+ * The adapters `navigator.gpu` has handed this page, kept for the life of the module.
+ *
+ * A local `const adapter = await requestAdapter()` is the shape every WebGPU sample uses, and it is
+ * the shape Chromium punishes: a collected `GPUAdapter` takes the wire instance down with it, and
+ * Dawn reports that on every operation still in flight as `A valid external Instance reference no
+ * longer exists.` — the `mapAsync` of the timestamp-query pool and of a GPU readback then rejects
+ * forever, the canvas stops presenting, and a run that was healthy at 30 s is black at the end.
+ * Collecting needs heap pressure, so it shows up only in the long runs.
+ *
+ * three's backend keeps the device and `navigator.gpu` but not its adapter, so this is the only
+ * strong reference to the one core asked for. Two adapters per renderer: one for the device's
+ * limits, one for the identity the capture and the software gate are read from.
+ */
+const retainedAdapters = new Set<unknown>();
+
+/** The adapters core is holding. A test reads this; a run never does. */
+export function retainedWebGpuAdapters(): ReadonlySet<unknown> {
+  return retainedAdapters;
+}
+
 interface IWebGpuAdapterFacts {
   /** The URI-encoded identity the pipeline census records; absent when the adapter reported none. */
   readonly identity?: string;
@@ -955,6 +976,7 @@ async function readWebGpuAdapterFacts(raw: RendererInstance): Promise<IWebGpuAda
       xrCompatible: raw.xr?.enabled === true,
     });
     if (!isObject(adapter)) return {};
+    retainedAdapters.add(adapter);
     const infoCandidate = isObject(adapter.info) ? adapter.info : undefined;
     const legacyInfo =
       infoCandidate === undefined && typeof adapter.requestAdapterInfo === "function"
@@ -1009,6 +1031,7 @@ export async function adapterTextureLimits(): Promise<{ requiredLimits?: Record<
   if (gpu === undefined || typeof gpu.requestAdapter !== "function") return {};
   try {
     const adapter = await gpu.requestAdapter();
+    retainedAdapters.add(adapter);
     const limits = isObject(adapter) && isObject(adapter.limits) ? adapter.limits : undefined;
     if (limits === undefined) return {};
     const requiredLimits: Record<string, number> = {};
