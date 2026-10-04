@@ -82,30 +82,60 @@ try {
     scenario.name = `joint-fog-exposure-${name}`;
     const wait = { kind: "wait" as const, waitFrames: 60, release: true };
     const action = (key: string) => ({ press: [key], holdTicks: 1, release: true });
+    const textureBoundary = {
+      waitForResource: { id: "state", path: "stableTextureFrames", gte: 3 },
+      timeoutMs: 30_000,
+      release: true,
+    };
+    const freshReadback = {
+      waitForResource: { id: "state", path: "exposureFreshSamples", gte: 1 },
+      timeoutMs: 30_000,
+      release: true,
+    };
     const resource = (key: string, equals: number | boolean) => ({
       waitForResource: { id: "state", path: key, equals },
       timeoutMs: 30_000,
       release: true,
     });
-    if (exposure) scenario.steps.push(action("Digit9"), wait, resource("exposureSettled", true));
+    if (exposure)
+      scenario.steps.push(
+        action("Digit9"),
+        wait,
+        textureBoundary,
+        freshReadback,
+        resource("exposureSettled", true),
+      );
     if (name === "rebuild-resize")
       scenario.steps.push(
         action("KeyC"),
         wait,
+        textureBoundary,
+        freshReadback,
         resource("exposureSettled", true),
         action("KeyR"),
         wait,
+        textureBoundary,
         resource("targetWidth", 320),
         resource("targetHeight", 240),
+        freshReadback,
         resource("exposureSettled", true),
         action("KeyT"),
         wait,
+        textureBoundary,
         resource("targetWidth", 640),
         resource("targetHeight", 400),
+        freshReadback,
         resource("exposureSettled", true),
       );
     if (name === "dispose") {
-      scenario.steps.push(action("Digit0"), wait, action("KeyO"), wait);
+      scenario.steps.push(
+        action("Digit0"),
+        wait,
+        textureBoundary,
+        action("KeyO"),
+        wait,
+        textureBoundary,
+      );
       const targets = scenario.assert?.components?.find((c) => c.component === "targets");
       const mode = scenario.assert?.components?.find((c) => c.component === "mode");
       if (targets !== undefined) targets.equals = 0;

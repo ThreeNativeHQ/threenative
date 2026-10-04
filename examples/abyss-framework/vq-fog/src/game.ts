@@ -45,6 +45,7 @@ export function fogInsideShadowMap(light: DirectionalLight, bounds: Box3): boole
 }
 
 const initialState = {
+  exposureFreshSamples: 0,
   exposureEnabled: false,
   exposureApplied: false,
   exposureMeasured: false,
@@ -121,6 +122,9 @@ export class FogProbe extends GameScene<FogState> {
   #release: (() => void) | undefined;
   #mode: Mode = "off";
   #exposureEnabled = false;
+  #readbackGeneration = 0;
+  #freshSamples = 0;
+  #restoreReadback = () => {};
   #exposure: ReturnType<WorldEnvironment["apply"]>["exposure"];
   #releasedExposures = 0;
   #cameraCut = false;
@@ -193,6 +197,33 @@ export class FogProbe extends GameScene<FogState> {
     ctx.add(new HemisphereLight(0xb3cced, 0x201d1a, 0.35));
     const raw = ctx.renderer.raw as { shadowMap: { enabled: boolean } };
     raw.shadowMap.enabled = true;
+    // Observe the public renderer readback boundary without changing its result or render policy.
+    const gpu = ctx.renderer.raw as typeof raw & {
+      readRenderTargetPixelsAsync?: (...args: unknown[]) => Promise<unknown>;
+    };
+    const originalReadback = gpu.readRenderTargetPixelsAsync;
+    if (originalReadback !== undefined) {
+      const observedReadback = async (...args: unknown[]) => {
+        const generation = this.#readbackGeneration;
+        const values = await originalReadback.apply(gpu, args);
+        if (
+          generation === this.#readbackGeneration &&
+          args[3] === 1 &&
+          args[4] === 1 &&
+          values instanceof Float32Array &&
+          values.length >= 4 &&
+          Array.from(values).every(Number.isFinite) &&
+          (values[1] ?? 0) > 0
+        )
+          this.#freshSamples += 1;
+        return values;
+      };
+      gpu.readRenderTargetPixelsAsync = observedReadback;
+      this.#restoreReadback = () => {
+        if (gpu.readRenderTargetPixelsAsync === observedReadback)
+          gpu.readRenderTargetPixelsAsync = originalReadback;
+      };
+    }
     ctx.entities.add("fog", { object: new Group(), debug: () => ({ ...ctx.state.getState() }) });
     this.#positionCamera(ctx);
   }
@@ -254,6 +285,7 @@ export class FogProbe extends GameScene<FogState> {
     }
     const exposure = this.#exposure?.getObservation();
     ctx.state.set({
+      exposureFreshSamples: this.#freshSamples,
       exposureEnabled: this.#exposureEnabled,
       exposureApplied: exposure?.applied === true,
       exposureMeasured: exposure?.measured === true,
@@ -303,6 +335,8 @@ export class FogProbe extends GameScene<FogState> {
   }
 
   #resetObservation(ctx: FogCtx): void {
+    this.#readbackGeneration += 1;
+    this.#freshSamples = 0;
     this.#lastRenderCalls = (ctx.renderer.info as IProbeInfo).render.calls;
     this.#lastTextures = -1;
     this.#settledRenderFrames = 0;
@@ -406,6 +440,8 @@ export class FogProbe extends GameScene<FogState> {
   }
   override exit(ctx: FogCtx): void {
     this.#disposeGraph();
+    this.#readbackGeneration += 1;
+    this.#restoreReadback();
     ctx.state.set({
       sceneExits: ctx.state.getState().sceneExits + 1,
       exitReleasedTargets: this.#releasedTargets,

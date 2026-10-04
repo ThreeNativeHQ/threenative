@@ -45,7 +45,10 @@ function fixture() {
       kind: "webgpu",
       info,
       setSize: (width: number, height: number) => sizes.push([width, height]),
-      raw: { shadowMap: { enabled: false } },
+      raw: {
+        shadowMap: { enabled: false },
+        readRenderTargetPixelsAsync: async () => new Float32Array([1, 0.1, 1, 1]),
+      },
       setOutputNode: () => {},
       clearOutputNode: () => {},
     },
@@ -76,6 +79,22 @@ function fixture() {
 }
 
 describe("fog qualification fixture", () => {
+  it("counts completed exposure readbacks only from the current render generation", async () => {
+    const f = fixture();
+    f.select("exposureOn");
+    const raw = f.ctx.renderer.raw as unknown as {
+      readRenderTargetPixelsAsync: (...args: unknown[]) => Promise<Float32Array>;
+    };
+    const stale = raw.readRenderTargetPixelsAsync({}, 0, 0, 1, 1);
+    f.select("resizeSmall");
+    await stale;
+    f.select("");
+    expect(f.state.getState()).toMatchObject({ exposureFreshSamples: 0 });
+    await raw.readRenderTargetPixelsAsync({}, 0, 0, 1, 1);
+    f.select("");
+    expect(f.state.getState()).toMatchObject({ exposureFreshSamples: 1 });
+    f.probe.exit(f.ctx);
+  });
   it("controls combined fog/exposure ownership and releases it before returning to off", () => {
     const f = fixture();
     f.select("exposureOn");
