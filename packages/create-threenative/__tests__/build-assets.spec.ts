@@ -1,3 +1,4 @@
+import type { SpawnSyncReturns } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -34,10 +35,14 @@ vi.mock("node:child_process", async (importOriginal) => {
     });
     return child;
   }) as typeof actual.spawn;
-  const spawnSync = (() => ({
+  const spawnSync = (): SpawnSyncReturns<string> => ({
+    pid: 0,
+    output: [null, "fixture + v8 build", ""],
+    signal: null,
     status: 0,
+    stderr: "",
     stdout: "fixture + v8 build",
-  })) as typeof actual.spawnSync;
+  });
   return { ...actual, spawn, spawnSync };
 });
 
