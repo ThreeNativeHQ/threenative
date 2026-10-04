@@ -1,6 +1,6 @@
 # PRD-492 — Colour grading and film grain
 
-**Status:** IN PROGRESS — Phase 1 landed, Phase 2's conformance row passes; AC-1, the identity round trip and the desktop staging of the table are open
+**Status:** IN PROGRESS — Phase 1 landed, Phase 2's conformance row passes; AC-1, the identity round trip and the desktop table-load failure are open
 **Complexity:** 1 (LOW) — 1–5 files, all generated template source; no package change expected; risk override: none
 **Owner:** João
 **Depends on:** [PRD-VQ-02](../native/PRD-VQ-02-native-postprocessing-parity.md) (a post stage must not blank the native frame; this PRD adds two more stages to the same chain)
@@ -62,10 +62,15 @@ item was reachable. The assertion is dropped, and `grade`/`grain` added to the s
 contributions it does read. Nothing is lost: the runner never produced that observation on this
 target, so the row was a hard error rather than a check.
 
-**`public/grade.cube` is not staged by the native packager yet.** `pnpm build:web` and
-`pnpm build:desktop` both report it among the undeclared files — and the desktop staging loop copies
-`selectManifestAssets(assets)` alone, so it never reaches the host. Phase 2's desktop run is what
-decided it: `TN_GRADE_TABLE grade.cube: File read error`.
+**The recorded desktop file-read failure remains open; CPU staging disproves the selector diagnosis**
+(2026-10-04). At published head `b09762a6`, compiling the actual starter assets with the supported
+decoder-free desktop contract and then calling desktop, Android and iOS staging preserves the
+19,909-byte `public/grade.cube` byte-for-byte at each bundle root. The `4 unmanaged file(s)` line
+reports included files, not omissions: `selectManifestAssets` keeps hand-placed public assets.
+A manifest-declared missing `grade.cube` rejects desktop staging with
+`TN_ASSETS_MANIFEST_MISSING`. The original `TN_GRADE_TABLE grade.cube: File read error` observation
+is retained; its installed package/runtime, final bundle contents and lookup provenance still need
+inspection. This CPU proof does not establish native execution or close Phase 2.
 
 ## Acceptance Criteria
 
@@ -88,7 +93,7 @@ decided it: `TN_GRADE_TABLE grade.cube: File read error`.
 - [x] `TN_RENDER_CHAIN` names `grade` and `grain` as applied at `high`, and grain as refused with a reason at `low`. proof: `pnpm test:templates` with the starter's render-chain assertion extended. **Ran at `high` on the starter's `look.playtest.json`** (`packages/create-threenative/template-playtests/starter/look.playtest.json`): `renderChain.tier`, `renderChain.stages.includes`, `renderChain.stages.order` and `renderChain.contributions.graphOutputChanged` all pass at `adapterClass: hardware`, and the marker carries `stages: ["ambientOcclusion","bloom","vignette","antialias","grade","grain"]`, `dropped: []`, with `grade` and `grain` both `graphOutputChanged: true`. **The `low` leg** is `perAdapter.software`, which needs an adapter the harness classes as software — and Chromium here reaches no WebGPU adapter under SwiftShader (`TN_PLAYTEST_CAPTURE_PROVENANCE_MISSING`, adapter request resolved null), so it was run instead on a throwaway copy of the scaffold with `setupPost(..., { tier: "low" })` pinned and a scenario asserting `stages: { includes: ["grade"], excludes: ["grain"] }`: both rows pass, and the marker carries `stages: [...,"grade"], dropped: [{"name":"grain","reason":"grainIntensity:0"}]`. Nothing about that pin is committed.
 
 #### Phase 2: Native runs the grade
-**Status:** PARTIAL — the conformance row passes; the starter's desktop scenario cannot yet, and the reason is the packager
+**Status:** PARTIAL — the conformance row passes; the starter's recorded desktop table-load failure remains under investigation
 **Files:** `packages/create-threenative/templates/starter/native-playtests/render-chain.playtest.json`, `packages/runtime-native/conformance/scenes/shared/lut-grade.js` (new), `registry.json`
-- [ ] The starter's desktop render-chain scenario includes `grade` and `grain` in its applied stages, with a non-blank screenshot. proof: `node packages/playtest/dist/runner/cli.js native-playtests/render-chain.playtest.json --target desktop` in a scaffolded starter. **Open — `grain` applies and `grade` does not, because the packager never stages the table.** `pnpm build:desktop` in the scaffolded starter, then the scenario against `dist-native/starter`: the marker reads `stages: [..., "grain"]`, `dropped: [{"name":"grade","reason":"lut:pending"}]`, and the console carries `TN_GRADE_TABLE grade.cube: File read error: Failed to open file: grade.cube`. The cause is in `packages/runtime-native/scripts/package-desktop.mjs`: the staging loop copies `selectManifestAssets(assets)` and nothing else, so a `public/` file the manifest does not declare — reported as `4 unmanaged file(s)` — is never copied. That is every unmanaged `public/` file on every native target, so the fix belongs in the packager's asset selection rather than in this PRD's filed file list, and it is not made here.
+- [ ] The starter's desktop render-chain scenario includes `grade` and `grain` in its applied stages, with a non-blank screenshot. proof: `node packages/playtest/dist/runner/cli.js native-playtests/render-chain.playtest.json --target desktop` in a scaffolded starter. **Open — the recorded native run applies `grain` and refuses `grade`; CPU staging now passes, so the file-read cause remains under investigation.** `pnpm build:desktop` in the scaffolded starter, then the scenario against `dist-native/starter`: the marker reads `stages: [..., "grain"]`, `dropped: [{"name":"grade","reason":"lut:pending"}]`, and the console carries `TN_GRADE_TABLE grade.cube: File read error: Failed to open file: grade.cube`. The earlier selector diagnosis is disproved by the CPU staging proof recorded under Decisions. No selector or loader change is made without reproducing the failing installed path.
 - [x] A conformance row grades a fixed colour chart through a known 17³ `.cube` with `lut3D` and `film` at zero intensity. It matches the LUT's expected colours and the browser reference within tolerance, which proves the `Data3DTexture` upload and trilinear sampling on the host. proof: `pnpm parity --target desktop --only-tests lut-grade`. **Ran, and passes:** after `pnpm native:build` (409/409 targets) and a web-lane reference capture, the desktop row reports `status: "pass"`, `metrics: { pixelMismatchRatio: 0, perceptualDeltaE: 0 }` over 1280x720 and `gpuValidationErrors: []`, with the host rendering 300 frames in 9.4 s. The table is a 17³ per-channel gain (r 0.75, g 1, b 0.5) rather than the identity, so a host that ignored the upload or substituted a constant would fail it, and the parsed `Data3DTexture` is read back in JS against that formula before the frame is compared. The sweep exits 2 because a `--only-tests` run blocks the other 95 rows by design, not because this row failed.
