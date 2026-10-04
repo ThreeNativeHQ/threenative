@@ -30,16 +30,16 @@ VARIABLE=TN_RUNNER
 LIGHT_VARIABLE=TN_RUNNER_LIGHT
 ENV_FILE="${TN_RUNNERS_ENV:-${XDG_CONFIG_HOME:-$HOME/.config}/threenative/runners.env}"
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/threenative/ci-runners"
-DEFAULT_SLOTS=6
-THREADS_PER_SLOT=3
-# 6 x 9 GB heavy + 3 x 2 GB light stays under 62 GB even if every slot hits its cap at once.
+DEFAULT_SLOTS=3
+CORES_PER_SLOT=3
+LIGHT_CORES=1
+# 3 x 9 GB heavy + 3 x 2 GB light caps the pool at 33 GB.
 SLOT_MEMORY=9g
 # Cores never given to a slot, so the owner's desktop stays responsive under a full board.
 HOST_CORES=2
 ONLINE_TIMEOUT_SECONDS=300
-# The light lane is a quota, not a reservation: one core of whatever a heavy slot is not using,
-# 2 GB, and the highest OOM score of any container, so a small join is what gets killed under
-# memory pressure rather than a 20-minute build.
+# The three short join slots share a physical core, separate from heavy and host cores.
+# Each retains a one-CPU quota, 2 GB, and the highest OOM score under memory pressure.
 LIGHT_SHAPE="--cpus 1 --memory 2g --memory-swap 2g --oom-score-adj 900"
 # Several light slots: an ephemeral runner needs 30-60 s to re-register after each job, and every
 # board brings ~7 joins, so one light slot serialised every pull request's scope and verdict.
@@ -133,10 +133,51 @@ online_count() {
   " 2>/dev/null || echo 0
 }
 
+# Read-only plan: group the CPUs by actual socket/core identity, keeping all SMT siblings
+# together. Refuse inherited restricted affinity rather than allocate CPUs we cannot use.
+plan() {
+  local slots="${1:-${TN_RUNNERS:-$DEFAULT_SLOTS}}" topology cpu_count cores=() slot first cpus
+  case "$slots" in ''|*[!0-9]*) fail 2 "N must be a positive integer" ;; esac
+  [ "$slots" -ge 1 ] || fail 2 "N must be at least 1"
+  topology="$(lscpu -p=CPU,CORE,SOCKET,ONLINE)" || fail 2 "cannot read CPU topology"
+  cpu_count="$(awk -F, '
+    $1 !~ /^#/ {
+      if (NF != 4 || $1 !~ /^[0-9]+$/ || $2 !~ /^[0-9]+$/ ||
+          $3 !~ /^[0-9]+$/ || $4 !~ /^(Y|N)$/ || seen[$1]++) bad=1
+      if ($4 == "Y") n++
+    }
+    END {if (bad || !n) exit 2; print n}
+  ' <<< "$topology")" || fail 2 "invalid or duplicate CPU topology"
+  [ "$cpu_count" -eq "$(env -u OMP_NUM_THREADS -u OMP_THREAD_LIMIT nproc)" ] || fail 2 "restricted affinity: online topology does not match available CPUs"
+  mapfile -t cores < <(awk -F, '
+    $1 !~ /^#/ && $4 == "Y" {
+      key=$3 ":" $2
+      if (!(key in cpus)) order[++n]=key
+      cpus[key]=cpus[key] (cpus[key] == "" ? "" : ",") $1
+    }
+    END {for (i=1;i<=n;i++) print cpus[order[i]]}
+  ' <<< "$topology")
+  [ $(( slots * CORES_PER_SLOT + LIGHT_CORES + HOST_CORES )) -le "${#cores[@]}" ] \
+    || fail 2 "$slots slots need $CORES_PER_SLOT whole physical cores each plus light/host reserves; only ${#cores[@]} exist"
+  for slot in $(seq 1 "$slots"); do
+    first=$(( (slot - 1) * CORES_PER_SLOT ))
+    cpus="$(IFS=,; echo "${cores[*]:$first:$CORES_PER_SLOT}")"
+    printf 'heavy:%s:%s\n' "$slot" "$cpus"
+  done
+  first=$(( ${#cores[@]} - HOST_CORES - LIGHT_CORES ))
+  cpus="$(IFS=,; echo "${cores[*]:$first:$LIGHT_CORES}")"
+  printf 'light:%s\n' "$cpus"
+  first=$(( ${#cores[@]} - HOST_CORES ))
+  cpus="$(IFS=,; echo "${cores[*]:$first:$HOST_CORES}")"
+  printf 'host:%s\n' "$cpus"
+}
+
 up() {
   local slots="${1:-${TN_RUNNERS:-$DEFAULT_SLOTS}}"
   case "$slots" in ''|*[!0-9]*) fail 2 "N must be a positive integer, got '$slots'" ;; esac
   [ "$slots" -ge 1 ] || fail 2 "N must be at least 1, got '$slots'"
+  local allocation
+  allocation="$(plan "$slots")" || return $?
   need docker
   need gh
   load_config
@@ -149,31 +190,20 @@ up() {
   # A leftover stop file from a previous teardown would make every loop exit before it starts.
   rm -f "$STATE_DIR/stop"
 
-  # Pinned CPUs, not a `--cpus N` quota: under a quota `nproc` and os.availableParallelism() still
-  # report every host CPU, so vitest sized its pool for 24 cores inside a 4-core budget and three
-  # unit tests timed out (PR #404). Threads are handed out core by core (both hyperthreads of a core
-  # before the next), THREADS_PER_SLOT to a slot, never touching the HOST_CORES left for the desktop.
-  # Three threads a slot (nproc 3) rather than four buys a sixth slot from the same 20 threads; most
-  # CI time is installs, downloads and browser waits, so parallel jobs beat fatter ones.
-  # ponytail: assumes Linux's usual sibling numbering (CPU k and k + nproc/2 share a core); read
-  # /sys/devices/system/cpu/cpu*/topology/thread_siblings_list if a host numbers them otherwise.
-  local half=$(( $(nproc) / 2 )) core threads=()
-  for core in $(seq 0 $(( half - HOST_CORES - 1 ))); do threads+=("$core" "$(( core + half ))"); done
-  [ $(( slots * THREADS_PER_SLOT )) -le "${#threads[@]}" ] \
-    || fail 2 "$slots slots of $THREADS_PER_SLOT threads need $(( slots * THREADS_PER_SLOT )); this host has ${#threads[@]} after $HOST_CORES cores for the desktop"
-  local slot cpus first
-  for slot in $(seq 1 "$slots"); do
-    first=$(( (slot - 1) * THREADS_PER_SLOT ))
-    cpus="$(IFS=,; echo "${threads[*]:$first:$THREADS_PER_SLOT}")"
-    start_slot "slot-$slot" "$STATE_DIR" "$ENV_FILE" "$repo" \
-      "--cpuset-cpus $cpus --memory ${SLOT_MEMORY} --memory-swap ${SLOT_MEMORY} --oom-score-adj 800 $KVM_SHAPE" \
-      "$LABEL"
-  done
-  # One light slot, unpinned and quota-limited, labelled so heavy jobs cannot select it: a 10-second
-  # join behind five 20-minute builds is the wait this lane exists to remove. It never reserves a
-  # core, so the check above still describes exactly the cores this pool owns.
+  # Heavy slots have whole physical cores; light joins never share their SMT siblings.
+  local kind slot cpus light_cpus
+  while IFS=: read -r kind slot cpus; do
+    if [ "$kind" = heavy ]; then
+      start_slot "slot-$slot" "$STATE_DIR" "$ENV_FILE" "$repo" \
+        "--cpuset-cpus $cpus --memory ${SLOT_MEMORY} --memory-swap ${SLOT_MEMORY} --oom-score-adj 800 $KVM_SHAPE" \
+        "$LABEL"
+    elif [ "$kind" = light ]; then
+      light_cpus="$slot"
+    fi
+  done <<< "$allocation"
   for slot in $(seq 1 "$LIGHT_SLOTS"); do
-    start_slot "light-$slot" "$STATE_DIR" "$ENV_FILE" "$repo" "$LIGHT_SHAPE" "$LIGHT_LABEL"
+    start_slot "light-$slot" "$STATE_DIR" "$ENV_FILE" "$repo" \
+      "--cpuset-cpus $light_cpus $LIGHT_SHAPE" "$LIGHT_LABEL"
   done
   printf '%s heavy + %s light runner container(s) starting; logs in %s\n' "$slots" "$LIGHT_SLOTS" "$STATE_DIR"
 
@@ -357,11 +387,12 @@ uninstall() {
 }
 
 case "${1:-}" in
+  plan) shift; plan "${1:-}" ;;
   up) shift; up "${1:-}" ;;
   down) down ;;
   status) status ;;
   balance) balance ;;
   install) install ;;
   uninstall) uninstall ;;
-  *) fail 2 "usage: ci-runners.sh up [N] | down | status | balance | install | uninstall" ;;
+  *) fail 2 "usage: ci-runners.sh plan [N] | up [N] | down | status | balance | install | uninstall" ;;
 esac

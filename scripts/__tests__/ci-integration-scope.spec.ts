@@ -1,10 +1,17 @@
 import { spawnSync } from "node:child_process";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import ts from "typescript";
 import { describe, expect, it } from "vitest";
 import { makeTempDirSync } from "../../test-support/temp-dir.js";
 const url = new URL("../ci-integration-scope.mjs", import.meta.url).href;
-const { integrationSelection, integrationGitSelection } = await import(url);
+const {
+  integrationSelection,
+  integrationGitSelection,
+  INDEPENDENT_CORE_MODULES,
+  INDEPENDENT_PACKAGES,
+  INDEPENDENT_PROOFS,
+} = await import(url);
 const workflow = readFileSync(
   new URL("../../.github/workflows/integration.yml", import.meta.url),
   "utf8",
@@ -364,11 +371,11 @@ describe("fluid runtime independence", () => {
     expect(lanes["fluid-particles"]).toBe(true);
   });
   it.each(["packages/core/src/renderer.ts", "packages/core/src/render/chain.ts"])(
-    "does not run fluid proofs for unrelated core render source: %s",
+    "retains fluid consumers for shared renderer and observation source: %s",
     (file) => {
       const lanes = select(workflow, [file]);
-      expect(lanes["fluid-native"]).toBe(false);
-      expect(lanes["fluid-particles"]).toBe(false);
+      expect(lanes["fluid-native"]).toBe(true);
+      expect(lanes["fluid-particles"]).toBe(true);
     },
   );
   it("fails closed for an unknown executable harness", () => {
@@ -467,4 +474,208 @@ describe("fluid CI observer ownership", () => {
       expect(select(workflow, [file])).toEqual({ ...none, "fluid-particles": true });
     },
   );
+});
+
+describe("reviewed producer and independent feature boundaries", () => {
+  it("keeps fluid for the shared game loop and core build config", () => {
+    for (const file of [
+      "packages/core/src/game.ts",
+      "packages/core/src/clustered-mesh.ts",
+      "packages/core/tsup.config.ts",
+      "packages/core/patches/three.patch",
+    ]) {
+      const lanes = select(workflow, [file]);
+      expect(lanes["fluid-particles"], file).toBe(true);
+      expect(lanes["fluid-native"], file).toBe(true);
+      expect(lanes.csg, file).toBe(false);
+      expect(lanes.ik, file).toBe(false);
+      expect(lanes.vegetation, file).toBe(false);
+    }
+  });
+  it("does not select fluid for independent terrain or animation modules", () => {
+    for (const file of [
+      "packages/core/src/terrain-jobs-worker.ts",
+      "packages/core/src/terrain-jobs.ts",
+      "packages/core/src/world-tiles.ts",
+      "packages/core/src/animation.ts",
+      "scripts/verify-animation-reversal.ts",
+      "scripts/temporal-aa-quality.ts",
+    ]) {
+      const lanes = select(workflow, [file]);
+      expect(lanes["fluid-particles"], file).toBe(false);
+      expect(lanes["fluid-native"], file).toBe(false);
+    }
+  });
+  it("still selects fluid when an independent change shares a producer configuration delta", () => {
+    const lanes = select(workflow, [
+      "packages/core/src/terrain-jobs-worker.ts",
+      "packages/core/tsup.config.ts",
+    ]);
+    expect(lanes["fluid-particles"]).toBe(true);
+    expect(lanes["fluid-native"]).toBe(true);
+    expect(lanes.csg).toBe(false);
+  });
+  it("retains unknown executable and scheduling fallback", () => {
+    expect(select(workflow, ["scripts/unclassified.ts"])).toEqual(all);
+    expect(select(workflow, ["packages/unknown/src/runtime.ts"])).toEqual(all);
+  });
+});
+
+const dependencyRoot = path.resolve(import.meta.dirname, "../..");
+function runtimeSource(filename: string): string {
+  const source = filename.replace("/dist/", "/src/");
+  const candidates = [
+    source.replace(/\.js$/u, ".ts"),
+    `${source}.ts`,
+    source,
+    `${source}/index.ts`,
+  ];
+  const resolved = candidates.find(
+    (candidate) => existsSync(candidate) && statSync(candidate).isFile(),
+  );
+  if (!resolved) throw new Error(`Unresolved fluid runtime source: ${filename}`);
+  return resolved;
+}
+function moduleEdges(file: string): { module: string; names: string[] }[] {
+  const source = ts.createSourceFile(
+    file,
+    readFileSync(file, "utf8"),
+    ts.ScriptTarget.Latest,
+    true,
+  );
+  const edges: { module: string; names: string[] }[] = [];
+  const visit = (node: ts.Node) => {
+    if (
+      ts.isImportDeclaration(node) &&
+      !node.importClause?.isTypeOnly &&
+      ts.isStringLiteral(node.moduleSpecifier)
+    ) {
+      const bindings = node.importClause?.namedBindings;
+      const names =
+        bindings && ts.isNamedImports(bindings)
+          ? bindings.elements
+              .filter((entry) => !entry.isTypeOnly)
+              .map((entry) => (entry.propertyName ?? entry.name).text)
+          : ["*"];
+      if (names.length) edges.push({ module: node.moduleSpecifier.text, names });
+    }
+    if (
+      ts.isExportDeclaration(node) &&
+      !node.isTypeOnly &&
+      node.moduleSpecifier &&
+      ts.isStringLiteral(node.moduleSpecifier)
+    )
+      edges.push({ module: node.moduleSpecifier.text, names: ["*"] });
+    if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword) {
+      const argument = node.arguments[0];
+      if (!argument || !ts.isStringLiteral(argument))
+        throw new Error(`Unresolved runtime import in ${file}`);
+      edges.push({ module: argument.text, names: ["*"] });
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return edges;
+}
+function workspaceTargets(module: string, names: string[]): string[] {
+  const match = /^@threenative\/([^/]+)(?:\/(.*))?$/u.exec(module);
+  if (!match?.[1]) return [];
+  const entry = runtimeSource(
+    path.join(dependencyRoot, "packages", match[1], "src", match[2] ?? "index.ts"),
+  );
+  if (names.includes("*")) return [entry];
+  // Resolve the public named exports, instead of pretending an unused barrel export is exercised.
+  const source = ts.createSourceFile(
+    entry,
+    readFileSync(entry, "utf8"),
+    ts.ScriptTarget.Latest,
+    true,
+  );
+  const exports = source.statements
+    .filter(ts.isExportDeclaration)
+    .filter(
+      (node) =>
+        !node.isTypeOnly && node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier),
+    );
+  const targets = new Set<string>();
+  for (const name of names) {
+    const exported = exports.find(
+      (node) =>
+        node.exportClause &&
+        ts.isNamedExports(node.exportClause) &&
+        node.exportClause.elements.some(
+          (element) => !element.isTypeOnly && element.name.text === name,
+        ),
+    );
+    if (exported?.moduleSpecifier && ts.isStringLiteral(exported.moduleSpecifier))
+      targets.add(runtimeSource(path.resolve(path.dirname(entry), exported.moduleSpecifier.text)));
+    else targets.add(entry);
+  }
+  return [...targets];
+}
+function fluidRuntimeClosure(extra: { module: string; names: string[] }[] = []): Set<string> {
+  const pending = [
+    "examples/prd476-fluid-particles/src/main.ts",
+    "examples/prd476-fluid-particles/src/collision-proof.ts",
+    "scripts/verify-fluid-collision.ts",
+    "scripts/verify-fluid-consumers.ts",
+    "scripts/verify-fluid-collision-native.ts",
+  ].map((file) => path.join(dependencyRoot, file));
+  pending.push(...extra.flatMap(({ module, names }) => workspaceTargets(module, names)));
+  const seen = new Set<string>();
+  while (pending.length) {
+    const file = pending.pop() as string;
+    if (seen.has(file)) continue;
+    seen.add(file);
+    for (const edge of moduleEdges(file)) {
+      if (edge.module.startsWith("."))
+        pending.push(runtimeSource(path.resolve(path.dirname(file), edge.module)));
+      else pending.push(...workspaceTargets(edge.module, edge.names));
+    }
+  }
+  return seen;
+}
+it("guards independent modules against the actual fluid fixture/harness runtime graph", () => {
+  const seen = fluidRuntimeClosure();
+  expect(
+    [...seen].filter((file) => INDEPENDENT_PROOFS.test(path.relative(dependencyRoot, file))),
+  ).toEqual([]);
+  for (const name of INDEPENDENT_PACKAGES)
+    expect(
+      [...seen].some((file) => file.includes(`/packages/${name}/src/`)),
+      name,
+    ).toBe(false);
+  for (const name of INDEPENDENT_CORE_MODULES)
+    expect(seen.has(path.join(dependencyRoot, `packages/core/src/${name}.ts`)), name).toBe(false);
+  for (const name of ["clustered-mesh", "renderer", "render/chain", "gpu-readback"])
+    expect(seen.has(path.join(dependencyRoot, `packages/core/src/${name}.ts`)), name).toBe(true);
+});
+it("detects a new fixture dependency through a named public export", () => {
+  const seen = fluidRuntimeClosure([{ module: "@threenative/core", names: ["AnimationPlayer"] }]);
+  expect(seen.has(path.join(dependencyRoot, "packages/core/src/animation.ts"))).toBe(true);
+});
+it("rejects an unresolved new workspace-package import instead of accepting an exclusion", () => {
+  expect(() =>
+    fluidRuntimeClosure([{ module: "@threenative/unclassified", names: ["newDependency"] }]),
+  ).toThrow("Unresolved fluid runtime source");
+});
+
+it("fails closed when a shared producer reaches a newly added unclassified consumer", () => {
+  const added = [
+    workflow
+      .replace(
+        "    outputs:\n",
+        "    outputs:\n      new-core: ${{ steps.filter.outputs.new-core }}\n",
+      )
+      .replace(
+        "          TN_LANE_FILTERS: |\n",
+        "          TN_LANE_FILTERS: |\n            new-core ^examples/new-core/.*$\n",
+      ),
+    "\n  new-core:\n    needs: paths\n    if: ${{ needs.paths.outputs.new-core == 'true' && !github.event.pull_request.draft }}\n    runs-on: ubuntu-24.04\n    steps:\n      - run: pnpm build\n",
+  ].join("");
+  expect(select(added, [".github/workflows/integration.yml"])).toEqual({
+    ...none,
+    "new-core": true,
+  });
+  expect(select(added, ["packages/core/tsup.config.ts"])).toEqual({ ...all, "new-core": true });
 });
