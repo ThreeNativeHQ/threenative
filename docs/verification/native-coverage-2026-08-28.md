@@ -2,31 +2,31 @@
 # Native coverage — 2026-08-28
 
 Configuration: `tn-linux-coverage` with clang source-based coverage. Executed
-42 native contract targets; 3 configured
+45 native contract targets; 3 configured
 targets could not be built and are named below.
 
 | Subsystem | Instrumented lines | Covered | Line coverage |
 | --- | ---: | ---: | ---: |
 | `src/async/` | 73 | 60 | 82.19% |
-| `src/audio/` | 1471 | 1301 | 88.44% |
+| `src/audio/` | 1471 | 1296 | 88.10% |
 | `src/canvas/` | 1334 | 1110 | 83.21% |
 | `src/cli/` | 1682 | 1238 | 73.60% |
 | `src/fs/` | 235 | 189 | 80.43% |
 | `src/http/` | 410 | 377 | 91.95% |
 | `src/js/` | 2785 | 2212 | 79.43% |
-| `src/platform/` | 1284 | 928 | 72.27% |
+| `src/platform/` | 1293 | 936 | 72.39% |
 | `src/raytracing/` | 461 | 399 | 86.55% |
 | `src/runtime.cpp` | 2361 | 1870 | 79.20% |
 | `src/screenshot_gate.cpp` | 27 | 24 | 88.89% |
 | `src/storage/` | 327 | 286 | 87.46% |
 | `src/utils/` | 0 | 0 | 0.00% |
 | `src/vfs/` | 239 | 195 | 81.59% |
-| `src/webgpu/` | 9661 | 7380 | 76.39% |
+| `src/webgpu/` | 9741 | 7473 | 76.72% |
 | `src/webtransport/` | 1391 | 1078 | 77.50% |
 | `src/workers/` | 615 | 527 | 85.69% |
-| **TOTAL** | **24356** | **19174** | **78.72%** |
+| **TOTAL** | **24445** | **19270** | **78.83%** |
 
-Source digest: `sha256:b309d234707d2ecd8ad21f4c86933adb2b1b9d43ed966e2e276f89c33fa4dbad`
+Source digest: `sha256:fa76aa265ca265cd6cb73c9fe0b2935598faf97c0f8dcf034a2fa19ea5196a16`
 
 The default `pnpm budgets` gate reads this committed measurement without configuring or compiling
 the native host. Any native source, native C++ test, CTest registration, or coverage aggregation
@@ -310,3 +310,9 @@ the focused test 1/1. Restoring the target-aware call passed that test 1/1, then
 resulting generated capability metadata changed all ten scaffold trees; the measured hashes are
 pinned in `packages/create-threenative/__tests__/scaffold.spec.ts`, whose complete suite passed
 55/55.
+
+## Rendering consolidation coverage status
+
+The generated measurement above was refreshed on 2026-10-04 from the combined exposure/fog candidate. A fresh isolated `tn-linux-coverage` build executed 45 native contract targets; three explicitly disabled targets remain listed above. The source digest is `sha256:fa76aa265ca265cd6cb73c9fe0b2935598faf97c0f8dcf034a2fa19ea5196a16`, and the existing coverage floors are unchanged.
+
+The original [exposure measurement](https://github.com/ThreeNativeHQ/threenative/blob/f54efbdc9cadac5bf8719adf3435fca98d872bb4/docs/verification/native-coverage-2026-08-28.md) and [fog measurement](https://github.com/ThreeNativeHQ/threenative/blob/edd5e1d6eef2ef306234a615d6f392861b2ee0f8/docs/verification/native-coverage-2026-08-28.md) remain preserved at their exact source commits. This Linux coverage result does not qualify combined browser or native GPU behavior, or macOS/Windows execution.

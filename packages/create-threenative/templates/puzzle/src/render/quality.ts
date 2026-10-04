@@ -84,6 +84,7 @@ const shared: IWorldEnvironmentOptions = {
   bloomStrength: 0.5,
   // High, on purpose: the lantern flames and the seal plate clear it and nothing lit does.
   bloomThreshold: 0.85,
+  autoExposureEnabled: false,
   exposure: 1.06,
   tonemapMode: "aces",
   vignetteAmount: 0.34,

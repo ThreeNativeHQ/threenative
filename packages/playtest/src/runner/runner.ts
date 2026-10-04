@@ -307,6 +307,9 @@ async function runStandalonePlaytestInternal(
   }
   let providedDisplay: IProvidedDisplay | undefined;
   let captureLease: ICaptureLease | undefined;
+  let observationArtifactsWritten = false;
+  const consoleEntries: IRunnerConsoleEntry[] = [];
+  const networkEntries: Array<{ method: string; url: string }> = [];
   try {
     if (needsPixels) {
       captureLease = await acquireRunnerCaptureLock();
@@ -370,8 +373,6 @@ async function runStandalonePlaytestInternal(
         console.error(`__THREENATIVE_PLAYTEST_UNHANDLED_REJECTION__:${reason}`);
       });
     });
-    const consoleEntries: IRunnerConsoleEntry[] = [];
-    const networkEntries: Array<{ method: string; url: string }> = [];
     page.on("console", (entry) => {
       const text = entry.text();
       const unhandledRejection = text.startsWith(UNHANDLED_REJECTION_PREFIX);
@@ -794,11 +795,25 @@ async function runStandalonePlaytestInternal(
       network: networkEntries,
       runtimeTrace: normalizedRuntimeDiagnostics(afterSnapshot, scenario, consoleEntries),
     });
+    observationArtifactsWritten = true;
     await stopCpuProfile(true);
     if (options.remoteBrowser === undefined) await context.close();
     else await page.close();
     return addPreflightDiagnostic(report, preflight);
   } catch (error) {
+    // Retain already-collected observations under the existing artifact policy.
+    // A failed bridge is never queried here; artifact I/O cannot replace the primary error.
+    try {
+      if (!observationArtifactsWritten) await writeObservationArtifacts(activeConfig.artifactDirectory, scenario.artifacts, {
+        console: consoleEntries,
+        network: networkEntries,
+        runtimeTrace: normalizedRuntimeDiagnostics(undefined, scenario, consoleEntries),
+      });
+    } catch (artifactError) {
+      try {
+        process.stderr.write(`${JSON.stringify({ failureArtifactError: String(artifactError) })}\n`);
+      } catch { /* Preserve the primary failure if diagnostic logging also fails. */ }
+    }
     if (error instanceof PlaytestBridgeError || error instanceof ManagedServerError) {
       return addPreflightDiagnostic(failureReport(activeConfig, scenario, error.diagnostic), preflight);
     }
