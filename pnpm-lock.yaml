@@ -974,6 +974,9 @@ importers:
         specifier: 'catalog:'
         version: 7.0.0
     devDependencies:
+      '@dimforge/rapier3d-compat':
+        specifier: 'catalog:'
+        version: 0.19.3
       '@threenative/playtest':
         specifier: workspace:*
         version: link:../playtest

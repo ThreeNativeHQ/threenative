@@ -15,6 +15,17 @@ import {
 
 export type RendererKind = "webgpu" | "webgl2";
 
+/** Owns one output-pipeline installation, not the lifetime of its input graph dependencies. */
+export interface IRenderOutputInstallation {
+  isCurrent(): boolean;
+  dispose(): void;
+}
+
+/** Union of callbacks preserves TypeScript's legacy void-callback return-value compatibility. */
+export type RenderOutputSetter =
+  | ((node: unknown, worldPass?: unknown) => void)
+  | ((node: unknown, worldPass?: unknown) => IRenderOutputInstallation);
+
 type WarmableSurface = {
   clone: () => WarmableSurface;
   opacity?: number;
@@ -175,8 +186,8 @@ export interface IRendererLike {
   render(scene: Object3D, camera: Camera): void;
   /** Draws after the world without clearing or passing through the world's output pipeline. */
   renderOverlay(scene: Object3D, camera: Camera): void;
-  /** Removes the output pipeline installed by a render-chain. */
-  clearOutputNode?(): void;
+  /** Legacy input-filtered clear; use an installation receipt for same-node replacement safety. */
+  clearOutputNode?(expectedNode?: unknown): void;
   /** Creates the core-owned chain seam without making generated render source import the package. */
   createRenderChain?: (options: Omit<IRenderChainOptions, "renderer">) => RenderChain;
   /** Feeds automatic render-chain tiers the completed frame-budget window. */
@@ -188,7 +199,9 @@ export interface IRendererLike {
   /** Internal callback used by RenderChain; games should request velocity through the chain. */
   setRenderChainVelocityEnabled?: (enabled: boolean) => void;
   /** Installs a graph; pass the authored world pass when the graph contains auxiliary passes. */
-  setOutputNode(node: unknown, worldPass?: unknown): void;
+  // The owned renderer returns a unique receipt. Legacy adapters may return void, without
+  // installation-level replacement safety; callers still own graph dependency disposal.
+  setOutputNode: RenderOutputSetter;
   setSize(width: number, height: number, updateStyle?: boolean): void;
   /**
    * The GPU time the last resolved frame actually cost, in milliseconds, or `undefined` when the
@@ -409,6 +422,8 @@ function wrapRenderer(
   softwareAdapter?: string,
 ): IRendererLike {
   let outputPipeline: RenderPipeline | undefined;
+  // Keep caller identity separately: RenderPipeline may wrap its public output node.
+  let outputInput: unknown;
   let outputPass: PassNode | undefined;
   const renderChains = new Set<RenderChain>();
   let renderChainUsesPerObjectVelocity = false;
@@ -743,6 +758,7 @@ function wrapRenderer(
       renderChainUsesPerObjectVelocity = false;
       outputPipeline?.dispose();
       outputPipeline = undefined;
+      outputInput = undefined;
       outputPass = undefined;
       pipelineCensus?.dispose();
       raw.dispose?.();
@@ -776,10 +792,23 @@ function wrapRenderer(
       outputPipeline?.dispose();
       outputPass = nextOutputPass;
       outputPipeline = nextPipeline;
+      outputInput = node;
+      return {
+        isCurrent: () => outputPipeline === nextPipeline,
+        dispose: () => {
+          if (outputPipeline !== nextPipeline) return;
+          outputPipeline = undefined;
+          outputInput = undefined;
+          outputPass = undefined;
+          nextPipeline.dispose();
+        },
+      };
     },
-    clearOutputNode: () => {
+    clearOutputNode: (expectedNode) => {
+      if (expectedNode !== undefined && expectedNode !== outputInput) return;
       outputPipeline?.dispose();
       outputPipeline = undefined;
+      outputInput = undefined;
       outputPass = undefined;
     },
     renderChainUsesPerObjectVelocity: () => renderChainUsesPerObjectVelocity,

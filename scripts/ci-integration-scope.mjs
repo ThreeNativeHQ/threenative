@@ -11,6 +11,12 @@ function parse(source) {
   const split = source.split("\njobs:\n");
   if (split.length !== 2 || /^\S/mu.test(split[1])) throw new Error("unbounded jobs mapping");
   const headings = [...split[1].matchAll(/^ {2}([a-z][a-z0-9-]*):\n/gmu)];
+  if (
+    split[1]
+      .split("\n")
+      .some((line) => /^ {2}[^ #]/u.test(line) && !/^ {2}[a-z][a-z0-9-]*:$/u.test(line))
+  )
+    throw new Error("unknown job heading");
   const jobs = new Map(
     headings.map((h, i) => [h[1], split[1].slice(h.index, headings[i + 1]?.index)]),
   );
@@ -54,7 +60,19 @@ function parse(source) {
     const gate = [...body.matchAll(/needs\.paths\.outputs\.([a-z][a-z-]*) == 'true'/gu)];
     if (needs.includes("paths")) {
       if (needs.length !== 1) throw new Error("entry dependency crosses lanes");
-      if (gate.length !== 1 || !filters.has(gate[0][1])) throw new Error("unknown root gate");
+      const conditions = [...body.matchAll(/^ {4}if: (.+)$/gmu)];
+      const condition =
+        conditions.length === 1 &&
+        /^\$\{\{ (?:!github\.event\.pull_request\.draft && )?needs\.paths\.outputs\.([a-z][a-z-]*) == 'true'(?: && !github\.event\.pull_request\.draft)? \}\}$/u.exec(
+          conditions[0][1],
+        );
+      if (
+        gate.length !== 1 ||
+        !condition ||
+        condition[1] !== gate[0][1] ||
+        !filters.has(gate[0][1])
+      )
+        throw new Error("unknown root gate");
       roots.set(id, gate[0][1]);
     } else if (gate.length) throw new Error("unbound root gate");
   }
@@ -72,7 +90,11 @@ function parse(source) {
     jobs,
     filters,
     lanesByJob,
-    scheduling: section.replace(block, "<lane filters>\n"),
+    // Only canonical output entries and the validated filter block may be additive.
+    // All other bytes of the shared paths job still participate in comparison.
+    scheduling: section
+      .replace(block, "<lane filters>\n")
+      .replace(/^ {6}[a-z][a-z-]*: \$\{\{ steps\.filter\.outputs\.[a-z][a-z-]* \}\}\n/gmu, ""),
   };
 }
 
@@ -124,25 +146,51 @@ export function integrationSelection({ files, before, after }) {
     if (files.includes(SELECTOR)) return all("shared selector changed");
     const lanes = new Set();
     for (const file of files) {
-      for (const [lane, pattern] of current.filters) if (pattern.test(file)) lanes.add(lane);
+      let matched = false;
+      for (const [lane, pattern] of current.filters) {
+        if (pattern.test(file)) {
+          lanes.add(lane);
+          matched = true;
+        }
+      }
+      // Unclassified executable harnesses/configuration cannot silently skip proofs.
+      // CI contract specs are checked by the dedicated CI contracts lane.
+      if (
+        !matched &&
+        file !== WORKFLOW &&
+        (/^scripts\/(?!__tests__\/).*\.(?:[cm]?[jt]s|sh|py)$/u.test(file) ||
+          /^\.github\/actions\//u.test(file) ||
+          /^packages\/(?!create-threenative\/).*(?:\/package\.json|\/[^/]+\.config\.[cm]?[jt]s)$/u.test(
+            file,
+          ) ||
+          /^(?!scripts\/__tests__\/|packages\/create-threenative\/|examples\/|docs\/).*\.(?:[cm]?[jt]sx?|cpp|h|hpp|cmake)$/u.test(
+            file,
+          ) ||
+          /^(?:package\.json|pnpm-(?:lock|workspace)\.yaml|tsconfig[^/]*\.json)$/u.test(file))
+      )
+        return all("unclassified executable integration dependency");
     }
     if (files.includes(WORKFLOW)) {
       const previous = parse(before);
       if (
         current.header !== previous.header ||
         current.scheduling !== previous.scheduling ||
-        [...current.jobs.keys()].join() !== [...previous.jobs.keys()].join() ||
-        [...current.filters.keys()].join() !== [...previous.filters.keys()].join()
+        [...previous.jobs.keys()].some((id) => !current.jobs.has(id)) ||
+        [...previous.filters.keys()].some((lane) => !current.filters.has(lane)) ||
+        [...previous.lanesByJob].some(([id, lane]) => current.lanesByJob.get(id) !== lane) ||
+        [...current.lanesByJob].some(
+          ([id, lane]) => !previous.jobs.has(id) && previous.filters.has(lane),
+        )
       ) {
         return all("shared scheduling or workflow shape changed");
       }
       for (const [lane, pattern] of current.filters) {
-        if (pattern.source !== previous.filters.get(lane).source) lanes.add(lane);
+        if (pattern.source !== previous.filters.get(lane)?.source) lanes.add(lane);
       }
       for (const [id, body] of current.jobs) {
-        if (id !== "paths" && body !== previous.jobs.get(id)) {
+        if (id !== "paths" && body.trimEnd() !== previous.jobs.get(id)?.trimEnd()) {
           lanes.add(current.lanesByJob.get(id));
-          lanes.add(previous.lanesByJob.get(id));
+          if (previous.jobs.has(id)) lanes.add(previous.lanesByJob.get(id));
         }
       }
     }
