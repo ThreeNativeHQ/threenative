@@ -47,7 +47,8 @@ Device loss currently logs from `onDeviceLost` and stops. Backend selection is
    preserved or visibly reset per the documented path; the state change is published in telemetry.
 6. **Backend adapters:** Dawn and wgpu-native each qualified against the same resource test suite;
    device limits and enabled features recorded per backend, never assumed interchangeable (§10).
-7. **Rollback:** the JS bindings and frame-stream replay stay compiled into the legacy backend.
+7. **No blocking waits** (owner decision 4): map, readback and pipeline compilation complete through the engine event queue, never by spinning on the device, so the same code runs on browser WebGPU.
+8. **Rollback:** the JS bindings and frame-stream replay stay compiled into the legacy backend.
 
 ## Out of scope
 
@@ -63,6 +64,7 @@ Device loss currently logs from `onDeviceLost` and stops. Backend selection is
 - [ ] A headless C++ driver uploads a buffer and texture and reads them back byte-identical on Dawn. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_gpu_upload_readback`
 - [ ] The same test passes on wgpu-native. proof: `ctest --test-dir packages/runtime-native/build/tn-linux-wgpu -R native_engine_gpu_upload_readback`
 - [ ] A resource destroyed while still referenced by an in-flight submission is freed only after that submission completes. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_gpu_deferred_destroy`
+- [ ] Readback and buffer mapping complete through the engine event queue with no blocking device wait in the engine targets. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_gpu_async_only`
 
 #### Phase 2: Presentation, resize, surface lifecycle
 **Status:** NOT STARTED

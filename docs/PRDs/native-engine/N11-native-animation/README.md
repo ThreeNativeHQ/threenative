@@ -2,6 +2,8 @@
 
 **Status:** PROPOSED — umbrella for PRD-516 … PRD-518; the boxes live in the child PRDs.
 
+**Gate:** no child PRD here starts until [PRD-534 (CP1)](../PRD-534-cp1-the-native-engine-earns-the-port.md) passes (owner decision 3, 2026-10-04).
+
 The work package must prove the supported `AnimationMixer` semantics running natively (§11.2): pose parity with the pinned reference, event ordering, morph targets and non-skeletal property tracks, and skinning palettes with previous-pose history for motion vectors. Animation update frequency is verified separately from render-pass frequency. An explicitly updated mixer is never evaluated a second time by engine scheduling (§6.4).
 
 | Key | PRD | Depends on |

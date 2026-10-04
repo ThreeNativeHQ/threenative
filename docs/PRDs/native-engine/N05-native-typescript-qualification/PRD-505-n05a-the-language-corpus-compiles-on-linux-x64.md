@@ -1,6 +1,6 @@
 # PRD-505 — The language corpus compiles on Linux x64 (N05a)
 
-**Status:** PROPOSED
+**Status:** PROPOSED — early spike for gate T; blocks nothing else (owner decision 2)
 **Complexity:** 4 — a third-party LLVM-based compiler, pinned and cached, plus a fixture corpus; no engine code yet
 **Owner:** João
 **Work package:** N05 — [native-engine batch](../README.md) · [N05 index](README.md)

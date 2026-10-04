@@ -19,7 +19,8 @@ Gate E needs a native application that renders with no V8, QuickJS, JavaScriptCo
 3. **Gate-E driver** (proposed: `packages/runtime-native/tests/native-engine/gate_e_driver.cpp`). A C++ test driver opens a window or headless target, clears and presents frames, and exits clean.
 4. **Artifact inspector** (proposed: `packages/runtime-native/scripts/inspect-js-free.mjs`). It reads the CMake target dependency graph, the linker map, the exported/imported symbols (`nm`/`objdump`/`dumpbin` per platform) and the packaged-resource list. It fails when any VM symbol family, embedded script blob or WebView library is present, and writes an evidence manifest naming the binary hash and capabilities (§15.2). [PRD-530](PRD-530-n17-strict-native-typescript-game-packaging.md) reuses it unchanged.
 5. **CI**: a `native-engine` step inside the existing `test-native` job in `.github/workflows/ci.yml` (no new workflow file). It builds the engine targets with scripting off, runs the gate-E driver headless, runs the inspector, and runs the engine tests under the `native-sanitizer` label.
-6. **Rollback**: the legacy host targets keep building unchanged; the split adds targets and moves no behaviour of the shipped player.
+6. **Wasm-safe from day one** (owner decision 4): engine targets use no blocking waits, no mandatory threads and no platform API outside the host-service interfaces. A compile-only Emscripten configuration of the engine targets guards this in CI, ahead of the full browser port ([PRD-532 (N19)](PRD-532-n19-webassembly-native-core-browser-port.md)).
+7. **Rollback**: the legacy host targets keep building unchanged; the split adds targets and moves no behaviour of the shipped player.
 
 ## Out of scope
 
@@ -39,6 +40,7 @@ Gate E needs a native application that renders with no V8, QuickJS, JavaScriptCo
 **Files:** `packages/runtime-native/CMakeLists.txt`, proposed `packages/runtime-native/tests/native-engine/gate_e_driver.cpp`
 - [ ] Engine targets configure as C++20 with `-DMYSTRAL_USE_V8=OFF -DTN_SCRIPTING=OFF`, and none links a JS engine library. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_target_graph`
 - [ ] The gate-E driver presents 300 headless frames with scripting compiled out. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_gate_e`
+- [ ] The engine targets also compile under Emscripten with threads off, compile-only. proof: `emcmake cmake -S packages/runtime-native -B packages/runtime-native/build/wasm-check -DTN_ENGINE_ONLY=ON && cmake --build packages/runtime-native/build/wasm-check`
 
 #### Phase 3: JS-free status is inspected, not assumed
 **Status:** NOT STARTED

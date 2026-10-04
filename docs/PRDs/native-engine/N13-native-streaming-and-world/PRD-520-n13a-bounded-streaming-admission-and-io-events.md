@@ -4,7 +4,7 @@
 **Complexity:** 3 — an engine event queue plus a frame-budgeted admission scheduler, both with existing TS references
 **Owner:** João
 **Work package:** N13 — [native-engine batch](../README.md) · [N13 umbrella](README.md)
-**Depends on:** [PRD-515 (N10)](../PRD-515-n10-native-gltf-cooked-assets-and-decoders.md)
+**Depends on:** [PRD-515 (N10)](../PRD-515-n10-native-gltf-cooked-assets-and-decoders.md); starts only after [PRD-534 (CP1)](../PRD-534-cp1-the-native-engine-earns-the-port.md) passes
 
 ## Context
 

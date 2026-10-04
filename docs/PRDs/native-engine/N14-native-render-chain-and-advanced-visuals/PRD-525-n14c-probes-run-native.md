@@ -8,7 +8,7 @@
 
 ## Context
 
-§11.3 lists probe systems among the framework systems that must execute natively in a strict build.
+§11.3 lists probe systems among the framework systems that must execute natively in a native-engine build.
 The current implementation is `packages/core/src/render/probe-volume.ts`. Probe capture and update are
 render-graph passes with history (an accumulated irradiance volume), so they wait on N14a.
 

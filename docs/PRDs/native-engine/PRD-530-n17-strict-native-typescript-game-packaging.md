@@ -1,10 +1,10 @@
 # PRD-530 — Strict native-TypeScript game packaging (N17)
 
-**Status:** PROPOSED
+**Status:** PROPOSED — later milestone (gate T), after promotion; not required by N20 (owner decision 2, 2026-10-04)
 **Complexity:** 4 — gate T: compiler, engine and packaging meet in one inspected artifact
 **Owner:** João
 **Work package:** N17 — [native-engine batch](README.md)
-**Depends on:** [N05 — native TypeScript](N05-native-typescript-qualification/README.md), [PRD-499 (N02)](PRD-499-n02-the-host-links-without-a-js-engine.md), and the engine PRDs the chosen game needs
+**Depends on:** [N05 — native TypeScript](N05-native-typescript-qualification/README.md), [PRD-499 (N02)](PRD-499-n02-the-host-links-without-a-js-engine.md), and the engine PRDs the chosen game needs; starts after [PRD-533 (N20)](PRD-533-n20-platform-qualification-performance-default-promotion.md) promotes the V8-runtime product
 
 ## Context
 

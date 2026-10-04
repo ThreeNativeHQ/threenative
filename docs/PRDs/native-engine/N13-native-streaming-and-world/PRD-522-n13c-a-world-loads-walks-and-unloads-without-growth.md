@@ -26,7 +26,7 @@
 #### Phase 1: Load, walk, unload
 **Status:** NOT STARTED
 **Files:** proposed `packages/runtime-native/scenarios/native-engine-world-walk.playtest.json`
-- [ ] The world fixture loads, walks the scripted path and unloads on the native desktop host with no strict-mode diagnostic. proof: `node packages/playtest/dist/runner/cli.js packages/runtime-native/scenarios/native-engine-world-walk.playtest.json --target desktop`
+- [ ] The world fixture loads, walks the scripted path and unloads on the native desktop host with no unsupported-feature diagnostic. proof: `node packages/playtest/dist/runner/cli.js packages/runtime-native/scenarios/native-engine-world-walk.playtest.json --target desktop`
 - [ ] Per-frame admission time and bytes stay within the configured allowance for the whole walk. proof: the same scenario's `TN_FRAME_BUDGET` admission assertions
 
 #### Phase 2: Memory and failure

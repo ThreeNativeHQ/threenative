@@ -4,7 +4,7 @@
 **Complexity:** 4 — new native subsystem every advanced pass plugs into; history rules are subtle
 **Owner:** João
 **Work package:** N14 — [native-engine batch](../README.md)
-**Depends on:** [PRD-514 (N09)](../PRD-514-n09-native-renderer-and-standard-materials.md)
+**Depends on:** [PRD-514 (N09)](../PRD-514-n09-native-renderer-and-standard-materials.md); starts only after [PRD-534 (CP1)](../PRD-534-cp1-the-native-engine-earns-the-port.md) passes
 
 ## Context
 

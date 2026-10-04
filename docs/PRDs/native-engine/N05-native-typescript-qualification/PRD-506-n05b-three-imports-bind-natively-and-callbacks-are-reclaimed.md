@@ -1,6 +1,6 @@
 # PRD-506 — Three imports bind natively and callbacks are reclaimed (N05b)
 
-**Status:** PROPOSED
+**Status:** PROPOSED — early spike for gate T; blocks nothing else (owner decision 2)
 **Complexity:** 5 — crosses the compiler's module system, the generated ABI and the engine lifetime protocol at once
 **Owner:** João
 **Work package:** N05 — [native-engine batch](../README.md) · [N05 index](README.md)

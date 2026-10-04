@@ -37,7 +37,7 @@
 **Status:** NOT STARTED
 **Files:** `packages/assets/src/` (package emitter); proposed `packages/runtime-native/src/engine/assets/package/`
 - [ ] `packages/assets` emits a native package with a manifest, per-entry hashes, decoder requirements and upload sizes. proof: `pnpm exec vitest run packages/assets/__tests__/native-package.spec.ts`
-- [ ] A packaged game loads its cooked assets in a strict build with no JS engine linked. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_cooked_package_load`
+- [ ] A packaged game loads its cooked assets in a native-engine build whose engine targets link no JS engine. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_cooked_package_load`
 - [ ] A hash or version mismatch is rejected before load with a stable error code. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_cooked_package_reject`
 
 #### Phase 3: Malformed data and the decoder matrix

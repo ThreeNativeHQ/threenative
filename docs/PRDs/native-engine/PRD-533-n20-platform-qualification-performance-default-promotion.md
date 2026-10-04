@@ -4,7 +4,7 @@
 **Complexity:** 5 — release-scale qualification on real hardware with explicit investment gates
 **Owner:** João
 **Work package:** N20 — [native-engine batch](README.md)
-**Depends on:** every N00–N17 PRD the declared capability profile requires; [PRD-530 (N17)](PRD-530-n17-strict-native-typescript-game-packaging.md) in particular
+**Depends on:** [PRD-534 (CP1)](PRD-534-cp1-the-native-engine-earns-the-port.md) passed; every N00–N16, N18 and N19 PRD the declared capability profile requires. Gate T ([PRD-530 (N17)](PRD-530-n17-strict-native-typescript-game-packaging.md)) is not required for promotion (owner decision 2).
 
 ## Context
 
@@ -31,11 +31,11 @@ targets (§2.3); software adapters and virtual displays are not performance evid
 4. A perf win never waives a failed compatibility or JS-free gate. If the gates are not met, stop and
    investigate before promotion.
 5. Promotion makes `native` the default engine profile with the legacy profile still explicitly
-   selectable; retiring legacy is a separate later decision (§19).
+   selectable; retiring legacy is [PRD-535 (N21)](PRD-535-n21-the-js-engine-is-deleted.md), one release later (owner decision 10). The web default moves to the Wasm engine in the same promotion (owner decision 4).
 
 ## Out of scope
 
-- iOS (§2.3). The Wasm browser product as a default (N19 owns its qualification).
+- iOS (§2.3). Deleting the legacy engine ([PRD-535 (N21)](PRD-535-n21-the-js-engine-is-deleted.md)).
 
 ## Execution Phases
 
@@ -48,18 +48,19 @@ targets (§2.3); software adapters and virtual displays are not performance evid
 #### Phase 2: Artifact qualification
 **Status:** NOT STARTED
 **Files:** `.github/workflows/native-platforms.yml` (new job in the existing workflow)
-- [ ] The strict Linux desktop artifact passes JS-free inspection and its playtest journey. proof: `native-platforms` CI job `strict-linux`
-- [ ] The strict Windows desktop artifact passes JS-free inspection and its playtest journey. proof: `native-platforms` CI job `strict-windows`
-- [ ] The strict macOS desktop artifact passes JS-free inspection and its playtest journey. proof: `native-platforms` CI job `strict-macos`
+- [ ] The Linux desktop artifact on the native engine passes engine-only JS-free inspection and its playtest journey. proof: `native-platforms` CI job `native-engine-linux`
+- [ ] The Windows desktop artifact on the native engine passes engine-only JS-free inspection and its playtest journey. proof: `native-platforms` CI job `native-engine-windows`
+- [ ] The macOS desktop artifact on the native engine passes engine-only JS-free inspection and its playtest journey. proof: `native-platforms` CI job `native-engine-macos`
 
 #### Phase 3: Promotion
 **Status:** NOT STARTED
 **Files:** `packages/create-threenative/` (default profile)
 - [ ] New projects scaffold with the native engine profile and can select legacy explicitly. proof: `pnpm test:templates`
+- [ ] New web builds run on the Wasm engine and pass every template journey. proof: `pnpm test:templates` (web arm)
 - [ ] Switching a project back to legacy restores the previous behaviour with no other edit. proof: `pnpm exec vitest run packages/create-threenative/__tests__/native-profile.spec.ts`
 
 ## Blocked on
 
 - §15.4 performance verdicts: physical desktop and Android hardware runs by the owner (João); Xvfb and SwiftShader numbers do not count (§15.3).
-- The strict Android artifact on a physical device: the owner's attached device.
+- The Android native-engine artifact on a physical device: the owner's attached device.
 - The promotion decision itself, once the gates are measured: owner decision (João).

@@ -42,3 +42,4 @@
 **Files:** proposed `packages/three-native/tests/compatibility/fixtures/arrays/`
 - [ ] A retained attribute view and a retained `.elements` view read a native-side write with no copy. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_buffers_views`
 - [ ] The array-shape fixtures (indexed writes, iteration, identity, Array vs TypedArray) pass or report their named `unsupported` code. proof: `pnpm parity -- --suite native-engine-arrays`
+- [ ] A retained view whose backing store is reallocated, the Wasm memory-growth case, is refreshed and never reads freed storage (owner decision 4). proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_buffer_view_regrowth`
