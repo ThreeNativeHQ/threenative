@@ -14,7 +14,7 @@ endfunction()
 
 # Foundation: handles and (later) math. Portable C++20 with no platform API, so the same sources
 # compile for the browser port.
-add_library(tn_engine_foundation STATIC src/engine/foundation/handles.cpp)
+add_library(tn_engine_foundation STATIC src/engine/foundation/handles.cpp src/engine/foundation/buffers.cpp)
 tn_native_engine_target(tn_engine_foundation)
 target_include_directories(tn_engine_foundation PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
@@ -85,6 +85,22 @@ endfunction()
 tn_native_engine_test(tn-native-engine-handles-test tests/native-engine/handles_test.cpp
     native_engine_handles_generation=generation
     native_engine_handles_identity=identity)
+
+tn_native_engine_test(tn-native-engine-buffers-test tests/native-engine/buffers_test.cpp
+    native_engine_buffers_range=range
+    native_engine_buffers_lease=lease
+    native_engine_buffers_views=views
+    native_engine_buffer_view_regrowth=view_regrowth)
+
+# libFuzzer targets need clang; `TN_ENGINE_FUZZ=ON` with a clang toolchain builds them.
+option(TN_ENGINE_FUZZ "Build the native engine libFuzzer targets (clang only)" OFF)
+if(TN_ENGINE_FUZZ)
+    add_executable(native_engine_fuzz_buffers EXCLUDE_FROM_ALL tests/native-engine/fuzz_buffers.cpp)
+    target_link_libraries(native_engine_fuzz_buffers PRIVATE tn_engine_foundation)
+    target_compile_options(native_engine_fuzz_buffers PRIVATE -fsanitize=fuzzer,address,undefined)
+    target_link_options(native_engine_fuzz_buffers PRIVATE -fsanitize=fuzzer,address,undefined)
+    set_target_properties(native_engine_fuzz_buffers PROPERTIES CXX_STANDARD 20)
+endif()
 
 if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "android")
     tn_native_engine_test(tn-native-engine-gpu-resources-test tests/native-engine/gpu_resources_test.cpp

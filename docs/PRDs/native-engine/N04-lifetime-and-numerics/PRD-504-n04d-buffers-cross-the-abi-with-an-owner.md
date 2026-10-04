@@ -1,6 +1,6 @@
 # PRD-504 — Buffers cross the ABI with an owner (N04d)
 
-**Status:** PROPOSED
+**Status:** IN PROGRESS — C++ store, lease, views done; fuzz run and the two reference-fixture boxes open
 **Complexity:** 4 — buffer ownership, leases and version semantics where game code holds typed views
 **Owner:** João
 **Work package:** N04 — [lifetime and numerics](README.md), [native-engine batch](../README.md)
@@ -28,18 +28,18 @@
 #### Phase 1: Descriptors are validated
 **Status:** NOT STARTED
 **Files:** proposed `packages/runtime-native/src/engine/foundation/buffers.{h,cpp}`, `packages/runtime-native/tests/native-engine/buffers_test.cpp`, `fuzz_buffers.cpp`
-- [ ] Out-of-range and overflowing offset/length pairs fail with `TN_BUFFER_RANGE` before any read. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_buffers_range`
+- [x] Out-of-range and overflowing offset/length pairs fail with `TN_BUFFER_RANGE` before any read. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_buffers_range` — 2026-10-04: green; `BufferStore::validate` compares by subtraction so a wrapping pair fails (red with the `offset + length` form), misalignment is `Layout`, and an overflowing element count allocates nothing. `src/engine/foundation/buffers.{h,cpp}`
 - [ ] The buffer-descriptor fuzzer runs 10 minutes under ASan/UBSan with no finding. proof: `pnpm --filter @threenative/runtime-native native:test:asan -- --fuzz native_engine_fuzz_buffers --max-total-time=600`
 
 #### Phase 2: Leases and versions
 **Status:** NOT STARTED
 **Files:** same
-- [ ] Storage under a live lease does not move when its attribute is resized; the resize applies after release. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_buffers_lease`
+- [x] Storage under a live lease does not move when its attribute is resized; the resize applies after release. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_buffers_lease` — 2026-10-04: green; the pointer is unchanged under the lease and the 4→1024 resize lands on the last release with contents kept (red when resize ignores leases)
 - [ ] `needsUpdate` and update ranges bump `version` and the dirty ranges exactly as the reference fixtures record. proof: `pnpm parity -- --suite native-engine-buffer-version`
 
 #### Phase 3: Retained views see native writes
 **Status:** NOT STARTED
 **Files:** proposed `packages/three-native/tests/compatibility/fixtures/arrays/`
-- [ ] A retained attribute view and a retained `.elements` view read a native-side write with no copy. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_buffers_views`
+- [x] A retained attribute view and a retained `.elements` view read a native-side write with no copy. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_buffers_views` — 2026-10-04: green; a `BufferView` over a 16-double `.elements` store reads a native write at the same address — one storage, no copy
 - [ ] The array-shape fixtures (indexed writes, iteration, identity, Array vs TypedArray) pass or report their named `unsupported` code. proof: `pnpm parity -- --suite native-engine-arrays`
-- [ ] A retained view whose backing store is reallocated, the Wasm memory-growth case, is refreshed and never reads freed storage (owner decision 4). proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_buffer_view_regrowth`
+- [x] A retained view whose backing store is reallocated, the Wasm memory-growth case, is refreshed and never reads freed storage (owner decision 4). proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_buffer_view_regrowth` — 2026-10-04: green; a resize bumps the store epoch, the view reports `stale()` and its next `bytes()` resolves the new storage with contents intact; it never caches a pointer across epochs
