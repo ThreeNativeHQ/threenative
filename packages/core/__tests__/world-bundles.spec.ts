@@ -162,6 +162,15 @@ function isChunk(object: Object3D): boolean {
 }
 
 /**
+ * Whether this object is a main-role batch mesh the GPU scene has not dressed, which is the
+ * `instanced` origin and so the batch the main record is for. A dressed batch carries `gpuScene`
+ * instead, and a recorded one carries `tnBundled`, which `RenderPassBudget` reads first.
+ */
+function isMainBatch(object: Object3D): boolean {
+  return object.userData.tnDrawSource === "instanced";
+}
+
+/**
  * The meshes' own names, sorted, so two projections are compared as sets: which meshes a frame draws
  * is the claim, and the order three happens to hand them over in is not.
  */
@@ -765,6 +774,47 @@ describe("the main pass's draw bundles", () => {
     turn(cells, renderer, 20, [0, 1]);
     for (const held of watched.values()) expect(held.count).toBeGreaterThan(0);
     expect(cells.stats().failures).toBe(0);
+    cells.dispose();
+  });
+
+  it("records a main batch the GPU scene does not own, so its window costs no traversal", async () => {
+    // The `instanced` source is a main batch the GPU scene never dressed, and it is the one main
+    // batch a record could not take: `#dressGpu` was the only caller of `#bundleIn`, so every key
+    // outside the scene's answer — a backend with no compute, `gpuScene: false`, a dress that gave up
+    // — was submitted per object for the whole walk. Its window is a per-frame answer, which is
+    // exactly what a frozen render list cannot re-read, so the record answers the gate instead: a
+    // batch the gate shows is recorded, a batch it hides leaves, and a window that moved re-records.
+    // Same trade a cell's chunk record makes, and the same one the visual A/B judged equal.
+    const { renderer, world: cells } = await world({ bundles: true, gpuScene: false });
+    cells.update(renderer, playerCamera());
+    await flushed(cells, renderer, playerCamera());
+
+    expect(cells.stats().gpuScene.on).toBe(false);
+    const dressed = mainKeys(cells);
+    expect(dressed.length).toBeGreaterThan(0);
+    const drawn = project(cells, playerCamera());
+    // Zero of them walks three's per-object path — that traversal is what AC-1's draw span is — and
+    // the record draws the very same meshes in their place.
+    expect(drawn.perObject.filter(isMainBatch)).toEqual([]);
+    expect(names(drawn.bundled.filter(isMainBatch))).toEqual(names(dressed));
+    // The picture is the same one: every one of them is in the one record, still cull-free because a
+    // record's list was cut by its own camera, and nothing failed on the way.
+    for (const mesh of dressed) {
+      expect(mesh.userData.tnBundled).toBe(true);
+      expect(mesh.frustumCulled).toBe(false);
+      expect(mesh.visible).toBe(true);
+    }
+    expect(cells.stats().failures).toBe(0);
+    // And the gate is what the record answers with: turning the camera is what moves a key in and out
+    // of it, and the union over the two directions the ring holds is every key. A record that ignored
+    // the gate would hold all of them from whichever camera last recorded it.
+    cells.update(renderer, eastCamera());
+    const east = project(cells, eastCamera()).bundled.filter(isMainBatch);
+    cells.update(renderer, playerCamera());
+    const west = project(cells, playerCamera()).bundled.filter(isMainBatch);
+    expect(west.length).toBeGreaterThan(0);
+    expect(east.length).toBeGreaterThan(0);
+    expect([...new Set([...names(west), ...names(east)])].sort()).toEqual(names(dressed));
     cells.dispose();
   });
 

@@ -995,6 +995,12 @@ class SharedBatch {
    */
   bundlable = false;
   /**
+   * The instance count the world's last record of this mesh was cut at. A record freezes the draw's
+   * instance count, so a CPU-path batch's moving window is one re-record when this moves; a dressed
+   * batch submits its key's region capacity, which only the dress changes and which re-records there.
+   */
+  bundledCount = -1;
+  /**
    * The same descriptor, recorded whether or not the GPU scene is on, which is the whole of what
    * lets a mesh minted before the scene came up be dressed after it: `gpu` says the mesh draws from
    * the scene's buffers, `main` says which key it would draw. A prewarm that mints a whole ring on a
@@ -4422,7 +4428,14 @@ export class WorldCells extends Group implements IComputeDriven {
         if (shared.bundled === false) dressed.push({ asset: shared.gpu.asset, shared });
         continue;
       }
+      // A batch the GPU scene does not own, and every one of a world without it: its own window is
+      // the CPU path's answer, and it is a per-frame answer a frozen render list never re-reads. So
+      // the record answers the gate instead of the gate writing `visible` into it — a batch the gate
+      // shows joins, one it hides leaves, and a window that moved is one more record, because the
+      // record holds the layout the move made. The same trade a cell's chunk record makes, at the
+      // granularity this gate already uses. See `#bundleIn`.
       const outcome = shared.cullFrom(this.#visibleSquares, this.#visibleEpoch);
+      this.#recordCpuMain(shared, outcome);
       if (outcome === "settled") continue;
       this.#mainCullWindows += 1;
       if (outcome === "repacked") {
@@ -6102,6 +6115,10 @@ export class WorldCells extends Group implements IComputeDriven {
     const group = this.#bundle as BundleGroup;
     if (shared.mesh.parent !== group) group.add(shared.mesh);
     shared.bundled = true;
+    shared.bundledCount = shared.mesh.count;
+    // A recorded draw was cut from this camera's frustum, so the mesh's own whole-mesh test would drop
+    // it the moment the camera turned away from a window the record still holds. Off, like a chunk's.
+    shared.mesh.frustumCulled = false;
     shared.mesh.visible = true;
     // Read by `VirtualShadowNode#probe`, which must not hide a bundled mesh: the render list a bundle
     // recorded is fixed, and `visible = false` would take the mesh out of every record after the next
@@ -6118,7 +6135,10 @@ export class WorldCells extends Group implements IComputeDriven {
   #bundleOut(shared: SharedBatch): void {
     if (shared.bundled === false) return;
     shared.bundled = false;
+    shared.bundledCount = -1;
     shared.mesh.userData.tnBundled = false;
+    // Back on the per-object path, so the mesh's own whole-mesh test is its gate again.
+    shared.mesh.frustumCulled = true;
     if (shared.mesh.parent === this.#bundle) (this.#bundle as BundleGroup).remove(shared.mesh);
     if (this.#bundle !== undefined) this.#bumpBundle();
   }
@@ -6128,6 +6148,37 @@ export class WorldCells extends Group implements IComputeDriven {
     if (group === undefined) return;
     this.#bundleRecords += 1;
     group.needsUpdate = true;
+  }
+
+  /**
+   * Put one CPU-path main batch into the world's record, or take it out, by the coarse gate's answer.
+   *
+   * A main batch the GPU scene dresses is recorded from `#dressGpu`, because its submission bound is
+   * its key's region capacity — a number only the dress writes, so the entry cannot go stale. A batch
+   * the scene does not own submits its own CPU window instead, and that window is per frame: the gate
+   * narrows it, a residency change repacks it, and a batch it narrows to nothing must draw nothing.
+   * A record fixes its render list, so all three are the record's business rather than a `visible`
+   * write the replay ignores. Hence this: the gate's answer is a join or a leave, a window that moved
+   * or a count that changed is one more record, and `frustumCulled` is off because the record's own
+   * list was cut by the same frustum when it was made.
+   *
+   * The trade is the one a cell's chunk record already makes and the visual A/B already judged: a
+   * batch whose window is half the view draws the half that faced the camera when the record was cut.
+   */
+  #recordCpuMain(shared: SharedBatch, outcome: "settled" | "narrowed" | "repacked"): void {
+    if (this.#bundlesWanted === false) return;
+    // `#publish` has just written this frame's answer onto the mesh, which is the only place it is.
+    if (shared.mesh.visible === false) {
+      this.#bundleOut(shared);
+      return;
+    }
+    this.#bundleIn(shared);
+    if (shared.bundled === false) return;
+    // The count a record freezes, and the layout behind it: a repack moves records inside the window
+    // without moving its length, so the epoch answer and the count are both read here.
+    if (outcome === "settled" && shared.mesh.count === shared.bundledCount) return;
+    shared.bundledCount = shared.mesh.count;
+    this.#bumpBundle();
   }
 
   /**
@@ -6246,6 +6297,13 @@ export class WorldCells extends Group implements IComputeDriven {
     shared.mesh.userData.tnBundled = shared.bundled;
     if (shared.bundled === true) (this.#bundle as BundleGroup).add(shared.mesh);
     else this.add(shared.mesh);
+    // A record holds the object it was cut from, so a mesh that arrived by a rebind or a grow is not
+    // the one the last record named: one re-record, and the record counts this mesh from here.
+    if (shared.bundled === true) {
+      shared.mesh.frustumCulled = false;
+      shared.bundledCount = shared.mesh.count;
+      this.#bumpBundle();
+    }
   }
 
   /**
