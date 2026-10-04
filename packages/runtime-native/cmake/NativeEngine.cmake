@@ -37,7 +37,7 @@ elseif(SDL3_LIBRARY)
 endif()
 
 # Renderer: native-owned GPU resources over the same WebGPU backend the host uses.
-add_library(tn_engine_renderer STATIC src/engine/renderer/gpu_resources.cpp)
+add_library(tn_engine_renderer STATIC src/engine/renderer/gpu_resources.cpp src/engine/renderer/device_state.cpp)
 tn_native_engine_target(tn_engine_renderer)
 target_link_libraries(tn_engine_renderer PUBLIC tn_engine_foundation)
 if(TARGET dawn::webgpu)
@@ -92,11 +92,25 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_gpu_deferred_destroy=deferred_destroy
         native_engine_gpu_async_only=async_only)
     target_link_libraries(tn-native-engine-gpu-resources-test PRIVATE tn_engine_renderer tn_host_services)
+    if(TARGET dawn::webgpu)
+        tn_native_engine_test(tn-native-engine-device-loss-test tests/native-engine/device_loss_test.cpp
+            native_engine_device_loss_recover=recover
+            native_engine_device_stale_handle=stale_handle
+            native_engine_device_no_adapter=no_adapter)
+        target_link_libraries(tn-native-engine-device-loss-test PRIVATE tn_engine_renderer tn_host_services)
+    else()
+        # Measured 2026-10-04: wgpu-native 25 never delivers the device-lost callback for
+        # wgpuDeviceDestroy, so the engine gets no loss signal to recover from.
+        foreach(name native_engine_device_loss_recover native_engine_device_stale_handle native_engine_device_no_adapter)
+            tn_register_blocked_test(${name} "wgpu-native 25 delivers no device-lost callback on wgpuDeviceDestroy")
+        endforeach()
+    endif()
     if(TN_ENGINE_SANITIZE)
         # These own a real device, whose driver keeps allocations past exit: judged for memory
         # errors and undefined behaviour, not leaks. CPU-only engine tests keep leak checking.
         set_tests_properties(native_engine_gpu_upload_readback native_engine_gpu_deferred_destroy
-            native_engine_gpu_async_only PROPERTIES
+            native_engine_gpu_async_only native_engine_device_loss_recover native_engine_device_stale_handle
+            native_engine_device_no_adapter PROPERTIES
             ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0:abort_on_error=1;UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1")
     endif()
 endif()

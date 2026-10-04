@@ -1,6 +1,6 @@
 # PRD-509 — GPU resources, presentation and device loss (N07)
 
-**Status:** IN PROGRESS — phase 1 done
+**Status:** IN PROGRESS — phases 1 and 3 done; phase 2 (windowed resize, Android surface cycle) open
 **Complexity:** 4 — reuses the existing WebGPU context; the new work is resource ownership and the device-loss state machine on two backends
 **Owner:** João
 **Work package:** N07 — [native-engine batch](README.md)
@@ -73,12 +73,13 @@ Device loss currently logs from `onDeviceLost` and stops. Backend selection is
 - [ ] Android surface destroy/recreate (background → foreground) rebuilds the surface without recreating the device. proof: `node packages/playtest/dist/runner/cli.js packages/runtime-native/scenarios/native-engine-surface-cycle.playtest.json --target android`
 
 #### Phase 3: Device loss
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** proposed `src/engine/renderer/device_state.cpp`
-- [ ] A forced `device.destroy()` walks running → lost → recovering → running and the next frame renders from rebuilt resources. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_device_loss_recover`
-- [ ] Any handle from the lost generation is rejected with `TN_GPU_STALE_GENERATION`. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_device_stale_handle`
+- [x] A forced `device.destroy()` walks running → lost → recovering → running and the next frame renders from rebuilt resources. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_device_loss_recover` — 2026-10-04: green on Dawn (`build/tn-linux`, `build/tn-linux-engine`, ASan): transitions recorded as running>lost>recovering>running, generation 2, and the texture rebuilt from its CPU copy reads back byte-identical; `no_adapter` ends lost>failed. `src/engine/renderer/device_state.{h,cpp}`; `Context::setDeviceLostHandler` makes a loss non-fatal only for a context that opts in
+- [x] Any handle from the lost generation is rejected with `TN_GPU_STALE_GENERATION`. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_device_stale_handle` — 2026-10-04: green on Dawn; red when the generation is not bumped on a new device. **wgpu-native gap:** wgpu-native 25 delivers no device-lost callback for `wgpuDeviceDestroy`, so these three tests register BLOCKED in wgpu builds
 
 ## Decisions
 
 - **No new graphics abstraction (§4, §10).** A thin adapter over the existing context; Dawn and wgpu-native stay the only backends.
 - **Native-owned submission does not replay the JS frame-op stream (§10).**
+- **wgpu-native device loss is untestable by destroy (2026-10-04, agent):** wgpu-native 25 never fires the device-lost callback for `wgpuDeviceDestroy`, measured in `build/tn-linux-engine-wgpu`. The state machine is proved on Dawn; the wgpu tests register BLOCKED with that reason rather than pass.

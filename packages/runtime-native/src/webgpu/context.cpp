@@ -288,10 +288,13 @@ static void onDeviceError(WGPUDevice const* device, WGPUErrorType type, WGPUStri
 }
 
 /// `Destroyed` is this runtime shutting its own device down, not a fault.
+/// A context with a lost handler (the native engine's device lifecycle) hears every loss, its own
+/// destroy() included, and recovers; without one a loss stays fatal as above.
 static void onDeviceLost(WGPUDevice const* device, WGPUDeviceLostReason reason, WGPUStringView message, void* userdata1, void* userdata2) {
     (void)device;
-    (void)userdata1;
     (void)userdata2;
+    auto* context = static_cast<mystral::webgpu::Context*>(userdata1);
+    if (context && context->notifyDeviceLost(static_cast<uint32_t>(reason), WGPU_PRINT_STRING_VIEW(message).c_str())) return;
     if (reason == WGPUDeviceLostReason_Destroyed) return;
     reportFatalDeviceLoss(WGPU_PRINT_STRING_VIEW(message));
 }
@@ -341,7 +344,7 @@ static void onDeviceError(WGPUErrorType type, char const* message, void* userdat
 
 /// Every device this runtime creates reports the same way, and three call sites used to say only
 /// half of it. Whatever is added here reaches all of them.
-static void installDeviceCallbacks(WGPUDeviceDescriptor& deviceDesc) {
+static void installDeviceCallbacks(WGPUDeviceDescriptor& deviceDesc, mystral::webgpu::Context* context) {
     WGPUUncapturedErrorCallbackInfo errorCallbackInfo = {};
     errorCallbackInfo.callback = onDeviceError;
     deviceDesc.uncapturedErrorCallbackInfo = errorCallbackInfo;
@@ -349,6 +352,7 @@ static void installDeviceCallbacks(WGPUDeviceDescriptor& deviceDesc) {
     WGPUDeviceLostCallbackInfo lostCallbackInfo = {};
     lostCallbackInfo.mode = WGPUCallbackMode_AllowSpontaneous;
     lostCallbackInfo.callback = onDeviceLost;
+    lostCallbackInfo.userdata1 = context;
     deviceDesc.deviceLostCallbackInfo = lostCallbackInfo;
 #endif
 }
@@ -682,7 +686,7 @@ bool Context::initializeHeadless() {
     deviceDesc.requiredFeatureCount = requiredFeatures.count;
     deviceDesc.requiredFeatures = requiredFeatures.count > 0 ? requiredFeatures.names.data() : nullptr;
 
-    installDeviceCallbacks(deviceDesc);
+    installDeviceCallbacks(deviceDesc, this);
 
     DeviceRequestData deviceData;
 
@@ -976,7 +980,7 @@ bool Context::createSurface(void* nativeHandle, int platformType) {
     deviceDesc.requiredFeatures = requiredFeatures.count > 0 ? requiredFeatures.names.data() : nullptr;
 
     // Set up error callback
-    installDeviceCallbacks(deviceDesc);
+    installDeviceCallbacks(deviceDesc, this);
 
     DeviceRequestData deviceData;
 
@@ -1156,7 +1160,7 @@ bool Context::createSurfaceWithDisplay(void* display, void* window, int platform
     deviceDesc.requiredFeatureCount = requiredFeatures.count;
     deviceDesc.requiredFeatures = requiredFeatures.count > 0 ? requiredFeatures.names.data() : nullptr;
 
-    installDeviceCallbacks(deviceDesc);
+    installDeviceCallbacks(deviceDesc, this);
 
     DeviceRequestData deviceData;
 
