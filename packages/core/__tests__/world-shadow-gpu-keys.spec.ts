@@ -586,6 +586,7 @@ async function measureSubmissions(
   keys: boolean,
   extents: readonly number[] = CLIP_EXTENTS,
   gpuScene = true,
+  sceneAfter = 0,
 ): Promise<IArmResult> {
   vi.stubGlobal("__tnShadowGpuKeys", keys ? 1 : 0);
   stubFixtureFetch();
@@ -680,7 +681,11 @@ async function measureSubmissions(
   const camera = cameraAt(FOLLOW.x, FOLLOW.z);
   for (let frame = 1; frame <= 30; frame += 1) {
     rendered.fill(false);
-    world.update(renderer, camera);
+    // `sceneAfter`: the loading screen's own shape — no renderer at all for its frames, so the ring is
+    // prewarmed and streamed with the GPU scene still off and comes up against a world already built.
+    // A refusal is final (the scene reports once), so only the renderer-less frames can be late.
+    const at = frame <= sceneAfter ? undefined : renderer;
+    world.update(at, camera);
     node.updateBefore({ camera, renderer, time: frame } as unknown as NodeFrame);
     // The node publishes a frame's rows before `updateBefore` returns, so the level that took this
     // frame's render — one per frame is the budget — is read here rather than at the end, where it
@@ -722,6 +727,37 @@ async function measureSubmissions(
 }
 
 describe("a level render's own submissions with and without GPU keys", () => {
+  /**
+   * The loading screen's shape, which is the one a real game loads in: the ring is prewarmed and
+   * streamed with no renderer at all, and the scene comes up on the first frame that has one, so
+   * every main key is named in one seeding pass. This asserts that shape's whole key table reaches
+   * every level and every level's counter: a twin minted from that pass is minted late, and the bill
+   * that reported a partial table as fewer draws is the same miscount the single-level case below is
+   * about, seen from the other side.
+   */
+  it("draws and counts the whole key table on a ring the scene came up to after", async () => {
+    const on = await measureSubmissions(true, CLIP_EXTENTS, true, 20);
+    const mains = on.mainPass.meshes.filter((name) => /:0:0$|:1:0$/.test(name));
+    expect(mains.length, "the fixture's main keys").toBeGreaterThan(1);
+    expect(
+      on.keys.length,
+      `a ring prewarmed before the scene came up drew ${String(on.keys.length)} of ${String(mains.length)} keys`,
+    ).toBe(mains.length);
+    console.info(
+      `TN_SHADOW_KEY_LATE_SCENE keys=${String(on.keys.length)} mains=${mains.join(",")} ` +
+        `records=${String(on.mainPass.records)} keysPerLevel=${on.perLevel.map((one) => one.keys).join(",")}`,
+    );
+    // Every level submits the whole table and counts it: a bill that says zero for a key the level
+    // really draws is the miscount, not a cheaper shadow.
+    for (const [index, one] of on.perLevel.entries()) {
+      expect(one.keys, `level ${String(index)} drew a partial key table`).toBe(mains.length);
+      expect(one.stat?.drawsBy.keys, `level ${String(index)} counted a partial table`).toBe(
+        mains.length,
+      );
+    }
+    on.dispose();
+  });
+
   it("submits one indirect draw per key with the flag on, and the caster halves' own meshes with it off", async () => {
     const off = await measureSubmissions(false);
     const on = await measureSubmissions(true);
