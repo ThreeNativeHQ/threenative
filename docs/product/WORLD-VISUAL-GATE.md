@@ -31,6 +31,16 @@ in meters, and a description locating the change in the frames. Do not infer abs
 missing data. The candidate fails if any critic reports popping at or inside `nearBandMeters`.
 A reference-arm event is reported but does not by itself fail the candidate.
 
+## Content one series never draws
+
+Then compare the two series frame by frame at the same walk index. Content that is absent for
+the whole route produces no transition at all, so this is the only place its absence can be
+seen: a band of forest, a building, a shadow the other series draws and this one does not.
+Report it as `missing` in the series that lacks it, naming both series' frame ids for that
+walk index, the element, and the camera-to-element distance you can infer from the landmark
+context. Use `missing: []` when the two series draw the same content at every index. Report
+these even far outside the near band; the near band is not a licence to look away.
+
 ## Verdict file
 
 Each of three independent critics submits one JSON file. Copy `promptSha256` from bundle.json
@@ -53,13 +63,22 @@ critic identity. Do not exchange results. The file shape is:
         "distanceMeters": 12,
         "description": "The upper silhouette abruptly loses its left branch."
       }]
+    }],
+    "missing": [{
+      "element": "forest band beyond the highway",
+      "kind": "missing",
+      "from": "frame-032", "to": "frame-032",
+      "distanceMeters": 300,
+      "description": "The other series draws this band at this walk index; this series draws sky."
     }]
   }]
 }
 ```
 
 This shape illustrates the schema only, not an actual judgment. Supply every sample, series
-and transition from the bundle. Allowed event kinds are `appear`, `disappear`, and `lod-swap`.
+and transition from the bundle. Transition events take the kinds `appear`, `disappear` and
+`lod-swap`; `missing` is only valid in the cross-series list, where `from` is the other
+series' frame id at that walk index and `to` this series' frame id, and both are required.
 
 ## Capture contract and command
 
@@ -81,8 +100,9 @@ pnpm visuals:world --score artifacts/world-gate --verdict critic-1.json --verdic
 Only share artifacts/world-gate/blind with critics. Keep the rest private until judging is
 complete. Bundle-only exits 2 (unjudged); malformed, missing, stale or mutated evidence also
 exits 2. A complete candidate reaches exit 0 only if every same-pose median is at least 4/5,
-no same-pose row is a measured LOSS at the duplicate-calibrated resolution, and no candidate
-near-band popping event is reported. A measured regression exits 1. The source captures,
+no same-pose row is a measured LOSS at the duplicate-calibrated resolution, no candidate
+near-band popping event is reported, and no candidate `missing` event is reported at any
+distance. A measured regression exits 1. The source captures,
 provenance, rubric, reveal maps and blinded pixels are hash-bound and must remain available
 and unchanged through scoring. A public test world's pass is mechanics evidence; Machinefall's
 known shadow regression still needs its own real red/green capture and independent judgments.

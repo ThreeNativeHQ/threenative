@@ -12,6 +12,15 @@ afterEach(() => {
 const read = (file: string) => JSON.parse(readFileSync(file, "utf8"));
 const write = (file: string, value: unknown) =>
   writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`);
+/** Cross-series absence: this series draws no band the other series draws at this walk index. */
+const crossSeries = {
+  element: "forest band beyond the road",
+  kind: "missing",
+  from: "frame-002",
+  to: "frame-002",
+  distanceMeters: 300,
+  description: "The other series draws the band at this walk index; this series draws sky.",
+};
 
 async function fixture() {
   const root = await makeTempDir("world-visual-gate-");
@@ -48,7 +57,7 @@ async function fixture() {
       nearBandMeters: 25,
       capture: "capture.json",
       landmarks: [{ id: "pine-1", position: [0, 0, 8] }],
-      samePose: [frame("forest"), frame("road")],
+      samePose: [frame("forest"), frame("road"), frame("step-2", 2)],
       walk: [0, 1, 2].map((time) => ({ ...frame(`step-${time}`, time), timeMs: time * 100 })),
     };
     const file = path.join(directory, "world.json");
@@ -85,6 +94,7 @@ function verdicts(f: Awaited<ReturnType<typeof ready>>) {
           to: frame.label,
           events: [],
         })),
+        missing: [],
       })),
     });
     return file;
@@ -93,7 +103,7 @@ function verdicts(f: Awaited<ReturnType<typeof ready>>) {
 
 it("blinds both arms, keeps every walk chronological, and binds the rubric and images", async () => {
   const f = await ready();
-  expect(f.bundle.samePose).toHaveLength(6);
+  expect(f.bundle.samePose).toHaveLength(8);
   expect(f.bundle.walk).toHaveLength(2);
   expect(
     f.bundle.walk.map((s: { frames: { timeMs: number }[] }) =>
@@ -201,6 +211,51 @@ it("reports far-band events without treating them as near-band failure", async (
     });
   write(files[0] as string, v);
   expect(scoreWorldVisualBundle(f.out, files).exitCode).toBe(0);
+});
+
+/** The private seal is the instrument's own answer; the specs use it to aim an anonymous event. */
+const arm = (f: Awaited<ReturnType<typeof ready>>) =>
+  read(path.join(f.out, "seal.json")).candidateSeries as string;
+const missingInto = (v: { series: { label: string; missing: unknown[] }[] }, label: string) =>
+  (v.series.find((entry) => entry.label === label) as { missing: unknown[] }).missing.push(
+    crossSeries,
+  );
+
+it("fails a candidate that never draws what the other series draws, at any distance", async () => {
+  const f = await ready();
+  const files = verdicts(f);
+  const v = read(files[0] as string);
+  missingInto(v, arm(f));
+  write(files[0] as string, v);
+  const result = scoreWorldVisualBundle(f.out, files);
+  expect(result.exitCode).toBe(1);
+  expect(result.popping).toContainEqual(
+    expect.objectContaining({ kind: "missing", candidate: true, disallowed: true }),
+  );
+});
+
+it("reports a reference-side missing event without failing the candidate", async () => {
+  const f = await ready();
+  const files = verdicts(f);
+  const v = read(files[0] as string);
+  missingInto(v, f.bundle.walk.find((s: { label: string }) => s.label !== arm(f)).label);
+  write(files[0] as string, v);
+  const result = scoreWorldVisualBundle(f.out, files);
+  expect(result.exitCode).toBe(0);
+  expect(result.popping).toContainEqual(
+    expect.objectContaining({ kind: "missing", candidate: false, disallowed: false }),
+  );
+});
+
+it.each(["from", "to"])("rejects a missing event without its %s frame id", async (id) => {
+  const f = await ready();
+  const files = verdicts(f);
+  const v = read(files[0] as string);
+  const event: Record<string, unknown> = { ...crossSeries };
+  delete event[id];
+  (v.series[0].missing as unknown[]).push(event);
+  write(files[0] as string, v);
+  expect(() => scoreWorldVisualBundle(f.out, files)).toThrow();
 });
 
 it.each([
@@ -346,7 +401,12 @@ it("does not silently reuse a populated bundle directory", async () => {
 it("maps scored pose rows back to the source IDs only after judging", async () => {
   const f = await ready();
   const result = scoreWorldVisualBundle(f.out, verdicts(f));
-  expect(result.samePose.rows.map(({ template }) => template).sort()).toEqual(["forest", "road"]);
+  // The walk's own last pose is scored too: content that only appears at the end never pops.
+  expect(result.samePose.rows.map(({ template }) => template).sort()).toEqual([
+    "forest",
+    "road",
+    "step-2",
+  ]);
 });
 
 it("binds the external verdict files in the final score", async () => {

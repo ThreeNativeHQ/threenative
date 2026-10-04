@@ -104,7 +104,7 @@ export interface IPoppingEvent {
   from: string;
   to: string;
   element: string;
-  kind: "appear" | "disappear" | "lod-swap";
+  kind: "appear" | "disappear" | "lod-swap" | "missing";
   distanceMeters: number;
   description: string;
   candidate: boolean;
@@ -433,12 +433,38 @@ function poppingVerdict(
     bundle.walk.map(({ label }) => label).sort(),
     "series coverage",
   );
+  const readEvent = (
+    raw: unknown,
+    allowed: readonly IPoppingEvent["kind"][],
+    from: string,
+    to: string,
+    label: string,
+  ): IPoppingEvent => {
+    const event = record(raw, "event");
+    const kind = text(event.kind, "event kind");
+    if (!allowed.includes(kind as IPoppingEvent["kind"])) fail(`unsupported event kind: ${kind}`);
+    const candidate = label === seal.candidateSeries;
+    const distanceMeters = finite(event.distanceMeters, "event distanceMeters");
+    return {
+      critic,
+      series: label,
+      from,
+      to,
+      element: text(event.element, "event element"),
+      kind: kind as IPoppingEvent["kind"],
+      distanceMeters,
+      description: text(event.description, "event description"),
+      candidate,
+      // Content the candidate never draws is a regression at any distance; a pop is judged by its band.
+      disallowed: candidate && (kind === "missing" || distanceMeters <= bundle.nearBandMeters),
+    };
+  };
   return series.flatMap((raw) => {
     const entry = record(raw, "series");
     const label = text(entry.label, "series label");
-    const frames = (bundle.walk.find((item) => item.label === label) as ISeries).frames;
+    const found = (bundle.walk.find((item) => item.label === label) as ISeries).frames;
     const transitions = list(entry.transitions, "transitions");
-    const expected = frames.slice(1).map((frame, index) => [frames[index]?.label, frame.label]);
+    const expected = found.slice(1).map((frame, index) => [found[index]?.label, frame.label]);
     equal(
       transitions.map((raw) => {
         const t = record(raw, "transition");
@@ -447,29 +473,37 @@ function poppingVerdict(
       expected,
       "chronological transition coverage",
     );
-    return transitions.flatMap((raw) => {
+    const pops = transitions.flatMap((raw) => {
       const transition = record(raw, "transition");
-      return list(transition.events, "events (use [] when none)", 0).map((raw): IPoppingEvent => {
-        const event = record(raw, "event");
-        const kind = text(event.kind, "event kind");
-        if (!["appear", "disappear", "lod-swap"].includes(kind))
-          fail("unsupported popping event kind");
-        const distanceMeters = finite(event.distanceMeters, "event distanceMeters");
-        const candidate = label === seal.candidateSeries;
-        return {
-          critic,
-          series: label,
-          from: transition.from as string,
-          to: transition.to as string,
-          element: text(event.element, "event element"),
-          kind: kind as IPoppingEvent["kind"],
-          distanceMeters,
-          description: text(event.description, "event description"),
-          candidate,
-          disallowed: candidate && distanceMeters <= bundle.nearBandMeters,
-        };
-      });
+      return list(transition.events, "events (use [] when none)", 0).map((raw) =>
+        readEvent(
+          raw,
+          ["appear", "disappear", "lod-swap"],
+          transition.from as string,
+          transition.to as string,
+          label,
+        ),
+      );
     });
+    // Content that never appears produces no transition: the same walk index in the other series is
+    // the only place its absence can be seen.
+    const other = (bundle.walk.find((item) => item.label !== label) as ISeries).frames;
+    return [
+      ...pops,
+      ...list(entry.missing, "missing (use [] when none)", 0).map((raw) => {
+        const event = record(raw, "missing event");
+        const from = text(event.from, "missing from");
+        const to = text(event.to, "missing to");
+        if (other.findIndex((frame) => frame.label === from) < 0)
+          fail("missing from must be the other series' frame at that walk index");
+        if (
+          found.findIndex((frame) => frame.label === to) !==
+          other.findIndex((frame) => frame.label === from)
+        )
+          fail("a missing event must name both series' frames at one walk index");
+        return readEvent(event, ["missing"], from, to, label);
+      }),
+    ];
   });
 }
 
