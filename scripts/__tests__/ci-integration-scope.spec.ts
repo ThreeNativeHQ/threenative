@@ -244,9 +244,6 @@ describe("merged world capture lane relevance", () => {
       expect(select(workflow, [file])).toEqual({
         ...none,
         "world-capture": true,
-        ...(file.startsWith("packages/core/")
-          ? { "fluid-particles": true, "fluid-native": true }
-          : {}),
         ...(file.startsWith("packages/core/src/") ? { exposure: true, "cold-boot": true } : {}),
       });
     }
@@ -333,7 +330,8 @@ describe("fluid runtime independence", () => {
     expect(lanes["fluid-particles"]).toBe(false);
   });
   it.each([
-    "packages/core/src/renderer.ts",
+    "packages/core/src/fluid-particles.ts",
+    "packages/core/src/gpu-readback.ts",
     "packages/physics/src/index.ts",
     "packages/playtest/src/runner/runner.ts",
     "pnpm-lock.yaml",
@@ -343,6 +341,14 @@ describe("fluid runtime independence", () => {
     expect(lanes["fluid-native"]).toBe(true);
     expect(lanes["fluid-particles"]).toBe(true);
   });
+  it.each(["packages/core/src/renderer.ts", "packages/core/src/render/chain.ts"])(
+    "does not run fluid proofs for unrelated core render source: %s",
+    (file) => {
+      const lanes = select(workflow, [file]);
+      expect(lanes["fluid-native"]).toBe(false);
+      expect(lanes["fluid-particles"]).toBe(false);
+    },
+  );
   it("fails closed for an unknown executable harness", () => {
     expect(select(workflow, ["scripts/new-unclassified-runtime.ts"])).toEqual(all);
   });

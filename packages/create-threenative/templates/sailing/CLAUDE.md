@@ -61,8 +61,7 @@ The sky is `assets/sky.jpg` (Poly Haven, CC0), fetched in `Boot.load` beside the
 
 Tune the sea state in `src/render/ocean.ts`, the rig and hull in `src/render/props.ts` and `src/entities/Ship.ts`, and the course in `src/scenes/Sailing.ts`. The React HUD reads published state; keep `playtests/survives.playtest.json` as smoke proof and native scenarios honest.
 
-On a touch-primary device (`isMobile() && isTouchscreenAvailable()`), `src/render/touch-controls.ts`
-adds a left stick whose vector `Sailing` adds into both the helm and the sheets; keyboard is the fallback.
+On a touch-primary device (`isMobile() && isTouchscreenAvailable()`), `src/render/touch-controls.ts` adds a left stick whose vector `Sailing` adds into both the helm and the sheets; keyboard is the fallback.
 
 ## Portable authoring contracts
 
@@ -76,8 +75,7 @@ state; from a frame function `goto` and then `return`; `ctx.state.set({ /* copy 
 is a partial patch. `game.goto("<scene-name>")` also rebuilds the scene, but it resets the game's
 state. Seeded randomness is deterministic only when `defineGame({ seed })` is configured.
 
-`src/render/quality.ts` owns `low`, `medium`, `high`; `isMobile()` chooses `low`, otherwise `high`; override with `setupPost(..., { tier: "low" })`. Unknown tiers throw and `TN_QUALITY_TIER` reports
-the source. The bridge flushes about 100 ms; keep speed/lap in state and frame feedback in Three.js.
+`src/render/quality.ts` owns `low`, `medium`, `high`; `isMobile()` chooses `low`, otherwise `high`; override with `setupPost(..., { tier: "low" })`. Unknown tiers throw and `TN_QUALITY_TIER` reports the source. The bridge flushes about 100 ms; keep speed/lap in state and frame feedback in Three.js.
 
 When an animation looks wrong, measure it before rewriting it. `clipPoseError` scores a
 retargeted clip against its source per bone in degrees — whole quaternions relative to each rig's
