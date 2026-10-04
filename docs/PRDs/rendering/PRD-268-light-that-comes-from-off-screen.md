@@ -4,10 +4,14 @@ prd_contract: v1
 
 # PRD-268 — light that comes from off-screen: an irradiance probe volume on WebGPU
 
-**Status:** PROPOSED — filed 2026-08-29, measured at `7e5a9fe1`. Depends on
-PRD-266; judged after
-[PRD-269](PRD-269-motion-vectors-or-the-temporal-filters-lie.md). Batch:
-docs/PRDs/lighting.
+**Status: SUPERSEDED 2026-10-03 — folded into
+[PRD-267](../useful-defaults/PRD-267-screen-space-gi-ships-in-the-templates.md) at runbook row C6,
+which carries this mechanism as its Phase 3 and its native gate as Phase 2. Kept in place with its
+text: `docs/PRDs/AGENTS.md` archives *finished* work in `done/`, and a superseded proposal with 0
+ticked boxes is not finished. The file below is PROPOSED — filed 2026-08-29, measured at `7e5a9fe1`.
+PRD-266 landed as
+[PRD-278](../done/PRD-278-every-template-ships-the-render-chain-and-says-what-ran.md); judged after
+[PRD-269](PRD-269-motion-vectors-or-the-temporal-filters-lie.md). Batch: docs/PRDs/lighting.**
 
 **Goal: a surface is lit by light it cannot see.** This is the one item in the batch that closes a
 real gap rather than wiring an existing one, and it is the reason screen-space GI alone never reads
