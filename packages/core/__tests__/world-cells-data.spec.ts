@@ -370,3 +370,230 @@ it("rejects exact authored parts combined with whole-asset impostors before mode
   ).rejects.toThrow(/preserveAuthoredParts.*impostors/u);
   expect(model).not.toHaveBeenCalled();
 });
+
+it("admits a queued run for the current camera rather than its obsolete enqueue position", async () => {
+  const assets = createAssetLoader();
+  vi.spyOn(assets, "resolve").mockResolvedValue([]);
+  const material = new MeshBasicMaterial();
+  const follow = { position: new Vector3(48, 0, 32) };
+  let release!: (model: Group) => void;
+  const model = new Promise<Group>((resolve) => {
+    release = resolve;
+  });
+  const world = await WorldCells.load({
+    url: "world.json",
+    assets,
+    surface: material,
+    follow,
+    ring: 4,
+    terrain: false,
+    prefetchSeconds: 0,
+    admissionBudgetMs: Infinity,
+    data: {
+      manifest: {
+        ...manifest,
+        cells: [{ x: 0, z: 0, runs: [{ asset: "tree", offset: 0, count: 1 }] }],
+      },
+      placements: new Float32Array([32, 0, 32, 0, 0, 0, 1, 1]).buffer,
+    },
+    placementReach: new Float32Array([5]),
+    budgets: { bytes: 32, instances: 1, residentCells: 1 },
+    loadModel: () => model,
+  });
+  try {
+    world.update();
+    release(new Group().add(new Mesh(new BoxGeometry(1, 2, 1), material)));
+    for (let turn = 0; turn < 30; turn++) await Promise.resolve();
+    expect(world.stats().loadsInFlight).toBe(0);
+    // The model adopted and queued its run while the camera was out of reach. Before any
+    // placement slice was admitted, the camera arrived beside it. No obsolete empty publication
+    // followed by another whole rebuild should be necessary to display this record.
+    follow.position.x = 32;
+    world.update();
+    expect(drawn(world)).toBe(1);
+    expect(world.stats().admission.backlog).toBe(0);
+    expect(world.stats().rebuilds).toBe(0);
+  } finally {
+    world.dispose();
+  }
+});
+
+it("keeps one camera snapshot across an admitted run's slices before refiltering its next pose", async () => {
+  const count = 600;
+  const packed = new Float32Array(count * 8);
+  for (let i = 0; i < count; i++) packed.set([32, 0, 32, 0, 0, 0, 1, 1], i * 8);
+  const assets = createAssetLoader();
+  vi.spyOn(assets, "resolve").mockResolvedValue([]);
+  const material = new MeshBasicMaterial();
+  const follow = { position: new Vector3(32, 0, 32) };
+  let clock = 0;
+  const world = await WorldCells.load({
+    url: "world.json",
+    assets,
+    surface: material,
+    follow,
+    ring: 0,
+    terrain: false,
+    prefetchSeconds: 0,
+    admissionBudgetMs: 0.1,
+    admissionNow: () => ++clock,
+    data: {
+      manifest: {
+        ...manifest,
+        cells: [{ x: 0, z: 0, runs: [{ asset: "tree", offset: 0, count }] }],
+      },
+      placements: packed.buffer,
+    },
+    placementReach: new Float32Array(count).fill(5),
+    budgets: { bytes: count * 32, instances: count, residentCells: 1 },
+    loadModel: async () => new Group().add(new Mesh(new BoxGeometry(1, 2, 1), material)),
+  });
+  try {
+    world.update();
+    for (let turn = 0; turn < 30; turn++) await Promise.resolve();
+    world.update(); // Only one 256-record placement slice fits this artificial budget.
+    expect(world.stats().admission.backlog).toBeGreaterThan(0);
+    expect(drawn(world)).toBe(0);
+    follow.position.x = 48;
+    let firstPublication = 0;
+    for (let frame = 0; frame < 30 && firstPublication === 0; frame++) {
+      world.update();
+      firstPublication = drawn(world);
+    }
+    expect(firstPublication).toBe(count);
+    await settle(world);
+    expect(drawn(world)).toBe(0);
+    expect(world.stats().admission.backlog).toBe(0);
+    expect(world.stats().failures).toBe(0);
+  } finally {
+    world.dispose();
+  }
+});
+
+it("converges every run of one asset after independently deferred camera snapshots", async () => {
+  const runCount = 300;
+  const count = runCount * 2;
+  const packed = new Float32Array(count * 8);
+  for (let i = 0; i < count; i++) packed.set([32, 0, 32, 0, 0, 0, 1, 1], i * 8);
+  const assets = createAssetLoader();
+  vi.spyOn(assets, "resolve").mockResolvedValue([]);
+  const material = new MeshBasicMaterial();
+  const follow = { position: new Vector3(32, 0, 32) };
+  let clock = 0;
+  const world = await WorldCells.load({
+    url: "world.json",
+    assets,
+    surface: material,
+    follow,
+    ring: 4,
+    terrain: false,
+    prefetchSeconds: 0,
+    admissionBudgetMs: 0.1,
+    admissionNow: () => ++clock,
+    data: {
+      manifest: {
+        ...manifest,
+        cells: [
+          {
+            x: 0,
+            z: 0,
+            runs: [
+              { asset: "tree", offset: 0, count: runCount },
+              { asset: "tree", offset: runCount, count: runCount },
+            ],
+          },
+        ],
+      },
+      placements: packed.buffer,
+    },
+    placementReach: new Float32Array(count).fill(5),
+    budgets: { bytes: count * 32, instances: count, residentCells: 1 },
+    loadModel: async () => new Group().add(new Mesh(new BoxGeometry(1, 2, 1), material)),
+  });
+  new Group().add(world);
+  const pump = () => {
+    world.update();
+    world.traverse((node) => {
+      if (node instanceof InstancedMesh && node.visible)
+        (node.onBeforeRender as (...args: unknown[]) => void)(node, null, null, null, null, null);
+    });
+  };
+  try {
+    pump();
+    for (let turn = 0; turn < 30; turn++) await Promise.resolve();
+    for (let frame = 0; frame < 30 && drawn(world) === 0; frame++) pump();
+    expect(drawn(world)).toBe(runCount);
+    expect(world.stats().admission.backlog).toBeGreaterThan(0);
+    follow.position.x = 100;
+    pump(); // Run B starts outside reach, independently of already-published run A.
+    follow.position.x = 32;
+    for (let frame = 0; frame < 100; frame++) {
+      pump();
+      await Promise.resolve();
+    }
+    expect(world.stats().unchanged).toBeGreaterThan(0);
+    expect(world.stats().pendingPrewarm).toBe(0);
+    expect(world.stats().admission.backlog).toBe(0);
+    expect(drawn(world)).toBe(count);
+    expect(world.stats().failures).toBe(0);
+  } finally {
+    world.dispose();
+  }
+});
+
+it("runs an owed stationary-camera refilter after the last byte-identical publication", async () => {
+  const count = 600;
+  const packed = new Float32Array(count * 8);
+  for (let i = 0; i < count; i++) packed.set([32, 0, 32, 0, 0, 0, 1, 1], i * 8);
+  const assets = createAssetLoader();
+  vi.spyOn(assets, "resolve").mockResolvedValue([]);
+  const material = new MeshBasicMaterial();
+  const follow = { position: new Vector3(32, 0, 32) };
+  let clock = 0;
+  const world = await WorldCells.load({
+    url: "world.json",
+    assets,
+    surface: material,
+    follow,
+    ring: 0,
+    terrain: false,
+    prefetchSeconds: 0,
+    admissionBudgetMs: 0.1,
+    admissionNow: () => ++clock,
+    data: {
+      manifest: {
+        ...manifest,
+        cells: [{ x: 0, z: 0, runs: [{ asset: "tree", offset: 0, count }] }],
+      },
+      placements: packed.buffer,
+    },
+    placementReach: new Float32Array(count).fill(5),
+    budgets: { bytes: count * 32, instances: count, residentCells: 1 },
+    loadModel: async () => new Group().add(new Mesh(new BoxGeometry(1, 2, 1), material)),
+  });
+  new Group().add(world);
+  const pump = async () => {
+    world.update();
+    world.traverse((node) => {
+      if (node instanceof InstancedMesh && node.visible)
+        (node.onBeforeRender as (...args: unknown[]) => void)(node, null, null, null, null, null);
+    });
+    await Promise.resolve();
+  };
+  try {
+    for (let frame = 0; frame < 100; frame++) await pump();
+    expect(drawn(world)).toBe(count);
+    expect(world.stats().pendingPrewarm).toBe(0);
+    follow.position.x = 35;
+    await pump(); // Gate bracket requests a build, but all records remain inside their reach.
+    expect(world.stats().admission.backlog).toBeGreaterThan(0);
+    follow.position.x = 48;
+    for (let frame = 0; frame < 100; frame++) await pump();
+    expect(world.stats().unchanged).toBeGreaterThan(0);
+    expect(world.stats().pendingPrewarm).toBe(0);
+    expect(world.stats().admission.backlog).toBe(0);
+    expect(drawn(world)).toBe(0);
+  } finally {
+    world.dispose();
+  }
+});

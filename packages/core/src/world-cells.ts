@@ -1920,10 +1920,10 @@ interface IBuildJob {
   readonly asset: IAssetState;
   readonly cell: IResidentCell;
   readonly run: IWorldRun;
-  /** The follow position this build filters for; a deferred build keeps the answer it was queued for. */
-  readonly filterY: number;
-  readonly filterX: number;
-  readonly filterZ: number;
+  /** The follow snapshot taken at first admission, held fixed across every placement slice. */
+  filterY: number;
+  filterX: number;
+  filterZ: number;
   /** A refilter's outgoing batches, drawn until this job's own batches are attached. */
   replaced: ICellBatch[];
   /** This job's built batches, attached together when the last one is ready. */
@@ -4536,6 +4536,7 @@ export class WorldCells extends Group implements IComputeDriven {
       this.#limiter.inFlight > 0 ||
       this.#limiter.queued > 0 ||
       this.#jobs.length > 0 ||
+      this.#refilterOwed ||
       this.#prewarmQueue.length > 0 ||
       this.#prewarmPending > 0 ||
       this.#shadowMoved === true ||
@@ -4558,6 +4559,10 @@ export class WorldCells extends Group implements IComputeDriven {
     return this.#placementReach === undefined ? 0 : (this.#follow.position.y ?? 0);
   }
 
+  #refilterStepMetres(): number {
+    return this.#placementReach === undefined ? LEVEL_REFILTER_STEP_METRES : 0.75;
+  }
+
   #refilterStale(x: number, z: number): boolean {
     if (this.#refilterOwed) return true;
     if (this.#refilterEpoch !== this.#residencyEpoch) return true;
@@ -4566,7 +4571,7 @@ export class WorldCells extends Group implements IComputeDriven {
         x - this.#refilterPoint.x,
         this.#followY() - this.#refilterPoint.y,
         z - this.#refilterPoint.z,
-      ) >= (this.#placementReach === undefined ? LEVEL_REFILTER_STEP_METRES : 0.75)
+      ) >= this.#refilterStepMetres()
     );
   }
 
@@ -5285,7 +5290,19 @@ export class WorldCells extends Group implements IComputeDriven {
       // Out of fresh meshes this frame: later jobs would only stall the same way.
       if (this.#meshStalled) break;
       // A finished build leaves the queue at this index, so the next one is served without a skip.
-      if (finished) this.#forget(index, job);
+      if (finished) {
+        this.#forget(index, job);
+        // A camera that moved during this bounded build may already have consumed the global
+        // refilter step before these batches existed. Owe one pass after publication, even if
+        // it now stands still, so the coherent old snapshot can converge to the latest pose.
+        if (
+          Math.hypot(
+            this.#follow.position.x - job.filterX,
+            this.#followY() - job.filterY,
+            this.#follow.position.z - job.filterZ,
+          ) >= this.#refilterStepMetres()
+        ) this.#refilterOwed = true;
+      }
     }
   }
 
@@ -5311,6 +5328,14 @@ export class WorldCells extends Group implements IComputeDriven {
    * finished batch and retires what a refilter replaced. `true` means the job is done.
    */
   #step(job: IBuildJob): boolean {
+    // A queued run may wait behind admission or fresh-mesh work while the camera moves.
+    // Take its filter snapshot when the first placement slice actually starts, then keep
+    // that snapshot for every slice so one publication never mixes different camera poses.
+    if (job.next === 0 && job.batches === undefined) {
+      job.filterX = this.#follow.position.x;
+      job.filterY = this.#followY();
+      job.filterZ = this.#follow.position.z;
+    }
     if (job.next < job.run.count) {
       job.batches ??= newBatches(job.asset);
       // One box per `(level, part)` beside the batches it measures, so the swap that hands the
@@ -7884,9 +7909,8 @@ export class WorldCells extends Group implements IComputeDriven {
     for (const entry of cell.batches) {
       const reach = this.#reachRanges.get(cell.cell)?.get(entry.asset);
       if ((entry.threshold === undefined && reach === undefined) || seen.has(entry.asset)) continue;
-      // Every level of one asset was filtered from the same follow position, so the first entry
-      // settles the asset and the levels behind it are already stale.
-      seen.add(entry.asset);
+      // Deferred runs of one asset can start at different camera snapshots. Only deduplicate
+      // after one entry proves the asset stale: an earlier matching run cannot settle the others.
       if (
         Math.hypot(
           x - entry.lastFilterX,
@@ -7921,6 +7945,7 @@ export class WorldCells extends Group implements IComputeDriven {
         high = reachHigh;
       }
       if (!reachCrossed && !gates.some((gate) => gate >= low && gate <= high)) continue;
+      seen.add(entry.asset);
       this.#stale.push({ cell, distance: near, id: entry.asset });
       this.#staleEntries += 1;
     }
