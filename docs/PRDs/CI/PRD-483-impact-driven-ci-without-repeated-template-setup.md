@@ -14,6 +14,7 @@ prd_contract: v1
   then whether retained tests apply now. Docs-only skips product tests. CI configuration proves its
   routing/contracts. Native runs for native and shared runtime consumers. Unknown meaningful inputs
   keep full coverage. No settings, credentials, runners or concurrency changes.
+- João, 2026-10-04 follow-up: allow up to eight existing hosted template legs at once; preserve selected coverage, fail-fast false, runner routing and timeouts. This separately authorized cap change does not alter the original cleanup decision or historical measurements.
 - Exhaustive template scenarios remain on broad changes, main qualification and scheduled audits.
   Exact kit changes run the affected kits; shared generator/render sources keep exhaustive fanout in
   this tranche. Narrowing shared sources further needs a proved dependency boundary.
@@ -46,7 +47,7 @@ There are 13 kit manifests, not a hardcoded CI count.
 | One kit | 4 full unit shards + 31 template jobs / full board | 1 scaffolder-contract unit job + 2 template jobs / same |
 | Shared runtime, generator, unknown meaningful code; main/nightly | exhaustive 31 template jobs | exhaustive 13 scenario jobs + 2 journey jobs |
 
-The template cap stays four. Baseline's nonvisual slot-work lower bound is 94.6 / 4 = 23.6 minutes;
+The hosted template cap is eight; selected kits and scenarios are unchanged. The historical baseline at cap four had a nonvisual slot-work lower bound of 94.6 / 4 = 23.6 minutes;
 removing 16 repeated setups at the workflow's documented ~65s estimates 17.3 runner-min saved,
 retaining both existing golden journeys. That gives ~83.6 template runner-min, an estimate,
 not measured after-change wall time. Individual exhaustive template jobs will be longer (shooter

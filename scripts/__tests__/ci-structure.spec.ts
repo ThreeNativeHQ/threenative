@@ -1762,7 +1762,9 @@ describe("CI pipeline structure", () => {
     expect(lane).toContain('for scenario in "${scenarios[@]}"');
     expect(lane).toContain('test "${#scenarios[@]}" -gt 0');
     expect(lane).not.toContain("SHARD");
-    expect(lane).toContain("max-parallel: 4");
+    expect(lane).toContain("max-parallel: 8");
+    expect(lane).toContain("fail-fast: false");
+    expect(lane).toContain("runs-on: ubuntu-24.04");
   });
 
   it("preserves platformer's unique production artifact in its installed scenario job", async () => {
