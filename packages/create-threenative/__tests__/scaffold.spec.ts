@@ -173,24 +173,25 @@ const BUG_REPORT_SKILL_PATHS = [
 // Current develop c18a42b integration: all13 actual generated trees were byte-compared
 // against reviewed 8bf trees; only the copied Three compute-only Storage3DTexture patch changed.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
-  // Measured through actual createProject trees after exposure/fog consolidation and restamping,
-  // then again on the merge carrying the WebGPU adapter-retention Three patch: the scaffolded
-  // `patches/three@0.185.1.patch` is the only byte that moved on top of the exposure/fog tree, so
-  // all thirteen trees move again. Values below are the merged-tree measurement, not either side's.
-  "action-rpg": "6aa05e1a9e39719f30242ddee588a91236fbfdbf6b75ec252e91d56effccb49a",
-  minimal: "ced30816bf592b829d655941da8cfb8555295fe45fd915d73ed1605a15a2a8f9",
-  platformer: "de6323b7fd05a66ce5e89415df962ed59eae765c65346a71488c609381bf14c6",
-  puzzle: "5c7eea6460b6f6718018cf3a5ffd9f9ccaeffa219fc3337cb7216008af2ef03f",
-  racing: "0e9c54935e58bacf835aa10e6d633f1360da394e759714903d7d36f6e04bf38b",
-  rain: "9b406dc1d87df403e4bff9f825fa4ad824e71cfb77dfb482d0a4da5b54f4e91b",
-  rts: "54b9ee0cdfe8d4cae460efacc348fba30ac6bf04680b282c789eeec619ed2481",
-  runner: "30695f2421a37adbeace02a2d30523da187c208b37252d93970f38f1618f064b",
-  // Initial finite-height readiness plus its scene-owned lifecycle helper and mirrored docs.
-  sailing: "a4e1a5c72086968e3137eb6b4a8168d0a74f28d292a21f4f82bcd355d9e9138e",
-  shooter: "668cb308dfaaa2cc86431bb71db895f8e5c8d9e6562bb4e333ac5a0b6618e046",
-  snow: "550ef7eff2c6df576716145d3b75c2956ac6413a24a1d5463c4d6c6c6ca9575b",
-  starter: "77d9c77d83cfc2d28e857303f07c1cca498e1135ee3474ac27fac43dfb6337a9",
-  "tower-defense": "ebed6e13a9be25ba48f6dcb41e2a23fc4798b074d46af688333c326771e919dc",
+  // Measured through actual createProject trees on the develop merge, carrying both develop's
+  // WebGPU adapter-retention Three patch and PRD-492's shared `afterOutputTransform` stage seat
+  // (which restamps every kit's worldEnvironment.ts), so all thirteen trees move again. The
+  // starter's own value also carries the neutralised default of 2026-10-04: `public/grade.cube`,
+  // `src/render/quality.ts`'s grain numbers, and the table's pivot moving to mid-grey. Values are
+  // the merged-tree measurement, not either side's.
+  "action-rpg": "cdd5083785cd2412c4075ebc065c5066cf7015d9327d03843b215eded8bd1db3",
+  minimal: "91160aa100c06f2a50c5617cdf3642527b6f5c5f0e1bc8dae99b1f106a289612",
+  platformer: "4dd60b847cd8ad867bb00402b68d88057dd09539325159fdacd7718189315255",
+  puzzle: "41985ceb32ea3ac10bf31e8d49250fc8f97761a32e2b8f58b3516b6cff471dae",
+  racing: "34318cdb7f9f1f3d3fe061add9f20e366c12a01fa5f3c165d91f1a1bd5fa347e",
+  rain: "44b42ea26d60ef69dc37874677d35786204420ed43b276368750700711b5ddae",
+  rts: "d277cef182a3cb24b847dcbdc776236836c336745d6cf97106c17606b49f4b54",
+  runner: "9a652c148a765b460e885196ac18afd7e824a2703545f998485fdc93cac46d6b",
+  sailing: "f7325e140caa16beec51dcf21a4783043a2f3c59fcf8c835efe7cbf83d16fbc5",
+  shooter: "631f25520770c31348c19c83c8c75fba2c582444e819728c2209093d92f09538",
+  snow: "db0d2981e2eb00eeadcd67e08dcdcc363b89d5040f4f663d5519625de2d82855",
+  starter: "c2160b5f33cd44bf116038b91c1e6ad26c5be09db09760892471c83cd93108b4",
+  "tower-defense": "5920816de90126bf2426114402445087ac3ca6c7ce483d2d3d0f43c07c413973",
 };
 
 const GENERATED_SCAFFOLD_METADATA =

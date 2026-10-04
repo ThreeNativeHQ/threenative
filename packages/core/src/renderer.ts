@@ -21,10 +21,22 @@ export interface IRenderOutputInstallation {
   dispose(): void;
 }
 
+/**
+ * Where the transform goes when a stage does the renderer's job for it. The chain passes
+ * `false` only when a stage that read display-referred colour actually ran.
+ */
+export interface IRenderOutputOptions {
+  readonly outputColorTransform?: boolean;
+}
+
 /** Union of callbacks preserves TypeScript's legacy void-callback return-value compatibility. */
 export type RenderOutputSetter =
-  | ((node: unknown, worldPass?: unknown) => void)
-  | ((node: unknown, worldPass?: unknown) => IRenderOutputInstallation);
+  | ((node: unknown, worldPass?: unknown, options?: IRenderOutputOptions) => void)
+  | ((
+      node: unknown,
+      worldPass?: unknown,
+      options?: IRenderOutputOptions,
+    ) => IRenderOutputInstallation);
 
 type WarmableSurface = {
   clone: () => WarmableSurface;
@@ -788,7 +800,7 @@ function wrapRenderer(
         renderingFrame -= 1;
       }
     },
-    setOutputNode: (node, worldPass) => {
+    setOutputNode: (node, worldPass, options) => {
       if (kind !== "webgpu")
         throw new Error(`setOutputNode is unavailable on the ${kind} renderer.`);
       const nextOutputPass = selectOutputPass(node, worldPass);
@@ -796,6 +808,11 @@ function wrapRenderer(
         raw as unknown as ConstructorParameters<typeof RenderPipeline>[0],
         node as ConstructorParameters<typeof RenderPipeline>[1],
       );
+      // The pipeline applies the tone curve and the output encode by default. A stage that took
+      // the transform over applies it itself, so the pipeline must not apply a second one.
+      if (options?.outputColorTransform !== undefined) {
+        nextPipeline.outputColorTransform = options.outputColorTransform;
+      }
       outputPipeline?.dispose();
       outputPass = nextOutputPass;
       outputPipeline = nextPipeline;
