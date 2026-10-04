@@ -786,10 +786,10 @@ jobs:
     needs: [scope, build-artifacts]
     if: ${{ (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template') }}
     # One scaffold/install/typecheck/cook per template. Every nonvisual scenario still executes;
-    # splitting identical setup across 29 jobs wastes scarce slots at max-parallel 4.
+    # Keep one leg per selected kit; eight hosted legs may run together without changing coverage.
     strategy:
       fail-fast: false
-      max-parallel: 4
+      max-parallel: 8
       matrix: ${{ fromJSON(needs.scope.outputs.plan).templateMatrix }}
     # Hosted on purpose: template legs use hosted while the balancer routes builds and tests
     # to the local pool, avoiding one routing variable sending the whole burst to a single pool.
