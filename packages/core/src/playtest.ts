@@ -247,15 +247,21 @@ export const PLAYTEST_RUNNER_EXPECTED_GLOBAL = "__THREENATIVE_PLAYTEST_RUNNER_EX
 export { PLAYTEST_CLOCK_GLOBAL };
 
 /**
- * The fixed steps of extra wall time a live advance may wait past the span its own ticks name.
+ * How long a live advance waits for the pump's own tick past the span its ticks name.
  *
- * A one-tick request names exactly one frame interval, so a wait that ended on that boundary ran
- * just before the host's next frame and observed nothing: the 2026-09-28 desktop pair failed on
- * that at 58 mean fps. Four steps is enough room for a host presenting at 15 fps, and it is a
- * bound — a host that really stopped presenting returns the zero the bridge reports as a dead
- * frame pump rather than hanging the run.
+ * The room this buys has to be wall time, not a number of fixed steps, because the thing being
+ * waited for is a frame and a frame costs what the machine costs: four steps is 33 ms, which is half
+ * a frame on the 15 fps host the old bound claimed to cover and a fraction of one on anything
+ * slower. The runner counts a wait in ten-tick pieces, so each piece named a 166 ms span and then
+ * 33 ms more — and Machinefall's map-walk standing scene died on exactly that at load average 142,
+ * with the world plainly drawing at 20 fps in the windows either side. A measurement whose subject
+ * is a slow machine cannot refuse to measure one.
+ *
+ * It stays a bound. A second is long past any frame the wait is waiting for and short enough that a
+ * pump which has genuinely stopped is a failed run carrying a zero rather than a wait that never
+ * ends — which is the one thing this wait is for.
  */
-const WALL_CLOCK_PUMP_STEPS = 4;
+const WALL_CLOCK_PUMP_TIMEOUT_MS = 1_000;
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -277,10 +283,10 @@ function wallClockAdvance(runtime: IGamePluginRuntime): (ticks: number) => Promi
     // The span is the floor, not the end: a host whose next frame lands just after it has still
     // presented nothing to report. Keep waiting for the pump's own tick, in half-step slices, and
     // never take one here — the loop is the host's, and a tick invented here would be the profile
-    // measuring itself. The slice count is the bound, so a pump that has stopped is a fast failure
+    // measuring itself. The deadline is the bound, so a pump that has stopped is a fast failure
     // carrying zero rather than a wait that never ends.
-    for (let waited = 0; waited < WALL_CLOCK_PUMP_STEPS && runtime.tick() === before; waited += 1)
-      await sleep(stepMs / 2);
+    const deadline = Date.now() + WALL_CLOCK_PUMP_TIMEOUT_MS;
+    while (runtime.tick() === before && Date.now() < deadline) await sleep(stepMs / 2);
     return runtime.tick() - before;
   };
 }

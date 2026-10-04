@@ -1186,6 +1186,7 @@ describe("playtest holdUntilAttached", () => {
       });
     };
     const game = lateHost(25);
+    let slow: ReturnType<typeof lateHost> | undefined;
     let stopped: ReturnType<typeof lateHost> | undefined;
 
     try {
@@ -1200,6 +1201,18 @@ describe("playtest holdUntilAttached", () => {
       // Host-driven, not stepped here: the tick the report names is one this host's pump ran.
       expect(updates).toBeGreaterThan(before);
 
+      // And a batch on a host slower than the room the wait buys past its span. The runner counts a
+      // wait in ten-tick pieces, so the 166 ms span of `advance(10)` asked a host presenting every
+      // 400 ms for a tick inside 200 ms — the failure Machinefall's map-walk standing scene reported
+      // under `--live-clock` at load average 142. A measurement whose subject is a slow machine
+      // cannot refuse to measure one.
+      slow = lateHost(400);
+      await slow.start();
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      const batched = await bridge().advance?.(10);
+      expect(batched?.clock.mode).toBe("wall-clock");
+      expect(batched?.ticks ?? 0).toBeGreaterThanOrEqual(1);
+
       // The bound is real, so a pump that has stopped is still a failed run rather than a wait: the
       // bridge reports the zero this hands back.
       stopped = lateHost(1e6);
@@ -1207,6 +1220,7 @@ describe("playtest holdUntilAttached", () => {
       await expect(bridge().advance?.(1)).rejects.toThrow(/moved no tick in 1 step/u);
     } finally {
       stopped?.stop();
+      slow?.stop();
       game.stop();
       Object.defineProperty(globalThis, "requestAnimationFrame", {
         configurable: true,
