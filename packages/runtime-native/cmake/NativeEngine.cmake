@@ -36,6 +36,17 @@ elseif(SDL3_LIBRARY)
     target_include_directories(tn_host_services PRIVATE ${SDL3_INCLUDE_DIR})
 endif()
 
+# Renderer: native-owned GPU resources over the same WebGPU backend the host uses.
+add_library(tn_engine_renderer STATIC src/engine/renderer/gpu_resources.cpp)
+tn_native_engine_target(tn_engine_renderer)
+target_link_libraries(tn_engine_renderer PUBLIC tn_engine_foundation)
+if(TARGET dawn::webgpu)
+    target_link_libraries(tn_engine_renderer PUBLIC dawn::webgpu)
+elseif(TARGET wgpu::wgpu)
+    target_link_libraries(tn_engine_renderer PUBLIC wgpu::wgpu)
+endif()
+target_include_directories(tn_engine_renderer PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+
 if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "android")
     # Gate E: clear, submit and read back 300 headless frames with no JS engine linked.
     add_executable(tn-native-engine-gate-e EXCLUDE_FROM_ALL tests/native-engine/gate_e_driver.cpp)
@@ -56,6 +67,7 @@ endif()
 function(tn_native_engine_test target source)
     add_executable(${target} EXCLUDE_FROM_ALL ${source})
     target_link_libraries(${target} PRIVATE tn_engine_foundation)
+    target_include_directories(${target} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine)
     tn_native_engine_target(${target})
     foreach(case IN LISTS ARGN)
         string(REPLACE "=" ";" pair "${case}")
@@ -63,6 +75,9 @@ function(tn_native_engine_test target source)
         list(GET pair 1 case_name)
         add_test(NAME ${test_name} COMMAND $<TARGET_FILE:${target}> ${case_name})
         set_tests_properties(${test_name} PROPERTIES LABELS "native-engine")
+        if(TN_ENGINE_SANITIZE)
+            set_tests_properties(${test_name} PROPERTIES LABELS "native-engine;native-sanitizer")
+        endif()
     endforeach()
     set_property(GLOBAL APPEND PROPERTY TN_NATIVE_ENGINE_TEST_TARGETS ${target})
 endfunction()
@@ -70,6 +85,21 @@ endfunction()
 tn_native_engine_test(tn-native-engine-handles-test tests/native-engine/handles_test.cpp
     native_engine_handles_generation=generation
     native_engine_handles_identity=identity)
+
+if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "android")
+    tn_native_engine_test(tn-native-engine-gpu-resources-test tests/native-engine/gpu_resources_test.cpp
+        native_engine_gpu_upload_readback=upload_readback
+        native_engine_gpu_deferred_destroy=deferred_destroy
+        native_engine_gpu_async_only=async_only)
+    target_link_libraries(tn-native-engine-gpu-resources-test PRIVATE tn_engine_renderer tn_host_services)
+    if(TN_ENGINE_SANITIZE)
+        # These own a real device, whose driver keeps allocations past exit: judged for memory
+        # errors and undefined behaviour, not leaks. CPU-only engine tests keep leak checking.
+        set_tests_properties(native_engine_gpu_upload_readback native_engine_gpu_deferred_destroy
+            native_engine_gpu_async_only PROPERTIES
+            ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0:abort_on_error=1;UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1")
+    endif()
+endif()
 
 get_property(tn_native_engine_test_targets GLOBAL PROPERTY TN_NATIVE_ENGINE_TEST_TARGETS)
 add_custom_target(tn-native-engine-tests DEPENDS ${tn_native_engine_test_targets})
@@ -119,3 +149,8 @@ add_test(NAME native_engine_target_graph
         -DGRAPH=${CMAKE_CURRENT_BINARY_DIR}/native-engine-target-graph.txt
         -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CheckNativeEngineGraph.cmake)
 set_tests_properties(native_engine_target_graph PROPERTIES LABELS "native-engine")
+
+add_test(NAME native_engine_no_blocking_waits
+    COMMAND ${CMAKE_COMMAND} -DENGINE_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/src/engine
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CheckNoBlockingWaits.cmake)
+set_tests_properties(native_engine_no_blocking_waits PROPERTIES LABELS "native-engine")

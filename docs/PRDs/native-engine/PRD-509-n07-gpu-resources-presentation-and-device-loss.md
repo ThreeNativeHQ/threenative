@@ -1,6 +1,6 @@
 # PRD-509 — GPU resources, presentation and device loss (N07)
 
-**Status:** PROPOSED
+**Status:** IN PROGRESS — phase 1 done
 **Complexity:** 4 — reuses the existing WebGPU context; the new work is resource ownership and the device-loss state machine on two backends
 **Owner:** João
 **Work package:** N07 — [native-engine batch](README.md)
@@ -59,12 +59,12 @@ Device loss currently logs from `onDeviceLost` and stops. Backend selection is
 ## Execution Phases
 
 #### Phase 1: Resources, upload, readback, destruction
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** proposed `src/engine/renderer/gpu_resources.cpp`, `tests/native-engine/gpu_resources_test.cpp`
-- [ ] A headless C++ driver uploads a buffer and texture and reads them back byte-identical on Dawn. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_gpu_upload_readback`
-- [ ] The same test passes on wgpu-native. proof: `ctest --test-dir packages/runtime-native/build/tn-linux-wgpu -R native_engine_gpu_upload_readback`
-- [ ] A resource destroyed while still referenced by an in-flight submission is freed only after that submission completes. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_gpu_deferred_destroy`
-- [ ] Readback and buffer mapping complete through the engine event queue with no blocking device wait in the engine targets. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_gpu_async_only`
+- [x] A headless C++ driver uploads a buffer and texture and reads them back byte-identical on Dawn. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_gpu_upload_readback` — 2026-10-04: green on Dawn (`build/tn-linux-engine`, RTX 2080) and under ASan/UBSan; 4 KiB buffer and a 13x5 RGBA texture (row padding stripped) read back byte-identical. `src/engine/renderer/gpu_resources.{h,cpp}`
+- [x] The same test passes on wgpu-native. proof: `ctest --test-dir packages/runtime-native/build/tn-linux-wgpu -R native_engine_gpu_upload_readback` — 2026-10-04: green in an engine-only wgpu-native build (`-DTN_ENGINE_ONLY=ON -DMYSTRAL_USE_WGPU=ON -DMYSTRAL_USE_DAWN=OFF`, `build/tn-linux-engine-wgpu`): all 8 engine tests including gate E
+- [x] A resource destroyed while still referenced by an in-flight submission is freed only after that submission completes. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_gpu_deferred_destroy` — 2026-10-04: green; the handle dies at once and the GPU object waits in the pending list until `OnSubmittedWorkDone` for its serial is drained; red when the destroy is tagged serial 0
+- [x] Readback and buffer mapping complete through the engine event queue with no blocking device wait in the engine targets. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_gpu_async_only` — 2026-10-04: green; a readback never completes inside the call or inside `poll()`, only on `EventQueue::drain()` (red when delivered from the map callback directly). `native_engine_no_blocking_waits` scans `src/engine` for WaitAny, blocking polls, sleeps, condition variables and futures; red on a planted `sleep_for`. A handle from another device generation returns `StaleGeneration`
 
 #### Phase 2: Presentation, resize, surface lifecycle
 **Status:** NOT STARTED

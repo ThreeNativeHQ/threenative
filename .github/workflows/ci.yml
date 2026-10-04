@@ -513,9 +513,9 @@ jobs:
           cmake -S . -B build/tn-linux-engine -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo \
             -DTN_ENGINE_ONLY=ON -DTN_ENGINE_SANITIZE=ON \
             -DMYSTRAL_USE_V8=OFF -DMYSTRAL_USE_QUICKJS=OFF -DMYSTRAL_USE_DAWN=ON
-          cmake --build build/tn-linux-engine --target tn-native-engine-gate-e --parallel "$(nproc)"
+          cmake --build build/tn-linux-engine --target tn-native-engine-gate-e --target tn-native-engine-tests --parallel "$(nproc)"
           ctest --test-dir build/tn-linux-engine -L native-engine --output-on-failure
-          cmake --build build/tn-linux --target tn-native-engine-gate-e --parallel "$(nproc)"
+          cmake --build build/tn-linux --target tn-native-engine-gate-e --target tn-native-engine-tests --parallel "$(nproc)"
           ctest --test-dir build/tn-linux -L native-engine --output-on-failure
           node scripts/inspect-js-free.mjs --binary build/tn-linux/tn-native-engine-gate-e \
             --manifest ../../artifacts/native-engine/gate-e.json --target tn-native-engine-gate-e --capability gate-e
