@@ -126,6 +126,266 @@ const TEMPERATE_PATHS: Record<string, readonly string[]> = {
 const phase = float(instanceIndex).mul(12.9898).sin().mul(43758.545).fract().mul(6.2831);
 const gust = sin(time.mul(0.1).add(phase));
 
+/** What one imported section is, before any appearance decision: its art and its niche. */
+interface ISurfaceContext {
+  readonly source: MeshStandardMaterial;
+  readonly asset: string;
+  readonly world: WorldName;
+  readonly stone: boolean;
+  readonly cutout: boolean;
+  readonly canopy: boolean;
+  readonly kite: boolean;
+  readonly fieldGrass: boolean;
+  readonly otherBiome: boolean;
+}
+
+/** Imported foliage draws as imported: its albedo, its normal map, its own cutoff, both faces. */
+function importedFoliage(
+  material: MeshPhysicalNodeMaterial,
+  source: MeshStandardMaterial,
+  map: Texture,
+): void {
+  const sampled = texture(map, uv());
+  map.anisotropy = 8;
+  material.normalMap = source.normalMap;
+  material.roughness = 0.92;
+  material.specularIntensity = 1;
+  material.colorNode = sampled.rgb;
+  material.alphaTest = source.alphaTest;
+  material.alphaTestNode = float(source.alphaTest);
+  material.opacityNode = sampled.a;
+  material.side = DoubleSide;
+  material.shadowSide = DoubleSide;
+}
+
+/**
+ * Moss, snow and the upward-face mask a stone section wears over its own albedo.
+ *
+ * Alpine keeps the heightfield's upward-face mask across mesh seams; tundra uses its ground rule.
+ */
+function stoneSurface(
+  material: MeshPhysicalNodeMaterial,
+  context: ISurfaceContext,
+  snowMap?: Texture,
+): void {
+  const { source, world } = context;
+  const growth = smoothstep(-0.15, 0.3, mx_noise_float(positionWorld.mul(2.1)));
+  const moss = normalWorldGeometry.y
+    .max(0)
+    .mul(growth)
+    .mul(world === "alpine" || world === "desert" ? 0 : 0.38);
+  material.colorNode = mix(
+    material.colorNode as Node<"vec3">,
+    world === "desert"
+      ? vec3(0.23, 0.16, 0.095)
+      : world === "alpine"
+        ? vec3(0.12, 0.13, 0.12)
+        : vec3(0.045, 0.078, 0.019),
+    moss,
+  );
+  if (world !== "alpine" && world !== "tundra") return;
+  const snow =
+    world === "alpine"
+      ? smoothstep(0.12, 0.82, alpineSnowCover())
+      : (biomeWeights(BIOMES[world], float(1).sub(normalWorldGeometry.y), float(0), growth)
+          .snow as Node<"float">);
+  material.colorNode = mix(
+    material.colorNode as Node<"vec3">,
+    world === "alpine"
+      ? (snowMap ? texture(snowMap, positionWorld.xz.div(12)).rgb : vec3(0.82, 0.86, 0.9)).mul(
+          vec3(...BIOMES.alpine.snowTint),
+        )
+      : vec3(0.84, 0.87, 0.91),
+    snow,
+  );
+  material.roughnessNode = mix(0.96, 0.82, snow);
+  if (source.normalMap)
+    material.normalNode = normalMap(texture(source.normalMap), vec2(mix(1, 0.2, snow)));
+}
+
+/** The coverage, interior depth and normal a cut-out section is drawn with. */
+function cutoutSurface(
+  material: MeshPhysicalNodeMaterial,
+  context: ISurfaceContext,
+  sampled: Node<"vec4">,
+): void {
+  const { source, asset, world, canopy, otherBiome } = context;
+  // Shadow overrides and VirtualShadowNode classify cutouts by this scalar, not the node.
+  material.alphaTest = source.alphaTest;
+  // The scene pass is 4x MSAA: coverage from alpha smooths card edges that a hard test speckles.
+  material.alphaToCoverage = true;
+  material.side = DoubleSide;
+  material.shadowSide = DoubleSide;
+  if (canopy) {
+    const inner = attribute<"float">("inner", "float");
+    material.colorNode = (material.colorNode as Node<"vec3">).mul(
+      mix(
+        otherBiome ? 0.42 : world === "forest" ? 0.6 : 0.48,
+        1,
+        otherBiome ? inner : inner.pow(2),
+      ),
+    );
+    material.aoNode = otherBiome
+      ? mix(0.12, 0.58, inner)
+      : world === "forest"
+        ? mix(0.35, 1, inner)
+        : mix(0.26, 0.72, inner.pow(2));
+    // The bent crown normal is the geometry's own (radial, from `addRadialCoverage`); the imported
+    // normal map perturbs that same geometry normal. Installing the bare geometry normal as
+    // `normalNode` replaced the normal node and discarded the map, so the crown shaded as one flat
+    // card. The custom path only fills in where the art carries no map — an imported surface sets
+    // `normalMap` and leaves the node to Three, which also applies the texture's own packing.
+    if (world === "forest" && !source.normalMap) material.normalNode = normalViewGeometry;
+  } else if (asset === "poppy") {
+    // Keep the photographed red petals; lift only the nearly black stems/seed pods.
+    const dark = smoothstep(0.045, 0.008, sampled.r.max(sampled.g).max(sampled.b));
+    material.colorNode = mix(
+      material.colorNode as Node<"vec3">,
+      vec3(0.028, 0.055, 0.009),
+      dark.mul(0.75),
+    );
+    material.emissiveNode = (material.colorNode as Node<"vec3">).mul(0.045);
+  } else if (source.normalMap && world !== "tundra") {
+    // Ground foliage keeps photographed relief around its bent, upward leaf normal.
+    const relief = texture(source.normalMap, uv()).xy.mul(2).sub(1).mul(0.45);
+    material.normalNode = vec3(relief.x, 1, relief.y)
+      .normalize()
+      .transformDirection(cameraViewMatrix);
+  }
+  const image = source.map?.image as { width?: number; height?: number } | undefined;
+  const size = vec2(image?.width ?? 2048, image?.height ?? 2048);
+  const mip = max(
+    log2(max(length(dFdx(uv()).mul(size)), length(dFdy(uv()).mul(size))).max(1)),
+    float(0),
+  );
+  // Low tundra mats must reject blurred photographic background in alpha mips.
+  material.alphaTestNode =
+    world === "tundra" && !canopy
+      ? float(0.5)
+      : float(world === "forest" ? source.alphaTest : 0.42).div(float(1).add(mip.mul(0.25)));
+  material.opacityNode = sampled.a;
+  if (canopy) {
+    lightNeedles(material, material.aoNode as Node<"float">);
+    if (!otherBiome) material.emissiveNode = (material.emissiveNode as Node<"vec3">).mul(0.18);
+    if (world === "alpine" && material.emissiveNode)
+      material.emissiveNode = (material.emissiveNode as Node<"vec3">).mul(0.4);
+  } else if (asset !== "poppy")
+    material.emissiveNode = (material.colorNode as Node<"vec3">).mul(0.025);
+}
+
+/** Imported albedo graded per niche, then stone, cutout and coverage. */
+function tintedFoliage(
+  material: MeshPhysicalNodeMaterial,
+  context: ISurfaceContext,
+  snowMap?: Texture,
+): void {
+  const { source, asset, world, stone, cutout, canopy, kite, fieldGrass, otherBiome } = context;
+  const map = source.map as Texture;
+  map.anisotropy = 8;
+  const sampled = texture(map, uv());
+  // Cooked albedo is already sRGB (KTX2 DFD transfer=2); never apply a second decode or lift.
+  const tint =
+    cutout && canopy
+      ? otherBiome
+        ? ([0.3, 0.42, 0.32] as const)
+        : ([0.6, 0.78, 0.34] as const)
+      : cutout && asset !== "poppy"
+        ? otherBiome
+          ? ([0.55, 0.82, 0.42] as const)
+          : ([0.6, 0.78, 0.45] as const)
+        : asset === "poppy"
+          ? ([1, 1, 0.85] as const)
+          : canopy && source.name === "branch"
+            ? ([0.45, 0.38, 0.25] as const)
+            : ([1, 1, 1] as const);
+
+  material.colorNode = sampled.rgb.mul(vec3(...tint));
+  // The Kite pine's photographed needles are already a pine green; a cool shift, not a repaint.
+  if (world === "forest" && canopy && cutout)
+    material.colorNode = sampled.rgb.mul(vec3(0.82, 0.96, 0.88));
+  // Kite's pine atlas is half live needles and half dead: cells 4 and 5 and the bare lower-branch
+  // card are rust brown, so every crown wears rust dots and every trunk wears a tan spiky burst.
+  // Colour decides, not geometry — a texel warmer than its own green is dead wood. This is not
+  // gated on the cutout: the bare lower branches are the one part of the pine drawn opaque, so a
+  // cutout-only mask left the worst of the tan spikes standing.
+  if (kite && canopy) {
+    const dead = smoothstep(0.008, 0.075, sampled.r.sub(sampled.g));
+    const damp = material.colorNode as Node<"vec3">;
+    material.colorNode = mix(
+      damp,
+      damp.rgb.mul(vec3(0.3, 0.42, 0.27)),
+      dead.mul(cutout ? 0.94 : 0.8),
+    );
+  }
+  if (!otherBiome && canopy && !cutout && !kite)
+    material.colorNode = sampled.rgb.mul(vec3(0.42, 0.27, 0.15));
+  if (!otherBiome && asset === "litter") {
+    // Needle litter is the spruce atlas photographed dry: pull it toward bark brown and lay it
+    // flat, so the forest floor carries a dead layer instead of more green.
+    const grain = dot(sampled.rgb, vec3(0.2126, 0.7152, 0.0722));
+    material.colorNode = mix(sampled.rgb.mul(vec3(0.72, 0.5, 0.28)), sampled.rgb, 0.18).mul(
+      grain.mul(6).clamp(0.45, 1.3),
+    );
+    material.aoNode = mix(0.28, 0.9, smoothstep(0.0, 0.14, positionGeometry.y).oneMinus());
+  }
+  if (!otherBiome && (asset === "grass" || asset === "scrub")) {
+    const tip = smoothstep(0.008, asset === "grass" ? 0.34 : 0.065, positionGeometry.y);
+    const dry = smoothstep(0.65, 0.92, sin(phase).mul(0.5).add(0.5));
+    const dune = world === "coastal" ? smoothstep(7.5, 2.2, positionWorld.y) : float(0);
+    const green = mix(vec3(0.32, 0.48, 0.18), vec3(0.84, 0.92, 0.46), tip);
+    const straw = mix(vec3(0.4, 0.29, 0.12), vec3(1.18, 0.94, 0.48), tip);
+    const grain = dot(sampled.rgb, vec3(0.2126, 0.7152, 0.0722));
+    material.colorNode = mix(sampled.rgb.mul(green), straw.mul(grain), dry.max(dune));
+    if (fieldGrass)
+      material.colorNode = mix(vec3(0.025, 0.052, 0.008), vec3(0.2, 0.31, 0.065), tip).mul(
+        grain.mul(24).clamp(0.4, 1.4),
+      );
+    material.aoNode = mix(0.35, 0.95, tip);
+  }
+  if (otherBiome && stone)
+    material.colorNode = sampled.rgb.mul(
+      world === "desert"
+        ? vec3(1.12, 0.8, 0.54)
+        : world === "alpine"
+          ? vec3(0.94, 0.98, 1.02)
+          : vec3(0.7, 0.78, 0.61),
+    );
+  if (world === "desert" && stone) material.colorNode = desertRockColor(sampled.rgb);
+  if (world === "alpine" && stone) material.colorNode = alpineRockColor(alpineRockAlbedo(map));
+  if (otherBiome && cutout && !canopy)
+    material.colorNode = sampled.rgb.mul(
+      world === "desert"
+        ? vec3(0.85, 0.64, 0.32)
+        : world === "tundra"
+          ? vec3(0.64, 0.67, 0.42)
+          : vec3(0.72, 0.8, 0.55),
+    );
+  if (world === "desert" && asset === "grass")
+    material.colorNode = vec3(1.28, 0.94, 0.52).mul(dot(sampled.rgb, vec3(0.2126, 0.7152, 0.0722)));
+  if (world === "tundra" && cutout && !canopy) {
+    const root = smoothstep(0.015, 0.14, positionGeometry.y);
+    material.colorNode = mix(vec3(0.025, 0.035, 0.013), material.colorNode, root);
+    material.aoNode = mix(0.15, 0.8, root);
+  }
+  if (stone) stoneSurface(material, context, snowMap);
+  if (cutout) cutoutSurface(material, context, sampled);
+}
+
+/** The wind a non-stone section bends with, per instance, from the geometry's own `sway` weights. */
+function applyWind(material: MeshPhysicalNodeMaterial, context: ISurfaceContext): void {
+  if (context.stone) return;
+  const bend = gust
+    .mul(positionGeometry.y.max(0).pow(1.5))
+    .mul(context.asset === "spruce" ? 0.008 : 0.025);
+  const offset = vec3(
+    positionLocal.x.add(bend),
+    positionLocal.y,
+    positionLocal.z.add(bend.mul(0.55)),
+  );
+  material.positionNode = offset;
+  material.castShadowPositionNode = offset;
+}
+
 function surface(
   source: MeshStandardMaterial,
   asset: string,
@@ -139,6 +399,17 @@ function surface(
   const kite = source.name.startsWith("ScotsPine");
   const fieldGrass = asset === "grass" && source.name === "open-world-demo";
   const otherBiome = world !== "forest" && world !== "coastal";
+  const context: ISurfaceContext = {
+    source,
+    asset,
+    world,
+    stone,
+    cutout,
+    canopy,
+    kite,
+    fieldGrass,
+    otherBiome,
+  };
   const material = new MeshPhysicalNodeMaterial({
     map: source.map,
     color: source.color,
@@ -150,219 +421,10 @@ function surface(
   if (!otherBiome && canopy && !cutout) material.normalMap = source.normalMap;
   // Forest needle crowns need their authored interior shading and filtered alpha coverage.
   // A plain imported PBR card erased canopy depth at the same geometry and camera.
-  if (cutout && source.map && !(world === "forest" && canopy)) {
-    // Imported foliage draws as imported: its albedo, its normal map, its own cutoff, both faces.
-    const sampled = texture(source.map, uv());
-    source.map.anisotropy = 8;
-    material.normalMap = source.normalMap;
-    material.roughness = 0.92;
-    material.specularIntensity = 1;
-    material.colorNode = sampled.rgb;
-    material.alphaTest = source.alphaTest;
-    material.alphaTestNode = float(source.alphaTest);
-    material.opacityNode = sampled.a;
-    material.side = DoubleSide;
-    material.shadowSide = DoubleSide;
-  } else if (source.map) {
-    source.map.anisotropy = 8;
-    const sampled = texture(source.map, uv());
-    // Cooked albedo is already sRGB (KTX2 DFD transfer=2); never apply a second decode or lift.
-    const tint =
-      cutout && canopy
-        ? otherBiome
-          ? ([0.3, 0.42, 0.32] as const)
-          : ([0.6, 0.78, 0.34] as const)
-        : cutout && asset !== "poppy"
-          ? otherBiome
-            ? ([0.55, 0.82, 0.42] as const)
-            : ([0.6, 0.78, 0.45] as const)
-          : asset === "poppy"
-            ? ([1, 1, 0.85] as const)
-            : canopy && source.name === "branch"
-              ? ([0.45, 0.38, 0.25] as const)
-              : ([1, 1, 1] as const);
-
-    material.colorNode = sampled.rgb.mul(vec3(...tint));
-    // The Kite pine's photographed needles are already a pine green; a cool shift, not a repaint.
-    if (world === "forest" && canopy && cutout)
-      material.colorNode = sampled.rgb.mul(vec3(0.82, 0.96, 0.88));
-    // Kite's pine atlas is half live needles and half dead: cells 4 and 5 and the bare lower-branch
-    // card are rust brown, so every crown wears rust dots and every trunk wears a tan spiky burst.
-    // Colour decides, not geometry — a texel warmer than its own green is dead wood. This is not
-    // gated on the cutout: the bare lower branches are the one part of the pine drawn opaque, so a
-    // cutout-only mask left the worst of the tan spikes standing.
-    if (kite && canopy) {
-      const dead = smoothstep(0.008, 0.075, sampled.r.sub(sampled.g));
-      const damp = material.colorNode as Node<"vec3">;
-      material.colorNode = mix(
-        damp,
-        damp.rgb.mul(vec3(0.3, 0.42, 0.27)),
-        dead.mul(cutout ? 0.94 : 0.8),
-      );
-    }
-    if (!otherBiome && canopy && !cutout && !kite)
-      material.colorNode = sampled.rgb.mul(vec3(0.42, 0.27, 0.15));
-    if (!otherBiome && asset === "litter") {
-      // Needle litter is the spruce atlas photographed dry: pull it toward bark brown and lay it
-      // flat, so the forest floor carries a dead layer instead of more green.
-      const grain = dot(sampled.rgb, vec3(0.2126, 0.7152, 0.0722));
-      material.colorNode = mix(sampled.rgb.mul(vec3(0.72, 0.5, 0.28)), sampled.rgb, 0.18).mul(
-        grain.mul(6).clamp(0.45, 1.3),
-      );
-      material.aoNode = mix(0.28, 0.9, smoothstep(0.0, 0.14, positionGeometry.y).oneMinus());
-    }
-    if (!otherBiome && (asset === "grass" || asset === "scrub")) {
-      const tip = smoothstep(0.008, asset === "grass" ? 0.34 : 0.065, positionGeometry.y);
-      const dry = smoothstep(0.65, 0.92, sin(phase).mul(0.5).add(0.5));
-      const dune = world === "coastal" ? smoothstep(7.5, 2.2, positionWorld.y) : float(0);
-      const green = mix(vec3(0.32, 0.48, 0.18), vec3(0.84, 0.92, 0.46), tip);
-      const straw = mix(vec3(0.4, 0.29, 0.12), vec3(1.18, 0.94, 0.48), tip);
-      const grain = dot(sampled.rgb, vec3(0.2126, 0.7152, 0.0722));
-      material.colorNode = mix(sampled.rgb.mul(green), straw.mul(grain), dry.max(dune));
-      if (fieldGrass)
-        material.colorNode = mix(vec3(0.025, 0.052, 0.008), vec3(0.2, 0.31, 0.065), tip).mul(
-          grain.mul(24).clamp(0.4, 1.4),
-        );
-      material.aoNode = mix(0.35, 0.95, tip);
-    }
-    if (otherBiome && stone)
-      material.colorNode = sampled.rgb.mul(
-        world === "desert"
-          ? vec3(1.12, 0.8, 0.54)
-          : world === "alpine"
-            ? vec3(0.94, 0.98, 1.02)
-            : vec3(0.7, 0.78, 0.61),
-      );
-    if (world === "desert" && stone) material.colorNode = desertRockColor(sampled.rgb);
-    if (world === "alpine" && stone)
-      material.colorNode = alpineRockColor(alpineRockAlbedo(source.map));
-    if (otherBiome && cutout && !canopy)
-      material.colorNode = sampled.rgb.mul(
-        world === "desert"
-          ? vec3(0.85, 0.64, 0.32)
-          : world === "tundra"
-            ? vec3(0.64, 0.67, 0.42)
-            : vec3(0.72, 0.8, 0.55),
-      );
-    if (world === "desert" && asset === "grass")
-      material.colorNode = vec3(1.28, 0.94, 0.52).mul(
-        dot(sampled.rgb, vec3(0.2126, 0.7152, 0.0722)),
-      );
-    if (world === "tundra" && cutout && !canopy) {
-      const root = smoothstep(0.015, 0.14, positionGeometry.y);
-      material.colorNode = mix(vec3(0.025, 0.035, 0.013), material.colorNode, root);
-      material.aoNode = mix(0.15, 0.8, root);
-    }
-    if (stone) {
-      const growth = smoothstep(-0.15, 0.3, mx_noise_float(positionWorld.mul(2.1)));
-      const moss = normalWorldGeometry.y
-        .max(0)
-        .mul(growth)
-        .mul(world === "alpine" || world === "desert" ? 0 : 0.38);
-      material.colorNode = mix(
-        material.colorNode,
-        world === "desert"
-          ? vec3(0.23, 0.16, 0.095)
-          : world === "alpine"
-            ? vec3(0.12, 0.13, 0.12)
-            : vec3(0.045, 0.078, 0.019),
-        moss,
-      );
-      if (world === "alpine" || world === "tundra") {
-        // Alpine keeps the heightfield's upward-face mask across mesh seams; tundra uses its ground rule.
-        const snow =
-          world === "alpine"
-            ? smoothstep(0.12, 0.82, alpineSnowCover())
-            : (biomeWeights(BIOMES[world], float(1).sub(normalWorldGeometry.y), float(0), growth)
-                .snow as Node<"float">);
-        material.colorNode = mix(
-          material.colorNode,
-          world === "alpine"
-            ? (snowMap
-                ? texture(snowMap, positionWorld.xz.div(12)).rgb
-                : vec3(0.82, 0.86, 0.9)
-              ).mul(vec3(...BIOMES.alpine.snowTint))
-            : vec3(0.84, 0.87, 0.91),
-          snow,
-        );
-        material.roughnessNode = mix(0.96, 0.82, snow);
-        if (source.normalMap)
-          material.normalNode = normalMap(texture(source.normalMap), vec2(mix(1, 0.2, snow)));
-      }
-    }
-    if (cutout) {
-      // Shadow overrides and VirtualShadowNode classify cutouts by this scalar, not the node.
-      material.alphaTest = source.alphaTest;
-      // The scene pass is 4x MSAA: coverage from alpha smooths card edges that a hard test speckles.
-      material.alphaToCoverage = true;
-      material.side = DoubleSide;
-      material.shadowSide = DoubleSide;
-      // Keep Three's DoubleSide back-face normal flip; overriding it lights undersides as sky faces.
-      if (canopy) {
-        const inner = attribute<"float">("inner", "float");
-        material.colorNode = material.colorNode.mul(
-          mix(
-            otherBiome ? 0.42 : world === "forest" ? 0.6 : 0.48,
-            1,
-            otherBiome ? inner : inner.pow(2),
-          ),
-        );
-        material.aoNode = otherBiome
-          ? mix(0.12, 0.58, inner)
-          : world === "forest"
-            ? mix(0.35, 1, inner)
-            : mix(0.26, 0.72, inner.pow(2));
-        // The bent crown normal is the geometry's own (radial, from `addRadialCoverage`); the
-        // imported normal map perturbs that same geometry normal. Installing the bare geometry
-        // normal as `normalNode` replaced the normal node and discarded the map, so the crown
-        // shaded as one flat card. The custom path only fills in where the art carries no map — an
-        // imported surface sets `normalMap` and leaves the node to Three, which also applies the
-        // texture's own normal packing. This mirrors the reference scene exactly.
-        if (world === "forest" && !source.normalMap) material.normalNode = normalViewGeometry;
-      } else if (asset === "poppy") {
-        // Keep the photographed red petals; lift only the nearly black stems/seed pods.
-        const dark = smoothstep(0.045, 0.008, sampled.r.max(sampled.g).max(sampled.b));
-        material.colorNode = mix(material.colorNode, vec3(0.028, 0.055, 0.009), dark.mul(0.75));
-        material.emissiveNode = material.colorNode.mul(0.045);
-      } else if (asset !== "poppy" && source.normalMap && world !== "tundra") {
-        // Ground foliage keeps photographed relief around its bent, upward leaf normal.
-        const relief = texture(source.normalMap, uv()).xy.mul(2).sub(1).mul(0.45);
-        material.normalNode = vec3(relief.x, 1, relief.y)
-          .normalize()
-          .transformDirection(cameraViewMatrix);
-      }
-      const image = source.map.image as { width?: number; height?: number };
-      const size = vec2(image?.width ?? 2048, image?.height ?? 2048);
-      const mip = max(
-        log2(max(length(dFdx(uv()).mul(size)), length(dFdy(uv()).mul(size))).max(1)),
-        float(0),
-      );
-      // Low tundra mats must reject blurred photographic background in alpha mips.
-      material.alphaTestNode =
-        world === "tundra" && !canopy
-          ? float(0.5)
-          : float(world === "forest" ? source.alphaTest : 0.42).div(float(1).add(mip.mul(0.25)));
-      material.opacityNode = sampled.a;
-      if (canopy) {
-        lightNeedles(material, material.aoNode as Node<"float">);
-        if (!otherBiome) material.emissiveNode = (material.emissiveNode as Node<"vec3">).mul(0.18);
-        if (world === "alpine" && material.emissiveNode)
-          material.emissiveNode = (material.emissiveNode as Node<"vec3">).mul(0.4);
-      } else if (asset !== "poppy") material.emissiveNode = material.colorNode.mul(0.025);
-    }
-  }
-  if (!stone) {
-    const bend = gust
-      .mul(positionGeometry.y.max(0).pow(1.5))
-      .mul(asset === "spruce" ? 0.008 : 0.025);
-    const offset = vec3(
-      positionLocal.x.add(bend),
-      positionLocal.y,
-      positionLocal.z.add(bend.mul(0.55)),
-    );
-    material.positionNode = offset;
-    material.castShadowPositionNode = offset;
-  }
+  if (cutout && source.map && !(world === "forest" && canopy))
+    importedFoliage(material, source, source.map);
+  else if (source.map) tintedFoliage(material, context, snowMap);
+  applyWind(material, context);
   // Image-based sky light, as Wildwood lights the same Fab packs (Kloofendal at 1.8 × 0.629).
   // Without it a shaded needle card gets only the hemisphere fill and falls to one flat dark value.
   // Per material, not `scene.environment`: the ground is tuned to the fill alone and cannot opt out.
