@@ -1070,7 +1070,10 @@ describe("CI pipeline structure", () => {
   // release writes on GitHub's own machines.
   const hosted = new Map<string, ReadonlySet<string>>([
     // golden-path-template runs hosted: its dev server twice failed to answer on a local slot (run 37089715252).
-    [".github/workflows/ci.yml", new Set(["golden-path-template", "supply-chain"])],
+    [
+      ".github/workflows/ci.yml",
+      new Set(["golden-path-template", "supply-chain", "template-nonvisual"]),
+    ],
     [
       ".github/workflows/native-platforms.yml",
       // publish-android-v8 writes the release; android-emulator-parity is CPU-bound SwiftShader that
