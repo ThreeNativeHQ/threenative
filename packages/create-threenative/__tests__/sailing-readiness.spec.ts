@@ -64,7 +64,17 @@ vi.mock("../templates/sailing/src/render/ocean.js", () => ({
   surfaceHeight: vi.fn(() => 0),
 }));
 vi.mock("../templates/sailing/src/render/postprocessing.js", () => ({
-  setupPost: vi.fn(() => ({ tier: "low", dispose: vi.fn(), observe: vi.fn() })),
+  setupPost: vi.fn(() => ({ tier: "high", dispose: vi.fn() })),
+}));
+vi.mock("../templates/sailing/src/render/materialLighting.js", () => ({
+  createMaterialLighting: vi.fn(() => ({
+    setEnabled: vi.fn(),
+    setEnvironmentMeasurement: vi.fn(),
+    dispose: vi.fn(),
+  })),
+}));
+vi.mock("../templates/sailing/src/render/environmentSetup.js", () => ({
+  loadedEnvironmentSample: vi.fn(() => undefined),
 }));
 vi.mock("../templates/sailing/src/render/props.js", () => ({
   createBuoy: vi.fn(() => ({ position: { set: vi.fn() } })),
@@ -74,17 +84,6 @@ vi.mock("../templates/sailing/src/render/props.js", () => ({
 }));
 vi.mock("../templates/sailing/src/render/sky.js", () => ({
   setupSky: vi.fn(),
-}));
-
-vi.mock("../templates/sailing/src/render/materialLighting.js", () => ({
-  createMaterialLighting: vi.fn(() => ({
-    dispose: vi.fn(),
-    setTier: vi.fn(),
-    setEnvironmentMeasurement: vi.fn(),
-  })),
-}));
-vi.mock("../templates/sailing/src/render/environmentSampling.js", () => ({
-  loadedEnvironmentSample: vi.fn(() => undefined),
 }));
 
 import { Sailing } from "../templates/sailing/src/scenes/Sailing.js";

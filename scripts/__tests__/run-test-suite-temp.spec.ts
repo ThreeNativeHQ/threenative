@@ -1,8 +1,8 @@
 import { spawnSync } from "node:child_process";
-import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { makeTempDir } from "../../test-support/temp-dir.js";
 const scriptPath = path.resolve("scripts/run-test-suite.sh");
 
 describe("run-test-suite temporary ownership", () => {
@@ -12,7 +12,7 @@ describe("run-test-suite temporary ownership", () => {
     const end = source.indexOf("\nset +e", start);
     expect(start).toBeGreaterThanOrEqual(0);
     expect(end).toBeGreaterThan(start);
-    const parent = await mkdtemp(path.join(os.tmpdir(), "tn suite parent "));
+    const parent = await makeTempDir("tn suite parent ");
     const retained = path.join(parent, "retained-owner-evidence");
     await writeFile(retained, "preserve");
     try {
@@ -30,6 +30,8 @@ describe("run-test-suite temporary ownership", () => {
       );
       expect(result.status, result.stderr).toBe(0);
       const [directory, inherited] = result.stdout.trim().split("\n");
+      if (directory === undefined || inherited === undefined)
+        throw new Error(`run-test-suite printed ${JSON.stringify(result.stdout)}`);
       expect(path.dirname(directory)).toBe(parent);
       expect(inherited).toBe(directory);
       await expect(stat(directory)).rejects.toMatchObject({ code: "ENOENT" });
@@ -43,7 +45,7 @@ describe("run-test-suite temporary ownership", () => {
     const source = await readFile(scriptPath, "utf8");
     const start = source.indexOf('suite_tmp_root="$(mktemp');
     const end = source.indexOf("\nset +e", start);
-    const parent = await mkdtemp(path.join(os.tmpdir(), "tn allocation parent "));
+    const parent = await makeTempDir("tn allocation parent ");
     const receipt = path.join(parent, "receipt");
     const retained = path.join(parent, "retained");
     await writeFile(retained, "preserve");

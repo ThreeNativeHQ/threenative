@@ -1,8 +1,7 @@
 import { spawnSync } from "node:child_process";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
+import { readFile, rm } from "node:fs/promises";
 import { expect, it } from "vitest";
+import { makeTempDir } from "../../test-support/temp-dir.js";
 
 it.each(["0", "1"])(
   "retains lease, queue and directory leak checks with CAPTURE_LOCK=%s",
@@ -12,7 +11,7 @@ it.each(["0", "1"])(
     const end = source.indexOf("\nbefore_temp_directories=", start);
     expect(start).toBeGreaterThanOrEqual(0);
     expect(end).toBeGreaterThan(start);
-    const root = await mkdtemp(path.join(os.tmpdir(), "tn-orphan-infrastructure-"));
+    const root = await makeTempDir("tn-orphan-infrastructure-");
     try {
       const result = spawnSync(
         "bash",

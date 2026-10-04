@@ -173,47 +173,24 @@ const BUG_REPORT_SKILL_PATHS = [
 // Current develop c18a42b integration: all13 actual generated trees were byte-compared
 // against reviewed 8bf trees; only the copied Three compute-only Storage3DTexture patch changed.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
-  // Measured from all thirteen actual no-install createProject trees on the Oct 4
-  // published-head merge with develop 15adf350; material defaults and exposure/fog coexist.
-  // Recomputed 2026-10-01 on the merge of develop a602467db (PRD-458/473): every template's frame
-  // budget now comes from resolveTargetFps, so ten trees move and `rts` does not; the capability reference (365 -> 368 entries) then moved all eleven, because it ships in every scaffold.
-  // Recomputed 2026-10-01, three times, each by a real run that found the previous tree wrong:
-  // the first gave each quality.ts a software adapter policy; the second found ten of eleven
-  // setupPost callers never forwarded the adapter fact to it; the third found no template but
-  // `starter` set `renderChainTier`, so a low preset still ran the high render chain. The same ten
-  // trees move on each of the last two. `starter` is unchanged throughout — its setupPost hands the
-  // whole environment to createAdaptiveQuality and its quality.ts already carried the chain tier.
-  // Values measured through createProject by the spec that asserts them, not by hand.
-  // Recomputed again 2026-10-01 for `sailing` alone: `sailMotion` is a range across landed cloth
-  // readbacks, and one landed copy makes that range zero by arithmetic, so the sails scenario now
-  // holds long enough for two copies to arrive on a CPU rasteriser and asserts the landed count
-  // beside it. Only the two sailing template files changed, so only this one tree moves.
-  // Recomputed again 2026-10-01 after merging the quality/post chain into this branch and landing
-  // the rts sim's order, queue and event-record fixes: `rts` alone moves, and it is the only one of
-  // the eleven that carries `src/sim/`. Measured through createProject on the merged tree.
-  // Recomputed 2026-10-01 on the merge of develop (PRD-470/471/472/474) into the rain + snow
-  // branch (PRD-469, PRD-473): the merged tree carries both sides' engine and manifest bytes, so
-  // all thirteen trees, rain and snow included, were re-measured through createProject.
-  // Recomputed 2026-10-02 rebasing the FabCLI manual-login fallback onto develop: the shared
-  // threenative-assets skill ships in every scaffold, so all thirteen trees move.
-  // Measured through actual createProject trees after exposure/fog consolidation and restamping,
-  // then again on the merge carrying the WebGPU adapter-retention Three patch: the scaffolded
-  // `patches/three@0.185.1.patch` is the only byte that moved on top of the exposure/fog tree, so
-  // all thirteen trees move again. Values below are the merged-tree measurement, not either side's.
-  "action-rpg": "fd4f3e633454cbaa0b3a24b05173e85139b02a4a3f5416588c9749294b6d29fc",
-  minimal: "4c416f52b84aa094240bd7f77d1edf2fff255cceae3d2cb5407592b85e6ee194",
-  platformer: "b80f85d6647264baaba3afedbfc1d6966aac4ed5e5125734363186aa321934e5",
-  puzzle: "15a1e2cc355cc55a72f956aebd9720292c14253b1bfb3fc5e2d5921aca7f0dd4",
-  racing: "c742631f68fca141129ee8ce9654b63ee55b9bd4ccb66c9153899c7b058307c2",
-  rain: "007f852bd80bcb9fb5db09184d208ce45f9d92b47ab70164ceb12fb8a3c7c449",
-  rts: "c53199b579a5fd1d0be2df935117d614bb3360f7a20dc8c30610f735320fed72",
-  runner: "b94edd3616ddc639c859462ed00301a81f9acdb718099097cab17dbb18c5da05",
-  // Initial finite-height readiness plus its scene-owned lifecycle helper and mirrored docs.
-  sailing: "3aa937a3f6ef1a653efbb76242314d9378e95a495704391673fc14523b6c4ddb",
-  shooter: "fd3a7fc3f5a47a65af1522fef4992374b75286d78469cb1a424f497fa4cff6a0",
-  snow: "4877c274c9977ebd115725d889f4a6acd1f487d97780eb95425f91ba94d77edf",
+  // Recomputed 2026-10-03 on the merge of develop (PRD-339 exposure/fog, PRD-423 frame
+  // consolidation) into the PRD-345 backlight/defaults branch: the merged tree carries both
+  // sides' engine, manifest and template bytes, so all thirteen generated trees were
+  // re-measured through createProject on that merged tree. Values below are the merged-tree
+  // measurement, not either side's.
+  "action-rpg": "85dede7f62295e7f286944727cc64de40dc759d9324cb38d02c6b03bfcf9eeea",
+  minimal: "168ed30d0c543c5973c4f642968ed1672cc85e10b94fdb687f851f70a0cdce08",
+  platformer: "6de157b3c2cfa0034d48f8326b9f1a90fe90ebce3bf265ac91bae379482d017b",
+  puzzle: "54c2a109b3c8d0575a06718b3e8f2c1c3bb75a8d968d7afb3215ac998e11b79c",
+  racing: "7b31cdc89f985f7431e1ef294dba9c6010fdebef6f250d767f86f6f6fcdb4d21",
+  rain: "9ba4b5d3bd72d2803db42568d1126c7dd96173b51acaa8c484d6d2139859f5fd",
+  rts: "a2d9006abe0b33c04b272c8ba2120d780e88782d1bdcee0c4d40635886a7adc3",
+  runner: "2d7dd25c0d763b84dd08f591d8bf124fb169ccba17e4b0b0bf967ac37d9a2258",
+  sailing: "7b87e05b98e3136cae944eab416442108dc1edf1f4ebe759e8ce3e24b58aece9",
+  shooter: "adecce922b383deb3c44f66cd518a2b433acee0ef23f3e2b11900eb05c674902",
+  snow: "791580f3b7314d4983a2cbf57b87b83be2e4740fa63e204327826120f1a0cf12",
   starter: "5ab4d1828be78d82e7b83fbb2e07afa998372314ffb46accbaffd3dc4ad8cfdd",
-  "tower-defense": "1b216a0538d67c0bdeaeb1e4937f362d181e13eb959fd208640e218859e4af2c",
+  "tower-defense": "6e93920048bd67a0b9cfeec9d8d6ec8c71dd17d0af9e5ff40cb67e7c60aa9714",
 };
 
 const GENERATED_SCAFFOLD_METADATA =

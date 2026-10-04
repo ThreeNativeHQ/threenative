@@ -1,10 +1,10 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { expect, test, vi } from "vitest";
 import { acquireCaptureLock } from "../src/runner/captureLock.js";
 import { createOwnedRunResourceRelease } from "../src/runner/ownedRunResources.js";
 import { handlePlaytestSignal } from "../src/runner/runner.js";
+import { makeTempDir } from "../../../test-support/temp-dir.js";
 
 test("signal waits for pending owned acquisition and releases once before exiting", async () => {
   const events: string[] = [];
@@ -39,7 +39,7 @@ test("display acquisition/release errors do not skip lease release or duplicate 
 });
 
 test("real acquired lease cleanup preserves a replacement owner's holder", async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "tn-owned-release-"));
+  const root = await makeTempDir("tn-owned-release-");
   try {
     const holder = path.join(root, "lock", "holder.json");
     const lease = await acquireCaptureLock({ lockRoot: root, timeoutMs: 1000 });

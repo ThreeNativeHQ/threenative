@@ -295,7 +295,6 @@ export class Sailing extends Scene<GameState, IPhysicsContext> {
     this.#materialLighting = undefined;
     this.#post?.dispose();
     this.#post = undefined;
-
     this.#stopOceanReadiness?.();
     this.#stopOceanReadiness = undefined;
     // The mirror owns a render target and a pass. Nothing in the frame releases it, so a restart
