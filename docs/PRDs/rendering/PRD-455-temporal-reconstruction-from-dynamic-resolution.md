@@ -291,21 +291,30 @@ threshold. Both Phase 2 ghost boxes stay open.
 
 **Neighbourhood reconstruction measured, 2026-10-06.** The generated resolve now reconstructs the
 current frame from the input raster's 3×3 neighbourhood with a jitter-aware Gaussian
-(Blackman–Harris approximation), reads the moments for its variance clip from the same taps, and
-adds a thin-feature lock that reuses the *unclipped* history where `validUV ∧ ¬depthChanged` and the
-pixel departs from its neighbourhood mean luminance. Both are graded through the real WGSL builder
+(Blackman–Harris approximation) and reads the moments for its variance clip from the same taps; the
+reconstruction is gated off at a 1:1 input, where its tap centers land on the pixel centers and it
+only adds blur. A **reactive colour/luminance mask** gates the history blend: a pixel keeps its
+*unclipped* history when it departs from its neighbourhood mean luminance (`thinFeature`) and the
+reprojected history does not contradict that departure (`stale`), so a real disocclusion withdraws
+the lock while a real thin feature keeps accumulating. Both are graded through the real WGSL builder
 in `temporal-resolve.spec.ts`; the starter scaffold hash moved and the 13-template byte-stability
-test passes. Measured over the full 31-arm corpus on nvidia/turing WebGPU: the reveal ghost falls
-hard — quality `quality-temporal` eight after-reveal fractions .3437/.2548/.0398/.0339/.0304/.0395/.0226/.0185
-→ .0489/.0180/.0035/.0027/.0038/.0172/.0016/.0032 — while at a 1:1 input the reconstruction is gated
-off (its tap centers land on the pixel centers and it only adds blur) and the motion `temporal`
-reveal sequence is bit-identical (.0177/.0005/0/0/0/.0159/.0003/0). Edge error does not move:
-`temporal` .05985 and `quality-temporal` .08148, because the thin-feature lock rarely engages on the
-moving camera's sub-pixel fences — their reprojected depth changes, so `canLock` is 0. **Boxes stay
-open:** `edgeImprovement` .05985 vs the required <.04778, `qualityEdgeImprovement` .08148 vs <.04686,
-`revealRecovery` frame 34 .0159 > .01, `qualityRevealRecovery` .0180/.0172 > .01. No threshold or
-appearance policy changed. Focused checks: 132 temporal/scaffold tests across 9 files, root
-`tsc` on every changed file and error-level Biome all clean; the complete repository board and
+test passes. Measured over the full 31-arm corpus on nvidia/turing WebGPU: the quality reveal ghost
+falls hard — `quality-temporal` eight after-reveal fractions
+.3437/.2548/.0398/.0339/.0304/.0395/.0226/.0185 → .0489/.0180/.0035/.0027/.0035/.0175/.0019/.0032 —
+and the motion `temporal` reveal sequence stays .0177/0/0/0/0/.0159/0/0.
+
+**The edge gate does not move, and the reactive mask is falsified as the lever.** An earlier
+depth-gated variant of the same lock measured `.05985` / `.08148`, a colour-only mask `.06052` /
+`.08135`, and the best of all 22 motion arms is `resolve-cubic-strict-ordinary` at `.05512` against
+the unchanged `.04778` bar (15% over). The cause is architectural, not the lock gate: on the moving
+camera's sub-pixel fences the velocity-driven `subpixelCorrection` raises the current weight towards
+`.3`, so the resolve tracks the aliased current frame instead of accumulating, and the variance clip
+keeps the already-clamped history. **Boxes stay open:** `edgeImprovement` .06052 vs <.04778,
+`qualityEdgeImprovement` .08135 vs <.04686, `revealRecovery` frame 34 .0159 > .01,
+`qualityRevealRecovery` .0180/.0175 > .01. Closing them needs a TSR-class reconstructor (reactive
+mask driving *rejection and reprojection*, not just the clip), not another blend or filter tune. No
+threshold or appearance policy changed. Focused checks: 132 temporal/scaffold tests across 9 files,
+every changed file `tsc`-clean and error-level Biome clean; the complete repository board and
 Phase 3 cost work remain unrun.
 
 - [ ] A fixed camera route containing thin fences, foliage, sub-pixel edges, a moving character and an instanced moving object stays within pinned temporal-stability/ghosting thresholds against a full-resolution reference. **proof:** automated frame-sequence report records edge flicker, rejected-history ratio and image delta for full-res, low-res spatial upscale and temporal reconstruction; the temporal arm must beat the spatial arm on the named stability metric.

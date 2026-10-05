@@ -86,7 +86,6 @@ export function createExperimentalTemporalResolve(
     const displaySize = historyNode.size(int(0)) as Node<"uvec2">;
     const validity = historyValidity(uvNode);
     const hasValidHistory = validity.get("hasValidHistory") as Node<"float">;
-    const canLock = validity.get("canLock") as Node<"float">;
     const historyUV = validity.get("historyUV") as Node<"vec2">;
     const offsetUV = validity.get("offsetUV") as Node<"vec2">;
     // Reconstruction: gather the current frame's 3×3 input neighbourhood around the jittered sample
@@ -132,10 +131,12 @@ export function createExperimentalTemporalResolve(
       minColor,
       maxColor,
     );
-    // Thin-feature lock: variance clipping squashes a sub-pixel feature towards its background, so
-    // it never accumulates across jittered frames and a thin fence attenuates. Where geometry did
-    // not change (`canLock`) and the current pixel departs from its neighbourhood's mean luminance,
-    // reuse the unclipped history that already carries the accumulated feature instead.
+    // Reactive mask: variance clipping squashes a sub-pixel feature towards its background, so it
+    // never accumulates across jittered frames and a thin fence attenuates. Colour evidence, not
+    // depth, decides it: where the current pixel departs from its neighbourhood's mean luminance
+    // (`thinFeature`) AND the reprojected history does not contradict that departure (`stale`), it
+    // is a real thin feature whose unclipped history already carries the accumulated sample. A real
+    // disocclusion has history that contradicts the current frame, so `stale` withdraws the lock.
     const currentLuma = luminance(currentColor.rgb) as Node<"float">;
     const meanLuma = (luminance(mean.rgb) as Node<"float">).add(1e-4);
     const thinFeature = smoothstep(
@@ -143,7 +144,12 @@ export function createExperimentalTemporalResolve(
       0.2,
       currentLuma.sub(meanLuma).abs().div(meanLuma),
     ) as Node<"float">;
-    const lock = canLock.mul(thinFeature).saturate() as Node<"float">;
+    const historyExcess = (luminance(historyColor.rgb) as Node<"float">)
+      .sub(currentLuma)
+      .abs()
+      .div(meanLuma);
+    const stale = smoothstep(0.25, 1, historyExcess) as Node<"float">;
+    const lock = thinFeature.mul(stale.oneMinus()).saturate() as Node<"float">;
     const lockedHistoryColor = mix(clippedHistoryColor, historyColor, lock) as Node<"vec4">;
     // Diagnostic only: ordinary blending isolates luminance reweighting at the same weight.
     return blend === "ordinary"

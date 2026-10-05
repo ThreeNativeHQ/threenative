@@ -162,7 +162,6 @@ export function createTemporalDepthRejection(
   };
   const historyValidityStruct = struct({
     hasValidHistory: "float",
-    canLock: "float",
     historyUV: "vec2",
     offsetUV: "vec2",
   });
@@ -170,8 +169,7 @@ export function createTemporalDepthRejection(
   const historyValid = (node._historyValidUniform ?? float(1)) as Node<"float">;
   /**
    * The one history-validity decision, parameterised by the pixel's own UV: `historyValid ∧ validUV
-   * ∧ ¬disocclusion`, plus `canLock` (`validUV ∧ ¬depthChanged`), which the resolve's thin-feature
-   * lock reads. The resolve weights its blend with this, and the rejection counter calls the
+   * ∧ ¬disocclusion`. The resolve weights its blend with this, and the rejection counter calls the
    * same node once per display pixel, so a reported fraction cannot diverge from the decision that
    * was drawn.
    *
@@ -192,14 +190,7 @@ export function createTemporalDepthRejection(
     const isDisocclusion = closestDepth.sub(sampledPreviousDepth).greaterThan(node.depthThreshold);
     // A reset frame has no legal cross-size colour seed, so it weights only the current frame.
     const hasValidHistory = historyValid.greaterThan(0.5).and(isValidUV.and(isDisocclusion.not()));
-    // The thin-feature lock may only fall back to raw history where geometry did not change.
-    // Two-sided on purpose: new geometry appearing closer is stale history too.
-    const isDepthChanged = closestDepth
-      .sub(sampledPreviousDepth)
-      .abs()
-      .greaterThan(node.depthThreshold);
-    const canLock = isValidUV.and(isDepthChanged.not());
-    return historyValidityStruct(hasValidHistory, canLock, historyUV, offsetUV);
+    return historyValidityStruct(hasValidHistory, historyUV, offsetUV);
   });
   return { currentDepth, previousDepth, historyValidity };
 }
