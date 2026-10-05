@@ -103,8 +103,8 @@ experimental path or mark the draft ready before the outstanding acceptance evid
   current colour after upstream bookkeeping; a pre-resolve seed alone still reprojects at shifted
   UVs and is not complete rejection. Five lifecycle tests pass; screenshot proof remains pending.
 
-- [ ] The reconstruction stage produces a display-sized output from a smaller colour/depth input and records input size, output size, history-valid state and rejection fraction. **proof:** focused render-chain test runs 0.67→1.0 sizing, then a mutation returning the low-resolution target directly fails the output-size assertion.
-- [ ] Camera cuts, projection changes and resolution changes invalidate history for the affected frame; moving skinned and instanced fixtures use the existing velocity source rather than a camera-only approximation. **proof:** deterministic fixture covers cut/resize/skinned/instanced cases and a zero-velocity mutation fails the moving-object rejection/stability assertion.
+- [x] The reconstruction stage produces a display-sized output from a smaller colour/depth input and records input size, output size, history-valid state and rejection fraction. **proof:** focused render-chain test runs 0.67→1.0 sizing, then a mutation returning the low-resolution target directly fails the output-size assertion. **result, 2026-10-06:** `packages/create-threenative/__tests__/temporal-aa.spec.ts` -t "presents a display-sized raster" drives the real `RenderChain` over the generated `temporalAAStages` `traa` factory and the same stubbed renderer the other sizing tests use. One arm reports the scene pass target at 1280×720 while the node the chain presents holds 1920×1080, with `report()` carrying `inputWidth 1280`, `inputHeight 720`, `outputWidth 1920`, `outputHeight 1080`, `historyValid false` on the opening reset and the measured `rejection { fraction 4/2073600, visited 2073600, staleFrames 0 }`. The mutated layer is `stages[0].build` in the test fixture: the generated stage still builds the provider and still owns its per-frame work, and the chain is handed the scene pass colour node instead of `provider.node`. The same `expectDisplayRaster` assertion then fails with the exact message `The presented raster is 1280x720, not the display raster 1920x1080.`, and the presented node's own render target measures 1280×720 — the low-resolution target — so the failure is classified at the output-raster contract, not at a missing measurement, a startup refusal or a canvas label. 26/26 in the file; root `pnpm typecheck` and `biome check` exit 0. No core change, no new dependency, no threshold touched. Runtime evidence for the same arm is the qualified browser/native result already recorded above.
+- [x] Camera cuts, projection changes and resolution changes invalidate history for the affected frame; moving skinned and instanced fixtures use the existing velocity source rather than a camera-only approximation. **proof:** deterministic fixture covers cut/resize/skinned/instanced cases and a zero-velocity mutation fails the moving-object rejection/stability assertion. **result, 2026-10-05:** the browser lane, the registered native row `temporal-aa-lifecycle` and the real `vec2(0)` MRT mutation — see the section at the end of this file.
 
 ### Phase 2 — Prove motion stability on content that exposes temporal defects
 
@@ -208,6 +208,86 @@ measurement is recorded below; the complete repository board remains unqualified
 Evidence validation: 29 documentation/citation/budget tests pass; two CLI-launch tests hit the
 known environment prohibition on tsx IPC pipes. Their unchanged 1,200-line and 701-file CLI
 fixtures both pass through `node --import tsx`. The real tracked evidence budget also passes.
+
+Phase 2 proof route, 2026-10-06: the missing route now exists and has run. One bounded quality
+family reuses the same scene, poses, occluder and frame schedule as the existing arms and adds
+authored deterministic alpha-tested foliage: six leaf cards with a 16x16 DataTexture mask (nearest
+filtered, `alphaTest` 0.5, no canvas, identical on both hosts). Its physical display raster stays
+640x360 for every arm. The input raster is 426x240 (2/3) for the spatial role, the temporal role and
+their controls, 1:1 for the full-resolution no-AA role, and 4x supersampled for the family
+reference, which the existing scorer downsamples. The full-resolution reference, the no-AA control
+and the spatial role request no reconstruction stage and no velocity MRT at all; the spatial role
+presents its low input through the ordinary texture upsample. The harness asserts that per frame —
+`stages: []`, `velocity.source: null`, no rejection counter and no MRT readback — instead of
+installing a stage and overriding its output. The temporal role must present 640x360 from a 426x240
+input and publish the settled GPU counter every frame. Each family scores against its own
+supersampled reference, and every original threshold is unchanged.
+
+`sh scripts/xvfb.sh node --import tsx scripts/verify-temporal-motion.ts` captured 31 arms
+(558 PNGs) with `nvidia`/`turing` WebGPU in every arm, empty diagnostics, and exit 1 at the final
+gate assertion after writing `artifacts/temporal-aa/motion/summary.json`; log
+`/tmp/opencode/pr398-phase2-route3.log`. Rasters are the measured ones: the family reference is
+2560x1440 input and display, the no-AA role 640x360/640x360, and every low-input arm 426x240 input
+into a 640x360 display. The temporal counter is real: rejection fraction 0.0023-0.0110 with
+`visited` 230400 on every frame, exactly the 640x360 display raster it walked, and `staleFrames` 0.
+
+| arm | edge | instability | excursion | moving edge | stale f29..36 |
+| --- | --- | --- | --- | --- | --- |
+| quality-reference (no AA, 1:1) | 0.04933 | 0.04768 | 0.01632 | 0.03547 | 0, 0, .0003, 0, 0, 0, 0, 0 |
+| quality-spatial (0.667, no stage) | 0.07745 | 0.05055 | 0.00964 | 0.04800 | .0306, .0304, .0648, .0355, .0357, .0664, .0473, .0312 |
+| quality-temporal (0.667) | 0.08240 | 0.03572 | 0.00216 | 0.04618 | .3437, .2548, .0398, .0339, .0304, .0395, .0226, .0185 |
+| quality-zero-velocity | 0.08971 | 0.03283 | 0.00401 | 0.05971 | .3451, .2580, .0468, .0417, .0414, .0513, .0357, .0314 |
+| quality-unchecked-history | 0.09744 | 0.03050 | 0.20525 | 0.12529 | 1.00 in all eight |
+
+The temporal arm is 29.3% more stable than the low-resolution spatial arm, which is the comparison
+its Phase 2 box names. The spatial role's own non-zero reveal residue is the low raster's
+occluder footprint resampled by the upsample, not a history. Both negative controls are detected:
+the real `vec2(0)` MRT control is worse on moving edges, and unchecked history holds 100% stale
+pixels with red tint 1.00 in every reveal frame. The motion family reproduced bit-identically
+(edge 0.06054, instability 0.03136, no-AA 0.05029/0.04913), which also proves the new browser flags
+did not change the existing measurement.
+
+**Both Phase 2 boxes stay open.** `qualityEdgeImprovement` fails: 0.08240 against the required
+0.04686, 67% worse than the family's no-AA arm. `qualityRevealRecovery` fails: 25.48% stale
+interior pixels one frame after the reveal, against the unchanged 1% bound, and the strict-rejection
+motion control still trips the same bound at frame 34. Nothing was renormalized and no threshold was
+relaxed. Focused checks: root `pnpm typecheck` exit 0, Biome error-level exit 0 on all three
+changed files, 122 temporal unit tests across 9 files pass, `pnpm check:docs` exit 0. The one
+repository lint error is the pre-existing cognitive-complexity finding in
+`examples/native-smoke/src/physics.ts`, which this change does not touch.
+
+One bounded next defect, in the generated appearance layer and not in this mechanism: at a 426x240
+input the installed history blend trades edge fidelity for stability (67% worse edge error than
+no-AA while beating the spatial arm by 29% on instability), which repeats the static thin-fence
+attenuation already measured at full resolution. The next task repairs the generated resolve blend;
+Phase 3 cost work stays untouched.
+
+**Ghost root cause measured, and the obvious hypothesis falsified, 2026-10-06.** The default
+resolve's history decision is `historyValid ∧ validUV ∧ (edge ∨ ¬disocclusion)`, where
+`disocclusion` is upstream's one-sided `closestDepth − previousDepth > threshold`. An occluder
+moving *away* leaves the current surface farther than the previous one, so a one-sided test calls
+that valid history and keeps the hidden colour — the suspected cause of the reveal residue. Making
+that test two-sided (`|closestDepth − previousDepth|`, which installed three 0.185.1
+`TAAUNode.js` itself applies and names as the remedy for its own one-sided test) was compiled
+through the real WGSL builder, red-green in `temporal-resolve.spec.ts`, and then measured over the
+whole 31-arm corpus. It moved nothing: the default arm's eight reveal fractions are bit-identical
+(.2833, .1795, .086, .0817, .0605, .0392, .0164, .0145) and its edge 0.06054, instability 0.03136 and
+excursion 0.000118 are unchanged, because every revealed pixel satisfies the depth-edge bypass that
+outranks the disocclusion term. On the two arms that disable that bypass the change is a measured
+regression: `strict-rejection` instability 0.03139 → 0.07597, excursion 0.000115 → 0.013923, and its
+stale fractions [.0177, 0, 0, 0, 0, .0159, .0003, 0] → [.0177, .0024, .0339, 0, 0, .0019, .0172,
+.0167]; `resolve-cubic-strict` the same. More rejection is not monotonically better, because the
+metric projects each residual onto the pre-reveal colour direction and unlocked jitter crosses it
+too. Every negative control, the zero-velocity controls, the GPU counter (rejection 0.00064–0.00172
+of 230400 visited display pixels, `staleFrames` 0) and the 15-check vector were unchanged. The
+change was therefore reverted; no artefact from it ships.
+
+What the corpus does say: the edge bypass is load-bearing for the ghost, because the bypass-off
+arm already holds edge 0.06055, instability 0.03139 and excursion 0.000115 — indistinguishable from
+the default — while cutting the residue from .2833 to .0177. A repair has to disocclude the revealed
+pixels without unlocking the surfaces the bypass protects, so it needs a per-pixel reason (real
+geometry change against depth-edge membership) rather than the edge range alone or a wider
+threshold. Both Phase 2 ghost boxes stay open.
 
 - [ ] A fixed camera route containing thin fences, foliage, sub-pixel edges, a moving character and an instanced moving object stays within pinned temporal-stability/ghosting thresholds against a full-resolution reference. **proof:** automated frame-sequence report records edge flicker, rejected-history ratio and image delta for full-res, low-res spatial upscale and temporal reconstruction; the temporal arm must beat the spatial arm on the named stability metric.
 - [ ] Newly revealed surfaces do not inherit stale colour after occlusion/disocclusion events. **proof:** foreground-occluder fixture reveals a contrasting background and asserts stale-history pixels decay within the declared frame bound; disabling disocclusion rejection makes it fail.
@@ -516,3 +596,929 @@ writer/upload; both participate in receipt completion. The four affected integra
 contract files pass **259/259**, and fresh independent review accepts the repairs.
 These bounded CPU checks do not replace the required hosted board or the original
 quality, reconstruction, cost and native evidence. All acceptance boxes remain unchanged.
+### Second develop merge into PR #398 (2026-10-04)
+
+The repair lane fast-forwarded from `ffa6ea9bb` to the published head `ea0c30701` with no
+history rewritten, then merged `origin/develop` `64aed30fe` (PRD-345 backlight and
+dark-environment defaults). One conflict, in `packages/create-threenative/__tests__/
+scaffold.spec.ts`: both sides had re-pinned `PRD_201_PARENT_SCAFFOLD_HASHES` for unrelated
+reasons, so neither table described the merged tree. The resolution is the merged-tree
+measurement through the actual `createProject` trees, and
+`vitest run packages/create-threenative/__tests__/scaffold.spec.ts -t byte-stable` passes on
+it. The incoming backlight, environment-contribution and material-lighting bytes and the
+temporal render source both survive; nothing under `src/render/` moved into a package.
+
+`pnpm ci:fast` passes all four stages: lint, docs, agents mirror and drift (including the full
+scaffold spec). The wider `vitest run packages/create-threenative` run is 1272/1282. Its
+deterministic reds all name files this merge did not touch and are already red on the
+published head: `temporalResolve.ts` at 347 lines, `temporalAA.ts` with no importer and an
+uncalled `createTemporalAA`, and the starter `CLAUDE.md` 100-line budget. The rest are
+environment reds on an unbuilt checkout: a 60s build ceiling, `publication.spec.ts` missing
+`packages/metahuman/dist`, three asset-cook 60s timeouts and one 180s pristine-scaffold
+typecheck timeout. No threshold, control or sample count moved.
+
+This merge has no new runtime proof, no capture and no hardware run. Every quality,
+ghosting, dynamic-resolution, native and performance acceptance box above stays exactly as it
+was, and the p95 baseline-noise control is still unpassed.
+
+### Browser positive is green on the display-sized arm; the cold-frame control is not (2026-10-04)
+
+The browser lane now runs through the harness on the correct HTML entry and the flags this host's
+X11 compositor accepts, so the two earlier causes are closed rather than re-diagnosed. The entry is
+`/temporal.html?measure&variant=scaled`, not the bare `/temporal-main.js` module URL that rendered as
+text and produced `TN_PLAYTEST_BRIDGE_MISSING`. The flags are the six already proved on this
+adapter — `--enable-unsafe-webgpu --enable-features=Vulkan --use-angle=vulkan --use-vulkan
+--disable-vulkan-surface --no-sandbox` — passed as repeated `--browser-arg`, which is the supported
+override and replaces the recipe rather than extending it, so no harness change was needed.
+
+Positive, `examples/abyss-framework/playtests/temporal-aa-scaled.playtest.json` against
+`http://127.0.0.1:5199/temporal.html?measure&variant=scaled`: 26 of 26 assertions pass and
+diagnostics are empty. Adapter `nvidia`/`turing`, 30 scenario frames, eight declared triviality
+opt-outs. Both cold frames compared the full 192 samples at outside 0 — the opening frame at input
+853x480 with no lattice (`viewEnabled false`), the resize frame at input 853x320 with
+`jitterMatchesInput true` — and both published mean 0.0833 against an oracle mean of 0.0833.
+
+Native positive was re-executed rather than reused, so no stale parity pass covers the new row
+wiring: `artifacts/conformance/native-r8/report.json`, `temporal-aa-scaled` pass, native exit 0,
+1280x480 non-uniform, `pixelMismatchRatio 0.0413037109375 <= 0.06`, `perceptualDeltaE
+0.2009623136688549 <= 9`, zero GPU validation errors, 192 samples per cold frame at outside 0. The
+runner exits 2 because the other 96 rows are unselected and one further row is blocked; that exit is
+the blocked-row contract, not a failure of the selected row. The native adapter is genuinely
+unknown and is reported as such.
+
+The cold-frame control was red in that window, and this paragraph's explanation of it was **wrong**.
+It claimed the fixture's constant-valid hook was a silent no-op because Three.js 0.185.1's
+`TRAANode.js` has no `_historyValidUniform` member. That member is not upstream's: `temporalAA.ts`
+installs it on the node and `temporalResolve.ts` reads it, so
+`historyValid.greaterThan(0.5).and(...)` is the live `hasValidHistory` term of the kernel the
+provider installs. The gate reaches the shader. What the 8x8 centre block actually showed is weaker:
+variance clipping pulls a stale history towards the current neighbourhood, so one flat block of the
+frame agreed with the oracle whether or not the gate was installed, and 192 samples could not tell
+the two arms apart. The measurement was too small, not inert. The control row and its registry entry
+stay uncommitted until the comparison covers the frame.
+
+The fix was not a re-diagnosis of the browser lane and not a new shader seam. It is a wider
+measurement: one cold frame's whole published display against the same spatial GPU oracle.
+
+### Two static contracts cleared by a comment-and-spacing repair (2026-10-04)
+
+The generated `temporalResolve.ts` lost its narration comments and their blank spacing, 347 to331
+lines, with the MIT notice, the pinned Three.js 0.185.1 attribution and the boundary, citation and
+calibration comments kept. `ts.transpileModule` with `removeComments: true` and `sourceMap: false`
+emits 9,363 bytes before and after and the two outputs are byte-identical, so the repair changes
+no executed statement. The three `temporal-resolve.spec.ts` tests pass.
+
+That repair did not clear the cap and is not claimed to. It bought room, and the resolve equations
+were then split into the modules that fit: `temporalAA.ts` 198 lines, `temporalAAFrame.ts` 197,
+`temporalAAStage.ts` 52, `temporalResolve.ts` 122, `temporalResolveDepth.ts` 124 and
+`temporalResolveMath.ts` 146. Every generated temporal helper is now under 200 lines, so the earlier
+`looks.spec.ts` exemption for `temporalResolve.ts` is removed rather than kept. The 200-line cap now
+holds for every generated render file except the two named reasons beside it, `loading.ts` and
+`worldEnvironment.ts`, and the ownership assertion above them — no `@threenative/` import in any
+generated render file — still covers every one of the six.
+
+The starter `AGENTS.md` lost the blank line before each of nine section headings, 97 to 88 lines,
+so the generated `CLAUDE.md` mirror measures 91 lines against the 100-line budget. No sentence,
+word, reference, convention, temporal note, backlight note or appearance note was removed;
+`pnpm sync:agents` rewrote that one mirror and its `--check` reports 22 mirrors in sync.
+
+Focused results on this tree: `looks.spec.ts -t 'should keep generated render files readable and
+framework-free'` 1 passed (was red at 347 lines), the whole `looks.spec.ts` 19 passed,
+`template.spec.ts -t 'should scaffold flat agent docs without shared marker comments'` 1 passed
+(was red at 100 lines), `scaffold.spec.ts -t 'byte-stable'` 1 passed after the measured `starter`
+tree hash moved to `f62b055c8c33441007a9bf293427ba88b126cacf44d062d46b17cb1f697c7a88` with the
+other twelve unchanged, `pnpm check:docs` clean across 2,442 links, `pnpm typecheck` Done, and
+biome reporting one pre-existing `looks.spec.ts:88` complexity warning that is identical at HEAD.
+The full `template.spec.ts` run is 56 passed and the same two reds as above: `starter/temporalAA.ts`
+has no importer and `createTemporalAA` is uncalled.
+
+No threshold, control, sample count or acceptance box changed, no runtime proof was gathered and
+no capture or hardware run was made.
+
+### Native reset/readback proof on the desktop lane (2026-10-04)
+
+`scene-support.js` calls `subject.render()` and never `subject.sampleVelocity()`, so the readbacks
+this proof needs could not execute natively. The scene's `build` callback is the supported async
+seam — `offscreen-screenshot.js` already reads a render target there — so
+`temporal-aa-scaled.js` drives its 22 diagnostic frames inside `build` and asserts every one before
+the frame loop starts. No shared harness file changed.
+
+Ran `sh scripts/xvfb.sh node packages/runtime-native/conformance/run-conformance.mjs --target desktop
+--only-tests temporal-aa-scaled --reference packages/runtime-native/artifacts/conformance/web --out
+artifacts/conformance/native-r7` against the prebuilt `build/tn-linux/mystral`, no C++ change and no
+rebuild. Row `temporal-aa-scaled` passed: native exit 0, non-uniform screenshot,
+`pixelMismatchRatio` 0.0394287109375 against the 0.06 tolerance, `perceptualDeltaE` 0.24874598761131655
+against 9, zero GPU validation errors, 1280x480. The runner exited 2 because the 96 unselected rows
+are reported blocked, which the registry requires.
+
+The native adapter identity is not available: the conformance stdout carries no adapter, vendor or
+architecture string, so nothing claims hardware here. The host window is 1280x720 and the capture is
+1280x480 after the fixture's own height-only resize.
+
+Because the row passed, those assertions held natively: input raster 853x480 then 853x320, depth
+history 853x480 then 853x320, display, resolve and history 1280x720 then 1280x480 with the display
+width held, the far border of the display raster answering a display-sized resolve, exactly two
+compared reset frames, 192 compared samples in each with none outside the spatial oracle, no jitter
+lattice on the opening frame, and the resize frame's lattice equal to the input raster. The disabled
+gating control (`scaled-unchecked-reset`) did not run natively in this window, so its contamination
+is still browser-only.
+
+Browser rerun: red. `temporal-aa-scaled.playtest.json` and its `-unchecked-reset` control both stop
+at `TN_PLAYTEST_BRIDGE_MISSING` with `frames: 0`, headed and headless, so the page installs no bridge
+under the current fixture. The earlier 26/26 and 5/5 results predate the final fixture, probe and
+scenario edits and describe no current tree. `examples/abyss-framework/temporal-main.js` gained the
+scaled arms' 1280x720 display raster, `settle` 20 and a 5-frame startup advance to make the browser
+control reach the same raster pair; that change is unproved while the scenario is red.
+
+Every full-phase box stays open: rejection, corpus, quality, ghosting, automatic-scale and
+performance. No threshold, tolerance or assertion was widened, no capture was taken on hardware and
+no commit was made.
+
+### The whole-display cold-frame oracle separates the two arms (2026-10-05)
+
+`temporal-resolve-probe.ts` now compares a cold frame's **whole published display** against the same
+immutable-current-input spatial GPU oracle, at the same half-float precision and the same tolerance.
+Each readback's row stride is derived from the returned typed array rather than assumed to be its pixel
+width, because a GPU readback pads rows to a 256-byte boundary. Precision, thresholds, depth rejection
+and variance clipping are untouched; the oracle is still the resolve's own colour sample of the same
+input texture, rendered by the same state discipline at display size.
+
+Browser, the two proved entries and the six proved flags, adapter `nvidia`/`turing`:
+
+- Positive `temporal-aa-scaled`: **29 of 29 assertions pass**, diagnostics empty, 30 scenario frames,
+  nine triviality opt-outs. Both cold frames report `outside 0` with `worstRatio 0` over the whole
+  display — **2,764,800** channels at 1280x720 and **1,843,200** at 1280x480 — with published mean
+  0.0336 against oracle mean 0.0336 and 0.0277 against 0.0277. `artifacts/playtest/wholeframe-positive`.
+- Control `temporal-aa-scaled-unchecked-reset`: **8 of 8 assertions pass** on the identical sample
+  sets, `outside` **168,884** of 2,764,800 (`worstRatio` 898.096) at the opening reset and **119,914**
+  of 1,843,200 (`worstRatio` 959.5) at the resize reset. `artifacts/playtest/wholeframe-control`.
+
+So the reset gate is live and now carries weight: with the whole frame compared, the gated arm
+publishes the untouched input everywhere and the ungated arm publishes an unwritten history over
+6.1% and 6.5% of the frame. Both browser scenarios and both native scenes now assert
+`pixels === width * height * 3` on each cold frame instead of the 8x8 block's 192.
+
+Focused units stay green: `temporal-resolve.spec.ts`, `temporal-aa.spec.ts`, `looks.spec.ts` and
+`scaffold.spec.ts` pass, 104 tests in 7.26 s.
+
+**Native is not re-executed in this window, and the reason is a blocker, not a pass.** Generating the
+fresh browser reference both native rows require fails on the positive row, deterministically, in three
+consecutive runs — twice with the control in the same run and once with the row alone
+(`packages/runtime-native/artifacts/conformance/web-wholeframe-r1`, `web-wholeframe-r2`,
+`web-posonly-r3`): the probe's
+pre-existing raster guard throws `Resolve must hold the display raster; it is 1280x720 against
+1280x480` at the fixture's height-only transition, so that row writes no reference capture and the
+desktop lane has nothing to compare against. The control row passes the same frames and captures
+1280x480. `guardRasters` runs before any comparison this window changed, so the cause is not yet
+diagnosed; what it is not is a product claim either way. The earlier `native-r8` positive pass
+compared the 8x8 block and describes no longer-current measurement, so it does not carry over. No
+native row, adapter identity or hardware claim is recorded here.
+
+Every full-phase box stays open: rejection, corpus, quality, ghosting, automatic-scale and
+performance. No threshold, tolerance or assertion was widened, no capture was taken on hardware and
+nothing is committed: the normal hook commit needs all four lanes green and only the two browser
+lanes are.
+
+### The blocked native reference was a missing frame boundary in the scene (2026-10-05)
+
+The blocker above is a fixture-scheduling defect, in the conformance scene, not a product defect and
+not a measurement defect. Both diagnostic frames ran back to back inside one turn: the loop issued
+`fixture.render()` and then awaited only `fixture.sampleVelocity()`, which is a GPU-completion
+await, not a frame boundary. `temporal-main.js` already carries the reason — a temporal node's own
+frame update waits on the animation clock, so renders issued without one never advance it. At the
+height-only transition the resolve therefore still held the pre-resize display raster, and the
+probe's pre-existing `guardRasters` threw `it is 1280x720 against 1280x480` before any comparison.
+
+The fix is one line in each of `temporal-aa-scaled.js` and `temporal-aa-scaled-unchecked-reset.js`,
+reusing the advance already proven in this directory's `probe-volume-sample.js`:
+`await new Promise((resolve) => requestAnimationFrame(resolve))` before each diagnostic render. No
+new helper, file, dependency or product change, no guard, threshold, tolerance or assertion touched,
+and both arms keep the identical 22-frame loop so they stay one frame-for-frame pair. The browser
+lane's Chromium already carries `--enable-unsafe-webgpu --enable-features=Vulkan` in
+`run-conformance.mjs`, so the reference needs no extra flag route; the repeated `--browser-arg` form
+belongs to the direct playtest CLI and was used there.
+
+All four runtime arms, on this exact tree:
+
+- Browser positive **29 of 29**, adapter `nvidia`/`turing`, `outside 0` and `worstRatio 0` over the
+  whole display at **2,764,800** and **1,843,200** channels — identical to the run above, because the
+  browser fixture did not change. `artifacts/playtest/raf-positive`.
+- Browser control **8 of 8**, `outside` **168,884** (`worstRatio` 898.096) and **119,914**
+  (`worstRatio` 959.5) on the same channel counts. `artifacts/playtest/raf-control`.
+- Fresh web reference, adapter `nvidia`/`turing`, both rows pass at display 1280x480, no page errors
+  and no GPU validation error. `packages/runtime-native/artifacts/conformance/web-raf-r9/report.json`.
+- Native desktop, prebuilt `build/tn-linux/mystral`, no C++ rebuild: both rows pass, native exit 0,
+  zero GPU validation errors, non-uniform 1280x480. `temporal-aa-scaled`
+  `pixelMismatchRatio 0.0350537109375 <= 0.06`, `perceptualDeltaE 0.2504743023768323 <= 9`;
+  `temporal-aa-scaled-unchecked-reset` `0.045857747395833336 <= 0.06`, `0.19054617552811 <= 9`.
+  `packages/runtime-native/artifacts/conformance/native-raf-r9/report.json`. The runner exits 2
+  because the other 96 registry rows are unselected; that is the blocked-row contract. The native
+  adapter remains genuinely unknown and is reported as unknown, not inferred from the browser row.
+- `biome check` clean on both scenes; `pnpm check:docs` clean across 2,442 links; the 104 focused
+  unit tests were green before this window and this change touches no unit-covered source.
+
+No full CI, no push, no merge. Every full-phase box stays open: rejection, corpus, quality,
+ghosting, automatic-scale and performance.
+
+### The per-pixel rejection fraction is measured on both lanes (2026-10-06)
+
+`ITemporalAAReport` now carries a measured `rejection`, and the report is the only place a caller
+reads it. `temporalResolveDepth.ts` lifts the one history-validity decision — `historyValid ∧
+validUV ∧ (edge ∨ ¬disocclusion)` — into a single `historyValidity` node parameterised by the
+pixel's UV. `temporalResolve.ts` calls that node for the blend weight, so the appearance is
+untouched: no new gate, no control uniform, no colour alpha. `temporalRejectionCounter.ts` calls the
+*same* node once per display pixel from a compute dispatch, `atomicAdd`s the rejected and visited
+words into a two-word `instancedArray`, and copies them back asynchronously, one at a time. A
+reported fraction therefore cannot describe a different decision than the one the resolve drew,
+because there is only one decision node. The dispatch runs between the resolve draw and this frame's
+depth-history copy, so the kernel reads the depth and matrices the resolve just drew with; nothing is
+re-rendered and no `PassTexture` dependency is added, so no input changes.
+
+Fail-closed on purpose: a copy that never lands, lands short, lands with `visited ≠` the display, or
+lands with `rejected >` `visited` **withdraws** the measurement and records the reason. `settled()`
+rejects with that reason, `report()` omits the field, and `drain()` hands the chain nothing — never a
+zero, never the previous frame's number. The report field is omitted rather than set to `undefined`,
+which a real failure caught: the playtest bridge publishes a resource whole and rejects
+`undefined` as not JSON-safe. `chain.observeFrame()` then fails closed on its own terms too — a
+non-advancing frame, a non-finite share or a share outside `[0, 1]` throws — and an unlanded
+measurement is reported as absent, never as `0`.
+
+`temporalAAHooks.ts` (51 lines) owns the two pipeline callbacks separately, and the lifecycle
+decision is unchanged: both originals are captured **once, before** upstream's setup writes the
+node's own pair; our `before` is installed after setup alongside the owned upstream `after`; the
+jitter callback keeps one identity across recompiles; and `dispose()` restores **both** first
+originals only while each slot still holds what this node installed, so a later replacement survives.
+Three tests prove the restore, the recompile identity and the later-owner case.
+
+Files: `temporalAA.ts` (report field, shared rejection instance, hook install), `temporalAAFrame.ts`
+(dispatch between resolve and depth copy, dispose the counter), `temporalAAStage.ts` (publish the
+callback the chain asks for), `temporalResolveDepth.ts` (the shared node), `temporalResolve.ts` (call
+site), `temporalAAHooks.ts`, `temporalRejectionCounter.ts`, the canonical `worldEnvironment.ts` and
+its twelve copies, and `temporal-aa-fixture.js` (`settledRejection()` then `chain.observeFrame()`).
+
+**Capability audit actually run before this work**, through the registered `engine-mcp`
+implementation (`packages/engine-mcp/dist/index.js`, `searchCapabilities` + `capabilityDetail`), not a
+filtered read of the manifest: two queries — one on owning pipeline callbacks around a third-party
+node that writes the same callbacks during setup, one on measuring the rejected-history share on the
+GPU with an asynchronous readback — returned **25 hits** and `engine_capability_detail` ran on every
+one. The hits that decided the design: **`GPUReadback`** (one copy in flight, requests during one
+dropped rather than queued, every sample carries `staleFrames`, WebGPU-only) — it is the exact
+throttle the counter implements by hand, and it is not reachable from generated `src/render/`, which
+may import no `@threenative/`; **`velocityTexture`** (`VelocityTracker.update()` before the render,
+`commit()` after) — already what the fixture does; **`temporalReproject`** — rejected, an addon that
+owns the look. No capability ships a rejection counter, so the count kernel is new generated source,
+not core. Zero core changes, zero new dependencies, no generic manager.
+
+Results on this tree, adapter `nvidia`/`turing` in both browser lanes, no SwiftShader:
+
+- Units: **58** focused create-threenative tests pass (25 in `temporal-aa.spec.ts`, including the
+  callback lifecycle and the fail-closed recovery cases), plus `scaffold.spec.ts` **66** and
+  `shared-render-sources` / `looks` / `temporal-resolve` / `temporal-initial-projection` green.
+  `pnpm typecheck` and `pnpm lint` exit 0 (Biome warnings only), `pnpm check:docs` clean across
+  2,442 links, and every changed generated file is under the 200-line gate after Biome.
+- Browser positive **passes** on `temporal.html?measure&variant=scaled`: reset frames at frame 1 and
+  frame 21 report fraction **1** with the GPU's own visited count **921,600** (1280×720) and
+  **614,400** (1280×480); the 33 warm frames range **0 … 0.006279296875**; the settled
+  `aa.rejection` is frame 35 at `0.0014860026041666667` with `staleFrames 0`; the whole-display
+  oracle is unchanged at **2,764,800 / 1,843,200** channels, `outside 0`, `worstRatio 0`.
+  `artifacts/playtest/rej-positive`.
+- Browser control **passes** on `…&variant=scaled-unchecked-reset`: the same counter visits the same
+  **921,600 / 614,400** pixels, its cold fractions are **0.92068359375** and **0** — not 1 — and the
+  contaminated oracle is unchanged at **168,884 / 119,914**. So the positive row's `1` is the reset
+  gate, not a constant. `artifacts/playtest/rej-control`.
+- Fresh web reference, both rows **pass**, adapter `nvidia`/`turing`, no page errors, no GPU
+  validation error. `packages/runtime-native/artifacts/conformance/web-rej-r2/report.json`.
+- Native desktop against that reference, prebuilt `build/tn-linux/mystral` with no C++ rebuild: both
+  rows **pass**, native exit 0, zero GPU validation errors, non-uniform 1280x480.
+  `temporal-aa-scaled` `pixelMismatchRatio 0.03699544270833333 <= 0.06`,
+  `perceptualDeltaE 0.23186547772174834 <= 9`; `temporal-aa-scaled-unchecked-reset`
+  `0.043798828125 <= 0.06`, `0.24407629667666397 <= 9`.
+  `packages/runtime-native/artifacts/conformance/native-rej-r2/report.json`. The runner exits 2
+  because the other 96 registry rows are unselected, which is the blocked-row contract. The native
+  adapter is genuinely unrecorded by this harness and is reported as unknown, not inferred.
+- One defect this window found and fixed, in the fixture rather than the product: the cold-frame
+  visited check indexed the observation array by reset index, and the two resets land on diagnostic
+  frames 0 and 20, so reset 1 was compared against the pre-resize 1280×720 raster. The counted
+  display now travels with the row it describes.
+
+Both Phase 1 boxes are now ticked: the output-size half by the low-resolution-passthrough mutation at
+`32ec88d10`, and the cut/projection/resize half by the native lifecycle row below. Phases 2 and 3 stay
+open. That entry's own scoped commit was: no full CI, no push, no merge.
+
+### The history coordinate is measured from the continuous current projection (2026-10-05)
+
+`reprojectedHistory()` was wrong twice, and each error alone made its bound unreachable. Its y sign
+was inverted. TRAANode samples `historyUV = uv - velocity * vec2( 0.5, - 0.5 )`, and that `uv`
+counts raster rows from the top, so a point whose measured NDC delta is `vy` is sampled half its
+height *down* the current row: `historyY = currentY + vy*h/2`, never minus. Its anchor was wrong
+too. It received the `Math.floor` of the **jittered** draw projection and compared that integer
+texel with a continuous unjittered previous location under a 0.05-pixel bound, so the sub-pixel
+jitter itself was charged as misregistration.
+
+`packages/runtime-native/conformance/scenes/shared/temporal-velocity-probe.ts` now projects each
+tracked point through both matrices. The jittered one still names the MRT texel that is read, and
+the unjittered one — the same projection `projectedMotion()` already used — supplies the single
+continuous anchor that `measuredPixels`, `expectedPixels` and `misregistrationPixels` are all
+measured from. The expected side is still two independently projected positions, so no expected
+value is derived from the measured vector. The integer pair stays in the sample as the record of
+where the read happened, and `REPROJECTION_PIXELS` stays **0.05**; no threshold moved and no core
+file changed.
+
+The derivation is closed in the unit test rather than in prose. On an 800×400 raster a point at
+`[400, 200]` whose previous projection was NDC `[-0.1, -0.1]` previously projected to `[360, 220]`
+and its measured `[0.1, 0.1]` velocity now reprojects to the same pixel, so the error is 0; the
+same point with a zero vector stays at `[400, 200]` and misses by `hypot( 40, 20 )`, more than the
+40 pixels that separate it; a point that rose alone, previous NDC `[0, -0.2]` with velocity
+`[0, 0.2]`, lands on `[400, 240]` from both sides.
+
+Capability lookup ran before the helper changed, through `packages/engine-mcp/dist/index.js`:
+`engine_search_capabilities` plus `engine_capability_detail` on **all 10 hits** across two queries.
+Nothing ships a history-coordinate helper; `temporalReproject` is an addon that owns the look, and
+`readVelocityPreviousMatrices` is the tracker the fixture already calls. The owned installed Three
+0.185.1 was read, not patched: `packages/core/node_modules/three/examples/jsm/tsl/display/TRAANode.js`
+lines 664-668 for the sample and `packages/core/node_modules/three/src/nodes/accessors/VelocityNode.js`
+line 177 for `velocity = ndcCurrent - ndcPrevious`.
+
+Results on this tree, adapter `nvidia`/`turing` in every browser lane, no SwiftShader:
+
+- Units: **4/4** in `packages/runtime-native/__tests__/temporal-velocity-probe.spec.ts`, which loads
+  the shared probe source and is what typechecks it. `pnpm typecheck` exit 0, `pnpm lint` exit 0
+  (Biome warnings only, and the 4 complexity warnings on these shared files are already at HEAD).
+- Browser positive **passes**, 41/41 assertions, 0 diagnostics, on
+  `temporal.html?measure&variant=scaled-lifecycle` at frame 39 with **5** resets. The history
+  witness, taken on the 34 frames that reused history, peaks at **0.001587 px** for the rigid body
+  (frame 11), **0.001322 px** for the instance (frame 7) and **0.017778 px** for the skinned limb
+  (frame 5), against a 0.05-pixel bound, while the measured motion on those same points reaches
+  3.124, 1.876 and 0.705 px. The bound is therefore met with real sub-pixel motion underneath it, not
+  by dropping frames.
+- Browser negative **fails as required**: the same scenario and the same 41 assertions on
+  `variant=scaled-lifecycle-zero`, which merges the real scene MRT to `vec2(0)`, exits 1 with 7
+  failures and every one of them a history assertion. `maxMisregistration` is **1.876 px** for the
+  instance, **0.702 px** for the skinned limb and **3.124 px** for the rigid body, each equal to that
+  point's whole per-frame motion, while `maxMeasuredPixels` is **0** and `movingFrames` **0** for all
+  three. Expected motion is non-empty in the control (`maxExpectedPixels` 1.876 and 0.702), so the
+  failure cannot be read as "nothing moved". Reset count, reset reasons, cold fractions, whole-display
+  oracle, rasters, applied stages and `velocity.source mrt` all pass unchanged, and no console or
+  network error is reported.
+- Browser baseline control **passes**, 35/35 on `playtests/temporal-aa-scaled.playtest.json` with
+  `?measure&variant=scaled`, so the shared fixture change costs the existing scaled arm nothing. Its
+  witness peaks at the same three values, which is the determinism the route depends on.
+
+The second Phase 1 box stays **open**: `conformance/scenes/shared/temporal-aa-lifecycle.js`, the
+deterministic node-side fixture that asserts the same route with `assertCondition`, is written but
+has not run on the native lane, and the native registration and capture are the next job. Phases 2
+and 3 stay open. Scoped commit only: no full CI, no push, no merge.
+
+### The same lifecycle route now runs natively, and the zero-velocity mutant fails there (2026-10-05)
+
+The browser lane already measured this route and its zero control. `conformance/scenes/shared/
+temporal-aa-lifecycle.js` had never run on the native lane, so it is now registered as the row
+`temporal-aa-lifecycle`: the existing `.06` mismatch / `9` DeltaE budget, the existing `webgpu`
+recipe, `captureFrames 40` for the 36 diagnostic frames, no new tolerance and no new scene. One
+defect surfaced on the first browser reference attempt and is fixed here rather than worked around:
+`assertRejectionCounts` was hard-coded to the scaled rows' two-reset pair, so the lifecycle route's
+five resets failed on its metadata. It now takes the expected count (default 2, unchanged for both
+existing callers) and names every counted reset frame by its own recorded `resetReason`.
+
+The route's own assertions are reordered, with no threshold moved. The independent expected motion of
+both witnesses comes first, then every tracked object's misregistration in one fail-closed condition,
+then the measured-velocity guards. A history coordinate in the wrong place now fails on the history
+condition itself, with the point's own independently projected motion in the message, instead of on a
+later report of no measured velocity.
+
+Capability lookup ran before the change, through `packages/engine-mcp/dist/index.js`:
+`engine_search_capabilities` plus `engine_capability_detail` on **all 10 hits** across two queries.
+Nothing ships a history-witness helper or a conformance-registration manager; `temporalReproject` is
+again the addon that owns the look, and the registry is the registration mechanism.
+
+Results on this tree, `build/tn-linux/mystral` unchanged, no C++ rebuild:
+
+- Web reference, three selected rows, all **pass**, adapter `nvidia`/`turing`, no page errors and no
+  GPU validation error. `packages/runtime-native/artifacts/conformance/web-life-r2/report.json`.
+- Native desktop against that reference, all three rows **pass**, native `exitCode 0`, 1280x480,
+  non-uniform, zero GPU validation errors. `temporal-aa-lifecycle` `pixelMismatchRatio 0.05384440104166666
+  <= 0.06` and `perceptualDeltaE 0.3712519114254307 <= 9`; `temporal-aa-scaled` `0.03699544270833333`
+  and `0.23186547772174834`; `temporal-aa-scaled-unchecked-reset` `0.04711588541666667` and
+  `0.27938254102333937`. `packages/runtime-native/artifacts/conformance/native-life-r1/report.json`.
+  The runner exits 2 because the other 96 rows are unselected, which is the blocked-row contract. The
+  native adapter is genuinely unrecorded by this harness and is reported as unknown, never inferred
+  from the browser row.
+- Native negative, same case and same positive web reference, with **only** the `startScene` variant
+  string mutated to `scaled-lifecycle-zero`: the row **fails** as required, native `exitCode null`,
+  zero GPU validation errors, and the native host's own captured message is
+  `temporal lifecycle: the instance missed its independently projected previous location by
+  1.6807242909818703 px at frame 2, over the 0.05 px bound, while the point moved 1.6807242909818703
+  px; the skinned missed its independently projected previous location by 0.6284101079565797 px at
+  frame 2, over the 0.05 px bound, while the point moved 0.6284101079565797 px.`
+  `artifacts/conformance/native-life-zero-r1/report.json`. The runner records no stdout or stderr for
+  a scene-level assertion, so the message above was read from the same prebuilt binary run directly
+  on the harness's own mutant bundle in `artifacts/conformance/desktop-bundles/`. The mutant's exact
+  source bytes were restored and verified by hash before this commit; no second registered scene and
+  no looser control wrapper exists.
+- Browser arms on the same tree, adapter `nvidia`/`turing`: lifecycle positive **41 of 41** with
+  empty diagnostics, the lifecycle zero control **fails with 7 history assertions** (all
+  `maxMisregistration`, `movingFrames` and `maxMeasuredPixels` for both tracked objects plus the
+  rigid witness) and non-empty expected motion, and `temporal-aa-scaled-unchecked-reset` **10 of 10**
+  with empty diagnostics.
+- Focused checks: `packages/runtime-native/__tests__/temporal-velocity-probe.spec.ts` 4 passed,
+  `pnpm typecheck` exit 0, `pnpm check:docs` clean across 2,442 links, and Biome clean on both scenes
+  and the registry. No generated render file changed, so no scaffold hash moved.
+
+Both Phase 1 boxes are now ticked. Phases 2 and 3 stay open: PRD-269's ghosting and cost controls,
+the content corpus and every performance box are untouched. Scoped commit only: no full CI, no push,
+no merge.
+
+### The unsupported control counter is now reported unavailable, and the quality family runs natively (2026-10-05)
+
+**The honesty defect.** The `unchecked-history` control installs its 0.05-current / 0.95-history
+blend by replacing `temporal.node._resolveMaterial.colorNode` *after* setup. That fragment never
+evaluates the shared history-validity predicate, so it bypasses depth rejection, neighbourhood
+clipping and motion reprojection at once. The provider's GPU counter kept counting that predicate
+anyway, and the harness collected `rejectionFrames` for every temporal role including this one. Its
+published share therefore described a decision those pixels did not make — a number that read as a
+measurement and was not one. The production and default arms were never affected: their fragment is
+the instrumented one, so their counter is real and is kept.
+
+**The fix, at the fixture only.** `temporal-aa-fixture.js` classifies the one policy that replaces
+the fragment, and for that arm alone (a) the provider's report copy drops `rejection` and carries
+`rejectionUnavailable` with the reason, keeping its source frame, history validity and both rasters;
+(b) the RenderChain `rejectionMeasurement` compatibility callback returns `undefined`, so the chain
+records no measurement for it; and (c) the collected counter trace skips it. `TemporalRejectionCounter`,
+the generated `temporalAA` provider and the `.05`/`.95` blend are untouched, and no public API or
+option was added to instrument this mutant. The scorer's assertion is now three-way: an off role has
+no resolve, the fragment-overridden control has an explicitly-unavailable counter, and **every other
+temporal arm must still publish a real one** — a default sample that went missing fails rather than
+passing as unavailable. Its published `counters[variant]` is an object naming the reason instead of
+a series, and `method.counterAvailability` states the classification in the summary itself.
+
+**The new native quality row.** `temporal-aa-quality` runs `createTemporalAAFixture` with
+`quality-temporal`, `measurement` and `settle 36`, awaiting a real RAF and the diagnostic
+`sampleVelocity` each of 36 frames, on the shared fixture with the shared `assertRejectionCounts`.
+It asserts the six alpha-tested foliage cards at `alphaTest 0.5` from the 16x16 DataTexture, an input
+raster at the authored 2/3 floor strictly below the display, an output at the physical display, the
+single `traa` stage with its MRT velocity source, a counter that visited the whole display with a
+finite source age, and one reset (startup only, no global reset after it). It reuses the existing
+`.06` / `9` budget, the `webgpu` recipe and `captureFrames 40`; no tolerance was loosened and no new
+runner or harness wrapper exists. It proves runtime portability and counter truth on the native host
+only. It proves no image-quality gate, and no such claim is made.
+
+Capability lookup ran before the change, through `packages/engine-mcp/dist/index.js`:
+`engine_search_capabilities` plus `engine_capability_detail` on **all 18 hits** across five queries.
+Nothing ships an unavailable-measurement convention for a fixture report, a quality-corpus scene or a
+conformance-registration manager, so the classification stays a fixture-local helper over the existing
+provider API.
+
+Results on this tree, `build/tn-linux/mystral` unchanged, no C++ rebuild:
+
+- **Browser, all 31 arms re-captured** after the honesty fix, adapter `nvidia`/`turing`,
+  `rendererKind webgpu`, zero error diagnostics. **All 31 arms' colour bytes are byte-identical to
+  the previous baseline** (every frame 21–36 sha256 matches), which is the expected result: the fix
+  removes a published measurement, not a pixel. `artifacts/temporal-aa/motion/summary.json`.
+  `temporal` and `quality-temporal` still publish 36 real frames each — `fraction 0.0030772569444444445`
+  and `0.011046006944444445`, `visited 230400`, `staleFrames 0` — and the four
+  `unchecked-history` arms now publish `{unavailable: "fragment-overridden control bypasses the
+  instrumented rejection predicate"}`. Every `checks` value is **identical** to the previous run;
+  `edgeImprovement`, `revealRecovery`, `qualityEdgeImprovement` and `qualityRevealRecovery` stay red,
+  so both Phase 2 boxes stay open. The runner exits 1 on those four gates, which is the expected
+  negative result; no assertion was dropped to make it green.
+- Web reference for the four temporal rows, all **pass** (scaled 4.4s, unchecked-reset 3.6s,
+  lifecycle 4.8s, quality 5.0s), runner exit 2 for the 96 unselected rows.
+  `packages/runtime-native/artifacts/conformance/web-quality-r1/report.json`.
+- Native desktop against that same reference: `temporal-aa-quality` **pass** —
+  `pixelMismatchRatio 0.04682942708333333 <= 0.06`, `perceptualDeltaE 0.15945597590657543 <= 9`, at
+  the native 1280x720 display with its 853x480 input. `temporal-aa-scaled` `0.0385888671875`,
+  `temporal-aa-scaled-unchecked-reset` `0.049832356770833336`, both pass. Reproduced identically on
+  a second run. `artifacts/conformance/native-quality-r2/` and `-r3/report.json`. The native adapter
+  is genuinely unrecorded by this harness and is reported as unknown, never inferred from the browser
+  row.
+- **`temporal-aa-lifecycle` fails on this reference at `0.061551106770833333 > 0.06`**, DeltaE
+  `0.40011787108055263`, `failureReason` "Capture metrics exceeded the registry tolerance", with zero
+  GPU validation errors. This is **reference variance, not a regression from this change**, and the
+  measurement says so: the native capture is **byte-identical** to the run that passed
+  (`0.00000` mismatch, same md5) between `native-life-r1` and `native-quality-r2`. The prior green at
+  `0.05384440104166666` came from a different reference (`web-life-r2`).
+  **Correction to the claim first written here.** That entry said the two browser references of the
+  same scene "differ from each other by `0.03870`" and therefore that "two correct browser runs
+  disagree by more than the whole row's budget". Both clauses were false. `0.03870` is the gap
+  between the two browser captures, which is *inside* the `0.06` budget — it is a real contribution
+  to the paired comparison, not an amount that exceeds the budget on its own. The paired
+  web-to-native comparison is what exceeds budget, and it does so because the browser and native
+  contributions point in the same direction and add up. The claim also named the jitter lattice as
+  the mechanism; that stayed a hypothesis and the trace below refuted it. With the tolerance
+  unchanged at `.06`, the row is left failing and reported.
+- Focused checks: `pnpm typecheck` exit 0; Biome clean on both scenes and the scorer. The fixture's
+  pre-existing cognitive-complexity warning is unchanged at 21 and the repo's one native-smoke physics
+  complexity warning is untouched — neither is fixed in this scope.
+
+No core, API, generic counter or ledger change. No generated render file changed, so no scaffold hash
+moved. Scoped commit only: no full CI, no push, no merge.
+
+### The capture repeatability defect, traced (2026-10-05)
+
+**The red check, run before any edit.** Two fresh web captures of the four temporal rows on this
+exact tree and commit, `web-rep-r1` and `web-rep-r2`, adapter `nvidia`/`turing`, all four rows pass,
+runner exit 2 for the 96 unselected rows. Their own capture bytes do **not** agree:
+
+| Row | r1 vs r2 capture mismatch | max channel delta |
+| --- | --- | --- |
+| `temporal-aa-scaled` | 21,651 px, `0.035239` | 84 |
+| `temporal-aa-scaled-unchecked-reset` | 23,431 px, `0.038136` | 96 |
+| `temporal-aa-lifecycle` | 0 px, byte-identical | 0 |
+| `temporal-aa-quality` | 0 px, byte-identical | 0 |
+
+So the defect is not web-versus-native and not a regression from the honesty fix: the **same host
+disagrees with itself run to run**, and it does so on the two rows whose budget the failing
+lifecycle row was being blamed on. Across all seven preserved capture sets the rows hold
+`scaled` 5 distinct states, `scaled-unchecked-reset` 5, `lifecycle` 3, `quality` 2. A row that can
+only be compared byte-for-byte is not a conformance row.
+
+**The jitter-lattice hypothesis is not refuted by the bounded diff.** The prior entry attributed the
+disagreement to the capture landing on a jitter-lattice frame boundary. The fixture already freezes
+the authored pose (`pose = min(frame, settle)`), so a whole-image lattice-phase shift is not the
+cause: the differing pixels are a *bounded region*, not a whole-image sub-pixel shift. That bounds the
+mechanism without excluding jitter, which can still decide the pixels inside a bounded region. For `scaled` the diff is confined
+to `x 430-840, y 169-361` of 1280x480; for `lifecycle`, `x 313-751, y 163-375`. That is the footprint
+of the fixture's own `occluder` (`occluder.visible = frame < 28`), the saturated foreground plane
+that is removed without a reset so the history must resolve the disocclusion on its own. Everything
+outside that box is byte-identical.
+
+**What the fixture actually does after settle, and why the capture is not a fixed point.** Traced
+`scene-support.js` → `temporal-aa-fixture.js` → the provider and the two capture drivers:
+
+1. `startVisualScene` calls `subject.render()` once, then drives an endless
+   `requestAnimationFrame` loop. The fixture's `render()` keeps running after the diagnostic frames
+   and after `settle`, and the pose freeze holds only the *authored* transforms.
+2. The temporal resolve keeps running on that frozen pose. Its history still carries the occluder's
+   disocclusion, and the neighbourhood clip and depth rejection blend the old samples out over
+   successive frames **asymptotically**. There is no frame at which the history is exactly settled,
+   so a capture's pixel values depend on how many frames elapsed since the last authored change.
+3. Nothing pins that frame count. The browser driver screenshots the canvas element after
+   `captureFrames` rAFs; the native host services a screenshot request from whichever presented
+   frame answers the mailbox poll. Either can land one frame earlier or later, and one frame is
+   enough to move 3.5% of the pixels inside the occluder's box.
+
+So the jitter lattice was never the variable. The variable is the **decay of temporal history in a
+region the fixture deliberately disoccluded, sampled at an unpinned frame index.**
+
+**Why no repair was made in that entry.** The two repairs named there both destroy what
+the row measures, and both are out of bounds for this scope:
+
+- A per-frame history reset after settle would pin the pixels, but it is exactly the
+  `unchecked-reset` control the positive row exists to contrast against, and it would publish a cold
+  frame as the capture — the row would compare two reset frames and stop testing reconstruction.
+- Pinning the capture frame in the harness would need the browser compositor and the native present
+  boundary to agree on a frame index, which is a runner change, and the scope forbids a new runner or
+  API for this.
+
+The honest statement of where this stands: the failing `lifecycle` number is a **real** failure of a
+row that is **not** deterministic, and the `.06` budget was never shown to be wrong. The next task
+should decide whether the fixture's disocclusion is authored to settle on a frame it can name, or
+whether the capture driver must be frame-locked. Until one of those lands, this PRD does not claim
+`prd:100%` for Phase 1: the native repeatability failure stands open.
+
+### A third repair the previous entry ruled out by omission: hold the finished frame (2026-10-06)
+
+**Correction.** The previous entry claimed the only two repairs were a per-frame history reset and a
+harness frame lock, and closed Phase 1 as unfixable in scope. That claim was wrong: a third repair
+exists, and it changes nothing the row measures. After a route's diagnostics finish, the fixture
+retains the resolve target its last real frame actually produced and presents *that same texture* on
+every later frame. No scene pass, no velocity, no reconstruction and no history write runs again, so
+no diagnostic frame, rejection count, reset reason or raster is invented by presenting, and the
+fixture's own metadata stays on the last frame it really rendered. Each presentation frame is still a
+genuine draw to the host surface.
+
+Implemented as one fixture-local `freeze()` on the shared temporal fixture
+(`packages/runtime-native/conformance/scenes/shared/temporal-aa-fixture.js`), called once by the four
+capture routes (`scaled`, `scaled-unchecked-reset`, `lifecycle`, `quality`) after all their existing
+diagnostic renders, readbacks and assertions, before returning to `startVisualScene`. It fails closed:
+freezing twice, freezing with no reconstruction frame, or freezing a resolve that is not the display
+raster throws. The default `temporal-aa` row, the browser `temporal-main` measurement with
+`settle === null`, every other variant, all 200 generated capabilities and all 200 capabilities of the
+manifest are untouched. No core, runner, C++, dependency, threshold or appearance policy changed.
+
+**Measured, this commit, local desktop host.** Every run used `--only-tests` on the same four rows and
+the runner exited `2` for the 96 unselected rows (blocked, never passed).
+
+| Comparison | Result |
+| --- | --- |
+| web r1 vs web r2, all four rows | **byte-identical PNG** (`sha256` equal) |
+| native r1 vs native r2, all four rows | **byte-identical PNG** (`sha256` equal) |
+| web r1 vs native r1, all four rows | `pixelMismatchRatio 0`, `perceptualDeltaE 0` |
+| web r2 vs native r2, all four rows | `pixelMismatchRatio 0`, `perceptualDeltaE 0` |
+
+Independently re-checked outside the runner by decoding both PNG sets: max channel delta `0` for every
+row, web against native and native against native. The runner's `0/0` is not a self-comparison: the
+web and native PNG files have different bytes and different sizes on disk, and the decode compares the
+pixels. Before this repair the same table read `scaled` 21,651 px / `0.035239` and
+`scaled-unchecked-reset` 23,431 px / `0.038136` run to run, and `lifecycle` `0.061551106770833333 >
+0.06` web against native. No reference, warmup, capture frame or tolerance was changed to reach these
+numbers; the captured frame is the same authored final diagnostic frame each route already rendered
+(frame 22 on the two scaled rows, frame 36 on `lifecycle` and `quality`), never a later 64 or 300.
+
+Zero GPU validation errors, no device loss and no adapter fallback in either native log. The native
+adapter is unrecorded by this harness and stays unknown. The web adapter is not written into these
+four runs' reports, so this entry claims no browser adapter identity rather than inferring one.
+Artifacts: `packages/runtime-native/artifacts/conformance/pr398-freeze-{web-r1,web-r2,native-r1,native-r2}/`.
+
+**Where this leaves the PRD.** Phase 1's native gate is now green on all four rows at `0` mismatch, so
+the earlier open repeatability failure is closed by measurement rather than by relaxing a budget. The
+rest is unchanged and still open: the Phase 2 quality scores and their gates, the Phase 3 GPU/render
+p95 comparison, and the PRD-269 ghosting cost remain as they were. This repair makes the capture a
+fixed point; it does not measure temporal stability, and it says nothing about the 176-frame quality
+benchmark. The `.03870` correction above stands as written.
+
+### Hand the replaced context back to its own originals (2026-10-06)
+
+**The bug.** `temporalAAHooks.ts` captured the two pipeline callback slots once, from the first
+context it ever saw, and restored them only on `dispose()`. Three.js 0.185.1's
+`RenderPipeline._update` builds a **fresh** context object on every recompile and `pipeline.context`
+names the active one. So after a recompile the node's `before`/`after` pair sat on the context three
+had stopped calling, the new context kept the originals **and** nothing of ours, and `dispose()`
+restored a slot nobody called while the live pair stayed installed — a disposed node that still
+jittered and re-projected the camera. The helper also captured `before`/`after` once for all
+contexts, so the originals it would later restore were the *first* context's, not the replaced one's.
+
+**The repair.** One local `restore()`, called both when `captureBeforeSetup` sees a different context
+and from `dispose()`. It writes each slot back only while that slot still holds what this node
+installed, so a later owner survives and upstream's pair is left to the node being disposed. The
+capture guard becomes `if (context === next) return`, so the same context still preserves the first
+originals and a new context captures **its** originals before upstream's setup runs. Generated
+template source, starter only: the canonical helper is ~65 lines and only the starter tree carries
+it, so no template was copied blind and `scaffold.spec.ts`'s measured starter hash is the only one
+that moves (`89dd12f6971111bc16476a884baa7bcf76e4b3b08fe7c66b073f09dfe28a1c78`).
+
+**Red then green, actual exits.** Two new cases in `temporal-aa.spec.ts` failed first: the replaced
+context still held `OLD` and `NEW` after `dispose()`. After the repair:
+`pnpm exec vitest run packages/create-threenative/__tests__/{scaffold,temporal-aa,temporal-resolve,temporal-initial-projection}.spec.ts packages/core/__tests__/temporal-chain.spec.ts packages/runtime-native/__tests__/temporal-velocity-probe.spec.ts`
+→ `6 files, 111 tests passed`, exit `0`. `pnpm typecheck` exit `0`, `biome check` on the three
+touched files exit `0`.
+
+**Browser scenarios, this commit, actual exits.** The three existing scenarios ran unmodified against
+`examples/abyss-framework` at variant `scaled-lifecycle`, `scaled` and `scaled-unchecked-reset`,
+adapter `nvidia`/`turing`, `rendererKind webgpu`, fixed-step clock, zero console/network/runtime
+diagnostics: `temporal-aa-lifecycle` **41** assertions pass exit `0`, `temporal-aa-scaled` **35**
+pass exit `0`, `temporal-aa-scaled-unchecked-reset` **10** pass exit `0`. The blocked runs before this
+were the harness, not the game: Vite 8.2.0 binds `[::1]` only, so `http://127.0.0.1:5201` was
+refused (`curl` `000`) while `localhost` answered `200`. The managed server now passes
+`--host 127.0.0.1 --port 5201 --strictPort`, which is what the repo's own
+`playtest:loading-leak` script already did. No budget, assertion or threshold moved.
+
+**Native, fresh web reference, actual exits.** Both lanes ran the same four rows with
+`--only-tests temporal-aa-scaled,temporal-aa-scaled-unchecked-reset,temporal-aa-lifecycle,temporal-aa-quality`
+against the prebuilt `build/tn-linux/mystral` (no rebuild): web **4 pass / 0 fail**, exit `2`;
+desktop against the fresh web directory **4 pass / 0 fail**, exit `2`. Exit `2` is the 96 unselected
+rows, each recorded `blocked` with reason `Not selected by this bounded execution run.` — not a
+failure and not a full-green board. Zero GPU validation errors on every row. The native adapter stays
+unrecorded and therefore unknown; the desktop report's `runtimeSha256` is the prebuilt binary.
+
+**Where this leaves the PRD.** The hook handover is repaired and green on units, three browser
+scenarios and both conformance lanes. Nothing else moved: Phase 2's quality scores and gates, Phase 3's
+GPU/render p95 comparison and the PRD-269 ghosting cost all stay **open**, no new box is ticked by this
+entry, and no full CI board, push or merge ran here.
+
+### The depth-edge bypass measured out of the history decision (2026-10-06)
+
+**The assumption, named and tested.** The previous entry asserted that every revealed pixel satisfies
+the depth-edge bypass. That is replaced here by a paired **policy** ablation, which is what this
+corpus can measure. One capture of the unmodified `scripts/verify-temporal-motion.ts` on the pre-fix
+source carries both policies over the same 3,721 revealed interior pixels: `temporal` (bypass on) and
+`strict-rejection` (the same arm with `edgeDepthDiff` at 1, so the term cannot be true). Bypass on
+measures stale fractions [.28326, .17952, .086, .0817, .06047, .03924, .01639, .01451]; bypass off
+measures [.01774, 0, 0, 0, 0, .01586, .00027, 0], while edge error (0.06054 against 0.06055),
+instability (0.03136 against 0.03139) and excursion (0.000118 against 0.000115) barely move. That
+supports the term as the cause of the aggregate residue and it buys nothing measurable here. It does
+**not** count the decisions the GPU actually made per pixel, and no geometry is claimed for it. That
+capture is preserved at `/tmp/opencode/pr398-preserved-062622/temporal-aa/motion` (19 scored arms,
+adapter `nvidia/turing`); the bypass-on side was not re-measured here, because putting the term back
+is a new policy change.
+
+**The repair.** `historyValidity` is now `historyValid ∧ validUV ∧ ¬disocclusion`. One predicate, one
+`Fn`, still called once per display pixel by `temporalRejectionCounter.ts`, so the published share
+cannot diverge from the drawn decision; the shared `currentDepth` struct lost its now-unread
+`farthestDepth` field with it. Generated template source, starter only. No new dependency, no preset,
+no threshold, no harness. Installed three 0.185.1 `TAAUNode.js` keeps the same OR in its own
+`hasValidHistory`; its remedy for its one-sided test is the thin-feature **lock** gate, a different
+term, so the reference offers no narrower history rule to adopt than the one measured here.
+
+**Red-green and actual exits.** `vitest run packages/create-threenative/__tests__/{scaffold,
+temporal-resolve,temporal-aa}.spec.ts packages/core/__tests__/temporal-chain.spec.ts` → `4 files,
+105 tests passed`, exit `0` (the scaffold pin follows the measured starter hash: `0d67385d…` for the
+predicate change, `022310e487fa1c39e6b81fdcdbfb7cb13f5977e51fdf5c146c8c0696e9d9db19` after this
+entry's comment correction; all 13 template hashes re-measured, every other one unchanged).
+`pnpm typecheck` exit `0`, `biome check` on both touched files exit `0`, the helper is 195 lines after
+Biome.
+
+**Runtime, this commit.** The production script, unmodified: `sh scripts/xvfb.sh node --import tsx
+scripts/verify-temporal-motion.ts` → exit `1`, all 31 arms captured with 18 PNGs each, no
+`failure.json`, every arm's adapter `nvidia/turing`, scored by its own `measureSequence`
+(`revealIndex` 8). `temporal` is **bit-identical to `strict-rejection`**: stale [.01774, 0, 0, 0, 0,
+.01586, .00027, 0], edge 0.06055, instability 0.03139, moving-edge 0.02899, excursion 0.000115. The
+exit `1` is the script's own gates, not a capture failure. The GPU rejection counter publishes a real
+36-frame series for 22 arms (`visited` 230400, source age 0, every share finite) and an
+`unavailable` object carrying its reason for the four fragment-overridden unchecked-history arms — no
+fabricated zero. `quality-supersampled` captured this time (2560x1440 reference against the 640x360
+display raster, 426x240 input), so the quality family is measured: `quality-temporal` stale [.0516,
+.01908, .00457, .00349, .00376, .01774, .00215, .00457], edge 0.08239, instability 0.03573, against
+`quality-spatial` [.03064, .03037, .06477, .03547, .03574, .06638, .0473, .03117].
+
+**Browser P1 and native, this commit.** The three existing scenarios against
+`examples/abyss-framework` (`scaled-lifecycle`, `scaled`, `scaled-unchecked-reset`; one managed server
+on IPv4 loopback, custom Vulkan arguments, no recipe): 41 + 35 + 10 = **86 assertions passed, 0
+failed**, each exit `0`, adapter `nvidia/turing`, `diagnostics: []` on all three. Native
+`conformance/run-conformance.mjs --only-tests temporal-aa-scaled,
+temporal-aa-scaled-unchecked-reset, temporal-aa-lifecycle, temporal-aa-quality` against the prebuilt
+`build/tn-linux/mystral`: web `pass 4, fail 0, blocked 96` and desktop `pass 4, fail 0, blocked 96`,
+both exiting `2` because the 96 unselected rows report **blocked**, never passed; each desktop row
+measured `pixelMismatchRatio` 0 and `perceptualDeltaE` 0 against its `.06`/`9` tolerance with the
+native process exiting `0`, and `provenance.commit` recorded `aeac68b2f` — this commit's only later
+change is the comment above and that test pin, neither of which reaches the drawn frame. The native
+lane publishes no WebGPU adapter, so none is claimed for it. Artifacts: `packages/runtime-native/
+artifacts/conformance/pr398-native-aeac/` and `examples/abyss-framework/artifacts/
+pr398-p1-aeac-*/`.
+
+**What stays open, honestly.** `revealRecovery` is still false: the warm bound covers `afterReveal`
+1–7 and afterReveal 5 measures .01586 against the pinned .01, while the ungated first reveal measures
+.01774. That residual is not the bypass — the bypass is already off in the arm that measures it — it is
+the pixels whose `closestDepth − previousDepth` never crosses `depthThreshold`, amplified at
+afterReveal 5 by the luminance reweighting (the corpus's `resolve-cubic-strict-ordinary` arm, which
+changes only the final blend, measures 0 there, and still measures .01559 when the reweighting stays).
+The low-input quality family fails its own warm bound twice, afterReveal 1 at .01908 and afterReveal 5
+at .01774, while `qualityBeatsSpatialStability` holds. Both Phase 2 boxes and the motion and quality
+edge boxes stay **open**, no box is ticked by this entry, and no full CI board, push or merge ran
+here.
+
+### The missing cell of the blend/sampling ablation (2026-10-05)
+
+**The cell that was missing.** The previous entry blamed the luminance reweighting from a single
+paired arm: `resolve-cubic-strict-ordinary` changes only the blend and measures 0 at afterReveal 5,
+while `resolve-cubic-strict` keeps the reweighting and measures .01559 there. That pair varies the
+blend under **cubic** history sampling, so it cannot separate the blend from the sampling. The cell
+that separates them is linear sampling plus the ordinary blend. The shipped default is linear sampling
+plus the **luminance** reweighting — `temporalAA.ts` passes `"linear", "luminance"` — so that cell is
+one change away from the default, not the default itself. This entry measured it.
+
+**The change, one line, reverted.** `temporalAA.ts` passed `"luminance"` to
+`createExperimentalTemporalResolve`; it passed `"ordinary"` for this run, with `"linear"` untouched so
+the ablation varies the blend alone. No new helper, no new argument, no new dependency, and no
+harness change: `temporalResolve.ts` already builds both arms from the installed TSL kernel, and the
+installed `TAAUNode.js` (`three@0.185.1` patched) still shows the luminance `flickerReduction` it was
+ported from, so this is a deliberate divergence from upstream, not a port defect.
+
+**What the production script measured, on that change.** `sh scripts/xvfb.sh node --import tsx
+scripts/verify-temporal-motion.ts` unmodified → exit `1`, **31 captured profiles** (22 motion + 9
+quality), 16 frames each, no `failure.json`, every profile's adapter `nvidia/turing`. The earlier
+entry's "32 arms" is a miscount, not a missing capture: the retained `f1b22c0be` capture
+(`/tmp/opencode/pr398-motion-baseline-f1b22c0be/motion/summary.json`) holds the same 31 profile keys
+and the same 19 scored rows, and the supersampled references (`supersampled`, `quality-supersampled`)
+are captured but carry no scored row (`counters` empty). `qualityCorpus` is null only for the 22 motion arms, which have no quality corpus; `quality-supersampled` holds the measured object `{role: "reference", foliageCards: 6, alphaTest: 0.5, leafTextureSize: 16}`, so it is captured, not absent. `temporal` stale fractions
+[.01774, 0, 0, 0, 0, **.01559**, .00027, .00027] against the pinned baseline
+[.01774, 0, 0, 0, 0, .01586, .00027, 0] — the warm ghost at afterReveal 5 does not move. Edge error
+0.05848 improves on 0.06055, instability 0.03193 worsens on 0.03139, and neither clears its gate, so
+`edgeImprovement` stays false. `quality-temporal` stale [.0516, .01908, .00484, .00349, .00376,
+**.01747**, .00188, .00457] against baseline [.0516, .01908, .00457, .00349, .00376, .01774, .00215,
+.00457]: the low-input warm bounds still fail twice. The paired arms are unchanged by the change and
+reproduce the previous numbers. Counters are unchanged: 27 arms publish a 36-frame share series
+(`visited` 230400, source age 0, every fraction finite) and the 4 fragment-overridden
+unchecked-history arms carry their `unavailable` reason; the decision is still the shared
+`historyValidity` `Fn` sampled per display pixel, so no new engine API and no policy change reached the
+render.
+
+**The pixels that survive.** Measured with the harness's own `linearFrame` and its `revealIndex` 8
+mask, against the `supersampled` reference: afterReveal 5 holds 62 stale pixels of 4225 revealed
+interior pixels, all inside one strip — x ≈ 358–366, rows 135–199 — with residue 0.103–0.141, just
+over the harness's 0.1 threshold. Their actual linear RGB is (0.078, 0.098, 0.153) against a target of
+(0.264, 0.332, 0.470), and the pre-reveal value was the pure red marker (1, 0, 0). The residue is a
+dark smear from the removed marker, not a red hue smear, so "the history keeps the old colour" does not
+describe it: a narrow band is under-resolved on the frame the marker's silhouette used to cover.
+
+**The causal result, and the decision.** With linear sampling held fixed, the ordinary blend does not
+remove the ghost (.01559 where the pinned baseline measures .01586). With cubic sampling held, it does
+(0). The blend's effect therefore **depends on the sampling**, and neither single-axis reading survives
+this pair: it does not show that the blend is not the cause, and it does not show that sampling alone
+is the cause. `resolve-cubic-strict-ordinary` is the only configuration in this corpus that clears the
+warm bound, and it differs from the shipped default on **two** axes, sampling and blend, so the corpus
+still holds no arm that isolates either axis against the default. That is a second, larger change than
+this entry's budget allowed and it is not qualified as a default. The source is
+therefore reverted to `f1b22c0be` and no product change ships: starter's tree pin stays
+`022310e487fa1c39e6b81fdcdbfb7cb13f5977e51fdf5c146c8c0696e9d9db19`, all 13 template hashes are
+unchanged, and `vitest run` over `scaffold`, `temporal-resolve`, `temporal-aa` and `temporal-chain`
+is `4 files, 105 tests passed`, exit `0`.
+
+**One honest harness consequence.** The run's exit `1` is not only the gates. `writeTemporalMotionSummary`
+asserts `authoredLinearEquivalent` — the installed `temporal` arm must hash-match the `resolve-linear`
+arm — and a deliberate default change makes that false by construction, so the assertion fired after
+every arm was retained and `summary.json` was written with `pass: false`. No threshold, score, camera,
+corpus or frame changed; a run whose default diverges from `resolve-linear` will always report this,
+which is the check working, not a defect. Native and browser P1 lanes were not re-run here because no
+runtime change ships.
+
+**Both boxes stay open.** The ghost box needs the warm bound qualified at full and low quality with its
+negative controls, native and counters; this entry qualifies the cause instead. The motion and quality
+edge boxes stay open, and no box is ticked by this entry.
+### The combined cubic + ordinary default, measured and reverted (2026-10-05)
+
+**Two axes at once, reverted.** `temporalAA.ts` passed `"catmull-rom", "ordinary"` for one production run, so the shipped arm moved on sampling **and** blend at once; the depth-edge rejection arm and `temporalResolve.ts` were untouched, and only `temporal-resolve.spec.ts` changed, to compare the generated default arm with the provider's own default compilation. No threshold, corpus, pose, camera or frame changed.
+
+**The run.** `sh scripts/xvfb.sh node --import tsx scripts/verify-temporal-motion.ts`; log `/tmp/opencode/pr398-motion-cubic-072259/motion-cubic.log`, summary `artifacts/temporal-aa/motion/summary.json`, 31 profiles. The log records **no exit code**: it ends in an uncaught `ERR_ASSERTION` from `writeTemporalMotionSummary` after every profile was retained, with `pass: false` because `authoredLinearEquivalent` is false once the shipped arm is not the linear one.
+
+**Full resolution clears the warm bound.** `temporal` is bit-identical to `resolve-cubic-strict-ordinary`: edge .0555994, instability .0324191, stale [.01774, 0, 0, 0, .00027, 0, .00054, .00054] — afterReveal 1–7 clears the pinned .01. `edgeImprovement` stays false. That claim of bit-identity to the retained `f1b22c0be` capture is withdrawn: this run's `temporal` edge is .0555994 against the baseline's .0605459 and its instability .0324191 against .0313916, so the combined candidate moved both, and only `temporal` is byte-identical to `resolve-cubic-strict-ordinary`.
+
+**Low input is where it fails.** `quality-temporal` stale [.0516, **.01908**, .00511, .00322, .0043, **.01747**, .00242, .00484] against the same .01 bound: afterReveal 1 and 5 fail, as under `linear` + `luminance` ([.0516, .01908, …, .01774, …]) and under `linear` + `ordinary`, so `qualityRevealRecovery` stays false. Edge .0806872 and instability .0364328 stay worse than `quality-spatial` (.0774488, .0505515), so `qualityEdgeImprovement` stays false.
+
+**Decision and boxes.** It fails its own measurements at both resolutions, so nothing ships: the three dirty files are reverted to `563d64a8b`, the starter tree pin and all 13 template hashes are unchanged, and every capture is retained. Both Phase 2 ghost boxes, the motion and quality edge boxes and PRD-269's ghosting cost stay **open**; no box is ticked, and no browser or native lane was re-run because no runtime change ships.
+
+
+### Current-frame reconstruction, measured and falsified (HEAD 8a20ae9ee + this commit)
+
+**What the installed node does.** `three/examples/jsm/tsl/display/TAAUNode.js` (0.185.1, patched pin
+`7036a173`) reconstructs the current frame as nine `load` taps on a 3×3 neighbourhood of the
+jittered input lattice, each weighted `exp(-2.29 * d²)`, normalized by its own weight sum. The
+generated kernel took one bilinear sample instead. No core Three patch was needed: `camera.view` is
+public, so the jitter a gather must follow is read where upstream applied it.
+
+**What was built and measured.** `createExperimentalTemporalResolve` gained
+`reconstruction: "bilinear" | "blackman-harris"` with that nine-tap loop, `temporalAAFrame`
+published the applied offset as `_jitterOffsetUniform`, `temporalAA.ts` installed the gather as its
+default, and the fixture mapped a `resolve-reconstruction` arm. History sampling, blend,
+`currentWeight`, clipping, rejection, velocity, counter, lifecycle, corpus, scoring and every
+threshold stayed as they were, so this run isolates the current-frame reconstruction alone. The
+whole-display cold-reset oracle was rebuilt as an independent nine-tap gather over the same immutable
+input and the measured jitter, because a plain bilinear fetch can no longer be the expected cold
+frame; the mutant that clears the reset flag still fails it.
+
+**The run.** `sh scripts/xvfb.sh node --import tsx scripts/verify-temporal-motion.ts`, log
+`/tmp/opencode/pr398-motion33.log`, recorded exit `1` in `/tmp/opencode/pr398-motion33.status`,
+summary `artifacts/temporal-aa/motion/summary.json`. 33 profiles, 16 frames each, no `failure.json`,
+`nvidia`/`turing` WebGPU in every arm: the retained 31, the explicit `resolve-reconstruction` arm, and
+its matched `resolve-reconstruction-open` control the causal pairing requires. `authoredResolveEquivalent`
+(the renamed equivalence oracle, now comparing the default against the arm that names the same
+reconstruction) is **true**: the shipped default hashed equal to the explicit gather arm in all 16
+frames, so the numbers below are that arm's, not a differently authored resolve.
+
+**Full resolution.** `temporal` (= `resolve-reconstruction`): edge **.0641339** against the shipped
+bilinear `.0605459` and the no-AA `.0502947`, so `edgeImprovement` is false and the gather is *worse*
+than the sample it replaces. Instability `.0321929` still improves on `.0491286`. Reveal
+[.00027, 0, .00027, 0, .00027, **.01586**, .00027, .00054]: afterReveal 5 holds the same warm ghost the
+bilinear default draws, so `revealRecovery` is false.
+
+**Low input.** `quality-temporal`: edge **.0812266** against `quality-reference` `.0493331`
+(`qualityEdgeImprovement` false) and instability `.0347867` against `quality-spatial` `.0505515`, so
+`qualityBeatsSpatialStability` passes at .687 of the spatial arm. Reveal [.04891, **.01801**, .00349,
+.00269, .00322, **.01854**, .00215, .00376] fails the same .01 bound at afterReveal 1, 2 and 6, as
+`linear` + `luminance` and `linear` + `ordinary` do. Causal red excess is 0 in all eight frames
+against the matched open-history control, and the real GPU counter is published for both arms — 36
+frames, 230 400 display pixels visited, finite fractions, source age 0 — so the ghost is a neutral
+brightening, not a red history leak, exactly as the `luminance` and `ordinary` arms show. Checks:
+11 true, 4 false (`edgeImprovement`, `revealRecovery`, `qualityEdgeImprovement`,
+`qualityRevealRecovery`).
+
+**Decision and boxes.** The installed node's own current-frame reconstruction is **not** the reveal
+ghost's cause and not its fix: it costs full-resolution edge error, leaves the warm ghost at the same
+.01586, and fails the low-input bound in three more places than the bilinear default. Nothing ships,
+so all nine touched files are reverted to `8a20ae9ee`, `temporalAA.ts` keeps the bilinear default, the
+starter tree pin and all 13 template hashes are unchanged, and every capture is retained (this run's
+in `artifacts/temporal-aa/motion`, the previous 31-arm corpus in
+`/tmp/opencode/pr398-motion-preserved-39f1d219`). No browser or native lane was re-run, because no
+runtime change ships and the mode had no native proof. Every Phase 2 ghost box, the motion and quality
+edge boxes and PRD-269's ghosting cost stay **open**; no box is ticked.
+
+**Counts, corrected against the retained capture.** `fenceProfiles`, `rasters`, `counters`,
+`qualityCorpus`, `velocityDiagnostics` and `provenance` all hold one key per captured arm — 31 in the
+retained `f1b22c0be` corpus (22 motion plus 9 quality), 33 in this run — while scored rows are 19 and
+20 respectively, and the `supersampled` / `quality-supersampled` references are captured without a
+scored row. `qualityCorpus` is null only for the motion arms. Earlier "32 arms" and "512 frames"
+figures were a miscount of a 31-arm corpus.
+
+
+### Current develop and immutable owner source combined with CPU repairs (2026-10-05)
+
+This isolated candidate normally merges current develop `9b3c4824c` into published PR398
+`f04169f39` (local merge `844a67c27`), then integrates exact committed owner checkpoint
+`a0830fec4`. No live owner fixture or motion-script patch was copied. Both temporal/velocity
+and the newly landed animation/native lanes retain candidate-pinned checkouts, current-attempt
+receipts and completion dependencies. Independent review and 100 routing/receipt tests passed.
+
+The owner helper had moved renderer, colour and texture-size rejection outside the catch again.
+The published repair is retained around the new frame helper: four rejected-input recovery cases
+prove unchanged reports/frame counts on failure, both current-colour target reseeds at full
+resolution, and subsequent accumulation. Fixed RTT colour now jitters on its measured raster;
+automatic RTT colour uses its own public resolution scale and the upcoming drawing-buffer size.
+Two composed-colour RTT cases cover both routes and a height-only display change. The scaled
+conformance input expectation now follows pinned Three's `Math.floor`, preserving the authored
+display resize's `Math.round`: the real pass at 800x600 changes input height to 266, not 267.
+
+Explicit red/green: 33 passing / 7 failing CPU cases before repair, then 40/40 passing. The
+combined focused set passes 303 tests across 14 files, including real WGSL compilation, template
+source/instruction contracts, measured actual hashes for all 13 no-install generated scaffolds,
+existing evidence/quality controls, and routing/receipts. Root TypeScript 7 checking and the final 40-case repair rerun also pass. Serial workspace
+typechecking reaches the landed locomotion example and fails because the owned core declarations
+were built before develop added `AnimationPlayer.playWeighted`; current source contains the method.
+A coordinated package build is required before claiming the full workspace check passes. Original
+thresholds and acceptance rows from the owner checkpoint are unchanged. This is CPU evidence; no GPU/native capture ran here.
+
+The matching lower-raster RTT cases do not qualify lower-raster exposure composition through
+actual WorldEnvironment or the automatic scaler. Clean retained browser/native reports at
+`aeac68b2f` remain historical source evidence, not execution of this combined candidate. Original
+quality/ghosting, GPU/render cost, native combined-source qualification and automatic-scale
+allocation/cost gates remain open. No new acceptance box is ticked, and publication remains held
+until later owner commits and remote advancement are reconciled.
