@@ -194,7 +194,10 @@ describe("impostorFrameBasis", () => {
 });
 
 describe("impostorFrameUv", () => {
-  it("projects an offset to the same uv the baker's camera itself projects", () => {
+  // A three render target's texture row 0 is the top of the frame the camera drew (WebGPU writes
+  // top-down and three samples it unflipped; WebGL's flip lands the same place), so the texel the
+  // bake wrote for NDC y sits at v = 0.5 - y/2. The GL-style 0.5 + y/2 drew every impostor upside down.
+  it("projects an offset to the texel the baker's camera wrote it into", () => {
     const center = new Vector3(0.5, -1, 2);
     const radius = 3;
     for (const direction of VIEW_DIRECTIONS) {
@@ -212,7 +215,7 @@ describe("impostorFrameUv", () => {
         const ndc = point.clone().project(camera);
         const uv = impostorFrameUv(point.clone().sub(center), basis, radius);
         expect(uv.u).toBeCloseTo(ndc.x * 0.5 + 0.5, 5);
-        expect(uv.v).toBeCloseTo(ndc.y * 0.5 + 0.5, 5);
+        expect(uv.v).toBeCloseTo(0.5 - ndc.y * 0.5, 5);
       }
     }
   });
