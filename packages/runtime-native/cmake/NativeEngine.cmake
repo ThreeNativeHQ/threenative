@@ -138,6 +138,18 @@ add_test(NAME native_engine_abi_c11 COMMAND $<TARGET_FILE:tn-native-engine-abi-c
 set_tests_properties(native_engine_abi_c11 PROPERTIES LABELS "native-engine")
 set_property(GLOBAL APPEND PROPERTY TN_NATIVE_ENGINE_TEST_TARGETS tn-native-engine-abi-c11)
 
+# The native side of the differential fixture runner (PRD-498): run-native.ts spawns the driver.
+add_library(tn_fixture_driver STATIC tests/native-engine/fixture/driver.cpp tests/native-engine/fixture/bindings.cpp)
+tn_native_engine_target(tn_fixture_driver)
+target_include_directories(tn_fixture_driver PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine)
+target_link_libraries(tn_fixture_driver PUBLIC tn_engine_foundation)
+add_executable(tn-native-engine-fixture-driver tests/native-engine/fixture/main.cpp)
+target_link_libraries(tn-native-engine-fixture-driver PRIVATE tn_fixture_driver)
+tn_native_engine_target(tn-native-engine-fixture-driver)
+tn_native_engine_test(tn-native-engine-fixture-protocol-test tests/native-engine/fixture_driver_test.cpp
+    native_engine_fixture_protocol=protocol)
+target_link_libraries(tn-native-engine-fixture-protocol-test PRIVATE tn_fixture_driver)
+
 # libFuzzer targets need clang; `TN_ENGINE_FUZZ=ON` with a clang toolchain builds them.
 option(TN_ENGINE_FUZZ "Build the native engine libFuzzer targets (clang only)" OFF)
 if(TN_ENGINE_FUZZ)

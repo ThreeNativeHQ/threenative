@@ -1,0 +1,171 @@
+#include "driver.h"
+
+#include <bit>
+#include <cctype>
+#include <cinttypes>
+#include <cstdio>
+#include <cstring>
+#include <istream>
+#include <ostream>
+#include <sstream>
+
+namespace tn::fixture {
+
+namespace {
+
+std::string decode(const std::string& text) {
+    std::string out;
+    for (size_t i = 0; i < text.size(); ++i) {
+        if (text[i] == '%' && i + 2 < text.size()) {
+            out += static_cast<char>(std::stoi(text.substr(i + 1, 2), nullptr, 16));
+            i += 2;
+        } else {
+            out += text[i];
+        }
+    }
+    return out;
+}
+
+std::string encode(const std::string& text) {
+    static const char* hex = "0123456789ABCDEF";
+    std::string out;
+    for (unsigned char c : text) {
+        if (std::isalnum(c) || std::strchr("-_.!~*'()", c)) {
+            out += static_cast<char>(c);
+        } else {
+            out += '%';
+            out += hex[c >> 4];
+            out += hex[c & 15];
+        }
+    }
+    return out;
+}
+
+std::string bits(double value) {
+    char buffer[24];
+    std::snprintf(buffer, sizeof buffer, "n:%016" PRIx64, std::bit_cast<uint64_t>(value));
+    return buffer;
+}
+
+Value parseArg(const std::string& token) {
+    if (token == "null") return Value{};
+    if (token.rfind("n:", 0) == 0) return Value::of(std::bit_cast<double>(std::stoull(token.substr(2), nullptr, 16)));
+    if (token.rfind("s:", 0) == 0) return Value{Value::Kind::String, 0, decode(token.substr(2))};
+    if (token == "b:1") return Value::of(true);
+    if (token == "b:0") return Value::of(false);
+    if (token.rfind("r:", 0) == 0) return Value{Value::Kind::Ref, 0, token.substr(2)};
+    throw Unsupported{"unknown argument token " + token};
+}
+
+std::vector<std::string> split(const std::string& line) {
+    std::vector<std::string> tokens;
+    std::istringstream stream(line);
+    for (std::string token; stream >> token;) tokens.push_back(token);
+    return tokens;
+}
+
+}  // namespace
+
+double number(const Value& v) {
+    if (v.kind != Value::Kind::Number) throw Unsupported{"expected a number"};
+    return v.number;
+}
+
+Value Driver::adopt(std::string cls, std::shared_ptr<void> ptr) {
+    const std::string id = "\x02t" + std::to_string(nextTemp_++);
+    objects_[id] = Object{std::move(cls), std::move(ptr)};
+    return Value{Value::Kind::Ref, 0, id};
+}
+
+int Driver::run(std::istream& in, std::ostream& out) {
+    for (std::string line; std::getline(in, line);) {
+        const std::vector<std::string> t = split(line);
+        if (t.empty()) continue;
+        const std::string& command = t[0];
+        try {
+            if (command == "fixture") continue;
+            if (command == "end") break;
+            if (command == "new" && t.size() >= 3) {
+                auto cls = classes.find(t[2]);
+                if (cls == classes.end() || !cls->second.ctor) throw Unsupported{"class " + t[2]};
+                Args args;
+                for (size_t i = 3; i < t.size(); ++i) args.push_back(parseArg(t[i]));
+                objects_[t[1]] = Object{t[2], cls->second.ctor(args, *this)};
+                continue;
+            }
+            if ((command == "call" && t.size() >= 4) || (command == "set" && t.size() >= 4)) {
+                auto object = objects_.find(t[1]);
+                if (object == objects_.end()) throw Unsupported{"no object " + t[1]};
+                ClassBinding& binding = classes[object->second.cls];
+                if (command == "set") {
+                    auto setter = binding.setters.find(t[2]);
+                    if (setter == binding.setters.end()) throw Unsupported{object->second.cls + "." + t[2] + " is not settable"};
+                    setter->second(object->second.ptr.get(), parseArg(t[3]));
+                    continue;
+                }
+                auto method = binding.methods.find(t[2]);
+                if (method == binding.methods.end()) throw Unsupported{object->second.cls + "." + t[2] + "()"};
+                Args args;
+                for (size_t i = 4; i < t.size(); ++i) args.push_back(parseArg(t[i]));
+                Value result = method->second(object->second.ptr.get(), args, *this);
+                if (t[3] != "-") {
+                    if (result.kind == Value::Kind::Ref) {
+                        // A chaining method returns its own object; a new object was adopted under a temp id.
+                        objects_[t[3]] = result.text == "\x01self" ? object->second : objects_[result.text];
+                    } else {
+                        // A plain value is held as a pseudo-object so it can be observed by id.
+                        auto boxed = std::make_shared<Value>(result);
+                        objects_[t[3]] = Object{"\x03value", boxed};
+                    }
+                }
+                continue;
+            }
+            if (command == "observe" && t.size() == 6) {
+                const std::string& index = t[1];
+                auto object = objects_.find(t[2]);
+                if (object == objects_.end()) throw Unsupported{"no object " + t[2]};
+                Value value;
+                if (object->second.cls == "\x03value") {
+                    value = *static_cast<Value*>(object->second.ptr.get());
+                } else {
+                    ClassBinding& binding = classes[object->second.cls];
+                    if (t[4] != "-") {
+                        auto method = binding.methods.find(decode(t[4]));
+                        if (method == binding.methods.end()) throw Unsupported{object->second.cls + "." + decode(t[4]) + "()"};
+                        value = method->second(object->second.ptr.get(), {}, *this);
+                    } else {
+                        auto getter = binding.getters.find(decode(t[3]));
+                        if (getter == binding.getters.end()) throw Unsupported{object->second.cls + "." + decode(t[3])};
+                        value = getter->second(object->second.ptr.get());
+                    }
+                }
+                const std::string& kind = t[5];
+                out << "obs " << index << " " << kind << " ";
+                if (kind == "number" && value.kind == Value::Kind::Number) {
+                    out << bits(value.number);
+                } else if (kind == "numbers" && value.kind == Value::Kind::Numbers) {
+                    for (size_t i = 0; i < value.numbers.size(); ++i) out << (i ? "," : "") << bits(value.numbers[i]);
+                } else if (kind == "boolean" && value.kind == Value::Kind::Bool) {
+                    out << (value.flag ? "b:1" : "b:0");
+                } else if ((kind == "string" || kind == "json") && value.kind == Value::Kind::String) {
+                    out << "s:" << encode(value.text);
+                } else {
+                    out << "\n";
+                    throw Unsupported{"observation kind " + kind + " does not match the native value"};
+                }
+                out << "\n";
+                continue;
+            }
+            throw Unsupported{"command " + command};
+        } catch (const Unsupported& u) {
+            const std::string index = command == "observe" && t.size() > 1 ? t[1] : "-";
+            out << "unsupported " << index << " " << encode(u.reason) << "\n";
+        } catch (const std::exception& e) {
+            out << "error " << encode(e.what()) << "\n";
+        }
+    }
+    out.flush();
+    return 0;
+}
+
+}  // namespace tn::fixture
