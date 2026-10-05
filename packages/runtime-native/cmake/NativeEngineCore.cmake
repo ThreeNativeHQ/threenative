@@ -43,7 +43,7 @@ tn_native_engine_target(tn_engine_foundation)
 target_include_directories(tn_engine_foundation PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 # The N03 C ABI over the foundation: version handshake, contexts, generational object handles.
-add_library(tn_engine_abi STATIC src/engine/abi/abi.cpp)
+add_library(tn_engine_abi STATIC src/engine/abi/abi.cpp src/engine/abi/identity.cpp)
 tn_native_engine_target(tn_engine_abi)
 target_link_libraries(tn_engine_abi PUBLIC tn_engine_foundation tn_engine_bindings)
 target_include_directories(tn_engine_abi PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
@@ -283,6 +283,15 @@ if(NOT EMSCRIPTEN AND NOT TN_ENGINE_CORE_ONLY AND NOT TN_ENGINE_SANITIZE)
             PASS_REGULAR_EXPRESSION "aot-callback +- +PASS")
     endif()
 endif()
+
+# PRD-530: the artifact identity manifest, its checks and the tool a packager runs.
+tn_native_engine_test(tn-native-engine-identity-test tests/native-engine/identity_test.cpp
+    native_engine_artifact_identity=identity)
+target_link_libraries(tn-native-engine-identity-test PRIVATE tn_engine_abi)
+add_executable(tn-native-engine-identity EXCLUDE_FROM_ALL tests/native-engine/identity_tool.cpp)
+target_link_libraries(tn-native-engine-identity PRIVATE tn_engine_abi)
+tn_native_engine_target(tn-native-engine-identity)
+set_property(GLOBAL APPEND PROPERTY TN_NATIVE_ENGINE_TEST_TARGETS tn-native-engine-identity)
 
 add_library(tn_fixture_driver STATIC tests/native-engine/fixture/driver.cpp)
 tn_native_engine_target(tn_fixture_driver)

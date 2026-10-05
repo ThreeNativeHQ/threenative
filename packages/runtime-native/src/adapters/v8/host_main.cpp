@@ -6,7 +6,7 @@
 // device without timestamp-query. Presentation arrives with the desktop/Pixel verdict runs.
 //
 //   tn-native-engine-host <workload.js> [--objects N] [--frames N] [--warmup N] [--size WxH]
-//                         [--report out.json] [--cpp]
+//                         [--report out.json] [--cpp] [--identity manifest]
 //
 // The script defines `workload = { setup(objectCount, width, height) -> {scene, camera},
 // update(frameIndex) }`. Per measured frame the host records the update time (the game's work),
@@ -27,6 +27,7 @@
 
 #include "adapters/v8/adapter.h"
 #include "engine/abi/abi_internal.h"
+#include "engine/abi/identity.h"
 #include "engine/foundation/math/ieee754.h"
 #include "engine/renderer/render_database.h"
 #include "engine/scene/geometries.h"
@@ -42,6 +43,7 @@ struct Options {
     uint32_t objects = 4096, frames = 600, warmup = 120, width = 1280, height = 720;
     std::string report;
     bool cpp = false;
+    std::string identity;  // the artifact identity manifest checked at startup (PRD-530)
 };
 
 double ms(Clock::time_point a, Clock::time_point b) { return std::chrono::duration<double, std::milli>(b - a).count(); }
@@ -243,10 +245,19 @@ int main(int argc, char** argv) {
         else if (a == "--size") { const std::string s = next(); o.width = uint32_t(std::stoul(s)); o.height = uint32_t(std::stoul(s.substr(s.find('x') + 1))); }
         else if (a == "--report") o.report = next();
         else if (a == "--cpp") o.cpp = true;
+        else if (a == "--identity") o.identity = next();
         else if (o.script.empty() && a.rfind("--", 0) != 0) o.script = a;
         else return std::fprintf(stderr, "TN_HOST_ARGS: unknown argument %s\n", a.c_str()), 2;
     }
     if (!o.cpp && o.script.empty()) return std::fprintf(stderr, "TN_HOST_ARGS: a workload script, or --cpp\n"), 2;
+    // PRD-530: an artifact built against another engine stops here, before any engine or game code.
+    if (!o.identity.empty()) {
+        std::ifstream manifest(o.identity);
+        std::stringstream text;
+        text << manifest.rdbuf();
+        const std::string refusal = manifest ? tn::abi::checkIdentity(text.str()) : "TN_ARTIFACT_IDENTITY_MISSING: " + o.identity;
+        if (!refusal.empty()) return std::fprintf(stderr, "%s\n", refusal.c_str()), 3;
+    }
 
     mystral::webgpu::Context gpuContext;
     if (!gpuContext.initializeHeadless()) return std::fprintf(stderr, "TN_HOST_NO_GPU\n"), 1;
