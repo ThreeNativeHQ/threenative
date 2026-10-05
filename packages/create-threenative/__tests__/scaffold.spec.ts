@@ -194,6 +194,8 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // that restored only the template sources to HEAD was dumped file-by-file against the current
   // trees: twelve kits differ in `src/render/worldEnvironment.ts` alone, starter in those eight
   // files, and no generated instruction, manifest or package byte moved.
+  // Re-measured for the temporal AA hook handover: `temporalAAHooks.ts` now returns the borrowed
+  // slots of the context a recompile replaces, so only starter's tree moves, by that one file.
   "action-rpg": "7a27b473f826f941d92c12074bab55fe574a82fcf3278b6f6739e2d2f4fbe7cf",
   minimal: "47ff5a81d830ccedfece116d42570cbbd1e5f80eea7801ce165081d9b3f7d2dd",
   platformer: "3405d339d70d1140c9785d1eba76d784fdeef32ef3af6bdfeb1e5bdfb33bfe55",
@@ -205,7 +207,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   sailing: "40afa9021dd0a932bfa0ae609ee9bc3006755a03d34e091e5a5a2fa32cd4834c",
   shooter: "006887d0c34d64be44382341b8a5fb8c1568dc22248da123cac58bfdef93cd51",
   snow: "8aa67382dbbb3785d7de903d416d4dfb0ed17c4cd81187c3a968bc214579bb7b",
-  starter: "2556ed96b5149f35c74321403e08c0857afa9fa9c6cfac66879b13f6d5677ff6",
+  starter: "89dd12f6971111bc16476a884baa7bcf76e4b3b08fe7c66b073f09dfe28a1c78",
   "tower-defense": "213d62000fb47921de130439c09e52c870712c3c58733088c3d4ae9904dea9b7",
 };
 

@@ -780,6 +780,47 @@ describe("opt-in temporal AA", () => {
     scenePass.dispose();
   });
 
+  it("returns the replaced context to its own originals when a recompile makes a new one", () => {
+    const before = (): void => {};
+    const after = (): void => {};
+    const { builder, temporal, pipeline, scenePass } = fixture({
+      renderPipeline: true,
+      pipelineCallbacks: { onBeforeRenderPipeline: before, onAfterRenderPipeline: after },
+    });
+    const jitter = pipeline.context.onBeforeRenderPipeline;
+    // Three's RenderPipeline._update builds a fresh context object per recompile and `context` is
+    // the getter naming the active one, so replacing it here is what a real recompile presents.
+    const replaced = pipeline.context;
+    const fresh: PipelineCallbacks = {};
+    pipeline.context = fresh;
+    temporal.node.setup(builder);
+    // The jitter callback keeps its identity across the handover.
+    expect(fresh.onBeforeRenderPipeline).toBe(jitter);
+    expect(fresh.onAfterRenderPipeline).not.toBe(after);
+    expect(replaced.onBeforeRenderPipeline).toBe(before);
+    expect(replaced.onAfterRenderPipeline).toBe(after);
+    scenePass.dispose();
+  });
+
+  it("leaves the context a recompile made clean after disposal, whatever it still calls", () => {
+    const { builder, camera, temporal, pipeline, scenePass } = fixture({ renderPipeline: true });
+    const fresh: PipelineCallbacks = {};
+    pipeline.context = fresh;
+    temporal.node.setup(builder);
+    expect(fresh.onAfterRenderPipeline).toBeTypeOf("function");
+    const view = camera.view;
+    const projection = camera.projectionMatrix.clone();
+    temporal.dispose();
+    expect(fresh.onBeforeRenderPipeline).toBeUndefined();
+    expect(fresh.onAfterRenderPipeline).toBeUndefined();
+    // The pair the disposed node left behind would still jitter and re-project the camera.
+    fresh.onBeforeRenderPipeline?.();
+    fresh.onAfterRenderPipeline?.();
+    expect(camera.view).toBe(view);
+    expect(camera.projectionMatrix.equals(projection)).toBe(true);
+    scenePass.dispose();
+  });
+
   it("leaves both slots empty when it found none before the first setup", () => {
     const { temporal, pipeline, scenePass } = fixture({ renderPipeline: true });
     temporal.dispose();

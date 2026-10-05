@@ -15,10 +15,26 @@ export function createTemporalAAHooks(jitter: (renderer: Renderer) => void) {
   let ownedBefore: (() => void) | undefined;
   let ownedAfter: (() => void) | undefined;
 
+  /**
+   * Each borrowed slot goes back to the original its own context held, and only while it is still
+   * this node's: a later owner keeps the slot, and upstream's pair belongs to the node.
+   */
+  function restore(): void {
+    if (context === undefined) return;
+    if (context.onBeforeRenderPipeline === ownedBefore)
+      context.onBeforeRenderPipeline = previousBefore;
+    if (context.onAfterRenderPipeline === ownedAfter) context.onAfterRenderPipeline = previousAfter;
+  }
+
   return {
-    /** The originals, read once and before upstream's setup has written the node's own pair. */
+    /**
+     * The originals, read once per context and before upstream's setup has written the node's own
+     * pair. A recompile into a fresh context object hands this one back, so the context three stops
+     * calling keeps nothing it borrowed.
+     */
     captureBeforeSetup(next: PipelineContext): void {
-      if (context !== undefined) return;
+      if (context === next) return;
+      restore();
       context = next;
       previousBefore = next.onBeforeRenderPipeline;
       previousAfter = next.onAfterRenderPipeline;
@@ -33,14 +49,8 @@ export function createTemporalAAHooks(jitter: (renderer: Renderer) => void) {
       ownedAfter = next.onAfterRenderPipeline;
       next.onBeforeRenderPipeline = ownedBefore;
     },
-    /** Each slot goes back to its own original, and only while it is still this node's: a later
-     * owner keeps the slot, and upstream's pair belongs to the node being disposed. */
     dispose(): void {
-      const owner = context;
-      if (owner !== undefined && owner.onBeforeRenderPipeline === ownedBefore)
-        owner.onBeforeRenderPipeline = previousBefore;
-      if (owner !== undefined && owner.onAfterRenderPipeline === ownedAfter)
-        owner.onAfterRenderPipeline = previousAfter;
+      restore();
       context = undefined;
       previousBefore = undefined;
       previousAfter = undefined;

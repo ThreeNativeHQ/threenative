@@ -1170,3 +1170,52 @@ rest is unchanged and still open: the Phase 2 quality scores and their gates, th
 p95 comparison, and the PRD-269 ghosting cost remain as they were. This repair makes the capture a
 fixed point; it does not measure temporal stability, and it says nothing about the 176-frame quality
 benchmark. The `.03870` correction above stands as written.
+
+### Hand the replaced context back to its own originals (2026-10-06)
+
+**The bug.** `temporalAAHooks.ts` captured the two pipeline callback slots once, from the first
+context it ever saw, and restored them only on `dispose()`. Three.js 0.185.1's
+`RenderPipeline._update` builds a **fresh** context object on every recompile and `pipeline.context`
+names the active one. So after a recompile the node's `before`/`after` pair sat on the context three
+had stopped calling, the new context kept the originals **and** nothing of ours, and `dispose()`
+restored a slot nobody called while the live pair stayed installed — a disposed node that still
+jittered and re-projected the camera. The helper also captured `before`/`after` once for all
+contexts, so the originals it would later restore were the *first* context's, not the replaced one's.
+
+**The repair.** One local `restore()`, called both when `captureBeforeSetup` sees a different context
+and from `dispose()`. It writes each slot back only while that slot still holds what this node
+installed, so a later owner survives and upstream's pair is left to the node being disposed. The
+capture guard becomes `if (context === next) return`, so the same context still preserves the first
+originals and a new context captures **its** originals before upstream's setup runs. Generated
+template source, starter only: the canonical helper is ~65 lines and only the starter tree carries
+it, so no template was copied blind and `scaffold.spec.ts`'s measured starter hash is the only one
+that moves (`89dd12f6971111bc16476a884baa7bcf76e4b3b08fe7c66b073f09dfe28a1c78`).
+
+**Red then green, actual exits.** Two new cases in `temporal-aa.spec.ts` failed first: the replaced
+context still held `OLD` and `NEW` after `dispose()`. After the repair:
+`pnpm exec vitest run packages/create-threenative/__tests__/{scaffold,temporal-aa,temporal-resolve,temporal-initial-projection}.spec.ts packages/core/__tests__/temporal-chain.spec.ts packages/runtime-native/__tests__/temporal-velocity-probe.spec.ts`
+→ `6 files, 111 tests passed`, exit `0`. `pnpm typecheck` exit `0`, `biome check` on the three
+touched files exit `0`.
+
+**Browser scenarios, this commit, actual exits.** The three existing scenarios ran unmodified against
+`examples/abyss-framework` at variant `scaled-lifecycle`, `scaled` and `scaled-unchecked-reset`,
+adapter `nvidia`/`turing`, `rendererKind webgpu`, fixed-step clock, zero console/network/runtime
+diagnostics: `temporal-aa-lifecycle` **41** assertions pass exit `0`, `temporal-aa-scaled` **35**
+pass exit `0`, `temporal-aa-scaled-unchecked-reset` **10** pass exit `0`. The blocked runs before this
+were the harness, not the game: Vite 8.2.0 binds `[::1]` only, so `http://127.0.0.1:5201` was
+refused (`curl` `000`) while `localhost` answered `200`. The managed server now passes
+`--host 127.0.0.1 --port 5201 --strictPort`, which is what the repo's own
+`playtest:loading-leak` script already did. No budget, assertion or threshold moved.
+
+**Native, fresh web reference, actual exits.** Both lanes ran the same four rows with
+`--only-tests temporal-aa-scaled,temporal-aa-scaled-unchecked-reset,temporal-aa-lifecycle,temporal-aa-quality`
+against the prebuilt `build/tn-linux/mystral` (no rebuild): web **4 pass / 0 fail**, exit `2`;
+desktop against the fresh web directory **4 pass / 0 fail**, exit `2`. Exit `2` is the 96 unselected
+rows, each recorded `blocked` with reason `Not selected by this bounded execution run.` — not a
+failure and not a full-green board. Zero GPU validation errors on every row. The native adapter stays
+unrecorded and therefore unknown; the desktop report's `runtimeSha256` is the prebuilt binary.
+
+**Where this leaves the PRD.** The hook handover is repaired and green on units, three browser
+scenarios and both conformance lanes. Nothing else moved: Phase 2's quality scores and gates, Phase 3's
+GPU/render p95 comparison and the PRD-269 ghosting cost all stay **open**, no new box is ticked by this
+entry, and no full CI board, push or merge ran here.
