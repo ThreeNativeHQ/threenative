@@ -133,7 +133,14 @@ export class AssetScene extends Scene<State> {
           node.quaternion.angleTo(rotations[index] ?? new Quaternion()),
         );
       frames += 1;
-      const owned = frames < SETTLE_FRAMES ? undefined : ownedResources(ctx);
+      // An enter is read only once the renderer has drawn this scene. `info.memory` counts a
+      // resource from the frame that uploads it, and the engine withholds the first world pass
+      // behind the loader cover until first-use compilation settles: at that point the loader's own
+      // geometry is the whole live tally, this scene's six geometries and three textures are not
+      // counted at all, and a baseline taken there charges the scene one whole upload as growth on
+      // every later enter. `startup.compileSettled` is the documented signal that ends the window.
+      const owned =
+        frames < SETTLE_FRAMES || !ctx.startup.compileSettled ? undefined : ownedResources(ctx);
       let isSettled = false;
       if (owned !== undefined) {
         peak.geometries = Math.max(peak.geometries, owned.geometries);
