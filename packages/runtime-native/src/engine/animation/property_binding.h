@@ -67,7 +67,9 @@ class PropertyBinding {
         MaterialColor,
         LightIntensity,
         LightColor,
-        CameraNumber
+        CameraNumber,
+        MorphArray,   // `morphTargetInfluences`: three's EntireArray binding
+        MorphElement  // `morphTargetInfluences[i]`: three's ArrayElement binding
     };
 
     std::weak_ptr<Object3D> root_;
@@ -78,6 +80,7 @@ class PropertyBinding {
     Target target_ = Target::Unavailable;
     Vector3 Object3D::* vector_ = nullptr; // the vector a component binding writes
     int component_ = 0;
+    std::size_t morphIndex_ = 0;
     std::shared_ptr<Material> material_; // the material bound, held until unbind like three's targetObject
     double Material::* materialNumber_ = nullptr;
     Color Material::* materialColor_ = nullptr;

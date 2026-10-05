@@ -772,13 +772,29 @@ const ball = Object.assign(new three.Mesh(new three.SphereGeometry(), ballMateri
 const sun = Object.assign(new three.DirectionalLight(0xffeedd, 2), { name: "sun" });
 const cam = Object.assign(new three.PerspectiveCamera(50, 1.5, 0.1, 100), { name: "cam" });
 const empty = named("empty");
-stage.add(cube, ball, sun, cam, empty);
+// Two morph targets: an entire-array track and an element track bind its morphTargetInfluences.
+const blobGeometry = new three.BoxGeometry();
+blobGeometry.morphAttributes.position = [
+  blobGeometry.attributes.position.clone(),
+  blobGeometry.attributes.position.clone(),
+];
+const blob = Object.assign(new three.Mesh(blobGeometry, new three.MeshStandardMaterial()), {
+  name: "blob",
+});
+stage.add(cube, ball, sun, cam, empty, blob);
 const PROPERTY_CLIPS: IClipSpec[] = [
   {
     name: "look",
     duration: -1,
     additive: false,
     tracks: [
+      {
+        name: "blob.morphTargetInfluences",
+        kind: "number",
+        interpolation: "Linear",
+        times: [0, 0.5, 1],
+        values: [0, 0, 1, 0.25, 0.4, 0.9],
+      },
       {
         name: "cube.material.color",
         kind: "color",
@@ -886,6 +902,13 @@ const PROPERTY_CLIPS: IClipSpec[] = [
         times: [0, 0.8],
         values: [1, 1.6],
       },
+      {
+        name: "blob.morphTargetInfluences[1]",
+        kind: "number",
+        interpolation: "Linear",
+        times: [0, 0.8],
+        values: [0.1, 0.7],
+      },
     ],
   },
   {
@@ -941,6 +964,7 @@ const propertyLines = runMixerScenario(
     `sun:i=${bits(sun.intensity)};c=${vec(sun.color)};m=${flag(sun.matrixWorldNeedsUpdate)}`,
     `cam:fov=${bits(cam.fov)};zoom=${bits(cam.zoom)};m=${flag(cam.matrixWorldNeedsUpdate)}`,
     `empty:v=${flag(empty.visible)};m=${flag(empty.matrixWorldNeedsUpdate)}`,
+    `blob:mi=${(blob.morphTargetInfluences ?? []).map(bits).join(",")};m=${flag(blob.matrixWorldNeedsUpdate)}`,
   ],
 );
 

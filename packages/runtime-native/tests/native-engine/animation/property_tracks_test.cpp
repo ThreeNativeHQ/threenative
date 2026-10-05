@@ -42,7 +42,13 @@ void propertyTracks() {
     cam->name = "cam";
     auto empty = std::make_shared<Object3D>();
     empty->name = "empty";
-    for (Object3D* child : std::initializer_list<Object3D*>{cube.get(), ball.get(), sun.get(), cam.get(), empty.get()})
+    // Two morph targets, bound by an entire-array track and an element track.
+    auto blobGeometry = makeBoxGeometry();
+    blobGeometry->morphPositions = {blobGeometry->attributes.at("position"), blobGeometry->attributes.at("position")};
+    auto blob = std::make_shared<Mesh>(blobGeometry, std::make_shared<Material>(MaterialType::Standard));
+    blob->name = "blob";
+    for (Object3D* child :
+         std::initializer_list<Object3D*>{cube.get(), ball.get(), sun.get(), cam.get(), empty.get(), blob.get()})
         stage->add(*child);
 
     const auto flag = [](bool x) { return x ? "1" : "0"; };
@@ -53,7 +59,9 @@ void propertyTracks() {
                ";v=" + std::to_string(ballMaterial->version()) + "|sun:i=" + bits(sun->intensity) +
                ";c=" + color(sun->color) + ";m=" + flag(sun->matrixWorldNeedsUpdate) + "|cam:fov=" + bits(cam->fov) +
                ";zoom=" + bits(cam->zoom) + ";m=" + flag(cam->matrixWorldNeedsUpdate) +
-               "|empty:v=" + flag(empty->visible()) + ";m=" + flag(empty->matrixWorldNeedsUpdate);
+               "|empty:v=" + flag(empty->visible()) + ";m=" + flag(empty->matrixWorldNeedsUpdate) +
+               "|blob:mi=" + bits(blob->morphTargetInfluences.at(0)) + "," + bits(blob->morphTargetInfluences.at(1)) +
+               ";m=" + flag(blob->matrixWorldNeedsUpdate);
     });
     const std::size_t diffs = differences(r.samples, kSamples, "sample");
     std::printf("property tracks: %zu samples, %zu differ\n", r.samples.size(), diffs);

@@ -187,6 +187,20 @@ void PropertyBinding::bind() {
         return unsupported("material property " + property);
     }
 
+    // morphTargetInfluences: the mesh's array whole (EntireArray), or one element of it
+    // (ArrayElement), the index read through morphTargetDictionary — which, for unnamed morph
+    // attributes, maps each index's own decimal string to it.
+    if (property == "morphTargetInfluences") {
+        auto* mesh = dynamic_cast<Mesh*>(node.get());
+        if (!mesh || !mesh->geometry) return unsupported("morphTargetInfluences without a geometry");
+        if (!parsed_.propertyIndex) return bound(Target::MorphArray);
+        const std::string& index = *parsed_.propertyIndex;
+        if (index.empty() || !std::all_of(index.begin(), index.end(), [](char c) { return c >= '0' && c <= '9'; }))
+            return unsupported("morph target name " + index); // named morph attributes are not carried yet
+        morphIndex_ = std::stoul(index);
+        return bound(Target::MorphElement);
+    }
+
     Vector3 Object3D::* vector = property == "position" ? &Object3D::position
                                  : property == "scale"  ? &Object3D::scale
                                                         : nullptr;
@@ -266,6 +280,13 @@ void PropertyBinding::getValue(double* buffer, std::size_t offset) {
     case Target::CameraNumber:
         buffer[offset] = static_cast<PerspectiveCamera&>(*node).*cameraNumber_;
         return;
+    case Target::MorphArray:
+        return put(static_cast<Mesh&>(*node).morphTargetInfluences);
+    case Target::MorphElement: {
+        const auto& influences = static_cast<Mesh&>(*node).morphTargetInfluences;
+        buffer[offset] = morphIndex_ < influences.size() ? influences[morphIndex_] : std::nan(""); // JS undefined
+        return;
+    }
     }
 }
 
@@ -314,6 +335,16 @@ void PropertyBinding::setValue(const double* buffer, std::size_t offset) {
     case Target::CameraNumber:
         static_cast<PerspectiveCamera&>(*node).*cameraNumber_ = buffer[offset];
         break;
+    case Target::MorphArray: {
+        auto& influences = static_cast<Mesh&>(*node).morphTargetInfluences;
+        std::copy(buffer + offset, buffer + offset + influences.size(), influences.begin());
+        break;
+    }
+    case Target::MorphElement: {
+        auto& influences = static_cast<Mesh&>(*node).morphTargetInfluences;
+        if (morphIndex_ < influences.size()) influences[morphIndex_] = buffer[offset];
+        break;
+    }
     }
     node->matrixWorldNeedsUpdate = true;
 }
