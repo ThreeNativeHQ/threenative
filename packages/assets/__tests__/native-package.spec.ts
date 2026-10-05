@@ -7,12 +7,58 @@ import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { compileAssets } from "../src/index.js";
 import {
   type INativePackageEntry,
+  NATIVE_PACKAGE_FORMAT_VERSION,
+  NATIVE_PACKAGE_HEADER_SIZE,
+  NativeDecoderBits,
   NativeEntryKind,
   NativePackageError,
   WGPU_TEXTURE_FORMAT_RGBA8_UNORM,
   readNativePackageManifest,
   writeNativePackage,
 } from "../src/native-package.js";
+
+/**
+ * Parses the C++ header that specifies the format, so the constants can never drift from it.
+ * This reads only the declarations the writer mirrors; a value that moves in `package.h` fails.
+ */
+function parseHeader(text: string): {
+  decoders: Record<string, number>;
+  entryKinds: Record<string, number>;
+  formatVersion: number;
+  headerSize: number;
+} {
+  const scalar = (name: string): number => {
+    const match = new RegExp(`${name}\\s*=\\s*(\\d+)`).exec(text);
+    if (match === null) throw new Error(`package.h is missing ${name}`);
+    return Number(match[1]);
+  };
+  const enumBody = (name: string): string => {
+    const match = new RegExp(`enum(?:\\s+class)?\\s+${name}[^{]*\\{([^}]*)\\}`).exec(text);
+    if (match === null) throw new Error(`package.h is missing enum ${name}`);
+    return match[1] ?? "";
+  };
+  const entryKinds: Record<string, number> = {};
+  for (const match of enumBody("EntryKind").matchAll(/(\w+)\s*=\s*(\d+)/g)) {
+    entryKinds[match[1] as string] = Number(match[2]);
+  }
+  const decoders: Record<string, number> = {};
+  for (const match of enumBody("DecoderBits").matchAll(/kDecoder(\w+)\s*=\s*1u\s*<<\s*(\d+)/g)) {
+    decoders[(match[1] as string).toLowerCase()] = 1 << Number(match[2]);
+  }
+  return {
+    decoders,
+    entryKinds,
+    formatVersion: scalar("kPackageFormatVersion"),
+    headerSize: scalar("kPackageHeaderSize"),
+  };
+}
+
+const PACKAGE_HEADER = path.resolve(
+  import.meta.dirname,
+  "..",
+  "..",
+  "runtime-native/src/engine/assets/package.h",
+);
 
 /** The exact inputs `package_writer_fixture.cpp` writes, in the same order. */
 function referenceEntries(): INativePackageEntry[] {
@@ -56,6 +102,106 @@ function codeOf(run: () => unknown): string {
   }
   throw new Error("expected readNativePackageManifest to refuse");
 }
+
+/** One entry whose dependency list names index 0, itself, the way a damaged file would. */
+function selfDependencyBytes(): Buffer {
+  const name = Buffer.from("self", "utf8");
+  const data = Buffer.from([1, 2, 3, 4]);
+  const tableSize = 2 + name.length + 2 + 4 + 8 + 8 + 8 + 32 + 4 + 4;
+  const dataStart = NATIVE_PACKAGE_HEADER_SIZE + tableSize;
+  const bytes = Buffer.alloc(dataStart + data.length);
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  bytes.write("TNPK", 0, "latin1");
+  view.setUint32(4, NATIVE_PACKAGE_FORMAT_VERSION, true);
+  view.setUint32(8, 1, true);
+  view.setUint32(12, 0, true);
+  view.setBigUint64(16, BigInt(tableSize), true);
+  let at = NATIVE_PACKAGE_HEADER_SIZE;
+  view.setUint16(at, name.length, true);
+  at += 2;
+  name.copy(bytes, at);
+  at += name.length;
+  view.setUint16(at, NativeEntryKind.Buffer, true);
+  at += 2;
+  view.setUint32(at, 0, true);
+  at += 4;
+  view.setBigUint64(at, BigInt(dataStart), true);
+  at += 8;
+  view.setBigUint64(at, BigInt(data.length), true);
+  at += 8;
+  view.setBigUint64(at, 0n, true);
+  at += 8;
+  createHash("sha256").update(data).digest().copy(bytes, at);
+  at += 32;
+  view.setUint32(at, 1, true);
+  at += 4;
+  view.setUint32(at, 0, true);
+  at += 4;
+  data.copy(bytes, at);
+  return bytes;
+}
+
+describe("package.h parity", () => {
+  it("every mirrored constant equals the value in the C++ header", async () => {
+    const header = parseHeader(await readFile(PACKAGE_HEADER, "utf8"));
+
+    expect(NATIVE_PACKAGE_FORMAT_VERSION).toBe(header.formatVersion);
+    expect(NATIVE_PACKAGE_HEADER_SIZE).toBe(header.headerSize);
+    for (const [name, value] of Object.entries(header.entryKinds)) {
+      expect(NativeEntryKind[name as keyof typeof NativeEntryKind]).toBe(value);
+    }
+    for (const [name, value] of Object.entries(header.decoders)) {
+      expect(NativeDecoderBits[name as keyof typeof NativeDecoderBits]).toBe(value);
+    }
+  });
+});
+
+describe("writeNativePackage validation", () => {
+  const entry = (overrides: Partial<INativePackageEntry> = {}): INativePackageEntry => ({
+    data: Uint8Array.from([1, 2, 3, 4]),
+    kind: NativeEntryKind.Buffer,
+    name: "ok",
+    ...overrides,
+  });
+
+  const invalid = (entries: readonly INativePackageEntry[]): string => {
+    try {
+      writeNativePackage(entries);
+    } catch (error) {
+      if (error instanceof NativePackageError) return `${error.code}: ${error.detail}`;
+      throw error;
+    }
+    throw new Error("expected writeNativePackage to refuse");
+  };
+
+  it("refuses a name longer than u16 can hold", () => {
+    const message = invalid([entry({ name: "n".repeat(65536) })]);
+    expect(message).toContain("TN_NATIVE_PACKAGE_INVALID");
+    expect(message).toMatch(/name/u);
+  });
+
+  it("refuses a dependency index past the entry count", () => {
+    const message = invalid([entry(), entry({ dependencies: [2] })]);
+    expect(message).toContain("TN_NATIVE_PACKAGE_INVALID");
+    expect(message).toMatch(/depend/u);
+  });
+
+  it("refuses a self-referencing dependency", () => {
+    const message = invalid([entry(), entry({ dependencies: [1] })]);
+    expect(message).toContain("TN_NATIVE_PACKAGE_INVALID");
+    expect(message).toMatch(/itself/u);
+  });
+
+  it("refuses a negative or non-integer uploadSize", () => {
+    expect(invalid([entry({ uploadSize: -1 })])).toContain("TN_NATIVE_PACKAGE_INVALID");
+    expect(invalid([entry({ uploadSize: 1.5 })])).toContain("TN_NATIVE_PACKAGE_INVALID");
+  });
+
+  it("refuses a u32 field out of range", () => {
+    expect(invalid([entry({ decoders: 2 ** 32 })])).toContain("TN_NATIVE_PACKAGE_INVALID");
+    expect(invalid([entry({ kind: 70000 })])).toContain("TN_NATIVE_PACKAGE_INVALID");
+  });
+});
 
 describe("writeNativePackage", () => {
   it("round-trips the header and table through the reader", () => {
@@ -116,10 +262,11 @@ describe("writeNativePackage", () => {
     view(range).setBigUint64(24 + 2 + nameLength + 2 + 4, BigInt(reference.length), true);
     expect(codeOf(() => readNativePackageManifest(range))).toBe("TN_PACKAGE_RANGE");
 
-    const dependency = writeNativePackage([
-      { data: Uint8Array.from([1, 2, 3, 4]), dependencies: [0], kind: 1, name: "self" },
-    ]);
-    expect(codeOf(() => readNativePackageManifest(dependency))).toBe("TN_PACKAGE_DEPENDENCY");
+    // Hand-encoded, not `writeNativePackage`: the writer now refuses a self-dependency itself, and
+    // this pins that the reader keeps refusing one arriving as untrusted bytes.
+    expect(codeOf(() => readNativePackageManifest(selfDependencyBytes()))).toBe(
+      "TN_PACKAGE_DEPENDENCY",
+    );
   });
 });
 
@@ -157,6 +304,26 @@ describe("assets.nativePackage", () => {
     expect(
       (await readFile(path.join(root, "public", "native", "assets.tnpk"))).equals(output),
     ).toBe(true);
+  });
+
+  it("removes a stale package when a recook has no v1 entry", async () => {
+    const root = await makeTempDir("threenative-native-package-empty-");
+    await mkdir(path.join(root, "assets"));
+    await writeFile(path.join(root, "assets", "data.bin"), Buffer.from([1, 2, 3]));
+    // The fixed path the bake owns whenever nativePackage is on, left by an earlier run whose
+    // receipt is gone. A 3-byte buffer is not a legal v1 entry, so this run emits none.
+    const target = path.join(root, "public", "native", "assets.tnpk");
+    await mkdir(path.dirname(target), { recursive: true });
+    await writeFile(target, Buffer.from("stale package left by an earlier run"));
+
+    const result = await compileAssets({
+      config: { models: "none", nativePackage: true, textures: "none" },
+      cwd: root,
+    });
+    await expect(readFile(target)).rejects.toThrow();
+    expect(result.receipt?.outputs.some((entry) => entry.path === "native/assets.tnpk")).toBe(
+      false,
+    );
   });
 
   it("writes nothing when the option is off", async () => {

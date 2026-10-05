@@ -33,9 +33,9 @@ export type NativeEntryKind = (typeof NativeEntryKind)[keyof typeof NativeEntryK
 
 /** Decoder requirement bits; a package needing one the target lacks is refused before load. */
 export const NativeDecoderBits = {
-  draco: 1,
-  ktx2: 4,
-  meshopt: 2,
+  draco: 1 << 1,
+  ktx2: 1 << 2,
+  meshopt: 1 << 0,
 } as const;
 
 /**
@@ -88,6 +88,59 @@ export class NativePackageError extends Error {
   }
 }
 
+const MAX_U16 = 0xffff;
+const MAX_U32 = 0xffff_ffff;
+
+interface IEncodedNativeEntry {
+  readonly data: Uint8Array;
+  readonly decoders: number;
+  readonly dependencies: readonly number[];
+  readonly kind: number;
+  readonly name: Buffer;
+  readonly uploadSize: number;
+}
+
+/**
+ * Refuses input the fixed-width fields cannot hold, so nothing is silently truncated: `setUint16`
+ * would keep a name's low 16 bits, and an out-of-range index or count would be written as a lie.
+ */
+function validateEntries(entries: readonly IEncodedNativeEntry[]): void {
+  const invalid = (what: string): never => {
+    throw new NativePackageError("TN_NATIVE_PACKAGE_INVALID", what);
+  };
+  for (const [index, entry] of entries.entries()) {
+    if (entry.name.length > MAX_U16) {
+      invalid(
+        `entry ${String(index)} name is ${String(entry.name.length)} bytes; the u16 name length holds at most ${String(MAX_U16)}`,
+      );
+    }
+    if (!Number.isInteger(entry.kind) || entry.kind < 0 || entry.kind > MAX_U16) {
+      invalid(`entry ${String(index)} kind ${String(entry.kind)} is not a u16`);
+    }
+    if (!Number.isInteger(entry.decoders) || entry.decoders < 0 || entry.decoders > MAX_U32) {
+      invalid(`entry ${String(index)} decoders ${String(entry.decoders)} is not a u32`);
+    }
+    if (!Number.isSafeInteger(entry.uploadSize) || entry.uploadSize < 0) {
+      invalid(
+        `entry ${String(index)} uploadSize ${String(entry.uploadSize)} is not a non-negative integer`,
+      );
+    }
+    for (const dependency of entry.dependencies) {
+      if (!Number.isInteger(dependency) || dependency < 0 || dependency > MAX_U32) {
+        invalid(`entry ${String(index)} dependency ${String(dependency)} is not a u32`);
+      }
+      if (dependency === index) {
+        invalid(`entry ${String(index)} depends on itself`);
+      }
+      if (dependency >= entries.length) {
+        invalid(
+          `entry ${String(index)} depends on ${String(dependency)}, past the ${String(entries.length)} entries`,
+        );
+      }
+    }
+  }
+}
+
 /** Serializes `entries` into a TNPK v1 package, data in entry order right after the table. */
 export function writeNativePackage(entries: readonly INativePackageEntry[]): Uint8Array {
   const encoded = entries.map((entry) => ({
@@ -98,6 +151,7 @@ export function writeNativePackage(entries: readonly INativePackageEntry[]): Uin
     name: Buffer.from(entry.name, "utf8"),
     uploadSize: entry.uploadSize ?? 0,
   }));
+  validateEntries(encoded);
   let tableSize = 0;
   for (const entry of encoded) {
     tableSize += 2 + entry.name.length + 2 + 4 + 8 + 8 + 8 + 32 + 4 + 4 * entry.dependencies.length;

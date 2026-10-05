@@ -7,7 +7,7 @@
 // makes no network call. A checksum mismatch fails closed with the code
 // TN_NATIVE_TS_CHECKSUM.
 import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import os from "node:os";
@@ -18,6 +18,8 @@ import { fileURLToPath } from "node:url";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const CHECKSUM_CODE = "TN_NATIVE_TS_CHECKSUM";
+/** Proof of a complete extraction, in the cache beside `toolchain`, holding the archive sha256. */
+const MARKER_NAME = ".verified";
 
 export function loadLock(lockFile = path.join(HERE, "compiler.lock.json")) {
   return JSON.parse(fs.readFileSync(lockFile, "utf8"));
@@ -59,10 +61,11 @@ export async function provision(opts = {}) {
   await fsp.mkdir(cacheDir, { recursive: true });
 
   const archiveOk = await fileMatches(archivePath, artifact);
-  const binary = () => findBinary(toolchainDir, lock.binaryCandidates);
+  const extractedOk = archiveOk && (await markerMatches(cacheDir, artifact));
+  const binary = () => (extractedOk ? findBinary(toolchainDir, lock.binaryCandidates) : undefined);
 
   if (opts.checkOnly) {
-    const found = archiveOk ? binary() : undefined;
+    const found = binary();
     if (!found) {
       throw named(
         "TN_NATIVE_TS_CHECK",
@@ -81,7 +84,7 @@ export async function provision(opts = {}) {
     });
   }
 
-  if (archiveOk) {
+  if (extractedOk) {
     const found = binary();
     if (found) {
       log("cache hit");
@@ -95,41 +98,82 @@ export async function provision(opts = {}) {
         cacheHit: true,
       });
     }
-  } else if (fs.existsSync(archivePath)) {
-    await verifyOrThrow(archivePath, artifact);
-  } else {
-    if (typeof fetchImpl !== "function") {
-      throw named("TN_NATIVE_TS_FETCH", `no fetch available to download ${artifact.url}`);
+  }
+
+  if (!archiveOk) {
+    if (fs.existsSync(archivePath)) {
+      // A present archive that does not match its pin is a corrupted cache, never a download
+      // trigger: fail closed so a bad mirror cannot quietly replace a trusted artifact.
+      await verifyOrThrow(archivePath, artifact);
+    } else {
+      if (typeof fetchImpl !== "function") {
+        throw named("TN_NATIVE_TS_FETCH", `no fetch available to download ${artifact.url}`);
+      }
+      log(`downloading ${artifact.url}`);
+      await downloadVerified(fetchImpl, artifact, archivePath);
     }
-    log(`downloading ${artifact.url}`);
-    await download(fetchImpl, artifact.url, archivePath);
-    await verifyOrThrow(archivePath, artifact);
   }
 
   log("extracting");
-  await fsp.rm(toolchainDir, { recursive: true, force: true });
-  await fsp.mkdir(toolchainDir, { recursive: true });
-  const tar = spawnSync("tar", ["-xzf", archivePath, "-C", toolchainDir], { stdio: "inherit" });
-  if (tar.status !== 0) {
-    throw named("TN_NATIVE_TS_EXTRACT", `tar exited ${tar.status} for ${archivePath}`);
-  }
-
-  const found = binary();
-  if (!found) {
-    throw named(
-      "TN_NATIVE_TS_BINARY",
-      `no compiler binary (${lock.binaryCandidates.join(", ")}) in the extracted toolchain`,
-    );
-  }
+  // The marker vouches for the tree, so it goes before the tree is touched: a run killed while the
+  // old tree is half-deleted must not find a marker that still matches.
+  await fsp.rm(path.join(cacheDir, MARKER_NAME), { force: true });
+  const binaryPath = await extractAtomically(archivePath, toolchainDir, lock.binaryCandidates);
+  await writeMarker(cacheDir, artifact);
   return result({
     lock,
     host,
     artifact,
     cacheDir,
     toolchainDir,
-    binaryPath: found,
+    binaryPath,
     cacheHit: false,
   });
+}
+
+/**
+ * Extracts the archive into a sibling temp directory and renames it over the cache only once the
+ * toolchain is complete, so a killed run leaves no half-tree that a later run trusts.
+ */
+async function extractAtomically(archivePath, toolchainDir, candidates) {
+  const staging = `${toolchainDir}.${process.pid}.${randomUUID()}.tmp`;
+  await fsp.rm(staging, { recursive: true, force: true });
+  await fsp.mkdir(staging, { recursive: true });
+  const tar = spawnSync("tar", ["-xzf", archivePath, "-C", staging], { stdio: "inherit" });
+  if (tar.status !== 0) {
+    await fsp.rm(staging, { recursive: true, force: true });
+    throw named("TN_NATIVE_TS_EXTRACT", `tar exited ${tar.status} for ${archivePath}`);
+  }
+  if (!findBinary(staging, candidates)) {
+    await fsp.rm(staging, { recursive: true, force: true });
+    throw named(
+      "TN_NATIVE_TS_BINARY",
+      `no compiler binary (${candidates.join(", ")}) in the extracted toolchain`,
+    );
+  }
+  await fsp.rm(toolchainDir, { recursive: true, force: true });
+  await fsp.rename(staging, toolchainDir);
+  const found = findBinary(toolchainDir, candidates);
+  if (!found) {
+    throw named(
+      "TN_NATIVE_TS_BINARY",
+      `no compiler binary (${candidates.join(", ")}) in the extracted toolchain`,
+    );
+  }
+  return found;
+}
+
+async function markerMatches(cacheDir, artifact) {
+  try {
+    const recorded = (await fsp.readFile(path.join(cacheDir, MARKER_NAME), "utf8")).trim();
+    return recorded === artifact.sha256;
+  } catch {
+    return false;
+  }
+}
+
+async function writeMarker(cacheDir, artifact) {
+  await fsp.writeFile(path.join(cacheDir, MARKER_NAME), `${artifact.sha256}\n`, "utf8");
 }
 
 function result(fields) {
@@ -146,6 +190,20 @@ async function download(fetchImpl, url, dest) {
     return;
   }
   await fsp.writeFile(dest, Buffer.from(await res.arrayBuffer()));
+}
+
+/** Streams to `<archive>.part` and publishes it only after the sha256 matches; a bad part dies. */
+async function downloadVerified(fetchImpl, artifact, archivePath) {
+  const part = `${archivePath}.part`;
+  await fsp.rm(part, { force: true });
+  await download(fetchImpl, artifact.url, part);
+  try {
+    await verifyOrThrow(part, artifact);
+  } catch (error) {
+    await fsp.rm(part, { force: true });
+    throw error;
+  }
+  await fsp.rename(part, archivePath);
 }
 
 async function fileMatches(file, artifact) {
