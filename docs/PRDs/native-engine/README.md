@@ -10,7 +10,55 @@ All new package names, configuration fields, ABI names, status markers, and work
 
 ## PRD index
 
-**Batch status: PROPOSED — sliced 2026-10-04 into PRD-497 … PRD-535; owner decisions recorded the same day; ready to execute from wave 1.** This file is the batch index and the source proposal; the PRDs below carry the boxes. Work packages too large for one PRD (at most 3 phases, about 8 boxes) are a folder with its own `README.md` and child PRDs. The batch moves to `done/` whole only when every PRD in it is finished.
+**Batch status: IN PROGRESS — 91/237 phase boxes (38%) as of 2026-10-04, on `feat/native-engine` (PR #438).** This file is the batch index and the source proposal; the PRDs below carry the boxes. Work packages too large for one PRD (at most 3 phases, about 8 boxes) are a folder with its own `README.md` and child PRDs. The batch moves to `done/` whole only when every PRD in it is finished.
+
+### Progress
+
+Generated from the PRD files' boxes; a PRD is done when every box is ticked.
+
+| PRD | Work package | Boxes | State |
+| --- | --- | --- | --- |
+| [PRD-497](PRD-497-n00-architecture-decision-and-compatibility-inventory.md) | Architecture decision, scope and compatibility inventory (N00) | 6/6 | done |
+| [PRD-498](PRD-498-n01-baseline-and-differential-fixture-runner.md) | Baseline and differential fixture runner (N01) | 3/4 | in progress |
+| [PRD-499](PRD-499-n02-the-host-links-without-a-js-engine.md) | The host links and runs without a JS engine (N02) | 7/8 | in progress |
+| [PRD-500](PRD-500-n03-api-catalog-binding-abi-and-version-protocol.md) | API catalog, binding ABI and version protocol (N03) | 7/7 | done |
+| [PRD-501](N04-lifetime-and-numerics/PRD-501-n04a-math-matches-the-pinned-reference.md) | Math matches the pinned reference (N04a) | 4/5 | in progress |
+| [PRD-502](N04-lifetime-and-numerics/PRD-502-n04b-handles-keep-identity-and-aliases.md) | Handles keep identity and aliases (N04b) | 4/5 | in progress |
+| [PRD-503](N04-lifetime-and-numerics/PRD-503-n04c-unreachable-cycles-are-reclaimed.md) | Unreachable cycles are reclaimed (N04c) | 7/7 | done |
+| [PRD-504](N04-lifetime-and-numerics/PRD-504-n04d-buffers-cross-the-abi-with-an-owner.md) | Buffers cross the ABI with an owner (N04d) | 5/7 | in progress |
+| [PRD-505](N05-native-typescript-qualification/PRD-505-n05a-the-language-corpus-compiles-on-linux-x64.md) | The language corpus compiles on Linux x64 (N05a) | 5/6 | in progress |
+| [PRD-506](N05-native-typescript-qualification/PRD-506-n05b-three-imports-bind-natively-and-callbacks-are-reclaimed.md) | Three imports bind natively and callbacks are reclaimed (N05b) | 0/6 | not started |
+| [PRD-507](N05-native-typescript-qualification/PRD-507-n05c-the-same-corpus-runs-on-android-arm64.md) | The same corpus runs on Android arm64 (N05c) | 0/4 | not started |
+| [PRD-508](PRD-508-n06-native-scene-graph-transforms-cameras-geometry.md) | Native scene graph, transforms, cameras and geometry (N06) | 6/7 | in progress |
+| [PRD-509](PRD-509-n07-gpu-resources-presentation-and-device-loss.md) | GPU resources, presentation and device loss (N07) | 7/8 | in progress |
+| [PRD-510](N08-native-tsl-and-shader-packages/PRD-510-n08a-a-typed-shader-ir-with-ordered-effects.md) | A typed shader IR with ordered effects (N08a) | 3/4 | in progress |
+| [PRD-511](N08-native-tsl-and-shader-packages/PRD-511-n08b-shader-packages-not-wgsl-text.md) | Shader packages, not WGSL text (N08b) | 6/6 | done |
+| [PRD-512](N08-native-tsl-and-shader-packages/PRD-512-n08c-standard-pbr-and-deformation-that-shadows.md) | Standard PBR and deformation that shadows (N08c) | 2/5 | in progress |
+| [PRD-513](N08-native-tsl-and-shader-packages/PRD-513-n08d-compute-multipass-and-a-dynamic-graph.md) | Compute, multipass and a dynamic graph (N08d) | 0/6 | not started |
+| [PRD-514](PRD-514-n09-native-renderer-and-standard-materials.md) | Native renderer and standard materials (N09) | 5/8 | in progress |
+| [PRD-515](PRD-515-n10-native-gltf-cooked-assets-and-decoders.md) | Native glTF, cooked assets and decoders (N10) | 3/7 | in progress |
+| [PRD-516](N11-native-animation/PRD-516-n11a-animation-mixer-semantics-in-native.md) | AnimationMixer semantics in native (N11a) | 0/6 | not started |
+| [PRD-517](N11-native-animation/PRD-517-n11b-morph-targets-and-property-tracks.md) | Morph targets and property tracks (N11b) | 0/4 | not started |
+| [PRD-518](N11-native-animation/PRD-518-n11c-skinning-palettes-and-pose-history.md) | Skinning palettes and pose history (N11c) | 0/7 | not started |
+| [PRD-519](PRD-519-n12-native-batching-visibility-lod-gpu-scene.md) | Native batching, visibility, LOD and GPU scene (N12) | 0/7 | not started |
+| [PRD-520](N13-native-streaming-and-world/PRD-520-n13a-bounded-streaming-admission-and-io-events.md) | Bounded streaming admission and IO events (N13a) | 0/5 | not started |
+| [PRD-521](N13-native-streaming-and-world/PRD-521-n13b-worldcells-and-worldtiles-run-native.md) | WorldCells and WorldTiles run native (N13b) | 0/6 | not started |
+| [PRD-522](N13-native-streaming-and-world/PRD-522-n13c-a-world-loads-walks-and-unloads-without-growth.md) | A world loads, walks and unloads without growth (N13c) | 0/4 | not started |
+| [PRD-523](N14-native-render-chain-and-advanced-visuals/PRD-523-n14a-the-render-graph-owns-passes-and-history.md) | The render graph owns passes and history (N14a) | 6/7 | in progress |
+| [PRD-524](N14-native-render-chain-and-advanced-visuals/PRD-524-n14b-virtual-shadows-run-native.md) | Virtual shadows run native (N14b) | 0/5 | not started |
+| [PRD-525](N14-native-render-chain-and-advanced-visuals/PRD-525-n14c-probes-run-native.md) | Probes run native (N14c) | 0/5 | not started |
+| [PRD-526](N14-native-render-chain-and-advanced-visuals/PRD-526-n14d-post-effects-and-render-chains-run-native.md) | Post effects and render chains run native (N14d) | 0/5 | not started |
+| [PRD-527](N14-native-render-chain-and-advanced-visuals/PRD-527-n14e-particles-and-fluids-run-native.md) | Particles and fluids run native (N14e) | 0/4 | not started |
+| [PRD-528](PRD-528-n15-framework-loop-rapier-sync-input-services.md) | Framework loop, Rapier sync, input and services (N15) | 0/7 | not started |
+| [PRD-529](PRD-529-n16-native-playtest-inspection-telemetry.md) | Native playtest, inspection and telemetry (N16) | 0/6 | not started |
+| [PRD-530](PRD-530-n17-strict-native-typescript-game-packaging.md) | Strict native-TypeScript game packaging (N17) | 0/7 | not started |
+| [PRD-531](PRD-531-n18-v8-game-runtime-adapter.md) | V8 game runtime adapter (N18) | 5/8 | in progress |
+| [PRD-532](PRD-532-n19-webassembly-native-core-browser-port.md) | WebAssembly native-core browser port (N19) | 0/8 | not started |
+| [PRD-533](PRD-533-n20-platform-qualification-performance-default-promotion.md) | Platform qualification, performance and default promotion (N20) | 0/8 | not started |
+| [PRD-534](PRD-534-cp1-the-native-engine-earns-the-port.md) | The native engine earns the port (CP1) | 0/5 | not started |
+| [PRD-535](PRD-535-n21-the-js-engine-is-deleted.md) | The JS engine is deleted (N21) | 0/7 | not started |
+
+**CP1 (PRD-534), first reading, not the verdict:** on L4 at 4,096 cubes (headless Dawn), the native engine's hot path p50 is 21.9 ms through V8 and 11.8 ms from C++, against roughly 3.5–5.9 ms per frame for current ThreeNative, which batches L4's colour-only materials into 3 draws while the native engine has no batching yet (N12). Whether the verdict waits for minimal batching is an owner decision, recorded in PR #438.
 
 ### Owner decisions (2026-10-04)
 
