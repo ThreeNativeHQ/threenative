@@ -156,6 +156,15 @@ tn_native_engine_test(tn-native-engine-abi-test tests/native-engine/abi_test.cpp
     native_engine_abi_light=light)
 target_link_libraries(tn-native-engine-abi-test PRIVATE tn_engine_abi)
 
+# PRD-508 phase 3: the geometry edges a JS caller reaches that no fixture states.
+tn_native_engine_test(tn-native-engine-geometry-edges-test tests/native-engine/geometry_edges_test.cpp
+    native_engine_geometry_js_numbers=js_numbers
+    native_engine_geometry_typed_writes=typed_writes
+    native_engine_geometry_normalized=normalized
+    native_engine_geometry_out_of_range=out_of_range
+    native_engine_geometry_nan_bounds=nan_bounds)
+target_link_libraries(tn-native-engine-geometry-edges-test PRIVATE tn_engine_scene)
+
 # PRD-508 phase 1: hierarchy, re-parenting, events and member identity.
 tn_native_engine_test(tn-native-engine-scene-test tests/native-engine/scene_hierarchy_test.cpp
     native_engine_scene_hierarchy=hierarchy

@@ -33,6 +33,9 @@
 
 namespace tn::engine {
 
+/** ECMAScript Number::toString(10): how a JS number prints, as JSON.stringify writes it. */
+std::string jsNumber(double value);
+
 /** three's BufferAttribute. The data lives in `store`; `itemSize` groups it per vertex. */
 class BufferAttribute {
 public:
@@ -62,6 +65,8 @@ public:
     void clearUpdateRanges() { store->clearUpdateRanges(); }
     [[nodiscard]] std::span<const UpdateRange> updateRanges() const { return store->updateRanges(); }
 
+    /** The element `index * itemSize + component`, false when it is outside the array (or wraps). */
+    [[nodiscard]] bool element(uint64_t index, int component, uint64_t& out) const;
     [[nodiscard]] double getComponent(uint64_t index, int component) const;
     BufferAttribute& setComponent(uint64_t index, int component, double value);
     [[nodiscard]] double getX(uint64_t index) const;
@@ -86,18 +91,22 @@ public:
     /** The typed array as plain doubles, exactly what `Array.from(attribute.array)` answers. */
     [[nodiscard]] std::vector<double> toNumbers() const;
 
-private:
+    /** `attribute.array[i]`: the stored element (NaN past the end, as JS reads undefined). */
     [[nodiscard]] double raw(uint64_t elementIndex) const;
+    /** `attribute.array[i] = value`, converted as the typed array converts; ignored past the end. */
     void setRaw(uint64_t elementIndex, double value);
+
+private:
     [[nodiscard]] double denormalize(double value) const;
     [[nodiscard]] double normalize(double value) const;
 };
 
 /** three's BufferGeometry group: one draw call's slice of the index buffer. */
+/** Numbers as JS holds them: `addGroup(0, Infinity)` is valid three and keeps its Infinity. */
 struct GeometryGroup {
-    uint32_t start = 0;
-    uint32_t count = 0;
-    int materialIndex = 0;
+    double start = 0;
+    double count = 0;
+    double materialIndex = 0;
 };
 
 /** three's drawRange: `count` defaults to Infinity, as the reference leaves it. */
@@ -137,7 +146,7 @@ public:
     bool deleteAttribute(const std::string& name);
     [[nodiscard]] bool hasAttribute(const std::string& name) const;
 
-    void addGroup(uint32_t start, uint32_t count, int materialIndex = 0);
+    void addGroup(double start, double count, double materialIndex = 0);
     void clearGroups();
     void setDrawRange(double start, double count);
 

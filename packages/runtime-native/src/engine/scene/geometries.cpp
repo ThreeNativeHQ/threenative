@@ -18,11 +18,7 @@ namespace {
 constexpr double kTwoPi = std::numbers::pi * 2;
 constexpr double kPi = std::numbers::pi;
 
-std::string num(double value) {
-    char buffer[40];
-    const auto result = std::to_chars(buffer, buffer + sizeof buffer, value);
-    return std::string(buffer, result.ptr);
-}
+std::string num(double value) { return std::isfinite(value) ? jsNumber(value) : "null"; }  // as JSON.stringify
 
 std::string boolean(bool value) { return value ? "true" : "false"; }
 

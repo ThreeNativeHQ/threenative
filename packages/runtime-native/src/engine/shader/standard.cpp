@@ -149,16 +149,22 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
     const ExprId normal = v.attribute("normal", Type::vec(3));
     const ExprId positionView = v.mul(view, v.mul(model, position));
     v.output("position", v.mul(v.uniform("projectionMatrix", Type::mat(4, 4)), positionView));
-    v.output("normalView", v.mul(normalMatrix, normal));
+    // transformNormalToView: normalize(view * vec4(modelNormalMatrix * normal, 0)), normalized per
+    // vertex before it is interpolated (v_normalViewGeometry); normalMatrix is that product.
+    v.output("normalView", v.call("normalize", {v.mul(normalMatrix, normal)}));
     v.output("positionView", v.swizzle(positionView, "xyz"));
-    v.output("normalWorld", v.swizzle(v.mul(model, v.construct(Type::vec(4), {normal, v.constant(0.0f)})), "xyz"));
 
     Program& f = out.fragment;
     Tsl t{f};
-    const ExprId normalViewGeometry = f.varying("normalView", Type::vec(3));
-    const ExprId n = f.call("normalize", {normalViewGeometry});
+    // normalViewGeometry is the varying renormalized (three's .normalize().toVar()); getGeometryRoughness
+    // differentiates that, not the raw varying.
+    const ExprId n = f.call("normalize", {f.varying("normalView", Type::vec(3))});
+    const ExprId normalViewGeometry = n;
     const ExprId positionViewDirection = f.call("normalize", {f.neg(f.varying("positionView", Type::vec(3)))});
-    const ExprId normalWorld = f.call("normalize", {f.varying("normalWorld", Type::vec(3))});
+    // normalWorld = normalView.transformNormalByInverseViewMatrix(cameraViewMatrix), in the fragment:
+    // normalize((vec4(normalView, 0) * viewMatrix).xyz).
+    const ExprId normalWorld = f.call("normalize", {f.swizzle(f.mul(f.construct(Type::vec(4), {n, f.constant(0.0f)}),
+                                                                     f.uniform("viewMatrix", Type::mat(4, 4))), "xyz")});
     const ExprId diffuse = f.uniform("diffuse", Type::vec(4));
     const ExprId diffuseColor = f.swizzle(diffuse, "xyz");
     const ExprId metalness = f.uniform("metalness", Type::f32());
@@ -234,15 +240,19 @@ StandardPrograms buildLit(bool phong) {
     const ExprId normal = v.attribute("normal", Type::vec(3));
     const ExprId positionView = v.mul(view, v.mul(model, position));
     v.output("position", v.mul(v.uniform("projectionMatrix", Type::mat(4, 4)), positionView));
-    v.output("normalView", v.mul(normalMatrix, normal));
+    // transformNormalToView: normalize(view * vec4(modelNormalMatrix * normal, 0)), normalized per
+    // vertex before it is interpolated (v_normalViewGeometry); normalMatrix is that product.
+    v.output("normalView", v.call("normalize", {v.mul(normalMatrix, normal)}));
     v.output("positionView", v.swizzle(positionView, "xyz"));
-    v.output("normalWorld", v.swizzle(v.mul(model, v.construct(Type::vec(4), {normal, v.constant(0.0f)})), "xyz"));
 
     Program& f = out.fragment;
     Tsl t{f};
     const ExprId n = f.call("normalize", {f.varying("normalView", Type::vec(3))});
     const ExprId positionViewDirection = f.call("normalize", {f.neg(f.varying("positionView", Type::vec(3)))});
-    const ExprId normalWorld = f.call("normalize", {f.varying("normalWorld", Type::vec(3))});
+    // normalWorld = normalView.transformNormalByInverseViewMatrix(cameraViewMatrix), in the fragment:
+    // normalize((vec4(normalView, 0) * viewMatrix).xyz).
+    const ExprId normalWorld = f.call("normalize", {f.swizzle(f.mul(f.construct(Type::vec(4), {n, f.constant(0.0f)}),
+                                                                     f.uniform("viewMatrix", Type::mat(4, 4))), "xyz")});
     const ExprId diffuse = f.uniform("diffuse", Type::vec(4));
     const ExprId diffuseColor = f.swizzle(diffuse, "xyz");
 

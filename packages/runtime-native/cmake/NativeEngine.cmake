@@ -124,9 +124,9 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     if(TN_PNPM_EXECUTABLE)
         # The five standard materials' fixtures in one case (PRD-514): Basic (alpha-test), Standard
         # (lit-render), Lambert, Phong, Physical, and their property fixtures.
-        foreach(render_case "render_tonemap:tonemap-ramp-*" "render_lit:lit-render" "render_lambert:materials-lambert"
+        foreach(render_case "render_tonemap:tonemap-ramp-*" "render_lit:lit-render*" "render_lambert:materials-lambert"
                 "render_phong:materials-phong" "render_physical:materials-physical*"
-                "standard_materials_fixtures:alpha-test,lit-render,materials-*"
+                "standard_materials_fixtures:alpha-test,lit-render*,materials-*"
                 "render_alpha:alpha-*")
             string(REPLACE ":" ";" render_pair "${render_case}")
             list(GET render_pair 0 render_name)

@@ -149,6 +149,8 @@ ExprId Program::arithmetic(Op op, std::string_view node, ExprId a, ExprId b, con
         result = ta;
     } else if (op == Op::Mul && ta.isMatrix() && tb.isVector() && ta.cols == tb.rows) {
         result = Type::vec(ta.rows);
+    } else if (op == Op::Mul && ta.isVector() && tb.isMatrix() && ta.rows == tb.rows) {
+        result = Type::vec(tb.cols);  // a row vector times a matrix: TSL's vec.mul(mat), WGSL's v * M
     } else if (op == Op::Mul && ta.isMatrix() && tb.isMatrix() && ta.cols == tb.rows) {
         result = Type::mat(tb.cols, ta.rows);
     } else {

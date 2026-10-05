@@ -29,12 +29,36 @@ bool arrayNeedsUint32(const std::vector<uint32_t>& values) {
     return false;
 }
 
-/** JSON.stringify's number form for the values `parameters` and `groups` ever carry. */
-std::string jsonNumber(double value) {
-    if (std::isnan(value) || std::isinf(value)) return "null";
+}  // namespace
+
+// ECMAScript Number::toString(10) over the shortest round-trip digits: `100000` and `1e-7`, where
+// std::to_chars alone writes `1e+05` and `1e-07`.
+std::string jsNumber(double value) {
+    if (std::isnan(value)) return "NaN";
+    if (value == 0) return "0";  // -0 too
+    if (std::isinf(value)) return value < 0 ? "-Infinity" : "Infinity";
+    if (value < 0) return "-" + jsNumber(-value);
     char buffer[40];
-    const auto result = std::to_chars(buffer, buffer + sizeof buffer, value);
-    return std::string(buffer, result.ptr);
+    const auto result = std::to_chars(buffer, buffer + sizeof buffer, value, std::chars_format::scientific);
+    const std::string text(buffer, result.ptr);           // "d.ddde+XX" or "de-XX"
+    const size_t e = text.find('e');
+    std::string digits = text.substr(0, e);
+    digits.erase(std::remove(digits.begin(), digits.end(), '.'), digits.end());
+    const int k = static_cast<int>(digits.size());
+    const int n = std::stoi(text.substr(e + 1)) + 1;     // value = 0.digits x 10^n
+    if (k <= n && n <= 21) return digits + std::string(static_cast<size_t>(n - k), '0');
+    if (0 < n && n <= 21) return digits.substr(0, static_cast<size_t>(n)) + "." + digits.substr(static_cast<size_t>(n));
+    if (-6 < n && n <= 0) return "0." + std::string(static_cast<size_t>(-n), '0') + digits;
+    const int exponent = n - 1;
+    const std::string mantissa = k == 1 ? digits : digits.substr(0, 1) + "." + digits.substr(1);
+    return mantissa + "e" + (exponent < 0 ? "-" : "+") + std::to_string(std::abs(exponent));
+}
+
+namespace {
+
+/** JSON.stringify's number form: Number::toString, and null for NaN and the infinities. */
+std::string jsonNumber(double value) {
+    return std::isfinite(value) ? jsNumber(value) : "null";
 }
 
 }  // namespace
@@ -67,78 +91,110 @@ std::shared_ptr<BufferAttribute> BufferAttribute::fromIndices(const std::vector<
     return attribute;
 }
 
+namespace {
+
+/** ECMAScript ToInt8/16/32 and ToUint8/16/32: truncate, wrap modulo 2^bits, then read as signed. */
+int64_t jsToInteger(double value, int bits, bool isSigned) {
+    if (!std::isfinite(value)) return 0;
+    const double modulus = std::ldexp(1.0, bits);
+    double wrapped = std::fmod(std::trunc(value), modulus);
+    if (wrapped < 0) wrapped += modulus;
+    if (isSigned && wrapped >= modulus / 2) wrapped -= modulus;
+    return static_cast<int64_t>(wrapped);
+}
+
+template <typename T>
+T load(const BufferStore& store, uint64_t element) {
+    T value{};
+    store.read(element * sizeof(T), &value, sizeof(T));
+    return value;
+}
+
+template <typename T>
+void storeValue(BufferStore& store, uint64_t element, T value) {
+    store.write(element * sizeof(T), &value, sizeof(T));
+}
+
+}  // namespace
+
+// A typed array read: NaN past the end (where JS reads `undefined`, which arithmetic turns to NaN),
+// never uninitialised bytes.
 double BufferAttribute::raw(uint64_t elementIndex) const {
-    const Scalar scalar = store->scalar();
-    const uint64_t size = scalarSize(scalar);
-    std::byte bytes[8];
-    store->read(elementIndex * size, bytes, size);
-    switch (scalar) {
-        case Scalar::F32: {
-            float value = 0;
-            std::memcpy(&value, bytes, sizeof value);
-            return static_cast<double>(value);
-        }
-        case Scalar::U16: {
-            uint16_t value = 0;
-            std::memcpy(&value, bytes, sizeof value);
-            return static_cast<double>(value);
-        }
-        case Scalar::U32: {
-            uint32_t value = 0;
-            std::memcpy(&value, bytes, sizeof value);
-            return static_cast<double>(value);
-        }
-        default: return 0;
+    if (elementIndex >= store->count()) return std::numeric_limits<double>::quiet_NaN();
+    switch (store->scalar()) {
+        case Scalar::F32: return load<float>(*store, elementIndex);
+        case Scalar::F64: return load<double>(*store, elementIndex);
+        case Scalar::I8: return load<int8_t>(*store, elementIndex);
+        case Scalar::U8: return load<uint8_t>(*store, elementIndex);
+        case Scalar::I16: return load<int16_t>(*store, elementIndex);
+        case Scalar::U16: return load<uint16_t>(*store, elementIndex);
+        case Scalar::I32: return load<int32_t>(*store, elementIndex);
+        case Scalar::U32: return load<uint32_t>(*store, elementIndex);
     }
+    return std::numeric_limits<double>::quiet_NaN();
 }
 
+// A typed array write: Math.fround for Float32, ToIntN wrapping for the integer arrays, and a
+// write past the end is ignored, as JS ignores it.
 void BufferAttribute::setRaw(uint64_t elementIndex, double value) {
-    const Scalar scalar = store->scalar();
-    const uint64_t size = scalarSize(scalar);
-    switch (scalar) {
-        case Scalar::F32: {
-            const float narrowed = static_cast<float>(value);
-            store->write(elementIndex * size, &narrowed, size);
-            return;
-        }
-        case Scalar::U16: {
-            const uint16_t narrowed = static_cast<uint16_t>(value);
-            store->write(elementIndex * size, &narrowed, size);
-            return;
-        }
-        case Scalar::U32: {
-            const uint32_t narrowed = static_cast<uint32_t>(value);
-            store->write(elementIndex * size, &narrowed, size);
-            return;
-        }
-        default: return;
+    if (elementIndex >= store->count()) return;
+    switch (store->scalar()) {
+        case Scalar::F32: return storeValue(*store, elementIndex, static_cast<float>(value));
+        case Scalar::F64: return storeValue(*store, elementIndex, value);
+        case Scalar::I8: return storeValue(*store, elementIndex, static_cast<int8_t>(jsToInteger(value, 8, true)));
+        case Scalar::U8: return storeValue(*store, elementIndex, static_cast<uint8_t>(jsToInteger(value, 8, false)));
+        case Scalar::I16: return storeValue(*store, elementIndex, static_cast<int16_t>(jsToInteger(value, 16, true)));
+        case Scalar::U16: return storeValue(*store, elementIndex, static_cast<uint16_t>(jsToInteger(value, 16, false)));
+        case Scalar::I32: return storeValue(*store, elementIndex, static_cast<int32_t>(jsToInteger(value, 32, true)));
+        case Scalar::U32: return storeValue(*store, elementIndex, static_cast<uint32_t>(jsToInteger(value, 32, false)));
     }
 }
 
+// three's MathUtils.denormalize / normalize for each typed array a normalized attribute may use.
 double BufferAttribute::denormalize(double value) const {
     if (!normalized) return value;
     switch (store->scalar()) {
-        case Scalar::U16: return value / 65535.0;
         case Scalar::U32: return value / 4294967295.0;
-        default: return value;  // Float32Array: three returns the value unchanged
+        case Scalar::U16: return value / 65535.0;
+        case Scalar::U8: return value / 255.0;
+        case Scalar::I32: return std::max(value / 2147483647.0, -1.0);
+        case Scalar::I16: return std::max(value / 32767.0, -1.0);
+        case Scalar::I8: return std::max(value / 127.0, -1.0);
+        default: return value;  // Float32Array; Float64Array is refused when an attribute is made
     }
 }
 
 double BufferAttribute::normalize(double value) const {
     if (!normalized) return value;
     switch (store->scalar()) {
-        case Scalar::U16: return jsRound(value * 65535.0);
         case Scalar::U32: return jsRound(value * 4294967295.0);
+        case Scalar::U16: return jsRound(value * 65535.0);
+        case Scalar::U8: return jsRound(value * 255.0);
+        case Scalar::I32: return jsRound(value * 2147483647.0);
+        case Scalar::I16: return jsRound(value * 32767.0);
+        case Scalar::I8: return jsRound(value * 127.0);
         default: return value;
     }
 }
 
+// index * itemSize + component without wrapping: a caller-supplied index can be anything, and a
+// product that wrapped would land back inside the array.
+bool BufferAttribute::element(uint64_t index, int component, uint64_t& out) const {
+    uint64_t scaled = 0;
+    if (component < 0 || itemSize <= 0) return false;
+    if (__builtin_mul_overflow(index, static_cast<uint64_t>(itemSize), &scaled)) return false;
+    if (__builtin_add_overflow(scaled, static_cast<uint64_t>(component), &out)) return false;
+    return out < store->count();
+}
+
 double BufferAttribute::getComponent(uint64_t index, int component) const {
-    return denormalize(raw(index * static_cast<uint64_t>(itemSize) + static_cast<uint64_t>(component)));
+    uint64_t at = 0;
+    return element(index, component, at) ? denormalize(raw(at)) : std::numeric_limits<double>::quiet_NaN();
 }
 
 BufferAttribute& BufferAttribute::setComponent(uint64_t index, int component, double value) {
-    setRaw(index * static_cast<uint64_t>(itemSize) + static_cast<uint64_t>(component), normalize(value));
+    uint64_t at = 0;
+    if (element(index, component, at)) setRaw(at, normalize(value));
     return *this;
 }
 
@@ -278,7 +334,7 @@ bool BufferGeometry::hasAttribute(const std::string& name) const {
     return attributes.find(name) != attributes.end();
 }
 
-void BufferGeometry::addGroup(uint32_t start, uint32_t count, int materialIndex) {
+void BufferGeometry::addGroup(double start, double count, double materialIndex) {
     groups.push_back(GeometryGroup{start, count, materialIndex});
     bumpRevision();
 }
@@ -318,7 +374,9 @@ void BufferGeometry::computeBoundingSphere() {
     double maxRadiusSq = 0;
     for (uint64_t i = 0; i < position->count(); ++i) {
         position->getXYZ(i, point);
-        maxRadiusSq = std::max(maxRadiusSq, center.distanceToSquared(point));
+        // Math.max propagates NaN; std::max would drop it and report a finite radius.
+        const double d = center.distanceToSquared(point);
+        maxRadiusSq = std::isnan(maxRadiusSq) || std::isnan(d) ? std::numeric_limits<double>::quiet_NaN() : std::max(maxRadiusSq, d);
     }
     boundingSphere->radius = std::sqrt(maxRadiusSq);
 }
@@ -388,15 +446,16 @@ std::shared_ptr<BufferGeometry> BufferGeometry::toNonIndexed() const {
     auto geometry = std::make_shared<BufferGeometry>();
     const std::vector<double> indices = index->toNumbers();
     for (const auto& [name, attribute] : attributes) {
-        std::vector<double> values(indices.size() * static_cast<size_t>(attribute->itemSize), 0.0);
-        size_t out = 0;
-        for (const double rawIndex : indices) {
-            const uint64_t vertex = static_cast<uint64_t>(rawIndex);
-            for (int j = 0; j < attribute->itemSize; ++j) values[out++] = attribute->getComponent(vertex, j);
+        // Raw element copies, as three's convertBufferAttribute does (array2[i] = array[j]): reading
+        // through getComponent would denormalize and fromDoubles would not re-normalize.
+        const uint64_t size = static_cast<uint64_t>(attribute->itemSize);
+        auto copy = std::make_shared<BufferAttribute>(attribute->store->scalar(), indices.size() * size,
+                                                      attribute->itemSize, attribute->normalized);
+        uint64_t out = 0;
+        for (const double vertex : indices) {
+            for (uint64_t j = 0; j < size; ++j) copy->setRaw(out++, attribute->raw(static_cast<uint64_t>(vertex) * size + j));
         }
-        geometry->setAttribute(name,
-                               BufferAttribute::fromDoubles(attribute->store->scalar(), values,
-                                                            attribute->itemSize, attribute->normalized));
+        geometry->setAttribute(name, copy);
     }
     for (const GeometryGroup& group : groups) {
         geometry->addGroup(group.start, group.count, group.materialIndex);

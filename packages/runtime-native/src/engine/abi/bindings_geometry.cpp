@@ -10,6 +10,9 @@
 #include "engine/scene/geometries.h"
 
 #include <algorithm>
+#include <cmath>
+#include <cstdint>
+#include <limits>
 #include <memory>
 #include <string>
 #include <vector>
@@ -51,6 +54,28 @@ BufferGeometry& geometryArg(Store& store, const Value& arg) {
 }
 
 /** Any buffer attribute class a fixture can name, matched against one base pointer. */
+/**
+ * A JS array index: a non-negative safe integer. Anything else (a fraction, a negative number, NaN)
+ * names no element, so it maps to an index past every array: reads answer undefined and writes do
+ * nothing, as typed-array access does.
+ */
+uint64_t jsIndex(const Value& v) {
+    const double i = number(v);
+    if (!(i >= 0 && i <= 9007199254740991.0) || i != std::floor(i)) return UINT64_MAX;
+    return static_cast<uint64_t>(i);
+}
+
+int jsComponent(const Value& v) {
+    const double c = number(v);
+    return (c >= 0 && c < 2147483647.0 && c == std::floor(c)) ? static_cast<int>(c) : -1;  // -1 names nothing
+}
+
+/** One component, or undefined (null) past the end of the array. */
+Value component(const BufferAttribute& attribute, uint64_t index, int c) {
+    uint64_t at = 0;
+    return attribute.element(index, c, at) ? Value::of(attribute.getComponent(index, c)) : Value{};
+}
+
 /** The caller's attribute itself (not a copy): three stores the reference it is handed. */
 std::shared_ptr<BufferAttribute> sharedAttributeArg(Store& store, const Value& arg) {
     Object* found = store.find(arg);
@@ -87,8 +112,12 @@ void registerBufferAttribute(ClassBinding& b) {
     b.ctor = [](const Args& a, Store&) {
         std::vector<double> values;
         if (!a.empty() && a.at(0).kind == Value::Kind::Numbers) values = a.at(0).numbers;
-        const int itemSize = std::max(1, static_cast<int>(optional(a, 1, 1)));
-        return std::static_pointer_cast<void>(BufferAttribute::fromDoubles(Scalar::F32, values, itemSize));
+        // BufferAttribute( array, itemSize, normalized = false ); itemSize is a positive integer.
+        const double itemSize = optional(a, 1, 1);
+        if (!(itemSize >= 1 && itemSize <= 65536) || itemSize != std::floor(itemSize)) throw Unsupported{"itemSize must be a positive integer"};
+        const bool normalized = a.size() > 2 && flag(a.at(2));
+        return std::static_pointer_cast<void>(
+            BufferAttribute::fromDoubles(Scalar::F32, values, static_cast<int>(itemSize), normalized));
     };
     b.getters["array"] = [](void* self) { return numbers(as<BufferAttribute>(self)->toNumbers()); };
     b.getters["count"] = [](void* self) { return Value::of(double(as<BufferAttribute>(self)->count())); };
@@ -99,66 +128,70 @@ void registerBufferAttribute(ClassBinding& b) {
     b.getters["version"] = [](void* self) { return Value::of(double(as<BufferAttribute>(self)->version())); };
     b.getters["id"] = [](void* self) { return Value::of(double(as<BufferAttribute>(self)->id)); };
     b.getters["name"] = [](void* self) { return string(as<BufferAttribute>(self)->name); };
-    b.setters["name"] = [](void* self, const Value& v) { as<BufferAttribute>(self)->name = v.text; };
+    b.setters["name"] = [](void* self, const Value& v) {
+        if (v.kind != Value::Kind::String) throw Unsupported{"name must be a string"};
+        as<BufferAttribute>(self)->name = v.text;
+    };
     b.setters["needsUpdate"] = [](void* self, const Value& v) {
         if (flag(v)) as<BufferAttribute>(self)->setNeedsUpdate();
     };
 
     b.methods["getX"] = [](void* self, const Args& a, Store&) {
-        return Value::of(as<BufferAttribute>(self)->getX(static_cast<uint64_t>(number(a.at(0)))));
+        return component(*as<BufferAttribute>(self), jsIndex(a.at(0)), 0);
     };
     b.methods["getY"] = [](void* self, const Args& a, Store&) {
-        return Value::of(as<BufferAttribute>(self)->getY(static_cast<uint64_t>(number(a.at(0)))));
+        return component(*as<BufferAttribute>(self), jsIndex(a.at(0)), 1);
     };
     b.methods["getZ"] = [](void* self, const Args& a, Store&) {
-        return Value::of(as<BufferAttribute>(self)->getZ(static_cast<uint64_t>(number(a.at(0)))));
+        return component(*as<BufferAttribute>(self), jsIndex(a.at(0)), 2);
     };
     b.methods["getW"] = [](void* self, const Args& a, Store&) {
-        return Value::of(as<BufferAttribute>(self)->getW(static_cast<uint64_t>(number(a.at(0)))));
+        return component(*as<BufferAttribute>(self), jsIndex(a.at(0)), 3);
     };
     b.methods["getComponent"] = [](void* self, const Args& a, Store&) {
-        return Value::of(as<BufferAttribute>(self)->getComponent(
-            static_cast<uint64_t>(number(a.at(0))), static_cast<int>(number(a.at(1)))));
+        const double c = number(a.at(1));
+        if (!(c >= 0 && c < 2147483647.0) || c != std::floor(c)) return Value{};
+        return component(*as<BufferAttribute>(self), jsIndex(a.at(0)), static_cast<int>(c));
     };
     b.methods["setComponent"] = [](void* self, const Args& a, Store&) {
-        as<BufferAttribute>(self)->setComponent(static_cast<uint64_t>(number(a.at(0))),
-                                                static_cast<int>(number(a.at(1))), number(a.at(2)));
+        as<BufferAttribute>(self)->setComponent(jsIndex(a.at(0)),
+                                                jsComponent(a.at(1)), number(a.at(2)));
         return chain();
     };
     b.methods["setX"] = [](void* self, const Args& a, Store&) {
-        as<BufferAttribute>(self)->setX(static_cast<uint64_t>(number(a.at(0))), number(a.at(1)));
+        as<BufferAttribute>(self)->setX(jsIndex(a.at(0)), number(a.at(1)));
         return chain();
     };
     b.methods["setY"] = [](void* self, const Args& a, Store&) {
-        as<BufferAttribute>(self)->setY(static_cast<uint64_t>(number(a.at(0))), number(a.at(1)));
+        as<BufferAttribute>(self)->setY(jsIndex(a.at(0)), number(a.at(1)));
         return chain();
     };
     b.methods["setZ"] = [](void* self, const Args& a, Store&) {
-        as<BufferAttribute>(self)->setZ(static_cast<uint64_t>(number(a.at(0))), number(a.at(1)));
+        as<BufferAttribute>(self)->setZ(jsIndex(a.at(0)), number(a.at(1)));
         return chain();
     };
     b.methods["setW"] = [](void* self, const Args& a, Store&) {
-        as<BufferAttribute>(self)->setW(static_cast<uint64_t>(number(a.at(0))), number(a.at(1)));
+        as<BufferAttribute>(self)->setW(jsIndex(a.at(0)), number(a.at(1)));
         return chain();
     };
     b.methods["setXY"] = [](void* self, const Args& a, Store&) {
-        as<BufferAttribute>(self)->setXY(static_cast<uint64_t>(number(a.at(0))), number(a.at(1)),
+        as<BufferAttribute>(self)->setXY(jsIndex(a.at(0)), number(a.at(1)),
                                          number(a.at(2)));
         return chain();
     };
     b.methods["setXYZ"] = [](void* self, const Args& a, Store&) {
-        as<BufferAttribute>(self)->setXYZ(static_cast<uint64_t>(number(a.at(0))), number(a.at(1)),
+        as<BufferAttribute>(self)->setXYZ(jsIndex(a.at(0)), number(a.at(1)),
                                           number(a.at(2)), number(a.at(3)));
         return chain();
     };
     b.methods["setXYZW"] = [](void* self, const Args& a, Store&) {
-        as<BufferAttribute>(self)->setXYZW(static_cast<uint64_t>(number(a.at(0))), number(a.at(1)),
+        as<BufferAttribute>(self)->setXYZW(jsIndex(a.at(0)), number(a.at(1)),
                                            number(a.at(2)), number(a.at(3)), number(a.at(4)));
         return chain();
     };
     b.methods["copyAt"] = [](void* self, const Args& a, Store& store) {
-        as<BufferAttribute>(self)->copyAt(static_cast<uint64_t>(number(a.at(0))),
-                                          attributeArg(store, a.at(1)), static_cast<uint64_t>(number(a.at(2))));
+        as<BufferAttribute>(self)->copyAt(jsIndex(a.at(0)),
+                                          attributeArg(store, a.at(1)), jsIndex(a.at(2)));
         return chain();
     };
     b.methods["applyMatrix3"] = [](void* self, const Args& a, Store& store) {
@@ -276,10 +309,11 @@ void registerBufferGeometry(ClassBinding& b) {
         if (!a.empty() && a.at(0).kind == Value::Kind::Ref) {
             geometry->setIndex(sharedAttributeArg(store, a.at(0)));
         } else if (!a.empty() && a.at(0).kind == Value::Kind::Numbers) {
-            std::vector<uint32_t> values;
-            values.reserve(a.at(0).numbers.size());
-            for (double value : a.at(0).numbers) values.push_back(static_cast<uint32_t>(value));
-            geometry->setIndexFromArray(values);
+            // three: new (arrayNeedsUint32(index) ? Uint32 : Uint16)BufferAttribute(index, 1), deciding on the
+            // numbers as given and then converting each as the typed array does (ToUint16/32).
+            const std::vector<double>& values = a.at(0).numbers;
+            const bool wide = std::any_of(values.begin(), values.end(), [](double v) { return v >= 65535; });
+            geometry->setIndex(BufferAttribute::fromDoubles(wide ? Scalar::U32 : Scalar::U16, values, 1));
         } else {
             throw Unsupported{"setIndex needs a BufferAttribute or an array"};
         }
@@ -308,9 +342,10 @@ void registerBufferGeometry(ClassBinding& b) {
         return Value::of(as<BufferGeometry>(self)->hasAttribute(a.at(0).text));
     };
     b.methods["addGroup"] = [](void* self, const Args& a, Store&) {
-        as<BufferGeometry>(self)->addGroup(static_cast<uint32_t>(number(a.at(0))),
-                                           static_cast<uint32_t>(number(a.at(1))),
-                                           static_cast<int>(optional(a, 2, 0)));
+        // addGroup( start, count, materialIndex = 0 ); a missing count is Infinity in practice (three
+        // passes it through), and the numbers stay JS numbers.
+        as<BufferGeometry>(self)->addGroup(number(a.at(0)), optional(a, 1, std::numeric_limits<double>::infinity()),
+                                           optional(a, 2, 0));
         return chain();
     };
     b.methods["clearGroups"] = [](void* self, const Args&, Store&) {
