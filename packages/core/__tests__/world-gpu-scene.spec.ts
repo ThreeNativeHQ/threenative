@@ -380,16 +380,6 @@ function mainKeys(world: WorldCells): InstancedMesh[] {
   return worldMeshes(world).filter((one) => one.name !== "" && !one.name.includes("@"));
 }
 
-/**
- * Whether the count this mesh is submitting is the prewarm's one degenerate instance rather than a
- * record: three refuses a `count === 0` draw outright, so an empty batch still owed a draw submits
- * one instance of the zero matrix its fresh buffer holds, and that submission is what builds its
- * node. Every count that means "how many placements this key draws" has to leave it out.
- */
-function prewarmInstance(mesh: InstancedMesh): boolean {
-  return (mesh as { prewarmInstance?: boolean }).prewarmInstance === true;
-}
-
 /** Every main mesh of one level of one asset: `pine:0:0`, `pine:0:1`, … */
 function mainLevel(world: WorldCells, asset: string, level: number): InstancedMesh[] {
   const prefix = `${asset}:${String(level)}:`;
@@ -1610,16 +1600,10 @@ describe("WorldCells with the GPU-driven main pass", () => {
         url: "/world/world.json",
       });
       await flushed(world);
-      // The near level of a multi-part tree: minted empty, because no placement reached it. Its own
-      // prewarm submissions are at one instance each while the gate is open — that is what three
-      // admits, and what builds each key's node — and they hold no record.
+      // The near level of a multi-part tree: minted empty, because no placement reached it.
       expect(mainLevel(world, "pine", 0).length).toBeGreaterThan(1);
       expect(mainLevel(world, "pine", 1).length).toBe(mainLevel(world, "pine", 0).length);
-      for (const mesh of mainLevel(world, "pine", 0)) {
-        expect(prewarmInstance(mesh), `${mesh.name} submits no prewarm instance`).toBe(true);
-        expect(mesh.count, `${mesh.name} submits its prewarm draw at one instance`).toBe(1);
-        expect(mesh.instanceMatrix.array[15], `${mesh.name} holds no record`).toBe(0);
-      }
+      for (const mesh of mainLevel(world, "pine", 0)) expect(mesh.count).toBe(0);
 
       const renderer = gpuRendererStub();
       const camera = playerCamera([3, 1]);
@@ -2173,11 +2157,10 @@ describe("WorldCells whose GPU scene comes up under a built ring", () => {
       });
       cpu.update();
       await flushed(cpu);
-      const live = mainKeys(cpu).filter((mesh) => !prewarmInstance(mesh));
-      const expected = live.reduce((sum, mesh) => sum + mesh.count, 0);
+      const expected = mainKeys(cpu).reduce((sum, mesh) => sum + mesh.count, 0);
       expect(world.stats().gpuScene.instances).toBe(expected);
       expect(mainReport).toContain(`instances=${String(expected)} `);
-      const matrices = live
+      const matrices = mainKeys(cpu)
         .flatMap((mesh) =>
           Array.from({ length: mesh.count }, (_, index) =>
             mesh.instanceMatrix.array.slice(index * 16, (index + 1) * 16).join(","),

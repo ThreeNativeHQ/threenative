@@ -240,17 +240,6 @@ describe("WorldCells streaming performance", () => {
           // A prewarmed batch is minted empty and only filled when a placement wants the key, so
           // `count` 0 is a mesh waiting rather than a hole.
           if (mesh.count === 0) continue;
-          // The one exception, and it is the prewarm's own submission rather than a record: an
-          // empty batch still owed its draw is submitted at one instance of the zero matrix its
-          // fresh buffer already holds, because three refuses a `count === 0` draw outright
-          // (`RenderObject.getDrawParameters` returns null). No triangle covers a pixel, so the walk
-          // sees nothing and this check skips it — and says so.
-          if ((mesh as { prewarmInstance?: boolean }).prewarmInstance === true) {
-            expect(uploaded(mesh)[15], `${name} is submitting a record, not its prewarm draw`).toBe(
-              0,
-            );
-            continue;
-          }
           // `count` is the live total: every drawn slot holds a real record, and no record is
           // drawn twice. A dead slot is a whole mesh run through the vertex shader for nothing.
           const shadow = uploaded(mesh);
