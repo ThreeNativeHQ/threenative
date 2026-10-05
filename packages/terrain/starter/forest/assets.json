@@ -8,13 +8,13 @@
     }
   },
   "boulder": {
-    "near": "rocks/rock01-near.glb",
-    "mid": "rocks/rock01-mid.glb",
+    "near": "boulder_01/boulder-near.glb",
+    "mid": "boulder_01/boulder-mid.glb",
     "midDistance": 35,
     "maxDistance": 300,
     "bounds": {
-      "min": [-1.0386, 0, -1.6977],
-      "max": [1.1249, 1.4081, 1.6673]
+      "min": [-0.716, 0, -0.991],
+      "max": [0.557, 1.004, 0.841]
     }
   }
 }

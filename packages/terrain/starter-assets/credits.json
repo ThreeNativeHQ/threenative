@@ -891,6 +891,13 @@
         "license": "CC0",
         "url": "https://polyhaven.com/a/boulder_01",
         "note": "A second source, so a meadow's stones are not one rock copied."
+      },
+      {
+        "asset": "Boulder 01",
+        "authors": "Poly Haven",
+        "license": "CC0",
+        "url": "https://polyhaven.com/a/boulder_01",
+        "note": "Authored LOD1 (33,060 tris) and LOD2 (16,530 tris) with base, normal and roughness maps, exported by examples/strata-terrain-preview/scripts/prep-polyhaven-rock.py; the forest starter kit's boulder."
       }
     ],
     "firedCoverage": {
@@ -991,6 +998,18 @@
         "dimensions": null,
         "file": "fir_tree_01/fir-b-lod2.glb",
         "sha256": "a7e1f126ba7c09aa160f82e200689312334204928c9d822a1eaf13ed9d259dc8"
+      },
+      {
+        "bytes": 2464264,
+        "dimensions": null,
+        "file": "boulder_01/boulder-near.glb",
+        "sha256": "4a86aadf75dd86bf13d32556da6acd2c1d53e2508094fe55a0903f2c44624a59"
+      },
+      {
+        "bytes": 2071256,
+        "dimensions": null,
+        "file": "boulder_01/boulder-mid.glb",
+        "sha256": "4d4a1026047d229d6fbe992d061b4b4e9ef5f837e64239f18e0664a77aed8d84"
       }
     ]
   }
