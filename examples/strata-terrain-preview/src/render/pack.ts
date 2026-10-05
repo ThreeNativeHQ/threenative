@@ -149,7 +149,9 @@ function importedFoliage(
   map.anisotropy = 8;
   material.normalMap = source.normalMap;
   material.roughness = 0.92;
-  material.colorNode = sampled.rgb;
+  // The Kite field grass is authored dark for Unreal's exposure (Wildwood lifts such packs ~3x); drawn raw
+  // it read as a blue-black carpet.
+  material.colorNode = sampled.rgb.mul(source.name === "open-world-demo" ? 3 : 1);
   material.alphaTest = source.alphaTest;
   material.alphaTestNode = float(source.alphaTest);
   material.opacityNode = sampled.a;
@@ -302,8 +304,11 @@ function tintedFoliage(
   // The spruce atlas is photographed warm under Unreal's exposure: cool and darken it toward a
   // spruce green, and sink its orange cone texels to shadowed brown instead of lit specks.
   if (world === "forest" && canopy && cutout) {
+    // The atlas is photographed olive-yellow (opaque mean RGB 90,81,21: almost no blue), which no
+    // channel gain turns blue-green. Keep its luminance detail and give it a spruce hue.
+    const needle = dot(sampled.rgb, vec3(0.2126, 0.7152, 0.0722));
     material.colorNode = mix(
-      sampled.rgb.mul(vec3(0.55, 0.72, 0.62)),
+      needle.mul(vec3(0.42, 0.85, 0.45)),
       vec3(0.05, 0.03, 0.015),
       smoothstep(0.02, 0.12, sampled.r.sub(sampled.g)),
     );
@@ -434,6 +439,8 @@ function surface(
   // Without it a shaded needle card gets only the hemisphere fill and falls to one flat dark value.
   // Per material, not `scene.environment`: the ground is tuned to the fill alone and cannot opt out.
   if (skyLight && !stone) skyEnvironment(material, skyLight);
+  // At full sky light a forest crown is ~85% lit by sky and emissive, so it shows no sun side.
+  if (skyLight && world === "forest" && canopy) material.envMapIntensity = 0.35;
   return material;
 }
 

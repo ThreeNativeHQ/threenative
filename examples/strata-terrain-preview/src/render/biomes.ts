@@ -1,4 +1,4 @@
-import type { Texture } from "three";
+import { ACESFilmicToneMapping, AgXToneMapping, type Texture, type ToneMapping } from "three";
 /** Game-owned biome choices; all five worlds share the same rendering and collision paths. */
 import {
   abs,
@@ -68,6 +68,8 @@ export interface IBiome {
   readonly saturation: number;
   readonly skySaturation: number;
   readonly exposure: number;
+  /** The tone curve this world was graded under. */
+  readonly toneMapping: ToneMapping;
   readonly clouds: number;
 }
 
@@ -101,6 +103,7 @@ const temperate: IBiome = {
   saturation: 1,
   skySaturation: 1,
   exposure: 2 ** -0.26,
+  toneMapping: ACESFilmicToneMapping,
   clouds: 0.76,
 };
 
@@ -125,6 +128,8 @@ export const BIOMES: Record<WorldName, IBiome> = {
   alpine: {
     ...temperate,
     world: "alpine",
+    // ACES crushes the dark ridge rock in shadow to black; AgX keeps its detail.
+    toneMapping: AgXToneMapping,
     horizon: "alpine",
     grassTint: [0.43, 0.8, 0.35],
     stoneTint: [0.86, 0.88, 0.9],
