@@ -21,11 +21,17 @@ double acos(double x);
 /** Returns atan(|y/x|), with the signs of both arguments selecting the quadrant. */
 double atan2(double y, double x);
 
+/** Returns the arc tangent of |x|, the value whose tangent is |x|. */
+double atan(double x);
+
 /** Returns the cosine of |x| in radians. */
 double cos(double x);
 
 /** Returns the sine of |x| in radians. */
 double sin(double x);
+
+/** Returns the tangent of |x| in radians; NaN (with a signal) at an infinity. */
+double tan(double x);
 
 /**
  * Returns |x| to the power of |y|.

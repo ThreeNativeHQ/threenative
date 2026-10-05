@@ -162,6 +162,57 @@ void generic() {
     CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
 }
 
+// PRD-508: the scene graph over the same generic calls, and the member alias a caller reads back as
+// one object rather than a copy per read.
+void scene() {
+    const tn_version_info_t own = tn_engine_version();
+    tn_context_t* ctx = nullptr;
+    Diag d;
+    CHECK(tn_context_create(&ctx, &own, &d.value) == TN_OK);
+
+    tn_handle_t parent{};
+    tn_handle_t child{};
+    CHECK(tn_construct(ctx, "Object3D", nullptr, 0, &parent, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "Object3D", nullptr, 0, &child, &d.value) == TN_OK);
+
+    const tn_value_t offset[3] = {num(1), num(2), num(3)};
+    CHECK(tn_set(parent, "position.x", &offset[0], &d.value) == TN_OK);
+    CHECK(tn_set(parent, "position.y", &offset[1], &d.value) == TN_OK);
+    CHECK(tn_set(parent, "position.z", &offset[2], &d.value) == TN_OK);
+    const tn_value_t two = num(2);
+    CHECK(tn_set(child, "position.y", &two, &d.value) == TN_OK);
+
+    tn_value_t result{};
+    CHECK(tn_invoke(parent, "add", nullptr, 0, &result, &d.value) == TN_ERROR_INVALID_ARGUMENT);
+    const tn_value_t childRef = ref(child);
+    CHECK(tn_invoke(parent, "add", &childRef, 1, &result, &d.value) == TN_OK);
+    CHECK(result.kind == TN_VALUE_HANDLE && same(result.handle, parent));
+
+    const tn_value_t force = num(1);
+    CHECK(tn_invoke(parent, "updateMatrixWorld", &force, 1, &result, &d.value) == TN_OK);
+    CHECK(tn_get(child, "matrixWorld.elements", &result, &d.value) == TN_OK);
+    CHECK(result.kind == TN_VALUE_NUMBERS && result.count == 16);
+    CHECK(result.numbers[12] == 1 && result.numbers[13] == 4 && result.numbers[14] == 3);
+
+    // `mesh.position` is the member, not a copy: the same handle every time, and a write through it
+    // is the object's own write.
+    tn_value_t first{};
+    tn_value_t second{};
+    CHECK(tn_invoke(child, "position", nullptr, 0, &first, &d.value) == TN_OK);
+    CHECK(tn_invoke(child, "position", nullptr, 0, &second, &d.value) == TN_OK);
+    CHECK(first.kind == TN_VALUE_HANDLE && same(first.handle, second.handle));
+    const tn_value_t forty = num(40);
+    CHECK(tn_set(first.handle, "y", &forty, &d.value) == TN_OK);
+    CHECK(tn_get(child, "position.y", &result, &d.value) == TN_OK);
+    CHECK(result.number == 40);
+
+    // The alias keeps the object alive, so releasing the object first does not dangle the alias.
+    CHECK(tn_object_release(child, &d.value) == TN_OK);
+    CHECK(tn_get(first.handle, "y", &result, &d.value) == TN_OK && result.number == 40);
+
+    CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
+}
+
 }  // namespace
 
-TN_TEST_MAIN({"version", version}, {"handles", handles}, {"generic", generic})
+TN_TEST_MAIN({"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene})

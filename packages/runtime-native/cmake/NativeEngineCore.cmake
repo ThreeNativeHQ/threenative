@@ -48,6 +48,14 @@ tn_native_engine_target(tn_engine_abi)
 target_link_libraries(tn_engine_abi PUBLIC tn_engine_foundation tn_engine_bindings)
 target_include_directories(tn_engine_abi PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
+# Scene graph, transforms and cameras (PRD-508 phases 1-2): Object3D, the node classes and the two
+# projection cameras, on the ported math classes. Portable, so it joins the Wasm core.
+add_library(tn_engine_scene STATIC src/engine/scene/object3d.cpp src/engine/scene/camera.cpp
+    src/engine/scene/nodes.cpp)
+tn_native_engine_target(tn_engine_scene)
+target_link_libraries(tn_engine_scene PUBLIC tn_engine_foundation)
+target_include_directories(tn_engine_scene PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+
 # Shader IR (N08): typed, hash-consed expressions and ordered effects. Portable like foundation.
 add_library(tn_engine_shader STATIC src/engine/shader/ir.cpp src/engine/shader/wgsl.cpp src/engine/shader/package.cpp
     src/engine/shader/standard.cpp src/engine/shader/tonemap.cpp src/engine/shader/output.cpp)
@@ -139,8 +147,16 @@ target_link_libraries(tn-native-engine-render-graph-test PRIVATE tn_engine_graph
 tn_native_engine_test(tn-native-engine-abi-test tests/native-engine/abi_test.cpp
     native_engine_abi_version=version
     native_engine_abi_handles=handles
-    native_engine_abi_generic=generic)
+    native_engine_abi_generic=generic
+    native_engine_abi_scene=scene)
 target_link_libraries(tn-native-engine-abi-test PRIVATE tn_engine_abi)
+
+# PRD-508 phase 1: hierarchy, re-parenting, events and member identity.
+tn_native_engine_test(tn-native-engine-scene-test tests/native-engine/scene_hierarchy_test.cpp
+    native_engine_scene_hierarchy=hierarchy
+    native_engine_scene_alias=alias)
+# The alias case drives the fixture driver's Store as well, which is the other implementor of it.
+target_link_libraries(tn-native-engine-scene-test PRIVATE tn_engine_scene tn_fixture_driver)
 
 # PRD-501: the ported V8 fdlibm answers V8's own bits, so a platform libm one bit off fails here.
 tn_native_engine_test(tn-native-engine-ieee754-test tests/native-engine/ieee754_test.cpp
@@ -160,10 +176,11 @@ set_tests_properties(native_engine_abi_c11 PROPERTIES LABELS "native-engine")
 set_property(GLOBAL APPEND PROPERTY TN_NATIVE_ENGINE_TEST_TARGETS tn-native-engine-abi-c11)
 
 # The native side of the differential fixture runner (PRD-498): run-native.ts spawns the driver.
-# The engine's binding registry for the math classes: one model the fixture driver and the C ABI share.
-add_library(tn_engine_bindings STATIC src/engine/abi/bindings_math.cpp)
+# The engine's binding registry for the math and scene classes: one model the fixture driver and the
+# C ABI share.
+add_library(tn_engine_bindings STATIC src/engine/abi/bindings_math.cpp src/engine/abi/bindings_scene.cpp)
 tn_native_engine_target(tn_engine_bindings)
-target_link_libraries(tn_engine_bindings PUBLIC tn_engine_foundation)
+target_link_libraries(tn_engine_bindings PUBLIC tn_engine_foundation tn_engine_scene)
 if(EMSCRIPTEN)
     # Bindings report an unsupported member by exception and the ABI catches it at the boundary;
     # engine algorithms never throw. Both sides need Wasm exception handling.
@@ -189,29 +206,29 @@ tn_native_engine_test(tn-native-engine-fixture-protocol-test tests/native-engine
     native_engine_fixture_protocol=protocol)
 target_link_libraries(tn-native-engine-fixture-protocol-test PRIVATE tn_fixture_driver)
 
-# PRD-501 phases 1 and 2: the ported math classes against the pinned three, one ctest per fixture
-# prefix. Each case is the differential runner over its prefix and the host driver; a mismatch and a
-# blocked row both fail it, because a row nobody ran is a row nobody proved. Emscripten needs node
-# and the host-built driver, which an Emscripten build has neither of.
+# PRD-501 phases 1 and 2 and PRD-508 phase 2: the ported math and scene classes against the pinned
+# three, one ctest per fixture prefix. Each case is the differential runner over its prefix and the
+# host driver; a mismatch and a blocked row both fail it, because a row nobody ran is a row nobody
+# proved. Emscripten needs node and the host-built driver, which an Emscripten build has neither of.
 if(NOT EMSCRIPTEN)
     find_program(TN_PNPM_EXECUTABLE pnpm)
     if(TN_PNPM_EXECUTABLE)
-        foreach(math_case "core:math-core-*" "edges:math-edges-*" "euler:math-euler-*" "primitives:math-primitives-*")
+        foreach(math_case "math_core:math-core-*" "math_edges:math-edges-*" "math_euler:math-euler-*" "math_primitives:math-primitives-*" "scene_transforms:scene-transforms-*" "scene_cameras:scene-cameras-*")
             string(REPLACE ":" ";" math_pair "${math_case}")
             list(GET math_pair 0 math_name)
             list(GET math_pair 1 math_glob)
-            add_test(NAME native_engine_math_${math_name}
+            add_test(NAME native_engine_${math_name}
                 COMMAND ${TN_PNPM_EXECUTABLE} --filter @threenative/three-native exec tsx
                     tests/compatibility/run-native.ts
                     --driver $<TARGET_FILE:tn-native-engine-fixture-driver>
                     --only "${math_glob}"
-                    --out ${CMAKE_CURRENT_BINARY_DIR}/math-${math_name}.json)
-            set_tests_properties(native_engine_math_${math_name} PROPERTIES LABELS "native-engine")
+                    --out ${CMAKE_CURRENT_BINARY_DIR}/${math_name}.json)
+            set_tests_properties(native_engine_${math_name} PROPERTIES LABELS "native-engine")
         endforeach()
         unset(math_case)
         unset(math_pair)
     else()
-        message(WARNING "pnpm not found: the native_engine_math_* fixture cases are not registered")
+        message(WARNING "pnpm not found: the native_engine_math_* and native_engine_scene_* fixture cases are not registered")
     endif()
 endif()
 

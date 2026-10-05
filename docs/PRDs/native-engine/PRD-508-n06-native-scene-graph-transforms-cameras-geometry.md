@@ -53,14 +53,14 @@ reference leaves them stale. Today the scene lives in JS inside the host (§3, R
 #### Phase 1: Object3D, hierarchy and events
 **Status:** NOT STARTED
 **Files:** proposed `packages/runtime-native/src/engine/scene/object3d.cpp`, `tests/native-engine/scene_hierarchy_test.cpp`
-- [ ] Upstream-derived `Object3D` hierarchy tests (add/remove/attach/clear, traversal order, lookup, events) pass against the native implementation. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_scene_hierarchy`
-- [ ] Repeated `mesh.position` access yields one logical vector that survives 10,000 sibling insertions. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_scene_alias`
+- [ ] Upstream-derived `Object3D` hierarchy tests (add/remove/attach/clear, traversal order, lookup, events) pass against the native implementation. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_scene_hierarchy` — open: 2026-10-04 `native_engine_scene_hierarchy` passes (58 checks: add/remove/attach/clear, re-parenting, traversal order, lookup, event order) on Dawn, ASan and Wasm, but its cases are written fresh, not derived from three's `test/unit` Object3D suite (the npm package ships no tests); deriving them is the remaining work
+- [x] Repeated `mesh.position` access yields one logical vector that survives 10,000 sibling insertions. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_scene_alias` — 2026-10-04: green on Dawn, ASan and Wasm: `&mesh.position` is one address across 10,000 sibling insertions, and both binding Stores (fixture driver, C ABI) hand back the same Ref for it every time (`adoptAlias`)
 
 #### Phase 2: Transforms, cameras, synchronous queries
 **Status:** NOT STARTED
 **Files:** proposed `packages/runtime-native/src/engine/scene/transform.cpp`, `camera.cpp`
-- [ ] `matrixAutoUpdate`/`matrixWorldAutoUpdate` on/off, manual matrices and stale-read cases match reference fixtures from N01. proof: `node packages/runtime-native/tests/native-engine/differential.mjs --suite transforms`
-- [ ] Perspective/orthographic projection, `lookAt`, `getWorld*` and `localToWorld` match the reference within the N04a tolerance. proof: `node packages/runtime-native/tests/native-engine/differential.mjs --suite cameras`
+- [x] `matrixAutoUpdate`/`matrixWorldAutoUpdate` on/off, manual matrices and stale-read cases match reference fixtures from N01. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_scene_transforms` — 2026-10-04: 4 `scene-transforms-*` fixtures, 52 observations, bit-exact (abs 0) on host and Wasm. `differential.mjs` was never built; the ctest runs the same differential runner over the suite
+- [x] Perspective/orthographic projection, `lookAt`, `getWorld*` and `localToWorld` match the reference within the N04a tolerance. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_scene_cameras` — 2026-10-04: 3 `scene-cameras-*` fixtures, 42 observations, bit-exact (abs 0) on host and Wasm; `tan`/`atan` are now V8's fdlibm (glibc `tan` differs from V8 on ~4% of arguments)
 
 #### Phase 3: Geometry
 **Status:** NOT STARTED

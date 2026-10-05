@@ -72,9 +72,24 @@ Object* Driver::find(const Value& arg) {
     return it == objects_.end() ? nullptr : &it->second;
 }
 
+void Driver::hold(const std::string& id, std::string cls, std::shared_ptr<void> ptr) {
+    owners_[ptr.get()] = ptr;
+    objects_[id] = Object{std::move(cls), ptr};
+}
+
 Value Driver::adopt(std::string cls, std::shared_ptr<void> ptr) {
     const std::string id = "\x02t" + std::to_string(nextTemp_++);
-    objects_[id] = Object{std::move(cls), std::move(ptr)};
+    hold(id, std::move(cls), ptr);
+    return Value{Value::Kind::Ref, 0, id};
+}
+
+Value Driver::adoptAlias(std::string cls, void* member, void* owner) {
+    // The id is the member's address, so the same member answers the same Ref on every call, and
+    // the aliasing shared_ptr keeps the owner alive while the caller holds the Ref.
+    const auto found = owners_.find(owner);
+    if (found == owners_.end()) throw Unsupported{"this object is not one the caller owns"};
+    const std::string id = "\x04a" + std::to_string(reinterpret_cast<uintptr_t>(member));
+    objects_[id] = Object{std::move(cls), std::shared_ptr<void>(found->second, member)};
     return Value{Value::Kind::Ref, 0, id};
 }
 
@@ -99,7 +114,7 @@ int Driver::run(std::istream& in, std::ostream& out) {
                 if (cls == classes.end() || !cls->second.ctor) throw Unsupported{"class " + t[2]};
                 Args args;
                 for (size_t i = 3; i < t.size(); ++i) args.push_back(parseArg(t[i]));
-                objects_[t[1]] = Object{t[2], cls->second.ctor(args, *this)};
+                hold(t[1], t[2], cls->second.ctor(args, *this));
                 continue;
             }
             if ((command == "call" && t.size() >= 4) || (command == "set" && t.size() >= 4)) {

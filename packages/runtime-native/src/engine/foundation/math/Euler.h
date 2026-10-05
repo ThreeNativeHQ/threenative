@@ -5,8 +5,13 @@
 // orders and their branches are otherwise the reference's, including the `Math.abs(m13) < 0.9999999`
 // gimbal-lock margin that decides which atan2 pair runs.
 //
-// Not ported: `_onChange` and its callback (only Object3D observes it, PRD-508), `fromArray`'s
-// string order (the enum carries it), `toJSON`, and the `Symbol.iterator`.
+// Not ported: `fromArray`'s string order (the enum carries it), `toJSON`, and the `Symbol.iterator`.
+//
+// Deviation: three keeps `_x` private and fires `_onChangeCallback` from the public `x`/`y`/`z`/
+// `order` setters, so writing `euler.x` in JS notifies whoever registered a callback. Here the
+// components are plain public doubles (the fixture protocol reads them by path), so the callback
+// fires from the methods below and a direct component write is not observed. Object3D registers
+// its callbacks and the scene fixtures drive rotation through methods, so both sides agree.
 
 #include <array>
 
@@ -21,6 +26,9 @@ enum class EulerOrder { XYZ, YXZ, ZXY, ZYX, YZX, XZY };
 
 class Euler {
 public:
+    /** three's `_onChangeCallback`: one function and its context, so an Euler costs no allocation. */
+    using OnChange = void (*)(void* context);
+
     double x = 0;
     double y = 0;
     double z = 0;
@@ -34,14 +42,28 @@ public:
     [[nodiscard]] Euler clone() const { return *this; }
     Euler& copy(const Euler& euler);
     /** `matrix` is read through its upper 3x3 only, and must be a pure rotation matrix. */
-    Euler& setFromRotationMatrix(const Matrix4& m, EulerOrder order = EulerOrder::XYZ);
-    Euler& setFromQuaternion(const Quaternion& q, EulerOrder order = EulerOrder::XYZ);
+    Euler& setFromRotationMatrix(const Matrix4& m, EulerOrder order = EulerOrder::XYZ, bool update = true);
+    /** `update` defaults false, because the reference's own `update` is undefined on this path. */
+    Euler& setFromQuaternion(const Quaternion& q, EulerOrder order = EulerOrder::XYZ, bool update = false);
     Euler& setFromVector3(const Vector3& v, EulerOrder order = EulerOrder::XYZ);
     Euler& reorder(EulerOrder newOrder);
+    /** Registers the change notification three's `_onChange` takes; a null callback clears it. */
+    void onChange(OnChange callback, void* context) {
+        onChange_ = callback;
+        onChangeContext_ = context;
+    }
     [[nodiscard]] bool equals(const Euler& euler) const;
     Euler& fromArray(const double* xyz);
     /** The three angles. three's fourth slot holds the order string, not a number. */
     [[nodiscard]] std::array<double, 3> toArray() const { return {x, y, z}; }
+
+private:
+    void notify() const {
+        if (onChange_ != nullptr) onChange_(onChangeContext_);
+    }
+
+    OnChange onChange_ = nullptr;
+    void* onChangeContext_ = nullptr;
 };
 
 }  // namespace tn::engine

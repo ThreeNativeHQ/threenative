@@ -15,12 +15,15 @@
 
 // Ported from V8 11.3.244 src/base/ieee754.cc (raw.githubusercontent.com/v8/v8/11.3.244/src/base/
 // ieee754.cc), keeping Sun's fdlibm notice and V8's copyright above and the function bodies
-// verbatim, so the bit patterns stay V8's. Only the six entry points the math classes call are
-// here, with the private kernels they need. The changes to the V8 text are: V8 headers, macros and
-// helpers replaced by plain C++20 (std::bit_cast for the word access, `inline` for V8_INLINE),
-// qualified std:: calls for fabs, sqrt and scalbn, and base::Divide lowered to the division it
-// already was. V8_USE_LIBM_TRIG_FUNCTIONS is V8's build-time switch to the platform libm for
-// sin and cos; the default is off, which is the fdlibm code below.
+// verbatim, so the bit patterns stay V8's. Only the entry points the engine calls are here, with
+// the private kernels they need: asin, acos, atan, atan2, cos, sin, tan and pow. The changes to
+// the V8 text are: V8 headers, macros and helpers replaced by plain C++20 (std::bit_cast for the
+// word access, `inline` for V8_INLINE), qualified std:: calls for fabs, sqrt and scalbn, and
+// base::Divide lowered to the division it already was. V8_USE_LIBM_TRIG_FUNCTIONS is V8's
+// build-time switch to the platform libm for the trig functions; the default is off, which is the
+// fdlibm code below. PRD-508 added `atan` and `tan` when PerspectiveCamera arrived: without them
+// `updateProjectionMatrix` would answer a glibc `tan` that differs from V8's on about 4% of
+// arguments, and a camera fixture would be comparing different functions.
 
 #include "engine/foundation/math/ieee754.h"
 
@@ -698,6 +701,8 @@ inline double __kernel_sin(double x, double y, int iy) {
   }
 }
 
+}  // namespace
+
 /* atan(x)
  * Method
  *   1. Reduce x to positive by atan(x) = -atan(-x).
@@ -800,6 +805,133 @@ double atan(double x) {
   } else {
     z = atanhi[id] - ((x * (s1 + s2) - atanlo[id]) - x);
     return (hx < 0) ? -z : z;
+  }
+}
+
+namespace {
+/* __kernel_tan( x, y, k )
+ * kernel tan function on [-pi/4, pi/4], pi/4 ~ 0.7854
+ * Input x is assumed to be bounded by ~pi/4 in magnitude.
+ * Input y is the tail of x.
+ * Input k indicates whether tan (if k=1) or
+ * -1/tan (if k= -1) is returned.
+ *
+ * Algorithm
+ *      1. Since tan(-x) = -tan(x), we need only to consider positive x.
+ *      2. if x < 2^-28 (hx<0x3E300000 0), return x with inexact if x!=0.
+ *      3. tan(x) is approximated by a odd polynomial of degree 27 on
+ *         [0,0.67434]
+ *                               3             27
+ *              tan(x) ~ x + T1*x + ... + T13*x
+ *         where
+ *
+ *              |tan(x)         2     4            26   |     -59.2
+ *              |----- - (1+T1*x +T2*x +.... +T13*x    )| <= 2
+ *              |  x                                    |
+ *
+ *         Note: tan(x+y) = tan(x) + tan'(x)*y
+ *                        ~ tan(x) + (1+x*x)*y
+ *         Therefore, for better accuracy in computing tan(x+y), let
+ *                   3      2      2       2       2
+ *              r = x *(T2+x *(T3+x *(...+x *(T12+x *T13))))
+ *         then
+ *                                  3    2
+ *              tan(x+y) = x + (T1*x + (x *(r+y)+y))
+ *
+ *      4. For x in [0.67434,pi/4],  let y = pi/4 - x, then
+ *              tan(x) = tan(pi/4-y) = (1-tan(y))/(1+tan(y))
+ *                     = 1 - 2*(tan(y) - (tan(y)^2)/(1+tan(y)))
+ */
+inline double __kernel_tan(double x, double y, int iy) {
+  static const double
+      T0 = 3.33333333333334091986e-01,    /* 3FD55555, 55555563 */
+      T1 = 1.33333333333201242699e-01,    /* 3FC11111, 1110FE7A */
+      T2 = 5.39682539762260521377e-02,    /* 3FABA1BA, 1BB341FE */
+      T3 = 2.18694882948595424599e-02,    /* 3F9664F4, 8406D637 */
+      T4 = 8.86323982359930005737e-03,    /* 3F8226E3, E96E8493 */
+      T5 = 3.59207910759131235356e-03,    /* 3F6D6D22, C9560328 */
+      T6 = 1.45620945432529025516e-03,    /* 3F57DBC8, FEE08315 */
+      T7 = 5.88041240820264096874e-04,    /* 3F4344D8, F2F26501 */
+      T8 = 2.46463134818469906812e-04,    /* 3F3026F7, 1A8D1068 */
+      T9 = 7.81794442939557092300e-05,    /* 3F147E88, A03792A6 */
+      T10 = 7.14072491382608190305e-05,   /* 3F12B80F, 32F0A7E9 */
+      T11 = -1.85586374855275456654e-05,  /* BEF375CB, DB605373 */
+      T12 = 2.59073051863633712884e-05,   /* 3EFB2A70, 74BF7AD4 */
+      one = 1.00000000000000000000e+00,   /* 3FF00000, 00000000 */
+      pio4 = 7.85398163397448278999e-01,  /* 3FE921FB, 54442D18 */
+      pio4lo = 3.06161699786838301793e-17; /* 3C81A626, 33145C07 */
+
+  double z, r, v, w, s;
+  int32_t ix, hx;
+
+  GET_HIGH_WORD(hx, x);             /* high word of x */
+  ix = hx & 0x7FFFFFFF;             /* high word of |x| */
+  if (ix < 0x3E300000) {            /* x < 2**-28 */
+    if (static_cast<int>(x) == 0) { /* generate inexact */
+      uint32_t low;
+      GET_LOW_WORD(low, x);
+      if (((ix | low) | (iy + 1)) == 0) {
+        return one / std::fabs(x);
+      } else {
+        if (iy == 1) {
+          return x;
+        } else { /* compute -1 / (x+y) carefully */
+          double a, t;
+
+          z = w = x + y;
+          SET_LOW_WORD(z, 0);
+          v = y - (z - x);
+          t = a = -one / w;
+          SET_LOW_WORD(t, 0);
+          s = one + t * z;
+          return t + a * (s + t * v);
+        }
+      }
+    }
+  }
+  if (ix >= 0x3FE59428) { /* |x| >= 0.6744 */
+    if (hx < 0) {
+      x = -x;
+      y = -y;
+    }
+    z = pio4 - x;
+    w = pio4lo - y;
+    x = z + w;
+    y = 0.0;
+  }
+  z = x * x;
+  w = z * z;
+  /*
+   * Break x^5*(T[1]+x^2*T[2]+...) into
+   * x^5(T[1]+x^4*T[3]+...+x^20*T[11]) +
+   * x^5(x^2*(T[2]+x^4*T[4]+...+x^22*[T12]))
+   */
+  r = T1 + w * (T3 + w * (T5 + w * (T7 + w * (T9 + w * T11))));
+  v = z * (T2 + w * (T4 + w * (T6 + w * (T8 + w * (T10 + w * T12)))));
+  s = z * x;
+  r = y + z * (s * (r + v) + y);
+  r += T0 * s;
+  w = x + r;
+  if (ix >= 0x3FE59428) {
+    v = iy;
+    return (1 - ((hx >> 30) & 2)) * (v - 2.0 * (x - (w * w / (w + v) - r)));
+  }
+  if (iy == 1) {
+    return w;
+  } else {
+    /*
+     * if allow error up to 2 ulp, simply return
+     * -1.0 / (x+r) here
+     */
+    /* compute -1.0 / (x+r) accurately */
+    double a, t;
+    z = w;
+    SET_LOW_WORD(z, 0);
+    v = r - (z - x);  /* z+v = r+x */
+    t = a = -1.0 / w; /* a = -1.0/w */
+    SET_LOW_WORD(t, 0);
+    s = 1.0 + t * z;
+    return t + a * (s + t * v);
   }
 }
 
@@ -922,6 +1054,57 @@ double sin(double x) {
       default:
         return -__kernel_cos(y[0], y[1]);
     }
+  }
+}
+
+/* tan(x)
+ * Return tangent function of x.
+ *
+ * kernel function:
+ *      __kernel_tan            ... tangent function on [-pi/4,pi/4]
+ *      __ieee754_rem_pio2      ... argument reduction routine
+ *
+ * Method.
+ *      Let S,C and T denote the sin, cos and tan respectively on
+ *      [-PI/4, +PI/4]. Reduce the argument x to y1+y2 = x-k*pi/2
+ *      in [-pi/4 , +PI/4], and let n = k mod 4.
+ *      We have
+ *
+ *          n        sin(x)      cos(x)        tan(x)
+ *     ----------------------------------------------------------
+ *          0          S           C             T
+ *          1          C          -S            -1/T
+ *          2         -S          -C             T
+ *          3         -C           S            -1/T
+ *     ----------------------------------------------------------
+ *
+ * Special cases:
+ *      Let trig be any of sin, cos, or tan.
+ *      trig(+-INF)  is NaN, with signals;
+ *      trig(NaN)    is that NaN;
+ *
+ * Accuracy:
+ *      TRIG(x) returns trig(x) nearly rounded
+ */
+double tan(double x) {
+  double y[2], z = 0.0;
+  int32_t n, ix;
+
+  /* High word of x. */
+  GET_HIGH_WORD(ix, x);
+
+  /* |x| ~< pi/4 */
+  ix &= 0x7FFFFFFF;
+  if (ix <= 0x3FE921FB) {
+    return __kernel_tan(x, z, 1);
+  } else if (ix >= 0x7FF00000) {
+    /* tan(Inf or NaN) is NaN */
+    return x - x; /* NaN */
+  } else {
+    /* argument reduction needed */
+    n = __ieee754_rem_pio2(x, y);
+    /* 1 -> n even, -1 -> n odd */
+    return __kernel_tan(y[0], y[1], 1 - ((n & 1) << 1));
   }
 }
 

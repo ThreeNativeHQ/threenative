@@ -4,9 +4,12 @@
 // (x, y, z, w), unit length expected, right-handed, and `setFromRotationMatrix` picks its branch in
 // the reference's order, because the branch decides which square roots run.
 //
-// Not ported: `_onChange` and the `_onChangeCallback` call it registers (a change-notification
-// hook that only Object3D observes, PRD-508), `fromBufferAttribute` (a BufferAttribute, PRD-504),
-// `toJSON`/`random` (JSON text and Math.random are not reproducible), and the `Symbol.iterator`.
+// Not ported: `fromBufferAttribute` (a BufferAttribute, PRD-504), `toJSON`/`random` (JSON text and
+// Math.random are not reproducible), and the `Symbol.iterator`.
+//
+// Deviation: three keeps `_x` private and fires `_onChangeCallback` from the public `x`/`y`/`z`/`w`
+// setters. Here the components are plain public doubles (the fixture protocol reads them by path),
+// so the callback fires from the methods below and a direct component write is not observed.
 
 #include <array>
 #include <cstddef>
@@ -30,6 +33,9 @@ double* multiplyQuaternionsFlat(double* dst, std::size_t dstOffset, const double
 
 class Quaternion {
 public:
+    /** three's `_onChangeCallback`: one function and its context, so a Quaternion costs nothing. */
+    using OnChange = void (*)(void* context);
+
     double x = 0;
     double y = 0;
     double z = 0;
@@ -41,12 +47,18 @@ public:
     Quaternion& set(double x, double y, double z, double w);
     [[nodiscard]] Quaternion clone() const { return *this; }
     Quaternion& copy(const Quaternion& q);
-    Quaternion& setFromEuler(const Euler& euler);
+    /** `update` is three's own flag: false suppresses the notification Object3D's sync relies on. */
+    Quaternion& setFromEuler(const Euler& euler, bool update = true);
     Quaternion& setFromAxisAngle(const Vector3& axis, double angle);
     /** `matrix` is read through its upper 3x3 only, and must be a pure rotation matrix. */
     Quaternion& setFromRotationMatrix(const Matrix4& m);
     /** Both arguments are assumed to be direction vectors (normalized). */
     Quaternion& setFromUnitVectors(const Vector3& vFrom, const Vector3& vTo);
+    /** Registers the change notification three's `_onChange` takes; a null callback clears it. */
+    void onChange(OnChange callback, void* context) {
+        onChange_ = callback;
+        onChangeContext_ = context;
+    }
     [[nodiscard]] double angleTo(const Quaternion& q) const;
     Quaternion& rotateTowards(const Quaternion& q, double step);
     Quaternion& identity();
@@ -64,6 +76,14 @@ public:
     [[nodiscard]] bool equals(const Quaternion& q) const;
     Quaternion& fromArray(const double* array, int offset = 0);
     [[nodiscard]] std::array<double, 4> toArray() const { return {x, y, z, w}; }
+
+private:
+    void notify() const {
+        if (onChange_ != nullptr) onChange_(onChangeContext_);
+    }
+
+    OnChange onChange_ = nullptr;
+    void* onChangeContext_ = nullptr;
 };
 
 }  // namespace tn::engine

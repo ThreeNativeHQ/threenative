@@ -77,6 +77,7 @@ Quaternion& Quaternion::set(double x, double y, double z, double w) {
     this->y = y;
     this->z = z;
     this->w = w;
+    notify();
     return *this;
 }
 
@@ -85,10 +86,11 @@ Quaternion& Quaternion::copy(const Quaternion& q) {
     y = q.y;
     z = q.z;
     w = q.w;
+    notify();
     return *this;
 }
 
-Quaternion& Quaternion::setFromEuler(const Euler& euler) {
+Quaternion& Quaternion::setFromEuler(const Euler& euler, bool update) {
     const double ex = euler.x, ey = euler.y, ez = euler.z;
     const double c1 = ieee754::cos(ex / 2);
     const double c2 = ieee754::cos(ey / 2);
@@ -134,6 +136,7 @@ Quaternion& Quaternion::setFromEuler(const Euler& euler) {
             w = c1 * c2 * c3 + s1 * s2 * s3;
             break;
     }
+    if (update) notify();
     return *this;
 }
 
@@ -143,6 +146,7 @@ Quaternion& Quaternion::setFromAxisAngle(const Vector3& axis, double angle) {
     y = axis.y * s;
     z = axis.z * s;
     w = ieee754::cos(halfAngle);
+    notify();
     return *this;
 }
 
@@ -178,6 +182,7 @@ Quaternion& Quaternion::setFromRotationMatrix(const Matrix4& m) {
         y = (m23 + m32) / s;
         z = 0.25 * s;
     }
+    notify();
     return *this;
 }
 
@@ -228,6 +233,7 @@ Quaternion& Quaternion::conjugate() {
     x *= -1;
     y *= -1;
     z *= -1;
+    notify();
     return *this;
 }
 
@@ -251,6 +257,7 @@ Quaternion& Quaternion::normalize() {
         z = z * l;
         w = w * l;
     }
+    notify();
     return *this;
 }
 
@@ -266,6 +273,7 @@ Quaternion& Quaternion::multiplyQuaternions(const Quaternion& a, const Quaternio
     y = qay * qbw + qaw * qby + qaz * qbx - qax * qbz;
     z = qaz * qbw + qaw * qbz + qax * qby - qay * qbx;
     w = qaw * qbw - qax * qbx - qay * qby - qaz * qbz;
+    notify();
     return *this;
 }
 
@@ -290,13 +298,14 @@ Quaternion& Quaternion::slerp(const Quaternion& qb, double t) {
         y = y * s + by * t;
         z = z * s + bz * t;
         w = w * s + bw * t;
+        notify();
     } else {
         // for small angles, lerp then normalize
         x = x * s + bx * t;
         y = y * s + by * t;
         z = z * s + bz * t;
         w = w * s + bw * t;
-        normalize();
+        normalize();  // normalize notifies, as it does in the reference
     }
     return *this;
 }
@@ -314,6 +323,7 @@ Quaternion& Quaternion::fromArray(const double* array, int offset) {
     y = array[offset + 1];
     z = array[offset + 2];
     w = array[offset + 3];
+    notify();
     return *this;
 }
 

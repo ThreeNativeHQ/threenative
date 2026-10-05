@@ -15,6 +15,7 @@ Euler& Euler::set(double x, double y, double z, EulerOrder order) {
     this->y = y;
     this->z = z;
     this->order = order;
+    notify();
     return *this;
 }
 
@@ -23,10 +24,11 @@ Euler& Euler::copy(const Euler& euler) {
     y = euler.y;
     z = euler.z;
     order = euler.order;
+    notify();
     return *this;
 }
 
-Euler& Euler::setFromRotationMatrix(const Matrix4& m, EulerOrder order) {
+Euler& Euler::setFromRotationMatrix(const Matrix4& m, EulerOrder order, bool update) {
     const double* te = m.elements.data();
     const double m11 = te[0], m12 = te[4], m13 = te[8];
     const double m21 = te[1], m22 = te[5], m23 = te[9];
@@ -94,13 +96,14 @@ Euler& Euler::setFromRotationMatrix(const Matrix4& m, EulerOrder order) {
             break;
     }
     this->order = order;
+    if (update) notify();
     return *this;
 }
 
-Euler& Euler::setFromQuaternion(const Quaternion& q, EulerOrder order) {
+Euler& Euler::setFromQuaternion(const Quaternion& q, EulerOrder order, bool update) {
     static Matrix4 matrix;
     matrix.makeRotationFromQuaternion(q);
-    return setFromRotationMatrix(matrix, order);
+    return setFromRotationMatrix(matrix, order, update);
 }
 
 Euler& Euler::setFromVector3(const Vector3& v, EulerOrder order) { return set(v.x, v.y, v.z, order); }
@@ -108,7 +111,7 @@ Euler& Euler::setFromVector3(const Vector3& v, EulerOrder order) { return set(v.
 Euler& Euler::reorder(EulerOrder newOrder) {
     static Quaternion quaternion;
     quaternion.setFromEuler(*this);
-    return setFromQuaternion(quaternion, newOrder);
+    return setFromQuaternion(quaternion, newOrder, false);
 }
 
 bool Euler::equals(const Euler& euler) const {
@@ -119,6 +122,7 @@ Euler& Euler::fromArray(const double* xyz) {
     x = xyz[0];
     y = xyz[1];
     z = xyz[2];
+    notify();
     return *this;
 }
 

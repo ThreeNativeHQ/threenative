@@ -17,6 +17,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace tn::fixture {
@@ -31,6 +32,7 @@ public:
 
     Object* find(const Value& arg) override;
     Value adopt(std::string cls, std::shared_ptr<void> ptr) override;
+    Value adoptAlias(std::string cls, void* member, void* owner) override;
     /**
      * The numeric array a `toArray()` result was boxed into, which is how `fromArray(array)`
      * receives what the reference receives as a plain JS array. Empty for any other argument.
@@ -41,7 +43,11 @@ public:
     int run(std::istream& in, std::ostream& out);
 
 private:
+    /** Stores an object under `id` and remembers the pointer an alias member would name it by. */
+    void hold(const std::string& id, std::string cls, std::shared_ptr<void> ptr);
+
     std::map<std::string, Object> objects_;
+    std::unordered_map<const void*, std::shared_ptr<void>> owners_;
     uint32_t nextTemp_ = 0;
 };
 

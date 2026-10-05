@@ -10,6 +10,7 @@
 #include <memory>
 #include <new>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
 #include "engine/abi/bindings.h"
@@ -26,6 +27,8 @@ struct tn_context : tn::binding::Store {
     explicit tn_context(uint16_t id) : objects(id) {}
     tn::engine::HandleTable objects;
     std::vector<tn::binding::Object> values;  // by handle index
+    std::unordered_map<void*, tn_handle_t> aliases_;  // a member address -> the one handle naming it
+    std::unordered_map<const void*, std::shared_ptr<void>> owners_;  // an object pointer -> its record
     std::string scratchText;                  // a returned string, valid until the next call
     std::vector<double> scratchNumbers;       // a returned array, valid until the next call
 
@@ -53,6 +56,22 @@ struct tn_context : tn::binding::Store {
         if (!hold(std::move(cls), std::move(ptr), h)) throw tn::binding::Unsupported{"the catalog publishes no such class"};
         return tn::binding::Value{tn::binding::Value::Kind::Ref, 0, refText(h)};
     }
+    tn::binding::Value adoptAlias(std::string cls, void* member, void* owner) override {
+        const auto held = owners_.find(owner);
+        if (held == owners_.end()) throw tn::binding::Unsupported{"this object is not one the caller owns"};
+        // One handle per member address, so `object.position` is the same handle on every call. The
+        // aliasing shared_ptr keeps the owner alive, so releasing the owner's handle first is safe.
+        const auto cached = aliases_.find(member);
+        if (cached != aliases_.end() && object(cached->second) != nullptr) {
+            return tn::binding::Value{tn::binding::Value::Kind::Ref, 0, refText(cached->second)};
+        }
+        tn_handle_t h{};
+        if (!hold(std::move(cls), std::shared_ptr<void>(held->second, member), h)) {
+            throw tn::binding::Unsupported{"the catalog publishes no such class"};
+        }
+        aliases_[member] = h;
+        return tn::binding::Value{tn::binding::Value::Kind::Ref, 0, refText(h)};
+    }
     std::vector<double> numbers(const tn::binding::Value& arg) override {
         return arg.kind == tn::binding::Value::Kind::Numbers ? arg.numbers : std::vector<double>{};
     }
@@ -61,6 +80,7 @@ struct tn_context : tn::binding::Store {
         if (type == 0) return false;
         const tn::engine::Handle h = objects.allocate(type);
         if (values.size() <= h.index) values.resize(h.index + 1);
+        owners_[ptr.get()] = ptr;
         values[h.index] = tn::binding::Object{std::move(cls), std::move(ptr)};
         out = tn_handle_t{h.type, h.context, h.index, h.generation};
         return true;
@@ -213,7 +233,13 @@ tn_status_t tn_object_release(tn_handle_t object, tn_diagnostic_t* diagnostic) {
     const tn::engine::Handle handle{object.type, object.context, object.index, object.generation};
     switch (context->objects.release(handle)) {
         case tn::engine::HandleError::None:
-            if (object.index < context->values.size()) context->values[object.index] = tn::binding::Object{};
+            if (object.index < context->values.size()) {
+                tn::binding::Object& slot = context->values[object.index];
+                // An alias of one of its members still holds the object, so the record outlives the
+                // handle that named it; the aliasing shared_ptr is what keeps it alive.
+                if (slot.ptr) context->owners_.erase(slot.ptr.get());
+                slot = tn::binding::Object{};
+            }
             return ok(diagnostic);
         case tn::engine::HandleError::Stale:
             return report(diagnostic, TN_ERROR_STALE_HANDLE, 0, "TN_HANDLE_STALE: the slot was reclaimed");
