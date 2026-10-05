@@ -33,6 +33,8 @@ import {
   PIXEL_TOLERANCE,
   PIXEL_TOLERANCE_AA,
   chromiumExpected,
+  cssStateAt,
+  hostIdsOf,
   focusCandidates,
   focusedFrom,
   pixelAt,
@@ -355,8 +357,11 @@ async function runInteraction(scenario, browser) {
     ...translated.observations.map((item) => item.clockSkewMs ?? 0),
   );
   const listen = scenario.listen ?? [];
+  // The host's own focus and scroll answers, written to its log under `TN_CSS_UI_STATE_TRACE=1`
+  // (`traceCssState` in `src/platform/ui_overlay.cpp`). The fixed clock is what makes a cut run
+  // reach the same frame the whole script would have.
   // biome-ignore lint/style/useNamingConvention: TN_CSS_UI_FIXED_STEP_MS is the host's own variable name.
-  const env = { TN_CSS_UI_FIXED_STEP_MS: String(CLOCK_STEP_MS) };
+  const env = { TN_CSS_UI_FIXED_STEP_MS: String(CLOCK_STEP_MS), TN_CSS_UI_STATE_TRACE: "1" };
   const built = buildProject(
     scenario,
     scenarioJson(scenario, translated, expected),
@@ -430,7 +435,10 @@ async function runInteraction(scenario, browser) {
       ...new Set(
         translated.observations
           .filter(
-            (item) => item.why === undefined && (item.obs === "pixel" || item.obs === "focus"),
+            (item) =>
+              item.why === undefined &&
+              item.fromState !== true &&
+              (item.obs === "pixel" || item.obs === "focus"),
           )
           .map((item) => item.label),
       ),
@@ -473,7 +481,34 @@ async function runInteraction(scenario, browser) {
     };
   }
   const baseline = captures.get("baseline");
+  // Every state observation — a scroll offset, or focus a click gave — is read from a run cut at its
+  // own step, because the host's `TN_CSS_UI_STATE` log records the state and not the step that was
+  // running: the last line of a cut run is the state that run ended in, which is the state this
+  // observation's step was waiting for. Reading the last line of the whole run instead would answer
+  // only the last state observation and would be wrong for the ones before it.
+  const states = new Map();
+  entry.stateRuns = [];
+  for (const item of translated.observations.filter(
+    (entry_) => entry_.fromState === true && entry_.why === undefined,
+  )) {
+    const cut = playOnce(scenarioJson(scenario, prefixFor(translated, item.label), expected));
+    if (!cut.identity.ok)
+      entry.identity.problems.push(
+        ...cut.identity.problems.map((problem) => `${item.label}: ${problem}`),
+      );
+    const state = cut.played.status === 0 ? cssStateAt(cut.lines) : undefined;
+    entry.stateRuns.push({
+      label: item.label,
+      obs: item.obs,
+      element: item.n,
+      exit: cut.played.status,
+      state: state?.line,
+    });
+    if (state !== undefined) states.set(item.index, state);
+  }
   const candidates = focusCandidates(scenario.tree);
+  const hostIds = hostIdsOf(scenario.tree);
+  const numberOf = new Map([...hostIds].map(([n, id]) => [id, n]));
   let compared = 0;
   for (const item of translated.observations) {
     const want = expected[item.index];
@@ -488,7 +523,17 @@ async function runInteraction(scenario, browser) {
     }
     let actual;
     let why;
-    if (item.obs === "focus" || item.obs === "pixel") {
+    if (item.fromState === true) {
+      const state = states.get(item.index);
+      if (state === undefined) {
+        actual = null;
+        why = `the host wrote no TN_CSS_UI_STATE line in the run cut at ${item.label}`;
+      } else
+        actual =
+          item.obs === "scroll"
+            ? state.scrollOf(hostIds.get(item.n))
+            : (numberOf.get(state.focused) ?? state.focused);
+    } else if (item.obs === "focus" || item.obs === "pixel") {
       const capture = captures.get(item.label);
       if (capture === undefined || (item.obs === "focus" && baseline === undefined)) {
         entry.mismatches.push({

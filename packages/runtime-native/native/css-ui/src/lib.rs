@@ -1271,6 +1271,28 @@ impl CssUi {
         Some([offset.x, offset.y])
     }
 
+    /// The ids of every element that has moved off its origin, ascending.
+    ///
+    /// A document holds thousands of elements and a handful of scrollers, so a host that wants to
+    /// report where the UI has scrolled to asks for the moved ones rather than sweeping every id.
+    pub fn scrolled_ids(&self) -> Vec<u32> {
+        let mut ids: Vec<u32> = self
+            .ids
+            .iter()
+            .filter(|(_, node)| {
+                self.doc.get_node(**node).is_some_and(|node| {
+                    node.is_element() && {
+                        let offset = *node.scroll_offset();
+                        offset.x != 0.0 || offset.y != 0.0
+                    }
+                })
+            })
+            .map(|(&id, _)| id)
+            .collect();
+        ids.sort_unstable();
+        ids
+    }
+
     /// Whether the UI consumes the pointer at `nx`/`ny`. The same predicate [`CssUi::pointer`]
     /// returns, without delivering an event.
     pub fn hit_test(&mut self, nx: f32, ny: f32) -> bool {

@@ -406,6 +406,103 @@ fn keys_are_consumed_only_while_the_ui_can_use_them() {
     assert_eq!(tn_css_ui_detach(), 0);
 }
 
+/// The scroll offsets cross the ABI beside the focused id, because without them a host (and any
+/// tool reading its log) cannot tell a scrolled list from a still one: the pixels move either way.
+#[test]
+fn scroll_offsets_cross_the_abi() {
+    let mut ids = [0u32; 8];
+    assert_eq!(tn_css_ui_scrolled_ids(ids.as_mut_ptr(), ids.len()), 0, "no document");
+    assert_eq!(tn_css_ui_scroll_offset(1, std::ptr::null_mut(), std::ptr::null_mut()), -5);
+
+    assert_eq!(tn_css_ui_attach(c("/nonexistent").as_ptr(), 320, 240), 0);
+    let sheet = serde_json::to_string(
+        "html,body{margin:0;padding:0}\
+         .outer{width:200px;height:120px;overflow:auto;background:#222;margin:10px}\
+         .inner{width:160px;height:60px;overflow:auto;background:#334;margin:10px}\
+         .pad2{height:200px}\
+         .pad{height:400px}",
+    )
+    .expect("css encodes");
+    assert_eq!(
+        tn_css_ui_post(
+            c(&format!(
+                r#"{{"ops":[
+                    {{"op":"sheet","key":"s","css":{sheet}}},
+                    {{"op":"create","id":1,"tag":"div"}},
+                    {{"op":"attr","id":1,"name":"class","value":"outer"}},
+                    {{"op":"create","id":2,"tag":"div"}},
+                    {{"op":"attr","id":2,"name":"class","value":"inner"}},
+                    {{"op":"create","id":3,"tag":"div"}},
+                    {{"op":"attr","id":3,"name":"class","value":"pad2"}},
+                    {{"op":"append","parent":2,"child":3}},
+                    {{"op":"append","parent":1,"child":2}},
+                    {{"op":"create","id":4,"tag":"div"}},
+                    {{"op":"attr","id":4,"name":"class","value":"pad"}},
+                    {{"op":"append","parent":1,"child":4}},
+                    {{"op":"append","parent":0,"child":1}}
+                ]}}"#
+            ))
+            .as_ptr()
+        ),
+        0,
+        "{}",
+        last_error()
+    );
+    let mut frame = TnCssFrame {
+        pixels: std::ptr::null(),
+        length: 0,
+        width: 0,
+        height: 0,
+        stride: 0,
+        counter: 0,
+    };
+    assert_eq!(tn_css_ui_frame(&mut frame), 1, "lay the UI out before scrolling it");
+
+    let offset = |id: u32| {
+        let (mut x, mut y) = (0.0, 0.0);
+        assert_eq!(tn_css_ui_scroll_offset(id, &mut x, &mut y), 1, "element {id} exists");
+        [x, y]
+    };
+    assert_eq!(offset(1), [0.0, 0.0], "a scroller that has not moved");
+    assert_eq!(tn_css_ui_scrolled_ids(ids.as_mut_ptr(), ids.len()), 0, "nothing has scrolled yet");
+
+    // The corpus `nested-scroll` script, wheel by wheel: (60, 40) in a 320x240 viewport is the inner box.
+    assert_eq!(tn_css_ui_wheel(60.0 / 320.0, 40.0 / 240.0, 0.0, 50.0), 1);
+    assert_eq!(offset(2), [0.0, 50.0], "the inner box took the first tick");
+    assert_eq!(offset(1), [0.0, 0.0], "and the outer box stayed put");
+    assert_eq!(tn_css_ui_scrolled_ids(ids.as_mut_ptr(), ids.len()), 1);
+    assert_eq!(ids[0], 2, "and it is the only element that has moved");
+
+    assert_eq!(tn_css_ui_wheel(60.0 / 320.0, 40.0 / 240.0, 0.0, 300.0), 1);
+    assert_eq!(offset(2), [0.0, 140.0], "the inner box hit its limit");
+    assert_eq!(offset(1), [0.0, 0.0], "a wheel latches to one scroller");
+
+    assert_eq!(tn_css_ui_wheel(60.0 / 320.0, 40.0 / 240.0, 0.0, 300.0), 1);
+    assert_eq!(offset(2), [0.0, 140.0], "the inner box cannot move");
+    assert_eq!(offset(1), [0.0, 300.0], "so the outer box does");
+
+    // Both scrollers, ascending, and a buffer too small to hold them still reports the full count.
+    assert_eq!(tn_css_ui_scrolled_ids(ids.as_mut_ptr(), 1), 2);
+    assert_eq!(tn_css_ui_scrolled_ids(ids.as_mut_ptr(), ids.len()), 2);
+    assert_eq!(ids[..2], [1, 2], "ascending, so a reader can pair an id with its offset");
+
+    let mut x = 7.0;
+    let mut y = 7.0;
+    assert_eq!(
+        tn_css_ui_scroll_offset(99, &mut x, std::ptr::null_mut()),
+        -5,
+        "a null out is an error"
+    );
+    assert_eq!(
+        tn_css_ui_scroll_offset(99, &mut x, &mut y),
+        0,
+        "an id this document never made has no offset"
+    );
+    assert_eq!([x, y], [7.0, 7.0], "and leaves the caller's values alone");
+
+    assert_eq!(tn_css_ui_detach(), 0);
+}
+
 /// The clock, the environment and the pointer kind: the host drives them, and each one is visible
 /// in what the document does with the frame.
 #[test]

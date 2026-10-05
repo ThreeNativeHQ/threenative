@@ -11,6 +11,7 @@
 #include <iostream>
 #include <memory>
 #include <mutex>
+#include <sstream>
 #include <string_view>
 
 #include <cstdio>
@@ -104,6 +105,8 @@ int tn_css_ui_set_time(double ms);
 int tn_css_ui_set_env(int dark, int reduced_motion);
 int tn_css_ui_set_pointer_kind(int touch);
 int tn_css_ui_focused_id();
+int tn_css_ui_scroll_offset(uint32_t id, double* x, double* y);
+size_t tn_css_ui_scrolled_ids(uint32_t* out, size_t capacity);
 void tn_css_ui_detach();
 const char* tn_css_ui_backend();
 }
@@ -245,6 +248,49 @@ void cssTakeEventsIntoQueue() {
 }
 
 /**
+ * The document's focus and scroll offsets, one line per composite that changed either of them.
+ *
+ * Off unless `TN_CSS_UI_STATE_TRACE` is set. Two facts a screenshot cannot carry live here: which
+ * element holds focus when nothing about it looks different (a pointer focus is not a
+ * `:focus-visible` one, so a clicked button paints exactly what an unfocused one does), and where
+ * a scroller has moved to (the pixels moved; the offset did not stay 0). Both are what
+ * `tn_css_ui_focused_id` and `tn_css_ui_scroll_offset` already answer, and this is those answers
+ * written where a run's captured log keeps them — the same arrangement `TN_UI_COMPOSITE_TRACE` and
+ * `TN_UI_LATENCY_TRACE` have for the frame and the post.
+ *
+ * A line only when the state differs from the last one, because a transition keeps every composite
+ * a candidate and the runs that read these lines care about when they changed. The element ids are
+ * the ids the game created its UI with, which are the ids the corpus numbers its elements by, so a
+ * reader pairs an offset with the element it asked about without a second mapping.
+ */
+void traceCssState() {
+    static const bool enabled = std::getenv("TN_CSS_UI_STATE_TRACE") != nullptr;
+    if (!enabled) return;
+    // The scrolled ids first: a document holds thousands of elements and a handful of scrollers, so
+    // the crate answers which of them moved instead of the host sweeping every id it has seen.
+    // How many moved, then the list itself: a null buffer is a count-only query.
+    const size_t count = tn_css_ui_scrolled_ids(nullptr, 0);
+    std::vector<uint32_t> ids(count);
+    if (count > 0) tn_css_ui_scrolled_ids(ids.data(), count);
+    std::ostringstream line;
+    line << "TN_CSS_UI_STATE focused=" << tn_css_ui_focused_id();
+    bool first = true;
+    for (size_t i = 0; i < count; i += 1) {
+        double x = 0.0;
+        double y = 0.0;
+        if (tn_css_ui_scroll_offset(ids[i], &x, &y) != 1) continue;
+        if (x == 0.0 && y == 0.0) continue;
+        line << (first ? " " : ";") << "scroll=" << ids[i] << ':' << x << ',' << y;
+        first = false;
+    }
+    static std::string last;
+    const std::string state = line.str();
+    if (state == last) return;
+    last = state;
+    std::cout << state << std::endl;
+}
+
+/**
  * The UI's newest frame, or false until it has painted once.
  *
  * `pixels` is the crate's own premultiplied RGBA8 raster, valid until the next call, and reported
@@ -255,6 +301,10 @@ void cssTakeEventsIntoQueue() {
 bool cssTakeFrame(UiOverlayFrame& frame) {
     TnCssFrame layout{};
     if (tn_css_ui_frame(&layout) != 1) return false;
+    // Every composite, not only a republished frame: focus that matches no `:focus-visible` rule
+    // changes nothing to look at and repaints nothing, and that is exactly the state a reader here
+    // cannot see any other way.
+    traceCssState();
     frame.pixels = layout.pixels;
     frame.length = layout.length;
     frame.width = layout.width;

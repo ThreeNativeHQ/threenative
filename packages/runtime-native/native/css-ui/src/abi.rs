@@ -19,6 +19,8 @@
 //! | `tn_css_ui_set_env` | `prefers-color-scheme` and `prefers-reduced-motion` |
 //! | `tn_css_ui_set_pointer_kind` | whether the pointer is a finger rather than a mouse |
 //! | `tn_css_ui_focused_id` | the focused element's id, or `0` when nothing has focus |
+//! | `tn_css_ui_scroll_offset` | an element's `[scrollLeft, scrollTop]` in CSS pixels |
+//! | `tn_css_ui_scrolled_ids` | the ids of every element that has scrolled off its origin |
 //! | `tn_css_ui_detach` | nothing; the document is gone |
 //! | `tn_css_ui_backend` | which engine produced the frames |
 //! | `tn_css_ui_last_error` | the message behind the last non-zero code |
@@ -365,6 +367,50 @@ pub extern "C" fn tn_css_ui_focused_id() -> c_int {
             .unwrap_or(0)
     });
     focused as c_int
+}
+
+/// `[scrollLeft, scrollTop]` of an element, in CSS pixels. `1` when the element exists — an element
+/// that cannot scroll answers `[0, 0]`, which is what a browser reports for one — and `0` when the
+/// document never made that id, leaving the caller's values alone.
+#[no_mangle]
+pub extern "C" fn tn_css_ui_scroll_offset(id: u32, x: *mut f64, y: *mut f64) -> c_int {
+    guard(|| {
+        if x.is_null() || y.is_null() {
+            return Err(Fail::Arg("tn_css_ui_scroll_offset: out is null".to_string()));
+        }
+        with_ui("tn_css_ui_scroll_offset", Fail::Arg, |ui| {
+            Ok(ui.scroll_offset(id).map_or(0, |offset| {
+                // Safety: both out parameters were checked non-null above, and the host contract is
+                // two writable doubles.
+                unsafe {
+                    *x = offset[0];
+                    *y = offset[1];
+                }
+                1
+            }))
+        })
+    })
+    .unwrap_or_else(|code| code)
+}
+
+/// Every element that has scrolled off its origin, ascending, into `out` up to `capacity` ids.
+/// Returns how many the document has, so a caller can tell a short buffer from a whole list, and
+/// `0` before attach.
+#[no_mangle]
+pub extern "C" fn tn_css_ui_scrolled_ids(out: *mut u32, capacity: usize) -> usize {
+    guard(|| {
+        with_ui("tn_css_ui_scrolled_ids", Fail::Arg, |ui| {
+            let ids = ui.scrolled_ids();
+            if !out.is_null() {
+                // Safety: the host guarantees `capacity` writable `u32`s; a null `out` asks for the
+                // count alone, which is how a caller sizes its buffer.
+                let slot = unsafe { std::slice::from_raw_parts_mut(out, capacity) };
+                slot[..ids.len().min(capacity)].copy_from_slice(&ids[..ids.len().min(capacity)]);
+            }
+            Ok(ids.len())
+        })
+    })
+    .unwrap_or(0)
 }
 
 /// Drop the document.

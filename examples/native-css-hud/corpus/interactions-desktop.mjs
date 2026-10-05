@@ -8,15 +8,25 @@
 // moment. Keys carry modifiers as a held set (`["Shift","Tab"]`), a mouse is `pointerPosition`, a
 // finger is `pointers`, a wheel is `wheel` at its point, and `env` is a step's `media`.
 //
-// One thing the grammar still cannot say, said out loud rather than approximated: a scroll offset.
-// The host has no channel that reports one, so a `scroll` observation is a named failure.
+// Two things the grammar cannot report, read from the host's own `TN_CSS_UI_STATE` line instead of
+// approximated: a scroll offset, and focus a click gave.
 //
-// Focus is the other thing the grammar cannot report: the engine records `focus` in its listener
-// table but registers no DOM listener for it, so no `onFocus` ever reaches the game's JS realm and
-// `tn_css_ui_focused_id` is host-side only. Focus is therefore read the only way the host can show it
-// — as pixels: which candidate control's box changed against the untouched baseline frame is the one
-// that has `:focus-visible`. That is a real measurement of what a player sees, and it is not the same
-// claim as reading the engine's own focus counter.
+// A scroll offset moves pixels without any of them reporting by how much, and a pointer focus is
+// not a `:focus-visible` one, so a clicked button paints exactly what an unfocused one does and its
+// box never changes against the baseline. The host answers both from the same place its keyboard
+// question comes from — `tn_css_ui_focused_id` and `tn_css_ui_scroll_offset` — and writes them to
+// stdout under `TN_CSS_UI_STATE_TRACE=1` as one line per composite that changed either. The line
+// carries the element ids the game created its UI with, which are the ids the oracle numbered its
+// elements with (`corpus/interaction.mjs` posts `{op:"create", id: node.n}`), so an offset and the
+// element the script asked about are the same number on both sides.
+//
+// What the log cannot do is say which step of the script it was written at. The runner's grammar
+// gives a step a label and gives the host no way to learn it, so `translate` still gives every one
+// of these observations its own labelled step and the driver reads the LAST line of a run cut at
+// that step (`prefixFor`): the last line of a run is the state the run ended in, which is the state
+// that step was waiting for. Stated here because it is the one approximation in the translation —
+// it costs one run per state observation and is exact only because the fixed clock makes the cut
+// run reach the same frame the full run would have.
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -231,25 +241,18 @@ export function translate(scenario, expected, { screenshots = true } = {}) {
       );
   for (const step of scenario.script) {
     if (step.obs !== undefined) {
-      if (step.obs === "scroll") {
-        record("scroll", {
-          why: "a scroll offset: the host exposes no channel that reports one (the CSS UI's C ABI has no scroll-offset entry point)",
-        });
-        continue;
-      }
       if (unreachable !== undefined) {
         record(step.obs, { why: unreachable });
         continue;
       }
-      if (step.obs === "focus" && pointerFocus) {
-        record("focus", {
-          why: "focus a click gave: `:focus-visible` does not match it, so no pixel shows it, and the host reports focus to no channel the run reads",
-        });
-        continue;
-      }
-      const pixels = step.obs === "pixel" || step.obs === "focus";
+      // A scroll offset and a click's focus are the host's state, not its pixels: both are read from
+      // the `TN_CSS_UI_STATE` line of a run cut at this observation's own step. Everything else
+      // stays on the capture path, including a keyboard focus, which does repaint its box.
+      const fromState = step.obs === "scroll" || (step.obs === "focus" && pointerFocus);
+      const pixels = step.obs === "pixel" || (step.obs === "focus" && !pointerFocus);
       const at = step.obs === "pixel" ? { at: [step.x, step.y] } : {};
-      // A capture already taken at this instant serves every observation made at it.
+      // A capture already taken at this instant serves every observation made at it. A state
+      // observation is not read off a capture, so it never rides one.
       if (pixels && lastCapture !== undefined) {
         record(step.obs, { label: lastCapture.label, clockSkewMs: lastCapture.skew, ...at });
         continue;
@@ -265,6 +268,9 @@ export function translate(scenario, expected, { screenshots = true } = {}) {
       record(step.obs, {
         label,
         clockSkewMs: skew,
+        ...(fromState ? { fromState: true } : {}),
+        // Which element of the oracle's numbering to read, for a scroll observation.
+        ...(step.obs === "scroll" ? { n: step.n } : {}),
         ...(pixels && levels > 1
           ? {
               why: `mid-transition: the capture is ${skew}ms off Chromium's moment, up to ${levels.toFixed(1)} levels of the sheet's ${fastest}ms transition`,
@@ -320,11 +326,15 @@ export function translate(scenario, expected, { screenshots = true } = {}) {
 }
 
 /**
- * The same script cut at one capture, with that capture the only screenshot in it.
+ * The same script cut at one step, with that step the only step that may carry a screenshot.
  *
- * The runner refuses a capture with fewer than eight distinct colours and stops the run there, and a
- * flat scenario has fewer by construction. The PNG is written before the guard reads it, so a run
- * whose last step is the capture keeps it, and the fixed clock makes the cut run reach the same frame.
+ * Two readers cut the same way. The runner refuses a capture with fewer than eight distinct colours
+ * and stops the run there, and a flat scenario has fewer by construction, so a pixel observation
+ * needs a run that ends at its own capture. A state observation needs a run that ends at its own
+ * step, because the last `TN_CSS_UI_STATE` line of a run is the state that run ended in and the log
+ * says nothing about which step wrote it. The PNG is written before the blank guard reads it, so a
+ * run whose last step is the capture keeps it, and the fixed clock makes the cut run reach the same
+ * frame.
  */
 export function prefixFor(translated, label) {
   const end = translated.steps.findIndex((step) => step.label === label);
@@ -423,4 +433,50 @@ export function focusedFrom(base, capture, boxes, candidates) {
 export function resourceAt(runnerReport, label, path) {
   const series = runnerReport?.observations?.resourceSeries ?? [];
   return series.find((item) => item.label === label)?.snapshots?.GameState?.[path];
+}
+
+/**
+ * The document state the host last reported, from the last `TN_CSS_UI_STATE` line of a run.
+ *
+ * The host writes the line once per composite that changed the state, so the last line of a run is
+ * the state that run ended in — which is the state the step the run was cut at was waiting for.
+ * `undefined` when the run wrote no line at all, which is a missing observation and never a zero.
+ */
+export function cssStateAt(lines) {
+  const line = lines.filter((entry) => entry.startsWith("TN_CSS_UI_STATE ")).at(-1);
+  if (line === undefined) return undefined;
+  const scroll = new Map();
+  for (const [, id, x, y] of line.matchAll(
+    /scroll=(\d+):(-?[\d.]+(?:e[-+]?\d+)?),(-?[\d.]+(?:e[-+]?\d+)?)/giu,
+  ))
+    scroll.set(Number(id), [Number(x), Number(y)]);
+  return {
+    line,
+    focused: Number(/focused=(\d+)/u.exec(line)?.[1] ?? Number.NaN),
+    // An element the host did not list has not moved, and a browser reports an unmoved scroller as
+    // `[0, 0]` rather than as no element.
+    scrollOf: (n) => scroll.get(n) ?? [0, 0],
+  };
+}
+
+/**
+ * The host id of each oracle element, by the oracle's number: `Map<n, hostId>`.
+ *
+ * The oracle numbers elements depth-first, parent before child, and the browser page carries that
+ * number as `data-n`. The game the host runs is React, and React hands the host config its
+ * instances children first: an element is created after everything inside it, a text child takes
+ * an id of its own where it sits, and ids count up from 1 (`createInstance`/`createTextInstance`
+ * in packages/core/src/react-css.ts). So the id the host reports for an element is not its `n`.
+ * The state line speaks in host ids and the oracle in numbers, and this is the one place they meet.
+ */
+export function hostIdsOf(tree) {
+  const ids = new Map();
+  let next = 0;
+  const walk = (node) => {
+    if (node.text === undefined) for (const child of node.children) walk(child);
+    next += 1;
+    if (node.text === undefined) ids.set(node.n, next);
+  };
+  for (const node of tree) walk(node);
+  return ids;
 }
