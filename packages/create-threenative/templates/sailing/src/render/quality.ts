@@ -85,6 +85,7 @@ const high: IWorldEnvironmentOptions = {
   bloomStrength: 0.38,
   // No SSGI runs here, so there is nothing for the denoiser to clean up. Off, explicitly.
   denoiseEnabled: false,
+  autoExposureEnabled: false,
   exposure: 0.9,
   // Off at every tier — see the note at the top of this file.
   ssgiEnabled: false,
@@ -147,4 +148,36 @@ export function qualityPreset(tier: string): IWorldEnvironmentOptions {
     );
   }
   return preset;
+}
+
+export interface IMaterialLightingEnvironment {
+  readonly web: boolean;
+  readonly rendererKind: string;
+  readonly mobile?: boolean;
+  readonly software?: boolean;
+  readonly webglFallback?: boolean;
+}
+export function materialLightingEnabled(
+  tier: QualityTier,
+  environment: IMaterialLightingEnvironment,
+): boolean {
+  return (
+    tier === "high" &&
+    environment.web &&
+    environment.rendererKind === "webgpu" &&
+    environment.mobile !== true &&
+    environment.software !== true &&
+    environment.webglFallback !== true
+  );
+}
+
+/** A WebGPURenderer wrapper may run an ordinary WebGL fallback backend. */
+export function isWebGLFallbackRenderer(renderer: unknown): boolean {
+  if (renderer === null || typeof renderer !== "object") return false;
+  const backend = Reflect.get(renderer, "backend");
+  return (
+    backend !== null &&
+    typeof backend === "object" &&
+    Reflect.get(backend, "isWebGLBackend") === true
+  );
 }

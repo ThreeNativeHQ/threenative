@@ -1,9 +1,11 @@
 import { execFile, spawn } from "node:child_process";
 import { existsSync, readdirSync } from "node:fs";
 import { mkdir, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
+import { TraceMap, encodedMappings } from "@jridgewell/trace-mapping";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { rgbaPng } from "../../../test-support/png.js";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
@@ -18,6 +20,7 @@ import {
   nativeOrientation,
   parseBuildArgs,
   publishStagedArtifact,
+  resolveRuntimeAssetCapabilities,
   runtimeHasWebAssembly,
   stagingPath,
   writePackagingConfig,
@@ -27,6 +30,39 @@ import { createProject } from "../src/index.js";
 
 const run = promisify(execFile);
 const roots: string[] = [];
+
+async function cssProvenanceFixture(target = "https://cdn.example.com/missing.png") {
+  const root = await makeTempDir("threenative-css-provenance-");
+  roots.push(root);
+  const built = path.join(root, "built-ui");
+  const file = path.join(built, "assets", "index-provenance.css");
+  const authored = `/* Inventário 🎮 */\n.hud {\n  color: red;\n  background-image: url(${target});\n}\n`;
+  const generatedLine = `*/ .hud{content:'🎮';background:url(${target})}`;
+  const css = `/* documented url(https://ignored.example.com) 🎮\r\n${generatedLine}\r\n/*# sourceMappingURL=index-provenance.css.map */\n`;
+  const column = generatedLine.indexOf("url(");
+  const map = {
+    version: 3,
+    file: "index-provenance.css",
+    sourceRoot: "../../src/ui",
+    sources: ["hud.css"],
+    sourcesContent: [authored],
+    names: [] as string[],
+    mappings: encodedMappings(
+      new TraceMap({
+        version: 3,
+        sources: ["hud.css"],
+        names: [],
+        mappings: [[], [[column, 0, 3, 20]]],
+      }),
+    ),
+  };
+  await mkdir(path.dirname(file), { recursive: true });
+  await mkdir(path.join(root, "src/ui"), { recursive: true });
+  await writeFile(path.join(root, "src/ui/hud.css"), authored);
+  await writeFile(file, css);
+  await writeFile(`${file}.map`, `${JSON.stringify(map)}\n`);
+  return { root, built, file, css, map, column, out: path.join(root, "ui-css") };
+}
 
 // Putting the previous artifact back only happens on a rename that failed, so one `rename` is made
 // to fail for the staged path alone. The put-back renames from the `.previous-` sibling instead, so
@@ -639,6 +675,302 @@ cpSync("public", out, { recursive: true });
     );
   });
 
+  it("preserves emitted CSS source maps byte-for-byte beside their stylesheets", async () => {
+    const root = await makeTempDir("threenative-ui-css-map-");
+    roots.push(root);
+    const built = path.join(root, "built-ui");
+    await mkdir(path.join(built, "assets"), { recursive: true });
+    const css = ".hud{color:#fff}\n/*# sourceMappingURL=index-abc123.css.map */\n";
+    const map = Buffer.from(
+      `${JSON.stringify({
+        version: 3,
+        file: "index-abc123.css",
+        sources: ["../../src/ui/hud.css"],
+        sourcesContent: ["/* Inventário */\n.hud { color: #fff; }\n"],
+        names: [],
+        mappings: "AACA,KAAO,UAAa",
+      })}\n`,
+    );
+    await writeFile(path.join(built, "assets", "index-abc123.css"), css);
+    await writeFile(path.join(built, "assets", "index-abc123.css.map"), map);
+    await writeFile(path.join(built, "assets", "index-abc123.js.map"), "browser-only");
+    await writeFile(path.join(built, "assets", "orphan.css.map"), "unrelated");
+
+    const out = path.join(root, "ui-css");
+    expect(await extractUiStylesheets(built, out)).toEqual([
+      "index-abc123.css",
+      "index-abc123.css.map",
+    ]);
+    await expect(readFile(path.join(out, "index-abc123.css"), "utf8")).resolves.toBe(css);
+    await expect(readFile(path.join(out, "index-abc123.css.map"))).resolves.toEqual(map);
+  });
+
+  it.each([false, true])(
+    "refuses ambiguous flattened CSS/map pairs before staging (later map: %s)",
+    async (laterMap) => {
+      const root = await makeTempDir("threenative-ui-css-map-collision-");
+      roots.push(root);
+      const built = path.join(root, "built-ui");
+      for (const name of ["a", "b"]) {
+        await mkdir(path.join(built, name), { recursive: true });
+        await writeFile(path.join(built, name, "hud.css"), `.${name}{color:#fff}`);
+      }
+      await writeFile(path.join(built, "a", "hud.css.map"), '{"version":3,"file":"a"}');
+      if (laterMap) {
+        await writeFile(path.join(built, "b", "hud.css.map"), '{"version":3,"file":"b"}');
+      }
+      const out = path.join(root, "ui-css");
+      await expect(extractUiStylesheets(built, out)).rejects.toThrow(
+        "TN_CSS_UI_STYLESHEET_AMBIGUOUS:",
+      );
+      expect(await readdir(out)).toEqual([]);
+    },
+  );
+
+  it("removes a previous CSS source map when the next build does not emit one", async () => {
+    const root = await makeTempDir("threenative-ui-css-map-rebuild-");
+    roots.push(root);
+    const built = path.join(root, "built-ui");
+    await mkdir(built, { recursive: true });
+    const css = path.join(built, "hud.css");
+    await writeFile(css, ".hud{color:#fff}/*# sourceMappingURL=hud.css.map */");
+    await writeFile(`${css}.map`, '{"version":3}');
+    const out = path.join(root, "ui-css");
+    expect(await extractUiStylesheets(built, out)).toEqual(["hud.css", "hud.css.map"]);
+
+    await rm(`${css}.map`);
+    await writeFile(css, ".hud{color:#fff}");
+    expect(await extractUiStylesheets(built, out)).toEqual(["hud.css"]);
+    expect(existsSync(path.join(out, "hud.css.map"))).toBe(false);
+  });
+
+  it.each(["https://cdn.example.com/missing.png", "missing.png"])(
+    "CSS asset provenance maps transformed CSS to the actual authored reference (%s)",
+    async (target) => {
+      const fixture = await cssProvenanceFixture(target);
+      const mapBytes = await readFile(`${fixture.file}.map`);
+      const failure = (await extractUiStylesheets(fixture.built, fixture.out, fixture.root).catch(
+        (error: Error) => error,
+      )) as Error;
+      expect(failure).toBeInstanceOf(Error);
+      expect(failure.message).toContain("TN_CSS_UI_ASSET_UNSUPPORTED:");
+      expect(failure.message).toContain(`references ${target};`);
+      expect(failure.message).toContain(`\n  generated: ${fixture.file}:2:${fixture.column + 1}`);
+      expect(failure.message).toContain("\n  authored: src/ui/hud.css:4:21");
+      expect(await readFile(fixture.file, "utf8")).toBe(fixture.css);
+      expect(await readFile(`${fixture.file}.map`)).toEqual(mapBytes);
+      expect(await readdir(fixture.out)).toEqual([]);
+    },
+  );
+
+  it.each([
+    "missing",
+    "malformed",
+    "truncated VLQ",
+    "consumer cache impersonation",
+    "wrong version",
+    "wrong artifact",
+    "unmapped",
+    "invalid authored position",
+    "stale authored source",
+    "unrelated authored URL",
+    "commented authored URL",
+    "duplicate references",
+    "duplicate authored sources",
+    "missing map reference",
+    "missing project root",
+    "coarse mapping anchor",
+    "ambiguous segment",
+    "map reference outside root",
+    "map symlink outside root",
+    "authored source outside root",
+  ])("CSS asset provenance keeps the refusal generated for %s maps", async (control) => {
+    const f = await cssProvenanceFixture();
+    let css = f.css;
+    if (control === "wrong version") f.map.version = 2;
+    if (control === "wrong artifact") f.map.file = "other.css";
+    if (control === "unmapped") f.map.mappings = "";
+    if (control === "truncated VLQ" || control === "consumer cache impersonation") {
+      f.map.sourcesContent[0] = "url(https://cdn.example.com/missing.png)";
+      await writeFile(path.join(f.root, "src/ui/hud.css"), f.map.sourcesContent[0]);
+      f.map.mappings = ";gCA"; // Column 32, source 0; both authored coordinates are missing.
+      if (control === "consumer cache impersonation") {
+        Object.assign(f.map, {
+          mappings: "",
+          _decodedMemo: {},
+          _decoded: [[], [[f.column, 0, 0, 0]]],
+          resolvedSources: [pathToFileURL(path.join(f.root, "src/ui/hud.css")).href],
+        });
+      }
+    }
+    if (control === "invalid authored position") {
+      f.map.mappings = encodedMappings(
+        new TraceMap({
+          version: 3,
+          sources: ["hud.css"],
+          names: [],
+          mappings: [[], [[f.column, 0, 99, 20]]],
+        }),
+      );
+    }
+    if (control === "stale authored source") {
+      await writeFile(path.join(f.root, "src/ui/hud.css"), "");
+    }
+    if (control === "unrelated authored URL" || control === "commented authored URL") {
+      const lines = (f.map.sourcesContent[0] ?? "").split("\n");
+      lines[3] =
+        control === "unrelated authored URL"
+          ? "  background-image: url(https://unrelated.example.com/other.png);"
+          : `/*${" ".repeat(18)}url(https://cdn.example.com/missing.png) */`;
+      f.map.sourcesContent[0] = lines.join("\n");
+      await writeFile(path.join(f.root, "src/ui/hud.css"), f.map.sourcesContent[0]);
+    }
+    if (control === "coarse mapping anchor") {
+      f.map.mappings = encodedMappings(
+        new TraceMap({
+          version: 3,
+          sources: ["hud.css"],
+          names: [],
+          mappings: [[], [[f.column - 1, 0, 3, 20]]],
+        }),
+      );
+    }
+    if (control === "duplicate authored sources") {
+      f.map.sources.push("./hud.css");
+      f.map.sourcesContent.push(f.map.sourcesContent[0] ?? "");
+    }
+    if (control === "ambiguous segment") {
+      f.map.mappings = encodedMappings(
+        new TraceMap({
+          version: 3,
+          sources: ["hud.css"],
+          names: [],
+          mappings: [
+            [],
+            [
+              [f.column, 0, 3, 20],
+              [f.column, 0, 1, 0],
+            ],
+          ],
+        }),
+      );
+    }
+    if (control === "authored source outside root") {
+      const outside = await makeTempDir("threenative-authored-outside-");
+      roots.push(outside);
+      await writeFile(path.join(outside, "hud.css"), f.map.sourcesContent[0] ?? "");
+      f.map.sourceRoot = outside;
+    }
+    await writeFile(`${f.file}.map`, `${JSON.stringify(f.map)}\n`);
+    if (control === "missing") await rm(`${f.file}.map`);
+    if (control === "malformed") await writeFile(`${f.file}.map`, "{broken");
+    if (control === "duplicate references") {
+      css += "/*# sourceMappingURL=index-provenance.css.map */";
+    }
+    if (control === "missing map reference") {
+      css = css.replace("/*# sourceMappingURL=index-provenance.css.map */", "");
+    }
+    if (control === "map reference outside root") {
+      css = css.replace(
+        "sourceMappingURL=index-provenance.css.map",
+        "sourceMappingURL=../../outside.map",
+      );
+    }
+    if (control === "map symlink outside root") {
+      const outside = path.join(f.root, "outside.map");
+      await writeFile(outside, JSON.stringify(f.map));
+      await rm(`${f.file}.map`);
+      await symlink(outside, `${f.file}.map`);
+    }
+    await writeFile(f.file, css);
+    const failure = (await extractUiStylesheets(
+      f.built,
+      f.out,
+      control === "missing project root" ? undefined : f.root,
+    ).catch((error: Error) => error)) as Error;
+    expect(failure).toBeInstanceOf(Error);
+    expect(failure.message).toContain("TN_CSS_UI_ASSET_UNSUPPORTED:");
+    expect(failure.message).toContain("only a file inside the UI build ships with it");
+    expect(failure.message).toContain(`\n  generated: ${f.file}:2:${f.column + 1}`);
+    expect(failure.message).not.toContain("\n  authored:");
+    expect(await readFile(f.file, "utf8")).toBe(css);
+    expect(await readdir(f.out)).toEqual([]);
+  });
+
+  it.each(["compiler map", "wrong artifact", "missing map link"])(
+    "real CSS compiler provenance survives the project Vite pipeline (%s)",
+    async (control) => {
+      const root = await makeTempDir("threenative-ui-compiler-map-");
+      roots.push(root);
+      await mkdir(path.join(root, "src/ui"), { recursive: true });
+      await mkdir(path.join(root, "node_modules"));
+      const require = createRequire(import.meta.url);
+      for (const name of ["vite", "esbuild"]) {
+        await symlink(
+          path.dirname(require.resolve(`${name}/package.json`)),
+          path.join(root, "node_modules", name),
+          "dir",
+        );
+      }
+      const authored =
+        "/* authored CSS */\n.hud {\n  color: red;\n  background-image: url(https://cdn.example.com/missing.png);\n}\n";
+      await writeFile(
+        path.join(root, "package.json"),
+        JSON.stringify({ name: "css-compiler-map", type: "module" }),
+      );
+      await writeFile(path.join(root, "src/ui/main.tsx"), "export const ui = true;\n");
+      await writeFile(path.join(root, "src/ui/hud.css"), authored);
+      // The project's existing Vite plugin emits real compiler output. No mapping coordinates,
+      // file identity or sourcesContent are supplied by the test or the engine.
+      await writeFile(
+        path.join(root, "vite.config.js"),
+        [
+          'import { build } from "esbuild";',
+          'import path from "node:path";',
+          "let config;",
+          'export default { plugins: [{ name: "real-css-compiler-fixture",',
+          "configResolved(value) { config = value; },",
+          "async generateBundle() {",
+          'const result = await build({ absWorkingDir: config.root, entryPoints: ["src/ui/hud.css"], outdir: path.join(config.build.outDir, "assets"), bundle: true, minify: true, sourcemap: true, write: false });',
+          'for (const file of result.outputFiles) this.emitFile({ type: "asset", fileName: path.relative(config.build.outDir, file.path).split(path.sep).join("/"), source: file.contents });',
+          "} }] };",
+        ].join("\n"),
+      );
+      const built = await buildUi(root, { ui: { renderer: "native-css" } } as Parameters<
+        typeof buildUi
+      >[1]);
+      const file = path.join(built, "assets/hud.css");
+      const mapFile = `${file}.map`;
+      let css = await readFile(file, "utf8");
+      const map = JSON.parse(await readFile(mapFile, "utf8"));
+      expect(map.file).toBeUndefined(); // ECMA-426 makes this field optional; esbuild omits it.
+      expect(map.sourcesContent).toEqual([authored]);
+      expect(css).toContain("/*# sourceMappingURL=hud.css.map */");
+      if (control === "wrong artifact") {
+        map.file = "other.css";
+        await writeFile(mapFile, JSON.stringify(map));
+      }
+      if (control === "missing map link") {
+        css = css.replace("/*# sourceMappingURL=hud.css.map */", "");
+        await writeFile(file, css);
+      }
+      const mapBytes = await readFile(mapFile);
+      const out = path.join(root, "ui-css");
+      const failure = await extractUiStylesheets(built, out, root).catch((error: Error) => error);
+      expect(failure).toBeInstanceOf(Error);
+      const message = (failure as Error).message;
+      expect(message).toContain("TN_CSS_UI_ASSET_UNSUPPORTED:");
+      expect(message).toContain("only a file inside the UI build ships with it");
+      expect(message).toContain(`\n  generated: ${file}:1:${css.indexOf("url(") + 1}`);
+      if (control === "compiler map")
+        expect(message).toContain("\n  authored: src/ui/hud.css:4:21");
+      else expect(message).not.toContain("\n  authored:");
+      expect(await readFile(file, "utf8")).toBe(css);
+      expect(await readFile(mapFile)).toEqual(mapBytes);
+      expect(await readdir(out)).toEqual([]);
+    },
+  );
+
   it("copies the fonts and images a stylesheet url() names, flat beside it", async () => {
     const root = await makeTempDir("threenative-ui-css-asset-");
     roots.push(root);
@@ -1021,7 +1353,7 @@ cpSync("public", out, { recursive: true });
     );
   });
 
-  it("guards web-only UI on every native target and WASM on mobile only", async () => {
+  it("guards web-only UI on every native target and WASM without a known desktop V8 artifact", async () => {
     const root = await makeTempDir("threenative-mobile-bundle-");
     roots.push(root);
     const native = path.join(root, "native.js");
@@ -1036,7 +1368,15 @@ cpSync("public", out, { recursive: true });
         /TN_NATIVE_WEB_ONLY_UI.*src\/main\.ts.*PRD-051/u,
       );
     }
-    await expect(assertNativeBundleCompatible(wasm, "desktop")).resolves.toBeUndefined();
+    await expect(assertNativeBundleCompatible(wasm, "desktop")).rejects.toThrow(
+      "TN_NATIVE_WASM_UNSUPPORTED",
+    );
+    const desktopV8 = resolveRuntimeAssetCapabilities(
+      "desktop",
+      path.resolve("packages/create-threenative/src/build.ts"),
+      (() => ({ status: 0, stdout: "+ v8 build" })) as never,
+    );
+    await expect(assertNativeBundleCompatible(wasm, "desktop", desktopV8)).resolves.toBeUndefined();
     for (const target of ["android", "ios"] as const) {
       await expect(assertNativeBundleCompatible(wasm, target)).rejects.toThrow(
         /TN_NATIVE_WASM_ON_MOBILE.*src\/game\.ts.*PRD-052/u,
@@ -1109,14 +1449,16 @@ describe("runtime WebAssembly capability", () => {
     ).toBe(true);
   });
 
-  it("keeps the WASM desktop backend when the runtime is unknown or unreadable", () => {
-    expect(runtimeHasWebAssembly(undefined)).toBe(true);
-    expect(runtimeHasWebAssembly("/no/such/runtime")).toBe(true);
-    expect(runtimeHasWebAssembly(runtime, (() => ({ status: 1, stdout: "" })) as never)).toBe(true);
+  it("refuses WASM when the runtime is unknown or unreadable", () => {
+    expect(runtimeHasWebAssembly(undefined)).toBe(false);
+    expect(runtimeHasWebAssembly("/no/such/runtime")).toBe(false);
+    expect(runtimeHasWebAssembly(runtime, (() => ({ status: 1, stdout: "" })) as never)).toBe(
+      false,
+    );
     expect(
       runtimeHasWebAssembly(runtime, (() => {
         throw new Error("EACCES");
       }) as never),
-    ).toBe(true);
+    ).toBe(false);
   });
 });

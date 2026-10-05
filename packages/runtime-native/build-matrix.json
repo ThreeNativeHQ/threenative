@@ -14,6 +14,7 @@
         "threenative-bindings-creation-test",
         "threenative-canvas-audio-comprehensive-test",
         "threenative-canvas2d-dirty-test",
+        "threenative-canvas-presentation-test",
         "threenative-cli-network-fs-test",
         "threenative-command-encoder-class-table-test",
         "threenative-crash-handler-policy-test",
@@ -21,6 +22,7 @@
         "threenative-device-pixel-ratio-test",
         "threenative-dom-dispatch-lifetime-test",
         "threenative-embedded-bundle-test",
+        "threenative-exposure-graph-test",
         "threenative-frame-op-stream-replay-test",
         "threenative-handle-lifetime-test",
         "threenative-input-restart-test",
@@ -41,6 +43,7 @@
         "threenative-shutdown-lifetime-test",
         "threenative-stall-budget-hitch-test",
         "threenative-surface-format-selection-test",
+        "threenative-surface-texture-status-test",
         "threenative-timer-delivery-test",
         "threenative-timer-engine-first-test",
         "threenative-timestamp-query-test",
@@ -67,6 +70,7 @@
         "threenative-bindings-creation-test",
         "threenative-canvas-audio-comprehensive-test",
         "threenative-canvas2d-dirty-test",
+        "threenative-canvas-presentation-test",
         "threenative-cli-network-fs-test",
         "threenative-command-encoder-class-table-test",
         "threenative-crash-handler-policy-test",
@@ -74,6 +78,7 @@
         "threenative-device-pixel-ratio-test",
         "threenative-dom-dispatch-lifetime-test",
         "threenative-embedded-bundle-test",
+        "threenative-exposure-graph-test",
         "threenative-frame-op-stream-replay-test",
         "threenative-handle-lifetime-test",
         "threenative-input-restart-test",
@@ -94,6 +99,7 @@
         "threenative-shutdown-lifetime-test",
         "threenative-stall-budget-hitch-test",
         "threenative-surface-format-selection-test",
+        "threenative-surface-texture-status-test",
         "threenative-timer-delivery-test",
         "threenative-timer-engine-first-test",
         "threenative-timestamp-query-test",
@@ -142,7 +148,8 @@
         "threenative-js-engine-contract-test",
         "threenative-rg11b10-renderable-test",
         "threenative-async-pipeline-thread-test",
-        "threenative-timestamp-query-test"
+        "threenative-timestamp-query-test",
+        "threenative-exposure-graph-test"
       ]
     },
     {

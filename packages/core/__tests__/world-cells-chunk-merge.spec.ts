@@ -421,6 +421,10 @@ async function attached(
     ...options,
     admissionBudgetMs: Number.POSITIVE_INFINITY,
     budgets,
+    // Off, like the rest of this file's claims: what a merged chunk is asked to do here is keep its
+    // own hierarchy, and a cell's BundleGroup re-parents the recorded draws out of it. The record
+    // and replay it does with them is `world-bundles.spec.ts`'s subject.
+    bundles: false,
     follow: options.follow ?? { position: { ...FOLLOW } },
     loadModel: async () => model,
     prefetchSeconds: 0,
@@ -591,6 +595,25 @@ describe("a hand-placed chunk merged by material", () => {
     world.dispose();
   });
 
+  it("tags every mesh the main pass draws from the chunk as chunks", async () => {
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const { group } = chunkModel();
+    const { chunk, world } = await attached(group, {});
+
+    // A hand-placed chunk is the buildings and set dressing: one draw per material after the bake,
+    // and on the map-walk those draws were the largest part of the `other` bucket — a bridge, a wall
+    // and a water surface's cell all reading as one number. The origin is written where the chunk is
+    // prepared, so a merge that is refused and a chunk left as authored are named the same way.
+    const meshes = meshesIn(chunk);
+    expect(meshes).toHaveLength(3);
+    for (const mesh of meshes) {
+      expect(mesh.layers.isEnabled(0)).toBe(true);
+      expect(mesh.userData.tnDrawSource).toBe("chunks");
+    }
+    expect(world.stats().failures).toBe(0);
+    world.dispose();
+  });
+
   it("keeps an instanced mesh whose group would cross the triangle cap", async () => {
     vi.spyOn(console, "info").mockImplementation(() => undefined);
     const { group, materials } = chunkModel();
@@ -677,11 +700,10 @@ describe("a hand-placed chunk merged by material", () => {
     world.dispose();
   });
 
-  // A merged slab cast into a wide (coarse) level's large texels self-shadows as acne stripes:
-  // Machinefall's bridge deck, PRD-475. The wide half keeps develop's look and drops it.
+  // Covered originals no longer cast: both scatter granularities must retain the proxy.
   it.each([
     ["cluster", true],
-    ["wide", false],
+    ["wide", true],
   ] as const)(
     "a level selecting %s casters draws the merged chunk proxy: %s",
     async (half, drawn) => {
@@ -929,10 +951,17 @@ describe("a hand-placed chunk merged by material", () => {
       "TN_WORLD_CHUNK_MERGE meshes=16 draws=5 bytes=13440 uploaded=0 instancedExpanded=0 keptInstanced=0 shadowDraws=1",
     ]);
     expect(meshesIn(chunk)).toHaveLength(5);
-    // On the cluster caster half only, and off the main camera's layer.
-    expect(proxy.layers.mask).toBe(1 << VIRTUAL_SHADOW_CASTER_LAYER);
+    // On both caster halves, and off the main camera's layer.
+    expect(proxy.layers.mask).toBe(
+      (1 << VIRTUAL_SHADOW_CASTER_LAYER) | (1 << VIRTUAL_SHADOW_WIDE_CASTER_LAYER),
+    );
     expect(proxy.castShadow).toBe(true);
     expect(proxy.receiveShadow).toBe(false);
+    // Two origins on one chunk, split by the layer that decides which pass draws them: the proxy is
+    // the shadow passes' bill, the groups under it are the main pass's.
+    expect(proxy.userData.tnDrawSource).toBe("proxies");
+    for (const mesh of meshesIn(chunk).filter((one) => one.layers.isEnabled(0)))
+      expect(mesh.userData.tnDrawSource).toBe("chunks");
     // The group's own material, by reference: the side it is grouped by is that material's own
     // `side`, so the depth pass reads exactly what the covered mesh's depth material would have.
     expect(opaque).toContain(proxy.material as MeshBasicMaterial);

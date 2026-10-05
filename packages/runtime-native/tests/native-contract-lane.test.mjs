@@ -3,7 +3,8 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { test } from "vitest";
+import { test, vi } from "vitest";
+import { buildNativeTarget } from "../scripts/native-test-lane.mjs";
 import { makeTempDirSync } from "../../../test-support/temp-dir.js";
 
 import {
@@ -15,6 +16,11 @@ import {
 
 const root = join(fileURLToPath(new URL("..", import.meta.url)));
 const cmake = readFileSync(join(root, "CMakeLists.txt"), "utf8");
+vi.mock("node:child_process", async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, spawnSync: vi.fn(actual.spawnSync) };
+});
+
 const helper = readFileSync(join(root, "scripts", "native-test-lane.mjs"), "utf8");
 const coverageRunner = readFileSync(join(root, "scripts", "measure-native-coverage.mjs"), "utf8");
 const packageJson = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
@@ -88,11 +94,15 @@ test("should fail when a declared test target is not executed", () => {
   // screenshot capture-gate ordering contract; +1 for PRD-329's surface-format selection
   // diagnostic contract; +5 for the comprehensive coverage contracts; +1 for PRD-368's pipeline
   // cache contract; +1 for PRD-399's presentation-pacing contract; +1 for PRD-465 Phase 2's
-  // MetaHuman facial rig bindings contract; +1 for the desktop CSS UI overlay contract.
+  // MetaHuman facial rig bindings contract; +1 for VQ07's surface acquisition status contract.; +1 for the desktop CSS UI overlay contract.
   // Bump alongside any new add_executable contract target.
-  // 46 since the CSS UI backend registered threenative-css-ui-overlay-test. The next assertion pins this against CMakeLists
+  // 49 targets include both exposure graph and fog presentation contracts.
   // itself, so the literal is a tripwire for an unreviewed target, not the source of truth.
-  assert.equal(discovered.length, 46);
+  assert.equal(discovered.length, 49);
+  const missingExposure = { ...executionContracts };
+  Reflect.deleteProperty(missingExposure, "threenative-exposure-graph-test");
+  assert.throws(() => validateExecutionContracts(discovered, missingExposure),
+    /missing execution contracts: threenative-exposure-graph-test/u);
   assert.deepEqual(discovered, declaredTargets(cmake));
   assert.doesNotThrow(() => validateExecutionContracts(discovered, executionContracts));
 
@@ -363,4 +373,32 @@ test('a contract declared for other platforms is not required to have a target h
     () => validateExecutionContracts(['threenative-unregistered-test'], {}, 'linux'),
     /missing execution contracts: threenative-unregistered-test/u,
   );
+});
+
+
+test("native build honors a requested positive worker cap and refuses invalid values", () => {
+  const spawn = vi.mocked(spawnSync);
+  const previous = process.env.CMAKE_BUILD_PARALLEL_LEVEL;
+  try {
+    process.env.CMAKE_BUILD_PARALLEL_LEVEL = "2";
+    spawn.mockReturnValueOnce({ status: 0, stdout: "", stderr: "" });
+    buildNativeTarget("cmake", "owned-build", "cap");
+    assert.deepEqual(spawn.mock.calls.at(-1)?.[1],
+      ["--build", "owned-build", "--target", "cap", "--parallel", "2"]);
+    const calls = spawn.mock.calls.length;
+    for (const invalid of ["", "0", "-1", "2.5", "2oops", "many", "9007199254740992"]) {
+      process.env.CMAKE_BUILD_PARALLEL_LEVEL = invalid;
+      assert.throws(() => buildNativeTarget("cmake", "owned-build", "cap"), /CMAKE_BUILD_PARALLEL_LEVEL.*positive integer/u);
+    }
+    assert.equal(spawn.mock.calls.length, calls);
+    Reflect.deleteProperty(process.env, "CMAKE_BUILD_PARALLEL_LEVEL");
+    spawn.mockReturnValueOnce({ status: 0, stdout: "", stderr: "" });
+    buildNativeTarget("cmake", "owned-build", "cap");
+    assert.deepEqual(spawn.mock.calls.at(-1)?.[1],
+      ["--build", "owned-build", "--target", "cap", "--parallel"]);
+  } finally {
+    if (previous === undefined) Reflect.deleteProperty(process.env, "CMAKE_BUILD_PARALLEL_LEVEL");
+    else process.env.CMAKE_BUILD_PARALLEL_LEVEL = previous;
+    spawn.mockClear();
+  }
 });

@@ -76,6 +76,7 @@ const shared: IWorldEnvironmentOptions = {
   bloomThreshold: 1,
   // The sky photograph arrives at 2.5x, so the curve and the exposure below are what bring it
   // back to a daylight frame instead of a white one.
+  autoExposureEnabled: false,
   exposure: 0.6,
   tonemapMode: "aces",
   vignetteAmount: 0.2,
@@ -115,4 +116,37 @@ export function qualityPreset(tier: string): IWorldEnvironmentOptions {
     );
   }
   return preset;
+}
+
+/** First admitted material lane: high desktop hardware WebGPU in the browser only. */
+export interface IMaterialLightingEnvironment {
+  readonly web: boolean;
+  readonly rendererKind: string;
+  readonly mobile?: boolean;
+  readonly software?: boolean;
+  readonly webglFallback?: boolean;
+}
+export function materialLightingEnabled(
+  tier: QualityTier,
+  environment: IMaterialLightingEnvironment,
+): boolean {
+  return (
+    tier === "high" &&
+    environment.web &&
+    environment.rendererKind === "webgpu" &&
+    environment.mobile !== true &&
+    environment.software !== true &&
+    environment.webglFallback !== true
+  );
+}
+
+/** A WebGPURenderer wrapper may run an ordinary WebGL fallback backend. */
+export function isWebGLFallbackRenderer(renderer: unknown): boolean {
+  if (renderer === null || typeof renderer !== "object") return false;
+  const backend = Reflect.get(renderer, "backend");
+  return (
+    backend !== null &&
+    typeof backend === "object" &&
+    Reflect.get(backend, "isWebGLBackend") === true
+  );
 }

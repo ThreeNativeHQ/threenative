@@ -94,6 +94,7 @@
     "native:css:licenses": "node scripts/native-css-license-inventory.mjs"
   },
   "devDependencies": {
+    "@dimforge/rapier3d-compat": "catalog:",
     "@threenative/playtest": "workspace:*",
     "esbuild": "catalog:",
     "publint": "catalog:",

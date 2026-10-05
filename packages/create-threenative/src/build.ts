@@ -1,12 +1,13 @@
 import { spawn, spawnSync } from "node:child_process";
-import { randomUUID } from "node:crypto";
-import { existsSync, statSync } from "node:fs";
+import { createHash, randomUUID } from "node:crypto";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import {
   copyFile,
   mkdir,
   open,
   readFile,
   readdir,
+  realpath,
   rename,
   rm,
   stat,
@@ -14,7 +15,15 @@ import {
 } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import {
+  TraceMap,
+  decodedMappings,
+  encodedMappings,
+  originalPositionFor,
+  sourceContentFor,
+  traceSegment,
+} from "@jridgewell/trace-mapping";
 import { compileAssets } from "@threenative/assets";
 import { BUILD_REPORT_SUFFIX, measureTreeBytes, writeBuildReport } from "./buildReport.js";
 import { writeCompressionSidecars } from "./compress.js";
@@ -85,6 +94,7 @@ async function projectName(cwd: string): Promise<string> {
 export async function assertNativeBundleCompatible(
   bundle: string,
   target: NativeBuildTarget,
+  capabilities = resolveRuntimeAssetCapabilities(target),
 ): Promise<void> {
   const source = await readFile(bundle, "utf8");
   const webOnlyUi = [
@@ -96,7 +106,7 @@ export async function assertNativeBundleCompatible(
       `TN_NATIVE_WEB_ONLY_UI: ${target} bundle contains ${webOnlyUi.map(([label]) => label).join(", ")}. Keep the portable game in src/game.ts and move DOM or React mounting to src/main.ts; native UI is owned by PRD-051.`,
     );
   }
-  if (target === "desktop") return;
+  if (target === "desktop" && capabilities.webAssembly) return;
   const wasm = [
     ["WebAssembly", /\bWebAssembly\b/u],
     ["Rapier WASM", /rapier_wasm|RAPIER_VERSION|rawrapier/u],
@@ -104,7 +114,7 @@ export async function assertNativeBundleCompatible(
   ].filter(([, pattern]) => (pattern as RegExp).test(source));
   if (wasm.length === 0) return;
   throw new Error(
-    `TN_NATIVE_WASM_ON_MOBILE: ${target} bundle contains ${wasm.map(([label]) => label).join(", ")}. Move web-only WASM imports out of src/game.ts or provide a threenative-native conditional backend; mobile navigation is owned by PRD-052.`,
+    `${target === "desktop" ? "TN_NATIVE_WASM_UNSUPPORTED" : "TN_NATIVE_WASM_ON_MOBILE"}: ${target} artifact ${capabilities.artifact} (${capabilities.engine}) bundle contains ${wasm.map(([label]) => label).join(", ")}. Move web-only WASM imports out of src/game.ts or provide a threenative-native conditional backend; mobile navigation is owned by PRD-052.`,
   );
 }
 
@@ -166,30 +176,22 @@ export function assetRoot(cwd: string, config: IResolvedThreeNativeConfig): stri
   return path.resolve(cwd, config.assets?.output ?? "public");
 }
 
-/**
- * Refuses compiled assets a mobile native target cannot decode, at the first point the build
- * knows about them — after the compile step, before a bundle or an APK exists.
- *
- * Android runs QuickJS and iOS runs JavaScriptCore without a WASM JIT, so neither has
- * `WebAssembly`. Three's Basis/zstd transcoder, its Meshopt decoder and Draco's wasm decoder
- * therefore cannot run there and are not in the mobile bundle at all (they are replaced in
- * `runtime-native/scripts/bundle.mjs`, which is what keeps `TN_NATIVE_WASM_ON_MOBILE` green).
- * A game that genuinely ships such an asset must hear that here rather than discover it as a
- * missing texture on a phone.
- */
+/** Refuse compiled codecs the selected runtime/bundle cannot decode before packaging starts. */
 export async function assertNativeAssetsCompatible(
   cwd: string,
   target: BuildTarget,
   config: IResolvedThreeNativeConfig,
+  capabilities = resolveRuntimeAssetCapabilities(target),
 ): Promise<void> {
-  if (target === "desktop" || target === "web") return;
+  if (target === "web") return;
   const outputRoot = assetRoot(cwd, config);
   const manifestPath = path.join(outputRoot, "assets.manifest.json");
   let raw: string;
   try {
     raw = await readFile(manifestPath, "utf8");
-  } catch {
-    return;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+    throw error;
   }
   let parsed: unknown;
   try {
@@ -199,32 +201,46 @@ export async function assertNativeAssetsCompatible(
       `TN_NATIVE_ASSET_MANIFEST_INVALID: '${manifestPath}' is not valid JSON: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
-  const entries = (parsed as { entries?: unknown }).entries;
-  if (typeof entries !== "object" || entries === null) {
+  const entries = (parsed as { entries?: unknown } | null)?.entries;
+  if (typeof entries !== "object" || entries === null || Array.isArray(entries)) {
     throw new Error(`TN_NATIVE_ASSET_MANIFEST_INVALID: '${manifestPath}' has no 'entries' object.`);
   }
   const rows = Object.entries(entries as Record<string, unknown>).map(
     ([logical, entry]) => [logical, (entry ?? {}) as Record<string, unknown>] as const,
   );
   const ktx2 = rows
-    .filter(([, entry]) => typeof entry.output === "string" && /\.ktx2$/iu.test(entry.output))
+    .filter(
+      ([, entry]) =>
+        (typeof entry.output === "string" && /\.ktx2$/iu.test(entry.output)) ||
+        (Array.isArray(entry.extensions) && entry.extensions.includes("KHR_texture_basisu")) ||
+        (Array.isArray(entry.sharedImages) &&
+          entry.sharedImages.some(
+            (image) =>
+              image !== null &&
+              typeof image === "object" &&
+              typeof image.output === "string" &&
+              /\.ktx2$/iu.test(image.output),
+          )),
+    )
     .map(([logical]) => logical);
-  if (ktx2.length > 0) {
+  if (!capabilities.decoders.ktx2 && ktx2.length > 0) {
     throw new Error(
-      `TN_NATIVE_KTX2_UNSUPPORTED: ${target} cannot ship compiled KTX2 textures (${namedAssets(ktx2)}). The mobile native runtime has no WebAssembly and therefore no Basis transcoder, so nothing in the bundle can decode them. Replace or transcode the authored KTX2 source for mobile, or exclude it from mobile builds; keep compressed textures on the web target.`,
+      `TN_NATIVE_KTX2_UNSUPPORTED: ${target} cannot ship compiled KTX2 textures (${namedAssets(ktx2)}). Selected artifact ${capabilities.artifact} (${capabilities.engine}) has no admitted Basis/KTX2 decoder in its bundle. Replace or transcode the authored KTX2 source for ${target === "desktop" ? "this runtime" : "mobile"}, or exclude it from ${target === "desktop" ? "this runtime's" : "mobile"} builds; keep compressed textures on the web target.`,
     );
   }
   const compressedModels = rows
     .filter(([, entry]) =>
       (Array.isArray(entry.extensions) ? (entry.extensions as unknown[]) : []).some(
         (extension) =>
-          typeof extension === "string" && COMPRESSED_MODEL_EXTENSIONS.includes(extension),
+          typeof extension === "string" &&
+          COMPRESSED_MODEL_EXTENSIONS.includes(extension) &&
+          !capabilities.decoders[extension === "KHR_draco_mesh_compression" ? "draco" : "meshopt"],
       ),
     )
     .map(([logical]) => logical);
   if (compressedModels.length > 0) {
     throw new Error(
-      `TN_NATIVE_MESH_COMPRESSION_UNSUPPORTED: ${target} cannot ship compressed model geometry (${namedAssets(compressedModels)}). The mobile native runtime has no WebAssembly and therefore no Meshopt or Draco decoder. Native compilation keeps shared images and decoder-free model rewrites while omitting Meshopt output; rebuild the native target, or keep compressed models on the web target.`,
+      `TN_NATIVE_MESH_COMPRESSION_UNSUPPORTED: ${target} cannot ship compressed model geometry (${namedAssets(compressedModels)}). Selected artifact ${capabilities.artifact} (${capabilities.engine}) has no admitted ${rows.flatMap(([, entry]) => (Array.isArray(entry.extensions) ? entry.extensions.filter((extension) => COMPRESSED_MODEL_EXTENSIONS.includes(String(extension))) : [])).join(", ")} decoder in its bundle. Native compilation keeps shared images and decoder-free model rewrites while omitting Meshopt output; rebuild the native target, or keep compressed models on the web target.`,
     );
   }
 }
@@ -299,7 +315,7 @@ export async function buildUi(cwd: string, config: IResolvedThreeNativeConfig): 
     ].join("\n"),
   );
   const driver = path.join(buildRoot, "build-ui.mjs");
-  await writeFile(driver, uiBuildDriver(cwd, page, output));
+  await writeFile(driver, uiBuildDriver(cwd, page, output, config.ui.renderer === "native-css"));
   try {
     await run(process.execPath, [driver], cwd);
   } finally {
@@ -315,14 +331,18 @@ export async function buildUi(cwd: string, config: IResolvedThreeNativeConfig): 
  * Copy just the stylesheets out of a built `src/ui/` into a flat directory the native CSS engine
  * reads, dropping the HTML and the JS of the web page — and copying the fonts and images those
  * stylesheets name, because the engine serves those by file name out of the same directory and has
- * no other source of bytes.
+ * no other source of bytes. Emitted adjacent `*.css.map` sidecars retain their original bytes.
  *
- * Only `*.css`, wherever Vite put it (`assets/index-<hash>.css`), copied flat under their own
- * names so the packaged `ui/` carries no page and no bundle. The previous contents go first
+ * CSS and its emitted map sidecars, wherever Vite put them (`assets/index-<hash>.css`), copy flat
+ * under their own names so the packaged `ui/` carries no page and no bundle. The previous contents go first
  * through `mkdir` on a directory that must be gone, so a stale stylesheet from a previous build
  * can never be packaged beside the new one.
  */
-export async function extractUiStylesheets(uiDir: string, outDir: string): Promise<string[]> {
+export async function extractUiStylesheets(
+  uiDir: string,
+  outDir: string,
+  projectRoot?: string,
+): Promise<string[]> {
   await rm(outDir, { force: true, recursive: true });
   await mkdir(outDir);
   const stylesheets: string[] = [];
@@ -341,13 +361,23 @@ export async function extractUiStylesheets(uiDir: string, outDir: string): Promi
   }
   // Sorted so two builds of one game stage the same names in the same order.
   const sheets = stylesheets.sort();
+  const sheetNames = new Set<string>();
+  for (const file of sheets) {
+    const name = path.basename(file);
+    if (sheetNames.has(name)) {
+      throw new Error(
+        `TN_CSS_UI_STYLESHEET_AMBIGUOUS: ${file} emits ${name}, which another stylesheet already claimed`,
+      );
+    }
+    sheetNames.add(name);
+  }
   const assets = new Map<string, string>();
   // Resolved before anything is staged: a build that cannot ship its font must not leave half a
   // `ui/` behind for the packager to find and a player to run.
   const findings: INativeCssFinding[] = [];
   for (const file of sheets) {
     const css = await readFile(file, "utf8");
-    collectStylesheetAssets(uiDir, file, css, assets);
+    await collectStylesheetAssets(uiDir, file, css, assets, projectRoot);
     findings.push(...findNativeCssViolations(path.relative(uiDir, file), css));
   }
   // Raster images the UI build emitted: an image imported from JSX is referenced by the bundle, not
@@ -380,6 +410,11 @@ export async function extractUiStylesheets(uiDir: string, outDir: string): Promi
   }
   for (const file of sheets) {
     await copyFile(file, path.join(outDir, path.basename(file)));
+    // Preserve emitted sidecars and the stylesheet's sourceMappingURL without rewriting either.
+    const sourceMap = `${file}.map`;
+    if (existsSync(sourceMap)) {
+      await copyFile(sourceMap, path.join(outDir, path.basename(sourceMap)));
+    }
   }
   // Flat, because the engine looks an asset up by name: two files of one name cannot both travel,
   // and silently shipping the wrong one is the failure this refuses.
@@ -398,29 +433,157 @@ export async function extractUiStylesheets(uiDir: string, outDir: string): Promi
  * out of the build, or a relative name no file answers to — fails the build here rather than
  * shipping a HUD whose font silently fell back to the machine's.
  */
-function collectStylesheetAssets(
+async function collectStylesheetAssets(
   build: string,
   file: string,
   css: string,
   assets: Map<string, string>,
-): void {
-  // Comments are stripped first so a documented example cannot fail the build.
-  const source = css.replaceAll(/\/\*[\s\S]*?\*\//gu, "");
+  projectRoot?: string,
+): Promise<void> {
+  // Mask comments without moving UTF-16 offsets: maps refer to the emitted CSS, not this scan.
+  const source = css.replaceAll(/\/\*[\s\S]*?\*\//gu, (comment) =>
+    comment.replaceAll(/[^\r\n]/g, " "),
+  );
   for (const match of source.matchAll(/url\(([^)]*)\)/giu)) {
     const target = (match[1] ?? "")
       .trim()
       .replace(/^["']|["']$/gu, "")
       .trim();
     if (target === "" || target.startsWith("data:") || target.startsWith("#")) continue;
-    const resolved = resolveStylesheetAsset(build, file, target);
-    const name = path.basename(resolved);
-    const claimed = assets.get(name);
-    if (claimed !== undefined && claimed !== resolved) {
-      throw new Error(
-        `TN_CSS_UI_ASSET_AMBIGUOUS: ${file} references ${target} as ${name}, which ${path.relative(build, claimed)} already claimed`,
-      );
+    try {
+      const resolved = resolveStylesheetAsset(build, file, target);
+      const name = path.basename(resolved);
+      const claimed = assets.get(name);
+      if (claimed !== undefined && claimed !== resolved) {
+        throw new Error(
+          `TN_CSS_UI_ASSET_AMBIGUOUS: ${file} references ${target} as ${name}, which ${path.relative(build, claimed)} already claimed`,
+        );
+      }
+      assets.set(name, resolved);
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        /^TN_CSS_UI_ASSET_(?:UNSUPPORTED|AMBIGUOUS):/u.test(error.message)
+      ) {
+        error.message += await stylesheetAssetLocation(
+          build,
+          file,
+          css,
+          match.index,
+          target,
+          projectRoot,
+        );
+      }
+      throw error;
     }
-    assets.set(name, resolved);
+  }
+}
+
+/** Read provenance only for an existing refusal; a bad map must never replace that refusal. */
+async function stylesheetAssetLocation(
+  build: string,
+  file: string,
+  css: string,
+  offset: number,
+  target: string,
+  projectRoot?: string,
+): Promise<string> {
+  const before = css.slice(0, offset);
+  const line = before.split("\n").length;
+  const column = offset - before.lastIndexOf("\n") - 1;
+  const generated = `\n  generated: ${file}:${line}:${column + 1}`;
+  if (projectRoot === undefined) return generated;
+  try {
+    const links = [...css.matchAll(/\/\*[#@]\s*sourceMappingURL\s*=\s*([^*]*?)\*\//gu)];
+    if (links.length !== 1 || links[0]?.[1]?.trim() !== `${path.basename(file)}.map`)
+      return generated;
+    const [root, mapFile] = await Promise.all([realpath(build), realpath(`${file}.map`)]);
+    const inside = path.relative(root, mapFile);
+    if (
+      inside === "" ||
+      inside === ".." ||
+      inside.startsWith(`..${path.sep}`) ||
+      path.isAbsolute(inside)
+    )
+      return generated;
+    const serialized = await readFile(mapFile, "utf8");
+    const raw = JSON.parse(serialized);
+    if (
+      raw.version !== 3 ||
+      // ECMA-426 permits an omitted file; the CSS annotation already identifies this sidecar.
+      (raw.file !== undefined && raw.file !== path.basename(file)) ||
+      typeof raw.mappings !== "string" ||
+      !/^[A-Za-z0-9+/;,]*$/u.test(raw.mappings) ||
+      !Array.isArray(raw.sources) ||
+      !raw.sources.every((source: unknown) => typeof source === "string") ||
+      !Array.isArray(raw.names) ||
+      !raw.names.every((name: unknown) => typeof name === "string") ||
+      (raw.sourceRoot !== undefined && typeof raw.sourceRoot !== "string") ||
+      !Array.isArray(raw.sourcesContent) ||
+      raw.sourcesContent.length !== raw.sources.length ||
+      !raw.sourcesContent.every(
+        (content: unknown) => content === null || typeof content === "string",
+      )
+    )
+      return generated;
+    // Parse the string so untrusted JSON cannot impersonate the consumer's private cache.
+    const map = new TraceMap(serialized, pathToFileURL(`${file}.map`).href);
+    const mappings = decodedMappings(map);
+    // The decoder accepts truncated VLQ tuples. Re-encode through a fresh consumer to require
+    // complete canonical tuples before trusting any authored coordinates.
+    const canonical = encodedMappings(
+      new TraceMap({ version: 3, names: map.names, sources: map.sources, mappings }),
+    );
+    if (canonical !== raw.mappings) return generated;
+    if (new Set(map.resolvedSources).size !== map.sources.length) return generated;
+    const segment = traceSegment(map, line - 1, column);
+    // A nearest declaration is not the exact authored URL. Duplicate anchors are ambiguous.
+    if (
+      segment === null ||
+      (segment.length !== 4 && segment.length !== 5) ||
+      segment[0] !== column ||
+      !segment.every((value) => Number.isSafeInteger(value) && value >= 0) ||
+      (mappings[line - 1] ?? []).filter((entry) => entry[0] === column).length !== 1
+    )
+      return generated;
+    const original = originalPositionFor(map, { line, column });
+    if (typeof original.source !== "string" || original.line === null || original.column === null)
+      return generated;
+    const sourceURL = new URL(original.source);
+    if (sourceURL.protocol !== "file:") return generated;
+    const [project, authoredFile] = await Promise.all([
+      realpath(projectRoot),
+      realpath(fileURLToPath(sourceURL)),
+    ]);
+    const source = path.relative(project, authoredFile);
+    if (
+      source === "" ||
+      source === ".." ||
+      source.startsWith(`..${path.sep}`) ||
+      path.isAbsolute(source)
+    )
+      return generated;
+    const content = sourceContentFor(map, original.source);
+    if (typeof content !== "string" || content !== (await readFile(authoredFile, "utf8")))
+      return generated;
+    const authoredLine = content
+      .replaceAll(/\/\*[\s\S]*?\*\//gu, (comment) => comment.replaceAll(/[^\r\n]/g, " "))
+      .split(/\r?\n/u)[original.line - 1];
+    const authoredURL = authoredLine?.slice(original.column).match(/^url\(([^)]*)\)/iu);
+    // A stale or mismatched map is not provenance for this refusal. Rewritten URLs safely retain
+    // generated-only diagnostics until a producer can establish their asset identity.
+    if (
+      authoredURL === null ||
+      authoredURL === undefined ||
+      (authoredURL[1] ?? "")
+        .trim()
+        .replace(/^["']|["']$/gu, "")
+        .trim() !== target
+    )
+      return generated;
+    return `${generated}\n  authored: ${source}:${original.line}:${original.column + 1}`;
+  } catch {
+    return generated;
   }
 }
 
@@ -450,7 +613,7 @@ function resolveStylesheetAsset(build: string, file: string, target: string): st
  * outside the project's own `index.html` without a config file — and a hand-written config file
  * would be a second copy of the game's, which is the drift this avoids.
  */
-function uiBuildDriver(cwd: string, page: string, output: string): string {
+function uiBuildDriver(cwd: string, page: string, output: string, cssSourcemaps = false): string {
   const literal = (value: string): string => JSON.stringify(value);
   return `${[
     'import { build, loadConfigFromFile, mergeConfig } from "vite";',
@@ -476,7 +639,10 @@ function uiBuildDriver(cwd: string, page: string, output: string): string {
     // first `useState` on the phone throws `Cannot read properties of null`. `mergeConfig`
     // concatenates arrays, so a project that deduped its own packages keeps every one of them.
     '    resolve: { dedupe: ["react", "react-dom"] },',
+    // Native CSS diagnostics consume adjacent maps linked by the emitted stylesheet.
+    ...(cssSourcemaps ? ["    css: { devSourcemap: true, emitSourcemap: true },"] : []),
     "    build: {",
+    ...(cssSourcemaps ? ["      sourcemap: true,"] : []),
     `      outDir: ${literal(output)},`,
     "      emptyOutDir: true,",
     `      rollupOptions: { input: { index: ${literal(page)} } },`,
@@ -730,31 +896,56 @@ export async function writePackagingConfig(
   return output;
 }
 
-/**
- * Whether the runtime that will execute this build has WebAssembly.
- *
- * The engine decides it, not the target: V8 compiles WebAssembly, QuickJS and JavaScriptCore do
- * not. A desktop build is for either engine — Linux x64, Windows and macOS use V8, the Linux
- * arm64 lane builds QuickJS over wgpu-native — so the target alone cannot answer it. The runtime
- * binary the packager is handed (`THREENATIVE_RUNTIME_BINARY`, set by the same build invocation)
- * is probed for its engine; absent or unreadable, the answer is the historical desktop one, true,
- * because every published desktop prebuilt runs V8.
- */
+/** Read only the selected executable. An unrecognized or failed probe never proves WASM. */
+function runtimeEngine(
+  binary: string | undefined,
+  probe: typeof spawnSync,
+): "v8" | "quickjs" | "jsc" | "unknown" {
+  if (binary === undefined || !existsSync(binary)) return "unknown";
+  try {
+    const result = probe(binary, ["--version"], { encoding: "utf8", timeout: 10_000 });
+    if (result.status !== 0) return "unknown";
+    const engine = /\+ (\S+) build/u.exec(String(result.stdout ?? ""))?.[1]?.toLowerCase();
+    return engine === "v8" || engine === "quickjs" || engine === "jsc" ? engine : "unknown";
+  } catch {
+    return "unknown";
+  }
+}
+
 export function runtimeHasWebAssembly(
   binary: string | undefined = process.env.THREENATIVE_RUNTIME_BINARY,
   probe: typeof spawnSync = spawnSync,
 ): boolean {
-  if (binary === undefined || !existsSync(binary)) return true;
-  let result: ReturnType<typeof spawnSync>;
-  try {
-    result = probe(binary, ["--version"], { encoding: "utf8" });
-  } catch {
-    return true;
+  return runtimeEngine(binary, probe) === "v8";
+}
+
+/**
+ * One conservative decision for cooking, validation and bundling. Only desktop's selected
+ * executable is runnable here: a desktop packaging tool is never evidence about Android/iOS.
+ * Mobile stays decoder-free until its selected artifact and packaged loaders are qualified.
+ * Desktop V8 retains its existing decoder path; WASM alone does not qualify new codec targets.
+ */
+export function resolveRuntimeAssetCapabilities(
+  target: BuildTarget,
+  binary?: string,
+  probe: typeof spawnSync = spawnSync,
+) {
+  const selected = target === "desktop" ? binary : undefined;
+  const engine = target === "web" ? "browser" : runtimeEngine(selected, probe);
+  const artifact = selected === undefined ? `${target}:unresolved` : path.resolve(selected);
+  let identity = artifact;
+  if (selected !== undefined && existsSync(selected)) {
+    identity = `${target}:sha256:${createHash("sha256").update(readFileSync(selected)).digest("hex")}`;
   }
-  if (result.status !== 0) return true;
-  const engine = /\+ (\S+) build/u.exec(String(result.stdout ?? ""))?.[1] ?? "";
-  // The engine names are CMake's MYSTRAL_JS_ENGINE_NAME: v8, jsc or quickjs. Only V8 runs WASM.
-  return !/^(?:quickjs|jsc)$/iu.test(engine);
+  const webAssembly = engine === "v8" || engine === "browser";
+  const bundled = target === "web" || (target === "desktop" && webAssembly);
+  return {
+    artifact,
+    identity,
+    engine,
+    webAssembly,
+    decoders: { ktx2: bundled, meshopt: bundled, draco: bundled },
+  };
 }
 
 async function bundleNative(
@@ -874,24 +1065,38 @@ async function buildNative(
   const config = await loadConfig(cwd, { target, profile });
   announceProfile(config);
   assertNativeUiRendererCompatible(target, config.ui.renderer);
-  // A native host without WebAssembly cannot run Rapier as WASM or decode meshopt/KTX2, so it
-  // takes the native physics backend and a decoder-free bake. The capability is the runtime
-  // engine, not the target: android and iOS are always QuickJS/JSC, and a desktop host is V8
-  // except on the Linux arm64 lane. `assertNativeAssetsCompatible` stays below as the backstop.
-  const webAssembly = runtimeHasWebAssembly();
+  const entry = await nativeEntry(cwd, config);
+  // Resolve the same desktop binary the packager will receive, before cooking. A default
+  // prebuilt used to be selected only after the cook had guessed from the build machine.
+  let selectedRuntime: string | undefined;
+  if (target === "desktop") {
+    const module = path.join(
+      packageRoot(cwd, "@threenative/runtime-native"),
+      "scripts",
+      "package-desktop.mjs",
+    );
+    const { resolveDesktopRuntime } = (await import(pathToFileURL(module).href)) as {
+      resolveDesktopRuntime(explicit?: string): Promise<string>;
+    };
+    const explicit = process.env.THREENATIVE_RUNTIME_BINARY;
+    selectedRuntime = await resolveDesktopRuntime(
+      explicit === undefined ? undefined : path.resolve(cwd, explicit),
+    );
+  }
+  const capabilities = resolveRuntimeAssetCapabilities(target, selectedRuntime);
   await compileAssets({
     config: config.assets,
     cwd,
     platform: target,
-    ...(webAssembly ? {} : { runtimeDecoders: { ktx2: false, meshopt: false } }),
+    runtimeDecoders: capabilities.decoders,
+    runtimeIdentity: capabilities.identity,
   });
-  await assertNativeAssetsCompatible(cwd, target, config);
-  const entry = await nativeEntry(cwd, config);
+  await assertNativeAssetsCompatible(cwd, target, config, capabilities);
   const orientation = config.display.orientation;
   const configPath = await writePackagingConfig(cwd, config);
   const runtimeRoot = packageRoot(cwd, "@threenative/runtime-native");
-  const bundle = await bundleNative(cwd, runtimeRoot, entry, target, !webAssembly);
-  await assertNativeBundleCompatible(bundle, target);
+  const bundle = await bundleNative(cwd, runtimeRoot, entry, target, !capabilities.webAssembly);
+  await assertNativeBundleCompatible(bundle, target, capabilities);
   // The compiled root the project configured, which `compileAssets` above baked into — not the
   // `public` default. A project whose cook profile writes elsewhere was packaging an empty
   // directory while its own assets sat next to it, unread.
@@ -905,7 +1110,7 @@ async function buildNative(
     const built = await buildUi(cwd, config);
     if (config.ui.renderer === "native-css") {
       ui = path.join(cwd, ".threenative", "build", "ui-css");
-      await extractUiStylesheets(built, ui);
+      await extractUiStylesheets(built, ui, cwd);
     } else {
       ui = built;
     }
@@ -984,9 +1189,7 @@ async function buildNative(
       ...(ui === undefined ? [] : ["--ui", ui]),
       "--config",
       configPath,
-      ...(process.env.THREENATIVE_RUNTIME_BINARY
-        ? ["--runtime", path.resolve(process.env.THREENATIVE_RUNTIME_BINARY)]
-        : []),
+      ...(selectedRuntime === undefined ? [] : ["--runtime", selectedRuntime]),
       "--output",
       output,
     ],

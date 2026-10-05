@@ -5,6 +5,7 @@ import { spawnSync } from 'node:child_process';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { desktopBuildOverrides } from './desktop-build-profile.mjs';
 import { uiOverlayLibraryPath } from './build-native-ui-overlay.mjs';
 import { cssUiLibraryPath } from './build-native-css-ui.mjs';
 
@@ -93,14 +94,8 @@ if (process.env.TN_ENABLE_CSS_UI === '1') {
 // desktop host with the QuickJS engine over the wgpu-native backend — the combination that does
 // have an arm64 path (`wgpu-linux-aarch64`). Command-line cache entries override the tn-linux
 // preset's V8+Dawn defaults, so the binary directory the CI lane reads stays `build/tn-linux`.
-if (process.platform === 'linux' && process.arch === 'arm64') {
-  configureArgs.push(
-    '-DMYSTRAL_USE_V8=OFF',
-    '-DMYSTRAL_USE_QUICKJS=ON',
-    '-DMYSTRAL_USE_DAWN=OFF',
-    '-DMYSTRAL_USE_WGPU=ON',
-  );
-}
+configureArgs.push(...Object.entries(desktopBuildOverrides()).map(([key, value]) => `-D${key}=${value}`));
+
 const vcpkgRoot = process.env.VCPKG_ROOT ?? process.env.VCPKG_INSTALLATION_ROOT;
 if (windows && vcpkgRoot) {
   configureArgs.push(

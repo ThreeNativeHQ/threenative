@@ -1,9 +1,13 @@
 import { spawnSync } from "node:child_process";
 import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { makeTempDirSync } from "../../test-support/temp-dir.js";
 import { ciJobGraph, declaredNeeds, jobSections } from "../ci-workflow.js";
+
+const { copyTemplateOwnership, integrationEvidence } = await import(
+  new URL("../../test-support/ci-integration-fixture.ts", import.meta.url).href
+);
 
 const repo = path.resolve(import.meta.dirname, "../..");
 const source = readFileSync(path.join(repo, ".github/workflows/ci.yml"), "utf8");
@@ -207,23 +211,22 @@ describe("PRD-380 an ordinary pull request owes only the Linux native rows", () 
     ]),
   );
 
-  it("gives an ordinary pull request the reduced matrix and everything else the full one", () => {
+  it("keeps unresolved pull requests and qualification events on the full matrix", () => {
     const ordinary = JSON.parse(
       classify(["--event-name", "pull_request", "--target", "develop"]),
     ) as Record<string, unknown>;
     // The tier travels with the plan, so ci-required records it and a reuse can compare it.
-    expect(ordinary).toMatchObject({ selection: "full", native: true, nativeTier: "reduced" });
+    expect(ordinary).toMatchObject({ selection: "full", native: true, nativeTier: "full" });
     expect(
       (ordinary.jobs as Record<string, { required: boolean }>)["native-platforms"]?.required,
     ).toBe(true);
     expect(classify(["--event-name", "pull_request", "--target", "develop"], "github")).toContain(
-      "native_tier=reduced\n",
+      "native_tier=full\n",
     );
-    // A merge group on develop is the queue testing the same tree, so it owes the same tier; ci.yml
-    // passes the queue's base branch for exactly that reason.
+    // Queue qualification owes all supported systems regardless of the target branch.
     expect(
       JSON.parse(classify(["--event-name", "merge_group", "--target", "develop"])),
-    ).toMatchObject({ nativeTier: "reduced" });
+    ).toMatchObject({ nativeTier: "full" });
     // main pushes, the nightly, an explicit audit and a pull request into main keep every row.
     const full: readonly (readonly [string, string])[] = [
       ["push", ""],
@@ -244,7 +247,7 @@ describe("PRD-380 an ordinary pull request owes only the Linux native rows", () 
 
   it("reads the tier from the planner instead of deciding it per job", () => {
     const gated = [...executable]
-      .filter(([name, section]) => name !== "scope" && section.includes("native_tier"))
+      .filter(([name, section]) => name !== "scope" && /^ {4}if: .*native_tier/mu.test(section))
       .map(([name]) => name)
       .sort();
     // Only the macOS, Windows and iOS legs are not Linux rows.
@@ -431,16 +434,45 @@ describe("PRD-373 fail-closed required verdict", () => {
       ),
       ...overrides,
     };
-    return spawnSync(process.execPath, ["scripts/ci-required.mjs"], {
-      cwd: repo,
-      encoding: "utf8",
-      env: { ...process.env, TN_CI_NEEDS: JSON.stringify(needs), ...environment },
-    });
+    const directory = makeTempDirSync("ci-verdict-evidence-");
+    try {
+      const evidence = jobs?.integration?.required
+        ? integrationEvidence(repo, directory, plan).env
+        : {};
+      return spawnSync(process.execPath, ["scripts/ci-required.mjs"], {
+        cwd: repo,
+        encoding: "utf8",
+        // Synthetic plans carry their own event identities; never inherit this
+        // enclosing Actions run's TN_CI_* context. Explicit adversarial inputs below win.
+        env: {
+          ...Object.fromEntries(
+            Object.entries(process.env).filter(([key]) => !key.startsWith("TN_CI_")),
+          ),
+          ...evidence,
+          TN_CI_NEEDS: JSON.stringify(needs),
+          ...environment,
+        },
+      });
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
   }
 
   it("accepts only a validated classifier and all selected successful jobs", () => {
     const result = verify(fullPlan());
     expect(result.status, result.stdout + result.stderr).toBe(0);
+  });
+
+  it("isolates synthetic verdict fixtures from the enclosing hosted PR context", () => {
+    vi.stubEnv("TN_CI_EVENT", "pull_request");
+    vi.stubEnv("TN_CI_BASE_SHA", "a".repeat(40));
+    vi.stubEnv("TN_CI_HEAD_SHA", "b".repeat(40));
+    try {
+      const result = verify(fullPlan());
+      expect(result.status, result.stdout + result.stderr).toBe(0);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it.each(["failure", "cancelled", "skipped", "neutral", "timed_out", ""])(
@@ -491,7 +523,7 @@ describe("PRD-373 fail-closed required verdict", () => {
     for (const headRef of ["develop", "feature/direct-main", `promotion/${"b".repeat(40)}`]) {
       const narrowed = verify(prosePlan(), {}, { ...environment, TN_CI_HEAD_REF: headRef });
       expect(narrowed.status, narrowed.stdout + narrowed.stderr).toBe(1);
-      expect(narrowed.stderr).toContain("CI_REQUIRED_MAIN_FULL");
+      expect(narrowed.stderr).toContain("CI_REQUIRED_QUALIFICATION_MINIMUM");
     }
   });
 
@@ -600,6 +632,16 @@ describe("PRD-373 fixed full candidates and current package products", () => {
       git("init", "-q", "--initial-branch=main");
       git("config", "user.email", "ci@example.invalid");
       git("config", "user.name", "CI fixture");
+      mkdirSync(path.join(root, ".github/workflows"), { recursive: true });
+      writeFileSync(
+        path.join(root, ".github/workflows/integration.yml"),
+        readFileSync(path.join(repo, ".github/workflows/integration.yml")),
+      );
+      writeFileSync(
+        path.join(root, ".github/workflows/native-platforms.yml"),
+        readFileSync(path.join(repo, ".github/workflows/native-platforms.yml")),
+      );
+      copyTemplateOwnership(root, repo);
       writeFileSync(path.join(root, "seed"), "seed");
       git("add", ".");
       git("commit", "-qm", "seed");
@@ -630,12 +672,20 @@ describe("PRD-373 fixed full candidates and current package products", () => {
           ]),
         ),
       };
+      const evidence = integrationEvidence(
+        root,
+        path.join(root, "fixture-bin"),
+        plan,
+        true,
+        head,
+      ).env;
       const check = (baseSha: string) =>
         spawnSync(process.execPath, [path.join(repo, "scripts/ci-required.mjs")], {
           cwd: root,
           encoding: "utf8",
           env: {
             ...process.env,
+            ...evidence,
             TN_CI_NEEDS: JSON.stringify(needs),
             TN_CI_EVENT: "pull_request",
             TN_CI_CUTOVER: "true",
@@ -675,6 +725,34 @@ describe("PRD-373 fixed full candidates and current package products", () => {
     expect(native).toContain("$ImageVersion");
     expect(native).toContain("c++ --version");
     expect(cache).not.toContain("restore-keys:");
+  });
+
+  it("publishes both base-branch caches from a develop push, ungated by the selection", () => {
+    // A pull request's cache is scoped to its own merge ref and no other pull request reads it, so
+    // the only thing that can warm the base branch is a run on the base branch — and only if these
+    // two jobs actually save when they run there.
+    const producer = job("build-artifacts");
+    expect(producer).toContain("uses: ./.github/actions/workspace-dist");
+    expect(producer).not.toContain('save-bundles: "false"');
+    // The shared action publishes on a cache miss, which is the same condition on develop as on any
+    // other branch. A gate naming the selection or the branch is what would stop the warm lane.
+    const action = readFileSync(
+      path.join(repo, ".github/actions/workspace-dist/action.yml"),
+      "utf8",
+    );
+    const save = action.slice(action.indexOf("- name: Save validated workspace bundles"));
+    expect(save).toContain("steps.dist.outputs.cache-hit != 'true'");
+    expect(save).not.toMatch(/selection|main|develop/u);
+  });
+
+  it("leaves the native cache saves to the cache action's own post step", () => {
+    const native = job("test-native");
+    for (const key of ["native-third-party-", "native-ccache-ci-test-native-", "native-build-"]) {
+      expect(native, `the warm lane no longer publishes ${key}`).toContain(`key: ${key}`);
+    }
+    // `actions/cache` saves in its post step on any successful run, so no step here may be gated on
+    // a full selection — that is the gate that would silently stop the develop push from warming.
+    expect(native).not.toMatch(/^ {6}if:.*selection == 'full'/mu);
   });
 
   it("repacks changed template bytes even when compiled bundles remain unchanged", () => {

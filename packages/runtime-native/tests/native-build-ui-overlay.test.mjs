@@ -48,9 +48,15 @@ test.runIf(process.platform === 'linux' || process.platform === 'darwin')(
     mkdirSync(scripts, { recursive: true });
     mkdirSync(bin, { recursive: true });
     // The real plan and the real overlay build, so the library path asserted below is the one the
-    // script derives rather than one the test wrote. The CSS UI builder is copied too: the plan
-    // imports its library-path helper, so an opt-in plan run needs the module to exist.
-    for (const name of ['native-build.mjs', 'build-native-ui-overlay.mjs', 'build-native-css-ui.mjs']) {
+    // script derives rather than one the test wrote. The CSS builder and desktop profile helpers
+    // are copied too because the merged native build imports them before selecting the plan.
+    for (const name of [
+      'native-build.mjs',
+      'build-native-ui-overlay.mjs',
+      'build-native-css-ui.mjs',
+      'native-test-lane.mjs',
+      'desktop-build-profile.mjs',
+    ]) {
       copyFileSync(
         new URL(`../scripts/${name}`, import.meta.url),
         join(scripts, name),

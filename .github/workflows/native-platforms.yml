@@ -33,6 +33,10 @@ on:
         required: false
         type: boolean
         default: false
+    outputs:
+      coverage_receipt:
+        description: Exact current-attempt supported native leg join.
+        value: ${{ jobs.completion.outputs.coverage_receipt }}
 
 concurrency:
   group: native-platforms-${{ github.event_name }}-${{ github.ref }}-${{ github.run_id }}
@@ -48,6 +52,7 @@ concurrency:
 # the failing job itself `cancelled`, which hid which leg went red. See ci.yml.
 permissions:
   contents: read
+  actions: read
 
 jobs:
   # The caller is the single selection authority. Dispatch has no exemption inputs and is full.
@@ -124,7 +129,8 @@ jobs:
     if: >-
       needs.scope.outputs.selection == 'full' &&
       inputs.ios_only == false
-    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    # Keep this platform prerequisite out of the local queue during CI/Integration bursts.
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
@@ -171,7 +177,8 @@ jobs:
     name: Android V8 source payload
     needs: scope
     if: needs.scope.outputs.selection == 'full' && inputs.ios_only != true
-    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    # Keep this platform prerequisite out of the local queue during CI/Integration bursts.
+    runs-on: ubuntu-24.04
     # 180-minute build ceiling plus 30 minutes for actions/cache/save, per the action's note.
     timeout-minutes: 210
     outputs:
@@ -193,8 +200,8 @@ jobs:
       - uses: android-actions/setup-android@v4
         with:
           packages: platform-tools
-      # No Actions cache for the NDK: the runner image already carries it (this step takes two
-      # seconds on a miss), while saving it took 90 seconds and a GB-scale share of the cache budget.
+      # Install the pinned NDK on the selected runner. Caching it previously took 90 seconds
+      # and a GB-scale share of the cache budget.
       - name: Install and select the pinned Android NDK
         run: |
           set -euo pipefail
@@ -273,7 +280,7 @@ jobs:
       - name: Aggregate retained collector evidence and unscheduled platforms
         if: always()
         env:
-          TN_PERF_REQUIRED_DESKTOP: ${{ needs.desktop.result != 'skipped' && 'Windows,macOS' || '' }}
+          TN_PERF_REQUIRED_DESKTOP: ${{ needs.scope.outputs.native_tier == 'full' && inputs.ios_only != true && 'Windows,macOS' || '' }}
         run: |
           pnpm tsx scripts/performance-regression/ci-summary.ts \
             --artifact-dir artifacts/native-performance-coverage \
@@ -774,6 +781,36 @@ jobs:
             packages/runtime-native/artifacts/performance-contract/
           if-no-files-found: error
 
+      - name: Bind the exact supported native build to this attempt
+        if: always()
+        shell: bash
+        env:
+          TN_CI_NATIVE_REUSABLE: ${{ inputs.selection_plan != '' }}
+          TN_CI_PLAN: ${{ needs.scope.outputs.plan }}
+          TN_CI_EVENT: ${{ github.event_name }}
+          TN_CI_BASE_REF: ${{ github.base_ref || github.event.merge_group.base_ref || (github.event_name == 'push' && github.ref_name) || '' }}
+          TN_CI_CANDIDATE_SHA: ${{ needs.scope.outputs.candidate_sha }}
+          TN_CI_WORKFLOW_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha || github.sha }}
+          TN_CI_JOB_RESULT: ${{ job.status }}
+          TN_CI_NATIVE_PLATFORM: ""
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/ci-native-receipts.mjs --write
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: ci-native-receipt-${{ github.run_id }}-${{ github.run_attempt }}-android-emulator-parity-single
+          path: artifacts/ci-native-receipts/*.json
+          if-no-files-found: error
+          retention-days: 2
+      - name: Preserve Android packaging provenance diagnostics
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: ci-native-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}-android-build-provenance
+          path: artifacts/ci-native-diagnostics/android-build-provenance-${{ github.run_id }}-${{ github.run_attempt }}.json
+          if-no-files-found: warn
+          retention-days: 2
+
   release-reports:
     name: Gate-schema release evidence reports
     # PRD-059 Phase 4 emitted these from inside android-emulator-parity, which holds the android
@@ -1044,6 +1081,28 @@ jobs:
             packages/runtime-native/artifacts/conformance/
             packages/runtime-native/artifacts/performance-contract/
           if-no-files-found: error
+
+      - name: Bind the exact supported native build to this attempt
+        if: always()
+        shell: bash
+        env:
+          TN_CI_NATIVE_REUSABLE: ${{ inputs.selection_plan != '' }}
+          TN_CI_PLAN: ${{ needs.scope.outputs.plan }}
+          TN_CI_EVENT: ${{ github.event_name }}
+          TN_CI_BASE_REF: ${{ github.base_ref || github.event.merge_group.base_ref || (github.event_name == 'push' && github.ref_name) || '' }}
+          TN_CI_CANDIDATE_SHA: ${{ needs.scope.outputs.candidate_sha }}
+          TN_CI_WORKFLOW_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha || github.sha }}
+          TN_CI_JOB_RESULT: ${{ job.status }}
+          TN_CI_NATIVE_PLATFORM: ""
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/ci-native-receipts.mjs --write
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: ci-native-receipt-${{ github.run_id }}-${{ github.run_attempt }}-desktop-parity-single
+          path: artifacts/ci-native-receipts/*.json
+          if-no-files-found: error
+          retention-days: 2
 
   desktop:
     name: ${{ matrix.platform }} desktop core
@@ -1778,6 +1837,9 @@ jobs:
           fi
           mkdir -p packages/runtime-native/artifacts/performance-contract/${{ matrix.platform }}
           if [ -f "$artifact" ]; then
+            # Preserve path-only source state before the profiler observes cleanliness.
+            git status --porcelain=v1 --untracked-files=all \
+              | tee "packages/runtime-native/artifacts/performance-contract/${{ matrix.platform }}/source-status.txt"
             node packages/runtime-native/scripts/profile-production.mjs \
               --profile production --target desktop --duration 1 --cold-starts 1 \
               --warmup 1 --repetitions 1 --hosted-software --prebuilt-artifact "$artifact" \
@@ -1802,6 +1864,28 @@ jobs:
           name: native-desktop-${{ matrix.platform }}
           path: packages/runtime-native/artifacts/
           if-no-files-found: error
+
+      - name: Bind the exact supported native build to this attempt
+        if: always()
+        shell: bash
+        env:
+          TN_CI_NATIVE_REUSABLE: ${{ inputs.selection_plan != '' }}
+          TN_CI_PLAN: ${{ needs.scope.outputs.plan }}
+          TN_CI_EVENT: ${{ github.event_name }}
+          TN_CI_BASE_REF: ${{ github.base_ref || github.event.merge_group.base_ref || (github.event_name == 'push' && github.ref_name) || '' }}
+          TN_CI_CANDIDATE_SHA: ${{ needs.scope.outputs.candidate_sha }}
+          TN_CI_WORKFLOW_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha || github.sha }}
+          TN_CI_JOB_RESULT: ${{ job.status }}
+          TN_CI_NATIVE_PLATFORM: ${{ matrix.platform }}
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/ci-native-receipts.mjs --write
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: ci-native-receipt-${{ github.run_id }}-${{ github.run_attempt }}-desktop-${{ matrix.platform }}
+          path: artifacts/ci-native-receipts/*.json
+          if-no-files-found: error
+          retention-days: 2
 
   starter-linux:
     name: Scaffolded starter desktop artifact (${{ matrix.platform }})
@@ -2049,6 +2133,28 @@ jobs:
           name: native-starter-${{ matrix.platform }}
           path: packages/runtime-native/artifacts/starter-${{ matrix.platform }}/
           if-no-files-found: error
+
+      - name: Bind the exact supported native build to this attempt
+        if: always()
+        shell: bash
+        env:
+          TN_CI_NATIVE_REUSABLE: ${{ inputs.selection_plan != '' }}
+          TN_CI_PLAN: ${{ needs.scope.outputs.plan }}
+          TN_CI_EVENT: ${{ github.event_name }}
+          TN_CI_BASE_REF: ${{ github.base_ref || github.event.merge_group.base_ref || (github.event_name == 'push' && github.ref_name) || '' }}
+          TN_CI_CANDIDATE_SHA: ${{ needs.scope.outputs.candidate_sha }}
+          TN_CI_WORKFLOW_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha || github.sha }}
+          TN_CI_JOB_RESULT: ${{ job.status }}
+          TN_CI_NATIVE_PLATFORM: ${{ matrix.platform }}
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/ci-native-receipts.mjs --write
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: ci-native-receipt-${{ github.run_id }}-${{ github.run_attempt }}-starter-linux-${{ matrix.platform }}
+          path: artifacts/ci-native-receipts/*.json
+          if-no-files-found: error
+          retention-days: 2
 
   ios-simulator:
     name: iOS simulator runtime and no-Xcode consumer handoff
@@ -2315,3 +2421,31 @@ jobs:
             packages/runtime-native/artifacts/performance-contract/
             ${{ runner.temp }}/ios-consumer-*.log
           if-no-files-found: error
+
+  completion:
+    name: Native required coverage receipt
+    needs: [scope, web-reference, android-v8-source, android-emulator-parity, desktop-parity, release-reports, performance-coverage, networking-matrix, desktop, starter-linux, ios-simulator, publish-android-v8]
+    # Isolated iOS dispatch remains advisory and emits no full qualification receipt.
+    if: ${{ always() && inputs.ios_only != true }}
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER_LIGHT) && 'ubuntu-24.04' || vars.TN_RUNNER_LIGHT }}
+    timeout-minutes: 5
+    outputs:
+      coverage_receipt: ${{ steps.collect.outputs.coverage_receipt }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.scope.outputs.candidate_sha || inputs.candidate_sha || github.sha }}
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: ci-native-receipt-${{ github.run_id }}-${{ github.run_attempt }}-*
+          path: artifacts/ci-native-receipts
+      - id: collect
+        env:
+          TN_CI_NATIVE_REUSABLE: ${{ inputs.selection_plan != '' }}
+          TN_CI_PLAN: ${{ needs.scope.outputs.plan }}
+          TN_CI_EVENT: ${{ github.event_name }}
+          TN_CI_BASE_REF: ${{ github.base_ref || github.event.merge_group.base_ref || (github.event_name == 'push' && github.ref_name) || '' }}
+          TN_CI_CANDIDATE_SHA: ${{ needs.scope.outputs.candidate_sha }}
+          TN_CI_WORKFLOW_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha || github.sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/ci-native-receipts.mjs --collect artifacts/ci-native-receipts

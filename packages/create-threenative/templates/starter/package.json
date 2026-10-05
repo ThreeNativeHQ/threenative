@@ -37,7 +37,7 @@
     "esbuild": "0.27.0",
     "playwright": "1.62.1",
     "tailwindcss": "4.3.3",
-    "typescript": "5.9.3",
+    "typescript": "7.0.2",
     "vite": "8.2.0",
     "@gltf-transform/cli": "4.4.2"
   },
@@ -53,7 +53,9 @@
     },
     "onlyBuiltDependencies": ["@threenative/core", "@threenative/runtime-native"],
     "patchedDependencies": {
-      "three@0.185.1": "patches/three@0.185.1.patch"
+      "three@0.185.1": "patches/three@0.185.1.patch",
+      "vite@8.2.0": "patches/vite@8.2.0.patch",
+      "@tailwindcss/node@4.3.3": "patches/@tailwindcss__node@4.3.3.patch"
     }
   }
 }

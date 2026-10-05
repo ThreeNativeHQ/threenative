@@ -30,6 +30,8 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     example: { tone: [{ atStep: "landed", mean: { min: 60, max: 140 }, p99: { min: 150 } }] },
     fields: [
       { description: "Capture after this named step; omit for the final frame.", name: "atStep", type: "non-empty string" },
+      { description: "Exact decoded PNG physical-pixel rectangle; non-negative safe-integer x/y, positive safe-integer width/height. No clipping or scaling.", name: "region", type: "{ x: number, y: number, width: number, height: number }" },
+      { description: "Same-capture primary minus reference region metric must reach minDelta; requires primary region.", name: "compare", type: "{ region: object, metric: string, minDelta: number }" },
       ...TONE_METRICS.map((name) => ({ description: "Inclusive finite bounds; luminance is 0..255 and fractions are 0..1. At least one bound is required.", name, type: "{ min?: number, max?: number }" })),
     ],
     cardinality: "array",

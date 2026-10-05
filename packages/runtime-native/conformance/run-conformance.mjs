@@ -14,7 +14,7 @@ import {
 } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
-import { dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { delimiter, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { SDL3_ANDROID_VERSION, stageAndroidAssets } from "../scripts/package-android.mjs";
 import { stageDesktopFiles } from "../scripts/package-desktop.mjs";
@@ -576,42 +576,68 @@ ${asyncEnd}
   return entryAbs;
 }
 
-function bundle(entry, out, result, side, esbuildBin, dryRun, format = "esm", conditions = []) {
+let compilerPromise;
+
+export async function bundle(entry, out, result, side, esbuildBin, dryRun, format = "esm", conditions = []) {
   if (!existsSync(esbuildBin)) {
     result.status = dryRun ? "fail" : "blocked";
     result.blockedReason =
       "Install JavaScript dependencies so esbuild can bundle the conformance scene.";
     return false;
   }
-  const proc = spawnSync(
-    esbuildBin,
-    [
-      entry,
-      "--bundle",
-      `--outfile=${out}`,
-      `--format=${format}`,
-      "--platform=browser",
-      "--sourcemap",
-      ...(side === "native"
-        ? [
-            '--define:import.meta.env={"BASE_URL":"/","DEV":false,"MODE":"production","PROD":true,"SSR":false}',
-          ]
-        : []),
-      ...conditions.map((condition) => `--conditions=${condition}`),
-    ],
-    { cwd: runtimeRoot, encoding: "utf8", timeout: 120_000 },
-  );
-  if (proc.status !== 0) {
+  let timer;
+  let compiler;
+  try {
+    compilerPromise ??= import("esbuild");
+    compiler = await compilerPromise;
+    const timeout = new Promise((_, reject) => {
+      timer = setTimeout(() => reject(Object.assign(
+        new Error("TN_CONFORMANCE_BUNDLE_TIMEOUT: esbuild exceeded 120000ms."),
+        { code: "ETIMEDOUT" },
+      )), 120_000);
+    });
+    await Promise.race([
+      compiler.build({
+        absWorkingDir: runtimeRoot,
+        entryPoints: [entry],
+        outfile: out,
+        bundle: true,
+        format,
+        platform: "browser",
+        // The CLI reads NODE_PATH for each invocation; the API requires explicit paths.
+        nodePaths: (process.env.NODE_PATH || "").split(delimiter).filter(Boolean),
+        sourcemap: true,
+        logLevel: "silent",
+        ...(side === "native" ? {
+          define: { "import.meta.env": '{"BASE_URL":"/","DEV":false,"MODE":"production","PROD":true,"SSR":false}' },
+        } : {}),
+        // Repeated CLI --conditions flags replace the previous value; comma-separated values
+        // within the final flag are retained. Match that behavior when translating to the API.
+        ...(conditions.length > 0
+          ? { conditions: conditions.at(-1).split(",").filter(Boolean) }
+          : {}),
+      }),
+      timeout,
+    ]);
+    return true;
+  } catch (error) {
+    let cleanupError;
+    if (error?.code === "ETIMEDOUT") {
+      try { await compiler?.stop(); } catch (cleanup) { cleanupError = String(cleanup); }
+    }
     result.status = "fail";
     result[side] = {
       phase: "bundle",
-      exitCode: proc.status,
-      stdout: proc.stdout,
-      stderr: proc.stderr,
+      exitCode: error?.code === "ETIMEDOUT" ? null : 1,
+      stdout: "",
+      stderr: error instanceof Error ? error.message : String(error),
+      ...(error?.code === "ETIMEDOUT" ? { timedOut: true, errorCode: error.code } : {}),
+      ...(cleanupError ? { cleanupError } : {}),
     };
     return false;
+  } finally {
+    clearTimeout(timer);
   }
-  return true;
 }
 
 function contentType(path) {
@@ -1593,12 +1619,12 @@ function sha256(contents) {
   return createHash("sha256").update(contents).digest("hex");
 }
 
-function verifyApkBundle(apk, bundle, javaHome) {
+export function verifyApkBundle(apk, bundle, javaHome, extract = runCommand) {
   const temporary = mkdtempSync(join(tmpdir(), "threenative-conformance-apk-"));
   try {
-    runCommand(
+    extract(
       join(javaHome, "bin", process.platform === "win32" ? "jar.exe" : "jar"),
-      ["--extract", "--file", apk, "assets/scripts/main.js"],
+      ["--extract", "--file", apk, "assets/scripts/main.js", "lib"],
       { cwd: temporary },
     );
     const packaged = join(temporary, "assets/scripts/main.js");
@@ -1606,6 +1632,11 @@ function verifyApkBundle(apk, bundle, javaHome) {
     assertPackagedAndroidBundle(readFileSync(packaged), {
       outputSha256: sha256(readFileSync(bundle)),
     });
+    const libraries = join(temporary, "lib");
+    return Object.fromEntries(readdirSync(libraries, { withFileTypes: true })
+      .filter(entry => entry.isDirectory())
+      .map(entry => [entry.name, fileSha256(join(libraries, entry.name, "libmystral-runtime.so"))]));
+
   } finally {
     rmSync(temporary, { recursive: true, force: true });
   }
@@ -1702,8 +1733,9 @@ async function runAndroid(
     return;
   }
   const apk = join(androidDir, "app/build/outputs/apk/debug/app-debug.apk");
+  let runtimeLibraries;
   try {
-    verifyApkBundle(apk, bundlePath, tools.javaHome);
+    runtimeLibraries = verifyApkBundle(apk, bundlePath, tools.javaHome);
   } catch (error) {
     result.status = "fail";
     result.native = {
@@ -1917,6 +1949,7 @@ async function runAndroid(
         pid,
         bundleSha256: bundleHash,
         apkBundleVerified: true,
+        runtimeLibraries,
         freshInstall: true,
         webgpuLogChannel: true,
         ...(deviceMetrics === null ? {} : { deviceMetrics }),
@@ -1980,6 +2013,7 @@ async function runAndroid(
         pid,
         bundleSha256: bundleHash,
         apkBundleVerified: true,
+        runtimeLibraries,
         freshInstall: true,
         webgpuLogChannel: true,
         settleMs,
@@ -2651,7 +2685,7 @@ async function main(argv = process.argv.slice(2)) {
           const nativeEntry = makeEntry(test, "native", port, entryRoot);
           const browserBundle = join(bundleRoot, `${test.id}-browser.js`);
           const nativeBundle = join(bundleRoot, `${test.id}-native.js`);
-          const browserBundled = bundle(
+          const browserBundled = await bundle(
             browserEntry,
             browserBundle,
             result,
@@ -2659,7 +2693,7 @@ async function main(argv = process.argv.slice(2)) {
             esbuildBin,
             true,
           );
-          const nativeBundled = bundle(
+          const nativeBundled = await bundle(
             nativeEntry,
             nativeBundle,
             result,
@@ -2678,7 +2712,7 @@ async function main(argv = process.argv.slice(2)) {
           const entryTarget = target === "web" ? "browser" : "native";
           const entry = makeEntry(test, entryTarget, port, entryRoot);
           bundlePath = join(bundleRoot, `${test.id}.js`);
-          bundled = bundle(
+          bundled = await bundle(
             entry,
             bundlePath,
             result,
@@ -2760,12 +2794,26 @@ async function main(argv = process.argv.slice(2)) {
   }
 }
 
+async function executeMain() {
+  try {
+    await main();
+  } finally {
+    try {
+      const compiler = await compilerPromise?.catch(() => undefined);
+      await compiler?.stop();
+    } catch (error) {
+      process.stderr.write(`TN_CONFORMANCE_BUNDLE_CLEANUP_FAILED: ${String(error)}\n`);
+      process.exitCode ||= 1;
+    }
+  }
+}
+
 if (process.argv[1] && resolve(process.argv[1]) === runnerPath) {
   // Lane children re-execute this file (the multi-target loop below spawns runnerPath).
   // Only the outermost invocation owns the gate record and worktree lease; nested ones
   // are covered by their parent's single record.
   if (process.env.TN_GATE_NESTED === "1") {
-    main().catch((error) => {
+    executeMain().catch((error) => {
       process.stderr.write(`${error instanceof Error ? error.stack : String(error)}\n`);
       process.exitCode = 1;
     });
@@ -2778,7 +2826,7 @@ if (process.argv[1] && resolve(process.argv[1]) === runnerPath) {
         command: ["pnpm parity", ...process.argv.slice(2)].join(" "),
       });
       try {
-        await main();
+        await executeMain();
       } catch (error) {
         process.stderr.write(`${error instanceof Error ? error.stack : String(error)}\n`);
         process.exitCode = 1;

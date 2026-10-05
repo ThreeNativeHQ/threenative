@@ -1,18 +1,20 @@
-import {
-  type Box3,
-  BufferAttribute,
-  BufferGeometry,
-  LOD,
-  type Matrix3,
-  type Matrix4,
-  Mesh,
-  Object3D,
-  Vector3,
-} from "three";
+import { BufferAttribute, BufferGeometry, LOD, type Matrix4, Mesh, Object3D, Vector3 } from "three";
 import type { InterleavedBufferAttribute } from "three";
 import type { IAssetLoader } from "./assets.js";
 import type { IComputeDriven } from "./compute-driven.js";
 import type { IRendererLike } from "./renderer.js";
+import {
+  type ITerrainBridgeAttributes,
+  type ITerrainEdgeFrame,
+  type ITerrainEdgeJob,
+  type ITerrainFineEdgeJob,
+  type ITerrainJobRunner,
+  type ITerrainMergeJob,
+  type ITerrainMergeResult,
+  type ITerrainSeamJob,
+  createTerrainJobRunner,
+  edgeWorldPoint,
+} from "./terrain-jobs.js";
 import { summarizeWorldTopology } from "./world-topology.js";
 import { terrainValidationRequested } from "./world-validate.js";
 import {
@@ -422,6 +424,22 @@ function edgeSamplesFor(values: readonly number[], resolution: number): IEdgeSam
   return { east, north, south, west };
 }
 
+/** One field's own rectangle and side, which is all a world point along an edge needs. */
+function tileEdgeFrame(field: Heightfield, side: keyof IEdgeSamples): ITerrainEdgeFrame {
+  return { depth: field.depth, origin: field.origin, side, width: field.width };
+}
+
+/**
+ * Apply a job's result, whenever it arrives. An inline host resolves inside the call, so the caller
+ * keeps the synchronous shape it always had; a worker host applies in its reply. A reply that throws
+ * rejects the promise instead of returning, so a budget overflow off this thread is a loud failure
+ * rather than a swallowed one.
+ */
+function settleJob<T>(result: T | Promise<T>, apply: (value: T) => void): void {
+  if (result instanceof Promise) result.then(apply);
+  else apply(result);
+}
+
 function edgeVertexIndex(level: ILevelGeometry, side: keyof IEdgeSamples, index: number): number {
   const row = side === "north" ? 0 : side === "south" ? level.resolution - 1 : index;
   const column = side === "west" ? 0 : side === "east" ? level.resolution - 1 : index;
@@ -474,6 +492,17 @@ function fieldStep(field: Heightfield, resolution: number): number {
   if (!Number.isInteger(step) || step < 1)
     throw new Error("TerrainTiles level vertices must land on the field's own sample grid.");
   return step;
+}
+
+/**
+ * Tags a mesh as terrain, so the frame budget counts its main-pass draw under `terrain` instead of
+ * under the `other` every mesh no world system claimed lands in. Every mesh this file creates goes
+ * through here — a tile level, a stitch bridge and a merged block — because a source that is tagged
+ * at three of the four places it exists is a split nobody can reconcile.
+ */
+function terrainMesh(mesh: Mesh): Mesh {
+  mesh.userData.tnDrawSource = "terrain";
+  return mesh;
 }
 
 function buildLevel(
@@ -566,7 +595,7 @@ function buildLevel(
   return {
     edgeSamples: edgeSamplesFor(heights, resolution),
     geometry,
-    mesh: new Mesh(geometry, surface),
+    mesh: terrainMesh(new Mesh(geometry, surface)),
     resolution,
     skirtDepth: skirt.depth,
     skirtVertexCount: skirt.vertexCount,
@@ -574,57 +603,40 @@ function buildLevel(
 }
 
 /**
- * Concatenate each settled tile level's `position`/`normal`/`index` into one geometry, every vertex
- * translated from its tile origin to the block origin. The vertices land on the world positions they
- * already occupied, so the same surface material samples the same heights and normals — the picture
- * cannot change. Skirts come along unchanged because they are part of the level geometry, and each
- * survivor keeps its tile's perimeter skirt: a block edge only ever exposes a tile that was already
- * on the block's perimeter, whose outward skirt is already there.
+ * A block's merged attributes, as the geometry the main thread swaps in. The concatenation itself
+ * is `mergeBlockAttributes`, which runs in a worker wherever a host has one; this is the part that
+ * cannot leave the main thread — a `BufferGeometry` and its bounds.
  */
-function mergeLevelGeometry(
-  parts: readonly { readonly geometry: BufferGeometry; readonly origin: IHeightfieldOrigin }[],
-  blockOrigin: IHeightfieldOrigin,
-): BufferGeometry {
-  let vertexCount = 0;
-  let indexCount = 0;
-  for (const { geometry } of parts) {
-    vertexCount += (geometry.getAttribute("position") as BufferAttribute).count;
-    indexCount += geometry.getIndex()?.count ?? 0;
-  }
-  const positions = new Float32Array(vertexCount * 3);
-  const normals = new Float32Array(vertexCount * 3);
-  const indices = new Uint32Array(indexCount);
-  let vertexOffset = 0;
-  let indexOffset = 0;
-  for (const { geometry, origin } of parts) {
-    const position = geometry.getAttribute("position") as BufferAttribute;
-    const normal = geometry.getAttribute("normal") as BufferAttribute;
-    const index = geometry.getIndex();
-    const dx = origin.x - blockOrigin.x;
-    const dz = origin.z - blockOrigin.z;
-    for (let vertex = 0; vertex < position.count; vertex += 1) {
-      const at = (vertexOffset + vertex) * 3;
-      positions[at] = position.getX(vertex) + dx;
-      positions[at + 1] = position.getY(vertex);
-      positions[at + 2] = position.getZ(vertex) + dz;
-      normals[at] = normal.getX(vertex);
-      normals[at + 1] = normal.getY(vertex);
-      normals[at + 2] = normal.getZ(vertex);
-    }
-    if (index !== null) {
-      for (let element = 0; element < index.count; element += 1)
-        indices[indexOffset + element] = index.getX(element) + vertexOffset;
-      indexOffset += index.count;
-    }
-    vertexOffset += position.count;
-  }
+function mergedBlockGeometry(result: ITerrainMergeResult): BufferGeometry {
   const geometry = new BufferGeometry();
-  geometry.setAttribute("position", new BufferAttribute(positions, 3));
-  geometry.setAttribute("normal", new BufferAttribute(normals, 3));
-  geometry.setIndex(new BufferAttribute(indices, 1));
+  geometry.setAttribute("position", new BufferAttribute(result.positions, 3));
+  geometry.setAttribute("normal", new BufferAttribute(result.normals, 3));
+  geometry.setIndex(new BufferAttribute(result.indices, 1));
   geometry.computeBoundingBox();
   geometry.computeBoundingSphere();
   return geometry;
+}
+
+/** One settled tile level's attributes, as the merge job reads them. */
+function mergeJob(
+  parts: readonly { readonly geometry: BufferGeometry; readonly origin: IHeightfieldOrigin }[],
+  blockOrigin: IHeightfieldOrigin,
+): ITerrainMergeJob {
+  return {
+    blockOrigin,
+    kind: "merge",
+    parts: parts.map(({ geometry, origin }) => {
+      const index = geometry.getIndex();
+      if (index === null)
+        throw new Error("TerrainTiles merged block geometry needs an index buffer.");
+      return {
+        indices: index.array as Uint32Array,
+        normals: (geometry.getAttribute("normal") as BufferAttribute).array as Float32Array,
+        origin,
+        positions: (geometry.getAttribute("position") as BufferAttribute).array as Float32Array,
+      };
+    }),
+  };
 }
 
 function inspectSkirtGeometry(
@@ -862,7 +874,11 @@ function bridgeEndpointHeight(
   expectedWorldPosition: Vector3,
 ): number {
   const sampleNormalized = sample / (bridge.resolution - 1);
-  const [expectedX, , expectedZ] = edgeWorldPoint(tile.field, side, sampleNormalized, 0);
+  const [expectedX, , expectedZ] = edgeWorldPoint(
+    tileEdgeFrame(tile.field, side),
+    sampleNormalized,
+    0,
+  );
   const expectedY = edgeWorldHeight(level, side, sampleNormalized, expectedWorldPosition);
   return bridgeEndpointWorldHeight(
     position,
@@ -898,47 +914,12 @@ function bridgeEndpointPair(
   return aLevel.resolution > bLevel.resolution ? [aEndpoint, bEndpoint] : [bEndpoint, aEndpoint];
 }
 
-function interpolatedEdgeSample(samples: Float32Array, normalized: number, name: string): number {
-  const position = Math.max(0, Math.min(1, normalized)) * (samples.length - 1);
-  const lower = Math.floor(position);
-  const upper = Math.min(samples.length - 1, lower + 1);
-  const mix = position - lower;
-  const lowerValue = samples[lower] as number;
-  const upperValue = samples[upper] as number;
-  if (!Number.isFinite(lowerValue) || !Number.isFinite(upperValue))
-    throw new Error(`TerrainTiles retained ${name} edge sample must be finite.`);
-  return lowerValue * (1 - mix) + upperValue * mix;
-}
-
 function refreshEdgeSamples(level: ILevelGeometry): void {
   for (const side of ["east", "north", "south", "west"] as const) {
     const samples = level.edgeSamples[side];
     for (let index = 0; index < level.resolution; index += 1)
       samples[index] = edgeVertexHeight(level, side, index);
   }
-}
-
-function edgeWorldPoint(
-  field: Heightfield,
-  side: keyof IEdgeSamples,
-  normalized: number,
-  height: number,
-): [number, number, number] {
-  const minimumX = field.origin.x - field.width / 2;
-  const minimumZ = field.origin.z - field.depth / 2;
-  const x =
-    side === "west"
-      ? minimumX
-      : side === "east"
-        ? minimumX + field.width
-        : minimumX + normalized * field.width;
-  const z =
-    side === "north"
-      ? minimumZ
-      : side === "south"
-        ? minimumZ + field.depth
-        : minimumZ + normalized * field.depth;
-  return [x, height, z];
 }
 
 /**
@@ -957,10 +938,11 @@ function restoreLevelEdge(
   const position = level.geometry.getAttribute("position");
   const normalAttribute = level.geometry.getAttribute("normal");
   const normal = new Vector3();
+  const frame = tileEdgeFrame(field, side);
   let changed = false;
   for (let index = 0; index < level.resolution; index += 1) {
     const normalized = index / (level.resolution - 1);
-    const [x, , z] = edgeWorldPoint(field, side, normalized, 0);
+    const [x, , z] = edgeWorldPoint(frame, normalized, 0);
     const vertex = edgeVertexIndex(level, side, index);
     // Compared at float32, the precision the attributes store: a float64 sample never equals its
     // stored copy, so an exact compare reported every edge changed on every call and recomputed
@@ -992,71 +974,31 @@ function restoreLevelEdge(
   return true;
 }
 
-interface IStitchGeometryData {
-  readonly coverageDepth: number;
-  readonly indices: Uint32Array;
-  readonly normals: Float32Array;
-  readonly positions: Float32Array;
-}
-
-function stitchGeometryData(
-  finer: IResidentTile,
-  finerLevel: ILevelGeometry,
-  finerSide: keyof IEdgeSamples,
-  coarser: IResidentTile,
-  coarserLevel: ILevelGeometry,
-  coarserSide: keyof IEdgeSamples,
-): IStitchGeometryData {
-  const positions: number[] = [];
-  const normals: number[] = [];
-  const indices: number[] = [];
-  let coverageDepth = 0;
-  for (let index = 0; index < finerLevel.resolution; index += 1) {
-    const normalized = index / (finerLevel.resolution - 1);
-    const fineHeight = interpolatedEdgeSample(
-      finerLevel.edgeSamples[finerSide],
-      normalized,
-      `${finerSide} of finer LOD`,
-    );
-    const coarseHeight = interpolatedEdgeSample(
-      coarserLevel.edgeSamples[coarserSide],
-      normalized,
-      `${coarserSide} of coarser LOD`,
-    );
-    coverageDepth = Math.max(coverageDepth, Math.abs(fineHeight - coarseHeight));
-    positions.push(...edgeWorldPoint(finer.field, finerSide, normalized, fineHeight));
-    positions.push(...edgeWorldPoint(coarser.field, coarserSide, normalized, coarseHeight));
-    normals.push(0, 1, 0, 0, 1, 0);
-  }
-  for (let index = 0; index < finerLevel.resolution - 1; index += 1) {
-    const fine = index * 2;
-    const coarse = fine + 1;
-    const nextFine = fine + 2;
-    const nextCoarse = coarse + 2;
-    indices.push(
-      fine,
-      coarse,
-      nextFine,
-      nextFine,
-      coarse,
-      nextCoarse,
-      nextFine,
-      coarse,
-      fine,
-      nextCoarse,
-      coarse,
-      nextFine,
-    );
-  }
+/** One level's edge as the bridge job reads it: the row's own heights, copied out of the level. */
+function edgeJob(
+  tile: IResidentTile,
+  level: ILevelGeometry,
+  side: keyof IEdgeSamples,
+): ITerrainEdgeJob {
   return {
-    coverageDepth,
-    indices: Uint32Array.from(indices),
-    normals: Float32Array.from(normals),
-    positions: Float32Array.from(positions),
+    depth: tile.field.depth,
+    origin: tile.field.origin,
+    samples: level.edgeSamples[side].slice(),
+    side,
+    width: tile.field.width,
   };
 }
 
-function stitchGeometry(data: IStitchGeometryData): BufferGeometry {
+/** The same edge with the resolution the fine side of a bridge needs. */
+function fineEdgeJob(
+  tile: IResidentTile,
+  level: ILevelGeometry,
+  side: keyof IEdgeSamples,
+): ITerrainFineEdgeJob {
+  return { ...edgeJob(tile, level, side), resolution: level.resolution };
+}
+
+function stitchGeometry(data: ITerrainBridgeAttributes): BufferGeometry {
   const geometry = new BufferGeometry();
   geometry.setAttribute("position", new BufferAttribute(data.positions, 3));
   geometry.setAttribute("normal", new BufferAttribute(data.normals, 3));
@@ -1134,7 +1076,7 @@ function validateBridgeTriangleTopology(
   return position;
 }
 
-function updateStitchBridge(bridge: IStitchBridge, data: IStitchGeometryData): void {
+function updateStitchBridge(bridge: IStitchBridge, data: ITerrainBridgeAttributes): void {
   const position = validateBridgeTriangleTopology(bridge.geometry, bridge.resolution * 2);
   if (bridge.resolution !== data.positions.length / 6) {
     const previous = bridge.geometry;
@@ -1680,6 +1622,17 @@ function seamObservation(
 
 type NeighborPair = readonly [IResidentTile, IResidentTile];
 
+/**
+ * One pair's bridge, as the seam job carries it: the two edges it is made of, and what the bridge it
+ * produces is called and keyed by.
+ */
+interface IStitchRequest {
+  readonly coarse: ITerrainEdgeJob;
+  readonly fine: ITerrainFineEdgeJob;
+  readonly keys: [string, string];
+  readonly resolution: number;
+}
+
 function neighborPairKey(pair: NeighborPair): string {
   const [a, b] = pair;
   return a.key < b.key ? `${a.key}|${b.key}` : `${b.key}|${a.key}`;
@@ -1755,11 +1708,14 @@ function neighborLodCorrection(
   return { coarser, level: finer.lodLevel + 1 };
 }
 
-function reconcileNeighborPair(
-  pair: NeighborPair,
-  surface: MeshSurface,
-  existingBridge: IStitchBridge | undefined,
-): IStitchBridge | undefined {
+/**
+ * One neighbor pair's bridge request, or `undefined` when the pair needs no bridge.
+ *
+ * The two edges are restored here — that reads the game's field sampler, which cannot cross into a
+ * worker — and everything the bridge strip is made of is copied out as numbers. The strip itself is
+ * built wherever the jobs run, so the main thread only swaps the attributes it gets back.
+ */
+function neighborBridgeRequest(pair: NeighborPair): IStitchRequest | undefined {
   const [a, b] = pair;
   const [aSide, bSide] = opposingEdge(a, b);
   const aLevel = renderedLevel(a);
@@ -1769,28 +1725,39 @@ function reconcileNeighborPair(
   restoreLevelEdge(a, aLevel, aSide);
   restoreLevelEdge(b, bLevel, bSide);
   if (aLevel.resolution === bLevel.resolution) return undefined;
-  const finer = aLevel.resolution > bLevel.resolution ? a : b;
   const finerLevel = aLevel.resolution > bLevel.resolution ? aLevel : bLevel;
-  const finerSide = aLevel.resolution > bLevel.resolution ? aSide : bSide;
-  const coarser = finer === a ? b : a;
-  const coarserLevel = finer === a ? bLevel : aLevel;
-  const coarserSide = finer === a ? bSide : aSide;
-  const data = stitchGeometryData(finer, finerLevel, finerSide, coarser, coarserLevel, coarserSide);
-  if (existingBridge === undefined) {
-    const geometry = stitchGeometry(data);
-    const mesh = new Mesh(geometry, surface);
-    mesh.frustumCulled = true;
-    return {
-      bytes: geometryBytes(geometry),
-      coverageDepth: data.coverageDepth,
-      geometry,
-      keys: [a.key, b.key].sort() as [string, string],
-      mesh,
-      resolution: finerLevel.resolution,
-    };
-  }
-  updateStitchBridge(existingBridge, data);
-  return existingBridge;
+  return {
+    coarse: edgeJob(
+      finerLevel === aLevel ? b : a,
+      finerLevel === aLevel ? bLevel : aLevel,
+      finerLevel === aLevel ? bSide : aSide,
+    ),
+    fine: fineEdgeJob(
+      finerLevel === aLevel ? a : b,
+      finerLevel,
+      finerLevel === aLevel ? aSide : bSide,
+    ),
+    keys: [a.key, b.key].sort() as [string, string],
+    resolution: finerLevel.resolution,
+  };
+}
+
+function newStitchBridge(
+  request: IStitchRequest,
+  data: ITerrainBridgeAttributes,
+  surface: MeshSurface,
+): IStitchBridge {
+  const geometry = stitchGeometry(data);
+  const mesh = terrainMesh(new Mesh(geometry, surface));
+  mesh.frustumCulled = true;
+  return {
+    bytes: geometryBytes(geometry),
+    coverageDepth: data.coverageDepth,
+    geometry,
+    keys: request.keys,
+    mesh,
+    resolution: request.resolution,
+  };
 }
 
 function setManualLodLevel(lod: LOD, level: number): void {
@@ -1887,6 +1854,16 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
    */
   #ringEpoch = 0;
   #seamEpoch = -1;
+  /**
+   * A seam pass whose strips are still being built off this thread, so a frame that arrives before the
+   * reply does not start a second pass over the same pairs and write them twice.
+   */
+  #seamPending = false;
+  /**
+   * Where the block merges and the seam strips are built. A module worker where the host has one, this
+   * thread where it does not, from the same function either way.
+   */
+  readonly #jobs: ITerrainJobRunner;
   #released = false;
   #renderer: IRendererLike | undefined;
   /**
@@ -1898,6 +1875,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
 
   constructor(options: IWorldTilesOptions) {
     super();
+    this.#jobs = createTerrainJobRunner();
     this.tileSize = positive(options.tileSize, "tileSize");
     this.tileResolution = integerAtLeast(options.tileResolution, 3, "tileResolution");
     this.residentTileBudget = integerAtLeast(options.residentTileBudget, 1, "residentTileBudget");
@@ -2321,6 +2299,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     if (this.#released) return;
     this.#released = true;
     this.#renderer = undefined;
+    this.#jobs.dispose();
     this.#topologyField?.detach();
     for (const key of [...this.#blocks.keys()]) this.#dissolveBlock(key);
     for (const tile of [...this.#resident.values()]) this.#evict(tile);
@@ -2724,34 +2703,87 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     return true;
   }
 
+  /**
+   * Reconcile every seam that moved, then close the pass.
+   *
+   * The strips are built wherever the jobs run — a worker where the host has one, this thread where
+   * it does not — so this loop only restores edges, collects what each bridge is made of, and swaps
+   * in the arrays that come back. An inline host resolves inside the call and the pass closes before
+   * `follow` returns, exactly as it did before the jobs moved; an off-thread host closes the pass in
+   * the reply, and a frame that arrives first finds `#seamPending` and waits.
+   */
   #reconcileNeighbors(): void {
     const pairs = collectNeighborPairs(this.#resident, this.#pairScratch);
     const active = new Set<string>();
     const reconciled = new Set<string>();
+    const requests: { key: string; previousBytes: number; request: IStitchRequest }[] = [];
     for (const pair of pairs) {
       const key = neighborPairKey(pair);
       active.add(key);
       if (this.#settled(key, pair)) continue;
       reconciled.add(key);
       const previousBytes = this.#stitches.get(key)?.bytes ?? 0;
-      const bridge = reconcileNeighborPair(pair, this.#surface, this.#stitches.get(key));
-      if (bridge === undefined) {
+      const request = neighborBridgeRequest(pair);
+      if (request === undefined) {
         this.#removeStitch(key);
         continue;
       }
-      if (this.#stitches.has(key)) {
-        this.#stitchBytes += bridge.bytes - previousBytes;
-      } else {
-        this.#stitches.set(key, bridge);
-        bridge.mesh.receiveShadow = this.#receiveShadow;
-        this.add(bridge.mesh);
-        this.#stitchBytes += bridge.bytes;
-      }
-      this.#stitchedEdges += 1;
+      requests.push({ key, previousBytes, request });
     }
     for (const key of this.#stitches.keys()) {
       if (!active.has(key)) this.#removeStitch(key);
     }
+    if (requests.length === 0) {
+      this.#settleSeamPass(pairs, reconciled, active);
+      return;
+    }
+    const job: ITerrainSeamJob = {
+      kind: "seam",
+      pairs: requests.map(({ request }) => ({ coarse: request.coarse, fine: request.fine })),
+    };
+    // The scratch array is reused by the next pass, so a reply that lands a frame later reads its
+    // own copy of the pairs and not whatever the next pass left there.
+    const snapshot = [...pairs];
+    this.#seamPending = true;
+    settleJob(this.#jobs.seam(job), (result) => {
+      if (this.#released) return;
+      for (const [index, pending] of requests.entries()) {
+        const data = result.bridges[index];
+        if (data === undefined) continue;
+        this.#applyStitch(pending.key, pending.previousBytes, pending.request, data);
+      }
+      this.#settleSeamPass(snapshot, reconciled, active);
+    });
+  }
+
+  #applyStitch(
+    key: string,
+    previousBytes: number,
+    request: IStitchRequest,
+    data: ITerrainBridgeAttributes,
+  ): void {
+    const existing = this.#stitches.get(key);
+    if (existing === undefined) {
+      const bridge = newStitchBridge(request, data, this.#surface);
+      this.#stitches.set(key, bridge);
+      bridge.mesh.receiveShadow = this.#receiveShadow;
+      this.add(bridge.mesh);
+      this.#stitchBytes += bridge.bytes;
+    } else {
+      updateStitchBridge(existing, data);
+      this.#stitchBytes += existing.bytes - previousBytes;
+    }
+    this.#stitchedEdges += 1;
+  }
+
+  /** Everything that closes a seam pass, once every bridge it asked for is in place. */
+  #settleSeamPass(
+    pairs: readonly NeighborPair[],
+    reconciled: ReadonlySet<string>,
+    active: ReadonlySet<string>,
+  ): void {
+    this.#seamPending = false;
+    if (this.#validate) this.#recordSeamDiagnostics();
     this.#recordPairSignatures(pairs, reconciled, active);
     // Every edge restore and bridge rewrite this pass did is a change the ring state describes; the
     // pass is the only writer of either, so one bump here covers all of it.
@@ -2760,6 +2792,16 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
       throw new TerrainTileBudgetError(
         "TerrainTiles residentByteBudget cannot fit stitched neighbor geometry.",
       );
+    if (this.#validate) {
+      // The pass moved geometry, so the settled state is what it left behind, read into the buffer
+      // the compare just filled; the buffer it compared against becomes the next frame's scratch.
+      const scratch = this.#ringScratch;
+      this.#ringScratch = this.#settledRing ?? [];
+      this.#settledRing = scratch;
+      this.#ringStateInto(this.#settledRing);
+    }
+    // Read after the pass, which moved geometry and bumped the epoch itself.
+    this.#seamEpoch = this.#ringEpoch;
   }
 
   #finishLodTransition(tile: IResidentTile): void {
@@ -2824,6 +2866,10 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
    * it owns, and the validating frame still checks everything.
    */
   #seamPass(): void {
+    if (this.#seamPending) {
+      this.#stitchedEdges += this.#stitches.size;
+      return;
+    }
     if (this.#validate) {
       this.#ringStateInto(this.#ringScratch);
       if (sameState(this.#ringScratch, this.#settledRing)) {
@@ -2836,17 +2882,6 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     }
     if (this.#validate) this.#recordSeamDiagnostics(false);
     this.#reconcileNeighbors();
-    if (this.#validate) this.#recordSeamDiagnostics();
-    if (this.#validate) {
-      // The pass moved geometry, so the settled state is what it left behind, read into the buffer
-      // the compare just filled; the buffer it compared against becomes the next frame's scratch.
-      const scratch = this.#ringScratch;
-      this.#ringScratch = this.#settledRing ?? [];
-      this.#settledRing = scratch;
-      this.#ringStateInto(this.#settledRing);
-    }
-    // Read after the pass, which moved geometry and bumped the epoch itself.
-    this.#seamEpoch = this.#ringEpoch;
   }
 
   /** Counted so a frame that built one is visible; see `#ringStateInto`. */
@@ -2992,6 +3027,9 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
    * this block's LOD tier. A block of fewer than two tiles is dissolved rather than drawn — a single
    * merged mesh for one tile is the same draw with a copied geometry — and every tile that just left
    * the block has its own mesh restored.
+   *
+   * The concatenation runs as a job, so this thread names the block and the tile levels it covers and
+   * then only swaps the attributes that come back.
    */
   #rebuildBlock(blockKey: string): void {
     const { lod, blockX, blockZ } = blockCoordinates(blockKey);
@@ -3007,11 +3045,28 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
       x: blockX * TERRAIN_MERGE_BLOCK * this.tileSize,
       z: blockZ * TERRAIN_MERGE_BLOCK * this.tileSize,
     };
-    const geometry = mergeLevelGeometry(parts, blockOrigin);
+    settleJob(this.#jobs.merge(mergeJob(parts, blockOrigin)), (result) => {
+      if (this.#released) return;
+      this.#applyBlock({ blockKey, blockOrigin, lod, members }, result);
+    });
+  }
+
+  #applyBlock(
+    plan: {
+      readonly blockKey: string;
+      readonly blockOrigin: IHeightfieldOrigin;
+      readonly lod: number;
+      readonly members: Set<string>;
+    },
+    result: ITerrainMergeResult,
+  ): void {
+    const { blockKey, blockOrigin, lod, members } = plan;
+    const existing = this.#blocks.get(blockKey);
+    const geometry = mergedBlockGeometry(result);
     const bytes = geometryBytes(geometry);
     this.#blockBytes += bytes - (existing?.bytes ?? 0);
     if (existing === undefined) {
-      const mesh = new Mesh(geometry, this.#surface);
+      const mesh = terrainMesh(new Mesh(geometry, this.#surface));
       mesh.frustumCulled = true;
       mesh.name = `tn-terrain-block:${blockKey}`;
       // The merged geometry is written relative to the block origin, so the mesh carries it. Without

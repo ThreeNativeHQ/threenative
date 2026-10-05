@@ -5,6 +5,7 @@ prd_contract: v1
 # PRD-060 — One verified public cohort can be safely promoted and shipped
 
 **Status:** PROPOSED — historical credential blockers must be checked at execution; no publication authorized by this plan. Revised 2026-09-08; planning only.
+**Priority:** P1 — release.ts and both workflows unwired, release.spec.ts not green; deploy path unbuilt.
 **Complexity:** 10 → HIGH (+3 files, +2 release module/state, +2 promotion/recovery concurrency, +2 multi-package, +1 registry/signing APIs).
 **Problem:** Green source and individual artifacts do not prove that the public default install resolves one coherent, playable and distributable non-iOS release.
 

@@ -42,16 +42,20 @@ without optional preview dependencies while a complete preview/check loop may no
    ends**. Poly Haven requires a visible Poly Haven credit when its API is used, ambientCG is
    CC0 per asset page, and audio and bundle licenses are per pack.
 
-**For a Poly Haven *model*, steps 3-4 collapse into `polyhaven_import_model`.** Poly Haven
-publishes models as a `.gltf` beside a `.bin` and loose texture files and **never as a `.glb`**, so
-doing it by hand means fetching five to eight URLs and rebuilding the directory layout the glTF's
-relative URIs expect before anything will load. Pass `assetId`, an `outputPath` ending in `.glb`,
-a `resolution` (it defaults to `1k`, which is what a game floor wants), and `acceptLicense: true`;
-it downloads through the same guarded path, packs one self-contained GLB that
-`ctx.assets.model()` loads directly, and returns **triangle count and per-texture dimensions** —
-the two numbers `create-threenative inspect` does not report and that every triangle and texture
-budget is written in. Ask for a resolution the asset does not publish and it names the ones that
-exist. Textures and HDRIs still use `asset_download_file`.
+**A Poly Haven *model* takes one extra step, and no tool does it for you.** Poly Haven publishes
+models as a `.gltf` beside a `.bin` and loose texture files and **never as a `.glb`**, so the file
+list is the whole model: call `polyhaven_list_files` with the `assetId`, a `resolution` such as
+`1k`, and `includeDependencies: true`, then `asset_download_file` once per entry — the `.gltf` and
+every URL the tool reported as a dependency — with `provider: "polyhaven"`, the `url` and `fileName`
+the listing gave, and `acceptLicense: true`. Keep the downloaded names exactly as the listing
+spelled them: the glTF's relative URIs resolve against them, so a renamed texture loads as a
+missing file rather than as an error. Serve that directory from `public/` and load it with
+`ctx.assets.model()`.
+
+No tool packs those files into one self-contained GLB. If you want one, convert the downloaded
+`.gltf` in Blender or with `gltf-transform` in a build step, and report the triangle count and
+per-texture dimensions yourself — `create-threenative inspect` does not read a Poly Haven listing,
+so those two numbers come from the conversion. Textures and HDRIs stay on `asset_download_file`.
 
 **Never state a license you did not read off a tool result.** If `polyhaven_list_files` or
 `ambientcg_search_assets` did not tell you, you do not know it.
@@ -134,6 +138,23 @@ session, converts every static mesh, and writes source GLBs into your `assets/`:
 Then load the returned path the ordinary way:
 `ctx.assets.model("fab/soul-cave/.../SM_S_Soul_Statue.glb")`. The normal asset compiler picks the
 GLBs up from `assets/` with no extra configuration.
+
+**Cook the pack with the default settings. `models: "none"` and `textures: "none"` in
+`threenative.config.ts` are not a fix, and a reason to reach for them is a bug report, not a
+workaround.** A converted Fab pack is ordinary input to that cook, and the cook is where an
+expensive import stops being expensive: embedded PNG and WebP maps are transcoded to KTX2 and
+capped, mesh attributes are quantized and Meshopt-compressed, and a `MASK` (alpha-cutout)
+primitive is handed a discrete LOD chain, so the LOD0 triangle count in the GLB is not the
+triangle count the scene pays for. One measured tree: `SM_EuropeanHornbeam_Forest_01.glb` cooks
+126,934,280 → 26,428,684 B, its six embedded PNGs → KTX2 (45.4 MB → 16.4 MB), and its
+755,677-triangle foliage primitive down to a 5.1% far rung. Turning a pass off ships every source
+byte verbatim instead, counts all of them against `assets.budget.uncooked`, and is precisely what
+makes `threenative build` fail with `TN_ASSETS_BUDGET_EXCEEDED` — read `dist.build-report.json`
+before you conclude a pack is too big. An extension the cook owns no pass for (`.dna`,
+`.strands.bin`, a vendor data file) is copied through and still resolves through the same manifest
+entry, so nothing needs `public/` to serve it. Ignore what the cook writes beside the manifest —
+`public/basis/`, `public/shared/` and `public/bake.receipt.json` are outputs too, and a
+content-addressed name is not the only output name.
 
 What the import will and will not do:
 

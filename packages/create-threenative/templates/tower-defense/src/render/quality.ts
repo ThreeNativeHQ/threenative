@@ -85,6 +85,7 @@ export function resolveQualityTier(
  * smooth sky gradient into visible bands. Both are one line to turn back on for a glossy scene.
  */
 const shared: IWorldEnvironmentOptions = {
+  autoExposureEnabled: false,
   // Bloom: ~4.6 ms in the reference ablation — the second most expensive stage there.
   bloomEnabled: true,
   bloomRadius: 0.6,
@@ -125,4 +126,37 @@ export function qualityPreset(tier: string): IWorldEnvironmentOptions {
     );
   }
   return preset;
+}
+
+/** First admitted material lane: high desktop hardware WebGPU in the browser only. */
+export interface IMaterialLightingEnvironment {
+  readonly web: boolean;
+  readonly rendererKind: string;
+  readonly mobile?: boolean;
+  readonly software?: boolean;
+  readonly webglFallback?: boolean;
+}
+export function materialLightingEnabled(
+  tier: QualityTier,
+  environment: IMaterialLightingEnvironment,
+): boolean {
+  return (
+    tier === "high" &&
+    environment.web &&
+    environment.rendererKind === "webgpu" &&
+    environment.mobile !== true &&
+    environment.software !== true &&
+    environment.webglFallback !== true
+  );
+}
+
+/** A WebGPURenderer wrapper may run an ordinary WebGL fallback backend. */
+export function isWebGLFallbackRenderer(renderer: unknown): boolean {
+  if (renderer === null || typeof renderer !== "object") return false;
+  const backend = Reflect.get(renderer, "backend");
+  return (
+    backend !== null &&
+    typeof backend === "object" &&
+    Reflect.get(backend, "isWebGLBackend") === true
+  );
 }

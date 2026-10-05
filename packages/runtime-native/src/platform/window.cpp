@@ -19,6 +19,9 @@
 #include <string>
 #include <vector>
 #include <SDL3/SDL.h>
+#if defined(__ANDROID__)
+#include <android/native_window.h>
+#endif
 #include "stb_image.h"
 
 namespace mystral {
@@ -666,6 +669,22 @@ void* getMetalLayer() {
 void getWindowSize(int* width, int* height) {
     *width = g_window.width;
     *height = g_window.height;
+}
+
+bool getWindowDrawableSize(void* surfaceNativeHandle, int* width, int* height) {
+    *width = 0;
+    *height = 0;
+#if defined(__ANDROID__)
+    if (!surfaceNativeHandle) return false;
+    auto* window = static_cast<ANativeWindow*>(surfaceNativeHandle);
+    *width = ANativeWindow_getWidth(window);
+    *height = ANativeWindow_getHeight(window);
+#else
+    (void)surfaceNativeHandle;
+    if (!g_window.sdlWindow || !SDL_GetWindowSizeInPixels(g_window.sdlWindow, width, height))
+        return false;
+#endif
+    return *width > 0 && *height > 0;
 }
 
 /**

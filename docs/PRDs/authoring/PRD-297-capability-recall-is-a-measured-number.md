@@ -7,6 +7,7 @@ prd_contract: v1
 **Status:** OPEN, filed 2026-08-31 against `77a68bec`. Planning only; the one measurement quoted
 below was executed and is recorded at `docs/verification/capability-recall-baseline-2026-08-31.md`.
 
+**Priority:** P1 — Prerequisite for P1 PRD-298: its recall numbers only exist once this lands. Capability recall still unmeasured; corpus, floor and fail-closed gate are planning only.
 **Outcome:** `pnpm caps:recall` answers, from a corpus whose every query is traceable to a line
 that already exists in this repository, what fraction of real authoring queries reach the right
 capability — and `pnpm budgets` fails when that fraction drops. An authoring agent's inability to

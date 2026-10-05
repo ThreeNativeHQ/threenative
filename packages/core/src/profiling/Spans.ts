@@ -24,8 +24,6 @@
  * to put around a per-draw call — and the names exist only in the report.
  */
 
-import type { Object3D } from "three";
-
 /** Marker printed once per report window when spans are installed. */
 export const SPANS_MARKER = "TN_FRAME_SPANS";
 
@@ -263,7 +261,7 @@ export class SpanRecorder {
     this.#depth = depth;
     const ms = now - (this.#stackStart[depth] ?? now);
     this.#own[id] = (this.#own[id] ?? 0) + ms;
-    this.#attribute(id, ms);
+    this.#attribute(ms);
   }
 
   /**
@@ -274,10 +272,10 @@ export class SpanRecorder {
   add(id: SpanId, ms: number): void {
     this.#own[id] = (this.#own[id] ?? 0) + ms;
     this.#entries[id] = (this.#entries[id] ?? 0) + 1;
-    this.#attribute(id, ms);
+    this.#attribute(ms);
   }
 
-  #attribute(id: SpanId, ms: number): void {
+  #attribute(ms: number): void {
     if (this.#depth === 0) {
       this.#topLevelMs += ms;
       return;

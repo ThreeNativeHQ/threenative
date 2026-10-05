@@ -13,6 +13,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export const GENERATED_ASSERTION_FIELD_VALIDATORS: Readonly<Record<string, Readonly<Record<string, GeneratedAssertionFieldValidator>>>> = Object.freeze({
   "tone": Object.freeze({
     "atStep": (value: unknown) => typeof value === "string" && value.trim() !== "",
+    "region": (value: unknown) => isRecord(value),
+    "compare": (value: unknown) => isRecord(value),
     "mean": (value: unknown) => isRecord(value),
     "p1": (value: unknown) => isRecord(value),
     "p50": (value: unknown) => isRecord(value),

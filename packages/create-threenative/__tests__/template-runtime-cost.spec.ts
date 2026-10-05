@@ -239,7 +239,10 @@ function sceneContext(
       raw: { shadowMap: { enabled: false, type: 0 } },
       // The real chain returns what it installed; a template reads that report back to print
       // TN_WORLD_ENVIRONMENT, so the double has to honour the contract rather than return void.
-      createRenderChain: () => ({ applied: { dropped: [], stages: ["bloom"] } }),
+      createRenderChain: () => ({
+        applied: { dropped: [], stages: ["bloom"] },
+        dispose: () => undefined,
+      }),
       setOutputNode: () => undefined,
     },
     scene,
@@ -691,6 +694,55 @@ describe("generated template ordinary-frame runtime cost", () => {
       );
     } finally {
       defensePhysics.dispose();
+    }
+  });
+
+  it("forwards a cached-sky sample to the controller entered while sampling was pending", async () => {
+    const sampling = await import("../templates/racing/src/render/environmentSampling.js");
+    const { captureEnvironmentSnapshot } = await import(
+      "../templates/racing/src/render/environmentSnapshot.js"
+    );
+    const { Race } = await import("../templates/racing/src/scenes/Race.js");
+    const physics = await physicsFixture(RACING_GRAVITY);
+    const context = sceneContext(physics.physics, Race.initialState);
+    let complete: (() => void) | undefined;
+    const sampleSpy = vi
+      .spyOn(sampling, "sampleEnvironment")
+      .mockImplementation((_renderer, scene) => {
+        const snapshot = captureEnvironmentSnapshot(scene);
+        return new Promise((resolve) => {
+          complete = () =>
+            resolve({
+              ...snapshot,
+              measurement: {
+                status: "measured",
+                meanRadiance: 0.25,
+                meanRGB: [0.25, 0.25, 0.25],
+                reason: "CPU timing fixture",
+              },
+            });
+        });
+      });
+    const race = new Race();
+    try {
+      // A cached texture resolves before enter(), while the bounded sample is still pending.
+      expect(race.load(context as never)).toBeUndefined();
+      await Promise.resolve();
+      expect(sampleSpy).toHaveBeenCalledTimes(1);
+      expect(complete).toBeTypeOf("function");
+      race.enter(context as never);
+      const controller = context.entities.get("material-lighting") as {
+        debug(): { status: string; meanRadiance: number | null };
+      };
+      expect(controller.debug().status).toBe("unknown");
+      complete?.();
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(controller.debug()).toMatchObject({ status: "measured", meanRadiance: 0.25 });
+    } finally {
+      race.exit(context as never);
+      sampleSpy.mockRestore();
+      physics.dispose();
     }
   });
 

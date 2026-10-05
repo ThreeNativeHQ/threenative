@@ -1,4 +1,4 @@
-import type { BufferGeometry, Camera, Object3D, WebGLRenderer } from "three";
+import type { BufferGeometry, Camera, Object3D } from "three";
 import { type PassNode, RenderPipeline } from "three/webgpu";
 import type { IFrameSurfaceState } from "./frame-budget.js";
 import {
@@ -14,6 +14,17 @@ import {
 } from "./render/chain.js";
 
 export type RendererKind = "webgpu" | "webgl2";
+
+/** Owns one output-pipeline installation, not the lifetime of its input graph dependencies. */
+export interface IRenderOutputInstallation {
+  isCurrent(): boolean;
+  dispose(): void;
+}
+
+/** Union of callbacks preserves TypeScript's legacy void-callback return-value compatibility. */
+export type RenderOutputSetter =
+  | ((node: unknown, worldPass?: unknown) => void)
+  | ((node: unknown, worldPass?: unknown) => IRenderOutputInstallation);
 
 type WarmableSurface = {
   clone: () => WarmableSurface;
@@ -175,8 +186,8 @@ export interface IRendererLike {
   render(scene: Object3D, camera: Camera): void;
   /** Draws after the world without clearing or passing through the world's output pipeline. */
   renderOverlay(scene: Object3D, camera: Camera): void;
-  /** Removes the output pipeline installed by a render-chain. */
-  clearOutputNode?(): void;
+  /** Legacy input-filtered clear; use an installation receipt for same-node replacement safety. */
+  clearOutputNode?(expectedNode?: unknown): void;
   /** Creates the core-owned chain seam without making generated render source import the package. */
   createRenderChain?: (options: Omit<IRenderChainOptions, "renderer">) => RenderChain;
   /** Feeds automatic render-chain tiers the completed frame-budget window. */
@@ -188,7 +199,9 @@ export interface IRendererLike {
   /** Internal callback used by RenderChain; games should request velocity through the chain. */
   setRenderChainVelocityEnabled?: (enabled: boolean) => void;
   /** Installs a graph; pass the authored world pass when the graph contains auxiliary passes. */
-  setOutputNode(node: unknown, worldPass?: unknown): void;
+  // The owned renderer returns a unique receipt. Legacy adapters may return void, without
+  // installation-level replacement safety; callers still own graph dependency disposal.
+  setOutputNode: RenderOutputSetter;
   setSize(width: number, height: number, updateStyle?: boolean): void;
   /**
    * The GPU time the last resolved frame actually cost, in milliseconds, or `undefined` when the
@@ -409,6 +422,8 @@ function wrapRenderer(
   softwareAdapter?: string,
 ): IRendererLike {
   let outputPipeline: RenderPipeline | undefined;
+  // Keep caller identity separately: RenderPipeline may wrap its public output node.
+  let outputInput: unknown;
   let outputPass: PassNode | undefined;
   const renderChains = new Set<RenderChain>();
   let renderChainUsesPerObjectVelocity = false;
@@ -419,11 +434,18 @@ function wrapRenderer(
   let pendingSize: Parameters<IRendererLike["setSize"]> | undefined;
   let timestampFrame = -1;
   const setTimestampTracking = (): void => {
+    // Three writes `info.frame` only inside its own animation loop, which the engine deliberately
+    // does not run -- the game drives frames through here -- so it sat at 0 for the whole session.
+    // Everything downstream reads it: this sampler derived its frame from it, `0 % 8 === 0`
+    // recorded a timestamp on *every* frame, the 2048-query pool filled in ~38 frames and every
+    // later read was null (~15 timestamps in a 300-frame window that had asked for 37), and three
+    // keys each query uid by it, so the per-pass split filed every uid under one hot frame id. The
+    // engine owns the cadence, so the engine is what advances the clock.
+    timestampFrame += 1;
+    const rawInfo = (raw as { info?: { frame: number } | null }).info;
+    if (rawInfo !== undefined && rawInfo !== null) rawInfo.frame = timestampFrame;
     const backend = raw.backend;
     if (!timestampCapable || backend === undefined) return;
-    const frame = raw.info?.frame;
-    if (typeof frame === "number" && Number.isInteger(frame)) timestampFrame = frame;
-    else timestampFrame += 1;
     backend.trackTimestamp = timestampFrame % timestampFrameInterval === 0;
   };
 
@@ -743,6 +765,7 @@ function wrapRenderer(
       renderChainUsesPerObjectVelocity = false;
       outputPipeline?.dispose();
       outputPipeline = undefined;
+      outputInput = undefined;
       outputPass = undefined;
       pipelineCensus?.dispose();
       raw.dispose?.();
@@ -776,10 +799,23 @@ function wrapRenderer(
       outputPipeline?.dispose();
       outputPass = nextOutputPass;
       outputPipeline = nextPipeline;
+      outputInput = node;
+      return {
+        isCurrent: () => outputPipeline === nextPipeline,
+        dispose: () => {
+          if (outputPipeline !== nextPipeline) return;
+          outputPipeline = undefined;
+          outputInput = undefined;
+          outputPass = undefined;
+          nextPipeline.dispose();
+        },
+      };
     },
-    clearOutputNode: () => {
+    clearOutputNode: (expectedNode) => {
+      if (expectedNode !== undefined && expectedNode !== outputInput) return;
       outputPipeline?.dispose();
       outputPipeline = undefined;
+      outputInput = undefined;
       outputPass = undefined;
     },
     renderChainUsesPerObjectVelocity: () => renderChainUsesPerObjectVelocity,
@@ -938,6 +974,27 @@ async function createWebGpuPipelineCensus(
 const SOFTWARE_ADAPTER =
   /swiftshader|llvmpipe|lavapipe|softwarerasterizer|software adapter|basic render/i;
 
+/**
+ * The adapters `navigator.gpu` has handed this page, kept for the life of the module.
+ *
+ * A local `const adapter = await requestAdapter()` is the shape every WebGPU sample uses, and it is
+ * the shape Chromium punishes: a collected `GPUAdapter` takes the wire instance down with it, and
+ * Dawn reports that on every operation still in flight as `A valid external Instance reference no
+ * longer exists.` — the `mapAsync` of the timestamp-query pool and of a GPU readback then rejects
+ * forever, the canvas stops presenting, and a run that was healthy at 30 s is black at the end.
+ * Collecting needs heap pressure, so it shows up only in the long runs.
+ *
+ * three's backend keeps the device and `navigator.gpu` but not its adapter, so this is the only
+ * strong reference to the one core asked for. Two adapters per renderer: one for the device's
+ * limits, one for the identity the capture and the software gate are read from.
+ */
+const retainedAdapters = new Set<unknown>();
+
+/** The adapters core is holding. A test reads this; a run never does. */
+export function retainedWebGpuAdapters(): ReadonlySet<unknown> {
+  return retainedAdapters;
+}
+
 interface IWebGpuAdapterFacts {
   /** The URI-encoded identity the pipeline census records; absent when the adapter reported none. */
   readonly identity?: string;
@@ -955,6 +1012,7 @@ async function readWebGpuAdapterFacts(raw: RendererInstance): Promise<IWebGpuAda
       xrCompatible: raw.xr?.enabled === true,
     });
     if (!isObject(adapter)) return {};
+    retainedAdapters.add(adapter);
     const infoCandidate = isObject(adapter.info) ? adapter.info : undefined;
     const legacyInfo =
       infoCandidate === undefined && typeof adapter.requestAdapterInfo === "function"
@@ -1009,6 +1067,7 @@ export async function adapterTextureLimits(): Promise<{ requiredLimits?: Record<
   if (gpu === undefined || typeof gpu.requestAdapter !== "function") return {};
   try {
     const adapter = await gpu.requestAdapter();
+    retainedAdapters.add(adapter);
     const limits = isObject(adapter) && isObject(adapter.limits) ? adapter.limits : undefined;
     if (limits === undefined) return {};
     const requiredLimits: Record<string, number> = {};
@@ -1126,5 +1185,3 @@ export async function createRenderer(options: IRendererOptions = {}): Promise<IR
   };
   return renderer;
 }
-
-export type WebGLRendererContract = WebGLRenderer;

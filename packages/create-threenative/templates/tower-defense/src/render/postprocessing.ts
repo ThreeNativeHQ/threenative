@@ -26,8 +26,9 @@ export function setupPost(
     software?: boolean;
     /** Forces a tier, ignoring `mobile`. An unknown name throws rather than falling back. */
     tier?: QualityTier;
+    onTierChanged?: (tier: QualityTier) => void;
   } = {},
-): void {
+) {
   const tier = resolveQualityTier({
     mobile: environment.mobile,
     software: environment.software,
@@ -40,7 +41,9 @@ export function setupPost(
     } source=${source}`,
   );
   const world = new WorldEnvironment(qualityPreset(tier));
-  world.apply(renderer, scene, camera, {
+  const applied = world.apply(renderer, scene, camera, {
     godraysLight: environment.godraysLight,
   });
+  environment.onTierChanged?.(tier);
+  return { tier, dispose: () => applied.dispose?.() };
 }
