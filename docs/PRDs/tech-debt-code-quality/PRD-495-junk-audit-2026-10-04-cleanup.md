@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-495 — junk-audit 2026-10-04: every finding dispositioned
 
-**Status:** PARTIAL — all three phases executed; one box open because the final `pnpm test` is red on wall-clock alone (exact cause below)
+**Status:** PARTIAL — all three phases executed; one box open because the final `pnpm test` is red on wall-clock alone (exact cause below) and the 2026-10-05 restorations need a fresh run at the new head
 **Complexity:** 5 → MEDIUM (3 for 11+ implementation files, +2 for touching two independent
 build boundaries — the scaffolder's pinned scaffold-tree hashes and the runtime-native
 CMake/Android source sets; every item is a deletion, a comment fix or a doc pointer, so risk
@@ -30,9 +30,12 @@ a stale comment, or a doc pointer, and no gameplay/render value moves.
 ## Solution
 
 Execute every finding whose only tracked references are its own definition or a comment that
-contradicts the code — the **73 changes** listed under `### Executed` below, counted from the diff
-itself. Retain the rest with a named reason (`### Retained`, one row per group; several rows cover
-more than one numbered audit finding, so they carry no count). Defer the duplicate-helper refactors
+contradicts the code — the **70 changes** listed under `### Executed` below, counted from the diff
+itself. Three of the original 73 came back after the independent Opus-5.5 review on 2026-10-05
+found their "dead" premises false; each is now a `### Retained` row with the reason (see the review
+correction under `## Verification notes`). Retain the rest with a named reason (`### Retained`, one
+row per group; several rows cover more than one numbered audit finding, so they carry no count).
+Defer the duplicate-helper refactors
 that touch live code for a ~21-line net win, leaving them to
 [PRD-208](./PRD-208-tier-four-hygiene-sweep.md), which already owns single-sourcing debt.
 
@@ -40,7 +43,10 @@ that touch live code for a ~21-line net win, leaving them to
 
 - [x] AC-1 [local]: `packages/core` reports zero unused-local and zero unused-parameter diagnostics. The 24-diagnostic baseline is the audit input's measurement, not one re-taken here. proof: `cd packages/core && ../../node_modules/.bin/tsc --noEmit --noUnusedLocals --noUnusedParameters -p tsconfig.json` — Evidence: exit 0, empty output.
 - [ ] AC-2 [local]: the deletions keep the contracts that read them intact — the workspace typechecks and lints, the unit and contract suites stay green, and the one pinned expectation that had to move (the scaffolder's `PRD_201_PARENT_SCAFFOLD_HASHES`) was restamped to the templates' new measured bytes. The per-symbol "no remaining tracked reader" claim is the audit's own independently checked caller census, dispositioned row by row in `## Disposition`; typecheck and the unit suite are the contracts preserved afterwards, not a reference search over the tree. proof:  `pnpm typecheck && pnpm lint && pnpm test` — Evidence: `pnpm typecheck` exit 0, `pnpm lint` exit 0 (1074 warnings). The final full board (`taskset -c 0,1,2,3 TN_SUITE_PACKAGE_CONCURRENCY=1 pnpm test`, 1424s) is **exit 1**: `docs`, `build` and `package-test` phases all green (runtime-native 134 files / 1548 tests + Rust parity + publint; `scaffold.spec.ts` 66 tests green), unit phase `4 failed | 7933 passed | 13 skipped (7950)`. Every failure is wall-clock on a box at load 27–44 across 24 cores — `template-assets-compile-1` racing (60s), `template-assets-compile-2` shooter (60s), `template.spec.ts` pristine-scaffold typecheck (180s), `desktop-playtest.spec.ts` native screenshot wait (`native host output: none captured`, the file's other 38 tests green) — with no failed assertion. The same four files alone on the four idlest cores: 4 files / 117 tests, exit 0, 227s. Left unticked: the gate as written ran red.
-- [x] AC-3 [local]: the scaffolder still ships every template its contract specs name, with the pinned scaffold-tree hashes restamped for exactly the templates that changed (10 of 13; `platformer`, `snow`, `starter` unchanged), and restamped again for the 2026-10-05 develop merge. proof:  `pnpm --filter @threenative/create-threenative test` — Evidence: green in the workspace suite before the merge; the four affected specs alone: 4 files / 93 tests, exit 0, 205s. On the merged tree `pnpm exec vitest run packages/create-threenative/__tests__/scaffold.spec.ts` is 66 tests, exit 0, 34.6s — see the merge-integration note under `## Verification notes` for the merged-tree hash measurement.
+- [x] AC-3 [local]: the scaffolder still ships every template its contract specs name, with the pinned scaffold-tree hashes restamped for exactly the templates that changed (10 of 13; `platformer`, `snow`, `starter` unchanged), restamped again for the 2026-10-05 develop merge, and restamped once more for `rain` alone when the review restored `templates/rain/tools/verify-noise-volume.mjs`. proof:  `pnpm --filter @threenative/create-threenative test` — Evidence: green in the workspace suite before the merge; the four affected specs alone: 4 files / 93 tests, exit 0, 205s. On the merged tree `pnpm exec vitest run packages/create-threenative/__tests__/scaffold.spec.ts` is 66 tests, exit 0,
+  34.6s; after the rain restoration the whole file is 66 tests, exit 0, 11.0s, with the
+  byte-stability test first failing and printing its measured `rain` hash `637afd24…92255` before
+  the restamp — see the merge-integration and review-correction notes under `## Verification notes`.
 - [x] AC-4 [local]: the runtime-native contract and source-list gates stay green after the never-packaged Android sample JS and the orphan Metal shader go. proof:  `pnpm --filter @threenative/runtime-native test` — Evidence: exit 0 — 134 files / 1548 tests passed, 62 skipped; Rust physics parity 21 + 2; publint clean. Required a compiled host first (`pnpm native:build` exit 0); every pre-build failure was an `is not built` assertion, and no C++ source or JS-engine file this PRD touches appears in any of them.
 - [x] AC-5 [local]: documentation links and primary-doc command names stay resolvable after the stale round-ledger pointers are corrected. proof:  `pnpm check:docs && pnpm exec vitest run scripts/__tests__/check-doc-links.spec.ts scripts/__tests__/primary-docs.spec.ts` — Evidence: `pnpm check:docs` exit 0 — "Checked 2323 relative documentation links across 1216 Markdown files"; both specs pass inside the green `scripts/__tests__` lane (143 files / 1944 tests, exit 0).
 - [x] AC-6 [local]: `examples/abyss-framework` no longer dirties the tree with a committed build report. proof: `pnpm --filter abyss-framework build` then `git check-ignore -v examples/abyss-framework/dist.build-report.json` — Evidence: build exit 0 (it rewrites the report on disk), `git check-ignore` reports `.gitignore:8:*.build-report.json`, and `git status --porcelain examples/abyss-framework` after the build lists only this lane's three staged deletions.
@@ -85,8 +91,7 @@ that touch live code for a ~21-line net win, leaving them to
   "Collect bounded desktop performance evidence" with `TN_PROD_PLAYTEST_FAILED`,
   `TN_PROD_RENDER_SAMPLES_INCOMPLETE`, `TN_PROD_MARKER_MISSING` and status `BLOCKED`. The run's own
   artifact names the cause: `performance-contract/Windows/artifacts/c928a7ef….json` carries
-  `TN_PLAYTEST_OPERATION_TIMEOUT` — "Device mailbox operation '3' exceeded 35000ms" — so the host
-  answered the handshake, emitted `run-start`, and never answered the first `sample`. The manifest
+  `TN_PLAYTEST_OPERATION_TIMEOUT` — "Device mailbox operation '3' exceeded 35000ms". The manifest
   agrees: `markers: ["run-start"]`, one `runWindows` entry with `sampleCount: 0` and
   `durationSeconds: 0`, `startupMs: 1091`. The host itself is healthy in the same job — the earlier
   desktop-core step rendered 300 frames in 18183 ms (`desktop-win32.log`) and its report passed.
@@ -98,17 +103,37 @@ that touch live code for a ~21-line net win, leaving them to
   the stall has been continuous for four hosted Windows runs and predates this PRD by two days.
   **Layer: engine**, in the `packages/playtest` file-mailbox transport and the native host's poll
   loop. No file this PRD deletes is in that path, so this lane did not cause the stall — and that
-  is a statement about cause only, **not** a finding that no bounded fix exists. The earlier
-  wording here ("no bounded fix here") was unsupported: it was inferred from the absence of a
-  cleanup cause, and a caller-census miss is not a bound. What is actually known is the shape of
-  the fault — a 35 s device-mailbox timeout on the first `sample` after a healthy `run-start`, so
-  the target for a bounded fix is the poll loop's first-sample wait, and re-running the one job
-  (`gh run rerun --job 111566787292`) still tells a hosted-runner stall from a real host bug.
-  **It is not waived here:** it is a red leg on this lane's own CI run
-  (run 37246919707, head `0ae683546`), and it must be green before this branch merges, whatever
-  the cause turns out to be. Fixing it is a native-lane change with its own proof; this PRD
-  records the requirement and does not dispatch it. Nothing in AC-2 turns on it, and no timeout or
-  check was touched here.
+  is a statement about cause only, **not** a finding that no bounded fix exists.
+  - **Exact cause, corrected 2026-10-05.** An earlier reading of this bullet blamed the missing
+    first `sample`. That was the symptom. 35000 ms is exact for a **warmup `advance(60)`**:
+    `advanceTimeoutMs(60)` = 5000 (`protocol.ts:37`) + 15000 (`protocol.ts:31`) + 60×250
+    (`protocol.ts:24`), computed at `bridgeClient.ts:62-78`; `warmupFrames: 60` comes from
+    `--warmup 1` (`profile-production.mjs:537-538,556`); and `androidRunner.ts:241` issues that
+    advance **before** the startup wait. `describe`/`ready`/`sample` carry
+    `config.timeoutMs` = 105000 there, so only an advance can report 35000. Operation id 3 confirms
+    it: the green sibling artifact from the same job numbers `1 describe`, `2 ready`, then the
+    advance. The host does not answer because its frame pump is silent for 38.3 s during first-use
+    compile (`maxGapMs: 38332`, `startup.compileSettledMs observed 41907.94`), and the mailbox poll
+    rides rAF (`three/device.ts:139`). `startupReady.ts:116-125,172-186` deliberately swallows
+    `TN_PLAYTEST_OPERATION_TIMEOUT` there, so every other call on that path tolerates the stall; the
+    warmup advance is the one pre-observation call with no such tolerance. The bounded fix is
+    `packages/playtest`: issue `scenario.warmupFrames` after `waitForStartupReady`. It is a
+    native-lane change with its own proof and **is not dispatched from here**.
+  - **CI policy: this leg is not selected for this branch, so it is not this branch's merge gate.**
+    `.github/workflows/native-platforms.yml:1058` gates the macOS/Windows `desktop` job on
+    `needs.scope.outputs.native_tier == 'full'` (the iOS simulator leg on the same tier at `:2061`),
+    and an ordinary pull request into `develop` is classified `reduced` — `validationProfile` in
+    `scripts/ci-change-scope.mjs:610-618` returns `reduced` for a `develop` target with native work,
+    which native-platforms.yml:67-69 records as the PRD-380 phase 2 owner call. Verified for this
+    pull request rather than assumed: replaying the classifier with run 37251931881's own inputs
+    (`--target develop --event-name pull_request --base 64aed30fe --head 504626b48`) prints
+    `selection=full`, `native_tier=reduced`, and run 37251931881 shows
+    `native-platforms / ${{ matrix.platform }} desktop core` as **skipped** while its Linux legs ran
+    green. `scripts/__tests__/ci-efficiency.spec.ts:252-253,348` locks that condition, so it is
+    policy, not an accident of this run. The earlier self-imposed line here ("it must be green before
+    this branch merges") was this PRD adding a gate the repo's policy does not set for a develop pull
+    request, and it is withdrawn. The Windows red itself is real and stays recorded: the manual full
+    native-platforms audit that ran all four platforms is **red**, and nothing here turns it green.
 - **Develop merge (2026-10-05, `64aed30fe` #416 backlight/dark defaults).** `origin/develop` was
   merged in with a plain `git merge` (no rebase, no force) because the merge queue requires a
   current base. #416 is one commit and 1,087 files; two of them also carried cleanup edits, so
@@ -144,6 +169,39 @@ that touch live code for a ~21-line net win, leaving them to
   - **AC-2 stays unticked.** The merged tree has not run a full board, and none was rolled here:
     the box is shared and oversubscribed, and a fourth red wall-clock reading would not be new
     evidence. AC-2 turns green on one fresh full `pnpm test` over the merged tree.
+- **Independent review (2026-10-05, `claude-opus-5-5 --effort high`) and its restorations.** The
+  review checked each removal for readers and found three deletions whose "dead" premise was false:
+  the physics allocation bench (open PRD-191 still names it as its Phase 3 EDIT target and
+  verification step 2; its "NOT STARTED" status is stale because `91e46d34f` did that work and left
+  a record showing the bench run at exit 0),
+  `templates/rain/tools/verify-noise-volume.mjs` (an owner's manual storm-volume proof that needs
+  an external `tempest.html`), and `plans/technical-debt-audit-2026-08-20.md` (a distinct audit of
+  `d75f4644`, not a duplicate). All three are restored byte-identical to `origin/develop`
+  (`64aed30fe`). Focus checks on the restored tree: `pnpm exec vitest run
+  packages/create-threenative/__tests__/scaffold.spec.ts -t "keeps every no-install scaffold tree
+  byte-stable"` — the assertion first failed and printed the measured `rain` hash
+  `637afd24…92255` (the restored verifier file reaches every rain scaffold), restamped, then 1
+  passed; `NODE_OPTIONS=--expose-gc pnpm --filter @threenative/physics exec tsx
+  scripts/bench-allocations.ts` — exit 0, full JSON census, 156.3 s (it is a manual bench, not a CI
+  gate, so a restored bench is not a new CI obligation); `pnpm --filter create-threenative typecheck`
+  exit 0 (the restored bench sits outside every package tsconfig — `packages/physics/tsconfig.json`
+  includes `src/**/*.ts` only — so running it is its own proof, as PRD-191 does);
+  `pnpm exec tsx
+  scripts/check-template-conventions.ts` green; `pnpm check:docs` exit 0; `pnpm sync:agents --check`
+  exit 0; the prose/CI lane 8 files / 303 tests exit 0, including `ci-efficiency.spec.ts`, which
+  locks the `native_tier` condition above; `git diff --check` clean. The count of executed changes
+  drops 73 → 70.
+- **What CI covers of AC-2, checked on this pull request rather than assumed.** `pnpm test` is four
+  phases — `docs,build,package-test,unit` (`scripts/run-test-suite.sh:277`) — and run 37251931881
+  covers all four across three jobs: `test` runs `docs,build,package-test` with
+  `@threenative/runtime-native` excluded (`ci.yml:196,200`), `test-unit` runs `unit` in four shards
+  (`ci.yml:246-247`), and `test-native` runs the one excluded package
+  (`ci.yml:529`). `scripts/__tests__/ci-structure.spec.ts:2617-2645` computes that partition from
+  the workflow rather than trusting it, and `:2652` holds the script's own default. `typecheck` and
+  `lint` are separate green jobs. So the phase and package scope of AC-2 is covered on hosted
+  runners; what CI cannot reproduce is the thing AC-2's local evidence keeps failing on — a box
+  whose cores are not oversubscribed. AC-2 also stays unticked because the restoration needs a
+  fresh run at the new head.
 - **Pacing decision (2026-10-04, this lane).** That is the third run to fail on wall-clock alone, so
   the fourth was not attempted: at launch every core was ≥59% busy (mean 77%) with no quiet set of
   four to move to, and another 24-minute run would only add foreign contention to the box it is
@@ -169,11 +227,15 @@ because the safe cleanup is stuck.
   reading, and deleting them is a separate decision with its own proof burden.
 - `examples/native-smoke`'s uncalled `parseHttpsUrl` is a game-layer defect, not junk; wiring it
   changes example behaviour, so it is reported here, not fixed. Fixing it is its own change.
-- The `native-platforms / Windows desktop core` leg is red on this lane's CI run with a first-
-  `sample` device-mailbox timeout that predates this sweep. It does not block the sweep and it is
-  **not waived**: the native lane must resolve it before this branch merges. See the Windows bullet
-  under `## Verification notes` for the fingerprint, the runs it also appears on, and the bound
-  this PRD does not claim.
+- The `native-platforms / Windows desktop core` leg is red on the manual full-platform audit with a
+  35 s device-mailbox timeout on the **warmup `advance(60)`** that `androidRunner.ts:241` issues
+  before the tolerant startup wait — the missing first `sample` is the symptom, not the fault. It
+  predates this sweep by two days and no file this PRD deletes is in that path. It does not block
+  the sweep, and this branch's own CI does not select it: the leg needs `native_tier == 'full'`
+  (`native-platforms.yml:1058`) and a develop pull request is classified `reduced`
+  (`scripts/ci-change-scope.mjs:610-618`, verified for this pull request — see the Windows bullet
+  under `## Verification notes`). The broader full-platform audit is still red and is recorded as
+  such; the fix is a `packages/playtest` change with its own proof, not dispatched here.
 
 ## Integration Ledger
 
@@ -181,8 +243,9 @@ Integration: unchanged — no consumer path, CLI form, render stage, capability-
 scenario changes. Deleted symbols have zero tracked readers; the one consumer-visible effect is
 that generated projects stop shipping template files nothing imports. The scaffolder's
 `PRD_201_PARENT_SCAFFOLD_HASHES` is the only pinned expectation that must move, and it moves to
-the new measured bytes of the templates this PRD touches — twice, the second time to the
-2026-10-05 merged-tree measurement after #416. One further pinned record moves with it:
+the new measured bytes of the templates this PRD touches — three times: once for the sweep, once for
+the 2026-10-05 merged-tree measurement after #416, and once more for `rain` alone when the review
+restored `templates/rain/tools/verify-noise-volume.mjs`. One further pinned record moves with it:
 `docs/verification/native-runtime-census-2026-08-16.md`, regenerated by `pnpm census` because the
 native tree lost the Android sample JS and the orphan Metal shader.
 
@@ -208,19 +271,24 @@ native tree lost the Android sample JS and the orphan Metal shader.
   parent review reverted that, because `Constructor.name` is what scene diagnostics print and a class
   name that names its scene is diagnostic value, while dropping one identifier cleans up nothing.
   The finding moves to `### Retained`.
+- 2026-10-05 (independent review correction, Opus 5.5 at `--effort high`): three deletions came
+  back, byte-identical to `origin/develop` — the physics allocation bench, the rain noise-volume
+  verifier and the 2026-08-20 plans audit. Each was deleted on an audit premise the review disproved
+  (stale PRD-191 status, "needs an external file", "duplicate audit"), and the owner asked for
+  anything that is not really junk to be fixed. The rest of the 70 stands.
 
 ## Disposition — every finding
 
-### Executed (73 changes, counted from the diff)
+### Executed (70 changes, counted from the diff)
 
 | Area | Deleted | Count |
 | --- | --- | --- |
 | core (A) | `IBackendDataLike`, `IRenderObjectContext` (pipeline-census); `#presentsUnreadable` and its two writes (frame-budget); `#groundSpeedOf` (animation); `#random` and its two writes (game.ts); `members` (geometry-capture); `#renderer` with its write/clear, `attachRenderer`'s parameter now `_renderer` (gpu-scene-bvh); `colorValueOf` (projection-uniform); `BATCHED_PREVIOUS_MATRICES_PROPERTY` (render/batched-velocity); `WebGLRendererContract` (renderer); `ObserverConstructor` (ui-hit-regions); `Spans`' `forEach` id parameter → `_id` (playtest.ts) and `#attribute`'s `id` parameter (profiling/Spans); `evictGeometryMembers`' `workspace` parameter (projection-plan); `#sharedFor`/`#disableFar`/`#restoreFar` `cell` parameters (world-cells.ts); unused imports `IAssetLoader`, `zenithTransmittance`, `nodeObject`, `float`, `vec4`, `Box3`, `Matrix3`; an unused loop index over `regions.entries()` (world-gpu-scene.ts); 2 `eslint-disable-next-line no-console` in a Biome repo (`__tests__/world-tiles-cost.spec.ts`); the false "engine-server.mjs is gitignored" comment (mcp/blender.mjs) | 24 |
-| physics / ui / playtest / assets (B) | `packages/physics/scripts/bench-allocations.ts`, `renderChainAssertionIsMeaningful` (playtest evaluators), `MIN_QUALITY` and `MAX_QUALITY` (assets audio-pcm), the `allowedXvfbRunMentions` entry naming the deleted analysis script (playtest `__tests__/display-advice.spec.ts`) | 5 |
-| runtime-native + small (C) | `android/.../assets/scripts/{gltf-viewer,glb-parser}.js` (Gradle replaces the asset source set), `src/raytracing/shaders/raytracing.metal` (`metal_rt.mm` embeds its own copy and no CMake rule names it), 3 module-only `export` keywords across `raw-unreal/{bulk-source-model,raw-mesh}.ts` | 4 |
-| templates (D) | the shooter's `SCALE_EXPECTATIONS`/`SizeCheck`/`SizeAxis`/`DOOR_HEIGHT` scale-audit table and its false `tools/scale-audit.mjs` pointer, `swallowtail`, `hoardingGeometry`, `pointOnTrack`, `curbBlock`, `vanFootprint`, `halfWithMirrors`, `RainIntent` (+ its `VISIBILITY_INTENT` import), `LOS_INTERVAL_SECONDS`+`losStagger` and their false comments, `_repair`, `padAt`, `aimBasis`, `MUZZLE_HEIGHT`, `scratchAxisY`, `TRACK_LAYER`, `clearProgress`, the unused `unwatch` binding, `rain/tools/verify-noise-volume.mjs`, the file `minimal/src/scenes/Boot.ts` | 20 |
+| physics / ui / playtest / assets (B) | `renderChainAssertionIsMeaningful` (playtest evaluators), `MIN_QUALITY` and `MAX_QUALITY` (assets audio-pcm), the `allowedXvfbRunMentions` entry naming the deleted analysis script (playtest `__tests__/display-advice.spec.ts`) | 4 |
+| runtime-native + small (C) | `android/.../assets/scripts/{gltf-viewer,glb-parser}.js` (Gradle replaces the asset source set), `src/raytracing/shaders/raytracing.metal` (no build rule compiles it; `metal_rt.mm:323` embeds only `raytracingKernel`, and the `shadowRayKernel`/`cornellBoxKernel` this file also holds were never built), 3 module-only `export` keywords across `raw-unreal/{bulk-source-model,raw-mesh}.ts` | 4 |
+| templates (D) | the shooter's `SCALE_EXPECTATIONS`/`SizeCheck`/`SizeAxis`/`DOOR_HEIGHT` scale-audit table and its false `tools/scale-audit.mjs` pointer, `swallowtail`, `hoardingGeometry`, `pointOnTrack`, `curbBlock`, `vanFootprint`, `halfWithMirrors`, `RainIntent`, the unused `PresetName`/`QualityName`/`WeatherKey` imports (`VISIBILITY_INTENT` stays: `rain/src/game.ts:7,60` still reads it), `LOS_INTERVAL_SECONDS`+`losStagger` and their false comments, `_repair`, `padAt`, `aimBasis`, `MUZZLE_HEIGHT`, `scratchAxisY`, `TRACK_LAYER`, `clearProgress`, the unused `unwatch` binding, the file `minimal/src/scenes/Boot.ts` | 19 |
 | examples (D) | `abyss-framework/src/entities/{Crate,Player}.ts`, the committed `abyss-framework/dist.build-report.json` (+ `*.build-report.json` in `.gitignore`), `reparentHome` (native-cpu-load-test), `ROUTE_WARMUP_FRAMES`, `ROUTE_LENGTH_METRES`, `RouteMark` (quarry), `FIRE_SPRITE_TEXTURE` (vfx-gallery) | 9 |
-| docs / scripts (E) | `docs/product/{ThreeNative_Lean_Product_Playbook_Report,ThreeNative_Product_Playbook}.pdf`, the duplicate `plans/technical-debt-audit-2026-08-20.md`, `analyze-prd-exp-002.mjs`, `analyze-prd-075-render-advisor.mjs`, `ICitationScan` (evidence-citations), `GATE_HEARTBEAT_INTERVAL_MS` and `writeGateStatus` (gate-status), `RoundDisposition` (round-ledger), `RealismEffectsExport`/`RealismEffectsPlatform` (realism-effects-coverage), 2 stale round-ledger pointers in `docs/README.md` | 11 |
+| docs / scripts (E) | `docs/product/{ThreeNative_Lean_Product_Playbook_Report,ThreeNative_Product_Playbook}.pdf`, `analyze-prd-exp-002.mjs`, `analyze-prd-075-render-advisor.mjs`, `ICitationScan` (evidence-citations), `GATE_HEARTBEAT_INTERVAL_MS` and `writeGateStatus` (gate-status), `RoundDisposition` (round-ledger), `RealismEffectsExport`/`RealismEffectsPlatform` (realism-effects-coverage), 2 stale round-ledger pointers in `docs/README.md` | 10 |
 
 ### Retained
 
@@ -239,6 +307,9 @@ native tree lost the Android sample JS and the orphan Metal shader.
 | E6–E9 four orphan docs | only the inbound link is provably missing; the content is a deliberate record |
 | E16–E22 untracked disk (`packages/*.tgz`, `release-native/`, `artifacts/`, `.linchpin/`, `notify.log`, `site/`, `test-results/`) | this lane deletes no local disk; untracked and gitignored, no repo effect |
 | E23 `stamp:template-loading` | not unreachable junk, and not deleted: `restampTemplateLoadingCopies` has no other caller in the tree, so this entry point is the only way to apply a canonical `loading.ts` change to the tracked templates — the exact role its sibling `stamp:template-render.ts` plays for shared render sources, and that sibling is itself a contract-tested input (`scripts/__tests__/ci-template-selection.spec.ts`). The audit's premise ("manual-only duplicate entry point") holds only if the function it wraps is reachable some other way; it is not |
+| B `packages/physics/scripts/bench-allocations.ts` | **restored 2026-10-05** — the audit called it unused because it read PRD-191 as NOT STARTED (`docs/PRDs/performance/PRD-191-physics-feature-frames-reuse-crossing-storage.md:7`). That status is stale: commit `91e46d34f` did the PRD-191 work (296 added bench lines) and its verification record shows `NODE_OPTIONS=--expose-gc pnpm --filter @threenative/physics exec tsx scripts/bench-allocations.ts — exit 0`. The open PRD still names the bench as its Phase 3 EDIT target and verification step 2 (`PRD-191-*.md:20,83,96`). Deleting it would have removed the measurement PRD-191 still has to run |
+| D `templates/rain/tools/verify-noise-volume.mjs` | **restored 2026-10-05** — an owner's manual proof that the storm noise volume matches byte for byte. It needs `tempest.html`, which exists only on the owner's disk, so nothing in the repo runs it; done `docs/PRDs/done/starter-kits/PRD-473-rain-starter-kit.md` and `docs/PRDs/production-readiness/RELEASE-READINESS-2026-09-23.md:23` cite it as history. Retained under "fix otherwise" rather than dropped: a useful proof that needs an external input is not junk |
+| E `plans/technical-debt-audit-2026-08-20.md` | **restored 2026-10-05** — the audit called it a duplicate. It is a distinct audit of `d75f4644`, not a copy of `junk-audit-2026-10-04.md`, and its items are still tracked: P0-2 (`:57`, libuv handle storage) by `docs/PRDs/BLOCKED/requires-asan-libuv-source-build/PRD-177-*.md` and `PRD-184-*.md`, P0-4 (`:83`, failure-atomic startup and teardown) by `docs/PRDs/done/PRD-180-core-lifecycle-failure-atomicity.md`. A historical record with live follow-ups is not proven junk |
 
 ### Deferred (4)
 
@@ -251,7 +322,7 @@ net lines. PRD-208 owns that single-sourcing debt; `isRecord` ×6 in `scripts/` 
 #### Phase 1: engine layer
 
 **Status:** DONE — both boxes green.
-**Files:** `packages/core/{src,__tests__,mcp}`, `packages/physics/scripts`, `packages/playtest/{src,__tests__}`, `packages/assets/src`, `packages/raw-unreal/src`, `packages/runtime-native/{android,src}`
+**Files:** `packages/core/{src,__tests__,mcp}`, `packages/playtest/{src,__tests__}`, `packages/assets/src`, `packages/raw-unreal/src`, `packages/runtime-native/{android,src}` (`packages/physics/scripts` dropped from this list on 2026-10-05: its only finding, the allocation bench, was restored)
 **Implementation:** remove the compiler-proven unused declarations and their now-unused
 arguments; delete the never-packaged Android sample JS and the orphan Metal shader; drop three
 module-only `export` keywords; fix the one stale comment.
@@ -278,8 +349,8 @@ example build.
 #### Phase 3: repo surface (docs and scripts)
 
 **Status:** DONE — deleted and re-pointed; both boxes green.
-**Files:** `docs/product/*.pdf`, `plans/technical-debt-audit-2026-08-20.md`, `docs/README.md`, `scripts/{analyze-prd-exp-002,analyze-prd-075-render-advisor}.mjs`, `scripts/{gate-status,evidence-citations,round-ledger,realism-effects-coverage}.ts`, `packages/playtest/__tests__/display-advice.spec.ts`
-**Implementation:** delete the unreferenced PDFs, the duplicate audit and the two unreachable
+**Files:** `docs/product/*.pdf`, `docs/README.md`, `scripts/{analyze-prd-exp-002,analyze-prd-075-render-advisor}.mjs`, `scripts/{gate-status,evidence-citations,round-ledger,realism-effects-coverage}.ts`, `packages/playtest/__tests__/display-advice.spec.ts` (`plans/technical-debt-audit-2026-08-20.md` dropped from this list on 2026-10-05: the review proved it a distinct audit, not a duplicate)
+**Implementation:** delete the unreferenced PDFs and the two unreachable
 analysis scripts; drop the five dead exports; correct the two stale round-ledger pointers.
 `scripts/stamp-template-loading.ts` and its `package.json` entry point are **kept** — see the E23
 row under `### Retained` and the 2026-10-04 decision: the wrapped function has no other caller, so
