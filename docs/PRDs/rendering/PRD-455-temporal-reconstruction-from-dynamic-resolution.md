@@ -512,6 +512,45 @@ This merge has no new runtime proof, no capture and no hardware run. Every quali
 ghosting, dynamic-resolution, native and performance acceptance box above stays exactly as it
 was, and the p95 baseline-noise control is still unpassed.
 
+### Browser positive is green on the display-sized arm; the cold-frame control is not (2026-10-04)
+
+The browser lane now runs through the harness on the correct HTML entry and the flags this host's
+X11 compositor accepts, so the two earlier causes are closed rather than re-diagnosed. The entry is
+`/temporal.html?measure&variant=scaled`, not the bare `/temporal-main.js` module URL that rendered as
+text and produced `TN_PLAYTEST_BRIDGE_MISSING`. The flags are the six already proved on this
+adapter — `--enable-unsafe-webgpu --enable-features=Vulkan --use-angle=vulkan --use-vulkan
+--disable-vulkan-surface --no-sandbox` — passed as repeated `--browser-arg`, which is the supported
+override and replaces the recipe rather than extending it, so no harness change was needed.
+
+Positive, `examples/abyss-framework/playtests/temporal-aa-scaled.playtest.json` against
+`http://127.0.0.1:5199/temporal.html?measure&variant=scaled`: 26 of 26 assertions pass and
+diagnostics are empty. Adapter `nvidia`/`turing`, 30 scenario frames, eight declared triviality
+opt-outs. Both cold frames compared the full 192 samples at outside 0 — the opening frame at input
+853x480 with no lattice (`viewEnabled false`), the resize frame at input 853x320 with
+`jitterMatchesInput true` — and both published mean 0.0833 against an oracle mean of 0.0833.
+
+Native positive was re-executed rather than reused, so no stale parity pass covers the new row
+wiring: `artifacts/conformance/native-r8/report.json`, `temporal-aa-scaled` pass, native exit 0,
+1280x480 non-uniform, `pixelMismatchRatio 0.0413037109375 <= 0.06`, `perceptualDeltaE
+0.2009623136688549 <= 9`, zero GPU validation errors, 192 samples per cold frame at outside 0. The
+runner exits 2 because the other 96 rows are unselected and one further row is blocked; that exit is
+the blocked-row contract, not a failure of the selected row. The native adapter is genuinely
+unknown and is reported as such.
+
+The cold-frame control was red in that window, and this paragraph's explanation of it was **wrong**.
+It claimed the fixture's constant-valid hook was a silent no-op because Three.js 0.185.1's
+`TRAANode.js` has no `_historyValidUniform` member. That member is not upstream's: `temporalAA.ts`
+installs it on the node and `temporalResolve.ts` reads it, so
+`historyValid.greaterThan(0.5).and(...)` is the live `hasValidHistory` term of the kernel the
+provider installs. The gate reaches the shader. What the 8x8 centre block actually showed is weaker:
+variance clipping pulls a stale history towards the current neighbourhood, so one flat block of the
+frame agreed with the oracle whether or not the gate was installed, and 192 samples could not tell
+the two arms apart. The measurement was too small, not inert. The control row and its registry entry
+stay uncommitted until the comparison covers the frame.
+
+The fix was not a re-diagnosis of the browser lane and not a new shader seam. It is a wider
+measurement: one cold frame's whole published display against the same spatial GPU oracle.
+
 ### Two static contracts cleared by a comment-and-spacing repair (2026-10-04)
 
 The generated `temporalResolve.ts` lost its narration comments and their blank spacing, 347 to331
@@ -520,13 +559,14 @@ calibration comments kept. `ts.transpileModule` with `removeComments: true` and 
 emits 9,363 bytes before and after and the two outputs are byte-identical, so the repair changes
 no executed statement. The three `temporal-resolve.spec.ts` tests pass.
 
-Comments and blank spacing cannot meet the 200-line generated render cap: 92 of the original 347
-lines are either, and removing every one of them leaves 255 lines of executable resolve equations.
-Three.js 0.185.1's `TRAANode.js` builds its resolve inside `setup()` and exports no reusable
-resolve, so the equations are the file. `looks.spec.ts` therefore exempts `temporalResolve.ts`
-from the length cap beside the existing `loading.ts` and `worldEnvironment.ts` exemptions, each
-with its reason; the ownership assertion above them — no `@threenative/` import in any generated
-render file — still covers it, and the cap still holds for every other file.
+That repair did not clear the cap and is not claimed to. It bought room, and the resolve equations
+were then split into the modules that fit: `temporalAA.ts` 198 lines, `temporalAAFrame.ts` 197,
+`temporalAAStage.ts` 52, `temporalResolve.ts` 122, `temporalResolveDepth.ts` 124 and
+`temporalResolveMath.ts` 146. Every generated temporal helper is now under 200 lines, so the earlier
+`looks.spec.ts` exemption for `temporalResolve.ts` is removed rather than kept. The 200-line cap now
+holds for every generated render file except the two named reasons beside it, `loading.ts` and
+`worldEnvironment.ts`, and the ownership assertion above them — no `@threenative/` import in any
+generated render file — still covers every one of the six.
 
 The starter `AGENTS.md` lost the blank line before each of nine section headings, 97 to 88 lines,
 so the generated `CLAUDE.md` mirror measures 91 lines against the 100-line budget. No sentence,
@@ -545,3 +585,128 @@ has no importer and `createTemporalAA` is uncalled.
 
 No threshold, control, sample count or acceptance box changed, no runtime proof was gathered and
 no capture or hardware run was made.
+
+### Native reset/readback proof on the desktop lane (2026-10-04)
+
+`scene-support.js` calls `subject.render()` and never `subject.sampleVelocity()`, so the readbacks
+this proof needs could not execute natively. The scene's `build` callback is the supported async
+seam — `offscreen-screenshot.js` already reads a render target there — so
+`temporal-aa-scaled.js` drives its 22 diagnostic frames inside `build` and asserts every one before
+the frame loop starts. No shared harness file changed.
+
+Ran `sh scripts/xvfb.sh node packages/runtime-native/conformance/run-conformance.mjs --target desktop
+--only-tests temporal-aa-scaled --reference packages/runtime-native/artifacts/conformance/web --out
+artifacts/conformance/native-r7` against the prebuilt `build/tn-linux/mystral`, no C++ change and no
+rebuild. Row `temporal-aa-scaled` passed: native exit 0, non-uniform screenshot,
+`pixelMismatchRatio` 0.0394287109375 against the 0.06 tolerance, `perceptualDeltaE` 0.24874598761131655
+against 9, zero GPU validation errors, 1280x480. The runner exited 2 because the 96 unselected rows
+are reported blocked, which the registry requires.
+
+The native adapter identity is not available: the conformance stdout carries no adapter, vendor or
+architecture string, so nothing claims hardware here. The host window is 1280x720 and the capture is
+1280x480 after the fixture's own height-only resize.
+
+Because the row passed, those assertions held natively: input raster 853x480 then 853x320, depth
+history 853x480 then 853x320, display, resolve and history 1280x720 then 1280x480 with the display
+width held, the far border of the display raster answering a display-sized resolve, exactly two
+compared reset frames, 192 compared samples in each with none outside the spatial oracle, no jitter
+lattice on the opening frame, and the resize frame's lattice equal to the input raster. The disabled
+gating control (`scaled-unchecked-reset`) did not run natively in this window, so its contamination
+is still browser-only.
+
+Browser rerun: red. `temporal-aa-scaled.playtest.json` and its `-unchecked-reset` control both stop
+at `TN_PLAYTEST_BRIDGE_MISSING` with `frames: 0`, headed and headless, so the page installs no bridge
+under the current fixture. The earlier 26/26 and 5/5 results predate the final fixture, probe and
+scenario edits and describe no current tree. `examples/abyss-framework/temporal-main.js` gained the
+scaled arms' 1280x720 display raster, `settle` 20 and a 5-frame startup advance to make the browser
+control reach the same raster pair; that change is unproved while the scenario is red.
+
+Every full-phase box stays open: rejection, corpus, quality, ghosting, automatic-scale and
+performance. No threshold, tolerance or assertion was widened, no capture was taken on hardware and
+no commit was made.
+
+### The whole-display cold-frame oracle separates the two arms (2026-10-05)
+
+`temporal-resolve-probe.ts` now compares a cold frame's **whole published display** against the same
+immutable-current-input spatial GPU oracle, at the same half-float precision and the same tolerance.
+Each readback's row stride is derived from the returned typed array rather than assumed to be its pixel
+width, because a GPU readback pads rows to a 256-byte boundary. Precision, thresholds, depth rejection
+and variance clipping are untouched; the oracle is still the resolve's own colour sample of the same
+input texture, rendered by the same state discipline at display size.
+
+Browser, the two proved entries and the six proved flags, adapter `nvidia`/`turing`:
+
+- Positive `temporal-aa-scaled`: **29 of 29 assertions pass**, diagnostics empty, 30 scenario frames,
+  nine triviality opt-outs. Both cold frames report `outside 0` with `worstRatio 0` over the whole
+  display — **2,764,800** channels at 1280x720 and **1,843,200** at 1280x480 — with published mean
+  0.0336 against oracle mean 0.0336 and 0.0277 against 0.0277. `artifacts/playtest/wholeframe-positive`.
+- Control `temporal-aa-scaled-unchecked-reset`: **8 of 8 assertions pass** on the identical sample
+  sets, `outside` **168,884** of 2,764,800 (`worstRatio` 898.096) at the opening reset and **119,914**
+  of 1,843,200 (`worstRatio` 959.5) at the resize reset. `artifacts/playtest/wholeframe-control`.
+
+So the reset gate is live and now carries weight: with the whole frame compared, the gated arm
+publishes the untouched input everywhere and the ungated arm publishes an unwritten history over
+6.1% and 6.5% of the frame. Both browser scenarios and both native scenes now assert
+`pixels === width * height * 3` on each cold frame instead of the 8x8 block's 192.
+
+Focused units stay green: `temporal-resolve.spec.ts`, `temporal-aa.spec.ts`, `looks.spec.ts` and
+`scaffold.spec.ts` pass, 104 tests in 7.26 s.
+
+**Native is not re-executed in this window, and the reason is a blocker, not a pass.** Generating the
+fresh browser reference both native rows require fails on the positive row, deterministically, in three
+consecutive runs — twice with the control in the same run and once with the row alone
+(`packages/runtime-native/artifacts/conformance/web-wholeframe-r1`, `web-wholeframe-r2`,
+`web-posonly-r3`): the probe's
+pre-existing raster guard throws `Resolve must hold the display raster; it is 1280x720 against
+1280x480` at the fixture's height-only transition, so that row writes no reference capture and the
+desktop lane has nothing to compare against. The control row passes the same frames and captures
+1280x480. `guardRasters` runs before any comparison this window changed, so the cause is not yet
+diagnosed; what it is not is a product claim either way. The earlier `native-r8` positive pass
+compared the 8x8 block and describes no longer-current measurement, so it does not carry over. No
+native row, adapter identity or hardware claim is recorded here.
+
+Every full-phase box stays open: rejection, corpus, quality, ghosting, automatic-scale and
+performance. No threshold, tolerance or assertion was widened, no capture was taken on hardware and
+nothing is committed: the normal hook commit needs all four lanes green and only the two browser
+lanes are.
+
+### The blocked native reference was a missing frame boundary in the scene (2026-10-05)
+
+The blocker above is a fixture-scheduling defect, in the conformance scene, not a product defect and
+not a measurement defect. Both diagnostic frames ran back to back inside one turn: the loop issued
+`fixture.render()` and then awaited only `fixture.sampleVelocity()`, which is a GPU-completion
+await, not a frame boundary. `temporal-main.js` already carries the reason — a temporal node's own
+frame update waits on the animation clock, so renders issued without one never advance it. At the
+height-only transition the resolve therefore still held the pre-resize display raster, and the
+probe's pre-existing `guardRasters` threw `it is 1280x720 against 1280x480` before any comparison.
+
+The fix is one line in each of `temporal-aa-scaled.js` and `temporal-aa-scaled-unchecked-reset.js`,
+reusing the advance already proven in this directory's `probe-volume-sample.js`:
+`await new Promise((resolve) => requestAnimationFrame(resolve))` before each diagnostic render. No
+new helper, file, dependency or product change, no guard, threshold, tolerance or assertion touched,
+and both arms keep the identical 22-frame loop so they stay one frame-for-frame pair. The browser
+lane's Chromium already carries `--enable-unsafe-webgpu --enable-features=Vulkan` in
+`run-conformance.mjs`, so the reference needs no extra flag route; the repeated `--browser-arg` form
+belongs to the direct playtest CLI and was used there.
+
+All four runtime arms, on this exact tree:
+
+- Browser positive **29 of 29**, adapter `nvidia`/`turing`, `outside 0` and `worstRatio 0` over the
+  whole display at **2,764,800** and **1,843,200** channels — identical to the run above, because the
+  browser fixture did not change. `artifacts/playtest/raf-positive`.
+- Browser control **8 of 8**, `outside` **168,884** (`worstRatio` 898.096) and **119,914**
+  (`worstRatio` 959.5) on the same channel counts. `artifacts/playtest/raf-control`.
+- Fresh web reference, adapter `nvidia`/`turing`, both rows pass at display 1280x480, no page errors
+  and no GPU validation error. `packages/runtime-native/artifacts/conformance/web-raf-r9/report.json`.
+- Native desktop, prebuilt `build/tn-linux/mystral`, no C++ rebuild: both rows pass, native exit 0,
+  zero GPU validation errors, non-uniform 1280x480. `temporal-aa-scaled`
+  `pixelMismatchRatio 0.0350537109375 <= 0.06`, `perceptualDeltaE 0.2504743023768323 <= 9`;
+  `temporal-aa-scaled-unchecked-reset` `0.045857747395833336 <= 0.06`, `0.19054617552811 <= 9`.
+  `packages/runtime-native/artifacts/conformance/native-raf-r9/report.json`. The runner exits 2
+  because the other 96 registry rows are unselected; that is the blocked-row contract. The native
+  adapter remains genuinely unknown and is reported as unknown, not inferred from the browser row.
+- `biome check` clean on both scenes; `pnpm check:docs` clean across 2,442 links; the 104 focused
+  unit tests were green before this window and this change touches no unit-covered source.
+
+No full CI, no push, no merge. Every full-phase box stays open: rejection, corpus, quality,
+ghosting, automatic-scale and performance.

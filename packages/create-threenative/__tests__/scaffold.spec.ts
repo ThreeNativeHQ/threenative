@@ -179,20 +179,26 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // through createProject on the merged worktree. Values below are the merged-tree measurement,
   // not either side's. starter was re-measured after its generated temporal resolve lost its
   // narration comments (347 -> 331 lines, emitted JavaScript byte-identical) and its AGENTS.md
-  // lost the blank line before each section heading (97 -> 88 lines, generated mirror 91).
-  "action-rpg": "64e17b6150cf59152328ae6466511e1785a80cc6c81cbc2ae5ce1b7d7a12dfb2",
-  minimal: "4e5d22015618331fcb21df134d3d27227d3f2c73c4885063d54f0b5ab136f84d",
-  platformer: "d406fc97ef44309bcf33636e6f0c64f021c54c543070cca09021c1bba3d8318a",
-  puzzle: "d98bfe15c4a2c63e951151555813c6f93b60d8f0e6847ea99a1b9c903e6813dd",
-  racing: "15f5130e0757227a7f3d1dfe057c5d231cc7495d2b9a652db49b861d8f19197e",
-  rain: "f5978783009b1248534db9aae65f021810bdb28d6e6974585178ff02b615ee42",
-  rts: "339ac4c36000eb515c5ddeb8a6d43781bd2f95d0304fe14cc2ee35d779886d22",
-  runner: "9a4eafc187bbc94afed70746460959fe89294ae67c9d67975c7fe7b733a4fd3d",
-  sailing: "9041f30618a2eabfe7370821342c8f307de3bd7f3583be61f187aaa37ffa92ac",
-  shooter: "f527a11a03c4233642a01dd74253369a26443ac81c7a9bf21f21f0598a61dc49",
-  snow: "b387bd386fe75499111bda9b14d4fde0b0f881e6b581e1d1a830a30588fa8c74",
-  starter: "f62b055c8c33441007a9bf293427ba88b126cacf44d062d46b17cb1f697c7a88",
-  "tower-defense": "fc81f61e338026753117bae9c8b747427a7f0528248848315d697edb8946a263",
+  // lost the blank line before each section heading (97 -> 88 lines, generated mirror 91). starter was
+  // re-measured again after its generated temporalAAFrame reallocated a resized depth history on both
+  // input axes instead of width alone, so a height-only resize no longer keeps a wrong-height sink,
+  // and after its temporalAA kept the caller's projection aspect while the jitter lattice is the
+  // input raster the scene pass is about to render. Every template re-measured with it, because the
+  // shared chain context in each worldEnvironment now carries the velocity accessor, the camera and
+  // the velocity-owning scene pass that a temporal stage needs.
+  "action-rpg": "f24e03efe260466c28c59af041eec7d29b2f48b74e519362eeda1d7dae23362a",
+  minimal: "c5e0b3eb9bfbcbe636531e53ba834351ea85ef41a5632322dd4e7a28148ccf4e",
+  platformer: "2476dc3d6dd8cb2afa9f25b35d5eb522ab70923603deeae992720e33147dace4",
+  puzzle: "16ef5686f71ed704f5bd2333751d33e174df4a6e7ec6ab2fc65943866a2bdca3",
+  racing: "e9f37bc79525c2a28fbc2ec3ca74dff1870ece310a1a2d20f206d810bf864864",
+  rain: "1fdebe255130c4e0278a696d683cb5b7bc9c832bda38d111f407c8c32519e499",
+  rts: "2fe59e7dda40ab26d3e318607bc55b7057f07636c7b8ac2bf94b78104bb49375",
+  runner: "9690eec0e8de519deb5424881919f7b81de47277e05bde0a742d2489852e7b56",
+  sailing: "2e4123bf33d6b64d9f9718c4cf2ac66388ab2dee7bb33efb22def8ef90ccbeb0",
+  shooter: "8ce9d7084fdde2423a4a653299654b81f1620e8de4cc51d30d61dbc3d87e9fc7",
+  snow: "4af2d3ec818c9ff30940e19f499a03dfe02b86262a6406a0ca46f09140e44d32",
+  starter: "e55b4ffd6ca8dc8c8a58856770d970961f7ff78d626e84e29a497ff1198d1854",
+  "tower-defense": "62b25bd662a3c62756773b2eb75239fbd98676bad7ea4c164457935e9b5563ec",
 };
 
 const GENERATED_SCAFFOLD_METADATA =

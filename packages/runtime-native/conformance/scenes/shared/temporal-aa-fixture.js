@@ -1,5 +1,5 @@
 import * as THREE from "three/webgpu";
-import { mrt, pass, texture, vec2 } from "three/tsl";
+import { mrt, pass, texture, uniform, vec2 } from "three/tsl";
 import { RenderChain } from "../../../../core/src/render/chain.ts";
 import {
   VelocityTracker,
@@ -9,10 +9,22 @@ import {
 } from "../../../../core/src/render/velocity.ts";
 import { createExperimentalTemporalResolve } from "../../../../create-threenative/templates/starter/src/render/temporalResolve.ts";
 import { createTemporalAA } from "../../../../create-threenative/templates/starter/src/render/temporalAA.ts";
+import { createTemporalResolveProbe } from "./temporal-resolve-probe.ts";
 import { createTemporalVelocityProbe } from "./temporal-velocity-probe.ts";
 
+// The one scaled arm: the scene pass renders below the display raster and the resolve reconstructs
+// at the display raster. Two thirds is a deliberate fraction — it is neither an integer divisor of
+// any conformance viewport nor a round pixel count, so an off-by-one raster cannot pass for it.
+const SCALED_RESOLUTION_SCALE = 2 / 3;
+
 // Shared browser/native content. The caller owns the renderer and sole frame loop.
-export function createTemporalAAFixture(renderer, scene, camera, variant = "temporal", measurement = false) {
+/**
+ * `settle` holds the authored pose at that frame. A conformance capture compares two hosts at their
+ * own capture frames, so a pose that keeps moving cannot be compared frame-for-frame; every temporal
+ * frame still renders, and the raster transition stays keyed to the real frame so both hosts reach
+ * it at the same point.
+ */
+export function createTemporalAAFixture(renderer, scene, camera, variant = "temporal", measurement = false, settle = null) {
   const policy = variant.replace(/-open$/u, "");
   scene.background = new THREE.Color(0x0d1630);
   camera.position.set(0, 0.3, 6);
@@ -60,6 +72,9 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
   occluder.position.set(0.25, 0.45, 1.3);
   if (measurement) scene.add(occluder);
   const scenePass = pass(scene, camera);
+  // Three sizes a pass from the drawing buffer every frame, so a lower input raster is the pass's
+  // own resolution scale rather than a one-shot resize that the next frame undoes.
+  if (variant.startsWith("scaled")) scenePass.setResolutionScale(SCALED_RESOLUTION_SCALE);
   const pipeline = new THREE.RenderPipeline(renderer);
   const tracker = new VelocityTracker();
   let temporal;
@@ -86,6 +101,12 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
         temporal.node.setup = (builder) => {
           setupCount++;
           if (camera.view?.enabled) setupDuringJitter++;
+          // Fixture-only control: hand the kernel a constant-valid history, so a reset frame blends
+          // whatever the history buffer holds instead of publishing current colour. This is what
+          // proves the reset gate is what keeps a cold frame clean; it is not a product mode. The
+          // provider builds its kernel from whichever uniform is installed when the graph is built,
+          // so the replacement has to precede that build to reach the shader at all.
+          if (policy.endsWith("unchecked-reset")) temporal.node._historyValidUniform = uniform(1);
           const result = setup(builder);
           if (policy.startsWith("resolve-")) {
             temporal.node._resolveMaterial.colorNode = createExperimentalTemporalResolve(
@@ -108,7 +129,12 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
   });
   if (variant === "zero-velocity" || variant === "resolve-cubic-strict-zero" || variant === "resolve-cubic-strict-ordinary-zero") scenePass.setMRT(scenePass.getMRT().merge(mrt({ velocity: vec2(0) })));
   if (variant === "reference") pipeline.outputNode = scenePass;
+  const resolveProbe =
+    variant.startsWith("scaled")
+      ? createTemporalResolveProbe(renderer, scene, camera, scenePass, temporal.node, () => temporal.report().resetReason !== null)
+      : null;
   const probeMatrix = new THREE.Matrix4();
+  const drawingBuffer = new THREE.Vector2();
   const frontTriangle = geometry.groups[4].start + 18;
   const velocityProbe = measurement && variant !== "reference" ? createTemporalVelocityProbe(renderer, scene, camera, scenePass, () => {
     const skinned = new THREE.Vector3();
@@ -193,6 +219,7 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
   const observation = () => ({
     frame, resets, lastReset, aa: temporal?.report() ?? null, instanceDraw, instanceUploads,
     measurement, variant, setupCount, setupDuringJitter, occluderVisible: measurement && occluder.visible,
+    resolveProbe: resolveProbe?.observation() ?? null,
     pose: { cameraX: camera.position.x, rigidX: rigid.position.x, limbZ: limb.rotation.z },
     velocityProbe: velocityProbe?.observation() ?? null,
     historyValues: measurement ? {
@@ -212,16 +239,26 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
     readbackAttributes = [];
     if (variant === "recompile" && frame === 22) renderer.contextNode.needsUpdate = true;
     if (measurement) occluder.visible = frame < 28 && !variant.endsWith("-open");
-    rigid.position.x = -1.5 + Math.sin(frame / 18) * 0.65;
-    limb.rotation.z = Math.sin(frame / 13) * 0.7;
+    const pose = settle === null ? frame : Math.min(frame, settle);
+    rigid.position.x = -1.5 + Math.sin(pose / 18) * 0.65;
+    limb.rotation.z = Math.sin(pose / 13) * 0.7;
     for (let index = 0; index < instances.count; index++) {
-      instances.setMatrixAt(index, matrix.makeTranslation(-0.5 + index * 0.6, -0.9 + Math.sin(frame / 11 + index) * 0.22, 0.3));
+      instances.setMatrixAt(index, matrix.makeTranslation(-0.5 + index * 0.6, -0.9 + Math.sin(pose / 11 + index) * 0.22, 0.3));
     }
     instances.instanceMatrix.needsUpdate = true;
-    camera.position.x = Math.sin(frame / 50) * 0.15 + (variant === "cut" && frame >= 20 ? 1.2 : 0);
+    camera.position.x = Math.sin(pose / 50) * 0.15 + (variant === "cut" && frame >= 20 ? 1.2 : 0);
     if (frame === 20 && variant === "cut") temporal?.resetHistory("camera-cut");
     if (frame === 20 && variant === "projection") { camera.fov = 65; camera.updateProjectionMatrix(); }
     if (frame === 20 && variant === "resize") { renderer.setSize(960, 540, false); camera.aspect = 960 / 540; camera.updateProjectionMatrix(); }
+    // The scaled arm moves the display height only. The input raster keeps its width, so a guard
+    // that watched width alone would keep a wrong-height depth history across the transition.
+    if (frame === 20 && variant.startsWith("scaled")) {
+      renderer.getDrawingBufferSize(drawingBuffer);
+      const scaledHeight = Math.round(drawingBuffer.y * SCALED_RESOLUTION_SCALE);
+      renderer.setSize(drawingBuffer.x, scaledHeight, false);
+      camera.aspect = drawingBuffer.x / scaledHeight;
+      camera.updateProjectionMatrix();
+    }
     tracker.update(scene);
     velocityProbe?.before();
     pipeline.render();
@@ -234,6 +271,7 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
     render, observation,
     sampleVelocity: async () => {
       await velocityProbe?.read();
+      await resolveProbe?.read();
       if (instanceDraw !== null) {
         instanceDraw.gpuValues = [];
         for (const attribute of readbackAttributes) {
@@ -251,6 +289,7 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
       if (renderer.backend.createAttribute === observedCreateAttribute) renderer.backend.createAttribute = originalCreateAttribute;
       if (renderer.backend.updateAttribute === observedUpdateAttribute) renderer.backend.updateAttribute = originalUpdateAttribute;
       velocityProbe?.dispose();
+      resolveProbe?.dispose();
       chain.dispose(); tracker.clear(); scenePass.dispose(); pipeline.dispose();
       const geometries = new Set();
       const materials = new Set();

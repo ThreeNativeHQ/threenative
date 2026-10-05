@@ -282,6 +282,14 @@ export type DepthTextureNode = ReturnType<ReturnType<typeof pass>["getTextureNod
 type ChainTier = "high" | "medium" | "low" | "off";
 type ChainContext = {
   readonly tier: ChainTier;
+  /**
+   * The sampled velocity texture, present only when this chain request provisioned one.
+   *
+   * Distinct from the accessor TRAANode wants: the chain passes the texture here and installs the
+   * accessor on the graph separately, so a stage that handed this node over as the accessor would
+   * sample a texture that no fragment stage writes.
+   */
+  readonly velocityNode?: Node;
 };
 /**
  * What a kit's `authoredStages` factory is handed. The depth node is the scene pass's, so a
@@ -290,6 +298,8 @@ type ChainContext = {
 export interface IWorldEnvironmentStageContext {
   readonly depthNode: DepthTextureNode;
   readonly tier: ChainTier;
+  /** The camera the scene pass renders with, which is the one a temporal stage must jitter. */
+  readonly camera: Camera;
 }
 
 export type ChainStage = {
@@ -352,7 +362,16 @@ export type OutputRenderer = {
   createRenderChain?: (options: {
     input?: unknown;
     worldPass?: unknown;
-    request?: { stages?: readonly string[]; tier?: ChainContext["tier"] };
+    request?: {
+      stages?: readonly string[];
+      tier?: ChainContext["tier"];
+      /**
+       * The scene pass that owns the shared velocity output, for a temporal stage to read. Its
+       * shape is the engine's velocity contract, restated here so this file keeps importing
+       * nothing: `pass(scene, camera)` returns exactly this.
+       */
+      velocity?: { pass?: ReturnType<typeof pass> };
+    };
     stages?: readonly ChainStage[];
   }) => {
     applied: { dropped: readonly { name: string; reason: string }[]; stages: readonly string[] };
@@ -769,7 +788,13 @@ export class WorldEnvironment {
     // The kit's own stages, composed after the built-ins. The factory is called with the two
     // things only this file can produce — the scene pass's depth texture and the resolved tier —
     // and returns the complete authored graph plus the subset to run.
-    stages.push(...options.authoredStages({ depthNode: depth(), tier: options.renderChainTier }));
+    stages.push(
+      ...options.authoredStages({
+        depthNode: depth(),
+        tier: options.renderChainTier,
+        camera,
+      }),
+    );
 
     // A composed base colour with every stage off still has to reach the frame. The chain
     // installs nothing for an empty stage list, so this is the one path that goes direct.
@@ -809,7 +834,13 @@ export class WorldEnvironment {
     if (renderer.createRenderChain === undefined) throw new Error("RenderChain is unavailable.");
     const chain = renderer.createRenderChain({
       input: exposed,
-      request: { stages: requested, tier: options.renderChainTier },
+      request: {
+        stages: requested,
+        tier: options.renderChainTier,
+        // Asked for on every chain and paid for only when a temporal stage is named: the chain
+        // provisions nothing while no requested stage needs velocity.
+        velocity: { pass: scenePass },
+      },
       stages,
       worldPass: scenePass,
     });
