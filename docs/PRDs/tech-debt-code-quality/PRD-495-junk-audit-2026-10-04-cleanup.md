@@ -65,8 +65,8 @@ that touch live code for a ~21-line net win, leaving them to
      TN_SUITE_PACKAGE_CONCURRENCY=1 pnpm test`, 1424s): `docs`, `build` and `package-test` green,
      unit phase `4 failed | 7933 passed | 13 skipped`. The same four files, alone, on the four
      idlest cores: 4 files / 117 tests, exit 0, 227s.
-- **CI repair (2026-10-04, budgets job 111567118048).** The one CI red this diff caused, and the
-  only one: `TN_TEMPLATE_CONVENTIONS_FAILED` for the `shooter` kit. The `normaliseToMetres` and
+- **CI repair (2026-10-04, budgets job 111567118048).** The CI red this diff caused:
+  `TN_TEMPLATE_CONVENTIONS_FAILED` for the `shooter` kit. The `normaliseToMetres` and
   `attachToBone` cells of the applicability table still named `src/entities/Enemy.ts:863` and `:869`,
   which this lane's dead-comment deletion moved 15 lines up to `:848` and `:854`. Both cells now
   name the measured calls; `pnpm exec tsx scripts/check-template-conventions.ts` ran red with those
@@ -79,6 +79,27 @@ that touch live code for a ~21-line net win, leaving them to
   `evidence-citations`, `ci-structure`, `ci-needs`) 7 files / 250 tests exit 0; `pnpm check:docs`
   exit 0; `git diff --check` clean. AC-2 stays unticked — the full board as written still ran red
   on wall-clock, which this change does not touch.
+- **CI red this diff did not cause (2026-10-05, `native-platforms / Windows desktop core`, job
+  111566787292 of run 37246919707, head `0ae683546`).** The full board's Windows leg exits 2 in
+  "Collect bounded desktop performance evidence" with `TN_PROD_PLAYTEST_FAILED`,
+  `TN_PROD_RENDER_SAMPLES_INCOMPLETE`, `TN_PROD_MARKER_MISSING` and status `BLOCKED`. The run's own
+  artifact names the cause: `performance-contract/Windows/artifacts/c928a7ef….json` carries
+  `TN_PLAYTEST_OPERATION_TIMEOUT` — "Device mailbox operation '3' exceeded 35000ms" — so the host
+  answered the handshake, emitted `run-start`, and never answered the first `sample`. The manifest
+  agrees: `markers: ["run-start"]`, one `runWindows` entry with `sampleCount: 0` and
+  `durationSeconds: 0`, `startupMs: 1091`. The host itself is healthy in the same job — the earlier
+  desktop-core step rendered 300 frames in 18183 ms (`desktop-win32.log`) and its report passed.
+  **Not this lane, and not a cleanup regression:** the identical fingerprint
+  (`markers: ["run-start"]`, `sampleCount: 0`, `startupMs` ~1.1 s, exit 2) is on runs 37241861419
+  (head `1015b95bc`) and 37245076840 (head `6a41767e7`), and `git merge-base --is-ancestor` says
+  `5678ba241`, `0ae683546` and `06754fd00` are in neither head, plus run 37065619655 (head
+  `af7e25333`, 2026-10-02T21:14Z). The job's last green run is 36960041733 (2026-10-02T03:24Z), so
+  the stall has been continuous for four hosted Windows runs and predates this PRD by two days.
+  **Layer: engine**, in the `packages/playtest` file-mailbox transport and the native host's poll
+  loop — no file this PRD deletes is in that path, so there is no bounded fix here and none was
+  attempted. Recommended next step for the native lane, not dispatched from here: re-run that one
+  job (`gh run rerun --job 111566787292`) to tell a hosted-runner stall from a real host bug; if it
+  repeats, it needs its own PRD. Nothing in AC-2 turns on it, and no timeout or check was touched.
 - **Pacing decision (2026-10-04, this lane).** That is the third run to fail on wall-clock alone, so
   the fourth was not attempted: at launch every core was ≥59% busy (mean 77%) with no quiet set of
   four to move to, and another 24-minute run would only add foreign contention to the box it is
