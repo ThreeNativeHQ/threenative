@@ -25,6 +25,8 @@ std::array<double, 3> normalized(std::array<double, 3> v) {
     return l > 0 ? std::array<double, 3>{v[0] / l, v[1] / l, v[2] / l} : v;
 }
 
+constexpr double kRadToDeg = 180 / 3.141592653589793; // MathUtils.RAD2DEG
+
 // LightShadow.updateMatrices in three's WebGPU coordinate system: the shadow camera stands at the
 // light, looks at the target, and `matrix` is the uv/depth bias matrix times its projection-view.
 DirectLight::Shadow shadowOf(LightShadow& shadow, const std::array<double, 3>& from, const std::array<double, 3>& to) {
@@ -50,6 +52,39 @@ DirectLight::Shadow shadowOf(LightShadow& shadow, const std::array<double, 3>& f
     out.intensity = shadow.intensity;
     out.width = static_cast<uint32_t>(shadow.mapSize.x);
     out.height = static_cast<uint32_t>(shadow.mapSize.y);
+    return out;
+}
+
+// PointShadowNode.renderShadow in WebGPU: the camera at the light, far = distance || far, turned to
+// each face in _cubeDirectionsWebGPU with _cubeUpsWebGPU; shadow.matrix is the translation to the light.
+DirectLight::Shadow pointShadowOf(LightShadow& shadow, const std::array<double, 3>& at, double distance) {
+    static const double kDirections[6][3] = {{1, 0, 0}, {-1, 0, 0}, {0, -1, 0}, {0, 1, 0}, {0, 0, 1}, {0, 0, -1}};
+    static const double kUps[6][3] = {{0, -1, 0}, {0, -1, 0}, {0, 0, -1}, {0, 0, 1}, {0, -1, 0}, {0, -1, 0}};
+    auto& camera = static_cast<PerspectiveCamera&>(*shadow.camera);
+    camera.coordinateSystem = CoordinateSystem::WebGPU;
+    if (distance != 0) camera.far = distance;
+    camera.updateProjectionMatrix();
+    DirectLight::Shadow out;
+    for (int face = 0; face < 6; ++face) {
+        camera.position.set(at[0], at[1], at[2]);
+        camera.up.set(kUps[face][0], kUps[face][1], kUps[face][2]);
+        camera.lookAt(Vector3(at[0] + kDirections[face][0], at[1] + kDirections[face][1], at[2] + kDirections[face][2]));
+        camera.updateMatrixWorld();
+        out.faceViews[face] = toArray(camera.matrixWorldInverse);
+    }
+    Matrix4 matrix;
+    matrix.makeTranslation(-at[0], -at[1], -at[2]);
+    out.cube = true;
+    out.view = out.faceViews[0];
+    out.projection = toArray(camera.projectionMatrix);
+    out.matrix = toArray(matrix);
+    out.bias = shadow.bias;
+    out.normalBias = shadow.normalBias;
+    out.radius = shadow.radius;
+    out.intensity = shadow.intensity;
+    out.width = out.height = static_cast<uint32_t>(shadow.mapSize.x);
+    out.near = camera.near;
+    out.far = camera.far;
     return out;
 }
 
@@ -182,18 +217,20 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
             if (shadowMapEnabled && l.castShadow())
                 direct_.back().second.shadow = shadowOf(l.shadow, from, to);
         } else if (type == "PointLight") {
-            const auto& l = static_cast<const PointLight&>(object);
+            auto& l = static_cast<PointLight&>(object); // its shadow camera moves, as three's does
             DirectLight d;
             d.kind = DirectLight::Kind::Point;
             d.color = scaled(l.color, l.intensity);
             d.position = worldPosition(l);
             d.distance = l.distance;
             d.decay = l.decay;
+            if (shadowMapEnabled && l.castShadow())
+                d.shadow = pointShadowOf(l.shadow, d.position, l.distance);
             direct_.emplace_back(object.id(), d);
         } else if (type == "SpotLight") {
             // SpotLightNode.update: coneCos = cos(angle), penumbraCos = cos(angle * (1 - penumbra)); the
             // axis is lightTargetDirection, from the target to the light.
-            const auto& l = static_cast<const SpotLight&>(object);
+            auto& l = static_cast<SpotLight&>(object); // its shadow camera moves, as three's does
             DirectLight d;
             d.kind = DirectLight::Kind::Spot;
             d.color = scaled(l.color, l.intensity);
@@ -204,6 +241,15 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
             d.decay = l.decay;
             d.coneCos = std::cos(l.angle);
             d.penumbraCos = std::cos(l.angle * (1 - l.penumbra));
+            if (shadowMapEnabled && l.castShadow()) {
+                // SpotLightShadow.updateMatrices: the camera's fov covers the cone (times focus), its
+                // aspect is the map's, and its far is the light's distance when it has one.
+                auto& camera = static_cast<PerspectiveCamera&>(*l.shadow.camera);
+                camera.fov = kRadToDeg * 2 * l.angle * l.shadow.focus;
+                camera.aspect = (l.shadow.mapSize.x / l.shadow.mapSize.y) * l.shadow.aspect;
+                camera.far = l.distance != 0 ? l.distance : camera.far;
+                d.shadow = shadowOf(l.shadow, d.position, to);
+            }
             direct_.emplace_back(object.id(), d);
         } else if (type == "HemisphereLight") {
             const auto& l = static_cast<const HemisphereLight&>(object);

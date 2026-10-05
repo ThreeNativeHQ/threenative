@@ -1,9 +1,8 @@
 #pragma once
 
 // three@0.185.1's lights the native renderer draws (PRD-514): Light, AmbientLight, DirectionalLight,
-// HemisphereLight, PointLight and SpotLight, and the directional light's shadow. Skipped: spot and
-// point shadows (PRD-514 phase 3), RectAreaLight/LightProbe (not yet drawn), SpotLight.map, dispose,
-// toJSON.
+// HemisphereLight, PointLight and SpotLight, and their shadows. Skipped: RectAreaLight/LightProbe
+// (not yet drawn), SpotLight.map, VSM and basic shadow types, dispose, toJSON.
 
 #include <memory>
 
@@ -41,6 +40,8 @@ public:
     double normalBias = 0;
     double radius = 1;
     Vector2 mapSize{512, 512};
+    double focus = 1;  // SpotLightShadow: the share of the cone the shadow camera's fov covers
+    double aspect = 1; // SpotLightShadow: a factor on the map's aspect
 };
 
 class DirectionalLight : public Light {
@@ -62,6 +63,8 @@ public:
     [[nodiscard]] std::string_view type() const override { return "PointLight"; }
     double distance;
     double decay;
+    /** PointLightShadow: a PerspectiveCamera(90, 1, 0.5, 500) turned to each cube face. */
+    LightShadow shadow{std::make_unique<PerspectiveCamera>(90, 1, 0.5, 500)};
 };
 
 /** three's SpotLight: a point light limited to a cone towards `target` (off the scene by default). */
@@ -76,6 +79,8 @@ public:
     double decay;
     std::unique_ptr<Object3D> ownTarget;
     Object3D* target;
+    /** SpotLightShadow: a PerspectiveCamera(50, 1, 0.5, 500) fitted to the cone each frame. */
+    LightShadow shadow{std::make_unique<PerspectiveCamera>(50, 1, 0.5, 500)};
 };
 
 class HemisphereLight : public Light {

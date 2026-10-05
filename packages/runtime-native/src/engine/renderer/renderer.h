@@ -76,6 +76,11 @@ struct DirectLight {
         Matrix view{}, projection{}, matrix{};
         double bias = 0, normalBias = 0, radius = 1, intensity = 1;
         uint32_t width = 512, height = 512;
+        // A point light's: a cube map, one view per face (PointShadowNode's WebGPU face order), and
+        // the camera's near and far, which turn a distance into the stored depth.
+        bool cube = false;
+        std::array<Matrix, 6> faceViews{};
+        double near = 0, far = 0;
     };
     std::optional<Shadow> shadow;
     static DirectLight directional(std::array<double, 3> towards, std::array<double, 3> color) {
@@ -165,7 +170,7 @@ private:
     enum LightField : uint8_t { kLightColor, kLightDirection, kLightPosition, kLightDistance, kLightDecay, kLightAxis,
                                 kLightConeCos, kLightPenumbraCos, kLightShadowMatrix, kLightShadowBias,
                                 kLightShadowNormalBias, kLightShadowRadius, kLightShadowMapSize,
-                                kLightShadowIntensity, kLightFieldCount };
+                                kLightShadowIntensity, kLightShadowNear, kLightShadowFar, kLightFieldCount };
     struct Program {
         shader::StageModule vertex;
         shader::StageModule fragment;
@@ -206,10 +211,14 @@ private:
     // the less-equal comparison sampler with linear filtering PCFShadowMap samples them with.
     struct ShadowMap {
         WGPUTexture texture = nullptr;
-        WGPUTextureView view = nullptr;
+        WGPUTextureView view = nullptr;      // sampled: 2D, or a cube for a point light
+        WGPUTextureView faces[6] = {};       // a cube's faces, each drawn as a 2D depth target
         uint32_t width = 0, height = 0;
+        bool cube = false;
     };
-    std::vector<ShadowMap> shadowMaps_;
+    // 2D maps and cube maps in separate slots, so a program built while light i was a directional
+    // light still binds a 2D map after light i becomes a point light.
+    std::vector<ShadowMap> shadowMaps_, cubeShadowMaps_;
     WGPUSampler compareSampler_ = nullptr;
     Handle color_;
     WGPUTexture depth_ = nullptr;

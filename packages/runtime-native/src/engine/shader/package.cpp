@@ -80,9 +80,10 @@ StageModule buildStage(const Program& program, uint32_t group) {
     }
     for (std::size_t i = 0; i < program.textures_.size(); ++i) {
         const std::string& name = program.textures_[i];
-        const bool depth = program.depthTextures_[i];
-        module.bindings.push_back(Binding{group, binding++, BindingKind::Texture, "t_" + name, 0, depth});
-        module.bindings.push_back(Binding{group, binding++, BindingKind::Sampler, "smp_" + name, 0, depth});
+        const bool depth = program.textureKinds_[i] != Program::TextureKind::Float2d;
+        const bool cube = program.textureKinds_[i] == Program::TextureKind::DepthCube;
+        module.bindings.push_back(Binding{group, binding++, BindingKind::Texture, "t_" + name, 0, depth, cube});
+        module.bindings.push_back(Binding{group, binding++, BindingKind::Sampler, "smp_" + name, 0, depth, cube});
     }
     return module;
 }

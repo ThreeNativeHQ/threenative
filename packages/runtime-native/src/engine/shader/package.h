@@ -32,7 +32,8 @@ struct Binding {
     BindingKind kind = BindingKind::Uniform;
     std::string name;
     uint32_t minSize = 0;  // bytes; for storage, one element's stride
-    bool depth = false;    // texture: texture_depth_2d; sampler: sampler_comparison
+    bool depth = false;    // texture: texture_depth_2d (or _cube); sampler: sampler_comparison
+    bool cube = false;     // a depth texture's view is a cube
 };
 
 struct VertexAttribute {

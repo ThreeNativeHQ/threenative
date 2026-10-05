@@ -182,6 +182,21 @@ struct Incoming {
     ExprId color;
 };
 
+// interleavedGradientNoise(screenCoordinate.xy) * 2pi, PCF's per-pixel rotation.
+static ExprId noisePhi(Program& f, Tsl& t) {
+    const ExprId coordinate = f.swizzle(f.builtin("position"), "xy");
+    const ExprId noise = f.call("fract", {f.mul(t.f(52.9829189f), f.call("fract", {t.dot(coordinate, f.construct(Type::vec(2), {t.f(0.06711056f), t.f(0.00583715f)}))}))});
+    return f.mul(noise, t.f(6.28318530718f));
+}
+
+// vogelDiskSample(i, 5, phi): r = sqrt((i + 0.5) / 5), theta = i * goldenAngle + phi.
+static ExprId vogelDisk(Program& f, Tsl& t, int i, ExprId phi) {
+    const ExprId index = t.f(static_cast<float>(i));
+    const ExprId r = f.call("sqrt", {f.div(f.add(index, t.f(0.5f)), t.f(5.0f))});
+    const ExprId theta = f.add(f.mul(index, t.f(2.399963229728653f)), phi);
+    return f.mul(f.construct(Type::vec(2), {f.call("cos", {theta}), f.call("sin", {theta})}), r);
+}
+
 // three's ShadowNode for a light's shadow under PCFShadowMap (the default type, with texture compare):
 // shadowPosition = shadowMatrix * (positionWorld + normalWorld * normalBias), divided by w, y flipped,
 // z biased; PCFShadowFilter's five Vogel-disk taps rotated by interleaved gradient noise of the
@@ -198,17 +213,10 @@ static ExprId shadowFactor(Program& f, Tsl& t, std::size_t index, ExprId positio
     const ExprId uv = f.construct(Type::vec(2), {x, y});
     const ExprId texelSize = f.div(f.construct(Type::vec(2), {t.f(1)}), f.uniform(at + "ShadowMapSize", Type::vec(2)));
     const ExprId radiusScaled = f.mul(f.uniform(at + "ShadowRadius", Type::f32()), f.swizzle(texelSize, "x"));
-    // interleavedGradientNoise(screenCoordinate.xy) * 2pi
-    const ExprId coordinate = f.swizzle(f.builtin("position"), "xy");
-    const ExprId noise = f.call("fract", {f.mul(t.f(52.9829189f), f.call("fract", {t.dot(coordinate, f.construct(Type::vec(2), {t.f(0.06711056f), t.f(0.00583715f)}))}))});
-    const ExprId phi = f.mul(noise, t.f(6.28318530718f));
+    const ExprId phi = noisePhi(f, t);
     ExprId sum = kInvalid;
     for (int i = 0; i < 5; ++i) {
-        // vogelDiskSample(i, 5, phi): r = sqrt((i + 0.5) / 5), theta = i * goldenAngle + phi.
-        const ExprId index = t.f(static_cast<float>(i));
-        const ExprId r = f.call("sqrt", {f.div(f.add(index, t.f(0.5f)), t.f(5.0f))});
-        const ExprId theta = f.add(f.mul(index, t.f(2.399963229728653f)), phi);
-        const ExprId disk = f.mul(f.construct(Type::vec(2), {f.call("cos", {theta}), f.call("sin", {theta})}), r);
+        const ExprId disk = vogelDisk(f, t, i, phi);
         const ExprId tap = f.sampleCompare(map, f.add(uv, f.mul(disk, radiusScaled)), z);
         sum = sum == kInvalid ? tap : f.add(sum, tap);
     }
@@ -222,13 +230,57 @@ static ExprId shadowFactor(Program& f, Tsl& t, std::size_t index, ExprId positio
     return f.call("mix", {t.f(1), shadow, f.uniform(at + "ShadowIntensity", Type::f32())});
 }
 
+// three's PointShadowNode under PCFShadowMap: the shadow position is the world offset from the light
+// (shadow.matrix is a translation); viewZ is its largest axis, outside [near, far] the factor is 1;
+// the reference depth is viewZToPerspectiveDepth(-viewZ) + bias; PointShadowFilter's five taps lie in
+// the plane across the direction, sampled from the cube with y negated (WebGPU), then
+// mix(1, shadow, intensity).
+static ExprId pointShadowFactor(Program& f, Tsl& t, std::size_t index, ExprId positionWorld, ExprId normalWorld) {
+    const std::string at = "light" + std::to_string(index);
+    const uint32_t map = f.textureDepth("shadowCube" + std::to_string(index), true);
+    const ExprId world = f.add(positionWorld, f.mul(normalWorld, f.uniform(at + "ShadowNormalBias", Type::f32())));
+    const ExprId shadowPosition = f.swizzle(
+        f.mul(f.uniform(at + "ShadowMatrix", Type::mat(4, 4)), f.construct(Type::vec(4), {world, t.f(1)})), "xyz");
+    const ExprId absolute = f.call("abs", {shadowPosition});
+    const ExprId viewZ = f.call("max", {f.call("max", {f.swizzle(absolute, "x"), f.swizzle(absolute, "y")}), f.swizzle(absolute, "z")});
+    const ExprId near = f.uniform(at + "ShadowNear", Type::f32()), far = f.uniform(at + "ShadowFar", Type::f32());
+    const ExprId negated = f.neg(viewZ);
+    const ExprId dp = f.add(f.div(f.mul(f.add(near, negated), far), f.mul(f.sub(far, near), negated)),
+                            f.uniform(at + "ShadowBias", Type::f32()));
+    const ExprId direction = f.call("normalize", {shadowPosition});
+    const ExprId texelSize = f.div(f.uniform(at + "ShadowRadius", Type::f32()),
+                                   f.swizzle(f.uniform(at + "ShadowMapSize", Type::vec(2)), "x"));
+    const ExprId absDir = f.call("abs", {direction});
+    const ExprId axis = f.select(f.less(f.swizzle(absDir, "z"), f.swizzle(absDir, "x")),
+                                 f.construct(Type::vec(3), {t.f(0), t.f(1), t.f(0)}),
+                                 f.construct(Type::vec(3), {t.f(1), t.f(0), t.f(0)}));
+    const ExprId tangent = f.call("normalize", {f.call("cross", {direction, axis})});
+    const ExprId bitangent = f.call("cross", {direction, tangent});
+    const ExprId phi = noisePhi(f, t);
+    ExprId sum = kInvalid;
+    for (int i = 0; i < 5; ++i) {
+        const ExprId disk = vogelDisk(f, t, i, phi);
+        const ExprId offset = f.mul(f.add(f.mul(tangent, f.swizzle(disk, "x")), f.mul(bitangent, f.swizzle(disk, "y"))), texelSize);
+        const ExprId sample = f.add(direction, offset);
+        const ExprId flipped = f.construct(Type::vec(3), {f.swizzle(sample, "x"), f.neg(f.swizzle(sample, "y")), f.swizzle(sample, "z")});
+        const ExprId tap = f.sampleCompare(map, flipped, dp);
+        sum = sum == kInvalid ? tap : f.add(sum, tap);
+    }
+    ExprId shadow = f.mul(sum, t.f(1.0f / 5.0f));
+    shadow = f.select(f.less(t.f(0), f.sub(viewZ, far)), t.f(1), shadow);
+    shadow = f.select(f.less(f.sub(viewZ, near), t.f(0)), t.f(1), shadow);
+    return f.call("mix", {t.f(1), shadow, f.uniform(at + "ShadowIntensity", Type::f32())});
+}
+
 // `kind` upper case: the light casts a shadow this mesh receives; `positionWorld` is then read.
 static Incoming incoming(Program& f, Tsl& t, char kind, std::size_t index, ExprId positionView,
                          ExprId positionWorld = kInvalid, ExprId normalWorld = kInvalid) {
     const std::string at = "light" + std::to_string(index);
     ExprId color = f.uniform(at + "Color", Type::vec(3));
     if (kind >= 'A' && kind <= 'Z') {
-        color = f.mul(color, shadowFactor(f, t, index, positionWorld, normalWorld)); // colorNode.mul(shadowNode)
+        const ExprId shadow = kind == 'P' ? pointShadowFactor(f, t, index, positionWorld, normalWorld)
+                                          : shadowFactor(f, t, index, positionWorld, normalWorld);
+        color = f.mul(color, shadow); // colorNode.mul(shadowNode)
         kind = static_cast<char>(kind - 'A' + 'a');
     }
     if (kind == 'd') return {f.call("normalize", {f.uniform(at + "Direction", Type::vec(3))}), color};

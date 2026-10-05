@@ -112,9 +112,9 @@ public:
     uint32_t texture2d(std::string_view name);
     /** vec4<f32>; implicit derivatives in a fragment stage, level 0 elsewhere. */
     ExprId sample(uint32_t texture, ExprId uv, Where where = Where::current());
-    /** A depth texture and its comparison sampler (less-equal), bound together: a shadow map. */
-    uint32_t textureDepth(std::string_view name);
-    /** f32 in [0, 1]: `reference` compared against the depth texture at `uv`, filtered. */
+    /** A depth texture (2D, or a cube) and its comparison sampler, bound together: a shadow map. */
+    uint32_t textureDepth(std::string_view name, bool cube = false);
+    /** f32 in [0, 1]: `reference` compared against the depth texture at `uv` (vec3 for a cube), filtered. */
     ExprId sampleCompare(uint32_t texture, ExprId uv, ExprId reference, Where where = Where::current());
     void discard(Where where = Where::current());
     /**
@@ -176,7 +176,8 @@ private:
     std::vector<Var> vars_;
     std::vector<Storage> storage_;
     std::vector<std::string> textures_;
-    std::vector<bool> depthTextures_; // per texture: a depth texture with a comparison sampler
+    enum class TextureKind : uint8_t { Float2d, Depth2d, DepthCube };
+    std::vector<TextureKind> textureKinds_; // per texture
     struct OutputSlot {
         uint64_t name;
         Type type;
