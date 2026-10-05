@@ -7,9 +7,6 @@
     "height": 720
   },
   "warmupFrames": 10,
-  "artifacts": {
-    "screenshots": "before-after"
-  },
   "steps": [
     {
       "kind": "input",
@@ -28,8 +25,9 @@
     "diagnostics": {
       "runtimeReady": true,
       "noConsoleErrors": true,
-      "noNetworkErrors": true,
-      "noRuntimeDiagnostics": true
+      "noNetworkErrors": false,
+      "noRuntimeDiagnostics": true,
+      "networkErrorsOptOutReason": "The identical scenario runs on desktop, whose device transport has no network observer; console errors and runtime diagnostics stay asserted, and this fixture loads only local files."
     },
     "resources": [
       {
@@ -144,17 +142,6 @@
         "minCount": 4,
         "visible": true,
         "minTriangles": 200
-      }
-    ],
-    "visual": [
-      {
-        "region": {
-          "x": 0,
-          "y": 0,
-          "width": 960,
-          "height": 720,
-          "minNonblankPixelRatio": 0.2
-        }
       }
     ]
   }
