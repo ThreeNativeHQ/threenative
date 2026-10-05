@@ -50,7 +50,7 @@ every glyph advance to a whole pixel and the engine does not.
 ## Outside the profile: the build fails
 
 `threenative build` rejects an **active** rule that uses a feature in the table below, listing every
-finding as `file:line:column` (in the emitted stylesheet, not your source — no source map is read yet)
+finding as `file:line:column` in the emitted stylesheet, followed by `authored <file:line:column>` in your source when the build's verified CSS map places it (without a map the emitted position stands alone)
 and writing `.threenative/build/native-css-compat.json` (empty when clean):
 
 | Feature | Why |

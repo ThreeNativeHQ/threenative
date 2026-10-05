@@ -308,6 +308,34 @@ describe("actual production CSS provenance", () => {
     ).rejects.toMatchObject({ stderr: expect.stringContaining("TN_CSS_SOURCEMAP_UNSUPPORTED:") });
   }, 60_000);
 
+  it("names the authored position of a compatibility finding, or keeps the generated one", async () => {
+    const { root } = await fixture();
+    await writeFile(
+      path.join(root, "src/ui/hud.css"),
+      ".a { color: red; }\n.b { filter: blur(2px); }\n",
+    );
+    const built = await buildUi(root, native);
+    const out = path.join(root, "ui-css");
+    await expect(extractUiStylesheets(built, out, root)).rejects.toThrow(
+      /TN_CSS_UI_UNSUPPORTED_CSS[\s\S]*authored src\/ui\/hud\.css:2:1[\s\S]*filter/u,
+    );
+    const report = JSON.parse(await readFile(path.join(root, "native-css-compat.json"), "utf8"));
+    expect(report.findings).toHaveLength(1);
+    expect(report.findings[0]).toMatchObject({ authored: "src/ui/hud.css:2:1", what: "filter" });
+    expect(report.findings[0]).toMatchObject({ file: expect.stringContaining(".css") });
+    // Without the project root the build cannot name an authored path, so the finding stays generated.
+    await expect(extractUiStylesheets(built, out)).rejects.toThrow(/assets\/index-\w+\.css:1:\d+/u);
+    // A map the build cannot verify is no provenance: the same finding, generated only.
+    const sheet = required((await cssFiles(built))[0]);
+    await writeFile(`${sheet}.map`, JSON.stringify({ version: 3, file: path.basename(sheet) }));
+    await expect(extractUiStylesheets(built, out, root)).rejects.toThrow(
+      /TN_CSS_UI_UNSUPPORTED_CSS/u,
+    );
+    expect(
+      String(await extractUiStylesheets(built, out, root).catch((error: Error) => error)),
+    ).not.toContain("authored");
+  }, 60_000);
+
   it("maps a stylesheet emitted through the actual CSS URL path", async () => {
     const { root, authored } = await fixture();
     await writeFile(

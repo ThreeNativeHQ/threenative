@@ -378,7 +378,7 @@ export async function extractUiStylesheets(
   for (const file of sheets) {
     const css = await readFile(file, "utf8");
     await collectStylesheetAssets(uiDir, file, css, assets, projectRoot);
-    findings.push(...findNativeCssViolations(path.relative(uiDir, file), css));
+    findings.push(...(await locateNativeCssViolations(uiDir, file, css, projectRoot)));
   }
   // Raster images the UI build emitted: an image imported from JSX is referenced by the bundle, not
   // by any stylesheet, so nothing above names it. They sit in Vite's `assets/`, and stage flat by
@@ -479,24 +479,35 @@ async function collectStylesheetAssets(
   }
 }
 
-/** Read provenance only for an existing refusal; a bad map must never replace that refusal. */
-async function stylesheetAssetLocation(
+/** Where one emitted position came from, once a verified map has proven it. */
+interface IAuthoredLocation {
+  /** The authored file, realpath'd. */
+  readonly file: string;
+  /** The same file as the project-relative path a diagnostic names. */
+  readonly source: string;
+  readonly line: number;
+  /** As the map records it: 0-based. */
+  readonly column: number;
+}
+
+/**
+ * The verified provenance of one emitted stylesheet, or undefined when there is none to trust.
+ *
+ * One map, one consumer cache, one set of refusals: the `.css.map` sidecar has to be the one the
+ * emitted stylesheet itself links, has to carry the bytes of the authored file still on disk, and
+ * has to hold complete canonical VLQ tuples before a single authored coordinate is read out of it.
+ * A stylesheet without that sidecar, or with one that fails any check, maps nothing — the
+ * diagnostics that want provenance keep their generated positions instead.
+ */
+async function stylesheetTraceMap(
   build: string,
   file: string,
   css: string,
-  offset: number,
-  target: string,
-  projectRoot?: string,
-): Promise<string> {
-  const before = css.slice(0, offset);
-  const line = before.split("\n").length;
-  const column = offset - before.lastIndexOf("\n") - 1;
-  const generated = `\n  generated: ${file}:${line}:${column + 1}`;
-  if (projectRoot === undefined) return generated;
+): Promise<TraceMap | undefined> {
   try {
     const links = [...css.matchAll(/\/\*[#@]\s*sourceMappingURL\s*=\s*([^*]*?)\*\//gu)];
     if (links.length !== 1 || links[0]?.[1]?.trim() !== `${path.basename(file)}.map`)
-      return generated;
+      return undefined;
     const [root, mapFile] = await Promise.all([realpath(build), realpath(`${file}.map`)]);
     const inside = path.relative(root, mapFile);
     if (
@@ -505,7 +516,7 @@ async function stylesheetAssetLocation(
       inside.startsWith(`..${path.sep}`) ||
       path.isAbsolute(inside)
     )
-      return generated;
+      return undefined;
     const serialized = await readFile(mapFile, "utf8");
     const raw = JSON.parse(serialized);
     if (
@@ -525,7 +536,7 @@ async function stylesheetAssetLocation(
         (content: unknown) => content === null || typeof content === "string",
       )
     )
-      return generated;
+      return undefined;
     // Parse the string so untrusted JSON cannot impersonate the consumer's private cache.
     const map = new TraceMap(serialized, pathToFileURL(`${file}.map`).href);
     const mappings = decodedMappings(map);
@@ -534,23 +545,33 @@ async function stylesheetAssetLocation(
     const canonical = encodedMappings(
       new TraceMap({ version: 3, names: map.names, sources: map.sources, mappings }),
     );
-    if (canonical !== raw.mappings) return generated;
-    if (new Set(map.resolvedSources).size !== map.sources.length) return generated;
-    const segment = traceSegment(map, line - 1, column);
-    // A nearest declaration is not the exact authored URL. Duplicate anchors are ambiguous.
-    if (
-      segment === null ||
-      (segment.length !== 4 && segment.length !== 5) ||
-      segment[0] !== column ||
-      !segment.every((value) => Number.isSafeInteger(value) && value >= 0) ||
-      (mappings[line - 1] ?? []).filter((entry) => entry[0] === column).length !== 1
-    )
-      return generated;
+    if (canonical !== raw.mappings) return undefined;
+    if (new Set(map.resolvedSources).size !== map.sources.length) return undefined;
+    return map;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The authored position of a generated one, or undefined when the map does not place it.
+ *
+ * A generated position with no segment on its line names nothing; one with segments takes the
+ * nearest preceding anchor, which is the source-map meaning of that position and the authored rule
+ * the emitted declaration came from.
+ */
+async function authoredStylesheetLocation(
+  map: TraceMap,
+  projectRoot: string,
+  line: number,
+  column: number,
+): Promise<IAuthoredLocation | undefined> {
+  try {
     const original = originalPositionFor(map, { line, column });
     if (typeof original.source !== "string" || original.line === null || original.column === null)
-      return generated;
+      return undefined;
     const sourceURL = new URL(original.source);
-    if (sourceURL.protocol !== "file:") return generated;
+    if (sourceURL.protocol !== "file:") return undefined;
     const [project, authoredFile] = await Promise.all([
       realpath(projectRoot),
       realpath(fileURLToPath(sourceURL)),
@@ -562,14 +583,87 @@ async function stylesheetAssetLocation(
       source.startsWith(`..${path.sep}`) ||
       path.isAbsolute(source)
     )
-      return generated;
+      return undefined;
     const content = sourceContentFor(map, original.source);
     if (typeof content !== "string" || content !== (await readFile(authoredFile, "utf8")))
+      return undefined;
+    return { file: authoredFile, source, line: original.line, column: original.column };
+  } catch {
+    return undefined;
+  }
+}
+
+/** The `file:line:column` string every diagnostic and the report share. */
+function authoredLocationString(location: IAuthoredLocation): string {
+  return `${location.source}:${location.line}:${location.column + 1}`;
+}
+
+/**
+ * Every Core-profile violation in an emitted stylesheet, each carrying the authored
+ * `file:line:column` the stylesheet's own verified map proves.
+ *
+ * The generated position stays either way: it is what a build without a map, or with a map it
+ * cannot verify, has to say.
+ */
+async function locateNativeCssViolations(
+  build: string,
+  file: string,
+  css: string,
+  projectRoot?: string,
+): Promise<INativeCssFinding[]> {
+  const found = findNativeCssViolations(path.relative(build, file), css);
+  if (projectRoot === undefined || found.length === 0) return found;
+  const map = await stylesheetTraceMap(build, file, css);
+  if (map === undefined) return found;
+  return Promise.all(
+    found.map(async (finding) => {
+      const authored = await authoredStylesheetLocation(
+        map,
+        projectRoot,
+        finding.line,
+        // A finding counts columns from 1; a map records them from 0.
+        finding.column - 1,
+      );
+      return authored === undefined
+        ? finding
+        : { ...finding, authored: authoredLocationString(authored) };
+    }),
+  );
+}
+
+/** Read provenance only for an existing refusal; a bad map must never replace that refusal. */
+async function stylesheetAssetLocation(
+  build: string,
+  file: string,
+  css: string,
+  offset: number,
+  target: string,
+  projectRoot?: string,
+): Promise<string> {
+  const before = css.slice(0, offset);
+  const line = before.split("\n").length;
+  const column = offset - before.lastIndexOf("\n") - 1;
+  const generated = `\n  generated: ${file}:${line}:${column + 1}`;
+  if (projectRoot === undefined) return generated;
+  try {
+    const map = await stylesheetTraceMap(build, file, css);
+    if (map === undefined) return generated;
+    const segment = traceSegment(map, line - 1, column);
+    // A nearest declaration is not the exact authored URL. Duplicate anchors are ambiguous.
+    if (
+      segment === null ||
+      (segment.length !== 4 && segment.length !== 5) ||
+      segment[0] !== column ||
+      !segment.every((value) => Number.isSafeInteger(value) && value >= 0) ||
+      (decodedMappings(map)[line - 1] ?? []).filter((entry) => entry[0] === column).length !== 1
+    )
       return generated;
-    const authoredLine = content
+    const authored = await authoredStylesheetLocation(map, projectRoot, line, column);
+    if (authored === undefined) return generated;
+    const authoredLine = (await readFile(authored.file, "utf8"))
       .replaceAll(/\/\*[\s\S]*?\*\//gu, (comment) => comment.replaceAll(/[^\r\n]/g, " "))
-      .split(/\r?\n/u)[original.line - 1];
-    const authoredURL = authoredLine?.slice(original.column).match(/^url\(([^)]*)\)/iu);
+      .split(/\r?\n/u)[authored.line - 1];
+    const authoredURL = authoredLine?.slice(authored.column).match(/^url\(([^)]*)\)/iu);
     // A stale or mismatched map is not provenance for this refusal. Rewritten URLs safely retain
     // generated-only diagnostics until a producer can establish their asset identity.
     if (
@@ -581,7 +675,7 @@ async function stylesheetAssetLocation(
         .trim() !== target
     )
       return generated;
-    return `${generated}\n  authored: ${source}:${original.line}:${original.column + 1}`;
+    return `${generated}\n  authored: ${authoredLocationString(authored)}`;
   } catch {
     return generated;
   }

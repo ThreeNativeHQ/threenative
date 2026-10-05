@@ -12,8 +12,9 @@
  * `@supports` condition is never trusted: Stylo answers it by parse-ability, not by what the engine
  * paints, so a denylisted feature fails the build even inside an `@supports` branch.
  *
- * Locations are in the emitted stylesheet (line:column), not in the author's source: no source map
- * is read yet.
+ * Locations are in the emitted stylesheet (line:column). The build adds the authored
+ * `file:line:column` where the stylesheet's own verified map proves one; a build with no map, or
+ * with a map it cannot verify, reports the emitted position only.
  */
 
 export interface INativeCssFinding {
@@ -23,6 +24,8 @@ export interface INativeCssFinding {
   /** The property, at-rule or selector construct that is outside the Core profile. */
   readonly what: string;
   readonly why: string;
+  /** The authored `file:line:column` this emitted position came from, when a map proves it. */
+  readonly authored?: string;
 }
 
 /** Properties whose any active value is outside Core. */
@@ -186,7 +189,12 @@ export function findNativeCssViolations(file: string, css: string): INativeCssFi
   return findings;
 }
 
-/** The build-failure text for a set of findings; one line each, with its location. */
+/** The build-failure text for a set of findings; one line each, with both locations. */
 export function describeNativeCssFindings(findings: readonly INativeCssFinding[]): string {
-  return findings.map((f) => `  ${f.file}:${f.line}:${f.column}  ${f.what} — ${f.why}`).join("\n");
+  return findings
+    .map(
+      (f) =>
+        `  ${f.file}:${f.line}:${f.column}${f.authored === undefined ? "" : `  authored ${f.authored}`}  ${f.what} — ${f.why}`,
+    )
+    .join("\n");
 }

@@ -75,6 +75,8 @@ describe("extractUiStylesheets compatibility gate", () => {
         await readFile(path.join(root, "build", "native-css-compat.json"), "utf8"),
       );
       expect(report.findings).toHaveLength(2);
+      // No project root, so no map, so a finding names the emitted stylesheet alone.
+      expect(report.findings[0]).not.toHaveProperty("authored");
     } finally {
       await rm(root, { force: true, recursive: true });
     }
