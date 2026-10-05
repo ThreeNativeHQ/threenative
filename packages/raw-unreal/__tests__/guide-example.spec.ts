@@ -12,7 +12,10 @@ import { UAssetLoader } from "../src/index.js";
  * `new DefaultLoadingManager()` still throws. The real shared instance stands in, because
  * `new <a real instance>` is the failure this catches and a plain object would not be one.
  */
-const guide = await readFile("docs/guides/unreal-assets.md", "utf8");
+const guide = await readFile(
+  new URL("../../../docs/guides/unreal-assets.md", import.meta.url),
+  "utf8",
+);
 const written = [...guide.matchAll(/new\s+UAssetLoader\([^)]*\)/gu)].map((match) => match[0]);
 const shared = written.filter((line) => line.includes("DefaultLoadingManager"));
 
