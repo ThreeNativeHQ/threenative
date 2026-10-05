@@ -1,6 +1,9 @@
 #include "check.h"
 #include "threenative/abi/tn_abi.h"
+#include "engine/abi/abi_internal.h"
+#include "engine/scene/object3d.h"
 
+#include <cstdio>
 #include <cstring>
 #include <string>
 
@@ -418,7 +421,85 @@ void lifetime() {
     CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
 }
 
+struct Calls {
+    int invoked = 0;
+    int released = 0;
+    bool fail = false;
+    uint32_t count = 0;
+    tn_value_t args[6] = {};
+};
+
+tn_status_t recordCall(void* context, const tn_value_t* args, uint32_t count, char* error, uint32_t capacity) {
+    auto* calls = static_cast<Calls*>(context);
+    ++calls->invoked;
+    calls->count = count;
+    for (uint32_t i = 0; i < count && i < 6; ++i) calls->args[i] = args[i];
+    if (!calls->fail) return TN_OK;
+    std::snprintf(error, capacity, "boom");
+    return TN_ERROR_INVALID_STATE;
+}
+
+void releaseCall(void* context) { ++static_cast<Calls*>(context)->released; }
+
+template <typename T>
+T* engineObject(tn_handle_t h) {
+    return static_cast<T*>(tn::abi::objectOf(h)->ptr.get());
+}
+
+// PRD-531/506: a callback set through the ABI runs with three's arguments as handles, reports a
+// throw as a status, and its context is released exactly once: replaced, cleared or destroyed.
+void callbacks() {
+    const tn_version_info_t own = tn_engine_version();
+    tn_context_t* ctx = nullptr;
+    Diag d;
+    CHECK(tn_context_create(&ctx, &own, &d.value) == TN_OK);
+    tn_handle_t scene{}, camera{}, geometry{}, material{}, mesh{}, other{};
+    CHECK(tn_construct(ctx, "Scene", nullptr, 0, &scene, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "PerspectiveCamera", nullptr, 0, &camera, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "BoxGeometry", nullptr, 0, &geometry, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "MeshBasicMaterial", nullptr, 0, &material, &d.value) == TN_OK);
+    const tn_value_t parts[2] = {ref(geometry), ref(material)};
+    CHECK(tn_construct(ctx, "Mesh", parts, 2, &mesh, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "Mesh", parts, 2, &other, &d.value) == TN_OK);
+
+    Calls first, second, third;
+    CHECK(tn_set_callback(mesh, "onBeforeRender", recordCall, &first, releaseCall, &d.value) == TN_OK);
+    auto* object = engineObject<tn::engine::Object3D>(mesh);
+    const tn::engine::RenderCallbackArgs args{
+        engineObject<tn::engine::Object3D>(scene), engineObject<tn::engine::Object3D>(camera),
+        std::static_pointer_cast<const tn::engine::BufferGeometry>(tn::abi::objectOf(geometry)->ptr),
+        std::static_pointer_cast<const tn::engine::Material>(tn::abi::objectOf(material)->ptr)};
+    std::string error;
+    CHECK(object->onBeforeRender && (*object->onBeforeRender)(args, error));
+    CHECK(first.invoked == 1 && first.count == 6);
+    CHECK(first.args[0].kind == TN_VALUE_NULL && first.args[5].kind == TN_VALUE_NULL);  // renderer, group
+    CHECK(first.args[1].kind == TN_VALUE_HANDLE && same(first.args[1].handle, scene));
+    CHECK(first.args[2].kind == TN_VALUE_HANDLE && same(first.args[2].handle, camera));
+    CHECK(first.args[3].kind == TN_VALUE_HANDLE && same(first.args[3].handle, geometry));
+    CHECK(first.args[4].kind == TN_VALUE_HANDLE && same(first.args[4].handle, material));
+    first.fail = true;
+    CHECK(!(*object->onBeforeRender)(args, error) && error == "boom");
+
+    CHECK(tn_set_callback(mesh, "onBeforeRender", recordCall, &second, releaseCall, &d.value) == TN_OK);
+    CHECK(first.released == 1 && second.released == 0);  // replaced: released once
+    CHECK(tn_set_callback(mesh, "onBeforeRender", nullptr, nullptr, nullptr, &d.value) == TN_OK);
+    CHECK(second.released == 1 && !object->onBeforeRender);  // cleared
+
+    CHECK(tn_set_callback(other, "onBeforeRender", recordCall, &third, releaseCall, &d.value) == TN_OK);
+    CHECK(tn_object_release(other, &d.value) == TN_OK);
+    CHECK(third.released == 1);  // its object destroyed
+
+    Calls unused;
+    CHECK(tn_set_callback(mesh, "onAfterShadow", recordCall, &unused, releaseCall, &d.value) == TN_ERROR_UNSUPPORTED);
+    tn_handle_t vector{};
+    CHECK(tn_construct(ctx, "Vector3", nullptr, 0, &vector, &d.value) == TN_OK);
+    CHECK(tn_set_callback(vector, "onBeforeRender", recordCall, &unused, releaseCall, &d.value) == TN_ERROR_UNSUPPORTED);
+    CHECK(unused.released == 0);  // a refused pair was never taken
+    CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
+}
+
 }  // namespace
 
 TN_TEST_MAIN({"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene},
-             {"unsupported_member", unsupported_member}, {"material", material}, {"light", light}, {"lifetime", lifetime})
+             {"unsupported_member", unsupported_member}, {"material", material}, {"light", light}, {"lifetime", lifetime},
+             {"callbacks", callbacks})

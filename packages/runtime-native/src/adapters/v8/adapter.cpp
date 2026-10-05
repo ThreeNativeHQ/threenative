@@ -1,5 +1,6 @@
 #include "adapter.h"
 
+#include <cstdio>
 #include <string>
 #include <vector>
 
@@ -11,6 +12,16 @@ struct Adapter::Wrapper {
     Adapter* adapter;
     tn_handle_t handle;
     v8::Global<v8::Object> object;
+    std::set<std::string> callbacks;  // JS callbacks set on the object, by name
+    bool held = false;                // strong: the engine may still call one of them
+};
+
+// What the engine holds for one JS callback: which wrapper's function to call. Deleted by the
+// engine's release, once, when it drops the callback.
+struct Adapter::CallbackData {
+    Adapter* adapter;
+    uint64_t wrapper;
+    std::string name;
 };
 
 namespace {
@@ -66,6 +77,7 @@ bool toValues(Adapter& a, const v8::FunctionCallbackInfo<v8::Value>& info, std::
         } else if (a.unwrap(arg, h)) {
             v.kind = TN_VALUE_HANDLE;
             v.handle = h;
+            a.holdIfCallback(h);
         } else if (arg->IsArray()) {
             v8::Local<v8::Array> array = arg.As<v8::Array>();
             std::vector<double> numbers(array->Length());
@@ -124,8 +136,14 @@ Adapter::Adapter(v8::Isolate* isolate, tn_context_t* context) : isolate_(isolate
 }
 
 Adapter::~Adapter() {
-    // The isolate may outlive this adapter: wrappers left alive stop pointing at it.
+    // The isolate may outlive this adapter: wrappers left alive stop pointing at it, and the engine
+    // stops calling into it.
     for (auto& [k, w] : wrappers_) {
+        for (const std::string& name : w->callbacks) {
+            tn_diagnostic_t diagnostic{nullptr, 0};
+            tn_set_callback(w->handle, name.c_str(), nullptr, nullptr, nullptr, &diagnostic);
+            tn_diagnostic_release(&diagnostic);
+        }
         w->object.Reset();
         delete w;
     }
@@ -135,6 +153,12 @@ void Adapter::forget(uint64_t k) {
     const auto it = wrappers_.find(k);
     if (it == wrappers_.end()) return;
     tn_diagnostic_t diagnostic{nullptr, 0};
+    // The engine must not call a function whose wrapper is gone.
+    for (const std::string& name : it->second->callbacks) {
+        tn_set_callback(it->second->handle, name.c_str(), nullptr, nullptr, nullptr, &diagnostic);
+        tn_diagnostic_release(&diagnostic);
+    }
+    withCallbacks_.erase(it->second);
     tn_object_release(it->second->handle, &diagnostic);
     tn_diagnostic_release(&diagnostic);
     delete it->second;
@@ -156,13 +180,7 @@ v8::Local<v8::Value> Adapter::wrap(tn_handle_t handle) {
         object = instanceTemplate_.Get(isolate_)->NewInstance(ctx).ToLocalChecked();
     }
     auto* w = new Wrapper{this, handle, {}};
-    object->SetAlignedPointerInInternalField(0, w);
-    w->object.Reset(isolate_, object);
-    w->object.SetWeak(w, [](const v8::WeakCallbackInfo<Wrapper>& info) {
-        Wrapper* wrapper = info.GetParameter();
-        wrapper->object.Reset();
-        wrapper->adapter->forget(key(wrapper->handle));
-    }, v8::WeakCallbackType::kParameter);
+    track(w, object);
     wrappers_[k] = w;
     return scope.Escape(object);
 }
@@ -177,8 +195,122 @@ bool Adapter::unwrap(v8::Local<v8::Value> value, tn_handle_t& out) const {
     return true;
 }
 
+void Adapter::track(Wrapper* w, v8::Local<v8::Object> object) {
+    object->SetAlignedPointerInInternalField(0, w);
+    w->object.Reset(isolate_, object);
+    weak(w);
+}
+
+void Adapter::weak(Wrapper* w) {
+    w->held = false;
+    w->object.SetWeak(w, [](const v8::WeakCallbackInfo<Wrapper>& info) {
+        Wrapper* wrapper = info.GetParameter();
+        wrapper->object.Reset();
+        wrapper->adapter->forget(key(wrapper->handle));
+    }, v8::WeakCallbackType::kParameter);
+}
+
+void Adapter::strong(Wrapper* w) {
+    if (w->held) return;
+    w->held = true;
+    w->object.ClearWeak();
+}
+
+void Adapter::holdIfCallback(tn_handle_t handle) {
+    const auto it = wrappers_.find(key(handle));
+    if (it != wrappers_.end() && !it->second->callbacks.empty()) strong(it->second);
+}
+
+void Adapter::collect() {
+    for (Wrapper* w : withCallbacks_) {
+        tn_value_t parent{};
+        tn_diagnostic_t diagnostic{nullptr, 0};
+        const bool attached = tn_get(w->handle, "parent", &parent, &diagnostic) == TN_OK && parent.kind == TN_VALUE_HANDLE;
+        tn_diagnostic_release(&diagnostic);
+        if (attached) strong(w);
+        else if (w->held) weak(w);
+    }
+}
+
+tn_status_t Adapter::invokeCallback(void* context, const tn_value_t* args, uint32_t count, char* error, uint32_t capacity) {
+    const auto* data = static_cast<CallbackData*>(context);
+    Adapter& a = *data->adapter;
+    v8::Isolate* isolate = a.isolate_;
+    v8::Isolate::Scope isolateScope(isolate);  // the engine calls from outside any JS frame
+    v8::HandleScope scope(isolate);
+    v8::Local<v8::Context> ctx = a.context_v8_.Get(isolate);
+    v8::Context::Scope contextScope(ctx);
+    const auto it = a.wrappers_.find(data->wrapper);
+    if (it == a.wrappers_.end()) {
+        std::snprintf(error, capacity, "TN_V8_CALLBACK_GONE %s", data->name.c_str());
+        return TN_ERROR_INVALID_STATE;
+    }
+    v8::Local<v8::Object> self = it->second->object.Get(isolate);
+    v8::Local<v8::Value> fn;
+    if (!self->GetPrivate(ctx, a.callbackKeys_.at(data->name).Get(isolate)).ToLocal(&fn) || !fn->IsFunction()) return TN_OK;
+    std::vector<v8::Local<v8::Value>> argv;
+    argv.reserve(count);
+    for (uint32_t i = 0; i < count; ++i) argv.push_back(args[i].kind == TN_VALUE_NULL ? v8::Null(isolate).As<v8::Value>() : fromValue(a, args[i]));
+    v8::TryCatch tryCatch(isolate);
+    if (fn.As<v8::Function>()->Call(ctx, self, static_cast<int>(argv.size()), argv.data()).IsEmpty()) {
+        v8::String::Utf8Value message(isolate, tryCatch.Exception());
+        std::snprintf(error, capacity, "%s", *message ? *message : "the callback threw");
+        return TN_ERROR_INVALID_STATE;
+    }
+    return TN_OK;
+}
+
+void Adapter::getCallback(const v8::FunctionCallbackInfo<v8::Value>& info) {
+    auto* d = static_cast<MethodData*>(info.Data().As<v8::External>()->Value());
+    v8::Isolate* isolate = info.GetIsolate();
+    v8::Local<v8::Value> fn;
+    if (info.This()->GetPrivate(isolate->GetCurrentContext(), d->adapter->callbackKeys_.at(d->name).Get(isolate)).ToLocal(&fn) &&
+        fn->IsFunction()) {
+        info.GetReturnValue().Set(fn);
+    } else {
+        info.GetReturnValue().SetNull();
+    }
+}
+
+void Adapter::setCallback(const v8::FunctionCallbackInfo<v8::Value>& info) {
+    auto* d = static_cast<MethodData*>(info.Data().As<v8::External>()->Value());
+    Adapter& a = *d->adapter;
+    v8::Isolate* isolate = info.GetIsolate();
+    v8::Local<v8::Context> ctx = isolate->GetCurrentContext();
+    tn_handle_t h{};
+    if (!a.unwrap(info.This(), h)) return;
+    Wrapper* w = a.wrappers_.at(key(h));
+    v8::Local<v8::Private> slot = a.callbackKeys_.at(d->name).Get(isolate);
+    v8::Local<v8::Value> value = info[0];
+    tn_diagnostic_t diagnostic{nullptr, 0};
+    if (value->IsNullOrUndefined()) {
+        info.This()->DeletePrivate(ctx, slot).Check();
+        w->callbacks.erase(d->name);
+        if (w->callbacks.empty()) a.withCallbacks_.erase(w);
+        if (tn_set_callback(h, d->name.c_str(), nullptr, nullptr, nullptr, &diagnostic) != TN_OK) throwStatus(isolate, diagnostic);
+        return;
+    }
+    if (!value->IsFunction()) {
+        isolate->ThrowException(v8::Exception::TypeError(str(isolate, d->name + " must be a function or null")));
+        return;
+    }
+    auto* data = new CallbackData{&a, key(h), d->name};
+    if (tn_set_callback(h, d->name.c_str(), &Adapter::invokeCallback, data,
+                        [](void* c) { delete static_cast<CallbackData*>(c); }, &diagnostic) != TN_OK) {
+        delete data;  // a refused callback was never taken
+        throwStatus(isolate, diagnostic);
+        return;
+    }
+    // The function lives on the wrapper: wrapper -> closure is a JS edge the collector sees.
+    info.This()->SetPrivate(ctx, slot, value).Check();
+    w->callbacks.insert(d->name);
+    a.withCallbacks_.insert(w);
+    a.strong(w);  // until the next safe point finds the object attached or not
+}
+
 void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> target) {
     v8::HandleScope scope(isolate_);
+    context_v8_.Reset(isolate_, context);
     v8::Local<v8::External> self = v8::External::New(isolate_, this);
     for (const auto& [name, binding] : registry()) {
         const uint16_t type = tn_type_id(name.c_str());
@@ -209,13 +341,7 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
                 // The construct call's own receiver becomes the wrapper: `new` returns it.
                 v8::Local<v8::Object> object = info.This();
                 auto* w = new Wrapper{&a, h, {}};
-                object->SetAlignedPointerInInternalField(0, w);
-                w->object.Reset(isolate, object);
-                w->object.SetWeak(w, [](const v8::WeakCallbackInfo<Wrapper>& weak) {
-                    Wrapper* wrapper = weak.GetParameter();
-                    wrapper->object.Reset();
-                    wrapper->adapter->forget(key(wrapper->handle));
-                }, v8::WeakCallbackType::kParameter);
+                a.track(w, object);
                 a.wrappers_[key(h)] = w;
             },
             self);
@@ -316,6 +442,15 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
                                },
                                v8::External::New(isolate_, data))
                          : v8::Local<v8::FunctionTemplate>());
+        }
+        for (const auto& [name, set] : binding.callbacks) {
+            (void)set;
+            if (callbackKeys_.find(name) == callbackKeys_.end())
+                callbackKeys_[name].Reset(isolate_, v8::Private::New(isolate_, str(isolate_, "tn:callback:" + name)));
+            auto* data = new MethodData{this, name, {}};
+            proto->SetAccessorProperty(str(isolate_, name),
+                                       v8::FunctionTemplate::New(isolate_, &Adapter::getCallback, v8::External::New(isolate_, data)),
+                                       v8::FunctionTemplate::New(isolate_, &Adapter::setCallback, v8::External::New(isolate_, data)));
         }
         classes_[type].Reset(isolate_, ctor);
         target->Set(context, str(isolate_, name), ctor->GetFunction(context).ToLocalChecked()).Check();

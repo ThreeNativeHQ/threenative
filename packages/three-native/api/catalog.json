@@ -11212,8 +11212,7 @@
           "lifetime": "reference",
           "default": "null",
           "status": {
-            "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "kind": "supported"
           }
         },
         {
@@ -11592,7 +11591,7 @@
               "parameters": [
                 {
                   "name": "renderer",
-                  "type": "WebGLRenderer",
+                  "type": "null",
                   "optional": false
                 },
                 {
@@ -11617,7 +11616,7 @@
                 },
                 {
                   "name": "group",
-                  "type": "Group",
+                  "type": "null",
                   "optional": false
                 }
               ],
@@ -11625,8 +11624,7 @@
             }
           ],
           "status": {
-            "kind": "unsupported",
-            "diagnostic": "TN_NATIVE_UNSUPPORTED_RENDERER_PRIVATE"
+            "kind": "supported"
           }
         },
         {

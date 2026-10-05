@@ -1,6 +1,9 @@
 #include "adapters/v8/adapter.h"
 #include "check.h"
+#include "engine/abi/abi_internal.h"
 #include "engine/abi/bindings.h"
+#include "engine/scene/nodes.h"
+#include "engine/scene/object3d.h"
 
 #include <libplatform/libplatform.h>
 
@@ -303,6 +306,10 @@ void catalogCoverage() {
             (void)fn;
             if (member.find('.') == std::string::npos) expected.insert(member);
         }
+        for (const auto& [callback, set] : binding.callbacks) {
+            (void)set;
+            expected.insert(callback);
+        }
         v8::Local<v8::Value> ctor;
         v8::Local<v8::Value> prototype;
         if (!global->Get(ctx, key(name)).ToLocal(&ctor) || !ctor->IsObject() ||
@@ -325,10 +332,94 @@ void catalogCoverage() {
     }
 }
 
+// PRD-531 box 41: a JS-to-native cycle through a captured callback is reclaimed at a safe point.
+// The closure set as mesh.onBeforeRender captures the mesh's own wrapper; while the mesh is in the
+// scene the safe point holds the wrapper so the engine can still call it, and once the mesh leaves
+// the scene the wrapper, the closure and the native mesh are all reclaimed.
+void callbackCycle() {
+    Runtime& rt = runtime();
+    v8::Isolate::Scope isolateScope(rt.isolate);
+    Adapter adapter(rt.isolate, rt.context);
+    v8::HandleScope scope(rt.isolate);
+    v8::Local<v8::Context> ctx = v8::Context::New(rt.isolate);
+    v8::Context::Scope contextScope(ctx);
+    adapter.install(ctx, ctx->Global());
+    const auto js = [&](const char* source) {
+        v8::TryCatch tryCatch(rt.isolate);
+        v8::Local<v8::Value> result;
+        if (!v8::Script::Compile(ctx, v8::String::NewFromUtf8(rt.isolate, source).ToLocalChecked())
+                 .ToLocalChecked()
+                 ->Run(ctx)
+                 .ToLocal(&result)) {
+            v8::String::Utf8Value error(rt.isolate, tryCatch.Exception());
+            return std::string("THROWN ") + (*error ? *error : "?");
+        }
+        v8::String::Utf8Value text(rt.isolate, result);
+        return std::string(*text ? *text : "");
+    };
+    tn_handle_t mesh{}, scene{}, camera{};
+    {
+        v8::HandleScope inner(rt.isolate);
+        v8::Local<v8::Value> made = v8::Script::Compile(ctx, v8::String::NewFromUtf8Literal(rt.isolate, R"JS(
+            globalThis.scene = new Scene();
+            globalThis.camera = new PerspectiveCamera();
+            globalThis.calls = 0;
+            (function () {
+                const mesh = new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial());
+                mesh.onBeforeRender = function (renderer, scene, camera, geometry, material, group) {
+                    calls++;
+                    globalThis.seen = [renderer === null, scene === globalThis.scene, camera === globalThis.camera,
+                                       geometry === mesh.geometry, material === mesh.material, group === null, this === mesh].join();
+                    if (globalThis.fail) throw new Error("boom");
+                };
+                scene.add(mesh);
+                return mesh;
+            })();
+        )JS")).ToLocalChecked()->Run(ctx).ToLocalChecked();
+        CHECK(adapter.unwrap(made, mesh));
+        CHECK(adapter.unwrap(ctx->Global()->Get(ctx, v8::String::NewFromUtf8Literal(rt.isolate, "scene")).ToLocalChecked(), scene));
+        CHECK(adapter.unwrap(ctx->Global()->Get(ctx, v8::String::NewFromUtf8Literal(rt.isolate, "camera")).ToLocalChecked(), camera));
+    }
+    // The engine's call, as RenderDatabase makes it before the mesh is drawn.
+    const auto render = [&](std::string& error) {
+        auto* object = static_cast<tn::engine::Object3D*>(tn::abi::objectOf(mesh)->ptr.get());
+        auto* meshNode = static_cast<tn::engine::Mesh*>(object);
+        const tn::engine::RenderCallbackArgs args{static_cast<tn::engine::Object3D*>(tn::abi::objectOf(scene)->ptr.get()),
+                                                  static_cast<tn::engine::Object3D*>(tn::abi::objectOf(camera)->ptr.get()),
+                                                  meshNode->geometry, meshNode->material};
+        return object->onBeforeRender && (*object->onBeforeRender)(args, error);
+    };
+
+    // In the scene, with no JS reference but its own closure: held across a safe point and GCs.
+    adapter.collect();
+    for (int i = 0; i < 4; ++i) rt.isolate->LowMemoryNotification();
+    std::string error;
+    CHECK(tn::abi::objectOf(mesh) != nullptr);
+    CHECK(render(error));
+    CHECK(js("calls") == "1");
+    CHECK(js("seen") == "true,true,true,true,true,true,true");
+    js("globalThis.fail = true");
+    CHECK(!render(error) && error.find("boom") != std::string::npos);  // a throw is a status
+    js("globalThis.fail = false");
+
+    // Out of the scene: the cycle is garbage, and reclaiming it releases the native mesh.
+    CHECK(js("scene.clear(); 'ok'") == "ok");
+    const size_t before = adapter.liveWrappers();
+    adapter.collect();
+    for (int i = 0; i < 4; ++i) rt.isolate->LowMemoryNotification();
+    CHECK(adapter.liveWrappers() < before);
+    CHECK(tn::abi::objectOf(mesh) == nullptr);
+    tn_value_t result{};
+    tn_diagnostic_t d{nullptr, 0};
+    CHECK(tn_get(mesh, "visible", &result, &d) == TN_ERROR_INVALID_HANDLE);
+    tn_diagnostic_release(&d);
+}
+
 }  // namespace
 
 TN_TEST_MAIN({"handles", handles}, {"unsupported", unsupported}, {"gc_release", gcRelease},
              {"runtime_churn", runtimeChurn},
              {"crossing_bench", crossingBench},
              {"scene", scene},
-             {"catalog_coverage", catalogCoverage})
+             {"catalog_coverage", catalogCoverage},
+             {"callback_cycle", callbackCycle})

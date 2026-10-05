@@ -45,6 +45,8 @@ interface IRegistryClass {
   readonly getters: string[];
   readonly setters: string[];
   readonly members: string[];
+  /** Language callbacks the engine calls back (`onBeforeRender`), set through tn_set_callback. */
+  readonly callbacks: string[];
 }
 
 interface IRegistryDump {
@@ -103,6 +105,21 @@ const METHOD_OVERRIDE: Record<string, { parameters: ICatalogParameter[]; returns
       returns: "this",
     },
   ],
+  // The engine calls it with no renderer and no group (tn_set_callback); three types the renderer
+  // as WebGLRenderer, which the catalog does not publish.
+  "Object3D.onBeforeRender": [
+    {
+      parameters: [
+        { name: "renderer", type: "null", optional: false },
+        { name: "scene", type: "Scene", optional: false },
+        { name: "camera", type: "Camera", optional: false },
+        { name: "geometry", type: "BufferGeometry", optional: false },
+        { name: "material", type: "Material", optional: false },
+        { name: "group", type: "null", optional: false },
+      ],
+      returns: "void",
+    },
+  ],
   // The binding's `toArray()` takes no argument and returns the plain array.
   "Vector2.toArray": [{ parameters: [], returns: "number[]" }],
 };
@@ -122,6 +139,7 @@ function registryMembers(binding: IRegistryClass): Set<string> {
     ...binding.methods,
     ...binding.getters.filter((name) => !name.includes(".")),
     ...binding.members.filter((name) => !name.includes(".")),
+    ...binding.callbacks,
   ]);
 }
 

@@ -153,7 +153,8 @@ tn_native_engine_test(tn-native-engine-abi-test tests/native-engine/abi_test.cpp
     native_engine_abi_lifetime=lifetime
     native_engine_unsupported_member=unsupported_member
     native_engine_abi_material=material
-    native_engine_abi_light=light)
+    native_engine_abi_light=light
+    native_engine_abi_callbacks=callbacks)
 target_link_libraries(tn-native-engine-abi-test PRIVATE tn_engine_abi)
 
 # PRD-508 phase 3: the geometry edges a JS caller reaches that no fixture states.
@@ -253,9 +254,10 @@ if(EMSCRIPTEN)
     target_link_libraries(tn-native-engine-abi-module PRIVATE tn_engine_abi)
     tn_native_engine_target(tn-native-engine-abi-module)
     target_link_options(tn-native-engine-abi-module PRIVATE --no-entry -sMODULARIZE=1 -sEXPORT_NAME=createTnAbi
-        -sENVIRONMENT=node,web -sALLOW_MEMORY_GROWTH=1
-        "-sEXPORTED_FUNCTIONS=_tn_engine_version,_tn_context_create,_tn_context_destroy,_tn_type_id,_tn_object_release,_tn_construct,_tn_invoke,_tn_get,_tn_set,_tn_diagnostic_release,_malloc,_free"
-        "-sEXPORTED_RUNTIME_METHODS=HEAPU8,HEAPU32,HEAPF64,UTF8ToString,stringToUTF8,lengthBytesUTF8")
+        -sENVIRONMENT=node,web -sALLOW_MEMORY_GROWTH=1 -sALLOW_TABLE_GROWTH=1
+        "-sEXPORTED_FUNCTIONS=_tn_engine_version,_tn_context_create,_tn_context_destroy,_tn_type_id,_tn_object_release,_tn_construct,_tn_invoke,_tn_get,_tn_set,_tn_set_callback,_tn_diagnostic_release,_tnw_fire_before_render,_malloc,_free"
+        "-sEXPORTED_RUNTIME_METHODS=HEAPU8,HEAPU32,HEAPF64,UTF8ToString,stringToUTF8,lengthBytesUTF8,addFunction")
+    target_include_directories(tn-native-engine-abi-module PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
     find_program(TN_PNPM_EXECUTABLE pnpm)
     if(TN_PNPM_EXECUTABLE)
         add_test(NAME native_engine_wasm_browser_backend

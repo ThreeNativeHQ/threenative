@@ -24,6 +24,7 @@
 // side's destructor detaches the other, so neither ever holds a dangling `parent` or child.
 
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <memory>
 #include <optional>
@@ -39,6 +40,27 @@
 namespace tn::engine {
 
 class Object3D;
+class BufferGeometry;
+class Material;
+
+/**
+ * What a render callback receives, as three's onBeforeRender does: the scene and camera being
+ * rendered and the object's geometry and material (PRD-531, PRD-506). Any may be null.
+ */
+struct RenderCallbackArgs {
+    const Object3D* scene = nullptr;
+    const Object3D* camera = nullptr;
+    // Shared, as the mesh holds them: a language may have released its handle to either, and the
+    // callback still hands it the same object.
+    std::shared_ptr<const BufferGeometry> geometry;
+    std::shared_ptr<const Material> material;
+};
+
+/**
+ * A language callback set on an object: true when it ran, false with `error` when the callee threw.
+ * Shared, so a call in progress keeps it alive while the callee replaces it.
+ */
+using RenderCallback = std::shared_ptr<const std::function<bool(const RenderCallbackArgs&, std::string& error)>>;
 
 /**
  * A dispatched event, three's shape: the type, the dispatcher as `target`, and `child` for the two
@@ -111,6 +133,8 @@ public:
     std::string name;  // not a renderer input, so a plain field: writes do not bump `revision()`
 
     Object3D* parent = nullptr;
+    /** three's onBeforeRender: run before this object is drawn (RenderDatabase::render). */
+    RenderCallback onBeforeRender;
     std::vector<Object3D*> children;
 
     /** `Object3D.DEFAULT_UP`, the up direction a new object copies. */

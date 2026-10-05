@@ -212,6 +212,19 @@ TN_EXPORT tn_status_t tn_invoke(tn_handle_t self, const char *method, const tn_v
 TN_EXPORT tn_status_t tn_get(tn_handle_t self, const char *path, tn_value_t *result, tn_diagnostic_t *diagnostic);
 TN_EXPORT tn_status_t tn_set(tn_handle_t self, const char *path, const tn_value_t *value, tn_diagnostic_t *diagnostic);
 
+/* A callback a language sets on an object, which the engine runs at a defined point (PRD-531,
+ * PRD-506). Today: `onBeforeRender`, run before the object is drawn with three's six arguments
+ * (renderer, scene, camera, geometry, material, group); the renderer and the group are null, the
+ * others are handles or null. `invoke` returns TN_OK, or writes a NUL-terminated message of at most
+ * `error_capacity` bytes into `error` and returns another status when the callee threw: the engine
+ * records it as a render diagnostic and goes on. `release` runs exactly once, when the engine drops
+ * the pair: the callback is replaced, cleared with a null `invoke`, or its object is destroyed. */
+typedef tn_status_t (*tn_object_callback_t)(void *context, const tn_value_t *args, uint32_t arg_count,
+                                            char *error, uint32_t error_capacity);
+typedef void (*tn_release_t)(void *context);
+TN_EXPORT tn_status_t tn_set_callback(tn_handle_t self, const char *name, tn_object_callback_t invoke, void *context,
+                                      tn_release_t release, tn_diagnostic_t *diagnostic);
+
 /* Releases a diagnostic's owned string. Safe on a zeroed struct. */
 TN_EXPORT void tn_diagnostic_release(tn_diagnostic_t *diagnostic);
 

@@ -18,6 +18,8 @@ export interface IRegistryClass {
   readonly getters: readonly string[];
   readonly setters: readonly string[];
   readonly members: readonly string[];
+  /** Language callbacks the engine calls back (`onBeforeRender`). */
+  readonly callbacks: readonly string[];
 }
 
 export interface IRegistryDump {
@@ -40,6 +42,23 @@ export interface IBrowserRuntime {
   get(self: IEngineRef, path: string): EngineValue;
   set(self: IEngineRef, path: string, value: EngineValue): void;
   release(self: IEngineRef): void;
+  /** Sets (or, with null, clears) a callback the engine runs; `handler` gets the engine's arguments. */
+  setCallback(
+    self: IEngineRef,
+    name: string,
+    handler: ((args: readonly EngineValue[]) => void) | null,
+  ): void;
+}
+
+/** The defined classes and the callback safe point the host runs between frames. */
+export interface IBrowserEngine {
+  readonly classes: Record<string, new (...args: unknown[]) => object>;
+  /**
+   * A wrapper whose object carries a callback is held while the object is attached (the engine may
+   * call it) and let go once detached, so a detached object, its closure and the wrapper the closure
+   * captured are a cycle the collector reclaims.
+   */
+  collect(): void;
 }
 
 const REF = Symbol("tn.engineRef");
@@ -48,21 +67,33 @@ interface IWrapped {
   [REF]: IEngineRef;
 }
 
+/** The engine object behind a back-end wrapper, for a host that talks to the ABI directly. */
+export function engineRef(object: object): IEngineRef | undefined {
+  return (object as Partial<IWrapped>)[REF];
+}
+
 function isRef(value: unknown): value is IEngineRef {
   return typeof value === "object" && value !== null && "key" in value && "type" in value;
 }
 
-/** Defines every registry class over `runtime` and returns them by name. */
+/** Defines every registry class over `runtime`. */
 export function defineBrowserClasses(
   registry: IRegistryDump,
   runtime: IBrowserRuntime,
-): Record<string, new (...args: unknown[]) => object> {
+): IBrowserEngine {
   const classes: Record<string, new (...args: unknown[]) => object> = {};
   const byType = new Map<number, { prototype: object }>();
   const wrappers = new Map<string, WeakRef<object>>();
+  // Callbacks: the function lives on its wrapper (a WeakMap entry), so wrapper -> closure is an edge
+  // the collector sees; `held` roots a wrapper while the engine may still call it.
+  const callbackFunctions = new WeakMap<object, Map<string, (...args: unknown[]) => unknown>>();
+  const callbackNames = new Map<string, Set<string>>(); // by handle key, to clear on collection
+  const held = new Set<object>();
   const released = new FinalizationRegistry<IEngineRef>((ref) => {
     if (wrappers.get(ref.key)?.deref() === undefined) {
       wrappers.delete(ref.key);
+      for (const name of callbackNames.get(ref.key) ?? []) runtime.setCallback(ref, name, null);
+      callbackNames.delete(ref.key);
       runtime.release(ref);
     }
   });
@@ -95,7 +126,11 @@ export function defineBrowserClasses(
       return value;
     if (Array.isArray(value) || ArrayBuffer.isView(value))
       return Array.from(value as ArrayLike<number>, Number);
-    if (typeof value === "object" && REF in value) return (value as IWrapped)[REF];
+    if (typeof value === "object" && REF in value) {
+      // An object with callbacks passed into the engine is held until the next safe point.
+      if (callbackNames.has((value as IWrapped)[REF].key)) held.add(value);
+      return (value as IWrapped)[REF];
+    }
     throw new TypeError(
       `TN_BROWSER_ARGUMENT_UNSUPPORTED: ${typeof value} cannot cross to the engine`,
     );
@@ -139,10 +174,51 @@ export function defineBrowserClasses(
           : {}),
       });
     }
+    for (const callback of binding.callbacks) {
+      Object.defineProperty(prototype, callback, {
+        configurable: true,
+        get(this: object) {
+          return callbackFunctions.get(this)?.get(callback) ?? null;
+        },
+        set(this: object, fn: unknown) {
+          const ref = refOf(this);
+          const functions = callbackFunctions.get(this) ?? new Map();
+          if (fn === null || fn === undefined) {
+            runtime.setCallback(ref, callback, null);
+            functions.delete(callback);
+            callbackNames.get(ref.key)?.delete(callback);
+            return;
+          }
+          if (typeof fn !== "function")
+            throw new TypeError(`${callback} must be a function or null`);
+          const self = new WeakRef(this);
+          runtime.setCallback(ref, callback, (args) => {
+            const target = self.deref();
+            const current =
+              target === undefined ? undefined : callbackFunctions.get(target)?.get(callback);
+            current?.apply(target, args.map(fromEngine));
+          });
+          functions.set(callback, fn as (...args: unknown[]) => unknown);
+          callbackFunctions.set(this, functions);
+          callbackNames.set(ref.key, (callbackNames.get(ref.key) ?? new Set()).add(callback));
+          held.add(this);
+        },
+      });
+    }
     classes[name] = cls;
     byType.set(runtime.typeId(name), cls as unknown as { prototype: object });
   }
-  return classes;
+  return {
+    classes,
+    collect() {
+      for (const [key, names] of callbackNames) {
+        const wrapper = wrappers.get(key)?.deref();
+        if (wrapper === undefined || names.size === 0) continue;
+        if (runtime.get(refOf(wrapper), "parent") !== null) held.add(wrapper);
+        else held.delete(wrapper);
+      }
+    },
+  };
 }
 
 /**
@@ -160,11 +236,16 @@ type AbiCall =
   | "_tn_invoke"
   | "_tn_get"
   | "_tn_set"
+  | "_tn_set_callback"
   | "_tn_diagnostic_release";
 export type TnAbiModule = Record<AbiCall, (...args: number[]) => number> &
   Record<"HEAPU8", Uint8Array> &
   Record<"HEAPF64", Float64Array> &
-  Record<"UTF8ToString", (pointer: number, maxBytes?: number) => string> & {
+  Record<"UTF8ToString", (pointer: number, maxBytes?: number) => string> &
+  Record<
+    "addFunction",
+    (fn: (...args: number[]) => number | undefined, signature: string) => number
+  > & {
     stringToUTF8(text: string, pointer: number, maxBytes: number): void;
     lengthBytesUTF8(text: string): number;
   };
@@ -179,6 +260,7 @@ const KIND = { null: 0, number: 1, bool: 2, string: 3, handle: 4, numbers: 5 } a
 /** The runtime over a loaded ABI module: one engine context, every call checked. */
 export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
   const view = () => new DataView(abi.HEAPU8.buffer);
+  // Each call frees what it allocated, and only that: a callback can run a nested call.
   const allocations: number[] = [];
   const alloc = (size: number): number => {
     const pointer = abi._malloc(size);
@@ -186,8 +268,13 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
     allocations.push(pointer);
     return pointer;
   };
-  const freeAll = () => {
-    for (const pointer of allocations.splice(0)) abi._free(pointer);
+  const scoped = <T>(work: () => T): T => {
+    const mark = allocations.length;
+    try {
+      return work();
+    } finally {
+      for (const pointer of allocations.splice(mark)) abi._free(pointer);
+    }
   };
   const string = (text: string): { pointer: number; bytes: number } => {
     const bytes = abi.lengthBytesUTF8(text);
@@ -201,7 +288,6 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
     const message = view().getUint32(diag, true);
     const text = message === 0 ? "" : abi.UTF8ToString(message);
     abi._tn_diagnostic_release(diag);
-    freeAll();
     throw new Error(`TN_ABI_${status}: ${what}${text ? `: ${text}` : ""}`);
   };
   const keyOf = (pointer: number): IEngineRef => {
@@ -287,70 +373,131 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
     }
   };
 
-  const version = alloc(32);
-  abi._tn_engine_version(version);
-  const contextOut = alloc(4);
-  let diag = diagnostic();
-  check(abi._tn_context_create(contextOut, version, diag), diag, "tn_context_create");
-  const context = view().getUint32(contextOut, true);
-  freeAll();
+  // Callbacks: one invoke and one release trampoline in the function table; the context is a
+  // handler id, and the engine's release (once per pair) forgets it.
+  const handlers = new Map<number, (args: readonly EngineValue[]) => void>();
+  let nextHandler = 1;
+  let invokeTrampoline = 0;
+  let releaseTrampoline = 0;
+  const trampolines = () => {
+    if (invokeTrampoline !== 0) return;
+    invokeTrampoline = abi.addFunction((id, args, count, error, capacity) => {
+      const handler = handlers.get(id ?? 0);
+      if (handler === undefined) return 0;
+      const decoded: EngineValue[] = [];
+      for (let i = 0; i < (count ?? 0); i++) decoded.push(readValue((args ?? 0) + i * VALUE));
+      try {
+        handler(decoded);
+        return 0;
+      } catch (thrown) {
+        abi.stringToUTF8(
+          thrown instanceof Error ? thrown.message : String(thrown),
+          error ?? 0,
+          capacity ?? 0,
+        );
+        return 8; // TN_ERROR_INVALID_STATE: the engine records it and goes on
+      }
+    }, "iiiiii");
+    releaseTrampoline = abi.addFunction((id) => {
+      handlers.delete(id ?? 0);
+      return undefined;
+    }, "vi");
+  };
+
+  const context = scoped(() => {
+    const version = alloc(32);
+    abi._tn_engine_version(version);
+    const contextOut = alloc(4);
+    const diag = diagnostic();
+    check(abi._tn_context_create(contextOut, version, diag), diag, "tn_context_create");
+    return view().getUint32(contextOut, true);
+  });
 
   return {
-    typeId(className) {
-      const id = abi._tn_type_id(string(className).pointer);
-      freeAll();
-      return id;
-    },
-    construct(className, args) {
-      const out = alloc(HANDLE);
-      diag = diagnostic();
-      check(
-        abi._tn_construct(context, string(className).pointer, values(args), args.length, out, diag),
-        diag,
-        `new ${className}`,
-      );
-      const ref = keyOf(out);
-      freeAll();
-      return ref;
-    },
-    invoke(self, method, args) {
-      const out = alloc(VALUE);
-      diag = diagnostic();
-      check(
-        abi._tn_invoke(
-          handleOf(self),
-          string(method).pointer,
-          values(args),
-          args.length,
-          out,
+    typeId: (className) => scoped(() => abi._tn_type_id(string(className).pointer)),
+    construct: (className, args) =>
+      scoped(() => {
+        const out = alloc(HANDLE);
+        const diag = diagnostic();
+        check(
+          abi._tn_construct(
+            context,
+            string(className).pointer,
+            values(args),
+            args.length,
+            out,
+            diag,
+          ),
           diag,
-        ),
-        diag,
-        `${method}()`,
-      );
-      const result = readValue(out);
-      freeAll();
-      return result;
-    },
-    get(self, path) {
-      const out = alloc(VALUE);
-      diag = diagnostic();
-      check(abi._tn_get(handleOf(self), string(path).pointer, out, diag), diag, `get ${path}`);
-      const result = readValue(out);
-      freeAll();
-      return result;
-    },
-    set(self, path, value) {
-      const pointer = values([value]);
-      diag = diagnostic();
-      check(abi._tn_set(handleOf(self), string(path).pointer, pointer, diag), diag, `set ${path}`);
-      freeAll();
-    },
-    release(self) {
-      diag = diagnostic();
-      abi._tn_object_release(handleOf(self), diag);
-      abi._tn_diagnostic_release(diag);
-      freeAll();
-    },
+          `new ${className}`,
+        );
+        return keyOf(out);
+      }),
+    invoke: (self, method, args) =>
+      scoped(() => {
+        const out = alloc(VALUE);
+        const diag = diagnostic();
+        check(
+          abi._tn_invoke(
+            handleOf(self),
+            string(method).pointer,
+            values(args),
+            args.length,
+            out,
+            diag,
+          ),
+          diag,
+          `${method}()`,
+        );
+        return readValue(out);
+      }),
+    get: (self, path) =>
+      scoped(() => {
+        const out = alloc(VALUE);
+        const diag = diagnostic();
+        check(abi._tn_get(handleOf(self), string(path).pointer, out, diag), diag, `get ${path}`);
+        return readValue(out);
+      }),
+    set: (self, path, value) =>
+      scoped(() => {
+        const pointer = values([value]);
+        const diag = diagnostic();
+        check(
+          abi._tn_set(handleOf(self), string(path).pointer, pointer, diag),
+          diag,
+          `set ${path}`,
+        );
+      }),
+    release: (self) =>
+      scoped(() => {
+        const diag = diagnostic();
+        abi._tn_object_release(handleOf(self), diag);
+        abi._tn_diagnostic_release(diag);
+      }),
+    setCallback: (self, name, handler) =>
+      scoped(() => {
+        const diag = diagnostic();
+        if (handler === null) {
+          check(
+            abi._tn_set_callback(handleOf(self), string(name).pointer, 0, 0, 0, diag),
+            diag,
+            `clear ${name}`,
+          );
+          return;
+        }
+        trampolines();
+        const id = nextHandler++;
+        handlers.set(id, handler);
+        const status = abi._tn_set_callback(
+          handleOf(self),
+          string(name).pointer,
+          invokeTrampoline,
+          id,
+          releaseTrampoline,
+          diag,
+        );
+        if (status !== 0) handlers.delete(id); // a refused pair was never taken
+        check(status, diag, `set ${name}`);
+      }),
   };
 }

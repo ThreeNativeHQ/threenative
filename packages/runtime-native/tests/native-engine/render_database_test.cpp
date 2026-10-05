@@ -321,10 +321,58 @@ void multiCameraLayers() {
     if (database.rebuilds() != built) std::fprintf(stderr, "rebuilds over 100 ticks: %llu\n", (unsigned long long)(database.rebuilds() - built));
 }
 
+// PRD-531/506: onBeforeRender runs once per drawn frame with the scene and camera, before the draw,
+// so a colour it sets reaches the same frame; a callee that threw is a diagnostic, not a crash.
+void renderCallback() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(64, 48);
+    LitScene s;
+    RenderDatabase database;
+    int calls = 0;
+    RenderCallbackArgs seen;
+    s.mesh.onBeforeRender = std::make_shared<const std::function<bool(const RenderCallbackArgs&, std::string&)>>(
+        [&](const RenderCallbackArgs& a, std::string&) {
+            ++calls;
+            seen = a;
+            s.material->color.setRGB(0.1, 0.2, 0.9);
+            return true;
+        });
+    database.render(renderer, s.scene, s.camera, {0, 0, 0, 1});
+    const std::vector<uint8_t> px = read(renderer, events);
+    const size_t center = (24 * 64 + 32) * 4;
+    CHECK(calls == 1);
+    CHECK(seen.scene == &s.scene && seen.camera == &s.camera);
+    CHECK(seen.geometry == s.geometry && seen.material == s.material);
+    CHECK(px.size() == 64 * 48 * 4 && px[center + 2] > px[center]);  // blue in the frame it was set
+    CHECK(database.diagnostics().empty());
+
+    s.mesh.onBeforeRender = std::make_shared<const std::function<bool(const RenderCallbackArgs&, std::string&)>>(
+        [](const RenderCallbackArgs&, std::string& error) {
+            error = "boom";
+            return false;
+        });
+    database.render(renderer, s.scene, s.camera, {0, 0, 0, 1});
+    CHECK(database.diagnostics().size() == 1 && database.diagnostics()[0] == "TN_CALLBACK_FAILED onBeforeRender: boom");
+
+    s.mesh.setVisible(false);  // a mesh not drawn is not called
+    calls = 0;
+    s.mesh.onBeforeRender = std::make_shared<const std::function<bool(const RenderCallbackArgs&, std::string&)>>(
+        [&](const RenderCallbackArgs&, std::string&) {
+            ++calls;
+            return true;
+        });
+    database.render(renderer, s.scene, s.camera, {0, 0, 0, 1});
+    CHECK(calls == 0);
+}
+
 }  // namespace
 
 TN_TEST_MAIN({"lit_scene", litScene}, {"invalidation", invalidation},
             {"alpha_scene", alphaScene},
             {"material_unsupported", materialUnsupported},
             {"updates", updates},
-            {"multi_camera_layers", multiCameraLayers})
+            {"multi_camera_layers", multiCameraLayers},
+            {"render_callback", renderCallback})

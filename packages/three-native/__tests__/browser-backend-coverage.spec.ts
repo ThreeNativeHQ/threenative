@@ -36,11 +36,12 @@ function surfaceOnly(): IBrowserRuntime {
     get: refuse,
     set: refuse,
     release: () => undefined,
+    setCallback: refuse,
   };
 }
 
 describe("the browser-JS back end", () => {
-  const classes = defineBrowserClasses(registry, surfaceOnly());
+  const { classes } = defineBrowserClasses(registry, surfaceOnly());
 
   it("defines exactly the catalog's supported classes", () => {
     const supported = loadCatalog(REPO)
@@ -58,14 +59,30 @@ describe("the browser-JS back end", () => {
         ...binding.methods,
         ...binding.getters.filter((key) => !key.includes(".")),
         ...binding.members.filter((key) => !key.includes(".")),
+        ...binding.callbacks,
       ]);
       expect(exposed.sort(), name).toEqual([...expected].sort());
       for (const key of exposed) {
         const descriptor = Object.getOwnPropertyDescriptor(prototype, key);
-        if (descriptor?.get === undefined) continue;
+        if (descriptor?.get === undefined || binding.callbacks.includes(key)) continue;
         expect(descriptor.set !== undefined, `${name}.${key} settable`).toBe(
           binding.setters.includes(key),
         );
+      }
+    }
+  });
+
+  it("makes each registry callback a settable accessor", () => {
+    for (const [name, binding] of Object.entries(registry.classes)) {
+      for (const callback of binding.callbacks) {
+        const descriptor = Object.getOwnPropertyDescriptor(
+          classes[name]?.prototype as object,
+          callback,
+        );
+        expect(
+          descriptor?.get !== undefined && descriptor.set !== undefined,
+          `${name}.${callback}`,
+        ).toBe(true);
       }
     }
   });

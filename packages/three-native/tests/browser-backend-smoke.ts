@@ -12,6 +12,7 @@ import {
   type TnAbiModule,
   createWasmRuntime,
   defineBrowserClasses,
+  engineRef,
 } from "../src/browser-backend.js";
 
 const modulePath = process.argv[2];
@@ -24,10 +25,10 @@ const registry = JSON.parse(
 ) as IRegistryDump;
 
 // The back end mirrors three's API, so three's declarations type it.
-const { BoxGeometry, Mesh, MeshStandardMaterial, Vector3 } = defineBrowserClasses(
-  registry,
-  createWasmRuntime(await createTnAbi()),
-) as unknown as typeof THREE;
+const abi = await createTnAbi();
+const engine = defineBrowserClasses(registry, createWasmRuntime(abi));
+const { BoxGeometry, Mesh, MeshStandardMaterial, Scene, Vector3 } =
+  engine.classes as unknown as typeof THREE;
 
 function check(condition: boolean, what: string): void {
   if (!condition) {
@@ -67,4 +68,68 @@ try {
   refused = String(error);
 }
 check(refused.includes("TN_ABI_"), `an engine refusal surfaces as an error (${refused || "none"})`);
+
+// Callbacks: the engine fires onBeforeRender (here through the module's test hook, as the renderer
+// would before a draw) and the closure gets three's arguments and the mesh as `this`.
+const scene = new Scene();
+scene.add(mesh);
+let seen = "";
+const callback = function (
+  this: unknown,
+  renderer: unknown,
+  s: unknown,
+  camera: unknown,
+  g: unknown,
+  m: unknown,
+  group: unknown,
+) {
+  seen = [
+    renderer === null,
+    s === scene,
+    camera === null,
+    g === mesh.geometry,
+    m === mesh.material,
+    group === null,
+    this === mesh,
+  ].join();
+};
+mesh.onBeforeRender = callback as never;
+check(mesh.onBeforeRender === (callback as never), "the callback reads back");
+const fire = () => {
+  const ref = engineRef(mesh);
+  if (ref === undefined) throw new Error("no engine ref");
+  const [type, context, index, generation] = ref.key.split(":").map(Number) as [
+    number,
+    number,
+    number,
+    number,
+  ];
+  const pointer = abi._malloc(12);
+  const view = new DataView(abi.HEAPU8.buffer);
+  view.setUint16(pointer, type, true);
+  view.setUint16(pointer + 2, context, true);
+  view.setUint32(pointer + 4, index, true);
+  view.setUint32(pointer + 8, generation, true);
+  const status = (
+    abi as unknown as { _tnw_fire_before_render(p: number): number }
+  )._tnw_fire_before_render(pointer);
+  abi._free(pointer);
+  return status;
+};
+check(fire() === 0, "the engine ran the callback");
+check(seen === "true,true,true,true,true,true,true", `callback arguments ${seen}`);
+mesh.onBeforeRender = (() => {
+  throw new Error("boom");
+}) as never;
+check(fire() === 1, "a throw comes back as a failure, not a crash");
+mesh.onBeforeRender = null as never;
+check(mesh.onBeforeRender === null && fire() === 2, "a cleared callback is gone from the engine");
+let rejected = "";
+try {
+  mesh.onBeforeRender = 42 as never;
+} catch (error) {
+  rejected = String(error);
+}
+check(rejected.includes("must be a function"), "a non-function callback is refused");
+engine.collect();
 process.stdout.write("TN_BROWSER_BACKEND_OK\n");

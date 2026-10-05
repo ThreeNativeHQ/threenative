@@ -148,7 +148,8 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_renderer_scene_alpha=alpha_scene
         native_engine_standard_materials_unsupported=material_unsupported
         native_engine_renderer_updates=updates
-        native_engine_renderer_multi_camera_layers=multi_camera_layers)
+        native_engine_renderer_multi_camera_layers=multi_camera_layers
+        native_engine_renderer_callback=render_callback)
     target_link_libraries(tn-native-engine-render-database-test PRIVATE tn_engine_renderer tn_host_services)
     target_compile_definitions(tn-native-engine-render-database-test PRIVATE
         TN_GOLDENS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../three-native/tests/compatibility/goldens/0.185.1"
@@ -187,7 +188,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         # errors and undefined behaviour, not leaks. CPU-only engine tests keep leak checking.
         set_tests_properties(native_engine_gpu_upload_readback native_engine_gpu_deferred_destroy
             native_engine_gpu_async_only native_engine_lifetime_deferred_gpu ${tn_shader_validator} native_engine_shader_layouts
-            native_engine_cooked_package_load native_engine_renderer_geometry_cache native_engine_renderer_pipeline_cache native_engine_renderer_scene_lit native_engine_renderer_invalidation native_engine_renderer_scene_alpha native_engine_standard_materials_unsupported native_engine_renderer_updates native_engine_renderer_multi_camera_layers native_engine_renderer_resize_readback native_engine_renderer_output_ramp native_engine_renderer_lit_reference native_engine_renderer_lambert_reference native_engine_renderer_phong_reference native_engine_renderer_physical_reference native_engine_renderer_alpha_transparency native_engine_renderer_alpha_test
+            native_engine_cooked_package_load native_engine_renderer_geometry_cache native_engine_renderer_pipeline_cache native_engine_renderer_scene_lit native_engine_renderer_invalidation native_engine_renderer_scene_alpha native_engine_standard_materials_unsupported native_engine_renderer_updates native_engine_renderer_multi_camera_layers native_engine_renderer_callback native_engine_renderer_resize_readback native_engine_renderer_output_ramp native_engine_renderer_lit_reference native_engine_renderer_lambert_reference native_engine_renderer_phong_reference native_engine_renderer_physical_reference native_engine_renderer_alpha_transparency native_engine_renderer_alpha_test
             native_engine_shader_variants_gpu native_engine_device_loss_recover native_engine_device_stale_handle
             native_engine_device_no_adapter PROPERTIES
             ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0:abort_on_error=1;UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1")

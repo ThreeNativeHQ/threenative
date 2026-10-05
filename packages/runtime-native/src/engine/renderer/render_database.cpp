@@ -114,6 +114,7 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
                 r.params = paramsOf(*r.material);
                 r.item.material = &r.params;
                 items.push_back(r.item);
+                if (mesh.onBeforeRender) callbacks_.push_back({mesh.weak_from_this().lock(), &mesh, &r});
             }
         } else if (type == "AmbientLight") {
             const auto& l = static_cast<const AmbientLight&>(object);
@@ -154,7 +155,20 @@ uint64_t RenderDatabase::render(Renderer& renderer, Object3D& scene, Camera& cam
     std::vector<DrawItem> items;
     LightState lights;
     lights.directionalColor = lights.hemisphereSky = lights.hemisphereGround = {0, 0, 0};
+    callbacks_.clear();
     project(scene, camera, items, lights);
+    // three's onBeforeRender, before the object is drawn: after projection, so a callback that edits
+    // the scene cannot invalidate the traversal, and before submission, so a uniform it sets (a
+    // material colour) reaches this frame. A callee that threw is a diagnostic, never a crash.
+    for (const PendingCallback& p : callbacks_) {
+        const RenderCallback callback = p.mesh->onBeforeRender;
+        if (!callback) continue;
+        std::string error;
+        if (!(*callback)({&scene, &camera, p.mesh->geometry, p.mesh->material}, error))
+            diagnostics_.push_back("TN_CALLBACK_FAILED onBeforeRender: " + error);
+        p.record->params = paramsOf(*p.record->material);
+    }
+    callbacks_.clear();
     if (directional_ > 1) diagnostics_.push_back("TN_NATIVE_LIGHTS_UNSUPPORTED: " + std::to_string(directional_) + " directional lights; one is drawn");
     if (hemisphere_ > 1) diagnostics_.push_back("TN_NATIVE_LIGHTS_UNSUPPORTED: " + std::to_string(hemisphere_) + " hemisphere lights; one is drawn");
     // Objects that left the scene leave the database.

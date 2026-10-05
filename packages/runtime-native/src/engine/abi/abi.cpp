@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "engine/abi/abi_internal.h"
+#include "engine/scene/material.h"
 #include "engine/abi/bindings.h"
 #include "engine/foundation/handles.h"
 
@@ -102,6 +103,27 @@ struct tn_context : tn::binding::Store {
         if (!hold(cls, std::move(ptr), h, primary)) throw tn::binding::Unsupported{"the catalog publishes no such class"};
         known.emplace_back(std::move(cls), h);
         return tn::binding::Value{tn::binding::Value::Kind::Ref, 0, refText(h)};
+    }
+    // A callback argument as share() answers it: the object's live handle, minted again if the
+    // caller released it; null for nothing or for an object the catalog cannot name.
+    tn_value_t valueOf(std::string cls, std::shared_ptr<const void> ptr) {
+        tn_value_t v{};
+        if (!ptr) return v;
+        try {
+            tn_handle_t h{};
+            if (decode(share(std::move(cls), std::const_pointer_cast<void>(ptr)).text, h)) {
+                v.kind = TN_VALUE_HANDLE;
+                v.handle = h;
+            }
+        } catch (const tn::binding::Unsupported&) {
+        }
+        return v;
+    }
+    tn_value_t valueOf(const tn::engine::Object3D* object) {
+        if (object == nullptr) return {};
+        // A borrowed object (no shared owner) has no handle to give.
+        std::shared_ptr<const tn::engine::Object3D> shared = object->weak_from_this().lock();
+        return shared ? valueOf(std::string(object->type()), shared) : tn_value_t{};
     }
     std::vector<double> numbers(const tn::binding::Value& arg) override {
         return arg.kind == tn::binding::Value::Kind::Numbers ? arg.numbers : std::vector<double>{};
@@ -462,6 +484,44 @@ tn_status_t tn_set(tn_handle_t self, const char* path, const tn_value_t* value, 
         st->second(object->ptr.get(), in[0], *context);
         return ok(diagnostic);
     });
+}
+
+tn_status_t tn_set_callback(tn_handle_t self, const char* name, tn_object_callback_t invoke, void* callback_context,
+                            tn_release_t release, tn_diagnostic_t* diagnostic) {
+    gCrossings.fetch_add(1, std::memory_order_relaxed);
+    tn_context* context = nullptr;
+    tn::binding::Object* object = nullptr;
+    if (!name) return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_ABI_NULL: name");
+    if (const tn_status_t s = selfObject(self, context, object, diagnostic); s != TN_OK) return s;
+    const auto& callbacks = classRegistry().at(object->cls).callbacks;
+    const auto set = callbacks.find(name);
+    if (set == callbacks.end())
+        return report(diagnostic, TN_ERROR_UNSUPPORTED, 0, ("TN_NATIVE_UNSUPPORTED " + object->cls + "." + name + " callback").c_str());
+    if (!invoke) {
+        set->second(object->ptr.get(), nullptr);  // the replaced pair is released by its owner below
+        return ok(diagnostic);
+    }
+    // Owns the language's context: its deleter is `release`, so the pair is released exactly once,
+    // whenever the last reference to the callback goes (replaced, cleared or its object destroyed).
+    std::shared_ptr<void> owner(callback_context, [release](void* c) {
+        if (release) release(c);
+    });
+    auto callback = std::make_shared<const std::function<bool(const tn::engine::RenderCallbackArgs&, std::string&)>>(
+        [invoke, owner, context](const tn::engine::RenderCallbackArgs& a, std::string& error) {
+            const tn_value_t args[6] = {{},
+                                        context->valueOf(a.scene),
+                                        context->valueOf(a.camera),
+                                        context->valueOf("BufferGeometry", a.geometry),
+                                        a.material ? context->valueOf(std::string(a.material->typeName()), a.material) : tn_value_t{},
+                                        {}};
+            char message[512] = {};
+            if (invoke(owner.get(), args, 6, message, sizeof message) == TN_OK) return true;
+            message[sizeof message - 1] = '\0';
+            error = message[0] ? message : "the callback failed";
+            return false;
+        });
+    set->second(object->ptr.get(), std::move(callback));
+    return ok(diagnostic);
 }
 
 void tn_diagnostic_release(tn_diagnostic_t* diagnostic) {

@@ -1349,6 +1349,8 @@ userData: Record<string, any>;
 pivot: Vector3 | null;
 readonly revision: number;
 
+  onBeforeRender(renderer: null, scene: Scene, camera: Camera, geometry: BufferGeometry, material: Material, group: null): void;
+
   applyMatrix4(matrix: Matrix4): void;
 
   applyQuaternion(quaternion: Quaternion): this;

@@ -118,12 +118,14 @@
         "color",
         "matrix",
         "matrixWorld",
+        "parent",
         "position",
         "quaternion",
         "rotation",
         "scale",
         "up"
-      ]
+      ],
+      "callbacks": ["onBeforeRender"]
     },
     "Box3": {
       "constructor": true,
@@ -157,7 +159,8 @@
       ],
       "getters": ["max.x", "max.y", "max.z", "min.x", "min.y", "min.z"],
       "setters": ["max.x", "max.y", "max.z", "min.x", "min.y", "min.z"],
-      "members": ["max", "min"]
+      "members": ["max", "min"],
+      "callbacks": []
     },
     "BoxGeometry": {
       "constructor": true,
@@ -217,7 +220,8 @@
         "boundingBox",
         "boundingSphere",
         "index"
-      ]
+      ],
+      "callbacks": []
     },
     "BufferAttribute": {
       "constructor": true,
@@ -257,7 +261,8 @@
         "version"
       ],
       "setters": ["name", "needsUpdate"],
-      "members": []
+      "members": [],
+      "callbacks": []
     },
     "BufferGeometry": {
       "constructor": true,
@@ -317,7 +322,8 @@
         "boundingBox",
         "boundingSphere",
         "index"
-      ]
+      ],
+      "callbacks": []
     },
     "Camera": {
       "constructor": true,
@@ -431,6 +437,7 @@
         "matrix",
         "matrixWorld",
         "matrixWorldInverse",
+        "parent",
         "position",
         "projectionMatrix",
         "projectionMatrixInverse",
@@ -438,7 +445,8 @@
         "rotation",
         "scale",
         "up"
-      ]
+      ],
+      "callbacks": ["onBeforeRender"]
     },
     "CircleGeometry": {
       "constructor": true,
@@ -498,7 +506,8 @@
         "boundingBox",
         "boundingSphere",
         "index"
-      ]
+      ],
+      "callbacks": []
     },
     "Color": {
       "constructor": true,
@@ -537,7 +546,8 @@
       ],
       "getters": ["b", "g", "r"],
       "setters": ["b", "g", "r"],
-      "members": []
+      "members": [],
+      "callbacks": []
     },
     "ConeGeometry": {
       "constructor": true,
@@ -597,7 +607,8 @@
         "boundingBox",
         "boundingSphere",
         "index"
-      ]
+      ],
+      "callbacks": []
     },
     "CylinderGeometry": {
       "constructor": true,
@@ -657,7 +668,8 @@
         "boundingBox",
         "boundingSphere",
         "index"
-      ]
+      ],
+      "callbacks": []
     },
     "DirectionalLight": {
       "constructor": true,
@@ -777,13 +789,15 @@
         "color",
         "matrix",
         "matrixWorld",
+        "parent",
         "position",
         "quaternion",
         "rotation",
         "scale",
         "target",
         "up"
-      ]
+      ],
+      "callbacks": ["onBeforeRender"]
     },
     "Euler": {
       "constructor": true,
@@ -801,7 +815,8 @@
       ],
       "getters": ["order", "x", "y", "z"],
       "setters": ["order", "x", "y", "z"],
-      "members": []
+      "members": [],
+      "callbacks": []
     },
     "Frustum": {
       "constructor": true,
@@ -848,7 +863,8 @@
         "planes.4.constant",
         "planes.5.constant"
       ],
-      "members": []
+      "members": [],
+      "callbacks": []
     },
     "Group": {
       "constructor": true,
@@ -955,7 +971,17 @@
         "up.z",
         "visible"
       ],
-      "members": ["matrix", "matrixWorld", "position", "quaternion", "rotation", "scale", "up"]
+      "members": [
+        "matrix",
+        "matrixWorld",
+        "parent",
+        "position",
+        "quaternion",
+        "rotation",
+        "scale",
+        "up"
+      ],
+      "callbacks": ["onBeforeRender"]
     },
     "HemisphereLight": {
       "constructor": true,
@@ -1083,12 +1109,14 @@
         "groundColor",
         "matrix",
         "matrixWorld",
+        "parent",
         "position",
         "quaternion",
         "rotation",
         "scale",
         "up"
-      ]
+      ],
+      "callbacks": ["onBeforeRender"]
     },
     "Matrix3": {
       "constructor": true,
@@ -1120,7 +1148,8 @@
       ],
       "getters": ["elements"],
       "setters": [],
-      "members": []
+      "members": [],
+      "callbacks": []
     },
     "Matrix4": {
       "constructor": true,
@@ -1165,7 +1194,8 @@
       ],
       "getters": ["elements"],
       "setters": [],
-      "members": []
+      "members": [],
+      "callbacks": []
     },
     "Mesh": {
       "constructor": true,
@@ -1277,12 +1307,14 @@
         "material",
         "matrix",
         "matrixWorld",
+        "parent",
         "position",
         "quaternion",
         "rotation",
         "scale",
         "up"
-      ]
+      ],
+      "callbacks": ["onBeforeRender"]
     },
     "MeshBasicMaterial": {
       "constructor": true,
@@ -1319,7 +1351,8 @@
         "transparent",
         "visible"
       ],
-      "members": ["color"]
+      "members": ["color"],
+      "callbacks": []
     },
     "MeshLambertMaterial": {
       "constructor": true,
@@ -1365,7 +1398,8 @@
         "transparent",
         "visible"
       ],
-      "members": ["color", "emissive"]
+      "members": ["color", "emissive"],
+      "callbacks": []
     },
     "MeshPhongMaterial": {
       "constructor": true,
@@ -1420,7 +1454,8 @@
         "transparent",
         "visible"
       ],
-      "members": ["color", "emissive", "specular"]
+      "members": ["color", "emissive", "specular"],
+      "callbacks": []
     },
     "MeshPhysicalMaterial": {
       "constructor": true,
@@ -1493,7 +1528,8 @@
         "transparent",
         "visible"
       ],
-      "members": ["color", "emissive", "specularColor"]
+      "members": ["color", "emissive", "specularColor"],
+      "callbacks": []
     },
     "MeshStandardMaterial": {
       "constructor": true,
@@ -1543,7 +1579,8 @@
         "transparent",
         "visible"
       ],
-      "members": ["color", "emissive"]
+      "members": ["color", "emissive"],
+      "callbacks": []
     },
     "Object3D": {
       "constructor": true,
@@ -1650,7 +1687,17 @@
         "up.z",
         "visible"
       ],
-      "members": ["matrix", "matrixWorld", "position", "quaternion", "rotation", "scale", "up"]
+      "members": [
+        "matrix",
+        "matrixWorld",
+        "parent",
+        "position",
+        "quaternion",
+        "rotation",
+        "scale",
+        "up"
+      ],
+      "callbacks": ["onBeforeRender"]
     },
     "OrthographicCamera": {
       "constructor": true,
@@ -1781,6 +1828,7 @@
         "matrix",
         "matrixWorld",
         "matrixWorldInverse",
+        "parent",
         "position",
         "projectionMatrix",
         "projectionMatrixInverse",
@@ -1788,7 +1836,8 @@
         "rotation",
         "scale",
         "up"
-      ]
+      ],
+      "callbacks": ["onBeforeRender"]
     },
     "PerspectiveCamera": {
       "constructor": true,
@@ -1927,6 +1976,7 @@
         "matrix",
         "matrixWorld",
         "matrixWorldInverse",
+        "parent",
         "position",
         "projectionMatrix",
         "projectionMatrixInverse",
@@ -1934,7 +1984,8 @@
         "rotation",
         "scale",
         "up"
-      ]
+      ],
+      "callbacks": ["onBeforeRender"]
     },
     "Plane": {
       "constructor": true,
@@ -1958,7 +2009,8 @@
       ],
       "getters": ["constant", "normal.x", "normal.y", "normal.z"],
       "setters": ["constant", "normal.x", "normal.y", "normal.z"],
-      "members": ["normal"]
+      "members": ["normal"],
+      "callbacks": []
     },
     "PlaneGeometry": {
       "constructor": true,
@@ -2018,7 +2070,8 @@
         "boundingBox",
         "boundingSphere",
         "index"
-      ]
+      ],
+      "callbacks": []
     },
     "Quaternion": {
       "constructor": true,
@@ -2050,7 +2103,8 @@
       ],
       "getters": ["w", "x", "y", "z"],
       "setters": ["w", "x", "y", "z"],
-      "members": []
+      "members": [],
+      "callbacks": []
     },
     "Ray": {
       "constructor": true,
@@ -2078,7 +2132,8 @@
       ],
       "getters": ["direction.x", "direction.y", "direction.z", "origin.x", "origin.y", "origin.z"],
       "setters": ["direction.x", "direction.y", "direction.z", "origin.x", "origin.y", "origin.z"],
-      "members": ["direction", "origin"]
+      "members": ["direction", "origin"],
+      "callbacks": []
     },
     "RingGeometry": {
       "constructor": true,
@@ -2138,7 +2193,8 @@
         "boundingBox",
         "boundingSphere",
         "index"
-      ]
+      ],
+      "callbacks": []
     },
     "Scene": {
       "constructor": true,
@@ -2256,12 +2312,14 @@
         "background",
         "matrix",
         "matrixWorld",
+        "parent",
         "position",
         "quaternion",
         "rotation",
         "scale",
         "up"
-      ]
+      ],
+      "callbacks": ["onBeforeRender"]
     },
     "Sphere": {
       "constructor": true,
@@ -2286,7 +2344,8 @@
       ],
       "getters": ["center.x", "center.y", "center.z", "radius"],
       "setters": ["center.x", "center.y", "center.z", "radius"],
-      "members": ["center"]
+      "members": ["center"],
+      "callbacks": []
     },
     "SphereGeometry": {
       "constructor": true,
@@ -2346,7 +2405,8 @@
         "boundingBox",
         "boundingSphere",
         "index"
-      ]
+      ],
+      "callbacks": []
     },
     "TorusGeometry": {
       "constructor": true,
@@ -2406,7 +2466,8 @@
         "boundingBox",
         "boundingSphere",
         "index"
-      ]
+      ],
+      "callbacks": []
     },
     "Vector2": {
       "constructor": true,
@@ -2462,7 +2523,8 @@
       ],
       "getters": ["height", "width", "x", "y"],
       "setters": ["height", "width", "x", "y"],
-      "members": []
+      "members": [],
+      "callbacks": []
     },
     "Vector3": {
       "constructor": true,
@@ -2536,7 +2598,8 @@
       ],
       "getters": ["x", "y", "z"],
       "setters": ["x", "y", "z"],
-      "members": []
+      "members": [],
+      "callbacks": []
     },
     "Vector4": {
       "constructor": true,
@@ -2590,7 +2653,8 @@
       ],
       "getters": ["height", "w", "width", "x", "y", "z"],
       "setters": ["w", "x", "y", "z"],
-      "members": []
+      "members": [],
+      "callbacks": []
     }
   }
 }

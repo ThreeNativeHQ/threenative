@@ -24,6 +24,7 @@ interface IRegistryClass {
   readonly getters: readonly string[];
   readonly setters: readonly string[];
   readonly members: readonly string[];
+  readonly callbacks: readonly string[];
 }
 
 interface IRegistryDump {
@@ -36,6 +37,7 @@ function registryMembers(binding: IRegistryClass): string[] {
     ...binding.methods,
     ...binding.getters.filter((name) => !name.includes(".")),
     ...binding.members.filter((name) => !name.includes(".")),
+    ...binding.callbacks,
   ];
 }
 

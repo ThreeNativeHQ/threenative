@@ -148,6 +148,12 @@ Value foundObject(Store& store, Object3D* found) {
 }
 
 void registerObject3D(ClassBinding& b) {
+    b.members["parent"] = [](void* self, const Args&, Store& store) {
+        return foundObject(store, as<Object3D>(self)->parent);
+    };
+    b.callbacks["onBeforeRender"] = [](void* self, RenderCallback callback) {
+        as<Object3D>(self)->onBeforeRender = std::move(callback);
+    };
     b.methods["getObjectById"] = [](void* self, const Args& a, Store& store) {
         // An id is a safe non-negative integer; anything else names no object (`undefined` in three).
         const double id = number(a.at(0));

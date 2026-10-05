@@ -56,6 +56,13 @@ private:
     void project(Object3D& object, const Camera& camera, std::vector<DrawItem>& items, LightState& lights);
     Record& record(const Mesh& mesh);
 
+    // Drawn meshes that carry onBeforeRender, run after projection and before submission.
+    struct PendingCallback {
+        std::shared_ptr<const Object3D> keep;  // a callback may detach it; the call still finds it
+        const Mesh* mesh;
+        Record* record;
+    };
+    std::vector<PendingCallback> callbacks_;
     std::unordered_map<const Object3D*, Record> records_;
     std::vector<std::string> diagnostics_;
     uint64_t rebuilds_ = 0;

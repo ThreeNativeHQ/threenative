@@ -222,6 +222,12 @@ struct V8Game {
         }
         return true;
     }
+    // The callback safe point (PRD-531), once a frame after the render.
+    void safePoint() {
+        v8::Isolate::Scope isolateScope(isolate);
+        v8::HandleScope scope(isolate);
+        adapter->collect();
+    }
 };
 
 }  // namespace
@@ -284,6 +290,7 @@ int main(int argc, char** argv) {
             events.drain();
         }
         const auto t3 = Clock::now();
+        if (!o.cpp) game.safePoint();
         if (!database.diagnostics().empty()) return std::fprintf(stderr, "TN_HOST_RENDER: %s\n", database.diagnostics().front().c_str()), 1;
         if (i < o.warmup) continue;
         update.push_back(ms(t0, t1));

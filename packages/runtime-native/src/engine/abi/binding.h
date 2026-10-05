@@ -14,6 +14,8 @@
 #include <type_traits>
 #include <vector>
 
+#include "engine/scene/object3d.h"
+
 namespace tn::binding {
 
 struct Value {
@@ -93,6 +95,9 @@ struct ClassBinding {
     // object for the owner's whole life, so a caller may keep the Ref it got the first time. A member
     // that can be reassigned (`mesh.material`, `geometry.attributes.position`) is never listed.
     std::set<std::string> fixedMembers;
+    // Callbacks a language sets on the object (`onBeforeRender`): set through tn_set_callback, never
+    // a Value, because the engine calls back into the language that set them.
+    std::map<std::string, std::function<void(void* self, tn::engine::RenderCallback)>> callbacks;
 };
 
 /** Registers a member that names a field of the object itself (see ClassBinding::fixedMembers). */
