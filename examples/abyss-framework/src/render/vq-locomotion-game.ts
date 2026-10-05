@@ -14,28 +14,16 @@ import {
   Vector3,
 } from "three";
 import { ClippingGroup } from "three/webgpu";
-import mannequinUrl from "../../../../packages/create-threenative/template-assets/assets/mannequin.glb?url";
 import { createLocomotionTrace } from "./vq-locomotion-trace.js";
 
 const eye = new Vector3();
-
-/**
- * The scaffolded mannequin ships beside the engine, not inside this project's cooked assets, so it
- * is asked for by absolute URL: the asset surface treats a URL it cannot rewrite as external and
- * fetches it directly instead of guessing at a manifest entry. A host without a document keeps the
- * emitted URL, which is the one its own asset resolver already understands.
- */
-function externalAssetUrl(path: string): string {
-  const base = globalThis.location?.href;
-  return base === undefined ? path : new URL(path, base).href;
-}
 
 /** Two CC0 mannequin rigs under one scripted speed trace, seen from the first rig's own head. */
 class VqLocomotion extends Scene {
   #model: { scene: Object3D; animations: AnimationClip[] } | undefined;
 
   override async load(ctx: ICtx): Promise<void> {
-    this.#model = await ctx.assets.model(externalAssetUrl(mannequinUrl));
+    this.#model = await ctx.assets.model("mannequin.glb");
   }
 
   override enter(ctx: ICtx) {
