@@ -39,6 +39,12 @@ elseif(SDL3_LIBRARY)
     target_include_directories(tn_host_services PRIVATE ${SDL3_INCLUDE_DIR})
 endif()
 
+# The N03 C ABI over the foundation: version handshake, contexts, generational object handles.
+add_library(tn_engine_abi STATIC src/engine/abi/abi.cpp)
+tn_native_engine_target(tn_engine_abi)
+target_link_libraries(tn_engine_abi PUBLIC tn_engine_foundation)
+target_include_directories(tn_engine_abi PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+
 # Shader IR (N08): typed, hash-consed expressions and ordered effects. Portable like foundation.
 add_library(tn_engine_shader STATIC src/engine/shader/ir.cpp)
 tn_native_engine_target(tn_engine_shader)
@@ -114,6 +120,23 @@ tn_native_engine_test(tn-native-engine-shader-ir-test tests/native-engine/shader
     native_engine_tsl_unsupported=unsupported)
 target_link_libraries(tn-native-engine-shader-ir-test PRIVATE tn_engine_shader)
 
+tn_native_engine_test(tn-native-engine-abi-test tests/native-engine/abi_test.cpp
+    native_engine_abi_version=version
+    native_engine_abi_handles=handles)
+target_link_libraries(tn-native-engine-abi-test PRIVATE tn_engine_abi)
+
+# The header compiles as strict C11 and a C program links against the ABI.
+add_executable(tn-native-engine-abi-c11 EXCLUDE_FROM_ALL tests/native-engine/abi_c11.c)
+target_link_libraries(tn-native-engine-abi-c11 PRIVATE tn_engine_abi)
+set_target_properties(tn-native-engine-abi-c11 PROPERTIES C_STANDARD 11 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF
+    LINKER_LANGUAGE CXX)
+if(NOT MSVC)
+    target_compile_options(tn-native-engine-abi-c11 PRIVATE -Wall -Wextra -Werror -pedantic)
+endif()
+add_test(NAME native_engine_abi_c11 COMMAND $<TARGET_FILE:tn-native-engine-abi-c11>)
+set_tests_properties(native_engine_abi_c11 PROPERTIES LABELS "native-engine")
+set_property(GLOBAL APPEND PROPERTY TN_NATIVE_ENGINE_TEST_TARGETS tn-native-engine-abi-c11)
+
 # libFuzzer targets need clang; `TN_ENGINE_FUZZ=ON` with a clang toolchain builds them.
 option(TN_ENGINE_FUZZ "Build the native engine libFuzzer targets (clang only)" OFF)
 if(TN_ENGINE_FUZZ)
@@ -122,6 +145,11 @@ if(TN_ENGINE_FUZZ)
     target_compile_options(native_engine_fuzz_buffers PRIVATE -fsanitize=fuzzer,address,undefined)
     target_link_options(native_engine_fuzz_buffers PRIVATE -fsanitize=fuzzer,address,undefined)
     set_target_properties(native_engine_fuzz_buffers PROPERTIES CXX_STANDARD 20)
+    add_executable(native_engine_fuzz_abi EXCLUDE_FROM_ALL tests/native-engine/fuzz_abi.cpp)
+    target_link_libraries(native_engine_fuzz_abi PRIVATE tn_engine_abi)
+    target_compile_options(native_engine_fuzz_abi PRIVATE -fsanitize=fuzzer,address,undefined)
+    target_link_options(native_engine_fuzz_abi PRIVATE -fsanitize=fuzzer,address,undefined)
+    set_target_properties(native_engine_fuzz_abi PROPERTIES CXX_STANDARD 20)
 endif()
 
 if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "android")

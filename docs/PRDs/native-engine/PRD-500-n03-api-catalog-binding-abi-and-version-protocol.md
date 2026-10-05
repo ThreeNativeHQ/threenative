@@ -1,6 +1,6 @@
 # PRD-500 — API catalog, binding ABI and version protocol (N03)
 
-**Status:** IN PROGRESS — phase 1 done; the C ABI implementation (phase 2) is next
+**Status:** IN PROGRESS — phases 1 and 2 done; the 10-minute ABI fuzz run (phase 3) is open
 **Complexity:** 5 — the one contract every adapter, generator and engine module depends on
 **Owner:** João
 **Work package:** N03 — [native-engine batch](README.md)
@@ -35,11 +35,11 @@ The repo's existing capability surface is `packages/create-threenative/capabilit
 - [x] Every catalog entry marked `supported` for the native profile also appears in the native section of `capabilities.json`, and nothing else does. proof: `pnpm exec vitest run packages/three-native/__tests__/catalog-capabilities.spec.ts` — 2026-10-04: green; `capabilities.json` gains a `native` section generated from the catalog. Today 0 entries are `supported`: every implementable entry is `partial(native-not-implemented)` until an engine work package proves it, so nothing is advertised natively before it runs. A probe catalog proves supported-in, partial/unsupported-out
 
 #### Phase 2: The C ABI and version handshake
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** proposed `packages/runtime-native/include/threenative/abi/tn_abi.h`, `packages/runtime-native/src/engine/abi/`, `packages/runtime-native/tests/native-engine/abi_test.cpp`
-- [ ] The generated header compiles as C11 and contains no STL types. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_abi_c11`
-- [ ] A module built against a different engine-ABI, contract, scene or shader-package version is rejected with its named code before start. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_abi_version`
-- [ ] A stale-generation or wrong-type handle returns a status code, never a crash. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_abi_handles`
+- [x] The generated header compiles as C11 and contains no STL types. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_abi_c11` — 2026-10-04: green in `build/tn-linux-engine`: `tests/native-engine/abi_c11.c` builds with `-std=c11 -Wall -Wextra -Werror -pedantic`, links `tn_engine_abi` and runs create/release/destroy
+- [x] A module built against a different engine-ABI, contract, scene or shader-package version is rejected with its named code before start. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_abi_version` — 2026-10-04: green; each of engine ABI, contract, scene, shader package, capability digest and count is refused with its `TN_DIAG_*` code and message, the first differing field wins, and `tn_context_create` returns no context. Red when the digest is not compared. `src/engine/abi/abi.cpp`
+- [x] A stale-generation or wrong-type handle returns a status code, never a crash. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_abi_handles` — 2026-10-04: green; stale generation, forged type, foreign context, out-of-range index, a destroyed context and a double destroy each return a status; type ids come from the generated `src/engine/abi/catalog_types.inc` (121 catalog classes)
 
 #### Phase 3: The ABI survives hostile input
 **Status:** NOT STARTED
