@@ -1010,6 +1010,12 @@
         "dimensions": null,
         "file": "boulder_01/boulder-mid.glb",
         "sha256": "4d4a1026047d229d6fbe992d061b4b4e9ef5f837e64239f18e0664a77aed8d84"
+      },
+      {
+        "bytes": 3971572,
+        "dimensions": null,
+        "file": "fir_tree_01/fir-c-lod2.glb",
+        "sha256": "9dba8a8a30f204a2c60f45bd059676cdabbe7287180338c38c1ce54d8530bd7b"
       }
     ]
   }

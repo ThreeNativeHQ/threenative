@@ -39,6 +39,7 @@ export const COLLIDERS: Readonly<
   >
 > = {
   fir: { capsule: [3, 0.35] },
+  "fir-c": { capsule: [3, 0.35] },
   boulder: { sphere: 0.9 },
 };
 
