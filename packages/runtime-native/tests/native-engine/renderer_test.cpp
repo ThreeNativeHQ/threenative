@@ -312,6 +312,27 @@ double goldenMismatch(const std::vector<uint8_t>& px, const char* name, int w, i
     return double(off) / (double(w) * h * 3);
 }
 
+// PlaneGeometry(w, h): three's vertex order and index.
+std::unique_ptr<Sphere> plane(double w, double h) {
+    auto s = std::make_unique<Sphere>();
+    const float v[12] = {float(-w / 2), float(h / 2), 0, float(w / 2), float(h / 2), 0,
+                         float(-w / 2), float(-h / 2), 0, float(w / 2), float(-h / 2), 0};
+    const uint16_t i[6] = {0, 2, 1, 2, 3, 1};
+    s->positions.resize(12);
+    s->positions.write(0, v, sizeof v);
+    s->indices.resize(6);
+    s->indices.write(0, i, sizeof i);
+    return s;
+}
+
+// OrthographicCamera(-2, 2, 1, -1, 0.1, 10) at z = 5, in WebGPU clip z.
+CameraState wideOrtho() {
+    CameraState camera;
+    camera.matrixWorldInverse = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, -5, 1};
+    camera.projectionMatrix = {0.5, 0, 0, 0, 0, 1, 0, 0, 0, 0, -1 / 9.9, 0, 0, 0, -0.1 / 9.9, 1};
+    return camera;
+}
+
 // The alpha-transparency fixture, natively: MeshBasicMaterial planes under OrthographicCamera(-2, 2,
 // 1, -1, 0.1, 10) at z = 5, 256x128, no tone mapping. Transparent planes are listed front-most
 // first, so only three's back-to-front sort gets the blend right, and a renderOrder pair checks
@@ -322,17 +343,6 @@ void alphaTransparency() {
     EventQueue events;
     Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
     renderer.setSize(256, 128);
-    auto plane = [](double w, double h) {  // PlaneGeometry(w, h): its vertex order and index
-        auto s = std::make_unique<Sphere>();
-        const float v[12] = {float(-w / 2), float(h / 2), 0, float(w / 2), float(h / 2), 0,
-                             float(-w / 2), float(-h / 2), 0, float(w / 2), float(-h / 2), 0};
-        const uint16_t i[6] = {0, 2, 1, 2, 3, 1};
-        s->positions.resize(12);
-        s->positions.write(0, v, sizeof v);
-        s->indices.resize(6);
-        s->indices.write(0, i, sizeof i);
-        return s;
-    };
     const auto big = plane(1.6, 1.6), small = plane(1, 1);
     struct Plane {
         Sphere* geometry;
@@ -360,10 +370,7 @@ void alphaTransparency() {
         d.renderOrder = planes[k].renderOrder;
         d.matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, planes[k].x, 0, planes[k].z, 1};
     }
-    CameraState camera;
-    camera.matrixWorldInverse = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, -5, 1};
-    camera.projectionMatrix = {0.5, 0, 0, 0, 0, 1, 0, 0, 0, 0, -1 / 9.9, 0, 0, 0, -0.1 / 9.9, 1};
-    renderer.render(items, camera, LightState{}, {0.1, 0.1, 0.1, 1});
+    renderer.render(items, wideOrtho(), LightState{}, {0.1, 0.1, 0.1, 1});
     const std::vector<uint8_t> px = read(renderer, events);
     if (const char* out = std::getenv("TN_RENDER_OUT"); out && px.size() == 256 * 128 * 4)
         stbi_write_png(out, 256, 128, 4, px.data(), 256 * 4);
@@ -373,8 +380,57 @@ void alphaTransparency() {
     CHECK(worst <= 2 && off < 0.001);
 }
 
+// The alpha-test fixture: tiles over an opaque red wall. alphaTest 0.5 discards opacity 0.4 (opaque)
+// and 0.45 (transparent); opacity 0.6 stays and is drawn opaque; an opaque material ignores its
+// opacity 0.3; a transparent tile at 0.55 passes the test and blends.
+void alphaTest() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(256, 128);
+    const auto wall = plane(4, 1.2), tile = plane(0.7, 0.7);
+    struct Tile {
+        std::array<float, 3> color;
+        bool transparent;
+        float opacity, alphaTest;
+        double x;
+    };
+    const Tile tiles[] = {{{0, 1, 0}, false, 0.4f, 0.5f, -1.6}, {{0, 0, 1}, false, 0.6f, 0.5f, -0.8},
+                          {{1, 1, 0}, false, 0.3f, 0, 0},       {{1, 0, 1}, true, 0.45f, 0.5f, 0.8},
+                          {{0, 1, 1}, true, 0.55f, 0.5f, 1.6}};
+    shader::StandardMaterial materials[6];
+    std::vector<DrawItem> items(6);
+    materials[0].color = {1, 0, 0};
+    items[0].positions = &wall->positions;
+    items[0].indices = &wall->indices;
+    items[0].matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, -0.5, 1};
+    for (int k = 0; k < 5; ++k) {
+        materials[k + 1].color = tiles[k].color;
+        materials[k + 1].opacity = tiles[k].opacity;
+        materials[k + 1].alphaTest = tiles[k].alphaTest;
+        DrawItem& d = items[k + 1];
+        d.positions = &tile->positions;
+        d.indices = &tile->indices;
+        d.transparent = tiles[k].transparent;
+        d.matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, tiles[k].x, 0, 0, 1};
+    }
+    for (int k = 0; k < 6; ++k) {
+        items[k].key = items[k].id = k + 1;
+        items[k].kind = MaterialKind::Basic;
+        items[k].material = &materials[k];
+    }
+    renderer.render(items, wideOrtho(), LightState{}, {0.1, 0.1, 0.1, 1});
+    const std::vector<uint8_t> px = read(renderer, events);
+    int worst = 0;
+    const double off = goldenMismatch(px, "alpha-test", 256, 128, 1, worst);
+    std::printf("alpha-test vs browser: worst %d, %.3f%% of channels over 1\n", worst, off * 100);
+    CHECK(worst <= 2 && off < 0.001);
+}
+
 }  // namespace
 
 TN_TEST_MAIN({"resize_readback", resizeReadback}, {"output_ramp", outputRamp},
              {"lit_reference", litReference},
-             {"alpha_transparency", alphaTransparency})
+             {"alpha_transparency", alphaTransparency},
+             {"alpha_test", alphaTest})

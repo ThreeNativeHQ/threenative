@@ -315,6 +315,8 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
         put(vblock, vs, "normalMatrix", normalMatrix(modelView));
         const shader::StandardMaterial& m = *item.material;
         put(fblock, fs, "diffuse", std::array<double, 4>{m.color[0], m.color[1], m.color[2], m.opacity});
+        put(fblock, fs, "alphaTest", std::array<double, 1>{m.alphaTest});
+        put(fblock, fs, "opaque", std::array<double, 1>{item.transparent ? 0.0 : 1.0});
         put(fblock, fs, "roughness", std::array<double, 1>{m.roughness});
         put(fblock, fs, "metalness", std::array<double, 1>{m.metalness});
         put(fblock, fs, "emissive",

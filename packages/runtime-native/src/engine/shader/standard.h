@@ -16,6 +16,7 @@ namespace tn::engine::shader {
 struct StandardMaterial {
     std::array<float, 3> color{1, 1, 1};
     float opacity = 1;
+    float alphaTest = 0;  // > 0: fragments with opacity <= alphaTest are discarded
     float roughness = 1;
     float metalness = 0;
     std::array<float, 3> emissive{0, 0, 0};
@@ -55,5 +56,13 @@ StandardPrograms buildStandard(const StandardMaterial& material);
  * standard program (normalMatrix unused); fragment uniform diffuse (rgb, opacity). Linear out.
  */
 StandardPrograms buildBasic();
+
+/**
+ * NodeMaterial.setupDiffuseColor's alpha tail, shared by every material program: discard when
+ * alphaTest > 0 and alpha <= alphaTest, then alpha 1 for an opaque material (builder.isOpaque()).
+ * Uniform-driven (uniforms "alphaTest", "opaque" 0/1) rather than per-variant programs; the output is
+ * the same. Returns the alpha to write.
+ */
+ExprId materialAlpha(Program& f, ExprId alpha);
 
 }  // namespace tn::engine::shader

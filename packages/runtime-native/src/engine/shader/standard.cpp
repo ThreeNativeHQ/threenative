@@ -169,7 +169,7 @@ StandardPrograms buildStandard(const StandardMaterial& material) {
     const ExprId emissive = f.uniform("emissive", Type::vec(3));
     const ExprId outgoing = f.add(f.add(f.add(directDiffuse, directSpecular), indirectDiffuse), emissive);
     // Linear HDR out: tone mapping and the output colour space belong to the output pass (output.h).
-    f.output("color", f.construct(Type::vec(4), {outgoing, f.swizzle(diffuse, "w")}));
+    f.output("color", f.construct(Type::vec(4), {outgoing, materialAlpha(f, f.swizzle(diffuse, "w"))}));
     for (const Program* stage : {&out.vertex, &out.fragment}) {
         for (const Diagnostic& d : stage->diagnostics()) {
             out.diagnostics.push_back(d.code + " " + d.node + ": " + d.reason + " (" + d.file + ":" + std::to_string(d.line) + ")");
@@ -185,8 +185,18 @@ StandardPrograms buildBasic() {
     v.output("position", v.mul(v.uniform("projectionMatrix", Type::mat(4, 4)),
                                v.mul(v.uniform("viewMatrix", Type::mat(4, 4)), v.mul(v.uniform("modelMatrix", Type::mat(4, 4)), position))));
     Program& f = out.fragment;
-    f.output("color", f.uniform("diffuse", Type::vec(4)));
+    const ExprId diffuse = f.uniform("diffuse", Type::vec(4));
+    f.output("color", f.construct(Type::vec(4), {f.swizzle(diffuse, "xyz"), materialAlpha(f, f.swizzle(diffuse, "w"))}));
     return out;
+}
+
+ExprId materialAlpha(Program& f, ExprId alpha) {
+    const ExprId alphaTest = f.uniform("alphaTest", Type::f32());
+    const ExprId no = f.constant(false);
+    // alpha <= alphaTest is !(alphaTest < alpha); the test applies only when alphaTest > 0.
+    const ExprId atOrBelow = f.select(f.less(alphaTest, alpha), no, f.constant(true));
+    f.If(f.select(f.less(f.constant(0.0f), alphaTest), atOrBelow, no), [&] { f.discard(); });
+    return f.call("mix", {alpha, f.constant(1.0f), f.uniform("opaque", Type::f32())});
 }
 
 }  // namespace tn::engine::shader
