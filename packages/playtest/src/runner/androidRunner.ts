@@ -238,10 +238,8 @@ async function runDevicePlaytestInternal(
     await throwIfAborted(target);
     setupApplication = bridge.setupApplication;
     await throwIfAborted(target);
-    if (scenario.warmupFrames > 0) await bridge.advance(scenario.warmupFrames);
-    await throwIfAborted(target);
-    // Same boundary as the browser lane: a fixed-step warmup is a tick count, not the clock the
-    // application's launch runs on, so wait for the device to say its world is safe to observe.
+    // Startup owns temporary operation timeouts during first-use compilation. Complete that
+    // gate before the scenario warmup, whose full tick count must run against the ready world.
     const attached = bridge;
     const startupOutcome = scenario.awaitStartup === false
       ? undefined
@@ -254,6 +252,8 @@ async function runDevicePlaytestInternal(
         hostAlive: () => target.driver.isAlive().catch(() => undefined),
         pump: () => attached.advance(1),
       });
+    await throwIfAborted(target);
+    if (scenario.warmupFrames > 0) await bridge.advance(scenario.warmupFrames);
     await throwIfAborted(target);
 
     const entityIds = observedEntityIds(scenario);
