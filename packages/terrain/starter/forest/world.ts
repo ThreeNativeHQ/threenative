@@ -11,7 +11,8 @@ import {
   loadTerrainSplat,
 } from "@threenative/core/world";
 import { CollisionShape3D, type IPhysicsContext, RigidBody3D } from "@threenative/physics";
-import type { Object3D } from "three";
+import { EquirectangularReflectionMapping, type Material, type Object3D } from "three";
+import { HDRLoader } from "three/addons/loaders/HDRLoader.js";
 
 /** Where the game's asset source holds the baked `world/` folder. */
 export const FOREST_URL = "terrain/forest/world.json";
@@ -30,6 +31,9 @@ export const COLLIDERS: Readonly<
   boulder: { sphere: 0.9 },
 };
 
+/** How strongly the sky lights the props; the sun stays the dominant light on a crown. */
+export const PROP_SKY_LIGHT = 0.5;
+
 export interface IForestWorld {
   readonly world: WorldCells;
   readonly props: readonly RigidBody3D[];
@@ -43,6 +47,7 @@ export async function addForest(
 ): Promise<IForestWorld> {
   const manifest = (await (await fetchAsset(ctx, url)).json()) as IWorldPackage;
   const surface = await loadTerrainSplat({ assets: ctx.assets, url });
+  await lightProps(ctx, url, manifest);
   const world = await WorldCells.load({
     url,
     assets: ctx.assets,
@@ -70,6 +75,33 @@ export async function addForest(
   return { world, props: await propColliders(ctx, url, manifest) };
 }
 
+// Cutout foliage with no environment draws flat and dark (the engine says TN_UNLIT_FOLIAGE): give
+// every prop the sky as its own envMap before WorldCells adopts the shared cached models.
+async function lightProps(
+  ctx: ICtx<Record<string, unknown>, IPhysicsContext>,
+  url: string,
+  manifest: IWorldPackage,
+): Promise<void> {
+  const base = url.slice(0, url.lastIndexOf("/") + 1);
+  const [skyUrl] = await ctx.assets.resolve(`${base}sky.hdr`);
+  if (skyUrl === undefined) throw new Error("Forest world: 'sky.hdr' is not served.");
+  const sky = await new HDRLoader().loadAsync(skyUrl);
+  sky.mapping = EquirectangularReflectionMapping;
+  for (const asset of Object.values(manifest.assets)) {
+    const model = await ctx.assets.model<{ scene: Object3D }>(base + asset.glb);
+    model.scene.traverse((object) => {
+      const surface = (object as { material?: Material | Material[] }).material;
+      for (const material of [surface ?? []].flat() as (Material & {
+        envMap?: unknown;
+        envMapIntensity?: number;
+      })[]) {
+        material.envMap = sky;
+        material.envMapIntensity = PROP_SKY_LIGHT;
+      }
+    });
+  }
+}
+
 // ponytail: every prop collider exists from load (a few thousand fixed bodies); stream them with
 // the cells when a world grows past what Rapier holds comfortably.
 async function propColliders(
@@ -88,23 +120,33 @@ async function propColliders(
       if (!shape) continue;
       for (let i = run.offset; i < run.offset + run.count; i++) {
         const [x, y, z] = records.subarray(i * 8, i * 8 + 3) as unknown as [number, number, number];
-        const scale = records[i * 8 + 7] as number;
-        const capsule = "capsule" in shape;
-        const lift = capsule ? (shape.capsule[0] + shape.capsule[1]) * scale : 0;
+        const { lift, collider } = colliderAt(shape, records[i * 8 + 7] as number);
         bodies.push(
           new RigidBody3D({
             physics: ctx.physics,
             type: "fixed",
             entity: `${run.asset}.${String(i)}`,
             position: { x, y: y + lift, z },
-            shape: capsule
-              ? CollisionShape3D.capsule(shape.capsule[0] * scale, shape.capsule[1] * scale)
-              : CollisionShape3D.sphere(shape.sphere * scale),
+            shape: collider,
           }),
         );
       }
     }
   return bodies;
+}
+
+/** One table row at one placement's scale; a capsule stands on the origin, a sphere sits on it. */
+function colliderAt(
+  shape: NonNullable<(typeof COLLIDERS)[string]>,
+  scale: number,
+): { lift: number; collider: CollisionShape3D } {
+  if ("sphere" in shape)
+    return { lift: 0, collider: CollisionShape3D.sphere(shape.sphere * scale) };
+  const [halfHeight, radius] = shape.capsule;
+  return {
+    lift: (halfHeight + radius) * scale,
+    collider: CollisionShape3D.capsule(halfHeight * scale, radius * scale),
+  };
 }
 
 async function fetchAsset(

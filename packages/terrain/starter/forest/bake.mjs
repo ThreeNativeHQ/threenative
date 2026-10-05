@@ -70,15 +70,17 @@ for (const spec of Object.values(assetTable)) {
   await copy(spec.near, `models/${spec.near.split("/").at(-1)}`);
   if (spec.mid) await copy(spec.mid, `models/${spec.mid.split("/").at(-1)}`);
 }
+// The sky the props are lit by (CC0 Poly Haven Kloofendal); world.ts gives it to their materials.
+await copy("hdri/kloofendal_48d_partly_cloudy_1k.hdr", "sky.hdr");
 for (const layer of [surface.base, ...surface.layers]) {
   const source = surface.sources[layer.id];
-  await copy(source.diff, `${surface.textures}${layer.id}_diff.jpg`);
-  await copy(source.nrm, `${surface.textures}${layer.id}_nrm.jpg`);
+  await copy(source.diff, `${surface.textures}/${layer.id}_diff.jpg`);
+  await copy(source.nrm, `${surface.textures}/${layer.id}_nrm.jpg`);
 }
 // `sources` is the bake's own lookup: the runtime reads only base/layers/splat/textures.
 await write(
   "terrain-table.json",
-  `${JSON.stringify({ ...surface, splat, textures: "textures/" }, null, 2)}\n`,
+  `${JSON.stringify({ ...surface, splat, textures: "textures" }, null, 2)}\n`,
 );
 
 const perAsset = {};

@@ -32,7 +32,7 @@
       "hi": 0.75
     }
   ],
-  "textures": "textures/",
+  "textures": "textures",
   "sources": {
     "grass": {
       "diff": "leafy_grass/leafy_grass_diff_1k.jpg",

@@ -817,6 +817,19 @@
       "bytes": 16575,
       "dimensions": [512, 512],
       "sha256": "bc6c9eaf576fd396347c5ea5b3931907cb9ace0943f0159c20d4824c4b2fe0d0"
+    },
+    {
+      "set": "kloofendal_48d_partly_cloudy",
+      "asset": "Kloofendal 48d Partly Cloudy",
+      "author": "Greg Zaal",
+      "license": "CC0",
+      "map": "hdri",
+      "file": "hdri/kloofendal_48d_partly_cloudy_1k.hdr",
+      "url": "https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/kloofendal_48d_partly_cloudy_1k.hdr",
+      "bytes": 1637206,
+      "dimensions": "1024x512",
+      "colourSpace": "linear",
+      "sha256": "5477b7dbb2aea4a6947cb36b96339c119f90bf36a03b039af3254b5e6a22896d"
     }
   ],
   "generated": {

@@ -92,7 +92,7 @@ describe("forest starter kit", () => {
     ];
     for (const layer of [table.base, ...table.layers]) {
       expect(Object.keys(table.splat.masks)).toContain(layer.id);
-      named.push(`${table.textures}${layer.id}_diff.jpg`, `${table.textures}${layer.id}_nrm.jpg`);
+      named.push(`${table.textures}/${layer.id}_diff.jpg`, `${table.textures}/${layer.id}_nrm.jpg`);
     }
     for (const name of named) {
       const path = join(out, name);
