@@ -11,6 +11,7 @@ PRD-266; lands before
 [PRD-268](PRD-268-light-that-comes-from-off-screen.md) is judged. Batch:
 docs/PRDs/lighting.
 
+**Priority:** P2 — Acceptance unticked: per-instance velocity, disocclusion ghosting playtest, no cost when unused.
 **Goal: a character that moves does not smear.** This is the one thing `0beqz/realism-effects`
 gives you that upstream's nodes do not — re-implemented in TSL rather than vendored, because that
 library is GLSL against `WebGLRenderer` and cannot reach this stack's native targets.

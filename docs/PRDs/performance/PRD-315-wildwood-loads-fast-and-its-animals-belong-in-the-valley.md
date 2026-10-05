@@ -10,6 +10,7 @@ prd_contract: v1
 `threenative-asset-mcp` was not present in this session, so Phase 4 must resolve and pin it before
 changing the importer. Never patch the installed copy under `node_modules`.
 
+**Priority:** P2 — Unstarted program: load tiers, fidelity audits and residency gates all to build.
 **Complexity:** +3 touches 10+ files, +2 crosses the engine, the game and the external asset MCP,
 +2 carries asynchronous load/navigation/residency state across frames, +1 integrates marketplace
 content, +2 adds measured runtime and conversion gates = **10 → HIGH mode**. During execution,

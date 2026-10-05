@@ -172,28 +172,25 @@ const BUG_REPORT_SKILL_PATHS = [
 // docs/verification/prd339-exposure-proof/completion-consumer-8bf16f4.json.
 // Current develop c18a42b integration: all13 actual generated trees were byte-compared
 // against reviewed 8bf trees; only the copied Three compute-only Storage3DTexture patch changed.
+// Re-measured on current develop plus TS7: restoring only each compiler manifest and
+// rain's shader API import recovers all 13 develop fingerprints.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
-  // Re-measured through this test after merging develop 15adf350 with the temporal branch:
-  // all trees retain exposure/fog and the combined Three patch; starter also retains temporal
-  // helpers. These values come from the actual generated trees, with no assertion weakened.
-  // Measured through actual createProject trees after exposure/fog consolidation and restamping,
-  // then again on the merge carrying the WebGPU adapter-retention Three patch: the scaffolded
-  // `patches/three@0.185.1.patch` is the only byte that moved on top of the exposure/fog tree, so
-  // all thirteen trees move again. Values below are the merged-tree measurement, not either side's.
-  "action-rpg": "4a1e7cce7edc1cc39cdaebe53c7b171a21bed2ceccb729a9ab8abf1dd0532095",
-  minimal: "0c7ac069cbbebffca4000c6a126c02c1358c8e0176c4bfaa8389b537b1e27990",
-  platformer: "82eb59d7d61357f0aa2e4f27a13139fd1d0c92e5550f65d940f099ae5c23cfae",
-  puzzle: "6eb64411e5afaacadd2b32b952bb0b1aa23cac46d766018a55824319136d6ff7",
-  racing: "cea96aca0515e1362406d75f9b2b346dfe707f43277b45fdbd79c7e857b453bd",
-  rain: "79b5ae2214571c5a03db7e01e02f276c149f436c5f1ab8095b6209c0eb356a76",
-  rts: "865b270e476e8d135146a1785662fa6beee0e7cda14c54afe970d384661d4871",
-  runner: "cc43ecb0f241c7432c3b35b63191545a6eab5eba38808209b22a0fd90e49181e",
-  // Initial finite-height readiness plus its scene-owned lifecycle helper and mirrored docs.
-  sailing: "f983606f01b4a5eafc42478abb75218f014a6bd0346335a0ccddd3eeb5027d9a",
-  shooter: "a618a5af20a39fba2e2811188e6d7a9ab8e2c91878a1c2fbf290c19bdf1fafdc",
-  snow: "973cba43709ba6594999cea6cd5fd94ff06c836e7b9b59f1e1c07cbce533c92a",
-  starter: "5f9ba6b015df2c879cc5222acf72476bbd6e8dc3189f7bd2147219636f2c4d30",
-  "tower-defense": "064ad094a1e5278bbd16a0913f65517fd052b8ebbc52ba7b94f3a1e65a5b2575",
+  // Measured through actual createProject trees after merging develop d5d169705 into PR398:
+  // retain TS7, current exposure/template source and the published temporal/Three patch union.
+  // Starter also includes rejected-input history recovery; original assertions stay intact.
+  "action-rpg": "47712f634ee5e05761f555976698f12c60013776cd07b41cfe03853dee03e54f",
+  minimal: "43cd2bee83e5a98c55354afa2a3a867b03bd25f66e79e822f06c98de8c3d13df",
+  platformer: "d739c731b5fa8be134becd834fe8272547d64f7a1664e0865cbe7e82b0c5024f",
+  puzzle: "17c515166c993dc859adfe618ac92cb8dd00040f52effcd22d5a455e9b8d3018",
+  racing: "1b1cccdb6956f878d2a122e60deba79dd23c51b9fc75e406d7ab1ec9fe506285",
+  rain: "f963d4b7a9c4d18bbd61e6b37bff56ac9ae0e292822c085e8c2a751377129d83",
+  rts: "ae3fbd07d450bed77f64a6379611025ac12d6f38ab46388bdb5d8a64ac873b58",
+  runner: "347f5e9454ac1e95b254a8a5e5d3c664eafa5b1f9a00bb246c08358c679b7bde",
+  sailing: "418dd39fd1c0d88a3b41aaa259e3607512882c7d8b44430b7a01fc1441d05a53",
+  shooter: "f3459d7b085033f74f9e3dc2ec93359655a1700bfe6ec2d8db544d92233bba26",
+  snow: "4c0dfe9ed9f24921a50a9fe60140b88f5c15b4bf71020dd535d5c132a8d946e3",
+  starter: "363ec948f99eda609c533aeec931d6530ce585b8b08b047638d973167b028ece",
+  "tower-defense": "ad9ad2b3ac599a7066db2b4d2438e6f6ec710f1a49c856e31c42f9cb4db9c3a1",
 };
 
 const GENERATED_SCAFFOLD_METADATA =

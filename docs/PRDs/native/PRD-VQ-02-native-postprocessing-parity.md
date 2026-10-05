@@ -5,6 +5,7 @@ prd_contract: v1
 # PRD-VQ-02 — A requested post-processing stage never turns the native world into a blank frame
 
 **Status:** PROPOSED — 2026-10-01. No implementation or qualification is claimed.
+**Priority:** P1 — Bloom at threshold 0.92 blanked the native world; open boxes add the assertion and repair it.
 **Batch:** Visual quality execution batch. **Wave:** 0 / correctness.
 **Dependencies:** None. Can start alongside VQ-01.
 

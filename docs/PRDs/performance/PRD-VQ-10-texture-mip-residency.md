@@ -5,6 +5,7 @@ prd_contract: v1
 # PRD-VQ-10 — Texture residency releases real GPU memory rather than only biasing sampling
 
 **Status:** PROPOSED — 2026-10-01. No implementation or qualification is claimed.
+**Priority:** P3 — Speculative streaming feature: variant records and byte accounting all proposed.
 **Batch:** Visual quality execution batch. **Wave:** 3 / memory-gated.
 **Dependencies:** Reconcile PRD-454 resource budgets and VQ-01 decoder selection first.
 

@@ -1,5 +1,6 @@
 # Native compiled frame plans
 
+**Priority:** P2 — Two open boxes: physical Android measurement of equivalent scenes.
 Status: PARTIAL. Automatic in production; no game flag is required. The retained transport landed,
 the adaptive selector is covered across stable, tiny, upload-heavy, topology-changing, split and
 oversized frames, and the original transport measurement showed 43–45% lower recorder cost with

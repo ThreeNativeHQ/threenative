@@ -9,6 +9,7 @@ landed; `pnpm audit --prod --audit-level high` is clean and the `site` deploy is
 **Complexity:** 3 → LOW; all local, no credentials.
 **Depends on:** none. Blocks rung R1 of [RELEASE-READINESS-2026-09-23](../../production-readiness/RELEASE-READINESS-2026-09-23.md).
 
+**Priority:** P1 — Only owner calls and an upstream sharp release remain; high advisory sharp<0.35.4 ships to consumers.
 ## Context
 
 The 2026-09-23 inspection found the things a stranger sees first are wrong or stale, and no PRD

@@ -1,6 +1,7 @@
 # PRD-449 — The scaffold ships only what a new game needs
 
 **Status:** IN REVIEW — Phases 1–3 shipped; open: AC-5's ≤ 8k line target (8,138 measured) is an owner call, and the full `pnpm test` box waits on CI (18 `runtime-native` tests need the opt-in native build, absent locally)
+**Priority:** P2 — Remaining: AC-5 line-budget owner call, CI green, three pending owner vetoes.
 **Complexity:** 1 (LOW)
 **Owner:** João
 **Depends on:** None

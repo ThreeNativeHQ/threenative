@@ -5,6 +5,7 @@ prd_contract: v1
 # PRD-VQ-12 — Overlapping transparent effects have an explicit correct or bounded-approximate path
 
 **Status:** PROPOSED — 2026-10-01. No implementation or qualification is claimed.
+**Priority:** P2 — Proposed correct-or-bounded transparent route with order and history tests.
 **Batch:** Visual quality execution batch. **Wave:** 3 / scene-gated transparency.
 **Dependencies:** Coordinate attachment/history ownership with VQ-02 and PRD-455. Preserve existing alpha-cutout foliage behavior.
 

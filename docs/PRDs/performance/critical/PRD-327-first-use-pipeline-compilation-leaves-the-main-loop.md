@@ -24,6 +24,7 @@ whole-scene compile walk is synchronous for ~33 s and its yield falls back to fr
 pasted reds are in `runtime-perf-state.md` §5a; the fix is PRD-339's, not a default flip. The PRD
 stays open on criterion 3, and PRD-218's criteria 1 and 2 stay open with it.
 
+**Priority:** P1 — Device acceptance failed criterion 3; open boxes build both desktop backends.
 **Complexity:** +2 (6–10 files) + 2 (concurrency: compile threads completing into the JS loop) +
 2 (multi-package: `runtime-native` and `core`) + 1 (external API: wgpu-native / Dawn async
 pipeline entry points) = **7 → HIGH mode**. Automated checkpoint after every phase; manual device

@@ -5,7 +5,7 @@ prd_contract: v1
 # PRD-455 — Fewer rendered pixels reconstruct into a stable full-resolution frame
 
 **Status:** IN PROGRESS — full-resolution opt-in runtime milestone verified on browser software WebGPU; reconstruction remains open (2026-10-02).  
-**Priority:** highest-value rendering project after the streaming quick wins.  
+**Priority:** P1 — Its own note ranks it the highest-value rendering project; reconstruction and ghosting boxes unticked.
 **Complexity:** 8 → HIGH. The renderer already has the difficult prerequisites; the remaining risk is history correctness and proving reconstruction wins more GPU time than it costs.  
 **Depends on:** the landed motion-history implementation from PRD-269 (`packages/core/src/render/velocity.ts`, commit `3630847a`), its pending canonical [PR393 repair](https://github.com/ThreeNativeHQ/threenative/pull/393) at `47e188e41601a64decb4fe0f580037546d63b543`, the existing `RenderChain`, and [PRD-384 adaptive resolution](../performance/PRD-384-adaptive-resolution-gpu-headroom.md).
 
@@ -501,3 +501,18 @@ ordinary accumulation resumes. The six-file temporal/velocity/resolve CPU slice
 passes **45/45**; strict TypeScript on the changed helper/spec also passes.
 These are CPU contracts with GPU work stubbed. No new runtime screenshot, image-quality,
 reconstruction, cost or native qualification is claimed, and no acceptance box changes.
+
+
+### Current develop CPU and CI integration (2026-10-05)
+
+The normal merge with develop `d5d169705` preserves TS7, exposure and the current
+CI receipt policy. Its two conflicts retain this PRD's verified in-progress status
+and incoming priority, and recompute all thirteen scaffold hashes from actual generated
+projects with the original helper and assertions; all **66 scaffold tests pass**.
+The eight-package JavaScript/declaration dependency closure and full workspace TS7
+checks pass. Temporal and velocity keep their existing selectors/runtime commands while
+using the caller's exact candidate, run/attempt artifact identities and existing receipt
+writer/upload; both participate in receipt completion. The four affected integration
+contract files pass **259/259**, and fresh independent review accepts the repairs.
+These bounded CPU checks do not replace the required hosted board or the original
+quality, reconstruction, cost and native evidence. All acceptance boxes remain unchanged.

@@ -3,6 +3,7 @@ import {
   Scene,
   type SceneFrame,
   WaterSurface3D,
+  getPlatform,
   isMobile,
   isTouchscreenAvailable,
 } from "@threenative/core";
@@ -10,8 +11,10 @@ import type { IPhysicsContext } from "@threenative/physics";
 import type { Group, PerspectiveCamera, Texture } from "three";
 import { Ship } from "../entities/Ship.js";
 import { followShip, setupCamera } from "../render/camera.js";
+import { loadedEnvironmentSample } from "../render/environmentSetup.js";
 import { followSun, setupLighting } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
+import { createMaterialLighting } from "../render/materialLighting.js";
 import { createMaterials } from "../render/materials.js";
 import {
   SEA_MIRROR,
@@ -22,6 +25,7 @@ import {
 } from "../render/ocean.js";
 import { setupPost } from "../render/postprocessing.js";
 import { createBuoy, createIsland, getShipModel } from "../render/props.js";
+import { isWebGLFallbackRenderer, materialLightingEnabled } from "../render/quality.js";
 import { setupSky } from "../render/sky.js";
 import { TouchControls } from "../render/touch-controls.js";
 import type { GameState } from "../state.js";
@@ -64,6 +68,8 @@ const MAX_WAKE_SPEED = 4.6;
 const WIND_DURATION = 120;
 
 export class Sailing extends Scene<GameState, IPhysicsContext> {
+  #materialLighting: ReturnType<typeof createMaterialLighting> | undefined;
+  #post: ReturnType<typeof setupPost> | undefined;
   static override readonly initialState: GameState = {
     buoysRounded: 0,
     elapsed: 0,
@@ -91,7 +97,16 @@ export class Sailing extends Scene<GameState, IPhysicsContext> {
     const software = ctx.renderer.softwareAdapter !== undefined;
     setupSky(ctx.scene, { software });
     const sun = setupLighting(ctx.scene, ctx.renderer.raw as Parameters<typeof setupLighting>[1]);
-    setupPost(ctx.renderer, ctx.scene, ctx.camera, {
+    const materialEnvironment = {
+      web: getPlatform().runtime === "web",
+      rendererKind: ctx.renderer.kind,
+      webglFallback: isWebGLFallbackRenderer(ctx.renderer.raw),
+      mobile: isMobile(),
+      software: ctx.renderer.softwareAdapter !== undefined,
+    };
+    this.#post = setupPost(ctx.renderer, ctx.scene, ctx.camera, {
+      onTierChanged: (tier) =>
+        this.#materialLighting?.setEnabled(materialLightingEnabled(tier, materialEnvironment)),
       godraysLight: sun,
       mobile: isMobile(),
       software,
@@ -135,6 +150,21 @@ export class Sailing extends Scene<GameState, IPhysicsContext> {
     // The ship is deliberately not in the sea's mirror: it is a second draw of the hull *and its
     // keel*, which the mirror sees from below as a black blot smeared under the stern.
     ctx.entities.add("player", ship);
+    this.#materialLighting = ctx.entities.add(
+      "material-lighting",
+      createMaterialLighting(ctx.scene, ctx.camera, sun, {
+        ...materialEnvironment,
+        enabled: materialLightingEnabled(this.#post.tier, materialEnvironment),
+      }),
+    );
+    const sample = loadedEnvironmentSample();
+    if (sample !== undefined)
+      this.#materialLighting.setEnvironmentMeasurement(
+        sample.measurement,
+        sample.source,
+        sample.intensity,
+        sample,
+      );
     let elapsed = 0;
     let buoysRounded = 0;
     let markBearing = 0;
@@ -261,6 +291,10 @@ export class Sailing extends Scene<GameState, IPhysicsContext> {
   }
 
   override exit(ctx: GameCtx): void {
+    this.#materialLighting?.dispose();
+    this.#materialLighting = undefined;
+    this.#post?.dispose();
+    this.#post = undefined;
     this.#stopOceanReadiness?.();
     this.#stopOceanReadiness = undefined;
     // The mirror owns a render target and a pass. Nothing in the frame releases it, so a restart

@@ -8,6 +8,7 @@ prd_contract: v1
 Phase 2's game-side sky split landed but its device before/after is queued behind the PRD-214
 device lease. Evidence: `docs/verification/prd-213-2026-08-23.md`.
 
+**Priority:** P1 — Pixel 8 measures 849 MB driver-held against 393 MB requested, RSS to 2.3 GB; bounding it is unlanded.
 **Complexity:** +2 for multi-package changes (sandbox game + assets/build pipeline guidance),
 +2 investigation system = **4 → MEDIUM mode**. Investigation-first: Phase 1 is measurement with
 instrumentation that already exists.

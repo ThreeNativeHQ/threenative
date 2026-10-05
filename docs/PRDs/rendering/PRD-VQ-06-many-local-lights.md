@@ -5,6 +5,7 @@ prd_contract: v1
 # PRD-VQ-06 — Many local lights use a qualified upstream tiled or clustered path
 
 **Status:** PROPOSED — 2026-10-01. No implementation or qualification is claimed.
+**Priority:** P2 — Proposed qualified tiled or clustered light route with a measured admission decision.
 **Batch:** Visual quality execution batch. **Wave:** 2 / scalable lighting.
 **Dependencies:** Use PRD-457 for local shadow work. This PRD owns direct-light selection, not a new shadow atlas.
 
