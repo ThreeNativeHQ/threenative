@@ -53,6 +53,8 @@ Last measured 2026-10-03 against `origin/develop` `4d5e07c98`: nvidia/turing, 12
 | CPU render | 6.9 ms | **21.2 ms** | 4.5 ms | **12.9 ms** |
 | GPU | 7.0 ms | 10.1 ms | 4.5 ms | 1.8 ms |
 
+**Update 2026-10-05 (this PR, `558f08cbf`):** 6 runs, nvidia/turing, `map-walk`, host load 6–26 (CI runners on the same machine). Render p95 is the median of the walk windows' p95 (`TN_FRAME_BUDGET` after the fourth window), and GPU p95 the p95 of the windows' timestamp means. The same method on develop's 3 runs of 2026-10-04 gives a render p95 of 7.8 ms, matching the 7.7 ms recorded then. This PR walks at render **3.1 / 6.4 ms** (p50 / p95) and GPU p95 **6.5 ms**, under 8.3 ms on both. AC-1 and AC-2 are not ticked: this is a loaded host, and PRD-478 asks for a quiet one, interleaved against develop, plus AC-3's blind raters.
+
 **Update 2026-10-03 evening (PRD-494, #424):** 3 interleaved runs per arm, nvidia/turing, 1280×720, load 3.8–6.4 (quiet).
 
 | | Walking render p50 / p95 | Walking GPU p50 / p95 | Walking main draws p50 | Idle render p95 |
@@ -137,6 +139,31 @@ themselves, or `#drainPrewarm`'s own loop (it invalidates the shadow levels on e
 caster is owed, and each of those level renders now submits every prewarmed caster) — and the next
 step is one instrumented run that separates them, not another guess. Until then A7 needs the
 preparation seam PRD-387 describes, and this arm must not merge.
+
+**Update 2026-10-05 (row A7, attempt 3 — the launch hang was not the prewarm):** the hang above was
+PRD-493's splat table throw (`world-terrain-splat.ts`, a layer table written before the `orm` column),
+which this PR now fixes: the same #437 core *without* the prewarm hung too, and with only the splat
+file restored it loaded. With that fixed, the prewarm loads. Twelve alternating runs, `map-walk`,
+`tnFrameSpans=1`, nvidia/turing, host load 6–26, in `.afk/scratch/walk-a7{c,d}-pair-*`:
+
+| arm (6 runs each) | render p50 / p95 | GPU p95 | creations after settle | prewarm line |
+| --- | --- | --- | --- | --- |
+| #437 `558f08cbf` | 3.1 / 6.4 ms | 6.5 ms | 28 (12 compute, 12 main, 4 shadow) | `shadowPrewarmed=0 castersUnbuilt=182` |
+| #437 + prewarm | 3.1 / 6.1 ms | 6.3 ms | 28, the same split | `shadowPrewarmed=0 castersUnbuilt=182` |
+
+Render p95 is the median of the walk windows' p95 (`TN_FRAME_BUDGET` after the fourth window), and GPU
+p95 the p95 of the windows' timestamp means. The arm that ran second was faster in both orders, so
+the 0.3 ms between the arms is order, not prewarm. Reading the census:
+
+- On Machinefall the prewarm prepares nothing. The caster admission this PR adds holds every caster
+  half while the seed drains, so the prewarm's draw never reaches a shadow pass.
+- No compile costs a frame. The 28 post-settle creations are streamed props and bridge pieces, at
+  most 0.2 ms of device service each, 1.3–1.9 ms in a whole walk.
+- AC-3 as written is still red: 28 creations after warm-up.
+
+One prewarm run of six timed out on a 22.5 s `advance` stall. Both arms show multi-second stalls on
+this host, so it is not attributed. The prewarm (`e580e76cb`) stays off this PR, on the local branch
+`a7-prewarm-trial`. A7 stays open on AC-3, but it is no longer on the frame-time critical path.
 
 ## Lane A — the 120 fps walk (critical path)
 
