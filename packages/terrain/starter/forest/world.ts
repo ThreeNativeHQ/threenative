@@ -60,6 +60,9 @@ export async function addForest(
     ring: 5,
     // Far firs draw as engine-baked impostors; the authored model stays the shadow caster.
     impostors: true,
+    // The GPU-culled path drops the near firs from the main pass while their shadows still draw
+    // (measured in a fresh game, 2026-10-05); the CPU path draws them. Engine finding, PRD-466.
+    gpuScene: false,
     budgets: { residentCells: 64, instances: 40_000, bytes: 64_000_000 },
     terrain: { streamRadius: 6 },
   });
