@@ -24,6 +24,24 @@ export function projectedMotion(
     .sub(previous.clone().applyMatrix4(previousView).applyMatrix4(previousProjection));
 }
 
+/** The two pixel coordinates a history read compares: where the installed resolve reaches for, and
+ * where the point independently projected. TRAANode samples `historyUV = uv - velocity *
+ * vec2( 0.5, - 0.5 )`, and that `uv` counts raster rows from the top, so the measured NDC delta
+ * moves the sample half its width left in x and half its height *down* in y: the history sample sits
+ * where the point was, one frame back. */
+export function reprojectedHistory(
+  pixel: [number, number],
+  velocityNdc: readonly [number, number],
+  previousNdc: Vector3,
+  width: number,
+  height: number,
+): { history: [number, number]; previous: [number, number] } {
+  return {
+    history: [pixel[0] - (velocityNdc[0] * width) / 2, pixel[1] + (velocityNdc[1] * height) / 2],
+    previous: [(previousNdc.x * 0.5 + 0.5) * width, (-previousNdc.y * 0.5 + 0.5) * height],
+  };
+}
+
 /** Fixture-only readback: never used for a performance claim or as the engine's motion source. */
 export function createTemporalVelocityProbe(
   renderer: WebGPURenderer,
@@ -72,6 +90,12 @@ export function createTemporalVelocityProbe(
             .clone()
             .applyMatrix4(camera.matrixWorldInverse)
             .applyMatrix4(drawProjection);
+          // The same point through the unjittered projection the resolve samples with, so the anchor
+          // below carries no jitter and can be compared with a previous frame on the same footing.
+          const currentNdc = world
+            .clone()
+            .applyMatrix4(camera.matrixWorldInverse)
+            .applyMatrix4(projection);
           const x = Math.floor((ndc.x * 0.5 + 0.5) * target.width);
           const y = Math.floor((-ndc.y * 0.5 + 0.5) * target.height);
           if (x < 0 || x >= target.width || y < 0 || y >= target.height)
@@ -103,11 +127,41 @@ export function createTemporalVelocityProbe(
           );
           if (![...actual, expected.x, expected.y].every(Number.isFinite))
             throw new Error("Nonfinite motion diagnostic");
+          // The continuous, unjittered anchor every pixel length below is measured from. The integer
+          // pair above is the floor of the *jittered* draw projection and names the MRT texel this
+          // read took; the sub-pixel jitter between the two would otherwise be compared as motion.
+          const currentPixel: [number, number] = [
+            (currentNdc.x * 0.5 + 0.5) * target.width,
+            (-currentNdc.y * 0.5 + 0.5) * target.height,
+          ];
+          // Where the measured vector reprojects this point, beside where it independently projected
+          // last frame. A wrong vector has to be able to miss the second.
+          const { history: historyPixel, previous: previousPixel } = reprojectedHistory(
+            currentPixel,
+            actual,
+            previous.clone().applyMatrix4(previousView).applyMatrix4(previousProjection),
+            target.width,
+            target.height,
+          );
           samples.push({
             name,
             pixel: [x, y],
             actualNdc: actual,
             expectedNdc: [expected.x, expected.y],
+            historyPixel,
+            previousPixel,
+            measuredPixels: Math.hypot(
+              historyPixel[0] - currentPixel[0],
+              historyPixel[1] - currentPixel[1],
+            ),
+            expectedPixels: Math.hypot(
+              previousPixel[0] - currentPixel[0],
+              previousPixel[1] - currentPixel[1],
+            ),
+            misregistrationPixels: Math.hypot(
+              historyPixel[0] - previousPixel[0],
+              historyPixel[1] - previousPixel[1],
+            ),
             errorPixels: Math.hypot(
               ((actual[0] - expected.x) * target.width) / 2,
               ((actual[1] - expected.y) * target.height) / 2,

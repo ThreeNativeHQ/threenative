@@ -105,6 +105,11 @@ experimental path or mark the draft ready before the outstanding acceptance evid
 
 - [x] The reconstruction stage produces a display-sized output from a smaller colour/depth input and records input size, output size, history-valid state and rejection fraction. **proof:** focused render-chain test runs 0.67→1.0 sizing, then a mutation returning the low-resolution target directly fails the output-size assertion. **result, 2026-10-06:** `packages/create-threenative/__tests__/temporal-aa.spec.ts` -t "presents a display-sized raster" drives the real `RenderChain` over the generated `temporalAAStages` `traa` factory and the same stubbed renderer the other sizing tests use. One arm reports the scene pass target at 1280×720 while the node the chain presents holds 1920×1080, with `report()` carrying `inputWidth 1280`, `inputHeight 720`, `outputWidth 1920`, `outputHeight 1080`, `historyValid false` on the opening reset and the measured `rejection { fraction 4/2073600, visited 2073600, staleFrames 0 }`. The mutated layer is `stages[0].build` in the test fixture: the generated stage still builds the provider and still owns its per-frame work, and the chain is handed the scene pass colour node instead of `provider.node`. The same `expectDisplayRaster` assertion then fails with the exact message `The presented raster is 1280x720, not the display raster 1920x1080.`, and the presented node's own render target measures 1280×720 — the low-resolution target — so the failure is classified at the output-raster contract, not at a missing measurement, a startup refusal or a canvas label. 26/26 in the file; root `pnpm typecheck` and `biome check` exit 0. No core change, no new dependency, no threshold touched. Runtime evidence for the same arm is the qualified browser/native result already recorded above.
 - [ ] Camera cuts, projection changes and resolution changes invalidate history for the affected frame; moving skinned and instanced fixtures use the existing velocity source rather than a camera-only approximation. **proof:** deterministic fixture covers cut/resize/skinned/instanced cases and a zero-velocity mutation fails the moving-object rejection/stability assertion.
+  - **left, 2026-10-05:** the browser lane measures it (cut, projection, resize and input-scale
+    resets, moving skinned and instanced reprojection, and the same assertions against a real
+    `vec2(0)` MRT) — see the section at the end of this file. The deterministic conformance scene
+    `conformance/scenes/shared/temporal-aa-lifecycle.js` has not run on the native lane, so the box
+    stays open.
 
 ### Phase 2 — Prove motion stability on content that exposes temporal defects
 
@@ -796,3 +801,67 @@ Both Phase 1 boxes stay **open**. The output-size half still needs its low-resol
 mutation to fail the assertion, and the cut/projection/zero-velocity mutation for moving skinned and
 instanced content has not run. Phases 2 and 3 stay open. Scoped commit only: no full CI, no push, no
 merge.
+
+### The history coordinate is measured from the continuous current projection (2026-10-05)
+
+`reprojectedHistory()` was wrong twice, and each error alone made its bound unreachable. Its y sign
+was inverted. TRAANode samples `historyUV = uv - velocity * vec2( 0.5, - 0.5 )`, and that `uv`
+counts raster rows from the top, so a point whose measured NDC delta is `vy` is sampled half its
+height *down* the current row: `historyY = currentY + vy*h/2`, never minus. Its anchor was wrong
+too. It received the `Math.floor` of the **jittered** draw projection and compared that integer
+texel with a continuous unjittered previous location under a 0.05-pixel bound, so the sub-pixel
+jitter itself was charged as misregistration.
+
+`packages/runtime-native/conformance/scenes/shared/temporal-velocity-probe.ts` now projects each
+tracked point through both matrices. The jittered one still names the MRT texel that is read, and
+the unjittered one — the same projection `projectedMotion()` already used — supplies the single
+continuous anchor that `measuredPixels`, `expectedPixels` and `misregistrationPixels` are all
+measured from. The expected side is still two independently projected positions, so no expected
+value is derived from the measured vector. The integer pair stays in the sample as the record of
+where the read happened, and `REPROJECTION_PIXELS` stays **0.05**; no threshold moved and no core
+file changed.
+
+The derivation is closed in the unit test rather than in prose. On an 800×400 raster a point at
+`[400, 200]` whose previous projection was NDC `[-0.1, -0.1]` previously projected to `[360, 220]`
+and its measured `[0.1, 0.1]` velocity now reprojects to the same pixel, so the error is 0; the
+same point with a zero vector stays at `[400, 200]` and misses by `hypot( 40, 20 )`, more than the
+40 pixels that separate it; a point that rose alone, previous NDC `[0, -0.2]` with velocity
+`[0, 0.2]`, lands on `[400, 240]` from both sides.
+
+Capability lookup ran before the helper changed, through `packages/engine-mcp/dist/index.js`:
+`engine_search_capabilities` plus `engine_capability_detail` on **all 10 hits** across two queries.
+Nothing ships a history-coordinate helper; `temporalReproject` is an addon that owns the look, and
+`readVelocityPreviousMatrices` is the tracker the fixture already calls. The owned installed Three
+0.185.1 was read, not patched: `packages/core/node_modules/three/examples/jsm/tsl/display/TRAANode.js`
+lines 664-668 for the sample and `packages/core/node_modules/three/src/nodes/accessors/VelocityNode.js`
+line 177 for `velocity = ndcCurrent - ndcPrevious`.
+
+Results on this tree, adapter `nvidia`/`turing` in every browser lane, no SwiftShader:
+
+- Units: **4/4** in `packages/runtime-native/__tests__/temporal-velocity-probe.spec.ts`, which loads
+  the shared probe source and is what typechecks it. `pnpm typecheck` exit 0, `pnpm lint` exit 0
+  (Biome warnings only, and the 4 complexity warnings on these shared files are already at HEAD).
+- Browser positive **passes**, 41/41 assertions, 0 diagnostics, on
+  `temporal.html?measure&variant=scaled-lifecycle` at frame 39 with **5** resets. The history
+  witness, taken on the 34 frames that reused history, peaks at **0.001587 px** for the rigid body
+  (frame 11), **0.001322 px** for the instance (frame 7) and **0.017778 px** for the skinned limb
+  (frame 5), against a 0.05-pixel bound, while the measured motion on those same points reaches
+  3.124, 1.876 and 0.705 px. The bound is therefore met with real sub-pixel motion underneath it, not
+  by dropping frames.
+- Browser negative **fails as required**: the same scenario and the same 41 assertions on
+  `variant=scaled-lifecycle-zero`, which merges the real scene MRT to `vec2(0)`, exits 1 with 7
+  failures and every one of them a history assertion. `maxMisregistration` is **1.876 px** for the
+  instance, **0.702 px** for the skinned limb and **3.124 px** for the rigid body, each equal to that
+  point's whole per-frame motion, while `maxMeasuredPixels` is **0** and `movingFrames` **0** for all
+  three. Expected motion is non-empty in the control (`maxExpectedPixels` 1.876 and 0.702), so the
+  failure cannot be read as "nothing moved". Reset count, reset reasons, cold fractions, whole-display
+  oracle, rasters, applied stages and `velocity.source mrt` all pass unchanged, and no console or
+  network error is reported.
+- Browser baseline control **passes**, 35/35 on `playtests/temporal-aa-scaled.playtest.json` with
+  `?measure&variant=scaled`, so the shared fixture change costs the existing scaled arm nothing. Its
+  witness peaks at the same three values, which is the determinism the route depends on.
+
+The second Phase 1 box stays **open**: `conformance/scenes/shared/temporal-aa-lifecycle.js`, the
+deterministic node-side fixture that asserts the same route with `assertCondition`, is written but
+has not run on the native lane, and the native registration and capture are the next job. Phases 2
+and 3 stay open. Scoped commit only: no full CI, no push, no merge.

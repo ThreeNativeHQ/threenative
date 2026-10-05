@@ -17,6 +17,19 @@ import { createTemporalVelocityProbe } from "./temporal-velocity-probe.ts";
 // any conformance viewport nor a round pixel count, so an off-by-one raster cannot pass for it.
 const SCALED_RESOLUTION_SCALE = 2 / 3;
 
+// One bounded lifecycle route on the shared fixture, on top of the height-only transition every
+// scaled arm already makes. Each step is keyed to the real frame, so the browser and native hosts
+// reach it at the same point, and the pose keeps moving through all of them, so the skinned limb and
+// the instances are still moving when each history decision is taken.
+const LIFECYCLE_CUT_FRAME = 24;
+const LIFECYCLE_PROJECTION_FRAME = 28;
+const LIFECYCLE_SCALE_FRAME = 32;
+// Fixture-only measurement thresholds, not product tolerances: a measured vector this small belongs
+// to a stationary point, and the misregistration bound is the sub-pixel jitter lattice this route
+// reprojects through. A vector that is simply wrong misses it by the point's whole per-frame motion.
+export const MOVING_PIXELS = 0.5;
+export const REPROJECTION_PIXELS = 0.05;
+
 // Shared browser/native content. The caller owns the renderer and sole frame loop.
 /**
  * `settle` holds the authored pose at that frame. A conformance capture compares two hosts at their
@@ -135,7 +148,7 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
       dispose: () => temporal?.dispose(),
     }],
   });
-  if (variant === "zero-velocity" || variant === "resolve-cubic-strict-zero" || variant === "resolve-cubic-strict-ordinary-zero") scenePass.setMRT(scenePass.getMRT().merge(mrt({ velocity: vec2(0) })));
+  if (variant === "zero-velocity" || variant === "scaled-lifecycle-zero" || variant === "resolve-cubic-strict-zero" || variant === "resolve-cubic-strict-ordinary-zero") scenePass.setMRT(scenePass.getMRT().merge(mrt({ velocity: vec2(0) })));
   if (variant === "reference") pipeline.outputNode = scenePass;
   const resolveProbe =
     variant.startsWith("scaled")
@@ -224,6 +237,18 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
   }
   let resets = 0;
   let lastReset = null;
+  // Fixture-only history witness: where the measured MRT vector reprojects each tracked point to,
+  // against where that point independently projected last frame.
+  const emptyWitness = () => ({
+    samples: 0,
+    movingFrames: 0,
+    maxMisregistration: 0,
+    maxMisregistrationFrame: -1,
+    maxMeasuredPixels: 0,
+    maxExpectedPixels: 0,
+  });
+  const historyWitness = { rigid: emptyWitness(), instance: emptyWitness(), skinned: emptyWitness() };
+  const lifecycle = variant === "scaled-lifecycle" || variant === "scaled-lifecycle-zero";
   // One rejected-pixel count per reset frame, taken after its copy lands. A reset frame is the only
   // frame whose expected rejection share is a whole raster, so it is where the count is checkable.
   const rejectionCold = [];
@@ -234,6 +259,7 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
     rejectionCold, rejectionFrames,
     resolveProbe: resolveProbe?.observation() ?? null,
     pose: { cameraX: camera.position.x, rigidX: rigid.position.x, limbZ: limb.rotation.z },
+    historyWitness,
     velocityProbe: velocityProbe?.observation() ?? null,
     historyValues: measurement ? {
       instances: Array.from(instances.instanceMatrix.array),
@@ -259,7 +285,13 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
       instances.setMatrixAt(index, matrix.makeTranslation(-0.5 + index * 0.6, -0.9 + Math.sin(pose / 11 + index) * 0.22, 0.3));
     }
     instances.instanceMatrix.needsUpdate = true;
-    camera.position.x = Math.sin(pose / 50) * 0.15 + (variant === "cut" && frame >= 20 ? 1.2 : 0);
+    // One authored camera jump per route, applied from its frame onward. Holding it keeps the pose
+    // from announcing an unrequested reverse cut on the very next frame, which no reset names.
+    const cut =
+      (variant === "cut" && frame >= 20) || (lifecycle && frame >= LIFECYCLE_CUT_FRAME)
+        ? 1.2
+        : 0;
+    camera.position.x = Math.sin(pose / 50) * 0.15 + cut;
     if (frame === 20 && variant === "cut") temporal?.resetHistory("camera-cut");
     if (frame === 20 && variant === "projection") { camera.fov = 65; camera.updateProjectionMatrix(); }
     if (frame === 20 && variant === "resize") { renderer.setSize(960, 540, false); camera.aspect = 960 / 540; camera.updateProjectionMatrix(); }
@@ -271,6 +303,20 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
       renderer.setSize(drawingBuffer.x, scaledHeight, false);
       camera.aspect = drawingBuffer.x / scaledHeight;
       camera.updateProjectionMatrix();
+    }
+    if (lifecycle) {
+      // The teleport the pose above holds from this frame on. The camera jumps a whole unit, so no
+      // history can still name the same samples, and the reset is the caller's own explicit request.
+      if (frame === LIFECYCLE_CUT_FRAME) temporal?.resetHistory("camera-cut");
+      // An authored projection change with no reset requested anywhere: the provider has to notice
+      // the discontinuity itself, and the raster never moves.
+      if (frame === LIFECYCLE_PROJECTION_FRAME) {
+        camera.fov = 52;
+        camera.updateProjectionMatrix();
+      }
+      // An input-raster change only. The physical display raster is left exactly where it is, so the
+      // display-sized resolve, its history and the whole-display oracle all stay comparable.
+      if (frame === LIFECYCLE_SCALE_FRAME) scenePass.setResolutionScale(1 / 2);
     }
     tracker.update(scene);
     velocityProbe?.before();
@@ -285,6 +331,27 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
     sampleVelocity: async () => {
       await velocityProbe?.read();
       await resolveProbe?.read();
+      // Only a frame that reused history reprojects a previous image at all: a reset frame has no
+      // history to land on, and it is checked against the whole-display oracle below instead.
+      const frameReport = temporal?.report();
+      if (frameReport?.historyValid) {
+        // The tracked points' history coordinates, folded into one running witness per point, so a
+        // moving skinned limb and a moving instance are both measured rather than asserted.
+        for (const sample of velocityProbe?.observation()?.samples ?? []) {
+          const witness = historyWitness[sample.name];
+          if (witness === undefined) continue;
+          witness.samples += 1;
+          if (sample.measuredPixels >= MOVING_PIXELS) witness.movingFrames += 1;
+          if (sample.misregistrationPixels > witness.maxMisregistration) {
+            witness.maxMisregistration = sample.misregistrationPixels;
+            witness.maxMisregistrationFrame = frameReport.frame;
+          }
+          witness.maxMeasuredPixels = Math.max(witness.maxMeasuredPixels, sample.measuredPixels);
+          // The motion the point actually had, so a control whose measured vector reads zero cannot
+          // pass by claiming the point never moved.
+          witness.maxExpectedPixels = Math.max(witness.maxExpectedPixels, sample.expectedPixels);
+        }
+      }
       // A rejection measurement only exists once its GPU copy lands, so a diagnostic frame awaits it
       // here rather than reading whatever the previous frame happened to leave in the report.
       await temporal?.settledRejection();
@@ -295,6 +362,7 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
         rejectionFrames.push({
           frame: report.frame,
           historyValid: report.historyValid,
+          resetReason: report.resetReason,
           // The raster this frame counted, so a visited count is checked against the display that
           // was actually current rather than against an index the caller has to line up.
           displayWidth: report.outputWidth,

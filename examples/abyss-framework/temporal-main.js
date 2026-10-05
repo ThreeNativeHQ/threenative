@@ -25,7 +25,7 @@ const fixture = createTemporalAAFixture(
   camera,
   variantName === "supersampled" ? "reference" : variantName,
   measurement,
-  scaled ? 20 : null,
+  scaled ? (variantName.includes("lifecycle") ? 36 : 20) : null,
 );
 // Three advances NodeUpdateType.FRAME from its existing animation clock. Multiple synchronous
 // renders would reuse one temporal result, so each deterministic step waits for that boundary.
