@@ -44,7 +44,16 @@ export function runtimeOptimizationProof(ninja, rules, library, buildDirectory) 
     if (compile.length !== 1) return reject();
     const flags = [...compile[0].body.matchAll(/^ {2}FLAGS = ([^\n]*)$/gmu)];
     const rule = compilerRules.filter((match) => match[1] === compile[0].rule);
-    if (flags.length !== 1 || flags[0][1].includes("$") || rule.length !== 1) return reject();
+    // Only the plain compiler argument shape is proven here. Shell quoting,
+    // escaping and response files can conceal a later optimization override.
+    const unknownArgumentSyntax = /['"\\`@;&|<>(){}\[\]*?#]/u;
+    if (
+      flags.length !== 1 ||
+      flags[0][1].includes("$") ||
+      unknownArgumentSyntax.test(flags[0][1]) ||
+      rule.length !== 1
+    )
+      return reject();
     const commands = [...rule[0][2].matchAll(/^ {2}command = ([^\n]+)$/gmu)];
     if (commands.length !== 1) return reject();
     const command = commands[0][1];
@@ -53,6 +62,7 @@ export function runtimeOptimizationProof(ninja, rules, library, buildDirectory) 
     );
     if (
       command.split("$FLAGS").length !== 2 ||
+      unknownArgumentSyntax.test(command) ||
       /(?:^|\s)-O\S*/u.test(command) ||
       command.includes("${") ||
       variables.some(

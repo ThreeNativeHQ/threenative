@@ -152,6 +152,21 @@ describe("runtime-own effective Android optimization", () => {
       "-O2",
     );
   });
+  it("rejects shell-quoted, escaped and response-file optimization overrides", () => {
+    for (const unsafe of ["-O2 '-O0'", '-O2 "-O0"', "-O2 -\\O0", "-O2 @override.rsp", "-O0 # -O2"])
+      expect(runtimeOptimizationProof(ninja(unsafe), rules, library, "/build").optimization).toBe(
+        "other",
+      );
+    for (const unsafe of ["'-O0'", '"-O0"', "-\\O0", "@override.rsp"])
+      expect(
+        runtimeOptimizationProof(
+          ninja("-O2"),
+          rules.replace("-c $in", `${unsafe} -c $in`),
+          library,
+          "/build",
+        ).optimization,
+      ).toBe("other");
+  });
   it("rejects missing rules, objects, wrong output and command-level overrides", () => {
     for (const [build, commands, output] of [
       [ninja("-O2"), "", library],

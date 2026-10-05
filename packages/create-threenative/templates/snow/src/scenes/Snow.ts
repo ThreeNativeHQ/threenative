@@ -3,6 +3,7 @@ import {
   type ICtx,
   Scene,
   type SceneFrame,
+  getPlatform,
   isMobile,
   isTouchscreenAvailable,
 } from "@threenative/core";
@@ -21,9 +22,11 @@ import { BOOT_AREA, bootPrint } from "../render/bootPrint.js";
 import { OrbitFollow, setupCamera } from "../render/camera.js";
 import { setupLighting } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
+import { createMaterialLighting } from "../render/materialLighting.js";
 import { createMaterials } from "../render/materials.js";
 import { setupPost } from "../render/postprocessing.js";
 import { createBall, createCrate, createLog } from "../render/props.js";
+import { isWebGLFallbackRenderer, materialLightingEnabled } from "../render/quality.js";
 import { createScenery } from "../render/scenery.js";
 import { setupSky } from "../render/sky.js";
 import { createSnowSurface } from "../render/snowSurface.js";
@@ -78,6 +81,8 @@ function placeBody(
 }
 
 export class Snow extends Scene<GameState, IPhysicsContext> {
+  #materialLighting: ReturnType<typeof createMaterialLighting> | undefined;
+  #post: ReturnType<typeof setupPost> | undefined;
   static override readonly initialState: GameState = {
     autoExplore: true,
     ballGap: 0,
@@ -113,7 +118,16 @@ export class Snow extends Scene<GameState, IPhysicsContext> {
       ctx.scene,
       ctx.renderer.raw as Parameters<typeof setupLighting>[1],
     );
-    setupPost(ctx.renderer, ctx.scene, ctx.camera, {
+    const materialEnvironment = {
+      web: getPlatform().runtime === "web",
+      rendererKind: ctx.renderer.kind,
+      webglFallback: isWebGLFallbackRenderer(ctx.renderer.raw),
+      mobile: isMobile(),
+      software: ctx.renderer.softwareAdapter !== undefined,
+    };
+    this.#post = setupPost(ctx.renderer, ctx.scene, ctx.camera, {
+      onTierChanged: (tier) =>
+        this.#materialLighting?.setEnabled(materialLightingEnabled(tier, materialEnvironment)),
       mobile,
       software: ctx.renderer.softwareAdapter !== undefined,
     });
@@ -513,6 +527,13 @@ export class Snow extends Scene<GameState, IPhysicsContext> {
 
     let waypoint = 0;
     let pointer: { x: number; y: number } | undefined;
+    this.#materialLighting = ctx.entities.add(
+      "material-lighting",
+      createMaterialLighting(ctx.scene, ctx.camera, lights.sun, {
+        ...materialEnvironment,
+        enabled: materialLightingEnabled(this.#post.tier, materialEnvironment),
+      }),
+    );
     return (frameCtx, dt) => {
       loading.update();
       const input = frameCtx.input;
@@ -610,6 +631,12 @@ export class Snow extends Scene<GameState, IPhysicsContext> {
         windNow: weather.wind,
       });
     };
+  }
+  override exit(): void {
+    this.#materialLighting?.dispose();
+    this.#materialLighting = undefined;
+    this.#post?.dispose();
+    this.#post = undefined;
   }
 }
 
