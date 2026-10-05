@@ -2244,6 +2244,224 @@ describe("WorldCells whose GPU scene comes up under a built ring", () => {
   });
 });
 
+describe("WorldCells caster admission while the GPU scene is still being seeded", () => {
+  /** One caster half the world holds: `@x,z` for a world-grid square, `@*` for the wide mesh. */
+  interface ICasterHalf {
+    /** What `WorldCells#publishCasterAdmission` published on the mesh, read as the probe reads it. */
+    readonly admitted: boolean;
+    /** The `x,z` after the `@`, or `*` for the one wide mesh that covers every cell of its asset. */
+    readonly cluster: string;
+    /** Records behind it, which is what a shadow level would submit. */
+    readonly records: number;
+  }
+
+  it("bills a caster half only for the sources the dispatch has been given", async () => {
+    /**
+     * The orphan shadows Machinefall's start pose drew: dozens of mid-distance canopies on empty
+     * ground. The scene came up under a ring the CPU path had already built, `#seedGpuSources` queued
+     * the source records behind the admission budget, and the near cells were placed first — so while
+     * an asset had *anything* placed, its far clusters drew shadows for trees the main pass had not
+     * been given a record for. One capture in four showed them.
+     *
+     * The window is measured, not hoped for: a fake clock that charges 10 s an admission makes every
+     * `update` admit exactly one unit, so the seed's rebuild is spread over hundreds of frames and a
+     * half-placed ring is a frame the test lands on deliberately.
+     *
+     * One asset over four cells, and `clusterSize: CELL` so a cell is a caster cluster of its own:
+     * every placed source in the ring is this asset's, so a half's records can be set against the
+     * sources behind it without knowing which asset a source was filed under.
+     */
+    const grid = [
+      [0, 0],
+      [0, 1],
+      [1, 0],
+      [1, 1],
+    ] as const;
+    const records: number[] = [];
+    for (const [x, z] of grid) {
+      const centre = cellCentre(x, z);
+      for (let at = 0; at < 4; at += 1)
+        records.push(
+          centre.x + (at % 2) * 4 - 2,
+          0,
+          centre.z + Math.floor(at / 2) * 4 - 2,
+          0,
+          0,
+          0,
+          1,
+          1,
+        );
+    }
+    const pkg: IWorldPackage = {
+      assets: { pine: { bounds: { max: [1, 2, 1], min: [-1, -2, -1] }, glb: "assets/pine.glb" } },
+      cellSize: CELL,
+      cells: grid.map(([x, z], index) => ({
+        runs: [{ asset: "pine", count: 4, offset: index * 4 }],
+        x,
+        z,
+      })),
+      extent: manifest.extent,
+      placements: "placements.bin",
+      terrain: manifest.terrain,
+      version: 1,
+    };
+    const body = JSON.stringify(pkg);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: unknown): Promise<object> => {
+        const url = String(input);
+        if (url.endsWith("world.json"))
+          return {
+            arrayBuffer: async () => new TextEncoder().encode(body).buffer as ArrayBuffer,
+            headers: new Headers(),
+            json: async () => pkg,
+            ok: true,
+            status: 200,
+          };
+        if (url.endsWith("placements.bin"))
+          return fileResponse(Buffer.from(new Float32Array(records).buffer));
+        if (url.endsWith("heightmap.u16"))
+          return fileResponse(readFileSync(path.join(fixture, "terrain", "heightmap.u16")));
+        return {
+          arrayBuffer: async () => new ArrayBuffer(0),
+          headers: new Headers(),
+          ok: false,
+          status: 404,
+        };
+      }),
+    );
+    const keyed = vi.spyOn(WorldGpuScene.prototype, "key");
+    let clock = 0;
+    const world = await WorldCells.load({
+      admissionBudgetMs: 1,
+      admissionNow: () => {
+        clock += 10_000;
+        return clock;
+      },
+      budgets,
+      clusterSize: CELL,
+      follow: { position: { ...cellCentre(0, 1), y: 0 } as { x: number; z: number } },
+      freshMeshesPerUpdate: 1,
+      gpuScene: true,
+      loadModel: async () => plainModel(),
+      prefetchSeconds: 0,
+      ring: 1,
+      shadows: { cast: true },
+      surface,
+      url: "/world/world.json",
+    });
+    const renderer = gpuRendererStub();
+    const camera = playerCamera();
+    /** Every caster half the world holds, whatever it draws. */
+    const halves = (): ICasterHalf[] =>
+      worldMeshes(world)
+        .map((mesh) => {
+          const at = mesh.name.indexOf("@");
+          // A main mesh is `asset:level:part` and has no `@`; a chunk mesh is not a caster half.
+          if (at < 0) return undefined;
+          return {
+            admitted: (mesh as InstancedMesh & { mainAdmitted?: boolean }).mainAdmitted !== false,
+            cluster: mesh.name.slice(at + 1),
+            records: mesh.count,
+          } as ICasterHalf;
+        })
+        .filter((half): half is ICasterHalf => half !== undefined);
+    /** Nothing left to admit: no backlog, no deferred build, no model still loading. */
+    const settled = (): boolean => {
+      const stats = world.stats();
+      return (
+        stats.admission.backlog === 0 && stats.admission.deferred === 0 && stats.loadsInFlight === 0
+      );
+    };
+
+    // The ring builds with no renderer: every caster half holds its cell's records and the scene holds
+    // no placement at all. That is the state the seed's rebuild then repairs one cell at a time.
+    let frames = 0;
+    for (; frames < 600; frames += 1) {
+      await flush(4);
+      world.update();
+      const stats = world.stats();
+      if (
+        stats.admission.backlog === 0 &&
+        stats.admission.deferred === 0 &&
+        stats.loadsInFlight === 0 &&
+        halves().filter((half) => half.records > 0).length > 4
+      )
+        break;
+    }
+    expect(frames).toBeLessThan(599);
+    expect(world.stats().gpuScene.on).toBe(false);
+    expect(halves().filter((half) => half.records > 0).length).toBeGreaterThan(4);
+
+    // The renderer arrives, and the scene comes up under that ring.
+    world.update(renderer, camera);
+    await flush(4);
+    const scene = keyed.mock.contexts.at(-1) as WorldGpuScene;
+    expect(scene).toBeInstanceOf(WorldGpuScene);
+    /** Sources the dispatch still holds, per `x,z` cluster and over the whole map. */
+    const placed = (): { readonly byCluster: Map<string, number>; readonly total: number } => {
+      const byCluster = new Map<string, number>();
+      let total = 0;
+      for (const one of scene.placements) {
+        if (one.slot < 0) continue;
+        const key = `${String(Math.floor(((one.centre[0] as number) - manifest.extent.minX) / CELL))},${String(Math.floor(((one.centre[2] as number) - manifest.extent.minZ) / CELL))}`;
+        byCluster.set(key, (byCluster.get(key) ?? 0) + 1);
+        total += 1;
+      }
+      return { byCluster, total };
+    };
+
+    // Drive to a frame with some of the ring placed and some of it still holding records the dispatch
+    // has none of, which is the only state this test means anything in.
+    let halfPlaced = false;
+    for (frames = 0; frames < 900; frames += 1) {
+      world.update(renderer, camera);
+      await flush(2);
+      const held = placed();
+      if (
+        held.total > 0 &&
+        halves().some(
+          (half) => half.records > 0 && (held.byCluster.get(half.cluster) ?? 0) < half.records,
+        )
+      ) {
+        halfPlaced = true;
+        break;
+      }
+    }
+    expect(halfPlaced).toBe(true);
+    // The frame just driven, read once for the bill: no update has run since, so the ring and the
+    // dispatch are the ones the loop stopped on.
+    const sources = placed();
+    /** Placed sources standing behind a half's records: its own cluster, or the map for the wide one. */
+    const behind = (half: ICasterHalf): number =>
+      half.cluster === "*" ? sources.total : (sources.byCluster.get(half.cluster) ?? 0);
+    const bill = (count: readonly ICasterHalf[]): number =>
+      count.reduce((sum, half) => sum + half.records, 0);
+
+    const every = halves().filter((half) => half.records > 0);
+    const placedHalves = every.filter((half) => behind(half) >= half.records);
+    // One asset with cells on both sides of the placement: some placed, some resident and not.
+    expect(placedHalves.length).toBeGreaterThan(0);
+    expect(placedHalves.length).toBeLessThan(every.length);
+    // So the bill the shadow levels take is the records behind the halves the dispatch can draw, and
+    // nothing else. Admitting a half with a record no placed source stands behind is what drew
+    // canopy shadows on empty ground.
+    expect(bill(every.filter((half) => half.admitted))).toBe(bill(placedHalves));
+
+    // The drain's end state is the whole ring casting again: the rule withholds a half until its own
+    // sources arrive, it does not withhold the asset for good.
+    for (frames = 0; frames < 900 && !settled(); frames += 1) {
+      world.update(renderer, camera);
+      await flush(2);
+    }
+    expect(settled()).toBe(true);
+    expect(world.stats().failures).toBe(0);
+    expect(world.stats().gpuScene.instances).toBeGreaterThan(0);
+    expect(halves().filter((half) => half.admitted).length).toBe(halves().length);
+    world.dispose();
+  });
+});
+
 describe("WorldCells GPU scene source records past the build-time cull", () => {
   it("gives the dispatch a placement that was past maxDistance once the camera walks into its range", async () => {
     // One cell, two props 42 m apart under a 40 m `maxDistance`: the build at the first culls the

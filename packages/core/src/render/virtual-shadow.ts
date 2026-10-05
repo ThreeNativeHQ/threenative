@@ -433,14 +433,16 @@ const MAX_MASS_WINDOW_WIDTHS = 1;
 const POOL_CASTERS = 1 << 0;
 
 /**
- * A mesh in the caster table, with the two channels the probe reads off the object rather than off
- * the geometry: the bounds three's own cull would use, which `Mesh` does not declare, and the
- * `casterPrewarmOwed` flag `WorldCells` writes (see `SharedBatch.awaitPrewarmDraw`).
+ * A mesh in the caster table, with the three channels the probe reads off the object rather than off
+ * the geometry: the bounds three's own cull would use, which `Mesh` does not declare, the
+ * `casterPrewarmOwed` flag `WorldCells` writes (see `SharedBatch.awaitPrewarmDraw`), and the
+ * `mainAdmitted` answer it publishes for a caster half (see `SharedBatch.setMainAdmitted`).
  */
 interface ICasterMesh extends Mesh {
   boundingBox?: Box3 | null;
   boundingSphere?: Sphere | null;
   casterPrewarmOwed?: boolean;
+  mainAdmitted?: boolean;
   chunkShadowProxy?: boolean;
   casterMinDiameter?: number;
   computeBoundingBox(): void;
@@ -621,9 +623,17 @@ const _shadowPlanes = new Float32Array(24);
  */
 const COARSEST_SHADOW_LEVEL = 1 << 20;
 
-/** What a caster is doing as far as a shadow level is concerned: 1 visible, 2 casting. */
-function casterFlag(mesh: { castShadow?: boolean; visible?: boolean }): number {
-  return (mesh.visible === true ? 1 : 0) | (mesh.castShadow === true ? 2 : 0);
+/** The state cached maps depend on: visible, casting, and admitted by the main pass. */
+function casterFlag(mesh: {
+  castShadow?: boolean;
+  mainAdmitted?: boolean;
+  visible?: boolean;
+}): number {
+  return (
+    (mesh.visible === true ? 1 : 0) |
+    (mesh.castShadow === true ? 2 : 0) |
+    (mesh.mainAdmitted === false ? 4 : 0)
+  );
 }
 
 /** The per-level entry of a scalar-or-array option, the last entry standing in for the rest. */
@@ -816,8 +826,8 @@ export class VirtualShadowNode extends ShadowBaseNode {
   /** The memo described by `CASTER_KEY_STRIDE`: per caster, the key it was computed from and the answer. */
   #casterMemo = new Float64Array(CASTER_STRIDE * 128);
   /**
-   * What `#pollCasters` last read off each table entry: 1 for `visible`, 2 for `castShadow`. Sized and
-   * filled by `#ensureCasters`, so the first poll after a build reports what the build already saw.
+   * What `#pollCasters` last read off each table entry: 1 for `visible`, 2 for `castShadow`,
+   * 4 for withheld admission. Filled by `#ensureCasters` after polling the old table.
    */
   #casterFlags = new Uint8Array(0);
   /**
@@ -1139,6 +1149,9 @@ export class VirtualShadowNode extends ShadowBaseNode {
   #ensureCasters(): void {
     const root = this.#root();
     if (this.#casterRoot === root && this.#casterStale === false) return;
+    // A streaming arrival can coincide with an older half's admission flip. Poll the old
+    // table before reseeding its flags, or that change disappears without invalidating its map.
+    this.#pollCasters();
     this.#casterRoot = root;
     this.#casterStale = false;
     for (const object of this.#casterObjects) {
@@ -1225,10 +1238,10 @@ export class VirtualShadowNode extends ShadowBaseNode {
   }
 
   /**
-   * What a game can change about a caster without touching the tree: its `visible` and its
-   * `castShadow`. A level that keeps its map across either keeps the shadow of geometry that casts
-   * nothing any more, which is the same ghost an eviction leaves and just as wrong. Both are read
-   * here, per frame, off the memoised table — one flag pair per caster, no matrix and no bounds —
+   * A caster can change visibility, casting or main-pass admission without touching the tree.
+   * A cached map must redraw when any of them flips, or it retains a removed shadow or omits a
+   * newly admitted one. Read per frame off the memoised table — one flag word per caster, no
+   * matrix and no bounds —
    * and a change asks for the levels covering that caster. The table is what cut 2 made cheap; this
    * reads it, it does not walk the world.
    *
@@ -1338,6 +1351,14 @@ export class VirtualShadowNode extends ShadowBaseNode {
       const mesh = table[entry];
       if (mesh === undefined) continue;
       if (mesh.visible !== true) continue;
+      // Admission must gate the render, not just its bill: three still traverses a visible
+      // caster omitted below. Reuse the texel gate's restore buffer for each level render.
+      // This is placement admission, so an admitted off-frustum caster still casts.
+      if (mesh.mainAdmitted === false) {
+        mesh.visible = false;
+        this.#hidden.push(mesh);
+        continue;
+      }
       // A retained-part proxy applies this gate to each original source at the draw boundary.
       if (mesh.chunkShadowProxy === true) mesh.casterMinDiameter = gate;
       // Read before the gates below: the level is going to render both caster layers either way, and
