@@ -34,5 +34,6 @@
       "sha256": "6524e39fc091745e2918867ff147d3db925efee6d24e8374aa10bc0acfd12aea"
     }
   ],
-  "correctnessOnly": true
+  "correctnessOnly": true,
+  "imagesNote": "Frame PNGs are not tracked (docs/verification byte budget); the sha256 values are of the original run's PNGs, produced by scripts/verify-vq-locomotion.ts and uploaded as the vq04-animation CI artifact."
 }
