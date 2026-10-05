@@ -294,6 +294,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
 
     std::vector<uint8_t> vblock, fblock;
     WGPURenderPipeline bound = nullptr;
+    lastFrame_ = FrameStats{};
     for (const auto& [depthKey, drawn] : opaque) {
         const DrawItem& item = *drawn;
         const Program& program = programs_[static_cast<int>(item.kind)];
@@ -352,11 +353,15 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
             wgpuRenderPassEncoderSetIndexBuffer(pass, gpu_.buffer(indices),
                                                 wide ? WGPUIndexFormat_Uint32 : WGPUIndexFormat_Uint16, 0,
                                                 (item.indices->byteLength() + 3) & ~uint64_t{3});
-            wgpuRenderPassEncoderDrawIndexed(pass, static_cast<uint32_t>(item.indices->byteLength() / (wide ? 4 : 2)), 1,
-                                             0, 0, 0);
+            const uint32_t count = static_cast<uint32_t>(item.indices->byteLength() / (wide ? 4 : 2));
+            wgpuRenderPassEncoderDrawIndexed(pass, count, 1, 0, 0, 0);
+            lastFrame_.triangles += count / 3;
         } else {
-            wgpuRenderPassEncoderDraw(pass, static_cast<uint32_t>(item.positions->byteLength() / 12), 1, 0, 0);
+            const uint32_t count = static_cast<uint32_t>(item.positions->byteLength() / 12);
+            wgpuRenderPassEncoderDraw(pass, count, 1, 0, 0);
+            lastFrame_.triangles += count / 3;
         }
+        ++lastFrame_.draws;
     }
     wgpuRenderPassEncoderEnd(pass);
     wgpuRenderPassEncoderRelease(pass);

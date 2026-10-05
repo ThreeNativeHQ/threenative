@@ -19,6 +19,30 @@ if(TARGET v8::v8 AND MYSTRAL_USE_V8 AND NOT MYSTRAL_PLATFORM STREQUAL "ios")
     endforeach()
     add_dependencies(tn-native-engine-tests tn-native-engine-v8-test)
 
+    # CP1's game host (PRD-534): a workload script on V8 through the adapter (native-v8), or its C++
+    # twin (--cpp, native-cpp), drawn through the native renderer and measured per frame.
+    add_executable(tn-native-engine-host EXCLUDE_FROM_ALL src/adapters/v8/host_main.cpp)
+    target_link_libraries(tn-native-engine-host PRIVATE tn_adapter_v8 tn_engine_renderer tn_host_services)
+    set_target_properties(tn-native-engine-host PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
+    if(NOT APPLE AND NOT WIN32)
+        # Dawn and the V8 monolith both carry Abseil, as for mystral-runtime: the same version's
+        # duplicate definitions are folded rather than refused.
+        target_link_options(tn-native-engine-host PRIVATE "LINKER:--allow-multiple-definition")
+    endif()
+    add_dependencies(tn-native-engine-tests tn-native-engine-host)
+    # Both CP1 arms on a small L4: 64 cubes + the ground must present 65 draws in each.
+    set(TN_ESBUILD ${CMAKE_CURRENT_SOURCE_DIR}/../../node_modules/.bin/esbuild)
+    set(TN_L4_SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/../../examples/engine-load-test/native-engine/l4-workload.ts)
+    set(TN_L4_SCRIPT ${CMAKE_CURRENT_BINARY_DIR}/l4-workload.js)
+    if(EXISTS ${TN_ESBUILD})
+        add_test(NAME native_engine_host_v8
+            COMMAND sh -c "${TN_ESBUILD} ${TN_L4_SOURCE} --bundle --format=iife --platform=neutral --log-level=error --outfile=${TN_L4_SCRIPT} && $<TARGET_FILE:tn-native-engine-host> ${TN_L4_SCRIPT} --objects 64 --frames 10 --warmup 2 2>/dev/null")
+        add_test(NAME native_engine_host_cpp
+            COMMAND sh -c "$<TARGET_FILE:tn-native-engine-host> --cpp --objects 64 --frames 10 --warmup 2 2>/dev/null")
+        set_tests_properties(native_engine_host_v8 native_engine_host_cpp PROPERTIES
+            LABELS "native-engine" PASS_REGULAR_EXPRESSION "\"draws\": 65,")
+    endif()
+
     # The differential fixtures through V8 (PRD-531 phase 2): the same corpus and goldens as the C++
     # driver, every op run as JS against the adapter's classes.
     add_executable(tn-native-engine-v8-fixture-driver EXCLUDE_FROM_ALL tests/native-engine/v8_fixture_driver.cpp)

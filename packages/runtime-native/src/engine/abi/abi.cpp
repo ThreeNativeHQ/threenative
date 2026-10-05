@@ -7,12 +7,14 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <atomic>
 #include <memory>
 #include <new>
 #include <string_view>
 #include <unordered_map>
 #include <vector>
 
+#include "engine/abi/abi_internal.h"
 #include "engine/abi/bindings.h"
 #include "engine/foundation/handles.h"
 
@@ -347,6 +349,8 @@ tn_status_t guarded(tn_diagnostic_t* diagnostic, Call call) {
     }
 }
 
+std::atomic<uint64_t> gCrossings{0};  // relaxed: a meter, not a synchronisation point
+
 tn_status_t selfObject(tn_handle_t self, tn_context*& context, tn::binding::Object*& object, tn_diagnostic_t* diagnostic) {
     context = contextFor(self.context);
     object = context ? context->object(self) : nullptr;
@@ -356,10 +360,22 @@ tn_status_t selfObject(tn_handle_t self, tn_context*& context, tn::binding::Obje
 
 }  // namespace
 
+namespace tn::abi {
+
+tn::binding::Object* objectOf(tn_handle_t handle) {
+    tn_context* context = contextFor(handle.context);
+    return context ? context->object(handle) : nullptr;
+}
+
+uint64_t crossings() { return gCrossings.load(std::memory_order_relaxed); }
+
+}  // namespace tn::abi
+
 extern "C" {
 
 tn_status_t tn_construct(tn_context_t* context, const char* class_name, const tn_value_t* args, uint32_t arg_count,
                          tn_handle_t* out_object, tn_diagnostic_t* diagnostic) {
+    gCrossings.fetch_add(1, std::memory_order_relaxed);
     if (!context || !class_name || !out_object || (arg_count && !args)) {
         return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_ABI_NULL: context, class, args or out_object");
     }
@@ -380,6 +396,7 @@ tn_status_t tn_construct(tn_context_t* context, const char* class_name, const tn
 
 tn_status_t tn_invoke(tn_handle_t self, const char* method, const tn_value_t* args, uint32_t arg_count, tn_value_t* result,
                       tn_diagnostic_t* diagnostic) {
+    gCrossings.fetch_add(1, std::memory_order_relaxed);
     tn_context* context = nullptr;
     tn::binding::Object* object = nullptr;
     if (!method || !result || (arg_count && !args)) return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_ABI_NULL: method, args or result");
@@ -399,6 +416,7 @@ tn_status_t tn_invoke(tn_handle_t self, const char* method, const tn_value_t* ar
 }
 
 tn_status_t tn_get(tn_handle_t self, const char* path, tn_value_t* result, tn_diagnostic_t* diagnostic) {
+    gCrossings.fetch_add(1, std::memory_order_relaxed);
     tn_context* context = nullptr;
     tn::binding::Object* object = nullptr;
     if (!path || !result) return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_ABI_NULL: path or result");
@@ -416,6 +434,7 @@ tn_status_t tn_get(tn_handle_t self, const char* path, tn_value_t* result, tn_di
 }
 
 tn_status_t tn_set(tn_handle_t self, const char* path, const tn_value_t* value, tn_diagnostic_t* diagnostic) {
+    gCrossings.fetch_add(1, std::memory_order_relaxed);
     tn_context* context = nullptr;
     tn::binding::Object* object = nullptr;
     if (!path || !value) return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_ABI_NULL: path or value");

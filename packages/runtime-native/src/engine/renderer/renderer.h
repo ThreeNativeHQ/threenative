@@ -99,6 +99,13 @@ public:
     /** Releases a renderable's GPU record (the database calls this when the object leaves the scene). */
     void forget(uint64_t key);
 
+    /** What the last render() submitted, as three's renderer.info.render counts it. */
+    struct FrameStats {
+        uint32_t draws = 0;
+        uint64_t triangles = 0;
+    };
+    const FrameStats& lastFrame() const { return lastFrame_; }
+
     GpuResources& gpu() { return gpu_; }
     const GeometryCache& geometry() const { return geometry_; }
     const PipelineCache& pipelines() const { return pipelines_; }
@@ -147,6 +154,7 @@ private:
     uint32_t width_ = 0;
     uint32_t height_ = 0;
     uint64_t renderId_ = 0;
+    FrameStats lastFrame_;
     std::unordered_map<uint64_t, Record> records_;
 };
 
