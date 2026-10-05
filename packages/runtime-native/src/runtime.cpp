@@ -3655,7 +3655,8 @@ private:
                 // binding at the same moment, and a HUD could only be proven keyboard-driven by a
                 // run where the game never saw the key it was pressed with.
                 if (platform::uiOverlayRouteKey(event.key.c_str(), event.type == "keydown", event.shiftKey)) {
-                    return jsEngine_->newUndefined();
+                    // Reported so a device runner does not add an OS copy of a key the UI took.
+                    return jsEngine_->newBoolean(true);
                 }
                 dispatchKeyboardEvent(event);
                 return jsEngine_->newUndefined();

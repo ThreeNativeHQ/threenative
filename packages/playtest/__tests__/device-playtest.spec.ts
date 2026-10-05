@@ -1282,3 +1282,34 @@ test("Android launches the playtest activity in the current foreground user", as
     "com.example.game",
   ]);
 });
+
+/**
+ * The native-css UI's own test knobs cross the launch as intent extras, because `am start` passes an
+ * app no environment and the host reads both with `getenv`. Absent by default, so a run that asked
+ * for neither launches exactly as it did before.
+ */
+test("Android launch carries the native-css UI's clock and state trace when the environment sets them", async () => {
+  const calls: string[][] = [];
+  const driver = new AdbAndroidDriver({
+    activity: "com.threenative.runtime.MystralActivity",
+    adbPath: "/nonexistent/adb",
+    packageName: "com.example.game",
+  });
+  (driver as unknown as { adb: (args: readonly string[]) => Promise<string> }).adb = async (args) => {
+    calls.push([...args]);
+    if (args.join(" ") === "shell am get-current-user") return "0\n";
+    return "";
+  };
+
+  process.env.TN_CSS_UI_FIXED_STEP_MS = "0.1";
+  process.env.TN_CSS_UI_STATE_TRACE = "1";
+  try {
+    await driver.prepare("http://127.0.0.1:41777/playtest", "/sdcard/Android/data/com.example.game/files");
+  } finally {
+    delete process.env.TN_CSS_UI_FIXED_STEP_MS;
+    delete process.env.TN_CSS_UI_STATE_TRACE;
+  }
+  const launch = calls.find((args) => args[0] === "shell" && args[1] === "am" && args[2] === "start");
+  expect(launch?.join(" ")).toContain("--es TN_CSS_UI_FIXED_STEP_MS 0.1 --es TN_CSS_UI_STATE_TRACE 1");
+  await driver.stop();
+});

@@ -490,6 +490,108 @@ test("Android click injects a viewport-pixel touch through the device transport"
   ]);
 });
 
+test("a key the native UI consumed gets no second OS key event on Android", async () => {
+  const projectPath = await makeTempDir("playtest-android-uikey-");
+  await writeFile(join(projectPath, "scenario.json"), JSON.stringify({
+    artifacts: { screenshots: false },
+    assert: {
+      diagnostics: {
+        networkErrorsOptOutReason: "The Android transport has no network observer in this focused input test.",
+        noNetworkErrors: false,
+      },
+    },
+    name: "android-uikey",
+    schemaVersion: 1,
+    steps: [
+      { kind: "input", label: "type-a", press: "a", holdTicks: 1, release: true },
+    ],
+    target: "web",
+    viewport: { height: 360, width: 640 },
+    warmupFrames: 0,
+  }));
+  const pointerSets: Array<readonly { buttons?: number; id: number; x: number; y: number }[]> = [];
+  const adbCalls: string[][] = [];
+  const taps: Array<{ x: number; y: number }> = [];
+  let keyboardHidden = 0;
+  let tick = 0;
+  const driver: IDevicePlaytestDriver = {
+    captureConsole: async () => [],
+    hideKeyboard: async () => {
+      keyboardHidden += 1;
+      return false;
+    },
+    isAlive: async () => true,
+    prepare: async () => undefined,
+    screenshot: async () => undefined,
+    tap: async (x, y) => {
+      taps.push({ x, y });
+    },
+    setPointers: async (pointers) => {
+      pointerSets.push(pointers);
+      return {
+        activeIds: pointers.map(({ id }) => id),
+        injection: "adb-emu-event-protocol-b",
+        rotation: 0,
+        trackingIds: pointers.map(({ id }) => id),
+      };
+    },
+    runAdb: async (args) => {
+      adbCalls.push([...args]);
+      return "";
+    },
+    stop: async () => undefined,
+  };
+  const transport: IDevicePlaytestTransport = {
+    capabilities: ["browser.console", "browser.input", "runtime.diagnostics"],
+    call: async <T>(method: string, argument?: unknown) => {
+      if (method === "describe") {
+        return {
+          capabilities: ["runtime.diagnostics", "runtime.fixedStep"],
+          limits: PLAYTEST_PROTOCOL_LIMITS,
+          name: "android-click-test",
+          protocolVersion: PLAYTEST_PROTOCOL_VERSION,
+        } as T;
+      }
+      if (method === "ready") return { ready: true } as T;
+      // The host answers a key its native-css UI took with `consumedByUi`: the OS key event the
+      // runner would add for a focused web-view input would be a second delivery of the same key.
+      if (method === "input.keyDown") return { consumedByUi: true } as T;
+      if (method === "advance") {
+        const ticks = typeof argument === "number" ? argument : 0;
+        tick += ticks;
+        return { clock: { mode: "fixed-step", tick }, ticks } as T;
+      }
+      if (method === "sample") return { clock: { mode: "fixed-step", tick }, diagnostics: [] } as T;
+      if (method === "drainEvents") return [] as T;
+      return undefined as T;
+    },
+    close: async () => undefined,
+    start: async () => undefined,
+    waitForBridge: async () => true,
+  };
+
+  const report = await runDevicePlaytest({
+    artifactDirectory: join(projectPath, "artifacts"),
+    endpoint: "http://127.0.0.1:41777/playtest",
+    headless: true,
+    projectPath,
+    scenarioPath: "scenario.json",
+    target: "android",
+    timeoutMs: 100,
+    trace: false,
+    url: "http://127.0.0.1:5173",
+  }, {
+    driver,
+    mailboxPaths: { request: "request", response: "response" },
+    name: "android",
+    processName: "android-click-test",
+    transport,
+  });
+
+  expect(report.pass).toBe(true);
+  expect(adbCalls.filter((args) => args.includes("input"))).toEqual([]);
+});
+
 test("native pointer transport remains an explicit pointerPosition step", async () => {
   const projectPath = await makeTempDir("playtest-native-pointer-");
   await writeFile(join(projectPath, "scenario.json"), JSON.stringify({

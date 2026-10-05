@@ -361,6 +361,11 @@ public class MystralActivity extends SDLActivity {
         }
         String uiRenderer = metadata == null ? "native" : metadata.getString("TN_UI_RENDERER", "native");
         String cssUiRoot = "native-css".equals(uiRenderer) ? extractCssUi() : "";
+        // The native-css UI's own test knobs, which the host reads from its environment. An Android
+        // app inherits none, so the runner hands them over as intent extras and they arrive as the
+        // last two arguments. Empty unless a playtest launch supplied them.
+        String fixedStepMs = getIntent().getStringExtra("TN_CSS_UI_FIXED_STEP_MS");
+        String stateTrace = getIntent().getStringExtra("TN_CSS_UI_STATE_TRACE");
         return new String[] {
             "asset://scripts/main.js",
             endpoint == null ? "" : endpoint,
@@ -369,7 +374,9 @@ public class MystralActivity extends SDLActivity {
             Boolean.toString(fullscreen),
             backgroundMode == null ? "pause" : backgroundMode,
             Integer.toString(maxFps),
-            cssUiRoot
+            cssUiRoot,
+            fixedStepMs == null ? "" : fixedStepMs,
+            stateTrace == null ? "" : stateTrace
         };
     }
 

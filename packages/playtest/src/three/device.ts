@@ -204,7 +204,7 @@ function dispatchInput(
   const host = (globalThis as typeof globalThis & {
     __THREENATIVE_NATIVE__?: {
       playtestInput?: {
-        keyboard?(type: string, key: string, code: string): void;
+        keyboard?(type: string, key: string, code: string): unknown;
         pointer?(
           type: string,
           x: number,
@@ -225,8 +225,9 @@ function dispatchInput(
     const code = argument.key;
     const key = /^Key[A-Z]$/u.test(code) ? code.slice(3).toLowerCase() : code;
     if (typeof host?.keyboard !== "function") throw new Error("Native playtest keyboard input is unavailable.");
-    host.keyboard(method === "input.keyDown" ? "keydown" : "keyup", key, code);
-    return null;
+    const consumed = host.keyboard(method === "input.keyDown" ? "keydown" : "keyup", key, code);
+    // The host's UI took this key: a runner that would add an OS-level copy of it must not.
+    return consumed === true ? { consumedByUi: true } : null;
   }
   if (method === "input.pointer") {
     if (typeof argument.x !== "number" || typeof argument.y !== "number" || typeof argument.buttons !== "number") {

@@ -417,8 +417,7 @@ async function runDevicePlaytestInternal(
         }
         if (typeof pressed === "string") {
           if (!heldKeys.has(pressed)) {
-            await transport.call("input.keyDown", { key: pressed });
-            await sendAndroidTextInput(target, pressed);
+            await pressKey(target, transport, pressed);
             heldKeys.add(pressed);
           }
         } else if (pressed !== undefined) {
@@ -430,8 +429,7 @@ async function runDevicePlaytestInternal(
           }
           for (const key of pressed) {
             if (!heldKeys.has(key)) {
-              await transport.call("input.keyDown", { key });
-              await sendAndroidTextInput(target, key);
+              await pressKey(target, transport, key);
               heldKeys.add(key);
             }
           }
@@ -795,6 +793,24 @@ async function deviceClickPoint(
     ));
   }
   return { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
+}
+
+/**
+ * One key down through the mailbox, plus the OS key event a focused web-view input needs.
+ *
+ * A host whose native-css UI took the key says so (`consumedByUi`), and the OS event is then a
+ * second delivery of the same key: a Space the UI already activated on, activated again by SDL's
+ * own copy of it. A web-view overlay never consumes a mailbox key, so its OS event still goes out.
+ */
+async function pressKey(
+  target: IDevicePlaytestTarget,
+  transport: IDevicePlaytestTransport,
+  key: string,
+): Promise<void> {
+  const reply = await transport.call<unknown>("input.keyDown", { key });
+  const consumed = typeof reply === "object" && reply !== null
+    && (reply as { consumedByUi?: unknown }).consumedByUi === true;
+  if (!consumed) await sendAndroidTextInput(target, key);
 }
 
 async function sendAndroidTextInput(target: IDevicePlaytestTarget, key: string): Promise<void> {

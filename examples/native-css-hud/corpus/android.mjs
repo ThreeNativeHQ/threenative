@@ -29,12 +29,15 @@
  * modifiers, a mouse as `pointerPosition`, a finger as `pointers`, a wheel at its point and an
  * environment as `media` all reach this host the way they reach desktop, over the device mailbox
  * into `playtestInput`. The observations are compared the same way, with the oracle's tolerances.
- * Two of them a device run cannot make, each reported skipped by name rather than approximated: a
- * scroll offset and a click-given focus are only on the host's `TN_CSS_UI_STATE` line, which it
- * writes when `TN_CSS_UI_STATE_TRACE` is set in its own process environment, and a pixel sampled
- * part-way through a transition needs `TN_CSS_UI_FIXED_STEP_MS` to place the capture at Chromium's
- * virtual moment. An Android app is launched by `am start`, which passes no environment, so both
- * stay off; a scenario with no observation left that a device can make is skipped by name.
+ *
+ * The host's UI clock and its state trace. Both are read by the native host from its own environment
+ * (`getenv` in `src/platform/ui_overlay.cpp`), and an Android app launched by `am start` inherits
+ * none, so the driver hands the two to the launch as intent extras and the native entry sets them
+ * before the overlay attaches (`SDL_main` in `src/platform/android_main.cpp`). So the fixed clock is
+ * on and the state line is written here exactly as on desktop, and the run proves it from the host's
+ * own `TN_CSS_UI_CLOCK` line. `TN_CSS_UI_STATE` reaches this harness through logcat rather than the
+ * runner's console: the native entry pipes its own stdout into logcat, and the runner clears logcat
+ * on every launch.
  *
  * Each run asserts the identity from the app's own logcat lines: the native-css backend line, the
  * attach marker, no web view, no rejected mutation batch.
@@ -50,10 +53,13 @@ import { chromium } from "@playwright/test";
 import { PNG } from "pngjs";
 import { FIXTURES, FONT } from "./fixtures.mjs";
 import {
+  CLOCK_STEP_MS,
   PIXEL_TOLERANCE,
   PIXEL_TOLERANCE_AA,
+  cssStateAt,
   focusCandidates,
   focusedFrom,
+  hostIdsOf,
   pixelAt,
   prefixFor,
   resourceAt,
@@ -246,6 +252,11 @@ function playInstalled(dir, scenario) {
       ...["--activity", "com.threenative.runtime.MystralActivity", "--artifacts", artifacts],
     ],
     dir,
+    // The host's fixed UI clock and its focus/scroll state line, the two knobs `desktop.mjs` sets
+    // here too: the Android driver forwards them into the launch as intent extras, because an
+    // Android app inherits no environment for the host to read them from.
+    // biome-ignore lint/style/useNamingConvention: the host's own variable names.
+    { ...process.env, TN_CSS_UI_FIXED_STEP_MS: String(CLOCK_STEP_MS), TN_CSS_UI_STATE_TRACE: "1" },
   );
   // The device log itself rather than the runner's console.json: the runner clears logcat when it
   // starts, and a flat subject that trips its blank-capture guard aborts before writing the file.
@@ -260,7 +271,25 @@ function playInstalled(dir, scenario) {
   } catch {
     report = undefined;
   }
-  return { artifacts, played, guard, report, id: identity(lines) };
+  // The host's own stdout lines, read off logcat the way `desktop.mjs` reads them off the host's
+  // stdout: the native entry redirects both into logcat (`MystralStdio`), so the line text is the
+  // part after the first `): `. That is what carries `TN_CSS_UI_STATE`, which reports the focus a
+  // click gave and where a scroller moved, neither of which any pixel shows.
+  const stdout = lines
+    .filter((line) => line.includes("MystralStdio"))
+    .map((line) => line.slice(line.indexOf("): ") + 3));
+  const clock = stdout.find((line) => line.startsWith("TN_CSS_UI_CLOCK:"));
+  return {
+    artifacts,
+    played,
+    guard,
+    report,
+    lines: stdout,
+    id: identity(lines),
+    ...(clock === undefined || JSON.parse(clock.slice(16)).stepMs !== CLOCK_STEP_MS
+      ? { clockProblem: clock ?? "no TN_CSS_UI_CLOCK line" }
+      : {}),
+  };
 }
 
 /**
@@ -357,42 +386,8 @@ async function runFixture(fixture, browser) {
   else if (entry.ssim < entry.ssimMin)
     entry.why = `SSIM ${entry.ssim} is below the ${entry.ssimMin} bar`;
   else if (played.played.status !== 0 && !played.guard)
-    entry.why = `the playtest exited ${played.played.status}`;
+    entry.why = `the playtest exited ${played.played.status}: ${(played.played.output ?? "").slice(-1800)}`;
   return entry;
-}
-
-/**
- * What a device run cannot observe, named on the observation rather than folded into a verdict.
- *
- * One cause for both: the host reads these from its own process environment (`getenv` in
- * `src/platform/ui_overlay.cpp`), and an Android app is launched by `am start`, which passes none.
- * `desktop.mjs` sets them because it launches the host itself.
- */
-const STATE_UNREACHABLE =
-  "the host reports focus and scroll only on its TN_CSS_UI_STATE line, which it writes when TN_CSS_UI_STATE_TRACE is set in its own environment; an `am start` launch passes none";
-const MID_TRANSITION_UNREACHABLE =
-  "the oracle sampled this pixel part-way through a transition, which needs the host's fixed UI clock (TN_CSS_UI_FIXED_STEP_MS) to place a capture at that exact moment; an `am start` launch passes none, so a device capture lands wherever the run reached";
-
-/**
- * Name the observations a device run cannot make, on the observation itself.
- *
- * A scroll offset and the focus a click gave are the host's state rather than its pixels, so the
- * desktop translation marks them `fromState` and reads them off that `TN_CSS_UI_STATE` line. A
- * pixel is comparable whenever the element under it has no transition: such an element paints the
- * same colour at every moment, so the capture needs no clock to agree with the oracle. Where it does
- * transition, the oracle's pixel is only right at its own virtual instant, and that is the moment a
- * fixed clock exists to reproduce — so the wait this harness already makes is real time, not that
- * instant, and the observation is named instead of compared. `settleMs` reads
- * `transition-duration` and `transition-delay` only, so a scenario written with `@keyframes` would
- * need its animation read here too before its pixels were comparable; none of these is.
- */
-function nameDeviceGaps(translated, samples) {
-  for (const item of translated.observations) {
-    if (item.why !== undefined) continue;
-    if (item.fromState === true) item.why = STATE_UNREACHABLE;
-    else if (item.obs === "pixel" && (samples[item.index]?.settleMs ?? 0) > 0)
-      item.why = MID_TRANSITION_UNREACHABLE;
-  }
 }
 
 /** The oracle's expected lists at the viewports this device presents. */
@@ -426,23 +421,17 @@ async function runInteraction(scenario, expected, browser) {
     compared: [],
     unreachable: [],
   };
-  const points = scenario.script.filter((s) => s.obs !== undefined);
   // `scenarioBoxes` reads the page the oracle leaves in `out-interaction/`, which the desktop corpus
   // rewrites too; re-run the oracle for this scenario right before reading it, so another lane's run
-  // cannot leave it missing. Its per-point `settleMs` is the element's own transition under that
-  // sample, which is what decides whether a pixel needs a clock to be comparable.
+  // cannot leave it missing.
   chromiumExpectedAt([scenario.name], { [scenario.name]: size });
-  const { boxes, samples } = await scenarioBoxes(
-    browser,
-    sized,
-    points.map((s) => ({ x: s.x ?? 0, y: s.y ?? 0 })),
-  );
-  // The desktop translation's own steps and observation list: a key with its held modifiers, a
-  // mouse as `pointerPosition`, a finger as `pointers`, a wheel at its point, an environment as
-  // `media`. Every one of those reaches this host the way it reaches desktop; only the clock that
-  // translation was written against is missing, and `nameDeviceGaps` accounts for it per observation.
+  const { boxes } = await scenarioBoxes(browser, sized);
+  // The desktop translation's own steps and observation list, unchanged: a key with its held
+  // modifiers, a mouse as `pointerPosition`, a finger as `pointers`, a wheel at its point, an
+  // environment as `media`, and the fixed UI clock every tick of those waits is counted in. Every
+  // one of those reaches this host the way it reaches desktop, and the run proves the clock arrived
+  // from the host's own `TN_CSS_UI_CLOCK` line rather than assuming the extra crossed.
   const translated = translate(sized, expected);
-  nameDeviceGaps(translated, samples);
   entry.observations = translated.observations.length;
   entry.skipped = translated.observations.filter((o) => o.why !== undefined).length;
   entry.unreachable = translated.observations
@@ -494,6 +483,8 @@ async function runInteraction(scenario, expected, browser) {
   let status = prepared.played.status;
   let output = prepared.played.output;
   const problems = [...prepared.id.problems];
+  if (prepared.clockProblem !== undefined)
+    problems.push(`the host did not run the fixed UI clock: ${prepared.clockProblem}`);
   // The runner's blank-capture colour floor cannot be met by a flat corpus subject, and it aborts
   // the run at the first capture it refuses, so every capture still needed comes from its own run
   // cut at its own step (`prefixFor`, the desktop corpus's own reader). The click ledger lives in a
@@ -518,6 +509,30 @@ async function runInteraction(scenario, expected, browser) {
     output = ledger.played.output;
   }
   entry.identity = { ...prepared.id, problems };
+  // Every state observation — a scroll offset, or focus a click gave — is read from a run cut at its
+  // own step, because the host's `TN_CSS_UI_STATE` log records the state and not the step that was
+  // running: the last line of a cut run is the state that run ended in, which is the state this
+  // observation's step was waiting for. The fixed clock is what makes the cut reach the same frame
+  // the whole script would have.
+  const states = new Map();
+  entry.stateRuns = [];
+  for (const item of reachable.filter((entry_) => entry_.fromState === true)) {
+    const cut = prepared.play(scenarioJson(sized, prefixFor(translated, item.label), expected));
+    problems.push(
+      ...cut.id.problems.map((problem) => `${item.label}: ${problem}`),
+      ...(cut.clockProblem === undefined ? [] : [`${item.label}: no fixed UI clock`]),
+    );
+    const state = cut.played.status === 0 ? cssStateAt(cut.lines) : undefined;
+    entry.stateRuns.push({
+      label: item.label,
+      obs: item.obs,
+      element: item.n,
+      exit: cut.played.status,
+      state: state?.line,
+      ...(cut.played.status === 0 ? {} : { output: cut.played.output.slice(-1500) }),
+    });
+    if (state !== undefined) states.set(item.index, state);
+  }
   // Exit 1 is the run's own click-ledger assertion failing: its report is complete, and the
   // comparison below names the observation that differs rather than stopping here.
   const exitOk = status === 0 || (status === 1 && report !== undefined);
@@ -527,8 +542,10 @@ async function runInteraction(scenario, expected, browser) {
     candidates: focusCandidates(scenario.tree),
     captures,
     expected,
+    hostIds: hostIdsOf(scenario.tree),
     reachable,
     report,
+    states,
   });
   entry.compared = compared.compared;
   entry.mismatches = compared.mismatches;
@@ -554,16 +571,29 @@ function compareObservations({
   candidates,
   captures,
   expected,
+  hostIds,
   reachable,
   report,
+  states,
 }) {
+  const numberOf = new Map([...hostIds].map(([n, id]) => [id, n]));
   const compared = [];
   const mismatches = [];
   for (const item of reachable) {
     const want = expected[item.index];
     let actual = null;
     let why;
-    if (item.obs === "focus" || item.obs === "pixel") {
+    if (item.fromState === true) {
+      const state = states.get(item.index);
+      if (state === undefined) {
+        actual = null;
+        why = `the host wrote no TN_CSS_UI_STATE line in the run cut at ${item.label}`;
+      } else
+        actual =
+          item.obs === "scroll"
+            ? state.scrollOf(hostIds.get(item.n))
+            : (numberOf.get(state.focused) ?? state.focused);
+    } else if (item.obs === "focus" || item.obs === "pixel") {
       const capture = captures.get(item.label);
       if (capture === undefined || (item.obs === "focus" && baseline === undefined)) {
         mismatches.push({

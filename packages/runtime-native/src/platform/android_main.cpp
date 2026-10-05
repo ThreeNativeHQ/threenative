@@ -271,6 +271,19 @@ extern "C" __attribute__((visibility("default"))) int SDL_main(int argc, char* a
             "threenative-playtest-mailbox.js"
         );
         LOGI("Device playtest mailbox configured");
+        // An Android app inherits no environment, and `am start` passes none, so the two test-only
+        // knobs the native-css UI reads with getenv arrive as intent extras instead: its animation
+        // clock (`TN_CSS_UI_FIXED_STEP_MS`, read by the attach below before anything is laid out)
+        // and the focus/scroll state line (`TN_CSS_UI_STATE_TRACE`). Inside this block because they
+        // are playtest configuration: a launch without a mailbox configures neither.
+        if (argc > 9 && argv[9] && argv[9][0] != '\0') {
+            ::setenv("TN_CSS_UI_FIXED_STEP_MS", argv[9], 1);
+            LOGI("Fixed UI clock: %s ms per tick", argv[9]);
+        }
+        if (argc > 10 && argv[10] && argv[10][0] != '\0') {
+            ::setenv("TN_CSS_UI_STATE_TRACE", argv[10], 1);
+            LOGI("UI state trace: on");
+        }
     }
     // `ui.renderer: "native-css"`: the activity extracted the packaged `ui/` stylesheets, fonts and
     // images to a real directory (APK assets are not one) and passes it here. Attached on this
