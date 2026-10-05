@@ -141,9 +141,9 @@ Renderer::Renderer(WGPUInstance instance, WGPUDevice device, WGPUQueue queue, Ev
     if (wgpuDeviceHasFeature(device, WGPUFeatureName_TimestampQuery)) {
         WGPUQuerySetDescriptor queries = {};
         queries.type = WGPUQueryType_Timestamp;
-        queries.count = 2;
+        queries.count = 4;
         timestamps_ = wgpuDeviceCreateQuerySet(device, &queries);
-        timestampResolve_ = gpu_.createBuffer(16, WGPUBufferUsage_QueryResolve | WGPUBufferUsage_CopySrc);
+        timestampResolve_ = gpu_.createBuffer(32, WGPUBufferUsage_QueryResolve | WGPUBufferUsage_CopySrc);
     }
     setOutput(OutputState{});
     setSize(1, 1);
@@ -321,8 +321,9 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
     WGPURenderPassTimestampWrites_Compat sceneTimes = {};
     if (timed) {
         sceneTimes.querySet = timestamps_;
+        // Both indices on both passes: a browser rejects the "undefined" index sentinel.
         sceneTimes.beginningOfPassWriteIndex = 0;
-        sceneTimes.endOfPassWriteIndex = WGPU_QUERY_SET_INDEX_UNDEFINED;
+        sceneTimes.endOfPassWriteIndex = 1;
         passDesc.timestampWrites = &sceneTimes;
     }
     WGPURenderPassEncoder pass = wgpuCommandEncoderBeginRenderPass(encoder, &passDesc);
@@ -462,22 +463,22 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
     wgpuRenderPassEncoderEnd(pass);
     wgpuRenderPassEncoderRelease(pass);
     outputPass(encoder, timed);
-    if (timed) wgpuCommandEncoderResolveQuerySet(encoder, timestamps_, 0, 2, gpu_.buffer(timestampResolve_), 0);
+    if (timed) wgpuCommandEncoderResolveQuerySet(encoder, timestamps_, 0, 4, gpu_.buffer(timestampResolve_), 0);
     WGPUCommandBufferDescriptor commandDesc = {};
     gpu_.submit(wgpuCommandEncoderFinish(encoder, &commandDesc));
     wgpuCommandEncoderRelease(encoder);
     if (timed) {
         timing_->pending = true;
         std::weak_ptr<Timing> timing = timing_;
-        gpu_.readBuffer(timestampResolve_, 0, 16, [timing](GpuStatus status, std::vector<uint8_t> bytes) {
+        gpu_.readBuffer(timestampResolve_, 0, 32, [timing](GpuStatus status, std::vector<uint8_t> bytes) {
             const std::shared_ptr<Timing> t = timing.lock();
             if (!t) return;  // the renderer is gone
             t->pending = false;
-            uint64_t ns[2];
+            uint64_t ns[4];
             if (status != GpuStatus::Ok || bytes.size() != sizeof ns) return;
             std::memcpy(ns, bytes.data(), sizeof ns);
-            if (ns[1] <= ns[0]) return;  // a reset clock reads as no sample
-            t->lastMs = double(ns[1] - ns[0]) / 1e6;
+            if (ns[3] <= ns[0]) return;  // a reset clock reads as no sample
+            t->lastMs = double(ns[3] - ns[0]) / 1e6;
             ++t->samples;
         });
     }
@@ -509,8 +510,8 @@ void Renderer::outputPass(WGPUCommandEncoder encoder, bool timed) {
     WGPURenderPassTimestampWrites_Compat outputTimes = {};
     if (timed) {
         outputTimes.querySet = timestamps_;
-        outputTimes.beginningOfPassWriteIndex = WGPU_QUERY_SET_INDEX_UNDEFINED;
-        outputTimes.endOfPassWriteIndex = 1;
+        outputTimes.beginningOfPassWriteIndex = 2;
+        outputTimes.endOfPassWriteIndex = 3;
         passDesc.timestampWrites = &outputTimes;
     }
     WGPURenderPassEncoder pass = wgpuCommandEncoderBeginRenderPass(encoder, &passDesc);

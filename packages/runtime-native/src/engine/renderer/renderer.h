@@ -168,7 +168,7 @@ private:
     uint32_t height_ = 0;
     uint64_t renderId_ = 0;
     FrameStats lastFrame_;
-    WGPUQuerySet timestamps_ = nullptr;  // [0] scene pass begins, [1] output pass ends
+    WGPUQuerySet timestamps_ = nullptr;  // scene pass begin/end [0, 1], output pass begin/end [2, 3]
     Handle timestampResolve_;
     // Shared with the readback callback by weak reference: a backend may deliver it after this
     // renderer is gone (wgpu does at teardown), and it must then find nothing to write into.

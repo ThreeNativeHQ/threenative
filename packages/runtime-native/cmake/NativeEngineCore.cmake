@@ -239,6 +239,13 @@ if(EMSCRIPTEN)
     target_link_libraries(tn-native-engine-wasm-renderer-link PRIVATE tn_engine_renderer)
     target_include_directories(tn-native-engine-wasm-renderer-link PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
     tn_native_engine_target(tn-native-engine-wasm-renderer-link)
+    # The browser boot page (PRD-532): async init, memory growth, callback delivery, no threads.
+    add_executable(tn-native-engine-wasm-boot tests/native-engine/wasm/boot.cpp)
+    target_link_libraries(tn-native-engine-wasm-boot PRIVATE tn_engine_renderer)
+    target_include_directories(tn-native-engine-wasm-boot PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    target_link_options(tn-native-engine-wasm-boot PRIVATE -sENVIRONMENT=web -sALLOW_MEMORY_GROWTH=1)
+    tn_native_engine_target(tn-native-engine-wasm-boot)
+    configure_file(tests/native-engine/wasm/boot.html ${CMAKE_CURRENT_BINARY_DIR}/native-core-boot.html COPYONLY)
 endif()
 
 add_library(tn_fixture_driver STATIC tests/native-engine/fixture/driver.cpp)

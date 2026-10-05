@@ -1,0 +1,69 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Native core boot</title>
+  <link rel="icon" href="data:,">
+</head>
+<body>
+  <!-- PRD-532: the Wasm engine boots here; the playtest bridge below publishes what it reports. The
+       engine draws offscreen; the canvas only names its renderer for the runner's provenance. -->
+  <canvas data-engine="native-core webgpu" width="64" height="48"></canvas>
+  <script>
+    (function () {
+      const started = performance.now();
+      const report = () => globalThis.__tnNativeCore ?? { initialized: false };
+      globalThis.__THREENATIVE_PLAYTEST_BRIDGE__ = {
+        describe: () => ({
+          name: "native-core-wasm",
+          protocolVersion: 1,
+          capabilities: ["runtime.components", "runtime.fixedStep"],
+          limits: { maxEntitiesPerSample: 100, maxEventsPerDrain: 1000, maxPayloadBytes: 1000000, operationTimeoutMs: 5000 },
+        }),
+        // Resolves once the engine finished booting or failed (a failure is a report, not a hang);
+        // the runner bounds the wait with its startup budget.
+        ready: () =>
+          new Promise((resolve) => {
+            const check = () => {
+              const r = report();
+              if (r.initialized || r.error) resolve({ ready: true });
+              else setTimeout(check, 50);
+            };
+            check();
+          }),
+        // One fixed step is one engine tick (a main-loop iteration: poll, drain, work).
+        advance: (count) =>
+          new Promise((resolve) => {
+            const target = (globalThis.__tnNativeTicks ?? 0) + count;
+            const wait = () => {
+              const tick = globalThis.__tnNativeTicks ?? 0;
+              if (tick >= target) resolve({ clock: { mode: "fixed-step", tick }, ticks: count });
+              else requestAnimationFrame(wait);
+            };
+            wait();
+          }),
+        sample: () => {
+          const r = report();
+          return {
+            clock: { mode: "fixed-step", tick: globalThis.__tnNativeTicks ?? 0, timeMs: performance.now() - started },
+            components: {
+              "native-core": {
+                boot: { initialized: r.initialized, adapter: r.adapter ?? "", error: r.error ?? "", covered: r.covered ?? -1 },
+                memory: r.memory ?? null,
+                loop: { ticks: globalThis.__tnNativeTicks ?? 0 },
+                callbacks: { delivered: r.callbacks ?? 0, reentrant: r.reentrantCallbacks ?? -1 },
+                threads: {
+                  built: r.threads ?? null,
+                  crossOriginIsolated: globalThis.crossOriginIsolated === true,
+                  sharedArrayBuffer: typeof SharedArrayBuffer === "function",
+                },
+              },
+            },
+          };
+        },
+      };
+    })();
+  </script>
+  <script src="tn-native-engine-wasm-boot.js"></script>
+</body>
+</html>

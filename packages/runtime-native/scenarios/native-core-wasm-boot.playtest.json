@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "name": "native-core-wasm-boot",
+  "target": "web",
+  "subject": "native-core",
+  "viewport": { "width": 640, "height": 480 },
+  "warmupFrames": 10,
+  "artifacts": { "screenshots": false },
+  "steps": [{ "kind": "wait", "label": "booted", "waitTicks": 30 }],
+  "assert": {
+    "components": [
+      {
+        "entity": "native-core",
+        "component": "boot",
+        "path": "initialized",
+        "equals": true,
+        "allowTrivial": "The bridge reports ready only once the engine has booted, so the first observation already carries the claim."
+      },
+      {
+        "entity": "native-core",
+        "component": "boot",
+        "path": "error",
+        "equals": "",
+        "allowTrivial": "A failed boot reports ready with its error, so an empty error is the claim from the first observation."
+      },
+      {
+        "entity": "native-core",
+        "component": "loop",
+        "path": "ticks",
+        "changed": true
+      },
+      {
+        "entity": "native-core",
+        "component": "boot",
+        "path": "covered",
+        "gte": 0.05,
+        "allowTrivial": "The frame is rendered and read back during boot, before the first observation."
+      }
+    ]
+  }
+}

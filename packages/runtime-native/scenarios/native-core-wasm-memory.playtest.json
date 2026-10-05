@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "name": "native-core-wasm-memory",
+  "target": "web",
+  "subject": "native-core",
+  "viewport": {
+    "width": 640,
+    "height": 480
+  },
+  "warmupFrames": 10,
+  "artifacts": {
+    "screenshots": false
+  },
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "running",
+      "waitTicks": 60
+    }
+  ],
+  "assert": {
+    "components": [
+      {
+        "entity": "native-core",
+        "component": "memory",
+        "path": "grew",
+        "equals": true,
+        "allowTrivial": "Measured during boot, before the bridge reports ready, so the first observation carries the result."
+      },
+      {
+        "entity": "native-core",
+        "component": "memory",
+        "path": "validAcrossGrowth",
+        "equals": true,
+        "allowTrivial": "Measured during boot, before the bridge reports ready, so the first observation carries the result."
+      },
+      {
+        "entity": "native-core",
+        "component": "memory",
+        "path": "staleAfterReallocation",
+        "equals": true,
+        "allowTrivial": "Measured during boot, before the bridge reports ready, so the first observation carries the result."
+      },
+      {
+        "entity": "native-core",
+        "component": "memory",
+        "path": "refreshedAfterReallocation",
+        "equals": true,
+        "allowTrivial": "Measured during boot, before the bridge reports ready, so the first observation carries the result."
+      },
+      {
+        "entity": "native-core",
+        "component": "loop",
+        "path": "ticks",
+        "changed": true
+      }
+    ]
+  }
+}
