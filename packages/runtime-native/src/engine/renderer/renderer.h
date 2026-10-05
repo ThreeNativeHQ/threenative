@@ -12,6 +12,7 @@
 #include <webgpu/webgpu.h>
 
 #include "engine/foundation/buffers.h"
+#include "engine/scene/geometry.h"
 #include "engine/renderer/geometry_cache.h"
 #include "engine/renderer/gpu_resources.h"
 #include "engine/renderer/pipeline_cache.h"
@@ -43,6 +44,9 @@ struct DrawItem {
     // SkinnedMesh: the skin attributes, the skeleton's palette this frame and the bind matrices.
     BufferStore* skinIndices = nullptr; // u8, u16 or u32 ×4
     BufferStore* skinWeights = nullptr; // f32 ×4
+    // Morph targets: the geometry (its morphPositions/morphNormals) and the mesh's influences.
+    const BufferGeometry* morphGeometry = nullptr;
+    const std::vector<double>* morphInfluences = nullptr;
     const std::vector<float>* boneMatrices = nullptr;
     Matrix bindMatrix{}, bindMatrixInverse{};
     bool castShadow = false;    // Object3D.castShadow: drawn into every shadow map
@@ -169,7 +173,7 @@ private:
         kModelMatrix, kViewMatrix, kProjectionMatrix, kNormalMatrix, kDiffuse, kAlphaTest, kOpaque, kRoughness,
         kMetalness, kEmissive, kSpecular, kShininess, kIor, kSpecularIntensity, kSpecularColor,
         kHemisphereSky, kHemisphereGround, kHemisphereDirection, kAmbient, kBoneBase, kBindMatrix,
-        kBindMatrixInverse, kSlotCount
+        kBindMatrixInverse, kMorphBase, kMorphInfluenceBase, kMorphVertexCount, kMorphBaseInfluence, kSlotCount
     };
     // Per direct light i, `light{i}<Field>` (shader::LightLayout).
     enum LightField : uint8_t { kLightColor, kLightDirection, kLightPosition, kLightDistance, kLightDecay, kLightAxis,
@@ -190,9 +194,9 @@ private:
     };
     void buildLayouts(Program& program);
     /** The program for a material kind, vertex variant and light layout, built on first use. */
-    Program& program(MaterialKind kind, int variant, const std::string& lights);
+    Program& program(MaterialKind kind, const shader::VertexVariant& variant, const std::string& lights);
     /** The shadow pass's depth-only program for a vertex variant (0 plain, 1 instanced). */
-    Program& depthProgram(int variant);
+    Program& depthProgram(const shader::VertexVariant& variant);
     Program& add(const std::string& key, shader::StageModule vertex, shader::StageModule fragment);
     WGPUBindGroup bindGroup(WGPUBindGroupLayout layout, const shader::StageModule& stage, Handle uniforms,
                             WGPUTextureView view, WGPUSampler sampler);
@@ -257,9 +261,15 @@ private:
     uint64_t uniformCapacity_ = 0;
     // Every skinned draw's bone palette this frame, one storage buffer the skinned programs index
     // from their `boneBase`; grown (and the bind groups rebuilt) like the uniform buffer.
-    std::vector<float> frameBones_;
-    Handle bonesBuffer_;
-    uint64_t bonesCapacity_ = 0;
+    // Per-frame storage the vertex variants read, by binding name: `boneMatrices` (skinning),
+    // `morphData` and `morphInfluences` (morph targets). Each starts at 64 bytes so a program always
+    // has a buffer to bind, and grows (bind groups rebuilt) like the uniform buffer.
+    struct FrameStorage {
+        std::vector<float> data;
+        Handle buffer;
+        uint64_t capacity = 0;
+    };
+    std::map<std::string, FrameStorage> storages_;
 };
 
 }  // namespace tn::engine

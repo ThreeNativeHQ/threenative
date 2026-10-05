@@ -55,7 +55,19 @@ class Mesh : public Object3D {
   public:
     Mesh() = default;
     Mesh(std::shared_ptr<BufferGeometry> geometry, std::shared_ptr<Material> material)
-        : geometry(std::move(geometry)), material(std::move(material)) {}
+        : geometry(std::move(geometry)), material(std::move(material)) {
+        updateMorphTargets();
+    }
+
+    /** three's updateMorphTargets: one zero influence per morph target the geometry carries. */
+    void updateMorphTargets() {
+        morphTargetInfluences.clear();
+        if (!geometry) return;
+        const std::size_t count = !geometry->morphPositions.empty() ? geometry->morphPositions.size()
+                                                                     : geometry->morphNormals.size();
+        morphTargetInfluences.assign(count, 0.0);
+    }
+    std::vector<double> morphTargetInfluences;
 
     [[nodiscard]] std::string_view type() const override { return "Mesh"; }
 

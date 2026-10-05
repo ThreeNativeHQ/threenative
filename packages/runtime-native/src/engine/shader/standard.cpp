@@ -147,6 +147,30 @@ struct LocalVertex {
 static LocalVertex localVertex(Program& v, const VertexVariant& variant, bool withNormal) {
     ExprId position = v.attribute("position", Type::vec(3));
     ExprId normal = withNormal ? v.attribute("normal", Type::vec(3)) : kInvalid;
+    if (variant.morphTargets > 0) {
+        // morphReference: scale by the base influence, then add each target times its influence,
+        // in target order; texel = vertexIndex * stride + offset inside target i's block.
+        const uint32_t data = v.storageBuffer("morphData", Type::vec(4));
+        const uint32_t influences = v.storageBuffer("morphInfluences", Type::f32());
+        const ExprId dataBase = v.construct(Type::u32(), {v.uniform("morphBase", Type::f32())});
+        const ExprId influenceBase = v.construct(Type::u32(), {v.uniform("morphInfluenceBase", Type::f32())});
+        const ExprId vertexCount = v.construct(Type::u32(), {v.uniform("morphVertexCount", Type::f32())});
+        const ExprId base = v.uniform("morphBaseInfluence", Type::f32());
+        const bool normals = variant.morphNormals && withNormal;
+        const ExprId stride = v.constant(int32_t(variant.morphNormals ? 2 : 1));
+        const ExprId strideU = v.construct(Type::u32(), {stride});
+        const ExprId texel = v.mul(v.builtin("vertexIndex"), strideU);
+        position = v.mul(position, base);
+        if (normals) normal = v.mul(normal, base);
+        for (int i = 0; i < variant.morphTargets; ++i) {
+            const ExprId target = v.add(dataBase, v.mul(v.mul(v.construct(Type::u32(), {v.constant(i)}), vertexCount), strideU));
+            const ExprId influence = v.loadStorage(influences, v.add(influenceBase, v.construct(Type::u32(), {v.constant(i)})));
+            const ExprId at = v.add(target, texel);
+            position = v.add(position, v.mul(v.swizzle(v.loadStorage(data, at), "xyz"), influence));
+            if (normals)
+                normal = v.add(normal, v.mul(v.swizzle(v.loadStorage(data, v.add(at, v.construct(Type::u32(), {v.constant(1)}))), "xyz"), influence));
+        }
+    }
     if (variant.instanced) {
         const ExprId c0 = v.attribute("instanceMatrix0", Type::vec(4)), c1 = v.attribute("instanceMatrix1", Type::vec(4)),
                      c2 = v.attribute("instanceMatrix2", Type::vec(4)), c3 = v.attribute("instanceMatrix3", Type::vec(4));

@@ -54,6 +54,19 @@ struct VertexVariant {
      * `bindMatrixInverse` uniforms.
      */
     bool skinned = false;
+    /**
+     * three's morphReference(): `morphTargets` targets read from the storage buffer `morphData`
+     * (vec4 per vertex and target; a normal entry after each position one when `morphNormals`) from
+     * `morphBase`, with `morphVertexCount` vertices per target; influences from `morphInfluences` at
+     * `morphInfluenceBase`; the base scale `morphBaseInfluence`.
+     */
+    uint8_t morphTargets = 0;
+    bool morphNormals = false;
+    /** A stable key: two variants with the same key build the same program. */
+    [[nodiscard]] std::string key() const {
+        return std::to_string(instanced) + std::to_string(instanceColor) + std::to_string(skinned) + "m" +
+               std::to_string(morphTargets) + (morphNormals ? "n" : "");
+    }
 };
 
 /**

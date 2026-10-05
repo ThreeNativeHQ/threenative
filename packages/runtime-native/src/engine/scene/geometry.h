@@ -122,6 +122,10 @@ public:
 
     std::map<std::string, std::shared_ptr<BufferAttribute>> attributes;
     std::shared_ptr<BufferAttribute> index;
+    // three's morphAttributes.position / .normal (one attribute per target) and morphTargetsRelative.
+    std::vector<std::shared_ptr<BufferAttribute>> morphPositions;
+    std::vector<std::shared_ptr<BufferAttribute>> morphNormals;
+    bool morphTargetsRelative = false;
     std::vector<GeometryGroup> groups;
     DrawRange drawRange;
     std::shared_ptr<Box3> boundingBox;

@@ -33,5 +33,5 @@
 #### Phase 2: Morph targets on the GPU
 **Status:** NOT STARTED
 **Files:** proposed `packages/runtime-native/src/engine/shader/morph/`, `packages/runtime-native/src/engine/scene/morph_attributes.cpp`
-- [ ] Absolute and relative morph targets blend positions and normals to match the reference capture. proof: `pnpm parity` case `native-engine-morph-targets`
+- [x] Absolute and relative morph targets blend positions and normals to match the reference capture. proof: `pnpm parity` case `native-engine-morph-targets` — 2026-10-05: run as `pnpm parity -- --suite native-engine-morph --renders` (ctest `native_engine_render_morph`), 2/2 pass: a sphere with two targets (positions and normals), absolute and relative side by side at two influence sets, 0.055% of pixels differ (limit 1%), deltaE 0.0003, on Dawn and wgpu. Red controls: relative treated as absolute, 8.5% and 11.0%; normals not morphed, 16.6% and 16.1%; only the first target, 15.7% and 16.0%.
 - [ ] A morph-influence clip loaded from glTF plays and matches the reference capture at three sampled times. proof: `pnpm parity` case `native-engine-morph-clip`

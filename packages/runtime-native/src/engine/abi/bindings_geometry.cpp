@@ -362,6 +362,21 @@ void registerBufferGeometry(ClassBinding& b) {
         if (geometry->index == nullptr) return Value{};
         return store.share("BufferAttribute", geometry->index);
     };
+    // morphAttributes.position / .normal as an array of attributes, and morphTargetsRelative.
+    for (const bool normals : {false, true}) {
+        b.setters[normals ? "morphAttributes.normal" : "morphAttributes.position"] =
+            [normals](void* self, const Value& v, Store& store) {
+                if (v.kind != Value::Kind::Refs) throw Unsupported{"morphAttributes takes an array of BufferAttributes"};
+                std::vector<std::shared_ptr<BufferAttribute>> targets;
+                for (const Value& ref : refsOf(v)) targets.push_back(sharedAttributeArg(store, ref));
+                BufferGeometry* geometry = as<BufferGeometry>(self);
+                (normals ? geometry->morphNormals : geometry->morphPositions) = std::move(targets);
+            };
+    }
+    b.getters["morphTargetsRelative"] = [](void* self) { return Value::of(as<BufferGeometry>(self)->morphTargetsRelative); };
+    b.setters["morphTargetsRelative"] = [](void* self, const Value& v) {
+        as<BufferGeometry>(self)->morphTargetsRelative = v.kind == Value::Kind::Bool ? v.flag : number(v) != 0;
+    };
     b.methods["setAttribute"] = [](void* self, const Args& a, Store& store) {
         if (a.at(0).kind != Value::Kind::String) throw Unsupported{"setAttribute needs a name"};
         as<BufferGeometry>(self)->setAttribute(a.at(0).text, sharedAttributeArg(store, a.at(1)));

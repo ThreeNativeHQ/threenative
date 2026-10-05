@@ -95,7 +95,7 @@ constexpr const char* kSlotNames[] = {
     "modelMatrix", "viewMatrix", "projectionMatrix", "normalMatrix", "diffuse", "alphaTest", "opaque", "roughness",
     "metalness", "emissive", "specular", "shininess", "ior", "specularIntensity", "specularColor",
     "hemisphereSky", "hemisphereGround", "hemisphereDirection", "ambient", "boneBase", "bindMatrix",
-    "bindMatrixInverse"};
+    "bindMatrixInverse", "morphBase", "morphInfluenceBase", "morphVertexCount", "morphBaseInfluence"};
 constexpr const char* kLightFieldNames[] = {"Color",       "Direction",        "Position",     "Distance",
                                             "Decay",       "Axis",             "ConeCos",      "PenumbraCos",
                                             "ShadowMatrix", "ShadowBias",      "ShadowNormalBias", "ShadowRadius",
@@ -147,8 +147,11 @@ Renderer::Renderer(WGPUInstance instance, WGPUDevice device, WGPUQueue queue, Ev
     // One triangle covers the frame; the output pass samples the scene target texel for texel.
     const float triangle[6] = {-1, -1, 3, -1, -1, 3};
     outputTriangle_ = gpu_.createBuffer(sizeof triangle, WGPUBufferUsage_Vertex | WGPUBufferUsage_CopyDst);
-    bonesCapacity_ = 64; // one identity's worth, so a skinned program always has a buffer to bind
-    bonesBuffer_ = gpu_.createBuffer(bonesCapacity_, WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst);
+    for (const char* name : {"boneMatrices", "morphData", "morphInfluences"}) {
+        FrameStorage& storage = storages_[name];
+        storage.capacity = 64;
+        storage.buffer = gpu_.createBuffer(storage.capacity, WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst);
+    }
     gpu_.writeBuffer(outputTriangle_, 0, triangle, sizeof triangle);
     outputUniforms_ = gpu_.createBuffer(16, WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
     WGPUSamplerDescriptor nearest = {};
@@ -262,9 +265,10 @@ WGPUBindGroup Renderer::bindGroup(WGPUBindGroupLayout layout, const shader::Stag
         if (b.kind == shader::BindingKind::Uniform) {
             e.buffer = gpu_.buffer(uniforms);
             e.size = stage.uniformBlockSize;
-        } else if (b.kind == shader::BindingKind::Storage && b.name == "s_boneMatrices") {
-            e.buffer = gpu_.buffer(bonesBuffer_);
-            e.size = bonesCapacity_;
+        } else if (b.kind == shader::BindingKind::Storage && storages_.count(b.name.substr(2))) {
+            const FrameStorage& storage = storages_.at(b.name.substr(2)); // "s_<name>"
+            e.buffer = gpu_.buffer(storage.buffer);
+            e.size = storage.capacity;
         } else if (b.depth) {
             // `t_shadow{i}` / `t_shadowCube{i}` and their samplers: direct light i's shadow map (2D, or a
             // point light's cube) and the comparison sampler.
@@ -342,11 +346,9 @@ void Renderer::buildLayouts(Program& program) {
     }
 }
 
-Renderer::Program& Renderer::program(MaterialKind kind, int variant, const std::string& lights) {
-    const std::string key = std::to_string(static_cast<int>(kind)) + "|" + std::to_string(variant) + "|" + lights;
+Renderer::Program& Renderer::program(MaterialKind kind, const shader::VertexVariant& vv, const std::string& lights) {
+    const std::string key = std::to_string(static_cast<int>(kind)) + "|" + vv.key() + "|" + lights;
     if (const auto found = programs_.find(key); found != programs_.end()) return *found->second;
-    static const shader::VertexVariant kVariants[4] = {{}, {true, false}, {true, true}, {false, false, true}};
-    const shader::VertexVariant& vv = kVariants[variant];
     const shader::LightLayout layout{lights};
     shader::StandardPrograms source;
     switch (kind) {
@@ -363,13 +365,12 @@ Renderer::Program& Renderer::program(MaterialKind kind, int variant, const std::
     return add(key, std::move(vertex), std::move(fragment));
 }
 
-Renderer::Program& Renderer::depthProgram(int variant) {
-    const std::string key = "depth|" + std::to_string(variant);
+Renderer::Program& Renderer::depthProgram(const shader::VertexVariant& variant) {
+    shader::VertexVariant kind = variant;
+    kind.instanceColor = false; // a depth pass reads no colour
+    const std::string key = "depth|" + kind.key();
     if (const auto found = programs_.find(key); found != programs_.end()) return *found->second;
     // three's shadow pass draws with the default positionNode, the same transform as a basic material.
-    const shader::VertexVariant kind = variant == 3 ? shader::VertexVariant{false, false, true}
-                                       : variant   ? shader::VertexVariant{true, false}
-                                                   : shader::VertexVariant{};
     shader::StageModule vertex = shader::buildStage(shader::buildBasic(kind).vertex, 0);
     if (!vertex.wgsl.ok()) throw std::runtime_error("TN_NATIVE_SHADER_INVALID: shadow depth program");
     shader::StageModule fragment;
@@ -510,18 +511,77 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
 
     // Each skinned draw's palette, appended once to the frame's bone buffer; its draws (main and shadow)
     // read it from `boneBase`. three's skeleton.update() ran in the render database.
-    frameBones_.clear();
-    std::unordered_map<const DrawItem*, double> boneBase;
+    // Each morphed draw's targets and influences likewise (three's morph texture, as vec4 per vertex
+    // and target, the normal after the position), and its base influence: 1 for relative targets,
+    // else 1 minus the influences' sum, summed in double as JS reduces them.
+    for (auto& [name, storage] : storages_) storage.data.clear();
+    std::vector<float>& bones = storages_["boneMatrices"].data;
+    std::vector<float>& morphData = storages_["morphData"].data;
+    std::vector<float>& morphInfluences = storages_["morphInfluences"].data;
+    struct Deform {
+        double boneBase = 0, morphBase = 0, morphInfluenceBase = 0, morphVertexCount = 0, morphBaseInfluence = 1;
+    };
+    std::unordered_map<const DrawItem*, Deform> deforms;
     for (const auto& [depthKey, drawn] : opaque) {
-        if (!drawn->boneMatrices) continue;
-        boneBase[drawn] = double(frameBones_.size() / 16);
-        frameBones_.insert(frameBones_.end(), drawn->boneMatrices->begin(), drawn->boneMatrices->end());
+        if (!drawn->boneMatrices && !drawn->morphGeometry) continue;
+        Deform& d = deforms[drawn];
+        if (drawn->boneMatrices) {
+            d.boneBase = double(bones.size() / 16);
+            bones.insert(bones.end(), drawn->boneMatrices->begin(), drawn->boneMatrices->end());
+        }
+        if (const BufferGeometry* g = drawn->morphGeometry) {
+            const bool normals = !g->morphNormals.empty();
+            const std::size_t vertices = g->morphPositions.front()->count();
+            d.morphBase = double(morphData.size() / 4);
+            d.morphVertexCount = double(vertices);
+            for (std::size_t i = 0; i < g->morphPositions.size(); ++i) {
+                for (std::size_t j = 0; j < vertices; ++j) {
+                    const BufferAttribute& p = *g->morphPositions[i];
+                    morphData.insert(morphData.end(), {float(p.getComponent(j, 0)), float(p.getComponent(j, 1)),
+                                                       float(p.getComponent(j, 2)), 0.0f});
+                    if (normals) {
+                        const BufferAttribute& n = *g->morphNormals.at(i);
+                        morphData.insert(morphData.end(), {float(n.getComponent(j, 0)), float(n.getComponent(j, 1)),
+                                                           float(n.getComponent(j, 2)), 0.0f});
+                    }
+                }
+            }
+            d.morphInfluenceBase = double(morphInfluences.size());
+            double sum = 0;
+            for (const double influence : *drawn->morphInfluences) {
+                morphInfluences.push_back(float(influence));
+                sum += influence;
+            }
+            // One influence per target the program reads; a shorter array reads as zeros.
+            for (std::size_t i = drawn->morphInfluences->size(); i < g->morphPositions.size(); ++i)
+                morphInfluences.push_back(0.0f);
+            d.morphBaseInfluence = g->morphTargetsRelative ? 1 : 1 - sum;
+        }
     }
     auto putSkin = [&](uint64_t v, const shader::UniformField* const* vs, const DrawItem& item) {
-        if (!item.boneMatrices) return;
-        put(frameUniforms_, v, vs[kBoneBase], std::array<double, 1>{boneBase[&item]});
-        put(frameUniforms_, v, vs[kBindMatrix], item.bindMatrix);
-        put(frameUniforms_, v, vs[kBindMatrixInverse], item.bindMatrixInverse);
+        const auto found = deforms.find(&item);
+        if (found == deforms.end()) return;
+        const Deform& d = found->second;
+        if (item.boneMatrices) {
+            put(frameUniforms_, v, vs[kBoneBase], std::array<double, 1>{d.boneBase});
+            put(frameUniforms_, v, vs[kBindMatrix], item.bindMatrix);
+            put(frameUniforms_, v, vs[kBindMatrixInverse], item.bindMatrixInverse);
+        }
+        put(frameUniforms_, v, vs[kMorphBase], std::array<double, 1>{d.morphBase});
+        put(frameUniforms_, v, vs[kMorphInfluenceBase], std::array<double, 1>{d.morphInfluenceBase});
+        put(frameUniforms_, v, vs[kMorphVertexCount], std::array<double, 1>{d.morphVertexCount});
+        put(frameUniforms_, v, vs[kMorphBaseInfluence], std::array<double, 1>{d.morphBaseInfluence});
+    };
+    auto variantOf = [](const DrawItem& item) {
+        shader::VertexVariant v;
+        v.instanced = item.instanceMatrices != nullptr;
+        v.instanceColor = item.instanceColors != nullptr;
+        v.skinned = item.boneMatrices != nullptr;
+        if (item.morphGeometry) {
+            v.morphTargets = static_cast<uint8_t>(item.morphGeometry->morphPositions.size());
+            v.morphNormals = !item.morphGeometry->morphNormals.empty();
+        }
+        return v;
     };
 
     // Plan: each draw's program, pipeline and uniform slices, all uniforms into one CPU block.
@@ -536,8 +596,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
     frameUniforms_.clear();
     for (const auto& [depthKey, drawn] : opaque) {
         const DrawItem& item = *drawn;
-        const int variant = item.boneMatrices ? 3 : item.instanceMatrices ? (item.instanceColors ? 2 : 1) : 0;
-        Program& program = this->program(item.kind, variant,
+        Program& program = this->program(item.kind, variantOf(item),
                                          item.kind == MaterialKind::Basic ? ""
                                          : item.receiveShadow            ? lightKinds
                                                                          : unshadowedKinds);
@@ -622,7 +681,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
         for (const auto& [depthKey, drawn] : opaque) {
             const DrawItem& item = *drawn;
             if (!item.castShadow || item.instanceCount == 0 || !item.positions) continue;
-            Program& program = depthProgram(item.boneMatrices ? 3 : item.instanceMatrices ? 1 : 0);
+            Program& program = depthProgram(variantOf(item));
             PipelineTarget target{WGPUTextureFormat_Undefined, WGPUTextureFormat_Depth24Plus, WGPUCullMode_Front};
             target.layout = program.pipelineLayout;
             target.skinIndex = skinIndexFormat(item);
@@ -650,13 +709,15 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
         rebuildGroups();
     }
     if (!frameUniforms_.empty()) gpu_.writeBuffer(uniformBuffer_, 0, frameUniforms_.data(), frameUniforms_.size());
-    if (frameBones_.size() * 4 > bonesCapacity_) {
-        gpu_.destroy(bonesBuffer_);
-        bonesCapacity_ = std::max<uint64_t>(frameBones_.size() * 4 * 2, 64 * 1024);
-        bonesBuffer_ = gpu_.createBuffer(bonesCapacity_, WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst);
-        rebuildGroups();
+    for (auto& [name, storage] : storages_) {
+        if (storage.data.size() * 4 > storage.capacity) {
+            gpu_.destroy(storage.buffer);
+            storage.capacity = std::max<uint64_t>(storage.data.size() * 4 * 2, 64 * 1024);
+            storage.buffer = gpu_.createBuffer(storage.capacity, WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst);
+            rebuildGroups();
+        }
+        if (!storage.data.empty()) gpu_.writeBuffer(storage.buffer, 0, storage.data.data(), storage.data.size() * 4);
     }
-    if (!frameBones_.empty()) gpu_.writeBuffer(bonesBuffer_, 0, frameBones_.data(), frameBones_.size() * 4);
 
     // Encode: state changes only where they change; per draw, its dynamic offsets and the draw. The
     // shadow passes first, so the main pass samples this frame's maps.

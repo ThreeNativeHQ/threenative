@@ -2139,8 +2139,7 @@
           "lifetime": "owned",
           "default": "false",
           "status": {
-            "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "kind": "supported"
           }
         },
         {
@@ -9180,8 +9179,7 @@
           "lifetime": "owned",
           "default": "undefined, _but reset to a blank array by .updateMorphTargets()._",
           "status": {
-            "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "kind": "supported"
           }
         },
         {
@@ -9217,8 +9215,7 @@
             }
           ],
           "status": {
-            "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "kind": "supported"
           }
         },
         {

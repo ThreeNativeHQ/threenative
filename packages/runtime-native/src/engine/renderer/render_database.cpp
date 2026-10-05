@@ -193,6 +193,10 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
                 r.item.batchable = type == "Mesh" && !mesh.onBeforeRender && !r.material->transparent;
                 r.item.castShadow = mesh.castShadow();
                 r.item.receiveShadow = mesh.receiveShadow();
+                const bool morphed = !mesh.geometry->morphPositions.empty() && !mesh.morphTargetInfluences.empty();
+                r.item.morphGeometry = morphed ? mesh.geometry.get() : nullptr;
+                r.item.morphInfluences = morphed ? &mesh.morphTargetInfluences : nullptr;
+                if (morphed) r.item.batchable = false;
                 items.push_back(r.item);
                 if (type == "SkinnedMesh") {
                     // three's skinning() updates each skeleton once per frame before its first draw.

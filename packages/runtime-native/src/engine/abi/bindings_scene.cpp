@@ -591,6 +591,24 @@ void registerMesh(ClassBinding& b) {
     b.members["geometry"] = [](void* self, const Args&, Store& store) -> Value {
         return store.share("BufferGeometry", as<Mesh>(self)->geometry);
     };
+    // morphTargetInfluences: a plain array three sizes from the geometry's morph targets.
+    b.methods["updateMorphTargets"] = [](void* self, const Args&, Store&) {
+        as<Mesh>(self)->updateMorphTargets();
+        return Value{};
+    };
+    b.getters["morphTargetInfluences"] = [](void* self) { return Value::list(as<Mesh>(self)->morphTargetInfluences); };
+    for (int i = 0; i < 64; ++i) {
+        const std::string path = "morphTargetInfluences." + std::to_string(i);
+        b.getters[path] = [i](void* self) {
+            const auto& influences = as<Mesh>(self)->morphTargetInfluences;
+            return std::size_t(i) < influences.size() ? Value::of(influences[i]) : Value{};
+        };
+        b.setters[path] = [i](void* self, const Value& v) {
+            auto& influences = as<Mesh>(self)->morphTargetInfluences;
+            if (std::size_t(i) >= influences.size()) influences.resize(i + 1, 0.0); // a JS array grows
+            influences[i] = number(v);
+        };
+    }
     b.members["material"] = [](void* self, const Args&, Store& store) -> Value {
         const std::shared_ptr<Material>& material = as<Mesh>(self)->material;
         return material ? store.share(std::string(material->typeName()), material) : Value{};
