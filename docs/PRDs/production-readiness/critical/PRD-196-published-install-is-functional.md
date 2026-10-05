@@ -11,6 +11,7 @@ the published `arm64-v8a` cohort byte-for-byte, `pnpm sandbox` builds a desktop 
 packages, and the `clean-room` runner carries the JDK 17 and Android SDK the `android` step needs.
 Remaining: one hosted run — a `v*` tag push whose `clean-room` job reports `pass npm:android`.
 
+**Priority:** P0 — Open clean-room box cannot provision the android step; every native target is dead.
 **2026-09-27 checkout gate:** focused registry-install and CI-structure tests pass 152/152;
 `pnpm typecheck`, `pnpm lint`, `pnpm budgets`, and `pnpm check:docs` pass. The first full test
 run was red on the packed mutation control and MCP ancestor-manifest lookup. After merging PR

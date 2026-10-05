@@ -4,7 +4,8 @@ prd_contract: v1
 
 # PRD-VQ-04 — Locomotion blends by speed and direction without restarting its gait
 
-**Status:** PARTIAL — 2026-10-04. Game-owned numerical 1D/2D evaluation and weighted playback have CPU proof; actual two-consumer locomotion and platform qualification remain open.
+**Status:** PARTIAL — 2026-10-04. Weighted playback, game-owned 1D/2D evaluation and two locomotion consumers (native and browser runs) have proof; directional clips and platform qualification remain open.
+**Priority:** P2 — Blend-weight evaluation, phase sync and first/third-person consumers are proven on the forward-speed axis; directional (strafe/backward) clips and a fresh native build are open.
 **Batch:** Visual quality execution batch. **Wave:** 1 / character motion.
 **Dependencies:** Uses existing AnimationPlayer, SkeletalMesh3D and stride synchronization. Coordinate its action ownership with VQ-05.
 

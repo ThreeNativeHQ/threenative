@@ -6,6 +6,7 @@ prd_contract: v1
 
 **Status:** OPEN, filed 2026-08-31 against `2e014460`. Planning only.
 
+**Priority:** P2 — Entirely a consumer of perf output with 26 open formatting gates.
 **Outcome:** `doctor --url <url>` prints, for the scene it just looked at, what each render pass
 costs the GPU — and names the adapter it measured on, so a browser number is never mistaken for a
 device number. An agent building a game on a laptop can see that its post chain is 12.5 ms of a

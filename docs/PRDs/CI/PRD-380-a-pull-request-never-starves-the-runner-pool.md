@@ -5,6 +5,7 @@ prd_contract: v1
 # PRD-380 — A pull request never starves the runner pool
 
 **Status:** PARTIAL — phases 1 and 2 complete; phase 3's janitor is in and its proof is a live merged PR
+**Priority:** P2 — Only AC-1's seven-day runner-minute audit proof stays open.
 **Complexity:** 6 → MEDIUM-HIGH (+1 workflow triggers, +1 reduced PR matrix, +1 scheduled janitor, +1 shared release concurrency, +1 guarded specs, +1 npm-release wiring).
 **Owner:** CI release tooling.
 **Problem:** The org's GitHub-hosted runner concurrency is small (roughly three runs at once) and it is consumed by matrices that a pull request does not need. On 2026-09-12 thirteen CI runs sat queued, five of them `main` pushes, while three heavy runs held the pool; a two-minute `build` join waited over an hour. Three multipliers: `native-release.yml` runs its macOS/Windows/Linux proof on **every** PR that touches one of four paths (including `native-platform-workflow.test.mjs`, which ordinary runtime-native PRs touch), `ci.yml` runs the **full** `native-platforms` matrix for any `selection == 'full'` PR, and nothing cancels a run whose PR has already merged, so dead runs keep holding runners. The owner's ask: pushing to a branch must not restart or stall the whole board.

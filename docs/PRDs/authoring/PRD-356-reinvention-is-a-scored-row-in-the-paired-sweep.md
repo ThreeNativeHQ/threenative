@@ -6,6 +6,7 @@ prd_contract: v1
 
 **Status: PROPOSED, 2026-09-04.** Filed in `agent-leverage/`, measured at `dae30759`.
 
+**Priority:** P2 — Paired-sweep row scoring a stopped rewrite unbuilt; needs PRD-355 and PRD-297 first.
 **Complexity:** +2 for 6–10 files, +2 for a new module (the scorer and its ledger row), +2 for
 multi-package (`scripts/`, the round ledger, the detector from PRD-355) = **6 → HIGH mode.**
 
