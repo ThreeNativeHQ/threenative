@@ -6,6 +6,7 @@ prd_contract: v1
 
 **Status:** PARTIAL — measured on hardware 2026-09-07 and the criterion is **unmet**. Three cold launches of the preserved baseline on a physical Pixel 8 give a preflight-qualified median launch-to-first-playable bound of 49,788.7 ms against the 8,000 ms criterion, with the player moving 2.147 m and a visible world proved. The device blocker that filed this under `requires-physical-device` is resolved, so it returns to its batch. The 2026-09-07 warm-up host turn and opt-in relaunch cache land compile-path progress, not the criterion: the single 16,020.007 ms candidate run is a retained-package launch rather than a cold install, and it misses 8,000 ms by roughly two times. What remains is implementation, not evidence: a build that reaches the criterion, and an observer-carrying artifact for the pump-silence bullet. Evidence: [prd-360-device-2026-09-07](../../verification/prd-360-device-2026-09-07/README.md), [prd-360-warmup-cache-2026-09-07](../../verification/prd-360-warmup-cache-2026-09-07/README.md).
 
+**Priority:** P1 — Owner's call: start today (2026-09-05). Criterion still unmet; what remains is implementation, not evidence.
 **Latest repaired-game handoff (2026-09-07):** The corrected Bayview starts and moves on the Pixel; one retained-package run reached first frame at 16.020 seconds. This remains above the eight-second criterion. Continue with [the bounded performance follow-up](PRD-360-FOLLOWUP-startup-performance.md); older blocker notes below are historical.
 
 **Latest bounded follow-up (2026-09-08):** A corrected validation of the existing object-granularity
@@ -15,7 +16,6 @@ The run still reached first frame at **19,629.400 ms** and the movement endpoint
 **5,560.916 ms** pump gap. Movement passed at **2.146682 m**, but the 8,000 ms and 250 ms criteria
 remain unmet. PRD-360 stays PARTIAL; the raw receipt and red/green regression are linked from the
 [follow-up verification record](../../verification/prd-360-warmup-cache-2026-09-07/README.md).
-**Priority:** 1 — start today, September 5, 2026.
 **Complexity:** 2 (6–10 files) + 2 (async startup) + 2 (core/native) = 6 → MEDIUM mode.
 **Estimate:** 6–10 engineering hours plus native build/device time.
 **Parent:** [Existing owning PRD](critical/PRD-339-the-compile-walk-leaves-the-main-thread.md). This document is its bounded delivery slice, not a competing implementation.

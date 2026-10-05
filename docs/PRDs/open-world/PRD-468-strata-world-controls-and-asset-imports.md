@@ -1,6 +1,7 @@
 # PRD-468 — Live world atmosphere, controller cameras, and asset injection
 
 **Status:** NOT STARTED
+**Priority:** P2 — Camera CRUD, GLB and texture injection and atmosphere edits are all unbuilt.
 **Complexity:** 7 (HIGH); risk override: none
 **Owner:** ThreeNative maintainers
 **Depends on:** PRD-466's public rendering/asset/export contract and PRD-467 phase 1's shared document/live session

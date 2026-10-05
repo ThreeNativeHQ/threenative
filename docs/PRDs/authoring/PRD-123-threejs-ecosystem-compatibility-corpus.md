@@ -7,6 +7,7 @@ prd_contract: v1
 **Status:** PROPOSED, 2026-08-15. Planning only; no corpus row or compatibility percentage in
 this document is execution evidence.
 
+**Priority:** P2 — Planning-only corpus and scorecard: 20+ upstream rows, license dispositions, generated score.
 **Outcome:** a pinned, reproducible corpus answers how much ordinary Three.js source runs through
 ThreeNative unchanged. Every row says `pass`, `fail`, `blocked`, or `excluded`, links to executed
 evidence, names the owning gap, and contributes honestly to a fixed denominator. A user can inspect

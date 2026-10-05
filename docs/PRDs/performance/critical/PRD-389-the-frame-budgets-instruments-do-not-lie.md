@@ -31,6 +31,7 @@ on a real frame.
 document. No IR, scene format, editor, preset/genre system, code-first ECS or bespoke CLI vocabulary
 is introduced. Vocabulary is borrowed from Three.js and WebGPU before inventing.
 
+**Priority:** P1 — Reported gpuMs spreads about 3.5x and lags eight frames against a real 17.6 ms.
 ## Closure Gates
 
 | Gate | Evidence required | Reachable here |

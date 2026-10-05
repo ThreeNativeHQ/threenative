@@ -1,4 +1,4 @@
-import { execFile, spawnSync } from "node:child_process";
+import { execFile, execFileSync, spawnSync } from "node:child_process";
 import { mkdir, readFile, readdir, rm, symlink } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -176,6 +176,30 @@ async function linkScaffoldBuildDependencies(target: string): Promise<void> {
     await linkDependency(target, name, await findPnpmPackage(name));
   }
 }
+
+// The independent required verdict verifies every actual hosted compiler step before merge.
+const { canDelegateTemplateTypechecks } = await import(
+  new URL("../../../scripts/ci-template-typecheck.mjs", import.meta.url).href
+);
+let delegatePristineTypechecks = false;
+if (process.env.TN_CI_TEMPLATE_TYPECHECK_OWNER === "hosted-matrix") {
+  try {
+    delegatePristineTypechecks = canDelegateTemplateTypechecks({
+      plan: JSON.parse(process.env.TN_CI_PLAN ?? "null"),
+      candidateSha: execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
+      eventName: process.env.TN_CI_EVENT,
+      target: process.env.TN_CI_BASE_REF,
+      templates: await typecheckTemplates(),
+      workflow: await readFile(path.resolve(".github/workflows/ci.yml"), "utf8"),
+    });
+  } catch {
+    /* Missing or unsupported ownership leaves the local compiler proof enabled. */
+  }
+}
+if (delegatePristineTypechecks)
+  console.log(
+    "Pristine scaffold compiler proof is delegated to the complete required hosted matrix; ci-required verifies actual current-attempt compiler steps.",
+  );
 
 describe("template contracts", () => {
   it("documents the optional multiplayer transport contract in every template", async () => {
@@ -1035,29 +1059,34 @@ describe("template contracts", () => {
   // pass every other gate here — which is exactly what happened: the starter's render chain
   // shipped 16 errors on a scaffold nobody had edited. This runs the script the template itself
   // advertises, on a scaffold nobody has edited, against the same `three` and `@types/three` a
-  // user installs. It is the only gate that reads a template the way `tsc` does.
-  it("should typecheck a pristine scaffold of every template that advertises the script", async () => {
-    // Every template is checked before anything is reported: stopping at the first red would
-    // leave the templates after it untested, which is how a hole this size stays open.
-    const failures: string[] = [];
-    for (const template of await typecheckTemplates()) {
-      const root = await makeTempDir(`threenative-${template}-typecheck-`);
-      try {
-        const result = await createProject({ install: false, target: template, template }, root);
-        await linkScaffoldBuildDependencies(result.target);
-        await execFileAsync("pnpm", ["typecheck"], { cwd: result.target });
-      } catch (error) {
-        // `tsc` names the file and line on stdout; without it the failure says only that a
-        // command exited non-zero, which is not a report anyone can act on.
-        const details = error as { stdout?: string; stderr?: string };
-        const output = `${details.stdout ?? ""}${details.stderr ?? ""}`.trim();
-        failures.push(`${template}:\n${output === "" ? String(error) : output}`);
-      } finally {
-        await rm(root, { force: true, recursive: true });
+  // user installs. Full qualification delegates this same compiler proof to the required hosted
+  // pristine matrix; the protected verdict verifies every actual successful compiler step.
+  it.skipIf(delegatePristineTypechecks)(
+    "should typecheck a pristine scaffold of every template that advertises the script",
+    async () => {
+      // Every template is checked before anything is reported: stopping at the first red would
+      // leave the templates after it untested, which is how a hole this size stays open.
+      const failures: string[] = [];
+      for (const template of await typecheckTemplates()) {
+        const root = await makeTempDir(`threenative-${template}-typecheck-`);
+        try {
+          const result = await createProject({ install: false, target: template, template }, root);
+          await linkScaffoldBuildDependencies(result.target);
+          await execFileAsync("pnpm", ["typecheck"], { cwd: result.target });
+        } catch (error) {
+          // `tsc` names the file and line on stdout; without it the failure says only that a
+          // command exited non-zero, which is not a report anyone can act on.
+          const details = error as { stdout?: string; stderr?: string };
+          const output = `${details.stdout ?? ""}${details.stderr ?? ""}`.trim();
+          failures.push(`${template}:\n${output === "" ? String(error) : output}`);
+        } finally {
+          await rm(root, { force: true, recursive: true });
+        }
       }
-    }
-    expect(failures.join("\n\n")).toBe("");
-  }, 180_000);
+      expect(failures.join("\n\n")).toBe("");
+    },
+    180_000,
+  );
 
   it("should build a starter scaffold after pruning its optional effect sources", async () => {
     // `effects/` ships three standalone TSL effect sources the starter's own look never imports:

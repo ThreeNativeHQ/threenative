@@ -1,6 +1,7 @@
 # PRD-351 — Compression never looks worse than a floor
 
 **Status:** READY FOR EXECUTION
+**Priority:** P2 — Open: SSIM and delta-E00 floors validated, alpha coverage preserved, per-slot caps measured.
 **Complexity:** 2 (6-10 files) + 2 (new system) + 1 = **5 → MEDIUM mode**
 **Batch:** `docs/PRDs/assets/`
 **Depends on:** PRD-349 (the cook must be on before a floor means anything)

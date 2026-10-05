@@ -11,6 +11,7 @@ Repository `/home/joao/projects/threenative/threenative-engine`, remote
 [`docs/architecture/CHARTER.md`](../../../architecture/CHARTER.md). Parent batch:
 feature-mining.
 
+**Priority:** P3 — Its own blocked-on says Phase 0 may close it DECLINED with nothing built.
 **Blocking evidence:** the required real many-soldier consumer is not reproducibly runnable from
 its committed source. A detached `sandbox/fps-framework` at `e2652889` requests
 `public/raw-assets.manifest.json`, but that commit contains only `public/assets.manifest.json`.

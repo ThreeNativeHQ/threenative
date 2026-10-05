@@ -9,6 +9,7 @@ criterion needs a physical Pixel 8. Evidence:
 `docs/verification/prd-211-2026-08-23.md` (Phase 2),
 `docs/verification/prd-211-phase1-2026-08-23.md` (Phases 1 and 3).
 
+**Priority:** P0 — Documented boot-dead APK with TN_NATIVE_START_FAILED on a real .ogg.
 **Complexity:** +2 for multi-package changes (runtime-native + assets scripts), +1 vendored
 dependency addition, +2 new decode capability = **5 → MEDIUM mode**.
 
