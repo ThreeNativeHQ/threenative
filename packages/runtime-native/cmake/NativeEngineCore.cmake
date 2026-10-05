@@ -17,7 +17,8 @@ endfunction()
 add_library(tn_engine_foundation STATIC
     src/engine/foundation/handles.cpp
     src/engine/foundation/buffers.cpp
-    src/engine/foundation/reachability.cpp)
+    src/engine/foundation/reachability.cpp
+    src/engine/foundation/members.cpp)
 tn_native_engine_target(tn_engine_foundation)
 target_include_directories(tn_engine_foundation PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
@@ -86,6 +87,10 @@ tn_native_engine_test(tn-native-engine-material-test tests/native-engine/materia
     native_engine_material_unsupported=unsupported
     native_engine_material_standard_builds=builds)
 target_link_libraries(tn-native-engine-material-test PRIVATE tn_engine_shader)
+
+tn_native_engine_test(tn-native-engine-members-test tests/native-engine/members_test.cpp
+    native_engine_alias_identity=identity
+    native_engine_alias_growth=growth)
 
 tn_native_engine_test(tn-native-engine-render-graph-test tests/native-engine/render_graph_test.cpp
     native_engine_render_graph_order=order
