@@ -1,14 +1,4 @@
-import {
-  type Box3,
-  BufferAttribute,
-  BufferGeometry,
-  LOD,
-  type Matrix3,
-  type Matrix4,
-  Mesh,
-  Object3D,
-  Vector3,
-} from "three";
+import { BufferAttribute, BufferGeometry, LOD, type Matrix4, Mesh, Object3D, Vector3 } from "three";
 import type { InterleavedBufferAttribute } from "three";
 import type { IAssetLoader } from "./assets.js";
 import type { IComputeDriven } from "./compute-driven.js";

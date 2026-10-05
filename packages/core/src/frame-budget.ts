@@ -588,7 +588,6 @@ export class FrameBudget {
   #readPresentCount: (() => number | undefined) | undefined;
   #lastPresentCount: number | undefined;
   #presentsInWindow = 0;
-  #presentsUnreadable = false;
   #firstFrameStart: number | undefined;
 
   constructor(options: IFrameBudgetOptions = {}) {
@@ -1084,11 +1083,9 @@ export class FrameBudget {
     if (count === undefined || !Number.isFinite(count)) {
       // One unreadable sample is not a broken counter: the reading resumes on the next frame, and
       // the window still says what it counted.
-      this.#presentsUnreadable = true;
       this.#lastPresentCount = undefined;
       return;
     }
-    this.#presentsUnreadable = false;
     const previous = this.#lastPresentCount;
     this.#lastPresentCount = count;
     if (previous === undefined || count < previous) return; // first sample, or a restarted counter

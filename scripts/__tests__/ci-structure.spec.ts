@@ -680,6 +680,8 @@ function classifyScope(
       root,
       "--event-name",
       "pull_request",
+      "--target",
+      "develop",
       "--base",
       base,
       "--head",
@@ -927,7 +929,15 @@ describe("CI pipeline structure", () => {
           .filter(([, job]) => job.required)
           .map(([name]) => name)
           .sort(),
-      ).toEqual(["budgets", "build-artifacts", "lint", "supply-chain", "test-unit", "typecheck"]);
+      ).toEqual([
+        "budgets",
+        "build-artifacts",
+        "integration",
+        "lint",
+        "supply-chain",
+        "test-unit",
+        "typecheck",
+      ]);
     } finally {
       await removeFixture(fixture.root);
     }
@@ -1072,7 +1082,13 @@ describe("CI pipeline structure", () => {
     // golden-path-template runs hosted: its dev server twice failed to answer on a local slot (run 37089715252).
     [
       ".github/workflows/ci.yml",
-      new Set(["golden-path-template", "supply-chain", "template-nonvisual"]),
+      new Set([
+        "golden-path-template",
+        "lint",
+        "performance-contracts",
+        "supply-chain",
+        "template-nonvisual",
+      ]),
     ],
     [
       ".github/workflows/native-platforms.yml",
@@ -1125,6 +1141,7 @@ describe("CI pipeline structure", () => {
   // heavy job here would build the workspace in one core, and a light job off the list would queue
   // behind the heavy pool — which is the wait the lane exists to remove.
   const light = new Set([
+    "completion",
     "build",
     "ci-required",
     "golden-path",
@@ -1242,6 +1259,10 @@ describe("CI pipeline structure", () => {
     for (const [name, section] of jobSections(ci)) {
       // ci-required is the verdict, not a gate: it runs on `always()` and reads the plan instead.
       // scope is the decision that produces the selection.
+      if (name === "integration") {
+        expect(section).toContain("fromJSON(needs.scope.outputs.plan).jobs.integration.required");
+        continue;
+      }
       if (name === "ci-required" || name === "scope") continue;
       expect(section, `${name} does not name the selection it admits`).toContain(
         "selection == 'full'",
@@ -1290,9 +1311,10 @@ describe("CI pipeline structure", () => {
     expect(duplicateCommitTriggers(source)).toEqual([]);
     // Skipping drafts only saves a runner if the event that ends the draft is one this workflow
     // listens for. Without `ready_for_review` the guard turns the lanes off rather than cheap.
-    expect(triggerSection(source)).toContain(
-      "types: [opened, synchronize, reopened, ready_for_review]",
-    );
+    expect(triggerSection(source)).toContain("workflow_call:");
+    expect(
+      triggerSection(await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8")),
+    ).toContain("types: [opened, synchronize, reopened, ready_for_review]");
     const sections = jobSections(source);
     // A job behind another job of the same workflow is skipped when that one is, so the guard belongs
     // on the entry points only.
@@ -1754,7 +1776,7 @@ describe("CI pipeline structure", () => {
   });
 
   // The obsolete shard arithmetic snapshots are replaced by complete kit/scenario coverage.
-  // ci-template-selection.spec.ts checks the actual planner matrices, including selective queues.
+  // ci-template-selection.spec.ts checks PR selections and exhaustive queue matrices.
   it("runs the complete classifier output once, without repeated scaffold shards", async () => {
     const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
     const lane = requiredJob(ci, "template-nonvisual");
@@ -3440,7 +3462,7 @@ describe("PRD-373 selective feature verification", () => {
     try {
       const head = await commitScopeChange(fixture, relative, "changed\n", "feature");
       const plan = classifyScope(fixture.root, fixture.base, head, ["--target", "develop"]);
-      expect(plan).toMatchObject({ version: 1, selection });
+      expect(plan).toMatchObject({ version: 2, selection });
       const jobs = plan.jobs as Record<string, { required: boolean; reason: string }>;
       expect(jobs["native-platforms"]).toMatchObject({ required: false });
       expect(jobs["native-platforms"]?.reason.length).toBeGreaterThan(10);
@@ -3663,7 +3685,7 @@ describe("PRD-373 selective feature verification", () => {
             "--event-name",
             event,
           ]).selection,
-        ).toBe(event === "merge_group" ? "prose" : "full");
+        ).toBe("full");
       }
       // The one narrowed event is a push onto develop, and it is narrow only as far as the caches:
       // `warm` still requires the two jobs that publish them, and it requires them on main too —
@@ -3756,6 +3778,7 @@ describe("PRD-373 selective feature verification", () => {
 const CI_KEPT_JOBS = [
   "budgets",
   "build-artifacts",
+  "integration",
   "lint",
   "supply-chain",
   "test-unit",
@@ -3897,7 +3920,7 @@ describe("a CI-configuration-only pull request", () => {
       expect(
         classifyScope(fixture.root, fixture.base, head, ["--target", "develop", ...extra])
           .selection,
-      ).toBe(extra.includes("merge_group") ? "ci" : "full");
+      ).toBe("full");
     } finally {
       await removeFixture(fixture.root);
     }
@@ -3931,6 +3954,12 @@ describe("a CI-configuration-only pull request", () => {
     // `scope` produces the selection and `ci-required` reads the plan on `always()`; neither is
     // gated by one, so neither can name it.
     for (const name of [...CI_KEPT_JOBS, "run-summary"]) {
+      if (name === "integration") {
+        expect(sections.get(name)).toContain(
+          "fromJSON(needs.scope.outputs.plan).jobs.integration.required",
+        );
+        continue;
+      }
       expect(sections.get(name), name).toContain("needs.scope.outputs.selection == 'ci'");
     }
     for (const name of CI_SKIPPED_JOBS) {

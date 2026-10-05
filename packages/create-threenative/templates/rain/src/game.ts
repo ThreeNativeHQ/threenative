@@ -4,14 +4,7 @@ import { UI_READY_INTENT } from "@threenative/core/ui-layer";
 import config from "../threenative.config.js";
 import { type IStormAudio, STORM_AUDIO_ENTITY } from "./audio/storm.js";
 import { Coast } from "./scenes/Boot.js";
-import {
-  type GameState,
-  type PresetName,
-  type QualityName,
-  VISIBILITY_INTENT,
-  type WeatherKey,
-  intentPatch,
-} from "./state.js";
+import { type GameState, VISIBILITY_INTENT, intentPatch } from "./state.js";
 
 const game = defineGame<GameState>({
   input: {
@@ -47,32 +40,6 @@ const game = defineGame<GameState>({
 });
 
 export default game;
-
-/**
- * The intents the UI sends, and the payload each one carries. The UI slice owns nothing else:
- * every control here is a named intent and a validated payload, and nothing else crosses.
- */
-export type RainIntent =
-  | { readonly name: "closeHelp" }
-  | { readonly name: "help" }
-  | { readonly name: "hideUi" }
-  | { readonly name: "pause" }
-  | { readonly name: "resetCamera"; readonly payload?: never }
-  | { readonly name: "resume" }
-  | { readonly name: "setAudioEnabled"; readonly payload: boolean }
-  | { readonly name: "setAutoLightning"; readonly payload: boolean }
-  | { readonly name: "setCinematic"; readonly payload: boolean }
-  | { readonly name: "setDroplets"; readonly payload: boolean }
-  | { readonly name: "setFrozen"; readonly payload: boolean }
-  | { readonly name: "setMuted"; readonly payload: boolean }
-  | { readonly name: "setPreset"; readonly payload: PresetName }
-  | { readonly name: "setQuality"; readonly payload: QualityName }
-  | { readonly name: "setSafe"; readonly payload: boolean }
-  | { readonly name: "setWeather"; readonly payload: Partial<Record<WeatherKey, number>> }
-  | { readonly name: "showUi" }
-  | { readonly name: "step"; readonly payload: number }
-  | { readonly name: "strike"; readonly payload?: never }
-  | { readonly name: typeof VISIBILITY_INTENT; readonly payload: boolean };
 
 game.ui.onIntent((intent, payload) => {
   // The framework's own "my tree has rendered" signal, and the one control that is not a player's:

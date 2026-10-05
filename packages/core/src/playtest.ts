@@ -584,7 +584,7 @@ function drainContacts<TState extends Record<string, unknown>, TPhysics>(
     for (const value of objectGraphValues(registered))
       if (!idsByEntity.has(value)) idsByEntity.set(value, id);
   });
-  ctx.entities.forEach((id, registered) => {
+  ctx.entities.forEach((_id, registered) => {
     for (const source of entitySources(registered)) {
       for (const event of source.drainContacts()) {
         const entity = idsByEntity.get(event.body);
