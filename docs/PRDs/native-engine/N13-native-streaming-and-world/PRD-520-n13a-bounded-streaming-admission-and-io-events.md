@@ -1,6 +1,6 @@
 # PRD-520 — Bounded streaming admission and IO events (N13a)
 
-**Status:** PROPOSED
+**Status:** IN PROGRESS
 **Complexity:** 3 — an engine event queue plus a frame-budgeted admission scheduler, both with existing TS references
 **Owner:** João
 **Work package:** N13 — [native-engine batch](../README.md) · [N13 umbrella](README.md)
@@ -25,14 +25,14 @@
 ## Execution Phases
 
 #### Phase 1: The event queue
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** proposed `packages/runtime-native/src/engine/world/events/`, `packages/runtime-native/tests/native-engine/world/`
-- [ ] Completions posted from worker threads are delivered on the game thread at the frame boundary, in per-source order. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_event_queue` (also under TSan)
-- [ ] After a world is destroyed, none of its pending completion callbacks run. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_event_queue_teardown`
+- [x] Completions posted from worker threads are delivered on the game thread at the frame boundary, in per-source order. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_event_queue` (also under TSan) — 2026-10-05: green on Dawn, ASan, wgpu and under TSan (`build/tn-linux-engine-tsan`, `TN_ENGINE_TSAN=ON`, 3 of 3 runs clean). `CompletionQueue` (`src/engine/world/events/completion_queue.{h,cpp}`): 4 worker threads post 24,000 completions over 12 interleaved sources while the game thread drains once per frame; every one runs on the game thread, inside a drain, in its source's posting order. Red control: `post` without its lock is a TSan data race
+- [x] After a world is destroyed, none of its pending completion callbacks run. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_event_queue_teardown` — 2026-10-05: green on the same lanes. Destroying the queue drops what is pending (and releases what it captured), refuses later posts, also through a poster that outlives the world, and stops a drain already under way when a completion destroys the world: tens of thousands ran before the destroy, 0 after. Red control: a drain that ignores a destroy mid-batch fails
 
 #### Phase 2: Budgeted admission and cancellation
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **Files:** proposed `packages/runtime-native/src/engine/world/admission/`
 - [ ] Admission work per frame stays within the allowance, and overflow is deferred, matching `world-cells-admission.spec.ts` fixtures. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_admission_budget`
-- [ ] Cancelling an in-flight load frees nothing the GPU still uses, as ASan and the lease audit both show. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_admission_cancel`
-- [ ] A failed load reports a stable code, the resource identity and a recovery class. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_admission_failure`
+- [x] Cancelling an in-flight load frees nothing the GPU still uses, as ASan and the lease audit both show. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_admission_cancel` — 2026-10-05: green on Dawn, ASan and wgpu. `PackageLoads` (`src/engine/world/admission/package_loads.{h,cpp}`) reads and verifies a cooked package on a worker and admits its entries on the game thread within a byte allowance (a 1.5 MiB frame takes two of three 1 MiB entries). The GPU then reads the first buffer and the load is cancelled: the live handles drop to 0 at once, both GPU objects stay pending until that read completes (pending 2, then 0), the read returns the uploaded bytes (ASan clean) and the load's callback never runs. Red control: a cancel that keeps the handles fails the lease audit
+- [x] A failed load reports a stable code, the resource identity and a recovery class. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_admission_failure` — 2026-10-05: green on the same lanes. A missing file is `TN_WORLD_IO_UNAVAILABLE` (io, Retry), a tampered entry `TN_PACKAGE_HASH` (assets, Skip), a package of another format `TN_PACKAGE_VERSION` (assets, Fatal), an entry needing KTX2 `TN_NATIVE_KTX2_UNSUPPORTED` (assets, Skip), each naming the package path and holding no GPU resource; an upload refusal is `TN_WORLD_UPLOAD_REFUSED` (gpu, Skip) naming `path#entry`. Red control: a version failure classed Skip fails

@@ -10,7 +10,7 @@ All new package names, configuration fields, ABI names, status markers, and work
 
 ## PRD index
 
-**Batch status: IN PROGRESS — 128/237 phase boxes (54%) as of 2026-10-05, on `feat/native-engine` (PR #438).** This file is the batch index and the source proposal; the PRDs below carry the boxes. Work packages too large for one PRD (at most 3 phases, about 8 boxes) are a folder with its own `README.md` and child PRDs. The batch moves to `done/` whole only when every PRD in it is finished.
+**Batch status: IN PROGRESS — 136/237 phase boxes (57%) as of 2026-10-05, on `feat/native-engine` (PR #438).** This file is the batch index and the source proposal; the PRDs below carry the boxes. Work packages too large for one PRD (at most 3 phases, about 8 boxes) are a folder with its own `README.md` and child PRDs. The batch moves to `done/` whole only when every PRD in it is finished.
 
 ### Progress
 
@@ -41,15 +41,15 @@ Generated from the PRD files' boxes; a PRD is done when every box is ticked.
 | [PRD-517](N11-native-animation/PRD-517-n11b-morph-targets-and-property-tracks.md) | Morph targets and property tracks (N11b) | 2/4 | in progress |
 | [PRD-518](N11-native-animation/PRD-518-n11c-skinning-palettes-and-pose-history.md) | Skinning palettes and pose history (N11c) | 0/7 | not started |
 | [PRD-519](PRD-519-n12-native-batching-visibility-lod-gpu-scene.md) | Native batching, visibility, LOD and GPU scene (N12) | 0/7 | not started |
-| [PRD-520](N13-native-streaming-and-world/PRD-520-n13a-bounded-streaming-admission-and-io-events.md) | Bounded streaming admission and IO events (N13a) | 0/5 | not started |
-| [PRD-521](N13-native-streaming-and-world/PRD-521-n13b-worldcells-and-worldtiles-run-native.md) | WorldCells and WorldTiles run native (N13b) | 0/6 | not started |
+| [PRD-520](N13-native-streaming-and-world/PRD-520-n13a-bounded-streaming-admission-and-io-events.md) | Bounded streaming admission and IO events (N13a) | 4/5 | in progress |
+| [PRD-521](N13-native-streaming-and-world/PRD-521-n13b-worldcells-and-worldtiles-run-native.md) | WorldCells and WorldTiles run native (N13b) | 1/6 | in progress |
 | [PRD-522](N13-native-streaming-and-world/PRD-522-n13c-a-world-loads-walks-and-unloads-without-growth.md) | A world loads, walks and unloads without growth (N13c) | 0/4 | not started |
 | [PRD-523](N14-native-render-chain-and-advanced-visuals/PRD-523-n14a-the-render-graph-owns-passes-and-history.md) | The render graph owns passes and history (N14a) | 6/7 | in progress |
 | [PRD-524](N14-native-render-chain-and-advanced-visuals/PRD-524-n14b-virtual-shadows-run-native.md) | Virtual shadows run native (N14b) | 0/5 | not started |
 | [PRD-525](N14-native-render-chain-and-advanced-visuals/PRD-525-n14c-probes-run-native.md) | Probes run native (N14c) | 0/5 | not started |
-| [PRD-526](N14-native-render-chain-and-advanced-visuals/PRD-526-n14d-post-effects-and-render-chains-run-native.md) | Post effects and render chains run native (N14d) | 0/5 | not started |
+| [PRD-526](N14-native-render-chain-and-advanced-visuals/PRD-526-n14d-post-effects-and-render-chains-run-native.md) | Post effects and render chains run native (N14d) | 1/5 | in progress |
 | [PRD-527](N14-native-render-chain-and-advanced-visuals/PRD-527-n14e-particles-and-fluids-run-native.md) | Particles and fluids run native (N14e) | 0/4 | not started |
-| [PRD-528](PRD-528-n15-framework-loop-rapier-sync-input-services.md) | Framework loop, Rapier sync, input and services (N15) | 1/7 | in progress |
+| [PRD-528](PRD-528-n15-framework-loop-rapier-sync-input-services.md) | Framework loop, Rapier sync, input and services (N15) | 3/7 | in progress |
 | [PRD-529](PRD-529-n16-native-playtest-inspection-telemetry.md) | Native playtest, inspection and telemetry (N16) | 0/6 | not started |
 | [PRD-530](PRD-530-n17-strict-native-typescript-game-packaging.md) | Strict native-TypeScript game packaging (N17) | 4/7 | in progress |
 | [PRD-531](PRD-531-n18-v8-game-runtime-adapter.md) | V8 game runtime adapter (N18) | 7/8 | in progress |

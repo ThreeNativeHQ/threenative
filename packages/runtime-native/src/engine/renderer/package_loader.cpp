@@ -19,7 +19,14 @@ bool fail(assets::PackageError& error, const std::string& name, const char* why)
 
 bool loadPackage(const assets::Package& package, GpuResources& gpu, std::vector<LoadedEntry>& out,
                  assets::PackageError& error) {
-    for (const assets::PackageEntry& e : package.entries) {
+    for (const assets::PackageEntry& e : package.entries)
+        if (!loadEntry(package, e, gpu, out, error)) return false;
+    return true;
+}
+
+bool loadEntry(const assets::Package& package, const assets::PackageEntry& e, GpuResources& gpu,
+               std::vector<LoadedEntry>& out, assets::PackageError& error) {
+    {
         const auto data = package.data(e);
         if (e.kind == static_cast<uint16_t>(assets::EntryKind::Buffer)) {
             if (data.empty() || data.size() % 4 != 0) return fail(error, e.name, "buffer size is not a multiple of 4");

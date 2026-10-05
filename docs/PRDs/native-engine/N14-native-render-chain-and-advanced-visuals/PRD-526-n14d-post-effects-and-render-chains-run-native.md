@@ -1,6 +1,6 @@
 # PRD-526 — Post effects and render chains run native (N14d)
 
-**Status:** PROPOSED
+**Status:** IN PROGRESS
 **Complexity:** 4 — every template's post graph must compile and order natively
 **Owner:** João
 **Work package:** N14 — [native-engine batch](../README.md)
@@ -31,9 +31,9 @@ graphs compile through N08 unchanged.
 ## Execution Phases
 
 #### Phase 1: Chain mechanism
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **Files:** proposed `packages/runtime-native/src/engine/renderer/chain/`, `packages/runtime-native/tests/native-engine/chain_*.cpp`
-- [ ] A chain built in the same order as `chain.ts` produces the same pass order and target usage. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_chain_order`
+- [x] A chain built in the same order as `chain.ts` produces the same pass order and target usage. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_chain_order` — 2026-10-05: green on Dawn, ASan and wgpu, exact. `planRenderChain` (`src/engine/renderer/chain/plan.{h,cpp}`) ports `RenderChain`'s decisions as a CPU plan: `resolveStageOrder` (built-in ranks, anchored authored stages, siblings in supply order, cycle and missing-definition refusals as `TN_RENDER_CHAIN_ORDER`), every drop reason in `apply()`, the contributions and `resolveVelocity`'s source (mrt or per-object). 34 configurations recorded from the real `RenderChain` (`tests/native-engine/chain/chain-reference.ts`), including every tier against every minimum tier, match stage for stage. Red controls: swapped before/after (6 differ), medium and low swapped (2 differ). Port by the save-tokens arm; reviewed, its internal exceptions replaced by error returns (engine code never throws) and the tier matrix added
 - [ ] A pass needing an unsupported feature fails with a named diagnostic rather than vanishing. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_chain_unsupported`
 
 #### Phase 2: Template post graphs

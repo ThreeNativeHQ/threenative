@@ -3,6 +3,7 @@
 # alone, which is the guard that the core stays Wasm-safe (owner decision 4).
 
 option(TN_ENGINE_SANITIZE "Build the native engine targets under ASan and UBSan" OFF)
+option(TN_ENGINE_TSAN "Build the native engine targets under ThreadSanitizer (a separate build: TSan excludes ASan)" OFF)
 function(tn_native_engine_target target)
     set_target_properties(${target} PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON POSITION_INDEPENDENT_CODE ON)
     # PRD-501 §6.3: the engine targets are compared against a JavaScript oracle in binary64, so the
@@ -13,6 +14,10 @@ function(tn_native_engine_target target)
     if(TN_ENGINE_SANITIZE)
         target_compile_options(${target} PRIVATE -fsanitize=address,undefined -fno-sanitize-recover=undefined -fno-omit-frame-pointer)
         target_link_options(${target} PRIVATE -fsanitize=address,undefined)
+    endif()
+    if(TN_ENGINE_TSAN)
+        target_compile_options(${target} PRIVATE -fsanitize=thread -fno-omit-frame-pointer)
+        target_link_options(${target} PRIVATE -fsanitize=thread)
     endif()
     set_property(GLOBAL APPEND PROPERTY TN_NATIVE_ENGINE_TARGETS ${target})
     if(TN_ENGINE_FUZZ)
@@ -324,8 +329,10 @@ tn_native_engine_test(tn-native-engine-animation-schedule-test tests/native-engi
 target_link_libraries(tn-native-engine-animation-schedule-test PRIVATE tn_engine_animation)
 target_include_directories(tn-native-engine-animation-mixer-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/animation)
 
-# PRD-528 phase 1: the fixed-step clock, ported from packages/core/src/loop.ts.
-add_library(tn_engine_world STATIC src/engine/world/loop/fixed_step.cpp)
+# PRD-528 phase 1, PRD-521 phase 3: the fixed-step clock and the world height buffer, ported from
+# packages/core/src/loop.ts, world-heightmap.ts and world.ts.
+add_library(tn_engine_world STATIC src/engine/world/loop/fixed_step.cpp
+    src/engine/world/terrain/heights.cpp src/engine/world/events/completion_queue.cpp)
 tn_native_engine_target(tn_engine_world)
 target_link_libraries(tn_engine_world PUBLIC tn_engine_foundation)
 target_include_directories(tn_engine_world PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
@@ -333,6 +340,18 @@ tn_native_engine_test(tn-native-engine-loop-fixed-step-test tests/native-engine/
     native_engine_loop_fixed_step=fixed_step)
 target_link_libraries(tn-native-engine-loop-fixed-step-test PRIVATE tn_engine_world)
 target_include_directories(tn-native-engine-loop-fixed-step-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/loop)
+tn_native_engine_test(tn-native-engine-world-heights-test tests/native-engine/world/heights_test.cpp
+    native_engine_world_heights=heights)
+target_link_libraries(tn-native-engine-world-heights-test PRIVATE tn_engine_world)
+target_include_directories(tn-native-engine-world-heights-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/world)
+# PRD-520 phase 1: completions from worker threads, drained on the game thread; also under TSan
+# (TN_ENGINE_TSAN). Emscripten builds the queue but has no threads to post from here.
+if(NOT EMSCRIPTEN)
+    find_package(Threads REQUIRED)
+    tn_native_engine_test(tn-native-engine-event-queue-test tests/native-engine/world/event_queue_test.cpp
+        native_engine_event_queue=event_queue native_engine_event_queue_teardown=teardown)
+    target_link_libraries(tn-native-engine-event-queue-test PRIVATE tn_engine_world Threads::Threads)
+endif()
 
 add_library(tn_fixture_driver STATIC tests/native-engine/fixture/driver.cpp)
 tn_native_engine_target(tn_fixture_driver)
@@ -383,6 +402,12 @@ if(NOT EMSCRIPTEN)
                 packages/runtime-native/tests/native-engine/loop/loop-reference.ts --check
             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../..)
         set_tests_properties(native_engine_loop_reference_current PROPERTIES LABELS "native-engine")
+        # PRD-521 phase 3: the committed height table is what world-heightmap.ts and world.ts produce.
+        add_test(NAME native_engine_world_heights_reference_current
+            COMMAND ${TN_PNPM_EXECUTABLE} --workspace-root exec tsx
+                packages/runtime-native/tests/native-engine/world/heights-reference.ts --check
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../..)
+        set_tests_properties(native_engine_world_heights_reference_current PROPERTIES LABELS "native-engine")
         unset(math_case)
         unset(math_pair)
     else()

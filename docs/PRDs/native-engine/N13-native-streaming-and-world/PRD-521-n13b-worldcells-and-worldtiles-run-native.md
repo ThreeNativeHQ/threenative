@@ -1,6 +1,6 @@
 # PRD-521 — WorldCells and WorldTiles run native (N13b)
 
-**Status:** PROPOSED
+**Status:** IN PROGRESS
 **Complexity:** 5 — the largest framework subsystem to port (cells, tiles, chunk merging, terrain, GPU-scene residency), with a deep spec suite to keep
 **Owner:** João
 **Work package:** N13 — [native-engine batch](../README.md) · [N13 umbrella](README.md)
@@ -26,10 +26,10 @@
 ## Execution Phases
 
 #### Phase 1: Package and terrain
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **Files:** proposed `packages/runtime-native/src/engine/world/package/`, `.../terrain/`
 - [ ] Native `world.json` validation accepts and rejects the `world-package.spec.ts` fixtures with the same codes. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_world_package`
-- [ ] Native height sampling matches `world-heightmap.spec.ts` fixtures, and `updateHeights` bumps the sample version. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_world_heights`
+- [x] Native height sampling matches `world-heightmap.spec.ts` fixtures, and `updateHeights` bumps the sample version. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_world_heights` — 2026-10-05: green on Dawn, ASan, wgpu and Wasm, exact. `HeightSampler` and `Heightfield` (`src/engine/world/terrain/heights.{h,cpp}`) port `heightSamplerFromHeightmap` and `Heightfield.heightAt`/`updateHeights`/`version` operation for operation; a malformed update is refused by name (`TN_WORLD_HEIGHTFIELD_REGION`, `_SIZE`, `_SAMPLE`) and writes nothing, a success bumps the version by one. From the TS modules themselves (`tests/native-engine/world/heights-reference.ts`): a 33 x 17 heightmap sampled at 203 points (vertices, edges, outside, NaN, both infinities) and a six-step update scenario with heightAt probes: 326 values match bit for bit (NaN as NaN, whatever its sign bit). Red controls: no clamp to the last row (ASan overflow), no version bump (6 differ). Port by the save-tokens arm; reviewed, NaN handling corrected
 
 #### Phase 2: Cells and tiles
 **Status:** NOT STARTED

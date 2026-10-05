@@ -21,4 +21,8 @@ struct LoadedEntry {
  */
 bool loadPackage(const assets::Package& package, GpuResources& gpu, std::vector<LoadedEntry>& out, assets::PackageError& error);
 
+/** One entry of `loadPackage`, so a caller can admit a package entry by entry; other kinds load nothing. */
+bool loadEntry(const assets::Package& package, const assets::PackageEntry& entry, GpuResources& gpu,
+               std::vector<LoadedEntry>& out, assets::PackageError& error);
+
 }  // namespace tn::engine
