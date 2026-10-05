@@ -1492,7 +1492,7 @@ figures were a miscount of a 31-arm corpus.
 
 ### Current develop and immutable owner source combined with CPU repairs (2026-10-05)
 
-This isolated candidate normally merges current develop `9b3c4824c` into published PR398
+This isolated candidate normally merges develop checkpoint `9b3c4824c` into published PR398
 `f04169f39` (local merge `844a67c27`), then integrates exact committed owner checkpoint
 `a0830fec4`. No live owner fixture or motion-script patch was copied. Both temporal/velocity
 and the newly landed animation/native lanes retain candidate-pinned checkouts, current-attempt
@@ -1510,11 +1510,16 @@ display resize's `Math.round`: the real pass at 800x600 changes input height to 
 Explicit red/green: 33 passing / 7 failing CPU cases before repair, then 40/40 passing. The
 combined focused set passes 303 tests across 14 files, including real WGSL compilation, template
 source/instruction contracts, measured actual hashes for all 13 no-install generated scaffolds,
-existing evidence/quality controls, and routing/receipts. Root TypeScript 7 checking and the final 40-case repair rerun also pass. Serial workspace
-typechecking reaches the landed locomotion example and fails because the owned core declarations
-were built before develop added `AnimationPlayer.playWeighted`; current source contains the method.
-A coordinated package build is required before claiming the full workspace check passes. Original
-thresholds and acceptance rows from the owner checkpoint are unchanged. This is CPU evidence; no GPU/native capture ran here.
+existing evidence/quality controls, and routing/receipts. Root TypeScript 7 checking and the final
+40-case repair rerun also pass. The initial serial workspace check failed at the landed locomotion
+example because the owned core declarations predated `AnimationPlayer.playWeighted`, present in
+current source. After the approved serial rebuild, all eight public dependency packages pass their
+normal build/publint commands: assets, playtest, engine MCP, Blender MCP, core, physics, UI and create.
+At exact source commit `9e9ccc88f7c6afd468581e1cc95d90a56b4ae29d`, root TS7, serial workspace and
+velocity-fixture typechecks all exit zero using CPUs 10 and 22 with one worker. Owned manifests and
+individual logs are under `artifacts/pr398-cpu-contract/current-closure-build` and
+`current-closure-typechecks`. Original thresholds and acceptance rows from the owner checkpoint are
+unchanged. This is CPU evidence; no GPU/native capture ran here.
 
 The matching lower-raster RTT cases do not qualify lower-raster exposure composition through
 actual WorldEnvironment or the automatic scaler. Clean retained browser/native reports at
@@ -1529,3 +1534,9 @@ no integration lane: the template subtree is excluded from the unknown-file fall
 new counter was absent from the temporal filter. The exact source path is now owned by the temporal
 lane. The isolated routing regression fails before the selector repair; all 101 routing/receipt
 contracts pass afterward. Candidate pins, job blocks, receipt policy and thresholds are unchanged.
+
+Develop subsequently merged PR440 as `d3c009e4404abcc2041f58124693edb9c78d802b`. It is outside this
+validated source checkpoint; its camera/material changes must survive later reconciliation and
+scaffold fingerprints must be remeasured from that actual combined generator. The original owner
+subsequently committed documentation-only `7e01edf58`; those later experimental claims were not
+imported as qualification. The serial build slot is released; publication and new CI remain held.
