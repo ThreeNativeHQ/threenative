@@ -62,7 +62,8 @@ all 25 cooked asset files and the unchanged scenario. The current-source per-mat
 repaired allocation-free helpers; only per-material graph construction versus WeakMap caching
 differs. Independent review rejected the initial comparison because its old inline helpers
 allocated arrays; those first arms are retained, and the corrected v2 arms were rebuilt and sealed
-before any GPU launch. Both CPU-only Vite bundles pass, with no
+before any GPU launch (`comparison-projects-v2/`, `comparison-source-proof-v2.json` in the
+delegated workspace). Both CPU-only Vite bundles pass, with no
 asset recook. One balanced comparison is planned when a recorded capture-only allocation is
 available; it cannot substitute for the original all-template/startup/native acceptance.
 
