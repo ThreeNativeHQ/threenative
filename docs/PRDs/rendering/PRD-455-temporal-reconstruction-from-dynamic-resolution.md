@@ -209,6 +209,59 @@ Evidence validation: 29 documentation/citation/budget tests pass; two CLI-launch
 known environment prohibition on tsx IPC pipes. Their unchanged 1,200-line and 701-file CLI
 fixtures both pass through `node --import tsx`. The real tracked evidence budget also passes.
 
+Phase 2 proof route, 2026-10-06: the missing route now exists and has run. One bounded quality
+family reuses the same scene, poses, occluder and frame schedule as the existing arms and adds
+authored deterministic alpha-tested foliage: six leaf cards with a 16x16 DataTexture mask (nearest
+filtered, `alphaTest` 0.5, no canvas, identical on both hosts). Its physical display raster stays
+640x360 for every arm. The input raster is 426x240 (2/3) for the spatial role, the temporal role and
+their controls, 1:1 for the full-resolution no-AA role, and 4x supersampled for the family
+reference, which the existing scorer downsamples. The full-resolution reference, the no-AA control
+and the spatial role request no reconstruction stage and no velocity MRT at all; the spatial role
+presents its low input through the ordinary texture upsample. The harness asserts that per frame —
+`stages: []`, `velocity.source: null`, no rejection counter and no MRT readback — instead of
+installing a stage and overriding its output. The temporal role must present 640x360 from a 426x240
+input and publish the settled GPU counter every frame. Each family scores against its own
+supersampled reference, and every original threshold is unchanged.
+
+`sh scripts/xvfb.sh node --import tsx scripts/verify-temporal-motion.ts` captured 32 arms
+(512 frames) with `nvidia`/`turing` WebGPU in every arm, empty diagnostics, and exit 1 at the final
+gate assertion after writing `artifacts/temporal-aa/motion/summary.json`; log
+`/tmp/opencode/pr398-phase2-route3.log`. Rasters are the measured ones: the family reference is
+2560x1440 input and display, the no-AA role 640x360/640x360, and every low-input arm 426x240 input
+into a 640x360 display. The temporal counter is real: rejection fraction 0.0023-0.0110 with
+`visited` 230400 on every frame, exactly the 640x360 display raster it walked, and `staleFrames` 0.
+
+| arm | edge | instability | excursion | moving edge | stale f29..36 |
+| --- | --- | --- | --- | --- | --- |
+| quality-reference (no AA, 1:1) | 0.04933 | 0.04768 | 0.01632 | 0.03547 | 0, 0, .0003, 0, 0, 0, 0, 0 |
+| quality-spatial (0.667, no stage) | 0.07745 | 0.05055 | 0.00964 | 0.04800 | .0306, .0304, .0648, .0355, .0357, .0664, .0473, .0312 |
+| quality-temporal (0.667) | 0.08240 | 0.03572 | 0.00216 | 0.04618 | .3437, .2548, .0398, .0339, .0304, .0395, .0226, .0185 |
+| quality-zero-velocity | 0.08971 | 0.03283 | 0.00401 | 0.05971 | .3451, .2580, .0468, .0417, .0414, .0513, .0357, .0314 |
+| quality-unchecked-history | 0.09744 | 0.03050 | 0.20525 | 0.12529 | 1.00 in all eight |
+
+The temporal arm is 29.3% more stable than the low-resolution spatial arm, which is the comparison
+its Phase 2 box names. The spatial role's own non-zero reveal residue is the low raster's
+occluder footprint resampled by the upsample, not a history. Both negative controls are detected:
+the real `vec2(0)` MRT control is worse on moving edges, and unchecked history holds 100% stale
+pixels with red tint 1.00 in every reveal frame. The motion family reproduced bit-identically
+(edge 0.06054, instability 0.03136, no-AA 0.05029/0.04913), which also proves the new browser flags
+did not change the existing measurement.
+
+**Both Phase 2 boxes stay open.** `qualityEdgeImprovement` fails: 0.08240 against the required
+0.04686, 67% worse than the family's no-AA arm. `qualityRevealRecovery` fails: 25.48% stale
+interior pixels one frame after the reveal, against the unchanged 1% bound, and the strict-rejection
+motion control still trips the same bound at frame 34. Nothing was renormalized and no threshold was
+relaxed. Focused checks: root `pnpm typecheck` exit 0, Biome error-level exit 0 on all three
+changed files, 122 temporal unit tests across 9 files pass, `pnpm check:docs` exit 0. The one
+repository lint error is the pre-existing cognitive-complexity finding in
+`examples/native-smoke/src/physics.ts`, which this change does not touch.
+
+One bounded next defect, in the generated appearance layer and not in this mechanism: at a 426x240
+input the installed history blend trades edge fidelity for stability (67% worse edge error than
+no-AA while beating the spatial arm by 29% on instability), which repeats the static thin-fence
+attenuation already measured at full resolution. The next task repairs the generated resolve blend;
+Phase 3 cost work stays untouched.
+
 - [ ] A fixed camera route containing thin fences, foliage, sub-pixel edges, a moving character and an instanced moving object stays within pinned temporal-stability/ghosting thresholds against a full-resolution reference. **proof:** automated frame-sequence report records edge flicker, rejected-history ratio and image delta for full-res, low-res spatial upscale and temporal reconstruction; the temporal arm must beat the spatial arm on the named stability metric.
 - [ ] Newly revealed surfaces do not inherit stale colour after occlusion/disocclusion events. **proof:** foreground-occluder fixture reveals a contrasting background and asserts stale-history pixels decay within the declared frame bound; disabling disocclusion rejection makes it fail.
 

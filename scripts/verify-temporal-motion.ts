@@ -34,155 +34,74 @@ const scenario = JSON.parse(
     "utf8",
   ),
 );
+// Qualified hardware WebGPU. Without the Vulkan and ANGLE flags below a headless Linux run never
+// reaches the driver and silently serves WebGPU from SwiftShader: nothing errors, and the numbers
+// become a CPU rasteriser's. `adapter.info` reads swiftshader/google without them and
+// nvidia/turing with them, and every arm's adapter is published in the summary either way.
+const QUALIFIED_WEBGPU_ARGS = [
+  "--enable-unsafe-webgpu",
+  "--enable-features=Vulkan",
+  "--use-angle=vulkan",
+  "--use-vulkan",
+  "--disable-vulkan-surface",
+  "--no-sandbox",
+];
 const frames: Record<string, ILinearFrame[]> = {};
 const provenance = [];
+const rasters: Record<string, unknown> = {};
+const counters: Record<string, unknown> = {};
+const qualityCorpus: Record<string, unknown> = {};
 const velocityDiagnostics: Record<
   string,
   Array<{ label: string; velocity: IVelocityProbe | null }>
 > = {};
 let poses: unknown[] | undefined;
 let recompileObserved = false;
-for (const variant of [
-  "supersampled",
-  "reference",
-  "temporal",
-  "zero-velocity",
-  "unchecked-history",
-  "dynamic-instances",
-  "strict-rejection",
-  "recompile",
-  "temporal-open",
-  "strict-rejection-open",
-  "unchecked-history-open",
-  "nearest-history",
-  "nearest-history-open",
-  "resolve-linear",
-  "resolve-cubic",
-  "resolve-cubic-open",
-  "resolve-cubic-strict",
-  "resolve-cubic-strict-open",
-  "resolve-cubic-strict-zero",
-  "resolve-cubic-strict-ordinary",
-  "resolve-cubic-strict-ordinary-open",
-  "resolve-cubic-strict-ordinary-zero",
-]) {
-  const artifactDirectory = path.join(output, variant);
-  await mkdir(artifactDirectory, { recursive: true });
-  const scale = variant === "supersampled" ? 4 : 1;
-  const scenarioPath = path.join(artifactDirectory, "scenario.json");
-  await writeFile(
-    scenarioPath,
-    JSON.stringify({ ...scenario, viewport: { width: 640 * scale, height: 360 * scale } }, null, 2),
-  );
-  const report = await runStandalonePlaytest({
-    allowSoftwareAdapter: true,
-    artifactDirectory,
-    browserArgs: [...WEBGPU_BROWSER_ARGS],
-    headless: false,
-    port: 0,
-    projectPath: path.join(root, "examples/abyss-framework"),
-    scenarioPath,
-    server: {
-      command:
-        "pnpm exec vite build --config temporal.vite.config.ts && pnpm exec vite preview --config temporal.vite.config.ts --host 127.0.0.1 --port $PORT --strictPort",
-      timeoutMs: 60_000,
-    },
-    timeoutMs: 120_000,
-    trace: false,
-    url: `http://127.0.0.1:5173/temporal.html?measure&variant=${variant}`,
-  }).catch(async (error: unknown) => {
-    await writeFile(
-      path.join(artifactDirectory, "failure.json"),
-      JSON.stringify(
-        { variant, error: error instanceof Error ? error.stack : String(error) },
-        null,
-        2,
-      ),
-    );
-    throw error;
-  });
-  await writeFile(path.join(artifactDirectory, "report.json"), JSON.stringify(report, null, 2));
-  requireTemporalRenderEvidence(report, variant);
-  const series = report.observations?.resourceSeries;
-  assert.ok(series);
-  assert.equal(series.length, 16, `${variant}: every captured frame needs an observation`);
-  const currentPoses = [];
-  const hashes = [];
-  const currentFrames: ILinearFrame[] = [];
-  frames[variant] = currentFrames;
-  for (let index = 0; index < 16; index++) {
-    const frame = index + 21;
-    const sample: { label: string; tick: number; snapshots: Record<string, unknown> } | undefined =
-      series[index];
-    assert.ok(sample);
-    const observed = sample.snapshots.temporal as {
-      frame: number;
-      pose: unknown;
-      occluderVisible: boolean;
-      aa: {
-        frame: number;
-        inputWidth: number;
-        inputHeight: number;
-        outputWidth: number;
-        outputHeight: number;
-        resetReason: string | null;
-      } | null;
-    };
-    assert.equal(sample.label, `frame-${frame}`);
-    assert.equal(sample.tick, frame);
-    assert.equal(observed.frame, frame);
-    assert.equal(observed.occluderVisible, frame <= 28 && !variant.endsWith("-open"));
-    currentPoses.push(observed.pose);
-    if (variant !== "supersampled" && variant !== "reference") {
-      assert.ok(observed.aa);
-      assert.equal(observed.aa.frame, frame, `${variant}: actual resolves must match simulation`);
-      assert.deepEqual(
-        [
-          observed.aa.inputWidth,
-          observed.aa.inputHeight,
-          observed.aa.outputWidth,
-          observed.aa.outputHeight,
-        ],
-        [640, 360, 640, 360],
-      );
-      assert.equal(
-        observed.aa.resetReason,
-        null,
-        "Disocclusion must not be hidden by a global reset",
-      );
-    } else assert.equal(observed.aa, null);
-    const filename = `frame-${frame}.png`;
-    const bytes = await readFile(path.join(artifactDirectory, filename));
-    const stats = assertCaptureNotBlank(bytes, `${variant}/${filename}`);
-    assert.deepEqual([stats.width, stats.height], [640 * scale, 360 * scale]);
-    currentFrames.push(linearFrame(PNG.sync.read(bytes), 640, 360));
-    hashes.push({ frame, filename, sha256: createHash("sha256").update(bytes).digest("hex") });
-  }
-  if (poses)
-    assert.deepEqual(currentPoses, poses, `${variant}: exact same camera/object poses required`);
-  else poses = currentPoses;
-  velocityDiagnostics[variant] = series.map(({ label, snapshots }) => ({
-    label,
-    velocity: (snapshots.temporal as { velocityProbe: IVelocityProbe | null }).velocityProbe,
-  }));
-  if (variant === "recompile") {
-    const observed = series.at(-1)?.snapshots.temporal as {
-      setupCount: number;
-      setupDuringJitter: number;
-    };
-    recompileObserved = observed.setupCount > 1 && observed.setupDuringJitter > 0;
-  }
-  provenance.push({ variant, capture: report.capture, hashes });
-}
-const reference = frames.supersampled;
-assert.ok(reference);
-const results = Object.fromEntries(
-  Object.entries(frames)
-    .filter(([name]) => name !== "supersampled" && !name.endsWith("-open"))
-    .map(([name, frames]) => [name, measureSequence(reference, frames, 8)]),
-);
-const causalReveals = Object.fromEntries(
-  [
+// Each family scores against its own 4x supersampled reference: the quality family adds authored
+// alpha-tested foliage, so a reference without it would score that content as pure error.
+const FAMILIES: Record<string, string[]> = {
+  motion: [
+    "supersampled",
+    "reference",
+    "temporal",
+    "zero-velocity",
+    "unchecked-history",
+    "dynamic-instances",
+    "strict-rejection",
+    "recompile",
+    "temporal-open",
+    "strict-rejection-open",
+    "unchecked-history-open",
+    "nearest-history",
+    "nearest-history-open",
+    "resolve-linear",
+    "resolve-cubic",
+    "resolve-cubic-open",
+    "resolve-cubic-strict",
+    "resolve-cubic-strict-open",
+    "resolve-cubic-strict-zero",
+    "resolve-cubic-strict-ordinary",
+    "resolve-cubic-strict-ordinary-open",
+    "resolve-cubic-strict-ordinary-zero",
+  ],
+  quality: [
+    "quality-supersampled",
+    "quality-reference",
+    "quality-spatial",
+    "quality-temporal",
+    "quality-zero-velocity",
+    "quality-unchecked-history",
+    "quality-temporal-open",
+    "quality-zero-velocity-open",
+    "quality-unchecked-history-open",
+  ],
+};
+const REFERENCE: Record<string, string> = {
+  motion: "supersampled",
+  quality: "quality-supersampled",
+};
+const CAUSAL: Record<string, string[]> = {
+  motion: [
     "temporal",
     "strict-rejection",
     "unchecked-history",
@@ -190,13 +109,244 @@ const causalReveals = Object.fromEntries(
     "resolve-cubic",
     "resolve-cubic-strict",
     "resolve-cubic-strict-ordinary",
-  ].map((policy) => {
+  ],
+  quality: ["quality-temporal", "quality-zero-velocity", "quality-unchecked-history"],
+};
+for (const [family, arms] of Object.entries(FAMILIES))
+  for (const variant of arms) {
+    const artifactDirectory = path.join(output, variant);
+    await mkdir(artifactDirectory, { recursive: true });
+    const scale = variant.endsWith("supersampled") ? 4 : 1;
+    // One declared raster per arm, from the fixture's own roles. The off roles request no stage and
+    // no velocity MRT at all; the spatial role still renders and presents its low input, so its
+    // input raster is the low one rather than absent.
+    const role = variant.replace(/^quality-/u, "").replace(/-open$/u, "");
+    const spatial = family === "quality" && role === "spatial";
+    const off = role === "reference" || role === "supersampled" || spatial;
+    const input: [number, number] =
+      family === "quality" && role !== "reference" && role !== "supersampled"
+        ? [426, 240]
+        : [640 * scale, 360 * scale];
+    const scenarioPath = path.join(artifactDirectory, "scenario.json");
+    await writeFile(
+      scenarioPath,
+      JSON.stringify(
+        { ...scenario, viewport: { width: 640 * scale, height: 360 * scale } },
+        null,
+        2,
+      ),
+    );
+    const report = await runStandalonePlaytest({
+      allowSoftwareAdapter: true,
+      artifactDirectory,
+      browserArgs: [...WEBGPU_BROWSER_ARGS, ...QUALIFIED_WEBGPU_ARGS],
+      headless: false,
+      port: 0,
+      projectPath: path.join(root, "examples/abyss-framework"),
+      scenarioPath,
+      server: {
+        command:
+          "pnpm exec vite build --config temporal.vite.config.ts && pnpm exec vite preview --config temporal.vite.config.ts --host 127.0.0.1 --port $PORT --strictPort",
+        timeoutMs: 60_000,
+      },
+      timeoutMs: 120_000,
+      trace: false,
+      url: `http://127.0.0.1:5173/temporal.html?measure&variant=${variant}`,
+    }).catch(async (error: unknown) => {
+      await writeFile(
+        path.join(artifactDirectory, "failure.json"),
+        JSON.stringify(
+          { variant, error: error instanceof Error ? error.stack : String(error) },
+          null,
+          2,
+        ),
+      );
+      throw error;
+    });
+    await writeFile(path.join(artifactDirectory, "report.json"), JSON.stringify(report, null, 2));
+    requireTemporalRenderEvidence(report, variant);
+    const series = report.observations?.resourceSeries;
+    assert.ok(series);
+    assert.equal(series.length, 16, `${variant}: every captured frame needs an observation`);
+    const currentPoses = [];
+    const hashes = [];
+    const currentFrames: ILinearFrame[] = [];
+    frames[variant] = currentFrames;
+    for (let index = 0; index < 16; index++) {
+      const frame = index + 21;
+      const sample:
+        | { label: string; tick: number; snapshots: Record<string, unknown> }
+        | undefined = series[index];
+      assert.ok(sample);
+      const observed = sample.snapshots.temporal as {
+        frame: number;
+        pose: unknown;
+        occluderVisible: boolean;
+        raster: {
+          displayWidth: number;
+          displayHeight: number;
+          inputWidth: number | null;
+          inputHeight: number | null;
+        };
+        quality: {
+          role: string;
+          foliageCards: number;
+          alphaTest: number;
+          leafTextureSize: number;
+        } | null;
+        stages: string[];
+        velocity: { source: string | null };
+        rejectionFrames: Array<{
+          frame: number;
+          displayWidth: number;
+          displayHeight: number;
+          fraction: number | null;
+          visited: number | null;
+          staleFrames: number | null;
+        }>;
+        aa: {
+          frame: number;
+          inputWidth: number;
+          inputHeight: number;
+          outputWidth: number;
+          outputHeight: number;
+          resetReason: string | null;
+        } | null;
+      };
+      assert.equal(sample.label, `frame-${frame}`);
+      assert.equal(sample.tick, frame);
+      assert.equal(observed.frame, frame);
+      assert.equal(observed.occluderVisible, frame <= 28 && !variant.endsWith("-open"));
+      // The actual physical rasters, not the scale that was requested.
+      assert.deepEqual(
+        [observed.raster.displayWidth, observed.raster.displayHeight],
+        [640 * scale, 360 * scale],
+        `${variant}: display raster`,
+      );
+      assert.deepEqual(
+        [observed.raster.inputWidth, observed.raster.inputHeight],
+        input,
+        `${variant}: input raster`,
+      );
+      // An off role must genuinely request nothing: no installed stage and no velocity MRT.
+      assert.deepEqual(observed.stages, off ? [] : ["traa"], `${variant}: installed stages`);
+      assert.equal(observed.velocity.source, off ? null : "mrt", `${variant}: velocity MRT source`);
+      // The counter is this frame's own settled GPU measurement, and its visited count is the
+      // display raster the resolve actually walked. An off role has no resolve, so it has none.
+      const rejection = observed.rejectionFrames.at(-1);
+      if (off)
+        assert.equal(rejection, undefined, `${variant}: no resolve means no rejection counter`);
+      else {
+        assert.equal(rejection?.frame, frame, `${variant}: counter must belong to this frame`);
+        assert.equal(rejection?.fraction !== null && rejection?.fraction !== undefined, true);
+        assert.equal(
+          rejection?.visited,
+          640 * 360,
+          `${variant}: counter must count display pixels`,
+        );
+        assert.deepEqual(
+          [rejection?.displayWidth, rejection?.displayHeight],
+          [640, 360],
+          `${variant}: counted raster`,
+        );
+      }
+      // The quality corpus is the only added content: authored alpha-tested foliage, no canvas.
+      if (family === "quality") {
+        // The 4x arm is the family's reference role rendered at four times the display raster.
+        assert.equal(
+          observed.quality?.role,
+          role === "supersampled" ? "reference" : role,
+          `${variant}: quality role`,
+        );
+        assert.ok(
+          (observed.quality?.foliageCards ?? 0) > 0 && (observed.quality?.alphaTest ?? 0) > 0,
+          `${variant}: alpha-tested foliage required`,
+        );
+      } else assert.equal(observed.quality, null, `${variant}: quality corpus must stay isolated`);
+      currentPoses.push(observed.pose);
+      if (off) {
+        assert.equal(observed.aa, null, `${variant}: an off role has no provider report`);
+      } else {
+        assert.ok(observed.aa);
+        assert.equal(observed.aa.frame, frame, `${variant}: actual resolves must match simulation`);
+        assert.deepEqual(
+          [observed.aa.inputWidth, observed.aa.inputHeight],
+          input,
+          `${variant}: resolve input raster`,
+        );
+        assert.deepEqual(
+          [observed.aa.outputWidth, observed.aa.outputHeight],
+          [640, 360],
+          `${variant}: a low input must still present the display raster`,
+        );
+        assert.equal(
+          observed.aa.resetReason,
+          null,
+          "Disocclusion must not be hidden by a global reset",
+        );
+      }
+      const filename = `frame-${frame}.png`;
+      const bytes = await readFile(path.join(artifactDirectory, filename));
+      const stats = assertCaptureNotBlank(bytes, `${variant}/${filename}`);
+      assert.deepEqual([stats.width, stats.height], [640 * scale, 360 * scale]);
+      currentFrames.push(linearFrame(PNG.sync.read(bytes), 640, 360));
+      hashes.push({ frame, filename, sha256: createHash("sha256").update(bytes).digest("hex") });
+    }
+    if (poses)
+      assert.deepEqual(currentPoses, poses, `${variant}: exact same camera/object poses required`);
+    else poses = currentPoses;
+    const last = series.at(-1)?.snapshots.temporal as {
+      setupCount: number;
+      setupDuringJitter: number;
+      raster: unknown;
+      rejectionFrames: Array<{
+        frame: number;
+        fraction: number | null;
+        visited: number | null;
+        staleFrames: number | null;
+      }>;
+      quality: unknown;
+    };
+    rasters[variant] = last.raster;
+    counters[variant] = last.rejectionFrames.map(({ frame, fraction, visited, staleFrames }) => ({
+      frame,
+      fraction,
+      visited,
+      staleFrames,
+    }));
+    qualityCorpus[variant] = last.quality;
+    velocityDiagnostics[variant] = series.map(({ label, snapshots }) => ({
+      label,
+      velocity: (snapshots.temporal as { velocityProbe: IVelocityProbe | null }).velocityProbe,
+    }));
+    if (variant === "recompile") {
+      const observed = series.at(-1)?.snapshots.temporal as {
+        setupCount: number;
+        setupDuringJitter: number;
+      };
+      recompileObserved = observed.setupCount > 1 && observed.setupDuringJitter > 0;
+    }
+    provenance.push({ variant, capture: report.capture, hashes });
+  }
+const results: Record<string, ReturnType<typeof measureSequence>> = {};
+const causalReveals: Record<string, ReturnType<typeof measureCausalReveal>> = {};
+for (const [family, arms] of Object.entries(FAMILIES)) {
+  const referenceName = REFERENCE[family];
+  const reference = referenceName === undefined ? undefined : frames[referenceName];
+  assert.ok(referenceName && reference);
+  for (const variant of arms) {
+    if (variant === referenceName || variant.endsWith("-open")) continue;
+    const sequence = frames[variant];
+    assert.ok(sequence);
+    results[variant] = measureSequence(reference, sequence, 8);
+  }
+  for (const policy of CAUSAL[family] ?? []) {
     const candidate = frames[policy];
     const open = frames[`${policy}-open`];
     assert.ok(candidate && open, `Matched open-history control missing: ${policy}`);
-    return [policy, measureCausalReveal(reference, candidate, open, 8)];
-  }),
-);
+    causalReveals[policy] = measureCausalReveal(reference, candidate, open, 8);
+  }
+}
 const temporal = results.temporal;
 const baseline = results.reference;
 const unchecked = results["unchecked-history"]?.reveal[1];
@@ -212,6 +362,23 @@ for (const { velocity } of temporalVelocity) {
   assert.ok(velocity && velocity.samples.length === 3, "Three actual MRT surface probes required");
   assert.ok(velocity.samples.every((sample) => Number.isFinite(sample.errorPixels)));
 }
+// The quality family holds every original threshold: 5% edge and instability improvement over its
+// own full-resolution no-AA arm, at most 1% stale interior pixels after one frame, and both negative
+// controls. Its one new named comparison is the one its Phase 2 box states: temporal against the
+// low-resolution spatial arm, on the same input raster, content, timings and seed.
+const qualityTemporal = results["quality-temporal"];
+const qualityBaseline = results["quality-reference"];
+const qualitySpatial = results["quality-spatial"];
+const qualityUnchecked = results["quality-unchecked-history"]?.reveal[1];
+const qualityZeroVelocity = results["quality-zero-velocity"];
+assert.ok(
+  qualityTemporal && qualityBaseline && qualitySpatial && qualityUnchecked && qualityZeroVelocity,
+  "Quality family measurements required",
+);
+assert.ok(
+  qualityTemporal.movingEdgeError !== null && qualityZeroVelocity.movingEdgeError !== null,
+  "Quality moving-object edges must be measurable",
+);
 // Pinned before the first runtime measurement. These are a narrow-fixture experimental bar,
 // not a claim of general image quality, native qualification or saved GPU time.
 const checks = {
@@ -232,6 +399,18 @@ const checks = {
   revealRecovery: temporal.reveal.slice(1).every((frame) => frame.staleFraction <= 0.01),
   uncheckedHistoryDetected: unchecked.staleFraction > 0.1,
   zeroVelocityDetected: zeroVelocity.movingEdgeError > temporal.movingEdgeError * 1.02,
+  qualityEdgeImprovement: qualityTemporal.edgeError < qualityBaseline.edgeError * 0.95,
+  qualityStabilityImprovement:
+    qualityTemporal.residualInstability < qualityBaseline.residualInstability * 0.95,
+  qualityBeatsSpatialStability:
+    qualityTemporal.residualInstability < (qualitySpatial.residualInstability ?? 0) * 0.95,
+  qualityRevealRecovery: qualityTemporal.reveal
+    .slice(1)
+    .every((frame) => frame.staleFraction <= 0.01),
+  qualityUncheckedHistoryDetected: qualityUnchecked.staleFraction > 0.1,
+  qualityZeroVelocityDetected:
+    (qualityZeroVelocity.movingEdgeError ?? 0) >
+    (qualityTemporal.movingEdgeError ?? Number.POSITIVE_INFINITY) * 1.02,
 };
 const linearProof = provenance.find((arm) => arm.variant === "resolve-linear");
 const installedProof = provenance.find((arm) => arm.variant === "temporal");
@@ -274,22 +453,30 @@ const candidates = Object.fromEntries(
   }),
 );
 const fenceRegion = { x: 165, y: 140, width: 55, height: 55 };
+// Each arm's fence profile is measured against its own family's supersampled reference.
 const fenceProfiles = Object.fromEntries(
   Object.entries(frames).map(([name, sequence]) => [
     name,
-    sequence.map((frame, index) => ({
-      frame: index + 21,
-      ...measureBlueProfile(frame, fenceRegion, reference[index]?.rgb[2] ?? Number.NaN),
-    })),
+    sequence.map((frame, index) => {
+      const family = name.startsWith("quality-") ? "quality" : "motion";
+      const referenceName = REFERENCE[family];
+      const reference = referenceName === undefined ? undefined : frames[referenceName];
+      return {
+        frame: index + 21,
+        ...measureBlueProfile(frame, fenceRegion, reference?.[index]?.rgb[2] ?? Number.NaN),
+      };
+    }),
   ]),
 );
 const summary = {
   qualification:
-    "Matched full-resolution AA measurement only. Software WebGPU; no native, reconstruction or GPU performance claim. Rejection fraction remains unmeasured.",
+    "Matched full-resolution AA measurement, plus the bounded quality family (authored alpha-tested foliage, a low-resolution spatial input and a low-input temporal resolve). Software WebGPU only; no native, reconstruction or GPU performance claim.",
   method: {
     width: 640,
     height: 360,
     referenceRasterScale: 4,
+    qualityFamily:
+      "One family on the same scene, poses, occluder and frame schedule: display raster 640x360 for every arm, input raster 426x240 (2/3) for the spatial and temporal roles and their controls, 1:1 for the full-resolution no-AA role, and 4x supersampled reference arms downsampled by the scorer. The off roles install no reconstruction stage and no velocity MRT at all.",
     colourSpace: "linear RGB decoded from opaque sRGB screenshots",
     frames: [21, 36],
     revealFrame: 29,
@@ -322,6 +509,9 @@ const summary = {
   checks,
   results,
   causalReveals,
+  rasters,
+  counters,
+  qualityCorpus,
   provenance,
   velocityDiagnostics,
 };

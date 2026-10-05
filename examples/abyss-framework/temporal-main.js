@@ -8,7 +8,11 @@ const measurement = query.has("measure");
 // The scaled arm is the browser control for the native conformance capture, which publishes the
 // 1280x720 display raster. Its measurement size would put the two hosts on different raster pairs.
 const scaled = variantName.startsWith("scaled");
-const rasterScale = variantName === "supersampled" ? 4 : 1;
+// Each 4x reference arm renders its own family's reference role at four times the display raster
+// and is downsampled by the scorer, exactly as the original route does.
+const supersampled = variantName === "supersampled" || variantName === "quality-supersampled";
+const family = variantName.startsWith("quality-") ? "quality-" : "";
+const rasterScale = supersampled ? 4 : 1;
 const width = measurement && !scaled ? 640 * rasterScale : 1280;
 const height = measurement && !scaled ? 360 * rasterScale : 720;
 const renderer = new WebGPURenderer({ antialias: false });
@@ -23,7 +27,7 @@ const fixture = createTemporalAAFixture(
   renderer,
   scene,
   camera,
-  variantName === "supersampled" ? "reference" : variantName,
+  supersampled ? `${family}reference` : variantName,
   measurement,
   scaled ? (variantName.includes("lifecycle") ? 36 : 20) : null,
 );

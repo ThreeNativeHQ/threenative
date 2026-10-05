@@ -32,13 +32,53 @@ export const REPROJECTION_PIXELS = 0.05;
 
 // Shared browser/native content. The caller owns the renderer and sole frame loop.
 /**
+ * Quality-only authored content: deterministic alpha-tested leaf cards. A cut-out alpha edge is
+ * neither a solid surface nor a fence bar, so it is the coverage the pinned corpus requires and the
+ * route the pre-existing arms deliberately do not carry. The mask is a DataTexture because the
+ * native host has no canvas, and nearest filtering keeps every texel a hard decision.
+ */
+function addQualityFoliage(scene) {
+  const data = new Uint8Array(16 * 16 * 4);
+  for (let y = 0; y < 16; y++)
+    for (let x = 0; x < 16; x++) {
+      const offset = (y * 16 + x) * 4;
+      data[offset] = 74; data[offset + 1] = 210; data[offset + 2] = 128;
+      data[offset + 3] = Math.hypot((x - 7.5) / 8, (y - 7.5) / 8) < 0.72 ? 255 : 0;
+    }
+  const map = new THREE.DataTexture(data, 16, 16);
+  map.magFilter = THREE.NearestFilter;
+  map.minFilter = THREE.NearestFilter;
+  map.needsUpdate = true;
+  const material = new THREE.MeshStandardMaterial({ map, alphaTest: 0.5, side: THREE.DoubleSide });
+  const group = new THREE.Group();
+  for (let index = 0; index < 6; index++) {
+    const card = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 0.6), material);
+    card.position.set(-1.35 + index * 0.54, -0.15 + (index % 2) * 0.18, -0.2 + (index % 3) * 0.2);
+    card.rotation.y = index * 1.3;
+    group.add(card);
+  }
+  scene.add(group);
+  return { group, map, cards: group.children.length, alphaTest: material.alphaTest, textureSize: 16 };
+}
+/**
  * `settle` holds the authored pose at that frame. A conformance capture compares two hosts at their
  * own capture frames, so a pose that keeps moving cannot be compared frame-for-frame; every temporal
  * frame still renders, and the raster transition stays keyed to the real frame so both hosts reach
  * it at the same point.
  */
 export function createTemporalAAFixture(renderer, scene, camera, variant = "temporal", measurement = false, settle = null) {
-  const policy = variant.replace(/-open$/u, "");
+  // The quality family reuses the existing control roles, so its prefix is stripped here: a
+  // "quality-unchecked-history" arm must install the same negative control as "unchecked-history",
+  // or it silently measures the installed policy twice.
+  const policy = variant.replace(/-open$/u, "").replace(/^quality-/u, "");
+  // One bounded quality family: the same scene, poses, occluder and frame schedule as every other
+  // arm, with the physical display raster pinned and only the authored input raster moving. It adds
+  // deterministic alpha-tested foliage, which is why it scores against its own supersampled
+  // reference. `qualityRole` stays null for every pre-existing arm, so their behaviour is untouched.
+  const qualityRole = variant.startsWith("quality-") ? variant.slice(8).replace(/-open$/u, "") : null;
+  // The roles that must genuinely request nothing: no reconstruction stage, no velocity MRT. The
+  // spatial role still renders its low input and presents it through the ordinary texture upsample.
+  const off = variant === "reference" || qualityRole === "reference" || qualityRole === "spatial";
   scene.background = new THREE.Color(0x0d1630);
   camera.position.set(0, 0.3, 6);
   const sun = new THREE.DirectionalLight(0xffffff, 2.0);
@@ -84,10 +124,14 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
   const occluder = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.8), new THREE.MeshBasicMaterial({ color: 0xff0000 }));
   occluder.position.set(0.25, 0.45, 1.3);
   if (measurement) scene.add(occluder);
+  const foliage = qualityRole === null ? null : addQualityFoliage(scene);
   const scenePass = pass(scene, camera);
   // Three sizes a pass from the drawing buffer every frame, so a lower input raster is the pass's
   // own resolution scale rather than a one-shot resize that the next frame undoes.
   if (variant.startsWith("scaled")) scenePass.setResolutionScale(SCALED_RESOLUTION_SCALE);
+  // The quality family leaves the physical display raster exactly where it is and lowers only the
+  // input raster, so its resolve, its history and the whole-display oracle stay comparable.
+  if (qualityRole !== null && qualityRole !== "reference") scenePass.setResolutionScale(SCALED_RESOLUTION_SCALE);
   const pipeline = new THREE.RenderPipeline(renderer);
   const tracker = new VelocityTracker();
   let temporal;
@@ -97,7 +141,7 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
     renderer: { kind: "webgpu", raw: renderer, setOutputNode: (node) => { pipeline.outputNode = node; }, clearOutputNode: () => {} },
     input: scenePass.getTextureNode("output"), worldPass: scenePass,
     request: {
-      stages: variant === "reference" ? [] : ["traa"],
+      stages: off ? [] : ["traa"],
       // The raw fixture builds the chain itself, so it supplies the same compatibility callback the
       // generated world environment does: the provider's own completed measurement, once per frame.
       velocity: {
@@ -148,8 +192,11 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
       dispose: () => temporal?.dispose(),
     }],
   });
-  if (variant === "zero-velocity" || variant === "scaled-lifecycle-zero" || variant === "resolve-cubic-strict-zero" || variant === "resolve-cubic-strict-ordinary-zero") scenePass.setMRT(scenePass.getMRT().merge(mrt({ velocity: vec2(0) })));
-  if (variant === "reference") pipeline.outputNode = scenePass;
+  if (variant === "zero-velocity" || variant === "scaled-lifecycle-zero" || variant === "resolve-cubic-strict-zero" || variant === "resolve-cubic-strict-ordinary-zero" || qualityRole === "zero-velocity") scenePass.setMRT(scenePass.getMRT().merge(mrt({ velocity: vec2(0) })));
+  if (variant === "reference" || qualityRole === "reference") pipeline.outputNode = scenePass;
+  // The spatial arm installs no reconstruction stage at all: it presents its low-resolution colour
+  // input through the pipeline's ordinary texture upsample, at the display raster.
+  if (qualityRole === "spatial") pipeline.outputNode = scenePass.getTextureNode("output");
   const resolveProbe =
     variant.startsWith("scaled")
       ? createTemporalResolveProbe(renderer, scene, camera, scenePass, temporal.node, () => temporal.report().resetReason !== null)
@@ -157,7 +204,7 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
   const probeMatrix = new THREE.Matrix4();
   const drawingBuffer = new THREE.Vector2();
   const frontTriangle = geometry.groups[4].start + 18;
-  const velocityProbe = measurement && variant !== "reference" ? createTemporalVelocityProbe(renderer, scene, camera, scenePass, () => {
+  const velocityProbe = measurement && !off ? createTemporalVelocityProbe(renderer, scene, camera, scenePass, () => {
     const skinned = new THREE.Vector3();
     for (let corner = 0; corner < 3; corner++) skinned.add(character.getVertexPosition(geometry.index.getX(frontTriangle + corner), new THREE.Vector3()));
     skinned.multiplyScalar(1 / 3).applyMatrix4(character.matrixWorld);
@@ -253,9 +300,22 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
   // frame whose expected rejection share is a whole raster, so it is where the count is checkable.
   const rejectionCold = [];
   const rejectionFrames = [];
+  // The rasters the fixture actually rendered, read from the pass target and the drawing buffer
+  // rather than from the scale that was asked for: an off-by-one input raster cannot pass as one.
+  const raster = () => {
+    renderer.getDrawingBufferSize(drawingBuffer);
+    return {
+      displayWidth: drawingBuffer.x, displayHeight: drawingBuffer.y,
+      inputWidth: scenePass.renderTarget?.width ?? null, inputHeight: scenePass.renderTarget?.height ?? null,
+    };
+  };
   const observation = () => ({
     frame, resets, lastReset, aa: temporal?.report() ?? null, instanceDraw, instanceUploads,
     measurement, variant, setupCount, setupDuringJitter, occluderVisible: measurement && occluder.visible,
+    raster: raster(),
+    quality: foliage === null ? null : {
+      role: qualityRole, foliageCards: foliage.cards, alphaTest: foliage.alphaTest, leafTextureSize: foliage.textureSize,
+    },
     rejectionCold, rejectionFrames,
     resolveProbe: resolveProbe?.observation() ?? null,
     pose: { cameraX: camera.position.x, rigidX: rigid.position.x, limbZ: limb.rotation.z },
@@ -285,6 +345,9 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
       instances.setMatrixAt(index, matrix.makeTranslation(-0.5 + index * 0.6, -0.9 + Math.sin(pose / 11 + index) * 0.22, 0.3));
     }
     instances.instanceMatrix.needsUpdate = true;
+    // The quality foliage rides the same authored pose schedule as every other object, so it is
+    // sub-pixel moving coverage rather than a static texture pasted into the frame.
+    if (foliage) foliage.group.position.x = Math.sin(pose / 17) * 0.25;
     // One authored camera jump per route, applied from its frame onward. Holding it keeps the pose
     // from announcing an unrequested reverse cut on the very next frame, which no reset names.
     const cut =
@@ -401,6 +464,7 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
       for (const item of geometries) item.dispose();
       for (const item of materials) item.dispose();
       character.skeleton.dispose();
+      foliage?.map.dispose();
       if (!measurement) { occluder.geometry.dispose(); occluder.material.dispose(); }
     },
   };
