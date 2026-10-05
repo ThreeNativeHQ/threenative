@@ -64,7 +64,17 @@ vi.mock("../templates/sailing/src/render/ocean.js", () => ({
   surfaceHeight: vi.fn(() => 0),
 }));
 vi.mock("../templates/sailing/src/render/postprocessing.js", () => ({
-  setupPost: vi.fn(),
+  setupPost: vi.fn(() => ({ tier: "high", dispose: vi.fn() })),
+}));
+vi.mock("../templates/sailing/src/render/materialLighting.js", () => ({
+  createMaterialLighting: vi.fn(() => ({
+    setEnabled: vi.fn(),
+    setEnvironmentMeasurement: vi.fn(),
+    dispose: vi.fn(),
+  })),
+}));
+vi.mock("../templates/sailing/src/render/environmentSetup.js", () => ({
+  loadedEnvironmentSample: vi.fn(() => undefined),
 }));
 vi.mock("../templates/sailing/src/render/props.js", () => ({
   createBuoy: vi.fn(() => ({ position: { set: vi.fn() } })),
