@@ -31,8 +31,9 @@ a stale comment, or a doc pointer, and no gameplay/render value moves.
 
 Execute every finding whose only tracked references are its own definition or a comment that
 contradicts the code — the **70 changes** listed under `### Executed` below, counted from the diff
-itself. Three of the original 73 came back after the independent Opus-5.5 review on 2026-10-05
-found their "dead" premises false; each is now a `### Retained` row with the reason (see the review
+itself. Three of the original 73 came back after the independent Opus-5.5 review on 2026-10-05:
+the live benchmark was a definite false positive; the manual proof and distinct audit were
+retained conservatively. Each is now a `### Retained` row with the reason (see the review
 correction under `## Verification notes`). Retain the rest with a named reason (`### Retained`, one
 row per group; several rows cover more than one numbered audit finding, so they carry no count).
 Defer the duplicate-helper refactors
@@ -170,7 +171,8 @@ that touch live code for a ~21-line net win, leaving them to
     the box is shared and oversubscribed, and a fourth red wall-clock reading would not be new
     evidence. AC-2 turns green on one fresh full `pnpm test` over the merged tree.
 - **Independent review (2026-10-05, `claude-opus-5-5 --effort high`) and its restorations.** The
-  review checked each removal for readers and found three deletions whose "dead" premise was false:
+  review checked each removal for readers and required the benchmark restoration; the other two
+  restorations conservatively preserve useful manual proof and history:
   the physics allocation bench (open PRD-191 still names it as its Phase 3 EDIT target and
   verification step 2; its "NOT STARTED" status is stale because `91e46d34f` did that work and left
   a record showing the bench run at exit 0),
@@ -199,9 +201,16 @@ that touch live code for a ~21-line net win, leaving them to
   (`ci.yml:529`). `scripts/__tests__/ci-structure.spec.ts:2617-2645` computes that partition from
   the workflow rather than trusting it, and `:2652` holds the script's own default. `typecheck` and
   `lint` are separate green jobs. So the phase and package scope of AC-2 is covered on hosted
-  runners; what CI cannot reproduce is the thing AC-2's local evidence keeps failing on — a box
-  whose cores are not oversubscribed. AC-2 also stays unticked because the restoration needs a
+  runners. This establishes coverage, not a guarantee against wall-clock failures. AC-2 stays
+  unticked because the restoration needs a
   fresh run at the new head.
+- **PR unit failure (2026-10-05, run 37251931881, job 111583180400).** Shard `3/4`
+  timed out at 60 s in `world-gpu-scene.spec.ts:913`, the GPU-main-pass regroup/refilter test.
+  The exact test alone passed locally: 1 passed / 69 skipped, 25.13 s (26.52 s total), using
+  `pnpm exec vitest run packages/core/__tests__/world-gpu-scene.spec.ts -t 'spends no regroup and no refilter, feeds the source buffer, and dresses every main key'`.
+  The core unused-local/parameter command in AC-1 was also rerun on the merged source: exit 0,
+  empty output. No assertion or timeout changed. The restored candidate still needs fresh CI;
+  these focused results do not turn the failed shard into a pass.
 - **Pacing decision (2026-10-04, this lane).** That is the third run to fail on wall-clock alone, so
   the fourth was not attempted: at launch every core was ≥59% busy (mean 77%) with no quiet set of
   four to move to, and another 24-minute run would only add foreign contention to the box it is
@@ -273,9 +282,9 @@ native tree lost the Android sample JS and the orphan Metal shader.
   The finding moves to `### Retained`.
 - 2026-10-05 (independent review correction, Opus 5.5 at `--effort high`): three deletions came
   back, byte-identical to `origin/develop` — the physics allocation bench, the rain noise-volume
-  verifier and the 2026-08-20 plans audit. Each was deleted on an audit premise the review disproved
-  (stale PRD-191 status, "needs an external file", "duplicate audit"), and the owner asked for
-  anything that is not really junk to be fixed. The rest of the 70 stands.
+  verifier and the 2026-08-20 plans audit. The benchmark was a definite false positive; the rain
+  verifier was an owner-decision item and the audit was distinct history. Preserve the latter two
+  conservatively under the owner's "fix otherwise" request. The remaining 70 deletions stand.
 
 ## Disposition — every finding
 
