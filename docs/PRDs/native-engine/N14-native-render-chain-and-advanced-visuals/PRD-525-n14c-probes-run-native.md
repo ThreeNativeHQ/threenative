@@ -1,6 +1,6 @@
 # PRD-525 — Probes run native (N14c)
 
-**Status:** PROPOSED
+**Status:** IN PROGRESS
 **Complexity:** 3 — one TS system to port onto the render graph
 **Owner:** João
 **Work package:** N14 — [native-engine batch](../README.md)
@@ -29,10 +29,10 @@ render-graph passes with history (an accumulated irradiance volume), so they wai
 ## Execution Phases
 
 #### Phase 1: Placement and scheduling
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** proposed `packages/runtime-native/src/engine/renderer/probes/`, `packages/runtime-native/tests/native-engine/probes_*.cpp`
-- [ ] Probe placement and update order match the TS reference for the same volume description. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_probe_schedule`
-- [ ] Updates never exceed the configured per-frame budget. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_probe_budget`
+- [x] Probe placement and update order match the TS reference for the same volume description. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_probe_schedule` — 2026-10-05: green on Dawn, ASan, wgpu and Wasm, exact. `src/engine/renderer/probes/schedule.{h,cpp}` ports `ProbeVolume`'s placement (probe positions, padded atlas slices) and its update scheduler: 5 volume descriptions over 60 frames each, recorded from the real `ProbeVolume` with the spec's fake renderer, give the same placements, slots and per-frame work in the same order (300 frames). The work costs are the reference's recorded costs: it reads a wall clock, the port consumes the numbers. Red controls: reversed capture-face order (548 differ), atlas slices without padding (126 differ). Port by the save-tokens arm; reviewed
+- [x] Updates never exceed the configured per-frame budget. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_probe_budget` — 2026-10-05: green on the same lanes: in every one of the 300 recorded frames, natively and in the reference table, the scheduled work stays within `maxWorkItemsPerFrame` and the time budget. Red control: the per-frame bound removed (118 frames differ)
 
 #### Phase 2: Rendered parity and cooking
 **Status:** NOT STARTED

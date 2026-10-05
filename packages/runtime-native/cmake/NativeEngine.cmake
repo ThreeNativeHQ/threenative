@@ -273,6 +273,29 @@ else()
     message(WARNING "pnpm not found: native_engine_model_lod_reference_current is not registered")
 endif()
 
+# PRD-525: probe placement and the bounded incremental update schedule as pure CPU functions, ported
+# from packages/core/src/render/probe-volume.ts. It links the foundation only and owns no GPU
+# resource; `native_engine_probes_reference_current` keeps the committed table equal to what the core
+# module produces today.
+add_library(tn_engine_probes STATIC src/engine/renderer/probes/schedule.cpp)
+tn_native_engine_target(tn_engine_probes)
+target_link_libraries(tn_engine_probes PUBLIC tn_engine_foundation)
+target_include_directories(tn_engine_probes PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+tn_native_engine_test(tn-native-engine-probe-schedule-test tests/native-engine/probes/probe_schedule_test.cpp
+    native_engine_probe_schedule=schedule
+    native_engine_probe_budget=budget)
+target_link_libraries(tn-native-engine-probe-schedule-test PRIVATE tn_engine_probes)
+target_include_directories(tn-native-engine-probe-schedule-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/probes)
+if(TN_PNPM_EXECUTABLE)
+    add_test(NAME native_engine_probes_reference_current
+        COMMAND ${TN_PNPM_EXECUTABLE} --workspace-root exec tsx
+            packages/runtime-native/tests/native-engine/probes/probes-reference.ts --check
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../..)
+    set_tests_properties(native_engine_probes_reference_current PROPERTIES LABELS "native-engine")
+else()
+    message(WARNING "pnpm not found: native_engine_probes_reference_current is not registered")
+endif()
+
 get_property(tn_native_engine_test_targets GLOBAL PROPERTY TN_NATIVE_ENGINE_TEST_TARGETS)
 add_custom_target(tn-native-engine-tests DEPENDS ${tn_native_engine_test_targets})
 

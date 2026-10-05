@@ -1,0 +1,74 @@
+#pragma once
+
+#include <cstdint>
+#include <functional>
+#include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
+
+#include "engine/foundation/json.h"
+#include "engine/scene/object3d.h"
+
+namespace tn::engine::inspect {
+
+/** One keyboard or pointer event the runner injected, as three/device.ts hands it to the host. */
+struct InputEvent {
+    std::string type; // keydown, keyup, pointerdown, pointermove, pointerup
+    std::string key, code;
+    double x = 0, y = 0;
+    double buttons = 0;
+    int pointerId = 1;
+    std::string pointerType = "mouse";
+    bool isPrimary = true;
+};
+
+/** What the endpoint drives: the scene it samples and the engine's own tick. */
+struct Host {
+    Object3D* scene = nullptr;
+    std::function<uint64_t()> tick; // the simulation tick that last ran
+    std::function<void()> step;     // runs one simulation tick; it takes the queued input first
+    std::string name = "threenative-native-engine";
+};
+
+/**
+ * The playtest device bridge on the native engine (PRD-529): one request frame
+ * ({"id","method","argument"}) in, one response frame ({"id","result"} or {"error":{"message"},"id"})
+ * out, as packages/playtest/src/three/device.ts answers them. The seven bridge methods (describe,
+ * ready, sample, advance, applySetup, drainEvents, focus) and the input methods (input.keyDown,
+ * input.keyUp, input.pointer, input.pointers) each answer with a result or an error whose message
+ * starts with a named code: TN_INSPECT_MALFORMED, TN_INSPECT_PAYLOAD_TOO_LARGE,
+ * TN_INSPECT_UNKNOWN_METHOD, TN_INSPECT_INVALID_ARGUMENT, or TN_INSPECT_UNSUPPORTED for a protocol
+ * field this player does not carry yet. Input is queued, not applied: the host's step takes it at
+ * the start of the next tick, so input injected before tick N is seen by tick N's game code.
+ */
+class Endpoint {
+  public:
+    explicit Endpoint(Host host) : host_(std::move(host)) {}
+
+    /** One request frame to one response frame. Never throws. */
+    std::string handle(std::string_view frame);
+    /** The input queued since the last call, in injection order; the host applies it per tick. */
+    std::vector<InputEvent> takeInput() { return std::exchange(input_, {}); }
+
+    static constexpr std::size_t kMaxPayloadBytes = 1'000'000;
+
+  private:
+    struct Pointer {
+        int id;
+        double x, y, buttons;
+    };
+    bool dispatch(const std::string& method, const json::Value* argument, json::Value& result, std::string& error);
+    bool input(const std::string& method, const json::Value* argument, std::string& error);
+    json::Value describe() const;
+    bool sample(const json::Value* argument, json::Value& result, std::string& error) const;
+    bool advance(const json::Value* argument, json::Value& result, std::string& error);
+    bool applySetup(const json::Value* argument, json::Value& result, std::string& error);
+    json::Value clock() const;
+
+    Host host_;
+    std::vector<InputEvent> input_;
+    std::vector<Pointer> pointers_; // the touch set input.pointers last reported, in its order
+};
+
+} // namespace tn::engine::inspect

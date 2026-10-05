@@ -57,7 +57,7 @@ target_include_directories(tn_engine_abi PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/incl
 # projection cameras, on the ported math classes. Portable, so it joins the Wasm core.
 add_library(tn_engine_scene STATIC src/engine/scene/object3d.cpp src/engine/scene/camera.cpp
     src/engine/scene/nodes.cpp src/engine/scene/geometry.cpp src/engine/scene/geometries.cpp
-    src/engine/scene/material.cpp src/engine/scene/lights.cpp)
+    src/engine/scene/material.cpp src/engine/scene/lights.cpp src/engine/scene/static_transform.cpp)
 tn_native_engine_target(tn_engine_scene)
 target_link_libraries(tn_engine_scene PUBLIC tn_engine_foundation)
 target_include_directories(tn_engine_scene PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
@@ -69,6 +69,15 @@ add_library(tn_engine_visibility STATIC src/engine/renderer/visibility/camera_cu
 tn_native_engine_target(tn_engine_visibility)
 target_link_libraries(tn_engine_visibility PUBLIC tn_engine_scene)
 target_include_directories(tn_engine_visibility PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+
+# Virtual shadow page logic (PRD-524 phase 1), ported from
+# packages/core/src/render/virtual-shadow-pages.ts: the pages a frame requests from receiver
+# feedback, the bounded LRU physical page pool, and the pages a moving caster invalidates. Portable,
+# so it joins the Wasm core.
+add_library(tn_engine_vsm STATIC src/engine/renderer/shadows/virtual/pages.cpp)
+tn_native_engine_target(tn_engine_vsm)
+target_link_libraries(tn_engine_vsm PUBLIC tn_engine_foundation)
+target_include_directories(tn_engine_vsm PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 # Shader IR (N08): typed, hash-consed expressions and ordered effects. Portable like foundation.
 add_library(tn_engine_shader STATIC src/engine/shader/ir.cpp src/engine/shader/wgsl.cpp src/engine/shader/package.cpp
@@ -188,6 +197,14 @@ tn_native_engine_test(tn-native-engine-visibility-camera-cull-test tests/native-
     native_engine_camera_cull=camera_cull)
 target_link_libraries(tn-native-engine-visibility-camera-cull-test PRIVATE tn_engine_visibility)
 target_include_directories(tn-native-engine-visibility-camera-cull-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/visibility)
+
+# PRD-524 phase 1: the recorded page requests, allocations, evictions and invalidations reproduce
+# over the native port.
+tn_native_engine_test(tn-native-engine-vsm-test tests/native-engine/vsm/vsm_pages_test.cpp
+    native_engine_vsm_pages=pages
+    native_engine_vsm_invalidation=invalidation)
+target_link_libraries(tn-native-engine-vsm-test PRIVATE tn_engine_vsm)
+target_include_directories(tn-native-engine-vsm-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/vsm)
 
 # PRD-508 phase 1: hierarchy, re-parenting, events and member identity.
 tn_native_engine_test(tn-native-engine-scene-test tests/native-engine/scene_hierarchy_test.cpp
@@ -367,6 +384,29 @@ if(NOT EMSCRIPTEN)
     target_link_libraries(tn-native-engine-event-queue-test PRIVATE tn_engine_world Threads::Threads)
 endif()
 
+# PRD-519 phase 2: frozen static subtrees, against packages/core/src/static-transform.ts.
+tn_native_engine_test(tn-native-engine-static-transform-test tests/native-engine/scene/static_transform_test.cpp
+    native_engine_static_transform=static_transform)
+target_link_libraries(tn-native-engine-static-transform-test PRIVATE tn_engine_scene)
+target_include_directories(tn-native-engine-static-transform-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/scene)
+
+# The engine's JSON reader and writer (header-only), against JSON.parse, JSON.stringify and
+# Number::toString.
+tn_native_engine_test(tn-native-engine-json-test tests/native-engine/json/json_test.cpp
+    native_engine_json=corpus native_engine_json_limits=limits)
+target_include_directories(tn-native-engine-json-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/json)
+
+# PRD-529 phase 1: the playtest device protocol on the native engine.
+add_library(tn_engine_inspect STATIC src/engine/inspect/endpoint.cpp)
+tn_native_engine_target(tn_engine_inspect)
+target_link_libraries(tn_engine_inspect PUBLIC tn_engine_scene)
+target_include_directories(tn_engine_inspect PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+tn_native_engine_test(tn-native-engine-inspect-test tests/native-engine/inspect/inspect_test.cpp
+    native_engine_inspect_protocol=protocol native_engine_inspect_input_tick=input_tick)
+target_link_libraries(tn-native-engine-inspect-test PRIVATE tn_engine_inspect tn_engine_world)
+target_include_directories(tn-native-engine-inspect-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/inspect)
+
 add_library(tn_fixture_driver STATIC tests/native-engine/fixture/driver.cpp)
 tn_native_engine_target(tn_fixture_driver)
 target_include_directories(tn_fixture_driver PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine)
@@ -416,6 +456,21 @@ if(NOT EMSCRIPTEN)
                 packages/runtime-native/tests/native-engine/loop/loop-reference.ts --check
             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../..)
         set_tests_properties(native_engine_loop_reference_current PROPERTIES LABELS "native-engine")
+        add_test(NAME native_engine_static_transform_reference_current
+            COMMAND ${TN_PNPM_EXECUTABLE} --workspace-root exec tsx
+                packages/runtime-native/tests/native-engine/scene/static-transform-reference.ts --check
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../..)
+        set_tests_properties(native_engine_static_transform_reference_current PROPERTIES LABELS "native-engine")
+        add_test(NAME native_engine_json_reference_current
+            COMMAND ${TN_PNPM_EXECUTABLE} --workspace-root exec tsx
+                packages/runtime-native/tests/native-engine/json/json-reference.ts --check
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../..)
+        set_tests_properties(native_engine_json_reference_current PROPERTIES LABELS "native-engine")
+        add_test(NAME native_engine_inspect_methods_current
+            COMMAND ${TN_PNPM_EXECUTABLE} --workspace-root exec tsx
+                packages/runtime-native/tests/native-engine/inspect/protocol-methods.ts --check
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../..)
+        set_tests_properties(native_engine_inspect_methods_current PROPERTIES LABELS "native-engine")
         # PRD-521 phase 3: the committed height table is what world-heightmap.ts and world.ts produce.
         add_test(NAME native_engine_world_heights_reference_current
             COMMAND ${TN_PNPM_EXECUTABLE} --workspace-root exec tsx
@@ -428,6 +483,12 @@ if(NOT EMSCRIPTEN)
                 packages/runtime-native/tests/native-engine/visibility/camera-cull-reference.ts --check
             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../..)
         set_tests_properties(native_engine_camera_cull_reference_current PROPERTIES LABELS "native-engine")
+        # PRD-524 phase 1: the committed VSM table is what virtual-shadow-pages.ts produces today.
+        add_test(NAME native_engine_vsm_reference_current
+            COMMAND ${TN_PNPM_EXECUTABLE} --workspace-root exec tsx
+                packages/runtime-native/tests/native-engine/vsm/vsm-reference.ts --check
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../..)
+        set_tests_properties(native_engine_vsm_reference_current PROPERTIES LABELS "native-engine")
         unset(math_case)
         unset(math_pair)
     else()

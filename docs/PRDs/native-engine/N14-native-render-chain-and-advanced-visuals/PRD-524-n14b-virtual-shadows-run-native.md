@@ -1,6 +1,6 @@
 # PRD-524 — Virtual shadows run native (N14b)
 
-**Status:** PROPOSED
+**Status:** IN PROGRESS
 **Complexity:** 4 — port of a paged shadow system with GPU feedback
 **Owner:** João
 **Work package:** N14 — [native-engine batch](../README.md)
@@ -32,10 +32,10 @@ which pages.
 ## Execution Phases
 
 #### Phase 1: Page logic without a GPU
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** proposed `packages/runtime-native/src/engine/renderer/shadows/virtual/`, `packages/runtime-native/tests/native-engine/vsm_*.cpp`
-- [ ] Page requests from a recorded feedback buffer allocate the same page set as the TS reference. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_vsm_pages` against fixtures from `pnpm exec vitest run packages/core/__tests__/virtual-shadow*.spec.ts`
-- [ ] A moving caster invalidates only the pages its bounds cover. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_vsm_invalidation`
+- [x] Page requests from a recorded feedback buffer allocate the same page set as the TS reference. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_vsm_pages` against fixtures from `pnpm exec vitest run packages/core/__tests__/virtual-shadow*.spec.ts` — 2026-10-05: green on Dawn, ASan, wgpu and Wasm, exact. `src/engine/renderer/shadows/virtual/pages.{h,cpp}` ports virtual-shadow-pages.ts (page keys, `PhysicalPagePool` with its LRU-then-slot eviction, `DirectionalClipmap` windows, `ReceiverDemandPass`, `projectBounds`): a 6-frame camera walk over recorded feedback buffers requests, allocates, evicts and keeps the same pages as the real classes. Red controls: most- instead of least-recently-used eviction (4 frames differ), windows snapped with ceil (6 differ). Port by the save-tokens arm; reviewed
+- [x] A moving caster invalidates only the pages its bounds cover. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_vsm_invalidation` — 2026-10-05: green on the same lanes: `ShadowInvalidationTracker` invalidates exactly the pages the old and new bounds of each of 6 caster moves cover, as the TS tracker does. Red control: ignoring the previous bounds (1 move differs)
 
 #### Phase 2: Rendered parity
 **Status:** NOT STARTED

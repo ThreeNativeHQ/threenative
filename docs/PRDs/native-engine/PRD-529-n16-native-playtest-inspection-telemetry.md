@@ -1,6 +1,6 @@
 # PRD-529 — Native playtest, inspection and telemetry (N16)
 
-**Status:** PROPOSED
+**Status:** IN PROGRESS
 **Complexity:** 3 — new native endpoint behind the existing playtest protocol
 **Owner:** João
 **Work package:** N16 — [native-engine batch](README.md)
@@ -34,10 +34,10 @@ debug server (`packages/runtime-native/src/debug/debug_server.cpp`) and a screen
 ## Execution Phases
 
 #### Phase 1: Protocol endpoint
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** proposed `packages/runtime-native/src/engine/inspect/`, `packages/runtime-native/tests/native-engine/inspect_*.cpp`
-- [ ] Every protocol message type in `protocol.ts` decodes and gets a defined reply or a named unsupported error. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_inspect_protocol`
-- [ ] Input injected for tick N is observed by game code in tick N, not N+1. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_inspect_input_tick`
+- [x] Every protocol message type in `protocol.ts` decodes and gets a defined reply or a named unsupported error. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_inspect_protocol` — 2026-10-05: green on Dawn, ASan, wgpu and Wasm. `Endpoint` (`src/engine/inspect/endpoint.{h,cpp}`) answers the device transport three/device.ts defines: the 11 message types (describe, ready, sample, advance, applySetup, drainEvents, focus, input.keyDown, input.keyUp, input.pointer, input.pointers) read from device.ts itself (`protocol-methods.ts`, so a new method fails `--check`) each answer 26 valid and invalid requests with a result of the protocol shape or an error whose message starts with a named code (`TN_INSPECT_MALFORMED`, `_PAYLOAD_TOO_LARGE`, `_UNKNOWN_METHOD`, `_INVALID_ARGUMENT`, `_UNSUPPORTED` for sample fields, setup resources and frozen entities not carried yet); the id is echoed and malformed or oversized frames are refused by name. It rides on the engine's new JSON reader and writer (`src/engine/foundation/json.h`), which matches JSON.parse, JSON.stringify and Number::toString on 89 texts and 160 numbers. Red control: `focus` unhandled fails
+- [x] Input injected for tick N is observed by game code in tick N, not N+1. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_inspect_input_tick` — 2026-10-05: green on the same lanes: input methods queue events (device.ts's key and pointer translation, touch sets diffed into down, move and up) that the host takes at the start of the next tick; after `advance 3`, an `input.keyDown KeyW` is read as `w` by tick 4's game code and by no other tick. Red control: a one-tick delay in the queue (seen at tick 5)
 
 #### Phase 2: Runner drives the native-engine player
 **Status:** NOT STARTED
