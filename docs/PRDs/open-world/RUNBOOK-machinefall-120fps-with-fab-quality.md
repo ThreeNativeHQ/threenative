@@ -69,6 +69,40 @@ The gap is CPU while walking. The costs, as span p95s, which overlap and do not 
 - Mid-walk pipeline compiles: spikes of 113–247 ms.
 - Cull, projection and LOD: 2–3 ms.
 
+**Update 2026-10-04 (row A7 baseline):** develop core `1a6298cd` (`origin/develop`), nvidia/turing,
+1280×720, `map-walk` with `tnFrameSpans=1`, 5 runs, GPU quiet at every run's start (6–15 %, nothing
+but the desktop compositors), **host load 18–48** — other agents' builds, so the CPU-side numbers are
+inflated against the 11–19 of the runs above and only the paired before/after in one lane is a
+comparison. Runs in `.afk/scratch/walk-quiet-r2-{1,2,4,5,6}`.
+
+| | Walking render p50 / p95 | Walking GPU p50 / p95 | Frames > 33 ms | Worst present gap |
+| --- | --- | --- | --- | --- |
+| develop, median of 5 | 13.4 / 25.9 ms | 3.6 / 21.6 ms | 48 of 1024 | 17.1 s |
+
+What the pipeline census says, per run, counting only creations after `startup.compileSettledMs`:
+
+| | streamed batch | other passes | summed device service |
+| --- | --- | --- | --- |
+| every one of the 5 runs | **8** (7 main pass, 1 shadow caster half) | 16–22 compute, 12 main, 4–5 shadow | 3.6–7.8 ms, of the streamed 8: 1.1–1.6 ms |
+
+Two facts the census forced out, both about the prewarm and not about the device:
+
+1. `TN_WORLD_PREWARM minted=385 shadowPrewarmed=0 castersUnbuilt=182` in every run. The prewarm mints
+   an empty `InstancedMesh` and waits for a draw to build its node. Three never submits one:
+   `RenderObject.getDrawParameters()` returns `null` at `count === 0`, so an empty batch builds
+   nothing in any pass, and the gate settles with 182 casters unbuilt.
+2. The 8 streamed creations are the **GPU-driven main pass's** fresh objects. `#dressGpu` cannot
+   re-dress a mesh three has compiled (its instancing node binds the `instanceMatrix` it held), so a
+   key dressed after the gate gets a brand-new object whose node and pipeline the first draw builds —
+   on a walking frame.
+
+Off-frame preparation through the engine's own `compileAsync` seam **hangs the walk**: with the swap
+deferred until that compile settles, `walk-a7-r2-1` reached the playtest's 900 s timeout (14 min
+against 3.5 min for the same scenario on `core-dev2`, same host load), because `compileAsync` drives
+the renderer's own frame state and a live renderer mid-walk is not a caller it survives. Behind the
+gate, where nothing is presented, the same call is what `#warmChunk` already does. So A7's mechanism
+is not a small change: it needs a preparation seam that does not borrow the live renderer.
+
 ## Lane A — the 120 fps walk (critical path)
 
 - [ ] **A0 · Land PRD-484** (instanced LOD + selective water mirrors by default). After: nothing. 🌍👁
@@ -92,6 +126,11 @@ The gap is CPU while walking. The costs, as span p95s, which overlap and do not 
 - [ ] **A6 · PRD-478 Phase 3: terrain merges and seams run in a worker.** After: A5. ⏱🌍👁
   - The settled terrain must be byte-identical to the inline path.
 - [ ] **A7 · No pipeline compiles mid-walk:** [PRD-459](PRD-459-smooth-streaming-one-admission-budget-per-frame.md) AC-3 with [PRD-387](../performance/critical/PRD-387-shader-variants-are-prepared-off-frame-and-bounded.md). After: A6. ⏱🌍👁
+  - **Measured 2026-10-04, still open.** 8 pipeline creations attributable to a streamed batch after
+    `compileSettledMs`, in all 5 baseline runs, from `#dressGpu`'s fresh objects; and a prewarm that
+    cannot prepare anything, because three never submits a `count === 0` batch. The engine's
+    `compileAsync` seam hangs a live renderer mid-walk (900 s timeout, measured), so the row needs a
+    preparation seam that does not borrow the frame the walk is drawing. Details in "Where we stand".
 - [ ] **A8 · [PRD-455](../rendering/PRD-455-temporal-reconstruction-from-dynamic-resolution.md): temporal reconstruction closes the GPU gap.** After: A7. ⏱🌍👁
 - [ ] **A9 · PRD-478 acceptance.** After: A8. ⏱🌍👁
   - Done when: AC-1, AC-2 and AC-3 are ticked on a quiet host 🙋, and PRD-478 is in `done/`.
