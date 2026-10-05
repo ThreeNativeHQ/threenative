@@ -8,19 +8,14 @@
       "properties": {
         "scope": {
           "description": "Use request for the complete cross-system game request; use mechanic or omit it for one mechanic.",
-          "enum": [
-            "request",
-            "mechanic"
-          ],
+          "enum": ["request", "mechanic"],
           "type": "string"
         },
         "situation": {
           "type": "string"
         }
       },
-      "required": [
-        "situation"
-      ],
+      "required": ["situation"],
       "type": "object"
     },
     "engine_capability_detail": {
@@ -34,9 +29,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "symbol"
-      ],
+      "required": ["symbol"],
       "type": "object"
     }
   },

@@ -77,19 +77,10 @@
       "properties": {
         "section": {
           "type": "string",
-          "enum": [
-            "overview",
-            "syntax",
-            "low",
-            "mid",
-            "high",
-            "delivery"
-          ]
+          "enum": ["overview", "syntax", "low", "mid", "high", "delivery"]
         }
       },
-      "required": [
-        "section"
-      ],
+      "required": ["section"],
       "additionalProperties": false
     },
     "asset_inspect_rig": {
@@ -108,16 +99,11 @@
               "properties": {
                 "sourceId": {
                   "type": "string",
-                  "enum": [
-                    "aether-02",
-                    "aether-02-retopo"
-                  ],
+                  "enum": ["aether-02", "aether-02-retopo"],
                   "description": "Explicitly acquire a pinned sample into the development cache."
                 }
               },
-              "required": [
-                "sourceId"
-              ]
+              "required": ["sourceId"]
             }
           ],
           "description": "Absolute path to the humanoid GLB under inspection, or a pinned sample reference to acquire into the development cache."
@@ -133,9 +119,7 @@
           }
         }
       },
-      "required": [
-        "target"
-      ]
+      "required": ["target"]
     },
     "asset_auto_rig": {
       "type": "object",
@@ -162,10 +146,7 @@
         "weightMode": {
           "default": "smooth",
           "type": "string",
-          "enum": [
-            "smooth",
-            "rigid"
-          ]
+          "enum": ["smooth", "rigid"]
         },
         "replaceRig": {
           "default": false,
@@ -206,27 +187,15 @@
           "properties": {
             "up": {
               "type": "string",
-              "enum": [
-                "x",
-                "y",
-                "z"
-              ]
+              "enum": ["x", "y", "z"]
             },
             "arm": {
               "type": "string",
-              "enum": [
-                "x",
-                "y",
-                "z"
-              ]
+              "enum": ["x", "y", "z"]
             },
             "facing": {
               "type": "string",
-              "enum": [
-                "x",
-                "y",
-                "z"
-              ]
+              "enum": ["x", "y", "z"]
             },
             "facingSign": {
               "anyOf": [
@@ -243,11 +212,7 @@
           }
         }
       },
-      "required": [
-        "target",
-        "output",
-        "projectRoot"
-      ]
+      "required": ["target", "output", "projectRoot"]
     },
     "asset_preview_animation": {
       "type": "object",
@@ -293,11 +258,7 @@
             },
             "axis": {
               "type": "string",
-              "enum": [
-                "x",
-                "y",
-                "z"
-              ]
+              "enum": ["x", "y", "z"]
             },
             "degrees": {
               "type": "number",
@@ -305,11 +266,7 @@
               "maximum": 360
             }
           },
-          "required": [
-            "bone",
-            "axis",
-            "degrees"
-          ]
+          "required": ["bone", "axis", "degrees"]
         },
         "angles": {
           "default": 3,
@@ -334,11 +291,7 @@
           "pattern": "^[0-9a-f]{64}$"
         }
       },
-      "required": [
-        "prepared",
-        "output",
-        "projectRoot"
-      ]
+      "required": ["prepared", "output", "projectRoot"]
     },
     "asset_retarget_animations": {
       "type": "object",
@@ -377,17 +330,11 @@
               },
               "variant": {
                 "type": "string",
-                "enum": [
-                  "in_place",
-                  "root_motion"
-                ],
+                "enum": ["in_place", "root_motion"],
                 "description": "Which donor variant to retarget."
               }
             },
-            "required": [
-              "id",
-              "variant"
-            ]
+            "required": ["id", "variant"]
           }
         },
         "keepExistingClips": {
@@ -410,12 +357,7 @@
           "pattern": "^[0-9a-f]{64}$"
         }
       },
-      "required": [
-        "target",
-        "output",
-        "projectRoot",
-        "clips"
-      ]
+      "required": ["target", "output", "projectRoot", "clips"]
     },
     "fab_search_assets": {
       "type": "object",
@@ -428,11 +370,7 @@
         "priceMode": {
           "default": "free",
           "type": "string",
-          "enum": [
-            "free",
-            "any",
-            "range"
-          ]
+          "enum": ["free", "any", "range"]
         },
         "minPrice": {
           "type": "number",
@@ -571,9 +509,7 @@
           "pattern": "^[A-Za-z]{3}$"
         }
       },
-      "required": [
-        "listingIdOrUrl"
-      ]
+      "required": ["listingIdOrUrl"]
     },
     "fab_list_filters": {
       "type": "object",
@@ -584,12 +520,7 @@
           "type": "array",
           "items": {
             "type": "string",
-            "enum": [
-              "channels",
-              "listing_types",
-              "categories",
-              "licenses"
-            ]
+            "enum": ["channels", "listing_types", "categories", "licenses"]
           }
         },
         "refresh": {
@@ -621,15 +552,7 @@
         },
         "format": {
           "type": "string",
-          "enum": [
-            "blender",
-            "fbx",
-            "glb",
-            "gltf",
-            "maya",
-            "obj",
-            "unity"
-          ]
+          "enum": ["blender", "fbx", "glb", "gltf", "maya", "obj", "unity"]
         },
         "acceptFabEula": {
           "type": "boolean",
@@ -637,11 +560,7 @@
           "description": "Required acknowledgement that the user accepts the Fab EULA linked by the listing."
         }
       },
-      "required": [
-        "listingIdOrUrl",
-        "format",
-        "acceptFabEula"
-      ]
+      "required": ["listingIdOrUrl", "format", "acceptFabEula"]
     },
     "fab_list_owned": {
       "type": "object",
@@ -693,10 +612,7 @@
           "maximum": 8192
         }
       },
-      "required": [
-        "sourceDir",
-        "outputDir"
-      ]
+      "required": ["sourceDir", "outputDir"]
     },
     "fab_import_asset": {
       "type": "object",
@@ -745,11 +661,7 @@
           "description": "Required acknowledgement that the user accepts the Fab EULA for the listing they already own."
         }
       },
-      "required": [
-        "listingIdOrUrl",
-        "outputDir",
-        "acceptFabEula"
-      ]
+      "required": ["listingIdOrUrl", "outputDir", "acceptFabEula"]
     },
     "polyhaven_search_assets": {
       "type": "object",
@@ -762,12 +674,7 @@
         "type": {
           "default": "all",
           "type": "string",
-          "enum": [
-            "all",
-            "hdris",
-            "textures",
-            "models"
-          ]
+          "enum": ["all", "hdris", "textures", "models"]
         },
         "categories": {
           "default": [],
@@ -782,12 +689,7 @@
         "sort": {
           "default": "relevance",
           "type": "string",
-          "enum": [
-            "relevance",
-            "popular",
-            "newest",
-            "name"
-          ]
+          "enum": ["relevance", "popular", "newest", "name"]
         },
         "limit": {
           "default": 24,
@@ -812,9 +714,7 @@
           "pattern": "^[A-Za-z0-9_-]+$"
         }
       },
-      "required": [
-        "assetId"
-      ]
+      "required": ["assetId"]
     },
     "polyhaven_list_categories": {
       "type": "object",
@@ -822,16 +722,10 @@
       "properties": {
         "type": {
           "type": "string",
-          "enum": [
-            "hdris",
-            "textures",
-            "models"
-          ]
+          "enum": ["hdris", "textures", "models"]
         }
       },
-      "required": [
-        "type"
-      ]
+      "required": ["type"]
     },
     "polyhaven_list_files": {
       "type": "object",
@@ -868,9 +762,7 @@
           "pattern": "^\\d+$"
         }
       },
-      "required": [
-        "assetId"
-      ]
+      "required": ["assetId"]
     },
     "ambientcg_search_assets": {
       "type": "object",
@@ -898,14 +790,7 @@
         "sort": {
           "default": "popular",
           "type": "string",
-          "enum": [
-            "popular",
-            "latest",
-            "downloads",
-            "oldest",
-            "random",
-            "alphabet"
-          ]
+          "enum": ["popular", "latest", "downloads", "oldest", "random", "alphabet"]
         },
         "limit": {
           "default": 24,
@@ -930,9 +815,7 @@
           "pattern": "^[A-Za-z0-9_-]+$"
         }
       },
-      "required": [
-        "assetId"
-      ]
+      "required": ["assetId"]
     },
     "ambientcg_list_categories": {
       "type": "object",
@@ -984,9 +867,7 @@
           "pattern": "^\\d+$"
         }
       },
-      "required": [
-        "assetId"
-      ]
+      "required": ["assetId"]
     },
     "smithsonian_search_assets": {
       "type": "object",
@@ -998,24 +879,11 @@
         },
         "fileType": {
           "type": "string",
-          "enum": [
-            "jpg",
-            "glb",
-            "ply",
-            "zip"
-          ]
+          "enum": ["jpg", "glb", "ply", "zip"]
         },
         "modelType": {
           "type": "string",
-          "enum": [
-            "glb",
-            "ply",
-            "obj",
-            "gltf",
-            "f3z",
-            "blend",
-            "stl"
-          ]
+          "enum": ["glb", "ply", "obj", "gltf", "f3z", "blend", "stl"]
         },
         "quality": {
           "type": "string",
@@ -1064,9 +932,7 @@
           "pattern": "^(?:3d_package:)?[0-9a-f]{8}-[0-9a-f-]{27}$"
         }
       },
-      "required": [
-        "modelId"
-      ]
+      "required": ["modelId"]
     },
     "smithsonian_list_files": {
       "type": "object",
@@ -1079,24 +945,11 @@
         },
         "fileType": {
           "type": "string",
-          "enum": [
-            "jpg",
-            "glb",
-            "ply",
-            "zip"
-          ]
+          "enum": ["jpg", "glb", "ply", "zip"]
         },
         "modelType": {
           "type": "string",
-          "enum": [
-            "glb",
-            "ply",
-            "obj",
-            "gltf",
-            "f3z",
-            "blend",
-            "stl"
-          ]
+          "enum": ["glb", "ply", "obj", "gltf", "f3z", "blend", "stl"]
         },
         "quality": {
           "type": "string",
@@ -1123,9 +976,7 @@
           "pattern": "^\\d+$"
         }
       },
-      "required": [
-        "modelId"
-      ]
+      "required": ["modelId"]
     },
     "sketchfab_search_models": {
       "type": "object",
@@ -1162,12 +1013,7 @@
         "sortBy": {
           "default": "relevance",
           "type": "string",
-          "enum": [
-            "relevance",
-            "likeCount",
-            "viewCount",
-            "publishedAt"
-          ]
+          "enum": ["relevance", "likeCount", "viewCount", "publishedAt"]
         },
         "limit": {
           "default": 24,
@@ -1191,9 +1037,7 @@
           "pattern": "^[0-9a-f]{32}$"
         }
       },
-      "required": [
-        "modelId"
-      ]
+      "required": ["modelId"]
     },
     "sketchfab_list_categories": {
       "type": "object",
@@ -1209,9 +1053,7 @@
           "pattern": "^[0-9a-f]{32}$"
         }
       },
-      "required": [
-        "modelId"
-      ]
+      "required": ["modelId"]
     },
     "audio_list_sources": {
       "type": "object",
@@ -1229,12 +1071,7 @@
         "kind": {
           "default": "all",
           "type": "string",
-          "enum": [
-            "all",
-            "sfx",
-            "music",
-            "mixed"
-          ]
+          "enum": ["all", "sfx", "music", "mixed"]
         },
         "source": {
           "default": "all",
@@ -1288,10 +1125,7 @@
           "description": "Required acknowledgement that the caller reviewed and accepts the asset license returned by audio_search_assets."
         }
       },
-      "required": [
-        "assetId",
-        "acceptLicense"
-      ]
+      "required": ["assetId", "acceptLicense"]
     },
     "audio_inspect_asset": {
       "type": "object",
@@ -1351,11 +1185,7 @@
               }
             }
           },
-          "required": [
-            "sourceDescription",
-            "targetMood",
-            "alternativeMoods"
-          ],
+          "required": ["sourceDescription", "targetMood", "alternativeMoods"],
           "additionalProperties": false
         },
         "bands": {
@@ -1462,16 +1292,10 @@
         "semantic": {
           "default": "off",
           "type": "string",
-          "enum": [
-            "off",
-            "clap"
-          ]
+          "enum": ["off", "clap"]
         }
       },
-      "required": [
-        "path",
-        "loop"
-      ],
+      "required": ["path", "loop"],
       "additionalProperties": false
     },
     "audio_generate_sound": {
@@ -1548,11 +1372,7 @@
                   }
                 }
               },
-              "required": [
-                "sourceDescription",
-                "targetMood",
-                "alternativeMoods"
-              ],
+              "required": ["sourceDescription", "targetMood", "alternativeMoods"],
               "additionalProperties": false
             },
             "bands": {
@@ -1659,19 +1479,13 @@
             "semantic": {
               "default": "off",
               "type": "string",
-              "enum": [
-                "off",
-                "clap"
-              ]
+              "enum": ["off", "clap"]
             }
           },
           "additionalProperties": false
         }
       },
-      "required": [
-        "requestId",
-        "prompt"
-      ],
+      "required": ["requestId", "prompt"],
       "additionalProperties": false
     },
     "itch_list_downloads": {
@@ -1689,9 +1503,7 @@
           ]
         }
       },
-      "required": [
-        "packId"
-      ]
+      "required": ["packId"]
     },
     "itch_download_asset": {
       "type": "object",
@@ -1718,11 +1530,7 @@
           "description": "Required acknowledgement that the caller accepts the CC0 terms and any pack-specific cautions returned by itch_list_downloads."
         }
       },
-      "required": [
-        "packId",
-        "uploadId",
-        "acceptLicense"
-      ]
+      "required": ["packId", "uploadId", "acceptLicense"]
     },
     "asset_list_bundle_entries": {
       "type": "object",
@@ -1744,10 +1552,7 @@
           "pattern": "^\\d+$"
         }
       },
-      "required": [
-        "packId",
-        "uploadId"
-      ]
+      "required": ["packId", "uploadId"]
     },
     "asset_download_bundle_entry": {
       "type": "object",
@@ -1779,12 +1584,7 @@
           "description": "Required acknowledgement of the pack license returned by itch_list_downloads or asset_list_bundle_entries."
         }
       },
-      "required": [
-        "packId",
-        "uploadId",
-        "entryPath",
-        "acceptLicense"
-      ]
+      "required": ["packId", "uploadId", "entryPath", "acceptLicense"]
     },
     "asset_list_bundle_animations": {
       "type": "object",
@@ -1812,10 +1612,7 @@
           "maxLength": 2048
         }
       },
-      "required": [
-        "packId",
-        "uploadId"
-      ]
+      "required": ["packId", "uploadId"]
     },
     "asset_download_bundle_animation": {
       "type": "object",
@@ -1851,12 +1648,7 @@
           "const": true
         }
       },
-      "required": [
-        "packId",
-        "uploadId",
-        "animationName",
-        "acceptLicense"
-      ]
+      "required": ["packId", "uploadId", "animationName", "acceptLicense"]
     },
     "asset_list_sources": {
       "type": "object",
@@ -1932,14 +1724,7 @@
             },
             {
               "type": "string",
-              "enum": [
-                "cc0",
-                "cc-by",
-                "mit",
-                "open-source",
-                "per-asset",
-                "marketplace"
-              ]
+              "enum": ["cc0", "cc-by", "mit", "open-source", "per-asset", "marketplace"]
             }
           ]
         },
@@ -1955,13 +1740,7 @@
       "properties": {
         "provider": {
           "type": "string",
-          "enum": [
-            "polyhaven",
-            "ambientcg",
-            "smithsonian",
-            "game-icons",
-            "kenney"
-          ]
+          "enum": ["polyhaven", "ambientcg", "smithsonian", "game-icons", "kenney"]
         },
         "url": {
           "type": "string",
@@ -1979,12 +1758,7 @@
           "description": "Required acknowledgement that the caller reviewed and accepts the license metadata returned by the provider's search/detail/file tools."
         }
       },
-      "required": [
-        "provider",
-        "url",
-        "fileName",
-        "acceptLicense"
-      ]
+      "required": ["provider", "url", "fileName", "acceptLicense"]
     },
     "creature_compile": {
       "type": "object",
@@ -2005,10 +1779,7 @@
           "pattern": "^[a-f0-9]{64}$"
         }
       },
-      "required": [
-        "specPath",
-        "outputPath"
-      ],
+      "required": ["specPath", "outputPath"],
       "additionalProperties": false
     },
     "creature_preview": {
@@ -2022,20 +1793,14 @@
         },
         "mode": {
           "type": "string",
-          "enum": [
-            "silhouettes",
-            "hero"
-          ]
+          "enum": ["silhouettes", "hero"]
         },
         "previousPreviewId": {
           "type": "string",
           "pattern": "^[a-z0-9-]{8,80}$"
         }
       },
-      "required": [
-        "glbPath",
-        "mode"
-      ],
+      "required": ["glbPath", "mode"],
       "additionalProperties": false
     },
     "creature_check": {
@@ -2055,10 +1820,7 @@
               "const": "structural"
             }
           },
-          "required": [
-            "glbPath",
-            "mode"
-          ],
+          "required": ["glbPath", "mode"],
           "additionalProperties": false
         },
         {
@@ -2080,19 +1842,10 @@
             },
             "stage": {
               "type": "string",
-              "enum": [
-                "LOW",
-                "MID",
-                "HIGH"
-              ]
+              "enum": ["LOW", "MID", "HIGH"]
             }
           },
-          "required": [
-            "glbPath",
-            "mode",
-            "claimsPath",
-            "stage"
-          ],
+          "required": ["glbPath", "mode", "claimsPath", "stage"],
           "additionalProperties": false
         }
       ]

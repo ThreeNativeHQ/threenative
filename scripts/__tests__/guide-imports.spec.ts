@@ -20,7 +20,12 @@ function exportedNames(file: string, seen: Set<string> = new Set()): ReadonlySet
   const source = readFileSync(file, "utf8");
   for (const match of source.matchAll(/export\s+(?:type\s+)?\{([^}]*)\}/gu)) {
     for (const part of match[1]?.split(",") ?? []) {
-      const name = part?.trim().split(/\s+as\s+/u).pop()?.replace(/^type\s+/u, "").trim();
+      const name = part
+        ?.trim()
+        .split(/\s+as\s+/u)
+        .pop()
+        ?.replace(/^type\s+/u, "")
+        .trim();
       if (name) names.add(name);
     }
   }
@@ -45,7 +50,10 @@ function entryPoint(specifier: string): string | undefined {
   for (const directory of readdirSync(PACKAGES)) {
     const manifest = path.join(PACKAGES, directory, "package.json");
     if (!existsSync(manifest)) continue;
-    if ((JSON.parse(readFileSync(manifest, "utf8")) as { name?: string }).name !== `@threenative/${name}`)
+    if (
+      (JSON.parse(readFileSync(manifest, "utf8")) as { name?: string }).name !==
+      `@threenative/${name}`
+    )
       continue;
     const source = path.join(PACKAGES, directory, "src");
     const candidates = rest.length
@@ -56,7 +64,11 @@ function entryPoint(specifier: string): string | undefined {
   return undefined;
 }
 
-function documentedImports(): readonly { readonly file: string; readonly specifier: string; readonly symbol: string }[] {
+function documentedImports(): readonly {
+  readonly file: string;
+  readonly specifier: string;
+  readonly symbol: string;
+}[] {
   const found: { file: string; specifier: string; symbol: string }[] = [];
   for (const directory of DOCS) {
     for (const name of readdirSync(directory).sort()) {
@@ -67,7 +79,11 @@ function documentedImports(): readonly { readonly file: string; readonly specifi
       )) {
         const specifier = match[2] ?? "";
         for (const part of match[1]?.split(",") ?? []) {
-          const symbol = part?.trim().split(/\s+as\s+/u)[0]?.replace(/^type\s+/u, "").trim();
+          const symbol = part
+            ?.trim()
+            .split(/\s+as\s+/u)[0]
+            ?.replace(/^type\s+/u, "")
+            .trim();
           if (symbol) found.push({ file, specifier, symbol });
         }
       }
@@ -86,7 +102,8 @@ describe("documented engine imports", () => {
       const entry = entryPoint(specifier);
       const names = entry ? (cache.get(entry) ?? exportedNames(entry)) : undefined;
       if (entry && names && !cache.has(entry)) cache.set(entry, names);
-      if (!names?.has(symbol)) unknown.push(`${path.relative(process.cwd(), file)}: ${symbol} from ${specifier}`);
+      if (!names?.has(symbol))
+        unknown.push(`${path.relative(process.cwd(), file)}: ${symbol} from ${specifier}`);
     }
     expect(unknown).toEqual([]);
   });

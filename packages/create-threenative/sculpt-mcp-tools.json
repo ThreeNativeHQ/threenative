@@ -31,10 +31,7 @@
           "maxLength": 500
         }
       },
-      "required": [
-        "referencePath",
-        "intent"
-      ]
+      "required": ["referencePath", "intent"]
     },
     "sculpt_spec_gate": {
       "$schema": "http://json-schema.org/draft-07/schema#",
@@ -48,9 +45,7 @@
           "additionalProperties": {}
         }
       },
-      "required": [
-        "spec"
-      ]
+      "required": ["spec"]
     },
     "sculpt_compare": {
       "$schema": "http://json-schema.org/draft-07/schema#",
@@ -96,20 +91,11 @@
                 "maximum": 1
               }
             },
-            "required": [
-              "id",
-              "x",
-              "y",
-              "width",
-              "height"
-            ]
+            "required": ["id", "x", "y", "width", "height"]
           }
         }
       },
-      "required": [
-        "referencePath",
-        "capturePath"
-      ]
+      "required": ["referencePath", "capturePath"]
     },
     "sculpt_pass_gate": {
       "$schema": "http://json-schema.org/draft-07/schema#",
@@ -158,10 +144,7 @@
                       "type": "number"
                     }
                   },
-                  "required": [
-                    "width",
-                    "height"
-                  ]
+                  "required": ["width", "height"]
                 },
                 "capture": {
                   "type": "object",
@@ -173,10 +156,7 @@
                       "type": "number"
                     }
                   },
-                  "required": [
-                    "width",
-                    "height"
-                  ]
+                  "required": ["width", "height"]
                 },
                 "normalizedForComparison": {
                   "type": "object",
@@ -188,17 +168,10 @@
                       "type": "number"
                     }
                   },
-                  "required": [
-                    "width",
-                    "height"
-                  ]
+                  "required": ["width", "height"]
                 }
               },
-              "required": [
-                "reference",
-                "capture",
-                "normalizedForComparison"
-              ]
+              "required": ["reference", "capture", "normalizedForComparison"]
             },
             "overall": {
               "type": "object",
@@ -210,10 +183,7 @@
                   "type": "number"
                 }
               },
-              "required": [
-                "score",
-                "confidence"
-              ]
+              "required": ["score", "confidence"]
             },
             "regions": {
               "type": "array",
@@ -262,14 +232,7 @@
                     }
                   }
                 },
-                "required": [
-                  "id",
-                  "pixels",
-                  "score",
-                  "confidence",
-                  "signals",
-                  "corrections"
-                ]
+                "required": ["id", "pixels", "score", "confidence", "signals", "corrections"]
               }
             },
             "ambiguous": {
@@ -335,21 +298,11 @@
                     "type": "boolean"
                   }
                 },
-                "required": [
-                  "id",
-                  "score",
-                  "threshold",
-                  "critical"
-                ]
+                "required": ["id", "score", "threshold", "critical"]
               }
             }
           },
-          "required": [
-            "score",
-            "confidence",
-            "notes",
-            "criticalFeatures"
-          ]
+          "required": ["score", "confidence", "notes", "criticalFeatures"]
         },
         "threshold": {
           "default": 0.7,
@@ -376,10 +329,7 @@
           "maximum": 9007199254740991
         }
       },
-      "required": [
-        "passId",
-        "compareResult"
-      ]
+      "required": ["passId", "compareResult"]
     },
     "sculpt_grimoire": {
       "$schema": "http://json-schema.org/draft-07/schema#",
@@ -390,9 +340,7 @@
           "minLength": 1
         }
       },
-      "required": [
-        "topic"
-      ]
+      "required": ["topic"]
     }
   },
   "descriptions": {
