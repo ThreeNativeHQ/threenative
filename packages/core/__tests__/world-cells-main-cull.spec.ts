@@ -641,11 +641,14 @@ describe("WorldCells main-pass cluster cull", () => {
       await flush();
       world.update();
       for (const mesh of worldMeshes(world)) {
-        // An empty mesh that is still shown is one owed its prewarm draw, and the borrow counting
-        // that draw is on it. `visible` at count 0 is what makes the submission that builds the node
-        // and the pipeline three would otherwise build on the walk's first frame instead.
-        if (mesh.count > 0 || mesh.visible === false || drawn.has(mesh)) continue;
+        // A batch still owed its prewarm draw is shown and submits one instance of the zero matrix
+        // its fresh buffer holds — three refuses a `count === 0` draw outright, so that submission
+        // is what builds the node and the pipeline three would otherwise build on the walk's first
+        // frame instead. The prewarm's own flag is what says so, not the count.
+        if ((mesh as { prewarmInstance?: boolean }).prewarmInstance !== true || drawn.has(mesh))
+          continue;
         expect(Object.hasOwn(mesh, "onBeforeRender")).toBe(true);
+        expect(mesh.count, "the owed draw is one instance three will admit").toBe(1);
         drawn.add(mesh);
         const owed = world.stats().pendingPrewarm;
         draw(mesh);

@@ -71,6 +71,16 @@ function chebyshev(a: { x: number; z: number }, b: { x: number; z: number }): nu
   return Math.max(Math.abs(a.x - b.x), Math.abs(a.z - b.z));
 }
 
+/**
+ * Whether the count this mesh is submitting is the prewarm's one degenerate instance rather than a
+ * record: three refuses a `count === 0` draw outright, so an empty batch still owed a draw submits
+ * one instance of the zero matrix its fresh buffer holds, and that submission is what builds its
+ * node. Every "is this batch drawing" question in this file has to say so.
+ */
+function prewarmInstance(mesh: InstancedMesh): boolean {
+  return (mesh as { prewarmInstance?: boolean }).prewarmInstance === true;
+}
+
 function makeModel(): Object3D {
   const group = new Group();
   group.add(new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial()));
@@ -1505,7 +1515,7 @@ describe("WorldCells", () => {
     // one per level and part, minted empty so the walk's first shadow pass builds no node for the
     // key the walk reaches first.
     expect(world.stats().residentCells).toBe(3);
-    const live = meshes.filter((mesh) => mesh.count > 0);
+    const live = meshes.filter((mesh) => mesh.count > 0 && !prewarmInstance(mesh));
     // Shadows are off in this world, so there is no caster half at all and the whole ring is one
     // mesh for the key; a world that asks to cast also gets one caster cluster per resident cell.
     expect(live.map((mesh) => mesh.name)).toEqual(["pine:1:0"]);

@@ -171,6 +171,16 @@ function isMainBatch(object: Object3D): boolean {
 }
 
 /**
+ * Whether the count this mesh is submitting is the prewarm's one degenerate instance rather than a
+ * record: three refuses a `count === 0` draw outright, so an empty batch still owed a draw submits
+ * one instance of the zero matrix its fresh buffer holds, and that submission is what builds its
+ * node. It is the prewarm's own bookkeeping, and it is deliberately not recorded.
+ */
+function prewarmInstance(object: Object3D): boolean {
+  return (object as { prewarmInstance?: boolean }).prewarmInstance === true;
+}
+
+/**
  * The meshes' own names, sorted, so two projections are compared as sets: which meshes a frame draws
  * is the claim, and the order three happens to hand them over in is not.
  */
@@ -795,11 +805,21 @@ describe("the main pass's draw bundles", () => {
     const drawn = project(cells, playerCamera());
     // Zero of them walks three's per-object path — that traversal is what AC-1's draw span is — and
     // the record draws the very same meshes in their place.
-    expect(drawn.perObject.filter(isMainBatch)).toEqual([]);
-    expect(names(drawn.bundled.filter(isMainBatch))).toEqual(names(dressed));
+    // The prewarm's own submissions are the one exception, and they are left per object on purpose:
+    // a record holds a draw that draws nothing, and the draw that counts each one hides its mesh a
+    // frame later (`WorldCells#recordCpuMain`).
+    const owed = new Set(
+      names(drawn.perObject.filter((mesh) => isMainBatch(mesh) && prewarmInstance(mesh))),
+    );
+    expect(owed.size).toBeGreaterThan(0);
+    expect(drawn.perObject.filter((mesh) => isMainBatch(mesh) && !owed.has(mesh.name))).toEqual([]);
+    expect(names(drawn.bundled.filter(isMainBatch))).toEqual(
+      names(dressed).filter((name) => !owed.has(name)),
+    );
     // The picture is the same one: every one of them is in the one record, still cull-free because a
     // record's list was cut by its own camera, and nothing failed on the way.
     for (const mesh of dressed) {
+      if (owed.has(mesh.name)) continue;
       expect(mesh.userData.tnBundled).toBe(true);
       expect(mesh.frustumCulled).toBe(false);
       expect(mesh.visible).toBe(true);
@@ -814,6 +834,8 @@ describe("the main pass's draw bundles", () => {
     const west = project(cells, playerCamera()).bundled.filter(isMainBatch);
     expect(west.length).toBeGreaterThan(0);
     expect(east.length).toBeGreaterThan(0);
+    // Every key of the first snapshot, the prewarm's own submissions included: a key that was still
+    // owed its draw then has been counted by now, and a counted key is an ordinary recorded batch.
     expect([...new Set([...names(west), ...names(east)])].sort()).toEqual(names(dressed));
     cells.dispose();
   });

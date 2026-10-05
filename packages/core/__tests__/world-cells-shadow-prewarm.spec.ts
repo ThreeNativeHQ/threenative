@@ -176,6 +176,11 @@ function shadowDraws(
         if (mesh.visible !== true || mesh.castShadow !== true) return;
         if ((mesh.layers.mask & camera.layers.mask) === 0) return;
         if (!frustum.intersectsObject(mesh)) return;
+        // Three's own gate, and the one this harness left out: `RenderObject.getDrawParameters()`
+        // returns null at `count === 0`, so the renderer skips the object, builds no node and never
+        // calls `onBeforeRender`. A harness that counts a draw three would not submit is the
+        // harness that let 182 casters reach the gate unbuilt (A7, 2026-10-04).
+        if (mesh.count === 0) return;
         const seen = tally.counts.get(mesh.name) ?? 0;
         tally.counts.set(mesh.name, seen + 1);
         // The first draw of a key is the one that builds its shadow-context node, so the frame it
@@ -508,6 +513,8 @@ describe("a streamed world's caster prewarm", () => {
           if ((mesh.layers.mask & camera.layers.mask) === 0) return;
           if ((mesh.layers.mask & keyLayer) === 0) return;
           if (!frustum.intersectsObject(mesh)) return;
+          // Three's own gate: no submission, no node, no `onBeforeRender`. See `shadowDraws`.
+          if (mesh.count === 0) return;
           tally.counts.set(mesh.name, (tally.counts.get(mesh.name) ?? 0) + 1);
           if ((tally.counts.get(mesh.name) as number) === 1)
             tally.first.set(mesh.name, tally.frame);

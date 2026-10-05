@@ -923,6 +923,19 @@ interface ICasterScaleMesh extends InstancedMesh {
   casterInstanceScale: number;
 }
 
+/**
+ * The prewarm's own bookkeeping on a mesh, duck-typed beside `casterPrewarmOwed`.
+ *
+ * `prewarmInstance` says the count this mesh is submitting is the prewarm's one degenerate instance
+ * rather than a record: three refuses a `count === 0` draw outright, so an empty batch owed a draw
+ * submits one instance of the zero matrix its fresh buffer holds (see `SharedBatch#publish`). Any
+ * harness that reads `mesh.count` as "how many records this key draws" has to leave that one out,
+ * and it cannot ask `casterPrewarmOwed` — a batch can owe its draw and hold records at once.
+ */
+interface IPrewarmMesh {
+  prewarmInstance?: boolean;
+}
+
 /** One world-grid square's records in a clustered batch: how many of them there are. */
 type ISquareSizes = Map<string, number>;
 
@@ -1064,6 +1077,14 @@ class SharedBatch {
    * counts. The draw is the whole of the prewarm; see {@link #publish}.
    */
   #awaitingPrewarm = false;
+  /**
+   * Whether the count this mesh is submitting is the prewarm's one degenerate instance rather than
+   * this batch's records. See {@link IPrewarmMesh}.
+   */
+  get prewarming(): boolean {
+    return (this.mesh as IPrewarmMesh).prewarmInstance === true;
+  }
+
   /** Free record ranges `[from, to)`, sorted, disjoint and never adjacent. */
   #free: Array<[number, number]> = [];
   #handles = 0;
@@ -1824,6 +1845,7 @@ class SharedBatch {
     // dispatch's, so an empty-looking key is one this map draws nothing of, not one to hide.
     if (this.role === "key") {
       this.mesh.count = this.gpuCount;
+      (this.mesh as IPrewarmMesh).prewarmInstance = false;
       this.mesh.visible = true;
       return;
     }
@@ -1835,11 +1857,22 @@ class SharedBatch {
     // empty: that submission is what builds the node and the pipeline.
     if (this.gpu !== undefined) {
       this.mesh.count = this.gpuCount;
+      (this.mesh as IPrewarmMesh).prewarmInstance = false;
       if (this.bundled === false) this.mesh.visible = this.#awaitingPrewarm;
       return;
     }
     this.mesh.count = count;
     this.mesh.visible = count > 0 || this.#awaitingPrewarm;
+    // …and the same gate on the count, because the prewarm's draw is the submission that builds the
+    // node: three skips an `InstancedMesh` at `count === 0` (`RenderObject.getDrawParameters`
+    // returns null), so an empty batch's owed draw never comes, `castersUnbuilt` reads 182 on a walk
+    // that streamed 385 keys, and the first walk frame that wants the key builds it inside a shadow
+    // pass. One instance at the zero matrix this batch's fresh buffer already holds is that
+    // submission, and it draws nothing — every vertex collapses onto one point, so no triangle
+    // covers a pixel. Any other count is this batch's own, and `prewarmDrew` has nothing to undo.
+    const degenerate = count === 0 && this.#awaitingPrewarm;
+    (this.mesh as IPrewarmMesh).prewarmInstance = degenerate;
+    if (degenerate) this.mesh.count = 1;
   }
 
   /**
@@ -1893,6 +1926,12 @@ class SharedBatch {
   prewarmDrew(): void {
     this.#awaitingPrewarm = false;
     (this.mesh as { casterPrewarmOwed?: boolean }).casterPrewarmOwed = false;
+    // The prewarm's one degenerate instance goes back to the count this batch actually holds, or an
+    // empty batch would keep submitting a zero matrix for the whole walk.
+    if ((this.mesh as IPrewarmMesh).prewarmInstance === true) {
+      (this.mesh as IPrewarmMesh).prewarmInstance = false;
+      this.mesh.count = 0;
+    }
     // A bundled mesh is in a render list three fixed when it recorded the bundle, and the replay
     // never re-reads visibility — so hiding it here would not save this frame's draw and would lose
     // the mesh from every record after the next structural change. See `bundled`.
@@ -4842,11 +4881,26 @@ export class WorldCells extends Group implements IComputeDriven {
       const caster = entry.batch.role !== "main";
       if (projected === true && entry.waited < PREWARM_RELEASE_UPDATES) continue;
       if (projected === false && caster === false) continue;
-      if (mesh.onBeforeRender === entry.borrow) this.#handBack(mesh, entry.hadOwn, entry.own);
-      this.#awaited.delete(mesh);
-      if (caster) this.#prewarmCasterOwed -= 1;
-      entry.batch.prewarmDrew();
+      this.#releasePrewarm(mesh);
     }
+  }
+
+  /**
+   * Hand back one mesh's prewarm borrow and let its batch stop owing the draw.
+   *
+   * The counter the gate settles on moves with it, because a borrow that is handed back is a draw
+   * nobody is waiting for — the same arithmetic `#releaseImpossibleBorrows` has always done, now also
+   * reachable when a batch leaves the world while the gate is still open. A mesh out of the world is
+   * out of every pass, so its owed draw can never come, and leaving it owed would keep the batch
+   * submitting the prewarm's one degenerate instance for the rest of the load.
+   */
+  #releasePrewarm(mesh: InstancedMesh): void {
+    const entry = this.#awaited.get(mesh);
+    if (entry === undefined) return;
+    if (mesh.onBeforeRender === entry.borrow) this.#handBack(mesh, entry.hadOwn, entry.own);
+    this.#awaited.delete(mesh);
+    if (entry.batch.role !== "main") this.#prewarmCasterOwed -= 1;
+    entry.batch.prewarmDrew();
   }
 
   /** Give a borrowed mesh back the hook it had, or none at all when it never had one of its own. */
@@ -6396,6 +6450,10 @@ export class WorldCells extends Group implements IComputeDriven {
    */
   #recordCpuMain(shared: SharedBatch, outcome: "settled" | "narrowed" | "repacked"): void {
     if (this.#bundlesWanted === false) return;
+    // The prewarm's own submission is not a record: one degenerate instance that draws nothing, and
+    // the draw that counts it hides the mesh a frame later, which re-records anyway. Recording it
+    // would also ask `bundleSafe` about the mesh every frame it is owed.
+    if (shared.prewarming) return;
     // `#publish` has just written this frame's answer onto the mesh, which is the only place it is.
     if (shared.mesh.visible === false) {
       this.#bundleOut(shared);
@@ -6972,6 +7030,9 @@ export class WorldCells extends Group implements IComputeDriven {
    * buffer state cannot be trusted, so it goes the same way as one over the byte budget.
    */
   #retire(key: string, shared: SharedBatch): void {
+    // Out of the world, so out of every pass: the prewarm's draw is released here rather than left
+    // owed, which would keep this batch submitting one degenerate instance for the rest of the load.
+    this.#releasePrewarm(shared.mesh);
     // Live records, not the draw window: a main batch whose squares are all behind the camera still
     // holds its records, and that is not a batch to dispose.
     if (shared.live > 0) {
