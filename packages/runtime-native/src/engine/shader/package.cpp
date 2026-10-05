@@ -47,9 +47,9 @@ const Variant* ShaderPackage::variant(uint32_t key) const {
     return nullptr;
 }
 
-StageModule buildStage(const Program& program) {
+StageModule buildStage(const Program& program, uint32_t group) {
     StageModule module{program.stage()};
-    module.wgsl = WgslEmitter::emit(program);
+    module.wgsl = WgslEmitter::emit(program, group);
 
     // Mirrors the emitter's first-use order, so every offset and binding names what WGSL declares.
     uint32_t offset = 0;
@@ -71,12 +71,12 @@ StageModule buildStage(const Program& program) {
     uint32_t binding = 0;
     if (!module.uniforms.empty()) {
         module.uniformBlockSize = roundUp(offset, structAlign);
-        module.bindings.push_back(Binding{0, binding++, BindingKind::Uniform, "u", module.uniformBlockSize});
+        module.bindings.push_back(Binding{group, binding++, BindingKind::Uniform, "u", module.uniformBlockSize});
     }
     for (const auto& storage : program.storage_) {
         const Layout element = uniformLayout(storage.element);
         module.bindings.push_back(
-            Binding{0, binding++, BindingKind::Storage, "s_" + storage.name, roundUp(element.size, element.align)});
+            Binding{group, binding++, BindingKind::Storage, "s_" + storage.name, roundUp(element.size, element.align)});
     }
     return module;
 }

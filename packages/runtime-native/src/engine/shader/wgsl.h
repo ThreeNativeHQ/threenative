@@ -23,7 +23,8 @@ struct WgslModule {
  */
 class WgslEmitter {
 public:
-    static WgslModule emit(const Program& program);
+    /** `group` is the bind group this stage's resources live in, so two stages never alias one. */
+    static WgslModule emit(const Program& program, uint32_t group = 0);
 
 private:
     explicit WgslEmitter(const Program& program) : p_(program) {}

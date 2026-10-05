@@ -85,7 +85,7 @@ struct Layout {
 Layout uniformLayout(const Type& type);
 
 /** Builds a stage module: emits WGSL and derives the layouts that WGSL declares. */
-StageModule buildStage(const Program& program);
+StageModule buildStage(const Program& program, uint32_t group = 0);
 
 /** Refuses a package of another revision before any pipeline is made. */
 bool acceptPackage(const ShaderPackage& package, std::string& error);

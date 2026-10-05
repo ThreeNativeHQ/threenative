@@ -212,6 +212,13 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     endif()
 endif()
 
+if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "android")
+    # A progress screenshot of the native path (IR -> WGSL package -> native GPU -> PNG); evidence, not a test.
+    add_executable(tn-native-engine-showcase EXCLUDE_FROM_ALL tests/native-engine/showcase.cpp)
+    target_link_libraries(tn-native-engine-showcase PRIVATE tn_engine_shader tn_engine_renderer tn_host_services)
+    tn_native_engine_target(tn-native-engine-showcase)
+endif()
+
 get_property(tn_native_engine_test_targets GLOBAL PROPERTY TN_NATIVE_ENGINE_TEST_TARGETS)
 add_custom_target(tn-native-engine-tests DEPENDS ${tn_native_engine_test_targets})
 

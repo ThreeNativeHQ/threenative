@@ -46,7 +46,9 @@ inline Program lit_fragment() {
     const ExprId lambert = p.call("clamp", {p.call("dot", {light, p.uniform("normalHint", Type::vec(3))}), p.constant(0.0f), p.constant(1.0f)});
     p.If(p.less(p.swizzle(color, "a"), cutoff), [&] { p.discard(); });
     const ExprId rgb = p.call("mix", {p.mul(p.swizzle(color, "rgb"), p.constant(0.1f)), p.swizzle(color, "rgb"), lambert});
-    p.output("color", p.construct(Type::vec(4), {rgb, p.swizzle(color, "a")}));
+    // TSL's clamp(vec, 0, 1) has scalar bounds; WGSL's clamp has none, so the emitter splats them.
+    const ExprId clamped = p.call("clamp", {rgb, p.constant(0.0f), p.constant(1.0f)});
+    p.output("color", p.construct(Type::vec(4), {clamped, p.swizzle(color, "a")}));
     return p;
 }
 

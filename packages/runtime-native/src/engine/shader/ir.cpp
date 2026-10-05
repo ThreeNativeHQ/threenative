@@ -115,6 +115,11 @@ ExprId Program::attribute(std::string_view name, Type type, Where where) {
     return pure(Expr{Op::Attribute, type, {}, 0, intern(name)});
 }
 
+ExprId Program::varying(std::string_view name, Type type, Where where) {
+    if (stage_ != Stage::Fragment) return fail("varying", "varyings are fragment inputs", where);
+    return pure(Expr{Op::Varying, type, {}, 0, intern(name)});
+}
+
 ExprId Program::builtin(std::string_view name, Where where) {
     for (const BuiltinInfo& info : kBuiltins) {
         if (name != info.name) continue;
@@ -459,6 +464,7 @@ std::string Program::describe(ExprId id, std::vector<int>& numbering) const {
         case Op::Uniform: return "uniform:" + names_[e.immediate];
         case Op::Attribute: return "attribute:" + names_[e.immediate];
         case Op::Builtin: return "builtin:" + names_[e.immediate];
+        case Op::Varying: return "varying:" + names_[e.immediate];
         case Op::Swizzle: {
             std::string lanes;
             const unsigned n = static_cast<unsigned>(e.immediate >> 8);

@@ -40,7 +40,7 @@ using VarId = uint32_t;
 inline constexpr ExprId kInvalid = 0;  // poisons dependents without repeating the diagnostic
 
 enum class Op : uint8_t {
-    Constant, Uniform, Attribute, Builtin,
+    Constant, Uniform, Attribute, Builtin, Varying,
     Add, Sub, Mul, Div, Neg, Less, Equal, Select,
     Swizzle, Construct, Call,
     // Ordered reads: pinned as statements where created, so they observe prior writes.
@@ -66,7 +66,7 @@ struct Diagnostic {
 using Where = std::source_location;
 
 struct StageModule;
-StageModule buildStage(const class Program& program);
+StageModule buildStage(const class Program& program, uint32_t group);
 
 /**
  * One shader stage's IR (PRD-510). Pure expressions are hash-consed, so the same operation on the
@@ -83,6 +83,8 @@ public:
     ExprId constant(bool value, Where where = Where::current());
     ExprId uniform(std::string_view name, Type type, Where where = Where::current());
     ExprId attribute(std::string_view name, Type type, Where where = Where::current());
+    /** A fragment input written by the vertex stage's output of the same name. */
+    ExprId varying(std::string_view name, Type type, Where where = Where::current());
     /** Stage builtins: position, instanceIndex, vertexIndex, frontFacing, globalInvocationId. */
     ExprId builtin(std::string_view name, Where where = Where::current());
 
@@ -129,7 +131,7 @@ public:
 
 private:
     friend class WgslEmitter;
-    friend StageModule buildStage(const Program& program);
+    friend StageModule buildStage(const Program& program, uint32_t group);
 
     enum class StmtKind : uint8_t { Eval, Assign, Store, Discard, If, Loop, Output };
     struct Stmt {

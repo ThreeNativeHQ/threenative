@@ -71,6 +71,7 @@ std::string WgslEmitter::expr(ExprId id) const {
         case Op::Uniform: return "u.f_" + p_.names_[e.immediate];
         case Op::Attribute: return "a_" + p_.names_[e.immediate];
         case Op::Builtin: return "b_" + p_.names_[e.immediate];
+        case Op::Varying: return "i_" + p_.names_[e.immediate];
         case Op::LoadVar:
         case Op::LoadStorage:
         case Op::Sample: return "l" + std::to_string(id);
@@ -86,10 +87,14 @@ std::string WgslEmitter::expr(ExprId id) const {
         case Op::Construct:
         case Op::Call: {
             std::string out = e.op == Op::Call ? p_.names_[e.immediate] : type(e.type);
+            // TSL lets clamp and smoothstep take scalar bounds on a vector; WGSL has no such overload.
+            const bool splat = e.op == Op::Call && e.type.isVector() &&
+                               (p_.names_[e.immediate] == "clamp" || p_.names_[e.immediate] == "smoothstep");
             out += "(";
             for (uint8_t i = 0; i < e.argc; ++i) {
                 if (i) out += ", ";
-                out += expr(e.args[i]);
+                const bool scalar = p_.exprs_[e.args[i]].type.isScalar();
+                out += splat && scalar ? type(e.type) + "(" + expr(e.args[i]) + ")" : expr(e.args[i]);
             }
             return out + ")";
         }
@@ -149,7 +154,7 @@ void WgslEmitter::block(uint32_t index, int depth, std::string& out) const {
     }
 }
 
-WgslModule WgslEmitter::emit(const Program& program) {
+WgslModule WgslEmitter::emit(const Program& program, uint32_t group) {
     WgslEmitter e(program);
     WgslModule module;
     if (!program.ok()) {
@@ -159,12 +164,13 @@ WgslModule WgslEmitter::emit(const Program& program) {
     std::string& out = module.code;
 
     // Resources in first-use order: uniforms in one block at binding 0, then storage buffers.
-    std::vector<ExprId> uniforms, attributes, builtins;
+    std::vector<ExprId> uniforms, attributes, builtins, varyings;
     for (ExprId id = 1; id < program.exprs_.size(); ++id) {
         const Op op = program.exprs_[id].op;
         if (op == Op::Uniform) uniforms.push_back(id);
         else if (op == Op::Attribute) attributes.push_back(id);
         else if (op == Op::Builtin) builtins.push_back(id);
+        else if (op == Op::Varying) varyings.push_back(id);
     }
     uint32_t binding = 0;
     if (!uniforms.empty()) {
@@ -172,7 +178,8 @@ WgslModule WgslEmitter::emit(const Program& program) {
         for (ExprId id : uniforms) {
             out += "  f_" + program.names_[program.exprs_[id].immediate] + ": " + e.type(program.exprs_[id].type) + ",\n";
         }
-        out += "}\n@group(0) @binding(" + std::to_string(binding++) + ") var<uniform> u: Uniforms;\n";
+        out += "}\n@group(" + std::to_string(group) + ") @binding(" + std::to_string(binding++) +
+               ") var<uniform> u: Uniforms;\n";
     }
     // A buffer the program never stores to is read-only, which is also the only storage a vertex
     // stage may declare.
@@ -184,7 +191,7 @@ WgslModule WgslEmitter::emit(const Program& program) {
     }
     for (uint32_t i = 0; i < program.storage_.size(); ++i) {
         const auto& storage = program.storage_[i];
-        out += "@group(0) @binding(" + std::to_string(binding++) + ") var<storage, " +
+        out += "@group(" + std::to_string(group) + ") @binding(" + std::to_string(binding++) + ") var<storage, " +
                (written.count(i) ? "read_write" : "read") + "> s_" + storage.name + ": array<" +
                e.type(storage.element) + ">;\n";
     }
@@ -212,6 +219,13 @@ WgslModule WgslEmitter::emit(const Program& program) {
     uint32_t location = 0;
     for (ExprId id : attributes) {
         out += std::string(first ? "" : ", ") + "@location(" + std::to_string(location++) + ") a_" +
+               program.names_[program.exprs_[id].immediate] + ": " + e.type(program.exprs_[id].type);
+        first = false;
+    }
+    // ponytail: varyings take locations in first-use order, which matches a vertex stage that
+    // outputs them in the same order; a package-level link step replaces this when stages differ.
+    for (ExprId id : varyings) {
+        out += std::string(first ? "" : ", ") + "@location(" + std::to_string(location++) + ") i_" +
                program.names_[program.exprs_[id].immediate] + ": " + e.type(program.exprs_[id].type);
         first = false;
     }
