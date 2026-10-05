@@ -1,6 +1,6 @@
 # PRD-513 — Compute, multipass and a dynamic graph (N08d)
 
-**Status:** PROPOSED
+**Status:** IN PROGRESS
 **Complexity:** 4 — compute dispatch, render-target chaining, and the first TSL graph built by AOT-compiled game code
 **Owner:** João
 **Work package:** N08 — [native-engine batch](../README.md) · [N08 index](README.md)
@@ -36,10 +36,10 @@ TSL `compute()` in JS (`packages/core/src/compute-driven.ts`).
 ## Execution Phases
 
 #### Phase 1: Compute feeds a draw
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **Files:** proposed `packages/runtime-native/conformance/scenes/native-engine-compute-draw/`
 - [ ] A compute pass writes 10,000 instance positions into a storage buffer and the following draw renders them matching the browser reference. proof: `pnpm parity -- --case native-engine-compute-draw`
-- [ ] Readback of the storage buffer equals the CPU-computed expected positions. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_compute_readback`
+- [x] Readback of the storage buffer equals the CPU-computed expected positions. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_compute_readback` — 2026-10-05: green on Dawn, ASan and wgpu. `ComputePass` (`src/engine/renderer/compute.{h,cpp}`) compiles an IR compute program to a pipeline, binds its storage buffers in declaration order and its scalar uniforms by name, and dispatches 64-thread workgroups. The test program writes 10,000 instance positions on a 100 x 100 grid (exact u32 row and column, `spacing` uniform), with 37 invocations past the end writing nothing; the readback equals the CPU positions in all 40,000 components. A dispatch given the wrong storage buffers is refused, not recorded. The IR now converts one numeric part of the same shape (`u32(x)`, `vec3<f32>(v)`), as WGSL does
 
 #### Phase 2: Multipass through a render target
 **Status:** NOT STARTED

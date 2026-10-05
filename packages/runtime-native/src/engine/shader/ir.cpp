@@ -236,7 +236,10 @@ ExprId Program::construct(Type type, const std::vector<ExprId>& parts, Where whe
     for (size_t i = 0; i < parts.size(); ++i) {
         if (parts[i] == kInvalid) return kInvalid;
         const Type part = exprs_[parts[i]].type;
-        if (part.scalar != type.scalar || part.isMatrix()) {
+        // One numeric part of the same shape converts, as WGSL's u32(x) and vec3<f32>(v) do.
+        const auto numeric = [](Type t) { return t.scalar != Type::Scalar::Bool && !t.isMatrix(); };
+        const bool conversion = parts.size() == 1 && numeric(part) && numeric(type) && part.rows == type.rows;
+        if ((part.scalar != type.scalar && !conversion) || part.isMatrix()) {
             return fail("construct " + type.name(), "part " + std::to_string(i) + " is " + part.name(), where);
         }
         components += part.rows;
