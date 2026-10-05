@@ -1,26 +1,43 @@
 # Forest starter kit
 
-A baked 512 m forest: real elevations, hydraulic erosion, a lake, a river, an access road, and
-scatter for firs and boulders. It ships data only. The scene, the materials and the props are
-yours.
+A 512 m forest on real elevations (USGS 3DEP), with hydraulic and thermal erosion, clustered fir
+stands, young firs and boulder fields. It is game source: once copied, every file is yours to edit.
 
-`recipe.json` is the editable recipe: change `config.seed`, `config.size`, or any scatter layer's
-`count`, `minDistance`, slope limits or `scale`, then re-run the bake. The same recipe always
-produces the same package. `assets.json` names each prop's two models, its LOD distance, its cull
-distance and its authored bounds; `surface.json` is the terrain table `loadTerrainSplat` reads.
+| File | What it decides |
+| --- | --- |
+| `recipe.json` | The terrain and the scatter: seed, size, erosion, `count`, `minDistance`, slope limits, `scale`, masks. |
+| `assets.json` | Each prop's models, LOD distance, draw distance and bounds. |
+| `surface.json` | The ground: texture layers, tiles, tints, far tiles and blend thresholds. |
+| `bake.mjs` | Writes the world package from the three files above. |
+| `world.ts` | `addForest(ctx, follow)`: terrain, props, shadows, collision; `COLLIDERS` per prop. |
+| `sky.ts` | `forestDaylight(follow)`: sun, sky, fill, haze, exposure and tone curve. |
+
+Art is CC0 (Poly Haven); provenance is in `@threenative/terrain/starter-assets/credits.json`.
 
 ## Three steps
 
 1. Copy `node_modules/@threenative/terrain/starter/forest` to `src/terrain/forest`.
-2. Run `node src/terrain/forest/bake.mjs` (needs `@threenative/terrain` as a devDependency).
-3. Copy the `world/` folder it wrote into the game's asset source as `terrain/forest/`.
+2. Run `node src/terrain/forest/bake.mjs --out assets/terrain/forest` (needs `@threenative/terrain`
+   as a devDependency). The same recipe always writes the same bytes.
+3. Add it to a scene:
 
-The bake writes a self-contained world package into `world/`: `world.json`, `heightmap.u16`,
-`placements.bin`, `splat.rgba`, `terrain-table.json`, `models/` and `textures/`. It reads the CC0
-models and JPGs from the installed `@threenative/terrain/starter-assets`, so nothing has to be
-copied by hand; pass `--assets <dir>` to read them from somewhere else, and `--out <dir>` to write
-the package somewhere other than `world/`.
+```ts
+import { forestDaylight } from "../terrain/forest/sky.js";
+import { addForest } from "../terrain/forest/world.js";
 
-## Adding it to a scene
+// In Scene.load (it awaits the package) — `player` is what the world streams around.
+const forest = await addForest(ctx, player);
+// In Scene.enter.
+ctx.add(forestDaylight(ctx.camera));
+```
 
-TODO(world.ts)
+`addForest` resolves once the ground can be stood on: one heightfield collider covers the whole
+world before it returns. Set the camera's `far` to at least the sky size in `sky.ts` (5000 m).
+
+## Changing it
+
+- **A prop's collider:** edit its row in `COLLIDERS` in `world.ts` (`capsule`, `sphere` or `null`).
+- **A prop's model:** point `assets.json` at another glTF with its bounds, then re-bake.
+- **The layout:** edit `recipe.json` (or open it in the terrain editor), then re-bake.
+- **The look:** `surface.json` for the ground, `sky.ts` for the light, `PROP_SKY_LIGHT` in
+  `world.ts` for how strongly the sky lights the props.
