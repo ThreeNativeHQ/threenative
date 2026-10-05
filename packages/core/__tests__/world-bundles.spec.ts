@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   BoxGeometry,
+  DataTexture,
   Group,
   InstancedMesh,
   Matrix4,
@@ -723,6 +724,31 @@ describe("the main pass's draw bundles", () => {
     cells.dispose();
     expect(lifted.parent).not.toBe(group);
     expect(lifted.parent instanceof BundleGroup).toBe(false);
+  });
+
+  it("never copies a texture's pixels while it asks whether a draw can be recorded", async () => {
+    // A sky-lit prop carries an HDR DataTexture as its envMap. The structural walk that looks for a
+    // framebuffer node must not descend into the texture's pixel array: Object.values on a typed
+    // array copies every element, which measured 4 s of a 4.3 s profile (5 fps) in a fresh game.
+    const materials = mixedChunkMaterials();
+    const painted = materials[0] as Material & { envMap: DataTexture | null };
+    painted.envMap = new DataTexture(new Float32Array(64 * 64 * 4), 64, 64);
+    const values = vi.spyOn(Object, "values");
+    try {
+      const { renderer, world: cells } = await world({
+        bundles: true,
+        chunkModel: (url) => standAtCellOf(url, chunkOf(materials)),
+      });
+      cells.update(renderer, eastCamera());
+      await flushed(cells, renderer, eastCamera());
+      const drawn = project(cells, eastCamera());
+      expect(drawn.bundled.filter(isChunk).map((mesh) => (mesh as Mesh).material)).toEqual([
+        painted,
+      ]);
+      expect(values.mock.calls.filter(([value]) => ArrayBuffer.isView(value))).toEqual([]);
+    } finally {
+      values.mockRestore();
+    }
   });
 
   it("leaves a main batch a record cannot replay on the per-object path, and records the rest", async () => {

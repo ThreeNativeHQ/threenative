@@ -2912,7 +2912,9 @@ const PER_RENDER_UPDATE = "render";
  * sampler — hence `transmission` is asked of the material itself as well.
  */
 function samplesFramebuffer(node: unknown, seen: Set<unknown>): boolean {
-  if (node === null || typeof node !== "object" || seen.has(node)) return false;
+  // Pixels and vertex data hold no node, and Object.values would copy every element of them.
+  if (node === null || typeof node !== "object" || ArrayBuffer.isView(node) || seen.has(node))
+    return false;
   seen.add(node);
   const candidate = node as {
     readonly isNode?: boolean;
