@@ -3,6 +3,7 @@
 **Complexity: 7 → MEDIUM mode**
 
 **Status:** EXPERIMENTAL — Phase 0 deterministic harness and fox-scale browser baseline complete; optimization/native decision phases remain open. No shipping optimization is authorized.
+**Priority:** P3 — Experimental harness with no shipping optimization authorized; scenario matrix unrun.
 **Baseline:** branch `experiment/native-cpu-profiling`, clean committed source `11bf82d2152af300e92e8f55c6e7c98a2492a5af`.
 
 ---

@@ -7,6 +7,7 @@ prd_contract: v1
 **Status:** PARTIAL — worked 2026-08-24 on the physical Pixel 8. Evidence:
 `docs/verification/runtime-perf-state.md`.
 
+**Priority:** P1 — Criterion unmet: first frame 14.4-14.8 s, warm-up path about 35 s on Pixel 8.
 | criterion | state |
 | --- | --- |
 | 1. Stall named | **short** — the stall is named and reproducible (`pipelineCompile` 8,038 ms across 105 calls, 67.5 % of an 11.7 s gap) but attribution is **73.5 %**, under the required 80 %. Re-measured 2026-09-03 on the current runtime: 8,300 ms / 103 calls, attribution 72.4 % — still short. The residual is JS inside the first frame and is reported as residual, not absorbed. |

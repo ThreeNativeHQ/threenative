@@ -8,6 +8,7 @@ prd_contract: v1
 [`maxliebscher/threejs-procedural-rocks-cliffs`](https://github.com/maxliebscher/threejs-procedural-rocks-cliffs)
 at `647839c884456a4d1b6a1a7d520cbce331794538` (MIT). No upstream code or assets have been copied.
 
+**Priority:** P2 — Thirty-five open boxes: starter baseline, fused horizon ridge, adapted-source counting.
 **Complexity:** +3 touches more than 10 files, +2 introduces a renderer-independent extraction
 module in generated source, +2 coordinates progressive Worker replacement, +2 crosses the
 scaffolder, playtest and native-proof surfaces = **9 → HIGH mode**. Run a `prd-work-reviewer`

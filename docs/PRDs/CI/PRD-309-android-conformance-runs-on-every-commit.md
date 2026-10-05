@@ -6,6 +6,7 @@ prd_contract: v1
 
 **Status:** OPEN, filed 2026-08-31 against `2e014460`. Planning only.
 
+**Priority:** P2 — Planning only; open boxes guard wiring the conformance harness into every-commit CI.
 **Outcome:** the Android conformance lane executes its rows on every commit and its result is
 visible on the run, instead of a lane that stopped before Gradle on a stale dependency pin and
 reported nothing. Every "runs everywhere" claim this project makes currently rests on a lane whose

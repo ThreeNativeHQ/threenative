@@ -5,6 +5,7 @@ prd_contract: v1
 # PRD-VQ-13 — Depth of field and motion blur are qualified optional stages, not a second camera pipeline
 
 **Status:** PROPOSED — 2026-10-01. No implementation or qualification is claimed.
+**Priority:** P2 — Proposed DOF and motion-blur stages with pre-install validation and no duplicate pass.
 **Batch:** Visual quality execution batch. **Wave:** 3 / optional cinematics.
 **Dependencies:** PRD-269 motion correctness and PRD-455 history/reset rules; VQ-02 output lifetime qualification.
 

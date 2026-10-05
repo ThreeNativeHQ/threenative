@@ -1,6 +1,7 @@
 # PRD-473 — Streamed open worlds hold 120 fps: a GPU-driven world
 
 **Status:** PARTIAL — filed 2026-09-28; PR375 GPU-scene continuity and the runtime impostor path are in flight (see execution status below).
+**Priority:** P1 — Open: GPU culls and LOD-selects batched instances, bundles replay static draws.
 **Complexity:** 9 (HIGH): compute culling, indirect draws, cached draw commands, runtime impostor bake and cook-time HLOD across core, assets and the three patch. Risk override: none.
 **Owner:** engine
 **Depends on:** [PRD-458 60 fps by default](PRD-458-open-worlds-hold-60-fps-by-default.md) (instanced chain LOD, main-pass cell culling, asset dedupe, chunk merge, shadow caster split, streaming prewarm).

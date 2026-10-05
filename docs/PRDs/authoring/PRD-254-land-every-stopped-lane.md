@@ -1,6 +1,7 @@
 # PRD-254 — Land every stopped lane
 
 **Status:** PARTIAL — landed on `main` 2026-08-29 at `65d30337`; see the gaps named below
+**Priority:** P2 — Remaining 35 boxes are post-landing hygiene: confirm uncommitted work survived, clear stale gate record.
 **Filed:** 2026-08-28 (state captured ~22:00 local)
 **Owner:** next session
 **Scope:** every lane with work that stopped and never landed — the nine crashed feature-mining

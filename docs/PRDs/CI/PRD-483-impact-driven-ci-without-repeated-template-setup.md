@@ -5,6 +5,7 @@ prd_contract: v1
 # PRD-483 — Impact-driven CI without repeated template setup
 
 **Status:** PARTIAL — local verification green; live CI pending.
+**Priority:** P2 — Single open box: normal CI passes on the cleanup PR without bypass.
 **Owner:** CI tooling
 **Scope:** One cleanup PR; builds on PRDs 373, 380, 480 and 481 and the conservative #417 reuse repair.
 

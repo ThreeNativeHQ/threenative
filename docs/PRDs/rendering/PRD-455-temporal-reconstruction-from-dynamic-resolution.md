@@ -5,7 +5,7 @@ prd_contract: v1
 # PRD-455 — Fewer rendered pixels reconstruct into a stable full-resolution frame
 
 **Status:** PROPOSED — filed 2026-09-26.  
-**Priority:** highest-value rendering project after the streaming quick wins.  
+**Priority:** P1 — Its own note ranks it the highest-value rendering project; reconstruction and ghosting boxes unticked.
 **Complexity:** 8 → HIGH. The renderer already has the difficult prerequisites; the remaining risk is history correctness and proving reconstruction wins more GPU time than it costs.  
 **Depends on:** the landed motion-history implementation from PRD-269 (`packages/core/src/render/velocity.ts`, commit `3630847a`), the existing `RenderChain`, and [PRD-384 adaptive resolution](../performance/PRD-384-adaptive-resolution-gpu-headroom.md).
 
