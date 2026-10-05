@@ -23,10 +23,7 @@ elseif(SDL3_LIBRARY)
 endif()
 
 # Renderer: native-owned GPU resources over the same WebGPU backend the host uses.
-add_library(tn_engine_renderer STATIC src/engine/renderer/gpu_resources.cpp src/engine/renderer/device_state.cpp
-    src/engine/renderer/presentation.cpp src/engine/renderer/package_loader.cpp
-    src/engine/renderer/geometry_cache.cpp src/engine/renderer/pipeline_cache.cpp src/engine/renderer/renderer.cpp
-    src/engine/renderer/render_database.cpp)
+add_library(tn_engine_renderer STATIC ${TN_ENGINE_RENDERER_SOURCES})
 tn_native_engine_target(tn_engine_renderer)
 target_link_libraries(tn_engine_renderer PUBLIC tn_engine_foundation tn_engine_assets tn_engine_shader tn_engine_scene tn_host_services)
 if(TARGET dawn::webgpu)

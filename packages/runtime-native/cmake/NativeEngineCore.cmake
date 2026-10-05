@@ -219,6 +219,28 @@ if(NOT EMSCRIPTEN)
     set_tests_properties(native_engine_registry_snapshot PROPERTIES LABELS "native-engine")
 endif()
 
+# The renderer's sources, shared by the native build (NativeEngine.cmake, over the host's WebGPU
+# backend) and the browser build below.
+set(TN_ENGINE_RENDERER_SOURCES src/engine/renderer/gpu_resources.cpp src/engine/renderer/device_state.cpp
+    src/engine/renderer/presentation.cpp src/engine/renderer/package_loader.cpp
+    src/engine/renderer/geometry_cache.cpp src/engine/renderer/pipeline_cache.cpp src/engine/renderer/renderer.cpp
+    src/engine/renderer/render_database.cpp)
+if(EMSCRIPTEN)
+    # PRD-532: the same renderer over the browser's WebGPU through Dawn's emdawnwebgpu port, whose
+    # webgpu.h is Dawn's. No host services: nothing here may assume a native driver.
+    add_library(tn_engine_renderer STATIC ${TN_ENGINE_RENDERER_SOURCES})
+    tn_native_engine_target(tn_engine_renderer)
+    target_link_libraries(tn_engine_renderer PUBLIC tn_engine_foundation tn_engine_assets tn_engine_shader tn_engine_scene)
+    target_compile_definitions(tn_engine_renderer PUBLIC MYSTRAL_WEBGPU_DAWN)
+    target_compile_options(tn_engine_renderer PUBLIC --use-port=emdawnwebgpu)
+    target_link_options(tn_engine_renderer PUBLIC --use-port=emdawnwebgpu)
+    target_include_directories(tn_engine_renderer PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    add_executable(tn-native-engine-wasm-renderer-link tests/native-engine/wasm/renderer_link.cpp)
+    target_link_libraries(tn-native-engine-wasm-renderer-link PRIVATE tn_engine_renderer)
+    target_include_directories(tn-native-engine-wasm-renderer-link PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    tn_native_engine_target(tn-native-engine-wasm-renderer-link)
+endif()
+
 add_library(tn_fixture_driver STATIC tests/native-engine/fixture/driver.cpp)
 tn_native_engine_target(tn_fixture_driver)
 target_include_directories(tn_fixture_driver PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine)

@@ -44,7 +44,7 @@ browser's own JS engine and reaches the Wasm engine through the catalog's browse
 #### Phase 1: It builds and initializes
 **Status:** NOT STARTED
 **Files:** proposed `packages/runtime-native/src/adapters/webgpu/emdawn/`, proposed CMake preset `wasm`
-- [ ] The engine targets compile to Wasm with no native-driver assumptions. proof: `cmake --preset wasm && cmake --build --preset wasm`
+- [x] The engine targets compile to Wasm with no native-driver assumptions. proof: `cmake --preset wasm && cmake --build --preset wasm` — 2026-10-05: green (emsdk 6.0.11). Every engine library, the renderer included, builds for Wasm; the renderer compiles the same sources as the native build over Dawn's `emdawnwebgpu` port and links no host services, and `tn-native-engine-wasm-renderer-link` (which pulls every renderer object and its `wgpu*` calls into the link) runs under node and prints `TN_WASM_RENDERER_LINKED`. The one native-driver assumption it found was `webgpu_compat.h` naming native window surfaces (Metal layer, HWND, Xlib, ANativeWindow), now outside Emscripten builds. The `wasm-check` lane stays 49/49
 - [ ] The browser-JS binding back end covers every catalog entry marked supported, and nothing else. proof: `pnpm exec vitest run packages/three-native/__tests__/browser-backend-coverage.spec.ts`
 - [ ] Async initialization completes and reports the adapter. proof: `node packages/playtest/dist/runner/cli.js native-core-wasm-boot.playtest.json --browser-recipe webgpu`
 
