@@ -17,6 +17,10 @@ import { ClippingGroup } from "three/webgpu";
 import { createLocomotionTrace } from "./vq-locomotion-trace.js";
 
 const eye = new Vector3();
+/** Eye position relative to the head bone: slightly up, forward of the neck (the rig faces -z). */
+const EYE_OFFSET = new Vector3(0, 0.1, -0.26);
+/** Pitch below the horizon, radians. */
+const LOOK_DOWN = (46 * Math.PI) / 180;
 
 /** Two CC0 mannequin rigs under one scripted speed trace, seen from the first rig's own head. */
 class VqLocomotion extends Scene {
@@ -44,7 +48,7 @@ class VqLocomotion extends Scene {
     // Neither rig translates: this fixture animates, and the first-person one stands under the
     // camera whose eye height it measures. The third-person one stands across the floor in front,
     // turned to face back. Both face the camera's forward direction, so neither is seen from behind.
-    trace.third.group.position.set(0, 0, -3.4);
+    trace.third.group.position.set(0, 0, -3);
     trace.third.group.rotation.y = Math.PI;
     trace.first.group.rotation.y = Math.PI;
     ctx.add(trace.third.group);
@@ -54,13 +58,16 @@ class VqLocomotion extends Scene {
     // plays the clips the driver asked for. Measured, not authored: the rig decides where its head
     // is.
     trace.first.head.updateWorldMatrix(true, false);
-    ctx.camera.position.copy(trace.first.head.getWorldPosition(eye));
+    trace.first.head.getWorldPosition(eye);
     const viewBody = new ClippingGroup();
     viewBody.clippingPlanes = [new Plane(new Vector3(0, -1, 0), eye.y)];
+    // The eye sits just above and in front of the head bone, which is where a face is.
+    eye.add(EYE_OFFSET);
+    ctx.camera.position.copy(eye);
     viewBody.add(trace.first.group);
     ctx.add(viewBody);
     // Pitched down far enough that the body's own arms and legs are in frame under the horizon.
-    ctx.camera.lookAt(eye.x, eye.y - 2.4, eye.z - 6);
+    ctx.camera.lookAt(eye.x, eye.y - Math.sin(LOOK_DOWN) * 5, eye.z - Math.cos(LOOK_DOWN) * 5);
     ctx.entities.add("third-person-locomotion", {
       debug: trace.third.report,
       mesh: trace.third.group,
@@ -87,7 +94,7 @@ class VqLocomotion extends Scene {
 
 export default defineGame({
   initialState: {},
-  camera: { projection: "perspective", fov: 70, near: 0.05, far: 50 },
+  camera: { projection: "perspective", fov: 85, near: 0.05, far: 50 },
   input: { start: { keys: ["Space"] } },
   plugins: [playtest()],
   render: { preferWebGPU: true },

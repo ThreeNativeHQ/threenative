@@ -17,8 +17,44 @@
     },
     {
       "kind": "wait",
-      "label": "run-two-passes-then-release",
-      "waitTicks": 420
+      "label": "walk",
+      "waitTicks": 45,
+      "screenshot": "locomotion-walk"
+    },
+    {
+      "kind": "wait",
+      "label": "jog",
+      "waitTicks": 25,
+      "screenshot": "locomotion-jog"
+    },
+    {
+      "kind": "wait",
+      "label": "sprint",
+      "waitTicks": 25,
+      "screenshot": "locomotion-sprint"
+    },
+    {
+      "kind": "wait",
+      "label": "decelerating",
+      "waitTicks": 35,
+      "screenshot": "locomotion-decelerating"
+    },
+    {
+      "kind": "wait",
+      "label": "idle-before-reversals",
+      "waitTicks": 30,
+      "screenshot": "locomotion-idle-before-reversals"
+    },
+    {
+      "kind": "wait",
+      "label": "after-reversals",
+      "waitTicks": 20,
+      "screenshot": "locomotion-after-reversals"
+    },
+    {
+      "kind": "wait",
+      "label": "finish-both-passes-and-release",
+      "waitTicks": 240
     }
   ],
   "assert": {
@@ -144,5 +180,8 @@
         "minTriangles": 200
       }
     ]
+  },
+  "artifacts": {
+    "screenshots": "after"
   }
 }
