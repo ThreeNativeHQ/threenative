@@ -144,9 +144,9 @@ void notifyingSetters(ClassBinding& b, const char* const (&names)[N], double T::
  */
 template <typename T>
 void nestedVector(ClassBinding& b, const char* prefix, Vector3 T::*field) {
-    b.members[prefix] = [field](void* self, const Args&, Store& store) {
+    fixedMember(b, prefix, [field](void* self, const Args&, Store& store) {
         return memberAlias(store, self, as<T>(self)->*field, "Vector3");
-    };
+    });
     for (int i = 0; i < 3; ++i) {
         const std::string path = std::string(prefix) + "." + "xyz"[i];
         b.getters[path] = [field, i](void* self) {

@@ -31,19 +31,29 @@ struct tn_context : tn::binding::Store {
     std::vector<tn::binding::Object> values;  // by handle index
     // (address, class) -> the one handle naming it: member aliases and shared objects. The class is
     // part of the key because a first member shares its owner's address (Box3::min).
-    std::map<std::pair<const void*, std::string>, tn_handle_t> identities_;
+    // address -> (class, handle) pairs: almost always one; the class tells a first member from its owner.
+    std::unordered_map<const void*, std::vector<std::pair<std::string, tn_handle_t>>> identities_;
     std::unordered_map<const void*, tn_handle_t> primary_;  // an object's own handle, by address
     std::unordered_map<const void*, std::shared_ptr<void>> owners_;  // an object pointer -> its record
     std::string scratchText;                  // a returned string, valid until the next call
     std::vector<double> scratchNumbers;       // a returned array, valid until the next call
 
+    // A Ref's text is the handle itself: a marker byte and its type, index and generation, 11 bytes
+    // that fit a std::string's inline buffer, so a crossing formats and parses nothing.
     static std::string refText(tn_handle_t h) {
-        return "h" + std::to_string(h.type) + ":" + std::to_string(h.index) + ":" + std::to_string(h.generation);
+        char bytes[11];
+        bytes[0] = '\x06';
+        std::memcpy(bytes + 1, &h.type, 2);
+        std::memcpy(bytes + 3, &h.index, 4);
+        std::memcpy(bytes + 7, &h.generation, 4);
+        return std::string(bytes, sizeof bytes);
     }
     bool decode(const std::string& text, tn_handle_t& out) const {
-        unsigned type = 0, index = 0, generation = 0;
-        if (std::sscanf(text.c_str(), "h%u:%u:%u", &type, &index, &generation) != 3) return false;
-        out = tn_handle_t{static_cast<uint16_t>(type), objects.context(), index, generation};
+        if (text.size() != 11 || text[0] != '\x06') return false;
+        out = tn_handle_t{0, objects.context(), 0, 0};
+        std::memcpy(&out.type, text.data() + 1, 2);
+        std::memcpy(&out.index, text.data() + 3, 4);
+        std::memcpy(&out.generation, text.data() + 7, 4);
         return true;
     }
     tn::binding::Object* object(tn_handle_t h) {
@@ -79,14 +89,18 @@ struct tn_context : tn::binding::Store {
     }
     // The cached handle while its object lives; a released handle is replaced, never reused.
     tn::binding::Value identity(std::string cls, std::shared_ptr<void> ptr, bool primary) {
-        const auto key = std::make_pair(static_cast<const void*>(ptr.get()), cls);
-        const auto cached = identities_.find(key);
-        if (cached != identities_.end() && object(cached->second) != nullptr) {
-            return tn::binding::Value{tn::binding::Value::Kind::Ref, 0, refText(cached->second)};
+        auto& known = identities_[ptr.get()];
+        for (auto& [knownCls, handle] : known) {
+            if (knownCls != cls) continue;
+            if (object(handle) != nullptr) return tn::binding::Value{tn::binding::Value::Kind::Ref, 0, refText(handle)};
+            tn_handle_t h{};
+            if (!hold(cls, std::move(ptr), h, primary)) throw tn::binding::Unsupported{"the catalog publishes no such class"};
+            handle = h;
+            return tn::binding::Value{tn::binding::Value::Kind::Ref, 0, refText(h)};
         }
         tn_handle_t h{};
-        if (!hold(std::move(cls), std::move(ptr), h, primary)) throw tn::binding::Unsupported{"the catalog publishes no such class"};
-        identities_[key] = h;
+        if (!hold(cls, std::move(ptr), h, primary)) throw tn::binding::Unsupported{"the catalog publishes no such class"};
+        known.emplace_back(std::move(cls), h);
         return tn::binding::Value{tn::binding::Value::Kind::Ref, 0, refText(h)};
     }
     std::vector<double> numbers(const tn::binding::Value& arg) override {

@@ -109,6 +109,9 @@ v8::Local<v8::Value> fromValue(Adapter& a, const tn_value_t& v) {
 struct MethodData {
     Adapter* adapter;
     std::string name;
+    // A fixed member's wrapper, kept on the owner's JS object under this private key: the member
+    // names the same native object for the owner's life, so later reads cross nothing.
+    v8::Global<v8::Private> cache;
 };
 
 }  // namespace
@@ -251,30 +254,49 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
                            },
                            v8::External::New(isolate_, data)));
         }
-        std::vector<std::pair<std::string, bool>> properties;  // name, settable
+        struct Property {
+            std::string path;
+            bool settable;
+            bool fixed;
+        };
+        std::vector<Property> properties;
         for (const auto& [path, getter] : binding.getters) {
             // A dotted path (`position.x`) is reached through the member object, not as a property.
-            if (path.find('.') == std::string::npos) properties.push_back({path, binding.setters.count(path) > 0});
+            if (path.find('.') == std::string::npos) properties.push_back({path, binding.setters.count(path) > 0, false});
         }
         // Member objects read as properties too; tn_get answers them with the one alias Ref.
-        for (const auto& [path, member] : binding.members) properties.push_back({path, false});
-        for (const auto& [path, settable] : properties) {
-            auto* data = new MethodData{this, path};
+        for (const auto& [path, member] : binding.members) {
+            properties.push_back({path, false, binding.fixedMembers.count(path) > 0});
+        }
+        for (const auto& [path, settable, fixed] : properties) {
+            auto* data = new MethodData{this, path, {}};
+            if (fixed) data->cache.Reset(isolate_, v8::Private::New(isolate_, str(isolate_, "tn:" + path)));
             proto->SetAccessorProperty(
                 str(isolate_, path),
                 v8::FunctionTemplate::New(
                     isolate_,
                     [](const v8::FunctionCallbackInfo<v8::Value>& info) {
                         auto* d = static_cast<MethodData*>(info.Data().As<v8::External>()->Value());
+                        v8::Isolate* isolate = info.GetIsolate();
+                        v8::Local<v8::Context> ctx = isolate->GetCurrentContext();
+                        if (!d->cache.IsEmpty()) {
+                            v8::Local<v8::Value> cached;
+                            if (info.This()->GetPrivate(ctx, d->cache.Get(isolate)).ToLocal(&cached) && !cached->IsUndefined()) {
+                                info.GetReturnValue().Set(cached);
+                                return;
+                            }
+                        }
                         tn_handle_t h{};
                         if (!d->adapter->unwrap(info.This(), h)) return;
                         tn_value_t result{};
                         tn_diagnostic_t diagnostic{nullptr, 0};
                         if (tn_get(h, d->name.c_str(), &result, &diagnostic) != TN_OK) {
-                            throwStatus(info.GetIsolate(), diagnostic);
+                            throwStatus(isolate, diagnostic);
                             return;
                         }
-                        info.GetReturnValue().Set(fromValue(*d->adapter, result));
+                        v8::Local<v8::Value> value = fromValue(*d->adapter, result);
+                        if (!d->cache.IsEmpty()) info.This()->SetPrivate(ctx, d->cache.Get(isolate), value).Check();
+                        info.GetReturnValue().Set(value);
                     },
                     v8::External::New(isolate_, data)),
                 settable ? v8::FunctionTemplate::New(

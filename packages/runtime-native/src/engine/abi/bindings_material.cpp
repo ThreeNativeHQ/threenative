@@ -142,10 +142,10 @@ void registerMaterialBase(ClassBinding& b) {
     nestedColor(b, "emissive", &Material::emissive, true);
     nestedColor(b, "specular", &Material::specular, true);
     nestedColor(b, "specularColor", &Material::specularColor, true);
-    b.members["color"] = memberAliasMethod(&Material::color, "Color");
-    b.members["emissive"] = memberAliasMethod(&Material::emissive, "Color");
-    b.members["specular"] = memberAliasMethod(&Material::specular, "Color");
-    b.members["specularColor"] = memberAliasMethod(&Material::specularColor, "Color");
+    fixedMember(b, "color", memberAliasMethod(&Material::color, "Color"));
+    fixedMember(b, "emissive", memberAliasMethod(&Material::emissive, "Color"));
+    fixedMember(b, "specular", memberAliasMethod(&Material::specular, "Color"));
+    fixedMember(b, "specularColor", memberAliasMethod(&Material::specularColor, "Color"));
     b.setters["color"] = colorSetter(&Material::color, true);
     b.setters["emissive"] = colorSetter(&Material::emissive, true);
     b.setters["specular"] = colorSetter(&Material::specular, true);
@@ -166,7 +166,7 @@ void registerLightBase(ClassBinding& b) {
     b.getters["intensity"] = [](void* self) { return Value::of(as<Light>(self)->intensity); };
     b.setters["intensity"] = [](void* self, const Value& v) { as<Light>(self)->intensity = number(v); };
     nestedColor(b, "color", &Light::color, false);
-    b.members["color"] = memberAliasMethod(&Light::color, "Color");
+    fixedMember(b, "color", memberAliasMethod(&Light::color, "Color"));
     b.setters["color"] = colorSetter(&Light::color, false);
 }
 
@@ -192,6 +192,7 @@ void registerDirectionalLight(ClassBinding& b) {
         if (light->target == nullptr) return Value{};
         return store.adoptAlias("Object3D", light->target, self);
     };
+    b.fixedMembers.insert("target");  // the light owns its target for its whole life
 }
 
 void registerHemisphereLight(ClassBinding& b) {
@@ -204,7 +205,7 @@ void registerHemisphereLight(ClassBinding& b) {
     };
     registerLightBase(b);
     nestedColor(b, "groundColor", &HemisphereLight::groundColor, false);
-    b.members["groundColor"] = memberAliasMethod(&HemisphereLight::groundColor, "Color");
+    fixedMember(b, "groundColor", memberAliasMethod(&HemisphereLight::groundColor, "Color"));
     b.setters["groundColor"] = colorSetter(&HemisphereLight::groundColor, false);
 }
 

@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <functional>
 #include <map>
+#include <set>
 #include <memory>
 #include <string>
 #include <type_traits>
@@ -88,7 +89,17 @@ struct ClassBinding {
     // Member objects (`position`, `matrixWorld`): read as properties, answered with the one alias Ref
     // of that member (memberAlias), so they need the Store a plain getter does not get.
     std::map<std::string, Method> members;
+    // The members that name a field of the object itself (`position`, `material.color`): the same
+    // object for the owner's whole life, so a caller may keep the Ref it got the first time. A member
+    // that can be reassigned (`mesh.material`, `geometry.attributes.position`) is never listed.
+    std::set<std::string> fixedMembers;
 };
+
+/** Registers a member that names a field of the object itself (see ClassBinding::fixedMembers). */
+inline void fixedMember(ClassBinding& b, const std::string& name, Method member) {
+    b.members[name] = std::move(member);
+    b.fixedMembers.insert(name);
+}
 
 using Registry = std::map<std::string, ClassBinding>;
 

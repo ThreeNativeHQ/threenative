@@ -241,13 +241,13 @@ void registerObject3D(ClassBinding& b) {
     };
 
     // The members themselves, as Refs to the members.
-    b.members["position"] = memberAliasMethod(&Object3D::position, "Vector3");
-    b.members["scale"] = memberAliasMethod(&Object3D::scale, "Vector3");
-    b.members["up"] = memberAliasMethod(&Object3D::up, "Vector3");
-    b.members["quaternion"] = memberAliasMethod(&Object3D::quaternion, "Quaternion");
-    b.members["rotation"] = memberAliasMethod(&Object3D::rotation, "Euler");
-    b.members["matrix"] = memberAliasMethod(&Object3D::matrix, "Matrix4");
-    b.members["matrixWorld"] = memberAliasMethod(&Object3D::matrixWorld, "Matrix4");
+    fixedMember(b, "position", memberAliasMethod(&Object3D::position, "Vector3"));
+    fixedMember(b, "scale", memberAliasMethod(&Object3D::scale, "Vector3"));
+    fixedMember(b, "up", memberAliasMethod(&Object3D::up, "Vector3"));
+    fixedMember(b, "quaternion", memberAliasMethod(&Object3D::quaternion, "Quaternion"));
+    fixedMember(b, "rotation", memberAliasMethod(&Object3D::rotation, "Euler"));
+    fixedMember(b, "matrix", memberAliasMethod(&Object3D::matrix, "Matrix4"));
+    fixedMember(b, "matrixWorld", memberAliasMethod(&Object3D::matrixWorld, "Matrix4"));
 
     // Transforms.
     b.methods["add"] = [](void* self, const Args& a, Store& store) {
@@ -389,9 +389,9 @@ void registerCameraCommon(ClassBinding& b) {
     nestedMatrix<Camera>(b, "projectionMatrix", &Camera::projectionMatrix);
     nestedMatrix<Camera>(b, "projectionMatrixInverse", &Camera::projectionMatrixInverse);
     nestedMatrix<Camera>(b, "matrixWorldInverse", &Camera::matrixWorldInverse);
-    b.members["projectionMatrix"] = memberAliasMethod(&Camera::projectionMatrix, "Matrix4");
-    b.members["projectionMatrixInverse"] = memberAliasMethod(&Camera::projectionMatrixInverse, "Matrix4");
-    b.members["matrixWorldInverse"] = memberAliasMethod(&Camera::matrixWorldInverse, "Matrix4");
+    fixedMember(b, "projectionMatrix", memberAliasMethod(&Camera::projectionMatrix, "Matrix4"));
+    fixedMember(b, "projectionMatrixInverse", memberAliasMethod(&Camera::projectionMatrixInverse, "Matrix4"));
+    fixedMember(b, "matrixWorldInverse", memberAliasMethod(&Camera::matrixWorldInverse, "Matrix4"));
     // `setViewOffset` and `clearViewOffset` are registered per concrete class, because only
     // PerspectiveCamera's `setViewOffset` also writes `aspect`.
 }
