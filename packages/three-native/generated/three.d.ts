@@ -36,6 +36,13 @@ export declare const AlwaysDepth: 1;
 /** Catalog partial (native-not-implemented): three/AlwaysStencilFunc. */
 export declare const AlwaysStencilFunc: 519;
 
+/** Catalog supported: three/webgpu/AmbientLight. */
+export declare class AmbientLight extends Object3D {
+constructor();
+intensity: number;
+color: Color;
+}
+
 /** Catalog partial (native-not-implemented): three/AttachedBindMode. */
 export declare const AttachedBindMode: "attached";
 
@@ -99,7 +106,7 @@ export declare const BlendingEquation = {
 } as const;
 export type BlendingEquation = (typeof BlendingEquation)[keyof typeof BlendingEquation];
 
-/** Catalog partial (native-not-implemented): three/Box3. */
+/** Catalog supported: three/Box3. */
 export declare class Box3 {
 constructor(min?: Vector3, max?: Vector3);
 readonly isBox3: boolean;
@@ -169,14 +176,14 @@ max: Vector3;
   equals(box: Box3): boolean;
 }
 
-/** Catalog partial (geometry-parameter-object-literal): three/BoxGeometry. */
+/** Catalog supported: three/BoxGeometry. */
 export declare class BoxGeometry extends BufferGeometry {
 constructor(width?: number, height?: number, depth?: number, widthSegments?: number, heightSegments?: number, depthSegments?: number);
 readonly type: string | "BoxGeometry";
 readonly parameters: { readonly width: number; readonly height: number; readonly depth: number; readonly widthSegments: number; readonly heightSegments: number; readonly depthSegments: number; };
 }
 
-/** Catalog partial (json-serialization): three/BufferAttribute. */
+/** Catalog supported: three/BufferAttribute. */
 export declare class BufferAttribute extends EventDispatcher {
 constructor(array: TypedArray, itemSize: number, normalized?: boolean);
 readonly id: number;
@@ -247,7 +254,7 @@ onUploadCallback: () => void;
   dispose(): void;
 }
 
-/** Catalog partial (attribute-map-typing, draw-groups, indirect-storage, json-serialization): three/BufferGeometry. */
+/** Catalog supported: three/BufferGeometry. */
 export declare class BufferGeometry extends EventDispatcher {
 constructor();
 id: number;
@@ -258,15 +265,26 @@ index: BufferAttribute | null;
 indirectOffset: number | number[];
 morphAttributes: { position?: Array<BufferAttribute | InterleavedBufferAttribute> | undefined; normal?: Array<BufferAttribute | InterleavedBufferAttribute> | undefined; color?: Array<BufferAttribute | InterleavedBufferAttribute> | undefined; };
 morphTargetsRelative: boolean;
+groups: string;
 boundingBox: Box3 | null;
 boundingSphere: Sphere | null;
 drawRange: { start: number; count: number; };
 userData: Record<string, any>;
 readonly isBufferGeometry: true;
+readonly parameters: Record<string, unknown>;
+readonly revision: number;
 
   getIndex(): BufferAttribute | null;
 
   setIndex(index: BufferAttribute | number[] | null): this;
+
+  setAttribute(name: string, attribute: BufferAttribute): this;
+
+  getAttribute(name: string): BufferAttribute | null;
+
+  deleteAttribute(name: string): this;
+
+  hasAttribute(name: string): boolean;
 
   addGroup(start: number, count: number, materialIndex?: number): void;
 
@@ -316,13 +334,26 @@ readonly isBufferGeometry: true;
 /** Catalog partial (native-not-implemented): three/ByteType. */
 export declare const ByteType: 1010;
 
+/** Catalog supported: three/Camera. */
+export declare class Camera extends Object3D {
+constructor();
+readonly matrixWorldInverse: Matrix4;
+readonly projectionMatrix: Matrix4;
+readonly projectionMatrixInverse: Matrix4;
+}
+
 /** Catalog partial (native-not-implemented): three/CineonToneMapping. */
 export declare const CineonToneMapping: 3;
+
+/** Catalog supported: three/CircleGeometry. */
+export declare class CircleGeometry extends BufferGeometry {
+constructor();
+}
 
 /** Catalog partial (native-not-implemented): three/ClampToEdgeWrapping. */
 export declare const ClampToEdgeWrapping: 1001;
 
-/** Catalog partial (native-not-implemented): three/Color. */
+/** Catalog supported: three/Color. */
 export declare class Color {
 constructor(color?: ColorRepresentation);
 readonly isColor: true;
@@ -409,6 +440,11 @@ export declare const Combine = {
 } as const;
 export type Combine = (typeof Combine)[keyof typeof Combine];
 
+/** Catalog supported: three/webgpu/ConeGeometry. */
+export declare class ConeGeometry extends CylinderGeometry {
+constructor();
+}
+
 /** Catalog partial (native-not-implemented): three/ConstantAlphaFactor. */
 export declare const ConstantAlphaFactor: 213;
 
@@ -448,6 +484,11 @@ export declare const CustomBlending: 5;
 
 /** Catalog partial (native-not-implemented): three/CustomToneMapping. */
 export declare const CustomToneMapping: 5;
+
+/** Catalog supported: three/webgpu/CylinderGeometry. */
+export declare class CylinderGeometry extends BufferGeometry {
+constructor();
+}
 
 /** Catalog partial (native-not-implemented): three/Cylindrical. */
 export declare class Cylindrical {
@@ -495,6 +536,14 @@ export declare const DepthStencilFormat: 1027;
 /** Catalog partial (native-not-implemented): three/DetachedBindMode. */
 export declare const DetachedBindMode: "detached";
 
+/** Catalog supported: three/webgpu/DirectionalLight. */
+export declare class DirectionalLight extends Object3D {
+constructor();
+intensity: number;
+color: Color;
+readonly target: Object3D;
+}
+
 /** Catalog partial (native-not-implemented): three/DoubleSide. */
 export declare const DoubleSide: 2;
 
@@ -528,7 +577,7 @@ export declare const EquirectangularReflectionMapping: 303;
 /** Catalog partial (native-not-implemented): three/EquirectangularRefractionMapping. */
 export declare const EquirectangularRefractionMapping: 304;
 
-/** Catalog partial (native-not-implemented): three/Euler. */
+/** Catalog supported: three/Euler. */
 export declare class Euler {
 constructor(x?: number, y?: number, z?: number, order?: EulerOrder);
 x: number;
@@ -612,6 +661,25 @@ density: number;
 /** Catalog partial (native-not-implemented): three/FrontSide. */
 export declare const FrontSide: 0;
 
+/** Catalog supported: three/webgpu/Frustum. */
+export declare class Frustum {
+constructor();
+
+  clone(): this;
+
+  containsPoint(point: Vector3): boolean;
+
+  copy(frustum: Frustum): this;
+
+  intersectsBox(box: Box3): boolean;
+
+  intersectsSphere(sphere: Sphere): boolean;
+
+  set(p0: Plane, p1: Plane, p2: Plane, p3: Plane, p4: Plane, p5: Plane): Frustum;
+
+  setFromProjectionMatrix(m: Matrix4, coordinateSystem?: CoordinateSystem, reversedDepth?: boolean): this;
+}
+
 /** Catalog partial (native-not-implemented): three/GLSL1. */
 export declare const GLSL1: "100";
 
@@ -636,7 +704,7 @@ export declare const GreaterEqualStencilFunc: 518;
 /** Catalog partial (native-not-implemented): three/GreaterStencilFunc. */
 export declare const GreaterStencilFunc: 516;
 
-/** Catalog partial (native-not-implemented): three/Group. */
+/** Catalog supported: three/Group. */
 export declare class Group extends Object3D {
 constructor();
 readonly isGroup: true;
@@ -647,6 +715,14 @@ export type HSL = { h: number; s: number; l: number; };
 
 /** Catalog partial (native-not-implemented): three/HalfFloatType. */
 export declare const HalfFloatType: 1016;
+
+/** Catalog supported: three/webgpu/HemisphereLight. */
+export declare class HemisphereLight extends Object3D {
+constructor();
+intensity: number;
+color: Color;
+groundColor: Color;
+}
 
 /** Catalog partial (native-not-implemented): three/IncrementStencilOp. */
 export declare const IncrementStencilOp: 7682;
@@ -848,7 +924,7 @@ export declare const MaterialBlending: 6;
 /** Catalog partial (shader-parameters): three/MaterialParameters. */
 export type MaterialParameters = {  };
 
-/** Catalog partial (native-not-implemented): three/Matrix3. */
+/** Catalog supported: three/Matrix3. */
 export declare class Matrix3 {
 constructor();
 readonly isMatrix3: true;
@@ -910,7 +986,7 @@ elements: Matrix3Tuple;
 /** Catalog partial (native-not-implemented): three/Matrix3Tuple. */
 export type Matrix3Tuple = [ n11: number, n12: number, n13: number, n21: number, n22: number, n23: number, n31: number, n32: number, n33: number ];
 
-/** Catalog partial (native-not-implemented): three/Matrix4. */
+/** Catalog supported: three/Matrix4. */
 export declare class Matrix4 {
 constructor();
 elements: Matrix4Tuple;
@@ -998,7 +1074,7 @@ export type Matrix4Tuple = [ n11: number, n12: number, n13: number, n14: number,
 /** Catalog partial (native-not-implemented): three/MaxEquation. */
 export declare const MaxEquation: 104;
 
-/** Catalog partial (native-not-implemented): three/Mesh. */
+/** Catalog supported: three/Mesh. */
 export declare class Mesh extends Object3D {
 constructor(geometry?: BufferGeometry, material?: Material);
 readonly isMesh: true;
@@ -1014,7 +1090,7 @@ count: number;
   getVertexPosition(index: number, target: Vector3): Vector3;
 }
 
-/** Catalog partial (shader-parameters): three/MeshBasicMaterial. */
+/** Catalog supported: three/MeshBasicMaterial. */
 export declare class MeshBasicMaterial extends Material {
 constructor(parameters?: MeshBasicMaterialParameters);
 readonly isMeshBasicMaterial: boolean;
@@ -1071,6 +1147,9 @@ wireframeLinewidth: number;
 wireframeLinecap: "round" | "bevel" | "miter";
 wireframeLinejoin: "round" | "bevel" | "miter";
 fog: boolean;
+alphaTest: number;
+readonly id: number;
+readonly type: string;
 
   setValues(values?: MeshBasicMaterialParameters): void;
 }
@@ -1078,7 +1157,7 @@ fog: boolean;
 /** Catalog partial (shader-parameters): three/MeshBasicMaterialParameters. */
 export type MeshBasicMaterialParameters = {  };
 
-/** Catalog partial (shader-parameters): three/MeshStandardMaterial. */
+/** Catalog supported: three/MeshStandardMaterial. */
 export declare class MeshStandardMaterial extends Material {
 constructor(parameters?: MeshStandardMaterialParameters);
 readonly isMeshStandardMaterial: boolean;
@@ -1143,6 +1222,9 @@ wireframeLinecap: "round" | "bevel" | "miter";
 wireframeLinejoin: "round" | "bevel" | "miter";
 flatShading: boolean;
 fog: boolean;
+alphaTest: number;
+readonly id: number;
+readonly type: string;
 
   setValues(values?: MeshStandardMaterialParameters): void;
 }
@@ -1232,7 +1314,7 @@ export declare const NotEqualDepth: 7;
 /** Catalog partial (native-not-implemented): three/NotEqualStencilFunc. */
 export declare const NotEqualStencilFunc: 517;
 
-/** Catalog partial (native-not-implemented): three/Object3D. */
+/** Catalog supported: three/Object3D. */
 export declare class Object3D extends EventDispatcher {
 constructor();
 readonly isObject3D: true;
@@ -1265,6 +1347,7 @@ customDistanceMaterial: Material | undefined;
 "static": boolean;
 userData: Record<string, any>;
 pivot: Vector3 | null;
+readonly revision: number;
 
   applyMatrix4(matrix: Matrix4): void;
 
@@ -1370,13 +1453,62 @@ export declare const OneMinusSrcAlphaFactor: 205;
 /** Catalog partial (native-not-implemented): three/OneMinusSrcColorFactor. */
 export declare const OneMinusSrcColorFactor: 203;
 
+/** Catalog supported: three/webgpu/OrthographicCamera. */
+export declare class OrthographicCamera extends Camera {
+constructor();
+bottom: number;
+far: number;
+left: number;
+near: number;
+right: number;
+top: number;
+zoom: number;
+
+  clearViewOffset(): void;
+
+  setViewOffset(fullWidth: number, fullHeight: number, x: number, y: number, width: number, height: number): void;
+
+  updateProjectionMatrix(): void;
+}
+
 /** Catalog partial (native-not-implemented): three/PCFShadowMap. */
 export declare const PCFShadowMap: 1;
 
 /** Catalog partial (native-not-implemented): three/PCFSoftShadowMap. */
 export declare const PCFSoftShadowMap: 2;
 
-/** Catalog partial (native-not-implemented): three/Plane. */
+/** Catalog supported: three/webgpu/PerspectiveCamera. */
+export declare class PerspectiveCamera extends Camera {
+constructor();
+aspect: number;
+far: number;
+filmGauge: number;
+filmOffset: number;
+focus: number;
+fov: number;
+near: number;
+zoom: number;
+
+  clearViewOffset(): void;
+
+  getEffectiveFOV(): number;
+
+  getFilmHeight(): number;
+
+  getFilmWidth(): number;
+
+  getFocalLength(): number;
+
+  getViewSize(distance: number, target: Vector2): Vector2;
+
+  setFocalLength(focalLength: number): void;
+
+  setViewOffset(fullWidth: number, fullHeight: number, x: number, y: number, width: number, height: number): void;
+
+  updateProjectionMatrix(): void;
+}
+
+/** Catalog supported: three/Plane. */
 export declare class Plane {
 constructor(normal?: Vector3, constant?: number);
 normal: Vector3;
@@ -1424,14 +1556,14 @@ readonly isPlane: true;
   isIntersectionLine(l: any): any;
 }
 
-/** Catalog partial (geometry-parameter-object-literal): three/PlaneGeometry. */
+/** Catalog supported: three/PlaneGeometry. */
 export declare class PlaneGeometry extends BufferGeometry {
 constructor(width?: number, height?: number, widthSegments?: number, heightSegments?: number);
 readonly type: string | "PlaneGeometry";
 readonly parameters: { readonly width: number; readonly height: number; readonly widthSegments: number; readonly heightSegments: number; };
 }
 
-/** Catalog partial (native-not-implemented): three/Quaternion. */
+/** Catalog supported: three/Quaternion. */
 export declare class Quaternion {
 constructor(x?: number, y?: number, z?: number, w?: number);
 x: number;
@@ -1643,6 +1775,11 @@ export declare const ReplaceStencilOp: 7681;
 /** Catalog partial (native-not-implemented): three/ReverseSubtractEquation. */
 export declare const ReverseSubtractEquation: 102;
 
+/** Catalog supported: three/RingGeometry. */
+export declare class RingGeometry extends BufferGeometry {
+constructor();
+}
+
 /** Catalog partial (native-not-implemented): three/SIGNED_R11_EAC_Format. */
 export declare const SIGNED_R11_EAC_Format: 37489;
 
@@ -1661,10 +1798,11 @@ export declare const SRGBColorSpace: "srgb";
 /** Catalog partial (native-not-implemented): three/SRGBTransfer. */
 export declare const SRGBTransfer: "srgb";
 
-/** Catalog partial (native-not-implemented): three/Scene. */
+/** Catalog supported: three/Scene. */
 export declare class Scene extends Object3D {
 constructor();
 readonly isScene: boolean;
+background: Color | null;
 fog: (Fog | FogExp2) | null;
 backgroundBlurriness: number;
 backgroundIntensity: number;
@@ -1686,7 +1824,7 @@ export declare const Side = {
 } as const;
 export type Side = (typeof Side)[keyof typeof Side];
 
-/** Catalog partial (native-not-implemented): three/Sphere. */
+/** Catalog supported: three/Sphere. */
 export declare class Sphere {
 constructor(center?: Vector3, radius?: number);
 readonly isSphere: true;
@@ -1732,7 +1870,7 @@ radius: number;
   empty(): any;
 }
 
-/** Catalog partial (geometry-parameter-object-literal): three/SphereGeometry. */
+/** Catalog supported: three/SphereGeometry. */
 export declare class SphereGeometry extends BufferGeometry {
 constructor(radius?: number, widthSegments?: number, heightSegments?: number, phiStart?: number, phiLength?: number, thetaStart?: number, thetaLength?: number);
 readonly type: string | "SphereGeometry";
@@ -1820,6 +1958,11 @@ export declare const SubtractiveBlending: 3;
 
 /** Catalog partial (native-not-implemented): three/TangentSpaceNormalMap. */
 export declare const TangentSpaceNormalMap: 0;
+
+/** Catalog supported: three/webgpu/TorusGeometry. */
+export declare class TorusGeometry extends BufferGeometry {
+constructor();
+}
 
 /** Catalog partial (native-not-implemented): three/Triangle. */
 export declare class Triangle {
@@ -1917,7 +2060,7 @@ export type Usage = (typeof Usage)[keyof typeof Usage];
 /** Catalog partial (native-not-implemented): three/VSMShadowMap. */
 export declare const VSMShadowMap: 3;
 
-/** Catalog partial (native-not-implemented): three/Vector2. */
+/** Catalog supported: three/Vector2. */
 export declare class Vector2 {
 constructor(x?: number, y?: number);
 x: number;
@@ -2018,6 +2161,8 @@ readonly isVector2: true;
 
   fromArray(array: number[] | ArrayLike<number>, offset?: number): this;
 
+  toArray(): number[];
+
   fromBufferAttribute(attribute: BufferAttribute, index: number): this;
 
   rotateAround(center: Vector2Like, angle: number): this;
@@ -2028,7 +2173,7 @@ readonly isVector2: true;
 /** Catalog partial (native-not-implemented): three/Vector2Like. */
 export type Vector2Like = { x: number; y: number; };
 
-/** Catalog partial (native-not-implemented): three/Vector3. */
+/** Catalog supported: three/Vector3. */
 export declare class Vector3 {
 constructor(x?: number, y?: number, z?: number);
 x: number;
@@ -2185,7 +2330,7 @@ export type Vector3Like = { x: number; y: number; z: number; };
 /** Catalog partial (native-not-implemented): three/Vector3Tuple. */
 export type Vector3Tuple = [ number, number, number ];
 
-/** Catalog partial (native-not-implemented): three/Vector4. */
+/** Catalog supported: three/Vector4. */
 export declare class Vector4 {
 constructor(x?: number, y?: number, z?: number, w?: number);
 x: number;
@@ -2291,6 +2436,8 @@ readonly isVector4: true;
   fromBufferAttribute(attribute: BufferAttribute, index: number): this;
 
   random(): this;
+
+  clampLength(min: number, max: number): this;
 }
 
 /** Catalog partial (native-not-implemented): three/Vector4Like. */
@@ -2319,3 +2466,104 @@ export declare const ZeroSlopeEnding: 2401;
 
 /** Catalog partial (native-not-implemented): three/ZeroStencilOp. */
 export declare const ZeroStencilOp: 0;
+
+/** Catalog supported: three/MeshLambertMaterial. */
+export declare class MeshLambertMaterial extends Material {
+constructor();
+alphaTest: number;
+depthTest: boolean;
+depthWrite: boolean;
+emissiveIntensity: number;
+readonly id: number;
+name: string;
+opacity: number;
+side: Side;
+toneMapped: boolean;
+transparent: boolean;
+readonly type: string;
+visible: boolean;
+color: Color;
+emissive: Color;
+}
+
+/** Catalog supported: three/MeshPhongMaterial. */
+export declare class MeshPhongMaterial extends Material {
+constructor();
+alphaTest: number;
+depthTest: boolean;
+depthWrite: boolean;
+emissiveIntensity: number;
+readonly id: number;
+name: string;
+opacity: number;
+shininess: number;
+side: Side;
+toneMapped: boolean;
+transparent: boolean;
+readonly type: string;
+visible: boolean;
+color: Color;
+emissive: Color;
+specular: Color;
+}
+
+/** Catalog supported: three/MeshPhysicalMaterial. */
+export declare class MeshPhysicalMaterial extends MeshStandardMaterial {
+constructor();
+anisotropy: number;
+clearcoat: number;
+dispersion: number;
+ior: number;
+iridescence: number;
+sheen: number;
+specularIntensity: number;
+transmission: number;
+specularColor: Color;
+}
+
+/** Catalog supported: three/Ray. */
+export declare class Ray {
+constructor();
+readonly direction: Vector3;
+readonly origin: Vector3;
+
+  applyMatrix4(matrix4: Matrix4): Ray;
+
+  at(t: number, target: Vector3): Vector3;
+
+  clone(): this;
+
+  closestPointToPoint(point: Vector3, target: Vector3): Vector3;
+
+  copy(ray: Ray): this;
+
+  distanceSqToPoint(point: Vector3): number;
+
+  distanceSqToSegment(v0: Vector3, v1: Vector3, optionalPointOnRay?: Vector3, optionalPointOnSegment?: Vector3): number;
+
+  distanceToPlane(plane: Plane): number;
+
+  distanceToPoint(point: Vector3): number;
+
+  equals(ray: Ray): boolean;
+
+  intersectBox(box: Box3, target: Vector3): Vector3 | null;
+
+  intersectPlane(plane: Plane, target: Vector3): Vector3 | null;
+
+  intersectSphere(sphere: Sphere, target: Vector3): Vector3 | null;
+
+  intersectTriangle(a: Vector3, b: Vector3, c: Vector3, backfaceCulling: boolean, target: Vector3): Vector3 | null;
+
+  intersectsBox(box: Box3): boolean;
+
+  intersectsPlane(plane: Plane): boolean;
+
+  intersectsSphere(sphere: Sphere): boolean;
+
+  lookAt(v: Vector3): Ray;
+
+  recast(t: number): Ray;
+
+  set(origin: Vector3, direction: Vector3): Ray;
+}

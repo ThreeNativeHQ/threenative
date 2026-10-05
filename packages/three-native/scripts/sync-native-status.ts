@@ -1,0 +1,488 @@
+/**
+ * Syncs the catalog's capability statuses with the engine's binding registry (PRD-531 phase 1).
+ *
+ *   pnpm --filter @threenative/three-native sync-native-status -- --dump <registry.json>
+ *
+ * The registry dump is the truth of what is natively implemented and bound:
+ * `tn-native-engine-registry-dump` prints it. A class the registry binds becomes `supported`; each
+ * member it binds becomes `supported` (a catalog method by name, a field by a top-level getter or
+ * member object); an unbound member of a bound class becomes `partial(native-not-bound)`. A bound
+ * class the catalog lacks is added, modeling a sibling and listing only members the registry binds.
+ * A missing member is typed from its class chain in `@types/three`; a bound member with no type source
+ * is `TN_CATALOG_UNKNOWN_BINDING` and fails the sync, so the catalog never publishes an untyped member.
+ *
+ * Dotted registry paths (`position.x`, `attributes.position`) are protocol paths, not catalog members.
+ */
+
+import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import path from "node:path";
+
+import type {
+  CatalogEntry,
+  ICatalog,
+  ICatalogField,
+  ICatalogMethod,
+  ICatalogParameter,
+} from "../src/catalog.js";
+
+type Writable<T> = T extends readonly (infer U)[]
+  ? Writable<U>[]
+  : T extends object
+    ? { -readonly [Key in keyof T]: Writable<T[Key]> }
+    : T;
+
+type MutableCatalog = Writable<ICatalog>;
+type MutableClass = Writable<Extract<CatalogEntry, { kind: "class" }>>;
+type MutableField = Writable<ICatalogField>;
+type MutableMethod = Writable<ICatalogMethod>;
+
+const REPO = path.resolve(import.meta.dirname, "..", "..", "..");
+const CATALOG_PATH = path.join(REPO, "packages", "three-native", "api", "catalog.json");
+
+interface IRegistryClass {
+  readonly constructor: boolean;
+  readonly methods: string[];
+  readonly getters: string[];
+  readonly setters: string[];
+  readonly members: string[];
+}
+
+interface IRegistryDump {
+  readonly classes: Record<string, IRegistryClass>;
+}
+
+const SUPPORTED = { kind: "supported" } as const;
+const NOT_BOUND = { kind: "partial" as const, gaps: ["native-not-bound"] as string[] };
+
+const unknown: string[] = [];
+
+/** A bound field whose three type the catalog narrows to what the binding accepts. */
+const FIELD_TYPE_OVERRIDE: Record<string, string> = {
+  "BufferGeometry.groups": "string",
+  "Scene.background": "Color | null",
+};
+
+/** Bound methods whose binding signature differs from three's richer overloads. */
+const METHOD_OVERRIDE: Record<string, { parameters: ICatalogParameter[]; returns: string }[]> = {
+  "BufferGeometry.setAttribute": [
+    {
+      parameters: [
+        { name: "name", type: "string", optional: false },
+        { name: "attribute", type: "BufferAttribute", optional: false },
+      ],
+      returns: "this",
+    },
+  ],
+  "BufferGeometry.getAttribute": [
+    {
+      parameters: [{ name: "name", type: "string", optional: false }],
+      returns: "BufferAttribute | null",
+    },
+  ],
+  "BufferGeometry.deleteAttribute": [
+    {
+      parameters: [{ name: "name", type: "string", optional: false }],
+      returns: "this",
+    },
+  ],
+  "BufferGeometry.hasAttribute": [
+    {
+      parameters: [{ name: "name", type: "string", optional: false }],
+      returns: "boolean",
+    },
+  ],
+  // three r185 has Vector4.clampLength; the pinned @types/three lags it.
+  "Vector4.clampLength": [
+    {
+      parameters: [
+        { name: "min", type: "number", optional: false },
+        { name: "max", type: "number", optional: false },
+      ],
+      returns: "this",
+    },
+  ],
+  // The binding's `toArray()` takes no argument and returns the plain array.
+  "Vector2.toArray": [{ parameters: [], returns: "number[]" }],
+};
+
+/**
+ * Bound members @types/three does not declare: engine-only counters, and `id`, which three's
+ * Material defines at runtime but the pinned types omit. Everything else is typed from @types/three.
+ */
+const UNDECLARED_FIELDS: Record<string, string> = {
+  revision: "number",
+  id: "number",
+  "BufferGeometry.parameters": "Record<string, unknown>",
+};
+
+function registryMembers(binding: IRegistryClass): Set<string> {
+  return new Set([
+    ...binding.methods,
+    ...binding.getters.filter((name) => !name.includes(".")),
+    ...binding.members.filter((name) => !name.includes(".")),
+  ]);
+}
+
+// ------------------------------------------------------------------------------- three types
+
+const TYPES_ROOT = (() => {
+  const pnpm = path.join(REPO, "node_modules", ".pnpm");
+  for (const entry of readdirSync(pnpm)) {
+    if (entry.startsWith("@types+three@")) {
+      const dir = path.join(pnpm, entry, "node_modules", "@types", "three");
+      if (existsSync(dir)) return dir;
+    }
+  }
+  return null;
+})();
+
+const classFiles = new Map<string, string>();
+const declarationBodies = new Map<string, string | null>();
+const classParents = new Map<string, string | null>();
+
+function indexThreeTypes(): void {
+  if (TYPES_ROOT === null) return;
+  const source = path.join(TYPES_ROOT, "src");
+  const walk = (directory: string): void => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const full = path.join(directory, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (!entry.name.endsWith(".d.ts")) continue;
+      let text: string;
+      try {
+        text = readFileSync(full, "utf8");
+      } catch {
+        continue;
+      }
+      for (const match of text.matchAll(
+        /export\s+(?:abstract\s+)?(?:class|interface)\s+([A-Za-z_$][\w$]*)/gu,
+      )) {
+        const name = match[1];
+        if (name !== undefined) classFiles.set(name, full);
+      }
+    }
+  };
+  walk(source);
+}
+
+/** The body between a declaration's opening brace and its matching close. */
+function declarationBody(keyword: "class" | "interface", name: string): string | null {
+  const key = `${keyword} ${name}`;
+  if (declarationBodies.has(key)) return declarationBodies.get(key) ?? null;
+  const file = classFiles.get(name);
+  if (file === undefined) {
+    declarationBodies.set(key, null);
+    return null;
+  }
+  const text = readFileSync(file, "utf8");
+  const header = new RegExp(
+    `export\\s+(?:abstract\\s+)?${keyword}\\s+${name}\\b(?:<[^>]*>)?\\s*(?:extends\\s+([A-Za-z_$][\\w$]*))?[^{]*\\{`,
+    "u",
+  ).exec(text);
+  if (header === null) {
+    declarationBodies.set(key, null);
+    return null;
+  }
+  if (keyword === "class") classParents.set(name, header[1] ?? null);
+  const start = header.index + header[0].length;
+  let depth = 1;
+  for (let i = start; i < text.length; i++) {
+    if (text[i] === "{") depth++;
+    else if (text[i] === "}" && --depth === 0) {
+      const body = text.slice(start, i);
+      declarationBodies.set(key, body);
+      return body;
+    }
+  }
+  declarationBodies.set(key, null);
+  return null;
+}
+
+/** @types/three splits a class's fields into a merged `XProperties` interface. */
+function bodiesFor(name: string): string[] {
+  const bodies: string[] = [];
+  const classDeclaration = declarationBody("class", name);
+  if (classDeclaration !== null) bodies.push(classDeclaration);
+  const properties = declarationBody("interface", `${name}Properties`);
+  if (properties !== null) bodies.push(properties);
+  return bodies;
+}
+
+function chain(name: string): string[] {
+  const names: string[] = [];
+  let current: string | null | undefined = name;
+  while (current !== null && current !== undefined && !names.includes(current)) {
+    names.push(current);
+    if (!classParents.has(current)) declarationBody("class", current);
+    current = classParents.get(current) ?? null;
+  }
+  return names;
+}
+
+/** The declared type of a field or accessor, reading a multi-line object type to its closing `;`. */
+function captureMemberType(body: string, member: string): string | null {
+  const head = new RegExp(
+    `(?:^|[\\n;{}])\\s*(?:(?:static|abstract|declare|readonly|get|set)\\s+)*${member}\\s*(?:\\(\\s*\\))?\\s*\\??\\s*:\\s*`,
+    "u",
+  ).exec(body);
+  if (head === null) return null;
+  const start = head.index + head[0].length;
+  let depth = 0;
+  for (let i = start; i < body.length; i++) {
+    const character = body.charAt(i);
+    if ("([{<".includes(character)) depth++;
+    else if (")]}>".includes(character)) depth--;
+    else if (character === ";" && depth <= 0) {
+      return body
+        .slice(start, i)
+        .replace(/\/\*[\s\S]*?\*\//gu, " ")
+        .replace(/\/\/[^\n]*/gu, " ")
+        .replace(/\s+/gu, " ")
+        .trim();
+    }
+  }
+  return null;
+}
+
+function findFieldType(className: string, member: string): string | null {
+  for (const name of chain(className)) {
+    for (const body of bodiesFor(name)) {
+      const type = captureMemberType(body, member);
+      if (type !== null) return type;
+    }
+  }
+  return null;
+}
+
+function parseParameters(text: string): ICatalogParameter[] {
+  const parameters: ICatalogParameter[] = [];
+  const parts: string[] = [];
+  let depth = 0;
+  let current = "";
+  for (const character of text) {
+    if ("([{<".includes(character)) depth++;
+    if (")]}>".includes(character)) depth--;
+    if (character === "," && depth === 0) {
+      parts.push(current);
+      current = "";
+    } else {
+      current += character;
+    }
+  }
+  parts.push(current);
+  for (const part of parts) {
+    const match = /^\s*(\.\.\.)?([A-Za-z_$][\w$]*)(\?)?\s*:\s*(.+?)\s*$/u.exec(part);
+    if (match === null) continue;
+    const rest = match[1] !== undefined;
+    const name = match[2];
+    const type = match[4];
+    if (name === undefined || type === undefined) continue;
+    const parameter: ICatalogParameter = {
+      name,
+      type,
+      optional: rest || match[3] !== undefined,
+      ...(rest ? { rest: true } : {}),
+    };
+    parameters.push(parameter);
+  }
+  return parameters;
+}
+
+function findMethod(
+  className: string,
+  member: string,
+): { parameters: ICatalogParameter[]; returns: string }[] | null {
+  for (const name of chain(className)) {
+    for (const body of bodiesFor(name)) {
+      const match = new RegExp(
+        `(?:^|[\\n;{}])\\s*(?:(?:static|abstract|declare|get|set)\\s+)*${member}\\s*\\(([^;]*?)\\)\\s*:\\s*([^;]+);`,
+        "u",
+      ).exec(body);
+      if (match === null) continue;
+      const parameters = match[1];
+      const returns = match[2];
+      if (parameters === undefined || returns === undefined) continue;
+      return [{ parameters: parseParameters(parameters), returns: returns.trim() }];
+    }
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------------- catalog
+
+function classEntry(name: string): MutableClass {
+  return {
+    name,
+    kind: "class",
+    source: "three",
+    status: SUPPORTED,
+    extends: null,
+    constructor: [],
+    fields: [],
+    methods: [],
+  };
+}
+
+function nearestCataloguedParent(
+  name: string,
+  catalogued: (candidate: string) => boolean,
+): string | null {
+  for (const parent of chain(name).slice(1)) {
+    if (catalogued(parent)) return parent;
+  }
+  return null;
+}
+
+function fieldFor(className: string, member: string, mutable: boolean): MutableField | null {
+  const key = `${className}.${member}`;
+  const override = FIELD_TYPE_OVERRIDE[key] ?? UNDECLARED_FIELDS[key] ?? UNDECLARED_FIELDS[member];
+  const type = override ?? findFieldType(className, member);
+  if (type === null || type === undefined) {
+    unknown.push(`${className}.${member}`);
+    return null;
+  }
+  return { name: member, type, mutable, lifetime: "owned", status: SUPPORTED };
+}
+
+function methodFor(className: string, member: string): MutableMethod | null {
+  const overloads = METHOD_OVERRIDE[`${className}.${member}`] ?? findMethod(className, member);
+  if (overloads === null) {
+    unknown.push(`${className}.${member}`);
+    return null;
+  }
+  return { name: member, async: false, overloads, status: SUPPORTED };
+}
+
+function supportedMembers(entry: MutableClass): Set<string> {
+  const names = new Set<string>();
+  for (const member of [...entry.fields, ...entry.methods]) {
+    if (member.status?.kind === "supported") names.add(member.name);
+  }
+  return names;
+}
+
+function effectiveSupported(
+  entry: MutableClass,
+  byName: Map<string, MutableClass>,
+  seen = new Set<string>(),
+): Set<string> {
+  const names = supportedMembers(entry);
+  const parent = entry.extends;
+  if (parent !== null && !seen.has(parent)) {
+    seen.add(entry.name);
+    const parentEntry = byName.get(parent);
+    if (parentEntry !== undefined) {
+      for (const name of effectiveSupported(parentEntry, byName, seen)) names.add(name);
+    }
+  }
+  return names;
+}
+
+/** A registry class the catalog lacks is added; every bound class entry becomes supported. */
+function ensureSupportedClasses(
+  catalog: MutableCatalog,
+  byName: Map<string, MutableClass>,
+  dump: IRegistryDump,
+): void {
+  for (const name of Object.keys(dump.classes)) {
+    let entry = byName.get(name);
+    if (entry === undefined) {
+      entry = classEntry(name);
+      catalog.entries.push(entry);
+      byName.set(name, entry);
+    }
+    entry.status = SUPPORTED;
+    const parent = nearestCataloguedParent(name, (candidate) => byName.has(candidate));
+    if (parent !== null) entry.extends = parent;
+  }
+}
+
+/**
+ * A bound member is supported; an unbound member without its own diagnostic is
+ * partial(native-not-bound). An explicit unsupported diagnostic is kept.
+ */
+function applyMemberStatuses(dump: IRegistryDump, byName: Map<string, MutableClass>): void {
+  for (const name of Object.keys(dump.classes)) {
+    const entry = byName.get(name);
+    const binding = dump.classes[name];
+    if (entry === undefined || binding === undefined) continue;
+    const bound = registryMembers(binding);
+    for (const field of entry.fields) {
+      if (bound.has(field.name)) {
+        field.status = SUPPORTED;
+        const override = FIELD_TYPE_OVERRIDE[`${name}.${field.name}`];
+        if (override !== undefined) field.type = override;
+      } else if (field.status?.kind !== "unsupported") {
+        field.status = NOT_BOUND;
+      }
+    }
+    for (const method of entry.methods) {
+      if (bound.has(method.name)) {
+        method.status = SUPPORTED;
+        const override = METHOD_OVERRIDE[`${name}.${method.name}`];
+        if (override !== undefined) method.overloads = override;
+      } else if (method.status?.kind !== "unsupported") {
+        method.status = NOT_BOUND;
+      }
+    }
+  }
+}
+
+/** A registry member the catalog lacks is added, parents first so a derived class inherits. */
+function addMissingMembers(dump: IRegistryDump, byName: Map<string, MutableClass>): void {
+  const order = Object.keys(dump.classes).sort(
+    (left, right) => chain(left).length - chain(right).length,
+  );
+  for (const name of order) {
+    const entry = byName.get(name);
+    const binding = dump.classes[name];
+    if (entry === undefined || binding === undefined) continue;
+    const covered = effectiveSupported(entry, byName);
+    for (const member of binding.methods) {
+      if (covered.has(member)) continue;
+      const method = methodFor(name, member);
+      if (method === null) continue;
+      entry.methods.push(method);
+      covered.add(member);
+    }
+    const getters = [
+      ...binding.getters.filter((member) => !member.includes(".")),
+      ...binding.members.filter((member) => !member.includes(".")),
+    ];
+    for (const member of getters) {
+      if (covered.has(member) || binding.methods.includes(member)) continue;
+      const field = fieldFor(name, member, binding.setters.includes(member));
+      if (field === null) continue;
+      entry.fields.push(field);
+      covered.add(member);
+    }
+  }
+}
+
+function main(): void {
+  const dumpIndex = process.argv.indexOf("--dump");
+  const dumpPath = dumpIndex === -1 ? undefined : process.argv[dumpIndex + 1];
+  if (dumpPath === undefined) throw new Error("usage: sync-native-status --dump <registry.json>");
+  const dump = JSON.parse(readFileSync(dumpPath, "utf8")) as IRegistryDump;
+  indexThreeTypes();
+
+  const catalog = JSON.parse(readFileSync(CATALOG_PATH, "utf8")) as MutableCatalog;
+  const byName = new Map<string, MutableClass>();
+  for (const entry of catalog.entries) if (entry.kind === "class") byName.set(entry.name, entry);
+
+  ensureSupportedClasses(catalog, byName, dump);
+  applyMemberStatuses(dump, byName);
+  addMissingMembers(dump, byName);
+  if (unknown.length > 0) {
+    for (const member of unknown) process.stderr.write(`TN_CATALOG_UNKNOWN_BINDING ${member}\n`);
+    process.exit(1);
+  }
+
+  writeFileSync(CATALOG_PATH, `${JSON.stringify(catalog, null, 2)}\n`);
+  const supported = catalog.entries.filter((entry) => entry.status.kind === "supported").length;
+  process.stdout.write(
+    `TN_CATALOG_SYNCED: ${Object.keys(dump.classes).length} registry classes, ${supported} supported catalog entries\n`,
+  );
+}
+
+main();

@@ -204,6 +204,20 @@ if(EMSCRIPTEN)
     target_link_options(tn_engine_bindings PUBLIC -fwasm-exceptions)
 endif()
 
+# PRD-531 phase 1: the registry printed as JSON, the truth of what is natively implemented and
+# bound. `--check` compares the output with the committed catalog snapshot and fails on drift.
+add_executable(tn-native-engine-registry-dump EXCLUDE_FROM_ALL tests/native-engine/registry_dump.cpp)
+target_link_libraries(tn-native-engine-registry-dump PRIVATE tn_engine_bindings)
+target_include_directories(tn-native-engine-registry-dump PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine)
+tn_native_engine_target(tn-native-engine-registry-dump)
+set_property(GLOBAL APPEND PROPERTY TN_NATIVE_ENGINE_TEST_TARGETS tn-native-engine-registry-dump)
+if(NOT EMSCRIPTEN)
+    add_test(NAME native_engine_registry_snapshot
+        COMMAND tn-native-engine-registry-dump --check
+            ${CMAKE_CURRENT_SOURCE_DIR}/../three-native/api/native-registry.json)
+    set_tests_properties(native_engine_registry_snapshot PROPERTIES LABELS "native-engine")
+endif()
+
 add_library(tn_fixture_driver STATIC tests/native-engine/fixture/driver.cpp)
 tn_native_engine_target(tn_fixture_driver)
 target_include_directories(tn_fixture_driver PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine)

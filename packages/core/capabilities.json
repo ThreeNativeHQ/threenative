@@ -7397,6 +7397,197 @@
     "engineAbi": 1,
     "scene": 1,
     "shaderPackage": 1,
-    "symbols": []
+    "symbols": [
+      {
+        "symbol": "AmbientLight",
+        "kind": "class",
+        "source": "three/webgpu"
+      },
+      {
+        "symbol": "Box3",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "BoxGeometry",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "BufferAttribute",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "BufferGeometry",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "Camera",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "CircleGeometry",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "Color",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "ConeGeometry",
+        "kind": "class",
+        "source": "three/webgpu"
+      },
+      {
+        "symbol": "CylinderGeometry",
+        "kind": "class",
+        "source": "three/webgpu"
+      },
+      {
+        "symbol": "DirectionalLight",
+        "kind": "class",
+        "source": "three/webgpu"
+      },
+      {
+        "symbol": "Euler",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "Frustum",
+        "kind": "class",
+        "source": "three/webgpu"
+      },
+      {
+        "symbol": "Group",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "HemisphereLight",
+        "kind": "class",
+        "source": "three/webgpu"
+      },
+      {
+        "symbol": "Matrix3",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "Matrix4",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "Mesh",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "MeshBasicMaterial",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "MeshLambertMaterial",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "MeshPhongMaterial",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "MeshPhysicalMaterial",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "MeshStandardMaterial",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "Object3D",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "OrthographicCamera",
+        "kind": "class",
+        "source": "three/webgpu"
+      },
+      {
+        "symbol": "PerspectiveCamera",
+        "kind": "class",
+        "source": "three/webgpu"
+      },
+      {
+        "symbol": "Plane",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "PlaneGeometry",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "Quaternion",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "Ray",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "RingGeometry",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "Scene",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "Sphere",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "SphereGeometry",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "TorusGeometry",
+        "kind": "class",
+        "source": "three/webgpu"
+      },
+      {
+        "symbol": "Vector2",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "Vector3",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "Vector4",
+        "kind": "class",
+        "source": "three"
+      }
+    ]
   }
 }

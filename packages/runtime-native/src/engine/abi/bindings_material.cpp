@@ -1,6 +1,7 @@
-// The mesh materials and lights in the engine's one binding registry (PRD-514). One Material class
-// carries every type's fields and `type` names the three class it is, so every material class shares
-// the same member surface; a light inherits Object3D's bindings exactly as Mesh and Group do.
+// The mesh materials and lights in the engine's one binding registry (PRD-514). One native Material
+// carries every type's fields and `type` names the three class it is; each three class binds only the
+// fields three declares on it, so `MeshBasicMaterial` has no `roughness` (PRD-531). A light
+// inherits Object3D's bindings exactly as Mesh and Group do.
 //
 // Every material setter that changes what the renderer reads calls `needsUpdate()`, so the render
 // database rebuilds. A Color member is read three ways: its components (`material.color.r`), the
@@ -118,18 +119,6 @@ void registerMaterialBase(ClassBinding& b) {
     materialBool(b, "toneMapped", &Material::toneMapped);
     materialNumber(b, "opacity", &Material::opacity);
     materialNumber(b, "alphaTest", &Material::alphaTest);
-    materialNumber(b, "emissiveIntensity", &Material::emissiveIntensity);
-    materialNumber(b, "roughness", &Material::roughness);
-    materialNumber(b, "metalness", &Material::metalness);
-    materialNumber(b, "shininess", &Material::shininess);
-    materialNumber(b, "ior", &Material::ior);
-    materialNumber(b, "specularIntensity", &Material::specularIntensity);
-    materialNumber(b, "clearcoat", &Material::clearcoat);
-    materialNumber(b, "sheen", &Material::sheen);
-    materialNumber(b, "transmission", &Material::transmission);
-    materialNumber(b, "iridescence", &Material::iridescence);
-    materialNumber(b, "anisotropy", &Material::anisotropy);
-    materialNumber(b, "dispersion", &Material::dispersion);
     b.getters["side"] = [](void* self) { return Value::of(double(as<Material>(self)->side)); };
     b.setters["side"] = [](void* self, const Value& v) {
         const double side = number(v);  // FrontSide 0, BackSide 1, DoubleSide 2; anything else is refused
@@ -137,19 +126,39 @@ void registerMaterialBase(ClassBinding& b) {
         as<Material>(self)->side = static_cast<Side>(static_cast<int>(side));
         as<Material>(self)->needsUpdate();
     };
+}
 
-    nestedColor(b, "color", &Material::color, true);
-    nestedColor(b, "emissive", &Material::emissive, true);
-    nestedColor(b, "specular", &Material::specular, true);
-    nestedColor(b, "specularColor", &Material::specularColor, true);
-    fixedMember(b, "color", memberAliasMethod(&Material::color, "Color"));
-    fixedMember(b, "emissive", memberAliasMethod(&Material::emissive, "Color"));
-    fixedMember(b, "specular", memberAliasMethod(&Material::specular, "Color"));
-    fixedMember(b, "specularColor", memberAliasMethod(&Material::specularColor, "Color"));
-    b.setters["color"] = colorSetter(&Material::color, true);
-    b.setters["emissive"] = colorSetter(&Material::emissive, true);
-    b.setters["specular"] = colorSetter(&Material::specular, true);
-    b.setters["specularColor"] = colorSetter(&Material::specularColor, true);
+/** A Color field read by component, as the member alias, and written whole. */
+void materialColor(ClassBinding& b, const char* name, Color Material::*field) {
+    nestedColor(b, name, field, true);
+    fixedMember(b, name, memberAliasMethod(field, "Color"));
+    b.setters[name] = colorSetter(field, true);
+}
+
+/** Exactly the fields three declares on each class, so a class publishes no sibling's surface. */
+void registerTypeFields(ClassBinding& b, MaterialType type) {
+    materialColor(b, "color", &Material::color);
+    if (type == MaterialType::Basic) return;
+    materialColor(b, "emissive", &Material::emissive);
+    materialNumber(b, "emissiveIntensity", &Material::emissiveIntensity);
+    if (type == MaterialType::Lambert) return;
+    if (type == MaterialType::Phong) {
+        materialColor(b, "specular", &Material::specular);
+        materialNumber(b, "shininess", &Material::shininess);
+        return;
+    }
+    materialNumber(b, "roughness", &Material::roughness);
+    materialNumber(b, "metalness", &Material::metalness);
+    if (type == MaterialType::Standard) return;
+    materialNumber(b, "ior", &Material::ior);
+    materialNumber(b, "specularIntensity", &Material::specularIntensity);
+    materialColor(b, "specularColor", &Material::specularColor);
+    materialNumber(b, "clearcoat", &Material::clearcoat);
+    materialNumber(b, "sheen", &Material::sheen);
+    materialNumber(b, "transmission", &Material::transmission);
+    materialNumber(b, "iridescence", &Material::iridescence);
+    materialNumber(b, "anisotropy", &Material::anisotropy);
+    materialNumber(b, "dispersion", &Material::dispersion);
 }
 
 void registerMeshMaterial(ClassBinding& b, MaterialType type) {
@@ -158,6 +167,7 @@ void registerMeshMaterial(ClassBinding& b, MaterialType type) {
         return std::static_pointer_cast<void>(std::make_shared<Material>(type));
     };
     registerMaterialBase(b);
+    registerTypeFields(b, type);
 }
 
 // ------------------------------------------------------------------------------- lights

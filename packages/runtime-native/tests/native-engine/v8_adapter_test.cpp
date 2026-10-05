@@ -1,10 +1,14 @@
 #include "adapters/v8/adapter.h"
 #include "check.h"
+#include "engine/abi/bindings.h"
 
 #include <libplatform/libplatform.h>
 
+#include <algorithm>
 #include <cstdio>
+#include <map>
 #include <memory>
+#include <set>
 #include <string>
 
 using tn::adapters::v8adapter::Adapter;
@@ -243,9 +247,88 @@ void scene() {
     if (got != "1111") std::fprintf(stderr, "got %s\n", got.c_str());
 }
 
+// PRD-531 phase 1: the adapter exposes exactly the catalog's supported set. The catalog's supported
+// classes are the registry's classes (the Python-free ctest above is checked by the snapshot), so
+// this case installs the adapter and compares its globals and prototype members with the registry.
+void catalogCoverage() {
+    Runtime& rt = runtime();
+    v8::Isolate::Scope isolateScope(rt.isolate);
+    Adapter adapter(rt.isolate, rt.context);
+    tn::binding::Registry registry;
+    tn::binding::registerAll(registry);
+
+    std::set<std::string> expectedClasses;
+    for (const auto& [name, binding] : registry) {
+        if (binding.ctor && tn_type_id(name.c_str()) != 0) expectedClasses.insert(name);
+    }
+
+    v8::HandleScope scope(rt.isolate);
+    v8::Local<v8::Context> ctx = v8::Context::New(rt.isolate);
+    v8::Context::Scope contextScope(ctx);
+    adapter.install(ctx, ctx->Global());
+    v8::Local<v8::Object> global = ctx->Global();
+    const auto text = [&rt](v8::Local<v8::Value> value) {
+        v8::String::Utf8Value utf8(rt.isolate, value);
+        return std::string(*utf8 ? *utf8 : "");
+    };
+    const auto key = [&rt](const std::string& name) {
+        return v8::String::NewFromUtf8(rt.isolate, name.c_str()).ToLocalChecked();
+    };
+
+    // The installed classes: global functions whose name the catalog publishes a type id for.
+    std::set<std::string> installed;
+    v8::Local<v8::Array> globals = global->GetOwnPropertyNames(ctx).ToLocalChecked();
+    for (uint32_t i = 0; i < globals->Length(); ++i) {
+        v8::Local<v8::Value> name;
+        v8::Local<v8::Value> value;
+        if (!globals->Get(ctx, i).ToLocal(&name)) continue;
+        if (!global->Get(ctx, name).ToLocal(&value) || !value->IsFunction()) continue;
+        const std::string symbol = text(name);
+        if (tn_type_id(symbol.c_str()) != 0) installed.insert(symbol);
+    }
+    CHECK(installed == expectedClasses);
+    CHECK(installed.size() == tn_engine_version().capability_count);
+
+    // Every class's prototype exposes exactly its registry members: methods, top-level getters and
+    // member objects. A dotted key is a protocol path, skipped on both sides.
+    for (const std::string& name : installed) {
+        std::set<std::string> expected;
+        const tn::binding::ClassBinding& binding = registry.at(name);
+        for (const auto& [member, fn] : binding.methods) { (void)fn; expected.insert(member); }
+        for (const auto& [member, fn] : binding.getters) {
+            (void)fn;
+            if (member.find('.') == std::string::npos) expected.insert(member);
+        }
+        for (const auto& [member, fn] : binding.members) {
+            (void)fn;
+            if (member.find('.') == std::string::npos) expected.insert(member);
+        }
+        v8::Local<v8::Value> ctor;
+        v8::Local<v8::Value> prototype;
+        if (!global->Get(ctx, key(name)).ToLocal(&ctor) || !ctor->IsObject() ||
+            !ctor.As<v8::Object>()->Get(ctx, key("prototype")).ToLocal(&prototype) ||
+            !prototype->IsObject()) {
+            CHECK(false);
+            continue;
+        }
+        std::set<std::string> exposed;
+        v8::Local<v8::Array> members = prototype.As<v8::Object>()->GetOwnPropertyNames(ctx).ToLocalChecked();
+        for (uint32_t i = 0; i < members->Length(); ++i) {
+            v8::Local<v8::Value> member;
+            if (!members->Get(ctx, i).ToLocal(&member)) continue;
+            const std::string symbol = text(member);
+            if (symbol == "constructor" || symbol.find('.') != std::string::npos) continue;
+            exposed.insert(symbol);
+        }
+        CHECK(exposed == expected);
+        if (exposed != expected) std::fprintf(stderr, "%s: adapter/registry member mismatch\n", name.c_str());
+    }
+}
+
 }  // namespace
 
 TN_TEST_MAIN({"handles", handles}, {"unsupported", unsupported}, {"gc_release", gcRelease},
              {"runtime_churn", runtimeChurn},
              {"crossing_bench", crossingBench},
-             {"scene", scene})
+             {"scene", scene},
+             {"catalog_coverage", catalogCoverage})

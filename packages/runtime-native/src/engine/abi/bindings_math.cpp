@@ -589,26 +589,6 @@ void registerQuaternion(ClassBinding& b) {
                                              number(a.at(1)));
         return chain();
     };
-    // The two flat helpers take four consecutive doubles each. The fixture names the two
-    // quaternions and the driver lays them out in a temporary buffer, so the same arithmetic runs.
-    b.methods["slerpFlat"] = [](void*, const Args& a, Store& d) {
-        const Quaternion& from = d.ref<Quaternion>(a.at(0), "Quaternion");
-        const Quaternion& to = d.ref<Quaternion>(a.at(1), "Quaternion");
-        const double src0[4] = {from.x, from.y, from.z, from.w};
-        const double src1[4] = {to.x, to.y, to.z, to.w};
-        double dst[4];
-        slerpFlat(dst, 0, src0, 0, src1, 0, number(a.at(2)));
-        return numbers(dst, 4);
-    };
-    b.methods["multiplyQuaternionsFlat"] = [](void*, const Args& a, Store& d) {
-        const Quaternion& from = d.ref<Quaternion>(a.at(0), "Quaternion");
-        const Quaternion& to = d.ref<Quaternion>(a.at(1), "Quaternion");
-        const double src0[4] = {from.x, from.y, from.z, from.w};
-        const double src1[4] = {to.x, to.y, to.z, to.w};
-        double dst[4];
-        multiplyQuaternionsFlat(dst, 0, src0, 0, src1, 0);
-        return numbers(dst, 4);
-    };
     readScalar<Quaternion>(b, "lengthSq", &Quaternion::lengthSq);
     readScalar<Quaternion>(b, "length", &Quaternion::length);
     b.methods["dot"] = [](void* self, const Args& a, Store& d) {
