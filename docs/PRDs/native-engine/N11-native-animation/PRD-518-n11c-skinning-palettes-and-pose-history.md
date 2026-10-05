@@ -34,15 +34,15 @@
 #### Phase 2: Palette batching with the ported rules
 **Status:** NOT STARTED
 **Files:** proposed `packages/runtime-native/src/engine/animation/skinning/palette.cpp`
-- [ ] Every eligibility case in `projection-skinned.spec.ts` gives the same batched-or-own-draw verdict and reason code natively. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_skinned_eligibility`
+- [x] Every eligibility case in `projection-skinned.spec.ts` gives the same batched-or-own-draw verdict and reason code natively. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_skinned_eligibility` — 2026-10-05: the native planner (`engine/renderer/projection/plan.h`, ctest `native_engine_projection_plan`) decides 22 described scenes as the real SceneRenderProjection does (`projection-reference.ts`), 0 differ, on Dawn, ASan and wgpu: the spec's crowd, below-floor crowd, uneven and mirrored rigs, transparent and normal-less rigs and two bone counts, alongside props, uniform, material and mixed-material groups and every decline. The spec's positionNode case has no native counterpart (no native material moves its own vertices); the opt-out is an option, not an eligibility rule. Red controls: floor weight 1, 2 scenes differ; similarity check removed, 1.
 - [ ] The skinned-crowd scene draws compatible rigs as one instanced draw per pass, and refused rigs as correct unbatched draws. proof: `node packages/playtest/dist/runner/cli.js examples/skinned-crowd/playtests/crowd.playtest.json --target desktop`
-- [ ] Hidden rigs and freed slots produce no visible triangles, and a reused slot shows no previous occupant. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_skinned_slot_reuse`
+- [x] Hidden rigs and freed slots produce no visible triangles, and a reused slot shows no previous occupant. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_skinned_slot_reuse` — 2026-10-05: `engine/animation/skinning/palette.{h,cpp}` against the real SkinnedBatch (`skinned-palette-reference.ts`: 6 rigs, 12 frames), bit for bit on Dawn, ASan and wgpu: released and hidden slots are zero matrices (every triangle collapses), a reused slot holds no previous occupant. Red control: release without zeroing, 78 values differ.
 
 #### Phase 3: Pose history and update frequency
 **Status:** NOT STARTED
 **Files:** proposed `packages/runtime-native/src/engine/animation/skinning/history.cpp`
-- [ ] The previous palette is seeded on spawn, slot reuse, skeleton reuse and camera cut, so the first-frame velocity is zero. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_skinned_pose_history`
-- [ ] Palette writes per tick equal animation evaluations, not render passes, with shadows enabled. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_skinned_update_frequency`
+- [x] The previous palette is seeded on spawn, slot reuse, skeleton reuse and camera cut, so the first-frame velocity is zero. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_skinned_pose_history` — 2026-10-05: the same table: history equals the reference every frame and a new, reused or restarted slot (skeleton reuse, camera cut) starts its history at its own pose. Red control: end() without seeding, 345 values differ.
+- [x] Palette writes per tick equal animation evaluations, not render passes, with shadows enabled. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_skinned_update_frequency` — 2026-10-05: the same table, two writes per frame (a main and a shadow pass): one skeleton.update per skeleton per frame. A review fix: a write before the first begin() now updates too, as three's WeakMap reads it. Red controls: update on every write, 2 frames differ; the old frame-0 comparison fails the new assertion.
 
 ## Blocked on
 
