@@ -2589,6 +2589,47 @@ function buildChunkShadowProxies(
  * and interleaved (`KHR_mesh_quantization`) and the raw array behind them is not what three would
  * have drawn. One pass at load time; the result is a depth buffer's whole input.
  */
+/**
+ * One mesh's vertices, placed into `positions` from `vertexAt`.
+ *
+ * A merged mesh's positions came out of `mergeByMaterial` as one plain float array, so that is three
+ * reads, three multiplies and three writes per vertex. The arithmetic is three's, term for term and
+ * including `applyMatrix4`'s homogeneous divide, so a proxy holds the vertices it held before. A
+ * retained source can still be quantized and interleaved (`KHR_mesh_quantization`), and it takes the
+ * accessor loop, which is what that arithmetic resolves to.
+ */
+function placeVertices(
+  position: BufferAttribute,
+  matrix: Matrix4,
+  positions: Float32Array,
+  vertexAt: number,
+): void {
+  if (
+    position.array instanceof Float32Array &&
+    !position.normalized &&
+    !("isInterleavedBufferAttribute" in position)
+  ) {
+    const values = position.array as Float32Array;
+    const e = matrix.elements;
+    for (let index = 0; index < position.count; index += 1) {
+      const x = values[index * 3] as number;
+      const y = values[index * 3 + 1] as number;
+      const z = values[index * 3 + 2] as number;
+      const w = 1 / (e[3] * x + e[7] * y + e[11] * z + e[15]);
+      const out = (vertexAt + index) * 3;
+      positions[out] = (e[0] * x + e[4] * y + e[8] * z + e[12]) * w;
+      positions[out + 1] = (e[1] * x + e[5] * y + e[9] * z + e[13]) * w;
+      positions[out + 2] = (e[2] * x + e[6] * y + e[10] * z + e[14]) * w;
+    }
+    return;
+  }
+  const vertex = new Vector3();
+  for (let index = 0; index < position.count; index += 1) {
+    vertex.fromBufferAttribute(position, index).applyMatrix4(matrix);
+    vertex.toArray(positions, (vertexAt + index) * 3);
+  }
+}
+
 function shadowProxyGeometry(
   meshes: readonly Mesh[],
   label: string,
@@ -2599,7 +2640,6 @@ function shadowProxyGeometry(
   const place = new Matrix4();
   const instance = new Matrix4();
   const matrix = new Matrix4();
-  const vertex = new Vector3();
   let vertices = 0;
   let drawn = 0;
   for (const mesh of meshes) {
@@ -2631,10 +2671,7 @@ function shadowProxyGeometry(
       if (mesh instanceof InstancedMesh) mesh.getMatrixAt(copy, instance);
       else instance.identity();
       matrix.multiplyMatrices(place, instance);
-      for (let index = 0; index < position.count; index += 1) {
-        vertex.fromBufferAttribute(position, index).applyMatrix4(matrix);
-        vertex.toArray(positions, (vertexAt + index) * 3);
-      }
+      placeVertices(position as BufferAttribute, matrix, positions, vertexAt);
       for (let index = start; index < end; index += 1)
         indices[indexAt++] = (source?.getX(index) ?? index) + vertexAt;
       vertexAt += position.count;
