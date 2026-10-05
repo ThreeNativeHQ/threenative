@@ -173,9 +173,10 @@ this host, so it is not attributed. The prewarm (`e580e76cb`) stays off this PR,
 
 ## Lane A — the 120 fps walk (critical path)
 
-- [ ] **A0 · Land PRD-484** (instanced LOD + selective water mirrors by default). After: nothing. 🌍👁
+- [x] **A0 · Land [PRD-484](../done/PRD-484-instanced-lod-and-mirror-by-default.md)** (instanced LOD + selective water mirrors by default). After: nothing. 🌍👁
   - Its commits exist only on the unpushed local branch `engine-defaults-484`, plus uncommitted edits in `.worktrees/prd-484-engine-defaults`.
   - Ask the owner 🙋 whether those edits are still wanted, then rebase onto `origin/develop` and open its own draft PR. Its old plan to ride #390 is moot, because #390 merged without it.
+  - **Done 2026-10-05:** the PRD's phases landed through #423 (merged 2026-10-04; #420 closed unmerged). Its last box passed on the Strata game with the stopgap reverted, under the develop defaults: scene 96.4 M → 15.8 M triangles at the worst view, mirror 96.4 M → 0.92 M in 3 draws. The game edits are restored, and the PRD moved to `done/` in this PR.
   - Done when: its PRD is in `done/` on `develop`.
 - [x] **A1 · [PRD-389](../performance/critical/PRD-389-the-frame-budgets-instruments-do-not-lie.md): the instrument gaps the 2026-10-03 probe hit.** After: nothing.
   - A standing scene can't be measured under `runtime.fixedStep` (it yields one window).
