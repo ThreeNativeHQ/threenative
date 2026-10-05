@@ -7,6 +7,7 @@ prd_contract: v1
 **Status:** PROPOSED, filed 2026-09-03 from PRD-327's device session. Planning and evidence in
 `docs/verification/runtime-perf-state.md` §5a (Phase 2's device acceptance section).
 
+**Priority:** P1 — Unstarted: move the 33 s Pixel 8 compile walk off the main thread and survive relaunch.
 **Owner:** unassigned
 
 **Source:** PRD-327's device acceptance runs on the Pixel 8 (six instrumented launches, 2026-09-03).

@@ -1,6 +1,7 @@
 # PRD-490 — Cluster LOD wins on native too
 
 **Status:** PROPOSED
+**Priority:** P1 — Shipped default virtual geometry carries a named native regression no PRD owns.
 **Complexity:** 3 (LOW) — 1–5 engine files (+1); a multi-draw binding would cross into the C++ host (+2); risk override: none
 **Owner:** João
 **Depends on:** None

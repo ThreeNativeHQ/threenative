@@ -5,6 +5,7 @@
 **Owner:** unassigned (drafted by Claude, 2026-09-26)
 **Depends on:** the in-flight scatter/terrain change, which is **prerequisite, not this PRD's scope**: `terrain.streamRadius` and `terrain.colliderRadius` options, multi-primitive scatter assets, and transparent scatter drawn as cutout. PRD-459 and PRD-460 are independent of it and neither waits for it.
 
+**Priority:** P1 — Ready and unticked: terrain radius is still the prop ring, every resident tile still gets a collider, and nothing hides the stream edge.
 ## Context
 
 Machinefall's 2 km map streams 25 cells of 128 m at ring 2 — a 640 m resident square, corners at

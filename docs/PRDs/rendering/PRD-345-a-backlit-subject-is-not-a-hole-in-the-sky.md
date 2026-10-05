@@ -10,6 +10,7 @@ decides how things look, and rule 1(b) vetoes 1(a) at any size. Source studied:
 [TheLongSilence](https://github.com/achimala/TheLongSilence) `src/gfx/greeble.js:37`, the
 `HULL_LIGHT` block and its environment note.
 
+**Priority:** P2 — Open boxes apply the convention to starter source and required templates, then native qualification.
 **Goal: the templates stop shipping two lighting failures that every game built from them
 inherits** — a backlit subject that collapses to a flat silhouette, and an environment map so dark
 that image-based lighting silently contributes nothing and every surface reads as painted clay.

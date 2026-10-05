@@ -5,6 +5,7 @@ prd_contract: v1
 # PRD — Standard Tailwind and CSS, rendered as native UI
 
 **Status:** NOT STARTED — revised design; no implementation or runtime parity is claimed.
+**Priority:** P2 — NOT STARTED native CSS backend; open boxes need the Tailwind artifact and parity oracles.
 **Date:** 2026-10-01 (America/Vancouver).
 **Audit baseline:** `develop` at `49ba2c49d6867ce075a9ebe42b994e3464ec0283`.
 **Delivery:** Replace the unimplemented proposal in draft PR #388; target `develop`.

@@ -1,6 +1,7 @@
 # PRD-475 — Machinefall's open world at 120 fps with no visual loss
 
 **Status:** PARTIAL — merged at prd:25% on João's 2026-10-02 call; the walking p95 boxes (AC-1, AC-2, Phase 2 targets, Phase 3 guard) continue in PRD-478
+**Priority:** P1 — Open: map-walk CPU and GPU p95 targets with halved shadow CPU share, no visual loss.
 **Complexity:** 5 (MEDIUM) — 6–10 engine files (+2), engine and Machinefall release separately (+2), GPU-pass state (+1 risk); risk override: none
 **Owner:** João
 **Depends on:** PRD-473 (merged at 75% in #375 as `a602467db`)

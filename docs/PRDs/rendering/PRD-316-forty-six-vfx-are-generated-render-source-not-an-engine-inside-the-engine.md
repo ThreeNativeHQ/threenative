@@ -10,6 +10,7 @@ prd_contract: v1
 The archive was inspected read-only at engine baseline `d6428f2e`; archive code has not been copied
 into this repository.
 
+**Priority:** P2 — Thirty-nine boxes pin donor commits, prove adaptations and license copied source.
 **Complexity:** +3 touches 10+ files, +2 carries GPU particle lifecycle/state across frames, +2
 crosses the example, scaffolder, playtest and native-proof surfaces = **7 → HIGH mode**. Run a
 `prd-work-reviewer` checkpoint after every phase, including the integration audit and negative

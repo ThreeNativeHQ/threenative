@@ -5,6 +5,7 @@ prd_contract: v1
 # PRD-VQ-04 — Locomotion blends by speed and direction without restarting its gait
 
 **Status:** PROPOSED — 2026-10-01. No implementation or qualification is claimed.
+**Priority:** P2 — Proposed blend-weight evaluation, phase sync and first/third-person consumers, all unrun.
 **Batch:** Visual quality execution batch. **Wave:** 1 / character motion.
 **Dependencies:** Uses existing AnimationPlayer, SkeletalMesh3D and stride synchronization. Coordinate its action ownership with VQ-05.
 

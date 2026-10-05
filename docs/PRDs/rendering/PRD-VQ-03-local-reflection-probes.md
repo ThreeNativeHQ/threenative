@@ -5,6 +5,7 @@ prd_contract: v1
 # PRD-VQ-03 — Off-screen specular reflections come from a complete local probe
 
 **Status:** PROPOSED — 2026-10-01. No implementation or qualification is claimed.
+**Priority:** P2 — Proposed incremental cube capture and PMREM publication; all proofs unrun.
 **Batch:** Visual quality execution batch. **Wave:** 1 / lighting.
 **Dependencies:** Coordinate with PRD-381 row 5; this is its bounded child specification. Do not duplicate its capture-completeness work elsewhere.
 

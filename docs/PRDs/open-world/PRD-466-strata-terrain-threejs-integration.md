@@ -1,6 +1,7 @@
 # PRD-466 — Agent-authored Strata terrain through the Three.js contract
 
 **Status:** NOT STARTED
+**Priority:** P2 — Owner-mandated Strata integration unbuilt: seeded recipe, generated geometry, play on WebGPU.
 **Complexity:** 7 (HIGH); risk override: none
 **Owner:** ThreeNative maintainers
 **Depends on:** None
