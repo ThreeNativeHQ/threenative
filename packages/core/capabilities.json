@@ -7404,6 +7404,21 @@
         "source": "three/webgpu"
       },
       {
+        "symbol": "AnimationAction",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "AnimationClip",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "AnimationMixer",
+        "kind": "class",
+        "source": "three"
+      },
+      {
         "symbol": "Bone",
         "kind": "class",
         "source": "three/webgpu"

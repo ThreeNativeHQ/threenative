@@ -13,6 +13,7 @@
 // notify through the Euler member's own setters.
 
 #include "engine/abi/bindings.h"
+#include "engine/animation/mixer.h"
 #include "engine/animation/skinning/skeleton.h"
 
 #include <cmath>
@@ -679,6 +680,63 @@ void registerSkinnedMesh(ClassBinding& b) {
     nestedMatrix<SkinnedMesh>(b, "bindMatrixInverse", &SkinnedMesh::bindMatrixInverse);
 }
 
+// three's AnimationMixer(root), the actions it owns and the clips a loader hands back. An action
+// is the mixer's: its Ref is an alias that keeps the mixer alive.
+void registerAnimationMixer(ClassBinding& b) {
+    using namespace tn::engine::animation;
+    b.ctor = [](const Args& a, Store& store) -> std::shared_ptr<void> {
+        if (a.empty() || a.at(0).kind != Value::Kind::Ref) throw Unsupported{"AnimationMixer needs a root object"};
+        std::shared_ptr<Object3D> root = objectArg(store, a.at(0)).weak_from_this().lock();
+        if (!root) throw Unsupported{"AnimationMixer root is not shared-owned"};
+        return std::static_pointer_cast<void>(std::make_shared<AnimationMixer>(root));
+    };
+    b.methods["clipAction"] = [](void* self, const Args& a, Store& store) -> Value {
+        if (a.empty() || a.at(0).kind != Value::Kind::Ref) throw Unsupported{"clipAction needs an AnimationClip"};
+        AnimationAction* action = as<AnimationMixer>(self)->clipAction(store.shared<AnimationClip>(a.at(0), "AnimationClip"));
+        if (!action) throw Unsupported{"clipAction: the engine refuses a track of this clip"};
+        return store.adoptAlias("AnimationAction", action, self);
+    };
+    b.methods["setTime"] = [](void* self, const Args& a, Store&) {
+        as<AnimationMixer>(self)->setTime(number(a.at(0)));
+        return chain();
+    };
+    b.methods["update"] = [](void* self, const Args& a, Store&) {
+        as<AnimationMixer>(self)->update(number(a.at(0)));
+        return chain();
+    };
+    b.methods["stopAllAction"] = [](void* self, const Args&, Store&) {
+        as<AnimationMixer>(self)->stopAllAction();
+        return chain();
+    };
+    b.getters["time"] = [](void* self) { return Value::of(as<AnimationMixer>(self)->time); };
+    b.getters["timeScale"] = [](void* self) { return Value::of(as<AnimationMixer>(self)->timeScale); };
+    b.setters["timeScale"] = [](void* self, const Value& v) { as<AnimationMixer>(self)->timeScale = number(v); };
+}
+
+void registerAnimationAction(ClassBinding& b) {
+    using namespace tn::engine::animation;
+    for (const char* name : {"play", "stop", "reset"}) {
+        const std::string method = name;
+        b.methods[method] = [method](void* self, const Args&, Store&) {
+            AnimationAction* action = as<AnimationAction>(self);
+            if (method == "play") action->play();
+            else if (method == "stop") action->stop();
+            else action->reset();
+            return chain();
+        };
+    }
+    b.methods["setEffectiveWeight"] = [](void* self, const Args& a, Store&) {
+        as<AnimationAction>(self)->setEffectiveWeight(number(a.at(0)));
+        return chain();
+    };
+}
+
+void registerAnimationClip(ClassBinding& b) {
+    using namespace tn::engine::animation;
+    b.getters["name"] = [](void* self) { return Value{Value::Kind::String, 0, as<AnimationClip>(self)->name}; };
+    b.getters["duration"] = [](void* self) { return Value::of(as<AnimationClip>(self)->duration); };
+}
+
 // three's InstancedMesh(geometry, material, count): every matrix the identity, no colour attribute
 // until setColorAt; the arrays are float32 and reach the GPU on `needsUpdate`.
 void registerInstancedMesh(ClassBinding& b) {
@@ -754,6 +812,9 @@ void registerSceneBindings(Registry& classes) {
     registerBone(classes["Bone"]);
     registerSkeleton(classes["Skeleton"]);
     registerSkinnedMesh(classes["SkinnedMesh"]);
+    registerAnimationMixer(classes["AnimationMixer"]);
+    registerAnimationAction(classes["AnimationAction"]);
+    registerAnimationClip(classes["AnimationClip"]);
 }
 
 }  // namespace tn::binding

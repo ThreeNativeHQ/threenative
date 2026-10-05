@@ -177,6 +177,8 @@ export interface IGltfOp {
   readonly op: "gltf";
   readonly id: string;
   readonly file: string;
+  /** Ids bound to the file's animations, in order (`gltf.animations[i]`). */
+  readonly clips?: readonly string[];
 }
 
 export type FixtureOp = INewOp | ICallOp | ISetOp | IGltfOp;
@@ -422,6 +424,10 @@ export function fixtureErrors(value: unknown, expectedName?: string): readonly s
       if (typeof node.file !== "string" || !GLTF_FILE.test(node.file))
         errors.push(`${at}.file: required, a repository-relative .glb or .gltf path`);
       bind(node.id, `${at}.id`);
+      if (node.clips !== undefined) {
+        if (!Array.isArray(node.clips)) errors.push(`${at}.clips: must be an array of ids`);
+        else node.clips.forEach((clip, i) => bind(clip, `${at}.clips[${i}]`));
+      }
       continue;
     }
     if (node.op !== "new" && node.op !== "call" && node.op !== "set") {

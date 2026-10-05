@@ -50,7 +50,9 @@ async function build(fixture) {
     if (op.op === "gltf") {
       // three's own loader on the served repository file; its default scene is the bound value.
       const { GLTFLoader } = await import("/addons/loaders/GLTFLoader.js");
-      bound.set(op.id, (await new GLTFLoader().loadAsync(`/files/${op.file}`)).scene);
+      const gltf = await new GLTFLoader().loadAsync(`/files/${op.file}`);
+      bound.set(op.id, gltf.scene);
+      (op.clips ?? []).forEach((clip, i) => bound.set(clip, gltf.animations[i]));
       continue;
     }
     if (op.op === "new") {

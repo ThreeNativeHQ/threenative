@@ -28,6 +28,7 @@ export const CORPUS = [
   "examples/csg-doorway/assets/doorway.glb",
   "packages/create-threenative/__tests__/fixtures/bounded-decals/public/receiver.glb",
   "test-support/fixtures/skinned-character.glb",
+  "test-support/fixtures/morph-clip.glb",
   "examples/abyss-framework/assets/world/assets/pine.glb",
   "examples/auto-lod/assets/hull.glb",
   "packages/assets/__tests__/fixtures/foliage-conifer.glb",

@@ -127,6 +127,30 @@
       ],
       "callbacks": ["onBeforeRender"]
     },
+    "AnimationAction": {
+      "constructor": false,
+      "methods": ["play", "reset", "setEffectiveWeight", "stop"],
+      "getters": [],
+      "setters": [],
+      "members": [],
+      "callbacks": []
+    },
+    "AnimationClip": {
+      "constructor": false,
+      "methods": [],
+      "getters": ["duration", "name"],
+      "setters": [],
+      "members": [],
+      "callbacks": []
+    },
+    "AnimationMixer": {
+      "constructor": true,
+      "methods": ["clipAction", "setTime", "stopAllAction", "update"],
+      "getters": ["time", "timeScale"],
+      "setters": ["timeScale"],
+      "members": [],
+      "callbacks": []
+    },
     "Bone": {
       "constructor": true,
       "methods": [

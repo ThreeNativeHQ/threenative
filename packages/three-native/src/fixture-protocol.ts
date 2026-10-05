@@ -201,7 +201,11 @@ export function encodeFixture(fixture: IFixture, renderPng?: string): readonly s
       continue;
     }
     if (op.op === "gltf") {
-      lines.push(["gltf", op.id, encodeArg(op.file)].join(" "));
+      lines.push(
+        ["gltf", op.id, encodeArg(op.file), ...(op.clips?.length ? [op.clips.join(",")] : [])].join(
+          " ",
+        ),
+      );
       continue;
     }
     const args = op.args.map((arg) => encodeArg(arg));

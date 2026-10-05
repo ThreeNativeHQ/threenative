@@ -210,7 +210,7 @@ int Driver::run(std::istream& in, std::ostream& out) {
                 }
                 continue;
             }
-            if (command == "gltf" && t.size() == 3) {
+            if (command == "gltf" && (t.size() == 3 || t.size() == 4)) {
 #if TN_FIXTURE_GLTF
                 // A repository-relative file: the repository root is the first ancestor of the working
                 // directory that holds pnpm-workspace.yaml.
@@ -225,6 +225,16 @@ int Driver::run(std::istream& in, std::ostream& out) {
                     std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(bytes.data()), bytes.size()));
                 if (!loaded.error.empty() || !loaded.scene) throw Unsupported{"gltf: " + loaded.error};
                 hold(t[1], "Group", loaded.scene);
+                if (t.size() == 4) { // the ids bound to the file's animations, in order
+                    std::size_t i = 0, at = 0;
+                    while (at <= t[3].size()) {
+                        std::size_t end = t[3].find(',', at);
+                        if (end == std::string::npos) end = t[3].size();
+                        if (i >= loaded.animations.size()) throw Unsupported{"gltf: fewer animations than clip ids"};
+                        hold(t[3].substr(at, end - at), "AnimationClip", loaded.animations[i++]);
+                        at = end + 1;
+                    }
+                }
                 continue;
 #else
                 throw Unsupported{"this build has no glTF loader"};

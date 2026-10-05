@@ -201,12 +201,30 @@
       "kind": "class",
       "source": "three",
       "status": {
-        "kind": "unsupported",
-        "diagnostic": "TN_NATIVE_UNSUPPORTED_ANIMATIONCLIP"
+        "kind": "supported"
       },
       "extends": null,
       "constructor": [],
-      "fields": [],
+      "fields": [
+        {
+          "name": "duration",
+          "type": "number",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ],
       "methods": []
     },
     {
@@ -214,13 +232,108 @@
       "kind": "class",
       "source": "three",
       "status": {
-        "kind": "unsupported",
-        "diagnostic": "TN_NATIVE_UNSUPPORTED_ANIMATIONMIXER"
+        "kind": "supported"
       },
-      "extends": null,
-      "constructor": [],
-      "fields": [],
-      "methods": []
+      "extends": "EventDispatcher",
+      "constructor": [
+        {
+          "name": "root",
+          "type": "Object3D",
+          "optional": false
+        }
+      ],
+      "fields": [
+        {
+          "name": "time",
+          "type": "number",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "timeScale",
+          "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ],
+      "methods": [
+        {
+          "name": "clipAction",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "clip",
+                  "type": "AnimationClip",
+                  "optional": false
+                }
+              ],
+              "returns": "AnimationAction"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "setTime",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "time",
+                  "type": "number",
+                  "optional": false
+                }
+              ],
+              "returns": "AnimationMixer"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "stopAllAction",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "AnimationMixer"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "update",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "deltaTime",
+                  "type": "number",
+                  "optional": false
+                }
+              ],
+              "returns": "AnimationMixer"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ]
     },
     {
       "name": "AttachedBindMode",
@@ -23149,6 +23262,77 @@
         }
       ],
       "methods": []
+    },
+    {
+      "name": "AnimationAction",
+      "kind": "class",
+      "source": "three",
+      "status": {
+        "kind": "supported"
+      },
+      "extends": null,
+      "constructor": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "play",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "AnimationAction"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "reset",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "AnimationAction"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "setEffectiveWeight",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "weight",
+                  "type": "number",
+                  "optional": false
+                }
+              ],
+              "returns": "AnimationAction"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "stop",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "AnimationAction"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ]
     }
   ]
 }

@@ -718,6 +718,120 @@
    ]
   },
   {
+   "file": "test-support/fixtures/morph-clip.glb",
+   "nodes": [
+    {
+     "name": "MorphScene",
+     "type": "Group",
+     "parent": -1,
+     "position": [
+      0,
+      0,
+      0
+     ],
+     "quaternion": [
+      0,
+      0,
+      0,
+      1
+     ],
+     "scale": [
+      1,
+      1,
+      1
+     ]
+    },
+    {
+     "name": "Blob",
+     "type": "Mesh",
+     "parent": 0,
+     "position": [
+      0,
+      0,
+      0
+     ],
+     "quaternion": [
+      0,
+      0,
+      0,
+      1
+     ],
+     "scale": [
+      1,
+      1,
+      1
+     ],
+     "geometry": {
+      "attributes": [
+       {
+        "name": "normal",
+        "itemSize": 3,
+        "count": 325,
+        "normalized": false,
+        "array": "Float32Array"
+       },
+       {
+        "name": "position",
+        "itemSize": 3,
+        "count": 325,
+        "normalized": false,
+        "array": "Float32Array"
+       }
+      ],
+      "index": 1728,
+      "morphTargets": 2,
+      "groups": 0
+     },
+     "materials": [
+      {
+       "type": "MeshStandardMaterial",
+       "name": "clay",
+       "opacity": 1,
+       "transparent": false,
+       "side": 0,
+       "alphaTest": 0,
+       "depthWrite": true,
+       "vertexColors": false,
+       "color": [
+        0.9,
+        0.6,
+        0.4
+       ],
+       "emissive": [
+        0,
+        0,
+        0
+       ],
+       "roughness": 0.45,
+       "metalness": 0,
+       "emissiveIntensity": 1,
+       "flatShading": false,
+       "maps": []
+      }
+     ],
+     "morphTargetInfluences": [
+      0,
+      0
+     ]
+    }
+   ],
+   "animations": [
+    {
+     "name": "breathe",
+     "duration": 2,
+     "tracks": [
+      {
+       "name": "Blob.morphTargetInfluences",
+       "type": "number",
+       "times": 3,
+       "values": 6,
+       "interpolation": 2301
+      }
+     ]
+    }
+   ]
+  },
+  {
    "file": "examples/abyss-framework/assets/world/assets/pine.glb",
    "nodes": [
     {

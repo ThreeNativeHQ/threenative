@@ -314,7 +314,10 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
     v8::Local<v8::External> self = v8::External::New(isolate_, this);
     for (const auto& [name, binding] : registry()) {
         const uint16_t type = tn_type_id(name.c_str());
-        if (type == 0 || !binding.ctor) continue;
+        // Every supported class is a global, constructible or not: a class the engine only hands out
+        // (an AnimationAction from clipAction) still needs its prototype for `instanceof` and
+        // members, and `new` on it is refused by tn_construct with a diagnostic naming it.
+        if (type == 0) continue;
         v8::Local<v8::FunctionTemplate> ctor = v8::FunctionTemplate::New(
             isolate_,
             [](const v8::FunctionCallbackInfo<v8::Value>& info) {

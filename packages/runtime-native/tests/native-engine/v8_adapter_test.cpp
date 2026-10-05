@@ -122,6 +122,11 @@ void unsupported() {
     CHECK(thrown.rfind("THROWN TypeError: TN_NATIVE_UNSUPPORTED", 0) == 0);
     if (thrown.rfind("THROWN TypeError: TN_NATIVE_UNSUPPORTED", 0) != 0) std::fprintf(stderr, "%s\n", thrown.c_str());
     CHECK(run(rt, adapter, "Vector3(1,2,3)").rfind("THROWN TypeError", 0) == 0);  // not a construct call
+    // A class the engine only hands out is a global (for instanceof), but `new` on it is refused by name.
+    CHECK(run(rt, adapter, "typeof AnimationAction") == "function");
+    const std::string handedOut = run(rt, adapter, "new AnimationAction()");
+    CHECK(handedOut.rfind("THROWN", 0) == 0 && handedOut.find("TN_NATIVE_UNSUPPORTED class AnimationAction") != std::string::npos);
+    if (handedOut.find("TN_NATIVE_UNSUPPORTED class AnimationAction") == std::string::npos) std::fprintf(stderr, "%s\n", handedOut.c_str());
 }
 
 void gcRelease() {
@@ -262,7 +267,7 @@ void catalogCoverage() {
 
     std::set<std::string> expectedClasses;
     for (const auto& [name, binding] : registry) {
-        if (binding.ctor && tn_type_id(name.c_str()) != 0) expectedClasses.insert(name);
+        if (tn_type_id(name.c_str()) != 0) expectedClasses.insert(name); // constructible or only handed out
     }
 
     v8::HandleScope scope(rt.isolate);

@@ -43,6 +43,28 @@ intensity: number;
 color: Color;
 }
 
+/** Catalog supported: three/AnimationClip. */
+export declare class AnimationClip {
+constructor();
+readonly duration: number;
+readonly name: string;
+}
+
+/** Catalog supported: three/AnimationMixer. */
+export declare class AnimationMixer extends EventDispatcher {
+constructor(root: Object3D);
+readonly time: number;
+timeScale: number;
+
+  clipAction(clip: AnimationClip): AnimationAction;
+
+  setTime(time: number): AnimationMixer;
+
+  stopAllAction(): AnimationMixer;
+
+  update(deltaTime: number): AnimationMixer;
+}
+
 /** Catalog partial (native-not-implemented): three/AttachedBindMode. */
 export declare const AttachedBindMode: "attached";
 
@@ -2638,4 +2660,17 @@ intensity: number;
 penumbra: number;
 color: Color;
 readonly target: Object3D;
+}
+
+/** Catalog supported: three/AnimationAction. */
+export declare class AnimationAction {
+constructor();
+
+  play(): AnimationAction;
+
+  reset(): AnimationAction;
+
+  setEffectiveWeight(weight: number): AnimationAction;
+
+  stop(): AnimationAction;
 }

@@ -44,14 +44,20 @@ import { type IRenderCapture, captureRenderFixtures } from "./render-reference.j
  * three's GLTFLoader on a repository file, its default scene. Node has no DOM to decode images, so
  * a texture stands in for each glTF texture; observations here never read pixels.
  */
-async function loadGltfScene(threeRoot: string, file: string): Promise<unknown> {
+async function loadGltf(
+  threeRoot: string,
+  file: string,
+): Promise<{ scene: unknown; animations: unknown[] }> {
   const loaderUrl = pathToFileURL(
     path.join(threeRoot, "examples", "jsm", "loaders", "GLTFLoader.js"),
   ).href;
   const { GLTFLoader } = (await import(loaderUrl)) as {
     GLTFLoader: new () => {
       register(plugin: (parser: { json: { textures: { name?: string }[] } }) => unknown): void;
-      parseAsync(data: ArrayBuffer, path: string): Promise<{ scene: unknown }>;
+      parseAsync(
+        data: ArrayBuffer,
+        path: string,
+      ): Promise<{ scene: unknown; animations: unknown[] }>;
     };
   };
   const three = (await import(
@@ -73,7 +79,7 @@ async function loadGltfScene(threeRoot: string, file: string): Promise<unknown> 
     bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
     "",
   );
-  return gltf.scene;
+  return gltf;
 }
 
 /** The pinned `three`, from whichever package in the workspace links the same store copy. */
@@ -162,7 +168,9 @@ export async function referenceGolden(
   const bound = new Map<string, unknown>();
   for (const op of fixture.ops) {
     if (op.op === "gltf") {
-      bound.set(op.id, await loadGltfScene(root, op.file));
+      const gltf = await loadGltf(root, op.file);
+      bound.set(op.id, gltf.scene);
+      op.clips?.forEach((clip, i) => bound.set(clip, gltf.animations[i]));
       continue;
     }
     if (op.op === "new") {
