@@ -381,3 +381,22 @@ This merged source has no new runtime proof. The next bounded runtime request is
 three-toggle fixture with the original balanced cost protocol, under a coordinated quiet host
 and the shared capture lease, retaining host-load evidence. Image-quality/ghosting, dynamic
 resolution reconstruction, native rendering and performance acceptance remain open.
+
+### Second develop merge into PR #398 (2026-10-04)
+
+The repair lane fast-forwarded from `ffa6ea9bb` to the published head `ea0c30701` without
+rewriting history, then merged `origin/develop` `64aed30fe` normally. The single conflict was
+the `PRD_201_PARENT_SCAFFOLD_HASHES` table in `scaffold.spec.ts`, which both branches had
+re-pinned for unrelated reasons. The resolution re-measures all thirteen no-install
+`createProject` trees on the merged worktree, and that test passes. Incoming PRD-345
+backlight, environment-contribution and material-lighting bytes are preserved beside the
+temporal render source; nothing moved into a package.
+
+`pnpm ci:fast` passes lint, docs, the agents mirror and drift. The wider scaffolder run is
+1272/1282; its four deterministic reds name files this merge did not touch and are red on the
+published head already (the 347-line `temporalResolve.ts`, the unimported and uncalled
+`starter/temporalAA.ts`, and the starter `CLAUDE.md` 100-line budget); the other six are
+environment reds from timeouts and an unbuilt checkout. Nothing here measures ghosting,
+temporal-off cost, native rendering or image quality, so the three open phase-3 and
+acceptance boxes and both open acceptance criteria stay open with their original thresholds
+and controls.

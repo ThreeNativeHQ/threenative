@@ -486,3 +486,28 @@ full workspace TypeScript and 255 focused CPU tests pass; the real Three patch p
 regression is fixed with exact full-blob migrations and tamper refusal. The merged runtime
 has not been captured. No reconstruction, quality, ghosting, native or performance acceptance
 box changes. The original quality failures and diagnostic hypotheses above remain open.
+
+### Second develop merge into PR #398 (2026-10-04)
+
+The repair lane fast-forwarded from `ffa6ea9bb` to the published head `ea0c30701` with no
+history rewritten, then merged `origin/develop` `64aed30fe` (PRD-345 backlight and
+dark-environment defaults). One conflict, in `packages/create-threenative/__tests__/
+scaffold.spec.ts`: both sides had re-pinned `PRD_201_PARENT_SCAFFOLD_HASHES` for unrelated
+reasons, so neither table described the merged tree. The resolution is the merged-tree
+measurement through the actual `createProject` trees, and
+`vitest run packages/create-threenative/__tests__/scaffold.spec.ts -t byte-stable` passes on
+it. The incoming backlight, environment-contribution and material-lighting bytes and the
+temporal render source both survive; nothing under `src/render/` moved into a package.
+
+`pnpm ci:fast` passes all four stages: lint, docs, agents mirror and drift (including the full
+scaffold spec). The wider `vitest run packages/create-threenative` run is 1272/1282. Its
+deterministic reds all name files this merge did not touch and are already red on the
+published head: `temporalResolve.ts` at 347 lines, `temporalAA.ts` with no importer and an
+uncalled `createTemporalAA`, and the starter `CLAUDE.md` 100-line budget. The rest are
+environment reds on an unbuilt checkout: a 60s build ceiling, `publication.spec.ts` missing
+`packages/metahuman/dist`, three asset-cook 60s timeouts and one 180s pristine-scaffold
+typecheck timeout. No threshold, control or sample count moved.
+
+This merge has no new runtime proof, no capture and no hardware run. Every quality,
+ghosting, dynamic-resolution, native and performance acceptance box above stays exactly as it
+was, and the p95 baseline-noise control is still unpassed.

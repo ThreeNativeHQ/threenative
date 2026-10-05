@@ -4795,6 +4795,20 @@
     },
     {
       "aliases": [],
+      "constraints": ["does not acquire another screenshot or alter frame timing"],
+      "example": "collectRegionalTone(png, assertions, \"character\", \"posed\");",
+      "importPath": "@threenative/playtest/capture",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function collectRegionalTone( png: Buffer, assertions: readonly IPlaytestToneAssertion[], label: string, atStep?: string, ): IPlaytestRegionalToneObservation[] { … }",
+      "situations": ["measure a specified pixel crop in a captured playtest frame"],
+      "summary": "Collect opt-in regional tone observations from the same acquired PNG.",
+      "supersedes": [],
+      "symbol": "collectRegionalTone"
+    },
+    {
+      "aliases": [],
       "constraints": [],
       "example": "const stats = inspectFrame(png);",
       "importPath": "@threenative/playtest/capture",
