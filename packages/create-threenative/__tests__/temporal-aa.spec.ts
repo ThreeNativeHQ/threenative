@@ -139,6 +139,75 @@ describe("opt-in full-resolution temporal AA", () => {
     temporal.dispose();
     scenePass.dispose();
   });
+  it.each(["depth", "velocity"] as const)(
+    "reseeds both temporal targets after an invalid %s raster interrupts valid history",
+    (input) => {
+      const { temporal, frame, copies, events, scenePass, node } = fixture();
+      try {
+        temporal.node.updateBefore(frame);
+        temporal.node.updateBefore(frame);
+        expect(temporal.report().historyValid).toBe(true);
+        const texture =
+          input === "depth" ? temporal.node.depthNode.value : temporal.node.velocityNode.value;
+        const validImage = texture.image;
+        texture.image = { width: 8, height: 8 };
+        expect(() => temporal.node.updateBefore(frame)).toThrow(/same raster/);
+        expect(temporal.report().frame).toBe(2);
+        expect(events).toEqual(["resolve", "copy", "copy", "resolve"]);
+        texture.image = validImage;
+        temporal.node.updateBefore(frame);
+        expect(temporal.report()).toMatchObject({
+          frame: 3,
+          historyValid: false,
+          resetReason: "scene-reset",
+        });
+        expect(copies.slice(2)).toEqual([
+          { from: scenePass.renderTarget.texture, to: node._resolveRenderTarget.texture },
+          { from: scenePass.renderTarget.texture, to: node._historyRenderTarget.texture },
+        ]);
+        temporal.node.updateBefore(frame);
+        expect(temporal.report()).toMatchObject({
+          frame: 4,
+          historyValid: true,
+          resetReason: null,
+        });
+        expect(copies).toHaveLength(4);
+      } finally {
+        temporal.dispose();
+        scenePass.dispose();
+      }
+    },
+  );
+  it.each(["renderer", "colour"] as const)(
+    "reseeds after the %s input is restored following a rejected frame",
+    (input) => {
+      const { temporal, frame, copies, scenePass } = fixture();
+      try {
+        temporal.node.updateBefore(frame);
+        temporal.node.updateBefore(frame);
+        const renderer = frame.renderer;
+        const colourPass = Reflect.get(temporal.node.beautyNode, "passNode");
+        if (input === "renderer") frame.renderer = null;
+        else Reflect.set(temporal.node.beautyNode, "passNode", undefined);
+        expect(() => temporal.node.updateBefore(frame)).toThrow(
+          input === "renderer" ? /requires a renderer/ : /materialized colour/,
+        );
+        expect(temporal.report().frame).toBe(2);
+        frame.renderer = renderer;
+        Reflect.set(temporal.node.beautyNode, "passNode", colourPass);
+        temporal.node.updateBefore(frame);
+        expect(temporal.report()).toMatchObject({
+          frame: 3,
+          historyValid: false,
+          resetReason: "scene-reset",
+        });
+        expect(copies).toHaveLength(4);
+      } finally {
+        temporal.dispose();
+        scenePass.dispose();
+      }
+    },
+  );
   it("releases temporal targets once and rejects use after disposal", () => {
     const { temporal, frame, node, scenePass } = fixture();
     const release = vi.spyOn(node._historyRenderTarget, "dispose");

@@ -486,3 +486,18 @@ full workspace TypeScript and 255 focused CPU tests pass; the real Three patch p
 regression is fixed with exact full-blob migrations and tamper refusal. The merged runtime
 has not been captured. No reconstruction, quality, ghosting, native or performance acceptance
 box changes. The original quality failures and diagnostic hypotheses above remain open.
+
+
+### Rejected input frames invalidate temporal history (2026-10-05)
+
+On published source `ea0c3070`, four CPU lifecycle regressions fail: after a valid
+history frame, mismatched depth/velocity dimensions, a missing renderer or a missing
+materialized colour input throw before the history-invalidating catch. Restoring
+the input then incorrectly reports valid history and skips both current-colour seeds.
+The generated helper now includes these guards in its existing failure/reset boundary.
+The rejected frame still throws and does not advance its completed-frame report;
+the next valid frame reports `scene-reset` and seeds both output and history, then
+ordinary accumulation resumes. The six-file temporal/velocity/resolve CPU slice
+passes **45/45**; strict TypeScript on the changed helper/spec also passes.
+These are CPU contracts with GPU work stubbed. No new runtime screenshot, image-quality,
+reconstruction, cost or native qualification is claimed, and no acceptance box changes.

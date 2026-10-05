@@ -114,20 +114,23 @@ export function createTemporalAA(
   };
   node.updateBefore = (frame) => {
     if (disposed) throw new Error("Temporal AA is disposed.");
-    if (frame.renderer === null) throw new Error("Temporal AA requires a renderer.");
-    const source = internals.beautyNode.isRTTNode
-      ? internals.beautyNode.renderTarget
-      : internals.beautyNode.passNode?.renderTarget;
-    if (source === undefined) throw new Error("Temporal AA requires a materialized colour input.");
-    const { width, height } = source;
-    for (const texture of [depth.value, velocity.value]) {
-      if (texture.width !== width || texture.height !== height)
-        throw new Error("Temporal AA colour, depth and velocity must share the same raster size.");
-    }
-    if (report.frame > 0 && (width !== report.inputWidth || height !== report.inputHeight))
-      pending = "resize";
-    const reason = pending;
     try {
+      if (frame.renderer === null) throw new Error("Temporal AA requires a renderer.");
+      const source = internals.beautyNode.isRTTNode
+        ? internals.beautyNode.renderTarget
+        : internals.beautyNode.passNode?.renderTarget;
+      if (source === undefined)
+        throw new Error("Temporal AA requires a materialized colour input.");
+      const { width, height } = source;
+      for (const texture of [depth.value, velocity.value]) {
+        if (texture.width !== width || texture.height !== height)
+          throw new Error(
+            "Temporal AA colour, depth and velocity must share the same raster size.",
+          );
+      }
+      if (report.frame > 0 && (width !== report.inputWidth || height !== report.inputHeight))
+        pending = "resize";
+      const reason = pending;
       updateBefore(frame);
       if (reason !== null) {
         // Seeding history before resolve is insufficient: motion would still sample that seed
@@ -136,21 +139,21 @@ export function createTemporalAA(
         frame.renderer.copyTextureToTexture(source.texture, internals._resolveRenderTarget.texture);
         frame.renderer.copyTextureToTexture(source.texture, internals._historyRenderTarget.texture);
       }
+      report = {
+        frame: report.frame + 1,
+        historyValid: reason === null,
+        resetReason: reason,
+        inputWidth: width,
+        inputHeight: height,
+        outputWidth: internals._resolveRenderTarget.width,
+        outputHeight: internals._resolveRenderTarget.height,
+      };
+      pending = null;
+      return undefined;
     } catch (error) {
       pending = "scene-reset";
       throw error;
     }
-    report = {
-      frame: report.frame + 1,
-      historyValid: reason === null,
-      resetReason: reason,
-      inputWidth: width,
-      inputHeight: height,
-      outputWidth: internals._resolveRenderTarget.width,
-      outputHeight: internals._resolveRenderTarget.height,
-    };
-    pending = null;
-    return undefined;
   };
   return {
     node,
