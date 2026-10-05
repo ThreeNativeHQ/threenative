@@ -31,6 +31,13 @@ import {
   isLodPreset,
   resolveLodPolicy,
 } from "./lod/generate.js";
+import {
+  type INativePackageEntry,
+  NATIVE_PACKAGE_NAME,
+  NativeEntryKind,
+  WGPU_TEXTURE_FORMAT_RGBA8_UNORM,
+  writeNativePackage,
+} from "./native-package.js";
 import { applyPasses } from "./pass-chain.js";
 import type { IAppliedPasses, IPassTiming } from "./pass-chain.js";
 import { parseAudioConfig } from "./passes/audio-config.js";
@@ -46,6 +53,7 @@ import type {
   IModelCompactOptions,
   IModelCompactSummary,
 } from "./passes/compact.js";
+import { decodeImageBytes } from "./passes/decode-image.js";
 import { globMatch } from "./passes/glob.js";
 import { lightmapPass } from "./passes/lightmap.js";
 import type { ILightmapPassOptions } from "./passes/lightmap.js";
@@ -62,6 +70,7 @@ import type {
 import { createSharedImageStore, unpackGlb } from "./passes/shared-images.js";
 import { texturePass, textureResizePass } from "./passes/texture.js";
 import type { ITextureOverride, ITexturePassOptions, TextureSkipReason } from "./passes/texture.js";
+import { parsePng } from "./png.js";
 import {
   formatAudioSizes,
   formatBudget,
@@ -187,6 +196,13 @@ export interface IAssetSourceConfig {
    * default-on decision is a later phase (PRD-377 §8).
    */
   readonly lod?: boolean | IModelLodOptions | "none";
+  /**
+   * Also writes the native cooked package (`<output>/native/assets.tnpk`, TNPK v1) beside the
+   * existing outputs: one Buffer entry per cooked binary buffer and one Texture entry per cooked
+   * RGBA8 PNG. Mesh, material and scene entries are out of scope until their native loaders land.
+   * Absent means off, so a web-only project pays nothing.
+   */
+  readonly nativePackage?: boolean;
   readonly output?: string;
   readonly source?: string;
   readonly targets?: IAssetTargets;
@@ -412,6 +428,8 @@ interface ICompileLayout {
   readonly modelCompressionReason: ISkippedCompressionRow["reason"] | undefined;
   /** The model decoder-backed sub-passes that were enabled before the target filtered them. */
   readonly modelCompressionDecoders: readonly ("meshopt" | "KTX2")[];
+  /** True when `assets.nativePackage` asked for the TNPK output beside the existing outputs. */
+  readonly nativePackage: boolean;
   /** Why the standalone texture pass was not emitted, if it was skipped. */
   readonly textureCompressionReason: ISkippedCompressionRow["reason"] | undefined;
 }
@@ -1552,7 +1570,8 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
       key !== "output" &&
       key !== "targets" &&
       key !== "textures" &&
-      key !== "models"
+      key !== "models" &&
+      key !== "nativePackage"
     ) {
       throw new Error(`TN_ASSETS_CONFIG_UNKNOWN_KEY: assets.${key} is not recognised.`);
     }
@@ -1595,6 +1614,10 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
   // `"none"` remain the absolute kill switch, and the legacy `models` declarations still translate
   // against the same policy, so an explicit `simplify` or `virtual: "none"` project is unaffected.
   const configuredLod = config.lod === undefined ? true : parseModelLod(config.lod);
+  const nativePackage = config.nativePackage ?? false;
+  if (typeof nativePackage !== "boolean") {
+    throw new Error("TN_ASSETS_CONFIG_INVALID: assets.nativePackage must be a boolean.");
+  }
   const modelCompressionDecoders: readonly ("meshopt" | "KTX2")[] =
     configuredModels === undefined
       ? []
@@ -1738,6 +1761,7 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
               ? undefined
               : "platform",
     modelCompressionDecoders,
+    nativePackage,
     outputRoot,
     passSpecs,
     skippedPasses,
@@ -2191,6 +2215,51 @@ async function writeOutput(
   const outputAbsolute = path.join(outputRoot, entry.output);
   await mkdir(path.dirname(outputAbsolute), { recursive: true });
   await writeFile(outputAbsolute, buffer);
+}
+
+/**
+ * Gathers the native package's entries from the cooked outputs already on disk.
+ *
+ * One Buffer entry per cooked binary buffer (audio/other) and one Texture entry per cooked RGBA8
+ * PNG. A KTX2 texture and a model are not v1 entries: mesh, material and scene entries are out of
+ * scope until the native loaders land, and v1 textures are RGBA8 only. A buffer the native loader
+ * would refuse (empty, or not a multiple of four) is left out and counted, never silently padded.
+ */
+async function nativePackageEntries(
+  outputRoot: string,
+  entries: Readonly<Record<string, IAssetManifestEntry>>,
+): Promise<{ entries: INativePackageEntry[]; skipped: number }> {
+  const specs: INativePackageEntry[] = [];
+  let skipped = 0;
+  for (const logical of Object.keys(entries).sort()) {
+    const entry = entries[logical];
+    if (entry === undefined || entry.kind === "model") continue;
+    const data = await readFile(path.join(outputRoot, entry.output));
+    if (entry.kind === "texture") {
+      if (!entry.output.toLowerCase().endsWith(".png") || parsePng(data) === undefined) {
+        skipped += 1;
+        continue;
+      }
+      const image = await decodeImageBytes(data, logical);
+      const header = Buffer.alloc(12);
+      header.writeUInt32LE(image.width, 0);
+      header.writeUInt32LE(image.height, 4);
+      header.writeUInt32LE(WGPU_TEXTURE_FORMAT_RGBA8_UNORM, 8);
+      specs.push({
+        data: Buffer.concat([header, Buffer.from(image.data)]),
+        kind: NativeEntryKind.Texture,
+        name: logical,
+        uploadSize: image.width * image.height * 4,
+      });
+      continue;
+    }
+    if (data.length === 0 || data.length % 4 !== 0) {
+      skipped += 1;
+      continue;
+    }
+    specs.push({ data, kind: NativeEntryKind.Buffer, name: logical, uploadSize: data.length });
+  }
+  return { entries: specs, skipped };
 }
 
 async function writeManifest(
@@ -2929,6 +2998,41 @@ export async function compileAssets(
         producer: "basis-transcoder",
         source: null,
       });
+    }
+  }
+
+  // The native cooked package (PRD-515) is an additional output, never a replacement: enabling
+  // it leaves every existing output byte-identical. Written after the cook, so a cache hit
+  // rebuilds it from the outputs already on disk.
+  if (layout.nativePackage) {
+    const native = await nativePackageEntries(layout.outputRoot, entries);
+    if (native.entries.length === 0) {
+      console.log(
+        "TN_ASSETS_NATIVE_PACKAGE_EMPTY: assets.nativePackage is on but no cooked binary buffer or RGBA8 PNG is in scope for a v1 entry.",
+      );
+    } else {
+      const nativeBytes = writeNativePackage(native.entries);
+      await recordPendingOutputs([NATIVE_PACKAGE_NAME]);
+      const nativeAbsolute = path.join(layout.outputRoot, NATIVE_PACKAGE_NAME);
+      await mkdir(path.dirname(nativeAbsolute), { recursive: true });
+      const existing = await readFile(nativeAbsolute).catch(() => undefined);
+      if (existing === undefined || !Buffer.from(existing).equals(nativeBytes)) {
+        await writeFile(nativeAbsolute, nativeBytes);
+      }
+      receiptOutputs.push({
+        bytes: nativeBytes.length,
+        path: NATIVE_PACKAGE_NAME,
+        producer: "native-package",
+        source: null,
+      });
+      if (native.skipped > 0) {
+        console.log(
+          `TN_ASSETS_NATIVE_PACKAGE_SKIPPED: ${String(native.skipped)} cooked output(s) are not a legal TNPK v1 entry (KTX2 texture or unaligned buffer) and are left out.`,
+        );
+      }
+      console.log(
+        `TN_ASSETS_NATIVE_PACKAGE: ${String(native.entries.length)} entry(ies), ${String(nativeBytes.length)} bytes at ${NATIVE_PACKAGE_NAME}.`,
+      );
     }
   }
 
