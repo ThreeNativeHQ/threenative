@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <span>
 #include <vector>
 
@@ -28,7 +29,7 @@ struct UpdateRange {
  * arithmetic before it touches memory. A lease pins the storage: a resize requested under a lease
  * waits for the last release, so a view or GPU job never reads memory that moved under it.
  */
-class BufferStore {
+class BufferStore : public std::enable_shared_from_this<BufferStore> {
 public:
     BufferStore(Scalar scalar, uint64_t count);
 

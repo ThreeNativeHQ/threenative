@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 #include <unordered_map>
 
 #include "engine/foundation/buffers.h"
@@ -24,6 +25,8 @@ public:
     Handle sync(BufferStore& store, uint32_t usage);
     /** Drops a store's GPU copy (deferred until the GPU is done with it). */
     void forget(const BufferStore& store);
+    /** Drops the GPU copies of shared-owned stores that no longer exist; the renderer calls it per frame. */
+    void sweep();
 
     struct Stats {
         uint64_t fullUploads = 0;
@@ -31,6 +34,8 @@ public:
         uint64_t bytesUploaded = 0;
     };
     const Stats& stats() const { return stats_; }
+    /** GPU copies held; the renderer-updates test bounds it. */
+    size_t entries() const { return entries_.size(); }
 
 private:
     void upload(Handle buffer, const BufferStore& store, uint64_t offset, uint64_t size);
@@ -39,6 +44,10 @@ private:
         uint64_t byteLength = 0;
         uint32_t version = 0;
         uint64_t epoch = 0;
+        // The store's owner when it is shared-owned: an expired one is a released store, whose
+        // address a new store may now hold. Stores outside a shared_ptr are never swept.
+        std::weak_ptr<const BufferStore> owner;
+        bool tracked = false;
     };
     GpuResources& gpu_;
     std::unordered_map<const BufferStore*, Entry> entries_;

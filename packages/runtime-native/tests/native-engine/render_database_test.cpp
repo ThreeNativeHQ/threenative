@@ -203,8 +203,68 @@ void materialUnsupported() {
     CHECK(database.diagnostics().size() == 1);  // the standard mesh beside it is not refused
 }
 
+// PRD-514: an edit between frames shows on the next frame, and nothing a frame no longer draws stays
+// behind: a released geometry's GPU copies are freed and never served to a geometry that reuses its
+// address.
+void updates() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(64, 48);
+    LitScene s;
+    RenderDatabase database;
+    const auto frame = [&] {
+        database.render(renderer, s.scene, s.camera, {0, 0, 0, 1});
+        CHECK(database.diagnostics().empty());
+        return read(renderer, events);
+    };
+    const auto lit = [](const std::vector<uint8_t>& px) {
+        size_t n = 0;
+        for (size_t i = 0; i + 3 < px.size(); i += 4) n += (px[i] | px[i + 1] | px[i + 2]) != 0;
+        return n;
+    };
+    const size_t center = (24 * 64 + 32) * 4;
+    std::vector<uint8_t> px = frame();
+    CHECK(px.size() == 64 * 48 * 4 && px[center] > px[center + 2]);  // the orange sphere
+
+    // A material edit is blue on the next frame.
+    s.material->color.setRGB(0.1, 0.2, 0.9);
+    s.material->needsUpdate();
+    px = frame();
+    CHECK(px[center + 2] > px[center]);
+
+    // Positions edited in place and flagged (three's attribute.needsUpdate) shrink the next frame.
+    const size_t whole = lit(px);
+    BufferStore& positions = *s.geometry->attributes.at("position")->store;
+    float* p = reinterpret_cast<float*>(positions.data());
+    for (uint64_t i = 0; i < positions.count(); ++i) p[i] *= 0.25f;
+    positions.needsUpdate();
+    px = frame();
+    CHECK(lit(px) > 0 && lit(px) * 4 < whole);
+
+    // 200 geometry swaps, each old geometry released. Same vertex count, alternating radius: a new
+    // geometry at a released one's address must draw its own radius, never the old GPU copy, and the
+    // GPU keeps copies of the live geometry and at most the one the previous frame drew.
+    s.geometry.reset();
+    size_t silhouette[2] = {0, 0};
+    int stale = 0;
+    for (int i = 0; i < 200; ++i) {
+        s.mesh.geometry = makeSphereGeometry(i % 2 ? 0.5 : 1, 16, 8);
+        const size_t n = lit(frame());
+        if (i < 2) silhouette[i] = n;
+        else stale += n != silhouette[i % 2];
+    }
+    CHECK(silhouette[1] > 0 && silhouette[1] < silhouette[0]);
+    CHECK(stale == 0);
+    if (stale) std::fprintf(stderr, "frames drawn from a released geometry: %d\n", stale);
+    CHECK(renderer.geometry().entries() <= 6);
+    if (renderer.geometry().entries() > 6) std::fprintf(stderr, "GPU copies: %zu\n", renderer.geometry().entries());
+}
+
 }  // namespace
 
 TN_TEST_MAIN({"lit_scene", litScene}, {"invalidation", invalidation},
             {"alpha_scene", alphaScene},
-            {"material_unsupported", materialUnsupported})
+            {"material_unsupported", materialUnsupported},
+            {"updates", updates})

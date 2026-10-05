@@ -43,8 +43,11 @@ private:
         uint64_t objectRevision = 0;
         uint64_t geometryRevision = 0;
         uint32_t materialVersion = 0;
-        const BufferGeometry* geometry = nullptr;
-        const Material* material = nullptr;
+        // Held, so neither is released while the record's item points into it, and a new one can
+        // never take its address and pass for it. The mesh is known by its id, never reused.
+        std::shared_ptr<const BufferGeometry> geometry;
+        std::shared_ptr<const Material> material;
+        uint64_t meshId = 0;
         shader::StandardMaterial params;
         DrawItem item;
         bool drawable = false;

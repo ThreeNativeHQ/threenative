@@ -68,16 +68,17 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh) {
     const Material* material = mesh.material.get();
     const uint64_t geometryRevision = mesh.geometry ? mesh.geometry->revision() : 0;
     const uint32_t materialVersion = material ? material->version() : 0;
-    if (r.drawable && r.objectRevision == mesh.revision() && r.geometry == mesh.geometry.get() && r.geometryRevision == geometryRevision &&
-        r.material == material && r.materialVersion == materialVersion) {
+    if (r.drawable && r.meshId == mesh.id() && r.objectRevision == mesh.revision() && r.geometry == mesh.geometry &&
+        r.geometryRevision == geometryRevision && r.material.get() == material && r.materialVersion == materialVersion) {
         return r;  // nothing the record depends on moved
     }
     ++rebuilds_;
     r = Record{};
+    r.meshId = mesh.id();
     r.objectRevision = mesh.revision();
-    r.geometry = mesh.geometry.get();
+    r.geometry = mesh.geometry;
     r.geometryRevision = geometryRevision;
-    r.material = material;
+    r.material = mesh.material;
     r.materialVersion = materialVersion;
     if (!mesh.geometry || !material) return r;
     r.params = paramsOf(*material);

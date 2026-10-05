@@ -26,6 +26,12 @@ Handle GeometryCache::sync(BufferStore& store, uint32_t usage) {
     const uint64_t byteLength = (store.byteLength() + 3) & ~uint64_t{3};
     auto [it, isNew] = entries_.try_emplace(&store);
     Entry& e = it->second;
+    // A released store's copy at this address belongs to the dead store, never to this one.
+    if (!isNew && e.tracked && e.owner.expired()) {
+        gpu_.destroy(e.buffer);
+        e = Entry{};
+        isNew = true;
+    }
     // A resize reallocates: the old copy is retired and the whole store goes up again.
     if (!isNew && (e.byteLength != byteLength || e.epoch != store.epoch())) {
         gpu_.destroy(e.buffer);
@@ -35,6 +41,8 @@ Handle GeometryCache::sync(BufferStore& store, uint32_t usage) {
         e.buffer = gpu_.createBuffer(byteLength == 0 ? 4 : byteLength, usage | WGPUBufferUsage_CopyDst);
         e.byteLength = byteLength;
         e.epoch = store.epoch();
+        e.owner = store.weak_from_this();
+        e.tracked = !e.owner.expired();
         upload(e.buffer, store, 0, store.byteLength());
         ++stats_.fullUploads;
     } else if (store.version() != e.version) {
@@ -62,6 +70,17 @@ void GeometryCache::forget(const BufferStore& store) {
     if (it == entries_.end()) return;
     gpu_.destroy(it->second.buffer);
     entries_.erase(it);
+}
+
+void GeometryCache::sweep() {
+    for (auto it = entries_.begin(); it != entries_.end();) {
+        if (it->second.tracked && it->second.owner.expired()) {
+            gpu_.destroy(it->second.buffer);
+            it = entries_.erase(it);
+        } else {
+            ++it;
+        }
+    }
 }
 
 }  // namespace tn::engine

@@ -288,6 +288,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
                           std::array<double, 4> clear) {
     const uint64_t id = ++renderId_;
     const Matrix& view = camera.matrixWorldInverse;
+    geometry_.sweep();  // GPU copies of attributes released since the last frame
 
     WGPUCommandEncoderDescriptor encoderDesc = {};
     WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(device_, &encoderDesc);
