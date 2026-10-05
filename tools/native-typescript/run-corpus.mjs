@@ -12,13 +12,20 @@
 // <case>: <first error line>) and is never skipped. A `.ts` entry with no
 // `.expected` is a named failure, not a skip. alloc-loop additionally fails
 // when its peak resident set exceeds 512 MB.
+//
+// A case that imports "three" is game code against the engine (PRD-506): the reference
+// build resolves "three" to the workspace's pinned three@<catalog>, the native build to
+// three/three.ts linked with three/tn_three_shim.c and the engine's static libraries from
+// TN_NATIVE_ENGINE_BUILD (default packages/runtime-native/build/tn-linux). The case's own
+// source is never edited.
 import { spawn, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
+import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { provision } from "./provision.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -26,6 +33,14 @@ const CORPUS = path.join(HERE, "corpus");
 const REPO = path.resolve(HERE, "..", "..");
 const RSS_LIMIT_BYTES = 512 * 1024 * 1024;
 const IMPORT_RE = /\bfrom\s*["']([^"']+)["']|\bimport\s*["']([^"']+)["']/g;
+const THREE_IMPORT_RE = /\bfrom\s*["']three["']/g;
+const THREE_DIR = path.join(HERE, "three");
+const ENGINE_LIBS = [
+  "tn_engine_abi",
+  "tn_engine_bindings",
+  "tn_engine_scene",
+  "tn_engine_foundation",
+];
 
 // Environment variable names are SCREAMING_SNAKE and must keep that spelling.
 function mergeEnv(base, entries) {
@@ -38,6 +53,95 @@ function named(code, message) {
   const error = new Error(`${code}: ${message}`);
   error.code = code;
   return error;
+}
+
+function importsThree(file) {
+  return /\bfrom\s*["']three["']/.test(fs.readFileSync(file, "utf8"));
+}
+
+/**
+ * A case that imports "three": stage three/three.ts as that module beside the case, compile the
+ * TypeScript to objects, and link them with the shim and the engine's archives through the host
+ * C++ driver (tslang's own link step takes no C++ archives). The libraries are tslang's own.
+ */
+function linkWithEngine({ name, entry, modules, tmp, exe, triple, compile, compileErrors, root }) {
+  const build =
+    process.env.TN_NATIVE_ENGINE_BUILD ??
+    path.join(REPO, "packages", "runtime-native", "build", "tn-linux");
+  const archives = ENGINE_LIBS.map((lib) => path.join(build, `lib${lib}.a`));
+  const missing = archives.find((archive) => !fs.existsSync(archive));
+  if (missing !== undefined) {
+    compileErrors.push(`TN_NATIVE_TS_ENGINE_MISSING: ${missing}; build the engine archives first`);
+    return;
+  }
+  const staged = path.join(tmp, path.basename(entry));
+  fs.copyFileSync(entry, staged);
+  const facade = path.join(tmp, "three.ts");
+  fs.copyFileSync(path.join(THREE_DIR, "three.ts"), facade);
+  const objects = [];
+  for (const module of [facade, ...modules.slice(1)]) {
+    const object = path.join(tmp, `${path.basename(module, ".ts")}.o`);
+    compile(module, ["--emit=obj", module, "-relocation-model=pic", ...triple, `-o=${object}`]);
+    objects.push(object);
+  }
+  const main = path.join(tmp, `${name}.main.o`);
+  compile(staged, [
+    "--emit=obj",
+    "--entry-point",
+    staged,
+    "-relocation-model=pic",
+    ...triple,
+    `-o=${main}`,
+  ]);
+  const shim = path.join(tmp, "tn_three_shim.o");
+  const host = (tool, args) => {
+    const run = spawnSync(tool, args, { encoding: "utf8" });
+    if (run.status !== 0)
+      compileErrors.push(`${tool}: ${(run.stderr || run.stdout || "").split("\n")[0]}`);
+  };
+  host("cc", [
+    "-c",
+    "-fPIC",
+    `-I${path.join(REPO, "packages", "runtime-native", "include")}`,
+    path.join(THREE_DIR, "tn_three_shim.c"),
+    "-o",
+    shim,
+  ]);
+  if (compileErrors.length > 0) return;
+  host("c++", [
+    "-o",
+    exe,
+    main,
+    ...objects,
+    shim,
+    ...archives,
+    `-L${path.join(root, "defaultlib", "lib", "release", "gc")}`,
+    "-lTypeScriptDefaultLib",
+    "-lTypeScriptDefaultLibCore",
+    path.join(root, "libTypeScriptAsyncRuntime.a"),
+    path.join(root, "libgc.a"),
+    "-lpthread",
+    "-ldl",
+    "-lm",
+  ]);
+}
+
+/** The workspace's pinned three, resolved the way the fixture reference runner resolves it. */
+function pinnedThreeModuleUrl() {
+  const pinned = /^\s*three:\s*([^\s#]+)/m.exec(
+    fs.readFileSync(path.join(REPO, "pnpm-workspace.yaml"), "utf8"),
+  )?.[1];
+  const entry = createRequire(path.join(REPO, "packages", "core", "package.json")).resolve("three");
+  const build = path.dirname(entry);
+  const version = JSON.parse(
+    fs.readFileSync(path.join(build, "..", "package.json"), "utf8"),
+  ).version;
+  if (version !== pinned)
+    throw named(
+      "TN_NATIVE_TS_THREE_MISMATCH",
+      `packages/core links three ${version}, the catalog pins ${pinned}`,
+    );
+  return pathToFileURL(path.join(build, "three.module.js")).href;
 }
 
 /** Splits a `.expected` file into its stdout bytes and its stored reference exit code. */
@@ -117,8 +221,16 @@ export function discoverCases(filter, corpusDir = CORPUS) {
 }
 
 function runReference(name) {
-  const file = path.join(CORPUS, `${name}.ts`);
+  let file = path.join(CORPUS, `${name}.ts`);
   const expected = parseExpected(fs.readFileSync(expectedPath(name)));
+  if (importsThree(file)) {
+    const staged = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "tn-ref-three-")), `${name}.ts`);
+    fs.writeFileSync(
+      staged,
+      fs.readFileSync(file, "utf8").replace(THREE_IMPORT_RE, `from "${pinnedThreeModuleUrl()}"`),
+    );
+    file = staged;
+  }
   const run = spawnSync("pnpm", ["exec", "tsx", path.relative(REPO, file)], {
     cwd: REPO,
     env: mergeEnv(process.env, [
@@ -179,21 +291,25 @@ async function runNative(name, info, target) {
     }
   };
 
-  const objects = [];
-  for (const module of modules.slice(1)) {
-    const object = path.join(tmp, `${path.basename(module, ".ts")}.o`);
-    compile(module, ["--emit=obj", module, "-relocation-model=pic", ...triple, `-o=${object}`]);
-    objects.push(object);
-  }
   const exe = path.join(tmp, name);
-  compile(entry, [
-    "--emit=exe",
-    entry,
-    "-relocation-model=pic",
-    ...triple,
-    `-o=${exe}`,
-    ...objects.map((object) => `--obj=${object}`),
-  ]);
+  if (importsThree(entry)) {
+    linkWithEngine({ name, entry, modules, tmp, exe, triple, compile, compileErrors, root });
+  } else {
+    const objects = [];
+    for (const module of modules.slice(1)) {
+      const object = path.join(tmp, `${path.basename(module, ".ts")}.o`);
+      compile(module, ["--emit=obj", module, "-relocation-model=pic", ...triple, `-o=${object}`]);
+      objects.push(object);
+    }
+    compile(entry, [
+      "--emit=exe",
+      entry,
+      "-relocation-model=pic",
+      ...triple,
+      `-o=${exe}`,
+      ...objects.map((object) => `--obj=${object}`),
+    ]);
+  }
 
   if (compileErrors.length > 0) {
     return { ok: false, note: `TN_NATIVE_TS_COMPILE ${name}: ${compileErrors[0]}` };

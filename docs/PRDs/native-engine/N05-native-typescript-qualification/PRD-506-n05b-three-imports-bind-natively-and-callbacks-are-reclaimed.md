@@ -1,6 +1,6 @@
 # PRD-506 — Three imports bind natively and callbacks are reclaimed (N05b)
 
-**Status:** PROPOSED — early spike for gate T; blocks nothing else (owner decision 2)
+**Status:** IN PROGRESS — early spike for gate T; blocks nothing else (owner decision 2)
 **Complexity:** 5 — crosses the compiler's module system, the generated ABI and the engine lifetime protocol at once
 **Owner:** João
 **Work package:** N05 — [native-engine batch](../README.md) · [N05 index](README.md)
@@ -44,7 +44,7 @@ rooting/tracing path is not qualified. The minimal native object fixture comes f
 #### Phase 1: Imports resolve to native wrappers
 **Status:** NOT STARTED
 **Files:** proposed `tools/native-typescript/module-map.json`, `tools/native-typescript/corpus/three-fixture/`
-- [ ] The §2.2 snippet (`Scene`, `Mesh`, `BoxGeometry`, `MeshStandardMaterial`, `mesh.position.x += 1`) compiles unchanged on Linux x64 and prints the same scene dump as the reference build against upstream `three@0.185.1`. proof: `node tools/native-typescript/run-corpus.mjs --native --case three-fixture`
+- [x] The §2.2 snippet (`Scene`, `Mesh`, `BoxGeometry`, `MeshStandardMaterial`, `mesh.position.x += 1`) compiles unchanged on Linux x64 and prints the same scene dump as the reference build against upstream `three@0.185.1`. proof: `node tools/native-typescript/run-corpus.mjs --native --case three-fixture` — 2026-10-05: green with `--reference --native` (the whole corpus stays 12/12 in both modes). `corpus/three-fixture.ts` imports from "three" unchanged; the reference build resolves it to the workspace's pinned three@0.185.1, the native build to `tools/native-typescript/three/three.ts`, which tslang compiles and the runner links with `three/tn_three_shim.c` and the engine's static archives through the host C++ driver (tslang's own link takes no C++ archives). Both print `Scene Mesh MeshStandardMaterial`, `position 2 0 -3`, `found same` (`getObjectById` returns the same wrapper). The shim exists because tslang declarations carry scalars and strings only: `tsbindgen` skips functions taking a struct by value, so engine handles stay in a C table and arguments are staged one at a time
 - [ ] `Mesh` imported from `three` and from `three/webgpu` is the same constructor (`instanceof` both ways). proof: `node tools/native-typescript/run-corpus.mjs --native --case import-identity`
 - [ ] Importing an uncatalogued export fails the build with `TN_NATIVE_TS_UNSUPPORTED_EXPORT`. proof: `node tools/native-typescript/run-corpus.mjs --native --case unsupported-export --expect-compile-error`
 
