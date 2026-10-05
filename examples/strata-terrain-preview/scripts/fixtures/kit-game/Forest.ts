@@ -94,7 +94,7 @@ export class Forest extends Scene<GameState, IPhysicsContext> {
     // player does; the capture views move the camera far from the player.
     const forest = await addForest(ctx, ctx.camera);
     this.#player = player;
-    ctx.state.set({ propColliders: forest.props.length, worldReady: 1 });
+    ctx.state.set({ propColliders: forest.colliders.active, worldReady: 1 });
   }
 
   override enter(ctx: Ctx): void {

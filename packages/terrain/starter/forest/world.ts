@@ -3,7 +3,7 @@
 // `bake.mjs` wrote a world package (heightmap, splat masks, placements, CC0 models) into `world/`;
 // the engine's `WorldCells` streams it, `loadTerrainSplat` textures its ground, and everything
 // that decides how the world looks or what stops the player is in this folder for the game to edit.
-import type { ICtx } from "@threenative/core";
+import type { IComputeDriven, ICtx } from "@threenative/core";
 import {
   Heightfield,
   type IWorldPackage,
@@ -40,8 +40,12 @@ export interface IForestWorld {
   readonly world: WorldCells;
   /** One heightfield for the whole world, in place before `addForest` resolves. */
   readonly ground: RigidBody3D;
-  readonly props: readonly RigidBody3D[];
+  /** The prop colliders near `follow`; they stream with it (see `PROP_COLLIDER_REACH`). */
+  readonly colliders: PropColliders;
 }
+
+/** Metres around `follow` within which props collide; beyond it they only draw. */
+export const PROP_COLLIDER_REACH = 60;
 
 /** Stream the forest around `follow` (usually the player or the camera) and give it collision. */
 export async function addForest(
@@ -72,7 +76,9 @@ export async function addForest(
   return {
     world,
     ground: await groundCollider(ctx, url, manifest),
-    props: await propColliders(ctx, url, manifest),
+    colliders: ctx.add(
+      new PropColliders(ctx, follow, manifest, await placements(ctx, url, manifest)),
+    ),
   };
 }
 
@@ -142,37 +148,96 @@ async function groundCollider(
   });
 }
 
-// ponytail: every prop collider exists from load (a few thousand fixed bodies); stream them with
-// the cells when a world grows past what Rapier holds comfortably.
-async function propColliders(
+async function placements(
   ctx: ICtx<Record<string, unknown>, IPhysicsContext>,
   url: string,
   manifest: IWorldPackage,
-): Promise<RigidBody3D[]> {
+): Promise<Float32Array> {
   const base = url.slice(0, url.lastIndexOf("/") + 1);
-  const records = new Float32Array(
-    await (await fetchAsset(ctx, base + manifest.placements)).arrayBuffer(),
-  );
-  const bodies: RigidBody3D[] = [];
-  for (const cell of manifest.cells)
-    for (const run of cell.runs) {
+  return new Float32Array(await (await fetchAsset(ctx, base + manifest.placements)).arrayBuffer());
+}
+
+/**
+ * Fixed bodies for the props within `PROP_COLLIDER_REACH` of `follow`, rebuilt when it has moved a
+ * few metres. Thousands of resident bodies cost Rapier ~0.5 s per 8 s (measured); a hundred do not.
+ */
+export class PropColliders extends Object3D implements IComputeDriven {
+  readonly warmupNodes: readonly unknown[] = [];
+  readonly processCadence = "render" as const;
+  readonly #live = new Map<number, RigidBody3D>();
+  readonly #runs: { asset: string; offset: number; count: number }[] = [];
+  readonly #at = { x: Number.NaN, z: Number.NaN };
+  #released = false;
+
+  constructor(
+    private readonly ctx: ICtx<Record<string, unknown>, IPhysicsContext>,
+    private readonly follow: Object3D,
+    manifest: IWorldPackage,
+    private readonly records: Float32Array,
+  ) {
+    super();
+    this.name = "forest-prop-colliders";
+    for (const cell of manifest.cells)
+      for (const run of cell.runs) if (COLLIDERS[run.asset]) this.#runs.push(run);
+    this.#rebuild();
+  }
+
+  /** How many prop bodies exist right now. */
+  get active(): number {
+    return this.#live.size;
+  }
+
+  get released(): boolean {
+    return this.#released;
+  }
+
+  attachRenderer(): void {}
+
+  process(): void {
+    const p = this.follow.position;
+    if (Math.hypot(p.x - this.#at.x, p.z - this.#at.z) > 4 || Number.isNaN(this.#at.x))
+      this.#rebuild();
+  }
+
+  detach(): void {
+    for (const body of this.#live.values()) body.dispose();
+    this.#live.clear();
+    this.#released = true;
+  }
+
+  #rebuild(): void {
+    const { x: fx, z: fz } = this.follow.getWorldPosition(this.position.clone());
+    this.#at.x = fx;
+    this.#at.z = fz;
+    const keep = new Set<number>();
+    for (const run of this.#runs) {
       const shape = COLLIDERS[run.asset];
       if (!shape) continue;
       for (let i = run.offset; i < run.offset + run.count; i++) {
-        const [x, y, z] = records.subarray(i * 8, i * 8 + 3) as unknown as [number, number, number];
-        const { lift, collider } = colliderAt(shape, records[i * 8 + 7] as number);
-        bodies.push(
+        const x = this.records[i * 8] as number;
+        const z = this.records[i * 8 + 2] as number;
+        if (Math.hypot(x - fx, z - fz) > PROP_COLLIDER_REACH) continue;
+        keep.add(i);
+        if (this.#live.has(i)) continue;
+        const { lift, collider } = colliderAt(shape, this.records[i * 8 + 7] as number);
+        this.#live.set(
+          i,
           new RigidBody3D({
-            physics: ctx.physics,
+            physics: this.ctx.physics,
             type: "fixed",
             entity: `${run.asset}.${String(i)}`,
-            position: { x, y: y + lift, z },
+            position: { x, y: (this.records[i * 8 + 1] as number) + lift, z },
             shape: collider,
           }),
         );
       }
     }
-  return bodies;
+    for (const [i, body] of this.#live)
+      if (!keep.has(i)) {
+        body.dispose();
+        this.#live.delete(i);
+      }
+  }
 }
 
 /** One table row at one placement's scale; a capsule stands on the origin, a sphere sits on it. */

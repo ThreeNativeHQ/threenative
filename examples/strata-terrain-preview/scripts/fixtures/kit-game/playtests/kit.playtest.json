@@ -80,8 +80,8 @@
       {
         "id": "GameState",
         "path": "propColliders",
-        "gte": 2000,
-        "allowTrivial": "Prop colliders are built while the scene loads, before the first scenario step; the count is the claim."
+        "gte": 20,
+        "allowTrivial": "Prop colliders near the camera are built while the scene loads, before the first scenario step; the live count is the claim."
       },
       {
         "id": "GameState",
