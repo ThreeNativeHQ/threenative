@@ -88,7 +88,19 @@ function fixture() {
         `${runtime}/android/app/build/intermediates/cxx/Debug/fixture/obj/x86_64/libmystral-runtime.so`,
         bytes,
       );
-      write(`${runtime}/android/app/.cxx/Debug/fixture/x86_64/build.ninja`, "FLAGS = -O2\n");
+      const androidLibrary = path.join(
+        root,
+        runtime,
+        "android/app/build/intermediates/cxx/Debug/fixture/obj/x86_64/libmystral-runtime.so",
+      );
+      write(
+        `${runtime}/android/app/.cxx/Debug/fixture/x86_64/build.ninja`,
+        `build CMakeFiles/mystral-runtime.dir/runtime.cpp.o: CXX_COMPILER__mystral-runtime_Debug /src/runtime.cpp\n  FLAGS = -O2\nbuild ${androidLibrary}: CXX_SHARED_LIBRARY_LINKER__mystral-runtime_Debug CMakeFiles/mystral-runtime.dir/runtime.cpp.o\n`,
+      );
+      write(
+        `${runtime}/android/app/.cxx/Debug/fixture/x86_64/CMakeFiles/rules.ninja`,
+        "rule CXX_COMPILER__mystral-runtime_Debug\n  command = clang++ $DEFINES $INCLUDES $FLAGS -c $in -o $out\n",
+      );
       write(`${runtime}/android/app/.cxx/Debug/fixture/x86_64/CMakeCache.txt`, cache);
       const apk = write(`${runtime}/android/app/build/outputs/apk/debug/app-debug.apk`, "");
       const zipped = spawnSync(

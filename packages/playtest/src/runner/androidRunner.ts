@@ -570,6 +570,10 @@ async function runDevicePlaytestInternal(
   } catch (error) {
     if (error instanceof PlaytestBridgeError) {
       let diagnostic = error.diagnostic;
+      // Preserve this failed host's output before stop/transport cleanup. Diagnostic
+      // collection is best effort and must never replace the original failure.
+      const consoleEntries = await target.driver.captureConsole().catch(() => []);
+      await writeFile(join(config.artifactDirectory, "console.json"), `${JSON.stringify(consoleEntries, null, 2)}\n`, "utf8").catch(() => undefined);
       if (
         diagnostic.code === "TN_PLAYTEST_OPERATION_TIMEOUT" ||
         diagnostic.code === "TN_PLAYTEST_STARTUP_HOST_EXITED"
@@ -578,14 +582,20 @@ async function runDevicePlaytestInternal(
         // a crash with evidence in its console tail, not a generic timeout (PRD-167).
         const hostAlive = await target.driver.isAlive().catch(() => undefined);
         const lastConsoleLines = hostAlive === false
-          ? (await target.driver.captureConsole().catch(() => [])).slice(-6).map((entry) => entry.text)
+          ? consoleEntries.slice(-6).map((entry) => entry.text)
           : [];
         diagnostic = deviceTimeoutDiagnostic(diagnostic, hostAlive, lastConsoleLines);
       }
-      return failureReport(config, scenario, diagnostic, target.name);
+      return { ...failureReport(config, scenario, diagnostic, target.name), observations: { console: consoleEntries, hud: {}, network: [], resources: {} } };
     }
     throw error;
   } finally {
+    // The timed-out request remains available until close; retain it even if
+    // console capture failed. An unavailable artifact must not mask the verdict.
+    await Promise.resolve().then(async () => {
+      const request = transport.getPendingRequest?.();
+      if (request !== undefined) await writeFile(join(config.artifactDirectory, "device-request-context.json"), `${JSON.stringify(request, null, 2)}\n`, "utf8");
+    }).catch(() => undefined);
     const cleanupErrors: unknown[] = [];
     const attemptCleanup = async (cleanup: () => Promise<void>): Promise<void> => {
       try {

@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { makeTempDirSync } from "../../test-support/temp-dir.js";
 import { ciJobGraph, declaredNeeds, jobSections } from "../ci-workflow.js";
 
@@ -442,7 +442,16 @@ describe("PRD-373 fail-closed required verdict", () => {
       return spawnSync(process.execPath, ["scripts/ci-required.mjs"], {
         cwd: repo,
         encoding: "utf8",
-        env: { ...process.env, ...evidence, TN_CI_NEEDS: JSON.stringify(needs), ...environment },
+        // Synthetic plans carry their own event identities; never inherit this
+        // enclosing Actions run's TN_CI_* context. Explicit adversarial inputs below win.
+        env: {
+          ...Object.fromEntries(
+            Object.entries(process.env).filter(([key]) => !key.startsWith("TN_CI_")),
+          ),
+          ...evidence,
+          TN_CI_NEEDS: JSON.stringify(needs),
+          ...environment,
+        },
       });
     } finally {
       rmSync(directory, { recursive: true, force: true });
@@ -452,6 +461,18 @@ describe("PRD-373 fail-closed required verdict", () => {
   it("accepts only a validated classifier and all selected successful jobs", () => {
     const result = verify(fullPlan());
     expect(result.status, result.stdout + result.stderr).toBe(0);
+  });
+
+  it("isolates synthetic verdict fixtures from the enclosing hosted PR context", () => {
+    vi.stubEnv("TN_CI_EVENT", "pull_request");
+    vi.stubEnv("TN_CI_BASE_SHA", "a".repeat(40));
+    vi.stubEnv("TN_CI_HEAD_SHA", "b".repeat(40));
+    try {
+      const result = verify(fullPlan());
+      expect(result.status, result.stdout + result.stderr).toBe(0);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it.each(["failure", "cancelled", "skipped", "neutral", "timed_out", ""])(
