@@ -3,6 +3,7 @@
 
 #include <libplatform/libplatform.h>
 
+#include <cstdio>
 #include <memory>
 #include <string>
 
@@ -142,6 +143,55 @@ void gcRelease() {
     tn_diagnostic_release(&d);
 }
 
+long residentKb() {
+    std::FILE* f = std::fopen("/proc/self/statm", "r");
+    long pages = 0, resident = 0;
+    if (f) {
+        if (std::fscanf(f, "%ld %ld", &pages, &resident) != 2) resident = 0;
+        std::fclose(f);
+    }
+    return resident * 4;
+}
+
+// Whole runtimes created and destroyed repeatedly leave no native objects and no memory growth.
+void runtimeChurn() {
+    Runtime& rt = runtime();  // V8 is initialized once per process; isolates come and go below
+    long afterWarmup = 0;
+    for (int cycle = 0; cycle < 50; ++cycle) {
+        v8::Isolate::CreateParams params;
+        params.array_buffer_allocator = rt.allocator;
+        v8::Isolate* isolate = v8::Isolate::New(params);
+        tn_context_t* context = nullptr;
+        const tn_version_info_t own = tn_engine_version();
+        tn_diagnostic_t d{nullptr, 0};
+        CHECK(tn_context_create(&context, &own, &d) == TN_OK);
+        tn_handle_t probe{};
+        {
+            v8::Isolate::Scope isolateScope(isolate);
+            Adapter adapter(isolate, context);
+            v8::HandleScope scope(isolate);
+            v8::Local<v8::Context> ctx = v8::Context::New(isolate);
+            v8::Context::Scope contextScope(ctx);
+            adapter.install(ctx, ctx->Global());
+            v8::Script::Compile(ctx, v8::String::NewFromUtf8Literal(isolate,
+                "const keep = []; for (let i = 0; i < 10000; i++) keep.push(new Vector3(i, 0, 0).clone()); keep.length"))
+                .ToLocalChecked()->Run(ctx).ToLocalChecked();
+            CHECK(tn_construct(context, "Vector3", nullptr, 0, &probe, &d) == TN_OK);
+        }
+        isolate->Dispose();
+        CHECK(tn_context_destroy(context, &d) == TN_OK);
+        // The context is gone and took every object with it: its handles resolve to nothing.
+        tn_value_t result{};
+        CHECK(tn_get(probe, "x", &result, &d) == TN_ERROR_INVALID_HANDLE);
+        tn_diagnostic_release(&d);
+        if (cycle == 9) afterWarmup = residentKb();
+    }
+    const long growthKb = residentKb() - afterWarmup;
+    std::printf("runtime churn: 40 cycles after warm-up, resident growth %ld KiB\n", growthKb);
+    CHECK(growthKb < 16 * 1024);  // 40 cycles x 20,000 objects; a per-cycle leak would show here
+}
+
 }  // namespace
 
-TN_TEST_MAIN({"handles", handles}, {"unsupported", unsupported}, {"gc_release", gcRelease})
+TN_TEST_MAIN({"handles", handles}, {"unsupported", unsupported}, {"gc_release", gcRelease},
+             {"runtime_churn", runtimeChurn})

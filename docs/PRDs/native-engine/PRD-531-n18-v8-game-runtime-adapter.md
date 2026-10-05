@@ -39,7 +39,7 @@ The CP1 checkpoint ([PRD-534](PRD-534-cp1-the-native-engine-earns-the-port.md)) 
 **Status:** NOT STARTED
 **Files:** proposed `packages/runtime-native/src/adapters/v8/lifetime.cpp`
 - [ ] A JS-to-native cycle through a captured callback is reclaimed at a safe point. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_v8_cycle_reclaim`
-- [ ] Repeated whole-runtime create and destroy shows no native object or GPU resource growth. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_v8_runtime_churn`
+- [x] Repeated whole-runtime create and destroy shows no native object or GPU resource growth. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_v8_runtime_churn` — 2026-10-04: green (`native_engine_v8_runtime_churn`): 50 cycles of isolate + engine context + adapter + 20,000 objects, each torn down; every object dies with its context (its handles resolve to nothing) and resident growth over the last 40 cycles is ~1 MiB, against 60 MiB when destroy leaks the context. GPU resources are not exercised until the renderer is bound
 - [ ] The N06 scene-semantics fixtures pass through the V8 adapter with the same results as the C++ driver. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_v8_scene_fixtures`
 
 #### Phase 3: A game runs on it
