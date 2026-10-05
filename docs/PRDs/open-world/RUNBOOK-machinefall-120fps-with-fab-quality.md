@@ -53,7 +53,13 @@ Last measured 2026-10-03 against `origin/develop` `4d5e07c98`: nvidia/turing, 12
 | CPU render | 6.9 ms | **21.2 ms** | 4.5 ms | **12.9 ms** |
 | GPU | 7.0 ms | 10.1 ms | 4.5 ms | 1.8 ms |
 
-**Update 2026-10-05 (this PR, `558f08cbf`):** 6 runs, nvidia/turing, `map-walk`, host load 6–26 (CI runners on the same machine). Render p95 is the median of the walk windows' p95 (`TN_FRAME_BUDGET` after the fourth window), and GPU p95 the p95 of the windows' timestamp means. The same method on develop's 3 runs of 2026-10-04 gives a render p95 of 7.8 ms, matching the 7.7 ms recorded then. This PR walks at render **3.1 / 6.4 ms** (p50 / p95) and GPU p95 **6.5 ms**, under 8.3 ms on both. AC-1 and AC-2 are not ticked: this is a loaded host, and PRD-478 asks for a quiet one, interleaved against develop, plus AC-3's blind raters.
+**Update 2026-10-05 (this PR, `558f08cbf`), two readings of the same runs:** nvidia/turing, `map-walk`, host load 6–35 (other sessions' native builds and CI on the same machine, so not the quiet host AC-1 asks for).
+
+- Read as PRD-478's ACs define it — walk windows are `TN_FRAME_BUDGET` windows under 100 fps — the target is **not met by this PR or by develop**. Over 3 interleaved runs each (`.afk/scratch/walk-ac-pair-*`, load 8–35), develop: render p95 median 22.2 ms (p95 across windows 53 ms), GPU p95 median 6.1 ms (18.4 ms); this PR: render 21.0 ms (55.8 ms), GPU 6.8 ms (12.8 ms). The windows under 100 fps are the loading interval and the multi-second stalls, so this reading is mostly about load and stalls, which PRD-494 AC-1 already asks the owner to rule on.
+- A looser reading — every window after the fourth, render p95 as the median of the windows' p95 — gives develop 7.8 ms (its 3 runs of 2026-10-04) and this PR 6.4 ms render, 6.5 ms GPU over 6 runs. That reading counts mostly smooth walking windows and is **not** the AC.
+- `gpuMain` p95 per run in the interleaved set: develop 5.9 / 5.1 / 5.2 ms, this PR 4.8 / 5.3 / 4.6 ms — no GPU cost from this PR's changes.
+
+AC-1 and AC-2 stay open.
 
 **Update 2026-10-03 evening (PRD-494, #424):** 3 interleaved runs per arm, nvidia/turing, 1280×720, load 3.8–6.4 (quiet).
 
