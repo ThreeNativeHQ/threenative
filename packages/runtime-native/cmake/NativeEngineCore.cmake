@@ -247,6 +247,24 @@ if(EMSCRIPTEN)
     tn_native_engine_target(tn-native-engine-wasm-boot)
     configure_file(tests/native-engine/wasm/boot.html ${CMAKE_CURRENT_BINARY_DIR}/native-core-boot.html COPYONLY)
 endif()
+if(EMSCRIPTEN)
+    # The C ABI as a module for the browser-JS back end (PRD-532); it runs under node as well.
+    add_executable(tn-native-engine-abi-module tests/native-engine/wasm/abi_module.cpp)
+    target_link_libraries(tn-native-engine-abi-module PRIVATE tn_engine_abi)
+    tn_native_engine_target(tn-native-engine-abi-module)
+    target_link_options(tn-native-engine-abi-module PRIVATE --no-entry -sMODULARIZE=1 -sEXPORT_NAME=createTnAbi
+        -sENVIRONMENT=node,web -sALLOW_MEMORY_GROWTH=1
+        "-sEXPORTED_FUNCTIONS=_tn_engine_version,_tn_context_create,_tn_context_destroy,_tn_type_id,_tn_object_release,_tn_construct,_tn_invoke,_tn_get,_tn_set,_tn_diagnostic_release,_malloc,_free"
+        "-sEXPORTED_RUNTIME_METHODS=HEAPU8,HEAPU32,HEAPF64,UTF8ToString,stringToUTF8,lengthBytesUTF8")
+    find_program(TN_PNPM_EXECUTABLE pnpm)
+    if(TN_PNPM_EXECUTABLE)
+        add_test(NAME native_engine_wasm_browser_backend
+            COMMAND ${TN_PNPM_EXECUTABLE} --filter @threenative/three-native exec tsx tests/browser-backend-smoke.ts
+                $<TARGET_FILE:tn-native-engine-abi-module>)
+        set_tests_properties(native_engine_wasm_browser_backend PROPERTIES LABELS "native-engine"
+            PASS_REGULAR_EXPRESSION "TN_BROWSER_BACKEND_OK")
+    endif()
+endif()
 
 add_library(tn_fixture_driver STATIC tests/native-engine/fixture/driver.cpp)
 tn_native_engine_target(tn_fixture_driver)
