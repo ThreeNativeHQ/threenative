@@ -16,6 +16,8 @@ struct PipelineTarget {
     WGPUTextureFormat color = WGPUTextureFormat_RGBA8Unorm;  // Undefined: depth-only (shadow) pass
     WGPUTextureFormat depth = WGPUTextureFormat_Depth32Float;
     WGPUCullMode cull = WGPUCullMode_Back;
+    bool blend = false;      // three's NormalBlending, premultipliedAlpha false (a transparent material)
+    bool depthWrite = true;  // material.depthWrite
 };
 
 /**

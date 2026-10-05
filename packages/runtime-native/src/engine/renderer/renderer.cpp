@@ -269,16 +269,40 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
     passDesc.depthStencilAttachment = &depth;
     WGPURenderPassEncoder pass = wgpuCommandEncoderBeginRenderPass(encoder, &passDesc);
 
+    // RenderList: z is the object origin's clip-space depth (setFromMatrixPosition, then the
+    // projection-view matrix); painterSortStable for opaques, reversePainterSortStable for the rest.
+    const Matrix projView = multiply(camera.projectionMatrix, view);
+    std::vector<std::pair<double, const DrawItem*>> opaque, transparent;
+    for (const DrawItem& item : items) {
+        const Matrix& m = item.matrixWorld;
+        const double z = projView[2] * m[12] + projView[6] * m[13] + projView[10] * m[14] + projView[14];
+        const double w = projView[3] * m[12] + projView[7] * m[13] + projView[11] * m[14] + projView[15];
+        (item.transparent ? transparent : opaque).push_back({z / w, &item});
+    }
+    std::sort(opaque.begin(), opaque.end(), [](const auto& a, const auto& b) {
+        if (a.second->renderOrder != b.second->renderOrder) return a.second->renderOrder < b.second->renderOrder;
+        if (a.first != b.first) return a.first < b.first;
+        return a.second->id < b.second->id;
+    });
+    std::sort(transparent.begin(), transparent.end(), [](const auto& a, const auto& b) {
+        if (a.second->renderOrder != b.second->renderOrder) return a.second->renderOrder < b.second->renderOrder;
+        if (a.first != b.first) return a.first > b.first;
+        return a.second->id < b.second->id;
+    });
+    opaque.insert(opaque.end(), transparent.begin(), transparent.end());
+
     std::vector<uint8_t> vblock, fblock;
     WGPURenderPipeline bound = nullptr;
-    for (const DrawItem& item : items) {
+    for (const auto& [depthKey, drawn] : opaque) {
+        const DrawItem& item = *drawn;
         const Program& program = programs_[static_cast<int>(item.kind)];
         const shader::StageModule& vs = program.vertex;
         const shader::StageModule& fs = program.fragment;
         const bool lit = item.kind == MaterialKind::Standard;
         if (!item.positions || (lit && !item.normals) || !item.material) continue;
         WGPURenderPipeline pipeline =
-            pipelines_.get(vs, &fs, PipelineTarget{WGPUTextureFormat_RGBA16Float, WGPUTextureFormat_Depth32Float});
+            pipelines_.get(vs, &fs, PipelineTarget{WGPUTextureFormat_RGBA16Float, WGPUTextureFormat_Depth32Float,
+                                                   WGPUCullMode_Back, item.transparent, item.depthWrite});
         if (!pipeline) throw std::runtime_error("TN_NATIVE_PIPELINE_REFUSED: material program");
         if (pipeline != bound) wgpuRenderPassEncoderSetPipeline(pass, bound = pipeline);
         Record& r = record(item.key, item.kind, program, pipeline);

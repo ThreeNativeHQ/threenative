@@ -102,7 +102,8 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     tn_native_engine_test(tn-native-engine-renderer-test tests/native-engine/renderer_test.cpp
         native_engine_renderer_resize_readback=resize_readback
         native_engine_renderer_output_ramp=output_ramp
-        native_engine_renderer_lit_reference=lit_reference)
+        native_engine_renderer_lit_reference=lit_reference
+        native_engine_renderer_alpha_transparency=alpha_transparency)
     target_link_libraries(tn-native-engine-renderer-test PRIVATE tn_engine_renderer tn_host_services)
     target_compile_definitions(tn-native-engine-renderer-test PRIVATE
         TN_GOLDENS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../three-native/tests/compatibility/goldens/0.185.1")
@@ -140,7 +141,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         # errors and undefined behaviour, not leaks. CPU-only engine tests keep leak checking.
         set_tests_properties(native_engine_gpu_upload_readback native_engine_gpu_deferred_destroy
             native_engine_gpu_async_only native_engine_lifetime_deferred_gpu ${tn_shader_validator} native_engine_shader_layouts
-            native_engine_cooked_package_load native_engine_renderer_geometry_cache native_engine_renderer_pipeline_cache native_engine_renderer_resize_readback native_engine_renderer_output_ramp native_engine_renderer_lit_reference
+            native_engine_cooked_package_load native_engine_renderer_geometry_cache native_engine_renderer_pipeline_cache native_engine_renderer_resize_readback native_engine_renderer_output_ramp native_engine_renderer_lit_reference native_engine_renderer_alpha_transparency
             native_engine_shader_variants_gpu native_engine_device_loss_recover native_engine_device_stale_handle
             native_engine_device_no_adapter PROPERTIES
             ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0:abort_on_error=1;UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1")

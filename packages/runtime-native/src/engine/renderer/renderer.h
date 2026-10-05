@@ -32,6 +32,11 @@ struct DrawItem {
     Matrix matrixWorld{};
     const shader::StandardMaterial* material = nullptr;
     MaterialKind kind = MaterialKind::Standard;
+    // Render-list inputs, as three's RenderList reads them.
+    uint64_t id = 0;           // Object3D.id: the sort's last tiebreak
+    int renderOrder = 0;       // Object3D.renderOrder
+    bool transparent = false;  // material.transparent: drawn after opaques, back to front, blended
+    bool depthWrite = true;    // material.depthWrite
 };
 
 struct CameraState {
@@ -80,7 +85,11 @@ public:
     uint32_t width() const { return width_; }
     uint32_t height() const { return height_; }
 
-    /** Draws one frame and returns its render ID (every render call gets its own, from 1). */
+    /**
+     * Draws one frame and returns its render ID (every render call gets its own, from 1). Items are
+     * drawn in three's order: opaque by renderOrder, then depth front to back, then id; transparent
+     * after them by renderOrder, then depth back to front, then id.
+     */
     uint64_t render(std::span<const DrawItem> items, const CameraState& camera, const LightState& lights,
                     std::array<double, 4> clear = {0, 0, 0, 1});
     /** The last frame's pixels, RGBA8 rows tightly packed, delivered from poll(). */

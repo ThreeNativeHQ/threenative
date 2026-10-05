@@ -293,7 +293,88 @@ void litReference() {
     CHECK(worst <= 8 && off1 / channels < 0.001);
 }
 
+// Compares a frame with a golden PNG; returns the share of channels more than `levels` apart.
+double goldenMismatch(const std::vector<uint8_t>& px, const char* name, int w, int h, int levels, int& worst) {
+    const std::string png = std::string(TN_GOLDENS_DIR) + "/" + name + ".png";
+    int gw = 0, gh = 0, gc = 0;
+    unsigned char* golden = stbi_load(png.c_str(), &gw, &gh, &gc, 4);
+    CHECK(golden != nullptr && gw == w && gh == h && px.size() == size_t(w) * h * 4);
+    if (!golden || gw != w || gh != h || px.size() != size_t(w) * h * 4) return 1;
+    size_t off = 0;
+    worst = 0;
+    for (size_t i = 0; i < px.size(); i += 4)
+        for (int c = 0; c < 3; ++c) {
+            const int d = std::abs(int(px[i + c]) - int(golden[i + c]));
+            worst = std::max(worst, d);
+            off += d > levels;
+        }
+    stbi_image_free(golden);
+    return double(off) / (double(w) * h * 3);
+}
+
+// The alpha-transparency fixture, natively: MeshBasicMaterial planes under OrthographicCamera(-2, 2,
+// 1, -1, 0.1, 10) at z = 5, 256x128, no tone mapping. Transparent planes are listed front-most
+// first, so only three's back-to-front sort gets the blend right, and a renderOrder pair checks
+// that renderOrder outranks depth while depthWrite stays on.
+void alphaTransparency() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(256, 128);
+    auto plane = [](double w, double h) {  // PlaneGeometry(w, h): its vertex order and index
+        auto s = std::make_unique<Sphere>();
+        const float v[12] = {float(-w / 2), float(h / 2), 0, float(w / 2), float(h / 2), 0,
+                             float(-w / 2), float(-h / 2), 0, float(w / 2), float(-h / 2), 0};
+        const uint16_t i[6] = {0, 2, 1, 2, 3, 1};
+        s->positions.resize(12);
+        s->positions.write(0, v, sizeof v);
+        s->indices.resize(6);
+        s->indices.write(0, i, sizeof i);
+        return s;
+    };
+    const auto big = plane(1.6, 1.6), small = plane(1, 1);
+    struct Plane {
+        Sphere* geometry;
+        std::array<float, 3> color;
+        bool transparent;
+        float opacity;
+        double x, z;
+        int renderOrder;
+    };
+    const Plane planes[] = {{big.get(), {0, 0, 1}, true, 0.5f, 0.2, 0.5, 0},       {big.get(), {0, 1, 0}, true, 0.5f, -0.3, 0, 0},
+                            {big.get(), {1, 0, 0}, false, 1, -0.8, -0.5, 0},       {small.get(), {1, 0, 1}, true, 0.6f, 1.35, -0.4, 2},
+                            {small.get(), {1, 1, 0}, true, 0.6f, 1.0, 0.4, 1}};
+    shader::StandardMaterial materials[5];
+    std::vector<DrawItem> items(5);
+    for (int k = 0; k < 5; ++k) {
+        materials[k].color = planes[k].color;
+        materials[k].opacity = planes[k].opacity;
+        DrawItem& d = items[k];
+        d.key = d.id = k + 1;  // creation order, as Object3D.id counts
+        d.kind = MaterialKind::Basic;
+        d.positions = &planes[k].geometry->positions;
+        d.indices = &planes[k].geometry->indices;
+        d.material = &materials[k];
+        d.transparent = planes[k].transparent;
+        d.renderOrder = planes[k].renderOrder;
+        d.matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, planes[k].x, 0, planes[k].z, 1};
+    }
+    CameraState camera;
+    camera.matrixWorldInverse = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, -5, 1};
+    camera.projectionMatrix = {0.5, 0, 0, 0, 0, 1, 0, 0, 0, 0, -1 / 9.9, 0, 0, 0, -0.1 / 9.9, 1};
+    renderer.render(items, camera, LightState{}, {0.1, 0.1, 0.1, 1});
+    const std::vector<uint8_t> px = read(renderer, events);
+    if (const char* out = std::getenv("TN_RENDER_OUT"); out && px.size() == 256 * 128 * 4)
+        stbi_write_png(out, 256, 128, 4, px.data(), 256 * 4);
+    int worst = 0;
+    const double off = goldenMismatch(px, "alpha-transparency", 256, 128, 1, worst);
+    std::printf("alpha-transparency vs browser: worst %d, %.3f%% of channels over 1\n", worst, off * 100);
+    CHECK(worst <= 2 && off < 0.001);
+}
+
 }  // namespace
 
 TN_TEST_MAIN({"resize_readback", resizeReadback}, {"output_ramp", outputRamp},
-             {"lit_reference", litReference})
+             {"lit_reference", litReference},
+             {"alpha_transparency", alphaTransparency})

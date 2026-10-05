@@ -37,7 +37,8 @@ WGPURenderPipeline PipelineCache::get(const shader::StageModule& vertex, const s
     std::string key = vertex.wgsl.code;
     key += '\x1f';
     if (fragment) key += fragment->wgsl.code;
-    key += '\x1f' + std::to_string(target.color) + ':' + std::to_string(target.depth) + ':' + std::to_string(target.cull);
+    key += '\x1f' + std::to_string(target.color) + ':' + std::to_string(target.depth) + ':' + std::to_string(target.cull) + ':' +
+           std::to_string(target.blend) + ':' + std::to_string(target.depthWrite);
     if (const auto found = pipelines_.find(key); found != pipelines_.end()) return found->second;
 
     // One vertex buffer per attribute, in location order: the renderer binds them the same way.
@@ -68,12 +69,17 @@ WGPURenderPipeline PipelineCache::get(const shader::StageModule& vertex, const s
     desc.multisample.mask = 0xffffffffu;
     WGPUDepthStencilState depth = {};
     depth.format = target.depth;
-    depth.depthWriteEnabled = WGPU_OPTIONAL_BOOL_TRUE;
+    depth.depthWriteEnabled = target.depthWrite ? WGPU_OPTIONAL_BOOL_TRUE : WGPU_OPTIONAL_BOOL_FALSE;
     depth.depthCompare = WGPUCompareFunction_LessEqual;
     if (target.depth != WGPUTextureFormat_Undefined) desc.depthStencil = &depth;
     WGPUColorTargetState color = {};
     color.format = target.color;
     color.writeMask = WGPUColorWriteMask_All;
+    // WebGPUPipelineUtils._getBlending, NormalBlending without premultiplied alpha.
+    WGPUBlendState blend = {};
+    blend.color = {WGPUBlendOperation_Add, WGPUBlendFactor_SrcAlpha, WGPUBlendFactor_OneMinusSrcAlpha};
+    blend.alpha = {WGPUBlendOperation_Add, WGPUBlendFactor_One, WGPUBlendFactor_OneMinusSrcAlpha};
+    if (target.blend) color.blend = &blend;
     WGPUFragmentState fragmentState = {};
     if (fs && target.color != WGPUTextureFormat_Undefined) {
         fragmentState.module = fs;
