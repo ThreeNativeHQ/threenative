@@ -179,3 +179,44 @@ describe("driver replies", () => {
     expect(() => parseReply("everything is fine")).toThrow(/TN_PROTOCOL_REPLY_INVALID/u);
   });
 });
+
+describe("the render line", () => {
+  const fixture = {
+    name: "render-order",
+    adaptedFrom: "original",
+    tolerance: { abs: 0 },
+    render: {
+      scene: "scene",
+      camera: "camera",
+      width: 4,
+      height: 2,
+      toneMapping: "aces",
+      toneMappingExposure: 1,
+      outputColorSpace: "srgb",
+    },
+    ops: [{ op: "new", id: "scene", class: "Scene", args: [] }],
+    observe: [
+      { id: "camera", path: "projectionMatrix.elements", kind: "numbers" },
+      {
+        id: "scene",
+        kind: "pixels",
+        metric: { maxPixelMismatchRatio: 0.01, maxPerceptualDeltaE: 0.02 },
+      },
+    ],
+  } as unknown as IFixture;
+
+  it("comes after the numeric observations and right before the pixels one", () => {
+    // Rendering switches the camera to WebGPU clip space; the reference takes its numbers in Node.
+    const lines = encodeFixture(fixture, "/tmp/frame.png");
+    const render = lines.findIndex((line) => line.startsWith("render "));
+    expect(lines[render - 1]).toMatch(/^observe 0 camera /u);
+    expect(lines[render + 1]).toMatch(/^observe 1 scene - - pixels$/u);
+    expect(lines[render]).toBe(
+      `render scene camera 4 2 aces ${encodeArg(1)} srgb s:${encodeURIComponent("/tmp/frame.png")}`,
+    );
+  });
+
+  it("is absent without a frame path, so a driver that cannot render is never asked", () => {
+    expect(encodeFixture(fixture).some((line) => line.startsWith("render "))).toBe(false);
+  });
+});

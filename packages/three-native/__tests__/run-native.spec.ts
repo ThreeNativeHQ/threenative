@@ -77,6 +77,11 @@ describe("the differential runner", () => {
     expect(FIXTURES.some((fixture) => !prefix.test(fixture.name))).toBe(true);
     // A dot is a name character, not a wildcard: the glob must not reach across a fixture name.
     expect(fixturePattern("math-core.*").test("math-core-vectors")).toBe(false);
+    const several = fixturePattern("lit-render,materials-*");
+    expect(several.test("lit-render")).toBe(true);
+    expect(several.test("materials-phong")).toBe(true);
+    expect(several.test("lit-render-2")).toBe(false);
+    expect(several.test("alpha-test")).toBe(false);
     expect(fixturePattern("math-core-?ectors").test("math-core-vectors")).toBe(true);
     expect(() => runNativeSuite(["--only", "math-nothing-*", "--driver", FAKE_DRIVER])).toThrow(
       /TN_FIXTURE_SELECTION_EMPTY/u,

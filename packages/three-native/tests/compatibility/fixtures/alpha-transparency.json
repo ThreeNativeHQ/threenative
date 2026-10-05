@@ -399,8 +399,8 @@
       "id": "scene",
       "kind": "pixels",
       "metric": {
-        "maxPixelMismatchRatio": 0.002,
-        "maxPerceptualDeltaE": 1
+        "maxPixelMismatchRatio": 0.01,
+        "maxPerceptualDeltaE": 0.02
       }
     }
   ]

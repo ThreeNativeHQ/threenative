@@ -178,7 +178,33 @@ void alphaScene() {
     CHECK(worst <= 1);
 }
 
+// An unported material property is refused by name and its mesh is not drawn, never silently drawn
+// with a simpler shader (PRD-514 decision 4); a supported material in the same scene still draws.
+void materialUnsupported() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(64, 48);
+    LitScene s;
+    auto coated = std::make_shared<Material>(MaterialType::Physical);
+    coated->clearcoat = 0.5;
+    Mesh refused{s.geometry, coated};
+    refused.position.x = 1;
+    s.scene.add(refused);
+    RenderDatabase database;
+    database.render(renderer, s.scene, s.camera);
+    bool named = false;
+    for (const std::string& d : database.diagnostics()) {
+        std::fprintf(stderr, "%s\n", d.c_str());
+        named = named || (d.rfind("TN_NATIVE_MATERIAL_UNSUPPORTED MeshPhysicalMaterial", 0) == 0 && d.find("clearcoat") != std::string::npos);
+    }
+    CHECK(named);
+    CHECK(database.diagnostics().size() == 1);  // the standard mesh beside it is not refused
+}
+
 }  // namespace
 
 TN_TEST_MAIN({"lit_scene", litScene}, {"invalidation", invalidation},
-            {"alpha_scene", alphaScene})
+            {"alpha_scene", alphaScene},
+            {"material_unsupported", materialUnsupported})

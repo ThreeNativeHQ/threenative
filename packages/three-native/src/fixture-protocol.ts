@@ -145,7 +145,34 @@ function numberValue(value: number): IEncodedObservation {
 }
 
 /** The whole script for one fixture, including the `fixture` and `end` commands. */
-export function encodeFixture(fixture: IFixture): readonly string[] {
+/**
+ * The `render` line, emitted just before the `pixels` observation: the reference takes its numbers
+ * in Node, where nothing renders, and rendering switches the camera to WebGPU clip space (a new
+ * projectionMatrix), so every numeric observation is answered before the frame is drawn.
+ */
+function renderLine(fixture: IFixture, renderPng: string): string {
+  const render = fixture.render;
+  if (render === undefined)
+    throw new Error(`TN_FIXTURE_RENDER_MISSING: ${fixture.name} has no render block`);
+  return [
+    "render",
+    render.scene,
+    render.camera,
+    String(render.width),
+    String(render.height),
+    render.toneMapping,
+    encodeArg(render.toneMappingExposure),
+    render.outputColorSpace,
+    `s:${encodeURIComponent(renderPng)}`,
+  ].join(" ");
+}
+
+/**
+ * The fixture as driver lines. `renderPng`, when given, asks a render-capable driver to draw the
+ * fixture's frame: `render <scene> <camera> <width> <height> <toneMapping> <exposure> <srgb|linear>
+ * <png path>`, placed before the `pixels` observation, which the driver answers with that PNG's path.
+ */
+export function encodeFixture(fixture: IFixture, renderPng?: string): readonly string[] {
   const lines = [`fixture ${fixture.name}`];
   for (const op of fixture.ops) {
     if (op.op === "set") {
@@ -157,6 +184,8 @@ export function encodeFixture(fixture: IFixture): readonly string[] {
     else lines.push(["call", op.id, op.method, op.result ?? "-", ...args].join(" "));
   }
   fixture.observe.forEach((observation, index) => {
+    if (observation.kind === "pixels" && renderPng !== undefined)
+      lines.push(renderLine(fixture, renderPng));
     lines.push(
       [
         "observe",

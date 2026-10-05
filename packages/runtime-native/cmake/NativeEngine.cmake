@@ -113,10 +113,43 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     target_compile_definitions(tn-native-engine-renderer-test PRIVATE
         TN_GOLDENS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../three-native/tests/compatibility/goldens/0.185.1")
 
+    # The fixture driver with a GPU: it answers render fixtures' `render` lines (PRD-514).
+    add_executable(tn-native-engine-render-driver EXCLUDE_FROM_ALL tests/native-engine/fixture/render_main.cpp)
+    target_link_libraries(tn-native-engine-render-driver PRIVATE tn_fixture_driver tn_engine_renderer tn_host_services)
+    tn_native_engine_target(tn-native-engine-render-driver)
+    set_property(GLOBAL APPEND PROPERTY TN_NATIVE_ENGINE_TEST_TARGETS tn-native-engine-render-driver)
+    # Every render fixture through the render driver against its browser golden frame (PRD-514,
+    # PRD-512): tone mapping ramps, the lit sphere, the five materials, transparency and alphaTest.
+    find_program(TN_PNPM_EXECUTABLE pnpm)
+    if(TN_PNPM_EXECUTABLE)
+        # The five standard materials' fixtures in one case (PRD-514): Basic (alpha-test), Standard
+        # (lit-render), Lambert, Phong, Physical, and their property fixtures.
+        foreach(render_case "render_tonemap:tonemap-ramp-*" "render_lit:lit-render" "render_lambert:materials-lambert"
+                "render_phong:materials-phong" "render_physical:materials-physical*"
+                "standard_materials_fixtures:alpha-test,lit-render,materials-*"
+                "render_alpha:alpha-*")
+            string(REPLACE ":" ";" render_pair "${render_case}")
+            list(GET render_pair 0 render_name)
+            list(GET render_pair 1 render_glob)
+            add_test(NAME native_engine_${render_name}
+                COMMAND ${TN_PNPM_EXECUTABLE} --filter @threenative/three-native exec tsx tests/compatibility/run-native.ts
+                    --driver $<TARGET_FILE:tn-native-engine-render-driver> --renders --only "${render_glob}"
+                    --out ${CMAKE_CURRENT_BINARY_DIR}/${render_name}.json)
+            set_tests_properties(native_engine_${render_name} PROPERTIES LABELS "native-engine")
+            if(TN_ENGINE_SANITIZE)
+                # As for the other GPU tests: memory errors and UB fail, the driver stack's own
+                # allocations at exit (Dawn's Vulkan queue) are not this engine's leaks.
+                set_tests_properties(native_engine_${render_name} PROPERTIES
+                    ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0:abort_on_error=1;UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1")
+            endif()
+        endforeach()
+    endif()
+
     tn_native_engine_test(tn-native-engine-render-database-test tests/native-engine/render_database_test.cpp
         native_engine_renderer_scene_lit=lit_scene
         native_engine_renderer_invalidation=invalidation
-        native_engine_renderer_scene_alpha=alpha_scene)
+        native_engine_renderer_scene_alpha=alpha_scene
+        native_engine_standard_materials_unsupported=material_unsupported)
     target_link_libraries(tn-native-engine-render-database-test PRIVATE tn_engine_renderer tn_host_services)
     target_compile_definitions(tn-native-engine-render-database-test PRIVATE
         TN_GOLDENS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../three-native/tests/compatibility/goldens/0.185.1")
@@ -154,7 +187,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         # errors and undefined behaviour, not leaks. CPU-only engine tests keep leak checking.
         set_tests_properties(native_engine_gpu_upload_readback native_engine_gpu_deferred_destroy
             native_engine_gpu_async_only native_engine_lifetime_deferred_gpu ${tn_shader_validator} native_engine_shader_layouts
-            native_engine_cooked_package_load native_engine_renderer_geometry_cache native_engine_renderer_pipeline_cache native_engine_renderer_scene_lit native_engine_renderer_invalidation native_engine_renderer_scene_alpha native_engine_renderer_resize_readback native_engine_renderer_output_ramp native_engine_renderer_lit_reference native_engine_renderer_lambert_reference native_engine_renderer_phong_reference native_engine_renderer_physical_reference native_engine_renderer_alpha_transparency native_engine_renderer_alpha_test
+            native_engine_cooked_package_load native_engine_renderer_geometry_cache native_engine_renderer_pipeline_cache native_engine_renderer_scene_lit native_engine_renderer_invalidation native_engine_renderer_scene_alpha native_engine_standard_materials_unsupported native_engine_renderer_resize_readback native_engine_renderer_output_ramp native_engine_renderer_lit_reference native_engine_renderer_lambert_reference native_engine_renderer_phong_reference native_engine_renderer_physical_reference native_engine_renderer_alpha_transparency native_engine_renderer_alpha_test
             native_engine_shader_variants_gpu native_engine_device_loss_recover native_engine_device_stale_handle
             native_engine_device_no_adapter PROPERTIES
             ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0:abort_on_error=1;UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1")

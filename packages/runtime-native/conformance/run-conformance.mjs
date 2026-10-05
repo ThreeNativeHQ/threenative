@@ -179,7 +179,8 @@ function usage() {
   --dry-run                        Validate and bundle without target execution
   --suite native-engine           Run the native-engine fixture suite against a native driver
                                   (--target android|android-hardware runs it on a device over adb;
-                                  --only <glob> selects fixtures, the rest report blocked)
+                                  --only <glob> selects fixtures; --renders with a render-capable
+                                  --driver draws the render fixtures' frames)
   --validate-report PATH           Validate an existing report
   --help                           Show this help without executing a lane
 `;
@@ -2560,6 +2561,14 @@ function androidFixtureDriver(argv, target) {
  * code. The suite never renders a scene, so it needs no Xvfb, no browser reference and no runtime
  * binary; a missing driver leaves every fixture blocked, which exits 2.
  */
+/** run-native's fixturePattern: comma-separated globs where `*` and `?` are the only wildcards. */
+function onlyPattern(globs) {
+  const alternatives = globs
+    .split(",")
+    .map((glob) => glob.replace(/[.+^${}()|[\]\\]/gu, "\\$&").replace(/\*/gu, ".*").replace(/\?/gu, "."));
+  return new RegExp(`^(?:${alternatives.join("|")})$`, "u");
+}
+
 function runFixtureSuite(argv, suite) {
   const runner = join(workspaceRoot, "packages", "three-native", "tests", "compatibility", "run-native.ts");
   const out = valueAfter(argv, "--out") ?? join(runtimeRoot, "artifacts", "conformance", suite);
@@ -2577,6 +2586,8 @@ function runFixtureSuite(argv, suite) {
   const only = valueAfter(argv, "--only");
   if (only !== null) args.push("--only", only);
   if (argv.includes("--allow-blocked")) args.push("--allow-blocked");
+  // A render-capable driver (tn-native-engine-render-driver) draws the render fixtures' frames.
+  if (argv.includes("--renders")) args.push("--renders");
   const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
   const child = spawnSync(pnpm, ["exec", "tsx", ...args], { cwd: workspaceRoot, stdio: "inherit", env });
   if (child.error) throw new Error(`TN_PARITY_SUITE_UNAVAILABLE: ${child.error.message}`);
@@ -2586,7 +2597,7 @@ function runFixtureSuite(argv, suite) {
     .map((entry) => basename(entry, ".json"))
     // `--only` runs a prefix of the corpus (run-native's fixturePattern: `*` and `?` are the only
     // wildcards), and the report must hold exactly those rows.
-    .filter((id) => only === null || new RegExp(`^${only.replace(/[.+^${}()|[\]\\]/gu, "\\$&").replace(/\*/gu, ".*").replace(/\?/gu, ".")}$`, "u").test(id))
+    .filter((id) => only === null || onlyPattern(only).test(id))
     .sort();
   const errors = validateReport(report, loadRegistry(), { suite, expectedIds });
   if (errors.length > 0) {

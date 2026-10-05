@@ -1,6 +1,6 @@
 {
-  "name": "materials-phong",
-  "adaptedFrom": "original \u2014 one lit WebGPU frame with MeshPhongMaterial (Blinn-Phong specular): a sphere under a directional and a hemisphere light, shininess 60, specular 0.5, ACES tone mapped, the lit-render scene",
+  "name": "materials-physical-rim",
+  "adaptedFrom": "original \u2014 the materials-physical scene lit from behind the sphere (a rim light), so the half vector grazes: a dark MeshPhysicalMaterial with specularIntensity 0.2, where direct specular uses f90 = 1 (PhysicalLightingModel.direct) and specularF90 belongs to indirect light only",
   "tolerance": {
     "abs": 0
   },
@@ -68,19 +68,19 @@
       "op": "set",
       "id": "light",
       "path": "position.x",
-      "value": 2
+      "value": 0
     },
     {
       "op": "set",
       "id": "light",
       "path": "position.y",
-      "value": 3
+      "value": 1.5
     },
     {
       "op": "set",
       "id": "light",
       "path": "position.z",
-      "value": 1
+      "value": -3
     },
     {
       "op": "new",
@@ -97,50 +97,68 @@
     {
       "op": "new",
       "id": "material",
-      "class": "MeshPhongMaterial",
+      "class": "MeshPhysicalMaterial",
       "args": []
     },
     {
       "op": "set",
       "id": "material",
       "path": "color.r",
-      "value": 0.8
+      "value": 0.05
     },
     {
       "op": "set",
       "id": "material",
       "path": "color.g",
-      "value": 0.35
+      "value": 0.05
     },
     {
       "op": "set",
       "id": "material",
       "path": "color.b",
+      "value": 0.05
+    },
+    {
+      "op": "set",
+      "id": "material",
+      "path": "roughness",
+      "value": 0.25
+    },
+    {
+      "op": "set",
+      "id": "material",
+      "path": "metalness",
+      "value": 0
+    },
+    {
+      "op": "set",
+      "id": "material",
+      "path": "ior",
+      "value": 1.5
+    },
+    {
+      "op": "set",
+      "id": "material",
+      "path": "specularIntensity",
       "value": 0.2
     },
     {
       "op": "set",
       "id": "material",
-      "path": "shininess",
-      "value": 60
+      "path": "specularColor.r",
+      "value": 1
     },
     {
       "op": "set",
       "id": "material",
-      "path": "specular.r",
-      "value": 0.5
+      "path": "specularColor.g",
+      "value": 1
     },
     {
       "op": "set",
       "id": "material",
-      "path": "specular.g",
-      "value": 0.5
-    },
-    {
-      "op": "set",
-      "id": "material",
-      "path": "specular.b",
-      "value": 0.5
+      "path": "specularColor.b",
+      "value": 1
     },
     {
       "op": "new",

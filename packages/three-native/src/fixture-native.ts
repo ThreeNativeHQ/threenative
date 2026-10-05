@@ -15,7 +15,7 @@
  */
 
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 
 import {
@@ -179,8 +179,12 @@ export interface IDriverRun {
 }
 
 /** Runs one fixture against one driver. A driver that cannot run here is a block, never a pass. */
-export function runFixture(fixture: IFixture, driver: string | null): IDriverRun {
-  const script = `${encodeFixture(fixture).join("\n")}\n`;
+export function runFixture(
+  fixture: IFixture,
+  driver: string | null,
+  renderPng?: string,
+): IDriverRun {
+  const script = `${encodeFixture(fixture, renderPng).join("\n")}\n`;
   if (driver === null)
     return {
       lines: [],
@@ -208,8 +212,23 @@ export function runFixture(fixture: IFixture, driver: string | null): IDriverRun
   return { lines, ...(error === undefined ? {} : { error }) };
 }
 
+/** How two frames differ, as the conformance lane measures it (metrics.mjs compareCaptures). */
+export interface IPixelComparison {
+  readonly pixelMismatchRatio: number;
+  readonly perceptualDeltaE: number;
+}
+
+/** What a render-capable driver needs: where to write frames, and how to compare them. */
+export interface IRenderOptions {
+  readonly frameDir: string;
+  readonly goldensDir: string;
+  readonly compare: (golden: Uint8Array, native: Uint8Array) => IPixelComparison;
+}
+
 export interface IRunFixturesOptions {
   readonly driver: string | null;
+  /** Present when the driver can draw frames; a render fixture is blocked without it. */
+  readonly renders?: IRenderOptions;
   /** Where a fixture with no golden for this reference version is reported. Default: fail. */
   readonly version: string;
   readonly goldens: ReadonlyMap<string, IFixtureGolden>;
@@ -232,7 +251,7 @@ function runOne(fixture: IFixture, options: IRunFixturesOptions): IFixtureResult
   // A frame the reference drew in a browser is not a frame the native renderer can draw yet, so the
   // row is blocked before any golden or driver is consulted: a render fixture is never a failure,
   // and never a pass, until the driver can answer a `render` request.
-  if (fixture.render !== undefined)
+  if (fixture.render !== undefined && options.renders === undefined)
     return {
       ...base,
       status: "blocked",
@@ -258,7 +277,11 @@ function runOne(fixture: IFixture, options: IRunFixturesOptions): IFixtureResult
       firstDifference: null,
     };
 
-  const run = runFixture(fixture, options.driver);
+  const renderPng =
+    fixture.render !== undefined && options.renders !== undefined
+      ? path.join(options.renders.frameDir, `${fixture.name}.png`)
+      : undefined;
+  const run = runFixture(fixture, options.driver, renderPng);
   if (run.blocked !== undefined)
     return { ...base, status: "blocked", reason: run.blocked, matched: 0, firstDifference: null };
 
@@ -313,6 +336,12 @@ function runOne(fixture: IFixture, options: IRunFixturesOptions): IFixtureResult
         matched: 0,
         firstDifference: null,
       };
+    if (expected.kind === "pixels") {
+      const failure = comparePixels(fixture, golden, reply.value, options.renders);
+      if (failure !== null)
+        return { ...base, status: "fail", reason: failure, matched: 0, firstDifference: null };
+      continue;
+    }
     let found: IFirstDifference | null;
     try {
       found = compareObservation(expected, reply, fixture.tolerance);
@@ -349,6 +378,38 @@ function runOne(fixture: IFixture, options: IRunFixturesOptions): IFixtureResult
     matched: golden.observations.length,
     firstDifference: null,
   };
+}
+
+/**
+ * A `pixels` observation: the driver's frame against the golden PNG, under the fixture's metric.
+ * Returns the failure, or null when the frame is within bounds.
+ */
+function comparePixels(
+  fixture: IFixture,
+  golden: IFixtureGolden,
+  value: string,
+  renders: IRenderOptions | undefined,
+): string | null {
+  const metric = fixture.observe.find((o) => o.kind === "pixels")?.metric;
+  if (renders === undefined || golden.render === undefined || metric === undefined)
+    return "a pixels observation needs a render-capable driver, a golden frame and a metric";
+  if (!value.startsWith("s:")) return `pixels observation is not a frame path: ${value}`;
+  const nativePng = decodeURIComponent(value.slice(2));
+  if (!existsSync(nativePng)) return `the driver named a frame it did not write: ${nativePng}`;
+  const goldenPng = path.join(renders.goldensDir, golden.render.png);
+  let measured: IPixelComparison;
+  try {
+    measured = renders.compare(readFileSync(goldenPng), readFileSync(nativePng));
+  } catch (error) {
+    return `frame comparison failed: ${error instanceof Error ? error.message : String(error)}`;
+  }
+  const within =
+    measured.pixelMismatchRatio <= metric.maxPixelMismatchRatio &&
+    measured.perceptualDeltaE <= metric.maxPerceptualDeltaE;
+  return within
+    ? null
+    : `frame differs: pixelMismatchRatio ${measured.pixelMismatchRatio} (max ${metric.maxPixelMismatchRatio}), ` +
+        `perceptualDeltaE ${measured.perceptualDeltaE} (max ${metric.maxPerceptualDeltaE}); native ${nativePng}`;
 }
 
 /** The driver this machine has, or null. `--driver` wins over the environment. */

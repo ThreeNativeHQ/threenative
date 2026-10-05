@@ -15,10 +15,12 @@
  * and the same exit-code rule, under `target: "native-engine"`.
  */
 
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { compareCaptures } from "../../../runtime-native/conformance/metrics.mjs";
 import {
   REPORT_SCHEMA_VERSION,
   buildProvenance,
@@ -28,6 +30,7 @@ import {
 } from "../../../runtime-native/conformance/run-conformance.mjs";
 import {
   FIXTURES_DIR,
+  GOLDENS_DIR,
   type IFixture,
   type IFixtureGolden,
   REPO_ROOT,
@@ -122,16 +125,19 @@ function loadGoldens(version: string): ReadonlyMap<string, IFixtureGolden> {
 }
 
 /**
- * `--only` takes one glob over fixture names (`math-core-*`), so a ctest case can run one prefix
- * of the corpus without the others. Only `*` and `?` are wildcards; every other character is the
- * name's own, because a fixture name is an identifier and a regex metacharacter in one is a typo.
+ * `--only` takes globs over fixture names (`math-core-*`), comma-separated for several
+ * (`lit-render,materials-*`), so a ctest case can run part of the corpus without the rest. Only `*`
+ * and `?` are wildcards; every other character is the name's own, because a fixture name is an
+ * identifier and a regex metacharacter in one is a typo.
  */
-export function fixturePattern(glob: string): RegExp {
-  const escaped = glob
-    .replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")
-    .replace(/\\\*/gu, ".*")
-    .replace(/\\\?/gu, ".");
-  return new RegExp(`^${escaped}$`, "u");
+export function fixturePattern(globs: string): RegExp {
+  const alternatives = globs.split(",").map((glob) =>
+    glob
+      .replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")
+      .replace(/\\\*/gu, ".*")
+      .replace(/\\\?/gu, "."),
+  );
+  return new RegExp(`^(?:${alternatives.join("|")})$`, "u");
 }
 
 /** The fixtures `--only` selects, or every fixture. A glob that selects nothing is an error. */
@@ -156,10 +162,20 @@ function main(argv: readonly string[]): number {
 
   const driver = resolveDriver(valueAfter(argv, "--driver"));
   const fixtures = selectFixtures(argv);
+  // `--renders`: the driver draws render fixtures, measured against the golden frames with the
+  // conformance lane's own comparison. Without it a render fixture stays blocked.
+  const renders = argv.includes("--renders")
+    ? {
+        frameDir: mkdtempSync(path.join(tmpdir(), "tn-native-frames-")),
+        goldensDir: path.join(GOLDENS_DIR, version),
+        compare: compareCaptures,
+      }
+    : undefined;
   const results = runFixtures(fixtures, {
     driver,
     version,
     goldens: loadGoldens(version),
+    ...(renders === undefined ? {} : { renders }),
   });
   const summary = { pass: 0, fail: 0, blocked: 0, planned: 0, validated: 0 };
   for (const result of results) summary[result.status] += 1;

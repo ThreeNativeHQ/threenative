@@ -172,7 +172,9 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
                                                   geometryRoughness), t.f(1)});
 
     // MeshStandardNodeMaterial.setupSpecular, or MeshPhysicalNodeMaterial's setupSpecular.
-    ExprId specularColorBlended, specularF90;
+    // specularF90 (mix(specularIntensity, 1, metalness)) feeds only PhysicalLightingModel's indirect
+    // specular, which arrives with environment lighting; direct light passes f90: 1 for every material.
+    ExprId specularColorBlended;
     if (physical) {
         const ExprId ior = f.uniform("ior", Type::f32());
         const ExprId specularIntensity = f.uniform("specularIntensity", Type::f32());
@@ -182,14 +184,12 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
                            f.construct(Type::vec(3), {t.f(1)})});
         const ExprId specularColor = f.mul(f0Base, specularIntensity);
         specularColorBlended = f.call("mix", {specularColor, diffuseColor, metalness});
-        specularF90 = f.call("mix", {specularIntensity, t.f(1), metalness});
     } else {
         specularColorBlended =
             f.call("mix", {f.construct(Type::vec(3), {t.f(0.04f)}), diffuseColor, metalness});
-        specularF90 = t.f(1);
     }
     const ExprId diffuseContribution = f.mul(diffuseColor, t.oneMinus(metalness));
-    const Surface surface{n, positionViewDirection, roughness, specularColorBlended, specularF90, f.texture2d("dfg")};
+    const Surface surface{n, positionViewDirection, roughness, specularColorBlended, t.f(1), f.texture2d("dfg")};
 
     // PhysicalLightingModel.direct for the directional light.
     const ExprId lightDirection = f.call("normalize", {f.uniform("directionalDirection", Type::vec(3))});

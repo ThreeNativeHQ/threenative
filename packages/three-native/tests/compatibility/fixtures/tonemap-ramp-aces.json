@@ -1,6 +1,6 @@
 {
   "name": "tonemap-ramp-aces",
-  "adaptedFrom": "original — an HDR ramp 0..8 in nine strips, tone mapped with ACESFilmicToneMapping: the curve as one row of pixels",
+  "adaptedFrom": "original \u2014 an HDR ramp 0..8 in nine strips, tone mapped with ACESFilmicToneMapping: the curve as one row of pixels",
   "tolerance": {
     "abs": 0
   },
@@ -515,8 +515,8 @@
       "id": "scene",
       "kind": "pixels",
       "metric": {
-        "maxPixelMismatchRatio": 0.002,
-        "maxPerceptualDeltaE": 1
+        "maxPixelMismatchRatio": 0.01,
+        "maxPerceptualDeltaE": 0.02
       }
     }
   ]
