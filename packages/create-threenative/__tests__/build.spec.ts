@@ -1,6 +1,7 @@
 import { execFile, spawn } from "node:child_process";
 import { existsSync, readdirSync } from "node:fs";
 import { mkdir, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
@@ -895,6 +896,80 @@ cpSync("public", out, { recursive: true });
     expect(await readFile(f.file, "utf8")).toBe(css);
     expect(await readdir(f.out)).toEqual([]);
   });
+
+  it.each(["compiler map", "wrong artifact", "missing map link"])(
+    "real CSS compiler provenance survives the project Vite pipeline (%s)",
+    async (control) => {
+      const root = await makeTempDir("threenative-ui-compiler-map-");
+      roots.push(root);
+      await mkdir(path.join(root, "src/ui"), { recursive: true });
+      await mkdir(path.join(root, "node_modules"));
+      const require = createRequire(import.meta.url);
+      for (const name of ["vite", "esbuild"]) {
+        await symlink(
+          path.dirname(require.resolve(`${name}/package.json`)),
+          path.join(root, "node_modules", name),
+          "dir",
+        );
+      }
+      const authored =
+        "/* authored CSS */\n.hud {\n  color: red;\n  background-image: url(https://cdn.example.com/missing.png);\n}\n";
+      await writeFile(
+        path.join(root, "package.json"),
+        JSON.stringify({ name: "css-compiler-map", type: "module" }),
+      );
+      await writeFile(path.join(root, "src/ui/main.tsx"), "export const ui = true;\n");
+      await writeFile(path.join(root, "src/ui/hud.css"), authored);
+      // The project's existing Vite plugin emits real compiler output. No mapping coordinates,
+      // file identity or sourcesContent are supplied by the test or the engine.
+      await writeFile(
+        path.join(root, "vite.config.js"),
+        [
+          'import { build } from "esbuild";',
+          'import path from "node:path";',
+          "let config;",
+          'export default { plugins: [{ name: "real-css-compiler-fixture",',
+          "configResolved(value) { config = value; },",
+          "async generateBundle() {",
+          'const result = await build({ absWorkingDir: config.root, entryPoints: ["src/ui/hud.css"], outdir: path.join(config.build.outDir, "assets"), bundle: true, minify: true, sourcemap: true, write: false });',
+          'for (const file of result.outputFiles) this.emitFile({ type: "asset", fileName: path.relative(config.build.outDir, file.path).split(path.sep).join("/"), source: file.contents });',
+          "} }] };",
+        ].join("\n"),
+      );
+      const built = await buildUi(root, { ui: { renderer: "native-css" } } as Parameters<
+        typeof buildUi
+      >[1]);
+      const file = path.join(built, "assets/hud.css");
+      const mapFile = `${file}.map`;
+      let css = await readFile(file, "utf8");
+      const map = JSON.parse(await readFile(mapFile, "utf8"));
+      expect(map.file).toBeUndefined(); // ECMA-426 makes this field optional; esbuild omits it.
+      expect(map.sourcesContent).toEqual([authored]);
+      expect(css).toContain("/*# sourceMappingURL=hud.css.map */");
+      if (control === "wrong artifact") {
+        map.file = "other.css";
+        await writeFile(mapFile, JSON.stringify(map));
+      }
+      if (control === "missing map link") {
+        css = css.replace("/*# sourceMappingURL=hud.css.map */", "");
+        await writeFile(file, css);
+      }
+      const mapBytes = await readFile(mapFile);
+      const out = path.join(root, "ui-css");
+      const failure = await extractUiStylesheets(built, out, root).catch((error: Error) => error);
+      expect(failure).toBeInstanceOf(Error);
+      const message = (failure as Error).message;
+      expect(message).toContain("TN_CSS_UI_ASSET_UNSUPPORTED:");
+      expect(message).toContain("only a file inside the UI build ships with it");
+      expect(message).toContain(`\n  generated: ${file}:1:${css.indexOf("url(") + 1}`);
+      if (control === "compiler map")
+        expect(message).toContain("\n  authored: src/ui/hud.css:4:21");
+      else expect(message).not.toContain("\n  authored:");
+      expect(await readFile(file, "utf8")).toBe(css);
+      expect(await readFile(mapFile)).toEqual(mapBytes);
+      expect(await readdir(out)).toEqual([]);
+    },
+  );
 
   it("copies the fonts and images a stylesheet url() names, flat beside it", async () => {
     const root = await makeTempDir("threenative-ui-css-asset-");

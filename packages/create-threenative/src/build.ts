@@ -473,7 +473,8 @@ async function stylesheetAssetLocation(
     const raw = JSON.parse(serialized);
     if (
       raw.version !== 3 ||
-      raw.file !== path.basename(file) ||
+      // ECMA-426 permits an omitted file; the CSS annotation already identifies this sidecar.
+      (raw.file !== undefined && raw.file !== path.basename(file)) ||
       typeof raw.mappings !== "string" ||
       !/^[A-Za-z0-9+/;,]*$/u.test(raw.mappings) ||
       !Array.isArray(raw.sources) ||
