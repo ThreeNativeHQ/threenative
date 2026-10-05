@@ -1049,6 +1049,38 @@ and downhill river remain in the basin. Native rendering is unverified this roun
 AC-5 remains open pending visual acceptance of all five environments.
 
 
+### Phase 4: Starter world kits — the agent handoff
+
+**Status:** OPEN (owner direction 2026-10-05)
+
+**Why:** the product is the handoff. Another agent asks "I am making an xyz game, generate a W
+terrain" and receives something ready to use that its game can still edit: tree colliders, models,
+placements and look. The preview example only proves it. Measured gaps on 2026-10-05: the package
+ships no starter worlds (`packages/terrain/starter/` was never created) and no art (`starter-assets/`
+is outside `files`); `exportWorldGLB` is browser-only and rejects instancing, so a GLB-only handoff
+caps the look at plain `MeshStandardMaterial`, loses per-placement data in the asset pipeline's
+instance batches and cannot carry colliders; the forest look tuned so far rests on 1.3 GB of licensed
+local Fab art that cannot ship.
+
+**Decision:** a kit is editable source plus baked data, copied into the asking game, not an opaque
+file and not an MCP tool (agents reach it through the existing capability search; a tool would wrap
+a copy and a bake). Per world, `packages/terrain/starter/<world>/` holds the recipe document, a bake
+script writing heights, splat colours and placements (stable ids, asset, transform), and render/world
+source with one entry that adds terrain, instanced props, water and collision to a ThreeNative scene.
+Colliders are a per-asset table in that copied source (`spruce: capsule`, `boulder: convex`, ...), so
+editing tree colliders is a one-line game edit. Art is the CC0 `starter-assets` set, shared across
+kits. The browser GLB export stays the path for other engines and tools.
+
+**Files:** `packages/terrain/starter/`, `packages/terrain/package.json` (`files`),
+`packages/terrain/__tests__/starter-kit.spec.ts`, example `src/` consuming the kit,
+`scripts/verify-consumer.mjs` (fresh-game adoption), terrain-authoring agent docs and capabilities.
+
+- [ ] K1: The forest kit ships in the packed `@threenative/terrain` and a freshly scaffolded game adopts it with no authoring package at runtime: copy, bake, add; terrain, instanced CC0 props and water draw; the character stands on the ground and a tree collider from the per-asset table stops it; no external request. proof: `pnpm exec vitest run packages/terrain/__tests__/starter-kit.spec.ts` plus `pnpm --filter strata-terrain-preview test:consumer`.
+- [ ] K2: The adopted forest kit holds 60 FPS: every benchmark view GPU p95 ≤ 14 ms and CPU frame p95 ≤ 16.7 ms on hardware WebGPU (RTX 2080, timestamp query, private Xvfb), cooked kit ≤ 25 MiB. proof: the fresh-game playtest's per-view budget observations.
+- [ ] K3: The adopted forest kit's captures pass every rubric row (ground, trees and rocks, lighting and depth) by a fresh judge subagent, before/after posted on the PR. proof: fresh-game captures plus the judge verdict.
+- [ ] K4: Coastal, alpine, desert and tundra kits meet K1–K3, the tundra kettles as an ice surface. proof: the same commands per world.
+- [ ] K5: An agent asked for "a W terrain for my game" reaches a playing world from the installed docs and capability search alone. proof: `test:consumer` capability lookup plus one cold-agent run recorded on the PR.
+
 ## Verification and delivery
 
 Phase 1 implementation: `packages/terrain/src/index.ts` is headless, and
