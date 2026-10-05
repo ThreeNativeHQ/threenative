@@ -1540,3 +1540,26 @@ validated source checkpoint; its camera/material changes must survive later reco
 scaffold fingerprints must be remeasured from that actual combined generator. The original owner
 subsequently committed documentation-only `7e01edf58`; those later experimental claims were not
 imported as qualification. The serial build slot is released; publication and new CI remain held.
+
+
+### PR440 develop reconciliation and draft repair publication (2026-10-05)
+
+Normal merge `6570965aae41d9c5db301dce5d9234e0fae4c6b6` combines reviewed local receipt
+`828a54da5` and current develop `d3c009e4404abcc2041f58124693edb9c78d802b`. Its only conflict was
+the scaffold fingerprint constant. All 13 fingerprints were remeasured through actual no-install
+generator output; the original assertions and owner's temporal scaffold requirements are retained.
+All 24 incoming camera/material template paths are byte-identical to PR440, and all six reviewed
+temporal production/test repair files are byte-identical to source `9e9ccc88f`.
+
+At exact merged source `6570965aa`, 306 affected CPU tests across 15 files pass, including PR440's
+shared-graph/camera contracts, the 40 temporal repair cases and all 101 routing/receipt contracts.
+Root TS7, serial workspace and velocity-fixture typechecks all exit zero on CPUs 10 and 22 with
+one worker. The eight-package declaration closure previously rebuilt at `9e9ccc88f` is still current:
+PR440 changes no public package implementation source. Exact manifests, measured fingerprints and
+logs are retained under `artifacts/pr398-cpu-contract/developd3-integration`.
+
+This resolves the subsequent develop conflict, preserving both features. Original quality/ghosting,
+GPU/render cost, combined-source native and actual WorldEnvironment/automatic-scaler gates remain
+open with their thresholds unchanged. No acceptance box is ticked. Draft repair publication is
+authorized after fresh head/base/noncritical guards, clean independent merge review and normal
+pre-push drift hooks; the PR must remain draft until original runtime acceptance is satisfied.
