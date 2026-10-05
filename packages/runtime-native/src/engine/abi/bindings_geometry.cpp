@@ -132,8 +132,14 @@ void registerBufferAttribute(ClassBinding& b) {
         const double itemSize = optional(a, 1, 1);
         if (!(itemSize >= 1 && itemSize <= 65536) || itemSize != std::floor(itemSize)) throw Unsupported{"itemSize must be a positive integer"};
         const bool normalized = a.size() > 2 && flag(a.at(2));
+        // The typed array it was given decides the storage, as three keeps the array it is handed.
+        const std::string& array = a.empty() ? std::string() : a.at(0).text;
+        const Scalar scalar = array == "Uint8Array"    ? Scalar::U8
+                              : array == "Uint16Array" ? Scalar::U16
+                              : array == "Uint32Array" ? Scalar::U32
+                                                       : Scalar::F32;
         return std::static_pointer_cast<void>(
-            BufferAttribute::fromDoubles(Scalar::F32, values, static_cast<int>(itemSize), normalized));
+            BufferAttribute::fromDoubles(scalar, values, static_cast<int>(itemSize), normalized));
     };
     b.getters["array"] = [](void* self) { return numbers(as<BufferAttribute>(self)->toNumbers()); };
     b.getters["array.length"] = [](void* self) {

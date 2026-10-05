@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <unordered_map>
 #include <iterator>
 #include <cstring>
 #include <stdexcept>
@@ -39,6 +40,15 @@ Matrix3 normalMatrix(const Matrix& m) {
                       t12 * s, (i * a - c * g) * s, (c * d - f * a) * s,
                       t13 * s, (b * g - h * a) * s, (e * a - b * d) * s};
     return {inv[0], inv[3], inv[6], inv[1], inv[4], inv[7], inv[2], inv[5], inv[8]};
+}
+
+WGPUVertexFormat skinIndexFormat(const DrawItem& item) {
+    if (!item.skinIndices) return WGPUVertexFormat_Uint16x4;
+    switch (item.skinIndices->scalar()) {
+        case Scalar::U8: return WGPUVertexFormat_Uint8x4;
+        case Scalar::U32: return WGPUVertexFormat_Uint32x4;
+        default: return WGPUVertexFormat_Uint16x4;
+    }
 }
 
 // A point through a column-major matrix (w = 1): a light's view-space position, as three's
@@ -84,7 +94,8 @@ void put(std::vector<uint8_t>& block, size_t base, const shader::UniformField* f
 constexpr const char* kSlotNames[] = {
     "modelMatrix", "viewMatrix", "projectionMatrix", "normalMatrix", "diffuse", "alphaTest", "opaque", "roughness",
     "metalness", "emissive", "specular", "shininess", "ior", "specularIntensity", "specularColor",
-    "hemisphereSky", "hemisphereGround", "hemisphereDirection", "ambient"};
+    "hemisphereSky", "hemisphereGround", "hemisphereDirection", "ambient", "boneBase", "bindMatrix",
+    "bindMatrixInverse"};
 constexpr const char* kLightFieldNames[] = {"Color",       "Direction",        "Position",     "Distance",
                                             "Decay",       "Axis",             "ConeCos",      "PenumbraCos",
                                             "ShadowMatrix", "ShadowBias",      "ShadowNormalBias", "ShadowRadius",
@@ -136,6 +147,8 @@ Renderer::Renderer(WGPUInstance instance, WGPUDevice device, WGPUQueue queue, Ev
     // One triangle covers the frame; the output pass samples the scene target texel for texel.
     const float triangle[6] = {-1, -1, 3, -1, -1, 3};
     outputTriangle_ = gpu_.createBuffer(sizeof triangle, WGPUBufferUsage_Vertex | WGPUBufferUsage_CopyDst);
+    bonesCapacity_ = 64; // one identity's worth, so a skinned program always has a buffer to bind
+    bonesBuffer_ = gpu_.createBuffer(bonesCapacity_, WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst);
     gpu_.writeBuffer(outputTriangle_, 0, triangle, sizeof triangle);
     outputUniforms_ = gpu_.createBuffer(16, WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
     WGPUSamplerDescriptor nearest = {};
@@ -249,6 +262,9 @@ WGPUBindGroup Renderer::bindGroup(WGPUBindGroupLayout layout, const shader::Stag
         if (b.kind == shader::BindingKind::Uniform) {
             e.buffer = gpu_.buffer(uniforms);
             e.size = stage.uniformBlockSize;
+        } else if (b.kind == shader::BindingKind::Storage && b.name == "s_boneMatrices") {
+            e.buffer = gpu_.buffer(bonesBuffer_);
+            e.size = bonesCapacity_;
         } else if (b.depth) {
             // `t_shadow{i}` / `t_shadowCube{i}` and their samplers: direct light i's shadow map (2D, or a
             // point light's cube) and the comparison sampler.
@@ -286,6 +302,9 @@ void Renderer::buildLayouts(Program& program) {
                 e.buffer.type = WGPUBufferBindingType_Uniform;
                 e.buffer.hasDynamicOffset = true;
                 e.buffer.minBindingSize = stages[g]->uniformBlockSize;
+            } else if (b.kind == shader::BindingKind::Storage) {
+                e.buffer.type = WGPUBufferBindingType_ReadOnlyStorage;
+                e.buffer.minBindingSize = b.minSize;
             } else if (b.kind == shader::BindingKind::Texture) {
                 e.texture.sampleType = b.depth ? WGPUTextureSampleType_Depth : WGPUTextureSampleType_Float;
                 e.texture.viewDimension = b.cube ? WGPUTextureViewDimension_Cube : WGPUTextureViewDimension_2D;
@@ -326,7 +345,7 @@ void Renderer::buildLayouts(Program& program) {
 Renderer::Program& Renderer::program(MaterialKind kind, int variant, const std::string& lights) {
     const std::string key = std::to_string(static_cast<int>(kind)) + "|" + std::to_string(variant) + "|" + lights;
     if (const auto found = programs_.find(key); found != programs_.end()) return *found->second;
-    static const shader::VertexVariant kVariants[3] = {{}, {true, false}, {true, true}};
+    static const shader::VertexVariant kVariants[4] = {{}, {true, false}, {true, true}, {false, false, true}};
     const shader::VertexVariant& vv = kVariants[variant];
     const shader::LightLayout layout{lights};
     shader::StandardPrograms source;
@@ -348,8 +367,10 @@ Renderer::Program& Renderer::depthProgram(int variant) {
     const std::string key = "depth|" + std::to_string(variant);
     if (const auto found = programs_.find(key); found != programs_.end()) return *found->second;
     // three's shadow pass draws with the default positionNode, the same transform as a basic material.
-    shader::StageModule vertex = shader::buildStage(shader::buildBasic(variant ? shader::VertexVariant{true, false}
-                                                                               : shader::VertexVariant{}).vertex, 0);
+    const shader::VertexVariant kind = variant == 3 ? shader::VertexVariant{false, false, true}
+                                       : variant   ? shader::VertexVariant{true, false}
+                                                   : shader::VertexVariant{};
+    shader::StageModule vertex = shader::buildStage(shader::buildBasic(kind).vertex, 0);
     if (!vertex.wgsl.ok()) throw std::runtime_error("TN_NATIVE_SHADER_INVALID: shadow depth program");
     shader::StageModule fragment;
     fragment.stage = shader::Stage::Fragment;
@@ -487,6 +508,22 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
         shadowMapsChanged = true;
     }
 
+    // Each skinned draw's palette, appended once to the frame's bone buffer; its draws (main and shadow)
+    // read it from `boneBase`. three's skeleton.update() ran in the render database.
+    frameBones_.clear();
+    std::unordered_map<const DrawItem*, double> boneBase;
+    for (const auto& [depthKey, drawn] : opaque) {
+        if (!drawn->boneMatrices) continue;
+        boneBase[drawn] = double(frameBones_.size() / 16);
+        frameBones_.insert(frameBones_.end(), drawn->boneMatrices->begin(), drawn->boneMatrices->end());
+    }
+    auto putSkin = [&](uint64_t v, const shader::UniformField* const* vs, const DrawItem& item) {
+        if (!item.boneMatrices) return;
+        put(frameUniforms_, v, vs[kBoneBase], std::array<double, 1>{boneBase[&item]});
+        put(frameUniforms_, v, vs[kBindMatrix], item.bindMatrix);
+        put(frameUniforms_, v, vs[kBindMatrixInverse], item.bindMatrixInverse);
+    };
+
     // Plan: each draw's program, pipeline and uniform slices, all uniforms into one CPU block.
     struct Planned {
         const DrawItem* item;
@@ -499,7 +536,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
     frameUniforms_.clear();
     for (const auto& [depthKey, drawn] : opaque) {
         const DrawItem& item = *drawn;
-        const int variant = item.instanceMatrices ? (item.instanceColors ? 2 : 1) : 0;
+        const int variant = item.boneMatrices ? 3 : item.instanceMatrices ? (item.instanceColors ? 2 : 1) : 0;
         Program& program = this->program(item.kind, variant,
                                          item.kind == MaterialKind::Basic ? ""
                                          : item.receiveShadow            ? lightKinds
@@ -510,6 +547,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
         PipelineTarget target{WGPUTextureFormat_RGBA16Float, WGPUTextureFormat_Depth32Float, WGPUCullMode_Back,
                               item.transparent, item.depthWrite};
         target.layout = program.pipelineLayout;
+        target.skinIndex = skinIndexFormat(item);
         WGPURenderPipeline pipeline = pipelines_.get(program.vertex, &program.fragment, target);
         if (!pipeline) throw std::runtime_error("TN_NATIVE_PIPELINE_REFUSED: material program");
         const uint64_t v = frameUniforms_.size();
@@ -521,6 +559,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
         put(frameUniforms_, v, vs[kViewMatrix], view);
         put(frameUniforms_, v, vs[kProjectionMatrix], camera.projectionMatrix);
         put(frameUniforms_, v, vs[kNormalMatrix], normalMatrix(multiply(view, item.matrixWorld)));
+        putSkin(v, vs, item);
         const shader::StandardMaterial& m = *item.material;
         put(frameUniforms_, f, fs[kDiffuse], std::array<double, 4>{m.color[0], m.color[1], m.color[2], m.opacity});
         put(frameUniforms_, f, fs[kViewMatrix], view);  // normalWorld is derived in the fragment, as three does
@@ -583,9 +622,10 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
         for (const auto& [depthKey, drawn] : opaque) {
             const DrawItem& item = *drawn;
             if (!item.castShadow || item.instanceCount == 0 || !item.positions) continue;
-            Program& program = depthProgram(item.instanceMatrices ? 1 : 0);
+            Program& program = depthProgram(item.boneMatrices ? 3 : item.instanceMatrices ? 1 : 0);
             PipelineTarget target{WGPUTextureFormat_Undefined, WGPUTextureFormat_Depth24Plus, WGPUCullMode_Front};
             target.layout = program.pipelineLayout;
+            target.skinIndex = skinIndexFormat(item);
             WGPURenderPipeline pipeline = pipelines_.get(program.vertex, nullptr, target);
             if (!pipeline) throw std::runtime_error("TN_NATIVE_PIPELINE_REFUSED: shadow depth program");
             const uint64_t v = frameUniforms_.size();
@@ -593,6 +633,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
             put(frameUniforms_, v, program.vertexSlots[kModelMatrix], item.matrixWorld);
             put(frameUniforms_, v, program.vertexSlots[kViewMatrix], view);
             put(frameUniforms_, v, program.vertexSlots[kProjectionMatrix], shadow.projection);
+            putSkin(v, program.vertexSlots, item);
             pass.draws.push_back({&item, &program, pipeline, static_cast<uint32_t>(v), 0});
         }
         }
@@ -609,6 +650,13 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
         rebuildGroups();
     }
     if (!frameUniforms_.empty()) gpu_.writeBuffer(uniformBuffer_, 0, frameUniforms_.data(), frameUniforms_.size());
+    if (frameBones_.size() * 4 > bonesCapacity_) {
+        gpu_.destroy(bonesBuffer_);
+        bonesCapacity_ = std::max<uint64_t>(frameBones_.size() * 4 * 2, 64 * 1024);
+        bonesBuffer_ = gpu_.createBuffer(bonesCapacity_, WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst);
+        rebuildGroups();
+    }
+    if (!frameBones_.empty()) gpu_.writeBuffer(bonesBuffer_, 0, frameBones_.data(), frameBones_.size() * 4);
 
     // Encode: state changes only where they change; per draw, its dynamic offsets and the draw. The
     // shadow passes first, so the main pass samples this frame's maps.
@@ -629,6 +677,8 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
             BufferStore& store = a.name == "position"        ? *item.positions
                                  : a.name == "normal"        ? *item.normals
                                  : a.name == "instanceColor" ? *item.instanceColors
+                                 : a.name == "skinIndex"     ? *item.skinIndices
+                                 : a.name == "skinWeight"    ? *item.skinWeights
                                                              : *item.instanceMatrices;
             const uint64_t offset = column ? uint64_t(a.name.back() - '0') * 16 : 0;
             const Handle buffer = geometry_.sync(store, WGPUBufferUsage_Vertex);

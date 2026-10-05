@@ -7404,6 +7404,11 @@
         "source": "three/webgpu"
       },
       {
+        "symbol": "Bone",
+        "kind": "class",
+        "source": "three/webgpu"
+      },
+      {
         "symbol": "Box3",
         "kind": "class",
         "source": "three"
@@ -7572,6 +7577,16 @@
         "symbol": "Scene",
         "kind": "class",
         "source": "three"
+      },
+      {
+        "symbol": "Skeleton",
+        "kind": "class",
+        "source": "three/webgpu"
+      },
+      {
+        "symbol": "SkinnedMesh",
+        "kind": "class",
+        "source": "three/webgpu"
       },
       {
         "symbol": "Sphere",

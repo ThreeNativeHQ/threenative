@@ -1,5 +1,7 @@
 #include "render_database.h"
 
+#include "engine/animation/skinning/skeleton.h"
+
 #include <algorithm>
 #include <cmath>
 
@@ -179,7 +181,7 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
         return;
     if (object.layers().test(camera.layers())) {
         const std::string_view type = object.type();
-        if (type == "Mesh" || type == "InstancedMesh") {
+        if (type == "Mesh" || type == "InstancedMesh" || type == "SkinnedMesh") {
             const auto& mesh = static_cast<const Mesh&>(object);
             Record& r = record(mesh);
             r.seen = frame_;
@@ -192,6 +194,19 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
                 r.item.castShadow = mesh.castShadow();
                 r.item.receiveShadow = mesh.receiveShadow();
                 items.push_back(r.item);
+                if (type == "SkinnedMesh") {
+                    // three's skinning() updates each skeleton once per frame before its first draw.
+                    const auto& skinned = static_cast<const SkinnedMesh&>(mesh);
+                    DrawItem& d = items.back();
+                    d.skinIndices = store(*mesh.geometry, "skinIndex");
+                    d.skinWeights = store(*mesh.geometry, "skinWeight");
+                    if (skinned.skeleton && d.skinIndices && d.skinWeights) {
+                        if (skeletonsUpdated_.insert(skinned.skeleton.get()).second) skinned.skeleton->update();
+                        d.boneMatrices = &skinned.skeleton->boneMatrices;
+                        d.bindMatrix = toArray(skinned.bindMatrix);
+                        d.bindMatrixInverse = toArray(skinned.bindMatrixInverse);
+                    }
+                }
                 if (type == "InstancedMesh") {
                     // Read every frame, as three does: count changes and setColorAt's first call (which
                     // creates the colour attribute) need no record rebuild.
@@ -346,6 +361,7 @@ uint64_t RenderDatabase::render(Renderer& renderer, Object3D& scene, Camera& cam
     lights.hemisphereSky = lights.hemisphereGround = {0, 0, 0};
     callbacks_.clear();
     direct_.clear();
+    skeletonsUpdated_.clear();
     project(scene, camera, items, lights);
     // three's LightsNode sorts its lights by id; the direct terms are summed in that order.
     std::stable_sort(direct_.begin(), direct_.end(), [](const auto& a, const auto& b) { return a.first < b.first; });

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <unordered_set>
+
 #include <array>
 #include <cstdint>
 #include <string>
@@ -85,6 +87,7 @@ class RenderDatabase {
     uint64_t rebuilds_ = 0;
     uint64_t frame_ = 0;
     std::vector<std::pair<uint64_t, DirectLight>> direct_; // this render's direct lights with their ids
+    std::unordered_set<const void*> skeletonsUpdated_;     // skeletons this render already updated
     int hemisphere_ = 0;
 };
 

@@ -39,7 +39,7 @@ WGPURenderPipeline PipelineCache::get(const shader::StageModule& vertex, const s
     if (fragment) key += fragment->wgsl.code;
     key += '\x1f' + std::to_string(target.color) + ':' + std::to_string(target.depth) + ':' + std::to_string(target.cull) + ':' +
            std::to_string(target.blend) + ':' + std::to_string(target.depthWrite) + ':' +
-           std::to_string(reinterpret_cast<uintptr_t>(target.layout));
+           std::to_string(reinterpret_cast<uintptr_t>(target.layout)) + ':' + std::to_string(target.skinIndex);
     if (const auto found = pipelines_.find(key); found != pipelines_.end()) return found->second;
 
     // One vertex buffer per attribute, in location order: the renderer binds them the same way. The
@@ -52,10 +52,15 @@ WGPURenderPipeline PipelineCache::get(const shader::StageModule& vertex, const s
         const std::string& name = vertex.attributes[i].name;
         const bool matrixColumn = name.rfind("instanceMatrix", 0) == 0;
         attributes[i] = {};
-        attributes[i].format = vertexFormat(t);
+        const bool skinIndex = name == "skinIndex";
+        attributes[i].format = skinIndex ? target.skinIndex : vertexFormat(t);
         attributes[i].shaderLocation = vertex.attributes[i].location;
         buffers[i] = {};
-        buffers[i].arrayStride = matrixColumn ? 64 : uint64_t{t.rows} * 4;
+        buffers[i].arrayStride = matrixColumn ? 64
+                                 : skinIndex  ? (target.skinIndex == WGPUVertexFormat_Uint8x4    ? 4
+                                                 : target.skinIndex == WGPUVertexFormat_Uint16x4 ? 8
+                                                                                                 : 16)
+                                              : uint64_t{t.rows} * 4;
         buffers[i].stepMode = matrixColumn || name == "instanceColor" ? WGPUVertexStepMode_Instance : WGPUVertexStepMode_Vertex;
         buffers[i].attributeCount = 1;
         buffers[i].attributes = &attributes[i];

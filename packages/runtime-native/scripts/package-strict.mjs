@@ -15,7 +15,13 @@ import { fileURLToPath } from "node:url";
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const THREE_DIR = path.join(REPO, "tools", "native-typescript", "three");
 const NATIVE = path.join(REPO, "packages", "runtime-native");
-export const ENGINE_LIBS = ["tn_engine_abi", "tn_engine_bindings", "tn_engine_scene", "tn_engine_foundation"];
+export const ENGINE_LIBS = [
+  "tn_engine_abi",
+  "tn_engine_bindings",
+  "tn_engine_animation",
+  "tn_engine_scene",
+  "tn_engine_foundation",
+];
 
 /** The first error line of a tool run, or undefined when it succeeded. */
 function defaultExec(tool, args, env) {

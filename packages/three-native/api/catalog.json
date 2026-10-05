@@ -482,10 +482,9 @@
       "kind": "class",
       "source": "three/webgpu",
       "status": {
-        "kind": "unsupported",
-        "diagnostic": "TN_NATIVE_UNSUPPORTED_BONE"
+        "kind": "supported"
       },
-      "extends": null,
+      "extends": "Object3D",
       "constructor": [],
       "fields": [],
       "methods": []
@@ -15507,26 +15506,122 @@
       "kind": "class",
       "source": "three/webgpu",
       "status": {
-        "kind": "unsupported",
-        "diagnostic": "TN_NATIVE_UNSUPPORTED_SKELETON"
+        "kind": "supported"
       },
       "extends": null,
       "constructor": [],
-      "fields": [],
-      "methods": []
+      "fields": [
+        {
+          "name": "boneMatrices",
+          "type": "Float32Array | null",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ],
+      "methods": [
+        {
+          "name": "calculateInverses",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "void"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "pose",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "void"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "update",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "void"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ]
     },
     {
       "name": "SkinnedMesh",
       "kind": "class",
       "source": "three/webgpu",
       "status": {
-        "kind": "unsupported",
-        "diagnostic": "TN_NATIVE_UNSUPPORTED_SKINNEDMESH"
+        "kind": "supported"
       },
-      "extends": null,
+      "extends": "Mesh",
       "constructor": [],
-      "fields": [],
-      "methods": []
+      "fields": [
+        {
+          "name": "skeleton",
+          "type": "Skeleton",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ],
+      "methods": [
+        {
+          "name": "bind",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "skeleton",
+                  "type": "Skeleton",
+                  "optional": false
+                },
+                {
+                  "name": "bindMatrix",
+                  "type": "Matrix4",
+                  "optional": true
+                }
+              ],
+              "returns": "void"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "pose",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "void"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ]
     },
     {
       "name": "Sphere",

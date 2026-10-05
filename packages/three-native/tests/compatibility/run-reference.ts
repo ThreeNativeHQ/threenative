@@ -79,6 +79,8 @@ function argument(arg: FixtureArg, bound: ReadonlyMap<string, unknown>): unknown
       if (found === undefined) throw new Error(`TN_FIXTURE_UNBOUND: ${arg.ref} has no value`);
       return found;
     }
+    if ("refs" in arg) return arg.refs.map((id) => argument({ ref: id }, bound));
+    if ("array" in arg) return new globalThis[arg.type](arg.array);
     return namedNumber(arg.num);
   }
   return arg;

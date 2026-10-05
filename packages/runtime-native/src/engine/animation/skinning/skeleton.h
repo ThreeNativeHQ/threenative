@@ -23,6 +23,7 @@
 #include <vector>
 
 #include "engine/foundation/math/Matrix.h"
+#include "engine/scene/nodes.h"
 #include "engine/scene/object3d.h"
 
 namespace tn::engine {
@@ -70,6 +71,26 @@ class Skeleton {
     std::vector<Matrix4> boneInverses;
     /** `bones.size() * 16` floats, column-major per slot, three's flat `boneMatrices`. */
     std::vector<float> boneMatrices;
+};
+
+/**
+ * three's SkinnedMesh: a Mesh whose vertices follow `skeleton` through `skinIndex`/`skinWeight`.
+ * `bindMatrix` is the mesh's world matrix when it was bound; in "attached" mode (the default)
+ * `bindMatrixInverse` follows the mesh's own world matrix on every updateMatrixWorld, in
+ * "detached" mode it stays the inverse of `bindMatrix`.
+ */
+class SkinnedMesh : public Mesh {
+  public:
+    using Mesh::Mesh;
+    [[nodiscard]] std::string_view type() const override { return "SkinnedMesh"; }
+    /** three's bind: without a matrix, the mesh's current world matrix after computing the inverses. */
+    void bind(std::shared_ptr<Skeleton> skeleton, const Matrix4* bindMatrix = nullptr);
+    void pose() { if (skeleton) skeleton->pose(); }
+    void updateMatrixWorld(bool force = false) override;
+    std::shared_ptr<Skeleton> skeleton;
+    bool attached = true; // bindMode: "attached" (true) or "detached"
+    Matrix4 bindMatrix;
+    Matrix4 bindMatrixInverse;
 };
 
 } // namespace tn::engine

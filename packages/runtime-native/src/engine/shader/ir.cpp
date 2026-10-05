@@ -153,6 +153,10 @@ ExprId Program::arithmetic(Op op, std::string_view node, ExprId a, ExprId b, con
         result = Type::vec(tb.cols);  // a row vector times a matrix: TSL's vec.mul(mat), WGSL's v * M
     } else if (op == Op::Mul && ta.isMatrix() && tb.isMatrix() && ta.cols == tb.rows) {
         result = Type::mat(tb.cols, ta.rows);
+    } else if (op == Op::Mul && ta.isMatrix() && tb == Type::f32()) {
+        result = ta;  // WGSL's mat * f32: skinning weighs a bone matrix
+    } else if (op == Op::Mul && ta == Type::f32() && tb.isMatrix()) {
+        result = tb;
     } else {
         return fail(node, "operands " + ta.name() + " and " + tb.name() + " do not combine", where);
     }

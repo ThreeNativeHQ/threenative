@@ -25,7 +25,8 @@ endif()
 # Renderer: native-owned GPU resources over the same WebGPU backend the host uses.
 add_library(tn_engine_renderer STATIC ${TN_ENGINE_RENDERER_SOURCES})
 tn_native_engine_target(tn_engine_renderer)
-target_link_libraries(tn_engine_renderer PUBLIC tn_engine_foundation tn_engine_assets tn_engine_shader tn_engine_scene tn_host_services)
+target_link_libraries(tn_engine_renderer PUBLIC tn_engine_foundation tn_engine_assets tn_engine_shader tn_engine_scene
+    tn_engine_animation tn_host_services)
 if(TARGET dawn::webgpu)
     target_link_libraries(tn_engine_renderer PUBLIC dawn::webgpu)
 elseif(TARGET wgpu::wgpu)
@@ -124,7 +125,8 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         foreach(render_case "render_tonemap:tonemap-ramp-*" "render_lit:lit-render*" "render_lambert:materials-lambert"
                 "render_phong:materials-phong" "render_physical:materials-physical*"
                 "standard_materials_fixtures:alpha-test,lit-render*,materials-*"
-                "render_alpha:alpha-*" "render_lights:lights-*" "render_shadows:shadows-*")
+                "render_alpha:alpha-*" "render_lights:lights-*" "render_shadows:shadows-*"
+                "render_skinned:skinned-*")
             string(REPLACE ":" ";" render_pair "${render_case}")
             list(GET render_pair 0 render_name)
             list(GET render_pair 1 render_glob)

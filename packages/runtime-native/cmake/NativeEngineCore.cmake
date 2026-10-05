@@ -238,7 +238,7 @@ set_property(GLOBAL APPEND PROPERTY TN_NATIVE_ENGINE_TEST_TARGETS tn-native-engi
 add_library(tn_engine_bindings STATIC src/engine/abi/bindings_math.cpp src/engine/abi/bindings_scene.cpp
     src/engine/abi/bindings_geometry.cpp src/engine/abi/bindings_material.cpp)
 tn_native_engine_target(tn_engine_bindings)
-target_link_libraries(tn_engine_bindings PUBLIC tn_engine_foundation tn_engine_scene)
+target_link_libraries(tn_engine_bindings PUBLIC tn_engine_foundation tn_engine_scene tn_engine_animation)
 if(EMSCRIPTEN)
     # Bindings report an unsupported member by exception and the ABI catches it at the boundary;
     # engine algorithms never throw. Both sides need Wasm exception handling.
@@ -271,7 +271,8 @@ if(EMSCRIPTEN)
     # webgpu.h is Dawn's. No host services: nothing here may assume a native driver.
     add_library(tn_engine_renderer STATIC ${TN_ENGINE_RENDERER_SOURCES})
     tn_native_engine_target(tn_engine_renderer)
-    target_link_libraries(tn_engine_renderer PUBLIC tn_engine_foundation tn_engine_assets tn_engine_shader tn_engine_scene)
+    target_link_libraries(tn_engine_renderer PUBLIC tn_engine_foundation tn_engine_assets tn_engine_shader tn_engine_scene
+        tn_engine_animation)
     target_compile_definitions(tn_engine_renderer PUBLIC MYSTRAL_WEBGPU_DAWN)
     target_compile_options(tn_engine_renderer PUBLIC --use-port=emdawnwebgpu)
     target_link_options(tn_engine_renderer PUBLIC --use-port=emdawnwebgpu)

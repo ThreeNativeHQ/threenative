@@ -160,6 +160,38 @@ static LocalVertex localVertex(Program& v, const VertexVariant& variant, bool wi
             normal = v.call("normalize", {v.div(v.mul(inverseTranspose, normal), v.call("dot", {a, bc}))});
         }
     }
+    if (variant.skinned) {
+        // getSkinnedPosition and getSkinnedNormalAndTangent, operand for operand.
+        const uint32_t bones = v.storageBuffer("boneMatrices", Type::mat(4, 4));
+        const ExprId base = v.construct(Type::u32(), {v.uniform("boneBase", Type::f32())});
+        const ExprId index = v.attribute("skinIndex", Type::vec(4, Type::Scalar::U32));
+        const ExprId weight = v.attribute("skinWeight", Type::vec(4));
+        const ExprId bindMatrix = v.uniform("bindMatrix", Type::mat(4, 4));
+        const ExprId bindMatrixInverse = v.uniform("bindMatrixInverse", Type::mat(4, 4));
+        ExprId bone[4], w[4];
+        for (int k = 0; k < 4; ++k) {
+            const char lane[2] = {"xyzw"[k], 0};
+            bone[k] = v.loadStorage(bones, v.add(base, v.swizzle(index, lane)));
+            w[k] = v.swizzle(weight, lane);
+        }
+        const ExprId skinVertex = v.mul(bindMatrix, v.construct(Type::vec(4), {position, v.constant(1.0f)}));
+        ExprId skinned = kInvalid;
+        for (int k = 0; k < 4; ++k) {
+            const ExprId term = v.mul(v.mul(bone[k], w[k]), skinVertex);
+            skinned = skinned == kInvalid ? term : v.add(skinned, term);
+        }
+        position = v.swizzle(v.mul(bindMatrixInverse, skinned), "xyz");
+        if (withNormal) {
+            ExprId skinMatrix = kInvalid;
+            for (int k = 0; k < 4; ++k) {
+                const ExprId term = v.mul(w[k], bone[k]);
+                skinMatrix = skinMatrix == kInvalid ? term : v.add(skinMatrix, term);
+            }
+            skinMatrix = v.mul(v.mul(bindMatrixInverse, skinMatrix), bindMatrix);
+            // transformDirection: normalize((matrix * vec4(direction, 0)).xyz)
+            normal = v.call("normalize", {v.swizzle(v.mul(skinMatrix, v.construct(Type::vec(4), {normal, v.constant(0.0f)})), "xyz")});
+        }
+    }
     const ExprId instanceColor = variant.instanceColor ? v.attribute("instanceColor", Type::vec(3)) : kInvalid;
     return {v.construct(Type::vec(4), {position, v.constant(1.0f)}), normal, instanceColor};
 }

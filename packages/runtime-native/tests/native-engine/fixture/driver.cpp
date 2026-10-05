@@ -55,6 +55,21 @@ Value parseArg(const std::string& token) {
     if (token == "b:1") return Value::of(true);
     if (token == "b:0") return Value::of(false);
     if (token.rfind("r:", 0) == 0) return Value{Value::Kind::Ref, 0, token.substr(2)};
+    if (token.rfind("R:", 0) == 0) return Value{Value::Kind::Refs, 0, token.substr(2)};
+    if (token.rfind("a:", 0) == 0) {
+        // a:<TypedArray>:<bits>,<bits>: the numbers and the array type they were written as.
+        const std::size_t colon = token.find(':', 2);
+        if (colon == std::string::npos) throw Unsupported{"array token names no type: " + token};
+        Value v = Value::list({});
+        v.text = token.substr(2, colon - 2);
+        for (std::size_t at = colon + 1; at < token.size();) {
+            std::size_t end = token.find(',', at);
+            if (end == std::string::npos) end = token.size();
+            v.numbers.push_back(std::bit_cast<double>(std::stoull(token.substr(at, end - at), nullptr, 16)));
+            at = end + 1;
+        }
+        return v;
+    }
     throw Unsupported{"unknown argument token " + token};
 }
 

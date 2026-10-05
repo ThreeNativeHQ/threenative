@@ -48,6 +48,12 @@ struct StandardMaterial {
 struct VertexVariant {
     bool instanced = false;
     bool instanceColor = false;
+    /**
+     * three's skinning(): `skinIndex` (vec4<u32>) and `skinWeight` attributes, the frame's bone
+     * matrices in the storage buffer `boneMatrices` from `boneBase` on, `bindMatrix` and
+     * `bindMatrixInverse` uniforms.
+     */
+    bool skinned = false;
 };
 
 /**

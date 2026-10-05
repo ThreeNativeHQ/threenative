@@ -22,8 +22,10 @@
  */
 
 import {
+  FIXTURE_ARRAY_TYPES,
   FIXTURE_NUMBER_NAMES,
   type FixtureArg,
+  type FixtureArrayType,
   type FixtureNumberName,
   type IFixture,
   type ObservationKind,
@@ -33,13 +35,19 @@ import {
   numberBits,
 } from "./fixture-format.js";
 
-/** Encodes one argument. `r:` is a reference, `n:` the binary64 bits of any number. */
+/**
+ * Encodes one argument. `r:` is a reference, `n:` the binary64 bits of any number, `a:<type>:` a
+ * typed array of such bits, comma-separated, and `R:` a comma-separated list of references.
+ */
 export function encodeArg(arg: FixtureArg): string {
   if (arg === null) return "null";
   if (typeof arg === "boolean") return arg ? "b:1" : "b:0";
   if (typeof arg === "number") return `n:${numberBits(arg)}`;
   if (typeof arg === "string") return `s:${encodeURIComponent(arg)}`;
   if ("ref" in arg) return `r:${arg.ref}`;
+  if ("refs" in arg) return `R:${arg.refs.join(",")}`;
+  if ("array" in arg)
+    return `a:${arg.type}:${arg.array.map((value) => numberBits(value)).join(",")}`;
   if (FIXTURE_NUMBER_NAMES.includes(arg.num)) return `n:${numberBits(namedNumber(arg.num))}`;
   throw new Error(
     `TN_PROTOCOL_ARG_INVALID: ${JSON.stringify(arg)} is not an argument this protocol encodes`,
@@ -65,6 +73,17 @@ export function decodeArg(token: string): FixtureArg {
     return { ref: id };
   }
   if (token.startsWith("n:")) return bitsNumber(token.slice(2));
+  if (token.startsWith("R:"))
+    return { refs: token.slice(2) === "" ? [] : token.slice(2).split(",") };
+  if (token.startsWith("a:")) {
+    const [, type, bits = ""] = token.split(":");
+    if (!FIXTURE_ARRAY_TYPES.includes(type as FixtureArrayType))
+      throw new Error(`TN_PROTOCOL_ARG_INVALID: ${token} names no typed array`);
+    return {
+      array: bits === "" ? [] : bits.split(",").map(bitsNumber),
+      type: type as FixtureArrayType,
+    };
+  }
   if (token.startsWith("s:")) return decodeURIComponent(token.slice(2));
   throw new Error(`TN_PROTOCOL_ARG_INVALID: ${token} is not an argument this protocol decodes`);
 }

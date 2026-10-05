@@ -13,6 +13,7 @@
 // notify through the Euler member's own setters.
 
 #include "engine/abi/bindings.h"
+#include "engine/animation/skinning/skeleton.h"
 
 #include <cmath>
 
@@ -127,7 +128,7 @@ Object3D& objectArg(Store& store, const Value& arg) {
                                            "Scene",           "Camera",          "PerspectiveCamera",
                                            "OrthographicCamera", "AmbientLight", "DirectionalLight",
                                            "HemisphereLight", "InstancedMesh",      "PointLight",
-                                           "SpotLight"};
+                                           "SpotLight",       "Bone",               "SkinnedMesh"};
     Object* found = store.find(arg);
     if (found == nullptr) throw Unsupported{"argument is not an Object3D"};
     for (const char* cls : kClasses) {
@@ -596,6 +597,70 @@ void registerMesh(ClassBinding& b) {
     };
 }
 
+// three's Bone: an Object3D a Skeleton names.
+void registerBone(ClassBinding& b) {
+    registerObject3D(b);
+    b.ctor = [](const Args&, Store&) { return std::static_pointer_cast<void>(std::make_shared<Bone>()); };
+}
+
+// three's Skeleton(bones, boneInverses = []): the bones as an array of objects; without inverses
+// they are computed from the bones' current world matrices.
+void registerSkeleton(ClassBinding& b) {
+    b.ctor = [](const Args& a, Store& store) -> std::shared_ptr<void> {
+        std::vector<std::shared_ptr<Bone>> bones;
+        if (!a.empty()) {
+            if (a.at(0).kind != Value::Kind::Refs) throw Unsupported{"Skeleton needs an array of bones"};
+            for (const Value& ref : refsOf(a.at(0))) bones.push_back(store.shared<Bone>(ref, "Bone"));
+        }
+        std::vector<Matrix4> inverses;
+        if (a.size() > 1 && a.at(1).kind == Value::Kind::Refs)
+            for (const Value& ref : refsOf(a.at(1))) inverses.push_back(store.ref<Matrix4>(ref, "Matrix4"));
+        return std::static_pointer_cast<void>(std::make_shared<Skeleton>(std::move(bones), std::move(inverses)));
+    };
+    b.methods["update"] = [](void* self, const Args&, Store&) { as<Skeleton>(self)->update(); return Value{}; };
+    b.methods["pose"] = [](void* self, const Args&, Store&) { as<Skeleton>(self)->pose(); return Value{}; };
+    b.methods["calculateInverses"] = [](void* self, const Args&, Store&) {
+        as<Skeleton>(self)->calculateInverses();
+        return Value{};
+    };
+    b.getters["boneMatrices"] = [](void* self) {
+        const std::vector<float>& m = as<Skeleton>(self)->boneMatrices;
+        return Value::list(std::vector<double>(m.begin(), m.end()));
+    };
+    b.getters["bones.length"] = [](void* self) { return Value::of(double(as<Skeleton>(self)->bones.size())); };
+}
+
+// three's SkinnedMesh(geometry, material): bind(skeleton, bindMatrix?), pose(). bindMode stays
+// "attached": three types it as BindMode, which the catalog does not publish yet.
+void registerSkinnedMesh(ClassBinding& b) {
+    registerMesh(b);
+    b.ctor = [](const Args& a, Store& store) -> std::shared_ptr<void> {
+        std::shared_ptr<BufferGeometry> geometry;
+        std::shared_ptr<Material> material;
+        if (!a.empty() && a.at(0).kind == Value::Kind::Ref) geometry = geometryArg(store, a.at(0));
+        if (a.size() >= 2 && a.at(1).kind == Value::Kind::Ref) material = materialArg(store, a.at(1));
+        return std::static_pointer_cast<void>(std::make_shared<SkinnedMesh>(geometry, material));
+    };
+    b.methods["bind"] = [](void* self, const Args& a, Store& store) {
+        if (a.empty() || a.at(0).kind != Value::Kind::Ref) throw Unsupported{"bind needs a Skeleton"};
+        std::shared_ptr<Skeleton> skeleton = store.shared<Skeleton>(a.at(0), "Skeleton");
+        if (a.size() > 1 && a.at(1).kind == Value::Kind::Ref) {
+            const Matrix4& matrix = store.ref<Matrix4>(a.at(1), "Matrix4");
+            as<SkinnedMesh>(self)->bind(std::move(skeleton), &matrix);
+        } else {
+            as<SkinnedMesh>(self)->bind(std::move(skeleton));
+        }
+        return Value{};
+    };
+    b.methods["pose"] = [](void* self, const Args&, Store&) { as<SkinnedMesh>(self)->pose(); return Value{}; };
+    b.members["skeleton"] = [](void* self, const Args&, Store& store) -> Value {
+        const std::shared_ptr<Skeleton>& skeleton = as<SkinnedMesh>(self)->skeleton;
+        return skeleton ? store.share("Skeleton", skeleton) : Value{};
+    };
+    nestedMatrix<SkinnedMesh>(b, "bindMatrix", &SkinnedMesh::bindMatrix);
+    nestedMatrix<SkinnedMesh>(b, "bindMatrixInverse", &SkinnedMesh::bindMatrixInverse);
+}
+
 // three's InstancedMesh(geometry, material, count): every matrix the identity, no colour attribute
 // until setColorAt; the arrays are float32 and reach the GPU on `needsUpdate`.
 void registerInstancedMesh(ClassBinding& b) {
@@ -668,6 +733,9 @@ void registerSceneBindings(Registry& classes) {
     registerGroup(classes["Group"]);
     registerMesh(classes["Mesh"]);
     registerInstancedMesh(classes["InstancedMesh"]);
+    registerBone(classes["Bone"]);
+    registerSkeleton(classes["Skeleton"]);
+    registerSkinnedMesh(classes["SkinnedMesh"]);
 }
 
 }  // namespace tn::binding

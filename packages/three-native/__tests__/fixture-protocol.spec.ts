@@ -29,9 +29,18 @@ const ARGUMENTS: readonly FixtureArg[] = [
   false,
   null,
   { ref: "m" },
+  { refs: ["bone0", "bone1"] },
+  { refs: [] },
+  { array: [0, 1, 65535, 3], type: "Uint16Array" },
+  { array: [0.25, -0, 1e-30], type: "Float32Array" },
+  { array: [], type: "Uint8Array" },
 ];
 
 describe("argument encoding", () => {
+  it("refuses an array token that names no typed array", () => {
+    expect(() => decodeArg("a:Int64Array:0000000000000000")).toThrow("TN_PROTOCOL_ARG_INVALID");
+  });
+
   it("round-trips every argument type", () => {
     for (const argument of ARGUMENTS) {
       const encoded = encodeArg(argument);

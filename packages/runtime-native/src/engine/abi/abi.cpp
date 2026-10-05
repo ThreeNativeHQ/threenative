@@ -369,6 +369,7 @@ void fromBinding(tn_context* context, tn_handle_t self, const tn::binding::Value
             if (in.text == "\x01self") out->handle = self;
             else context->decode(in.text, out->handle);
             break;
+        case Kind::Refs: break; // an argument shape only; no binding returns one
     }
 }
 

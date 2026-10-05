@@ -109,8 +109,36 @@ export interface IFixtureNumber {
   readonly num: FixtureNumberName;
 }
 
+/** The typed arrays a fixture may build: a geometry attribute's own storage. */
+export const FIXTURE_ARRAY_TYPES = [
+  "Float32Array",
+  "Uint8Array",
+  "Uint16Array",
+  "Uint32Array",
+] as const;
+export type FixtureArrayType = (typeof FIXTURE_ARRAY_TYPES)[number];
+
+/** `new <type>(array)`: a typed array of finite numbers, for a BufferAttribute. */
+export interface IFixtureArray {
+  readonly array: readonly number[];
+  readonly type: FixtureArrayType;
+}
+
+/** A plain array of bound objects, as `new Skeleton([bone0, bone1])` takes. */
+export interface IFixtureRefs {
+  readonly refs: readonly string[];
+}
+
 /** Every argument an op or observation carries. */
-export type FixtureArg = number | string | boolean | null | IFixtureRef | IFixtureNumber;
+export type FixtureArg =
+  | number
+  | string
+  | boolean
+  | null
+  | IFixtureRef
+  | IFixtureNumber
+  | IFixtureArray
+  | IFixtureRefs;
 
 /** `abs` is an absolute difference; `ulps` is a distance in representable doubles. At least one. */
 export interface IFixtureTolerance {
@@ -347,8 +375,29 @@ export function fixtureErrors(value: unknown, expectedName?: string): readonly s
         errors.push(`${path}.num: must be one of ${FIXTURE_NUMBER_NAMES.join(", ")}`);
       return;
     }
+    if (keys.length === 2 && "array" in node && "type" in node) {
+      if (!FIXTURE_ARRAY_TYPES.includes(node.type as FixtureArrayType))
+        errors.push(`${path}.type: must be one of ${FIXTURE_ARRAY_TYPES.join(", ")}`);
+      if (
+        !Array.isArray(node.array) ||
+        !node.array.every((value) => typeof value === "number" && Number.isFinite(value))
+      )
+        errors.push(`${path}.array: must be an array of finite numbers`);
+      return;
+    }
+    if (keys.length === 1 && "refs" in node) {
+      if (!Array.isArray(node.refs)) {
+        errors.push(`${path}.refs: must be an array of bound ids`);
+        return;
+      }
+      for (const [index, id] of node.refs.entries()) {
+        if (typeof id !== "string" || !TOKEN.test(id) || !defined.has(id))
+          errors.push(`${path}.refs[${index}]: ${String(id)} is not a bound id`);
+      }
+      return;
+    }
     errors.push(
-      `${path}: must be a number, string, boolean, null, { "ref": id } or { "num": name }`,
+      `${path}: must be a number, string, boolean, null, { "ref": id }, { "num": name }, { "array": [...], "type": name } or { "refs": [...] }`,
     );
   };
 

@@ -106,6 +106,11 @@ export declare const BlendingEquation = {
 } as const;
 export type BlendingEquation = (typeof BlendingEquation)[keyof typeof BlendingEquation];
 
+/** Catalog supported: three/webgpu/Bone. */
+export declare class Bone extends Object3D {
+constructor();
+}
+
 /** Catalog supported: three/Box3. */
 export declare class Box3 {
 constructor(min?: Vector3, max?: Vector3);
@@ -1850,6 +1855,28 @@ export declare const Side = {
   DoubleSide: 2,
 } as const;
 export type Side = (typeof Side)[keyof typeof Side];
+
+/** Catalog supported: three/webgpu/Skeleton. */
+export declare class Skeleton {
+constructor();
+readonly boneMatrices: Float32Array | null;
+
+  calculateInverses(): void;
+
+  pose(): void;
+
+  update(): void;
+}
+
+/** Catalog supported: three/webgpu/SkinnedMesh. */
+export declare class SkinnedMesh extends Mesh {
+constructor();
+readonly skeleton: Skeleton;
+
+  bind(skeleton: Skeleton, bindMatrix?: Matrix4): void;
+
+  pose(): void;
+}
 
 /** Catalog supported: three/Sphere. */
 export declare class Sphere {

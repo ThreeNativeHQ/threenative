@@ -40,6 +40,11 @@ struct DrawItem {
     int renderOrder = 0;       // Object3D.renderOrder
     bool transparent = false;  // material.transparent: drawn after opaques, back to front, blended
     bool depthWrite = true;    // material.depthWrite
+    // SkinnedMesh: the skin attributes, the skeleton's palette this frame and the bind matrices.
+    BufferStore* skinIndices = nullptr; // u8, u16 or u32 ×4
+    BufferStore* skinWeights = nullptr; // f32 ×4
+    const std::vector<float>* boneMatrices = nullptr;
+    Matrix bindMatrix{}, bindMatrixInverse{};
     bool castShadow = false;    // Object3D.castShadow: drawn into every shadow map
     bool receiveShadow = false; // Object3D.receiveShadow: its lit program reads the shadow maps
     // InstancedMesh: one mat4 (16 floats) per instance, an optional rgb per instance, and how many draw.
@@ -163,8 +168,8 @@ private:
     enum Slot : uint8_t {
         kModelMatrix, kViewMatrix, kProjectionMatrix, kNormalMatrix, kDiffuse, kAlphaTest, kOpaque, kRoughness,
         kMetalness, kEmissive, kSpecular, kShininess, kIor, kSpecularIntensity, kSpecularColor,
-        kHemisphereSky, kHemisphereGround, kHemisphereDirection, kAmbient,
-        kSlotCount
+        kHemisphereSky, kHemisphereGround, kHemisphereDirection, kAmbient, kBoneBase, kBindMatrix,
+        kBindMatrixInverse, kSlotCount
     };
     // Per direct light i, `light{i}<Field>` (shader::LightLayout).
     enum LightField : uint8_t { kLightColor, kLightDirection, kLightPosition, kLightDistance, kLightDecay, kLightAxis,
@@ -250,6 +255,11 @@ private:
     std::vector<uint8_t> frameUniforms_;  // every draw's uniform blocks, written to the GPU once a frame
     Handle uniformBuffer_;
     uint64_t uniformCapacity_ = 0;
+    // Every skinned draw's bone palette this frame, one storage buffer the skinned programs index
+    // from their `boneBase`; grown (and the bind groups rebuilt) like the uniform buffer.
+    std::vector<float> frameBones_;
+    Handle bonesBuffer_;
+    uint64_t bonesCapacity_ = 0;
 };
 
 }  // namespace tn::engine

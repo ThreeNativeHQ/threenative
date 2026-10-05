@@ -72,4 +72,21 @@ Bone* Skeleton::getBoneByName(std::string_view name) const {
     return nullptr;
 }
 
+void SkinnedMesh::bind(std::shared_ptr<Skeleton> next, const Matrix4* matrix) {
+    skeleton = std::move(next);
+    if (matrix == nullptr) {
+        updateMatrixWorld(true);
+        if (skeleton) skeleton->calculateInverses();
+        matrix = &matrixWorld;
+    }
+    bindMatrix.copy(*matrix);
+    bindMatrixInverse.copy(*matrix).invert();
+}
+
+void SkinnedMesh::updateMatrixWorld(bool force) {
+    Mesh::updateMatrixWorld(force);
+    if (attached) bindMatrixInverse.copy(matrixWorld).invert();
+    else bindMatrixInverse.copy(bindMatrix).invert();
+}
+
 } // namespace tn::engine

@@ -19,6 +19,8 @@ struct PipelineTarget {
     bool blend = false;      // three's NormalBlending, premultipliedAlpha false (a transparent material)
     bool depthWrite = true;  // material.depthWrite
     WGPUPipelineLayout layout = nullptr;  // explicit layout (dynamic-offset uniforms); null: auto
+    // `skinIndex` as the geometry stores it: three's Uint8/16/32 attribute read as vec4<u32>.
+    WGPUVertexFormat skinIndex = WGPUVertexFormat_Uint16x4;
 };
 
 /**

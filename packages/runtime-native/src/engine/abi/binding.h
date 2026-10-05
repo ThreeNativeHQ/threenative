@@ -19,10 +19,12 @@
 namespace tn::binding {
 
 struct Value {
-    enum class Kind : uint8_t { Null, Number, String, Bool, Ref, Numbers };
+    enum class Kind : uint8_t { Null, Number, String, Bool, Ref, Numbers, Refs };
     Kind kind = Kind::Null;
     double number = 0;
-    std::string text;             // String payload, or the caller's object id for Ref
+    // String payload; the caller's object id for Ref; comma-separated ids for Refs (an array of
+    // objects, as `new Skeleton(bones)` takes); for Numbers, the typed array they came as, if any.
+    std::string text;
     bool flag = false;
     std::vector<double> numbers;  // a numeric array (`elements`, `toArray()`)
 
@@ -133,6 +135,14 @@ public:
     /** The numeric array a Ref names when it holds one (a boxed toArray() result); empty otherwise. */
     virtual std::vector<double> numbers(const Value& arg) = 0;
 
+    /** Resolves a Ref argument to shared ownership of its object, refusing a class mismatch. */
+    template <typename T>
+    std::shared_ptr<T> shared(const Value& arg, const char* cls) {
+        Object* object = find(arg);
+        if (!object || object->cls != cls) throw Unsupported{std::string("argument is not a ") + cls};
+        return std::static_pointer_cast<T>(object->ptr);
+    }
+
     /** Resolves a Ref argument, refusing a class mismatch. */
     template <typename T>
     T& ref(const Value& arg, const char* cls) {
@@ -141,6 +151,20 @@ public:
         return *static_cast<T*>(object->ptr.get());
     }
 };
+
+/** Each Ref in a Refs argument, in order. */
+inline std::vector<Value> refsOf(const Value& v) {
+    std::vector<Value> out;
+    if (v.kind != Value::Kind::Refs) return out;
+    std::size_t start = 0;
+    while (start < v.text.size()) {
+        std::size_t end = v.text.find(',', start);
+        if (end == std::string::npos) end = v.text.size();
+        out.push_back(Value{Value::Kind::Ref, 0, v.text.substr(start, end - start)});
+        start = end + 1;
+    }
+    return out;
+}
 
 /** The value a chaining method returns: the object it was called on. */
 inline Value chain() { return Value{Value::Kind::Ref, 0, "\x01self"}; }
