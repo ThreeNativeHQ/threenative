@@ -863,7 +863,7 @@ jobs:
 
   completion:
     name: Verify required integration receipts
-    needs: [paths, csg, ik, vegetation, decals, decals-native, tone, fog, fog-native, capture, fluid-collision, fluid-collision-native, packaged-quickjs, exposure, cold-boot]
+    needs: [paths, csg, ik, vegetation, decals, decals-native, tone, animation, fog, fog-native, capture, fluid-collision, fluid-collision-native, packaged-quickjs, exposure, cold-boot]
     if: ${{ always() }}
     runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER_LIGHT) && 'ubuntu-24.04' || vars.TN_RUNNER_LIGHT }}
     timeout-minutes: 5
