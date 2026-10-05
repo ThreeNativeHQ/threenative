@@ -28,7 +28,7 @@
 #### Phase 1: Native skeleton and unbatched skinning
 **Status:** NOT STARTED
 **Files:** proposed `packages/runtime-native/src/engine/animation/skinning/skeleton.cpp`, `packages/runtime-native/tests/native-engine/skinning/`
-- [ ] Native bone matrices match reference `Skeleton.update` output for the glTF rig corpus. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_skeleton_pose`
+- [x] Native bone matrices match reference `Skeleton.update` output for the glTF rig corpus. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_skeleton_pose` — 2026-10-05: 9 rigs, 36 poses, 0 differ (boneMatrices float32 bits and every matrixWorld float64 bit) on Dawn, ASan, wgpu and Wasm. Rigs: the repository's skinned glTF files (skinned-character, the templates' mannequin with 65 joints and player-viewmodel with 81, parsed without GLTFLoader) plus six seeded synthetic rigs. Red controls: pose() ignoring a bone parent, 93 differ; product order reversed, 8453 differ.
 - [ ] A single skinned rig renders and matches the upstream capture at three sampled times. proof: `pnpm parity` case `native-engine-skinned-single`
 
 #### Phase 2: Palette batching with the ported rules

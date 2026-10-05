@@ -335,7 +335,8 @@ set_property(GLOBAL APPEND PROPERTY TN_NATIVE_ENGINE_TEST_TARGETS tn-native-engi
 
 # PRD-516: three's animation system, starting with its interpolants.
 add_library(tn_engine_animation STATIC src/engine/animation/interpolant.cpp src/engine/animation/property_binding.cpp
-    src/engine/animation/mixer.cpp src/engine/animation/schedule.cpp)
+    src/engine/animation/mixer.cpp src/engine/animation/schedule.cpp
+    src/engine/animation/skinning/skeleton.cpp)
 tn_native_engine_target(tn_engine_animation)
 target_link_libraries(tn_engine_animation PUBLIC tn_engine_scene)
 target_include_directories(tn_engine_animation PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
@@ -359,6 +360,11 @@ tn_native_engine_test(tn-native-engine-animation-schedule-test tests/native-engi
     native_engine_animation_explicit_update=explicit_update)
 target_link_libraries(tn-native-engine-animation-schedule-test PRIVATE tn_engine_animation)
 target_include_directories(tn-native-engine-animation-mixer-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/animation)
+# PRD-518 phase 1: the recorded Bone/Skeleton poses reproduce over the native port.
+tn_native_engine_test(tn-native-engine-animation-skeleton-test tests/native-engine/animation/skeleton_test.cpp
+    native_engine_skeleton_pose=skeleton_pose)
+target_link_libraries(tn-native-engine-animation-skeleton-test PRIVATE tn_engine_animation)
+target_include_directories(tn-native-engine-animation-skeleton-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/animation)
 
 # PRD-528 phase 1, PRD-521 phase 3: the fixed-step clock and the world height buffer, ported from
 # packages/core/src/loop.ts, world-heightmap.ts and world.ts.
@@ -467,6 +473,12 @@ if(NOT EMSCRIPTEN)
                 packages/runtime-native/tests/native-engine/scene/static-transform-reference.ts --check
             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../..)
         set_tests_properties(native_engine_static_transform_reference_current PROPERTIES LABELS "native-engine")
+        # PRD-518 phase 1: the committed skeleton table is what the pinned three's Bone/Skeleton produce.
+        add_test(NAME native_engine_skeleton_reference_current
+            COMMAND ${TN_PNPM_EXECUTABLE} --workspace-root exec tsx
+                packages/runtime-native/tests/native-engine/animation/skeleton-reference.ts --check
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../..)
+        set_tests_properties(native_engine_skeleton_reference_current PROPERTIES LABELS "native-engine")
         add_test(NAME native_engine_json_reference_current
             COMMAND ${TN_PNPM_EXECUTABLE} --workspace-root exec tsx
                 packages/runtime-native/tests/native-engine/json/json-reference.ts --check
