@@ -1582,3 +1582,134 @@ GPU/render cost, combined-source native and actual WorldEnvironment/automatic-sc
 open with their thresholds unchanged. No acceptance box is ticked. Draft repair publication is
 authorized after fresh head/base/noncritical guards, clean independent merge review and normal
 pre-push drift hooks; the PR must remain draft until original runtime acceptance is satisfied.
+
+
+### Fresh original quality failure and bounded CPU repair — 2026-10-05
+
+Published source `c5357e39d8ecd0c29802e3cb2af633a2af40dcaa` ran the unchanged 31-arm motion
+verifier on hardware WebGPU (NVIDIA/Turing, Vulkan flags) from 17:16:06 to 17:19:49 UTC,
+PID 1708586, 223 seconds, exit 1. All 31 captures completed with empty diagnostics; authored
+linear equivalence and 11 checks passed. The four original edge/reveal checks still failed:
+full-resolution edge 0.06054592 versus no-AA 0.05029465 (required <0.04777992), warm reveal
+1.5856%; lower-input edge 0.08238862 versus no-AA 0.04933311 (required <0.04686646), warm reveal
+1.9081% and 1.7737%, against the unchanged <=1% bound. All original arms, scenarios, pixels,
+reports, hashes and terminal/lease receipts remain under
+`artifacts/pr398-original-qualification/c5357e39d8ecd0c29802e3cb2af633a2af40dcaa/20261005T171606Z`.
+This is quality evidence only; it does not qualify performance, native or the automatic scaler.
+
+Actual pixel inspection finds all 59 full-resolution frame-34 failures on one dim fence column;
+57 exactly match their never-occluded temporal control; the other two are darker in all three
+channels, with no positive red excess. The conservative stale gate stays
+unchanged. Independent CPU controls isolate two narrower defects: luminance-reweighted blending
+turns correctly registered 50% alternating linear coverage into mean 0.400194 instead of 0.5;
+and replacing a raw central input sample with a bilinear display sample narrows the same nine-texel
+variance bound from 0.804738 to 0.693517, incorrectly clipping legal history 0.75.
+
+The generated provider now selects the existing ordinary blend, and its clipping moments count
+nine raw input texels. The linear equivalence arm follows that production blend; weighted cubic
+comparison arms remain available. Velocity, jitter, depth rejection, current weights, gamma,
+reference/corpus, thresholds and negative controls are unchanged. Two real offline-WGSL contract
+failures were recorded before repair (luminance weighting and eight point loads); the repaired
+shader suite passes 5/5. The affected suite passes 307/307 across 15 files; root TS7, serial workspace
+and velocity-fixture typechecks exit zero on CPUs 10 and 22, one worker. Actual no-install generation
+changes only the starter fingerprint. Independent rendering/source review found no blocking issue.
+The first expected fingerprint failure and new-test type annotation failure are retained alongside
+the corrected green run. Portable controls, pixel diagnostics, reviews and validation receipts are
+in the delegated task directory; no external images were uploaded.
+
+These CPU repairs are a candidate for the next bounded hardware quality measurement, after PR388
+releases the GPU. They do not prove the four original failed checks pass. All outstanding quality,
+GPU/render cost, platform and automatic-resolution acceptance boxes remain open; PR398 stays draft
+at `prd:25%`. Publication and the next GPU slot require parent coordination.
+
+
+### Matched input-sample depth support, with original quality still red — 2026-10-05
+
+The authorized one-shot recheck at exact local source `a4a54f269` retained all 31 original arms,
+496 scored PNG hashes, zero capture diagnostics and the actual NVIDIA/Turing Vulkan adapter.
+It still passes 11/15 verifier checks. Full edge error is `0.05848247097103398` (required
+`<0.04777992218249867`); low-input edge is `0.08160088260921274` (required
+`<0.04686645747732535`). Full reveal +5 is 58/3,721 stale pixels (1.5587%); low reveal +1 is
+71/3,721 (1.9081%) and +5 is 66/3,721 (1.7737%). The unchanged reveal limit is <=1%.
+These are the rechecked base's measurements, not results for the following CPU patch. Both
+original 31-arm attempts remain retained in their owned immutable artifact directories.
+
+A fresh independent rendering critic inspected the actual masks/reference/sample chain. A
+constant-depth 0.4-pixel colour stripe, exact history and zero velocity isolate a missing sample
+coverage contract: instantaneous raw 3x3 clipping collapses valid partial coverage when a jitter
+phase misses the stripe. Repeated bilinear history transport independently broadens an impulse.
+The proposed accumulated-moment prototype is rejected: it validates history against itself,
+normalizes sparse neighboring confidence into amplified brightness, and can restore a previously
+clipped colour. No moment-history shader or new target is integrated. The original reconstruction
+and quality requirements remain open; the reference, masks and thresholds are unchanged.
+
+The bounded template fix instead validates the chosen depth/velocity texel in both depth rasters.
+`temporalDepthSamples.ts` recovers the exact integer index used by textureLoad, maps its centre
+through current jitter, unjittered surface velocity and previous jitter, and retains BOTH the
+original colour-centre rejection and the additional matched-point rejection. A surviving
+foreground neighbor cannot legalize removed red centre history. Both UV domains are checked.
+The jitter uniforms are captured before late first-compile synchronization, beside the matching
+saved depth matrices. Resolve and the existing counted compute dispatch use the same predicate.
+No target, pass, render loop, threshold or negative-control policy is added or relaxed.
+
+CPU proof in `/home/joao/Documents/Codex/2026-10-04/task-15`: exact-base regressions record 10 red
+and 38 passing cases, then all 48 initial cases pass. Final affected verification records
+317/317 tests across 16 selected files, including an actual WGSL compute-dispatch build with both
+depth supports. Root TS7, serial workspace and velocity-fixture types exit zero on CPUs 10/22,
+one worker. All 13 actual no-install scaffold hashes were measured; only starter changes to
+`f3cfe800f60828fe05fc3e87c99190ace71ed364a9598bb08fb167fc86268df0`. Final source is independently
+reviewed in `pr398-implemented-depth-guard-review.md` and `pr398-depth-guard-final-hash-addendum.md`.
+The earlier 315/317 template-contract failure is retained separately and repaired. This fix only
+adds rejection; its extra prior-depth read, possible thin-feature rejection, original hardware
+quality, cost and native gates require later evidence. No new GPU/native capture ran for it.
+Publication and any next capture remain held for parent coordination; phase boxes and label stay
+`prd:25%`.
+
+
+### Combined Gaussian reconstruction with mandatory clipping — 2026-10-05
+
+A new isolated CPU lane combines exact committed owner checkpoint `f73058a8ddda62110f2496f5871c1f5da7127ffe`
+with reviewed repair checkpoint `94c03074f02826e6cdda0c22a9059227f0bdf1a7`. No live owner patch or
+unknown script was imported. The owner Gaussian 3x3 current reconstruction and equally weighted
+raw-tap moments are retained, with ordinary linear-coverage blending and BOTH original colour-centre
+and matched selected-point depth rejection. Resolve and the existing counted compute dispatch still
+share the predicate; its thresholds, weights, corpus and original acceptance thresholds are unchanged.
+
+The owner's thin-feature lock is deliberately excluded: an accepted surviving black depth donor
+can legalize removed bright centre history. Two synthetic controls execute the authored colour
+graph with that accepted decision injected; the original ordinary/weighted results retain 0.95
+and 0.926829 bright colour on black. Both now clip to within 1e-6 of black. This restores mandatory
+raw-neighbourhood clipping instead of replacing it with a competing accumulated-history algorithm.
+The known instantaneous-clipping loss of valid thin coverage and history transport/donor ownership
+remain unresolved; removing the lock does not establish improved hardware edge quality.
+
+Reconstruction reads the actual enabled camera view offset at the same pre-sync point as current
+depth matrices. It no longer predicts Three's private jitter cursor. The actual-provider lazy-first
+CPU control fails at predicted `(0,-1/6)` for unjittered input `(0,0)`, then passes for that first
+input and the following normal hook cycle. This proves registration, not a measured visible
+first-frame defect after reset seeding. Gather loads now clamp to input boundaries while Gaussian
+weights retain virtual sample centres; a constant corner formerly attenuated from 0.3 to 0.175272
+now stays 0.3. Either reduced input axis selects reconstruction; a height-only case formerly
+returned plain 0.25 and now matches the independent Gaussian sum 0.117220. Coefficient -2.29 stays
+unchanged. No new target, pass, blend weight or rejection relaxation is introduced.
+
+Proof: retained genuine initial controls record 34 passing/3 failing cases, and additional
+footprint controls record 3 passing/2 failing cases before their repairs. Final
+`pnpm exec vitest run <17 affected files> --maxWorkers=1 --reporter=json` records **324/324 passed**
+in `pr398-combined-contracts.json`; exact commands and zero-exit root TS7, serial workspace and
+velocity-fixture typechecks are in `pr398-combined-validation.json` in the delegated task directory.
+Synthetic colour controls mock TSL algebra and inject validity; separate real pinned WGSL generation
+compiles the active Gaussian within the production-like Fn stack, proving nine bounded raw loads
+and no implicit sampler. Real provider/depth-counter generation and lifecycle controls also pass.
+All 13 actual no-install scaffolds were generated and hashed; only starter changes to
+`c799fd810c2c373dd29a730db3f0254fa4be86470a4a4d039aeceabd98c4527a`.
+Independent rendering review found no material defect in this bounded source and records its limits.
+Harness-only failures, the initial ivec2 declaration failure and corrected runs are retained separately.
+
+No GPU/native capture ran for this combined source. The preceding `94c03074f` qualification attempt
+completed only 14 arms before a canonical capture-mutex timeout, so it is not a completed 31-arm
+qualification; its retained partial original scores remain red. The complete earlier original
+quality boards and all their captures are preserved. All original quality, ghosting, GPU/render cost,
+platform and automatic-resolution acceptance rows remain unchanged and open. PR398 remains draft
+at `prd:25%`; portable local source is prepared for parent review, with publication/new CI and any
+next hardware capture held for parent coordination and fresh remote/committed-owner guards.

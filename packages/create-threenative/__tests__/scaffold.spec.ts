@@ -172,11 +172,12 @@ const BUG_REPORT_SKILL_PATHS = [
 // docs/verification/prd339-exposure-proof/completion-consumer-8bf16f4.json.
 // Current develop c18a42b integration: all13 actual generated trees were byte-compared
 // against reviewed 8bf trees; only the copied Three compute-only Storage3DTexture patch changed.
+// Recomputed in the isolated PR398 lane for linear coverage blending and coherent input moments;
+// actual no-install generation changes only starter. All thirteen generator hashes were measured.
+// Recomputed for the additional matched-surface depth guard; all other twelve stay unchanged.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Measured through actual generated trees after merging PR440/develop d3c009e44
   // into reviewed temporal source 9e9ccc88f; preserve both features and original assertions.
-  // Re-measured 2026-10-06 from the same actual trees after the starter's resolve gained the
-  // jitter-aware neighbourhood reconstruction and thin-feature lock: only `starter` moved.
   "action-rpg": "c87aedaae0f0fe3c28d0b6af09f131fe8139acdf54fb2bcea019f5ef9a31c538",
   minimal: "68c1f477096a929519e539eb496db9773e31d3cdf0567c5362c4f1303b4fb56e",
   platformer: "1476db1d5303e91509f49c0a222ab6f616f45c2e5a72f1c7e72d7b4c22ec8acc",
@@ -188,7 +189,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   sailing: "e3c64feec14399a3101807c83ba0906ba55285706d4d50907b71cf9e41195f1b",
   shooter: "c8a9755cfbdd536f4a7a6074b3a8e873a97636eabbe57c7529193a1b83da1f1b",
   snow: "ca9a8fe4bb0f8f583db48ba60e68f6b3f60af1407a8827e72855dc67e2744e36",
-  starter: "0e14f562393ba6bfa585a0486479a0c801cd18ed9395726b62dc689372d28d7b",
+  starter: "c799fd810c2c373dd29a730db3f0254fa4be86470a4a4d039aeceabd98c4527a",
   "tower-defense": "0f6b5be43f264488c0899ffd3518016946ad74f13028b277451a3b81152374e5",
 };
 

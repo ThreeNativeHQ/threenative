@@ -8,7 +8,7 @@ import type { Node, TextureNode } from "three/webgpu";
 import { type ITemporalAANode, createTemporalAAFrame } from "./temporalAAFrame.js";
 import { type PipelineContext, createTemporalAAHooks } from "./temporalAAHooks.js";
 import type { ITemporalRejectionMeasurement } from "./temporalRejectionCounter.js";
-import { createExperimentalTemporalResolve, haltonJitterOffset } from "./temporalResolve.js";
+import { createExperimentalTemporalResolve } from "./temporalResolve.js";
 import {
   type TemporalDepthRejection,
   type TemporalResolveNode,
@@ -50,6 +50,9 @@ export function createTemporalAA(
   const jitterOffset = uniform(new Vector2());
   const internals = node as unknown as ITemporalAANode;
   internals._historyValidUniform = historyValid;
+  internals._reconstructionJitterOffset = jitterOffset;
+  internals._currentJitterUV = uniform(new Vector2());
+  internals._previousJitterUV = uniform(new Vector2());
   // One instance of the depth-rejection equations, shared by the resolve, the counter and every
   // recompile, so a measured fraction cannot describe a different decision than the one drawn.
   let rejection: TemporalDepthRejection | undefined;
@@ -112,7 +115,8 @@ export function createTemporalAA(
       builder.renderer,
       jitterOffset,
       "linear",
-      "luminance",
+      // Keep the blend linear in coverage; luminance reweighting darkens thin moving geometry.
+      "ordinary",
       rejection,
     );
     if (pipeline !== undefined) hooks.installAfterSetup(pipeline.context, builder.renderer);
@@ -150,8 +154,6 @@ export function createTemporalAA(
       )
         pending = "resize";
       const reason = pending;
-      const [jitterX, jitterY] = haltonJitterOffset(internals._jitterIndex);
-      jitterOffset.value.set(jitterX, jitterY);
       frames.draw(frame.renderer, reason !== null, report.frame + 1);
       if (reason !== null && width === frames.display.x && height === frames.display.y) {
         frame.renderer.copyTextureToTexture(source.texture, internals._resolveRenderTarget.texture);

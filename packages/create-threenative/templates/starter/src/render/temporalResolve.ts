@@ -3,7 +3,7 @@
 // from this kernel; `temporalResolveMath.ts` and `temporalResolveDepth.ts` hold its equations.
 // Derived resolve source: three/examples/jsm/tsl/display/TRAANode.js (pinned 0.185.1).
 import type TRAANode from "three/addons/tsl/display/TRAANode.js";
-import { Fn, add, float, int, luminance, max, mix, smoothstep, texture, uv } from "three/tsl";
+import { Fn, add, float, int, luminance, max, mix, texture, uv } from "three/tsl";
 import type { Node } from "three/webgpu";
 import {
   type TemporalDepthRejection,
@@ -16,7 +16,7 @@ import {
   sampleCatmullRom,
 } from "./temporalResolveMath.js";
 
-export { CATMULL_ROM_BASIS, haltonJitterOffset } from "./temporalResolveMath.js";
+export { CATMULL_ROM_BASIS } from "./temporalResolveMath.js";
 
 /** Returns the amount of subpixel (expressed within [0, 1]) in the velocity. */
 const subpixelCorrection = Fn(([velocityUV, textureSize]: [Node<"vec2">, Node<"uvec2">]) => {
@@ -58,8 +58,8 @@ const flickerReduction = Fn(
  * only its resolve.
  *
  * `interpolation` and `blend` are the comparison arms: linear against Catmull–Rom history sampling,
- * and luminance reweighting against an ordinary blend at the same weight. The default arm keeps
- * upstream's behaviour at full resolution and adds the two-raster rules below.
+ * and luminance reweighting against an ordinary blend at the same weight. The default comparison keeps
+ * upstream's luminance weighting; the provider selects ordinary linear-coverage blending.
  */
 export function createExperimentalTemporalResolve(
   source: TRAANode,
@@ -86,20 +86,18 @@ export function createExperimentalTemporalResolve(
     const displaySize = historyNode.size(int(0)) as Node<"uvec2">;
     const validity = historyValidity(uvNode);
     const hasValidHistory = validity.get("hasValidHistory") as Node<"float">;
-    const canLock = validity.get("canLock") as Node<"float">;
     const historyUV = validity.get("historyUV") as Node<"vec2">;
     const offsetUV = validity.get("offsetUV") as Node<"vec2">;
     // Reconstruction: gather the current frame's 3×3 input neighbourhood around the jittered sample
     // the scene pass drew, and read its moments for the variance clip from the same taps. At a 1:1
-    // raster the kernel's tap centers land on the pixel centers, so the plain sample is exact and
-    // the reconstruction only adds its own blur; it is selected when the input raster is smaller.
+    // raster the plain current sample is exact; retain it instead of adding Gaussian blur.
     const reconstruction = reconstructNeighbourhood(
       node.beautyNode,
       uvNode,
       inputSize,
       jitterOffset,
     );
-    const upsampled = inputSize.x.lessThan(displaySize.x);
+    const upsampled = inputSize.x.lessThan(displaySize.x).or(inputSize.y.lessThan(displaySize.y));
     const currentColor = upsampled.select(
       reconstruction.get("color") as Node<"vec4">,
       node.beautyNode.sample(uvNode),
@@ -132,23 +130,11 @@ export function createExperimentalTemporalResolve(
       minColor,
       maxColor,
     );
-    // Thin-feature lock: variance clipping squashes a sub-pixel feature towards its background, so
-    // it never accumulates across jittered frames and a thin fence attenuates. Where geometry did
-    // not change (`canLock`) and the current pixel departs from its neighbourhood's mean luminance,
-    // reuse the unclipped history that already carries the accumulated feature instead.
-    const currentLuma = luminance(currentColor.rgb) as Node<"float">;
-    const meanLuma = (luminance(mean.rgb) as Node<"float">).add(1e-4);
-    const thinFeature = smoothstep(
-      0,
-      0.2,
-      currentLuma.sub(meanLuma).abs().div(meanLuma),
-    ) as Node<"float">;
-    const lock = canLock.mul(thinFeature).saturate() as Node<"float">;
-    const lockedHistoryColor = mix(clippedHistoryColor, historyColor, lock) as Node<"vec4">;
+    // Every accepted history colour still passes the raw current-tap variance box.
     // Diagnostic only: ordinary blending isolates luminance reweighting at the same weight.
     return blend === "ordinary"
-      ? mix(lockedHistoryColor, currentColor, currentWeight)
-      : flickerReduction(currentColor, lockedHistoryColor, currentWeight);
+      ? mix(clippedHistoryColor, currentColor, currentWeight)
+      : flickerReduction(currentColor, clippedHistoryColor, currentWeight);
   });
   return resolve();
 }

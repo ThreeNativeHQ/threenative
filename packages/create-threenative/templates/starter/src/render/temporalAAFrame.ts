@@ -90,6 +90,21 @@ export function createTemporalAAFrame(
     guardTemporalAASeams(internals);
     if (display.x < input.x || display.y < input.y)
       throw new Error("Temporal AA cannot resolve to a display raster below its input raster.");
+    // Snapshot the input's actual camera before late first-compile synchronization installs jitter
+    // for a subsequent draw. The saved depth and its inverse projection must describe one raster.
+    if (internals._currentJitterUV !== undefined && internals._previousJitterUV !== undefined) {
+      internals._previousJitterUV.value.copy(internals._currentJitterUV.value);
+      const view = camera.view;
+      internals._currentJitterUV.value.set(
+        view?.enabled === true ? view.offsetX / input.x : 0,
+        view?.enabled === true ? view.offsetY / input.y : 0,
+      );
+    }
+    const reconstructionView = camera.view;
+    internals._reconstructionJitterOffset?.value.set(
+      reconstructionView?.enabled === true ? reconstructionView.offsetX : 0,
+      reconstructionView?.enabled === true ? reconstructionView.offsetY : 0,
+    );
     // Store previous frame matrices before updating current ones.
     internals._previousCameraWorldMatrix.value.copy(internals._cameraWorldMatrix.value);
     internals._previousCameraProjectionMatrixInverse.value.copy(

@@ -41,6 +41,7 @@ import {
   viewZToPerspectiveDepth,
 } from "three/tsl";
 import type { Node, NodeMaterial, RenderTarget, TextureNode } from "three/webgpu";
+import { temporalDepthHasDisocclusion, temporalDepthHistoryUV } from "./temporalDepthSamples.js";
 
 /** A TSL uniform node: the shader reads it as a node, this reconstruction writes its value. */
 export interface ITemporalUniform<T> {
@@ -66,6 +67,11 @@ export interface ITemporalResolvePinned {
   _previousCameraProjectionMatrixInverse: Node<"mat4"> & ITemporalUniform<Matrix4>;
   /** Installed by `createTemporalAA`. 0 on a reset frame, which then weights current colour only. */
   _historyValidUniform?: ITemporalUniform<number>;
+  /** Input-pixel jitter for current-frame reconstruction, captured beside the depth matrices. */
+  _reconstructionJitterOffset?: Node<"vec2"> & ITemporalUniform<Vector2>;
+  /** Actual input jitter, in input-raster UVs, captured beside the matching depth matrices. */
+  _currentJitterUV?: Node<"vec2"> & ITemporalUniform<Vector2>;
+  _previousJitterUV?: Node<"vec2"> & ITemporalUniform<Vector2>;
 }
 
 export type TemporalResolveNode = TRAANode & ITemporalResolvePinned;
@@ -75,8 +81,6 @@ export interface ITemporalAANode extends ITemporalResolvePinned {
   _needsPostProcessingSync: boolean;
   _historyValidUniform: { value: number };
   _originalProjectionMatrix: Matrix4;
-  /** Three's own jitter cursor; the reconstruction reads the exact sample the scene pass drew. */
-  _jitterIndex: number;
   _velocityNode: {
     projectionMatrix: Matrix4 | null;
     setProjectionMatrix(matrix: Matrix4 | null): void;
@@ -162,7 +166,6 @@ export function createTemporalDepthRejection(
   };
   const historyValidityStruct = struct({
     hasValidHistory: "float",
-    canLock: "float",
     historyUV: "vec2",
     offsetUV: "vec2",
   });
@@ -170,8 +173,7 @@ export function createTemporalDepthRejection(
   const historyValid = (node._historyValidUniform ?? float(1)) as Node<"float">;
   /**
    * The one history-validity decision, parameterised by the pixel's own UV: `historyValid ∧ validUV
-   * ∧ ¬disocclusion`, plus `canLock` (`validUV ∧ ¬depthChanged`), which the resolve's thin-feature
-   * lock reads. The resolve weights its blend with this, and the rejection counter calls the
+   * ∧ ¬disocclusion`. The resolve weights its blend with this, and the rejection counter calls the
    * same node once per display pixel, so a reported fraction cannot diverge from the decision that
    * was drawn.
    *
@@ -188,18 +190,33 @@ export function createTemporalDepthRejection(
     const offsetUV = node.velocityNode.load(closestPositionTexel).xy.mul(vec2(0.5, -0.5));
     const historyUV = pixelUV.sub(offsetUV);
     const sampledPreviousDepth = previousDepth(historyUV);
-    const isValidUV = historyUV.greaterThanEqual(0).all().and(historyUV.lessThanEqual(1).all());
-    const isDisocclusion = closestDepth.sub(sampledPreviousDepth).greaterThan(node.depthThreshold);
+    let isValidUV = historyUV.greaterThanEqual(0).all().and(historyUV.lessThanEqual(1).all());
+    let isDisocclusion = closestDepth.sub(sampledPreviousDepth).greaterThan(node.depthThreshold);
+    if (node._currentJitterUV !== undefined && node._previousJitterUV !== undefined) {
+      // The conservative centre test remains intact. Also validate the actual closest texel whose
+      // velocity we used: previous depth is input sized and jittered, colour history is neither.
+      const depthHistoryUV = temporalDepthHistoryUV(
+        closestPositionTexel,
+        inputSize,
+        offsetUV,
+        node._currentJitterUV,
+        node._previousJitterUV,
+      );
+      const pointInBounds = depthHistoryUV
+        .greaterThanEqual(0)
+        .all()
+        .and(depthHistoryUV.lessThan(1).all());
+      isValidUV = isValidUV.and(pointInBounds);
+      isDisocclusion = temporalDepthHasDisocclusion(
+        closestDepth,
+        sampledPreviousDepth,
+        previousDepth(depthHistoryUV),
+        node.depthThreshold,
+      );
+    }
     // A reset frame has no legal cross-size colour seed, so it weights only the current frame.
     const hasValidHistory = historyValid.greaterThan(0.5).and(isValidUV.and(isDisocclusion.not()));
-    // The thin-feature lock may only fall back to raw history where geometry did not change.
-    // Two-sided on purpose: new geometry appearing closer is stale history too.
-    const isDepthChanged = closestDepth
-      .sub(sampledPreviousDepth)
-      .abs()
-      .greaterThan(node.depthThreshold);
-    const canLock = isValidUV.and(isDepthChanged.not());
-    return historyValidityStruct(hasValidHistory, canLock, historyUV, offsetUV);
+    return historyValidityStruct(hasValidHistory, historyUV, offsetUV);
   });
   return { currentDepth, previousDepth, historyValidity };
 }

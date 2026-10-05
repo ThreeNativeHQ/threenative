@@ -70,25 +70,6 @@ export function sampleCatmullRom(source: TextureNode, coordinate: Node<"vec2">) 
   })();
 }
 
-/**
- * The jitter Three's TRAANode applies for a given `_jitterIndex`. Copied from its module-private
- * `_haltonOffsets` so the resolve can reconstruct around the exact sample the scene pass drew.
- */
-export function haltonJitterOffset(index: number): [number, number] {
-  const halton = (start: number, base: number) => {
-    let fraction = 1;
-    let result = 0;
-    let value = start;
-    while (value > 0) {
-      fraction /= base;
-      result += fraction * (value % base);
-      value = Math.floor(value / base);
-    }
-    return result;
-  };
-  return [halton(index + 1, 2) - 0.5, halton(index + 1, 3) - 0.5];
-}
-
 const reconstructionStruct = struct({
   color: "vec4",
   mean: "vec4",
@@ -99,8 +80,8 @@ const reconstructionStruct = struct({
  * Reconstruct the current frame at an output pixel from the input raster's 3×3 neighbourhood. Each
  * tap's weight is a Gaussian (Blackman-Harris approximation) evaluated at the distance between the
  * tap's jittered sample center and the output pixel, so the same kernel sharpens a lower input
- * raster and gathers the moments the variance clip needs. At a 1:1 raster the tap centers land on
- * the pixel centers and the kernel reduces to the pixel itself.
+ * raster and gathers the moments the variance clip needs. The provider keeps the plain
+ * current sample at a 1:1 raster to avoid introducing additional spatial blur.
  */
 export function reconstructNeighbourhood(
   source: TextureNode,
@@ -132,7 +113,9 @@ export function reconstructNeighbourhood(
     const delta = pIn.sub(tapCenter);
     const weight = delta.dot(delta).mul(-2.29).exp();
     // Use max() to prevent NaN values from propagating.
-    const sample = source.load(tap).max(0);
+    // Match the colour sampler's clamp-to-edge support; robust out-of-bounds loads return zero.
+    const boundedTap = ivec2(vec2(tap).clamp(vec2(0), vec2(inputSize).sub(1)));
+    const sample = source.load(boundedTap).max(0);
     sumColor.addAssign(sample.mul(weight));
     sumWeight.addAssign(weight);
     moment1.addAssign(sample);
@@ -185,12 +168,7 @@ export function createTemporalResolveMath(node: TemporalResolveNode) {
   return {
     clipAABB,
     varianceClipping: Fn(
-      ([positionTexel, currentColor, historyColor, gamma]: [
-        Node<"vec2">,
-        Node<"vec4">,
-        Node<"vec4">,
-        Node<"float">,
-      ]) => {
+      ([positionTexel, historyColor, gamma]: [Node<"vec2">, Node<"vec4">, Node<"float">]) => {
         const offsets = [
           [-1, -1],
           [-1, 1],
@@ -201,8 +179,12 @@ export function createTemporalResolveMath(node: TemporalResolveNode) {
           [0, 1],
           [-1, 0],
         ];
-        const moment1 = currentColor.toVar();
-        const moment2 = currentColor.pow2().toVar();
+        // Moments describe nine equally weighted input texels. The displayed current colour may
+        // be filtered between them, so using it as the centre would change this population with
+        // display-pixel phase and clip valid history below the input neighbourhood's bound.
+        const centre = node.beautyNode.load(positionTexel).max(0);
+        const moment1 = centre.toVar();
+        const moment2 = centre.pow2().toVar();
         for (const [x, y] of offsets) {
           // Use max() to prevent NaN values from propagating.
           const neighbor = node.beautyNode.offset(ivec2(x, y)).load(positionTexel).max(0);
