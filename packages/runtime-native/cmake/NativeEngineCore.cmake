@@ -314,6 +314,11 @@ target_include_directories(tn-native-engine-animation-binding-test PRIVATE ${CMA
 tn_native_engine_test(tn-native-engine-animation-mixer-test tests/native-engine/animation/mixer_test.cpp
     native_engine_animation_mixer=mixer native_engine_animation_events=events)
 target_link_libraries(tn-native-engine-animation-mixer-test PRIVATE tn_engine_animation)
+# PRD-517: property tracks on materials, lights, cameras and visibility.
+tn_native_engine_test(tn-native-engine-animation-property-tracks-test tests/native-engine/animation/property_tracks_test.cpp
+    native_engine_animation_property_tracks=property_tracks)
+target_link_libraries(tn-native-engine-animation-property-tracks-test PRIVATE tn_engine_animation)
+target_include_directories(tn-native-engine-animation-property-tracks-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/animation)
 tn_native_engine_test(tn-native-engine-animation-schedule-test tests/native-engine/animation/schedule_test.cpp
     native_engine_animation_explicit_update=explicit_update)
 target_link_libraries(tn-native-engine-animation-schedule-test PRIVATE tn_engine_animation)

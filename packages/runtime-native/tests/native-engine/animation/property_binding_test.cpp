@@ -150,8 +150,8 @@ void binding() {
     std::printf("binding scenario: %zu steps, %zu differ\n", steps.size(), mismatched);
     CHECK(mismatched == 0);
     // Outside three's surface: the paths the engine does not carry yet say so.
-    CHECK(bindings[6].diagnostic.rfind("TN_NATIVE_ANIMATION_TRACK_UNSUPPORTED", 0) == 0);
-    CHECK(bindings[7].diagnostic.rfind("TN_NATIVE_ANIMATION_TRACK_UNSUPPORTED", 0) == 0);
+    CHECK(bindings[6].diagnostic.rfind("TN_NATIVE_ANIMATION_PATH_UNSUPPORTED", 0) == 0);
+    CHECK(bindings[7].diagnostic.rfind("TN_NATIVE_ANIMATION_PATH_UNSUPPORTED", 0) == 0);
 }
 
 } // namespace

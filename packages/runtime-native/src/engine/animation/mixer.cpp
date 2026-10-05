@@ -32,8 +32,11 @@ template <typename T, typename Key> auto findKey(std::vector<std::pair<Key, T>>&
 
 KeyframeTrack::KeyframeTrack(std::string trackName, TrackType trackType, const std::vector<double>& keyTimes,
                              const std::vector<double>& keyValues, Interpolation mode)
-    : name(std::move(trackName)), type(trackType), times(float32s(keyTimes)), values(float32s(keyValues)) {
-    if (type == TrackType::Quaternion)
+    : name(std::move(trackName)), type(trackType), times(float32s(keyTimes)),
+      values(trackType == TrackType::Bool ? keyValues : float32s(keyValues)) {
+    if (type == TrackType::Bool)
+        interpolation = Interpolation::Discrete;
+    else if (type == TrackType::Quaternion)
         interpolation = mode == Interpolation::Discrete ? Interpolation::Discrete : Interpolation::QuaternionLinear;
     else
         interpolation = mode == Interpolation::QuaternionLinear ? Interpolation::Linear : mode;
@@ -64,7 +67,16 @@ PropertyMixer::PropertyMixer(PropertyBinding propertyBinding, TrackType type, st
     : binding(std::move(propertyBinding)), valueSize(size), buffer(size * (type == TrackType::Quaternion ? 6 : 5), 0.0),
       type_(type) {}
 
+// three's _select: a boolean property takes the source whole once its share reaches one half.
+void PropertyMixer::select(std::size_t dst, std::size_t src, double t) {
+    if (t >= 0.5)
+        for (std::size_t i = 0; i != valueSize; ++i)
+            buffer[dst + i] = buffer[src + i];
+}
+
 void PropertyMixer::mix(std::size_t dst, std::size_t src, double t) {
+    if (type_ == TrackType::Bool)
+        return select(dst, src, t);
     if (type_ == TrackType::Quaternion) {
         slerpFlat(&buffer[dst], &buffer[dst], &buffer[src], t);
         return;
@@ -75,6 +87,8 @@ void PropertyMixer::mix(std::size_t dst, std::size_t src, double t) {
 }
 
 void PropertyMixer::mixAdditive(std::size_t dst, std::size_t src, double t) {
+    if (type_ == TrackType::Bool)
+        return select(dst, src, t);
     if (type_ == TrackType::Quaternion) {
         const std::size_t work = kWorkIndex * valueSize;
         multiplyQuaternionsFlat(&buffer[work], &buffer[dst], &buffer[src]);
@@ -86,6 +100,11 @@ void PropertyMixer::mixAdditive(std::size_t dst, std::size_t src, double t) {
 }
 
 void PropertyMixer::setIdentity() {
+    if (type_ == TrackType::Bool) { // _setAdditiveIdentityOther: the original value
+        for (std::size_t i = 0; i < valueSize; ++i)
+            buffer[kAddIndex * valueSize + i] = buffer[kOrigIndex * valueSize + i];
+        return;
+    }
     const std::size_t start = kAddIndex * valueSize;
     for (std::size_t i = start; i < start + valueSize; ++i)
         buffer[i] = 0;

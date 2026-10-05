@@ -6,6 +6,8 @@
 #include <string>
 #include <string_view>
 
+#include "engine/scene/camera.h"
+#include "engine/scene/material.h"
 #include "engine/scene/object3d.h"
 
 namespace tn::engine::animation {
@@ -28,12 +30,14 @@ bool parseTrackName(std::string_view trackName, ParsedPath& out, std::string& er
 Object3D* findNode(Object3D& root, const std::optional<std::string>& nodeName);
 
 /**
- * three's `PropertyBinding` for an object's transform and visibility: `position`, `quaternion`,
- * `scale` (whole, or one component as `[x]`), and `visible`. Like three, it binds on the first get
+ * three's `PropertyBinding` for an object's transform and visibility (`position`, `quaternion`,
+ * `scale`, whole or one component as `[x]`, and `visible`), a light's `intensity` and `color`, a
+ * perspective camera's `fov`, `zoom`, `near`, `far`, `aspect` and `focus`, and `.material.<property>`
+ * for the material's numbers and colours its type declares. Like three, it binds on the first get
  * or set after construction or `unbind()`, and the node it found stays bound until `unbind()`, even
  * after it leaves the root; the next bind searches again.
- * A path three would bind but the engine does not carry yet (an object name such as `material`,
- * another property) leaves the binding unavailable with TN_NATIVE_ANIMATION_TRACK_UNSUPPORTED in
+ * Any other path (another object name, a material array, morph influences, a property not listed)
+ * leaves the binding unavailable with TN_NATIVE_ANIMATION_PATH_UNSUPPORTED naming the path in
  * `diagnostic`; an unavailable binding's get and set do nothing, as three's do.
  */
 class PropertyBinding {
@@ -52,7 +56,19 @@ class PropertyBinding {
     std::string diagnostic;
 
   private:
-    enum class Target { Unavailable, Position, Quaternion, Scale, Component, Visible };
+    enum class Target {
+        Unavailable,
+        Position,
+        Quaternion,
+        Scale,
+        Component,
+        Visible,
+        MaterialNumber,
+        MaterialColor,
+        LightIntensity,
+        LightColor,
+        CameraNumber
+    };
 
     std::weak_ptr<Object3D> root_;
     std::weak_ptr<Object3D> node_;
@@ -62,6 +78,10 @@ class PropertyBinding {
     Target target_ = Target::Unavailable;
     Vector3 Object3D::* vector_ = nullptr; // the vector a component binding writes
     int component_ = 0;
+    std::shared_ptr<Material> material_; // the material bound, held until unbind like three's targetObject
+    double Material::* materialNumber_ = nullptr;
+    Color Material::* materialColor_ = nullptr;
+    double PerspectiveCamera::* cameraNumber_ = nullptr;
 };
 
 } // namespace tn::engine::animation

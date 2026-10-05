@@ -5,6 +5,11 @@
 #include <regex>
 #include <utility>
 
+#include "engine/scene/camera.h"
+#include "engine/scene/lights.h"
+#include "engine/scene/material.h"
+#include "engine/scene/nodes.h"
+
 namespace tn::engine::animation {
 
 namespace {
@@ -82,9 +87,67 @@ PropertyBinding::PropertyBinding(const std::shared_ptr<Object3D>& root, std::str
         node_ = found->weak_from_this();
 }
 
+namespace {
+
+// The material properties a track may drive, by the material types three declares them on. The
+// Physical setters that bump `version` on their own when crossing zero (clearcoat, sheen,
+// transmission, iridescence, anisotropy, dispersion) are left out until they are ported with it.
+double Material::* materialNumber(std::string_view property, MaterialType type) {
+    const bool lit = type != MaterialType::Basic,
+               pbr = type == MaterialType::Standard || type == MaterialType::Physical;
+    if (property == "opacity")
+        return &Material::opacity;
+    if (property == "alphaTest")
+        return &Material::alphaTest;
+    if (property == "emissiveIntensity" && lit)
+        return &Material::emissiveIntensity;
+    if (property == "roughness" && pbr)
+        return &Material::roughness;
+    if (property == "metalness" && pbr)
+        return &Material::metalness;
+    if (property == "shininess" && type == MaterialType::Phong)
+        return &Material::shininess;
+    if (property == "ior" && type == MaterialType::Physical)
+        return &Material::ior;
+    if (property == "specularIntensity" && type == MaterialType::Physical)
+        return &Material::specularIntensity;
+    return nullptr;
+}
+
+Color Material::* materialColor(std::string_view property, MaterialType type) {
+    if (property == "color")
+        return &Material::color;
+    if (property == "emissive" && type != MaterialType::Basic)
+        return &Material::emissive;
+    if (property == "specular" && type == MaterialType::Phong)
+        return &Material::specular;
+    if (property == "specularColor" && type == MaterialType::Physical)
+        return &Material::specularColor;
+    return nullptr;
+}
+
+double PerspectiveCamera::* cameraNumber(std::string_view property) {
+    if (property == "fov")
+        return &PerspectiveCamera::fov;
+    if (property == "zoom")
+        return &PerspectiveCamera::zoom;
+    if (property == "near")
+        return &PerspectiveCamera::near;
+    if (property == "far")
+        return &PerspectiveCamera::far;
+    if (property == "aspect")
+        return &PerspectiveCamera::aspect;
+    if (property == "focus")
+        return &PerspectiveCamera::focus;
+    return nullptr;
+}
+
+} // namespace
+
 void PropertyBinding::bind() {
     bindAttempted_ = true;
     target_ = Target::Unavailable;
+    material_.reset();
     if (!parsedOk_)
         return; // three throws in the constructor; the diagnostic says why
     std::shared_ptr<Object3D> node = node_.lock();
@@ -99,11 +162,31 @@ void PropertyBinding::bind() {
         return;
     }
     const auto unsupported = [&](const std::string& what) {
-        diagnostic = "TN_NATIVE_ANIMATION_TRACK_UNSUPPORTED: " + path + " (" + what + ")";
+        diagnostic = "TN_NATIVE_ANIMATION_PATH_UNSUPPORTED: " + path + " (" + what + ")";
     };
-    if (parsed_.objectName)
-        return unsupported("object " + *parsed_.objectName);
     const std::string& property = parsed_.propertyName;
+    const auto bound = [&](Target target) {
+        target_ = target;
+        diagnostic.clear();
+    };
+
+    // `.material.<property>`: three binds the mesh's material object itself, with NeedsUpdate
+    // versioning, and keeps that object until unbind even if the mesh takes another one.
+    if (parsed_.objectName) {
+        auto* mesh = dynamic_cast<Mesh*>(node.get());
+        if (*parsed_.objectName != "material" || parsed_.objectIndex || !mesh || !mesh->material)
+            return unsupported("object " + *parsed_.objectName);
+        if (parsed_.propertyIndex)
+            return unsupported("property " + property + "[" + *parsed_.propertyIndex + "]");
+        material_ = mesh->material;
+        if ((materialNumber_ = materialNumber(property, material_->type)))
+            return bound(Target::MaterialNumber);
+        if ((materialColor_ = materialColor(property, material_->type)))
+            return bound(Target::MaterialColor);
+        material_.reset();
+        return unsupported("material property " + property);
+    }
+
     Vector3 Object3D::* vector = property == "position" ? &Object3D::position
                                  : property == "scale"  ? &Object3D::scale
                                                         : nullptr;
@@ -113,28 +196,33 @@ void PropertyBinding::bind() {
             if (*parsed_.propertyIndex == kComponents[i]) {
                 vector_ = vector;
                 component_ = i;
-                target_ = Target::Component;
-                diagnostic.clear();
-                return;
+                return bound(Target::Component);
             }
         }
         return unsupported("property " + property + "[" + *parsed_.propertyIndex + "]");
     }
     if (property == "position")
-        target_ = Target::Position;
-    else if (property == "scale")
-        target_ = Target::Scale;
-    else if (property == "quaternion")
-        target_ = Target::Quaternion;
-    else if (property == "visible")
-        target_ = Target::Visible;
-    else
-        return unsupported("property " + property);
-    diagnostic.clear();
+        return bound(Target::Position);
+    if (property == "scale")
+        return bound(Target::Scale);
+    if (property == "quaternion")
+        return bound(Target::Quaternion);
+    if (property == "visible")
+        return bound(Target::Visible);
+    if (dynamic_cast<Light*>(node.get())) {
+        if (property == "intensity")
+            return bound(Target::LightIntensity);
+        if (property == "color")
+            return bound(Target::LightColor);
+    }
+    if (dynamic_cast<PerspectiveCamera*>(node.get()) && (cameraNumber_ = cameraNumber(property)))
+        return bound(Target::CameraNumber);
+    return unsupported("property " + property);
 }
 
 void PropertyBinding::unbind() {
     node_.reset();
+    material_.reset();
     target_ = Target::Unavailable;
     bindAttempted_ = false;
 }
@@ -145,51 +233,62 @@ void PropertyBinding::getValue(double* buffer, std::size_t offset) {
     const std::shared_ptr<Object3D> node = node_.lock();
     if (!node)
         return;
+    const auto put = [&](const auto& array) { std::copy(array.begin(), array.end(), buffer + offset); };
     switch (target_) {
     case Target::Unavailable:
         return;
-    case Target::Position: {
-        const auto a = node->position.toArray();
-        std::copy(a.begin(), a.end(), buffer + offset);
-        return;
-    }
-    case Target::Scale: {
-        const auto a = node->scale.toArray();
-        std::copy(a.begin(), a.end(), buffer + offset);
-        return;
-    }
-    case Target::Quaternion: {
-        const auto a = node->quaternion.toArray();
-        std::copy(a.begin(), a.end(), buffer + offset);
-        return;
-    }
+    case Target::Position:
+        return put(node->position.toArray());
+    case Target::Scale:
+        return put(node->scale.toArray());
+    case Target::Quaternion:
+        return put(node->quaternion.toArray());
     case Target::Component:
         buffer[offset] = ((*node).*vector_).getComponent(component_);
         return;
     case Target::Visible:
         buffer[offset] = node->visible() ? 1 : 0;
         return;
+    case Target::MaterialNumber:
+        buffer[offset] = (*material_).*materialNumber_;
+        return;
+    case Target::MaterialColor: {
+        const Color& c = (*material_).*materialColor_;
+        return put(std::array<double, 3>{c.r, c.g, c.b});
+    }
+    case Target::LightIntensity:
+        buffer[offset] = static_cast<Light&>(*node).intensity;
+        return;
+    case Target::LightColor: {
+        const Color& c = static_cast<Light&>(*node).color;
+        return put(std::array<double, 3>{c.r, c.g, c.b});
+    }
+    case Target::CameraNumber:
+        buffer[offset] = static_cast<PerspectiveCamera&>(*node).*cameraNumber_;
+        return;
     }
 }
 
-// three's setters with MatrixWorldNeedsUpdate versioning: every write to an Object3D flags it.
+// three's setters by versioning: an Object3D target flags matrixWorldNeedsUpdate, a material
+// target sets needsUpdate (its version moves on every write, as three's does).
 void PropertyBinding::setValue(const double* buffer, std::size_t offset) {
     if (!bindAttempted_)
         bind();
     const std::shared_ptr<Object3D> node = node_.lock();
     if (!node || target_ == Target::Unavailable)
         return;
+    const int at = static_cast<int>(offset);
     switch (target_) {
     case Target::Unavailable:
         return;
     case Target::Position:
-        node->position.fromArray(buffer, static_cast<int>(offset));
+        node->position.fromArray(buffer, at);
         break;
     case Target::Scale:
-        node->scale.fromArray(buffer, static_cast<int>(offset));
+        node->scale.fromArray(buffer, at);
         break;
     case Target::Quaternion:
-        node->quaternion.fromArray(buffer, static_cast<int>(offset));
+        node->quaternion.fromArray(buffer, at);
         break;
     case Target::Component:
         ((*node).*vector_).setComponent(component_, buffer[offset]);
@@ -197,6 +296,23 @@ void PropertyBinding::setValue(const double* buffer, std::size_t offset) {
     // three stores the number itself; any read of `visible` treats it as JavaScript truthiness.
     case Target::Visible:
         node->setVisible(buffer[offset] != 0 && !std::isnan(buffer[offset]));
+        break;
+    case Target::MaterialNumber:
+        (*material_).*materialNumber_ = buffer[offset];
+        material_->needsUpdate();
+        return;
+    case Target::MaterialColor:
+        ((*material_).*materialColor_).fromArray(buffer, at);
+        material_->needsUpdate();
+        return;
+    case Target::LightIntensity:
+        static_cast<Light&>(*node).intensity = buffer[offset];
+        break;
+    case Target::LightColor:
+        static_cast<Light&>(*node).color.fromArray(buffer, at);
+        break;
+    case Target::CameraNumber:
+        static_cast<PerspectiveCamera&>(*node).*cameraNumber_ = buffer[offset];
         break;
     }
     node->matrixWorldNeedsUpdate = true;

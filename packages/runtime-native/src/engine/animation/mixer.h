@@ -18,12 +18,13 @@ namespace tn::engine::animation {
 // three's constants, by meaning: LoopOnce/LoopRepeat/LoopPingPong and the two blend modes.
 enum class Loop { Once, Repeat, PingPong };
 enum class BlendMode { Normal, Additive };
-/** A track's ValueTypeName. Boolean, string and colour tracks are not carried yet. */
-enum class TrackType { Number, Vector, Quaternion };
+/** A track's ValueTypeName. String tracks are not carried yet. */
+enum class TrackType { Number, Vector, Quaternion, Color, Bool };
 
 /**
- * three's NumberKeyframeTrack, VectorKeyframeTrack and QuaternionKeyframeTrack. Times and values are
- * stored as three stores them, in float32 (each entry is that float's exact double).
+ * three's Number, Vector, Quaternion, Color and BooleanKeyframeTrack. Times and values are stored as
+ * three stores them: float32 (each entry is that float's exact double), except a boolean track's
+ * values, a plain array of true and false, held here as 1 and 0.
  */
 struct KeyframeTrack {
     KeyframeTrack(std::string name, TrackType type, const std::vector<double>& times, const std::vector<double>& values,
@@ -32,8 +33,9 @@ struct KeyframeTrack {
     std::string name;
     TrackType type;
     std::vector<double> times, values;
-    /** What createInterpolant builds: a quaternion track's Linear is QuaternionLinear, and its
-     * Smooth falls back to Linear, as three's setInterpolation does. */
+    /** What createInterpolant builds: a quaternion track's Linear is QuaternionLinear and its
+     * Smooth falls back to Linear; a boolean track is always Discrete, as three's setInterpolation
+     * falls back to each track's default. */
     Interpolation interpolation;
 
     [[nodiscard]] std::size_t valueSize() const { return values.size() / times.size(); }
@@ -72,6 +74,7 @@ class PropertyMixer {
     const Object3D* rootKey = nullptr; // three keys bindings by root uuid; the root is the key here
 
   private:
+    void select(std::size_t dst, std::size_t src, double t);
     void mix(std::size_t dst, std::size_t src, double t);
     void mixAdditive(std::size_t dst, std::size_t src, double t);
     void setIdentity();

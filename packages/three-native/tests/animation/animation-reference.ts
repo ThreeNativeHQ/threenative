@@ -323,7 +323,7 @@ const bindingLines = [
 ];
 
 // ---- AnimationMixer: clips and a timeline of operations, both data, replayed by the native test
-type TrackKind = "vector" | "quaternion" | "number";
+type TrackKind = "vector" | "quaternion" | "number" | "color" | "bool";
 interface ITrackSpec {
   name: string;
   kind: TrackKind;
@@ -548,188 +548,407 @@ const TRACK_TYPES = {
   vector: three.VectorKeyframeTrack,
   quaternion: three.QuaternionKeyframeTrack,
   number: three.NumberKeyframeTrack,
+  color: three.ColorKeyframeTrack,
+  bool: three.BooleanKeyframeTrack,
+};
+const TRACK_TYPE_NAMES: Record<TrackKind, string> = {
+  vector: "Vector",
+  quaternion: "Quaternion",
+  number: "Number",
+  color: "Color",
+  bool: "Bool",
 };
 const INTERPOLATIONS = {
   Discrete: three.InterpolateDiscrete,
   Linear: three.InterpolateLinear,
   Smooth: three.InterpolateSmooth,
 };
-const clips = CLIPS.map(
-  (c) =>
-    new three.AnimationClip(
-      c.name,
-      c.duration,
-      c.tracks.map(
-        (s) => new TRACK_TYPES[s.kind](s.name, s.times, s.values, INTERPOLATIONS[s.interpolation]),
-      ),
-      c.additive ? three.AdditiveAnimationBlendMode : three.NormalAnimationBlendMode,
-    ),
-);
-const mixer = new three.AnimationMixer(rig);
-const actions = clips.map((clip) => mixer.clipAction(clip));
-const mixerEvents: string[] = [];
-let frame = 0;
-for (const type of ["finished", "loop"]) {
-  mixer.addEventListener(
-    type,
-    (e: {
-      type: string;
-      action: { getClip(): { name: string } };
-      direction?: number;
-      loopDelta?: number;
-    }) => {
-      mixerEvents.push(
-        `${frame}:${e.type}:${e.action.getClip().name}:${e.direction ?? 0}:${bits(e.loopDelta ?? 0)}`,
-      );
-    },
-  );
-}
-const applyOp = ([, op, i, a, b, c]: Op) => {
-  const action = actions[i];
-  switch (op) {
-    case "play":
-      action.play();
-      break;
-    case "stop":
-      action.stop();
-      break;
-    case "reset":
-      action.reset();
-      break;
-    case "fadeIn":
-      action.fadeIn(a);
-      break;
-    case "fadeOut":
-      action.fadeOut(a);
-      break;
-    case "crossFadeFrom":
-      action.crossFadeFrom(actions[a], b, c === 1);
-      break;
-    case "crossFadeTo":
-      action.crossFadeTo(actions[a], b, c === 1);
-      break;
-    case "halt":
-      action.halt(a);
-      break;
-    case "warp":
-      action.warp(a, b, c);
-      break;
-    case "setLoop":
-      action.setLoop(LOOPS[a], b);
-      break;
-    case "clamp":
-      action.clampWhenFinished = a === 1;
-      break;
-    case "weight":
-      action.weight = a;
-      break;
-    case "timeScale":
-      action.timeScale = a;
-      break;
-    case "setEffectiveWeight":
-      action.setEffectiveWeight(a);
-      break;
-    case "setEffectiveTimeScale":
-      action.setEffectiveTimeScale(a);
-      break;
-    case "setDuration":
-      action.setDuration(a);
-      break;
-    case "syncWith":
-      action.syncWith(actions[a]);
-      break;
-    case "startAt":
-      action.startAt(mixer.time + a);
-      break;
-    case "zeroSlope":
-      action.zeroSlopeAtStart = a === 1;
-      action.zeroSlopeAtEnd = b === 1;
-      break;
-    case "mixerTimeScale":
-      mixer.timeScale = a;
-      break;
-    case "mixerSetTime":
-      mixer.setTime(a);
-      break;
-    case "stopAll":
-      mixer.stopAllAction();
-      break;
-    case "uncacheAction":
-      mixer.uncacheAction(clips[i]);
-      break;
-    default:
-      throw new Error(`unknown op ${op}`);
-  }
-};
 const flag = (x: boolean) => (x ? 1 : 0);
-const poses: string[] = [];
-for (frame = 0; frame < FRAMES; ++frame) {
-  for (const op of OPS) if (op[0] === frame) applyOp(op);
-  mixer.update(DT[frame] as number);
-  if (frame % 5 !== 4) continue;
-  const nodes = RIG.map(
-    (o) => `${o.name}:p=${vec(o.position)};q=${vec(o.quaternion)};s=${vec(o.scale)}`,
+const cDoubles = (xs: number[]) =>
+  xs.map((x) => `std::bit_cast<double>(${hex64(f64(Number(x)))})`).join(", ");
+
+/**
+ * Plays `clipSpecs` on a mixer over `root` through the timeline `ops`, one update per delta, and
+ * records `observe()` plus every action's state and the mixer's stats every fifth frame, and every
+ * loop and finished event. Returns those and the C++ table lines that let the native test rebuild
+ * the same clips, timeline and deltas.
+ */
+function runMixerScenario(
+  clipSpecs: IClipSpec[],
+  ops: Op[],
+  deltas: number[],
+  root: InstanceType<typeof three.Object3D>,
+  observe: () => string[],
+) {
+  const clips = clipSpecs.map(
+    (c) =>
+      new three.AnimationClip(
+        c.name,
+        c.duration,
+        c.tracks.map(
+          (s) =>
+            new TRACK_TYPES[s.kind](
+              s.name,
+              s.times,
+              s.kind === "bool" ? s.values.map((v) => v === 1) : s.values,
+              INTERPOLATIONS[s.interpolation],
+            ),
+        ),
+        c.additive ? three.AdditiveAnimationBlendMode : three.NormalAnimationBlendMode,
+      ),
   );
-  const states = actions.map(
-    (a, i) =>
-      `a${i}:t=${bits(a.time)};w=${bits(a.getEffectiveWeight())};ts=${bits(a.getEffectiveTimeScale())};e=${flag(a.enabled)};p=${flag(a.paused)};r=${flag(a.isRunning())};s=${flag(a.isScheduled())}`,
-  );
-  const s = mixer.stats;
-  poses.push(
-    [
-      `f${frame}`,
-      `t=${bits(mixer.time)}`,
-      ...nodes,
-      ...states,
-      `stats=${s.actions.total},${s.actions.inUse},${s.bindings.total},${s.bindings.inUse},${s.controlInterpolants.total},${s.controlInterpolants.inUse}`,
-    ].join("|"),
-  );
+  const mixer = new three.AnimationMixer(root);
+  const actions = clips.map((clip) => mixer.clipAction(clip));
+  const events: string[] = [];
+  let frame = 0;
+  for (const type of ["finished", "loop"]) {
+    mixer.addEventListener(
+      type,
+      (e: {
+        type: string;
+        action: { getClip(): { name: string } };
+        direction?: number;
+        loopDelta?: number;
+      }) => {
+        events.push(
+          `${frame}:${e.type}:${e.action.getClip().name}:${e.direction ?? 0}:${bits(e.loopDelta ?? 0)}`,
+        );
+      },
+    );
+  }
+  const applyOp = ([, op, i, a, b, c]: Op) => {
+    const action = actions[i];
+    switch (op) {
+      case "play":
+        action.play();
+        break;
+      case "stop":
+        action.stop();
+        break;
+      case "reset":
+        action.reset();
+        break;
+      case "fadeIn":
+        action.fadeIn(a);
+        break;
+      case "fadeOut":
+        action.fadeOut(a);
+        break;
+      case "crossFadeFrom":
+        action.crossFadeFrom(actions[a], b, c === 1);
+        break;
+      case "crossFadeTo":
+        action.crossFadeTo(actions[a], b, c === 1);
+        break;
+      case "halt":
+        action.halt(a);
+        break;
+      case "warp":
+        action.warp(a, b, c);
+        break;
+      case "setLoop":
+        action.setLoop(LOOPS[a], b);
+        break;
+      case "clamp":
+        action.clampWhenFinished = a === 1;
+        break;
+      case "weight":
+        action.weight = a;
+        break;
+      case "timeScale":
+        action.timeScale = a;
+        break;
+      case "setEffectiveWeight":
+        action.setEffectiveWeight(a);
+        break;
+      case "setEffectiveTimeScale":
+        action.setEffectiveTimeScale(a);
+        break;
+      case "setDuration":
+        action.setDuration(a);
+        break;
+      case "syncWith":
+        action.syncWith(actions[a]);
+        break;
+      case "startAt":
+        action.startAt(mixer.time + a);
+        break;
+      case "zeroSlope":
+        action.zeroSlopeAtStart = a === 1;
+        action.zeroSlopeAtEnd = b === 1;
+        break;
+      case "mixerTimeScale":
+        mixer.timeScale = a;
+        break;
+      case "mixerSetTime":
+        mixer.setTime(a);
+        break;
+      case "stopAll":
+        mixer.stopAllAction();
+        break;
+      case "uncacheAction":
+        mixer.uncacheAction(clips[i]);
+        break;
+      default:
+        throw new Error(`unknown op ${op}`);
+    }
+  };
+  const samples: string[] = [];
+  for (frame = 0; frame < deltas.length; ++frame) {
+    for (const op of ops) if (op[0] === frame) applyOp(op);
+    mixer.update(deltas[frame] as number);
+    if (frame % 5 !== 4) continue;
+    const states = actions.map(
+      (a, i) =>
+        `a${i}:t=${bits(a.time)};w=${bits(a.getEffectiveWeight())};ts=${bits(a.getEffectiveTimeScale())};e=${flag(a.enabled)};p=${flag(a.paused)};r=${flag(a.isRunning())};s=${flag(a.isScheduled())}`,
+    );
+    const s = mixer.stats;
+    samples.push(
+      [
+        `f${frame}`,
+        `t=${bits(mixer.time)}`,
+        ...observe(),
+        ...states,
+        `stats=${s.actions.total},${s.actions.inUse},${s.bindings.total},${s.bindings.inUse},${s.controlInterpolants.total},${s.controlInterpolants.inUse}`,
+      ].join("|"),
+    );
+  }
+  const lines = [
+    `// Generated by packages/three-native/tests/animation/animation-reference.ts from three@${version}.`,
+    "// Do not edit: rerun the generator. Doubles are their 16 hex digits of bits.",
+    ...clipSpecs.flatMap((c, ci) =>
+      c.tracks.flatMap((s, ti) => [
+        `static const double kTimes${ci}_${ti}[] = {${cDoubles(s.times)}};`,
+        `static const double kValues${ci}_${ti}[] = {${cDoubles(s.values)}};`,
+      ]),
+    ),
+    "static const TrackSpec kTracks[] = {",
+    ...clipSpecs.flatMap((c, ci) =>
+      c.tracks.map(
+        (s, ti) =>
+          `    {${ci}, ${cString(s.name)}, TrackType::${TRACK_TYPE_NAMES[s.kind]}, Interpolation::${s.interpolation}, kTimes${ci}_${ti}, std::size(kTimes${ci}_${ti}), kValues${ci}_${ti}, std::size(kValues${ci}_${ti})},`,
+      ),
+    ),
+    "};",
+    "static const ClipSpec kClips[] = {",
+    ...clipSpecs.map(
+      (c) =>
+        `    {${cString(c.name)}, std::bit_cast<double>(${hex64(f64(c.duration))}), ${c.additive ? "BlendMode::Additive" : "BlendMode::Normal"}},`,
+    ),
+    "};",
+    "static const OpSpec kOps[] = {",
+    ...ops.map(
+      ([fr, op, i, a, b, c]) => `    {${fr}, ${cString(op)}, ${i}, ${cDoubles([a, b, c])}},`,
+    ),
+    "};",
+    `static const double kDeltas[] = {${cDoubles(deltas)}};`,
+    "static const char* const kSamples[] = {",
+    ...samples.map((x) => `    ${cString(x)},`),
+    "};",
+    "static const char* const kEvents[] = {",
+    ...events.map((x) => `    ${cString(x)},`),
+    "};",
+    "",
+  ];
+  return lines;
 }
 
-const cDoubles = (xs: number[]) =>
-  xs.map((x) => `std::bit_cast<double>(${hex64(f64(x))})`).join(", ");
-const mixerLines = [
-  `// Generated by packages/three-native/tests/animation/animation-reference.ts from three@${version}.`,
-  "// Do not edit: rerun the generator. Doubles are their 16 hex digits of bits.",
-  ...CLIPS.flatMap((c, ci) =>
-    c.tracks.flatMap((s, ti) => [
-      `static const double kTimes${ci}_${ti}[] = {${cDoubles(s.times)}};`,
-      `static const double kValues${ci}_${ti}[] = {${cDoubles(s.values)}};`,
-    ]),
-  ),
-  "static const TrackSpec kTracks[] = {",
-  ...CLIPS.flatMap((c, ci) =>
-    c.tracks.map(
-      (s, ti) =>
-        `    {${ci}, ${cString(s.name)}, TrackType::${s.kind === "vector" ? "Vector" : s.kind === "quaternion" ? "Quaternion" : "Number"}, Interpolation::${s.interpolation}, kTimes${ci}_${ti}, std::size(kTimes${ci}_${ti}), kValues${ci}_${ti}, std::size(kValues${ci}_${ti})},`,
-    ),
-  ),
-  "};",
-  "static const ClipSpec kClips[] = {",
-  ...CLIPS.map(
-    (c) =>
-      `    {${cString(c.name)}, std::bit_cast<double>(${hex64(f64(c.duration))}), ${c.additive ? "BlendMode::Additive" : "BlendMode::Normal"}},`,
-  ),
-  "};",
-  "static const OpSpec kOps[] = {",
-  ...OPS.map(
-    ([fr, op, i, a, b, c]) => `    {${fr}, ${cString(op)}, ${i}, ${cDoubles([a, b, c])}},`,
-  ),
-  "};",
-  `static const double kDeltas[] = {${cDoubles(DT)}};`,
-  "static const char* const kSamples[] = {",
-  ...poses.map((s) => `    ${cString(s)},`),
-  "};",
-  "static const char* const kEvents[] = {",
-  ...mixerEvents.map((e) => `    ${cString(e)},`),
-  "};",
-  "",
+const mixerLines = runMixerScenario(CLIPS, OPS, DT, rig, () =>
+  RIG.map((o) => `${o.name}:p=${vec(o.position)};q=${vec(o.quaternion)};s=${vec(o.scale)}`),
+);
+
+// ---- PRD-517: property tracks on materials, lights, a camera and visibility, same mixer
+const stage = named("stage");
+const cubeMaterial = new three.MeshStandardMaterial({
+  color: 0x3366cc,
+  roughness: 0.5,
+  transparent: true,
+});
+const cube = Object.assign(new three.Mesh(new three.BoxGeometry(), cubeMaterial), { name: "cube" });
+const ballMaterial = new three.MeshPhongMaterial({ color: 0xffffff, shininess: 30 });
+const ball = Object.assign(new three.Mesh(new three.SphereGeometry(), ballMaterial), {
+  name: "ball",
+});
+const sun = Object.assign(new three.DirectionalLight(0xffeedd, 2), { name: "sun" });
+const cam = Object.assign(new three.PerspectiveCamera(50, 1.5, 0.1, 100), { name: "cam" });
+const empty = named("empty");
+stage.add(cube, ball, sun, cam, empty);
+const PROPERTY_CLIPS: IClipSpec[] = [
+  {
+    name: "look",
+    duration: -1,
+    additive: false,
+    tracks: [
+      {
+        name: "cube.material.color",
+        kind: "color",
+        interpolation: "Linear",
+        times: [0, 0.5, 1],
+        values: [0.2, 0.4, 0.8, 0.9, 0.3, 0.1, 0.2, 0.4, 0.8],
+      },
+      {
+        name: "cube.material.opacity",
+        kind: "number",
+        interpolation: "Linear",
+        times: [0, 0.4, 1],
+        values: [1, 0.35, 1],
+      },
+      {
+        name: "cube.material.roughness",
+        kind: "number",
+        interpolation: "Smooth",
+        times: [0, 0.3, 0.7, 1],
+        values: [0.5, 0.9, 0.2, 0.5],
+      },
+      {
+        name: "ball.material.shininess",
+        kind: "number",
+        interpolation: "Linear",
+        times: [0, 1],
+        values: [30, 90],
+      },
+      {
+        name: "ball.material.emissive",
+        kind: "color",
+        interpolation: "Discrete",
+        times: [0, 0.5],
+        values: [0, 0, 0, 0.5, 0.1, 0],
+      },
+      {
+        name: "sun.intensity",
+        kind: "number",
+        interpolation: "Linear",
+        times: [0, 0.6, 1.2],
+        values: [2, 3.5, 2],
+      },
+      {
+        name: "sun.color",
+        kind: "color",
+        interpolation: "Linear",
+        times: [0, 1.2],
+        values: [1, 0.93, 0.87, 0.7, 0.8, 1],
+      },
+      {
+        name: "cam.fov",
+        kind: "number",
+        interpolation: "Smooth",
+        times: [0, 0.4, 0.8, 1.2],
+        values: [50, 42, 60, 50],
+      },
+      {
+        name: "empty.visible",
+        kind: "bool",
+        interpolation: "Discrete",
+        times: [0, 0.3, 0.6, 0.9],
+        values: [1, 0, 1, 0],
+      },
+      // Bound nowhere: a Standard material has no sheen, and a light no fov. Writes must vanish.
+      {
+        name: "cube.material.sheen",
+        kind: "number",
+        interpolation: "Linear",
+        times: [0, 1],
+        values: [0, 1],
+      },
+      { name: "sun.fov", kind: "number", interpolation: "Linear", times: [0, 1], values: [10, 20] },
+    ],
+  },
+  {
+    name: "flash",
+    duration: 0.8,
+    additive: false,
+    tracks: [
+      {
+        name: "cube.material.color",
+        kind: "color",
+        interpolation: "Linear",
+        times: [0, 0.4, 0.8],
+        values: [1, 1, 1, 1, 0.2, 0.2, 1, 1, 1],
+      },
+      {
+        name: "sun.intensity",
+        kind: "number",
+        interpolation: "Linear",
+        times: [0, 0.8],
+        values: [6, 1],
+      },
+      {
+        name: "empty.visible",
+        kind: "bool",
+        interpolation: "Discrete",
+        times: [0, 0.2, 0.5],
+        values: [0, 1, 0],
+      },
+      {
+        name: "cam.zoom",
+        kind: "number",
+        interpolation: "Linear",
+        times: [0, 0.8],
+        values: [1, 1.6],
+      },
+    ],
+  },
+  {
+    name: "dim",
+    duration: -1,
+    additive: true,
+    tracks: [
+      {
+        name: "sun.intensity",
+        kind: "number",
+        interpolation: "Linear",
+        times: [0, 1],
+        values: [0, -1.5],
+      },
+      {
+        name: "cube.material.opacity",
+        kind: "number",
+        interpolation: "Linear",
+        times: [0, 1],
+        values: [0, -0.2],
+      },
+      {
+        name: "empty.visible",
+        kind: "bool",
+        interpolation: "Discrete",
+        times: [0, 0.5],
+        values: [1, 0],
+      },
+    ],
+  },
 ];
+const PROPERTY_OPS: Op[] = [
+  [0, "play", 0, 0, 0, 0],
+  [40, "weight", 1, 0.3, 0, 0],
+  [40, "play", 1, 0, 0, 0],
+  [90, "crossFadeFrom", 1, 0, 0.5, 0],
+  [130, "weight", 2, 0.6, 0, 0],
+  [130, "play", 2, 0, 0, 0],
+  [170, "play", 0, 0, 0, 0],
+  [170, "crossFadeTo", 1, 0, 0.4, 0],
+  [210, "stop", 1, 0, 0, 0],
+  [250, "stop", 2, 0, 0, 0],
+  [280, "stopAll", 0, 0, 0, 0],
+];
+const propertyLines = runMixerScenario(
+  PROPERTY_CLIPS,
+  PROPERTY_OPS,
+  DT.slice(0, 300),
+  stage,
+  () => [
+    `cube:c=${vec(cubeMaterial.color)};o=${bits(cubeMaterial.opacity)};r=${bits(cubeMaterial.roughness)};v=${cubeMaterial.version}`,
+    `ball:sh=${bits(ballMaterial.shininess)};em=${vec(ballMaterial.emissive)};v=${ballMaterial.version}`,
+    `sun:i=${bits(sun.intensity)};c=${vec(sun.color)};m=${flag(sun.matrixWorldNeedsUpdate)}`,
+    `cam:fov=${bits(cam.fov)};zoom=${bits(cam.zoom)};m=${flag(cam.matrixWorldNeedsUpdate)}`,
+    `empty:v=${flag(empty.visible)};m=${flag(empty.matrixWorldNeedsUpdate)}`,
+  ],
+);
 
 const outputs: Array<[string, string]> = [
   ["interpolants_reference.inc", lines.join("\n")],
   ["property_binding_reference.inc", bindingLines.join("\n")],
   ["mixer_reference.inc", mixerLines.join("\n")],
+  ["property_tracks_reference.inc", propertyLines.join("\n")],
 ];
 for (const [file, text] of outputs) {
   const out = path.join(OUT_DIR, file);
