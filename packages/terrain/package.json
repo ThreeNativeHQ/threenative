@@ -14,7 +14,14 @@
     "directory": "packages/terrain"
   },
   "type": "module",
-  "files": ["dist", "README.md", "AGENT_GUIDE.md", "THIRD_PARTY_NOTICES.md"],
+  "files": [
+    "dist",
+    "starter",
+    "starter-assets",
+    "README.md",
+    "AGENT_GUIDE.md",
+    "THIRD_PARTY_NOTICES.md"
+  ],
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
