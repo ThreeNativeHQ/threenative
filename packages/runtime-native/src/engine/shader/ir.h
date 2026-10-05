@@ -1,0 +1,162 @@
+#pragma once
+
+#include <array>
+#include <cstdint>
+#include <functional>
+#include <source_location>
+#include <string>
+#include <string_view>
+#include <unordered_map>
+#include <vector>
+
+namespace tn::engine::shader {
+
+/** WGSL-compatible value types: a scalar, a vector (rows 2–4, cols 1) or a matrix (cols × rows). */
+struct Type {
+    enum class Scalar : uint8_t { Void, Bool, I32, U32, F32 };
+    Scalar scalar = Scalar::Void;
+    uint8_t rows = 1;
+    uint8_t cols = 1;
+
+    static Type f32() { return {Scalar::F32, 1, 1}; }
+    static Type i32() { return {Scalar::I32, 1, 1}; }
+    static Type u32() { return {Scalar::U32, 1, 1}; }
+    static Type boolean() { return {Scalar::Bool, 1, 1}; }
+    static Type vec(uint8_t n, Scalar s = Scalar::F32) { return {s, n, 1}; }
+    static Type mat(uint8_t cols, uint8_t rows) { return {Scalar::F32, rows, cols}; }
+
+    bool isScalar() const { return rows == 1 && cols == 1 && scalar != Scalar::Void; }
+    bool isVector() const { return rows > 1 && cols == 1; }
+    bool isMatrix() const { return cols > 1; }
+    bool numeric() const { return scalar == Scalar::I32 || scalar == Scalar::U32 || scalar == Scalar::F32; }
+    bool operator==(const Type&) const = default;
+    std::string name() const;
+};
+
+enum class Stage : uint8_t { Vertex, Fragment, Compute };
+
+using ExprId = uint32_t;
+using VarId = uint32_t;
+inline constexpr ExprId kInvalid = 0;  // poisons dependents without repeating the diagnostic
+
+enum class Op : uint8_t {
+    Constant, Uniform, Attribute, Builtin,
+    Add, Sub, Mul, Div, Neg, Less, Equal, Select,
+    Swizzle, Construct, Call,
+    // Ordered reads: pinned as statements where created, so they observe prior writes.
+    LoadVar, LoadStorage, Sample,
+};
+
+struct Expr {
+    Op op;
+    Type type;
+    std::array<ExprId, 4> args{};
+    uint8_t argc = 0;
+    uint64_t immediate = 0;  // constant bits, swizzle lanes, or an interned name
+};
+
+struct Diagnostic {
+    std::string code;     // TN_TSL_TYPE | TN_TSL_UNSUPPORTED
+    std::string node;     // the operation that failed
+    std::string reason;
+    std::string file;
+    uint32_t line = 0;
+};
+
+using Where = std::source_location;
+
+/**
+ * One shader stage's IR (PRD-510). Pure expressions are hash-consed, so the same operation on the
+ * same operands is one node. Effects — assignments, storage writes, discards, ordered reads — live
+ * in blocks that keep program order, nested by If and Loop: a graph is not a DAG of arithmetic.
+ * Every type error names the authoring call site.
+ */
+class Program {
+public:
+    explicit Program(Stage stage);
+
+    ExprId constant(float value, Where where = Where::current());
+    ExprId constant(int32_t value, Where where = Where::current());
+    ExprId constant(bool value, Where where = Where::current());
+    ExprId uniform(std::string_view name, Type type, Where where = Where::current());
+    ExprId attribute(std::string_view name, Type type, Where where = Where::current());
+    /** Stage builtins: position, instanceIndex, vertexIndex, frontFacing, globalInvocationId. */
+    ExprId builtin(std::string_view name, Where where = Where::current());
+
+    ExprId add(ExprId a, ExprId b, Where where = Where::current());
+    ExprId sub(ExprId a, ExprId b, Where where = Where::current());
+    ExprId mul(ExprId a, ExprId b, Where where = Where::current());
+    ExprId div(ExprId a, ExprId b, Where where = Where::current());
+    ExprId neg(ExprId a, Where where = Where::current());
+    ExprId less(ExprId a, ExprId b, Where where = Where::current());
+    ExprId equal(ExprId a, ExprId b, Where where = Where::current());
+    ExprId select(ExprId condition, ExprId whenTrue, ExprId whenFalse, Where where = Where::current());
+    ExprId swizzle(ExprId value, std::string_view lanes, Where where = Where::current());
+    ExprId construct(Type type, const std::vector<ExprId>& parts, Where where = Where::current());
+    /** A catalogued builtin function (dot, normalize, mix, …); anything else is TN_TSL_UNSUPPORTED. */
+    ExprId call(std::string_view function, const std::vector<ExprId>& args, Where where = Where::current());
+
+    VarId var(Type type, ExprId initial, Where where = Where::current());
+    ExprId load(VarId var, Where where = Where::current());
+    void assign(VarId var, ExprId value, Where where = Where::current());
+
+    uint32_t storageBuffer(std::string_view name, Type element);
+    ExprId loadStorage(uint32_t buffer, ExprId index, Where where = Where::current());
+    void store(uint32_t buffer, ExprId index, ExprId value, Where where = Where::current());
+    void discard(Where where = Where::current());
+
+    void If(ExprId condition, const std::function<void()>& then, const std::function<void()>& otherwise = {},
+            Where where = Where::current());
+    /** `for (var i: i32 = 0; i < count; i++)`; the body receives the index. */
+    void Loop(ExprId count, const std::function<void(ExprId index)>& body, Where where = Where::current());
+
+    const Expr& expr(ExprId id) const { return exprs_[id]; }
+    size_t exprCount() const { return exprs_.size() - 1; }
+    const std::vector<Diagnostic>& diagnostics() const { return diagnostics_; }
+    bool ok() const { return diagnostics_.empty(); }
+    Stage stage() const { return stage_; }
+
+    /** Canonical text: one line per statement, expressions numbered by first use. */
+    std::string dump() const;
+
+private:
+    enum class StmtKind : uint8_t { Eval, Assign, Store, Discard, If, Loop };
+    struct Stmt {
+        StmtKind kind;
+        uint32_t a = 0;  // var, buffer, condition, or count
+        ExprId b = kInvalid;
+        ExprId c = kInvalid;
+        uint32_t body = 0;      // block index
+        uint32_t otherwise = 0; // block index, 0 = none
+    };
+    struct Var {
+        Type type;
+    };
+    struct Storage {
+        std::string name;
+        Type element;
+    };
+
+    ExprId fail(std::string_view node, std::string reason, const Where& where);
+    ExprId pure(Expr expr);
+    ExprId ordered(Expr expr);
+    ExprId arithmetic(Op op, std::string_view node, ExprId a, ExprId b, const Where& where);
+    uint64_t intern(std::string_view name);
+    uint32_t openBlock();
+    void emit(Stmt stmt) { blocks_[current_].push_back(stmt); }
+    void dumpBlock(uint32_t block, int depth, std::string& out, std::vector<int>& numbering, int& next) const;
+    std::string describe(ExprId id, std::vector<int>& numbering) const;
+
+    Stage stage_;
+    std::vector<Expr> exprs_;
+    std::unordered_map<std::string, ExprId> pureIndex_;
+    std::vector<std::string> names_;
+    std::unordered_map<std::string, uint64_t> nameIndex_;
+    std::vector<Var> vars_;
+    std::vector<Storage> storage_;
+    std::vector<std::vector<Stmt>> blocks_;
+    uint32_t current_ = 0;
+    std::vector<Diagnostic> diagnostics_;
+};
+
+}  // namespace tn::engine::shader

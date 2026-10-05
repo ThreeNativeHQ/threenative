@@ -39,6 +39,11 @@ elseif(SDL3_LIBRARY)
     target_include_directories(tn_host_services PRIVATE ${SDL3_INCLUDE_DIR})
 endif()
 
+# Shader IR (N08): typed, hash-consed expressions and ordered effects. Portable like foundation.
+add_library(tn_engine_shader STATIC src/engine/shader/ir.cpp)
+tn_native_engine_target(tn_engine_shader)
+target_include_directories(tn_engine_shader PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+
 # Renderer: native-owned GPU resources over the same WebGPU backend the host uses.
 add_library(tn_engine_renderer STATIC src/engine/renderer/gpu_resources.cpp src/engine/renderer/device_state.cpp)
 tn_native_engine_target(tn_engine_renderer)
@@ -102,6 +107,12 @@ tn_native_engine_test(tn-native-engine-lifetime-test tests/native-engine/lifetim
     native_engine_lifetime_callback_cycle=callback_cycle
     native_engine_lifetime_soak=soak
     native_engine_reclaim_single_thread=single_thread)
+
+tn_native_engine_test(tn-native-engine-shader-ir-test tests/native-engine/shader_ir_test.cpp
+    native_engine_tsl_ir_order=order
+    native_engine_tsl_ir_types=types
+    native_engine_tsl_unsupported=unsupported)
+target_link_libraries(tn-native-engine-shader-ir-test PRIVATE tn_engine_shader)
 
 # libFuzzer targets need clang; `TN_ENGINE_FUZZ=ON` with a clang toolchain builds them.
 option(TN_ENGINE_FUZZ "Build the native engine libFuzzer targets (clang only)" OFF)

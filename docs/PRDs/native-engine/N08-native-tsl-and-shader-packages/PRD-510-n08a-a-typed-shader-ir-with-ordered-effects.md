@@ -1,6 +1,6 @@
 # PRD-510 — A typed shader IR with ordered effects (N08a)
 
-**Status:** PROPOSED
+**Status:** IN PROGRESS — phase 1 done
 **Complexity:** 4 — new native data model with a large operator surface; no GPU needed to test it
 **Owner:** João
 **Work package:** N08 — [native-engine batch](../README.md) · [N08 index](README.md)
@@ -41,10 +41,10 @@ functions are supported.
 ## Execution Phases
 
 #### Phase 1: IR core
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** proposed `src/engine/shader/ir/*.cpp`, `tests/native-engine/shader_ir_test.cpp`
-- [ ] Pure expressions are deduplicated and effects keep program order inside nested `If`/`Loop` blocks. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_tsl_ir_order`
-- [ ] Type errors raise `TN_TSL_TYPE` with a source location for each fixture case. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_tsl_ir_types`
+- [x] Pure expressions are deduplicated and effects keep program order inside nested `If`/`Loop` blocks. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_tsl_ir_order` — 2026-10-04: green (Dawn and ASan builds): repeated pure operations are one node; variable and storage reads are ordered statements that never merge; the canonical dump of a nested If/Loop/store program matches line for line. Red when loads hash-cons or If bodies flatten into the parent. `src/engine/shader/ir.{h,cpp}`, target `tn_engine_shader`
+- [x] Type errors raise `TN_TSL_TYPE` with a source location for each fixture case. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_tsl_ir_types` — 2026-10-04: green; 11 cases (operand shapes, swizzle arity and lane sets, vertex storage write, assignment, non-bool condition, stage builtins, discard stage, mat×vec, construct arity, dot of scalars) each raise one `TN_TSL_TYPE` at the authoring line via `std::source_location`; an invalid node poisons dependents without cascading. Red when the location is dropped
 
 #### Phase 2: TSL builder parity
 **Status:** NOT STARTED
