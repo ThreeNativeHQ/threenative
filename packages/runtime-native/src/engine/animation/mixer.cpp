@@ -703,6 +703,7 @@ AnimationMixer& AnimationMixer::stopAllAction() {
 }
 
 AnimationMixer& AnimationMixer::update(double deltaTime) {
+    ++updateCount_;
     deltaTime *= timeScale;
     const std::size_t nActions = nActiveActions_;
     const double t = time += deltaTime;

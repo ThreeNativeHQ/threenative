@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <limits>
 #include <memory>
 #include <optional>
@@ -192,6 +193,8 @@ class AnimationMixer {
     AnimationMixer& update(double deltaTime);
     AnimationMixer& setTime(double time);
     [[nodiscard]] Object3D& getRoot() const { return *root_; }
+    /** Every `update` so far, explicit or scheduled (`setTime` is one): what the schedule reads. */
+    [[nodiscard]] std::uint64_t updateCount() const { return updateCount_; }
     void uncacheClip(const AnimationClip& clip);
     void uncacheRoot(const Object3D& root);
     void uncacheAction(const AnimationClip& clip, const Object3D* optionalRoot = nullptr);
@@ -245,6 +248,7 @@ class AnimationMixer {
 
     std::shared_ptr<Object3D> root_;
     int accuIndex_ = 0;
+    std::uint64_t updateCount_ = 0;
     std::vector<AnimationAction*> actions_;
     std::size_t nActiveActions_ = 0;
     std::vector<ActionsForClip> actionsByClip_;

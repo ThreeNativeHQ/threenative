@@ -299,7 +299,7 @@ set_property(GLOBAL APPEND PROPERTY TN_NATIVE_ENGINE_TEST_TARGETS tn-native-engi
 
 # PRD-516: three's animation system, starting with its interpolants.
 add_library(tn_engine_animation STATIC src/engine/animation/interpolant.cpp src/engine/animation/property_binding.cpp
-    src/engine/animation/mixer.cpp)
+    src/engine/animation/mixer.cpp src/engine/animation/schedule.cpp)
 tn_native_engine_target(tn_engine_animation)
 target_link_libraries(tn_engine_animation PUBLIC tn_engine_scene)
 target_include_directories(tn_engine_animation PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
@@ -314,6 +314,9 @@ target_include_directories(tn-native-engine-animation-binding-test PRIVATE ${CMA
 tn_native_engine_test(tn-native-engine-animation-mixer-test tests/native-engine/animation/mixer_test.cpp
     native_engine_animation_mixer=mixer native_engine_animation_events=events)
 target_link_libraries(tn-native-engine-animation-mixer-test PRIVATE tn_engine_animation)
+tn_native_engine_test(tn-native-engine-animation-schedule-test tests/native-engine/animation/schedule_test.cpp
+    native_engine_animation_explicit_update=explicit_update)
+target_link_libraries(tn-native-engine-animation-schedule-test PRIVATE tn_engine_animation)
 target_include_directories(tn-native-engine-animation-mixer-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/animation)
 
 # PRD-528 phase 1: the fixed-step clock, ported from packages/core/src/loop.ts.

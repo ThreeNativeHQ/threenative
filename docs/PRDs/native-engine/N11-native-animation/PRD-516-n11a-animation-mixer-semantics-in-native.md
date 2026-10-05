@@ -1,6 +1,6 @@
 # PRD-516 — AnimationMixer semantics in native (N11a)
 
-**Status:** IN PROGRESS
+**Status:** DONE
 **Complexity:** 4 — the mixer has a lot of observable state (weights, fades, warps, loops, events), and all of it is compared against the reference
 **Owner:** João
 **Work package:** N11 — [native-engine batch](../README.md) · [N11 umbrella](README.md)
@@ -39,10 +39,10 @@
 - [x] `finished` and `loop` events fire in the reference order and on the reference tick. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_animation_events` — 2026-10-05: green on the same lanes and replay: all 26 `loop` and `finished` events (walk, wave, lean, idle, jump, spin) fire on three's frame, in three's order, with its direction or loop delta, including a backwards loop (delta -1) under the negative time scale and three loops in one `setTime`. Red controls: a flipped `finished` direction (1 differs), reversed action order (4)
 
 #### Phase 3: The scheduling contract
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** `packages/core/src/animation.ts` (binding glue); proposed `packages/runtime-native/src/engine/animation/schedule.cpp`
-- [ ] An explicit `mixer.update()` is observable straight away, and the engine schedule does not evaluate that mixer again in the same tick. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_animation_explicit_update`
-- [ ] The animation update count is independent of the render count: two renders in one tick evaluate once. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_animation_tick_vs_render`
+- [x] An explicit `mixer.update()` is observable straight away, and the engine schedule does not evaluate that mixer again in the same tick. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_animation_explicit_update` — 2026-10-05: green on Dawn, ASan, wgpu and Wasm. `AnimationSchedule` (`src/engine/animation/schedule.{h,cpp}`) manages mixers per simulation tick: `openTick` notes each mixer's update count, and `closeTick(dt)` advances only the mixers nobody updated in between. In the test, a game-updated mixer shows its pose the moment `update(0.25)` returns (x = 0.25), the tick then evaluates only the untouched mixer (time and update count of the game's mixer unchanged), a zero-length explicit update still counts as the game's, and a released mixer is left alone. Red control: a schedule that ignores explicit updates fails the first tick's checks
+- [x] The animation update count is independent of the render count: two renders in one tick evaluate once. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_animation_tick_vs_render` — 2026-10-05: green on Dawn, ASan and wgpu (it renders headless). The arm's `FixedStepClock` drives 10 frames carrying 0, 1 or 2 ticks and 0 to 3 real renders each (`RenderDatabase::render` of the animated mesh): 7 ticks, 18 renders, 7 evaluations, and no render changes the update count or the pose, including frames with two renders in one tick. Red control: evaluating per render fails both checks
 
 ## Decisions
 
