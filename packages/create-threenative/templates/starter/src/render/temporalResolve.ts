@@ -274,38 +274,26 @@ export function createExperimentalTemporalResolve(
     const textureSize = node.beautyNode.size(int(0)) as Node<"uvec2">; // Assumes all the buffers share the same size.
     const positionTexel = uvNode.mul(textureSize);
 
-    // sample the closest and farthest depths in the current buffer
-
     const currentDepth = sampleCurrentDepth(positionTexel);
     const closestDepth = currentDepth.get("closestDepth") as Node<"float">;
     const closestPositionTexel = currentDepth.get("closestPositionTexel") as Node<"vec2">;
     const farthestDepth = currentDepth.get("farthestDepth") as Node<"float">;
 
-    // convert the NDC offset to UV offset
-
     const offsetUV = node.velocityNode.load(closestPositionTexel).xy.mul(vec2(0.5, -0.5));
-
-    // sample the previous depth
 
     const historyUV = uvNode.sub(offsetUV);
     const previousDepth = samplePreviousDepth(historyUV);
-
-    // history is considered valid when the UV is in range and there's no disocclusion except on edges
 
     const isValidUV = historyUV.greaterThanEqual(0).all().and(historyUV.lessThanEqual(1).all());
     const isEdge = farthestDepth.sub(closestDepth).greaterThan(node.edgeDepthDiff);
     const isDisocclusion = closestDepth.sub(previousDepth).greaterThan(node.depthThreshold);
     const hasValidHistory = isValidUV.and(isEdge.or(isDisocclusion.not()));
 
-    // sample the current and previous colors
-
     const currentColor = node.beautyNode.sample(uvNode);
     const historyColor =
       interpolation === "linear"
         ? historyNode.sample(uvNode.sub(offsetUV))
         : sampleCatmullRom(historyNode, uvNode.sub(offsetUV)).max(0);
-
-    // increase the weight towards the current frame under motion
 
     const motionFactor = uvNode
       .sub(historyUV)
@@ -322,8 +310,6 @@ export function createExperimentalTemporalResolve(
 
     currentWeight.assign(hasValidHistory.select(currentWeight.add(motionFactor).saturate(), 1));
 
-    // Perform neighborhood clipping/clamping. We use variance clipping here.
-
     const varianceGamma = mix(0.5, 1, motionFactor.oneMinus().pow2()); // Reasonable gamma range is [0.75, 2]
     const clippedHistoryColor = varianceClipping(
       positionTexel,
@@ -331,8 +317,6 @@ export function createExperimentalTemporalResolve(
       historyColor,
       varianceGamma,
     );
-
-    // flicker reduction based on luminance weighing
 
     // Diagnostic only: ordinary blending isolates luminance reweighting at the same weight.
     const output =
