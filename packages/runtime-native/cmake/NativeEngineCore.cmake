@@ -297,6 +297,16 @@ target_link_libraries(tn-native-engine-identity PRIVATE tn_engine_abi)
 tn_native_engine_target(tn-native-engine-identity)
 set_property(GLOBAL APPEND PROPERTY TN_NATIVE_ENGINE_TEST_TARGETS tn-native-engine-identity)
 
+# PRD-516: three's animation system, starting with its interpolants.
+add_library(tn_engine_animation STATIC src/engine/animation/interpolant.cpp)
+tn_native_engine_target(tn_engine_animation)
+target_link_libraries(tn_engine_animation PUBLIC tn_engine_foundation)
+target_include_directories(tn_engine_animation PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+tn_native_engine_test(tn-native-engine-animation-interpolants-test tests/native-engine/animation/interpolants_test.cpp
+    native_engine_animation_interpolants=interpolants)
+target_link_libraries(tn-native-engine-animation-interpolants-test PRIVATE tn_engine_animation)
+target_include_directories(tn-native-engine-animation-interpolants-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/animation)
+
 add_library(tn_fixture_driver STATIC tests/native-engine/fixture/driver.cpp)
 tn_native_engine_target(tn_fixture_driver)
 target_include_directories(tn_fixture_driver PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine)
@@ -334,6 +344,12 @@ if(NOT EMSCRIPTEN)
                     --out ${CMAKE_CURRENT_BINARY_DIR}/${math_name}.json)
             set_tests_properties(native_engine_${math_name} PROPERTIES LABELS "native-engine")
         endforeach()
+        # PRD-516: the committed interpolant table is what the pinned three produces today.
+        add_test(NAME native_engine_animation_reference_current
+            COMMAND ${TN_PNPM_EXECUTABLE} --workspace-root exec tsx
+                packages/three-native/tests/animation/interpolants-reference.ts --check
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../..)
+        set_tests_properties(native_engine_animation_reference_current PROPERTIES LABELS "native-engine")
         unset(math_case)
         unset(math_pair)
     else()

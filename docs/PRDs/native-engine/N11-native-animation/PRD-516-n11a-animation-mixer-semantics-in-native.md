@@ -1,6 +1,6 @@
 # PRD-516 — AnimationMixer semantics in native (N11a)
 
-**Status:** PROPOSED
+**Status:** IN PROGRESS
 **Complexity:** 4 — the mixer has a lot of observable state (weights, fades, warps, loops, events), and all of it is compared against the reference
 **Owner:** João
 **Work package:** N11 — [native-engine batch](../README.md) · [N11 umbrella](README.md)
@@ -27,9 +27,9 @@
 ## Execution Phases
 
 #### Phase 1: Tracks and interpolation
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **Files:** proposed `packages/runtime-native/src/engine/animation/`, `packages/runtime-native/tests/native-engine/animation/`
-- [ ] Every interpolant (discrete, linear, cubic, quaternion) reproduces the pinned reference fixtures within the documented tolerance. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_animation_interpolants`
+- [x] Every interpolant (discrete, linear, cubic, quaternion) reproduces the pinned reference fixtures within the documented tolerance. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_animation_interpolants` — 2026-10-05: green on Dawn, ASan, wgpu and Wasm, tolerance zero: 25 cases, 3,763 float32 results, every one with three's bits. `Interpolant` (`src/engine/animation/interpolant.{h,cpp}`) ports three's interval search label for label (cached index, linear scan, binary search, both ends) and the discrete, linear, cubic and quaternion-slerp arithmetic in binary64 with V8's `acos` and `sin`, storing into a float32 result like the track's Float32Array. The table comes from three@0.185.1's own keyframe tracks (`packages/three-native/tests/animation/interpolants-reference.ts`): scalar, vec3, single-key and quaternion tracks, all nine cubic ending pairs, and 71 samples that seek both ways and pass NaN and both infinities; `native_engine_animation_reference_current` fails when the committed table is stale. Red control: a wrong ZeroSlope start ending makes 96 values differ. Using libm `acos`/`sin` instead still matches here, because the float32 store absorbs their one-bit differences on these arguments
 - [ ] Property-path binding resolves and rebinds after reparenting, as the reference does. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_animation_binding`
 
 #### Phase 2: Actions and the mixer
