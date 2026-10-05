@@ -81,8 +81,9 @@ TN_STATIC_ASSERT(offsetof(tn_handle_t, type) == 0 && offsetof(tn_handle_t, conte
                      offsetof(tn_handle_t, index) == 4 && offsetof(tn_handle_t, generation) == 8,
                  "tn_handle_t must keep this field order and no padding holes.");
 
-/* A diagnostic the caller owns: release it with tn_diagnostic_release, never with free(). An owned
- * string keeps the message out of the ABI's stack and thread rules. */
+/* A diagnostic the caller owns: release it with tn_diagnostic_release, never with free(). Pass a
+ * zeroed struct the first time; every call that takes one releases the message it held before
+ * writing, so one diagnostic can be reused across calls without leaking. */
 typedef struct tn_diagnostic {
   char *message;
   uint32_t code;

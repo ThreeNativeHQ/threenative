@@ -46,9 +46,9 @@ target_link_libraries(tn_engine_abi PUBLIC tn_engine_foundation)
 target_include_directories(tn_engine_abi PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 # Shader IR (N08): typed, hash-consed expressions and ordered effects. Portable like foundation.
-add_library(tn_engine_shader STATIC src/engine/shader/ir.cpp src/engine/shader/wgsl.cpp)
+add_library(tn_engine_shader STATIC src/engine/shader/ir.cpp src/engine/shader/wgsl.cpp src/engine/shader/package.cpp)
 tn_native_engine_target(tn_engine_shader)
-target_include_directories(tn_engine_shader PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_include_directories(tn_engine_shader PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 # Renderer: native-owned GPU resources over the same WebGPU backend the host uses.
 add_library(tn_engine_renderer STATIC src/engine/renderer/gpu_resources.cpp src/engine/renderer/device_state.cpp)
@@ -128,6 +128,7 @@ target_link_libraries(tn-native-engine-abi-test PRIVATE tn_engine_abi)
 # The header compiles as strict C11 and a C program links against the ABI.
 add_executable(tn-native-engine-abi-c11 EXCLUDE_FROM_ALL tests/native-engine/abi_c11.c)
 target_link_libraries(tn-native-engine-abi-c11 PRIVATE tn_engine_abi)
+tn_native_engine_target(tn-native-engine-abi-c11)
 set_target_properties(tn-native-engine-abi-c11 PROPERTIES C_STANDARD 11 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF
     LINKER_LANGUAGE CXX)
 if(NOT MSVC)
@@ -169,6 +170,11 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         ${tn_shader_validator}=validates
         native_engine_shader_emit_stable=stable)
     target_link_libraries(tn-native-engine-shader-emit-test PRIVATE tn_engine_shader tn_host_services)
+    tn_native_engine_test(tn-native-engine-shader-package-test tests/native-engine/shader_package_test.cpp
+        native_engine_shader_layouts=layouts
+        native_engine_shader_variants_gpu=variants
+        native_engine_shader_package_version=version)
+    target_link_libraries(tn-native-engine-shader-package-test PRIVATE tn_engine_shader tn_engine_renderer tn_host_services)
 
     if(TARGET dawn::webgpu)
         tn_native_engine_test(tn-native-engine-device-loss-test tests/native-engine/device_loss_test.cpp
@@ -187,7 +193,8 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         # These own a real device, whose driver keeps allocations past exit: judged for memory
         # errors and undefined behaviour, not leaks. CPU-only engine tests keep leak checking.
         set_tests_properties(native_engine_gpu_upload_readback native_engine_gpu_deferred_destroy
-            native_engine_gpu_async_only native_engine_lifetime_deferred_gpu native_engine_device_loss_recover native_engine_device_stale_handle
+            native_engine_gpu_async_only native_engine_lifetime_deferred_gpu ${tn_shader_validator} native_engine_shader_layouts
+            native_engine_shader_variants_gpu native_engine_device_loss_recover native_engine_device_stale_handle
             native_engine_device_no_adapter PROPERTIES
             ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0:abort_on_error=1;UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1")
     endif()

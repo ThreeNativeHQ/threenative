@@ -174,9 +174,19 @@ WgslModule WgslEmitter::emit(const Program& program) {
         }
         out += "}\n@group(0) @binding(" + std::to_string(binding++) + ") var<uniform> u: Uniforms;\n";
     }
-    for (const auto& storage : program.storage_) {
-        out += "@group(0) @binding(" + std::to_string(binding++) + ") var<storage, read_write> s_" + storage.name +
-               ": array<" + e.type(storage.element) + ">;\n";
+    // A buffer the program never stores to is read-only, which is also the only storage a vertex
+    // stage may declare.
+    std::set<uint32_t> written;
+    for (const auto& b : program.blocks_) {
+        for (const auto& s : b) {
+            if (s.kind == Program::StmtKind::Store) written.insert(s.a);
+        }
+    }
+    for (uint32_t i = 0; i < program.storage_.size(); ++i) {
+        const auto& storage = program.storage_[i];
+        out += "@group(0) @binding(" + std::to_string(binding++) + ") var<storage, " +
+               (written.count(i) ? "read_write" : "read") + "> s_" + storage.name + ": array<" +
+               e.type(storage.element) + ">;\n";
     }
 
     const Stage stage = program.stage_;

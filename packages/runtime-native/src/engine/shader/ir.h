@@ -65,6 +65,9 @@ struct Diagnostic {
 
 using Where = std::source_location;
 
+struct StageModule;
+StageModule buildStage(const class Program& program);
+
 /**
  * One shader stage's IR (PRD-510). Pure expressions are hash-consed, so the same operation on the
  * same operands is one node. Effects — assignments, storage writes, discards, ordered reads — live
@@ -126,6 +129,7 @@ public:
 
 private:
     friend class WgslEmitter;
+    friend StageModule buildStage(const Program& program);
 
     enum class StmtKind : uint8_t { Eval, Assign, Store, Discard, If, Loop, Output };
     struct Stmt {

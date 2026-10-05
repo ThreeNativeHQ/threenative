@@ -1,6 +1,6 @@
 # PRD-511 — Shader packages, not WGSL text (N08b)
 
-**Status:** IN PROGRESS — phase 1 done
+**Status:** DONE 2026-10-04
 **Complexity:** 4 — code generation plus the layout/variant/schedule metadata that makes it executable
 **Owner:** João
 **Work package:** N08 — [native-engine batch](../README.md) · [N08 index](README.md)
@@ -47,11 +47,11 @@ already caches pipelines (`src/webgpu/bindings_pipeline_cache.cpp`) for the JS p
 - [x] Emission is deterministic: two runs over the corpus produce byte-identical packages. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_shader_emit_stable` — 2026-10-04: green; names derive from IR ids and fixed prefixes, two builds of each graph emit byte-identical WGSL, and a non-finite constant is refused as `TN_SHADER_PACKAGE_INVALID` rather than emitted
 
 #### Phase 2: Layouts, variants, schedules
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** proposed `src/engine/shader/package.cpp`
-- [ ] Generated bind group and uniform layouts match the WGSL declarations (group, binding, offset, size) for every corpus package. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_shader_layouts`
-- [ ] A package with a skinning and a shadow variant creates both pipelines on a real device with no validation error. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_shader_variants_gpu`
-- [ ] A shader-package revision mismatch is rejected before pipeline creation. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_shader_package_version`
+- [x] Generated bind group and uniform layouts match the WGSL declarations (group, binding, offset, size) for every corpus package. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_shader_layouts` — 2026-10-04: green on Dawn, wgpu-native and ASan: a mixed block (f32, vec3, f32 packed into the vec3 tail, mat4x4, vec2) gets offsets 0/16/28/32/96 and size 112; bytes written at those offsets come back through the device-compiled WGSL, all 23 values exact. Red when vec3 aligns to 12. `src/engine/shader/package.{h,cpp}`
+- [x] A package with a skinning and a shadow variant creates both pipelines on a real device with no validation error. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_shader_variants_gpu` — 2026-10-04: green; a skinned vertex stage (bone matrices from read-only storage, two joints) with a fragment stage, and the same vertex stage as a depth-only shadow variant, both create render pipelines inside a validation scope with no error. Red when storage is declared read_write, which a vertex stage may not do
+- [x] A shader-package revision mismatch is rejected before pipeline creation. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_shader_package_version` — 2026-10-04: green; `acceptPackage` refuses another revision with `TN_SHADER_PACKAGE_VERSION` and an invalid stage with `TN_SHADER_PACKAGE_INVALID` before any pipeline is made; the revision is the ABI header's `TN_SHADER_PACKAGE_VERSION`, one number
 
 ## Decisions
 

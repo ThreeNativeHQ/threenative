@@ -42,6 +42,7 @@ std::vector<std::unique_ptr<tn_context>>& registry() {
 
 tn_status_t report(tn_diagnostic_t* diagnostic, tn_status_t status, uint32_t code, const char* message) {
     if (diagnostic) {
+        tn_diagnostic_release(diagnostic);  // a reused diagnostic never leaks its previous message
         diagnostic->code = code;
         const size_t length = std::strlen(message);
         diagnostic->message = static_cast<char*>(std::malloc(length + 1));
@@ -51,7 +52,7 @@ tn_status_t report(tn_diagnostic_t* diagnostic, tn_status_t status, uint32_t cod
 }
 
 tn_status_t ok(tn_diagnostic_t* diagnostic) {
-    if (diagnostic) *diagnostic = tn_diagnostic_t{nullptr, 0};
+    tn_diagnostic_release(diagnostic);
     return TN_OK;
 }
 
