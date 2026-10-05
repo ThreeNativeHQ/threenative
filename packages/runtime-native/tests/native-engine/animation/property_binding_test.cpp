@@ -48,18 +48,17 @@ std::string bits(double x) {
     return out;
 }
 
-template <typename Array>
-std::string join(const Array& values) {
+template <typename Array> std::string join(const Array& values) {
     std::string out;
-    for (double v : values) out += (out.empty() ? "" : ",") + bits(v);
+    for (double v : values)
+        out += (out.empty() ? "" : ",") + bits(v);
     return out;
 }
 
 void binding() {
     const std::pair<const char*, std::size_t> tracks[] = {
-        {".position", 3},          {"hand.position", 3},     {"arm.L.quaternion", 4},
-        {"hand.scale[y]", 1},      {"armB/hand.visible", 1}, {"missing.position", 3},
-        {"hand.material.opacity", 1}, {"hand.foo", 1},
+        {".position", 3},         {"hand.position", 3},    {"arm.L.quaternion", 4},      {"hand.scale[y]", 1},
+        {"armB/hand.visible", 1}, {"missing.position", 3}, {"hand.material.opacity", 1}, {"hand.foo", 1},
     };
     // A boolean track writes 0 or 1. three stores the raw number in `visible`, the engine a bool, so
     // only 0 and 1 read back the same; any other number is still JavaScript truthiness here.
@@ -69,24 +68,29 @@ void binding() {
         object->name = name;
         return object;
     };
-    auto root = named("root"), armA = named("armA"), armL = named("arm.L"), armB = named("armB"),
-         hand = named("hand"), hand2 = named("hand"), outside = named("outside");
+    auto root = named("root"), armA = named("armA"), armL = named("arm.L"), armB = named("armB"), hand = named("hand"),
+         hand2 = named("hand"), outside = named("outside");
     root->add(*armA);
     root->add(*armB);
     armA->add(*armL);
     armB->add(*hand);
     const std::shared_ptr<Object3D> nodes[] = {root, armA, armL, armB, hand, hand2, outside};
     std::vector<PropertyBinding> bindings;
-    for (const auto& [track, size] : tracks) bindings.emplace_back(root, track);
+    for (const auto& [track, size] : tracks)
+        bindings.emplace_back(root, track);
     const auto rebind = [&] {
-        for (auto& b : bindings) b.unbind();
-        for (auto& b : bindings) b.bind();
+        for (auto& b : bindings)
+            b.unbind();
+        for (auto& b : bindings)
+            b.bind();
     };
     const auto setAll = [&](int step) {
         for (std::size_t i = 0; i < bindings.size(); ++i) {
             double buffer[4] = {};
-            for (std::size_t c = 0; c < tracks[i].second; ++c) buffer[c] = step * 10 + double(i) + double(c) * 0.25;
-            if (i == 4) buffer[0] = visible[step];
+            for (std::size_t c = 0; c < tracks[i].second; ++c)
+                buffer[c] = step * 10 + double(i) + double(c) * 0.25;
+            if (i == 4)
+                buffer[0] = visible[step];
             bindings[i].setValue(buffer, 0);
         }
     };
@@ -104,7 +108,8 @@ void binding() {
         return out;
     };
     std::vector<std::string> steps;
-    for (auto& b : bindings) b.bind();
+    for (auto& b : bindings)
+        b.bind();
     setAll(1);
     steps.push_back(observe("bind"));
     armA->add(*hand);
@@ -131,13 +136,16 @@ void binding() {
     CHECK(steps.size() == std::size(kSteps));
     std::size_t mismatched = 0;
     for (std::size_t s = 0; s < steps.size() && s < std::size(kSteps); ++s) {
-        if (steps[s] == kSteps[s]) continue;
+        if (steps[s] == kSteps[s])
+            continue;
         ++mismatched;
         // Name the first differing field, not two 1 KB strings.
         std::size_t at = 0;
-        while (at < steps[s].size() && steps[s][at] == kSteps[s][at]) ++at;
+        while (at < steps[s].size() && steps[s][at] == kSteps[s][at])
+            ++at;
         const std::size_t from = steps[s].rfind('|', at) + 1;
-        std::fprintf(stderr, "step %zu: native %.80s\n        three  %.80s\n", s, steps[s].c_str() + from, kSteps[s] + from);
+        std::fprintf(stderr, "step %zu: native %.80s\n        three  %.80s\n", s, steps[s].c_str() + from,
+                     kSteps[s] + from);
     }
     std::printf("binding scenario: %zu steps, %zu differ\n", steps.size(), mismatched);
     CHECK(mismatched == 0);
@@ -146,6 +154,6 @@ void binding() {
     CHECK(bindings[7].diagnostic.rfind("TN_NATIVE_ANIMATION_TRACK_UNSUPPORTED", 0) == 0);
 }
 
-}  // namespace
+} // namespace
 
 TN_TEST_MAIN({"parse", parse}, {"binding", binding})

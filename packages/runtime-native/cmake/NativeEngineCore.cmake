@@ -311,6 +311,10 @@ tn_native_engine_test(tn-native-engine-animation-binding-test tests/native-engin
     native_engine_animation_binding_parse=parse native_engine_animation_binding=binding)
 target_link_libraries(tn-native-engine-animation-binding-test PRIVATE tn_engine_animation)
 target_include_directories(tn-native-engine-animation-binding-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/animation)
+tn_native_engine_test(tn-native-engine-animation-mixer-test tests/native-engine/animation/mixer_test.cpp
+    native_engine_animation_mixer=mixer native_engine_animation_events=events)
+target_link_libraries(tn-native-engine-animation-mixer-test PRIVATE tn_engine_animation)
+target_include_directories(tn-native-engine-animation-mixer-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/animation)
 
 # PRD-528 phase 1: the fixed-step clock, ported from packages/core/src/loop.ts.
 add_library(tn_engine_world STATIC src/engine/world/loop/fixed_step.cpp)

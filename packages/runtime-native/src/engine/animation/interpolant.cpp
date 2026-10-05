@@ -9,7 +9,7 @@
 namespace tn::engine::animation {
 
 namespace {
-constexpr double kUndefined = std::numeric_limits<double>::quiet_NaN();  // compares false, as undefined does
+constexpr double kUndefined = std::numeric_limits<double>::quiet_NaN(); // compares false, as undefined does
 }
 
 void slerpFlat(double* dst, const double* src0, const double* src1, double t) {
@@ -69,33 +69,37 @@ Interpolant::Interpolant(Interpolation kind, std::span<const double> times, std:
 // t1 is pp[i1] and t0 is pp[i1 - 1], with an index outside the array reading as undefined.
 std::span<const double> Interpolant::evaluate(double t) {
     const auto n = static_cast<std::ptrdiff_t>(times_.size());
-    if (n == 0) return {result_, valueSize_};  // a track refuses an empty time array before it creates one
+    if (n == 0)
+        return {result_, valueSize_}; // a track refuses an empty time array before it creates one
     const auto pp = [&](std::ptrdiff_t i) { return i >= 0 && i < n ? times_[i] : kUndefined; };
     const auto undefinedAt = [&](std::ptrdiff_t i) { return i < 0 || i >= n; };
     auto i1 = static_cast<std::ptrdiff_t>(cachedIndex_);
     double t1 = pp(i1), t0 = pp(i1 - 1);
     std::ptrdiff_t right = 0;
 
-    if (!(t < t1)) {  // forward_scan
+    if (!(t < t1)) { // forward_scan
         for (const std::ptrdiff_t giveUpAt = i1 + 2;;) {
             if (undefinedAt(i1)) {
-                if (t < t0) goto backward_scan;  // break forward_scan
+                if (t < t0)
+                    goto backward_scan; // break forward_scan
                 cachedIndex_ = static_cast<std::size_t>(n);
                 return copySampleValue(static_cast<std::size_t>(n - 1));
             }
-            if (i1 == giveUpAt) break;
+            if (i1 == giveUpAt)
+                break;
             t0 = t1;
             t1 = pp(++i1);
-            if (t < t1) goto seek_done;  // break seek
+            if (t < t1)
+                goto seek_done; // break seek
         }
         right = n;
-        goto binary_search;  // break linear_scan
+        goto binary_search; // break linear_scan
     }
 backward_scan:
     if (!(t >= t0)) {
         const double t1global = pp(1);
         if (t < t1global) {
-            i1 = 2;  // + 1, using the scan for the details
+            i1 = 2; // + 1, using the scan for the details
             t0 = t1global;
         }
         for (const std::ptrdiff_t giveUpAt = i1 - 2;;) {
@@ -103,22 +107,26 @@ backward_scan:
                 cachedIndex_ = 0;
                 return copySampleValue(0);
             }
-            if (i1 == giveUpAt) break;
+            if (i1 == giveUpAt)
+                break;
             t1 = t0;
             t0 = pp(--i1 - 1);
-            if (t >= t0) goto seek_done;  // break seek
+            if (t >= t0)
+                goto seek_done; // break seek
         }
         right = i1;
         i1 = 0;
-        goto binary_search;  // break linear_scan
+        goto binary_search; // break linear_scan
     }
-    goto interval_valid;  // break validate_interval
+    goto interval_valid; // break validate_interval
 
 binary_search:
     while (i1 < right) {
         const std::ptrdiff_t mid = (i1 + right) >> 1;
-        if (t < pp(mid)) right = mid;
-        else i1 = mid + 1;
+        if (t < pp(mid))
+            right = mid;
+        else
+            i1 = mid + 1;
     }
     t1 = pp(i1);
     t0 = pp(i1 - 1);
@@ -139,45 +147,47 @@ interval_valid:
 
 std::span<const double> Interpolant::copySampleValue(std::size_t index) {
     const std::size_t offset = index * valueSize_;
-    for (std::size_t i = 0; i != valueSize_; ++i) store(i, values_[offset + i]);
+    for (std::size_t i = 0; i != valueSize_; ++i)
+        store(i, values_[offset + i]);
     return {result_, valueSize_};
 }
 
 // CubicInterpolant.intervalChanged_; the other interpolants keep no per-interval state.
 void Interpolant::intervalChanged(std::size_t i1, double t0, double t1) {
-    if (kind_ != Interpolation::Smooth) return;
+    if (kind_ != Interpolation::Smooth)
+        return;
     const auto n = static_cast<std::ptrdiff_t>(times_.size());
     const auto pp = [&](std::ptrdiff_t i) { return i >= 0 && i < n ? times_[i] : kUndefined; };
     auto iPrev = static_cast<std::ptrdiff_t>(i1) - 2, iNext = static_cast<std::ptrdiff_t>(i1) + 1;
     double tPrev = pp(iPrev), tNext = pp(iNext);
     if (iPrev < 0) {
         switch (settings->endingStart) {
-            case Ending::ZeroSlope:
-                iPrev = static_cast<std::ptrdiff_t>(i1);
-                tPrev = 2 * t0 - t1;
-                break;
-            case Ending::WrapAround:
-                iPrev = n - 2;
-                tPrev = t0 + pp(iPrev) - pp(iPrev + 1);
-                break;
-            case Ending::ZeroCurvature:
-                iPrev = static_cast<std::ptrdiff_t>(i1);
-                tPrev = t1;
+        case Ending::ZeroSlope:
+            iPrev = static_cast<std::ptrdiff_t>(i1);
+            tPrev = 2 * t0 - t1;
+            break;
+        case Ending::WrapAround:
+            iPrev = n - 2;
+            tPrev = t0 + pp(iPrev) - pp(iPrev + 1);
+            break;
+        case Ending::ZeroCurvature:
+            iPrev = static_cast<std::ptrdiff_t>(i1);
+            tPrev = t1;
         }
     }
     if (iNext >= n) {
         switch (settings->endingEnd) {
-            case Ending::ZeroSlope:
-                iNext = static_cast<std::ptrdiff_t>(i1);
-                tNext = 2 * t1 - t0;
-                break;
-            case Ending::WrapAround:
-                iNext = 1;
-                tNext = t1 + pp(1) - pp(0);
-                break;
-            case Ending::ZeroCurvature:
-                iNext = static_cast<std::ptrdiff_t>(i1) - 1;
-                tNext = t0;
+        case Ending::ZeroSlope:
+            iNext = static_cast<std::ptrdiff_t>(i1);
+            tNext = 2 * t1 - t0;
+            break;
+        case Ending::WrapAround:
+            iNext = 1;
+            tNext = t1 + pp(1) - pp(0);
+            break;
+        case Ending::ZeroCurvature:
+            iNext = static_cast<std::ptrdiff_t>(i1) - 1;
+            tNext = t0;
         }
     }
     const double halfDt = (t1 - t0) * 0.5;
@@ -191,36 +201,38 @@ std::span<const double> Interpolant::interpolate(std::size_t i1, double t0, doub
     const std::size_t stride = valueSize_, o1 = i1 * stride, o0 = o1 - stride;
     const std::span<const double> v = values_;
     switch (kind_) {
-        case Interpolation::Discrete:
-            return copySampleValue(i1 - 1);
-        case Interpolation::Linear: {
-            const double weight1 = (t - t0) / (t1 - t0), weight0 = 1 - weight1;
-            for (std::size_t i = 0; i != stride; ++i) store(i, v[o0 + i] * weight0 + v[o1 + i] * weight1);
-            break;
+    case Interpolation::Discrete:
+        return copySampleValue(i1 - 1);
+    case Interpolation::Linear: {
+        const double weight1 = (t - t0) / (t1 - t0), weight0 = 1 - weight1;
+        for (std::size_t i = 0; i != stride; ++i)
+            store(i, v[o0 + i] * weight0 + v[o1 + i] * weight1);
+        break;
+    }
+    case Interpolation::Smooth: {
+        const double wP = weightPrev_, wN = weightNext_;
+        const double p = (t - t0) / (t1 - t0), pp = p * p, ppp = pp * p;
+        const double sP = -wP * ppp + 2 * wP * pp - wP * p;
+        const double s0 = (1 + wP) * ppp + (-1.5 - 2 * wP) * pp + (-0.5 + wP) * p + 1;
+        const double s1 = (-1 - wN) * ppp + (1.5 + wN) * pp + 0.5 * p;
+        const double sN = wN * ppp - wN * pp;
+        for (std::size_t i = 0; i != stride; ++i)
+            store(i, sP * v[offsetPrev_ + i] + s0 * v[o0 + i] + s1 * v[o1 + i] + sN * v[offsetNext_ + i]);
+        break;
+    }
+    case Interpolation::QuaternionLinear: {
+        const double alpha = (t - t0) / (t1 - t0);
+        // three passes dstOffset 0 on every pass, as a quaternion track's value is one quaternion.
+        for (std::size_t offset = o1, end = o1 + stride; offset != end; offset += 4) {
+            double q[4];
+            slerpFlat(q, &v[offset - stride], &v[offset], alpha);
+            for (std::size_t i = 0; i != 4; ++i)
+                store(i, q[i]);
         }
-        case Interpolation::Smooth: {
-            const double wP = weightPrev_, wN = weightNext_;
-            const double p = (t - t0) / (t1 - t0), pp = p * p, ppp = pp * p;
-            const double sP = -wP * ppp + 2 * wP * pp - wP * p;
-            const double s0 = (1 + wP) * ppp + (-1.5 - 2 * wP) * pp + (-0.5 + wP) * p + 1;
-            const double s1 = (-1 - wN) * ppp + (1.5 + wN) * pp + 0.5 * p;
-            const double sN = wN * ppp - wN * pp;
-            for (std::size_t i = 0; i != stride; ++i)
-                store(i, sP * v[offsetPrev_ + i] + s0 * v[o0 + i] + s1 * v[o1 + i] + sN * v[offsetNext_ + i]);
-            break;
-        }
-        case Interpolation::QuaternionLinear: {
-            const double alpha = (t - t0) / (t1 - t0);
-            // three passes dstOffset 0 on every pass, as a quaternion track's value is one quaternion.
-            for (std::size_t offset = o1, end = o1 + stride; offset != end; offset += 4) {
-                double q[4];
-                slerpFlat(q, &v[offset - stride], &v[offset], alpha);
-                for (std::size_t i = 0; i != 4; ++i) store(i, q[i]);
-            }
-            break;
-        }
+        break;
+    }
     }
     return {result_, valueSize_};
 }
 
-}  // namespace tn::engine::animation
+} // namespace tn::engine::animation

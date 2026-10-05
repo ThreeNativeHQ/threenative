@@ -37,7 +37,7 @@ Object3D* findNode(Object3D& root, const std::optional<std::string>& nodeName);
  * `diagnostic`; an unavailable binding's get and set do nothing, as three's do.
  */
 class PropertyBinding {
-public:
+  public:
     PropertyBinding(const std::shared_ptr<Object3D>& root, std::string path);
 
     void bind();
@@ -51,17 +51,17 @@ public:
     /** Why the last bind left this unavailable, empty when it bound. */
     std::string diagnostic;
 
-private:
+  private:
     enum class Target { Unavailable, Position, Quaternion, Scale, Component, Visible };
 
     std::weak_ptr<Object3D> root_;
     std::weak_ptr<Object3D> node_;
     ParsedPath parsed_;
     bool parsedOk_ = false;
-    bool bindAttempted_ = false;  // three's `_getValue_unbound`: the first get or set binds
+    bool bindAttempted_ = false; // three's `_getValue_unbound`: the first get or set binds
     Target target_ = Target::Unavailable;
-    Vector3 Object3D::*vector_ = nullptr;  // the vector a component binding writes
+    Vector3 Object3D::* vector_ = nullptr; // the vector a component binding writes
     int component_ = 0;
 };
 
-}  // namespace tn::engine::animation
+} // namespace tn::engine::animation

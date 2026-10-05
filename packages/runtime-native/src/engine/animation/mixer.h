@@ -53,7 +53,7 @@ struct AnimationClip {
 
 /** three's PropertyMixer: the per-property accumulation buffer the mixer blends actions into. */
 class PropertyMixer {
-public:
+  public:
     PropertyMixer(PropertyBinding binding, TrackType type, std::size_t valueSize);
 
     void accumulate(int accuIndex, double weight);
@@ -68,9 +68,9 @@ public:
     double cumulativeWeight = 0, cumulativeWeightAdditive = 0;
     int useCount = 0, referenceCount = 0;
     std::optional<std::size_t> cacheIndex;
-    const Object3D* rootKey = nullptr;  // three keys bindings by root uuid; the root is the key here
+    const Object3D* rootKey = nullptr; // three keys bindings by root uuid; the root is the key here
 
-private:
+  private:
     void mix(std::size_t dst, std::size_t src, double t);
     void mixAdditive(std::size_t dst, std::size_t src, double t);
     void setIdentity();
@@ -101,7 +101,7 @@ struct ControlInterpolant {
 
 /** three's AnimationAction. Fields and methods keep three's names; the mixer owns every action. */
 class AnimationAction {
-public:
+  public:
     AnimationAction(AnimationMixer& mixer, std::shared_ptr<const AnimationClip> clip,
                     std::shared_ptr<Object3D> localRoot, BlendMode blendMode);
 
@@ -141,7 +141,7 @@ public:
     bool zeroSlopeAtStart = true;
     bool zeroSlopeAtEnd = true;
 
-private:
+  private:
     friend class AnimationMixer;
 
     void update(double time, double deltaTime, double timeDirection, int accuIndex);
@@ -177,7 +177,7 @@ private:
  * destroyed (three lets the collector take uncached ones); a game that churns clips grows it.
  */
 class AnimationMixer {
-public:
+  public:
     explicit AnimationMixer(std::shared_ptr<Object3D> root);
     ~AnimationMixer();
     AnimationMixer(const AnimationMixer&) = delete;
@@ -211,7 +211,7 @@ public:
     [[nodiscard]] std::size_t controlInterpolantsTotal() const { return controlInterpolants_.size(); }
     [[nodiscard]] std::size_t controlInterpolantsInUse() const { return nActiveControlInterpolants_; }
 
-private:
+  private:
     friend class AnimationAction;
 
     struct ActionsForClip {
@@ -264,4 +264,4 @@ private:
     std::vector<ListenerEntry> listeners_;
 };
 
-}  // namespace tn::engine::animation
+} // namespace tn::engine::animation

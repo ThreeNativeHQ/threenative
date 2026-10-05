@@ -18,11 +18,13 @@ void FixedStepClock::start(double nowMs) {
 namespace {
 // Math.max: NaN if either side is NaN (std::fmax returns the other side), and +0 over -0.
 double jsMax(double a, double b) {
-    if (std::isnan(a) || std::isnan(b)) return std::numeric_limits<double>::quiet_NaN();
-    if (a == b) return std::signbit(a) ? b : a;
+    if (std::isnan(a) || std::isnan(b))
+        return std::numeric_limits<double>::quiet_NaN();
+    if (a == b)
+        return std::signbit(a) ? b : a;
     return a > b ? a : b;
 }
-}  // namespace
+} // namespace
 
 // loop.ts's #advanceSimulation, operation for operation. Number.EPSILON is DBL_EPSILON.
 uint32_t FixedStepClock::advance(double nowMs) {
@@ -37,7 +39,8 @@ uint32_t FixedStepClock::advance(double nowMs) {
         accumulator_ -= step_;
         updates += 1;
     }
-    if (updates == maxSteps_ && accumulator_ >= step_) accumulator_ = 0.0;
+    if (updates == maxSteps_ && accumulator_ >= step_)
+        accumulator_ = 0.0;
     return updates;
 }
 
@@ -45,4 +48,4 @@ uint64_t FixedStepClock::tick() const { return tick_; }
 
 double FixedStepClock::interpolationAlpha() const { return accumulator_ / step_; }
 
-}  // namespace tn::engine::world
+} // namespace tn::engine::world

@@ -22,12 +22,11 @@ bool odd(double x) {
     return (static_cast<int64_t>(m < 0 ? m + 4294967296.0 : m) & 1) == 1;
 }
 
-template <typename T, typename Key>
-auto findKey(std::vector<std::pair<Key, T>>& entries, const Key& key) {
+template <typename T, typename Key> auto findKey(std::vector<std::pair<Key, T>>& entries, const Key& key) {
     return std::find_if(entries.begin(), entries.end(), [&](const auto& e) { return e.first == key; });
 }
 
-}  // namespace
+} // namespace
 
 // ---- tracks and clips
 
@@ -47,12 +46,14 @@ std::unique_ptr<Interpolant> KeyframeTrack::createInterpolant() const {
 AnimationClip::AnimationClip(std::string clipName, double clipDuration, std::vector<KeyframeTrack> clipTracks,
                              BlendMode mode)
     : name(std::move(clipName)), tracks(std::move(clipTracks)), duration(clipDuration), blendMode(mode) {
-    if (duration < 0) resetDuration();
+    if (duration < 0)
+        resetDuration();
 }
 
 AnimationClip& AnimationClip::resetDuration() {
     double d = 0;
-    for (const KeyframeTrack& track : tracks) d = std::max(d, track.times.back());
+    for (const KeyframeTrack& track : tracks)
+        d = std::max(d, track.times.back());
     duration = d;
     return *this;
 }
@@ -69,7 +70,8 @@ void PropertyMixer::mix(std::size_t dst, std::size_t src, double t) {
         return;
     }
     const double s = 1 - t;
-    for (std::size_t i = 0; i != valueSize; ++i) buffer[dst + i] = buffer[dst + i] * s + buffer[src + i] * t;
+    for (std::size_t i = 0; i != valueSize; ++i)
+        buffer[dst + i] = buffer[dst + i] * s + buffer[src + i] * t;
 }
 
 void PropertyMixer::mixAdditive(std::size_t dst, std::size_t src, double t) {
@@ -79,20 +81,24 @@ void PropertyMixer::mixAdditive(std::size_t dst, std::size_t src, double t) {
         slerpFlat(&buffer[dst], &buffer[dst], &buffer[work], t);
         return;
     }
-    for (std::size_t i = 0; i != valueSize; ++i) buffer[dst + i] = buffer[dst + i] + buffer[src + i] * t;
+    for (std::size_t i = 0; i != valueSize; ++i)
+        buffer[dst + i] = buffer[dst + i] + buffer[src + i] * t;
 }
 
 void PropertyMixer::setIdentity() {
     const std::size_t start = kAddIndex * valueSize;
-    for (std::size_t i = start; i < start + valueSize; ++i) buffer[i] = 0;
-    if (type_ == TrackType::Quaternion) buffer[start + 3] = 1;
+    for (std::size_t i = start; i < start + valueSize; ++i)
+        buffer[i] = 0;
+    if (type_ == TrackType::Quaternion)
+        buffer[start + 3] = 1;
 }
 
 void PropertyMixer::accumulate(int accuIndex, double weight) {
     const std::size_t stride = valueSize, offset = static_cast<std::size_t>(accuIndex) * stride + stride;
     double currentWeight = cumulativeWeight;
     if (currentWeight == 0) {
-        for (std::size_t i = 0; i != stride; ++i) buffer[offset + i] = buffer[i];
+        for (std::size_t i = 0; i != stride; ++i)
+            buffer[offset + i] = buffer[i];
         currentWeight = weight;
     } else {
         currentWeight += weight;
@@ -102,7 +108,8 @@ void PropertyMixer::accumulate(int accuIndex, double weight) {
 }
 
 void PropertyMixer::accumulateAdditive(double weight) {
-    if (cumulativeWeightAdditive == 0) setIdentity();
+    if (cumulativeWeightAdditive == 0)
+        setIdentity();
     mixAdditive(valueSize * kAddIndex, 0, weight);
     cumulativeWeightAdditive += weight;
 }
@@ -112,8 +119,10 @@ void PropertyMixer::apply(int accuIndex) {
     const double weight = cumulativeWeight, weightAdditive = cumulativeWeightAdditive;
     cumulativeWeight = 0;
     cumulativeWeightAdditive = 0;
-    if (weight < 1) mix(offset, stride * kOrigIndex, 1 - weight);
-    if (weightAdditive > 0) mixAdditive(offset, kAddIndex * stride, 1);
+    if (weight < 1)
+        mix(offset, stride * kOrigIndex, 1 - weight);
+    if (weightAdditive > 0)
+        mixAdditive(offset, kAddIndex * stride, 1);
     for (std::size_t i = stride, e = stride + stride; i != e; ++i) {
         if (buffer[i] != buffer[i + stride]) {
             binding.setValue(buffer.data(), offset);
@@ -251,7 +260,8 @@ AnimationAction& AnimationAction::halt(double duration) { return warp(effectiveT
 
 AnimationAction& AnimationAction::warp(double startTimeScale, double endTimeScale, double duration) {
     const double now = mixer_.time;
-    if (!timeScaleInterpolant_) timeScaleInterpolant_ = mixer_.lendControlInterpolant();
+    if (!timeScaleInterpolant_)
+        timeScaleInterpolant_ = mixer_.lendControlInterpolant();
     timeScaleInterpolant_->set(now, startTimeScale / timeScale, now + duration, endTimeScale / timeScale);
     return *this;
 }
@@ -306,7 +316,8 @@ double AnimationAction::updateWeight(double t) {
             w *= interpolantValue;
             if (t > interpolant->times[1]) {
                 stopFading();
-                if (interpolantValue == 0) enabled = false;
+                if (interpolantValue == 0)
+                    enabled = false;
             }
         }
     }
@@ -325,7 +336,8 @@ double AnimationAction::updateTimeScale(double t) {
                 if (scale == 0) {
                     paused = true;
                 } else {
-                    if (restoreTimeScale_) scale = *restoreTimeScale_;
+                    if (restoreTimeScale_)
+                        scale = *restoreTimeScale_;
                     timeScale = scale;
                 }
                 stopWarping();
@@ -342,7 +354,8 @@ double AnimationAction::updateTime(double deltaTime) {
     double loopCount = loopCount_;
     const bool pingPong = loop == Loop::PingPong;
     if (deltaTime == 0) {
-        if (loopCount == -1) return t;
+        if (loopCount == -1)
+            return t;
         return pingPong && odd(loopCount) ? duration - t : t;
     }
     if (loop == Loop::Once) {
@@ -356,10 +369,12 @@ double AnimationAction::updateTime(double deltaTime) {
             t = 0;
         } else {
             time = t;
-            return t;  // break handle_stop
+            return t; // break handle_stop
         }
-        if (clampWhenFinished) paused = true;
-        else enabled = false;
+        if (clampWhenFinished)
+            paused = true;
+        else
+            enabled = false;
         time = t;
         mixer_.dispatchEvent({"finished", this, deltaTime < 0 ? -1 : 1, 0});
         return t;
@@ -378,8 +393,10 @@ double AnimationAction::updateTime(double deltaTime) {
         loopCount += std::abs(loopDelta);
         const double pending = repetitions - loopCount;
         if (pending <= 0) {
-            if (clampWhenFinished) paused = true;
-            else enabled = false;
+            if (clampWhenFinished)
+                paused = true;
+            else
+                enabled = false;
             t = deltaTime > 0 ? duration : 0;
             time = t;
             mixer_.dispatchEvent({"finished", this, deltaTime > 0 ? 1 : -1, 0});
@@ -398,7 +415,8 @@ double AnimationAction::updateTime(double deltaTime) {
         loopCount_ = loopCount;
         time = t;
     }
-    if (pingPong && odd(loopCount)) return duration - t;
+    if (pingPong && odd(loopCount))
+        return duration - t;
     return t;
 }
 
@@ -409,13 +427,15 @@ void AnimationAction::setEndings(bool atStart, bool atEnd, bool pingPong) {
         settings.endingEnd = Ending::ZeroSlope;
         return;
     }
-    settings.endingStart = atStart ? (zeroSlopeAtStart ? Ending::ZeroSlope : Ending::ZeroCurvature) : Ending::WrapAround;
+    settings.endingStart =
+        atStart ? (zeroSlopeAtStart ? Ending::ZeroSlope : Ending::ZeroCurvature) : Ending::WrapAround;
     settings.endingEnd = atEnd ? (zeroSlopeAtEnd ? Ending::ZeroSlope : Ending::ZeroCurvature) : Ending::WrapAround;
 }
 
 AnimationAction& AnimationAction::scheduleFading(double duration, double weightNow, double weightThen) {
     const double now = mixer_.time;
-    if (!weightInterpolant_) weightInterpolant_ = mixer_.lendControlInterpolant();
+    if (!weightInterpolant_)
+        weightInterpolant_ = mixer_.lendControlInterpolant();
     weightInterpolant_->set(now, weightNow, now + duration, weightThen);
     return *this;
 }
@@ -427,23 +447,26 @@ AnimationMixer::~AnimationMixer() = default;
 
 AnimationMixer::ActionsForClip* AnimationMixer::actionsFor(const AnimationClip* clip) {
     for (ActionsForClip& entry : actionsByClip_)
-        if (entry.clip == clip) return &entry;
+        if (entry.clip == clip)
+            return &entry;
     return nullptr;
 }
 
 AnimationMixer::BindingsForRoot* AnimationMixer::bindingsFor(const Object3D* root) {
     for (BindingsForRoot& entry : bindingsByRootAndName_)
-        if (entry.root == root) return &entry;
+        if (entry.root == root)
+            return &entry;
     return nullptr;
 }
 
 void AnimationMixer::bindAction(AnimationAction& action, AnimationAction* /*prototypeAction*/) {
     const std::shared_ptr<Object3D> root = action.localRoot_ ? action.localRoot_ : root_;
     const auto& tracks = action.clip_->tracks;
-    if (!bindingsFor(root.get())) bindingsByRootAndName_.push_back({root.get(), {}});
+    if (!bindingsFor(root.get()))
+        bindingsByRootAndName_.push_back({root.get(), {}});
     for (std::size_t i = 0; i != tracks.size(); ++i) {
         const KeyframeTrack& track = tracks[i];
-        BindingsForRoot* byName = bindingsFor(root.get());  // created above; nothing removes it while binding
+        BindingsForRoot* byName = bindingsFor(root.get()); // created above; nothing removes it while binding
         auto found = findKey(byName->byName, track.name);
         PropertyMixer* binding = found != byName->byName.end() ? found->second : nullptr;
         if (binding) {
@@ -471,7 +494,8 @@ void AnimationMixer::bindAction(AnimationAction& action, AnimationAction* /*prot
 }
 
 void AnimationMixer::activateAction(AnimationAction& action) {
-    if (isActiveAction(action)) return;
+    if (isActiveAction(action))
+        return;
     if (!action.cacheIndex_) {
         const Object3D* root = action.localRoot_ ? action.localRoot_.get() : root_.get();
         ActionsForClip* forClip = actionsFor(action.clip_.get());
@@ -488,7 +512,8 @@ void AnimationMixer::activateAction(AnimationAction& action) {
 }
 
 void AnimationMixer::deactivateAction(AnimationAction& action) {
-    if (!isActiveAction(action)) return;
+    if (!isActiveAction(action))
+        return;
     for (PropertyMixer* binding : action.propertyBindings_) {
         if (--binding->useCount == 0) {
             binding->restoreOriginalState();
@@ -514,8 +539,10 @@ void AnimationMixer::addInactiveAction(AnimationAction& action, const AnimationC
     }
     action.cacheIndex_ = actions_.size();
     actions_.push_back(&action);
-    if (auto it = findKey(forClip->actionByRoot, root); it != forClip->actionByRoot.end()) it->second = &action;
-    else forClip->actionByRoot.emplace_back(root, &action);
+    if (auto it = findKey(forClip->actionByRoot, root); it != forClip->actionByRoot.end())
+        it->second = &action;
+    else
+        forClip->actionByRoot.emplace_back(root, &action);
 }
 
 void AnimationMixer::removeInactiveAction(AnimationAction& action) {
@@ -534,7 +561,8 @@ void AnimationMixer::removeInactiveAction(AnimationAction& action) {
     forClip->knownActions.pop_back();
     action.byClipCacheIndex_.reset();
     const Object3D* root = action.localRoot_ ? action.localRoot_.get() : root_.get();
-    if (auto it = findKey(forClip->actionByRoot, root); it != forClip->actionByRoot.end()) forClip->actionByRoot.erase(it);
+    if (auto it = findKey(forClip->actionByRoot, root); it != forClip->actionByRoot.end())
+        forClip->actionByRoot.erase(it);
     if (forClip->knownActions.empty())
         actionsByClip_.erase(actionsByClip_.begin() + (forClip - actionsByClip_.data()));
     removeInactiveBindingsForAction(action);
@@ -542,7 +570,8 @@ void AnimationMixer::removeInactiveAction(AnimationAction& action) {
 
 void AnimationMixer::removeInactiveBindingsForAction(AnimationAction& action) {
     for (PropertyMixer* binding : action.propertyBindings_)
-        if (--binding->referenceCount == 0) removeInactiveBinding(*binding);
+        if (--binding->referenceCount == 0)
+            removeInactiveBinding(*binding);
 }
 
 void AnimationMixer::lendAction(AnimationAction& action) {
@@ -569,8 +598,10 @@ void AnimationMixer::addInactiveBinding(PropertyMixer& binding, const Object3D* 
         bindingsByRootAndName_.push_back({root, {}});
         byName = &bindingsByRootAndName_.back();
     }
-    if (auto it = findKey(byName->byName, trackName); it != byName->byName.end()) it->second = &binding;
-    else byName->byName.emplace_back(trackName, &binding);
+    if (auto it = findKey(byName->byName, trackName); it != byName->byName.end())
+        it->second = &binding;
+    else
+        byName->byName.emplace_back(trackName, &binding);
     binding.cacheIndex = bindings_.size();
     bindings_.push_back(&binding);
 }
@@ -582,8 +613,12 @@ void AnimationMixer::removeInactiveBinding(PropertyMixer& binding) {
     lastInactiveBinding->cacheIndex = cacheIndex;
     bindings_[cacheIndex] = lastInactiveBinding;
     bindings_.pop_back();
+    // three leaves the index set, so replaying an uncached action throws there; cleared here, the
+    // replay rebinds through bindAction's `cacheIndex` check instead.
+    binding.cacheIndex.reset();
     if (byName) {
-        if (auto it = findKey(byName->byName, binding.binding.path); it != byName->byName.end()) byName->byName.erase(it);
+        if (auto it = findKey(byName->byName, binding.binding.path); it != byName->byName.end())
+            byName->byName.erase(it);
         if (byName->byName.empty())
             bindingsByRootAndName_.erase(bindingsByRootAndName_.begin() + (byName - bindingsByRootAndName_.data()));
     }
@@ -609,7 +644,8 @@ void AnimationMixer::takeBackBinding(PropertyMixer& binding) {
 
 ControlInterpolant* AnimationMixer::lendControlInterpolant() {
     const std::size_t lastActiveIndex = nActiveControlInterpolants_++;
-    if (lastActiveIndex < controlInterpolants_.size()) return controlInterpolants_[lastActiveIndex];
+    if (lastActiveIndex < controlInterpolants_.size())
+        return controlInterpolants_[lastActiveIndex];
     ownedControls_.push_back(std::make_unique<ControlInterpolant>());
     ControlInterpolant* interpolant = ownedControls_.back().get();
     interpolant->cacheIndex = lastActiveIndex;
@@ -629,12 +665,14 @@ void AnimationMixer::takeBackControlInterpolant(ControlInterpolant* interpolant)
 AnimationAction* AnimationMixer::clipAction(const std::shared_ptr<const AnimationClip>& clip,
                                             const std::shared_ptr<Object3D>& optionalRoot,
                                             std::optional<BlendMode> blendMode) {
-    if (!clip) return nullptr;
+    if (!clip)
+        return nullptr;
     const Object3D* root = optionalRoot ? optionalRoot.get() : root_.get();
     const BlendMode mode = blendMode.value_or(clip->blendMode);
     AnimationAction* prototypeAction = nullptr;
     if (ActionsForClip* forClip = actionsFor(clip.get())) {
-        if (auto it = findKey(forClip->actionByRoot, root); it != forClip->actionByRoot.end() && it->second->blendMode == mode)
+        if (auto it = findKey(forClip->actionByRoot, root);
+            it != forClip->actionByRoot.end() && it->second->blendMode == mode)
             return it->second;
         prototypeAction = forClip->knownActions[0];
     }
@@ -648,16 +686,19 @@ AnimationAction* AnimationMixer::clipAction(const std::shared_ptr<const Animatio
 AnimationAction* AnimationMixer::existingAction(const AnimationClip& clip, const Object3D* optionalRoot) const {
     const Object3D* root = optionalRoot ? optionalRoot : root_.get();
     for (const ActionsForClip& entry : actionsByClip_) {
-        if (entry.clip != &clip) continue;
+        if (entry.clip != &clip)
+            continue;
         for (const auto& [key, action] : entry.actionByRoot)
-            if (key == root) return action;
+            if (key == root)
+                return action;
         return nullptr;
     }
     return nullptr;
 }
 
 AnimationMixer& AnimationMixer::stopAllAction() {
-    for (std::size_t i = nActiveActions_; i-- > 0;) actions_[i]->stop();
+    for (std::size_t i = nActiveActions_; i-- > 0;)
+        actions_[i]->stop();
     return *this;
 }
 
@@ -665,23 +706,27 @@ AnimationMixer& AnimationMixer::update(double deltaTime) {
     deltaTime *= timeScale;
     const std::size_t nActions = nActiveActions_;
     const double t = time += deltaTime;
-    const double timeDirection = deltaTime > 0 ? 1 : deltaTime < 0 ? -1 : deltaTime;  // Math.sign
+    const double timeDirection = deltaTime > 0 ? 1 : deltaTime < 0 ? -1 : deltaTime; // Math.sign
     const int accuIndex = accuIndex_ ^= 1;
-    for (std::size_t i = 0; i != nActions; ++i) actions_[i]->update(t, deltaTime, timeDirection, accuIndex);
+    for (std::size_t i = 0; i != nActions; ++i)
+        actions_[i]->update(t, deltaTime, timeDirection, accuIndex);
     const std::size_t nBindings = nActiveBindings_;
-    for (std::size_t i = 0; i != nBindings; ++i) bindings_[i]->apply(accuIndex);
+    for (std::size_t i = 0; i != nBindings; ++i)
+        bindings_[i]->apply(accuIndex);
     return *this;
 }
 
 AnimationMixer& AnimationMixer::setTime(double t) {
     time = 0;
-    for (AnimationAction* action : actions_) action->time = 0;
+    for (AnimationAction* action : actions_)
+        action->time = 0;
     return update(t);
 }
 
 void AnimationMixer::uncacheClip(const AnimationClip& clip) {
     ActionsForClip* forClip = actionsFor(&clip);
-    if (!forClip) return;
+    if (!forClip)
+        return;
     const std::vector<AnimationAction*> actionsToRemove = forClip->knownActions;
     for (AnimationAction* action : actionsToRemove) {
         deactivateAction(*action);
@@ -694,16 +739,19 @@ void AnimationMixer::uncacheClip(const AnimationClip& clip) {
         actions_.pop_back();
         removeInactiveBindingsForAction(*action);
     }
-    if ((forClip = actionsFor(&clip))) actionsByClip_.erase(actionsByClip_.begin() + (forClip - actionsByClip_.data()));
+    if ((forClip = actionsFor(&clip)))
+        actionsByClip_.erase(actionsByClip_.begin() + (forClip - actionsByClip_.data()));
 }
 
 void AnimationMixer::uncacheRoot(const Object3D& root) {
-    const std::vector<ActionsForClip> snapshot = actionsByClip_;  // `for in` over the keys present at the start
+    const std::vector<ActionsForClip> snapshot = actionsByClip_; // `for in` over the keys present at the start
     for (const ActionsForClip& entry : snapshot) {
         ActionsForClip* forClip = actionsFor(entry.clip);
-        if (!forClip) continue;
+        if (!forClip)
+            continue;
         auto it = findKey(forClip->actionByRoot, &root);
-        if (it == forClip->actionByRoot.end()) continue;
+        if (it == forClip->actionByRoot.end())
+            continue;
         AnimationAction* action = it->second;
         deactivateAction(*action);
         removeInactiveAction(*action);
@@ -726,7 +774,8 @@ void AnimationMixer::uncacheAction(const AnimationClip& clip, const Object3D* op
 
 void AnimationMixer::addEventListener(std::string_view type, Listener listener, void* context) {
     for (const ListenerEntry& e : listeners_)
-        if (e.type == type && e.listener == listener && e.context == context) return;
+        if (e.type == type && e.listener == listener && e.context == context)
+            return;
     listeners_.push_back({std::string(type), listener, context});
 }
 
@@ -737,9 +786,10 @@ void AnimationMixer::removeEventListener(std::string_view type, Listener listene
 }
 
 void AnimationMixer::dispatchEvent(const MixerEvent& event) {
-    const std::vector<ListenerEntry> copy = listeners_;  // a listener may remove itself while it runs
+    const std::vector<ListenerEntry> copy = listeners_; // a listener may remove itself while it runs
     for (const ListenerEntry& e : copy)
-        if (e.type == event.type) e.listener(event, e.context);
+        if (e.type == event.type)
+            e.listener(event, e.context);
 }
 
-}  // namespace tn::engine::animation
+} // namespace tn::engine::animation

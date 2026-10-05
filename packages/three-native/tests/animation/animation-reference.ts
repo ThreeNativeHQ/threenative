@@ -322,9 +322,414 @@ const bindingLines = [
   "",
 ];
 
+// ---- AnimationMixer: clips and a timeline of operations, both data, replayed by the native test
+type TrackKind = "vector" | "quaternion" | "number";
+interface ITrackSpec {
+  name: string;
+  kind: TrackKind;
+  interpolation: "Discrete" | "Linear" | "Smooth";
+  times: number[];
+  values: number[];
+}
+interface IClipSpec {
+  name: string;
+  duration: number;
+  additive: boolean;
+  tracks: ITrackSpec[];
+}
+const axisAngle = (x: number, y: number, z: number, angle: number) => {
+  const q = new three.Quaternion().setFromAxisAngle(new three.Vector3(x, y, z).normalize(), angle);
+  return [q.x, q.y, q.z, q.w];
+};
+const CLIPS: IClipSpec[] = [
+  {
+    name: "idle",
+    duration: -1,
+    additive: false,
+    tracks: [
+      {
+        name: "hips.position",
+        kind: "vector",
+        interpolation: "Linear",
+        times: [0, 0.5, 1, 1.5, 2],
+        values: [0, 1, 0, 0, 1.05, 0.02, 0, 1, 0, 0, 0.97, -0.02, 0, 1, 0],
+      },
+      {
+        name: "spine.quaternion",
+        kind: "quaternion",
+        interpolation: "Linear",
+        times: [0, 0.7, 1.4, 2],
+        values: [
+          ...axisAngle(1, 0, 0, 0),
+          ...axisAngle(1, 0, 0, 0.1),
+          ...axisAngle(1, 0.2, 0, -0.08),
+          ...axisAngle(1, 0, 0, 0),
+        ],
+      },
+      {
+        name: "head.scale",
+        kind: "vector",
+        interpolation: "Smooth",
+        times: [0, 0.4, 1.1, 2],
+        values: [1, 1, 1, 1.02, 0.99, 1, 0.97, 1.03, 1, 1, 1, 1],
+      },
+    ],
+  },
+  {
+    name: "walk",
+    duration: 1.2,
+    additive: false,
+    tracks: [
+      {
+        name: "hips.position",
+        kind: "vector",
+        interpolation: "Smooth",
+        times: [0, 0.3, 0.6, 0.9, 1.2],
+        values: [0, 1, 0, 0.1, 1.08, 0.3, 0, 1, 0.6, -0.1, 1.08, 0.9, 0, 1, 1.2],
+      },
+      {
+        name: "spine.quaternion",
+        kind: "quaternion",
+        interpolation: "Linear",
+        times: [0, 0.6, 1.2],
+        values: [
+          ...axisAngle(0, 1, 0, 0.2),
+          ...axisAngle(0, 1, 0, -0.2),
+          ...axisAngle(0, 1, 0, 0.2),
+        ],
+      },
+      {
+        name: "prop.position",
+        kind: "vector",
+        interpolation: "Discrete",
+        times: [0, 0.4, 0.8],
+        values: [1, 0, 0, 1.5, 0.2, 0, 1, 0.4, 0],
+      },
+    ],
+  },
+  {
+    name: "wave",
+    duration: 0.8,
+    additive: false,
+    tracks: [
+      {
+        name: "head.quaternion",
+        kind: "quaternion",
+        interpolation: "Linear",
+        times: [0, 0.4, 0.8],
+        values: [
+          ...axisAngle(0, 0, 1, -0.3),
+          ...axisAngle(0, 0, 1, 0.3),
+          ...axisAngle(0, 0, 1, -0.3),
+        ],
+      },
+    ],
+  },
+  {
+    name: "lean",
+    duration: -1,
+    additive: true,
+    tracks: [
+      {
+        name: "spine.quaternion",
+        kind: "quaternion",
+        interpolation: "Linear",
+        times: [0, 1],
+        values: [...axisAngle(0, 0, 1, 0), ...axisAngle(0, 0, 1, 0.25)],
+      },
+      {
+        name: "hips.position",
+        kind: "vector",
+        interpolation: "Linear",
+        times: [0, 1],
+        values: [0, 0, 0, 0.2, -0.05, 0],
+      },
+    ],
+  },
+  {
+    name: "jump",
+    duration: -1,
+    additive: false,
+    tracks: [
+      {
+        name: "hips.position",
+        kind: "vector",
+        interpolation: "Smooth",
+        times: [0, 0.25, 0.5, 0.75],
+        values: [0, 1, 0, 0, 1.6, 0, 0, 1.9, 0, 0, 1, 0],
+      },
+    ],
+  },
+  {
+    name: "spin",
+    duration: -1,
+    additive: false,
+    tracks: [
+      {
+        name: "prop.quaternion",
+        kind: "quaternion",
+        interpolation: "Linear",
+        times: [0, 0.3, 0.6],
+        values: [...axisAngle(0, 1, 0, 0), ...axisAngle(0, 1, 0, 2), ...axisAngle(0, 1, 0, 4)],
+      },
+      {
+        name: "prop.scale",
+        kind: "vector",
+        interpolation: "Linear",
+        times: [0, 0.6],
+        values: [1, 1, 1, 2, 0.5, 1],
+      },
+    ],
+  },
+];
+// [frame, op, action, a, b, c]: applied before that frame's update. Actions index CLIPS. An
+// uncached action is never played again: three 0.185.1's _removeInactiveBinding leaves the
+// binding's _cacheIndex set, so that play() throws in _lendBinding.
+type Op = [number, string, number, number, number, number];
+const OPS: Op[] = [
+  [0, "play", 0, 0, 0, 0],
+  [60, "play", 1, 0, 0, 0],
+  [60, "crossFadeFrom", 1, 0, 0.5, 1],
+  [120, "setLoop", 2, 2, Number.POSITIVE_INFINITY, 0],
+  [120, "weight", 2, 0.4, 0, 0],
+  [120, "play", 2, 0, 0, 0],
+  [150, "weight", 3, 0.7, 0, 0],
+  [150, "fadeIn", 3, 0.3, 0, 0],
+  [150, "play", 3, 0, 0, 0],
+  [180, "setLoop", 4, 0, 1, 0],
+  [180, "clamp", 4, 1, 0, 0],
+  [180, "play", 4, 0, 0, 0],
+  [210, "setLoop", 5, 1, 2, 0],
+  [210, "timeScale", 5, 1.5, 0, 0],
+  [210, "play", 5, 0, 0, 0],
+  [240, "halt", 1, 0.5, 0, 0],
+  [270, "mixerTimeScale", 0, -0.5, 0, 0],
+  [330, "mixerTimeScale", 0, 1, 0, 0],
+  [360, "reset", 0, 0, 0, 0],
+  [360, "play", 0, 0, 0, 0],
+  [360, "fadeIn", 0, 0.25, 0, 0],
+  [360, "fadeOut", 1, 0.25, 0, 0],
+  [390, "stop", 4, 0, 0, 0],
+  [420, "setEffectiveWeight", 2, 0, 0, 0],
+  [420, "zeroSlope", 0, 0, 1, 0],
+  [450, "stop", 3, 0, 0, 0],
+  [450, "startAt", 3, 0.4, 0, 0],
+  [450, "play", 3, 0, 0, 0],
+  [480, "uncacheAction", 5, 0, 0, 0],
+  [500, "mixerSetTime", 0, 3.3, 0, 0],
+  [510, "setEffectiveTimeScale", 0, 2, 0, 0],
+  [520, "warp", 0, 2, 0.5, 0.4],
+  [540, "stop", 1, 0, 0, 0],
+  [540, "setDuration", 1, 2, 0, 0],
+  [540, "play", 1, 0, 0, 0],
+  [555, "syncWith", 2, 1, 0, 0],
+  [570, "stopAll", 0, 0, 0, 0],
+  [585, "play", 0, 0, 0, 0],
+  [585, "crossFadeTo", 0, 2, 0.3, 0],
+];
+const LOOPS = [three.LoopOnce, three.LoopRepeat, three.LoopPingPong];
+const FRAMES = 600;
+let dtSeed = 0x1b873593;
+const DT = Array.from({ length: FRAMES }, () => {
+  dtSeed = (Math.imul(dtSeed, 1664525) + 1013904223) >>> 0;
+  return 0.008 + (dtSeed / 2 ** 32) * 0.026;
+});
+
+const rig = named("rig");
+const hips = named("hips");
+const spine = named("spine");
+const head = named("head");
+const prop = named("prop");
+rig.add(hips, prop);
+hips.add(spine);
+spine.add(head);
+const RIG = [rig, hips, spine, head, prop];
+const TRACK_TYPES = {
+  vector: three.VectorKeyframeTrack,
+  quaternion: three.QuaternionKeyframeTrack,
+  number: three.NumberKeyframeTrack,
+};
+const INTERPOLATIONS = {
+  Discrete: three.InterpolateDiscrete,
+  Linear: three.InterpolateLinear,
+  Smooth: three.InterpolateSmooth,
+};
+const clips = CLIPS.map(
+  (c) =>
+    new three.AnimationClip(
+      c.name,
+      c.duration,
+      c.tracks.map(
+        (s) => new TRACK_TYPES[s.kind](s.name, s.times, s.values, INTERPOLATIONS[s.interpolation]),
+      ),
+      c.additive ? three.AdditiveAnimationBlendMode : three.NormalAnimationBlendMode,
+    ),
+);
+const mixer = new three.AnimationMixer(rig);
+const actions = clips.map((clip) => mixer.clipAction(clip));
+const mixerEvents: string[] = [];
+let frame = 0;
+for (const type of ["finished", "loop"]) {
+  mixer.addEventListener(
+    type,
+    (e: {
+      type: string;
+      action: { getClip(): { name: string } };
+      direction?: number;
+      loopDelta?: number;
+    }) => {
+      mixerEvents.push(
+        `${frame}:${e.type}:${e.action.getClip().name}:${e.direction ?? 0}:${bits(e.loopDelta ?? 0)}`,
+      );
+    },
+  );
+}
+const applyOp = ([, op, i, a, b, c]: Op) => {
+  const action = actions[i];
+  switch (op) {
+    case "play":
+      action.play();
+      break;
+    case "stop":
+      action.stop();
+      break;
+    case "reset":
+      action.reset();
+      break;
+    case "fadeIn":
+      action.fadeIn(a);
+      break;
+    case "fadeOut":
+      action.fadeOut(a);
+      break;
+    case "crossFadeFrom":
+      action.crossFadeFrom(actions[a], b, c === 1);
+      break;
+    case "crossFadeTo":
+      action.crossFadeTo(actions[a], b, c === 1);
+      break;
+    case "halt":
+      action.halt(a);
+      break;
+    case "warp":
+      action.warp(a, b, c);
+      break;
+    case "setLoop":
+      action.setLoop(LOOPS[a], b);
+      break;
+    case "clamp":
+      action.clampWhenFinished = a === 1;
+      break;
+    case "weight":
+      action.weight = a;
+      break;
+    case "timeScale":
+      action.timeScale = a;
+      break;
+    case "setEffectiveWeight":
+      action.setEffectiveWeight(a);
+      break;
+    case "setEffectiveTimeScale":
+      action.setEffectiveTimeScale(a);
+      break;
+    case "setDuration":
+      action.setDuration(a);
+      break;
+    case "syncWith":
+      action.syncWith(actions[a]);
+      break;
+    case "startAt":
+      action.startAt(mixer.time + a);
+      break;
+    case "zeroSlope":
+      action.zeroSlopeAtStart = a === 1;
+      action.zeroSlopeAtEnd = b === 1;
+      break;
+    case "mixerTimeScale":
+      mixer.timeScale = a;
+      break;
+    case "mixerSetTime":
+      mixer.setTime(a);
+      break;
+    case "stopAll":
+      mixer.stopAllAction();
+      break;
+    case "uncacheAction":
+      mixer.uncacheAction(clips[i]);
+      break;
+    default:
+      throw new Error(`unknown op ${op}`);
+  }
+};
+const flag = (x: boolean) => (x ? 1 : 0);
+const poses: string[] = [];
+for (frame = 0; frame < FRAMES; ++frame) {
+  for (const op of OPS) if (op[0] === frame) applyOp(op);
+  mixer.update(DT[frame] as number);
+  if (frame % 5 !== 4) continue;
+  const nodes = RIG.map(
+    (o) => `${o.name}:p=${vec(o.position)};q=${vec(o.quaternion)};s=${vec(o.scale)}`,
+  );
+  const states = actions.map(
+    (a, i) =>
+      `a${i}:t=${bits(a.time)};w=${bits(a.getEffectiveWeight())};ts=${bits(a.getEffectiveTimeScale())};e=${flag(a.enabled)};p=${flag(a.paused)};r=${flag(a.isRunning())};s=${flag(a.isScheduled())}`,
+  );
+  const s = mixer.stats;
+  poses.push(
+    [
+      `f${frame}`,
+      `t=${bits(mixer.time)}`,
+      ...nodes,
+      ...states,
+      `stats=${s.actions.total},${s.actions.inUse},${s.bindings.total},${s.bindings.inUse},${s.controlInterpolants.total},${s.controlInterpolants.inUse}`,
+    ].join("|"),
+  );
+}
+
+const cDoubles = (xs: number[]) =>
+  xs.map((x) => `std::bit_cast<double>(${hex64(f64(x))})`).join(", ");
+const mixerLines = [
+  `// Generated by packages/three-native/tests/animation/animation-reference.ts from three@${version}.`,
+  "// Do not edit: rerun the generator. Doubles are their 16 hex digits of bits.",
+  ...CLIPS.flatMap((c, ci) =>
+    c.tracks.flatMap((s, ti) => [
+      `static const double kTimes${ci}_${ti}[] = {${cDoubles(s.times)}};`,
+      `static const double kValues${ci}_${ti}[] = {${cDoubles(s.values)}};`,
+    ]),
+  ),
+  "static const TrackSpec kTracks[] = {",
+  ...CLIPS.flatMap((c, ci) =>
+    c.tracks.map(
+      (s, ti) =>
+        `    {${ci}, ${cString(s.name)}, TrackType::${s.kind === "vector" ? "Vector" : s.kind === "quaternion" ? "Quaternion" : "Number"}, Interpolation::${s.interpolation}, kTimes${ci}_${ti}, std::size(kTimes${ci}_${ti}), kValues${ci}_${ti}, std::size(kValues${ci}_${ti})},`,
+    ),
+  ),
+  "};",
+  "static const ClipSpec kClips[] = {",
+  ...CLIPS.map(
+    (c) =>
+      `    {${cString(c.name)}, std::bit_cast<double>(${hex64(f64(c.duration))}), ${c.additive ? "BlendMode::Additive" : "BlendMode::Normal"}},`,
+  ),
+  "};",
+  "static const OpSpec kOps[] = {",
+  ...OPS.map(
+    ([fr, op, i, a, b, c]) => `    {${fr}, ${cString(op)}, ${i}, ${cDoubles([a, b, c])}},`,
+  ),
+  "};",
+  `static const double kDeltas[] = {${cDoubles(DT)}};`,
+  "static const char* const kSamples[] = {",
+  ...poses.map((s) => `    ${cString(s)},`),
+  "};",
+  "static const char* const kEvents[] = {",
+  ...mixerEvents.map((e) => `    ${cString(e)},`),
+  "};",
+  "",
+];
+
 const outputs: Array<[string, string]> = [
   ["interpolants_reference.inc", lines.join("\n")],
   ["property_binding_reference.inc", bindingLines.join("\n")],
+  ["mixer_reference.inc", mixerLines.join("\n")],
 ];
 for (const [file, text] of outputs) {
   const out = path.join(OUT_DIR, file);

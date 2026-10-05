@@ -39,11 +39,10 @@ void fixed_step() {
             const uint64_t alpha = std::bit_cast<uint64_t>(clock.interpolationAlpha());
             if (updates != c.updates[i] || tick != c.ticks[i] || alpha != c.alphas[i]) {
                 if (mismatched++ < 8)
-                    std::fprintf(stderr,
-                        "%s frame %zu t=%.17g: updates %u/%llu tick %llu/%llu alpha 0x%016llx/0x%016llx\n",
-                        c.name, i, now, updates, (unsigned long long)c.updates[i],
-                        (unsigned long long)tick, (unsigned long long)c.ticks[i],
-                        (unsigned long long)alpha, (unsigned long long)c.alphas[i]);
+                    std::fprintf(
+                        stderr, "%s frame %zu t=%.17g: updates %u/%llu tick %llu/%llu alpha 0x%016llx/0x%016llx\n",
+                        c.name, i, now, updates, (unsigned long long)c.updates[i], (unsigned long long)tick,
+                        (unsigned long long)c.ticks[i], (unsigned long long)alpha, (unsigned long long)c.alphas[i]);
             }
             ++compared;
         }
@@ -52,6 +51,6 @@ void fixed_step() {
     CHECK(compared > 0 && mismatched == 0);
 }
 
-}  // namespace
+} // namespace
 
 TN_TEST_MAIN({"fixed_step", fixed_step})

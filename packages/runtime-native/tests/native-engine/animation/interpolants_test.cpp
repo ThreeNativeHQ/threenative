@@ -33,7 +33,8 @@ struct InterpolantCase {
 // A track's Float32Array, as the doubles JavaScript reads out of it.
 std::vector<double> floats(const uint32_t* bits, std::size_t count) {
     std::vector<double> out(count);
-    for (std::size_t i = 0; i < count; ++i) out[i] = std::bit_cast<float>(bits[i]);
+    for (std::size_t i = 0; i < count; ++i)
+        out[i] = std::bit_cast<float>(bits[i]);
     return out;
 }
 
@@ -47,7 +48,8 @@ void interpolants() {
             const double t = std::bit_cast<double>(kSamples[s]);
             const auto result = interpolant.evaluate(t);
             for (std::size_t i = 0; i < c.valueSize; ++i, ++compared) {
-                const uint32_t got = std::bit_cast<uint32_t>(static_cast<float>(result[i])), want = c.results[s * c.valueSize + i];
+                const uint32_t got = std::bit_cast<uint32_t>(static_cast<float>(result[i])),
+                               want = c.results[s * c.valueSize + i];
                 if (got != want && mismatched++ < 8)
                     std::fprintf(stderr, "%s t=%.17g [%zu]: got 0x%08x, three has 0x%08x\n", c.name, t, i, got, want);
             }
@@ -57,6 +59,6 @@ void interpolants() {
     CHECK(compared > 0 && mismatched == 0);
 }
 
-}  // namespace
+} // namespace
 
 TN_TEST_MAIN({"interpolants", interpolants})

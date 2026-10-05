@@ -12,7 +12,7 @@ namespace tn::engine::world {
  * replaces them is not this clock.
  */
 class FixedStepClock {
-public:
+  public:
     FixedStepClock(double step, uint32_t maxSteps);
 
     /** Begin at `nowMs`; the next advance from that same timestamp banks nothing. */
@@ -27,7 +27,7 @@ public:
     /** The banked accumulator as a fraction of the step, for render interpolation. */
     double interpolationAlpha() const;
 
-private:
+  private:
     double step_;
     uint32_t maxSteps_;
     double accumulator_ = 0.0;
@@ -36,4 +36,4 @@ private:
     uint64_t tick_ = 0;
 };
 
-}  // namespace tn::engine::world
+} // namespace tn::engine::world

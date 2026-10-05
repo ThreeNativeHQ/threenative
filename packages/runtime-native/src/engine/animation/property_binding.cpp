@@ -25,13 +25,15 @@ std::optional<std::string> group(const std::smatch& m, std::size_t i) {
 
 Object3D* searchNodeSubtree(const std::vector<Object3D*>& children, const std::string& nodeName) {
     for (Object3D* child : children) {
-        if (child->name == nodeName) return child;
-        if (Object3D* result = searchNodeSubtree(child->children, nodeName)) return result;
+        if (child->name == nodeName)
+            return child;
+        if (Object3D* result = searchNodeSubtree(child->children, nodeName))
+            return result;
     }
     return nullptr;
 }
 
-}  // namespace
+} // namespace
 
 bool parseTrackName(std::string_view trackName, ParsedPath& out, std::string& error) {
     const std::string name(trackName);
@@ -62,7 +64,8 @@ bool parseTrackName(std::string_view trackName, ParsedPath& out, std::string& er
 }
 
 Object3D* findNode(Object3D& root, const std::optional<std::string>& nodeName) {
-    if (!nodeName || nodeName->empty() || *nodeName == "." || *nodeName == root.name) return &root;
+    if (!nodeName || nodeName->empty() || *nodeName == "." || *nodeName == root.name)
+        return &root;
     return searchNodeSubtree(root.children, *nodeName);
 }
 
@@ -75,19 +78,21 @@ PropertyBinding::PropertyBinding(const std::shared_ptr<Object3D>& root, std::str
         return;
     }
     // Like three, the node is looked up once here; bind() searches again only after unbind().
-    if (Object3D* found = findNode(*root, parsed_.nodeName)) node_ = found->weak_from_this();
+    if (Object3D* found = findNode(*root, parsed_.nodeName))
+        node_ = found->weak_from_this();
 }
 
 void PropertyBinding::bind() {
     bindAttempted_ = true;
     target_ = Target::Unavailable;
-    if (!parsedOk_) return;  // three throws in the constructor; the diagnostic says why
+    if (!parsedOk_)
+        return; // three throws in the constructor; the diagnostic says why
     std::shared_ptr<Object3D> node = node_.lock();
     if (!node) {
         const std::shared_ptr<Object3D> root = root_.lock();
         Object3D* found = root ? findNode(*root, parsed_.nodeName) : nullptr;
         node = found ? found->weak_from_this().lock() : nullptr;
-        node_ = node;  // an object no shared_ptr owns cannot be held, so it reads as not found
+        node_ = node; // an object no shared_ptr owns cannot be held, so it reads as not found
     }
     if (!node) {
         diagnostic = "PropertyBinding: No target node found for track: " + path + ".";
@@ -96,11 +101,12 @@ void PropertyBinding::bind() {
     const auto unsupported = [&](const std::string& what) {
         diagnostic = "TN_NATIVE_ANIMATION_TRACK_UNSUPPORTED: " + path + " (" + what + ")";
     };
-    if (parsed_.objectName) return unsupported("object " + *parsed_.objectName);
+    if (parsed_.objectName)
+        return unsupported("object " + *parsed_.objectName);
     const std::string& property = parsed_.propertyName;
-    Vector3 Object3D::*vector = property == "position" ? &Object3D::position
-                                : property == "scale"  ? &Object3D::scale
-                                                       : nullptr;
+    Vector3 Object3D::* vector = property == "position" ? &Object3D::position
+                                 : property == "scale"  ? &Object3D::scale
+                                                        : nullptr;
     if (parsed_.propertyIndex) {
         static constexpr std::array<std::string_view, 3> kComponents = {"x", "y", "z"};
         for (int i = 0; i < 3 && vector; ++i) {
@@ -114,11 +120,16 @@ void PropertyBinding::bind() {
         }
         return unsupported("property " + property + "[" + *parsed_.propertyIndex + "]");
     }
-    if (property == "position") target_ = Target::Position;
-    else if (property == "scale") target_ = Target::Scale;
-    else if (property == "quaternion") target_ = Target::Quaternion;
-    else if (property == "visible") target_ = Target::Visible;
-    else return unsupported("property " + property);
+    if (property == "position")
+        target_ = Target::Position;
+    else if (property == "scale")
+        target_ = Target::Scale;
+    else if (property == "quaternion")
+        target_ = Target::Quaternion;
+    else if (property == "visible")
+        target_ = Target::Visible;
+    else
+        return unsupported("property " + property);
     diagnostic.clear();
 }
 
@@ -129,46 +140,66 @@ void PropertyBinding::unbind() {
 }
 
 void PropertyBinding::getValue(double* buffer, std::size_t offset) {
-    if (!bindAttempted_) bind();
+    if (!bindAttempted_)
+        bind();
     const std::shared_ptr<Object3D> node = node_.lock();
-    if (!node) return;
+    if (!node)
+        return;
     switch (target_) {
-        case Target::Unavailable: return;
-        case Target::Position: {
-            const auto a = node->position.toArray();
-            std::copy(a.begin(), a.end(), buffer + offset);
-            return;
-        }
-        case Target::Scale: {
-            const auto a = node->scale.toArray();
-            std::copy(a.begin(), a.end(), buffer + offset);
-            return;
-        }
-        case Target::Quaternion: {
-            const auto a = node->quaternion.toArray();
-            std::copy(a.begin(), a.end(), buffer + offset);
-            return;
-        }
-        case Target::Component: buffer[offset] = ((*node).*vector_).getComponent(component_); return;
-        case Target::Visible: buffer[offset] = node->visible() ? 1 : 0; return;
+    case Target::Unavailable:
+        return;
+    case Target::Position: {
+        const auto a = node->position.toArray();
+        std::copy(a.begin(), a.end(), buffer + offset);
+        return;
+    }
+    case Target::Scale: {
+        const auto a = node->scale.toArray();
+        std::copy(a.begin(), a.end(), buffer + offset);
+        return;
+    }
+    case Target::Quaternion: {
+        const auto a = node->quaternion.toArray();
+        std::copy(a.begin(), a.end(), buffer + offset);
+        return;
+    }
+    case Target::Component:
+        buffer[offset] = ((*node).*vector_).getComponent(component_);
+        return;
+    case Target::Visible:
+        buffer[offset] = node->visible() ? 1 : 0;
+        return;
     }
 }
 
 // three's setters with MatrixWorldNeedsUpdate versioning: every write to an Object3D flags it.
 void PropertyBinding::setValue(const double* buffer, std::size_t offset) {
-    if (!bindAttempted_) bind();
+    if (!bindAttempted_)
+        bind();
     const std::shared_ptr<Object3D> node = node_.lock();
-    if (!node || target_ == Target::Unavailable) return;
+    if (!node || target_ == Target::Unavailable)
+        return;
     switch (target_) {
-        case Target::Unavailable: return;
-        case Target::Position: node->position.fromArray(buffer, static_cast<int>(offset)); break;
-        case Target::Scale: node->scale.fromArray(buffer, static_cast<int>(offset)); break;
-        case Target::Quaternion: node->quaternion.fromArray(buffer, static_cast<int>(offset)); break;
-        case Target::Component: ((*node).*vector_).setComponent(component_, buffer[offset]); break;
-        // three stores the number itself; any read of `visible` treats it as JavaScript truthiness.
-        case Target::Visible: node->setVisible(buffer[offset] != 0 && !std::isnan(buffer[offset])); break;
+    case Target::Unavailable:
+        return;
+    case Target::Position:
+        node->position.fromArray(buffer, static_cast<int>(offset));
+        break;
+    case Target::Scale:
+        node->scale.fromArray(buffer, static_cast<int>(offset));
+        break;
+    case Target::Quaternion:
+        node->quaternion.fromArray(buffer, static_cast<int>(offset));
+        break;
+    case Target::Component:
+        ((*node).*vector_).setComponent(component_, buffer[offset]);
+        break;
+    // three stores the number itself; any read of `visible` treats it as JavaScript truthiness.
+    case Target::Visible:
+        node->setVisible(buffer[offset] != 0 && !std::isnan(buffer[offset]));
+        break;
     }
     node->matrixWorldNeedsUpdate = true;
 }
 
-}  // namespace tn::engine::animation
+} // namespace tn::engine::animation

@@ -33,8 +33,9 @@ void multiplyQuaternionsFlat(double* dst, const double* src0, const double* src1
  * Float64Array region, as AnimationMixer does.
  */
 class Interpolant {
-public:
-    Interpolant(Interpolation kind, std::span<const double> times, std::span<const double> values, std::size_t valueSize);
+  public:
+    Interpolant(Interpolation kind, std::span<const double> times, std::span<const double> values,
+                std::size_t valueSize);
     Interpolant(const Interpolant&) = delete;
     Interpolant& operator=(const Interpolant&) = delete;
 
@@ -50,11 +51,13 @@ public:
     /** The cubic endings, shared like three's `settings` object; read when the interval changes. */
     std::shared_ptr<const InterpolantSettings> settings = std::make_shared<InterpolantSettings>();
 
-private:
+  private:
     std::span<const double> copySampleValue(std::size_t index);
     void intervalChanged(std::size_t i1, double t0, double t1);
     std::span<const double> interpolate(std::size_t i1, double t0, double t, double t1);
-    void store(std::size_t i, double value) { result_[i] = float32_ ? static_cast<double>(static_cast<float>(value)) : value; }
+    void store(std::size_t i, double value) {
+        result_[i] = float32_ ? static_cast<double>(static_cast<float>(value)) : value;
+    }
 
     Interpolation kind_;
     std::span<const double> times_;
@@ -69,4 +72,4 @@ private:
     std::size_t offsetPrev_ = 0, offsetNext_ = 0;
 };
 
-}  // namespace tn::engine::animation
+} // namespace tn::engine::animation
