@@ -39,7 +39,7 @@
 #### Phase 3: The same results on Android
 **Status:** NOT STARTED
 **Files:** proposed `packages/runtime-native/tests/native-engine/CMakeLists.txt`
-- [ ] The math fixtures pass on the arm64 Android emulator with the same tolerances. proof: `pnpm parity -- --suite native-engine-math --target android`
+- [ ] The math fixtures pass on arm64 Android with the same tolerances. proof: `pnpm parity -- --suite native-engine --target android-hardware --only 'math-*'` — open: 2026-10-04 the lane exists and runs: the fixture driver cross-builds with the NDK (`-DTN_ENGINE_CORE_ONLY=ON`, `build/android-core-<abi>`) and runs over adb; on the x86_64 emulator (`--target android`, API 35, bionic) all 26 math and 7 scene fixtures pass bit-exact at abs 0. An arm64 system image cannot run on this x86_64 host, so the arm64 run needs the Pixel (`android-hardware`); the arm64 driver is built
 
 ## Decisions
 

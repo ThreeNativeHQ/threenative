@@ -178,6 +178,8 @@ function usage() {
   --out PATH                       Report file or artifact directory
   --dry-run                        Validate and bundle without target execution
   --suite native-engine           Run the native-engine fixture suite against a native driver
+                                  (--target android|android-hardware runs it on a device over adb;
+                                  --only <glob> selects fixtures, the rest report blocked)
   --validate-report PATH           Validate an existing report
   --help                           Show this help without executing a lane
 `;
@@ -2517,6 +2519,34 @@ export function reportExitCode(report) {
 }
 
 /**
+ * The fixture driver on an Android device: `scripts/adb-fixture-driver.sh` runs the binary cross-built
+ * for the device's ABI (cmake -DTN_ENGINE_CORE_ONLY=ON with the NDK toolchain into
+ * build/android-core-<abi>) over adb. `--target android` takes an emulator, `android-hardware` a
+ * physical device, and each refuses the other kind, as the scene lanes do.
+ */
+function androidFixtureDriver(argv, target) {
+  const { adb } = discoverTools();
+  const wanted = target === "android" ? "emulator" : "physical";
+  const online = parseAdbDevices(String(runCommand(adb, ["devices", "-l"]).stdout)).filter(({ state }) => state === "device");
+  const serial =
+    valueAfter(argv, "--device") ??
+    online.map(({ serial: s }) => s).find((s) => androidDeviceKind(androidDeviceProperties(adb, s)) === wanted);
+  if (!serial) throw new Error(`TN_PARITY_ANDROID_DEVICE_MISSING: no online ${wanted} Android device for --target ${target}`);
+  const kind = androidDeviceKind(androidDeviceProperties(adb, serial));
+  if (kind !== wanted) throw new Error(`TN_PARITY_ANDROID_DEVICE_KIND: ${serial} is ${kind}; --target ${target} needs ${wanted}`);
+  const abi = String(runCommand(adb, androidArgs(serial, "shell", "getprop", "ro.product.cpu.abi")).stdout || "").trim();
+  const binary =
+    process.env.TN_ANDROID_DRIVER ?? join(runtimeRoot, "build", `android-core-${abi}`, "tn-native-engine-fixture-driver");
+  if (!existsSync(binary)) {
+    throw new Error(
+      `TN_PARITY_ANDROID_DRIVER_MISSING: ${binary}. Build it: cmake -S packages/runtime-native -B packages/runtime-native/build/android-core-${abi} -G Ninja -DTN_ENGINE_CORE_ONLY=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake -DANDROID_ABI=${abi} -DANDROID_PLATFORM=android-26 && cmake --build <that dir> --target tn-native-engine-fixture-driver`,
+    );
+  }
+  process.stderr.write(`native-engine fixtures on ${serial} (${wanted}, ${abi})\n`);
+  return { TN_ADB: adb, TN_ADB_SERIAL: serial, TN_ANDROID_DRIVER: binary };
+}
+
+/**
  * The native-engine fixture suite: `@threenative/three-native` writes the conformance report from
  * a native driver's answers, and this runner keeps the gate record, the validation and the exit
  * code. The suite never renders a scene, so it needs no Xvfb, no browser reference and no runtime
@@ -2526,16 +2556,29 @@ function runFixtureSuite(argv, suite) {
   const runner = join(workspaceRoot, "packages", "three-native", "tests", "compatibility", "run-native.ts");
   const out = valueAfter(argv, "--out") ?? join(runtimeRoot, "artifacts", "conformance", suite);
   const file = extname(out).toLowerCase() === ".json" ? out : join(out, "report.json");
-  const driver = valueAfter(argv, "--driver");
+  const target = valueAfter(argv, "--target");
+  const env = { ...process.env };
+  let driver = valueAfter(argv, "--driver");
+  if (target === "android" || target === "android-hardware") {
+    Object.assign(env, androidFixtureDriver(argv, target));
+    driver = join(runtimeRoot, "scripts", "adb-fixture-driver.sh");
+  } else if (target !== null && target !== "desktop") {
+    throw new Error(`TN_PARITY_SUITE_TARGET: --suite native-engine runs on desktop, android or android-hardware; received ${target}`);
+  }
   const args = [runner, "--out", file, ...(driver === null ? [] : ["--driver", driver])];
+  const only = valueAfter(argv, "--only");
+  if (only !== null) args.push("--only", only);
   if (argv.includes("--allow-blocked")) args.push("--allow-blocked");
   const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
-  const child = spawnSync(pnpm, ["exec", "tsx", ...args], { cwd: workspaceRoot, stdio: "inherit" });
+  const child = spawnSync(pnpm, ["exec", "tsx", ...args], { cwd: workspaceRoot, stdio: "inherit", env });
   if (child.error) throw new Error(`TN_PARITY_SUITE_UNAVAILABLE: ${child.error.message}`);
   const report = JSON.parse(readFileSync(file, "utf8"));
   const expectedIds = readdirSync(join(workspaceRoot, "packages", "three-native", "tests", "compatibility", "fixtures"))
     .filter((entry) => entry.endsWith(".json"))
     .map((entry) => basename(entry, ".json"))
+    // `--only` runs a prefix of the corpus (run-native's fixturePattern: `*` and `?` are the only
+    // wildcards), and the report must hold exactly those rows.
+    .filter((id) => only === null || new RegExp(`^${only.replace(/[.+^${}()|[\]\\]/gu, "\\$&").replace(/\*/gu, ".*").replace(/\?/gu, ".")}$`, "u").test(id))
     .sort();
   const errors = validateReport(report, loadRegistry(), { suite, expectedIds });
   if (errors.length > 0) {
