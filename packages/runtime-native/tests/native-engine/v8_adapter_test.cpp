@@ -191,7 +191,34 @@ void runtimeChurn() {
     CHECK(growthKb < 16 * 1024);  // 40 cycles x 20,000 objects; a per-cycle leak would show here
 }
 
+// Reports the per-call cost of one property write and one method call through the adapter
+// (PRD-531 phase 3). CP1 reads these to decide whether bulk paths are needed (decision 9).
+void crossingBench() {
+    Runtime& rt = runtime();
+    v8::Isolate::Scope isolateScope(rt.isolate);
+    Adapter adapter(rt.isolate, rt.context);
+    const std::string got = run(rt, adapter, R"JS(
+        const v = new Vector3(), w = new Vector3(1, 2, 3);
+        const N = 1000000;
+        for (let i = 0; i < 100000; i++) { v.x = i; v.add(w); }      // warm-up: let the JIT settle
+        let t0 = Date.now();
+        for (let i = 0; i < N; i++) v.x = i;
+        const write = (Date.now() - t0) * 1e6 / N;
+        t0 = Date.now();
+        for (let i = 0; i < N; i++) v.add(w);
+        const call = (Date.now() - t0) * 1e6 / N;
+        t0 = Date.now();
+        let s = 0;
+        for (let i = 0; i < N; i++) s += v.x;
+        const read = (Date.now() - t0) * 1e6 / N;
+        `write ${write.toFixed(1)} ns, call ${call.toFixed(1)} ns, read ${read.toFixed(1)} ns`
+    )JS");
+    std::printf("TN_V8_CROSSING %s (V8 13.1 -> C ABI -> binding registry)\n", got.c_str());
+    CHECK(got.rfind("write ", 0) == 0);
+}
+
 }  // namespace
 
 TN_TEST_MAIN({"handles", handles}, {"unsupported", unsupported}, {"gc_release", gcRelease},
-             {"runtime_churn", runtimeChurn})
+             {"runtime_churn", runtimeChurn},
+             {"crossing_bench", crossingBench})
