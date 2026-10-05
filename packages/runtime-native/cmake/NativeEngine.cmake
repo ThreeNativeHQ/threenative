@@ -24,9 +24,10 @@ endif()
 
 # Renderer: native-owned GPU resources over the same WebGPU backend the host uses.
 add_library(tn_engine_renderer STATIC src/engine/renderer/gpu_resources.cpp src/engine/renderer/device_state.cpp
-    src/engine/renderer/presentation.cpp src/engine/renderer/package_loader.cpp)
+    src/engine/renderer/presentation.cpp src/engine/renderer/package_loader.cpp
+    src/engine/renderer/geometry_cache.cpp src/engine/renderer/pipeline_cache.cpp)
 tn_native_engine_target(tn_engine_renderer)
-target_link_libraries(tn_engine_renderer PUBLIC tn_engine_foundation tn_engine_assets tn_host_services)
+target_link_libraries(tn_engine_renderer PUBLIC tn_engine_foundation tn_engine_assets tn_engine_shader tn_host_services)
 if(TARGET dawn::webgpu)
     target_link_libraries(tn_engine_renderer PUBLIC dawn::webgpu)
 elseif(TARGET wgpu::wgpu)
@@ -98,6 +99,11 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         ${tn_shader_validator}=validates
         native_engine_shader_emit_stable=stable)
     target_link_libraries(tn-native-engine-shader-emit-test PRIVATE tn_engine_shader tn_host_services)
+    tn_native_engine_test(tn-native-engine-renderer-caches-test tests/native-engine/renderer_caches_test.cpp
+        native_engine_renderer_geometry_cache=geometry
+        native_engine_renderer_pipeline_cache=pipelines)
+    target_link_libraries(tn-native-engine-renderer-caches-test PRIVATE tn_engine_renderer tn_host_services)
+
     tn_native_engine_test(tn-native-engine-package-load-test tests/native-engine/package_load_test.cpp
         native_engine_cooked_package_load=load)
     target_link_libraries(tn-native-engine-package-load-test PRIVATE tn_engine_renderer tn_host_services)
@@ -126,7 +132,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         # errors and undefined behaviour, not leaks. CPU-only engine tests keep leak checking.
         set_tests_properties(native_engine_gpu_upload_readback native_engine_gpu_deferred_destroy
             native_engine_gpu_async_only native_engine_lifetime_deferred_gpu ${tn_shader_validator} native_engine_shader_layouts
-            native_engine_cooked_package_load
+            native_engine_cooked_package_load native_engine_renderer_geometry_cache native_engine_renderer_pipeline_cache
             native_engine_shader_variants_gpu native_engine_device_loss_recover native_engine_device_stale_handle
             native_engine_device_no_adapter PROPERTIES
             ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0:abort_on_error=1;UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1")

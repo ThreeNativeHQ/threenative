@@ -1,0 +1,110 @@
+#include "check.h"
+#include "engine/renderer/geometry_cache.h"
+#include "engine/renderer/pipeline_cache.h"
+#include "engine/shader/standard.h"
+#include "mystral/webgpu/context.h"
+
+#include <chrono>
+#include <cstring>
+#include <thread>
+
+using namespace tn::engine;
+
+namespace {
+
+struct Device {
+    mystral::webgpu::Context context;
+    EventQueue events;
+    bool ok = context.initializeHeadless();
+};
+
+std::vector<uint8_t> readBack(GpuResources& gpu, EventQueue& events, Handle buffer, uint64_t size) {
+    std::vector<uint8_t> out;
+    bool done = false;
+    gpu.readBuffer(buffer, 0, size, [&](GpuStatus, std::vector<uint8_t> b) {
+        out = std::move(b);
+        done = true;
+    });
+    for (int i = 0; i < 2000 && !done; ++i) {
+        gpu.poll();
+        events.drain();
+        if (!done) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    return out;
+}
+
+std::vector<uint8_t> bytesOf(const BufferStore& s, uint64_t size) {
+    return std::vector<uint8_t>(reinterpret_cast<const uint8_t*>(s.data()), reinterpret_cast<const uint8_t*>(s.data()) + size);
+}
+
+void geometry() {
+    Device d;
+    CHECK(d.ok);
+    if (!d.ok) return;
+    GpuResources gpu(d.context.getInstance(), d.context.getDevice(), d.context.getQueue(), d.events, 1);
+    GeometryCache cache(gpu);
+    BufferStore positions(Scalar::F32, 300);
+    for (int i = 0; i < 300; ++i) {
+        const float v = i * 0.5f;
+        positions.write(i * 4, &v, 4);
+    }
+    const uint32_t usage = WGPUBufferUsage_Vertex | WGPUBufferUsage_CopySrc;
+    const Handle first = cache.sync(positions, usage);
+    CHECK(cache.stats().fullUploads == 1);
+    CHECK(readBack(gpu, d.events, first, 1200) == bytesOf(positions, 1200));
+
+    for (int frame = 0; frame < 300; ++frame) CHECK(cache.sync(positions, usage).index == first.index);
+    CHECK(cache.stats().fullUploads == 1 && cache.stats().rangeUploads == 0);  // unchanged: nothing moves
+
+    const float changed = 42;
+    positions.write(10 * 4, &changed, 4);
+    positions.write(11 * 4, &changed, 4);
+    positions.addUpdateRange(10, 2);
+    positions.needsUpdate();
+    cache.sync(positions, usage);
+    CHECK(cache.stats().rangeUploads == 1 && cache.stats().fullUploads == 1);
+    CHECK(positions.updateRanges().empty());                                  // consumed, as three's renderer does
+    CHECK(readBack(gpu, d.events, first, 1200) == bytesOf(positions, 1200));
+
+    positions.write(0, &changed, 4);
+    positions.needsUpdate();                                                  // no ranges: the whole store
+    cache.sync(positions, usage);
+    CHECK(cache.stats().fullUploads == 2);
+    CHECK(readBack(gpu, d.events, first, 1200) == bytesOf(positions, 1200));
+
+    positions.resize(600);                                                    // storage moved: a new GPU copy
+    const Handle grown = cache.sync(positions, usage);
+    CHECK(grown.index != first.index || grown.generation != first.generation);
+    CHECK(readBack(gpu, d.events, grown, 2400) == bytesOf(positions, 2400));
+
+    BufferStore index(Scalar::U16, 3);                                        // 6 bytes: a partial final word
+    const uint16_t tri[3] = {7, 8, 9};
+    index.write(0, tri, 6);
+    const Handle indexBuffer = cache.sync(index, WGPUBufferUsage_Index | WGPUBufferUsage_CopySrc);
+    const auto got = readBack(gpu, d.events, indexBuffer, 8);
+    CHECK(got.size() == 8 && std::memcmp(got.data(), tri, 6) == 0);
+}
+
+void pipelines() {
+    Device d;
+    CHECK(d.ok);
+    if (!d.ok) return;
+    const shader::StandardPrograms standard = shader::buildStandard(shader::StandardMaterial{});
+    const shader::StageModule vs = shader::buildStage(standard.vertex, 0);
+    const shader::StageModule fs = shader::buildStage(standard.fragment, 1);
+    PipelineCache cache(d.context.getDevice());
+    const PipelineTarget color{};
+    WGPURenderPipeline first = cache.get(vs, &fs, color);
+    CHECK(first != nullptr);
+    for (int frame = 0; frame < 300; ++frame) CHECK(cache.get(vs, &fs, color) == first);
+    CHECK(cache.compiles() == 1);
+    const PipelineTarget shadow{WGPUTextureFormat_Undefined, WGPUTextureFormat_Depth32Float, WGPUCullMode_Back};
+    WGPURenderPipeline depthOnly = cache.get(vs, nullptr, shadow);
+    CHECK(depthOnly != nullptr && depthOnly != first);
+    CHECK(cache.get(vs, nullptr, shadow) == depthOnly);
+    CHECK(cache.compiles() == 2);
+}
+
+}  // namespace
+
+TN_TEST_MAIN({"geometry", geometry}, {"pipelines", pipelines})
