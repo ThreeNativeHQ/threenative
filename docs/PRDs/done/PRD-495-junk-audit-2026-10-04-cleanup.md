@@ -4,7 +4,10 @@ prd_contract: v1
 
 # PRD-495 — junk-audit 2026-10-04: every finding dispositioned
 
-**Status:** PARTIAL — all three phases executed; one box open because the final `pnpm test` is red on wall-clock alone (exact cause below) and the 2026-10-05 restorations need a fresh run at the new head
+**Status:** DONE — all three phases executed; AC-2 and its Phase 2 box close on CI run
+[37255318117](https://github.com/ThreeNativeHQ/threenative/actions/runs/37255318117) at head
+`346afd02717e079874280eab2a39ce3db21f2068`, terminal success, which covers the same four
+`run-test-suite` phases and the same package scope as the local gate (see AC-2)
 **Complexity:** 5 → MEDIUM (3 for 11+ implementation files, +2 for touching two independent
 build boundaries — the scaffolder's pinned scaffold-tree hashes and the runtime-native
 CMake/Android source sets; every item is a deletion, a comment fix or a doc pointer, so risk
@@ -38,12 +41,12 @@ correction under `## Verification notes`). Retain the rest with a named reason (
 row per group; several rows cover more than one numbered audit finding, so they carry no count).
 Defer the duplicate-helper refactors
 that touch live code for a ~21-line net win, leaving them to
-[PRD-208](./PRD-208-tier-four-hygiene-sweep.md), which already owns single-sourcing debt.
+[PRD-208](../tech-debt-code-quality/PRD-208-tier-four-hygiene-sweep.md), which already owns single-sourcing debt.
 
 ## Acceptance Criteria
 
 - [x] AC-1 [local]: `packages/core` reports zero unused-local and zero unused-parameter diagnostics. The 24-diagnostic baseline is the audit input's measurement, not one re-taken here. proof: `cd packages/core && ../../node_modules/.bin/tsc --noEmit --noUnusedLocals --noUnusedParameters -p tsconfig.json` — Evidence: exit 0, empty output.
-- [ ] AC-2 [local]: the deletions keep the contracts that read them intact — the workspace typechecks and lints, the unit and contract suites stay green, and the one pinned expectation that had to move (the scaffolder's `PRD_201_PARENT_SCAFFOLD_HASHES`) was restamped to the templates' new measured bytes. The per-symbol "no remaining tracked reader" claim is the audit's own independently checked caller census, dispositioned row by row in `## Disposition`; typecheck and the unit suite are the contracts preserved afterwards, not a reference search over the tree. proof:  `pnpm typecheck && pnpm lint && pnpm test` — Evidence: `pnpm typecheck` exit 0, `pnpm lint` exit 0 (1074 warnings). The final full board (`taskset -c 0,1,2,3 TN_SUITE_PACKAGE_CONCURRENCY=1 pnpm test`, 1424s) is **exit 1**: `docs`, `build` and `package-test` phases all green (runtime-native 134 files / 1548 tests + Rust parity + publint; `scaffold.spec.ts` 66 tests green), unit phase `4 failed | 7933 passed | 13 skipped (7950)`. Every failure is wall-clock on a box at load 27–44 across 24 cores — `template-assets-compile-1` racing (60s), `template-assets-compile-2` shooter (60s), `template.spec.ts` pristine-scaffold typecheck (180s), `desktop-playtest.spec.ts` native screenshot wait (`native host output: none captured`, the file's other 38 tests green) — with no failed assertion. The same four files alone on the four idlest cores: 4 files / 117 tests, exit 0, 227s. Left unticked: the gate as written ran red.
+- [x] AC-2 [local, CI]: the deletions keep the contracts that read them intact — the workspace typechecks and lints, the unit and contract suites stay green, and the one pinned expectation that had to move (the scaffolder's `PRD_201_PARENT_SCAFFOLD_HASHES`) was restamped to the templates' new measured bytes. The per-symbol "no remaining tracked reader" claim is the audit's own independently checked caller census, dispositioned row by row in `## Disposition`; typecheck and the unit suite are the contracts preserved afterwards, not a reference search over the tree. proof:  `pnpm typecheck && pnpm lint && pnpm test` — Evidence: `pnpm typecheck` exit 0, `pnpm lint` exit 0 (1074 warnings). The final full board (`taskset -c 0,1,2,3 TN_SUITE_PACKAGE_CONCURRENCY=1 pnpm test`, 1424s) is **exit 1**: `docs`, `build` and `package-test` phases all green (runtime-native 134 files / 1548 tests + Rust parity + publint; `scaffold.spec.ts` 66 tests green), unit phase `4 failed | 7933 passed | 13 skipped (7950)`. Every failure is wall-clock on a box at load 27–44 across 24 cores — `template-assets-compile-1` racing (60s), `template-assets-compile-2` shooter (60s), `template.spec.ts` pristine-scaffold typecheck (180s), `desktop-playtest.spec.ts` native screenshot wait (`native host output: none captured`, the file's other 38 tests green) — with no failed assertion. The same four files alone on the four idlest cores: 4 files / 117 tests, exit 0, 227s. That literal local `pnpm test` is not claimed green. The gate closes instead on CI run [37255318117](https://github.com/ThreeNativeHQ/threenative/actions/runs/37255318117), head `346afd02717e079874280eab2a39ce3db21f2068`, terminal **success**: `typecheck`, `lint`, `test`, `test-native`, `test-unit` shards 1/4–4/4 and `ci-required` all green. That is the same verification method at full scope, not narrower acceptance — `pnpm test`'s default is the four phases `docs,build,package-test,unit` (`scripts/run-test-suite.sh:277`) and CI runs all four across three jobs, a partition `scripts/__tests__/ci-structure.spec.ts` computes from the workflow rather than trusting (see the CI-coverage note under `## Verification notes`). Hosted runners are also not the oversubscribed 24-core box every local red below measured.
 - [x] AC-3 [local]: the scaffolder still ships every template its contract specs name, with the pinned scaffold-tree hashes restamped for exactly the templates that changed (10 of 13; `platformer`, `snow`, `starter` unchanged), restamped again for the 2026-10-05 develop merge, and restamped once more for `rain` alone when the review restored `templates/rain/tools/verify-noise-volume.mjs`. proof:  `pnpm --filter @threenative/create-threenative test` — Evidence: green in the workspace suite before the merge; the four affected specs alone: 4 files / 93 tests, exit 0, 205s. On the merged tree `pnpm exec vitest run packages/create-threenative/__tests__/scaffold.spec.ts` is 66 tests, exit 0,
   34.6s; after the rain restoration the whole file is 66 tests, exit 0, 11.0s, with the
   byte-stability test first failing and printing its measured `rain` hash `637afd24…92255` before
@@ -85,8 +88,8 @@ that touch live code for a ~21-line net win, leaving them to
   no-install scaffold tree byte-stable"` (1 passed); the scripts prose lane
   (`check-template-conventions`, `check-doc-links`, `sync-agent-docs`, `evidence-budget`,
   `evidence-citations`, `ci-structure`, `ci-needs`) 7 files / 250 tests exit 0; `pnpm check:docs`
-  exit 0; `git diff --check` clean. AC-2 stays unticked — the full board as written still ran red
-  on wall-clock, which this change does not touch.
+  exit 0; `git diff --check` clean. AC-2 stayed unticked at this point — the full board as written
+  still ran red on wall-clock, which this change does not touch.
 - **CI red this diff did not cause (2026-10-05, `native-platforms / Windows desktop core`, job
   111566787292 of run 37246919707, head `0ae683546`).** The full board's Windows leg exits 2 in
   "Collect bounded desktop performance evidence" with `TN_PROD_PLAYTEST_FAILED`,
@@ -167,9 +170,10 @@ that touch live code for a ~21-line net win, leaving them to
     @threenative/playtest build` exit 0 (publint clean) and budgets is then exit 0. It also
     reported native census drift; `pnpm census` exit 0 regenerated the ten cells, of which
     `android/` 3,187 → 1,814 is this lane's deleted sample JS and the orphan Metal shader.
-  - **AC-2 stays unticked.** The merged tree has not run a full board, and none was rolled here:
-    the box is shared and oversubscribed, and a fourth red wall-clock reading would not be new
-    evidence. AC-2 turns green on one fresh full `pnpm test` over the merged tree.
+  - **AC-2 stayed unticked here.** The merged tree had not run a full board, and none was rolled
+    from this lane: the box is shared and oversubscribed, and a fourth red wall-clock reading would
+    not be new evidence. AC-2 turned green later, on CI run 37255318117 at the new head rather than
+    on a local board.
 - **Independent review (2026-10-05, `claude-opus-5-5 --effort high`) and its restorations.** The
   review checked each removal for readers and required the benchmark restoration; the other two
   restorations conservatively preserve useful manual proof and history:
@@ -194,23 +198,30 @@ that touch live code for a ~21-line net win, leaving them to
   locks the `native_tier` condition above; `git diff --check` clean. The count of executed changes
   drops 73 → 70.
 - **What CI covers of AC-2, checked on this pull request rather than assumed.** `pnpm test` is four
-  phases — `docs,build,package-test,unit` (`scripts/run-test-suite.sh:277`) — and run 37251931881
-  covers all four across three jobs: `test` runs `docs,build,package-test` with
-  `@threenative/runtime-native` excluded (`ci.yml:196,200`), `test-unit` runs `unit` in four shards
-  (`ci.yml:246-247`), and `test-native` runs the one excluded package
-  (`ci.yml:529`). `scripts/__tests__/ci-structure.spec.ts:2617-2645` computes that partition from
+  phases — `docs,build,package-test,unit` (`scripts/run-test-suite.sh:277`) — and CI runs all four
+  across three jobs: `test` runs `docs,build,package-test` with `@threenative/runtime-native`
+  excluded (`ci.yml:196,200`), `test-native` runs that one excluded package
+  (`ci.yml:529`), and `test-unit` runs `unit` in four shards (`ci.yml:246-247`).
+  `scripts/__tests__/ci-structure.spec.ts:2617-2645` computes that partition from
   the workflow rather than trusting it, and `:2652` holds the script's own default. `typecheck` and
   `lint` are separate green jobs. So the phase and package scope of AC-2 is covered on hosted
-  runners. This establishes coverage, not a guarantee against wall-clock failures. AC-2 stays
-  unticked because the restoration needs a
-  fresh run at the new head.
+  runners, at full scope rather than a narrower substitute.
+  **Executed green 2026-10-05 at head `346afd02717e079874280eab2a39ce3db21f2068`:**
+  [run 37255318117](https://github.com/ThreeNativeHQ/threenative/actions/runs/37255318117), terminal
+  `success` — `typecheck` (job 111594404786), `lint` (111591273243), `test` (111591273307),
+  `test-native` (111594404758), `test-unit` 1/4–4/4 (111594404946, 111594404960, 111594404852,
+  111594404832) and `ci-required` (111600105931), whose `selection` was `full`. Its
+  `native-platforms / ${{ matrix.platform }} desktop core` leg is **skipped** under the reduced
+  `native_tier` policy below, not waived here. AC-2 is ticked on that receipt, not on the
+  oversubscribed local box.
 - **PR unit failure (2026-10-05, run 37251931881, job 111583180400).** Shard `3/4`
   timed out at 60 s in `world-gpu-scene.spec.ts:913`, the GPU-main-pass regroup/refilter test.
   The exact test alone passed locally: 1 passed / 69 skipped, 25.13 s (26.52 s total), using
   `pnpm exec vitest run packages/core/__tests__/world-gpu-scene.spec.ts -t 'spends no regroup and no refilter, feeds the source buffer, and dresses every main key'`.
   The core unused-local/parameter command in AC-1 was also rerun on the merged source: exit 0,
-  empty output. No assertion or timeout changed. The restored candidate still needs fresh CI;
-  these focused results do not turn the failed shard into a pass.
+  empty output. No assertion or timeout changed. Those focused results did not turn the failed
+  shard into a pass; run 37251931881 was superseded and cancelled by the new head, and the shard
+  is green on run 37255318117 (`test-unit` 3/4, job 111594404852).
 - **Pacing decision (2026-10-04, this lane).** That is the third run to fail on wall-clock alone, so
   the fourth was not attempted: at launch every core was ≥59% busy (mean 77%) with no quiet set of
   four to move to, and another 24-minute run would only add foreign contention to the box it is
@@ -342,7 +353,7 @@ module-only `export` keywords; fix the one stale comment.
 
 #### Phase 2: game layer (templates and examples)
 
-**Status:** DONE except the workspace-gate box, which is open on wall-clock alone (see below).
+**Status:** DONE — all three boxes green; the workspace gate verified on CI at head `346afd02`.
 **Files:** `packages/create-threenative/templates/{shooter,sailing,racing,rain,action-rpg,rts,tower-defense,runner,puzzle,minimal}`, `examples/{abyss-framework,quarry,native-cpu-load-test,vfx-gallery}`
 **Implementation:** delete each zero-reader helper with its doc comment, drop the false
 `LOS_INTERVAL_SECONDS`/`losStagger` comments, delete `minimal/src/scenes/Boot.ts`, remove
@@ -352,7 +363,7 @@ module-only `export` keywords; fix the one stale comment.
 **Verification:** AC-2, AC-3, AC-6 — the scaffolder contract specs, the workspace gates, and the
 example build.
 - [x] The scaffolder's template contract specs pass with the hashes restamped for the 10 changed templates. proof: `pnpm --filter @threenative/create-threenative test` — Evidence: green inside the workspace suite; the four scaffolder specs the restamp touches (`scaffold`, `template-assets-compile-1`, `template-assets-compile-2`, `template`) re-run on their own: 4 files / 93 tests, exit 0, 205s.
-- [ ] The workspace typecheck, lint and unit suite stay green over the deleted helpers. proof: `pnpm typecheck && pnpm lint && pnpm test` — Evidence: `pnpm typecheck` exit 0; `pnpm lint` exit 0 (1074 warnings). The final `pnpm test` (`taskset -c 0,1,2,3 TN_SUITE_PACKAGE_CONCURRENCY=1`, 1424s) is **exit 1**: `docs`, `build` and `package-test` green — `package-test` including runtime-native 134 files / 1548 tests + Rust parity 21 + 2 + publint and the scaffolder's own `scaffold.spec.ts` at 66 tests — and the unit phase `4 failed | 7933 passed | 13 skipped (7950)`. All four are `Test timed out` on the three heaviest specs in the repo plus one native screenshot wait: `template-assets-compile-1` racing (60s), `template-assets-compile-2` shooter (60s), `template.spec.ts` pristine-scaffold typecheck (180s), and `desktop-playtest.spec.ts` "desktop screenshot outlives the unpicked-request wait" (`TN_PLAYTEST_NATIVE_SCREENSHOT_UNAVAILABLE … native host output: none captured`, its other 38 tests green). Not one behavioural assertion. This box is shared with other agents' worktrees and ran at load 27–44 on 24 cores; the same four files alone on the four idlest cores are green — 4 files / 117 tests, exit 0, 227s. Left unticked because the gate as written ran red; see the pacing decision under `## Verification notes` for why it was not rolled a fourth time.
+- [x] The workspace typecheck, lint and unit suite stay green over the deleted helpers. proof: `pnpm typecheck && pnpm lint && pnpm test`, or the same four phases on hosted runners — Evidence: `pnpm typecheck` exit 0; `pnpm lint` exit 0 (1074 warnings). The final `pnpm test` (`taskset -c 0,1,2,3 TN_SUITE_PACKAGE_CONCURRENCY=1`, 1424s) is **exit 1**: `docs`, `build` and `package-test` green — `package-test` including runtime-native 134 files / 1548 tests + Rust parity 21 + 2 + publint and the scaffolder's own `scaffold.spec.ts` at 66 tests — and the unit phase `4 failed | 7933 passed | 13 skipped (7950)`. All four are `Test timed out` on the three heaviest specs in the repo plus one native screenshot wait: `template-assets-compile-1` racing (60s), `template-assets-compile-2` shooter (60s), `template.spec.ts` pristine-scaffold typecheck (180s), and `desktop-playtest.spec.ts` "desktop screenshot outlives the unpicked-request wait" (`TN_PLAYTEST_NATIVE_SCREENSHOT_UNAVAILABLE … native host output: none captured`, its other 38 tests green). Not one behavioural assertion. This box is shared with other agents' worktrees and ran at load 27–44 on 24 cores; the same four files alone on the four idlest cores are green — 4 files / 117 tests, exit 0, 227s. Left unticked at the time because the gate as written ran red; see the pacing decision under `## Verification notes` for why it was not rolled a fourth time. It closes on CI run 37255318117 at head `346afd02` — `typecheck`, `lint`, `test`, `test-native` and all four `test-unit` shards green — which runs the same four phases over the same package scope, as AC-2 records.
 - [x] `examples/abyss-framework` no longer dirties the tree on build. proof: `pnpm --filter abyss-framework build` then `git check-ignore -v examples/abyss-framework/dist.build-report.json` — Evidence: build exit 0 and rewrites the report; `git check-ignore` → `.gitignore:8:*.build-report.json`; `git status --porcelain examples/abyss-framework` after the build lists only this lane's three staged deletions.
 
 #### Phase 3: repo surface (docs and scripts)
