@@ -20,18 +20,24 @@ namespace tn::engine {
 
 using Matrix = std::array<double, 16>;  // column-major, as three's Matrix4.elements
 
+/** Which program a draw uses; each kind reads the StandardMaterial fields it needs. */
+enum class MaterialKind : uint8_t { Standard, Basic };
+
 /** One opaque draw. The render database (PRD-514 phase 1) fills these from the scene graph. */
 struct DrawItem {
     uint64_t key = 0;                    // the renderable's stable identity; its GPU record persists under it
     BufferStore* positions = nullptr;    // vec3 float
-    BufferStore* normals = nullptr;      // vec3 float
+    BufferStore* normals = nullptr;      // vec3 float; unused by Basic
     BufferStore* indices = nullptr;      // u16 or u32; null draws non-indexed
     Matrix matrixWorld{};
     const shader::StandardMaterial* material = nullptr;
+    MaterialKind kind = MaterialKind::Standard;
 };
 
 struct CameraState {
     Matrix matrixWorldInverse{};
+    // In three's WebGPUCoordinateSystem (clip z 0..1): WebGPURenderer.render switches a camera to it
+    // and recomputes projectionMatrix, so the render database does the same before it fills this.
     Matrix projectionMatrix{};
 };
 
@@ -89,13 +95,20 @@ public:
     const PipelineCache& pipelines() const { return pipelines_; }
 
 private:
+    struct Program {
+        shader::StageModule vertex;
+        shader::StageModule fragment;
+    };
     struct Record {
+        MaterialKind kind = MaterialKind::Standard;
         Handle vertexUniforms;
         Handle fragmentUniforms;
         WGPUBindGroup vertexGroup = nullptr;
         WGPUBindGroup fragmentGroup = nullptr;
     };
-    Record& record(uint64_t key, WGPURenderPipeline pipeline);
+    Record& record(uint64_t key, MaterialKind kind, const Program& program, WGPURenderPipeline pipeline);
+    WGPUBindGroup bindGroup(WGPURenderPipeline pipeline, uint32_t group, const shader::StageModule& stage, Handle uniforms,
+                            WGPUTextureView view, WGPUSampler sampler);
     void releaseTargets();
     void releaseOutputGroup();
     void outputPass(WGPUCommandEncoder encoder);
@@ -105,8 +118,7 @@ private:
     GpuResources gpu_;
     GeometryCache geometry_;
     PipelineCache pipelines_;
-    shader::StageModule vertex_;
-    shader::StageModule fragment_;
+    Program programs_[2];  // by MaterialKind
     WGPUTexture lut_ = nullptr;
     WGPUTextureView lutView_ = nullptr;
     WGPUSampler lutSampler_ = nullptr;

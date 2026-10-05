@@ -102,8 +102,8 @@ int main(int argc, char** argv) {
     CameraState camera;
     camera.matrixWorldInverse = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, -13, 1};
     const double near = 0.1, far = 100, top = near * std::tan(0.31), aspect = double(kWidth) / kHeight;
-    camera.projectionMatrix = {near / (aspect * top), 0, 0, 0, 0, near / top, 0, 0, 0, 0, -(far + near) / (far - near), -1,
-                               0, 0, -2 * far * near / (far - near), 0};
+    camera.projectionMatrix = {near / (aspect * top), 0, 0, 0, 0, near / top, 0, 0, 0, 0, -far / (far - near), -1,
+                               0, 0, -far * near / (far - near), 0};  // WebGPU clip z
     LightState lights;
     lights.directionalDirection = {-0.5, 0.8, 0.6};
     lights.directionalColor = {3, 3, 3};

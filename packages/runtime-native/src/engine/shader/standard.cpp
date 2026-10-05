@@ -178,4 +178,15 @@ StandardPrograms buildStandard(const StandardMaterial& material) {
     return out;
 }
 
+StandardPrograms buildBasic() {
+    StandardPrograms out;
+    Program& v = out.vertex;
+    const ExprId position = v.construct(Type::vec(4), {v.attribute("position", Type::vec(3)), v.constant(1.0f)});
+    v.output("position", v.mul(v.uniform("projectionMatrix", Type::mat(4, 4)),
+                               v.mul(v.uniform("viewMatrix", Type::mat(4, 4)), v.mul(v.uniform("modelMatrix", Type::mat(4, 4)), position))));
+    Program& f = out.fragment;
+    f.output("color", f.uniform("diffuse", Type::vec(4)));
+    return out;
+}
+
 }  // namespace tn::engine::shader

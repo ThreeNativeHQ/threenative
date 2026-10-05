@@ -5,6 +5,7 @@
 #include <chrono>
 #include <cmath>
 #include <optional>
+#include <string>
 #include <thread>
 
 using namespace tn::engine;
@@ -47,12 +48,13 @@ std::unique_ptr<Sphere> sphere(int segments, int rings) {
     return s;
 }
 
-// A camera at z = 4 looking down -z, three's PerspectiveCamera(50, aspect, 0.1, 100).
+// A camera at z = 4 looking down -z, three's PerspectiveCamera(50, aspect, 0.1, 100), WebGPU clip z.
 CameraState camera(double aspect) {
     CameraState c;
     c.matrixWorldInverse = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, -4, 1};
     const double top = 0.1 * std::tan(25 * kPi / 180), height = 2 * top, width = aspect * height;
-    const double x = 2 * 0.1 / width, y = 2 * 0.1 / height, cz = -(100 + 0.1) / (100 - 0.1), d = -2 * 100 * 0.1 / (100 - 0.1);
+    // three's makePerspective in WebGPUCoordinateSystem, which WebGPURenderer.render switches cameras to.
+    const double x = 2 * 0.1 / width, y = 2 * 0.1 / height, cz = -100 / (100 - 0.1), d = -100 * 0.1 / (100 - 0.1);
     c.projectionMatrix = {x, 0, 0, 0, 0, y, 0, 0, 0, 0, cz, -1, 0, 0, d, 0};
     return c;
 }
@@ -130,6 +132,9 @@ void resizeReadback() {
 // three@0.185.1 in Chromium (WebGPU, NVIDIA Turing), tonemap-ramp-* goldens: the 8-bit sRGB output
 // of linear grey 0..8 under each tone mapping, exposure 1. Read from the golden PNGs
 // (packages/three-native/tests/compatibility/goldens/0.185.1/tonemap-ramp-<mapping>.png, strip centres).
+extern "C" unsigned char* stbi_load(const char* filename, int* x, int* y, int* comp, int req_comp);
+extern "C" void stbi_image_free(void* data);
+
 struct Ramp {
     const char* name;
     std::optional<shader::ToneMapping> mapping;
@@ -144,31 +149,68 @@ constexpr Ramp kRamps[] = {
     {"neutral", shader::ToneMapping::Neutral, {0, 240, 250, 252, 253, 254, 254, 254, 254}},
 };
 
-// The output pass against the browser: each linear value goes through the scene target (as an unlit
-// material's colour would) and must come out as the reference's pixel.
+// The tonemap-ramp fixtures, natively: nine MeshBasicMaterial strips (PlaneGeometry(2/9, 2)) of
+// linear grey 0..8 side by side under OrthographicCamera(-1, 1, 1, -1, 0.1, 10) at z = 1, 288x64.
+// Every strip's pixels must equal the browser reference's.
 void outputRamp() {
     mystral::webgpu::Context context;
     CHECK(context.initializeHeadless());
     EventQueue events;
     Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
-    renderer.setSize(4, 4);
+    renderer.setSize(288, 64);
+    const double w = 2.0 / 9;
+    const float quad[12] = {float(-w / 2), -1, 0, float(w / 2), -1, 0, float(-w / 2), 1, 0, float(w / 2), 1, 0};
+    const uint16_t corners[6] = {0, 1, 2, 2, 1, 3};  // PlaneGeometry's winding, facing +z
+    BufferStore positions(Scalar::F32, 12), indices(Scalar::U16, 6);
+    positions.write(0, quad, sizeof quad);
+    indices.write(0, corners, sizeof corners);
+    shader::StandardMaterial greys[9];
+    std::vector<DrawItem> strips(9);
+    for (int k = 0; k < 9; ++k) {
+        greys[k].color = {float(k), float(k), float(k)};
+        strips[k].key = k + 1;
+        strips[k].kind = MaterialKind::Basic;
+        strips[k].positions = &positions;
+        strips[k].indices = &indices;
+        strips[k].material = &greys[k];
+        strips[k].matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -1 + (k + 0.5) * w, 0, 0, 1};
+    }
+    CameraState camera;
+    camera.matrixWorldInverse = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, -1, 1};
+    camera.projectionMatrix = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, -1 / 9.9, 0, 0, 0, -0.1 / 9.9, 1};  // WebGPU clip z
     int worst = 0;
     for (const Ramp& ramp : kRamps) {
         renderer.setOutput(OutputState{ramp.mapping, 1, true});
-        for (int v = 0; v <= 8; ++v) {
-            renderer.render({}, camera(1), LightState{}, {double(v), double(v), double(v), 1});
-            const std::vector<uint8_t> px = read(renderer, events);
-            CHECK(px.size() == 64);
-            if (px.size() != 64) return;
-            const int diff = std::abs(int(px[0]) - int(ramp.out[v]));
-            worst = std::max(worst, diff);
-            if (diff > 1) std::printf("%s %d: native %d, reference %d\n", ramp.name, v, px[0], ramp.out[v]);
-            CHECK(diff <= 1);
-            CHECK(px[0] == px[1] && px[1] == px[2]);
+        renderer.render(strips, camera, LightState{});
+        const std::vector<uint8_t> px = read(renderer, events);
+        CHECK(px.size() == 288 * 64 * 4);
+        if (px.size() != 288 * 64 * 4) return;
+        // Whole frame against the golden PNG, when the checkout has it.
+        const std::string png = std::string(TN_GOLDENS_DIR) + "/tonemap-ramp-" + ramp.name + ".png";
+        int gw = 0, gh = 0, gc = 0;
+        if (unsigned char* golden = stbi_load(png.c_str(), &gw, &gh, &gc, 4)) {
+            CHECK(gw == 288 && gh == 64);
+            size_t mismatched = 0;
+            for (size_t i = 0; gw == 288 && gh == 64 && i < px.size(); ++i) mismatched += std::abs(int(px[i]) - int(golden[i])) > 1;
+            std::printf("%s: %zu of %zu channels differ from %s\n", ramp.name, mismatched, px.size(), png.c_str());
+            CHECK(mismatched == 0);
+            stbi_image_free(golden);
+        } else {
+            CHECK(!"golden PNG missing");
         }
+        for (int k = 0; k < 9; ++k)
+            for (int x : {k * 32 + 2, k * 32 + 16, k * 32 + 29})
+                for (int y : {2, 32, 61}) {
+                    const uint8_t* p = &px[(size_t(y) * 288 + x) * 4];
+                    const int diff = std::abs(int(p[0]) - int(ramp.out[k]));
+                    worst = std::max(worst, diff);
+                    if (diff > 1) std::printf("%s strip %d (%d,%d): native %d, reference %d\n", ramp.name, k, x, y, p[0], ramp.out[k]);
+                    CHECK(diff <= 1);
+                    CHECK(p[0] == p[1] && p[1] == p[2] && p[3] == 255);
+                }
     }
-    std::printf("output ramp: 6 mappings x 9 values, worst difference %d/255\n", worst);
-    CHECK(renderer.pipelines().compiles() == 1 + 6);  // the standard program once, one output program per mapping
+    std::printf("output ramp: 6 mappings x 9 strips x 9 samples, worst difference %d/255\n", worst);
+    CHECK(renderer.pipelines().compiles() == 1 + 6);  // the basic program once, one output program per mapping
 }
 
 }  // namespace

@@ -49,4 +49,11 @@ struct StandardPrograms {
  */
 StandardPrograms buildStandard(const StandardMaterial& material);
 
+/**
+ * MeshBasicMaterial with no maps and no environment: BasicLightingModel's indirect diffuse is
+ * 1 x AO x diffuseColor, so the outgoing light is the colour itself. Same vertex uniforms as the
+ * standard program (normalMatrix unused); fragment uniform diffuse (rgb, opacity). Linear out.
+ */
+StandardPrograms buildBasic();
+
 }  // namespace tn::engine::shader
