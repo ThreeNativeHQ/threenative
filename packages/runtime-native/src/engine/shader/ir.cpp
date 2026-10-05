@@ -256,7 +256,7 @@ ExprId Program::call(std::string_view function, const std::vector<ExprId>& args,
     auto floating = [&](size_t i) { return type(i).scalar == Type::Scalar::F32 && !type(i).isMatrix(); };
     Type result{};
     std::string error;
-    const std::string_view unary[] = {"abs", "sin", "cos", "floor", "fract", "sqrt", "exp", "normalize"};
+    const std::string_view unary[] = {"abs", "sin", "cos", "floor", "fract", "sqrt", "exp", "exp2", "normalize", "dFdx", "dFdy"};
     const std::string_view binary[] = {"min", "max", "pow", "step"};
     bool known = false;
     for (std::string_view name : unary) {
@@ -300,6 +300,9 @@ ExprId Program::call(std::string_view function, const std::vector<ExprId>& args,
         diagnostics_.push_back(Diagnostic{"TN_TSL_UNSUPPORTED", std::string(function), "uncatalogued function",
                                           where.file_name(), where.line()});
         return kInvalid;
+    }
+    if (error.empty() && (function == "dFdx" || function == "dFdy") && stage_ != Stage::Fragment) {
+        error = "screen-space derivatives exist only in the fragment stage";
     }
     if (!error.empty()) return fail(function, error, where);
     Expr e{Op::Call, result, {}, static_cast<uint8_t>(args.size()), intern(function)};
@@ -367,6 +370,18 @@ void Program::store(uint32_t buffer, ExprId index, ExprId value, Where where) {
         return;
     }
     emit(Stmt{StmtKind::Store, buffer, index, value});
+}
+
+uint32_t Program::texture2d(std::string_view name) {
+    textures_.emplace_back(name);
+    return static_cast<uint32_t>(textures_.size() - 1);
+}
+
+ExprId Program::sample(uint32_t texture, ExprId uv, Where where) {
+    if (uv == kInvalid) return kInvalid;
+    if (texture >= textures_.size()) return fail("sample", "no such texture", where);
+    if (exprs_[uv].type != Type::vec(2)) return fail("sample " + textures_[texture], "uv is " + exprs_[uv].type.name(), where);
+    return pure(Expr{Op::Sample, Type::vec(4), {uv}, 1, texture});
 }
 
 void Program::discard(Where where) {
@@ -465,6 +480,7 @@ std::string Program::describe(ExprId id, std::vector<int>& numbering) const {
         case Op::Attribute: return "attribute:" + names_[e.immediate];
         case Op::Builtin: return "builtin:" + names_[e.immediate];
         case Op::Varying: return "varying:" + names_[e.immediate];
+        case Op::Sample: return "sample:" + textures_[e.immediate] + "(" + describe(e.args[0], numbering) + ")";
         case Op::Swizzle: {
             std::string lanes;
             const unsigned n = static_cast<unsigned>(e.immediate >> 8);

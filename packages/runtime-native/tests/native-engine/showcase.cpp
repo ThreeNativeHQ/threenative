@@ -3,7 +3,9 @@
 // read back and written as PNG. It grows with the renderer (N09); it is evidence, not a test.
 
 #include "engine/renderer/gpu_resources.h"
+#include "engine/shader/dfg_lut.h"
 #include "engine/shader/package.h"
+#include "engine/shader/standard.h"
 #include "mystral/webgpu/context.h"
 
 #include <webgpu/webgpu.h>
@@ -16,6 +18,7 @@
 #include <cstdio>
 #include <string>
 #include <thread>
+#include <tuple>
 #include <vector>
 
 extern "C" int stbi_write_png(const char* filename, int w, int h, int comp, const void* data, int stride);
@@ -93,38 +96,6 @@ Sphere sphere(int segments, int rings) {
     return s;
 }
 
-Program vertexProgram() {
-    Program v(Stage::Vertex);
-    const ExprId model = v.uniform("model", Type::mat(4, 4));
-    const ExprId world = v.mul(model, v.construct(Type::vec(4), {v.attribute("position", Type::vec(3)), v.constant(1.0f)}));
-    v.output("position", v.mul(v.uniform("viewProjection", Type::mat(4, 4)), world));
-    v.output("normal", v.swizzle(v.mul(model, v.construct(Type::vec(4), {v.attribute("normal", Type::vec(3)), v.constant(0.0f)})), "xyz"));
-    v.output("world", v.swizzle(world, "xyz"));
-    return v;
-}
-
-Program fragmentProgram() {
-    Program f(Stage::Fragment);
-    const ExprId n = f.call("normalize", {f.varying("normal", Type::vec(3))});
-    const ExprId world = f.varying("world", Type::vec(3));
-    const ExprId base = f.swizzle(f.uniform("color", Type::vec(4)), "rgb");
-    const ExprId light = f.call("normalize", {f.uniform("lightDirection", Type::vec(3))});
-    const ExprId view = f.call("normalize", {f.sub(f.uniform("cameraPosition", Type::vec(3)), world)});
-    const ExprId lambert = f.call("max", {f.call("dot", {n, light}), f.constant(0.0f)});
-    const ExprId half = f.call("normalize", {f.add(light, view)});
-    const ExprId spec = f.call("pow", {f.call("max", {f.call("dot", {n, half}), f.constant(0.0f)}), f.constant(64.0f)});
-    const ExprId sky = f.construct(Type::vec(3), {f.constant(0.55f), f.constant(0.65f), f.constant(0.85f)});
-    const ExprId ground = f.construct(Type::vec(3), {f.constant(0.18f), f.constant(0.14f), f.constant(0.12f)});
-    const ExprId hemi = f.call("mix", {ground, sky, f.add(f.mul(f.swizzle(n, "y"), f.constant(0.5f)), f.constant(0.5f))});
-    const ExprId lit = f.add(f.add(f.mul(f.mul(base, hemi), f.constant(0.45f)), f.mul(base, f.mul(lambert, f.constant(1.1f)))),
-                             f.construct(Type::vec(3), {f.mul(spec, f.constant(0.6f))}));
-    // Linear to sRGB by a 2.2 power, since the target is RGBA8Unorm.
-    const ExprId encoded = f.call("pow", {f.call("clamp", {lit, f.constant(0.0f), f.constant(1.0f)}),
-                                          f.construct(Type::vec(3), {f.constant(1.0f / 2.2f)})});
-    f.output("color", f.construct(Type::vec(4), {encoded, f.constant(1.0f)}));
-    return f;
-}
-
 template <typename Done>
 bool pump(GpuResources& gpu, EventQueue& events, Done done) {
     for (int i = 0; i < 5000 && !done(); ++i) {
@@ -152,8 +123,10 @@ int main(int argc, char** argv) {
     EventQueue events;
     GpuResources gpu(context.getInstance(), device, context.getQueue(), events, 1);
 
-    const StageModule vs = buildStage(vertexProgram(), 0);
-    const StageModule fs = buildStage(fragmentProgram(), 1);
+    const StandardPrograms standard = buildStandard(StandardMaterial{});
+    for (const std::string& d : standard.diagnostics) std::fprintf(stderr, "%s\n", d.c_str());
+    const StageModule vs = buildStage(standard.vertex, 0);
+    const StageModule fs = buildStage(standard.fragment, 1);
     if (!vs.wgsl.ok() || !fs.wgsl.ok()) return std::fprintf(stderr, "shader package invalid\n"), 1;
 
     const Sphere ball = sphere(64, 32);
@@ -224,44 +197,105 @@ int main(int argc, char** argv) {
     WGPURenderPipeline pipeline = wgpuDeviceCreateRenderPipeline(device, &desc);
     if (!pipeline) return std::fprintf(stderr, "pipeline refused\n"), 1;
 
-    const std::array<float, 3> eye{0.0f, 2.2f, 7.5f};
-    const Mat4 viewProjection = multiply(perspective(0.75f, float(kWidth) / kHeight, 0.1f, 100.0f), lookAt(eye, {0, 0.1f, 0}));
+    // The DFG lookup the standard BRDF samples: three's 16x16 RG half-float table, linear filtered.
+    WGPUTextureDescriptor lutDesc = {};
+    lutDesc.dimension = WGPUTextureDimension_2D;
+    lutDesc.size = {kDfgLutSize, kDfgLutSize, 1};
+    lutDesc.format = WGPUTextureFormat_RG16Float;
+    lutDesc.usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst;
+    lutDesc.mipLevelCount = 1;
+    lutDesc.sampleCount = 1;
+    WGPUTexture lut = wgpuDeviceCreateTexture(device, &lutDesc);
+    WGPUImageCopyTexture_Compat lutDst = {};
+    lutDst.texture = lut;
+    lutDst.aspect = WGPUTextureAspect_All;
+    WGPUTextureDataLayout_Compat lutLayout = {};
+    lutLayout.bytesPerRow = kDfgLutSize * 4;
+    lutLayout.rowsPerImage = kDfgLutSize;
+    const WGPUExtent3D lutExtent = {kDfgLutSize, kDfgLutSize, 1};
+    wgpuQueueWriteTexture(context.getQueue(), &lutDst, kDfgLut, sizeof kDfgLut, &lutLayout, &lutExtent);
+    WGPUTextureView lutView = wgpuTextureCreateView(lut, nullptr);
+    WGPUSamplerDescriptor samplerDesc = {};
+    samplerDesc.magFilter = WGPUFilterMode_Linear;
+    samplerDesc.minFilter = WGPUFilterMode_Linear;
+    samplerDesc.addressModeU = WGPUAddressMode_ClampToEdge;
+    samplerDesc.addressModeV = WGPUAddressMode_ClampToEdge;
+    samplerDesc.addressModeW = WGPUAddressMode_ClampToEdge;
+    samplerDesc.maxAnisotropy = 1;
+    WGPUSampler lutSampler = wgpuDeviceCreateSampler(device, &samplerDesc);
+
+    // A roughness x metalness grid: roughness 0 -> 1 left to right, metalness 0, 0.5, 1 top to bottom.
+    const std::array<float, 3> eye{0.0f, 0.0f, 13.0f};
+    const Mat4 projection = perspective(0.62f, float(kWidth) / kHeight, 0.1f, 100.0f);
+    const Mat4 view = lookAt(eye, {0, 0, 0});
     struct Draw {
         Mat4 model;
-        std::array<float, 4> rgba;
+        float roughness, metalness;
     };
-    const Draw draws[] = {
-        {transform(0, -1.0f, 0, 9, 1, 9), {0.30f, 0.32f, 0.36f, 1}},
-        {transform(-2.3f, 0, 0, 1, 1, 1), {0.85f, 0.18f, 0.16f, 1}},
-        {transform(0, 0, -0.4f, 1, 1, 1), {0.95f, 0.72f, 0.25f, 1}},
-        {transform(2.3f, 0, 0, 1, 1, 1), {0.12f, 0.62f, 0.66f, 1}},
+    std::vector<Draw> draws;
+    for (int row = 0; row < 3; ++row)
+        for (int col = 0; col < 6; ++col)
+            draws.push_back({transform((col - 2.5f) * 2.3f, (1 - row) * 2.3f, 0, 1, 1, 1), col / 5.0f, row * 0.5f});
+    auto rotate = [&](const Mat4& m, std::array<float, 3> v) {
+        return std::array<float, 3>{m[0] * v[0] + m[4] * v[1] + m[8] * v[2], m[1] * v[0] + m[5] * v[1] + m[9] * v[2],
+                                    m[2] * v[0] + m[6] * v[1] + m[10] * v[2]};
     };
+    const std::array<float, 3> lightWorld{-0.5f, 0.8f, 0.6f};
+    const std::array<float, 3> lightView = rotate(view, lightWorld);
+
     WGPUBindGroupLayout vsLayout = wgpuRenderPipelineGetBindGroupLayout(pipeline, 0);
     WGPUBindGroupLayout fsLayout = wgpuRenderPipelineGetBindGroupLayout(pipeline, 1);
     std::vector<WGPUBindGroup> groups;
+    auto put = [](std::vector<uint8_t>& block, const StageModule& stage, const char* name, const float* data, size_t n) {
+        for (const UniformField& f : stage.uniforms) {
+            if (f.name != name) continue;
+            // mat3x3 columns are 16-byte aligned in a uniform block.
+            if (f.type.isMatrix() && f.type.rows == 3) {
+                for (int c = 0; c < 3; ++c) std::memcpy(&block[f.offset + c * 16], data + c * 3, 12);
+            } else {
+                std::memcpy(&block[f.offset], data, n * 4);
+            }
+        }
+    };
     for (const Draw& d : draws) {
         std::vector<uint8_t> vblock(vs.uniformBlockSize), fblock(fs.uniformBlockSize);
-        auto put = [](std::vector<uint8_t>& block, const StageModule& stage, const char* name, const float* data, size_t n) {
-            for (const UniformField& f : stage.uniforms)
-                if (f.name == name) std::memcpy(&block[f.offset], data, n * 4);
-        };
-        put(vblock, vs, "model", d.model.data(), 16);
-        put(vblock, vs, "viewProjection", viewProjection.data(), 16);
-        const float light[3] = {-0.45f, 0.85f, 0.4f};
-        put(fblock, fs, "color", d.rgba.data(), 4);
-        put(fblock, fs, "lightDirection", light, 3);
-        put(fblock, fs, "cameraPosition", eye.data(), 3);
-        for (auto [block, layout] : {std::pair{&vblock, vsLayout}, std::pair{&fblock, fsLayout}}) {
+        const Mat4 modelView = multiply(view, d.model);
+        const float normalMatrix[9] = {modelView[0], modelView[1], modelView[2], modelView[4], modelView[5],
+                                       modelView[6], modelView[8], modelView[9], modelView[10]};
+        put(vblock, vs, "modelMatrix", d.model.data(), 16);
+        put(vblock, vs, "viewMatrix", view.data(), 16);
+        put(vblock, vs, "projectionMatrix", projection.data(), 16);
+        put(vblock, vs, "normalMatrix", normalMatrix, 9);
+        const float diffuse[4] = {1.0f, 0.71f, 0.29f, 1};  // gold-ish albedo, linear
+        const float lightColor[3] = {3.0f, 3.0f, 3.0f};
+        const float sky[3] = {0.9f, 1.0f, 1.2f}, ground[3] = {0.25f, 0.2f, 0.15f}, up[3] = {0, 1, 0};
+        const float ambient[3] = {0.05f, 0.05f, 0.05f}, emissive[3] = {0, 0, 0};
+        put(fblock, fs, "diffuse", diffuse, 4);
+        put(fblock, fs, "roughness", &d.roughness, 1);
+        put(fblock, fs, "metalness", &d.metalness, 1);
+        put(fblock, fs, "emissive", emissive, 3);
+        put(fblock, fs, "directionalDirection", lightView.data(), 3);
+        put(fblock, fs, "directionalColor", lightColor, 3);
+        put(fblock, fs, "hemisphereSky", sky, 3);
+        put(fblock, fs, "hemisphereGround", ground, 3);
+        put(fblock, fs, "hemisphereDirection", up, 3);
+        put(fblock, fs, "ambient", ambient, 3);
+        for (auto [block, layout, fragmentGroup] :
+             {std::tuple{&vblock, vsLayout, false}, std::tuple{&fblock, fsLayout, true}}) {
             const Handle buffer = gpu.createBuffer(block->size(), WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
             gpu.writeBuffer(buffer, 0, block->data(), block->size());
-            WGPUBindGroupEntry entry = {};
-            entry.binding = 0;
-            entry.buffer = gpu.buffer(buffer);
-            entry.size = block->size();
+            WGPUBindGroupEntry entries[3] = {};
+            entries[0].binding = 0;
+            entries[0].buffer = gpu.buffer(buffer);
+            entries[0].size = block->size();
+            entries[1].binding = 1;
+            entries[1].textureView = lutView;
+            entries[2].binding = 2;
+            entries[2].sampler = lutSampler;
             WGPUBindGroupDescriptor groupDesc = {};
             groupDesc.layout = layout;
-            groupDesc.entryCount = 1;
-            groupDesc.entries = &entry;
+            groupDesc.entryCount = fragmentGroup ? 3 : 1;
+            groupDesc.entries = entries;
             groups.push_back(wgpuDeviceCreateBindGroup(device, &groupDesc));
         }
     }
@@ -280,7 +314,7 @@ int main(int argc, char** argv) {
     colorAttachment.view = colorView;
     colorAttachment.loadOp = WGPULoadOp_Clear;
     colorAttachment.storeOp = WGPUStoreOp_Store;
-    colorAttachment.clearValue = {0.07, 0.08, 0.11, 1.0};
+    colorAttachment.clearValue = {0.02, 0.022, 0.03, 1.0};
 #if defined(MYSTRAL_WEBGPU_DAWN)
     colorAttachment.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
 #endif
@@ -298,11 +332,10 @@ int main(int argc, char** argv) {
     wgpuRenderPassEncoderSetVertexBuffer(pass, 0, gpu.buffer(positions), 0, mesh.positions.size() * 4);
     wgpuRenderPassEncoderSetVertexBuffer(pass, 1, gpu.buffer(normals), 0, mesh.normals.size() * 4);
     wgpuRenderPassEncoderSetIndexBuffer(pass, gpu.buffer(indices), WGPUIndexFormat_Uint32, 0, mesh.indices.size() * 4);
-    for (size_t i = 0; i < std::size(draws); ++i) {
+    for (size_t i = 0; i < draws.size(); ++i) {
         wgpuRenderPassEncoderSetBindGroup(pass, 0, groups[i * 2], 0, nullptr);
         wgpuRenderPassEncoderSetBindGroup(pass, 1, groups[i * 2 + 1], 0, nullptr);
-        if (i == 0) wgpuRenderPassEncoderDrawIndexed(pass, plane.indices.size(), 1, planeFirst, 0, 0);
-        else wgpuRenderPassEncoderDrawIndexed(pass, ball.indices.size(), 1, 0, 0, 0);
+        wgpuRenderPassEncoderDrawIndexed(pass, ball.indices.size(), 1, 0, 0, 0);
     }
     wgpuRenderPassEncoderEnd(pass);
     wgpuRenderPassEncoderRelease(pass);
@@ -318,7 +351,7 @@ int main(int argc, char** argv) {
     });
     if (!pump(gpu, events, [&] { return done; }) || pixels.empty()) return std::fprintf(stderr, "readback failed\n"), 1;
     if (!stbi_write_png(outPath, kWidth, kHeight, 4, pixels.data(), kWidth * 4)) return std::fprintf(stderr, "png write failed\n"), 1;
-    std::printf("SHOWCASE_OK %s %ux%u, %zu draws, %zu triangles each\n", outPath, kWidth, kHeight, std::size(draws),
+    std::printf("SHOWCASE_OK %s %ux%u, %zu draws, %zu triangles each\n", outPath, kWidth, kHeight, draws.size(),
                 ball.indices.size() / 3);
     return 0;
 }

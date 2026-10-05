@@ -24,7 +24,7 @@ struct UniformField {
     UpdateSchedule schedule = UpdateSchedule::Material;
 };
 
-enum class BindingKind : uint8_t { Uniform, Storage };
+enum class BindingKind : uint8_t { Uniform, Storage, Texture, Sampler };
 
 struct Binding {
     uint32_t group = 0;

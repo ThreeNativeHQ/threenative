@@ -159,10 +159,10 @@ void types() {
 
 void unsupported() {
     Program p(Stage::Fragment);
-    p.call("dFdx", {p.constant(1.0f)});
+    p.call("mx_noise_float", {p.constant(1.0f)});
     p.builtin("sampleMask");
     CHECK(p.diagnostics().size() == 2);
-    CHECK(p.diagnostics()[0].code == "TN_TSL_UNSUPPORTED" && p.diagnostics()[0].node == "dFdx");
+    CHECK(p.diagnostics()[0].code == "TN_TSL_UNSUPPORTED" && p.diagnostics()[0].node == "mx_noise_float");
     CHECK(p.diagnostics()[1].code == "TN_TSL_UNSUPPORTED" && p.diagnostics()[1].node == "sampleMask");
 }
 

@@ -108,6 +108,10 @@ public:
     uint32_t storageBuffer(std::string_view name, Type element);
     ExprId loadStorage(uint32_t buffer, ExprId index, Where where = Where::current());
     void store(uint32_t buffer, ExprId index, ExprId value, Where where = Where::current());
+    /** A sampled 2D float texture and its sampler, bound together. */
+    uint32_t texture2d(std::string_view name);
+    /** vec4<f32>; implicit derivatives in a fragment stage, level 0 elsewhere. */
+    ExprId sample(uint32_t texture, ExprId uv, Where where = Where::current());
     void discard(Where where = Where::current());
     /**
      * A stage output: "position" (vec4, vertex) and "color" (vec4, fragment) are the fixed ones;
@@ -167,6 +171,7 @@ private:
     std::unordered_map<std::string, uint64_t> nameIndex_;
     std::vector<Var> vars_;
     std::vector<Storage> storage_;
+    std::vector<std::string> textures_;
     struct OutputSlot {
         uint64_t name;
         Type type;

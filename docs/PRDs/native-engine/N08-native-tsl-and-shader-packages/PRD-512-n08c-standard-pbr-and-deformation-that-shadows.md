@@ -1,6 +1,6 @@
 # PRD-512 — Standard PBR and deformation that shadows (N08c)
 
-**Status:** PROPOSED
+**Status:** IN PROGRESS — the standard material is ported (BRDF_GGX_Multiscatter with the DFG lookup, Lambert, getRoughness, directional/hemisphere/ambient, sRGB OETF) and renders the grid natively; the browser-parity boxes, tonemapping and the deformation case are open
 **Complexity:** 4 — reference-pinned lighting maths plus a shadow pass that must reuse the deformed position
 **Owner:** João
 **Work package:** N08 — [native-engine batch](../README.md) · [N08 index](README.md)
@@ -44,7 +44,7 @@ is a separate opt-in change, not parity. Existing native-vs-browser comparison l
 **Files:** proposed `src/engine/shader/tsl/lighting/*.cpp`, `packages/runtime-native/conformance/scenes/native-engine-pbr/`
 - [ ] A sphere grid (roughness × metalness) under a directional light and an environment map matches the browser reference within the documented tolerance, with no upstream `three` in the native app. proof: `pnpm parity -- --case native-engine-pbr-grid`
 - [ ] Each catalogued tonemapping operator matches the reference on a luminance ramp. proof: `pnpm parity -- --case native-engine-tonemap-ramp`
-- [ ] An unported physical-material feature raises `TN_MATERIAL_UNSUPPORTED`. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_material_unsupported`
+- [x] An unported physical-material feature raises `TN_MATERIAL_UNSUPPORTED`. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_material_unsupported` — 2026-10-04: green on Dawn, wgpu-native, ASan and Wasm: clearcoat, sheen, transmission, iridescence, anisotropy and dispersion each raise `TN_MATERIAL_UNSUPPORTED <feature>` and produce no shader at all, never a simpler one; defaults match the pinned `MeshStandardMaterial` constructor. `src/engine/shader/standard.{h,cpp}`
 
 #### Phase 2: Deformation that shadows
 **Status:** NOT STARTED

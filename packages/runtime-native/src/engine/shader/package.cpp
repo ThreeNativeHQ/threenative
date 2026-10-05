@@ -78,6 +78,10 @@ StageModule buildStage(const Program& program, uint32_t group) {
         module.bindings.push_back(
             Binding{group, binding++, BindingKind::Storage, "s_" + storage.name, roundUp(element.size, element.align)});
     }
+    for (const std::string& name : program.textures_) {
+        module.bindings.push_back(Binding{group, binding++, BindingKind::Texture, "t_" + name, 0});
+        module.bindings.push_back(Binding{group, binding++, BindingKind::Sampler, "smp_" + name, 0});
+    }
     return module;
 }
 

@@ -73,8 +73,13 @@ std::string WgslEmitter::expr(ExprId id) const {
         case Op::Builtin: return "b_" + p_.names_[e.immediate];
         case Op::Varying: return "i_" + p_.names_[e.immediate];
         case Op::LoadVar:
-        case Op::LoadStorage:
-        case Op::Sample: return "l" + std::to_string(id);
+        case Op::LoadStorage: return "l" + std::to_string(id);
+        case Op::Sample: {
+            const std::string& name = p_.textures_[e.immediate];
+            return p_.stage_ == Stage::Fragment
+                       ? "textureSample(t_" + name + ", smp_" + name + ", " + expr(e.args[0]) + ")"
+                       : "textureSampleLevel(t_" + name + ", smp_" + name + ", " + expr(e.args[0]) + ", 0.0)";
+        }
         case Op::Neg: return "(-" + expr(e.args[0]) + ")";
         case Op::Select:
             return "select(" + expr(e.args[2]) + ", " + expr(e.args[1]) + ", " + expr(e.args[0]) + ")";
@@ -87,6 +92,8 @@ std::string WgslEmitter::expr(ExprId id) const {
         case Op::Construct:
         case Op::Call: {
             std::string out = e.op == Op::Call ? p_.names_[e.immediate] : type(e.type);
+            if (out == "dFdx") out = "dpdx";
+            if (out == "dFdy") out = "dpdy";
             // TSL lets clamp and smoothstep take scalar bounds on a vector; WGSL has no such overload.
             const bool splat = e.op == Op::Call && e.type.isVector() &&
                                (p_.names_[e.immediate] == "clamp" || p_.names_[e.immediate] == "smoothstep");
@@ -194,6 +201,13 @@ WgslModule WgslEmitter::emit(const Program& program, uint32_t group) {
         out += "@group(" + std::to_string(group) + ") @binding(" + std::to_string(binding++) + ") var<storage, " +
                (written.count(i) ? "read_write" : "read") + "> s_" + storage.name + ": array<" +
                e.type(storage.element) + ">;\n";
+    }
+
+    for (const std::string& name : program.textures_) {
+        out += "@group(" + std::to_string(group) + ") @binding(" + std::to_string(binding++) + ") var t_" + name +
+               ": texture_2d<f32>;\n";
+        out += "@group(" + std::to_string(group) + ") @binding(" + std::to_string(binding++) + ") var smp_" + name +
+               ": sampler;\n";
     }
 
     const Stage stage = program.stage_;

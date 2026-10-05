@@ -28,7 +28,8 @@ target_link_libraries(tn_engine_abi PUBLIC tn_engine_foundation)
 target_include_directories(tn_engine_abi PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 # Shader IR (N08): typed, hash-consed expressions and ordered effects. Portable like foundation.
-add_library(tn_engine_shader STATIC src/engine/shader/ir.cpp src/engine/shader/wgsl.cpp src/engine/shader/package.cpp)
+add_library(tn_engine_shader STATIC src/engine/shader/ir.cpp src/engine/shader/wgsl.cpp src/engine/shader/package.cpp
+    src/engine/shader/standard.cpp)
 tn_native_engine_target(tn_engine_shader)
 target_include_directories(tn_engine_shader PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
@@ -75,6 +76,11 @@ tn_native_engine_test(tn-native-engine-shader-ir-test tests/native-engine/shader
     native_engine_tsl_ir_types=types
     native_engine_tsl_unsupported=unsupported)
 target_link_libraries(tn-native-engine-shader-ir-test PRIVATE tn_engine_shader)
+
+tn_native_engine_test(tn-native-engine-material-test tests/native-engine/material_test.cpp
+    native_engine_material_unsupported=unsupported
+    native_engine_material_standard_builds=builds)
+target_link_libraries(tn-native-engine-material-test PRIVATE tn_engine_shader)
 
 tn_native_engine_test(tn-native-engine-abi-test tests/native-engine/abi_test.cpp
     native_engine_abi_version=version
