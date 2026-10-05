@@ -5,13 +5,15 @@
 // that decides how the world looks or what stops the player is in this folder for the game to edit.
 import type { ICtx } from "@threenative/core";
 import {
+  Heightfield,
   type IWorldPackage,
-  type IWorldTileColliderInput,
   WorldCells,
+  heightSamplerFromHeightmap,
   loadTerrainSplat,
+  loadWorldHeightmap,
 } from "@threenative/core/world";
 import { CollisionShape3D, type IPhysicsContext, RigidBody3D } from "@threenative/physics";
-import { EquirectangularReflectionMapping, type Material, type Object3D } from "three";
+import { EquirectangularReflectionMapping, type Material, Object3D } from "three";
 import { HDRLoader } from "three/addons/loaders/HDRLoader.js";
 
 /** Where the game's asset source holds the baked `world/` folder. */
@@ -36,6 +38,8 @@ export const PROP_SKY_LIGHT = 0.5;
 
 export interface IForestWorld {
   readonly world: WorldCells;
+  /** One heightfield for the whole world, in place before `addForest` resolves. */
+  readonly ground: RigidBody3D;
   readonly props: readonly RigidBody3D[];
 }
 
@@ -57,22 +61,14 @@ export async function addForest(
     // Far firs draw as engine-baked impostors; the authored model stays the shadow caster.
     impostors: true,
     budgets: { residentCells: 64, instances: 40_000, bytes: 64_000_000 },
-    terrain: { streamRadius: 6, colliderRadius: 1 },
-    createCollider: ({ field, key, object, tileX, tileZ }: IWorldTileColliderInput) =>
-      new RigidBody3D({
-        object,
-        physics: ctx.physics,
-        type: "fixed",
-        entity: `terrain.${key}.${String(tileX)}.${String(tileZ)}`,
-        shape: CollisionShape3D.heightfield(field.rows, field.columns, field.toColliderHeights(), {
-          x: manifest.cellSize,
-          y: 1,
-          z: manifest.cellSize,
-        }),
-      }),
+    terrain: { streamRadius: 6 },
   });
   ctx.add(world);
-  return { world, props: await propColliders(ctx, url, manifest) };
+  return {
+    world,
+    ground: await groundCollider(ctx, url, manifest),
+    props: await propColliders(ctx, url, manifest),
+  };
 }
 
 // Cutout foliage with no environment draws flat and dark (the engine says TN_UNLIT_FOLIAGE): give
@@ -100,6 +96,45 @@ async function lightProps(
       }
     });
   }
+}
+
+// The streamed terrain tiles arrive over several frames; a player spawned before its tile would fall
+// through. One heightfield for the whole package (a few hundred kilobytes of samples) avoids that.
+async function groundCollider(
+  ctx: ICtx<Record<string, unknown>, IPhysicsContext>,
+  url: string,
+  manifest: IWorldPackage,
+): Promise<RigidBody3D> {
+  const base = url.slice(0, url.lastIndexOf("/") + 1);
+  const [heightmapUrl] = await ctx.assets.resolve(base + manifest.terrain.heightmap);
+  if (heightmapUrl === undefined) throw new Error("Forest world: its heightmap is not served.");
+  const { extent, terrain } = manifest;
+  const field = Heightfield.fromSampler({
+    columns: terrain.columns,
+    rows: terrain.rows,
+    width: extent.sizeX,
+    depth: extent.sizeZ,
+    origin: { x: extent.minX + extent.sizeX / 2, z: extent.minZ + extent.sizeZ / 2 },
+    sampleHeight: heightSamplerFromHeightmap(
+      terrain,
+      extent,
+      await loadWorldHeightmap(heightmapUrl),
+    ),
+  });
+  const anchor = new Object3D();
+  anchor.position.set(extent.minX + extent.sizeX / 2, 0, extent.minZ + extent.sizeZ / 2);
+  ctx.add(anchor);
+  return new RigidBody3D({
+    object: anchor,
+    physics: ctx.physics,
+    type: "fixed",
+    entity: "terrain",
+    shape: CollisionShape3D.heightfield(field.rows, field.columns, field.toColliderHeights(), {
+      x: extent.sizeX,
+      y: 1,
+      z: extent.sizeZ,
+    }),
+  });
 }
 
 // ponytail: every prop collider exists from load (a few thousand fixed bodies); stream them with
