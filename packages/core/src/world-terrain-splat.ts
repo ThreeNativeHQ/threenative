@@ -12,6 +12,7 @@ import {
   UnsignedByteType,
 } from "three";
 import {
+  cameraPosition,
   cameraViewMatrix,
   clamp,
   dot,
@@ -21,6 +22,7 @@ import {
   mx_noise_float,
   normalWorld,
   positionWorld,
+  smoothstep,
   texture,
   vec2,
   vec3,
@@ -42,6 +44,17 @@ export interface ITerrainSplatLayer {
   readonly saturation?: number;
   /** Box-projected, for cliffs a top-down projection smears. */
   readonly triplanar?: boolean;
+  /**
+   * The same map again at a larger `tile`, mixed in by up to `amount` as camera distance goes from
+   * `from` to `to` metres, so a repeated pattern stops reading as a grid at grazing angles.
+   * Top-down layers only; every value is the game's.
+   */
+  readonly far?: {
+    readonly tile: number;
+    readonly from: number;
+    readonly to: number;
+    readonly amount: number;
+  };
 }
 
 /** A layer blended over what is below it by one mask channel, remapped from `lo..hi`. */
@@ -300,6 +313,15 @@ export async function loadTerrainSplat(options: ILoadTerrainSplatOptions): Promi
       layer.triplanar === true
         ? triplanar((uv) => diffuseAt(index, uv), layer.tile)
         : diffuseAt(index, ground.div(layer.tile));
+    const far = layer.far;
+    if (far !== undefined && layer.triplanar !== true) {
+      if (!(far.tile > 0 && far.from < far.to && far.amount >= 0 && far.amount <= 1))
+        throw new Error(
+          `loadTerrainSplat: layer '${layer.id}' far needs tile > 0, from < to and amount in 0..1.`,
+        );
+      const reach = smoothstep(far.from, far.to, positionWorld.distance(cameraPosition));
+      sample = mix(sample, diffuseAt(index, ground.div(far.tile)), reach.mul(far.amount));
+    }
     if (layer.saturation !== undefined) {
       const luma = dot(sample, vec3(0.2126, 0.7152, 0.0722));
       sample = mix(vec3(luma), sample, layer.saturation);
