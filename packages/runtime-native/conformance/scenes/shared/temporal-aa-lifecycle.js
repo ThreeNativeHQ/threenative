@@ -19,6 +19,8 @@ const DISPLAY_WIDTH = 1280;
 const DISPLAY_HEIGHT = 480;
 const SCALED_INPUT_WIDTH = 640;
 const SCALED_INPUT_HEIGHT = 240;
+/** The tracked points this route measures, in the order the assertions read them. */
+const TRACKED = ["instance", "skinned"];
 
 /** The route, its assertions and its own frames, so the zero-velocity control drives exactly these
  * assertions rather than a second and looser copy of them. */
@@ -94,14 +96,31 @@ export async function runTemporalLifecycle({ renderer, scene, camera }, variant,
     `${label}: the input-scale frame jitted a ${scaleCold.viewWidth}x${scaleCold.viewHeight} lattice against the pass's own ${scaleCold.inputWidth}x${scaleCold.inputHeight} raster.`,
   );
   // The tracked objects' history coordinates, reconstructed from the measured MRT velocity and
-  // compared against where each point independently projected last frame.
-  for (const name of ["instance", "skinned"]) {
+  // compared against where each point independently projected last frame. The independent expected
+  // motion comes first: with nothing read, or nothing that moved, every number below is meaningless.
+  for (const name of TRACKED) {
     const witness = observed.historyWitness[name];
     assertCondition(witness.samples > 0, `${label}: no ${name} history sample was read, so nothing was measured.`);
     assertCondition(
       witness.maxExpectedPixels >= MOVING_PIXELS,
       `${label}: the ${name} moved at most ${witness.maxExpectedPixels} px, so its history coordinate is untested.`,
     );
+  }
+  // Every tracked object in one fail-closed condition, ahead of the measured-velocity guards below: a
+  // history coordinate that lands in the wrong place has to fail here, where the message still carries
+  // each point's own independent expected motion, and not at a later report of no measured motion.
+  const missed = TRACKED.filter((name) => observed.historyWitness[name].maxMisregistration > REPROJECTION_PIXELS);
+  assertCondition(
+    missed.length === 0,
+    `${label}: ${missed
+      .map((name) => {
+        const witness = observed.historyWitness[name];
+        return `the ${name} missed its independently projected previous location by ${witness.maxMisregistration} px at frame ${witness.maxMisregistrationFrame}, over the ${REPROJECTION_PIXELS} px bound, while the point moved ${witness.maxExpectedPixels} px`;
+      })
+      .join("; ")}.`,
+  );
+  for (const name of TRACKED) {
+    const witness = observed.historyWitness[name];
     assertCondition(
       witness.movingFrames > 0,
       `${label}: the ${name}'s measured vector never reached the ${MOVING_PIXELS} px moving threshold on any of its ${witness.samples} samples.`,
@@ -109,10 +128,6 @@ export async function runTemporalLifecycle({ renderer, scene, camera }, variant,
     assertCondition(
       witness.maxMeasuredPixels >= MOVING_PIXELS,
       `${label}: the ${name}'s measured MRT velocity peaked at ${witness.maxMeasuredPixels} px, under the ${MOVING_PIXELS} px moving threshold.`,
-    );
-    assertCondition(
-      witness.maxMisregistration <= REPROJECTION_PIXELS,
-      `${label}: the ${name}'s reprojected history coordinate missed its independently projected previous location by ${witness.maxMisregistration} px at frame ${witness.maxMisregistrationFrame}, over the ${REPROJECTION_PIXELS} px bound, while the point moved ${witness.maxExpectedPixels} px.`,
     );
   }
   return {
@@ -124,7 +139,7 @@ export async function runTemporalLifecycle({ renderer, scene, camera }, variant,
       input: `${settled.inputWidth}x${settled.inputHeight}`,
       display: `${settled.displayWidth}x${settled.displayHeight}`,
       reasons: REASONS,
-      misregistration: ["instance", "skinned"].map((name) => observed.historyWitness[name].maxMisregistration),
+      misregistration: TRACKED.map((name) => observed.historyWitness[name].maxMisregistration),
     },
   };
 }

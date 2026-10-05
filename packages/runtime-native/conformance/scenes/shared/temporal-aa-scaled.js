@@ -70,30 +70,28 @@ export function assertScaledTransition(opening, resized, label) {
  * The measured per-pixel history rejection, on the frames where the answer is checkable. A reset
  * frame carries no legal history at any pixel, so the whole display must be counted as rejected and
  * the GPU must say it visited exactly that many pixels. Every later frame must publish a finite
- * share with a stated age, and no frame may publish one it has not measured.
+ * share with a stated age, and no frame may publish one it has not measured. `expectedCold` is how
+ * many resets the calling route makes: two for the scaled rows, five for the lifecycle route.
  */
-export function assertRejectionCounts(observed, label) {
+export function assertRejectionCounts(observed, label, expectedCold = 2) {
   const cold = observed.rejectionCold;
   assertCondition(
-    cold.length === 2,
-    `${label}: ${cold.length} reset frames reported a rejection count, not the opening and resize pair.`,
+    cold.length === expectedCold,
+    `${label}: ${cold.length} reset frames reported a rejection count, not the ${expectedCold} this route makes.`,
   );
-  for (const [row, name] of [
-    [cold[0], "opening"],
-    [cold[1], "resize"],
-  ]) {
+  for (const row of cold) {
     const pixels = row.displayWidth * row.displayHeight;
     assertCondition(
       row.visited === pixels,
-      `${label}: the ${name} reset frame visited ${row.visited} of ${pixels} display pixels.`,
+      `${label}: the ${row.resetReason} reset frame visited ${row.visited} of ${pixels} display pixels.`,
     );
     assertCondition(
       row.fraction === 1,
-      `${label}: the ${name} reset frame rejected ${row.fraction} of its display, not all of it.`,
+      `${label}: the ${row.resetReason} reset frame rejected ${row.fraction} of its display, not all of it.`,
     );
     assertCondition(
       row.historyValid === false,
-      `${label}: the ${name} counted frame reports legal history, so the whole-raster share is not the reset's.`,
+      `${label}: the ${row.resetReason} counted frame reports legal history, so the whole-raster share is not the reset's.`,
     );
   }
   for (const row of observed.rejectionFrames) {

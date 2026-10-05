@@ -104,12 +104,7 @@ experimental path or mark the draft ready before the outstanding acceptance evid
   UVs and is not complete rejection. Five lifecycle tests pass; screenshot proof remains pending.
 
 - [x] The reconstruction stage produces a display-sized output from a smaller colour/depth input and records input size, output size, history-valid state and rejection fraction. **proof:** focused render-chain test runs 0.67→1.0 sizing, then a mutation returning the low-resolution target directly fails the output-size assertion. **result, 2026-10-06:** `packages/create-threenative/__tests__/temporal-aa.spec.ts` -t "presents a display-sized raster" drives the real `RenderChain` over the generated `temporalAAStages` `traa` factory and the same stubbed renderer the other sizing tests use. One arm reports the scene pass target at 1280×720 while the node the chain presents holds 1920×1080, with `report()` carrying `inputWidth 1280`, `inputHeight 720`, `outputWidth 1920`, `outputHeight 1080`, `historyValid false` on the opening reset and the measured `rejection { fraction 4/2073600, visited 2073600, staleFrames 0 }`. The mutated layer is `stages[0].build` in the test fixture: the generated stage still builds the provider and still owns its per-frame work, and the chain is handed the scene pass colour node instead of `provider.node`. The same `expectDisplayRaster` assertion then fails with the exact message `The presented raster is 1280x720, not the display raster 1920x1080.`, and the presented node's own render target measures 1280×720 — the low-resolution target — so the failure is classified at the output-raster contract, not at a missing measurement, a startup refusal or a canvas label. 26/26 in the file; root `pnpm typecheck` and `biome check` exit 0. No core change, no new dependency, no threshold touched. Runtime evidence for the same arm is the qualified browser/native result already recorded above.
-- [ ] Camera cuts, projection changes and resolution changes invalidate history for the affected frame; moving skinned and instanced fixtures use the existing velocity source rather than a camera-only approximation. **proof:** deterministic fixture covers cut/resize/skinned/instanced cases and a zero-velocity mutation fails the moving-object rejection/stability assertion.
-  - **left, 2026-10-05:** the browser lane measures it (cut, projection, resize and input-scale
-    resets, moving skinned and instanced reprojection, and the same assertions against a real
-    `vec2(0)` MRT) — see the section at the end of this file. The deterministic conformance scene
-    `conformance/scenes/shared/temporal-aa-lifecycle.js` has not run on the native lane, so the box
-    stays open.
+- [x] Camera cuts, projection changes and resolution changes invalidate history for the affected frame; moving skinned and instanced fixtures use the existing velocity source rather than a camera-only approximation. **proof:** deterministic fixture covers cut/resize/skinned/instanced cases and a zero-velocity mutation fails the moving-object rejection/stability assertion. **result, 2026-10-05:** the browser lane, the registered native row `temporal-aa-lifecycle` and the real `vec2(0)` MRT mutation — see the section at the end of this file.
 
 ### Phase 2 — Prove motion stability on content that exposes temporal defects
 
@@ -797,10 +792,9 @@ Results on this tree, adapter `nvidia`/`turing` in both browser lanes, no SwiftS
   frames 0 and 20, so reset 1 was compared against the pre-resize 1280×720 raster. The counted
   display now travels with the row it describes.
 
-Both Phase 1 boxes stay **open**. The output-size half still needs its low-resolution-passthrough
-mutation to fail the assertion, and the cut/projection/zero-velocity mutation for moving skinned and
-instanced content has not run. Phases 2 and 3 stay open. Scoped commit only: no full CI, no push, no
-merge.
+Both Phase 1 boxes are now ticked: the output-size half by the low-resolution-passthrough mutation at
+`32ec88d10`, and the cut/projection/resize half by the native lifecycle row below. Phases 2 and 3 stay
+open. That entry's own scoped commit was: no full CI, no push, no merge.
 
 ### The history coordinate is measured from the continuous current projection (2026-10-05)
 
@@ -865,3 +859,62 @@ The second Phase 1 box stays **open**: `conformance/scenes/shared/temporal-aa-li
 deterministic node-side fixture that asserts the same route with `assertCondition`, is written but
 has not run on the native lane, and the native registration and capture are the next job. Phases 2
 and 3 stay open. Scoped commit only: no full CI, no push, no merge.
+
+### The same lifecycle route now runs natively, and the zero-velocity mutant fails there (2026-10-05)
+
+The browser lane already measured this route and its zero control. `conformance/scenes/shared/
+temporal-aa-lifecycle.js` had never run on the native lane, so it is now registered as the row
+`temporal-aa-lifecycle`: the existing `.06` mismatch / `9` DeltaE budget, the existing `webgpu`
+recipe, `captureFrames 40` for the 36 diagnostic frames, no new tolerance and no new scene. One
+defect surfaced on the first browser reference attempt and is fixed here rather than worked around:
+`assertRejectionCounts` was hard-coded to the scaled rows' two-reset pair, so the lifecycle route's
+five resets failed on its metadata. It now takes the expected count (default 2, unchanged for both
+existing callers) and names every counted reset frame by its own recorded `resetReason`.
+
+The route's own assertions are reordered, with no threshold moved. The independent expected motion of
+both witnesses comes first, then every tracked object's misregistration in one fail-closed condition,
+then the measured-velocity guards. A history coordinate in the wrong place now fails on the history
+condition itself, with the point's own independently projected motion in the message, instead of on a
+later report of no measured velocity.
+
+Capability lookup ran before the change, through `packages/engine-mcp/dist/index.js`:
+`engine_search_capabilities` plus `engine_capability_detail` on **all 10 hits** across two queries.
+Nothing ships a history-witness helper or a conformance-registration manager; `temporalReproject` is
+again the addon that owns the look, and the registry is the registration mechanism.
+
+Results on this tree, `build/tn-linux/mystral` unchanged, no C++ rebuild:
+
+- Web reference, three selected rows, all **pass**, adapter `nvidia`/`turing`, no page errors and no
+  GPU validation error. `packages/runtime-native/artifacts/conformance/web-life-r2/report.json`.
+- Native desktop against that reference, all three rows **pass**, native `exitCode 0`, 1280x480,
+  non-uniform, zero GPU validation errors. `temporal-aa-lifecycle` `pixelMismatchRatio 0.05384440104166666
+  <= 0.06` and `perceptualDeltaE 0.3712519114254307 <= 9`; `temporal-aa-scaled` `0.03699544270833333`
+  and `0.23186547772174834`; `temporal-aa-scaled-unchecked-reset` `0.04711588541666667` and
+  `0.27938254102333937`. `packages/runtime-native/artifacts/conformance/native-life-r1/report.json`.
+  The runner exits 2 because the other 96 rows are unselected, which is the blocked-row contract. The
+  native adapter is genuinely unrecorded by this harness and is reported as unknown, never inferred
+  from the browser row.
+- Native negative, same case and same positive web reference, with **only** the `startScene` variant
+  string mutated to `scaled-lifecycle-zero`: the row **fails** as required, native `exitCode null`,
+  zero GPU validation errors, and the native host's own captured message is
+  `temporal lifecycle: the instance missed its independently projected previous location by
+  1.6807242909818703 px at frame 2, over the 0.05 px bound, while the point moved 1.6807242909818703
+  px; the skinned missed its independently projected previous location by 0.6284101079565797 px at
+  frame 2, over the 0.05 px bound, while the point moved 0.6284101079565797 px.`
+  `artifacts/conformance/native-life-zero-r1/report.json`. The runner records no stdout or stderr for
+  a scene-level assertion, so the message above was read from the same prebuilt binary run directly
+  on the harness's own mutant bundle in `artifacts/conformance/desktop-bundles/`. The mutant's exact
+  source bytes were restored and verified by hash before this commit; no second registered scene and
+  no looser control wrapper exists.
+- Browser arms on the same tree, adapter `nvidia`/`turing`: lifecycle positive **41 of 41** with
+  empty diagnostics, the lifecycle zero control **fails with 7 history assertions** (all
+  `maxMisregistration`, `movingFrames` and `maxMeasuredPixels` for both tracked objects plus the
+  rigid witness) and non-empty expected motion, and `temporal-aa-scaled-unchecked-reset` **10 of 10**
+  with empty diagnostics.
+- Focused checks: `packages/runtime-native/__tests__/temporal-velocity-probe.spec.ts` 4 passed,
+  `pnpm typecheck` exit 0, `pnpm check:docs` clean across 2,442 links, and Biome clean on both scenes
+  and the registry. No generated render file changed, so no scaffold hash moved.
+
+Both Phase 1 boxes are now ticked. Phases 2 and 3 stay open: PRD-269's ghosting and cost controls,
+the content corpus and every performance box are untouched. Scoped commit only: no full CI, no push,
+no merge.
