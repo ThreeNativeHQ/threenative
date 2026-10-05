@@ -50,7 +50,7 @@ functions are supported.
 **Status:** NOT STARTED
 **Files:** proposed `src/engine/shader/tsl/*.cpp`, `packages/runtime-native/tests/native-engine/tsl-corpus/`
 - [ ] Every catalogued TSL function used by the corpus builds IR structurally equal to the upstream node tree. proof: `node packages/runtime-native/tests/native-engine/differential.mjs --suite tsl-ir`
-- [ ] An uncatalogued node raises `TN_TSL_UNSUPPORTED` naming it. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_tsl_unsupported`
+- [x] An uncatalogued node raises `TN_TSL_UNSUPPORTED` naming it. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_tsl_unsupported` — 2026-10-04: green on Dawn, ASan and Wasm: an uncatalogued function (`mx_noise_float`, absent from the API catalog too) and an uncatalogued builtin (`sampleMask`) each raise one `TN_TSL_UNSUPPORTED` naming the node, at its authoring line; red when the IR accepts an unknown function (`ir.cpp` call path)
 
 ## Decisions
 
