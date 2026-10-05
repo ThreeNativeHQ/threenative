@@ -39,6 +39,19 @@ describe("integration work applies to the changed source", () => {
       expect(select(workflow, [file]).animation, file).toBe(true);
     }
   });
+  it("selects the animation lane alone for the two-rig locomotion capture", () => {
+    for (const file of [
+      "scripts/verify-vq-locomotion.ts",
+      "examples/abyss-framework/src/render/vq-locomotion-game.ts",
+      "examples/abyss-framework/src/render/vq-locomotion-trace.ts",
+      "examples/abyss-framework/src/render/locomotion-driver.ts",
+      "examples/abyss-framework/src/vq-locomotion-main.ts",
+      "examples/abyss-framework/playtests/vq-locomotion-blend-spaces.playtest.json",
+      "examples/abyss-framework/assets/mannequin.glb",
+    ]) {
+      expect(select(workflow, [file]), file).toEqual({ ...none, animation: true });
+    }
+  });
   it("keeps animation workflow edits local while preserving other lanes", () => {
     expect(
       select(
@@ -516,6 +529,7 @@ describe("reviewed producer and independent feature boundaries", () => {
       "packages/core/src/world-tiles.ts",
       "packages/core/src/animation.ts",
       "scripts/verify-animation-reversal.ts",
+      "scripts/verify-vq-locomotion.ts",
       "scripts/temporal-aa-quality.ts",
     ]) {
       const lanes = select(workflow, [file]);
