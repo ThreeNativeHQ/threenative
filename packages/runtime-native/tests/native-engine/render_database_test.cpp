@@ -10,6 +10,7 @@
 
 #include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <string>
 #include <thread>
 
@@ -77,6 +78,11 @@ void litScene() {
     for (const std::string& d : database.diagnostics()) std::fprintf(stderr, "%s\n", d.c_str());
     CHECK(database.diagnostics().empty());
     const std::vector<uint8_t> px = read(renderer, events);
+    // The desktop frame, raw RGBA, for the browser build's parity scenario (PRD-532).
+    if (FILE* out = std::fopen(TN_NATIVE_LIT_OUT, "wb")) {
+        std::fwrite(px.data(), 1, px.size(), out);
+        std::fclose(out);
+    }
     const std::string png = std::string(TN_GOLDENS_DIR) + "/lit-render.png";
     int w = 0, h = 0, c = 0;
     unsigned char* golden = stbi_load(png.c_str(), &w, &h, &c, 4);

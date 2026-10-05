@@ -151,7 +151,8 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_renderer_multi_camera_layers=multi_camera_layers)
     target_link_libraries(tn-native-engine-render-database-test PRIVATE tn_engine_renderer tn_host_services)
     target_compile_definitions(tn-native-engine-render-database-test PRIVATE
-        TN_GOLDENS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../three-native/tests/compatibility/goldens/0.185.1")
+        TN_GOLDENS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../three-native/tests/compatibility/goldens/0.185.1"
+        TN_NATIVE_LIT_OUT="${CMAKE_CURRENT_BINARY_DIR}/native-lit-render.rgba")
 
     tn_native_engine_test(tn-native-engine-renderer-caches-test tests/native-engine/renderer_caches_test.cpp
         native_engine_renderer_geometry_cache=geometry

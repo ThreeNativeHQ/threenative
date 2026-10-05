@@ -12,6 +12,36 @@
   <script>
     (function () {
       const started = performance.now();
+      // Box 61: the desktop's frame of the same scene (raw RGBA from native_engine_renderer_scene_lit),
+      // named by ?native=<url>, compared with this build's frame once both are here.
+      const nativeUrl = new URLSearchParams(location.search).get("native");
+      let nativeFrame = null;
+      let nativeError = "";
+      if (nativeUrl !== null)
+        fetch(nativeUrl)
+          .then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(`HTTP ${r.status}`))))
+          .then((b) => (nativeFrame = new Uint8Array(b)))
+          .catch((e) => (nativeError = String(e)));
+      let parity = null;
+      const compare = () => {
+        if (parity !== null) return parity;
+        const browser = globalThis.__tnLitPixels;
+        if (nativeError) return { compared: false, error: nativeError };
+        if (!browser || !nativeFrame) return { compared: false, error: "" };
+        if (browser.length !== nativeFrame.length)
+          return (parity = { compared: false, error: `sizes differ: ${browser.length} vs ${nativeFrame.length}` });
+        let worst = 0;
+        let over1 = 0;
+        let channels = 0;
+        for (let i = 0; i < browser.length; i += 4)
+          for (let k = 0; k < 3; k++) {
+            const d = Math.abs(browser[i + k] - nativeFrame[i + k]);
+            if (d > worst) worst = d;
+            if (d > 1) over1++;
+            channels++;
+          }
+        return (parity = { compared: true, error: "", worst, over1Ratio: over1 / channels });
+      };
       const report = () => globalThis.__tnNativeCore ?? { initialized: false };
       globalThis.__THREENATIVE_PLAYTEST_BRIDGE__ = {
         describe: () => ({
@@ -51,6 +81,7 @@
                 boot: { initialized: r.initialized, adapter: r.adapter ?? "", error: r.error ?? "", covered: r.covered ?? -1 },
                 memory: r.memory ?? null,
                 loop: { ticks: globalThis.__tnNativeTicks ?? 0 },
+                lit: compare(),
                 callbacks: { delivered: r.callbacks ?? 0, reentrant: r.reentrantCallbacks ?? -1 },
                 threads: {
                   built: r.threads ?? null,

@@ -4,7 +4,8 @@
 // queue at the frame boundary, as the native host does. Nothing here waits or blocks.
 //
 // What the page reads back, as globalThis.__tnNativeCore (the playtest bridge publishes it):
-//   boot       adapter info, a rendered lit frame and how much of it is covered;
+//   boot       adapter info, the lit-render fixture's frame and how much of it is covered (the
+//              page compares that frame with the desktop's, PRD-532 box 61);
 //   memory     a retained buffer view across Wasm memory growth and a store reallocation;
 //   callbacks  callbacks delivered (a readback every 10 ticks after boot) and how many ran inside a
 //              renderer call (must stay zero);
@@ -18,6 +19,7 @@
 #include <emscripten/heap.h>
 #include <webgpu/webgpu.h>
 
+#include <array>
 #include <cstdio>
 #include <cstring>
 #include <memory>
@@ -55,6 +57,7 @@ struct Boot {
     std::unique_ptr<PerspectiveCamera> camera;
     std::unique_ptr<Mesh> mesh;
     std::unique_ptr<DirectionalLight> light;
+    std::unique_ptr<HemisphereLight> sky;
     enum class Phase { Adapter, Device, Render, Readback, Done } phase = Phase::Adapter;
     int frames = 0;
     double covered = -1;
@@ -120,23 +123,39 @@ std::string memoryCheck() {
            ", \"refreshedAfterReallocation\": " + (refreshed ? "true" : "false") + "}";
 }
 
+constexpr int kWidth = 320;
+constexpr int kHeight = 240;
+constexpr std::array<double, 4> kClear = {0.05, 0.06, 0.08, 1};
+
+// The lit-render fixture's scene, exactly as the desktop's native_engine_renderer_scene_lit builds it
+// (render_database_test.cpp LitScene), so the two frames can be compared (box 61).
 void buildScene() {
     boot.renderer = std::make_unique<Renderer>(boot.instance, boot.device, wgpuDeviceGetQueue(boot.device), boot.events);
-    boot.renderer->setSize(64, 48);
+    boot.renderer->setSize(kWidth, kHeight);
+    boot.renderer->setOutput(OutputState{shader::ToneMapping::ACESFilmic, 1, true});
     boot.database = std::make_unique<RenderDatabase>();
     boot.scene = std::make_unique<Scene>();
     boot.camera = std::make_unique<PerspectiveCamera>();
     boot.camera->fov = 60;
     boot.camera->aspect = 4.0 / 3;
-    boot.camera->position.z = 3;
+    boot.camera->near = 0.1;
+    boot.camera->far = 100;
+    boot.camera->position.y = 1.4;
+    boot.camera->position.z = 3.2;
+    boot.camera->lookAt(0, 0, 0);
     boot.camera->updateProjectionMatrix();
     auto material = std::make_shared<Material>(MaterialType::Standard);
     material->color.setRGB(0.8, 0.35, 0.2);
+    material->roughness = 0.35;
+    material->metalness = 0.1;
     boot.mesh = std::make_unique<Mesh>(makeSphereGeometry(1, 32, 16), material);
-    boot.light = std::make_unique<DirectionalLight>(Color(1, 1, 1), 3);
+    boot.light = std::make_unique<DirectionalLight>(Color().setHex(0xffffff), 3);
     boot.light->position.set(2, 3, 1);
+    boot.sky = std::make_unique<HemisphereLight>(Color().setHex(0xaabb91), Color().setHex(0x222222), 0.6);
     boot.scene->add(*boot.mesh);
     boot.scene->add(*boot.light);
+    boot.scene->add(*boot.sky);
+    boot.scene->updateMatrixWorld(true);
 }
 
 void tick() {
@@ -152,13 +171,17 @@ void tick() {
     switch (boot.phase) {
         case Boot::Phase::Render: {
             boot.insideRenderer = true;
-            boot.database->render(*boot.renderer, *boot.scene, *boot.camera, {0, 0, 0, 1});
+            boot.database->render(*boot.renderer, *boot.scene, *boot.camera, kClear);
             boot.renderer->readPixels([](GpuStatus status, std::vector<uint8_t> px) {
                 if (boot.insideRenderer) ++boot.reentrant;  // a callback inside a renderer call
-                if (status != GpuStatus::Ok || px.size() != 64 * 48 * 4) return fail("readPixels failed");
+                if (status != GpuStatus::Ok || px.size() != size_t(kWidth) * kHeight * 4) return fail("readPixels failed");
+                // Covered: pixels that differ from the corner, which is the clear colour.
                 size_t lit = 0;
-                for (size_t i = 0; i + 3 < px.size(); i += 4) lit += (px[i] | px[i + 1] | px[i + 2]) != 0;
-                boot.covered = double(lit) / double(64 * 48);
+                for (size_t i = 0; i + 3 < px.size(); i += 4)
+                    lit += px[i] != px[0] || px[i + 1] != px[1] || px[i + 2] != px[2];
+                boot.covered = double(lit) / double(kWidth * kHeight);
+                // The frame itself, for the page's comparison with the desktop's.
+                EM_ASM({ globalThis.__tnLitPixels = HEAPU8.slice($0, $0 + $1); }, px.data(), px.size());
                 boot.memory = memoryCheck();
                 boot.phase = Boot::Phase::Done;  // published on the next tick, with this drain counted
             });
@@ -175,7 +198,7 @@ void tick() {
             // delivery is exercised for the whole scenario, not only once at startup.
             if (++boot.frames % 10 == 0) {
                 boot.insideRenderer = true;
-                boot.database->render(*boot.renderer, *boot.scene, *boot.camera, {0, 0, 0, 1});
+                boot.database->render(*boot.renderer, *boot.scene, *boot.camera, kClear);
                 boot.renderer->readPixels([](GpuStatus, std::vector<uint8_t>) {
                     if (boot.insideRenderer) ++boot.reentrant;
                 });
