@@ -215,8 +215,9 @@ this host, so it is not attributed. The prewarm (`e580e76cb`) stays off this PR,
 
 ## Lane B — Fab-quality assets at that frame rate
 
-- [ ] **B1 · [VQ-01](../assets/PRD-VQ-01-native-asset-capabilities.md): native asset capability guard.** After: nothing.
+- [x] **B1 · [VQ-01](../done/PRD-VQ-01-native-asset-capabilities.md): native asset capability guard.** After: nothing.
   - It already has a draft PR, #396. `assertNativeAssetsCompatible` currently rejects KTX2 and meshopt on every Android and iOS build.
+  - **Done 2026-10-05:** #396 merged its phases (2026-10-04). The last box, the lifecycle release, passes on nvidia/turing: geometryGrowth 0, textureGrowth 0. The old 6/3 was a baseline read before the first world pass had drawn, not a leak; every owned dispose was counted at 6 + 3 per enter. The PRD moved to `done/` in this PR.
 - [ ] **B2 · [PRD-485](PRD-485-high-quality-assets-go-through-the-cook.md): high-quality assets go through the cook.** After: B1 for its Android box only. 🎨👁
   - fab-import-proof, lumen-hall and metahuman-lab drop their escape hatches.
 - [ ] **B3 · Texture residency:** [VQ-10](../performance/PRD-VQ-10-texture-mip-residency.md) together with [PRD-454](PRD-454-worldcells-budget-real-resources.md). After: B2. ⏱🌍👁
