@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-345 — a backlit subject is not a hole in the sky
 
-**Status:** PARTIAL — generated material defaults integrated across conventional templates; twelve final matched web desktop pairs are palette-stable, including corrected racing. All-template gameplay/full-root/native appearance and rain admission remain open. Originally filed 2026-09-03, measured at `43d03e6a`. Batch:
+**Status:** PARTIAL — generated material defaults integrated across conventional templates; twelve final matched web desktop pairs are palette-stable, including corrected racing. A controller-owned shared render graph removes the shooter's per-material-graph performance regression in the isolated causal study (`docs/benchmark/prd345/shooter-causes1/`); integrated gameplay/performance re-qualification, all-template/full-root/native appearance and rain admission remain open. Originally filed 2026-09-03, measured at `43d03e6a`. Batch:
 [docs/PRDs/AAA-visuals](aaa-visuals-notes.md). **Ships as generated user source, not as a package** — it
 decides how things look, and rule 1(b) vetoes 1(a) at any size. Source studied:
 [TheLongSilence](https://github.com/achimala/TheLongSilence) `src/gfx/greeble.js:37`, the
@@ -97,6 +97,7 @@ P1, PRD-345. The workbook remains unchanged.
 ### Phase 2 — admit measured generated defaults
 
 - [ ] Apply only qualified conventions to the actual starter/material source and all required templates, preserving per-template appearance, low/mobile/software fallbacks and named overrides. proof: matched per-template screenshots and actual frame/startup cost
+  - 2026-10-04: the twelve material templates now build **one controller-owned render graph** (`src/render/backlightControls.ts` owns `validateControls`/`resolveKey`; `backlightMaterial.ts` caches one graph per controls object in a `WeakMap` so every converted material references the same graph) instead of a per-material graph. The isolated 21-launch causal study at the unchanged 1920×1080 / 33 ms limit measured per-material current 46.93 ms (0/6 pass) against shared graph 30.43 ms (3/3 pass), with copy-only (29.37 ms) and material-emissive-only (28.90 ms) controls also passing and runtime-zero/compiled-rim-only controls failing. Evidence: `docs/benchmark/prd345/shooter-causes1/` (raw reports, source identities, PNG hashes). Integrated gameplay/performance re-qualification, the snow threshold and native remain open, so this box stays open.
 - [x] Add the concise convention/override rows to generated instructions with mirrors kept in sync. proof: all thirteen template rows, explicit rain exception, primary-docs/instruction-budget seventeen tests and scaffold/doc eighty-three tests pass; unchanged instruction caps
 
 ### Phase 3 — clean starter and platform validation
