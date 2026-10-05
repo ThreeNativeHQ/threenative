@@ -46,7 +46,7 @@ target_link_libraries(tn_engine_abi PUBLIC tn_engine_foundation)
 target_include_directories(tn_engine_abi PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 # Shader IR (N08): typed, hash-consed expressions and ordered effects. Portable like foundation.
-add_library(tn_engine_shader STATIC src/engine/shader/ir.cpp)
+add_library(tn_engine_shader STATIC src/engine/shader/ir.cpp src/engine/shader/wgsl.cpp)
 tn_native_engine_target(tn_engine_shader)
 target_include_directories(tn_engine_shader PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
@@ -159,6 +159,17 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_gpu_async_only=async_only
         native_engine_lifetime_deferred_gpu=lifetime_deferred_gpu)
     target_link_libraries(tn-native-engine-gpu-resources-test PRIVATE tn_engine_renderer tn_host_services)
+    # The same corpus validates through the backend's own compiler: Tint on Dawn, naga on wgpu-native.
+    if(TARGET dawn::webgpu)
+        set(tn_shader_validator native_engine_shader_emit_tint)
+    else()
+        set(tn_shader_validator native_engine_shader_emit_naga)
+    endif()
+    tn_native_engine_test(tn-native-engine-shader-emit-test tests/native-engine/shader_emit_test.cpp
+        ${tn_shader_validator}=validates
+        native_engine_shader_emit_stable=stable)
+    target_link_libraries(tn-native-engine-shader-emit-test PRIVATE tn_engine_shader tn_host_services)
+
     if(TARGET dawn::webgpu)
         tn_native_engine_test(tn-native-engine-device-loss-test tests/native-engine/device_loss_test.cpp
             native_engine_device_loss_recover=recover

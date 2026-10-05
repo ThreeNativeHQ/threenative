@@ -372,6 +372,35 @@ void Program::discard(Where where) {
     emit(Stmt{StmtKind::Discard});
 }
 
+void Program::output(std::string_view name, ExprId value, Where where) {
+    if (value == kInvalid) return;
+    const Type type = exprs_[value].type;
+    const bool position = name == "position";
+    const bool color = name == "color";
+    if (position && (stage_ != Stage::Vertex || type != Type::vec(4))) {
+        fail("output position", "a vertex stage writes position as vec4<f32>", where);
+        return;
+    }
+    if (color && (stage_ != Stage::Fragment || type != Type::vec(4))) {
+        fail("output color", "a fragment stage writes color as vec4<f32>", where);
+        return;
+    }
+    if (stage_ == Stage::Compute) {
+        fail("output " + std::string(name), "compute stages write storage, not outputs", where);
+        return;
+    }
+    const uint64_t id = intern(name);
+    uint32_t slot = 0;
+    while (slot < outputs_.size() && outputs_[slot].name != id) ++slot;
+    if (slot == outputs_.size()) {
+        outputs_.push_back(OutputSlot{id, type});
+    } else if (outputs_[slot].type != type) {
+        fail("output " + std::string(name), "written as " + outputs_[slot].type.name() + " and " + type.name(), where);
+        return;
+    }
+    emit(Stmt{StmtKind::Output, slot, value});
+}
+
 uint32_t Program::openBlock() {
     blocks_.emplace_back();
     return static_cast<uint32_t>(blocks_.size() - 1);
@@ -470,6 +499,9 @@ void Program::dumpBlock(uint32_t block, int depth, std::string& out, std::vector
                        describe(s.c, numbering) + "\n";
                 break;
             case StmtKind::Discard: out += indent + "discard\n"; break;
+            case StmtKind::Output:
+                out += indent + "output " + names_[outputs_[s.a].name] + " = " + describe(s.b, numbering) + "\n";
+                break;
             case StmtKind::If:
                 out += indent + "if " + describe(s.a, numbering) + " {\n";
                 dumpBlock(s.body, depth + 1, out, numbering, next);

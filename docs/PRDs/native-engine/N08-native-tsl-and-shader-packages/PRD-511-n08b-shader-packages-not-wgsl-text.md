@@ -1,6 +1,6 @@
 # PRD-511 — Shader packages, not WGSL text (N08b)
 
-**Status:** PROPOSED
+**Status:** IN PROGRESS — phase 1 done
 **Complexity:** 4 — code generation plus the layout/variant/schedule metadata that makes it executable
 **Owner:** João
 **Work package:** N08 — [native-engine batch](../README.md) · [N08 index](README.md)
@@ -40,11 +40,11 @@ already caches pipelines (`src/webgpu/bindings_pipeline_cache.cpp`) for the JS p
 ## Execution Phases
 
 #### Phase 1: Emit and validate
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** proposed `src/engine/shader/wgsl/emitter.cpp`, `tests/native-engine/shader_emit_test.cpp`
-- [ ] Every corpus graph emits WGSL that Tint validates. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_shader_emit_tint`
-- [ ] The same WGSL validates under naga on wgpu-native. proof: `ctest --test-dir packages/runtime-native/build/tn-linux-wgpu -R native_engine_shader_emit_naga`
-- [ ] Emission is deterministic: two runs over the corpus produce byte-identical packages. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_shader_emit_stable`
+- [x] Every corpus graph emits WGSL that Tint validates. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_shader_emit_tint` — 2026-10-04: green in `build/tn-linux-engine` (Dawn): the three corpus graphs (`tests/native-engine/shader_corpus.h`: compute with storage, loop and branch; lit vertex; lit fragment with discard) create shader modules inside a validation error scope with no error; broken WGSL is refused, proving the validator is live. Red when the loop counter loses its `var`. `src/engine/shader/wgsl.{h,cpp}`
+- [x] The same WGSL validates under naga on wgpu-native. proof: `ctest --test-dir packages/runtime-native/build/tn-linux-wgpu -R native_engine_shader_emit_naga` — 2026-10-04: green in the engine-only wgpu-native build (`build/tn-linux-engine-wgpu`, ctest `native_engine_shader_emit_naga`)
+- [x] Emission is deterministic: two runs over the corpus produce byte-identical packages. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_shader_emit_stable` — 2026-10-04: green; names derive from IR ids and fixed prefixes, two builds of each graph emit byte-identical WGSL, and a non-finite constant is refused as `TN_SHADER_PACKAGE_INVALID` rather than emitted
 
 #### Phase 2: Layouts, variants, schedules
 **Status:** NOT STARTED

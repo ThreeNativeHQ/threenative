@@ -104,6 +104,11 @@ public:
     ExprId loadStorage(uint32_t buffer, ExprId index, Where where = Where::current());
     void store(uint32_t buffer, ExprId index, ExprId value, Where where = Where::current());
     void discard(Where where = Where::current());
+    /**
+     * A stage output: "position" (vec4, vertex) and "color" (vec4, fragment) are the fixed ones;
+     * any other name is a varying, located in order of first output.
+     */
+    void output(std::string_view name, ExprId value, Where where = Where::current());
 
     void If(ExprId condition, const std::function<void()>& then, const std::function<void()>& otherwise = {},
             Where where = Where::current());
@@ -120,7 +125,9 @@ public:
     std::string dump() const;
 
 private:
-    enum class StmtKind : uint8_t { Eval, Assign, Store, Discard, If, Loop };
+    friend class WgslEmitter;
+
+    enum class StmtKind : uint8_t { Eval, Assign, Store, Discard, If, Loop, Output };
     struct Stmt {
         StmtKind kind;
         uint32_t a = 0;  // var, buffer, condition, or count
@@ -154,6 +161,11 @@ private:
     std::unordered_map<std::string, uint64_t> nameIndex_;
     std::vector<Var> vars_;
     std::vector<Storage> storage_;
+    struct OutputSlot {
+        uint64_t name;
+        Type type;
+    };
+    std::vector<OutputSlot> outputs_;
     std::vector<std::vector<Stmt>> blocks_;
     uint32_t current_ = 0;
     std::vector<Diagnostic> diagnostics_;
