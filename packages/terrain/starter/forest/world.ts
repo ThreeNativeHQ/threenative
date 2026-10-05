@@ -48,7 +48,9 @@ export async function addForest(
     assets: ctx.assets,
     surface,
     follow,
-    ring: 3,
+    ring: 5,
+    // Far firs draw as engine-baked impostors; the authored model stays the shadow caster.
+    impostors: true,
     budgets: { residentCells: 64, instances: 40_000, bytes: 64_000_000 },
     terrain: { streamRadius: 6, colliderRadius: 1 },
     createCollider: ({ field, key, object, tileX, tileZ }: IWorldTileColliderInput) =>

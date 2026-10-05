@@ -37,7 +37,9 @@ const assets = Object.fromEntries(
     {
       bounds: spec.bounds,
       glb: `models/${spec.near.split("/").at(-1)}`,
-      lods: [{ distance: spec.midDistance, glb: `models/${spec.mid.split("/").at(-1)}` }],
+      ...(spec.mid
+        ? { lods: [{ distance: spec.midDistance, glb: `models/${spec.mid.split("/").at(-1)}` }] }
+        : {}),
       maxDistance: spec.maxDistance,
     },
   ]),
@@ -66,7 +68,7 @@ await write("world.json", `${JSON.stringify(manifest, null, 2)}\n`);
 for (const [name, bytes] of Object.entries(files)) await write(name, bytes);
 for (const spec of Object.values(assetTable)) {
   await copy(spec.near, `models/${spec.near.split("/").at(-1)}`);
-  await copy(spec.mid, `models/${spec.mid.split("/").at(-1)}`);
+  if (spec.mid) await copy(spec.mid, `models/${spec.mid.split("/").at(-1)}`);
 }
 for (const layer of [surface.base, ...surface.layers]) {
   const source = surface.sources[layer.id];

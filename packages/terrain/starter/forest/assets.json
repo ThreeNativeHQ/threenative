@@ -1,12 +1,18 @@
 {
   "fir": {
-    "near": "fir_tree_01/fir-b-near.glb",
-    "mid": "fir_tree_01/fir-b-mid.glb",
-    "midDistance": 45,
-    "maxDistance": 400,
+    "near": "fir_tree_01/fir-b-lod2.glb",
+    "maxDistance": 600,
     "bounds": {
-      "min": [-3.0395, 0, -2.471],
-      "max": [2.5292, 13.756, 2.8765]
+      "min": [
+        -2.869,
+        0,
+        -3.619
+      ],
+      "max": [
+        2.763,
+        14.078,
+        2.465
+      ]
     }
   },
   "boulder": {
@@ -15,8 +21,16 @@
     "midDistance": 35,
     "maxDistance": 300,
     "bounds": {
-      "min": [-1.0386, 0, -1.6977],
-      "max": [1.1249, 1.4081, 1.6673]
+      "min": [
+        -1.0386,
+        0,
+        -1.6977
+      ],
+      "max": [
+        1.1249,
+        1.4081,
+        1.6673
+      ]
     }
   }
 }
