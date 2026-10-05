@@ -229,9 +229,7 @@ test.each(["android", "desktop", "ios"] as const)(
 );
 
 test.each([
-  ["android", "wheel"],
   ["ios", "wheel"],
-  ["android", "media"],
   ["ios", "media"],
 ] as const)(
   "native %s %s input fails closed before startup",
@@ -293,6 +291,94 @@ test.each([
     expect(started).toBe(false);
   },
 );
+
+/**
+ * A wheel and a media step are the Android host's own route, not a policy refusal: both arrive as
+ * `input.wheel` / `input.media` on the device mailbox, exactly as they do on desktop, and the host
+ * answers from `playtestInput` (`uiOverlayRouteWheel`, `uiOverlaySetEnvironment`). This pins the
+ * delivery — viewport pixels for the wheel, and `1`/`0`/`-1` for the environment — because a run
+ * that silently dropped either would report the same pixels as a host that never received it.
+ */
+test("Android wheel and media steps reach the host over the device transport", async () => {
+  const projectPath = await makeTempDir("playtest-android-wheel-media-");
+  await writeFile(join(projectPath, "scenario.json"), JSON.stringify({
+    artifacts: { screenshots: false },
+    assert: {
+      diagnostics: {
+        networkErrorsOptOutReason: "The Android transport has no network observer in this focused input test.",
+        noNetworkErrors: false,
+      },
+    },
+    name: "android-wheel-media",
+    schemaVersion: 1,
+    steps: [
+      { media: { colorScheme: "dark" }, release: true, waitTicks: 1 },
+      { release: true, waitTicks: 1, wheel: { deltaX: 10, deltaY: -160, x: 0.25, y: 0.5 } },
+    ],
+    target: "web",
+    viewport: { height: 360, width: 640 },
+    warmupFrames: 0,
+  }));
+  const calls: Array<[string, unknown]> = [];
+  let tick = 0;
+  const driver: IDevicePlaytestDriver = {
+    captureConsole: async () => [],
+    isAlive: async () => true,
+    prepare: async () => undefined,
+    screenshot: async () => undefined,
+    stop: async () => undefined,
+  };
+  const transport: IDevicePlaytestTransport = {
+    capabilities: ["browser.console", "browser.input", "runtime.diagnostics"],
+    call: async <T>(method: string, argument?: unknown) => {
+      if (method === "input.wheel" || method === "input.media") calls.push([method, argument]);
+      if (method === "describe") {
+        return {
+          capabilities: ["runtime.diagnostics", "runtime.fixedStep"],
+          limits: PLAYTEST_PROTOCOL_LIMITS,
+          name: "android-wheel-media-test",
+          protocolVersion: PLAYTEST_PROTOCOL_VERSION,
+        } as T;
+      }
+      if (method === "ready") return { ready: true } as T;
+      if (method === "advance") {
+        const ticks = typeof argument === "number" ? argument : 0;
+        tick += ticks;
+        return { clock: { mode: "fixed-step", tick }, ticks } as T;
+      }
+      if (method === "sample") return { clock: { mode: "fixed-step", tick }, diagnostics: [] } as T;
+      if (method === "drainEvents") return [] as T;
+      return undefined as T;
+    },
+    close: async () => undefined,
+    start: async () => undefined,
+    waitForBridge: async () => true,
+  };
+
+  const report = await runDevicePlaytest({
+    artifactDirectory: join(projectPath, "artifacts"),
+    endpoint: "http://127.0.0.1:41777/playtest",
+    headless: true,
+    projectPath,
+    scenarioPath: "scenario.json",
+    target: "android",
+    timeoutMs: 100,
+    trace: false,
+    url: "http://127.0.0.1:5173",
+  }, {
+    driver,
+    mailboxPaths: { request: "request", response: "response" },
+    name: "android",
+    processName: "android-wheel-media-test",
+    transport,
+  });
+
+  expect(report.pass).toBe(true);
+  expect(calls).toEqual([
+    ["input.media", { dark: 1, reducedMotion: -1 }],
+    ["input.wheel", { deltaX: 10, deltaY: -160, x: 160, y: 180 }],
+  ]);
+});
 
 test("Android click injects a viewport-pixel touch through the device transport", async () => {
   const projectPath = await makeTempDir("playtest-android-click-");

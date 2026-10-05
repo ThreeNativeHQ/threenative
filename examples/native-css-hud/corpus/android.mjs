@@ -25,11 +25,16 @@
  * rotation for the run too (`wm fixed-to-user-rotation`), so the rotation lock alone decides the
  * display's orientation and each run waits until the display is in its viewport (`settleDisplay`).
  *
- * Interactions. The runner's touch is a real touchscreen event on an emulator, so the scenarios made
- * of taps run, with each tap a finger. Hover moves (a finger has no hover), keys (the runner's key
- * channel never reaches the host's UI route), wheels and environment changes are not injectable; the
- * observations after the first such step are reported unreachable, by name, and a scenario with none
- * left is skipped by name.
+ * Interactions. The steps are `interactions-desktop.mjs`'s own translation: a key with its
+ * modifiers, a mouse as `pointerPosition`, a finger as `pointers`, a wheel at its point and an
+ * environment as `media` all reach this host the way they reach desktop, over the device mailbox
+ * into `playtestInput`. The observations are compared the same way, with the oracle's tolerances.
+ * Two of them a device run cannot make, each reported skipped by name rather than approximated: a
+ * scroll offset and a click-given focus are only on the host's `TN_CSS_UI_STATE` line, which it
+ * writes when `TN_CSS_UI_STATE_TRACE` is set in its own process environment, and a pixel sampled
+ * part-way through a transition needs `TN_CSS_UI_FIXED_STEP_MS` to place the capture at Chromium's
+ * virtual moment. An Android app is launched by `am start`, which passes no environment, so both
+ * stay off; a scenario with no observation left that a device can make is skipped by name.
  *
  * Each run asserts the identity from the app's own logcat lines: the native-css backend line, the
  * attach marker, no web view, no rejected mutation batch.
@@ -47,9 +52,14 @@ import { FIXTURES, FONT } from "./fixtures.mjs";
 import {
   PIXEL_TOLERANCE,
   PIXEL_TOLERANCE_AA,
+  focusCandidates,
+  focusedFrom,
   pixelAt,
+  prefixFor,
   resourceAt,
   scenarioBoxes,
+  scenarioJson,
+  translate,
 } from "./interactions-desktop.mjs";
 import { INTERACTIONS } from "./interactions.mjs";
 import { writeProject } from "./project.mjs";
@@ -87,9 +97,6 @@ const packageName = "com.threenative.nativecsshud";
 /** The font sheet `interaction.mjs` puts in front of a scenario's own CSS, as `desktop.mjs` uses. */
 const INTERACTION_FONT =
   "@font-face{font-family:Noto;font-weight:400;src:url(NotoSans-Regular.ttf)}@font-face{font-family:Noto;font-weight:700;src:url(NotoSans-Bold.ttf)}";
-/** Ticks a finger is held, and ticks to let the UI settle after an input: 500 ms at 60 Hz. */
-const HOLD_TICKS = 6;
-const SETTLE_TICKS = 30;
 
 /** The viewport Android can present for `size`, and whether it had to be enlarged. */
 function presented([width, height]) {
@@ -221,28 +228,14 @@ function settleDisplay([width, height]) {
 }
 
 /**
- * Build, swap, install and play one generated project. The consumer build writes the Android bundle
- * and `ui-css`, then stops at packaging (this run packages by swapping); a missing bundle afterwards
- * is a real build failure.
+ * One playtest run of the project already installed at `dir`, with `scenario` as its playtest.
+ *
+ * Re-runnable without a rebuild: the APK carries the subject, not the scenario, so a second run of
+ * the same subject only rewrites `playtest.json`. `desktop.mjs` needs that for its cut runs; the
+ * blank-capture guard makes it necessary here too.
  */
-function playOnDevice(root, subject, scenario, listen, fontCss) {
-  // Under `dist/` for the reason `desktop.mjs` gives: Biome ignores the name, and generated fixture
-  // markup is not application code.
-  const dir = join(root, "dist");
-  writeProject(dir, subject, { fontCss, listen, scenario });
-  const build = run(process.execPath, [threenative, "build", "--target", "android"], dir);
-  if (
-    !existsSync(join(dir, ".threenative", "build", "game.js")) ||
-    !existsSync(join(dir, ".threenative", "build", "ui-css"))
-  )
-    return { fail: `build produced no bundle: ${build.output.slice(-400)}` };
-  const swapped = swapApk(dir);
-  if (swapped.fail !== undefined) return swapped;
-  const installed = run(adb, ["-s", device, "install", "-r", swapped.signed]);
-  rmSync(swapped.signed, { force: true });
-  if (installed.status !== 0) return { fail: `install failed: ${installed.output.slice(-300)}` };
-  const unsettled = settleDisplay([scenario.viewport.width, scenario.viewport.height]);
-  if (unsettled !== undefined) return { fail: unsettled };
+function playInstalled(dir, scenario) {
+  writeFileSync(join(dir, "playtest.json"), `${JSON.stringify(scenario, null, 2)}\n`);
   const artifacts = join(dir, "artifacts", "playtest");
   const played = run(
     process.execPath,
@@ -267,7 +260,33 @@ function playOnDevice(root, subject, scenario, listen, fontCss) {
   } catch {
     report = undefined;
   }
-  return { dir, artifacts, played, guard, report, id: identity(lines) };
+  return { artifacts, played, guard, report, id: identity(lines) };
+}
+
+/**
+ * Build, swap, install and play one generated project. The consumer build writes the Android bundle
+ * and `ui-css`, then stops at packaging (this run packages by swapping); a missing bundle afterwards
+ * is a real build failure.
+ */
+function playOnDevice(root, subject, scenario, listen, fontCss) {
+  // Under `dist/` for the reason `desktop.mjs` gives: Biome ignores the name, and generated fixture
+  // markup is not application code.
+  const dir = join(root, "dist");
+  writeProject(dir, subject, { fontCss, listen, scenario });
+  const build = run(process.execPath, [threenative, "build", "--target", "android"], dir);
+  if (
+    !existsSync(join(dir, ".threenative", "build", "game.js")) ||
+    !existsSync(join(dir, ".threenative", "build", "ui-css"))
+  )
+    return { fail: `build produced no bundle: ${build.output.slice(-400)}` };
+  const swapped = swapApk(dir);
+  if (swapped.fail !== undefined) return swapped;
+  const installed = run(adb, ["-s", device, "install", "-r", swapped.signed]);
+  rmSync(swapped.signed, { force: true });
+  if (installed.status !== 0) return { fail: `install failed: ${installed.output.slice(-300)}` };
+  const unsettled = settleDisplay([scenario.viewport.width, scenario.viewport.height]);
+  if (unsettled !== undefined) return { fail: unsettled };
+  return { dir, ...playInstalled(dir, scenario), play: (next) => playInstalled(dir, next) };
 }
 
 /** Viewport and settling steps shared by every scenario this harness writes. */
@@ -343,82 +362,37 @@ async function runFixture(fixture, browser) {
 }
 
 /**
- * Translate one interaction script for a finger. Observations stay positional with the oracle's list;
- * consecutive observations with no input between them read the same capture, because nothing can
- * have changed. A pixel is comparable only where its element has finished its transition, measured
- * in Chromium (`scenarioBoxes`), exactly as the desktop translation decides it.
+ * What a device run cannot observe, named on the observation rather than folded into a verdict.
+ *
+ * One cause for both: the host reads these from its own process environment (`getenv` in
+ * `src/platform/ui_overlay.cpp`), and an Android app is launched by `am start`, which passes none.
+ * `desktop.mjs` sets them because it launches the host itself.
  */
-function translateTouch(scenario, size, samples) {
-  const [width, height] = size;
-  const steps = [{ label: "baseline", waitTicks: 60 }];
-  const observations = [];
-  let unreachable;
-  let sinceInput = 0;
-  let capture;
-  let observed = 0;
-  for (const step of scenario.script) {
-    if (step.obs !== undefined) {
-      const index = observed++;
-      if (unreachable !== undefined) {
-        observations.push({ index, obs: step.obs, why: unreachable });
-        continue;
-      }
-      if (step.obs !== "pixel" && step.obs !== "clicks") {
-        unreachable = `a ${step.obs} observation: the Android host reports no ${step.obs} to the runner`;
-        observations.push({ index, obs: step.obs, why: unreachable });
-        continue;
-      }
-      if (capture === undefined) {
-        capture = `obs-${index}`;
-        steps.push({
-          label: capture,
-          waitTicks: 1,
-          ...(step.obs === "pixel" ? { screenshot: capture } : {}),
-        });
-      } else if (step.obs === "pixel" && !steps.some((s) => s.screenshot === capture)) {
-        steps.find((s) => s.label === capture).screenshot = capture;
-      }
-      const settle = step.obs === "pixel" ? (samples[index]?.settleMs ?? 0) : 0;
-      observations.push({
-        index,
-        obs: step.obs,
-        label: capture,
-        ...(step.obs === "pixel" ? { at: [step.x, step.y] } : {}),
-        ...(sinceInput >= settle
-          ? {}
-          : { why: `mid-transition: ${sinceInput}ms elapsed of the ${settle}ms this pixel takes` }),
-      });
-      continue;
-    }
-    if (unreachable !== undefined) continue;
-    capture = undefined;
-    if (step.t === "pointer" && (step.type === "down" || step.type === "up")) {
-      steps.push(
-        step.type === "down"
-          ? {
-              pointers: [{ id: 1, x: step.x / width, y: step.y / height }],
-              holdTicks: HOLD_TICKS,
-              release: false,
-            }
-          : { pointers: [], release: true },
-      );
-      steps.push({ waitTicks: SETTLE_TICKS });
-      sinceInput = 0;
-    } else if (step.t === "advance") {
-      sinceInput += step.ms;
-    } else if (step.t === "pointer") {
-      unreachable =
-        "a hover move: a finger has no hover, and the runner injects no mouse on Android";
-    } else if (step.t === "key") {
-      unreachable = "a key: the Android runner's key channel never reaches the host's UI key route";
-    } else if (step.t === "wheel") {
-      unreachable = "a wheel step: the Android runner has no wheel injector";
-    } else {
-      unreachable =
-        "prefers-color-scheme/reduced-motion: the host reads its environment once at attach and the runner injects neither";
-    }
+const STATE_UNREACHABLE =
+  "the host reports focus and scroll only on its TN_CSS_UI_STATE line, which it writes when TN_CSS_UI_STATE_TRACE is set in its own environment; an `am start` launch passes none";
+const MID_TRANSITION_UNREACHABLE =
+  "the oracle sampled this pixel part-way through a transition, which needs the host's fixed UI clock (TN_CSS_UI_FIXED_STEP_MS) to place a capture at that exact moment; an `am start` launch passes none, so a device capture lands wherever the run reached";
+
+/**
+ * Name the observations a device run cannot make, on the observation itself.
+ *
+ * A scroll offset and the focus a click gave are the host's state rather than its pixels, so the
+ * desktop translation marks them `fromState` and reads them off that `TN_CSS_UI_STATE` line. A
+ * pixel is comparable whenever the element under it has no transition: such an element paints the
+ * same colour at every moment, so the capture needs no clock to agree with the oracle. Where it does
+ * transition, the oracle's pixel is only right at its own virtual instant, and that is the moment a
+ * fixed clock exists to reproduce — so the wait this harness already makes is real time, not that
+ * instant, and the observation is named instead of compared. `settleMs` reads
+ * `transition-duration` and `transition-delay` only, so a scenario written with `@keyframes` would
+ * need its animation read here too before its pixels were comparable; none of these is.
+ */
+function nameDeviceGaps(translated, samples) {
+  for (const item of translated.observations) {
+    if (item.why !== undefined) continue;
+    if (item.fromState === true) item.why = STATE_UNREACHABLE;
+    else if (item.obs === "pixel" && (samples[item.index]?.settleMs ?? 0) > 0)
+      item.why = MID_TRANSITION_UNREACHABLE;
   }
-  return { steps, observations };
 }
 
 /** The oracle's expected lists at the viewports this device presents. */
@@ -455,22 +429,26 @@ async function runInteraction(scenario, expected, browser) {
   const points = scenario.script.filter((s) => s.obs !== undefined);
   // `scenarioBoxes` reads the page the oracle leaves in `out-interaction/`, which the desktop corpus
   // rewrites too; re-run the oracle for this scenario right before reading it, so another lane's run
-  // cannot leave it missing.
+  // cannot leave it missing. Its per-point `settleMs` is the element's own transition under that
+  // sample, which is what decides whether a pixel needs a clock to be comparable.
   chromiumExpectedAt([scenario.name], { [scenario.name]: size });
-  const { samples } = await scenarioBoxes(
+  const { boxes, samples } = await scenarioBoxes(
     browser,
     sized,
     points.map((s) => ({ x: s.x ?? 0, y: s.y ?? 0 })),
   );
-  const translated = translateTouch(scenario, size, samples);
-  if (translated.observations.length !== expected.length)
-    throw new Error(
-      `TN_ANDROID_INTERACTION_COUNT: ${scenario.name} translated ${translated.observations.length}, expected ${expected.length}`,
-    );
-  const reachable = translated.observations.filter((o) => o.why === undefined);
+  // The desktop translation's own steps and observation list: a key with its held modifiers, a
+  // mouse as `pointerPosition`, a finger as `pointers`, a wheel at its point, an environment as
+  // `media`. Every one of those reaches this host the way it reaches desktop; only the clock that
+  // translation was written against is missing, and `nameDeviceGaps` accounts for it per observation.
+  const translated = translate(sized, expected);
+  nameDeviceGaps(translated, samples);
+  entry.observations = translated.observations.length;
+  entry.skipped = translated.observations.filter((o) => o.why !== undefined).length;
   entry.unreachable = translated.observations
     .filter((o) => o.why !== undefined)
-    .map((o) => ({ index: o.index, why: o.why }));
+    .map((o) => ({ index: o.index, obs: o.obs, why: o.why }));
+  const reachable = translated.observations.filter((o) => o.why === undefined);
   // An observation made before any input proves nothing about interaction (the page's own first
   // paint): a scenario whose only reachable observations are those is skipped, not passed.
   const firstInput = scenario.script.findIndex((s) => s.obs === undefined);
@@ -485,64 +463,152 @@ async function runInteraction(scenario, expected, browser) {
     });
     return undefined;
   }
-  const clicks = reachable
-    .filter((o) => o.obs === "clicks")
-    .map((o) => ({ label: o.label, equals: expected[o.index].join(",") }));
-  const labels = translated.steps.filter((s) => s.label !== undefined);
-  const scenarioFile = scenarioShell(
-    scenario.name,
-    size,
-    translated.steps,
-    [
-      { id: "GameState", path: "mounted", atSteps: [{ label: labels.at(-1).label, equals: true }] },
-      ...(clicks.length === 0 ? [] : [{ id: "GameState", path: "clicks", atSteps: clicks }]),
-    ],
-    translated.steps.some((s) => s.screenshot !== undefined),
-  );
   const root = join(out, scenario.name);
-  rmSync(root, { force: true, recursive: true });
-  const played = playOnDevice(root, sized, scenarioFile, scenario.listen ?? [], INTERACTION_FONT);
-  if (played.fail !== undefined) return { ...entry, pass: false, why: played.fail };
-  entry.playtestExit = played.played.status;
-  entry.identity = played.id;
-  if (played.guard) entry.obstruction = "the runner's blank-capture colour floor";
+  rmSync(root, { recursive: true, force: true });
+  const prepared = playOnDevice(
+    root,
+    sized,
+    scenarioJson(sized, translated, expected),
+    scenario.listen ?? [],
+    INTERACTION_FONT,
+  );
+  if (prepared.fail !== undefined) return { ...entry, pass: false, why: prepared.fail };
+  entry.playtestExit = prepared.played.status;
+  entry.identity = prepared.id;
+  // Every capture this run has to compare, copied out before a later run reuses the directory.
+  const captures = new Map();
+  const keep = (run_, name) => {
+    const file = join(run_.artifacts, `${name}.png`);
+    if (existsSync(file) && !captures.has(name))
+      captures.set(name, PNG.sync.read(readFileSync(file)));
+  };
+  const labels = [
+    ...new Set([
+      "baseline",
+      "final",
+      ...translated.observations.map((item) => item.label).filter(Boolean),
+    ]),
+  ];
+  for (const name of labels) keep(prepared, name);
+  let report = prepared.report;
+  let status = prepared.played.status;
+  let output = prepared.played.output;
+  const problems = [...prepared.id.problems];
+  // The runner's blank-capture colour floor cannot be met by a flat corpus subject, and it aborts
+  // the run at the first capture it refuses, so every capture still needed comes from its own run
+  // cut at its own step (`prefixFor`, the desktop corpus's own reader). The click ledger lives in a
+  // run's report rather than in a capture, so it comes from one run of the whole script with no
+  // screenshot at all — the same two moves `desktop.mjs` makes for the same guard.
+  if (prepared.guard) {
+    entry.obstruction = "the runner's blank-capture colour floor";
+    entry.prefixRuns = [];
+    for (const label of labels.filter((name) => !captures.has(name))) {
+      const cut = prepared.play(scenarioJson(sized, prefixFor(translated, label), expected));
+      entry.prefixRuns.push({ label, exit: cut.played.status, problems: cut.id.problems });
+      problems.push(...cut.id.problems.map((problem) => `${label}: ${problem}`));
+      keep(cut, label);
+    }
+    const ledger = prepared.play(
+      scenarioJson(sized, translate(sized, expected, { screenshots: false }), expected),
+    );
+    entry.rerunExit = ledger.played.status;
+    problems.push(...ledger.id.problems);
+    report = ledger.report;
+    status = ledger.played.status;
+    output = ledger.played.output;
+  }
+  entry.identity = { ...prepared.id, problems };
+  // Exit 1 is the run's own click-ledger assertion failing: its report is complete, and the
+  // comparison below names the observation that differs rather than stopping here.
+  const exitOk = status === 0 || (status === 1 && report !== undefined);
+  const compared = compareObservations({
+    baseline: captures.get("baseline"),
+    boxes,
+    candidates: focusCandidates(scenario.tree),
+    captures,
+    expected,
+    reachable,
+    report,
+  });
+  entry.compared = compared.compared;
+  entry.mismatches = compared.mismatches;
+  entry.pass = entry.mismatches.length === 0 && problems.length === 0 && exitOk;
+  if (problems.length > 0) entry.why = `identity: ${problems.join("; ")}`;
+  else if (entry.mismatches.length > 0)
+    entry.why = `${entry.mismatches.length} observation(s) differ from Chromium`;
+  else if (!exitOk) entry.why = `the playtest exited ${status}: ${output.slice(-300)}`;
+  return entry;
+}
+
+/**
+ * Compare every observation a device run could make, the way `desktop.mjs` compares its own.
+ *
+ * A `pixel` is one colour out of the capture at that observation's own step, a keyboard `focus` is
+ * which focus candidate's box changed against the untouched baseline, and `clicks` is the game's own
+ * click ledger at that step. The tolerance and the anti-aliased-edge fallback are the oracle's.
+ * An observation with no capture, or no ledger, is a mismatch naming what was missing, never a pass.
+ */
+function compareObservations({
+  baseline,
+  boxes,
+  candidates,
+  captures,
+  expected,
+  reachable,
+  report,
+}) {
+  const compared = [];
+  const mismatches = [];
   for (const item of reachable) {
     const want = expected[item.index];
     let actual = null;
-    if (item.obs === "pixel") {
-      const file = join(played.artifacts, `${item.label}.png`);
-      if (existsSync(file)) actual = pixelAt(PNG.sync.read(readFileSync(file)), ...item.at);
+    let why;
+    if (item.obs === "focus" || item.obs === "pixel") {
+      const capture = captures.get(item.label);
+      if (capture === undefined || (item.obs === "focus" && baseline === undefined)) {
+        mismatches.push({
+          index: item.index,
+          obs: item.obs,
+          expected: want,
+          actual: null,
+          why: `no capture at ${item.label}${item.obs === "focus" ? " or baseline" : ""}`,
+        });
+        continue;
+      }
+      if (item.obs === "focus") {
+        // Keyboard focus repaints the box of the control that took it, so which control holds it is
+        // read off the capture against the untouched baseline: the desktop decoder, unchanged.
+        const decoded = focusedFrom(baseline, capture, boxes, candidates);
+        actual = decoded.focused;
+        why = decoded.why;
+      } else actual = pixelAt(capture, item.at[0], item.at[1]);
     } else {
-      const ledger = resourceAt(played.report, item.label, "clicks");
+      const ledger = resourceAt(report, item.label, "clicks");
+      if (ledger === undefined) why = `the runner recorded no GameState.clicks at ${item.label}`;
       actual = ledger === undefined ? null : ledger.split(",").filter(Boolean).map(Number);
     }
-    entry.compared.push({ index: item.index, obs: item.obs, expected: want, actual });
+    compared.push({ index: item.index, obs: item.obs, expected: want, actual });
     const same =
       item.obs === "pixel"
         ? Array.isArray(actual) && actual.every((v, i) => Math.abs(v - want[i]) <= PIXEL_TOLERANCE)
-        : JSON.stringify(actual) === JSON.stringify(want);
+        : actual !== null && JSON.stringify(actual) === JSON.stringify(want);
     if (same) continue;
     const wider =
       item.obs === "pixel" &&
       Array.isArray(actual) &&
       actual.every((v, i) => Math.abs(v - want[i]) <= PIXEL_TOLERANCE_AA);
-    entry.mismatches.push({
+    mismatches.push({
       index: item.index,
+      obs: item.obs,
+      at: item.at,
       expected: want,
       actual,
       ...(wider ? { note: `within the ${PIXEL_TOLERANCE_AA} anti-aliased-edge tolerance` } : {}),
+      ...(why === undefined ? {} : { why }),
     });
   }
-  const exitOk = played.played.status === 0 || played.guard;
-  entry.pass = entry.mismatches.length === 0 && played.id.ok && exitOk;
-  if (!played.id.ok) entry.why = `identity: ${played.id.problems.join("; ")}`;
-  else if (entry.mismatches.length > 0)
-    entry.why = `${entry.mismatches.length} observation(s) differ from Chromium`;
-  else if (!exitOk)
-    entry.why = `the playtest exited ${played.played.status}: ${played.played.output.slice(-300)}`;
-  return entry;
+  return { compared, mismatches };
 }
-
 const report = [];
 mkdirSync(out, { recursive: true });
 const disableBars = ["clock", "system-icons", "notification-icons", "home", "recents"];

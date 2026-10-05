@@ -1072,17 +1072,25 @@ function unsupportedAssertion(
       target,
     );
   }
-  if (target !== "desktop" && scenario.steps.some((step) => step.wheel !== undefined)) {
+  // A wheel and a media step reach Android the way they reach desktop: `input.wheel` /
+  // `input.media` over the mailbox, into `playtestInput` on the host, then `uiOverlayRouteWheel` /
+  // `uiOverlaySetEnvironment` — all host-neutral (runtime.cpp, ui_overlay.cpp), and the Android
+  // build attaches the same native-css document (`attachDesktopCssUi` from android_main.cpp). A
+  // wheel a scroller did not take, and a media set on a build with no CSS UI attached, both fail
+  // by name from the host itself (packages/playtest/src/three/device.ts), so nothing here has to
+  // guess on the host's behalf. iOS keeps its refusal: its overlay is a WKWebView mirror
+  // (`attachIosUiOverlay`), which has no native-css environment to emulate or scroll.
+  if (target === "ios" && scenario.steps.some((step) => step.wheel !== undefined)) {
     return unsupportedDiagnostic(
       "wheel input steps",
-      "Run wheel input steps on --target browser or desktop; the Android and iOS runners have no wheel injector and will not skip the sample.",
+      "Run wheel input steps on --target browser, --target desktop or --target android; the iOS overlay is a web-view mirror with no native-css scroller to turn, and will not skip the sample.",
       target,
     );
   }
-  if (target !== "desktop" && scenario.steps.some((step) => step.media !== undefined)) {
+  if (target === "ios" && scenario.steps.some((step) => step.media !== undefined)) {
     return unsupportedDiagnostic(
       "media steps",
-      "Run media steps on --target browser or desktop (native-css UI); the Android and iOS runners cannot emulate media features and will not skip the step.",
+      "Run media steps on --target browser, --target desktop or --target android (native-css UI); the iOS overlay is a web-view mirror with no native-css environment to emulate, and will not skip the step.",
       target,
     );
   }
