@@ -1,4 +1,4 @@
-#include "bindings.h"
+#include "engine/abi/bindings.h"
 
 #include "engine/foundation/math/Color.h"
 #include "engine/foundation/math/Euler.h"
@@ -14,7 +14,7 @@
 #include <string>
 #include <vector>
 
-namespace tn::fixture {
+namespace tn::binding {
 
 using namespace tn::engine;
 
@@ -71,7 +71,7 @@ CoordinateSystem system(const Args& a, size_t i, CoordinateSystem fallback) {
 }
 
 /** The protocol carries no array value, so a point list is a run of Vector3 references. */
-std::vector<Vector3> pointsOf(const Args& a, Driver& d) {
+std::vector<Vector3> pointsOf(const Args& a, Store& d) {
     std::vector<Vector3> points;
     points.reserve(a.size());
     for (const Value& v : a) points.push_back(d.ref<Vector3>(v, "Vector3"));
@@ -96,7 +96,7 @@ void setComponent(Vector3& v, int i, double value) { (i == 0 ? v.x : (i == 1 ? v
 /** Builds the constructor: a fresh value, then the reference's own default-then-set shape. */
 template <typename T, typename Build>
 Ctor ctor(Build build) {
-    return [build](const Args& a, Driver&) {
+    return [build](const Args& a, Store&) {
         auto object = std::make_shared<T>();
         build(*object, a);
         return std::static_pointer_cast<void>(object);
@@ -106,7 +106,7 @@ Ctor ctor(Build build) {
 /** `clone()` is three's only method that answers a new object; the fixture binds it by result id. */
 template <typename T>
 Method cloneAs(const char* cls) {
-    return [cls](void* self, const Args&, Driver& d) {
+    return [cls](void* self, const Args&, Store& d) {
         return d.adopt(cls, std::make_shared<T>(as<T>(self)->clone()));
     };
 }
@@ -143,7 +143,7 @@ void nestedVector(ClassBinding& b, const char* prefix, Vector3 T::*field) {
 // would leave every call site to name it twice.
 template <typename T, typename M>
 void chainVoid(ClassBinding& b, const char* name, M method) {
-    b.methods[name] = [method](void* self, const Args&, Driver&) {
+    b.methods[name] = [method](void* self, const Args&, Store&) {
         (as<T>(self)->*method)();
         return chain();
     };
@@ -151,7 +151,7 @@ void chainVoid(ClassBinding& b, const char* name, M method) {
 
 template <typename T, typename M>
 void chainOne(ClassBinding& b, const char* name, M method) {
-    b.methods[name] = [method](void* self, const Args& a, Driver&) {
+    b.methods[name] = [method](void* self, const Args& a, Store&) {
         (as<T>(self)->*method)(number(a.at(0)));
         return chain();
     };
@@ -159,7 +159,7 @@ void chainOne(ClassBinding& b, const char* name, M method) {
 
 template <typename T, typename M>
 void chainTwo(ClassBinding& b, const char* name, M method) {
-    b.methods[name] = [method](void* self, const Args& a, Driver&) {
+    b.methods[name] = [method](void* self, const Args& a, Store&) {
         (as<T>(self)->*method)(number(a.at(0)), number(a.at(1)));
         return chain();
     };
@@ -167,7 +167,7 @@ void chainTwo(ClassBinding& b, const char* name, M method) {
 
 template <typename T, typename M>
 void chainThree(ClassBinding& b, const char* name, M method) {
-    b.methods[name] = [method](void* self, const Args& a, Driver&) {
+    b.methods[name] = [method](void* self, const Args& a, Store&) {
         (as<T>(self)->*method)(number(a.at(0)), number(a.at(1)), number(a.at(2)));
         return chain();
     };
@@ -175,7 +175,7 @@ void chainThree(ClassBinding& b, const char* name, M method) {
 
 template <typename T, typename M>
 void chainFour(ClassBinding& b, const char* name, M method) {
-    b.methods[name] = [method](void* self, const Args& a, Driver&) {
+    b.methods[name] = [method](void* self, const Args& a, Store&) {
         (as<T>(self)->*method)(number(a.at(0)), number(a.at(1)), number(a.at(2)), number(a.at(3)));
         return chain();
     };
@@ -183,7 +183,7 @@ void chainFour(ClassBinding& b, const char* name, M method) {
 
 template <typename T, typename U, typename M>
 void chainRef(ClassBinding& b, const char* name, const char* cls, M method) {
-    b.methods[name] = [cls, method](void* self, const Args& a, Driver& d) {
+    b.methods[name] = [cls, method](void* self, const Args& a, Store& d) {
         (as<T>(self)->*method)(d.ref<U>(a.at(0), cls));
         return chain();
     };
@@ -191,7 +191,7 @@ void chainRef(ClassBinding& b, const char* name, const char* cls, M method) {
 
 template <typename T, typename U, typename M>
 void chainRefOne(ClassBinding& b, const char* name, const char* cls, M method) {
-    b.methods[name] = [cls, method](void* self, const Args& a, Driver& d) {
+    b.methods[name] = [cls, method](void* self, const Args& a, Store& d) {
         (as<T>(self)->*method)(d.ref<U>(a.at(0), cls), number(a.at(1)));
         return chain();
     };
@@ -200,7 +200,7 @@ void chainRefOne(ClassBinding& b, const char* name, const char* cls, M method) {
 /** `lerpVectors(a, b, alpha)`: three's two-vector forms carry the blend as a third argument. */
 template <typename T, typename U, typename M>
 void chainRef2One(ClassBinding& b, const char* name, const char* cls, M method) {
-    b.methods[name] = [cls, method](void* self, const Args& a, Driver& d) {
+    b.methods[name] = [cls, method](void* self, const Args& a, Store& d) {
         (as<T>(self)->*method)(d.ref<U>(a.at(0), cls), d.ref<U>(a.at(1), cls), number(a.at(2)));
         return chain();
     };
@@ -208,7 +208,7 @@ void chainRef2One(ClassBinding& b, const char* name, const char* cls, M method) 
 
 template <typename T, typename U, typename M>
 void chainRef2(ClassBinding& b, const char* name, const char* cls, M method) {
-    b.methods[name] = [cls, method](void* self, const Args& a, Driver& d) {
+    b.methods[name] = [cls, method](void* self, const Args& a, Store& d) {
         (as<T>(self)->*method)(d.ref<U>(a.at(0), cls), d.ref<U>(a.at(1), cls));
         return chain();
     };
@@ -216,21 +216,21 @@ void chainRef2(ClassBinding& b, const char* name, const char* cls, M method) {
 
 template <typename T, typename M>
 void readScalar(ClassBinding& b, const char* name, M method) {
-    b.methods[name] = [method](void* self, const Args&, Driver&) {
+    b.methods[name] = [method](void* self, const Args&, Store&) {
         return Value::of((as<T>(self)->*method)());
     };
 }
 
 template <typename T, typename M>
 void readFlag(ClassBinding& b, const char* name, M method) {
-    b.methods[name] = [method](void* self, const Args&, Driver&) {
+    b.methods[name] = [method](void* self, const Args&, Store&) {
         return Value::of((as<T>(self)->*method)());
     };
 }
 
 template <typename T, std::size_t N>
 void toArray(ClassBinding& b, const char* name, std::array<double, N> (T::*method)() const) {
-    b.methods[name] = [method](void* self, const Args&, Driver&) {
+    b.methods[name] = [method](void* self, const Args&, Store&) {
         const std::array<double, N> values = (as<T>(self)->*method)();
         return numbers(values.data(), N);
     };
@@ -242,7 +242,7 @@ void toArray(ClassBinding& b, const char* name, std::array<double, N> (T::*metho
  */
 template <typename T>
 void fromArray(ClassBinding& b, const char* name) {
-    b.methods[name] = [](void* self, const Args& a, Driver& d) {
+    b.methods[name] = [](void* self, const Args& a, Store& d) {
         const std::vector<double> values = d.numbers(a.at(0));
         (as<T>(self)->fromArray)(values.data());
         return chain();
@@ -295,18 +295,18 @@ void registerVector2(ClassBinding& b) {
     toArray<Vector2>(b, "toArray", &Vector2::toArray);
     b.methods["clone"] = cloneAs<Vector2>("Vector2");
 
-    b.methods["setComponent"] = [](void* self, const Args& a, Driver&) {
+    b.methods["setComponent"] = [](void* self, const Args& a, Store&) {
         const int index = integer(a, 0);
         if (index < 0 || index > 1) throw Unsupported{"Vector2.setComponent index out of range"};
         as<Vector2>(self)->setComponent(index, number(a.at(1)));
         return chain();
     };
-    b.methods["getComponent"] = [](void* self, const Args& a, Driver&) {
+    b.methods["getComponent"] = [](void* self, const Args& a, Store&) {
         const int index = integer(a, 0);
         if (index < 0 || index > 1) throw Unsupported{"Vector2.getComponent index out of range"};
         return Value::of(as<Vector2>(self)->getComponent(index));
     };
-    b.methods["rotateAround"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["rotateAround"] = [](void* self, const Args& a, Store& d) {
         as<Vector2>(self)->rotateAround(d.ref<Vector2>(a.at(0), "Vector2"), number(a.at(1)));
         return chain();
     };
@@ -315,7 +315,7 @@ void registerVector2(ClassBinding& b) {
     readScalar<Vector2>(b, "manhattanLength", &Vector2::manhattanLength);
     readScalar<Vector2>(b, "angle", &Vector2::angle);
     auto read2 = [&b](const char* name, double (Vector2::*Method)(const Vector2&) const) {
-        b.methods[name] = [Method](void* self, const Args& a, Driver& d) {
+        b.methods[name] = [Method](void* self, const Args& a, Store& d) {
             return Value::of((as<Vector2>(self)->*Method)(d.ref<Vector2>(a.at(0), "Vector2")));
         };
     };
@@ -325,7 +325,7 @@ void registerVector2(ClassBinding& b) {
     read2("distanceTo", &Vector2::distanceTo);
     read2("distanceToSquared", &Vector2::distanceToSquared);
     read2("manhattanDistanceTo", &Vector2::manhattanDistanceTo);
-    b.methods["equals"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["equals"] = [](void* self, const Args& a, Store& d) {
         return Value::of(as<Vector2>(self)->equals(d.ref<Vector2>(a.at(0), "Vector2")));
     };
 }
@@ -336,7 +336,7 @@ void registerVector3(ClassBinding& b) {
     });
     members<Vector3>(b, {"x", "y", "z"}, {&Vector3::x, &Vector3::y, &Vector3::z});
 
-    b.methods["set"] = [](void* self, const Args& a, Driver&) {
+    b.methods["set"] = [](void* self, const Args& a, Store&) {
         Vector3& v = *as<Vector3>(self);
         // three's two-argument shape keeps z, for the sprite-scale call form.
         if (a.size() >= 3) v.set(number(a.at(0)), number(a.at(1)), number(a.at(2)));
@@ -383,7 +383,7 @@ void registerVector3(ClassBinding& b) {
     chainRef<Vector3, Matrix4>(b, "transformDirection", "Matrix4", &Vector3::transformDirection);
     chainRef<Vector3, Matrix4>(b, "setFromMatrixPosition", "Matrix4", &Vector3::setFromMatrixPosition);
     chainRef<Vector3, Matrix4>(b, "setFromMatrixScale", "Matrix4", &Vector3::setFromMatrixScale);
-    b.methods["setFromMatrix3Column"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["setFromMatrix3Column"] = [](void* self, const Args& a, Store& d) {
         as<Vector3>(self)->setFromMatrix3Column(d.ref<Matrix3>(a.at(0), "Matrix3"), integer(a, 1));
         return chain();
     };
@@ -399,21 +399,21 @@ void registerVector3(ClassBinding& b) {
     toArray<Vector3>(b, "toArray", &Vector3::toArray);
     b.methods["clone"] = cloneAs<Vector3>("Vector3");
 
-    b.methods["setFromEuler"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["setFromEuler"] = [](void* self, const Args& a, Store& d) {
         as<Vector3>(self)->setFromEuler(d.ref<Euler>(a.at(0), "Euler"));
         return chain();
     };
-    b.methods["setFromMatrixColumn"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["setFromMatrixColumn"] = [](void* self, const Args& a, Store& d) {
         as<Vector3>(self)->setFromMatrixColumn(d.ref<Matrix4>(a.at(0), "Matrix4"), integer(a, 1));
         return chain();
     };
-    b.methods["setComponent"] = [](void* self, const Args& a, Driver&) {
+    b.methods["setComponent"] = [](void* self, const Args& a, Store&) {
         const int index = integer(a, 0);
         if (index < 0 || index > 2) throw Unsupported{"Vector3.setComponent index out of range"};
         as<Vector3>(self)->setComponent(index, number(a.at(1)));
         return chain();
     };
-    b.methods["getComponent"] = [](void* self, const Args& a, Driver&) {
+    b.methods["getComponent"] = [](void* self, const Args& a, Store&) {
         const int index = integer(a, 0);
         if (index < 0 || index > 2) throw Unsupported{"Vector3.getComponent index out of range"};
         return Value::of(as<Vector3>(self)->getComponent(index));
@@ -422,7 +422,7 @@ void registerVector3(ClassBinding& b) {
     readScalar<Vector3>(b, "length", &Vector3::length);
     readScalar<Vector3>(b, "manhattanLength", &Vector3::manhattanLength);
     auto read3 = [&b](const char* name, double (Vector3::*Method)(const Vector3&) const) {
-        b.methods[name] = [Method](void* self, const Args& a, Driver& d) {
+        b.methods[name] = [Method](void* self, const Args& a, Store& d) {
             return Value::of((as<Vector3>(self)->*Method)(d.ref<Vector3>(a.at(0), "Vector3")));
         };
     };
@@ -431,7 +431,7 @@ void registerVector3(ClassBinding& b) {
     read3("distanceTo", &Vector3::distanceTo);
     read3("distanceToSquared", &Vector3::distanceToSquared);
     read3("manhattanDistanceTo", &Vector3::manhattanDistanceTo);
-    b.methods["equals"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["equals"] = [](void* self, const Args& a, Store& d) {
         return Value::of(as<Vector3>(self)->equals(d.ref<Vector3>(a.at(0), "Vector3")));
     };
 }
@@ -485,7 +485,7 @@ void registerVector4(ClassBinding& b) {
     b.methods["clone"] = cloneAs<Vector4>("Vector4");
 
     // three's Vector4.copy defaults w to 1 when the source has none, so Vector2/Vector3 work too.
-    b.methods["copy"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["copy"] = [](void* self, const Args& a, Store& d) {
         Vector4& v = *as<Vector4>(self);
         const Value& source = a.at(0);
         try {
@@ -501,13 +501,13 @@ void registerVector4(ClassBinding& b) {
         }
         return chain();
     };
-    b.methods["setComponent"] = [](void* self, const Args& a, Driver&) {
+    b.methods["setComponent"] = [](void* self, const Args& a, Store&) {
         const int index = integer(a, 0);
         if (index < 0 || index > 3) throw Unsupported{"Vector4.setComponent index out of range"};
         as<Vector4>(self)->setComponent(index, number(a.at(1)));
         return chain();
     };
-    b.methods["getComponent"] = [](void* self, const Args& a, Driver&) {
+    b.methods["getComponent"] = [](void* self, const Args& a, Store&) {
         const int index = integer(a, 0);
         if (index < 0 || index > 3) throw Unsupported{"Vector4.getComponent index out of range"};
         return Value::of(as<Vector4>(self)->getComponent(index));
@@ -515,10 +515,10 @@ void registerVector4(ClassBinding& b) {
     readScalar<Vector4>(b, "lengthSq", &Vector4::lengthSq);
     readScalar<Vector4>(b, "length", &Vector4::length);
     readScalar<Vector4>(b, "manhattanLength", &Vector4::manhattanLength);
-    b.methods["dot"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["dot"] = [](void* self, const Args& a, Store& d) {
         return Value::of(as<Vector4>(self)->dot(d.ref<Vector4>(a.at(0), "Vector4")));
     };
-    b.methods["equals"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["equals"] = [](void* self, const Args& a, Store& d) {
         return Value::of(as<Vector4>(self)->equals(d.ref<Vector4>(a.at(0), "Vector4")));
     };
 }
@@ -548,28 +548,28 @@ void registerQuaternion(ClassBinding& b) {
     toArray<Quaternion>(b, "toArray", &Quaternion::toArray);
     b.methods["clone"] = cloneAs<Quaternion>("Quaternion");
 
-    b.methods["setFromEuler"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["setFromEuler"] = [](void* self, const Args& a, Store& d) {
         as<Quaternion>(self)->setFromEuler(d.ref<Euler>(a.at(0), "Euler"));
         return chain();
     };
-    b.methods["slerp"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["slerp"] = [](void* self, const Args& a, Store& d) {
         as<Quaternion>(self)->slerp(d.ref<Quaternion>(a.at(0), "Quaternion"), number(a.at(1)));
         return chain();
     };
-    b.methods["slerpQuaternions"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["slerpQuaternions"] = [](void* self, const Args& a, Store& d) {
         as<Quaternion>(self)->slerpQuaternions(d.ref<Quaternion>(a.at(0), "Quaternion"),
                                                d.ref<Quaternion>(a.at(1), "Quaternion"),
                                                number(a.at(2)));
         return chain();
     };
-    b.methods["rotateTowards"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["rotateTowards"] = [](void* self, const Args& a, Store& d) {
         as<Quaternion>(self)->rotateTowards(d.ref<Quaternion>(a.at(0), "Quaternion"),
                                              number(a.at(1)));
         return chain();
     };
     // The two flat helpers take four consecutive doubles each. The fixture names the two
     // quaternions and the driver lays them out in a temporary buffer, so the same arithmetic runs.
-    b.methods["slerpFlat"] = [](void*, const Args& a, Driver& d) {
+    b.methods["slerpFlat"] = [](void*, const Args& a, Store& d) {
         const Quaternion& from = d.ref<Quaternion>(a.at(0), "Quaternion");
         const Quaternion& to = d.ref<Quaternion>(a.at(1), "Quaternion");
         const double src0[4] = {from.x, from.y, from.z, from.w};
@@ -578,7 +578,7 @@ void registerQuaternion(ClassBinding& b) {
         slerpFlat(dst, 0, src0, 0, src1, 0, number(a.at(2)));
         return numbers(dst, 4);
     };
-    b.methods["multiplyQuaternionsFlat"] = [](void*, const Args& a, Driver& d) {
+    b.methods["multiplyQuaternionsFlat"] = [](void*, const Args& a, Store& d) {
         const Quaternion& from = d.ref<Quaternion>(a.at(0), "Quaternion");
         const Quaternion& to = d.ref<Quaternion>(a.at(1), "Quaternion");
         const double src0[4] = {from.x, from.y, from.z, from.w};
@@ -589,13 +589,13 @@ void registerQuaternion(ClassBinding& b) {
     };
     readScalar<Quaternion>(b, "lengthSq", &Quaternion::lengthSq);
     readScalar<Quaternion>(b, "length", &Quaternion::length);
-    b.methods["dot"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["dot"] = [](void* self, const Args& a, Store& d) {
         return Value::of(as<Quaternion>(self)->dot(d.ref<Quaternion>(a.at(0), "Quaternion")));
     };
-    b.methods["angleTo"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["angleTo"] = [](void* self, const Args& a, Store& d) {
         return Value::of(as<Quaternion>(self)->angleTo(d.ref<Quaternion>(a.at(0), "Quaternion")));
     };
-    b.methods["equals"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["equals"] = [](void* self, const Args& a, Store& d) {
         return Value::of(as<Quaternion>(self)->equals(d.ref<Quaternion>(a.at(0), "Quaternion")));
     };
 }
@@ -617,39 +617,39 @@ void registerEuler(ClassBinding& b) {
     };
 
     chainRef<Euler, Euler>(b, "copy", "Euler", &Euler::copy);
-    b.methods["set"] = [](void* self, const Args& a, Driver&) {
+    b.methods["set"] = [](void* self, const Args& a, Store&) {
         as<Euler>(self)->set(number(a.at(0)), number(a.at(1)), number(a.at(2)),
                              order(a, 3, as<Euler>(self)->order));
         return chain();
     };
-    b.methods["setFromRotationMatrix"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["setFromRotationMatrix"] = [](void* self, const Args& a, Store& d) {
         as<Euler>(self)->setFromRotationMatrix(d.ref<Matrix4>(a.at(0), "Matrix4"),
                                               order(a, 1, as<Euler>(self)->order));
         return chain();
     };
-    b.methods["setFromQuaternion"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["setFromQuaternion"] = [](void* self, const Args& a, Store& d) {
         as<Euler>(self)->setFromQuaternion(d.ref<Quaternion>(a.at(0), "Quaternion"),
                                            order(a, 1, as<Euler>(self)->order));
         return chain();
     };
-    b.methods["setFromVector3"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["setFromVector3"] = [](void* self, const Args& a, Store& d) {
         as<Euler>(self)->setFromVector3(d.ref<Vector3>(a.at(0), "Vector3"),
                                        order(a, 1, as<Euler>(self)->order));
         return chain();
     };
-    b.methods["reorder"] = [](void* self, const Args& a, Driver&) {
+    b.methods["reorder"] = [](void* self, const Args& a, Store&) {
         as<Euler>(self)->reorder(order(a, 0, as<Euler>(self)->order));
         return chain();
     };
     fromArray<Euler>(b, "fromArray");
-    b.methods["toArray"] = [](void* self, const Args&, Driver&) {
+    b.methods["toArray"] = [](void* self, const Args&, Store&) {
         const std::array<double, 3> angles = as<Euler>(self)->toArray();
         // three's fourth slot holds the order string, which a numeric list cannot carry: the
         // reference records that slot as NaN and so does this.
         return Value::list({angles[0], angles[1], angles[2], QUIET_NAN});
     };
     b.methods["clone"] = cloneAs<Euler>("Euler");
-    b.methods["equals"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["equals"] = [](void* self, const Args& a, Store& d) {
         return Value::of(as<Euler>(self)->equals(d.ref<Euler>(a.at(0), "Euler")));
     };
 }
@@ -665,7 +665,7 @@ void registerMatrix3(ClassBinding& b) {
         m.set(values[0], values[1], values[2], values[3], values[4], values[5], values[6],
               values[7], values[8]);
     });
-    b.methods["set"] = [](void* self, const Args& a, Driver&) {
+    b.methods["set"] = [](void* self, const Args& a, Store&) {
         if (a.size() < 9) throw Unsupported{"Matrix3.set needs nine numbers"};
         double values[9];
         for (size_t i = 0; i < 9; ++i) values[i] = number(a.at(i));
@@ -698,20 +698,20 @@ void registerMatrix3(ClassBinding& b) {
     chainRef<Matrix3, Matrix4>(b, "getNormalMatrix", "Matrix4", &Matrix3::getNormalMatrix);
     chainRef2<Matrix3, Matrix3>(b, "multiplyMatrices", "Matrix3", &Matrix3::multiplyMatrices);
     readScalar<Matrix3>(b, "determinant", &Matrix3::determinant);
-    b.methods["setUvTransform"] = [](void* self, const Args& a, Driver&) {
+    b.methods["setUvTransform"] = [](void* self, const Args& a, Store&) {
         if (a.size() < 7) throw Unsupported{"Matrix3.setUvTransform needs seven numbers"};
         as<Matrix3>(self)->setUvTransform(number(a.at(0)), number(a.at(1)), number(a.at(2)),
                                           number(a.at(3)), number(a.at(4)), number(a.at(5)),
                                           number(a.at(6)));
         return chain();
     };
-    b.methods["extractBasis"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["extractBasis"] = [](void* self, const Args& a, Store& d) {
         as<Matrix3>(self)->extractBasis(d.ref<Vector3>(a.at(0), "Vector3"),
                                         d.ref<Vector3>(a.at(1), "Vector3"),
                                         d.ref<Vector3>(a.at(2), "Vector3"));
         return chain();
     };
-    b.methods["equals"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["equals"] = [](void* self, const Args& a, Store& d) {
         return Value::of(as<Matrix3>(self)->equals(d.ref<Matrix3>(a.at(0), "Matrix3")));
     };
 }
@@ -726,7 +726,7 @@ void registerMatrix4(ClassBinding& b) {
               values[8], values[9], values[10], values[11], values[12], values[13], values[14],
               values[15]);
     });
-    b.methods["set"] = [](void* self, const Args& a, Driver&) {
+    b.methods["set"] = [](void* self, const Args& a, Store&) {
         if (a.size() < 16) throw Unsupported{"Matrix4.set needs sixteen numbers"};
         double values[16];
         for (size_t i = 0; i < 16; ++i) values[i] = number(a.at(i));
@@ -767,47 +767,47 @@ void registerMatrix4(ClassBinding& b) {
     readScalar<Matrix4>(b, "determinantAffine", &Matrix4::determinantAffine);
     readScalar<Matrix4>(b, "getMaxScaleOnAxis", &Matrix4::getMaxScaleOnAxis);
 
-    b.methods["makeRotationFromEuler"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["makeRotationFromEuler"] = [](void* self, const Args& a, Store& d) {
         as<Matrix4>(self)->makeRotationFromEuler(d.ref<Euler>(a.at(0), "Euler"));
         return chain();
     };
-    b.methods["lookAt"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["lookAt"] = [](void* self, const Args& a, Store& d) {
         as<Matrix4>(self)->lookAt(d.ref<Vector3>(a.at(0), "Vector3"),
                                   d.ref<Vector3>(a.at(1), "Vector3"),
                                   d.ref<Vector3>(a.at(2), "Vector3"));
         return chain();
     };
-    b.methods["extractBasis"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["extractBasis"] = [](void* self, const Args& a, Store& d) {
         as<Matrix4>(self)->extractBasis(d.ref<Vector3>(a.at(0), "Vector3"),
                                         d.ref<Vector3>(a.at(1), "Vector3"),
                                         d.ref<Vector3>(a.at(2), "Vector3"));
         return chain();
     };
-    b.methods["makeBasis"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["makeBasis"] = [](void* self, const Args& a, Store& d) {
         as<Matrix4>(self)->makeBasis(d.ref<Vector3>(a.at(0), "Vector3"),
                                      d.ref<Vector3>(a.at(1), "Vector3"),
                                      d.ref<Vector3>(a.at(2), "Vector3"));
         return chain();
     };
-    b.methods["compose"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["compose"] = [](void* self, const Args& a, Store& d) {
         as<Matrix4>(self)->compose(d.ref<Vector3>(a.at(0), "Vector3"),
                                    d.ref<Quaternion>(a.at(1), "Quaternion"),
                                    d.ref<Vector3>(a.at(2), "Vector3"));
         return chain();
     };
-    b.methods["decompose"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["decompose"] = [](void* self, const Args& a, Store& d) {
         as<Matrix4>(self)->decompose(d.ref<Vector3>(a.at(0), "Vector3"),
                                      d.ref<Quaternion>(a.at(1), "Quaternion"),
                                      d.ref<Vector3>(a.at(2), "Vector3"));
         return chain();
     };
-    b.methods["makeShear"] = [](void* self, const Args& a, Driver&) {
+    b.methods["makeShear"] = [](void* self, const Args& a, Store&) {
         if (a.size() < 6) throw Unsupported{"Matrix4.makeShear needs six numbers"};
         as<Matrix4>(self)->makeShear(number(a.at(0)), number(a.at(1)), number(a.at(2)),
                                      number(a.at(3)), number(a.at(4)), number(a.at(5)));
         return chain();
     };
-    b.methods["makePerspective"] = [](void* self, const Args& a, Driver&) {
+    b.methods["makePerspective"] = [](void* self, const Args& a, Store&) {
         if (a.size() < 6) throw Unsupported{"Matrix4.makePerspective needs six numbers"};
         as<Matrix4>(self)->makePerspective(number(a.at(0)), number(a.at(1)), number(a.at(2)),
                                            number(a.at(3)), number(a.at(4)), number(a.at(5)),
@@ -815,7 +815,7 @@ void registerMatrix4(ClassBinding& b) {
                                            boolean(a, 7, false));
         return chain();
     };
-    b.methods["makeOrthographic"] = [](void* self, const Args& a, Driver&) {
+    b.methods["makeOrthographic"] = [](void* self, const Args& a, Store&) {
         if (a.size() < 6) throw Unsupported{"Matrix4.makeOrthographic needs six numbers"};
         as<Matrix4>(self)->makeOrthographic(number(a.at(0)), number(a.at(1)), number(a.at(2)),
                                             number(a.at(3)), number(a.at(4)), number(a.at(5)),
@@ -823,7 +823,7 @@ void registerMatrix4(ClassBinding& b) {
                                             boolean(a, 7, false));
         return chain();
     };
-    b.methods["equals"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["equals"] = [](void* self, const Args& a, Store& d) {
         return Value::of(as<Matrix4>(self)->equals(d.ref<Matrix4>(a.at(0), "Matrix4")));
     };
 }
@@ -839,27 +839,27 @@ void registerColor(ClassBinding& b) {
     });
     members<Color>(b, {"r", "g", "b"}, {&Color::r, &Color::g, &Color::b});
 
-    b.methods["setRGB"] = [](void* self, const Args& a, Driver&) {
+    b.methods["setRGB"] = [](void* self, const Args& a, Store&) {
         if (a.size() < 3) throw Unsupported{"Color.setRGB needs three numbers"};
         as<Color>(self)->setRGB(number(a.at(0)), number(a.at(1)), number(a.at(2)),
                                 space(a, 3, ColorSpace::LinearSRGB));
         return chain();
     };
-    b.methods["setHex"] = [](void* self, const Args& a, Driver&) {
+    b.methods["setHex"] = [](void* self, const Args& a, Store&) {
         as<Color>(self)->setHex(number(a.at(0)), space(a, 1, ColorSpace::SRGB));
         return chain();
     };
-    b.methods["setHSL"] = [](void* self, const Args& a, Driver&) {
+    b.methods["setHSL"] = [](void* self, const Args& a, Store&) {
         if (a.size() < 3) throw Unsupported{"Color.setHSL needs three numbers"};
         as<Color>(self)->setHSL(number(a.at(0)), number(a.at(1)), number(a.at(2)),
                                 space(a, 3, ColorSpace::LinearSRGB));
         return chain();
     };
-    b.methods["setStyle"] = [](void* self, const Args& a, Driver&) {
+    b.methods["setStyle"] = [](void* self, const Args& a, Store&) {
         as<Color>(self)->setStyle(a.at(0).text.c_str(), space(a, 1, ColorSpace::SRGB));
         return chain();
     };
-    b.methods["setColorName"] = [](void* self, const Args& a, Driver&) {
+    b.methods["setColorName"] = [](void* self, const Args& a, Store&) {
         as<Color>(self)->setColorName(a.at(0).text.c_str(), space(a, 1, ColorSpace::SRGB));
         return chain();
     };
@@ -883,36 +883,36 @@ void registerColor(ClassBinding& b) {
     toArray<Color>(b, "toArray", &Color::toArray);
     b.methods["clone"] = cloneAs<Color>("Color");
 
-    b.methods["lerpColors"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["lerpColors"] = [](void* self, const Args& a, Store& d) {
         as<Color>(self)->lerpColors(d.ref<Color>(a.at(0), "Color"), d.ref<Color>(a.at(1), "Color"),
                                     number(a.at(2)));
         return chain();
     };
-    b.methods["offsetHSL"] = [](void* self, const Args& a, Driver&) {
+    b.methods["offsetHSL"] = [](void* self, const Args& a, Store&) {
         as<Color>(self)->offsetHSL(number(a.at(0)), number(a.at(1)), number(a.at(2)));
         return chain();
     };
-    b.methods["getHex"] = [](void* self, const Args& a, Driver&) {
+    b.methods["getHex"] = [](void* self, const Args& a, Store&) {
         return Value::of(as<Color>(self)->getHex(space(a, 0, ColorSpace::SRGB)));
     };
-    b.methods["getHexString"] = [](void* self, const Args& a, Driver&) {
+    b.methods["getHexString"] = [](void* self, const Args& a, Store&) {
         return Value{Value::Kind::String, 0, as<Color>(self)->getHexString(space(a, 0, ColorSpace::SRGB))};
     };
     // three fills a plain { h, s, l } target, which no class here has and the line protocol
     // cannot name, so this answers the three numbers instead and no fixture observes it.
-    b.methods["getHSL"] = [](void* self, const Args& a, Driver&) {
+    b.methods["getHSL"] = [](void* self, const Args& a, Store&) {
         const IColorHsl hsl = as<Color>(self)->getHSL(space(a, 0, ColorSpace::LinearSRGB));
         return Value::list({hsl.h, hsl.s, hsl.l});
     };
     // three writes r/g/b onto the target, so the target is another Color and the answer is it.
-    b.methods["getRGB"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["getRGB"] = [](void* self, const Args& a, Store& d) {
         Color& target = d.ref<Color>(a.at(0), "Color");
         const std::array<double, 3> rgb =
             as<Color>(self)->getRGB(space(a, 1, ColorSpace::LinearSRGB));
         target.setRGB(rgb[0], rgb[1], rgb[2], ColorSpace::LinearSRGB);
         return a.at(0);
     };
-    b.methods["equals"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["equals"] = [](void* self, const Args& a, Store& d) {
         return Value::of(as<Color>(self)->equals(d.ref<Color>(a.at(0), "Color")));
     };
 }
@@ -920,7 +920,7 @@ void registerColor(ClassBinding& b) {
 // ------------------------------------------- Box3, Sphere, Plane, Ray and Frustum
 
 void registerBox3(ClassBinding& b) {
-    b.ctor = [](const Args& a, Driver& d) {
+    b.ctor = [](const Args& a, Store& d) {
         auto box = std::make_shared<Box3>();
         if (a.size() >= 2)
             box->set(d.ref<Vector3>(a.at(0), "Vector3"), d.ref<Vector3>(a.at(1), "Vector3"));
@@ -939,74 +939,74 @@ void registerBox3(ClassBinding& b) {
     chainRef<Box3, Matrix4>(b, "applyMatrix4", "Matrix4", &Box3::applyMatrix4);
 
     chainRef<Box3, Box3>(b, "copy", "Box3", &Box3::copy);
-    b.methods["set"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["set"] = [](void* self, const Args& a, Store& d) {
         as<Box3>(self)->set(d.ref<Vector3>(a.at(0), "Vector3"), d.ref<Vector3>(a.at(1), "Vector3"));
         return chain();
     };
-    b.methods["setFromArray"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["setFromArray"] = [](void* self, const Args& a, Store& d) {
         const std::vector<double> values = d.numbers(a.at(0));
         as<Box3>(self)->setFromArray(values.data(), values.size());
         return chain();
     };
-    b.methods["setFromPoints"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["setFromPoints"] = [](void* self, const Args& a, Store& d) {
         as<Box3>(self)->setFromPoints(pointsOf(a, d));
         return chain();
     };
-    b.methods["setFromCenterAndSize"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["setFromCenterAndSize"] = [](void* self, const Args& a, Store& d) {
         as<Box3>(self)->setFromCenterAndSize(d.ref<Vector3>(a.at(0), "Vector3"),
                                              d.ref<Vector3>(a.at(1), "Vector3"));
         return chain();
     };
-    b.methods["getCenter"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["getCenter"] = [](void* self, const Args& a, Store& d) {
         as<Box3>(self)->getCenter(d.ref<Vector3>(a.at(0), "Vector3"));
         return a.at(0);  // three answers the target
     };
-    b.methods["getSize"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["getSize"] = [](void* self, const Args& a, Store& d) {
         as<Box3>(self)->getSize(d.ref<Vector3>(a.at(0), "Vector3"));
         return a.at(0);  // three answers the target
     };
-    b.methods["getParameter"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["getParameter"] = [](void* self, const Args& a, Store& d) {
         as<Box3>(self)->getParameter(d.ref<Vector3>(a.at(0), "Vector3"),
                                      d.ref<Vector3>(a.at(1), "Vector3"));
         return a.at(1);  // three answers the target
     };
-    b.methods["clampPoint"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["clampPoint"] = [](void* self, const Args& a, Store& d) {
         as<Box3>(self)->clampPoint(d.ref<Vector3>(a.at(0), "Vector3"),
                                    d.ref<Vector3>(a.at(1), "Vector3"));
         return a.at(1);  // three answers the target
     };
-    b.methods["getBoundingSphere"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["getBoundingSphere"] = [](void* self, const Args& a, Store& d) {
         if (a.empty())
             return d.adopt("Sphere", std::make_shared<Sphere>(as<Box3>(self)->getBoundingSphere()));
         // The port answers a fresh Sphere; three writes the target the caller names.
         d.ref<Sphere>(a.at(0), "Sphere") = as<Box3>(self)->getBoundingSphere();
         return a.at(0);
     };
-    b.methods["containsPoint"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["containsPoint"] = [](void* self, const Args& a, Store& d) {
         return Value::of(as<Box3>(self)->containsPoint(d.ref<Vector3>(a.at(0), "Vector3")));
     };
-    b.methods["containsBox"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["containsBox"] = [](void* self, const Args& a, Store& d) {
         return Value::of(as<Box3>(self)->containsBox(d.ref<Box3>(a.at(0), "Box3")));
     };
-    b.methods["intersectsBox"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["intersectsBox"] = [](void* self, const Args& a, Store& d) {
         return Value::of(as<Box3>(self)->intersectsBox(d.ref<Box3>(a.at(0), "Box3")));
     };
-    b.methods["intersectsSphere"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["intersectsSphere"] = [](void* self, const Args& a, Store& d) {
         return Value::of(as<Box3>(self)->intersectsSphere(d.ref<Sphere>(a.at(0), "Sphere")));
     };
-    b.methods["intersectsPlane"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["intersectsPlane"] = [](void* self, const Args& a, Store& d) {
         return Value::of(as<Box3>(self)->intersectsPlane(d.ref<Plane>(a.at(0), "Plane")));
     };
-    b.methods["distanceToPoint"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["distanceToPoint"] = [](void* self, const Args& a, Store& d) {
         return Value::of(as<Box3>(self)->distanceToPoint(d.ref<Vector3>(a.at(0), "Vector3")));
     };
-    b.methods["equals"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["equals"] = [](void* self, const Args& a, Store& d) {
         return Value::of(as<Box3>(self)->equals(d.ref<Box3>(a.at(0), "Box3")));
     };
 }
 
 void registerSphere(ClassBinding& b) {
-    b.ctor = [](const Args& a, Driver& d) {
+    b.ctor = [](const Args& a, Store& d) {
         auto sphere = std::make_shared<Sphere>();
         if (!a.empty())
             sphere->set(d.ref<Vector3>(a.at(0), "Vector3"), a.size() > 1 ? number(a.at(1)) : -1);
@@ -1022,50 +1022,50 @@ void registerSphere(ClassBinding& b) {
     chainRef<Sphere, Sphere>(b, "union", "Sphere", &Sphere::unionWith);
     chainRef<Sphere, Matrix4>(b, "applyMatrix4", "Matrix4", &Sphere::applyMatrix4);
 
-    b.methods["set"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["set"] = [](void* self, const Args& a, Store& d) {
         as<Sphere>(self)->set(d.ref<Vector3>(a.at(0), "Vector3"),
                               a.size() > 1 ? number(a.at(1)) : -1);
         return chain();
     };
-    b.methods["setFromPoints"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["setFromPoints"] = [](void* self, const Args& a, Store& d) {
         // The line protocol carries no array value, so the points arrive as a run of references.
         // three's optional centre has no argument left over here, so this is its centroid form.
         as<Sphere>(self)->setFromPoints(pointsOf(a, d));
         return chain();
     };
-    b.methods["clampPoint"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["clampPoint"] = [](void* self, const Args& a, Store& d) {
         as<Sphere>(self)->clampPoint(d.ref<Vector3>(a.at(0), "Vector3"),
                                      d.ref<Vector3>(a.at(1), "Vector3"));
         return a.at(1);  // three answers the target
     };
-    b.methods["getBoundingBox"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["getBoundingBox"] = [](void* self, const Args& a, Store& d) {
         if (a.empty())
             return d.adopt("Box3", std::make_shared<Box3>(as<Sphere>(self)->getBoundingBox()));
         d.ref<Box3>(a.at(0), "Box3") = as<Sphere>(self)->getBoundingBox();
         return a.at(0);
     };
-    b.methods["containsPoint"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["containsPoint"] = [](void* self, const Args& a, Store& d) {
         return Value::of(as<Sphere>(self)->containsPoint(d.ref<Vector3>(a.at(0), "Vector3")));
     };
-    b.methods["distanceToPoint"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["distanceToPoint"] = [](void* self, const Args& a, Store& d) {
         return Value::of(as<Sphere>(self)->distanceToPoint(d.ref<Vector3>(a.at(0), "Vector3")));
     };
-    b.methods["intersectsSphere"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["intersectsSphere"] = [](void* self, const Args& a, Store& d) {
         return Value::of(as<Sphere>(self)->intersectsSphere(d.ref<Sphere>(a.at(0), "Sphere")));
     };
-    b.methods["intersectsBox"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["intersectsBox"] = [](void* self, const Args& a, Store& d) {
         return Value::of(as<Sphere>(self)->intersectsBox(d.ref<Box3>(a.at(0), "Box3")));
     };
-    b.methods["intersectsPlane"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["intersectsPlane"] = [](void* self, const Args& a, Store& d) {
         return Value::of(as<Sphere>(self)->intersectsPlane(d.ref<Plane>(a.at(0), "Plane")));
     };
-    b.methods["equals"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["equals"] = [](void* self, const Args& a, Store& d) {
         return Value::of(as<Sphere>(self)->equals(d.ref<Sphere>(a.at(0), "Sphere")));
     };
 }
 
 void registerPlane(ClassBinding& b) {
-    b.ctor = [](const Args& a, Driver& d) {
+    b.ctor = [](const Args& a, Store& d) {
         auto plane = std::make_shared<Plane>();
         if (!a.empty())
             plane->set(d.ref<Vector3>(a.at(0), "Vector3"), a.size() > 1 ? number(a.at(1)) : 0);
@@ -1079,55 +1079,55 @@ void registerPlane(ClassBinding& b) {
     chainRef<Plane, Vector3>(b, "translate", "Vector3", &Plane::translate);
     chainRef<Plane, Matrix4>(b, "applyMatrix4", "Matrix4", &Plane::applyMatrix4);
 
-    b.methods["set"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["set"] = [](void* self, const Args& a, Store& d) {
         as<Plane>(self)->set(d.ref<Vector3>(a.at(0), "Vector3"),
                              a.size() > 1 ? number(a.at(1)) : 0);
         return chain();
     };
-    b.methods["setComponents"] = [](void* self, const Args& a, Driver&) {
+    b.methods["setComponents"] = [](void* self, const Args& a, Store&) {
         as<Plane>(self)->setComponents(number(a.at(0)), number(a.at(1)), number(a.at(2)),
                                        number(a.at(3)));
         return chain();
     };
-    b.methods["setFromNormalAndCoplanarPoint"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["setFromNormalAndCoplanarPoint"] = [](void* self, const Args& a, Store& d) {
         as<Plane>(self)->setFromNormalAndCoplanarPoint(d.ref<Vector3>(a.at(0), "Vector3"),
                                                        d.ref<Vector3>(a.at(1), "Vector3"));
         return chain();
     };
-    b.methods["setFromCoplanarPoints"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["setFromCoplanarPoints"] = [](void* self, const Args& a, Store& d) {
         as<Plane>(self)->setFromCoplanarPoints(d.ref<Vector3>(a.at(0), "Vector3"),
                                                d.ref<Vector3>(a.at(1), "Vector3"),
                                                d.ref<Vector3>(a.at(2), "Vector3"));
         return chain();
     };
-    b.methods["projectPoint"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["projectPoint"] = [](void* self, const Args& a, Store& d) {
         as<Plane>(self)->projectPoint(d.ref<Vector3>(a.at(0), "Vector3"),
                                       d.ref<Vector3>(a.at(1), "Vector3"));
         return a.at(1);  // three answers the target
     };
-    b.methods["coplanarPoint"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["coplanarPoint"] = [](void* self, const Args& a, Store& d) {
         as<Plane>(self)->coplanarPoint(d.ref<Vector3>(a.at(0), "Vector3"));
         return a.at(0);  // three answers the target
     };
-    b.methods["distanceToPoint"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["distanceToPoint"] = [](void* self, const Args& a, Store& d) {
         return Value::of(as<Plane>(self)->distanceToPoint(d.ref<Vector3>(a.at(0), "Vector3")));
     };
-    b.methods["distanceToSphere"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["distanceToSphere"] = [](void* self, const Args& a, Store& d) {
         return Value::of(as<Plane>(self)->distanceToSphere(d.ref<Sphere>(a.at(0), "Sphere")));
     };
-    b.methods["intersectsBox"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["intersectsBox"] = [](void* self, const Args& a, Store& d) {
         return Value::of(as<Plane>(self)->intersectsBox(d.ref<Box3>(a.at(0), "Box3")));
     };
-    b.methods["intersectsSphere"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["intersectsSphere"] = [](void* self, const Args& a, Store& d) {
         return Value::of(as<Plane>(self)->intersectsSphere(d.ref<Sphere>(a.at(0), "Sphere")));
     };
-    b.methods["equals"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["equals"] = [](void* self, const Args& a, Store& d) {
         return Value::of(as<Plane>(self)->equals(d.ref<Plane>(a.at(0), "Plane")));
     };
 }
 
 void registerRay(ClassBinding& b) {
-    b.ctor = [](const Args& a, Driver& d) {
+    b.ctor = [](const Args& a, Store& d) {
         auto ray = std::make_shared<Ray>();
         if (!a.empty())
             ray->set(d.ref<Vector3>(a.at(0), "Vector3"),
@@ -1140,29 +1140,29 @@ void registerRay(ClassBinding& b) {
     chainRef<Ray, Matrix4>(b, "applyMatrix4", "Matrix4", &Ray::applyMatrix4);
     b.methods["clone"] = cloneAs<Ray>("Ray");
 
-    b.methods["set"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["set"] = [](void* self, const Args& a, Store& d) {
         as<Ray>(self)->set(d.ref<Vector3>(a.at(0), "Vector3"),
                            a.size() > 1 ? d.ref<Vector3>(a.at(1), "Vector3") : Vector3(0, 0, -1));
         return chain();
     };
-    b.methods["at"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["at"] = [](void* self, const Args& a, Store& d) {
         as<Ray>(self)->at(number(a.at(0)), d.ref<Vector3>(a.at(1), "Vector3"));
         return a.at(1);  // three answers the target
     };
-    b.methods["lookAt"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["lookAt"] = [](void* self, const Args& a, Store& d) {
         as<Ray>(self)->lookAt(d.ref<Vector3>(a.at(0), "Vector3"));
         return chain();
     };
-    b.methods["recast"] = [](void* self, const Args& a, Driver&) {
+    b.methods["recast"] = [](void* self, const Args& a, Store&) {
         as<Ray>(self)->recast(number(a.at(0)));
         return chain();
     };
-    b.methods["closestPointToPoint"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["closestPointToPoint"] = [](void* self, const Args& a, Store& d) {
         as<Ray>(self)->closestPointToPoint(d.ref<Vector3>(a.at(0), "Vector3"),
                                            d.ref<Vector3>(a.at(1), "Vector3"));
         return a.at(1);  // three answers the target
     };
-    b.methods["distanceSqToSegment"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["distanceSqToSegment"] = [](void* self, const Args& a, Store& d) {
         if (a.size() < 2 || a.size() > 4) throw Unsupported{"Ray.distanceSqToSegment needs 2 to 4 args"};
         Vector3 onRay;
         Vector3 onSegment;
@@ -1173,50 +1173,50 @@ void registerRay(ClassBinding& b) {
         if (a.size() > 3) d.ref<Vector3>(a.at(3), "Vector3").copy(onSegment);
         return Value::of(sqrDist);
     };
-    b.methods["intersectSphere"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["intersectSphere"] = [](void* self, const Args& a, Store& d) {
         as<Ray>(self)->intersectSphere(d.ref<Sphere>(a.at(0), "Sphere"),
                                        d.ref<Vector3>(a.at(1), "Vector3"));
         return a.at(1);
     };
-    b.methods["intersectsSphere"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["intersectsSphere"] = [](void* self, const Args& a, Store& d) {
         return Value::of(as<Ray>(self)->intersectsSphere(d.ref<Sphere>(a.at(0), "Sphere")));
     };
-    b.methods["intersectPlane"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["intersectPlane"] = [](void* self, const Args& a, Store& d) {
         as<Ray>(self)->intersectPlane(d.ref<Plane>(a.at(0), "Plane"),
                                       d.ref<Vector3>(a.at(1), "Vector3"));
         return a.at(1);
     };
-    b.methods["intersectsPlane"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["intersectsPlane"] = [](void* self, const Args& a, Store& d) {
         return Value::of(as<Ray>(self)->intersectsPlane(d.ref<Plane>(a.at(0), "Plane")));
     };
-    b.methods["intersectBox"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["intersectBox"] = [](void* self, const Args& a, Store& d) {
         as<Ray>(self)->intersectBox(d.ref<Box3>(a.at(0), "Box3"), d.ref<Vector3>(a.at(1), "Vector3"));
         return a.at(1);
     };
-    b.methods["intersectsBox"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["intersectsBox"] = [](void* self, const Args& a, Store& d) {
         return Value::of(as<Ray>(self)->intersectsBox(d.ref<Box3>(a.at(0), "Box3")));
     };
-    b.methods["intersectTriangle"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["intersectTriangle"] = [](void* self, const Args& a, Store& d) {
         as<Ray>(self)->intersectTriangle(d.ref<Vector3>(a.at(0), "Vector3"),
                                          d.ref<Vector3>(a.at(1), "Vector3"),
                                          d.ref<Vector3>(a.at(2), "Vector3"), boolean(a, 3, false),
                                          d.ref<Vector3>(a.at(4), "Vector3"));
         return a.at(4);
     };
-    b.methods["distanceToPoint"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["distanceToPoint"] = [](void* self, const Args& a, Store& d) {
         return Value::of(as<Ray>(self)->distanceToPoint(d.ref<Vector3>(a.at(0), "Vector3")));
     };
-    b.methods["distanceSqToPoint"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["distanceSqToPoint"] = [](void* self, const Args& a, Store& d) {
         return Value::of(as<Ray>(self)->distanceSqToPoint(d.ref<Vector3>(a.at(0), "Vector3")));
     };
-    b.methods["distanceToPlane"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["distanceToPlane"] = [](void* self, const Args& a, Store& d) {
         double distance = 0;
         // three answers null for a coplanar or receding ray; NaN is the value a fixture compares.
         if (!as<Ray>(self)->distanceToPlane(d.ref<Plane>(a.at(0), "Plane"), distance))
             return Value::of(QUIET_NAN);
         return Value::of(distance);
     };
-    b.methods["equals"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["equals"] = [](void* self, const Args& a, Store& d) {
         return Value::of(as<Ray>(self)->equals(d.ref<Ray>(a.at(0), "Ray")));
     };
 }
@@ -1225,25 +1225,25 @@ void registerFrustum(ClassBinding& b) {
     b.ctor = ctor<Frustum>([](Frustum&, const Args&) {});
     chainRef<Frustum, Frustum>(b, "copy", "Frustum", &Frustum::copy);
     b.methods["clone"] = cloneAs<Frustum>("Frustum");
-    b.methods["set"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["set"] = [](void* self, const Args& a, Store& d) {
         Plane planes[6];
         for (size_t i = 0; i < 6; ++i) planes[i] = d.ref<Plane>(a.at(i), "Plane");
         as<Frustum>(self)->set(planes[0], planes[1], planes[2], planes[3], planes[4], planes[5]);
         return chain();
     };
-    b.methods["setFromProjectionMatrix"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["setFromProjectionMatrix"] = [](void* self, const Args& a, Store& d) {
         as<Frustum>(self)->setFromProjectionMatrix(d.ref<Matrix4>(a.at(0), "Matrix4"),
                                                    system(a, 1, CoordinateSystem::WebGL),
                                                    boolean(a, 2, false));
         return chain();
     };
-    b.methods["intersectsSphere"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["intersectsSphere"] = [](void* self, const Args& a, Store& d) {
         return Value::of(as<Frustum>(self)->intersectsSphere(d.ref<Sphere>(a.at(0), "Sphere")));
     };
-    b.methods["intersectsBox"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["intersectsBox"] = [](void* self, const Args& a, Store& d) {
         return Value::of(as<Frustum>(self)->intersectsBox(d.ref<Box3>(a.at(0), "Box3")));
     };
-    b.methods["containsPoint"] = [](void* self, const Args& a, Driver& d) {
+    b.methods["containsPoint"] = [](void* self, const Args& a, Store& d) {
         return Value::of(as<Frustum>(self)->containsPoint(d.ref<Vector3>(a.at(0), "Vector3")));
     };
     for (int i = 0; i < 6; ++i) {
@@ -1265,7 +1265,7 @@ void registerFrustum(ClassBinding& b) {
 }  // namespace
 
 /** Every engine class the differential fixtures can reach; each work package adds its own. */
-void registerBindings(Driver& driver) {
+void registerMathBindings(Registry& classes) {
     const std::pair<const char*, void (*)(ClassBinding&)> CLASSES[] = {
         {"Vector2", registerVector2},   {"Vector3", registerVector3},
         {"Vector4", registerVector4},   {"Quaternion", registerQuaternion},
@@ -1278,8 +1278,8 @@ void registerBindings(Driver& driver) {
     for (const auto& [name, bind] : CLASSES) {
         ClassBinding binding;
         bind(binding);
-        driver.classes[name] = binding;
+        classes[name] = binding;
     }
 }
 
-}  // namespace tn::fixture
+}  // namespace tn::binding

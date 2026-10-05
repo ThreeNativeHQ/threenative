@@ -25,19 +25,19 @@ std::string hex(double v) {
 void protocol() {
     Driver driver;
     ClassBinding pair;
-    pair.ctor = [](const Args& a, Driver&) {
+    pair.ctor = [](const Args& a, Store&) {
         auto p = std::make_shared<Pair>();
         if (a.size() == 2) *p = Pair{number(a[0]), number(a[1])};
         return std::static_pointer_cast<void>(p);
     };
-    pair.methods["add"] = [](void* self, const Args& a, Driver& d) {
+    pair.methods["add"] = [](void* self, const Args& a, Store& d) {
         auto& p = *static_cast<Pair*>(self);
         const Pair& o = d.ref<Pair>(a.at(0), "Pair");
         p.x += o.x;
         p.y += o.y;
         return chain();
     };
-    pair.methods["length"] = [](void* self, const Args&, Driver&) {
+    pair.methods["length"] = [](void* self, const Args&, Store&) {
         auto& p = *static_cast<Pair*>(self);
         return Value::of(p.x * p.x + p.y * p.y);
     };

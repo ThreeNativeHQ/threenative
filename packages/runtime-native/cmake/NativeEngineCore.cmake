@@ -37,7 +37,8 @@ add_library(tn_engine_foundation STATIC
     src/engine/foundation/math/Quaternion.cpp
     src/engine/foundation/math/Euler.cpp
     src/engine/foundation/math/Color.cpp
-    src/engine/foundation/math/Primitives.cpp)
+    src/engine/foundation/math/Primitives.cpp
+    src/engine/foundation/math/ieee754.cpp)
 tn_native_engine_target(tn_engine_foundation)
 target_include_directories(tn_engine_foundation PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
@@ -140,6 +141,10 @@ tn_native_engine_test(tn-native-engine-abi-test tests/native-engine/abi_test.cpp
     native_engine_abi_handles=handles)
 target_link_libraries(tn-native-engine-abi-test PRIVATE tn_engine_abi)
 
+# PRD-501: the ported V8 fdlibm answers V8's own bits, so a platform libm one bit off fails here.
+tn_native_engine_test(tn-native-engine-ieee754-test tests/native-engine/ieee754_test.cpp
+    native_engine_ieee754=bits)
+
 # The header compiles as strict C11 and a C program links against the ABI.
 add_executable(tn-native-engine-abi-c11 EXCLUDE_FROM_ALL tests/native-engine/abi_c11.c)
 target_link_libraries(tn-native-engine-abi-c11 PRIVATE tn_engine_abi)
@@ -154,10 +159,15 @@ set_tests_properties(native_engine_abi_c11 PROPERTIES LABELS "native-engine")
 set_property(GLOBAL APPEND PROPERTY TN_NATIVE_ENGINE_TEST_TARGETS tn-native-engine-abi-c11)
 
 # The native side of the differential fixture runner (PRD-498): run-native.ts spawns the driver.
-add_library(tn_fixture_driver STATIC tests/native-engine/fixture/driver.cpp tests/native-engine/fixture/bindings.cpp)
+# The engine's binding registry for the math classes: one model the fixture driver and the C ABI share.
+add_library(tn_engine_bindings STATIC src/engine/abi/bindings_math.cpp)
+tn_native_engine_target(tn_engine_bindings)
+target_link_libraries(tn_engine_bindings PUBLIC tn_engine_foundation)
+
+add_library(tn_fixture_driver STATIC tests/native-engine/fixture/driver.cpp)
 tn_native_engine_target(tn_fixture_driver)
 target_include_directories(tn_fixture_driver PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine)
-target_link_libraries(tn_fixture_driver PUBLIC tn_engine_foundation)
+target_link_libraries(tn_fixture_driver PUBLIC tn_engine_foundation tn_engine_bindings)
 if(EMSCRIPTEN)
     # The driver (a test tool) reports unsupported fixtures by exception; engine code never throws.
     target_compile_options(tn_fixture_driver PUBLIC -fwasm-exceptions)

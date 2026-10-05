@@ -66,9 +66,10 @@ std::vector<std::string> split(const std::string& line) {
 
 }  // namespace
 
-double number(const Value& v) {
-    if (v.kind != Value::Kind::Number) throw Unsupported{"expected a number"};
-    return v.number;
+Object* Driver::find(const Value& arg) {
+    if (arg.kind != Value::Kind::Ref) return nullptr;
+    const auto it = objects_.find(arg.text);
+    return it == objects_.end() ? nullptr : &it->second;
 }
 
 Value Driver::adopt(std::string cls, std::shared_ptr<void> ptr) {
