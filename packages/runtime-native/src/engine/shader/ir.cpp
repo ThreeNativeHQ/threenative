@@ -256,7 +256,7 @@ ExprId Program::call(std::string_view function, const std::vector<ExprId>& args,
     auto floating = [&](size_t i) { return type(i).scalar == Type::Scalar::F32 && !type(i).isMatrix(); };
     Type result{};
     std::string error;
-    const std::string_view unary[] = {"abs", "sin", "cos", "floor", "fract", "sqrt", "exp", "exp2", "normalize", "dFdx", "dFdy"};
+    const std::string_view unary[] = {"abs", "sin", "cos", "floor", "fract", "sqrt", "exp", "exp2", "log2", "normalize", "dFdx", "dFdy"};
     const std::string_view binary[] = {"min", "max", "pow", "step"};
     bool known = false;
     for (std::string_view name : unary) {
