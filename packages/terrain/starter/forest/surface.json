@@ -8,7 +8,13 @@
       0.55
     ],
     "normal": true,
-    "saturation": 1.25
+    "saturation": 1.25,
+    "far": {
+      "tile": 17,
+      "from": 4,
+      "to": 40,
+      "amount": 0.6
+    }
   },
   "breakup": {
     "scale": 0.05,
@@ -31,7 +37,13 @@
       "normal": true,
       "mask": "dirt",
       "lo": 0.45,
-      "hi": 0.85
+      "hi": 0.85,
+      "far": {
+        "tile": 15,
+        "from": 4,
+        "to": 40,
+        "amount": 0.5
+      }
     },
     {
       "id": "rock",
