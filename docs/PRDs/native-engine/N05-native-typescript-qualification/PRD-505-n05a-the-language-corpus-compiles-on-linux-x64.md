@@ -1,6 +1,6 @@
 # PRD-505 — The language corpus compiles on Linux x64 (N05a)
 
-**Status:** PROPOSED — early spike for gate T; blocks nothing else (owner decision 2)
+**Status:** IN PROGRESS — phases 1-2 done; phase 3 (fork ledger) opens only if a local patch is needed. Early spike for gate T; blocks nothing else (owner decision 2)
 **Complexity:** 4 — a third-party LLVM-based compiler, pinned and cached, plus a fixture corpus; no engine code yet
 **Owner:** João
 **Work package:** N05 — [native-engine batch](../README.md) · [N05 index](README.md)
@@ -48,17 +48,18 @@ adapter and callback lifetime are [PRD-506](PRD-506-n05b-three-imports-bind-nati
 ## Execution Phases
 
 #### Phase 1: Pinned, cached compiler
-**Status:** NOT STARTED
-**Files:** proposed `tools/native-typescript/compiler.lock.json`, `tools/native-typescript/provision.mjs`
-- [ ] The provision script fetches the pinned toolchain, verifies its SHA-256, and a second run is a cache hit with no download. proof: `node tools/native-typescript/provision.mjs --check`
-- [ ] A tampered archive is refused with a named checksum error. proof: `pnpm exec vitest run tools/native-typescript/__tests__/provision.spec.ts`
+**Status:** DONE (2026-10-04)
+**Files:** `tools/native-typescript/compiler.lock.json`, `tools/native-typescript/provision.mjs`
+- [x] The provision script fetches the pinned toolchain, verifies its SHA-256, and a second run is a cache hit with no download. proof: `node tools/native-typescript/provision.mjs --check` — first run downloads ubuntu-26.04 (sha256 pinned), second prints `cache hit`, `--check` exits 0. Pinned v0.0-pre-alpha87, commit 0a0906e0d9fb271264fd49c2dd9a5a32ca05463e.
+- [x] A tampered archive is refused with a named checksum error. proof: `pnpm exec vitest run tools/native-typescript/__tests__/provision.spec.ts` — 2 passed; tampered bytes refused with `TN_NATIVE_TS_CHECKSUM` naming expected vs actual, cache-hit path makes no download.
 
 #### Phase 2: The corpus, reference and native
-**Status:** NOT STARTED
-**Files:** proposed `tools/native-typescript/corpus/*.ts`, `tools/native-typescript/run-corpus.mjs`
-- [ ] Every corpus case produces its expected stdout under Node. proof: `node tools/native-typescript/run-corpus.mjs --reference`
-- [ ] Every corpus case compiles to a Linux x64 executable whose stdout and exit code match the reference. proof: `node tools/native-typescript/run-corpus.mjs --native --target x86_64-linux-gnu`
-- [ ] The allocation-loop case holds RSS bounded under the selected memory mode. proof: `node tools/native-typescript/run-corpus.mjs --native --case alloc-loop`
+**Status:** DONE (2026-10-04)
+**Files:** `tools/native-typescript/corpus/*.ts`, `tools/native-typescript/run-corpus.mjs`
+**Findings (2026-10-04, v0.0-pre-alpha87):** the corpus passes as written, but it avoids shapes this compiler rejects, and gate T must count them: `new Int32Array(n)` (only the array-literal form compiles), `.toString()` on an `i32` or an enum member, and `import` resolution from `node_modules` (the compiler resolves source paths only, so multi-file cases compile per module with `--emit=obj` and link with `--obj=`). Each is a compiler limit, not a dropped case.
+- [x] Every corpus case produces its expected stdout under Node. proof: `node tools/native-typescript/run-corpus.mjs --reference` — all 11 cases PASS (classes, inheritance, getters-setters, options-constructor, enums-unions, imports-cycle, typed-arrays, closures, exceptions, async-await, alloc-loop).
+- [x] Every corpus case compiles to a Linux x64 executable whose stdout and exit code match the reference. proof: `node tools/native-typescript/run-corpus.mjs --native --target x86_64-linux-gnu` — exit 0, all 11 PASS, byte-for-byte stdout and matching exit codes. Multi-file imports compile per module (`--emit=obj`) and link with `--obj=`.
+- [x] The allocation-loop case holds RSS bounded under the selected memory mode. proof: `node tools/native-typescript/run-corpus.mjs --native --case alloc-loop` — PASS, peak RSS 9.2 MB against the 512 MB limit under the default Boehm GC (`--mm=gc`).
 
 #### Phase 3: Fork ledger, if needed
 **Status:** NOT STARTED

@@ -1,0 +1,22 @@
+{
+  "repository": "ASDAlexander77/TypeScriptCompiler",
+  "tag": "v0.0-pre-alpha87",
+  "tagRefSha": "f542b61042c5b9213363307f4a1ed79da6d60000",
+  "commit": "0a0906e0d9fb271264fd49c2dd9a5a32ca05463e",
+  "binaryCandidates": ["bin/tsc", "bin/tslang", "tslang", "tsc"],
+  "artifacts": {
+    "linux-x64-ubuntu-26.04": {
+      "url": "https://github.com/ASDAlexander77/TypeScriptCompiler/releases/download/v0.0-pre-alpha87/tslang-v0.0-pre-alpha87-ubuntu-26.04-x64.tar.gz",
+      "sha256": "c529b92bd07b492c6667aa5f0575881255b68ec8296f2e899ae22f0b208ff399",
+      "size": 135944448
+    },
+    "linux-x64-ubuntu-24.04": {
+      "url": "https://github.com/ASDAlexander77/TypeScriptCompiler/releases/download/v0.0-pre-alpha87/tslang-v0.0-pre-alpha87-ubuntu-24.04-x64.tar.gz",
+      "sha256": "e1b0cbb0f7325326a2aa83921cd96d3c0a5850321b68f97cc7d9c76b8b3f13a7",
+      "size": 135198858
+    }
+  },
+  "hostPreference": {
+    "linux-x64": ["linux-x64-ubuntu-26.04", "linux-x64-ubuntu-24.04"]
+  }
+}

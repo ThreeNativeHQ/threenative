@@ -8,6 +8,7 @@ export default defineConfig({
       "scripts/**/*.spec.ts",
       "packages/**/__tests__/**/*.spec.ts",
       "packages/**/__tests__/**/*.spec.tsx",
+      "tools/**/__tests__/**/*.spec.ts",
     ],
     exclude: ["**/node_modules/**", "**/dist/**", "examples/**"],
     reporters: ["default"],
