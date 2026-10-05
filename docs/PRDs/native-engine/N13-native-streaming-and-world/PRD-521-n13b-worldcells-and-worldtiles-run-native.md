@@ -28,7 +28,7 @@
 #### Phase 1: Package and terrain
 **Status:** IN PROGRESS
 **Files:** proposed `packages/runtime-native/src/engine/world/package/`, `.../terrain/`
-- [ ] Native `world.json` validation accepts and rejects the `world-package.spec.ts` fixtures with the same codes. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_world_package`
+- [x] Native `world.json` validation accepts and rejects the `world-package.spec.ts` fixtures with the same codes. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_world_package` — 2026-10-05: 81 manifests (the spec's fixtures plus malformed variants), 0 differ in code, path, message or order, on Dawn, ASan, wgpu and Wasm. Red controls: insertion-order keys instead of `Object.entries` order, 12 differ; heightmapByteLength check removed, fails.
 - [x] Native height sampling matches `world-heightmap.spec.ts` fixtures, and `updateHeights` bumps the sample version. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_world_heights` — 2026-10-05: green on Dawn, ASan, wgpu and Wasm, exact. `HeightSampler` and `Heightfield` (`src/engine/world/terrain/heights.{h,cpp}`) port `heightSamplerFromHeightmap` and `Heightfield.heightAt`/`updateHeights`/`version` operation for operation; a malformed update is refused by name (`TN_WORLD_HEIGHTFIELD_REGION`, `_SIZE`, `_SAMPLE`) and writes nothing, a success bumps the version by one. From the TS modules themselves (`tests/native-engine/world/heights-reference.ts`): a 33 x 17 heightmap sampled at 203 points (vertices, edges, outside, NaN, both infinities) and a six-step update scenario with heightAt probes: 326 values match bit for bit (NaN as NaN, whatever its sign bit). Red controls: no clamp to the last row (ASan overflow), no version bump (6 differ). Port by the save-tokens arm; reviewed, NaN handling corrected
 
 #### Phase 2: Cells and tiles
@@ -40,5 +40,5 @@
 #### Phase 3: GPU-scene residency and bindings
 **Status:** NOT STARTED
 **Files:** proposed `packages/runtime-native/src/engine/world/gpu_scene/`; `packages/core/src/world-cells.ts`, `world-tiles.ts`, `world-gpu-scene.ts` (binding glue)
-- [ ] The placement buffer after a scripted camera path matches the `world-gpu-scene.spec.ts` reference. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_world_gpu_scene`
+- [x] The placement buffer after a scripted camera path matches the `world-gpu-scene.spec.ts` reference. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_world_gpu_scene` — 2026-10-05: 34 steps (the spec's walk, a gate path forward and back, biased-LOD steps, two shadow levels), 0 differ in args, counts and drawn matrices, on Dawn, ASan and wgpu. Red controls: shadow pass biased, 1 differs; bias ignored, 4 differ; capacity `>=` to `>`, 5 differ. This is the CPU oracle; the GPU kernel is PRD-519.
 - [ ] The native-engine artifact inspection finds no TS world implementation reachable from the world fixture. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_strict_artifact_inspect`

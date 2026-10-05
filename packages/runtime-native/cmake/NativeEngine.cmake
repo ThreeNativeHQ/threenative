@@ -273,6 +273,29 @@ else()
     message(WARNING "pnpm not found: native_engine_model_lod_reference_current is not registered")
 endif()
 
+# PRD-521: the GPU-driven main pass's per-placement CPU oracle, ported from
+# packages/core/src/world-gpu-scene.ts (`cullAndSelect`, `cullAndSelectShadow`, `levelAtGates`,
+# `drawableLevel`, `liveKeyInstances`). It links the LOD bias and the foundation but owns no GPU
+# resource; `native_engine_world_gpu_scene_reference_current` keeps the committed table equal to what
+# the core module produces today.
+add_library(tn_engine_gpu_scene STATIC src/engine/world/gpu_scene/gpu_scene.cpp)
+tn_native_engine_target(tn_engine_gpu_scene)
+target_link_libraries(tn_engine_gpu_scene PUBLIC tn_engine_lod tn_engine_foundation)
+target_include_directories(tn_engine_gpu_scene PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+tn_native_engine_test(tn-native-engine-world-gpu-scene-test tests/native-engine/world/gpu_scene_test.cpp
+    native_engine_world_gpu_scene=gpu_scene)
+target_link_libraries(tn-native-engine-world-gpu-scene-test PRIVATE tn_engine_gpu_scene)
+target_include_directories(tn-native-engine-world-gpu-scene-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/world)
+if(TN_PNPM_EXECUTABLE)
+    add_test(NAME native_engine_world_gpu_scene_reference_current
+        COMMAND ${TN_PNPM_EXECUTABLE} --workspace-root exec tsx
+            packages/runtime-native/tests/native-engine/world/gpu-scene-reference.ts --check
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../..)
+    set_tests_properties(native_engine_world_gpu_scene_reference_current PROPERTIES LABELS "native-engine")
+else()
+    message(WARNING "pnpm not found: native_engine_world_gpu_scene_reference_current is not registered")
+endif()
+
 # PRD-525: probe placement and the bounded incremental update schedule as pure CPU functions, ported
 # from packages/core/src/render/probe-volume.ts. It links the foundation only and owns no GPU
 # resource; `native_engine_probes_reference_current` keeps the committed table equal to what the core
