@@ -7,6 +7,7 @@ prd_contract: v1
 **Status:** OPEN, filed 2026-08-31 against `77a68bec`. **Blocked on an owner ruling — see §0.**
 Planning only.
 
+**Priority:** P2 — Planned tooling: build the decomposition index from shipping templates; blocked on an owner ruling.
 **Outcome:** an agent handed *"build a tower defense game"* is answered with the mechanics that
 request implies, the capabilities that serve each one, the mechanics the framework deliberately
 does not own, and the template whose `AGENTS.md` already demonstrates this shape — instead of the

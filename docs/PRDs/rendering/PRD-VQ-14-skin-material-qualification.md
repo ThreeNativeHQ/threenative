@@ -5,6 +5,7 @@ prd_contract: v1
 # PRD-VQ-14 — Skin shading reuses upstream material support and preserves facial animation
 
 **Status:** PROPOSED — 2026-10-01. No implementation or qualification is claimed.
+**Priority:** P2 — Proposed generated-source skin route with thickness controls and a low-cost fallback.
 **Batch:** Visual quality execution batch. **Wave:** 3 / character-quality gate.
 **Dependencies:** Use a license-clear rigged head. Preserve existing MetaHuman/GLTF binding and expression ownership.
 

@@ -1,6 +1,7 @@
 # PRD-391 — See geometry cost by scene object
 
 **Status:** IN PROGRESS
+**Priority:** P2 — Open: AC-7 no added traversal when uncaptured and Pixel 8 Midway proof from two views.
 **Complexity:** 5 (MEDIUM); risk override: none
 **Owner:** Engine authoring / diagnostics
 **Depends on:** None; reuse the inspected scene observation, LOD and frame-budget implementations

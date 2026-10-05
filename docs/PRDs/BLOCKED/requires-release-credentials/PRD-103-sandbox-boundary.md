@@ -9,6 +9,7 @@ enforced and proved by probes that run, and a sandbox now has no route to the co
 database — only to the gateway. **No microVM has been booted**, so the kernel boundary — the
 subject of Phase 2 — is the one thing still absent.
 
+**Priority:** P0 — Open box proves default-deny egress; the sandbox still reaches control plane, database, metadata.
 Proved by `hosting/__tests__/escape.spec.ts`, each probe also observed failing with its rule
 removed: a sandbox cannot reach the database, holds no capabilities and cannot acquire any, finds
 no container or hypervisor socket, is contained at its pid cap under a fork bomb, and cannot

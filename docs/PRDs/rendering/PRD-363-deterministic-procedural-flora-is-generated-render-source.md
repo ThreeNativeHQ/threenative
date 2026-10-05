@@ -9,6 +9,7 @@ prd_contract: v1
 at `e85729b779708c50b7d65ddd34d524f42da88705` (MIT, depth-1 clone at `/tmp/dryad`).
 No upstream code or assets have been copied.
 
+**Priority:** P2 — Thirty-three open boxes: baseline, multi-plant stand, TSL wind, adapted-source accounting.
 **Complexity:** +3 touches more than 10 files, +2 introduces a renderer-independent
 generation module in generated source, +2 crosses the scaffolder, playtest and native-proof
 surfaces = **7 → HIGH mode**. Run a `prd-work-reviewer` checkpoint after every implementation

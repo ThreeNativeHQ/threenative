@@ -5,6 +5,7 @@ prd_contract: v1
 # PRD-481 — CI does each piece of work once
 
 **Status:** PARTIAL — all three phases landed (#405) and the merge queue is on; live reuse, merge-group and cache-hit proofs pending; AC-1 audits the 7 days from 2026-10-03
+**Priority:** P1 — Open: merge-queue reuse under two minutes, native cache restore, seven-day audit.
 **Complexity:** 5 (HIGH)
 **Owner:** CI tooling
 **Depends on:** None ([PRD-480](PRD-480-linux-ci-runs-on-the-owner-machine.md) and

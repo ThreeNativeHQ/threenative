@@ -5,6 +5,7 @@ prd_contract: v1
 # PRD-VQ-08 — Clouds and their ground attenuation share one authored field
 
 **Status:** PROPOSED — 2026-10-01. No implementation or qualification is claimed.
+**Priority:** P2 — Proposed one authored cloud field driving density, wind and transmittance; unstarted.
 **Batch:** Visual quality execution batch. **Wave:** 2 / atmosphere.
 **Dependencies:** Reuse the merged rain/snow kits and PRD-381 row 4. Coordinate atmosphere composition with VQ-07; do not recreate the kits.
 

@@ -1,6 +1,7 @@
 # PRD-352 — Unreal ingest is first-party
 
 **Status:** READY FOR EXECUTION — **all three spike questions answered 2026-09-04**
+**Priority:** P2 — Open: uncooked Unreal pack builds, quarry props render identically, no PNG tree written.
 **Complexity:** 3 (10+ files) + 2 (new module) + 2 (multi-package) = **7 → HIGH mode**
 **Batch:** `docs/PRDs/assets/`
 **Independent of:** PRD-349/350/351 — this changes ingest (①), those change the cook (②). It wins
