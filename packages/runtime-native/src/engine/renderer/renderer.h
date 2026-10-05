@@ -5,6 +5,7 @@
 #include <optional>
 #include <span>
 #include <unordered_map>
+#include <vector>
 
 #include <webgpu/webgpu.h>
 
@@ -96,9 +97,6 @@ public:
     GpuStatus readPixels(ReadbackCallback done);
     void poll() { gpu_.poll(); }
 
-    /** Releases a renderable's GPU record (the database calls this when the object leaves the scene). */
-    void forget(uint64_t key);
-
     /** What the last render() submitted, as three's renderer.info.render counts it. */
     struct FrameStats {
         uint32_t draws = 0;
@@ -111,19 +109,26 @@ public:
     const PipelineCache& pipelines() const { return pipelines_; }
 
 private:
+    // The uniforms a material program may read, resolved to block offsets once per program.
+    enum Slot : uint8_t {
+        kModelMatrix, kViewMatrix, kProjectionMatrix, kNormalMatrix, kDiffuse, kAlphaTest, kOpaque, kRoughness,
+        kMetalness, kEmissive, kSpecular, kShininess, kIor, kSpecularIntensity, kSpecularColor,
+        kDirectionalDirection, kDirectionalColor, kHemisphereSky, kHemisphereGround, kHemisphereDirection, kAmbient,
+        kSlotCount
+    };
     struct Program {
         shader::StageModule vertex;
         shader::StageModule fragment;
+        // Explicit layouts: each stage's uniform block is a dynamic-offset slice of the frame's one
+        // uniform buffer, so a draw costs a bind-group offset, not a buffer and a bind group of its own.
+        WGPUBindGroupLayout layouts[2] = {};
+        WGPUPipelineLayout pipelineLayout = nullptr;
+        WGPUBindGroup groups[2] = {};  // over the current frame buffer; rebuilt when it grows
+        const shader::UniformField* vertexSlots[kSlotCount] = {};
+        const shader::UniformField* fragmentSlots[kSlotCount] = {};
     };
-    struct Record {
-        MaterialKind kind = MaterialKind::Standard;
-        Handle vertexUniforms;
-        Handle fragmentUniforms;
-        WGPUBindGroup vertexGroup = nullptr;
-        WGPUBindGroup fragmentGroup = nullptr;
-    };
-    Record& record(uint64_t key, MaterialKind kind, const Program& program, WGPURenderPipeline pipeline);
-    WGPUBindGroup bindGroup(WGPURenderPipeline pipeline, uint32_t group, const shader::StageModule& stage, Handle uniforms,
+    void buildLayouts(Program& program);
+    WGPUBindGroup bindGroup(WGPUBindGroupLayout layout, const shader::StageModule& stage, Handle uniforms,
                             WGPUTextureView view, WGPUSampler sampler);
     void releaseTargets();
     void releaseOutputGroup();
@@ -155,7 +160,9 @@ private:
     uint32_t height_ = 0;
     uint64_t renderId_ = 0;
     FrameStats lastFrame_;
-    std::unordered_map<uint64_t, Record> records_;
+    std::vector<uint8_t> frameUniforms_;  // every draw's uniform blocks, written to the GPU once a frame
+    Handle uniformBuffer_;
+    uint64_t uniformCapacity_ = 0;
 };
 
 }  // namespace tn::engine

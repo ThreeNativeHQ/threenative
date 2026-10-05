@@ -18,6 +18,7 @@ struct PipelineTarget {
     WGPUCullMode cull = WGPUCullMode_Back;
     bool blend = false;      // three's NormalBlending, premultipliedAlpha false (a transparent material)
     bool depthWrite = true;  // material.depthWrite
+    WGPUPipelineLayout layout = nullptr;  // explicit layout (dynamic-offset uniforms); null: auto
 };
 
 /**

@@ -38,7 +38,8 @@ WGPURenderPipeline PipelineCache::get(const shader::StageModule& vertex, const s
     key += '\x1f';
     if (fragment) key += fragment->wgsl.code;
     key += '\x1f' + std::to_string(target.color) + ':' + std::to_string(target.depth) + ':' + std::to_string(target.cull) + ':' +
-           std::to_string(target.blend) + ':' + std::to_string(target.depthWrite);
+           std::to_string(target.blend) + ':' + std::to_string(target.depthWrite) + ':' +
+           std::to_string(reinterpret_cast<uintptr_t>(target.layout));
     if (const auto found = pipelines_.find(key); found != pipelines_.end()) return found->second;
 
     // One vertex buffer per attribute, in location order: the renderer binds them the same way.
@@ -58,6 +59,7 @@ WGPURenderPipeline PipelineCache::get(const shader::StageModule& vertex, const s
     WGPUShaderModule vs = module(device_, vertex.wgsl.code);
     WGPUShaderModule fs = fragment ? module(device_, fragment->wgsl.code) : nullptr;
     WGPURenderPipelineDescriptor desc = {};
+    desc.layout = target.layout;
     desc.vertex.module = vs;
     WGPU_SET_ENTRY_POINT(desc.vertex, "main");
     desc.vertex.bufferCount = buffers.size();

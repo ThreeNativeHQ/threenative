@@ -59,6 +59,27 @@ void put(std::vector<uint8_t>& block, const shader::StageModule& stage, const ch
     }
 }
 
+// Writes a uniform through its resolved field; a null field is a uniform this program does not read.
+template <size_t N>
+void put(std::vector<uint8_t>& block, size_t base, const shader::UniformField* f, const std::array<double, N>& v) {
+    if (f == nullptr) return;
+    float data[N];
+    for (size_t k = 0; k < N; ++k) data[k] = static_cast<float>(v[k]);
+    if (f->type.isMatrix() && f->type.rows == 3) {  // mat3x3 columns are 16-byte aligned
+        for (int c = 0; c < 3; ++c) std::memcpy(&block[base + f->offset + c * 16], data + c * 3, 12);
+    } else {
+        std::memcpy(&block[base + f->offset], data, N * 4);
+    }
+}
+
+constexpr const char* kSlotNames[] = {
+    "modelMatrix", "viewMatrix", "projectionMatrix", "normalMatrix", "diffuse", "alphaTest", "opaque", "roughness",
+    "metalness", "emissive", "specular", "shininess", "ior", "specularIntensity", "specularColor",
+    "directionalDirection", "directionalColor", "hemisphereSky", "hemisphereGround", "hemisphereDirection", "ambient"};
+
+constexpr uint64_t kUniformAlign = 256;  // minUniformBufferOffsetAlignment's WebGPU default
+uint64_t aligned(uint64_t size) { return (size + kUniformAlign - 1) / kUniformAlign * kUniformAlign; }
+
 WGPUTextureView view2d(WGPUTexture texture, WGPUTextureFormat format) {
     WGPUTextureViewDescriptor desc = {};
     desc.dimension = WGPUTextureViewDimension_2D;
@@ -78,6 +99,7 @@ Renderer::Renderer(WGPUInstance instance, WGPUDevice device, WGPUQueue queue, Ev
         programs_[kind] = {shader::buildStage(sources[kind].vertex, 0), shader::buildStage(sources[kind].fragment, 1)};
         if (!programs_[kind].vertex.wgsl.ok() || !programs_[kind].fragment.wgsl.ok())
             throw std::runtime_error("TN_NATIVE_SHADER_INVALID: material program " + std::to_string(kind));
+        buildLayouts(programs_[kind]);
     }
 
     // The DFG lookup the standard BRDF samples: three's 16x16 RG half-float table, linear filtered.
@@ -121,9 +143,12 @@ Renderer::Renderer(WGPUInstance instance, WGPUDevice device, WGPUQueue queue, Ev
 }
 
 Renderer::~Renderer() {
-    for (auto& [key, r] : records_) {
-        wgpuBindGroupRelease(r.vertexGroup);
-        wgpuBindGroupRelease(r.fragmentGroup);
+    for (Program& program : programs_) {
+        for (int g = 0; g < 2; ++g) {
+            if (program.groups[g]) wgpuBindGroupRelease(program.groups[g]);
+            if (program.layouts[g]) wgpuBindGroupLayoutRelease(program.layouts[g]);
+        }
+        if (program.pipelineLayout) wgpuPipelineLayoutRelease(program.pipelineLayout);
     }
     releaseTargets();
     releaseOutputGroup();
@@ -191,8 +216,10 @@ void Renderer::setSize(uint32_t width, uint32_t height) {
 
 // One stage's bind group, from the bindings its package declares: the uniform block, and for a
 // texture/sampler pair the view and sampler given.
-WGPUBindGroup Renderer::bindGroup(WGPURenderPipeline pipeline, uint32_t group, const shader::StageModule& stage,
-                                  Handle uniforms, WGPUTextureView view, WGPUSampler sampler) {
+// A stage's bind group: its uniform slice of `uniforms` (dynamic offset when the layout says so), and
+// for a texture/sampler pair the view and sampler given.
+WGPUBindGroup Renderer::bindGroup(WGPUBindGroupLayout layout, const shader::StageModule& stage, Handle uniforms,
+                                  WGPUTextureView view, WGPUSampler sampler) {
     std::vector<WGPUBindGroupEntry> entries;
     for (const shader::Binding& b : stage.bindings) {
         WGPUBindGroupEntry e = {};
@@ -209,39 +236,52 @@ WGPUBindGroup Renderer::bindGroup(WGPURenderPipeline pipeline, uint32_t group, c
         }
         entries.push_back(e);
     }
-    WGPUBindGroupLayout layout = wgpuRenderPipelineGetBindGroupLayout(pipeline, group);
     WGPUBindGroupDescriptor desc = {};
     desc.layout = layout;
     desc.entryCount = entries.size();
     desc.entries = entries.data();
-    WGPUBindGroup out = wgpuDeviceCreateBindGroup(device_, &desc);
-    wgpuBindGroupLayoutRelease(layout);
-    return out;
+    return wgpuDeviceCreateBindGroup(device_, &desc);
 }
 
-Renderer::Record& Renderer::record(uint64_t key, MaterialKind kind, const Program& program, WGPURenderPipeline pipeline) {
-    if (const auto it = records_.find(key); it != records_.end()) {
-        if (it->second.kind == kind) return it->second;
-        forget(key);  // a different program: its layouts differ
+// Each stage's layout from the bindings its package declares, the uniform block with a dynamic
+// offset; the uniform slots resolved to fields once, so a draw never looks a name up.
+void Renderer::buildLayouts(Program& program) {
+    const shader::StageModule* stages[2] = {&program.vertex, &program.fragment};
+    for (int g = 0; g < 2; ++g) {
+        std::vector<WGPUBindGroupLayoutEntry> entries;
+        for (const shader::Binding& b : stages[g]->bindings) {
+            WGPUBindGroupLayoutEntry e = {};
+            e.binding = b.binding;
+            e.visibility = g == 0 ? WGPUShaderStage_Vertex : WGPUShaderStage_Fragment;
+            if (b.kind == shader::BindingKind::Uniform) {
+                e.buffer.type = WGPUBufferBindingType_Uniform;
+                e.buffer.hasDynamicOffset = true;
+                e.buffer.minBindingSize = stages[g]->uniformBlockSize;
+            } else if (b.kind == shader::BindingKind::Texture) {
+                e.texture.sampleType = WGPUTextureSampleType_Float;
+                e.texture.viewDimension = WGPUTextureViewDimension_2D;
+            } else if (b.kind == shader::BindingKind::Sampler) {
+                e.sampler.type = WGPUSamplerBindingType_Filtering;
+            } else {
+                throw std::runtime_error("TN_NATIVE_BINDING_UNSUPPORTED: " + b.name);
+            }
+            entries.push_back(e);
+        }
+        WGPUBindGroupLayoutDescriptor desc = {};
+        desc.entryCount = entries.size();
+        desc.entries = entries.data();
+        program.layouts[g] = wgpuDeviceCreateBindGroupLayout(device_, &desc);
     }
-    Record& r = records_[key];
-    r.kind = kind;
-    // A stage with no uniforms still gets a 16-byte buffer so every record has the same shape.
-    r.vertexUniforms = gpu_.createBuffer(std::max<uint32_t>(program.vertex.uniformBlockSize, 16), WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
-    r.fragmentUniforms = gpu_.createBuffer(std::max<uint32_t>(program.fragment.uniformBlockSize, 16), WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
-    r.vertexGroup = bindGroup(pipeline, 0, program.vertex, r.vertexUniforms, lutView_, lutSampler_);
-    r.fragmentGroup = bindGroup(pipeline, 1, program.fragment, r.fragmentUniforms, lutView_, lutSampler_);
-    return r;
-}
-
-void Renderer::forget(uint64_t key) {
-    const auto it = records_.find(key);
-    if (it == records_.end()) return;
-    wgpuBindGroupRelease(it->second.vertexGroup);
-    wgpuBindGroupRelease(it->second.fragmentGroup);
-    gpu_.destroy(it->second.vertexUniforms);
-    gpu_.destroy(it->second.fragmentUniforms);
-    records_.erase(it);
+    WGPUPipelineLayoutDescriptor desc = {};
+    desc.bindGroupLayoutCount = 2;
+    desc.bindGroupLayouts = program.layouts;
+    program.pipelineLayout = wgpuDeviceCreatePipelineLayout(device_, &desc);
+    for (int s = 0; s < kSlotCount; ++s) {
+        for (const shader::UniformField& f : program.vertex.uniforms)
+            if (f.name == kSlotNames[s]) program.vertexSlots[s] = &f;
+        for (const shader::UniformField& f : program.fragment.uniforms)
+            if (f.name == kSlotNames[s]) program.fragmentSlots[s] = &f;
+    }
 }
 
 uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& camera, const LightState& lights,
@@ -292,67 +332,106 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
     });
     opaque.insert(opaque.end(), transparent.begin(), transparent.end());
 
-    std::vector<uint8_t> vblock, fblock;
-    WGPURenderPipeline bound = nullptr;
-    lastFrame_ = FrameStats{};
+    // Plan: each draw's program, pipeline and uniform slices, all uniforms into one CPU block.
+    struct Planned {
+        const DrawItem* item;
+        Program* program;
+        WGPURenderPipeline pipeline;
+        uint32_t vertexOffset, fragmentOffset;
+    };
+    std::vector<Planned> plan;
+    plan.reserve(opaque.size());
+    frameUniforms_.clear();
     for (const auto& [depthKey, drawn] : opaque) {
         const DrawItem& item = *drawn;
-        const Program& program = programs_[static_cast<int>(item.kind)];
-        const shader::StageModule& vs = program.vertex;
-        const shader::StageModule& fs = program.fragment;
+        Program& program = programs_[static_cast<int>(item.kind)];
         const bool lit = item.kind != MaterialKind::Basic;
         if (!item.positions || (lit && !item.normals) || !item.material) continue;
-        WGPURenderPipeline pipeline =
-            pipelines_.get(vs, &fs, PipelineTarget{WGPUTextureFormat_RGBA16Float, WGPUTextureFormat_Depth32Float,
-                                                   WGPUCullMode_Back, item.transparent, item.depthWrite});
+        PipelineTarget target{WGPUTextureFormat_RGBA16Float, WGPUTextureFormat_Depth32Float, WGPUCullMode_Back,
+                              item.transparent, item.depthWrite};
+        target.layout = program.pipelineLayout;
+        WGPURenderPipeline pipeline = pipelines_.get(program.vertex, &program.fragment, target);
         if (!pipeline) throw std::runtime_error("TN_NATIVE_PIPELINE_REFUSED: material program");
-        if (pipeline != bound) wgpuRenderPassEncoderSetPipeline(pass, bound = pipeline);
-        Record& r = record(item.key, item.kind, program, pipeline);
-        vblock.assign(std::max<uint32_t>(vs.uniformBlockSize, 16), 0);
-        fblock.assign(std::max<uint32_t>(fs.uniformBlockSize, 16), 0);
-        const Matrix modelView = multiply(view, item.matrixWorld);
-        put(vblock, vs, "modelMatrix", item.matrixWorld);
-        put(vblock, vs, "viewMatrix", view);
-        put(vblock, vs, "projectionMatrix", camera.projectionMatrix);
-        put(vblock, vs, "normalMatrix", normalMatrix(modelView));
+        const uint64_t v = frameUniforms_.size();
+        const uint64_t f = v + aligned(program.vertex.uniformBlockSize);
+        frameUniforms_.resize(f + aligned(program.fragment.uniformBlockSize), 0);
+        const auto* vs = program.vertexSlots;
+        const auto* fs = program.fragmentSlots;
+        put(frameUniforms_, v, vs[kModelMatrix], item.matrixWorld);
+        put(frameUniforms_, v, vs[kViewMatrix], view);
+        put(frameUniforms_, v, vs[kProjectionMatrix], camera.projectionMatrix);
+        put(frameUniforms_, v, vs[kNormalMatrix], normalMatrix(multiply(view, item.matrixWorld)));
         const shader::StandardMaterial& m = *item.material;
-        put(fblock, fs, "diffuse", std::array<double, 4>{m.color[0], m.color[1], m.color[2], m.opacity});
-        put(fblock, fs, "viewMatrix", view);  // normalWorld is derived in the fragment, as three does
-        put(fblock, fs, "alphaTest", std::array<double, 1>{m.alphaTest});
-        put(fblock, fs, "opaque", std::array<double, 1>{item.transparent ? 0.0 : 1.0});
-        put(fblock, fs, "roughness", std::array<double, 1>{m.roughness});
-        put(fblock, fs, "metalness", std::array<double, 1>{m.metalness});
-        put(fblock, fs, "emissive",
+        put(frameUniforms_, f, fs[kDiffuse], std::array<double, 4>{m.color[0], m.color[1], m.color[2], m.opacity});
+        put(frameUniforms_, f, fs[kViewMatrix], view);  // normalWorld is derived in the fragment, as three does
+        put(frameUniforms_, f, fs[kAlphaTest], std::array<double, 1>{m.alphaTest});
+        put(frameUniforms_, f, fs[kOpaque], std::array<double, 1>{item.transparent ? 0.0 : 1.0});
+        put(frameUniforms_, f, fs[kRoughness], std::array<double, 1>{m.roughness});
+        put(frameUniforms_, f, fs[kMetalness], std::array<double, 1>{m.metalness});
+        put(frameUniforms_, f, fs[kEmissive],
             std::array<double, 3>{m.emissive[0] * m.emissiveIntensity, m.emissive[1] * m.emissiveIntensity,
                                   m.emissive[2] * m.emissiveIntensity});
-        put(fblock, fs, "specular", std::array<double, 3>{m.specular[0], m.specular[1], m.specular[2]});
-        put(fblock, fs, "shininess", std::array<double, 1>{m.shininess});
-        put(fblock, fs, "ior", std::array<double, 1>{m.ior});
-        put(fblock, fs, "specularIntensity", std::array<double, 1>{m.specularIntensity});
-        put(fblock, fs, "specularColor",
-            std::array<double, 3>{m.specularColor[0], m.specularColor[1], m.specularColor[2]});
-        put(fblock, fs, "directionalDirection", rotate(view, lights.directionalDirection));
-        put(fblock, fs, "directionalColor", lights.directionalColor);
-        put(fblock, fs, "hemisphereSky", lights.hemisphereSky);
-        put(fblock, fs, "hemisphereGround", lights.hemisphereGround);
-        put(fblock, fs, "hemisphereDirection", lights.hemisphereUp);  // world space: it meets normalWorld
-        put(fblock, fs, "ambient", lights.ambient);
-        gpu_.writeBuffer(r.vertexUniforms, 0, vblock.data(), vblock.size());
-        gpu_.writeBuffer(r.fragmentUniforms, 0, fblock.data(), fblock.size());
+        put(frameUniforms_, f, fs[kSpecular], std::array<double, 3>{m.specular[0], m.specular[1], m.specular[2]});
+        put(frameUniforms_, f, fs[kShininess], std::array<double, 1>{m.shininess});
+        put(frameUniforms_, f, fs[kIor], std::array<double, 1>{m.ior});
+        put(frameUniforms_, f, fs[kSpecularIntensity], std::array<double, 1>{m.specularIntensity});
+        put(frameUniforms_, f, fs[kSpecularColor], std::array<double, 3>{m.specularColor[0], m.specularColor[1], m.specularColor[2]});
+        put(frameUniforms_, f, fs[kDirectionalDirection], rotate(view, lights.directionalDirection));
+        put(frameUniforms_, f, fs[kDirectionalColor], lights.directionalColor);
+        put(frameUniforms_, f, fs[kHemisphereSky], lights.hemisphereSky);
+        put(frameUniforms_, f, fs[kHemisphereGround], lights.hemisphereGround);
+        put(frameUniforms_, f, fs[kHemisphereDirection], lights.hemisphereUp);  // world space: it meets normalWorld
+        put(frameUniforms_, f, fs[kAmbient], lights.ambient);
+        plan.push_back({&item, &program, pipeline, static_cast<uint32_t>(v), static_cast<uint32_t>(f)});
+    }
 
-        for (const shader::VertexAttribute& a : vs.attributes) {
-            BufferStore& store = a.name == "position" ? *item.positions : *item.normals;
-            wgpuRenderPassEncoderSetVertexBuffer(pass, a.location, gpu_.buffer(geometry_.sync(store, WGPUBufferUsage_Vertex)), 0,
-                                                 store.byteLength());
+    // One buffer for the frame's uniforms, grown (and its bind groups rebuilt) when it is too small,
+    // written once: a queue write, so it lands before this frame's commands and after the last's.
+    if (frameUniforms_.size() > uniformCapacity_) {
+        if (uniformCapacity_ != 0) gpu_.destroy(uniformBuffer_);
+        uniformCapacity_ = std::max<uint64_t>(frameUniforms_.size() * 2, 64 * 1024);
+        uniformBuffer_ = gpu_.createBuffer(uniformCapacity_, WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
+        for (Program& program : programs_) {
+            for (int g = 0; g < 2; ++g) {
+                if (program.groups[g]) wgpuBindGroupRelease(program.groups[g]);
+                program.groups[g] = bindGroup(program.layouts[g], g == 0 ? program.vertex : program.fragment,
+                                              uniformBuffer_, lutView_, lutSampler_);
+            }
         }
-        wgpuRenderPassEncoderSetBindGroup(pass, 0, r.vertexGroup, 0, nullptr);
-        wgpuRenderPassEncoderSetBindGroup(pass, 1, r.fragmentGroup, 0, nullptr);
+    }
+    if (!frameUniforms_.empty()) gpu_.writeBuffer(uniformBuffer_, 0, frameUniforms_.data(), frameUniforms_.size());
+
+    // Encode: state changes only where they change; per draw, two dynamic offsets and the draw.
+    WGPURenderPipeline bound = nullptr;
+    const BufferStore* boundVertex[2] = {nullptr, nullptr};
+    const BufferStore* boundIndex = nullptr;
+    lastFrame_ = FrameStats{};
+    for (const Planned& p : plan) {
+        const DrawItem& item = *p.item;
+        if (p.pipeline != bound) {
+            wgpuRenderPassEncoderSetPipeline(pass, bound = p.pipeline);
+            boundVertex[0] = boundVertex[1] = nullptr;
+            boundIndex = nullptr;
+        }
+        for (const shader::VertexAttribute& a : p.program->vertex.attributes) {
+            BufferStore& store = a.name == "position" ? *item.positions : *item.normals;
+            const size_t slot = a.name == "position" ? 0 : 1;
+            const Handle buffer = geometry_.sync(store, WGPUBufferUsage_Vertex);
+            if (boundVertex[slot] == &store) continue;
+            wgpuRenderPassEncoderSetVertexBuffer(pass, a.location, gpu_.buffer(buffer), 0, store.byteLength());
+            boundVertex[slot] = &store;
+        }
+        wgpuRenderPassEncoderSetBindGroup(pass, 0, p.program->groups[0], 1, &p.vertexOffset);
+        wgpuRenderPassEncoderSetBindGroup(pass, 1, p.program->groups[1], 1, &p.fragmentOffset);
         if (item.indices) {
             const Handle indices = geometry_.sync(*item.indices, WGPUBufferUsage_Index);
             const bool wide = item.indices->scalar() == Scalar::U32;
-            wgpuRenderPassEncoderSetIndexBuffer(pass, gpu_.buffer(indices),
-                                                wide ? WGPUIndexFormat_Uint32 : WGPUIndexFormat_Uint16, 0,
-                                                (item.indices->byteLength() + 3) & ~uint64_t{3});
+            if (boundIndex != item.indices) {
+                wgpuRenderPassEncoderSetIndexBuffer(pass, gpu_.buffer(indices),
+                                                    wide ? WGPUIndexFormat_Uint32 : WGPUIndexFormat_Uint16, 0,
+                                                    (item.indices->byteLength() + 3) & ~uint64_t{3});
+                boundIndex = item.indices;
+            }
             const uint32_t count = static_cast<uint32_t>(item.indices->byteLength() / (wide ? 4 : 2));
             wgpuRenderPassEncoderDrawIndexed(pass, count, 1, 0, 0, 0);
             lastFrame_.triangles += count / 3;
@@ -379,7 +458,11 @@ void Renderer::outputPass(WGPUCommandEncoder encoder) {
     std::vector<uint8_t> block(std::max<uint32_t>(outputFragment_.uniformBlockSize, 4));
     put(block, outputFragment_, "toneMappingExposure", std::array<double, 1>{output_.toneMappingExposure});
     if (outputFragment_.uniformBlockSize) gpu_.writeBuffer(outputUniforms_, 0, block.data(), outputFragment_.uniformBlockSize);
-    if (!outputGroup_) outputGroup_ = bindGroup(pipeline, 0, outputFragment_, outputUniforms_, sceneView_, outputSampler_);
+    if (!outputGroup_) {
+        WGPUBindGroupLayout layout = wgpuRenderPipelineGetBindGroupLayout(pipeline, 0);
+        outputGroup_ = bindGroup(layout, outputFragment_, outputUniforms_, sceneView_, outputSampler_);
+        wgpuBindGroupLayoutRelease(layout);
+    }
     WGPURenderPassColorAttachment color = {};
     color.view = colorView_;
     color.loadOp = WGPULoadOp_Clear;

@@ -154,10 +154,9 @@ uint64_t RenderDatabase::render(Renderer& renderer, Object3D& scene, Camera& cam
     project(scene, camera, items, lights);
     if (directional_ > 1) diagnostics_.push_back("TN_NATIVE_LIGHTS_UNSUPPORTED: " + std::to_string(directional_) + " directional lights; one is drawn");
     if (hemisphere_ > 1) diagnostics_.push_back("TN_NATIVE_LIGHTS_UNSUPPORTED: " + std::to_string(hemisphere_) + " hemisphere lights; one is drawn");
-    // Objects that left the scene release their GPU record.
+    // Objects that left the scene leave the database.
     for (auto it = records_.begin(); it != records_.end();) {
         if (it->second.seen != frame_) {
-            renderer.forget(it->second.item.key);
             it = records_.erase(it);
         } else {
             ++it;
