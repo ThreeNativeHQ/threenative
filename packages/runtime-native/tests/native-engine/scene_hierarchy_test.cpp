@@ -14,6 +14,8 @@
 #include "engine/scene/nodes.h"
 #include "engine/scene/object3d.h"
 
+#include <algorithm>
+#include <array>
 #include <cmath>
 #include <memory>
 #include <string>
@@ -302,6 +304,692 @@ void revision() {
     CHECK(child->matrixWorld.elements[12] == 6);
 }
 
+// Ported from three r185 test/unit/src/core/Object3D.tests.js. The source holds 37 QUnit.test
+// blocks (the task brief says 38; a count of `QUnit.test(` in the file is 37). Every block is
+// ported or skipped below.
+//
+//   Extending                          skipped: JS `instanceof`/class-property check; C++ derives
+//                                      EventDispatcher at compile time, no runtime value to assert
+//   Instancing                         ported
+//   type                               ported
+//   DEFAULT_UP                         ported
+//   DEFAULT_MATRIX_AUTO_UPDATE         ported
+//   isObject3D                         skipped: no `isObject3D` boolean; C++ answers with the class
+//   applyMatrix4                       ported
+//   applyQuaternion                    ported
+//   setRotationFromAxisAngle           ported
+//   setRotationFromEuler               ported
+//   setRotationFromMatrix              ported
+//   setRotationFromQuaternion          ported
+//   rotateX                            ported
+//   rotateY                            ported
+//   rotateZ                            ported
+//   translateOnAxis                    ported
+//   translateX                         ported
+//   translateY                         ported
+//   translateZ                         ported
+//   localToWorld                       ported
+//   worldToLocal                       ported
+//   lookAt                             ported
+//   add/remove/removeFromParent/clear  ported
+//   attach                             ported
+//   getObjectById/getObjectByName/getObjectByProperty
+//                                      partly: 3 of 4 asserts ported; the `prop` boolean-property
+//                                      assert skipped (native getObjectByProperty reads only the
+//                                      string `name` and `type`; object3d.h:204)
+//   getObjectsByProperty               skipped: no such native API (object3d.h:15)
+//   getWorldPosition                   ported
+//   getWorldScale                      ported
+//   getWorldDirection                  ported
+//   localTransformVariableInstantiation ported
+//   traverse/traverseVisible/traverseAncestors ported
+//   updateMatrix                       ported
+//   updateMatrixWorld                  ported
+//   updateWorldMatrix                  ported
+//   toJSON                             skipped: no native toJSON (object3d.h:9)
+//   clone                              skipped: no native clone (object3d.h:9)
+//   copy                               skipped: native copy has no recursive branch and no
+//                                      `uuid`/`userData` (object3d.h:18,25), so the test's
+//                                      pre/post whole-object equality cannot hold
+
+void upstream() {
+    using std::abs;
+
+    // three's test/unit/utils/math-constants.js: x=2, y=3, z=4, w=5, eps=0.0001.
+    const double x = 2, y = 3, z = 4;
+    const double eps = 0.0001;
+    const double pi = 3.14159265358979323846;
+    const double RadToDeg = 180.0 / pi;
+
+    // eulerEquals: same order and each angle within tolerance (default 0.0001).
+    const auto eulerEquals = [](const Euler& a, const Euler& b, double tolerance = 0.0001) {
+        if (a.order != b.order) return false;
+        return abs(a.x - b.x) <= tolerance && abs(a.y - b.y) <= tolerance &&
+               abs(a.z - b.z) <= tolerance;
+    };
+    // matrixEquals4: every element within eps.
+    const auto matrixEquals4 = [eps](const Matrix4& a, const Matrix4& b) {
+        for (int i = 0; i < 16; ++i) {
+            if (abs(a.elements[i] - b.elements[i]) >= eps) return false;
+        }
+        return true;
+    };
+    // QUnit's numEqual: diff < 0.1.
+    const auto numEqual = [](double actual, double expected) { return abs(actual - expected) < 0.1; };
+    const auto contains = [](const std::vector<Object3D*>& list, const Object3D* who) {
+        return std::find(list.begin(), list.end(), who) != list.end();
+    };
+
+    const std::array<double, 16> kIdentity{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    const std::array<double, 16> kT123{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 2, 3, 1};
+    const std::array<double, 16> kT456{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 4, 5, 6, 1};
+    const std::array<double, 16> kT579{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 5, 7, 9, 1};
+
+    // ---- Instancing
+    // upstream: 'Instancing' (Object3D.tests.js:68)
+    {
+        Object3D object;
+        CHECK(&object != nullptr);
+    }
+
+    // ---- type
+    // upstream: 'type' (Object3D.tests.js:77)
+    {
+        Object3D object;
+        CHECK(object.type() == "Object3D");
+    }
+
+    // ---- DEFAULT_UP
+    // upstream: 'DEFAULT_UP' (Object3D.tests.js:88)
+    {
+        const Vector3 currentDefaultUp = Object3D::defaultUp;
+        Vector3 v;
+        v.set(0, 1, 0);
+        CHECK(Object3D::defaultUp.x == v.x && Object3D::defaultUp.y == v.y &&
+              Object3D::defaultUp.z == v.z);
+        Object3D object;
+        CHECK(object.up.x == v.x && object.up.y == v.y && object.up.z == v.z);
+        Object3D::defaultUp.set(0, 0, 1);
+        Object3D object2;
+        CHECK(object2.up.x == 0 && object2.up.y == 0 && object2.up.z == 1);
+        Object3D::defaultUp.copy(currentDefaultUp);
+    }
+
+    // ---- DEFAULT_MATRIX_AUTO_UPDATE
+    // upstream: 'DEFAULT_MATRIX_AUTO_UPDATE' (Object3D.tests.js:115)
+    {
+        const bool currentDefaultMatrixAutoUpdate = Object3D::defaultMatrixAutoUpdate;
+        CHECK(currentDefaultMatrixAutoUpdate == true);
+        Object3D object;
+        CHECK(object.matrixAutoUpdate == true);
+        Object3D::defaultMatrixAutoUpdate = false;
+        Object3D object2;
+        CHECK(object2.matrixAutoUpdate == false);
+        Object3D::defaultMatrixAutoUpdate = currentDefaultMatrixAutoUpdate;
+    }
+
+    // ---- applyMatrix4
+    // upstream: 'applyMatrix4' (Object3D.tests.js:164)
+    {
+        Object3D a;
+        Matrix4 m;
+        const Vector3 expectedPos(x, y, z);
+        const Quaternion expectedQuat(0.5 * std::sqrt(2.0), 0, 0, 0.5 * std::sqrt(2.0));
+        m.makeRotationX(pi / 2);
+        m.setPosition(Vector3(x, y, z));
+        a.applyMatrix4(m);
+        CHECK(a.position.x == expectedPos.x && a.position.y == expectedPos.y &&
+              a.position.z == expectedPos.z);
+        CHECK(abs(a.quaternion.x - expectedQuat.x) <= eps &&
+              abs(a.quaternion.y - expectedQuat.y) <= eps &&
+              abs(a.quaternion.z - expectedQuat.z) <= eps);
+    }
+
+    // ---- applyQuaternion
+    // upstream: 'applyQuaternion' (Object3D.tests.js:186)
+    {
+        Object3D a;
+        const double sqrtHalf = 0.5 * std::sqrt(2.0);
+        const Quaternion quat(0, sqrtHalf, 0, sqrtHalf);
+        const Quaternion expected(sqrtHalf / 2, sqrtHalf / 2, 0, 0);
+        a.quaternion.set(0.25, 0.25, 0.25, 0.25);
+        a.applyQuaternion(quat);
+        CHECK(abs(a.quaternion.x - expected.x) <= eps && abs(a.quaternion.y - expected.y) <= eps &&
+              abs(a.quaternion.z - expected.z) <= eps);
+    }
+
+    // ---- setRotationFromAxisAngle
+    // upstream: 'setRotationFromAxisAngle' (Object3D.tests.js:205)
+    {
+        Object3D a;
+        Vector3 axis(0, 1, 0);
+        double angle = pi;
+        Euler expected(-pi, 0, -pi);
+        Euler euler;
+        Quaternion q;
+        a.setRotationFromAxisAngle(axis, angle);
+        euler.setFromQuaternion(a.getWorldQuaternion(q));
+        CHECK(eulerEquals(euler, expected));
+        axis.set(1, 0, 0);
+        angle = 0;
+        expected.set(0, 0, 0);
+        a.setRotationFromAxisAngle(axis, angle);
+        euler.setFromQuaternion(a.getWorldQuaternion(q));
+        CHECK(eulerEquals(euler, expected));
+    }
+
+    // ---- setRotationFromEuler
+    // upstream: 'setRotationFromEuler' (Object3D.tests.js:227)
+    {
+        Object3D a;
+        const Euler rotation(45 / RadToDeg, 0, pi);
+        const Euler expected = rotation.clone();
+        Euler euler;
+        Quaternion q;
+        a.setRotationFromEuler(rotation);
+        euler.setFromQuaternion(a.getWorldQuaternion(q));
+        CHECK(eulerEquals(euler, expected));
+    }
+
+    // ---- setRotationFromMatrix
+    // upstream: 'setRotationFromMatrix' (Object3D.tests.js:240)
+    {
+        Object3D a;
+        Matrix4 m;
+        const Vector3 eye(0, 0, 0);
+        const Vector3 target(0, 1, -1);
+        const Vector3 up(0, 1, 0);
+        Euler euler;
+        Quaternion q;
+        m.lookAt(eye, target, up);
+        a.setRotationFromMatrix(m);
+        euler.setFromQuaternion(a.getWorldQuaternion(q));
+        CHECK(numEqual(euler.x * RadToDeg, 45));
+    }
+
+    // ---- setRotationFromQuaternion
+    // upstream: 'setRotationFromQuaternion' (Object3D.tests.js:256)
+    {
+        Object3D a;
+        Quaternion rotation;
+        rotation.setFromEuler(Euler(pi, 0, -pi));
+        Euler euler;
+        Quaternion q;
+        a.setRotationFromQuaternion(rotation);
+        euler.setFromQuaternion(a.getWorldQuaternion(q));
+        CHECK(eulerEquals(euler, Euler(pi, 0, -pi)));
+    }
+
+    // ---- rotateX / rotateY / rotateZ
+    // upstream: 'rotateX' (Object3D.tests.js:268)
+    {
+        Object3D obj;
+        const double angleInRad = 1.562;
+        obj.rotateX(angleInRad);
+        CHECK(numEqual(obj.rotation.x, angleInRad));
+    }
+    // upstream: 'rotateY' (Object3D.tests.js:278)
+    {
+        Object3D obj;
+        const double angleInRad = -0.346;
+        obj.rotateY(angleInRad);
+        CHECK(numEqual(obj.rotation.y, angleInRad));
+    }
+    // upstream: 'rotateZ' (Object3D.tests.js:288)
+    {
+        Object3D obj;
+        const double angleInRad = 1;
+        obj.rotateZ(angleInRad);
+        CHECK(numEqual(obj.rotation.z, angleInRad));
+    }
+
+    // ---- translateOnAxis
+    // upstream: 'translateOnAxis' (Object3D.tests.js:298)
+    {
+        Object3D obj;
+        obj.translateOnAxis(Vector3(1, 0, 0), 1);
+        obj.translateOnAxis(Vector3(0, 1, 0), 1.23);
+        obj.translateOnAxis(Vector3(0, 0, 1), -4.56);
+        CHECK(obj.position.x == 1 && obj.position.y == 1.23 && obj.position.z == -4.56);
+    }
+
+    // ---- translateX / translateY / translateZ
+    // upstream: 'translateX' (Object3D.tests.js:313)
+    {
+        Object3D obj;
+        obj.translateX(1.234);
+        CHECK(numEqual(obj.position.x, 1.234));
+    }
+    // upstream: 'translateY' (Object3D.tests.js:322)
+    {
+        Object3D obj;
+        obj.translateY(1.234);
+        CHECK(numEqual(obj.position.y, 1.234));
+    }
+    // upstream: 'translateZ' (Object3D.tests.js:331)
+    {
+        Object3D obj;
+        obj.translateZ(1.234);
+        CHECK(numEqual(obj.position.z, 1.234));
+    }
+
+    // ---- localToWorld
+    // upstream: 'localToWorld' (Object3D.tests.js:340)
+    {
+        Vector3 v;
+        const Vector3 expectedPosition(5, -1, -4);
+        Object3D parent;
+        Object3D child;
+        parent.position.set(1, 0, 0);
+        parent.rotation.set(0, pi / 2, 0);
+        parent.scale.set(2, 1, 1);
+        child.position.set(0, 1, 0);
+        child.rotation.set(pi / 2, 0, 0);
+        child.scale.set(1, 2, 1);
+        parent.add(child);
+        parent.updateMatrixWorld();
+        child.localToWorld(v.set(2, 2, 2));
+        CHECK(abs(v.x - expectedPosition.x) <= eps && abs(v.y - expectedPosition.y) <= eps &&
+              abs(v.z - expectedPosition.z) <= eps);
+    }
+
+    // ---- worldToLocal
+    // upstream: 'worldToLocal' (Object3D.tests.js:370)
+    {
+        Vector3 v;
+        const Vector3 expectedPosition(-1, 0.5, -1);
+        Object3D parent;
+        Object3D child;
+        parent.position.set(1, 0, 0);
+        parent.rotation.set(0, pi / 2, 0);
+        parent.scale.set(2, 1, 1);
+        child.position.set(0, 1, 0);
+        child.rotation.set(pi / 2, 0, 0);
+        child.scale.set(1, 2, 1);
+        parent.add(child);
+        parent.updateMatrixWorld();
+        child.worldToLocal(v.set(2, 2, 2));
+        CHECK(abs(v.x - expectedPosition.x) <= eps && abs(v.y - expectedPosition.y) <= eps &&
+              abs(v.z - expectedPosition.z) <= eps);
+    }
+
+    // ---- lookAt
+    // upstream: 'lookAt' (Object3D.tests.js:400)
+    {
+        Object3D obj;
+        obj.lookAt(Vector3(0, -1, 1));
+        CHECK(numEqual(obj.rotation.x * RadToDeg, 45));
+    }
+
+    // ---- add/remove/removeFromParent/clear
+    // upstream: 'add/remove/removeFromParent/clear' (Object3D.tests.js:409)
+    {
+        Object3D a;
+        Object3D child1;
+        Object3D child2;
+        CHECK(a.children.size() == 0);
+        a.add(child1);
+        CHECK(a.children.size() == 1);
+        CHECK(a.children[0] == &child1);
+        a.add(child2);
+        CHECK(a.children.size() == 2);
+        CHECK(a.children[1] == &child2);
+        CHECK(a.children[0] == &child1);
+        a.remove(child1);
+        CHECK(a.children.size() == 1);
+        CHECK(a.children[0] == &child2);
+        a.add(child1);
+        a.remove(std::vector<Object3D*>{&child1, &child2});
+        CHECK(a.children.size() == 0);
+        child1.add(child2);
+        CHECK(child1.children.size() == 1);
+        a.add(child2);
+        CHECK(a.children.size() == 1);
+        CHECK(a.children[0] == &child2);
+        CHECK(child1.children.size() == 0);
+        a.add(child1);
+        CHECK(a.children.size() == 2);
+        a.clear();
+        CHECK(a.children.size() == 0);
+        CHECK(child1.parent == nullptr);
+        CHECK(child2.parent == nullptr);
+        a.add(child1);
+        CHECK(a.children.size() == 1);
+        child1.removeFromParent();
+        CHECK(a.children.size() == 0);
+        CHECK(child1.parent == nullptr);
+    }
+
+    // ---- attach
+    // upstream: 'attach' (Object3D.tests.js:456)
+    {
+        Object3D object;
+        Object3D oldParent;
+        Object3D newParent;
+        Matrix4 expectedMatrixWorld;
+
+        object.position.set(1, 2, 3);
+        object.rotation.set(pi / 2, pi / 3, pi / 4);
+        object.scale.set(2, 3, 4);
+        newParent.position.set(4, 5, 6);
+        newParent.rotation.set(pi / 5, pi / 6, pi / 7);
+        newParent.scale.set(5, 5, 5);
+        object.updateMatrixWorld();
+        newParent.updateMatrixWorld();
+        expectedMatrixWorld.copy(object.matrixWorld);
+
+        newParent.attach(object);
+        CHECK(object.parent != nullptr && object.parent == &newParent &&
+              !contains(oldParent.children, &object));
+        CHECK(matrixEquals4(expectedMatrixWorld, object.matrixWorld));
+
+        object.position.set(1, 2, 3);
+        object.rotation.set(pi / 2, pi / 3, pi / 4);
+        object.scale.set(2, 3, 4);
+        oldParent.position.set(4, 5, 6);
+        oldParent.rotation.set(pi / 5, pi / 6, pi / 7);
+        oldParent.scale.set(5, 5, 5);
+        newParent.position.set(7, 8, 9);
+        newParent.rotation.set(pi / 8, pi / 9, pi / 10);
+        newParent.scale.set(6, 6, 6);
+
+        oldParent.add(object);
+        oldParent.updateMatrixWorld();
+        newParent.updateMatrixWorld();
+        expectedMatrixWorld.copy(object.matrixWorld);
+
+        newParent.attach(object);
+        CHECK(object.parent != nullptr && object.parent == &newParent &&
+              contains(newParent.children, &object) && !contains(oldParent.children, &object));
+        CHECK(matrixEquals4(expectedMatrixWorld, object.matrixWorld));
+    }
+
+    // ---- getObjectById/getObjectByName/getObjectByProperty
+    // upstream: 'getObjectById/getObjectByName/getObjectByProperty' (Object3D.tests.js:513)
+    {
+        Object3D parent;
+        Object3D childName;
+        Object3D childId;  // id = parent.id + 2
+        Object3D childNothing;
+        childName.name = "foo";
+        parent.add(childName);
+        parent.add(childId);
+        parent.add(childNothing);
+        // upstream assert: parent.getObjectByProperty('prop', true) === parent
+        // skipped: native getObjectByProperty reads only the string `name`/`type` (object3d.h:204).
+        CHECK(parent.getObjectByName("foo") == &childName);
+        CHECK(parent.getObjectById(parent.id() + 2) == &childId);
+        CHECK(parent.getObjectByProperty("no-property", "no-value") == nullptr);
+    }
+
+    // ---- getWorldPosition
+    // upstream: 'getWorldPosition' (Object3D.tests.js:555)
+    {
+        Object3D a;
+        Object3D b;
+        const Vector3 expectedSingle(x, y, z);
+        const Vector3 expectedParent(x, y, 0);
+        const Vector3 expectedChild(x, y, 7);
+        Vector3 position;
+        a.translateX(x);
+        a.translateY(y);
+        a.translateZ(z);
+        a.getWorldPosition(position);
+        CHECK(position.x == expectedSingle.x && position.y == expectedSingle.y &&
+              position.z == expectedSingle.z);
+        b.translateZ(7);
+        a.add(b);
+        a.translateZ(-z);
+        a.getWorldPosition(position);
+        CHECK(position.x == expectedParent.x && position.y == expectedParent.y &&
+              position.z == expectedParent.z);
+        b.getWorldPosition(position);
+        CHECK(position.x == expectedChild.x && position.y == expectedChild.y &&
+              position.z == expectedChild.z);
+    }
+
+    // ---- getWorldScale
+    // upstream: 'getWorldScale' (Object3D.tests.js:580)
+    {
+        Object3D a;
+        Matrix4 m;
+        m.makeScale(x, y, z);
+        const Vector3 expected(x, y, z);
+        a.applyMatrix4(m);
+        Vector3 worldScale;
+        a.getWorldScale(worldScale);
+        CHECK(worldScale.x == expected.x && worldScale.y == expected.y &&
+              worldScale.z == expected.z);
+    }
+
+    // ---- getWorldDirection
+    // upstream: 'getWorldDirection' (Object3D.tests.js:592)
+    {
+        Object3D a;
+        const Vector3 expected(0, -0.5 * std::sqrt(2.0), 0.5 * std::sqrt(2.0));
+        Vector3 direction;
+        a.lookAt(Vector3(0, -1, 1));
+        a.getWorldDirection(direction);
+        CHECK(abs(direction.x - expected.x) <= eps && abs(direction.y - expected.y) <= eps &&
+              abs(direction.z - expected.z) <= eps);
+    }
+
+    // ---- localTransformVariableInstantiation
+    // upstream: 'localTransformVariableInstantiation' (Object3D.tests.js:610)
+    {
+        Object3D a;
+        Object3D b;
+        Object3D c;
+        Object3D d;
+        Vector3 vec;
+        Quaternion quat;
+        a.getWorldDirection(vec);
+        a.lookAt(Vector3(0, -1, 1));
+        CHECK(true);
+        b.getWorldPosition(vec);
+        b.lookAt(Vector3(0, -1, 1));
+        CHECK(true);
+        c.getWorldQuaternion(quat);
+        c.lookAt(Vector3(0, -1, 1));
+        CHECK(true);
+        d.getWorldScale(vec);
+        d.lookAt(Vector3(0, -1, 1));
+        CHECK(true);
+    }
+
+    // ---- traverse/traverseVisible/traverseAncestors
+    // upstream: 'traverse/traverseVisible/traverseAncestors' (Object3D.tests.js:639)
+    {
+        Object3D a, b, c, d;
+        std::vector<std::string> names;
+        a.name = "parent";
+        b.name = "child";
+        c.name = "childchild 1";
+        c.setVisible(false);
+        d.name = "childchild 2";
+        b.add(c);
+        b.add(d);
+        a.add(b);
+        a.traverse(&collect, &names);
+        CHECK(names == std::vector<std::string>({"parent", "child", "childchild 1", "childchild 2"}));
+        names.clear();
+        a.traverseVisible(&collect, &names);
+        CHECK(names == std::vector<std::string>({"parent", "child", "childchild 2"}));
+        names.clear();
+        c.traverseAncestors(&collect, &names);
+        CHECK(names == std::vector<std::string>({"child", "parent"}));
+    }
+
+    // ---- updateMatrix
+    // upstream: 'updateMatrix' (Object3D.tests.js:685)
+    {
+        Object3D a;
+        a.position.set(2, 3, 4);
+        a.quaternion.set(5, 6, 7, 8);
+        a.scale.set(9, 10, 11);
+        CHECK(a.matrix.elements == kIdentity);
+        a.updateMatrix();
+        const std::array<double, 16> confused{
+            -1521, 1548, -234, 0, -520, -1470, 1640, 0, 1826, 44, -1331, 0, 2, 3, 4, 1};
+        CHECK(a.matrix.elements == confused);
+        CHECK(a.matrixWorldNeedsUpdate == true);
+    }
+
+    // ---- updateMatrixWorld
+    // upstream: 'updateMatrixWorld' (Object3D.tests.js:712)
+    {
+        Object3D parent;
+        Object3D child;
+        parent.position.set(1, 2, 3);
+        child.position.set(4, 5, 6);
+        parent.add(child);
+        parent.updateMatrixWorld();
+        CHECK(parent.matrix.elements == kT123);
+        CHECK(parent.matrixWorld.elements == kT123);
+        CHECK(child.matrix.elements == kT456);
+        CHECK(child.matrixWorld.elements == kT579);
+        CHECK((parent.matrixWorldNeedsUpdate || child.matrixWorldNeedsUpdate) == false);
+
+        parent.position.set(0, 0, 0);
+        parent.updateMatrix();
+        CHECK(parent.matrixWorld.elements == kT123);
+
+        child.position.set(0, 0, 0);
+        parent.updateMatrixWorld();
+        parent.position.set(1, 2, 3);
+        parent.matrixAutoUpdate = false;
+        child.matrixAutoUpdate = false;
+        parent.updateMatrixWorld();
+        CHECK(parent.matrix.elements == kIdentity);
+        CHECK(parent.matrixWorld.elements == kIdentity);
+        CHECK(child.matrixWorld.elements == kIdentity);
+
+        parent.position.set(3, 2, 1);
+        parent.updateMatrix();
+        parent.matrixAutoUpdate = true;
+        child.matrixAutoUpdate = true;
+        parent.matrixWorldNeedsUpdate = true;
+        child.matrixWorldAutoUpdate = false;
+        parent.updateMatrixWorld();
+        CHECK(child.matrixWorld.elements == kIdentity);
+
+        child.position.set(0, 0, 0);
+        parent.position.set(1, 2, 3);
+        child.matrixWorldAutoUpdate = true;
+        parent.updateMatrixWorld();
+        CHECK(child.matrixWorld.elements == kT123);
+
+        child.position.set(0, 0, 0);
+        child.matrixAutoUpdate = true;
+        parent.updateMatrixWorld();
+        parent.position.set(1, 2, 3);
+        parent.updateMatrix();
+        parent.matrixAutoUpdate = false;
+        parent.matrixWorldNeedsUpdate = false;
+        parent.updateMatrixWorld(true);
+        CHECK(parent.matrixWorld.elements == kT123);
+
+        parent.position.set(0, 0, 0);
+        child.position.set(0, 0, 0);
+        parent.matrixAutoUpdate = true;
+        child.matrixAutoUpdate = true;
+        parent.updateMatrixWorld();
+        parent.position.set(1, 2, 3);
+        child.position.set(4, 5, 6);
+        child.updateMatrixWorld();
+        CHECK(parent.matrix.elements == kIdentity);
+        CHECK(parent.matrixWorld.elements == kIdentity);
+        CHECK(child.matrixWorld.elements == kT456);
+    }
+
+    // ---- updateWorldMatrix
+    // upstream: 'updateWorldMatrix' (Object3D.tests.js:889)
+    {
+        Object3D object;
+        Object3D parent;
+        Object3D child;
+        parent.add(object);
+        object.add(child);
+        parent.position.set(1, 2, 3);
+        object.position.set(4, 5, 6);
+        child.position.set(7, 8, 9);
+
+        object.updateWorldMatrix(false, false);
+        CHECK(parent.matrix.elements == kIdentity);
+        CHECK(parent.matrixWorld.elements == kIdentity);
+        Matrix4 expected;
+        expected.setPosition(object.position);
+        CHECK(object.matrix.elements == expected.elements);
+        CHECK(object.matrixWorld.elements == expected.elements);
+        CHECK(child.matrix.elements == kIdentity);
+        CHECK(child.matrixWorld.elements == kIdentity);
+
+        object.matrix.identity();
+        object.matrixWorld.identity();
+        object.updateWorldMatrix(true, false);
+        expected.identity().setPosition(parent.position);
+        CHECK(parent.matrix.elements == expected.elements);
+        CHECK(parent.matrixWorld.elements == expected.elements);
+        expected.identity().setPosition(object.position);
+        CHECK(object.matrix.elements == expected.elements);
+        Vector3 v;
+        expected.identity().setPosition(v.copy(parent.position).add(object.position));
+        CHECK(object.matrixWorld.elements == expected.elements);
+        CHECK(child.matrix.elements == kIdentity);
+        CHECK(child.matrixWorld.elements == kIdentity);
+
+        parent.matrix.identity();
+        parent.matrixWorld.identity();
+        object.matrix.identity();
+        object.matrixWorld.identity();
+        object.updateWorldMatrix(false, true);
+        CHECK(parent.matrix.elements == kIdentity);
+        CHECK(parent.matrixWorld.elements == kIdentity);
+        expected.identity().setPosition(object.position);
+        CHECK(object.matrix.elements == expected.elements);
+        CHECK(object.matrixWorld.elements == expected.elements);
+        expected.identity().setPosition(child.position);
+        CHECK(child.matrix.elements == expected.elements);
+        expected.identity().setPosition(v.copy(object.position).add(child.position));
+        CHECK(child.matrixWorld.elements == expected.elements);
+
+        object.matrix.identity();
+        object.matrixWorld.identity();
+        child.matrix.identity();
+        child.matrixWorld.identity();
+        object.updateWorldMatrix(true, true);
+        expected.identity().setPosition(parent.position);
+        CHECK(parent.matrix.elements == expected.elements);
+        CHECK(parent.matrixWorld.elements == expected.elements);
+        expected.identity().setPosition(object.position);
+        CHECK(object.matrix.elements == expected.elements);
+        expected.identity().setPosition(v.copy(parent.position).add(object.position));
+        CHECK(object.matrixWorld.elements == expected.elements);
+        expected.identity().setPosition(child.position);
+        CHECK(child.matrix.elements == expected.elements);
+        expected.identity().setPosition(
+            v.copy(parent.position).add(object.position).add(child.position));
+        CHECK(child.matrixWorld.elements == expected.elements);
+
+        object.matrix.identity();
+        object.matrixWorld.identity();
+        object.matrixAutoUpdate = false;
+        object.matrixWorldNeedsUpdate = true;
+        object.updateWorldMatrix(true, false);
+        CHECK(object.matrix.elements == kIdentity);
+        expected.identity().setPosition(parent.position);
+        CHECK(object.matrixWorld.elements == expected.elements);
+
+        parent.matrixWorldAutoUpdate = false;
+        child.matrixWorldAutoUpdate = false;
+        child.matrixWorld.identity();
+        parent.matrixWorld.identity();
+        child.updateWorldMatrix(true, true);
+        CHECK(child.matrixWorld.elements == kIdentity);
+        CHECK(parent.matrixWorld.elements == kIdentity);
+    }
+}
+
 }  // namespace
 
-TN_TEST_MAIN({"hierarchy", hierarchy}, {"alias", alias}, {"revision", revision})
+TN_TEST_MAIN({"hierarchy", hierarchy}, {"alias", alias}, {"revision", revision}, {"upstream", upstream})
