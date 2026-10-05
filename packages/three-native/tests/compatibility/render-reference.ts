@@ -100,6 +100,7 @@ function page(request: Record<string, unknown>): string {
     '<!doctype html><meta charset="utf-8">',
     "<style>html,body{margin:0;background:#000}canvas{display:block}</style>",
     `<canvas id="c" width="${String(width)}" height="${String(height)}"></canvas>`,
+    '<script type="importmap">{"imports":{"three":"/build/three.webgpu.js"}}</script>',
     '<script type="module">',
     'import { reportOutcome } from "/render-fixture-page.js";',
     `reportOutcome(${JSON.stringify(request)});`,
@@ -113,11 +114,29 @@ async function withServer(
   fn: (origin: string) => Promise<void>,
 ): Promise<void> {
   const build = threeBuildDir();
-  const served = new Map<string, [string, string]>([
+  const served = new Map<string, [string, string | Buffer]>([
     ["/render-fixture-page.js", ["text/javascript", readFileSync(PAGE_FILE, "utf8")]],
   ]);
   for (const name of ["three.webgpu.js", "three.core.js"])
     served.set(`/build/${name}`, ["text/javascript", readFileSync(path.join(build, name), "utf8")]);
+  // GLTFLoader and the two helpers it imports, resolving `three` through the page's import map; and
+  // every glTF a fixture loads, from the repository.
+  for (const addon of [
+    "loaders/GLTFLoader.js",
+    "utils/BufferGeometryUtils.js",
+    "utils/SkeletonUtils.js",
+  ])
+    served.set(`/addons/${addon}`, [
+      "text/javascript",
+      readFileSync(path.join(build, "..", "examples", "jsm", addon), "utf8"),
+    ]);
+  for (const fixture of fixtures.values())
+    for (const op of fixture.ops)
+      if (op.op === "gltf")
+        served.set(`/files/${op.file}`, [
+          "model/gltf-binary",
+          readFileSync(path.join(REPO_ROOT, op.file)),
+        ]);
   const server = createServer((request, response) => {
     const url = new URL(request.url ?? "/", "http://127.0.0.1");
     const fixture = fixtures.get(url.searchParams.get("fixture") ?? "");

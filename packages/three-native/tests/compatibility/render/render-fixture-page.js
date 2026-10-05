@@ -44,9 +44,15 @@ function writePath(root, dotted, value) {
 }
 
 /** Executes the fixture's ops in `three`, the same reads the Node reference makes. */
-function build(fixture) {
+async function build(fixture) {
   const bound = new Map();
   for (const op of fixture.ops) {
+    if (op.op === "gltf") {
+      // three's own loader on the served repository file; its default scene is the bound value.
+      const { GLTFLoader } = await import("/addons/loaders/GLTFLoader.js");
+      bound.set(op.id, (await new GLTFLoader().loadAsync(`/files/${op.file}`)).scene);
+      continue;
+    }
     if (op.op === "new") {
       const Constructor = three[op.class];
       if (typeof Constructor !== "function")
@@ -97,7 +103,7 @@ export async function renderFixture(request) {
   renderer.outputColorSpace = three[request.outputColorSpaceConstant];
   renderer.shadowMap.enabled = request.shadowMap === true;
 
-  const bound = build(request.fixture);
+  const bound = await build(request.fixture);
   renderer.render(bound.get(request.scene), bound.get(request.camera));
   // The harness screenshots the presented frame, so wait for the work to land and for the
   // compositor to hold it before the page reports back.

@@ -1,5 +1,13 @@
 #include "driver.h"
 
+#if TN_FIXTURE_GLTF
+#include <filesystem>
+#include <fstream>
+#include <iterator>
+
+#include "engine/assets/gltf/loader.h"
+#endif
+
 #include <algorithm>
 #include <bit>
 #include <cctype>
@@ -201,6 +209,26 @@ int Driver::run(std::istream& in, std::ostream& out) {
                     }
                 }
                 continue;
+            }
+            if (command == "gltf" && t.size() == 3) {
+#if TN_FIXTURE_GLTF
+                // A repository-relative file: the repository root is the first ancestor of the working
+                // directory that holds pnpm-workspace.yaml.
+                std::filesystem::path root = std::filesystem::current_path();
+                while (!std::filesystem::exists(root / "pnpm-workspace.yaml") && root.has_parent_path() &&
+                       root.parent_path() != root)
+                    root = root.parent_path();
+                std::ifstream in(root / decode(t[2].substr(2)), std::ios::binary);
+                if (!in) throw Unsupported{"gltf file not found: " + decode(t[2].substr(2))};
+                const std::string bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+                tn::engine::gltf::LoadResult loaded = tn::engine::gltf::load(
+                    std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(bytes.data()), bytes.size()));
+                if (!loaded.error.empty() || !loaded.scene) throw Unsupported{"gltf: " + loaded.error};
+                hold(t[1], "Group", loaded.scene);
+                continue;
+#else
+                throw Unsupported{"this build has no glTF loader"};
+#endif
             }
             if (command == "render" && (t.size() == 9 || (t.size() == 10 && t[9] == "shadowMap"))) {
                 if (!render) throw Unsupported{"this driver does not render: use the render-capable driver"};

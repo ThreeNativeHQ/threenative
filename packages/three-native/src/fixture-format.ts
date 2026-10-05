@@ -169,7 +169,20 @@ export interface ISetOp {
   readonly value: FixtureArg;
 }
 
-export type FixtureOp = INewOp | ICallOp | ISetOp;
+/**
+ * Loads a repository glTF/GLB (a path from the repository root) and binds `id` to its default
+ * scene: three's GLTFLoader in the references, the native loader in the native driver.
+ */
+export interface IGltfOp {
+  readonly op: "gltf";
+  readonly id: string;
+  readonly file: string;
+}
+
+export type FixtureOp = INewOp | ICallOp | ISetOp | IGltfOp;
+
+/** A repository-relative glTF path: no parent steps, no absolute root. */
+export const GLTF_FILE = /^(?!\/)(?!.*(?:^|\/)\.\.(?:\/|$))[\w./-]+\.(?:glb|gltf)$/u;
 
 /** Reads `path` or calls `method`, never both: one observation, one source. */
 export interface IObservation {
@@ -405,8 +418,14 @@ export function fixtureErrors(value: unknown, expectedName?: string): readonly s
     const at = `$.ops[${index}]`;
     const node = record(op);
     const args = node.args === undefined ? [] : node.args;
+    if (node.op === "gltf") {
+      if (typeof node.file !== "string" || !GLTF_FILE.test(node.file))
+        errors.push(`${at}.file: required, a repository-relative .glb or .gltf path`);
+      bind(node.id, `${at}.id`);
+      continue;
+    }
     if (node.op !== "new" && node.op !== "call" && node.op !== "set") {
-      errors.push(`${at}.op: must be new, call or set`);
+      errors.push(`${at}.op: must be new, call, set or gltf`);
       continue;
     }
     if (!Array.isArray(args)) errors.push(`${at}.args: must be an array`);

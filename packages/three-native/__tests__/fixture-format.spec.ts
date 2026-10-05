@@ -95,6 +95,13 @@ function rendered(): Writable<IFixture> {
 }
 
 describe("fixture format", () => {
+  it("accepts a gltf op on a repository path and refuses one that leaves the repository", () => {
+    const at = (file: string) => messages(withOp({ op: "gltf", id: "m", file }));
+    expect(at("examples/csg-doorway/assets/doorway.glb")).toEqual([]);
+    for (const file of ["../secret.glb", "/etc/model.glb", "a/../../b.glb", "model.obj", ""])
+      expect(at(file).join("\n"), file).toMatch(/\.file: required, a repository-relative/u);
+  });
+
   it("accepts a minimal fixture", () => {
     expect(messages(fixture())).toEqual([]);
   });

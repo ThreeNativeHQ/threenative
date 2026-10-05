@@ -451,6 +451,11 @@ target_include_directories(tn-native-engine-inspect-test PRIVATE ${CMAKE_CURRENT
 add_library(tn_fixture_driver STATIC tests/native-engine/fixture/driver.cpp)
 tn_native_engine_target(tn_fixture_driver)
 target_include_directories(tn_fixture_driver PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine)
+if(TARGET tn_engine_gltf)
+    # The `gltf` fixture op loads a repository file through the native loader.
+    target_link_libraries(tn_fixture_driver PUBLIC tn_engine_gltf)
+    target_compile_definitions(tn_fixture_driver PRIVATE TN_FIXTURE_GLTF=1)
+endif()
 target_link_libraries(tn_fixture_driver PUBLIC tn_engine_foundation tn_engine_bindings)
 if(EMSCRIPTEN)
     # The driver (a test tool) reports unsupported fixtures by exception; engine code never throws.

@@ -200,6 +200,10 @@ export function encodeFixture(fixture: IFixture, renderPng?: string): readonly s
       lines.push(["set", op.id, op.path, encodeArg(op.value)].join(" "));
       continue;
     }
+    if (op.op === "gltf") {
+      lines.push(["gltf", op.id, encodeArg(op.file)].join(" "));
+      continue;
+    }
     const args = op.args.map((arg) => encodeArg(arg));
     if (op.op === "new") lines.push(["new", op.id, op.class, ...args].join(" "));
     else lines.push(["call", op.id, op.method, op.result ?? "-", ...args].join(" "));

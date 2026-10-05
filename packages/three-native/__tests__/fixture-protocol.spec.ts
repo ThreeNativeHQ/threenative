@@ -37,6 +37,18 @@ const ARGUMENTS: readonly FixtureArg[] = [
 ];
 
 describe("argument encoding", () => {
+  it("encodes a gltf op as its id and percent-encoded path", () => {
+    const lines = encodeFixture({
+      ...({} as IFixture),
+      name: "g",
+      adaptedFrom: "original",
+      tolerance: { abs: 0 },
+      ops: [{ op: "gltf", id: "model", file: "examples/a b/model.glb" }],
+      observe: [],
+    });
+    expect(lines).toContain("gltf model s:examples%2Fa%20b%2Fmodel.glb");
+  });
+
   it("refuses an array token that names no typed array", () => {
     expect(() => decodeArg("a:Int64Array:0000000000000000")).toThrow("TN_PROTOCOL_ARG_INVALID");
   });

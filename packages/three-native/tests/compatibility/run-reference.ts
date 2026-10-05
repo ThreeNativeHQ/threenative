@@ -40,10 +40,47 @@ import {
 import { encodeObservation, namedNumber } from "../../src/fixture-protocol.js";
 import { type IRenderCapture, captureRenderFixtures } from "./render-reference.js";
 
+/**
+ * three's GLTFLoader on a repository file, its default scene. Node has no DOM to decode images, so
+ * a texture stands in for each glTF texture; observations here never read pixels.
+ */
+async function loadGltfScene(threeRoot: string, file: string): Promise<unknown> {
+  const loaderUrl = pathToFileURL(
+    path.join(threeRoot, "examples", "jsm", "loaders", "GLTFLoader.js"),
+  ).href;
+  const { GLTFLoader } = (await import(loaderUrl)) as {
+    GLTFLoader: new () => {
+      register(plugin: (parser: { json: { textures: { name?: string }[] } }) => unknown): void;
+      parseAsync(data: ArrayBuffer, path: string): Promise<{ scene: unknown }>;
+    };
+  };
+  const three = (await import(
+    pathToFileURL(path.join(threeRoot, "build", "three.module.js")).href
+  )) as {
+    Texture: new () => { name: string };
+  };
+  const loader = new GLTFLoader();
+  loader.register((parser) => ({
+    name: "tn_no_image_decode",
+    loadTexture(index: number) {
+      const texture = new three.Texture();
+      texture.name = parser.json.textures[index]?.name ?? "";
+      return Promise.resolve(texture);
+    },
+  }));
+  const bytes = readFileSync(path.join(REPO_ROOT, file));
+  const gltf = await loader.parseAsync(
+    bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
+    "",
+  );
+  return gltf.scene;
+}
+
 /** The pinned `three`, from whichever package in the workspace links the same store copy. */
 async function loadReference(): Promise<{
   readonly three: Record<string, unknown>;
   readonly version: string;
+  readonly root: string;
 }> {
   const expected = pinnedThreeVersion(REPO_ROOT);
   for (const owner of ["three-native", "runtime-native", "core"]) {
@@ -66,7 +103,7 @@ async function loadReference(): Promise<{
       string,
       unknown
     >;
-    return { three, version: manifest.version };
+    return { three, version: manifest.version, root: path.join(build, "..") };
   }
   throw new Error("TN_FIXTURE_THREE_MISSING: no workspace package links the catalog three");
 }
@@ -121,9 +158,13 @@ export async function referenceGolden(
   fixture: IFixture,
   captures: ReadonlyMap<string, IRenderCapture> = new Map(),
 ): Promise<IFixtureGolden> {
-  const { three, version } = await loadReference();
+  const { three, version, root } = await loadReference();
   const bound = new Map<string, unknown>();
   for (const op of fixture.ops) {
+    if (op.op === "gltf") {
+      bound.set(op.id, await loadGltfScene(root, op.file));
+      continue;
+    }
     if (op.op === "new") {
       const Constructor = three[op.class];
       if (typeof Constructor !== "function")
