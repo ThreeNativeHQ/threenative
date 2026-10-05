@@ -633,6 +633,10 @@ describe("fluid CI observer ownership", () => {
 });
 
 describe("reviewed producer and independent feature boundaries", () => {
+  it("routes an isolated rejection-counter edit to its temporal evidence lane", () => {
+    const file = "packages/create-threenative/templates/starter/src/render/temporalRejectionCounter.ts";
+    expect(select(workflow, [file])).toEqual({ ...none, temporal: true });
+  });
   it("registers temporal and velocity as workspace producer consumers", () => {
     for (const file of ["packages/core/tsup.config.ts", "packages/playtest/package.json"]) {
       const lanes = select(workflow, [file]);

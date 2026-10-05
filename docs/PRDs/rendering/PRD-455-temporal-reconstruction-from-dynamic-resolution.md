@@ -1522,3 +1522,10 @@ actual WorldEnvironment or the automatic scaler. Clean retained browser/native r
 quality/ghosting, GPU/render cost, native combined-source qualification and automatic-scale
 allocation/cost gates remain open. No new acceptance box is ticked, and publication remains held
 until later owner commits and remote advancement are reconciled.
+
+
+Independent merge review also found that an isolated `temporalRejectionCounter.ts` edit selected
+no integration lane: the template subtree is excluded from the unknown-file fallback and the
+new counter was absent from the temporal filter. The exact source path is now owned by the temporal
+lane. The isolated routing regression fails before the selector repair; all 101 routing/receipt
+contracts pass afterward. Candidate pins, job blocks, receipt policy and thresholds are unchanged.
