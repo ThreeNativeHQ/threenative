@@ -12,7 +12,8 @@ is mechanical).
 **Owner:** João
 **Depends on:** none
 **Task:** branch `chore/junk-cleanup-2026-10-04`, worktree `.worktrees/junk-cleanup`, base
-`origin/develop` at `f24f6243e`. The audit input `junk-audit-2026-10-04.md` stays untracked.
+`origin/develop` at `f24f6243e`, since merged forward to `64aed30fe` (#416). The audit input
+`junk-audit-2026-10-04.md` stays untracked.
 
 ## Context
 
@@ -39,7 +40,7 @@ that touch live code for a ~21-line net win, leaving them to
 
 - [x] AC-1 [local]: `packages/core` reports zero unused-local and zero unused-parameter diagnostics. The 24-diagnostic baseline is the audit input's measurement, not one re-taken here. proof: `cd packages/core && ../../node_modules/.bin/tsc --noEmit --noUnusedLocals --noUnusedParameters -p tsconfig.json` — Evidence: exit 0, empty output.
 - [ ] AC-2 [local]: the deletions keep the contracts that read them intact — the workspace typechecks and lints, the unit and contract suites stay green, and the one pinned expectation that had to move (the scaffolder's `PRD_201_PARENT_SCAFFOLD_HASHES`) was restamped to the templates' new measured bytes. The per-symbol "no remaining tracked reader" claim is the audit's own independently checked caller census, dispositioned row by row in `## Disposition`; typecheck and the unit suite are the contracts preserved afterwards, not a reference search over the tree. proof:  `pnpm typecheck && pnpm lint && pnpm test` — Evidence: `pnpm typecheck` exit 0, `pnpm lint` exit 0 (1074 warnings). The final full board (`taskset -c 0,1,2,3 TN_SUITE_PACKAGE_CONCURRENCY=1 pnpm test`, 1424s) is **exit 1**: `docs`, `build` and `package-test` phases all green (runtime-native 134 files / 1548 tests + Rust parity + publint; `scaffold.spec.ts` 66 tests green), unit phase `4 failed | 7933 passed | 13 skipped (7950)`. Every failure is wall-clock on a box at load 27–44 across 24 cores — `template-assets-compile-1` racing (60s), `template-assets-compile-2` shooter (60s), `template.spec.ts` pristine-scaffold typecheck (180s), `desktop-playtest.spec.ts` native screenshot wait (`native host output: none captured`, the file's other 38 tests green) — with no failed assertion. The same four files alone on the four idlest cores: 4 files / 117 tests, exit 0, 227s. Left unticked: the gate as written ran red.
-- [x] AC-3 [local]: the scaffolder still ships every template its contract specs name, with the pinned scaffold-tree hashes restamped for exactly the templates that changed (10 of 13; `platformer`, `snow`, `starter` unchanged). proof:  `pnpm --filter @threenative/create-threenative test` — Evidence: green in the workspace suite; the four affected specs alone: 4 files / 93 tests, exit 0, 205s.
+- [x] AC-3 [local]: the scaffolder still ships every template its contract specs name, with the pinned scaffold-tree hashes restamped for exactly the templates that changed (10 of 13; `platformer`, `snow`, `starter` unchanged), and restamped again for the 2026-10-05 develop merge. proof:  `pnpm --filter @threenative/create-threenative test` — Evidence: green in the workspace suite before the merge; the four affected specs alone: 4 files / 93 tests, exit 0, 205s. On the merged tree `pnpm exec vitest run packages/create-threenative/__tests__/scaffold.spec.ts` is 66 tests, exit 0, 34.6s — see the merge-integration note under `## Verification notes` for the merged-tree hash measurement.
 - [x] AC-4 [local]: the runtime-native contract and source-list gates stay green after the never-packaged Android sample JS and the orphan Metal shader go. proof:  `pnpm --filter @threenative/runtime-native test` — Evidence: exit 0 — 134 files / 1548 tests passed, 62 skipped; Rust physics parity 21 + 2; publint clean. Required a compiled host first (`pnpm native:build` exit 0); every pre-build failure was an `is not built` assertion, and no C++ source or JS-engine file this PRD touches appears in any of them.
 - [x] AC-5 [local]: documentation links and primary-doc command names stay resolvable after the stale round-ledger pointers are corrected. proof:  `pnpm check:docs && pnpm exec vitest run scripts/__tests__/check-doc-links.spec.ts scripts/__tests__/primary-docs.spec.ts` — Evidence: `pnpm check:docs` exit 0 — "Checked 2323 relative documentation links across 1216 Markdown files"; both specs pass inside the green `scripts/__tests__` lane (143 files / 1944 tests, exit 0).
 - [x] AC-6 [local]: `examples/abyss-framework` no longer dirties the tree with a committed build report. proof: `pnpm --filter abyss-framework build` then `git check-ignore -v examples/abyss-framework/dist.build-report.json` — Evidence: build exit 0 (it rewrites the report on disk), `git check-ignore` reports `.gitignore:8:*.build-report.json`, and `git status --porcelain examples/abyss-framework` after the build lists only this lane's three staged deletions.
@@ -96,10 +97,53 @@ that touch live code for a ~21-line net win, leaving them to
   `af7e25333`, 2026-10-02T21:14Z). The job's last green run is 36960041733 (2026-10-02T03:24Z), so
   the stall has been continuous for four hosted Windows runs and predates this PRD by two days.
   **Layer: engine**, in the `packages/playtest` file-mailbox transport and the native host's poll
-  loop — no file this PRD deletes is in that path, so there is no bounded fix here and none was
-  attempted. Recommended next step for the native lane, not dispatched from here: re-run that one
-  job (`gh run rerun --job 111566787292`) to tell a hosted-runner stall from a real host bug; if it
-  repeats, it needs its own PRD. Nothing in AC-2 turns on it, and no timeout or check was touched.
+  loop. No file this PRD deletes is in that path, so this lane did not cause the stall — and that
+  is a statement about cause only, **not** a finding that no bounded fix exists. The earlier
+  wording here ("no bounded fix here") was unsupported: it was inferred from the absence of a
+  cleanup cause, and a caller-census miss is not a bound. What is actually known is the shape of
+  the fault — a 35 s device-mailbox timeout on the first `sample` after a healthy `run-start`, so
+  the target for a bounded fix is the poll loop's first-sample wait, and re-running the one job
+  (`gh run rerun --job 111566787292`) still tells a hosted-runner stall from a real host bug.
+  **It is not waived here:** it is a red leg on this lane's own CI run
+  (run 37246919707, head `0ae683546`), and it must be green before this branch merges, whatever
+  the cause turns out to be. Fixing it is a native-lane change with its own proof; this PRD
+  records the requirement and does not dispatch it. Nothing in AC-2 turns on it, and no timeout or
+  check was touched here.
+- **Develop merge (2026-10-05, `64aed30fe` #416 backlight/dark defaults).** `origin/develop` was
+  merged in with a plain `git merge` (no rebase, no force) because the merge queue requires a
+  current base. #416 is one commit and 1,087 files; two of them also carried cleanup edits, so
+  exactly one conflict: `PRD_201_PARENT_SCAFFOLD_HASHES` in
+  `packages/create-threenative/__tests__/scaffold.spec.ts`.
+  - **Resolution, measured not chosen.** Neither side's hash block was kept. The merged tree was
+    measured through the installed generator — `pnpm exec vitest run
+    packages/create-threenative/__tests__/scaffold.spec.ts -t "keeps every no-install scaffold tree
+    byte-stable"` — and its failing assertion printed all thirteen actual values; those are what
+    the constant now carries. Ten moved (the ten templates this sweep edited, since #416 also
+    touched them), `platformer`, `snow` and `starter` kept #416's values untouched by either side.
+    Re-run after the restamp: 1 passed; the whole file 66 tests, exit 0, 34.6s.
+  - **Auto-merge audited, not trusted.** The other overlapping file,
+    `templates/puzzle/src/scenes/Play.ts`, merged clean: `git diff 64aed30fe --` on it shows
+    exactly this lane's `const unwatch = seal.watch({` → `seal.watch({` and none of #416's
+    material-lighting wiring, and #416's diff against the base shows exactly its wiring and none
+    of ours. Both sides' behaviour survives. Whole-file deletions: all 14 of this lane's are
+    absent from the merged tree (`git diff --name-status --diff-filter=D 64aed30fe`), and every
+    file #416 added is present.
+  - **Focused proof on the merged tree** — `pnpm typecheck` exit 0; `pnpm lint` exit 0 (1,101
+    warnings, 0 errors, after `biome format` on the restamped constant); `pnpm sync:agents
+    --check` exit 0, 22 mirrors; `pnpm exec tsx scripts/check-template-conventions.ts` green, so
+    the restamped shooter applicability cells still name live calls on the merged tree;
+    `pnpm check:docs` exit 0, 2,393 links across 1,230 files; the scripts lane
+    (`check-doc-links`, `primary-docs`, `evidence-budget`, `evidence-citations`, `sync-agent-docs`,
+    `ci-structure`, `ci-needs`, `search-path`) 8 files / 260 tests exit 0; `pnpm budgets` exit 0.
+    `pnpm budgets` first failed on a **stale build artefact**, not on merged source —
+    `CAPABILITY_BUILT_SYMBOL_MISSING: @threenative/playtest/capture#collectRegionalTone` — because
+    `packages/playtest/dist` predated #416's `collectRegionalTone`. `pnpm --filter
+    @threenative/playtest build` exit 0 (publint clean) and budgets is then exit 0. It also
+    reported native census drift; `pnpm census` exit 0 regenerated the ten cells, of which
+    `android/` 3,187 → 1,814 is this lane's deleted sample JS and the orphan Metal shader.
+  - **AC-2 stays unticked.** The merged tree has not run a full board, and none was rolled here:
+    the box is shared and oversubscribed, and a fourth red wall-clock reading would not be new
+    evidence. AC-2 turns green on one fresh full `pnpm test` over the merged tree.
 - **Pacing decision (2026-10-04, this lane).** That is the third run to fail on wall-clock alone, so
   the fourth was not attempted: at launch every core was ≥59% busy (mean 77%) with no quiet set of
   four to move to, and another 24-minute run would only add foreign contention to the box it is
@@ -125,6 +169,11 @@ because the safe cleanup is stuck.
   reading, and deleting them is a separate decision with its own proof burden.
 - `examples/native-smoke`'s uncalled `parseHttpsUrl` is a game-layer defect, not junk; wiring it
   changes example behaviour, so it is reported here, not fixed. Fixing it is its own change.
+- The `native-platforms / Windows desktop core` leg is red on this lane's CI run with a first-
+  `sample` device-mailbox timeout that predates this sweep. It does not block the sweep and it is
+  **not waived**: the native lane must resolve it before this branch merges. See the Windows bullet
+  under `## Verification notes` for the fingerprint, the runs it also appears on, and the bound
+  this PRD does not claim.
 
 ## Integration Ledger
 
@@ -132,7 +181,10 @@ Integration: unchanged — no consumer path, CLI form, render stage, capability-
 scenario changes. Deleted symbols have zero tracked readers; the one consumer-visible effect is
 that generated projects stop shipping template files nothing imports. The scaffolder's
 `PRD_201_PARENT_SCAFFOLD_HASHES` is the only pinned expectation that must move, and it moves to
-the new measured bytes of the templates this PRD touches.
+the new measured bytes of the templates this PRD touches — twice, the second time to the
+2026-10-05 merged-tree measurement after #416. One further pinned record moves with it:
+`docs/verification/native-runtime-census-2026-08-16.md`, regenerated by `pnpm census` because the
+native tree lost the Android sample JS and the orphan Metal shader.
 
 ## Decisions
 

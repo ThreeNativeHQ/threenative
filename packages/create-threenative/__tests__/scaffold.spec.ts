@@ -177,25 +177,26 @@ const BUG_REPORT_SKILL_PATHS = [
 // starter were untouched and keep their values. Every restamped value is the measured no-install
 // tree, taken from the failing assertion this constant exists to raise and then re-run green.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
-  // History: measured through actual createProject trees after exposure/fog consolidation and
-  // restamping, then again on the merge carrying the WebGPU adapter-retention Three patch (the
-  // scaffolded `patches/three@0.185.1.patch` was the only byte that moved on top of the
-  // exposure/fog tree). The ten values restamped 2026-10-04 below supersede that merge-wide
-  // measurement for those templates only; the three untouched ones still carry it.
-  "action-rpg": "309efa772a9949788e0e5471e2334b0c27d1dad69c7b84689272f9a72becfa50",
-  minimal: "4d4a8320c82f79b4817be09f707047e99cd08a5cb7d1c7f5206b34d363c5e7cf",
-  platformer: "de6323b7fd05a66ce5e89415df962ed59eae765c65346a71488c609381bf14c6",
-  puzzle: "d8b79aa3e39b86c695be76a967b85ca903309a2cc13bd6e8a4db09c617311b48",
-  racing: "4cfaabffb03f31ca550b9015f7d7a745f7aeeb4d3e369b27df4b97db06b5226c",
-  rain: "f9fdc98c2412b8237531413df5c1068a9be1e77a2e107c8364da63941ecddcc5",
-  rts: "a200f3c63963a6b3446105ad1bb3b4ac328c21646cc8d8949c4b7dda6f803f7e",
-  runner: "058c9e8b3c15a6b0fe2e3d2a4237c9554b618422e3a94168e8c28d3d1bd961bf",
+  // Recomputed 2026-10-05 on the merge of develop (PRD-345 backlight/dark defaults, #416) into
+  // the PRD-495 junk-cleanup branch: the merged tree carries both sides' template bytes — ten
+  // templates lost one zero-reader declaration each and all thirteen gained the bounded
+  // lighting/environment sources — so all thirteen generated trees were re-measured through
+  // createProject on that merged tree. Values below are the merged-tree measurement, not either
+  // side's.
+  "action-rpg": "4958ce9c3fc2a809262f05294481020a958fac17b70d454f648b59f09351f95a",
+  minimal: "572bf9ffd8b18a8b1e04186c4dfdec17216b77d31bf6d9ddc1a26ceaac3333fe",
+  platformer: "6de157b3c2cfa0034d48f8326b9f1a90fe90ebce3bf265ac91bae379482d017b",
+  puzzle: "1a83b3b4ec8de36970c589cdb50783620af09a8569f7690fb1beb2f4a7a2c2a6",
+  racing: "7f1ca6cd0655349331216dc9b8b08bc04406209bfc075b01af4029fedf9c6caa",
+  rain: "1b2a44bf393abd879c88848297292a62908efe0b391777b2ed315af20b3de3d1",
+  rts: "c9b22f3b32846caf493699c365ffed4bcd139d418b7e4ce99dd9b67c42a325d8",
+  runner: "550b626387489ebf70a6a33aad2c437c52d7bdefef04b3a97c1a81413fa678f4",
   // Initial finite-height readiness plus its scene-owned lifecycle helper and mirrored docs.
-  sailing: "d46f68964d63873f3fa6a85307ede8a424cac960d52631126b6cd14f53635945",
-  shooter: "65ed8fcaa349ec8662c3fcb1a02d9ecac9f60ac36e31c13d1237b415c3840c99",
-  snow: "550ef7eff2c6df576716145d3b75c2956ac6413a24a1d5463c4d6c6c6ca9575b",
-  starter: "77d9c77d83cfc2d28e857303f07c1cca498e1135ee3474ac27fac43dfb6337a9",
-  "tower-defense": "0504494af22f564dc69e86d987fd074346fae6fd60d523f4b61cb77a5a5eb023",
+  sailing: "4cae0186fa08e10f6e732d79711ef42347ebd83e2b83448f656b1e6c63a8cdba",
+  shooter: "127fcdc64a2b48f7259c811391e07524c4e27b189f994c8a157268bd27f0d200",
+  snow: "791580f3b7314d4983a2cbf57b87b83be2e4740fa63e204327826120f1a0cf12",
+  starter: "5ab4d1828be78d82e7b83fbb2e07afa998372314ffb46accbaffd3dc4ad8cfdd",
+  "tower-defense": "f441c30e062185be72b7d97f63ff63c6eaf66b72a8689acdfea91e5b9907f8a2",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
