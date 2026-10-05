@@ -196,20 +196,6 @@ function selectExpectation(ctx: IEvaluationContext, assertion: IPlaytestRenderCh
   };
 }
 
-export function renderChainAssertionIsMeaningful(assertion: IPlaytestRenderChainAssertion): boolean {
-  return assertion.tier !== undefined
-    || assertion.stages !== undefined
-    || assertion.contributions !== undefined
-    || assertion.velocity !== undefined
-    || Object.values(assertion.perAdapter ?? {}).some(
-      (branch) => branch !== undefined
-        && (branch.tier !== undefined
-          || branch.stages !== undefined
-          || branch.contributions !== undefined
-          || branch.velocity !== undefined),
-    );
-}
-
 function emitStageCheck(
   ctx: IEvaluationContext,
   provenance: ISelectedExpectation["provenance"],

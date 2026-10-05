@@ -172,28 +172,37 @@ const BUG_REPORT_SKILL_PATHS = [
 // docs/verification/prd339-exposure-proof/completion-consumer-8bf16f4.json.
 // Current develop c18a42b integration: all13 actual generated trees were byte-compared
 // against reviewed 8bf trees; only the copied Three compute-only Storage3DTexture patch changed.
+// Recomputed 2026-10-04 for PRD-495's junk sweep: ten templates lost zero-reader declarations
+// (several helpers in racing and shooter, one dead file in minimal), so their generated trees
+// moved. platformer, snow and starter were untouched and keep their values. Every restamped value
+// is the measured no-install tree, taken from the failing assertion this constant exists to raise
+// and then re-run green.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
-  // Recomputed 2026-10-04 on the rebased PRD-345 shooter-perf branch: the twelve material
-  // templates now share one controller-owned render graph (new backlightControls.ts, plus
-  // backlightMaterial.ts referencing it), so twelve trees move and rain is unchanged.
-  // Recomputed 2026-10-03 on the merge of develop (PRD-339 exposure/fog, PRD-423 frame
-  // consolidation) into the PRD-345 backlight/defaults branch: the merged tree carries both
-  // sides' engine, manifest and template bytes, so all thirteen generated trees were
-  // re-measured through createProject on that merged tree. Values below are the merged-tree
-  // measurement, not either side's.
-  "action-rpg": "296d86de125d298dc3aeba77f09201f51aa9c691acf5359f4928a6b435e851f6",
-  minimal: "cad5969d84e355be505d5613a4ddea18cc95a9f96849b6becc7cf70993b367b7",
+  // Recomputed 2026-10-05 on the rebased PRD-345 shooter-perf branch merged with the PRD-495
+  // junk sweep: the twelve material templates now share one controller-owned render graph
+  // (new backlightControls.ts, and backlightMaterial.ts referencing it), so all thirteen trees
+  // were re-measured through createProject on the merged tree; rain moves only via the merge.
+  // Recomputed 2026-10-05 on the merge of develop (PRD-345 backlight/dark defaults, #416) into
+  // the PRD-495 junk-cleanup branch: the merged tree carries both sides' template bytes — ten
+  // templates lost zero-reader declarations and all thirteen gained the bounded
+  // lighting/environment sources — so all thirteen generated trees were re-measured through
+  // createProject on that merged tree. Values below are the merged-tree measurement, not either
+  // side's.
+  // rain re-measured after Opus review restored templates/rain/tools/verify-noise-volume.mjs,
+  // the owner's manual storm-volume proof that the sweep had removed as junk.
+  "action-rpg": "92d303aa293531cf7a47f71a0d0e7d3b65e5193c2609072924d6803270432113",
+  minimal: "e95690f7478204cc9948b134b132d9d9061bebdd26546146f81b4270b9dc99d8",
   platformer: "36af4ec21b10d21387ff7aeb60490b2e5abc0362d5b00450f1f9a7bc8a9af675",
-  puzzle: "11aa313c5d4763dd4802899023435bfff1808e4c17a565875b38b2974947d772",
-  racing: "22545df38dc6646ea052c66754ef4af4f6bd0535f9304bd91464b38b5d40aeff",
-  rain: "9ba4b5d3bd72d2803db42568d1126c7dd96173b51acaa8c484d6d2139859f5fd",
-  rts: "9b69b582991006406e26671d7457807e60851db06267c9cc58a10cb48d786192",
-  runner: "b56e7de4bc4928b158c78688af9f365dc241d4c44b32a4edd6abb38fda1f98a6",
-  sailing: "4f7d8972e0853e1ac81001f5cac28f31206686d7cd44ffdae8756d74e9a38f2e",
-  shooter: "7b23a136380b4b700cea11045c29d7b9ee5b06c9530fea54debacec776a07871",
+  puzzle: "12e45fd921a100823ab3a166e30a53e5a83b693d2032fb0135645e7ef508f07c",
+  racing: "1743f3d6a2ee374b3ca235cc7e5d7079d5564b85b18fefa8a85195528932b97c",
+  rain: "637afd242e4d7bc6ded1b102b1bd80bfbf289ed32878cdb1b20902e303292255",
+  rts: "3f4c7292e2a45d88d18c434a6c407696a5a6b36f9e0d39288b15d7c1f9c047ca",
+  runner: "db58ac5addcc9ebd3f3917dadf1f2d5f725ea3728ea7a1e29dab895b10c0a761",
+  sailing: "3958a6481ef470d89f2f83159d6c3dfecea264bae8bef182a9a456194d9be4ce",
+  shooter: "53840be6e1d8b7054a09851ca1d490ecde00186ce934125f3fd7b4ba87ee03c2",
   snow: "fcf37ea542facf32d20e197865abdf9363b1c6cce2b1741288d4ad2e28412227",
   starter: "a70abdda7fe0dc14d1bb10646fb91a7b836eb61838f90e28d077356c51f8d9ec",
-  "tower-defense": "1de8147417774dc24558a25898ead8ae44023d5979d3ca5aff6a2c9b374dd584",
+  "tower-defense": "c6b04b85de33545b0c03d393f0cf23c9df3fb63d3541ebe424e2b2ea05476351",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
