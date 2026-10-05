@@ -58,8 +58,11 @@ changes texture packaging and converts the viewmodel scope from BLEND to MASK. T
 real cooking transformations, not proof that historical cooked assets are equivalent.
 
 Two separate owned comparison projects now use identical current packages, dependency locks,
-all 25 cooked asset files and the unchanged scenario. The per-material arm applies the same
-actual-camera repair; only graph ownership differs. Both CPU-only Vite bundles pass, with no
+all 25 cooked asset files and the unchanged scenario. The current-source per-material control imports the same
+repaired allocation-free helpers; only per-material graph construction versus WeakMap caching
+differs. Independent review rejected the initial comparison because its old inline helpers
+allocated arrays; those first arms are retained, and the corrected v2 arms were rebuilt and sealed
+before any GPU launch. Both CPU-only Vite bundles pass, with no
 asset recook. One balanced comparison is planned when a recorded capture-only allocation is
 available; it cannot substitute for the original all-template/startup/native acceptance.
 
