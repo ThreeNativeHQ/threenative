@@ -241,24 +241,28 @@ function chain(name: string): string[] {
 
 /** The declared type of a field or accessor, reading a multi-line object type to its closing `;`. */
 function captureMemberType(body: string, member: string): string | null {
-  const head = new RegExp(
+  const heads = new RegExp(
     `(?:^|[\\n;{}])\\s*(?:(?:static|abstract|declare|readonly|get|set)\\s+)*${member}\\s*(?:\\(\\s*\\))?\\s*\\??\\s*:\\s*`,
-    "u",
-  ).exec(body);
-  if (head === null) return null;
-  const start = head.index + head[0].length;
-  let depth = 0;
-  for (let i = start; i < body.length; i++) {
-    const character = body.charAt(i);
-    if ("([{<".includes(character)) depth++;
-    else if (")]}>".includes(character)) depth--;
-    else if (character === ";" && depth <= 0) {
-      return body
-        .slice(start, i)
-        .replace(/\/\*[\s\S]*?\*\//gu, " ")
-        .replace(/\/\/[^\n]*/gu, " ")
-        .replace(/\s+/gu, " ")
-        .trim();
+    "gu",
+  );
+  // A constructor written one parameter per line also matches `name?: type` at a line start; its
+  // type text then runs out through the list's closing ')', which no member declaration does.
+  for (let head = heads.exec(body); head !== null; head = heads.exec(body)) {
+    const start = head.index + head[0].length;
+    let depth = 0;
+    for (let i = start; i < body.length; i++) {
+      const character = body.charAt(i);
+      if ("([{<".includes(character)) depth++;
+      else if (")]}>".includes(character)) depth--;
+      if (depth < 0) break;
+      if (character === ";" && depth <= 0) {
+        return body
+          .slice(start, i)
+          .replace(/\/\*[\s\S]*?\*\//gu, " ")
+          .replace(/\/\/[^\n]*/gu, " ")
+          .replace(/\s+/gu, " ")
+          .trim();
+      }
     }
   }
   return null;

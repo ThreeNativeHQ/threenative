@@ -174,11 +174,36 @@ static ExprId materialColor(Program& f, const VertexVariant& variant, ExprId dif
     return variant.instanceColor ? f.mul(f.varying("instanceColor", Type::vec(3)), color) : color;
 }
 
+// One direct light's direction and colour, three's setupDirect for DirectionalLightNode,
+// PointLightNode (directPointLight with getDistanceAttenuation) and SpotLightNode (that, times
+// smoothstep(coneCos, penumbraCos, angleCos)), at the fragment's view-space position.
+struct Incoming {
+    ExprId direction;
+    ExprId color;
+};
+
+static Incoming incoming(Program& f, Tsl& t, char kind, std::size_t index, ExprId positionView) {
+    const std::string at = "light" + std::to_string(index);
+    const ExprId color = f.uniform(at + "Color", Type::vec(3));
+    if (kind == 'd') return {f.call("normalize", {f.uniform(at + "Direction", Type::vec(3))}), color};
+    const ExprId lightVector = f.sub(f.uniform(at + "Position", Type::vec(3)), positionView);
+    const ExprId direction = f.call("normalize", {lightVector});
+    const ExprId distance = f.call("length", {lightVector});
+    const ExprId cutoff = f.uniform(at + "Distance", Type::f32());
+    const ExprId falloff = f.div(t.f(1), f.call("max", {f.call("pow", {distance, f.uniform(at + "Decay", Type::f32())}), t.f(0.01f)}));
+    const ExprId cut = f.mul(falloff, t.pow2(t.saturate(t.oneMinus(t.pow2(t.pow2(f.div(distance, cutoff)))))));
+    const ExprId attenuation = f.select(f.less(t.f(0), cutoff), cut, falloff);
+    if (kind == 'p') return {direction, f.mul(color, attenuation)};
+    const ExprId angleCos = t.dot(direction, f.call("normalize", {f.uniform(at + "Axis", Type::vec(3))}));
+    const ExprId spot = f.call("smoothstep", {f.uniform(at + "ConeCos", Type::f32()), f.uniform(at + "PenumbraCos", Type::f32()), angleCos});
+    return {direction, f.mul(f.mul(color, spot), attenuation)};
+}
+
 // The MeshStandardNodeMaterial / MeshPhysicalNodeMaterial body. `physical` swaps setupSpecular's
 // fixed 0.04 F0 / 1 F90 for the physical ior, specularIntensity and specularColor formula; every
 // other node is identical, so the standard output stays bit-identical.
 static StandardPrograms buildStandardProgram(const StandardMaterial& material, bool physical,
-                                             const VertexVariant& variant) {
+                                             const VertexVariant& variant, const LightLayout& lights) {
     StandardPrograms out;
     out.diagnostics = unsupportedFeatures(material);
     if (!out.diagnostics.empty()) return out;
@@ -240,12 +265,16 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
     const ExprId diffuseContribution = f.mul(diffuseColor, t.oneMinus(metalness));
     const Surface surface{n, positionViewDirection, roughness, specularColorBlended, t.f(1), f.texture2d("dfg")};
 
-    // PhysicalLightingModel.direct for the directional light.
-    const ExprId lightDirection = f.call("normalize", {f.uniform("directionalDirection", Type::vec(3))});
-    const ExprId irradiance = f.mul(t.saturate(t.dot(n, lightDirection)), f.uniform("directionalColor", Type::vec(3)));
+    // PhysicalLightingModel.direct for each light, accumulated in three's order.
     const ExprId brdfLambert = f.mul(diffuseContribution, t.f(1 / kPi));
-    const ExprId directDiffuse = f.mul(irradiance, brdfLambert);
-    const ExprId directSpecular = f.mul(irradiance, brdfGgxMultiscatter(t, surface, lightDirection));
+    const ExprId fragmentView = f.varying("positionView", Type::vec(3));
+    ExprId directDiffuse = f.construct(Type::vec(3), {t.f(0)}), directSpecular = directDiffuse;
+    for (std::size_t i = 0; i < lights.kinds.size(); ++i) {
+        const Incoming light = incoming(f, t, lights.kinds[i], i, fragmentView);
+        const ExprId irradiance = f.mul(t.saturate(t.dot(n, light.direction)), light.color);
+        directDiffuse = f.add(directDiffuse, f.mul(irradiance, brdfLambert));
+        directSpecular = f.add(directSpecular, f.mul(irradiance, brdfGgxMultiscatter(t, surface, light.direction)));
+    }
 
     // Hemisphere and ambient irradiance, then PhysicalLightingModel.indirect diffuse.
     const ExprId hemiWeight = f.add(f.mul(t.dot(normalWorld, f.call("normalize", {f.uniform("hemisphereDirection", Type::vec(3))})), t.f(0.5f)), t.f(0.5f));
@@ -265,11 +294,11 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
     return out;
 }
 
-StandardPrograms buildStandard(const StandardMaterial& material, const VertexVariant& variant) {
-    return buildStandardProgram(material, false, variant);
+StandardPrograms buildStandard(const StandardMaterial& material, const VertexVariant& variant, const LightLayout& lights) {
+    return buildStandardProgram(material, false, variant, lights);
 }
-StandardPrograms buildPhysical(const StandardMaterial& material, const VertexVariant& variant) {
-    return buildStandardProgram(material, true, variant);
+StandardPrograms buildPhysical(const StandardMaterial& material, const VertexVariant& variant, const LightLayout& lights) {
+    return buildStandardProgram(material, true, variant, lights);
 }
 
 namespace {
@@ -277,7 +306,7 @@ namespace {
 // The PhongLightingModel chain shared by MeshLambertNodeMaterial (specular off) and
 // MeshPhongNodeMaterial (Blinn-Phong specular): direct and indirect Lambert diffuse from the same
 // one directional, one hemisphere and one ambient light the standard program reads.
-StandardPrograms buildLit(bool phong, const VertexVariant& variant) {
+StandardPrograms buildLit(bool phong, const VertexVariant& variant, const LightLayout& lights) {
     StandardPrograms out;
     Program& v = out.vertex;
     const ExprId model = v.uniform("modelMatrix", Type::mat(4, 4));
@@ -304,11 +333,20 @@ StandardPrograms buildLit(bool phong, const VertexVariant& variant) {
     const ExprId diffuse = f.uniform("diffuse", Type::vec(4));
     const ExprId diffuseColor = materialColor(f, variant, diffuse);
 
-    // PhongLightingModel.direct / BRDF_Lambert for the directional light.
-    const ExprId lightDirection = f.call("normalize", {f.uniform("directionalDirection", Type::vec(3))});
-    const ExprId irradiance = f.mul(t.saturate(t.dot(n, lightDirection)), f.uniform("directionalColor", Type::vec(3)));
+    // PhongLightingModel.direct for each light, in three's order: BRDF_Lambert, and with phong the
+    // Blinn-Phong specular (shininess clamped to 1e-4, the material's specular colour).
     const ExprId brdfLambert = f.mul(diffuseColor, t.f(1 / kPi));
-    const ExprId directDiffuse = f.mul(irradiance, brdfLambert);
+    const ExprId fragmentView = f.varying("positionView", Type::vec(3));
+    const ExprId shininess = phong ? f.call("max", {f.uniform("shininess", Type::f32()), t.f(1e-4f)}) : kInvalid;
+    ExprId directDiffuse = f.construct(Type::vec(3), {t.f(0)}), directSpecular = directDiffuse;
+    for (std::size_t i = 0; i < lights.kinds.size(); ++i) {
+        const Incoming light = incoming(f, t, lights.kinds[i], i, fragmentView);
+        const ExprId irradiance = f.mul(t.saturate(t.dot(n, light.direction)), light.color);
+        directDiffuse = f.add(directDiffuse, f.mul(irradiance, brdfLambert));
+        if (phong)
+            directSpecular = f.add(directSpecular, f.mul(irradiance, brdfBlinnPhong(t, n, positionViewDirection, light.direction,
+                                                                                 f.uniform("specular", Type::vec(3)), shininess)));
+    }
 
     // Hemisphere and ambient irradiance, then PhongLightingModel.indirect diffuse.
     const ExprId hemiWeight = f.add(f.mul(t.dot(normalWorld, f.call("normalize", {f.uniform("hemisphereDirection", Type::vec(3))})), t.f(0.5f)), t.f(0.5f));
@@ -317,14 +355,7 @@ StandardPrograms buildLit(bool phong, const VertexVariant& variant) {
     const ExprId indirectDiffuse = f.mul(indirectIrradiance, brdfLambert);
 
     ExprId lighting = f.add(directDiffuse, indirectDiffuse);
-    if (phong) {
-        // MeshPhongNodeMaterial.setupVariants: shininess clamped to 1e-4, specular color is the
-        // material's; materialSpecularStrength is 1 without a specularMap.
-        const ExprId shininess = f.call("max", {f.uniform("shininess", Type::f32()), t.f(1e-4f)});
-        const ExprId directSpecular = f.mul(irradiance, brdfBlinnPhong(t, n, positionViewDirection, lightDirection,
-                                                                       f.uniform("specular", Type::vec(3)), shininess));
-        lighting = f.add(lighting, directSpecular);
-    }
+    if (phong) lighting = f.add(lighting, directSpecular);
     const ExprId emissive = f.uniform("emissive", Type::vec(3));
     const ExprId outgoing = f.add(lighting, emissive);
     // Linear HDR out: tone mapping and the output colour space belong to the output pass (output.h).
@@ -339,8 +370,8 @@ StandardPrograms buildLit(bool phong, const VertexVariant& variant) {
 
 }  // namespace
 
-StandardPrograms buildLambert(const VertexVariant& variant) { return buildLit(false, variant); }
-StandardPrograms buildPhong(const VertexVariant& variant) { return buildLit(true, variant); }
+StandardPrograms buildLambert(const VertexVariant& variant, const LightLayout& lights) { return buildLit(false, variant, lights); }
+StandardPrograms buildPhong(const VertexVariant& variant, const LightLayout& lights) { return buildLit(true, variant, lights); }
 
 StandardPrograms buildBasic(const VertexVariant& variant) {
     StandardPrograms out;

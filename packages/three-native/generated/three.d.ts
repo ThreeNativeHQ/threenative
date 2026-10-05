@@ -1581,6 +1581,15 @@ readonly type: string | "PlaneGeometry";
 readonly parameters: { readonly width: number; readonly height: number; readonly widthSegments: number; readonly heightSegments: number; };
 }
 
+/** Catalog supported: three/webgpu/PointLight. */
+export declare class PointLight extends Object3D {
+constructor();
+decay: number;
+distance: number;
+intensity: number;
+color: Color;
+}
+
 /** Catalog supported: three/Quaternion. */
 export declare class Quaternion {
 constructor(x?: number, y?: number, z?: number, w?: number);
@@ -2590,4 +2599,16 @@ readonly origin: Vector3;
 export declare class InstancedBufferAttribute extends BufferAttribute {
 constructor(array: TypedArray, itemSize: number, normalized?: boolean, meshPerAttribute?: number);
 readonly meshPerAttribute: number;
+}
+
+/** Catalog supported: three/SpotLight. */
+export declare class SpotLight extends Object3D {
+constructor(color?: ColorRepresentation, intensity?: number, distance?: number, angle?: number, penumbra?: number, decay?: number);
+angle: number;
+decay: number;
+distance: number;
+intensity: number;
+penumbra: number;
+color: Color;
+readonly target: Object3D;
 }

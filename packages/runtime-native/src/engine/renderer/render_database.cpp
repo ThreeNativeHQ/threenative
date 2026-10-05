@@ -146,11 +146,33 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
                 lights.ambient[c] += scaled(l.color, l.intensity)[c];
         } else if (type == "DirectionalLight") {
             const auto& l = static_cast<const DirectionalLight&>(object);
-            if (directional_++ == 0) {
-                const auto from = worldPosition(l), to = worldPosition(*l.target);
-                lights.directionalDirection = normalized({from[0] - to[0], from[1] - to[1], from[2] - to[2]});
-                lights.directionalColor = scaled(l.color, l.intensity);
-            }
+            const auto from = worldPosition(l), to = worldPosition(*l.target);
+            direct_.emplace_back(object.id(), DirectLight::directional(normalized({from[0] - to[0], from[1] - to[1], from[2] - to[2]}),
+                                                                      scaled(l.color, l.intensity)));
+        } else if (type == "PointLight") {
+            const auto& l = static_cast<const PointLight&>(object);
+            DirectLight d;
+            d.kind = DirectLight::Kind::Point;
+            d.color = scaled(l.color, l.intensity);
+            d.position = worldPosition(l);
+            d.distance = l.distance;
+            d.decay = l.decay;
+            direct_.emplace_back(object.id(), d);
+        } else if (type == "SpotLight") {
+            // SpotLightNode.update: coneCos = cos(angle), penumbraCos = cos(angle * (1 - penumbra)); the
+            // axis is lightTargetDirection, from the target to the light.
+            const auto& l = static_cast<const SpotLight&>(object);
+            DirectLight d;
+            d.kind = DirectLight::Kind::Spot;
+            d.color = scaled(l.color, l.intensity);
+            d.position = worldPosition(l);
+            const auto to = worldPosition(*l.target);
+            d.direction = normalized({d.position[0] - to[0], d.position[1] - to[1], d.position[2] - to[2]});
+            d.distance = l.distance;
+            d.decay = l.decay;
+            d.coneCos = std::cos(l.angle);
+            d.penumbraCos = std::cos(l.angle * (1 - l.penumbra));
+            direct_.emplace_back(object.id(), d);
         } else if (type == "HemisphereLight") {
             const auto& l = static_cast<const HemisphereLight&>(object);
             if (hemisphere_++ == 0) {
@@ -227,7 +249,7 @@ void RenderDatabase::batch(std::vector<DrawItem>& items) {
 uint64_t RenderDatabase::render(Renderer& renderer, Object3D& scene, Camera& camera, std::array<double, 4> clear) {
     ++frame_;
     diagnostics_.clear();
-    directional_ = hemisphere_ = 0;
+    hemisphere_ = 0;
     // Renderer.render: world matrices first, then the camera in the renderer's coordinate system.
     if (scene.matrixWorldAutoUpdate)
         scene.updateMatrixWorld();
@@ -242,9 +264,13 @@ uint64_t RenderDatabase::render(Renderer& renderer, Object3D& scene, Camera& cam
     }
     std::vector<DrawItem> items;
     LightState lights;
-    lights.directionalColor = lights.hemisphereSky = lights.hemisphereGround = {0, 0, 0};
+    lights.hemisphereSky = lights.hemisphereGround = {0, 0, 0};
     callbacks_.clear();
+    direct_.clear();
     project(scene, camera, items, lights);
+    // three's LightsNode sorts its lights by id; the direct terms are summed in that order.
+    std::stable_sort(direct_.begin(), direct_.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+    for (const auto& [id, light] : direct_) lights.direct.push_back(light);
     // three's onBeforeRender, before the object is drawn: after projection, so a callback that edits
     // the scene cannot invalidate the traversal, and before submission, so a uniform it sets (a
     // material colour) reaches this frame. A callee that threw is a diagnostic, never a crash.
@@ -258,9 +284,6 @@ uint64_t RenderDatabase::render(Renderer& renderer, Object3D& scene, Camera& cam
         p.record->params = paramsOf(*p.record->material);
     }
     callbacks_.clear();
-    if (directional_ > 1)
-        diagnostics_.push_back("TN_NATIVE_LIGHTS_UNSUPPORTED: " + std::to_string(directional_) +
-                               " directional lights; one is drawn");
     if (hemisphere_ > 1)
         diagnostics_.push_back("TN_NATIVE_LIGHTS_UNSUPPORTED: " + std::to_string(hemisphere_) +
                                " hemisphere lights; one is drawn");

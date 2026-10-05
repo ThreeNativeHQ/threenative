@@ -7549,6 +7549,11 @@
         "source": "three"
       },
       {
+        "symbol": "PointLight",
+        "kind": "class",
+        "source": "three/webgpu"
+      },
+      {
         "symbol": "Quaternion",
         "kind": "class",
         "source": "three"
@@ -7575,6 +7580,11 @@
       },
       {
         "symbol": "SphereGeometry",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "SpotLight",
         "kind": "class",
         "source": "three"
       },

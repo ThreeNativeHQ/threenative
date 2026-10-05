@@ -205,6 +205,47 @@ void registerDirectionalLight(ClassBinding& b) {
     b.fixedMembers.insert("target");  // the light owns its target for its whole life
 }
 
+// A number field of a light class: getter and setter over one member.
+template <typename L> void numberField(ClassBinding& b, const char* name, double L::* member) {
+    b.getters[name] = [member](void* self) { return Value::of(as<L>(self)->*member); };
+    b.setters[name] = [member](void* self, const Value& v) { as<L>(self)->*member = number(v); };
+}
+
+// three's PointLight(color, intensity, distance = 0, decay = 2).
+void registerPointLight(ClassBinding& b) {
+    registerObject3DBindings(b);
+    b.ctor = [](const Args& a, Store& store) -> std::shared_ptr<void> {
+        Color color = a.empty() ? Color(1, 1, 1) : colorArg(a.at(0), store);
+        return std::static_pointer_cast<void>(
+            std::make_shared<PointLight>(color, optional(a, 1, 1), optional(a, 2, 0), optional(a, 3, 2)));
+    };
+    registerLightBase(b);
+    numberField<PointLight>(b, "distance", &PointLight::distance);
+    numberField<PointLight>(b, "decay", &PointLight::decay);
+}
+
+// three's SpotLight(color, intensity, distance = 0, angle = PI / 3, penumbra = 0, decay = 2).
+void registerSpotLight(ClassBinding& b) {
+    registerObject3DBindings(b);
+    b.ctor = [](const Args& a, Store& store) -> std::shared_ptr<void> {
+        Color color = a.empty() ? Color(1, 1, 1) : colorArg(a.at(0), store);
+        return std::static_pointer_cast<void>(std::make_shared<SpotLight>(
+            color, optional(a, 1, 1), optional(a, 2, 0), optional(a, 3, 1.0471975511965976), optional(a, 4, 0),
+            optional(a, 5, 2)));
+    };
+    registerLightBase(b);
+    numberField<SpotLight>(b, "distance", &SpotLight::distance);
+    numberField<SpotLight>(b, "angle", &SpotLight::angle);
+    numberField<SpotLight>(b, "penumbra", &SpotLight::penumbra);
+    numberField<SpotLight>(b, "decay", &SpotLight::decay);
+    b.members["target"] = [](void* self, const Args&, Store& store) -> Value {
+        SpotLight* light = as<SpotLight>(self);
+        if (light->target == nullptr) return Value{};
+        return store.adoptAlias("Object3D", light->target, self);
+    };
+    b.fixedMembers.insert("target"); // the light owns its target for its whole life
+}
+
 void registerHemisphereLight(ClassBinding& b) {
     registerObject3DBindings(b);
     b.ctor = [](const Args& a, Store& store) -> std::shared_ptr<void> {
@@ -229,6 +270,8 @@ void registerMaterialBindings(Registry& classes) {
     registerMeshMaterial(classes["MeshPhysicalMaterial"], MaterialType::Physical);
     registerAmbientLight(classes["AmbientLight"]);
     registerDirectionalLight(classes["DirectionalLight"]);
+    registerPointLight(classes["PointLight"]);
+    registerSpotLight(classes["SpotLight"]);
     registerHemisphereLight(classes["HemisphereLight"]);
 }
 

@@ -92,8 +92,7 @@ void resizeReadback() {
     material.color = {0.8f, 0.3f, 0.2f};
     material.roughness = 0.5f;
     LightState lights;
-    lights.directionalDirection = {0.5, 0.8, 0.6};
-    lights.directionalColor = {3, 3, 3};
+    lights.direct.push_back(DirectLight::directional({0.5, 0.8, 0.6}, {3, 3, 3}));
     lights.ambient = {0.1, 0.1, 0.1};
     DrawItem item;
     item.key = 1;
@@ -256,8 +255,7 @@ void litReference() {
 
     LightState lights;
     const double dl = std::sqrt(4.0 + 9 + 1);
-    lights.directionalDirection = {2 / dl, 3 / dl, 1 / dl};
-    lights.directionalColor = {3, 3, 3};
+    lights.direct.push_back(DirectLight::directional({2 / dl, 3 / dl, 1 / dl}, {3, 3, 3}));
     lights.hemisphereSky = {srgbToLinear(0xaa / 255.0) * 0.6, srgbToLinear(0xbb / 255.0) * 0.6, srgbToLinear(0x91 / 255.0) * 0.6};
     const double ground = srgbToLinear(0x22 / 255.0) * 0.6;
     lights.hemisphereGround = {ground, ground, ground};
@@ -347,8 +345,7 @@ void materialReference(const char* golden, MaterialKind kind, const shader::Stan
 
     LightState lights;
     const double dl = std::sqrt(4.0 + 9 + 1);
-    lights.directionalDirection = {2 / dl, 3 / dl, 1 / dl};
-    lights.directionalColor = {3, 3, 3};
+    lights.direct.push_back(DirectLight::directional({2 / dl, 3 / dl, 1 / dl}, {3, 3, 3}));
     lights.hemisphereSky = {srgbToLinear(0xaa / 255.0) * 0.6, srgbToLinear(0xbb / 255.0) * 0.6, srgbToLinear(0x91 / 255.0) * 0.6};
     const double ground = srgbToLinear(0x22 / 255.0) * 0.6;
     lights.hemisphereGround = {ground, ground, ground};

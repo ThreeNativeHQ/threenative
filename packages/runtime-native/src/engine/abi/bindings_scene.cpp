@@ -126,7 +126,8 @@ Object3D& objectArg(Store& store, const Value& arg) {
     static const char* const kClasses[] = {"Object3D",        "Group",           "Mesh",
                                            "Scene",           "Camera",          "PerspectiveCamera",
                                            "OrthographicCamera", "AmbientLight", "DirectionalLight",
-                                           "HemisphereLight", "InstancedMesh"};
+                                           "HemisphereLight", "InstancedMesh",      "PointLight",
+                                           "SpotLight"};
     Object* found = store.find(arg);
     if (found == nullptr) throw Unsupported{"argument is not an Object3D"};
     for (const char* cls : kClasses) {

@@ -124,7 +124,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         foreach(render_case "render_tonemap:tonemap-ramp-*" "render_lit:lit-render*" "render_lambert:materials-lambert"
                 "render_phong:materials-phong" "render_physical:materials-physical*"
                 "standard_materials_fixtures:alpha-test,lit-render*,materials-*"
-                "render_alpha:alpha-*")
+                "render_alpha:alpha-*" "render_lights:lights-*")
             string(REPLACE ":" ";" render_pair "${render_case}")
             list(GET render_pair 0 render_name)
             list(GET render_pair 1 render_glob)

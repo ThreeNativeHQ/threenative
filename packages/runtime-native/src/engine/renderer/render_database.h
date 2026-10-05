@@ -26,8 +26,9 @@ namespace tn::engine {
  * then projects the scene as projectObject does — invisible subtrees skipped, layers tested
  * against the camera's — into meshes and lights.
  *
- * Not yet: frustum culling (PRD-519; it changes cost, not pixels), more than one directional or
- * hemisphere light (refused by name), shadows, groups and multi-material meshes.
+ * Lights: every directional, point and spot light, summed in three's id order; one hemisphere light
+ * (more are refused by name). Not yet: frustum culling (PRD-519; it changes cost, not pixels),
+ * shadows, groups and multi-material meshes.
  */
 class RenderDatabase {
   public:
@@ -81,7 +82,7 @@ class RenderDatabase {
     std::vector<std::string> diagnostics_;
     uint64_t rebuilds_ = 0;
     uint64_t frame_ = 0;
-    int directional_ = 0;
+    std::vector<std::pair<uint64_t, DirectLight>> direct_; // this render's direct lights with their ids
     int hemisphere_ = 0;
 };
 

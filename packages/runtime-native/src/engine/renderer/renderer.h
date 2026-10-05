@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <map>
 #include <cstdint>
 #include <optional>
 #include <span>
@@ -55,10 +56,26 @@ struct CameraState {
     Matrix projectionMatrix{};
 };
 
+/** One direct light, world space and linear colour with its intensity folded in. */
+struct DirectLight {
+    enum class Kind : uint8_t { Directional, Point, Spot };
+    Kind kind = Kind::Directional;
+    std::array<double, 3> color{0, 0, 0};
+    std::array<double, 3> direction{0, 1, 0}; // directional: towards the light; spot: target to light
+    std::array<double, 3> position{0, 0, 0};  // point and spot
+    double distance = 0, decay = 2;           // point and spot: the cutoff (0 none) and the falloff exponent
+    double coneCos = 0, penumbraCos = 0;      // spot: cos(angle) and cos(angle * (1 - penumbra))
+    static DirectLight directional(std::array<double, 3> towards, std::array<double, 3> color) {
+        DirectLight l;
+        l.direction = towards;
+        l.color = color;
+        return l;
+    }
+};
+
 /** Light values in world space and linear colour, intensity folded in (three's physically correct units). */
 struct LightState {
-    std::array<double, 3> directionalDirection{0, 1, 0};  // towards the light
-    std::array<double, 3> directionalColor{0, 0, 0};
+    std::vector<DirectLight> direct; // three's LightsNode order: by Object3D id
     std::array<double, 3> hemisphereSky{0, 0, 0};
     std::array<double, 3> hemisphereGround{0, 0, 0};
     std::array<double, 3> hemisphereUp{0, 1, 0};
@@ -128,9 +145,12 @@ private:
     enum Slot : uint8_t {
         kModelMatrix, kViewMatrix, kProjectionMatrix, kNormalMatrix, kDiffuse, kAlphaTest, kOpaque, kRoughness,
         kMetalness, kEmissive, kSpecular, kShininess, kIor, kSpecularIntensity, kSpecularColor,
-        kDirectionalDirection, kDirectionalColor, kHemisphereSky, kHemisphereGround, kHemisphereDirection, kAmbient,
+        kHemisphereSky, kHemisphereGround, kHemisphereDirection, kAmbient,
         kSlotCount
     };
+    // Per direct light i, `light{i}<Field>` (shader::LightLayout).
+    enum LightField : uint8_t { kLightColor, kLightDirection, kLightPosition, kLightDistance, kLightDecay, kLightAxis,
+                                kLightConeCos, kLightPenumbraCos, kLightFieldCount };
     struct Program {
         shader::StageModule vertex;
         shader::StageModule fragment;
@@ -141,8 +161,11 @@ private:
         WGPUBindGroup groups[2] = {};  // over the current frame buffer; rebuilt when it grows
         const shader::UniformField* vertexSlots[kSlotCount] = {};
         const shader::UniformField* fragmentSlots[kSlotCount] = {};
+        std::vector<std::array<const shader::UniformField*, kLightFieldCount>> lightSlots;
     };
     void buildLayouts(Program& program);
+    /** The program for a material kind, vertex variant and light layout, built on first use. */
+    Program& program(MaterialKind kind, int variant, const std::string& lights);
     WGPUBindGroup bindGroup(WGPUBindGroupLayout layout, const shader::StageModule& stage, Handle uniforms,
                             WGPUTextureView view, WGPUSampler sampler);
     void releaseTargets();
@@ -154,8 +177,9 @@ private:
     GpuResources gpu_;
     GeometryCache geometry_;
     PipelineCache pipelines_;
-    // By MaterialKind, then vertex variant: 0 plain, 1 instanced, 2 instanced with instanceColor.
-    Program programs_[5][3];
+    // By MaterialKind, vertex variant (0 plain, 1 instanced, 2 instanced with instanceColor) and light
+    // layout; held by pointer so a frame's plan keeps its addresses while new programs are added.
+    std::map<std::string, std::unique_ptr<Program>> programs_;
     WGPUTexture lut_ = nullptr;
     WGPUTextureView lutView_ = nullptr;
     WGPUSampler lutSampler_ = nullptr;

@@ -1,6 +1,7 @@
 #include "renderer.h"
 
 #include <algorithm>
+#include <cctype>
 #include <iterator>
 #include <cstring>
 #include <stdexcept>
@@ -40,6 +41,13 @@ Matrix3 normalMatrix(const Matrix& m) {
     return {inv[0], inv[3], inv[6], inv[1], inv[4], inv[7], inv[2], inv[5], inv[8]};
 }
 
+// A point through a column-major matrix (w = 1): a light's view-space position, as three's
+// lightViewPosition computes it on the CPU before it becomes a uniform.
+std::array<double, 3> transformPoint(const Matrix& m, const std::array<double, 3>& v) {
+    return {m[0] * v[0] + m[4] * v[1] + m[8] * v[2] + m[12], m[1] * v[0] + m[5] * v[1] + m[9] * v[2] + m[13],
+            m[2] * v[0] + m[6] * v[1] + m[10] * v[2] + m[14]};
+}
+
 std::array<double, 3> rotate(const Matrix& m, const std::array<double, 3>& v) {
     return {m[0] * v[0] + m[4] * v[1] + m[8] * v[2], m[1] * v[0] + m[5] * v[1] + m[9] * v[2],
             m[2] * v[0] + m[6] * v[1] + m[10] * v[2]};
@@ -76,7 +84,9 @@ void put(std::vector<uint8_t>& block, size_t base, const shader::UniformField* f
 constexpr const char* kSlotNames[] = {
     "modelMatrix", "viewMatrix", "projectionMatrix", "normalMatrix", "diffuse", "alphaTest", "opaque", "roughness",
     "metalness", "emissive", "specular", "shininess", "ior", "specularIntensity", "specularColor",
-    "directionalDirection", "directionalColor", "hemisphereSky", "hemisphereGround", "hemisphereDirection", "ambient"};
+    "hemisphereSky", "hemisphereGround", "hemisphereDirection", "ambient"};
+constexpr const char* kLightFieldNames[] = {"Color", "Direction", "Position", "Distance", "Decay", "Axis",
+                                            "ConeCos", "PenumbraCos"};
 
 constexpr uint64_t kUniformAlign = 256;  // minUniformBufferOffsetAlignment's WebGPU default
 uint64_t aligned(uint64_t size) { return (size + kUniformAlign - 1) / kUniformAlign * kUniformAlign; }
@@ -94,22 +104,6 @@ WGPUTextureView view2d(WGPUTexture texture, WGPUTextureFormat format) {
 
 Renderer::Renderer(WGPUInstance instance, WGPUDevice device, WGPUQueue queue, EventQueue& events)
     : device_(device), events_(events), gpu_(instance, device, queue, events, 1), geometry_(gpu_), pipelines_(device) {
-    const shader::VertexVariant variants[3] = {{}, {true, false}, {true, true}};
-    for (int variant = 0; variant < 3; ++variant) {
-        const shader::VertexVariant& vv = variants[variant];
-        const shader::StandardPrograms sources[5] = {
-            shader::buildStandard(shader::StandardMaterial{}, vv), shader::buildBasic(vv), shader::buildLambert(vv),
-            shader::buildPhong(vv), shader::buildPhysical(shader::StandardMaterial{}, vv)};
-        for (int kind = 0; kind < 5; ++kind) {
-            Program& program = programs_[kind][variant];
-            program = {shader::buildStage(sources[kind].vertex, 0), shader::buildStage(sources[kind].fragment, 1)};
-            if (!program.vertex.wgsl.ok() || !program.fragment.wgsl.ok())
-                throw std::runtime_error("TN_NATIVE_SHADER_INVALID: material program " + std::to_string(kind) +
-                                         " variant " + std::to_string(variant));
-            buildLayouts(program);
-        }
-    }
-
     // The DFG lookup the standard BRDF samples: three's 16x16 RG half-float table, linear filtered.
     WGPUTextureDescriptor lutDesc = {};
     lutDesc.dimension = WGPUTextureDimension_2D;
@@ -159,14 +153,12 @@ Renderer::Renderer(WGPUInstance instance, WGPUDevice device, WGPUQueue queue, Ev
 
 Renderer::~Renderer() {
     if (timestamps_) wgpuQuerySetRelease(timestamps_);
-    for (auto& variants : programs_) {
-        for (Program& program : variants) {
-            for (int g = 0; g < 2; ++g) {
-                if (program.groups[g]) wgpuBindGroupRelease(program.groups[g]);
-                if (program.layouts[g]) wgpuBindGroupLayoutRelease(program.layouts[g]);
-            }
-            if (program.pipelineLayout) wgpuPipelineLayoutRelease(program.pipelineLayout);
+    for (auto& [key, program] : programs_) {
+        for (int g = 0; g < 2; ++g) {
+            if (program->groups[g]) wgpuBindGroupRelease(program->groups[g]);
+            if (program->layouts[g]) wgpuBindGroupLayoutRelease(program->layouts[g]);
         }
+        if (program->pipelineLayout) wgpuPipelineLayoutRelease(program->pipelineLayout);
     }
     releaseTargets();
     releaseOutputGroup();
@@ -300,6 +292,44 @@ void Renderer::buildLayouts(Program& program) {
         for (const shader::UniformField& f : program.fragment.uniforms)
             if (f.name == kSlotNames[s]) program.fragmentSlots[s] = &f;
     }
+    for (const shader::UniformField& f : program.fragment.uniforms) {
+        if (f.name.rfind("light", 0) != 0) continue;
+        std::size_t end = 5;
+        while (end < f.name.size() && std::isdigit(static_cast<unsigned char>(f.name[end]))) ++end;
+        if (end == 5) continue;
+        const std::size_t index = std::stoul(f.name.substr(5, end - 5));
+        if (program.lightSlots.size() <= index) program.lightSlots.resize(index + 1);
+        for (int field = 0; field < kLightFieldCount; ++field)
+            if (f.name.compare(end, std::string::npos, kLightFieldNames[field]) == 0) program.lightSlots[index][field] = &f;
+    }
+}
+
+Renderer::Program& Renderer::program(MaterialKind kind, int variant, const std::string& lights) {
+    const std::string key = std::to_string(static_cast<int>(kind)) + "|" + std::to_string(variant) + "|" + lights;
+    if (const auto found = programs_.find(key); found != programs_.end()) return *found->second;
+    static const shader::VertexVariant kVariants[3] = {{}, {true, false}, {true, true}};
+    const shader::VertexVariant& vv = kVariants[variant];
+    const shader::LightLayout layout{lights};
+    shader::StandardPrograms source;
+    switch (kind) {
+    case MaterialKind::Standard: source = shader::buildStandard(shader::StandardMaterial{}, vv, layout); break;
+    case MaterialKind::Basic: source = shader::buildBasic(vv); break;
+    case MaterialKind::Lambert: source = shader::buildLambert(vv, layout); break;
+    case MaterialKind::Phong: source = shader::buildPhong(vv, layout); break;
+    case MaterialKind::Physical: source = shader::buildPhysical(shader::StandardMaterial{}, vv, layout); break;
+    }
+    auto built = std::make_unique<Program>();
+    built->vertex = shader::buildStage(source.vertex, 0);
+    built->fragment = shader::buildStage(source.fragment, 1);
+    if (!built->vertex.wgsl.ok() || !built->fragment.wgsl.ok())
+        throw std::runtime_error("TN_NATIVE_SHADER_INVALID: material program " + key);
+    buildLayouts(*built);
+    if (uniformCapacity_ != 0) {
+        for (int g = 0; g < 2; ++g)
+            built->groups[g] = bindGroup(built->layouts[g], g == 0 ? built->vertex : built->fragment, uniformBuffer_,
+                                         lutView_, lutSampler_);
+    }
+    return *programs_.emplace(key, std::move(built)).first->second;
 }
 
 uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& camera, const LightState& lights,
@@ -360,6 +390,11 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
     });
     opaque.insert(opaque.end(), transparent.begin(), transparent.end());
 
+    // The light layout every lit program this frame is specialized for, in three's light order.
+    std::string lightKinds;
+    for (const DirectLight& l : lights.direct)
+        lightKinds += l.kind == DirectLight::Kind::Directional ? 'd' : l.kind == DirectLight::Kind::Point ? 'p' : 's';
+
     // Plan: each draw's program, pipeline and uniform slices, all uniforms into one CPU block.
     struct Planned {
         const DrawItem* item;
@@ -373,7 +408,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
     for (const auto& [depthKey, drawn] : opaque) {
         const DrawItem& item = *drawn;
         const int variant = item.instanceMatrices ? (item.instanceColors ? 2 : 1) : 0;
-        Program& program = programs_[static_cast<int>(item.kind)][variant];
+        Program& program = this->program(item.kind, variant, item.kind == MaterialKind::Basic ? "" : lightKinds);
         if (item.instanceCount == 0) continue;  // three draws nothing for count 0
         const bool lit = item.kind != MaterialKind::Basic;
         if (!item.positions || (lit && !item.normals) || !item.material) continue;
@@ -406,8 +441,18 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
         put(frameUniforms_, f, fs[kIor], std::array<double, 1>{m.ior});
         put(frameUniforms_, f, fs[kSpecularIntensity], std::array<double, 1>{m.specularIntensity});
         put(frameUniforms_, f, fs[kSpecularColor], std::array<double, 3>{m.specularColor[0], m.specularColor[1], m.specularColor[2]});
-        put(frameUniforms_, f, fs[kDirectionalDirection], rotate(view, lights.directionalDirection));
-        put(frameUniforms_, f, fs[kDirectionalColor], lights.directionalColor);
+        for (std::size_t i = 0; i < lights.direct.size() && i < program.lightSlots.size(); ++i) {
+            const DirectLight& l = lights.direct[i];
+            const auto& slot = program.lightSlots[i];
+            put(frameUniforms_, f, slot[kLightColor], l.color);
+            put(frameUniforms_, f, slot[kLightDirection], rotate(view, l.direction));
+            put(frameUniforms_, f, slot[kLightAxis], rotate(view, l.direction));
+            put(frameUniforms_, f, slot[kLightPosition], transformPoint(view, l.position));
+            put(frameUniforms_, f, slot[kLightDistance], std::array<double, 1>{l.distance});
+            put(frameUniforms_, f, slot[kLightDecay], std::array<double, 1>{l.decay});
+            put(frameUniforms_, f, slot[kLightConeCos], std::array<double, 1>{l.coneCos});
+            put(frameUniforms_, f, slot[kLightPenumbraCos], std::array<double, 1>{l.penumbraCos});
+        }
         put(frameUniforms_, f, fs[kHemisphereSky], lights.hemisphereSky);
         put(frameUniforms_, f, fs[kHemisphereGround], lights.hemisphereGround);
         put(frameUniforms_, f, fs[kHemisphereDirection], lights.hemisphereUp);  // world space: it meets normalWorld
@@ -421,13 +466,11 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
         if (uniformCapacity_ != 0) gpu_.destroy(uniformBuffer_);
         uniformCapacity_ = std::max<uint64_t>(frameUniforms_.size() * 2, 64 * 1024);
         uniformBuffer_ = gpu_.createBuffer(uniformCapacity_, WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
-        for (auto& variants : programs_) {
-            for (Program& program : variants) {
-                for (int g = 0; g < 2; ++g) {
-                    if (program.groups[g]) wgpuBindGroupRelease(program.groups[g]);
-                    program.groups[g] = bindGroup(program.layouts[g], g == 0 ? program.vertex : program.fragment,
-                                                  uniformBuffer_, lutView_, lutSampler_);
-                }
+        for (auto& [key, program] : programs_) {
+            for (int g = 0; g < 2; ++g) {
+                if (program->groups[g]) wgpuBindGroupRelease(program->groups[g]);
+                program->groups[g] = bindGroup(program->layouts[g], g == 0 ? program->vertex : program->fragment,
+                                               uniformBuffer_, lutView_, lutSampler_);
             }
         }
     }

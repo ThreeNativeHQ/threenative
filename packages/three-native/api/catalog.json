@@ -13781,12 +13781,48 @@
       "kind": "class",
       "source": "three/webgpu",
       "status": {
-        "kind": "unsupported",
-        "diagnostic": "TN_NATIVE_UNSUPPORTED_POINTLIGHT"
+        "kind": "supported"
       },
-      "extends": null,
+      "extends": "Object3D",
       "constructor": [],
-      "fields": [],
+      "fields": [
+        {
+          "name": "decay",
+          "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "distance",
+          "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "intensity",
+          "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "color",
+          "type": "Color",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ],
       "methods": []
     },
     {
@@ -22906,6 +22942,113 @@
         {
           "name": "meshPerAttribute",
           "type": "number",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ],
+      "methods": []
+    },
+    {
+      "name": "SpotLight",
+      "kind": "class",
+      "source": "three",
+      "status": {
+        "kind": "supported"
+      },
+      "extends": "Object3D",
+      "constructor": [
+        {
+          "name": "color",
+          "type": "ColorRepresentation",
+          "optional": true
+        },
+        {
+          "name": "intensity",
+          "type": "number",
+          "optional": true
+        },
+        {
+          "name": "distance",
+          "type": "number",
+          "optional": true
+        },
+        {
+          "name": "angle",
+          "type": "number",
+          "optional": true
+        },
+        {
+          "name": "penumbra",
+          "type": "number",
+          "optional": true
+        },
+        {
+          "name": "decay",
+          "type": "number",
+          "optional": true
+        }
+      ],
+      "fields": [
+        {
+          "name": "angle",
+          "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "decay",
+          "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "distance",
+          "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "intensity",
+          "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "penumbra",
+          "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "color",
+          "type": "Color",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "target",
+          "type": "Object3D",
           "mutable": false,
           "lifetime": "owned",
           "status": {

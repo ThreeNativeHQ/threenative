@@ -105,8 +105,7 @@ int main(int argc, char** argv) {
     camera.projectionMatrix = {near / (aspect * top), 0, 0, 0, 0, near / top, 0, 0, 0, 0, -far / (far - near), -1,
                                0, 0, -far * near / (far - near), 0};  // WebGPU clip z
     LightState lights;
-    lights.directionalDirection = {-0.5, 0.8, 0.6};
-    lights.directionalColor = {3, 3, 3};
+    lights.direct.push_back(DirectLight::directional({-0.5, 0.8, 0.6}, {3, 3, 3}));
     lights.hemisphereSky = {0.9, 1.0, 1.2};
     lights.hemisphereGround = {0.25, 0.2, 0.15};
     lights.ambient = {0.05, 0.05, 0.05};
