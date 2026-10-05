@@ -48,7 +48,7 @@ engine or LLVM. Packaging today is `packages/runtime-native/scripts/package-desk
 **Status:** NOT STARTED
 **Files:** proposed `packages/runtime-native/scripts/package-strict.mjs`
 - [ ] A game-source-only edit rebuilds the game module without recompiling Dawn, the engine or the compiler. proof: `pnpm exec vitest run packages/runtime-native/__tests__/strict-incremental-build.spec.ts`
-- [ ] Prebuilt SDK and compiler artifacts are refused on checksum mismatch. proof: `pnpm exec vitest run packages/runtime-native/__tests__/strict-prebuilt-checksum.spec.ts`
+- [x] Prebuilt SDK and compiler artifacts are refused on checksum mismatch. proof: `pnpm exec vitest run packages/runtime-native/__tests__/strict-prebuilt-checksum.spec.ts` — 2026-10-05: green (6 tests). For the native SDK prebuilt (`install-prebuilt.mjs`, served over loopback) and the native-TypeScript compiler (`provision.mjs`, a real tar archive): a payload matching its pin installs; one byte changed is refused and leaves nothing at the destination (no runtime or helper and an `ok: false` install status; no archive, `.part` or toolchain, `TN_NATIVE_TS_CHECKSUM`); a pin that is not 64 lowercase hex is refused before any download. That last case found a gap: `provision` downloaded before refusing a malformed pin, so it now checks the pin first. Red controls: removing either guard fails its case
 
 #### Phase 3: Gate T
 **Status:** NOT STARTED

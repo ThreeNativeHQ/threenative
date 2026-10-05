@@ -51,6 +51,9 @@ export async function provision(opts = {}) {
   if (!artifact) {
     throw named("TN_NATIVE_TS_HOST", `no pinned toolchain for host ${host}`);
   }
+  if (typeof artifact.sha256 !== "string" || !/^[a-f0-9]{64}$/u.test(artifact.sha256)) {
+    throw named(CHECKSUM_CODE, `the pinned sha256 for ${host} is not 64 lowercase hex`);
+  }
   const cacheDir = opts.cacheDir ?? defaultCacheDir(lock, opts.env);
   const toolchainDir = path.join(cacheDir, "toolchain");
   const archiveName = path.basename(new URL(artifact.url).pathname);
