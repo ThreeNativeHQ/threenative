@@ -1076,10 +1076,11 @@ lifecycle row was being blamed on. Across all seven preserved capture sets the r
 `scaled` 5 distinct states, `scaled-unchecked-reset` 5, `lifecycle` 3, `quality` 2. A row that can
 only be compared byte-for-byte is not a conformance row.
 
-**The jitter-lattice hypothesis is refuted.** The prior entry attributed the disagreement to the
-capture landing on a jitter-lattice frame boundary. The fixture already freezes the authored pose
-(`pose = min(frame, settle)`), so a lattice-phase difference cannot be the cause: the differing
-pixels are a *bounded region*, not a whole-image sub-pixel shift. For `scaled` the diff is confined
+**The jitter-lattice hypothesis is not refuted by the bounded diff.** The prior entry attributed the
+disagreement to the capture landing on a jitter-lattice frame boundary. The fixture already freezes
+the authored pose (`pose = min(frame, settle)`), so a whole-image lattice-phase shift is not the
+cause: the differing pixels are a *bounded region*, not a whole-image sub-pixel shift. That bounds the
+mechanism without excluding jitter, which can still decide the pixels inside a bounded region. For `scaled` the diff is confined
 to `x 430-840, y 169-361` of 1280x480; for `lifecycle`, `x 313-751, y 163-375`. That is the footprint
 of the fixture's own `occluder` (`occluder.visible = frame < 28`), the saturated foreground plane
 that is removed without a reset so the history must resolve the disocclusion on its own. Everything
@@ -1103,7 +1104,7 @@ outside that box is byte-identical.
 So the jitter lattice was never the variable. The variable is the **decay of temporal history in a
 region the fixture deliberately disoccluded, sampled at an unpinned frame index.**
 
-**Why no repair was made here.** The two ways to make the capture a fixed point both destroy what
+**Why no repair was made in that entry.** The two repairs named there both destroy what
 the row measures, and both are out of bounds for this scope:
 
 - A per-frame history reset after settle would pin the pixels, but it is exactly the
@@ -1118,3 +1119,54 @@ row that is **not** deterministic, and the `.06` budget was never shown to be wr
 should decide whether the fixture's disocclusion is authored to settle on a frame it can name, or
 whether the capture driver must be frame-locked. Until one of those lands, this PRD does not claim
 `prd:100%` for Phase 1: the native repeatability failure stands open.
+
+### A third repair the previous entry ruled out by omission: hold the finished frame (2026-10-06)
+
+**Correction.** The previous entry claimed the only two repairs were a per-frame history reset and a
+harness frame lock, and closed Phase 1 as unfixable in scope. That claim was wrong: a third repair
+exists, and it changes nothing the row measures. After a route's diagnostics finish, the fixture
+retains the resolve target its last real frame actually produced and presents *that same texture* on
+every later frame. No scene pass, no velocity, no reconstruction and no history write runs again, so
+no diagnostic frame, rejection count, reset reason or raster is invented by presenting, and the
+fixture's own metadata stays on the last frame it really rendered. Each presentation frame is still a
+genuine draw to the host surface.
+
+Implemented as one fixture-local `freeze()` on the shared temporal fixture
+(`packages/runtime-native/conformance/scenes/shared/temporal-aa-fixture.js`), called once by the four
+capture routes (`scaled`, `scaled-unchecked-reset`, `lifecycle`, `quality`) after all their existing
+diagnostic renders, readbacks and assertions, before returning to `startVisualScene`. It fails closed:
+freezing twice, freezing with no reconstruction frame, or freezing a resolve that is not the display
+raster throws. The default `temporal-aa` row, the browser `temporal-main` measurement with
+`settle === null`, every other variant, all 200 generated capabilities and all 200 capabilities of the
+manifest are untouched. No core, runner, C++, dependency, threshold or appearance policy changed.
+
+**Measured, this commit, local desktop host.** Every run used `--only-tests` on the same four rows and
+the runner exited `2` for the 96 unselected rows (blocked, never passed).
+
+| Comparison | Result |
+| --- | --- |
+| web r1 vs web r2, all four rows | **byte-identical PNG** (`sha256` equal) |
+| native r1 vs native r2, all four rows | **byte-identical PNG** (`sha256` equal) |
+| web r1 vs native r1, all four rows | `pixelMismatchRatio 0`, `perceptualDeltaE 0` |
+| web r2 vs native r2, all four rows | `pixelMismatchRatio 0`, `perceptualDeltaE 0` |
+
+Independently re-checked outside the runner by decoding both PNG sets: max channel delta `0` for every
+row, web against native and native against native. The runner's `0/0` is not a self-comparison: the
+web and native PNG files have different bytes and different sizes on disk, and the decode compares the
+pixels. Before this repair the same table read `scaled` 21,651 px / `0.035239` and
+`scaled-unchecked-reset` 23,431 px / `0.038136` run to run, and `lifecycle` `0.061551106770833333 >
+0.06` web against native. No reference, warmup, capture frame or tolerance was changed to reach these
+numbers; the captured frame is the same authored final diagnostic frame each route already rendered
+(frame 22 on the two scaled rows, frame 36 on `lifecycle` and `quality`), never a later 64 or 300.
+
+Zero GPU validation errors, no device loss and no adapter fallback in either native log. The native
+adapter is unrecorded by this harness and stays unknown. The web adapter is not written into these
+four runs' reports, so this entry claims no browser adapter identity rather than inferring one.
+Artifacts: `packages/runtime-native/artifacts/conformance/pr398-freeze-{web-r1,web-r2,native-r1,native-r2}/`.
+
+**Where this leaves the PRD.** Phase 1's native gate is now green on all four rows at `0` mismatch, so
+the earlier open repeatability failure is closed by measurement rather than by relaxing a budget. The
+rest is unchanged and still open: the Phase 2 quality scores and their gates, the Phase 3 GPU/render
+p95 comparison, and the PRD-269 ghosting cost remain as they were. This repair makes the capture a
+fixed point; it does not measure temporal stability, and it says nothing about the 176-frame quality
+benchmark. The `.03870` correction above stands as written.

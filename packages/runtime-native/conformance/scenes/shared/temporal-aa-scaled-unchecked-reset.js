@@ -87,6 +87,8 @@ export function startScene(canvas, dimensions) {
           `scaled unchecked-reset control: reset frame ${index} reported the age ${String(row.staleFrames)} of its own count.`,
         );
       }
+      // The control's diagnostics are finished, so its capture holds its own last real frame too.
+      fixture.freeze();
       return {
         ...fixture,
         detail: {

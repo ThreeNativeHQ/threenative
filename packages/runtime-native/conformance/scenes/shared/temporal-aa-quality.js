@@ -79,6 +79,9 @@ async function runTemporalQuality({ renderer, scene, camera, dimensions }, label
     observed.resets === 1,
     `${label}: ${observed.resets} global history resets ran, not the single startup reset.`,
   );
+  // The authored corpus has been measured on this host, so the capture holds this route's last real
+  // frame rather than whichever later frame each host happened to stop on.
+  fixture.freeze();
   return {
     ...fixture,
     detail: {

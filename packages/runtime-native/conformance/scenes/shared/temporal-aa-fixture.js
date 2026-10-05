@@ -9,6 +9,7 @@ import {
 } from "../../../../core/src/render/velocity.ts";
 import { createExperimentalTemporalResolve } from "../../../../create-threenative/templates/starter/src/render/temporalResolve.ts";
 import { createTemporalAA } from "../../../../create-threenative/templates/starter/src/render/temporalAA.ts";
+import { assertCondition } from "./scene-support.js";
 import { createTemporalResolveProbe } from "./temporal-resolve-probe.ts";
 import { createTemporalVelocityProbe } from "./temporal-velocity-probe.ts";
 
@@ -346,6 +347,7 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
     resolveProbe: resolveProbe?.observation() ?? null,
     pose: { cameraX: camera.position.x, rigidX: rigid.position.x, limbZ: limb.rotation.z },
     historyWitness,
+    held: frozen === null ? null : { frame: frozen.frame, resolve: frozen.resolve },
     velocityProbe: velocityProbe?.observation() ?? null,
     historyValues: measurement ? {
       instances: Array.from(instances.instanceMatrix.array),
@@ -358,7 +360,39 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
     skinnedHistory: readVelocityPreviousBoneMatrices(character) !== undefined,
     instancedHistory: readVelocityPreviousMatrices(instances) !== undefined,
   });
+  // Fixture-only capture hold. The host keeps calling render() after a route's diagnostic loop ends,
+  // and every one of those frames advances the temporal chain's own jitter and history, so two hosts
+  // that stop at different frames publish different pixels from one measurement. After the last
+  // diagnostic frame this holds the resolve target that frame actually produced and presents that
+  // same texture on every later frame: a real draw each time, with no scene pass, no velocity, no
+  // reconstruction and no history write, so presenting invents no frame and no measurement.
+  let frozen = null;
+  const freeze = () => {
+    assertCondition(frozen === null, "The temporal fixture capture is already frozen.");
+    const resolve = temporal?.node._resolveRenderTarget;
+    assertCondition(
+      resolve !== undefined && resolve.texture !== undefined,
+      "Freezing a capture needs a reconstruction frame, and none rendered one.",
+    );
+    renderer.getDrawingBufferSize(drawingBuffer);
+    assertCondition(
+      resolve.width === drawingBuffer.x && resolve.height === drawingBuffer.y,
+      `A held capture must hold the display raster; the resolve is ${resolve.width}x${resolve.height} against ${drawingBuffer.x}x${drawingBuffer.y}.`,
+    );
+    frozen = { frame, node: texture(resolve.texture), resolve: `${resolve.width}x${resolve.height}` };
+    pipeline.outputNode = frozen.node;
+    // The pipeline's own "the output node changed" flag, so the held texture replaces the whole
+    // reconstruction graph rather than only taking over the frames that need no rebuild.
+    pipeline.needsUpdate = true;
+  };
   const render = () => {
+    if (frozen !== null) {
+      // Presenting a held resolve is still a draw on the host surface every frame. It is not a
+      // rendered frame, so the fixture's own frame must not advance and must not measure again.
+      assertCondition(frame === frozen.frame, "A held temporal capture advanced the fixture frame.");
+      pipeline.render();
+      return;
+    }
     instanceDraw = null;
     instanceUploads = [];
     readbackAttributes = [];
@@ -416,7 +450,7 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
     frame += 1;
   };
   return {
-    render, observation,
+    render, observation, freeze,
     sampleVelocity: async () => {
       await velocityProbe?.read();
       await resolveProbe?.read();

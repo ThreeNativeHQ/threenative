@@ -130,6 +130,9 @@ export async function runTemporalLifecycle({ renderer, scene, camera }, variant,
       `${label}: the ${name}'s measured MRT velocity peaked at ${witness.maxMeasuredPixels} px, under the ${MOVING_PIXELS} px moving threshold.`,
     );
   }
+  // All five reset frames and every tracked point have been read, so the capture holds this route's
+  // last real frame rather than whichever later frame each host happened to stop on.
+  fixture.freeze();
   return {
     ...fixture,
     detail: {

@@ -156,6 +156,9 @@ export function startScene(canvas, dimensions) {
         resizeCold.jitterMatchesInput === true,
         `scaled reconstruction: the resize frame jitted ${resizeCold.viewWidth}x${resizeCold.viewHeight} against a ${resizeCold.inputWidth}x${resizeCold.inputHeight} input raster.`,
       );
+      // Every diagnostic render and readback is done, so the capture holds this route's last real
+      // frame instead of whichever later frame each host happened to stop on.
+      fixture.freeze();
       return {
         ...fixture,
         detail: {
