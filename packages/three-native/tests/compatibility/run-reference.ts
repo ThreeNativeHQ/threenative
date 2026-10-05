@@ -144,8 +144,17 @@ export async function referenceGolden(
       continue;
     }
     const method = holder[op.method];
-    if (typeof method !== "function")
+    if (typeof method !== "function") {
+      // A member object (`Object3D.position`) is not callable: with no arguments it is read as the
+      // property itself, which three allocates once, so a caller keeps the same object and sees
+      // writes through it. This is the reference half of the native driver's `members` map, whose
+      // Ref is the one identity of that member (§6.1).
+      if (op.args.length === 0 && typeof method === "object" && method !== null) {
+        if (op.result !== undefined) bound.set(op.result, method);
+        continue;
+      }
       throw new Error(`TN_FIXTURE_METHOD_UNKNOWN: ${op.id}.${op.method} is not callable`);
+    }
     const returned = (method as (...args: unknown[]) => unknown).apply(
       target,
       op.args.map((arg) => argument(arg, bound)),

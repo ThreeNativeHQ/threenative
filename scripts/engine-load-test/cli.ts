@@ -512,6 +512,8 @@ async function runCp1Command(arms: string): Promise<void> {
     );
   const base = ladderOptions();
   const objects = Number(flag("objects") ?? 4096);
+  // The current arm's bundle times its GPU work only for CP1 (three's timestamp queries).
+  process.env.TN_BENCH_GPU_TIMESTAMPS = "1";
   const options = {
     ...base,
     axes: { ...base.axes, material: "unique" as const },

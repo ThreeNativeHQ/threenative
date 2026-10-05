@@ -33,6 +33,7 @@ declare const __TN_BENCH_CONFIG__: Readonly<{
   sourceSha?: string;
   warmup: number;
   width: number;
+  gpuTimestamps: boolean;
 }>;
 
 const config = __TN_BENCH_CONFIG__;
@@ -126,6 +127,15 @@ async function main(): Promise<void> {
         // PRD-534 CP1's meter: the game update plus the render call (projection, batching, encoding,
         // submission), timed exactly as the native engine's host times update plus submit.
         const hotPathMs: number[] = [];
+        // CP1's GPU meter: three's timestamp queries, resolved after each measured frame. The
+        // resolve is instrumentation, so the frame interval restarts after it.
+        const gpuMs: number[] = [];
+        const timing = harness.renderer as unknown as {
+          backend: { trackTimestamp: boolean };
+          info: { render: { timestamp: number } };
+          resolveTimestampsAsync(): Promise<number | undefined>;
+        };
+        if (config.gpuTimestamps) timing.backend.trackTimestamp = true;
         const collapseMs: number[] = [];
         // The rAF timestamp the host handed this frame's callback, aligned one-to-one with
         // frameMs/stepMs/collapseMs so a budget sample can be joined to the host-gap meter's
@@ -165,6 +175,12 @@ async function main(): Promise<void> {
             frameMs.push(Math.round(interval * 1000) / 1000);
             stepMs.push(Math.round(harness.stepMs * 1000) / 1000);
             hotPathMs.push(Math.round(hotPath * 1000) / 1000);
+            if (config.gpuTimestamps) {
+              await timing.resolveTimestampsAsync();
+              const ms = timing.info.render.timestamp;
+              if (Number.isFinite(ms) && ms > 0) gpuMs.push(Math.round(ms * 1000) / 1000);
+              previous = performance.now();
+            }
             collapseMs.push(Math.round(harness.collapseMs * 1000) / 1000);
             rafTimestampMs.push(Math.round(rafTimestamp * 1000) / 1000);
           }
@@ -177,6 +193,7 @@ async function main(): Promise<void> {
           ...(ladder === undefined ? {} : { ladder }),
           ...(renderCheck === undefined ? {} : { renderCheck }),
           hotPathMs,
+          ...(config.gpuTimestamps ? { gpuMs } : {}),
           stepMs,
           mode,
           objectCount,

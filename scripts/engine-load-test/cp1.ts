@@ -89,7 +89,7 @@ function currentResult(report: IRunReport, objects: number): ICp1ArmResult {
     hotPathMs: series(rung.hotPathMs),
     frameMs: series(rung.frameMs),
     crossingsPerFrame: null,
-    gpuMs: null,
+    gpuMs: rung.gpuMs === undefined || rung.gpuMs.length === 0 ? null : series(rung.gpuMs),
     presented: true,
   };
 }

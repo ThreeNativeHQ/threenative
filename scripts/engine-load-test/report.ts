@@ -117,6 +117,8 @@ export interface IRunReportRung {
   stepMs?: number[];
   /** PRD-534 CP1: per-frame game update plus render call, the hot path the verdict compares. */
   hotPathMs?: number[];
+  /** PRD-534 CP1: GPU time of each frame whose timestamps resolved; may be shorter than frameMs. */
+  gpuMs?: number[];
   triangles: number;
   visibleObjects: number;
 }
@@ -591,6 +593,18 @@ export function parseRunReport(value: unknown): IRunReport {
         );
       timingSeries[field] = samples as number[];
     }
+    const gpuMs = rung.gpuMs;
+    if (
+      gpuMs !== undefined &&
+      (!Array.isArray(gpuMs) ||
+        gpuMs.some(
+          (sample) => typeof sample !== "number" || !Number.isFinite(sample) || sample < 0,
+        ))
+    )
+      throw new BenchError(
+        "TN_BENCH_BAD_SHAPE",
+        `${path}.gpuMs must hold finite nonnegative samples`,
+      );
     const initialPlacementSha256 = rung.initialPlacementSha256;
     if (
       initialPlacementSha256 !== undefined &&
@@ -696,6 +710,7 @@ export function parseRunReport(value: unknown): IRunReport {
       ...(ladder === undefined ? {} : { ladder }),
       ...(renderCheck === undefined ? {} : { renderCheck }),
       ...timingSeries,
+      ...(gpuMs === undefined ? {} : { gpuMs: gpuMs as number[] }),
       mode: mode as RenderMode,
       objectCount,
       ...(initialPlacementSha256 === undefined ? {} : { initialPlacementSha256 }),

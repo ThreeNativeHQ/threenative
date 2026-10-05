@@ -10,7 +10,7 @@ All new package names, configuration fields, ABI names, status markers, and work
 
 ## PRD index
 
-**Batch status: IN PROGRESS — 98/237 phase boxes (41%) as of 2026-10-05, on `feat/native-engine` (PR #438).** This file is the batch index and the source proposal; the PRDs below carry the boxes. Work packages too large for one PRD (at most 3 phases, about 8 boxes) are a folder with its own `README.md` and child PRDs. The batch moves to `done/` whole only when every PRD in it is finished.
+**Batch status: IN PROGRESS — 100/237 phase boxes (42%) as of 2026-10-05, on `feat/native-engine` (PR #438).** This file is the batch index and the source proposal; the PRDs below carry the boxes. Work packages too large for one PRD (at most 3 phases, about 8 boxes) are a folder with its own `README.md` and child PRDs. The batch moves to `done/` whole only when every PRD in it is finished.
 
 ### Progress
 
@@ -23,7 +23,7 @@ Generated from the PRD files' boxes; a PRD is done when every box is ticked.
 | [PRD-499](PRD-499-n02-the-host-links-without-a-js-engine.md) | The host links and runs without a JS engine (N02) | 7/8 | in progress |
 | [PRD-500](PRD-500-n03-api-catalog-binding-abi-and-version-protocol.md) | API catalog, binding ABI and version protocol (N03) | 7/7 | done |
 | [PRD-501](N04-lifetime-and-numerics/PRD-501-n04a-math-matches-the-pinned-reference.md) | Math matches the pinned reference (N04a) | 4/5 | in progress |
-| [PRD-502](N04-lifetime-and-numerics/PRD-502-n04b-handles-keep-identity-and-aliases.md) | Handles keep identity and aliases (N04b) | 4/5 | in progress |
+| [PRD-502](N04-lifetime-and-numerics/PRD-502-n04b-handles-keep-identity-and-aliases.md) | Handles keep identity and aliases (N04b) | 5/5 | done |
 | [PRD-503](N04-lifetime-and-numerics/PRD-503-n04c-unreachable-cycles-are-reclaimed.md) | Unreachable cycles are reclaimed (N04c) | 7/7 | done |
 | [PRD-504](N04-lifetime-and-numerics/PRD-504-n04d-buffers-cross-the-abi-with-an-owner.md) | Buffers cross the ABI with an owner (N04d) | 7/7 | done |
 | [PRD-505](N05-native-typescript-qualification/PRD-505-n05a-the-language-corpus-compiles-on-linux-x64.md) | The language corpus compiles on Linux x64 (N05a) | 5/6 | in progress |
@@ -55,7 +55,7 @@ Generated from the PRD files' boxes; a PRD is done when every box is ticked.
 | [PRD-531](PRD-531-n18-v8-game-runtime-adapter.md) | V8 game runtime adapter (N18) | 6/8 | in progress |
 | [PRD-532](PRD-532-n19-webassembly-native-core-browser-port.md) | WebAssembly native-core browser port (N19) | 0/8 | not started |
 | [PRD-533](PRD-533-n20-platform-qualification-performance-default-promotion.md) | Platform qualification, performance and default promotion (N20) | 0/8 | not started |
-| [PRD-534](PRD-534-cp1-the-native-engine-earns-the-port.md) | The native engine earns the port (CP1) | 1/5 | in progress |
+| [PRD-534](PRD-534-cp1-the-native-engine-earns-the-port.md) | The native engine earns the port (CP1) | 2/5 | in progress |
 | [PRD-535](PRD-535-n21-the-js-engine-is-deleted.md) | The JS engine is deleted (N21) | 0/7 | not started |
 
 **CP1 (PRD-534), functional reading, not the verdict:** `pnpm bench:engines --arms current,native-v8,native-cpp --workload heterogeneous` at 4,096 cubes (Xvfb and headless Dawn) gives hot path p50 10.26 ms for current ThreeNative, 23.60 ms through V8 and 13.28 ms from C++. The bar is V8 at most half of current, so this reading is a stop signal. Current batches the colour-only materials into 3 draws; the native engine has no batching yet (N12). Whether minimal batching comes before the verdict runs is an owner decision, recorded in PR #438.

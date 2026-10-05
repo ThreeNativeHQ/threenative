@@ -124,6 +124,8 @@ export default defineConfig({
       // which is the one field a paired before/after needs to be readable as evidence.
       sourceSha: process.env.TN_BENCH_SOURCE_SHA,
       warmup: integer("TN_BENCH_WARMUP", 120),
+      // PRD-534 CP1: GPU time per frame from three's timestamp queries, off for every other run.
+      gpuTimestamps: process.env.TN_BENCH_GPU_TIMESTAMPS === "1",
     }),
   },
 });

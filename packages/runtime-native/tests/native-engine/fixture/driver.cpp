@@ -159,11 +159,22 @@ int Driver::run(std::istream& in, std::ostream& out) {
                     setter->second(object->second.ptr.get(), parseArg(t[3]), *this);
                     continue;
                 }
+                // A name the class does not have as a method but does have as a member
+                // (`Object3D.position`) reads that member, the same alias Ref on every call (§6.1);
+                // a member takes no arguments, and adoptAlias keeps the owner alive behind it.
                 auto method = binding.methods.find(t[2]);
-                if (method == binding.methods.end()) throw Unsupported{object->second.cls + "." + t[2] + "()"};
+                Method call = method == binding.methods.end() ? Method{} : method->second;
+                if (!call) {
+                    auto member = binding.members.find(t[2]);
+                    if (member == binding.members.end())
+                        throw Unsupported{object->second.cls + "." + t[2] + "()"};
+                    if (t.size() > 4)
+                        throw Unsupported{object->second.cls + "." + t[2] + " is a member, not a method"};
+                    call = member->second;
+                }
                 Args args;
                 for (size_t i = 4; i < t.size(); ++i) args.push_back(parseArg(t[i]));
-                Value result = method->second(object->second.ptr.get(), args, *this);
+                Value result = call(object->second.ptr.get(), args, *this);
                 if (t[3] != "-") {
                     if (result.kind == Value::Kind::Ref) {
                         // A chaining method returns its own object; a new object was adopted under a temp id.
