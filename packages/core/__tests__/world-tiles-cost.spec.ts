@@ -398,7 +398,6 @@ describe("TerrainTiles settled-frame cost", () => {
         attributeReads += attributes.mock.calls.length - before;
       }
       attributes.mockRestore();
-      // eslint-disable-next-line no-console
       console.log(
         `TerrainTiles 6 s walk: ${perCall.toFixed(3)} ms per follow()+process(), ` +
           `${(attributeReads / frames).toFixed(0)} getAttribute a frame, ` +
@@ -430,7 +429,6 @@ describe("TerrainTiles settled-frame cost", () => {
         tiles.process();
       }
       const perCall = (performance.now() - started) / 100;
-      // eslint-disable-next-line no-console
       console.log(
         `TerrainTiles settled 289-tile ring: ${perCall.toFixed(3)} ms per follow()+process()`,
       );

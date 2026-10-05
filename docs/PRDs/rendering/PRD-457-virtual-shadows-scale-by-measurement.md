@@ -5,7 +5,7 @@ prd_contract: v1
 # PRD-457 — Virtual shadows page only when pages are cheaper than cached clip levels
 
 **Status:** PROPOSED — filed 2026-09-26.  
-**Priority:** after the streaming quick wins; pursue when representative scenes show shadow cost is material.  
+**Priority:** P1 — Declared required by P1 PRD-458 for its shadow half; 6 open boxes and no sparse page atlas renders yet.
 **Complexity:** 7 → HIGH. The bookkeeping already exists; the risk is turning it on where many page renders cost more than the current cached-level path.  
 **Depends on:** the shipped `VirtualShadowNode` and `virtual-shadow-pages.ts` infrastructure.
 

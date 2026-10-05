@@ -1,6 +1,7 @@
 # PRD-477 — WorldCells auto-on + measured budgets
 
 **Status:** PARTIAL — Phase 1 capture/judgment plumbing is implemented on the draft PR; real visual red/green and all acceptance claims remain open. No engine default has changed.
+**Priority:** P1 — Gate unbuilt that must red on the known-bad impostors-default-on build.
 **Complexity:** 6 (MEDIUM) — a standing visual gate (one script plus a judge), a native conformance case, and budget derivation inside `packages/core/src/world-cells.ts`. Risk override: none.
 **Owner:** João
 **Depends on:** PRD-475 (Machinefall's open world at 120 fps, no visual loss, #384), PRD-473 (GPU-driven world, #375).

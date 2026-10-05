@@ -5,6 +5,7 @@ prd_contract: v1
 # PRD-482 — The local agent loop costs only what it catches
 
 **Status:** PARTIAL — phases 1 and 2 verified; AC-1 audits the 7 days after this lands
+**Priority:** P2 — One open box: audit seven days of runner-minutes after phase 2 and cut useless steps.
 **Complexity:** 2 (LOW)
 **Owner:** CI tooling
 **Depends on:** [PRD-480](../CI/PRD-480-linux-ci-runs-on-the-owner-machine.md) for the push rule's wording

@@ -1645,12 +1645,12 @@ function sha256(contents) {
   return createHash("sha256").update(contents).digest("hex");
 }
 
-function verifyApkBundle(apk, bundle, javaHome) {
+export function verifyApkBundle(apk, bundle, javaHome, extract = runCommand) {
   const temporary = mkdtempSync(join(tmpdir(), "threenative-conformance-apk-"));
   try {
-    runCommand(
+    extract(
       join(javaHome, "bin", process.platform === "win32" ? "jar.exe" : "jar"),
-      ["--extract", "--file", apk, "assets/scripts/main.js"],
+      ["--extract", "--file", apk, "assets/scripts/main.js", "lib"],
       { cwd: temporary },
     );
     const packaged = join(temporary, "assets/scripts/main.js");
@@ -1658,6 +1658,11 @@ function verifyApkBundle(apk, bundle, javaHome) {
     assertPackagedAndroidBundle(readFileSync(packaged), {
       outputSha256: sha256(readFileSync(bundle)),
     });
+    const libraries = join(temporary, "lib");
+    return Object.fromEntries(readdirSync(libraries, { withFileTypes: true })
+      .filter(entry => entry.isDirectory())
+      .map(entry => [entry.name, fileSha256(join(libraries, entry.name, "libmystral-runtime.so"))]));
+
   } finally {
     rmSync(temporary, { recursive: true, force: true });
   }
@@ -1754,8 +1759,9 @@ async function runAndroid(
     return;
   }
   const apk = join(androidDir, "app/build/outputs/apk/debug/app-debug.apk");
+  let runtimeLibraries;
   try {
-    verifyApkBundle(apk, bundlePath, tools.javaHome);
+    runtimeLibraries = verifyApkBundle(apk, bundlePath, tools.javaHome);
   } catch (error) {
     result.status = "fail";
     result.native = {
@@ -1969,6 +1975,7 @@ async function runAndroid(
         pid,
         bundleSha256: bundleHash,
         apkBundleVerified: true,
+        runtimeLibraries,
         freshInstall: true,
         webgpuLogChannel: true,
         ...(deviceMetrics === null ? {} : { deviceMetrics }),
@@ -2032,6 +2039,7 @@ async function runAndroid(
         pid,
         bundleSha256: bundleHash,
         apkBundleVerified: true,
+        runtimeLibraries,
         freshInstall: true,
         webgpuLogChannel: true,
         settleMs,

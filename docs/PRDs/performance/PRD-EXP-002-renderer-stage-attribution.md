@@ -5,6 +5,7 @@ prd_contract: v1
 # PRD-EXP-002 — WebGPU renderer-stage attribution and truthful counters
 
 **Status:** IMPLEMENTED — browser complete, Android gate open. Instrumentation only; no renderer fork or optimization authorized.
+**Priority:** P2 — One open box: a physical Android report with render, draw and pass counts.
 **Depends on:** reconcile the `renderer.info` portion of PRD-071 with current `packages/core/src/renderer.ts`.
 **Evidence:** `docs/verification/render-work-reduction-2026-08-11.md`; `docs/verification/prd-exp-002-renderer-stage-attribution-2026-08-11.md`.
 

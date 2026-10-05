@@ -180,17 +180,6 @@ interface IInstalledDevice {
   readonly restore: readonly (() => void)[];
 }
 
-interface IBackendDataLike {
-  readonly pipeline?: unknown;
-  readonly error?: unknown;
-}
-
-interface IRenderObjectContext {
-  readonly pass?: unknown;
-  readonly object?: unknown;
-  readonly material?: unknown;
-}
-
 interface IActiveRenderObject {
   readonly clippingContext: unknown;
   readonly object: unknown;

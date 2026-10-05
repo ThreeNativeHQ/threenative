@@ -5,6 +5,7 @@ prd_contract: v1
 # PRD-400 — The frame gets cheaper one measured, removable cost at a time
 
 **Status:** IN PROGRESS
+**Priority:** P1 — Active campaign: one measured cost at a time with native and Pixel 8 acceptance.
 **Progress:** 0/5 phases (Phase 1: skill and judge plumbing landed; live baseline pending)
 **Complexity:** 7 → HIGH; 11+ implementation files across core, the three.js patch, the native
 recorder and the C++ replay (+3), retained projection and command-plan state (+2), crosses the native

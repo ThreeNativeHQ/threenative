@@ -5,7 +5,7 @@ prd_contract: v1
 # PRD-456 — Distant world cells stay visible after their detailed cells unload
 
 **Status:** PROPOSED — filed 2026-09-26.  
-**Priority:** later open-world investment, after streamed LOD and honest resource budgets.  
+**Priority:** P1 — Declared required by P1 PRD-458, which owns only what its prerequisites leave out; 6 open boxes, proxy cooking unbuilt.
 **Complexity:** 8 → HIGH. Build-time proxy generation, package schema, two residency rings and cross-fade-free handoff must agree across web/native.  
 **Related:** [PRD-253 content residency/HLOD](../BLOCKED/requires-portable-native-residency-consumer/PRD-253-content-residency-and-screen-space-hlod.md) is an older blocked proposal whose residency assumptions predate shipped WorldCells and AutoLOD. This PRD supersedes **only its distant-cell HLOD/proxy portion**; it does not duplicate its historical Phase-0 evidence.
 

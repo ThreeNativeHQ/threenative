@@ -8,6 +8,7 @@ prd_contract: v1
 kill switch in §9 fired as written. Nothing else below has executed. No physical-hardware, signing or
 mobile-readiness claim is made by this file, and no device gate has run.
 
+**Priority:** P2 — Open boxes split PRD-056 into three, repair references and recover the unlanded orchestrator.
 **What Phase 0 found**, in full in
 [`docs/verification/prd-128-phase-0-2026-08-16.md`](../../verification/prd-128-phase-0-2026-08-16.md):
 

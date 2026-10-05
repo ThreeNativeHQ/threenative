@@ -11,11 +11,17 @@ const {
   INDEPENDENT_CORE_MODULES,
   INDEPENDENT_PACKAGES,
   INDEPENDENT_PROOFS,
+  integrationCandidatePreflight,
 } = await import(url);
+const { classify, selectionPlan } = await import(
+  new URL("../ci-change-scope.mjs", import.meta.url).href
+);
 const workflow = readFileSync(
   new URL("../../.github/workflows/integration.yml", import.meta.url),
   "utf8",
-);
+)
+  .replace(/\n {2}completion:\n[\s\S]*$/u, "\n")
+  .replace(/ {4}outputs:\n {6}coverage_receipt:\n {8}value:.*\n/u, "");
 function select(after: string, files = [".github/workflows/integration.yml"]) {
   return integrationSelection({ before: workflow, after, files }).lanes;
 }
@@ -136,15 +142,19 @@ describe("integration work applies to the changed source", () => {
     ).toEqual(none);
   });
   it.each([
-    ["trigger", "types: [opened, synchronize, reopened, ready_for_review]", "types: [opened]"],
+    ["trigger", "required: true", "required: false"],
     ["permissions", "contents: read", "contents: write"],
-    ["concurrency", "cancel-in-progress: true", "cancel-in-progress: false"],
+    [
+      "concurrency",
+      "cancel-in-progress: ${{ github.event_name == 'pull_request' }}",
+      "cancel-in-progress: false",
+    ],
     ["shared paths job", "timeout-minutes: 5", "timeout-minutes: 6"],
     ["entry cross-lane dependency", "needs: paths", "needs: [paths,csg]"],
     ["entry self-cycle", "needs: paths", "needs: [paths,tone]"],
-    ["unknown dependency", "needs: [fluid-collision]", "needs: [missing-job]"],
-    ["cycle", "needs: [fluid-collision]", "needs: [fluid-collision-native]"],
-    ["ambiguous needs", "needs: [fluid-collision]", "needs: ${{ inputs.jobs }}"],
+    ["unknown dependency", "needs: [decals]", "needs: [missing-job]"],
+    ["cycle", "needs: [decals]", "needs: [decals-native]"],
+    ["ambiguous needs", "needs: [decals]", "needs: ${{ inputs.jobs }}"],
     ["unknown shape", "  tone:\n", "  tone: &alias\n"],
   ])("fails closed for %s edits", (_name, before, after) => {
     expect(select(workflow.replace(before, after))).toEqual(all);
@@ -206,6 +216,99 @@ describe("integration exact Git source selection", () => {
       git("commit", "-qm", "rename");
       const head = git("rev-parse", "HEAD");
       process.chdir(root);
+      const plan = classify({
+        root,
+        base,
+        head,
+        candidateSha: head,
+        target: "develop",
+        eventName: "merge_group",
+      });
+      const preflight = integrationCandidatePreflight({
+        plan,
+        eventName: "merge_group",
+        target: "develop",
+        baseSha: base,
+      });
+      expect(preflight.candidateSha).toBe(head);
+      expect(preflight.lanes).toEqual(all);
+      // Deliberate gate retirement must be reflected in every exhaustive event inventory.
+      for (const eventName of ["pull_request", "merge_group", "workflow_dispatch", "push"]) {
+        const target = eventName === "push" ? "main" : "develop";
+        const exhaustive = selectionPlan(
+          "full",
+          "retained exhaustive inventory",
+          [],
+          head,
+          true,
+          0,
+          target,
+          true,
+        );
+        const inventory = integrationCandidatePreflight({
+          plan: exhaustive,
+          eventName,
+          target,
+          baseSha: base,
+        });
+        expect(inventory.jobs).not.toContain("fluid-consumers");
+        expect(inventory.jobs).toContain("fluid-collision");
+        expect(inventory.jobs).toContain("fluid-collision-native");
+      }
+      expect(preflight.jobs).toEqual(
+        [...workflow.matchAll(/^ {2}([a-z][a-z0-9-]*):\n/gmu)]
+          .map((m) => m[1])
+          .filter((id) => id !== "paths")
+          .sort(),
+      );
+      const reviewPlan = selectionPlan(
+        "ci",
+        "review exemption",
+        ["scripts/ci-required.mjs"],
+        head,
+        false,
+        0,
+        "develop",
+      );
+      expect(() =>
+        integrationCandidatePreflight({
+          plan: reviewPlan,
+          eventName: "merge_group",
+          target: "develop",
+          baseSha: base,
+        }),
+      ).toThrow("CI_REQUIRED_QUALIFICATION_MINIMUM");
+      expect(() =>
+        integrationCandidatePreflight({
+          plan,
+          eventName: "merge_group",
+          target: "develop",
+          baseSha: base,
+          candidateSha: base,
+        }),
+      ).toThrow("CI_INTEGRATION_CANDIDATE_MISMATCH");
+      for (const malformed of [
+        workflow.replace("  decals-native:\n", "  decals-native:\n    if: ${{ false }}\n"),
+        workflow.replace(
+          "candidate_sha: ${{ steps.filter.outputs.candidate_sha }}",
+          "candidate_sha: 'wrong'",
+        ),
+      ]) {
+        writeFileSync(path.join(root, ".github/workflows/integration.yml"), malformed);
+        git("add", ".");
+        git("commit", "-qm", "malformed scheduling");
+        const invalidSha = git("rev-parse", "HEAD");
+        const invalid = selectionPlan("full", "test", [], invalidSha, true, 0, "develop", true);
+        expect(() =>
+          integrationCandidatePreflight({
+            plan: invalid,
+            eventName: "merge_group",
+            target: "develop",
+            baseSha: base,
+          }),
+        ).toThrow(/unknown dependent gate|unsupported integration metadata expression/u);
+        git("checkout", "-q", head);
+      }
       expect(integrationGitSelection(base, head).lanes).toEqual({ ...none, csg: true });
       mkdirSync(path.join(root, "packages/runtime-native/src"), { recursive: true });
       mkdirSync(path.join(root, "scripts"), { recursive: true });
@@ -349,7 +452,7 @@ describe("fluid runtime independence", () => {
     expect(lanes["fluid-particles"]).toBe(true);
   });
   it.each(["packages/core/src/renderer.ts", "packages/core/src/render/chain.ts"])(
-    "retains fluid consumers for shared renderer and observation source: %s",
+    "retains focused fluid coverage for shared renderer and observation source: %s",
     (file) => {
       const lanes = select(workflow, [file]);
       expect(lanes["fluid-native"]).toBe(true);
@@ -656,4 +759,38 @@ it("fails closed when a shared producer reaches a newly added unclassified consu
     "new-core": true,
   });
   expect(select(added, ["packages/core/tsup.config.ts"])).toEqual({ ...all, "new-core": true });
+});
+
+it("keeps the capture verifier's candidate SHA distinct from attempt-qualified artifacts", () => {
+  const capture =
+    (workflow.split("\n  capture:\n")[1] ?? "").split("\n  fluid-collision:\n")[0] ?? "";
+  const candidate = "b".repeat(40);
+  const evaluate = (value: string) =>
+    value
+      .replaceAll("${{ inputs.candidate_sha }}", candidate)
+      .replaceAll("${{ github.run_id }}", "123")
+      .replaceAll("${{ github.run_attempt }}", "2");
+  const expectedSource = capture.match(/EXPECTED_SOURCE_SHA: (.*)/u)?.[1];
+  expect(expectedSource).toBeDefined();
+  expect(evaluate(expectedSource as string)).toBe(candidate);
+  const diagnostic = capture.match(/name: (world-capture-diagnostic-.*)/u)?.[1];
+  expect(diagnostic).toBeDefined();
+  expect(evaluate(diagnostic as string)).toBe(`world-capture-diagnostic-123-2-${candidate}`);
+});
+
+describe("deliberately retired flaky fluid browser gate", () => {
+  it("removes the automatic job and join while retaining focused CPU/native coverage and diagnostics", () => {
+    const actual = readFileSync(
+      new URL("../../.github/workflows/integration.yml", import.meta.url),
+      "utf8",
+    );
+    expect(actual).not.toMatch(/^ {2}fluid-consumers:/mu);
+    expect(actual.match(/^ {4}needs: \[paths,.*$/mu)?.[0]).not.toContain("fluid-consumers");
+    expect(actual).toContain("packages/core/__tests__/fluid-particles.spec.ts");
+    expect(actual).toContain("scripts/verify-fluid-collision.ts");
+    expect(actual).toContain("scripts/verify-fluid-collision-native.ts");
+    for (const file of ["scripts/observe-fluid-ci.mjs", "scripts/verify-fluid-consumers.ts"]) {
+      expect(existsSync(new URL(`../../${file}`, import.meta.url))).toBe(true);
+    }
+  });
 });
