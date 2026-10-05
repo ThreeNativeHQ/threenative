@@ -1317,3 +1317,64 @@ The low-input quality family fails its own warm bound twice, afterReveal 1 at .0
 at .01774, while `qualityBeatsSpatialStability` holds. Both Phase 2 boxes and the motion and quality
 edge boxes stay **open**, no box is ticked by this entry, and no full CI board, push or merge ran
 here.
+
+### The missing cell of the blend/sampling ablation (2026-10-06)
+
+**The cell that was missing.** The previous entry blamed the luminance reweighting from a single
+paired arm: `resolve-cubic-strict-ordinary` changes only the blend and measures 0 at afterReveal 5,
+while `resolve-cubic-strict` keeps the reweighting and measures .01559 there. That pair varies the
+blend under **cubic** history sampling, so it cannot separate the blend from the sampling. The cell
+that separates them is the shipped combination itself: linear sampling plus the ordinary blend, which
+is what the default installs. This entry measured it.
+
+**The change, one line, reverted.** `temporalAA.ts` passed `"luminance"` to
+`createExperimentalTemporalResolve`; it passed `"ordinary"` for this run, with `"linear"` untouched so
+the ablation varies the blend alone. No new helper, no new argument, no new dependency, and no
+harness change: `temporalResolve.ts` already builds both arms from the installed TSL kernel, and the
+installed `TAAUNode.js` (`three@0.185.1` patched) still shows the luminance `flickerReduction` it was
+ported from, so this is a deliberate divergence from upstream, not a port defect.
+
+**What the production script measured, on that change.** `sh scripts/xvfb.sh node --import tsx
+scripts/verify-temporal-motion.ts` unmodified → exit `1`, **31 arms** (22 motion + 9 quality), 16
+frames each, no `failure.json`, every arm's adapter `nvidia/turing`. `temporal` stale fractions
+[.01774, 0, 0, 0, 0, **.01559**, .00027, .00027] against the pinned baseline
+[.01774, 0, 0, 0, 0, .01586, .00027, 0] — the warm ghost at afterReveal 5 does not move. Edge error
+0.05848 improves on 0.06055, instability 0.03193 worsens on 0.03139, and neither clears its gate, so
+`edgeImprovement` stays false. `quality-temporal` stale [.0516, .01908, .00484, .00349, .00376,
+**.01747**, .00188, .00457] against baseline [.0516, .01908, .00457, .00349, .00376, .01774, .00215,
+.00457]: the low-input warm bounds still fail twice. The paired arms are unchanged by the change and
+reproduce the previous numbers. Counters are unchanged: 27 arms publish a 36-frame share series
+(`visited` 230400, source age 0, every fraction finite) and the 4 fragment-overridden
+unchecked-history arms carry their `unavailable` reason; the decision is still the shared
+`historyValidity` `Fn` sampled per display pixel, so no new engine API and no policy change reached the
+render.
+
+**The pixels that survive.** Measured with the harness's own `linearFrame` and its `revealIndex` 8
+mask, against the `supersampled` reference: afterReveal 5 holds 62 stale pixels of 4225 revealed
+interior pixels, all inside one strip — x ≈ 358–366, rows 135–199 — with residue 0.103–0.141, just
+over the harness's 0.1 threshold. Their actual linear RGB is (0.078, 0.098, 0.153) against a target of
+(0.264, 0.332, 0.470), and the pre-reveal value was the pure red marker (1, 0, 0). The residue is a
+dark smear from the removed marker, not a red hue smear, so "the history keeps the old colour" does not
+describe it: a narrow band is under-resolved on the frame the marker's silhouette used to cover.
+
+**The causal result, and the decision.** With linear sampling held fixed, the ordinary blend does not
+remove the ghost (.01559 where the pinned baseline measures .01586). With cubic sampling held, it does
+(0). So the blend is not the cause; the only configuration in this corpus that clears the warm bound is
+`resolve-cubic-strict-ordinary`, and it differs from the default on the **sampling** axis, which is a
+second, larger change than this entry's budget allowed and is not qualified as a default. The source is
+therefore reverted to `f1b22c0be` and no product change ships: starter's tree pin stays
+`022310e487fa1c39e6b81fdcdbfb7cb13f5977e51fdf5c146c8c0696e9d9db19`, all 13 template hashes are
+unchanged, and `vitest run` over `scaffold`, `temporal-resolve`, `temporal-aa` and `temporal-chain`
+is `4 files, 105 tests passed`, exit `0`.
+
+**One honest harness consequence.** The run's exit `1` is not only the gates. `writeTemporalMotionSummary`
+asserts `authoredLinearEquivalent` — the installed `temporal` arm must hash-match the `resolve-linear`
+arm — and a deliberate default change makes that false by construction, so the assertion fired after
+every arm was retained and `summary.json` was written with `pass: false`. No threshold, score, camera,
+corpus or frame changed; a run whose default diverges from `resolve-linear` will always report this,
+which is the check working, not a defect. Native and browser P1 lanes were not re-run here because no
+runtime change ships.
+
+**Both boxes stay open.** The ghost box needs the warm bound qualified at full and low quality with its
+negative controls, native and counters; this entry qualifies the cause instead. The motion and quality
+edge boxes stay open, and no box is ticked by this entry.
