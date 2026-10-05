@@ -11,6 +11,7 @@ const SELECTOR = "scripts/ci-integration-scope.mjs";
 // projects. Producer configuration reaches every package lane; library source reaches its
 // runtime consumers. This inventory adds coverage before the unknown-executable fallback.
 const PACKAGE_LANES = [
+  "animation",
   "exposure",
   "cold-boot",
   "decals",
@@ -55,7 +56,7 @@ const PACKAGE_PRODUCER = new RegExp(
   "u",
 );
 export const INDEPENDENT_PROOFS =
-  /^scripts\/(?:run-test-suite\.sh|verify-animation-reversal\.ts|temporal-aa-(?:evidence|quality)\.ts|velocity-(?:capture|cost)-proof\.ts|verify-temporal-(?:aa|motion)\.ts|verify-velocity-history\.ts)$/u;
+  /^scripts\/(?:run-test-suite\.sh|verify-animation-reversal\.ts|verify-vq-locomotion\.ts|temporal-aa-(?:evidence|quality)\.ts|velocity-(?:capture|cost)-proof\.ts|verify-temporal-(?:aa|motion)\.ts|verify-velocity-history\.ts)$/u;
 function dependencyLanes(file, current) {
   if (PACKAGE_PRODUCER.test(file)) return PACKAGE_LANES;
   if (/^packages\/core\/src\//u.test(file)) {

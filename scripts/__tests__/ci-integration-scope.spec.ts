@@ -34,6 +34,68 @@ const none = Object.fromEntries(
 );
 const all = Object.fromEntries(Object.keys(none).map((key) => [key, true]));
 describe("integration work applies to the changed source", () => {
+  it("retains animation routing for weighted playback and authored locomotion", () => {
+    for (const file of [
+      "packages/core/src/animation.ts",
+      "packages/core/__tests__/animation-weighted.spec.ts",
+      "packages/core/__tests__/vq-locomotion-blend-spaces.spec.ts",
+      "examples/abyss-framework/src/render/locomotion-weights.ts",
+      "examples/abyss-framework/src/render/animation-reversal-game.ts",
+    ]) {
+      expect(select(workflow, [file]).animation, file).toBe(true);
+    }
+  });
+  it("selects the animation lane alone for the two-rig locomotion capture", () => {
+    for (const file of [
+      "scripts/verify-vq-locomotion.ts",
+      "examples/abyss-framework/src/render/vq-locomotion-game.ts",
+      "examples/abyss-framework/src/render/vq-locomotion-trace.ts",
+      "examples/abyss-framework/src/render/locomotion-driver.ts",
+      "examples/abyss-framework/src/vq-locomotion-main.ts",
+      "examples/abyss-framework/playtests/vq-locomotion-blend-spaces.playtest.json",
+      "examples/abyss-framework/assets/mannequin.glb",
+    ]) {
+      expect(select(workflow, [file]), file).toEqual({ ...none, animation: true });
+    }
+  });
+  it("keeps animation workflow edits local while preserving other lanes", () => {
+    expect(
+      select(
+        workflow.replace(
+          "Capture real mannequin gait reversals",
+          "Capture mannequin gait reversals",
+        ),
+      ),
+    ).toEqual({ ...none, animation: true });
+  });
+  // The hosted native proof is a dependent of `animation`, not a lane of its own: a blend-space
+  // source edit has to reach the fresh host build, and the host build has nothing to say when the
+  // browser capture did not move.
+  it("runs the native locomotion job with its animation lane", () => {
+    expect(
+      select(
+        workflow.replace("Linux native locomotion correctness", "Linux native locomotion verified"),
+      ),
+    ).toEqual({ ...none, animation: true });
+  });
+  it("joins the native locomotion job in the real workflow's completion gate", () => {
+    const real = readFileSync(
+      new URL("../../.github/workflows/integration.yml", import.meta.url),
+      "utf8",
+    );
+    expect(real).toContain("\n  animation-native:\n");
+    const reason = (after: string) =>
+      integrationSelection({
+        files: [".github/workflows/integration.yml"],
+        before: real,
+        after,
+      }).reason;
+    // A job the completion gate does not name is a required proof nothing waits for, and the
+    // selector has to say so rather than report a board that looks complete.
+    expect(reason(real.replace(", animation-native", ""))).toContain("unknown completion join");
+    expect(reason(real)).toBe("source filters and bounded job/dependency comparison");
+  });
+
   it("runs exposure alone for an exposure workflow step edit", () => {
     expect(select(workflow.replace("pnpm test:tone", "pnpm test:tone --example"))).toEqual({
       ...none,
@@ -558,6 +620,23 @@ describe("fluid CI observer ownership", () => {
 });
 
 describe("reviewed producer and independent feature boundaries", () => {
+  it("registers animation as a workspace producer consumer", () => {
+    for (const file of ["packages/core/tsup.config.ts", "packages/playtest/package.json"]) {
+      const lanes = select(workflow, [file]);
+      expect(lanes.animation, file).toBe(true);
+      expect(lanes.csg, file).toBe(false);
+      expect(lanes.ik, file).toBe(false);
+      expect(lanes.vegetation, file).toBe(false);
+    }
+  });
+  it("keeps independent terrain worker modules outside animation", () => {
+    for (const file of [
+      "packages/core/src/terrain-jobs-worker.ts",
+      "packages/core/src/world-tiles.ts",
+    ]) {
+      expect(select(workflow, [file]).animation, file).toBe(false);
+    }
+  });
   it("keeps fluid for the shared game loop and core build config", () => {
     for (const file of [
       "packages/core/src/game.ts",
@@ -580,6 +659,7 @@ describe("reviewed producer and independent feature boundaries", () => {
       "packages/core/src/world-tiles.ts",
       "packages/core/src/animation.ts",
       "scripts/verify-animation-reversal.ts",
+      "scripts/verify-vq-locomotion.ts",
       "scripts/temporal-aa-quality.ts",
     ]) {
       const lanes = select(workflow, [file]);
