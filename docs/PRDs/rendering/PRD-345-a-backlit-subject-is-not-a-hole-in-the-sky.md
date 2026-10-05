@@ -103,6 +103,7 @@ P1, PRD-345. The workbook remains unchanged.
 
 - [ ] Verify generated clean starters/simple scenes and template visual gates including dark environment/no-sun and backlit character controls. proof: `pnpm test:templates`, tone crops and red-green captures
 - [ ] Complete required root and native qualification without claiming unexecuted targets. proof: `pnpm typecheck && pnpm lint && pnpm test` and targeted native fixture
+  - 2026-10-04 interim, open: typecheck and lint pass. `pnpm test` stops in runtime-native (21 reds, native host binaries not built here). Root vitest 8007 pass, 4 red under load 35-50: template typecheck passes in isolation, `generated-shooter-input.spec.ts` red twice and not yet attributed.
 
 ## Qualification design
 
@@ -331,7 +332,7 @@ source-first architecture requires an explicit coherent policy change before pac
    via `assert.tone`, that `p1` and `p99` remain separated — a scene lit only by the fill still has
    range.
    *Red-green:* set the analytic fill to black; the range assertion goes red.
-- [ ] **Every template has both, and says so.** `scripts/__tests__/primary-docs.spec.ts` and the proof: `primary-docs and generated convention rows`
+- [x] **Every template has both, and says so.** `scripts/__tests__/primary-docs.spec.ts` and the proof: `primary-docs and generated convention rows; 2026-10-04 primary-docs.spec.ts + instruction-budget.spec.ts 17/17 pass, spec asserts rimGain and fillGain in all 13 template AGENTS.md (rain included, custom shader exception stated)`
    templates' own gate assert each template's `AGENTS.md` names both conventions and both override
    names.
 - [ ] **The templates gate is green on the templates that currently pass it.** Note the known red lane: proof: `complete template gate with explicit lane outcomes`
