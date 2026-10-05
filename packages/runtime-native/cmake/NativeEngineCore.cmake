@@ -118,7 +118,7 @@ target_link_libraries(tn-native-engine-tonemap-test PRIVATE tn_engine_shader)
 
 tn_native_engine_test(tn-native-engine-package-test tests/native-engine/package_test.cpp
     native_engine_package_sha256=sha256
-    native_engine_cooked_package_load=load
+    native_engine_cooked_package_parse=load
     native_engine_cooked_package_reject=reject)
 target_link_libraries(tn-native-engine-package-test PRIVATE tn_engine_assets)
 
