@@ -1,6 +1,6 @@
 # PRD-530 — Strict native-TypeScript game packaging (N17)
 
-**Status:** PROPOSED — later milestone (gate T), after promotion; not required by N20 (owner decision 2, 2026-10-04)
+**Status:** IN PROGRESS — later milestone (gate T), after promotion; not required by N20 (owner decision 2, 2026-10-04)
 **Complexity:** 4 — gate T: compiler, engine and packaging meet in one inspected artifact
 **Owner:** João
 **Work package:** N17 — [native-engine batch](README.md)
@@ -39,9 +39,9 @@ engine or LLVM. Packaging today is `packages/runtime-native/scripts/package-desk
 ## Execution Phases
 
 #### Phase 1: Profiles and identity
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **Files:** `packages/create-threenative/` (profile resolution), proposed `packages/runtime-native/scripts/package-strict.mjs`
-- [ ] Every contradictory engine/runtime/UI combination is rejected with a named error. proof: `pnpm exec vitest run packages/create-threenative/__tests__/native-profile.spec.ts`
+- [x] Every contradictory engine/runtime/UI combination is rejected with a named error. proof: `pnpm exec vitest run packages/create-threenative/__tests__/native-profile.spec.ts` — 2026-10-05: green (4 tests). `resolveNativeProfile` (`packages/create-threenative/src/native-profile.ts`) applies the decision record's section 6 table: native + VM is the native-engine artifact, native + AOT/C++ + native or no UI is strict-native (JS-free), a WebView keeps an AOT game labelled never JS-free, and the contradictions throw `TN_PROFILE_LEGACY_NATIVE_RUNTIME`, `TN_PROFILE_NATIVE_LOADS_JS`, `TN_PROFILE_STRICT_LEGACY`, `TN_PROFILE_STRICT_JS_RUNTIME`, `TN_PROFILE_STRICT_WEBVIEW` or `TN_PROFILE_UNKNOWN`, naming the offending values; none falls back. The spec enumerates all 72 combinations of the dimensions, `loadsJsRuntime` and a strict request. The packager calls it once `package-strict.mjs` exists (phase 1 box 2)
 - [ ] A strict artifact carries the §13 identity manifest and refuses a mismatched ABI at startup. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_artifact_identity`
 
 #### Phase 2: Incremental strict builds
