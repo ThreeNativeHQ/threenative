@@ -126,9 +126,8 @@ slot names and index ranges, not texture payloads, so textures come from your ow
 
 ## Inspecting a file before you build from it
 
-`ueformat` ships a CLI, `ueformat-inspect`, as the bin of `@threenative/ueformat`. Install that
-package first; there is no separate `ueformat-inspect` package on the registry, so a bare `npx
-ueformat-inspect` would try to download one that does not exist.
+`ueformat` ships a CLI, `ueformat-inspect`, as the bin of `@threenative/ueformat`. Add that package,
+then run the binary through `pnpm exec`.
 
 ```sh
 pnpm add @threenative/ueformat
@@ -179,7 +178,7 @@ Every parse and geometry failure is a typed error with a code. Catch the class, 
 | `UNSUPPORTED_STATIC_MESH_LAYOUT` | `raw-unreal` | No inline mesh description, compressed buffer, bulk data or raw mesh blob matched | Read `error.details.probed` and `error.details.supported`: the error names what it looked for, so a cooked or IoStore asset is identifiable from it. |
 | `MISSING_CODEC` | `raw-unreal` | A compressed payload needs `oodle`, `lz4` or `zlib` | Inject the codec named in the message. See the table above. |
 | `MISSING_BULK_DATA_FILE` | `raw-unreal` | The payload is in a sibling `.ubulk`/`.uptnl` | Read the file the message names and pass it as `bulkDataFiles`. |
-| `INVALID_RAW_MESH` | `raw-unreal` | An `FRawMesh` blob does not validate: a version pair the parser does not model, a truncated array, a UV channel that disagrees with the wedge count, or no renderable geometry | Read `error.details`. It carries `offset` plus the count or version that disagreed. `version` outside `0`/`1`, or a nonzero `licenseeVersion`, is the one case that means the source model predates the layout UE4.18 writes; re-export it. Every other case means the candidate was not a real `FRawMesh`, so it was rejected as a byte pattern and another blob in the same file may still parse. |
+| `INVALID_RAW_MESH` | `raw-unreal` | An `FRawMesh` blob does not validate: a version pair the parser does not model, a truncated array, a UV channel that disagrees with the wedge count, or no renderable geometry | Read `error.details`. It carries `offset` plus the count or version that disagreed. A `version` outside `0`/`1`, or a nonzero `licenseeVersion`, means the blob uses a serialized layout this parser does not model, so re-export the model. Every other case means the candidate was not a real `FRawMesh`, so it was rejected as a byte pattern and another blob in the same file may still parse. |
 | `INVALID_MAGIC` | `ueformat` | The file does not start with `UEFORMAT` | It is not a `.uemodel`. |
 | `UNSUPPORTED_VERSION` | `ueformat` | The version byte is not `10` | Re-export with a CUE4Parse build that writes UEFormat v10. |
 | `INVALID_COMPRESSION` | `ueformat` | A ZSTD body, or a compression format this build does not know | Inject `zstdDecoder` in the parse options. The CLI cannot do this. |

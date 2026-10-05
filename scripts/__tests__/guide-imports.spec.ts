@@ -13,7 +13,7 @@ const DOCS = [
   path.resolve("packages/create-threenative/agent-docs/references"),
 ];
 
-function exportedNames(file: string, seen: ReadonlySet<string> = new Set()): ReadonlySet<string> {
+function exportedNames(file: string, seen: Set<string> = new Set()): ReadonlySet<string> {
   if (seen.has(file)) return new Set();
   seen.add(file);
   const names = new Set<string>();

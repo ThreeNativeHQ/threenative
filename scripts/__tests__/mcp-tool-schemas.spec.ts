@@ -67,7 +67,10 @@ describe("recorded MCP tool schemas", () => {
       expect(snapshot.tools.length).toBeGreaterThan(0);
       for (const tool of snapshot.tools) {
         expect(snapshot.inputSchemas?.[tool], `${tool} has no recorded schema`).toBeDefined();
-        expect(snapshot.descriptions?.[tool], `${tool} has no recorded description`).not.toBe("");
+        // `not.toBe("")` also passes `undefined`, so the string itself is what is asserted.
+        expect(snapshot.descriptions?.[tool], `${tool} has no recorded description`).toEqual(
+          expect.stringMatching(/\S/u),
+        );
       }
       // `acceptLicense` is the acknowledgement the recipes tell an agent to pass, so a snapshot
       // without it could not answer the question they ask.

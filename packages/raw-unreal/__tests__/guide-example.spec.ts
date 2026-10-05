@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { decompress as oodle } from "ooz-wasm";
-import { Mesh } from "three";
+import { DefaultLoadingManager, Mesh } from "three";
 import { describe, expect, it } from "vitest";
 
 import { UAssetLoader } from "../src/index.js";
@@ -9,8 +9,8 @@ import { UAssetLoader } from "../src/index.js";
  * `docs/guides/unreal-assets.md` tells a reader to hand three.js's shared loading manager to
  * `UAssetLoader`. That line is run here, from the guide's own text, because `guide-imports.spec.ts`
  * cannot judge it: `DefaultLoadingManager` is a real export, so an import check passes while
- * `new DefaultLoadingManager()` still throws. A plain object stands in for the shared instance —
- * `new <plain object>` is the failure this catches.
+ * `new DefaultLoadingManager()` still throws. The real shared instance stands in, because
+ * `new <a real instance>` is the failure this catches and a plain object would not be one.
  */
 const guide = await readFile("docs/guides/unreal-assets.md", "utf8");
 const written = [...guide.matchAll(/new\s+UAssetLoader\([^)]*\)/gu)].map((match) => match[0]);
@@ -22,12 +22,11 @@ describe("the Unreal guide's loader example", () => {
   });
 
   it("runs that line and parses the committed fixture through it", async () => {
-    const manager = { name: "shared" };
     const loader = new Function("DefaultLoadingManager", "UAssetLoader", `return ${shared[0]}`)(
-      manager,
+      DefaultLoadingManager,
       UAssetLoader,
     ) as UAssetLoader;
-    expect(loader.manager).toBe(manager);
+    expect(loader.manager).toBe(DefaultLoadingManager);
 
     // The fixture is an Oodle-compressed UE5 package, so the codec is injected the way the guide's
     // codec table says to inject one.

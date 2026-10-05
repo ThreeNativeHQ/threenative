@@ -136,8 +136,12 @@ the C++ evaluator runs instead and `backend` reads `"native"`; the game code doe
 ## Clean up
 
 ```ts
+removeFace();
 human.dispose();
 ```
+
+`removeFace()` comes first, because the scene still holds the before-render callback that calls
+`human.update()`, and every other method throws `TN_MH_DISPOSED` after `dispose()`.
 
 `dispose()` is idempotent and frees the evaluator. Every other method throws `TN_MH_DISPOSED`
 afterwards, so a stale handle fails loudly instead of writing into freed memory.

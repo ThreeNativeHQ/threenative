@@ -43,7 +43,11 @@ function hostPackage(source: string): string {
   for (const directory of readdirSync("packages")) {
     const manifest = path.join("packages", directory, "package.json");
     if (!existsSync(manifest)) continue;
-    if ((JSON.parse(readFileSync(manifest, "utf8")) as { name?: string }).name === imported)
+    // `workspacePaths` keys on the manifest's scoped name, so this compares like with like.
+    if (
+      (JSON.parse(readFileSync(manifest, "utf8")) as { name?: string }).name ===
+      `@threenative/${imported}`
+    )
       return directory;
   }
   return "core";
