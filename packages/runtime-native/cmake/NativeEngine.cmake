@@ -14,7 +14,10 @@ endfunction()
 
 # Foundation: handles and (later) math. Portable C++20 with no platform API, so the same sources
 # compile for the browser port.
-add_library(tn_engine_foundation STATIC src/engine/foundation/handles.cpp src/engine/foundation/buffers.cpp)
+add_library(tn_engine_foundation STATIC
+    src/engine/foundation/handles.cpp
+    src/engine/foundation/buffers.cpp
+    src/engine/foundation/reachability.cpp)
 tn_native_engine_target(tn_engine_foundation)
 target_include_directories(tn_engine_foundation PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
@@ -92,6 +95,14 @@ tn_native_engine_test(tn-native-engine-buffers-test tests/native-engine/buffers_
     native_engine_buffers_views=views
     native_engine_buffer_view_regrowth=view_regrowth)
 
+tn_native_engine_test(tn-native-engine-lifetime-test tests/native-engine/lifetime_test.cpp
+    native_engine_lifetime_detach=detach
+    native_engine_lifetime_shared=shared
+    native_engine_lifetime_cycles=cycles
+    native_engine_lifetime_callback_cycle=callback_cycle
+    native_engine_lifetime_soak=soak
+    native_engine_reclaim_single_thread=single_thread)
+
 # libFuzzer targets need clang; `TN_ENGINE_FUZZ=ON` with a clang toolchain builds them.
 option(TN_ENGINE_FUZZ "Build the native engine libFuzzer targets (clang only)" OFF)
 if(TN_ENGINE_FUZZ)
@@ -106,7 +117,8 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     tn_native_engine_test(tn-native-engine-gpu-resources-test tests/native-engine/gpu_resources_test.cpp
         native_engine_gpu_upload_readback=upload_readback
         native_engine_gpu_deferred_destroy=deferred_destroy
-        native_engine_gpu_async_only=async_only)
+        native_engine_gpu_async_only=async_only
+        native_engine_lifetime_deferred_gpu=lifetime_deferred_gpu)
     target_link_libraries(tn-native-engine-gpu-resources-test PRIVATE tn_engine_renderer tn_host_services)
     if(TARGET dawn::webgpu)
         tn_native_engine_test(tn-native-engine-device-loss-test tests/native-engine/device_loss_test.cpp
@@ -125,7 +137,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         # These own a real device, whose driver keeps allocations past exit: judged for memory
         # errors and undefined behaviour, not leaks. CPU-only engine tests keep leak checking.
         set_tests_properties(native_engine_gpu_upload_readback native_engine_gpu_deferred_destroy
-            native_engine_gpu_async_only native_engine_device_loss_recover native_engine_device_stale_handle
+            native_engine_gpu_async_only native_engine_lifetime_deferred_gpu native_engine_device_loss_recover native_engine_device_stale_handle
             native_engine_device_no_adapter PROPERTIES
             ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0:abort_on_error=1;UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1")
     endif()

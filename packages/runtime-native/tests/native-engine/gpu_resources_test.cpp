@@ -1,4 +1,5 @@
 #include "check.h"
+#include "engine/foundation/reachability.h"
 #include "engine/renderer/gpu_resources.h"
 #include "mystral/webgpu/context.h"
 
@@ -119,6 +120,35 @@ void asyncOnly() {
     CHECK(nextDevice.status(buffer, GpuResources::kBuffer) == GpuStatus::StaleGeneration);
 }
 
+void lifetimeDeferredGpu() {
+    Device device;
+    CHECK(device.ok);
+    if (!device.ok) return;
+    GpuResources gpu(device.context.getInstance(), device.context.getDevice(), device.context.getQueue(),
+                     device.events, 1);
+    tn::engine::ObjectGraph graph(1);
+    const Handle buffer = gpu.createBuffer(256, WGPUBufferUsage_CopyDst | WGPUBufferUsage_CopySrc);
+    const Handle copyTarget = gpu.createBuffer(256, WGPUBufferUsage_CopyDst);
+    // The geometry object owns the buffer; reclaiming it hands the buffer to the deferred queue.
+    const Handle geometry = graph.create(1, [&] { gpu.destroy(buffer); });
+
+    WGPUCommandEncoderDescriptor encoderDesc = {};
+    WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(device.context.getDevice(), &encoderDesc);
+    wgpuCommandEncoderCopyBufferToBuffer(encoder, gpu.buffer(buffer), 0, gpu.buffer(copyTarget), 0, 256);
+    WGPUCommandBufferDescriptor commandDesc = {};
+    const uint64_t serial = gpu.submit(wgpuCommandEncoderFinish(encoder, &commandDesc));
+    wgpuCommandEncoderRelease(encoder);
+
+    CHECK(graph.collect().reclaimed == 1);             // unrooted: reclaimed at this safe point
+    CHECK(!graph.alive(geometry));
+    CHECK(gpu.buffer(buffer) == nullptr);
+    CHECK(gpu.completedSerial() < serial);
+    CHECK(gpu.pendingDestroyCount() == 1);             // not released before the submission completes
+    CHECK(pump(gpu, device.events, [&] { return gpu.completedSerial() >= serial; }));
+    CHECK(gpu.pendingDestroyCount() == 0);             // and released after
+}
+
 }  // namespace
 
-TN_TEST_MAIN({"upload_readback", uploadReadback}, {"deferred_destroy", deferredDestroy}, {"async_only", asyncOnly})
+TN_TEST_MAIN({"upload_readback", uploadReadback}, {"deferred_destroy", deferredDestroy}, {"async_only", asyncOnly},
+             {"lifetime_deferred_gpu", lifetimeDeferredGpu})
