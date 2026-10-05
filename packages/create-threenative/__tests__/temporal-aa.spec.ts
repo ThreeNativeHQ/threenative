@@ -1,8 +1,20 @@
 import { type Color, PerspectiveCamera, Scene, Vector2 } from "three";
 import { pass, velocity } from "three/tsl";
-import type { NodeBuilder, NodeFrame, RenderTarget, Texture } from "three/webgpu";
+import type {
+  Node,
+  NodeBuilder,
+  NodeFrame,
+  RenderTarget,
+  Texture,
+  TextureNode,
+} from "three/webgpu";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { RenderChain } from "../../core/src/render/chain.js";
 import { createTemporalAA } from "../templates/starter/src/render/temporalAA.js";
+import {
+  type TemporalAAProvider,
+  temporalAAStages,
+} from "../templates/starter/src/render/temporalAAStage.js";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -158,7 +170,154 @@ function fixture(
   };
 }
 
+/**
+ * The real `RenderChain` and the generated `traa` stage over the same stubbed renderer, optionally
+ * mutated: the stage still builds the provider and still owns every frame of its work, but the node
+ * it hands the chain is the scene pass's own colour target rather than the reconstructed output.
+ */
+function chainFixture(lowResolutionPassthrough = false) {
+  const camera = new PerspectiveCamera(50, DISPLAY.width / DISPLAY.height);
+  const scenePass = pass(new Scene(), camera);
+  scenePass.setResolutionScale(SCALED);
+  scenePass.setSize(DISPLAY.width, DISPLAY.height);
+  scenePass.getTextureNode("depth").value.image = { width: INPUT.width, height: INPUT.height };
+  const stub = stubRenderer();
+  let graph: unknown;
+  let provider: TemporalAAProvider | undefined;
+  const stages = temporalAAStages(
+    { camera, depthNode: scenePass.getTextureNode("depth"), tier: "high" },
+    {
+      onProvider: (next) => {
+        provider = next;
+      },
+    },
+  ).map((stage) =>
+    lowResolutionPassthrough
+      ? {
+          ...stage,
+          build: (input: unknown, context: Parameters<typeof stage.build>[1]) => {
+            stage.build(input, context);
+            return input;
+          },
+        }
+      : stage,
+  );
+  const chain = new RenderChain({
+    renderer: {
+      kind: "webgpu",
+      raw: stub.renderer,
+      setOutputNode: (node) => {
+        graph = node;
+      },
+      clearOutputNode: () => {},
+    },
+    input: scenePass.getTextureNode(),
+    worldPass: scenePass,
+    request: { stages: ["traa"], velocity: { pass: scenePass } },
+    stages,
+  });
+  const builder = {
+    context: { velocity },
+    renderer: stub.renderer,
+    getNodeProperties: () => ({}),
+  } as unknown as NodeBuilder;
+  const frame = { renderer: stub.renderer } as unknown as NodeFrame;
+  return {
+    chain,
+    scenePass,
+    stub,
+    provider: (): TemporalAAProvider => {
+      if (provider === undefined) throw new Error("The chain never built its traa stage.");
+      return provider;
+    },
+    /** The node the chain presents, unwrapped from the velocity context it wraps it in. */
+    presented: (): Node => {
+      let node = graph as Node;
+      while ((node as { isContextNode?: boolean }).isContextNode === true)
+        node = (node as unknown as { node: Node }).node;
+      return node;
+    },
+    /** One frame as the pipeline drives it: compile, then the provider's own per-frame work. */
+    draw: async (rejected: number): Promise<void> => {
+      const pixels = DISPLAY.width * DISPLAY.height;
+      stub.words[0] = rejected;
+      stub.words[1] = pixels;
+      provider?.node.setup(builder);
+      provider?.node.updateBefore(frame);
+      await provider?.settledRejection();
+    },
+    dispose: (): void => {
+      chain.dispose();
+      scenePass.dispose();
+    },
+  };
+}
+
+/** The raster a presented node publishes, whether it reconstructs one or samples the input. */
+function outputRaster(node: Node): { width: number; height: number } {
+  const reconstruction = node as { _resolveRenderTarget?: RenderTarget };
+  const sampled = node as TextureNode & {
+    isRTTNode?: boolean;
+    renderTarget?: RenderTarget;
+    passNode?: { renderTarget: RenderTarget };
+  };
+  const target =
+    reconstruction._resolveRenderTarget ??
+    (sampled.isRTTNode ? sampled.renderTarget : sampled.passNode?.renderTarget);
+  if (target === undefined) throw new Error("The presented node publishes no render target.");
+  return { width: target.width, height: target.height };
+}
+
+/** The one output-raster contract under test: a 0.67 input is presented at the display raster. */
+function expectDisplayRaster(node: Node): void {
+  const raster = outputRaster(node);
+  if (raster.width !== DISPLAY.width || raster.height !== DISPLAY.height)
+    throw new Error(
+      `The presented raster is ${String(raster.width)}x${String(raster.height)}, not the display raster ${String(DISPLAY.width)}x${String(DISPLAY.height)}.`,
+    );
+}
+
 describe("opt-in temporal AA", () => {
+  it("presents a display-sized raster from a 0.67 input and rejects the low-resolution passthrough", async () => {
+    const rejected = 4;
+    const pixels = DISPLAY.width * DISPLAY.height;
+    const reconstruction = chainFixture();
+    await reconstruction.draw(rejected);
+    // The scene pass really did render below the display, and the chain still presents the frame.
+    expect({
+      width: reconstruction.scenePass.renderTarget?.width,
+      height: reconstruction.scenePass.renderTarget?.height,
+    }).toEqual({ width: INPUT.width, height: INPUT.height });
+    expect(reconstruction.chain.applied.stages).toEqual(["traa"]);
+    expect(() => expectDisplayRaster(reconstruction.presented())).not.toThrow();
+    // The same frame records both rasters, its history state and the share the GPU rejected.
+    expect(reconstruction.provider().report()).toMatchObject({
+      frame: 1,
+      historyValid: false,
+      resetReason: "initial",
+      inputWidth: INPUT.width,
+      inputHeight: INPUT.height,
+      outputWidth: DISPLAY.width,
+      outputHeight: DISPLAY.height,
+      rejection: { frame: 1, fraction: rejected / pixels, visited: pixels, staleFrames: 0 },
+    });
+    reconstruction.dispose();
+
+    // The mutation: the stage builds the same provider, and the chain is handed the input target.
+    const passthrough = chainFixture(true);
+    await passthrough.draw(rejected);
+    expect(() => expectDisplayRaster(passthrough.presented())).toThrow(
+      `The presented raster is ${String(INPUT.width)}x${String(INPUT.height)}, not the display raster ${String(DISPLAY.width)}x${String(DISPLAY.height)}.`,
+    );
+    // It fails on the output raster itself, not on a missing measurement or a startup refusal.
+    expect(outputRaster(passthrough.presented())).toEqual({
+      width: INPUT.width,
+      height: INPUT.height,
+    });
+    expect(passthrough.provider().report().rejection).toMatchObject({ visited: pixels });
+    passthrough.dispose();
+  });
+
   it("registers input-pass dependencies before temporal update and sizing", () => {
     const { dependencies, temporal, scenePass } = fixture();
     expect(Object.values(dependencies)).toContain(temporal.node.beautyNode);
