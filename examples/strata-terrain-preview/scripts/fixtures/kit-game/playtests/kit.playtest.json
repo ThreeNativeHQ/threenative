@@ -4,8 +4,8 @@
   "subject": "Forest starter kit: the world's ground, props, firs and daylight in a real game",
   "schemaVersion": 1,
   "viewport": {
-    "width": 1280,
-    "height": 720
+    "width": 1920,
+    "height": 1080
   },
   "warmupFrames": 30,
   "artifacts": {
@@ -92,7 +92,8 @@
         "id": "GameState",
         "path": "groundError",
         "gte": 0,
-        "lte": 0.15
+        "lte": 0.15,
+        "allowTrivial": "Measured once, when the body first grounds during warm-up; paired with driveMetres, which only the scenario's own drive can satisfy."
       },
       {
         "id": "GameState",
@@ -175,8 +176,8 @@
         "region": {
           "x": 0,
           "y": 0,
-          "width": 1280,
-          "height": 720,
+          "width": 1920,
+          "height": 1080,
           "minNonblankPixelRatio": 0.9
         }
       }

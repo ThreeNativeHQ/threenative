@@ -94,9 +94,24 @@ describe("forest starter kit", () => {
       expect(Object.keys(table.splat.masks)).toContain(layer.id);
       named.push(`${table.textures}/${layer.id}_diff.jpg`, `${table.textures}/${layer.id}_nrm.jpg`);
     }
+    named.push("sky.hdr");
     for (const name of named) {
+      // Local by construction: a package-relative path, never a scheme or a root.
+      expect(name, `${name} is not package-relative`).not.toMatch(/^(\/|[a-z][a-z0-9+.-]*:)/iu);
       const path = join(out, name);
       expect(() => readFileSync(path), `${name} is missing from the baked package`).not.toThrow();
+    }
+    // Every model carries its own images: a GLB's JSON chunk names no external uri.
+    for (const name of named.filter((file) => file.endsWith(".glb"))) {
+      const glb = readFileSync(join(out, name));
+      const json = JSON.parse(glb.subarray(20, 20 + glb.readUInt32LE(12)).toString("utf8")) as {
+        images?: { uri?: string }[];
+        buffers?: { uri?: string }[];
+      };
+      const uris = [...(json.images ?? []), ...(json.buffers ?? [])].flatMap((entry) =>
+        entry.uri === undefined ? [] : [entry.uri],
+      );
+      expect(uris, `${name} references files outside itself`).toEqual([]);
     }
   });
 
