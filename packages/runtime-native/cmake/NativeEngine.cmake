@@ -23,9 +23,10 @@ elseif(SDL3_LIBRARY)
 endif()
 
 # Renderer: native-owned GPU resources over the same WebGPU backend the host uses.
-add_library(tn_engine_renderer STATIC src/engine/renderer/gpu_resources.cpp src/engine/renderer/device_state.cpp)
+add_library(tn_engine_renderer STATIC src/engine/renderer/gpu_resources.cpp src/engine/renderer/device_state.cpp
+    src/engine/renderer/presentation.cpp)
 tn_native_engine_target(tn_engine_renderer)
-target_link_libraries(tn_engine_renderer PUBLIC tn_engine_foundation)
+target_link_libraries(tn_engine_renderer PUBLIC tn_engine_foundation tn_host_services)
 if(TARGET dawn::webgpu)
     target_link_libraries(tn_engine_renderer PUBLIC dawn::webgpu)
 elseif(TARGET wgpu::wgpu)
@@ -71,6 +72,17 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_gpu_async_only=async_only
         native_engine_lifetime_deferred_gpu=lifetime_deferred_gpu)
     target_link_libraries(tn-native-engine-gpu-resources-test PRIVATE tn_engine_renderer tn_host_services)
+    # A real window, so the ctest runs it under the repository's private Xvfb with SDL's dummy audio.
+    add_executable(tn-native-engine-presentation-test EXCLUDE_FROM_ALL tests/native-engine/presentation_test.cpp)
+    target_link_libraries(tn-native-engine-presentation-test PRIVATE tn_engine_renderer tn_host_services ${SDL3_STATIC_TARGET})
+    target_include_directories(tn-native-engine-presentation-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine)
+    tn_native_engine_target(tn-native-engine-presentation-test)
+    add_test(NAME native_engine_present_resize
+        COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/../../scripts/xvfb.sh $<TARGET_FILE:tn-native-engine-presentation-test> resizes)
+    set_tests_properties(native_engine_present_resize PROPERTIES LABELS "native-engine"
+        ENVIRONMENT "SDL_AUDIODRIVER=dummy;SDL_VIDEODRIVER=x11")
+    set_property(GLOBAL APPEND PROPERTY TN_NATIVE_ENGINE_TEST_TARGETS tn-native-engine-presentation-test)
+
     # The same corpus validates through the backend's own compiler: Tint on Dawn, naga on wgpu-native.
     if(TARGET dawn::webgpu)
         set(tn_shader_validator native_engine_shader_emit_tint)

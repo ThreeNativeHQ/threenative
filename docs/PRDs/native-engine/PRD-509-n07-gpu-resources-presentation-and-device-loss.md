@@ -69,7 +69,7 @@ Device loss currently logs from `onDeviceLost` and stops. Backend selection is
 #### Phase 2: Presentation, resize, surface lifecycle
 **Status:** NOT STARTED
 **Files:** proposed `src/engine/renderer/presentation.cpp`
-- [ ] A windowed native driver presents 300 frames through 5 resizes with no validation error. proof: `pnpm native:verify:desktop`
+- [x] A windowed native driver presents 300 frames through 5 resizes with no validation error. proof: `pnpm native:verify:desktop` — 2026-10-04: proved by `ctest -R native_engine_present_resize` (the engine is not in the shipped host yet, so `native:verify:desktop` cannot carry it): an SDL X11 window under the private Xvfb, 300 frames each inside a validation scope, a resize every 60; zero validation errors, the same device throughout, depth rebuilt once per resize. Red when a resize keeps the old depth target: 240 frames fail on the size mismatch. `src/engine/renderer/presentation.{h,cpp}`
 - [ ] Android surface destroy/recreate (background → foreground) rebuilds the surface without recreating the device. proof: `node packages/playtest/dist/runner/cli.js packages/runtime-native/scenarios/native-engine-surface-cycle.playtest.json --target android`
 
 #### Phase 3: Device loss
