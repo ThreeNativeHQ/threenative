@@ -1081,6 +1081,27 @@ kits. The browser GLB export stays the path for other engines and tools.
 - [ ] K4: Coastal, alpine, desert and tundra kits meet K1–K3, the tundra kettles as an ice surface. proof: the same commands per world.
 - [ ] K5: An agent asked for "a W terrain for my game" reaches a playing world from the installed docs and capability search alone. proof: `test:consumer` capability lookup plus one cold-agent run recorded on the PR.
 
+#### Phase 4 forest kit, round 1 (2026-10-05; K1 rows green, boxes open until the committed `test:kit` reruns)
+
+- Kit: `packages/terrain/starter/forest/` = `recipe.json`, `bake.mjs` → engine WorldCells package via new
+  `bakeWorldPackage` (`0f4054be5`, specs round-trip through core's validator and sampler), `world.ts`
+  (`addForest`: `loadTerrainSplat` + `WorldCells` + one full-world heightfield + per-asset `COLLIDERS`),
+  `sky.ts` (`Daylight`, ACES). CC0 art: Poly Haven fir_tree_01 authored LOD2 (54,927 tris, full crown;
+  the old card-dropping prep kept 0.3% of the silhouette), boulder_01 authored LOD1/LOD2, Kloofendal 1k
+  HDRI as prop envMap. Baked forest world 8.1 MB cooked (≤ 25 MiB).
+- `pnpm --filter strata-terrain-preview test:kit` (fresh scaffold, packed tarballs, NVIDIA/turing, 1920×1080):
+  groundError 0.036 m, driven 3.28 m, stopped 0.72 m from the fir axis (0.35 + 0.35 m capsules),
+  2,740 prop colliders, firs drawn, no console errors, no failed requests. Per view GPU p50/p95 and
+  CPU frame p95: ground 5.7/5.9 and 3.0 ms, edge 10.9/11.6 and 2.6 ms, overview 13.9/14.5 and 3.6 ms —
+  overview misses the K2 14 ms GPU bar.
+- Engine findings from the fresh game: (1) `WorldCells` `samplesFramebuffer` copied every typed array it
+  walked (`Object.values`), so an HDR envMap on a streamed prop cost 4.07 s of a 4.33 s CPU profile (5 fps);
+  fixed with a red→green spec (`7bd7c84a4`). (2) The default GPU-culled `WorldCells` path drops near
+  firs from the main pass while their shadows draw; the kit sets `gpuScene: false` like the preview —
+  open. (3) A splat texture path that does not resolve stalled startup at 0% with "nothing outstanding"
+  instead of failing — open, cause unconfirmed. (4) Streamed terrain colliders arrive after a spawned
+  player falls through; the kit builds one heightfield before `addForest` resolves.
+
 ## Verification and delivery
 
 Phase 1 implementation: `packages/terrain/src/index.ts` is headless, and
