@@ -169,4 +169,46 @@ void chain_order() {
 
 } // namespace
 
-TN_TEST_MAIN({"chain_order", chain_order})
+// A stage needing a renderer feature the native engine lacks is dropped by name, never built into a
+// pass that draws nothing; every requested stage is either in the chain or named in `dropped`.
+void chain_unsupported() {
+    using namespace tn::engine::chain;
+    const auto stage = [](const char* name, std::vector<std::string> features) {
+        ChainStage s;
+        s.name = name;
+        s.features = std::move(features);
+        return s;
+    };
+    ChainRequest request;
+    request.request = {"bloom", "ssr", "vignette", "ambientOcclusion"};
+    request.stages = {stage("bloom", {}), stage("ssr", {"depth", "normal", "ssr"}), stage("vignette", {"depth"}),
+                      stage("ambientOcclusion", {"normal", "depth"})};
+    request.hasNativeFeatures = true;
+    request.nativeFeatures = {"depth"};
+    const ChainPlan plan = planRenderChain(request);
+    CHECK(!plan.refused);
+    if (plan.refused) std::printf("refused: %s\n", plan.error.c_str());
+    CHECK((plan.stages == std::vector<std::string>{"bloom", "vignette"})); // built-in order
+    CHECK(plan.dropped.size() == 2);
+    if (plan.dropped.size() == 2) {
+        CHECK(plan.dropped[0].name == "ambientOcclusion"); // chain order: AO, SSR, bloom, vignette
+        CHECK(plan.dropped[0].reason == "TN_NATIVE_RENDER_FEATURE_UNSUPPORTED: normal"); // its first missing
+        CHECK(plan.dropped[1].name == "ssr");
+        CHECK(plan.dropped[1].reason == "TN_NATIVE_RENDER_FEATURE_UNSUPPORTED: normal");
+    }
+    CHECK(plan.stages.size() + plan.dropped.size() == request.request.size()); // nothing vanishes
+
+    // Every feature present: nothing is dropped.
+    request.nativeFeatures = {"depth", "normal", "ssr"};
+    const ChainPlan full = planRenderChain(request);
+    CHECK(full.stages.size() == 4 && full.dropped.empty());
+
+    // The web path checks no features, whatever a stage declares.
+    request.hasNativeFeatures = false;
+    request.nativeFeatures.clear();
+    const ChainPlan web = planRenderChain(request);
+    CHECK(web.stages.size() == 4 && web.dropped.empty());
+    std::printf("chain unsupported: %zu kept, %zu dropped by name\n", plan.stages.size(), plan.dropped.size());
+}
+
+TN_TEST_MAIN({"chain_order", chain_order}, {"chain_unsupported", chain_unsupported})

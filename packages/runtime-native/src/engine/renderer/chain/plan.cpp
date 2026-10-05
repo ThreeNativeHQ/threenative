@@ -295,6 +295,18 @@ ChainPlan planRenderChain(const ChainRequest& request) {
                 dropped.push_back({name, definition->availabilityReason});
                 continue;
             }
+            if (request.hasNativeFeatures) {
+                std::string missing;
+                for (const std::string& feature : definition->features)
+                    if (missing.empty() &&
+                        std::find(request.nativeFeatures.begin(), request.nativeFeatures.end(), feature) ==
+                            request.nativeFeatures.end())
+                        missing = feature;
+                if (!missing.empty()) {
+                    dropped.push_back({name, "TN_NATIVE_RENDER_FEATURE_UNSUPPORTED: " + missing});
+                    continue;
+                }
+            }
             if (definition->build == StageBuild::Throws) {
                 dropped.push_back({name, "build:" + definition->buildError});
                 continue;

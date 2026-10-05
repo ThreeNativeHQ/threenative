@@ -48,6 +48,8 @@ struct ChainStage {
     std::string buildError;
     bool hasRequiresVelocity = false;
     bool requiresVelocity = false;
+    /** Renderer features the stage's pass needs (e.g. "depth", "normal", "ssr"), in its own order. */
+    std::vector<std::string> features;
 };
 
 /** The velocity request flags `resolveVelocity` reads; `source` is "mrt" or "per-object". */
@@ -67,6 +69,13 @@ struct ChainRequest {
     ChainVelocityRequest velocity;
     std::vector<std::string> request;
     std::vector<ChainStage> stages;
+    /**
+     * The native renderer's features. Set, a requested stage needing one it lacks is dropped as
+     * `TN_NATIVE_RENDER_FEATURE_UNSUPPORTED: <feature>` instead of building a pass that would draw
+     * nothing; unset (the web path), features are not checked.
+     */
+    bool hasNativeFeatures = false;
+    std::vector<std::string> nativeFeatures;
 };
 
 struct ChainDroppedStage {

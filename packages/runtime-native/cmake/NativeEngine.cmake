@@ -240,7 +240,7 @@ add_library(tn_engine_chain STATIC src/engine/renderer/chain/plan.cpp)
 tn_native_engine_target(tn_engine_chain)
 target_include_directories(tn_engine_chain PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 tn_native_engine_test(tn-native-engine-chain-test tests/native-engine/chain/chain_order_test.cpp
-    native_engine_chain_order=chain_order)
+    native_engine_chain_order=chain_order native_engine_chain_unsupported=chain_unsupported)
 target_link_libraries(tn-native-engine-chain-test PRIVATE tn_engine_chain)
 target_include_directories(tn-native-engine-chain-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/chain)
 find_program(TN_PNPM_EXECUTABLE pnpm)
