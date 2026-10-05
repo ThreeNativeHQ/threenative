@@ -103,6 +103,41 @@ the renderer's own frame state and a live renderer mid-walk is not a caller it s
 gate, where nothing is presented, the same call is what `#warmChunk` already does. So A7's mechanism
 is not a small change: it needs a preparation seam that does not borrow the live renderer.
 
+**Update 2026-10-04 (row A7, attempt 2 — the prewarm draw made real, and the gate never opens):**
+the first cause above was fixed at the mechanism level, unit-proved, and it **blocks Machinefall's
+launch**, twice, so the row is still open and the fix is not to be merged as it stands. An empty
+prewarmed batch now submits one instance of the zero matrix its own fresh buffer holds
+(`SharedBatch#publish`; three refuses a `count === 0` draw outright), which is the submission that
+builds the node and the pipeline, and `prewarmDrew` puts the honest count back. The harness that
+counted the prewarm's draws had left out three's own count gate, so it passed with 8 of 17 casters
+unbuilt; with that gate in, `world-cells-shadow-prewarm` reads `castersUnbuilt=8` before the change
+and `castersUnbuilt=0` after it, and every prewarmed caster still first draws behind the gate.
+
+Measured on the walk, alternating arms in one lane, `map-walk` with `tnFrameSpans=1`, nvidia/turing,
+1280×720, host load 24–32 throughout (other lanes), runs in `.afk/scratch/walk-a7b-pair-{1,2,3,4}`:
+
+| arm | core | outcome | streamed creations after settle | prewarm line | frames > 33 ms | render p50 / p95 | GPU p50 / p95 | load → compileSettled |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| dev, pair-1 | `core-dev2` (`1a6298cd`) | pass in 2 min 59 s | 18 of 127 (1.7 ms) | `minted=385 shadowPrewarmed=0 castersUnbuilt=182` | 13 of 1024 | 8.2 / 15.7 ms | 1.6 / 10.6 ms | 17.8 s (`pipelines=1895`) |
+| dev, pair-3 | `core-dev2` | **fail**: 2 state failures + 3 console/network errors, 4382 frames | — | — | — | — | — | — |
+| a7, pair-2 | `core-a7b` | **blocks the page**: 900 s timeout | — | never printed | — | — | — | never |
+| a7, pair-4 | `core-a7b` | **blocks the page**: 900 s timeout | — | never printed | — | — | — | never |
+
+Both `a7` runs stall at the loading gate with `TN_STARTUP_STALLED: progress has stood at 0.0 % for
+45 s — still loading: nothing, no asset is outstanding`, the page's main thread never yields again
+(`Bridge operation 'describe' exceeded 915000 ms`), and the walk never starts, so there is no
+mid-walk census, no frame series and nothing to capture. The `dev` arm's pair-3 failure is the same
+host's noise (two failed loads and three network errors on an unchanged core) and the lane does not
+claim a CPU comparison from these runs — the walk numbers in the row above are the 5-run baseline.
+
+So the honest state of the row: the mechanism is right and provable in the fixture world, and fatal
+at Machinefall's scale, where 385 keys × 2 variants behind the gate is a different cost than 24
+keys × 2. What is **not** yet known is which of two things the gate is paying — the node builds
+themselves, or `#drainPrewarm`'s own loop (it invalidates the shadow levels on every update while a
+caster is owed, and each of those level renders now submits every prewarmed caster) — and the next
+step is one instrumented run that separates them, not another guess. Until then A7 needs the
+preparation seam PRD-387 describes, and this arm must not merge.
+
 ## Lane A — the 120 fps walk (critical path)
 
 - [ ] **A0 · Land PRD-484** (instanced LOD + selective water mirrors by default). After: nothing. 🌍👁
@@ -131,6 +166,12 @@ is not a small change: it needs a preparation seam that does not borrow the live
     cannot prepare anything, because three never submits a `count === 0` batch. The engine's
     `compileAsync` seam hangs a live renderer mid-walk (900 s timeout, measured), so the row needs a
     preparation seam that does not borrow the frame the walk is drawing. Details in "Where we stand".
+  - **Attempt 2, measured 2026-10-04: the non-zero prewarm draw is proved and fatal.** Unit-proved
+    (`castersUnbuilt=0` where the old harness read 8 of 17), and on the walk it blocks the launch in
+    both alternating `a7` runs at 0.0 % progress with the page's main thread never yielding, so there
+    is no walk to compare. Nothing ticked, nothing to capture, and that arm must not merge; the row
+    needs one instrumented run to separate the gate's node builds from its own per-update shadow
+    invalidation before this mechanism is retried. Details in "Where we stand".
 - [ ] **A8 · [PRD-455](../rendering/PRD-455-temporal-reconstruction-from-dynamic-resolution.md): temporal reconstruction closes the GPU gap.** After: A7. ⏱🌍👁
 - [ ] **A9 · PRD-478 acceptance.** After: A8. ⏱🌍👁
   - Done when: AC-1, AC-2 and AC-3 are ticked on a quiet host 🙋, and PRD-478 is in `done/`.
