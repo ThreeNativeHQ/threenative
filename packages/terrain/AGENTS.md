@@ -8,6 +8,7 @@ Read `/AGENTS.md` first. This optional addon is authoring tooling, not a game ru
 - `/export` encodes caller-prepared static worlds; browser FileReader/canvas is required only when encoding.
 - Its MeshStandardMaterial images and final placement/water matrices come from the game; unresolved/deforming/stale content fails.
 - Appearance belongs to game `src/render/`; never add palette, material or lighting defaults.
+- `starter/<world>/` is copy-out game source (recipe, bake, look, colliders); package code never imports it.
 - Bake before play. Games own their camera, mesh lifetime and existing physics registration.
 - Keep raw terrain-only exports labelled; they do not prove full-world GLB delivery.
 

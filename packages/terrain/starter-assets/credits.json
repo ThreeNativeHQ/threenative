@@ -863,7 +863,7 @@
         "authors": "Rob Tuytel, Rico Cilliers",
         "license": "CC0",
         "url": "https://polyhaven.com/a/fir_tree_01",
-        "note": "Prepared for the Temperate spruce but NOT scattered: see firedCoverage."
+        "note": "Poly Haven's own authored LOD2 of tree b (fir_tree_01_b_LOD2, 54,927 triangles, full crown), exported by examples/strata-terrain-preview/scripts/prep-polyhaven-fir.py from the 1k .blend; the forest starter kit's fir."
       },
       {
         "asset": "Rock Moss Set 01",
@@ -881,9 +881,8 @@
       }
     ],
     "firedCoverage": {
-      "verdict": "prepared, committed, and not scattered",
-      "oneConstant": "SCATTER_PREPARED_FIR in examples/strata-terrain-preview/src/render/prepared.ts",
-      "why": "fir_tree_01's crown is 437,376 needle cards about a centimetre across. The six-thousand-triangle near budget buys four hundred of them, and the prep script rasterises the front view and measures the result: 0.3% of the silhouette. Enlarging the survivors twenty-four times takes the mid level to 2.2%, which still reads as a bare tree at forty metres. The starter keeps its procedural spruce until a conifer with coarser cards, or a larger tree budget, is available."
+      "verdict": "superseded 2026-10-05",
+      "why": "The card-dropping prep kept 433 of 437,376 needle cards (0.3% of the silhouette). The .blend ships authored LODs whose LOD2 keeps the whole crown; that file replaced fir-b/c near/mid."
     },
     "budgets": {
       "treesNear": 6000,
@@ -896,42 +895,6 @@
       "measuredRockMid": "469-540"
     },
     "files": [
-      {
-        "bytes": 98580,
-        "dimensions": null,
-        "file": "fir_tree_01/fir-b-mid.glb",
-        "sha256": "b012ae67afded83e0e52b438ffa1db5b36898cf46e124f7bc5cae7ab3a044536"
-      },
-      {
-        "bytes": 342160,
-        "dimensions": null,
-        "file": "fir_tree_01/fir-b-near.glb",
-        "sha256": "2a446492ca504988465dc7d9b9495c0150dfd6acbdb6099508f7e0a9de94c678"
-      },
-      {
-        "bytes": 1202,
-        "dimensions": null,
-        "file": "fir_tree_01/fir-b-prep.json",
-        "sha256": "7b32ae4bb33b32e9b73492bd424e1d7d27e46ebdb6ec9bffe61d07c6d41cfaa5"
-      },
-      {
-        "bytes": 83076,
-        "dimensions": null,
-        "file": "fir_tree_01/fir-c-mid.glb",
-        "sha256": "4abd7a2fc2cc3bdf07ce00ae6158f70eff594579935d9becdbb190fa06afe01c"
-      },
-      {
-        "bytes": 438740,
-        "dimensions": null,
-        "file": "fir_tree_01/fir-c-near.glb",
-        "sha256": "2d03d4287747dcd03aee74ef8d87a6ab20d7b2b1cab8b4b18ae106aebbaf25e1"
-      },
-      {
-        "bytes": 1197,
-        "dimensions": null,
-        "file": "fir_tree_01/fir-c-prep.json",
-        "sha256": "b91acbf6936adc82b5194cb368d7f6ffb2da29fe2955f89f6000b6f58b67334c"
-      },
       {
         "bytes": 407309,
         "dimensions": "1024x1024",
@@ -1009,6 +972,12 @@
         "dimensions": null,
         "file": "rocks/rock13-mid.glb",
         "sha256": "d98074cc7944de0c428502264c2d35b01f6a8b87cd10715132a6a7e0847d8e48"
+      },
+      {
+        "bytes": 5153060,
+        "dimensions": null,
+        "file": "fir_tree_01/fir-b-lod2.glb",
+        "sha256": "a7e1f126ba7c09aa160f82e200689312334204928c9d822a1eaf13ed9d259dc8"
       }
     ]
   }
