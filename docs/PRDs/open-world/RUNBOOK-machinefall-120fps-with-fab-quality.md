@@ -171,12 +171,13 @@ this host, so it is not attributed. The prewarm (`e580e76cb`) stays off this PR,
   - Its commits exist only on the unpushed local branch `engine-defaults-484`, plus uncommitted edits in `.worktrees/prd-484-engine-defaults`.
   - Ask the owner 🙋 whether those edits are still wanted, then rebase onto `origin/develop` and open its own draft PR. Its old plan to ride #390 is moot, because #390 merged without it.
   - Done when: its PRD is in `done/` on `develop`.
-- [ ] **A1 · [PRD-389](../performance/critical/PRD-389-the-frame-budgets-instruments-do-not-lie.md): the instrument gaps the 2026-10-03 probe hit.** After: nothing.
+- [x] **A1 · [PRD-389](../performance/critical/PRD-389-the-frame-budgets-instruments-do-not-lie.md): the instrument gaps the 2026-10-03 probe hit.** After: nothing.
   - A standing scene can't be measured under `runtime.fixedStep` (it yields one window).
   - The update phase reads 0.
   - `passes.main.triangles` reads 338 M.
   - Only about 15 of 300 frames carry a GPU timestamp, too few for a GPU p95.
   - Done when: each gap has a ticked box in PRD-389.
+  - **Done 2026-10-05:** PRD-389 Phase 4 ("the 2026-10-03 Machinefall probe's gaps") reads 5 ticked / 0 open on `origin/develop`, one box per gap above (counted tick batch charged to `update`, main-pass GPU-selected triangles beside three's CPU figure, the 1-in-N GPU sampler counting drawn frames, a standing scene measurable under the wall-clock opt-in); landed by #423, merged 2026-10-04.
 - [ ] **A2 · [PRD-477](PRD-477-worldcells-auto-on-measured-budgets.md) Phase 1: the world gate goes red, then green.** After: nothing; runs alongside A1.
   - The gate must red on an impostors-on build (#375) and green on develop. Every later 🌍 row trusts it.
   - Done when: both Phase 1 boxes are ticked.
@@ -223,8 +224,8 @@ this host, so it is not attributed. The prewarm (`e580e76cb`) stays off this PR,
 
 ## Lane C — look and native parity (independent; any free session)
 
-- [ ] **C1 · [PRD-339](../done/PRD-339-the-frame-sets-its-own-exposure.md): auto exposure.** 🎨👁
-  - Draft PR #397 already exists. Add its phase boxes first, since `prd:progress` exits 1 without them.
+- [x] **C1 · [PRD-339](../done/PRD-339-the-frame-sets-its-own-exposure.md): auto exposure.** 🎨👁
+  - **Done 2026-10-05:** #397 merged 2026-10-04; `docs/PRDs/done/PRD-339-the-frame-sets-its-own-exposure.md` on `origin/develop` reads 11 ticked / 0 open.
 - [ ] **C2 · [PRD-492](PRD-492-colour-grading-and-film-grain.md): colour grading and film grain.** 🎨👁
 - [ ] **C3 · [PRD-493](PRD-493-terrain-layers-past-sixteen-textures.md): terrain layers past sixteen textures.** ⏱🌍👁
 - [ ] **C4 · [PRD-491](PRD-491-water-and-atmosphere-run-native.md): water and atmosphere run native.** 👁
