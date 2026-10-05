@@ -61,7 +61,8 @@ bool BufferStore::resize(uint64_t count) {
     if (bytes == bytes_.size()) return true;
     // A fresh allocation every time, so the storage really moves and stale readers are caught.
     std::vector<std::byte> next(bytes);
-    std::memcpy(next.data(), bytes_.data(), std::min<uint64_t>(bytes, bytes_.size()));
+    // memcpy with a null pointer is undefined even for zero bytes, and empty storage has none.
+    if (const uint64_t kept = std::min<uint64_t>(bytes, bytes_.size()); kept > 0) std::memcpy(next.data(), bytes_.data(), kept);
     bytes_.swap(next);
     ++epoch_;
     return true;

@@ -29,6 +29,12 @@ void range() {
     CHECK(store.read(8, &back, 4) == BufferError::None);
     CHECK(back == 1.5f);
     CHECK(BufferStore(Scalar::F64, kMax / 4).byteLength() == 0);  // an overflowing count is empty, not wrapped
+
+    // Found by the instrumented fuzzer: resizing to or from empty storage must not hand memcpy null.
+    BufferStore empty(Scalar::F32, 0);
+    CHECK(empty.resize(4));
+    CHECK(empty.resize(0));
+    CHECK(empty.byteLength() == 0);
 }
 
 void lease() {

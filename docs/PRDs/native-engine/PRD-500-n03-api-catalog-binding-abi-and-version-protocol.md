@@ -44,7 +44,7 @@ The repo's existing capability surface is `packages/create-threenative/capabilit
 #### Phase 3: The ABI survives hostile input
 **Status:** DONE
 **Files:** proposed `packages/runtime-native/tests/native-engine/fuzz_abi.cpp`
-- [x] The ABI fuzzer runs 10 minutes under ASan/UBSan with no finding. proof: `pnpm --filter @threenative/runtime-native native:test:asan -- --fuzz native_engine_fuzz_abi --max-total-time=600` — 2026-10-04: run as `native_engine_fuzz_abi corpus-abi -max_total_time=600` in a clang engine-only build with every engine target under ASan/UBSan (`-DTN_ENGINE_FUZZ=ON -DTN_ENGINE_SANITIZE=ON`): 20,256,198 inputs in 601 s, no finding. Two earlier runs found a clang 23 libFuzzer nothrow-new false positive (worked around, reproduced without engine code) and, under ASan, a leak of reused diagnostics (fixed)
+- [x] The ABI fuzzer runs 10 minutes under ASan/UBSan with no finding. proof: `pnpm --filter @threenative/runtime-native native:test:asan -- --fuzz native_engine_fuzz_abi --max-total-time=600` — 2026-10-04: run as `native_engine_fuzz_abi corpus-abi -max_total_time=600` in a clang engine-only build with every engine target under ASan/UBSan (`-DTN_ENGINE_FUZZ=ON -DTN_ENGINE_SANITIZE=ON`): 20,256,198 inputs in 601 s, no finding. Two earlier runs found a clang 23 libFuzzer nothrow-new false positive (worked around, reproduced without engine code) and, under ASan, a leak of reused diagnostics (fixed). Rerun 2026-10-04 with coverage counters in the engine code too (`-fsanitize=fuzzer-no-link`; the first runs instrumented only the harness): 2,385,702 inputs in 601 s, 243 coverage points, no finding
 
 ## Decisions
 
