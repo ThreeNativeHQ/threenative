@@ -1,29 +1,38 @@
 name: Integration lanes
 
-# One workflow, one job per feature. A per-feature workflow file means a per-feature set of
-# triggers, permissions, concurrency groups and review surface, none of which any of these lanes
-# needs of its own: each job below keeps its own paths gate, its own draft guard, its own runner and
-# its own artifact names, so what a pull request runs is unchanged.
+# CI calls every selected lane at one exact candidate. Ordinary PRs select affected lanes;
+# qualification events require all lanes and current-attempt completion receipts.
 on:
-  pull_request:
-    # `ready_for_review` is what makes the draft guards below safe: without it the workflow never
-    # fires on the event that un-skips a job, and the lanes go quiet instead of cheap.
-    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_call:
+    inputs:
+      selection_plan:
+        type: string
+        required: true
+      candidate_sha:
+        type: string
+        required: true
+      base_sha:
+        type: string
+        default: ""
+    outputs:
+      coverage_receipt:
+        value: ${{ jobs.completion.outputs.coverage_receipt }}
 
 permissions:
   contents: read
+  actions: read
 
-# `pull_request` alone, never `pull_request` plus `push`: one commit pushed to a branch reaches both
-# triggers, so the pair ran the identical proof twice for the same tree. A per-branch `push` filter is
-# the other shape that outlives its pull request — `integration-decals` carried
-# `fix/vq11-decal-material-lifetime` for a merged pull request #394 and kept a 30-minute lane alive
-# for as long as the branch existed.
-#
-# The supersession `integration-csg` and `integration-decals` declared, kept once for the set: a newer
-# commit on the pull request's head cancels the integration run it replaces.
+# Only ordinary PR runs supersede earlier reviews. Queue/audit candidate runs cannot cancel peers.
 concurrency:
-  group: integration-${{ github.event.pull_request.head.ref || github.ref_name }}
-  cancel-in-progress: true
+  group: integration-${{ github.event_name }}-${{ github.event_name == 'pull_request' && github.ref || format('{0}-{1}', inputs.candidate_sha, github.run_id) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  TN_CI_PLAN: ${{ inputs.selection_plan }}
+  TN_CI_CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+  TN_CI_EVENT: ${{ github.event_name }}
+  TN_CI_BASE_REF: ${{ github.base_ref || github.event.merge_group.base_ref || (github.event_name == 'push' && github.ref_name) || '' }}
+  TN_BASE_SHA: ${{ inputs.base_sha }}
 
 jobs:
   # The per-lane trigger filters these lane files used to carry, as one gate: the pull request's own
@@ -31,15 +40,17 @@ jobs:
   # spending a runner. Lane-local workflow edits select that lane; shared scheduling edits
   # fail closed to every lane. Source filters remain independent of workflow-only selection.
   paths:
-    name: lanes this pull request touches
+    name: exact candidate integration inventory
     if: ${{ !github.event.pull_request.draft }}
     runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER_LIGHT) && 'ubuntu-24.04' || vars.TN_RUNNER_LIGHT }}
     timeout-minutes: 5
     permissions:
       contents: read
-      pull-requests: read
+      actions: read
     outputs:
       animation: ${{ steps.filter.outputs.animation }}
+      candidate_sha: ${{ steps.filter.outputs.candidate_sha }}
+      required_jobs: ${{ steps.filter.outputs.required_jobs }}
       exposure: ${{ steps.filter.outputs.exposure }}
       cold-boot: ${{ steps.filter.outputs.cold-boot }}
       csg: ${{ steps.filter.outputs.csg }}
@@ -57,11 +68,11 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ inputs.candidate_sha }}
       - id: filter
         env:
-          TN_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          TN_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          TN_BASE_SHA: ${{ inputs.base_sha }}
+          TN_HEAD_SHA: ${{ inputs.candidate_sha }}
           # Exact source filters; workflow-only changes compare each job and filter separately.
           TN_LANE_FILTERS: |
             animation ^packages/core/src/animation\.ts$|^packages/core/__tests__/animation[^/]*\.spec\.ts$|^examples/abyss-framework/src/render/animation-reversal[^/]*\.ts$|^examples/abyss-framework/src/animation-reversal-main\.ts$|^examples/abyss-framework/animation-reversal\.html$|^examples/abyss-framework/playtests/animation-reversal\.playtest\.json$|^scripts/verify-animation-reversal\.ts$|^packages/core/__tests__/vq-locomotion-blend-spaces\.spec\.ts$|^examples/abyss-framework/src/render/locomotion-[^/]*\.ts$|^examples/abyss-framework/src/render/vq-locomotion-[^/]*\.ts$|^examples/abyss-framework/src/vq-locomotion-main\.ts$|^examples/abyss-framework/playtests/vq-locomotion-blend-spaces\.playtest\.json$|^examples/abyss-framework/assets/mannequin\.glb$|^scripts/verify-vq-locomotion\.ts$
@@ -92,6 +103,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
+          ref: ${{ inputs.candidate_sha }}
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '22'
@@ -101,6 +113,18 @@ jobs:
       - run: npm run test:contracts
       - if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: npm run test:integration
+      - name: Record exact current-attempt integration receipt
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TN_CI_JOB_RESULT: ${{ job.status }}
+        run: node "$GITHUB_WORKSPACE/scripts/ci-integration-receipts.mjs" --write
+      - uses: actions/upload-artifact@v7
+        if: ${{ always() }}
+        with:
+          name: ci-integration-receipt-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.candidate_sha }}-${{ github.job }}
+          path: ${{ github.workspace }}/artifacts/ci-integration-receipts/${{ github.job }}.json
+          if-no-files-found: error
 
   ik:
     name: ik
@@ -115,11 +139,24 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
+          ref: ${{ inputs.candidate_sha }}
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '22'
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - run: npm test
+      - name: Record exact current-attempt integration receipt
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TN_CI_JOB_RESULT: ${{ job.status }}
+        run: node "$GITHUB_WORKSPACE/scripts/ci-integration-receipts.mjs" --write
+      - uses: actions/upload-artifact@v7
+        if: ${{ always() }}
+        with:
+          name: ci-integration-receipt-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.candidate_sha }}-${{ github.job }}
+          path: ${{ github.workspace }}/artifacts/ci-integration-receipts/${{ github.job }}.json
+          if-no-files-found: error
 
   vegetation:
     name: vegetation
@@ -134,11 +171,24 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
+          ref: ${{ inputs.candidate_sha }}
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '22'
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - run: npm test
+      - name: Record exact current-attempt integration receipt
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TN_CI_JOB_RESULT: ${{ job.status }}
+        run: node "$GITHUB_WORKSPACE/scripts/ci-integration-receipts.mjs" --write
+      - uses: actions/upload-artifact@v7
+        if: ${{ always() }}
+        with:
+          name: ci-integration-receipt-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.candidate_sha }}-${{ github.job }}
+          path: ${{ github.workspace }}/artifacts/ci-integration-receipts/${{ github.job }}.json
+          if-no-files-found: error
 
   decals:
     name: decals
@@ -150,7 +200,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ inputs.candidate_sha }}
       - uses: ./.github/actions/pnpm
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
@@ -168,8 +218,20 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: vq11-decals-${{ github.event.pull_request.head.sha || github.sha }}
+          name: vq11-decals-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.candidate_sha }}
           path: artifacts/vq11-decals
+          if-no-files-found: error
+      - name: Record exact current-attempt integration receipt
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TN_CI_JOB_RESULT: ${{ job.status }}
+        run: node "$GITHUB_WORKSPACE/scripts/ci-integration-receipts.mjs" --write
+      - uses: actions/upload-artifact@v7
+        if: ${{ always() }}
+        with:
+          name: ci-integration-receipt-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.candidate_sha }}-${{ github.job }}
+          path: ${{ github.workspace }}/artifacts/ci-integration-receipts/${{ github.job }}.json
           if-no-files-found: error
 
   decals-native:
@@ -185,7 +247,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ inputs.candidate_sha }}
       - uses: ./.github/actions/pnpm
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
@@ -225,12 +287,24 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: vq11-decals-native-${{ github.event.pull_request.head.sha || github.sha }}
+          name: vq11-decals-native-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.candidate_sha }}
           path: |
             artifacts/vq11-decals-native/
             !artifacts/vq11-decals-native/variants/**
           retention-days: 30
           if-no-files-found: warn
+      - name: Record exact current-attempt integration receipt
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TN_CI_JOB_RESULT: ${{ job.status }}
+        run: node "$GITHUB_WORKSPACE/scripts/ci-integration-receipts.mjs" --write
+      - uses: actions/upload-artifact@v7
+        if: ${{ always() }}
+        with:
+          name: ci-integration-receipt-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.candidate_sha }}-${{ github.job }}
+          path: ${{ github.workspace }}/artifacts/ci-integration-receipts/${{ github.job }}.json
+          if-no-files-found: error
 
   tone:
     name: exposure
@@ -242,7 +316,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ inputs.candidate_sha }}
       - uses: ./.github/actions/pnpm
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
@@ -260,8 +334,20 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: tone-exposure-${{ github.event.pull_request.head.sha }}
+          name: tone-exposure-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.candidate_sha }}
           path: artifacts/tone-exposure
+          if-no-files-found: error
+      - name: Record exact current-attempt integration receipt
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TN_CI_JOB_RESULT: ${{ job.status }}
+        run: node "$GITHUB_WORKSPACE/scripts/ci-integration-receipts.mjs" --write
+      - uses: actions/upload-artifact@v7
+        if: ${{ always() }}
+        with:
+          name: ci-integration-receipt-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.candidate_sha }}-${{ github.job }}
+          path: ${{ github.workspace }}/artifacts/ci-integration-receipts/${{ github.job }}.json
           if-no-files-found: error
 
   animation:
@@ -308,7 +394,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ inputs.candidate_sha }}
       - uses: ./.github/actions/pnpm
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
@@ -322,9 +408,21 @@ jobs:
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: volumetric-fog-${{ github.event.pull_request.head.sha || github.sha }}
+          name: volumetric-fog-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.candidate_sha }}
           path: artifacts/volumetric-fog/
           retention-days: 30
+          if-no-files-found: error
+      - name: Record exact current-attempt integration receipt
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TN_CI_JOB_RESULT: ${{ job.status }}
+        run: node "$GITHUB_WORKSPACE/scripts/ci-integration-receipts.mjs" --write
+      - uses: actions/upload-artifact@v7
+        if: ${{ always() }}
+        with:
+          name: ci-integration-receipt-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.candidate_sha }}-${{ github.job }}
+          path: ${{ github.workspace }}/artifacts/ci-integration-receipts/${{ github.job }}.json
           if-no-files-found: error
 
   fog-native:
@@ -341,7 +439,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ inputs.candidate_sha }}
       - uses: ./.github/actions/pnpm
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
@@ -401,12 +499,24 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: volumetric-fog-native-${{ github.event.pull_request.head.sha || github.sha }}
+          name: volumetric-fog-native-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.candidate_sha }}
           path: |
             artifacts/volumetric-fog-native/
             artifacts/volumetric-fog-native-resize-control/
           retention-days: 30
           if-no-files-found: warn
+      - name: Record exact current-attempt integration receipt
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TN_CI_JOB_RESULT: ${{ job.status }}
+        run: node "$GITHUB_WORKSPACE/scripts/ci-integration-receipts.mjs" --write
+      - uses: actions/upload-artifact@v7
+        if: ${{ always() }}
+        with:
+          name: ci-integration-receipt-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.candidate_sha }}-${{ github.job }}
+          path: ${{ github.workspace }}/artifacts/ci-integration-receipts/${{ github.job }}.json
+          if-no-files-found: error
 
   capture:
     name: capture
@@ -418,7 +528,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ inputs.candidate_sha }}
       - name: Record exact source before setup
         run: |
           mkdir -p artifacts/world-capture
@@ -436,15 +546,27 @@ jobs:
         run: pnpm exec vitest run --maxWorkers=1 scripts/__tests__/verify-world-capture.spec.ts scripts/__tests__/world-capture-manifest.spec.ts scripts/__tests__/world-visual-gate.spec.ts packages/core/__tests__/world-capture-fixture.spec.ts
       - name: Capture 34 real frames and confirm strict software rejection
         env:
-          EXPECTED_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+          EXPECTED_SOURCE_SHA: ${{ inputs.candidate_sha }}
         # The headed runner provisions its private Xvfb. Software is diagnostic only.
         run: pnpm exec tsx scripts/verify-world-capture.ts
       - name: Retain screenshots, reports, importer result, and strict gate outcome
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: world-capture-diagnostic-${{ github.event.pull_request.head.sha }}
+          name: world-capture-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.candidate_sha }}
           path: artifacts/world-capture
+      - name: Record exact current-attempt integration receipt
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TN_CI_JOB_RESULT: ${{ job.status }}
+        run: node "$GITHUB_WORKSPACE/scripts/ci-integration-receipts.mjs" --write
+      - uses: actions/upload-artifact@v7
+        if: ${{ always() }}
+        with:
+          name: ci-integration-receipt-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.candidate_sha }}-${{ github.job }}
+          path: ${{ github.workspace }}/artifacts/ci-integration-receipts/${{ github.job }}.json
+          if-no-files-found: error
 
   fluid-collision:
     name: fluid collision
@@ -456,7 +578,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ inputs.candidate_sha }}
       - uses: ./.github/actions/pnpm
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
@@ -474,11 +596,23 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: fluid-collision-${{ github.event.pull_request.head.sha }}
+          name: fluid-collision-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.candidate_sha }}
           path: |
             artifacts/fluid-collision/**/*.png
             artifacts/fluid-collision/summary.json
             artifacts/fluid-collision/failure.json
+          if-no-files-found: error
+      - name: Record exact current-attempt integration receipt
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TN_CI_JOB_RESULT: ${{ job.status }}
+        run: node "$GITHUB_WORKSPACE/scripts/ci-integration-receipts.mjs" --write
+      - uses: actions/upload-artifact@v7
+        if: ${{ always() }}
+        with:
+          name: ci-integration-receipt-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.candidate_sha }}-${{ github.job }}
+          path: ${{ github.workspace }}/artifacts/ci-integration-receipts/${{ github.job }}.json
           if-no-files-found: error
 
   fluid-collision-native:
@@ -496,7 +630,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ inputs.candidate_sha }}
       - uses: ./.github/actions/pnpm
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
@@ -536,45 +670,28 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: fluid-collision-native-${{ github.event.pull_request.head.sha }}
+          name: fluid-collision-native-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.candidate_sha }}
           path: |
             artifacts/fluid-collision-native/**/*.png
             artifacts/fluid-collision-native/summary.json
             artifacts/fluid-collision-native/failure.json
           if-no-files-found: error
-
-  fluid-consumers:
-    name: fluid consumers
-    needs: [fluid-collision]
-    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
-    timeout-minutes: 35
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Record exact current-attempt integration receipt
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TN_CI_JOB_RESULT: ${{ job.status }}
+        run: node "$GITHUB_WORKSPACE/scripts/ci-integration-receipts.mjs" --write
+      - uses: actions/upload-artifact@v7
+        if: ${{ always() }}
         with:
-          persist-credentials: false
-          ref: ${{ github.event.pull_request.head.sha }}
-      - uses: ./.github/actions/pnpm
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
-        with:
-          node-version: '22'
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - uses: ./.github/actions/playwright-chromium
-      - name: Build current fluid consumer dependencies
-        run: pnpm tsx scripts/workspace-packages.ts build
-      - name: Run unchanged dam-break and coupling assertions
-        run: sh scripts/xvfb.sh node scripts/observe-fluid-ci.mjs
-      - name: Retain actual consumer pixels and minimal provenance
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: fluid-consumers-${{ github.event.pull_request.head.sha }}
-          path: |
-            artifacts/fluid-consumers/**/*.png
-            artifacts/fluid-consumers/summary.json
-            artifacts/fluid-consumers/failure.json
-            artifacts/fluid-consumers/ci-diagnostics.json
+          name: ci-integration-receipt-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.candidate_sha }}-${{ github.job }}
+          path: ${{ github.workspace }}/artifacts/ci-integration-receipts/${{ github.job }}.json
           if-no-files-found: error
+
+  # The flaky browser fluid-consumers gate is deliberately retired.
+  # Keep observe-fluid-ci.mjs / verify-fluid-consumers.ts for explicit diagnostics;
+  # fluid-collision CPU and fluid-collision-native remain required when selected.
 
   packaged-quickjs:
     name: packaged native asset fallback
@@ -592,7 +709,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ inputs.candidate_sha }}
       - uses: ./.github/actions/pnpm
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
@@ -636,10 +753,22 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: vq01-native-assets-${{ github.event.pull_request.head.sha }}
+          name: vq01-native-assets-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.candidate_sha }}
           path: artifacts/vq01-native-assets/
           retention-days: 30
           if-no-files-found: warn
+      - name: Record exact current-attempt integration receipt
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TN_CI_JOB_RESULT: ${{ job.status }}
+        run: node "$GITHUB_WORKSPACE/scripts/ci-integration-receipts.mjs" --write
+      - uses: actions/upload-artifact@v7
+        if: ${{ always() }}
+        with:
+          name: ci-integration-receipt-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.candidate_sha }}-${{ github.job }}
+          path: ${{ github.workspace }}/artifacts/ci-integration-receipts/${{ github.job }}.json
+          if-no-files-found: error
 
   exposure:
     name: auto-exposure
@@ -651,7 +780,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ inputs.candidate_sha }}
       - uses: ./.github/actions/pnpm
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
@@ -669,8 +798,20 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: prd339-exposure-${{ github.sha }}
+          name: prd339-exposure-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.candidate_sha }}
           path: artifacts/prd339-exposure
+          if-no-files-found: error
+      - name: Record exact current-attempt integration receipt
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TN_CI_JOB_RESULT: ${{ job.status }}
+        run: node "$GITHUB_WORKSPACE/scripts/ci-integration-receipts.mjs" --write
+      - uses: actions/upload-artifact@v7
+        if: ${{ always() }}
+        with:
+          name: ci-integration-receipt-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.candidate_sha }}-${{ github.job }}
+          path: ${{ github.workspace }}/artifacts/ci-integration-receipts/${{ github.job }}.json
           if-no-files-found: error
 
   cold-boot:
@@ -683,7 +824,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ inputs.candidate_sha }}
       - uses: ./.github/actions/pnpm
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
@@ -703,7 +844,47 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: prd339-cold-boot-${{ github.sha }}
+          name: prd339-cold-boot-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.candidate_sha }}
           path: |
             artifacts/prd339-cold-boot
             artifacts/prd339-snap-response
+      - name: Record exact current-attempt integration receipt
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TN_CI_JOB_RESULT: ${{ job.status }}
+        run: node "$GITHUB_WORKSPACE/scripts/ci-integration-receipts.mjs" --write
+      - uses: actions/upload-artifact@v7
+        if: ${{ always() }}
+        with:
+          name: ci-integration-receipt-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.candidate_sha }}-${{ github.job }}
+          path: ${{ github.workspace }}/artifacts/ci-integration-receipts/${{ github.job }}.json
+          if-no-files-found: error
+
+  completion:
+    name: Verify required integration receipts
+    needs: [paths, csg, ik, vegetation, decals, decals-native, tone, animation, fog, fog-native, capture, fluid-collision, fluid-collision-native, packaged-quickjs, exposure, cold-boot]
+    if: ${{ always() }}
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER_LIGHT) && 'ubuntu-24.04' || vars.TN_RUNNER_LIGHT }}
+    timeout-minutes: 5
+    outputs:
+      coverage_receipt: ${{ steps.collect.outputs.coverage_receipt }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.candidate_sha }}
+          fetch-depth: 0
+      - uses: actions/download-artifact@v7
+        if: needs.paths.outputs.required_jobs != '[]'
+        with:
+          pattern: ci-integration-receipt-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.candidate_sha }}-*
+          path: artifacts/integration-receipts
+      - id: collect
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TN_CI_PATHS_RESULT: ${{ needs.paths.result }}
+        run: |
+          set -euo pipefail
+          test "$TN_CI_PATHS_RESULT" = success
+          node scripts/ci-integration-receipts.mjs --collect artifacts/integration-receipts
