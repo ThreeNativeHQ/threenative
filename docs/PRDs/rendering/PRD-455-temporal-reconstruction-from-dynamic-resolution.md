@@ -289,24 +289,48 @@ pixels without unlocking the surfaces the bypass protects, so it needs a per-pix
 geometry change against depth-edge membership) rather than the edge range alone or a wider
 threshold. Both Phase 2 ghost boxes stay open.
 
-**Neighbourhood reconstruction measured, 2026-10-06.** The generated resolve now reconstructs the
+**Historical neighbourhood reconstruction measured, 2026-10-06 (published `4e94b95c`).** That checkpoint reconstructs the
 current frame from the input raster's 3×3 neighbourhood with a jitter-aware Gaussian
-(Blackman–Harris approximation), reads the moments for its variance clip from the same taps, and
-adds a thin-feature lock that reuses the *unclipped* history where `validUV ∧ ¬depthChanged` and the
-pixel departs from its neighbourhood mean luminance. Both are graded through the real WGSL builder
+(Blackman–Harris approximation) and reads the moments for its variance clip from the same taps; the
+reconstruction is gated off at a 1:1 input, where its tap centers land on the pixel centers and it
+only adds blur. A **reactive colour/luminance mask** gates the history blend: a pixel keeps its
+*unclipped* history when it departs from its neighbourhood mean luminance (`thinFeature`) and the
+reprojected history does not contradict that departure (`stale`). The checkpoint intended this to
+withdraw the lock on disocclusion while accumulating a thin feature; the correction below limits
+that claim. Both are graded through the real WGSL builder
 in `temporal-resolve.spec.ts`; the starter scaffold hash moved and the 13-template byte-stability
-test passes. Measured over the full 31-arm corpus on nvidia/turing WebGPU: the reveal ghost falls
-hard — quality `quality-temporal` eight after-reveal fractions .3437/.2548/.0398/.0339/.0304/.0395/.0226/.0185
-→ .0489/.0180/.0035/.0027/.0038/.0172/.0016/.0032 — while at a 1:1 input the reconstruction is gated
-off (its tap centers land on the pixel centers and it only adds blur) and the motion `temporal`
-reveal sequence is bit-identical (.0177/.0005/0/0/0/.0159/.0003/0). Edge error does not move:
-`temporal` .05985 and `quality-temporal` .08148, because the thin-feature lock rarely engages on the
-moving camera's sub-pixel fences — their reprojected depth changes, so `canLock` is 0. **Boxes stay
-open:** `edgeImprovement` .05985 vs the required <.04778, `qualityEdgeImprovement` .08148 vs <.04686,
-`revealRecovery` frame 34 .0159 > .01, `qualityRevealRecovery` .0180/.0172 > .01. No threshold or
-appearance policy changed. Focused checks: 132 temporal/scaffold tests across 9 files, root
-`tsc` on every changed file and error-level Biome all clean; the complete repository board and
+test passes. Measured over the full 31-arm corpus on nvidia/turing WebGPU: the quality reveal ghost
+falls hard — `quality-temporal` eight after-reveal fractions
+.3437/.2548/.0398/.0339/.0304/.0395/.0226/.0185 → .0489/.0180/.0035/.0027/.0035/.0175/.0019/.0032 —
+and the motion `temporal` reveal sequence stays .0177/0/0/0/0/.0159/0/0.
+
+**The edge gate does not move, and the reactive mask is falsified as the lever.** An earlier
+depth-gated variant of the same lock measured `.05985` / `.08148`, a colour-only mask `.06052` /
+`.08135`, and the best of all 22 motion arms is `resolve-cubic-strict-ordinary` at `.05512` against
+the unchanged `.04778` bar (15% over). The published checkpoint attributes this to the architecture: on the moving
+camera's sub-pixel fences the velocity-driven `subpixelCorrection` raises the current weight towards
+`.3`, so the resolve tracks the aliased current frame instead of accumulating, and the variance clip
+keeps the already-clamped history. **Boxes stay open:** `edgeImprovement` .06052 vs <.04778,
+`qualityEdgeImprovement` .08135 vs <.04686, `revealRecovery` frame 34 .0159 > .01,
+`qualityRevealRecovery` .0180/.0175 > .01. Its proposed next direction was a TSR-class reconstructor (reactive
+mask driving *rejection and reprojection*, not just the clip); that proposal is not established by
+these captures. No
+threshold or appearance policy changed. Focused checks: 132 temporal/scaffold tests across 9 files,
+every changed file `tsc`-clean and error-level Biome clean; the complete repository board and
 Phase 3 cost work remain unrun.
+
+**Merged colour-contract correction, 2026-10-05.** The published `4e94b95c` reactive mask uses
+luminance agreement to restore raw RGB history. At display pixel (2,2) of a 4×4 raster, a current
+green texel `G=.2` and accepted red history `R=.672812794` have equal luminance but the nine current
+raw taps contain no red. Exact committed authored-graph CPU controls retain red `.639172154`
+(ordinary) / `.640135656` (luminance) under the reactive mask; mandatory clipping retains less than
+`1e-6`. The merged source retains every published commit and its historical measurements, but
+always blends the clipped history. The new actual-pixel regressions cover both blends and preserve
+constant green. Validity is injected: this proves conditional colour support, not depth acceptance,
+WGSL/f32 equivalence or GPU quality. Applied-jitter capture, the conservative centre plus matched
+selected-point depth checks, bounded raw gathers and height-only reconstruction from the reviewed
+combined candidate remain intact. Its original 31-arm qualification is pending; the old captures
+above do not qualify this source. Original quality, cost and platform acceptance remain open.
 
 - [ ] A fixed camera route containing thin fences, foliage, sub-pixel edges, a moving character and an instanced moving object stays within pinned temporal-stability/ghosting thresholds against a full-resolution reference. **proof:** automated frame-sequence report records edge flicker, rejected-history ratio and image delta for full-res, low-res spatial upscale and temporal reconstruction; the temporal arm must beat the spatial arm on the named stability metric.
 - [ ] Newly revealed surfaces do not inherit stale colour after occlusion/disocclusion events. **proof:** foreground-occluder fixture reveals a contrasting background and asserts stale-history pixels decay within the declared frame bound; disabling disocclusion rejection makes it fail.
@@ -1713,3 +1737,24 @@ quality boards and all their captures are preserved. All original quality, ghost
 platform and automatic-resolution acceptance rows remain unchanged and open. PR398 remains draft
 at `prd:25%`; portable local source is prepared for parent review, with publication/new CI and any
 next hardware capture held for parent coordination and fresh remote/committed-owner guards.
+
+
+### Published reactive checkpoint merged with colour-contract regression — 2026-10-05
+
+Normal merge parents are the reviewed combined `8a0aec6e583926b6de7616792c2221dfa5f9cd96` and published
+`4e94b95c8c63f966e87914e364b4caef86b01090`. All published commits and their measured historical
+results are retained; the only final tree differences from the reviewed combined source are this
+PRD and the actual-pixel colour regression. Every production render file, shared fixture, core
+and playtest build, installed Three.js input and original verifier/scenario/scorer stays identical
+to that candidate. Mandatory raw RGB clipping and the actual-jitter/depth repairs remain intact.
+
+Proof: `pnpm exec vitest run <17 affected files> --maxWorkers=1 --reporter=json` records **328/328
+passed**, including **9/9** synthetic colour/footprint cases, in `pr398-combined-4e94-contracts.json`;
+root TS7, serial workspace and velocity-fixture typechecks all exit 0 in
+`pr398-combined-4e94-validation.json`. The real-pixel negative control executes exact published
+`4e94b95c` colour source and retains `.639172154` / `.640135656` unsupported red, while the clipped
+source retains less than `1e-6`; both preserve constant green `.2`. These controls inject validity
+and use mocked double-precision TSL algebra, so they establish conditional colour support only.
+The existing original 31-arm qualification remains unlaunched until competing capture activity
+finishes and fresh source, remote, non-critical and canonical-lease checks pass. No GPU/native
+claim, acceptance checkbox, threshold, appearance policy, publication or new CI is advanced here.

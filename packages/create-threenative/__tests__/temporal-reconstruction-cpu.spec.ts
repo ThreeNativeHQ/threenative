@@ -1,6 +1,10 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { GridTexture, Value, cpuTSL } from "./temporal-resolve-cpu-grid.js";
-vi.mock("three/tsl", async () => cpuTSL);
+const uvState = vi.hoisted(() => ({ position: [0.5, 0.5] }));
+vi.mock("three/tsl", async () => ({ ...cpuTSL, uv: () => new Value(uvState.position) }));
+beforeEach(() => {
+  uvState.position = [0.5, 0.5];
+});
 import { createExperimentalTemporalResolve } from "../templates/starter/src/render/temporalResolve.js";
 
 import { reconstructNeighbourhood } from "../templates/starter/src/render/temporalResolveMath.js";
@@ -40,6 +44,57 @@ describe("actual authored resolve over synthetic texture inputs", () => {
       ) as unknown as Value;
       for (const channel of output.values.slice(0, 3)) expect(channel).toBeCloseTo(0, 6);
     });
+  }
+});
+
+describe("accepted history colour support at an actual display pixel centre", () => {
+  for (const blend of ["ordinary", "luminance"] as const) {
+    for (const stable of [false, true]) {
+      it(`${stable ? "preserves constant green" : "clips equal-luminance red history"} (${blend})`, () => {
+        // Pixel (2,2) of a 4×4 display: this is a fragment centre, not the between-pixel UV .5.
+        // Validity is injected to isolate colour support after acceptance, not to prove depth.
+        uvState.position = [0.625, 0.625];
+        const green = 0.2;
+        const redWithSameLuminance = (green * 0.7152) / 0.2126;
+        const current = new GridTexture(4, 4, (x, y) =>
+          stable || (x === 2 && y === 2) ? [0, green, 0, 1] : [0, 0, 0, 1],
+        );
+        const history = new GridTexture(4, 4, () =>
+          stable ? [0, green, 0, 1] : [redWithSameLuminance, 0, 0, 1],
+        );
+        const source = {
+          beautyNode: current,
+          _historyRenderTarget: { texture: history },
+          maxVelocityLength: 128,
+          useSubpixelCorrection: true,
+        };
+        const rejection = {
+          historyValidity: () => ({
+            get: (key: string) =>
+              ({
+                hasValidHistory: new Value([1]),
+                historyUV: new Value(uvState.position),
+                offsetUV: new Value([0, 0]),
+              })[key],
+          }),
+        };
+        expect(current.sample(new Value(uvState.position)).values[1]).toBe(green);
+        expect(redWithSameLuminance * 0.2126).toBeCloseTo(green * 0.7152, 12);
+        const output = createExperimentalTemporalResolve(
+          source as never,
+          {} as never,
+          new Value([0, 0]) as never,
+          "linear",
+          blend,
+          rejection as never,
+        ) as unknown as Value;
+        expect(output.values.every(Number.isFinite)).toBe(true);
+        // The raw current taps contain zero red. Scalar luminance agreement cannot expand RGB support.
+        expect(output.values[0]).toBeLessThan(1e-6);
+        expect(output.values[1]).toBeGreaterThan(0);
+        if (stable) expect(output.values[1]).toBeCloseTo(green, 12);
+      });
+    }
   }
 });
 
