@@ -1,6 +1,6 @@
 # PRD-514 — Native renderer and standard materials (N09)
 
-**Status:** PROPOSED
+**Status:** IN PROGRESS — the draw core, geometry and pipeline caches land first; the render database waits on N06
 **Complexity:** 5 — first C++ renderer in the repo; reads native scene state and draws standard materials against a pinned reference
 **Owner:** João
 **Work package:** N09 — [native-engine batch](README.md)
@@ -33,7 +33,7 @@
 **Files:** proposed `packages/runtime-native/src/engine/renderer/`, `packages/runtime-native/tests/native-engine/renderer/`
 - [ ] Render records update only from revision changes: an unchanged scene rebuilds zero records across 300 frames. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_renderer_invalidation`
 - [ ] A lit opaque `MeshStandardMaterial` scene matches the pinned upstream reference capture within the documented tolerance. proof: `pnpm parity` case `native-engine-standard-lit`
-- [ ] Resize and readback return the new extent and a non-blank frame on the native host. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_renderer_resize_readback`
+- [x] Resize and readback return the new extent and a non-blank frame on the native host. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_renderer_resize_readback` — 2026-10-04: green on Dawn (`build/tn-linux`, ASan) and wgpu-native: a lit standard-material sphere renders at 64x48, 160x90 and 90x150; each readback has exactly width x height x 4 bytes and covers 17.71/13.44/39.73% of the frame against the analytic 18.06/13.54/40.13%. Red when setSize keeps the old targets or the projection is dropped. Draw core: `src/engine/renderer/renderer.{h,cpp}`
 
 #### Phase 2: Alpha, transparency, cameras and layers
 **Status:** NOT STARTED
