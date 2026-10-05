@@ -1,7 +1,7 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { extractUiStylesheets } from "../src/build.js";
 import { findNativeCssViolations } from "../src/native-css-compat.js";
 
@@ -57,7 +57,7 @@ describe("native-css Core profile scan", () => {
 
 describe("extractUiStylesheets compatibility gate", () => {
   async function build(css: string): Promise<{ root: string; run: () => Promise<string[]> }> {
-    const root = await mkdtemp(path.join(tmpdir(), "tn-native-css-compat-"));
+    const root = await makeTempDir("tn-native-css-compat-");
     const ui = path.join(root, "ui");
     await mkdir(path.join(ui, "assets"), { recursive: true });
     await writeFile(path.join(ui, "assets", "index.css"), css);

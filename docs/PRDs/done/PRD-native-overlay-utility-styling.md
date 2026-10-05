@@ -486,3 +486,24 @@ Repository budgets (including current native coverage/census) and documentation 
 These repairs preserve the earlier published oracle/device results and checklist history.
 No Android, macOS, Windows, physical-device, performance-budget or full CI board was rerun for
 this bounded source review. CI must qualify the new published candidate separately.
+
+## CI corrective follow-up — 2026-10-05
+
+Candidate `2d160589` started CI run `37387474791`; its platformer golden journey failed at
+the mutated CLI pack step with `TN_FRAMEWORK_PATCH_MISSING: ../../patches/vite@8.2.0.patch`.
+The prior published `28b8c87` run `37380293620` had the same failure. The mutation copy used
+a flat package layout, while this PR's real prepack requires repository-relative Three.js,
+Vite and Tailwind patch inputs. It now recreates that layout and reconstructs patches from
+the authored inputs; generated patch copies are excluded so a warm checkout cannot hide
+the cold-copy defect. The packed dependency mutation still reaches and observes its
+deliberately missing Vite tarball.
+
+The prior run also failed because the source-NUL test scanned this PR's binary fonts/PNG
+as UTF-8 text, and the native CSS compatibility test created an unregistered temp directory.
+Both failures reproduced on `2d160589` in a focused CPU run: 2 FAIL. The text scan now
+excludes known binary asset extensions and has a real tracked TypeScript NUL negative
+control; the compatibility fixture uses the existing registered temp-directory helper.
+All 32 affected packaging/test-contract tests pass, including the cold pack/scaffold control,
+on CPUs 11 and 23 with one test worker. The four reviewed engine production repairs remain
+byte-for-byte unchanged. No additional native host, browser, device or performance board was
+run for this CI follow-up; the normal candidate and merge-queue checks determine eligibility.
