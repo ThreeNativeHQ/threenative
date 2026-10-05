@@ -41,6 +41,7 @@ import {
   viewZToPerspectiveDepth,
 } from "three/tsl";
 import type { Node, NodeMaterial, RenderTarget, TextureNode } from "three/webgpu";
+import { temporalDepthHasDisocclusion, temporalDepthHistoryUV } from "./temporalDepthSamples.js";
 
 /** A TSL uniform node: the shader reads it as a node, this reconstruction writes its value. */
 export interface ITemporalUniform<T> {
@@ -66,6 +67,9 @@ export interface ITemporalResolvePinned {
   _previousCameraProjectionMatrixInverse: Node<"mat4"> & ITemporalUniform<Matrix4>;
   /** Installed by `createTemporalAA`. 0 on a reset frame, which then weights current colour only. */
   _historyValidUniform?: ITemporalUniform<number>;
+  /** Actual input jitter, in input-raster UVs, captured beside the matching depth matrices. */
+  _currentJitterUV?: Node<"vec2"> & ITemporalUniform<Vector2>;
+  _previousJitterUV?: Node<"vec2"> & ITemporalUniform<Vector2>;
 }
 
 export type TemporalResolveNode = TRAANode & ITemporalResolvePinned;
@@ -184,8 +188,30 @@ export function createTemporalDepthRejection(
     const offsetUV = node.velocityNode.load(closestPositionTexel).xy.mul(vec2(0.5, -0.5));
     const historyUV = pixelUV.sub(offsetUV);
     const sampledPreviousDepth = previousDepth(historyUV);
-    const isValidUV = historyUV.greaterThanEqual(0).all().and(historyUV.lessThanEqual(1).all());
-    const isDisocclusion = closestDepth.sub(sampledPreviousDepth).greaterThan(node.depthThreshold);
+    let isValidUV = historyUV.greaterThanEqual(0).all().and(historyUV.lessThanEqual(1).all());
+    let isDisocclusion = closestDepth.sub(sampledPreviousDepth).greaterThan(node.depthThreshold);
+    if (node._currentJitterUV !== undefined && node._previousJitterUV !== undefined) {
+      // The conservative centre test remains intact. Also validate the actual closest texel whose
+      // velocity we used: previous depth is input sized and jittered, colour history is neither.
+      const depthHistoryUV = temporalDepthHistoryUV(
+        closestPositionTexel,
+        inputSize,
+        offsetUV,
+        node._currentJitterUV,
+        node._previousJitterUV,
+      );
+      const pointInBounds = depthHistoryUV
+        .greaterThanEqual(0)
+        .all()
+        .and(depthHistoryUV.lessThan(1).all());
+      isValidUV = isValidUV.and(pointInBounds);
+      isDisocclusion = temporalDepthHasDisocclusion(
+        closestDepth,
+        sampledPreviousDepth,
+        previousDepth(depthHistoryUV),
+        node.depthThreshold,
+      );
+    }
     // A reset frame has no legal cross-size colour seed, so it weights only the current frame.
     const hasValidHistory = historyValid.greaterThan(0.5).and(isValidUV.and(isDisocclusion.not()));
     return historyValidityStruct(hasValidHistory, historyUV, offsetUV);

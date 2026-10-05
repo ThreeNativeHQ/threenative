@@ -1602,3 +1602,46 @@ These CPU repairs are a candidate for the next bounded hardware quality measurem
 releases the GPU. They do not prove the four original failed checks pass. All outstanding quality,
 GPU/render cost, platform and automatic-resolution acceptance boxes remain open; PR398 stays draft
 at `prd:25%`. Publication and the next GPU slot require parent coordination.
+
+
+### Matched input-sample depth support, with original quality still red — 2026-10-05
+
+The authorized one-shot recheck at exact local source `a4a54f269` retained all 31 original arms,
+496 scored PNG hashes, zero capture diagnostics and the actual NVIDIA/Turing Vulkan adapter.
+It still passes 11/15 verifier checks. Full edge error is `0.05848247097103398` (required
+`<0.04777992218249867`); low-input edge is `0.08160088260921274` (required
+`<0.04686645747732535`). Full reveal +5 is 58/3,721 stale pixels (1.5587%); low reveal +1 is
+71/3,721 (1.9081%) and +5 is 66/3,721 (1.7737%). The unchanged reveal limit is <=1%.
+These are the rechecked base's measurements, not results for the following CPU patch. Both
+original 31-arm attempts remain retained in their owned immutable artifact directories.
+
+A fresh independent rendering critic inspected the actual masks/reference/sample chain. A
+constant-depth 0.4-pixel colour stripe, exact history and zero velocity isolate a missing sample
+coverage contract: instantaneous raw 3x3 clipping collapses valid partial coverage when a jitter
+phase misses the stripe. Repeated bilinear history transport independently broadens an impulse.
+The proposed accumulated-moment prototype is rejected: it validates history against itself,
+normalizes sparse neighboring confidence into amplified brightness, and can restore a previously
+clipped colour. No moment-history shader or new target is integrated. The original reconstruction
+and quality requirements remain open; the reference, masks and thresholds are unchanged.
+
+The bounded template fix instead validates the chosen depth/velocity texel in both depth rasters.
+`temporalDepthSamples.ts` recovers the exact integer index used by textureLoad, maps its centre
+through current jitter, unjittered surface velocity and previous jitter, and retains BOTH the
+original colour-centre rejection and the additional matched-point rejection. A surviving
+foreground neighbor cannot legalize removed red centre history. Both UV domains are checked.
+The jitter uniforms are captured before late first-compile synchronization, beside the matching
+saved depth matrices. Resolve and the existing counted compute dispatch use the same predicate.
+No target, pass, render loop, threshold or negative-control policy is added or relaxed.
+
+CPU proof in `/home/joao/Documents/Codex/2026-10-04/task-15`: exact-base regressions record 10 red
+and 38 passing cases, then all 48 initial cases pass. Final affected verification records
+317/317 tests across 16 selected files, including an actual WGSL compute-dispatch build with both
+depth supports. Root TS7, serial workspace and velocity-fixture types exit zero on CPUs 10/22,
+one worker. All 13 actual no-install scaffold hashes were measured; only starter changes to
+`f3cfe800f60828fe05fc3e87c99190ace71ed364a9598bb08fb167fc86268df0`. Final source is independently
+reviewed in `pr398-implemented-depth-guard-review.md` and `pr398-depth-guard-final-hash-addendum.md`.
+The earlier 315/317 template-contract failure is retained separately and repaired. This fix only
+adds rejection; its extra prior-depth read, possible thin-feature rejection, original hardware
+quality, cost and native gates require later evidence. No new GPU/native capture ran for it.
+Publication and any next capture remain held for parent coordination; phase boxes and label stay
+`prd:25%`.

@@ -5,11 +5,15 @@ import type { Node, NodeBuilder } from "three/webgpu";
 import { MeshBasicNodeMaterial, WGSLNodeBuilder, WebGPURenderer } from "three/webgpu";
 import { describe, expect, it, vi } from "vitest";
 import { createTemporalAA } from "../templates/starter/src/render/temporalAA.js";
+import { createTemporalRejectionCounter } from "../templates/starter/src/render/temporalRejectionCounter.js";
 import {
   CATMULL_ROM_BASIS,
   createExperimentalTemporalResolve,
 } from "../templates/starter/src/render/temporalResolve.js";
-import type { TemporalResolveNode } from "../templates/starter/src/render/temporalResolveDepth.js";
+import {
+  type TemporalResolveNode,
+  createTemporalDepthRejection,
+} from "../templates/starter/src/render/temporalResolveDepth.js";
 import { createTemporalResolveMath } from "../templates/starter/src/render/temporalResolveMath.js";
 
 /** Real WGSL generation without a GPU device; only device-capability probes are stubbed. */
@@ -121,12 +125,52 @@ describe("authored temporal reconstruction kernel", () => {
       // Production retains its named current weight: luminance reweighting biases alternating
       // linear coverage towards the darker sample even when history is correctly registered.
       expect(withFlag).not.toContain("0.2126");
+      // The chosen velocity texel and the reused centre colour have independent depth support.
+      // An AND guard must read both previous depths; replacing the centre check admits stale red.
+      expect(withFlag.match(/textureLoad\([^\n]*clamp\( floor\(/gu)).toHaveLength(2);
+      expect(withoutFlag.match(/textureLoad\([^\n]*clamp\( floor\(/gu)).toHaveLength(1);
     } finally {
       temporal.dispose();
       bare.dispose();
       scenePass.dispose();
       mesh.geometry.dispose();
       mesh.material.dispose();
+    }
+  });
+  it("compiles both depth supports in the actual rejection-count compute dispatch", async () => {
+    const renderer = offlineRenderer();
+    const camera = new PerspectiveCamera();
+    const scenePass = pass(new Scene(), camera);
+    const temporal = createTemporalAA(
+      scenePass.getTextureNode(),
+      scenePass.getTextureNode("depth"),
+      scenePass.getTextureNode("velocity"),
+      camera,
+    );
+    const rejection = createTemporalDepthRejection(temporal.node as TemporalResolveNode, renderer);
+    const counter = createTemporalRejectionCounter(rejection);
+    const compute = vi.spyOn(renderer, "compute").mockImplementation(() => {});
+    vi.spyOn(renderer, "getArrayBufferAsync").mockResolvedValue(new Uint32Array([0, 64]).buffer);
+    try {
+      counter.sample(renderer, 1, 8, 8);
+      expect(compute).toHaveBeenCalledTimes(2);
+      const dispatch = compute.mock.calls[1]?.[0];
+      // Pinned declarations omit the real compute constructor/build surface.
+      const builder = new WGSLNodeBuilder(dispatch as never, renderer) as unknown as {
+        build(): void;
+        computeShader: string;
+      };
+      builder.build();
+      expect(builder.computeShader.match(/textureLoad\([^\n]*clamp\( floor\(/gu)).toHaveLength(2);
+      expect(builder.computeShader).not.toContain("textureSample(");
+      expect(builder.computeShader).toContain("atomicAdd");
+      await counter.settled();
+      expect(counter.report(1)?.visited).toBe(64);
+    } finally {
+      counter.dispose();
+      temporal.dispose();
+      scenePass.dispose();
+      vi.restoreAllMocks();
     }
   });
   it("counts nine point-sampled input texels in the clipping moments", () => {

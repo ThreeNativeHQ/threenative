@@ -1,7 +1,7 @@
 // Generated user source: opt-in temporal AA using pinned Three.js TRAANode. Colour, depth and velocity
 // share the scene pass raster, which may sit below the display raster; resolve and history hold the
 // display raster, so presented pixels come from a display-sized resolve, not an upscaled copy.
-import { Matrix4, type OrthographicCamera, type PerspectiveCamera } from "three";
+import { Matrix4, type OrthographicCamera, type PerspectiveCamera, Vector2 } from "three";
 import { traa } from "three/addons/tsl/display/TRAANode.js";
 import { uniform } from "three/tsl";
 import type { Node, TextureNode } from "three/webgpu";
@@ -48,6 +48,8 @@ export function createTemporalAA(
   const historyValid = uniform(1);
   const internals = node as unknown as ITemporalAANode;
   internals._historyValidUniform = historyValid;
+  internals._currentJitterUV = uniform(new Vector2());
+  internals._previousJitterUV = uniform(new Vector2());
   // One instance of the depth-rejection equations, shared by the resolve, the counter and every
   // recompile, so a measured fraction cannot describe a different decision than the one drawn.
   let rejection: TemporalDepthRejection | undefined;

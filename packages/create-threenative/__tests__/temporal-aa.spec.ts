@@ -955,3 +955,47 @@ describe("opt-in temporal AA", () => {
     scenePass.dispose();
   });
 });
+
+describe("input jitter belongs to the same frame as saved depth", () => {
+  it("records the unjittered lazy-first input before late synchronization, then actual next jitter", () => {
+    const { temporal, node, camera, frame, pipeline, scenePass } = fixture({
+      renderPipeline: true,
+    });
+    const internals = node as unknown as {
+      _currentJitterUV: { value: Vector2 };
+      _previousJitterUV: { value: Vector2 };
+      _cameraProjectionMatrixInverse: { value: { equals(other: unknown): boolean } };
+    };
+    try {
+      const firstInputProjection = camera.projectionMatrixInverse.clone();
+      // First lazy setup installs the hook after that frame's onBefore boundary. Its input has
+      // already drawn without jitter; temporal.draw's late sync only prepares a later draw.
+      temporal.node.updateBefore(frame);
+      expect(internals._currentJitterUV?.value.toArray()).toEqual([0, 0]);
+      expect(internals._previousJitterUV?.value.toArray()).toEqual([0, 0]);
+      expect(internals._cameraProjectionMatrixInverse.value.equals(firstInputProjection)).toBe(
+        true,
+      );
+      pipeline.context.onAfterRenderPipeline?.();
+      pipeline.context.onBeforeRenderPipeline?.();
+      const view = camera.view;
+      expect(view?.enabled).toBe(true);
+      const actualInputJitter = new Vector2(
+        (view?.offsetX ?? 0) / INPUT.width,
+        (view?.offsetY ?? 0) / INPUT.height,
+      );
+      const nextInputProjection = camera.projectionMatrixInverse.clone();
+      temporal.node.updateBefore(frame);
+      expect(internals._previousJitterUV.value.toArray()).toEqual([0, 0]);
+      expect(internals._currentJitterUV.value.equals(actualInputJitter)).toBe(true);
+      expect(internals._cameraProjectionMatrixInverse.value.equals(nextInputProjection)).toBe(true);
+      pipeline.context.onAfterRenderPipeline?.();
+      pipeline.context.onBeforeRenderPipeline?.();
+      temporal.node.updateBefore(frame);
+      expect(internals._previousJitterUV.value.equals(actualInputJitter)).toBe(true);
+    } finally {
+      temporal.dispose();
+      scenePass.dispose();
+    }
+  });
+});
