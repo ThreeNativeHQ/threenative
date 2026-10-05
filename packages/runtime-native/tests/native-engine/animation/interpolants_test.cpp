@@ -1,5 +1,5 @@
 // PRD-516 phase 1: every interpolant reproduces the pinned three exactly. The table is generated
-// from three's own keyframe tracks (packages/three-native/tests/animation/interpolants-reference.ts):
+// from three's own keyframe tracks (packages/three-native/tests/animation/animation-reference.ts):
 // each case evaluates the same sample sequence, seeking forward and back, past both ends and
 // through NaN and the infinities, and every result must have three's float32 bits.
 #include "check.h"
