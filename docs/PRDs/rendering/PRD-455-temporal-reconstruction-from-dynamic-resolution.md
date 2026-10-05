@@ -1318,14 +1318,15 @@ at .01774, while `qualityBeatsSpatialStability` holds. Both Phase 2 boxes and th
 edge boxes stay **open**, no box is ticked by this entry, and no full CI board, push or merge ran
 here.
 
-### The missing cell of the blend/sampling ablation (2026-10-06)
+### The missing cell of the blend/sampling ablation (2026-10-05)
 
 **The cell that was missing.** The previous entry blamed the luminance reweighting from a single
 paired arm: `resolve-cubic-strict-ordinary` changes only the blend and measures 0 at afterReveal 5,
 while `resolve-cubic-strict` keeps the reweighting and measures .01559 there. That pair varies the
 blend under **cubic** history sampling, so it cannot separate the blend from the sampling. The cell
-that separates them is the shipped combination itself: linear sampling plus the ordinary blend, which
-is what the default installs. This entry measured it.
+that separates them is linear sampling plus the ordinary blend. The shipped default is linear sampling
+plus the **luminance** reweighting — `temporalAA.ts` passes `"linear", "luminance"` — so that cell is
+one change away from the default, not the default itself. This entry measured it.
 
 **The change, one line, reverted.** `temporalAA.ts` passed `"luminance"` to
 `createExperimentalTemporalResolve`; it passed `"ordinary"` for this run, with `"linear"` untouched so
@@ -1335,8 +1336,12 @@ installed `TAAUNode.js` (`three@0.185.1` patched) still shows the luminance `fli
 ported from, so this is a deliberate divergence from upstream, not a port defect.
 
 **What the production script measured, on that change.** `sh scripts/xvfb.sh node --import tsx
-scripts/verify-temporal-motion.ts` unmodified → exit `1`, **31 arms** (22 motion + 9 quality), 16
-frames each, no `failure.json`, every arm's adapter `nvidia/turing`. `temporal` stale fractions
+scripts/verify-temporal-motion.ts` unmodified → exit `1`, **31 captured profiles** (22 motion + 9
+quality), 16 frames each, no `failure.json`, every profile's adapter `nvidia/turing`. The earlier
+entry's "32 arms" is a miscount, not a missing capture: the retained `f1b22c0be` capture
+(`/tmp/opencode/pr398-motion-baseline-f1b22c0be/motion/summary.json`) holds the same 31 profile keys
+and the same 19 scored rows, and the supersampled references (`supersampled`, `quality-supersampled`)
+are captured but carry no scored row (`counters` empty, `qualityCorpus` null). `temporal` stale fractions
 [.01774, 0, 0, 0, 0, **.01559**, .00027, .00027] against the pinned baseline
 [.01774, 0, 0, 0, 0, .01586, .00027, 0] — the warm ghost at afterReveal 5 does not move. Edge error
 0.05848 improves on 0.06055, instability 0.03193 worsens on 0.03139, and neither clears its gate, so
@@ -1359,9 +1364,12 @@ describe it: a narrow band is under-resolved on the frame the marker's silhouett
 
 **The causal result, and the decision.** With linear sampling held fixed, the ordinary blend does not
 remove the ghost (.01559 where the pinned baseline measures .01586). With cubic sampling held, it does
-(0). So the blend is not the cause; the only configuration in this corpus that clears the warm bound is
-`resolve-cubic-strict-ordinary`, and it differs from the default on the **sampling** axis, which is a
-second, larger change than this entry's budget allowed and is not qualified as a default. The source is
+(0). The blend's effect therefore **depends on the sampling**, and neither single-axis reading survives
+this pair: it does not show that the blend is not the cause, and it does not show that sampling alone
+is the cause. `resolve-cubic-strict-ordinary` is the only configuration in this corpus that clears the
+warm bound, and it differs from the shipped default on **two** axes, sampling and blend, so the corpus
+still holds no arm that isolates either axis against the default. That is a second, larger change than
+this entry's budget allowed and it is not qualified as a default. The source is
 therefore reverted to `f1b22c0be` and no product change ships: starter's tree pin stays
 `022310e487fa1c39e6b81fdcdbfb7cb13f5977e51fdf5c146c8c0696e9d9db19`, all 13 template hashes are
 unchanged, and `vitest run` over `scaffold`, `temporal-resolve`, `temporal-aa` and `temporal-chain`
@@ -1378,3 +1386,14 @@ runtime change ships.
 **Both boxes stay open.** The ghost box needs the warm bound qualified at full and low quality with its
 negative controls, native and counters; this entry qualifies the cause instead. The motion and quality
 edge boxes stay open, and no box is ticked by this entry.
+### The combined cubic + ordinary default, measured and reverted (2026-10-05)
+
+**Two axes at once, reverted.** `temporalAA.ts` passed `"catmull-rom", "ordinary"` for one production run, so the shipped arm moved on sampling **and** blend at once; the depth-edge rejection arm and `temporalResolve.ts` were untouched, and only `temporal-resolve.spec.ts` changed, to compare the generated default arm with the provider's own default compilation. No threshold, corpus, pose, camera or frame changed.
+
+**The run.** `sh scripts/xvfb.sh node --import tsx scripts/verify-temporal-motion.ts`; log `/tmp/opencode/pr398-motion-cubic-072259/motion-cubic.log`, summary `artifacts/temporal-aa/motion/summary.json`, 31 profiles. The log records **no exit code**: it ends in an uncaught `ERR_ASSERTION` from `writeTemporalMotionSummary` after every profile was retained, with `pass: false` because `authoredLinearEquivalent` is false once the shipped arm is not the linear one.
+
+**Full resolution clears the warm bound.** `temporal` is bit-identical to `resolve-cubic-strict-ordinary`: edge .0555994, instability .0324191, stale [.01774, 0, 0, 0, .00027, 0, .00054, .00054] — afterReveal 1–7 clears the pinned .01. `edgeImprovement` stays false, and every motion arm is bit-identical to the retained `f1b22c0be` capture.
+
+**Low input is where it fails.** `quality-temporal` stale [.0516, **.01908**, .00511, .00322, .0043, **.01747**, .00242, .00484] against the same .01 bound: afterReveal 1 and 5 fail, as under `linear` + `luminance` ([.0516, .01908, …, .01774, …]) and under `linear` + `ordinary`, so `qualityRevealRecovery` stays false. Edge .0806872 and instability .0364328 stay worse than `quality-spatial` (.0774488, .0505515), so `qualityEdgeImprovement` stays false.
+
+**Decision and boxes.** It fails its own measurements at both resolutions, so nothing ships: the three dirty files are reverted to `563d64a8b`, the starter tree pin and all 13 template hashes are unchanged, and every capture is retained. Both Phase 2 ghost boxes, the motion and quality edge boxes and PRD-269's ghosting cost stay **open**; no box is ticked, and no browser or native lane was re-run because no runtime change ships.
