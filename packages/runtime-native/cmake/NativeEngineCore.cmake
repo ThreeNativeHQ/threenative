@@ -50,7 +50,7 @@ target_include_directories(tn_engine_abi PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/incl
 
 # Shader IR (N08): typed, hash-consed expressions and ordered effects. Portable like foundation.
 add_library(tn_engine_shader STATIC src/engine/shader/ir.cpp src/engine/shader/wgsl.cpp src/engine/shader/package.cpp
-    src/engine/shader/standard.cpp src/engine/shader/tonemap.cpp)
+    src/engine/shader/standard.cpp src/engine/shader/tonemap.cpp src/engine/shader/output.cpp)
 tn_native_engine_target(tn_engine_shader)
 target_include_directories(tn_engine_shader PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/include)
 

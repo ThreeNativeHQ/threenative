@@ -101,6 +101,19 @@ Renderer::Renderer(WGPUInstance instance, WGPUDevice device, WGPUQueue queue, Ev
     sampler.addressModeU = sampler.addressModeV = sampler.addressModeW = WGPUAddressMode_ClampToEdge;
     sampler.maxAnisotropy = 1;
     lutSampler_ = wgpuDeviceCreateSampler(device, &sampler);
+
+    // One triangle covers the frame; the output pass samples the scene target texel for texel.
+    const float triangle[6] = {-1, -1, 3, -1, -1, 3};
+    outputTriangle_ = gpu_.createBuffer(sizeof triangle, WGPUBufferUsage_Vertex | WGPUBufferUsage_CopyDst);
+    gpu_.writeBuffer(outputTriangle_, 0, triangle, sizeof triangle);
+    outputUniforms_ = gpu_.createBuffer(16, WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
+    WGPUSamplerDescriptor nearest = {};
+    nearest.magFilter = WGPUFilterMode_Nearest;
+    nearest.minFilter = WGPUFilterMode_Nearest;
+    nearest.addressModeU = nearest.addressModeV = nearest.addressModeW = WGPUAddressMode_ClampToEdge;
+    nearest.maxAnisotropy = 1;
+    outputSampler_ = wgpuDeviceCreateSampler(device, &nearest);
+    setOutput(OutputState{});
     setSize(1, 1);
 }
 
@@ -110,6 +123,8 @@ Renderer::~Renderer() {
         wgpuBindGroupRelease(r.fragmentGroup);
     }
     releaseTargets();
+    releaseOutputGroup();
+    wgpuSamplerRelease(outputSampler_);
     wgpuSamplerRelease(lutSampler_);
     wgpuTextureViewRelease(lutView_);
     wgpuTextureRelease(lut_);
@@ -122,8 +137,27 @@ void Renderer::releaseTargets() {
     }
     if (depthView_) wgpuTextureViewRelease(depthView_);
     if (depth_) wgpuTextureRelease(depth_);
-    colorView_ = depthView_ = nullptr;
-    depth_ = nullptr;
+    if (sceneView_) wgpuTextureViewRelease(sceneView_);
+    if (sceneColor_) wgpuTextureRelease(sceneColor_);
+    colorView_ = depthView_ = sceneView_ = nullptr;
+    depth_ = sceneColor_ = nullptr;
+    releaseOutputGroup();  // it binds the scene target
+}
+
+void Renderer::releaseOutputGroup() {
+    if (outputGroup_) wgpuBindGroupRelease(outputGroup_);
+    outputGroup_ = nullptr;
+}
+
+void Renderer::setOutput(const OutputState& output) {
+    const bool programChanged = outputVertex_.wgsl.code.empty() || output.toneMapping != output_.toneMapping || output.srgb != output_.srgb;
+    output_ = output;
+    if (!programChanged) return;
+    const shader::OutputPrograms programs = shader::buildOutput(output.toneMapping, output.srgb);
+    outputVertex_ = shader::buildStage(programs.vertex, 0);
+    outputFragment_ = shader::buildStage(programs.fragment, 0);
+    if (!outputVertex_.wgsl.ok() || !outputFragment_.wgsl.ok()) throw std::runtime_error("TN_NATIVE_SHADER_INVALID: output program");
+    releaseOutputGroup();  // its layout belongs to the previous program
 }
 
 void Renderer::setSize(uint32_t width, uint32_t height) {
@@ -143,6 +177,11 @@ void Renderer::setSize(uint32_t width, uint32_t height) {
     depthDesc.mipLevelCount = 1;
     depthDesc.sampleCount = 1;
     depth_ = wgpuDeviceCreateTexture(device_, &depthDesc);
+    WGPUTextureDescriptor sceneDesc = depthDesc;
+    sceneDesc.format = WGPUTextureFormat_RGBA16Float;
+    sceneDesc.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding;
+    sceneColor_ = wgpuDeviceCreateTexture(device_, &sceneDesc);
+    sceneView_ = view2d(sceneColor_, WGPUTextureFormat_RGBA16Float);
     colorView_ = view2d(gpu_.texture(color_), WGPUTextureFormat_RGBA8Unorm);
     depthView_ = view2d(depth_, WGPUTextureFormat_Depth32Float);
 }
@@ -186,14 +225,15 @@ void Renderer::forget(uint64_t key) {
 uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& camera, const LightState& lights,
                           std::array<double, 4> clear) {
     const uint64_t id = ++renderId_;
-    WGPURenderPipeline pipeline = pipelines_.get(vertex_, &fragment_, PipelineTarget{});
+    WGPURenderPipeline pipeline =
+        pipelines_.get(vertex_, &fragment_, PipelineTarget{WGPUTextureFormat_RGBA16Float, WGPUTextureFormat_Depth32Float});
     if (!pipeline) throw std::runtime_error("TN_NATIVE_PIPELINE_REFUSED: standard program");
     const Matrix& view = camera.matrixWorldInverse;
 
     WGPUCommandEncoderDescriptor encoderDesc = {};
     WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(device_, &encoderDesc);
     WGPURenderPassColorAttachment color = {};
-    color.view = colorView_;
+    color.view = sceneView_;
     color.loadOp = WGPULoadOp_Clear;
     color.storeOp = WGPUStoreOp_Store;
     color.clearValue = {clear[0], clear[1], clear[2], clear[3]};
@@ -261,10 +301,60 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
     }
     wgpuRenderPassEncoderEnd(pass);
     wgpuRenderPassEncoderRelease(pass);
+    outputPass(encoder);
     WGPUCommandBufferDescriptor commandDesc = {};
     gpu_.submit(wgpuCommandEncoderFinish(encoder, &commandDesc));
     wgpuCommandEncoderRelease(encoder);
     return id;
+}
+
+void Renderer::outputPass(WGPUCommandEncoder encoder) {
+    WGPURenderPipeline pipeline = pipelines_.get(
+        outputVertex_, &outputFragment_, PipelineTarget{WGPUTextureFormat_RGBA8Unorm, WGPUTextureFormat_Undefined, WGPUCullMode_None});
+    if (!pipeline) throw std::runtime_error("TN_NATIVE_PIPELINE_REFUSED: output program");
+    std::vector<uint8_t> block(std::max<uint32_t>(outputFragment_.uniformBlockSize, 4));
+    put(block, outputFragment_, "toneMappingExposure", std::array<double, 1>{output_.toneMappingExposure});
+    if (outputFragment_.uniformBlockSize) gpu_.writeBuffer(outputUniforms_, 0, block.data(), outputFragment_.uniformBlockSize);
+    if (!outputGroup_) {
+        std::vector<WGPUBindGroupEntry> entries;
+        for (const shader::Binding& b : outputFragment_.bindings) {
+            WGPUBindGroupEntry e = {};
+            e.binding = b.binding;
+            if (b.kind == shader::BindingKind::Uniform) {
+                e.buffer = gpu_.buffer(outputUniforms_);
+                e.size = outputFragment_.uniformBlockSize;
+            } else if (b.kind == shader::BindingKind::Texture) {
+                e.textureView = sceneView_;
+            } else if (b.kind == shader::BindingKind::Sampler) {
+                e.sampler = outputSampler_;
+            }
+            entries.push_back(e);
+        }
+        WGPUBindGroupLayout layout = wgpuRenderPipelineGetBindGroupLayout(pipeline, 0);
+        WGPUBindGroupDescriptor desc = {};
+        desc.layout = layout;
+        desc.entryCount = entries.size();
+        desc.entries = entries.data();
+        outputGroup_ = wgpuDeviceCreateBindGroup(device_, &desc);
+        wgpuBindGroupLayoutRelease(layout);
+    }
+    WGPURenderPassColorAttachment color = {};
+    color.view = colorView_;
+    color.loadOp = WGPULoadOp_Clear;
+    color.storeOp = WGPUStoreOp_Store;
+#if defined(MYSTRAL_WEBGPU_DAWN)
+    color.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
+#endif
+    WGPURenderPassDescriptor passDesc = {};
+    passDesc.colorAttachmentCount = 1;
+    passDesc.colorAttachments = &color;
+    WGPURenderPassEncoder pass = wgpuCommandEncoderBeginRenderPass(encoder, &passDesc);
+    wgpuRenderPassEncoderSetPipeline(pass, pipeline);
+    wgpuRenderPassEncoderSetBindGroup(pass, 0, outputGroup_, 0, nullptr);
+    wgpuRenderPassEncoderSetVertexBuffer(pass, outputVertex_.attributes.at(0).location, gpu_.buffer(outputTriangle_), 0, 24);
+    wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0);
+    wgpuRenderPassEncoderEnd(pass);
+    wgpuRenderPassEncoderRelease(pass);
 }
 
 GpuStatus Renderer::readPixels(ReadbackCallback done) { return gpu_.readTexture(color_, std::move(done)); }

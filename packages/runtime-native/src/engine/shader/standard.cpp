@@ -96,15 +96,6 @@ ExprId brdfGgxMultiscatter(Tsl& t, const Surface& s, ExprId light) {
     return p.add(singleScatter, p.mul(Fms, compensationFactor));
 }
 
-// sRGBTransferOETF from three's ColorSpaceFunctions.
-ExprId srgbTransferOetf(Tsl& t, ExprId linear) {
-    Program& p = t.p;
-    const ExprId a = p.sub(p.mul(p.call("pow", {linear, p.construct(Type::vec(3), {t.f(1 / 2.4f)})}), t.f(1.055f)), t.f(0.055f));
-    const ExprId b = p.mul(linear, t.f(12.92f));
-    const ExprId le = p.call("step", {linear, p.construct(Type::vec(3), {t.f(0.0031308f)})});  // 1 where linear <= cutoff
-    return p.call("mix", {a, b, le});
-}
-
 }  // namespace
 
 std::vector<std::string> unsupportedFeatures(const StandardMaterial& m) {
@@ -177,8 +168,8 @@ StandardPrograms buildStandard(const StandardMaterial& material) {
 
     const ExprId emissive = f.uniform("emissive", Type::vec(3));
     const ExprId outgoing = f.add(f.add(f.add(directDiffuse, directSpecular), indirectDiffuse), emissive);
-    f.output("color", f.construct(Type::vec(4), {srgbTransferOetf(t, f.call("clamp", {outgoing, t.f(0), t.f(1)})),
-                                                 f.swizzle(diffuse, "w")}));
+    // Linear HDR out: tone mapping and the output colour space belong to the output pass (output.h).
+    f.output("color", f.construct(Type::vec(4), {outgoing, f.swizzle(diffuse, "w")}));
     for (const Program* stage : {&out.vertex, &out.fragment}) {
         for (const Diagnostic& d : stage->diagnostics()) {
             out.diagnostics.push_back(d.code + " " + d.node + ": " + d.reason + " (" + d.file + ":" + std::to_string(d.line) + ")");

@@ -4,6 +4,7 @@
 
 #include <chrono>
 #include <cmath>
+#include <optional>
 #include <thread>
 
 using namespace tn::engine;
@@ -122,10 +123,54 @@ void resizeReadback() {
     // Steady state: rendering the same item again compiles nothing and uploads nothing.
     const uint64_t uploads = renderer.geometry().stats().fullUploads;
     for (int i = 0; i < 30; ++i) renderer.render({&item, 1}, camera(90.0 / 150), lights);
-    CHECK(renderer.pipelines().compiles() == 1);
+    CHECK(renderer.pipelines().compiles() == 2);  // the standard program and the output pass
     CHECK(renderer.geometry().stats().fullUploads == uploads);
+}
+
+// three@0.185.1 in Chromium (WebGPU, NVIDIA Turing), tonemap-ramp-* goldens: the 8-bit sRGB output
+// of linear grey 0..8 under each tone mapping, exposure 1. Read from the golden PNGs
+// (packages/three-native/tests/compatibility/goldens/0.185.1/tonemap-ramp-<mapping>.png, strip centres).
+struct Ramp {
+    const char* name;
+    std::optional<shader::ToneMapping> mapping;
+    uint8_t out[9];
+};
+constexpr Ramp kRamps[] = {
+    {"linear", shader::ToneMapping::Linear, {0, 255, 255, 255, 255, 255, 255, 255, 255}},
+    {"reinhard", shader::ToneMapping::Reinhard, {0, 188, 213, 225, 231, 235, 238, 240, 242}},
+    {"cineon", shader::ToneMapping::Cineon, {0, 216, 233, 240, 244, 246, 247, 248, 249}},
+    {"aces", shader::ToneMapping::ACESFilmic, {0, 227, 242, 247, 250, 251, 252, 253, 253}},
+    {"agx", shader::ToneMapping::AgX, {0, 202, 224, 233, 239, 242, 245, 246, 248}},
+    {"neutral", shader::ToneMapping::Neutral, {0, 240, 250, 252, 253, 254, 254, 254, 254}},
+};
+
+// The output pass against the browser: each linear value goes through the scene target (as an unlit
+// material's colour would) and must come out as the reference's pixel.
+void outputRamp() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(4, 4);
+    int worst = 0;
+    for (const Ramp& ramp : kRamps) {
+        renderer.setOutput(OutputState{ramp.mapping, 1, true});
+        for (int v = 0; v <= 8; ++v) {
+            renderer.render({}, camera(1), LightState{}, {double(v), double(v), double(v), 1});
+            const std::vector<uint8_t> px = read(renderer, events);
+            CHECK(px.size() == 64);
+            if (px.size() != 64) return;
+            const int diff = std::abs(int(px[0]) - int(ramp.out[v]));
+            worst = std::max(worst, diff);
+            if (diff > 1) std::printf("%s %d: native %d, reference %d\n", ramp.name, v, px[0], ramp.out[v]);
+            CHECK(diff <= 1);
+            CHECK(px[0] == px[1] && px[1] == px[2]);
+        }
+    }
+    std::printf("output ramp: 6 mappings x 9 values, worst difference %d/255\n", worst);
+    CHECK(renderer.pipelines().compiles() == 1 + 6);  // the standard program once, one output program per mapping
 }
 
 }  // namespace
 
-TN_TEST_MAIN({"resize_readback", resizeReadback})
+TN_TEST_MAIN({"resize_readback", resizeReadback}, {"output_ramp", outputRamp})

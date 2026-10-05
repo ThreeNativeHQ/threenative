@@ -1,116 +1,68 @@
-// tn-native-engine-showcase: a progress screenshot of the native path as it stands. Shaders are
-// authored as IR, emitted as WGSL packages, drawn through native GPU resources with no JS engine,
-// read back and written as PNG. It grows with the renderer (N09); it is evidence, not a test.
+// A visual check of the native renderer for the PR's progress record: a roughness x metalness grid
+// of standard-material spheres through Renderer (scene target, output pass), written as a PNG.
+//   tn-native-engine-showcase [out.png] [none|linear|reinhard|cineon|aces|agx|neutral]
 
-#include "engine/renderer/gpu_resources.h"
-#include "engine/shader/dfg_lut.h"
-#include "engine/shader/package.h"
-#include "engine/shader/standard.h"
+#include "engine/renderer/renderer.h"
 #include "mystral/webgpu/context.h"
 
-#include <webgpu/webgpu.h>
-#include "mystral/webgpu_compat.h"
-
-#include <array>
 #include <chrono>
 #include <cmath>
-#include <cstring>
 #include <cstdio>
-#include <string>
+#include <cstring>
+#include <memory>
 #include <thread>
-#include <tuple>
 #include <vector>
 
 extern "C" int stbi_write_png(const char* filename, int w, int h, int comp, const void* data, int stride);
 
 using namespace tn::engine;
-using namespace tn::engine::shader;
-using Mat4 = std::array<float, 16>;  // column-major, as WGSL reads it
 
 namespace {
 
 constexpr uint32_t kWidth = 960;
 constexpr uint32_t kHeight = 540;
-
-Mat4 multiply(const Mat4& a, const Mat4& b) {
-    Mat4 r{};
-    for (int c = 0; c < 4; ++c)
-        for (int row = 0; row < 4; ++row)
-            for (int k = 0; k < 4; ++k) r[c * 4 + row] += a[k * 4 + row] * b[c * 4 + k];
-    return r;
-}
-
-Mat4 perspective(float fovY, float aspect, float near, float far) {
-    const float f = 1.0f / std::tan(fovY / 2);
-    Mat4 m{};
-    m[0] = f / aspect;
-    m[5] = f;
-    m[10] = far / (near - far);
-    m[11] = -1;
-    m[14] = near * far / (near - far);
-    return m;
-}
-
-Mat4 lookAt(std::array<float, 3> eye, std::array<float, 3> target) {
-    auto sub = [](auto a, auto b) { return std::array<float, 3>{a[0] - b[0], a[1] - b[1], a[2] - b[2]}; };
-    auto norm = [](std::array<float, 3> v) {
-        const float l = std::sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
-        return std::array<float, 3>{v[0] / l, v[1] / l, v[2] / l};
-    };
-    auto cross = [](auto a, auto b) {
-        return std::array<float, 3>{a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]};
-    };
-    auto dot = [](auto a, auto b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; };
-    const auto z = norm(sub(eye, target));
-    const std::array<float, 3> up{0, 1, 0};
-    const auto x = norm(cross(up, z));
-    const auto y = cross(z, x);
-    return {x[0], y[0], z[0], 0, x[1], y[1], z[1], 0, x[2], y[2], z[2], 0, -dot(x, eye), -dot(y, eye), -dot(z, eye), 1};
-}
-
-Mat4 transform(float x, float y, float z, float sx, float sy, float sz) {
-    return {sx, 0, 0, 0, 0, sy, 0, 0, 0, 0, sz, 0, x, y, z, 1};
-}
+constexpr double kPi = 3.141592653589793;
 
 struct Sphere {
-    std::vector<float> positions, normals;
-    std::vector<uint32_t> indices;
+    BufferStore positions{Scalar::F32, 0};
+    BufferStore normals{Scalar::F32, 0};
+    BufferStore indices{Scalar::U16, 0};
 };
 
-Sphere sphere(int segments, int rings) {
-    Sphere s;
-    for (int r = 0; r <= rings; ++r) {
-        const float v = float(r) / rings * 3.14159265f;
-        for (int g = 0; g <= segments; ++g) {
-            const float u = float(g) / segments * 6.2831853f;
-            const float n[3] = {std::sin(v) * std::cos(u), std::cos(v), std::sin(v) * std::sin(u)};
-            s.positions.insert(s.positions.end(), n, n + 3);
-            s.normals.insert(s.normals.end(), n, n + 3);
+// three's SphereGeometry(1, segments, rings) layout and winding.
+std::unique_ptr<Sphere> sphere(int segments, int rings) {
+    auto s = std::make_unique<Sphere>();
+    std::vector<float> p;
+    std::vector<uint16_t> idx;
+    for (int y = 0; y <= rings; ++y)
+        for (int x = 0; x <= segments; ++x) {
+            const double u = double(x) / segments, v = double(y) / rings;
+            p.insert(p.end(), {float(-std::cos(u * 2 * kPi) * std::sin(v * kPi)), float(std::cos(v * kPi)),
+                               float(std::sin(u * 2 * kPi) * std::sin(v * kPi))});
         }
-    }
-    for (int r = 0; r < rings; ++r)
-        for (int g = 0; g < segments; ++g) {
-            const uint32_t a = r * (segments + 1) + g, b = a + segments + 1;
-            s.indices.insert(s.indices.end(), {a, b, a + 1, a + 1, b, b + 1});
+    for (int y = 0; y < rings; ++y)
+        for (int x = 0; x < segments; ++x) {
+            const uint16_t a = y * (segments + 1) + x + 1, b = y * (segments + 1) + x, c = (y + 1) * (segments + 1) + x,
+                           d = (y + 1) * (segments + 1) + x + 1;
+            if (y != 0) idx.insert(idx.end(), {a, b, d});
+            if (y != rings - 1) idx.insert(idx.end(), {b, c, d});
         }
+    s->positions.resize(p.size());
+    s->positions.write(0, p.data(), p.size() * 4);
+    s->normals.resize(p.size());
+    s->normals.write(0, p.data(), p.size() * 4);
+    s->indices.resize(idx.size());
+    s->indices.write(0, idx.data(), idx.size() * 2);
     return s;
 }
 
-template <typename Done>
-bool pump(GpuResources& gpu, EventQueue& events, Done done) {
-    for (int i = 0; i < 5000 && !done(); ++i) {
-        gpu.poll();
-        events.drain();
-        if (!done()) std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    }
-    return done();
-}
-
-WGPUShaderModule shaderModule(WGPUDevice device, const std::string& code) {
-    WGPUShaderModuleWGSLDescriptor_Compat wgsl = {};
-    WGPUShaderModuleDescriptor desc = {};
-    setupShaderModuleWGSL(&desc, &wgsl, code.c_str());
-    return wgpuDeviceCreateShaderModule(device, &desc);
+std::optional<shader::ToneMapping> toneMapping(const char* name) {
+    using T = shader::ToneMapping;
+    const std::pair<const char*, T> names[] = {{"linear", T::Linear}, {"reinhard", T::Reinhard}, {"cineon", T::Cineon},
+                                               {"aces", T::ACESFilmic}, {"agx", T::AgX}, {"neutral", T::Neutral}};
+    for (const auto& [n, t] : names)
+        if (std::strcmp(n, name) == 0) return t;
+    return std::nullopt;
 }
 
 }  // namespace
@@ -119,239 +71,61 @@ int main(int argc, char** argv) {
     const char* outPath = argc > 1 ? argv[1] : "showcase.png";
     mystral::webgpu::Context context;
     if (!context.initializeHeadless()) return std::fprintf(stderr, "no GPU device\n"), 1;
-    WGPUDevice device = context.getDevice();
     EventQueue events;
-    GpuResources gpu(context.getInstance(), device, context.getQueue(), events, 1);
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(kWidth, kHeight);
+    renderer.setOutput(OutputState{argc > 2 ? toneMapping(argv[2]) : std::nullopt, 1, true});
 
-    const StandardPrograms standard = buildStandard(StandardMaterial{});
-    for (const std::string& d : standard.diagnostics) std::fprintf(stderr, "%s\n", d.c_str());
-    const StageModule vs = buildStage(standard.vertex, 0);
-    const StageModule fs = buildStage(standard.fragment, 1);
-    if (!vs.wgsl.ok() || !fs.wgsl.ok()) return std::fprintf(stderr, "shader package invalid\n"), 1;
-
-    const Sphere ball = sphere(64, 32);
-    Sphere plane;
-    plane.positions = {-1, 0, -1, 1, 0, -1, -1, 0, 1, 1, 0, 1};
-    plane.normals = {0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0};
-    plane.indices = {0, 1, 2, 2, 1, 3};
-    // One buffer set holds both meshes: the plane's vertices and indices follow the sphere's.
-    Sphere mesh = ball;
-    const uint32_t planeBase = static_cast<uint32_t>(ball.positions.size() / 3);
-    const uint32_t planeFirst = static_cast<uint32_t>(ball.indices.size());
-    mesh.positions.insert(mesh.positions.end(), plane.positions.begin(), plane.positions.end());
-    mesh.normals.insert(mesh.normals.end(), plane.normals.begin(), plane.normals.end());
-    for (uint32_t i : plane.indices) mesh.indices.push_back(planeBase + i);
-    const Handle positions = gpu.createBuffer(mesh.positions.size() * 4, WGPUBufferUsage_Vertex | WGPUBufferUsage_CopyDst);
-    const Handle normals = gpu.createBuffer(mesh.normals.size() * 4, WGPUBufferUsage_Vertex | WGPUBufferUsage_CopyDst);
-    const Handle indices = gpu.createBuffer(mesh.indices.size() * 4, WGPUBufferUsage_Index | WGPUBufferUsage_CopyDst);
-    gpu.writeBuffer(positions, 0, mesh.positions.data(), mesh.positions.size() * 4);
-    gpu.writeBuffer(normals, 0, mesh.normals.data(), mesh.normals.size() * 4);
-    gpu.writeBuffer(indices, 0, mesh.indices.data(), mesh.indices.size() * 4);
-    const Handle color = gpu.createTexture(kWidth, kHeight, WGPUTextureFormat_RGBA8Unorm,
-                                           WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_CopySrc);
-    WGPUTextureDescriptor depthDesc = {};
-    depthDesc.dimension = WGPUTextureDimension_2D;
-    depthDesc.size = {kWidth, kHeight, 1};
-    depthDesc.format = WGPUTextureFormat_Depth32Float;
-    depthDesc.usage = WGPUTextureUsage_RenderAttachment;
-    depthDesc.mipLevelCount = 1;
-    depthDesc.sampleCount = 1;
-    WGPUTexture depth = wgpuDeviceCreateTexture(device, &depthDesc);
-
-    WGPUVertexAttribute attributes[2] = {};
-    WGPUVertexBufferLayout buffers[2] = {};
-    for (int i = 0; i < 2; ++i) {
-        attributes[i].format = WGPUVertexFormat_Float32x3;
-        attributes[i].shaderLocation = vs.attributes[i].location;
-        buffers[i].arrayStride = 12;
-        buffers[i].stepMode = WGPUVertexStepMode_Vertex;
-        buffers[i].attributeCount = 1;
-        buffers[i].attributes = &attributes[i];
-    }
-    WGPUShaderModule vsModule = shaderModule(device, vs.wgsl.code);
-    WGPUShaderModule fsModule = shaderModule(device, fs.wgsl.code);
-    WGPURenderPipelineDescriptor desc = {};
-    desc.vertex.module = vsModule;
-    WGPU_SET_ENTRY_POINT(desc.vertex, "main");
-    desc.vertex.bufferCount = 2;
-    desc.vertex.buffers = buffers;
-    desc.primitive.topology = WGPUPrimitiveTopology_TriangleList;
-    desc.primitive.cullMode = WGPUCullMode_Back;
-    desc.primitive.frontFace = WGPUFrontFace_CW;
-    desc.multisample.count = 1;
-    desc.multisample.mask = 0xffffffffu;
-    WGPUDepthStencilState depthState = {};
-    depthState.format = WGPUTextureFormat_Depth32Float;
-    depthState.depthWriteEnabled = WGPU_OPTIONAL_BOOL_TRUE;
-    depthState.depthCompare = WGPUCompareFunction_Less;
-    desc.depthStencil = &depthState;
-    WGPUColorTargetState target = {};
-    target.format = WGPUTextureFormat_RGBA8Unorm;
-    target.writeMask = WGPUColorWriteMask_All;
-    WGPUFragmentState fragment = {};
-    fragment.module = fsModule;
-    WGPU_SET_ENTRY_POINT(fragment, "main");
-    fragment.targetCount = 1;
-    fragment.targets = &target;
-    desc.fragment = &fragment;
-    WGPURenderPipeline pipeline = wgpuDeviceCreateRenderPipeline(device, &desc);
-    if (!pipeline) return std::fprintf(stderr, "pipeline refused\n"), 1;
-
-    // The DFG lookup the standard BRDF samples: three's 16x16 RG half-float table, linear filtered.
-    WGPUTextureDescriptor lutDesc = {};
-    lutDesc.dimension = WGPUTextureDimension_2D;
-    lutDesc.size = {kDfgLutSize, kDfgLutSize, 1};
-    lutDesc.format = WGPUTextureFormat_RG16Float;
-    lutDesc.usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst;
-    lutDesc.mipLevelCount = 1;
-    lutDesc.sampleCount = 1;
-    WGPUTexture lut = wgpuDeviceCreateTexture(device, &lutDesc);
-    WGPUImageCopyTexture_Compat lutDst = {};
-    lutDst.texture = lut;
-    lutDst.aspect = WGPUTextureAspect_All;
-    WGPUTextureDataLayout_Compat lutLayout = {};
-    lutLayout.bytesPerRow = kDfgLutSize * 4;
-    lutLayout.rowsPerImage = kDfgLutSize;
-    const WGPUExtent3D lutExtent = {kDfgLutSize, kDfgLutSize, 1};
-    wgpuQueueWriteTexture(context.getQueue(), &lutDst, kDfgLut, sizeof kDfgLut, &lutLayout, &lutExtent);
-    WGPUTextureView lutView = wgpuTextureCreateView(lut, nullptr);
-    WGPUSamplerDescriptor samplerDesc = {};
-    samplerDesc.magFilter = WGPUFilterMode_Linear;
-    samplerDesc.minFilter = WGPUFilterMode_Linear;
-    samplerDesc.addressModeU = WGPUAddressMode_ClampToEdge;
-    samplerDesc.addressModeV = WGPUAddressMode_ClampToEdge;
-    samplerDesc.addressModeW = WGPUAddressMode_ClampToEdge;
-    samplerDesc.maxAnisotropy = 1;
-    WGPUSampler lutSampler = wgpuDeviceCreateSampler(device, &samplerDesc);
-
+    const auto ball = sphere(64, 32);
     // A roughness x metalness grid: roughness 0 -> 1 left to right, metalness 0, 0.5, 1 top to bottom.
-    const std::array<float, 3> eye{0.0f, 0.0f, 13.0f};
-    const Mat4 projection = perspective(0.62f, float(kWidth) / kHeight, 0.1f, 100.0f);
-    const Mat4 view = lookAt(eye, {0, 0, 0});
-    struct Draw {
-        Mat4 model;
-        float roughness, metalness;
-    };
-    std::vector<Draw> draws;
+    std::vector<shader::StandardMaterial> materials;
     for (int row = 0; row < 3; ++row)
-        for (int col = 0; col < 6; ++col)
-            draws.push_back({transform((col - 2.5f) * 2.3f, (1 - row) * 2.3f, 0, 1, 1, 1), col / 5.0f, row * 0.5f});
-    auto rotate = [&](const Mat4& m, std::array<float, 3> v) {
-        return std::array<float, 3>{m[0] * v[0] + m[4] * v[1] + m[8] * v[2], m[1] * v[0] + m[5] * v[1] + m[9] * v[2],
-                                    m[2] * v[0] + m[6] * v[1] + m[10] * v[2]};
-    };
-    const std::array<float, 3> lightWorld{-0.5f, 0.8f, 0.6f};
-    const std::array<float, 3> lightView = rotate(view, lightWorld);
-
-    WGPUBindGroupLayout vsLayout = wgpuRenderPipelineGetBindGroupLayout(pipeline, 0);
-    WGPUBindGroupLayout fsLayout = wgpuRenderPipelineGetBindGroupLayout(pipeline, 1);
-    std::vector<WGPUBindGroup> groups;
-    auto put = [](std::vector<uint8_t>& block, const StageModule& stage, const char* name, const float* data, size_t n) {
-        for (const UniformField& f : stage.uniforms) {
-            if (f.name != name) continue;
-            // mat3x3 columns are 16-byte aligned in a uniform block.
-            if (f.type.isMatrix() && f.type.rows == 3) {
-                for (int c = 0; c < 3; ++c) std::memcpy(&block[f.offset + c * 16], data + c * 3, 12);
-            } else {
-                std::memcpy(&block[f.offset], data, n * 4);
-            }
+        for (int col = 0; col < 6; ++col) {
+            shader::StandardMaterial m;
+            m.color = {1.0f, 0.71f, 0.29f};  // gold-ish albedo, linear
+            m.roughness = col / 5.0f;
+            m.metalness = row * 0.5f;
+            materials.push_back(m);
         }
-    };
-    for (const Draw& d : draws) {
-        std::vector<uint8_t> vblock(vs.uniformBlockSize), fblock(fs.uniformBlockSize);
-        const Mat4 modelView = multiply(view, d.model);
-        const float normalMatrix[9] = {modelView[0], modelView[1], modelView[2], modelView[4], modelView[5],
-                                       modelView[6], modelView[8], modelView[9], modelView[10]};
-        put(vblock, vs, "modelMatrix", d.model.data(), 16);
-        put(vblock, vs, "viewMatrix", view.data(), 16);
-        put(vblock, vs, "projectionMatrix", projection.data(), 16);
-        put(vblock, vs, "normalMatrix", normalMatrix, 9);
-        const float diffuse[4] = {1.0f, 0.71f, 0.29f, 1};  // gold-ish albedo, linear
-        const float lightColor[3] = {3.0f, 3.0f, 3.0f};
-        const float sky[3] = {0.9f, 1.0f, 1.2f}, ground[3] = {0.25f, 0.2f, 0.15f}, up[3] = {0, 1, 0};
-        const float ambient[3] = {0.05f, 0.05f, 0.05f}, emissive[3] = {0, 0, 0};
-        put(fblock, fs, "diffuse", diffuse, 4);
-        put(fblock, fs, "roughness", &d.roughness, 1);
-        put(fblock, fs, "metalness", &d.metalness, 1);
-        put(fblock, fs, "emissive", emissive, 3);
-        put(fblock, fs, "directionalDirection", lightView.data(), 3);
-        put(fblock, fs, "directionalColor", lightColor, 3);
-        put(fblock, fs, "hemisphereSky", sky, 3);
-        put(fblock, fs, "hemisphereGround", ground, 3);
-        put(fblock, fs, "hemisphereDirection", up, 3);
-        put(fblock, fs, "ambient", ambient, 3);
-        for (auto [block, layout, fragmentGroup] :
-             {std::tuple{&vblock, vsLayout, false}, std::tuple{&fblock, fsLayout, true}}) {
-            const Handle buffer = gpu.createBuffer(block->size(), WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
-            gpu.writeBuffer(buffer, 0, block->data(), block->size());
-            WGPUBindGroupEntry entries[3] = {};
-            entries[0].binding = 0;
-            entries[0].buffer = gpu.buffer(buffer);
-            entries[0].size = block->size();
-            entries[1].binding = 1;
-            entries[1].textureView = lutView;
-            entries[2].binding = 2;
-            entries[2].sampler = lutSampler;
-            WGPUBindGroupDescriptor groupDesc = {};
-            groupDesc.layout = layout;
-            groupDesc.entryCount = fragmentGroup ? 3 : 1;
-            groupDesc.entries = entries;
-            groups.push_back(wgpuDeviceCreateBindGroup(device, &groupDesc));
-        }
+    std::vector<DrawItem> items;
+    for (int i = 0; i < 18; ++i) {
+        DrawItem item;
+        item.key = i + 1;
+        item.positions = &ball->positions;
+        item.normals = &ball->normals;
+        item.indices = &ball->indices;
+        item.matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, ((i % 6) - 2.5) * 2.3, (1 - i / 6) * 2.3, 0, 1};
+        item.material = &materials[i];
+        items.push_back(item);
     }
-
-    WGPUTextureViewDescriptor viewDesc = {};
-    viewDesc.dimension = WGPUTextureViewDimension_2D;
-    viewDesc.mipLevelCount = 1;
-    viewDesc.arrayLayerCount = 1;
-    viewDesc.format = WGPUTextureFormat_RGBA8Unorm;
-    WGPUTextureView colorView = wgpuTextureCreateView(gpu.texture(color), &viewDesc);
-    viewDesc.format = WGPUTextureFormat_Depth32Float;
-    WGPUTextureView depthView = wgpuTextureCreateView(depth, &viewDesc);
-    WGPUCommandEncoderDescriptor encoderDesc = {};
-    WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(device, &encoderDesc);
-    WGPURenderPassColorAttachment colorAttachment = {};
-    colorAttachment.view = colorView;
-    colorAttachment.loadOp = WGPULoadOp_Clear;
-    colorAttachment.storeOp = WGPUStoreOp_Store;
-    colorAttachment.clearValue = {0.02, 0.022, 0.03, 1.0};
-#if defined(MYSTRAL_WEBGPU_DAWN)
-    colorAttachment.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
-#endif
-    WGPURenderPassDepthStencilAttachment depthAttachment = {};
-    depthAttachment.view = depthView;
-    depthAttachment.depthLoadOp = WGPULoadOp_Clear;
-    depthAttachment.depthStoreOp = WGPUStoreOp_Store;
-    depthAttachment.depthClearValue = 1.0f;
-    WGPURenderPassDescriptor passDesc = {};
-    passDesc.colorAttachmentCount = 1;
-    passDesc.colorAttachments = &colorAttachment;
-    passDesc.depthStencilAttachment = &depthAttachment;
-    WGPURenderPassEncoder pass = wgpuCommandEncoderBeginRenderPass(encoder, &passDesc);
-    wgpuRenderPassEncoderSetPipeline(pass, pipeline);
-    wgpuRenderPassEncoderSetVertexBuffer(pass, 0, gpu.buffer(positions), 0, mesh.positions.size() * 4);
-    wgpuRenderPassEncoderSetVertexBuffer(pass, 1, gpu.buffer(normals), 0, mesh.normals.size() * 4);
-    wgpuRenderPassEncoderSetIndexBuffer(pass, gpu.buffer(indices), WGPUIndexFormat_Uint32, 0, mesh.indices.size() * 4);
-    for (size_t i = 0; i < draws.size(); ++i) {
-        wgpuRenderPassEncoderSetBindGroup(pass, 0, groups[i * 2], 0, nullptr);
-        wgpuRenderPassEncoderSetBindGroup(pass, 1, groups[i * 2 + 1], 0, nullptr);
-        wgpuRenderPassEncoderDrawIndexed(pass, ball.indices.size(), 1, 0, 0, 0);
-    }
-    wgpuRenderPassEncoderEnd(pass);
-    wgpuRenderPassEncoderRelease(pass);
-    WGPUCommandBufferDescriptor commandDesc = {};
-    gpu.submit(wgpuCommandEncoderFinish(encoder, &commandDesc));
-    wgpuCommandEncoderRelease(encoder);
+    // three's PerspectiveCamera(35.5 deg, 16:9, 0.1, 100) at z = 13 looking at the origin.
+    CameraState camera;
+    camera.matrixWorldInverse = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, -13, 1};
+    const double near = 0.1, far = 100, top = near * std::tan(0.31), aspect = double(kWidth) / kHeight;
+    camera.projectionMatrix = {near / (aspect * top), 0, 0, 0, 0, near / top, 0, 0, 0, 0, -(far + near) / (far - near), -1,
+                               0, 0, -2 * far * near / (far - near), 0};
+    LightState lights;
+    lights.directionalDirection = {-0.5, 0.8, 0.6};
+    lights.directionalColor = {3, 3, 3};
+    lights.hemisphereSky = {0.9, 1.0, 1.2};
+    lights.hemisphereGround = {0.25, 0.2, 0.15};
+    lights.ambient = {0.05, 0.05, 0.05};
+    renderer.render(items, camera, lights, {0.002, 0.002, 0.003, 1});
 
     std::vector<uint8_t> pixels;
     bool done = false;
-    gpu.readTexture(color, [&](GpuStatus s, std::vector<uint8_t> out) {
+    renderer.readPixels([&](GpuStatus s, std::vector<uint8_t> out) {
         if (s == GpuStatus::Ok) pixels = std::move(out);
         done = true;
     });
-    if (!pump(gpu, events, [&] { return done; }) || pixels.empty()) return std::fprintf(stderr, "readback failed\n"), 1;
+    for (int i = 0; i < 5000 && !done; ++i) {
+        renderer.poll();
+        events.drain();
+        if (!done) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    if (pixels.empty()) return std::fprintf(stderr, "readback failed\n"), 1;
     if (!stbi_write_png(outPath, kWidth, kHeight, 4, pixels.data(), kWidth * 4)) return std::fprintf(stderr, "png write failed\n"), 1;
-    std::printf("SHOWCASE_OK %s %ux%u, %zu draws, %zu triangles each\n", outPath, kWidth, kHeight, draws.size(),
-                ball.indices.size() / 3);
+    std::printf("SHOWCASE_OK %s %ux%u, %zu draws, %zu triangles each\n", outPath, kWidth, kHeight, items.size(),
+                ball->indices.byteLength() / 6);
     return 0;
 }

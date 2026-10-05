@@ -41,7 +41,8 @@ struct StandardPrograms {
 /**
  * Builds the standard material's two stages from the pinned node chain: BRDF_GGX_Multiscatter with
  * the DFG lookup, Lambert diffuse, getRoughness with geometry roughness, one directional, one
- * hemisphere and one ambient light (the N09 renderer generalizes lights), sRGB output transfer.
+ * hemisphere and one ambient light (the N09 renderer generalizes lights). It writes linear HDR
+ * colour; the output pass (output.h) tone maps and encodes it.
  * Uniforms: modelMatrix, viewMatrix, projectionMatrix, normalMatrix (vertex); diffuse (rgb,
  * opacity), roughness, metalness, emissive, directionalDirection (view space), directionalColor,
  * hemisphereSky, hemisphereGround, hemisphereDirection (world), ambient (fragment); texture "dfg".

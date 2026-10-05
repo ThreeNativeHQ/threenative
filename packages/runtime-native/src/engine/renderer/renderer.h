@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <unordered_map>
 
@@ -11,6 +12,7 @@
 #include "engine/renderer/geometry_cache.h"
 #include "engine/renderer/gpu_resources.h"
 #include "engine/renderer/pipeline_cache.h"
+#include "engine/shader/output.h"
 #include "engine/shader/package.h"
 #include "engine/shader/standard.h"
 
@@ -43,9 +45,18 @@ struct LightState {
     std::array<double, 3> ambient{0, 0, 0};
 };
 
+/** three's renderer output settings: `toneMapping`, `toneMappingExposure`, `outputColorSpace`. */
+struct OutputState {
+    std::optional<shader::ToneMapping> toneMapping;  // empty: NoToneMapping
+    double toneMappingExposure = 1;
+    bool srgb = true;  // false: LinearSRGBColorSpace
+};
+
 /**
- * The native renderer's draw core (PRD-514): standard-material meshes into an RGBA8 target with a
- * depth buffer, at the size the caller sets. GPU records — geometry copies, pipelines, uniform buffers
+ * The native renderer's draw core (PRD-514): standard-material meshes into a linear RGBA16Float
+ * scene target with depth, then three's output pass — tone mapping, then the output colour space —
+ * into the RGBA8 frame, at the size the caller sets. The clear colour is linear and goes through the
+ * output pass too, as three's background does. GPU records — geometry copies, pipelines, uniform buffers
  * and bind groups — persist across frames; a frame only rewrites uniforms and records commands.
  */
 class Renderer {
@@ -54,6 +65,9 @@ public:
     ~Renderer();
     Renderer(const Renderer&) = delete;
     Renderer& operator=(const Renderer&) = delete;
+
+    void setOutput(const OutputState& output);
+    const OutputState& output() const { return output_; }
 
     /** Reallocates the targets; the next render draws at the new extent. Zero sizes clamp to 1. */
     void setSize(uint32_t width, uint32_t height);
@@ -83,6 +97,8 @@ private:
     };
     Record& record(uint64_t key, WGPURenderPipeline pipeline);
     void releaseTargets();
+    void releaseOutputGroup();
+    void outputPass(WGPUCommandEncoder encoder);
 
     WGPUDevice device_;
     EventQueue& events_;
@@ -98,6 +114,15 @@ private:
     WGPUTexture depth_ = nullptr;
     WGPUTextureView colorView_ = nullptr;
     WGPUTextureView depthView_ = nullptr;
+    WGPUTexture sceneColor_ = nullptr;  // linear HDR, what materials draw into
+    WGPUTextureView sceneView_ = nullptr;
+    OutputState output_;
+    shader::StageModule outputVertex_;
+    shader::StageModule outputFragment_;
+    Handle outputTriangle_;
+    Handle outputUniforms_;
+    WGPUSampler outputSampler_ = nullptr;
+    WGPUBindGroup outputGroup_ = nullptr;
     uint32_t width_ = 0;
     uint32_t height_ = 0;
     uint64_t renderId_ = 0;

@@ -1,5 +1,6 @@
-// Ported from three@0.185.1 src/nodes/display/ToneMappingFunctions.js. TSL's 9-scalar mat3(...) is
-// column-major, so each matrix is built from its three columns in source order.
+// Ported from three@0.185.1 src/nodes/display/ToneMappingFunctions.js. Two matrix spellings there:
+// mat3(vec3, vec3, vec3) takes columns, but mat3(9 scalars) becomes `new Matrix3(...)`, whose set()
+// takes ROWS (NodeUtils.getValueFromType). mat3() below takes columns, mat3Rows() rows.
 
 #include "tonemap.h"
 
@@ -14,6 +15,10 @@ ExprId mat3(Program& p, const std::array<float, 9>& m) {
         return p.construct(Type::vec(3), {p.constant(m[c * 3]), p.constant(m[c * 3 + 1]), p.constant(m[c * 3 + 2])});
     };
     return p.construct(Type::mat(3, 3), {column(0), column(1), column(2)});
+}
+
+ExprId mat3Rows(Program& p, const std::array<float, 9>& r) {
+    return mat3(p, {r[0], r[3], r[6], r[1], r[4], r[7], r[2], r[5], r[8]});
 }
 
 ExprId f(Program& p, float v) { return p.constant(v); }
@@ -51,8 +56,8 @@ ExprId toneMap(Program& p, ToneMapping mapping, ExprId color, ExprId exposure) {
             return p.call("pow", {p.div(a, b), p.construct(Type::vec(3), {f(p, 2.2f)})});
         }
         case ToneMapping::ACESFilmic: {
-            const ExprId input = mat3(p, {0.59719f, 0.35458f, 0.04823f, 0.07600f, 0.90834f, 0.01566f, 0.02840f, 0.13383f, 0.83777f});
-            const ExprId output = mat3(p, {1.60475f, -0.53108f, -0.07367f, -0.10208f, 1.10813f, -0.00605f, -0.00327f, -0.07276f, 1.07602f});
+            const ExprId input = mat3Rows(p, {0.59719f, 0.35458f, 0.04823f, 0.07600f, 0.90834f, 0.01566f, 0.02840f, 0.13383f, 0.83777f});
+            const ExprId output = mat3Rows(p, {1.60475f, -0.53108f, -0.07367f, -0.10208f, 1.10813f, -0.00605f, -0.00327f, -0.07276f, 1.07602f});
             ExprId c = p.div(p.mul(color, exposure), f(p, 0.6f));
             c = p.mul(input, c);
             c = rrtAndOdtFit(p, c);
