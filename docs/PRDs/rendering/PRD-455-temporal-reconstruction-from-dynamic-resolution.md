@@ -1039,14 +1039,82 @@ Results on this tree, `build/tn-linux/mystral` unchanged, no C++ rebuild:
   `0.40011787108055263`, `failureReason` "Capture metrics exceeded the registry tolerance", with zero
   GPU validation errors. This is **reference variance, not a regression from this change**, and the
   measurement says so: the native capture is **byte-identical** to the run that passed
-  (`0.00000` mismatch, same md5) between `native-life-r1` and `native-quality-r2`, while the two
-  browser references of the same scene differ from **each other** by `0.03870`. The temporal route's
-  capture lands on a jitter-lattice frame boundary, so two correct browser runs disagree by more
-  than the whole row's budget. The prior green at `0.05384440104166666` came from a different
-  reference (`web-life-r2`). Left failing and reported, with the tolerance unchanged at `.06`.
+  (`0.00000` mismatch, same md5) between `native-life-r1` and `native-quality-r2`. The prior green at
+  `0.05384440104166666` came from a different reference (`web-life-r2`).
+  **Correction to the claim first written here.** That entry said the two browser references of the
+  same scene "differ from each other by `0.03870`" and therefore that "two correct browser runs
+  disagree by more than the whole row's budget". Both clauses were false. `0.03870` is the gap
+  between the two browser captures, which is *inside* the `0.06` budget — it is a real contribution
+  to the paired comparison, not an amount that exceeds the budget on its own. The paired
+  web-to-native comparison is what exceeds budget, and it does so because the browser and native
+  contributions point in the same direction and add up. The claim also named the jitter lattice as
+  the mechanism; that stayed a hypothesis and the trace below refuted it. With the tolerance
+  unchanged at `.06`, the row is left failing and reported.
 - Focused checks: `pnpm typecheck` exit 0; Biome clean on both scenes and the scorer. The fixture's
   pre-existing cognitive-complexity warning is unchanged at 21 and the repo's one native-smoke physics
   complexity warning is untouched — neither is fixed in this scope.
 
 No core, API, generic counter or ledger change. No generated render file changed, so no scaffold hash
 moved. Scoped commit only: no full CI, no push, no merge.
+
+### The capture repeatability defect, traced (2026-10-05)
+
+**The red check, run before any edit.** Two fresh web captures of the four temporal rows on this
+exact tree and commit, `web-rep-r1` and `web-rep-r2`, adapter `nvidia`/`turing`, all four rows pass,
+runner exit 2 for the 96 unselected rows. Their own capture bytes do **not** agree:
+
+| Row | r1 vs r2 capture mismatch | max channel delta |
+| --- | --- | --- |
+| `temporal-aa-scaled` | 21,651 px, `0.035239` | 84 |
+| `temporal-aa-scaled-unchecked-reset` | 23,431 px, `0.038136` | 96 |
+| `temporal-aa-lifecycle` | 0 px, byte-identical | 0 |
+| `temporal-aa-quality` | 0 px, byte-identical | 0 |
+
+So the defect is not web-versus-native and not a regression from the honesty fix: the **same host
+disagrees with itself run to run**, and it does so on the two rows whose budget the failing
+lifecycle row was being blamed on. Across all seven preserved capture sets the rows hold
+`scaled` 5 distinct states, `scaled-unchecked-reset` 5, `lifecycle` 3, `quality` 2. A row that can
+only be compared byte-for-byte is not a conformance row.
+
+**The jitter-lattice hypothesis is refuted.** The prior entry attributed the disagreement to the
+capture landing on a jitter-lattice frame boundary. The fixture already freezes the authored pose
+(`pose = min(frame, settle)`), so a lattice-phase difference cannot be the cause: the differing
+pixels are a *bounded region*, not a whole-image sub-pixel shift. For `scaled` the diff is confined
+to `x 430-840, y 169-361` of 1280x480; for `lifecycle`, `x 313-751, y 163-375`. That is the footprint
+of the fixture's own `occluder` (`occluder.visible = frame < 28`), the saturated foreground plane
+that is removed without a reset so the history must resolve the disocclusion on its own. Everything
+outside that box is byte-identical.
+
+**What the fixture actually does after settle, and why the capture is not a fixed point.** Traced
+`scene-support.js` → `temporal-aa-fixture.js` → the provider and the two capture drivers:
+
+1. `startVisualScene` calls `subject.render()` once, then drives an endless
+   `requestAnimationFrame` loop. The fixture's `render()` keeps running after the diagnostic frames
+   and after `settle`, and the pose freeze holds only the *authored* transforms.
+2. The temporal resolve keeps running on that frozen pose. Its history still carries the occluder's
+   disocclusion, and the neighbourhood clip and depth rejection blend the old samples out over
+   successive frames **asymptotically**. There is no frame at which the history is exactly settled,
+   so a capture's pixel values depend on how many frames elapsed since the last authored change.
+3. Nothing pins that frame count. The browser driver screenshots the canvas element after
+   `captureFrames` rAFs; the native host services a screenshot request from whichever presented
+   frame answers the mailbox poll. Either can land one frame earlier or later, and one frame is
+   enough to move 3.5% of the pixels inside the occluder's box.
+
+So the jitter lattice was never the variable. The variable is the **decay of temporal history in a
+region the fixture deliberately disoccluded, sampled at an unpinned frame index.**
+
+**Why no repair was made here.** The two ways to make the capture a fixed point both destroy what
+the row measures, and both are out of bounds for this scope:
+
+- A per-frame history reset after settle would pin the pixels, but it is exactly the
+  `unchecked-reset` control the positive row exists to contrast against, and it would publish a cold
+  frame as the capture — the row would compare two reset frames and stop testing reconstruction.
+- Pinning the capture frame in the harness would need the browser compositor and the native present
+  boundary to agree on a frame index, which is a runner change, and the scope forbids a new runner or
+  API for this.
+
+The honest statement of where this stands: the failing `lifecycle` number is a **real** failure of a
+row that is **not** deterministic, and the `.06` budget was never shown to be wrong. The next task
+should decide whether the fixture's disocclusion is authored to settle on a frame it can name, or
+whether the capture driver must be frame-locked. Until one of those lands, this PRD does not claim
+`prd:100%` for Phase 1: the native repeatability failure stands open.
