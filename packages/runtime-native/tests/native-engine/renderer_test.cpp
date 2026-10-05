@@ -4,6 +4,7 @@
 
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
 #include <optional>
 #include <string>
 #include <thread>
@@ -134,6 +135,7 @@ void resizeReadback() {
 // (packages/three-native/tests/compatibility/goldens/0.185.1/tonemap-ramp-<mapping>.png, strip centres).
 extern "C" unsigned char* stbi_load(const char* filename, int* x, int* y, int* comp, int req_comp);
 extern "C" void stbi_image_free(void* data);
+extern "C" int stbi_write_png(const char* filename, int w, int h, int comp, const void* data, int stride);
 
 struct Ramp {
     const char* name;
@@ -213,6 +215,85 @@ void outputRamp() {
     CHECK(renderer.pipelines().compiles() == 1 + 6);  // the basic program once, one output program per mapping
 }
 
+double srgbToLinear(double c) { return c < 0.04045 ? c * 0.0773993808 : std::pow(c * 0.9478672986 + 0.0521327014, 2.4); }
+
+// The lit-render fixture, natively: SphereGeometry(1, 32, 16) with MeshStandardMaterial (0.8, 0.35,
+// 0.2; roughness 0.35, metalness 0.1) under DirectionalLight(0xffffff, 3) at (2, 3, 1) and
+// HemisphereLight(0xaabb91, 0x222222, 0.6), PerspectiveCamera(60, 4/3) at (0, 1.4, 3.2) looking at the
+// origin, background (0.05, 0.06, 0.08), ACES, 320x240. Compared with the browser's golden frame.
+void litReference() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(320, 240);
+    renderer.setOutput(OutputState{shader::ToneMapping::ACESFilmic, 1, true});
+    const auto ball = sphere(32, 16);
+    shader::StandardMaterial material;
+    material.color = {0.8f, 0.35f, 0.2f};
+    material.roughness = 0.35f;
+    material.metalness = 0.1f;
+    DrawItem item;
+    item.key = 1;
+    item.positions = &ball->positions;
+    item.normals = &ball->normals;
+    item.indices = &ball->indices;
+    item.matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    item.material = &material;
+
+    // Object3D.lookAt for a camera: -z towards the target, up (0, 1, 0); the view is its inverse.
+    const double eye[3] = {0, 1.4, 3.2};
+    const double zl = std::sqrt(eye[1] * eye[1] + eye[2] * eye[2]);
+    const double z[3] = {0, eye[1] / zl, eye[2] / zl};
+    const double x[3] = {1, 0, 0};  // up x z, normalised: z has no x component
+    const double y[3] = {z[1] * x[2] - z[2] * x[1], z[2] * x[0] - z[0] * x[2], z[0] * x[1] - z[1] * x[0]};
+    auto dot = [](const double* a, const double* b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; };
+    CameraState camera;
+    camera.matrixWorldInverse = {x[0], y[0], z[0], 0, x[1], y[1], z[1], 0, x[2], y[2], z[2], 0,
+                                 -dot(x, eye), -dot(y, eye), -dot(z, eye), 1};
+    const double t = std::tan(30 * kPi / 180), aspect = 4.0 / 3;
+    camera.projectionMatrix = {1 / (aspect * t), 0, 0, 0, 0, 1 / t, 0, 0, 0, 0, -100 / 99.9, -1, 0, 0, -10 / 99.9, 0};
+
+    LightState lights;
+    const double dl = std::sqrt(4.0 + 9 + 1);
+    lights.directionalDirection = {2 / dl, 3 / dl, 1 / dl};
+    lights.directionalColor = {3, 3, 3};
+    lights.hemisphereSky = {srgbToLinear(0xaa / 255.0) * 0.6, srgbToLinear(0xbb / 255.0) * 0.6, srgbToLinear(0x91 / 255.0) * 0.6};
+    const double ground = srgbToLinear(0x22 / 255.0) * 0.6;
+    lights.hemisphereGround = {ground, ground, ground};
+    lights.hemisphereUp = {0, 1, 0};
+    renderer.render({&item, 1}, camera, lights, {0.05, 0.06, 0.08, 1});
+    const std::vector<uint8_t> px = read(renderer, events);
+    CHECK(px.size() == 320 * 240 * 4);
+    if (const char* out = std::getenv("TN_RENDER_OUT"); out && px.size() == 320 * 240 * 4)
+        stbi_write_png(out, 320, 240, 4, px.data(), 320 * 4);  // for the PR's progress record
+
+    const std::string png = std::string(TN_GOLDENS_DIR) + "/lit-render.png";
+    int gw = 0, gh = 0, gc = 0;
+    unsigned char* golden = stbi_load(png.c_str(), &gw, &gh, &gc, 4);
+    CHECK(golden != nullptr && gw == 320 && gh == 240);
+    if (!golden || px.size() != 320 * 240 * 4) return;
+    size_t off1 = 0, off4 = 0;
+    int worst = 0;
+    double sum = 0;
+    for (size_t i = 0; i < px.size(); i += 4)
+        for (int c = 0; c < 3; ++c) {
+            const int d = std::abs(int(px[i + c]) - int(golden[i + c]));
+            worst = std::max(worst, d);
+            sum += d;
+            off1 += d > 1;
+            off4 += d > 4;
+        }
+    stbi_image_free(golden);
+    const double channels = 320.0 * 240 * 3;
+    std::printf("lit-render vs browser: mean |d| %.3f, worst %d, >1: %.3f%%, >4: %.3f%% of channels\n", sum / channels, worst,
+                off1 * 100 / channels, off4 * 100 / channels);
+    // Measured on NVIDIA Turing (Dawn and wgpu-native): mean 0.001, worst 4, 0.006% over 1 level.
+    // A wrong light term moves thousands of channels (the view-space hemisphere bug: 7% over 1).
+    CHECK(worst <= 8 && off1 / channels < 0.001);
+}
+
 }  // namespace
 
-TN_TEST_MAIN({"resize_readback", resizeReadback}, {"output_ramp", outputRamp})
+TN_TEST_MAIN({"resize_readback", resizeReadback}, {"output_ramp", outputRamp},
+             {"lit_reference", litReference})

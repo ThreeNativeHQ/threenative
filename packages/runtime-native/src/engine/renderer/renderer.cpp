@@ -300,7 +300,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
         put(fblock, fs, "directionalColor", lights.directionalColor);
         put(fblock, fs, "hemisphereSky", lights.hemisphereSky);
         put(fblock, fs, "hemisphereGround", lights.hemisphereGround);
-        put(fblock, fs, "hemisphereDirection", rotate(view, lights.hemisphereUp));
+        put(fblock, fs, "hemisphereDirection", lights.hemisphereUp);  // world space: it meets normalWorld
         put(fblock, fs, "ambient", lights.ambient);
         gpu_.writeBuffer(r.vertexUniforms, 0, vblock.data(), vblock.size());
         gpu_.writeBuffer(r.fragmentUniforms, 0, fblock.data(), fblock.size());
