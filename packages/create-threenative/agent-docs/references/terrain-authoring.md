@@ -10,6 +10,22 @@ Search `engine_search_capabilities` for terrain authoring and inspect the return
 `engine_capability_detail` before creating a terrain generator. Use the installed
 terrain operations rather than writing noise, erosion, masks, roads or rivers again.
 
+## Asked for a ready world? Start from a starter kit
+
+A kit is a whole playable world as game source: recipe, bake script, CC0 art, terrain surface,
+sky, props and colliders. `@threenative/terrain` ships them under `starter/<world>/` (today:
+`forest`). Copy one into the game, bake, add it to a scene:
+
+```sh
+cp -r node_modules/@threenative/terrain/starter/forest src/terrain/forest
+node src/terrain/forest/bake.mjs --out assets/terrain/forest
+```
+
+Then `await addForest(ctx, player)` in `Scene.load` and `ctx.add(forestDaylight(ctx.camera))` in
+`Scene.enter`; the kit's `README.md` says what each file decides. Edit `recipe.json` for layout,
+`COLLIDERS` in `world.ts` for what stops the player, `surface.json` and `sky.ts` for the look, and
+re-run the bake. The bake writes the engine's `WorldCells` package (`bakeWorldPackage`).
+
 ## Generate once, play the bake
 
 Run this in an authoring/build script, outside the game loop:
