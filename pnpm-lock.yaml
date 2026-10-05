@@ -18,6 +18,9 @@ catalogs:
     '@gltf-transform/functions':
       specifier: 4.4.2
       version: 4.4.2
+    '@jridgewell/trace-mapping':
+      specifier: 0.3.31
+      version: 0.3.31
     '@tailwindcss/vite':
       specifier: 4.3.3
       version: 4.3.3
@@ -934,6 +937,9 @@ importers:
       '@gltf-transform/functions':
         specifier: 'catalog:'
         version: 4.4.2(@types/node@20.19.43)
+      '@jridgewell/trace-mapping':
+        specifier: 'catalog:'
+        version: 0.3.31
       draco3dgltf:
         specifier: ^1.5.7
         version: 1.5.7

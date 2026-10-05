@@ -7,6 +7,7 @@ confirmModulesPurge: false
 
 catalog:
   three: 0.185.1
+  '@jridgewell/trace-mapping': 0.3.31
   '@gltf-transform/core': 4.4.2
   '@gltf-transform/extensions': 4.4.2
   '@gltf-transform/functions': 4.4.2

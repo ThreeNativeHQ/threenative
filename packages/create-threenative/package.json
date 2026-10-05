@@ -72,7 +72,8 @@
     "ktx-parse": "^1.1.0",
     "ktx2-encoder": "0.6.0",
     "meshoptimizer": "1.1.1",
-    "three": "catalog:"
+    "three": "catalog:",
+    "@jridgewell/trace-mapping": "catalog:"
   },
   "devDependencies": {
     "@gltf-transform/core": "catalog:",

@@ -4,6 +4,7 @@ import { mkdir, readFile, readdir, rm, symlink, writeFile } from "node:fs/promis
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
+import { TraceMap, encodedMappings } from "@jridgewell/trace-mapping";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { rgbaPng } from "../../../test-support/png.js";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
@@ -28,6 +29,39 @@ import { createProject } from "../src/index.js";
 
 const run = promisify(execFile);
 const roots: string[] = [];
+
+async function cssProvenanceFixture(target = "https://cdn.example.com/missing.png") {
+  const root = await makeTempDir("threenative-css-provenance-");
+  roots.push(root);
+  const built = path.join(root, "built-ui");
+  const file = path.join(built, "assets", "index-provenance.css");
+  const authored = `/* Inventário 🎮 */\n.hud {\n  color: red;\n  background-image: url(${target});\n}\n`;
+  const generatedLine = `*/ .hud{content:'🎮';background:url(${target})}`;
+  const css = `/* documented url(https://ignored.example.com) 🎮\r\n${generatedLine}\r\n/*# sourceMappingURL=index-provenance.css.map */\n`;
+  const column = generatedLine.indexOf("url(");
+  const map = {
+    version: 3,
+    file: "index-provenance.css",
+    sourceRoot: "../../src/ui",
+    sources: ["hud.css"],
+    sourcesContent: [authored],
+    names: [] as string[],
+    mappings: encodedMappings(
+      new TraceMap({
+        version: 3,
+        sources: ["hud.css"],
+        names: [],
+        mappings: [[], [[column, 0, 3, 20]]],
+      }),
+    ),
+  };
+  await mkdir(path.dirname(file), { recursive: true });
+  await mkdir(path.join(root, "src/ui"), { recursive: true });
+  await writeFile(path.join(root, "src/ui/hud.css"), authored);
+  await writeFile(file, css);
+  await writeFile(`${file}.map`, `${JSON.stringify(map)}\n`);
+  return { root, built, file, css, map, column, out: path.join(root, "ui-css") };
+}
 
 // Putting the previous artifact back only happens on a rename that failed, so one `rename` is made
 // to fail for the staged path alone. The put-back renames from the `.previous-` sibling instead, so
@@ -707,6 +741,159 @@ cpSync("public", out, { recursive: true });
     await writeFile(css, ".hud{color:#fff}");
     expect(await extractUiStylesheets(built, out)).toEqual(["hud.css"]);
     expect(existsSync(path.join(out, "hud.css.map"))).toBe(false);
+  });
+
+  it.each(["https://cdn.example.com/missing.png", "missing.png"])(
+    "CSS asset provenance maps transformed CSS to the actual authored reference (%s)",
+    async (target) => {
+      const fixture = await cssProvenanceFixture(target);
+      const mapBytes = await readFile(`${fixture.file}.map`);
+      const failure = (await extractUiStylesheets(fixture.built, fixture.out, fixture.root).catch(
+        (error: Error) => error,
+      )) as Error;
+      expect(failure).toBeInstanceOf(Error);
+      expect(failure.message).toContain("TN_CSS_UI_ASSET_UNSUPPORTED:");
+      expect(failure.message).toContain(`references ${target};`);
+      expect(failure.message).toContain(`\n  generated: ${fixture.file}:2:${fixture.column + 1}`);
+      expect(failure.message).toContain("\n  authored: src/ui/hud.css:4:21");
+      expect(await readFile(fixture.file, "utf8")).toBe(fixture.css);
+      expect(await readFile(`${fixture.file}.map`)).toEqual(mapBytes);
+      expect(await readdir(fixture.out)).toEqual([]);
+    },
+  );
+
+  it.each([
+    "missing",
+    "malformed",
+    "truncated VLQ",
+    "consumer cache impersonation",
+    "wrong version",
+    "wrong artifact",
+    "unmapped",
+    "invalid authored position",
+    "stale authored source",
+    "unrelated authored URL",
+    "commented authored URL",
+    "duplicate references",
+    "duplicate authored sources",
+    "missing map reference",
+    "missing project root",
+    "coarse mapping anchor",
+    "ambiguous segment",
+    "map reference outside root",
+    "map symlink outside root",
+    "authored source outside root",
+  ])("CSS asset provenance keeps the refusal generated for %s maps", async (control) => {
+    const f = await cssProvenanceFixture();
+    let css = f.css;
+    if (control === "wrong version") f.map.version = 2;
+    if (control === "wrong artifact") f.map.file = "other.css";
+    if (control === "unmapped") f.map.mappings = "";
+    if (control === "truncated VLQ" || control === "consumer cache impersonation") {
+      f.map.sourcesContent[0] = "url(https://cdn.example.com/missing.png)";
+      await writeFile(path.join(f.root, "src/ui/hud.css"), f.map.sourcesContent[0]);
+      f.map.mappings = ";gCA"; // Column 32, source 0; both authored coordinates are missing.
+      if (control === "consumer cache impersonation") {
+        Object.assign(f.map, {
+          mappings: "",
+          _decodedMemo: {},
+          _decoded: [[], [[f.column, 0, 0, 0]]],
+          resolvedSources: [pathToFileURL(path.join(f.root, "src/ui/hud.css")).href],
+        });
+      }
+    }
+    if (control === "invalid authored position") {
+      f.map.mappings = encodedMappings(
+        new TraceMap({
+          version: 3,
+          sources: ["hud.css"],
+          names: [],
+          mappings: [[], [[f.column, 0, 99, 20]]],
+        }),
+      );
+    }
+    if (control === "stale authored source") {
+      await writeFile(path.join(f.root, "src/ui/hud.css"), "");
+    }
+    if (control === "unrelated authored URL" || control === "commented authored URL") {
+      const lines = (f.map.sourcesContent[0] ?? "").split("\n");
+      lines[3] =
+        control === "unrelated authored URL"
+          ? "  background-image: url(https://unrelated.example.com/other.png);"
+          : `/*${" ".repeat(18)}url(https://cdn.example.com/missing.png) */`;
+      f.map.sourcesContent[0] = lines.join("\n");
+      await writeFile(path.join(f.root, "src/ui/hud.css"), f.map.sourcesContent[0]);
+    }
+    if (control === "coarse mapping anchor") {
+      f.map.mappings = encodedMappings(
+        new TraceMap({
+          version: 3,
+          sources: ["hud.css"],
+          names: [],
+          mappings: [[], [[f.column - 1, 0, 3, 20]]],
+        }),
+      );
+    }
+    if (control === "duplicate authored sources") {
+      f.map.sources.push("./hud.css");
+      f.map.sourcesContent.push(f.map.sourcesContent[0] ?? "");
+    }
+    if (control === "ambiguous segment") {
+      f.map.mappings = encodedMappings(
+        new TraceMap({
+          version: 3,
+          sources: ["hud.css"],
+          names: [],
+          mappings: [
+            [],
+            [
+              [f.column, 0, 3, 20],
+              [f.column, 0, 1, 0],
+            ],
+          ],
+        }),
+      );
+    }
+    if (control === "authored source outside root") {
+      const outside = await makeTempDir("threenative-authored-outside-");
+      roots.push(outside);
+      await writeFile(path.join(outside, "hud.css"), f.map.sourcesContent[0] ?? "");
+      f.map.sourceRoot = outside;
+    }
+    await writeFile(`${f.file}.map`, `${JSON.stringify(f.map)}\n`);
+    if (control === "missing") await rm(`${f.file}.map`);
+    if (control === "malformed") await writeFile(`${f.file}.map`, "{broken");
+    if (control === "duplicate references") {
+      css += "/*# sourceMappingURL=index-provenance.css.map */";
+    }
+    if (control === "missing map reference") {
+      css = css.replace("/*# sourceMappingURL=index-provenance.css.map */", "");
+    }
+    if (control === "map reference outside root") {
+      css = css.replace(
+        "sourceMappingURL=index-provenance.css.map",
+        "sourceMappingURL=../../outside.map",
+      );
+    }
+    if (control === "map symlink outside root") {
+      const outside = path.join(f.root, "outside.map");
+      await writeFile(outside, JSON.stringify(f.map));
+      await rm(`${f.file}.map`);
+      await symlink(outside, `${f.file}.map`);
+    }
+    await writeFile(f.file, css);
+    const failure = (await extractUiStylesheets(
+      f.built,
+      f.out,
+      control === "missing project root" ? undefined : f.root,
+    ).catch((error: Error) => error)) as Error;
+    expect(failure).toBeInstanceOf(Error);
+    expect(failure.message).toContain("TN_CSS_UI_ASSET_UNSUPPORTED:");
+    expect(failure.message).toContain("only a file inside the UI build ships with it");
+    expect(failure.message).toContain(`\n  generated: ${f.file}:2:${f.column + 1}`);
+    expect(failure.message).not.toContain("\n  authored:");
+    expect(await readFile(f.file, "utf8")).toBe(css);
+    expect(await readdir(f.out)).toEqual([]);
   });
 
   it("copies the fonts and images a stylesheet url() names, flat beside it", async () => {

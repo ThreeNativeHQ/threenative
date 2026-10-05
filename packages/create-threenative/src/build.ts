@@ -7,6 +7,7 @@ import {
   open,
   readFile,
   readdir,
+  realpath,
   rename,
   rm,
   stat,
@@ -14,7 +15,15 @@ import {
 } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import {
+  TraceMap,
+  decodedMappings,
+  encodedMappings,
+  originalPositionFor,
+  sourceContentFor,
+  traceSegment,
+} from "@jridgewell/trace-mapping";
 import { compileAssets } from "@threenative/assets";
 import { BUILD_REPORT_SUFFIX, measureTreeBytes, writeBuildReport } from "./buildReport.js";
 import { writeCompressionSidecars } from "./compress.js";
@@ -323,7 +332,11 @@ export async function buildUi(cwd: string, config: IResolvedThreeNativeConfig): 
  * through `mkdir` on a directory that must be gone, so a stale stylesheet from a previous build
  * can never be packaged beside the new one.
  */
-export async function extractUiStylesheets(uiDir: string, outDir: string): Promise<string[]> {
+export async function extractUiStylesheets(
+  uiDir: string,
+  outDir: string,
+  projectRoot?: string,
+): Promise<string[]> {
   await rm(outDir, { force: true, recursive: true });
   await mkdir(outDir);
   const stylesheets: string[] = [];
@@ -356,7 +369,7 @@ export async function extractUiStylesheets(uiDir: string, outDir: string): Promi
   // Resolved before anything is staged: a build that cannot ship its font must not leave half a
   // `ui/` behind for the packager to find and a player to run.
   for (const file of sheets) {
-    collectStylesheetAssets(uiDir, file, await readFile(file, "utf8"), assets);
+    await collectStylesheetAssets(uiDir, file, await readFile(file, "utf8"), assets, projectRoot);
   }
   for (const file of sheets) {
     await copyFile(file, path.join(outDir, path.basename(file)));
@@ -383,29 +396,156 @@ export async function extractUiStylesheets(uiDir: string, outDir: string): Promi
  * out of the build, or a relative name no file answers to — fails the build here rather than
  * shipping a HUD whose font silently fell back to the machine's.
  */
-function collectStylesheetAssets(
+async function collectStylesheetAssets(
   build: string,
   file: string,
   css: string,
   assets: Map<string, string>,
-): void {
-  // Comments are stripped first so a documented example cannot fail the build.
-  const source = css.replaceAll(/\/\*[\s\S]*?\*\//gu, "");
+  projectRoot?: string,
+): Promise<void> {
+  // Mask comments without moving UTF-16 offsets: maps refer to the emitted CSS, not this scan.
+  const source = css.replaceAll(/\/\*[\s\S]*?\*\//gu, (comment) =>
+    comment.replaceAll(/[^\r\n]/g, " "),
+  );
   for (const match of source.matchAll(/url\(([^)]*)\)/giu)) {
     const target = (match[1] ?? "")
       .trim()
       .replace(/^["']|["']$/gu, "")
       .trim();
     if (target === "" || target.startsWith("data:") || target.startsWith("#")) continue;
-    const resolved = resolveStylesheetAsset(build, file, target);
-    const name = path.basename(resolved);
-    const claimed = assets.get(name);
-    if (claimed !== undefined && claimed !== resolved) {
-      throw new Error(
-        `TN_CSS_UI_ASSET_AMBIGUOUS: ${file} references ${target} as ${name}, which ${path.relative(build, claimed)} already claimed`,
-      );
+    try {
+      const resolved = resolveStylesheetAsset(build, file, target);
+      const name = path.basename(resolved);
+      const claimed = assets.get(name);
+      if (claimed !== undefined && claimed !== resolved) {
+        throw new Error(
+          `TN_CSS_UI_ASSET_AMBIGUOUS: ${file} references ${target} as ${name}, which ${path.relative(build, claimed)} already claimed`,
+        );
+      }
+      assets.set(name, resolved);
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        /^TN_CSS_UI_ASSET_(?:UNSUPPORTED|AMBIGUOUS):/u.test(error.message)
+      ) {
+        error.message += await stylesheetAssetLocation(
+          build,
+          file,
+          css,
+          match.index,
+          target,
+          projectRoot,
+        );
+      }
+      throw error;
     }
-    assets.set(name, resolved);
+  }
+}
+
+/** Read provenance only for an existing refusal; a bad map must never replace that refusal. */
+async function stylesheetAssetLocation(
+  build: string,
+  file: string,
+  css: string,
+  offset: number,
+  target: string,
+  projectRoot?: string,
+): Promise<string> {
+  const before = css.slice(0, offset);
+  const line = before.split("\n").length;
+  const column = offset - before.lastIndexOf("\n") - 1;
+  const generated = `\n  generated: ${file}:${line}:${column + 1}`;
+  if (projectRoot === undefined) return generated;
+  try {
+    const links = [...css.matchAll(/\/\*[#@]\s*sourceMappingURL\s*=\s*([^*]*?)\*\//gu)];
+    if (links.length !== 1 || links[0]?.[1]?.trim() !== `${path.basename(file)}.map`)
+      return generated;
+    const [root, mapFile] = await Promise.all([realpath(build), realpath(`${file}.map`)]);
+    const inside = path.relative(root, mapFile);
+    if (
+      inside === "" ||
+      inside === ".." ||
+      inside.startsWith(`..${path.sep}`) ||
+      path.isAbsolute(inside)
+    )
+      return generated;
+    const serialized = await readFile(mapFile, "utf8");
+    const raw = JSON.parse(serialized);
+    if (
+      raw.version !== 3 ||
+      raw.file !== path.basename(file) ||
+      typeof raw.mappings !== "string" ||
+      !/^[A-Za-z0-9+/;,]*$/u.test(raw.mappings) ||
+      !Array.isArray(raw.sources) ||
+      !raw.sources.every((source: unknown) => typeof source === "string") ||
+      !Array.isArray(raw.names) ||
+      !raw.names.every((name: unknown) => typeof name === "string") ||
+      (raw.sourceRoot !== undefined && typeof raw.sourceRoot !== "string") ||
+      !Array.isArray(raw.sourcesContent) ||
+      raw.sourcesContent.length !== raw.sources.length ||
+      !raw.sourcesContent.every(
+        (content: unknown) => content === null || typeof content === "string",
+      )
+    )
+      return generated;
+    // Parse the string so untrusted JSON cannot impersonate the consumer's private cache.
+    const map = new TraceMap(serialized, pathToFileURL(`${file}.map`).href);
+    const mappings = decodedMappings(map);
+    // The decoder accepts truncated VLQ tuples. Re-encode through a fresh consumer to require
+    // complete canonical tuples before trusting any authored coordinates.
+    const canonical = encodedMappings(
+      new TraceMap({ version: 3, names: map.names, sources: map.sources, mappings }),
+    );
+    if (canonical !== raw.mappings) return generated;
+    if (new Set(map.resolvedSources).size !== map.sources.length) return generated;
+    const segment = traceSegment(map, line - 1, column);
+    // A nearest declaration is not the exact authored URL. Duplicate anchors are ambiguous.
+    if (
+      segment === null ||
+      (segment.length !== 4 && segment.length !== 5) ||
+      segment[0] !== column ||
+      !segment.every((value) => Number.isSafeInteger(value) && value >= 0) ||
+      (mappings[line - 1] ?? []).filter((entry) => entry[0] === column).length !== 1
+    )
+      return generated;
+    const original = originalPositionFor(map, { line, column });
+    if (typeof original.source !== "string" || original.line === null || original.column === null)
+      return generated;
+    const sourceURL = new URL(original.source);
+    if (sourceURL.protocol !== "file:") return generated;
+    const [project, authoredFile] = await Promise.all([
+      realpath(projectRoot),
+      realpath(fileURLToPath(sourceURL)),
+    ]);
+    const source = path.relative(project, authoredFile);
+    if (
+      source === "" ||
+      source === ".." ||
+      source.startsWith(`..${path.sep}`) ||
+      path.isAbsolute(source)
+    )
+      return generated;
+    const content = sourceContentFor(map, original.source);
+    if (typeof content !== "string" || content !== (await readFile(authoredFile, "utf8")))
+      return generated;
+    const authoredLine = content
+      .replaceAll(/\/\*[\s\S]*?\*\//gu, (comment) => comment.replaceAll(/[^\r\n]/g, " "))
+      .split(/\r?\n/u)[original.line - 1];
+    const authoredURL = authoredLine?.slice(original.column).match(/^url\(([^)]*)\)/iu);
+    // A stale or mismatched map is not provenance for this refusal. Rewritten URLs safely retain
+    // generated-only diagnostics until a producer can establish their asset identity.
+    if (
+      authoredURL === null ||
+      authoredURL === undefined ||
+      (authoredURL[1] ?? "")
+        .trim()
+        .replace(/^["']|["']$/gu, "")
+        .trim() !== target
+    )
+      return generated;
+    return `${generated}\n  authored: ${source}:${original.line}:${original.column + 1}`;
+  } catch {
+    return generated;
   }
 }
 
@@ -929,7 +1069,7 @@ async function buildNative(
     const built = await buildUi(cwd, config);
     if (config.ui.renderer === "native-css") {
       ui = path.join(cwd, ".threenative", "build", "ui-css");
-      await extractUiStylesheets(built, ui);
+      await extractUiStylesheets(built, ui, cwd);
     } else {
       ui = built;
     }
