@@ -54,6 +54,11 @@ add_library(tn_engine_graph STATIC src/engine/renderer/graph/render_graph.cpp sr
 tn_native_engine_target(tn_engine_graph)
 target_include_directories(tn_engine_graph PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
+# Cooked asset packages (N10): the TNPK reader and its hash gate. Untrusted input, portable.
+add_library(tn_engine_assets STATIC src/engine/assets/sha256.cpp src/engine/assets/package.cpp)
+tn_native_engine_target(tn_engine_assets)
+target_include_directories(tn_engine_assets PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+
 # One executable per test file; each ctest names a case inside it.
 function(tn_native_engine_test target source)
     add_executable(${target} EXCLUDE_FROM_ALL ${source})
@@ -110,6 +115,12 @@ tn_native_engine_test(tn-native-engine-members-test tests/native-engine/members_
 tn_native_engine_test(tn-native-engine-tonemap-test tests/native-engine/tonemap_test.cpp
     native_engine_tonemap_operators=operators)
 target_link_libraries(tn-native-engine-tonemap-test PRIVATE tn_engine_shader)
+
+tn_native_engine_test(tn-native-engine-package-test tests/native-engine/package_test.cpp
+    native_engine_package_sha256=sha256
+    native_engine_cooked_package_load=load
+    native_engine_cooked_package_reject=reject)
+target_link_libraries(tn-native-engine-package-test PRIVATE tn_engine_assets)
 
 tn_native_engine_test(tn-native-engine-render-graph-test tests/native-engine/render_graph_test.cpp
     native_engine_render_graph_order=order

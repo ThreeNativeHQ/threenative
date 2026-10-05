@@ -1,6 +1,6 @@
 # PRD-515 — Native glTF, cooked assets and decoders (N10)
 
-**Status:** PROPOSED
+**Status:** IN PROGRESS — the TNPK v1 format, reader and hash gate are native; the `packages/assets` emitter, GPU upload of entries and the glTF path are open
 **Complexity:** 4 — parser reuse, but scene construction, a cooked package format and decoder qualification are all new and face untrusted input
 **Owner:** João
 **Work package:** N10 — [native-engine batch](README.md)
@@ -38,7 +38,7 @@
 **Files:** `packages/assets/src/` (package emitter); proposed `packages/runtime-native/src/engine/assets/package/`
 - [ ] `packages/assets` emits a native package with a manifest, per-entry hashes, decoder requirements and upload sizes. proof: `pnpm exec vitest run packages/assets/__tests__/native-package.spec.ts`
 - [ ] A packaged game loads its cooked assets in a native-engine build whose engine targets link no JS engine. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_cooked_package_load`
-- [ ] A hash or version mismatch is rejected before load with a stable error code. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_cooked_package_reject`
+- [x] A hash or version mismatch is rejected before load with a stable error code. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_cooked_package_reject` — 2026-10-04: green (`build/tn-linux`, and standalone under ASan/UBSan): another format version, a bad magic, a truncated header or table, a one-bit data change (`TN_PACKAGE_HASH`), a missing decoder, a bad or self dependency, data outside the file, an `offset + size` that wraps, data inside the header and an impossible entry count are each refused with their stable `TN_PACKAGE_*` code before any entry is read. Red with a wrapping range check and without the hash compare. Format v1 is specified in `src/engine/assets/package.h`
 
 #### Phase 3: Malformed data and the decoder matrix
 **Status:** NOT STARTED
