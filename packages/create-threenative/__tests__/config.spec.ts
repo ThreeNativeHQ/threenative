@@ -135,7 +135,8 @@ export const rejected: IAudioConfig = { ${rejectedKey}: 2 };
 `,
   );
   const outcome = (await execFileAsync(process.execPath, [
-    path.resolve("packages/core/node_modules/typescript/bin/tsc"),
+    path.resolve("packages/core/node_modules/@typescript/native/bin/tsc"),
+    "--ignoreConfig",
     "--noEmit",
     "--strict",
     "--target",

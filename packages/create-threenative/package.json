@@ -86,7 +86,9 @@
     "threenative-blender-mcp": "workspace:*",
     "tsup": "8.5.1",
     "typescript": "catalog:",
-    "vite": "catalog:"
+    "vite": "catalog:",
+    "@typescript/native": "catalog:",
+    "@typescript/typescript6": "catalog:"
   },
   "peerDependencies": {
     "@threenative/assets": ">=0.3.5 <0.4.0"

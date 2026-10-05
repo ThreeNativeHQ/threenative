@@ -4,8 +4,7 @@ prd_contract: v1
 
 # PRD-483 — Impact-driven CI without repeated template setup
 
-**Status:** PARTIAL — local verification green; live CI pending.
-**Priority:** P2 — Single open box: normal CI passes on the cleanup PR without bypass.
+**Status:** DONE — 2026-10-05. Normal PR and merge-group qualification green; merged as `abaa1f0e9` (#435).
 **Owner:** CI tooling
 **Scope:** One cleanup PR; builds on PRDs 373, 380, 480 and 481 and the conservative #417 reuse repair.
 
@@ -32,7 +31,16 @@ prd_contract: v1
 ### Phase 2 — Qualify the smaller pipeline
 
 - [x] Final typecheck, lint, docs and relevant unit checks pass. proof: `pnpm build`, `pnpm typecheck`, `pnpm lint`, `pnpm check:docs` exit 0; 303 focused tests passed, 2026-10-03.
-- [ ] Normal CI passes on this cleanup PR before merge; the authorized ready transition starts qualification. proof: PR check run; no bypass authorized.
+- [x] Normal CI passes on this cleanup PR before merge; the authorized ready transition starts qualification. proof: PR run 37256579927 at head `e072c3a6` (65 succeeded, 1 expected policy skip, `ci-required` success) and merge-group run 37259374897 at candidate `c3211d3c` (66 jobs, `ci-required` success 04:31:04); merged as `abaa1f0e9` at 04:38:29, no bypass.
+
+## Acceptance criteria
+
+- [x] **AC-1 [shared; actor: CI]:** An ordinary PR plans only what its diff reaches — a one-kit change runs only that kit's template legs, a Markdown-only change no fixture consumes runs no product job, and a shared or unknown executable input keeps the exhaustive matrix. proof: `pnpm exec vitest run scripts/__tests__/ci-template-selection.spec.ts scripts/__tests__/ci-structure.spec.ts`, 2026-10-05.
+- [x] **AC-2 [shared; actor: merge queue]:** A merge group qualifies the exhaustive plan at the exact candidate — all 13 template nonvisual legs, both golden journeys, the full native tier and every Integration lane — and the required `ci-required` verdict passes only on that completed plan. proof: merge-group run 37259374897 (66 jobs: 13 nonvisual legs, 3 golden-path jobs, 16 Integration jobs, `ci-required` success) and PR run 37256579927 (65 succeeded, 1 expected policy skip), 2026-10-05.
+- [x] **AC-3 [shared; actor: implementation agent]:** Template setup does not repeat: the sequential pristine-template compiler loop is skipped only when the exact full plan owns every dynamically discovered typecheck template, and a local, partial, unsupported or unknown input keeps it. proof: `pnpm exec vitest run scripts/__tests__/ci-template-typecheck.spec.ts`, 2026-10-05.
+- [x] **AC-4 [shared; actor: CI]:** Reusable-verdict reuse stays disabled: a missing, partial, failed, skipped, stale or wrong-source receipt never authorizes a skip, and an attempt receipt is retried only for the observed transport outage against the identical attempt endpoint. proof: `pnpm exec vitest run scripts/__tests__/ci-qualification.spec.ts scripts/__tests__/ci-attempt-receipts.spec.ts`, 2026-10-05.
+
+All six CI-contract specs above ran together at `abaa1f0e9`: 6 files, 282 tests passed.
 
 ## Coverage and cost
 
