@@ -84,6 +84,151 @@ describe("AnimationPlayer", () => {
     expect(player.current).toBe("hit");
   });
 
+  it("preserves weight and phase when returning to a still-contributing loop", () => {
+    const root = new Object3D();
+    const idle = new AnimationClip("idle", 1, [
+      new NumberKeyframeTrack(".position[x]", [0, 1], [1, 2]),
+    ]);
+    const run = new AnimationClip("run", 1, [
+      new NumberKeyframeTrack(".position[x]", [0, 1], [3, 4]),
+    ]);
+    const player = new AnimationPlayer({ clips: [idle, run], root, strideSync: false });
+    const idleAction = player.mixer.clipAction(idle);
+    const runAction = player.mixer.clipAction(run);
+    player.play("idle");
+    player.update(0.1);
+    player.play("run", { fade: 0.4 });
+    player.update(0.2);
+    player.update(0); // sample the current blend without advancing either clip
+    const poseBefore = root.position.x;
+    const phaseBefore = idleAction.time;
+
+    player.play("idle", { fade: 0.4 });
+
+    expect(idleAction.getEffectiveWeight()).toBeCloseTo(0.5, 6);
+    expect(idleAction.time).toBe(phaseBefore);
+    player.update(0);
+    expect(root.position.x).toBeCloseTo(poseBefore, 6);
+    player.update(0.2);
+    expect(idleAction.getEffectiveWeight()).toBeCloseTo(0.75, 6);
+    expect(runAction.getEffectiveWeight()).toBeCloseTo(0.25, 6);
+    player.update(0.2);
+    expect(idleAction.getEffectiveWeight()).toBe(1);
+    expect(runAction.isScheduled()).toBe(false);
+    player.dispose();
+  });
+
+  it("keeps rapid idle/walk/run/idle requests normalized before a frame advances", () => {
+    const clips = ["idle", "walk", "run"].map((name) => new AnimationClip(name, 1, []));
+    const player = new AnimationPlayer({ clips, root: new Object3D() });
+    player.play("idle");
+    for (const name of ["walk", "run", "idle", "run", "walk", "idle"]) {
+      player.play(name, { fade: 0.4 });
+      const weights = clips.map((clip) => player.mixer.clipAction(clip).getEffectiveWeight());
+      expect(weights.every((weight) => Number.isFinite(weight) && weight >= 0)).toBe(true);
+      expect(weights.reduce((sum, weight) => sum + weight, 0)).toBeCloseTo(1, 6);
+    }
+    player.update(0.4);
+    expect(player.mixer.clipAction(player.clip("idle")).getEffectiveWeight()).toBe(1);
+    player.dispose();
+  });
+
+  it("starts a requested fade at full weight when no actions are scheduled", () => {
+    const root = new Object3D();
+    const clips = ["idle", "walk", "run"].map(
+      (name, index) =>
+        new AnimationClip(name, 1, [
+          new NumberKeyframeTrack(".position[x]", [0, 1], [index + 1, index + 1]),
+        ]),
+    );
+    const player = new AnimationPlayer({ clips, root, strideSync: false });
+    for (let cycle = 0; cycle < 3; cycle += 1) {
+      player.play("walk", { fade: 0.4 });
+      player.update(0);
+      expect(root.position.x).toBe(2);
+      expect(player.mixer.stats.actions.inUse).toBe(1);
+      player.stop();
+      expect(player.mixer.stats.actions.inUse).toBe(0);
+    }
+    player.dispose();
+    expect(player.mixer.stats.actions.total).toBe(0);
+  });
+
+  it.each(["once", "loop"] as const)(
+    "restarts a still-contributing clip when explicitly changing it to %s",
+    (mode) => {
+      const root = new Object3D();
+      const first = new AnimationClip("first", 1, [
+        new NumberKeyframeTrack(".position[x]", [0, 1], [1, 2]),
+      ]);
+      const other = new AnimationClip("other", 1, []);
+      const player = new AnimationPlayer({ clips: [first, other], root, strideSync: false });
+      player.play("first", { mode: mode === "loop" ? "once" : "loop" });
+      player.update(0.1);
+      player.play("other", { fade: 0.4 });
+      player.update(0.2);
+      player.play("first", { fade: 0.4, mode });
+      expect(player.mixer.clipAction(first).time).toBe(0);
+      expect(player.mixer.clipAction(first).getEffectiveWeight()).toBeCloseTo(0.5, 6);
+      player.update(1.1);
+      expect(player.finished).toBe(mode === "once");
+      player.dispose();
+    },
+  );
+
+  it("restarts a loop on an immediate cut and after its previous fade has finished", () => {
+    const root = new Object3D();
+    const clips = ["idle", "run"].map((name) => new AnimationClip(name, 1, []));
+    const player = new AnimationPlayer({ clips, root });
+    for (const elapsed of [0.2, 0.4]) {
+      player.play("idle");
+      player.update(0.1);
+      player.play("run", { fade: 0.4 });
+      player.update(elapsed);
+      player.play("idle", { fade: elapsed === 0.2 ? 0 : 0.4 });
+      expect(player.mixer.clipAction(player.clip("idle")).time).toBe(0);
+      player.stop();
+    }
+    player.dispose();
+  });
+
+  it("keeps deterministic sampled bone poses through repeated rapid reversals", () => {
+    const trace = () => {
+      const bone = new Bone();
+      bone.name = "Hip";
+      const root = new Group();
+      root.add(bone);
+      const clips = ["idle", "walk", "run"].map(
+        (name, index) =>
+          new AnimationClip(name, 1, [
+            new NumberKeyframeTrack("Hip.position[x]", [0, 0.5, 1], [index, index + 1, index]),
+          ]),
+      );
+      const player = new AnimationPlayer({ clips, root, strideSync: false });
+      player.play("idle");
+      const poses: number[] = [];
+      for (const name of ["walk", "run", "idle", "run", "walk", "idle"]) {
+        player.update(0.1);
+        player.update(0);
+        const before = bone.position.x;
+        player.play(name, { fade: 0.4 });
+        player.update(0);
+        expect(bone.position.x).toBeCloseTo(before, 6);
+        poses.push(bone.position.x);
+        const weights = clips.map((clip) => player.mixer.clipAction(clip).getEffectiveWeight());
+        expect(weights.every((weight) => Number.isFinite(weight) && weight >= 0)).toBe(true);
+        expect(weights.reduce((sum, weight) => sum + weight, 0)).toBeCloseTo(1, 6);
+      }
+      player.update(0.4);
+      player.update(0);
+      expect(player.mixer.stats.actions.inUse).toBe(1);
+      player.dispose();
+      expect(player.mixer.stats.actions.total).toBe(0);
+      return poses;
+    };
+    expect(trace()).toEqual(trace());
+  });
+
   it("should ease the blend rather than ramp it linearly", () => {
     const root = new Object3D();
     const idle = new AnimationClip("idle", 1, []);
