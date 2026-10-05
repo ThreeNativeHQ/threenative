@@ -363,7 +363,8 @@ target_include_directories(tn-native-engine-animation-mixer-test PRIVATE ${CMAKE
 # PRD-528 phase 1, PRD-521 phase 3: the fixed-step clock and the world height buffer, ported from
 # packages/core/src/loop.ts, world-heightmap.ts and world.ts.
 add_library(tn_engine_world STATIC src/engine/world/loop/fixed_step.cpp
-    src/engine/world/terrain/heights.cpp src/engine/world/events/completion_queue.cpp)
+    src/engine/world/terrain/heights.cpp src/engine/world/events/completion_queue.cpp
+    src/engine/world/package/world_package.cpp)
 tn_native_engine_target(tn_engine_world)
 target_link_libraries(tn_engine_world PUBLIC tn_engine_foundation)
 target_include_directories(tn_engine_world PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
@@ -375,6 +376,11 @@ tn_native_engine_test(tn-native-engine-world-heights-test tests/native-engine/wo
     native_engine_world_heights=heights)
 target_link_libraries(tn-native-engine-world-heights-test PRIVATE tn_engine_world)
 target_include_directories(tn-native-engine-world-heights-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/world)
+# PRD-521 phase 1: the ported world.json validator and cellPlacements against world-package.ts.
+tn_native_engine_test(tn-native-engine-world-package-test tests/native-engine/world/world_package_test.cpp
+    native_engine_world_package=world_package)
+target_link_libraries(tn-native-engine-world-package-test PRIVATE tn_engine_world)
+target_include_directories(tn-native-engine-world-package-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/world)
 # PRD-520 phase 1: completions from worker threads, drained on the game thread; also under TSan
 # (TN_ENGINE_TSAN). Emscripten builds the queue but has no threads to post from here.
 if(NOT EMSCRIPTEN)
@@ -477,6 +483,12 @@ if(NOT EMSCRIPTEN)
                 packages/runtime-native/tests/native-engine/world/heights-reference.ts --check
             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../..)
         set_tests_properties(native_engine_world_heights_reference_current PROPERTIES LABELS "native-engine")
+        # PRD-521 phase 1: the committed world.json table is what world-package.ts produces today.
+        add_test(NAME native_engine_world_package_reference_current
+            COMMAND ${TN_PNPM_EXECUTABLE} --workspace-root exec tsx
+                packages/runtime-native/tests/native-engine/world/world-package-reference.ts --check
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../..)
+        set_tests_properties(native_engine_world_package_reference_current PROPERTIES LABELS "native-engine")
         # PRD-519: the committed camera-cull table is what render-camera-cull.ts produces today.
         add_test(NAME native_engine_camera_cull_reference_current
             COMMAND ${TN_PNPM_EXECUTABLE} --workspace-root exec tsx
