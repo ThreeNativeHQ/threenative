@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-345 — a backlit subject is not a hole in the sky
 
-**Status:** PARTIAL — generated material defaults integrated across conventional templates; twelve final matched web desktop pairs are palette-stable, including corrected racing. All-template gameplay/full-root/native appearance and rain admission remain open. Originally filed 2026-09-03, measured at `43d03e6a`. Batch:
+**Status:** PARTIAL — generated material defaults integrated across conventional templates; twelve final matched web desktop pairs are palette-stable, including corrected racing. A controller-owned shared render graph removes the shooter's per-material-graph performance regression in the isolated causal study (`docs/benchmark/prd345/shooter-causes1/`); integrated gameplay/performance re-qualification, all-template/full-root/native appearance and rain admission remain open. Originally filed 2026-09-03, measured at `43d03e6a`. Batch:
 [docs/PRDs/AAA-visuals](aaa-visuals-notes.md). **Ships as generated user source, not as a package** — it
 decides how things look, and rule 1(b) vetoes 1(a) at any size. Source studied:
 [TheLongSilence](https://github.com/achimala/TheLongSilence) `src/gfx/greeble.js:37`, the
@@ -97,12 +97,18 @@ P1, PRD-345. The workbook remains unchanged.
 ### Phase 2 — admit measured generated defaults
 
 - [ ] Apply only qualified conventions to the actual starter/material source and all required templates, preserving per-template appearance, low/mobile/software fallbacks and named overrides. proof: matched per-template screenshots and actual frame/startup cost
+  - 2026-10-04: the twelve material templates now build **one controller-owned render graph** (`src/render/backlightControls.ts` owns `validateControls`/`resolveKey`; `backlightMaterial.ts` caches one graph per controls object in a `WeakMap` so every converted material references the same graph) instead of a per-material graph. The isolated 21-launch causal study at the unchanged 1920×1080 / 33 ms limit measured per-material current 46.93 ms (0/6 pass) against shared graph 30.43 ms (3/3 pass), with copy-only (29.37 ms) and material-emissive-only (28.90 ms) controls also passing and runtime-zero/compiled-rim-only controls failing. Evidence: `docs/benchmark/prd345/shooter-causes1/` (raw reports, source identities, PNG hashes). Integrated gameplay/performance re-qualification, the snow threshold and native remain open, so this box stays open.
 - [x] Add the concise convention/override rows to generated instructions with mirrors kept in sync. proof: all thirteen template rows, explicit rain exception, primary-docs/instruction-budget seventeen tests and scaffold/doc eighty-three tests pass; unchanged instruction caps
+
+2026-10-05 PR #440 merged-source checkpoint (`develop` 45565868): independent review identified a second-camera layer error, reproduced by a regression test in the shared key callbacks. The callbacks now pass actual `NodeFrame.camera` to key resolution in all twelve material templates and the matching fixture. The existing test failed before the fix and the camera/matrix/lifecycle suite passes 31/31; merged scaffold/compiler contracts pass 101/101 with all thirteen hashes measured through the real generator. The ordinary JS/DTS build passes. Fresh serial hardware NVIDIA Turing WebGPU difficult-lighting captures pass the unchanged decoded-PNG qualifier: enabled edge/body p99 52/2 versus zero-rim 7/0; fill-black fails only the two intended tone assertions, and omitted reporting fails the marker verifier. Actual camera world/inverse/projection matrices are now recorded. Local evidence is retained at `artifacts/pr440-acceptance/`; images remain unpublished pending the user's sharing decision. Failed startup wrappers and one unobserved black-fill launch remain retained beside its observed retry. This verifies the corrected graph's isolated controls; integrated template gameplay/performance, repeated startup and native admission remain open.
+
+2026-10-05 integrated checkpoint: all six fresh unchanged 33 ms runs are **RED**: shooter p95 112.9/144.5/88.9 ms, snow 59.8/48.6/51.8 ms; one shooter also fails minimum FPS. Host/resource and source differences prevent code-causality attribution. Typecheck/lint/docs/budgets and 35 latest-base CPU contracts pass. Full root/all-template/startup/native qualification remains open. See [merged-source acceptance and retained report seals](../../verification/prd345/pr440-acceptance-2026-10-05.md). No further timing is admitted until a comparable window is available.
 
 ### Phase 3 — clean starter and platform validation
 
 - [ ] Verify generated clean starters/simple scenes and template visual gates including dark environment/no-sun and backlit character controls. proof: `pnpm test:templates`, tone crops and red-green captures
 - [ ] Complete required root and native qualification without claiming unexecuted targets. proof: `pnpm typecheck && pnpm lint && pnpm test` and targeted native fixture
+  - 2026-10-04 interim, open: typecheck and lint pass. `pnpm test` stops in runtime-native (21 reds, native host binaries not built here). Root vitest 8007 pass, 4 red under load 35-50: template typecheck passes in isolation, `generated-shooter-input.spec.ts` red twice and not yet attributed.
 
 ## Qualification design
 
@@ -331,7 +337,7 @@ source-first architecture requires an explicit coherent policy change before pac
    via `assert.tone`, that `p1` and `p99` remain separated — a scene lit only by the fill still has
    range.
    *Red-green:* set the analytic fill to black; the range assertion goes red.
-- [ ] **Every template has both, and says so.** `scripts/__tests__/primary-docs.spec.ts` and the proof: `primary-docs and generated convention rows`
+- [x] **Every template has both, and says so.** `scripts/__tests__/primary-docs.spec.ts` and the proof: `primary-docs and generated convention rows; 2026-10-04 primary-docs.spec.ts + instruction-budget.spec.ts 17/17 pass, spec asserts rimGain and fillGain in all 13 template AGENTS.md (rain included, custom shader exception stated)`
    templates' own gate assert each template's `AGENTS.md` names both conventions and both override
    names.
 - [ ] **The templates gate is green on the templates that currently pass it.** Note the known red lane: proof: `complete template gate with explicit lane outcomes`

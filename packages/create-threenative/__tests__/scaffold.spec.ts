@@ -175,19 +175,21 @@ const BUG_REPORT_SKILL_PATHS = [
 // Re-measured on current develop plus TS7: restoring only each compiler manifest and
 // rain's shader API import recovers all 13 develop fingerprints.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
-  "action-rpg": "1e9e05b2ddd8a7b576f9b5e229a175e93db5cd5d8024b8e61b40d4f90894d631",
-  minimal: "a7f1a7481c6ed7667b1cdcc85990dbbccf2cbec59ce2b65799c232bf08c41918",
-  platformer: "8033728a0b8a14d2d42143d6665e0f3ee5822dfa320ee3f9fbae340e0082f7b9",
-  puzzle: "7dc75d6999576ff64d33a2ce52323334602a76f54fe29126a7a3ddfcececfac6",
-  racing: "8cded24d0f31cb9b76b5ab199ee0a4f1845c4466e96cc6ac49c2b3d8b8c277ac",
+  // Re-measured through this generator contract on PR440 merged with develop 45565868:
+  // TS7/API6 compiler pins plus shared render graph and actual-render-camera light layers.
+  "action-rpg": "913c20b4a7a15458204570daae4f1aa30e75dba67e42702ff507a9ec781ef692",
+  minimal: "151aec43f5bd3a697abe1e3c48cd1246468f4544a48f1f1ef3e8f9f4d0db792f",
+  platformer: "277d034652896c733071d3def3b32c29ceb2211360ffdc3de08b0a719b0d975e",
+  puzzle: "f867724339566fb2d67a4614261da0e5d23167d51138fa81bea79085741ef141",
+  racing: "20c92ebf0762f6e80a6ee6e542c3e4d7144f2b43675eeb95beabf3bb93642f8b",
   rain: "21dbd2a9100f3e1dfc9ea0a474fd5f3b429a55ae4e968a3741dccaf57e05bfc8",
-  rts: "d009ce4bf88df41780b6e98f9923c85266824e2f9e7e00075a48f779f2bfc578",
-  runner: "5c2c6c40fbee5d3c55c7cccbc05c6860ad62aadf9c65ae947095a9a2bbdbe79c",
-  sailing: "afe80626d46070fcd2ab3f520c603eaef09a07fb03acd49b1659b06a898a39be",
-  shooter: "c0f9f3110db4c8fa90d29ebaf37c3aa995654ee7ff3264dbd7033ac91b8e6f65",
-  snow: "5873bb82bab520d5f29c127161e1447c0657034b8f40e366617ad44686f4fa06",
-  starter: "4cd799d72f936554c2d61cfe70879f15dde39d3fc77a9183e48d891fc8f62473",
-  "tower-defense": "cf63b89d4f3939a05d65179291368b865e9b1491231a749339a81e1df4c40906",
+  rts: "03e1b67e66f104c305d513af145913579e6529aa000f0bf44f734a8a92c89fe8",
+  runner: "7ef226bda60aa813b2d85ee1da30bebbc2c63aac2d38828d40967c254163863e",
+  sailing: "2d9a3bbfbb15f81699c779950a96d30526f05956ab8e52e1327dd884c0e39493",
+  shooter: "7913e84a7b59ef54e5e45996be13143bb41aa531b9597eaf196c590532ca716d",
+  snow: "ce85dc72f12d267a394bf6befefe59da537d52f565a96fde703a50ff06c46754",
+  starter: "af8956584e6dc12af8ae7c9f78a21d5cc45f6c8ed3650218e433bae414a6ba52",
+  "tower-defense": "b915904e5ceb4769a1a9a7a2a82260d14346b3ffa6ea724d1c8dc5ec93c28156",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
