@@ -18,8 +18,8 @@ on:
     types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch: {} # Explicit full audit; never a selectable exemption.
   # PRD-481: the merge queue. GitHub tests the exact result a merge would produce, so two PRs
-  # merged back to back can no longer put a tree on develop that nothing tested. An unchanged base
-  # means the queue's tree is the pull request's tree, and tree reuse makes that instant.
+  # merged back to back can no longer put a tree on develop that nothing tested. Qualification
+  # always runs fresh exhaustive coverage; unproven matrix verdict reuse remains disabled.
   merge_group:
     types: [checks_requested]
   schedule:
@@ -63,8 +63,7 @@ jobs:
         name: Classify the complete pull-request diff
         env:
           TN_CI_EVENT: ${{ github.event_name }}
-          # A merge group reports no `base_ref`; its target is on the event. Passing it is what keeps
-          # a develop merge group on the reduced native matrix and a main one on the full matrix.
+          # Merge groups carry their target on the event and always owe the full native matrix.
           # A push reports neither, and its target is the branch it landed on — which is what selects
           # the cache-warm lane on develop and keeps a push to main full.
           TN_CI_TARGET: ${{ github.base_ref || github.event.merge_group.base_ref || (github.event_name == 'push' && github.ref_name) || '' }}
@@ -132,7 +131,7 @@ jobs:
     # tree skips it too — every gate it would run here already passed in the run that tested this
     # exact tree, and `!= 'prose'` would otherwise have bought a second full lint.
     if: (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template') || needs.scope.outputs.selection == 'instructions' || needs.scope.outputs.selection == 'ci'
-    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
@@ -243,6 +242,10 @@ jobs:
       matrix: ${{ fromJSON(needs.scope.outputs.plan).unitMatrix }}
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
+      TN_CI_PLAN: ${{ needs.scope.outputs.plan }}
+      TN_CI_EVENT: ${{ github.event_name }}
+      TN_CI_BASE_REF: ${{ github.base_ref || github.event.merge_group.base_ref || (github.event_name == 'push' && github.ref_name) || '' }}
+      TN_CI_TEMPLATE_TYPECHECK_OWNER: hosted-matrix
       TN_SUITE_PHASES: unit
       TN_SUITE_UNIT_SHARD: ${{ matrix.shard }}
       # The orphan gate waits for Playwright's asynchronous profile cleanup; its 30s default is a
@@ -830,6 +833,12 @@ jobs:
           target: ${{ runner.temp }}/threenative-${{ matrix.template }}
           template: ${{ matrix.template }}
       - uses: ./.github/actions/playwright-chromium
+      - name: Typecheck pristine template
+        run: |
+          set -euo pipefail
+          target="$RUNNER_TEMP/threenative-${{ matrix.template }}"
+          pnpm --dir "$target" install
+          pnpm --dir "$target" run typecheck
       - name: Run the template's GPU-free scenarios
         run: |
           set -euo pipefail
@@ -839,8 +848,6 @@ jobs:
           # in, or this lane would quietly stop covering 21 scenarios it has always covered.
           extras="$GITHUB_WORKSPACE/packages/create-threenative/template-playtests/${{ matrix.template }}"
           if [ -d "$extras" ]; then cp -r "$extras/." "$target/playtests/"; fi
-          pnpm --dir "$target" install
-          pnpm --dir "$target" run typecheck
           scenario_list=$(node "$GITHUB_WORKSPACE/scripts/non-visual-scenarios.mjs" "$target")
           mapfile -t scenarios <<< "$scenario_list"
           test "${#scenarios[@]}" -gt 0
@@ -1026,7 +1033,7 @@ jobs:
   performance-contracts:
     needs: scope
     if: ${{ needs.scope.outputs.selection == 'full' && !cancelled() }}
-    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 2
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
@@ -1140,10 +1147,23 @@ jobs:
     # asking for more than its caller allows fails the whole run before any job starts.
     permissions:
       contents: write
+      actions: read
     uses: ./.github/workflows/native-platforms.yml
     with:
       selection_plan: ${{ needs.scope.outputs.plan }}
       candidate_sha: ${{ needs.scope.outputs.candidate_sha }}
+
+  integration:
+    needs: scope
+    if: needs.scope.result == 'success' && fromJSON(needs.scope.outputs.plan).jobs.integration.required
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/integration.yml
+    with:
+      selection_plan: ${{ needs.scope.outputs.plan }}
+      candidate_sha: ${{ needs.scope.outputs.candidate_sha }}
+      base_sha: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || '' }}
 
   supply-chain:
     needs: scope
@@ -1216,7 +1236,7 @@ jobs:
   # The only required context after protected-develop cutover. Explicit exemptions are not passes.
   # Legacy main contexts stay in place until the owner changes protection after full qualification.
   ci-required:
-    needs: [scope, native-platforms, typecheck, lint, test, test-unit, test-native, test-browser, test-playtest, golden-path-template, template-nonvisual, golden-path, benchmark, build, build-artifacts, budgets, performance-contracts, supply-chain]
+    needs: [scope, integration, native-platforms, typecheck, lint, test, test-unit, test-native, test-browser, test-playtest, golden-path-template, template-nonvisual, golden-path, benchmark, build, build-artifacts, budgets, performance-contracts, supply-chain]
     if: ${{ always() && !github.event.pull_request.draft }}
     runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER_LIGHT) && 'ubuntu-24.04' || vars.TN_RUNNER_LIGHT }}
     timeout-minutes: 5
@@ -1235,10 +1255,13 @@ jobs:
           TN_CI_NEEDS: ${{ toJSON(needs) }}
           TN_CI_EVENT: ${{ github.event_name }}
           TN_CI_CUTOVER: ${{ vars.TN_DEVELOP_CI_ENABLED }}
-          TN_CI_BASE_REF: ${{ github.base_ref }}
+          TN_CI_BASE_REF: ${{ github.base_ref || github.event.merge_group.base_ref || (github.event_name == 'push' && github.ref_name) || '' }}
+          TN_CI_FORCE_FULL: ${{ vars.TN_CI_FORCE_FULL }}
           TN_CI_HEAD_REF: ${{ github.head_ref }}
           TN_CI_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
           TN_CI_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
+          TN_CI_NATIVE_RECEIPT: ${{ needs.native-platforms.outputs.coverage_receipt }}
+          TN_CI_INTEGRATION_RECEIPT: ${{ needs.integration.outputs.coverage_receipt }}
           GH_TOKEN: ${{ github.token }}
         run: node scripts/ci-required.mjs
 
@@ -1258,6 +1281,7 @@ jobs:
   run-summary:
     needs:
       - scope
+      - integration
       - native-platforms
       - typecheck
       - lint

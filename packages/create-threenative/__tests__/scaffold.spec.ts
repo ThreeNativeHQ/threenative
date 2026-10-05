@@ -172,37 +172,26 @@ const BUG_REPORT_SKILL_PATHS = [
 // docs/verification/prd339-exposure-proof/completion-consumer-8bf16f4.json.
 // Current develop c18a42b integration: all13 actual generated trees were byte-compared
 // against reviewed 8bf trees; only the copied Three compute-only Storage3DTexture patch changed.
-// Recomputed 2026-10-04 for PRD-495's junk sweep: ten templates lost zero-reader declarations
-// (several helpers in racing and shooter, one dead file in minimal), so their generated trees
-// moved. platformer, snow and starter were untouched and keep their values. Every restamped value
-// is the measured no-install tree, taken from the failing assertion this constant exists to raise
-// and then re-run green.
+// Re-measured on current develop plus TS7: restoring only each compiler manifest and
+// rain's shader API import recovers all 13 develop fingerprints.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
-  // Recomputed 2026-10-05 on the rebased PRD-345 shooter-perf branch merged with the PRD-495
-  // junk sweep: the twelve material templates now share one controller-owned render graph
-  // (new backlightControls.ts, and backlightMaterial.ts referencing it), so all thirteen trees
-  // were re-measured through createProject on the merged tree; rain moves only via the merge.
-  // Recomputed 2026-10-05 on the merge of develop (PRD-345 backlight/dark defaults, #416) into
-  // the PRD-495 junk-cleanup branch: the merged tree carries both sides' template bytes — ten
-  // templates lost zero-reader declarations and all thirteen gained the bounded
-  // lighting/environment sources — so all thirteen generated trees were re-measured through
-  // createProject on that merged tree. Values below are the merged-tree measurement, not either
-  // side's.
-  // rain re-measured after Opus review restored templates/rain/tools/verify-noise-volume.mjs,
-  // the owner's manual storm-volume proof that the sweep had removed as junk.
-  "action-rpg": "92d303aa293531cf7a47f71a0d0e7d3b65e5193c2609072924d6803270432113",
-  minimal: "e95690f7478204cc9948b134b132d9d9061bebdd26546146f81b4270b9dc99d8",
-  platformer: "36af4ec21b10d21387ff7aeb60490b2e5abc0362d5b00450f1f9a7bc8a9af675",
-  puzzle: "12e45fd921a100823ab3a166e30a53e5a83b693d2032fb0135645e7ef508f07c",
-  racing: "1743f3d6a2ee374b3ca235cc7e5d7079d5564b85b18fefa8a85195528932b97c",
-  rain: "637afd242e4d7bc6ded1b102b1bd80bfbf289ed32878cdb1b20902e303292255",
-  rts: "3f4c7292e2a45d88d18c434a6c407696a5a6b36f9e0d39288b15d7c1f9c047ca",
-  runner: "db58ac5addcc9ebd3f3917dadf1f2d5f725ea3728ea7a1e29dab895b10c0a761",
-  sailing: "3958a6481ef470d89f2f83159d6c3dfecea264bae8bef182a9a456194d9be4ce",
-  shooter: "53840be6e1d8b7054a09851ca1d490ecde00186ce934125f3fd7b4ba87ee03c2",
-  snow: "fcf37ea542facf32d20e197865abdf9363b1c6cce2b1741288d4ad2e28412227",
-  starter: "a70abdda7fe0dc14d1bb10646fb91a7b836eb61838f90e28d077356c51f8d9ec",
-  "tower-defense": "c6b04b85de33545b0c03d393f0cf23c9df3fb63d3541ebe424e2b2ea05476351",
+  // Re-measured 2026-10-05 on the merge of develop (PRD-495 junk sweep, TS7 toolchain, CI
+  // consolidation) into the PRD-345 shooter-perf branch: the twelve material templates now
+  // share one controller-owned render graph (new backlightControls.ts, plus backlightMaterial.ts
+  // referencing it), so twelve trees move against develop and rain is unchanged.
+  "action-rpg": "86ce4317313e8f59eef733037f6663d0aea4887f4663041d53aef728d676885d",
+  minimal: "5b4fbbc7afa7119fbc80ea8b54b981e61cbba39a2b940aeada8217039fee8d61",
+  platformer: "d41531488f3140010b66f20feb6421dda1641dfb36b915443b299387946980c0",
+  puzzle: "d73ce90938da97e8d8be849cda4234a18332c377dc4175a45a66cc9b3e478260",
+  racing: "0e499665aface93bdc6362d3bffe18712b534a6481a211741beb91c801514606",
+  rain: "21dbd2a9100f3e1dfc9ea0a474fd5f3b429a55ae4e968a3741dccaf57e05bfc8",
+  rts: "7847d7110ca1ab17a2b80b5c3682e3c9366de1cb8d5a72875b68f30ddb3af9f9",
+  runner: "c2dbb6fad673efaae661473189757f2e24a273f44007b501f04bda70df244a20",
+  sailing: "922927a0f95c83ce942b37e98e95a59d7d8cf6cd73938826ac9f407285e9eda0",
+  shooter: "8395e64d3af1e3e1c42dc3f88fd55ad52240a6110be3a6ea8b280ceb477ea693",
+  snow: "95d76280c208cd703b4ee56a7d9d25f85d22467c1962a878c68d4aafeb69132b",
+  starter: "c1c425f5da137ecc097c1a2928bdc2cee26c7b40e1987b5db11fac4633a2ea19",
+  "tower-defense": "74c06465b4c0bb5f76f62f77ae24044f2d3baae592fac1d31ef143810c7262b1",
 };
 
 const GENERATED_SCAFFOLD_METADATA =

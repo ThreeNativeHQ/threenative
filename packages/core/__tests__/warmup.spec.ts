@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from "vitest";
 
-import { type IWarmUpProgress, warmUpScene } from "../src/warmup.js";
+import { type IWarmUpProgress, warmUpComputeNodes, warmUpScene } from "../src/warmup.js";
 
 /**
  * The launch this exists to fix: a Pixel 8 spent 24.5 seconds across 107 pipeline compiles inside
@@ -689,4 +689,71 @@ describe("scene warm-up", () => {
     expect(raw.shadowMap.needsUpdate).toBe(false);
     expect(scene.visible).toBe(false);
   });
+});
+
+describe("warm-up absolute budget", () => {
+  test.each(["scene", "object", "compute"] as const)(
+    "%s compilation counts a synchronous prefix against its existing budget",
+    async (kind) => {
+      let clock = 0;
+      const clockSpy = vi.spyOn(globalThis.performance, "now").mockImplementation(() => clock);
+      try {
+        const compile = () => {
+          clock += 20;
+          return Promise.resolve();
+        };
+        const report =
+          kind === "compute"
+            ? await warmUpComputeNodes({ computeAsync: compile }, [{}, {}, {}], { budgetMs: 10 })
+            : await warmUpScene({ compileAsync: compile }, sceneOf(3) as never, {} as never, {
+                budgetMs: 10,
+                granularity: kind,
+              });
+        expect(report.compiled).toBe(0);
+        expect(report.abandoned).toBe(kind === "scene" ? 1 : 3);
+        expect(report.timedOut).toBe(true);
+        if ("candidates" in report) {
+          expect(report).toMatchObject({ candidates: 3, attempted: 1 });
+        }
+      } finally {
+        clockSpy.mockRestore();
+      }
+    },
+  );
+
+  test.each(["scene", "object"] as const)(
+    "%s compilation does not grant a fresh wait after an expired synchronous prefix",
+    async (granularity) => {
+      let clock = 0;
+      let yields = 0;
+      const clockSpy = vi.spyOn(globalThis.performance, "now").mockImplementation(() => clock);
+      try {
+        const report = await warmUpScene(
+          {
+            compileAsync: () => {
+              clock += 20;
+              return new Promise<void>(() => undefined);
+            },
+          },
+          sceneOf(3) as never,
+          {} as never,
+          {
+            budgetMs: 10,
+            granularity,
+            yieldFrame: async () => {
+              yields += 1;
+              clock += 20;
+            },
+          },
+        );
+        expect(report.compiled).toBe(0);
+        expect(report.abandoned).toBe(granularity === "scene" ? 1 : 3);
+        expect(report.timedOut).toBe(true);
+        expect(yields).toBe(0);
+        expect(report.elapsedMs).toBe(20);
+      } finally {
+        clockSpy.mockRestore();
+      }
+    },
+  );
 });
