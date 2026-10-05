@@ -4,6 +4,14 @@ import path from "node:path";
 import ts from "typescript";
 
 import { RELEVANCE_FLOOR, capabilitySituationTokens } from "../packages/engine-mcp/src/index.js";
+import {
+  type ICatalog,
+  formatErrors,
+  readCatalog,
+  readCatalogSchema,
+  supportedNativeSymbols,
+  validateCatalog,
+} from "../packages/three-native/src/catalog.js";
 import { CAPABILITY_PACKAGE_ALLOWLIST, isPublicClassOrFunction } from "./check-capability-docs.js";
 import { type INotOwnedCapability, NOT_OWNED_CAPABILITIES } from "./not-owned-capabilities.js";
 import {
@@ -40,10 +48,30 @@ export interface ICapabilityManifestEntry {
   readonly deprecated?: readonly string[];
 }
 
+export interface ICapabilityNativeSymbol {
+  readonly symbol: string;
+  readonly kind: string;
+  readonly source: string;
+}
+
+/**
+ * The native profile's published surface (N03 catalog). Every entry the catalog marks `supported`
+ * appears here and nothing else does: the type surface and the runtime capability must agree.
+ */
+export interface ICapabilityNativeSection {
+  readonly catalog: string;
+  readonly engineAbi: number;
+  readonly compatibilityContract: number;
+  readonly scene: number;
+  readonly shaderPackage: number;
+  readonly symbols: readonly ICapabilityNativeSymbol[];
+}
+
 export interface ICapabilityManifest {
   readonly version: typeof MANIFEST_VERSION;
   readonly entries: readonly ICapabilityManifestEntry[];
   readonly notOwned: readonly INotOwnedCapability[];
+  readonly native?: ICapabilityNativeSection;
 }
 
 export interface ICapabilityAllowlistEntry {
@@ -649,6 +677,25 @@ export function validateNotOwned(
   }
 }
 
+/** The native section comes from the catalog, never from this file. */
+function nativeSection(root: string): ICapabilityNativeSection | undefined {
+  const catalogPath = path.join(root, "packages", "three-native", "api", "catalog.json");
+  // A fixture tree used by the manifest unit tests has no catalog and therefore no native profile.
+  if (!existsSync(catalogPath)) return undefined;
+  const catalog: ICatalog = readCatalog(root);
+  const errors = validateCatalog(catalog, readCatalogSchema(root));
+  if (errors.length > 0)
+    throw new Error(`TN_API_CATALOG_INVALID:\n${formatErrors(errors.slice(0, 10))}`);
+  return {
+    catalog: path.posix.join("packages", "three-native", "api", "catalog.json"),
+    compatibilityContract: catalog.abi.compatibilityContract,
+    engineAbi: catalog.abi.engine,
+    scene: catalog.abi.scene,
+    shaderPackage: catalog.abi.shaderPackage,
+    symbols: supportedNativeSymbols(catalog),
+  };
+}
+
 export function buildCapabilityManifest(
   root: string,
   allowlist: readonly ICapabilityAllowlistEntry[] = CAPABILITY_ALLOWLIST,
@@ -708,7 +755,11 @@ export function buildCapabilityManifest(
       throw new Error(`Realism-effects coverage validation failed:\n${coverageErrors.join("\n")}`);
     }
   }
-  return { entries, notOwned, version: MANIFEST_VERSION };
+  const manifest: ICapabilityManifest = { entries, notOwned, version: MANIFEST_VERSION };
+  const native = nativeSection(root);
+  // An absent native section stays absent rather than serializing as null: the serializer writes
+  // every own key, and a fixture tree without a catalog has no native profile to describe.
+  return native === undefined ? manifest : { ...manifest, native };
 }
 
 function manifestPath(root: string): string {

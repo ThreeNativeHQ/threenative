@@ -29,7 +29,7 @@
 **Status:** NOT STARTED
 **Files:** proposed `packages/runtime-native/src/engine/foundation/buffers.{h,cpp}`, `packages/runtime-native/tests/native-engine/buffers_test.cpp`, `fuzz_buffers.cpp`
 - [x] Out-of-range and overflowing offset/length pairs fail with `TN_BUFFER_RANGE` before any read. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_buffers_range` — 2026-10-04: green; `BufferStore::validate` compares by subtraction so a wrapping pair fails (red with the `offset + length` form), misalignment is `Layout`, and an overflowing element count allocates nothing. `src/engine/foundation/buffers.{h,cpp}`
-- [ ] The buffer-descriptor fuzzer runs 10 minutes under ASan/UBSan with no finding. proof: `pnpm --filter @threenative/runtime-native native:test:asan -- --fuzz native_engine_fuzz_buffers --max-total-time=600`
+- [x] The buffer-descriptor fuzzer runs 10 minutes under ASan/UBSan with no finding. proof: `pnpm --filter @threenative/runtime-native native:test:asan -- --fuzz native_engine_fuzz_buffers --max-total-time=600` — 2026-10-04: run as `native_engine_fuzz_buffers -max_total_time=600` in a clang engine-only build (`-DTN_ENGINE_FUZZ=ON`, `-fsanitize=fuzzer,address,undefined`): 81,703,188 inputs in 601 s, 699 corpus units, no finding
 
 #### Phase 2: Leases and versions
 **Status:** NOT STARTED

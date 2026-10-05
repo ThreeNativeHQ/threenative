@@ -1,6 +1,6 @@
 # PRD-500 — API catalog, binding ABI and version protocol (N03)
 
-**Status:** PROPOSED
+**Status:** IN PROGRESS — phase 1 done; the C ABI implementation (phase 2) is next
 **Complexity:** 5 — the one contract every adapter, generator and engine module depends on
 **Owner:** João
 **Work package:** N03 — [native-engine batch](README.md)
@@ -28,11 +28,11 @@ The repo's existing capability surface is `packages/create-threenative/capabilit
 ## Execution Phases
 
 #### Phase 1: The catalog exists and generates declarations
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** proposed `packages/three-native/api/{catalog.json,catalog.schema.json}`, `packages/three-native/scripts/generate.ts`, `packages/three-native/__tests__/catalog.spec.ts`
-- [ ] The schema rejects an entry with no capability status and an overload set with ambiguous signatures. proof: red-green `pnpm exec vitest run packages/three-native/__tests__/catalog.spec.ts`
-- [ ] Generated declarations for the seed classes (Object3D, Scene, Mesh, Vector3, Matrix4) typecheck the §2.2 sample program. proof: `pnpm --filter @threenative/three-native generate && pnpm typecheck`
-- [ ] Every catalog entry marked `supported` for the native profile also appears in the native section of `capabilities.json`, and nothing else does. proof: `pnpm exec vitest run packages/three-native/__tests__/catalog-capabilities.spec.ts`
+- [x] The schema rejects an entry with no capability status and an overload set with ambiguous signatures. proof: red-green `pnpm exec vitest run packages/three-native/__tests__/catalog.spec.ts` — 2026-10-04: green (`catalog.spec.ts`, 8 cases incl. duplicate names, partial without gap, unsupported without code, unknown member types). `packages/three-native/api/{catalog.json,catalog.schema.json}`: 480 entries covering every N00-inventory symbol
+- [x] Generated declarations for the seed classes (Object3D, Scene, Mesh, Vector3, Matrix4) typecheck the §2.2 sample program. proof: `pnpm --filter @threenative/three-native generate && pnpm typecheck` — 2026-10-04: `generate` writes `generated/three.d.ts` and `tn_abi.h`; `pnpm typecheck` green and checks `__tests__/fixtures/sample.ts` through the package tsconfig (a planted type error reds it). The header is fixed-width (uint32 codes, `_Static_assert` layouts) and compiles as C11 `-pedantic` and C++20
+- [x] Every catalog entry marked `supported` for the native profile also appears in the native section of `capabilities.json`, and nothing else does. proof: `pnpm exec vitest run packages/three-native/__tests__/catalog-capabilities.spec.ts` — 2026-10-04: green; `capabilities.json` gains a `native` section generated from the catalog. Today 0 entries are `supported`: every implementable entry is `partial(native-not-implemented)` until an engine work package proves it, so nothing is advertised natively before it runs. A probe catalog proves supported-in, partial/unsupported-out
 
 #### Phase 2: The C ABI and version handshake
 **Status:** NOT STARTED
