@@ -19,6 +19,7 @@
 #include "engine/foundation/math/Quaternion.h"
 #include "engine/foundation/math/Vector.h"
 #include "engine/scene/camera.h"
+#include "engine/scene/geometry.h"
 #include "engine/scene/nodes.h"
 #include "engine/scene/object3d.h"
 
@@ -485,13 +486,37 @@ void registerGroup(ClassBinding& b) {
     };
 }
 
+/** A geometry argument of any generator class, matched to one base pointer. */
+BufferGeometry& geometryArg(Store& store, const Value& arg) {
+    static const char* const kClasses[] = {
+        "BufferGeometry", "PlaneGeometry",  "BoxGeometry",   "SphereGeometry", "CylinderGeometry",
+        "ConeGeometry",   "CircleGeometry", "TorusGeometry", "RingGeometry"};
+    Object* found = store.find(arg);
+    if (found == nullptr) throw Unsupported{"argument is not a BufferGeometry"};
+    for (const char* cls : kClasses) {
+        if (found->cls == cls) return *static_cast<BufferGeometry*>(found->ptr.get());
+    }
+    throw Unsupported{"argument is not a BufferGeometry, it is a " + found->cls};
+}
+
 void registerMesh(ClassBinding& b) {
     registerObject3D(b);
-    // three's Mesh builds a BufferGeometry and a MeshBasicMaterial by default; both arrive with
-    // PRD-508 phase 3, so a fixture that names them is refused rather than given empty ones.
-    b.ctor = [](const Args& a, Store&) -> std::shared_ptr<void> {
-        if (!a.empty()) throw Unsupported{"Mesh geometry and material arrive with PRD-508 phase 3"};
-        return std::static_pointer_cast<void>(std::make_shared<Mesh>());
+    // three's Mesh builds a BufferGeometry and a MeshBasicMaterial by default; the material class
+    // arrives with PRD-514, so a Mesh takes a geometry and keeps the material pointer opaque.
+    b.ctor = [](const Args& a, Store& store) -> std::shared_ptr<void> {
+        BufferGeometry* geometry = nullptr;
+        void* material = nullptr;
+        if (!a.empty() && a.at(0).kind == Value::Kind::Ref) geometry = &geometryArg(store, a.at(0));
+        if (a.size() >= 2 && a.at(1).kind == Value::Kind::Ref) {
+            Object* found = store.find(a.at(1));
+            material = found != nullptr ? found->ptr.get() : nullptr;
+        }
+        return std::static_pointer_cast<void>(std::make_shared<Mesh>(geometry, material));
+    };
+    b.members["geometry"] = [](void* self, const Args&, Store& store) -> Value {
+        Mesh* mesh = as<Mesh>(self);
+        if (mesh->geometry == nullptr) return Value{};
+        return store.adoptAlias("BufferGeometry", mesh->geometry, self);
     };
 }
 

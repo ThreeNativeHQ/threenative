@@ -65,9 +65,9 @@ reference leaves them stale. Today the scene lives in JS inside the host (§3, R
 #### Phase 3: Geometry
 **Status:** NOT STARTED
 **Files:** proposed `packages/runtime-native/src/engine/scene/geometry.cpp`, `geometry_generators.cpp`
-- [ ] Every catalogued geometry generator emits the reference positions, normals, uvs, index and groups for the fixture parameter sets. proof: `node packages/runtime-native/tests/native-engine/differential.mjs --suite geometry`
-- [ ] Bounding box/sphere and `computeVertexNormals` match the reference. proof: `node packages/runtime-native/tests/native-engine/differential.mjs --suite geometry-derived`
-- [ ] Calling an uncatalogued member raises `TN_NATIVE_UNSUPPORTED` and the manifest lists it as unsupported. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_unsupported_member`
+- [x] Every catalogued geometry generator emits the reference positions, normals, uvs, index and groups for the fixture parameter sets. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_geometry$` — 2026-10-04: 10 `geometry-*` fixtures (Plane, Box, Sphere, Cylinder, Cone, Circle, Torus, Ring; non-default segments and partial sweeps), 128 observations bit-exact at abs 0 on host and Wasm; the BufferAttribute data is a BufferStore the renderer uploads by version
+- [x] Bounding box/sphere and `computeVertexNormals` match the reference. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_geometry_derived` — 2026-10-04: 2 `geometry-derived-*` fixtures (normals on indexed and non-indexed geometry, bounds after translate/rotate), 20 observations bit-exact
+- [x] Calling an uncatalogued member raises `TN_NATIVE_UNSUPPORTED` and the manifest lists it as unsupported. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_unsupported_member` — 2026-10-04: green: `tn_invoke` of a name the registry lacks on a BufferGeometry returns TN_ERROR_UNSUPPORTED with `TN_NATIVE_UNSUPPORTED BufferGeometry.<name>`; uncatalogued classes report `partial(native-not-implemented)` in the catalog
 
 ## Decisions
 

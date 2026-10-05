@@ -101,14 +101,7 @@ export interface IEncodedObservation {
  */
 export function encodeObservation(kind: ObservationKind, value: unknown): IEncodedObservation {
   if (kind === "number") return numberValue(value as number);
-  if (kind === "numbers") {
-    if (!Array.isArray(value))
-      throw new Error(`TN_OBSERVATION_INVALID: numbers observed ${typeof value}`);
-    return {
-      value: value.map((entry) => `n:${numberBits(entry as number)}`).join(","),
-      decimal: value.map((entry) => decimalOf(entry as number)).join(", "),
-    };
-  }
+  if (kind === "numbers") return numbersValue(value);
   if (kind === "boolean") {
     if (typeof value !== "boolean")
       throw new Error(`TN_OBSERVATION_INVALID: boolean observed ${typeof value}`);
@@ -128,6 +121,21 @@ export function encodeObservation(kind: ObservationKind, value: unknown): IEncod
   }
   const text = canonicalJson(value);
   return { value: `s:${encodeURIComponent(text)}`, decimal: text };
+}
+
+/**
+ * A `numbers` value. A plain array is the usual case; a typed array (`Float32Array`, `Uint16Array`)
+ * is what a BufferAttribute's `.array` is, and the native side reads it as the same list of doubles,
+ * so its elements are observed in order.
+ */
+function numbersValue(value: unknown): IEncodedObservation {
+  if (!Array.isArray(value) && !ArrayBuffer.isView(value))
+    throw new Error(`TN_OBSERVATION_INVALID: numbers observed ${typeof value}`);
+  const entries = Array.from(value as unknown as ArrayLike<number>);
+  return {
+    value: entries.map((entry) => `n:${numberBits(entry)}`).join(","),
+    decimal: entries.map((entry) => decimalOf(entry)).join(", "),
+  };
 }
 
 function numberValue(value: number): IEncodedObservation {

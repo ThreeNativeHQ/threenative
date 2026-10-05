@@ -10,10 +10,14 @@ void registerMathBindings(Registry& classes);
 /** The scene graph (PRD-508): Object3D, Scene, Group, Mesh and the cameras. */
 void registerSceneBindings(Registry& classes);
 
+/** Geometry (PRD-508): BufferAttribute, BufferGeometry and the built-in generators. */
+void registerGeometryBindings(Registry& classes);
+
 /** Every engine class any caller can reach; each work package adds its own register function. */
 inline void registerAll(Registry& classes) {
     registerMathBindings(classes);
     registerSceneBindings(classes);
+    registerGeometryBindings(classes);
 }
 
 }  // namespace tn::binding

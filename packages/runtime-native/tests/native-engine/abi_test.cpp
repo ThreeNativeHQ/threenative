@@ -213,6 +213,27 @@ void scene() {
     CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
 }
 
+// PRD-508 phase 3: a catalogued class whose registry lacks a member refuses it by name, so an
+// uncatalogued method is a status a caller can read, never a crash.
+void unsupported_member() {
+    const tn_version_info_t own = tn_engine_version();
+    tn_context_t* ctx = nullptr;
+    Diag d;
+    CHECK(tn_context_create(&ctx, &own, &d.value) == TN_OK);
+
+    tn_handle_t geometry{};
+    CHECK(tn_construct(ctx, "BufferGeometry", nullptr, 0, &geometry, &d.value) == TN_OK);
+    tn_value_t result{};
+    CHECK(tn_invoke(geometry, "computeBoundingVolume", nullptr, 0, &result, &d.value) == TN_ERROR_UNSUPPORTED);
+    CHECK(d.message().find("TN_NATIVE_UNSUPPORTED") != std::string::npos);
+    CHECK(d.message().find("BufferGeometry.computeBoundingVolume()") != std::string::npos);
+    CHECK(tn_get(geometry, "attributes.tangent.array", &result, &d.value) == TN_ERROR_UNSUPPORTED);
+    CHECK(d.message().find("TN_NATIVE_UNSUPPORTED") != std::string::npos);
+    CHECK(tn_object_release(geometry, &d.value) == TN_OK);
+    CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
+}
+
 }  // namespace
 
-TN_TEST_MAIN({"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene})
+TN_TEST_MAIN({"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene},
+             {"unsupported_member", unsupported_member})

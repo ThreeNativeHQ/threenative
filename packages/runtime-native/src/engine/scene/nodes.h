@@ -17,6 +17,8 @@
 
 namespace tn::engine {
 
+class BufferGeometry;
+
 /** three's Scene: an Object3D root plus what the renderer reads about the whole frame. */
 class Scene : public Object3D {
 public:
@@ -47,12 +49,12 @@ public:
 class Mesh : public Object3D {
 public:
     Mesh() = default;
-    Mesh(void* geometry, void* material) : geometry(geometry), material(material) {}
+    Mesh(BufferGeometry* geometry, void* material) : geometry(geometry), material(material) {}
 
     [[nodiscard]] std::string_view type() const override { return "Mesh"; }
 
-    void* geometry = nullptr;  // BufferGeometry*, PRD-508 phase 3
-    void* material = nullptr;  // Material* or Material**
+    BufferGeometry* geometry = nullptr;  // borrowed, as Object3D's children are
+    void* material = nullptr;            // Material* or Material**, PRD-514
 };
 
 }  // namespace tn::engine
