@@ -54,8 +54,8 @@ const flickerReduction = Fn(
  * only its resolve.
  *
  * `interpolation` and `blend` are the comparison arms: linear against Catmull–Rom history sampling,
- * and luminance reweighting against an ordinary blend at the same weight. The default arm keeps
- * upstream's behaviour at full resolution and adds the two-raster rules below.
+ * and luminance reweighting against an ordinary blend at the same weight. The default here keeps
+ * upstream's luminance comparison; the provider selects an ordinary blend for linear coverage.
  */
 export function createExperimentalTemporalResolve(
   source: TRAANode,
@@ -103,13 +103,8 @@ export function createExperimentalTemporalResolve(
     currentWeight.assign(hasValidHistory.select(currentWeight.add(motionFactor).saturate(), 1));
     // Reasonable gamma range is [0.75, 2]
     const varianceGamma = mix(0.5, 1, motionFactor.oneMinus().pow2());
-    const clippedHistoryColor = varianceClipping(
-      positionTexel,
-      currentColor,
-      historyColor,
-      varianceGamma,
-    );
-    // Diagnostic only: ordinary blending isolates luminance reweighting at the same weight.
+    const clippedHistoryColor = varianceClipping(positionTexel, historyColor, varianceGamma);
+    // Keep the computed weight in production; luminance reweighting remains a comparison arm.
     return blend === "ordinary"
       ? mix(clippedHistoryColor, currentColor, currentWeight)
       : flickerReduction(currentColor, clippedHistoryColor, currentWeight);

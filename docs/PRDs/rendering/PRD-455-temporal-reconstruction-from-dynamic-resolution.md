@@ -1563,3 +1563,41 @@ GPU/render cost, combined-source native and actual WorldEnvironment/automatic-sc
 open with their thresholds unchanged. No acceptance box is ticked. Draft repair publication is
 authorized after fresh head/base/noncritical guards, clean independent merge review and normal
 pre-push drift hooks; the PR must remain draft until original runtime acceptance is satisfied.
+
+
+### Fresh original quality failure and bounded CPU repair — 2026-10-05
+
+Published source `c5357e39d8ecd0c29802e3cb2af633a2af40dcaa` ran the unchanged 31-arm motion
+verifier on hardware WebGPU (NVIDIA/Turing, Vulkan flags) from 17:16:06 to 17:19:49 UTC,
+PID 1708586, 223 seconds, exit 1. All 31 captures completed with empty diagnostics; authored
+linear equivalence and 11 checks passed. The four original edge/reveal checks still failed:
+full-resolution edge 0.06054592 versus no-AA 0.05029465 (required <0.04777992), warm reveal
+1.5856%; lower-input edge 0.08238862 versus no-AA 0.04933311 (required <0.04686646), warm reveal
+1.9081% and 1.7737%, against the unchanged <=1% bound. All original arms, scenarios, pixels,
+reports, hashes and terminal/lease receipts remain under
+`artifacts/pr398-original-qualification/c5357e39d8ecd0c29802e3cb2af633a2af40dcaa/20261005T171606Z`.
+This is quality evidence only; it does not qualify performance, native or the automatic scaler.
+
+Actual pixel inspection finds all 59 full-resolution frame-34 failures on one dim fence column;
+each pixel equals its matched never-occluded temporal control. The conservative stale gate stays
+unchanged. Independent CPU controls isolate two narrower defects: luminance-reweighted blending
+turns correctly registered 50% alternating linear coverage into mean 0.400194 instead of 0.5;
+and replacing a raw central input sample with a bilinear display sample narrows the same nine-texel
+variance bound from 0.804738 to 0.693517, incorrectly clipping legal history 0.75.
+
+The generated provider now selects the existing ordinary blend, and its clipping moments count
+nine raw input texels. The linear equivalence arm follows that production blend; weighted cubic
+comparison arms remain available. Velocity, jitter, depth rejection, current weights, gamma,
+reference/corpus, thresholds and negative controls are unchanged. Two real offline-WGSL contract
+failures were recorded before repair (luminance weighting and eight point loads); the repaired
+shader suite passes 5/5. The affected suite passes 307/307 across 15 files; root TS7, serial workspace
+and velocity-fixture typechecks exit zero on CPUs 10 and 22, one worker. Actual no-install generation
+changes only the starter fingerprint. Independent rendering/source review found no blocking issue.
+The first expected fingerprint failure and new-test type annotation failure are retained alongside
+the corrected green run. Portable controls, pixel diagnostics, reviews and validation receipts are
+in the delegated task directory; no external images were uploaded.
+
+These CPU repairs are a candidate for the next bounded hardware quality measurement, after PR388
+releases the GPU. They do not prove the four original failed checks pass. All outstanding quality,
+GPU/render cost, platform and automatic-resolution acceptance boxes remain open; PR398 stays draft
+at `prd:25%`. Publication and the next GPU slot require parent coordination.

@@ -1,7 +1,7 @@
 import { Mesh, PerspectiveCamera, PlaneGeometry, Scene } from "three";
 import { traa } from "three/addons/tsl/display/TRAANode.js";
-import { pass, velocity } from "three/tsl";
-import type { NodeBuilder } from "three/webgpu";
+import { float, int, pass, uv, vec4, velocity } from "three/tsl";
+import type { Node, NodeBuilder } from "three/webgpu";
 import { MeshBasicNodeMaterial, WGSLNodeBuilder, WebGPURenderer } from "three/webgpu";
 import { describe, expect, it, vi } from "vitest";
 import { createTemporalAA } from "../templates/starter/src/render/temporalAA.js";
@@ -9,6 +9,8 @@ import {
   CATMULL_ROM_BASIS,
   createExperimentalTemporalResolve,
 } from "../templates/starter/src/render/temporalResolve.js";
+import type { TemporalResolveNode } from "../templates/starter/src/render/temporalResolveDepth.js";
+import { createTemporalResolveMath } from "../templates/starter/src/render/temporalResolveMath.js";
 
 /** Real WGSL generation without a GPU device; only device-capability probes are stubbed. */
 function offlineRenderer() {
@@ -116,11 +118,44 @@ describe("authored temporal reconstruction kernel", () => {
       expect(withFlag).toMatch(/\bobject\.nodeUniform\d+ > 0\.5\b/u);
       expect(withoutFlag).toContain("( 1.0 > 0.5 )");
       expect(withFlag).not.toContain("( 1.0 > 0.5 )");
-      // The default arm is upstream's, so a full-resolution frame resolves exactly as it did.
-      expect(withFlag).toContain("0.2126");
+      // Production retains its named current weight: luminance reweighting biases alternating
+      // linear coverage towards the darker sample even when history is correctly registered.
+      expect(withFlag).not.toContain("0.2126");
     } finally {
       temporal.dispose();
       bare.dispose();
+      scenePass.dispose();
+      mesh.geometry.dispose();
+      mesh.material.dispose();
+    }
+  });
+  it("counts nine point-sampled input texels in the clipping moments", () => {
+    const renderer = offlineRenderer();
+    const camera = new PerspectiveCamera();
+    const scenePass = pass(new Scene(), camera);
+    scenePass.setResolutionScale(2 / 3);
+    const beauty = scenePass.getTextureNode();
+    const source = traa(
+      beauty,
+      scenePass.getTextureNode("depth"),
+      scenePass.getTextureNode("velocity"),
+      camera,
+    );
+    const mesh = new Mesh(new PlaneGeometry(2, 2), new MeshBasicNodeMaterial());
+    try {
+      const { varianceClipping } = createTemporalResolveMath(source as TemporalResolveNode);
+      // A display pixel can lie between input texels. Every clipping moment still counts the
+      // same nine input samples; a filtered centre changes their population with display phase.
+      const graph = varianceClipping(
+        uv().mul(beauty.size(int(0)) as Node<"uvec2">),
+        vec4(0.75),
+        float(1),
+      );
+      const shader = fragment(renderer, mesh, graph);
+      expect(shader.match(/textureLoad\(/gu)).toHaveLength(9);
+      expect(shader).not.toContain("textureSample(");
+    } finally {
+      source.dispose();
       scenePass.dispose();
       mesh.geometry.dispose();
       mesh.material.dispose();

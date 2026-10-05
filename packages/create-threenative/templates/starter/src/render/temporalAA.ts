@@ -109,7 +109,8 @@ export function createTemporalAA(
       node,
       builder.renderer,
       "linear",
-      "luminance",
+      // Keep the blend linear in coverage; luminance reweighting darkens thin moving geometry.
+      "ordinary",
       rejection,
     );
     if (pipeline !== undefined) hooks.installAfterSetup(pipeline.context, builder.renderer);

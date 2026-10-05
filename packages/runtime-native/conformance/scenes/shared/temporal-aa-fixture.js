@@ -202,7 +202,9 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
           if (policy.startsWith("resolve-")) {
             temporal.node._resolveMaterial.colorNode = createExperimentalTemporalResolve(
               temporal.node, builder.renderer, policy === "resolve-linear" ? "linear" : "catmull-rom",
-              policy.startsWith("resolve-cubic-strict-ordinary") ? "ordinary" : "luminance",
+              // The linear equivalence control follows the production blend; weighted cubic
+              // arms retain their explicit diagnostic policy.
+              policy === "resolve-linear" || policy.startsWith("resolve-cubic-strict-ordinary") ? "ordinary" : "luminance",
             );
           }
           if (policy === "unchecked-history") {

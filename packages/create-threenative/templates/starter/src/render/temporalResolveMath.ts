@@ -110,12 +110,7 @@ export function createTemporalResolveMath(node: TemporalResolveNode) {
   // See: https://developer.download.nvidia.com/gameworks/events/GDC2016/msalvi_temporal_supersampling.pdf
   return {
     varianceClipping: Fn(
-      ([positionTexel, currentColor, historyColor, gamma]: [
-        Node<"vec2">,
-        Node<"vec4">,
-        Node<"vec4">,
-        Node<"float">,
-      ]) => {
+      ([positionTexel, historyColor, gamma]: [Node<"vec2">, Node<"vec4">, Node<"float">]) => {
         const offsets = [
           [-1, -1],
           [-1, 1],
@@ -126,8 +121,12 @@ export function createTemporalResolveMath(node: TemporalResolveNode) {
           [0, 1],
           [-1, 0],
         ];
-        const moment1 = currentColor.toVar();
-        const moment2 = currentColor.pow2().toVar();
+        // Moments describe nine equally weighted input texels. The displayed current colour may
+        // be filtered between them, so using it as the centre would change this population with
+        // display-pixel phase and clip valid history below the input neighbourhood's bound.
+        const centre = node.beautyNode.load(positionTexel).max(0);
+        const moment1 = centre.toVar();
+        const moment2 = centre.pow2().toVar();
         for (const [x, y] of offsets) {
           // Use max() to prevent NaN values from propagating.
           const neighbor = node.beautyNode.offset(ivec2(x, y)).load(positionTexel).max(0);
