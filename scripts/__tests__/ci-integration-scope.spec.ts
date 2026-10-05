@@ -68,6 +68,33 @@ describe("integration work applies to the changed source", () => {
       ),
     ).toEqual({ ...none, animation: true });
   });
+  // The hosted native proof is a dependent of `animation`, not a lane of its own: a blend-space
+  // source edit has to reach the fresh host build, and the host build has nothing to say when the
+  // browser capture did not move.
+  it("runs the native locomotion job with its animation lane", () => {
+    expect(
+      select(
+        workflow.replace("Linux native locomotion correctness", "Linux native locomotion verified"),
+      ),
+    ).toEqual({ ...none, animation: true });
+  });
+  it("joins the native locomotion job in the real workflow's completion gate", () => {
+    const real = readFileSync(
+      new URL("../../.github/workflows/integration.yml", import.meta.url),
+      "utf8",
+    );
+    expect(real).toContain("\n  animation-native:\n");
+    const reason = (after: string) =>
+      integrationSelection({
+        files: [".github/workflows/integration.yml"],
+        before: real,
+        after,
+      }).reason;
+    // A job the completion gate does not name is a required proof nothing waits for, and the
+    // selector has to say so rather than report a board that looks complete.
+    expect(reason(real.replace(", animation-native", ""))).toContain("unknown completion join");
+    expect(reason(real)).toBe("source filters and bounded job/dependency comparison");
+  });
 
   it("runs exposure alone for an exposure workflow step edit", () => {
     expect(select(workflow.replace("pnpm test:tone", "pnpm test:tone --example"))).toEqual({
