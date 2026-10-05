@@ -393,7 +393,7 @@ set_property(GLOBAL APPEND PROPERTY TN_NATIVE_ENGINE_TEST_TARGETS tn-native-engi
 # PRD-516: three's animation system, starting with its interpolants.
 add_library(tn_engine_animation STATIC src/engine/animation/interpolant.cpp src/engine/animation/property_binding.cpp
     src/engine/animation/mixer.cpp src/engine/animation/schedule.cpp
-    src/engine/animation/skinning/skeleton.cpp)
+    src/engine/animation/skinning/skeleton.cpp src/engine/animation/skinning/palette.cpp)
 tn_native_engine_target(tn_engine_animation)
 target_link_libraries(tn_engine_animation PUBLIC tn_engine_scene)
 target_include_directories(tn_engine_animation PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
@@ -417,11 +417,30 @@ tn_native_engine_test(tn-native-engine-animation-schedule-test tests/native-engi
     native_engine_animation_explicit_update=explicit_update)
 target_link_libraries(tn-native-engine-animation-schedule-test PRIVATE tn_engine_animation)
 target_include_directories(tn-native-engine-animation-mixer-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/animation)
+# PRD-519 phase 1 / PRD-518 phase 2: the render projection's batching decisions (header-only
+# engine/renderer/projection/plan.h) against the real SceneRenderProjection. The test reads its JSON
+# table from disk, which a Wasm test under node cannot; the header compiles the same there.
+if(NOT EMSCRIPTEN)
+    tn_native_engine_test(tn-native-engine-projection-plan-test tests/native-engine/projection/plan_test.cpp
+        native_engine_projection_plan=plan)
+    target_link_libraries(tn-native-engine-projection-plan-test PRIVATE tn_engine_animation)
+    target_include_directories(tn-native-engine-projection-plan-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_compile_definitions(tn-native-engine-projection-plan-test PRIVATE
+        TN_PROJECTION_REFERENCE="${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/projection/projection_reference.json")
+endif()
+
 # PRD-518 phase 1: the recorded Bone/Skeleton poses reproduce over the native port.
 tn_native_engine_test(tn-native-engine-animation-skeleton-test tests/native-engine/animation/skeleton_test.cpp
     native_engine_skeleton_pose=skeleton_pose)
 target_link_libraries(tn-native-engine-animation-skeleton-test PRIVATE tn_engine_animation)
 target_include_directories(tn-native-engine-animation-skeleton-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/animation)
+# PRD-518 phases 2-3: the recorded SkinnedBatch CPU state reproduces over the native palette.
+tn_native_engine_test(tn-native-engine-animation-skinned-palette-test tests/native-engine/animation/skinned_palette_test.cpp
+    native_engine_skinned_slot_reuse=slot_reuse
+    native_engine_skinned_pose_history=pose_history
+    native_engine_skinned_update_frequency=update_frequency)
+target_link_libraries(tn-native-engine-animation-skinned-palette-test PRIVATE tn_engine_animation)
+target_include_directories(tn-native-engine-animation-skinned-palette-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/animation)
 
 # PRD-528 phase 1, PRD-521 phase 3: the fixed-step clock and the world height buffer, ported from
 # packages/core/src/loop.ts, world-heightmap.ts and world.ts.
@@ -535,12 +554,24 @@ if(NOT EMSCRIPTEN)
                 packages/runtime-native/tests/native-engine/scene/static-transform-reference.ts --check
             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../..)
         set_tests_properties(native_engine_static_transform_reference_current PROPERTIES LABELS "native-engine")
+        # PRD-519 phase 1: the committed projection table is what SceneRenderProjection decides today.
+        add_test(NAME native_engine_projection_plan_reference_current
+            COMMAND ${TN_PNPM_EXECUTABLE} --workspace-root exec tsx
+                packages/runtime-native/tests/native-engine/projection/projection-reference.ts --check
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../..)
+        set_tests_properties(native_engine_projection_plan_reference_current PROPERTIES LABELS "native-engine")
         # PRD-518 phase 1: the committed skeleton table is what the pinned three's Bone/Skeleton produce.
         add_test(NAME native_engine_skeleton_reference_current
             COMMAND ${TN_PNPM_EXECUTABLE} --workspace-root exec tsx
                 packages/runtime-native/tests/native-engine/animation/skeleton-reference.ts --check
             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../..)
         set_tests_properties(native_engine_skeleton_reference_current PROPERTIES LABELS "native-engine")
+        # PRD-518 phases 2-3: the committed palette table is what the pinned SkinnedBatch produces.
+        add_test(NAME native_engine_skinned_palette_reference_current
+            COMMAND ${TN_PNPM_EXECUTABLE} --workspace-root exec tsx
+                packages/runtime-native/tests/native-engine/animation/skinned-palette-reference.ts --check
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../..)
+        set_tests_properties(native_engine_skinned_palette_reference_current PROPERTIES LABELS "native-engine")
         add_test(NAME native_engine_json_reference_current
             COMMAND ${TN_PNPM_EXECUTABLE} --workspace-root exec tsx
                 packages/runtime-native/tests/native-engine/json/json-reference.ts --check
