@@ -65,6 +65,20 @@ that touch live code for a ~21-line net win, leaving them to
      TN_SUITE_PACKAGE_CONCURRENCY=1 pnpm test`, 1424s): `docs`, `build` and `package-test` green,
      unit phase `4 failed | 7933 passed | 13 skipped`. The same four files, alone, on the four
      idlest cores: 4 files / 117 tests, exit 0, 227s.
+- **CI repair (2026-10-04, budgets job 111567118048).** The one CI red this diff caused, and the
+  only one: `TN_TEMPLATE_CONVENTIONS_FAILED` for the `shooter` kit. The `normaliseToMetres` and
+  `attachToBone` cells of the applicability table still named `src/entities/Enemy.ts:863` and `:869`,
+  which this lane's dead-comment deletion moved 15 lines up to `:848` and `:854`. Both cells now
+  name the measured calls; `pnpm exec tsx scripts/check-template-conventions.ts` ran red with those
+  two findings and is green after the fix. The `shooter` scaffold hash needed no restamp — the
+  measured `createProject` no-install tree equals `PRD_201_PARENT_SCAFFOLD_HASHES.shooter`, and
+  `pnpm sync:agents` wrote 0 mirrors. Focused checks, all green:
+  `pnpm exec vitest run packages/create-threenative/__tests__/scaffold.spec.ts -t "keeps every
+  no-install scaffold tree byte-stable"` (1 passed); the scripts prose lane
+  (`check-template-conventions`, `check-doc-links`, `sync-agent-docs`, `evidence-budget`,
+  `evidence-citations`, `ci-structure`, `ci-needs`) 7 files / 250 tests exit 0; `pnpm check:docs`
+  exit 0; `git diff --check` clean. AC-2 stays unticked — the full board as written still ran red
+  on wall-clock, which this change does not touch.
 - **Pacing decision (2026-10-04, this lane).** That is the third run to fail on wall-clock alone, so
   the fourth was not attempted: at launch every core was ≥59% busy (mean 77%) with no quiet set of
   four to move to, and another 24-minute run would only add foreign contention to the box it is
