@@ -14,7 +14,7 @@ export function forestDaylight(follow: Object3D): Daylight {
     sky: { turbidity: 2, rayleigh: 3, mieCoefficient: 0.003, mieDirectionalG: 0.82 },
     fill: { sky: new Color(0xa8c8e8), ground: new Color(0x464937), intensity: 0.62 },
     // Enough air that the 512 m world's far edge fades instead of ending on a hard line.
-    haze: { color: new Color(0x9fb4c2), density: 0.0024 },
+    haze: { color: new Color(0x9fb4c2), density: 0.0016 },
     exposure: 2 ** -0.38,
     toneMapping: ACESFilmicToneMapping,
     // The box's corners must stay inside the camera's far plane (5000 m in the kit's example scene).
