@@ -1579,7 +1579,8 @@ reports, hashes and terminal/lease receipts remain under
 This is quality evidence only; it does not qualify performance, native or the automatic scaler.
 
 Actual pixel inspection finds all 59 full-resolution frame-34 failures on one dim fence column;
-each pixel equals its matched never-occluded temporal control. The conservative stale gate stays
+57 exactly match their never-occluded temporal control; the other two are darker in all three
+channels, with no positive red excess. The conservative stale gate stays
 unchanged. Independent CPU controls isolate two narrower defects: luminance-reweighted blending
 turns correctly registered 50% alternating linear coverage into mean 0.400194 instead of 0.5;
 and replacing a raw central input sample with a bilinear display sample narrows the same nine-texel
