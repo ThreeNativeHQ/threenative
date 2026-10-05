@@ -223,8 +223,8 @@ installing a stage and overriding its output. The temporal role must present 640
 input and publish the settled GPU counter every frame. Each family scores against its own
 supersampled reference, and every original threshold is unchanged.
 
-`sh scripts/xvfb.sh node --import tsx scripts/verify-temporal-motion.ts` captured 32 arms
-(512 frames) with `nvidia`/`turing` WebGPU in every arm, empty diagnostics, and exit 1 at the final
+`sh scripts/xvfb.sh node --import tsx scripts/verify-temporal-motion.ts` captured 31 arms
+(558 PNGs) with `nvidia`/`turing` WebGPU in every arm, empty diagnostics, and exit 1 at the final
 gate assertion after writing `artifacts/temporal-aa/motion/summary.json`; log
 `/tmp/opencode/pr398-phase2-route3.log`. Rasters are the measured ones: the family reference is
 2560x1440 input and display, the no-AA role 640x360/640x360, and every low-input arm 426x240 input
@@ -270,7 +270,7 @@ that valid history and keeps the hidden colour — the suspected cause of the re
 that test two-sided (`|closestDepth − previousDepth|`, which installed three 0.185.1
 `TAAUNode.js` itself applies and names as the remedy for its own one-sided test) was compiled
 through the real WGSL builder, red-green in `temporal-resolve.spec.ts`, and then measured over the
-whole 32-arm corpus. It moved nothing: the default arm's eight reveal fractions are bit-identical
+whole 31-arm corpus. It moved nothing: the default arm's eight reveal fractions are bit-identical
 (.2833, .1795, .086, .0817, .0605, .0392, .0164, .0145) and its edge 0.06054, instability 0.03136 and
 excursion 0.000118 are unchanged, because every revealed pixel satisfies the depth-edge bypass that
 outranks the disocclusion term. On the two arms that disable that bypass the change is a measured
@@ -1041,7 +1041,7 @@ provider API.
 
 Results on this tree, `build/tn-linux/mystral` unchanged, no C++ rebuild:
 
-- **Browser, all 32 arms re-captured** after the honesty fix, adapter `nvidia`/`turing`,
+- **Browser, all 31 arms re-captured** after the honesty fix, adapter `nvidia`/`turing`,
   `rendererKind webgpu`, zero error diagnostics. **All 31 arms' colour bytes are byte-identical to
   the previous baseline** (every frame 21–36 sha256 matches), which is the expected result: the fix
   removes a published measurement, not a pixel. `artifacts/temporal-aa/motion/summary.json`.
@@ -1280,7 +1280,7 @@ entry's comment correction; all 13 template hashes re-measured, every other one 
 Biome.
 
 **Runtime, this commit.** The production script, unmodified: `sh scripts/xvfb.sh node --import tsx
-scripts/verify-temporal-motion.ts` → exit `1`, all 32 arms captured with 16 frames each, no
+scripts/verify-temporal-motion.ts` → exit `1`, all 31 arms captured with 18 PNGs each, no
 `failure.json`, every arm's adapter `nvidia/turing`, scored by its own `measureSequence`
 (`revealIndex` 8). `temporal` is **bit-identical to `strict-rejection`**: stale [.01774, 0, 0, 0, 0,
 .01586, .00027, 0], edge 0.06055, instability 0.03139, moving-edge 0.02899, excursion 0.000115. The
@@ -1341,7 +1341,7 @@ quality), 16 frames each, no `failure.json`, every profile's adapter `nvidia/tur
 entry's "32 arms" is a miscount, not a missing capture: the retained `f1b22c0be` capture
 (`/tmp/opencode/pr398-motion-baseline-f1b22c0be/motion/summary.json`) holds the same 31 profile keys
 and the same 19 scored rows, and the supersampled references (`supersampled`, `quality-supersampled`)
-are captured but carry no scored row (`counters` empty, `qualityCorpus` null). `temporal` stale fractions
+are captured but carry no scored row (`counters` empty). `qualityCorpus` is null only for the 22 motion arms, which have no quality corpus; `quality-supersampled` holds the measured object `{role: "reference", foliageCards: 6, alphaTest: 0.5, leafTextureSize: 16}`, so it is captured, not absent. `temporal` stale fractions
 [.01774, 0, 0, 0, 0, **.01559**, .00027, .00027] against the pinned baseline
 [.01774, 0, 0, 0, 0, .01586, .00027, 0] — the warm ghost at afterReveal 5 does not move. Edge error
 0.05848 improves on 0.06055, instability 0.03193 worsens on 0.03139, and neither clears its gate, so
@@ -1392,8 +1392,70 @@ edge boxes stay open, and no box is ticked by this entry.
 
 **The run.** `sh scripts/xvfb.sh node --import tsx scripts/verify-temporal-motion.ts`; log `/tmp/opencode/pr398-motion-cubic-072259/motion-cubic.log`, summary `artifacts/temporal-aa/motion/summary.json`, 31 profiles. The log records **no exit code**: it ends in an uncaught `ERR_ASSERTION` from `writeTemporalMotionSummary` after every profile was retained, with `pass: false` because `authoredLinearEquivalent` is false once the shipped arm is not the linear one.
 
-**Full resolution clears the warm bound.** `temporal` is bit-identical to `resolve-cubic-strict-ordinary`: edge .0555994, instability .0324191, stale [.01774, 0, 0, 0, .00027, 0, .00054, .00054] — afterReveal 1–7 clears the pinned .01. `edgeImprovement` stays false, and every motion arm is bit-identical to the retained `f1b22c0be` capture.
+**Full resolution clears the warm bound.** `temporal` is bit-identical to `resolve-cubic-strict-ordinary`: edge .0555994, instability .0324191, stale [.01774, 0, 0, 0, .00027, 0, .00054, .00054] — afterReveal 1–7 clears the pinned .01. `edgeImprovement` stays false. That claim of bit-identity to the retained `f1b22c0be` capture is withdrawn: this run's `temporal` edge is .0555994 against the baseline's .0605459 and its instability .0324191 against .0313916, so the combined candidate moved both, and only `temporal` is byte-identical to `resolve-cubic-strict-ordinary`.
 
 **Low input is where it fails.** `quality-temporal` stale [.0516, **.01908**, .00511, .00322, .0043, **.01747**, .00242, .00484] against the same .01 bound: afterReveal 1 and 5 fail, as under `linear` + `luminance` ([.0516, .01908, …, .01774, …]) and under `linear` + `ordinary`, so `qualityRevealRecovery` stays false. Edge .0806872 and instability .0364328 stay worse than `quality-spatial` (.0774488, .0505515), so `qualityEdgeImprovement` stays false.
 
 **Decision and boxes.** It fails its own measurements at both resolutions, so nothing ships: the three dirty files are reverted to `563d64a8b`, the starter tree pin and all 13 template hashes are unchanged, and every capture is retained. Both Phase 2 ghost boxes, the motion and quality edge boxes and PRD-269's ghosting cost stay **open**; no box is ticked, and no browser or native lane was re-run because no runtime change ships.
+
+
+### Current-frame reconstruction, measured and falsified (HEAD 8a20ae9ee + this commit)
+
+**What the installed node does.** `three/examples/jsm/tsl/display/TAAUNode.js` (0.185.1, patched pin
+`7036a173`) reconstructs the current frame as nine `load` taps on a 3×3 neighbourhood of the
+jittered input lattice, each weighted `exp(-2.29 * d²)`, normalized by its own weight sum. The
+generated kernel took one bilinear sample instead. No core Three patch was needed: `camera.view` is
+public, so the jitter a gather must follow is read where upstream applied it.
+
+**What was built and measured.** `createExperimentalTemporalResolve` gained
+`reconstruction: "bilinear" | "blackman-harris"` with that nine-tap loop, `temporalAAFrame`
+published the applied offset as `_jitterOffsetUniform`, `temporalAA.ts` installed the gather as its
+default, and the fixture mapped a `resolve-reconstruction` arm. History sampling, blend,
+`currentWeight`, clipping, rejection, velocity, counter, lifecycle, corpus, scoring and every
+threshold stayed as they were, so this run isolates the current-frame reconstruction alone. The
+whole-display cold-reset oracle was rebuilt as an independent nine-tap gather over the same immutable
+input and the measured jitter, because a plain bilinear fetch can no longer be the expected cold
+frame; the mutant that clears the reset flag still fails it.
+
+**The run.** `sh scripts/xvfb.sh node --import tsx scripts/verify-temporal-motion.ts`, log
+`/tmp/opencode/pr398-motion33.log`, recorded exit `1` in `/tmp/opencode/pr398-motion33.status`,
+summary `artifacts/temporal-aa/motion/summary.json`. 33 profiles, 16 frames each, no `failure.json`,
+`nvidia`/`turing` WebGPU in every arm: the retained 31, the explicit `resolve-reconstruction` arm, and
+its matched `resolve-reconstruction-open` control the causal pairing requires. `authoredResolveEquivalent`
+(the renamed equivalence oracle, now comparing the default against the arm that names the same
+reconstruction) is **true**: the shipped default hashed equal to the explicit gather arm in all 16
+frames, so the numbers below are that arm's, not a differently authored resolve.
+
+**Full resolution.** `temporal` (= `resolve-reconstruction`): edge **.0641339** against the shipped
+bilinear `.0605459` and the no-AA `.0502947`, so `edgeImprovement` is false and the gather is *worse*
+than the sample it replaces. Instability `.0321929` still improves on `.0491286`. Reveal
+[.00027, 0, .00027, 0, .00027, **.01586**, .00027, .00054]: afterReveal 5 holds the same warm ghost the
+bilinear default draws, so `revealRecovery` is false.
+
+**Low input.** `quality-temporal`: edge **.0812266** against `quality-reference` `.0493331`
+(`qualityEdgeImprovement` false) and instability `.0347867` against `quality-spatial` `.0505515`, so
+`qualityBeatsSpatialStability` passes at .687 of the spatial arm. Reveal [.04891, **.01801**, .00349,
+.00269, .00322, **.01854**, .00215, .00376] fails the same .01 bound at afterReveal 1, 2 and 6, as
+`linear` + `luminance` and `linear` + `ordinary` do. Causal red excess is 0 in all eight frames
+against the matched open-history control, and the real GPU counter is published for both arms — 36
+frames, 230 400 display pixels visited, finite fractions, source age 0 — so the ghost is a neutral
+brightening, not a red history leak, exactly as the `luminance` and `ordinary` arms show. Checks:
+11 true, 4 false (`edgeImprovement`, `revealRecovery`, `qualityEdgeImprovement`,
+`qualityRevealRecovery`).
+
+**Decision and boxes.** The installed node's own current-frame reconstruction is **not** the reveal
+ghost's cause and not its fix: it costs full-resolution edge error, leaves the warm ghost at the same
+.01586, and fails the low-input bound in three more places than the bilinear default. Nothing ships,
+so all nine touched files are reverted to `8a20ae9ee`, `temporalAA.ts` keeps the bilinear default, the
+starter tree pin and all 13 template hashes are unchanged, and every capture is retained (this run's
+in `artifacts/temporal-aa/motion`, the previous 31-arm corpus in
+`/tmp/opencode/pr398-motion-preserved-39f1d219`). No browser or native lane was re-run, because no
+runtime change ships and the mode had no native proof. Every Phase 2 ghost box, the motion and quality
+edge boxes and PRD-269's ghosting cost stay **open**; no box is ticked.
+
+**Counts, corrected against the retained capture.** `fenceProfiles`, `rasters`, `counters`,
+`qualityCorpus`, `velocityDiagnostics` and `provenance` all hold one key per captured arm — 31 in the
+retained `f1b22c0be` corpus (22 motion plus 9 quality), 33 in this run — while scored rows are 19 and
+20 respectively, and the `supersampled` / `quality-supersampled` references are captured without a
+scored row. `qualityCorpus` is null only for the motion arms. Earlier "32 arms" and "512 frames"
+figures were a miscount of a 31-arm corpus.
