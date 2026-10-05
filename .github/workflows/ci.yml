@@ -519,6 +519,20 @@ jobs:
           ctest --test-dir build/tn-linux -L native-engine --output-on-failure
           node scripts/inspect-js-free.mjs --binary build/tn-linux/tn-native-engine-gate-e \
             --manifest ../../artifacts/native-engine/gate-e.json --target tn-native-engine-gate-e --capability gate-e
+      # PRD-499, owner decision 4: the portable engine core builds and passes its tests as Wasm
+      # under node, so it stays Wasm-safe from day one. emsdk is pinned by tag and SDK version.
+      - name: Native engine core as Wasm
+        working-directory: packages/runtime-native
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch 6.0.11 https://github.com/emscripten-core/emsdk.git "$RUNNER_TEMP/emsdk"
+          "$RUNNER_TEMP/emsdk/emsdk" install 6.0.11
+          "$RUNNER_TEMP/emsdk/emsdk" activate 6.0.11
+          source "$RUNNER_TEMP/emsdk/emsdk_env.sh"
+          emcmake cmake -S . -B build/wasm-check -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build/wasm-check --target tn-native-engine-core-tests --parallel "$(nproc)"
+          ctest --test-dir build/wasm-check -L native-engine --output-on-failure
       - name: Report the compiler cache hit rate
         if: always()
         shell: bash
