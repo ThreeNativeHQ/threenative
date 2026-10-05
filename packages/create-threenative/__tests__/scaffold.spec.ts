@@ -172,33 +172,22 @@ const BUG_REPORT_SKILL_PATHS = [
 // docs/verification/prd339-exposure-proof/completion-consumer-8bf16f4.json.
 // Current develop c18a42b integration: all13 actual generated trees were byte-compared
 // against reviewed 8bf trees; only the copied Three compute-only Storage3DTexture patch changed.
-// Recomputed 2026-10-04 for PRD-495's junk sweep: ten templates lost zero-reader declarations
-// (several helpers in racing and shooter, one dead file in minimal), so their generated trees
-// moved. platformer, snow and starter were untouched and keep their values. Every restamped value
-// is the measured no-install tree, taken from the failing assertion this constant exists to raise
-// and then re-run green.
+// Re-measured on current develop plus TS7: restoring only each compiler manifest and
+// rain's shader API import recovers all 13 develop fingerprints.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
-  // Recomputed 2026-10-05 on the merge of develop (PRD-345 backlight/dark defaults, #416) into
-  // the PRD-495 junk-cleanup branch: the merged tree carries both sides' template bytes — ten
-  // templates lost zero-reader declarations and all thirteen gained the bounded
-  // lighting/environment sources — so all thirteen generated trees were re-measured through
-  // createProject on that merged tree. Values below are the merged-tree measurement, not either
-  // side's.
-  // rain re-measured after Opus review restored templates/rain/tools/verify-noise-volume.mjs,
-  // the owner's manual storm-volume proof that the sweep had removed as junk.
-  "action-rpg": "4958ce9c3fc2a809262f05294481020a958fac17b70d454f648b59f09351f95a",
-  minimal: "572bf9ffd8b18a8b1e04186c4dfdec17216b77d31bf6d9ddc1a26ceaac3333fe",
-  platformer: "6de157b3c2cfa0034d48f8326b9f1a90fe90ebce3bf265ac91bae379482d017b",
-  puzzle: "1a83b3b4ec8de36970c589cdb50783620af09a8569f7690fb1beb2f4a7a2c2a6",
-  racing: "7f1ca6cd0655349331216dc9b8b08bc04406209bfc075b01af4029fedf9c6caa",
-  rain: "637afd242e4d7bc6ded1b102b1bd80bfbf289ed32878cdb1b20902e303292255",
-  rts: "c9b22f3b32846caf493699c365ffed4bcd139d418b7e4ce99dd9b67c42a325d8",
-  runner: "550b626387489ebf70a6a33aad2c437c52d7bdefef04b3a97c1a81413fa678f4",
-  sailing: "4cae0186fa08e10f6e732d79711ef42347ebd83e2b83448f656b1e6c63a8cdba",
-  shooter: "127fcdc64a2b48f7259c811391e07524c4e27b189f994c8a157268bd27f0d200",
-  snow: "791580f3b7314d4983a2cbf57b87b83be2e4740fa63e204327826120f1a0cf12",
-  starter: "5ab4d1828be78d82e7b83fbb2e07afa998372314ffb46accbaffd3dc4ad8cfdd",
-  "tower-defense": "f441c30e062185be72b7d97f63ff63c6eaf66b72a8689acdfea91e5b9907f8a2",
+  "action-rpg": "1e9e05b2ddd8a7b576f9b5e229a175e93db5cd5d8024b8e61b40d4f90894d631",
+  minimal: "a7f1a7481c6ed7667b1cdcc85990dbbccf2cbec59ce2b65799c232bf08c41918",
+  platformer: "8033728a0b8a14d2d42143d6665e0f3ee5822dfa320ee3f9fbae340e0082f7b9",
+  puzzle: "7dc75d6999576ff64d33a2ce52323334602a76f54fe29126a7a3ddfcececfac6",
+  racing: "8cded24d0f31cb9b76b5ab199ee0a4f1845c4466e96cc6ac49c2b3d8b8c277ac",
+  rain: "21dbd2a9100f3e1dfc9ea0a474fd5f3b429a55ae4e968a3741dccaf57e05bfc8",
+  rts: "d009ce4bf88df41780b6e98f9923c85266824e2f9e7e00075a48f779f2bfc578",
+  runner: "5c2c6c40fbee5d3c55c7cccbc05c6860ad62aadf9c65ae947095a9a2bbdbe79c",
+  sailing: "afe80626d46070fcd2ab3f520c603eaef09a07fb03acd49b1659b06a898a39be",
+  shooter: "c0f9f3110db4c8fa90d29ebaf37c3aa995654ee7ff3264dbd7033ac91b8e6f65",
+  snow: "5873bb82bab520d5f29c127161e1447c0657034b8f40e366617ad44686f4fa06",
+  starter: "4cd799d72f936554c2d61cfe70879f15dde39d3fc77a9183e48d891fc8f62473",
+  "tower-defense": "cf63b89d4f3939a05d65179291368b865e9b1491231a749339a81e1df4c40906",
 };
 
 const GENERATED_SCAFFOLD_METADATA =

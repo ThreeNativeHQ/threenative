@@ -140,12 +140,23 @@ async function linkScaffoldDependencies(target: string): Promise<void> {
     path.resolve("packages/physics/node_modules/@dimforge/rapier3d-compat"),
   );
   await linkDependency(target, "zustand", path.resolve("packages/core/node_modules/zustand"));
-  await linkDependency(target, "typescript", path.resolve("packages/core/node_modules/typescript"));
+  await linkDependency(
+    target,
+    "typescript",
+    path.resolve("packages/core/node_modules/@typescript/native"),
+  );
+  if (packageJson.devDependencies?.["@typescript/typescript6"] !== undefined) {
+    await linkDependency(
+      target,
+      "@typescript/typescript6",
+      path.resolve("packages/core/node_modules/typescript"),
+    );
+  }
   await linkDependency(target, "vite", await findPnpmPackage("vite"));
   await linkDependency(target, "@types/node", await findPnpmPackage("@types/node"));
   await mkdir(path.join(target, "node_modules/.bin"), { recursive: true });
   await symlink(
-    path.resolve("packages/core/node_modules/typescript/bin/tsc"),
+    path.resolve("packages/core/node_modules/@typescript/native/bin/tsc"),
     path.join(target, "node_modules/.bin/tsc"),
   );
 }

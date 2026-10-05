@@ -26,7 +26,9 @@ catalog:
   '@tailwindcss/vite': 4.3.3
   '@vitejs/plugin-react': 6.0.5
   zod: 4.4.3
-  typescript: 5.9.3
+  typescript: npm:@typescript/typescript6@6.0.2
+  '@typescript/native': npm:typescript@7.0.2
+  '@typescript/typescript6': 6.0.2
   vite: 8.2.0
   vitest: 4.1.10
   esbuild: 0.27.0
@@ -38,3 +40,4 @@ catalog:
 
 patchedDependencies:
   three@0.185.1: packages/core/patches/three@0.185.1.patch
+  tsup@8.5.1: patches/tsup@8.5.1.patch
