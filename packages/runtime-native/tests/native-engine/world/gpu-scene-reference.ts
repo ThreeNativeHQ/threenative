@@ -273,7 +273,34 @@ function gateScene(): ISceneSpec {
   return { placements, regions, slots, steps };
 }
 
-const scenes = [specScene(), gateScene()];
+/* ---- scene 2: a level the prewarm minted no key for ---- */
+
+// Level 1 of the asset has no parts: a placement past its gate keeps level 0 (`drawableLevel`), and
+// a shadow base that names it walks down the same way.
+function gapScene(): ISceneSpec {
+  const slots: ISlotSpec[] = [
+    {
+      distances: [0, 20, 60],
+      levels: [
+        { firstKey: 0, parts: 1 },
+        { firstKey: 1, parts: 0 },
+        { firstKey: 1, parts: 1 },
+      ],
+    },
+  ];
+  const regions = [regionAt(0, 0, 8), regionAt(1, 8, 8)];
+  const placements = [10, 30, 45, 80].map((z, index) => placement(index - 2, z, 0, 0.5, 1));
+  const camera = cameraAt(0, 0);
+  const steps: IStepSpec[] = [{ camera: { planes: camera, x: 0, y: 0, z: 0 } }];
+  for (const base of [0, 1, 2])
+    steps.push({
+      camera: { planes: camera, x: 0, y: 0, z: 0 },
+      shadow: { base, centreX: 0, centreZ: 0, gate: 0, planes: camera },
+    });
+  return { placements, regions, slots, steps };
+}
+
+const scenes = [specScene(), gateScene(), gapScene()];
 
 interface IStepResult {
   args: Uint32Array;

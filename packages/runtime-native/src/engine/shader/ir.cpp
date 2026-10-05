@@ -344,8 +344,10 @@ void Program::assign(VarId var, ExprId value, Where where) {
     emit(Stmt{StmtKind::Assign, var, value});
 }
 
-uint32_t Program::storageBuffer(std::string_view name, Type element) {
-    storage_.push_back(Storage{std::string(name), element});
+uint32_t Program::storageBuffer(std::string_view name, Type element, bool atomic, Where where) {
+    if (atomic && element != Type::i32() && element != Type::u32())
+        fail("storageBuffer " + std::string(name), "atomic elements are i32 or u32, not " + element.name(), where);
+    storage_.push_back(Storage{std::string(name), element, atomic});
     return static_cast<uint32_t>(storage_.size() - 1);
 }
 
@@ -356,6 +358,21 @@ ExprId Program::loadStorage(uint32_t buffer, ExprId index, Where where) {
     if (t != Type::i32() && t != Type::u32()) return fail("loadStorage", "index is " + t.name(), where);
     Expr e{Op::LoadStorage, storage_[buffer].element, {index}, 1, buffer};
     return ordered(e);
+}
+
+ExprId Program::atomicAdd(uint32_t buffer, ExprId index, ExprId value, Where where) {
+    if (index == kInvalid || value == kInvalid) return kInvalid;
+    if (buffer >= storage_.size()) return fail("atomicAdd", "no such storage buffer", where);
+    const Storage& storage = storage_[buffer];
+    if (!storage.atomic) return fail("atomicAdd " + storage.name, "the buffer is not atomic", where);
+    if (stage_ == Stage::Vertex)
+        return fail("atomicAdd " + storage.name, "storage writes are not allowed in the vertex stage", where);
+    const Type t = exprs_[index].type;
+    if (t != Type::i32() && t != Type::u32()) return fail("atomicAdd " + storage.name, "index is " + t.name(), where);
+    if (exprs_[value].type != storage.element)
+        return fail("atomicAdd " + storage.name,
+                    "a " + exprs_[value].type.name() + " into " + storage.element.name() + " elements", where);
+    return ordered(Expr{Op::AtomicAdd, storage.element, {index, value}, 2, buffer});
 }
 
 void Program::store(uint32_t buffer, ExprId index, ExprId value, Where where) {
@@ -539,8 +556,10 @@ void Program::dumpBlock(uint32_t block, int depth, std::string& out, std::vector
             case StmtKind::Eval: {
                 const Expr& e = exprs_[s.b];
                 std::string read = e.op == Op::LoadVar ? "load v" + std::to_string(e.immediate)
-                                                       : "load " + storage_[e.immediate].name + "[" +
-                                                             describe(e.args[0], numbering) + "]";
+                                   : e.op == Op::AtomicAdd
+                                       ? "atomicAdd " + storage_[e.immediate].name + "[" +
+                                             describe(e.args[0], numbering) + "], " + describe(e.args[1], numbering)
+                                       : "load " + storage_[e.immediate].name + "[" + describe(e.args[0], numbering) + "]";
                 const int n = next++;
                 numbering[s.b] = n;
                 out += indent + "%" + std::to_string(n) + " = " + read + "\n";

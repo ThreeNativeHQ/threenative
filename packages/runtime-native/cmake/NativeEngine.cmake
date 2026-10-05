@@ -226,6 +226,23 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     endif()
 endif()
 
+# PRD-519 phase 3: the GPU cull and LOD kernel (clear, cull, clamp), built in the shader IR from
+# world-gpu-scene.ts's kernels; the test runs it on a real device against the CPU oracle above.
+add_library(tn_engine_gpu_scene_kernel STATIC src/engine/world/gpu_scene/cull_kernel.cpp)
+tn_native_engine_target(tn_engine_gpu_scene_kernel)
+target_link_libraries(tn_engine_gpu_scene_kernel PUBLIC tn_engine_gpu_scene tn_engine_shader)
+if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "android")
+    tn_native_engine_test(tn-native-engine-gpu-scene-kernel-test tests/native-engine/world/gpu_scene_kernel_test.cpp
+        native_engine_gpu_scene_select=gpu_scene_select)
+    target_link_libraries(tn-native-engine-gpu-scene-kernel-test PRIVATE tn_engine_gpu_scene_kernel tn_engine_renderer tn_host_services)
+    target_include_directories(tn-native-engine-gpu-scene-kernel-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/world)
+    if(TN_ENGINE_SANITIZE)
+        # A real device's driver keeps allocations past exit (see the GPU tests above).
+        set_tests_properties(native_engine_gpu_scene_select PROPERTIES
+            ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0:abort_on_error=1;UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1")
+    endif()
+endif()
+
 if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "android")
     # A progress screenshot of the native path (IR -> WGSL package -> native GPU -> PNG); evidence, not a test.
     add_executable(tn-native-engine-showcase EXCLUDE_FROM_ALL tests/native-engine/showcase.cpp)

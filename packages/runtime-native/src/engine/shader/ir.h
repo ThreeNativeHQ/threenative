@@ -44,7 +44,7 @@ enum class Op : uint8_t {
     Add, Sub, Mul, Div, Neg, Less, Equal, Select,
     Swizzle, Construct, Call,
     // Ordered reads: pinned as statements where created, so they observe prior writes.
-    LoadVar, LoadStorage, Sample,
+    LoadVar, LoadStorage, Sample, AtomicAdd,
 };
 
 struct Expr {
@@ -105,8 +105,11 @@ public:
     ExprId load(VarId var, Where where = Where::current());
     void assign(VarId var, ExprId value, Where where = Where::current());
 
-    uint32_t storageBuffer(std::string_view name, Type element);
+    /** `atomic`: an `array<atomic<i32|u32>>`; loads and stores on it become atomicLoad/atomicStore. */
+    uint32_t storageBuffer(std::string_view name, Type element, bool atomic = false, Where where = Where::current());
     ExprId loadStorage(uint32_t buffer, ExprId index, Where where = Where::current());
+    /** `atomicAdd(&buffer[index], value)` on an atomic buffer: the element's value before the add. */
+    ExprId atomicAdd(uint32_t buffer, ExprId index, ExprId value, Where where = Where::current());
     void store(uint32_t buffer, ExprId index, ExprId value, Where where = Where::current());
     /** A sampled 2D float texture and its sampler, bound together. */
     uint32_t texture2d(std::string_view name);
@@ -156,6 +159,7 @@ private:
     struct Storage {
         std::string name;
         Type element;
+        bool atomic = false;
     };
 
     ExprId fail(std::string_view node, std::string reason, const Where& where);

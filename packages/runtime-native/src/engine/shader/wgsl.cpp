@@ -73,7 +73,8 @@ std::string WgslEmitter::expr(ExprId id) const {
         case Op::Builtin: return "b_" + p_.names_[e.immediate];
         case Op::Varying: return "i_" + p_.names_[e.immediate];
         case Op::LoadVar:
-        case Op::LoadStorage: return "l" + std::to_string(id);
+        case Op::LoadStorage:
+        case Op::AtomicAdd: return "l" + std::to_string(id);
         case Op::Sample: {
             const std::string& name = p_.textures_[e.immediate];
             if (e.argc == 2)  // three's generateTextureCompare
@@ -125,8 +126,13 @@ void WgslEmitter::block(uint32_t index, int depth, std::string& out) const {
                 if (e.op == Op::LoadVar) {
                     out += indent + "let l" + std::to_string(s.b) + " = v" + std::to_string(e.immediate) + ";\n";
                 } else if (e.op == Op::LoadStorage) {
-                    out += indent + "let l" + std::to_string(s.b) + " = s_" + p_.storage_[e.immediate].name + "[" +
-                           expr(e.args[0]) + "];\n";
+                    const auto& storage = p_.storage_[e.immediate];
+                    const std::string at = "s_" + storage.name + "[" + expr(e.args[0]) + "]";
+                    out += indent + "let l" + std::to_string(s.b) + " = " +
+                           (storage.atomic ? "atomicLoad(&" + at + ")" : at) + ";\n";
+                } else if (e.op == Op::AtomicAdd) {
+                    out += indent + "let l" + std::to_string(s.b) + " = atomicAdd(&s_" + p_.storage_[e.immediate].name +
+                           "[" + expr(e.args[0]) + "], " + expr(e.args[1]) + ");\n";
                 }
                 break;
             }
@@ -134,7 +140,10 @@ void WgslEmitter::block(uint32_t index, int depth, std::string& out) const {
                 out += indent + "v" + std::to_string(s.a) + " = " + expr(s.b) + ";\n";
                 break;
             case Kind::Store:
-                out += indent + "s_" + p_.storage_[s.a].name + "[" + expr(s.b) + "] = " + expr(s.c) + ";\n";
+                if (p_.storage_[s.a].atomic)
+                    out += indent + "atomicStore(&s_" + p_.storage_[s.a].name + "[" + expr(s.b) + "], " + expr(s.c) + ");\n";
+                else
+                    out += indent + "s_" + p_.storage_[s.a].name + "[" + expr(s.b) + "] = " + expr(s.c) + ";\n";
                 break;
             case Kind::Discard: out += indent + "discard;\n"; break;
             case Kind::Output: {
@@ -202,8 +211,8 @@ WgslModule WgslEmitter::emit(const Program& program, uint32_t group) {
     for (uint32_t i = 0; i < program.storage_.size(); ++i) {
         const auto& storage = program.storage_[i];
         out += "@group(" + std::to_string(group) + ") @binding(" + std::to_string(binding++) + ") var<storage, " +
-               (written.count(i) ? "read_write" : "read") + "> s_" + storage.name + ": array<" +
-               e.type(storage.element) + ">;\n";
+               (written.count(i) || storage.atomic ? "read_write" : "read") + "> s_" + storage.name + ": array<" +
+               (storage.atomic ? "atomic<" + e.type(storage.element) + ">" : e.type(storage.element)) + ">;\n";
     }
 
     for (std::size_t i = 0; i < program.textures_.size(); ++i) {
