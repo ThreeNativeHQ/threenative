@@ -149,7 +149,6 @@ function importedFoliage(
   map.anisotropy = 8;
   material.normalMap = source.normalMap;
   material.roughness = 0.92;
-  material.specularIntensity = 1;
   material.colorNode = sampled.rgb;
   material.alphaTest = source.alphaTest;
   material.alphaTestNode = float(source.alphaTest);
@@ -300,9 +299,15 @@ function tintedFoliage(
             : ([1, 1, 1] as const);
 
   material.colorNode = sampled.rgb.mul(vec3(...tint));
-  // The Kite pine's photographed needles are already a pine green; a cool shift, not a repaint.
-  if (world === "forest" && canopy && cutout)
-    material.colorNode = sampled.rgb.mul(vec3(0.82, 0.96, 0.88));
+  // The spruce atlas is photographed warm under Unreal's exposure: cool and darken it toward a
+  // spruce green, and sink its orange cone texels to shadowed brown instead of lit specks.
+  if (world === "forest" && canopy && cutout) {
+    material.colorNode = mix(
+      sampled.rgb.mul(vec3(0.55, 0.72, 0.62)),
+      vec3(0.05, 0.03, 0.015),
+      smoothstep(0.02, 0.12, sampled.r.sub(sampled.g)),
+    );
+  }
   // Kite's pine atlas is half live needles and half dead: cells 4 and 5 and the bare lower-branch
   // card are rust brown, so every crown wears rust dots and every trunk wears a tan spiky burst.
   // Colour decides, not geometry — a texel warmer than its own green is dead wood. This is not
@@ -632,22 +637,6 @@ export async function loadPack(
     selected.map(async (one) => {
       if (!assets) return undefined;
       try {
-        // The distant level must be the same Kite pine, or far stands read as a second species.
-        if (world === "forest" && one.asset === "spruce" && one.level) {
-          const far = await assets
-            .model<{ scene?: Group }>("prepared/pine-tall-mid.glb")
-            .catch(() => undefined);
-          if (far) return far;
-        }
-        if (world === "forest" && one.asset === "spruce" && !one.level) {
-          const pine = await assets
-            // One Kite pine for the whole wood. The broad ScotsPine beside it reads as a gnarled
-            // broadleaf, so the variety comes from each variant's own `metres` plus the placement's
-            // scale, rotation and lean — five heights out of one model, not two species.
-            .model<{ scene?: Group }>("temperate/kite-spruce/0.glb")
-            .catch(() => undefined);
-          if (pine) return pine;
-        }
         return await assets.model<{ scene?: Group }>(`temperate/${one.path}.glb`);
       } catch {
         return undefined;

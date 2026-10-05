@@ -166,8 +166,8 @@ describe("licensed pack characterization", () => {
     const assets = {
       resolve: async () => [],
       model: async (path: string) => {
-        if (near && path === "temperate/kite-spruce/0.glb") return { scene: near };
-        if (far && path === "prepared/pine-tall-mid.glb") return { scene: far };
+        if (near && /^temperate\/spruce\/\d\.glb$/.test(path)) return { scene: near };
+        if (far && /^temperate\/spruce\/\d-far\.glb$/.test(path)) return { scene: far };
         throw new Error(`Missing optional fixture ${path}`);
       },
     } as unknown as IAssetLoader;

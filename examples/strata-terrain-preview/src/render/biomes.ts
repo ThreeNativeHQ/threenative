@@ -98,7 +98,7 @@ const temperate: IBiome = {
     horizonFade: [400, 1500],
   },
   skyRadiance: 0.27,
-  saturation: 0.8,
+  saturation: 1,
   skySaturation: 1,
   exposure: 2 ** -0.26,
   clouds: 0.76,

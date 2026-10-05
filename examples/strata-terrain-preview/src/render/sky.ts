@@ -1,6 +1,14 @@
 // Game-owned sun, shadows and daylight; atmosphere.ts owns the LUT sky and surface air.
 import { Atmosphere, Daylight, type ICtx, VirtualShadowNode } from "@threenative/core";
-import { Color, DirectionalLight, Mesh, type Object3D, SphereGeometry, Vector3 } from "three";
+import {
+  ACESFilmicToneMapping,
+  Color,
+  DirectionalLight,
+  Mesh,
+  type Object3D,
+  SphereGeometry,
+  Vector3,
+} from "three";
 import { denoise } from "three/addons/tsl/display/DenoiseNode.js";
 import { ao } from "three/addons/tsl/display/GTAONode.js";
 import {
@@ -153,6 +161,8 @@ export function createOutdoorSky(camera: Object3D, biome?: IBiome): IOutdoorSky 
     sunColor,
     sunDirection: direction,
     sunIntensity: 0,
+    // AgX greys the Fab foliage to chalk; ACES keeps the greens these packs are photographed in.
+    toneMapping: ACESFilmicToneMapping,
   });
   const atmosphere = createAtmosphere(biome ?? BIOMES.forest);
   atmosphere.setSunDirection(direction);
