@@ -63,6 +63,8 @@ export async function addForest(
     // The GPU-culled path drops the near firs from the main pass while their shadows still draw
     // (measured in a fresh game, 2026-10-05); the CPU path draws them. Engine finding, PRD-466.
     gpuScene: false,
+    // Trees and rocks shade the ground and each other; impostors keep the authored model as the caster.
+    shadows: { cast: true, receive: true },
     budgets: { residentCells: 64, instances: 40_000, bytes: 64_000_000 },
     terrain: { streamRadius: 6 },
   });

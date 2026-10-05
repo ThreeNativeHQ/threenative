@@ -1,21 +1,46 @@
 {
-  "base": { "id": "grass", "tile": 2.6, "tint": [1, 1, 1], "normal": true },
-  "breakup": { "scale": 0.08, "push": 0.12 },
-  "macro": { "scale": 0.004, "min": 0.85, "max": 1.1 },
+  "base": {
+    "id": "grass",
+    "tile": 4.2,
+    "tint": [
+      0.72,
+      0.95,
+      0.55
+    ],
+    "normal": true,
+    "saturation": 1.25
+  },
+  "breakup": {
+    "scale": 0.05,
+    "push": 0.18
+  },
+  "macro": {
+    "scale": 0.006,
+    "min": 0.7,
+    "max": 1.15
+  },
   "layers": [
     {
       "id": "dirt",
       "tile": 3.4,
-      "tint": [1, 1, 1],
+      "tint": [
+        0.8,
+        0.72,
+        0.62
+      ],
       "normal": true,
       "mask": "dirt",
-      "lo": 0.25,
-      "hi": 0.75
+      "lo": 0.45,
+      "hi": 0.85
     },
     {
       "id": "rock",
       "tile": 3.8,
-      "tint": [1, 1, 1],
+      "tint": [
+        1,
+        1,
+        1
+      ],
       "normal": true,
       "triplanar": true,
       "mask": "rock",
@@ -25,7 +50,11 @@
     {
       "id": "moss",
       "tile": 3.6,
-      "tint": [1, 1, 1],
+      "tint": [
+        1,
+        1,
+        1
+      ],
       "normal": true,
       "mask": "moss",
       "lo": 0.25,
