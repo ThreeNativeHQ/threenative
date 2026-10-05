@@ -262,6 +262,33 @@ no-AA while beating the spatial arm by 29% on instability), which repeats the st
 attenuation already measured at full resolution. The next task repairs the generated resolve blend;
 Phase 3 cost work stays untouched.
 
+**Ghost root cause measured, and the obvious hypothesis falsified, 2026-10-06.** The default
+resolve's history decision is `historyValid ∧ validUV ∧ (edge ∨ ¬disocclusion)`, where
+`disocclusion` is upstream's one-sided `closestDepth − previousDepth > threshold`. An occluder
+moving *away* leaves the current surface farther than the previous one, so a one-sided test calls
+that valid history and keeps the hidden colour — the suspected cause of the reveal residue. Making
+that test two-sided (`|closestDepth − previousDepth|`, which installed three 0.185.1
+`TAAUNode.js` itself applies and names as the remedy for its own one-sided test) was compiled
+through the real WGSL builder, red-green in `temporal-resolve.spec.ts`, and then measured over the
+whole 32-arm corpus. It moved nothing: the default arm's eight reveal fractions are bit-identical
+(.2833, .1795, .086, .0817, .0605, .0392, .0164, .0145) and its edge 0.06054, instability 0.03136 and
+excursion 0.000118 are unchanged, because every revealed pixel satisfies the depth-edge bypass that
+outranks the disocclusion term. On the two arms that disable that bypass the change is a measured
+regression: `strict-rejection` instability 0.03139 → 0.07597, excursion 0.000115 → 0.013923, and its
+stale fractions [.0177, 0, 0, 0, 0, .0159, .0003, 0] → [.0177, .0024, .0339, 0, 0, .0019, .0172,
+.0167]; `resolve-cubic-strict` the same. More rejection is not monotonically better, because the
+metric projects each residual onto the pre-reveal colour direction and unlocked jitter crosses it
+too. Every negative control, the zero-velocity controls, the GPU counter (rejection 0.00064–0.00172
+of 230400 visited display pixels, `staleFrames` 0) and the 15-check vector were unchanged. The
+change was therefore reverted; no artefact from it ships.
+
+What the corpus does say: the edge bypass is load-bearing for the ghost, because the bypass-off
+arm already holds edge 0.06055, instability 0.03139 and excursion 0.000115 — indistinguishable from
+the default — while cutting the residue from .2833 to .0177. A repair has to disocclude the revealed
+pixels without unlocking the surfaces the bypass protects, so it needs a per-pixel reason (real
+geometry change against depth-edge membership) rather than the edge range alone or a wider
+threshold. Both Phase 2 ghost boxes stay open.
+
 - [ ] A fixed camera route containing thin fences, foliage, sub-pixel edges, a moving character and an instanced moving object stays within pinned temporal-stability/ghosting thresholds against a full-resolution reference. **proof:** automated frame-sequence report records edge flicker, rejected-history ratio and image delta for full-res, low-res spatial upscale and temporal reconstruction; the temporal arm must beat the spatial arm on the named stability metric.
 - [ ] Newly revealed surfaces do not inherit stale colour after occlusion/disocclusion events. **proof:** foreground-occluder fixture reveals a contrasting background and asserts stale-history pixels decay within the declared frame bound; disabling disocclusion rejection makes it fail.
 
