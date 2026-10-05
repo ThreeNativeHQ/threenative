@@ -17,6 +17,16 @@ if(NOT MYSTRAL_PACKAGE_VERSION MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+")
 endif()
 
 project(MystralNativeRuntime VERSION ${MYSTRAL_PACKAGE_VERSION} LANGUAGES C CXX)
+
+# The browser port builds only the portable engine core (PRD-499, owner decision 4): no host
+# services, no GPU backend, no JS engine. Its CPU tests run under node through ctest.
+if(EMSCRIPTEN)
+    enable_testing()
+    # This package is "type": "module"; Emscripten emits CommonJS, and the nearest package.json wins.
+    file(WRITE "${CMAKE_BINARY_DIR}/package.json" "{\"type\": \"commonjs\"}\n")
+    include(cmake/NativeEngineCore.cmake)
+    return()
+endif()
 enable_testing()
 
 function(tn_register_contract_test target)
