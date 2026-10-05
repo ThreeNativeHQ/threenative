@@ -5,10 +5,12 @@ import { describe, expect, it } from "vitest";
 
 import {
   FIXTURES_DIR,
+  GOLDENS_DIR,
   type IFixture,
   type IFixtureTolerance,
   bitsNumber,
   fixtureErrors,
+  goldenErrors,
   loadFixtures,
   numberBits,
   parseFixture,
@@ -68,6 +70,27 @@ function withObservation(observation: unknown): unknown {
 function withNoToleranceAndNoObservations(): unknown {
   const value = withTolerance({});
   Reflect.deleteProperty(value as object, "observe");
+  return value;
+}
+
+/** A fixture that renders one frame and observes it: the shape every render golden needs. */
+function rendered(): Writable<IFixture> {
+  const value = copy();
+  value.ops.unshift({ op: "new", id: "s", class: "Scene", args: [] });
+  value.render = {
+    scene: "s",
+    camera: "m",
+    width: 320,
+    height: 240,
+    toneMapping: "aces",
+    toneMappingExposure: 1,
+    outputColorSpace: "srgb",
+  };
+  value.observe.push({
+    id: "s",
+    kind: "pixels",
+    metric: { maxPixelMismatchRatio: 0.002, maxPerceptualDeltaE: 1 },
+  });
   return value;
 }
 
@@ -135,6 +158,71 @@ describe("fixture format", () => {
     const broken = withNoToleranceAndNoObservations();
     expect(fixtureErrors(broken, "sample").length).toBeGreaterThanOrEqual(2);
     expect(() => parseFixture(broken, "sample")).toThrow(/TN_FIXTURE_INVALID/u);
+  });
+
+  it("accepts a render block whose frame something observes", () => {
+    expect(messages(rendered())).toEqual([]);
+  });
+
+  it("rejects a render block with no size, and one naming a tone mapping three does not have", () => {
+    const sizeless = rendered();
+    Reflect.deleteProperty(sizeless.render as object as object, "height");
+    expect(messages(sizeless)).toContainEqual(expect.stringContaining("$.render.height"));
+    const unknown = rendered();
+    (unknown.render as { toneMapping: string }).toneMapping = "filmic";
+    expect(messages(unknown)).toContainEqual(expect.stringContaining("$.render.toneMapping"));
+  });
+
+  it("rejects a pixels observation with no render block, a missing metric, or a foreign scene", () => {
+    const orphan = withObservation({
+      id: "m",
+      kind: "pixels",
+      metric: { maxPixelMismatchRatio: 0.002, maxPerceptualDeltaE: 1 },
+    });
+    expect(messages(orphan)).toContainEqual(
+      expect.stringContaining("a pixels observation needs a $.render block"),
+    );
+    const metricless = rendered();
+    metricless.observe[0] = { id: "s", kind: "pixels" };
+    expect(messages(metricless)).toEqual(
+      expect.arrayContaining([expect.stringContaining("$.observe[0].metric")]),
+    );
+    const foreign = rendered();
+    foreign.observe[0] = {
+      id: "m",
+      kind: "pixels",
+      metric: { maxPixelMismatchRatio: 0.002, maxPerceptualDeltaE: 1 },
+    };
+    expect(messages(foreign)).toContainEqual(expect.stringContaining("$.observe[0].id"));
+  });
+
+  it("rejects a render block that renders a frame nothing observes", () => {
+    const silent = rendered();
+    silent.observe = [];
+    expect(messages(silent)).toEqual(
+      expect.arrayContaining([expect.stringContaining("$.render: a render block needs a pixels")]),
+    );
+  });
+
+  it("rejects a golden whose pixels observation names no capture, and one whose capture is unhashed", () => {
+    const unhashed = JSON.parse(
+      readFileSync(path.join(GOLDENS_DIR, pinnedThreeVersion(), "lit-render.json"), "utf8"),
+    );
+    Reflect.deleteProperty(unhashed.render, "pngSha256");
+    expect(goldenErrors(unhashed, "lit-render")).toContainEqual(
+      expect.stringContaining("$.render.pngSha256"),
+    );
+    Reflect.deleteProperty(unhashed, "render");
+    expect(goldenErrors(unhashed, "lit-render")).toContainEqual(
+      expect.stringContaining("$.render: required"),
+    );
+    unhashed.render = { png: "lit-render.png", pngSha256: "nope", width: 320, height: 240 };
+    expect(goldenErrors(unhashed, "lit-render")).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("$.render.pngSha256"),
+        expect.stringContaining("$.render.adapter"),
+      ]),
+    );
   });
 
   it("reads every number's bits without losing -0", () => {

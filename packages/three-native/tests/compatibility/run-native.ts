@@ -8,7 +8,8 @@
  * The driver speaks the line protocol in `src/fixture-protocol.ts`: the fixture goes in on stdin,
  * one reply per observation comes back on stdout, then the driver exits 0. There is no driver on
  * this machine yet, so every row is reported `blocked`, which is the honest answer and is never
- * `pass`.
+ * `pass`. A render fixture is blocked even with a driver: the native renderer cannot draw a frame
+ * yet, so its reason names the work that will (`NATIVE_RENDER_BLOCKED`).
  *
  * The report is the conformance report, not a second format: the same fields, the same validator
  * and the same exit-code rule, under `target: "native-engine"`.

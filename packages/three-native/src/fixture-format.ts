@@ -24,8 +24,71 @@ export const FIXTURES_DIR = path.join(PACKAGE_ROOT, "tests", "compatibility", "f
 export const GOLDENS_DIR = path.join(PACKAGE_ROOT, "tests", "compatibility", "goldens");
 
 /** Kinds a golden can carry. Anything else is a typo, and a typo must not read as a match. */
-export const OBSERVATION_KINDS = ["number", "numbers", "boolean", "string", "json"] as const;
+export const OBSERVATION_KINDS = [
+  "number",
+  "numbers",
+  "boolean",
+  "string",
+  "json",
+  "pixels",
+] as const;
 export type ObservationKind = (typeof OBSERVATION_KINDS)[number];
+
+/**
+ * The tone mappings a render fixture may name, and the three constant each one is.
+ *
+ * The constant names are shipped to the browser instead of being written twice, so a new mapping
+ * cannot be spelled in one half of the runner and missing from the other.
+ */
+export const TONE_MAPPING_CONSTANTS = {
+  none: "NoToneMapping",
+  linear: "LinearToneMapping",
+  reinhard: "ReinhardToneMapping",
+  cineon: "CineonToneMapping",
+  aces: "ACESFilmicToneMapping",
+  agx: "AgXToneMapping",
+  neutral: "NeutralToneMapping",
+} as const;
+export type ToneMappingName = keyof typeof TONE_MAPPING_CONSTANTS;
+export const TONE_MAPPINGS = Object.keys(TONE_MAPPING_CONSTANTS) as readonly ToneMappingName[];
+
+/** What the renderer writes into the canvas. `linear` leaves the working space untouched. */
+export const OUTPUT_COLOR_SPACES = ["srgb", "linear"] as const;
+export type OutputColorSpace = (typeof OUTPUT_COLOR_SPACES)[number];
+
+/** How close two renders must be for the differential runner to call them the same frame. */
+export interface IPixelsMetric {
+  readonly maxPixelMismatchRatio: number;
+  readonly maxPerceptualDeltaE: number;
+}
+
+/** The one frame a render fixture renders, and the settings that frame is captured under. */
+export interface IFixtureRender {
+  readonly scene: string;
+  readonly camera: string;
+  readonly width: number;
+  readonly height: number;
+  readonly toneMapping: ToneMappingName;
+  readonly toneMappingExposure: number;
+  readonly outputColorSpace: OutputColorSpace;
+}
+
+/** What `navigator.gpu` reported about the adapter that drew the golden frame. */
+export interface IAdapterInfo {
+  readonly architecture: string;
+  readonly description: string;
+  readonly device: string;
+  readonly vendor: string;
+}
+
+/** The capture itself: the PNG next to the JSON golden, its hash, and the adapter that drew it. */
+export interface IRenderGolden {
+  readonly png: string;
+  readonly pngSha256: string;
+  readonly width: number;
+  readonly height: number;
+  readonly adapter: IAdapterInfo;
+}
 
 /** JSON has no NaN, Infinity or -0, so those numbers travel under a name. */
 export type FixtureNumberName = "NaN" | "Infinity" | "-Infinity" | "-0";
@@ -84,6 +147,8 @@ export interface IObservation {
   readonly kind: ObservationKind;
   readonly path?: string;
   readonly method?: string;
+  /** Required by `pixels`, forbidden on every other kind: the bounds the differential applies. */
+  readonly metric?: IPixelsMetric;
 }
 
 export interface IFixture {
@@ -92,8 +157,8 @@ export interface IFixture {
   readonly tolerance: IFixtureTolerance;
   readonly ops: readonly FixtureOp[];
   readonly observe: readonly IObservation[];
-  /** A fixture that needs a real renderer. `run-reference` reports it blocked, never passed. */
-  readonly render?: boolean;
+  /** Present when this fixture renders a frame. Its scene and camera must name bound ids. */
+  readonly render?: IFixtureRender;
 }
 
 /** One recorded observation. `value` is exactly what a driver prints on the wire. */
@@ -115,6 +180,8 @@ export interface IFixtureGolden {
   /** Non-null when the reference could not execute this fixture; `observations` is then empty. */
   readonly blocked: string | null;
   readonly observations: readonly IGoldenObservation[];
+  /** Present exactly when an observation is `pixels`: where the frame is and who drew it. */
+  readonly render?: IRenderGolden;
 }
 
 /** Protocol tokens share one alphabet: no spaces, no separators, no escaping. */
@@ -123,6 +190,7 @@ const TOKEN = /^[A-Za-z_$][\w$]*$/u;
 const NAME = /^[A-Za-z_$][\w$-]*$/u;
 const PATH_SEGMENT = /^(?:[A-Za-z_$][\w$]*|\d+)$/u;
 const HEX_BITS = /^[0-9a-f]{16}$/u;
+const SHA256 = /^[0-9a-f]{64}$/u;
 
 function record(value: unknown): Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -192,8 +260,41 @@ export function fixtureErrors(value: unknown, expectedName?: string): readonly s
     errors.push(`$.name: ${JSON.stringify(name)} does not match its file name ${expectedName}`);
   if (typeof root.adaptedFrom !== "string" || root.adaptedFrom.trim() === "")
     errors.push("$.adaptedFrom: required, and must name the upstream test or `original`");
-  if (root.render !== undefined && typeof root.render !== "boolean")
-    errors.push("$.render: must be a boolean when present");
+
+  // A render block names a frame and the settings it is captured under. Anything less than the
+  // whole block is a capture nobody can reproduce, so each field is required rather than assumed.
+  let render: Record<string, unknown> | null = null;
+  if (root.render !== undefined) {
+    render = record(root.render);
+    if (root.render === null || typeof root.render !== "object" || Array.isArray(root.render))
+      errors.push("$.render: must be an object naming the scene, camera, size and tone mapping");
+    else {
+      if (typeof render.scene !== "string" || !TOKEN.test(render.scene))
+        errors.push("$.render.scene: required, and must match /^[A-Za-z_$][\\w$]*$/");
+      if (typeof render.camera !== "string" || !TOKEN.test(render.camera))
+        errors.push("$.render.camera: required, and must match /^[A-Za-z_$][\\w$]*$/");
+      for (const key of ["width", "height"] as const) {
+        if (!Number.isInteger(render[key]) || (render[key] as number) < 1)
+          errors.push(`$.render.${key}: required, and must be a positive integer`);
+      }
+      if (!TONE_MAPPINGS.includes(render.toneMapping as ToneMappingName))
+        errors.push(`$.render.toneMapping: must be one of ${TONE_MAPPINGS.join(", ")}`);
+      if (
+        render.toneMappingExposure !== undefined &&
+        !(
+          typeof render.toneMappingExposure === "number" &&
+          Number.isFinite(render.toneMappingExposure) &&
+          render.toneMappingExposure > 0
+        )
+      )
+        errors.push("$.render.toneMappingExposure: must be a positive finite number when present");
+      if (
+        render.outputColorSpace !== undefined &&
+        !OUTPUT_COLOR_SPACES.includes(render.outputColorSpace as OutputColorSpace)
+      )
+        errors.push(`$.render.outputColorSpace: must be one of ${OUTPUT_COLOR_SPACES.join(", ")}`);
+    }
+  }
 
   const tolerance = record(root.tolerance);
   if (root.tolerance === undefined) errors.push("$.tolerance: required");
@@ -277,6 +378,7 @@ export function fixtureErrors(value: unknown, expectedName?: string): readonly s
     }
   }
 
+  let pixels = 0;
   for (const [index, observation] of (Array.isArray(root.observe) ? root.observe : []).entries()) {
     const at = `$.observe[${index}]`;
     const node = record(observation);
@@ -296,7 +398,32 @@ export function fixtureErrors(value: unknown, expectedName?: string): readonly s
       (typeof node.method !== "string" || !TOKEN.test(node.method))
     )
       errors.push(`${at}.method: required, and must match /^[A-Za-z_$][\\w$]*$/`);
+
+    // `pixels` reads the whole captured frame, not a property of one object: it names the render's
+    // own scene, carries no path, and states the bounds the differential applies to the frame.
+    if (node.kind === "pixels") {
+      pixels += 1;
+      if (render === null) errors.push(`${at}: a pixels observation needs a $.render block`);
+      else if (node.id !== render.scene)
+        errors.push(
+          `${at}.id: a pixels observation names the rendered scene ${JSON.stringify(render.scene)}`,
+        );
+      if (hasPath || hasMethod)
+        errors.push(`${at}: pixels is the whole frame, so path and method do not apply`);
+      const metric = record(node.metric);
+      if (node.metric === undefined) errors.push(`${at}.metric: required for pixels`);
+      for (const key of ["maxPixelMismatchRatio", "maxPerceptualDeltaE"] as const) {
+        if (!nonNegative(metric[key]) || (metric[key] as number) > 1)
+          errors.push(`${at}.metric.${key}: must be a ratio between 0 and 1`);
+      }
+      continue;
+    }
+    if (node.metric !== undefined)
+      errors.push(`${at}.metric: only a pixels observation carries a metric`);
   }
+  // A captured frame nothing observes is a frame nobody compared.
+  if (render !== null && pixels === 0)
+    errors.push("$.render: a render block needs a pixels observation naming its scene");
   return errors;
 }
 
@@ -320,6 +447,7 @@ export function goldenErrors(value: unknown, expectedName?: string): readonly st
   if (root.blocked !== null && typeof root.blocked !== "string")
     errors.push("$.blocked: must be null or a reason");
   const observations = root.observations;
+  let pixels = false;
   if (!Array.isArray(observations)) errors.push("$.observations: must be an array");
   else {
     if (root.blocked === null && observations.length === 0)
@@ -336,8 +464,27 @@ export function goldenErrors(value: unknown, expectedName?: string): readonly st
         errors.push(`$.observations[${index}].id: required`);
       if (typeof node.value !== "string" || node.value === "")
         errors.push(`$.observations[${index}].value: required`);
+      if (node.kind === "pixels") pixels = true;
     });
   }
+  // A pixels observation is a claim about a file on disk: without the file's hash and the adapter
+  // that drew it, the claim is a number nobody can check.
+  const render = record(root.render);
+  if (pixels) {
+    if (root.render === undefined) errors.push("$.render: required when an observation is pixels");
+    else {
+      if (typeof render.png !== "string" || render.png === "")
+        errors.push("$.render.png: required, and must name the capture file");
+      if (typeof render.pngSha256 !== "string" || !SHA256.test(render.pngSha256))
+        errors.push("$.render.pngSha256: required, and must be 64 lowercase hex digits");
+      for (const key of ["width", "height"] as const)
+        if (!Number.isInteger(render[key]) || (render[key] as number) < 1)
+          errors.push(`$.render.${key}: required, and must be a positive integer`);
+      if (record(render.adapter).vendor === undefined)
+        errors.push("$.render.adapter: required, and must record what navigator.gpu reported");
+    }
+  } else if (root.render !== undefined)
+    errors.push("$.render: only a golden with a pixels observation carries a render block");
   return errors;
 }
 
@@ -379,6 +526,18 @@ export function writeGolden(golden: IFixtureGolden, version: string): string {
   const file = goldenPath(golden.name, version);
   mkdirSync(path.dirname(file), { recursive: true });
   writeFileSync(file, `${JSON.stringify(golden, null, 2)}\n`);
+  return file;
+}
+
+/** The captured frame, beside the JSON golden that names its hash. Never inside `artifacts/`. */
+export function renderPngPath(name: string, version: string): string {
+  return path.join(GOLDENS_DIR, version, `${name}.png`);
+}
+
+export function writeRenderPng(name: string, version: string, png: Uint8Array): string {
+  const file = renderPngPath(name, version);
+  mkdirSync(path.dirname(file), { recursive: true });
+  writeFileSync(file, png);
   return file;
 }
 

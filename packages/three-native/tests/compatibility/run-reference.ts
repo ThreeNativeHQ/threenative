@@ -10,10 +10,14 @@
  * the committed goldens are what this reference produces today; `--repeat N` proves two runs of
  * the same corpus agree, which is what makes a golden usable as an oracle at all.
  *
- * A render fixture is reported `blocked` here. Executing it needs the playtest harness and a GPU
- * adapter; N01 phase 1 does not build one, so the row exists and says so.
+ * A render fixture adds one frame. Its numbers still come from Node, and its `pixels` observation
+ * comes from `render-reference.ts`: one headed WebGPU Chromium draws it and writes the PNG beside
+ * the JSON golden. That run needs a display and a real adapter, so on Linux it goes under
+ * `sh scripts/xvfb.sh`. A software adapter is refused rather than recorded; `--allow-software`
+ * overrides that, and the adapter is named in the golden either way.
  */
 
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
@@ -29,12 +33,12 @@ import {
   goldenPath,
   loadFixtures,
   pinnedThreeVersion,
+  renderPngPath,
   writeGolden,
+  writeRenderPng,
 } from "../../src/fixture-format.js";
 import { encodeObservation, namedNumber } from "../../src/fixture-protocol.js";
-
-const RENDER_BLOCKED =
-  "render fixtures need the playtest harness (N01 phase 1 follow-up): this reference run has no GPU adapter, so no pixel or lit-frame observation was recorded";
+import { type IRenderCapture, captureRenderFixtures } from "./render-reference.js";
 
 /** The pinned `three`, from whichever package in the workspace links the same store copy. */
 async function loadReference(): Promise<{
@@ -104,16 +108,17 @@ function writePath(root: unknown, dotted: string, value: unknown): void {
   current[last] = value;
 }
 
-/** Every fixture name, in the order a driver receives the observe commands. */
-export async function referenceGolden(fixture: IFixture): Promise<IFixtureGolden> {
-  if (fixture.render === true)
-    return {
-      name: fixture.name,
-      threeVersion: pinnedThreeVersion(REPO_ROOT),
-      adaptedFrom: fixture.adaptedFrom,
-      blocked: RENDER_BLOCKED,
-      observations: [],
-    };
+/**
+ * The fixture's golden. `captures` holds the frames a browser drew for its render fixtures.
+ *
+ * A `pixels` observation is the one observation no Node object can answer: its value is the hash
+ * of the captured frame, so a fixture that asks for one and got no capture is an error, not a
+ * golden with a hole in it.
+ */
+export async function referenceGolden(
+  fixture: IFixture,
+  captures: ReadonlyMap<string, IRenderCapture> = new Map(),
+): Promise<IFixtureGolden> {
   const { three, version } = await loadReference();
   const bound = new Map<string, unknown>();
   for (const op of fixture.ops) {
@@ -149,6 +154,21 @@ export async function referenceGolden(fixture: IFixture): Promise<IFixtureGolden
   }
 
   const observations: IGoldenObservation[] = fixture.observe.map((observation, index) => {
+    if (observation.kind === "pixels") {
+      const capture = captures.get(fixture.name);
+      if (capture === undefined)
+        throw new Error(
+          `TN_FIXTURE_RENDER_NOT_CAPTURED: ${fixture.name} asks for pixels and no browser frame arrived`,
+        );
+      const encoded = encodeObservation("pixels", capture.pngSha256);
+      return {
+        index,
+        id: observation.id,
+        kind: observation.kind,
+        value: encoded.value,
+        decimal: encoded.decimal,
+      };
+    }
     const target = bound.get(observation.id);
     if (target === undefined) throw new Error(`TN_FIXTURE_UNBOUND: ${observation.id} has no value`);
     const holder = target as Record<string, unknown>;
@@ -180,12 +200,43 @@ export async function referenceGolden(fixture: IFixture): Promise<IFixtureGolden
       decimal: encoded.decimal,
     };
   });
+  const render = fixture.render;
+  const capture = render === undefined ? undefined : captures.get(fixture.name);
+  if (render !== undefined && capture === undefined)
+    throw new Error(`TN_FIXTURE_RENDER_NOT_CAPTURED: ${fixture.name} renders but no frame arrived`);
   return {
     name: fixture.name,
     threeVersion: version,
     adaptedFrom: fixture.adaptedFrom,
     blocked: null,
     observations,
+    ...(capture === undefined
+      ? {}
+      : {
+          render: {
+            png: `${fixture.name}.png`,
+            pngSha256: capture.pngSha256,
+            width: capture.width,
+            height: capture.height,
+            adapter: capture.adapter,
+          },
+        }),
+  };
+}
+
+/** One pass over the corpus: every fixture's golden, with the browser frames this pass drew. */
+async function pass(
+  fixtures: readonly IFixture[],
+  options: { readonly allowSoftware: boolean },
+): Promise<{
+  readonly goldens: readonly IFixtureGolden[];
+  readonly captures: ReadonlyMap<string, IRenderCapture>;
+}> {
+  const renders = fixtures.filter((fixture) => fixture.render !== undefined);
+  const captures = await captureRenderFixtures(renders, { allowSoftware: options.allowSoftware });
+  return {
+    goldens: await Promise.all(fixtures.map((fixture) => referenceGolden(fixture, captures))),
+    captures,
   };
 }
 
@@ -195,22 +246,22 @@ async function main(argv: readonly string[]): Promise<number> {
   if (!Number.isInteger(repeat) || repeat < 1)
     throw new Error("TN_FIXTURE_ARG_INVALID: --repeat needs a positive integer");
   const check = argv.includes("--check");
+  const allowSoftware = argv.includes("--allow-software");
   const fixtures = loadFixtures(FIXTURES_DIR);
   const version = pinnedThreeVersion(REPO_ROOT);
 
-  let goldens = await Promise.all(fixtures.map((fixture) => referenceGolden(fixture)));
-  if (repeat > 1) {
-    for (let round = 2; round <= repeat; round += 1) {
-      const again = await Promise.all(fixtures.map((fixture) => referenceGolden(fixture)));
-      again.forEach((golden, index) => {
-        if (JSON.stringify(golden) !== JSON.stringify(goldens[index]))
-          throw new Error(
-            `TN_FIXTURE_NOT_REPRODUCIBLE: ${golden.name} differs between run 1 and run ${round}`,
-          );
-      });
-      goldens = again;
-    }
+  let run = await pass(fixtures, { allowSoftware });
+  for (let round = 2; round <= repeat; round += 1) {
+    const again = await pass(fixtures, { allowSoftware });
+    again.goldens.forEach((golden, index) => {
+      if (JSON.stringify(golden) !== JSON.stringify(run.goldens[index]))
+        throw new Error(
+          `TN_FIXTURE_NOT_REPRODUCIBLE: ${golden.name} differs between run 1 and run ${round}`,
+        );
+    });
+    run = again;
   }
+  const goldens = run.goldens;
 
   const problems: string[] = [];
   for (const golden of goldens) {
@@ -223,12 +274,40 @@ async function main(argv: readonly string[]): Promise<number> {
         problems.push(
           `${file}: ${actual === null ? "missing" : "differs from the regenerated golden"}`,
         );
+      // The PNG is the observation; a JSON golden whose frame is missing or stale asserts nothing.
+      const png = renderPngPath(golden.name, version);
+      if (golden.render === undefined) {
+        if (existsSync(png)) problems.push(`${png}: a frame with no pixels observation is stale`);
+        continue;
+      }
+      const captured = existsSync(png)
+        ? createHash("sha256").update(readFileSync(png)).digest("hex")
+        : null;
+      if (captured !== golden.render.pngSha256)
+        problems.push(
+          `${png}: ${captured === null ? "missing" : `hashes ${captured}, the golden records ${golden.render.pngSha256}`}`,
+        );
       continue;
     }
     process.stdout.write(`${writeGolden(golden, version)}\n`);
+    const capture = run.captures.get(golden.name);
+    if (capture !== undefined)
+      process.stdout.write(`${writeRenderPng(golden.name, version, capture.png)}\n`);
   }
 
   const blocked = goldens.filter((golden) => golden.blocked !== null);
+  const renders = goldens.flatMap((golden) =>
+    golden.render === undefined
+      ? []
+      : [
+          {
+            name: golden.name,
+            png: golden.render.png,
+            pngSha256: golden.render.pngSha256,
+            adapter: golden.render.adapter,
+          },
+        ],
+  );
   process.stdout.write(
     `${JSON.stringify(
       {
@@ -236,6 +315,7 @@ async function main(argv: readonly string[]): Promise<number> {
         fixtures: goldens.length,
         observations: goldens.reduce((total, golden) => total + golden.observations.length, 0),
         blocked: blocked.map((golden) => ({ name: golden.name, reason: golden.blocked })),
+        renders,
         repeats: repeat,
         ...(check ? { checked: true } : { wrote: goldens.length }),
         ...(problems.length === 0 ? {} : { problems }),

@@ -32,6 +32,9 @@ import { type DriverReply, decodeNumbers, encodeFixture, parseReply } from "./fi
 
 export type FixtureStatus = "pass" | "fail" | "blocked";
 
+/** A render fixture's reason for being blocked on this side. Named, dated, and never a pass. */
+export const NATIVE_RENDER_BLOCKED = "native renderer pending (PRD-514)";
+
 export interface IFirstDifference {
   readonly index: number;
   readonly id: string;
@@ -226,6 +229,17 @@ function runOne(fixture: IFixture, options: IRunFixturesOptions): IFixtureResult
     tolerance: fixture.tolerance,
     observations: fixture.observe.length,
   };
+  // A frame the reference drew in a browser is not a frame the native renderer can draw yet, so the
+  // row is blocked before any golden or driver is consulted: a render fixture is never a failure,
+  // and never a pass, until the driver can answer a `render` request.
+  if (fixture.render !== undefined)
+    return {
+      ...base,
+      status: "blocked",
+      reason: NATIVE_RENDER_BLOCKED,
+      matched: 0,
+      firstDifference: null,
+    };
   const golden = options.goldens.get(fixture.name);
   if (golden === undefined)
     return {

@@ -119,6 +119,13 @@ export function encodeObservation(kind: ObservationKind, value: unknown): IEncod
       throw new Error(`TN_OBSERVATION_INVALID: string observed ${typeof value}`);
     return { value: `s:${encodeURIComponent(value)}`, decimal: value };
   }
+  if (kind === "pixels") {
+    // The frame's own hash is the observation: two runs that drew the same pixels agree byte for
+    // byte, and the driver that answers differently names a frame nobody compared.
+    if (typeof value !== "string")
+      throw new Error(`TN_OBSERVATION_INVALID: pixels observed ${typeof value}`);
+    return { value: `s:${encodeURIComponent(value)}`, decimal: value };
+  }
   const text = canonicalJson(value);
   return { value: `s:${encodeURIComponent(text)}`, decimal: text };
 }
@@ -213,4 +220,5 @@ const OBSERVATIONS: ReadonlySet<string> = new Set([
   "boolean",
   "string",
   "json",
+  "pixels",
 ]);

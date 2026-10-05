@@ -11,7 +11,12 @@ import {
   pinnedThreeVersion,
   readGolden,
 } from "../src/fixture-format.js";
-import { type IFixtureResult, compareObservation, runFixtures } from "../src/fixture-native.js";
+import {
+  type IFixtureResult,
+  NATIVE_RENDER_BLOCKED,
+  compareObservation,
+  runFixtures,
+} from "../src/fixture-native.js";
 import { fixturePattern, runNativeSuite } from "../tests/compatibility/run-native.js";
 
 const VERSION = pinnedThreeVersion();
@@ -50,12 +55,18 @@ describe("the differential runner", () => {
   it("passes every fixture whose observations the driver reproduces", () => {
     withDriverMode("echo");
     const results = run(FAKE_DRIVER);
-    // The lit render row is blocked by its golden, not by the driver: no harness rendered it.
     expect(named(results, "matrix4-compose-invert").status).toBe("pass");
     expect(named(results, "matrix4-compose-invert").matched).toBe(8);
     expect(named(results, "nan-and-signed-zero").status).toBe("pass");
     expect(results.filter((result) => result.status === "fail")).toEqual([]);
+    // A render row has a real golden and still never passes: the native renderer cannot draw it.
     expect(named(results, "lit-render").status).toBe("blocked");
+    expect(named(results, "lit-render").reason).toBe(NATIVE_RENDER_BLOCKED);
+    expect(
+      FIXTURES.filter((fixture) => fixture.render !== undefined).map((fixture) => fixture.name),
+    ).toEqual(expect.arrayContaining(["lit-render", "tonemap-ramp-aces", "tonemap-ramp-agx"]));
+    for (const name of ["tonemap-ramp-linear", "tonemap-ramp-reinhard", "tonemap-ramp-cineon"])
+      expect(named(results, name).reason).toBe(NATIVE_RENDER_BLOCKED);
   });
 
   it("selects one prefix of the corpus with --only, and refuses a glob that matches nothing", () => {
@@ -108,6 +119,19 @@ describe("the differential runner", () => {
     const results = run(null);
     expect(results.every((result) => result.status === "blocked")).toBe(true);
     expect(named(results, "euler-orders").reason).toMatch(/TN_NATIVE_FIXTURE_DRIVER/u);
+  });
+
+  it("blocks a render fixture even with no recorded golden, because the native renderer cannot draw", () => {
+    withDriverMode("echo");
+    const fixture = FIXTURES.find((entry) => entry.name === "lit-render");
+    if (fixture === undefined) throw new Error("the corpus lost lit-render");
+    const results = runFixtures([fixture], {
+      driver: FAKE_DRIVER,
+      version: VERSION,
+      goldens: new Map(),
+    });
+    expect(named(results, "lit-render").status).toBe("blocked");
+    expect(named(results, "lit-render").reason).toBe(NATIVE_RENDER_BLOCKED);
   });
 
   it("fails a fixture with no recorded golden, because nobody recorded what to match", () => {
