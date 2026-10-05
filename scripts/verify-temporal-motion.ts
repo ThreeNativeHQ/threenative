@@ -46,6 +46,13 @@ const QUALIFIED_WEBGPU_ARGS = [
   "--disable-vulkan-surface",
   "--no-sandbox",
 ];
+// The one policy that replaces the resolve's whole fragment after setup, so no pixel it draws came
+// from the instrumented predicate the rejection counter samples. Its counter share is unavailable and
+// is reported as such: the arm is still qualified, by the staleness of the 95% blend it really drew.
+const FRAGMENT_OVERRIDDEN = "unchecked-history";
+/** Both families' uncontrolled arms reduce to the same policy name, as the fixture itself does. */
+const overridesFragment = (variant: string) =>
+  variant.replace(/^quality-/u, "").replace(/-open$/u, "") === FRAGMENT_OVERRIDDEN;
 const frames: Record<string, ILinearFrame[]> = {};
 const provenance = [];
 const rasters: Record<string, unknown> = {};
@@ -211,6 +218,7 @@ for (const [family, arms] of Object.entries(FAMILIES))
           outputWidth: number;
           outputHeight: number;
           resetReason: string | null;
+          rejectionUnavailable?: string;
         } | null;
       };
       assert.equal(sample.label, `frame-${frame}`);
@@ -232,11 +240,33 @@ for (const [family, arms] of Object.entries(FAMILIES))
       assert.deepEqual(observed.stages, off ? [] : ["traa"], `${variant}: installed stages`);
       assert.equal(observed.velocity.source, off ? null : "mrt", `${variant}: velocity MRT source`);
       // The counter is this frame's own settled GPU measurement, and its visited count is the
-      // display raster the resolve actually walked. An off role has no resolve, so it has none.
+      // display raster the resolve actually walked. Two roles legitimately carry none: an off role
+      // has no resolve at all, and the fragment-overridden control drew pixels the instrumented
+      // predicate never evaluated. Every other temporal arm must still publish a real one, so a
+      // default sample that went missing fails instead of passing as unavailable.
       const rejection = observed.rejectionFrames.at(-1);
-      if (off)
+      if (off) {
         assert.equal(rejection, undefined, `${variant}: no resolve means no rejection counter`);
-      else {
+        assert.equal(
+          observed.aa?.rejectionUnavailable,
+          undefined,
+          `${variant}: an off role has no fragment override to blame`,
+        );
+      } else if (overridesFragment(variant)) {
+        assert.equal(
+          rejection,
+          undefined,
+          `${variant}: a fragment-overridden control must publish no counter share`,
+        );
+        // The fixture owns the reason text, so the scorer checks that one was published rather than
+        // repeating a string here and letting the two drift.
+        assert.equal(
+          typeof observed.aa?.rejectionUnavailable === "string" &&
+            observed.aa.rejectionUnavailable.length > 0,
+          true,
+          `${variant}: the unavailable counter must name why`,
+        );
+      } else {
         assert.equal(rejection?.frame, frame, `${variant}: counter must belong to this frame`);
         assert.equal(rejection?.fraction !== null && rejection?.fraction !== undefined, true);
         assert.equal(
@@ -248,6 +278,11 @@ for (const [family, arms] of Object.entries(FAMILIES))
           [rejection?.displayWidth, rejection?.displayHeight],
           [640, 360],
           `${variant}: counted raster`,
+        );
+        assert.equal(
+          observed.aa?.rejectionUnavailable,
+          undefined,
+          `${variant}: an instrumented resolve must not report its counter unavailable`,
         );
       }
       // The quality corpus is the only added content: authored alpha-tested foliage, no canvas.
@@ -305,15 +340,20 @@ for (const [family, arms] of Object.entries(FAMILIES))
         visited: number | null;
         staleFrames: number | null;
       }>;
+      aa: { rejectionUnavailable?: string } | null;
       quality: unknown;
     };
     rasters[variant] = last.raster;
-    counters[variant] = last.rejectionFrames.map(({ frame, fraction, visited, staleFrames }) => ({
-      frame,
-      fraction,
-      visited,
-      staleFrames,
-    }));
+    // The published counter trace states the unavailability instead of an empty series a reader could
+    // mistake for a frame that counted nothing.
+    counters[variant] = overridesFragment(variant)
+      ? { unavailable: last.aa?.rejectionUnavailable ?? null }
+      : last.rejectionFrames.map(({ frame, fraction, visited, staleFrames }) => ({
+          frame,
+          fraction,
+          visited,
+          staleFrames,
+        }));
     qualityCorpus[variant] = last.quality;
     velocityDiagnostics[variant] = series.map(({ label, snapshots }) => ({
       label,
@@ -499,6 +539,8 @@ const summary = {
   },
   negativeControl:
     "unchecked-history renders a 95% unchecked history blend; it bypasses both depth rejection and neighbourhood clipping and does not isolate their individual effects",
+  counterAvailability:
+    "Every temporal arm publishes its real per-frame GPU rejection share (source frame, visited display pixels, finite source age). The two unchecked-history arms publish none: that control replaces the resolve fragment outright, so its pixels never evaluated the instrumented history-validity predicate the counter samples. Their counters[variant] carries the reason instead of a share, which is why their counters[variant] is an object rather than a series. This is an unavailable measurement, not a measured zero.",
   causalMethod:
     "Each policy is paired with the same temporal sequence whose red marker was never drawn. Positive red excess subtracts any positive shared green/blue change, normalised by marker red minus control red. This diagnostic separates red tint from neutral brightening/darkening; the original projection score and gate remain unchanged.",
   ordinaryBlendExperiment:

@@ -971,3 +971,82 @@ Results on this tree, `build/tn-linux/mystral` unchanged, no C++ rebuild:
 Both Phase 1 boxes are now ticked. Phases 2 and 3 stay open: PRD-269's ghosting and cost controls,
 the content corpus and every performance box are untouched. Scoped commit only: no full CI, no push,
 no merge.
+
+### The unsupported control counter is now reported unavailable, and the quality family runs natively (2026-10-05)
+
+**The honesty defect.** The `unchecked-history` control installs its 0.05-current / 0.95-history
+blend by replacing `temporal.node._resolveMaterial.colorNode` *after* setup. That fragment never
+evaluates the shared history-validity predicate, so it bypasses depth rejection, neighbourhood
+clipping and motion reprojection at once. The provider's GPU counter kept counting that predicate
+anyway, and the harness collected `rejectionFrames` for every temporal role including this one. Its
+published share therefore described a decision those pixels did not make — a number that read as a
+measurement and was not one. The production and default arms were never affected: their fragment is
+the instrumented one, so their counter is real and is kept.
+
+**The fix, at the fixture only.** `temporal-aa-fixture.js` classifies the one policy that replaces
+the fragment, and for that arm alone (a) the provider's report copy drops `rejection` and carries
+`rejectionUnavailable` with the reason, keeping its source frame, history validity and both rasters;
+(b) the RenderChain `rejectionMeasurement` compatibility callback returns `undefined`, so the chain
+records no measurement for it; and (c) the collected counter trace skips it. `TemporalRejectionCounter`,
+the generated `temporalAA` provider and the `.05`/`.95` blend are untouched, and no public API or
+option was added to instrument this mutant. The scorer's assertion is now three-way: an off role has
+no resolve, the fragment-overridden control has an explicitly-unavailable counter, and **every other
+temporal arm must still publish a real one** — a default sample that went missing fails rather than
+passing as unavailable. Its published `counters[variant]` is an object naming the reason instead of
+a series, and `method.counterAvailability` states the classification in the summary itself.
+
+**The new native quality row.** `temporal-aa-quality` runs `createTemporalAAFixture` with
+`quality-temporal`, `measurement` and `settle 36`, awaiting a real RAF and the diagnostic
+`sampleVelocity` each of 36 frames, on the shared fixture with the shared `assertRejectionCounts`.
+It asserts the six alpha-tested foliage cards at `alphaTest 0.5` from the 16x16 DataTexture, an input
+raster at the authored 2/3 floor strictly below the display, an output at the physical display, the
+single `traa` stage with its MRT velocity source, a counter that visited the whole display with a
+finite source age, and one reset (startup only, no global reset after it). It reuses the existing
+`.06` / `9` budget, the `webgpu` recipe and `captureFrames 40`; no tolerance was loosened and no new
+runner or harness wrapper exists. It proves runtime portability and counter truth on the native host
+only. It proves no image-quality gate, and no such claim is made.
+
+Capability lookup ran before the change, through `packages/engine-mcp/dist/index.js`:
+`engine_search_capabilities` plus `engine_capability_detail` on **all 18 hits** across five queries.
+Nothing ships an unavailable-measurement convention for a fixture report, a quality-corpus scene or a
+conformance-registration manager, so the classification stays a fixture-local helper over the existing
+provider API.
+
+Results on this tree, `build/tn-linux/mystral` unchanged, no C++ rebuild:
+
+- **Browser, all 32 arms re-captured** after the honesty fix, adapter `nvidia`/`turing`,
+  `rendererKind webgpu`, zero error diagnostics. **All 31 arms' colour bytes are byte-identical to
+  the previous baseline** (every frame 21–36 sha256 matches), which is the expected result: the fix
+  removes a published measurement, not a pixel. `artifacts/temporal-aa/motion/summary.json`.
+  `temporal` and `quality-temporal` still publish 36 real frames each — `fraction 0.0030772569444444445`
+  and `0.011046006944444445`, `visited 230400`, `staleFrames 0` — and the four
+  `unchecked-history` arms now publish `{unavailable: "fragment-overridden control bypasses the
+  instrumented rejection predicate"}`. Every `checks` value is **identical** to the previous run;
+  `edgeImprovement`, `revealRecovery`, `qualityEdgeImprovement` and `qualityRevealRecovery` stay red,
+  so both Phase 2 boxes stay open. The runner exits 1 on those four gates, which is the expected
+  negative result; no assertion was dropped to make it green.
+- Web reference for the four temporal rows, all **pass** (scaled 4.4s, unchecked-reset 3.6s,
+  lifecycle 4.8s, quality 5.0s), runner exit 2 for the 96 unselected rows.
+  `packages/runtime-native/artifacts/conformance/web-quality-r1/report.json`.
+- Native desktop against that same reference: `temporal-aa-quality` **pass** —
+  `pixelMismatchRatio 0.04682942708333333 <= 0.06`, `perceptualDeltaE 0.15945597590657543 <= 9`, at
+  the native 1280x720 display with its 853x480 input. `temporal-aa-scaled` `0.0385888671875`,
+  `temporal-aa-scaled-unchecked-reset` `0.049832356770833336`, both pass. Reproduced identically on
+  a second run. `artifacts/conformance/native-quality-r2/` and `-r3/report.json`. The native adapter
+  is genuinely unrecorded by this harness and is reported as unknown, never inferred from the browser
+  row.
+- **`temporal-aa-lifecycle` fails on this reference at `0.061551106770833333 > 0.06`**, DeltaE
+  `0.40011787108055263`, `failureReason` "Capture metrics exceeded the registry tolerance", with zero
+  GPU validation errors. This is **reference variance, not a regression from this change**, and the
+  measurement says so: the native capture is **byte-identical** to the run that passed
+  (`0.00000` mismatch, same md5) between `native-life-r1` and `native-quality-r2`, while the two
+  browser references of the same scene differ from **each other** by `0.03870`. The temporal route's
+  capture lands on a jitter-lattice frame boundary, so two correct browser runs disagree by more
+  than the whole row's budget. The prior green at `0.05384440104166666` came from a different
+  reference (`web-life-r2`). Left failing and reported, with the tolerance unchanged at `.06`.
+- Focused checks: `pnpm typecheck` exit 0; Biome clean on both scenes and the scorer. The fixture's
+  pre-existing cognitive-complexity warning is unchanged at 21 and the repo's one native-smoke physics
+  complexity warning is untouched — neither is fixed in this scope.
+
+No core, API, generic counter or ledger change. No generated render file changed, so no scaffold hash
+moved. Scoped commit only: no full CI, no push, no merge.

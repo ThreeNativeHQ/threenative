@@ -139,6 +139,22 @@
       "required": false
     },
     {
+      "id": "temporal-aa-quality",
+      "title": "display-sized temporal reconstruction of the authored alpha-tested quality corpus",
+      "category": "rendering",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/temporal-aa-quality.js",
+      "captureFrames": 40,
+      "browserRecipe": "webgpu",
+      "requiresHardwareAdapter": true,
+      "tolerance": {
+        "pixelMismatchRatio": 0.06,
+        "perceptualDeltaE": 9.0
+      },
+      "desktopGate": false,
+      "required": false
+    },
+    {
       "id": "01-basic-cube",
       "title": "basic cube",
       "category": "core",

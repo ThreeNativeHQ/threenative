@@ -30,6 +30,25 @@ const LIFECYCLE_SCALE_FRAME = 32;
 export const MOVING_PIXELS = 0.5;
 export const REPROJECTION_PIXELS = 0.05;
 
+// The unchecked-history control replaces the resolve's whole fragment, so the fragment never evaluates
+// the shared history-validity predicate the rejection counter samples. The counter keeps running and
+// keeps counting that predicate, so its share would describe a decision this control did not make. It
+// is therefore unavailable here, with this reason, rather than published as a number for a kernel the
+// pixels did not come from. The production and default temporal arms are unaffected: their fragment is
+// the instrumented one, so their counter still measures the real per-pixel decision.
+const FRAGMENT_OVERRIDDEN = "unchecked-history";
+export const REJECTION_UNAVAILABLE = "fragment-overridden control bypasses the instrumented rejection predicate";
+
+/** This arm's own rejection measurement, or the reason it has none. Never a fabricated share. */
+function rejectionReport(report, fragmentOverridden) {
+  if (report === undefined) return null;
+  if (!fragmentOverridden) return report;
+  // The provider's report keeps its source frame, history validity and both rasters; only the
+  // measurement its own predicate could not reach is dropped, in favour of the stated reason.
+  const { rejection, ...rest } = report;
+  return { ...rest, rejectionUnavailable: REJECTION_UNAVAILABLE };
+}
+
 // Shared browser/native content. The caller owns the renderer and sole frame loop.
 /**
  * Quality-only authored content: deterministic alpha-tested leaf cards. A cut-out alpha edge is
@@ -71,6 +90,9 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
   // "quality-unchecked-history" arm must install the same negative control as "unchecked-history",
   // or it silently measures the installed policy twice.
   const policy = variant.replace(/-open$/u, "").replace(/^quality-/u, "");
+  // One arm replaces the resolve fragment outright, so its own pixels carry no instrumented
+  // predicate for the counter to sample and its rejection share is unavailable, not zero.
+  const fragmentOverridden = policy === FRAGMENT_OVERRIDDEN;
   // One bounded quality family: the same scene, poses, occluder and frame schedule as every other
   // arm, with the physical display raster pinned and only the authored input raster moving. It adds
   // deterministic alpha-tested foliage, which is why it scores against its own supersampled
@@ -144,9 +166,12 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
       stages: off ? [] : ["traa"],
       // The raw fixture builds the chain itself, so it supplies the same compatibility callback the
       // generated world environment does: the provider's own completed measurement, once per frame.
+      // The fragment-overridden control hands over nothing, because the counter it would carry counted
+      // a predicate its resolve never evaluated.
       velocity: {
         pass: scenePass,
-        rejectionMeasurement: () => temporal?.rejectionMeasurement(),
+        rejectionMeasurement: () =>
+          fragmentOverridden ? undefined : temporal?.rejectionMeasurement(),
       },
     },
     stages: [{
@@ -310,7 +335,8 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
     };
   };
   const observation = () => ({
-    frame, resets, lastReset, aa: temporal?.report() ?? null, instanceDraw, instanceUploads,
+    frame, resets, lastReset, aa: rejectionReport(temporal?.report(), fragmentOverridden),
+    instanceDraw, instanceUploads,
     measurement, variant, setupCount, setupDuringJitter, occluderVisible: measurement && occluder.visible,
     raster: raster(),
     quality: foliage === null ? null : {
@@ -419,7 +445,7 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
       // here rather than reading whatever the previous frame happened to leave in the report.
       await temporal?.settledRejection();
       const report = temporal?.report();
-      if (report !== undefined) {
+      if (report !== undefined && !fragmentOverridden) {
         const measured = report.rejection;
         // The frame's own measurement, with the count the GPU visited beside the share it rejected.
         rejectionFrames.push({
