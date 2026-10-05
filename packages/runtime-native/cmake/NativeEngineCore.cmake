@@ -150,7 +150,10 @@ tn_native_engine_test(tn-native-engine-abi-test tests/native-engine/abi_test.cpp
     native_engine_abi_handles=handles
     native_engine_abi_generic=generic
     native_engine_abi_scene=scene
-    native_engine_unsupported_member=unsupported_member)
+    native_engine_abi_lifetime=lifetime
+    native_engine_unsupported_member=unsupported_member
+    native_engine_abi_material=material
+    native_engine_abi_light=light)
 target_link_libraries(tn-native-engine-abi-test PRIVATE tn_engine_abi)
 
 # PRD-508 phase 1: hierarchy, re-parenting, events and member identity.
@@ -182,7 +185,7 @@ set_property(GLOBAL APPEND PROPERTY TN_NATIVE_ENGINE_TEST_TARGETS tn-native-engi
 # The engine's binding registry for the math and scene classes: one model the fixture driver and the
 # C ABI share.
 add_library(tn_engine_bindings STATIC src/engine/abi/bindings_math.cpp src/engine/abi/bindings_scene.cpp
-    src/engine/abi/bindings_geometry.cpp)
+    src/engine/abi/bindings_geometry.cpp src/engine/abi/bindings_material.cpp)
 tn_native_engine_target(tn_engine_bindings)
 target_link_libraries(tn_engine_bindings PUBLIC tn_engine_foundation tn_engine_scene)
 if(EMSCRIPTEN)
@@ -217,7 +220,7 @@ target_link_libraries(tn-native-engine-fixture-protocol-test PRIVATE tn_fixture_
 if(NOT EMSCRIPTEN)
     find_program(TN_PNPM_EXECUTABLE pnpm)
     if(TN_PNPM_EXECUTABLE)
-        foreach(math_case "math_core:math-core-*" "math_edges:math-edges-*" "math_euler:math-euler-*" "math_primitives:math-primitives-*" "scene_transforms:scene-transforms-*" "scene_cameras:scene-cameras-*" "geometry:geometry-*" "geometry_derived:geometry-derived-*")
+        foreach(math_case "math_core:math-core-*" "math_edges:math-edges-*" "math_euler:math-euler-*" "math_primitives:math-primitives-*" "scene_transforms:scene-transforms-*" "scene_cameras:scene-cameras-*" "geometry:geometry-*" "geometry_derived:geometry-derived-*" "material_props:materials-props-*" "light_props:lights-props-*")
             string(REPLACE ":" ";" math_pair "${math_case}")
             list(GET math_pair 0 math_name)
             list(GET math_pair 1 math_glob)

@@ -268,11 +268,31 @@ void Object3D::lookAt(double x, double y, double z) {
 
 // ------------------------------------------------------------------------------ hierarchy
 
+Object3D::~Object3D() {
+    for (Object3D* child : children) child->parent = nullptr;  // owned children die after this body
+    if (parent != nullptr) {
+        auto& siblings = parent->children;
+        siblings.erase(std::remove(siblings.begin(), siblings.end(), this), siblings.end());
+    }
+}
+
+void Object3D::own(Object3D& child) {
+    if (std::shared_ptr<Object3D> shared = child.weak_from_this().lock()) owned_.push_back(std::move(shared));
+}
+
+void Object3D::disown(Object3D& child) {
+    const auto found = std::find_if(owned_.begin(), owned_.end(), [&](const auto& o) { return o.get() == &child; });
+    if (found != owned_.end()) owned_.erase(found);
+}
+
 Object3D& Object3D::add(Object3D& object) {
     if (&object == this) return *this;  // three logs an error and returns; no exception crosses here
+    // Re-parenting drops the old parent's hold: keep the object alive across it.
+    const std::shared_ptr<Object3D> keep = object.weak_from_this().lock();
     object.removeFromParent();
     object.parent = this;
     children.push_back(&object);
+    own(object);
     object.dispatchEvent(addedEvent);
     childAddedEvent.child = &object;
     dispatchEvent(childAddedEvent);
@@ -289,7 +309,9 @@ Object3D& Object3D::add(const std::vector<Object3D*>& objects) {
 Object3D& Object3D::remove(Object3D& object) {
     const auto found = std::find(children.begin(), children.end(), &object);
     if (found == children.end()) return *this;
+    const std::shared_ptr<Object3D> keep = object.weak_from_this().lock();  // alive until this returns
     children.erase(found);
+    disown(object);
     object.parent = nullptr;
     object.dispatchEvent(removedEvent);
     childRemovedEvent.child = &object;
@@ -310,8 +332,9 @@ Object3D& Object3D::removeFromParent() {
 }
 
 Object3D& Object3D::clear() {
-    // three splices the live array out of the spread; copying first is the same order.
-    return remove(children);
+    // three splices the live array out of the spread; copying first is the same order, and the copy
+    // matters: remove() erases from `children` while the loop walks it.
+    return remove(std::vector<Object3D*>(children));
 }
 
 Object3D& Object3D::attach(Object3D& object) {
@@ -325,9 +348,11 @@ Object3D& Object3D::attach(Object3D& object) {
     }
 
     object.applyMatrix4(scratchM1);
+    const std::shared_ptr<Object3D> keep = object.weak_from_this().lock();
     object.removeFromParent();
     object.parent = this;
     children.push_back(&object);
+    own(object);
 
     object.updateWorldMatrix(false, true);
 

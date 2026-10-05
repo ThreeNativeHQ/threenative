@@ -51,6 +51,17 @@ BufferGeometry& geometryArg(Store& store, const Value& arg) {
 }
 
 /** Any buffer attribute class a fixture can name, matched against one base pointer. */
+/** The caller's attribute itself (not a copy): three stores the reference it is handed. */
+std::shared_ptr<BufferAttribute> sharedAttributeArg(Store& store, const Value& arg) {
+    Object* found = store.find(arg);
+    if (found == nullptr) throw Unsupported{"argument is not a BufferAttribute"};
+    if (found->cls == "BufferAttribute" || found->cls == "Float32BufferAttribute" ||
+        found->cls == "Uint16BufferAttribute" || found->cls == "Uint32BufferAttribute") {
+        return std::static_pointer_cast<BufferAttribute>(found->ptr);
+    }
+    throw Unsupported{"argument is not a BufferAttribute, it is a " + found->cls};
+}
+
 BufferAttribute& attributeArg(Store& store, const Value& arg) {
     Object* found = store.find(arg);
     if (found == nullptr) throw Unsupported{"argument is not a BufferAttribute"};
@@ -69,10 +80,6 @@ Value attributeArray(const BufferGeometry& geometry, const char* name) {
     return numbers(attribute->toNumbers());
 }
 
-Value aliased(void* self, void* member, const char* cls, Store& store) {
-    if (member == nullptr) return Value{};
-    return store.adoptAlias(cls, member, self);
-}
 
 // ---------------------------------------------------------------- BufferAttribute
 
@@ -243,34 +250,31 @@ void registerBufferGeometry(ClassBinding& b) {
 
     b.members["attributes.position"] = [](void* self, const Args&, Store& store) {
         BufferGeometry* geometry = as<BufferGeometry>(self);
-        const std::shared_ptr<BufferAttribute> attribute = geometry->getAttribute("position");
-        return aliased(self, attribute.get(), "BufferAttribute", store);
+        return store.share("BufferAttribute", geometry->getAttribute("position"));
     };
     b.members["attributes.normal"] = [](void* self, const Args&, Store& store) {
         BufferGeometry* geometry = as<BufferGeometry>(self);
-        const std::shared_ptr<BufferAttribute> attribute = geometry->getAttribute("normal");
-        return aliased(self, attribute.get(), "BufferAttribute", store);
+        return store.share("BufferAttribute", geometry->getAttribute("normal"));
     };
     b.members["attributes.uv"] = [](void* self, const Args&, Store& store) {
         BufferGeometry* geometry = as<BufferGeometry>(self);
-        const std::shared_ptr<BufferAttribute> attribute = geometry->getAttribute("uv");
-        return aliased(self, attribute.get(), "BufferAttribute", store);
+        return store.share("BufferAttribute", geometry->getAttribute("uv"));
     };
     b.members["index"] = [](void* self, const Args&, Store& store) {
         BufferGeometry* geometry = as<BufferGeometry>(self);
-        return aliased(self, geometry->index.get(), "BufferAttribute", store);
+        return store.share("BufferAttribute", geometry->index);
     };
     b.members["boundingBox"] = [](void* self, const Args&, Store& store) {
-        return aliased(self, as<BufferGeometry>(self)->boundingBox.get(), "Box3", store);
+        return store.share("Box3", as<BufferGeometry>(self)->boundingBox);
     };
     b.members["boundingSphere"] = [](void* self, const Args&, Store& store) {
-        return aliased(self, as<BufferGeometry>(self)->boundingSphere.get(), "Sphere", store);
+        return store.share("Sphere", as<BufferGeometry>(self)->boundingSphere);
     };
 
     b.methods["setIndex"] = [](void* self, const Args& a, Store& store) {
         BufferGeometry* geometry = as<BufferGeometry>(self);
         if (!a.empty() && a.at(0).kind == Value::Kind::Ref) {
-            geometry->setIndex(std::make_shared<BufferAttribute>(attributeArg(store, a.at(0))));
+            geometry->setIndex(sharedAttributeArg(store, a.at(0)));
         } else if (!a.empty() && a.at(0).kind == Value::Kind::Numbers) {
             std::vector<uint32_t> values;
             values.reserve(a.at(0).numbers.size());
@@ -284,17 +288,17 @@ void registerBufferGeometry(ClassBinding& b) {
     b.methods["getIndex"] = [](void* self, const Args&, Store& store) {
         BufferGeometry* geometry = as<BufferGeometry>(self);
         if (geometry->index == nullptr) return Value{};
-        return store.adopt("BufferAttribute", std::static_pointer_cast<void>(geometry->index));
+        return store.share("BufferAttribute", geometry->index);
     };
     b.methods["setAttribute"] = [](void* self, const Args& a, Store& store) {
-        as<BufferGeometry>(self)->setAttribute(a.at(0).text,
-                                               std::make_shared<BufferAttribute>(attributeArg(store, a.at(1))));
+        if (a.at(0).kind != Value::Kind::String) throw Unsupported{"setAttribute needs a name"};
+        as<BufferGeometry>(self)->setAttribute(a.at(0).text, sharedAttributeArg(store, a.at(1)));
         return chain();
     };
     b.methods["getAttribute"] = [](void* self, const Args& a, Store& store) {
         const std::shared_ptr<BufferAttribute> attribute = as<BufferGeometry>(self)->getAttribute(a.at(0).text);
         if (attribute == nullptr) return Value{};
-        return store.adopt("BufferAttribute", std::static_pointer_cast<void>(attribute));
+        return store.share("BufferAttribute", attribute);
     };
     b.methods["deleteAttribute"] = [](void* self, const Args& a, Store&) {
         as<BufferGeometry>(self)->deleteAttribute(a.at(0).text);

@@ -18,12 +18,14 @@
 //   - `copy`'s `recursive` branch: it clones children, and `clone` is not ported.
 //   - `Object.defineProperty` descriptors: plain members, which is what a C++ caller expects.
 //
-// Lifetime: a child is a borrowed pointer, so an attached object must outlive its parent's use. That
-// is what the reference gets from the garbage collector, and what `std::shared_ptr` ownership in a
-// caller (or the binding Store) gives here.
+// Lifetime: a child that is shared-owned (made with std::make_shared, as every bound object is) is
+// owned by its parent while attached, so a scene keeps what it draws alive after its creator lets go
+// — what the reference gets from the garbage collector. A plain C++ child stays borrowed. Either
+// side's destructor detaches the other, so neither ever holds a dangling `parent` or child.
 
 #include <cstdint>
 #include <map>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -90,16 +92,13 @@ public:
     [[nodiscard]] bool isEnabled(int layer) const { return (mask & (static_cast<uint32_t>(1) << layer)) != 0; }
 };
 
-class Object3D : public EventDispatcher {
+class Object3D : public EventDispatcher, public std::enable_shared_from_this<Object3D> {
 public:
     Object3D();
     Object3D(const Object3D&) = delete;
     Object3D& operator=(const Object3D&) = delete;
-    /** Children are borrowed, so destroying one does not touch the tree; see the header note. */
-    virtual ~Object3D() = default;
-    // A destructor deliberately does not detach: a child outliving its parent, or the reverse, would
-    // then write through a pointer the other side has already freed. A caller that re-parents a
-    // dying object calls `removeFromParent` first, as the reference's owners do.
+    /** Detaches from both sides: children lose their `parent`, the parent loses this child. */
+    virtual ~Object3D();
 
     /** three's `type` string, the class name a loader would serialize. */
     [[nodiscard]] virtual std::string_view type() const { return "Object3D"; }
@@ -239,6 +238,9 @@ private:
     Layers layers_;
     uint64_t id_ = 0;
     uint64_t revision_ = 0;
+    std::vector<std::shared_ptr<Object3D>> owned_;  // shared-owned children, held while attached
+    void own(Object3D& child);
+    void disown(Object3D& child);
 };
 
 }  // namespace tn::engine

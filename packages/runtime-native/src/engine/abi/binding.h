@@ -10,6 +10,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 namespace tn::binding {
@@ -48,7 +49,36 @@ using Ctor = std::function<std::shared_ptr<void>(const Args&, Store&)>;
 /** Returns a value, or chain() to return the object it was called on. */
 using Method = std::function<Value(void* self, const Args&, Store&)>;
 using Getter = std::function<Value(void* self)>;
-using Setter = std::function<void(void* self, const Value&)>;
+
+/**
+ * A property write. Most setters need only the value; a member object's whole-value write
+ * (`material.color = ref`, `scene.background = ref`) must resolve a Ref through the caller's Store,
+ * so every call passes the caller's Store. A two-argument callable still fits: it ignores the Store.
+ */
+class Setter {
+public:
+    Setter() = default;
+    template <typename F,
+              typename = std::enable_if_t<std::is_invocable_v<F&, void*, const Value&> ||
+                                          std::is_invocable_v<F&, void*, const Value&, Store&>>>
+    Setter(F fn) : fn_(wrap(std::move(fn))) {}
+
+    void operator()(void* self, const Value& value, Store& store) const { fn_(self, value, store); }
+    explicit operator bool() const { return static_cast<bool>(fn_); }
+
+private:
+    /** A three-argument callable is kept as-is; a two-argument one ignores the store it is handed. */
+    template <typename F>
+    static std::function<void(void*, const Value&, Store&)> wrap(F fn) {
+        if constexpr (std::is_invocable_v<F&, void*, const Value&, Store&>) {
+            return std::function<void(void*, const Value&, Store&)>(std::move(fn));
+        } else {
+            return [fn = std::move(fn)](void* self, const Value& value, Store&) { fn(self, value); };
+        }
+    }
+
+    std::function<void(void*, const Value&, Store&)> fn_;
+};
 
 struct ClassBinding {
     Ctor ctor;
@@ -77,6 +107,13 @@ public:
      * keeps that owner alive, so an alias carries no lifetime of its own.
      */
     virtual Value adoptAlias(std::string cls, void* member, void* owner) = 0;
+    /**
+     * Hands back an object the engine shares ownership of (`geometry.attributes.position`,
+     * `mesh.material`, `scene.background`) as its one Ref: the same Ref while it lives, and the Ref
+     * holds the object itself, so it stays valid after the engine lets go of it (a deleted attribute,
+     * a replaced background), as a JS reference to a three object does. A null object is null.
+     */
+    virtual Value share(std::string cls, std::shared_ptr<void> object) = 0;
     /** The numeric array a Ref names when it holds one (a boxed toArray() result); empty otherwise. */
     virtual std::vector<double> numbers(const Value& arg) = 0;
 

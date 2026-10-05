@@ -28,6 +28,7 @@ MaterialKind kindOf(MaterialType type) {
         case MaterialType::Basic: return MaterialKind::Basic;
         case MaterialType::Lambert: return MaterialKind::Lambert;
         case MaterialType::Phong: return MaterialKind::Phong;
+        case MaterialType::Physical: return MaterialKind::Physical;
         default: return MaterialKind::Standard;
     }
 }
@@ -43,6 +44,9 @@ shader::StandardMaterial paramsOf(const Material& m) {
     p.emissiveIntensity = float(m.emissiveIntensity);
     p.specular = {float(m.specular.r), float(m.specular.g), float(m.specular.b)};
     p.shininess = float(m.shininess);
+    p.ior = float(m.ior);
+    p.specularIntensity = float(m.specularIntensity);
+    p.specularColor = {float(m.specularColor.r), float(m.specularColor.g), float(m.specularColor.b)};
     p.clearcoat = float(m.clearcoat);
     p.sheen = float(m.sheen);
     p.transmission = float(m.transmission);
@@ -61,17 +65,17 @@ BufferStore* store(const BufferGeometry& g, const char* name) {
 
 RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh) {
     Record& r = records_[&mesh];
-    const auto* material = static_cast<const Material*>(mesh.material);
+    const Material* material = mesh.material.get();
     const uint64_t geometryRevision = mesh.geometry ? mesh.geometry->revision() : 0;
     const uint32_t materialVersion = material ? material->version() : 0;
-    if (r.drawable && r.objectRevision == mesh.revision() && r.geometry == mesh.geometry && r.geometryRevision == geometryRevision &&
+    if (r.drawable && r.objectRevision == mesh.revision() && r.geometry == mesh.geometry.get() && r.geometryRevision == geometryRevision &&
         r.material == material && r.materialVersion == materialVersion) {
         return r;  // nothing the record depends on moved
     }
     ++rebuilds_;
     r = Record{};
     r.objectRevision = mesh.revision();
-    r.geometry = mesh.geometry;
+    r.geometry = mesh.geometry.get();
     r.geometryRevision = geometryRevision;
     r.material = material;
     r.materialVersion = materialVersion;
@@ -104,6 +108,9 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
             Record& r = record(mesh);
             r.seen = frame_;
             if (r.drawable && r.material->visible) {
+                // Uniform values refresh every frame, as three's do: a write through a member object
+                // (`material.color.r = x` in JS) changes the colour without a version bump.
+                r.params = paramsOf(*r.material);
                 r.item.material = &r.params;
                 items.push_back(r.item);
             }

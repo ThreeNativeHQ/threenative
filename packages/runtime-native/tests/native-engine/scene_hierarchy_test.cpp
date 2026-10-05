@@ -109,6 +109,14 @@ void hierarchy() {
     CHECK(root.children.empty());
     CHECK(doomed->parent == nullptr);
     CHECK(doomed->name == "doomed");  // still alive after clear, as three leaves it
+    // clear() walks a copy: removing from the live list while iterating it skips every second child.
+    auto c1 = node("c1"), c2 = node("c2"), c3 = node("c3");
+    root.add(*c1);
+    root.add(*c2);
+    root.add(*c3);
+    root.clear();
+    CHECK(root.children.empty());
+    CHECK(c1->parent == nullptr && c2->parent == nullptr && c3->parent == nullptr);
 
     // ---- attach preserves the world transform
     auto target = node("target");

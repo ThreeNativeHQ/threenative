@@ -88,8 +88,21 @@ Value Driver::adoptAlias(std::string cls, void* member, void* owner) {
     // the aliasing shared_ptr keeps the owner alive while the caller holds the Ref.
     const auto found = owners_.find(owner);
     if (found == owners_.end()) throw Unsupported{"this object is not one the caller owns"};
-    const std::string id = "\x04a" + std::to_string(reinterpret_cast<uintptr_t>(member));
+    // The class joins the id: a first member shares its owner's address (Box3::min).
+    const std::string id = "\x04a" + std::to_string(reinterpret_cast<uintptr_t>(member)) + ":" + cls;
     objects_[id] = Object{std::move(cls), std::shared_ptr<void>(found->second, member)};
+    return Value{Value::Kind::Ref, 0, id};
+}
+
+Value Driver::share(std::string cls, std::shared_ptr<void> object) {
+    if (!object) return Value{};
+    // An object a fixture already names answers its own id (`mesh.geometry` is the geometry it built).
+    for (const auto& [id, held] : objects_) {
+        if (held.ptr.get() == object.get() && id.rfind("\x04a", 0) != 0) return Value{Value::Kind::Ref, 0, id};
+    }
+    const std::string id = "\x05s" + std::to_string(reinterpret_cast<uintptr_t>(object.get())) + ":" + cls;
+    owners_[object.get()] = object;
+    objects_[id] = Object{std::move(cls), std::move(object)};
     return Value{Value::Kind::Ref, 0, id};
 }
 
@@ -124,7 +137,7 @@ int Driver::run(std::istream& in, std::ostream& out) {
                 if (command == "set") {
                     auto setter = binding.setters.find(t[2]);
                     if (setter == binding.setters.end()) throw Unsupported{object->second.cls + "." + t[2] + " is not settable"};
-                    setter->second(object->second.ptr.get(), parseArg(t[3]));
+                    setter->second(object->second.ptr.get(), parseArg(t[3]), *this);
                     continue;
                 }
                 auto method = binding.methods.find(t[2]);
@@ -142,6 +155,27 @@ int Driver::run(std::istream& in, std::ostream& out) {
                         objects_[t[3]] = Object{"\x03value", boxed};
                     }
                 }
+                continue;
+            }
+            if (command == "render" && t.size() == 10) {
+                if (!render) throw Unsupported{"this driver does not render: use the render-capable driver"};
+                auto scene = objects_.find(t[1]);
+                auto camera = objects_.find(t[2]);
+                if (scene == objects_.end() || camera == objects_.end()) throw Unsupported{"render names no scene or camera"};
+                RenderRequest request;
+                request.width = static_cast<uint32_t>(std::stoul(t[3]));
+                request.height = static_cast<uint32_t>(std::stoul(t[4]));
+                request.toneMapping = t[5];
+                request.exposure = number(parseArg(t[6]));
+                request.srgb = t[7] == "srgb";
+                request.png = decode(t[8].substr(2));
+                if (const std::string failed = render(scene->second, camera->second, request); !failed.empty()) throw Unsupported{failed};
+                frame_ = request.png;
+                continue;
+            }
+            if (command == "observe" && t.size() == 6 && t[5] == "pixels") {
+                if (frame_.empty()) throw Unsupported{"no frame was rendered"};
+                out << "obs " << t[1] << " pixels s:" << encode(frame_) << "\n";
                 continue;
             }
             if (command == "observe" && t.size() == 6) {

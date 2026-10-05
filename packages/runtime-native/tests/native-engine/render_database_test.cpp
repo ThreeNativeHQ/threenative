@@ -40,8 +40,8 @@ struct LitScene {
     Scene scene;
     PerspectiveCamera camera;
     std::shared_ptr<BufferGeometry> geometry = makeSphereGeometry(1, 32, 16);
-    Material material{MaterialType::Standard};
-    Mesh mesh{geometry.get(), &material};
+    std::shared_ptr<Material> material = std::make_shared<Material>(MaterialType::Standard);
+    Mesh mesh{geometry, material};
     DirectionalLight light{Color().setHex(0xffffff), 3};
     HemisphereLight sky{Color().setHex(0xaabb91), Color().setHex(0x222222), 0.6};
     LitScene() {
@@ -53,9 +53,9 @@ struct LitScene {
         camera.position.z = 3.2;
         camera.lookAt(0, 0, 0);
         light.position.set(2, 3, 1);
-        material.color.setRGB(0.8, 0.35, 0.2);
-        material.roughness = 0.35;
-        material.metalness = 0.1;
+        material->color.setRGB(0.8, 0.35, 0.2);
+        material->roughness = 0.35;
+        material->metalness = 0.1;
         scene.add(mesh);
         scene.add(light);
         scene.add(sky);
@@ -111,8 +111,8 @@ void invalidation() {
     s.mesh.position.x = 0.5;  // a transform: the mesh's revision moves on the next updateMatrixWorld
     database.render(renderer, s.scene, s.camera);
     CHECK(database.rebuilds() == first + 1);
-    s.material.color.setRGB(0, 1, 0);
-    s.material.needsUpdate();  // three's material.needsUpdate = true
+    s.material->color.setRGB(0, 1, 0);
+    s.material->needsUpdate();  // three's material.needsUpdate = true
     database.render(renderer, s.scene, s.camera);
     CHECK(database.rebuilds() == first + 2);
     s.scene.remove(s.mesh);  // a mesh that leaves the scene leaves the database
@@ -138,24 +138,24 @@ void alphaScene() {
     camera.position.z = 5;
     const auto big = makePlaneGeometry(1.6, 1.6), small = makePlaneGeometry(1, 1);
     struct Spec {
-        BufferGeometry* geometry;
+        std::shared_ptr<BufferGeometry> geometry;
         double r, g, b;
         bool transparent;
         double opacity, x, z;
         int renderOrder;
     };
-    const Spec specs[] = {{big.get(), 0, 0, 1, true, 0.5, 0.2, 0.5, 0},       {big.get(), 0, 1, 0, true, 0.5, -0.3, 0, 0},
-                          {big.get(), 1, 0, 0, false, 1, -0.8, -0.5, 0},       {small.get(), 1, 0, 1, true, 0.6, 1.35, -0.4, 2},
-                          {small.get(), 1, 1, 0, true, 0.6, 1.0, 0.4, 1}};
-    std::vector<std::unique_ptr<Material>> materials;
+    const Spec specs[] = {{big, 0, 0, 1, true, 0.5, 0.2, 0.5, 0},       {big, 0, 1, 0, true, 0.5, -0.3, 0, 0},
+                          {big, 1, 0, 0, false, 1, -0.8, -0.5, 0},       {small, 1, 0, 1, true, 0.6, 1.35, -0.4, 2},
+                          {small, 1, 1, 0, true, 0.6, 1.0, 0.4, 1}};
+    std::vector<std::shared_ptr<Material>> materials;
     std::vector<std::unique_ptr<Mesh>> meshes;
     for (const Spec& s : specs) {
-        materials.push_back(std::make_unique<Material>(MaterialType::Basic));
+        materials.push_back(std::make_shared<Material>(MaterialType::Basic));
         Material& m = *materials.back();
         m.color.setRGB(s.r, s.g, s.b);
         m.transparent = s.transparent;
         m.opacity = s.opacity;
-        meshes.push_back(std::make_unique<Mesh>(s.geometry, &m));
+        meshes.push_back(std::make_unique<Mesh>(s.geometry, materials.back()));
         Mesh& mesh = *meshes.back();
         mesh.position.x = s.x;
         mesh.position.z = s.z;

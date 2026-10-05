@@ -108,6 +108,13 @@ tn_value_t ref(tn_handle_t h) {
     v.handle = h;
     return v;
 }
+tn_value_t boolean(bool b) {
+    tn_value_t v{};
+    v.kind = TN_VALUE_BOOL;
+    v.boolean = b ? 1 : 0;
+    return v;
+}
+std::string text(const tn_value_t& v) { return std::string(v.text, v.count); }
 bool same(tn_handle_t a, tn_handle_t b) { return a.type == b.type && a.index == b.index && a.generation == b.generation; }
 
 // The generic calls drive the same registry the differential fixtures prove.
@@ -210,6 +217,23 @@ void scene() {
     CHECK(tn_object_release(child, &d.value) == TN_OK);
     CHECK(tn_get(first.handle, "y", &result, &d.value) == TN_OK && result.number == 40);
 
+    // PRD-514: Scene.background is a typed Color member; null clears it.
+    tn_handle_t stage{};
+    tn_handle_t background{};
+    CHECK(tn_construct(ctx, "Scene", nullptr, 0, &stage, &d.value) == TN_OK);
+    const tn_value_t bg[3] = {num(0.05), num(0.06), num(0.08)};
+    CHECK(tn_construct(ctx, "Color", bg, 3, &background, &d.value) == TN_OK);
+    const tn_value_t bgRef = ref(background);
+    CHECK(tn_set(stage, "background", &bgRef, &d.value) == TN_OK);
+    tn_value_t alias{};
+    CHECK(tn_get(stage, "background", &alias, &d.value) == TN_OK && alias.kind == TN_VALUE_HANDLE);
+    CHECK(tn_get(alias.handle, "g", &result, &d.value) == TN_OK && result.number == 0.06);
+    const tn_value_t empty{};
+    CHECK(tn_set(stage, "background", &empty, &d.value) == TN_OK);
+    CHECK(tn_get(stage, "background", &result, &d.value) == TN_OK && result.kind == TN_VALUE_NULL);
+    CHECK(tn_object_release(background, &d.value) == TN_OK);
+    CHECK(tn_object_release(stage, &d.value) == TN_OK);
+
     CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
 }
 
@@ -233,7 +257,168 @@ void unsupported_member() {
     CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
 }
 
+// PRD-514: the material classes over the generic calls. A whole-color write reaches the Store, and
+// the Color member is one alias Ref, as the fixture driver proves too.
+void material() {
+    const tn_version_info_t own = tn_engine_version();
+    tn_context_t* ctx = nullptr;
+    Diag d;
+    CHECK(tn_context_create(&ctx, &own, &d.value) == TN_OK);
+
+    tn_handle_t basic{};
+    CHECK(tn_construct(ctx, "MeshBasicMaterial", nullptr, 0, &basic, &d.value) == TN_OK);
+    tn_value_t result{};
+    CHECK(tn_get(basic, "type", &result, &d.value) == TN_OK);
+    CHECK(result.kind == TN_VALUE_STRING && text(result) == "MeshBasicMaterial");
+    CHECK(tn_get(basic, "transparent", &result, &d.value) == TN_OK && result.boolean == 0);
+    CHECK(tn_get(basic, "opacity", &result, &d.value) == TN_OK && result.number == 1);
+
+    // A parameters object is out of scope; the no-argument constructor is the only one.
+    const tn_value_t one = num(1);
+    tn_handle_t refused{};
+    CHECK(tn_construct(ctx, "MeshBasicMaterial", &one, 1, &refused, &d.value) == TN_ERROR_UNSUPPORTED);
+    CHECK(d.message().find("TN_NATIVE_UNSUPPORTED") != std::string::npos);
+
+    // `material.color = ref` copies through the Store; the member reads back as one alias Ref.
+    tn_handle_t paint{};
+    const tn_value_t rgb[3] = {num(0.2), num(0.4), num(0.6)};
+    CHECK(tn_construct(ctx, "Color", rgb, 3, &paint, &d.value) == TN_OK);
+    const tn_value_t paintRef = ref(paint);
+    CHECK(tn_set(basic, "color", &paintRef, &d.value) == TN_OK);
+    CHECK(tn_get(basic, "color.g", &result, &d.value) == TN_OK && result.number == 0.4);
+
+    tn_value_t first{};
+    tn_value_t second{};
+    CHECK(tn_get(basic, "color", &first, &d.value) == TN_OK);
+    CHECK(tn_get(basic, "color", &second, &d.value) == TN_OK);
+    CHECK(first.kind == TN_VALUE_HANDLE && same(first.handle, second.handle));
+    const tn_value_t nine = num(0.9);
+    CHECK(tn_set(first.handle, "r", &nine, &d.value) == TN_OK);
+    CHECK(tn_get(basic, "color.r", &result, &d.value) == TN_OK && result.number == 0.9);
+
+    const tn_value_t yes = boolean(true);
+    CHECK(tn_set(basic, "needsUpdate", &yes, &d.value) == TN_OK);
+    CHECK(tn_object_release(basic, &d.value) == TN_OK);
+    CHECK(tn_object_release(paint, &d.value) == TN_OK);
+    CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
+}
+
+// PRD-514: a light takes a hex number through ColorManagement, inherits Object3D's bindings, and a
+// DirectionalLight's target is an Object3D member alias.
+void light() {
+    const tn_version_info_t own = tn_engine_version();
+    tn_context_t* ctx = nullptr;
+    Diag d;
+    CHECK(tn_context_create(&ctx, &own, &d.value) == TN_OK);
+
+    tn_handle_t directional{};
+    const tn_value_t args[2] = {num(16777215), num(3)};
+    CHECK(tn_construct(ctx, "DirectionalLight", args, 2, &directional, &d.value) == TN_OK);
+    tn_value_t result{};
+    CHECK(tn_get(directional, "type", &result, &d.value) == TN_OK && text(result) == "DirectionalLight");
+    CHECK(tn_get(directional, "intensity", &result, &d.value) == TN_OK && result.number == 3);
+    CHECK(tn_get(directional, "position.y", &result, &d.value) == TN_OK && result.number == 1);  // DEFAULT_UP
+    CHECK(tn_get(directional, "target", &result, &d.value) == TN_OK && result.kind == TN_VALUE_HANDLE);
+
+    tn_handle_t hemisphere{};
+    const tn_value_t hemiArgs[3] = {num(11189137), num(2236962), num(0.6)};
+    CHECK(tn_construct(ctx, "HemisphereLight", hemiArgs, 3, &hemisphere, &d.value) == TN_OK);
+    CHECK(tn_get(hemisphere, "type", &result, &d.value) == TN_OK && text(result) == "HemisphereLight");
+    CHECK(tn_get(hemisphere, "intensity", &result, &d.value) == TN_OK && result.number == 0.6);
+    CHECK(tn_get(hemisphere, "groundColor.g", &result, &d.value) == TN_OK && result.kind == TN_VALUE_NUMBER);
+
+    tn_handle_t ambient{};
+    CHECK(tn_construct(ctx, "AmbientLight", nullptr, 0, &ambient, &d.value) == TN_OK);
+    CHECK(tn_get(ambient, "color.r", &result, &d.value) == TN_OK && result.number == 1);
+
+    // A light is an Object3D: `add` and the inherited setters reach it through the same binding.
+    const tn_value_t x = num(4);
+    CHECK(tn_set(directional, "position.x", &x, &d.value) == TN_OK);
+    CHECK(tn_get(directional, "position.x", &result, &d.value) == TN_OK && result.number == 4);
+
+    CHECK(tn_object_release(ambient, &d.value) == TN_OK);
+    CHECK(tn_object_release(hemisphere, &d.value) == TN_OK);
+    CHECK(tn_object_release(directional, &d.value) == TN_OK);
+    CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
+}
+
+// Objects the engine still uses outlive the caller's handles, as three objects outlive a JS scope:
+// a deleted attribute stays readable through a reference to it, a scene keeps the mesh it draws
+// (and the mesh its geometry and material), and a replaced background stays readable. Run under
+// ASan, a use-after-free in any of these fails the case.
+void lifetime() {
+    const tn_version_info_t own = tn_engine_version();
+    tn_context_t* ctx = nullptr;
+    Diag d;
+    CHECK(tn_context_create(&ctx, &own, &d.value) == TN_OK);
+    auto str = [](const char* s) {
+        tn_value_t v{};
+        v.kind = TN_VALUE_STRING;
+        v.text = s;
+        v.count = std::strlen(s);
+        return v;
+    };
+    auto ref = [](tn_handle_t h) {
+        tn_value_t v{};
+        v.kind = TN_VALUE_HANDLE;
+        v.handle = h;
+        return v;
+    };
+    tn_value_t out{};
+
+    // 1. An attribute reference survives deleteAttribute.
+    tn_handle_t box{};
+    CHECK(tn_construct(ctx, "BoxGeometry", nullptr, 0, &box, &d.value) == TN_OK);
+    CHECK(tn_get(box, "attributes.position", &out, &d.value) == TN_OK && out.kind == TN_VALUE_HANDLE);
+    const tn_handle_t position = out.handle;
+    const tn_value_t name = str("position");
+    CHECK(tn_invoke(box, "deleteAttribute", &name, 1, &out, &d.value) == TN_OK);
+    const tn_value_t zero = num(0);
+    CHECK(tn_invoke(position, "getX", &zero, 1, &out, &d.value) == TN_OK && out.kind == TN_VALUE_NUMBER && out.number == 0.5);
+
+    // 2. A scene keeps its mesh, and the mesh its geometry and material, after every other handle goes.
+    tn_handle_t scene{}, geometry{}, material{}, mesh{};
+    CHECK(tn_construct(ctx, "Scene", nullptr, 0, &scene, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "SphereGeometry", nullptr, 0, &geometry, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "MeshBasicMaterial", nullptr, 0, &material, &d.value) == TN_OK);
+    const tn_value_t parts[2] = {ref(geometry), ref(material)};
+    CHECK(tn_construct(ctx, "Mesh", parts, 2, &mesh, &d.value) == TN_OK);
+    CHECK(tn_get(mesh, "geometry", &out, &d.value) == TN_OK && out.handle.index == geometry.index &&
+          out.handle.generation == geometry.generation);  // the geometry it was built from, not a new handle
+    const tn_value_t meshName = str("kept");
+    CHECK(tn_set(mesh, "name", &meshName, &d.value) == TN_OK);
+    const tn_value_t meshRef = ref(mesh);
+    CHECK(tn_invoke(scene, "add", &meshRef, 1, &out, &d.value) == TN_OK);
+    CHECK(tn_object_release(mesh, &d.value) == TN_OK);
+    CHECK(tn_object_release(geometry, &d.value) == TN_OK);
+    CHECK(tn_object_release(material, &d.value) == TN_OK);
+    CHECK(tn_invoke(scene, "getObjectByName", &meshName, 1, &out, &d.value) == TN_OK && out.kind == TN_VALUE_HANDLE);
+    const tn_handle_t found = out.handle;
+    CHECK(tn_get(found, "geometry", &out, &d.value) == TN_OK && out.kind == TN_VALUE_HANDLE);
+    const tn_handle_t keptGeometry = out.handle;
+    CHECK(tn_get(keptGeometry, "attributes.position", &out, &d.value) == TN_OK && out.kind == TN_VALUE_HANDLE);
+    CHECK(tn_get(out.handle, "count", &out, &d.value) == TN_OK && out.kind == TN_VALUE_NUMBER && out.number > 0);
+    CHECK(tn_get(found, "material", &out, &d.value) == TN_OK && out.kind == TN_VALUE_HANDLE);
+    CHECK(tn_get(out.handle, "type", &out, &d.value) == TN_OK && std::string(out.text, out.count) == "MeshBasicMaterial");
+
+    // 3. A replaced background stays readable through the old reference, and is the caller's Color.
+    const tn_value_t red[3] = {num(1), num(0), num(0)};
+    tn_handle_t c1{}, c2{};
+    CHECK(tn_construct(ctx, "Color", red, 3, &c1, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "Color", nullptr, 0, &c2, &d.value) == TN_OK);
+    const tn_value_t c1Ref = ref(c1), c2Ref = ref(c2);
+    CHECK(tn_set(scene, "background", &c1Ref, &d.value) == TN_OK);
+    CHECK(tn_get(scene, "background", &out, &d.value) == TN_OK && out.handle.index == c1.index);  // the same Color
+    CHECK(tn_object_release(c1, &d.value) == TN_OK);
+    CHECK(tn_get(scene, "background", &out, &d.value) == TN_OK && out.kind == TN_VALUE_HANDLE);
+    const tn_handle_t oldBackground = out.handle;
+    CHECK(tn_set(scene, "background", &c2Ref, &d.value) == TN_OK);
+    CHECK(tn_get(oldBackground, "r", &out, &d.value) == TN_OK && out.number == 1);
+
+    CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
+}
+
 }  // namespace
 
 TN_TEST_MAIN({"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene},
-             {"unsupported_member", unsupported_member})
+             {"unsupported_member", unsupported_member}, {"material", material}, {"light", light}, {"lifetime", lifetime})

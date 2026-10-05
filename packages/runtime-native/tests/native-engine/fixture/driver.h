@@ -6,6 +6,8 @@
 //
 //   fixture <name> | new <id> <Class> <arg>* | call <id> <method> <result|-> <arg>*
 //   set <id> <path> <arg> | observe <index> <id> <path|-> <method|-> <kind> | end
+//   render <scene> <camera> <width> <height> <toneMapping> <exposure> <srgb|linear> <png> (a
+//   render-capable driver only; the `pixels` observation then answers with the PNG's path)
 //   arg: n:<16 hex> | s:<percent-encoded> | b:1 | b:0 | null | r:<id>
 //   reply: obs <index> <kind> <value> | unsupported <index|-> <reason> | error <message>
 
@@ -25,14 +27,30 @@ namespace tn::fixture {
 using namespace tn::binding;
 
 /** The differential fixture driver: a binding Store keyed by the fixture's own string ids. */
+/** One `render` line: the frame a render fixture asks for. */
+struct RenderRequest {
+    uint32_t width = 0;
+    uint32_t height = 0;
+    std::string toneMapping;  // none|linear|reinhard|cineon|aces|agx|neutral
+    double exposure = 1;
+    bool srgb = true;
+    std::string png;          // where to write the frame
+};
+
 class Driver : public Store {
 public:
     /** Every native class the fixtures can name. */
     Registry classes;
+    /**
+     * Draws `scene` from `camera` into `request.png`; empty on success, else why not. Unset in the
+     * portable driver (Wasm, Android), which then refuses `render` as unsupported.
+     */
+    std::function<std::string(Object& scene, Object& camera, const RenderRequest& request)> render;
 
     Object* find(const Value& arg) override;
     Value adopt(std::string cls, std::shared_ptr<void> ptr) override;
     Value adoptAlias(std::string cls, void* member, void* owner) override;
+    Value share(std::string cls, std::shared_ptr<void> object) override;
     /**
      * The numeric array a `toArray()` result was boxed into, which is how `fromArray(array)`
      * receives what the reference receives as a plain JS array. Empty for any other argument.
@@ -47,6 +65,7 @@ private:
     void hold(const std::string& id, std::string cls, std::shared_ptr<void> ptr);
 
     std::map<std::string, Object> objects_;
+    std::string frame_;  // the last frame `render` wrote, which a `pixels` observation names
     std::unordered_map<const void*, std::shared_ptr<void>> owners_;
     uint32_t nextTemp_ = 0;
 };

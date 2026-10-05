@@ -11,20 +11,23 @@
 //     so `geometry` and `material` are opaque pointers for now.
 //   - `toJSON`, `clone`: out of scope for the object model, as in Object3D.
 
+#include <memory>
 #include <string_view>
 
+#include "engine/foundation/math/Color.h"
 #include "engine/scene/object3d.h"
 
 namespace tn::engine {
 
 class BufferGeometry;
+class Material;
 
 /** three's Scene: an Object3D root plus what the renderer reads about the whole frame. */
 class Scene : public Object3D {
 public:
     [[nodiscard]] std::string_view type() const override { return "Scene"; }
 
-    void* background = nullptr;      // Color* or Texture*
+    std::shared_ptr<Color> background;  // null = no background
     void* environment = nullptr;    // Texture*
     void* fog = nullptr;             // Fog* or FogExp2*
     void* overrideMaterial = nullptr;
@@ -49,12 +52,15 @@ public:
 class Mesh : public Object3D {
 public:
     Mesh() = default;
-    Mesh(BufferGeometry* geometry, void* material) : geometry(geometry), material(material) {}
+    Mesh(std::shared_ptr<BufferGeometry> geometry, std::shared_ptr<Material> material)
+        : geometry(std::move(geometry)), material(std::move(material)) {}
 
     [[nodiscard]] std::string_view type() const override { return "Mesh"; }
 
-    BufferGeometry* geometry = nullptr;  // borrowed, as Object3D's children are
-    void* material = nullptr;            // Material* or Material**, PRD-514
+    // Shared, as a three Mesh references its geometry and material: the mesh keeps them alive while
+    // it draws them. A material array (groups) arrives with PRD-514's multi-material work.
+    std::shared_ptr<BufferGeometry> geometry;
+    std::shared_ptr<Material> material;
 };
 
 }  // namespace tn::engine

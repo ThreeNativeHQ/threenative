@@ -14,12 +14,15 @@
 
 #include "engine/abi/bindings.h"
 
+#include <cmath>
+
 #include "engine/foundation/math/Euler.h"
 #include "engine/foundation/math/Matrix.h"
 #include "engine/foundation/math/Quaternion.h"
 #include "engine/foundation/math/Vector.h"
 #include "engine/scene/camera.h"
 #include "engine/scene/geometry.h"
+#include "engine/scene/material.h"
 #include "engine/scene/nodes.h"
 #include "engine/scene/object3d.h"
 
@@ -134,7 +137,25 @@ std::shared_ptr<void> makeNode() { return std::static_pointer_cast<void>(std::ma
 
 // ---------------------------------------------------------------------------- Object3D
 
+/** A found descendant as its own Ref; a borrowed (C++-owned) object has no shared owner to hand out. */
+Value foundObject(Store& store, Object3D* found) {
+    if (found == nullptr) return Value{};
+    std::shared_ptr<Object3D> shared = found->weak_from_this().lock();
+    if (!shared) throw Unsupported{"the object found is not shared-owned"};
+    return store.share(std::string(found->type()), std::static_pointer_cast<void>(shared));
+}
+
 void registerObject3D(ClassBinding& b) {
+    b.methods["getObjectById"] = [](void* self, const Args& a, Store& store) {
+        // An id is a safe non-negative integer; anything else names no object (`undefined` in three).
+        const double id = number(a.at(0));
+        if (!(id >= 0 && id <= 9007199254740991.0) || id != std::floor(id)) return Value{};
+        return foundObject(store, as<Object3D>(self)->getObjectById(static_cast<uint64_t>(id)));
+    };
+    b.methods["getObjectByName"] = [](void* self, const Args& a, Store& store) {
+        if (a.at(0).kind != Value::Kind::String) throw Unsupported{"getObjectByName needs a name"};
+        return foundObject(store, as<Object3D>(self)->getObjectByName(a.at(0).text));
+    };
     b.ctor = [](const Args&, Store&) { return makeNode(); };
 
     // The renderer's flat inputs. Every setter that bumps `revision` is one of these.
@@ -477,6 +498,23 @@ void registerScene(ClassBinding& b) {
         b.getters[name] = [field](void* self) { return Value::of(as<Scene>(self)->*field); };
         b.setters[name] = [field](void* self, const Value& v) { as<Scene>(self)->*field = number(v); };
     }
+    // `background` is the caller's Color itself, as in three: `scene.background = c` keeps `c`, so a
+    // later write to `c` is a background change, and reading it back answers `c`.
+    b.members["background"] = [](void* self, const Args&, Store& store) -> Value {
+        // The Color itself, not an alias of the scene: a later `background =` replaces it, and a JS
+        // reference to the old one must stay valid.
+        return store.share("Color", as<Scene>(self)->background);
+    };
+    b.setters["background"] = [](void* self, const Value& v, Store& store) {
+        Scene* scene = as<Scene>(self);
+        if (v.kind == Value::Kind::Null) {
+            scene->background = nullptr;
+            return;
+        }
+        Object* color = store.find(v);
+        if (color == nullptr || color->cls != "Color") throw Unsupported{"background must be a Color or null"};
+        scene->background = std::static_pointer_cast<Color>(color->ptr);
+    };
 }
 
 void registerGroup(ClassBinding& b) {
@@ -487,40 +525,55 @@ void registerGroup(ClassBinding& b) {
 }
 
 /** A geometry argument of any generator class, matched to one base pointer. */
-BufferGeometry& geometryArg(Store& store, const Value& arg) {
+std::shared_ptr<BufferGeometry> geometryArg(Store& store, const Value& arg) {
     static const char* const kClasses[] = {
         "BufferGeometry", "PlaneGeometry",  "BoxGeometry",   "SphereGeometry", "CylinderGeometry",
         "ConeGeometry",   "CircleGeometry", "TorusGeometry", "RingGeometry"};
     Object* found = store.find(arg);
     if (found == nullptr) throw Unsupported{"argument is not a BufferGeometry"};
     for (const char* cls : kClasses) {
-        if (found->cls == cls) return *static_cast<BufferGeometry*>(found->ptr.get());
+        if (found->cls == cls) return std::static_pointer_cast<BufferGeometry>(found->ptr);
     }
     throw Unsupported{"argument is not a BufferGeometry, it is a " + found->cls};
 }
 
+/** A material argument of any mesh-material class, matched to one base pointer. */
+std::shared_ptr<Material> materialArg(Store& store, const Value& arg) {
+    static const char* const kClasses[] = {"Material",           "MeshBasicMaterial", "MeshLambertMaterial",
+                                           "MeshPhongMaterial",  "MeshStandardMaterial", "MeshPhysicalMaterial"};
+    Object* found = store.find(arg);
+    if (found == nullptr) throw Unsupported{"argument is not a Material"};
+    for (const char* cls : kClasses) {
+        if (found->cls == cls) return std::static_pointer_cast<Material>(found->ptr);
+    }
+    throw Unsupported{"argument is not a Material, it is a " + found->cls};
+}
+
 void registerMesh(ClassBinding& b) {
     registerObject3D(b);
-    // three's Mesh builds a BufferGeometry and a MeshBasicMaterial by default; the material class
-    // arrives with PRD-514, so a Mesh takes a geometry and keeps the material pointer opaque.
+    // three's Mesh builds a BufferGeometry and a MeshBasicMaterial by default; this port takes both
+    // from the caller, so a no-argument Mesh stays empty.
     b.ctor = [](const Args& a, Store& store) -> std::shared_ptr<void> {
-        BufferGeometry* geometry = nullptr;
-        void* material = nullptr;
-        if (!a.empty() && a.at(0).kind == Value::Kind::Ref) geometry = &geometryArg(store, a.at(0));
-        if (a.size() >= 2 && a.at(1).kind == Value::Kind::Ref) {
-            Object* found = store.find(a.at(1));
-            material = found != nullptr ? found->ptr.get() : nullptr;
-        }
+        std::shared_ptr<BufferGeometry> geometry;
+        std::shared_ptr<Material> material;
+        if (!a.empty() && a.at(0).kind == Value::Kind::Ref) geometry = geometryArg(store, a.at(0));
+        if (a.size() >= 2 && a.at(1).kind == Value::Kind::Ref) material = materialArg(store, a.at(1));
         return std::static_pointer_cast<void>(std::make_shared<Mesh>(geometry, material));
     };
     b.members["geometry"] = [](void* self, const Args&, Store& store) -> Value {
-        Mesh* mesh = as<Mesh>(self);
-        if (mesh->geometry == nullptr) return Value{};
-        return store.adoptAlias("BufferGeometry", mesh->geometry, self);
+        return store.share("BufferGeometry", as<Mesh>(self)->geometry);
+    };
+    b.members["material"] = [](void* self, const Args&, Store& store) -> Value {
+        const std::shared_ptr<Material>& material = as<Mesh>(self)->material;
+        return material ? store.share(std::string(material->typeName()), material) : Value{};
     };
 }
 
 }  // namespace
+
+void registerObject3DBindings(ClassBinding& b) {
+    registerObject3D(b);
+}
 
 void registerSceneBindings(Registry& classes) {
     registerObject3D(classes["Object3D"]);

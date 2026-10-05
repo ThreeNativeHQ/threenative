@@ -27,7 +27,10 @@ struct tn_context : tn::binding::Store {
     explicit tn_context(uint16_t id) : objects(id) {}
     tn::engine::HandleTable objects;
     std::vector<tn::binding::Object> values;  // by handle index
-    std::unordered_map<void*, tn_handle_t> aliases_;  // a member address -> the one handle naming it
+    // (address, class) -> the one handle naming it: member aliases and shared objects. The class is
+    // part of the key because a first member shares its owner's address (Box3::min).
+    std::map<std::pair<const void*, std::string>, tn_handle_t> identities_;
+    std::unordered_map<const void*, tn_handle_t> primary_;  // an object's own handle, by address
     std::unordered_map<const void*, std::shared_ptr<void>> owners_;  // an object pointer -> its record
     std::string scratchText;                  // a returned string, valid until the next call
     std::vector<double> scratchNumbers;       // a returned array, valid until the next call
@@ -61,21 +64,34 @@ struct tn_context : tn::binding::Store {
         if (held == owners_.end()) throw tn::binding::Unsupported{"this object is not one the caller owns"};
         // One handle per member address, so `object.position` is the same handle on every call. The
         // aliasing shared_ptr keeps the owner alive, so releasing the owner's handle first is safe.
-        const auto cached = aliases_.find(member);
-        if (cached != aliases_.end() && object(cached->second) != nullptr) {
+        return identity(std::move(cls), std::shared_ptr<void>(held->second, member), false);
+    }
+    tn::binding::Value share(std::string cls, std::shared_ptr<void> shared) override {
+        if (!shared) return tn::binding::Value{};
+        // An object the caller already holds answers its own handle (`mesh.geometry` is the
+        // BoxGeometry it was built from), whatever class name the asking binding knows it by.
+        if (const auto known = primary_.find(shared.get()); known != primary_.end() && object(known->second) != nullptr) {
+            return tn::binding::Value{tn::binding::Value::Kind::Ref, 0, refText(known->second)};
+        }
+        return identity(std::move(cls), std::move(shared), true);
+    }
+    // The cached handle while its object lives; a released handle is replaced, never reused.
+    tn::binding::Value identity(std::string cls, std::shared_ptr<void> ptr, bool primary) {
+        const auto key = std::make_pair(static_cast<const void*>(ptr.get()), cls);
+        const auto cached = identities_.find(key);
+        if (cached != identities_.end() && object(cached->second) != nullptr) {
             return tn::binding::Value{tn::binding::Value::Kind::Ref, 0, refText(cached->second)};
         }
         tn_handle_t h{};
-        if (!hold(std::move(cls), std::shared_ptr<void>(held->second, member), h)) {
-            throw tn::binding::Unsupported{"the catalog publishes no such class"};
-        }
-        aliases_[member] = h;
+        if (!hold(std::move(cls), std::move(ptr), h, primary)) throw tn::binding::Unsupported{"the catalog publishes no such class"};
+        identities_[key] = h;
         return tn::binding::Value{tn::binding::Value::Kind::Ref, 0, refText(h)};
     }
     std::vector<double> numbers(const tn::binding::Value& arg) override {
         return arg.kind == tn::binding::Value::Kind::Numbers ? arg.numbers : std::vector<double>{};
     }
-    bool hold(std::string cls, std::shared_ptr<void> ptr, tn_handle_t& out) {
+    // `primary`: the handle names the object itself, not a member alias at the same address.
+    bool hold(std::string cls, std::shared_ptr<void> ptr, tn_handle_t& out, bool primary = true) {
         const uint16_t type = tn_type_id(cls.c_str());
         if (type == 0) return false;
         const tn::engine::Handle h = objects.allocate(type);
@@ -83,6 +99,7 @@ struct tn_context : tn::binding::Store {
         owners_[ptr.get()] = ptr;
         values[h.index] = tn::binding::Object{std::move(cls), std::move(ptr)};
         out = tn_handle_t{h.type, h.context, h.index, h.generation};
+        if (primary) primary_[values[h.index].ptr.get()] = out;
         return true;
     }
 };
@@ -409,7 +426,7 @@ tn_status_t tn_set(tn_handle_t self, const char* path, const tn_value_t* value, 
     return guarded(diagnostic, [&]() -> tn_status_t {
         tn::binding::Args in;
         if (!toBinding(context, value, 1, in)) return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_ABI_VALUE: bad value kind");
-        st->second(object->ptr.get(), in[0]);
+        st->second(object->ptr.get(), in[0], *context);
         return ok(diagnostic);
     });
 }
