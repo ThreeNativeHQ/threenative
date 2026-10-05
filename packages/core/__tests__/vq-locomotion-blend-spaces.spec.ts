@@ -1,7 +1,14 @@
 import { readFileSync } from "node:fs";
-import { Bone } from "three";
+import type { AnimationClip, Object3D } from "three";
+import { Bone, Group } from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { describe, expect, it, vi } from "vitest";
+import {
+  FIRST_PERSON_BODY_LOCOMOTION,
+  type ILocomotionSettings,
+  THIRD_PERSON_LOCOMOTION,
+  createLocomotionDriver,
+} from "../../../examples/abyss-framework/src/render/locomotion-driver.js";
 import {
   createDirectionWeights,
   createSpeedWeights,
@@ -30,6 +37,69 @@ const weights = (entries: readonly { weight: number }[]) => entries.map((entry) 
 function expectNormalized(entries: readonly { weight: number }[]) {
   expect(entries.every(({ weight }) => Number.isFinite(weight) && weight >= 0)).toBe(true);
   expect(entries.reduce((sum, { weight }) => sum + weight, 0)).toBeCloseTo(1, 6);
+}
+
+async function loadMannequin() {
+  const bytes = readFileSync(
+    new URL("../../create-threenative/template-assets/assets/mannequin.glb", import.meta.url),
+  );
+  return new GLTFLoader().parseAsync(
+    bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
+    "",
+  );
+}
+
+/** One real game consumer: the authored settings, the rig they author, and one driver. */
+function consumer(
+  settings: ILocomotionSettings,
+  model: { scene: Object3D; animations: AnimationClip[] },
+  parent?: Object3D,
+) {
+  const player = new SkeletalMesh3D({
+    source: model.scene,
+    clips: model.animations,
+    requiredClips: settings.speedSamples.map(({ clip }) => clip),
+    strideSync: false,
+  });
+  parent?.add(player.root);
+  const bones: Bone[] = [];
+  player.root.traverse((node) => {
+    if (node instanceof Bone) bones.push(node);
+  });
+  if (bones.length === 0) throw new Error("Mannequin locomotion requires actual animated bones.");
+  const initial = bones.map((bone) => bone.quaternion.clone().normalize());
+  const driver = createLocomotionDriver(settings, player);
+  const actions = settings.speedSamples.map(({ clip }) =>
+    player.mixer.clipAction(player.clip(clip)),
+  );
+  const run = (speed: number, frames: number) => {
+    for (let frame = 0; frame < frames; frame++) {
+      driver.update(speed);
+      player.update(1 / 60);
+    }
+  };
+  return {
+    actions,
+    bones,
+    driver,
+    player,
+    settings,
+    run,
+    weights: () =>
+      actions.map((action) => (action.isScheduled() ? action.getEffectiveWeight() : 0)),
+    phases: () => actions.map((action) => action.time / action.getClip().duration),
+    maxAnimatedRadians: () =>
+      bones.reduce((largest, bone, index) => {
+        const bind = initial[index];
+        return bind === undefined
+          ? largest
+          : Math.max(largest, bone.quaternion.clone().normalize().angleTo(bind));
+      }, 0),
+    signature: () =>
+      Number(
+        bones.reduce((sum, bone) => sum + bone.quaternion.x + bone.quaternion.w, 0).toFixed(9),
+      ),
+  };
 }
 
 describe("game-owned speed evaluation", () => {
@@ -201,13 +271,7 @@ describe("game-owned declared directional domain", () => {
 });
 
 it("feeds actual mannequin speed weights through the repaired authoritative player", async () => {
-  const bytes = readFileSync(
-    new URL("../../create-threenative/template-assets/assets/mannequin.glb", import.meta.url),
-  );
-  const model = await new GLTFLoader().parseAsync(
-    bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
-    "",
-  );
+  const model = await loadMannequin();
   const player = new SkeletalMesh3D({
     source: model.scene,
     clips: model.animations,
@@ -262,4 +326,122 @@ it("feeds actual mannequin speed weights through the repaired authoritative play
   expect(player.mixer.stats.actions.inUse).toBe(1);
   player.dispose();
   expect(player.mixer.stats.actions.total).toBe(0);
+});
+
+const CONSUMERS = [THIRD_PERSON_LOCOMOTION, FIRST_PERSON_BODY_LOCOMOTION] as const;
+const SWEEP = [0, 0.6, 1.6, 3, 5.5, 6, 0] as const;
+
+describe("two game-owned consumers on the real mannequin", () => {
+  it("holds weights summing to one within 1e-6 and animates real bones over the speed domain", async () => {
+    const model = await loadMannequin();
+    for (const settings of CONSUMERS) {
+      const rig = consumer(settings, model, new Group());
+      expect(rig.bones.length).toBeGreaterThan(60);
+      let animated = 0;
+      for (const speed of SWEEP) {
+        rig.run(speed, 20);
+        const sum = rig.weights().reduce((total, weight) => total + weight, 0);
+        expect(Math.abs(sum - 1)).toBeLessThan(1e-6);
+        expect(rig.player.mixer.stats.actions.inUse).toBeLessThanOrEqual(rig.actions.length);
+        createSpeedWeights(rig.settings.speedSamples)(speed).forEach(({ weight }, index) =>
+          expect(rig.weights()[index]).toBeCloseTo(weight, 6),
+        );
+        animated = Math.max(animated, rig.maxAnimatedRadians());
+      }
+      expect(animated).toBeGreaterThan(0.05);
+      rig.player.dispose();
+    }
+  });
+
+  it("joins an entering clip to the dominant phase when sync is on and stays independent when it is off", async () => {
+    const model = await loadMannequin();
+    const synced = consumer(THIRD_PERSON_LOCOMOTION, model);
+    const independent = consumer(FIRST_PERSON_BODY_LOCOMOTION, model, new Group());
+    for (const rig of [synced, independent]) {
+      const walk = rig.settings.speedSamples[1];
+      const jog = rig.settings.speedSamples[2];
+      if (walk === undefined || jog === undefined)
+        throw new Error("Both consumers author a walk and a jog sample.");
+      rig.run(walk.speed, 20);
+      const walkPhase = rig.phases()[1] ?? 0;
+      expect(walkPhase).toBeGreaterThan(0.05);
+      rig.driver.update((walk.speed + jog.speed) / 2);
+      rig.player.update(0);
+      const jogPhase = rig.phases()[2] ?? Number.NaN;
+      const gap = Math.abs(jogPhase - walkPhase);
+      if (rig.settings.phaseSync === false) expect(gap).toBeGreaterThan(0.05);
+      else expect(gap).toBeLessThan(1e-6);
+      rig.player.dispose();
+    }
+  });
+
+  it("fails closed on a direction when the game authored no directional clips", async () => {
+    const model = await loadMannequin();
+    const rig = consumer(THIRD_PERSON_LOCOMOTION, model);
+    rig.run(0, 1);
+    const held = rig.weights();
+    expect(() => rig.driver.update(1.2, [0, 1])).toThrow();
+    expect(rig.weights()).toEqual(held);
+    rig.player.dispose();
+  });
+
+  it("evaluates a game-authored forward direction domain on real clips", async () => {
+    const model = await loadMannequin();
+    const rig = consumer(
+      {
+        ...THIRD_PERSON_LOCOMOTION,
+        direction: {
+          samples: [
+            { clip: "Idle_Loop", point: [0, 0] },
+            { clip: "Walk_Loop", point: [1, 0] },
+            { clip: "Jog_Fwd_Loop", point: [1, 1] },
+          ],
+          triangles: [[0, 1, 2]],
+        },
+      },
+      model,
+    );
+    rig.driver.update(0, [1, 1]);
+    rig.player.update(0);
+    expect(rig.weights().map((weight) => Number(weight.toFixed(6)))).toEqual([0, 0, 1, 0]);
+    rig.driver.update(0, [0.5, 0.5]);
+    for (let frame = 0; frame < 20; frame++) rig.player.update(1 / 60);
+    expect(rig.weights().map((weight) => Number(weight.toFixed(6)))).toEqual([0.5, 0, 0.5, 0]);
+    rig.player.dispose();
+  });
+
+  it("replays an identical trace on fresh consumers to the same weights, phases and bone pose", async () => {
+    const model = await loadMannequin();
+    const trace = (settings: ILocomotionSettings) => {
+      const rig = consumer(settings, model, new Group());
+      const rows: unknown[] = [];
+      for (const speed of [0, 1.2, 2.4, 5.5, 0.8, 0]) {
+        rig.run(speed, 12);
+        rows.push({
+          active: rig.player.mixer.stats.actions.inUse,
+          phases: rig.phases(),
+          pose: rig.signature(),
+          weights: rig.weights(),
+        });
+      }
+      rig.player.dispose();
+      return rows;
+    };
+    expect(trace(THIRD_PERSON_LOCOMOTION)).toEqual(trace(THIRD_PERSON_LOCOMOTION));
+    expect(trace(FIRST_PERSON_BODY_LOCOMOTION)).toEqual(trace(FIRST_PERSON_BODY_LOCOMOTION));
+  });
+
+  it("bounds active actions and releases every action on disposal", async () => {
+    const model = await loadMannequin();
+    for (const settings of CONSUMERS) {
+      const rig = consumer(settings, model, new Group());
+      for (const speed of [4, 2, 0.5, 0]) {
+        rig.run(speed, 20);
+        expect(rig.player.mixer.stats.actions.inUse).toBeLessThanOrEqual(2);
+      }
+      expect(rig.player.mixer.stats.actions.inUse).toBe(1);
+      rig.player.dispose();
+      expect(rig.player.mixer.stats.actions.total).toBe(0);
+    }
+  });
 });
