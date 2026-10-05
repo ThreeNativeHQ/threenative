@@ -17,6 +17,7 @@ so a change here is a change to the published docs.
 - [Input](input.md)
 - [Physics](physics.md)
 - [Assets](assets.md)
+- [Unreal assets](unreal-assets.md)
 - [Animation](animation.md)
 - [UI and state](ui-state.md)
 - [Audio](audio.md)
