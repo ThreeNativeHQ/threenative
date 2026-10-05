@@ -138,11 +138,19 @@ Renderer::Renderer(WGPUInstance instance, WGPUDevice device, WGPUQueue queue, Ev
     nearest.addressModeU = nearest.addressModeV = nearest.addressModeW = WGPUAddressMode_ClampToEdge;
     nearest.maxAnisotropy = 1;
     outputSampler_ = wgpuDeviceCreateSampler(device, &nearest);
+    if (wgpuDeviceHasFeature(device, WGPUFeatureName_TimestampQuery)) {
+        WGPUQuerySetDescriptor queries = {};
+        queries.type = WGPUQueryType_Timestamp;
+        queries.count = 2;
+        timestamps_ = wgpuDeviceCreateQuerySet(device, &queries);
+        timestampResolve_ = gpu_.createBuffer(16, WGPUBufferUsage_QueryResolve | WGPUBufferUsage_CopySrc);
+    }
     setOutput(OutputState{});
     setSize(1, 1);
 }
 
 Renderer::~Renderer() {
+    if (timestamps_) wgpuQuerySetRelease(timestamps_);
     for (Program& program : programs_) {
         for (int g = 0; g < 2; ++g) {
             if (program.groups[g]) wgpuBindGroupRelease(program.groups[g]);
@@ -309,6 +317,14 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
     passDesc.colorAttachmentCount = 1;
     passDesc.colorAttachments = &color;
     passDesc.depthStencilAttachment = &depth;
+    const bool timed = timestamps_ && !timing_->pending;
+    WGPURenderPassTimestampWrites_Compat sceneTimes = {};
+    if (timed) {
+        sceneTimes.querySet = timestamps_;
+        sceneTimes.beginningOfPassWriteIndex = 0;
+        sceneTimes.endOfPassWriteIndex = WGPU_QUERY_SET_INDEX_UNDEFINED;
+        passDesc.timestampWrites = &sceneTimes;
+    }
     WGPURenderPassEncoder pass = wgpuCommandEncoderBeginRenderPass(encoder, &passDesc);
 
     // RenderList: z is the object origin's clip-space depth (setFromMatrixPosition, then the
@@ -445,14 +461,30 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
     }
     wgpuRenderPassEncoderEnd(pass);
     wgpuRenderPassEncoderRelease(pass);
-    outputPass(encoder);
+    outputPass(encoder, timed);
+    if (timed) wgpuCommandEncoderResolveQuerySet(encoder, timestamps_, 0, 2, gpu_.buffer(timestampResolve_), 0);
     WGPUCommandBufferDescriptor commandDesc = {};
     gpu_.submit(wgpuCommandEncoderFinish(encoder, &commandDesc));
     wgpuCommandEncoderRelease(encoder);
+    if (timed) {
+        timing_->pending = true;
+        std::weak_ptr<Timing> timing = timing_;
+        gpu_.readBuffer(timestampResolve_, 0, 16, [timing](GpuStatus status, std::vector<uint8_t> bytes) {
+            const std::shared_ptr<Timing> t = timing.lock();
+            if (!t) return;  // the renderer is gone
+            t->pending = false;
+            uint64_t ns[2];
+            if (status != GpuStatus::Ok || bytes.size() != sizeof ns) return;
+            std::memcpy(ns, bytes.data(), sizeof ns);
+            if (ns[1] <= ns[0]) return;  // a reset clock reads as no sample
+            t->lastMs = double(ns[1] - ns[0]) / 1e6;
+            ++t->samples;
+        });
+    }
     return id;
 }
 
-void Renderer::outputPass(WGPUCommandEncoder encoder) {
+void Renderer::outputPass(WGPUCommandEncoder encoder, bool timed) {
     WGPURenderPipeline pipeline = pipelines_.get(
         outputVertex_, &outputFragment_, PipelineTarget{WGPUTextureFormat_RGBA8Unorm, WGPUTextureFormat_Undefined, WGPUCullMode_None});
     if (!pipeline) throw std::runtime_error("TN_NATIVE_PIPELINE_REFUSED: output program");
@@ -474,6 +506,13 @@ void Renderer::outputPass(WGPUCommandEncoder encoder) {
     WGPURenderPassDescriptor passDesc = {};
     passDesc.colorAttachmentCount = 1;
     passDesc.colorAttachments = &color;
+    WGPURenderPassTimestampWrites_Compat outputTimes = {};
+    if (timed) {
+        outputTimes.querySet = timestamps_;
+        outputTimes.beginningOfPassWriteIndex = WGPU_QUERY_SET_INDEX_UNDEFINED;
+        outputTimes.endOfPassWriteIndex = 1;
+        passDesc.timestampWrites = &outputTimes;
+    }
     WGPURenderPassEncoder pass = wgpuCommandEncoderBeginRenderPass(encoder, &passDesc);
     wgpuRenderPassEncoderSetPipeline(pass, pipeline);
     wgpuRenderPassEncoderSetBindGroup(pass, 0, outputGroup_, 0, nullptr);

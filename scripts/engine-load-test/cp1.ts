@@ -32,8 +32,9 @@ export interface ICp1ArmResult {
   frameMs: ISeries;
   /** C ABI crossings; null for `current`, which has no C ABI. */
   crossingsPerFrame: ISeries | null;
-  /** Null until GPU timestamps are wired into the arms. */
-  gpuMs: null;
+  /** Timestamp-query GPU time per frame; null where the arm has no reading yet. Dawn quantizes
+   *  timestamps to 65.536 µs unless its timestamp_quantization toggle is off. */
+  gpuMs: ISeries | null;
   /** Whether frames went to a window; the native host draws offscreen. */
   presented: boolean;
 }
@@ -98,6 +99,7 @@ interface IHostReport {
   hotPathMs: ISeries;
   frameMs: ISeries;
   crossingsPerFrame: ISeries;
+  gpuMs: ISeries | null;
   draws: number;
   triangles: number;
   presented: boolean;
@@ -163,7 +165,7 @@ async function nativeResult(
     hotPathMs: report.hotPathMs,
     frameMs: report.frameMs,
     crossingsPerFrame: report.crossingsPerFrame,
-    gpuMs: null,
+    gpuMs: report.gpuMs,
     presented: report.presented,
   };
 }
@@ -201,15 +203,15 @@ export async function runCp1(repoRoot: string, artifactRoot: string, options: IC
   await writeFile(file, `${JSON.stringify(report, null, 2)}\n`);
   const rows = results.map(
     (r) =>
-      `| ${r.arm} | ${r.hotPathMs.p50.toFixed(2)} / ${r.hotPathMs.p95.toFixed(2)} | ${r.frameMs.p50.toFixed(2)} | ${r.crossingsPerFrame?.p50 ?? "n/a"} | ${r.drawCalls} | ${r.triangles} |`,
+      `| ${r.arm} | ${r.hotPathMs.p50.toFixed(2)} / ${r.hotPathMs.p95.toFixed(2)} | ${r.gpuMs?.p50.toFixed(3) ?? "n/a"} | ${r.frameMs.p50.toFixed(2)} | ${r.crossingsPerFrame?.p50 ?? "n/a"} | ${r.drawCalls} | ${r.triangles} |`,
   );
   return {
     file,
     markdown: [
       `CP1 heterogeneous L4@${options.objects}, ${options.width}x${options.height}, ${options.frames} frames`,
       "",
-      "| arm | hot path p50 / p95 ms | frame p50 ms | crossings/frame | draws | triangles |",
-      "| --- | --- | --- | --- | --- | --- |",
+      "| arm | hot path p50 / p95 ms | GPU p50 ms | frame p50 ms | crossings/frame | draws | triangles |",
+      "| --- | --- | --- | --- | --- | --- | --- |",
       ...rows,
     ].join("\n"),
   };

@@ -5,6 +5,7 @@
 #include <optional>
 #include <span>
 #include <unordered_map>
+#include <memory>
 #include <vector>
 
 #include <webgpu/webgpu.h>
@@ -103,6 +104,13 @@ public:
         uint64_t triangles = 0;
     };
     const FrameStats& lastFrame() const { return lastFrame_; }
+    /**
+     * GPU time of the most recent frame whose timestamps came back, scene pass start to output pass
+     * end, in milliseconds; negative until one has, and always on a device without timestamp-query.
+     */
+    double lastGpuMs() const { return timing_->lastMs; }
+    /** How many GPU times have come back, so a caller samples each one once. */
+    uint64_t gpuSamples() const { return timing_->samples; }
 
     GpuResources& gpu() { return gpu_; }
     const GeometryCache& geometry() const { return geometry_; }
@@ -132,7 +140,7 @@ private:
                             WGPUTextureView view, WGPUSampler sampler);
     void releaseTargets();
     void releaseOutputGroup();
-    void outputPass(WGPUCommandEncoder encoder);
+    void outputPass(WGPUCommandEncoder encoder, bool timed);
 
     WGPUDevice device_;
     EventQueue& events_;
@@ -160,6 +168,16 @@ private:
     uint32_t height_ = 0;
     uint64_t renderId_ = 0;
     FrameStats lastFrame_;
+    WGPUQuerySet timestamps_ = nullptr;  // [0] scene pass begins, [1] output pass ends
+    Handle timestampResolve_;
+    // Shared with the readback callback by weak reference: a backend may deliver it after this
+    // renderer is gone (wgpu does at teardown), and it must then find nothing to write into.
+    struct Timing {
+        bool pending = false;  // a resolve is being read back; the next frames are not timed
+        double lastMs = -1;
+        uint64_t samples = 0;
+    };
+    std::shared_ptr<Timing> timing_ = std::make_shared<Timing>();
     std::vector<uint8_t> frameUniforms_;  // every draw's uniform blocks, written to the GPU once a frame
     Handle uniformBuffer_;
     uint64_t uniformCapacity_ = 0;

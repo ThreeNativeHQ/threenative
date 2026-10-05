@@ -2,7 +2,8 @@
 // runs on V8 through the adapter — the shipping shape (arm `native-v8`) — or, with --cpp, a C++ twin
 // of the same workload drives the engine directly (arm `native-cpp`, the control that isolates the
 // crossing cost). Both draw through renderer.render(scene, camera)'s native path into an offscreen
-// target; presentation and GPU timestamps arrive with the desktop/Pixel verdict runs.
+// target; GPU time is the renderer's timestamp queries (scene pass start to output pass end), null on a
+// device without timestamp-query. Presentation arrives with the desktop/Pixel verdict runs.
 //
 //   tn-native-engine-host <workload.js> [--objects N] [--frames N] [--warmup N] [--size WxH]
 //                         [--report out.json] [--cpp]
@@ -263,7 +264,8 @@ int main(int argc, char** argv) {
         camera = game.camera;
     }
 
-    std::vector<double> update, submit, frame, crossings;
+    std::vector<double> update, submit, frame, crossings, gpu;
+    uint64_t gpuSeen = 0;
     Renderer::FrameStats stats;
     for (uint32_t i = 0; i < o.warmup + o.frames; ++i) {
         const uint64_t crossed = tn::abi::crossings();
@@ -288,6 +290,10 @@ int main(int argc, char** argv) {
         submit.push_back(ms(t1, t2));
         frame.push_back(ms(t0, t3));
         crossings.push_back(double(tn::abi::crossings() - crossed));
+        if (renderer.gpuSamples() != gpuSeen) {  // each GPU time once, as it comes back
+            gpuSeen = renderer.gpuSamples();
+            gpu.push_back(renderer.lastGpuMs());
+        }
         stats = renderer.lastFrame();
     }
     std::vector<double> hot(update.size());
@@ -305,7 +311,8 @@ int main(int argc, char** argv) {
          << "  \"hotPathMs\": " << series(hot) << ",\n  \"frameMs\": " << series(frame) << ",\n"
          << "  \"crossingsPerFrame\": " << series(crossings) << ",\n"
          << "  \"draws\": " << stats.draws << ",\n  \"triangles\": " << stats.triangles << ",\n"
-         << "  \"gpuMs\": null,\n  \"presented\": false\n}\n";
+         << "  \"gpuMs\": " << (gpu.empty() ? std::string("null") : series(gpu)) << ",\n  \"gpuSamples\": " << gpu.size()
+         << ",\n  \"presented\": false\n}\n";
     std::fputs(json.str().c_str(), stdout);
     if (!o.report.empty()) std::ofstream(o.report) << json.str();
     return 0;

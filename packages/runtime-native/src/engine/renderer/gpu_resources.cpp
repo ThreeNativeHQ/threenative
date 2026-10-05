@@ -288,6 +288,9 @@ uint64_t GpuResources::submit(WGPUCommandBuffer commands) {
 #endif
                        void* userdata, void*) {
         std::unique_ptr<WorkDone> done(static_cast<WorkDone*>(userdata));
+        // A backend may fire this at device release, after the resource table and the event queue
+        // it posts to are gone (wgpu does); the queue outlives the table, so a live owner is the test.
+        if (done->owner.expired()) return;
         done->events->post([owner = done->owner, serial = done->serial]() {
             if (auto shared = owner.lock()) {
                 shared->completed = std::max(shared->completed, serial);
