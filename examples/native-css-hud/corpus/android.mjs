@@ -549,8 +549,19 @@ async function runInteraction(scenario, expected, browser) {
   });
   entry.compared = compared.compared;
   entry.mismatches = compared.mismatches;
-  entry.pass = entry.mismatches.length === 0 && problems.length === 0 && exitOk;
-  if (problems.length > 0) entry.why = `identity: ${problems.join("; ")}`;
+  entry.pass =
+    entry.mismatches.length === 0 &&
+    problems.length === 0 &&
+    exitOk &&
+    entry.skipped === 0 &&
+    entry.unreachable.length === 0 &&
+    entry.observations > 0 &&
+    entry.compared.length === entry.observations;
+  if (entry.skipped > 0 || entry.unreachable.length > 0)
+    entry.why = `${Math.max(entry.skipped, entry.unreachable.length)} observation(s) not observable`;
+  else if (entry.compared.length !== entry.observations)
+    entry.why = `${entry.compared.length}/${entry.observations} observations compared`;
+  else if (problems.length > 0) entry.why = `identity: ${problems.join("; ")}`;
   else if (entry.mismatches.length > 0)
     entry.why = `${entry.mismatches.length} observation(s) differ from Chromium`;
   else if (!exitOk) entry.why = `the playtest exited ${status}: ${output.slice(-300)}`;

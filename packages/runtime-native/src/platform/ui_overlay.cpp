@@ -9,6 +9,7 @@
 #include <charconv>
 #include <deque>
 #include <iostream>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <sstream>
@@ -273,6 +274,7 @@ void traceCssState() {
     std::vector<uint32_t> ids(count);
     if (count > 0) tn_css_ui_scrolled_ids(ids.data(), count);
     std::ostringstream line;
+    line.precision(std::numeric_limits<double>::max_digits10);
     line << "TN_CSS_UI_STATE focused=" << tn_css_ui_focused_id();
     bool first = true;
     for (size_t i = 0; i < count; i += 1) {

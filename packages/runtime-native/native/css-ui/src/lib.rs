@@ -409,6 +409,7 @@ pub struct CssUi {
     assets: Arc<Assets>,
     dirty: bool,
     counter: u64,
+    event_dispatch: u64,
     pixels: Vec<u8>,
     frame: (u32, u32),
     out: VecDeque<String>,
@@ -481,6 +482,7 @@ impl CssUi {
             assets,
             dirty: true,
             counter: 0,
+            event_dispatch: 0,
             pixels: Vec::new(),
             frame: (0, 0),
             out: VecDeque::new(),
@@ -492,7 +494,8 @@ impl CssUi {
         Ok(ui)
     }
 
-    /// Load every `*.css` in `root`, sorted by file name, as one stylesheet each, and register
+    /// Load the stylesheets in the packaged `stylesheets.json` order (or every `*.css` sorted by
+    /// name for a hand-staged directory without a manifest), as one stylesheet each, and register
     /// every font and image beside them so a `url()` naming one resolves without a network. A
     /// missing directory is not an error: a game may ship its styles inside its bundle instead.
     /// The count is how many stylesheets loaded, so a caller can tell an empty directory from a
@@ -529,6 +532,39 @@ impl CssUi {
             }
         }
         sheets.sort();
+        let manifest_path = root.join("stylesheets.json");
+        match std::fs::read_to_string(&manifest_path) {
+            Ok(source) => {
+                let invalid = || {
+                    format!(
+                        "sheet order {}: invalid or missing stylesheet",
+                        manifest_path.display()
+                    )
+                };
+                let manifest: serde_json::Value =
+                    serde_json::from_str(&source).map_err(|_| invalid())?;
+                if manifest["version"].as_u64() != Some(1) {
+                    return Err(invalid());
+                }
+                let names = manifest["stylesheets"].as_array().ok_or_else(invalid)?;
+                if names.is_empty() {
+                    return Err(invalid());
+                }
+                let mut ordered = Vec::new();
+                for name in names {
+                    let name = name.as_str().ok_or_else(invalid)?;
+                    if !sheets.iter().any(|file| file == name)
+                        || ordered.iter().any(|file| file == name)
+                    {
+                        return Err(invalid());
+                    }
+                    ordered.push(name.to_string());
+                }
+                sheets = ordered;
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(format!("sheet order {}: {e}", manifest_path.display())),
+        }
         assets.sort();
         // Registered before the sheets, because reading a stylesheet is what asks for its fonts.
         self.assets.register(root, &assets);
@@ -991,6 +1027,7 @@ impl CssUi {
                 listeners,
                 out,
                 dropped,
+                event_dispatch,
                 ..
             } = self;
             let mut driver = EventDriver::new(
@@ -1000,6 +1037,7 @@ impl CssUi {
                     listeners,
                     out,
                     dropped,
+                    dispatch: event_dispatch,
                 },
             );
             driver.handle_ui_event(ui_event);
@@ -1205,6 +1243,7 @@ impl CssUi {
             listeners: &self.listeners,
             out: &mut self.out,
             dropped: &mut self.dropped,
+            dispatch: &mut self.event_dispatch,
         }
         .handle_event(&chain, &mut event, &mut self.doc, &mut state);
         self.dirty = true;
@@ -1551,6 +1590,7 @@ struct Recorder<'a> {
     listeners: &'a HashMap<NodeId, HashSet<&'static str>>,
     out: &'a mut VecDeque<String>,
     dropped: &'a mut u64,
+    dispatch: &'a mut u64,
 }
 
 impl EventHandler for Recorder<'_> {
@@ -1562,6 +1602,7 @@ impl EventHandler for Recorder<'_> {
         _state: &mut EventState,
     ) {
         let name = event.name();
+        let mut ids = Vec::new();
         for node in chain {
             let Some(events) = self.listeners.get(node) else {
                 continue;
@@ -1572,12 +1613,28 @@ impl EventHandler for Recorder<'_> {
             let Some(id) = self.callers.get(node) else {
                 continue;
             };
+            ids.push(*id);
+        }
+        // Preserve each listener's existing message and order, but keep a multi-handler DOM
+        // dispatch identifiable across the async bridge so React can stop its ancestors.
+        let grouped = ids.len() > 1;
+        if grouped {
+            *self.dispatch = self.dispatch.wrapping_add(1);
+        }
+        for id in ids {
             if self.out.len() == EVENT_QUEUE_CAP {
                 self.out.pop_front();
                 *self.dropped += 1;
             }
-            self.out
-                .push_back(format!(r#"{{"type":"{name}","id":{id}}}"#));
+            let message = if grouped {
+                format!(
+                    r#"{{"type":"{name}","id":{id},"dispatch":"{}"}}"#,
+                    self.dispatch
+                )
+            } else {
+                format!(r#"{{"type":"{name}","id":{id}}}"#)
+            };
+            self.out.push_back(message);
         }
     }
 }

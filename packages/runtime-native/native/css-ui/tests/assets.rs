@@ -183,3 +183,49 @@ fn an_image_behind_the_vite_assets_prefix_resolves_and_nothing_deeper_does() {
     }
     clean_up(&dir);
 }
+
+#[test]
+fn packaged_stylesheet_order_preserves_cascade_and_excludes_inactive_css() {
+    let dir = ui_dir("sheet-order", "");
+    std::fs::write(
+        dir.join("z.css"),
+        "html,body{margin:0}.hud{width:32px;height:32px;background:red}",
+    )
+    .unwrap();
+    std::fs::write(dir.join("a.css"), ".hud{background:blue}").unwrap();
+    std::fs::write(dir.join("unused.css"), ".hud{background:green}").unwrap();
+    std::fs::write(
+        dir.join("stylesheets.json"),
+        r#"{"version":1,"stylesheets":["z.css","a.css"]}"#,
+    )
+    .unwrap();
+    let mut ui = CssUi::new(64, 64, 1.0).unwrap();
+    assert_eq!(ui.load_sheet_dir(&dir).unwrap(), 2);
+    ui.post(r#"{"ops":[{"op":"create","id":1,"tag":"div"},{"op":"attr","id":1,"name":"class","value":"hud"},{"op":"append","parent":0,"child":1}]}"#).unwrap();
+    assert!(ui.render());
+    let offset = ((16 * ui.frame_width() + 16) * 4) as usize;
+    assert_eq!(&ui.pixels()[offset..offset + 4], &[0, 0, 255, 255]);
+    clean_up(&dir);
+}
+
+#[test]
+fn packaged_stylesheet_order_refuses_missing_duplicate_or_escaping_names() {
+    for names in [
+        r#"["missing.css"]"#,
+        r#"["hud.css","hud.css"]"#,
+        r#"["../hud.css"]"#,
+    ] {
+        let dir = ui_dir("invalid-sheet-order", ".hud{color:red}");
+        std::fs::write(
+            dir.join("stylesheets.json"),
+            format!(r#"{{"version":1,"stylesheets":{names}}}"#),
+        )
+        .unwrap();
+        let mut ui = CssUi::new(64, 64, 1.0).unwrap();
+        assert!(
+            ui.load_sheet_dir(&dir).is_err(),
+            "invalid order {names} must fail attach"
+        );
+        clean_up(&dir);
+    }
+}

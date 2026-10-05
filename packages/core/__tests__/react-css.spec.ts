@@ -223,6 +223,75 @@ describe("createCssUiRoot", () => {
     root.dispose();
   });
 
+  it.each([false, true])(
+    "stops the native ancestor messages from the same click dispatch (%s)",
+    (stop) => {
+      const fake = fakeScope();
+      const root = createCssUiRoot({ scope: fake.scope });
+      const seen: string[] = [];
+      root.render(
+        createElement(
+          "div",
+          { onClick: () => seen.push("parent") },
+          createElement(
+            "button",
+            {
+              type: "button",
+              onClick: (event: { stopPropagation(): void }) => {
+                seen.push("child");
+                if (stop) event.stopPropagation();
+              },
+            },
+            "Use",
+          ),
+        ),
+      );
+      const ops = lastFrame(fake.frames);
+      const child = idOf(ops, "button");
+      const parent = idOf(ops, "div");
+      for (const dispatch of ["1", "2"]) {
+        fake.send({ dispatch, id: child, type: "click" });
+        fake.send({ dispatch, id: parent, type: "click" });
+      }
+      expect(seen).toEqual(stop ? ["child", "child"] : ["child", "parent", "child", "parent"]);
+      root.dispose();
+    },
+  );
+
+  it("a retained event cannot stop a later native click dispatch", () => {
+    const fake = fakeScope();
+    const root = createCssUiRoot({ scope: fake.scope });
+    const seen: string[] = [];
+    let previous: { stopPropagation(): void } | undefined;
+    root.render(
+      createElement(
+        "div",
+        { onClick: () => seen.push("parent") },
+        createElement(
+          "button",
+          {
+            type: "button",
+            onClick: (event: { stopPropagation(): void }) => {
+              seen.push("child");
+              if (previous === undefined) previous = event;
+              else previous.stopPropagation();
+            },
+          },
+          "Use",
+        ),
+      ),
+    );
+    const ops = lastFrame(fake.frames);
+    const child = idOf(ops, "button");
+    const parent = idOf(ops, "div");
+    for (const dispatch of ["1", "2"]) {
+      fake.send({ dispatch, id: child, type: "click" });
+      fake.send({ dispatch, id: parent, type: "click" });
+    }
+    expect(seen).toEqual(["child", "parent", "child", "parent"]);
+    root.dispose();
+  });
+
   it("moves a keyed sibling with insertBefore instead of recreating it", () => {
     const fake = fakeScope();
     const root = createCssUiRoot({ scope: fake.scope });

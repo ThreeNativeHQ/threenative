@@ -551,17 +551,27 @@ export function createCssUiRoot(options: ICssUiRootOptions = {}): ICssUiRoot {
     null,
   );
 
+  let eventDispatch: string | undefined;
+  let propagationStopped = false;
   const unsubscribe = bridge.onMessage((message: IUiMessage) => {
     const { type } = message;
     if (!EVENT_NAMES.has(type)) return;
     const id = message.id;
     if (typeof id !== "number") return;
+    const dispatch = typeof message.dispatch === "string" ? message.dispatch : undefined;
+    if (dispatch === undefined || dispatch !== eventDispatch) {
+      eventDispatch = dispatch;
+      propagationStopped = false;
+    }
+    if (propagationStopped) return;
     const handler = root.byId.get(id)?.handlers.get(type);
     if (handler === undefined) return;
     try {
       handler({
         preventDefault: () => undefined,
-        stopPropagation: () => undefined,
+        stopPropagation: () => {
+          if (dispatch !== undefined && dispatch === eventDispatch) propagationStopped = true;
+        },
         target: { id },
         type,
       });

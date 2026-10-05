@@ -971,6 +971,108 @@ cpSync("public", out, { recursive: true });
     },
   );
 
+  it.each([
+    { lazy: false, split: true },
+    { lazy: true, split: true },
+    { lazy: false, split: false },
+    { lazy: true, split: false },
+  ])(
+    "preserves the real CSS entry order and refuses lazy CSS ($lazy, $split)",
+    async ({ lazy, split }) => {
+      const root = await makeTempDir("threenative-ui-css-order-");
+      roots.push(root);
+      await mkdir(path.join(root, "src/ui"), { recursive: true });
+      await mkdir(path.join(root, "node_modules"));
+      const require = createRequire(import.meta.url);
+      await symlink(
+        path.dirname(require.resolve("vite/package.json")),
+        path.join(root, "node_modules/vite"),
+        "dir",
+      );
+      await writeFile(path.join(root, "package.json"), JSON.stringify({ type: "module" }));
+      await writeFile(
+        path.join(root, "src/ui/main.tsx"),
+        `import "./z.js"; import "./a.js";${lazy ? 'globalThis.openPanel = () => import("./lazy.js");' : ""}`,
+      );
+      for (const [name, color] of [
+        ["z", "red"],
+        ["a", "blue"],
+        ["lazy", "green"],
+      ]) {
+        await writeFile(
+          path.join(root, `src/ui/${name}.js`),
+          `import "./${name}.css"; globalThis.${name} = true;`,
+        );
+        await writeFile(path.join(root, `src/ui/${name}.css`), `.hud{background:${color}}`);
+      }
+      await writeFile(
+        path.join(root, "vite.config.js"),
+        `export default { build: { cssCodeSplit: ${split}, rollupOptions: { output: { manualChunks(id) { const match = /\\/(z|a)\\.(?:js|css)$/.exec(id); return match?.[1]; }, assetFileNames: "assets/[name][extname]" } } } };`,
+      );
+      const built = await buildUi(root, { ui: { renderer: "native-css" } } as Parameters<
+        typeof buildUi
+      >[1]);
+      const html = await readFile(path.join(built, "index.html"), "utf8");
+      const browserOrder = [...html.matchAll(/href="\.\/assets\/([^"/]+\.css)"/gu)].map(
+        (match) => match[1] as string,
+      );
+      expect(browserOrder).toEqual(split ? ["z.css", "a.css"] : ["style.css"]);
+      const out = path.join(root, "ui-css");
+      if (lazy && split) {
+        await expect(extractUiStylesheets(built, out)).rejects.toThrow(
+          "TN_CSS_UI_LAZY_STYLESHEET_UNSUPPORTED",
+        );
+        expect(await readdir(out)).toEqual([]);
+      } else {
+        await extractUiStylesheets(built, out);
+        const staged = JSON.parse(await readFile(path.join(out, "stylesheets.json"), "utf8"));
+        expect(staged).toEqual({ version: 1, stylesheets: browserOrder });
+        for (const name of browserOrder)
+          expect(await readFile(path.join(out, name))).toEqual(
+            await readFile(path.join(built, "assets", name)),
+          );
+      }
+    },
+  );
+
+  it("refuses CSS imported only as an asset URL without a browser stylesheet link", async () => {
+    const root = await makeTempDir("threenative-ui-css-url-");
+    roots.push(root);
+    await mkdir(path.join(root, "src/ui"), { recursive: true });
+    await mkdir(path.join(root, "node_modules"));
+    const require = createRequire(import.meta.url);
+    await symlink(
+      path.dirname(require.resolve("vite/package.json")),
+      path.join(root, "node_modules/vite"),
+      "dir",
+    );
+    await writeFile(path.join(root, "package.json"), JSON.stringify({ type: "module" }));
+    await writeFile(
+      path.join(root, "src/ui/main.tsx"),
+      'import cssUrl from "../../style.css?url"; globalThis.cssUrl = cssUrl;',
+    );
+    await writeFile(path.join(root, "style.css"), ".hud{background:red}");
+    await writeFile(
+      path.join(root, "vite.config.js"),
+      'export default { build: { cssCodeSplit: true, assetsInlineLimit: 0, rollupOptions: { output: { assetFileNames: "assets/[name][extname]" } } } };',
+    );
+    const built = await buildUi(root, { ui: { renderer: "native-css" } } as Parameters<
+      typeof buildUi
+    >[1]);
+    const html = await readFile(path.join(built, "index.html"), "utf8");
+    expect(html).not.toContain('rel="stylesheet"');
+    const manifest = JSON.parse(await readFile(path.join(built, ".vite/manifest.json"), "utf8"));
+    expect(manifest["style.css"]).toBeUndefined();
+    expect(Object.values(manifest)).toEqual(
+      expect.arrayContaining([expect.objectContaining({ file: "assets/style.css" })]),
+    );
+    const out = path.join(root, "ui-css");
+    await expect(extractUiStylesheets(built, out)).rejects.toThrow(
+      "TN_CSS_UI_LAZY_STYLESHEET_UNSUPPORTED",
+    );
+    expect(await readdir(out)).toEqual([]);
+  });
+
   it("copies the fonts and images a stylesheet url() names, flat beside it", async () => {
     const root = await makeTempDir("threenative-ui-css-asset-");
     roots.push(root);

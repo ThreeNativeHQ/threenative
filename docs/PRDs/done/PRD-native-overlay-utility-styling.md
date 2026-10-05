@@ -446,3 +446,43 @@ need the downloaded `third_party` receipts, `ios-packaging` expects a workflow e
 `develop` after this branch's base, and the generated-shooter input proof fails on a static scenario check
 in files this branch does not touch. Not run: Android emulator, iOS, macOS, Windows, any performance
 budget, and the Phase 2 browser-oracle corpus.
+
+
+## Published source review — 2026-10-05
+
+Review of published commit `28b8c87c98f3b262586df4353a1afa447338256b` against develop
+`d3c009e4404abcc2041f58124693edb9c78d802b` reproduced four defects and corrected them:
+CSS staging/loading now follows Vite's static import order instead of hashed filenames;
+unloaded split CSS is refused explicitly (the browser's single global stylesheet with
+`cssCodeSplit: false` remains supported). Grouped native event messages let React's
+`stopPropagation()` suppress ancestors only in that dispatch, including when an old event
+is retained. The host state trace preserves exact double scroll offsets. Android interaction
+verdicts require every observation to be reachable and compared.
+
+RED evidence on that published source: the real Vite/React lane had 3 failures and 1 positive
+control; Rust stylesheet loading had 2 failures and pointer dispatch had 1; the actual Android
+verdict and compiled C++ trace function had 2 failures. Independent review additionally caught
+a retained event stopping a later dispatch and the global-CSS case; each failed before its
+correction. Setup errors and an unconfirmed CSS-URL manifest-key hypothesis are not behavior REDs.
+
+Final verification: packaging/compatibility/source-map specs 92 PASS; React CSS 15 PASS;
+actual split/global/URL stylesheet controls 5 PASS; Rust release tests 73 PASS; UI host-contract
+spec 18 PASS and 1 named macOS-only skip on Linux. Core and CLI typechecks, changed-file Biome
+checks, and the ordinary CLI build pass. The C++ precision regression compiles the actual trace
+function with controlled ABI offsets and uses the actual state reader; it is a function contract,
+not a new device run. Rust uses the real CSS engine; its build was capped with `-j 1`.
+
+The published native coverage digest was already stale (`e330b253…` against the retained
+`d0a593af…`). A fresh canonical `pnpm --filter @threenative/runtime-native native:coverage`
+measurement on this repair ran from 22:53:50 to 22:58:07 UTC under the shared capture lease:
+46 native contract targets executed, 3 explicitly disabled targets, 50 fresh raw profiles and
+46 merged profiles, 19,354/24,669 instrumented lines covered (78.45%). Existing floors are
+unchanged. The generated report now binds to
+`b5ddb0d3c39a6590d1e9088c4e82fd8659c38e0713ca373a1083002fbb256595`.
+The canonical configuration disables the CSS/web overlay, physics, video and metahuman lanes;
+this refresh establishes current coverage provenance, not new native-CSS host or mobile evidence.
+Repository budgets (including current native coverage/census) and documentation checks also pass.
+
+These repairs preserve the earlier published oracle/device results and checklist history.
+No Android, macOS, Windows, physical-device, performance-budget or full CI board was rerun for
+this bounded source review. CI must qualify the new published candidate separately.

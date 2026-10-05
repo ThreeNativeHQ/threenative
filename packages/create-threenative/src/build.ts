@@ -360,7 +360,7 @@ export async function extractUiStylesheets(
     );
   }
   // Sorted so two builds of one game stage the same names in the same order.
-  const sheets = stylesheets.sort();
+  let sheets = stylesheets.sort();
   const sheetNames = new Set<string>();
   for (const file of sheets) {
     const name = path.basename(file);
@@ -408,6 +408,54 @@ export async function extractUiStylesheets(
       `TN_CSS_UI_UNSUPPORTED_CSS: ${findings.length} active rule(s) outside the native-css Core profile (docs/guides/native-css-support.md):\n${describeNativeCssFindings(findings)}`,
     );
   }
+  // Vite's entry/import graph carries the browser's stylesheet order. Hashed filenames do not.
+  // Older hand-staged directories have no manifest and retain their alphabetical load contract.
+  let order: { version: number; stylesheets: string[] } | undefined;
+  const manifestFile = path.join(uiDir, ".vite", "manifest.json");
+  if (existsSync(manifestFile)) {
+    const manifest: Record<
+      string,
+      { isEntry?: boolean; src?: string; file?: string; imports?: string[]; css?: string[] }
+    > = JSON.parse(await readFile(manifestFile, "utf8"));
+    const entries = Object.keys(manifest).filter(
+      (key) =>
+        manifest[key]?.isEntry &&
+        path.basename(manifest[key]?.src ?? "").startsWith(UI_PAGE_PREFIX),
+    );
+    if (entries.length !== 1)
+      throw new Error("TN_CSS_UI_STYLESHEET_ORDER: the UI manifest must name exactly one UI entry");
+    const visited = new Set<string>();
+    const ordered = new Set<string>();
+    const visit = (key: string): void => {
+      if (visited.has(key)) return;
+      visited.add(key);
+      const chunk = manifest[key];
+      if (chunk === undefined)
+        throw new Error(`TN_CSS_UI_STYLESHEET_ORDER: missing manifest chunk ${key}`);
+      for (const imported of chunk.imports ?? []) visit(imported);
+      for (const css of chunk.css ?? []) {
+        const file = path.resolve(uiDir, css);
+        if (!stylesheets.includes(file))
+          throw new Error(`TN_CSS_UI_STYLESHEET_ORDER: missing emitted stylesheet ${css}`);
+        ordered.add(file);
+      }
+    };
+    visit(entries[0] as string);
+    // With cssCodeSplit:false Vite emits its one global stylesheet as a standalone manifest
+    // asset, and injects that asset into every HTML entry rather than attaching it to a chunk.
+    const globalCss = manifest["style.css"]?.file;
+    if (ordered.size === 0 && sheets.length === 1 && globalCss !== undefined) {
+      const file = path.resolve(uiDir, globalCss);
+      if (sheets[0] === file) ordered.add(file);
+    }
+    const inactive = sheets.filter((file) => !ordered.has(file));
+    if (inactive.length > 0)
+      throw new Error(
+        `TN_CSS_UI_LAZY_STYLESHEET_UNSUPPORTED: ${inactive.map((file) => path.relative(uiDir, file)).join(", ")} is not loaded by the UI entry; import native-css styles statically from src/ui/main.tsx`,
+      );
+    sheets = [...ordered];
+    order = { version: 1, stylesheets: sheets.map((file) => path.basename(file)) };
+  }
   for (const file of sheets) {
     await copyFile(file, path.join(outDir, path.basename(file)));
     // Preserve emitted sidecars and the stylesheet's sourceMappingURL without rewriting either.
@@ -421,6 +469,8 @@ export async function extractUiStylesheets(
   for (const [name, source] of assets) {
     await copyFile(source, path.join(outDir, name));
   }
+  if (order !== undefined)
+    await writeFile(path.join(outDir, "stylesheets.json"), `${JSON.stringify(order)}\n`);
   return readdir(outDir);
 }
 
@@ -736,7 +786,7 @@ function uiBuildDriver(cwd: string, page: string, output: string, cssSourcemaps 
     // Native CSS diagnostics consume adjacent maps linked by the emitted stylesheet.
     ...(cssSourcemaps ? ["    css: { devSourcemap: true, emitSourcemap: true },"] : []),
     "    build: {",
-    ...(cssSourcemaps ? ["      sourcemap: true,"] : []),
+    ...(cssSourcemaps ? ["      sourcemap: true,", "      manifest: true,"] : []),
     `      outDir: ${literal(output)},`,
     "      emptyOutDir: true,",
     `      rollupOptions: { input: { index: ${literal(page)} } },`,

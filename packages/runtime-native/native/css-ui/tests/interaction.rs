@@ -751,3 +751,48 @@ fn reduced_motion_makes_a_transition_arrive_at_once() {
     ui.render();
     assert_eq!(rgb(&ui, 50, 130), [64, 0, 191], "a quarter of the way to red");
 }
+
+#[test]
+fn a_single_click_keeps_its_ancestor_messages_in_one_dispatch() {
+    let mut ui = ui(
+        64,
+        64,
+        &[
+            sheet(
+                "s",
+                "html,body{margin:0}div,button{width:64px;height:64px;padding:0;border:0}",
+            ),
+            create(1, "div"),
+            create(2, "button"),
+            append(1, 2),
+            append(0, 1),
+            listen(1, "click"),
+            listen(2, "click"),
+        ],
+    );
+    ui.pointer("move", 0.5, 0.5, 0).unwrap();
+    ui.pointer("down", 0.5, 0.5, 1).unwrap();
+    ui.pointer("up", 0.5, 0.5, 0).unwrap();
+    let events = clicks(&mut ui);
+    assert_eq!(
+        events.len(),
+        2,
+        "the target and ancestor remain separate messages"
+    );
+    let child: serde_json::Value = serde_json::from_str(&events[0]).unwrap();
+    let parent: serde_json::Value = serde_json::from_str(&events[1]).unwrap();
+    assert_eq!(child["id"], 2);
+    assert_eq!(parent["id"], 1);
+    assert!(
+        child["dispatch"].is_string(),
+        "a multi-handler click needs a lossless dispatch token"
+    );
+    assert_eq!(child["dispatch"], parent["dispatch"]);
+    ui.pointer("down", 0.5, 0.5, 1).unwrap();
+    ui.pointer("up", 0.5, 0.5, 0).unwrap();
+    let next: serde_json::Value = serde_json::from_str(&clicks(&mut ui)[0]).unwrap();
+    assert_ne!(
+        child["dispatch"], next["dispatch"],
+        "the next click is independently deliverable"
+    );
+}

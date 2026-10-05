@@ -30,6 +30,10 @@ every glyph advance to a whole pixel and the engine does not.
 
 ## Restrictions you will hit
 
+- **Stylesheet loading.** Native packaging preserves the Vite UI entry's static stylesheet order in
+  `ui/stylesheets.json`, keeping emitted CSS and maps unchanged. CSS emitted only for a lazy chunk
+  is refused with `TN_CSS_UI_LAZY_STYLESHEET_UNSUPPORTED`; import those styles statically from
+  `src/ui/main.tsx`. A hand-staged directory without an order manifest loads CSS alphabetically.
 - **Reduced motion is a rule, not a media query.** Stylo's servo build has no `prefers-reduced-motion`
   feature, so `@media (prefers-reduced-motion: reduce)` never matches. When reduced motion is
   requested the engine instead forces `transition-duration: 0s`; any other thing you hang on that media
