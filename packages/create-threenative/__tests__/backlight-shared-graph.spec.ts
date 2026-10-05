@@ -125,3 +125,46 @@ test("shared full graph preserves live render boundaries and independent materia
   secondFrame.renderId = 6;
   for (const n of nodes) secondFrame.updateNode(n);
 });
+
+test("shared graph follows the actual render camera and live key layers within one frame", () => {
+  const scene = new Scene();
+  const key = new DirectionalLight(0xffffff, 2);
+  key.position.set(0, 2, -3);
+  scene.add(key);
+  scene.updateMatrixWorld(true);
+  const ownerCamera = new Camera();
+  const renderCamera = new Camera();
+  renderCamera.layers.set(1);
+  const controls = {
+    scene,
+    camera: ownerCamera,
+    key,
+    rimGain: 0.12,
+    fillGain: 1,
+    fillColor: new Color(0.2, 0.3, 0.4),
+    fillDirection: new Vector3(0, 1, 0),
+    fillAngularSize: 1.25,
+    fillAdmitted: false,
+  };
+  const material = backlightMaterial(new MeshStandardMaterial(), controls);
+  const nodes = new Set<LiveNode>();
+  material.emissiveNode?.traverse((node) => {
+    if (node.getUpdateType() === "render") nodes.add(node as LiveNode);
+  });
+  const frame = new NodeFrame();
+  frame.frameId = 7;
+  const render = (camera: Camera, renderId: number) => {
+    frame.camera = camera;
+    frame.renderId = renderId;
+    for (const node of nodes) frame.updateNode(node);
+    return [...nodes].some((node) => node.value === 2);
+  };
+  assert.equal(render(renderCamera, 1), false, "actual camera excludes the key");
+  ownerCamera.layers.set(1);
+  assert.equal(render(new Camera(), 2), true, "actual camera admits the key despite owner layers");
+  key.layers.set(1);
+  assert.equal(render(new Camera(), 3), false, "live key layers remove its contribution");
+  assert.equal(render(renderCamera, 4), true, "second camera admits the changed key layers");
+  assert.equal(frame.frameId, 7, "all camera renders belong to one frame");
+  material.dispose();
+});

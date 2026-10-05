@@ -16,10 +16,10 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import ts from "@typescript/typescript6";
 import GLSLDecoder from "three/examples/jsm/transpiler/GLSLDecoder.js";
 import TSLEncoder from "three/examples/jsm/transpiler/TSLEncoder.js";
 import Transpiler from "three/examples/jsm/transpiler/Transpiler.js";
-import ts from "typescript";
 
 const here = dirname(fileURLToPath(import.meta.url));
 // The repository this template lives in, four levels up from `tools/`. A scaffolded project has no

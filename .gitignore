@@ -1,5 +1,7 @@
 node_modules/
 .pnpm-store/
+# Native CI compiler-cache output is not source; adjacent .cache paths remain visible.
+/.cache/ccache/
 .npmrc
 dist/
 dist-native/

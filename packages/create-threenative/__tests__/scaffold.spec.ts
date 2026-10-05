@@ -172,37 +172,24 @@ const BUG_REPORT_SKILL_PATHS = [
 // docs/verification/prd339-exposure-proof/completion-consumer-8bf16f4.json.
 // Current develop c18a42b integration: all13 actual generated trees were byte-compared
 // against reviewed 8bf trees; only the copied Three compute-only Storage3DTexture patch changed.
-// Recomputed 2026-10-04 for PRD-495's junk sweep: ten templates lost zero-reader declarations
-// (several helpers in racing and shooter, one dead file in minimal), so their generated trees
-// moved. platformer, snow and starter were untouched and keep their values. Every restamped value
-// is the measured no-install tree, taken from the failing assertion this constant exists to raise
-// and then re-run green.
+// Re-measured on current develop plus TS7: restoring only each compiler manifest and
+// rain's shader API import recovers all 13 develop fingerprints.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
-  // Recomputed 2026-10-05 on the rebased PRD-345 shooter-perf branch merged with the PRD-495
-  // junk sweep: the twelve material templates now share one controller-owned render graph
-  // (new backlightControls.ts, and backlightMaterial.ts referencing it), so all thirteen trees
-  // were re-measured through createProject on the merged tree; rain moves only via the merge.
-  // Recomputed 2026-10-05 on the merge of develop (PRD-345 backlight/dark defaults, #416) into
-  // the PRD-495 junk-cleanup branch: the merged tree carries both sides' template bytes — ten
-  // templates lost zero-reader declarations and all thirteen gained the bounded
-  // lighting/environment sources — so all thirteen generated trees were re-measured through
-  // createProject on that merged tree. Values below are the merged-tree measurement, not either
-  // side's.
-  // rain re-measured after Opus review restored templates/rain/tools/verify-noise-volume.mjs,
-  // the owner's manual storm-volume proof that the sweep had removed as junk.
-  "action-rpg": "92d303aa293531cf7a47f71a0d0e7d3b65e5193c2609072924d6803270432113",
-  minimal: "e95690f7478204cc9948b134b132d9d9061bebdd26546146f81b4270b9dc99d8",
-  platformer: "36af4ec21b10d21387ff7aeb60490b2e5abc0362d5b00450f1f9a7bc8a9af675",
-  puzzle: "12e45fd921a100823ab3a166e30a53e5a83b693d2032fb0135645e7ef508f07c",
-  racing: "1743f3d6a2ee374b3ca235cc7e5d7079d5564b85b18fefa8a85195528932b97c",
-  rain: "637afd242e4d7bc6ded1b102b1bd80bfbf289ed32878cdb1b20902e303292255",
-  rts: "3f4c7292e2a45d88d18c434a6c407696a5a6b36f9e0d39288b15d7c1f9c047ca",
-  runner: "db58ac5addcc9ebd3f3917dadf1f2d5f725ea3728ea7a1e29dab895b10c0a761",
-  sailing: "3958a6481ef470d89f2f83159d6c3dfecea264bae8bef182a9a456194d9be4ce",
-  shooter: "53840be6e1d8b7054a09851ca1d490ecde00186ce934125f3fd7b4ba87ee03c2",
-  snow: "fcf37ea542facf32d20e197865abdf9363b1c6cce2b1741288d4ad2e28412227",
-  starter: "a70abdda7fe0dc14d1bb10646fb91a7b836eb61838f90e28d077356c51f8d9ec",
-  "tower-defense": "c6b04b85de33545b0c03d393f0cf23c9df3fb63d3541ebe424e2b2ea05476351",
+  // Re-measured through this generator contract on PR440 merged with develop 45565868:
+  // TS7/API6 compiler pins plus shared render graph and actual-render-camera light layers.
+  "action-rpg": "913c20b4a7a15458204570daae4f1aa30e75dba67e42702ff507a9ec781ef692",
+  minimal: "151aec43f5bd3a697abe1e3c48cd1246468f4544a48f1f1ef3e8f9f4d0db792f",
+  platformer: "277d034652896c733071d3def3b32c29ceb2211360ffdc3de08b0a719b0d975e",
+  puzzle: "f867724339566fb2d67a4614261da0e5d23167d51138fa81bea79085741ef141",
+  racing: "20c92ebf0762f6e80a6ee6e542c3e4d7144f2b43675eeb95beabf3bb93642f8b",
+  rain: "21dbd2a9100f3e1dfc9ea0a474fd5f3b429a55ae4e968a3741dccaf57e05bfc8",
+  rts: "03e1b67e66f104c305d513af145913579e6529aa000f0bf44f734a8a92c89fe8",
+  runner: "7ef226bda60aa813b2d85ee1da30bebbc2c63aac2d38828d40967c254163863e",
+  sailing: "2d9a3bbfbb15f81699c779950a96d30526f05956ab8e52e1327dd884c0e39493",
+  shooter: "7913e84a7b59ef54e5e45996be13143bb41aa531b9597eaf196c590532ca716d",
+  snow: "ce85dc72f12d267a394bf6befefe59da537d52f565a96fde703a50ff06c46754",
+  starter: "af8956584e6dc12af8ae7c9f78a21d5cc45f6c8ed3650218e433bae414a6ba52",
+  "tower-defense": "b915904e5ceb4769a1a9a7a2a82260d14346b3ffa6ea724d1c8dc5ec93c28156",
 };
 
 const GENERATED_SCAFFOLD_METADATA =

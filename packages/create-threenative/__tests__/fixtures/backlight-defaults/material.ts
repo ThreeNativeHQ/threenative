@@ -100,13 +100,13 @@ function createGraph(controls: BacklightControls) {
   });
   const keyDirectionValue = new Vector3(0, 1, 0);
   const keyTargetValue = new Vector3();
-  const keyDirection = uniform(keyDirectionValue).onRenderUpdate(() => {
-    resolveKey(controls, keyDirectionValue, keyTargetValue);
+  const keyDirection = uniform(keyDirectionValue).onRenderUpdate((frame) => {
+    resolveKey(controls, keyDirectionValue, keyTargetValue, frame.camera ?? controls.camera);
     return keyDirectionValue;
   });
   // Removal/visibility/intensity are live. A removed sun cannot leave an invented rim behind.
-  const keyGain = uniform(0).onRenderUpdate(() =>
-    resolveKey(controls, keyDirectionValue, keyTargetValue),
+  const keyGain = uniform(0).onRenderUpdate((frame) =>
+    resolveKey(controls, keyDirectionValue, keyTargetValue, frame.camera ?? controls.camera),
   );
   const N = normalView.normalize();
   const V = positionViewDirection.normalize();

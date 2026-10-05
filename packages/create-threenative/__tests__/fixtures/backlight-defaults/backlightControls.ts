@@ -1,4 +1,4 @@
-import type { Color, Object3D, Vector3 } from "three";
+import type { Camera, Color, Object3D, Vector3 } from "three";
 import type { BacklightControls } from "./material.js";
 function finiteColor(color: Color) {
   return (
@@ -30,7 +30,12 @@ export function validateControls(controls: BacklightControls) {
       "Backlight controls require finite nonnegative gains, a direction and angular size in (0, 1.5].",
     );
 }
-export function resolveKey(controls: BacklightControls, direction: Vector3, target: Vector3) {
+export function resolveKey(
+  controls: BacklightControls,
+  direction: Vector3,
+  target: Vector3,
+  camera: Camera = controls.camera,
+) {
   validateControls(controls);
   // Read the renderer/game-updated matrices, as upstream Three light uniforms do.
   // Targets outside the scene must be updated by their owner before rendering.
@@ -50,7 +55,7 @@ export function resolveKey(controls: BacklightControls, direction: Vector3, targ
     return 0;
   }
   direction.normalize();
-  if (!controls.key.layers.test(controls.camera.layers)) return 0;
+  if (!controls.key.layers.test(camera.layers)) return 0;
   let current: Object3D | null = controls.key;
   while (current !== null) {
     if (!current.visible) return 0;

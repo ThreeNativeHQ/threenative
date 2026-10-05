@@ -669,7 +669,7 @@ describe("PRD-481 a tree is tested once", () => {
     const jobs = plan.jobs as Record<string, { required: boolean }>;
     expect(Object.values(jobs).some((job) => job.required)).toBe(true);
     // The unclassified executable diff keeps native coverage rather than guessing it is web-only.
-    expect(plan.nativeTier).toBe("reduced");
+    expect(plan.nativeTier).toBe("full");
   });
 
   it("runs the full board for a tree that changed by one file", () => {
@@ -835,16 +835,16 @@ describe("PRD-481 a reused verdict has to cover this run's validation profile", 
     fakeActionsApi(fixture, { base: "develop", nativeConclusion: "skipped" });
     listSourceRun(fixture);
     const plan = classifyCandidate(fixture, fixture.candidate);
-    expect(plan).toMatchObject({ selection: "full", nativeTier: "reduced" });
+    expect(plan).toMatchObject({ selection: "full", nativeTier: "full" });
     expect(plan.reason).toContain("no authoritative complete expansion");
   });
 
-  it("records the reduced tier in the verdict, so the gate cannot accept a weaker source", () => {
+  it("records the exhaustive fallback tier, so the gate cannot accept a weaker source", () => {
     const fixture = reuseFixture({ native: true });
     fakeActionsApi(fixture, { base: "main" });
     listSourceRun(fixture);
     const plan = classifyCandidate(fixture, fixture.candidate);
-    expect(plan).toMatchObject({ selection: "full", nativeTier: "reduced" });
+    expect(plan).toMatchObject({ selection: "full", nativeTier: "full" });
     // The source's lane disappears after the scope job made its verdict: `none` no longer covers
     // the Linux rows this run owes, and ci-required re-reads the run instead of trusting the plan.
     fakeActionsApi(fixture, { base: "main", nativeConclusion: "skipped" });
@@ -909,7 +909,7 @@ function verifyWarmPlan(
       ...process.env,
       TN_CI_NEEDS: JSON.stringify(needs),
       TN_CI_EVENT: "push",
-      TN_CI_BASE_REF: "",
+      TN_CI_BASE_REF: "develop",
       GITHUB_ACTIONS: "true",
       GITHUB_REPOSITORY: "three-native/fixture",
       GITHUB_RUN_ID: String(SELF_RUN_ID),
