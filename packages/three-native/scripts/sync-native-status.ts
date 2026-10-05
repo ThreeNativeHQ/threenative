@@ -59,6 +59,8 @@ const unknown: string[] = [];
 /** A bound field whose three type the catalog narrows to what the binding accepts. */
 const FIELD_TYPE_OVERRIDE: Record<string, string> = {
   "BufferGeometry.groups": "string",
+  // The binding answers three's `{ start, count }[]` as its canonical JSON text.
+  "BufferAttribute.updateRanges": "string",
   "Scene.background": "Color | null",
 };
 

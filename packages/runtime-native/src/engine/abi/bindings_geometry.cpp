@@ -99,6 +99,20 @@ BufferAttribute& attributeArg(Store& store, const Value& arg) {
 
 Value string(std::string text) { return Value{Value::Kind::String, 0, std::move(text)}; }
 
+/** `updateRanges` as canonical JSON (`[{"count":N,"start":M}, ...]`), three's array of records. */
+Value updateRangesJson(const BufferAttribute& attribute) {
+    std::string json = "[";
+    bool first = true;
+    for (const UpdateRange& range : attribute.updateRanges()) {
+        if (!first) json += ",";
+        first = false;
+        json += "{\"count\":" + std::to_string(range.count) + ",\"start\":" +
+                std::to_string(range.start) + "}";
+    }
+    json += "]";
+    return string(std::move(json));
+}
+
 Value attributeArray(const BufferGeometry& geometry, const char* name) {
     const std::shared_ptr<BufferAttribute> attribute = geometry.getAttribute(name);
     if (attribute == nullptr) throw Unsupported{std::string("this geometry has no ") + name + " attribute"};
@@ -120,12 +134,16 @@ void registerBufferAttribute(ClassBinding& b) {
             BufferAttribute::fromDoubles(Scalar::F32, values, static_cast<int>(itemSize), normalized));
     };
     b.getters["array"] = [](void* self) { return numbers(as<BufferAttribute>(self)->toNumbers()); };
+    b.getters["array.length"] = [](void* self) {
+        return Value::of(double(as<BufferAttribute>(self)->store->count()));
+    };
     b.getters["count"] = [](void* self) { return Value::of(double(as<BufferAttribute>(self)->count())); };
     b.getters["itemSize"] = [](void* self) { return Value::of(double(as<BufferAttribute>(self)->itemSize)); };
     b.getters["normalized"] = [](void* self) { return Value::of(as<BufferAttribute>(self)->normalized); };
     b.getters["usage"] = [](void* self) { return Value::of(double(as<BufferAttribute>(self)->usage)); };
     b.getters["gpuType"] = [](void* self) { return Value::of(double(as<BufferAttribute>(self)->gpuType)); };
     b.getters["version"] = [](void* self) { return Value::of(double(as<BufferAttribute>(self)->version())); };
+    b.getters["updateRanges"] = [](void* self) { return updateRangesJson(*as<BufferAttribute>(self)); };
     b.getters["id"] = [](void* self) { return Value::of(double(as<BufferAttribute>(self)->id)); };
     b.getters["name"] = [](void* self) { return string(as<BufferAttribute>(self)->name); };
     b.setters["name"] = [](void* self, const Value& v) {
@@ -152,6 +170,18 @@ void registerBufferAttribute(ClassBinding& b) {
         const double c = number(a.at(1));
         if (!(c >= 0 && c < 2147483647.0) || c != std::floor(c)) return Value{};
         return component(*as<BufferAttribute>(self), jsIndex(a.at(0)), static_cast<int>(c));
+    };
+    b.methods["addUpdateRange"] = [](void* self, const Args& a, Store&) {
+        const uint64_t start = jsIndex(a.at(0));
+        const uint64_t count = jsIndex(a.at(1));
+        if (start == UINT64_MAX || count == UINT64_MAX)
+            throw Unsupported{"addUpdateRange takes a non-negative integer start and count"};
+        as<BufferAttribute>(self)->addUpdateRange(start, count);
+        return chain();
+    };
+    b.methods["clearUpdateRanges"] = [](void* self, const Args&, Store&) {
+        as<BufferAttribute>(self)->clearUpdateRanges();
+        return chain();
     };
     b.methods["setComponent"] = [](void* self, const Args& a, Store&) {
         as<BufferAttribute>(self)->setComponent(jsIndex(a.at(0)),

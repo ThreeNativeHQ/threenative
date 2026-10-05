@@ -222,9 +222,11 @@
     "BufferAttribute": {
       "constructor": true,
       "methods": [
+        "addUpdateRange",
         "applyMatrix3",
         "applyMatrix4",
         "applyNormalMatrix",
+        "clearUpdateRanges",
         "copyAt",
         "getComponent",
         "getW",
@@ -243,12 +245,14 @@
       ],
       "getters": [
         "array",
+        "array.length",
         "count",
         "gpuType",
         "id",
         "itemSize",
         "name",
         "normalized",
+        "updateRanges",
         "usage",
         "version"
       ],

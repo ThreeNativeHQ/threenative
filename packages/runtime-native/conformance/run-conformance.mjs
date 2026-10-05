@@ -178,6 +178,7 @@ function usage() {
   --out PATH                       Report file or artifact directory
   --dry-run                        Validate and bundle without target execution
   --suite native-engine           Run the native-engine fixture suite against a native driver
+  --suite native-engine-<group>   The same suite over the <group>-* fixtures only
                                   (--target android|android-hardware runs it on a device over adb;
                                   --only <glob> selects fixtures; --renders with a render-capable
                                   --driver draws the render fixtures' frames)
@@ -2569,7 +2570,7 @@ function onlyPattern(globs) {
   return new RegExp(`^(?:${alternatives.join("|")})$`, "u");
 }
 
-function runFixtureSuite(argv, suite) {
+function runFixtureSuite(argv, suite, groupOnly = null) {
   const runner = join(workspaceRoot, "packages", "three-native", "tests", "compatibility", "run-native.ts");
   const out = valueAfter(argv, "--out") ?? join(runtimeRoot, "artifacts", "conformance", suite);
   const file = extname(out).toLowerCase() === ".json" ? out : join(out, "report.json");
@@ -2583,7 +2584,9 @@ function runFixtureSuite(argv, suite) {
     throw new Error(`TN_PARITY_SUITE_TARGET: --suite native-engine runs on desktop, android or android-hardware; received ${target}`);
   }
   const args = [runner, "--out", file, ...(driver === null ? [] : ["--driver", driver])];
-  const only = valueAfter(argv, "--only");
+  if (groupOnly !== null && valueAfter(argv, "--only") !== null)
+    throw new Error(`TN_PARITY_SUITE_ONLY: --suite ${suite} already selects ${groupOnly}; drop --only`);
+  const only = groupOnly ?? valueAfter(argv, "--only");
   if (only !== null) args.push("--only", only);
   if (argv.includes("--allow-blocked")) args.push("--allow-blocked");
   // A render-capable driver (tn-native-engine-render-driver) draws the render fixtures' frames.
@@ -2599,7 +2602,7 @@ function runFixtureSuite(argv, suite) {
     // wildcards), and the report must hold exactly those rows.
     .filter((id) => only === null || onlyPattern(only).test(id))
     .sort();
-  const errors = validateReport(report, loadRegistry(), { suite, expectedIds });
+  const errors = validateReport(report, loadRegistry(), { suite: "native-engine", expectedIds });
   if (errors.length > 0) {
     throw new Error(`Generated an invalid conformance report:\n- ${errors.join("\n- ")}`);
   }
@@ -2650,8 +2653,11 @@ async function main(argv = process.argv.slice(2)) {
   }
   const suite = valueAfter(argv, "--suite");
   if (suite !== null) {
-    if (suite !== "native-engine") throw new Error(`--suite must be native-engine; received ${suite}`);
-    runFixtureSuite(argv, suite);
+    // `native-engine-<group>` is the native-engine suite over the `<group>-*` fixtures, the form the
+    // PRD proofs name (`--suite native-engine-buffer-version`).
+    const group = suite.startsWith("native-engine-") ? suite.slice("native-engine-".length) : null;
+    if (suite !== "native-engine" && !group) throw new Error(`--suite must be native-engine or native-engine-<group>; received ${suite}`);
+    runFixtureSuite(argv, suite, group === null ? null : `${group}-*`);
     return;
   }
   const projectArgument = valueAfter(argv, "--project");

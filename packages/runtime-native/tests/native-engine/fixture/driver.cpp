@@ -1,5 +1,6 @@
 #include "driver.h"
 
+#include <algorithm>
 #include <bit>
 #include <cctype>
 #include <cinttypes>
@@ -55,6 +56,21 @@ Value parseArg(const std::string& token) {
     if (token == "b:0") return Value::of(false);
     if (token.rfind("r:", 0) == 0) return Value{Value::Kind::Ref, 0, token.substr(2)};
     throw Unsupported{"unknown argument token " + token};
+}
+
+/**
+ * True when a path names a flat array (`array`, `elements`) or one of its elements (`array.1`).
+ * The engine exposes the whole array as a value: an element read is served from it, while an
+ * element write, which no binding addresses, is the named unsupported shape TN_ARRAY_SHAPE.
+ */
+bool isArrayShapePath(const std::string& path) {
+    const size_t dot = path.rfind('.');
+    const std::string base = dot == std::string::npos ? path : path.substr(0, dot);
+    if (base != "array" && base != "elements") return false;
+    if (dot == std::string::npos) return true;
+    const std::string last = path.substr(dot + 1);
+    return !last.empty() &&
+           std::all_of(last.begin(), last.end(), [](unsigned char c) { return std::isdigit(c) != 0; });
 }
 
 std::vector<std::string> split(const std::string& line) {
@@ -136,7 +152,10 @@ int Driver::run(std::istream& in, std::ostream& out) {
                 ClassBinding& binding = classes[object->second.cls];
                 if (command == "set") {
                     auto setter = binding.setters.find(t[2]);
-                    if (setter == binding.setters.end()) throw Unsupported{object->second.cls + "." + t[2] + " is not settable"};
+                    if (setter == binding.setters.end()) {
+                        if (isArrayShapePath(t[2])) throw Unsupported{"TN_ARRAY_SHAPE"};
+                        throw Unsupported{object->second.cls + "." + t[2] + " is not settable"};
+                    }
                     setter->second(object->second.ptr.get(), parseArg(t[3]), *this);
                     continue;
                 }
@@ -199,7 +218,18 @@ int Driver::run(std::istream& in, std::ostream& out) {
                             value = getter->second(object->second.ptr.get());
                         } else if (member != binding.members.end()) {
                             value = member->second(object->second.ptr.get(), {}, *this);
+                        } else if (const size_t dot = path.rfind('.'); isArrayShapePath(path) && dot != std::string::npos) {
+                            // `array.1` reads one element of the whole array the engine stores; an
+                            // index past it, or an array the class does not expose, is the named shape.
+                            auto whole = binding.getters.find(path.substr(0, dot));
+                            const std::string digits = path.substr(dot + 1);
+                            if (whole == binding.getters.end() || digits.size() > 15) throw Unsupported{"TN_ARRAY_SHAPE"};
+                            const Value all = whole->second(object->second.ptr.get());
+                            const uint64_t i = std::stoull(digits);
+                            if (all.kind != Value::Kind::Numbers || i >= all.numbers.size()) throw Unsupported{"TN_ARRAY_SHAPE"};
+                            value = Value::of(all.numbers[i]);
                         } else {
+                            if (isArrayShapePath(path)) throw Unsupported{"TN_ARRAY_SHAPE"};
                             throw Unsupported{object->second.cls + "." + path};
                         }
                     }

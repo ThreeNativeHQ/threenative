@@ -1343,12 +1343,11 @@
         },
         {
           "name": "updateRanges",
-          "type": "Array<{ start: number; count: number; }>",
+          "type": "string",
           "mutable": true,
           "lifetime": "owned",
           "status": {
-            "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "kind": "supported"
           }
         },
         {
@@ -1476,8 +1475,7 @@
             }
           ],
           "status": {
-            "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "kind": "supported"
           }
         },
         {
@@ -1490,8 +1488,7 @@
             }
           ],
           "status": {
-            "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "kind": "supported"
           }
         },
         {
