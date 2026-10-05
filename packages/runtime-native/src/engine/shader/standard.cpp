@@ -133,7 +133,10 @@ std::vector<std::string> unsupportedFeatures(const StandardMaterial& m) {
     return out;
 }
 
-StandardPrograms buildStandard(const StandardMaterial& material) {
+// The MeshStandardNodeMaterial / MeshPhysicalNodeMaterial body. `physical` swaps setupSpecular's
+// fixed 0.04 F0 / 1 F90 for the physical ior, specularIntensity and specularColor formula; every
+// other node is identical, so the standard output stays bit-identical.
+static StandardPrograms buildStandardProgram(const StandardMaterial& material, bool physical) {
     StandardPrograms out;
     out.diagnostics = unsupportedFeatures(material);
     if (!out.diagnostics.empty()) return out;
@@ -168,11 +171,25 @@ StandardPrograms buildStandard(const StandardMaterial& material) {
     const ExprId roughness = f.call("min", {f.add(f.call("max", {f.uniform("roughness", Type::f32()), t.f(0.0525f)}),
                                                   geometryRoughness), t.f(1)});
 
-    // MeshStandardNodeMaterial.setupSpecular / setupVariants
-    const ExprId specularColorBlended =
-        f.call("mix", {f.construct(Type::vec(3), {t.f(0.04f)}), diffuseColor, metalness});
+    // MeshStandardNodeMaterial.setupSpecular, or MeshPhysicalNodeMaterial's setupSpecular.
+    ExprId specularColorBlended, specularF90;
+    if (physical) {
+        const ExprId ior = f.uniform("ior", Type::f32());
+        const ExprId specularIntensity = f.uniform("specularIntensity", Type::f32());
+        const ExprId f0Base =
+            f.call("min", {f.mul(t.pow2(f.div(f.sub(ior, t.f(1)), f.add(ior, t.f(1)))),
+                                 f.uniform("specularColor", Type::vec(3))),
+                           f.construct(Type::vec(3), {t.f(1)})});
+        const ExprId specularColor = f.mul(f0Base, specularIntensity);
+        specularColorBlended = f.call("mix", {specularColor, diffuseColor, metalness});
+        specularF90 = f.call("mix", {specularIntensity, t.f(1), metalness});
+    } else {
+        specularColorBlended =
+            f.call("mix", {f.construct(Type::vec(3), {t.f(0.04f)}), diffuseColor, metalness});
+        specularF90 = t.f(1);
+    }
     const ExprId diffuseContribution = f.mul(diffuseColor, t.oneMinus(metalness));
-    const Surface surface{n, positionViewDirection, roughness, specularColorBlended, t.f(1), f.texture2d("dfg")};
+    const Surface surface{n, positionViewDirection, roughness, specularColorBlended, specularF90, f.texture2d("dfg")};
 
     // PhysicalLightingModel.direct for the directional light.
     const ExprId lightDirection = f.call("normalize", {f.uniform("directionalDirection", Type::vec(3))});
@@ -198,6 +215,9 @@ StandardPrograms buildStandard(const StandardMaterial& material) {
     }
     return out;
 }
+
+StandardPrograms buildStandard(const StandardMaterial& material) { return buildStandardProgram(material, false); }
+StandardPrograms buildPhysical(const StandardMaterial& material) { return buildStandardProgram(material, true); }
 
 namespace {
 

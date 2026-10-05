@@ -21,7 +21,7 @@ namespace tn::engine {
 using Matrix = std::array<double, 16>;  // column-major, as three's Matrix4.elements
 
 /** Which program a draw uses; each kind reads the StandardMaterial fields it needs. */
-enum class MaterialKind : uint8_t { Standard, Basic, Lambert, Phong };
+enum class MaterialKind : uint8_t { Standard, Basic, Lambert, Phong, Physical };
 
 /** One opaque draw. The render database (PRD-514 phase 1) fills these from the scene graph. */
 struct DrawItem {
@@ -127,7 +127,7 @@ private:
     GpuResources gpu_;
     GeometryCache geometry_;
     PipelineCache pipelines_;
-    Program programs_[4];  // by MaterialKind
+    Program programs_[5];  // by MaterialKind
     WGPUTexture lut_ = nullptr;
     WGPUTextureView lutView_ = nullptr;
     WGPUSampler lutSampler_ = nullptr;

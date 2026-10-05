@@ -25,6 +25,11 @@ struct StandardMaterial {
     // Color(0x111111), which setHex converts from sRGB: SRGBToLinear(17/255) = 0.0056053916.
     std::array<float, 3> specular{0.0056053916f, 0.0056053916f, 0.0056053916f};
     float shininess = 30;
+    // MeshPhysicalMaterial specular inputs, read by buildPhysical. Defaults match three's
+    // MeshPhysicalMaterial: ior 1.5, specularIntensity 1, specularColor linear white.
+    float ior = 1.5f;
+    float specularIntensity = 1;
+    std::array<float, 3> specularColor{1, 1, 1};
     // MeshPhysicalMaterial: any non-default value is a feature in use.
     float clearcoat = 0;
     float sheen = 0;
@@ -53,6 +58,15 @@ struct StandardPrograms {
  * hemisphereSky, hemisphereGround, hemisphereDirection (world), ambient (fragment); texture "dfg".
  */
 StandardPrograms buildStandard(const StandardMaterial& material);
+
+/**
+ * MeshPhysicalNodeMaterial's non-feature path: the standard program with setupSpecular's physical
+ * F0/F90 — specularColorBlended = mix(min(pow2((ior-1)/(ior+1)) * specularColor, vec3(1)) *
+ * specularIntensity, diffuseColor.rgb, metalness), specularF90 = mix(specularIntensity, 1, metalness)
+ * — instead of the standard's fixed 0.04 / 1. A physical feature in use (clearcoat, sheen, …) is
+ * still refused by name. Same uniforms as buildStandard plus ior, specularIntensity, specularColor.
+ */
+StandardPrograms buildPhysical(const StandardMaterial& material);
 
 /**
  * MeshLambertNodeMaterial: PhongLightingModel with specular off — BRDF_Lambert direct and indirect

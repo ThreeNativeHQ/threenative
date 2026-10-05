@@ -375,6 +375,17 @@ void phongReference() {
     materialReference("materials-phong", MaterialKind::Phong, material);
 }
 
+void physicalReference() {
+    shader::StandardMaterial material;
+    material.color = {0.8f, 0.35f, 0.2f};
+    material.roughness = 0.35f;
+    material.metalness = 0.1f;
+    material.ior = 1.8f;
+    material.specularIntensity = 0.7f;
+    material.specularColor = {1.0f, 0.8f, 0.6f};
+    materialReference("materials-physical", MaterialKind::Physical, material);
+}
+
 // PlaneGeometry(w, h): three's vertex order and index.
 std::unique_ptr<Sphere> plane(double w, double h) {
     auto s = std::make_unique<Sphere>();
@@ -497,5 +508,6 @@ TN_TEST_MAIN({"resize_readback", resizeReadback}, {"output_ramp", outputRamp},
              {"lit_reference", litReference},
              {"lambert_reference", lambertReference},
              {"phong_reference", phongReference},
+             {"physical_reference", physicalReference},
              {"alpha_transparency", alphaTransparency},
              {"alpha_test", alphaTest})
