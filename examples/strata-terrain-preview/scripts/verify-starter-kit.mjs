@@ -117,9 +117,14 @@ function chooseStand(game, world) {
   // trees instead of sitting inside a crown (crowns reach ~4 m; stands are 4 m apart).
   let edge = { x: fir.x + 30, z: fir.z };
   let edgeClear = -1;
+  // On the sun's side of the stand (the kit's sun azimuth is atan2(0.56, 0.55)), so the view is
+  // front-lit like a beauty shot rather than always looking into the light.
+  const sunAzimuth = Math.atan2(0.56, 0.55);
   for (let step = 0; step < 24; step += 1)
     for (const reach of [25, 30, 35, 40]) {
       const angle = (2 * Math.PI * step) / 24;
+      const off = Math.abs(Math.atan2(Math.sin(angle - sunAzimuth), Math.cos(angle - sunAzimuth)));
+      if (off > Math.PI / 3) continue;
       const candidate = { x: fir.x + reach * Math.cos(angle), z: fir.z + reach * Math.sin(angle) };
       if (Math.abs(candidate.x) > 250 || Math.abs(candidate.z) > 250) continue;
       const clear = Math.min(
