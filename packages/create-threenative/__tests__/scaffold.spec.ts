@@ -174,20 +174,23 @@ const BUG_REPORT_SKILL_PATHS = [
 // against reviewed 8bf trees; only the copied Three compute-only Storage3DTexture patch changed.
 // Re-measured on current develop plus TS7: restoring only each compiler manifest and
 // rain's shader API import recovers all 13 develop fingerprints.
+// PR388 producer delivery: compared all 13 immutable eab0cdbfe/generated trees. Only
+// package.json patch declarations and copied Vite/Tailwind patch bytes differ; every other
+// generated file remains byte-identical. Fingerprints still cover the complete tree.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
-  "action-rpg": "1e9e05b2ddd8a7b576f9b5e229a175e93db5cd5d8024b8e61b40d4f90894d631",
-  minimal: "a7f1a7481c6ed7667b1cdcc85990dbbccf2cbec59ce2b65799c232bf08c41918",
-  platformer: "8033728a0b8a14d2d42143d6665e0f3ee5822dfa320ee3f9fbae340e0082f7b9",
-  puzzle: "7dc75d6999576ff64d33a2ce52323334602a76f54fe29126a7a3ddfcececfac6",
-  racing: "8cded24d0f31cb9b76b5ab199ee0a4f1845c4466e96cc6ac49c2b3d8b8c277ac",
-  rain: "21dbd2a9100f3e1dfc9ea0a474fd5f3b429a55ae4e968a3741dccaf57e05bfc8",
-  rts: "d009ce4bf88df41780b6e98f9923c85266824e2f9e7e00075a48f779f2bfc578",
-  runner: "5c2c6c40fbee5d3c55c7cccbc05c6860ad62aadf9c65ae947095a9a2bbdbe79c",
-  sailing: "afe80626d46070fcd2ab3f520c603eaef09a07fb03acd49b1659b06a898a39be",
-  shooter: "c0f9f3110db4c8fa90d29ebaf37c3aa995654ee7ff3264dbd7033ac91b8e6f65",
-  snow: "5873bb82bab520d5f29c127161e1447c0657034b8f40e366617ad44686f4fa06",
-  starter: "4cd799d72f936554c2d61cfe70879f15dde39d3fc77a9183e48d891fc8f62473",
-  "tower-defense": "cf63b89d4f3939a05d65179291368b865e9b1491231a749339a81e1df4c40906",
+  "action-rpg": "00ec230d2f6cce0d4efa8d2e9ed46e5d05b47b94bcc76e4fe134cdd5c0e4e454",
+  minimal: "9d2bd39d4a133ca29201a09b2020d937657f5e8c840f1396a14a9cb9e26aa51e",
+  platformer: "991a9ad1d56abb1fc607d9eb41de14ae3f17c4363d7bd5398046d238457cdc5d",
+  puzzle: "3b224395052be4f3fe036e1583f04f168e2085794463a08285844fedd3faff79",
+  racing: "05d359d6f9cbf5098cc5e047eb4e4db9e31c6971c7027952b6809c52e0e09789",
+  rain: "07e065b9ee6558956a23c5cbe2918efd8b8fc9e8be3764040896acb9686c0899",
+  rts: "ad4e9d87a84f45e8db6a40f8bdcd3674eafc9fda786282546207b96b23ddd36c",
+  runner: "0d5fc81c7f12f2d66ea2068963db1c68cc7128fa5f18ae1291aaf492e64b903f",
+  sailing: "45b18beb589e9adef6518d72379cb6481499a266001c4faa211b8533dcc1ffd2",
+  shooter: "c03f6667cb1c8ccc959f22f2fd2dce0ad664d0904145294e6fa57ee93d5c5b75",
+  snow: "166b92658de4807c4149da34d8f827e8a8e92be33501079bf9450796fba49fac",
+  starter: "e849a8c5b7acb1f9e07c6aef066a9fc025f01162bbc3de81fe90972caca04ec7",
+  "tower-defense": "885f41b7780515a7af3bae565ecf4629820e29667939824d9e8b902547d890e7",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
@@ -270,6 +273,8 @@ const STARTER_PATHS = [
   "kit.json",
   "package.json",
   "patches/three@0.185.1.patch",
+  "patches/vite@8.2.0.patch",
+  "patches/@tailwindcss__node@4.3.3.patch",
   "threenative.config.ts",
   "tools/look.mjs",
   "scripts/reference.mjs",
@@ -816,6 +821,8 @@ describe("create-threenative", () => {
       };
       expect(packageManifest.pnpm?.patchedDependencies).toEqual({
         "three@0.185.1": "patches/three@0.185.1.patch",
+        "vite@8.2.0": "patches/vite@8.2.0.patch",
+        "@tailwindcss/node@4.3.3": "patches/@tailwindcss__node@4.3.3.patch",
       });
       expect(STARTER_PATHS).toContain("playtests/survives.playtest.json");
       for (const relativePath of STARTER_PATHS) {

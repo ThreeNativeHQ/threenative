@@ -309,7 +309,7 @@ export async function buildUi(cwd: string, config: IResolvedThreeNativeConfig): 
     ].join("\n"),
   );
   const driver = path.join(buildRoot, "build-ui.mjs");
-  await writeFile(driver, uiBuildDriver(cwd, page, output));
+  await writeFile(driver, uiBuildDriver(cwd, page, output, config.ui.renderer === "native-css"));
   try {
     await run(process.execPath, [driver], cwd);
   } finally {
@@ -576,7 +576,7 @@ function resolveStylesheetAsset(build: string, file: string, target: string): st
  * outside the project's own `index.html` without a config file — and a hand-written config file
  * would be a second copy of the game's, which is the drift this avoids.
  */
-function uiBuildDriver(cwd: string, page: string, output: string): string {
+function uiBuildDriver(cwd: string, page: string, output: string, cssSourcemaps = false): string {
   const literal = (value: string): string => JSON.stringify(value);
   return `${[
     'import { build, loadConfigFromFile, mergeConfig } from "vite";',
@@ -602,7 +602,10 @@ function uiBuildDriver(cwd: string, page: string, output: string): string {
     // first `useState` on the phone throws `Cannot read properties of null`. `mergeConfig`
     // concatenates arrays, so a project that deduped its own packages keeps every one of them.
     '    resolve: { dedupe: ["react", "react-dom"] },',
+    // Native CSS diagnostics consume adjacent maps linked by the emitted stylesheet.
+    ...(cssSourcemaps ? ["    css: { devSourcemap: true, emitSourcemap: true },"] : []),
     "    build: {",
+    ...(cssSourcemaps ? ["      sourcemap: true,"] : []),
     `      outDir: ${literal(output)},`,
     "      emptyOutDir: true,",
     `      rollupOptions: { input: { index: ${literal(page)} } },`,
