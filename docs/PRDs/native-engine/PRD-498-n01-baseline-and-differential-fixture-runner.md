@@ -38,7 +38,7 @@ Every later PRD proves itself by comparing the native engine against the pinned 
 #### Phase 3: Native-host baselines exist
 **Status:** NOT STARTED
 **Files:** `docs/verification/runtime-perf-state.md`
-- [ ] The Machinefall per-object refresh, WorldCells streaming and shadow workloads are measured on the native desktop host, each labelled with its lane. proof: `node packages/playtest/dist/runner/cli.js perf --executable <native host> --file <scenario>`
+- [ ] The Machinefall per-object refresh, WorldCells streaming and shadow workloads are measured on the native desktop host, each labelled with its lane. proof: `node packages/playtest/dist/runner/cli.js perf --executable <native host> --file <scenario>` — open: 2026-10-05 no runnable source for these workloads exists in this repo or `../sandbox` (no Machinefall, WorldCells or shadow perf scenario; Machinefall appears only in docs). The proof shape is also not runnable: `perf` takes `--file`, `--executable` and `--logcat` as alternatives, and a desktop run is `perf --executable <host> --host-arg run --host-arg <game bundle>` on a bundle that emits `TN_FRAME_BUDGET` markers. Needs the owner to name the Machinefall build
 
 ## Blocked on
 
