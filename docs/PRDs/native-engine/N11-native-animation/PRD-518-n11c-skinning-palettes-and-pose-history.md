@@ -1,6 +1,7 @@
 # PRD-518 — Skinning palettes and pose history (N11c)
 
 **Status:** PROPOSED
+**Priority:** P2 — Wave 5, which CP1 gates: skinning palettes and pose history; 7 open boxes.
 **Complexity:** 4 — ports tested compatibility rules and visual invariants from `projection-skinned.ts`, plus previous-pose data for temporal effects
 **Owner:** João
 **Work package:** N11 — [native-engine batch](../README.md) · [N11 umbrella](README.md)

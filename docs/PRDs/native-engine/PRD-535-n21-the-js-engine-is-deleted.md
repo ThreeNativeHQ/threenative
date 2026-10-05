@@ -1,6 +1,7 @@
 # PRD-535 — The JS engine is deleted (N21)
 
 **Status:** PROPOSED
+**Priority:** P2 — Wave 6, one release after promotion: deleting the JS engine, the TS systems and upstream Three.js at runtime; 7 open boxes.
 **Complexity:** 4 — wide deletion across core, templates' dependencies and the native host; reversible only by revert
 **Owner:** João
 **Work package:** N21 — [native-engine batch](README.md)

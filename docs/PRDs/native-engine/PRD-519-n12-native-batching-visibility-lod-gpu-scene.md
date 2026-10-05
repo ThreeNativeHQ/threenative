@@ -1,6 +1,7 @@
 # PRD-519 — Native batching, visibility, LOD and GPU scene (N12)
 
 **Status:** PROPOSED
+**Priority:** P2 — Wave 5, which CP1 gates: native batching, visibility, LOD and the GPU scene; 7 open boxes.
 **Complexity:** 5 — ports the framework's render projection, culling and LOD rules, each with an eligibility test and a correct unbatched fallback
 **Owner:** João
 **Work package:** N12 — [native-engine batch](README.md)

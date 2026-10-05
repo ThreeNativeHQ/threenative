@@ -1,6 +1,7 @@
 # PRD-533 — Platform qualification, performance and default promotion (N20)
 
 **Status:** PROPOSED
+**Priority:** P2 — Wave 6 promotion: release-scale hardware qualification and the default promotion; 8 open boxes.
 **Complexity:** 5 — release-scale qualification on real hardware with explicit investment gates
 **Owner:** João
 **Work package:** N20 — [native-engine batch](README.md)

@@ -1,6 +1,7 @@
 # PRD-526 — Post effects and render chains run native (N14d)
 
 **Status:** PROPOSED
+**Priority:** P2 — Wave 5, which CP1 gates: post effects and render chains run native; 5 open boxes.
 **Complexity:** 4 — every template's post graph must compile and order natively
 **Owner:** João
 **Work package:** N14 — [native-engine batch](../README.md)

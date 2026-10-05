@@ -1,6 +1,7 @@
 # PRD-512 — Standard PBR and deformation that shadows (N08c)
 
 **Status:** PROPOSED
+**Priority:** P2 — Wave 3: standard PBR and deformation pinned to the reference shadows; 5 open boxes.
 **Complexity:** 4 — reference-pinned lighting maths plus a shadow pass that must reuse the deformed position
 **Owner:** João
 **Work package:** N08 — [native-engine batch](../README.md) · [N08 index](README.md)

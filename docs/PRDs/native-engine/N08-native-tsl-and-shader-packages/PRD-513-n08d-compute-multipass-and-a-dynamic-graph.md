@@ -1,6 +1,7 @@
 # PRD-513 — Compute, multipass and a dynamic graph (N08d)
 
 **Status:** PROPOSED
+**Priority:** P2 — Wave 3: compute dispatch, render-target chaining and a dynamic graph; 6 open boxes.
 **Complexity:** 4 — compute dispatch, render-target chaining, and the first TSL graph built by AOT-compiled game code
 **Owner:** João
 **Work package:** N08 — [native-engine batch](../README.md) · [N08 index](README.md)

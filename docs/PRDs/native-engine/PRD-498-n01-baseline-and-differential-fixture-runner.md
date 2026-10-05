@@ -1,6 +1,7 @@
 # PRD-498 — Baseline and differential fixture runner (N01)
 
 **Status:** PROPOSED
+**Priority:** P1 — Wave 1: the differential fixture runner CP1 later measures against; 4 open boxes and no runner exists.
 **Complexity:** 4 — a new runner that drives the pinned upstream and the native engine through one fixture format, plus native-host baselines
 **Owner:** João
 **Work package:** N01 — [native-engine batch](README.md)

@@ -1,6 +1,7 @@
 # PRD-504 — Buffers cross the ABI with an owner (N04d)
 
 **Status:** PROPOSED
+**Priority:** P2 — Wave 2: buffer ownership, leases and version semantics across the ABI; 7 open boxes.
 **Complexity:** 4 — buffer ownership, leases and version semantics where game code holds typed views
 **Owner:** João
 **Work package:** N04 — [lifetime and numerics](README.md), [native-engine batch](../README.md)

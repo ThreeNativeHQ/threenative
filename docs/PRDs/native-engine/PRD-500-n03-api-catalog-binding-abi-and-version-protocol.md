@@ -1,6 +1,7 @@
 # PRD-500 — API catalog, binding ABI and version protocol (N03)
 
 **Status:** PROPOSED
+**Priority:** P1 — Wave 1: the binding ABI and version protocol every adapter and engine module reads; 7 open boxes.
 **Complexity:** 5 — the one contract every adapter, generator and engine module depends on
 **Owner:** João
 **Work package:** N03 — [native-engine batch](README.md)

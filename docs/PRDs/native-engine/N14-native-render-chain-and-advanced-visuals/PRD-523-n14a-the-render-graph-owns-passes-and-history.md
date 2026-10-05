@@ -1,6 +1,7 @@
 # PRD-523 — The render graph owns passes and history (N14a)
 
 **Status:** PROPOSED
+**Priority:** P2 — Wave 5, which CP1 gates: the render graph owns passes and history; 7 open boxes.
 **Complexity:** 4 — new native subsystem every advanced pass plugs into; history rules are subtle
 **Owner:** João
 **Work package:** N14 — [native-engine batch](../README.md)

@@ -1,6 +1,7 @@
 # PRD-530 — Strict native-TypeScript game packaging (N17)
 
 **Status:** PROPOSED — later milestone (gate T), after promotion; not required by N20 (owner decision 2, 2026-10-04)
+**Priority:** P2 — Later milestone (gate T) after promotion, per owner decision 2; 7 open boxes.
 **Complexity:** 4 — gate T: compiler, engine and packaging meet in one inspected artifact
 **Owner:** João
 **Work package:** N17 — [native-engine batch](README.md)

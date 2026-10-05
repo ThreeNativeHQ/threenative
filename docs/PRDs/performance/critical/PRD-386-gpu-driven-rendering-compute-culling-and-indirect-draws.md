@@ -18,6 +18,7 @@ CPU submitting on the order of one `drawIndirect` per material and never touchin
 existing CPU cut stays: it is the oracle and the fallback, not the thing being replaced.
 
 **Status:** PARTIAL — the mechanism shipped as PRD-473's Phase 1, this PRD's gates did not.
+**Priority:** P1 — Open gates are platform parity: no Android or iOS evidence, no desktop `--target` conformance case, and CPU submission is still per key instead of per material.
 **Evidence:** `a602467db` (PR #375) landed `packages/core/src/world-gpu-scene.ts` (2,353 lines) plus
 `world-gpu-scene.spec.ts` (3,431 lines): one compute dispatch culls and LOD-selects every resident
 placement and each main key draws its own region through a `BufferGeometry.setIndirect` record, with a

@@ -1,6 +1,7 @@
 # PRD-528 — Framework loop, Rapier sync, input and services (N15)
 
 **Status:** PROPOSED
+**Priority:** P2 — Wave 5, which CP1 gates: the frame contract, Rapier sync, input and services; 7 open boxes.
 **Complexity:** 4 — the frame contract, physics sync and platform services all move under native ownership
 **Owner:** João
 **Work package:** N15 — [native-engine batch](README.md)

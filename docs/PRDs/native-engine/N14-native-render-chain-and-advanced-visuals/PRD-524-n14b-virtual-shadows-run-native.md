@@ -1,6 +1,7 @@
 # PRD-524 — Virtual shadows run native (N14b)
 
 **Status:** PROPOSED
+**Priority:** P2 — Wave 5, which CP1 gates: virtual shadows run native; 5 open boxes.
 **Complexity:** 4 — port of a paged shadow system with GPU feedback
 **Owner:** João
 **Work package:** N14 — [native-engine batch](../README.md)

@@ -1,6 +1,7 @@
 # PRD-511 — Shader packages, not WGSL text (N08b)
 
 **Status:** PROPOSED
+**Priority:** P2 — Wave 3: shader packages plus the layout, variant and schedule metadata; 6 open boxes.
 **Complexity:** 4 — code generation plus the layout/variant/schedule metadata that makes it executable
 **Owner:** João
 **Work package:** N08 — [native-engine batch](../README.md) · [N08 index](README.md)

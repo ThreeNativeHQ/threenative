@@ -1,6 +1,7 @@
 # PRD-503 — Unreachable cycles are reclaimed (N04c)
 
 **Status:** PROPOSED
+**Priority:** P2 — Wave 2: the tracing reachability layer over the engine schema; 7 open boxes.
 **Complexity:** 5 — a tracing reachability layer over the engine schema, with safe points and deferred GPU destruction
 **Owner:** João
 **Work package:** N04 — [lifetime and numerics](README.md), [native-engine batch](../README.md)

@@ -1,6 +1,7 @@
 # PRD-529 — Native playtest, inspection and telemetry (N16)
 
 **Status:** PROPOSED
+**Priority:** P2 — Wave 5: the native playtest, inspection and telemetry endpoint behind the existing protocol; 6 open boxes.
 **Complexity:** 3 — new native endpoint behind the existing playtest protocol
 **Owner:** João
 **Work package:** N16 — [native-engine batch](README.md)

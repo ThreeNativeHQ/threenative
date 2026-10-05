@@ -1,6 +1,7 @@
 # PRD-510 — A typed shader IR with ordered effects (N08a)
 
 **Status:** PROPOSED
+**Priority:** P2 — Wave 2: the typed shader IR with ordered effects; 4 open boxes and no GPU work required to start.
 **Complexity:** 4 — new native data model with a large operator surface; no GPU needed to test it
 **Owner:** João
 **Work package:** N08 — [native-engine batch](../README.md) · [N08 index](README.md)

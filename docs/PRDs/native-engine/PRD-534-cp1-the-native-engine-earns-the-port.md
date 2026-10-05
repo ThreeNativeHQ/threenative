@@ -1,6 +1,7 @@
 # PRD-534 — The native engine earns the port (CP1)
 
 **Status:** PROPOSED
+**Priority:** P2 — Wave 4 go/stop gate: native measured against current ThreeNative once N06 and N09 land; 5 open boxes and no verdict measured.
 **Complexity:** 3 — measurement only, on existing workloads; the verdict can stop the program
 **Owner:** João
 **Work package:** CP1 — [native-engine batch](README.md)

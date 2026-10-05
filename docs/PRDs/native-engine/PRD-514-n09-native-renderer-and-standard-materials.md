@@ -1,6 +1,7 @@
 # PRD-514 — Native renderer and standard materials (N09)
 
 **Status:** PROPOSED
+**Priority:** P2 — Wave 4: the first C++ renderer and the standard materials; 8 open boxes.
 **Complexity:** 5 — first C++ renderer in the repo; reads native scene state and draws standard materials against a pinned reference
 **Owner:** João
 **Work package:** N09 — [native-engine batch](README.md)

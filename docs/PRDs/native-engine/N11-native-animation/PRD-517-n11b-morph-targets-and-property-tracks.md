@@ -1,6 +1,7 @@
 # PRD-517 — Morph targets and property tracks (N11b)
 
 **Status:** PROPOSED
+**Priority:** P2 — Wave 5, which CP1 gates: morph targets and property tracks; 4 open boxes.
 **Complexity:** 3 — the evaluator comes from N11a; the new work is GPU morph blending and binding to non-skeletal properties
 **Owner:** João
 **Work package:** N11 — [native-engine batch](../README.md) · [N11 umbrella](README.md)

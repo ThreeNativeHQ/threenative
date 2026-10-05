@@ -1,6 +1,7 @@
 # PRD-502 — Handles keep identity and aliases (N04b)
 
 **Status:** PROPOSED
+**Priority:** P2 — Wave 2: the handle and identity model every binding reads; 5 open boxes.
 **Complexity:** 4 — the handle and identity model every binding and engine module reads
 **Owner:** João
 **Work package:** N04 — [lifetime and numerics](README.md), [native-engine batch](../README.md)

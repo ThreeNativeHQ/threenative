@@ -1,6 +1,7 @@
 # PRD-525 — Probes run native (N14c)
 
 **Status:** PROPOSED
+**Priority:** P2 — Wave 5, which CP1 gates: probes run native; 5 open boxes.
 **Complexity:** 3 — one TS system to port onto the render graph
 **Owner:** João
 **Work package:** N14 — [native-engine batch](../README.md)

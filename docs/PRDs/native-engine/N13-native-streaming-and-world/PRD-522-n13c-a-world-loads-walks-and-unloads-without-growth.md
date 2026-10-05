@@ -1,6 +1,7 @@
 # PRD-522 — A world loads, walks and unloads without growth (N13c)
 
 **Status:** PROPOSED
+**Priority:** P2 — Wave 5, which CP1 gates: a world loads, walks and unloads without growth; 4 open boxes.
 **Complexity:** 3 — integration proof over N13a/N13b; the new work is the fixture, the memory accounting and the failure injection
 **Owner:** João
 **Work package:** N13 — [native-engine batch](../README.md) · [N13 umbrella](README.md)

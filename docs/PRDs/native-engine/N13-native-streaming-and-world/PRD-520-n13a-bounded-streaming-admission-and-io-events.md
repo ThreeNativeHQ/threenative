@@ -1,6 +1,7 @@
 # PRD-520 — Bounded streaming admission and IO events (N13a)
 
 **Status:** PROPOSED
+**Priority:** P2 — Wave 5, which CP1 gates: bounded streaming admission and IO events; 5 open boxes.
 **Complexity:** 3 — an engine event queue plus a frame-budgeted admission scheduler, both with existing TS references
 **Owner:** João
 **Work package:** N13 — [native-engine batch](../README.md) · [N13 umbrella](README.md)

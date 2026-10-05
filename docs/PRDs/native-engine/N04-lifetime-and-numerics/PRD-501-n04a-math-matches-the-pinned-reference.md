@@ -1,6 +1,7 @@
 # PRD-501 — Math matches the pinned reference (N04a)
 
 **Status:** PROPOSED
+**Priority:** P2 — Wave 2: scalar math classes ported against a fixed oracle; 5 open boxes and no C++ math port.
 **Complexity:** 3 — scalar math classes ported against a fixed oracle; wide but shallow
 **Owner:** João
 **Work package:** N04 — [lifetime and numerics](README.md), [native-engine batch](../README.md)

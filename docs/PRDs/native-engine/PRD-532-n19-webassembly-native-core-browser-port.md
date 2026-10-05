@@ -1,6 +1,7 @@
 # PRD-532 — WebAssembly native-core browser port (N19)
 
 **Status:** PROPOSED — mandatory: the web runs this engine (owner decision 4, 2026-10-04)
+**Priority:** P2 — Wave 5 by owner decision 4: the web runs the C++ core in Wasm; 8 open boxes.
 **Complexity:** 4 — new platform build with its own async, memory and threading rules
 **Owner:** João
 **Work package:** N19 — [native-engine batch](README.md)

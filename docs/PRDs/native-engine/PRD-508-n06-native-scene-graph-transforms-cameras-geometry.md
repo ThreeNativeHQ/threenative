@@ -1,6 +1,7 @@
 # PRD-508 — Native scene graph, transforms, cameras and geometry (N06)
 
 **Status:** PROPOSED
+**Priority:** P2 — Wave 3: the native scene graph, transforms, cameras and geometry; 7 open boxes.
 **Complexity:** 4 — many classes with reference-pinned semantics, but no GPU work and no new dependency
 **Owner:** João
 **Work package:** N06 — [native-engine batch](README.md)

@@ -1,6 +1,7 @@
 # PRD-516 — AnimationMixer semantics in native (N11a)
 
 **Status:** PROPOSED
+**Priority:** P2 — Wave 5, which CP1 gates: mixer semantics in native; 6 open boxes.
 **Complexity:** 4 — the mixer has a lot of observable state (weights, fades, warps, loops, events), and all of it is compared against the reference
 **Owner:** João
 **Work package:** N11 — [native-engine batch](../README.md) · [N11 umbrella](README.md)

@@ -1,6 +1,7 @@
 # PRD-527 — Particles and fluids run native (N14e)
 
 **Status:** PROPOSED
+**Priority:** P2 — Wave 5, which CP1 gates: particles and fluids run native; 4 open boxes.
 **Complexity:** 3 — compute-driven systems on top of N08d's compute proof
 **Owner:** João
 **Work package:** N14 — [native-engine batch](../README.md)

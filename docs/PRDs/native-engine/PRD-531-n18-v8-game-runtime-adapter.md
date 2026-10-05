@@ -1,6 +1,7 @@
 # PRD-531 — V8 game runtime adapter (N18)
 
 **Status:** PROPOSED
+**Priority:** P2 — Wave 3 phases 1–2: the first shipping game runtime over the C++ engine; 8 open boxes.
 **Complexity:** 4 — the first shipping game runtime over the C++ engine; lifetime and crossing cost are the hard parts
 **Owner:** João
 **Work package:** N18 — [native-engine batch](README.md)

@@ -1,6 +1,7 @@
 # PRD-515 — Native glTF, cooked assets and decoders (N10)
 
 **Status:** PROPOSED
+**Priority:** P2 — Wave 3: glTF ingest, the cooked package format and the decoders; 7 open boxes.
 **Complexity:** 4 — parser reuse, but scene construction, a cooked package format and decoder qualification are all new and face untrusted input
 **Owner:** João
 **Work package:** N10 — [native-engine batch](README.md)

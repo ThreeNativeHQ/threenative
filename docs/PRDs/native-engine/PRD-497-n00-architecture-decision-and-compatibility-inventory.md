@@ -1,6 +1,7 @@
 # PRD-497 — Architecture decision, scope and compatibility inventory (N00)
 
 **Status:** PROPOSED — decisions approved by the owner 2026-10-04; the record and inventory are not yet written
+**Priority:** P1 — Wave 1 of the owner-approved batch: the decision record and compatibility inventory every other native-engine PRD names is unwritten (6 open boxes).
 **Complexity:** 3 — docs and one inventory script; no runtime code, but it reverses standing product rules
 **Owner:** João
 **Work package:** N00 — [native-engine batch](README.md)

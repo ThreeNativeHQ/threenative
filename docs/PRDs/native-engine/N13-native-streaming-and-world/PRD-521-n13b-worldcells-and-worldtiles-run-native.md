@@ -1,6 +1,7 @@
 # PRD-521 — WorldCells and WorldTiles run native (N13b)
 
 **Status:** PROPOSED
+**Priority:** P2 — Wave 5, which CP1 gates: WorldCells and WorldTiles run native; 6 open boxes.
 **Complexity:** 5 — the largest framework subsystem to port (cells, tiles, chunk merging, terrain, GPU-scene residency), with a deep spec suite to keep
 **Owner:** João
 **Work package:** N13 — [native-engine batch](../README.md) · [N13 umbrella](README.md)

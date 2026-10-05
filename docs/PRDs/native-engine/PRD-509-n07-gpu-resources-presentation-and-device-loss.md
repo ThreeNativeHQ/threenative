@@ -1,6 +1,7 @@
 # PRD-509 — GPU resources, presentation and device loss (N07)
 
 **Status:** PROPOSED
+**Priority:** P2 — Wave 2: resource ownership, presentation and device loss; 8 open boxes.
 **Complexity:** 4 — reuses the existing WebGPU context; the new work is resource ownership and the device-loss state machine on two backends
 **Owner:** João
 **Work package:** N07 — [native-engine batch](README.md)

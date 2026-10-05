@@ -1,6 +1,7 @@
 # PRD-499 — The host links and runs without a JS engine (N02)
 
 **Status:** PROPOSED
+**Priority:** P1 — Wave 1: gate E requires the host to link and run with no JS engine; 8 open boxes.
 **Complexity:** 5 — splits the native CMake tree, decouples the GPU context from scripting, and adds an artifact inspector every strict gate reuses
 **Owner:** João
 **Work package:** N02 — [native-engine batch](README.md)
