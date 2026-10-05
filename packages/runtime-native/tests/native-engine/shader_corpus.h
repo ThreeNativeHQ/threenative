@@ -2,6 +2,7 @@
 
 // The shader corpus (PRD-510/511): one graph per stage shape the engine must emit.
 #include "engine/shader/ir.h"
+#include "engine/shader/tonemap.h"
 
 #include <utility>
 #include <vector>
@@ -52,8 +53,26 @@ inline Program lit_fragment() {
     return p;
 }
 
+// Fragment: one catalogued tonemapping operator over an HDR varying.
+template <ToneMapping M>
+Program tonemapped() {
+    Program p(Stage::Fragment);
+    const ExprId hdr = p.swizzle(p.varying("hdr", Type::vec(4)), "rgb");
+    const ExprId mapped = toneMap(p, M, hdr, p.uniform("toneMappingExposure", Type::f32()));
+    p.output("color", p.construct(Type::vec(4), {mapped, p.constant(1.0f)}));
+    return p;
+}
+
 inline std::vector<std::pair<const char*, Program (*)()>> all() {
-    return {{"particles", particles}, {"lit_vertex", lit_vertex}, {"lit_fragment", lit_fragment}};
+    return {{"particles", particles},
+            {"lit_vertex", lit_vertex},
+            {"lit_fragment", lit_fragment},
+            {"tonemap_linear", tonemapped<ToneMapping::Linear>},
+            {"tonemap_reinhard", tonemapped<ToneMapping::Reinhard>},
+            {"tonemap_cineon", tonemapped<ToneMapping::Cineon>},
+            {"tonemap_aces", tonemapped<ToneMapping::ACESFilmic>},
+            {"tonemap_agx", tonemapped<ToneMapping::AgX>},
+            {"tonemap_neutral", tonemapped<ToneMapping::Neutral>}};
 }
 
 }  // namespace tn::engine::shader::corpus

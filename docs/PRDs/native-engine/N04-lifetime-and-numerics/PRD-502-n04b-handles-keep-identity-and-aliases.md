@@ -33,6 +33,6 @@
 #### Phase 2: Member aliases survive growth
 **Status:** NOT STARTED
 **Files:** proposed `packages/runtime-native/src/engine/foundation/members.{h,cpp}`
-- [ ] Repeated `position` access on one object yields the same identity, and a write through one alias is read through the other. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_alias_identity`
-- [ ] A retained member alias still refers to its own object after 100,000 more objects force the storage to grow. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_alias_growth`
+- [x] Repeated `position` access on one object yields the same identity, and a write through one alias is read through the other. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_alias_identity` — 2026-10-04: green (`build/tn-linux`): `MemberAliases` returns one cached alias handle per (owner, member); a write through it is the owner's own field; a released owner releases its aliases and a reused slot never inherits them. Red without the cache, and with a release that keeps aliases. `src/engine/foundation/members.{h,cpp}`
+- [x] A retained member alias still refers to its own object after 100,000 more objects force the storage to grow. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_alias_growth` — 2026-10-04: green; the alias resolves through the owner every time, so 100,000 more objects (and aliases) growing the tables leave it pointing at its own record
 - [ ] The alias fixtures adapted from the reference runner pass through the differential runner. proof: `pnpm parity -- --suite native-engine-alias`
