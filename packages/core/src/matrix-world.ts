@@ -1,4 +1,6 @@
 import { Object3D } from "three";
+import { SPANS, beginSpan, endSpan } from "./profiling/Spans.js";
+import { isStatic } from "./static-transform.js";
 
 /**
  * The per-frame world-matrix walk, with a hidden subtree left where it stands.
@@ -24,13 +26,23 @@ import { Object3D } from "three";
  * Two things are never dropped by the pruning, because both are read while nothing above them is
  * visible:
  *
- * - a class that overrides `updateMatrixWorld` runs its own. `SkinnedMesh` refreshes
- *   `bindMatrixInverse`, `Camera` its `matrixWorldInverse`; re-implementing only the base walk
- *   left every deck-crew sailor that had moved since load drawing with a stale bind matrix and
+ * - a class that overrides `updateMatrixWorld` runs its own — never a `Scene`, which three does not
+ *   override and whose method only differs when something patched the prototype. `SkinnedMesh`
+ *   refreshes `bindMatrixInverse`, `Camera` its `matrixWorldInverse`; re-implementing only the base
+ *   walk left every deck-crew sailor that had moved since load drawing with a stale bind matrix and
  *   vanishing from the frame. Their subtrees are small, so walking them whole costs nothing;
  * - a hidden node that holds a `Bone` is walked, because a visible `SkinnedMesh` draws with its
  *   skeleton's matrices wherever the armature happens to sit. Whether bones sit below a node is
  *   decided once and remembered — a rig is built whole and does not grow.
+ *
+ * A third thing is dropped, and it is the walk's largest single share on a streamed world: a subtree
+ * frozen with `markStatic`. `markStatic` composes the subtree once and turns off the two flags that
+ * would recompose it, which until now still left three's unconditional recursion visiting every node
+ * under it every frame. A frozen root that carries no dirty flag is a leaf here, and it is one
+ * whether the walk was forced or not: `refreshStaticTransforms` re-arms a root whose own transform
+ * moved, `invalidateStatic` re-arms one something wrote inside, and both compose the subtree once at
+ * that moment. `isStatic` is what separates the engine's freeze from a game that turned the flags off
+ * for its own reasons. See `static-transform.ts`.
  *
  * A game that reads a **hidden** object's `matrixWorld` directly must not rely on this pass
  * having reached it: use `getWorldPosition`/`getWorldQuaternion`/`getWorldScale` (which update the
@@ -64,6 +76,52 @@ export interface IMatrixWorldOptions {
 
 /** The base walk, to tell a class that overrides `updateMatrixWorld` (SkinnedMesh, Camera) apart. */
 const BASE_UPDATE_MATRIX_WORLD = Object3D.prototype.updateMatrixWorld;
+
+/**
+ * Whether this node's own `updateMatrixWorld` must run instead of this walk.
+ *
+ * A `Scene` never does: three does not override the walk on `Scene`, so a scene whose method is not
+ * the base one has had its prototype patched — the frame spans time the render phase's walk by
+ * wrapping `Scene.prototype.updateMatrixWorld` — or a game has subclassed `Scene`. Reading that as
+ * "a class that owns its walk" handed the whole scene to three's own recursion, and three's
+ * recursion prunes nothing: the visible-only pass and every frozen subtree stopped mattering for as
+ * long as the frame spans were on, which is how they are measured. The trade is a game that
+ * subclasses `Scene` *and* overrides the walk, which no template does; it is walked by this pass
+ * instead, which is the same walk minus the pruning.
+ */
+function ownsItsWalk(root: Object3D): boolean {
+  if ((root as Object3D & { isScene?: boolean }).isScene === true) return false;
+  return root.updateMatrixWorld !== BASE_UPDATE_MATRIX_WORLD;
+}
+
+/**
+ * `three`'s own world-matrix compose, verbatim: recompute when the node is dirty or the walk is
+ * forced, honour `matrixWorldAutoUpdate` and a null parent, then clear the dirty flag.
+ *
+ * Answers whether the node's world matrix was recomposed, which is what makes its subtree dirty.
+ */
+function composeWorld(root: Object3D, force: boolean): boolean {
+  if (!(root.matrixWorldNeedsUpdate || force)) return false;
+  if (root.matrixWorldAutoUpdate === true) {
+    if (root.parent === null) root.matrixWorld.copy(root.matrix);
+    else root.matrixWorld.multiplyMatrices(root.parent.matrixWorld, root.matrix);
+  }
+  root.matrixWorldNeedsUpdate = false;
+  return true;
+}
+
+/**
+ * Whether the walk can stop here, because the subtree's world matrices were composed when the engine
+ * placed it and only a write inside could change them.
+ *
+ * `isStatic` is what separates the engine's freeze from a game that turned the flags off itself, and
+ * a dirty flag means someone has written to this node since. A forced walk does not change the
+ * answer: `composeWorld` has already run, and a frozen root silences its own world compose, so three
+ * would carry the force down the subtree and recompute nothing at the end of it.
+ */
+function frozenLeaf(root: Object3D): boolean {
+  return root.matrixWorldNeedsUpdate === false && isStatic(root);
+}
 
 function resolveMode(mode: MatrixWorldMode | undefined): MatrixWorldMode {
   if (mode === undefined) return DEFAULT_MATRIX_WORLD_MODE;
@@ -115,7 +173,12 @@ export class MatrixWorldPass {
    */
   apply(root: Object3D, force = false): number {
     const before = this.#visited;
-    this.#step(root, force, this.#mode === "visible");
+    beginSpan(SPANS.sceneUpdate);
+    try {
+      this.#step(root, force, this.#mode === "visible");
+    } finally {
+      endSpan(SPANS.sceneUpdate);
+    }
     return this.#visited - before;
   }
 
@@ -128,30 +191,27 @@ export class MatrixWorldPass {
     this.#visited += 1;
     // A class that extends the walk runs its own, so `SkinnedMesh.bindMatrixInverse` and
     // `Camera.matrixWorldInverse` stay as fresh as the world matrix they derive from.
-    if (root.updateMatrixWorld !== BASE_UPDATE_MATRIX_WORLD) {
+    if (ownsItsWalk(root)) {
       const stale = this.#stale.delete(root);
       root.updateMatrixWorld(force || stale);
       return;
     }
     if (root.matrixAutoUpdate) root.updateMatrix();
-    let childForce = force;
-    if (root.matrixWorldNeedsUpdate || force) {
-      if (root.matrixWorldAutoUpdate === true) {
-        if (root.parent === null) root.matrixWorld.copy(root.matrix);
-        else root.matrixWorld.multiplyMatrices(root.parent.matrixWorld, root.matrix);
-      }
-      root.matrixWorldNeedsUpdate = false;
-      childForce = true;
-    }
-    // The recompute above cleared the flag, so `childForce` is now true exactly when this node's
-    // own world matrix changed — and therefore when its subtree is dirty. Nothing under a hidden
-    // node can draw, so defer the recursion; the node itself is already correct for the frame it
-    // shows.
+    let childForce = composeWorld(root, force) || force;
+    // The recompose cleared the flag, so `childForce` is now true exactly when this node's own
+    // world matrix changed — and therefore when its subtree is dirty. Nothing under a hidden node
+    // can draw, so defer the recursion; the node itself is already correct for the frame it shows.
     if (prune && root.visible === false && !this.#holdsBones(root)) {
       if (childForce) this.#stale.add(root);
       return;
     }
     if (this.#stale.delete(root)) childForce = true;
+    // The frozen subtree's world matrices were composed when the engine placed it, and only a write
+    // to something in it can change them: `refreshStaticTransforms` re-arms a frozen root whose own
+    // transform moved, and `invalidateStatic` re-arms one something wrote inside. Both compose the
+    // subtree once, at that moment, so the frames in between have nothing to recompute — which is
+    // what makes the recursion here worth stopping.
+    if (frozenLeaf(root)) return;
     const children = root.children;
     for (let index = 0, length = children.length; index < length; index += 1) {
       this.#step(children[index] as Object3D, childForce, prune);
