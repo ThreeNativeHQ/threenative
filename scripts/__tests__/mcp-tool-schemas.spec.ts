@@ -55,20 +55,29 @@ describe("recorded MCP tool schemas", () => {
     expect(blender.inputSchemas.blender_status?.required).toBeUndefined();
   });
 
-  it("records an argument list for the published asset server too", () => {
-    const asset = JSON.parse(
-      readFileSync(path.join(SNAPSHOT_DIR, "asset-mcp-tools.json"), "utf8"),
-    ) as RecordedSurface;
-    for (const tool of asset.tools) {
-      expect(asset.inputSchemas?.[tool], `${tool} has no recorded schema`).toBeDefined();
-      expect(asset.descriptions?.[tool], `${tool} has no recorded description`).not.toBe("");
-    }
-    // `acceptLicense` is the acknowledgement the docs tell an agent to pass, so a snapshot without
-    // it could not answer the question the recipe asks.
-    expect(
-      (asset.inputSchemas?.asset_download_file as { required?: readonly string[] }).required,
-    ).toContain("acceptLicense");
-  });
+  // The asset and sculpt servers are published npm packages, so nothing here compares their snapshot
+  // to a served response — `verify-golden-path.ts` does that. What is checked here is the contract
+  // the site relies on: every tool in the snapshot carries the arguments it takes, so no page has to
+  // describe an argument by hand.
+  for (const name of ["asset-mcp-tools.json", "sculpt-mcp-tools.json"]) {
+    it(`${name} records an argument list for every tool it lists`, () => {
+      const snapshot = JSON.parse(
+        readFileSync(path.join(SNAPSHOT_DIR, name), "utf8"),
+      ) as RecordedSurface;
+      expect(snapshot.tools.length).toBeGreaterThan(0);
+      for (const tool of snapshot.tools) {
+        expect(snapshot.inputSchemas?.[tool], `${tool} has no recorded schema`).toBeDefined();
+        expect(snapshot.descriptions?.[tool], `${tool} has no recorded description`).not.toBe("");
+      }
+      // `acceptLicense` is the acknowledgement the recipes tell an agent to pass, so a snapshot
+      // without it could not answer the question they ask.
+      if (snapshot.tools.includes("asset_download_file")) {
+        expect(
+          (snapshot.inputSchemas?.asset_download_file as { required?: readonly string[] }).required,
+        ).toContain("acceptLicense");
+      }
+    });
+  }
 
   it("names only tools a recorded surface actually serves", () => {
     const served = new Set<string>();
