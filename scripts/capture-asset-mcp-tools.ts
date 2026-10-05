@@ -119,9 +119,10 @@ export async function listTools(
   child: ChildProcessWithoutNullStreams,
   lines: ReturnType<typeof createInterface>,
   next: { value: number },
-): Promise<string[]> {
+): Promise<readonly { name: string; description?: unknown; inputSchema?: unknown }[]> {
   const names = new Set<string>();
   const cursors = new Set<string>();
+  const tools: { name: string; description?: unknown; inputSchema?: unknown }[] = [];
   let cursor: string | undefined;
   // `for (;;)` rather than `do … while (true)`: the exit is the `break` on a missing cursor, and
   // biome rejects the constant condition.
@@ -144,6 +145,7 @@ export async function listTools(
         throw new Error("MCP tools/list: invalid or duplicate tool name");
       }
       names.add(tool.name);
+      tools.push(tool as { name: string; description?: unknown; inputSchema?: unknown });
     }
     const nextCursor = listed.nextCursor;
     if (nextCursor === undefined) break;
@@ -156,7 +158,7 @@ export async function listTools(
   const missing = RECOMMENDED.filter((name) => !names.has(name));
   if (missing.length)
     throw new Error(`MCP tools/list: missing recommended tools: ${missing.join(", ")}`);
-  return [...names].sort();
+  return tools;
 }
 
 function versionPin(): string {
@@ -207,13 +209,23 @@ async function main(): Promise<void> {
       protocolVersion: "2025-06-18",
     });
     child.stdin.write('{"jsonrpc":"2.0","method":"notifications/initialized"}\n');
-    const tools = await listTools(child, lines, next);
+    const listedTools = await listTools(child, lines, next);
+    const tools = listedTools.map((tool) => tool.name).sort();
+    // The schemas come from the same live response, so no doc restates an argument by hand.
+    const inputSchemas = Object.fromEntries(
+      listedTools.map((tool) => [tool.name, tool.inputSchema ?? {}]),
+    );
+    const descriptions = Object.fromEntries(
+      listedTools.map((tool) => [tool.name, tool.description ?? ""]),
+    );
     const snapshot = {
-      comment: `The asset MCP surface a generated project actually gets. \`tools\` is the live tools/list response of the pinned version, recorded by installing ${PACKAGE}@${version} from the registry into a clean directory containing \`.threenative\` and driving it over stdio - not copied from its docs. The published ${version} serves all ${tools.length} tools, including the humanoid rig inspect, auto-rig, retarget and preview tools. \`profile\` is null because the server has no profile selector. \`recommended\` is the loop the template AGENTS.md teaches, not a claim about what the other tools can do - \`asset_search_sources\` is the authority on that. \`fab_import_asset\` and \`asset_import_unreal\` are deliberately not recommended: they convert an Unreal pack the user already owns, which is a route a game takes on purpose rather than a step in the ordinary asset loop. Regenerate with \`pnpm tsx scripts/capture-asset-mcp-tools.ts\`.`,
+      comment: `The asset MCP surface a generated project actually gets. \`tools\` is the live tools/list response of the pinned version, recorded by installing ${PACKAGE}@${version} from the registry into a clean directory containing \`.threenative\` and driving it over stdio - not copied from its docs. \`inputSchemas\` and \`descriptions\` come from that same response, so the documentation cannot name an argument the server does not accept. The published ${version} serves all ${tools.length} tools, including the humanoid rig inspect, auto-rig, retarget and preview tools. \`profile\` is null because the server has no profile selector. \`recommended\` is the loop the template AGENTS.md teaches, not a claim about what the other tools can do - \`asset_search_sources\` is the authority on that. \`fab_import_asset\` and \`asset_import_unreal\` are deliberately not recommended: they convert an Unreal pack the user already owns, which is a route a game takes on purpose rather than a step in the ordinary asset loop. Regenerate with \`pnpm tsx scripts/capture-asset-mcp-tools.ts\`.`,
       version,
       profile: null,
       recommended: [...RECOMMENDED],
       tools,
+      inputSchemas,
+      descriptions,
     };
     writeFileSync(SNAPSHOT, `${JSON.stringify(snapshot, null, 2)}\n`);
     process.stdout.write(`asset MCP surface: ${tools.length} tool(s) -> ${SNAPSHOT}\n`);

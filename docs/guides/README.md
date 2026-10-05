@@ -19,6 +19,7 @@ so a change here is a change to the published docs.
 - [Assets](assets.md)
 - [Unreal assets](unreal-assets.md)
 - [Animation](animation.md)
+- [MetaHuman heads](metahuman.md)
 - [UI and state](ui-state.md)
 - [Audio](audio.md)
 - [World streaming](world-streaming.md)

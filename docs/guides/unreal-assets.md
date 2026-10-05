@@ -41,11 +41,14 @@ optional:
 import { DefaultLoadingManager } from "three";
 import { UAssetLoader } from "@threenative/raw-unreal";
 
-const loader = new UAssetLoader(new DefaultLoadingManager());
+const loader = new UAssetLoader(DefaultLoadingManager);
 loader.load("/assets/SM_pine01.uasset", (object) => scene.add(object));
 ```
 
-`UEFormatLoader` is the same shape for a `.uemodel`. Both loaders take `parse(bytes)` for bytes you
+`DefaultLoadingManager` is three.js's shared instance, not a class, so pass it as it is. The
+constructor argument is optional, and `new UAssetLoader()` creates the loader with that same shared
+manager. `UEFormatLoader` is the same shape for a `.uemodel`. Both loaders take `parse(bytes)` for
+bytes you
 already hold, which is the entry point to prefer outside a browser, because it does not depend on the
 fetch path of three.js `FileLoader`.
 
@@ -123,16 +126,20 @@ slot names and index ranges, not texture payloads, so textures come from your ow
 
 ## Inspecting a file before you build from it
 
-`ueformat` ships a CLI. It validates the file and prints the LOD, material, skeleton and collision
-counts without dumping vertex arrays:
+`ueformat` ships a CLI, `ueformat-inspect`, as the bin of `@threenative/ueformat`. Install that
+package first; there is no separate `ueformat-inspect` package on the registry, so a bare `npx
+ueformat-inspect` would try to download one that does not exist.
 
 ```sh
-npx ueformat-inspect model.uemodel
-npx ueformat-inspect --json model.uemodel
+pnpm add @threenative/ueformat
+pnpm exec ueformat-inspect model.uemodel
+pnpm exec ueformat-inspect --json model.uemodel
 ```
 
-It exits `0` on success, `1` on a `UEFormatError` (printing `CODE: message (offset N)`) and `2` when
-no file is given. A ZSTD body cannot be inspected from the CLI, because the CLI injects no decoder.
+Inside this repository, the workspace install already links the binary, so `pnpm exec
+ueformat-inspect` is enough. It exits `0` on success, `1` on a `UEFormatError` (printing `CODE:
+message (offset N)`) and `2` when no file is given. A ZSTD body cannot be inspected from the CLI,
+because the CLI injects no decoder.
 
 In code, `summarizeUEModel(parseUEModel(bytes))` returns the same summary. `readPackageSummary`
 reports which engine generation wrote a `.uasset` before you decode it, and `readPackageLayout`
@@ -172,7 +179,7 @@ Every parse and geometry failure is a typed error with a code. Catch the class, 
 | `UNSUPPORTED_STATIC_MESH_LAYOUT` | `raw-unreal` | No inline mesh description, compressed buffer, bulk data or raw mesh blob matched | Read `error.details.probed` and `error.details.supported`: the error names what it looked for, so a cooked or IoStore asset is identifiable from it. |
 | `MISSING_CODEC` | `raw-unreal` | A compressed payload needs `oodle`, `lz4` or `zlib` | Inject the codec named in the message. See the table above. |
 | `MISSING_BULK_DATA_FILE` | `raw-unreal` | The payload is in a sibling `.ubulk`/`.uptnl` | Read the file the message names and pass it as `bulkDataFiles`. |
-| `INVALID_RAW_MESH` | `raw-unreal` | The `FRawMesh` version pair is not modelled | Older than UE4.18. Re-export the source model. |
+| `INVALID_RAW_MESH` | `raw-unreal` | An `FRawMesh` blob does not validate: a version pair the parser does not model, a truncated array, a UV channel that disagrees with the wedge count, or no renderable geometry | Read `error.details`. It carries `offset` plus the count or version that disagreed. `version` outside `0`/`1`, or a nonzero `licenseeVersion`, is the one case that means the source model predates the layout UE4.18 writes; re-export it. Every other case means the candidate was not a real `FRawMesh`, so it was rejected as a byte pattern and another blob in the same file may still parse. |
 | `INVALID_MAGIC` | `ueformat` | The file does not start with `UEFORMAT` | It is not a `.uemodel`. |
 | `UNSUPPORTED_VERSION` | `ueformat` | The version byte is not `10` | Re-export with a CUE4Parse build that writes UEFormat v10. |
 | `INVALID_COMPRESSION` | `ueformat` | A ZSTD body, or a compression format this build does not know | Inject `zstdDecoder` in the parse options. The CLI cannot do this. |

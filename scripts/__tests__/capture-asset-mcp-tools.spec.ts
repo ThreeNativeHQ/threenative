@@ -131,7 +131,11 @@ describe("published asset MCP capture", () => {
       f.reply({ jsonrpc: "2.0", id: sent.id, result });
     });
     try {
-      assert.deepEqual(await listTools(f.child, f.lines, f.next), [...recommended].sort());
+      const captured = await listTools(f.child, f.lines, f.next);
+      assert.deepEqual(captured.map((tool) => tool.name).sort(), [...recommended].sort());
+      // The snapshot's arguments come from this same response, so a tool with no schema here would
+      // publish a tool page that cannot say what the tool takes.
+      assert.ok(captured.every((tool) => tool.name.length > 0));
       assert.deepEqual(params, [{}, { cursor: "page-2" }]);
       f.assertClean();
     } finally {
