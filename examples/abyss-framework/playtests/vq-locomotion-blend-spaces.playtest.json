@@ -1,0 +1,161 @@
+{
+  "name": "vq04-two-locomotion-consumers-cc0-mannequin",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 960,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "artifacts": {
+    "screenshots": "before-after"
+  },
+  "steps": [
+    {
+      "kind": "input",
+      "label": "start-shared-speed-trace",
+      "press": "Space",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "run-two-passes-then-release",
+      "waitTicks": 420
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "runtimeReady": true,
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "complete",
+        "equals": true
+      },
+      {
+        "id": "state",
+        "path": "passes",
+        "equals": 2
+      },
+      {
+        "id": "state",
+        "path": "third.maxWeightError",
+        "gte": 0,
+        "lte": 1e-6
+      },
+      {
+        "id": "state",
+        "path": "third.maxPhaseGap",
+        "gte": 0,
+        "lte": 1e-6
+      },
+      {
+        "id": "state",
+        "path": "first.maxPhaseGap",
+        "gte": 0.05
+      },
+      {
+        "id": "state",
+        "path": "third.maxPoseRadians",
+        "gte": 0.01,
+        "lte": 0.65
+      },
+      {
+        "id": "state",
+        "path": "third.maxPoseMetres",
+        "gte": 0.005,
+        "lte": 0.21
+      },
+      {
+        "id": "state",
+        "path": "first.maxPoseRadians",
+        "gte": 0.01,
+        "lte": 0.65
+      },
+      {
+        "id": "state",
+        "path": "first.maxPoseMetres",
+        "gte": 0.005,
+        "lte": 0.21
+      },
+      {
+        "id": "state",
+        "path": "third.maxActiveActions",
+        "gte": 1,
+        "lte": 4
+      },
+      {
+        "id": "state",
+        "path": "first.maxActiveActions",
+        "gte": 1,
+        "lte": 4
+      },
+      {
+        "id": "state",
+        "path": "third.settledActions",
+        "equals": 1
+      },
+      {
+        "id": "state",
+        "path": "first.settledActions",
+        "equals": 1
+      },
+      {
+        "id": "state",
+        "path": "third.settledClips",
+        "equals": "Idle_Loop"
+      },
+      {
+        "id": "state",
+        "path": "first.settledClips",
+        "equals": "Idle_Loop"
+      },
+      {
+        "id": "state",
+        "path": "third.disposed",
+        "equals": true
+      },
+      {
+        "id": "state",
+        "path": "first.disposed",
+        "equals": true
+      },
+      {
+        "id": "state",
+        "path": "third.releasedActions",
+        "equals": 0
+      },
+      {
+        "id": "state",
+        "path": "first.releasedActions",
+        "equals": 0
+      }
+    ],
+    "sceneNodes": [
+      {
+        "select": {
+          "type": "SkinnedMesh"
+        },
+        "minCount": 4,
+        "visible": true,
+        "minTriangles": 200
+      }
+    ],
+    "visual": [
+      {
+        "region": {
+          "x": 0,
+          "y": 0,
+          "width": 960,
+          "height": 720,
+          "minNonblankPixelRatio": 0.2
+        }
+      }
+    ]
+  }
+}
