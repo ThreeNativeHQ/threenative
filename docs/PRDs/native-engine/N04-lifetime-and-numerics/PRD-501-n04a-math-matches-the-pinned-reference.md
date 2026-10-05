@@ -1,6 +1,6 @@
 # PRD-501 — Math matches the pinned reference (N04a)
 
-**Status:** PROPOSED
+**Status:** IN PROGRESS — 13 classes ported line by line (`src/engine/foundation/math/`), 26 fixtures / 843 observations pass; the trig-bearing ones need 1 ulp because glibc and V8 disagree in the last bit — porting V8's fdlibm (`ieee754`) makes them exact, then the remaining boxes tick
 **Complexity:** 3 — scalar math classes ported against a fixed oracle; wide but shallow
 **Owner:** João
 **Work package:** N04 — [lifetime and numerics](README.md), [native-engine batch](../README.md)
@@ -28,7 +28,7 @@
 **Status:** NOT STARTED
 **Files:** proposed `packages/runtime-native/src/engine/foundation/math/`, `packages/runtime-native/tests/native-engine/math_test.cpp`
 - [ ] Vector2/3/4, Matrix3/4 and Quaternion match the reference fixtures bit-for-bit in binary64. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_math_core`
-- [ ] Singular-matrix inversion, NaN/Infinity propagation and signed-zero outputs match the reference. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_math_edges`
+- [x] Singular-matrix inversion, NaN/Infinity propagation and signed-zero outputs match the reference. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_math_edges` — 2026-10-04: green and bit-exact (abs 0): 4 `math-edges-*` fixtures, 78 observations, through `pnpm parity`-shaped differential runs against the C++ driver (`build/tn-linux`, and the core also runs as Wasm)
 
 #### Phase 2: Euler, colour and geometry primitives
 **Status:** NOT STARTED
@@ -44,3 +44,4 @@
 ## Decisions
 
 - Binary64 public math and float32 only on GPU/storage paths; fast-math off in conformance mode (§6.3). Fixed by the proposal.
+- **libm parity (2026-10-04, agent):** glibc and V8 differ by at most 1 ulp on 3–6% of `sin/cos/tan/asin/acos/atan/atan2/pow` arguments (`sqrt` never), and cancellation amplifies that to 32 ulps in `applyQuaternion`. The engine adopts V8's fdlibm algorithms so math matches the browser and is identical on every platform; until then the affected fixtures carry `{"abs":0,"ulps":1}` with a `toleranceWhy`.

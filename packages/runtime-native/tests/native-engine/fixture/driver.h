@@ -76,6 +76,12 @@ public:
     /** Returns a new native object to the fixture as a fresh id. */
     Value adopt(std::string cls, std::shared_ptr<void> ptr);
 
+    /**
+     * The numeric array a `toArray()` result was boxed into, which is how `fromArray(array)`
+     * receives what the reference receives as a plain JS array. Empty for any other argument.
+     */
+    std::vector<double> numbers(const Value& arg);
+
     /** Runs one fixture script; returns the process exit status. */
     int run(std::istream& in, std::ostream& out);
 

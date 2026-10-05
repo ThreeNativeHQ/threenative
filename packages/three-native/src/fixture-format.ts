@@ -382,17 +382,20 @@ export function writeGolden(golden: IFixtureGolden, version: string): string {
   return file;
 }
 
-/** Every fixture in the corpus, sorted by name, each parsed against its own file name. */
+/**
+ * Every fixture in the corpus, sorted by name, each parsed against its own file name.
+ *
+ * The sort is on the bare name, not on the file name: `"a-b.json"` sorts before `"a.json"` because
+ * `-` is below `.`, and the conformance parent orders its rows by bare name too.
+ */
 export function loadFixtures(directory: string = FIXTURES_DIR): readonly IFixture[] {
-  const files = readdirSync(directory)
+  const names = readdirSync(directory)
     .filter((file) => file.endsWith(".json"))
+    .map((file) => path.basename(file, ".json"))
     .sort();
-  if (files.length === 0) throw new Error(`TN_FIXTURE_EMPTY: ${directory} holds no fixtures`);
-  return files.map((file) =>
-    parseFixture(
-      JSON.parse(readFileSync(path.join(directory, file), "utf8")),
-      path.basename(file, ".json"),
-    ),
+  if (names.length === 0) throw new Error(`TN_FIXTURE_EMPTY: ${directory} holds no fixtures`);
+  return names.map((name) =>
+    parseFixture(JSON.parse(readFileSync(path.join(directory, `${name}.json`), "utf8")), name),
   );
 }
 

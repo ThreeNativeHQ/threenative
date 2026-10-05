@@ -12,6 +12,7 @@ import {
   readGolden,
 } from "../src/fixture-format.js";
 import { type IFixtureResult, compareObservation, runFixtures } from "../src/fixture-native.js";
+import { fixturePattern, runNativeSuite } from "../tests/compatibility/run-native.js";
 
 const VERSION = pinnedThreeVersion();
 const FIXTURES = loadFixtures(FIXTURES_DIR);
@@ -55,6 +56,20 @@ describe("the differential runner", () => {
     expect(named(results, "nan-and-signed-zero").status).toBe("pass");
     expect(results.filter((result) => result.status === "fail")).toEqual([]);
     expect(named(results, "lit-render").status).toBe("blocked");
+  });
+
+  it("selects one prefix of the corpus with --only, and refuses a glob that matches nothing", () => {
+    const prefix = fixturePattern("math-core-*");
+    const selected = FIXTURES.filter((fixture) => prefix.test(fixture.name)).map((f) => f.name);
+    expect(selected.length).toBeGreaterThan(1);
+    expect(selected.every((name) => name.startsWith("math-core-"))).toBe(true);
+    expect(FIXTURES.some((fixture) => !prefix.test(fixture.name))).toBe(true);
+    // A dot is a name character, not a wildcard: the glob must not reach across a fixture name.
+    expect(fixturePattern("math-core.*").test("math-core-vectors")).toBe(false);
+    expect(fixturePattern("math-core-?ectors").test("math-core-vectors")).toBe(true);
+    expect(() => runNativeSuite(["--only", "math-nothing-*", "--driver", FAKE_DRIVER])).toThrow(
+      /TN_FIXTURE_SELECTION_EMPTY/u,
+    );
   });
 
   it("fails, naming the first differing value in bits and in decimals", () => {

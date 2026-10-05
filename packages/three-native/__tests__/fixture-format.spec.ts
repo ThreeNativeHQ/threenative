@@ -154,16 +154,24 @@ describe("the seed corpus", () => {
   const fixtures = loadFixtures(FIXTURES_DIR);
   const version = pinnedThreeVersion();
 
-  it("parses every fixture in the corpus", () => {
-    expect(fixtures.map((entry) => entry.name)).toEqual([
-      "euler-orders",
-      "lit-render",
-      "matrix4-compose-invert",
-      "nan-and-signed-zero",
-      "object3d-hierarchy-matrixworld",
-      "quaternion-slerp",
-      "vector3-apply-quaternion",
-    ]);
+  it("parses every fixture in the corpus, seeds first and in name order", () => {
+    const names = fixtures.map((entry) => entry.name);
+    // PRD-498 seeded this corpus; PRD-501 added the four math groups beside those seeds.
+    expect(names).toEqual(
+      expect.arrayContaining([
+        "euler-orders",
+        "lit-render",
+        "matrix4-compose-invert",
+        "nan-and-signed-zero",
+        "object3d-hierarchy-matrixworld",
+        "quaternion-slerp",
+        "vector3-apply-quaternion",
+      ]),
+    );
+    for (const group of ["math-core-", "math-edges-", "math-euler-", "math-primitives-"])
+      expect(names.some((name) => name.startsWith(group))).toBe(true);
+    // The conformance parent orders its rows by name, so the corpus has to arrive in that order.
+    expect(names).toEqual([...names].sort());
   });
 
   it("covers the hierarchy, matrix and edge cases the PRD names", () => {

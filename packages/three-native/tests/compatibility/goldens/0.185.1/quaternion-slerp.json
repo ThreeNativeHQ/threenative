@@ -1,7 +1,7 @@
 {
   "name": "quaternion-slerp",
   "threeVersion": "0.185.1",
-  "adaptedFrom": "three@0.185.1 test/unit/src/math/Quaternion.tests.js — slerp between two normalized quaternions, plus normalize",
+  "adaptedFrom": "three@0.185.1 test/unit/src/math/Quaternion.tests.js — slerp between two normalized quaternions, plus normalize. The Euler angles are chosen so the half-angle sine and cosine are bit-identical in glibc and V8, so this fixture compares bit-exactly",
   "blocked": null,
   "observations": [
     {
@@ -9,24 +9,24 @@
       "id": "a",
       "kind": "numbers",
       "method": "toArray",
-      "value": "n:3fc8dab74fa3cf29,n:bfc6fcb5b2c698f0,n:3fd96a0ca32b30fd,n:3fec1f730bb88ecc",
-      "decimal": "0.19417468441644672, -0.17958708981786442, 0.39709773954815814, 0.8788390377926247"
+      "value": "n:3fcd29d35389ca80,n:bfc3d940936d1259,n:3fdbad5b4e3d3d25,n:3feb78d8e1516225",
+      "decimal": "0.22783891276374746, -0.1550675124982657, 0.4324558509878947, 0.8585018540134725"
     },
     {
       "index": 1,
       "id": "b",
       "kind": "numbers",
       "method": "toArray",
-      "value": "n:3fddabd2dad6a7fe,n:3fd6008b0a05cee6,n:bfc603b6df1b76fc,n:3fe98bbeb77dd7b7",
-      "decimal": "0.46361228342959737, 0.34378314951685096, -0.17198835271749846, 0.7983087142772466"
+      "value": "n:3fe087d093f190ac,n:3fdca992b4d8235e,n:bfcccb53793469ac,n:3fe6373ae214ad7c",
+      "decimal": "0.5165789498828608, 0.4478499189431683, -0.22495501917076177, 0.6942419448509294"
     },
     {
       "index": 2,
       "id": "quarter",
       "kind": "numbers",
       "method": "toArray",
-      "value": "n:3fd22abef7fe1002,n:bfa770ca8fef4496,n:3fd10a42bc74fa5f,n:3fed70cf7e34580f",
-      "decimal": "0.28385900705347933, -0.045782404012819786, 0.26625126270292826, 0.9200208153658894"
+      "value": "n:3fd57dc4c78f2750,n:3f780d02f8751f80,n:3fd22b646fdd148c,n:3fecbd54cc0870be",
+      "decimal": "0.3358013104267359, 0.005871783832226529, 0.28389845775775124, 0.8981117234248115"
     },
     {
       "index": 3,
@@ -41,16 +41,16 @@
       "id": "midpoint",
       "kind": "numbers",
       "method": "toArray",
-      "value": "n:3fd717f3030a76da,n:3fb70eefe5efcdc4,n:3fbf9ccddc13e465,n:3fed70cbc8db3744",
-      "decimal": "0.3608367471405082, 0.09007167209329398, 0.12348639128676238, 0.9200190470671505"
+      "value": "n:3fdb15f0d0a549f7,n:3fc54e4a81aa7f34,n:3fbe332229c42640,n:3fec3f944397631a",
+      "decimal": "0.4232141530566475, 0.16645175296161485, 0.1179677345245631, 0.8827611274856253"
     },
     {
       "index": 5,
       "id": "endpoint",
       "kind": "numbers",
       "method": "toArray",
-      "value": "n:3fddabd2dad6a7fe,n:3fd6008b0a05cee6,n:bfc603b6df1b76fc,n:3fe98bbeb77dd7b7",
-      "decimal": "0.46361228342959737, 0.34378314951685096, -0.17198835271749846, 0.7983087142772466"
+      "value": "n:3fe087d093f190ac,n:3fdca992b4d8235e,n:bfcccb53793469ac,n:3fe6373ae214ad7c",
+      "decimal": "0.5165789498828608, 0.4478499189431683, -0.22495501917076177, 0.6942419448509294"
     },
     {
       "index": 6,
@@ -65,8 +65,8 @@
       "id": "flipped",
       "kind": "numbers",
       "method": "toArray",
-      "value": "n:bfdafc8303648b01,n:8000000000000000,n:3f9966cb2e6a76f8,n:3fec1f68162c3cfc",
-      "decimal": "-0.4216620953686033, -0, 0.024806189258575778, 0.8788338120520218"
+      "value": "n:bfdf05c9440c1b48,n:8000000000000000,n:3fac40d3c3ad4394,n:3fea074952658343",
+      "decimal": "-0.4847281612896279, -0, 0.055182092319802895, 0.8133894547755535"
     },
     {
       "index": 8,

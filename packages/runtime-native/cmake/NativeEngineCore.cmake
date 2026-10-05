@@ -5,20 +5,35 @@
 option(TN_ENGINE_SANITIZE "Build the native engine targets under ASan and UBSan" OFF)
 function(tn_native_engine_target target)
     set_target_properties(${target} PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON POSITION_INDEPENDENT_CODE ON)
+    # PRD-501 §6.3: the engine targets are compared against a JavaScript oracle in binary64, so the
+    # compiler must not fuse a multiply and an add into one rounded FMA. No fast-math anywhere.
+    if(NOT MSVC)
+        target_compile_options(${target} PRIVATE -ffp-contract=off)
+    endif()
     if(TN_ENGINE_SANITIZE)
         target_compile_options(${target} PRIVATE -fsanitize=address,undefined -fno-sanitize-recover=undefined -fno-omit-frame-pointer)
         target_link_options(${target} PRIVATE -fsanitize=address,undefined)
     endif()
     set_property(GLOBAL APPEND PROPERTY TN_NATIVE_ENGINE_TARGETS ${target})
+    if(EMSCRIPTEN)
+        # Owner decision 4: the core runs on a growing Wasm heap, never a fixed one.
+        target_link_options(${target} PRIVATE -sALLOW_MEMORY_GROWTH=1)
+    endif()
 endfunction()
 
-# Foundation: handles and (later) math. Portable C++20 with no platform API, so the same sources
+# Foundation: handles and math. Portable C++20 with no platform API, so the same sources
 # compile for the browser port.
 add_library(tn_engine_foundation STATIC
     src/engine/foundation/handles.cpp
     src/engine/foundation/buffers.cpp
     src/engine/foundation/reachability.cpp
-    src/engine/foundation/members.cpp)
+    src/engine/foundation/members.cpp
+    src/engine/foundation/math/Vector.cpp
+    src/engine/foundation/math/Matrix.cpp
+    src/engine/foundation/math/Quaternion.cpp
+    src/engine/foundation/math/Euler.cpp
+    src/engine/foundation/math/Color.cpp
+    src/engine/foundation/math/Primitives.cpp)
 tn_native_engine_target(tn_engine_foundation)
 target_include_directories(tn_engine_foundation PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
@@ -136,9 +151,39 @@ endif()
 add_executable(tn-native-engine-fixture-driver tests/native-engine/fixture/main.cpp)
 target_link_libraries(tn-native-engine-fixture-driver PRIVATE tn_fixture_driver)
 tn_native_engine_target(tn-native-engine-fixture-driver)
+# The differential ctests run it, so every test aggregate rebuilds it.
+set_property(GLOBAL APPEND PROPERTY TN_NATIVE_ENGINE_TEST_TARGETS tn-native-engine-fixture-driver)
 tn_native_engine_test(tn-native-engine-fixture-protocol-test tests/native-engine/fixture_driver_test.cpp
     native_engine_fixture_protocol=protocol)
 target_link_libraries(tn-native-engine-fixture-protocol-test PRIVATE tn_fixture_driver)
 
+# PRD-501 phases 1 and 2: the ported math classes against the pinned three, one ctest per fixture
+# prefix. Each case is the differential runner over its prefix and the host driver; a mismatch and a
+# blocked row both fail it, because a row nobody ran is a row nobody proved. Emscripten needs node
+# and the host-built driver, which an Emscripten build has neither of.
+if(NOT EMSCRIPTEN)
+    find_program(TN_PNPM_EXECUTABLE pnpm)
+    if(TN_PNPM_EXECUTABLE)
+        foreach(math_case "core:math-core-*" "edges:math-edges-*" "euler:math-euler-*" "primitives:math-primitives-*")
+            string(REPLACE ":" ";" math_pair "${math_case}")
+            list(GET math_pair 0 math_name)
+            list(GET math_pair 1 math_glob)
+            add_test(NAME native_engine_math_${math_name}
+                COMMAND ${TN_PNPM_EXECUTABLE} --filter @threenative/three-native exec tsx
+                    tests/compatibility/run-native.ts
+                    --driver $<TARGET_FILE:tn-native-engine-fixture-driver>
+                    --only "${math_glob}"
+                    --out ${CMAKE_CURRENT_BINARY_DIR}/math-${math_name}.json)
+            set_tests_properties(native_engine_math_${math_name} PROPERTIES LABELS "native-engine")
+        endforeach()
+        unset(math_case)
+        unset(math_pair)
+    else()
+        message(WARNING "pnpm not found: the native_engine_math_* fixture cases are not registered")
+    endif()
+endif()
+
+# The math fixture cases spawn the driver, so the aggregate target has to build it too.
 get_property(tn_native_engine_core_test_targets GLOBAL PROPERTY TN_NATIVE_ENGINE_TEST_TARGETS)
-add_custom_target(tn-native-engine-core-tests DEPENDS ${tn_native_engine_core_test_targets})
+add_custom_target(tn-native-engine-core-tests DEPENDS ${tn_native_engine_core_test_targets}
+    tn-native-engine-fixture-driver)

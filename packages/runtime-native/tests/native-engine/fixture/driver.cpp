@@ -77,6 +77,14 @@ Value Driver::adopt(std::string cls, std::shared_ptr<void> ptr) {
     return Value{Value::Kind::Ref, 0, id};
 }
 
+std::vector<double> Driver::numbers(const Value& arg) {
+    if (arg.kind != Value::Kind::Ref) return {};
+    const auto it = objects_.find(arg.text);
+    if (it == objects_.end() || it->second.cls != "\x03value") return {};
+    const auto& boxed = *static_cast<Value*>(it->second.ptr.get());
+    return boxed.kind == Value::Kind::Numbers ? boxed.numbers : std::vector<double>{};
+}
+
 int Driver::run(std::istream& in, std::ostream& out) {
     for (std::string line; std::getline(in, line);) {
         const std::vector<std::string> t = split(line);

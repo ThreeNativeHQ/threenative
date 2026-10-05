@@ -14,7 +14,7 @@
  * and the same exit-code rule, under `target: "native-engine"`.
  */
 
-import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -120,12 +120,30 @@ function loadGoldens(version: string): ReadonlyMap<string, IFixtureGolden> {
   return goldens;
 }
 
-/** The fixture names on disk. The parent validates the report against this list. */
-export function fixtureNames(): readonly string[] {
-  return readdirSync(FIXTURES_DIR)
-    .filter((file) => file.endsWith(".json"))
-    .map((file) => path.basename(file, ".json"))
-    .sort();
+/**
+ * `--only` takes one glob over fixture names (`math-core-*`), so a ctest case can run one prefix
+ * of the corpus without the others. Only `*` and `?` are wildcards; every other character is the
+ * name's own, because a fixture name is an identifier and a regex metacharacter in one is a typo.
+ */
+export function fixturePattern(glob: string): RegExp {
+  const escaped = glob
+    .replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")
+    .replace(/\\\*/gu, ".*")
+    .replace(/\\\?/gu, ".");
+  return new RegExp(`^${escaped}$`, "u");
+}
+
+/** The fixtures `--only` selects, or every fixture. A glob that selects nothing is an error. */
+function selectFixtures(argv: readonly string[]): readonly IFixture[] {
+  const fixtures = loadFixtures(FIXTURES_DIR);
+  const only = valueAfter(argv, "--only");
+  if (only === null) return fixtures;
+  const pattern = fixturePattern(only);
+  const selected = fixtures.filter((fixture) => pattern.test(fixture.name));
+  // Fail closed: an empty run would report a clean summary for a corpus it never touched.
+  if (selected.length === 0)
+    throw new Error(`TN_FIXTURE_SELECTION_EMPTY: --only ${only} matched none`);
+  return selected;
 }
 
 function main(argv: readonly string[]): number {
@@ -136,7 +154,8 @@ function main(argv: readonly string[]): number {
     throw new Error(`Invalid conformance registry:\n- ${registryErrors.join("\n- ")}`);
 
   const driver = resolveDriver(valueAfter(argv, "--driver"));
-  const results = runFixtures(loadFixtures(FIXTURES_DIR), {
+  const fixtures = selectFixtures(argv);
+  const results = runFixtures(fixtures, {
     driver,
     version,
     goldens: loadGoldens(version),
@@ -159,7 +178,8 @@ function main(argv: readonly string[]): number {
   };
   const reportErrors = validateReport(report, registry, {
     suite: SUITE,
-    expectedIds: fixtureNames(),
+    // The rows this run selected: every fixture, or the prefix `--only` named.
+    expectedIds: fixtures.map((fixture) => fixture.name),
   });
   if (reportErrors.length > 0)
     throw new Error(`Generated an invalid conformance report:\n- ${reportErrors.join("\n- ")}`);
