@@ -115,6 +115,34 @@ function(tn_native_engine_test target source)
     set_property(GLOBAL APPEND PROPERTY TN_NATIVE_ENGINE_TEST_TARGETS ${target})
 endfunction()
 
+# PRD-515 phase 1: glTF/GLB to a native scene in GLTFLoader's shape. cgltf (provisioned by
+# download-deps) only parses; the corpus test reads the repository's glTF files from disk.
+set(TN_CGLTF_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/cgltf)
+if(EXISTS ${TN_CGLTF_DIR}/cgltf.h AND NOT EMSCRIPTEN)
+    add_library(tn_engine_gltf STATIC src/engine/assets/gltf/loader.cpp src/engine/assets/gltf/cgltf_impl.cpp)
+    tn_native_engine_target(tn_engine_gltf)
+    target_link_libraries(tn_engine_gltf PUBLIC tn_engine_scene tn_engine_animation tn_engine_foundation)
+    target_include_directories(tn_engine_gltf PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src PRIVATE ${TN_CGLTF_DIR})
+    # cgltf is third-party C in a C++ unit: its own warnings are not this engine's.
+    set_source_files_properties(src/engine/assets/gltf/cgltf_impl.cpp PROPERTIES COMPILE_OPTIONS "-w")
+    tn_native_engine_test(tn-native-engine-gltf-hierarchy-test tests/native-engine/assets/gltf_hierarchy_test.cpp
+        native_engine_gltf_hierarchy=hierarchy)
+    target_link_libraries(tn-native-engine-gltf-hierarchy-test PRIVATE tn_engine_gltf)
+    find_program(TN_PNPM_EXECUTABLE pnpm)
+    target_compile_definitions(tn-native-engine-gltf-hierarchy-test PRIVATE
+        TN_GLTF_REFERENCE="${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/assets/gltf_reference.json"
+        TN_REPO_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/../..")
+    if(TN_PNPM_EXECUTABLE)
+        add_test(NAME native_engine_gltf_reference_current
+            COMMAND ${TN_PNPM_EXECUTABLE} --workspace-root exec tsx
+                packages/runtime-native/tests/native-engine/assets/gltf-reference.ts --check
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../..)
+        set_tests_properties(native_engine_gltf_reference_current PROPERTIES LABELS "native-engine")
+    endif()
+else()
+    message(STATUS "cgltf not provisioned (or Emscripten): the native glTF loader is not built")
+endif()
+
 tn_native_engine_test(tn-native-engine-handles-test tests/native-engine/handles_test.cpp
     native_engine_handles_generation=generation
     native_engine_handles_identity=identity)

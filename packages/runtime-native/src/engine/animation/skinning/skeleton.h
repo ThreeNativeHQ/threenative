@@ -67,7 +67,11 @@ class Skeleton {
     /** The first bone whose name matches, or null. A null slot is skipped, never dereferenced. */
     [[nodiscard]] Bone* getBoneByName(std::string_view name) const;
 
-    std::vector<std::shared_ptr<Bone>> bones;
+    // Weak: the scene graph owns bones. A SkinnedMesh often sits under its own bones, so a strong
+    // reference would make mesh -> skeleton -> bone -> ... -> mesh a cycle that never frees (three's
+    // GC collects it). A bone nothing else holds reads as three's `undefined` slot.
+    std::vector<std::weak_ptr<Bone>> bones;
+    [[nodiscard]] Bone* bone(std::size_t i) const { return i < bones.size() ? bones[i].lock().get() : nullptr; }
     std::vector<Matrix4> boneInverses;
     /** `bones.size() * 16` floats, column-major per slot, three's flat `boneMatrices`. */
     std::vector<float> boneMatrices;

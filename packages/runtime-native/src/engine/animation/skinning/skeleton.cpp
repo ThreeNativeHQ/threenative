@@ -10,7 +10,7 @@
 namespace tn::engine {
 
 Skeleton::Skeleton(std::vector<std::shared_ptr<Bone>> bones, std::vector<Matrix4> boneInverses)
-    : bones(std::move(bones)), boneInverses(std::move(boneInverses)) {
+    : bones(bones.begin(), bones.end()), boneInverses(std::move(boneInverses)) {
     init();
 }
 
@@ -29,7 +29,7 @@ void Skeleton::calculateInverses() {
     boneInverses.clear();
     for (std::size_t i = 0; i < bones.size(); ++i) {
         Matrix4 inverse;
-        if (bones[i]) inverse.copy(bones[i]->matrixWorld).invert();
+        if (Bone* b = bone(i)) inverse.copy(b->matrixWorld).invert();
         boneInverses.push_back(inverse);
     }
 }
@@ -37,12 +37,12 @@ void Skeleton::calculateInverses() {
 void Skeleton::pose() {
     // Recover the bind-time world matrices.
     for (std::size_t i = 0; i < bones.size(); ++i) {
-        if (bones[i]) bones[i]->matrixWorld.copy(boneInverses[i]).invert();
+        if (Bone* b = bone(i)) b->matrixWorld.copy(boneInverses[i]).invert();
     }
 
     // Compute the local matrices, positions, rotations and scales.
     for (std::size_t i = 0; i < bones.size(); ++i) {
-        Bone* bone = bones[i].get();
+        Bone* bone = this->bone(i);
         if (bone == nullptr) continue;
         if (bone->parent != nullptr && dynamic_cast<Bone*>(bone->parent) != nullptr) {
             bone->matrix.copy(bone->parent->matrixWorld).invert();
@@ -58,7 +58,8 @@ void Skeleton::update() {
     static const Matrix4 identity{};
     Matrix4 offset;
     for (std::size_t i = 0; i < bones.size(); ++i) {
-        const Matrix4& matrix = bones[i] ? bones[i]->matrixWorld : identity;
+        const Bone* b = bone(i);
+        const Matrix4& matrix = b ? b->matrixWorld : identity;
         offset.multiplyMatrices(matrix, boneInverses[i]);
         for (std::size_t k = 0; k < 16; ++k)
             boneMatrices[i * 16 + k] = static_cast<float>(offset.elements[k]);
@@ -66,8 +67,8 @@ void Skeleton::update() {
 }
 
 Bone* Skeleton::getBoneByName(std::string_view name) const {
-    for (const std::shared_ptr<Bone>& bone : bones) {
-        if (bone && bone->name == name) return bone.get();
+    for (std::size_t i = 0; i < bones.size(); ++i) {
+        if (Bone* b = bone(i); b && b->name == name) return b;
     }
     return nullptr;
 }

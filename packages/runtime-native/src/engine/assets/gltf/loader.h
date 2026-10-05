@@ -1,0 +1,36 @@
+#pragma once
+// glTF 2.0 / GLB to a native scene (PRD-515 phase 1): cgltf parses and validates; the scene, meshes,
+// materials, skins and clips are built here in three@0.185.1 GLTFLoader's hierarchy and naming, so a
+// game finds the same names, parents and transforms it would under the upstream loader.
+//
+// Supported: core glTF 2.0 in a GLB or a glTF with embedded (data URI) buffers, and
+// KHR_mesh_quantization. An extension GLTFLoader implements and this loader does not is refused
+// by name (TN_NATIVE_GLTF_EXTENSION_UNSUPPORTED) instead of being dropped, as is a required
+// extension nobody knows; an unknown optional extension is ignored, as GLTFLoader ignores it.
+// Not yet: cameras and lights (refused), image decoding (a texture records its name and image),
+// a node shared between scenes, external buffer files.
+//
+// Engine code never throws: a refusal is the result's `error`, a TN_NATIVE_GLTF_* code and detail.
+
+#include <cstdint>
+#include <memory>
+#include <span>
+#include <string>
+#include <vector>
+
+#include "engine/animation/mixer.h"
+#include "engine/scene/nodes.h"
+
+namespace tn::engine::gltf {
+
+struct LoadResult {
+    std::shared_ptr<Group> scene;                 // the default scene (json.scene, else the first)
+    std::vector<std::shared_ptr<Group>> scenes;   // every scene, in file order
+    std::vector<std::shared_ptr<animation::AnimationClip>> animations;
+    std::string error;                            // empty on success
+};
+
+/** Loads a GLB (or glTF JSON with embedded buffers) from memory. */
+LoadResult load(std::span<const uint8_t> bytes);
+
+} // namespace tn::engine::gltf

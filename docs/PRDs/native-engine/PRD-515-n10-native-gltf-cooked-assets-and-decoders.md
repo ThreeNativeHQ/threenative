@@ -30,7 +30,7 @@
 #### Phase 1: glTF to a native scene
 **Status:** NOT STARTED
 **Files:** proposed `packages/runtime-native/src/engine/assets/gltf/`, `packages/runtime-native/tests/native-engine/assets/`
-- [ ] The glTF sample corpus loads into a native hierarchy whose names, transforms, materials and clip list match the reference `GLTFLoader` dump. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_gltf_hierarchy`
+- [x] The glTF sample corpus loads into a native hierarchy whose names, transforms, materials and clip list match the reference `GLTFLoader` dump. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_gltf_hierarchy` — 2026-10-05: 11 files, 0 differ, on Dawn, ASan (LeakSanitizer clean) and wgpu: every uncompressed tracked glTF (the template mannequin and viewmodel rigs with 7 and 5 clips, the sailing ship with KHR_mesh_quantization, world assets, the skinned test character, a file with a custom extension) against `gltf_reference.json` from the real GLTFLoader (`gltf-reference.ts`, `native_engine_gltf_reference_current`): names, types, parents, transforms (JSON doubles), geometry layout, materials and texture slots, skeletons and clips. Red controls: no unique-name suffix, 3 files differ; default metalness 0, 4; translations dropped, 4; translation tracks misnamed, 2. The first ASan run caught a mesh -> skeleton -> bone cycle; Skeleton now holds its bones weakly. Not loaded yet: compressed files (Draco, meshopt, KTX2 stay refused by name), cameras, lights, cubic-spline clips.
 - [ ] A loaded model renders and matches the upstream capture of the same file. proof: `pnpm parity` case `native-engine-gltf-model`
 
 #### Phase 2: Cooked packages without JS
