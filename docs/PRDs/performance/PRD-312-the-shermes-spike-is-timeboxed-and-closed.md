@@ -6,6 +6,7 @@ prd_contract: v1
 
 **Status:** OPEN, filed 2026-08-31 against `2e014460`. Planning only.
 
+**Priority:** P2 — Timeboxed AOT spike with a pre-stated bar and graveyard close-out.
 **Outcome:** the one idea that could stop iOS's no-JIT rule being permanent stops being an
 unowned sentence in two architecture documents. Within a **fixed five-day timebox**, this repository
 holds a number for *"does untyped Three.js game code gain anything from ahead-of-time compilation"*,

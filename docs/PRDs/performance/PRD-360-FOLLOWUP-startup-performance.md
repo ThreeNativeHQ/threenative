@@ -11,6 +11,7 @@ complete; PRD-360 remains PARTIAL because the launch and pump budgets still fail
 **Execution budget:** Start with a 60-minute profiling task. At most three measured optimization experiments before reporting results or escalating. No speculative rewrite.
 **Delegate:** A cheaper coding model can execute the bounded tasks below. Escalate a demonstrated GPU scheduling or cross-thread ownership problem with evidence, not an open-ended debugging transcript.
 
+**Priority:** P1 — Qualifies the unmet eight-second launch criterion on three physical cold launches.
 ## Objective and current truth
 
 Make the real Bayview game playable within **8,000 ms median across three qualified physical Android cold launches**, with **no event-pump silence above 250 ms**. Preserve the world, effects, assets, UI and accepted movement. First frame alone does not establish first playable.

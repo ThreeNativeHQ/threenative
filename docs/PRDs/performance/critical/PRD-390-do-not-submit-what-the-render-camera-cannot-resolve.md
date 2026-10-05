@@ -44,6 +44,7 @@ tuning pass") are the whole PRD; §5b (never own the look) is the boundary. No I
 preset/genre system, code-first ECS or bespoke CLI vocabulary is introduced. Vocabulary is borrowed from
 Three.js, WebGPU and Godot before anything is invented.
 
+**Priority:** P1 — Shipped mechanisms still carry the open gates: mobile evidence, the native `--target` leg and the second in-repo consumer.
 ## Closure Gates
 
 Every box requires evidence from an implementation revision. Merging this PRD completes none of them.

@@ -5,6 +5,7 @@ prd_contract: v1
 # PRD-VQ-01 — Native asset compatibility follows the selected runtime and actual decoders
 
 **Status:** PARTIAL — 2026-10-02. Bounded desktop/unknown-runtime fail-closed repair implemented and packaged Linux QuickJS fallback rendered on the hosted lane; mobile selected-artifact resolution and compressed-decoder qualification remain open.
+**Priority:** P2 — Only open box: documented fallback preserved and resources released across lifecycles.
 **Batch:** [Visual quality execution batch](https://github.com/ThreeNativeHQ/threenative/blob/d9ac5b4e97f6b1383bd163d91619cffa7c6c0ef5/docs/PRDs/batch-2026-10-01-visual-quality/README.md). **Wave:** 0 / correctness.
 **Dependencies:** None. This is a build/runtime contract repair, not permission to remove compatibility guards.
 

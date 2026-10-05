@@ -22,6 +22,7 @@ keeping the currently valid rendering until the new path is ready. Cover the var
 actually runs — shadow, reflection and its real render passes — not every conceivable combination.
 
 **Status:** NOT STARTED — specification only.
+**Priority:** P2 — Spec only: trace the synchronous build, census variants, prepare off-frame with a bound.
 **Date:** 2026-09-15.
 **Scope:** Engine warm-up/preparation in `@threenative/core`, on both runtimes. No game code, no new
 public shader-authoring surface, no change to how a game writes materials.

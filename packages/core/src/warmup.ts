@@ -360,6 +360,17 @@ export async function within(
   yieldFrame: () => Promise<void>,
   now: () => number,
 ): Promise<boolean> {
+  return withinDeadline(now() + limitMs, work, yieldFrame, now);
+}
+
+// Keep the deadline established before invoking a compiler's synchronous prefix. This does not
+// interrupt that work; it prevents the promise wait or cached completion granting extra budget.
+async function withinDeadline(
+  deadline: number,
+  work: Promise<unknown>,
+  yieldFrame: () => Promise<void>,
+  now: () => number,
+): Promise<boolean> {
   // A rejected compile is a pipeline this warm-up could not build, not a reason to fail the
   // launch: the frame that needs it will try again and fail there, where the error belongs.
   let settled: boolean | undefined;
@@ -376,8 +387,8 @@ export async function within(
   // Do not ask the host for a turn when a normal synchronous or already-cached compile has
   // settled. This preserves the existing slice cadence for fakes and desktop renderers.
   await Promise.resolve();
+  if (now() >= deadline) return false;
   if (settled !== undefined) return settled;
-  const deadline = now() + limitMs;
   while (now() < deadline) {
     if (settled !== undefined) return settled;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -392,7 +403,7 @@ export async function within(
     ]);
     if (timer !== undefined) clearTimeout(timer);
     if (result === "timeout") return false;
-    if (result.kind === "complete") return result.value;
+    if (result.kind === "complete") return now() < deadline && result.value;
   }
   return false;
 }
@@ -420,15 +431,15 @@ async function runComputeWarmUp(
       abandoned += nodes.length - index;
       break;
     }
-    const finished = await within(
+    const finished = await withinDeadline(
+      Math.min(deadline, now() + compileTimeoutMs),
       Promise.resolve().then(() => computeAsync(nodes[index])),
-      Math.min(compileTimeoutMs, remaining),
       yieldFrame,
       now,
     );
     if (finished) compiled += 1;
     else abandoned += 1;
-    if (now() >= deadline && index + 1 < nodes.length) {
+    if (now() >= deadline && (!finished || index + 1 < nodes.length)) {
       timedOut = true;
       abandoned += nodes.length - index - 1;
       break;
@@ -957,7 +968,7 @@ export async function warmUpScene(
     )?.backend?.device?.queue;
     if (typeof queue?.onSubmittedWorkDone !== "function") return;
     const drained = Promise.resolve().then(() => queue.onSubmittedWorkDone?.());
-    await within(drained, Math.max(0, startedAt + budgetMs - now()), yieldFrame, now);
+    await withinDeadline(startedAt + budgetMs, drained, yieldFrame, now);
   };
   const withPasses = (report: IWarmUpReport): IWarmUpReport =>
     passResult === undefined
@@ -977,7 +988,11 @@ export async function warmUpScene(
   // cost is paid before the loop is released rather than inside the first frame the player sees.
   if ((options.granularity ?? "scene") === "scene") {
     if (compute === undefined) {
-      const finished = await within(invokeCompile(scene), budgetMs, yieldFrame, now);
+      const deadline = startedAt + budgetMs;
+      const finished =
+        now() < deadline
+          ? await withinDeadline(deadline, invokeCompile(scene), yieldFrame, now)
+          : false;
       options.onProgress?.({ done: finished ? 1 : 0, total: 1 });
       renderWarmPassesOnce();
       await settleGpu();
@@ -998,7 +1013,9 @@ export async function warmUpScene(
     }
     const remaining = Math.max(0, startedAt + budgetMs - now());
     const finished =
-      remaining > 0 ? await within(invokeCompile(scene), remaining, yieldFrame, now) : false;
+      remaining > 0
+        ? await withinDeadline(startedAt + budgetMs, invokeCompile(scene), yieldFrame, now)
+        : false;
     options.onProgress?.({ done: finished ? 1 : 0, total: 1 });
     renderWarmPassesOnce();
     await settleGpu();
@@ -1060,14 +1077,17 @@ export async function warmUpScene(
     // identity; this layer must not guess which objects are safe to drop before it observes them.
     //
     // Bounded, because an unbounded await here is what held a real launch open forever.
-    const finished = await within(
+    const finished = await withinDeadline(
+      Math.min(deadline, now() + compileTimeoutMs),
       invokeCompile(renderables[index] as Object3D, scene),
-      Math.min(compileTimeoutMs, Math.max(0, deadline - now())),
       yieldFrame,
       now,
     );
     if (finished) compiled += 1;
-    else abandoned += 1;
+    else {
+      abandoned += 1;
+      if (now() >= deadline) timedOut = true;
+    }
 
     const done = index + 1;
     if (done % sliceSize === 0 || done === total) {

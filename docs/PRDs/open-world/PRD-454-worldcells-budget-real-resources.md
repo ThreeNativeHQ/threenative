@@ -5,7 +5,7 @@ prd_contract: v1
 # PRD-454 — World streaming budgets the resources that actually consume memory
 
 **Status:** PROPOSED — filed 2026-09-26.  
-**Priority:** quick-win follow-up after streamed LOD integration.  
+**Priority:** P2 — Stated quick-win follow-up: budgets count only placement bytes, not geometry or texture.
 **Complexity:** 7 → HIGH. Resource accounting crosses the loader, world residency, texture/geometry ownership and transient loading, but it reuses existing refcounts and device-budget work.  
 **Depends on:** [PRD-448 WorldCells](../done/unreal-like-features/PRD-448-world-cells-blender-export-and-streaming.md), [PRD-213 GPU memory accounting](../performance/PRD-213-gpu-memory-is-accounted-and-bounded.md), and [cross-platform asset cooking/device budgets](../done/PRD-448-cross-platform-asset-cooking-and-device-budgets.md).
 

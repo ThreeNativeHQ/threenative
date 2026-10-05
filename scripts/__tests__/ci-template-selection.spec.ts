@@ -35,39 +35,36 @@ function fixture() {
   };
 }
 describe("impact-driven template coverage", () => {
-  it.each(["pull_request", "merge_group"])(
-    "selects only an exact changed kit for %s",
-    (eventName) => {
-      const f = fixture();
-      try {
-        const head = f.change("packages/create-threenative/templates/shooter/src/game.ts");
-        const plan = classify({
-          root: f.root,
-          base: f.base,
-          head,
-          candidateSha: head,
-          target: "develop",
-          eventName,
-        });
-        expect(plan.selection).toBe("template");
-        expect(plan.templateMatrix.template).toEqual(["shooter"]);
-        expect(plan.goldenMatrix.template).toEqual(["shooter"]);
-        for (const name of ["test-native", "native-platforms", "test-browser", "benchmark"])
-          expect(plan.jobs[name].required).toBe(false);
-        for (const name of [
-          "build-artifacts",
-          "template-nonvisual",
-          "golden-path-template",
-          "supply-chain",
-        ])
-          expect(plan.jobs[name].required).toBe(true);
-        expect(validatePlan(plan)).toEqual(plan);
-      } finally {
-        rmSync(f.root, { recursive: true, force: true });
-      }
-    },
-  );
-  it.each(["pull_request", "merge_group"])("keeps CI and docs narrow on %s", (eventName) => {
+  it.each(["pull_request"])("selects only an exact changed kit for %s", (eventName) => {
+    const f = fixture();
+    try {
+      const head = f.change("packages/create-threenative/templates/shooter/src/game.ts");
+      const plan = classify({
+        root: f.root,
+        base: f.base,
+        head,
+        candidateSha: head,
+        target: "develop",
+        eventName,
+      });
+      expect(plan.selection).toBe("template");
+      expect(plan.templateMatrix.template).toEqual(["shooter"]);
+      expect(plan.goldenMatrix.template).toEqual(["shooter"]);
+      for (const name of ["test-native", "native-platforms", "test-browser", "benchmark"])
+        expect(plan.jobs[name].required).toBe(false);
+      for (const name of [
+        "build-artifacts",
+        "template-nonvisual",
+        "golden-path-template",
+        "supply-chain",
+      ])
+        expect(plan.jobs[name].required).toBe(true);
+      expect(validatePlan(plan)).toEqual(plan);
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+  it.each(["pull_request"])("keeps CI and docs narrow on %s", (eventName) => {
     for (const [file, selection] of [
       ["docs/PRDs/inert.md", "prose"],
       ["scripts/ci-required.mjs", "ci"],
@@ -135,10 +132,10 @@ describe("impact-driven template coverage", () => {
         target: "refs/heads/develop",
         eventName: "merge_group",
       });
-      expect(plan.selection).toBe("template");
-      expect(plan.templateMatrix.template).toEqual(["shooter", "snow"]);
-      expect(plan.goldenMatrix.template).toEqual(["shooter"]);
-      expect(plan.unitMatrix.shard).toEqual(["1/1"]);
+      expect(plan.selection).toBe("full");
+      expect(plan.templateMatrix.template).toEqual(TEMPLATE_NAMES);
+      expect(plan.goldenMatrix.template).toEqual(["starter", "platformer"]);
+      expect(plan.unitMatrix.shard).toEqual(["1/4", "2/4", "3/4", "4/4"]);
     } finally {
       rmSync(f.root, { recursive: true, force: true });
     }
@@ -156,7 +153,7 @@ describe("impact-driven template coverage", () => {
           target,
           eventName: "merge_group",
         });
-        expect(plan.selection).toBe(target === "main" ? "full" : "prose");
+        expect(plan.selection).toBe("full");
       }
     } finally {
       rmSync(f.root, { recursive: true, force: true });
@@ -175,9 +172,9 @@ describe("impact-driven template coverage", () => {
         target: "develop",
         eventName: "merge_group",
       });
-      expect(plan.selection).toBe("template");
+      expect(plan.selection).toBe("full");
       expect(plan.checks.ci).toBe(true);
-      expect(plan.templateMatrix.template).toEqual(["shooter"]);
+      expect(plan.templateMatrix.template).toEqual(TEMPLATE_NAMES);
     } finally {
       rmSync(f.root, { recursive: true, force: true });
     }
@@ -205,7 +202,7 @@ describe("impact-driven template coverage", () => {
       rmSync(f.root, { recursive: true, force: true });
     }
   });
-  it("requires resolved history for the queue verdict, then accepts a complete checkout", () => {
+  it("requires resolved queue history and independently refuses missing Integration evidence", () => {
     const f = fixture();
     const clone = makeTempDirSync("ci-shallow-queue-");
     try {
@@ -226,7 +223,7 @@ describe("impact-driven template coverage", () => {
       expect(cloned.status, cloned.stderr).toBe(0);
       const needs = {
         scope: { result: "success", outputs: { plan: JSON.stringify(plan) } },
-        ...Object.fromEntries(Object.keys(plan.jobs).map((name) => [name, { result: "skipped" }])),
+        ...Object.fromEntries(Object.keys(plan.jobs).map((name) => [name, { result: "success" }])),
       };
       const run = () =>
         spawnSync(process.execPath, [new URL("../ci-required.mjs", import.meta.url).pathname], {
@@ -247,7 +244,9 @@ describe("impact-driven template coverage", () => {
       });
       expect(fetched.status, fetched.stderr).toBe(0);
       const verified = run();
-      expect(verified.status, verified.stderr).toBe(0);
+      expect(verified.status).toBe(1);
+      expect(verified.stderr).not.toContain("CI_REQUIRED_QUEUE_CANDIDATE_MISMATCH");
+      expect(verified.stderr).toContain("CI_INTEGRATION_RECEIPT_IDENTITY");
       const workflow = readFileSync(
         new URL("../.github/workflows/ci.yml", new URL("../", import.meta.url)),
         "utf8",
@@ -416,7 +415,7 @@ it("retains both renamed kit endpoints and deleted kit source coverage", () => {
       head,
       candidateSha: head,
       target: "develop",
-      eventName: "merge_group",
+      eventName: "pull_request",
     });
     expect(plan.templateMatrix.template).toEqual(["shooter", "snow"]);
     f.git("rm", "packages/create-threenative/templates/snow/src/new.ts");
@@ -429,7 +428,7 @@ it("retains both renamed kit endpoints and deleted kit source coverage", () => {
         head: deleted,
         candidateSha: deleted,
         target: "develop",
-        eventName: "merge_group",
+        eventName: "pull_request",
       }).templateMatrix.template,
     ).toEqual(["snow"]);
   } finally {

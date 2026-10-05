@@ -1,6 +1,7 @@
 # PRD — AI View-Projected Environments
 
 **Status:** NOT STARTED — experimental proposal; implementation and runtime validation have not begun.  
+**Priority:** P3 — NOT STARTED and called experimental; capture contract and projective rendering are unrun specs.
 **Date:** 2026-09-28  
 **Repository:** `ThreeNativeHQ/threenative`  
 **Intended path:** `docs/PRDs/authoring/PRD-ai-view-projected-environments.md`  

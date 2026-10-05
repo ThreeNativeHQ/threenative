@@ -15,7 +15,6 @@ import {
   resolveAtmosphereParameters,
   solarPosition,
   updateAtmosphereParameters,
-  zenithTransmittance,
 } from "./params.js";
 
 /** The structural contract consumed by the compute registry from PRD-242. */

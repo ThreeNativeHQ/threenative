@@ -1,6 +1,7 @@
 # PRD-493 — Terrain layers past sixteen textures
 
 **Status:** PROPOSED
+**Priority:** P2 — Layer arrays, a 0.5 ms bound and the 16-layer fallback are all unbuilt.
 **Complexity:** 3 (LOW) — 1–5 implementation files (`world-terrain-splat.ts`, the two identical `export_world.py` recipe copies) (+1); Machinefall re-exports its table and releases separately (+2); risk override: none
 **Owner:** João
 **Depends on:** None

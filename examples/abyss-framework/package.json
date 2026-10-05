@@ -31,7 +31,8 @@
     "create-threenative": "workspace:*",
     "tailwindcss": "catalog:",
     "typescript": "catalog:",
-    "vite": "catalog:"
+    "vite": "catalog:",
+    "@typescript/native": "catalog:"
   },
   "optionalDependencies": {
     "@threenative/runtime-native": "workspace:*"

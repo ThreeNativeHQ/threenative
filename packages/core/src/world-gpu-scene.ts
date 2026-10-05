@@ -15,7 +15,6 @@ import {
   struct,
   uniform,
   vec3,
-  vec4,
 } from "three/tsl";
 import {
   IndirectStorageBufferAttribute,
@@ -435,7 +434,7 @@ function select(input: IKernelInput, shadow: IShadowLevel | undefined): IKernelR
     0,
   );
   const matrix = new Float32Array(capacity * LOCAL_WORDS);
-  for (const [index, region] of regions.entries()) {
+  for (const region of regions) {
     args[region.argsIndex * DRAW_ARGS_WORDS + 4] = region.start;
   }
   for (let index = 0; index < input.count; index += 1) {

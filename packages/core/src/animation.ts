@@ -404,10 +404,6 @@ export class AnimationPlayer {
     return uniformYawScale(owner.matrixWorld);
   }
 
-  #groundSpeedOf(name: string): number {
-    return this.#measureOf(name).groundSpeed;
-  }
-
   /**
    * What one unit of a root track is worth in world metres.
    *

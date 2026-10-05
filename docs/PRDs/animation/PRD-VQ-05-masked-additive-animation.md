@@ -5,6 +5,7 @@ prd_contract: v1
 # PRD-VQ-05 — Upper-body actions and additive reactions compose over locomotion
 
 **Status:** PROPOSED — 2026-10-01. No implementation or qualification is claimed.
+**Priority:** P2 — Proposed mask resolution and additive preparation, proved only by new unrun specs.
 **Batch:** Visual quality execution batch. **Wave:** 1 / character motion.
 **Dependencies:** Coordinate with VQ-04 through one action owner. Existing constrained IK must remain after authored animation evaluation.
 

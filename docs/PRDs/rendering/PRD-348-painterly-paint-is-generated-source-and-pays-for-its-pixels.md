@@ -11,6 +11,7 @@ at `c0c02c47971e70b214a25de01ac9633e7608fc84`, particularly `src/components/kuwa
 `src/components/watercolor/` and `src/components/painterlyStarter/PainterlyStarter.tsx` (MIT).
 Nothing copied.
 
+**Priority:** P2 — Proposed painterly chain owned by generated src/render, per-pixel cost attributed by adapter.
 **Goal: the starter's high tier can produce a recognisably painterly frame from editable generated
 TSL source, while every lower tier and every report says exactly which part of that cost it paid.**
 

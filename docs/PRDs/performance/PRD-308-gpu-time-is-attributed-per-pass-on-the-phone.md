@@ -6,6 +6,7 @@ prd_contract: v1
 
 **Status:** OPEN, filed 2026-08-31 against `2e014460`. Planning only.
 
+**Priority:** P2 — Planning-only per-pass GPU attribution with 32 open design gates.
 **Outcome:** one run on one build prints, per render pass, what that pass cost the GPU this frame —
 `TN_GPU_PASS ssr 6.31ms` — so answering "what is expensive" stops costing a rebuild-and-reinstall
 per hypothesis. Three separate sessions have worked GPU cost out by rebuilding the app once per
