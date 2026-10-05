@@ -268,6 +268,32 @@ void alias() {
     CHECK(driver.ref<Vector3>(firstRef, "Vector3").y == 2);
 }
 
+
+// `revision` counts changes, not recomputes: three's renderer calls scene.updateMatrixWorld() every
+// frame, which recomposes every auto-update object, and a still scene must read as unchanged.
+void revision() {
+    Object3D scene;
+    auto parent = node("parent");
+    auto child = node("child");
+    scene.add(*parent);
+    parent->add(*child);
+    child->position.set(1, 2, 3);
+    scene.updateMatrixWorld();
+    const uint64_t settledParent = parent->revision(), settledChild = child->revision();
+    for (int frame = 0; frame < 300; ++frame) scene.updateMatrixWorld();
+    CHECK(parent->revision() == settledParent);
+    CHECK(child->revision() == settledChild);
+    for (int frame = 0; frame < 300; ++frame) scene.updateWorldMatrix(false, true);
+    CHECK(child->revision() == settledChild);
+
+    // Moving the parent changes the child's world matrix, so both read as changed.
+    parent->position.x = 5;
+    scene.updateMatrixWorld();
+    CHECK(parent->revision() > settledParent);
+    CHECK(child->revision() > settledChild);
+    CHECK(child->matrixWorld.elements[12] == 6);
+}
+
 }  // namespace
 
-TN_TEST_MAIN({"hierarchy", hierarchy}, {"alias", alias})
+TN_TEST_MAIN({"hierarchy", hierarchy}, {"alias", alias}, {"revision", revision})

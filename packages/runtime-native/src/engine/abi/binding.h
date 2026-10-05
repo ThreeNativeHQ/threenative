@@ -55,6 +55,9 @@ struct ClassBinding {
     std::map<std::string, Method> methods;
     std::map<std::string, Getter> getters;  // keyed by full path: "x", "position.x", "matrixWorld.elements"
     std::map<std::string, Setter> setters;
+    // Member objects (`position`, `matrixWorld`): read as properties, answered with the one alias Ref
+    // of that member (memberAlias), so they need the Store a plain getter does not get.
+    std::map<std::string, Method> members;
 };
 
 using Registry = std::map<std::string, ClassBinding>;
@@ -89,10 +92,7 @@ public:
 /** The value a chaining method returns: the object it was called on. */
 inline Value chain() { return Value{Value::Kind::Ref, 0, "\x01self"}; }
 
-/**
- * The Ref for a member object of the object a binding was called on. A getter has no Store to ask,
- * which is why a member is reached through a method rather than through `tn_get`.
- */
+/** The Ref for a member object of the object a binding was called on; registered in `members`. */
 template <typename T>
 Value memberAlias(Store& store, void* self, T& member, const char* cls) {
     return store.adoptAlias(cls, &member, self);

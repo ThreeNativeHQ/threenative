@@ -154,7 +154,8 @@ target_link_libraries(tn-native-engine-abi-test PRIVATE tn_engine_abi)
 # PRD-508 phase 1: hierarchy, re-parenting, events and member identity.
 tn_native_engine_test(tn-native-engine-scene-test tests/native-engine/scene_hierarchy_test.cpp
     native_engine_scene_hierarchy=hierarchy
-    native_engine_scene_alias=alias)
+    native_engine_scene_alias=alias
+    native_engine_scene_revision=revision)
 # The alias case drives the fixture driver's Store as well, which is the other implementor of it.
 target_link_libraries(tn-native-engine-scene-test PRIVATE tn_engine_scene tn_fixture_driver)
 

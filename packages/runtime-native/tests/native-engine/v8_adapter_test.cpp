@@ -217,8 +217,35 @@ void crossingBench() {
     CHECK(got.rfind("write ", 0) == 0);
 }
 
+// The scene graph through V8: member objects are properties, `mesh.position` is the same wrapper on
+// every read, writes through it reach the native object, and the transform matches three's.
+void scene() {
+    Runtime& rt = runtime();
+    v8::Isolate::Scope isolateScope(rt.isolate);
+    Adapter adapter(rt.isolate, rt.context);
+    const std::string got = run(rt, adapter, R"JS(
+        const parent = new Object3D(), child = new Object3D();
+        parent.add(child);
+        const p = child.position;
+        p.x = 2;
+        parent.position.y = 3;
+        parent.updateMatrixWorld(true);
+        const e = child.matrixWorld.elements;
+        const checks = [
+            child.position === p,
+            child.position.x === 2,
+            e[12] === 2 && e[13] === 3 && e[14] === 0,
+            child.matrixWorld === child.matrixWorld,
+        ];
+        checks.map(Number).join("")
+    )JS");
+    CHECK(got == "1111");
+    if (got != "1111") std::fprintf(stderr, "got %s\n", got.c_str());
+}
+
 }  // namespace
 
 TN_TEST_MAIN({"handles", handles}, {"unsupported", unsupported}, {"gc_release", gcRelease},
              {"runtime_churn", runtimeChurn},
-             {"crossing_bench", crossingBench})
+             {"crossing_bench", crossingBench},
+             {"scene", scene})

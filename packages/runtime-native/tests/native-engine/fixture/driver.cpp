@@ -158,9 +158,16 @@ int Driver::run(std::istream& in, std::ostream& out) {
                         if (method == binding.methods.end()) throw Unsupported{object->second.cls + "." + decode(t[4]) + "()"};
                         value = method->second(object->second.ptr.get(), {}, *this);
                     } else {
-                        auto getter = binding.getters.find(decode(t[3]));
-                        if (getter == binding.getters.end()) throw Unsupported{object->second.cls + "." + decode(t[3])};
-                        value = getter->second(object->second.ptr.get());
+                        const std::string path = decode(t[3]);
+                        auto getter = binding.getters.find(path);
+                        auto member = binding.members.find(path);
+                        if (getter != binding.getters.end()) {
+                            value = getter->second(object->second.ptr.get());
+                        } else if (member != binding.members.end()) {
+                            value = member->second(object->second.ptr.get(), {}, *this);
+                        } else {
+                            throw Unsupported{object->second.cls + "." + path};
+                        }
                     }
                 }
                 const std::string& kind = t[5];

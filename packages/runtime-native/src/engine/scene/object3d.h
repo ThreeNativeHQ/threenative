@@ -156,7 +156,9 @@ public:
 
     /**
      * The renderer's change counter (PRD-508 §6.4). It counts the writes the renderer must react
-     * to, and nothing else: every transform method below, `updateMatrix`, `add`/`remove`/`attach`/
+     * to, and nothing else: every transform method below, `updateMatrix` and the world-matrix updates
+     * when they change the matrix bits (three recomposes every auto-update object every frame, so an
+     * unchanged recompose is not a change), `add`/`remove`/`attach`/
      * `clear` (which bump the object they are called on, so `child.removeFromParent()` bumps the
      * parent), every setter above, and `copy`. A direct write to `position`, `quaternion`,
      * `rotation`, `scale`, `up`, `matrix`, `matrixWorld`, `pivot` or the auto-update flags is a C++

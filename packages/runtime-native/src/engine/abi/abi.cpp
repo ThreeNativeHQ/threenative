@@ -386,11 +386,14 @@ tn_status_t tn_get(tn_handle_t self, const char* path, tn_value_t* result, tn_di
     tn::binding::Object* object = nullptr;
     if (!path || !result) return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_ABI_NULL: path or result");
     if (const tn_status_t s = selfObject(self, context, object, diagnostic); s != TN_OK) return s;
-    const auto& getters = classRegistry().at(object->cls).getters;
-    const auto g = getters.find(path);
-    if (g == getters.end()) return report(diagnostic, TN_ERROR_UNSUPPORTED, 0, ("TN_NATIVE_UNSUPPORTED " + object->cls + "." + path).c_str());
+    const tn::binding::ClassBinding& binding = classRegistry().at(object->cls);
+    const auto g = binding.getters.find(path);
+    const auto m = binding.members.find(path);
+    if (g == binding.getters.end() && m == binding.members.end())
+        return report(diagnostic, TN_ERROR_UNSUPPORTED, 0, ("TN_NATIVE_UNSUPPORTED " + object->cls + "." + path).c_str());
     return guarded(diagnostic, [&]() -> tn_status_t {
-        fromBinding(context, self, g->second(object->ptr.get()), result);
+        void* ptr = object->ptr.get();
+        fromBinding(context, self, g != binding.getters.end() ? g->second(ptr) : m->second(ptr, {}, *context), result);
         return ok(diagnostic);
     });
 }

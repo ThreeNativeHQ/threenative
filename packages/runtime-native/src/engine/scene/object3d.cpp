@@ -7,6 +7,7 @@
 #include "engine/scene/object3d.h"
 
 #include <algorithm>
+#include <cstring>
 
 namespace tn::engine {
 
@@ -405,6 +406,7 @@ void Object3D::traverseAncestors(Visitor visitor, void* context) {
 // ------------------------------------------------------------------------------ matrices
 
 void Object3D::updateMatrix() {
+    const Matrix4 before = matrix;
     matrix.compose(position, quaternion, scale);
 
     if (pivot.has_value()) {
@@ -416,7 +418,8 @@ void Object3D::updateMatrix() {
     }
 
     matrixWorldNeedsUpdate = true;
-    bump();
+    // three recomposes every frame for every auto-update object; only a changed matrix is a change.
+    if (std::memcmp(before.elements.data(), matrix.elements.data(), sizeof(double) * 16) != 0) bump();
 }
 
 void Object3D::updateMatrixWorld(bool force) {
@@ -424,11 +427,14 @@ void Object3D::updateMatrixWorld(bool force) {
 
     if (matrixWorldNeedsUpdate || force) {
         if (matrixWorldAutoUpdate) {
+            const Matrix4 before = matrixWorld;
             if (parent == nullptr) {
                 matrixWorld.copy(matrix);
             } else {
                 matrixWorld.multiplyMatrices(parent->matrixWorld, matrix);
             }
+            // A parent's move reaches the renderer through the child's world matrix.
+            if (std::memcmp(before.elements.data(), matrixWorld.elements.data(), sizeof(double) * 16) != 0) bump();
         }
         matrixWorldNeedsUpdate = false;
         force = true;
@@ -446,11 +452,13 @@ void Object3D::updateWorldMatrix(bool updateParents, bool updateChildren, bool f
 
     if (matrixWorldNeedsUpdate || force) {
         if (matrixWorldAutoUpdate) {
+            const Matrix4 before = matrixWorld;
             if (parent_ == nullptr) {
                 matrixWorld.copy(matrix);
             } else {
                 matrixWorld.multiplyMatrices(parent_->matrixWorld, matrix);
             }
+            if (std::memcmp(before.elements.data(), matrixWorld.elements.data(), sizeof(double) * 16) != 0) bump();
         }
         matrixWorldNeedsUpdate = false;
         force = true;

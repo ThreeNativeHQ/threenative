@@ -251,11 +251,15 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
                            },
                            v8::External::New(isolate_, data)));
         }
+        std::vector<std::pair<std::string, bool>> properties;  // name, settable
         for (const auto& [path, getter] : binding.getters) {
-            (void)getter;
-            if (path.find('.') != std::string::npos) continue;  // nested members arrive with the scene's aliases
+            // A dotted path (`position.x`) is reached through the member object, not as a property.
+            if (path.find('.') == std::string::npos) properties.push_back({path, binding.setters.count(path) > 0});
+        }
+        // Member objects read as properties too; tn_get answers them with the one alias Ref.
+        for (const auto& [path, member] : binding.members) properties.push_back({path, false});
+        for (const auto& [path, settable] : properties) {
             auto* data = new MethodData{this, path};
-            const bool settable = binding.setters.count(path) > 0;
             proto->SetAccessorProperty(
                 str(isolate_, path),
                 v8::FunctionTemplate::New(

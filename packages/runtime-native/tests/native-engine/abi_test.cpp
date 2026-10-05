@@ -198,8 +198,8 @@ void scene() {
     // is the object's own write.
     tn_value_t first{};
     tn_value_t second{};
-    CHECK(tn_invoke(child, "position", nullptr, 0, &first, &d.value) == TN_OK);
-    CHECK(tn_invoke(child, "position", nullptr, 0, &second, &d.value) == TN_OK);
+    CHECK(tn_get(child, "position", &first, &d.value) == TN_OK);
+    CHECK(tn_get(child, "position", &second, &d.value) == TN_OK);
     CHECK(first.kind == TN_VALUE_HANDLE && same(first.handle, second.handle));
     const tn_value_t forty = num(40);
     CHECK(tn_set(first.handle, "y", &forty, &d.value) == TN_OK);
