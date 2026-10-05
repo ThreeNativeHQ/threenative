@@ -7,6 +7,7 @@ import {
   missingExpectationNote,
   parseExpected,
   runMeasured,
+  unsupportedThreeImports,
 } from "../run-corpus.mjs";
 
 function tempDir(): string {
@@ -34,7 +35,8 @@ describe("discoverCases", () => {
     expect(names).not.toContain("imports-cycle-inner");
     expect(names).not.toContain("imports-cycle-outer");
     expect(names).toContain("three-fixture");
-    expect(names).toHaveLength(12);
+    expect(names).toContain("unsupported-export");
+    expect(names).toHaveLength(13);
   });
 
   it("turns a top-level .ts with no .expected into a named failure, not a skip", () => {
@@ -63,5 +65,39 @@ describe("runMeasured", () => {
     expect(measured.stdout.toString()).toBe("8\n");
     expect(measured.status).toBe(0);
     expect(measured.peakRssBytes).toBeGreaterThan(200 * 1024 * 1024);
+  });
+});
+
+describe("unsupportedThreeImports", () => {
+  const catalog = {
+    entries: [
+      { name: "Mesh", status: { kind: "supported" } },
+      {
+        name: "Raycaster",
+        status: { kind: "unsupported", diagnostic: "TN_NATIVE_UNSUPPORTED_RAYCASTER" },
+      },
+    ],
+  };
+
+  it("passes supported names, aliases included", () => {
+    expect(unsupportedThreeImports('import { Mesh, Mesh as M } from "three";', catalog)).toEqual(
+      [],
+    );
+  });
+
+  it("names each refused import with its specifier and the catalog's diagnostic", () => {
+    expect(
+      unsupportedThreeImports(
+        'import { Mesh, Raycaster } from "three";\nimport { Fog as F } from "three/webgpu";',
+        catalog,
+      ),
+    ).toEqual([
+      "TN_NATIVE_TS_UNSUPPORTED_EXPORT three#Raycaster (TN_NATIVE_UNSUPPORTED_RAYCASTER)",
+      "TN_NATIVE_TS_UNSUPPORTED_EXPORT three/webgpu#Fog (not in the catalog)",
+    ]);
+  });
+
+  it("ignores imports from other modules", () => {
+    expect(unsupportedThreeImports('import { Raycaster } from "./local";', catalog)).toEqual([]);
   });
 });

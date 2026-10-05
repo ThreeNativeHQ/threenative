@@ -10,7 +10,7 @@ All new package names, configuration fields, ABI names, status markers, and work
 
 ## PRD index
 
-**Batch status: IN PROGRESS — 108/237 phase boxes (45%) as of 2026-10-05, on `feat/native-engine` (PR #438).** This file is the batch index and the source proposal; the PRDs below carry the boxes. Work packages too large for one PRD (at most 3 phases, about 8 boxes) are a folder with its own `README.md` and child PRDs. The batch moves to `done/` whole only when every PRD in it is finished.
+**Batch status: IN PROGRESS — 109/237 phase boxes (45%) as of 2026-10-05, on `feat/native-engine` (PR #438).** This file is the batch index and the source proposal; the PRDs below carry the boxes. Work packages too large for one PRD (at most 3 phases, about 8 boxes) are a folder with its own `README.md` and child PRDs. The batch moves to `done/` whole only when every PRD in it is finished.
 
 ### Progress
 
@@ -27,7 +27,7 @@ Generated from the PRD files' boxes; a PRD is done when every box is ticked.
 | [PRD-503](N04-lifetime-and-numerics/PRD-503-n04c-unreachable-cycles-are-reclaimed.md) | Unreachable cycles are reclaimed (N04c) | 7/7 | done |
 | [PRD-504](N04-lifetime-and-numerics/PRD-504-n04d-buffers-cross-the-abi-with-an-owner.md) | Buffers cross the ABI with an owner (N04d) | 7/7 | done |
 | [PRD-505](N05-native-typescript-qualification/PRD-505-n05a-the-language-corpus-compiles-on-linux-x64.md) | The language corpus compiles on Linux x64 (N05a) | 5/6 | in progress |
-| [PRD-506](N05-native-typescript-qualification/PRD-506-n05b-three-imports-bind-natively-and-callbacks-are-reclaimed.md) | Three imports bind natively and callbacks are reclaimed (N05b) | 1/6 | in progress |
+| [PRD-506](N05-native-typescript-qualification/PRD-506-n05b-three-imports-bind-natively-and-callbacks-are-reclaimed.md) | Three imports bind natively and callbacks are reclaimed (N05b) | 2/6 | in progress |
 | [PRD-507](N05-native-typescript-qualification/PRD-507-n05c-the-same-corpus-runs-on-android-arm64.md) | The same corpus runs on Android arm64 (N05c) | 0/4 | not started |
 | [PRD-508](PRD-508-n06-native-scene-graph-transforms-cameras-geometry.md) | Native scene graph, transforms, cameras and geometry (N06) | 7/7 | done |
 | [PRD-509](PRD-509-n07-gpu-resources-presentation-and-device-loss.md) | GPU resources, presentation and device loss (N07) | 7/8 | in progress |

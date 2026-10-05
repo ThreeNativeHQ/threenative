@@ -5,6 +5,8 @@
 //   --native --target <triple> compile each case with the pinned compiler to an
 //                              executable and compare stdout and exit to <case>.expected
 //   --case <name>             run only one case
+//   --expect-compile-error    the selected cases must be compile-error cases (their
+//                              .expected holds `# compile-error <text>`; nothing runs)
 //
 // Each `<case>.expected` holds the reference stdout, optionally followed by a
 // `# exit <n>` line naming the reference exit code (absent means 0).
@@ -53,6 +55,36 @@ function named(code, message) {
   const error = new Error(`${code}: ${message}`);
   error.code = code;
   return error;
+}
+
+/**
+ * Names a case imports from "three" or a "three/..." subpath that the catalog does not mark
+ * supported: each fails the build as TN_NATIVE_TS_UNSUPPORTED_EXPORT <specifier>#<name>, with the
+ * catalog's own diagnostic when it records one, before anything compiles.
+ */
+export function unsupportedThreeImports(source, catalog) {
+  const entries = new Map(catalog.entries.map((entry) => [entry.name, entry]));
+  const refused = [];
+  for (const match of source.matchAll(
+    /\bimport\s*\{([^}]*)\}\s*from\s*["'](three(?:\/[\w-]+)?)["']/g,
+  )) {
+    for (const part of (match[1] ?? "").split(",")) {
+      const name = part
+        .trim()
+        .split(/\s+as\s+/)[0]
+        ?.trim();
+      if (!name) continue;
+      const entry = entries.get(name);
+      if (entry?.status?.kind === "supported") continue;
+      const diagnostic = entry?.status?.diagnostic
+        ? ` (${entry.status.diagnostic})`
+        : entry
+          ? ""
+          : " (not in the catalog)";
+      refused.push(`TN_NATIVE_TS_UNSUPPORTED_EXPORT ${match[2]}#${name}${diagnostic}`);
+    }
+  }
+  return refused;
 }
 
 function importsThree(file) {
@@ -147,6 +179,9 @@ function pinnedThreeModuleUrl() {
 /** Splits a `.expected` file into its stdout bytes and its stored reference exit code. */
 export function parseExpected(buffer) {
   const text = buffer.toString("utf8");
+  // A native-only case: the build must fail naming this text, and nothing runs.
+  const compileError = /^# compile-error (.+)$/m.exec(text)?.[1];
+  if (compileError !== undefined) return { compileError, exit: 0, stdout: Buffer.alloc(0) };
   const match = /(^|\n)# exit (\d+)\r?\n?$/.exec(text);
   if (match === null) return { exit: 0, stdout: buffer };
   const exit = Number(match[2]);
@@ -223,6 +258,7 @@ export function discoverCases(filter, corpusDir = CORPUS) {
 function runReference(name) {
   let file = path.join(CORPUS, `${name}.ts`);
   const expected = parseExpected(fs.readFileSync(expectedPath(name)));
+  if (expected.compileError !== undefined) return { ok: true, notApplicable: true };
   if (importsThree(file)) {
     const staged = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "tn-ref-three-")), `${name}.ts`);
     fs.writeFileSync(
@@ -292,7 +328,15 @@ async function runNative(name, info, target) {
   };
 
   const exe = path.join(tmp, name);
-  if (importsThree(entry)) {
+  const refusedImports = unsupportedThreeImports(
+    fs.readFileSync(entry, "utf8"),
+    JSON.parse(
+      fs.readFileSync(path.join(REPO, "packages", "three-native", "api", "catalog.json"), "utf8"),
+    ),
+  );
+  if (refusedImports.length > 0) {
+    compileErrors.push(...refusedImports);
+  } else if (importsThree(entry)) {
     linkWithEngine({ name, entry, modules, tmp, exe, triple, compile, compileErrors, root });
   } else {
     const objects = [];
@@ -311,6 +355,15 @@ async function runNative(name, info, target) {
     ]);
   }
 
+  const expectedCompile = parseExpected(fs.readFileSync(expectedPath(name))).compileError;
+  if (expectedCompile !== undefined) {
+    return compileErrors.some((error) => error.includes(expectedCompile))
+      ? { ok: true, note: `refused at compile time: ${expectedCompile}` }
+      : {
+          ok: false,
+          note: `expected the build to fail with ${expectedCompile}; got ${compileErrors[0] ?? "a successful build"}`,
+        };
+  }
   if (compileErrors.length > 0) {
     return { ok: false, note: `TN_NATIVE_TS_COMPILE ${name}: ${compileErrors[0]}` };
   }
@@ -476,6 +529,18 @@ async function main() {
 
   const names = discoverCases(filter);
   if (names.length === 0) throw named("TN_NATIVE_TS_CASE", `no corpus case matches '${filter}'`);
+  // --expect-compile-error states the selected cases are compile-error cases; a case that is not
+  // one would pass for the wrong reason, so it stops the run.
+  if (args.includes("--expect-compile-error")) {
+    for (const name of names) {
+      const note = missingExpectationNote(name);
+      if (
+        note === undefined &&
+        parseExpected(fs.readFileSync(expectedPath(name))).compileError === undefined
+      )
+        throw named("TN_NATIVE_TS_USAGE", `${name} has no '# compile-error' expectation`);
+    }
+  }
 
   const info = wantNative ? await provision({ log: () => {} }) : undefined;
   const rows = [];
@@ -498,7 +563,8 @@ async function main() {
     }
     if (wantReference) {
       const result = runReference(name);
-      row.reference = result.ok ? "PASS" : "FAIL";
+      // A native compile-error case has no reference run to compare.
+      row.reference = result.notApplicable ? "n/a" : result.ok ? "PASS" : "FAIL";
       if (!result.ok) {
         failed = true;
         row.note = result.note;
