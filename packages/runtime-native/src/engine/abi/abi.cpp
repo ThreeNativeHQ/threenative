@@ -4,6 +4,7 @@
 
 #include "threenative/abi/tn_abi.h"
 
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <memory>
@@ -11,11 +12,59 @@
 #include <string_view>
 #include <vector>
 
+#include "engine/abi/bindings.h"
 #include "engine/foundation/handles.h"
 
-struct tn_context {
+#include <exception>
+#include <string>
+
+extern "C" uint16_t tn_type_id(const char* name);
+
+// A context is also the binding Store of the generic calls: Ref values name handles, objects live
+// in the slot their handle indexes.
+struct tn_context : tn::binding::Store {
     explicit tn_context(uint16_t id) : objects(id) {}
     tn::engine::HandleTable objects;
+    std::vector<tn::binding::Object> values;  // by handle index
+    std::string scratchText;                  // a returned string, valid until the next call
+    std::vector<double> scratchNumbers;       // a returned array, valid until the next call
+
+    static std::string refText(tn_handle_t h) {
+        return "h" + std::to_string(h.type) + ":" + std::to_string(h.index) + ":" + std::to_string(h.generation);
+    }
+    bool decode(const std::string& text, tn_handle_t& out) const {
+        unsigned type = 0, index = 0, generation = 0;
+        if (std::sscanf(text.c_str(), "h%u:%u:%u", &type, &index, &generation) != 3) return false;
+        out = tn_handle_t{static_cast<uint16_t>(type), objects.context(), index, generation};
+        return true;
+    }
+    tn::binding::Object* object(tn_handle_t h) {
+        const tn::engine::Handle handle{h.type, h.context, h.index, h.generation};
+        if (objects.check(handle) != tn::engine::HandleError::None || h.index >= values.size()) return nullptr;
+        tn::binding::Object& o = values[h.index];
+        return o.ptr ? &o : nullptr;
+    }
+    tn::binding::Object* find(const tn::binding::Value& arg) override {
+        tn_handle_t h{};
+        return arg.kind == tn::binding::Value::Kind::Ref && decode(arg.text, h) ? object(h) : nullptr;
+    }
+    tn::binding::Value adopt(std::string cls, std::shared_ptr<void> ptr) override {
+        tn_handle_t h{};
+        if (!hold(std::move(cls), std::move(ptr), h)) throw tn::binding::Unsupported{"the catalog publishes no such class"};
+        return tn::binding::Value{tn::binding::Value::Kind::Ref, 0, refText(h)};
+    }
+    std::vector<double> numbers(const tn::binding::Value& arg) override {
+        return arg.kind == tn::binding::Value::Kind::Numbers ? arg.numbers : std::vector<double>{};
+    }
+    bool hold(std::string cls, std::shared_ptr<void> ptr, tn_handle_t& out) {
+        const uint16_t type = tn_type_id(cls.c_str());
+        if (type == 0) return false;
+        const tn::engine::Handle h = objects.allocate(type);
+        if (values.size() <= h.index) values.resize(h.index + 1);
+        values[h.index] = tn::binding::Object{std::move(cls), std::move(ptr)};
+        out = tn_handle_t{h.type, h.context, h.index, h.generation};
+        return true;
+    }
 };
 
 namespace {
@@ -163,7 +212,9 @@ tn_status_t tn_object_release(tn_handle_t object, tn_diagnostic_t* diagnostic) {
     if (!context) return report(diagnostic, TN_ERROR_INVALID_HANDLE, 0, "TN_HANDLE_CONTEXT: no live context owns this handle");
     const tn::engine::Handle handle{object.type, object.context, object.index, object.generation};
     switch (context->objects.release(handle)) {
-        case tn::engine::HandleError::None: return ok(diagnostic);
+        case tn::engine::HandleError::None:
+            if (object.index < context->values.size()) context->values[object.index] = tn::binding::Object{};
+            return ok(diagnostic);
         case tn::engine::HandleError::Stale:
             return report(diagnostic, TN_ERROR_STALE_HANDLE, 0, "TN_HANDLE_STALE: the slot was reclaimed");
         case tn::engine::HandleError::Type:
@@ -172,6 +223,166 @@ tn_status_t tn_object_release(tn_handle_t object, tn_diagnostic_t* diagnostic) {
         case tn::engine::HandleError::Invalid: break;
     }
     return report(diagnostic, TN_ERROR_INVALID_HANDLE, 0, "TN_HANDLE_INVALID: no such object");
+}
+
+}  // extern "C"
+
+namespace {
+
+const tn::binding::Registry& classRegistry() {
+    static const tn::binding::Registry classes = [] {
+        tn::binding::Registry r;
+        tn::binding::registerAll(r);
+        return r;
+    }();
+    return classes;
+}
+
+bool toBinding(tn_context* context, const tn_value_t* in, uint32_t count, tn::binding::Args& out) {
+    using Kind = tn::binding::Value::Kind;
+    for (uint32_t i = 0; i < count; ++i) {
+        const tn_value_t& v = in[i];
+        switch (v.kind) {
+            case TN_VALUE_NULL: out.push_back({}); break;
+            case TN_VALUE_NUMBER: out.push_back(tn::binding::Value::of(v.number)); break;
+            case TN_VALUE_BOOL: out.push_back(tn::binding::Value::of(v.boolean != 0)); break;
+            case TN_VALUE_STRING:
+                out.push_back(tn::binding::Value{Kind::String, 0, std::string(v.text ? v.text : "", v.text ? v.count : 0)});
+                break;
+            case TN_VALUE_HANDLE:
+                // A handle from another context is not resolvable here; it arrives as an unknown ref.
+                out.push_back(tn::binding::Value{Kind::Ref, 0,
+                                                 v.handle.context == context->objects.context() ? tn_context::refText(v.handle) : "x"});
+                break;
+            case TN_VALUE_NUMBERS:
+                if (!v.numbers && v.count) return false;
+                out.push_back(tn::binding::Value::list(std::vector<double>(v.numbers, v.numbers + v.count)));
+                break;
+            default: return false;
+        }
+    }
+    return true;
+}
+
+void fromBinding(tn_context* context, tn_handle_t self, const tn::binding::Value& in, tn_value_t* out) {
+    using Kind = tn::binding::Value::Kind;
+    *out = tn_value_t{};
+    switch (in.kind) {
+        case Kind::Null: break;
+        case Kind::Number: out->kind = TN_VALUE_NUMBER; out->number = in.number; break;
+        case Kind::Bool: out->kind = TN_VALUE_BOOL; out->boolean = in.flag ? 1 : 0; break;
+        case Kind::String:
+            context->scratchText = in.text;
+            out->kind = TN_VALUE_STRING;
+            out->text = context->scratchText.c_str();
+            out->count = context->scratchText.size();
+            break;
+        case Kind::Numbers:
+            context->scratchNumbers = in.numbers;
+            out->kind = TN_VALUE_NUMBERS;
+            out->numbers = context->scratchNumbers.data();
+            out->count = context->scratchNumbers.size();
+            break;
+        case Kind::Ref:
+            out->kind = TN_VALUE_HANDLE;
+            if (in.text == "\x01self") out->handle = self;
+            else context->decode(in.text, out->handle);
+            break;
+    }
+}
+
+// Every binding throw stops here: Unsupported becomes TN_ERROR_UNSUPPORTED with its reason,
+// anything else (a missing argument) TN_ERROR_INVALID_ARGUMENT. Nothing unwinds into C.
+template <typename Call>
+tn_status_t guarded(tn_diagnostic_t* diagnostic, Call call) {
+    try {
+        return call();
+    } catch (const tn::binding::Unsupported& u) {
+        return report(diagnostic, TN_ERROR_UNSUPPORTED, 0, ("TN_NATIVE_UNSUPPORTED " + u.reason).c_str());
+    } catch (const std::exception& e) {
+        return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, (std::string("TN_ABI_ARGUMENT ") + e.what()).c_str());
+    }
+}
+
+tn_status_t selfObject(tn_handle_t self, tn_context*& context, tn::binding::Object*& object, tn_diagnostic_t* diagnostic) {
+    context = contextFor(self.context);
+    object = context ? context->object(self) : nullptr;
+    if (!object) return report(diagnostic, TN_ERROR_INVALID_HANDLE, 0, "TN_HANDLE_INVALID: no live object");
+    return TN_OK;
+}
+
+}  // namespace
+
+extern "C" {
+
+tn_status_t tn_construct(tn_context_t* context, const char* class_name, const tn_value_t* args, uint32_t arg_count,
+                         tn_handle_t* out_object, tn_diagnostic_t* diagnostic) {
+    if (!context || !class_name || !out_object || (arg_count && !args)) {
+        return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_ABI_NULL: context, class, args or out_object");
+    }
+    *out_object = tn_handle_t{};
+    const auto cls = classRegistry().find(class_name);
+    if (cls == classRegistry().end() || !cls->second.ctor) {
+        return report(diagnostic, TN_ERROR_UNSUPPORTED, 0, (std::string("TN_NATIVE_UNSUPPORTED class ") + class_name).c_str());
+    }
+    return guarded(diagnostic, [&]() -> tn_status_t {
+        tn::binding::Args in;
+        if (!toBinding(context, args, arg_count, in)) return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_ABI_VALUE: bad value kind");
+        if (!context->hold(class_name, cls->second.ctor(in, *context), *out_object)) {
+            return report(diagnostic, TN_ERROR_UNSUPPORTED, 0, (std::string("TN_NATIVE_UNSUPPORTED catalog class ") + class_name).c_str());
+        }
+        return ok(diagnostic);
+    });
+}
+
+tn_status_t tn_invoke(tn_handle_t self, const char* method, const tn_value_t* args, uint32_t arg_count, tn_value_t* result,
+                      tn_diagnostic_t* diagnostic) {
+    tn_context* context = nullptr;
+    tn::binding::Object* object = nullptr;
+    if (!method || !result || (arg_count && !args)) return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_ABI_NULL: method, args or result");
+    if (const tn_status_t s = selfObject(self, context, object, diagnostic); s != TN_OK) return s;
+    const auto& methods = classRegistry().at(object->cls).methods;
+    const auto m = methods.find(method);
+    if (m == methods.end()) {
+        return report(diagnostic, TN_ERROR_UNSUPPORTED, 0, ("TN_NATIVE_UNSUPPORTED " + object->cls + "." + method + "()").c_str());
+    }
+    return guarded(diagnostic, [&]() -> tn_status_t {
+        tn::binding::Args in;
+        if (!toBinding(context, args, arg_count, in)) return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_ABI_VALUE: bad value kind");
+        void* target = object->ptr.get();
+        fromBinding(context, self, m->second(target, in, *context), result);
+        return ok(diagnostic);
+    });
+}
+
+tn_status_t tn_get(tn_handle_t self, const char* path, tn_value_t* result, tn_diagnostic_t* diagnostic) {
+    tn_context* context = nullptr;
+    tn::binding::Object* object = nullptr;
+    if (!path || !result) return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_ABI_NULL: path or result");
+    if (const tn_status_t s = selfObject(self, context, object, diagnostic); s != TN_OK) return s;
+    const auto& getters = classRegistry().at(object->cls).getters;
+    const auto g = getters.find(path);
+    if (g == getters.end()) return report(diagnostic, TN_ERROR_UNSUPPORTED, 0, ("TN_NATIVE_UNSUPPORTED " + object->cls + "." + path).c_str());
+    return guarded(diagnostic, [&]() -> tn_status_t {
+        fromBinding(context, self, g->second(object->ptr.get()), result);
+        return ok(diagnostic);
+    });
+}
+
+tn_status_t tn_set(tn_handle_t self, const char* path, const tn_value_t* value, tn_diagnostic_t* diagnostic) {
+    tn_context* context = nullptr;
+    tn::binding::Object* object = nullptr;
+    if (!path || !value) return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_ABI_NULL: path or value");
+    if (const tn_status_t s = selfObject(self, context, object, diagnostic); s != TN_OK) return s;
+    const auto& setters = classRegistry().at(object->cls).setters;
+    const auto st = setters.find(path);
+    if (st == setters.end()) return report(diagnostic, TN_ERROR_UNSUPPORTED, 0, ("TN_NATIVE_UNSUPPORTED " + object->cls + "." + path + " is not settable").c_str());
+    return guarded(diagnostic, [&]() -> tn_status_t {
+        tn::binding::Args in;
+        if (!toBinding(context, value, 1, in)) return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_ABI_VALUE: bad value kind");
+        st->second(object->ptr.get(), in[0]);
+        return ok(diagnostic);
+    });
 }
 
 void tn_diagnostic_release(tn_diagnostic_t* diagnostic) {

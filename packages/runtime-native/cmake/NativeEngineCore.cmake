@@ -45,7 +45,7 @@ target_include_directories(tn_engine_foundation PUBLIC ${CMAKE_CURRENT_SOURCE_DI
 # The N03 C ABI over the foundation: version handshake, contexts, generational object handles.
 add_library(tn_engine_abi STATIC src/engine/abi/abi.cpp)
 tn_native_engine_target(tn_engine_abi)
-target_link_libraries(tn_engine_abi PUBLIC tn_engine_foundation)
+target_link_libraries(tn_engine_abi PUBLIC tn_engine_foundation tn_engine_bindings)
 target_include_directories(tn_engine_abi PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 # Shader IR (N08): typed, hash-consed expressions and ordered effects. Portable like foundation.
@@ -138,7 +138,8 @@ target_link_libraries(tn-native-engine-render-graph-test PRIVATE tn_engine_graph
 
 tn_native_engine_test(tn-native-engine-abi-test tests/native-engine/abi_test.cpp
     native_engine_abi_version=version
-    native_engine_abi_handles=handles)
+    native_engine_abi_handles=handles
+    native_engine_abi_generic=generic)
 target_link_libraries(tn-native-engine-abi-test PRIVATE tn_engine_abi)
 
 # PRD-501: the ported V8 fdlibm answers V8's own bits, so a platform libm one bit off fails here.
@@ -163,6 +164,12 @@ set_property(GLOBAL APPEND PROPERTY TN_NATIVE_ENGINE_TEST_TARGETS tn-native-engi
 add_library(tn_engine_bindings STATIC src/engine/abi/bindings_math.cpp)
 tn_native_engine_target(tn_engine_bindings)
 target_link_libraries(tn_engine_bindings PUBLIC tn_engine_foundation)
+if(EMSCRIPTEN)
+    # Bindings report an unsupported member by exception and the ABI catches it at the boundary;
+    # engine algorithms never throw. Both sides need Wasm exception handling.
+    target_compile_options(tn_engine_bindings PUBLIC -fwasm-exceptions)
+    target_link_options(tn_engine_bindings PUBLIC -fwasm-exceptions)
+endif()
 
 add_library(tn_fixture_driver STATIC tests/native-engine/fixture/driver.cpp)
 tn_native_engine_target(tn_fixture_driver)

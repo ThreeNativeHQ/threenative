@@ -85,7 +85,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     add_test(NAME native_engine_present_resize
         COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/../../scripts/xvfb.sh $<TARGET_FILE:tn-native-engine-presentation-test> resizes)
     set_tests_properties(native_engine_present_resize PROPERTIES LABELS "native-engine"
-        ENVIRONMENT "SDL_AUDIODRIVER=dummy;SDL_VIDEODRIVER=x11")
+        ENVIRONMENT "SDL_AUDIODRIVER=dummy;SDL_VIDEODRIVER=x11;ASAN_OPTIONS=detect_leaks=0:abort_on_error=1;UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1")
     set_property(GLOBAL APPEND PROPERTY TN_NATIVE_ENGINE_TEST_TARGETS tn-native-engine-presentation-test)
 
     # The same corpus validates through the backend's own compiler: Tint on Dawn, naga on wgpu-native.

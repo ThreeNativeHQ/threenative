@@ -96,6 +96,72 @@ void handles() {
     tn_diagnostic_release(nullptr);
 }
 
+tn_value_t num(double n) {
+    tn_value_t v{};
+    v.kind = TN_VALUE_NUMBER;
+    v.number = n;
+    return v;
+}
+tn_value_t ref(tn_handle_t h) {
+    tn_value_t v{};
+    v.kind = TN_VALUE_HANDLE;
+    v.handle = h;
+    return v;
+}
+bool same(tn_handle_t a, tn_handle_t b) { return a.type == b.type && a.index == b.index && a.generation == b.generation; }
+
+// The generic calls drive the same registry the differential fixtures prove.
+void generic() {
+    const tn_version_info_t own = tn_engine_version();
+    tn_context_t* ctx = nullptr;
+    Diag d;
+    CHECK(tn_context_create(&ctx, &own, &d.value) == TN_OK);
+
+    const tn_value_t xyz[3] = {num(1), num(2), num(3)};
+    tn_handle_t v{};
+    CHECK(tn_construct(ctx, "Vector3", xyz, 3, &v, &d.value) == TN_OK);
+    CHECK(v.type == tn_type_id("Vector3"));
+
+    tn_handle_t m{};
+    CHECK(tn_construct(ctx, "Matrix4", nullptr, 0, &m, &d.value) == TN_OK);
+    tn_value_t result{};
+    const tn_value_t offset[3] = {num(10), num(0), num(-5)};
+    CHECK(tn_invoke(m, "makeTranslation", offset, 3, &result, &d.value) == TN_OK);
+    CHECK(result.kind == TN_VALUE_HANDLE && same(result.handle, m));         // chaining returns self
+
+    const tn_value_t byMatrix[1] = {ref(m)};
+    CHECK(tn_invoke(v, "applyMatrix4", byMatrix, 1, &result, &d.value) == TN_OK);
+    CHECK(tn_get(v, "x", &result, &d.value) == TN_OK);
+    CHECK(result.kind == TN_VALUE_NUMBER && result.number == 11);
+    CHECK(tn_get(v, "z", &result, &d.value) == TN_OK && result.number == -2);
+
+    const tn_value_t seven = num(7);
+    CHECK(tn_set(v, "y", &seven, &d.value) == TN_OK);
+    CHECK(tn_get(v, "y", &result, &d.value) == TN_OK && result.number == 7);
+
+    CHECK(tn_get(m, "elements", &result, &d.value) == TN_OK);
+    CHECK(result.kind == TN_VALUE_NUMBERS && result.count == 16 && result.numbers[12] == 10);
+
+    CHECK(tn_invoke(v, "clone", nullptr, 0, &result, &d.value) == TN_OK);  // a new object, a new handle
+    CHECK(result.kind == TN_VALUE_HANDLE && !same(result.handle, v));
+    tn_value_t copyX{};
+    CHECK(tn_get(result.handle, "x", &copyX, &d.value) == TN_OK && copyX.number == 11);
+
+    // Refusals are statuses with named reasons, never a crash or an exception across the ABI.
+    CHECK(tn_invoke(v, "teleport", nullptr, 0, &result, &d.value) == TN_ERROR_UNSUPPORTED);
+    CHECK(d.message().find("Vector3.teleport()") != std::string::npos);
+    CHECK(tn_invoke(v, "applyMatrix4", nullptr, 0, &result, &d.value) == TN_ERROR_INVALID_ARGUMENT);
+    const tn_value_t wrong[1] = {ref(v)};
+    CHECK(tn_invoke(v, "applyMatrix4", wrong, 1, &result, &d.value) == TN_ERROR_UNSUPPORTED);  // a Vector3, not a Matrix4
+    CHECK(tn_construct(ctx, "Spaceship", nullptr, 0, &v, &d.value) == TN_ERROR_UNSUPPORTED);
+
+    tn_handle_t gone{};
+    CHECK(tn_construct(ctx, "Vector3", nullptr, 0, &gone, &d.value) == TN_OK);
+    CHECK(tn_object_release(gone, &d.value) == TN_OK);
+    CHECK(tn_get(gone, "x", &result, &d.value) == TN_ERROR_INVALID_HANDLE);
+    CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
+}
+
 }  // namespace
 
-TN_TEST_MAIN({"version", version}, {"handles", handles})
+TN_TEST_MAIN({"version", version}, {"handles", handles}, {"generic", generic})

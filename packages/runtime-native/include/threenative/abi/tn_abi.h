@@ -182,6 +182,36 @@ TN_EXPORT tn_status_t tn_object_create(tn_context_t *context, uint16_t type, tn_
                                        tn_diagnostic_t *diagnostic);
 TN_EXPORT tn_status_t tn_object_release(tn_handle_t object, tn_diagnostic_t *diagnostic);
 
+/* A value crossing the generic binding calls. One flat struct, no union: only the fields its
+ * kind names are read. Strings and number arrays a call returns are owned by the context and stay
+ * valid until that context's next call. */
+#define TN_VALUE_NULL 0u
+#define TN_VALUE_NUMBER 1u
+#define TN_VALUE_BOOL 2u
+#define TN_VALUE_STRING 3u
+#define TN_VALUE_HANDLE 4u
+#define TN_VALUE_NUMBERS 5u
+typedef struct tn_value {
+  uint32_t kind;
+  uint32_t boolean;
+  double number;
+  tn_handle_t handle;
+  uint32_t reserved;
+  const char *text;
+  uint64_t count; /* bytes of text, or elements of numbers */
+  const double *numbers;
+} tn_value_t;
+
+/* The generic binding calls over the engine's one registry: the same classes, methods and
+ * properties the differential fixtures prove. Members are named as in three (applyMatrix4,
+ * position.x, elements); an unregistered one returns TN_ERROR_UNSUPPORTED naming it. */
+TN_EXPORT tn_status_t tn_construct(tn_context_t *context, const char *class_name, const tn_value_t *args,
+                                   uint32_t arg_count, tn_handle_t *out_object, tn_diagnostic_t *diagnostic);
+TN_EXPORT tn_status_t tn_invoke(tn_handle_t self, const char *method, const tn_value_t *args, uint32_t arg_count,
+                                tn_value_t *result, tn_diagnostic_t *diagnostic);
+TN_EXPORT tn_status_t tn_get(tn_handle_t self, const char *path, tn_value_t *result, tn_diagnostic_t *diagnostic);
+TN_EXPORT tn_status_t tn_set(tn_handle_t self, const char *path, const tn_value_t *value, tn_diagnostic_t *diagnostic);
+
 /* Releases a diagnostic's owned string. Safe on a zeroed struct. */
 TN_EXPORT void tn_diagnostic_release(tn_diagnostic_t *diagnostic);
 
