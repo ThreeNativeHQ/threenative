@@ -3,6 +3,7 @@
 #include "engine/foundation/math/MathUtils.h"
 #include "engine/foundation/math/Matrix.h"
 #include "engine/foundation/math/Vector.h"
+#include "engine/foundation/math/ieee754.h"
 
 #include <cmath>
 #include <cstdio>
@@ -171,11 +172,11 @@ double scanUnsigned(const char*& cursor) {
 
 double srgbToLinear(double c) {
     return (c < 0.04045) ? c * 0.0773993808
-                         : std::pow(c * 0.9478672986 + 0.0521327014, 2.4);
+                         : ieee754::pow(c * 0.9478672986 + 0.0521327014, 2.4);
 }
 
 double linearToSrgb(double c) {
-    return (c < 0.0031308) ? c * 12.92 : 1.055 * (std::pow(c, 0.41666)) - 0.055;
+    return (c < 0.0031308) ? c * 12.92 : 1.055 * (ieee754::pow(c, 0.41666)) - 0.055;
 }
 
 bool colorNameHex(const char* name, uint32_t& hex) {

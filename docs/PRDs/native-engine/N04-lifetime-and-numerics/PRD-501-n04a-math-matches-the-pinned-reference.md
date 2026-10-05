@@ -1,6 +1,6 @@
 # PRD-501 — Math matches the pinned reference (N04a)
 
-**Status:** IN PROGRESS — 13 classes ported line by line (`src/engine/foundation/math/`), 26 fixtures / 843 observations pass; the trig-bearing ones need 1 ulp because glibc and V8 disagree in the last bit — porting V8's fdlibm (`ieee754`) makes them exact, then the remaining boxes tick
+**Status:** IN PROGRESS — phases 1 and 2 done, bit-exact; phase 3 (Android arm64 emulator) open
 **Complexity:** 3 — scalar math classes ported against a fixed oracle; wide but shallow
 **Owner:** João
 **Work package:** N04 — [lifetime and numerics](README.md), [native-engine batch](../README.md)
@@ -25,16 +25,16 @@
 ## Execution Phases
 
 #### Phase 1: Vectors, matrices and quaternions
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** proposed `packages/runtime-native/src/engine/foundation/math/`, `packages/runtime-native/tests/native-engine/math_test.cpp`
-- [ ] Vector2/3/4, Matrix3/4 and Quaternion match the reference fixtures bit-for-bit in binary64. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_math_core`
+- [x] Vector2/3/4, Matrix3/4 and Quaternion match the reference fixtures bit-for-bit in binary64. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_math_core` — 2026-10-04: green and bit-exact (abs 0): 12 `math-core-*` fixtures; transcendental functions are V8 11.3's fdlibm (`src/engine/foundation/math/ieee754.{h,cpp}`), so results equal the reference's; 158,520 further argument patterns compared against node in every bit (`native_engine_ieee754`)
 - [x] Singular-matrix inversion, NaN/Infinity propagation and signed-zero outputs match the reference. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_math_edges` — 2026-10-04: green and bit-exact (abs 0): 4 `math-edges-*` fixtures, 78 observations, through `pnpm parity`-shaped differential runs against the C++ driver (`build/tn-linux`, and the core also runs as Wasm)
 
 #### Phase 2: Euler, colour and geometry primitives
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** same directory
-- [ ] All six Euler orders round-trip through Matrix4 and Quaternion as the reference does, including gimbal lock. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_math_euler`
-- [ ] Color (including colour-space conversion), Box3, Sphere, Plane, Ray and Frustum match the reference fixtures. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_math_primitives`
+- [x] All six Euler orders round-trip through Matrix4 and Quaternion as the reference does, including gimbal lock. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_math_euler` — 2026-10-04: green and bit-exact: 4 `math-euler-*` fixtures (279 observations) including gimbal lock; the seed fixtures keep their original angles
+- [x] Color (including colour-space conversion), Box3, Sphere, Plane, Ray and Frustum match the reference fixtures. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_math_primitives` — 2026-10-04: green and bit-exact: 6 `math-primitives-*` fixtures (210 observations); the C++ core also passes as Wasm under node
 
 #### Phase 3: The same results on Android
 **Status:** NOT STARTED

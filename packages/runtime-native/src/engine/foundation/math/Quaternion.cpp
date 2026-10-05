@@ -4,6 +4,7 @@
 #include "engine/foundation/math/MathUtils.h"
 #include "engine/foundation/math/Matrix.h"
 #include "engine/foundation/math/Vector.h"
+#include "engine/foundation/math/ieee754.h"
 
 #include <cmath>
 
@@ -27,10 +28,10 @@ void slerpFlat(double* dst, std::size_t dstOffset, const double* src0, std::size
         double s = 1 - t;
         if (dot < 0.9995) {
             // slerp
-            const double theta = std::acos(dot);
-            const double sin = std::sin(theta);
-            s = std::sin(s * theta) / sin;
-            t = std::sin(t * theta) / sin;
+            const double theta = ieee754::acos(dot);
+            const double sin = ieee754::sin(theta);
+            s = ieee754::sin(s * theta) / sin;
+            t = ieee754::sin(t * theta) / sin;
             x0 = x0 * s + x1 * t;
             y0 = y0 * s + y1 * t;
             z0 = z0 * s + z1 * t;
@@ -89,12 +90,12 @@ Quaternion& Quaternion::copy(const Quaternion& q) {
 
 Quaternion& Quaternion::setFromEuler(const Euler& euler) {
     const double ex = euler.x, ey = euler.y, ez = euler.z;
-    const double c1 = std::cos(ex / 2);
-    const double c2 = std::cos(ey / 2);
-    const double c3 = std::cos(ez / 2);
-    const double s1 = std::sin(ex / 2);
-    const double s2 = std::sin(ey / 2);
-    const double s3 = std::sin(ez / 2);
+    const double c1 = ieee754::cos(ex / 2);
+    const double c2 = ieee754::cos(ey / 2);
+    const double c3 = ieee754::cos(ez / 2);
+    const double s1 = ieee754::sin(ex / 2);
+    const double s2 = ieee754::sin(ey / 2);
+    const double s3 = ieee754::sin(ez / 2);
     switch (euler.order) {
         case EulerOrder::XYZ:
             x = s1 * c2 * c3 + c1 * s2 * s3;
@@ -137,11 +138,11 @@ Quaternion& Quaternion::setFromEuler(const Euler& euler) {
 }
 
 Quaternion& Quaternion::setFromAxisAngle(const Vector3& axis, double angle) {
-    const double halfAngle = angle / 2, s = std::sin(halfAngle);
+    const double halfAngle = angle / 2, s = ieee754::sin(halfAngle);
     x = axis.x * s;
     y = axis.y * s;
     z = axis.z * s;
-    w = std::cos(halfAngle);
+    w = ieee754::cos(halfAngle);
     return *this;
 }
 
@@ -208,7 +209,7 @@ Quaternion& Quaternion::setFromUnitVectors(const Vector3& vFrom, const Vector3& 
 }
 
 double Quaternion::angleTo(const Quaternion& q) const {
-    return 2 * std::acos(std::fabs(clamp(dot(q), -1, 1)));
+    return 2 * ieee754::acos(std::fabs(clamp(dot(q), -1, 1)));
 }
 
 Quaternion& Quaternion::rotateTowards(const Quaternion& q, double step) {
@@ -281,10 +282,10 @@ Quaternion& Quaternion::slerp(const Quaternion& qb, double t) {
     double s = 1 - t;
     if (dot < 0.9995) {
         // slerp
-        const double theta = std::acos(dot);
-        const double sin = std::sin(theta);
-        s = std::sin(s * theta) / sin;
-        t = std::sin(t * theta) / sin;
+        const double theta = ieee754::acos(dot);
+        const double sin = ieee754::sin(theta);
+        s = ieee754::sin(s * theta) / sin;
+        t = ieee754::sin(t * theta) / sin;
         x = x * s + bx * t;
         y = y * s + by * t;
         z = z * s + bz * t;

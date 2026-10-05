@@ -5,6 +5,7 @@
 #include "engine/foundation/math/Matrix.h"
 #include "engine/foundation/math/Quaternion.h"
 #include "engine/foundation/math/Color.h"
+#include "engine/foundation/math/ieee754.h"
 
 #include <cmath>
 
@@ -201,7 +202,7 @@ double Vector2::manhattanLength() const { return std::fabs(x) + std::fabs(y); }
 Vector2& Vector2::normalize() { return divideScalar(orOne(length())); }
 
 double Vector2::angle() const {
-    const double angle = std::atan2(-y, -x) + PI;
+    const double angle = ieee754::atan2(-y, -x) + PI;
     return angle;
 }
 
@@ -210,7 +211,7 @@ double Vector2::angleTo(const Vector2& v) const {
     if (denominator == 0) return PI / 2;
     const double theta = dot(v) / denominator;
     // clamp, to handle numerical problems
-    return std::acos(tn::engine::clamp(theta, -1, 1));
+    return ieee754::acos(tn::engine::clamp(theta, -1, 1));
 }
 
 double Vector2::distanceTo(const Vector2& v) const { return std::sqrt(distanceToSquared(v)); }
@@ -245,7 +246,7 @@ Vector2& Vector2::fromArray(const double* array, int offset) {
 }
 
 Vector2& Vector2::rotateAround(const Vector2& center, double angle) {
-    const double c = std::cos(angle), s = std::sin(angle);
+    const double c = ieee754::cos(angle), s = ieee754::sin(angle);
     const double vx = x - center.x;
     const double vy = y - center.y;
     x = vx * c - vy * s + center.x;
@@ -577,7 +578,7 @@ double Vector3::angleTo(const Vector3& v) const {
     if (denominator == 0) return PI / 2;
     const double theta = dot(v) / denominator;
     // clamp, to handle numerical problems
-    return std::acos(tn::engine::clamp(theta, -1, 1));
+    return ieee754::acos(tn::engine::clamp(theta, -1, 1));
 }
 
 double Vector3::distanceTo(const Vector3& v) const { return std::sqrt(distanceToSquared(v)); }
@@ -592,17 +593,17 @@ double Vector3::manhattanDistanceTo(const Vector3& v) const {
 }
 
 Vector3& Vector3::setFromSphericalCoords(double radius, double phi, double theta) {
-    const double sinPhiRadius = std::sin(phi) * radius;
-    x = sinPhiRadius * std::sin(theta);
-    y = std::cos(phi) * radius;
-    z = sinPhiRadius * std::cos(theta);
+    const double sinPhiRadius = ieee754::sin(phi) * radius;
+    x = sinPhiRadius * ieee754::sin(theta);
+    y = ieee754::cos(phi) * radius;
+    z = sinPhiRadius * ieee754::cos(theta);
     return *this;
 }
 
 Vector3& Vector3::setFromCylindricalCoords(double radius, double theta, double y) {
-    x = radius * std::sin(theta);
+    x = radius * ieee754::sin(theta);
     this->y = y;
-    z = radius * std::cos(theta);
+    z = radius * ieee754::cos(theta);
     return *this;
 }
 
@@ -814,7 +815,7 @@ Vector4& Vector4::divideScalar(double scalar) { return multiplyScalar(1 / scalar
 
 Vector4& Vector4::setAxisAngleFromQuaternion(const Quaternion& q) {
     // q is assumed to be normalized
-    w = 2 * std::acos(q.w);
+    w = 2 * ieee754::acos(q.w);
     const double s = std::sqrt(1 - q.w * q.w);
     if (s < 0.0001) {
         x = 1;
@@ -899,7 +900,7 @@ Vector4& Vector4::setAxisAngleFromRotationMatrix(const Matrix4& m) {
     this->x = (m32 - m23) / s;
     this->y = (m13 - m31) / s;
     this->z = (m21 - m12) / s;
-    this->w = std::acos((m11 + m22 + m33 - 1) / 2);
+    this->w = ieee754::acos((m11 + m22 + m33 - 1) / 2);
     return *this;
 }
 

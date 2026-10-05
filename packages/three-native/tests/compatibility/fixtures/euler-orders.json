@@ -1,8 +1,7 @@
 {
   "name": "euler-orders",
   "adaptedFrom": "three@0.185.1 test/unit/src/math/Euler.tests.js — setFromRotationMatrix over all six orders",
-  "tolerance": { "abs": 0, "ulps": 1 },
-  "toleranceWhy": "libm and V8 disagree in the last bit for sin/cos/tan/atan/asin/acos/atan2/pow: measured over 6000 random arguments each, glibc differs from V8 by exactly 1 ulp on 3-6% of them, while sqrt never differs. This fixture's expected values pass through one of those, so it compares within 1 ulp; the signed zero and NaN rules still hold exactly.",
+  "tolerance": { "abs": 0 },
   "ops": [
     { "op": "new", "id": "source", "class": "Euler", "args": [0.3, -0.4, 1.2, "XYZ"] },
     { "op": "new", "id": "q", "class": "Quaternion", "args": [] },

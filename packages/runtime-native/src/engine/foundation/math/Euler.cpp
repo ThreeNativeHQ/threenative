@@ -4,6 +4,7 @@
 #include "engine/foundation/math/Matrix.h"
 #include "engine/foundation/math/Quaternion.h"
 #include "engine/foundation/math/Vector.h"
+#include "engine/foundation/math/ieee754.h"
 
 #include <cmath>
 
@@ -32,62 +33,62 @@ Euler& Euler::setFromRotationMatrix(const Matrix4& m, EulerOrder order) {
     const double m31 = te[2], m32 = te[6], m33 = te[10];
     switch (order) {
         case EulerOrder::XYZ:
-            y = std::asin(clamp(m13, -1, 1));
+            y = ieee754::asin(clamp(m13, -1, 1));
             if (std::fabs(m13) < 0.9999999) {
-                x = std::atan2(-m23, m33);
-                z = std::atan2(-m12, m11);
+                x = ieee754::atan2(-m23, m33);
+                z = ieee754::atan2(-m12, m11);
             } else {
-                x = std::atan2(m32, m22);
+                x = ieee754::atan2(m32, m22);
                 z = 0;
             }
             break;
         case EulerOrder::YXZ:
-            x = std::asin(-clamp(m23, -1, 1));
+            x = ieee754::asin(-clamp(m23, -1, 1));
             if (std::fabs(m23) < 0.9999999) {
-                y = std::atan2(m13, m33);
-                z = std::atan2(m21, m22);
+                y = ieee754::atan2(m13, m33);
+                z = ieee754::atan2(m21, m22);
             } else {
-                y = std::atan2(-m31, m11);
+                y = ieee754::atan2(-m31, m11);
                 z = 0;
             }
             break;
         case EulerOrder::ZXY:
-            x = std::asin(clamp(m32, -1, 1));
+            x = ieee754::asin(clamp(m32, -1, 1));
             if (std::fabs(m32) < 0.9999999) {
-                y = std::atan2(-m31, m33);
-                z = std::atan2(-m12, m22);
+                y = ieee754::atan2(-m31, m33);
+                z = ieee754::atan2(-m12, m22);
             } else {
                 y = 0;
-                z = std::atan2(m21, m11);
+                z = ieee754::atan2(m21, m11);
             }
             break;
         case EulerOrder::ZYX:
-            y = std::asin(-clamp(m31, -1, 1));
+            y = ieee754::asin(-clamp(m31, -1, 1));
             if (std::fabs(m31) < 0.9999999) {
-                x = std::atan2(m32, m33);
-                z = std::atan2(m21, m11);
+                x = ieee754::atan2(m32, m33);
+                z = ieee754::atan2(m21, m11);
             } else {
                 x = 0;
-                z = std::atan2(-m12, m22);
+                z = ieee754::atan2(-m12, m22);
             }
             break;
         case EulerOrder::YZX:
-            z = std::asin(clamp(m21, -1, 1));
+            z = ieee754::asin(clamp(m21, -1, 1));
             if (std::fabs(m21) < 0.9999999) {
-                x = std::atan2(-m23, m22);
-                y = std::atan2(-m31, m11);
+                x = ieee754::atan2(-m23, m22);
+                y = ieee754::atan2(-m31, m11);
             } else {
                 x = 0;
-                y = std::atan2(m13, m33);
+                y = ieee754::atan2(m13, m33);
             }
             break;
         case EulerOrder::XZY:
-            z = std::asin(-clamp(m12, -1, 1));
+            z = ieee754::asin(-clamp(m12, -1, 1));
             if (std::fabs(m12) < 0.9999999) {
-                x = std::atan2(m32, m22);
-                y = std::atan2(m13, m11);
+                x = ieee754::atan2(m32, m22);
+                y = ieee754::atan2(m13, m11);
             } else {
-                x = std::atan2(-m23, m33);
+                x = ieee754::atan2(-m23, m33);
                 y = 0;
             }
             break;

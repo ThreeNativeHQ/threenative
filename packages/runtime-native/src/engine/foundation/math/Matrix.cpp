@@ -3,6 +3,7 @@
 #include "engine/foundation/math/Euler.h"
 #include "engine/foundation/math/Quaternion.h"
 #include "engine/foundation/math/Vector.h"
+#include "engine/foundation/math/ieee754.h"
 
 #include <cmath>
 
@@ -123,8 +124,8 @@ Matrix3& Matrix3::getNormalMatrix(const Matrix4& matrix4) {
 
 Matrix3& Matrix3::setUvTransform(double tx, double ty, double sx, double sy, double rotation,
                                 double cx, double cy) {
-    const double c = std::cos(rotation);
-    const double s = std::sin(rotation);
+    const double c = ieee754::cos(rotation);
+    const double s = ieee754::sin(rotation);
     return set(sx * c, sx * s, -sx * (c * cx + s * cy) + cx + tx,
                -sy * s, sy * c, -sy * (-s * cx + c * cy) + cy + ty,
                0, 0, 1);
@@ -144,8 +145,8 @@ Matrix3& Matrix3::makeTranslation(double x, double y) {
 
 Matrix3& Matrix3::makeRotation(double theta) {
     // counterclockwise
-    const double c = std::cos(theta);
-    const double s = std::sin(theta);
+    const double c = ieee754::cos(theta);
+    const double s = ieee754::sin(theta);
     return set(c, -s, 0, s, c, 0, 0, 0, 1);
 }
 
@@ -250,9 +251,9 @@ Matrix4& Matrix4::extractRotation(const Matrix4& m) {
 Matrix4& Matrix4::makeRotationFromEuler(const Euler& euler) {
     double* te = elements.data();
     const double x = euler.x, y = euler.y, z = euler.z;
-    const double a = std::cos(x), b = std::sin(x);
-    const double c = std::cos(y), d = std::sin(y);
-    const double e = std::cos(z), f = std::sin(z);
+    const double a = ieee754::cos(x), b = ieee754::sin(x);
+    const double c = ieee754::cos(y), d = ieee754::sin(y);
+    const double e = ieee754::cos(z), f = ieee754::sin(z);
     if (euler.order == EulerOrder::XYZ) {
         const double ae = a * e, af = a * f, be = b * e, bf = b * f;
         te[0] = c * e;
@@ -520,24 +521,24 @@ Matrix4& Matrix4::makeTranslation(double x, double y, double z) {
 }
 
 Matrix4& Matrix4::makeRotationX(double theta) {
-    const double c = std::cos(theta), s = std::sin(theta);
+    const double c = ieee754::cos(theta), s = ieee754::sin(theta);
     return set(1, 0, 0, 0, 0, c, -s, 0, 0, s, c, 0, 0, 0, 0, 1);
 }
 
 Matrix4& Matrix4::makeRotationY(double theta) {
-    const double c = std::cos(theta), s = std::sin(theta);
+    const double c = ieee754::cos(theta), s = ieee754::sin(theta);
     return set(c, 0, s, 0, 0, 1, 0, 0, -s, 0, c, 0, 0, 0, 0, 1);
 }
 
 Matrix4& Matrix4::makeRotationZ(double theta) {
-    const double c = std::cos(theta), s = std::sin(theta);
+    const double c = ieee754::cos(theta), s = ieee754::sin(theta);
     return set(c, -s, 0, 0, s, c, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1);
 }
 
 Matrix4& Matrix4::makeRotationAxis(const Vector3& axis, double angle) {
     // Based on http://www.gamedev.net/reference/articles/article1199.asp
-    const double c = std::cos(angle);
-    const double s = std::sin(angle);
+    const double c = ieee754::cos(angle);
+    const double s = ieee754::sin(angle);
     const double t = 1 - c;
     const double x = axis.x, y = axis.y, z = axis.z;
     const double tx = t * x, ty = t * y;

@@ -1,9 +1,9 @@
 {
   "name": "vector3-apply-quaternion",
-  "adaptedFrom": "three@0.185.1 test/unit/src/math/Vector3.tests.js — applyQuaternion, normalize and length. The Euler angles are chosen so the half-angle sine and cosine are bit-identical in glibc and V8, so this fixture compares bit-exactly",
+  "adaptedFrom": "three@0.185.1 test/unit/src/math/Vector3.tests.js — applyQuaternion, normalize and length",
   "tolerance": { "abs": 0 },
   "ops": [
-    { "op": "new", "id": "euler", "class": "Euler", "args": [0.4, 0.9, -0.26, "XYZ"] },
+    { "op": "new", "id": "euler", "class": "Euler", "args": [0.4, 0.9, -0.2, "XYZ"] },
     { "op": "new", "id": "q", "class": "Quaternion", "args": [] },
     { "op": "call", "id": "q", "method": "setFromEuler", "args": [{ "ref": "euler" }] },
     { "op": "new", "id": "out", "class": "Vector3", "args": [1, 2, 3] },

@@ -1,7 +1,7 @@
 {
   "name": "vector3-apply-quaternion",
   "threeVersion": "0.185.1",
-  "adaptedFrom": "three@0.185.1 test/unit/src/math/Vector3.tests.js — applyQuaternion, normalize and length. The Euler angles are chosen so the half-angle sine and cosine are bit-identical in glibc and V8, so this fixture compares bit-exactly",
+  "adaptedFrom": "three@0.185.1 test/unit/src/math/Vector3.tests.js — applyQuaternion, normalize and length",
   "blocked": null,
   "observations": [
     {
@@ -9,32 +9,32 @@
       "id": "q",
       "kind": "numbers",
       "method": "toArray",
-      "value": "n:3fbf433608f10b5a,n:3fdc896fc9c5ad96,n:bf9d67ec4c531290,n:3fec5c30cefbfc0b",
-      "decimal": "0.12211930959987907, 0.4458884687835164, -0.028716747435071854, 0.8862537424719233"
+      "value": "n:3fc15610be4f81a1,n:3fdc4a2267903390,n:bf615e628b056dc0,n:3fec5ffaed8659c8",
+      "decimal": "0.13543900768764863, 0.44202480424501633, -0.00212020155610812, 0.8867163314014812"
     },
     {
       "index": 1,
       "id": "out",
       "kind": "numbers",
       "method": "toArray",
-      "value": "n:400a2996368b8778,n:3ff44d383b386a1c,n:3ff4d4d8d89f8e9b",
-      "decimal": "3.2703060399371076, 1.2688524544997852, 1.301964613136909"
+      "value": "n:4009a646b5c07a53,n:3ff50fe7887b6aa4,n:3ff68e774b94d37b",
+      "decimal": "3.206189556061227, 1.3163829165775178, 1.4097817375561295"
     },
     {
       "index": 2,
       "id": "out",
       "kind": "number",
       "method": "length",
-      "value": "n:400deeea11683f48",
-      "decimal": "3.741657386773941"
+      "value": "n:400deeea11683f49",
+      "decimal": "3.7416573867739413"
     },
     {
       "index": 3,
       "id": "unit",
       "kind": "numbers",
       "method": "toArray",
-      "value": "n:bfe91103985da841,n:3fcefc077f3f36a4,n:bfe25240dd3851c0",
-      "decimal": "-0.7833269096274834, 0.24206632340649492, -0.5725406952574801"
+      "value": "n:bfe91103985da841,n:3fcefc077f3f36a5,n:bfe25240dd3851c0",
+      "decimal": "-0.7833269096274834, 0.24206632340649495, -0.5725406952574801"
     },
     {
       "index": 4,
@@ -73,8 +73,8 @@
       "id": "sum",
       "kind": "numbers",
       "method": "toArray",
-      "value": "n:3fe91103985da841,n:bfcefc077f3f36a4,n:3fe25240dd3851c0",
-      "decimal": "0.7833269096274834, -0.24206632340649492, 0.5725406952574801"
+      "value": "n:3fe91103985da841,n:bfcefc077f3f36a5,n:3fe25240dd3851c0",
+      "decimal": "0.7833269096274834, -0.24206632340649495, 0.5725406952574801"
     },
     {
       "index": 9,

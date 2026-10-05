@@ -1,12 +1,12 @@
 {
   "name": "quaternion-slerp",
-  "adaptedFrom": "three@0.185.1 test/unit/src/math/Quaternion.tests.js — slerp between two normalized quaternions, plus normalize. The Euler angles are chosen so the half-angle sine and cosine are bit-identical in glibc and V8, so this fixture compares bit-exactly",
+  "adaptedFrom": "three@0.185.1 test/unit/src/math/Quaternion.tests.js — slerp between two normalized quaternions, plus normalize",
   "tolerance": { "abs": 0 },
   "ops": [
-    { "op": "new", "id": "fromEuler", "class": "Euler", "args": [0.26, -0.5, 1, "ZXY"] },
+    { "op": "new", "id": "fromEuler", "class": "Euler", "args": [0.2, -0.5, 0.9, "ZXY"] },
     { "op": "new", "id": "a", "class": "Quaternion", "args": [] },
     { "op": "call", "id": "a", "method": "setFromEuler", "args": [{ "ref": "fromEuler" }] },
-    { "op": "new", "id": "toEuler", "class": "Euler", "args": [1.5, 0.4, -1, "XYZ"] },
+    { "op": "new", "id": "toEuler", "class": "Euler", "args": [1.2, 0.4, -0.7, "XYZ"] },
     { "op": "new", "id": "b", "class": "Quaternion", "args": [] },
     { "op": "call", "id": "b", "method": "setFromEuler", "args": [{ "ref": "toEuler" }] },
     { "op": "new", "id": "quarter", "class": "Quaternion", "args": [] },
