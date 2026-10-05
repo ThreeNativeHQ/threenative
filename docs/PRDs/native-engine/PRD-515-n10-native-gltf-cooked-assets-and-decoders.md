@@ -44,7 +44,7 @@
 **Status:** NOT STARTED
 **Files:** proposed `packages/runtime-native/tests/fuzz/gltf_fuzz.cpp`, `packages/runtime-native/tests/fuzz/package_fuzz.cpp`
 - [ ] The glTF and package fuzz targets run under ASan/UBSan for the CI budget with no crash or sanitizer report. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_asset_fuzz`
-- [ ] The decoder matrix test records every format as qualified or refused per target, and the refusal codes stay in force on mobile. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_decoder_matrix`
+- [x] The decoder matrix test records every format as qualified or refused per target, and the refusal codes stay in force on mobile. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_decoder_matrix` — 2026-10-05: green on Linux (Dawn, ASan, wgpu), Wasm (node) and Android: the test ran on the `threenative_api35` emulator (Android 15, x86_64) from `build/android-core-x86_64`, and the arm64-v8a binary builds (a device run needs the Pixel). Every target prints the same rows: raw buffers and RGBA8 textures qualified; Meshopt and Draco geometry refused with `TN_NATIVE_MESH_COMPRESSION_UNSUPPORTED`, KTX2/Basis textures with `TN_NATIVE_KTX2_UNSUPPORTED`, the product's own codes (they replaced the generic `TN_PACKAGE_DECODER`, kept for an unknown bit). `targetDecoders()` is pinned at none qualified, so a decoder added without its qualification fails the test
 
 ## Blocked on
 

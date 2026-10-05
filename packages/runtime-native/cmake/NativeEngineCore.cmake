@@ -135,6 +135,10 @@ tn_native_engine_test(tn-native-engine-package-test tests/native-engine/package_
     native_engine_cooked_package_parse=load
     native_engine_cooked_package_reject=reject)
 target_link_libraries(tn-native-engine-package-test PRIVATE tn_engine_assets)
+# PRD-515: every format qualified or refused on this target, mobile and Wasm included.
+tn_native_engine_test(tn-native-engine-decoder-matrix-test tests/native-engine/decoder_matrix_test.cpp
+    native_engine_decoder_matrix=matrix)
+target_link_libraries(tn-native-engine-decoder-matrix-test PRIVATE tn_engine_assets)
 
 tn_native_engine_test(tn-native-engine-render-graph-test tests/native-engine/render_graph_test.cpp
     native_engine_render_graph_order=order

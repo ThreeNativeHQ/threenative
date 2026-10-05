@@ -69,7 +69,7 @@ void reject() {
     tampered.back() ^= 1;  // one bit of the last entry's data
     expect(tampered, "TN_PACKAGE_HASH");
 
-    expect(good, "TN_PACKAGE_DECODER", 0);  // the texture needs meshopt; this target has none
+    expect(good, "TN_NATIVE_MESH_COMPRESSION_UNSUPPORTED", 0);  // the texture needs meshopt; this target has none
 
     auto deps = sample();
     deps[2].dependencies = {7};

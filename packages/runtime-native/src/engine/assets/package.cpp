@@ -105,11 +105,16 @@ bool parsePackage(std::span<const uint8_t> bytes, Package& out, PackageError& er
     return true;
 }
 
+uint32_t targetDecoders() { return 0; }  // none qualified yet, on any target
+
 bool verifyPackage(const Package& package, uint32_t availableDecoders, PackageError& error) {
     for (const PackageEntry& e : package.entries) {
         const uint32_t missing = e.decoders & ~availableDecoders;
         if (missing) {
-            return fail(error, "TN_PACKAGE_DECODER",
+            const char* code = (missing & kDecoderKtx2)                       ? "TN_NATIVE_KTX2_UNSUPPORTED"
+                               : (missing & (kDecoderMeshopt | kDecoderDraco)) ? "TN_NATIVE_MESH_COMPRESSION_UNSUPPORTED"
+                                                                               : "TN_PACKAGE_DECODER";
+            return fail(error, code,
                         "entry '" + e.name + "' needs decoder bits " + std::to_string(missing) + " this target lacks");
         }
         const std::span<const uint8_t> data = package.data(e);

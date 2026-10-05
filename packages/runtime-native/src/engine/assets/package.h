@@ -53,7 +53,9 @@ struct PackageEntry {
 };
 
 struct PackageError {
-    std::string code;  // TN_PACKAGE_TRUNCATED | _MAGIC | _VERSION | _RANGE | _DEPENDENCY | _HASH | _DECODER
+    // TN_PACKAGE_TRUNCATED | _MAGIC | _VERSION | _RANGE | _DEPENDENCY | _HASH | _DECODER (an unknown
+    // decoder bit), or a format's own refusal: TN_NATIVE_KTX2_UNSUPPORTED, TN_NATIVE_MESH_COMPRESSION_UNSUPPORTED
+    std::string code;
     std::string detail;
 };
 
@@ -76,5 +78,13 @@ bool parsePackage(std::span<const uint8_t> bytes, Package& out, PackageError& er
  * `availableDecoders`. Nothing is loaded from a package that fails it.
  */
 bool verifyPackage(const Package& package, uint32_t availableDecoders, PackageError& error);
+
+/**
+ * The decoders this build qualifies (PRD-515): a decoder joins only once it passes on the target's
+ * own artifact, and none has yet on any target, so every compressed format is refused everywhere,
+ * mobile included, with the product's codes: TN_NATIVE_KTX2_UNSUPPORTED for KTX2/Basis textures and
+ * TN_NATIVE_MESH_COMPRESSION_UNSUPPORTED for Meshopt and Draco geometry.
+ */
+uint32_t targetDecoders();
 
 }  // namespace tn::engine::assets
