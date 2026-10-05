@@ -53,6 +53,20 @@ describe("FixedStepLoop", () => {
     expect(updates).toBe(30);
   });
 
+  it("should expose the fraction of a step banked for render interpolation", () => {
+    // A render pass draws between simulation states: alpha 0 is the last tick and alpha 1 the
+    // next one, so it is the remainder the frame carried over `step`, never the step just spent.
+    const loop = new FixedStepLoop({ onUpdate: () => undefined });
+
+    loop.stepFrame(0);
+    loop.stepFrame(1_000 / 60);
+    expect(loop.interpolationAlpha).toBe(0);
+
+    // One and a half steps: one update runs and half a step stays banked.
+    loop.stepFrame(1_000 / 60 + 8.333333333333334);
+    expect(loop.interpolationAlpha).toBeCloseTo(0.5, 12);
+  });
+
   it("should clamp catch-up to 5 steps after a long stall", () => {
     let updates = 0;
     const loop = new FixedStepLoop({ onUpdate: () => updates++ });

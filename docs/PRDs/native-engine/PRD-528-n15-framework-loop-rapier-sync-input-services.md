@@ -1,6 +1,6 @@
 # PRD-528 — Framework loop, Rapier sync, input and services (N15)
 
-**Status:** PROPOSED
+**Status:** IN PROGRESS
 **Complexity:** 4 — the frame contract, physics sync and platform services all move under native ownership
 **Owner:** João
 **Work package:** N15 — [native-engine batch](README.md)
@@ -41,9 +41,9 @@ library. Platform input and lifecycle already exist in `packages/runtime-native/
 ## Execution Phases
 
 #### Phase 1: Frame contract
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **Files:** proposed `packages/runtime-native/src/engine/world/loop/`, `packages/runtime-native/tests/native-engine/loop_*.cpp`
-- [ ] Fixed-step count and interpolation alpha match `loop.ts` for the same recorded frame times. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_loop_fixed_step` against fixtures from `pnpm exec vitest run packages/core/__tests__/loop.spec.ts`
+- [x] Fixed-step count and interpolation alpha match `loop.ts` for the same recorded frame times. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_loop_fixed_step` against fixtures from `pnpm exec vitest run packages/core/__tests__/loop.spec.ts` — 2026-10-05: green on Dawn, ASan, wgpu and Wasm, exact: 8 recorded runs, 836 frames, every update count, tick and alpha bit equal. `FixedStepClock` (`src/engine/world/loop/fixed_step.{h,cpp}`) ports `#advanceSimulation` operation for operation (`Number.EPSILON`, `Math.max` with its NaN rule, the clamp and its reset to zero). `loop.ts` had no alpha, so `FixedStepLoop` gained `interpolationAlpha` (the banked accumulator over `step`) with a `loop.spec.ts` case. The table comes from `FixedStepLoop` itself, driven through its `requestFrame` seam (`tests/native-engine/loop/loop-reference.ts`): 60, 144 and 30 Hz at 1/60, 60 Hz at 1/120, LCG jitter, a 500 ms stall, a clock that repeats and runs backwards, and `maxSteps` 1; `native_engine_loop_reference_current` fails on a stale table. The held and frozen branches are not ported. Red controls: without `+ DBL_EPSILON` 350 of 836 frames differ; without the reset to zero the stall frames from 61 on differ
 - [ ] Two renders in one tick get distinct render ids and the second sees a mutation made between them. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_loop_render_ids`
 - [ ] A cancelled async load frees nothing still in use and no callback fires after world destruction. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_loop_async_cancel`
 

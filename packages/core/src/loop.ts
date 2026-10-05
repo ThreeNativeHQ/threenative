@@ -219,6 +219,17 @@ export class FixedStepLoop {
   get fps(): number {
     return this.#fps;
   }
+  /**
+   * The fraction of a fixed step banked after the last frame's updates, for render interpolation.
+   *
+   * A render pass draws between simulation states, so it needs the leftover accumulator as a
+   * fraction of `step`: the position at alpha 0 is the last tick and at alpha 1 is the next one.
+   * The value is read after the frame's updates have run, so it is the remainder that frame
+   * carried forward, and it never counts the step a frame just spent.
+   */
+  get interpolationAlpha(): number {
+    return this.#accumulator / this.step;
+  }
   runtimeDiagnosticsSeries(): readonly IRenderPerformanceSample[] {
     return this.#renderPerformanceSamples.map((sample) => ({ ...sample }));
   }

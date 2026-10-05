@@ -79,6 +79,7 @@ PropertyBinding::PropertyBinding(const std::shared_ptr<Object3D>& root, std::str
 }
 
 void PropertyBinding::bind() {
+    bindAttempted_ = true;
     target_ = Target::Unavailable;
     if (!parsedOk_) return;  // three throws in the constructor; the diagnostic says why
     std::shared_ptr<Object3D> node = node_.lock();
@@ -124,9 +125,11 @@ void PropertyBinding::bind() {
 void PropertyBinding::unbind() {
     node_.reset();
     target_ = Target::Unavailable;
+    bindAttempted_ = false;
 }
 
-void PropertyBinding::getValue(double* buffer, std::size_t offset) const {
+void PropertyBinding::getValue(double* buffer, std::size_t offset) {
+    if (!bindAttempted_) bind();
     const std::shared_ptr<Object3D> node = node_.lock();
     if (!node) return;
     switch (target_) {
@@ -153,6 +156,7 @@ void PropertyBinding::getValue(double* buffer, std::size_t offset) const {
 
 // three's setters with MatrixWorldNeedsUpdate versioning: every write to an Object3D flags it.
 void PropertyBinding::setValue(const double* buffer, std::size_t offset) {
+    if (!bindAttempted_) bind();
     const std::shared_ptr<Object3D> node = node_.lock();
     if (!node || target_ == Target::Unavailable) return;
     switch (target_) {

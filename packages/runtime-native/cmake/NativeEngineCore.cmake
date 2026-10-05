@@ -298,7 +298,8 @@ tn_native_engine_target(tn-native-engine-identity)
 set_property(GLOBAL APPEND PROPERTY TN_NATIVE_ENGINE_TEST_TARGETS tn-native-engine-identity)
 
 # PRD-516: three's animation system, starting with its interpolants.
-add_library(tn_engine_animation STATIC src/engine/animation/interpolant.cpp src/engine/animation/property_binding.cpp)
+add_library(tn_engine_animation STATIC src/engine/animation/interpolant.cpp src/engine/animation/property_binding.cpp
+    src/engine/animation/mixer.cpp)
 tn_native_engine_target(tn_engine_animation)
 target_link_libraries(tn_engine_animation PUBLIC tn_engine_scene)
 target_include_directories(tn_engine_animation PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
@@ -310,6 +311,16 @@ tn_native_engine_test(tn-native-engine-animation-binding-test tests/native-engin
     native_engine_animation_binding_parse=parse native_engine_animation_binding=binding)
 target_link_libraries(tn-native-engine-animation-binding-test PRIVATE tn_engine_animation)
 target_include_directories(tn-native-engine-animation-binding-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/animation)
+
+# PRD-528 phase 1: the fixed-step clock, ported from packages/core/src/loop.ts.
+add_library(tn_engine_world STATIC src/engine/world/loop/fixed_step.cpp)
+tn_native_engine_target(tn_engine_world)
+target_link_libraries(tn_engine_world PUBLIC tn_engine_foundation)
+target_include_directories(tn_engine_world PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+tn_native_engine_test(tn-native-engine-loop-fixed-step-test tests/native-engine/loop/fixed_step_test.cpp
+    native_engine_loop_fixed_step=fixed_step)
+target_link_libraries(tn-native-engine-loop-fixed-step-test PRIVATE tn_engine_world)
+target_include_directories(tn-native-engine-loop-fixed-step-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/loop)
 
 add_library(tn_fixture_driver STATIC tests/native-engine/fixture/driver.cpp)
 tn_native_engine_target(tn_fixture_driver)
@@ -354,6 +365,12 @@ if(NOT EMSCRIPTEN)
                 packages/three-native/tests/animation/animation-reference.ts --check
             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../..)
         set_tests_properties(native_engine_animation_reference_current PROPERTIES LABELS "native-engine")
+        # PRD-528 phase 1: the committed fixed-step table is what loop.ts produces today.
+        add_test(NAME native_engine_loop_reference_current
+            COMMAND ${TN_PNPM_EXECUTABLE} --workspace-root exec tsx
+                packages/runtime-native/tests/native-engine/loop/loop-reference.ts --check
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../..)
+        set_tests_properties(native_engine_loop_reference_current PROPERTIES LABELS "native-engine")
         unset(math_case)
         unset(math_pair)
     else()
