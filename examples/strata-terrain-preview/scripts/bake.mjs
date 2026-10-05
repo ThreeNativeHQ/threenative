@@ -92,7 +92,17 @@ export const forest = new Terrain({ size: 512, resolution: 257, seed: 73 })
     shoulder: 10,
     enforceDownhill: true,
   })
-  .water({ id: "lake", kind: "lake", at: [-70, 25], radius: 105, level: 13.3 });
+  .water({ id: "lake", kind: "lake", at: [-70, 25], radius: 105, level: 13.3 })
+  // What a full-world export places; the game draws its own runtime scatter, not these.
+  .scatter({
+    id: "stand",
+    asset: "spruce",
+    count: 120,
+    minDistance: 8,
+    maxSlope: 35,
+    avoidWater: true,
+    scale: [0.9, 1.5],
+  });
 export const coastal = new Terrain({ size: 512, resolution: 257, seed: 73 })
   .heightmap({ id: "usgs-3dep", data: dem.coastal.data })
   .erode({
@@ -114,7 +124,17 @@ export const coastal = new Terrain({ size: 512, resolution: 257, seed: 73 })
       { material: "sand", mask: Mask.height(-1000, 6, 4) },
     ],
   })
-  .water({ id: "ocean", kind: "ocean", level: 1.5, radius: 512 });
+  .water({ id: "ocean", kind: "ocean", level: 1.5, radius: 512 })
+  .scatter({
+    id: "stand",
+    asset: "spruce",
+    count: 80,
+    minDistance: 8,
+    minHeight: 4,
+    maxSlope: 35,
+    avoidWater: true,
+    scale: [0.9, 1.4],
+  });
 // Real glaciated granite and bedded sandstone. Only a light transport pass follows the survey:
 // no fabricated ridges, shelves, dunes, river cuts or smoothing of the measured landform.
 export const alpine = new Terrain({ size: 512, resolution: 257, seed: 41 })
@@ -138,6 +158,15 @@ export const alpine = new Terrain({ size: 512, resolution: 257, seed: 41 })
       { material: "dirt", mask: Mask.slope(20, 38, 6), strength: 0.4 },
       { material: "snow", mask: Mask.and(Mask.height(80, 1e9, 60), Mask.slope(0, 42, 8)) },
     ],
+  })
+  .scatter({
+    id: "scree",
+    asset: "boulder",
+    count: 90,
+    minDistance: 6,
+    minSlope: 15,
+    maxSlope: 45,
+    scale: [0.6, 1.6],
   });
 export const desert = new Terrain({ size: 512, resolution: 257, seed: 97 })
   .heightmap({ id: "usgs-3dep", data: dem.desert.data })
@@ -160,6 +189,14 @@ export const desert = new Terrain({ size: 512, resolution: 257, seed: 97 })
       { material: "dirt", mask: Mask.noise(40, 0.7, 97, 0.2), strength: 0.25 },
       { material: "rock", mask: Mask.slope(28, 90, 8) },
     ],
+  })
+  .scatter({
+    id: "scrub",
+    asset: "scrub",
+    count: 140,
+    minDistance: 5,
+    maxSlope: 25,
+    scale: [0.7, 1.3],
   });
 // Measured low-relief alpine basin; the retained playable meltwater/pond beds are authored.
 export const tundra = new Terrain({ size: 512, resolution: 257, seed: 131 })
@@ -221,6 +258,15 @@ export const tundra = new Terrain({ size: 512, resolution: 257, seed: 131 })
       { material: "snow", mask: Mask.noise(85, 0.68, 131, 0.3), strength: 0.6 },
       { material: "rock", mask: Mask.slope(23, 90, 8) },
     ],
+  })
+  .scatter({
+    id: "erratics",
+    asset: "boulder",
+    count: 70,
+    minDistance: 8,
+    maxSlope: 30,
+    avoidWater: true,
+    scale: [0.6, 1.8],
   });
 // `pnpm dev` checks the cache on every start; strong erosion runs only on a cold bake. The recipes are seeded and deterministic, so a
 // bake is only needed when the recipe, the palette it colours with, or the terrain build it

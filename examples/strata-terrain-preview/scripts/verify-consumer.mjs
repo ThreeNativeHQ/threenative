@@ -408,21 +408,22 @@ try {
   assert.deepEqual(replayed.storedKeys, []);
 
   // --- PRD-466 AC-8: every world bake.mjs exports, as a FULL-world GLB -------------------------------
-  // Terrain, any placements and any water, exported and read back in the plain page. A world with no
-  // scatter layer exports no placements, and is reported as such rather than counted as complete:
-  // only a world that places something proves the placement half of this criterion.
+  // Terrain, placements and any water, exported and read back in the plain page. Every world must
+  // place something: a terrain-only GLB is not a full world.
   const everyWorld = await openConsumerPage({ consumer, repo });
   const fullWorlds = [];
   try {
     for (const name of worldNames) {
       const recipe = recipes[name].toJSON();
       const revision = createHash("sha256").update(JSON.stringify(recipe)).digest("hex");
+      const started = performance.now();
       const full = await everyWorld.exportAndLoad(
         { version: 1, recipe },
         revision,
         [0, 1000, 33024, 66048],
       );
       assert.deepEqual(full.loadedHeights, full.stateHeights, `${name}: full-world GLB terrain`);
+      assert(full.placements.length > 0, `${name}: the full-world GLB places nothing`);
       assert.equal(full.placements.length, full.report.placementIds.length, `${name}: placements`);
       assert.equal(full.externalUris, 0, `${name}: external URI`);
       assert.equal(full.cameras, 0);
@@ -431,7 +432,7 @@ try {
         placements: full.placements.length,
         water: full.waterIds,
         glbBytes: full.glbBytes,
-        complete: full.placements.length > 0,
+        exportAndLoadMs: Math.round(performance.now() - started),
       });
     }
     assert.deepEqual(everyWorld.problems, []);
