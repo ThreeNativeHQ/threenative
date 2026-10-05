@@ -1,0 +1,165 @@
+#include "render_database.h"
+
+#include <cmath>
+
+namespace tn::engine {
+
+namespace {
+
+Matrix toArray(const Matrix4& m) {
+    Matrix out{};
+    for (int i = 0; i < 16; ++i) out[i] = m.elements[i];
+    return out;
+}
+
+std::array<double, 3> scaled(const Color& c, double s) { return {c.r * s, c.g * s, c.b * s}; }
+
+std::array<double, 3> worldPosition(const Object3D& o) {
+    return {o.matrixWorld.elements[12], o.matrixWorld.elements[13], o.matrixWorld.elements[14]};
+}
+
+std::array<double, 3> normalized(std::array<double, 3> v) {
+    const double l = std::sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+    return l > 0 ? std::array<double, 3>{v[0] / l, v[1] / l, v[2] / l} : v;
+}
+
+MaterialKind kindOf(MaterialType type) {
+    switch (type) {
+        case MaterialType::Basic: return MaterialKind::Basic;
+        case MaterialType::Lambert: return MaterialKind::Lambert;
+        case MaterialType::Phong: return MaterialKind::Phong;
+        default: return MaterialKind::Standard;
+    }
+}
+
+shader::StandardMaterial paramsOf(const Material& m) {
+    shader::StandardMaterial p;
+    p.color = {float(m.color.r), float(m.color.g), float(m.color.b)};
+    p.opacity = float(m.opacity);
+    p.alphaTest = float(m.alphaTest);
+    p.roughness = float(m.roughness);
+    p.metalness = float(m.metalness);
+    p.emissive = {float(m.emissive.r), float(m.emissive.g), float(m.emissive.b)};
+    p.emissiveIntensity = float(m.emissiveIntensity);
+    p.specular = {float(m.specular.r), float(m.specular.g), float(m.specular.b)};
+    p.shininess = float(m.shininess);
+    p.clearcoat = float(m.clearcoat);
+    p.sheen = float(m.sheen);
+    p.transmission = float(m.transmission);
+    p.iridescence = float(m.iridescence);
+    p.anisotropy = float(m.anisotropy);
+    p.dispersion = float(m.dispersion);
+    return p;
+}
+
+BufferStore* store(const BufferGeometry& g, const char* name) {
+    const auto it = g.attributes.find(name);
+    return it == g.attributes.end() || !it->second ? nullptr : it->second->store.get();
+}
+
+}  // namespace
+
+RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh) {
+    Record& r = records_[&mesh];
+    const auto* material = static_cast<const Material*>(mesh.material);
+    const uint64_t geometryRevision = mesh.geometry ? mesh.geometry->revision() : 0;
+    const uint32_t materialVersion = material ? material->version() : 0;
+    if (r.drawable && r.objectRevision == mesh.revision() && r.geometry == mesh.geometry && r.geometryRevision == geometryRevision &&
+        r.material == material && r.materialVersion == materialVersion) {
+        return r;  // nothing the record depends on moved
+    }
+    ++rebuilds_;
+    r = Record{};
+    r.objectRevision = mesh.revision();
+    r.geometry = mesh.geometry;
+    r.geometryRevision = geometryRevision;
+    r.material = material;
+    r.materialVersion = materialVersion;
+    if (!mesh.geometry || !material) return r;
+    r.params = paramsOf(*material);
+    if (const auto unsupported = shader::unsupportedFeatures(r.params); !unsupported.empty()) {
+        for (const std::string& u : unsupported) diagnostics_.push_back("TN_NATIVE_MATERIAL_UNSUPPORTED " + std::string(material->typeName()) + ": " + u);
+        return r;
+    }
+    DrawItem& d = r.item;
+    d.key = d.id = mesh.id();
+    d.positions = store(*mesh.geometry, "position");
+    d.normals = store(*mesh.geometry, "normal");
+    d.indices = mesh.geometry->index ? mesh.geometry->index->store.get() : nullptr;
+    d.matrixWorld = toArray(mesh.matrixWorld);
+    d.kind = kindOf(material->type);
+    d.renderOrder = mesh.renderOrder();
+    d.transparent = material->transparent;
+    d.depthWrite = material->depthWrite;
+    r.drawable = d.positions != nullptr;
+    return r;
+}
+
+void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector<DrawItem>& items, LightState& lights) {
+    if (!object.visible()) return;
+    if (object.layers().test(camera.layers())) {
+        const std::string_view type = object.type();
+        if (type == "Mesh") {
+            const auto& mesh = static_cast<const Mesh&>(object);
+            Record& r = record(mesh);
+            r.seen = frame_;
+            if (r.drawable && r.material->visible) {
+                r.item.material = &r.params;
+                items.push_back(r.item);
+            }
+        } else if (type == "AmbientLight") {
+            const auto& l = static_cast<const AmbientLight&>(object);
+            for (int c = 0; c < 3; ++c) lights.ambient[c] += scaled(l.color, l.intensity)[c];
+        } else if (type == "DirectionalLight") {
+            const auto& l = static_cast<const DirectionalLight&>(object);
+            if (directional_++ == 0) {
+                const auto from = worldPosition(l), to = worldPosition(*l.target);
+                lights.directionalDirection = normalized({from[0] - to[0], from[1] - to[1], from[2] - to[2]});
+                lights.directionalColor = scaled(l.color, l.intensity);
+            }
+        } else if (type == "HemisphereLight") {
+            const auto& l = static_cast<const HemisphereLight&>(object);
+            if (hemisphere_++ == 0) {
+                lights.hemisphereSky = scaled(l.color, l.intensity);
+                lights.hemisphereGround = scaled(l.groundColor, l.intensity);
+                lights.hemisphereUp = normalized(worldPosition(l));
+            }
+        }
+    }
+    for (Object3D* child : object.children) project(*child, camera, items, lights);
+}
+
+uint64_t RenderDatabase::render(Renderer& renderer, Object3D& scene, Camera& camera, std::array<double, 4> clear) {
+    ++frame_;
+    diagnostics_.clear();
+    directional_ = hemisphere_ = 0;
+    // Renderer.render: world matrices first, then the camera in the renderer's coordinate system.
+    if (scene.matrixWorldAutoUpdate) scene.updateMatrixWorld();
+    if (camera.parent == nullptr && camera.matrixWorldAutoUpdate) camera.updateMatrixWorld();
+    if (camera.coordinateSystem != CoordinateSystem::WebGPU) {
+        camera.coordinateSystem = CoordinateSystem::WebGPU;
+        if (auto* p = dynamic_cast<PerspectiveCamera*>(&camera)) p->updateProjectionMatrix();
+        if (auto* o = dynamic_cast<OrthographicCamera*>(&camera)) o->updateProjectionMatrix();
+    }
+    std::vector<DrawItem> items;
+    LightState lights;
+    lights.directionalColor = lights.hemisphereSky = lights.hemisphereGround = {0, 0, 0};
+    project(scene, camera, items, lights);
+    if (directional_ > 1) diagnostics_.push_back("TN_NATIVE_LIGHTS_UNSUPPORTED: " + std::to_string(directional_) + " directional lights; one is drawn");
+    if (hemisphere_ > 1) diagnostics_.push_back("TN_NATIVE_LIGHTS_UNSUPPORTED: " + std::to_string(hemisphere_) + " hemisphere lights; one is drawn");
+    // Objects that left the scene release their GPU record.
+    for (auto it = records_.begin(); it != records_.end();) {
+        if (it->second.seen != frame_) {
+            renderer.forget(it->second.item.key);
+            it = records_.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    CameraState state;
+    state.matrixWorldInverse = toArray(camera.matrixWorldInverse);
+    state.projectionMatrix = toArray(camera.projectionMatrix);
+    return renderer.render(items, state, lights, clear);
+}
+
+}  // namespace tn::engine

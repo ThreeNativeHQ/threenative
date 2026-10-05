@@ -1,0 +1,16 @@
+#include "engine/scene/lights.h"
+
+namespace tn::engine {
+
+DirectionalLight::DirectionalLight(Color c, double i)
+    : Light(c, i), ownTarget(std::make_unique<Object3D>()), target(ownTarget.get()) {
+    position.copy(Object3D::defaultUp);  // three: this.position.copy( Object3D.DEFAULT_UP )
+    updateMatrix();
+}
+
+HemisphereLight::HemisphereLight(Color sky, Color ground, double i) : Light(sky, i), groundColor(ground) {
+    position.copy(Object3D::defaultUp);
+    updateMatrix();
+}
+
+}  // namespace tn::engine
