@@ -139,6 +139,34 @@ if(EXISTS ${TN_CGLTF_DIR}/cgltf.h AND NOT EMSCRIPTEN)
             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../..)
         set_tests_properties(native_engine_gltf_reference_current PROPERTIES LABELS "native-engine")
     endif()
+    # PRD-515 phase 3: the glTF and TNPK readers under a budgeted, deterministic mutation run from
+    # seed files (fuzz_driver.cpp), so the ASan/UBSan lane fuzzes them without a libFuzzer toolchain.
+    # TN_FUZZ_ITERATIONS sets the budget (20000 by default).
+    set(TN_REPO ${CMAKE_CURRENT_SOURCE_DIR}/../..)
+    add_executable(tn-native-engine-fuzz-gltf EXCLUDE_FROM_ALL tests/native-engine/fuzz_gltf.cpp
+        tests/native-engine/fuzz_driver.cpp)
+    target_link_libraries(tn-native-engine-fuzz-gltf PRIVATE tn_engine_gltf)
+    add_executable(tn-native-engine-fuzz-package EXCLUDE_FROM_ALL tests/native-engine/fuzz_package.cpp
+        tests/native-engine/fuzz_driver.cpp)
+    target_link_libraries(tn-native-engine-fuzz-package PRIVATE tn_engine_assets)
+    foreach(fuzz_target tn-native-engine-fuzz-gltf tn-native-engine-fuzz-package)
+        tn_native_engine_target(${fuzz_target})
+        set_property(GLOBAL APPEND PROPERTY TN_NATIVE_ENGINE_TEST_TARGETS ${fuzz_target})
+    endforeach()
+    add_test(NAME native_engine_asset_fuzz_gltf COMMAND tn-native-engine-fuzz-gltf
+        ${TN_REPO}/packages/create-threenative/templates/starter/assets/native-proof.glb
+        ${TN_REPO}/packages/core/__tests__/fixtures/world-v1/assets/rock.glb
+        ${TN_REPO}/examples/csg-doorway/assets/doorway.glb
+        ${TN_REPO}/packages/create-threenative/__tests__/fixtures/bounded-decals/public/receiver.glb
+        ${TN_REPO}/test-support/fixtures/skinned-character.glb
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/assets/fuzz-seeds/skinned-character.gltf
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/assets/fuzz-seeds/doorway.gltf)
+    add_test(NAME native_engine_asset_fuzz_package COMMAND tn-native-engine-fuzz-package
+        ${TN_REPO}/packages/assets/__tests__/fixtures/reference.tnpk)
+    foreach(fuzz_test native_engine_asset_fuzz_gltf native_engine_asset_fuzz_package)
+        set_tests_properties(${fuzz_test} PROPERTIES LABELS "native-engine;native-sanitizer"
+            ENVIRONMENT "ASAN_OPTIONS=abort_on_error=1;UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1")
+    endforeach()
 else()
     message(STATUS "cgltf not provisioned (or Emscripten): the native glTF loader is not built")
 endif()

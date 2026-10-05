@@ -670,6 +670,25 @@ class Builder {
 
 } // namespace
 
+namespace {
+bool alignedView(const cgltf_buffer_view* view, cgltf_size offset, cgltf_size componentSize) {
+    if (!view || componentSize == 0) return true;
+    return (view->offset + offset) % componentSize == 0 && view->stride % componentSize == 0;
+}
+bool aligned(const cgltf_data& data) {
+    for (cgltf_size i = 0; i < data.accessors_count; ++i) {
+        const cgltf_accessor& a = data.accessors[i];
+        if (!alignedView(a.buffer_view, a.offset, cgltf_component_size(a.component_type))) return false;
+        if (a.is_sparse &&
+            (!alignedView(a.sparse.indices_buffer_view, a.sparse.indices_byte_offset,
+                          cgltf_component_size(a.sparse.indices_component_type)) ||
+             !alignedView(a.sparse.values_buffer_view, a.sparse.values_byte_offset, cgltf_component_size(a.component_type))))
+            return false;
+    }
+    return true;
+}
+} // namespace
+
 LoadResult load(std::span<const uint8_t> bytes) {
     LoadResult result;
     cgltf_options options{};
@@ -682,6 +701,14 @@ LoadResult load(std::span<const uint8_t> bytes) {
     if (cgltf_load_buffers(&options, data, nullptr) != cgltf_result_success) {
         cgltf_free(data);
         result.error = "TN_NATIVE_GLTF_BUFFER_MISSING an external or unreadable buffer";
+        return result;
+    }
+    // glTF 2.0 requires an accessor's offset and stride to be multiples of its component size; three
+    // fails on such a file too (a typed array cannot start there). Checked before cgltf_validate,
+    // whose index-bound pass reads index data through an aligned cast.
+    if (!aligned(*data)) {
+        cgltf_free(data);
+        result.error = "TN_NATIVE_GLTF_ACCESSOR_INVALID misaligned accessor";
         return result;
     }
     if (cgltf_validate(data) != cgltf_result_success) {
