@@ -36,7 +36,8 @@ describe("discoverCases", () => {
     expect(names).not.toContain("imports-cycle-outer");
     expect(names).toContain("three-fixture");
     expect(names).toContain("unsupported-export");
-    expect(names).toHaveLength(13);
+    expect(names).toContain("callback-cycle");
+    expect(names).toHaveLength(16);
   });
 
   it("turns a top-level .ts with no .expected into a named failure, not a skip", () => {

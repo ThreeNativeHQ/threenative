@@ -1,0 +1,4 @@
+# native-only
+objects back to baseline true
+objects bounded between safe points true
+resident growth under 8 MiB true

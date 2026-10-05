@@ -110,8 +110,14 @@ function linkWithEngine({ name, entry, modules, tmp, exe, triple, compile, compi
   fs.copyFileSync(entry, staged);
   const facade = path.join(tmp, "three.ts");
   fs.copyFileSync(path.join(THREE_DIR, "three.ts"), facade);
+  const stagedModules = [facade];
+  if (/\bfrom\s*["']three-aot["']/.test(fs.readFileSync(entry, "utf8"))) {
+    const hooks = path.join(tmp, "three-aot.ts");
+    fs.copyFileSync(path.join(THREE_DIR, "three-aot.ts"), hooks);
+    stagedModules.push(hooks);
+  }
   const objects = [];
-  for (const module of [facade, ...modules.slice(1)]) {
+  for (const module of [...stagedModules, ...modules.slice(1)]) {
     const object = path.join(tmp, `${path.basename(module, ".ts")}.o`);
     compile(module, ["--emit=obj", module, "-relocation-model=pic", ...triple, `-o=${object}`]);
     objects.push(object);
@@ -131,13 +137,18 @@ function linkWithEngine({ name, entry, modules, tmp, exe, triple, compile, compi
     if (run.status !== 0)
       compileErrors.push(`${tool}: ${(run.stderr || run.stdout || "").split("\n")[0]}`);
   };
-  host("cc", [
+  const include = path.join(REPO, "packages", "runtime-native", "include");
+  host("cc", ["-c", "-fPIC", `-I${include}`, path.join(THREE_DIR, "tn_three_shim.c"), "-o", shim]);
+  const hooks = path.join(tmp, "tn_three_hooks.o");
+  host("c++", [
     "-c",
     "-fPIC",
-    `-I${path.join(REPO, "packages", "runtime-native", "include")}`,
-    path.join(THREE_DIR, "tn_three_shim.c"),
+    "-std=c++20",
+    `-I${include}`,
+    `-I${path.join(REPO, "packages", "runtime-native", "src")}`,
+    path.join(THREE_DIR, "tn_three_hooks.cpp"),
     "-o",
-    shim,
+    hooks,
   ]);
   if (compileErrors.length > 0) return;
   host("c++", [
@@ -146,6 +157,7 @@ function linkWithEngine({ name, entry, modules, tmp, exe, triple, compile, compi
     main,
     ...objects,
     shim,
+    hooks,
     ...archives,
     `-L${path.join(root, "defaultlib", "lib", "release", "gc")}`,
     "-lTypeScriptDefaultLib",
@@ -182,6 +194,11 @@ export function parseExpected(buffer) {
   // A native-only case: the build must fail naming this text, and nothing runs.
   const compileError = /^# compile-error (.+)$/m.exec(text)?.[1];
   if (compileError !== undefined) return { compileError, exit: 0, stdout: Buffer.alloc(0) };
+  // A case that uses the native-only "three-aot" hooks: compared on the native build alone.
+  if (/^# native-only\r?\n/.test(text)) {
+    const rest = Buffer.from(text.replace(/^# native-only\r?\n/, ""), "utf8");
+    return { ...parseExpected(rest), nativeOnly: true };
+  }
   const match = /(^|\n)# exit (\d+)\r?\n?$/.exec(text);
   if (match === null) return { exit: 0, stdout: buffer };
   const exit = Number(match[2]);
@@ -258,7 +275,8 @@ export function discoverCases(filter, corpusDir = CORPUS) {
 function runReference(name) {
   let file = path.join(CORPUS, `${name}.ts`);
   const expected = parseExpected(fs.readFileSync(expectedPath(name)));
-  if (expected.compileError !== undefined) return { ok: true, notApplicable: true };
+  if (expected.compileError !== undefined || expected.nativeOnly)
+    return { ok: true, notApplicable: true };
   if (importsThree(file)) {
     const staged = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "tn-ref-three-")), `${name}.ts`);
     fs.writeFileSync(

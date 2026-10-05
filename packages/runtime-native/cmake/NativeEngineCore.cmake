@@ -268,6 +268,22 @@ if(EMSCRIPTEN)
     endif()
 endif()
 
+# PRD-506: a compiled TypeScript closure called by the engine, through the native-TypeScript corpus
+# runner against this build's archives. The archives must link with a plain C++ driver, so not under
+# sanitizers, and the pinned compiler targets the host, so not for Wasm or a cross build.
+if(NOT EMSCRIPTEN AND NOT TN_ENGINE_CORE_ONLY AND NOT TN_ENGINE_SANITIZE)
+    find_program(TN_NODE_EXECUTABLE node)
+    if(TN_NODE_EXECUTABLE)
+        add_test(NAME native_engine_aot_callback
+            COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/../../tools/native-typescript/run-corpus.mjs
+                --native --case aot-callback)
+        set_tests_properties(native_engine_aot_callback PROPERTIES
+            LABELS "native-engine;native-typescript"
+            ENVIRONMENT "TN_NATIVE_ENGINE_BUILD=${CMAKE_BINARY_DIR}"
+            PASS_REGULAR_EXPRESSION "aot-callback +- +PASS")
+    endif()
+endif()
+
 add_library(tn_fixture_driver STATIC tests/native-engine/fixture/driver.cpp)
 tn_native_engine_target(tn_fixture_driver)
 target_include_directories(tn_fixture_driver PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine)
