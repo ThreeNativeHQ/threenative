@@ -192,7 +192,7 @@ array: TypedArray;
 itemSize: number;
 usage: Usage;
 gpuType: AttributeGPUType;
-updateRanges: Array<{ start: number; count: number; }>;
+updateRanges: string;
 version: number;
 normalized: boolean;
 readonly count: number;
