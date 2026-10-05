@@ -118,13 +118,11 @@ export function createTemporalDepthRejection(
   const currentDepthStruct = struct({
     closestDepth: "float",
     closestPositionTexel: "vec2",
-    farthestDepth: "float",
   });
-  // Samples 3×3 neighborhood pixels and returns the closest and farthest depths.
+  // Samples 3×3 neighborhood pixels and returns the closest depth and its texel.
   const currentDepth = Fn(([positionTexel]: [Node<"vec2">]) => {
     const closestDepth = float(2).toVar();
     const closestPositionTexel = vec2(0).toVar();
-    const farthestDepth = float(-1).toVar();
     for (let x = -1; x <= 1; ++x)
       for (let y = -1; y <= 1; ++y) {
         const neighbor = positionTexel.add(vec2(x, y)).toVar();
@@ -136,11 +134,8 @@ export function createTemporalDepthRejection(
           closestDepth.assign(depth);
           closestPositionTexel.assign(neighbor);
         });
-        If(depth.greaterThan(farthestDepth), () => {
-          farthestDepth.assign(depth);
-        });
       }
-    return currentDepthStruct(closestDepth, closestPositionTexel, farthestDepth);
+    return currentDepthStruct(closestDepth, closestPositionTexel);
   });
   // Samples a previous depth and reprojects it using the current camera matrices. The mip is named
   // because the rejection counter reads this from a compute dispatch, where WGSL has no implicit
@@ -170,26 +165,27 @@ export function createTemporalDepthRejection(
   const historyValid = (node._historyValidUniform ?? float(1)) as Node<"float">;
   /**
    * The one history-validity decision, parameterised by the pixel's own UV: `historyValid ∧ validUV
-   * ∧ (edge ∨ ¬disocclusion)`. The resolve weights its blend with this, and the rejection counter
-   * calls the same node once per display pixel, so a reported fraction cannot diverge from the
-   * decision that was drawn.
+   * ∧ ¬disocclusion`. The resolve weights its blend with this, and the rejection counter calls the
+   * same node once per display pixel, so a reported fraction cannot diverge from the decision that
+   * was drawn.
+   *
+   * Upstream also ORs in a depth-edge bypass (`farthestDepth − closestDepth > edgeDepthDiff`).
+   * PRD-455 holds the paired policy ablation: with that term off the measured reveal residue falls
+   * while edge error, instability and excursion each move by under 0.0001, which supports the term
+   * as the residue's cause.
    */
   const historyValidity = Fn(([pixelUV]: [Node<"vec2">]) => {
     const inputSize = node.beautyNode.size(int(0)) as Node<"uvec2">;
     const sampled = currentDepth(pixelUV.mul(inputSize));
     const closestDepth = sampled.get("closestDepth") as Node<"float">;
     const closestPositionTexel = sampled.get("closestPositionTexel") as Node<"vec2">;
-    const farthestDepth = sampled.get("farthestDepth") as Node<"float">;
     const offsetUV = node.velocityNode.load(closestPositionTexel).xy.mul(vec2(0.5, -0.5));
     const historyUV = pixelUV.sub(offsetUV);
     const sampledPreviousDepth = previousDepth(historyUV);
     const isValidUV = historyUV.greaterThanEqual(0).all().and(historyUV.lessThanEqual(1).all());
-    const isEdge = farthestDepth.sub(closestDepth).greaterThan(node.edgeDepthDiff);
     const isDisocclusion = closestDepth.sub(sampledPreviousDepth).greaterThan(node.depthThreshold);
     // A reset frame has no legal cross-size colour seed, so it weights only the current frame.
-    const hasValidHistory = historyValid
-      .greaterThan(0.5)
-      .and(isValidUV.and(isEdge.or(isDisocclusion.not())));
+    const hasValidHistory = historyValid.greaterThan(0.5).and(isValidUV.and(isDisocclusion.not()));
     return historyValidityStruct(hasValidHistory, historyUV, offsetUV);
   });
   return { currentDepth, previousDepth, historyValidity };

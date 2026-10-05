@@ -1246,3 +1246,74 @@ unrecorded and therefore unknown; the desktop report's `runtimeSha256` is the pr
 scenarios and both conformance lanes. Nothing else moved: Phase 2's quality scores and gates, Phase 3's
 GPU/render p95 comparison and the PRD-269 ghosting cost all stay **open**, no new box is ticked by this
 entry, and no full CI board, push or merge ran here.
+
+### The depth-edge bypass measured out of the history decision (2026-10-06)
+
+**The assumption, named and tested.** The previous entry asserted that every revealed pixel satisfies
+the depth-edge bypass. That is replaced here by a paired **policy** ablation, which is what this
+corpus can measure. One capture of the unmodified `scripts/verify-temporal-motion.ts` on the pre-fix
+source carries both policies over the same 3,721 revealed interior pixels: `temporal` (bypass on) and
+`strict-rejection` (the same arm with `edgeDepthDiff` at 1, so the term cannot be true). Bypass on
+measures stale fractions [.28326, .17952, .086, .0817, .06047, .03924, .01639, .01451]; bypass off
+measures [.01774, 0, 0, 0, 0, .01586, .00027, 0], while edge error (0.06054 against 0.06055),
+instability (0.03136 against 0.03139) and excursion (0.000118 against 0.000115) barely move. That
+supports the term as the cause of the aggregate residue and it buys nothing measurable here. It does
+**not** count the decisions the GPU actually made per pixel, and no geometry is claimed for it. That
+capture is preserved at `/tmp/opencode/pr398-preserved-062622/temporal-aa/motion` (19 scored arms,
+adapter `nvidia/turing`); the bypass-on side was not re-measured here, because putting the term back
+is a new policy change.
+
+**The repair.** `historyValidity` is now `historyValid ∧ validUV ∧ ¬disocclusion`. One predicate, one
+`Fn`, still called once per display pixel by `temporalRejectionCounter.ts`, so the published share
+cannot diverge from the drawn decision; the shared `currentDepth` struct lost its now-unread
+`farthestDepth` field with it. Generated template source, starter only. No new dependency, no preset,
+no threshold, no harness. Installed three 0.185.1 `TAAUNode.js` keeps the same OR in its own
+`hasValidHistory`; its remedy for its one-sided test is the thin-feature **lock** gate, a different
+term, so the reference offers no narrower history rule to adopt than the one measured here.
+
+**Red-green and actual exits.** `vitest run packages/create-threenative/__tests__/{scaffold,
+temporal-resolve,temporal-aa}.spec.ts packages/core/__tests__/temporal-chain.spec.ts` → `4 files,
+105 tests passed`, exit `0` (the scaffold pin follows the measured starter hash: `0d67385d…` for the
+predicate change, `022310e487fa1c39e6b81fdcdbfb7cb13f5977e51fdf5c146c8c0696e9d9db19` after this
+entry's comment correction; all 13 template hashes re-measured, every other one unchanged).
+`pnpm typecheck` exit `0`, `biome check` on both touched files exit `0`, the helper is 195 lines after
+Biome.
+
+**Runtime, this commit.** The production script, unmodified: `sh scripts/xvfb.sh node --import tsx
+scripts/verify-temporal-motion.ts` → exit `1`, all 32 arms captured with 16 frames each, no
+`failure.json`, every arm's adapter `nvidia/turing`, scored by its own `measureSequence`
+(`revealIndex` 8). `temporal` is **bit-identical to `strict-rejection`**: stale [.01774, 0, 0, 0, 0,
+.01586, .00027, 0], edge 0.06055, instability 0.03139, moving-edge 0.02899, excursion 0.000115. The
+exit `1` is the script's own gates, not a capture failure. The GPU rejection counter publishes a real
+36-frame series for 22 arms (`visited` 230400, source age 0, every share finite) and an
+`unavailable` object carrying its reason for the four fragment-overridden unchecked-history arms — no
+fabricated zero. `quality-supersampled` captured this time (2560x1440 reference against the 640x360
+display raster, 426x240 input), so the quality family is measured: `quality-temporal` stale [.0516,
+.01908, .00457, .00349, .00376, .01774, .00215, .00457], edge 0.08239, instability 0.03573, against
+`quality-spatial` [.03064, .03037, .06477, .03547, .03574, .06638, .0473, .03117].
+
+**Browser P1 and native, this commit.** The three existing scenarios against
+`examples/abyss-framework` (`scaled-lifecycle`, `scaled`, `scaled-unchecked-reset`; one managed server
+on IPv4 loopback, custom Vulkan arguments, no recipe): 41 + 35 + 10 = **86 assertions passed, 0
+failed**, each exit `0`, adapter `nvidia/turing`, `diagnostics: []` on all three. Native
+`conformance/run-conformance.mjs --only-tests temporal-aa-scaled,
+temporal-aa-scaled-unchecked-reset, temporal-aa-lifecycle, temporal-aa-quality` against the prebuilt
+`build/tn-linux/mystral`: web `pass 4, fail 0, blocked 96` and desktop `pass 4, fail 0, blocked 96`,
+both exiting `2` because the 96 unselected rows report **blocked**, never passed; each desktop row
+measured `pixelMismatchRatio` 0 and `perceptualDeltaE` 0 against its `.06`/`9` tolerance with the
+native process exiting `0`, and `provenance.commit` recorded `aeac68b2f` — this commit's only later
+change is the comment above and that test pin, neither of which reaches the drawn frame. The native
+lane publishes no WebGPU adapter, so none is claimed for it. Artifacts: `packages/runtime-native/
+artifacts/conformance/pr398-native-aeac/` and `examples/abyss-framework/artifacts/
+pr398-p1-aeac-*/`.
+
+**What stays open, honestly.** `revealRecovery` is still false: the warm bound covers `afterReveal`
+1–7 and afterReveal 5 measures .01586 against the pinned .01, while the ungated first reveal measures
+.01774. That residual is not the bypass — the bypass is already off in the arm that measures it — it is
+the pixels whose `closestDepth − previousDepth` never crosses `depthThreshold`, amplified at
+afterReveal 5 by the luminance reweighting (the corpus's `resolve-cubic-strict-ordinary` arm, which
+changes only the final blend, measures 0 there, and still measures .01559 when the reweighting stays).
+The low-input quality family fails its own warm bound twice, afterReveal 1 at .01908 and afterReveal 5
+at .01774, while `qualityBeatsSpatialStability` holds. Both Phase 2 boxes and the motion and quality
+edge boxes stay **open**, no box is ticked by this entry, and no full CI board, push or merge ran
+here.
