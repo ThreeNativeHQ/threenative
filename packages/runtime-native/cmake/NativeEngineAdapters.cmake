@@ -18,4 +18,30 @@ if(TARGET v8::v8 AND MYSTRAL_USE_V8 AND NOT MYSTRAL_PLATFORM STREQUAL "ios")
         set_tests_properties(native_engine_v8_${case} PROPERTIES LABELS "native-engine")
     endforeach()
     add_dependencies(tn-native-engine-tests tn-native-engine-v8-test)
+
+    # The differential fixtures through V8 (PRD-531 phase 2): the same corpus and goldens as the C++
+    # driver, every op run as JS against the adapter's classes.
+    add_executable(tn-native-engine-v8-fixture-driver EXCLUDE_FROM_ALL tests/native-engine/v8_fixture_driver.cpp)
+    target_link_libraries(tn-native-engine-v8-fixture-driver PRIVATE tn_adapter_v8)
+    set_target_properties(tn-native-engine-v8-fixture-driver PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
+    add_dependencies(tn-native-engine-tests tn-native-engine-v8-fixture-driver)
+    find_program(TN_PNPM_EXECUTABLE pnpm)
+    if(TN_PNPM_EXECUTABLE)
+        add_test(NAME native_engine_v8_scene_fixtures
+            COMMAND ${TN_PNPM_EXECUTABLE} --filter @threenative/three-native exec tsx tests/compatibility/run-native.ts
+                --driver $<TARGET_FILE:tn-native-engine-v8-fixture-driver> --only "scene-*"
+                --out ${CMAKE_CURRENT_BINARY_DIR}/v8_scene.json)
+        # Math through JS: three rows are blocked for named reasons the C ABI owns, not the adapter —
+        # Ray is not in the catalog (math-core-constructors, math-primitives-ray) and Frustum.planes
+        # is an array of member objects the binding Value cannot carry yet. Exactly that list passes;
+        # a new blocked row changes the line and any FAIL row fails the test.
+        add_test(NAME native_engine_v8_math_fixtures
+            COMMAND ${TN_PNPM_EXECUTABLE} --filter @threenative/three-native exec tsx tests/compatibility/run-native.ts
+                --driver $<TARGET_FILE:tn-native-engine-v8-fixture-driver> --only "math-*" --allow-blocked
+                --out ${CMAKE_CURRENT_BINARY_DIR}/v8_math.json)
+        set_tests_properties(native_engine_v8_math_fixtures PROPERTIES
+            PASS_REGULAR_EXPRESSION "ALLOWED_BLOCKED math-core-constructors, math-primitives-frustum, math-primitives-ray\n"
+            FAIL_REGULAR_EXPRESSION "(^|\n)FAIL ")
+        set_tests_properties(native_engine_v8_scene_fixtures native_engine_v8_math_fixtures PROPERTIES LABELS "native-engine")
+    endif()
 endif()

@@ -1,0 +1,247 @@
+// The differential fixture driver, through V8 (PRD-531 phase 2): the same line protocol as
+// fixture/driver.h, but every op runs as JavaScript against the classes the V8 adapter installs,
+// so a fixture checks what a game's JS would see — `mesh.position.z = 1` goes through the member
+// alias and Vector3's setter, an observation through a property read. Values cross as V8 numbers
+// built from the protocol's exact bits, never as text.
+
+#include "adapters/v8/adapter.h"
+
+#include <libplatform/libplatform.h>
+
+#include <bit>
+#include <cctype>
+#include <cinttypes>
+#include <cstdio>
+#include <cstring>
+#include <iostream>
+#include <memory>
+#include <sstream>
+#include <string>
+#include <vector>
+
+using tn::adapters::v8adapter::Adapter;
+
+namespace {
+
+struct Unsupported {
+    std::string reason;
+};
+
+std::string decode(const std::string& text) {
+    std::string out;
+    for (size_t i = 0; i < text.size(); ++i) {
+        if (text[i] == '%' && i + 2 < text.size()) {
+            out += static_cast<char>(std::stoi(text.substr(i + 1, 2), nullptr, 16));
+            i += 2;
+        } else {
+            out += text[i];
+        }
+    }
+    return out;
+}
+
+std::string encode(const std::string& text) {
+    static const char* hex = "0123456789ABCDEF";
+    std::string out;
+    for (unsigned char c : text) {
+        if (std::isalnum(c) || std::strchr("-_.!~*'()", c)) {
+            out += static_cast<char>(c);
+        } else {
+            out += '%';
+            out += hex[c >> 4];
+            out += hex[c & 15];
+        }
+    }
+    return out;
+}
+
+std::string bits(double value) {
+    char buffer[24];
+    std::snprintf(buffer, sizeof buffer, "n:%016" PRIx64, std::bit_cast<uint64_t>(value));
+    return buffer;
+}
+
+// A dotted property path as JS member access; each segment must be an identifier, so a fixture
+// can never inject code.
+std::string access(const std::string& path) {
+    std::string out;
+    std::istringstream segments(path);
+    for (std::string s; std::getline(segments, s, '.');) {
+        if (s.empty() || !(std::isalpha(static_cast<unsigned char>(s[0])) || s[0] == '_' || s[0] == '$'))
+            throw Unsupported{"path " + path};
+        for (char c : s)
+            if (!(std::isalnum(static_cast<unsigned char>(c)) || c == '_' || c == '$')) throw Unsupported{"path " + path};
+        out += "." + s;
+    }
+    return out;
+}
+
+class V8Driver {
+public:
+    V8Driver(v8::Isolate* isolate, tn_context_t* context) : isolate_(isolate), adapter_(isolate, context) {
+        v8::HandleScope scope(isolate_);
+        v8::Local<v8::Context> ctx = v8::Context::New(isolate_);
+        context_.Reset(isolate_, ctx);
+        v8::Context::Scope contextScope(ctx);
+        adapter_.install(ctx, ctx->Global());
+        eval("globalThis.__ids = {};");
+    }
+
+    int run(std::istream& in, std::ostream& out) {
+        v8::HandleScope scope(isolate_);
+        v8::Local<v8::Context> ctx = context_.Get(isolate_);
+        v8::Context::Scope contextScope(ctx);
+        for (std::string line; std::getline(in, line);) {
+            std::vector<std::string> t;
+            std::istringstream stream(line);
+            for (std::string token; stream >> token;) t.push_back(token);
+            if (t.empty()) continue;
+            const std::string& command = t[0];
+            try {
+                if (command == "fixture") continue;
+                if (command == "end") break;
+                if (command == "new" && t.size() >= 3) {
+                    setArgs(t, 3);
+                    setId(t[1]);
+                    access(t[2]);  // the class name is an identifier too
+                    evalOrThrow("__ids[__id] = new " + t[2] + "(...__args);");
+                    continue;
+                }
+                if (command == "set" && t.size() >= 4) {
+                    setArgs(t, 3);
+                    setId(t[1]);
+                    evalOrThrow("__ids[__id]" + access(t[2]) + " = __args[0];");
+                    continue;
+                }
+                if (command == "call" && t.size() >= 4) {
+                    setArgs(t, 4);
+                    setId(t[1]);
+                    const std::string call = "__ids[__id]" + access(t[2]) + "(...__args)";
+                    if (t[3] == "-") {
+                        evalOrThrow(call + ";");
+                    } else {
+                        setGlobal("__result", str(t[3]));
+                        evalOrThrow("__ids[__result] = " + call + ";");
+                    }
+                    continue;
+                }
+                if (command == "observe" && t.size() == 6) {
+                    setId(t[2]);
+                    // A plain call result is observed as itself, as the C++ driver's boxed value is.
+                    std::string expr = "(typeof __ids[__id] !== 'object' || Array.isArray(__ids[__id])) ? __ids[__id] : ";
+                    if (t[4] != "-") expr += "__ids[__id]" + access(decode(t[4])) + "()";
+                    else if (t[3] == "-") expr += "__ids[__id]";  // the object itself (a boxed result)
+                    else expr += "__ids[__id]" + access(decode(t[3]));
+                    v8::Local<v8::Value> value = evalOrThrow("(" + expr + ")", t[1]);
+                    out << "obs " << t[1] << " " << t[5] << " " << render(value, t[5]) << "\n";
+                    continue;
+                }
+                throw Unsupported{"command " + command};
+            } catch (const Unsupported& u) {
+                const std::string index = command == "observe" && t.size() > 1 ? t[1] : "-";
+                out << "unsupported " << index << " " << encode(u.reason) << "\n";
+            }
+        }
+        out.flush();
+        return 0;
+    }
+
+private:
+    v8::Local<v8::String> str(const std::string& s) {
+        return v8::String::NewFromUtf8(isolate_, s.c_str(), v8::NewStringType::kNormal, static_cast<int>(s.size())).ToLocalChecked();
+    }
+    void setGlobal(const char* name, v8::Local<v8::Value> value) {
+        v8::Local<v8::Context> ctx = isolate_->GetCurrentContext();
+        ctx->Global()->Set(ctx, str(name), value).Check();
+    }
+    void setId(const std::string& id) { setGlobal("__id", str(id)); }
+
+    void setArgs(const std::vector<std::string>& t, size_t from) {
+        v8::Local<v8::Context> ctx = isolate_->GetCurrentContext();
+        v8::Local<v8::Array> args = v8::Array::New(isolate_, static_cast<int>(t.size() - from));
+        v8::Local<v8::Object> ids = ctx->Global()->Get(ctx, str("__ids")).ToLocalChecked().As<v8::Object>();
+        for (size_t i = from; i < t.size(); ++i) {
+            const std::string& token = t[i];
+            v8::Local<v8::Value> v;
+            if (token == "null") v = v8::Null(isolate_);
+            else if (token.rfind("n:", 0) == 0) v = v8::Number::New(isolate_, std::bit_cast<double>(std::stoull(token.substr(2), nullptr, 16)));
+            else if (token.rfind("s:", 0) == 0) v = str(decode(token.substr(2)));
+            else if (token == "b:1" || token == "b:0") v = v8::Boolean::New(isolate_, token == "b:1");
+            else if (token.rfind("r:", 0) == 0) v = ids->Get(ctx, str(token.substr(2))).ToLocalChecked();
+            else throw Unsupported{"unknown argument token " + token};
+            args->Set(ctx, static_cast<uint32_t>(i - from), v).Check();
+        }
+        setGlobal("__args", args);
+    }
+
+    v8::Local<v8::Value> eval(const std::string& source) {
+        v8::Local<v8::Context> ctx = isolate_->GetCurrentContext();
+        return v8::Script::Compile(ctx, str(source)).ToLocalChecked()->Run(ctx).ToLocalChecked();
+    }
+
+    // Any exception is the binding saying no (TN_NATIVE_UNSUPPORTED, an unbound member read as
+    // undefined): the fixture row reports it, as the C++ driver reports its Unsupported.
+    v8::Local<v8::Value> evalOrThrow(const std::string& source, const std::string& = "-") {
+        v8::Local<v8::Context> ctx = isolate_->GetCurrentContext();
+        v8::TryCatch tryCatch(isolate_);
+        v8::Local<v8::Script> script;
+        v8::Local<v8::Value> result;
+        if (!v8::Script::Compile(ctx, str(source)).ToLocal(&script) || !script->Run(ctx).ToLocal(&result)) {
+            v8::String::Utf8Value message(isolate_, tryCatch.Exception());
+            throw Unsupported{*message ? *message : "exception"};
+        }
+        return result;
+    }
+
+    std::string render(v8::Local<v8::Value> value, const std::string& kind) {
+        v8::Local<v8::Context> ctx = isolate_->GetCurrentContext();
+        if (kind == "number" && value->IsNumber()) return bits(value.As<v8::Number>()->Value());
+        if (kind == "boolean" && value->IsBoolean()) return value->IsTrue() ? "b:1" : "b:0";
+        if ((kind == "string" || kind == "json") && value->IsString()) {
+            v8::String::Utf8Value text(isolate_, value);
+            return "s:" + encode(*text ? *text : "");
+        }
+        if (kind == "numbers" && value->IsArray()) {
+            v8::Local<v8::Array> array = value.As<v8::Array>();
+            std::string out;
+            for (uint32_t i = 0; i < array->Length(); ++i) {
+                v8::Local<v8::Value> e = array->Get(ctx, i).ToLocalChecked();
+                if (!e->IsNumber()) throw Unsupported{"numbers observation holds a non-number"};
+                out += (i ? "," : "") + bits(e.As<v8::Number>()->Value());
+            }
+            return out;
+        }
+        throw Unsupported{"observation kind " + kind + " does not match the JS value"};
+    }
+
+    v8::Isolate* isolate_;
+    Adapter adapter_;
+    v8::Global<v8::Context> context_;
+};
+
+}  // namespace
+
+int main() {
+    std::unique_ptr<v8::Platform> platform = v8::platform::NewDefaultPlatform();
+    v8::V8::InitializePlatform(platform.get());
+    v8::V8::Initialize();
+    std::unique_ptr<v8::ArrayBuffer::Allocator> allocator(v8::ArrayBuffer::Allocator::NewDefaultAllocator());
+    v8::Isolate::CreateParams params;
+    params.array_buffer_allocator = allocator.get();
+    v8::Isolate* isolate = v8::Isolate::New(params);
+    tn_context_t* context = nullptr;
+    const tn_version_info_t own = tn_engine_version();
+    tn_diagnostic_t diagnostic{nullptr, 0};
+    if (tn_context_create(&context, &own, &diagnostic) != TN_OK) return std::fprintf(stderr, "no engine context\n"), 1;
+    int status = 0;
+    {
+        v8::Isolate::Scope isolateScope(isolate);
+        V8Driver driver(isolate, context);
+        status = driver.run(std::cin, std::cout);
+    }
+    isolate->Dispose();
+    tn_context_destroy(context, &diagnostic);
+    v8::V8::Dispose();
+    v8::V8::DisposePlatform();
+    return status;
+}
