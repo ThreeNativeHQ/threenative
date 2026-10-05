@@ -2816,3 +2816,4 @@ install(TARGETS mystral-runtime
 install(DIRECTORY include/mystral
     DESTINATION include
 )
+include(cmake/NativeEngineAdapters.cmake)

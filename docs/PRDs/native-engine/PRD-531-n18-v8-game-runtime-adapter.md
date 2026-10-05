@@ -1,6 +1,6 @@
 # PRD-531 — V8 game runtime adapter (N18)
 
-**Status:** PROPOSED
+**Status:** IN PROGRESS — the adapter drives the engine through the C ABI; catalog-coverage (box 1) needs the supported statuses synced from the binding registry
 **Complexity:** 4 — the first shipping game runtime over the C++ engine; lifetime and crossing cost are the hard parts
 **Owner:** João
 **Work package:** N18 — [native-engine batch](README.md)
@@ -32,8 +32,8 @@ The CP1 checkpoint ([PRD-534](PRD-534-cp1-the-native-engine-earns-the-port.md)) 
 **Status:** NOT STARTED
 **Files:** proposed `packages/three-native/generator/`, `packages/runtime-native/src/adapters/v8/`, `packages/runtime-native/tests/native-engine/v8_*.cpp`
 - [ ] The V8 back end covers every catalog entry marked supported, and nothing else. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_v8_catalog_coverage`
-- [ ] A handle round-trips through JS without losing bits. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_v8_handles`
-- [ ] Every engine target below the adapter has no V8 include or link. proof: `node packages/runtime-native/scripts/inspect-js-free.mjs --binary <each engine target>`
+- [x] A handle round-trips through JS without losing bits. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_v8_handles` — 2026-10-04: green (`build/tn-linux`, V8 13.1): 2,000 handles, a third with reused slots and bumped generations, cross into JS through the wrapper's internal field and come back with type, context, index and generation intact; one wrapper per handle, so `m.makeTranslation(...) === m`; collected wrappers release their native objects. Red without the wrapper cache and without the release. `src/adapters/v8/adapter.{h,cpp}`, `tests/native-engine/v8_adapter_test.cpp`
+- [x] Every engine target below the adapter has no V8 include or link. proof: `node packages/runtime-native/scripts/inspect-js-free.mjs --binary <each engine target>` — 2026-10-04: `inspect-js-free.mjs` passes every engine library in the V8 build (`libtn_engine_{abi,assets,bindings,foundation,graph,renderer,shader}.a`, `libtn_host_services.a`) and fails only `libtn_adapter_v8.a`; `native_engine_target_graph` stays green with the adapter linked, which is defined in `cmake/NativeEngineAdapters.cmake` after the JS engines
 
 #### Phase 2: Same engine, same lifetime
 **Status:** NOT STARTED
