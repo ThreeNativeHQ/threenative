@@ -1,7 +1,9 @@
-// The standard material, ported from three@0.185.1's TSL node chain line by line where order of
+// The standard materials, ported from three@0.185.1's TSL node chain line by line where order of
 // operations is observable: src/nodes/functions/BSDF/{F_Schlick,V_GGX_SmithCorrelated,D_GGX,
 // BRDF_GGX,BRDF_GGX_Multiscatter,BRDF_Lambert,DFGLUT}.js, functions/material/getRoughness.js,
 // functions/PhysicalLightingModel.js (direct, indirect diffuse), lighting/HemisphereLightNode.js.
+// Lambert and Phong come from functions/PhongLightingModel.js (its Blinn-Phong D_BlinnPhong and
+// BRDF_BlinnPhong) as materials/nodes/Mesh{Lambert,Phong}NodeMaterial.js wire them.
 
 #include "standard.h"
 
@@ -96,6 +98,25 @@ ExprId brdfGgxMultiscatter(Tsl& t, const Surface& s, ExprId light) {
     return p.add(singleScatter, p.mul(Fms, compensationFactor));
 }
 
+// D_BlinnPhong( dotNH ) = ( shininess * 0.5 + 1.0 ) * (1/pi) * pow( dotNH, shininess )
+ExprId dBlinnPhong(Tsl& t, ExprId shininess, ExprId dotNH) {
+    Program& p = t.p;
+    const ExprId base = p.add(p.mul(shininess, t.f(0.5f)), t.f(1));
+    return p.mul(p.mul(base, t.f(1 / kPi)), p.call("pow", {dotNH, shininess}));
+}
+
+// BRDF_BlinnPhong( lightDirection ): F_Schlick(specularColor, 1.0, dotVH) * 0.25 * D_BlinnPhong,
+// with G_BlinnPhong_Implicit = float(0.25). lightDirection is view space, like normalView.
+ExprId brdfBlinnPhong(Tsl& t, ExprId normalView, ExprId positionViewDirection, ExprId lightDirection,
+                      ExprId specularColor, ExprId shininess) {
+    Program& p = t.p;
+    const ExprId halfDir = p.call("normalize", {p.add(lightDirection, positionViewDirection)});
+    const ExprId dotNH = t.saturate(t.dot(normalView, halfDir));
+    const ExprId dotVH = t.saturate(t.dot(positionViewDirection, halfDir));
+    const ExprId F = fSchlick(t, specularColor, t.f(1), dotVH);
+    return p.mul(p.mul(F, t.f(0.25f)), dBlinnPhong(t, shininess, dotNH));
+}
+
 }  // namespace
 
 std::vector<std::string> unsupportedFeatures(const StandardMaterial& m) {
@@ -177,6 +198,71 @@ StandardPrograms buildStandard(const StandardMaterial& material) {
     }
     return out;
 }
+
+namespace {
+
+// The PhongLightingModel chain shared by MeshLambertNodeMaterial (specular off) and
+// MeshPhongNodeMaterial (Blinn-Phong specular): direct and indirect Lambert diffuse from the same
+// one directional, one hemisphere and one ambient light the standard program reads.
+StandardPrograms buildLit(bool phong) {
+    StandardPrograms out;
+    Program& v = out.vertex;
+    const ExprId model = v.uniform("modelMatrix", Type::mat(4, 4));
+    const ExprId view = v.uniform("viewMatrix", Type::mat(4, 4));
+    const ExprId normalMatrix = v.uniform("normalMatrix", Type::mat(3, 3));
+    const ExprId position = v.construct(Type::vec(4), {v.attribute("position", Type::vec(3)), v.constant(1.0f)});
+    const ExprId normal = v.attribute("normal", Type::vec(3));
+    const ExprId positionView = v.mul(view, v.mul(model, position));
+    v.output("position", v.mul(v.uniform("projectionMatrix", Type::mat(4, 4)), positionView));
+    v.output("normalView", v.mul(normalMatrix, normal));
+    v.output("positionView", v.swizzle(positionView, "xyz"));
+    v.output("normalWorld", v.swizzle(v.mul(model, v.construct(Type::vec(4), {normal, v.constant(0.0f)})), "xyz"));
+
+    Program& f = out.fragment;
+    Tsl t{f};
+    const ExprId n = f.call("normalize", {f.varying("normalView", Type::vec(3))});
+    const ExprId positionViewDirection = f.call("normalize", {f.neg(f.varying("positionView", Type::vec(3)))});
+    const ExprId normalWorld = f.call("normalize", {f.varying("normalWorld", Type::vec(3))});
+    const ExprId diffuse = f.uniform("diffuse", Type::vec(4));
+    const ExprId diffuseColor = f.swizzle(diffuse, "xyz");
+
+    // PhongLightingModel.direct / BRDF_Lambert for the directional light.
+    const ExprId lightDirection = f.call("normalize", {f.uniform("directionalDirection", Type::vec(3))});
+    const ExprId irradiance = f.mul(t.saturate(t.dot(n, lightDirection)), f.uniform("directionalColor", Type::vec(3)));
+    const ExprId brdfLambert = f.mul(diffuseColor, t.f(1 / kPi));
+    const ExprId directDiffuse = f.mul(irradiance, brdfLambert);
+
+    // Hemisphere and ambient irradiance, then PhongLightingModel.indirect diffuse.
+    const ExprId hemiWeight = f.add(f.mul(t.dot(normalWorld, f.call("normalize", {f.uniform("hemisphereDirection", Type::vec(3))})), t.f(0.5f)), t.f(0.5f));
+    const ExprId hemisphere = f.call("mix", {f.uniform("hemisphereGround", Type::vec(3)), f.uniform("hemisphereSky", Type::vec(3)), hemiWeight});
+    const ExprId indirectIrradiance = f.add(hemisphere, f.uniform("ambient", Type::vec(3)));
+    const ExprId indirectDiffuse = f.mul(indirectIrradiance, brdfLambert);
+
+    ExprId lighting = f.add(directDiffuse, indirectDiffuse);
+    if (phong) {
+        // MeshPhongNodeMaterial.setupVariants: shininess clamped to 1e-4, specular color is the
+        // material's; materialSpecularStrength is 1 without a specularMap.
+        const ExprId shininess = f.call("max", {f.uniform("shininess", Type::f32()), t.f(1e-4f)});
+        const ExprId directSpecular = f.mul(irradiance, brdfBlinnPhong(t, n, positionViewDirection, lightDirection,
+                                                                       f.uniform("specular", Type::vec(3)), shininess));
+        lighting = f.add(lighting, directSpecular);
+    }
+    const ExprId emissive = f.uniform("emissive", Type::vec(3));
+    const ExprId outgoing = f.add(lighting, emissive);
+    // Linear HDR out: tone mapping and the output colour space belong to the output pass (output.h).
+    f.output("color", f.construct(Type::vec(4), {outgoing, materialAlpha(f, f.swizzle(diffuse, "w"))}));
+    for (const Program* stage : {&out.vertex, &out.fragment}) {
+        for (const Diagnostic& d : stage->diagnostics()) {
+            out.diagnostics.push_back(d.code + " " + d.node + ": " + d.reason + " (" + d.file + ":" + std::to_string(d.line) + ")");
+        }
+    }
+    return out;
+}
+
+}  // namespace
+
+StandardPrograms buildLambert() { return buildLit(false); }
+StandardPrograms buildPhong() { return buildLit(true); }
 
 StandardPrograms buildBasic() {
     StandardPrograms out;

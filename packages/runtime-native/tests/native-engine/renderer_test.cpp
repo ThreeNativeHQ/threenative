@@ -312,6 +312,69 @@ double goldenMismatch(const std::vector<uint8_t>& px, const char* name, int w, i
     return double(off) / (double(w) * h * 3);
 }
 
+// The materials-lambert / materials-phong fixtures, natively: the litReference scene (sphere,
+// DirectionalLight(3) at (2,3,1), HemisphereLight(0xaabb91, 0x222222, 0.6), camera, ACES,
+// 320x240) with MeshLambertMaterial (specular off) or MeshPhongMaterial (Blinn-Phong), vs the
+// browser golden. The gate is litReference's: a wrong light term moves thousands of channels.
+void materialReference(const char* golden, MaterialKind kind, const shader::StandardMaterial& material) {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(320, 240);
+    renderer.setOutput(OutputState{shader::ToneMapping::ACESFilmic, 1, true});
+    const auto ball = sphere(32, 16);
+    DrawItem item;
+    item.key = 1;
+    item.kind = kind;
+    item.positions = &ball->positions;
+    item.normals = &ball->normals;
+    item.indices = &ball->indices;
+    item.matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    item.material = &material;
+
+    const double eye[3] = {0, 1.4, 3.2};
+    const double zl = std::sqrt(eye[1] * eye[1] + eye[2] * eye[2]);
+    const double z[3] = {0, eye[1] / zl, eye[2] / zl};
+    const double x[3] = {1, 0, 0};
+    const double y[3] = {z[1] * x[2] - z[2] * x[1], z[2] * x[0] - z[0] * x[2], z[0] * x[1] - z[1] * x[0]};
+    auto dot = [](const double* a, const double* b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; };
+    CameraState camera;
+    camera.matrixWorldInverse = {x[0], y[0], z[0], 0, x[1], y[1], z[1], 0, x[2], y[2], z[2], 0,
+                                 -dot(x, eye), -dot(y, eye), -dot(z, eye), 1};
+    const double t = std::tan(30 * kPi / 180), aspect = 4.0 / 3;
+    camera.projectionMatrix = {1 / (aspect * t), 0, 0, 0, 0, 1 / t, 0, 0, 0, 0, -100 / 99.9, -1, 0, 0, -10 / 99.9, 0};
+
+    LightState lights;
+    const double dl = std::sqrt(4.0 + 9 + 1);
+    lights.directionalDirection = {2 / dl, 3 / dl, 1 / dl};
+    lights.directionalColor = {3, 3, 3};
+    lights.hemisphereSky = {srgbToLinear(0xaa / 255.0) * 0.6, srgbToLinear(0xbb / 255.0) * 0.6, srgbToLinear(0x91 / 255.0) * 0.6};
+    const double ground = srgbToLinear(0x22 / 255.0) * 0.6;
+    lights.hemisphereGround = {ground, ground, ground};
+    lights.hemisphereUp = {0, 1, 0};
+    renderer.render({&item, 1}, camera, lights, {0.05, 0.06, 0.08, 1});
+    const std::vector<uint8_t> px = read(renderer, events);
+    int worst = 0;
+    const double off = goldenMismatch(px, golden, 320, 240, 1, worst);
+    std::printf("%s vs browser: worst %d, %.3f%% of channels over 1\n", golden, worst, off * 100);
+    CHECK(worst <= 8 && off < 0.001);
+}
+
+void lambertReference() {
+    shader::StandardMaterial material;
+    material.color = {0.8f, 0.35f, 0.2f};
+    materialReference("materials-lambert", MaterialKind::Lambert, material);
+}
+
+void phongReference() {
+    shader::StandardMaterial material;
+    material.color = {0.8f, 0.35f, 0.2f};
+    material.shininess = 60;
+    material.specular = {0.5f, 0.5f, 0.5f};
+    materialReference("materials-phong", MaterialKind::Phong, material);
+}
+
 // PlaneGeometry(w, h): three's vertex order and index.
 std::unique_ptr<Sphere> plane(double w, double h) {
     auto s = std::make_unique<Sphere>();
@@ -432,5 +495,7 @@ void alphaTest() {
 
 TN_TEST_MAIN({"resize_readback", resizeReadback}, {"output_ramp", outputRamp},
              {"lit_reference", litReference},
+             {"lambert_reference", lambertReference},
+             {"phong_reference", phongReference},
              {"alpha_transparency", alphaTransparency},
              {"alpha_test", alphaTest})

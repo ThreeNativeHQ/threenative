@@ -72,8 +72,9 @@ WGPUTextureView view2d(WGPUTexture texture, WGPUTextureFormat format) {
 
 Renderer::Renderer(WGPUInstance instance, WGPUDevice device, WGPUQueue queue, EventQueue& events)
     : device_(device), events_(events), gpu_(instance, device, queue, events, 1), geometry_(gpu_), pipelines_(device) {
-    const shader::StandardPrograms sources[2] = {shader::buildStandard(shader::StandardMaterial{}), shader::buildBasic()};
-    for (int kind = 0; kind < 2; ++kind) {
+    const shader::StandardPrograms sources[4] = {shader::buildStandard(shader::StandardMaterial{}), shader::buildBasic(),
+                                                 shader::buildLambert(), shader::buildPhong()};
+    for (int kind = 0; kind < 4; ++kind) {
         programs_[kind] = {shader::buildStage(sources[kind].vertex, 0), shader::buildStage(sources[kind].fragment, 1)};
         if (!programs_[kind].vertex.wgsl.ok() || !programs_[kind].fragment.wgsl.ok())
             throw std::runtime_error("TN_NATIVE_SHADER_INVALID: material program " + std::to_string(kind));
@@ -298,7 +299,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
         const Program& program = programs_[static_cast<int>(item.kind)];
         const shader::StageModule& vs = program.vertex;
         const shader::StageModule& fs = program.fragment;
-        const bool lit = item.kind == MaterialKind::Standard;
+        const bool lit = item.kind != MaterialKind::Basic;
         if (!item.positions || (lit && !item.normals) || !item.material) continue;
         WGPURenderPipeline pipeline =
             pipelines_.get(vs, &fs, PipelineTarget{WGPUTextureFormat_RGBA16Float, WGPUTextureFormat_Depth32Float,
@@ -322,6 +323,8 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
         put(fblock, fs, "emissive",
             std::array<double, 3>{m.emissive[0] * m.emissiveIntensity, m.emissive[1] * m.emissiveIntensity,
                                   m.emissive[2] * m.emissiveIntensity});
+        put(fblock, fs, "specular", std::array<double, 3>{m.specular[0], m.specular[1], m.specular[2]});
+        put(fblock, fs, "shininess", std::array<double, 1>{m.shininess});
         put(fblock, fs, "directionalDirection", rotate(view, lights.directionalDirection));
         put(fblock, fs, "directionalColor", lights.directionalColor);
         put(fblock, fs, "hemisphereSky", lights.hemisphereSky);

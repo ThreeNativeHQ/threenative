@@ -21,6 +21,10 @@ struct StandardMaterial {
     float metalness = 0;
     std::array<float, 3> emissive{0, 0, 0};
     float emissiveIntensity = 1;
+    // MeshPhongMaterial.specular and .shininess; read by buildPhong. three's default is
+    // Color(0x111111), which setHex converts from sRGB: SRGBToLinear(17/255) = 0.0056053916.
+    std::array<float, 3> specular{0.0056053916f, 0.0056053916f, 0.0056053916f};
+    float shininess = 30;
     // MeshPhysicalMaterial: any non-default value is a feature in use.
     float clearcoat = 0;
     float sheen = 0;
@@ -49,6 +53,20 @@ struct StandardPrograms {
  * hemisphereSky, hemisphereGround, hemisphereDirection (world), ambient (fragment); texture "dfg".
  */
 StandardPrograms buildStandard(const StandardMaterial& material);
+
+/**
+ * MeshLambertNodeMaterial: PhongLightingModel with specular off — BRDF_Lambert direct and indirect
+ * diffuse, no specular. Same vertex and light uniforms as the standard program; it reads no dfg,
+ * metalness or roughness. Linear HDR out, materialAlpha tail.
+ */
+StandardPrograms buildLambert();
+
+/**
+ * MeshPhongNodeMaterial: PhongLightingModel with the Blinn-Phong specular term
+ * (BRDF_BlinnPhong: F_Schlick with `specular` f0 and f90 1, G 0.25, D_BlinnPhong with `shininess`).
+ * Same uniforms as buildLambert plus specular (vec3) and shininess (f32). Linear HDR out.
+ */
+StandardPrograms buildPhong();
 
 /**
  * MeshBasicMaterial with no maps and no environment: BasicLightingModel's indirect diffuse is
