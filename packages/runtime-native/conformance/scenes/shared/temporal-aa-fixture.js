@@ -201,7 +201,8 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
           const result = setup(builder);
           if (policy.startsWith("resolve-")) {
             temporal.node._resolveMaterial.colorNode = createExperimentalTemporalResolve(
-              temporal.node, builder.renderer, policy === "resolve-linear" ? "linear" : "catmull-rom",
+              temporal.node, builder.renderer, temporal.jitterOffset,
+              policy === "resolve-linear" ? "linear" : "catmull-rom",
               policy.startsWith("resolve-cubic-strict-ordinary") ? "ordinary" : "luminance",
             );
           }

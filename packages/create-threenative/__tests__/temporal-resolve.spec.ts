@@ -1,6 +1,6 @@
-import { Mesh, PerspectiveCamera, PlaneGeometry, Scene } from "three";
+import { Mesh, PerspectiveCamera, PlaneGeometry, Scene, Vector2 } from "three";
 import { traa } from "three/addons/tsl/display/TRAANode.js";
-import { pass, velocity } from "three/tsl";
+import { pass, uniform, velocity } from "three/tsl";
 import type { NodeBuilder } from "three/webgpu";
 import { MeshBasicNodeMaterial, WGSLNodeBuilder, WebGPURenderer } from "three/webgpu";
 import { describe, expect, it, vi } from "vitest";
@@ -52,7 +52,13 @@ describe("authored temporal reconstruction kernel", () => {
     source.edgeDepthDiff = 1;
     const mesh = new Mesh(new PlaneGeometry(2, 2), new MeshBasicNodeMaterial());
     const compile = (blend?: "luminance" | "ordinary") => {
-      const graph = createExperimentalTemporalResolve(source, renderer, "catmull-rom", blend);
+      const graph = createExperimentalTemporalResolve(
+        source,
+        renderer,
+        uniform(new Vector2()),
+        "catmull-rom",
+        blend,
+      );
       const builder = new WGSLNodeBuilder(mesh, renderer) as WGSLNodeBuilder & {
         setShaderStage(stage: string): void;
         flowStagesNode(node: unknown, output: string): { code: string; result: string };
@@ -64,8 +70,11 @@ describe("authored temporal reconstruction kernel", () => {
       const weighted = compile("luminance");
       const ordinary = compile("ordinary");
       expect(compile()).toEqual(weighted);
+      // The thin-feature lock reads luminance in both arms, so the isolation is the flicker
+      // reduction itself: only the luminance-weighted blend normalises by its compressed sum.
       expect(weighted.code).toContain("0.2126");
-      expect(ordinary.code).not.toContain("0.2126");
+      expect(weighted.code).toContain("0.00001");
+      expect(ordinary.code).not.toContain("0.00001");
       const weight = ordinary.code.match(/(?:^|\n)\t(\w+) = 0\.05;/)?.[1];
       expect(weight).toBeDefined();
       expect(ordinary.result).toMatch(new RegExp(`^mix\\( .*?, .*?, ${weight} \\)$`));
@@ -109,7 +118,7 @@ describe("authored temporal reconstruction kernel", () => {
       const withoutFlag = fragment(
         renderer,
         mesh,
-        createExperimentalTemporalResolve(bare, renderer, "linear"),
+        createExperimentalTemporalResolve(bare, renderer, uniform(new Vector2()), "linear"),
       );
       // The installed kernel compares a uniform against the threshold; a kernel with no flag
       // installed folds the same comparison to a constant.

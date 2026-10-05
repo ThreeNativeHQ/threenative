@@ -289,6 +289,25 @@ pixels without unlocking the surfaces the bypass protects, so it needs a per-pix
 geometry change against depth-edge membership) rather than the edge range alone or a wider
 threshold. Both Phase 2 ghost boxes stay open.
 
+**Neighbourhood reconstruction measured, 2026-10-06.** The generated resolve now reconstructs the
+current frame from the input raster's 3×3 neighbourhood with a jitter-aware Gaussian
+(Blackman–Harris approximation), reads the moments for its variance clip from the same taps, and
+adds a thin-feature lock that reuses the *unclipped* history where `validUV ∧ ¬depthChanged` and the
+pixel departs from its neighbourhood mean luminance. Both are graded through the real WGSL builder
+in `temporal-resolve.spec.ts`; the starter scaffold hash moved and the 13-template byte-stability
+test passes. Measured over the full 31-arm corpus on nvidia/turing WebGPU: the reveal ghost falls
+hard — quality `quality-temporal` eight after-reveal fractions .3437/.2548/.0398/.0339/.0304/.0395/.0226/.0185
+→ .0489/.0180/.0035/.0027/.0038/.0172/.0016/.0032 — while at a 1:1 input the reconstruction is gated
+off (its tap centers land on the pixel centers and it only adds blur) and the motion `temporal`
+reveal sequence is bit-identical (.0177/.0005/0/0/0/.0159/.0003/0). Edge error does not move:
+`temporal` .05985 and `quality-temporal` .08148, because the thin-feature lock rarely engages on the
+moving camera's sub-pixel fences — their reprojected depth changes, so `canLock` is 0. **Boxes stay
+open:** `edgeImprovement` .05985 vs the required <.04778, `qualityEdgeImprovement` .08148 vs <.04686,
+`revealRecovery` frame 34 .0159 > .01, `qualityRevealRecovery` .0180/.0172 > .01. No threshold or
+appearance policy changed. Focused checks: 132 temporal/scaffold tests across 9 files, root
+`tsc` on every changed file and error-level Biome all clean; the complete repository board and
+Phase 3 cost work remain unrun.
+
 - [ ] A fixed camera route containing thin fences, foliage, sub-pixel edges, a moving character and an instanced moving object stays within pinned temporal-stability/ghosting thresholds against a full-resolution reference. **proof:** automated frame-sequence report records edge flicker, rejected-history ratio and image delta for full-res, low-res spatial upscale and temporal reconstruction; the temporal arm must beat the spatial arm on the named stability metric.
 - [ ] Newly revealed surfaces do not inherit stale colour after occlusion/disocclusion events. **proof:** foreground-occluder fixture reveals a contrasting background and asserts stale-history pixels decay within the declared frame bound; disabling disocclusion rejection makes it fail.
 

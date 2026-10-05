@@ -1,14 +1,14 @@
 // Generated user source: opt-in temporal AA using pinned Three.js TRAANode. Colour, depth and velocity
 // share the scene pass raster, which may sit below the display raster; resolve and history hold the
 // display raster, so presented pixels come from a display-sized resolve, not an upscaled copy.
-import { Matrix4, type OrthographicCamera, type PerspectiveCamera } from "three";
+import { Matrix4, type OrthographicCamera, type PerspectiveCamera, Vector2 } from "three";
 import { traa } from "three/addons/tsl/display/TRAANode.js";
 import { uniform } from "three/tsl";
 import type { Node, TextureNode } from "three/webgpu";
 import { type ITemporalAANode, createTemporalAAFrame } from "./temporalAAFrame.js";
 import { type PipelineContext, createTemporalAAHooks } from "./temporalAAHooks.js";
 import type { ITemporalRejectionMeasurement } from "./temporalRejectionCounter.js";
-import { createExperimentalTemporalResolve } from "./temporalResolve.js";
+import { createExperimentalTemporalResolve, haltonJitterOffset } from "./temporalResolve.js";
 import {
   type TemporalDepthRejection,
   type TemporalResolveNode,
@@ -46,6 +46,8 @@ export function createTemporalAA(
   const node = traa(colour, depth, velocity, camera);
   // Three 0.185.1 exposes no reset API, so its pinned seams are isolated here instead.
   const historyValid = uniform(1);
+  // The reconstruction gathers around the exact jittered sample Three applied this frame.
+  const jitterOffset = uniform(new Vector2());
   const internals = node as unknown as ITemporalAANode;
   internals._historyValidUniform = historyValid;
   // One instance of the depth-rejection equations, shared by the resolve, the counter and every
@@ -108,6 +110,7 @@ export function createTemporalAA(
     internals._resolveMaterial.colorNode = createExperimentalTemporalResolve(
       node,
       builder.renderer,
+      jitterOffset,
       "linear",
       "luminance",
       rejection,
@@ -147,6 +150,8 @@ export function createTemporalAA(
       )
         pending = "resize";
       const reason = pending;
+      const [jitterX, jitterY] = haltonJitterOffset(internals._jitterIndex);
+      jitterOffset.value.set(jitterX, jitterY);
       frames.draw(frame.renderer, reason !== null, report.frame + 1);
       if (reason !== null && width === frames.display.x && height === frames.display.y) {
         frame.renderer.copyTextureToTexture(source.texture, internals._resolveRenderTarget.texture);
@@ -170,6 +175,7 @@ export function createTemporalAA(
   };
   return {
     node,
+    jitterOffset,
     // Omitted rather than undefined, so a report carrying none stays JSON-safe for a bridge.
     report: (): ITemporalAAReport => {
       const measured = frames.rejection();

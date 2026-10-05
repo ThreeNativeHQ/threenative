@@ -24,7 +24,7 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
-import { Fn, float, int, ivec2, max, vec2, vec4 } from "three/tsl";
+import { Fn, float, int, ivec2, max, struct, vec2, vec4 } from "three/tsl";
 import type { Node, TextureNode } from "three/webgpu";
 import type { TemporalResolveNode } from "./temporalResolveDepth.js";
 
@@ -71,6 +71,80 @@ export function sampleCatmullRom(source: TextureNode, coordinate: Node<"vec2">) 
 }
 
 /**
+ * The jitter Three's TRAANode applies for a given `_jitterIndex`. Copied from its module-private
+ * `_haltonOffsets` so the resolve can reconstruct around the exact sample the scene pass drew.
+ */
+export function haltonJitterOffset(index: number): [number, number] {
+  const halton = (start: number, base: number) => {
+    let fraction = 1;
+    let result = 0;
+    let value = start;
+    while (value > 0) {
+      fraction /= base;
+      result += fraction * (value % base);
+      value = Math.floor(value / base);
+    }
+    return result;
+  };
+  return [halton(index + 1, 2) - 0.5, halton(index + 1, 3) - 0.5];
+}
+
+const reconstructionStruct = struct({
+  color: "vec4",
+  mean: "vec4",
+  variance: "vec4",
+});
+
+/**
+ * Reconstruct the current frame at an output pixel from the input raster's 3×3 neighbourhood. Each
+ * tap's weight is a Gaussian (Blackman-Harris approximation) evaluated at the distance between the
+ * tap's jittered sample center and the output pixel, so the same kernel sharpens a lower input
+ * raster and gathers the moments the variance clip needs. At a 1:1 raster the tap centers land on
+ * the pixel centers and the kernel reduces to the pixel itself.
+ */
+export function reconstructNeighbourhood(
+  source: TextureNode,
+  uvNode: Node<"vec2">,
+  inputSize: Node<"uvec2">,
+  jitterOffset: Node<"vec2">,
+) {
+  const inputSizeF = vec2(inputSize);
+  const pIn = uvNode.mul(inputSizeF);
+  const closestTap = ivec2(pIn.sub(vec2(0.5).add(jitterOffset)).round());
+  const offsets = [
+    [-1, -1],
+    [0, -1],
+    [1, -1],
+    [-1, 0],
+    [0, 0],
+    [1, 0],
+    [-1, 1],
+    [0, 1],
+    [1, 1],
+  ] as const;
+  const sumColor = vec4(0).toVar();
+  const sumWeight = float(0).toVar();
+  const moment1 = vec4(0).toVar();
+  const moment2 = vec4(0).toVar();
+  for (const [x, y] of offsets) {
+    const tap = closestTap.add(ivec2(x, y));
+    const tapCenter = vec2(tap).add(vec2(0.5).add(jitterOffset));
+    const delta = pIn.sub(tapCenter);
+    const weight = delta.dot(delta).mul(-2.29).exp();
+    // Use max() to prevent NaN values from propagating.
+    const sample = source.load(tap).max(0);
+    sumColor.addAssign(sample.mul(weight));
+    sumWeight.addAssign(weight);
+    moment1.addAssign(sample);
+    moment2.addAssign(sample.pow2());
+  }
+  const N = float(offsets.length);
+  const mean = moment1.div(N);
+  const variance = moment2.div(N).sub(mean.pow2()).max(0).sqrt();
+  return reconstructionStruct(sumColor.div(sumWeight.max(1e-6)), mean, variance);
+}
+
+/**
  * Variance clipping over the current frame's neighbourhood.
  *
  * The neighbourhood offsets are in input texels, which is what `positionTexel` already carries, so
@@ -109,6 +183,7 @@ export function createTemporalResolveMath(node: TemporalResolveNode) {
   // Performs variance clipping.
   // See: https://developer.download.nvidia.com/gameworks/events/GDC2016/msalvi_temporal_supersampling.pdf
   return {
+    clipAABB,
     varianceClipping: Fn(
       ([positionTexel, currentColor, historyColor, gamma]: [
         Node<"vec2">,
