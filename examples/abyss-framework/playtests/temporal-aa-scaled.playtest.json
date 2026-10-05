@@ -178,6 +178,50 @@
         "path": "stages.0",
         "equals": "traa",
         "allowTrivial": "The applied stage list is decided when the chain is built, before the first observation."
+      },
+      {
+        "id": "temporal",
+        "path": "rejectionCold.0.visited",
+        "equals": 921600,
+        "allowTrivial": "The opening reset frame's count is the 1280x720 display the scenario fixes as its viewport, so the GPU must report having visited exactly that many pixels; a smaller count means the kernel skipped a region of the raster."
+      },
+      {
+        "id": "temporal",
+        "path": "rejectionCold.0.fraction",
+        "equals": 1,
+        "allowTrivial": "A reset frame carries no legal history at any pixel, so the whole counted raster must be reported rejected. The measurement is one frame taken before the scenario starts and nothing later can change it."
+      },
+      {
+        "id": "temporal",
+        "path": "rejectionCold.1.visited",
+        "equals": 614400,
+        "allowTrivial": "The resize reset frame counts the 1280x480 display the fixture resized to, so the visited count follows the display rather than the input raster or the opening frame."
+      },
+      {
+        "id": "temporal",
+        "path": "rejectionCold.1.fraction",
+        "equals": 1,
+        "allowTrivial": "The second reset frame has no legal history either, so its whole counted raster is rejected for the same reason the opening frame's is."
+      },
+      {
+        "id": "temporal",
+        "path": "aa.rejection.visited",
+        "equals": 614400,
+        "allowTrivial": "Every settled frame of this run counts the resized display, so the latest completed measurement names that many pixels; it is the same count the resize reset frame recorded."
+      },
+      {
+        "id": "temporal",
+        "path": "aa.rejection.fraction",
+        "gte": 0,
+        "lte": 1,
+        "changed": true,
+        "allowTrivial": "A steady-state frame rejects whatever its own pixels reject, so the share is a finite fraction of the display rather than a whole raster; the before and after samples differ because the counted frame advances."
+      },
+      {
+        "id": "temporal",
+        "path": "aa.rejection.staleFrames",
+        "equals": 0,
+        "allowTrivial": "The copy is asynchronous, so every count carries the age of the frame it measured. This scenario's driver awaits each count before drawing the next frame, so the settled measurement is always its own frame; the assertion states that age instead of leaving it implicit."
       }
     ],
     "diagnostics": {

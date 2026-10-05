@@ -69,6 +69,24 @@ export function startScene(canvas, dimensions) {
         resizeCold.jitterMatchesInput === true,
         `scaled unchecked-reset control: the resize frame jitted ${resizeCold.viewWidth}x${resizeCold.viewHeight} against a ${resizeCold.inputWidth}x${resizeCold.inputHeight} input raster.`,
       );
+      // The same counter runs in this arm, over the same two rasters. It must still visit every
+      // display pixel and publish a finite share with a stated age; the removed gate is a shader
+      // concern, so no value of its own is claimed here — the positive row owns the whole-raster one.
+      for (const [index, row] of fixture.observation().rejectionCold.entries()) {
+        const pixels = row.displayWidth * row.displayHeight;
+        assertCondition(
+          row.visited === pixels,
+          `scaled unchecked-reset control: reset frame ${index} visited ${row.visited} of ${pixels} display pixels.`,
+        );
+        assertCondition(
+          typeof row.fraction === "number" && Number.isFinite(row.fraction) && row.fraction >= 0 && row.fraction <= 1,
+          `scaled unchecked-reset control: reset frame ${index} reported the rejection fraction ${String(row.fraction)}.`,
+        );
+        assertCondition(
+          Number.isInteger(row.staleFrames) && row.staleFrames >= 0,
+          `scaled unchecked-reset control: reset frame ${index} reported the age ${String(row.staleFrames)} of its own count.`,
+        );
+      }
       return {
         ...fixture,
         detail: {

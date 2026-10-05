@@ -3,9 +3,13 @@
 // from this kernel; `temporalResolveMath.ts` and `temporalResolveDepth.ts` hold its equations.
 // Derived resolve source: three/examples/jsm/tsl/display/TRAANode.js (pinned 0.185.1).
 import type TRAANode from "three/addons/tsl/display/TRAANode.js";
-import { Fn, add, float, int, luminance, max, mix, texture, uv, vec2 } from "three/tsl";
+import { Fn, add, float, int, luminance, max, mix, texture, uv } from "three/tsl";
 import type { Node } from "three/webgpu";
-import { type TemporalResolveNode, createTemporalDepthRejection } from "./temporalResolveDepth.js";
+import {
+  type TemporalDepthRejection,
+  type TemporalResolveNode,
+  createTemporalDepthRejection,
+} from "./temporalResolveDepth.js";
 import { createTemporalResolveMath, sampleCatmullRom } from "./temporalResolveMath.js";
 
 export { CATMULL_ROM_BASIS } from "./temporalResolveMath.js";
@@ -58,13 +62,15 @@ export function createExperimentalTemporalResolve(
   renderer: { reversedDepthBuffer: boolean; logarithmicDepthBuffer: boolean },
   interpolation: "linear" | "catmull-rom",
   blend: "luminance" | "ordinary" = "luminance",
+  rejection: TemporalDepthRejection = createTemporalDepthRejection(
+    source as TemporalResolveNode,
+    renderer,
+  ),
 ) {
   const node = source as TemporalResolveNode;
-  const { currentDepth, previousDepth } = createTemporalDepthRejection(node, renderer);
+  const { historyValidity } = rejection;
   const { varianceClipping } = createTemporalResolveMath(node);
   const historyNode = texture(node._historyRenderTarget.texture);
-  // Absent on a standalone node, which then keeps upstream's own history reuse unchanged.
-  const historyValid = (node._historyValidUniform ?? float(1)) as Node<"float">;
 
   const resolve = Fn(() => {
     const uvNode = uv();
@@ -74,20 +80,10 @@ export function createExperimentalTemporalResolve(
     const inputSize = node.beautyNode.size(int(0)) as Node<"uvec2">;
     const positionTexel = uvNode.mul(inputSize);
     const displaySize = historyNode.size(int(0)) as Node<"uvec2">;
-    const sampled = currentDepth(positionTexel);
-    const closestDepth = sampled.get("closestDepth") as Node<"float">;
-    const closestPositionTexel = sampled.get("closestPositionTexel") as Node<"vec2">;
-    const farthestDepth = sampled.get("farthestDepth") as Node<"float">;
-    const offsetUV = node.velocityNode.load(closestPositionTexel).xy.mul(vec2(0.5, -0.5));
-    const historyUV = uvNode.sub(offsetUV);
-    const sampledPreviousDepth = previousDepth(historyUV);
-    const isValidUV = historyUV.greaterThanEqual(0).all().and(historyUV.lessThanEqual(1).all());
-    const isEdge = farthestDepth.sub(closestDepth).greaterThan(node.edgeDepthDiff);
-    const isDisocclusion = closestDepth.sub(sampledPreviousDepth).greaterThan(node.depthThreshold);
-    // A reset frame has no legal cross-size colour seed, so it weights only the current frame.
-    const hasValidHistory = historyValid
-      .greaterThan(0.5)
-      .and(isValidUV.and(isEdge.or(isDisocclusion.not())));
+    const validity = historyValidity(uvNode);
+    const hasValidHistory = validity.get("hasValidHistory") as Node<"float">;
+    const historyUV = validity.get("historyUV") as Node<"vec2">;
+    const offsetUV = validity.get("offsetUV") as Node<"vec2">;
     const currentColor = node.beautyNode.sample(uvNode);
     const historyColor =
       interpolation === "linear"

@@ -186,19 +186,27 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // input raster the scene pass is about to render. Every template re-measured with it, because the
   // shared chain context in each worldEnvironment now carries the velocity accessor, the camera and
   // the velocity-owning scene pass that a temporal stage needs.
-  "action-rpg": "f24e03efe260466c28c59af041eec7d29b2f48b74e519362eeda1d7dae23362a",
-  minimal: "c5e0b3eb9bfbcbe636531e53ba834351ea85ef41a5632322dd4e7a28148ccf4e",
-  platformer: "2476dc3d6dd8cb2afa9f25b35d5eb522ab70923603deeae992720e33147dace4",
-  puzzle: "16ef5686f71ed704f5bd2333751d33e174df4a6e7ec6ab2fc65943866a2bdca3",
-  racing: "e9f37bc79525c2a28fbc2ec3ca74dff1870ece310a1a2d20f206d810bf864864",
-  rain: "1fdebe255130c4e0278a696d683cb5b7bc9c832bda38d111f407c8c32519e499",
-  rts: "2fe59e7dda40ab26d3e318607bc55b7057f07636c7b8ac2bf94b78104bb49375",
-  runner: "9690eec0e8de519deb5424881919f7b81de47277e05bde0a742d2489852e7b56",
-  sailing: "2e4123bf33d6b64d9f9718c4cf2ac66388ab2dee7bb33efb22def8ef90ccbeb0",
-  shooter: "8ce9d7084fdde2423a4a653299654b81f1620e8de4cc51d30d61dbc3d87e9fc7",
-  snow: "4af2d3ec818c9ff30940e19f499a03dfe02b86262a6406a0ca46f09140e44d32",
-  starter: "e55b4ffd6ca8dc8c8a58856770d970961f7ff78d626e84e29a497ff1198d1854",
-  "tower-defense": "62b25bd662a3c62756773b2eb75239fbd98676bad7ea4c164457935e9b5563ec",
+  // Re-measured 2026-10-06 for the temporal per-pixel rejection count on this same lane: every
+  // template's worldEnvironment now forwards one stage's completed `rejectionMeasurement` into the
+  // chain's velocity request, so all thirteen trees move by that one file. starter additionally
+  // gained `temporalAAHooks.ts` and `temporalRejectionCounter.ts` and its four temporal sources
+  // changed. All thirteen were measured through `createProject` on this worktree, and an ablation
+  // that restored only the template sources to HEAD was dumped file-by-file against the current
+  // trees: twelve kits differ in `src/render/worldEnvironment.ts` alone, starter in those eight
+  // files, and no generated instruction, manifest or package byte moved.
+  "action-rpg": "7a27b473f826f941d92c12074bab55fe574a82fcf3278b6f6739e2d2f4fbe7cf",
+  minimal: "47ff5a81d830ccedfece116d42570cbbd1e5f80eea7801ce165081d9b3f7d2dd",
+  platformer: "3405d339d70d1140c9785d1eba76d784fdeef32ef3af6bdfeb1e5bdfb33bfe55",
+  puzzle: "19b41fd0cedbb45fb45cacd935fdb5753612e74e3002452ad03d7be3c4d69f0c",
+  racing: "e9a23aa220d1c490241c20247f1616ec3689d0b22ee9b97c82889a42e34b58c2",
+  rain: "d4712000637b676be98283f9a196c5f688b4d25260dca681ec0d9d8b46ff659b",
+  rts: "7fa169468252b57fd3e6ce4c1997c1108652a9ac25d85b116ef53acc8de6ee15",
+  runner: "44fe13861c530e719f5c0a01f480ed1339edf9e81a166c92c53244faeddee2c6",
+  sailing: "40afa9021dd0a932bfa0ae609ee9bc3006755a03d34e091e5a5a2fa32cd4834c",
+  shooter: "006887d0c34d64be44382341b8a5fb8c1568dc22248da123cac58bfdef93cd51",
+  snow: "8aa67382dbbb3785d7de903d416d4dfb0ed17c4cd81187c3a968bc214579bb7b",
+  starter: "2556ed96b5149f35c74321403e08c0857afa9fa9c6cfac66879b13f6d5677ff6",
+  "tower-defense": "213d62000fb47921de130439c09e52c870712c3c58733088c3d4ae9904dea9b7",
 };
 
 const GENERATED_SCAFFOLD_METADATA =

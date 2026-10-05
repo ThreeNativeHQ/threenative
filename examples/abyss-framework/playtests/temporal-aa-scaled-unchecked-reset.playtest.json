@@ -37,6 +37,26 @@
         "path": "resolveProbe.coldFrames.0.historyValid",
         "equals": false,
         "allowTrivial": "The frame is a reset frame by the provider's own report, which is what identifies it for the comparison; the removed gate is a shader concern and does not change that report."
+      },
+      {
+        "id": "temporal",
+        "path": "rejectionCold.0.visited",
+        "equals": 921600,
+        "allowTrivial": "The same counter runs in this arm over the same 1280x720 display, so its GPU visited count must equal the positive row's. A smaller count here would mean the count itself depends on the removed gate."
+      },
+      {
+        "id": "temporal",
+        "path": "rejectionCold.1.visited",
+        "equals": 614400,
+        "allowTrivial": "The resize reset frame counts the same 1280x480 display as the positive row, on the same sample of the run."
+      },
+      {
+        "id": "temporal",
+        "path": "aa.rejection.fraction",
+        "gte": 0,
+        "lte": 1,
+        "changed": true,
+        "allowTrivial": "With the reset gate removed the counted share is whatever the depth test alone decides, so it stays a finite fraction of the display; the positive row owns the whole-raster claim and this row deliberately makes none."
       }
     ],
     "diagnostics": { "noConsoleErrors": true, "noNetworkErrors": true }

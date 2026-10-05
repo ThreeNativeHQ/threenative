@@ -42,6 +42,8 @@ export function temporalAAStages(
         sink.onProvider?.(provider);
         return provider.node;
       },
+      // The chain publishes this as its velocity report; a stage that never built has no measurement.
+      rejectionMeasurement: () => provider?.rejectionMeasurement(),
       dispose: () => {
         sink.onProvider?.(undefined);
         provider?.dispose();

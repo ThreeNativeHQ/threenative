@@ -309,6 +309,13 @@ export type ChainStage = {
   readonly available?: (context: ChainContext) => boolean | string;
   readonly dispose?: () => void;
   readonly minimumTier?: ChainTier;
+  /**
+   * A temporal stage's completed rejection measurement. Its shape is the engine's velocity
+   * contract, restated here so this file keeps importing nothing, and it is asked once per frame
+   * after rendering. A stage that has not built, or has nothing landed yet, answers `undefined` —
+   * which the chain reports as absent rather than as zero.
+   */
+  readonly rejectionMeasurement?: () => { frame: number; rejectionFraction: number } | undefined;
   /** The chain plumbing is stage-agnostic, so it names the node it carries `unknown`. */
   readonly build: (input: unknown, context: ChainContext) => unknown;
 };
@@ -370,7 +377,10 @@ export type OutputRenderer = {
        * shape is the engine's velocity contract, restated here so this file keeps importing
        * nothing: `pass(scene, camera)` returns exactly this.
        */
-      velocity?: { pass?: ReturnType<typeof pass> };
+      velocity?: {
+        pass?: ReturnType<typeof pass>;
+        rejectionMeasurement?: () => { frame: number; rejectionFraction: number } | undefined;
+      };
     };
     stages?: readonly ChainStage[];
   }) => {
@@ -832,6 +842,11 @@ export class WorldEnvironment {
     }
 
     if (renderer.createRenderChain === undefined) throw new Error("RenderChain is unavailable.");
+    // One stage owns the measurement, so the chain is asked for the one that published a callback
+    // rather than every stage in turn. A stage that dropped keeps answering `undefined`.
+    const rejectionMeasurement = stages.find(
+      (entry) => entry.rejectionMeasurement !== undefined,
+    )?.rejectionMeasurement;
     const chain = renderer.createRenderChain({
       input: exposed,
       request: {
@@ -839,7 +854,10 @@ export class WorldEnvironment {
         tier: options.renderChainTier,
         // Asked for on every chain and paid for only when a temporal stage is named: the chain
         // provisions nothing while no requested stage needs velocity.
-        velocity: { pass: scenePass },
+        velocity: {
+          pass: scenePass,
+          ...(rejectionMeasurement === undefined ? {} : { rejectionMeasurement }),
+        },
       },
       stages,
       worldPass: scenePass,

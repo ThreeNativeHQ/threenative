@@ -710,3 +710,89 @@ All four runtime arms, on this exact tree:
 
 No full CI, no push, no merge. Every full-phase box stays open: rejection, corpus, quality,
 ghosting, automatic-scale and performance.
+
+### The per-pixel rejection fraction is measured on both lanes (2026-10-06)
+
+`ITemporalAAReport` now carries a measured `rejection`, and the report is the only place a caller
+reads it. `temporalResolveDepth.ts` lifts the one history-validity decision — `historyValid ∧
+validUV ∧ (edge ∨ ¬disocclusion)` — into a single `historyValidity` node parameterised by the
+pixel's UV. `temporalResolve.ts` calls that node for the blend weight, so the appearance is
+untouched: no new gate, no control uniform, no colour alpha. `temporalRejectionCounter.ts` calls the
+*same* node once per display pixel from a compute dispatch, `atomicAdd`s the rejected and visited
+words into a two-word `instancedArray`, and copies them back asynchronously, one at a time. A
+reported fraction therefore cannot describe a different decision than the one the resolve drew,
+because there is only one decision node. The dispatch runs between the resolve draw and this frame's
+depth-history copy, so the kernel reads the depth and matrices the resolve just drew with; nothing is
+re-rendered and no `PassTexture` dependency is added, so no input changes.
+
+Fail-closed on purpose: a copy that never lands, lands short, lands with `visited ≠` the display, or
+lands with `rejected >` `visited` **withdraws** the measurement and records the reason. `settled()`
+rejects with that reason, `report()` omits the field, and `drain()` hands the chain nothing — never a
+zero, never the previous frame's number. The report field is omitted rather than set to `undefined`,
+which a real failure caught: the playtest bridge publishes a resource whole and rejects
+`undefined` as not JSON-safe. `chain.observeFrame()` then fails closed on its own terms too — a
+non-advancing frame, a non-finite share or a share outside `[0, 1]` throws — and an unlanded
+measurement is reported as absent, never as `0`.
+
+`temporalAAHooks.ts` (51 lines) owns the two pipeline callbacks separately, and the lifecycle
+decision is unchanged: both originals are captured **once, before** upstream's setup writes the
+node's own pair; our `before` is installed after setup alongside the owned upstream `after`; the
+jitter callback keeps one identity across recompiles; and `dispose()` restores **both** first
+originals only while each slot still holds what this node installed, so a later replacement survives.
+Three tests prove the restore, the recompile identity and the later-owner case.
+
+Files: `temporalAA.ts` (report field, shared rejection instance, hook install), `temporalAAFrame.ts`
+(dispatch between resolve and depth copy, dispose the counter), `temporalAAStage.ts` (publish the
+callback the chain asks for), `temporalResolveDepth.ts` (the shared node), `temporalResolve.ts` (call
+site), `temporalAAHooks.ts`, `temporalRejectionCounter.ts`, the canonical `worldEnvironment.ts` and
+its twelve copies, and `temporal-aa-fixture.js` (`settledRejection()` then `chain.observeFrame()`).
+
+**Capability audit actually run before this work**, through the registered `engine-mcp`
+implementation (`packages/engine-mcp/dist/index.js`, `searchCapabilities` + `capabilityDetail`), not a
+filtered read of the manifest: two queries — one on owning pipeline callbacks around a third-party
+node that writes the same callbacks during setup, one on measuring the rejected-history share on the
+GPU with an asynchronous readback — returned **25 hits** and `engine_capability_detail` ran on every
+one. The hits that decided the design: **`GPUReadback`** (one copy in flight, requests during one
+dropped rather than queued, every sample carries `staleFrames`, WebGPU-only) — it is the exact
+throttle the counter implements by hand, and it is not reachable from generated `src/render/`, which
+may import no `@threenative/`; **`velocityTexture`** (`VelocityTracker.update()` before the render,
+`commit()` after) — already what the fixture does; **`temporalReproject`** — rejected, an addon that
+owns the look. No capability ships a rejection counter, so the count kernel is new generated source,
+not core. Zero core changes, zero new dependencies, no generic manager.
+
+Results on this tree, adapter `nvidia`/`turing` in both browser lanes, no SwiftShader:
+
+- Units: **58** focused create-threenative tests pass (25 in `temporal-aa.spec.ts`, including the
+  callback lifecycle and the fail-closed recovery cases), plus `scaffold.spec.ts` **66** and
+  `shared-render-sources` / `looks` / `temporal-resolve` / `temporal-initial-projection` green.
+  `pnpm typecheck` and `pnpm lint` exit 0 (Biome warnings only), `pnpm check:docs` clean across
+  2,442 links, and every changed generated file is under the 200-line gate after Biome.
+- Browser positive **passes** on `temporal.html?measure&variant=scaled`: reset frames at frame 1 and
+  frame 21 report fraction **1** with the GPU's own visited count **921,600** (1280×720) and
+  **614,400** (1280×480); the 33 warm frames range **0 … 0.006279296875**; the settled
+  `aa.rejection` is frame 35 at `0.0014860026041666667` with `staleFrames 0`; the whole-display
+  oracle is unchanged at **2,764,800 / 1,843,200** channels, `outside 0`, `worstRatio 0`.
+  `artifacts/playtest/rej-positive`.
+- Browser control **passes** on `…&variant=scaled-unchecked-reset`: the same counter visits the same
+  **921,600 / 614,400** pixels, its cold fractions are **0.92068359375** and **0** — not 1 — and the
+  contaminated oracle is unchanged at **168,884 / 119,914**. So the positive row's `1` is the reset
+  gate, not a constant. `artifacts/playtest/rej-control`.
+- Fresh web reference, both rows **pass**, adapter `nvidia`/`turing`, no page errors, no GPU
+  validation error. `packages/runtime-native/artifacts/conformance/web-rej-r2/report.json`.
+- Native desktop against that reference, prebuilt `build/tn-linux/mystral` with no C++ rebuild: both
+  rows **pass**, native exit 0, zero GPU validation errors, non-uniform 1280x480.
+  `temporal-aa-scaled` `pixelMismatchRatio 0.03699544270833333 <= 0.06`,
+  `perceptualDeltaE 0.23186547772174834 <= 9`; `temporal-aa-scaled-unchecked-reset`
+  `0.043798828125 <= 0.06`, `0.24407629667666397 <= 9`.
+  `packages/runtime-native/artifacts/conformance/native-rej-r2/report.json`. The runner exits 2
+  because the other 96 registry rows are unselected, which is the blocked-row contract. The native
+  adapter is genuinely unrecorded by this harness and is reported as unknown, not inferred.
+- One defect this window found and fixed, in the fixture rather than the product: the cold-frame
+  visited check indexed the observation array by reset index, and the two resets land on diagnostic
+  frames 0 and 20, so reset 1 was compared against the pre-resize 1280×720 raster. The counted
+  display now travels with the row it describes.
+
+Both Phase 1 boxes stay **open**. The output-size half still needs its low-resolution-passthrough
+mutation to fail the assertion, and the cut/projection/zero-velocity mutation for moving skinned and
+instanced content has not run. Phases 2 and 3 stay open. Scoped commit only: no full CI, no push, no
+merge.

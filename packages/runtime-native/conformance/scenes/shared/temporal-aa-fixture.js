@@ -83,7 +83,15 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
   const chain = new RenderChain({
     renderer: { kind: "webgpu", raw: renderer, setOutputNode: (node) => { pipeline.outputNode = node; }, clearOutputNode: () => {} },
     input: scenePass.getTextureNode("output"), worldPass: scenePass,
-    request: { stages: variant === "reference" ? [] : ["traa"], velocity: { pass: scenePass } },
+    request: {
+      stages: variant === "reference" ? [] : ["traa"],
+      // The raw fixture builds the chain itself, so it supplies the same compatibility callback the
+      // generated world environment does: the provider's own completed measurement, once per frame.
+      velocity: {
+        pass: scenePass,
+        rejectionMeasurement: () => temporal?.rejectionMeasurement(),
+      },
+    },
     stages: [{
       name: "traa",
       build: (input, context) => {
@@ -216,9 +224,14 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
   }
   let resets = 0;
   let lastReset = null;
+  // One rejected-pixel count per reset frame, taken after its copy lands. A reset frame is the only
+  // frame whose expected rejection share is a whole raster, so it is where the count is checkable.
+  const rejectionCold = [];
+  const rejectionFrames = [];
   const observation = () => ({
     frame, resets, lastReset, aa: temporal?.report() ?? null, instanceDraw, instanceUploads,
     measurement, variant, setupCount, setupDuringJitter, occluderVisible: measurement && occluder.visible,
+    rejectionCold, rejectionFrames,
     resolveProbe: resolveProbe?.observation() ?? null,
     pose: { cameraX: camera.position.x, rigidX: rigid.position.x, limbZ: limb.rotation.z },
     velocityProbe: velocityProbe?.observation() ?? null,
@@ -272,6 +285,26 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
     sampleVelocity: async () => {
       await velocityProbe?.read();
       await resolveProbe?.read();
+      // A rejection measurement only exists once its GPU copy lands, so a diagnostic frame awaits it
+      // here rather than reading whatever the previous frame happened to leave in the report.
+      await temporal?.settledRejection();
+      const report = temporal?.report();
+      if (report !== undefined) {
+        const measured = report.rejection;
+        // The frame's own measurement, with the count the GPU visited beside the share it rejected.
+        rejectionFrames.push({
+          frame: report.frame,
+          historyValid: report.historyValid,
+          // The raster this frame counted, so a visited count is checked against the display that
+          // was actually current rather than against an index the caller has to line up.
+          displayWidth: report.outputWidth,
+          displayHeight: report.outputHeight,
+          fraction: measured?.fraction ?? null,
+          visited: measured?.visited ?? null,
+          staleFrames: measured?.staleFrames ?? null,
+        });
+        if (report.resetReason !== null) rejectionCold.push(rejectionFrames.at(-1));
+      }
       if (instanceDraw !== null) {
         instanceDraw.gpuValues = [];
         for (const attribute of readbackAttributes) {
@@ -283,6 +316,9 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
           });
         }
       }
+      // The chain is observed here because only the fixture's own loop drives this RenderChain, and a
+      // measurement that is never observed is never published.
+      chain.observeFrame();
     },
     dispose: () => {
       if (renderer.backend.draw === observedDraw) renderer.backend.draw = originalDraw;

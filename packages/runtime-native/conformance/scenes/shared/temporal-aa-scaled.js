@@ -66,6 +66,48 @@ export function assertScaledTransition(opening, resized, label) {
   );
 }
 
+/**
+ * The measured per-pixel history rejection, on the frames where the answer is checkable. A reset
+ * frame carries no legal history at any pixel, so the whole display must be counted as rejected and
+ * the GPU must say it visited exactly that many pixels. Every later frame must publish a finite
+ * share with a stated age, and no frame may publish one it has not measured.
+ */
+export function assertRejectionCounts(observed, label) {
+  const cold = observed.rejectionCold;
+  assertCondition(
+    cold.length === 2,
+    `${label}: ${cold.length} reset frames reported a rejection count, not the opening and resize pair.`,
+  );
+  for (const [row, name] of [
+    [cold[0], "opening"],
+    [cold[1], "resize"],
+  ]) {
+    const pixels = row.displayWidth * row.displayHeight;
+    assertCondition(
+      row.visited === pixels,
+      `${label}: the ${name} reset frame visited ${row.visited} of ${pixels} display pixels.`,
+    );
+    assertCondition(
+      row.fraction === 1,
+      `${label}: the ${name} reset frame rejected ${row.fraction} of its display, not all of it.`,
+    );
+    assertCondition(
+      row.historyValid === false,
+      `${label}: the ${name} counted frame reports legal history, so the whole-raster share is not the reset's.`,
+    );
+  }
+  for (const row of observed.rejectionFrames) {
+    assertCondition(
+      typeof row.fraction === "number" && Number.isFinite(row.fraction) && row.fraction >= 0 && row.fraction <= 1,
+      `${label}: frame ${row.frame} reported the rejection fraction ${String(row.fraction)}.`,
+    );
+    assertCondition(
+      Number.isInteger(row.staleFrames) && row.staleFrames >= 0,
+      `${label}: frame ${row.frame} reported the age ${String(row.staleFrames)} of its own count.`,
+    );
+  }
+}
+
 export function startScene(canvas, dimensions) {
   return startVisualScene(
     canvas,
@@ -88,6 +130,7 @@ export function startScene(canvas, dimensions) {
       const opening = observations[0];
       const resized = observations.at(-1);
       assertScaledTransition(opening, resized, "scaled reconstruction");
+      assertRejectionCounts(fixture.observation(), "scaled reconstruction");
       assertCondition(
         resized.coldFrames.length === 2,
         `scaled reconstruction: ${resized.coldFrames.length} reset frames were compared, not the opening and resize pair.`,

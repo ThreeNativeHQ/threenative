@@ -15,13 +15,21 @@ const INPUT = {
 };
 
 type Copy = { from: Texture; to: Texture };
+type PipelineCallbacks = {
+  onBeforeRenderPipeline?: () => void;
+  onAfterRenderPipeline?: () => void;
+};
 
 /** The renderer surface the overridden updateBefore drives, and the order it drives it in. */
 function stubRenderer(display = DISPLAY) {
   const order: string[] = [];
   const copies: Copy[] = [];
+  const computed: unknown[] = [];
+  const words = new Uint32Array(2);
   const size = new Vector2(display.width, display.height);
   let target: RenderTarget | null = null;
+  // What the device hands back for the two words: a healthy copy, a short one, or a failure.
+  let readback: () => Promise<ArrayBuffer> = () => Promise.resolve(words.buffer);
   const renderer = {
     autoClear: true,
     logarithmicDepthBuffer: false,
@@ -57,13 +65,25 @@ function stubRenderer(display = DISPLAY) {
       order.push("copy");
       copies.push({ from, to });
     },
+    // The rejection counter dispatches a one-thread reset and one group per display pixel, then
+    // copies the two words back. The words are what the test decides the GPU produced.
+    compute: (node: unknown) => {
+      order.push(typeof node === "object" && node !== null ? "compute" : "compute?");
+      computed.push(node);
+    },
+    getArrayBufferAsync: () => readback(),
   };
   return {
+    computed,
     copies,
     order,
     renderer,
+    words,
     setDisplay(width: number, height: number) {
       size.set(width, height);
+    },
+    setReadback(next: () => Promise<ArrayBuffer>) {
+      readback = next;
     },
   };
 }
@@ -73,6 +93,8 @@ function fixture(
     display?: { width: number; height: number };
     resolutionScale?: number;
     renderPipeline?: boolean;
+    /** Who owns the pipeline callbacks before the provider's first setup runs. */
+    pipelineCallbacks?: PipelineCallbacks;
   } = {},
 ) {
   // GPU execution belongs to the runtime fixture. Unit tests isolate sizing, reset and lifetime.
@@ -107,12 +129,9 @@ function fixture(
   // A render pipeline is what asks the node for its first jitter, once before the scene pass draws
   // and once after the chain, in that order.
   const pipeline = {
-    context: {} as {
-      onBeforeRenderPipeline?: () => void;
-      onAfterRenderPipeline?: () => void;
-    },
+    context: { ...options.pipelineCallbacks } as PipelineCallbacks,
   };
-  temporal.node.setup({
+  const builder = {
     context: {
       velocity,
       ...(options.renderPipeline === true ? { renderPipeline: pipeline } : {}),
@@ -120,9 +139,12 @@ function fixture(
     // The pipeline callback reads the drawing buffer through the builder's renderer.
     renderer: stub.renderer,
     getNodeProperties: () => dependencies,
-  } as unknown as NodeBuilder);
+  } as unknown as NodeBuilder;
+  temporal.node.setup(builder);
   return {
+    builder,
     camera,
+    computed: stub.computed,
     copies: stub.copies,
     dependencies,
     frame,
@@ -132,6 +154,7 @@ function fixture(
     scenePass,
     stub,
     temporal,
+    words: stub.words,
   };
 }
 
@@ -452,6 +475,186 @@ describe("opt-in temporal AA", () => {
     expect(release).toHaveBeenCalledTimes(1);
     expect(() => temporal.node.updateBefore(frame)).toThrow(/disposed/);
     expect(() => temporal.resetHistory()).toThrow(/disposed/);
+    scenePass.dispose();
+  });
+
+  it("counts every display pixel between the resolve and the depth history copy", async () => {
+    const { computed, order, temporal, frame, words, scenePass } = fixture();
+    temporal.node.updateBefore(frame);
+    // Reset first, in its own dispatch, then one count: a partial sum can never be read.
+    expect(computed).toHaveLength(2);
+    expect(order.indexOf("resolve")).toBeLessThan(order.indexOf("compute"));
+    // The count lands after the resolve and before this frame's depth history copy, so the kernel
+    // reads the previous depth and the matrices that resolve drew with.
+    const count = order.lastIndexOf("compute");
+    expect(order.indexOf("resolve")).toBeLessThan(count);
+    expect(order.slice(count).every((step) => step === "compute" || step === "copy")).toBe(true);
+    words[0] = DISPLAY.width * DISPLAY.height;
+    words[1] = DISPLAY.width * DISPLAY.height;
+    await temporal.settledRejection();
+    expect(temporal.report().rejection).toEqual({
+      frame: 1,
+      fraction: 1,
+      visited: DISPLAY.width * DISPLAY.height,
+      staleFrames: 0,
+    });
+    // A reset frame carries no legal history at any pixel, so 1.0 is the decision, not an estimate.
+    temporal.dispose();
+    scenePass.dispose();
+  });
+
+  it("hands each completed measurement to the chain once and reports its stale age", async () => {
+    const { temporal, frame, words, scenePass } = fixture();
+    words[0] = 7;
+    words[1] = DISPLAY.width * DISPLAY.height;
+    temporal.node.updateBefore(frame);
+    await temporal.settledRejection();
+    expect(temporal.rejectionMeasurement()).toEqual({
+      frame: 1,
+      rejectionFraction: 7 / (DISPLAY.width * DISPLAY.height),
+    });
+    // The chain sees it once; a report read must never consume what the chain publishes.
+    expect(temporal.rejectionMeasurement()).toBeUndefined();
+    expect(temporal.report().rejection?.fraction).toBe(7 / (DISPLAY.width * DISPLAY.height));
+    temporal.node.updateBefore(frame);
+    expect(temporal.report().rejection?.staleFrames).toBe(1);
+    temporal.dispose();
+    scenePass.dispose();
+  });
+
+  it("fails closed on a copy it cannot trust, then recovers on the next valid sample", async () => {
+    const { temporal, frame, words, scenePass } = fixture();
+    const pixels = DISPLAY.width * DISPLAY.height;
+    words[0] = 3;
+    words[1] = 5; // fewer pixels visited than the dispatch asked for: a partial or empty copy
+    temporal.node.updateBefore(frame);
+    await expect(temporal.settledRejection()).rejects.toThrow(
+      new RegExp(`visited 5 of ${pixels} display pixels`),
+    );
+    // Absent on both readers: the report never claims a fraction and the chain is handed nothing.
+    expect(temporal.report().rejection).toBeUndefined();
+    expect(temporal.rejectionMeasurement()).toBeUndefined();
+    // The next valid sample recovers, so one bad copy does not disable the measurement for good.
+    words[0] = 4;
+    words[1] = pixels;
+    temporal.node.updateBefore(frame);
+    await temporal.settledRejection();
+    expect(temporal.rejectionMeasurement()).toEqual({ frame: 2, rejectionFraction: 4 / pixels });
+    temporal.dispose();
+    scenePass.dispose();
+  });
+
+  it("withdraws a published measurement when the next copy fails on the device", async () => {
+    const { stub, temporal, frame, words, scenePass } = fixture();
+    const pixels = DISPLAY.width * DISPLAY.height;
+    words[0] = 1;
+    words[1] = pixels;
+    temporal.node.updateBefore(frame);
+    await temporal.settledRejection();
+    expect(temporal.report().rejection).toBeDefined();
+    // A lost device copy must withdraw the earlier number rather than keep serving it as current.
+    stub.setReadback(() => Promise.reject(new Error("device lost")));
+    temporal.node.updateBefore(frame);
+    await expect(temporal.settledRejection()).rejects.toThrow(/device lost/);
+    expect(temporal.report().rejection).toBeUndefined();
+    expect(temporal.rejectionMeasurement()).toBeUndefined();
+    temporal.dispose();
+    scenePass.dispose();
+  });
+
+  it("withdraws a measurement whose copy arrived empty, short or impossible", async () => {
+    const { stub, temporal, frame, scenePass } = fixture();
+    const pixels = DISPLAY.width * DISPLAY.height;
+    // An empty copy carries no words at all, and a one-word copy carries no visited count, so
+    // neither has a denominator to divide by.
+    for (const [words, reason] of [
+      [0, /carried 0 of 2 words/],
+      [1, /carried 1 of 2 words/],
+    ] as const) {
+      stub.setReadback(() => Promise.resolve(new Uint32Array(words).buffer));
+      temporal.node.updateBefore(frame);
+      await expect(temporal.settledRejection()).rejects.toThrow(reason);
+    }
+    // More rejected than visited cannot come from this kernel, so the copy is not its own.
+    stub.setReadback(() => Promise.resolve(new Uint32Array([pixels + 1, pixels]).buffer));
+    temporal.node.updateBefore(frame);
+    await expect(temporal.settledRejection()).rejects.toThrow(
+      new RegExp(`rejected ${pixels + 1} of ${pixels} pixels`),
+    );
+    expect(temporal.report().rejection).toBeUndefined();
+    temporal.dispose();
+    scenePass.dispose();
+  });
+
+  it("clears its measurement on disposal instead of leaving a stale number behind", async () => {
+    const { temporal, frame, words, scenePass } = fixture();
+    words[0] = 1;
+    words[1] = DISPLAY.width * DISPLAY.height;
+    temporal.node.updateBefore(frame);
+    await temporal.settledRejection();
+    expect(temporal.report().rejection).toBeDefined();
+    temporal.dispose();
+    expect(temporal.report().rejection).toBeUndefined();
+    expect(temporal.rejectionMeasurement()).toBeUndefined();
+    scenePass.dispose();
+  });
+
+  it("puts each slot back on the owner it held before the first setup", () => {
+    const before = (): void => {};
+    const after = (): void => {};
+    const { builder, temporal, pipeline, scenePass } = fixture({
+      renderPipeline: true,
+      pipelineCallbacks: { onBeforeRenderPipeline: before, onAfterRenderPipeline: after },
+    });
+    // Upstream's own setup wrote a pair bound to this node; only the jitter callback is ours.
+    const jitter = pipeline.context.onBeforeRenderPipeline;
+    expect(jitter).toBeTypeOf("function");
+    expect(jitter).not.toBe(before);
+    expect(pipeline.context.onAfterRenderPipeline).toBeTypeOf("function");
+    expect(pipeline.context.onAfterRenderPipeline).not.toBe(after);
+    // A recompile is this node's own pair again, and the jitter callback keeps its identity.
+    temporal.node.setup(builder);
+    expect(pipeline.context.onBeforeRenderPipeline).toBe(jitter);
+    temporal.dispose();
+    expect(pipeline.context.onBeforeRenderPipeline).toBe(before);
+    expect(pipeline.context.onAfterRenderPipeline).toBe(after);
+    scenePass.dispose();
+  });
+
+  it("leaves both slots empty when it found none before the first setup", () => {
+    const { temporal, pipeline, scenePass } = fixture({ renderPipeline: true });
+    temporal.dispose();
+    expect(pipeline.context.onBeforeRenderPipeline).toBeUndefined();
+    expect(pipeline.context.onAfterRenderPipeline).toBeUndefined();
+    scenePass.dispose();
+  });
+
+  it("never clears a later owner's replacement callback in either slot", () => {
+    const { temporal, pipeline, scenePass } = fixture({ renderPipeline: true });
+    const laterBefore = (): void => {};
+    const laterAfter = (): void => {};
+    pipeline.context.onBeforeRenderPipeline = laterBefore;
+    pipeline.context.onAfterRenderPipeline = laterAfter;
+    temporal.dispose();
+    expect(pipeline.context.onBeforeRenderPipeline).toBe(laterBefore);
+    expect(pipeline.context.onAfterRenderPipeline).toBe(laterAfter);
+    scenePass.dispose();
+  });
+
+  it("leaves the disposed camera alone whatever the pipeline still calls", () => {
+    const { camera, temporal, pipeline, scenePass } = fixture({ renderPipeline: true });
+    pipeline.context.onBeforeRenderPipeline?.();
+    expect(camera.view?.enabled).toBe(true);
+    temporal.dispose();
+    expect(pipeline.context.onBeforeRenderPipeline).toBeUndefined();
+    expect(pipeline.context.onAfterRenderPipeline).toBeUndefined();
+    const view = camera.view;
+    const projection = camera.projectionMatrix.clone();
+    // Upstream's pair belongs to the node being disposed, so restoring it would jitter it again.
+    pipeline.context.onBeforeRenderPipeline?.();
+    pipeline.context.onAfterRenderPipeline?.();
+    expect(camera.view).toBe(view);
+    expect(camera.projectionMatrix.equals(projection)).toBe(true);
     scenePass.dispose();
   });
 });
