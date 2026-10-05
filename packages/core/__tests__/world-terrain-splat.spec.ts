@@ -57,6 +57,54 @@ const table = {
   textures: "terrain/tex",
 };
 
+/**
+ * A package exported before the `orm` column existed: Machinefall's own `terrain/layers.json`,
+ * which states roughness per layer, never metalness, and says nothing at all about its base.
+ */
+const preOrmTable = {
+  base: { id: "forrest_ground_01", normal: true, tile: 3.0405, tint: [0.36, 0.47, 0.27] },
+  breakup: { push: 0.25, scale: 0.35 },
+  layers: [
+    {
+      channel: "r",
+      hi: 1.35,
+      id: "forrest_ground_03",
+      lo: 0.3,
+      mask: "litter",
+      roughness: 0.95,
+      saturation: 0.9,
+      tile: 3,
+      tint: [0.36, 0.37, 0.26],
+    },
+    {
+      channel: "b",
+      hi: 0.75,
+      id: "sparse_grass",
+      lo: 0.25,
+      mask: "b",
+      normal: true,
+      roughness: 0.95,
+      tile: 3.5,
+      tint: [0.85, 0.9, 0.75],
+    },
+    {
+      channel: "r",
+      hi: 0.85,
+      id: "rock_face_03",
+      lo: 0.45,
+      mask: "a",
+      roughness: 0.85,
+      saturation: 0.6,
+      tile: 7,
+      tint: [0.55, 0.5, 0.44],
+      triplanar: true,
+    },
+  ],
+  macro: { max: 1.12, min: 0.8, scale: 0.05 },
+  splat: { masks: { a: [0, "rgb"], b: [1, "rgb"], litter: [0, "a"] }, planes: 2, size: 4 },
+  textures: "terrain/tex",
+};
+
 function world(layers: Record<string, string> | undefined): unknown {
   return {
     extent: { minX: -8, minZ: -8, sizeX: 16, sizeZ: 16 },
@@ -179,18 +227,24 @@ describe("loadTerrainSplat", () => {
     expect(sampledTextures(surface).size).toBe(4);
   });
 
-  it("refuses a layer that states neither an ORM map nor its own roughness and metalness", async () => {
+  it("loads a table exported before the orm column, naming the layer that says nothing", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
     const { assets } = served({
       "world/world.json": world({ splat: "terrain/splat.rgba8", table: "terrain/layers.json" }),
-      "world/terrain/layers.json": {
-        ...table,
-        layers: [{ channel: "r", hi: 1, id: "rock", lo: 0, mask: "a", tile: 7, tint: [1, 1, 1] }],
-      },
+      "world/terrain/layers.json": preOrmTable,
       "world/terrain/splat.rgba8": new Uint8Array(2 * 4 * 4 * 4),
     });
-    await expect(loadTerrainSplat({ assets, url: "world/world.json" })).rejects.toThrow(
-      /'rock' declares no orm map/u,
-    );
+    // A package the earlier export recipe wrote is not malformed, and a world that never loads is
+    // a game stuck on its loading screen: the surface builds, and the gap is reported.
+    const surface = (await loadTerrainSplat({
+      assets,
+      renderer: copyingRenderer() as never,
+      url: "world/world.json",
+    })) as MeshStandardNodeMaterial;
+    expect(surface.roughnessNode).toBeTruthy();
+    expect(surface.metalnessNode).toBeTruthy();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("forrest_ground_01"));
   });
 
   it("refuses a package without terrain layers instead of drawing a default", async () => {

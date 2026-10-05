@@ -35,6 +35,10 @@ import type { IWorldExtent } from "./world-package.js";
 
 type Channel = "r" | "g" | "b" | "a";
 
+/** What a layer that states no surface response at all answers with: the matte dielectric surface
+ *  this material carried before the table carried roughness and metalness. */
+const DEFAULT_ROUGHNESS = 0.92;
+
 /** One texture set: albedo (and optionally a normal and ORM map) tiled in metres, tinted in linear. */
 export interface ITerrainSplatLayer {
   readonly id: string;
@@ -43,7 +47,7 @@ export interface ITerrainSplatLayer {
   readonly normal?: boolean;
   /** `<id>_orm.jpg`: occlusion in r, roughness in g, metalness in b, read as linear data. */
   readonly orm?: boolean;
-  /** Without an ORM map, how this layer answers light. Required unless `orm` is true. */
+  /** Without an ORM map, how this layer answers light. Defaults to `DEFAULT_ROUGHNESS` and 0. */
   readonly metalness?: number;
   readonly roughness?: number;
   readonly saturation?: number;
@@ -300,7 +304,8 @@ export function stackLayers(
  * variation. Texture sets tile in world metres on the package's ground plane (x, -z: a Z-up
  * authoring tool's x and y), cliffs can be triplanar, and the base plus any layer that asks carries
  * a normal map. Each layer answers light from its own ORM map where the table ships one and from
- * the table's own roughness and metalness where it does not. Nothing here is a look choice:
+ * the table's own roughness and metalness where it does not; a layer that states neither is matte
+ * and dielectric, and named in a warning. Nothing here is a look choice:
  * textures, tiles, tints, thresholds, surface response and noise scales all come from the package's
  * table, which the game authors once and its DCC shares.
  *
@@ -343,14 +348,21 @@ export async function loadTerrainSplat(options: ILoadTerrainSplatOptions): Promi
     planes.push(texture(splat, maskUv).depth(int(plane)));
 
   const all: ITerrainSplatLayer[] = [table.base, ...table.layers];
-  for (const layer of all)
-    if (
-      layer.orm !== true &&
-      (typeof layer.roughness !== "number" || typeof layer.metalness !== "number")
+  // A table exported before the orm column states no surface response at all, which is a package
+  // the recipe wrote, not a malformed one: it loads, matte and dielectric, with the gap named. A
+  // throw here fails the world's `load()` instead, and the game waits on its loading gate forever.
+  const unstated = all
+    .filter(
+      (layer) =>
+        layer.orm !== true &&
+        typeof layer.roughness !== "number" &&
+        typeof layer.metalness !== "number",
     )
-      throw new Error(
-        `loadTerrainSplat: terrain layer '${layer.id}' declares no orm map and no roughness/metalness; give it "orm": true or both numbers in the table the export recipe wrote.`,
-      );
+    .map((layer) => layer.id);
+  if (unstated.length > 0)
+    console.warn(
+      `TN_TERRAIN_SPLAT: ${unstated.join(", ")} states no orm map and no roughness/metalness, so they answer light as roughness ${String(DEFAULT_ROUGHNESS)} and metalness 0; re-export the package to author them.`,
+    );
 
   const load = async (
     layer: ITerrainSplatLayer,
@@ -441,7 +453,7 @@ export async function loadTerrainSplat(options: ILoadTerrainSplatOptions): Promi
   const ormOf = (layer: ITerrainSplatLayer): Node<"vec3"> => {
     const slot = withOrm.indexOf(layer);
     if (slot !== -1 && ormAt !== undefined) return ormAt(slot, ground.div(layer.tile));
-    return vec3(1, layer.roughness ?? 0, layer.metalness ?? 0);
+    return vec3(1, layer.roughness ?? DEFAULT_ROUGHNESS, layer.metalness ?? 0);
   };
 
   let color = albedo(table.base, 0);
@@ -468,7 +480,8 @@ export async function loadTerrainSplat(options: ILoadTerrainSplatOptions): Promi
     .add(table.macro.min);
 
   // Every layer's own light response, blended by the same weights as its colour: the material
-  // carries no surface constant of its own.
+  // holds no scalar of its own, and `DEFAULT_ROUGHNESS` only answers for a layer that states
+  // nothing at all.
   const material = new MeshStandardNodeMaterial();
   material.name = "terrain-splat";
   material.colorNode = color.mul(macro);
