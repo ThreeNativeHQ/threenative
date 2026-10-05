@@ -33,6 +33,11 @@ add_library(tn_engine_shader STATIC src/engine/shader/ir.cpp src/engine/shader/w
 tn_native_engine_target(tn_engine_shader)
 target_include_directories(tn_engine_shader PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
+# Render graph (N14a): pass ordering, transient aliasing and temporal history. Pure CPU logic.
+add_library(tn_engine_graph STATIC src/engine/renderer/graph/render_graph.cpp src/engine/renderer/graph/history.cpp)
+tn_native_engine_target(tn_engine_graph)
+target_include_directories(tn_engine_graph PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+
 # One executable per test file; each ctest names a case inside it.
 function(tn_native_engine_test target source)
     add_executable(${target} EXCLUDE_FROM_ALL ${source})
@@ -81,6 +86,15 @@ tn_native_engine_test(tn-native-engine-material-test tests/native-engine/materia
     native_engine_material_unsupported=unsupported
     native_engine_material_standard_builds=builds)
 target_link_libraries(tn-native-engine-material-test PRIVATE tn_engine_shader)
+
+tn_native_engine_test(tn-native-engine-render-graph-test tests/native-engine/render_graph_test.cpp
+    native_engine_render_graph_order=order
+    native_engine_render_graph_aliasing=aliasing
+    native_engine_render_graph_diagnostics=diagnostics
+    native_engine_history_cut_resize=cut_resize
+    native_engine_history_objects=objects
+    native_engine_history_multi_render=multi_render)
+target_link_libraries(tn-native-engine-render-graph-test PRIVATE tn_engine_graph)
 
 tn_native_engine_test(tn-native-engine-abi-test tests/native-engine/abi_test.cpp
     native_engine_abi_version=version
