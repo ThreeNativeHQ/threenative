@@ -77,10 +77,15 @@ public:
     Quaternion& fromArray(const double* array, int offset = 0);
     [[nodiscard]] std::array<double, 4> toArray() const { return {x, y, z, w}; }
 
-private:
+    /**
+     * three's `_onChangeCallback()`: what its public component setters fire. A caller that writes a
+     * component field directly (a binding's `x` setter) calls this, so the other rotation form syncs.
+     */
     void notify() const {
         if (onChange_ != nullptr) onChange_(onChangeContext_);
     }
+
+private:
 
     OnChange onChange_ = nullptr;
     void* onChangeContext_ = nullptr;

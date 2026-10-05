@@ -125,6 +125,20 @@ void members(ClassBinding& b, const char* const (&names)[N], double T::* const (
 }
 
 /**
+ * Component setters that fire the change callback, as three's public `x`/`y`/`z`/`w` setters on
+ * Euler and Quaternion do: an Object3D's rotation and quaternion stay in sync through any write.
+ */
+template <typename T, size_t N>
+void notifyingSetters(ClassBinding& b, const char* const (&names)[N], double T::* const (&fields)[N]) {
+    for (size_t i = 0; i < N; ++i) {
+        b.setters[names[i]] = [fields, i](void* self, const Value& v) {
+            as<T>(self)->*fields[i] = number(v);
+            as<T>(self)->notify();
+        };
+    }
+}
+
+/**
  * Registers a Vector3 field twice over: `<prefix>.x`/`y`/`z` for the protocol's dotted paths, and
  * `<prefix>` itself as a member object (`box.min`), so JS reaches it as three's code does.
  */
@@ -537,6 +551,8 @@ void registerQuaternion(ClassBinding& b) {
     });
     members<Quaternion>(b, {"x", "y", "z", "w"},
                         {&Quaternion::x, &Quaternion::y, &Quaternion::z, &Quaternion::w});
+    notifyingSetters<Quaternion>(b, {"x", "y", "z", "w"},
+                                 {&Quaternion::x, &Quaternion::y, &Quaternion::z, &Quaternion::w});
 
     chainFour<Quaternion>(b, "set", &Quaternion::set);
     chainVoid<Quaternion>(b, "identity", &Quaternion::identity);
@@ -612,6 +628,7 @@ void registerEuler(ClassBinding& b) {
               order(a, 3, EulerOrder::XYZ));
     });
     members<Euler>(b, {"x", "y", "z"}, {&Euler::x, &Euler::y, &Euler::z});
+    notifyingSetters<Euler>(b, {"x", "y", "z"}, {&Euler::x, &Euler::y, &Euler::z});
     b.getters["order"] = [](void* self) {
         static const char* const NAMES[] = {"XYZ", "YXZ", "ZXY", "ZYX", "YZX", "XZY"};
         return Value{Value::Kind::String, 0, NAMES[static_cast<int>(as<Euler>(self)->order)]};
@@ -620,6 +637,7 @@ void registerEuler(ClassBinding& b) {
         Args one;
         one.push_back(v);
         as<Euler>(self)->order = order(one, 0, as<Euler>(self)->order);
+        as<Euler>(self)->notify();  // three's order setter fires _onChangeCallback too
     };
 
     chainRef<Euler, Euler>(b, "copy", "Euler", &Euler::copy);

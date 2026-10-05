@@ -8,9 +8,9 @@
 // `object.position` is one vector, the same Ref on every call, and writing through it writes the
 // object's own vector.
 //
-// `rotation` is deliberately read-only here: a direct component write is a plain C++ field write the
-// Euler change callback cannot see (see Euler.h), so rotation arrives through `setRotationFromEuler`
-// and the quaternion methods, which do keep the two in step.
+// `rotation.x`/`y`/`z` write the component and then call Euler::notify(), as three's Euler setters
+// fire _onChangeCallback, so the quaternion follows; a JS `mesh.rotation.x = v` reaches the same
+// notify through the Euler member's own setters.
 
 #include "engine/abi/bindings.h"
 
@@ -94,7 +94,7 @@ void nestedQuaternion(ClassBinding& b, const char* prefix, Quaternion T::*field)
         const std::string path = std::string(prefix) + "." + names[i];
         b.getters[path] = [field, i](void* self) { return Value::of(component4(as<T>(self)->*field, i)); };
         b.setters[path] = [field, i](void* self, const Value& v) {
-            setComponent4(as<T>(self)->*field, i, number(v));
+            setComponent4(as<T>(self)->*field, i, number(v));  // Quaternion::set notifies
         };
     }
 }
@@ -199,6 +199,12 @@ void registerObject3D(ClassBinding& b) {
     for (int i = 0; i < 3; ++i) {
         const std::string path = std::string("rotation.") + "xyz"[i];
         b.getters[path] = [i](void* self) { return Value::of(as<Object3D>(self)->rotation.toArray()[i]); };
+        // As three's Euler setters: write the component, then sync the quaternion through notify().
+        b.setters[path] = [i](void* self, const Value& v) {
+            Euler& rotation = as<Object3D>(self)->rotation;
+            (i == 0 ? rotation.x : i == 1 ? rotation.y : rotation.z) = number(v);
+            rotation.notify();
+        };
     }
     // `pivot` is `null` in three until something sets it, and the protocol's `set` carries one value,
     // so there is no way to make it non-null through a binding: a C++ caller assigns the member. Both
@@ -220,6 +226,18 @@ void registerObject3D(ClassBinding& b) {
         static const char* const kNames[] = {"XYZ", "YXZ", "ZXY", "ZYX", "YZX", "XZY"};
         return Value{Value::Kind::String, 0,
                      std::string(kNames[static_cast<int>(as<Object3D>(self)->rotation.order)])};
+    };
+    b.setters["rotation.order"] = [](void* self, const Value& v) {
+        static const char* const kNames[] = {"XYZ", "YXZ", "ZXY", "ZYX", "YZX", "XZY"};
+        Euler& rotation = as<Object3D>(self)->rotation;
+        for (int i = 0; i < 6; ++i) {
+            if (v.kind == Value::Kind::String && v.text == kNames[i]) {
+                rotation.order = static_cast<EulerOrder>(i);
+                rotation.notify();  // three's order setter re-syncs the quaternion
+                return;
+            }
+        }
+        throw Unsupported{"unknown Euler order"};
     };
 
     // The members themselves, as Refs to the members.

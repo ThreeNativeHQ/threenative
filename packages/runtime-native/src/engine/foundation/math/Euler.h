@@ -10,8 +10,8 @@
 // Deviation: three keeps `_x` private and fires `_onChangeCallback` from the public `x`/`y`/`z`/
 // `order` setters, so writing `euler.x` in JS notifies whoever registered a callback. Here the
 // components are plain public doubles (the fixture protocol reads them by path), so the callback
-// fires from the methods below and a direct component write is not observed. Object3D registers
-// its callbacks and the scene fixtures drive rotation through methods, so both sides agree.
+// fires from the methods below and from notify(), which the bindings' component setters call: a JS
+// `euler.x = v` notifies exactly as in three.
 
 #include <array>
 
@@ -57,10 +57,15 @@ public:
     /** The three angles. three's fourth slot holds the order string, not a number. */
     [[nodiscard]] std::array<double, 3> toArray() const { return {x, y, z}; }
 
-private:
+    /**
+     * three's `_onChangeCallback()`: what its public component setters fire. A caller that writes a
+     * component field directly (a binding's `x` setter) calls this, so the other rotation form syncs.
+     */
     void notify() const {
         if (onChange_ != nullptr) onChange_(onChangeContext_);
     }
+
+private:
 
     OnChange onChange_ = nullptr;
     void* onChangeContext_ = nullptr;
