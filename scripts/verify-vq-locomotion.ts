@@ -82,8 +82,8 @@ if (!process.argv.includes("--build-only")) {
     step.screenshot === undefined ? [] : [`${step.screenshot}.png`],
   );
   assert.ok(
-    names.length >= 5,
-    `The scenario must name at least five frames, found ${names.length}.`,
+    names.length >= 12,
+    `The scenario must name both views' frames, found ${names.length}.`,
   );
   const frames = await Promise.all(
     names.map(async (name) => {
@@ -93,9 +93,13 @@ if (!process.argv.includes("--build-only")) {
       return { name, sha256: createHash("sha256").update(png).digest("hex") };
     }),
   );
-  assert.ok(
-    new Set(frames.map((frame) => frame.sha256)).size >= 5,
-    "The locomotion captures must contain actual pose changes.",
+  // Both views name six frames each: the speed poses seen from the first-person eye, the direction
+  // poses seen from the gait camera. Two identical captures would leave one named pose unproven, so
+  // the frame count is the bound, not a rounded-up fraction of it.
+  assert.equal(
+    new Set(frames.map((frame) => frame.sha256)).size,
+    frames.length,
+    "Two captures are identical, so one named pose has no frame of its own.",
   );
   await writeFile(
     path.join(output, "summary.json"),

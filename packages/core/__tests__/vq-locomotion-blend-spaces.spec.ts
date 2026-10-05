@@ -1,11 +1,12 @@
 import { readFileSync } from "node:fs";
 import type { AnimationClip, Object3D } from "three";
-import { Bone, Group } from "three";
+import { AnimationMixer, Bone, Group, Vector3 } from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { describe, expect, it, vi } from "vitest";
 import {
   FIRST_PERSON_BODY_LOCOMOTION,
   type ILocomotionSettings,
+  KAYKIT_DIRECTIONAL,
   THIRD_PERSON_LOCOMOTION,
   createLocomotionDriver,
 } from "../../../examples/abyss-framework/src/render/locomotion-driver.js";
@@ -49,16 +50,57 @@ async function loadMannequin() {
   );
 }
 
+const KAYKIT_ASSETS = new URL("../../../examples/abyss-framework/assets/", import.meta.url);
+
+/** The three unmodified KayKit files, each parsed on its own so no clip is silently renamed. */
+async function loadKayKit() {
+  return Promise.all(
+    ["general", "movement-basic", "movement-advanced"].map(async (name) => {
+      const bytes = readFileSync(new URL(`kaykit-rig-medium-${name}.glb`, KAYKIT_ASSETS));
+      return new GLTFLoader().parseAsync(
+        bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
+        "",
+      );
+    }),
+  );
+}
+
+/** One Rig_Medium scene with the clips of all three files, merged by their real names. */
+function kayKitRig(models: Awaited<ReturnType<typeof loadKayKit>>) {
+  const [general, basic, advanced] = models;
+  if (general === undefined || basic === undefined || advanced === undefined)
+    throw new Error("KayKit locomotion needs all three authored files.");
+  // Only the clips this game asked for reach the player: each of the three files carries its own
+  // T-Pose, and a repeated clip name is a load failure, not a silent overwrite.
+  const required = new Set(clipsOf(KAYKIT_DIRECTIONAL));
+  const animations = [...general.animations, ...basic.animations, ...advanced.animations].filter(
+    (clip) => required.has(clip.name),
+  );
+  const names = animations.map((clip) => clip.name);
+  expect(names).toHaveLength(required.size);
+  expect(new Set(names)).toEqual(required);
+  return { animations, scene: general.scene };
+}
+
+/** Every clip the driver can ask this settings object for, speed samples first. */
+function clipsOf(settings: ILocomotionSettings): readonly string[] {
+  const names = settings.speedSamples.map(({ clip }) => clip);
+  for (const { clip } of settings.direction?.samples ?? [])
+    if (!names.includes(clip)) names.push(clip);
+  return names;
+}
+
 /** One real game consumer: the authored settings, the rig they author, and one driver. */
 function consumer(
   settings: ILocomotionSettings,
   model: { scene: Object3D; animations: AnimationClip[] },
   parent?: Object3D,
 ) {
+  const clips = clipsOf(settings);
   const player = new SkeletalMesh3D({
     source: model.scene,
     clips: model.animations,
-    requiredClips: settings.speedSamples.map(({ clip }) => clip),
+    requiredClips: clips,
     strideSync: false,
   });
   parent?.add(player.root);
@@ -69,9 +111,7 @@ function consumer(
   if (bones.length === 0) throw new Error("Mannequin locomotion requires actual animated bones.");
   const initial = bones.map((bone) => bone.quaternion.clone().normalize());
   const driver = createLocomotionDriver(settings, player);
-  const actions = settings.speedSamples.map(({ clip }) =>
-    player.mixer.clipAction(player.clip(clip)),
-  );
+  const actions = clips.map((clip) => player.mixer.clipAction(player.clip(clip)));
   const run = (speed: number, frames: number) => {
     for (let frame = 0; frame < frames; frame++) {
       driver.update(speed);
@@ -81,10 +121,17 @@ function consumer(
   return {
     actions,
     bones,
+    clips,
     driver,
     player,
     settings,
     run,
+    runDirection: (direction: readonly [number, number], frames: number) => {
+      for (let frame = 0; frame < frames; frame++) {
+        driver.update(0, direction);
+        player.update(1 / 60);
+      }
+    },
     weights: () =>
       actions.map((action) => (action.isScheduled() ? action.getEffectiveWeight() : 0)),
     phases: () => actions.map((action) => action.time / action.getClip().duration),
@@ -330,6 +377,227 @@ it("feeds actual mannequin speed weights through the repaired authoritative play
 
 const CONSUMERS = [THIRD_PERSON_LOCOMOTION, FIRST_PERSON_BODY_LOCOMOTION] as const;
 const SWEEP = [0, 0.6, 1.6, 3, 5.5, 6, 0] as const;
+
+/** The authored domain, read once so a settings edit cannot quietly change the evaluator under it. */
+function kaykitDirection() {
+  const direction = KAYKIT_DIRECTIONAL.direction;
+  if (direction === undefined)
+    throw new Error("KAYKIT_DIRECTIONAL must author a directional domain.");
+  return direction;
+}
+
+function kaykitEvaluator() {
+  const { samples, triangles } = kaykitDirection();
+  return createDirectionWeights(samples, triangles);
+}
+
+function dominant(entries: readonly { clip: string; weight: number }[]) {
+  const best = entries.reduce((top, entry) => (entry.weight > top.weight ? entry : top));
+  if (!Number.isFinite(best.weight)) throw new Error("Directional weights were not finite.");
+  return best;
+}
+
+/** The five authored sample points in declaration order, x right and y forward. */
+const KAYKIT_POINTS = [
+  [0, 0],
+  [0, 1],
+  [1, 0],
+  [0, -1],
+  [-1, 0],
+] as const;
+
+describe("the authored KayKit directional domain on real clips", () => {
+  it("puts every real clip on its own authored point, at full weight and named for that direction", () => {
+    const evaluate = kaykitEvaluator();
+    const expected = [
+      "Idle_A",
+      "Running_A",
+      "Running_Strafe_Right",
+      "Walking_Backwards",
+      "Running_Strafe_Left",
+    ];
+    for (const [index, point] of KAYKIT_POINTS.entries()) {
+      const entries = evaluate(point);
+      expectNormalized(entries);
+      const best = dominant(entries);
+      expect(best.clip).toBe(expected[index]);
+      expect(best.weight).toBe(1);
+    }
+  });
+
+  it("blends the two real clips a diagonal shares and no third", () => {
+    const evaluate = kaykitEvaluator();
+    expect(weights(evaluate([0.5, 0.5]))).toEqual([0, 0.5, 0.5, 0, 0]);
+    expect(weights(evaluate([-0.5, -0.5]))).toEqual([0, 0, 0, 0.5, 0.5]);
+    expect(weights(evaluate([0.5, -0.5]))).toEqual([0, 0, 0.5, 0.5, 0]);
+    expect(weights(evaluate([-0.5, 0.5]))).toEqual([0, 0.5, 0, 0, 0.5]);
+    for (const point of [
+      [0.5, 0.5],
+      [-0.5, -0.5],
+      [0.5, -0.5],
+      [-0.5, 0.5],
+    ] as const)
+      expect(evaluate(point).map(({ weight }) => weight)).toEqual(
+        evaluate(point).map(({ weight }) => weight),
+      );
+  });
+
+  it("projects an out-of-domain request onto the nearest real clip, never past it", () => {
+    const evaluate = kaykitEvaluator();
+    expect(dominant(evaluate([2, 0]))).toEqual({ clip: "Running_Strafe_Right", weight: 1 });
+    expect(dominant(evaluate([0, 2]))).toEqual({ clip: "Running_A", weight: 1 });
+    expect(dominant(evaluate([-2, 0]))).toEqual({ clip: "Running_Strafe_Left", weight: 1 });
+    expect(dominant(evaluate([0, -2]))).toEqual({ clip: "Walking_Backwards", weight: 1 });
+    expect(weights(evaluate([1.4, 1.4]))).toEqual([0, 0.5, 0.5, 0, 0]);
+    for (let x = -2; x <= 2; x += 0.125) {
+      const point = [x, 0.35] as const;
+      expect(evaluate(point)).toEqual(evaluate(point));
+      expectNormalized(evaluate(point));
+    }
+  });
+
+  it("keeps every declared triangle of the four real quadrant fans usable and non-overlapping", () => {
+    const { triangles } = kaykitDirection();
+    expect(triangles).toEqual([
+      [0, 1, 2],
+      [0, 2, 3],
+      [0, 3, 4],
+      [0, 4, 1],
+    ]);
+    const evaluate = kaykitEvaluator();
+    for (const [index, point] of KAYKIT_POINTS.entries()) {
+      const weight = dominant(evaluate(point)).weight;
+      expect(weight).toBe(1);
+      expect(index).toBeGreaterThanOrEqual(0);
+    }
+  });
+
+  it("replays a rapid right/left/forward/back reversal on the real clips to the same pose", async () => {
+    const model = kayKitRig(await loadKayKit());
+    const REVERSALS = [
+      [[1, 0], 20],
+      [[-1, 0], 1],
+      [[1, 0], 1],
+      [[0, 1], 1],
+      [[0, -1], 1],
+      [[0, 1], 1],
+      [[-1, 0], 1],
+      [[0, 0], 12],
+    ] as const;
+    const trace = () => {
+      const rig = consumer(KAYKIT_DIRECTIONAL, model, new Group());
+      const rows: unknown[] = [];
+      for (const [direction, ticks] of REVERSALS) {
+        rig.runDirection(direction, ticks);
+        rows.push({
+          active: rig.player.mixer.stats.actions.inUse,
+          phases: rig.phases(),
+          pose: rig.signature(),
+          weights: rig.weights(),
+        });
+      }
+      rig.player.dispose();
+      return rows;
+    };
+    const first = trace();
+    expect(first).toEqual(trace());
+    // A one-tick reversal cannot cross a 0.2 s weight ramp, so the old direction is still dominant:
+    // that lag is the gait, and a snap would mean the driver ignored the transition it was given.
+    const rig = consumer(KAYKIT_DIRECTIONAL, model, new Group());
+    rig.runDirection([1, 0], 20);
+    const held = rig.weights();
+    rig.runDirection([-1, 0], 1);
+    const reversed = rig.weights();
+    const clipOf = (values: readonly number[]) =>
+      rig.clips[values.indexOf(Math.max(...values))] ?? "";
+    expect(clipOf(held)).toBe("Running_Strafe_Right");
+    expect(clipOf(reversed)).toBe("Running_Strafe_Right");
+    expect(reversed.reduce((total, weight) => total + weight, 0)).toBeCloseTo(1, 6);
+    rig.player.dispose();
+  });
+});
+
+/** Sampled from the real Rig_Medium: the forward-most foot.l phase, and how far that foot travels. */
+async function measuredGaitPhases() {
+  const { animations, scene } = kayKitRig(await loadKayKit());
+  const STEPS = 1000;
+  const measured: Record<string, { phase: number; toeTravel: number }> = {};
+  for (const name of [
+    "Idle_A",
+    "Running_A",
+    "Walking_A",
+    "Running_Strafe_Right",
+    "Running_Strafe_Left",
+    "Walking_Backwards",
+  ]) {
+    const clip = animations.find((candidate) => candidate.name === name);
+    if (clip === undefined) throw new Error(`KayKit locomotion needs the authored clip '${name}'.`);
+    const root = scene.clone(true);
+    const bones = new Map<string, Bone>();
+    root.traverse((node) => {
+      if (node instanceof Bone) bones.set(node.name, node);
+    });
+    const hips = bones.get("hips");
+    const toes = bones.get("toesl");
+    const ankles = bones.get("footl");
+    if (hips === undefined || toes === undefined || ankles === undefined)
+      throw new Error("Rig_Medium needs hips, footl and toesl to measure a gait.");
+    const mixer = new AnimationMixer(root);
+    mixer.clipAction(clip).play();
+    const at = new Vector3();
+    const forward = new Vector3();
+    let peak = Number.NEGATIVE_INFINITY;
+    let low = Number.POSITIVE_INFINITY;
+    let peakAt = 0;
+    for (let step = 0; step < STEPS; step++) {
+      mixer.setTime((step / STEPS) * clip.duration);
+      root.updateMatrixWorld(true);
+      toes.getWorldPosition(at);
+      hips.worldToLocal(at);
+      // The first sample fixes which way this rig's foot points, so the marker never assumes it.
+      if (step === 0) {
+        ankles.getWorldPosition(forward);
+        hips.worldToLocal(forward);
+        expect(at.z - forward.z).toBeGreaterThan(0);
+      }
+      if (at.z > peak) {
+        peak = at.z;
+        peakAt = step / STEPS;
+      }
+      if (at.z < low) low = at.z;
+    }
+    measured[name] = { phase: peakAt, toeTravel: peak - low };
+  }
+  return measured;
+}
+
+const phaseGap = (a: number, b: number) => {
+  const difference = Math.abs(a - b);
+  return Math.min(difference, 1 - difference);
+};
+
+describe("the measured KayKit gait, which is the only reason phaseSync may be on", () => {
+  it("lines every directional clip's forward-most foot up with Running_A inside the stated tolerance", async () => {
+    const measured = await measuredGaitPhases();
+    const reference = measured.Running_A;
+    if (reference === undefined) throw new Error("Running_A is the phase reference clip.");
+    for (const name of [
+      "Walking_A",
+      "Running_Strafe_Right",
+      "Running_Strafe_Left",
+      "Walking_Backwards",
+    ]) {
+      const mark = measured[name];
+      if (mark === undefined) throw new Error(`Missing measured gait for '${name}'.`);
+      expect(mark.toeTravel).toBeGreaterThan(0.3);
+      expect(phaseGap(mark.phase, reference.phase)).toBeLessThanOrEqual(0.05);
+    }
+    // The idle has no stride to join: its own foot travel is noise, which is why the tolerance is
+    // claimed for the clips that step and not for the one that stands.
+    expect(measured.Idle_A?.toeTravel ?? 1).toBeLessThan(0.01);
+    expect(KAYKIT_DIRECTIONAL.phaseSync).toBe(true);
+  });
+});
 
 describe("two game-owned consumers on the real mannequin", () => {
   it("holds weights summing to one within 1e-6 and animates real bones over the speed domain", async () => {

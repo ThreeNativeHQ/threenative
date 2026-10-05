@@ -1,5 +1,5 @@
 {
-  "name": "vq04-two-locomotion-consumers-cc0-mannequin",
+  "name": "vq04-two-mannequin-speed-consumers-and-a-kaykit-direction-consumer",
   "schemaVersion": 1,
   "target": "web",
   "viewport": {
@@ -18,38 +18,86 @@
     {
       "kind": "wait",
       "label": "walk",
-      "waitTicks": 45,
-      "screenshot": "locomotion-walk"
+      "waitTicks": 33,
+      "screenshot": "locomotion-walk-forward"
     },
     {
       "kind": "wait",
       "label": "jog",
-      "waitTicks": 25,
-      "screenshot": "locomotion-jog"
+      "waitTicks": 29,
+      "screenshot": "locomotion-jog-strafe-right"
     },
     {
       "kind": "wait",
       "label": "sprint",
-      "waitTicks": 25,
-      "screenshot": "locomotion-sprint"
+      "waitTicks": 30,
+      "screenshot": "locomotion-sprint-backwards"
     },
     {
       "kind": "wait",
       "label": "decelerating",
-      "waitTicks": 35,
-      "screenshot": "locomotion-decelerating"
+      "waitTicks": 30,
+      "screenshot": "locomotion-walk-strafe-left"
     },
     {
       "kind": "wait",
       "label": "idle-before-reversals",
-      "waitTicks": 30,
-      "screenshot": "locomotion-idle-before-reversals"
+      "waitTicks": 20,
+      "screenshot": "locomotion-idle-sweep"
     },
     {
       "kind": "wait",
       "label": "after-reversals",
-      "waitTicks": 20,
+      "waitTicks": 22,
       "screenshot": "locomotion-after-reversals"
+    },
+    {
+      "kind": "wait",
+      "label": "to-the-first-tick-of-the-second-pass",
+      "waitTicks": 8
+    },
+    {
+      "kind": "input",
+      "label": "switch-to-the-gait-view",
+      "press": "KeyC",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "gait-forward",
+      "waitTicks": 33,
+      "screenshot": "gait-forward"
+    },
+    {
+      "kind": "wait",
+      "label": "gait-diagonal",
+      "waitTicks": 15,
+      "screenshot": "gait-diagonal"
+    },
+    {
+      "kind": "wait",
+      "label": "gait-strafe-right",
+      "waitTicks": 15,
+      "screenshot": "gait-strafe-right"
+    },
+    {
+      "kind": "wait",
+      "label": "gait-backward",
+      "waitTicks": 30,
+      "screenshot": "gait-backward"
+    },
+    {
+      "kind": "wait",
+      "label": "gait-strafe-left",
+      "waitTicks": 30,
+      "screenshot": "gait-strafe-left"
+    },
+    {
+      "kind": "wait",
+      "label": "gait-after-reversals",
+      "waitTicks": 49,
+      "screenshot": "gait-after-reversals"
     },
     {
       "kind": "wait",
@@ -168,6 +216,126 @@
         "id": "state",
         "path": "first.releasedActions",
         "equals": 0
+      },
+      {
+        "id": "state",
+        "path": "kaykit.maxWeightError",
+        "gte": 0,
+        "lte": 1e-6
+      },
+      {
+        "id": "state",
+        "path": "kaykit.maxPhaseGap",
+        "gte": 0,
+        "lte": 1e-6
+      },
+      {
+        "id": "state",
+        "path": "kaykit.maxPoseRadians",
+        "gte": 0.18,
+        "lte": 0.5
+      },
+      {
+        "id": "state",
+        "path": "kaykit.maxPoseMetres",
+        "gte": 0.05,
+        "lte": 0.15
+      },
+      {
+        "id": "state",
+        "path": "kaykit.maxActiveActions",
+        "gte": 3,
+        "lte": 6
+      },
+      {
+        "id": "state",
+        "path": "kaykit.settledActions",
+        "equals": 1
+      },
+      {
+        "id": "state",
+        "path": "kaykit.settledClips",
+        "equals": "Idle_A"
+      },
+      {
+        "id": "state",
+        "path": "kaykit.disposed",
+        "equals": true
+      },
+      {
+        "id": "state",
+        "path": "kaykit.releasedActions",
+        "equals": 0
+      },
+      {
+        "id": "state",
+        "path": "kaykit.poses.idle.clips",
+        "equals": "Idle_A"
+      },
+      {
+        "id": "state",
+        "path": "kaykit.poses.forward.clips",
+        "equals": "Running_A"
+      },
+      {
+        "id": "state",
+        "path": "kaykit.poses.forward.weight",
+        "equals": 1
+      },
+      {
+        "id": "state",
+        "path": "kaykit.poses.right.clips",
+        "equals": "Running_Strafe_Right"
+      },
+      {
+        "id": "state",
+        "path": "kaykit.poses.right.weight",
+        "equals": 1
+      },
+      {
+        "id": "state",
+        "path": "kaykit.poses.back.clips",
+        "equals": "Walking_Backwards"
+      },
+      {
+        "id": "state",
+        "path": "kaykit.poses.back.weight",
+        "equals": 1
+      },
+      {
+        "id": "state",
+        "path": "kaykit.poses.left.clips",
+        "equals": "Running_Strafe_Left"
+      },
+      {
+        "id": "state",
+        "path": "kaykit.poses.left.weight",
+        "equals": 1
+      },
+      {
+        "id": "state",
+        "path": "kaykit.poses.diagForwardRight.clips",
+        "equals": "Running_A+Running_Strafe_Right"
+      },
+      {
+        "id": "state",
+        "path": "kaykit.poses.diagForwardRight.weight",
+        "equals": 0.5
+      },
+      {
+        "id": "state",
+        "path": "kaykit.poses.diagRightBack.clips",
+        "equals": "Running_Strafe_Right+Walking_Backwards"
+      },
+      {
+        "id": "state",
+        "path": "kaykit.poses.diagBackLeft.clips",
+        "equals": "Walking_Backwards+Running_Strafe_Left"
+      },
+      {
+        "id": "state",
+        "path": "kaykit.poses.diagLeftForward.clips",
+        "equals": "Running_A+Running_Strafe_Left"
       }
     ],
     "sceneNodes": [
@@ -175,7 +343,7 @@
         "select": {
           "type": "SkinnedMesh"
         },
-        "minCount": 4,
+        "minCount": 10,
         "visible": true,
         "minTriangles": 200
       }

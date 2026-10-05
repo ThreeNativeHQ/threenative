@@ -51,6 +51,47 @@ export const FIRST_PERSON_BODY_LOCOMOTION: ILocomotionSettings = {
 };
 
 /**
+ * A real CC0 directional set, on one Rig_Medium skeleton, playing the clips KayKit authored for the
+ * direction they actually are. Nothing here is retargeted or relabelled; `x` is right, `y` is
+ * forward, and the four triangles fan the diamond around the idle from the four authored axes.
+ *
+ * `phaseSync` is on because the clips measure that way, not because a phase join sounds right.
+ * `vq-locomotion-blend-spaces.spec.ts` samples each real clip's bones and reports the normalized
+ * phase at which foot.l is at its forward-most (toe travel, so a marker with no stride behind it
+ * cannot pass). Measured: Running_A 0.996; Running_Strafe_Left 0.9998, Walking_Backwards 0.9998 and
+ * Walking_A 0.9998 sit 0.004 from it, Running_Strafe_Right 0.9546 sits 0.041 from it, and Idle_A
+ * carries 3 mm of toe travel, so it has no stride to join. The largest gap between clips that ever
+ * blend is 0.041 of a phase — 33 ms of the 0.8 s run cycle — inside the 0.05 tolerance that test
+ * asserts, which is the only reason the gait is allowed to join instead of starting mid-stride.
+ *
+ * The speed thresholds are placeholders for a game to tune, the way the other two consumers' are.
+ */
+export const KAYKIT_DIRECTIONAL: ILocomotionSettings = {
+  speedSamples: [
+    { clip: "Idle_A", speed: 0 },
+    { clip: "Walking_A", speed: 1.2 },
+    { clip: "Running_A", speed: 3.4 },
+  ],
+  direction: {
+    samples: [
+      { clip: "Idle_A", point: [0, 0] },
+      { clip: "Running_A", point: [0, 1] },
+      { clip: "Running_Strafe_Right", point: [1, 0] },
+      { clip: "Walking_Backwards", point: [0, -1] },
+      { clip: "Running_Strafe_Left", point: [-1, 0] },
+    ],
+    triangles: [
+      [0, 1, 2],
+      [0, 2, 3],
+      [0, 3, 4],
+      [0, 4, 1],
+    ],
+  },
+  transitionSeconds: 0.2,
+  phaseSync: true,
+};
+
+/**
  * Turn one speed into clip weights and hand them to a player, once per frame.
  *
  * The samples and their thresholds, the transition and the phase rule are the game's settings; the
