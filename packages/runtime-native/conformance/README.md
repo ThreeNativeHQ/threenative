@@ -13,6 +13,12 @@ Use `--only-tests id,id` for bounded real execution. Implemented rows not select
 command are reported blocked, never passed or omitted. ImageMagick Q16/Q16-HDRI absolute
 error is normalized by its quantum range; an unknown quantum depth fails metric computation.
 
+`--suite native-engine` runs the compatibility fixtures in
+`packages/three-native/tests/compatibility/` instead of registry scenes. `@threenative/three-native`
+records the pinned Three.js answers as goldens (`pnpm --filter @threenative/three-native
+test:reference`), writes them into a native driver, and reports every fixture through this same
+report and exit code under `target: "native-engine"`. With no driver, every fixture is blocked.
+
 Run a scaffolded project's portable native entry with:
 
 ```sh

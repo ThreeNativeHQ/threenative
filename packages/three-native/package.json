@@ -13,6 +13,7 @@
   "type": "module",
   "scripts": {
     "generate": "pnpm --workspace-root exec tsx packages/three-native/scripts/generate.ts",
+    "test:reference": "pnpm --workspace-root exec tsx packages/three-native/tests/compatibility/run-reference.ts",
     "typecheck": "pnpm run generate && tsc --noEmit -p tsconfig.json"
   },
   "devDependencies": {

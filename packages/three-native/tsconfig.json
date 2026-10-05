@@ -7,5 +7,11 @@
       "three": ["./generated/three.d.ts"]
     }
   },
-  "include": ["generated/**/*.d.ts", "src/**/*.ts", "scripts/**/*.ts", "__tests__/**/*.ts"]
+  "include": [
+    "generated/**/*.d.ts",
+    "src/**/*.ts",
+    "scripts/**/*.ts",
+    "tests/**/*.ts",
+    "__tests__/**/*.ts"
+  ]
 }

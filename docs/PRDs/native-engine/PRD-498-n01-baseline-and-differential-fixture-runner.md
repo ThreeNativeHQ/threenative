@@ -1,6 +1,6 @@
 # PRD-498 — Baseline and differential fixture runner (N01)
 
-**Status:** PROPOSED
+**Status:** IN PROGRESS — phases 1 and 2 done; phase 3 (native-host baselines) open
 **Complexity:** 4 — a new runner that drives the pinned upstream and the native engine through one fixture format, plus native-host baselines
 **Owner:** João
 **Work package:** N01 — [native-engine batch](README.md)
@@ -25,15 +25,15 @@ Every later PRD proves itself by comparing the native engine against the pinned 
 ## Execution Phases
 
 #### Phase 1: Reference outputs are reproducible
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** proposed `packages/three-native/tests/compatibility/{fixtures,run-reference.ts}`, `packages/three-native/__tests__/fixture-format.spec.ts`
-- [ ] The fixture schema rejects a fixture with no observations and a missing tolerance. proof: red-green `pnpm exec vitest run packages/three-native/__tests__/fixture-format.spec.ts`
-- [ ] Two consecutive reference runs of the seed corpus (hierarchy, matrices, one lit render) produce identical non-pixel goldens. proof: `pnpm --filter @threenative/three-native test:reference -- --repeat 2`
+- [x] The fixture schema rejects a fixture with no observations and a missing tolerance. proof: red-green `pnpm exec vitest run packages/three-native/__tests__/fixture-format.spec.ts` — 2026-10-04: green (`fixture-format.spec.ts`): no observations, missing tolerance, unknown op or kind and a dangling ref each fail closed; the seed corpus parses. Doubles cross as binary64 bit patterns (`fixture-protocol.ts`), so -0 and NaN payloads survive
+- [x] Two consecutive reference runs of the seed corpus (hierarchy, matrices, one lit render) produce identical non-pixel goldens. proof: `pnpm --filter @threenative/three-native test:reference -- --repeat 2` — 2026-10-04: `test:reference -- --repeat 2` exit 0: 7 fixtures, 61 observations, identical goldens in both passes, written to `tests/compatibility/goldens/0.185.1/`. The lit-render fixture reports blocked (it needs the playtest harness), never a golden it did not compute
 
 #### Phase 2: Native results diff against the goldens
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** proposed `packages/three-native/tests/compatibility/run-native.ts`; `packages/runtime-native/conformance/registry.json`
-- [ ] The differential runner reports pass/fail per fixture through the existing parity report. A fixture the native driver cannot run reports `blocked`, not `pass`. proof: `pnpm parity -- --suite native-engine`
+- [x] The differential runner reports pass/fail per fixture through the existing parity report. A fixture the native driver cannot run reports `blocked`, not `pass`. proof: `pnpm parity -- --suite native-engine` — 2026-10-04: `pnpm parity -- --suite native-engine --driver build/tn-linux-engine/tn-native-engine-fixture-driver` runs the C++ driver end to end and reports all 7 blocked (`driver reported unsupported: class Vector3`) in the existing report shape, validated by `validateReport`; a fake driver proves pass, a one-bit fail and blocked (`run-native.spec.ts`). Rows come from the fixtures, so `registry.json` is untouched
 
 #### Phase 3: Native-host baselines exist
 **Status:** NOT STARTED

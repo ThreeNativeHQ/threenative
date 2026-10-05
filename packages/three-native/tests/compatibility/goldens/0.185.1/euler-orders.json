@@ -1,0 +1,112 @@
+{
+  "name": "euler-orders",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "three@0.185.1 test/unit/src/math/Euler.tests.js — setFromRotationMatrix over all six orders",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "source",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3fd3333333333333,n:bfd999999999999a,n:3ff3333333333333,n:7ff8000000000000",
+      "decimal": "0.3, -0.4, 1.2, XYZ"
+    },
+    {
+      "index": 1,
+      "id": "e_XYZ",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3fd3333333333333,n:bfd9999999999999,n:3ff3333333333334,n:7ff8000000000000",
+      "decimal": "0.3, -0.39999999999999997, 1.2000000000000002, XYZ"
+    },
+    {
+      "index": 2,
+      "id": "e_XYZ",
+      "kind": "string",
+      "path": "order",
+      "value": "s:XYZ",
+      "decimal": "XYZ"
+    },
+    {
+      "index": 3,
+      "id": "e_YZX",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3fe14cdeaaf3851b,n:bfec693d8233ad5f,n:3ff03777f9970f46,n:7ff8000000000000",
+      "decimal": "0.5406335200206372, -0.8878467123990211, 1.013542151414144, YZX"
+    },
+    {
+      "index": 4,
+      "id": "e_YZX",
+      "kind": "string",
+      "path": "order",
+      "value": "s:YZX",
+      "decimal": "YZX"
+    },
+    {
+      "index": 5,
+      "id": "e_ZXY",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:bfcefa4fb49ea0b9,n:bfdbebc3b713d9d0,n:3ff15b8caae2bf85,n:7ff8000000000000",
+      "decimal": "-0.24201389617269856, -0.43626492384592286, 1.084850947878267, ZXY"
+    },
+    {
+      "index": 6,
+      "id": "e_ZXY",
+      "kind": "string",
+      "path": "order",
+      "value": "s:ZXY",
+      "decimal": "ZXY"
+    },
+    {
+      "index": 7,
+      "id": "e_XZY",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:bfdf1e364b302770,n:bfeb974dd623032d,n:3ff0842c6132b4d4,n:7ff8000000000000",
+      "decimal": "-0.486218999315148, -0.8622197325094924, 1.0322688862609555, XZY"
+    },
+    {
+      "index": 8,
+      "id": "e_XZY",
+      "kind": "string",
+      "path": "order",
+      "value": "s:XZY",
+      "decimal": "XZY"
+    },
+    {
+      "index": 9,
+      "id": "e_YXZ",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3fd1a495ad6af4df,n:bfdaaa6158689896,n:3ff148282c248e5e,n:7ff8000000000000",
+      "decimal": "0.2756704515011971, -0.4166491855015776, 1.080116436417391, YXZ"
+    },
+    {
+      "index": 10,
+      "id": "e_YXZ",
+      "kind": "string",
+      "path": "order",
+      "value": "s:YXZ",
+      "decimal": "YXZ"
+    },
+    {
+      "index": 11,
+      "id": "e_ZYX",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:bfd104b6ecb445c7,n:bfdb0dd907c0a6e7,n:3ff3235330204e42,n:7ff8000000000000",
+      "decimal": "-0.2659127532543519, -0.4227202010830368, 1.1961242561273058, ZYX"
+    },
+    {
+      "index": 12,
+      "id": "e_ZYX",
+      "kind": "string",
+      "path": "order",
+      "value": "s:ZYX",
+      "decimal": "ZYX"
+    }
+  ]
+}

@@ -417,7 +417,15 @@ TN_EXPORT void tn_diagnostic_release(tn_diagnostic_t *diagnostic);
 `;
 }
 
-const TYPE_TABLE = path.join(ROOT, "packages", "runtime-native", "src", "engine", "abi", "catalog_types.inc");
+const TYPE_TABLE = path.join(
+  ROOT,
+  "packages",
+  "runtime-native",
+  "src",
+  "engine",
+  "abi",
+  "catalog_types.inc",
+);
 
 /**
  * The ABI's type ids: one per catalog class, 1-based in catalog order (0 means "not published").

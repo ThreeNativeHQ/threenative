@@ -1,0 +1,7 @@
+{
+  "name": "lit-render",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "original — one lit WebGPU frame: camera, directional light, MeshStandardMaterial box",
+  "blocked": "render fixtures need the playtest harness (N01 phase 1 follow-up): this reference run has no GPU adapter, so no pixel or lit-frame observation was recorded",
+  "observations": []
+}
