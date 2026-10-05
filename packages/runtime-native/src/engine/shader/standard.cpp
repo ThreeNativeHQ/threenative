@@ -182,9 +182,55 @@ struct Incoming {
     ExprId color;
 };
 
-static Incoming incoming(Program& f, Tsl& t, char kind, std::size_t index, ExprId positionView) {
+// three's ShadowNode for a light's shadow under PCFShadowMap (the default type, with texture compare):
+// shadowPosition = shadowMatrix * (positionWorld + normalWorld * normalBias), divided by w, y flipped,
+// z biased; PCFShadowFilter's five Vogel-disk taps rotated by interleaved gradient noise of the
+// fragment coordinate; 1 outside the shadow frustum; then mix(1, shadow, intensity).
+static ExprId shadowFactor(Program& f, Tsl& t, std::size_t index, ExprId positionWorld, ExprId normalWorld) {
     const std::string at = "light" + std::to_string(index);
-    const ExprId color = f.uniform(at + "Color", Type::vec(3));
+    const uint32_t map = f.textureDepth("shadow" + std::to_string(index));
+    const ExprId world = f.add(positionWorld, f.mul(normalWorld, f.uniform(at + "ShadowNormalBias", Type::f32())));
+    const ExprId shadowPosition =
+        f.mul(f.uniform(at + "ShadowMatrix", Type::mat(4, 4)), f.construct(Type::vec(4), {world, t.f(1)}));
+    const ExprId projected = f.div(f.swizzle(shadowPosition, "xyz"), f.swizzle(shadowPosition, "w"));
+    const ExprId x = f.swizzle(projected, "x"), y = t.oneMinus(f.swizzle(projected, "y"));
+    const ExprId z = f.add(f.swizzle(projected, "z"), f.uniform(at + "ShadowBias", Type::f32()));
+    const ExprId uv = f.construct(Type::vec(2), {x, y});
+    const ExprId texelSize = f.div(f.construct(Type::vec(2), {t.f(1)}), f.uniform(at + "ShadowMapSize", Type::vec(2)));
+    const ExprId radiusScaled = f.mul(f.uniform(at + "ShadowRadius", Type::f32()), f.swizzle(texelSize, "x"));
+    // interleavedGradientNoise(screenCoordinate.xy) * 2pi
+    const ExprId coordinate = f.swizzle(f.builtin("position"), "xy");
+    const ExprId noise = f.call("fract", {f.mul(t.f(52.9829189f), f.call("fract", {t.dot(coordinate, f.construct(Type::vec(2), {t.f(0.06711056f), t.f(0.00583715f)}))}))});
+    const ExprId phi = f.mul(noise, t.f(6.28318530718f));
+    ExprId sum = kInvalid;
+    for (int i = 0; i < 5; ++i) {
+        // vogelDiskSample(i, 5, phi): r = sqrt((i + 0.5) / 5), theta = i * goldenAngle + phi.
+        const ExprId index = t.f(static_cast<float>(i));
+        const ExprId r = f.call("sqrt", {f.div(f.add(index, t.f(0.5f)), t.f(5.0f))});
+        const ExprId theta = f.add(f.mul(index, t.f(2.399963229728653f)), phi);
+        const ExprId disk = f.mul(f.construct(Type::vec(2), {f.call("cos", {theta}), f.call("sin", {theta})}), r);
+        const ExprId tap = f.sampleCompare(map, f.add(uv, f.mul(disk, radiusScaled)), z);
+        sum = sum == kInvalid ? tap : f.add(sum, tap);
+    }
+    ExprId shadow = f.mul(sum, t.f(1.0f / 5.0f));
+    // frustumTest: x and y in [0, 1] and z <= 1, else 1.
+    shadow = f.select(f.less(x, t.f(0)), t.f(1), shadow);
+    shadow = f.select(f.less(t.f(1), x), t.f(1), shadow);
+    shadow = f.select(f.less(y, t.f(0)), t.f(1), shadow);
+    shadow = f.select(f.less(t.f(1), y), t.f(1), shadow);
+    shadow = f.select(f.less(t.f(1), z), t.f(1), shadow);
+    return f.call("mix", {t.f(1), shadow, f.uniform(at + "ShadowIntensity", Type::f32())});
+}
+
+// `kind` upper case: the light casts a shadow this mesh receives; `positionWorld` is then read.
+static Incoming incoming(Program& f, Tsl& t, char kind, std::size_t index, ExprId positionView,
+                         ExprId positionWorld = kInvalid, ExprId normalWorld = kInvalid) {
+    const std::string at = "light" + std::to_string(index);
+    ExprId color = f.uniform(at + "Color", Type::vec(3));
+    if (kind >= 'A' && kind <= 'Z') {
+        color = f.mul(color, shadowFactor(f, t, index, positionWorld, normalWorld)); // colorNode.mul(shadowNode)
+        kind = static_cast<char>(kind - 'A' + 'a');
+    }
     if (kind == 'd') return {f.call("normalize", {f.uniform(at + "Direction", Type::vec(3))}), color};
     const ExprId lightVector = f.sub(f.uniform(at + "Position", Type::vec(3)), positionView);
     const ExprId direction = f.call("normalize", {lightVector});
@@ -220,6 +266,8 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
     // vertex before it is interpolated (v_normalViewGeometry); normalMatrix is that product.
     v.output("normalView", v.call("normalize", {v.mul(normalMatrix, normal)}));
     v.output("positionView", v.swizzle(positionView, "xyz"));
+    // positionWorld, before instanceColor: varyings take locations in creation order in both stages.
+    if (lights.shadowed()) v.output("positionWorld", v.swizzle(v.mul(model, position), "xyz"));
     outputInstanceColor(v, local);
 
     Program& f = out.fragment;
@@ -229,6 +277,7 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
     const ExprId n = f.call("normalize", {f.varying("normalView", Type::vec(3))});
     const ExprId normalViewGeometry = n;
     const ExprId positionViewDirection = f.call("normalize", {f.neg(f.varying("positionView", Type::vec(3)))});
+    const ExprId positionWorld = lights.shadowed() ? f.varying("positionWorld", Type::vec(3)) : kInvalid;
     // normalWorld = normalView.transformNormalByInverseViewMatrix(cameraViewMatrix), in the fragment:
     // normalize((vec4(normalView, 0) * viewMatrix).xyz).
     const ExprId normalWorld = f.call("normalize", {f.swizzle(f.mul(f.construct(Type::vec(4), {n, f.constant(0.0f)}),
@@ -270,7 +319,7 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
     const ExprId fragmentView = f.varying("positionView", Type::vec(3));
     ExprId directDiffuse = f.construct(Type::vec(3), {t.f(0)}), directSpecular = directDiffuse;
     for (std::size_t i = 0; i < lights.kinds.size(); ++i) {
-        const Incoming light = incoming(f, t, lights.kinds[i], i, fragmentView);
+        const Incoming light = incoming(f, t, lights.kinds[i], i, fragmentView, positionWorld, normalWorld);
         const ExprId irradiance = f.mul(t.saturate(t.dot(n, light.direction)), light.color);
         directDiffuse = f.add(directDiffuse, f.mul(irradiance, brdfLambert));
         directSpecular = f.add(directSpecular, f.mul(irradiance, brdfGgxMultiscatter(t, surface, light.direction)));
@@ -320,12 +369,15 @@ StandardPrograms buildLit(bool phong, const VertexVariant& variant, const LightL
     // vertex before it is interpolated (v_normalViewGeometry); normalMatrix is that product.
     v.output("normalView", v.call("normalize", {v.mul(normalMatrix, normal)}));
     v.output("positionView", v.swizzle(positionView, "xyz"));
+    // positionWorld, before instanceColor: varyings take locations in creation order in both stages.
+    if (lights.shadowed()) v.output("positionWorld", v.swizzle(v.mul(model, position), "xyz"));
     outputInstanceColor(v, local);
 
     Program& f = out.fragment;
     Tsl t{f};
     const ExprId n = f.call("normalize", {f.varying("normalView", Type::vec(3))});
     const ExprId positionViewDirection = f.call("normalize", {f.neg(f.varying("positionView", Type::vec(3)))});
+    const ExprId positionWorld = lights.shadowed() ? f.varying("positionWorld", Type::vec(3)) : kInvalid;
     // normalWorld = normalView.transformNormalByInverseViewMatrix(cameraViewMatrix), in the fragment:
     // normalize((vec4(normalView, 0) * viewMatrix).xyz).
     const ExprId normalWorld = f.call("normalize", {f.swizzle(f.mul(f.construct(Type::vec(4), {n, f.constant(0.0f)}),
@@ -340,7 +392,7 @@ StandardPrograms buildLit(bool phong, const VertexVariant& variant, const LightL
     const ExprId shininess = phong ? f.call("max", {f.uniform("shininess", Type::f32()), t.f(1e-4f)}) : kInvalid;
     ExprId directDiffuse = f.construct(Type::vec(3), {t.f(0)}), directSpecular = directDiffuse;
     for (std::size_t i = 0; i < lights.kinds.size(); ++i) {
-        const Incoming light = incoming(f, t, lights.kinds[i], i, fragmentView);
+        const Incoming light = incoming(f, t, lights.kinds[i], i, fragmentView, positionWorld, normalWorld);
         const ExprId irradiance = f.mul(t.saturate(t.dot(n, light.direction)), light.color);
         directDiffuse = f.add(directDiffuse, f.mul(irradiance, brdfLambert));
         if (phong)

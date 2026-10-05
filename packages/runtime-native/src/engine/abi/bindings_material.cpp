@@ -203,6 +203,42 @@ void registerDirectionalLight(ClassBinding& b) {
         return store.adoptAlias("Object3D", light->target, self);
     };
     b.fixedMembers.insert("target");  // the light owns its target for its whole life
+    // light.shadow (DirectionalLightShadow) by path: its numbers, the map size and the orthographic
+    // shadow camera's frustum, which the renderer re-projects every frame it draws the map.
+    using Shadow = LightShadow;
+    const auto shadowNumber = [&b](const char* name, double Shadow::*field) {
+        const std::string path = std::string("shadow.") + name;
+        b.getters[path] = [field](void* self) { return Value::of(as<DirectionalLight>(self)->shadow.*field); };
+        b.setters[path] = [field](void* self, const Value& v) { as<DirectionalLight>(self)->shadow.*field = number(v); };
+    };
+    shadowNumber("bias", &Shadow::bias);
+    shadowNumber("normalBias", &Shadow::normalBias);
+    shadowNumber("radius", &Shadow::radius);
+    shadowNumber("intensity", &Shadow::intensity);
+    for (const char* axis : {"x", "y", "width", "height"}) {
+        const bool first = axis[0] == 'x' || axis[0] == 'w';
+        const std::string path = std::string("shadow.mapSize.") + axis;
+        b.getters[path] = [first](void* self) {
+            const Vector2& size = as<DirectionalLight>(self)->shadow.mapSize;
+            return Value::of(first ? size.x : size.y);
+        };
+        b.setters[path] = [first](void* self, const Value& v) {
+            Vector2& size = as<DirectionalLight>(self)->shadow.mapSize;
+            (first ? size.x : size.y) = number(v);
+        };
+    }
+    const auto cameraNumber = [&b](const char* name, double OrthographicCamera::*field) {
+        const std::string path = std::string("shadow.camera.") + name;
+        auto camera = [](void* self) { return static_cast<OrthographicCamera*>(as<DirectionalLight>(self)->shadow.camera.get()); };
+        b.getters[path] = [field, camera](void* self) { return Value::of(camera(self)->*field); };
+        b.setters[path] = [field, camera](void* self, const Value& v) { camera(self)->*field = number(v); };
+    };
+    cameraNumber("left", &OrthographicCamera::left);
+    cameraNumber("right", &OrthographicCamera::right);
+    cameraNumber("top", &OrthographicCamera::top);
+    cameraNumber("bottom", &OrthographicCamera::bottom);
+    cameraNumber("near", &OrthographicCamera::near);
+    cameraNumber("far", &OrthographicCamera::far);
 }
 
 // A number field of a light class: getter and setter over one member.

@@ -55,11 +55,19 @@ struct VertexVariant {
  * character each, 'd' directional, 'p' point, 's' spot. Light i reads `light{i}Color` (intensity
  * folded in) and, by kind, `light{i}Direction` (view space, towards the light), `light{i}Position`
  * (view space), `light{i}Distance`, `light{i}Decay`, `light{i}Axis` (view space, target to light),
- * `light{i}ConeCos` and `light{i}PenumbraCos`. A program is specialized per layout, as three's is per
+ * `light{i}ConeCos` and `light{i}PenumbraCos`. An upper-case kind also casts a shadow the mesh
+ * receives: `light{i}ShadowMatrix`, `ShadowBias`, `ShadowNormalBias`, `ShadowRadius`,
+ * `ShadowMapSize` and `ShadowIntensity`, and the depth texture `shadow{i}`. A program is specialized per layout, as three's is per
  * lights hash; the default is the one directional light the first renderer drew.
  */
 struct LightLayout {
     std::string kinds = "d";
+    /** Any upper-case kind: that light's shadow map is read (`light{i}Shadow*`, texture `shadow{i}`). */
+    [[nodiscard]] bool shadowed() const {
+        for (const char c : kinds)
+            if (c >= 'A' && c <= 'Z') return true;
+        return false;
+    }
 };
 
 /** TN_MATERIAL_UNSUPPORTED <feature> for each physical feature in use and not yet ported. */

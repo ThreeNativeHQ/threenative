@@ -71,6 +71,8 @@ export interface IFixtureRender {
   readonly toneMapping: ToneMappingName;
   readonly toneMappingExposure: number;
   readonly outputColorSpace: OutputColorSpace;
+  /** three's `renderer.shadowMap.enabled` (PCFShadowMap); absent is off. */
+  readonly shadowMap?: boolean;
 }
 
 /** What `navigator.gpu` reported about the adapter that drew the golden frame. */
@@ -293,6 +295,8 @@ export function fixtureErrors(value: unknown, expectedName?: string): readonly s
         !OUTPUT_COLOR_SPACES.includes(render.outputColorSpace as OutputColorSpace)
       )
         errors.push(`$.render.outputColorSpace: must be one of ${OUTPUT_COLOR_SPACES.join(", ")}`);
+      if (render.shadowMap !== undefined && typeof render.shadowMap !== "boolean")
+        errors.push("$.render.shadowMap: must be a boolean when present");
     }
   }
 

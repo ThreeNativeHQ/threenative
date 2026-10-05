@@ -86,6 +86,7 @@ function requestOf(fixture: IFixture): Record<string, unknown> {
     height: render.height,
     toneMappingConstant: TONE_MAPPING_CONSTANTS[render.toneMapping],
     toneMappingExposure: render.toneMappingExposure ?? 1,
+    shadowMap: render.shadowMap === true,
     outputColorSpaceConstant:
       OUTPUT_COLOR_SPACE_CONSTANTS[render.outputColorSpace ?? "srgb"] ??
       OUTPUT_COLOR_SPACE_CONSTANTS.srgb,

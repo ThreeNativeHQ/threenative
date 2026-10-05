@@ -35,6 +35,7 @@ struct RenderRequest {
     double exposure = 1;
     bool srgb = true;
     std::string png;          // where to write the frame
+    bool shadowMap = false;   // a trailing `shadowMap` token: three's renderer.shadowMap.enabled
 };
 
 class Driver : public Store {

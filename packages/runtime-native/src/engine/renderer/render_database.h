@@ -46,6 +46,8 @@ class RenderDatabase {
      * default; off draws every mesh on its own, which must give the same frame.
      */
     bool batching = true;
+    /** three's `renderer.shadowMap.enabled`: off, no light draws or reads a shadow map. */
+    bool shadowMapEnabled = false;
     static constexpr std::size_t kMinBatchMembers = 4;
     /** Draws the last render merged by batching: groups made and meshes they absorbed. */
     [[nodiscard]] std::pair<std::size_t, std::size_t> lastBatches() const { return {batchGroups_, batchMembers_}; }

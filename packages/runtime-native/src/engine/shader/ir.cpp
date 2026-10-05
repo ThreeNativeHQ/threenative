@@ -379,12 +379,28 @@ void Program::store(uint32_t buffer, ExprId index, ExprId value, Where where) {
 
 uint32_t Program::texture2d(std::string_view name) {
     textures_.emplace_back(name);
+    depthTextures_.push_back(false);
     return static_cast<uint32_t>(textures_.size() - 1);
+}
+
+uint32_t Program::textureDepth(std::string_view name) {
+    textures_.emplace_back(name);
+    depthTextures_.push_back(true);
+    return static_cast<uint32_t>(textures_.size() - 1);
+}
+
+ExprId Program::sampleCompare(uint32_t texture, ExprId uv, ExprId reference, Where where) {
+    if (uv == kInvalid || reference == kInvalid) return kInvalid;
+    if (texture >= textures_.size() || !depthTextures_[texture]) return fail("sampleCompare", "no such depth texture", where);
+    if (exprs_[uv].type != Type::vec(2)) return fail("sampleCompare " + textures_[texture], "uv is " + exprs_[uv].type.name(), where);
+    if (exprs_[reference].type != Type::f32())
+        return fail("sampleCompare " + textures_[texture], "reference is " + exprs_[reference].type.name(), where);
+    return pure(Expr{Op::Sample, Type::f32(), {uv, reference}, 2, texture});
 }
 
 ExprId Program::sample(uint32_t texture, ExprId uv, Where where) {
     if (uv == kInvalid) return kInvalid;
-    if (texture >= textures_.size()) return fail("sample", "no such texture", where);
+    if (texture >= textures_.size() || depthTextures_[texture]) return fail("sample", "no such texture", where);
     if (exprs_[uv].type != Type::vec(2)) return fail("sample " + textures_[texture], "uv is " + exprs_[uv].type.name(), where);
     return pure(Expr{Op::Sample, Type::vec(4), {uv}, 1, texture});
 }
@@ -485,7 +501,11 @@ std::string Program::describe(ExprId id, std::vector<int>& numbering) const {
         case Op::Attribute: return "attribute:" + names_[e.immediate];
         case Op::Builtin: return "builtin:" + names_[e.immediate];
         case Op::Varying: return "varying:" + names_[e.immediate];
-        case Op::Sample: return "sample:" + textures_[e.immediate] + "(" + describe(e.args[0], numbering) + ")";
+        case Op::Sample:
+            if (e.argc == 2)
+                return "sampleCompare:" + textures_[e.immediate] + "(" + describe(e.args[0], numbering) + ", " +
+                       describe(e.args[1], numbering) + ")";
+            return "sample:" + textures_[e.immediate] + "(" + describe(e.args[0], numbering) + ")";
         case Op::Swizzle: {
             std::string lanes;
             const unsigned n = static_cast<unsigned>(e.immediate >> 8);

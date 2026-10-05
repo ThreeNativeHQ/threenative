@@ -187,7 +187,7 @@ int Driver::run(std::istream& in, std::ostream& out) {
                 }
                 continue;
             }
-            if (command == "render" && t.size() == 9) {
+            if (command == "render" && (t.size() == 9 || (t.size() == 10 && t[9] == "shadowMap"))) {
                 if (!render) throw Unsupported{"this driver does not render: use the render-capable driver"};
                 auto scene = objects_.find(t[1]);
                 auto camera = objects_.find(t[2]);
@@ -199,6 +199,7 @@ int Driver::run(std::istream& in, std::ostream& out) {
                 request.exposure = number(parseArg(t[6]));
                 request.srgb = t[7] == "srgb";
                 request.png = decode(t[8].substr(2));
+                request.shadowMap = t.size() == 10;
                 if (const std::string failed = render(scene->second, camera->second, request); !failed.empty()) throw Unsupported{failed};
                 frame_ = request.png;
                 continue;

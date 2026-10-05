@@ -40,6 +40,8 @@ struct DrawItem {
     int renderOrder = 0;       // Object3D.renderOrder
     bool transparent = false;  // material.transparent: drawn after opaques, back to front, blended
     bool depthWrite = true;    // material.depthWrite
+    bool castShadow = false;    // Object3D.castShadow: drawn into every shadow map
+    bool receiveShadow = false; // Object3D.receiveShadow: its lit program reads the shadow maps
     // InstancedMesh: one mat4 (16 floats) per instance, an optional rgb per instance, and how many draw.
     BufferStore* instanceMatrices = nullptr;
     BufferStore* instanceColors = nullptr;
@@ -65,6 +67,17 @@ struct DirectLight {
     std::array<double, 3> position{0, 0, 0};  // point and spot
     double distance = 0, decay = 2;           // point and spot: the cutoff (0 none) and the falloff exponent
     double coneCos = 0, penumbraCos = 0;      // spot: cos(angle) and cos(angle * (1 - penumbra))
+    /**
+     * Set when the light casts a shadow and the shadow map is on (three's LightShadow after
+     * updateMatrices): the shadow camera's view and projection draw the depth map, and `matrix` takes a
+     * world position to the map's uv and depth.
+     */
+    struct Shadow {
+        Matrix view{}, projection{}, matrix{};
+        double bias = 0, normalBias = 0, radius = 1, intensity = 1;
+        uint32_t width = 512, height = 512;
+    };
+    std::optional<Shadow> shadow;
     static DirectLight directional(std::array<double, 3> towards, std::array<double, 3> color) {
         DirectLight l;
         l.direction = towards;
@@ -150,7 +163,9 @@ private:
     };
     // Per direct light i, `light{i}<Field>` (shader::LightLayout).
     enum LightField : uint8_t { kLightColor, kLightDirection, kLightPosition, kLightDistance, kLightDecay, kLightAxis,
-                                kLightConeCos, kLightPenumbraCos, kLightFieldCount };
+                                kLightConeCos, kLightPenumbraCos, kLightShadowMatrix, kLightShadowBias,
+                                kLightShadowNormalBias, kLightShadowRadius, kLightShadowMapSize,
+                                kLightShadowIntensity, kLightFieldCount };
     struct Program {
         shader::StageModule vertex;
         shader::StageModule fragment;
@@ -166,8 +181,12 @@ private:
     void buildLayouts(Program& program);
     /** The program for a material kind, vertex variant and light layout, built on first use. */
     Program& program(MaterialKind kind, int variant, const std::string& lights);
+    /** The shadow pass's depth-only program for a vertex variant (0 plain, 1 instanced). */
+    Program& depthProgram(int variant);
+    Program& add(const std::string& key, shader::StageModule vertex, shader::StageModule fragment);
     WGPUBindGroup bindGroup(WGPUBindGroupLayout layout, const shader::StageModule& stage, Handle uniforms,
                             WGPUTextureView view, WGPUSampler sampler);
+    void rebuildGroups();
     void releaseTargets();
     void releaseOutputGroup();
     void outputPass(WGPUCommandEncoder encoder, bool timed);
@@ -183,6 +202,15 @@ private:
     WGPUTexture lut_ = nullptr;
     WGPUTextureView lutView_ = nullptr;
     WGPUSampler lutSampler_ = nullptr;
+    // Shadow maps by direct-light index (Depth24Plus, three's DepthTexture of UnsignedIntType), and
+    // the less-equal comparison sampler with linear filtering PCFShadowMap samples them with.
+    struct ShadowMap {
+        WGPUTexture texture = nullptr;
+        WGPUTextureView view = nullptr;
+        uint32_t width = 0, height = 0;
+    };
+    std::vector<ShadowMap> shadowMaps_;
+    WGPUSampler compareSampler_ = nullptr;
     Handle color_;
     WGPUTexture depth_ = nullptr;
     WGPUTextureView colorView_ = nullptr;

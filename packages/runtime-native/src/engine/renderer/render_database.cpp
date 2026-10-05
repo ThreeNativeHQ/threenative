@@ -25,6 +25,34 @@ std::array<double, 3> normalized(std::array<double, 3> v) {
     return l > 0 ? std::array<double, 3>{v[0] / l, v[1] / l, v[2] / l} : v;
 }
 
+// LightShadow.updateMatrices in three's WebGPU coordinate system: the shadow camera stands at the
+// light, looks at the target, and `matrix` is the uv/depth bias matrix times its projection-view.
+DirectLight::Shadow shadowOf(LightShadow& shadow, const std::array<double, 3>& from, const std::array<double, 3>& to) {
+    Camera& camera = *shadow.camera;
+    if (camera.coordinateSystem != CoordinateSystem::WebGPU) camera.coordinateSystem = CoordinateSystem::WebGPU;
+    if (auto* o = dynamic_cast<OrthographicCamera*>(&camera)) o->updateProjectionMatrix();
+    if (auto* p = dynamic_cast<PerspectiveCamera*>(&camera)) p->updateProjectionMatrix();
+    camera.position.set(from[0], from[1], from[2]);
+    camera.lookAt(Vector3(to[0], to[1], to[2]));
+    camera.updateMatrixWorld();
+    Matrix4 projScreen;
+    projScreen.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+    Matrix4 matrix;
+    matrix.set(0.5, 0.0, 0.0, 0.5, 0.0, 0.5, 0.0, 0.5, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0);
+    matrix.multiply(projScreen);
+    DirectLight::Shadow out;
+    out.view = toArray(camera.matrixWorldInverse);
+    out.projection = toArray(camera.projectionMatrix);
+    out.matrix = toArray(matrix);
+    out.bias = shadow.bias;
+    out.normalBias = shadow.normalBias;
+    out.radius = shadow.radius;
+    out.intensity = shadow.intensity;
+    out.width = static_cast<uint32_t>(shadow.mapSize.x);
+    out.height = static_cast<uint32_t>(shadow.mapSize.y);
+    return out;
+}
+
 MaterialKind kindOf(MaterialType type) {
     switch (type) {
     case MaterialType::Basic:
@@ -126,6 +154,8 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
                 r.params = paramsOf(*r.material);
                 r.item.material = &r.params;
                 r.item.batchable = type == "Mesh" && !mesh.onBeforeRender && !r.material->transparent;
+                r.item.castShadow = mesh.castShadow();
+                r.item.receiveShadow = mesh.receiveShadow();
                 items.push_back(r.item);
                 if (type == "InstancedMesh") {
                     // Read every frame, as three does: count changes and setColorAt's first call (which
@@ -145,10 +175,12 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
             for (int c = 0; c < 3; ++c)
                 lights.ambient[c] += scaled(l.color, l.intensity)[c];
         } else if (type == "DirectionalLight") {
-            const auto& l = static_cast<const DirectionalLight&>(object);
+            auto& l = static_cast<DirectionalLight&>(object); // its shadow camera moves, as three's does
             const auto from = worldPosition(l), to = worldPosition(*l.target);
             direct_.emplace_back(object.id(), DirectLight::directional(normalized({from[0] - to[0], from[1] - to[1], from[2] - to[2]}),
                                                                       scaled(l.color, l.intensity)));
+            if (shadowMapEnabled && l.castShadow())
+                direct_.back().second.shadow = shadowOf(l.shadow, from, to);
         } else if (type == "PointLight") {
             const auto& l = static_cast<const PointLight&>(object);
             DirectLight d;
@@ -201,7 +233,8 @@ void RenderDatabase::batch(std::vector<DrawItem>& items) {
         auto same = [&](const std::vector<std::size_t>& g) {
             const DrawItem& o = items[g.front()];
             return o.positions == d.positions && o.normals == d.normals && o.indices == d.indices &&
-                   o.materialKey == d.materialKey && o.kind == d.kind && o.renderOrder == d.renderOrder;
+                   o.materialKey == d.materialKey && o.kind == d.kind && o.renderOrder == d.renderOrder &&
+                   o.castShadow == d.castShadow && o.receiveShadow == d.receiveShadow;
         };
         auto it = std::find_if(groups.begin(), groups.end(), same);
         if (it == groups.end())

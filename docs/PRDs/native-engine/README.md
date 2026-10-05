@@ -10,7 +10,7 @@ All new package names, configuration fields, ABI names, status markers, and work
 
 ## PRD index
 
-**Batch status: IN PROGRESS — 146/237 phase boxes (61%) as of 2026-10-05, on `feat/native-engine` (PR #438).** This file is the batch index and the source proposal; the PRDs below carry the boxes. Work packages too large for one PRD (at most 3 phases, about 8 boxes) are a folder with its own `README.md` and child PRDs. The batch moves to `done/` whole only when every PRD in it is finished.
+**Batch status: IN PROGRESS — 148/237 phase boxes (62%) as of 2026-10-05, on `feat/native-engine` (PR #438).** This file is the batch index and the source proposal; the PRDs below carry the boxes. Work packages too large for one PRD (at most 3 phases, about 8 boxes) are a folder with its own `README.md` and child PRDs. The batch moves to `done/` whole only when every PRD in it is finished.
 
 ### Progress
 
@@ -42,7 +42,7 @@ Generated from the PRD files' boxes; a PRD is done when every box is ticked.
 | [PRD-518](N11-native-animation/PRD-518-n11c-skinning-palettes-and-pose-history.md) | Skinning palettes and pose history (N11c) | 0/7 | not started |
 | [PRD-519](PRD-519-n12-native-batching-visibility-lod-gpu-scene.md) | Native batching, visibility, LOD and GPU scene (N12) | 4/7 | in progress |
 | [PRD-520](N13-native-streaming-and-world/PRD-520-n13a-bounded-streaming-admission-and-io-events.md) | Bounded streaming admission and IO events (N13a) | 4/5 | in progress |
-| [PRD-521](N13-native-streaming-and-world/PRD-521-n13b-worldcells-and-worldtiles-run-native.md) | WorldCells and WorldTiles run native (N13b) | 1/6 | in progress |
+| [PRD-521](N13-native-streaming-and-world/PRD-521-n13b-worldcells-and-worldtiles-run-native.md) | WorldCells and WorldTiles run native (N13b) | 3/6 | in progress |
 | [PRD-522](N13-native-streaming-and-world/PRD-522-n13c-a-world-loads-walks-and-unloads-without-growth.md) | A world loads, walks and unloads without growth (N13c) | 0/4 | not started |
 | [PRD-523](N14-native-render-chain-and-advanced-visuals/PRD-523-n14a-the-render-graph-owns-passes-and-history.md) | The render graph owns passes and history (N14a) | 6/7 | in progress |
 | [PRD-524](N14-native-render-chain-and-advanced-visuals/PRD-524-n14b-virtual-shadows-run-native.md) | Virtual shadows run native (N14b) | 2/5 | in progress |

@@ -76,6 +76,9 @@ std::string WgslEmitter::expr(ExprId id) const {
         case Op::LoadStorage: return "l" + std::to_string(id);
         case Op::Sample: {
             const std::string& name = p_.textures_[e.immediate];
+            if (e.argc == 2)  // three's generateTextureCompare
+                return (p_.stage_ == Stage::Fragment ? "textureSampleCompare(t_" : "textureSampleCompareLevel(t_") + name +
+                       ", smp_" + name + ", " + expr(e.args[0]) + ", " + expr(e.args[1]) + ")";
             return p_.stage_ == Stage::Fragment
                        ? "textureSample(t_" + name + ", smp_" + name + ", " + expr(e.args[0]) + ")"
                        : "textureSampleLevel(t_" + name + ", smp_" + name + ", " + expr(e.args[0]) + ", 0.0)";
@@ -203,11 +206,13 @@ WgslModule WgslEmitter::emit(const Program& program, uint32_t group) {
                e.type(storage.element) + ">;\n";
     }
 
-    for (const std::string& name : program.textures_) {
+    for (std::size_t i = 0; i < program.textures_.size(); ++i) {
+        const std::string& name = program.textures_[i];
+        const bool depth = program.depthTextures_[i];
         out += "@group(" + std::to_string(group) + ") @binding(" + std::to_string(binding++) + ") var t_" + name +
-               ": texture_2d<f32>;\n";
+               (depth ? ": texture_depth_2d;\n" : ": texture_2d<f32>;\n");
         out += "@group(" + std::to_string(group) + ") @binding(" + std::to_string(binding++) + ") var smp_" + name +
-               ": sampler;\n";
+               (depth ? ": sampler_comparison;\n" : ": sampler;\n");
     }
 
     const Stage stage = program.stage_;

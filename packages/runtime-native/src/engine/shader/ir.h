@@ -112,6 +112,10 @@ public:
     uint32_t texture2d(std::string_view name);
     /** vec4<f32>; implicit derivatives in a fragment stage, level 0 elsewhere. */
     ExprId sample(uint32_t texture, ExprId uv, Where where = Where::current());
+    /** A depth texture and its comparison sampler (less-equal), bound together: a shadow map. */
+    uint32_t textureDepth(std::string_view name);
+    /** f32 in [0, 1]: `reference` compared against the depth texture at `uv`, filtered. */
+    ExprId sampleCompare(uint32_t texture, ExprId uv, ExprId reference, Where where = Where::current());
     void discard(Where where = Where::current());
     /**
      * A stage output: "position" (vec4, vertex) and "color" (vec4, fragment) are the fixed ones;
@@ -172,6 +176,7 @@ private:
     std::vector<Var> vars_;
     std::vector<Storage> storage_;
     std::vector<std::string> textures_;
+    std::vector<bool> depthTextures_; // per texture: a depth texture with a comparison sampler
     struct OutputSlot {
         uint64_t name;
         Type type;

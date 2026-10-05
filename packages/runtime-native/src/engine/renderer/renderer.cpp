@@ -85,8 +85,10 @@ constexpr const char* kSlotNames[] = {
     "modelMatrix", "viewMatrix", "projectionMatrix", "normalMatrix", "diffuse", "alphaTest", "opaque", "roughness",
     "metalness", "emissive", "specular", "shininess", "ior", "specularIntensity", "specularColor",
     "hemisphereSky", "hemisphereGround", "hemisphereDirection", "ambient"};
-constexpr const char* kLightFieldNames[] = {"Color", "Direction", "Position", "Distance", "Decay", "Axis",
-                                            "ConeCos", "PenumbraCos"};
+constexpr const char* kLightFieldNames[] = {"Color",       "Direction",        "Position",     "Distance",
+                                            "Decay",       "Axis",             "ConeCos",      "PenumbraCos",
+                                            "ShadowMatrix", "ShadowBias",      "ShadowNormalBias", "ShadowRadius",
+                                            "ShadowMapSize", "ShadowIntensity"};
 
 constexpr uint64_t kUniformAlign = 256;  // minUniformBufferOffsetAlignment's WebGPU default
 uint64_t aligned(uint64_t size) { return (size + kUniformAlign - 1) / kUniformAlign * kUniformAlign; }
@@ -128,6 +130,8 @@ Renderer::Renderer(WGPUInstance instance, WGPUDevice device, WGPUQueue queue, Ev
     sampler.addressModeU = sampler.addressModeV = sampler.addressModeW = WGPUAddressMode_ClampToEdge;
     sampler.maxAnisotropy = 1;
     lutSampler_ = wgpuDeviceCreateSampler(device, &sampler);
+    sampler.compare = WGPUCompareFunction_LessEqual;
+    compareSampler_ = wgpuDeviceCreateSampler(device, &sampler);
 
     // One triangle covers the frame; the output pass samples the scene target texel for texel.
     const float triangle[6] = {-1, -1, 3, -1, -1, 3};
@@ -164,6 +168,11 @@ Renderer::~Renderer() {
     releaseOutputGroup();
     wgpuSamplerRelease(outputSampler_);
     wgpuSamplerRelease(lutSampler_);
+    wgpuSamplerRelease(compareSampler_);
+    for (ShadowMap& map : shadowMaps_) {
+        if (map.view) wgpuTextureViewRelease(map.view);
+        if (map.texture) wgpuTextureRelease(map.texture);
+    }
     wgpuTextureViewRelease(lutView_);
     wgpuTextureRelease(lut_);
 }
@@ -237,6 +246,11 @@ WGPUBindGroup Renderer::bindGroup(WGPUBindGroupLayout layout, const shader::Stag
         if (b.kind == shader::BindingKind::Uniform) {
             e.buffer = gpu_.buffer(uniforms);
             e.size = stage.uniformBlockSize;
+        } else if (b.depth) {
+            // `t_shadow{i}` / `smp_shadow{i}`: direct light i's shadow map and the comparison sampler.
+            const std::size_t index = std::stoul(b.name.substr(b.name.find("shadow") + 6));
+            if (b.kind == shader::BindingKind::Texture) e.textureView = shadowMaps_.at(index).view;
+            else e.sampler = compareSampler_;
         } else if (b.kind == shader::BindingKind::Texture) {
             e.textureView = view;
         } else if (b.kind == shader::BindingKind::Sampler) {
@@ -268,10 +282,10 @@ void Renderer::buildLayouts(Program& program) {
                 e.buffer.hasDynamicOffset = true;
                 e.buffer.minBindingSize = stages[g]->uniformBlockSize;
             } else if (b.kind == shader::BindingKind::Texture) {
-                e.texture.sampleType = WGPUTextureSampleType_Float;
+                e.texture.sampleType = b.depth ? WGPUTextureSampleType_Depth : WGPUTextureSampleType_Float;
                 e.texture.viewDimension = WGPUTextureViewDimension_2D;
             } else if (b.kind == shader::BindingKind::Sampler) {
-                e.sampler.type = WGPUSamplerBindingType_Filtering;
+                e.sampler.type = b.depth ? WGPUSamplerBindingType_Comparison : WGPUSamplerBindingType_Filtering;
             } else {
                 throw std::runtime_error("TN_NATIVE_BINDING_UNSUPPORTED: " + b.name);
             }
@@ -318,11 +332,29 @@ Renderer::Program& Renderer::program(MaterialKind kind, int variant, const std::
     case MaterialKind::Phong: source = shader::buildPhong(vv, layout); break;
     case MaterialKind::Physical: source = shader::buildPhysical(shader::StandardMaterial{}, vv, layout); break;
     }
-    auto built = std::make_unique<Program>();
-    built->vertex = shader::buildStage(source.vertex, 0);
-    built->fragment = shader::buildStage(source.fragment, 1);
-    if (!built->vertex.wgsl.ok() || !built->fragment.wgsl.ok())
+    shader::StageModule vertex = shader::buildStage(source.vertex, 0);
+    shader::StageModule fragment = shader::buildStage(source.fragment, 1);
+    if (!vertex.wgsl.ok() || !fragment.wgsl.ok())
         throw std::runtime_error("TN_NATIVE_SHADER_INVALID: material program " + key);
+    return add(key, std::move(vertex), std::move(fragment));
+}
+
+Renderer::Program& Renderer::depthProgram(int variant) {
+    const std::string key = "depth|" + std::to_string(variant);
+    if (const auto found = programs_.find(key); found != programs_.end()) return *found->second;
+    // three's shadow pass draws with the default positionNode, the same transform as a basic material.
+    shader::StageModule vertex = shader::buildStage(shader::buildBasic(variant ? shader::VertexVariant{true, false}
+                                                                               : shader::VertexVariant{}).vertex, 0);
+    if (!vertex.wgsl.ok()) throw std::runtime_error("TN_NATIVE_SHADER_INVALID: shadow depth program");
+    shader::StageModule fragment;
+    fragment.stage = shader::Stage::Fragment;
+    return add(key, std::move(vertex), std::move(fragment));
+}
+
+Renderer::Program& Renderer::add(const std::string& key, shader::StageModule vertex, shader::StageModule fragment) {
+    auto built = std::make_unique<Program>();
+    built->vertex = std::move(vertex);
+    built->fragment = std::move(fragment);
     buildLayouts(*built);
     if (uniformCapacity_ != 0) {
         for (int g = 0; g < 2; ++g)
@@ -330,6 +362,16 @@ Renderer::Program& Renderer::program(MaterialKind kind, int variant, const std::
                                          lutView_, lutSampler_);
     }
     return *programs_.emplace(key, std::move(built)).first->second;
+}
+
+void Renderer::rebuildGroups() {
+    for (auto& [key, program] : programs_) {
+        for (int g = 0; g < 2; ++g) {
+            if (program->groups[g]) wgpuBindGroupRelease(program->groups[g]);
+            program->groups[g] = bindGroup(program->layouts[g], g == 0 ? program->vertex : program->fragment,
+                                           uniformBuffer_, lutView_, lutSampler_);
+        }
+    }
 }
 
 uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& camera, const LightState& lights,
@@ -366,7 +408,6 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
         sceneTimes.endOfPassWriteIndex = 1;
         passDesc.timestampWrites = &sceneTimes;
     }
-    WGPURenderPassEncoder pass = wgpuCommandEncoderBeginRenderPass(encoder, &passDesc);
 
     // RenderList: z is the object origin's clip-space depth (setFromMatrixPosition, then the
     // projection-view matrix); painterSortStable for opaques, reversePainterSortStable for the rest.
@@ -391,9 +432,34 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
     opaque.insert(opaque.end(), transparent.begin(), transparent.end());
 
     // The light layout every lit program this frame is specialized for, in three's light order.
-    std::string lightKinds;
-    for (const DirectLight& l : lights.direct)
-        lightKinds += l.kind == DirectLight::Kind::Directional ? 'd' : l.kind == DirectLight::Kind::Point ? 'p' : 's';
+    // Upper case: the light casts a shadow, which a receiving mesh's program reads; a mesh that does
+    // not receive shadows takes the lower-case layout, as three keys a program on receiveShadow.
+    std::string lightKinds, unshadowedKinds;
+    bool shadowMapsChanged = false;
+    for (std::size_t i = 0; i < lights.direct.size(); ++i) {
+        const DirectLight& l = lights.direct[i];
+        const char kind = l.kind == DirectLight::Kind::Directional ? 'd' : l.kind == DirectLight::Kind::Point ? 'p' : 's';
+        unshadowedKinds += kind;
+        lightKinds += l.shadow ? static_cast<char>(kind - 'a' + 'A') : kind;
+        if (!l.shadow) continue;
+        if (shadowMaps_.size() <= i) shadowMaps_.resize(i + 1);
+        ShadowMap& map = shadowMaps_[i];
+        if (map.width == l.shadow->width && map.height == l.shadow->height) continue;
+        if (map.view) wgpuTextureViewRelease(map.view);
+        if (map.texture) wgpuTextureRelease(map.texture);
+        WGPUTextureDescriptor desc = {};
+        desc.dimension = WGPUTextureDimension_2D;
+        desc.size = {l.shadow->width, l.shadow->height, 1};
+        desc.format = WGPUTextureFormat_Depth24Plus;
+        desc.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding;
+        desc.mipLevelCount = 1;
+        desc.sampleCount = 1;
+        map.texture = wgpuDeviceCreateTexture(device_, &desc);
+        map.view = view2d(map.texture, WGPUTextureFormat_Depth24Plus);
+        map.width = l.shadow->width;
+        map.height = l.shadow->height;
+        shadowMapsChanged = true;
+    }
 
     // Plan: each draw's program, pipeline and uniform slices, all uniforms into one CPU block.
     struct Planned {
@@ -408,7 +474,10 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
     for (const auto& [depthKey, drawn] : opaque) {
         const DrawItem& item = *drawn;
         const int variant = item.instanceMatrices ? (item.instanceColors ? 2 : 1) : 0;
-        Program& program = this->program(item.kind, variant, item.kind == MaterialKind::Basic ? "" : lightKinds);
+        Program& program = this->program(item.kind, variant,
+                                         item.kind == MaterialKind::Basic ? ""
+                                         : item.receiveShadow            ? lightKinds
+                                                                         : unshadowedKinds);
         if (item.instanceCount == 0) continue;  // three draws nothing for count 0
         const bool lit = item.kind != MaterialKind::Basic;
         if (!item.positions || (lit && !item.normals) || !item.material) continue;
@@ -452,6 +521,15 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
             put(frameUniforms_, f, slot[kLightDecay], std::array<double, 1>{l.decay});
             put(frameUniforms_, f, slot[kLightConeCos], std::array<double, 1>{l.coneCos});
             put(frameUniforms_, f, slot[kLightPenumbraCos], std::array<double, 1>{l.penumbraCos});
+            if (l.shadow) {
+                put(frameUniforms_, f, slot[kLightShadowMatrix], l.shadow->matrix);
+                put(frameUniforms_, f, slot[kLightShadowBias], std::array<double, 1>{l.shadow->bias});
+                put(frameUniforms_, f, slot[kLightShadowNormalBias], std::array<double, 1>{l.shadow->normalBias});
+                put(frameUniforms_, f, slot[kLightShadowRadius], std::array<double, 1>{l.shadow->radius});
+                put(frameUniforms_, f, slot[kLightShadowMapSize],
+                    std::array<double, 2>{double(l.shadow->width), double(l.shadow->height)});
+                put(frameUniforms_, f, slot[kLightShadowIntensity], std::array<double, 1>{l.shadow->intensity});
+            }
         }
         put(frameUniforms_, f, fs[kHemisphereSky], lights.hemisphereSky);
         put(frameUniforms_, f, fs[kHemisphereGround], lights.hemisphereGround);
@@ -460,28 +538,48 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
         plan.push_back({&item, &program, pipeline, static_cast<uint32_t>(v), static_cast<uint32_t>(f)});
     }
 
+    // Each shadow-casting light's depth pass: every caster through the shadow camera, back faces for
+    // front-sided materials (three's _shadowSide), depth only. Order is free: depth keeps the nearest.
+    std::vector<std::vector<Planned>> shadowPlans(lights.direct.size());
+    for (std::size_t i = 0; i < lights.direct.size(); ++i) {
+        if (!lights.direct[i].shadow) continue;
+        const DirectLight::Shadow& shadow = *lights.direct[i].shadow;
+        for (const auto& [depthKey, drawn] : opaque) {
+            const DrawItem& item = *drawn;
+            if (!item.castShadow || item.instanceCount == 0 || !item.positions) continue;
+            Program& program = depthProgram(item.instanceMatrices ? 1 : 0);
+            PipelineTarget target{WGPUTextureFormat_Undefined, WGPUTextureFormat_Depth24Plus, WGPUCullMode_Front};
+            target.layout = program.pipelineLayout;
+            WGPURenderPipeline pipeline = pipelines_.get(program.vertex, nullptr, target);
+            if (!pipeline) throw std::runtime_error("TN_NATIVE_PIPELINE_REFUSED: shadow depth program");
+            const uint64_t v = frameUniforms_.size();
+            frameUniforms_.resize(v + aligned(program.vertex.uniformBlockSize), 0);
+            put(frameUniforms_, v, program.vertexSlots[kModelMatrix], item.matrixWorld);
+            put(frameUniforms_, v, program.vertexSlots[kViewMatrix], shadow.view);
+            put(frameUniforms_, v, program.vertexSlots[kProjectionMatrix], shadow.projection);
+            shadowPlans[i].push_back({&item, &program, pipeline, static_cast<uint32_t>(v), 0});
+        }
+    }
+
     // One buffer for the frame's uniforms, grown (and its bind groups rebuilt) when it is too small,
     // written once: a queue write, so it lands before this frame's commands and after the last's.
     if (frameUniforms_.size() > uniformCapacity_) {
         if (uniformCapacity_ != 0) gpu_.destroy(uniformBuffer_);
         uniformCapacity_ = std::max<uint64_t>(frameUniforms_.size() * 2, 64 * 1024);
         uniformBuffer_ = gpu_.createBuffer(uniformCapacity_, WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
-        for (auto& [key, program] : programs_) {
-            for (int g = 0; g < 2; ++g) {
-                if (program->groups[g]) wgpuBindGroupRelease(program->groups[g]);
-                program->groups[g] = bindGroup(program->layouts[g], g == 0 ? program->vertex : program->fragment,
-                                               uniformBuffer_, lutView_, lutSampler_);
-            }
-        }
+        rebuildGroups();
+    } else if (shadowMapsChanged) {
+        rebuildGroups();
     }
     if (!frameUniforms_.empty()) gpu_.writeBuffer(uniformBuffer_, 0, frameUniforms_.data(), frameUniforms_.size());
 
-    // Encode: state changes only where they change; per draw, two dynamic offsets and the draw.
+    // Encode: state changes only where they change; per draw, its dynamic offsets and the draw. The
+    // shadow passes first, so the main pass samples this frame's maps.
     WGPURenderPipeline bound = nullptr;
     const BufferStore* boundVertex[8] = {};  // by vertex buffer slot (attribute location)
     const BufferStore* boundIndex = nullptr;
     lastFrame_ = FrameStats{};
-    for (const Planned& p : plan) {
+    auto encode = [&](WGPURenderPassEncoder pass, const Planned& p, bool counted) {
         const DrawItem& item = *p.item;
         if (p.pipeline != bound) {
             wgpuRenderPassEncoderSetPipeline(pass, bound = p.pipeline);
@@ -502,7 +600,9 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
             if (a.location < std::size(boundVertex)) boundVertex[a.location] = &store;
         }
         wgpuRenderPassEncoderSetBindGroup(pass, 0, p.program->groups[0], 1, &p.vertexOffset);
-        wgpuRenderPassEncoderSetBindGroup(pass, 1, p.program->groups[1], 1, &p.fragmentOffset);
+        // The depth program's fragment group is empty: no uniform block, no dynamic offset.
+        const bool fragmentBlock = p.program->fragment.uniformBlockSize != 0;
+        wgpuRenderPassEncoderSetBindGroup(pass, 1, p.program->groups[1], fragmentBlock ? 1 : 0, &p.fragmentOffset);
         if (item.indices) {
             const Handle indices = geometry_.sync(*item.indices, WGPUBufferUsage_Index);
             const bool wide = item.indices->scalar() == Scalar::U32;
@@ -514,14 +614,34 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
             }
             const uint32_t count = static_cast<uint32_t>(item.indices->byteLength() / (wide ? 4 : 2));
             wgpuRenderPassEncoderDrawIndexed(pass, count, item.instanceCount, 0, 0, 0);
-            lastFrame_.triangles += uint64_t{item.instanceCount} * (count / 3);  // three's Info.update
+            if (counted) lastFrame_.triangles += uint64_t{item.instanceCount} * (count / 3);  // three's Info.update
         } else {
             const uint32_t count = static_cast<uint32_t>(item.positions->byteLength() / 12);
             wgpuRenderPassEncoderDraw(pass, count, item.instanceCount, 0, 0);
-            lastFrame_.triangles += uint64_t{item.instanceCount} * (count / 3);
+            if (counted) lastFrame_.triangles += uint64_t{item.instanceCount} * (count / 3);
         }
-        ++lastFrame_.draws;
+        if (counted) ++lastFrame_.draws;
+    };
+    for (std::size_t i = 0; i < shadowPlans.size(); ++i) {
+        if (!lights.direct[i].shadow) continue;
+        WGPURenderPassDepthStencilAttachment shadowDepth = {};
+        shadowDepth.view = shadowMaps_[i].view;
+        shadowDepth.depthLoadOp = WGPULoadOp_Clear;
+        shadowDepth.depthStoreOp = WGPUStoreOp_Store;
+        shadowDepth.depthClearValue = 1.0f;
+        WGPURenderPassDescriptor shadowDesc = {};
+        shadowDesc.depthStencilAttachment = &shadowDepth;
+        WGPURenderPassEncoder shadowPass = wgpuCommandEncoderBeginRenderPass(encoder, &shadowDesc);
+        bound = nullptr;
+        boundIndex = nullptr;
+        for (const Planned& p : shadowPlans[i]) encode(shadowPass, p, false); // three's info counts the main pass
+        wgpuRenderPassEncoderEnd(shadowPass);
+        wgpuRenderPassEncoderRelease(shadowPass);
     }
+    WGPURenderPassEncoder pass = wgpuCommandEncoderBeginRenderPass(encoder, &passDesc);
+    bound = nullptr;
+    boundIndex = nullptr;
+    for (const Planned& p : plan) encode(pass, p, true);
     wgpuRenderPassEncoderEnd(pass);
     wgpuRenderPassEncoderRelease(pass);
     outputPass(encoder, timed);

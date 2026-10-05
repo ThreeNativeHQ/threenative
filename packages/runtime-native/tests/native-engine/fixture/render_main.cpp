@@ -56,6 +56,7 @@ std::string draw(Gpu& gpu, tn::binding::Object& sceneObject, tn::binding::Object
     // three's background colour is the clear colour; without one the renderer clears to black.
     std::array<double, 4> clear{0, 0, 0, 1};
     if (scene.background) clear = {scene.background->r, scene.background->g, scene.background->b, 1};
+    gpu.database.shadowMapEnabled = r.shadowMap;
     gpu.database.render(renderer, scene, *camera, clear);
     if (!gpu.database.diagnostics().empty()) return gpu.database.diagnostics().front();
     std::vector<uint8_t> pixels;

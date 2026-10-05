@@ -93,6 +93,7 @@ export async function renderFixture(request) {
   renderer.toneMapping = three[request.toneMappingConstant];
   renderer.toneMappingExposure = request.toneMappingExposure;
   renderer.outputColorSpace = three[request.outputColorSpaceConstant];
+  renderer.shadowMap.enabled = request.shadowMap === true;
 
   const bound = build(request.fixture);
   renderer.render(bound.get(request.scene), bound.get(request.camera));
