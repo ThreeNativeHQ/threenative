@@ -199,6 +199,9 @@ class QualificationScene extends Scene {
         bufferWidth: ctx.renderer.domElement.width,
         bufferHeight: ctx.renderer.domElement.height,
         cameraPosition: camera.position.toArray(),
+        cameraMatrixWorld: camera.matrixWorld.toArray(),
+        cameraMatrixWorldInverse: camera.matrixWorldInverse.toArray(),
+        cameraProjectionMatrix: camera.projectionMatrix.toArray(),
       }),
     });
     console.info("TN_BACKLIGHT_QUALIFICATION", {
