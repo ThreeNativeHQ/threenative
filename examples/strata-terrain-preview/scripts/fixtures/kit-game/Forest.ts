@@ -33,9 +33,7 @@ const VIEWS: Readonly<Record<string, { at: Vector3; look: Vector3 }>> = {
     look: new Vector3(stand.spawn.x, stand.groundY + EYE, stand.spawn.z).addScaledVector(AWAY, 20),
   },
   edge: {
-    at: TRUNK.clone()
-      .setY(stand.groundY + 8)
-      .addScaledVector(AWAY, 30),
+    at: new Vector3(stand.edge.x, stand.groundY + 6, stand.edge.z),
     look: TRUNK,
   },
   overview: {

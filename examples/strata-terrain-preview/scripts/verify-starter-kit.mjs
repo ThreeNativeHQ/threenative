@@ -113,7 +113,24 @@ function chooseStand(game, world) {
       spawn = candidate;
     }
   }
-  return { fir, spawn, clearance };
+  // The edge camera stands back from the stand in the clearest spot 25-40 m out, so it frames the
+  // trees instead of sitting inside a crown (crowns reach ~4 m; stands are 4 m apart).
+  let edge = { x: fir.x + 30, z: fir.z };
+  let edgeClear = -1;
+  for (let step = 0; step < 24; step += 1)
+    for (const reach of [25, 30, 35, 40]) {
+      const angle = (2 * Math.PI * step) / 24;
+      const candidate = { x: fir.x + reach * Math.cos(angle), z: fir.z + reach * Math.sin(angle) };
+      if (Math.abs(candidate.x) > 250 || Math.abs(candidate.z) > 250) continue;
+      const clear = Math.min(
+        ...props.map((prop) => Math.hypot(prop.x - candidate.x, prop.z - candidate.z)),
+      );
+      if (clear > edgeClear) {
+        edgeClear = clear;
+        edge = candidate;
+      }
+    }
+  return { fir, spawn, clearance, edge, edgeClear };
 }
 
 async function main() {
@@ -162,7 +179,7 @@ async function main() {
     `bake: ${run("node", ["src/terrain/forest/bake.mjs", "--out", "assets/terrain/forest"], { cwd: game }).trim()}`,
   );
 
-  const { fir, spawn, clearance } = chooseStand(game, world);
+  const { fir, spawn, clearance, edge, edgeClear } = chooseStand(game, world);
   writeFileSync(
     join(game, "src/terrain/forest/stand.ts"),
     `// Written by the kit's proof from the placements this bake wrote: the fir the scene stands
@@ -172,11 +189,12 @@ export const stand = {
   fir: { x: ${round(fir.x)}, z: ${round(fir.z)} },
   groundY: ${round(fir.y)},
   spawn: { x: ${round(spawn.x)}, z: ${round(spawn.z)} },
+  edge: { x: ${round(edge.x)}, z: ${round(edge.z)} },
 } as const;
 `,
   );
   say(
-    `stand: fir ${round(fir.x)},${round(fir.z)} spawn ${round(spawn.x)},${round(spawn.z)} (${round(clearance)} m clear)`,
+    `stand: fir ${round(fir.x)},${round(fir.z)} spawn ${round(spawn.x)},${round(spawn.z)} (${round(clearance)} m clear) edge ${round(edge.x)},${round(edge.z)} (${round(edgeClear)} m clear)`,
   );
 
   // --- the game, written around the copied kit -------------------------------------------------------

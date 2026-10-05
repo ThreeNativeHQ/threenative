@@ -13,7 +13,16 @@ import {
   loadWorldHeightmap,
 } from "@threenative/core/world";
 import { CollisionShape3D, type IPhysicsContext, RigidBody3D } from "@threenative/physics";
-import { EquirectangularReflectionMapping, type Material, Object3D } from "three";
+import {
+  type Box3,
+  type BufferGeometry,
+  EquirectangularReflectionMapping,
+  type Mesh,
+  type MeshStandardMaterial,
+  Object3D,
+  type Texture,
+  Vector3,
+} from "three";
 import { HDRLoader } from "three/addons/loaders/HDRLoader.js";
 
 /** Where the game's asset source holds the baked `world/` folder. */
@@ -83,7 +92,9 @@ export async function addForest(
 }
 
 // Cutout foliage with no environment draws flat and dark (the engine says TN_UNLIT_FOLIAGE): give
-// every prop the sky as its own envMap before WorldCells adopts the shared cached models.
+// every prop the sky as its own envMap before WorldCells adopts the shared cached models. Foliage
+// cards also get normals bent out from the crown's axis, so a crown shades as one soft volume
+// instead of a stack of flat cards, and lose the glossy specular glTF exporters give them.
 async function lightProps(
   ctx: ICtx<Record<string, unknown>, IPhysicsContext>,
   url: string,
@@ -96,17 +107,44 @@ async function lightProps(
   sky.mapping = EquirectangularReflectionMapping;
   for (const asset of Object.values(manifest.assets)) {
     const model = await ctx.assets.model<{ scene: Object3D }>(base + asset.glb);
-    model.scene.traverse((object) => {
-      const surface = (object as { material?: Material | Material[] }).material;
-      for (const material of [surface ?? []].flat() as (Material & {
-        envMap?: unknown;
-        envMapIntensity?: number;
-      })[]) {
-        material.envMap = sky;
-        material.envMapIntensity = PROP_SKY_LIGHT;
-      }
-    });
+    model.scene.traverse((object) => dressProp(object as Mesh, sky));
   }
+}
+
+/** One prop mesh: the sky as its envMap, and matte, crown-shaded foliage. */
+function dressProp(mesh: Mesh, sky: Texture): void {
+  const surfaces = [mesh.material ?? []].flat() as MeshStandardMaterial[];
+  const foliage = surfaces.some((material) => material.alphaTest > 0);
+  for (const material of surfaces) {
+    material.envMap = sky;
+    material.envMapIntensity = foliage ? FOLIAGE_SKY_LIGHT : PROP_SKY_LIGHT;
+    if (material.alphaTest <= 0) continue;
+    material.roughness = 0.85;
+    (material as MeshStandardMaterial & { specularIntensity?: number }).specularIntensity = 0.15;
+  }
+  if (foliage && mesh.isMesh) bendCrownNormals(mesh.geometry, CROWN_NORMAL_BEND);
+}
+
+/** How strongly the sky lights foliage, which the sun alone leaves near-black from most sides. */
+export const FOLIAGE_SKY_LIGHT = 1;
+/** 0 keeps each card's own normal, 1 points every normal straight out from the crown's axis. */
+export const CROWN_NORMAL_BEND = 0.7;
+
+function bendCrownNormals(geometry: BufferGeometry, bend: number): void {
+  const position = geometry.getAttribute("position");
+  const normal = geometry.getAttribute("normal");
+  if (position === undefined || normal === undefined) return;
+  geometry.computeBoundingBox();
+  const box = geometry.boundingBox as Box3;
+  const midY = (box.min.y + box.max.y) / 2;
+  const out = new Vector3();
+  const own = new Vector3();
+  for (let i = 0; i < position.count; i++) {
+    out.set(position.getX(i), (position.getY(i) - midY) * 0.5, position.getZ(i)).normalize();
+    own.fromBufferAttribute(normal, i).lerp(out, bend).normalize();
+    normal.setXYZ(i, own.x, own.y, own.z);
+  }
+  normal.needsUpdate = true;
 }
 
 // The streamed terrain tiles arrive over several frames; a player spawned before its tile would fall
