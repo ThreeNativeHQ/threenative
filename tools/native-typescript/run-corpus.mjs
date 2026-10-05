@@ -28,6 +28,7 @@ import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { buildStrict } from "../../packages/runtime-native/scripts/package-strict.mjs";
 import { provision } from "./provision.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -36,13 +37,6 @@ const REPO = path.resolve(HERE, "..", "..");
 const RSS_LIMIT_BYTES = 512 * 1024 * 1024;
 const IMPORT_RE = /\bfrom\s*["']([^"']+)["']|\bimport\s*["']([^"']+)["']/g;
 const THREE_IMPORT_RE = /\bfrom\s*["']three["']/g;
-const THREE_DIR = path.join(HERE, "three");
-const ENGINE_LIBS = [
-  "tn_engine_abi",
-  "tn_engine_bindings",
-  "tn_engine_scene",
-  "tn_engine_foundation",
-];
 
 // Environment variable names are SCREAMING_SNAKE and must keep that spelling.
 function mergeEnv(base, entries) {
@@ -92,82 +86,26 @@ function importsThree(file) {
 }
 
 /**
- * A case that imports "three": stage three/three.ts as that module beside the case, compile the
- * TypeScript to objects, and link them with the shim and the engine's archives through the host
- * C++ driver (tslang's own link step takes no C++ archives). The libraries are tslang's own.
+ * A case that imports "three" is built the way a strict game is (package-strict.mjs): the facade
+ * staged as its "three" module, the TypeScript compiled to objects and linked with the shim, the
+ * hooks and the engine's archives through the host C++ driver (tslang's own link step takes no
+ * C++ archives). The corpus checks behaviour, so it writes no identity manifest.
  */
-function linkWithEngine({ name, entry, modules, tmp, exe, triple, compile, compileErrors, root }) {
-  const build =
-    process.env.TN_NATIVE_ENGINE_BUILD ??
-    path.join(REPO, "packages", "runtime-native", "build", "tn-linux");
-  const archives = ENGINE_LIBS.map((lib) => path.join(build, `lib${lib}.a`));
-  const missing = archives.find((archive) => !fs.existsSync(archive));
-  if (missing !== undefined) {
-    compileErrors.push(`TN_NATIVE_TS_ENGINE_MISSING: ${missing}; build the engine archives first`);
-    return;
-  }
-  const staged = path.join(tmp, path.basename(entry));
-  fs.copyFileSync(entry, staged);
-  const facade = path.join(tmp, "three.ts");
-  fs.copyFileSync(path.join(THREE_DIR, "three.ts"), facade);
-  const stagedModules = [facade];
-  if (/\bfrom\s*["']three-aot["']/.test(fs.readFileSync(entry, "utf8"))) {
-    const hooks = path.join(tmp, "three-aot.ts");
-    fs.copyFileSync(path.join(THREE_DIR, "three-aot.ts"), hooks);
-    stagedModules.push(hooks);
-  }
-  const objects = [];
-  for (const module of [...stagedModules, ...modules.slice(1)]) {
-    const object = path.join(tmp, `${path.basename(module, ".ts")}.o`);
-    compile(module, ["--emit=obj", module, "-relocation-model=pic", ...triple, `-o=${object}`]);
-    objects.push(object);
-  }
-  const main = path.join(tmp, `${name}.main.o`);
-  compile(staged, [
-    "--emit=obj",
-    "--entry-point",
-    staged,
-    "-relocation-model=pic",
-    ...triple,
-    `-o=${main}`,
-  ]);
-  const shim = path.join(tmp, "tn_three_shim.o");
-  const host = (tool, args) => {
-    const run = spawnSync(tool, args, { encoding: "utf8" });
-    if (run.status !== 0)
-      compileErrors.push(`${tool}: ${(run.stderr || run.stdout || "").split("\n")[0]}`);
-  };
-  const include = path.join(REPO, "packages", "runtime-native", "include");
-  host("cc", ["-c", "-fPIC", `-I${include}`, path.join(THREE_DIR, "tn_three_shim.c"), "-o", shim]);
-  const hooks = path.join(tmp, "tn_three_hooks.o");
-  host("c++", [
-    "-c",
-    "-fPIC",
-    "-std=c++20",
-    `-I${include}`,
-    `-I${path.join(REPO, "packages", "runtime-native", "src")}`,
-    path.join(THREE_DIR, "tn_three_hooks.cpp"),
-    "-o",
-    hooks,
-  ]);
-  if (compileErrors.length > 0) return;
-  host("c++", [
-    "-o",
-    exe,
-    main,
-    ...objects,
-    shim,
-    hooks,
-    ...archives,
-    `-L${path.join(root, "defaultlib", "lib", "release", "gc")}`,
-    "-lTypeScriptDefaultLib",
-    "-lTypeScriptDefaultLibCore",
-    path.join(root, "libTypeScriptAsyncRuntime.a"),
-    path.join(root, "libgc.a"),
-    "-lpthread",
-    "-ldl",
-    "-lm",
-  ]);
+function linkWithEngine({ name, entry, modules, tmp, triple, compileErrors, info }) {
+  const { errors } = buildStrict({
+    name,
+    entry,
+    modules: modules.slice(1),
+    outDir: tmp,
+    engineBuild: process.env.TN_NATIVE_ENGINE_BUILD,
+    compiler: {
+      binaryPath: info.binaryPath,
+      identity: `tslang ${info.lock.tag} ${info.artifact.sha256}`,
+    },
+    triple,
+    manifest: false,
+  });
+  compileErrors.push(...errors.map((error) => error.replace(path.join(CORPUS, ""), "")));
 }
 
 /** The workspace's pinned three, resolved the way the fixture reference runner resolves it. */
@@ -355,7 +293,7 @@ async function runNative(name, info, target) {
   if (refusedImports.length > 0) {
     compileErrors.push(...refusedImports);
   } else if (importsThree(entry)) {
-    linkWithEngine({ name, entry, modules, tmp, exe, triple, compile, compileErrors, root });
+    linkWithEngine({ name, entry, modules, tmp, triple, compileErrors, info });
   } else {
     const objects = [];
     for (const module of modules.slice(1)) {
