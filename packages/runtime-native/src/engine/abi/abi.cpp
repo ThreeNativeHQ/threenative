@@ -107,9 +107,15 @@ tn_status_t tn_context_create(tn_context_t** out_context, const tn_version_info_
     size_t slot = 0;
     while (slot < contexts.size() && contexts[slot]) ++slot;
     if (slot >= 0xffff) return report(diagnostic, TN_ERROR_OUT_OF_MEMORY, 0, "TN_ABI_CONTEXTS: no free context id");
-    auto context = std::unique_ptr<tn_context>(new (std::nothrow) tn_context(static_cast<uint16_t>(slot + 1)));
-    if (!context) return report(diagnostic, TN_ERROR_OUT_OF_MEMORY, 0, "TN_ABI_OOM: context");
-    if (slot == contexts.size()) contexts.emplace_back();
+    // Plain new under a catch, not nothrow new: clang 23's libFuzzer runtime pairs nothrow new with
+    // free and reports a false alloc-dealloc mismatch (reproduced with no engine code, 2026-10-04).
+    std::unique_ptr<tn_context> context;
+    try {
+        context = std::make_unique<tn_context>(static_cast<uint16_t>(slot + 1));
+        if (slot == contexts.size()) contexts.emplace_back();
+    } catch (const std::bad_alloc&) {
+        return report(diagnostic, TN_ERROR_OUT_OF_MEMORY, 0, "TN_ABI_OOM: context");
+    }
     *out_context = context.get();
     contexts[slot] = std::move(context);
     return ok(diagnostic);
