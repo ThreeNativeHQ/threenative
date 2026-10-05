@@ -6664,6 +6664,25 @@
     },
     {
       "aliases": [],
+      "constraints": [
+        "headless authoring; no three, no DOM, and nothing here decides how the world looks"
+      ],
+      "example": "const { manifest, files } = bakeWorldPackage(state, { assets });",
+      "importPath": "@threenative/terrain",
+      "kind": "function",
+      "overrides": [
+        "every asset path, bound, LOD distance and cell size comes from the caller's options"
+      ],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function bakeWorldPackage( state: ITerrainState, options: IBakeWorldPackageOptions, ): IBakedWorldPackage { … }",
+      "situations": ["hand an evaluated Strata terrain to a game without a Blender round trip"],
+      "summary": "Bake an evaluated terrain into the engine's world package: a `world.json` manifest, a uint16 heightmap, a splat mask array, a placement buffer of eight float32 per instance, and the square cells that stream them. The encodings and row orders are the ones the Blender recipe `export_world.py` writes, so one runtime streams both without a second reader.",
+      "supersedes": [],
+      "symbol": "bakeWorldPackage"
+    },
+    {
+      "aliases": [],
       "constraints": ["authoring data only; the game owns appearance, physics and rendering"],
       "example": "const png = await encodeHeightPNG(new Terrain({ resolution: 17 }).evaluate()); const heights = await decodeHeightPNG(png);",
       "importPath": "@threenative/terrain",

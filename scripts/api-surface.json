@@ -415,6 +415,7 @@
         "@threenative/terrain#applyPlacementOverrides": "export function applyPlacementOverrides(state: ITerrainState, value: unknown): ITerrainState { … }",
         "@threenative/terrain#bakeMesh": "export function bakeMesh( state: ITerrainState, { … }",
         "@threenative/terrain#bakeTerrain": "export function bakeTerrain( state: ITerrainState, { … }",
+        "@threenative/terrain#bakeWorldPackage": "export function bakeWorldPackage( state: ITerrainState, options: IBakeWorldPackageOptions, ): IBakedWorldPackage { … }",
         "@threenative/terrain#decodeHeightPNG": "export async function decodeHeightPNG( input: Uint8Array | ArrayBuffer, options: IDecodeHeightPngOptions = { … }",
         "@threenative/terrain#decodeRAW16": "export function decodeRAW16( input: Uint8Array | ArrayBuffer, { … }",
         "@threenative/terrain#encodeGLB": "export function encodeGLB(input: IBakedMesh | readonly IBakedMesh[]) { … }",

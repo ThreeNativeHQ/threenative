@@ -14,4 +14,5 @@ export {
   encodeGLB,
 } from "./core/io.js";
 export { encodeZIP, makeExport } from "./core/export.js";
+export { bakeWorldPackage } from "./core/world-package.js";
 export type * from "./core/types.js";

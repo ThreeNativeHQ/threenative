@@ -4563,20 +4563,6 @@
           "avoidWater": true,
           "scale": [0.6, 1.8]
         }
-      },
-      {
-        "enabled": true,
-        "opacity": 1,
-        "id": "ferns",
-        "type": "scatter",
-        "params": {
-          "asset": "fern",
-          "count": 1800,
-          "minDistance": 2.2,
-          "maxSlope": 28,
-          "avoidWater": true,
-          "scale": [0.7, 1.3]
-        }
       }
     ]
   }

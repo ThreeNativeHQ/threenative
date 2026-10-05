@@ -5461,6 +5461,23 @@ export function bakeTerrain( state: ITerrainState, { … }
 const baked = bakeTerrain(new Terrain({ resolution: 129 }).evaluate(), { chunkCells: 64 });
 ```
 
+### `bakeWorldPackage`
+
+`function` — Bake an evaluated terrain into the engine's world package: a `world.json` manifest, a uint16 heightmap, a splat mask array, a placement buffer of eight float32 per instance, and the square cells that stream them. The encodings and row orders are the ones the Blender recipe `export_world.py` writes, so one runtime streams both without a second reader.
+
+```ts
+export function bakeWorldPackage( state: ITerrainState, options: IBakeWorldPackageOptions, ): IBakedWorldPackage { … }
+```
+
+- **Use when:** hand an evaluated Strata terrain to a game without a Blender round trip
+- **Constraints:** headless authoring; no three, no DOM, and nothing here decides how the world looks
+- **Requires:** npm i -D @threenative/terrain
+- **Overrides:** every asset path, bound, LOD distance and cell size comes from the caller's options
+
+```ts
+const { manifest, files } = bakeWorldPackage(state, { assets });
+```
+
 ### `decodeHeightPNG`
 
 `function` — CRC-checked bounded non-interlaced grayscale PNG height decoder.

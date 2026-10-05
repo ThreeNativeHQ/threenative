@@ -1,90 +1,92 @@
-// Bakes this folder's world.json into baked.json. Run it once from your game project:
-//   node src/terrain/forest/bake.mjs
-// The game imports the baked JSON and never evaluates terrain at runtime.
-import { readFile, writeFile } from "node:fs/promises";
-import { Terrain, applyPlacementOverrides, bakeMesh } from "@threenative/terrain";
+// Bakes this folder's recipe into a self-contained world package. Run it once from your game
+// project, then serve the folder it writes:
+//   node src/terrain/forest/bake.mjs [--assets <dir>] [--out <dir>]
+// The engine's `WorldCells` streams `world/world.json` and `loadTerrainSplat` textures its ground;
+// the game never evaluates terrain at runtime.
+import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { Terrain, applyPlacementOverrides, bakeWorldPackage } from "@threenative/terrain";
 
-// Explicit sRGB surface colours, in material-ID order, copied from the terrain preview's palette.
-const palette = [
-  [0.38, 0.46, 0.26],
-  [0.46, 0.36, 0.25],
-  [0.47, 0.47, 0.44],
-  [0.91, 0.94, 0.95],
-  [0.73, 0.63, 0.46],
-  [0.37, 0.32, 0.24],
-  [0.48, 0.44, 0.36],
-  [0.32, 0.4, 0.28],
-];
+const here = dirname(fileURLToPath(import.meta.url));
 
-// A placement is either an authored transform, or the scatter pose: yaw about +Y, uniform scale.
-function pose(item) {
-  if (item.transform)
-    return {
-      position: item.transform.position,
-      quaternion: item.transform.quaternion,
-      scale: item.transform.scale,
-    };
-  return {
-    position: item.position,
-    quaternion: [0, Math.sin(item.rotation / 2), 0, Math.cos(item.rotation / 2)],
-    scale: [item.scale, item.scale, item.scale],
-  };
+/** `--key value` after the script; `--assets` and `--out` default as noted below. */
+function flag(name, fallback) {
+  const at = process.argv.indexOf(`--${name}`);
+  return at === -1 ? fallback : resolve(process.argv[at + 1] ?? "");
 }
 
-const round = (value, digits = 3) => {
-  const factor = 10 ** digits;
-  return Math.round(value * factor) / factor;
-};
-const roundAll = (values, digits) => Array.from(values, (value) => round(value, digits));
+// The installed kit ships its models and textures beside the package manifest, so a copied kit
+// finds them without asking the game for a path. `--assets` overrides that for a local checkout.
+const installed = dirname(fileURLToPath(import.meta.resolve("@threenative/terrain/package.json")));
+const assetsDir = flag("assets", join(installed, "starter-assets"));
+const outDir = flag("out", join(here, "world"));
 
-// Rounding a quaternion breaks unit length; re-normalise so consumers need no tolerance.
-const unitQuaternion = (quaternion) => {
-  const length = Math.hypot(...quaternion);
-  return roundAll(
-    quaternion.map((value) => value / length),
-    6,
-  );
-};
+const recipe = JSON.parse(await readFile(join(here, "recipe.json"), "utf8"));
+const assetTable = JSON.parse(await readFile(join(here, "assets.json"), "utf8"));
+const surface = JSON.parse(await readFile(join(here, "surface.json"), "utf8"));
+
+const state = applyPlacementOverrides(
+  Terrain.fromJSON(recipe.recipe).evaluate(),
+  recipe.placementOverrides ?? {},
+);
+
+const assets = Object.fromEntries(
+  Object.entries(assetTable).map(([id, spec]) => [
+    id,
+    {
+      bounds: spec.bounds,
+      glb: `models/${spec.near.split("/").at(-1)}`,
+      lods: [{ distance: spec.midDistance, glb: `models/${spec.mid.split("/").at(-1)}` }],
+      maxDistance: spec.maxDistance,
+    },
+  ]),
+);
 
 const started = performance.now();
-const doc = JSON.parse(await readFile(new URL("./world.json", import.meta.url), "utf8"));
-const state = applyPlacementOverrides(
-  Terrain.fromJSON(doc.recipe).evaluate(),
-  doc.placementOverrides ?? {},
-);
-const mesh = bakeMesh(state, { palette });
-
-const placements = state.instances.map((item) => {
-  const { position, quaternion, scale } = pose(item);
-  return {
-    id: item.id,
-    asset: item.asset,
-    position: roundAll(position),
-    quaternion: unitQuaternion(quaternion),
-    scale: roundAll(scale),
-  };
+const { manifest, splat, files } = bakeWorldPackage(state, {
+  assets,
+  layers: { table: "terrain-table.json" },
 });
+const written = new Map();
 
-const baked = {
-  size: state.size,
-  resolution: state.resolution,
-  heights: roundAll(state.height),
-  colors: roundAll(mesh.colors),
-  placements,
-  lakes: state.waters
-    .filter((water) => water.kind === "lake")
-    .map(({ id, at, radius, level }) => ({ id, at, radius, level })),
-  rivers: state.rivers,
-  waterLevel: state.waters.find((water) => water.kind === "ocean")?.level ?? null,
-};
-const json = JSON.stringify(baked);
-await writeFile(new URL("./baked.json", import.meta.url), json);
+async function write(relative, bytes) {
+  await mkdir(join(outDir, dirname(relative)), { recursive: true });
+  await writeFile(join(outDir, relative), bytes);
+  written.set(relative, bytes.length ?? bytes.byteLength);
+}
+
+async function copy(from, to) {
+  await mkdir(join(outDir, dirname(to)), { recursive: true });
+  await copyFile(join(assetsDir, from), join(outDir, to));
+  written.set(to, (await readFile(join(outDir, to))).byteLength);
+}
+
+await write("world.json", `${JSON.stringify(manifest, null, 2)}\n`);
+for (const [name, bytes] of Object.entries(files)) await write(name, bytes);
+for (const spec of Object.values(assetTable)) {
+  await copy(spec.near, `models/${spec.near.split("/").at(-1)}`);
+  await copy(spec.mid, `models/${spec.mid.split("/").at(-1)}`);
+}
+for (const layer of [surface.base, ...surface.layers]) {
+  const source = surface.sources[layer.id];
+  await copy(source.diff, `${surface.textures}${layer.id}_diff.jpg`);
+  await copy(source.nrm, `${surface.textures}${layer.id}_nrm.jpg`);
+}
+// `sources` is the bake's own lookup: the runtime reads only base/layers/splat/textures.
+await write(
+  "terrain-table.json",
+  `${JSON.stringify({ ...surface, splat, textures: "textures/" }, null, 2)}\n`,
+);
 
 const perAsset = {};
-for (const placement of placements)
-  perAsset[placement.asset] = (perAsset[placement.asset] ?? 0) + 1;
+for (const cell of manifest.cells)
+  for (const run of cell.runs) perAsset[run.asset] = (perAsset[run.asset] ?? 0) + run.count;
+const total = [...written.values()].reduce((sum, bytes) => sum + bytes, 0);
 console.log(
-  `baked.json: ${placements.length} placements (${Object.entries(perAsset)
-    .map(([asset, count]) => `${asset} ${count}`)
-    .join(", ")}); ${Math.round(performance.now() - started)} ms; ${Buffer.byteLength(json)} bytes`,
+  `${Object.entries(perAsset)
+    .map(([asset, count]) => `${asset} ${String(count)}`)
+    .join(", ")} placements; ${[...written]
+    .map(([name, bytes]) => `${name} ${String(bytes)} B`)
+    .join(", ")}; ${String(total)} B total; ${Math.round(performance.now() - started)} ms`,
 );
