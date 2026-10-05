@@ -64,7 +64,7 @@ describe("forest starter kit", () => {
     for (const cell of manifest.cells)
       for (const run of cell.runs) perAsset[run.asset] = (perAsset[run.asset] ?? 0) + run.count;
     expect(perAsset.fir).toBeGreaterThanOrEqual(2000);
-    expect(perAsset.boulder).toBe(140);
+    expect(perAsset.boulder).toBe(320);
     expect(Object.keys(perAsset)).toEqual(["boulder", "fir"]);
     expect(total).toBeLessThanOrEqual(25 * 1024 * 1024);
 
