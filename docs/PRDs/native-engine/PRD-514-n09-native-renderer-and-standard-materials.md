@@ -39,7 +39,7 @@
 **Status:** NOT STARTED
 **Files:** proposed `packages/runtime-native/src/engine/renderer/passes/`
 - [x] Alpha-masked and transparent objects sort and blend as the reference does, `renderOrder` included. proof: `pnpm parity -- --suite native-engine --driver packages/runtime-native/build/tn-linux/tn-native-engine-render-driver --renders --only 'alpha-*'` — 2026-10-04: green on Dawn, wgpu-native and ASan (`native_engine_render_alpha`): alpha-transparency (back-to-front sort, renderOrder over depth with depthWrite on) and alpha-test (discard at or below alphaTest, opaque ignores opacity) match their browser frames exactly; red without the sort (17.8%), with renderOrder ignored (12.5%), without blending (48.9%) or without the discard (6.0%)
-- [ ] Two cameras with different `layers`, rendered in one tick, each see only their layer and get distinct render IDs. proof: `pnpm parity` case `native-engine-multi-camera-layers`
+- [x] Two cameras with different `layers`, rendered in one tick, each see only their layer and get distinct render IDs. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_renderer_multi_camera_layers` (a render fixture carries one camera, so the two-camera tick is a renderer test) — 2026-10-05: green on Dawn, ASan and wgpu. A mesh on layer 1 and one on layer 2, lights on both: camera A (layer 1) draws only the left mesh, camera B (layer 2) only the right, and the two renders return distinct IDs. Red before the fix: 200 record rebuilds over 100 ticks, because each camera's render purged the records of meshes on the other's layer; a mesh in the scene that the camera does not draw now keeps its record, so 100 ticks rebuild nothing
 
 #### Phase 3: Shadows and the standard material set
 **Status:** NOT STARTED

@@ -133,6 +133,8 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
                 lights.hemisphereUp = normalized(worldPosition(l));
             }
         }
+    } else if (const auto it = records_.find(&object); it != records_.end()) {
+        it->second.seen = frame_;  // in the scene, on another camera's layer: its record stays
     }
     for (Object3D* child : object.children) project(*child, camera, items, lights);
 }

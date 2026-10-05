@@ -262,9 +262,63 @@ void updates() {
     if (renderer.geometry().entries() > 6) std::fprintf(stderr, "GPU copies: %zu\n", renderer.geometry().entries());
 }
 
+// PRD-514: two cameras with different layers, rendered in one tick, each see only their layer's mesh
+// and get distinct render IDs; ticking both keeps every record, so no frame rebuilds the other's.
+void multiCameraLayers() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(64, 48);
+    LitScene s;
+    s.mesh.position.x = -1.2;
+    s.mesh.setLayer(1);
+    auto blue = std::make_shared<Material>(MaterialType::Standard);
+    blue->color.setRGB(0.1, 0.2, 0.9);
+    Mesh right{s.geometry, blue};
+    right.position.x = 1.2;
+    right.setLayer(2);
+    s.scene.add(right);
+    for (Object3D* light : {static_cast<Object3D*>(&s.light), static_cast<Object3D*>(&s.sky)}) {
+        light->enableLayer(1);
+        light->enableLayer(2);
+    }
+    PerspectiveCamera second;  // the same view as the first, on another layer
+    second.fov = s.camera.fov;
+    second.aspect = s.camera.aspect;
+    second.near = s.camera.near;
+    second.far = s.camera.far;
+    second.position.copy(s.camera.position);
+    second.lookAt(0, 0, 0);
+    second.updateProjectionMatrix();
+    s.camera.setLayer(1);
+    second.setLayer(2);
+    RenderDatabase database;
+    const auto lit = [](const std::vector<uint8_t>& px, int x) {
+        const size_t i = (24 * 64 + size_t(x)) * 4;
+        return px.size() == 64 * 48 * 4 && (px[i] | px[i + 1] | px[i + 2]) != 0;
+    };
+    const uint64_t first = database.render(renderer, s.scene, s.camera);
+    const std::vector<uint8_t> a = read(renderer, events);
+    const uint64_t other = database.render(renderer, s.scene, second);
+    const std::vector<uint8_t> b = read(renderer, events);
+    CHECK(first != other);
+    CHECK(lit(a, 14) && !lit(a, 50));  // layer 1: the left mesh only
+    CHECK(!lit(b, 14) && lit(b, 50));  // layer 2: the right mesh only
+    CHECK(database.diagnostics().empty());
+    const uint64_t built = database.rebuilds();
+    for (int tick = 0; tick < 100; ++tick) {
+        database.render(renderer, s.scene, s.camera);
+        database.render(renderer, s.scene, second);
+    }
+    CHECK(database.rebuilds() == built);
+    if (database.rebuilds() != built) std::fprintf(stderr, "rebuilds over 100 ticks: %llu\n", (unsigned long long)(database.rebuilds() - built));
+}
+
 }  // namespace
 
 TN_TEST_MAIN({"lit_scene", litScene}, {"invalidation", invalidation},
             {"alpha_scene", alphaScene},
             {"material_unsupported", materialUnsupported},
-            {"updates", updates})
+            {"updates", updates},
+            {"multi_camera_layers", multiCameraLayers})
