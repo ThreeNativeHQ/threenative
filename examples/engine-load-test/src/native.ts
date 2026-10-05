@@ -123,6 +123,9 @@ async function main(): Promise<void> {
         // Split the frame in two: `stepMs` is the game-side transform loop, the remainder is the
         // renderer. Without the split a mobile regression cannot be attributed to either.
         const stepMs: number[] = [];
+        // PRD-534 CP1's meter: the game update plus the render call (projection, batching, encoding,
+        // submission), timed exactly as the native engine's host times update plus submit.
+        const hotPathMs: number[] = [];
         const collapseMs: number[] = [];
         // The rAF timestamp the host handed this frame's callback, aligned one-to-one with
         // frameMs/stepMs/collapseMs so a budget sample can be joined to the host-gap meter's
@@ -137,8 +140,10 @@ async function main(): Promise<void> {
         let previous = performance.now();
         const statsFrame = Math.floor((config.frames + config.warmup) / 2);
         for (let frameIndex = 0; frameIndex < config.frames; frameIndex += 1) {
+          const hotPathStart = performance.now();
           harness.step(frameIndex);
           await harness.render();
+          const hotPath = performance.now() - hotPathStart;
           if (frameIndex === statsFrame) {
             const stats = harness.stats();
             drawCalls = stats.drawCalls;
@@ -159,6 +164,7 @@ async function main(): Promise<void> {
           if (frameIndex >= config.warmup) {
             frameMs.push(Math.round(interval * 1000) / 1000);
             stepMs.push(Math.round(harness.stepMs * 1000) / 1000);
+            hotPathMs.push(Math.round(hotPath * 1000) / 1000);
             collapseMs.push(Math.round(harness.collapseMs * 1000) / 1000);
             rafTimestampMs.push(Math.round(rafTimestamp * 1000) / 1000);
           }
@@ -170,6 +176,7 @@ async function main(): Promise<void> {
           ...(foxMeasurement === undefined ? {} : { foxMeasurement }),
           ...(ladder === undefined ? {} : { ladder }),
           ...(renderCheck === undefined ? {} : { renderCheck }),
+          hotPathMs,
           stepMs,
           mode,
           objectCount,

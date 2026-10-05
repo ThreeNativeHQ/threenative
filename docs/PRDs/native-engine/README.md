@@ -10,7 +10,7 @@ All new package names, configuration fields, ABI names, status markers, and work
 
 ## PRD index
 
-**Batch status: IN PROGRESS — 92/237 phase boxes (38%) as of 2026-10-05, on `feat/native-engine` (PR #438).** This file is the batch index and the source proposal; the PRDs below carry the boxes. Work packages too large for one PRD (at most 3 phases, about 8 boxes) are a folder with its own `README.md` and child PRDs. The batch moves to `done/` whole only when every PRD in it is finished.
+**Batch status: IN PROGRESS — 93/237 phase boxes (39%) as of 2026-10-05, on `feat/native-engine` (PR #438).** This file is the batch index and the source proposal; the PRDs below carry the boxes. Work packages too large for one PRD (at most 3 phases, about 8 boxes) are a folder with its own `README.md` and child PRDs. The batch moves to `done/` whole only when every PRD in it is finished.
 
 ### Progress
 
@@ -55,10 +55,10 @@ Generated from the PRD files' boxes; a PRD is done when every box is ticked.
 | [PRD-531](PRD-531-n18-v8-game-runtime-adapter.md) | V8 game runtime adapter (N18) | 6/8 | in progress |
 | [PRD-532](PRD-532-n19-webassembly-native-core-browser-port.md) | WebAssembly native-core browser port (N19) | 0/8 | not started |
 | [PRD-533](PRD-533-n20-platform-qualification-performance-default-promotion.md) | Platform qualification, performance and default promotion (N20) | 0/8 | not started |
-| [PRD-534](PRD-534-cp1-the-native-engine-earns-the-port.md) | The native engine earns the port (CP1) | 0/5 | not started |
+| [PRD-534](PRD-534-cp1-the-native-engine-earns-the-port.md) | The native engine earns the port (CP1) | 1/5 | in progress |
 | [PRD-535](PRD-535-n21-the-js-engine-is-deleted.md) | The JS engine is deleted (N21) | 0/7 | not started |
 
-**CP1 (PRD-534), first reading, not the verdict:** on L4 at 4,096 cubes (headless Dawn), the native engine's hot path p50 is 21.9 ms through V8 and 11.8 ms from C++, against roughly 3.5–5.9 ms per frame for current ThreeNative, which batches L4's colour-only materials into 3 draws while the native engine has no batching yet (N12). Whether the verdict waits for minimal batching is an owner decision, recorded in PR #438.
+**CP1 (PRD-534), functional reading, not the verdict:** `pnpm bench:engines --arms current,native-v8,native-cpp --workload heterogeneous` at 4,096 cubes (Xvfb and headless Dawn) gives hot path p50 10.26 ms for current ThreeNative, 23.60 ms through V8 and 13.28 ms from C++. The bar is V8 at most half of current, so this reading is a stop signal. Current batches the colour-only materials into 3 draws; the native engine has no batching yet (N12). Whether minimal batching comes before the verdict runs is an owner decision, recorded in PR #438.
 
 ### Owner decisions (2026-10-04)
 

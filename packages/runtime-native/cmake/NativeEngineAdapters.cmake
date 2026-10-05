@@ -30,7 +30,7 @@ if(TARGET v8::v8 AND MYSTRAL_USE_V8 AND NOT MYSTRAL_PLATFORM STREQUAL "ios")
         target_link_options(tn-native-engine-host PRIVATE "LINKER:--allow-multiple-definition")
     endif()
     add_dependencies(tn-native-engine-tests tn-native-engine-host)
-    # Both CP1 arms on a small L4: 64 cubes + the ground must present 65 draws in each.
+    # Both CP1 arms on a small L4: 64 cubes + the ground + the output pass, 66 draws in each.
     set(TN_ESBUILD ${CMAKE_CURRENT_SOURCE_DIR}/../../node_modules/.bin/esbuild)
     set(TN_L4_SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/../../examples/engine-load-test/native-engine/l4-workload.ts)
     set(TN_L4_SCRIPT ${CMAKE_CURRENT_BINARY_DIR}/l4-workload.js)
@@ -40,7 +40,7 @@ if(TARGET v8::v8 AND MYSTRAL_USE_V8 AND NOT MYSTRAL_PLATFORM STREQUAL "ios")
         add_test(NAME native_engine_host_cpp
             COMMAND sh -c "$<TARGET_FILE:tn-native-engine-host> --cpp --objects 64 --frames 10 --warmup 2 2>/dev/null")
         set_tests_properties(native_engine_host_v8 native_engine_host_cpp PROPERTIES
-            LABELS "native-engine" PASS_REGULAR_EXPRESSION "\"draws\": 65,")
+            LABELS "native-engine" PASS_REGULAR_EXPRESSION "\"draws\": 66,")
     endif()
 
     # The differential fixtures through V8 (PRD-531 phase 2): the same corpus and goldens as the C++

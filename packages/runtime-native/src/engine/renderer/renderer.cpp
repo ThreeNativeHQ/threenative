@@ -478,6 +478,9 @@ void Renderer::outputPass(WGPUCommandEncoder encoder) {
     wgpuRenderPassEncoderSetBindGroup(pass, 0, outputGroup_, 0, nullptr);
     wgpuRenderPassEncoderSetVertexBuffer(pass, outputVertex_.attributes.at(0).location, gpu_.buffer(outputTriangle_), 0, 24);
     wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0);
+    // three's renderer.info counts its output QuadMesh as one draw of one triangle; so does this.
+    ++lastFrame_.draws;
+    ++lastFrame_.triangles;
     wgpuRenderPassEncoderEnd(pass);
     wgpuRenderPassEncoderRelease(pass);
 }

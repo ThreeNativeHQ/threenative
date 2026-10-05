@@ -1,6 +1,6 @@
 # PRD-534 — The native engine earns the port (CP1)
 
-**Status:** PROPOSED
+**Status:** IN PROGRESS — the three arms run on one workload; GPU time and the desktop and Pixel verdict runs are open
 **Complexity:** 3 — measurement only, on existing workloads; the verdict can stop the program
 **Owner:** João
 **Work package:** CP1 — [native-engine batch](README.md)
@@ -29,9 +29,9 @@ Workloads that already exist: `examples/engine-load-test` (heterogeneous rendera
 ## Execution Phases
 
 #### Phase 1: Three arms on one workload
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **Files:** `scripts/engine-load-test/`, `examples/engine-load-test/src/`
-- [ ] `pnpm bench:engines` runs the heterogeneous workload under `current`, `native-v8` and `native-cpp` with identical presented draws and triangles. proof: `pnpm bench:engines -- --arms current,native-v8,native-cpp --workload heterogeneous`
+- [x] `pnpm bench:engines` runs the heterogeneous workload under `current`, `native-v8` and `native-cpp` with identical presented draws and triangles. proof: `pnpm bench:engines -- --arms current,native-v8,native-cpp --workload heterogeneous` — 2026-10-05: green (`scripts/engine-load-test/cp1.ts`). The three arms draw L4 (unique material per cube) at one object count, size and camera path, and the run fails closed (`TN_BENCH_CP1_WORKLOAD_MISMATCH`) unless every arm submits the same triangles by three's `renderer.info` count; the native renderer now counts its output pass as three does. GPU draw calls differ by design: `current` batches the scene (§15.3 includes batching), so at 4,096 cubes it submits 3 draws and the native engine 4,098, both 49,155 triangles. Functional reading (Xvfb and headless Dawn, not the verdict): hot path p50 `current` 10.26 ms, `native-v8` 23.60 ms (12,290 crossings per frame), `native-cpp` 13.28 ms
 - [ ] Each arm reports hot-path CPU p50/p95, GPU time, frame time and crossings per frame. proof: the same command's JSON report
 
 #### Phase 2: The measurement

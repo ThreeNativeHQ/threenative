@@ -115,6 +115,8 @@ export interface IRunReportRung {
   positionHash: string;
   repeat: number;
   stepMs?: number[];
+  /** PRD-534 CP1: per-frame game update plus render call, the hot path the verdict compares. */
+  hotPathMs?: number[];
   triangles: number;
   visibleObjects: number;
 }
@@ -572,8 +574,8 @@ export function parseRunReport(value: unknown): IRunReport {
       if (typeof sample !== "number" || !Number.isFinite(sample) || sample < 0)
         throw new BenchError("TN_BENCH_BAD_SHAPE", `${path}.frameMs holds a non-finite sample`);
     }
-    const timingSeries: Partial<Pick<IRunReportRung, "stepMs" | "collapseMs">> = {};
-    for (const field of ["stepMs", "collapseMs"] as const) {
+    const timingSeries: Partial<Pick<IRunReportRung, "stepMs" | "collapseMs" | "hotPathMs">> = {};
+    for (const field of ["stepMs", "collapseMs", "hotPathMs"] as const) {
       const samples = rung[field];
       if (samples === undefined) continue;
       if (

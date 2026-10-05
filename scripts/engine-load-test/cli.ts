@@ -19,6 +19,7 @@ import {
   startProcess,
   waitForUrl,
 } from "./browser.js";
+import { parseCp1Arms, runCp1 } from "./cp1.js";
 import {
   BenchError,
   type IPerformanceBaseline,
@@ -495,6 +496,41 @@ async function runReportCheckCommand(file: string): Promise<void> {
   }
 }
 
+/** PRD-534 CP1: the three engine arms on the heterogeneous workload (L4, unique materials). */
+async function runCp1Command(arms: string): Promise<void> {
+  const workload = flag("workload") ?? "heterogeneous";
+  if (workload !== "heterogeneous")
+    throw new BenchError(
+      "TN_BENCH_BAD_FLAG",
+      `CP1 runs only the heterogeneous workload, not ${workload}`,
+    );
+  const target = flag("target") ?? "desktop";
+  if (target !== "desktop")
+    throw new BenchError(
+      "TN_BENCH_BAD_FLAG",
+      `CP1 has no ${target} lane yet; the native host is desktop-only`,
+    );
+  const base = ladderOptions();
+  const objects = Number(flag("objects") ?? 4096);
+  const options = {
+    ...base,
+    axes: { ...base.axes, material: "unique" as const },
+    ladder: String(objects),
+    modes: "L4",
+    repeats: 1,
+  };
+  const { file, markdown } = await runCp1(repoRoot, artifactRoot, {
+    arms: parseCp1Arms(arms),
+    objects,
+    frames: options.frames,
+    warmup: options.warmup,
+    width: options.width,
+    height: options.height,
+    runCurrent: () => runRequestedArm("tn-desktop", options),
+  });
+  process.stdout.write(`${markdown}\n\nwrote ${path.relative(repoRoot, file)}\n`);
+}
+
 async function runProductComparison(): Promise<void> {
   const left = await loadArm(flag("left") ?? "tn-web");
   const right = await loadArm(flag("right") ?? "godot-web");
@@ -506,7 +542,7 @@ async function runProductComparison(): Promise<void> {
 
 function printUsage(): void {
   process.stdout.write(
-    "usage: pnpm bench:engines --arm <tn-web|plain-three-webgpu|godot-web|tn-desktop|godot-desktop|tn-android|godot-android> [--production] [--required-baseline --lane id] [--lanes path] [--out name] [--skip-baseline] [--allow-emulator] [--source-sha sha --frames N --warmup N --repeats N --ladder a,b --modes L1,L2,R1..R5 --width N --height N] [--geometry shared|unique --material shared|unique --hierarchy-depth N --visible-fraction 0..1 --mutation-rate 0..1 --shadow-caster-share 0..1 --passes N]\n       pnpm bench:engines --compare [--left tn-web --right godot-web] [--doc path.md]\n       pnpm bench:engines --check-report path.json [--required-baseline --lanes path]\n       pnpm bench:engines --regression --input report.json [--lanes path --lane id] [--policy policy.json] [--out summary.json]\n       pnpm bench:engines --regression-collection --target <web|desktop|android|ios> [--device id] [--prebuilt-artifact path] [--out path]\n",
+    "usage: pnpm bench:engines --arm <tn-web|plain-three-webgpu|godot-web|tn-desktop|godot-desktop|tn-android|godot-android> [--production] [--required-baseline --lane id] [--lanes path] [--out name] [--skip-baseline] [--allow-emulator] [--source-sha sha --frames N --warmup N --repeats N --ladder a,b --modes L1,L2,R1..R5 --width N --height N] [--geometry shared|unique --material shared|unique --hierarchy-depth N --visible-fraction 0..1 --mutation-rate 0..1 --shadow-caster-share 0..1 --passes N]\n       pnpm bench:engines --arms current,native-v8,native-cpp --workload heterogeneous [--objects N] [--frames N --warmup N --width N --height N]\n       pnpm bench:engines --compare [--left tn-web --right godot-web] [--doc path.md]\n       pnpm bench:engines --check-report path.json [--required-baseline --lanes path]\n       pnpm bench:engines --regression --input report.json [--lanes path --lane id] [--policy policy.json] [--out summary.json]\n       pnpm bench:engines --regression-collection --target <web|desktop|android|ios> [--device id] [--prebuilt-artifact path] [--out path]\n",
   );
 }
 
@@ -516,6 +552,8 @@ async function main(): Promise<void> {
   if (process.argv.includes("--regression")) return runRegressionCommand();
   const checkReport = flag("check-report");
   if (checkReport !== undefined) return runReportCheckCommand(checkReport);
+  const cp1Arms = flag("arms");
+  if (cp1Arms !== undefined) return runCp1Command(cp1Arms);
   const arm = flag("arm");
   if (arm !== undefined) return runArmCommand(arm, ladderOptions());
   if (process.argv.includes("--compare")) return runProductComparison();
