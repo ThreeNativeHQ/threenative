@@ -133,10 +133,52 @@ std::vector<std::string> unsupportedFeatures(const StandardMaterial& m) {
     return out;
 }
 
+// three's instance() on the local vertex: positionLocal = (instanceMatrix * positionLocal).xyz and
+// normalLocal = transformNormal(normalLocal, instanceMatrix), i.e. normalize(transpose(inverse(
+// mat3(instanceMatrix))) * normal). WGSL has no inverse(): for columns a, b, c the inverse transpose is
+// mat3(cross(b, c), cross(c, a), cross(a, b)) / dot(a, cross(b, c)), the sign kept for mirrored instances.
+struct LocalVertex {
+    ExprId position;      // vec4, w = 1
+    ExprId normal;        // vec3; kInvalid without one
+    ExprId instanceColor; // vec3; kInvalid without one. Written last (outputInstanceColor): varyings
+                          // take locations in first-use order, and every fragment reads it last.
+};
+
+static LocalVertex localVertex(Program& v, const VertexVariant& variant, bool withNormal) {
+    ExprId position = v.attribute("position", Type::vec(3));
+    ExprId normal = withNormal ? v.attribute("normal", Type::vec(3)) : kInvalid;
+    if (variant.instanced) {
+        const ExprId c0 = v.attribute("instanceMatrix0", Type::vec(4)), c1 = v.attribute("instanceMatrix1", Type::vec(4)),
+                     c2 = v.attribute("instanceMatrix2", Type::vec(4)), c3 = v.attribute("instanceMatrix3", Type::vec(4));
+        const ExprId matrix = v.construct(Type::mat(4, 4), {c0, c1, c2, c3});
+        position = v.swizzle(v.mul(matrix, v.construct(Type::vec(4), {position, v.constant(1.0f)})), "xyz");
+        if (withNormal) {
+            const ExprId a = v.swizzle(c0, "xyz"), b = v.swizzle(c1, "xyz"), c = v.swizzle(c2, "xyz");
+            const ExprId bc = v.call("cross", {b, c});
+            const ExprId inverseTranspose =
+                v.construct(Type::mat(3, 3), {bc, v.call("cross", {c, a}), v.call("cross", {a, b})});
+            normal = v.call("normalize", {v.div(v.mul(inverseTranspose, normal), v.call("dot", {a, bc}))});
+        }
+    }
+    const ExprId instanceColor = variant.instanceColor ? v.attribute("instanceColor", Type::vec(3)) : kInvalid;
+    return {v.construct(Type::vec(4), {position, v.constant(1.0f)}), normal, instanceColor};
+}
+
+static void outputInstanceColor(Program& v, const LocalVertex& local) {
+    if (local.instanceColor != kInvalid) v.output("instanceColor", local.instanceColor);
+}
+
+// setupDiffuseColor: an instanced mesh with instanceColor multiplies the material colour by it.
+static ExprId materialColor(Program& f, const VertexVariant& variant, ExprId diffuse) {
+    const ExprId color = f.swizzle(diffuse, "xyz");
+    return variant.instanceColor ? f.mul(f.varying("instanceColor", Type::vec(3)), color) : color;
+}
+
 // The MeshStandardNodeMaterial / MeshPhysicalNodeMaterial body. `physical` swaps setupSpecular's
 // fixed 0.04 F0 / 1 F90 for the physical ior, specularIntensity and specularColor formula; every
 // other node is identical, so the standard output stays bit-identical.
-static StandardPrograms buildStandardProgram(const StandardMaterial& material, bool physical) {
+static StandardPrograms buildStandardProgram(const StandardMaterial& material, bool physical,
+                                             const VertexVariant& variant) {
     StandardPrograms out;
     out.diagnostics = unsupportedFeatures(material);
     if (!out.diagnostics.empty()) return out;
@@ -145,14 +187,15 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
     const ExprId model = v.uniform("modelMatrix", Type::mat(4, 4));
     const ExprId view = v.uniform("viewMatrix", Type::mat(4, 4));
     const ExprId normalMatrix = v.uniform("normalMatrix", Type::mat(3, 3));
-    const ExprId position = v.construct(Type::vec(4), {v.attribute("position", Type::vec(3)), v.constant(1.0f)});
-    const ExprId normal = v.attribute("normal", Type::vec(3));
+    const LocalVertex local = localVertex(v, variant, true);
+    const ExprId position = local.position, normal = local.normal;
     const ExprId positionView = v.mul(view, v.mul(model, position));
     v.output("position", v.mul(v.uniform("projectionMatrix", Type::mat(4, 4)), positionView));
     // transformNormalToView: normalize(view * vec4(modelNormalMatrix * normal, 0)), normalized per
     // vertex before it is interpolated (v_normalViewGeometry); normalMatrix is that product.
     v.output("normalView", v.call("normalize", {v.mul(normalMatrix, normal)}));
     v.output("positionView", v.swizzle(positionView, "xyz"));
+    outputInstanceColor(v, local);
 
     Program& f = out.fragment;
     Tsl t{f};
@@ -166,7 +209,7 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
     const ExprId normalWorld = f.call("normalize", {f.swizzle(f.mul(f.construct(Type::vec(4), {n, f.constant(0.0f)}),
                                                                      f.uniform("viewMatrix", Type::mat(4, 4))), "xyz")});
     const ExprId diffuse = f.uniform("diffuse", Type::vec(4));
-    const ExprId diffuseColor = f.swizzle(diffuse, "xyz");
+    const ExprId diffuseColor = materialColor(f, variant, diffuse);
     const ExprId metalness = f.uniform("metalness", Type::f32());
 
     // getRoughness: max(roughness, 0.0525) + getGeometryRoughness, capped at 1.
@@ -222,28 +265,33 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
     return out;
 }
 
-StandardPrograms buildStandard(const StandardMaterial& material) { return buildStandardProgram(material, false); }
-StandardPrograms buildPhysical(const StandardMaterial& material) { return buildStandardProgram(material, true); }
+StandardPrograms buildStandard(const StandardMaterial& material, const VertexVariant& variant) {
+    return buildStandardProgram(material, false, variant);
+}
+StandardPrograms buildPhysical(const StandardMaterial& material, const VertexVariant& variant) {
+    return buildStandardProgram(material, true, variant);
+}
 
 namespace {
 
 // The PhongLightingModel chain shared by MeshLambertNodeMaterial (specular off) and
 // MeshPhongNodeMaterial (Blinn-Phong specular): direct and indirect Lambert diffuse from the same
 // one directional, one hemisphere and one ambient light the standard program reads.
-StandardPrograms buildLit(bool phong) {
+StandardPrograms buildLit(bool phong, const VertexVariant& variant) {
     StandardPrograms out;
     Program& v = out.vertex;
     const ExprId model = v.uniform("modelMatrix", Type::mat(4, 4));
     const ExprId view = v.uniform("viewMatrix", Type::mat(4, 4));
     const ExprId normalMatrix = v.uniform("normalMatrix", Type::mat(3, 3));
-    const ExprId position = v.construct(Type::vec(4), {v.attribute("position", Type::vec(3)), v.constant(1.0f)});
-    const ExprId normal = v.attribute("normal", Type::vec(3));
+    const LocalVertex local = localVertex(v, variant, true);
+    const ExprId position = local.position, normal = local.normal;
     const ExprId positionView = v.mul(view, v.mul(model, position));
     v.output("position", v.mul(v.uniform("projectionMatrix", Type::mat(4, 4)), positionView));
     // transformNormalToView: normalize(view * vec4(modelNormalMatrix * normal, 0)), normalized per
     // vertex before it is interpolated (v_normalViewGeometry); normalMatrix is that product.
     v.output("normalView", v.call("normalize", {v.mul(normalMatrix, normal)}));
     v.output("positionView", v.swizzle(positionView, "xyz"));
+    outputInstanceColor(v, local);
 
     Program& f = out.fragment;
     Tsl t{f};
@@ -254,7 +302,7 @@ StandardPrograms buildLit(bool phong) {
     const ExprId normalWorld = f.call("normalize", {f.swizzle(f.mul(f.construct(Type::vec(4), {n, f.constant(0.0f)}),
                                                                      f.uniform("viewMatrix", Type::mat(4, 4))), "xyz")});
     const ExprId diffuse = f.uniform("diffuse", Type::vec(4));
-    const ExprId diffuseColor = f.swizzle(diffuse, "xyz");
+    const ExprId diffuseColor = materialColor(f, variant, diffuse);
 
     // PhongLightingModel.direct / BRDF_Lambert for the directional light.
     const ExprId lightDirection = f.call("normalize", {f.uniform("directionalDirection", Type::vec(3))});
@@ -291,18 +339,19 @@ StandardPrograms buildLit(bool phong) {
 
 }  // namespace
 
-StandardPrograms buildLambert() { return buildLit(false); }
-StandardPrograms buildPhong() { return buildLit(true); }
+StandardPrograms buildLambert(const VertexVariant& variant) { return buildLit(false, variant); }
+StandardPrograms buildPhong(const VertexVariant& variant) { return buildLit(true, variant); }
 
-StandardPrograms buildBasic() {
+StandardPrograms buildBasic(const VertexVariant& variant) {
     StandardPrograms out;
     Program& v = out.vertex;
-    const ExprId position = v.construct(Type::vec(4), {v.attribute("position", Type::vec(3)), v.constant(1.0f)});
+    const LocalVertex local = localVertex(v, variant, false);
     v.output("position", v.mul(v.uniform("projectionMatrix", Type::mat(4, 4)),
-                               v.mul(v.uniform("viewMatrix", Type::mat(4, 4)), v.mul(v.uniform("modelMatrix", Type::mat(4, 4)), position))));
+                               v.mul(v.uniform("viewMatrix", Type::mat(4, 4)), v.mul(v.uniform("modelMatrix", Type::mat(4, 4)), local.position))));
+    outputInstanceColor(v, local);
     Program& f = out.fragment;
     const ExprId diffuse = f.uniform("diffuse", Type::vec(4));
-    f.output("color", f.construct(Type::vec(4), {f.swizzle(diffuse, "xyz"), materialAlpha(f, f.swizzle(diffuse, "w"))}));
+    f.output("color", f.construct(Type::vec(4), {materialColor(f, variant, diffuse), materialAlpha(f, f.swizzle(diffuse, "w"))}));
     return out;
 }
 

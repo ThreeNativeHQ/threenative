@@ -42,17 +42,21 @@ WGPURenderPipeline PipelineCache::get(const shader::StageModule& vertex, const s
            std::to_string(reinterpret_cast<uintptr_t>(target.layout));
     if (const auto found = pipelines_.find(key); found != pipelines_.end()) return found->second;
 
-    // One vertex buffer per attribute, in location order: the renderer binds them the same way.
+    // One vertex buffer per attribute, in location order: the renderer binds them the same way. The
+    // instance attributes step per instance; the four instance-matrix columns are one mat4 per
+    // instance, the same buffer bound four times at offsets 0, 16, 32 and 48.
     std::vector<WGPUVertexAttribute> attributes(vertex.attributes.size());
     std::vector<WGPUVertexBufferLayout> buffers(vertex.attributes.size());
     for (size_t i = 0; i < vertex.attributes.size(); ++i) {
         const shader::Type& t = vertex.attributes[i].type;
+        const std::string& name = vertex.attributes[i].name;
+        const bool matrixColumn = name.rfind("instanceMatrix", 0) == 0;
         attributes[i] = {};
         attributes[i].format = vertexFormat(t);
         attributes[i].shaderLocation = vertex.attributes[i].location;
         buffers[i] = {};
-        buffers[i].arrayStride = uint64_t{t.rows} * 4;
-        buffers[i].stepMode = WGPUVertexStepMode_Vertex;
+        buffers[i].arrayStride = matrixColumn ? 64 : uint64_t{t.rows} * 4;
+        buffers[i].stepMode = matrixColumn || name == "instanceColor" ? WGPUVertexStepMode_Instance : WGPUVertexStepMode_Vertex;
         buffers[i].attributeCount = 1;
         buffers[i].attributes = &attributes[i];
     }

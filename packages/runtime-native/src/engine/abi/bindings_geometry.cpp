@@ -81,7 +81,8 @@ std::shared_ptr<BufferAttribute> sharedAttributeArg(Store& store, const Value& a
     Object* found = store.find(arg);
     if (found == nullptr) throw Unsupported{"argument is not a BufferAttribute"};
     if (found->cls == "BufferAttribute" || found->cls == "Float32BufferAttribute" ||
-        found->cls == "Uint16BufferAttribute" || found->cls == "Uint32BufferAttribute") {
+        found->cls == "Uint16BufferAttribute" || found->cls == "Uint32BufferAttribute" ||
+        found->cls == "InstancedBufferAttribute") {
         return std::static_pointer_cast<BufferAttribute>(found->ptr);
     }
     throw Unsupported{"argument is not a BufferAttribute, it is a " + found->cls};
@@ -91,7 +92,8 @@ BufferAttribute& attributeArg(Store& store, const Value& arg) {
     Object* found = store.find(arg);
     if (found == nullptr) throw Unsupported{"argument is not a BufferAttribute"};
     if (found->cls == "BufferAttribute" || found->cls == "Float32BufferAttribute" ||
-        found->cls == "Uint16BufferAttribute" || found->cls == "Uint32BufferAttribute") {
+        found->cls == "Uint16BufferAttribute" || found->cls == "Uint32BufferAttribute" ||
+        found->cls == "InstancedBufferAttribute") {
         return *static_cast<BufferAttribute*>(found->ptr.get());
     }
     throw Unsupported{"argument is not a BufferAttribute, it is a " + found->cls};
@@ -490,6 +492,11 @@ void registerGeometryGenerators(Registry& classes) {
 
 void registerGeometryBindings(Registry& classes) {
     registerBufferAttribute(classes["BufferAttribute"]);
+    // three's InstancedBufferAttribute: a BufferAttribute read once per instance (InstancedMesh's
+    // instanceMatrix and instanceColor). meshPerAttribute stays 1, the only value InstancedMesh uses.
+    ClassBinding& instanced = classes["InstancedBufferAttribute"];
+    registerBufferAttribute(instanced);
+    instanced.getters["meshPerAttribute"] = [](void*) { return Value::of(1.0); };
     registerBufferGeometry(classes["BufferGeometry"]);
     registerGeometryGenerators(classes);
 }

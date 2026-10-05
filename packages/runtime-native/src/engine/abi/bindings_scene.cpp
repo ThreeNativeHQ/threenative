@@ -126,7 +126,7 @@ Object3D& objectArg(Store& store, const Value& arg) {
     static const char* const kClasses[] = {"Object3D",        "Group",           "Mesh",
                                            "Scene",           "Camera",          "PerspectiveCamera",
                                            "OrthographicCamera", "AmbientLight", "DirectionalLight",
-                                           "HemisphereLight"};
+                                           "HemisphereLight", "InstancedMesh"};
     Object* found = store.find(arg);
     if (found == nullptr) throw Unsupported{"argument is not an Object3D"};
     for (const char* cls : kClasses) {
@@ -595,6 +595,63 @@ void registerMesh(ClassBinding& b) {
     };
 }
 
+// three's InstancedMesh(geometry, material, count): every matrix the identity, no colour attribute
+// until setColorAt; the arrays are float32 and reach the GPU on `needsUpdate`.
+void registerInstancedMesh(ClassBinding& b) {
+    registerMesh(b);
+    b.ctor = [](const Args& a, Store& store) -> std::shared_ptr<void> {
+        std::shared_ptr<BufferGeometry> geometry;
+        std::shared_ptr<Material> material;
+        if (!a.empty() && a.at(0).kind == Value::Kind::Ref) geometry = geometryArg(store, a.at(0));
+        if (a.size() >= 2 && a.at(1).kind == Value::Kind::Ref) material = materialArg(store, a.at(1));
+        const double count = a.size() >= 3 ? number(a.at(2)) : 0;
+        if (!(count >= 0 && count <= 16777216.0) || count != std::floor(count))
+            throw Unsupported{"InstancedMesh count must be a whole number of instances"};
+        return std::static_pointer_cast<void>(
+            std::make_shared<InstancedMesh>(geometry, material, static_cast<uint32_t>(count)));
+    };
+    b.getters["count"] = [](void* self) { return Value::of(double(as<InstancedMesh>(self)->count)); };
+    b.setters["count"] = [](void* self, const Value& v) {
+        const double count = number(v);
+        if (!(count >= 0 && count <= 4294967295.0) || count != std::floor(count))
+            throw Unsupported{"InstancedMesh count must be a whole number of instances"};
+        as<InstancedMesh>(self)->count = static_cast<uint32_t>(count);
+    };
+    b.members["instanceMatrix"] = [](void* self, const Args&, Store& store) -> Value {
+        return store.share("InstancedBufferAttribute", as<InstancedMesh>(self)->instanceMatrix);
+    };
+    b.members["instanceColor"] = [](void* self, const Args&, Store& store) -> Value {
+        const auto& colors = as<InstancedMesh>(self)->instanceColor;
+        return colors ? store.share("InstancedBufferAttribute", colors) : Value{};
+    };
+    const auto index = [](const Value& v, const InstancedMesh& mesh) {
+        const double i = number(v);
+        if (!(i >= 0 && i < double(mesh.instanceMatrix->count())) || i != std::floor(i))
+            throw Unsupported{"instance index outside the instance arrays"};
+        return static_cast<uint32_t>(i);
+    };
+    b.methods["setMatrixAt"] = [index](void* self, const Args& a, Store& store) {
+        InstancedMesh& mesh = *as<InstancedMesh>(self);
+        mesh.setMatrixAt(index(a.at(0), mesh), store.ref<Matrix4>(a.at(1), "Matrix4"));
+        return chain();
+    };
+    b.methods["getMatrixAt"] = [index](void* self, const Args& a, Store& store) {
+        const InstancedMesh& mesh = *as<InstancedMesh>(self);
+        mesh.getMatrixAt(index(a.at(0), mesh), store.ref<Matrix4>(a.at(1), "Matrix4"));
+        return a.at(1);
+    };
+    b.methods["setColorAt"] = [index](void* self, const Args& a, Store& store) {
+        InstancedMesh& mesh = *as<InstancedMesh>(self);
+        mesh.setColorAt(index(a.at(0), mesh), store.ref<Color>(a.at(1), "Color"));
+        return chain();
+    };
+    b.methods["getColorAt"] = [index](void* self, const Args& a, Store& store) {
+        const InstancedMesh& mesh = *as<InstancedMesh>(self);
+        mesh.getColorAt(index(a.at(0), mesh), store.ref<Color>(a.at(1), "Color"));
+        return a.at(1);
+    };
+}
+
 }  // namespace
 
 void registerObject3DBindings(ClassBinding& b) {
@@ -609,6 +666,7 @@ void registerSceneBindings(Registry& classes) {
     registerScene(classes["Scene"]);
     registerGroup(classes["Group"]);
     registerMesh(classes["Mesh"]);
+    registerInstancedMesh(classes["InstancedMesh"]);
 }
 
 }  // namespace tn::binding

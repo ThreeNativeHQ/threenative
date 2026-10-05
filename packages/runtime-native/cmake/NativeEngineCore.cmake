@@ -62,6 +62,14 @@ tn_native_engine_target(tn_engine_scene)
 target_link_libraries(tn_engine_scene PUBLIC tn_engine_foundation)
 target_include_directories(tn_engine_scene PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
+# The projected-size camera cull (PRD-519), ported from packages/core/src/render-camera-cull.ts over
+# the scene graph: it hides the renderables this camera cannot resolve. Portable, so it joins the
+# Wasm core.
+add_library(tn_engine_visibility STATIC src/engine/renderer/visibility/camera_cull.cpp)
+tn_native_engine_target(tn_engine_visibility)
+target_link_libraries(tn_engine_visibility PUBLIC tn_engine_scene)
+target_include_directories(tn_engine_visibility PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+
 # Shader IR (N08): typed, hash-consed expressions and ordered effects. Portable like foundation.
 add_library(tn_engine_shader STATIC src/engine/shader/ir.cpp src/engine/shader/wgsl.cpp src/engine/shader/package.cpp
     src/engine/shader/standard.cpp src/engine/shader/tonemap.cpp src/engine/shader/output.cpp)
@@ -174,6 +182,12 @@ tn_native_engine_test(tn-native-engine-geometry-edges-test tests/native-engine/g
     native_engine_geometry_out_of_range=out_of_range
     native_engine_geometry_nan_bounds=nan_bounds)
 target_link_libraries(tn-native-engine-geometry-edges-test PRIVATE tn_engine_scene)
+
+# PRD-519: every recorded RenderCameraCull report reproduces over the native scene graph.
+tn_native_engine_test(tn-native-engine-visibility-camera-cull-test tests/native-engine/visibility/camera_cull_test.cpp
+    native_engine_camera_cull=camera_cull)
+target_link_libraries(tn-native-engine-visibility-camera-cull-test PRIVATE tn_engine_visibility)
+target_include_directories(tn-native-engine-visibility-camera-cull-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/visibility)
 
 # PRD-508 phase 1: hierarchy, re-parenting, events and member identity.
 tn_native_engine_test(tn-native-engine-scene-test tests/native-engine/scene_hierarchy_test.cpp
@@ -408,6 +422,12 @@ if(NOT EMSCRIPTEN)
                 packages/runtime-native/tests/native-engine/world/heights-reference.ts --check
             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../..)
         set_tests_properties(native_engine_world_heights_reference_current PROPERTIES LABELS "native-engine")
+        # PRD-519: the committed camera-cull table is what render-camera-cull.ts produces today.
+        add_test(NAME native_engine_camera_cull_reference_current
+            COMMAND ${TN_PNPM_EXECUTABLE} --workspace-root exec tsx
+                packages/runtime-native/tests/native-engine/visibility/camera-cull-reference.ts --check
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../..)
+        set_tests_properties(native_engine_camera_cull_reference_current PROPERTIES LABELS "native-engine")
         unset(math_case)
         unset(math_pair)
     else()

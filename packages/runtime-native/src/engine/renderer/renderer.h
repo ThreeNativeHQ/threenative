@@ -39,6 +39,13 @@ struct DrawItem {
     int renderOrder = 0;       // Object3D.renderOrder
     bool transparent = false;  // material.transparent: drawn after opaques, back to front, blended
     bool depthWrite = true;    // material.depthWrite
+    // InstancedMesh: one mat4 (16 floats) per instance, an optional rgb per instance, and how many draw.
+    BufferStore* instanceMatrices = nullptr;
+    BufferStore* instanceColors = nullptr;
+    uint32_t instanceCount = 1;
+    // Automatic batching (RenderDatabase): which material it draws, and whether it may share a draw.
+    const void* materialKey = nullptr;
+    bool batchable = false;
 };
 
 struct CameraState {
@@ -147,7 +154,8 @@ private:
     GpuResources gpu_;
     GeometryCache geometry_;
     PipelineCache pipelines_;
-    Program programs_[5];  // by MaterialKind
+    // By MaterialKind, then vertex variant: 0 plain, 1 instanced, 2 instanced with instanceColor.
+    Program programs_[5][3];
     WGPUTexture lut_ = nullptr;
     WGPUTextureView lutView_ = nullptr;
     WGPUSampler lutSampler_ = nullptr;

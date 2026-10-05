@@ -153,7 +153,9 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_standard_materials_unsupported=material_unsupported
         native_engine_renderer_updates=updates
         native_engine_renderer_multi_camera_layers=multi_camera_layers
-        native_engine_renderer_callback=render_callback)
+        native_engine_renderer_callback=render_callback
+        native_engine_renderer_instanced=instanced
+        native_engine_batched_vs_unbatched=batched_vs_unbatched)
     target_link_libraries(tn-native-engine-render-database-test PRIVATE tn_engine_renderer tn_host_services)
     target_compile_definitions(tn-native-engine-render-database-test PRIVATE
         TN_GOLDENS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../three-native/tests/compatibility/goldens/0.185.1"
@@ -215,7 +217,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         # errors and undefined behaviour, not leaks. CPU-only engine tests keep leak checking.
         set_tests_properties(native_engine_gpu_upload_readback native_engine_gpu_deferred_destroy
             native_engine_gpu_async_only native_engine_lifetime_deferred_gpu ${tn_shader_validator} native_engine_shader_layouts
-            native_engine_cooked_package_load native_engine_renderer_geometry_cache native_engine_renderer_pipeline_cache native_engine_renderer_scene_lit native_engine_renderer_invalidation native_engine_renderer_scene_alpha native_engine_standard_materials_unsupported native_engine_renderer_updates native_engine_renderer_multi_camera_layers native_engine_renderer_callback native_engine_animation_tick_vs_render native_engine_animation_material_revision native_engine_admission_failure native_engine_admission_cancel native_engine_loop_async_cancel native_engine_loop_render_ids native_engine_compute_readback native_engine_renderer_resize_readback native_engine_renderer_output_ramp native_engine_renderer_lit_reference native_engine_renderer_lambert_reference native_engine_renderer_phong_reference native_engine_renderer_physical_reference native_engine_renderer_alpha_transparency native_engine_renderer_alpha_test
+            native_engine_cooked_package_load native_engine_renderer_geometry_cache native_engine_renderer_pipeline_cache native_engine_renderer_scene_lit native_engine_renderer_invalidation native_engine_renderer_scene_alpha native_engine_standard_materials_unsupported native_engine_renderer_updates native_engine_renderer_multi_camera_layers native_engine_renderer_callback native_engine_renderer_instanced native_engine_batched_vs_unbatched native_engine_animation_tick_vs_render native_engine_animation_material_revision native_engine_admission_failure native_engine_admission_cancel native_engine_loop_async_cancel native_engine_loop_render_ids native_engine_compute_readback native_engine_renderer_resize_readback native_engine_renderer_output_ramp native_engine_renderer_lit_reference native_engine_renderer_lambert_reference native_engine_renderer_phong_reference native_engine_renderer_physical_reference native_engine_renderer_alpha_transparency native_engine_renderer_alpha_test
             native_engine_shader_variants_gpu native_engine_device_loss_recover native_engine_device_stale_handle
             native_engine_device_no_adapter PROPERTIES
             ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0:abort_on_error=1;UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1")
@@ -248,6 +250,27 @@ if(TN_PNPM_EXECUTABLE)
     set_tests_properties(native_engine_chain_reference_current PROPERTIES LABELS "native-engine")
 else()
     message(WARNING "pnpm not found: native_engine_chain_reference_current is not registered")
+endif()
+
+# PRD-519: discrete LOD selection and its per-frame decision as pure CPU functions. It links the
+# scene classes for Camera and Object3D but owns no GPU resource; `native_engine_model_lod_reference_current`
+# keeps the committed table equal to what model-lod.ts produces today.
+add_library(tn_engine_lod STATIC src/engine/renderer/lod/model_lod.cpp)
+tn_native_engine_target(tn_engine_lod)
+target_link_libraries(tn_engine_lod PUBLIC tn_engine_scene)
+target_include_directories(tn_engine_lod PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+tn_native_engine_test(tn-native-engine-model-lod-test tests/native-engine/lod/model_lod_test.cpp
+    native_engine_model_lod=model_lod)
+target_link_libraries(tn-native-engine-model-lod-test PRIVATE tn_engine_lod)
+target_include_directories(tn-native-engine-model-lod-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/lod)
+if(TN_PNPM_EXECUTABLE)
+    add_test(NAME native_engine_model_lod_reference_current
+        COMMAND ${TN_PNPM_EXECUTABLE} --workspace-root exec tsx
+            packages/runtime-native/tests/native-engine/lod/model-lod-reference.ts --check
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../..)
+    set_tests_properties(native_engine_model_lod_reference_current PROPERTIES LABELS "native-engine")
+else()
+    message(WARNING "pnpm not found: native_engine_model_lod_reference_current is not registered")
 endif()
 
 get_property(tn_native_engine_test_targets GLOBAL PROPERTY TN_NATIVE_ENGINE_TEST_TARGETS)

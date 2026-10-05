@@ -5932,13 +5932,137 @@
       "kind": "class",
       "source": "three/webgpu",
       "status": {
-        "kind": "unsupported",
-        "diagnostic": "TN_NATIVE_UNSUPPORTED_INSTANCEDMESH"
+        "kind": "supported"
       },
-      "extends": null,
+      "extends": "Mesh",
       "constructor": [],
-      "fields": [],
-      "methods": []
+      "fields": [
+        {
+          "name": "count",
+          "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "instanceColor",
+          "type": "InstancedBufferAttribute | null",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "instanceMatrix",
+          "type": "InstancedBufferAttribute",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ],
+      "methods": [
+        {
+          "name": "getColorAt",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "index",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "color",
+                  "type": "Color",
+                  "optional": false
+                }
+              ],
+              "returns": "Color"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "getMatrixAt",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "index",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "matrix",
+                  "type": "Matrix4",
+                  "optional": false
+                }
+              ],
+              "returns": "Matrix4"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "setColorAt",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "index",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "color",
+                  "type": "Color",
+                  "optional": false
+                }
+              ],
+              "returns": "this"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "setMatrixAt",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "index",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "matrix",
+                  "type": "Matrix4",
+                  "optional": false
+                }
+              ],
+              "returns": "this"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ]
     },
     {
       "name": "IntType",
@@ -22747,6 +22871,49 @@
           }
         }
       ]
+    },
+    {
+      "name": "InstancedBufferAttribute",
+      "kind": "class",
+      "source": "three",
+      "status": {
+        "kind": "supported"
+      },
+      "extends": "BufferAttribute",
+      "constructor": [
+        {
+          "name": "array",
+          "type": "TypedArray",
+          "optional": false
+        },
+        {
+          "name": "itemSize",
+          "type": "number",
+          "optional": false
+        },
+        {
+          "name": "normalized",
+          "type": "boolean",
+          "optional": true
+        },
+        {
+          "name": "meshPerAttribute",
+          "type": "number",
+          "optional": true
+        }
+      ],
+      "fields": [
+        {
+          "name": "meshPerAttribute",
+          "type": "number",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ],
+      "methods": []
     }
   ]
 }

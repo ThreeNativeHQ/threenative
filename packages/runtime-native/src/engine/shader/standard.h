@@ -39,6 +39,17 @@ struct StandardMaterial {
     float dispersion = 0;
 };
 
+/**
+ * Per-draw vertex variants (package VariantBits). `instanced`: three's instance() — the vertex reads
+ * its instance matrix as four per-instance vec4 attributes (instanceMatrix0..3), transforms
+ * positionLocal by it and normalLocal by its inverse transpose. `instanceColor`: the per-instance
+ * colour (attribute instanceColor) multiplies the material colour, as setupDiffuseColor does.
+ */
+struct VertexVariant {
+    bool instanced = false;
+    bool instanceColor = false;
+};
+
 /** TN_MATERIAL_UNSUPPORTED <feature> for each physical feature in use and not yet ported. */
 std::vector<std::string> unsupportedFeatures(const StandardMaterial& material);
 
@@ -57,7 +68,7 @@ struct StandardPrograms {
  * opacity), roughness, metalness, emissive, directionalDirection (view space), directionalColor,
  * hemisphereSky, hemisphereGround, hemisphereDirection (world), ambient (fragment); texture "dfg".
  */
-StandardPrograms buildStandard(const StandardMaterial& material);
+StandardPrograms buildStandard(const StandardMaterial& material, const VertexVariant& variant = {});
 
 /**
  * MeshPhysicalNodeMaterial's non-feature path: the standard program with setupSpecular's physical
@@ -66,28 +77,28 @@ StandardPrograms buildStandard(const StandardMaterial& material);
  * — instead of the standard's fixed 0.04 / 1. A physical feature in use (clearcoat, sheen, …) is
  * still refused by name. Same uniforms as buildStandard plus ior, specularIntensity, specularColor.
  */
-StandardPrograms buildPhysical(const StandardMaterial& material);
+StandardPrograms buildPhysical(const StandardMaterial& material, const VertexVariant& variant = {});
 
 /**
  * MeshLambertNodeMaterial: PhongLightingModel with specular off — BRDF_Lambert direct and indirect
  * diffuse, no specular. Same vertex and light uniforms as the standard program; it reads no dfg,
  * metalness or roughness. Linear HDR out, materialAlpha tail.
  */
-StandardPrograms buildLambert();
+StandardPrograms buildLambert(const VertexVariant& variant = {});
 
 /**
  * MeshPhongNodeMaterial: PhongLightingModel with the Blinn-Phong specular term
  * (BRDF_BlinnPhong: F_Schlick with `specular` f0 and f90 1, G 0.25, D_BlinnPhong with `shininess`).
  * Same uniforms as buildLambert plus specular (vec3) and shininess (f32). Linear HDR out.
  */
-StandardPrograms buildPhong();
+StandardPrograms buildPhong(const VertexVariant& variant = {});
 
 /**
  * MeshBasicMaterial with no maps and no environment: BasicLightingModel's indirect diffuse is
  * 1 x AO x diffuseColor, so the outgoing light is the colour itself. Same vertex uniforms as the
  * standard program (normalMatrix unused); fragment uniform diffuse (rgb, opacity). Linear out.
  */
-StandardPrograms buildBasic();
+StandardPrograms buildBasic(const VertexVariant& variant = {});
 
 /**
  * NodeMaterial.setupDiffuseColor's alpha tail, shared by every material program: discard when

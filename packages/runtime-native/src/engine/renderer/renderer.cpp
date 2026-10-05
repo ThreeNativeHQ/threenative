@@ -1,6 +1,7 @@
 #include "renderer.h"
 
 #include <algorithm>
+#include <iterator>
 #include <cstring>
 #include <stdexcept>
 #include <vector>
@@ -93,13 +94,20 @@ WGPUTextureView view2d(WGPUTexture texture, WGPUTextureFormat format) {
 
 Renderer::Renderer(WGPUInstance instance, WGPUDevice device, WGPUQueue queue, EventQueue& events)
     : device_(device), events_(events), gpu_(instance, device, queue, events, 1), geometry_(gpu_), pipelines_(device) {
-    const shader::StandardPrograms sources[5] = {shader::buildStandard(shader::StandardMaterial{}), shader::buildBasic(),
-                                                 shader::buildLambert(), shader::buildPhong(), shader::buildPhysical(shader::StandardMaterial{})};
-    for (int kind = 0; kind < 5; ++kind) {
-        programs_[kind] = {shader::buildStage(sources[kind].vertex, 0), shader::buildStage(sources[kind].fragment, 1)};
-        if (!programs_[kind].vertex.wgsl.ok() || !programs_[kind].fragment.wgsl.ok())
-            throw std::runtime_error("TN_NATIVE_SHADER_INVALID: material program " + std::to_string(kind));
-        buildLayouts(programs_[kind]);
+    const shader::VertexVariant variants[3] = {{}, {true, false}, {true, true}};
+    for (int variant = 0; variant < 3; ++variant) {
+        const shader::VertexVariant& vv = variants[variant];
+        const shader::StandardPrograms sources[5] = {
+            shader::buildStandard(shader::StandardMaterial{}, vv), shader::buildBasic(vv), shader::buildLambert(vv),
+            shader::buildPhong(vv), shader::buildPhysical(shader::StandardMaterial{}, vv)};
+        for (int kind = 0; kind < 5; ++kind) {
+            Program& program = programs_[kind][variant];
+            program = {shader::buildStage(sources[kind].vertex, 0), shader::buildStage(sources[kind].fragment, 1)};
+            if (!program.vertex.wgsl.ok() || !program.fragment.wgsl.ok())
+                throw std::runtime_error("TN_NATIVE_SHADER_INVALID: material program " + std::to_string(kind) +
+                                         " variant " + std::to_string(variant));
+            buildLayouts(program);
+        }
     }
 
     // The DFG lookup the standard BRDF samples: three's 16x16 RG half-float table, linear filtered.
@@ -151,12 +159,14 @@ Renderer::Renderer(WGPUInstance instance, WGPUDevice device, WGPUQueue queue, Ev
 
 Renderer::~Renderer() {
     if (timestamps_) wgpuQuerySetRelease(timestamps_);
-    for (Program& program : programs_) {
-        for (int g = 0; g < 2; ++g) {
-            if (program.groups[g]) wgpuBindGroupRelease(program.groups[g]);
-            if (program.layouts[g]) wgpuBindGroupLayoutRelease(program.layouts[g]);
+    for (auto& variants : programs_) {
+        for (Program& program : variants) {
+            for (int g = 0; g < 2; ++g) {
+                if (program.groups[g]) wgpuBindGroupRelease(program.groups[g]);
+                if (program.layouts[g]) wgpuBindGroupLayoutRelease(program.layouts[g]);
+            }
+            if (program.pipelineLayout) wgpuPipelineLayoutRelease(program.pipelineLayout);
         }
-        if (program.pipelineLayout) wgpuPipelineLayoutRelease(program.pipelineLayout);
     }
     releaseTargets();
     releaseOutputGroup();
@@ -362,7 +372,9 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
     frameUniforms_.clear();
     for (const auto& [depthKey, drawn] : opaque) {
         const DrawItem& item = *drawn;
-        Program& program = programs_[static_cast<int>(item.kind)];
+        const int variant = item.instanceMatrices ? (item.instanceColors ? 2 : 1) : 0;
+        Program& program = programs_[static_cast<int>(item.kind)][variant];
+        if (item.instanceCount == 0) continue;  // three draws nothing for count 0
         const bool lit = item.kind != MaterialKind::Basic;
         if (!item.positions || (lit && !item.normals) || !item.material) continue;
         PipelineTarget target{WGPUTextureFormat_RGBA16Float, WGPUTextureFormat_Depth32Float, WGPUCullMode_Back,
@@ -409,11 +421,13 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
         if (uniformCapacity_ != 0) gpu_.destroy(uniformBuffer_);
         uniformCapacity_ = std::max<uint64_t>(frameUniforms_.size() * 2, 64 * 1024);
         uniformBuffer_ = gpu_.createBuffer(uniformCapacity_, WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
-        for (Program& program : programs_) {
-            for (int g = 0; g < 2; ++g) {
-                if (program.groups[g]) wgpuBindGroupRelease(program.groups[g]);
-                program.groups[g] = bindGroup(program.layouts[g], g == 0 ? program.vertex : program.fragment,
-                                              uniformBuffer_, lutView_, lutSampler_);
+        for (auto& variants : programs_) {
+            for (Program& program : variants) {
+                for (int g = 0; g < 2; ++g) {
+                    if (program.groups[g]) wgpuBindGroupRelease(program.groups[g]);
+                    program.groups[g] = bindGroup(program.layouts[g], g == 0 ? program.vertex : program.fragment,
+                                                  uniformBuffer_, lutView_, lutSampler_);
+                }
             }
         }
     }
@@ -421,23 +435,28 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
 
     // Encode: state changes only where they change; per draw, two dynamic offsets and the draw.
     WGPURenderPipeline bound = nullptr;
-    const BufferStore* boundVertex[2] = {nullptr, nullptr};
+    const BufferStore* boundVertex[8] = {};  // by vertex buffer slot (attribute location)
     const BufferStore* boundIndex = nullptr;
     lastFrame_ = FrameStats{};
     for (const Planned& p : plan) {
         const DrawItem& item = *p.item;
         if (p.pipeline != bound) {
             wgpuRenderPassEncoderSetPipeline(pass, bound = p.pipeline);
-            boundVertex[0] = boundVertex[1] = nullptr;
+            std::fill(std::begin(boundVertex), std::end(boundVertex), nullptr);
             boundIndex = nullptr;
         }
         for (const shader::VertexAttribute& a : p.program->vertex.attributes) {
-            BufferStore& store = a.name == "position" ? *item.positions : *item.normals;
-            const size_t slot = a.name == "position" ? 0 : 1;
+            // instanceMatrix0..3 are the columns of one buffer of mat4s, bound at 16-byte steps.
+            const bool column = a.name.rfind("instanceMatrix", 0) == 0;
+            BufferStore& store = a.name == "position"        ? *item.positions
+                                 : a.name == "normal"        ? *item.normals
+                                 : a.name == "instanceColor" ? *item.instanceColors
+                                                             : *item.instanceMatrices;
+            const uint64_t offset = column ? uint64_t(a.name.back() - '0') * 16 : 0;
             const Handle buffer = geometry_.sync(store, WGPUBufferUsage_Vertex);
-            if (boundVertex[slot] == &store) continue;
-            wgpuRenderPassEncoderSetVertexBuffer(pass, a.location, gpu_.buffer(buffer), 0, store.byteLength());
-            boundVertex[slot] = &store;
+            if (a.location < std::size(boundVertex) && boundVertex[a.location] == &store) continue;
+            wgpuRenderPassEncoderSetVertexBuffer(pass, a.location, gpu_.buffer(buffer), offset, store.byteLength() - offset);
+            if (a.location < std::size(boundVertex)) boundVertex[a.location] = &store;
         }
         wgpuRenderPassEncoderSetBindGroup(pass, 0, p.program->groups[0], 1, &p.vertexOffset);
         wgpuRenderPassEncoderSetBindGroup(pass, 1, p.program->groups[1], 1, &p.fragmentOffset);
@@ -451,12 +470,12 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
                 boundIndex = item.indices;
             }
             const uint32_t count = static_cast<uint32_t>(item.indices->byteLength() / (wide ? 4 : 2));
-            wgpuRenderPassEncoderDrawIndexed(pass, count, 1, 0, 0, 0);
-            lastFrame_.triangles += count / 3;
+            wgpuRenderPassEncoderDrawIndexed(pass, count, item.instanceCount, 0, 0, 0);
+            lastFrame_.triangles += uint64_t{item.instanceCount} * (count / 3);  // three's Info.update
         } else {
             const uint32_t count = static_cast<uint32_t>(item.positions->byteLength() / 12);
-            wgpuRenderPassEncoderDraw(pass, count, 1, 0, 0);
-            lastFrame_.triangles += count / 3;
+            wgpuRenderPassEncoderDraw(pass, count, item.instanceCount, 0, 0);
+            lastFrame_.triangles += uint64_t{item.instanceCount} * (count / 3);
         }
         ++lastFrame_.draws;
     }

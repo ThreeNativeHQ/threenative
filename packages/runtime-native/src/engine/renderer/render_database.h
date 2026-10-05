@@ -30,7 +30,7 @@ namespace tn::engine {
  * hemisphere light (refused by name), shadows, groups and multi-material meshes.
  */
 class RenderDatabase {
-public:
+  public:
     uint64_t render(Renderer& renderer, Object3D& scene, Camera& camera, std::array<double, 4> clear = {0, 0, 0, 1});
 
     /** Records rebuilt since construction; the invalidation test reads it. */
@@ -38,7 +38,18 @@ public:
     /** Why the last render left something out (TN_NATIVE_MATERIAL_UNSUPPORTED, TN_NATIVE_LIGHTS_UNSUPPORTED...). */
     [[nodiscard]] const std::vector<std::string>& diagnostics() const { return diagnostics_; }
 
-private:
+    /**
+     * Automatic batching (PRD-519): opaque plain meshes that share a geometry and a material, at
+     * least kMinBatchMembers of them (projection-plan.ts's MIN_BATCH_MEMBERS) and none with a render
+     * callback, draw as one instanced draw whose instance matrices are their world matrices. On by
+     * default; off draws every mesh on its own, which must give the same frame.
+     */
+    bool batching = true;
+    static constexpr std::size_t kMinBatchMembers = 4;
+    /** Draws the last render merged by batching: groups made and meshes they absorbed. */
+    [[nodiscard]] std::pair<std::size_t, std::size_t> lastBatches() const { return {batchGroups_, batchMembers_}; }
+
+  private:
     struct Record {
         uint64_t objectRevision = 0;
         uint64_t geometryRevision = 0;
@@ -51,14 +62,17 @@ private:
         shader::StandardMaterial params;
         DrawItem item;
         bool drawable = false;
-        uint64_t seen = 0;  // the render it was last projected in
+        uint64_t seen = 0; // the render it was last projected in
     };
     void project(Object3D& object, const Camera& camera, std::vector<DrawItem>& items, LightState& lights);
+    void batch(std::vector<DrawItem>& items);
+    std::vector<std::shared_ptr<BufferStore>> batchStores_; // reused frame to frame, one per group
+    std::size_t batchGroups_ = 0, batchMembers_ = 0;
     Record& record(const Mesh& mesh);
 
     // Drawn meshes that carry onBeforeRender, run after projection and before submission.
     struct PendingCallback {
-        std::shared_ptr<const Object3D> keep;  // a callback may detach it; the call still finds it
+        std::shared_ptr<const Object3D> keep; // a callback may detach it; the call still finds it
         const Mesh* mesh;
         Record* record;
     };
@@ -71,4 +85,4 @@ private:
     int hemisphere_ = 0;
 };
 
-}  // namespace tn::engine
+} // namespace tn::engine

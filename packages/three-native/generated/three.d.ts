@@ -730,6 +730,22 @@ export declare const IncrementStencilOp: 7682;
 /** Catalog partial (native-not-implemented): three/IncrementWrapStencilOp. */
 export declare const IncrementWrapStencilOp: 34055;
 
+/** Catalog supported: three/webgpu/InstancedMesh. */
+export declare class InstancedMesh extends Mesh {
+constructor();
+count: number;
+readonly instanceColor: InstancedBufferAttribute | null;
+readonly instanceMatrix: InstancedBufferAttribute;
+
+  getColorAt(index: number, color: Color): Color;
+
+  getMatrixAt(index: number, matrix: Matrix4): Matrix4;
+
+  setColorAt(index: number, color: Color): this;
+
+  setMatrixAt(index: number, matrix: Matrix4): this;
+}
+
 /** Catalog partial (native-not-implemented): three/IntType. */
 export declare const IntType: 1013;
 
@@ -2568,4 +2584,10 @@ readonly origin: Vector3;
   recast(t: number): Ray;
 
   set(origin: Vector3, direction: Vector3): Ray;
+}
+
+/** Catalog supported: three/InstancedBufferAttribute. */
+export declare class InstancedBufferAttribute extends BufferAttribute {
+constructor(array: TypedArray, itemSize: number, normalized?: boolean, meshPerAttribute?: number);
+readonly meshPerAttribute: number;
 }

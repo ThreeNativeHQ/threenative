@@ -8,7 +8,10 @@
 #include "engine/scene/geometries.h"
 #include "mystral/webgpu/context.h"
 
+#include <algorithm>
 #include <chrono>
+#include <functional>
+#include <cstdlib>
 #include <cmath>
 #include <cstdio>
 #include <string>
@@ -368,6 +371,193 @@ void renderCallback() {
     CHECK(calls == 0);
 }
 
+// PRD-519 groundwork: an InstancedMesh draws exactly what the same objects drawn one by one draw.
+// Nine lit spheres, rotated, non-uniformly scaled and coloured per instance, render once as one
+// InstancedMesh (one draw, three's instance(): matrix per instance, normals by its inverse
+// transpose, instanceColor times the material colour) and once as nine Meshes with those world
+// matrices and colours (nine draws). The frames must match to within float rounding.
+void instanced() {
+    if (std::getenv("TN_DUMP_WGSL")) {
+        const auto p = shader::buildBasic({true, true});
+        std::printf("%s\n", shader::buildStage(p.vertex, 0).wgsl.code.c_str());
+        return;
+    }
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(160, 120);
+    PerspectiveCamera camera(50, 4.0 / 3, 0.1, 100);
+    camera.position.set(0, 2, 9);
+    camera.lookAt(0, 0, 0);
+    camera.updateProjectionMatrix();
+    camera.updateMatrixWorld(true);
+    // Spheres, not boxes: a box's normals are axis-aligned, and for those the instance matrix and its
+    // inverse transpose point the same way, so only a curved surface tests the normal transform.
+    auto geometry = makeSphereGeometry(0.6, 24, 16);
+    const Color base = Color().setHex(0xdddddd);
+    std::vector<Matrix4> matrices;
+    std::vector<Color> colors;
+    for (int i = 0; i < 9; ++i) {
+        const Vector3 position((i % 3 - 1) * 2.6, (i / 3 - 1) * 1.9, -0.4 * i);
+        Quaternion q;
+        q.setFromEuler(Euler(0.3 * i, 0.5 + 0.2 * i, 0.1 * i));
+        const Vector3 scale(0.6 + 0.1 * i, 1.0 - 0.05 * i, 0.8 + (i % 2) * 0.5);  // non-uniform: the normal path
+        matrices.push_back(Matrix4().compose(position, q, scale));
+        colors.push_back(Color().setHSL(i / 9.0, 0.7, 0.5));
+    }
+    const auto light = [](Object3D& scene) {
+        auto sun = std::make_shared<DirectionalLight>(Color().setHex(0xffffff), 2.5);
+        sun->position.set(3, 4, 5);
+        auto sky = std::make_shared<HemisphereLight>(Color().setHex(0xb0c4de), Color().setHex(0x302820), 0.8);
+        scene.add(*sun);
+        scene.add(*sky);
+        return std::make_pair(sun, sky);
+    };
+
+    Scene batched;
+    const auto keepA = light(batched);
+    auto material = std::make_shared<Material>(MaterialType::Standard);
+    material->color = base;
+    material->roughness = 0.6;
+    auto mesh = std::make_shared<InstancedMesh>(geometry, material, 9);
+    for (int i = 0; i < 9; ++i) mesh->setMatrixAt(i, matrices[i]).setColorAt(i, colors[i]);
+    batched.add(*mesh);
+    RenderDatabase dbA;
+    dbA.render(renderer, batched, camera);
+    const auto statsA = renderer.lastFrame();
+    const std::vector<uint8_t> a = read(renderer, events);
+
+    Scene separate;
+    const auto keepB = light(separate);
+    std::vector<std::shared_ptr<Mesh>> meshes;
+    for (int i = 0; i < 9; ++i) {
+        auto m = std::make_shared<Material>(MaterialType::Standard);
+        // The instance colour is stored as float32 and multiplies the material colour in the shader.
+        m->color.setRGB(float(colors[i].r) * base.r, float(colors[i].g) * base.g, float(colors[i].b) * base.b);
+        m->roughness = 0.6;
+        auto one = std::make_shared<Mesh>(geometry, m);
+        one->matrixAutoUpdate = false;
+        one->matrix = matrices[i];
+        separate.add(*one);
+        meshes.push_back(one);
+    }
+    RenderDatabase dbB;
+    dbB.render(renderer, separate, camera);
+    const auto statsB = renderer.lastFrame();
+    const std::vector<uint8_t> b = read(renderer, events);
+
+    CHECK(a.size() == b.size() && !a.empty());
+    std::size_t lit = 0, differ = 0;
+    int worst = 0;
+    for (std::size_t p = 0; p + 3 < a.size() && a.size() == b.size(); p += 4) {
+        int d = 0;
+        for (int c = 0; c < 3; ++c) d = std::max(d, std::abs(int(a[p + c]) - int(b[p + c])));
+        worst = std::max(worst, d);
+        if (d > 2) ++differ;
+        if (a[p] + a[p + 1] + a[p + 2] > 0) ++lit;
+    }
+    std::printf("instanced: draws %u vs %u, triangles %llu vs %llu, %zu covered pixels, %zu differ by more than 2 (worst %d)\n",
+                statsA.draws, statsB.draws, (unsigned long long)statsA.triangles, (unsigned long long)statsB.triangles,
+                lit, differ, worst);
+    // Each frame adds the output pass (one draw, one triangle) to the scene's.
+    CHECK(statsA.draws == 1 + 1 && statsB.draws == 9 + 1 && statsA.triangles == statsB.triangles);
+    CHECK(lit > 1000 && differ == 0);
+    for (const std::string& d : dbA.diagnostics()) std::fprintf(stderr, "%s\n", d.c_str());
+    CHECK(dbA.diagnostics().empty());
+}
+
+// PRD-519 phase 1: a mixed scene renders the same batched and fully unbatched. Automatic batching
+// merges opaque plain meshes sharing a geometry and material (at least four) into instanced draws;
+// below the minimum, transparent meshes, a different render order and a mesh with a render callback
+// stay single. Batching on and off must give the same frame, with fewer draws on.
+void batchedVsUnbatched() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(200, 150);
+    PerspectiveCamera camera(55, 4.0 / 3, 0.1, 100);
+    camera.position.set(0, 3, 13);
+    camera.lookAt(0, 0, 0);
+    camera.updateProjectionMatrix();
+    camera.updateMatrixWorld(true);
+
+    Scene scene;
+    auto sun = std::make_shared<DirectionalLight>(Color().setHex(0xffffff), 2.2);
+    sun->position.set(2, 5, 4);
+    auto sky = std::make_shared<HemisphereLight>(Color().setHex(0xc0d0ff), Color().setHex(0x403020), 0.7);
+    scene.add(*sun);
+    scene.add(*sky);
+    auto sphere = makeSphereGeometry(0.5, 20, 14);
+    auto box = makeBoxGeometry(0.8, 0.8, 0.8);
+    const auto material = [](MaterialType type, uint32_t hex, bool transparent = false) {
+        auto m = std::make_shared<Material>(type);
+        m->color.setHex(hex);
+        if (transparent) {
+            m->transparent = true;
+            m->opacity = 0.5;
+        }
+        return m;
+    };
+    auto standard = material(MaterialType::Standard, 0x88aaee), lambert = material(MaterialType::Lambert, 0xee9955),
+         glass = material(MaterialType::Standard, 0x99ffcc, true), single = material(MaterialType::Phong, 0xdddd66);
+    std::vector<std::shared_ptr<Mesh>> meshes;
+    const auto place = [&](const std::shared_ptr<BufferGeometry>& g, const std::shared_ptr<Material>& m, double x,
+                           double y, double z, int order = 0) {
+        auto mesh = std::make_shared<Mesh>(g, m);
+        mesh->position.set(x, y, z);
+        mesh->rotation.set(0.3 * x, 0.2 * y, 0.1 * z);
+        mesh->scale.set(1 + 0.05 * x, 1 - 0.03 * y, 1);
+        if (order) mesh->setRenderOrder(order);
+        scene.add(*mesh);
+        meshes.push_back(mesh);
+        return mesh;
+    };
+    for (int i = 0; i < 6; ++i) place(sphere, standard, -5 + i * 2.0, 2.4, 0);       // one batch of six
+    for (int i = 0; i < 3; ++i) place(sphere, single, -2 + i * 2.0, -2.6, 1);        // three: below the minimum
+    for (int i = 0; i < 5; ++i) place(box, lambert, -4 + i * 2.0, 0.4, -1);          // a second batch of five
+    for (int i = 0; i < 4; ++i) place(sphere, glass, -3 + i * 2.0, -0.9, 2.5);       // transparent: never batched
+    for (int i = 0; i < 4; ++i) place(box, standard, -3 + i * 2.0, 4.2, -2, 1);      // another render order
+    auto watched = place(sphere, standard, 4, -2.6, 1);                              // a callback keeps it single
+    int callbacks = 0;
+    watched->onBeforeRender = std::make_shared<const std::function<bool(const RenderCallbackArgs&, std::string&)>>(
+        [&](const RenderCallbackArgs&, std::string&) { return ++callbacks, true; });
+
+    RenderDatabase database;
+    database.batching = false;
+    database.render(renderer, scene, camera);
+    const auto unbatchedStats = renderer.lastFrame();
+    const std::vector<uint8_t> unbatched = read(renderer, events);
+    database.batching = true;
+    database.render(renderer, scene, camera);
+    const auto batchedStats = renderer.lastFrame();
+    const auto [groups, members] = database.lastBatches();
+    const std::vector<uint8_t> batched = read(renderer, events);
+
+    std::size_t covered = 0, differ = 0;
+    int worst = 0;
+    for (std::size_t p = 0; p + 3 < batched.size() && batched.size() == unbatched.size(); p += 4) {
+        int d = 0;
+        for (int c = 0; c < 3; ++c) d = std::max(d, std::abs(int(batched[p + c]) - int(unbatched[p + c])));
+        worst = std::max(worst, d);
+        if (d > 2) ++differ;
+        if (batched[p] + batched[p + 1] + batched[p + 2] > 0) ++covered;
+    }
+    std::printf("batched vs unbatched: %zu groups of %zu meshes; draws %u vs %u, triangles %llu vs %llu; "
+                "%zu covered pixels, %zu differ by more than 2 (worst %d); callback ran %d times\n",
+                groups, members, batchedStats.draws, unbatchedStats.draws, (unsigned long long)batchedStats.triangles,
+                (unsigned long long)unbatchedStats.triangles, covered, differ, worst, callbacks);
+    CHECK(batched.size() == unbatched.size() && !batched.empty());
+    CHECK(groups == 3 && members == 6 + 5 + 4);                 // standard spheres, lambert boxes, ordered boxes
+    CHECK(batchedStats.draws == unbatchedStats.draws - members + groups);
+    CHECK(batchedStats.triangles == unbatchedStats.triangles);
+    CHECK(covered > 2000 && differ == 0);
+    CHECK(callbacks == 2);                                       // the callback mesh drew in both renders
+    for (const std::string& d : database.diagnostics()) std::fprintf(stderr, "%s\n", d.c_str());
+    CHECK(database.diagnostics().empty());
+}
+
 }  // namespace
 
 TN_TEST_MAIN({"lit_scene", litScene}, {"invalidation", invalidation},
@@ -375,4 +565,6 @@ TN_TEST_MAIN({"lit_scene", litScene}, {"invalidation", invalidation},
             {"material_unsupported", materialUnsupported},
             {"updates", updates},
             {"multi_camera_layers", multiCameraLayers},
-            {"render_callback", renderCallback})
+            {"render_callback", renderCallback},
+            {"instanced", instanced},
+            {"batched_vs_unbatched", batchedVsUnbatched})

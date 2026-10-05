@@ -7474,6 +7474,16 @@
         "source": "three/webgpu"
       },
       {
+        "symbol": "InstancedBufferAttribute",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "InstancedMesh",
+        "kind": "class",
+        "source": "three/webgpu"
+      },
+      {
         "symbol": "Matrix3",
         "kind": "class",
         "source": "three"

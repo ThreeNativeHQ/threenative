@@ -1,5 +1,6 @@
 #include "render_database.h"
 
+#include <algorithm>
 #include <cmath>
 
 namespace tn::engine {
@@ -8,7 +9,8 @@ namespace {
 
 Matrix toArray(const Matrix4& m) {
     Matrix out{};
-    for (int i = 0; i < 16; ++i) out[i] = m.elements[i];
+    for (int i = 0; i < 16; ++i)
+        out[i] = m.elements[i];
     return out;
 }
 
@@ -25,11 +27,16 @@ std::array<double, 3> normalized(std::array<double, 3> v) {
 
 MaterialKind kindOf(MaterialType type) {
     switch (type) {
-        case MaterialType::Basic: return MaterialKind::Basic;
-        case MaterialType::Lambert: return MaterialKind::Lambert;
-        case MaterialType::Phong: return MaterialKind::Phong;
-        case MaterialType::Physical: return MaterialKind::Physical;
-        default: return MaterialKind::Standard;
+    case MaterialType::Basic:
+        return MaterialKind::Basic;
+    case MaterialType::Lambert:
+        return MaterialKind::Lambert;
+    case MaterialType::Phong:
+        return MaterialKind::Phong;
+    case MaterialType::Physical:
+        return MaterialKind::Physical;
+    default:
+        return MaterialKind::Standard;
     }
 }
 
@@ -61,7 +68,7 @@ BufferStore* store(const BufferGeometry& g, const char* name) {
     return it == g.attributes.end() || !it->second ? nullptr : it->second->store.get();
 }
 
-}  // namespace
+} // namespace
 
 RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh) {
     Record& r = records_[&mesh];
@@ -69,8 +76,9 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh) {
     const uint64_t geometryRevision = mesh.geometry ? mesh.geometry->revision() : 0;
     const uint32_t materialVersion = material ? material->version() : 0;
     if (r.drawable && r.meshId == mesh.id() && r.objectRevision == mesh.revision() && r.geometry == mesh.geometry &&
-        r.geometryRevision == geometryRevision && r.material.get() == material && r.materialVersion == materialVersion) {
-        return r;  // nothing the record depends on moved
+        r.geometryRevision == geometryRevision && r.material.get() == material &&
+        r.materialVersion == materialVersion) {
+        return r; // nothing the record depends on moved
     }
     ++rebuilds_;
     r = Record{};
@@ -80,10 +88,12 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh) {
     r.geometryRevision = geometryRevision;
     r.material = mesh.material;
     r.materialVersion = materialVersion;
-    if (!mesh.geometry || !material) return r;
+    if (!mesh.geometry || !material)
+        return r;
     r.params = paramsOf(*material);
     if (const auto unsupported = shader::unsupportedFeatures(r.params); !unsupported.empty()) {
-        for (const std::string& u : unsupported) diagnostics_.push_back("TN_NATIVE_MATERIAL_UNSUPPORTED " + std::string(material->typeName()) + ": " + u);
+        for (const std::string& u : unsupported)
+            diagnostics_.push_back("TN_NATIVE_MATERIAL_UNSUPPORTED " + std::string(material->typeName()) + ": " + u);
         return r;
     }
     DrawItem& d = r.item;
@@ -96,15 +106,17 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh) {
     d.renderOrder = mesh.renderOrder();
     d.transparent = material->transparent;
     d.depthWrite = material->depthWrite;
+    d.materialKey = material;
     r.drawable = d.positions != nullptr;
     return r;
 }
 
 void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector<DrawItem>& items, LightState& lights) {
-    if (!object.visible()) return;
+    if (!object.visible())
+        return;
     if (object.layers().test(camera.layers())) {
         const std::string_view type = object.type();
-        if (type == "Mesh") {
+        if (type == "Mesh" || type == "InstancedMesh") {
             const auto& mesh = static_cast<const Mesh&>(object);
             Record& r = record(mesh);
             r.seen = frame_;
@@ -113,12 +125,25 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
                 // (`material.color.r = x` in JS) changes the colour without a version bump.
                 r.params = paramsOf(*r.material);
                 r.item.material = &r.params;
+                r.item.batchable = type == "Mesh" && !mesh.onBeforeRender && !r.material->transparent;
                 items.push_back(r.item);
-                if (mesh.onBeforeRender) callbacks_.push_back({mesh.weak_from_this().lock(), &mesh, &r});
+                if (type == "InstancedMesh") {
+                    // Read every frame, as three does: count changes and setColorAt's first call (which
+                    // creates the colour attribute) need no record rebuild.
+                    const auto& instanced = static_cast<const InstancedMesh&>(mesh);
+                    DrawItem& d = items.back();
+                    d.instanceMatrices = instanced.instanceMatrix->store.get();
+                    d.instanceColors = instanced.instanceColor ? instanced.instanceColor->store.get() : nullptr;
+                    d.instanceCount =
+                        static_cast<uint32_t>(std::min<uint64_t>(instanced.count, instanced.instanceMatrix->count()));
+                }
+                if (mesh.onBeforeRender)
+                    callbacks_.push_back({mesh.weak_from_this().lock(), &mesh, &r});
             }
         } else if (type == "AmbientLight") {
             const auto& l = static_cast<const AmbientLight&>(object);
-            for (int c = 0; c < 3; ++c) lights.ambient[c] += scaled(l.color, l.intensity)[c];
+            for (int c = 0; c < 3; ++c)
+                lights.ambient[c] += scaled(l.color, l.intensity)[c];
         } else if (type == "DirectionalLight") {
             const auto& l = static_cast<const DirectionalLight&>(object);
             if (directional_++ == 0) {
@@ -135,9 +160,68 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
             }
         }
     } else if (const auto it = records_.find(&object); it != records_.end()) {
-        it->second.seen = frame_;  // in the scene, on another camera's layer: its record stays
+        it->second.seen = frame_; // in the scene, on another camera's layer: its record stays
     }
-    for (Object3D* child : object.children) project(*child, camera, items, lights);
+    for (Object3D* child : object.children)
+        project(*child, camera, items, lights);
+}
+
+// Groups batchable items by what they draw (geometry buffers, material, kind, render order) and
+// replaces each group of kMinBatchMembers or more with one instanced item: identity model matrix,
+// the members' world matrices (float32, as a uniform holds them) as instance matrices, drawn in the
+// first member's place.
+void RenderDatabase::batch(std::vector<DrawItem>& items) {
+    std::vector<std::vector<std::size_t>> groups;
+    for (std::size_t i = 0; i < items.size(); ++i) {
+        const DrawItem& d = items[i];
+        if (!d.batchable)
+            continue;
+        auto same = [&](const std::vector<std::size_t>& g) {
+            const DrawItem& o = items[g.front()];
+            return o.positions == d.positions && o.normals == d.normals && o.indices == d.indices &&
+                   o.materialKey == d.materialKey && o.kind == d.kind && o.renderOrder == d.renderOrder;
+        };
+        auto it = std::find_if(groups.begin(), groups.end(), same);
+        if (it == groups.end())
+            groups.push_back({i});
+        else
+            it->push_back(i);
+    }
+    std::vector<bool> absorbed(items.size(), false);
+    std::vector<DrawItem> merged;
+    for (const std::vector<std::size_t>& g : groups) {
+        if (g.size() < kMinBatchMembers)
+            continue;
+        if (batchStores_.size() <= batchGroups_)
+            batchStores_.push_back(std::make_shared<BufferStore>(Scalar::F32, 0));
+        BufferStore& store = *batchStores_[batchGroups_++];
+        if (store.count() != g.size() * 16)
+            store.resize(g.size() * 16);
+        std::vector<float> matrices;
+        matrices.reserve(g.size() * 16);
+        for (std::size_t i : g) {
+            for (double e : items[i].matrixWorld)
+                matrices.push_back(static_cast<float>(e));
+            absorbed[i] = true;
+        }
+        store.write(0, matrices.data(), matrices.size() * sizeof(float));
+        store.needsUpdate();
+        DrawItem d = items[g.front()];
+        d.matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+        d.instanceMatrices = &store;
+        d.instanceCount = static_cast<uint32_t>(g.size());
+        merged.push_back(d);
+        batchMembers_ += g.size();
+    }
+    if (merged.empty())
+        return;
+    std::vector<DrawItem> out;
+    out.reserve(items.size() - batchMembers_ + merged.size());
+    for (std::size_t i = 0; i < items.size(); ++i)
+        if (!absorbed[i])
+            out.push_back(items[i]);
+    out.insert(out.end(), merged.begin(), merged.end());
+    items = std::move(out);
 }
 
 uint64_t RenderDatabase::render(Renderer& renderer, Object3D& scene, Camera& camera, std::array<double, 4> clear) {
@@ -145,12 +229,16 @@ uint64_t RenderDatabase::render(Renderer& renderer, Object3D& scene, Camera& cam
     diagnostics_.clear();
     directional_ = hemisphere_ = 0;
     // Renderer.render: world matrices first, then the camera in the renderer's coordinate system.
-    if (scene.matrixWorldAutoUpdate) scene.updateMatrixWorld();
-    if (camera.parent == nullptr && camera.matrixWorldAutoUpdate) camera.updateMatrixWorld();
+    if (scene.matrixWorldAutoUpdate)
+        scene.updateMatrixWorld();
+    if (camera.parent == nullptr && camera.matrixWorldAutoUpdate)
+        camera.updateMatrixWorld();
     if (camera.coordinateSystem != CoordinateSystem::WebGPU) {
         camera.coordinateSystem = CoordinateSystem::WebGPU;
-        if (auto* p = dynamic_cast<PerspectiveCamera*>(&camera)) p->updateProjectionMatrix();
-        if (auto* o = dynamic_cast<OrthographicCamera*>(&camera)) o->updateProjectionMatrix();
+        if (auto* p = dynamic_cast<PerspectiveCamera*>(&camera))
+            p->updateProjectionMatrix();
+        if (auto* o = dynamic_cast<OrthographicCamera*>(&camera))
+            o->updateProjectionMatrix();
     }
     std::vector<DrawItem> items;
     LightState lights;
@@ -162,15 +250,20 @@ uint64_t RenderDatabase::render(Renderer& renderer, Object3D& scene, Camera& cam
     // material colour) reaches this frame. A callee that threw is a diagnostic, never a crash.
     for (const PendingCallback& p : callbacks_) {
         const RenderCallback callback = p.mesh->onBeforeRender;
-        if (!callback) continue;
+        if (!callback)
+            continue;
         std::string error;
         if (!(*callback)({&scene, &camera, p.mesh->geometry, p.mesh->material}, error))
             diagnostics_.push_back("TN_CALLBACK_FAILED onBeforeRender: " + error);
         p.record->params = paramsOf(*p.record->material);
     }
     callbacks_.clear();
-    if (directional_ > 1) diagnostics_.push_back("TN_NATIVE_LIGHTS_UNSUPPORTED: " + std::to_string(directional_) + " directional lights; one is drawn");
-    if (hemisphere_ > 1) diagnostics_.push_back("TN_NATIVE_LIGHTS_UNSUPPORTED: " + std::to_string(hemisphere_) + " hemisphere lights; one is drawn");
+    if (directional_ > 1)
+        diagnostics_.push_back("TN_NATIVE_LIGHTS_UNSUPPORTED: " + std::to_string(directional_) +
+                               " directional lights; one is drawn");
+    if (hemisphere_ > 1)
+        diagnostics_.push_back("TN_NATIVE_LIGHTS_UNSUPPORTED: " + std::to_string(hemisphere_) +
+                               " hemisphere lights; one is drawn");
     // Objects that left the scene leave the database.
     for (auto it = records_.begin(); it != records_.end();) {
         if (it->second.seen != frame_) {
@@ -179,10 +272,13 @@ uint64_t RenderDatabase::render(Renderer& renderer, Object3D& scene, Camera& cam
             ++it;
         }
     }
+    batchGroups_ = batchMembers_ = 0;
+    if (batching)
+        batch(items);
     CameraState state;
     state.matrixWorldInverse = toArray(camera.matrixWorldInverse);
     state.projectionMatrix = toArray(camera.projectionMatrix);
     return renderer.render(items, state, lights, clear);
 }
 
-}  // namespace tn::engine
+} // namespace tn::engine
