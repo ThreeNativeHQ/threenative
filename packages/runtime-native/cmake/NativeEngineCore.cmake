@@ -15,6 +15,10 @@ function(tn_native_engine_target target)
         target_link_options(${target} PRIVATE -fsanitize=address,undefined)
     endif()
     set_property(GLOBAL APPEND PROPERTY TN_NATIVE_ENGINE_TARGETS ${target})
+    if(TN_ENGINE_FUZZ)
+        # Coverage counters in the engine code itself, or libFuzzer only sees its own harness.
+        target_compile_options(${target} PRIVATE -fsanitize=fuzzer-no-link)
+    endif()
     if(EMSCRIPTEN)
         # Owner decision 4: the core runs on a growing Wasm heap, never a fixed one.
         target_link_options(${target} PRIVATE -sALLOW_MEMORY_GROWTH=1)
