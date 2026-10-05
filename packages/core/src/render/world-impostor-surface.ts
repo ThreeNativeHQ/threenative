@@ -13,7 +13,6 @@ import {
 } from "three";
 import {
   Fn,
-  OnObjectUpdate,
   abs,
   attribute,
   cameraPosition,
@@ -49,6 +48,7 @@ import {
   vec4,
 } from "three/tsl";
 import {
+  EventNode,
   MeshBasicNodeMaterial,
   MeshPhysicalNodeMaterial,
   MeshStandardNodeMaterial,
@@ -244,16 +244,28 @@ export function syncInstanceRanges(
 }
 
 /**
+ * The event that runs {@link syncInstanceRanges} for one instance attribute: once per frame, the
+ * type three's own `Instance.js` sync uses (`OnFrameUpdate`, not re-exported, so built directly).
+ * Never OBJECT: world batches are `static`, and three skips a settled static object's OBJECT
+ * updates, so an OBJECT sync never ran and the GPU kept the batch's first, zeroed upload.
+ */
+export function instanceSyncEvent(
+  source: InstancedBufferAttribute,
+  derived: InstancedInterleavedBuffer,
+): EventNode {
+  return new EventNode(EventNode.FRAME, () => syncInstanceRanges(source, derived));
+}
+
+/**
  * The per-instance matrix as a `mat4` node, choosing the path by the attribute three installed.
  *
  * A `StorageInstancedBufferAttribute` is read through `storage(...).element(instanceIndex)`, which
  * is the same seam three's own `Instance.js` uses and which includes the indirect draw's
  * `firstInstance`. A plain CPU `InstancedBufferAttribute` cannot require storage support, so it is
  * read as the same four `instancedBufferAttribute` columns of an `InstancedInterleavedBuffer` over
- * its own array, and a per-object update copies the attribute's ranges and version onto that
+ * its own array, and a per-frame update copies the attribute's ranges and version onto that
  * derived buffer exactly as `Instance.js` does — a derived buffer nobody re-uploads draws a stale
- * pose. `OnFrameUpdate` is internal to three's bundled `Instance.js` in 0.185 and is not
- * re-exported, so the public per-object event carries the same synced ranges.
+ * pose. See {@link instanceSyncEvent}.
  */
 function instanceMatrixNode(attribute: InstancedBufferAttribute): Node<"mat4"> {
   const count = Math.max(attribute.count, 1);
@@ -277,12 +289,7 @@ function instanceMatrixNode(attribute: InstancedBufferAttribute): Node<"mat4"> {
     bufferFn(interleaved, "vec4", 16, 8),
     bufferFn(interleaved, "vec4", 16, 12),
   ];
-  // `OnFrameUpdate` is internal to three's bundled `Instance.js` and not re-exported publicly, so
-  // the public per-object event carries the same sync: it fires for the mesh on every render, which
-  // is every frame a changed matrix must be followed, and the copy is idempotent across passes.
-  OnObjectUpdate(() => {
-    if (interleaved !== undefined) syncInstanceRanges(attribute, interleaved);
-  });
+  instanceSyncEvent(attribute, interleaved).toStack();
   return mat4(
     columns[0] as Node<"vec4">,
     columns[1] as Node<"vec4">,

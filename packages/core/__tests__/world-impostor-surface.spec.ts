@@ -7,13 +7,14 @@ import {
   Texture,
   Vector3,
 } from "three";
-import { MeshStandardNodeMaterial } from "three/webgpu";
+import { MeshStandardNodeMaterial, NodeUpdateType } from "three/webgpu";
 import { describe, expect, it, vi } from "vitest";
 import {
   IMPOSTOR_SURFACE_PARALLAX,
   WorldImpostorSurface,
   impostorFrameBasis,
   impostorFrameUv,
+  instanceSyncEvent,
   syncInstanceRanges,
 } from "../src/render/world-impostor-surface.js";
 import {
@@ -243,6 +244,21 @@ describe("syncInstanceRanges", () => {
     source.needsUpdate = true;
     syncInstanceRanges(source, derived);
     expect(derived.updateRanges).toEqual([]);
+    expect(derived.version).toBe(source.version);
+  });
+});
+
+describe("instanceSyncEvent", () => {
+  // World batches are `static`, and the patched three skips OBJECT node updates of a settled static
+  // object: an OBJECT-typed sync never ran, the derived buffer kept its first (zeroed) upload, and
+  // every near impostor drew nothing. FRAME is the type three's own `Instance.js` sync uses.
+  it("syncs once per frame, the update a settled static object still runs", () => {
+    const source = new InstancedBufferAttribute(new Float32Array(16 * 2), 16);
+    const derived = new InstancedInterleavedBuffer(source.array as Float32Array, 16, 1);
+    const event = instanceSyncEvent(source, derived);
+    expect(event.updateType).toBe(NodeUpdateType.FRAME);
+    source.needsUpdate = true;
+    event.update({} as never);
     expect(derived.version).toBe(source.version);
   });
 });
