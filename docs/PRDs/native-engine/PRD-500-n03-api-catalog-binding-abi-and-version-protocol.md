@@ -1,6 +1,6 @@
 # PRD-500 — API catalog, binding ABI and version protocol (N03)
 
-**Status:** IN PROGRESS — phases 1 and 2 done; the 10-minute ABI fuzz run (phase 3) is open
+**Status:** DONE 2026-10-04
 **Complexity:** 5 — the one contract every adapter, generator and engine module depends on
 **Owner:** João
 **Work package:** N03 — [native-engine batch](README.md)
@@ -42,9 +42,9 @@ The repo's existing capability surface is `packages/create-threenative/capabilit
 - [x] A stale-generation or wrong-type handle returns a status code, never a crash. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_abi_handles` — 2026-10-04: green; stale generation, forged type, foreign context, out-of-range index, a destroyed context and a double destroy each return a status; type ids come from the generated `src/engine/abi/catalog_types.inc` (121 catalog classes)
 
 #### Phase 3: The ABI survives hostile input
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** proposed `packages/runtime-native/tests/native-engine/fuzz_abi.cpp`
-- [ ] The ABI fuzzer runs 10 minutes under ASan/UBSan with no finding. proof: `pnpm --filter @threenative/runtime-native native:test:asan -- --fuzz native_engine_fuzz_abi --max-total-time=600`
+- [x] The ABI fuzzer runs 10 minutes under ASan/UBSan with no finding. proof: `pnpm --filter @threenative/runtime-native native:test:asan -- --fuzz native_engine_fuzz_abi --max-total-time=600` — 2026-10-04: run as `native_engine_fuzz_abi corpus-abi -max_total_time=600` in a clang engine-only build with every engine target under ASan/UBSan (`-DTN_ENGINE_FUZZ=ON -DTN_ENGINE_SANITIZE=ON`): 20,256,198 inputs in 601 s, no finding. Two earlier runs found a clang 23 libFuzzer nothrow-new false positive (worked around, reproduced without engine code) and, under ASan, a leak of reused diagnostics (fixed)
 
 ## Decisions
 
