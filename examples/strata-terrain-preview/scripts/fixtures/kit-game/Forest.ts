@@ -90,7 +90,9 @@ export class Forest extends Scene<GameState, IPhysicsContext> {
     for (const view of VIEW_NAMES) viewWindows.set(view, { frameP95: [], gpuP50: [], gpuP95: [] });
     const player = new Object3D();
     player.position.set(stand.spawn.x, stand.groundY + HALF_HEIGHT + RADIUS + 2.5, stand.spawn.z);
-    const forest = await addForest(ctx, player);
+    // The world streams and picks detail around the camera, as a game whose camera follows its
+    // player does; the capture views move the camera far from the player.
+    const forest = await addForest(ctx, ctx.camera);
     this.#player = player;
     ctx.state.set({ propColliders: forest.props.length, worldReady: 1 });
   }
