@@ -70,6 +70,7 @@ export class ObservedExposureNode {
   #pending = false;
   #disposed = false;
   #releaseWarmup: ((sample: Record<string, unknown>) => void) | undefined;
+  readonly #warmupCheckpoints = new Map<number, () => void>();
 
   holdStartup(startup: Pick<ICtx["startup"], "hold" | "whenReady">): void {
     if (!this.deterministic || this.#disposed)
@@ -89,6 +90,15 @@ export class ObservedExposureNode {
       }),
       60_000,
     );
+    // Hold completion is startup's measured progress. Register every checkpoint now against
+    // the same deadline; a fresh accepted GPU readback, never a clock tick, releases it.
+    for (const updates of [30, 60, 90, 120, 150]) {
+      startup.hold(
+        `exposure-warmup-${updates}`,
+        new Promise<void>((resolve) => this.#warmupCheckpoints.set(updates, resolve)),
+        60_000 - (performance.now() - started),
+      );
+    }
     void startup.whenReady().then(() => {
       if (!this.#disposed)
         console.info(
@@ -122,6 +132,7 @@ export class ObservedExposureNode {
   }
 
   updateBefore(frame: NodeFrame): undefined {
+    if (this.#disposed) return;
     // Bound each deterministic pose to exactly 180 actual graph updates. Wait for its real
     // GPU readback before the next update, including the terminal update; then hold that history.
     const bounded = this.deterministic || this.coldBoot;
@@ -183,6 +194,8 @@ export class ObservedExposureNode {
                 ...(this.capturePose === undefined ? {} : { cameraPose: this.capturePose() }),
               };
               console.info(`TN_EXPOSURE_SAMPLE:${JSON.stringify(sample)}`);
+              this.#warmupCheckpoints.get(next.updates)?.();
+              this.#warmupCheckpoints.delete(next.updates);
               if (this.coldBoot && next.updates === 3)
                 console.info(`TN_EXPOSURE_BOOT_FROZEN:${JSON.stringify(sample)}`);
               if (next.updates === 180) {
@@ -206,6 +219,8 @@ export class ObservedExposureNode {
 
   dispose(): void {
     this.#disposed = true;
+    this.#warmupCheckpoints.clear();
+    this.#releaseWarmup = undefined;
     this.#dispose();
   }
 }
