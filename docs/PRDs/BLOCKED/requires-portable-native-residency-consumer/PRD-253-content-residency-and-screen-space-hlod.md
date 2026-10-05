@@ -10,6 +10,7 @@ Locked repository `/home/joao/projects/threenative/threenative-engine`, remote
 `b37bf30fb51527ac086a484893ad813ee0a2df0b`. Binding charter:
 [`docs/architecture/CHARTER.md`](../../../architecture/CHARTER.md).
 
+**Priority:** P2 — Open boxes acquire a real content subject and measure load-all residency cost.
 Parent batch: feature-mining.
 
 **Blocking evidence:** the real Niagara Bistro load-all consumer proved a large browser bound, but

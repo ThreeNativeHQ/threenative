@@ -101,7 +101,8 @@
     "threenative-blender-mcp": "workspace:*",
     "threenative-engine-mcp": "workspace:*",
     "tsup": "8.5.1",
-    "typescript": "catalog:"
+    "typescript": "catalog:",
+    "@typescript/native": "catalog:"
   },
   "peerDependencies": {
     "@threenative/playtest": ">=0.3.4 <0.4.0",

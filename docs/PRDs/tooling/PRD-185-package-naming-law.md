@@ -8,6 +8,7 @@ prd_contract: v1
 scoped, the MCP layer runs on three more schemes, and no document states which is the standard.
 Evidence verified at HEAD `8033dc50`.
 
+**Priority:** P2 — Open boxes extend the manifests spec and publish the naming law with two waivers.
 Complexity: 5 → MEDIUM mode (>10 touched files across packages/scripts/templates, every edit
 mechanical; the decisions — which scheme wins, what is exempt — are the substance).
 

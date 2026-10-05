@@ -11,6 +11,7 @@ prd_contract: v1
 `src/components/outline/OutlineFilter.tsx:10-198` and
 `src/components/painterlyStarter/PainterlyStarter.tsx:52-72` (MIT). Nothing copied.
 
+**Priority:** P2 — Proposed custom post-stage ids that fail closed on bad graphs.
 **Goal: a generated game can put its own TSL post stage into the existing ordered, tiered and
 reported render chain without teaching the engine that stage's visual vocabulary.** The first live
 consumer is a scale-stable ink outline in the starter's generated `src/render/` source.

@@ -1,6 +1,7 @@
 # PRD-486 — Characters get a LOD chain
 
 **Status:** PROPOSED
+**Priority:** P2 — AutoLOD still declines skinned and morph primitives; shared-attribute chains unbuilt.
 **Complexity:** 4 (MEDIUM) — 6–10 engine files (+2: `lod/eligibility.ts`, `lod/generate.ts`, `model-lod.ts`, `projection-skinned.ts`, the crowd example); pose-sampled error is a new module in `packages/assets/src/lod/` (+2); risk override: none
 **Owner:** João
 **Depends on:** [PRD-377](../assets/PRD-377-auto-lod-is-on-by-default.md) (the discrete-LOD contract, PARTIAL); builds on [PRD-448](../done/PRD-448-cross-platform-asset-cooking-and-device-budgets.md), which deferred skeletal reduction to separate work (its non-goals table, line 87)

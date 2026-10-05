@@ -86,6 +86,7 @@
     "publint": "0.3.22",
     "three": "catalog:",
     "tsup": "8.5.1",
-    "typescript": "catalog:"
+    "typescript": "catalog:",
+    "@typescript/native": "catalog:"
   }
 }

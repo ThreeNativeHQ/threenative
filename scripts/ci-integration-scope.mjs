@@ -2,6 +2,7 @@
 import { execFileSync } from "node:child_process";
 import { appendFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
+import { validateEventPlan } from "./ci-change-scope.mjs";
 
 const WORKFLOW = ".github/workflows/integration.yml";
 const SELECTOR = "scripts/ci-integration-scope.mjs";
@@ -104,6 +105,24 @@ function parse(source) {
     headings.map((h, i) => [h[1], split[1].slice(h.index, headings[i + 1]?.index)]),
   );
   if (!jobs.has("paths") || jobs.size !== headings.length) throw new Error("unknown job shape");
+  if (jobs.has("completion")) {
+    const expected = [
+      "paths",
+      ...[...jobs.keys()].filter((id) => !["paths", "completion"].includes(id)),
+    ].sort();
+    const body = jobs.get("completion");
+    const needs = /^ {4}needs: \[([a-z0-9, -]+)\]$/mu
+      .exec(body)?.[1]
+      .split(",")
+      .map((id) => id.trim())
+      .sort();
+    if (
+      JSON.stringify(needs) !== JSON.stringify(expected) ||
+      !body.includes("    if: ${{ always() }}")
+    )
+      throw new Error("unknown completion join");
+    jobs.delete("completion");
+  }
   const section = jobs.get("paths");
   const block = / {10}TN_LANE_FILTERS: \|\n((?: {12}[^\n]+\n)+)/u.exec(section)?.[1];
   if (!block) throw new Error("missing filters");
@@ -158,6 +177,9 @@ function parse(source) {
         throw new Error("unknown root gate");
       roots.set(id, gate[0][1]);
     } else if (gate.length) throw new Error("unbound root gate");
+    else if (/^ {4}if:/mu.test(body)) throw new Error("unknown dependent gate");
+    if (/^ {4}continue-on-error:/mu.test(body))
+      throw new Error("unsupported advisory integration job");
   }
   if (new Set(roots.values()).size !== filters.size) throw new Error("orphan filter");
   const laneFor = (id, seen = new Set()) => {
@@ -198,6 +220,16 @@ export function integrationSelection({ files, before, after }) {
   const outputNames = outputBlock
     .split("\n")
     .filter((line) => line.trim() && !line.trimStart().startsWith("#"))
+    .filter((line) => {
+      if (!/^ {6}(?:candidate_sha|required_jobs): /u.test(line)) return true;
+      const metadata =
+        /^ {6}(candidate_sha|required_jobs): \$\{\{ steps\.filter\.outputs\.(candidate_sha|required_jobs) \}\}$/u.exec(
+          line,
+        );
+      if (!metadata || metadata[1] !== metadata[2])
+        throw new Error("unsupported integration metadata expression");
+      return false;
+    })
     .map((line) => {
       const match =
         /^ {6}([a-z][a-z-]*): \$\{\{ steps\.filter\.outputs\.([a-z][a-z-]*) \}\}$/u.exec(line);
@@ -210,7 +242,7 @@ export function integrationSelection({ files, before, after }) {
     throw new Error("duplicate integration outputs");
   const declaredLanes = new Set([
     ...[...paths.matchAll(/^ {12}([a-z][a-z-]*) /gmu)].map((m) => m[1]),
-    ...[...after.matchAll(/needs\.paths\.outputs\.([a-z][a-z-]*)/gu)].map((m) => m[1]),
+    ...[...after.matchAll(/needs\.paths\.outputs\.([a-z][a-z-]*)(?![a-z_-])/gu)].map((m) => m[1]),
   ]);
   if (
     declaredLanes.size !== outputNames.length ||
@@ -317,13 +349,117 @@ export function integrationGitSelection(base, head) {
   }
 }
 
+// Exact-candidate inventory shared by the reusable workflow and independent protected verdict.
+export function integrationCandidatePreflight({
+  plan: value,
+  eventName,
+  target,
+  baseSha,
+  candidateSha,
+}) {
+  const plan = validateEventPlan(value, { eventName, baseRef: target });
+  const candidate = candidateSha ?? plan.candidateSha;
+  const git = (...args) => execFileSync("git", args, { encoding: "utf8" });
+  if (candidate !== plan.candidateSha || git("rev-parse", "HEAD").trim() !== candidate)
+    throw new Error("CI_INTEGRATION_CANDIDATE_MISMATCH: checkout, caller and plan must agree");
+  const after = git("show", `${candidate}:${WORKFLOW}`);
+  const current = parse(after);
+  const selection = plan.qualification
+    ? integrationSelection({ files: [SELECTOR], before: "", after })
+    : integrationGitSelection(baseSha, candidate);
+  return {
+    candidateSha: candidate,
+    lanes: selection.lanes,
+    jobs: [...current.lanesByJob]
+      .filter(([, lane]) => selection.lanes[lane])
+      .map(([id]) => id)
+      .sort(),
+    jobNames: Object.fromEntries(
+      [...current.jobs]
+        .filter(([id]) => id !== "paths")
+        .map(([id, body]) => {
+          const name = /^ {4}name: ([^\n]+)$/mu.exec(body)?.[1] ?? id;
+          if (name.includes("${{") || !name.trim()) throw new Error("unknown integration job name");
+          return [id, name];
+        }),
+    ),
+    qualification: plan.qualification,
+    planVersion: plan.version,
+  };
+}
+
+export function validateIntegrationReceipts(expected, receipts, listing) {
+  if (expected.qualification && expected.jobs.length === 0)
+    throw new Error("CI_INTEGRATION_EMPTY_QUALIFICATION");
+  if (
+    !Array.isArray(receipts) ||
+    receipts.length !== expected.jobs.length ||
+    new Set(receipts.map((r) => r?.job)).size !== expected.jobs.length ||
+    receipts.some((r) => !expected.jobs.includes(r?.job))
+  )
+    throw new Error(
+      "CI_INTEGRATION_RECEIPT_INVENTORY: required receipts are missing, duplicated or unmapped",
+    );
+  if (
+    !Array.isArray(listing?.jobs) ||
+    !Number.isInteger(listing.totalCount) ||
+    listing.totalCount !== listing.jobs.length
+  )
+    throw new Error("CI_INTEGRATION_API_INCOMPLETE: job listing must be complete");
+  for (const receipt of receipts) {
+    const matching = listing.jobs.filter(
+      (job) => job.name === `integration / ${expected.jobNames[receipt.job]}`,
+    );
+    if (matching.length !== 1) throw new Error(`CI_INTEGRATION_JOB_IDENTITY: ${receipt.job}`);
+    const job = matching[0];
+    if (String(job.run_id) !== expected.runId || String(job.run_attempt) !== expected.runAttempt)
+      throw new Error(`CI_INTEGRATION_JOB_IDENTITY: ${receipt.job} belongs to another run/attempt`);
+    if (job.status !== "completed" || job.conclusion !== "success")
+      throw new Error(
+        `CI_INTEGRATION_LEG_NOT_SUCCESS: ${receipt.job} (${job.conclusion ?? job.status})`,
+      );
+    if (
+      receipt.version !== 1 ||
+      receipt.candidateSha !== expected.candidateSha ||
+      receipt.runId !== expected.runId ||
+      receipt.runAttempt !== expected.runAttempt ||
+      receipt.planVersion !== expected.planVersion ||
+      receipt.conclusion !== "success" ||
+      !Number.isSafeInteger(job.id) ||
+      job.id <= 0 ||
+      receipt.jobId !== String(job.id)
+    )
+      throw new Error(
+        `CI_INTEGRATION_RECEIPT_IDENTITY: ${receipt.job} source, attempt, job or profile mismatch`,
+      );
+  }
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const result = integrationGitSelection(process.env.TN_BASE_SHA, process.env.TN_HEAD_SHA);
-  console.log(result.reason);
+  const result = process.env.TN_CI_PLAN
+    ? integrationCandidatePreflight({
+        plan: JSON.parse(process.env.TN_CI_PLAN),
+        eventName: process.env.TN_CI_EVENT,
+        target: process.env.TN_CI_BASE_REF,
+        baseSha: process.env.TN_BASE_SHA,
+        candidateSha: process.env.TN_HEAD_SHA,
+      })
+    : integrationGitSelection(process.env.TN_BASE_SHA, process.env.TN_HEAD_SHA);
+  console.log(
+    result.reason ??
+      (result.qualification
+        ? "exhaustive candidate qualification"
+        : "affected candidate integration"),
+  );
   appendFileSync(
     process.env.GITHUB_OUTPUT,
     Object.entries(result.lanes)
       .map(([lane, selected]) => `${lane}=${selected}\n`)
       .join(""),
   );
+  if (result.jobs)
+    appendFileSync(
+      process.env.GITHUB_OUTPUT,
+      `candidate_sha=${result.candidateSha}\nrequired_jobs=${JSON.stringify(result.jobs)}\n`,
+    );
 }

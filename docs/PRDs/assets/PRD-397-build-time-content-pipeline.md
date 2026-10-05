@@ -18,6 +18,7 @@ against). PRD-396 is **not** a dependency — they touch disjoint code and can l
 order — but if PRD-396 has landed, its numbers are the baseline this PRD measures from.
 **PR:** (open as draft before Phase 1) — label `prd:0`
 
+**Priority:** P1 — Open: static merge bounds and instancing transform parity; measured 573 draws per frame.
 ## Problem
 
 573 draws/frame (main 158, shadow 364, reflection 51) for 1.04M triangles is **~1,815

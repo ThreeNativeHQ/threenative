@@ -5,7 +5,7 @@ prd_contract: v1
 # PRD-453 — Streamed worlds stop pinning every instance to LOD0
 
 **Status:** PROPOSED — filed 2026-09-26.  
-**Priority:** quick win #1 from the 2026-09-26 Unreal-gap audit.  
+**Priority:** P1 — Its own note calls it quick win #1; WorldCells still pins placements to LOD0.
 **Complexity:** 5 → MEDIUM. Existing world packages already contain LOD files and the runtime already batches instances; the missing work is selection, shared loading and lifecycle.  
 **Depends on:** [PRD-448 WorldCells](../done/unreal-like-features/PRD-448-world-cells-blender-export-and-streaming.md). Reuse, do not duplicate, [PRD-377 AutoLOD](../assets/PRD-377-auto-lod-is-on-by-default.md).
 

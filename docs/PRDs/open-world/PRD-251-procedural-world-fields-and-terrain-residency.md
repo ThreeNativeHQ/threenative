@@ -8,6 +8,7 @@ prd_contract: v1
 `9b2f64c8`, branch `feature-mining-prd251-phase1-20260830`. Binding charter:
 [`docs/architecture/CHARTER.md`](../../architecture/CHARTER.md).
 
+**Priority:** P2 — Planned GPU field synthesis in fixed order with a per-frame dispatch budget.
 Parent batch: feature-mining.
 
 **Complexity:** +3 touches 10+ files, +2 new subsystem from scratch, +2 residency/GPU state

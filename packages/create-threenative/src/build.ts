@@ -316,10 +316,10 @@ export async function buildUi(cwd: string, config: IResolvedThreeNativeConfig): 
  * Copy just the stylesheets out of a built `src/ui/` into a flat directory the native CSS engine
  * reads, dropping the HTML and the JS of the web page — and copying the fonts and images those
  * stylesheets name, because the engine serves those by file name out of the same directory and has
- * no other source of bytes.
+ * no other source of bytes. Emitted adjacent `*.css.map` sidecars retain their original bytes.
  *
- * Only `*.css`, wherever Vite put it (`assets/index-<hash>.css`), copied flat under their own
- * names so the packaged `ui/` carries no page and no bundle. The previous contents go first
+ * CSS and its emitted map sidecars, wherever Vite put them (`assets/index-<hash>.css`), copy flat
+ * under their own names so the packaged `ui/` carries no page and no bundle. The previous contents go first
  * through `mkdir` on a directory that must be gone, so a stale stylesheet from a previous build
  * can never be packaged beside the new one.
  */
@@ -342,6 +342,16 @@ export async function extractUiStylesheets(uiDir: string, outDir: string): Promi
   }
   // Sorted so two builds of one game stage the same names in the same order.
   const sheets = stylesheets.sort();
+  const sheetNames = new Set<string>();
+  for (const file of sheets) {
+    const name = path.basename(file);
+    if (sheetNames.has(name)) {
+      throw new Error(
+        `TN_CSS_UI_STYLESHEET_AMBIGUOUS: ${file} emits ${name}, which another stylesheet already claimed`,
+      );
+    }
+    sheetNames.add(name);
+  }
   const assets = new Map<string, string>();
   // Resolved before anything is staged: a build that cannot ship its font must not leave half a
   // `ui/` behind for the packager to find and a player to run.
@@ -350,6 +360,11 @@ export async function extractUiStylesheets(uiDir: string, outDir: string): Promi
   }
   for (const file of sheets) {
     await copyFile(file, path.join(outDir, path.basename(file)));
+    // Preserve emitted sidecars and the stylesheet's sourceMappingURL without rewriting either.
+    const sourceMap = `${file}.map`;
+    if (existsSync(sourceMap)) {
+      await copyFile(sourceMap, path.join(outDir, path.basename(sourceMap)));
+    }
   }
   // Flat, because the engine looks an asset up by name: two files of one name cannot both travel,
   // and silently shipping the wrong one is the failure this refuses.

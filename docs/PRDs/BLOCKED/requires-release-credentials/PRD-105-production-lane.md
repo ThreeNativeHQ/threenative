@@ -6,6 +6,7 @@ prd_contract: v1
 
 **Status: PARTIAL — the non-deploy half is done, the deploy half is blocked, 2026-08-13.**
 
+**Priority:** P1 — Deploy half unbuilt: manual-dispatch deploy, release migrations, PITR-plus-mirror restore drill.
 Done and verified here, because none of it needed a hosting account:
 
 - **Phase 1, the secret assertion.** `assertRequiredSecrets` names *every* missing secret at once,

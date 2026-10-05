@@ -4,7 +4,8 @@ prd_contract: v1
 
 # PRD — Standard Tailwind and CSS, rendered as native UI
 
-**Status:** NOT STARTED — revised design; no implementation or runtime parity is claimed.
+**Status:** PARTIAL — Phase 1 landed and verified on Linux desktop only (Blitz CPU backend, one acceptance fixture); Phases 2 and 3 are open. No Android, iOS, macOS or Windows claim.
+**Priority:** P2 — PARTIAL native CSS backend; source maps, Android admission, Core parity and resource criteria remain open.
 **Date:** 2026-10-01 (America/Vancouver).
 **Audit baseline:** `develop` at `49ba2c49d6867ce075a9ebe42b994e3464ec0283`.
 **Delivery:** Replace the unimplemented proposal in draft PR #388; target `develop`.
@@ -65,7 +66,8 @@ No default switch, completed-PRD rewrite, or mandatory dependency cost for other
 
 ## User-facing contract
 
-The example below is a **required future acceptance fixture**, not a currently available API.
+The example below is the acceptance fixture. It runs on Linux desktop as `examples/native-css-hud` (system
+font instead of `@font-face`, `type="button"` added); the rest is the same source.
 The component and stylesheet are identical in browser and native-CSS builds; only the renderer
 selection/bootstrap differs. Do not make users replace `div` with `View` or rewrite styles per target.
 
@@ -360,19 +362,25 @@ backend decision or upstream fix, not an unrequested return to the utility-only 
 
 ## Execution phases
 
-All test paths and fixture names below are **planned**; none are claimed to exist or pass today.
+A box with a result beside it is verified; every other path and fixture name below is planned and unverified.
 These three phases implement only the Core HUD profile. Larger follow-on profiles require separate
 PRDs/PRs rather than extending this checklist indefinitely.
 
 ### Phase 1 — Standard CSS pipeline and native admission slice
 
-- [ ] Standard UI sources produce the same Tailwind/CSS styling artifact for both targets. proof: planned `packages/ui/__tests__/native-css-build.spec.ts` covering the pinned upstream compiler, plain CSS, theme/custom utilities, assets, source maps and dependency isolation.
-- [ ] The unchanged acceptance component mounts on an actual native CSS backend. proof: planned `native-css-admission.playtest.json` through the existing desktop runner, including native surface ownership, button dispatch, no WebView and required architectural/documentation updates.
+- [x] The acceptance fixture's Tailwind/CSS styling artifact is byte-identical for the browser and native builds. proof: `pnpm exec vitest run packages/create-threenative/__tests__/build.spec.ts packages/create-threenative/__tests__/config.spec.ts` (129 tests, all passing) plus `examples/native-css-hud`: the web build emits `assets/index-DeVq0E9q.css` and the native package stages `ui/index-DeVq0E9q.css` — same content hash, from the workspace's pinned Tailwind 4.3.3 via the project's own Vite config (`extractUiStylesheets` copies only `*.css`; no page, no JS).
+- [x] A plain-CSS-only arm (no Tailwind in the styling pipeline) mounts on the native CSS backend. proof: `pnpm --filter threenative-native-css-hud verify:desktop:plain` — exit 0 on Linux desktop (same host, GPU and Xvfb as below): `examples/native-css-hud/plain/` is its own project (own `package.json`, a Vite config without `@tailwindcss/vite`, hand-written `plain.css` with custom properties, a descendant selector, an alpha colour and `:hover`); the script asserts the stylesheet the engine receives is 568 bytes of `.panel` rules with no Tailwind banner, `@layer` or `--tw-` marker, the playtest passes (`closeClicks` 0 -> 1 from a real pointer click, `frames` >= 100), the host log shows the same `blitz-dom` backend with no web view, and the decoded captures show 3,736 button pixels in `#2563eb` before the click and in the `:hover` blend (`rgb(37 99 235 / 80%)` over the panel) after it. The Tailwind arm still passes after the script change (2,693 / 13,125 px).
+  Not claimed: the plain arm's browser build was not compared byte-for-byte against its native stylesheet; Tailwind-arm identity is the box above.
+- [ ] Assets (fonts/images), source maps, opt-out dependency isolation, a native Android build and an upstream/transitive license inventory are proven for the native-css backend. proof: planned `packages/create-threenative/__tests__/native-css-build.spec.ts`, an Android emulator run, and a license inventory.
+  Partial CPU-only evidence (2026-10-05): `extractUiStylesheets` preserves emitted adjacent `*.css.map` sidecars and CSS byte-for-byte, excludes unrelated maps, and removes stale maps. Two regression tests fail before the fix; two additional collision regressions fail before rejecting ambiguous flattened stylesheet/map pairs; the final focused extractor lane passes 10 tests (`pnpm exec vitest run --config .afk/focused-vitest.config.ts -t "stylesheet|CSS source map|ambiguous flattened CSS/map" --maxWorkers 2`, using checkout-local source aliases for unbuilt assets/Blender bridge packages). No Vite build, native run, source-map generation, or native diagnostic/source-location mapping was verified by this check.
+  Still unverified: bundled-font/image native proof, source-map generation and native diagnostic provenance, opt-out cost beyond the default-OFF host/refusal lane and isolated `react-css` subpath, Android admission, and the license inventory. Existing asset-copy unit tests alone do not prove native asset rendering.
+- [x] The acceptance component (the PRD fixture minus `@font-face`, which needs the bundled-font work) mounts on an actual native CSS backend. proof: `TN_ENABLE_CSS_UI=1 TN_ENABLE_UI_OVERLAY=0 pnpm native:build` then `pnpm --filter threenative-native-css-hud verify:desktop` — exit 0 on Linux desktop (NVIDIA RTX 2080, Vulkan, private Xvfb): `examples/native-css-hud/playtests/native-css-hud.playtest.json` passes (`GameState.closeClicks` 0 -> 1 after a real pointer click on the native-painted Close button, `frames` >= 100, diagnostics clean), and the host log carries `ui overlay: native-css backend=blitz-dom 0.3.0-beta.2 ... (CPU rasteriser, no WebView, no Chromium)` and `TN_UI_OVERLAY:{"attached":true,"renderer":"native-css"}`. `Inventory.tsx` is the one file both the react-dom and native entries mount. Charter amended (bounded UI-only exception); `packages/ui/AGENTS.md` and `docs/guides/native-runtime.md` describe the opt-in. Screenshots: `examples/native-css-hud/reference/native-css-hud-{before,after-click}.png` beside the Chrome reference.
 
 ### Phase 2 — Core HUD semantics
 
 - [ ] Core cascade and layout match the browser oracle. proof: planned `native-css-layout.playtest.json` plus focused selector/cascade unit cases covering the Core matrix, geometry, text wrapping and viewport/font changes.
 - [ ] Core paint and typography match the browser oracle. proof: planned `native-css-paint.playtest.json` with the documented image/metric thresholds, real bundled fonts, alpha/clip/shadow/gradient cases and asset hashes.
+  Measured so far (acceptance fixture, 1280x720, HUD crop vs headless Chrome): fixed-size boxes and the button's top/bottom/left edges are pixel-identical; the one text-dependent edge (button right edge) is 3 px wider because Blitz and Chrome resolved different system sans fonts. That misses the 1 px threshold, so this stays open until a bundled `@font-face` fixture exists; SSIM was not computed.
 - [ ] Core interaction behavior matches the browser oracle. proof: planned `native-css-input.playtest.json` covering focus, disabled controls, mouse/touch/wheel, scroll, transition interruption and game-input isolation.
 
 ### Phase 3 — Cross-target proof
@@ -390,9 +398,9 @@ the normative source-parity, no-WebView, dependency-isolation or supported-profi
 
 ## Blocked on
 
-No external dependency blocks reviewing or editing this PRD. No implementation has been attempted.
-Backend selection/interop, the bounded Charter amendment and the Core engine gaps are work inside
-this proposal, not facts already established by a dependency README.
+No external dependency blocks this PRD. Phase 1 is implemented and verified on Linux desktop only
+(Blitz, CPU raster, existing compositor). GPU-side interop, Android admission, a license inventory and the
+Core engine gaps are still work inside this proposal, not facts established by a dependency README.
 
 Physical-device performance and platform accessibility readiness require the corresponding
 hardware/OS test lane; the implementing agent must try the available lane and name the actual
@@ -407,19 +415,30 @@ items are replaced by this Core HUD plan because they proved the wrong contract;
 work or evidence is removed. The existing filename is retained to preserve PR #388 links.
 
 This proposal recommends a reused standards-oriented native UI engine, with CSS allowed at
-runtime and no public proprietary style IR. The candidate library and UI-only Charter exception
-remain design proposals pending their stated implementation evidence; the owner did not select
-a specific Rust library or authorize a silent default-renderer change.
+runtime and no public proprietary style IR. Blitz 0.3.0-beta.2 was admitted for Phase 1 on Linux desktop by
+the evidence in the boxes above, and the bounded UI-only Charter exception is recorded; Android admission and
+the license inventory remain open. The owner did not select a specific Rust library or authorize a silent
+default-renderer change, and none was made.
 
 Ship as experimental opt-in after the native proofs. Preserve the web and lightweight-native
 backends and their existing tests. Rollback changes renderer selection/bootstrap, not authored
 JSX/CSS. Rollback must be explicit: no hidden WebView fallback. Default promotion, advanced CSS
 profiles, forms/IME and additional platform certification are separate decisions and PRDs.
 
-## Verification of this documentation change
+## Verification
 
-Only this Markdown PRD is changed. Repository inspection is pinned to the audit commit, with
-external references checked on the document date. Structural/progress-check results belong in the
-PR body. Keep all implementation boxes open and the draft at `prd:0%` until real evidence exists.
-No full repo build, native execution, visual parity, performance improvement or CI-green claim is
-implied by creating this document.
+Phase 1 evidence is in the boxes above. Gates run on the delivering branch: `pnpm typecheck`, `pnpm lint`
+and `pnpm budgets` (all exit 0; the native coverage record and census were regenerated, coverage with
+LLVM 23.1.1 minus the `--fatal-warnings` flag it no longer accepts), `cargo test --release` in
+`packages/runtime-native/native/css-ui` (30 tests), the `react-css`, ui-bridge and packaging specs, and
+the host contract lane in three configurations (CSS on/web overlay off, CSS off, both on).
+
+Full `pnpm test` was not green on this branch. Two failures were this branch's own and are fixed (a
+`main.cpp` length backstop and unwaived suppressions in `react-css.ts`); the others passed in isolation or
+once their test executables were built (load flakes, unbuilt `tn-linux` targets). A last full run after
+those fixes was not repeated. The remainder are not caused by this diff and were not baseline-run: three
+`tn-linux-quickjs` lane tests need a QuickJS host build directory that does not exist here, two SBOM tests
+need the downloaded `third_party` receipts, `ios-packaging` expects a workflow edit that landed on
+`develop` after this branch's base, and the generated-shooter input proof fails on a static scenario check
+in files this branch does not touch. Not run: Android emulator, iOS, macOS, Windows, any performance
+budget, and the Phase 2 browser-oracle corpus.

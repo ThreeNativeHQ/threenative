@@ -44,7 +44,8 @@
     "react-dom": "catalog:",
     "react-test-renderer": "catalog:",
     "tsup": "8.5.1",
-    "typescript": "catalog:"
+    "typescript": "catalog:",
+    "@typescript/native": "catalog:"
   },
   "scripts": {
     "build": "tsup --config tsup.config.ts && publint",

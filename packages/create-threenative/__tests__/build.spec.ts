@@ -640,6 +640,75 @@ cpSync("public", out, { recursive: true });
     );
   });
 
+  it("preserves emitted CSS source maps byte-for-byte beside their stylesheets", async () => {
+    const root = await makeTempDir("threenative-ui-css-map-");
+    roots.push(root);
+    const built = path.join(root, "built-ui");
+    await mkdir(path.join(built, "assets"), { recursive: true });
+    const css = ".hud{color:#fff}\n/*# sourceMappingURL=index-abc123.css.map */\n";
+    const map = Buffer.from(
+      `${JSON.stringify({
+        version: 3,
+        file: "index-abc123.css",
+        sources: ["../../src/ui/hud.css"],
+        sourcesContent: ["/* Inventário */\n.hud { color: #fff; }\n"],
+        names: [],
+        mappings: "AACA,KAAO,UAAa",
+      })}\n`,
+    );
+    await writeFile(path.join(built, "assets", "index-abc123.css"), css);
+    await writeFile(path.join(built, "assets", "index-abc123.css.map"), map);
+    await writeFile(path.join(built, "assets", "index-abc123.js.map"), "browser-only");
+    await writeFile(path.join(built, "assets", "orphan.css.map"), "unrelated");
+
+    const out = path.join(root, "ui-css");
+    expect(await extractUiStylesheets(built, out)).toEqual([
+      "index-abc123.css",
+      "index-abc123.css.map",
+    ]);
+    await expect(readFile(path.join(out, "index-abc123.css"), "utf8")).resolves.toBe(css);
+    await expect(readFile(path.join(out, "index-abc123.css.map"))).resolves.toEqual(map);
+  });
+
+  it.each([false, true])(
+    "refuses ambiguous flattened CSS/map pairs before staging (later map: %s)",
+    async (laterMap) => {
+      const root = await makeTempDir("threenative-ui-css-map-collision-");
+      roots.push(root);
+      const built = path.join(root, "built-ui");
+      for (const name of ["a", "b"]) {
+        await mkdir(path.join(built, name), { recursive: true });
+        await writeFile(path.join(built, name, "hud.css"), `.${name}{color:#fff}`);
+      }
+      await writeFile(path.join(built, "a", "hud.css.map"), '{"version":3,"file":"a"}');
+      if (laterMap) {
+        await writeFile(path.join(built, "b", "hud.css.map"), '{"version":3,"file":"b"}');
+      }
+      const out = path.join(root, "ui-css");
+      await expect(extractUiStylesheets(built, out)).rejects.toThrow(
+        "TN_CSS_UI_STYLESHEET_AMBIGUOUS:",
+      );
+      expect(await readdir(out)).toEqual([]);
+    },
+  );
+
+  it("removes a previous CSS source map when the next build does not emit one", async () => {
+    const root = await makeTempDir("threenative-ui-css-map-rebuild-");
+    roots.push(root);
+    const built = path.join(root, "built-ui");
+    await mkdir(built, { recursive: true });
+    const css = path.join(built, "hud.css");
+    await writeFile(css, ".hud{color:#fff}/*# sourceMappingURL=hud.css.map */");
+    await writeFile(`${css}.map`, '{"version":3}');
+    const out = path.join(root, "ui-css");
+    expect(await extractUiStylesheets(built, out)).toEqual(["hud.css", "hud.css.map"]);
+
+    await rm(`${css}.map`);
+    await writeFile(css, ".hud{color:#fff}");
+    expect(await extractUiStylesheets(built, out)).toEqual(["hud.css"]);
+    expect(existsSync(path.join(out, "hud.css.map"))).toBe(false);
+  });
+
   it("copies the fonts and images a stylesheet url() names, flat beside it", async () => {
     const root = await makeTempDir("threenative-ui-css-asset-");
     roots.push(root);

@@ -1,6 +1,7 @@
 # PRD-459 — Smooth streaming: one admission budget per frame, prefetched ahead of the camera
 
 **Status:** NOT STARTED
+**Priority:** P1 — Measured 92 ms streaming-window p95; per-frame admission budget and prefetch unbuilt.
 **Complexity:** 6 (MEDIUM); risk override: none. About 8 implementation files across `core` and `playtest`, one new per-frame budget, and an admission queue that resumes across frames.
 **Owner:** unassigned (drafted by Claude, 2026-09-26)
 **Depends on:** None. Landed prerequisites, already on `feat/world-cells-scatter-lod`: `aded4a85a` (per-instance package `lods` + rebuild skip and the `rebuildsPerUpdate` cap) and `f7164f850` (terrain seam/LOD thrash that cost ~39 ms/frame).

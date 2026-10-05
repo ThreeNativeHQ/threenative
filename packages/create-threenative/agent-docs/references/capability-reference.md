@@ -3824,6 +3824,21 @@ export class CaptureGuardError extends Error { … }
 throw new CaptureGuardError("menu", "no bright pixels");
 ```
 
+### `collectRegionalTone`
+
+`function` — Collect opt-in regional tone observations from the same acquired PNG.
+
+```ts
+export function collectRegionalTone( png: Buffer, assertions: readonly IPlaytestToneAssertion[], label: string, atStep?: string, ): IPlaytestRegionalToneObservation[] { … }
+```
+
+- **Use when:** measure a specified pixel crop in a captured playtest frame
+- **Constraints:** does not acquire another screenshot or alter frame timing
+
+```ts
+collectRegionalTone(png, assertions, "character", "posed");
+```
+
 ### `inspectFrame`
 
 `function` — Inspect a PNG frame for visible pixels and luminance variation.

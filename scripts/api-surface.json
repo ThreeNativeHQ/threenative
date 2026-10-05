@@ -256,6 +256,7 @@
         "@threenative/playtest/capture#assertCaptureNotBlank": "export function assertCaptureNotBlank(png: Buffer, label: string): ICaptureFrameStats { … }",
         "@threenative/playtest/capture#assertFrameShowsSomething": "assertFrameShowsSomething = assertCaptureNotBlank",
         "@threenative/playtest/capture#CaptureGuardError": "export class CaptureGuardError extends Error { … }",
+        "@threenative/playtest/capture#collectRegionalTone": "export function collectRegionalTone( png: Buffer, assertions: readonly IPlaytestToneAssertion[], label: string, atStep?: string, ): IPlaytestRegionalToneObservation[] { … }",
         "@threenative/playtest/capture#inspectFrame": "export function inspectFrame(png: Buffer): ICaptureFrameStats { … }",
         "@threenative/playtest/protocol#assertJsonSafe": "export function assertJsonSafe(value: unknown, path = \"$\"): asserts value is JsonValue { … }",
         "@threenative/playtest/protocol#jsonByteLength": "export function jsonByteLength(value: JsonValue): number { … }",
