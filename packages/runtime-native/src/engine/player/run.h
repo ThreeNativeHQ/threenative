@@ -10,6 +10,7 @@
 namespace tn::engine {
 
 class Camera;
+class Renderer;
 
 namespace inspect {
 class Endpoint;
@@ -31,6 +32,12 @@ struct Game {
      *  for a game bundle on the V8 adapter. */
     std::string gameRuntime = "cpp";
     bool shadowMapEnabled = false;
+    /** Streaming proofs render every driven tick, including ticks in a batched advance request. */
+    bool renderEachTick = false;
+    std::function<void(Renderer&)> initialize;
+    std::function<void(Renderer&, const std::vector<std::string>&)> frameComplete;
+    /** Releases game-owned GPU resources before the loop destroys its renderer. */
+    std::function<void()> shutdown;
     /** One fixed tick; `dt` is the step in seconds. The loop calls it once per `advance` tick. */
     std::function<void(double dt)> update;
     /** A registered resource by id, or null. The loop answers `profile` itself; the `tick` is the

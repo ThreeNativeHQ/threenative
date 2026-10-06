@@ -38,6 +38,7 @@ struct Gpu {
     EventQueue events;
     std::unique_ptr<Renderer> renderer;
     RenderDatabase database;
+    std::vector<std::shared_ptr<void>> fixtureResources;
 };
 
 std::string draw(Gpu& gpu, tn::binding::Object& sceneObject, tn::binding::Object& cameraObject, const tn::fixture::RenderRequest& r) {
@@ -66,7 +67,7 @@ std::string draw(Gpu& gpu, tn::binding::Object& sceneObject, tn::binding::Object
     };
     for (auto [program, object] : r.tsl)
         if (const std::string failed =
-                tn::fixture::applyTslProgram(program, object, renderer, gpu.context.getDevice(), renderAt);
+                tn::fixture::applyTslProgram(program, object, renderer, gpu.context.getDevice(), renderAt, gpu.fixtureResources, camera);
             !failed.empty())
             return failed;
     gpu.database.render(renderer, scene, *camera, clear);

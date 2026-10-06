@@ -11,6 +11,7 @@ Material::Material(MaterialType t, bool node) : type(t), nodeMaterial(node), id(
 }
 
 std::string_view Material::typeName() const {
+    if (spriteMaterial) return nodeMaterial ? "SpriteNodeMaterial" : "SpriteMaterial";
     if (nodeMaterial) return type == MaterialType::Basic ? "MeshBasicNodeMaterial" : "MeshStandardNodeMaterial";
     switch (type) {
         case MaterialType::Basic: return "MeshBasicMaterial";

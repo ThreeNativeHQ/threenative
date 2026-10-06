@@ -420,6 +420,22 @@ void registerTextureClass(ClassBinding& b, bool data) {
 }  // namespace
 
 void registerMaterialBindings(Registry& classes) {
+    for (const auto& [name, node] : {std::pair{"SpriteMaterial", false}, std::pair{"SpriteNodeMaterial", true}}) {
+        auto& b = classes[name];
+        registerMeshMaterial(b, MaterialType::Basic, node);
+        const auto ctor = b.ctor;
+        b.ctor = [ctor](const Args& a, Store& store) {
+            auto value = ctor(a, store);
+            auto* material = static_cast<Material*>(value.get());
+            material->spriteMaterial = true;
+            material->transparent = true;
+            return value;
+        };
+        b.getters["rotation"] = [](void* self) { return Value::of(as<Material>(self)->rotation); };
+        b.setters["rotation"] = [](void* self, const Value& v) { as<Material>(self)->rotation = number(v); };
+        b.getters["sizeAttenuation"] = [](void* self) { return Value::of(as<Material>(self)->sizeAttenuation); };
+        b.setters["sizeAttenuation"] = [](void* self, const Value& v) { as<Material>(self)->sizeAttenuation = flag(v); };
+    }
     registerMeshMaterial(classes["MeshBasicMaterial"], MaterialType::Basic);
     registerMeshMaterial(classes["MeshBasicNodeMaterial"], MaterialType::Basic, true);
     registerMeshMaterial(classes["MeshStandardNodeMaterial"], MaterialType::Standard, true);

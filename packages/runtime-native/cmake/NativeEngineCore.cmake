@@ -82,7 +82,8 @@ target_include_directories(tn_engine_visibility PUBLIC ${CMAKE_CURRENT_SOURCE_DI
 # packages/core/src/render/virtual-shadow-pages.ts: the pages a frame requests from receiver
 # feedback, the bounded LRU physical page pool, and the pages a moving caster invalidates. Portable,
 # so it joins the Wasm core.
-add_library(tn_engine_vsm STATIC src/engine/renderer/shadows/virtual/pages.cpp)
+add_library(tn_engine_vsm STATIC src/engine/renderer/shadows/virtual/pages.cpp
+    src/engine/renderer/shadows/virtual/atlas.cpp)
 tn_native_engine_target(tn_engine_vsm)
 target_link_libraries(tn_engine_vsm PUBLIC tn_engine_foundation)
 target_include_directories(tn_engine_vsm PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
@@ -90,7 +91,7 @@ target_include_directories(tn_engine_vsm PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 # Shader IR (N08): typed, hash-consed expressions and ordered effects. Portable like foundation.
 add_library(tn_engine_shader STATIC src/engine/shader/ir.cpp src/engine/shader/wgsl.cpp src/engine/shader/package.cpp
     src/engine/shader/standard.cpp src/engine/shader/tonemap.cpp src/engine/shader/output.cpp
-    src/engine/shader/graph/graph.cpp)
+    src/engine/shader/graph/graph.cpp src/engine/shader/sprite.cpp)
 tn_native_engine_target(tn_engine_shader)
 target_include_directories(tn_engine_shader PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
@@ -270,6 +271,10 @@ tn_native_engine_test(tn-native-engine-vsm-test tests/native-engine/vsm/vsm_page
     native_engine_vsm_invalidation=invalidation)
 target_link_libraries(tn-native-engine-vsm-test PRIVATE tn_engine_vsm)
 target_include_directories(tn-native-engine-vsm-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/vsm)
+tn_native_engine_test(tn-native-engine-vsm-atlas-test tests/native-engine/vsm/vsm_atlas_test.cpp
+    native_engine_vsm_atlas=atlas
+    native_engine_vsm_sampling=sampling)
+target_link_libraries(tn-native-engine-vsm-atlas-test PRIVATE tn_engine_vsm tn_engine_shader)
 
 # PRD-508 phase 1: hierarchy, re-parenting, events and member identity.
 tn_native_engine_test(tn-native-engine-scene-test tests/native-engine/scene_hierarchy_test.cpp
@@ -338,7 +343,7 @@ if(EMSCRIPTEN)
     add_library(tn_engine_renderer STATIC ${TN_ENGINE_RENDERER_SOURCES})
     tn_native_engine_target(tn_engine_renderer)
     target_link_libraries(tn_engine_renderer PUBLIC tn_engine_foundation tn_engine_assets tn_engine_shader tn_engine_scene
-        tn_engine_animation)
+        tn_engine_animation tn_engine_vsm tn_engine_graph)
     target_compile_definitions(tn_engine_renderer PUBLIC MYSTRAL_WEBGPU_DAWN)
     target_compile_options(tn_engine_renderer PUBLIC --use-port=emdawnwebgpu)
     target_link_options(tn_engine_renderer PUBLIC --use-port=emdawnwebgpu)

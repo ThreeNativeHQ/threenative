@@ -16,6 +16,7 @@
 #include "engine/renderer/geometry_cache.h"
 #include "engine/renderer/gpu_resources.h"
 #include "engine/renderer/pipeline_cache.h"
+#include "engine/renderer/shadows/virtual/atlas.h"
 #include "engine/shader/output.h"
 #include "engine/shader/package.h"
 #include "engine/shader/standard.h"
@@ -75,6 +76,9 @@ struct DrawItem {
     BufferStore* instanceMatrices = nullptr;
     BufferStore* instanceColors = nullptr;
     uint32_t instanceCount = 1;
+    bool sprite = false, spriteSizeAttenuation = true;
+    std::array<double, 2> spriteCenter{0.5, 0.5};
+    double spriteRotation = 0;
     // Automatic batching (RenderDatabase): which material it draws, and whether it may share a draw.
     const void* materialKey = nullptr;
     bool batchable = false;
@@ -161,6 +165,10 @@ public:
      */
     void setStorage(const std::string& name, Handle buffer, uint64_t bytes) { externalStorage_[name] = {buffer, bytes}; }
 
+    // VirtualShadowNode's explicit depth, fixed refresh/gate path. Unsupported policies are
+    // named at this boundary rather than silently selected by a light's ordinary shadow.
+    void setVirtualShadow(std::size_t light, const shadows::AtlasOptions& options);
+    void cutVirtualShadows() { virtualCut_ = true; }
     void setOutput(const OutputState& output);
     /** A post pass between the scene and the output transform; null draws the scene straight out. */
     void setPostNode(std::shared_ptr<const shader::PostNode> post);
@@ -306,6 +314,14 @@ private:
     // 2D maps and cube maps in separate slots, so a program built while light i was a directional
     // light still binds a 2D map after light i becomes a point light.
     std::vector<ShadowMap> shadowMaps_, cubeShadowMaps_;
+    struct VirtualShadow {
+        shadows::PageAtlas atlas;
+        ShadowMap map;
+        std::map<uint64_t, Box3> casters;
+        std::map<uint64_t, std::string> casterPrograms;
+    };
+    std::map<std::size_t, VirtualShadow> virtualShadows_;
+    bool virtualCut_ = false;
     WGPUSampler compareSampler_ = nullptr;
     Handle color_;
     WGPUTexture depth_ = nullptr;

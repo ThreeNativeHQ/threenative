@@ -38,11 +38,13 @@ function served(): Map<string, [string, string]> {
     "text/javascript",
     readFileSync(path.join(HERE, "programs.js"), "utf8"),
   ]);
-  // The real class, transpiled as served: its only imports are `three` and `three/tsl`.
-  const particles = transformSync(readFileSync(path.join(CORE_SRC, "particles.ts"), "utf8"), {
-    loader: "ts",
-  });
-  files.set("/core/particles.js", ["text/javascript", particles.code]);
+  // Real core classes, transpiled as served; type-only imports disappear.
+  for (const name of ["particles", "fluid-field"]) {
+    const source = transformSync(readFileSync(path.join(CORE_SRC, `${name}.ts`), "utf8"), {
+      loader: "ts",
+    });
+    files.set(`/core/${name}.js`, ["text/javascript", source.code]);
+  }
   files.set("/", [
     "text/html",
     [

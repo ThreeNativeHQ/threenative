@@ -131,7 +131,7 @@ Object3D& objectArg(Store& store, const Value& arg) {
                                            "Scene",           "Camera",          "PerspectiveCamera",
                                            "OrthographicCamera", "AmbientLight", "DirectionalLight",
                                            "HemisphereLight", "InstancedMesh",      "PointLight",
-                                           "SpotLight",       "Bone",               "SkinnedMesh", "LOD"};
+                                           "Sprite", "SpotLight",       "Bone",               "SkinnedMesh", "LOD"};
     Object* found = store.find(arg);
     if (found == nullptr) throw Unsupported{"argument is not an Object3D"};
     for (const char* cls : kClasses) {
@@ -937,6 +937,22 @@ void registerSceneBindings(Registry& classes) {
     registerLOD(classes["LOD"]);
     registerMesh(classes["Mesh"]);
     registerInstancedMesh(classes["InstancedMesh"]);
+    auto& sprite = classes["Sprite"];
+    registerMesh(sprite);
+    sprite.ctor = [](const Args& a, Store& store) {
+        return std::static_pointer_cast<void>(std::make_shared<Sprite>(a.empty() ? nullptr : materialArg(store, a.at(0))));
+    };
+    sprite.getters["count"] = [](void* self) { return Value::of(double(as<Sprite>(self)->count)); };
+    sprite.setters["count"] = [](void* self, const Value& v) {
+        const double n = number(v);
+        if (!std::isfinite(n) || n < 0 || n != std::floor(n) || n > UINT32_MAX) throw Unsupported{"Sprite count must be a whole number of instances"};
+        as<Sprite>(self)->count = static_cast<uint32_t>(n);
+    };
+    for (int i = 0; i < 2; ++i) {
+        const std::string path = i == 0 ? "center.x" : "center.y";
+        sprite.getters[path] = [i](void* self) { const auto& c = as<Sprite>(self)->center; return Value::of(i == 0 ? c.x : c.y); };
+        sprite.setters[path] = [i](void* self, const Value& v) { auto& c = as<Sprite>(self)->center; (i == 0 ? c.x : c.y) = number(v); };
+    }
     registerBone(classes["Bone"]);
     registerSkeleton(classes["Skeleton"]);
     registerSkinnedMesh(classes["SkinnedMesh"]);

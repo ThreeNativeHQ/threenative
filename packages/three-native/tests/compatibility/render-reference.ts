@@ -27,6 +27,10 @@ import {
   TONE_MAPPING_CONSTANTS,
 } from "../../src/fixture-format.js";
 
+const { buildSync, transformSync } = createRequire(
+  path.join(REPO_ROOT, "packages/runtime-native/package.json"),
+)("esbuild");
+
 /**
  * The flags `--browser-recipe webgpu` passes, named in `packages/playtest/src/runner/browser.ts`.
  *
@@ -126,6 +130,24 @@ async function withServer(
   ]);
   for (const name of ["three.webgpu.js", "three.core.js", "three.tsl.js"])
     served.set(`/build/${name}`, ["text/javascript", readFileSync(path.join(build, name), "utf8")]);
+  for (const name of ["particles", "fluid-particles", "gpu-readback"]) {
+    const source = transformSync(
+      readFileSync(path.join(REPO_ROOT, "packages/core/src", `${name}.ts`), "utf8"),
+      { loader: "ts" },
+    );
+    served.set(`/core/${name}.js`, ["text/javascript", source.code]);
+  }
+  if ([...fixtures.values()].some((fixture) => fixture.name.startsWith("vsm-"))) {
+    const virtual = buildSync({
+      entryPoints: [path.join(REPO_ROOT, "packages/core/src/render/virtual-shadow.ts")],
+      bundle: true,
+      format: "esm",
+      platform: "browser",
+      external: ["three", "three/*"],
+      write: false,
+    });
+    served.set("/core/virtual-shadow.js", ["text/javascript", virtual.outputFiles[0].text]);
+  }
   // GLTFLoader and the two helpers it imports, resolving `three` through the page's import map; and
   // every glTF a fixture loads, from the repository.
   for (const addon of [

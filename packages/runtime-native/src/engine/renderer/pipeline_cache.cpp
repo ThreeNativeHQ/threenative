@@ -40,7 +40,7 @@ WGPURenderPipeline PipelineCache::get(const shader::StageModule& vertex, const s
     key += '\x1f' + std::to_string(target.color) + ':' + std::to_string(target.depth) + ':' +
            std::to_string(target.cull) + ':' + std::to_string(target.blend) + ':' + std::to_string(target.depthWrite) +
            ':' + std::to_string(reinterpret_cast<uintptr_t>(target.layout)) + ':' + std::to_string(target.skinIndex) +
-           ':' + std::to_string(target.frontFace);
+           ':' + std::to_string(target.frontFace) + ':' + std::to_string(target.depthCompare);
     if (const auto found = pipelines_.find(key); found != pipelines_.end()) return found->second;
 
     // One vertex buffer per attribute, in location order: the renderer binds them the same way. The
@@ -82,7 +82,7 @@ WGPURenderPipeline PipelineCache::get(const shader::StageModule& vertex, const s
     WGPUDepthStencilState depth = {};
     depth.format = target.depth;
     depth.depthWriteEnabled = target.depthWrite ? WGPU_OPTIONAL_BOOL_TRUE : WGPU_OPTIONAL_BOOL_FALSE;
-    depth.depthCompare = WGPUCompareFunction_LessEqual;
+    depth.depthCompare = target.depthCompare;
     if (target.depth != WGPUTextureFormat_Undefined) desc.depthStencil = &depth;
     WGPUColorTargetState color = {};
     color.format = target.color;

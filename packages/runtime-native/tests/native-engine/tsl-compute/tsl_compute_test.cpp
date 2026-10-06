@@ -8,6 +8,9 @@
 #include "engine/foundation/json.h"
 #include "engine/renderer/compute.h"
 #include "engine/world/particles/gpu_particles.h"
+#include "engine/world/fluids/fluid_field.h"
+#include "engine/shader/sprite.h"
+#include "engine/renderer/render_database.h"
 #include "mystral/webgpu/context.h"
 
 #include <chrono>
@@ -219,6 +222,84 @@ void particlesLifetime() {
     device.gpu->destroy(state);
 }
 
+world::FluidField2D::Options fluidOptions() {
+    world::FluidField2D::Options o;
+    o.resolution = 16; o.pressureIterations = 5; o.viscosity = 0.03; o.splatRadius = 0.24;
+    return o;
+}
+
+void fluidIr() {
+    const auto o = fluidOptions();
+    for (int k = 0; k < world::FluidField2D::Count; ++k) {
+        const Program p = world::FluidField2D::kernel(static_cast<world::FluidField2D::Kernel>(k), o);
+        for (const Diagnostic& d : p.diagnostics()) std::fprintf(stderr, "%s: %s\n", d.code.c_str(), d.reason.c_str());
+        const auto module = buildStage(p, 0);
+        CHECK(p.ok() && module.wgsl.ok());
+        CHECK(module.wgsl.code.find("texture") == std::string::npos);
+        CHECK(module.wgsl.code.find("global_invocation_id") != std::string::npos);
+    }
+    VertexVariant sprite;
+    sprite.sprite = true;
+    sprite.nodes.colorNode = graph::vec4({graph::uv(), graph::float_(0.35), graph::float_(1)});
+    sprite.positionNode = std::make_shared<PositionNode>(PositionNode{"particle-storage", [](Program& p, ExprId) {
+        Build build(p);
+        return Node(storage("positions", Type::vec(3)).element(instanceIndex())).id;
+    }});
+    const auto stages = buildSprite(sprite);
+    CHECK(stages.vertex.ok() && stages.fragment.ok());
+    CHECK(buildStage(stages.vertex, 0).wgsl.ok() && buildStage(stages.fragment, 1).wgsl.ok());
+    const auto vertex = buildStage(stages.vertex, 0);
+    CHECK(vertex.wgsl.code.find("instance_index") != std::string::npos);
+    CHECK(vertex.wgsl.code.find("s_positions") != std::string::npos);
+    Scene scene;
+    auto material = std::make_shared<Material>(MaterialType::Basic, true);
+    material->spriteMaterial = true; material->rotation = 0.3;
+    auto object = std::make_shared<Sprite>(material);
+    object->count = 12; object->center.x = 0.3; object->setCastShadow(true);
+    scene.add(*object);
+    PerspectiveCamera camera(50, 4.0 / 3, 0.1, 50);
+    camera.position.set(3, 2, 7); camera.lookAt(Vector3(0, 0, 0));
+    RenderDatabase database;
+    LightState lights;
+    const auto draws = database.prepare(scene, camera, lights);
+    CHECK(draws.size() == 1 && database.diagnostics().empty());
+    if (draws.size() == 1) {
+        CHECK(draws[0].sprite && draws[0].instanceCount == 12 && !draws[0].castShadow);
+        CHECK(draws[0].spriteCenter[0] == 0.3 && draws[0].spriteRotation == 0.3);
+        CHECK(!draws[0].instanceMatrices && !draws[0].batchable);
+    }
+
+}
+
+void fluidField() {
+    Device device;
+    world::FluidField2D field(device.context.getDevice(), *device.gpu, fluidOptions());
+    CHECK(field.error().empty());
+    if (!field.error().empty()) { std::fprintf(stderr, "%s\n", field.error().c_str()); return; }
+    for (int tick = 0; tick < 6; ++tick) {
+        if (tick % 2 == 0) {
+            CHECK(field.splat(0.35, 0.45, 0.12, -0.08, 0.7));
+            CHECK(field.splat(0.72, 0.65, -0.09, 0.11, 0.4));
+        }
+        CHECK(field.process());
+    }
+    CHECK(field.steps() == 6 && field.splatsApplied() == 6);
+    // 1e-5 * max(1, |reference|): f32 division/length and fused arithmetic differ across
+    // WGSL backends; six steps with five Jacobi iterations accumulate that rounding.
+    // No tolerance for changed texel selection: all 16x16 vec4 entries must match.
+    for (const auto& entry : {std::pair{"velocity", field.velocity()}, std::pair{"dye", field.dye()}}) {
+        const auto got = device.read(entry.second, 16 * 16 * 4);
+        const auto want = reference("fluid-field", entry.first);
+        size_t inexact = 0;
+        const size_t differ = compare(got, want, 1e-5f, inexact);
+        std::printf("fluid %s: %zu differ, %zu within 1e-5 f32 tolerance\n", entry.first, differ, inexact);
+        CHECK(got.size() == 1024 && differ == 0);
+        CHECK(std::any_of(got.begin(), got.end(), [](float v) { return v != 0; }));
+    }
+    field.release();
+    CHECK(field.process() && field.steps() == 6);
+}
+
 }  // namespace
 
-TN_TEST_MAIN({"instance_grid", instanceGrid}, {"particles_lifetime", particlesLifetime})
+TN_TEST_MAIN({"instance_grid", instanceGrid}, {"particles_lifetime", particlesLifetime}, {"fluid_field", fluidField}, {"fluid_ir", fluidIr})

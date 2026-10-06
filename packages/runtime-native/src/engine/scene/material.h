@@ -35,6 +35,9 @@ public:
     std::string name;
 
     // Material
+    bool spriteMaterial = false;
+    double rotation = 0;
+    bool sizeAttenuation = true;
     bool transparent = false;
     double opacity = 1;
     double alphaTest = 0;

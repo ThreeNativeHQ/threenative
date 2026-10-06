@@ -24,14 +24,12 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import {
-  FIXTURES_DIR,
   type FixtureArg,
   type IFixture,
   type IFixtureGolden,
   type IGoldenObservation,
   REPO_ROOT,
   goldenPath,
-  loadFixtures,
   pinnedThreeVersion,
   renderPngPath,
   writeGolden,
@@ -39,6 +37,8 @@ import {
 } from "../../src/fixture-format.js";
 import { encodeObservation, namedNumber } from "../../src/fixture-protocol.js";
 import { type IRenderCapture, captureRenderFixtures } from "./render-reference.js";
+
+import { selectFixtures } from "./run-native.js";
 
 /**
  * three's GLTFLoader on a repository file, its default scene. Node has no DOM to decode images, so
@@ -325,7 +325,7 @@ async function main(argv: readonly string[]): Promise<number> {
     throw new Error("TN_FIXTURE_ARG_INVALID: --repeat needs a positive integer");
   const check = argv.includes("--check");
   const allowSoftware = argv.includes("--allow-software");
-  const fixtures = loadFixtures(FIXTURES_DIR);
+  const fixtures = selectFixtures(argv);
   const version = pinnedThreeVersion(REPO_ROOT);
 
   let run = await pass(fixtures, { allowSoftware });

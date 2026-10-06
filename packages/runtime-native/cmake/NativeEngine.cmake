@@ -37,7 +37,7 @@ endif()
 add_library(tn_engine_renderer STATIC ${TN_ENGINE_RENDERER_SOURCES})
 tn_native_engine_target(tn_engine_renderer)
 target_link_libraries(tn_engine_renderer PUBLIC tn_engine_foundation tn_engine_assets tn_engine_shader tn_engine_scene
-    tn_engine_animation tn_host_services)
+    tn_engine_animation tn_engine_vsm tn_engine_graph tn_host_services)
 if(TARGET dawn::webgpu)
     target_link_libraries(tn_engine_renderer PUBLIC dawn::webgpu)
 elseif(TARGET wgpu::wgpu)
@@ -137,6 +137,8 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
                 "render_phong:materials-phong" "render_physical:materials-physical*"
                 "standard_materials_fixtures:alpha-test,lit-render*,materials-*"
                 "render_alpha:alpha-*" "render_lights:lights-*" "render_shadows:shadows-*"
+                "render_vsm:vsm-*"
+                "render_particles:particles-sprite,fluid-particles"
                 "render_skinned:skinned-*" "render_morph:morph-*" "render_gltf:gltf-model-*")
             string(REPLACE ":" ";" render_pair "${render_case}")
             list(GET render_pair 0 render_name)
@@ -275,18 +277,21 @@ endif()
 # PRD-527 phase 1: GPUParticles3D's mechanism (two vec3 storage buffers, start once, process per
 # render while emitting); tsl_compute_test runs it and the PRD-513 instance grid against programs.js
 # recorded in Chromium's WebGPU (compute_reference.json).
-add_library(tn_engine_particles STATIC src/engine/world/particles/gpu_particles.cpp)
+add_library(tn_engine_particles STATIC src/engine/world/particles/gpu_particles.cpp
+    src/engine/world/fluids/fluid_field.cpp)
 tn_native_engine_target(tn_engine_particles)
 target_link_libraries(tn_engine_particles PUBLIC tn_engine_renderer tn_engine_shader)
 if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "android")
     tn_native_engine_test(tn-native-engine-tsl-compute-test tests/native-engine/tsl-compute/tsl_compute_test.cpp
         native_engine_compute_instance_grid=instance_grid
-        native_engine_particles_lifetime=particles_lifetime)
+        native_engine_particles_lifetime=particles_lifetime
+        native_engine_fluid_field=fluid_field
+        native_engine_fluid_ir=fluid_ir)
     target_link_libraries(tn-native-engine-tsl-compute-test PRIVATE tn_engine_particles tn_host_services)
     target_compile_definitions(tn-native-engine-tsl-compute-test PRIVATE
         TN_COMPUTE_REFERENCE="${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/tsl-compute/compute_reference.json")
     if(TN_ENGINE_SANITIZE)
-        set_tests_properties(native_engine_compute_instance_grid native_engine_particles_lifetime PROPERTIES
+        set_tests_properties(native_engine_compute_instance_grid native_engine_particles_lifetime native_engine_fluid_field PROPERTIES
             ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0:abort_on_error=1;UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1")
     endif()
 endif()
@@ -545,3 +550,8 @@ add_test(NAME native_engine_no_blocking_waits
     COMMAND ${CMAKE_COMMAND} -DENGINE_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/src/engine
         -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CheckNoBlockingWaits.cmake)
 set_tests_properties(native_engine_no_blocking_waits PROPERTIES LABELS "native-engine")
+
+# Particle render fixtures dispatch the real native mechanism before drawing.
+if(TARGET tn-native-engine-render-driver)
+    target_link_libraries(tn-native-engine-render-driver PRIVATE tn_engine_particles)
+endif()

@@ -10,7 +10,9 @@
 #include <vector>
 
 #include "engine/shader/dfg_lut.h"
+#include "engine/shader/sprite.h"
 #include "engine/scene/texture.h"
+#include "engine/renderer/graph/render_graph.h"
 #include "mystral/webgpu_compat.h"
 
 namespace tn::engine {
@@ -355,6 +357,18 @@ Renderer::Renderer(WGPUInstance instance, WGPUDevice device, WGPUQueue queue, Ev
     setSize(1, 1);
 }
 
+void Renderer::setVirtualShadow(std::size_t light, const shadows::AtlasOptions& options) {
+    if (virtualShadows_.count(light)) throw std::runtime_error("TN_VIRTUAL_SHADOW_UNSUPPORTED: reconfiguration of an active light");
+    std::string error;
+    auto atlas = shadows::PageAtlas::create(options, error);
+    if (!atlas) throw std::runtime_error(error);
+    virtualShadows_.emplace(light, VirtualShadow{std::move(*atlas), {}, {}});
+    // The table must exist before a cached material's bind groups can name it.
+    auto& table = storages_["vsmTable" + std::to_string(light)];
+    table.capacity = uint64_t(options.clipExtents.size()) * (9 + (options.mapSize/options.pageTexels)*(options.mapSize/options.pageTexels)) * 16;
+    table.buffer = gpu_.createBuffer(table.capacity, WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst);
+}
+
 Renderer::~Renderer() {
     if (timestamps_) wgpuQuerySetRelease(timestamps_);
     for (auto& [key, program] : programs_) {
@@ -369,6 +383,7 @@ Renderer::~Renderer() {
     wgpuSamplerRelease(outputSampler_);
     wgpuSamplerRelease(lutSampler_);
     wgpuSamplerRelease(compareSampler_);
+    for (auto& [light, shadow] : virtualShadows_) shadowMaps_.push_back(shadow.map);
     shadowMaps_.insert(shadowMaps_.end(), cubeShadowMaps_.begin(), cubeShadowMaps_.end());
     for (ShadowMap& map : shadowMaps_) {
         if (map.view) wgpuTextureViewRelease(map.view);
@@ -473,9 +488,11 @@ WGPUBindGroup Renderer::bindGroup(WGPUBindGroupLayout layout, const shader::Stag
         } else if (b.depth) {
             // `t_shadow{i}` / `t_shadowCube{i}` and their samplers: direct light i's shadow map (2D, or a
             // point light's cube) and the comparison sampler.
-            const std::string prefix = b.cube ? "shadowCube" : "shadow";
+            const bool virtualMap = b.name.find("vsm") != std::string::npos;
+            const std::string prefix = virtualMap ? "vsm" : b.cube ? "shadowCube" : "shadow";
             const std::size_t index = std::stoul(b.name.substr(b.name.find(prefix) + prefix.size()));
-            if (b.kind == shader::BindingKind::Texture) e.textureView = (b.cube ? cubeShadowMaps_ : shadowMaps_).at(index).view;
+            if (b.kind == shader::BindingKind::Texture)
+                e.textureView = virtualMap ? virtualShadows_.at(index).map.view : (b.cube ? cubeShadowMaps_ : shadowMaps_).at(index).view;
             else e.sampler = compareSampler_;
         } else if (b.kind == shader::BindingKind::Texture) {
             e.textureView = b.name == "t_map" ? mapView : b.name == "t_env" ? envView : view;
@@ -870,7 +887,7 @@ Renderer::Program& Renderer::program(MaterialKind kind, const shader::VertexVari
     shader::StandardPrograms source;
     switch (kind) {
     case MaterialKind::Standard: source = shader::buildStandard(shader::StandardMaterial{}, vv, layout); break;
-    case MaterialKind::Basic: source = shader::buildBasic(vv); break;
+    case MaterialKind::Basic: source = vv.sprite ? shader::buildSprite(vv) : shader::buildBasic(vv); break;
     case MaterialKind::Lambert: source = shader::buildLambert(vv, layout); break;
     case MaterialKind::Phong: source = shader::buildPhong(vv, layout); break;
     case MaterialKind::Physical: source = shader::buildPhysical(shader::StandardMaterial{}, vv, layout); break;
@@ -997,13 +1014,87 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
     // The light layout every lit program this frame is specialized for, in three's light order.
     // Upper case: the light casts a shadow, which a receiving mesh's program reads; a mesh that does
     // not receive shadows takes the lower-case layout, as three keys a program on receiveShadow.
+    std::map<std::size_t, std::vector<shadows::AtlasPage>> virtualPages;
+    std::map<uint64_t, Box3> casterBounds;
+    for (const DrawItem& item : virtualShadows_.empty() ? std::span<const DrawItem>{} : items) {
+        if (!item.castShadow || !item.positions || item.instanceCount == 0) continue;
+        Box3 bounds;
+        if (item.positions->scalar() == Scalar::F32) {
+            for (uint64_t i = 0; i + 2 < item.positions->count(); i += 3) {
+                float p[3]; item.positions->read(i * 4, p, sizeof(p));
+                bounds.expandByPoint(Vector3(p[0], p[1], p[2]));
+            }
+        }
+        Matrix4 model; model.elements = item.matrixWorld;
+        bounds.applyMatrix4(model);
+        casterBounds[item.key] = bounds;
+    }
+    for (auto& [i, shadow] : virtualShadows_) {
+        if (i >= lights.direct.size() || lights.direct[i].kind != DirectLight::Kind::Directional || !lights.direct[i].shadow)
+            throw std::runtime_error("TN_VIRTUAL_SHADOW_UNSUPPORTED: requires a shadow-casting directional light");
+        const auto& direction = lights.direct[i].direction;
+        const Vector3 towards(direction[0], direction[1], direction[2]);
+        if (!std::isfinite(towards.lengthSq()) || towards.lengthSq() == 0)
+            throw std::runtime_error("TN_VIRTUAL_SHADOW_INVALID: light direction");
+        const double radius = lights.direct[i].shadow->radius;
+        if (!std::isfinite(radius) || radius < 0 || radius + 0.5 > shadow.atlas.options().border)
+            throw std::runtime_error("TN_VIRTUAL_SHADOW_UNSUPPORTED: PCF radius exceeds page guard texels");
+        for (const auto& [key, bounds] : shadow.casters) {
+            const auto now = casterBounds.find(key);
+            if (now == casterBounds.end() || !shadows::boundsEqual(bounds, now->second)) shadow.atlas.invalidate(bounds);
+        }
+        for (const auto& [key, bounds] : casterBounds) {
+            const auto old = shadow.casters.find(key);
+            if (old == shadow.casters.end() || !shadows::boundsEqual(bounds, old->second)) shadow.atlas.invalidate(bounds);
+        }
+        // A shader can displace beyond the CPU AABB. Redraw and bypass the bounds gate rather than
+        // silently clipping a caster whose deformation cannot be evaluated on the CPU.
+        std::map<uint64_t, std::string> casterPrograms;
+        for (const DrawItem& item : items) {
+            if (!item.castShadow || !item.positions || item.instanceCount == 0) continue;
+            std::string signature = std::to_string(item.positions->version());
+            if (item.instanceMatrices) signature += ":instances:" + std::to_string(item.instanceMatrices->version()) + ":" + std::to_string(item.instanceCount);
+            if (item.nodes.positionNode) {
+                signature += shader::graph::key(item.nodes.positionNode);
+                for (const auto& [name, values] : shader::graph::uniforms(item.nodes.positionNode)) {
+                    signature += name;
+                    signature.append(reinterpret_cast<const char*>(values.data()), values.size() * sizeof(float));
+                }
+            }
+            if (item.positionNode || item.boneMatrices || item.morphGeometry ||
+                (shadow.casterPrograms.count(item.key) && shadow.casterPrograms.at(item.key) != signature)) shadow.atlas.invalidateAll();
+            casterPrograms[item.key] = std::move(signature);
+        }
+        shadow.casterPrograms = std::move(casterPrograms);
+        shadow.casters = casterBounds;
+        virtualPages[i] = shadow.atlas.update(Vector3(camera.matrixWorld[12], camera.matrixWorld[13], camera.matrixWorld[14]), towards, virtualCut_);
+    }
+    virtualCut_ = false;
     std::string lightKinds, unshadowedKinds;
     bool shadowMapsChanged = false;
     for (std::size_t i = 0; i < lights.direct.size(); ++i) {
         const DirectLight& l = lights.direct[i];
         const char kind = l.kind == DirectLight::Kind::Directional ? 'd' : l.kind == DirectLight::Kind::Point ? 'p' : 's';
         unshadowedKinds += kind;
-        lightKinds += l.shadow ? static_cast<char>(kind - 'a' + 'A') : kind;
+        lightKinds += virtualShadows_.count(i) ? char('0' + virtualShadows_.at(i).atlas.options().clipExtents.size()) : l.shadow ? static_cast<char>(kind - 'a' + 'A') : kind;
+        if (virtualShadows_.count(i)) {
+            auto& shadow = virtualShadows_.at(i);
+            if (shadow.map.texture) continue;
+            WGPUTextureDescriptor desc = {};
+            desc.dimension = WGPUTextureDimension_2D;
+            desc.size = {uint32_t(shadow.atlas.edge()), uint32_t(shadow.atlas.edge()), 1};
+            WGPULimits limits = {}; wgpuDeviceGetLimits(device_, &limits);
+            if (desc.size.width > limits.maxTextureDimension2D)
+                throw std::runtime_error("TN_VIRTUAL_SHADOW_UNSUPPORTED: atlas exceeds device texture limit");
+            desc.format = WGPUTextureFormat_Depth24Plus;
+            desc.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding;
+            desc.mipLevelCount = desc.sampleCount = 1;
+            shadow.map.texture = wgpuDeviceCreateTexture(device_, &desc);
+            shadow.map.view = view2d(shadow.map.texture, desc.format);
+            shadow.map.width = shadow.map.height = desc.size.width;
+            shadowMapsChanged = true;
+            continue;
+        }
         if (!l.shadow) continue;
         std::vector<ShadowMap>& maps = l.shadow->cube ? cubeShadowMaps_ : shadowMaps_;
         if (maps.size() <= i) maps.resize(i + 1);
@@ -1051,6 +1142,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
     // and target, the normal after the position), and its base influence: 1 for relative targets,
     // else 1 minus the influences' sum, summed in double as JS reduces them.
     for (auto& [name, storage] : storages_) storage.data.clear();
+    for (const auto& [i, shadow] : virtualShadows_) storages_["vsmTable" + std::to_string(i)].data = shadow.atlas.table();
     std::vector<float>& bones = storages_["boneMatrices"].data;
     std::vector<float>& morphData = storages_["morphData"].data;
     std::vector<float>& morphInfluences = storages_["morphInfluences"].data;
@@ -1111,6 +1203,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
     };
     auto variantOf = [](const DrawItem& item) {
         shader::VertexVariant v;
+        v.sprite = item.sprite;
         v.instanced = item.instanceMatrices != nullptr;
         v.instanceColor = item.instanceColors != nullptr;
         v.skinned = item.boneMatrices != nullptr;
@@ -1217,6 +1310,12 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
         put(frameUniforms_, f, fs[kHemisphereGround], lights.hemisphereGround);
         put(frameUniforms_, f, fs[kHemisphereDirection], lights.hemisphereUp);  // world space: it meets normalWorld
         put(frameUniforms_, f, fs[kAmbient], lights.ambient);
+        if (item.sprite) for (const auto& field : program.vertex.uniforms) {
+            if (field.name == "spriteCenter") put(frameUniforms_, v, &field, item.spriteCenter);
+            if (field.name == "spriteRotation") put(frameUniforms_, v, &field, std::array<double, 1>{item.spriteRotation});
+            if (field.name == "spriteNoAttenuation") put(frameUniforms_, v, &field,
+                std::array<double, 1>{!item.spriteSizeAttenuation && camera.projectionMatrix[11] == -1 ? 1.0 : 0.0});
+        }
         putNodes(frameUniforms_, v, program.vertex, item.nodes);
         putNodes(frameUniforms_, f, program.fragment, item.nodes);
         plan.push_back({&item, &program, pipeline, static_cast<uint32_t>(v), static_cast<uint32_t>(f)});
@@ -1226,19 +1325,30 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
     // front-sided materials (three's _shadowSide), depth only. Order is free: depth keeps the nearest.
     struct ShadowPass {
         WGPUTextureView target;
+        int x = 0, y = 0, size = 0; // zero: ordinary map; otherwise one atlas page's guarded viewport
         std::vector<Planned> draws;
     };
     std::vector<ShadowPass> shadowPasses;
     for (std::size_t i = 0; i < lights.direct.size(); ++i) {
         if (!lights.direct[i].shadow) continue;
         const DirectLight::Shadow& shadow = *lights.direct[i].shadow;
-        for (int face = 0; face < (shadow.cube ? 6 : 1); ++face) {
-        const Matrix& view = shadow.cube ? shadow.faceViews[face] : shadow.view;
+        const auto virtualIt = virtualShadows_.find(i);
+        const bool virtualMap = virtualIt != virtualShadows_.end();
+        const int passCount = virtualMap ? int(virtualPages[i].size()) : shadow.cube ? 6 : 1;
+        for (int face = 0; face < passCount; ++face) {
+        const shadows::AtlasPage* page = virtualMap ? &virtualPages[i][face] : nullptr;
+        const Matrix& view = page ? page->view.elements : shadow.cube ? shadow.faceViews[face] : shadow.view;
         ShadowPass& pass = shadowPasses.emplace_back();
-        pass.target = shadow.cube ? cubeShadowMaps_[i].faces[face] : shadowMaps_[i].view;
+        pass.target = virtualMap ? virtualIt->second.map.view : shadow.cube ? cubeShadowMaps_[i].faces[face] : shadowMaps_[i].view;
+        if (page) {
+            const auto [x, y] = virtualIt->second.atlas.origin(page->slot);
+            pass.x = x; pass.y = y; pass.size = virtualIt->second.atlas.stride();
+        }
         for (const auto& [depthKey, drawn] : opaque) {
             const DrawItem& item = *drawn;
             if (!item.castShadow || item.instanceCount == 0 || !item.positions) continue;
+            if (page && !item.positionNode && !item.nodes.positionNode && !item.boneMatrices && !item.morphGeometry &&
+                !item.instanceMatrices && !virtualIt->second.atlas.overlaps(*page, casterBounds.at(item.key))) continue;
             Program& program = depthProgram(variantOf(item));
             // three's _shadowSide: a front-sided caster draws its back faces, a back-sided one its
             // front faces, a double-sided one both.
@@ -1254,7 +1364,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
             frameUniforms_.resize(v + aligned(program.vertex.uniformBlockSize), 0);
             put(frameUniforms_, v, program.vertexSlots[kModelMatrix], item.matrixWorld);
             put(frameUniforms_, v, program.vertexSlots[kViewMatrix], view);
-            put(frameUniforms_, v, program.vertexSlots[kProjectionMatrix], shadow.projection);
+            put(frameUniforms_, v, program.vertexSlots[kProjectionMatrix], page ? page->projection.elements : shadow.projection);
             putSkin(v, program.vertexSlots, item);
             putNodes(frameUniforms_, v, program.vertex, item.nodes);
             pass.draws.push_back({&item, &program, pipeline, static_cast<uint32_t>(v), 0});
@@ -1368,15 +1478,47 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
             }
         }
     };
+    WGPURenderPipeline pageClear = nullptr;
+    if (!virtualShadows_.empty()) {
+        shader::Program clear(shader::Stage::Vertex);
+        const auto i = clear.builtin("vertexIndex");
+        const auto zero = clear.construct(shader::Type::u32(), {clear.constant(int32_t(0))}), one = clear.construct(shader::Type::u32(), {clear.constant(int32_t(1))});
+        const auto x = clear.select(clear.equal(i, one), clear.constant(3.0f), clear.constant(-1.0f));
+        const auto y = clear.select(clear.equal(i, zero), clear.constant(3.0f), clear.constant(-1.0f));
+        clear.output("position", clear.construct(shader::Type::vec(4), {x, y, clear.constant(1.0f), clear.constant(1.0f)}));
+        const auto vertex = shader::buildStage(clear, 0);
+        PipelineTarget target{WGPUTextureFormat_Undefined, WGPUTextureFormat_Depth24Plus, WGPUCullMode_None};
+        target.depthCompare = WGPUCompareFunction_Always;
+        pageClear = pipelines_.get(vertex, nullptr, target);
+        if (!pageClear) throw std::runtime_error("TN_NATIVE_PIPELINE_REFUSED: virtual page clear");
+        graph::RenderGraph graph;
+        std::vector<graph::Read> reads;
+        for (const auto& [i, shadow] : virtualShadows_) {
+            const auto atlas = graph.external("vsm-atlas" + std::to_string(i),
+                {uint32_t(shadow.atlas.edge()), uint32_t(shadow.atlas.edge()), WGPUTextureFormat_Depth24Plus,
+                 WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding});
+            const auto table = graph.external("vsm-page-table" + std::to_string(i), {});
+            graph.pass("vsm-pages" + std::to_string(i), graph::PassKind::Render, {{table}}, {atlas});
+            reads.push_back({atlas}); reads.push_back({table});
+        }
+        graph.pass("vsm-receivers", graph::PassKind::Render, reads, {});
+        if (!graph.compile().ok()) throw std::runtime_error("TN_GRAPH_INVALID: virtual shadows");
+    }
     for (const ShadowPass& shadowPlan : shadowPasses) {
         WGPURenderPassDepthStencilAttachment shadowDepth = {};
         shadowDepth.view = shadowPlan.target;
-        shadowDepth.depthLoadOp = WGPULoadOp_Clear;
+        shadowDepth.depthLoadOp = shadowPlan.size ? WGPULoadOp_Load : WGPULoadOp_Clear;
         shadowDepth.depthStoreOp = WGPUStoreOp_Store;
         shadowDepth.depthClearValue = 1.0f;
         WGPURenderPassDescriptor shadowDesc = {};
         shadowDesc.depthStencilAttachment = &shadowDepth;
         WGPURenderPassEncoder shadowPass = wgpuCommandEncoderBeginRenderPass(encoder, &shadowDesc);
+        if (shadowPlan.size) {
+            wgpuRenderPassEncoderSetViewport(shadowPass, shadowPlan.x, shadowPlan.y, shadowPlan.size, shadowPlan.size, 0, 1);
+            wgpuRenderPassEncoderSetScissorRect(shadowPass, shadowPlan.x, shadowPlan.y, shadowPlan.size, shadowPlan.size);
+            wgpuRenderPassEncoderSetPipeline(shadowPass, pageClear);
+            wgpuRenderPassEncoderDraw(shadowPass, 3, 1, 0, 0);
+        }
         bound = nullptr;
         boundIndex = nullptr;
         for (const Planned& p : shadowPlan.draws) encode(shadowPass, p, false); // three's info counts the main pass

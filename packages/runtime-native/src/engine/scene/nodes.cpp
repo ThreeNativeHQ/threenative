@@ -4,6 +4,8 @@
 #include "engine/scene/nodes.h"
 
 #include <array>
+#include "engine/scene/geometries.h"
+#include "engine/scene/material.h"
 
 namespace tn::engine {
 
@@ -22,6 +24,14 @@ Scene& Scene::copy(const Scene& source) {
     environmentRotation.copy(source.environmentRotation);
     matrixAutoUpdate = source.matrixAutoUpdate;
     return *this;
+}
+
+Sprite::Sprite(std::shared_ptr<Material> m) : Mesh(makePlaneGeometry(), std::move(m)) {
+    if (!material) {
+        material = std::make_shared<Material>(MaterialType::Basic);
+        material->spriteMaterial = true;
+        material->transparent = true;
+    }
 }
 
 InstancedMesh::InstancedMesh(std::shared_ptr<BufferGeometry> g, std::shared_ptr<Material> m, uint32_t instances)

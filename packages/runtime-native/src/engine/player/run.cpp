@@ -142,20 +142,25 @@ int run(const Game& game) {
     const uint32_t height = presenter ? presenter->height() : kHeight;
     renderer.setSize(width, height);
     renderer.setOutput(OutputState{shader::ToneMapping::ACESFilmic, 1, true});
+    if (game.initialize)
+        game.initialize(renderer);
 
     world::FixedStepClock clock(kTickStep, 5);
     clock.start(0);
     double nowMs = 0;
     inspect::Host host;
+    std::function<void()> renderFrame;
     host.scene = game.scene;
     host.gameRuntime = game.gameRuntime;
     host.tick = [&clock] { return clock.tick(); };
-    host.step = [&clock, &game, &nowMs] {
+    host.step = [&clock, &game, &nowMs, &renderFrame] {
         // One fixed update per driven tick, so the reported clock is the engine's own.
         nowMs += 1000.0 * kTickStep;
         clock.advance(nowMs);
         if (game.update)
             game.update(kTickStep);
+        if (game.renderEachTick && renderFrame)
+            renderFrame();
     };
     // What the scenario schema can read: the profile describe reports, a state snapshot a scenario
     // compares across labelled steps, and whatever else the game registers.
@@ -188,10 +193,7 @@ int run(const Game& game) {
     RenderDatabase database;
     database.shadowMapEnabled = game.shadowMapEnabled;
     bool readbackInFlight = false;
-    while (pumpEvents(window)) {
-        // One request frame in, one response frame out: advance, sample, describe and the input
-        // methods are all answered here, so the runner's call lands inside the tick it asked for.
-        mailbox.poll(endpoint);
+    renderFrame = [&] {
         if (game.afterRender)  // after the previous frame; between frames, never inside one
             game.afterRender();
 
@@ -230,7 +232,19 @@ int run(const Game& game) {
             if (!readbackInFlight && events.pending() == 0)
                 break;
         }
+        // Retirement callbacks also need a poll when no readback/event was queued at frame start.
+        renderer.poll();
+        events.drain();
+        if (game.frameComplete)
+            game.frameComplete(renderer, database.diagnostics());
+    };
+    while (pumpEvents(window)) {
+        // An advance may render several streaming frames; each tick gets its own admission cap.
+        mailbox.poll(endpoint);
+        renderFrame();
     }
+    if (game.shutdown)
+        game.shutdown();
 
 #if defined(__APPLE__)
     if (window.metalView)

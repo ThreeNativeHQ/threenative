@@ -53,6 +53,7 @@ struct StandardMaterial {
  * colour (attribute instanceColor) multiplies the material colour, as setupDiffuseColor does.
  */
 struct VertexVariant {
+    bool sprite = false;
     bool instanced = false;
     bool instanceColor = false;
     /**
@@ -91,7 +92,7 @@ struct VertexVariant {
     MaterialNodes nodes;
     /** A stable key: two variants with the same key build the same program. */
     [[nodiscard]] std::string key() const {
-        return std::to_string(instanced) + std::to_string(instanceColor) + std::to_string(skinned) +
+        return (sprite ? "sprite|" : "") + std::to_string(instanced) + std::to_string(instanceColor) + std::to_string(skinned) +
                std::to_string(skinnedPalette) + "m" + std::to_string(morphTargets) + (morphNormals ? "n" : "") +
                (map ? "t" : "") + (mapSRGB ? "s" : "") + (environment ? "e" : "") +
                (positionNode ? "p:" + positionNode->key : "") + "|nodes:" + nodes.key();
@@ -108,12 +109,14 @@ struct VertexVariant {
  * `ShadowMapSize` and `ShadowIntensity`, and the depth texture `shadow{i}`. A program is specialized per layout, as three's is per
  * lights hash; the default is the one directional light the first renderer drew.
  */
+// '1'..'8': a directional virtual shadow with that many clip levels. It reads the depth
+// atlas `vsm{i}` and storage page table `vsmTable{i}` in both standard and basic lit programs.
 struct LightLayout {
     std::string kinds = "d";
     /** Any upper-case kind: that light's shadow map is read (`light{i}Shadow*`, texture `shadow{i}`). */
     [[nodiscard]] bool shadowed() const {
         for (const char c : kinds)
-            if (c >= 'A' && c <= 'Z') return true;
+            if ((c >= 'A' && c <= 'Z') || (c >= '1' && c <= '8')) return true;
         return false;
     }
 };

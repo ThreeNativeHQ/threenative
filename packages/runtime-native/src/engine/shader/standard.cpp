@@ -561,11 +561,80 @@ static ExprId pointShadowFactor(Program& f, Tsl& t, std::size_t index, ExprId po
     return f.call("mix", {t.f(1), shadow, f.uniform(at + "ShadowIntensity", Type::f32())});
 }
 
+// VirtualShadowNode's stock PCF filter and coarse-to-fine guarded blending. Physical pages
+// replace only the texture addressing; all coordinates and filter operations remain level-local.
+static ExprId virtualShadowFactor(Program& f, Tsl& t, std::size_t index, int levels,
+                                  ExprId positionWorld, ExprId normalWorld) {
+    const std::string at = "light" + std::to_string(index);
+    const uint32_t map = f.textureDepth("vsm" + std::to_string(index));
+    const uint32_t table = f.storageBuffer("vsmTable" + std::to_string(index), Type::vec(4));
+    auto row = [&](int i) { return f.loadStorage(table, f.construct(Type::u32(), {f.constant(int32_t(i))})); };
+    const ExprId world = f.add(positionWorld, f.mul(normalWorld, f.uniform(at + "ShadowNormalBias", Type::f32())));
+    const ExprId plane = f.call("cross", {f.call("dFdx", {positionWorld}), f.call("dFdy", {positionWorld})});
+    const ExprId phi = noisePhi(f, t);
+    ExprId result = t.f(1);
+    for (int l = levels - 1; l >= 0; --l) {
+        const ExprId matrix = f.construct(Type::mat(4, 4), {row(l*9), row(l*9+1), row(l*9+2), row(l*9+3)});
+        const ExprId window = row(l*9+4), u = row(l*9+5), v = row(l*9+6), w = row(l*9+7), params = row(l*9+8);
+        const ExprId mapSize = f.swizzle(u, "w"), tiles = f.swizzle(v, "w"), span = f.swizzle(w, "w");
+        const ExprId axisU = f.swizzle(u, "xyz"), axisV = f.swizzle(v, "xyz"), axisW = f.swizzle(w, "xyz");
+        const ExprId extent = f.swizzle(window, "z"), guard = f.swizzle(window, "w");
+        const ExprId projected4 = f.mul(matrix, f.construct(Type::vec(4), {world, t.f(1)}));
+        const ExprId projected = f.div(f.swizzle(projected4, "xyz"), f.swizzle(projected4, "w"));
+        const ExprId uv = f.construct(Type::vec(2), {f.swizzle(projected, "x"), t.oneMinus(f.swizzle(projected, "y"))});
+        const ExprId along = f.call("max", {f.call("abs", {t.dot(plane, axisW)}),
+            f.call("max", {f.mul(f.call("length", {plane}), t.f(0.0001f)), t.f(1e-12f)})});
+        const ExprId slope = f.div(f.add(f.call("abs", {t.dot(plane, axisU)}), f.call("abs", {t.dot(plane, axisV)})), along);
+        const ExprId radius = f.uniform(at + "ShadowRadius", Type::f32());
+        const ExprId footprint = f.add(f.call("max", {radius, t.f(0)}), t.f(1));
+        // table entry.w carries receiverPlaneBias so changing the policy never changes a program.
+        const ExprId slopeBias = f.mul(f.div(f.div(f.mul(slope, f.mul(extent, t.f(2))), mapSize), span), footprint);
+        const ExprId baseZ = f.add(f.swizzle(projected, "z"), f.uniform(at + "ShadowBias", Type::f32()));
+        ExprId sum = kInvalid;
+        for (int tap = 0; tap < 5; ++tap) {
+            const ExprId sampleUv = f.call("clamp", {f.add(uv, f.mul(vogelDisk(f, t, tap, phi), f.div(radius, mapSize))),
+                f.construct(Type::vec(2), {t.f(0)}), f.construct(Type::vec(2), {t.f(1)})});
+            const ExprId grid = f.mul(sampleUv, tiles);
+            const ExprId tile = f.call("min", {f.call("floor", {grid}), f.construct(Type::vec(2), {f.sub(tiles, t.f(1))})});
+            const ExprId pageIndex = f.add(t.f(float(levels*9)), f.add(f.mul(t.f(float(l)), f.mul(tiles, tiles)),
+                f.add(f.mul(f.swizzle(tile, "y"), tiles), f.swizzle(tile, "x"))));
+            const ExprId entry = f.loadStorage(table, f.construct(Type::u32(), {pageIndex}));
+            const ExprId local = f.mul(f.sub(grid, tile), f.swizzle(params, "x"));
+            const ExprId atlasUv = f.div(f.add(f.add(f.swizzle(entry, "xy"), f.construct(Type::vec(2), {f.swizzle(params, "y")})), local), f.swizzle(params, "z"));
+            const ExprId z = f.sub(baseZ, f.mul(slopeBias, f.swizzle(entry, "w")));
+            const ExprId value = f.select(f.less(t.f(0), f.swizzle(entry, "z")), f.sampleCompare(map, atlasUv, z), t.f(1));
+            sum = sum == kInvalid ? value : f.add(sum, value);
+        }
+        ExprId value = f.mul(sum, t.f(1.0f / 5.0f));
+        value = f.select(f.less(f.swizzle(uv, "x"), t.f(0)), t.f(1), value);
+        value = f.select(f.less(t.f(1), f.swizzle(uv, "x")), t.f(1), value);
+        value = f.select(f.less(f.swizzle(uv, "y"), t.f(0)), t.f(1), value);
+        value = f.select(f.less(t.f(1), f.swizzle(uv, "y")), t.f(1), value);
+        value = f.select(f.less(t.f(1), baseZ), t.f(1), value);
+        value = f.call("mix", {t.f(1), value, f.uniform(at + "ShadowIntensity", Type::f32())});
+        value = f.select(f.less(t.f(0), f.swizzle(params, "w")), value, t.f(1));
+        if (l == levels - 1) { result = value; continue; }
+        const ExprId distance = f.call("max", {f.call("abs", {f.sub(t.dot(positionWorld, axisU), f.swizzle(window, "x"))}),
+            f.call("abs", {f.sub(t.dot(positionWorld, axisV), f.swizzle(window, "y"))})});
+        const ExprId edge = f.mul(extent, guard);
+        const ExprId band = f.call("max", {f.sub(extent, edge), f.div(f.mul(extent, t.f(4)), mapSize)});
+        const ExprId weight = t.oneMinus(f.call("smoothstep", {f.sub(edge, band), edge, distance}));
+        const ExprId blended = f.call("mix", {result, value, weight});
+        result = f.select(f.less(edge, distance), result,
+            f.select(f.less(t.f(0), f.swizzle(params, "w")), blended, result));
+    }
+    return result;
+}
+
 // `kind` upper case: the light casts a shadow this mesh receives; `positionWorld` is then read.
 static Incoming incoming(Program& f, Tsl& t, char kind, std::size_t index, ExprId positionView,
                          ExprId positionWorld = kInvalid, ExprId normalWorld = kInvalid) {
     const std::string at = "light" + std::to_string(index);
     ExprId color = f.uniform(at + "Color", Type::vec(3));
+    if (kind >= '1' && kind <= '8') {
+        color = f.mul(color, virtualShadowFactor(f, t, index, kind - '0', positionWorld, normalWorld));
+        kind = 'd';
+    }
     if (kind >= 'A' && kind <= 'Z') {
         const ExprId shadow = kind == 'P' ? pointShadowFactor(f, t, index, positionWorld, normalWorld)
                                           : shadowFactor(f, t, index, positionWorld, normalWorld);

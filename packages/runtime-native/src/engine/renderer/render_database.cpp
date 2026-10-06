@@ -196,7 +196,7 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
     if (object.layers().test(camera.layers())) {
         if (auto* lod = dynamic_cast<LOD*>(&object); lod && lod->autoUpdate) lod->update(camera);
         const std::string_view type = object.type();
-        if (type == "Mesh" || type == "InstancedMesh" || type == "SkinnedMesh") {
+        if (type == "Mesh" || type == "InstancedMesh" || type == "SkinnedMesh" || type == "Sprite") {
             const auto& mesh = static_cast<const Mesh&>(object);
             Record& r = record(mesh);
             r.seen = frame_;
@@ -238,6 +238,15 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
                     d.instanceColors = instanced.instanceColor ? instanced.instanceColor->store.get() : nullptr;
                     d.instanceCount =
                         static_cast<uint32_t>(std::min<uint64_t>(instanced.count, instanced.instanceMatrix->count()));
+                }
+                if (type == "Sprite") {
+                    const auto& sprite = static_cast<const Sprite&>(mesh);
+                    DrawItem& d = items.back();
+                    d.sprite = true; d.castShadow = false;
+                    d.instanceCount = sprite.count;
+                    d.spriteCenter = {sprite.center.x, sprite.center.y};
+                    d.spriteRotation = mesh.material->rotation;
+                    d.spriteSizeAttenuation = mesh.material->sizeAttenuation;
                 }
                 if (mesh.onBeforeRender)
                     callbacks_.push_back({mesh.weak_from_this().lock(), &mesh, &r});

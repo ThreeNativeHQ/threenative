@@ -78,6 +78,15 @@ class Mesh : public Object3D {
     std::shared_ptr<Material> material;
 };
 
+/** three's Sprite: a view-aligned quad; count supports GPUParticles3D's instanced sprites. */
+class Sprite : public Mesh {
+public:
+    explicit Sprite(std::shared_ptr<Material> material = {});
+    [[nodiscard]] std::string_view type() const override { return "Sprite"; }
+    Vector2 center{0.5, 0.5};
+    uint32_t count = 1;
+};
+
 /**
  * three's InstancedMesh: one geometry and material drawn `count` times, each through its own matrix
  * and, once `setColorAt` has made the attribute, its own colour. Like three, the instance arrays are

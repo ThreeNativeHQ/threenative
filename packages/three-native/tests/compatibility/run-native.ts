@@ -141,7 +141,7 @@ export function fixturePattern(globs: string): RegExp {
 }
 
 /** The fixtures `--only` selects, or every fixture. A glob that selects nothing is an error. */
-function selectFixtures(argv: readonly string[]): readonly IFixture[] {
+export function selectFixtures(argv: readonly string[]): readonly IFixture[] {
   const fixtures = loadFixtures(FIXTURES_DIR);
   const only = valueAfter(argv, "--only");
   if (only === null) return fixtures;

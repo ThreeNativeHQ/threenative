@@ -20,6 +20,7 @@ import {
   vec3,
   vec4,
 } from "three/tsl";
+import { FluidField2D } from "/core/fluid-field.js";
 import { GPUParticles3D } from "/core/particles.js";
 
 export const GRID_COUNT = 10_000;
@@ -35,7 +36,36 @@ async function read(renderer, attribute) {
   return Array.from(new Float32Array(await renderer.getArrayBufferAsync(attribute)));
 }
 
+export const FLUID_RESOLUTION = 16;
+export const FLUID_STEPS = 6;
+
 export const programs = {
+  async "fluid-field"(renderer) {
+    const field = new FluidField2D({ resolution: FLUID_RESOLUTION, pressureIterations: 5,
+      viscosity: 0.03, vorticity: 0.2, splatRadius: 0.24 });
+    field.attachRenderer(renderer);
+    for (let tick = 0; tick < FLUID_STEPS; tick += 1) {
+      if (tick % 2 === 0) {
+        field.splat({ x: 0.35, y: 0.45 }, { x: 0.12, y: -0.08 }, 0.7);
+        field.splat({ x: 0.72, y: 0.65 }, { x: -0.09, y: 0.11 }, 0.4);
+      }
+      field.process(renderer);
+    }
+    // Copy the public samplers, so no test-only access to private ping-pong textures is needed.
+    const velocity = instancedArray(FLUID_RESOLUTION ** 2, "vec4");
+    const dye = instancedArray(FLUID_RESOLUTION ** 2, "vec4");
+    const snapshot = Fn(() => {
+      const row = instanceIndex.div(uint(FLUID_RESOLUTION));
+      const col = instanceIndex.sub(row.mul(uint(FLUID_RESOLUTION)));
+      const uv = vec2(float(col).add(0.5), float(row).add(0.5)).div(FLUID_RESOLUTION);
+      velocity.element(instanceIndex).assign(field.velocity.sample(uv));
+      dye.element(instanceIndex).assign(field.dye.sample(uv));
+    })().compute(FLUID_RESOLUTION ** 2);
+    await renderer.computeAsync(snapshot);
+    const result = { velocity: await read(renderer, velocity.value), dye: await read(renderer, dye.value) };
+    field.detach();
+    return result;
+  },
   /** PRD-513: one compute pass writes 10,000 instance positions on a 100 x 100 grid with a wave. */
   async "instance-grid"(renderer) {
     const positions = instancedArray(GRID_COUNT, "vec4");
