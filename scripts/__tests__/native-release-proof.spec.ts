@@ -847,7 +847,7 @@ test("the Windows consumer runs on a Windows runner with every native compiler m
   // The Linux lane's mask is `printf` plus `chmod +x`, neither of which exists on Windows, so the
   // same claim needs its own lane rather than a flag: PATHEXT resolves a `.cmd` ahead of the real
   // `.exe`, and MSVC is installed on this image, so the shadowing has to be proved, not assumed.
-  assert.match(job("clean-consumer-windows"), /runs-on: windows-2025/u);
+  assert.match(job("clean-consumer-windows"), /runs-on: (blacksmith-\d+vcpu-)?windows-2025/u);
   const mask = windowStep("Mask every native toolchain entry point");
   // Derive the set from the workflow's own array so adding or dropping a shim changes this list:
   // the step is the source of truth for which compilers are masked.
