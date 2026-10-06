@@ -1,7 +1,7 @@
 {
-  "name": "procedural-wolf-accepted-physics",
+  "name": "procedural-wolf-frustum-suppression",
   "schemaVersion": 1,
-  "subject": "Installed 32-wolf DQS qualification: accepted Rapier motion, actual GPU position/normal output and deformed shadows; run with --live-clock",
+  "subject": "The same 32 visible baked wolves leave the camera frustum; require captured actual main submissions to become zero",
   "target": "web",
   "viewport": {
     "width": 1280,
@@ -14,44 +14,14 @@
   },
   "steps": [
     {
-      "timeoutMs": 45000,
-      "label": "wall",
+      "timeoutMs": 60000,
+      "label": "outside",
       "waitForResource": {
         "id": "state",
-        "path": "elapsed",
-        "gte": 2
+        "path": "offFrustumCaptured",
+        "equals": true
       },
-      "screenshot": "wall"
-    },
-    {
-      "timeoutMs": 45000,
-      "label": "turn",
-      "waitForResource": {
-        "id": "state",
-        "path": "elapsed",
-        "gte": 4.5
-      },
-      "screenshot": "turn"
-    },
-    {
-      "timeoutMs": 45000,
-      "label": "stopped",
-      "waitForResource": {
-        "id": "state",
-        "path": "elapsed",
-        "gte": 11
-      },
-      "screenshot": "stopped"
-    },
-    {
-      "timeoutMs": 45000,
-      "label": "posture",
-      "waitForResource": {
-        "id": "state",
-        "path": "elapsed",
-        "gte": 24.5
-      },
-      "screenshot": "posture"
+      "screenshot": "outside"
     }
   ],
   "assert": {
@@ -116,6 +86,16 @@
         "id": "state",
         "path": "gpuNormalError",
         "lte": 0.0001
+      },
+      {
+        "id": "state",
+        "path": "offFrustumCaptured",
+        "equals": true
+      },
+      {
+        "id": "state",
+        "path": "offFrustumMainDraws",
+        "equals": 0
       }
     ],
     "sceneNodes": [
@@ -125,23 +105,6 @@
         },
         "minCount": 34,
         "visible": true
-      }
-    ],
-    "visual": [
-      {
-        "entityVisible": {
-          "entity": "wolf-0",
-          "minProjectedPixels": 100
-        }
-      },
-      {
-        "region": {
-          "x": 0,
-          "y": 0,
-          "width": 1280,
-          "height": 720,
-          "minNonblankPixelRatio": 0.1
-        }
       }
     ],
     "geometry": {

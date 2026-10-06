@@ -11,11 +11,12 @@ import {
   type PerspectiveCamera,
 } from "three";
 import { WebGPURenderer } from "three/webgpu";
+import { releaseAll } from "../cleanup.js";
 
 export function course<TState extends Record<string, unknown>>(ctx: ICtx<TState, IPhysicsContext>) {
   if (!(ctx.renderer.raw instanceof WebGPURenderer)) throw new Error("TN_ANIMAL_WEBGPU_REQUIRED");
   ctx.renderer.raw.shadowMap.enabled = true;
-  ctx.world.background = new Color(0xc7d4df);
+  ctx.scene.background = new Color(0xc7d4df);
   const camera = ctx.camera as PerspectiveCamera;
   camera.position.set(15, 13, 23);
   camera.lookAt(0, 0, -3);
@@ -47,24 +48,39 @@ export function course<TState extends Record<string, unknown>>(ctx: ICtx<TState,
   wall.name = "stop-wall";
   wall.position.set(0, 1.3, -10);
   wall.receiveShadow = true;
-  ctx.add(ambient, sun, sun.target, floor, wall);
-  const bodies = [floor, wall].map(
-    (object, index) =>
-      new RigidBody3D({
+  const releases = [
+    () => ambient.removeFromParent(),
+    () => sun.removeFromParent(),
+    () => sun.target.removeFromParent(),
+    () => floor.removeFromParent(),
+    () => wall.removeFromParent(),
+    () => floor.geometry.dispose(),
+    () => wall.geometry.dispose(),
+    () => (floor.material as MeshStandardMaterial).dispose(),
+    () => (wall.material as MeshStandardMaterial).dispose(),
+    () => sun.dispose(),
+  ];
+  const cleanup = () => releaseAll(releases.splice(0).reverse());
+  try {
+    for (const object of [ambient, sun, sun.target, floor, wall]) ctx.add(object);
+    for (const [index, object] of [floor, wall].entries()) {
+      const body = new RigidBody3D({
         object,
         physics: ctx.physics,
         shape: CollisionShape3D.fromMesh(object),
         type: "fixed",
         collisionLayer: index === 0 ? 1 : 4,
         collisionMask: 0xffff,
-      }),
-  );
-  return () => {
-    for (const body of bodies) body.dispose();
-    floor.geometry.dispose();
-    wall.geometry.dispose();
-    (floor.material as MeshStandardMaterial).dispose();
-    (wall.material as MeshStandardMaterial).dispose();
-    sun.dispose();
-  };
+      });
+      releases.push(() => body.dispose());
+    }
+  } catch (error) {
+    try {
+      cleanup();
+    } catch (cleanupError) {
+      throw new AggregateError([error, cleanupError], "TN_ANIMAL_COURSE_FAILED");
+    }
+    throw error;
+  }
+  return cleanup;
 }
