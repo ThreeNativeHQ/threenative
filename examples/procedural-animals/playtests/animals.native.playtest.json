@@ -1,0 +1,159 @@
+{
+  "name": "procedural-wolf-accepted-physics-linux-native",
+  "schemaVersion": 1,
+  "subject": "Identical installed wolf payload and src/game.ts; native resources/geometry/GPU numeric probes plus actual labeled PNG/tone and independent deformation/shadow review. The harness records its unsupported CDP network channel explicitly; no network or visual observer is invented.",
+  "target": "desktop",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 20,
+  "artifacts": {
+    "screenshots": true,
+    "console": true
+  },
+  "steps": [
+    {
+      "timeoutMs": 45000,
+      "label": "wall",
+      "waitForResource": {
+        "id": "state",
+        "path": "elapsed",
+        "gte": 2
+      },
+      "screenshot": "wall"
+    },
+    {
+      "timeoutMs": 45000,
+      "label": "turn",
+      "waitForResource": {
+        "id": "state",
+        "path": "elapsed",
+        "gte": 4.5
+      },
+      "screenshot": "turn"
+    },
+    {
+      "timeoutMs": 45000,
+      "label": "stopped",
+      "waitForResource": {
+        "id": "state",
+        "path": "elapsed",
+        "gte": 11
+      },
+      "screenshot": "stopped"
+    },
+    {
+      "timeoutMs": 45000,
+      "label": "posture",
+      "waitForResource": {
+        "id": "state",
+        "path": "elapsed",
+        "gte": 24.5
+      },
+      "screenshot": "posture"
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "GameState",
+        "path": "loaded",
+        "equals": true
+      },
+      {
+        "id": "GameState",
+        "path": "wolves",
+        "equals": 32
+      },
+      {
+        "id": "GameState",
+        "path": "rootError",
+        "lte": 0.0001
+      },
+      {
+        "id": "GameState",
+        "path": "vertices",
+        "lte": 8000
+      },
+      {
+        "id": "GameState",
+        "path": "bones",
+        "lte": 128
+      },
+      {
+        "id": "state",
+        "path": "visibleCaptured",
+        "equals": true
+      },
+      {
+        "id": "state",
+        "path": "visibleMainDraws",
+        "equals": 32
+      },
+      {
+        "id": "state",
+        "path": "visibleShadowDraws",
+        "gte": 32
+      },
+      {
+        "id": "state",
+        "path": "gpuCases",
+        "equals": 9
+      },
+      {
+        "id": "state",
+        "path": "gpuPositionError",
+        "lte": 0.0001
+      },
+      {
+        "id": "state",
+        "path": "gpuNormalError",
+        "lte": 0.0001
+      }
+    ],
+    "sceneNodes": [
+      {
+        "select": {
+          "type": "Mesh"
+        },
+        "minCount": 34,
+        "visible": true
+      }
+    ],
+    "geometry": {
+      "limit": 500
+    },
+    "tone": [
+      {
+        "atStep": "wall",
+        "blackFraction": {
+          "max": 0.9
+        }
+      },
+      {
+        "atStep": "turn",
+        "blackFraction": {
+          "max": 0.9
+        }
+      },
+      {
+        "atStep": "stopped",
+        "blackFraction": {
+          "max": 0.9
+        }
+      },
+      {
+        "atStep": "posture",
+        "blackFraction": {
+          "max": 0.9
+        }
+      }
+    ]
+  }
+}
