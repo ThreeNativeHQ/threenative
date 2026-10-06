@@ -3054,3 +3054,37 @@ currently prevents the render-cadence admission that would finish it. PR #437 at
 `7cce7825d6155124c93fe571cb8965ed235c1d37` has the identical original terrain-tile file and still
 has no regional-readiness/startup-admission contract. Align that shared extension before publication.
 No #437 mutation, foreign WIP import, quality reduction or publication occurred. K2 stays open.
+
+### 2026-10-06 — spawn loading gate and consumer lifecycle (CPU verified)
+
+Both visible consumers now draw a game-owned loading curtain. The direct preview still owns its
+baked global ground mesh and streams props through WorldCells; the copied forest kit streams both
+props and terrain through the same engine owner. Neither replaces the streamer or changes authored
+placement transforms/count, terrain resolution, LOD thresholds or licensed appearance.
+
+The existing opaque startup gate suppressed WorldCells render admission, deadlocking a hold for
+spawn coverage. Render-driven streaming now explicitly opts into admission after initial compilation;
+ordinary compute still waits. CanvasLayer can opt into world preparation behind an opaque cover on
+later scene transitions too. Actual game-loop regression failed before and passes after the change.
+WorldCells reports completed initial runs/chunks as loadedCells and exposes local readinessAt with
+completed terrain tiles. Shader prewarmed remains a separate gate; reserved cells are not coverage.
+The launch consumer waits for its fixed 60 m spawn region plus prewarm, then latches success while
+distant content continues streaming. Spawn eviction after launch cannot disable controls. Failure,
+120-second timeout and cancellation remain distinct from the engine's general fail-open startup
+policy: failed loading stays covered, names the failure and prevents gameplay input.
+
+The copied kit places its follow camera before loading, shares decoded manifest/placements/heightmap
+with WorldCells and whole-world ground collision, checks scene currency across awaits and releases
+consumer-owned resources on cancellation/exit. PropColliders uses consistent world coordinates,
+including parent-only movement. It retains the original 60 m collision reach. The installed Three.js
+runtime accepts EventNode.FRAME while its declaration omits FRAME from the constructor union; an
+actual TS2345 baseline regression now passes with a narrow assertion of that runtime-supported value.
+
+Current-source targeted checks: **185 tests across 12 files pass**, including real copied Forest
+lifecycle/control execution, failure/cancellation, grounded transform/density, startup/transition and
+terrain contracts. Independent startup review reran **9/9** consumer tests and passed. Core and direct
+consumer source typechecks pass. The full board, native consumer lane and fresh sealed GPU captures
+remain unrun at this checkpoint; K2 and original frame/visual thresholds stay open. Remaining adjacent
+API gaps are splat manifest reuse and explicit splat texture ownership. HLOD is a separate authorized
+lane: current cell-proxy cook output is not consumed by this runtime, and scatter-only Strata emits no
+proxy-eligible chunks. Per-model LOD, fir impostors and merged terrain blocks do not establish HLOD.

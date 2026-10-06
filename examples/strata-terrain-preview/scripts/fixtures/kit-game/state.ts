@@ -1,5 +1,10 @@
 /** What the playtest reads out of the forest scene. Every number is measured, none is a default. */
 export type GameState = {
+  loadingError: string;
+  spawnCellsLoaded: number;
+  spawnCellsRequired: number;
+  spawnTerrainLoaded: number;
+  spawnTerrainRequired: number;
   /** The kit's world streamed, its colliders built and the daylight mounted. */
   worldReady: number;
   /** Which fixed camera view is up; the scenario switches it with 1, 2 and 3. */
@@ -25,6 +30,11 @@ export type GameState = {
 
 /** -1 everywhere a number has not been measured yet, so a bound cannot pass on a default. */
 export const initialState: GameState = {
+  loadingError: "",
+  spawnCellsLoaded: 0,
+  spawnCellsRequired: 0,
+  spawnTerrainLoaded: 0,
+  spawnTerrainRequired: 0,
   closestToTrunk: -1,
   driveDone: 0,
   driveMetres: 0,

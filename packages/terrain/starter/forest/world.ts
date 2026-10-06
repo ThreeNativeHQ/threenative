@@ -17,6 +17,7 @@ import {
   type Box3,
   type BufferGeometry,
   EquirectangularReflectionMapping,
+  type Material,
   type Mesh,
   type MeshStandardMaterial,
   Object3D,
@@ -57,39 +58,87 @@ export interface IForestWorld {
 /** Metres around `follow` within which props collide; beyond it they only draw. */
 export const PROP_COLLIDER_REACH = 60;
 
-/** Stream the forest around `follow` (usually the player or the camera) and give it collision. */
+/**
+ * Stream the forest around `follow` (usually the player or the camera) and give it collision.
+ * `whileCurrent` prevents a departed scene's async load from attaching anything; its resources
+ * are released on cancellation, failure and when the game's entity registry ends this scene.
+ */
 export async function addForest(
   ctx: ICtx<Record<string, unknown>, IPhysicsContext>,
   follow: Object3D,
   url = FOREST_URL,
+  whileCurrent: () => boolean = () => true,
 ): Promise<IForestWorld> {
-  const manifest = (await (await fetchAsset(ctx, url)).json()) as IWorldPackage;
-  const surface = await loadTerrainSplat({ assets: ctx.assets, url });
-  await lightProps(ctx, url, manifest);
-  const world = await WorldCells.load({
-    url,
-    assets: ctx.assets,
-    surface,
-    follow,
-    ring: 5,
-    // Far firs draw as engine-baked impostors; the authored model stays the shadow caster.
-    impostors: true,
-    // The GPU-culled path drops the near firs from the main pass while their shadows still draw
-    // (measured in a fresh game, 2026-10-05); the CPU path draws them. Engine finding, PRD-466.
-    gpuScene: false,
-    // Trees and rocks shade the ground and each other; impostors keep the authored model as the caster.
-    shadows: { cast: true, receive: true },
-    budgets: { residentCells: 64, instances: 40_000, bytes: 64_000_000 },
-    terrain: { streamRadius: 6 },
-  });
-  ctx.add(world);
-  return {
-    world,
-    ground: await groundCollider(ctx, url, manifest),
-    colliders: ctx.add(
-      new PropColliders(ctx, follow, manifest, await placements(ctx, url, manifest)),
-    ),
+  const assertCurrent = () => {
+    if (whileCurrent()) return;
+    const error = new Error("Forest world: its scene is no longer current.");
+    error.name = "AbortError";
+    throw error;
   };
+  let surface: Material | undefined;
+  let releaseLighting: (() => void) | undefined;
+  let world: WorldCells | undefined;
+  let ground: RigidBody3D | undefined;
+  let colliders: PropColliders | undefined;
+  let released = false;
+  const dispose = () => {
+    if (released) return;
+    released = true;
+    colliders?.detach();
+    colliders?.removeFromParent();
+    ground?.dispose();
+    ground?.object?.removeFromParent();
+    world?.dispose();
+    surface?.dispose();
+    releaseLighting?.();
+  };
+  try {
+    assertCurrent();
+    const manifest = (await (await fetchAsset(ctx, url, assertCurrent)).json()) as IWorldPackage;
+    assertCurrent();
+    const base = url.slice(0, url.lastIndexOf("/") + 1);
+    const records = await (
+      await fetchAsset(ctx, base + manifest.placements, assertCurrent)
+    ).arrayBuffer();
+    assertCurrent();
+    const [heightmapUrl] = await ctx.assets.resolve(base + manifest.terrain.heightmap);
+    assertCurrent();
+    if (heightmapUrl === undefined) throw new Error("Forest world: its heightmap is not served.");
+    const heightmap = await loadWorldHeightmap(heightmapUrl);
+    assertCurrent();
+    surface = await loadTerrainSplat({ assets: ctx.assets, url });
+    assertCurrent();
+    releaseLighting = await lightProps(ctx, url, manifest, assertCurrent);
+    assertCurrent();
+    world = await WorldCells.load({
+      url,
+      assets: ctx.assets,
+      data: { manifest, placements: records, heightmap },
+      surface,
+      follow,
+      ring: 5,
+      // Far firs draw as engine-baked impostors; the authored model stays the shadow caster.
+      impostors: true,
+      // The GPU-culled path drops the near firs from the main pass while their shadows still draw
+      // (measured in a fresh game, 2026-10-05); the CPU path draws them. Engine finding, PRD-466.
+      gpuScene: false,
+      // Trees and rocks shade the ground and each other; impostors keep the authored model as the caster.
+      shadows: { cast: true, receive: true },
+      budgets: { residentCells: 64, instances: 40_000, bytes: 64_000_000 },
+      terrain: { streamRadius: 6 },
+    });
+    assertCurrent();
+    ground = groundCollider(ctx, manifest, heightmap);
+    colliders = new PropColliders(ctx, follow, manifest, new Float32Array(records));
+    ctx.add(world);
+    if (ground.object !== undefined) ctx.add(ground.object);
+    ctx.add(colliders);
+    ctx.entities.add(`forest-world.${world.uuid}`, { dispose });
+    return { world, ground, colliders };
+  } catch (error) {
+    dispose();
+    throw error;
+  }
 }
 
 // Cutout foliage with no environment draws flat and dark (the engine says TN_UNLIT_FOLIAGE): give
@@ -100,15 +149,43 @@ async function lightProps(
   ctx: ICtx<Record<string, unknown>, IPhysicsContext>,
   url: string,
   manifest: IWorldPackage,
-): Promise<void> {
+  assertCurrent: () => void,
+): Promise<() => void> {
   const base = url.slice(0, url.lastIndexOf("/") + 1);
   const [skyUrl] = await ctx.assets.resolve(`${base}sky.hdr`);
+  assertCurrent();
   if (skyUrl === undefined) throw new Error("Forest world: 'sky.hdr' is not served.");
   const sky = await new HDRLoader().loadAsync(skyUrl);
-  sky.mapping = EquirectangularReflectionMapping;
-  for (const asset of Object.values(manifest.assets)) {
-    const model = await ctx.assets.model<{ scene: Object3D }>(base + asset.glb);
-    model.scene.traverse((object) => dressProp(object as Mesh, sky));
+  const originals = new Map<MeshStandardMaterial, { envMap: Texture | null; intensity: number }>();
+  const dispose = () => {
+    for (const [material, original] of originals) {
+      if (material.envMap !== sky) continue;
+      material.envMap = original.envMap;
+      material.envMapIntensity = original.intensity;
+    }
+    sky.dispose();
+  };
+  try {
+    assertCurrent();
+    sky.mapping = EquirectangularReflectionMapping;
+    for (const asset of Object.values(manifest.assets)) {
+      const model = await ctx.assets.model<{ scene: Object3D }>(base + asset.glb);
+      assertCurrent();
+      model.scene.traverse((object) => {
+        const mesh = object as Mesh;
+        for (const material of [mesh.material ?? []].flat() as MeshStandardMaterial[])
+          if (!originals.has(material))
+            originals.set(material, {
+              envMap: material.envMap,
+              intensity: material.envMapIntensity,
+            });
+        dressProp(mesh, sky);
+      });
+    }
+    return dispose;
+  } catch (error) {
+    dispose();
+    throw error;
   }
 }
 
@@ -150,14 +227,11 @@ function bendCrownNormals(geometry: BufferGeometry, bend: number): void {
 
 // The streamed terrain tiles arrive over several frames; a player spawned before its tile would fall
 // through. One heightfield for the whole package (a few hundred kilobytes of samples) avoids that.
-async function groundCollider(
+function groundCollider(
   ctx: ICtx<Record<string, unknown>, IPhysicsContext>,
-  url: string,
   manifest: IWorldPackage,
-): Promise<RigidBody3D> {
-  const base = url.slice(0, url.lastIndexOf("/") + 1);
-  const [heightmapUrl] = await ctx.assets.resolve(base + manifest.terrain.heightmap);
-  if (heightmapUrl === undefined) throw new Error("Forest world: its heightmap is not served.");
+  heightmap: Uint16Array,
+): RigidBody3D {
   const { extent, terrain } = manifest;
   const field = Heightfield.fromSampler({
     columns: terrain.columns,
@@ -165,15 +239,10 @@ async function groundCollider(
     width: extent.sizeX,
     depth: extent.sizeZ,
     origin: { x: extent.minX + extent.sizeX / 2, z: extent.minZ + extent.sizeZ / 2 },
-    sampleHeight: heightSamplerFromHeightmap(
-      terrain,
-      extent,
-      await loadWorldHeightmap(heightmapUrl),
-    ),
+    sampleHeight: heightSamplerFromHeightmap(terrain, extent, heightmap),
   });
   const anchor = new Object3D();
   anchor.position.set(extent.minX + extent.sizeX / 2, 0, extent.minZ + extent.sizeZ / 2);
-  ctx.add(anchor);
   return new RigidBody3D({
     object: anchor,
     physics: ctx.physics,
@@ -187,15 +256,6 @@ async function groundCollider(
   });
 }
 
-async function placements(
-  ctx: ICtx<Record<string, unknown>, IPhysicsContext>,
-  url: string,
-  manifest: IWorldPackage,
-): Promise<Float32Array> {
-  const base = url.slice(0, url.lastIndexOf("/") + 1);
-  return new Float32Array(await (await fetchAsset(ctx, base + manifest.placements)).arrayBuffer());
-}
-
 /**
  * Fixed bodies for the props within `PROP_COLLIDER_REACH` of `follow`, rebuilt when it has moved a
  * few metres. Thousands of resident bodies cost Rapier ~0.5 s per 8 s (measured); a hundred do not.
@@ -206,6 +266,7 @@ export class PropColliders extends Object3D implements IComputeDriven {
   readonly #live = new Map<number, RigidBody3D>();
   readonly #runs: { asset: string; offset: number; count: number }[] = [];
   readonly #at = { x: Number.NaN, z: Number.NaN };
+  readonly #followPosition = new Vector3();
   #released = false;
 
   constructor(
@@ -218,7 +279,12 @@ export class PropColliders extends Object3D implements IComputeDriven {
     this.name = "forest-prop-colliders";
     for (const cell of manifest.cells)
       for (const run of cell.runs) if (COLLIDERS[run.asset]) this.#runs.push(run);
-    this.#rebuild();
+    try {
+      this.#rebuild();
+    } catch (error) {
+      this.detach();
+      throw error;
+    }
   }
 
   /** How many prop bodies exist right now. */
@@ -233,7 +299,8 @@ export class PropColliders extends Object3D implements IComputeDriven {
   attachRenderer(): void {}
 
   process(): void {
-    const p = this.follow.position;
+    if (this.#released) return;
+    const p = this.follow.getWorldPosition(this.#followPosition);
     if (Math.hypot(p.x - this.#at.x, p.z - this.#at.z) > 4 || Number.isNaN(this.#at.x))
       this.#rebuild();
   }
@@ -245,7 +312,7 @@ export class PropColliders extends Object3D implements IComputeDriven {
   }
 
   #rebuild(): void {
-    const { x: fx, z: fz } = this.follow.getWorldPosition(this.position.clone());
+    const { x: fx, z: fz } = this.follow.getWorldPosition(this.#followPosition);
     this.#at.x = fx;
     this.#at.z = fz;
     const keep = new Set<number>();
@@ -296,9 +363,13 @@ function colliderAt(
 async function fetchAsset(
   ctx: ICtx<Record<string, unknown>, IPhysicsContext>,
   path: string,
+  assertCurrent: () => void,
 ): Promise<Response> {
-  for (const candidate of await ctx.assets.resolve(path)) {
+  const candidates = await ctx.assets.resolve(path);
+  assertCurrent();
+  for (const candidate of candidates) {
     const response = await fetch(candidate);
+    assertCurrent();
     if (response.ok) return response;
   }
   throw new Error(`Forest world: '${path}' is not served.`);

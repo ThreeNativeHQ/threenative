@@ -762,4 +762,5 @@ export type {
   IWorldCellsLoadOptions,
   IWorldCellsStats,
   IWorldCellsTerrainOptions,
+  IWorldRegionReadiness,
 } from "./world-cells.js";

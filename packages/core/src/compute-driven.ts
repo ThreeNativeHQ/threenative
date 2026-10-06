@@ -17,6 +17,8 @@ export interface IComputeDriven {
    * existing behavior of consumers whose simulation is intentionally tied to presentation.
    */
   readonly processCadence?: "fixed" | "render";
+  /** Render admission needed to settle a startup hold, after initial compilation. */
+  readonly processDuringStartup?: boolean;
   /**
    * Dispatched once per fixed step, in scene-add order unless render cadence is declared.
    *
@@ -75,17 +77,23 @@ export class ComputeDrivenRegistry {
    * Dispatch render-cadence objects once with the frame's render camera; detached scene children are
    * released before dispatch.
    */
-  processRender(renderer: IRendererLike, camera?: Camera): void {
-    this.#process(renderer, "render", camera);
+  processRender(renderer: IRendererLike, camera?: Camera, startupOnly = false): void {
+    this.#process(renderer, "render", camera, startupOnly);
   }
 
-  #process(renderer: IRendererLike, cadence: "fixed" | "render", camera?: Camera): void {
+  #process(
+    renderer: IRendererLike,
+    cadence: "fixed" | "render",
+    camera?: Camera,
+    startupOnly = false,
+  ): void {
     for (const entry of [...this.#entries.values()]) {
       if (entry.driven.released || entry.object.parent === null) {
         this.remove(entry.driven);
         continue;
       }
       if ((entry.driven.processCadence ?? "fixed") !== cadence) continue;
+      if (startupOnly && entry.driven.processDuringStartup !== true) continue;
       entry.driven.process(renderer, camera);
     }
   }

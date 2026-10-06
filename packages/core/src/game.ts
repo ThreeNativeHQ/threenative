@@ -1639,20 +1639,15 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
               : undefined,
           );
         }
-        // Render-cadence compute is first-use work too: keep it behind an opaque startup layer
-        // until readiness settles, or a particle process dispatch compiles in the loader frame.
-        //
-        // It is charged to the render phase, because it is render-path work and a bake hidden in
-        // `residual` leaves the frame budget unable to enforce its per-frame limit. It cannot be
-        // called from inside the render block below to get that attribution, though: that block
-        // runs on `!opaque || !ready`, which is exactly the window this dispatch has to stay out
-        // of. Moving the call in there dispatched on every loader frame and never once after
-        // readiness — the inverse of the rule — so it stays here and adds its own render time.
+        // Ordinary render compute waits for startup readiness. Streaming explicitly opts in
+        // after compilation so a spawn hold can finish behind the curtain. Present the loader
+        // first; charge this admission to the same render phase as normal render compute.
         if (
           this.#renderer !== undefined &&
           this.#sceneEntered &&
           !explicitWarmUpPending &&
-          (!startupCoverActive() || startupReadiness.ready)
+          !mustPresentLoader &&
+          (!startupCoverActive() || startupReadiness.compileSettled)
         ) {
           const computeStart = frameBudget === undefined ? 0 : budgetNow();
           beginSpan(SPANS.compute);
@@ -1660,7 +1655,11 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
             // The render camera comes with it, because a render-cadence consumer that culls by the
             // view — a streamed world's main batches — has to be driven from here and not from a draw
             // three skips for a mesh that is hidden because it has nothing to draw.
-            this.#computeDriven.processRender(this.#renderer, camera);
+            this.#computeDriven.processRender(
+              this.#renderer,
+              camera,
+              startupCoverActive() && !startupReadiness.ready,
+            );
           } finally {
             endSpan(SPANS.compute);
           }
@@ -1673,7 +1672,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         if (
           !mustPresentLoader &&
           !waitingForFirstUse &&
-          (!canvasLayer.opaque || !startupReadiness.ready)
+          (!canvasLayer.opaque || !startupReadiness.ready || canvasLayer.keepWorldRendering)
         ) {
           // The projection's own scene when it is faithful, the game's when it is not. Nothing
           // here branches on which: `root` is the single render input either way, so there is no

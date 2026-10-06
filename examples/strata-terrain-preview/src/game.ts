@@ -17,6 +17,7 @@ import {
   Vector3,
 } from "three";
 import { BIOMES, type WorldName } from "./render/biomes.js";
+import { createLoadingScreen, createSpawnReadiness } from "./render/loading.js";
 import { createOcean, createWaterMesh } from "./render/ocean.js";
 import { loadPack, loadSkyLight } from "./render/pack.js";
 import { loadPreparedProps } from "./render/prepared.js";
@@ -191,6 +192,9 @@ function median(values: readonly number[]): number {
 const initialState = {
   showcase: false,
   worldReady: false,
+  loadingError: "",
+  spawnCellsRequired: 0,
+  spawnCellsLoaded: 0,
   streamingResidentCells: 0,
   streamingLoadedCells: 0,
   streamingEvictions: 0,
@@ -294,7 +298,28 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
       const data = this.#data;
       if (!data) throw new Error(`World ${world} was not loaded`);
       // ctx.goto carries state; camera names from the outgoing biome must not carry with it.
-      ctx.state.set({ view: "player", worldReady: false });
+      ctx.state.set({ view: "player", worldReady: false, loadingError: "" });
+      const admission = createSpawnReadiness("Strata spawn");
+      const failSpawn = (reason: unknown): void => {
+        admission.fail(reason);
+        ctx.state.set({ worldReady: admission.ready, loadingError: admission.error });
+      };
+      if (ctx.startup.phase !== "ready")
+        ctx.startup.hold("strata-spawn", admission.promise, 120_000);
+      const loading = createLoadingScreen({
+        ...ctx,
+        startup: {
+          get progress() {
+            const state = ctx.state.getState();
+            const coverage =
+              state.spawnCellsRequired > 0 ? state.spawnCellsLoaded / state.spawnCellsRequired : 0;
+            return Math.min(0.99, (ctx.startup.progress + coverage) / 2);
+          },
+          whenReady: () =>
+            Promise.all([ctx.startup.whenReady(), admission.promise]).then(() => undefined),
+        },
+      });
+      ctx.beforeRender(() => loading.update());
       const biome = BIOMES[world];
       const { field, mesh } = createTerrain(data, ctx.assets, biome);
       ctx.add(mesh);
@@ -353,6 +378,11 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
         start[1] as number,
       );
       actor.name = "player";
+      // Freeze the launch region before gameplay or a review view can move its follow camera.
+      const spawn = actor.position
+        .clone()
+        .add(world === "coastal" ? new Vector3(28, 18, 34) : new Vector3(28, 24, 42));
+      ctx.camera.position.copy(spawn);
       ctx.add(actor);
       const player = new CharacterBody3D({
         object: actor,
@@ -536,6 +566,8 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
       ctx.entities.add("props-lifetime", {
         dispose: () => {
           released = true;
+          admission.cancel();
+          loading.finish();
           surfacesDispose?.();
           flat.dispose();
           preparedDispose?.();
@@ -825,11 +857,18 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
           building = true;
           const work = buildProps();
           if (ctx.startup.phase !== "ready") ctx.startup.hold("strata-props", work);
-          void work;
+          void work.catch((error) => {
+            if (!released) failSpawn(error);
+          });
         }
         frames++;
         const streaming = props?.stats();
-        const worldReady = props?.ready ?? false;
+        const region = props?.readinessAt(spawn);
+        admission.observe(region?.ready === true, region?.failures ?? 0);
+        const worldReady = admission.ready;
+        if (region)
+          ctx.state.set({ spawnCellsRequired: region.required, spawnCellsLoaded: region.loaded });
+        if (admission.error) ctx.state.set({ loadingError: admission.error });
         if (
           worldReady &&
           !released &&
@@ -1015,7 +1054,8 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
     override update(ctx: TerrainCtx, dt: number): void {
       this.#elapsed += dt;
       this.#surfaces?.advance(this.#elapsed);
-      if (ctx.input.justPressed("view")) {
+      const playable = ctx.state.getState().worldReady && ctx.startup.phase === "ready";
+      if (playable && ctx.input.justPressed("view")) {
         const cycle = BENCHMARK[world].views;
         const current = cycle.indexOf(ctx.state.getState().view as ViewName);
         const next = cycle[(current + 1) % cycle.length] ?? "player";
@@ -1044,14 +1084,16 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
       this.#ocean?.advance(this.#elapsed);
       this.#river?.advance(this.#elapsed);
       this.#lake?.advance(this.#elapsed);
-      if (ctx.input.justPressed("light")) this.#sky?.setSunX(this.#sky.sunX < 0 ? 180 : -180);
+      if (playable && ctx.input.justPressed("light"))
+        this.#sky?.setSunX(this.#sky.sunX < 0 ? 180 : -180);
       const player = this.#player;
       if (!player) return;
-      const move = ctx.input.vector("move");
+      const move = playable ? ctx.input.vector("move") : { x: 0, y: 0 };
       player.velocity.x = move.x * 9;
       player.velocity.z = move.y * 9;
-      if (ctx.input.justPressed("jump") && player.grounded) player.velocity.y = 5;
+      if (playable && ctx.input.justPressed("jump") && player.grounded) player.velocity.y = 5;
       player.moveAndSlide(dt);
+      if (!playable) return;
       for (const name of Object.keys(BIOMES) as WorldName[])
         if (name !== world && ctx.input.justPressed(name)) {
           void ctx.goto(name);

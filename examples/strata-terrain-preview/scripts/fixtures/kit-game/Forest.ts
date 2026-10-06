@@ -5,6 +5,7 @@
 import { type ICtx, type IFrameBudgetWindow, Scene } from "@threenative/core";
 import { CharacterBody3D, CollisionShape3D, type IPhysicsContext } from "@threenative/physics";
 import { type InstancedMesh, Object3D, type PerspectiveCamera, Vector3 } from "three";
+import { createLoadingScreen, createSpawnReadiness } from "../render/loading.js";
 import { type GameState, initialState } from "../state.js";
 import { forestDaylight } from "../terrain/forest/sky.js";
 import { stand } from "../terrain/forest/stand.js";
@@ -27,7 +28,7 @@ const AWAY = new Vector3(stand.spawn.x - stand.fir.x, 0, stand.spawn.z - stand.f
 /** The three fixed views the scenario captures. */
 // Eye-height cameras inside a 4.5 m stand sit inside crowns, whose one-sided cards vanish from
 // behind; so the close view looks out of the clearing and the edge view stands back from the stand.
-const VIEWS: Readonly<Record<string, { at: Vector3; look: Vector3 }>> = {
+const VIEWS = {
   ground: {
     at: new Vector3(stand.spawn.x, stand.groundY + EYE, stand.spawn.z),
     look: new Vector3(stand.spawn.x, stand.groundY + EYE, stand.spawn.z).addScaledVector(AWAY, 20),
@@ -40,7 +41,7 @@ const VIEWS: Readonly<Record<string, { at: Vector3; look: Vector3 }>> = {
     at: new Vector3(stand.fir.x + 160, stand.groundY + 220, stand.fir.z + 160),
     look: TRUNK,
   },
-};
+} satisfies Readonly<Record<string, { at: Vector3; look: Vector3 }>>;
 const VIEW_NAMES = Object.keys(VIEWS);
 
 /** One view's closed frame-budget windows, read by {@link noteFrameBudget}. */
@@ -82,6 +83,10 @@ export class Forest extends Scene<GameState, IPhysicsContext> {
   #driven = 0;
   #closest = Number.POSITIVE_INFINITY;
   #settled = false;
+  #forest: Awaited<ReturnType<typeof addForest>> | undefined;
+  #released = false;
+  #admission: ReturnType<typeof createSpawnReadiness> | undefined;
+  #loading: ReturnType<typeof createLoadingScreen> | undefined;
 
   /** The kit's world streams while the scene loads, so `ready` waits for real streamed cells. */
   override async load(ctx: Ctx): Promise<void> {
@@ -90,13 +95,55 @@ export class Forest extends Scene<GameState, IPhysicsContext> {
     player.position.set(stand.spawn.x, stand.groundY + HALF_HEIGHT + RADIUS + 2.5, stand.spawn.z);
     // The world streams and picks detail around the camera, as a game whose camera follows its
     // player does; the capture views move the camera far from the player.
-    const forest = await addForest(ctx, ctx.camera);
     this.#player = player;
-    ctx.state.set({ propColliders: forest.colliders.active, worldReady: 1 });
+    ctx.camera.position.copy(VIEWS.ground.at);
+    ctx.camera.lookAt(VIEWS.ground.look);
+    const admission = createSpawnReadiness("Forest spawn");
+    this.#admission = admission;
+    void admission.promise.catch((error: unknown) => {
+      this.#fail(ctx, error instanceof Error ? error.message : String(error));
+    });
+    if (ctx.startup.phase !== "ready") ctx.startup.hold("forest-spawn", admission.promise, 120_000);
+    let forest: Awaited<ReturnType<typeof addForest>> | undefined;
+    this.#loading = createLoadingScreen({
+      ...ctx,
+      startup: {
+        get progress() {
+          const region = forest?.world.readinessAt(VIEWS.ground.at, 60);
+          const required = (region?.requiredCells ?? 0) + (region?.requiredTerrainTiles ?? 0);
+          const loaded = (region?.loadedCells ?? 0) + (region?.loadedTerrainTiles ?? 0);
+          return Math.min(
+            0.99,
+            (ctx.startup.progress + (required > 0 ? loaded / required : 0)) / 2,
+          );
+        },
+        whenReady: () =>
+          Promise.all([ctx.startup.whenReady(), admission.promise]).then(() => undefined),
+      },
+    });
+    try {
+      forest = await addForest(ctx, ctx.camera, undefined, () => !this.#released);
+    } catch (error) {
+      this.#fail(ctx, error instanceof Error ? error.message : String(error));
+      return;
+    }
+    if (this.#released) {
+      forest.world.dispose();
+      forest.colliders.detach();
+      forest.ground.dispose();
+      return;
+    }
+    this.#forest = forest;
+    this.#player = player;
+    ctx.state.set({ propColliders: forest.colliders.active, worldReady: 0 });
   }
 
   override enter(ctx: Ctx): void {
     ctx.add(forestDaylight(ctx.camera));
+    if (!this.#forest) {
+      ctx.beforeRender(() => this.#loading?.update());
+      return;
+    }
     ctx.add(this.#player as Object3D);
     // The body joins the world once its object is in the scene, as the template player does.
     this.#body = new CharacterBody3D({
@@ -110,12 +157,61 @@ export class Forest extends Scene<GameState, IPhysicsContext> {
     camera.updateProjectionMatrix();
     this.#camera = camera;
     this.#viewNow(ctx);
+    ctx.beforeRender(() => {
+      this.#loading?.update();
+      const region = this.#forest?.world.readinessAt(VIEWS.ground.at, 60);
+      if (!region) return;
+      ctx.state.set({
+        spawnCellsLoaded: region.loadedCells,
+        spawnCellsRequired: region.requiredCells,
+        spawnTerrainLoaded: region.loadedTerrainTiles,
+        spawnTerrainRequired: region.requiredTerrainTiles,
+      });
+      if (this.#released) return;
+      this.#admission?.observe(
+        region.ready && this.#forest?.world.stats().pendingPrewarm === 0,
+        region.failures,
+      );
+      ctx.state.set({
+        worldReady: this.#admission?.ready ? 1 : 0,
+        loadingError: this.#admission?.error ?? "",
+      });
+    });
+  }
+
+  #fail(ctx: Ctx, message: string): void {
+    if (this.#released || ctx.state.getState().loadingError) return;
+    this.#admission?.fail(message);
+    ctx.state.set({
+      loadingError: this.#admission?.error ?? message,
+      worldReady: this.#admission?.ready ? 1 : 0,
+    });
+  }
+
+  override exit(): void {
+    this.#released = true;
+    this.#admission?.cancel();
+    this.#loading?.finish();
+    this.#body?.dispose();
+    this.#forest?.world.dispose();
+    this.#forest?.colliders.detach();
+    this.#forest?.ground.dispose();
   }
 
   override update(ctx: Ctx, dt: number): void {
     const body = this.#body;
     const player = this.#player;
     if (body === undefined || player === undefined) return;
+    if (
+      !this.#admission?.ready ||
+      ctx.startup.phase !== "ready" ||
+      ctx.state.getState().loadingError
+    ) {
+      body.velocity.x = 0;
+      body.velocity.z = 0;
+      body.moveAndSlide(dt);
+      return;
+    }
     this.#frames += 1;
 
     const towards = new Vector3(
@@ -184,7 +280,7 @@ export class Forest extends Scene<GameState, IPhysicsContext> {
 
   /** Placed every frame: the engine reconciles the camera, so a pose written once is not a pose. */
   #placeCamera(): void {
-    const view = VIEWS[this.#view];
+    const view = (VIEWS as Readonly<Record<string, { at: Vector3; look: Vector3 }>>)[this.#view];
     if (view === undefined || this.#camera === undefined) return;
     this.#camera.position.copy(view.at);
     this.#camera.lookAt(view.look);

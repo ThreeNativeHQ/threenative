@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import {
   DoubleSide,
   InstancedBufferAttribute,
@@ -8,6 +9,7 @@ import {
   Vector3,
 } from "three";
 import { MeshStandardNodeMaterial, NodeUpdateType } from "three/webgpu";
+import ts from "typescript";
 import { describe, expect, it, vi } from "vitest";
 import {
   IMPOSTOR_SURFACE_PARALLAX,
@@ -249,6 +251,24 @@ describe("syncInstanceRanges", () => {
 });
 
 describe("instanceSyncEvent", () => {
+  it("typechecks the frame event against the installed Three declarations", () => {
+    const file = fileURLToPath(new URL("../src/render/world-impostor-surface.ts", import.meta.url));
+    const program = ts.createProgram([file], {
+      module: ts.ModuleKind.ESNext,
+      moduleResolution: ts.ModuleResolutionKind.Bundler,
+      noEmit: true,
+      skipLibCheck: true,
+      strict: true,
+      target: ts.ScriptTarget.ES2022,
+    });
+    const diagnostics = ts
+      .getPreEmitDiagnostics(program)
+      .filter(({ file: source }) => source?.fileName === file);
+    expect(
+      diagnostics.map(({ messageText }) => ts.flattenDiagnosticMessageText(messageText, "\n")),
+    ).toEqual([]);
+  }, 20_000);
+
   // World batches are `static`, and the patched three skips OBJECT node updates of a settled static
   // object: an OBJECT-typed sync never ran, the derived buffer kept its first (zeroed) upload, and
   // every near impostor drew nothing. FRAME is the type three's own `Instance.js` sync uses.

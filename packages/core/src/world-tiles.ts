@@ -2306,6 +2306,34 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     this.#reportTileMarker();
   }
 
+  /** Completed render tiles intersecting a square in world metres; pending builds do not count. */
+  readinessAt(
+    position: IWorldTilesFollowPosition,
+    radius = 0,
+  ): { required: number; loaded: number } {
+    if (
+      !Number.isFinite(position.x) ||
+      !Number.isFinite(position.z) ||
+      !Number.isFinite(radius) ||
+      radius < 0
+    )
+      throw new Error(
+        "TerrainTiles readiness requires finite coordinates and a nonnegative radius.",
+      );
+    const lowX = Math.floor((position.x - radius + this.tileSize / 2) / this.tileSize);
+    const highX = Math.floor((position.x + radius + this.tileSize / 2) / this.tileSize);
+    const lowZ = Math.floor((position.z - radius + this.tileSize / 2) / this.tileSize);
+    const highZ = Math.floor((position.z + radius + this.tileSize / 2) / this.tileSize);
+    let loaded = 0;
+    const required = (highX - lowX + 1) * (highZ - lowZ + 1);
+    if (!Number.isSafeInteger(required))
+      throw new Error("TerrainTiles readiness region is too large.");
+    for (const tile of this.#resident.values())
+      if (tile.tileX >= lowX && tile.tileX <= highX && tile.tileZ >= lowZ && tile.tileZ <= highZ)
+        loaded++;
+    return { required, loaded };
+  }
+
   debug(): Record<string, unknown> {
     const topologyField = this.#topologyField;
     const topology =

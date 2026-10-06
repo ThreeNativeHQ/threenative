@@ -667,6 +667,8 @@ export interface IWorldCellsGpuTally {
 
 export interface IWorldCellsStats {
   readonly residentCells: number;
+  /** Resident cells whose initial placement runs and chunks have completed admission. */
+  readonly loadedCells: number;
   readonly residentKeys: readonly string[];
   /** Placement instances the resident cells hold, before any `maxDistance` filter. */
   readonly instances: number;
@@ -813,6 +815,17 @@ export interface IWorldCellsStats {
     /** Units of work those builds still owe — placement slices left plus meshes left to publish. */
     readonly backlog: number;
   };
+}
+
+/** Local render coverage, independent of shader prewarm and distant admission. */
+export interface IWorldRegionReadiness {
+  readonly requiredCells: number;
+  readonly loadedCells: number;
+  readonly requiredTerrainTiles: number;
+  readonly loadedTerrainTiles: number;
+  readonly failures: number;
+  readonly cancelled: boolean;
+  readonly ready: boolean;
 }
 
 interface ICellBatch {
@@ -1954,6 +1967,9 @@ function crossesGate(gates: readonly number[], low: number, high: number): boole
 }
 
 interface IResidentCell {
+  readonly completedRuns: Set<IWorldRun>;
+  chunksLoaded: boolean;
+  chunkFailed: boolean;
   readonly key: string;
   readonly x: number;
   readonly z: number;
@@ -2180,6 +2196,7 @@ interface IAssetState {
   threshold: number | undefined;
   refcount: number;
   pending: boolean;
+  failed: boolean;
   disposed: boolean;
   /**
    * The exact `assets.model` cache paths this state asked the loader for, held in `#modelPaths`
@@ -3663,6 +3680,7 @@ class AdmissionBudget implements IAdmissionBudget {
  */
 export class WorldCells extends Group implements IComputeDriven {
   readonly processCadence = "render" as const;
+  readonly processDuringStartup = true;
   readonly #budgets: IWorldCellsBudget;
   readonly #cells: readonly IWorldCell[];
   readonly #cellSize: number;
@@ -5284,12 +5302,61 @@ export class WorldCells extends Group implements IComputeDriven {
       // the refilter pass is a bracket that was wider than any placement.
       unchanged: this.#unchanged,
       residentCells: this.#resident.size,
+      loadedCells: [...this.#resident.values()].filter((cell) => this.#cellLoaded(cell)).length,
       residentKeys: [...this.#resident.keys()].sort(),
     };
   }
 
   detach(): void {
     this.dispose();
+  }
+
+  #cellLoaded(cell: IResidentCell): boolean {
+    return cell.chunksLoaded && cell.completedRuns.size === cell.cell.runs.length;
+  }
+
+  /** Completed content intersecting a square around a fixed spawn, in world metres. */
+  readinessAt(
+    position: { readonly x: number; readonly z: number },
+    radius = 0,
+  ): IWorldRegionReadiness {
+    if (
+      !Number.isFinite(position.x) ||
+      !Number.isFinite(position.z) ||
+      !Number.isFinite(radius) ||
+      radius < 0
+    )
+      throw new Error("WorldCells readiness requires finite coordinates and a nonnegative radius.");
+    const lowX = Math.floor((position.x - radius - this.#minX) / this.#cellSize);
+    const highX = Math.floor((position.x + radius - this.#minX) / this.#cellSize);
+    const lowZ = Math.floor((position.z - radius - this.#minZ) / this.#cellSize);
+    const highZ = Math.floor((position.z + radius - this.#minZ) / this.#cellSize);
+    let requiredCells = 0;
+    let loadedCells = 0;
+    let failures = 0;
+    for (const cell of this.#cells) {
+      if (cell.x < lowX || cell.x > highX || cell.z < lowZ || cell.z > highZ) continue;
+      requiredCells++;
+      const resident = this.#resident.get(cellKey(cell.x, cell.z));
+      if (resident && this.#cellLoaded(resident)) loadedCells++;
+      if (resident?.chunkFailed) failures++;
+      for (const run of cell.runs)
+        if (this.#assets.get(this.#canonical(run.asset))?.failed) failures++;
+    }
+    const terrain = this.#terrain?.readinessAt(position, radius) ?? { required: 0, loaded: 0 };
+    return {
+      requiredCells,
+      loadedCells,
+      requiredTerrainTiles: terrain.required,
+      loadedTerrainTiles: terrain.loaded,
+      failures,
+      cancelled: this.#released,
+      ready:
+        !this.#released &&
+        failures === 0 &&
+        loadedCells === requiredCells &&
+        terrain.loaded === terrain.required,
+    };
   }
 
   dispose(): void {
@@ -5415,6 +5482,9 @@ export class WorldCells extends Group implements IComputeDriven {
 
   #admit(cell: IWorldCell, instances: number, bytes: number): void {
     const state: IResidentCell = {
+      completedRuns: new Set(),
+      chunksLoaded: (cell.chunks?.length ?? 0) === 0,
+      chunkFailed: false,
       batches: [],
       bytes,
       cell,
@@ -5457,6 +5527,7 @@ export class WorldCells extends Group implements IComputeDriven {
       id,
       levels: [],
       pending: false,
+      failed: false,
       refcount: 0,
       retainedPaths: [],
       resolvedGlb: "",
@@ -5570,6 +5641,7 @@ export class WorldCells extends Group implements IComputeDriven {
       if (this.#meshStalled) break;
       // A finished build leaves the queue at this index, so the next one is served without a skip.
       if (finished) {
+        job.cell.completedRuns.add(job.run);
         this.#forget(index, job);
         // A camera that moved during this bounded build may already have consumed the global
         // refilter step before these batches existed. Owe one pass after publication, even if
@@ -7276,6 +7348,7 @@ export class WorldCells extends Group implements IComputeDriven {
         this.#limiter
           .load(() => this.#model(path), wanted)
           .catch((error: unknown) => {
+            asset.failed = true;
             this.#failures += 1;
             this.#reportCellFailure("asset", asset.id, [path], error);
             return undefined;
@@ -8626,6 +8699,7 @@ export class WorldCells extends Group implements IComputeDriven {
         );
       },
       (error: unknown) => {
+        cell.chunkFailed = true;
         this.#failures += 1;
         this.#reportCellFailure("chunk", cell.key, paths, error);
       },
@@ -8795,6 +8869,7 @@ export class WorldCells extends Group implements IComputeDriven {
         attached += 1;
       }
     } catch (error) {
+      cell.chunkFailed = true;
       this.#failures += 1;
       this.#reportCellFailure(
         "attach",
@@ -8805,6 +8880,7 @@ export class WorldCells extends Group implements IComputeDriven {
       for (let i = attached; i < models.length; i += 1)
         this.#failures += this.#disposeLoaded(models[i] as Object3D);
     }
+    if (this.#cellLive(cell, generation) && !cell.chunkFailed) cell.chunksLoaded = true;
   }
 
   #evict(cell: IResidentCell): void {
