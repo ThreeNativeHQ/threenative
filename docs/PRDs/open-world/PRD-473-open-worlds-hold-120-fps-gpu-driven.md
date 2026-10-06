@@ -88,6 +88,9 @@ The largest CPU and GPU win, and the prerequisite for bundles.
 ### Phase 3 — Impostors (AC-3) and HLOD (AC-4)
 They are independent; the executable plan is below. Impostors are not implemented in the visibility pass.
 
+- [x] The existing cook accepts eligible static scatter alongside chunks, preserves cutout triangles and placement transforms, publishes explicit coverage/bounds and a conservative error, and declines an unsupported cell whole. proof: focused `packages/assets/__tests__/hlod.spec.ts`, `packages/core/__tests__/world-package.spec.ts` and `packages/core/__tests__/world-cell-proxy.spec.ts` → 76/76 CPU tests, one worker on cores 10,22; changed-source strict typecheck → exit 0. Runtime integration and visual/performance acceptance remain open.
+- [ ] WorldCells loads and atomically selects the ready cell proxy through its existing admission/cache/shadow paths, retaining source fallback, protected near detail and collision; cancellation, eviction and actual resident proxy bytes stay bounded. proof: HLOD cases in `packages/core/__tests__/world-cells-admission.spec.ts` plus browser/native playtest observations of source/proxy coverage, lifecycle and timing. No such runtime proof has run for this slice.
+
 ### Phase 4 — Measure and tune
 
 Moved to PRD-475 with AC-5 (decision 2026-10-01, João).
@@ -142,6 +145,39 @@ Scope: near full visibility + sparse middle foliage + bare hills with the real e
 - **Runtime baker:** a real module exists — 16 octahedral views at 128 px, two RGBA8 arrays with mips, 2,796,160 B per atlas; the NVIDIA source pine GLB atlas has 16 non-empty views, 11 tests. A lit 2-triangle whole-asset surface is under verification, not integrated. This runtime bake supersedes the cook-time impostor proposal (executable plan step 3, now marked superseded); HLOD and other work are unchanged.
 - **Remaining bounded implementation:** integrate the automatic alpha-foliage bake with WorldCells load/prewarm; finite atlas budget and cache keyed on the resolved cooked content URL plus the source cutout contract; preserve full source leaf coverage through authored/generated LODs until the impostor switch. One whole-asset terminal part means the wide caster uses one quad and the root placement matrix, with no per-part fallback duplicates. Use existing raw renderer/public APIs, owned disposal, CPU/GPU buffer updates. **Next:** real game and native visual checks at the near transition, mid coverage and far hills; parent reviews and updates this PRD, no merge request. Broad 120 fps / HLOD acceptance stays open. No box is ticked from a unit check or a blank capture.
 - **Far residency:** a lightweight aggregate per atlas asset using the original placements, independent of the near full-geometry ring; upload matrices only on cell/run handoff; atomic near-ready swap/eviction avoids duplicates and holes; finite instance and atlas budgets. Terrain radius 8 vs near prop ring 2; of 60,331 exported tree placements, 49,516 are beyond 500 m. One `InstancedMesh` per asset (not per cell) is the minimum candidate; the full-geometry ring is not raised.
+
+## Strata HLOD implementation checkpoint
+
+The cook/schema/internal-selector slice is isolated from the PR381 owner's WorldCells, terrain,
+startup and forest work. Search/detail used the engine capability manifest before implementation.
+Scatter resolves its existing model and placement inputs through the existing compile overlay;
+there is no second loader or streaming system. Source staging and expansion are capped at 64 MiB,
+expanded mesh nodes at 4,096, and each output GLB at 4 MiB. Animated, skinned, morphed, nested
+instanced, sheared, alternate-scene, orphan, blended, tangent-bearing and complex-material
+full-cell sources retain detail with a diagnostic. MASK primitives retain all source triangles.
+
+Review regressions reproduced nine failures, then a mixed-chunk shear failure and a cancelling
+ancestor-rotation distortion. The final focused suite passes 76 tests. It uses a temporary Vitest
+alias to the real Blender bridge source because this isolated checkout has no built bridge.
+Assets package typecheck still fails on that unbuilt bridge and raw-unreal's missing Three.js
+workspace dependency; it reports no errors in the changed assets files. The focused strict source
+check passes. Biome passes with complexity warnings. Independent source review reports no
+remaining blockers for this bounded slice. Full board, GPU, native and visual gates are unrun.
+
+The selector uses existing projected-error hysteresis, requires ready proxy draws and compatible
+source behavior, retains an active proxy while detail returns, and gates new activation by
+prospective selected source LOD triangles and draws actually retired. A global shared batch kept
+by another cell contributes zero retired draws. Its cook LOD0 census is never a performance proof.
+It is internal and not yet connected to WorldCells. Proposed wiring reuses model cache refcounts,
+load limiter, generation checks, chunk prewarm/attachment, atomic batch swaps and eviction; the
+owner must charge real geometry/material/texture bytes and attach shadows and bundles together.
+
+Active Strata supplies custom in-memory models, materials and placement reach. A faithful proxy
+source/material contract is required before it can use cooked proxies. Validation must compare
+its current globally instanced far LOD/impostor baseline at fixed near/middle/far poses, preserve
+foliage/shadow coverage and original acceptance thresholds, and observe GPU/CPU time, frame p95,
+hitches and resident memory alongside draw/triangle counts. No Strata performance gain or
+complete HLOD acceptance is claimed by this slice.
 
 ## Phase 3 executable plan
 
