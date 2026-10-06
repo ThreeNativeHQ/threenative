@@ -145,6 +145,12 @@ option(TN_ENABLE_METAHUMAN "Enable the OpenRigLogic MetaHuman facial rig ABI" OF
 # Off by default and desktop-only — Android has its own host in Java, iOS has one in Swift, and a
 # game whose ui.renderer is "native" must link none of it.
 option(TN_ENABLE_UI_OVERLAY "Enable the ThreeNative desktop UI overlay" OFF)
+# The other UI backend: the same `src/ui/` laid out and rasterised on the CPU by
+# `native/css-ui`, with no web view, no GTK and no webkit2gtk anywhere on the path. Off by default
+# and separate from `TN_ENABLE_UI_OVERLAY` because the two are independent: a host may want both
+# (a game picks one at runtime) or neither (a game whose UI renderer is `native` links none of it),
+# and the option that turns on a browser must not be the option that turns on the no-browser lane.
+option(TN_ENABLE_CSS_UI "Enable the ThreeNative desktop CSS UI backend (CPU rasteriser, no WebView)" OFF)
 option(TN_ANDROID_VSYNC "Use FIFO presentation in the Android runtime" ON)
 option(TN_WEBGPU_UPLOAD_STAGING "Stage queue.writeBuffer calls into mapped blocks flushed at queue boundaries (wgpu-native builds)" ON)
 set(TN_WEBGPU_DESIRED_FRAME_LATENCY "0" CACHE STRING "Chain desiredMaximumFrameLatency into the surface configuration (wgpu-native builds); 0 keeps the backend default of 2")
@@ -221,6 +227,7 @@ add_compile_definitions(
     TN_ENABLE_NATIVE_PHYSICS=$<BOOL:${TN_ENABLE_NATIVE_PHYSICS}>
     TN_ENABLE_METAHUMAN=$<BOOL:${TN_ENABLE_METAHUMAN}>
     TN_ENABLE_UI_OVERLAY=$<BOOL:${TN_ENABLE_UI_OVERLAY}>
+    TN_ENABLE_CSS_UI=$<BOOL:${TN_ENABLE_CSS_UI}>
     TN_ANDROID_VSYNC=$<BOOL:${TN_ANDROID_VSYNC}>
     TN_WEBGPU_UPLOAD_STAGING=$<BOOL:${TN_WEBGPU_UPLOAD_STAGING}>
     TN_WEBGPU_DESIRED_FRAME_LATENCY=${TN_WEBGPU_DESIRED_FRAME_LATENCY}
@@ -1618,6 +1625,42 @@ if(TN_ENABLE_UI_OVERLAY)
     )
 endif()
 
+if(TN_ENABLE_CSS_UI)
+    if(NOT THREENATIVE_CSS_UI_LIBRARY)
+        # The same naming rule as the overlay above: MSVC writes `.lib`, every other desktop
+        # toolchain this host is built with writes `lib*.a`.
+        if(WIN32)
+            set(_tn_css_ui_name "threenative_css_ui.lib")
+        else()
+            set(_tn_css_ui_name "libthreenative_css_ui.a")
+        endif()
+        # Android cross-builds land in cargo's per-triple directory, one per ABI
+        # (`scripts/build-native-css-ui.mjs --target <triple>`), like native physics.
+        if(ANDROID_ABI STREQUAL "arm64-v8a")
+            set(_tn_css_ui_dir "aarch64-linux-android/release")
+        elseif(ANDROID_ABI STREQUAL "x86_64")
+            set(_tn_css_ui_dir "x86_64-linux-android/release")
+        elseif(ANDROID)
+            message(FATAL_ERROR "The CSS UI has no Android target for ABI ${ANDROID_ABI}")
+        else()
+            set(_tn_css_ui_dir "release")
+        endif()
+        set(THREENATIVE_CSS_UI_LIBRARY
+            "${CMAKE_CURRENT_SOURCE_DIR}/native/css-ui/target/${_tn_css_ui_dir}/${_tn_css_ui_name}"
+        )
+    endif()
+    if(NOT EXISTS "${THREENATIVE_CSS_UI_LIBRARY}")
+        message(FATAL_ERROR
+            "CSS UI artifact is missing: ${THREENATIVE_CSS_UI_LIBRARY}. "
+            "Run node scripts/build-native-css-ui.mjs, or supply -DTHREENATIVE_CSS_UI_LIBRARY."
+        )
+    endif()
+    add_library(threenative-css-ui STATIC IMPORTED)
+    set_target_properties(threenative-css-ui PROPERTIES
+        IMPORTED_LOCATION "${THREENATIVE_CSS_UI_LIBRARY}"
+    )
+endif()
+
 # Canvas2D sources provide no-Skia stubs when MYSTRAL_HAS_SKIA is absent.
 # Keep them linked even when TN_ENABLE_CANVAS2D=OFF because WebGPU bindings expose
 # browser-shaped canvas methods that reference these symbols.
@@ -1719,6 +1762,12 @@ target_compile_definitions(mystral-runtime PUBLIC
 )
 
 include(cmake/PipelineCacheIdentity.cmake)
+
+if(TN_ENABLE_CSS_UI)
+    # Pure Rust with no system dependency, so this is the whole link: no framework, no `pkg-config`
+    # package, nothing a system needs installing. That is the reason this backend exists.
+    target_link_libraries(mystral-runtime PRIVATE threenative-css-ui)
+endif()
 
 if(TN_ENABLE_UI_OVERLAY)
     target_link_libraries(mystral-runtime PRIVATE threenative-ui-overlay)
@@ -2249,6 +2298,14 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         tests/device_pixel_ratio_test.cpp)
     target_link_libraries(threenative-device-pixel-ratio-test PRIVATE mystral-runtime)
 
+    # The `native-css` UI backend, as a contract on the host's own seam. Declared in every
+    # configure, like the physics and MetaHuman bindings tests, so `verify-native-contracts.mjs`
+    # can discover it: what it asserts depends on the option, and a lane with the backend absent
+    # gets the refusal path rather than a target that cannot be built.
+    add_executable(threenative-css-ui-overlay-test EXCLUDE_FROM_ALL
+        tests/css_ui_overlay_test.cpp)
+    target_link_libraries(threenative-css-ui-overlay-test PRIVATE mystral-runtime)
+
     add_executable(threenative-async-pipeline-thread-test EXCLUDE_FROM_ALL
         tests/async_pipeline_thread_test.cpp)
     target_link_libraries(threenative-async-pipeline-thread-test PRIVATE mystral-runtime)
@@ -2626,6 +2683,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     if(NOT WIN32)
         tn_register_contract_test(threenative-crash-handler-policy-test)
     endif()
+    tn_register_contract_test(threenative-css-ui-overlay-test)
     tn_register_contract_test(threenative-device-pixel-ratio-test)
     tn_register_contract_test(threenative-dom-dispatch-lifetime-test)
     tn_register_contract_test(threenative-worker-production-test)

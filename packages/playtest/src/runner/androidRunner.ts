@@ -399,10 +399,25 @@ async function runDevicePlaytestInternal(
           await setDevicePointers(target, transport, step.pointers, scenario.viewport);
           pointerCount = step.pointers.length;
         }
+        if (step.media !== undefined) {
+          await transport.call("input.media", {
+            dark: step.media.colorScheme === undefined ? -1 : step.media.colorScheme === "dark" ? 1 : 0,
+            reducedMotion: step.media.reducedMotion === undefined ? -1 : step.media.reducedMotion === "reduce" ? 1 : 0,
+          });
+        }
+        if (step.wheel !== undefined) {
+          // Viewport pixels, like every other device pointer; the centre when the step names no point,
+          // which is where the browser lane turns the wheel too.
+          await transport.call("input.wheel", {
+            deltaX: step.wheel.deltaX ?? 0,
+            deltaY: step.wheel.deltaY,
+            x: (step.wheel.x ?? 0.5) * scenario.viewport.width,
+            y: (step.wheel.y ?? 0.5) * scenario.viewport.height,
+          });
+        }
         if (typeof pressed === "string") {
           if (!heldKeys.has(pressed)) {
-            await transport.call("input.keyDown", { key: pressed });
-            await sendAndroidTextInput(target, pressed);
+            await pressKey(target, transport, pressed);
             heldKeys.add(pressed);
           }
         } else if (pressed !== undefined) {
@@ -414,8 +429,7 @@ async function runDevicePlaytestInternal(
           }
           for (const key of pressed) {
             if (!heldKeys.has(key)) {
-              await transport.call("input.keyDown", { key });
-              await sendAndroidTextInput(target, key);
+              await pressKey(target, transport, key);
               heldKeys.add(key);
             }
           }
@@ -781,6 +795,24 @@ async function deviceClickPoint(
   return { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
 }
 
+/**
+ * One key down through the mailbox, plus the OS key event a focused web-view input needs.
+ *
+ * A host whose native-css UI took the key says so (`consumedByUi`), and the OS event is then a
+ * second delivery of the same key: a Space the UI already activated on, activated again by SDL's
+ * own copy of it. A web-view overlay never consumes a mailbox key, so its OS event still goes out.
+ */
+async function pressKey(
+  target: IDevicePlaytestTarget,
+  transport: IDevicePlaytestTransport,
+  key: string,
+): Promise<void> {
+  const reply = await transport.call<unknown>("input.keyDown", { key });
+  const consumed = typeof reply === "object" && reply !== null
+    && (reply as { consumedByUi?: unknown }).consumedByUi === true;
+  if (!consumed) await sendAndroidTextInput(target, key);
+}
+
 async function sendAndroidTextInput(target: IDevicePlaytestTarget, key: string): Promise<void> {
   if (target.name !== "android" || target.driver.runAdb === undefined) return;
   const keyEvent = androidKeyEventCode(key);
@@ -1056,10 +1088,25 @@ function unsupportedAssertion(
       target,
     );
   }
-  if (scenario.steps.some((step) => step.wheel !== undefined)) {
+  // A wheel and a media step reach Android the way they reach desktop: `input.wheel` /
+  // `input.media` over the mailbox, into `playtestInput` on the host, then `uiOverlayRouteWheel` /
+  // `uiOverlaySetEnvironment` — all host-neutral (runtime.cpp, ui_overlay.cpp), and the Android
+  // build attaches the same native-css document (`attachDesktopCssUi` from android_main.cpp). A
+  // wheel a scroller did not take, and a media set on a build with no CSS UI attached, both fail
+  // by name from the host itself (packages/playtest/src/three/device.ts), so nothing here has to
+  // guess on the host's behalf. iOS keeps its refusal: its overlay is a WKWebView mirror
+  // (`attachIosUiOverlay`), which has no native-css environment to emulate or scroll.
+  if (target === "ios" && scenario.steps.some((step) => step.wheel !== undefined)) {
     return unsupportedDiagnostic(
       "wheel input steps",
-      "Run wheel input steps on --target browser; Android, desktop, and iOS runners have no wheel injector and will not skip the sample.",
+      "Run wheel input steps on --target browser, --target desktop or --target android; the iOS overlay is a web-view mirror with no native-css scroller to turn, and will not skip the sample.",
+      target,
+    );
+  }
+  if (target === "ios" && scenario.steps.some((step) => step.media !== undefined)) {
+    return unsupportedDiagnostic(
+      "media steps",
+      "Run media steps on --target browser, --target desktop or --target android (native-css UI); the iOS overlay is a web-view mirror with no native-css environment to emulate, and will not skip the step.",
       target,
     );
   }

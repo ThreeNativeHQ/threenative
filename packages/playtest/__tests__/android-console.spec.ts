@@ -122,6 +122,17 @@ test("Android console ignores SurfaceSyncGroup framework noise that names Mystra
   ]);
 });
 
+test("Android console ignores system_server TransitionController lines that name MystralActivity", () => {
+  const entries = parseAndroidConsole([
+    "E/TransitionController(  575): Set visible without transition ActivityRecord{2cc98de u0 com.threenative.nativecsshud/com.threenative.runtime.MystralActivity t405} playing=false",
+    "I/SDL     ( 4270): [Mystral] Runtime initialized",
+  ].join("\n"));
+
+  expect(entries).toEqual([
+    { text: "I/SDL     ( 4270): [Mystral] Runtime initialized", type: "log" },
+  ]);
+});
+
 /**
  * The WebView's own C++ diagnostics are not the game's console.
  *
