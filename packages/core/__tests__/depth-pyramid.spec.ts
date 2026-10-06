@@ -101,7 +101,13 @@ describe("readable scene depth", () => {
       const depth = new DepthTexture(8, 8);
       const kernels: unknown[] = [];
       pyramid.resize(8, 8);
-      pyramid.build({ compute: (node) => kernels.push(node) }, depth, 0.1, 1000, samples);
+      pyramid.build(
+        { compute: (node) => kernels.push(...(node as unknown[])) },
+        depth,
+        0.1,
+        1000,
+        samples,
+      );
       const first = compile(kernels[0], samples);
       expect(first.uniforms.compute.some((uniform) => uniform.node.value === depth)).toBe(true);
       expect(first.computeShader.match(/textureLoad\(/g)).toHaveLength(4 * samples);
@@ -117,7 +123,13 @@ describe("readable scene depth", () => {
       // A same-size replacement must bind the new depth, not a cached texture from a retired pass.
       const replacement = new DepthTexture(8, 8);
       kernels.length = 0;
-      pyramid.build({ compute: (node) => kernels.push(node) }, replacement, 0.1, 1000, samples);
+      pyramid.build(
+        { compute: (node) => kernels.push(...(node as unknown[])) },
+        replacement,
+        0.1,
+        1000,
+        samples,
+      );
       expect(
         compile(kernels[0], samples).uniforms.compute.some(
           (uniform) => uniform.node.value === replacement,
@@ -141,13 +153,15 @@ describe("readable scene depth", () => {
       kind: "webgpu",
       raw: { backend: { hasFeature: () => true } },
       readback: async () => new ArrayBuffer(24),
-      compute: (node: unknown) => {
-        let builder = compiled.get(node);
-        if (builder === undefined) {
-          builder = compile(node, 4);
-          compiled.set(node, builder);
+      compute: (group: unknown) => {
+        for (const node of Array.isArray(group) ? group : [group]) {
+          let builder = compiled.get(node);
+          if (builder === undefined) {
+            builder = compile(node, 4);
+            compiled.set(node, builder);
+          }
+          dispatches.push({ name: (node as { name: string }).name, builder });
         }
-        dispatches.push({ name: (node as { name: string }).name, builder });
       },
       scenePassDepth: () => ({
         texture: depth,
@@ -183,6 +197,88 @@ describe("readable scene depth", () => {
       }
     } finally {
       world.dispose();
+    }
+  });
+});
+
+describe("pyramid GPU timestamps", () => {
+  it("timestamps the whole resolve/reduction group, resolves with cadence off, and consumes each sample once", async () => {
+    vi.stubGlobal("navigator", { gpu: {} });
+    const canvas = new EventTarget() as HTMLCanvasElement;
+    const pool = { queryOffsets: new Map<string, number>(), timestamps: new Map<string, number>() };
+    const backend = { trackTimestamp: true, timestampQueryPool: { compute: pool } };
+    const info = { frame: 0, compute: { timestamp: 0 } };
+    const groups: unknown[] = [];
+    const resolves: { type: string; enabled: boolean }[] = [];
+    const raw = {
+      domElement: canvas,
+      backend,
+      info,
+      init: async () => undefined,
+      compute: (group: unknown) => {
+        groups.push(group);
+        if (backend.trackTimestamp)
+          pool.queryOffsets.set(
+            `compute:${groups.length}:f${info.frame}`,
+            pool.queryOffsets.size * 2,
+          );
+      },
+      resolveTimestampsAsync: async (type = "render") => {
+        resolves.push({ type, enabled: backend.trackTimestamp });
+        if (!backend.trackTimestamp || type !== "compute") return undefined;
+        const uids = [...pool.queryOffsets.keys()];
+        pool.queryOffsets.clear();
+        await Promise.resolve();
+        for (const uid of uids) pool.timestamps.set(uid, 0.25);
+        info.compute.timestamp = 0.25;
+        return 0.25;
+      },
+      render: () => undefined,
+      setSize: () => undefined,
+    };
+    const renderer = await createRenderer({
+      canvas,
+      gpuTimestampFrameInterval: 2,
+      webgpuFactory: () => raw,
+    });
+    const pyramid = new DepthPyramid();
+    pyramid.resize(8, 8);
+    const depth = new DepthTexture(8, 8);
+    try {
+      pyramid.build(renderer, depth, 0.1, 1000, 4);
+      const group = groups[0] as { name: string }[];
+      expect(group.map((node) => node.name)).toEqual([
+        "tnDepthPyramid0",
+        "tnDepthPyramid1",
+        "tnDepthPyramid2",
+      ]);
+      expect(renderer.gpuPyramidMs?.()).toBeUndefined();
+      renderer.compute({}); // Cadence off when the frame asks to resolve.
+      expect(backend.trackTimestamp).toBe(false);
+      renderer.resolveGpuFrame();
+      expect(backend.trackTimestamp).toBe(false);
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(resolves).toEqual([
+        { type: "render", enabled: true },
+        { type: "compute", enabled: true },
+      ]);
+      expect(renderer.gpuPyramidMs?.()).toBe(0.25);
+      expect(renderer.gpuPyramidMs?.()).toBeUndefined();
+      expect(renderer.gpuComputeMs?.()).toBe(0.25);
+      // Two builds on a fixed dispatch cadence still sample independently, once per two builds.
+      pyramid.build(renderer, depth, 0.1, 1000, 4);
+      expect(pool.queryOffsets.size).toBe(0);
+      renderer.compute({});
+      pyramid.build(renderer, depth, 0.1, 1000, 4);
+      renderer.resolveGpuFrame();
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(renderer.gpuPyramidMs?.()).toBe(0.25);
+      expect(renderer.gpuPyramidMs?.()).toBeUndefined();
+    } finally {
+      pyramid.dispose();
+      renderer.dispose();
     }
   });
 });

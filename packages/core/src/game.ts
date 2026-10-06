@@ -1815,6 +1815,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           // negative residual — the tree reporting, correctly, that it had been handed a term from
           // outside the phase it is dividing up. The frame budget already carries this cost.
           renderer.resolveGpuFrame();
+          frameBudget?.addGpuPyramidMs(renderer.gpuPyramidMs?.());
           // The budget's GPU series is fed every frame, not read once per reported window. A
           // single window-close read is one instantaneous, lagged `info.render.timestamp` — the
           // sample that made a 17.6 ms frame read as 2.98–10.40 ms. The sample carries the

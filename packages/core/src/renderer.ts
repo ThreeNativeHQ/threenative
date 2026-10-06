@@ -6,6 +6,7 @@ import {
   type PipelineCensus,
   createPipelineCensus,
 } from "./pipeline-census.js";
+import type { ITimestampQueryPool } from "./render-pass-budget.js";
 import { AlphaAntialiasing, type IAlphaAntialiasingReport } from "./render/alpha-antialiasing.js";
 import {
   type IRenderChainBudgetWindow,
@@ -173,7 +174,7 @@ export interface IRendererLike {
    * exposes the same four `adapter.info` fields, so the same read works on every target.
    */
   readonly softwareAdapter?: string;
-  compute(node: unknown): void;
+  compute(node: unknown, span?: "depthPyramid"): void;
   /**
    * Creates the GPU buffers these geometries draw from, through the backend's own attribute path,
    * and reports how many it created.
@@ -262,6 +263,8 @@ export interface IRendererLike {
    * frame that ran no compute.
    */
   gpuComputeMs?(): number | undefined;
+  /** Consume one fresh timestamped pyramid build, including its depth resolve; absent until resolved. */
+  gpuPyramidMs?(): number | undefined;
   /**
    * The main render pass's GPU milliseconds, smoothed over fresh resolved samples, or `undefined`
    * while no reading is fresh.
@@ -356,6 +359,7 @@ type RendererInstance = {
   };
   backend?: {
     trackTimestamp?: boolean;
+    timestampQueryPool?: Record<string, ITimestampQueryPool | null>;
     /** The backend's own attribute creation, which a compile does not do. */
     createAttribute?: (attribute: unknown) => void;
     createIndexAttribute?: (attribute: unknown) => void;
@@ -461,6 +465,8 @@ function wrapRenderer(
   let pendingScale: { scale: number; source: "auto" | "auto-pinned" } | undefined;
   let pendingSize: Parameters<IRendererLike["setSize"]> | undefined;
   let timestampFrame = -1;
+  let pyramidBuild = 0;
+  const pyramidQueries: string[][] = [];
   const setTimestampTracking = (): void => {
     // Three writes `info.frame` only inside its own animation loop, which the engine deliberately
     // does not run -- the game drives frames through here -- so it sat at 0 for the whole session.
@@ -598,17 +604,34 @@ function wrapRenderer(
         ? timestamp
         : undefined;
     },
+    gpuPyramidMs: () => {
+      const timestamps = raw.backend?.timestampQueryPool?.compute?.timestamps;
+      if (timestamps === undefined) return undefined;
+      for (const [index, uids] of pyramidQueries.entries()) {
+        const values = uids.map((uid) => timestamps.get(uid));
+        if (values.some((ms) => ms === undefined || !Number.isFinite(ms) || ms < 0)) continue;
+        pyramidQueries.splice(index, 1);
+        return values.reduce<number>((sum, ms) => sum + (ms ?? 0), 0);
+      }
+      return undefined;
+    },
     resolveGpuFrame: () => {
       // Fire and forget: a rejected resolve means this adapter has no timestamps, which is a
       // reported absence rather than a frame-time error.
       const resolveTimestampsAsync = raw.resolveTimestampsAsync;
       if (resolveTimestampsAsync === undefined) return;
-      void resolveTimestampsAsync.call(raw)?.catch(() => undefined);
-      // Three maintains independent 2,048-query pools for render and compute passes. Resolving
-      // only the default render pool lets GPU simulations exhaust the compute pool even when the
-      // render pool is healthy, after which the adapter can be lost instead of merely reporting
-      // an absent timestamp.
-      void resolveTimestampsAsync.call(raw, "compute")?.catch(() => undefined);
+      // Three refuses to resolve while the sampling flag is off. Hold it on only for starting
+      // the resolves; restore the cadence before any later pass allocates queries.
+      const backend = raw.backend;
+      const tracking = backend?.trackTimestamp;
+      if (timestampCapable && backend !== undefined) backend.trackTimestamp = true;
+      try {
+        void resolveTimestampsAsync.call(raw)?.catch(() => undefined);
+        // Render and compute own independent pools; both must be drained.
+        void resolveTimestampsAsync.call(raw, "compute")?.catch(() => undefined);
+      } finally {
+        if (backend !== undefined) backend.trackTimestamp = tracking;
+      }
     },
     setResolutionScale: (scale, scaleSource) => {
       if (disposed) return;
@@ -748,12 +771,25 @@ function wrapRenderer(
         }
       }
     },
-    compute: (node) => {
+    compute: (node, span) => {
       if (kind !== "webgpu") throw new Error(`compute is unavailable on the ${kind} renderer.`);
       if (typeof raw.compute !== "function")
         throw new Error("webgpu renderer does not expose compute().");
       setTimestampTracking();
+      const backend = raw.backend;
+      // Sample builds, not arbitrary dispatch positions: a fixed number of world dispatches per
+      // frame must not alias the cadence and leave every pyramid unmeasured.
+      if (span === "depthPyramid" && timestampCapable && backend !== undefined)
+        backend.trackTimestamp = pyramidBuild++ % timestampFrameInterval === 0;
+      const before = backend?.timestampQueryPool?.compute?.queryOffsets?.size ?? 0;
       raw.compute(node);
+      if (span === "depthPyramid") {
+        const offsets = backend?.timestampQueryPool?.compute?.queryOffsets;
+        const uids = offsets === undefined ? [] : [...offsets.keys()].slice(before);
+        if (uids.length > 0) pyramidQueries.push(uids);
+        // Match the render-pass recorder's bounded query retention on a stalled resolve.
+        if (pyramidQueries.length > 64) pyramidQueries.shift();
+      }
     },
     uploadAttributes: (geometries) => {
       const backend = kind === "webgpu" ? raw.backend : undefined;

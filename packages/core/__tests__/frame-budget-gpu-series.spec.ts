@@ -204,3 +204,18 @@ describe("frame-budget GPU series", () => {
     expect(window.gpuCompute).toBeUndefined();
   });
 });
+
+describe("pyramid GPU span", () => {
+  it("reports fresh pyramid samples as a windowed p50/p95 and resets the next window", () => {
+    const lines: string[] = [];
+    const budget = new FrameBudget({ reportEvery: 3, report: (line) => lines.push(line) });
+    for (const [frame, ms] of [1, 2, 3].entries()) {
+      budget.beginFrame(frame * 16, frame * 16);
+      budget.addGpuPyramidMs(ms);
+      budget.endFrame(frame * 16 + 1);
+    }
+    const payload = JSON.parse(lines[0]?.slice(FRAME_BUDGET_MARKER.length + 1) ?? "{}");
+    expect(payload.gpuPyramid).toMatchObject({ samples: 3, p50: 2, p95: 3 });
+    expect(budget.window().gpuPyramid).toBeUndefined();
+  });
+});

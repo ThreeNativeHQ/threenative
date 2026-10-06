@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import {
   BoxGeometry,
   type BufferGeometry,
-  type DepthTexture,
+  DepthTexture,
   Frustum,
   Group,
   InstancedMesh,
@@ -3732,9 +3732,10 @@ describe("WorldGpuScene measured occlusion cull", () => {
     depth: { width: number; height: number } | undefined,
     computes: { count: number },
   ): IRendererLike {
+    const texture = { image: depth } as DepthTexture;
     return {
-      compute: (): void => {
-        computes.count += 1;
+      compute: (node: unknown): void => {
+        computes.count += Array.isArray(node) ? node.length : 1;
       },
       kind: "webgpu",
       log: (): void => {},
@@ -3745,7 +3746,7 @@ describe("WorldGpuScene measured occlusion cull", () => {
           ? undefined
           : {
               height: depth.height,
-              texture: { image: { height: depth.height, width: depth.width } } as DepthTexture,
+              texture,
               width: depth.width,
             },
     } as unknown as IRendererLike;
@@ -3770,6 +3771,7 @@ describe("WorldGpuScene measured occlusion cull", () => {
     expect(world.enable(renderer, true, false, false, "measure")).toBe(true);
     const { camera } = cameraAt(0, 0);
     world.dispatch(renderer, camera as PerspectiveCamera);
+    world.dispatch(renderer, camera as PerspectiveCamera);
     await flush();
     const report = world.report().occlusion;
     // The chain is half the depth's own resolution, one level per halving down to one texel.
@@ -3780,8 +3782,149 @@ describe("WorldGpuScene measured occlusion cull", () => {
     expect(report?.share).toBeCloseTo(0.6, 6);
     expect(report?.samples).toBe(1);
     // A clear and a cull, plus one dispatch per level of the chain.
-    expect(computes.count).toBe(12);
+    expect(computes.count).toBe(24);
     world.dispose();
+  });
+
+  it("skips warmup, cuts and resized depth, but measures a normal walk and turn", async () => {
+    const world = scene();
+    const depth = { width: 8, height: 8 };
+    const renderer = measureRenderer(() => Uint32Array.from([36, 5, 0, 0, 0, 3]).buffer, depth, {
+      count: 0,
+    });
+    const readback = vi.spyOn(renderer, "readback");
+    world.enable(renderer, true, false, false, "measure");
+    const camera = new PerspectiveCamera();
+    camera.updateMatrixWorld();
+    world.dispatch(renderer, camera);
+    await flush();
+    expect(world.report().occlusion?.samples).toBe(0);
+    expect(readback).not.toHaveBeenCalled();
+    camera.position.x = 0.1;
+    camera.rotation.y = 0.01;
+    camera.updateMatrixWorld();
+    world.dispatch(renderer, camera);
+    await flush();
+    expect(world.report().occlusion?.samples).toBe(1);
+    expect(world.report().occlusion?.share).toBeCloseTo(0.6);
+    camera.position.x = 10;
+    camera.updateMatrixWorld();
+    for (let frame = 0; frame < 30; frame += 1) world.dispatch(renderer, camera);
+    await flush();
+    expect(world.report().occlusion?.samples).toBe(2);
+    camera.fov = 60;
+    camera.updateProjectionMatrix();
+    world.dispatch(renderer, camera);
+    expect(world.report().occlusion?.reason).toContain("cut");
+    depth.width = 16;
+    world.dispatch(renderer, camera);
+    expect(world.report().occlusion?.reason).toContain("depth");
+    expect(readback).toHaveBeenCalledTimes(2);
+    world.dispose();
+  });
+
+  it("skips same-size depth replacement, odd resize and depth resource rebuild", async () => {
+    const world = scene();
+    let depth = new DepthTexture(8, 8);
+    const renderer = measureRenderer(
+      () => Uint32Array.from([36, 5, 0, 0, 0, 3]).buffer,
+      { width: 8, height: 8 },
+      { count: 0 },
+    );
+    renderer.scenePassDepth = () => ({
+      texture: depth,
+      width: depth.image.width,
+      height: depth.image.height,
+    });
+    const readback = vi.spyOn(renderer, "readback");
+    world.enable(renderer, true, false, false, "measure");
+    const camera = new PerspectiveCamera();
+    camera.updateMatrixWorld();
+    world.dispatch(renderer, camera);
+    world.dispatch(renderer, camera);
+    await flush();
+    expect(world.report().occlusion?.samples).toBe(1);
+    // 8 -> 9 keeps the half-resolution chain at 4 -> 2 -> 1.
+    depth.image.width = 9;
+    world.dispatch(renderer, camera);
+    expect(world.report().occlusion?.reason).toContain("depth");
+    expect(world.report().occlusion?.levels).toBe(3);
+    depth = new DepthTexture(9, 8);
+    world.dispatch(renderer, camera);
+    expect(world.report().occlusion?.reason).toContain("depth");
+    depth.needsUpdate = true;
+    world.dispatch(renderer, camera);
+    expect(world.report().occlusion?.reason).toContain("depth");
+    expect(readback).toHaveBeenCalledTimes(1);
+    world.dispose();
+  });
+
+  it("decodes delayed counts with their dispatch's region layout", async () => {
+    const world = scene();
+    const renderer = measureRenderer(
+      () => new ArrayBuffer(0),
+      { width: 8, height: 8 },
+      { count: 0 },
+    );
+    let land: ((bytes: ArrayBuffer) => void) | undefined;
+    renderer.readback = () =>
+      new Promise((resolve) => {
+        land = resolve;
+      });
+    world.enable(renderer, true, false, false, "measure");
+    const camera = new PerspectiveCamera();
+    camera.updateMatrixWorld();
+    world.dispatch(renderer, camera);
+    world.dispatch(renderer, camera);
+    world.key("oak:0:0", LOCAL, 16, { group: "oak:0", part: 0, parts: 1 });
+    land?.(Uint32Array.from([36, 5, 0, 0, 0, 3]).buffer);
+    await flush();
+    expect(world.report().gpuTriangles).toBe(60);
+    expect(world.report().occlusion?.triangles).toBe(36);
+    expect(world.report().occlusion?.share).toBeCloseTo(0.6);
+    expect(world.report().occlusion?.samples).toBe(1);
+    world.dispose();
+  });
+
+  it("keeps a genuine zero sample and its paired denominator when a later readback is invalid", async () => {
+    const world = scene();
+    let bytes = Uint32Array.from([36, 5, 0, 0, 0, 0]).buffer;
+    const renderer = measureRenderer(() => bytes, { width: 8, height: 8 }, { count: 0 });
+    world.enable(renderer, true, false, false, "measure");
+    const camera = new PerspectiveCamera();
+    camera.updateMatrixWorld();
+    world.dispatch(renderer, camera);
+    world.dispatch(renderer, camera);
+    await flush();
+    expect(world.report().occlusion).toMatchObject({
+      samples: 1,
+      reason: "",
+      share: 0,
+      gpuTriangles: 60,
+    });
+    bytes = Uint32Array.from([36, 1, 0, 0, 0, 2]).buffer;
+    for (let frame = 0; frame < 30; frame += 1) world.dispatch(renderer, camera);
+    await flush();
+    expect(world.report().occlusion).toMatchObject({ samples: 1, share: 0, gpuTriangles: 60 });
+    expect(world.report().occlusion?.reason).toContain("readback");
+    world.dispose();
+  });
+
+  it("flags inconsistent or short readbacks instead of publishing a share over one", async () => {
+    for (const bytes of [Uint32Array.from([36, 5, 0, 0, 0, 6]).buffer, new ArrayBuffer(20)]) {
+      const world = scene();
+      const renderer = measureRenderer(() => bytes, { width: 8, height: 8 }, { count: 0 });
+      world.enable(renderer, true, false, false, "measure");
+      const camera = new PerspectiveCamera();
+      camera.updateMatrixWorld();
+      world.dispatch(renderer, camera);
+      world.dispatch(renderer, camera);
+      await flush();
+      expect(world.report().occlusion?.samples).toBe(0);
+      expect(world.report().occlusion?.reason).toContain("readback");
+      expect(world.report().occlusion?.share).toBeLessThanOrEqual(1);
+      world.dispose();
+    }
   });
 
   it("refuses with a reason when no render chain installed a depth to test against", () => {

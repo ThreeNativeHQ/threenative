@@ -381,7 +381,7 @@ export class DepthPyramid {
    * The resolve shares level 0's dispatch, so timing the whole chain includes that cost.
    */
   build(
-    renderer: { compute(node: unknown): void },
+    renderer: { compute(node: unknown, span?: "depthPyramid"): void },
     depth: DepthTexture,
     near: number,
     far: number,
@@ -395,7 +395,9 @@ export class DepthPyramid {
     }
     this.#depthSize.value.set(depth.image.width ?? 0, depth.image.height ?? 0);
     this.#nearFar.value.set(near, far);
-    for (const [index] of this.#levels.entries()) renderer.compute(this.#levelKernel(index, depth));
+    // Three timestamps a compute group around all its dispatches, including level 0's depth resolve.
+    for (const [index] of this.#levels.entries()) this.#levelKernel(index, depth);
+    renderer.compute(this.#kernels, "depthPyramid");
     return this.#levels.length;
   }
 

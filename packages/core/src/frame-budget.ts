@@ -352,6 +352,8 @@ export interface IFrameBudgetWindow {
   readonly gpuShadow?: number;
   readonly gpuOther?: number;
   readonly gpuCompute?: number;
+  /** Pyramid build GPU milliseconds per resolved build, including the depth copy/resolve. */
+  readonly gpuPyramid?: IFrameBudgetSummary;
   /**
    * The frame's boundary counts, when something counted them.
    *
@@ -552,6 +554,7 @@ export class FrameBudget {
   #substeps: Ring;
   #phaseRings: Record<FrameBudgetPhase, Ring>;
   #gpu: Ring;
+  #gpuPyramid: Ring;
   #gpuBucketRings: Record<FrameGpuBucket, Ring>;
   #gpuBucketThisFrame: IFrameGpuBucketSample = {};
   #passDrawRings: Record<FramePassKind, Ring>;
@@ -612,6 +615,7 @@ export class FrameBudget {
     this.#frame = new Ring(capacity);
     this.#substeps = new Ring(capacity);
     this.#gpu = new Ring(capacity);
+    this.#gpuPyramid = new Ring(capacity);
     this.#gpuBucketRings = {
       compute: new Ring(capacity),
       main: new Ring(capacity),
@@ -770,6 +774,14 @@ export class FrameBudget {
       this.#lastGpuFrame = frame;
     }
     this.#gpuThisFrame = ms;
+  }
+
+  /** Record one freshly resolved pyramid build, independently of the render pool's cadence. */
+  addGpuPyramidMs(ms: number | undefined): void {
+    if (!this.#open) throw new Error("FrameBudget.addGpuPyramidMs called outside a frame.");
+    if (ms === undefined) return;
+    if (ms < 0) throw new Error("Frame budget gpu pyramid must be non-negative.");
+    this.#gpuPyramid.push(ms);
   }
 
   /**
@@ -1001,6 +1013,7 @@ export class FrameBudget {
     const gpuShadow = gpuBucket("shadow");
     const gpuOther = gpuBucket("other");
     const gpuCompute = gpuBucket("compute");
+    const gpuPyramid = this.#gpuPyramid.summarize(this.#scratch);
     const target = this.#readTarget === undefined ? undefined : (this.#readTarget() ?? undefined);
     const resolvedTarget = target === undefined ? undefined : requireTarget(target);
     return {
@@ -1047,6 +1060,7 @@ export class FrameBudget {
       ...(gpuShadow === undefined ? {} : { gpuShadow }),
       ...(gpuOther === undefined ? {} : { gpuOther }),
       ...(gpuCompute === undefined ? {} : { gpuCompute }),
+      ...(gpuPyramid.samples === 0 ? {} : { gpuPyramid }),
     };
   }
 
@@ -1104,6 +1118,7 @@ export class FrameBudget {
     this.#frame.reset();
     this.#substeps.reset();
     this.#gpu.reset();
+    this.#gpuPyramid.reset();
     for (const bucket of FRAME_GPU_BUCKETS) this.#gpuBucketRings[bucket].reset();
     this.#hostCalls.reset();
     this.#gpuBytes.reset();

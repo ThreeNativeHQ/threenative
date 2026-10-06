@@ -1,6 +1,7 @@
 import {
   type BufferAttribute,
   type Camera,
+  type DepthTexture,
   Frustum,
   Matrix4,
   PerspectiveCamera,
@@ -1166,7 +1167,8 @@ export interface IWorldGpuSceneReport {
   /**
    * What the pyramid occlusion test would cull, when a launch asked it to measure. Absent unless
    * `?tnOcclusion=measure` asked, `reason` names why it measured nothing (`no scene depth`), and the
-   * counts come from the same landed readback as `gpuTriangles`, so the share is one window's.
+   * counts and `occlusion.gpuTriangles` come from one landed dispatch, even if a later tally
+   * was skipped for occlusion.
    */
   readonly occlusion?: {
     readonly mode: OcclusionMode;
@@ -1182,6 +1184,7 @@ export interface IWorldGpuSceneReport {
     readonly samples: number;
     /** `triangles / gpuTriangles` of the same sample, which is what the go/no-go multiplies. */
     readonly share: number;
+    readonly gpuTriangles: number;
     readonly ageFrames: number;
   };
 }
@@ -1285,11 +1288,11 @@ const _view = new Matrix4();
 /** Camera travel in one dispatch that the occlusion test reads as a cut rather than a turn. */
 const OCCLUSION_CUT_METRES = 2;
 
-/** Two `viewProjection` products are the same projection when every element is within this. */
+/** Two projection matrices are unchanged when every element is within this. */
 const VIEW_EPSILON = 1e-6;
 
-/** Whether two camera matrices are the same projection and the same point of view. */
-function sameView(left: Matrix4, right: Matrix4): boolean {
+/** Whether the projection changed; ordinary camera travel and turns are not cuts. */
+function sameProjection(left: Matrix4, right: Matrix4): boolean {
   for (const [index, element] of right.elements.entries())
     if (Math.abs((left.elements[index] as number) - element) > VIEW_EPSILON) return false;
   return true;
@@ -1672,7 +1675,7 @@ export class WorldGpuScene {
         ? {}
         : {
             occlusion: {
-              ageFrames: this.#dispatched - this.#tallySample,
+              ageFrames: this.#occlusionSample < 0 ? 0 : this.#dispatched - this.#occlusionSample,
               buildDispatches: this.#pyramid.levels,
               instances: this.#occludedInstances,
               levels: this.#pyramid.levels,
@@ -1687,8 +1690,11 @@ export class WorldGpuScene {
               mode: this.#occlusion,
               reason: this.#occlusionReason,
               samples: this.#occlusionSamples,
+              gpuTriangles: this.#occlusionTotalTriangles,
               share:
-                this.#tallyTriangles === 0 ? 0 : this.#occludedTriangles / this.#tallyTriangles,
+                this.#occlusionTotalTriangles === 0
+                  ? 0
+                  : this.#occludedTriangles / this.#occlusionTotalTriangles,
               triangles: this.#occludedTriangles,
             },
           }),
@@ -2124,6 +2130,7 @@ export class WorldGpuScene {
     else if (
       this.#validate === false &&
       this.#tally === true &&
+      (this.#occlusion === "off" || this.#occlusionCut.value === 0) &&
       this.#tallyPending === false &&
       (this.#tallyRequested < 0 || this.#dispatched - this.#tallyRequested >= TALLY_EVERY)
     )
@@ -2147,6 +2154,7 @@ export class WorldGpuScene {
     // The main pass returns on an orthographic camera before it gets here (that is a shadow level's
     // own), and a linear depth in metres is a perspective projection's to begin with.
     if (!(camera instanceof PerspectiveCamera)) {
+      this.#previousDepth = undefined;
       this.#occlusionReason = "refused: not a perspective camera";
       return;
     }
@@ -2154,13 +2162,15 @@ export class WorldGpuScene {
     const width = depth?.width ?? 0;
     const height = depth?.height ?? 0;
     if (depth === undefined || width < 2 || height < 2) {
+      this.#previousDepth = undefined;
       this.#occlusionReason = "refused: no scene depth";
       return;
     }
     this.#occlusionReason = "";
     // A resized depth resizes the chain, and the chain's two buffers are what the cull kernel reads,
     // so a new chain is a new pipeline: structural, like every other grow in this class.
-    if (this.#pyramid.resize(width, height)) {
+    const resized = this.#pyramid.resize(width, height);
+    if (resized) {
       this.#kernel = undefined;
       this.#version += 1;
     }
@@ -2170,15 +2180,35 @@ export class WorldGpuScene {
     // a projection change means the pyramid is a different camera's depth altogether.
     // ponytail: 2 m of camera travel in one dispatch is a cut. A game that teleports further per
     // step than that raises the bound; one that cuts under it gets a frame of frustum-only.
+    const samples = depth.samples ?? 1;
+    const previous = this.#previousDepth;
+    const depthChanged =
+      previous?.texture !== depth.texture ||
+      previous.width !== width ||
+      previous.height !== height ||
+      previous.samples !== samples ||
+      previous.version !== depth.texture.version;
     this.#occlusionCut.value =
-      this.#dispatched === 0 ||
-      !sameView(this.#previousView, _view) ||
+      depthChanged ||
+      resized ||
+      !sameProjection(this.#previousProjection, camera.projectionMatrix) ||
       _eye.distanceTo(this.#previousEye) > OCCLUSION_CUT_METRES
         ? 1
         : 0;
+    if (this.#occlusionCut.value !== 0)
+      this.#occlusionReason =
+        depthChanged || resized ? "skipped: depth changed" : "skipped: camera cut";
+    this.#previousDepth = {
+      texture: depth.texture,
+      width,
+      height,
+      samples,
+      version: depth.texture.version,
+    };
+    this.#previousProjection.copy(camera.projectionMatrix);
     // The chain first, then the camera the chain belongs to: last frame's, which is what the
     // previous frame's depth recorded.
-    this.#pyramid.build(renderer, depth.texture, camera.near, camera.far, depth.samples ?? 1);
+    this.#pyramid.build(renderer, depth.texture, camera.near, camera.far, samples);
     this.#occlusionView.value.copy(this.#previousView);
     this.#previousView.copy(_view);
     this.#previousEye.copy(_eye);
@@ -2238,6 +2268,16 @@ export class WorldGpuScene {
   /** The max-distance chain, and the previous frame's camera the test reprojects into. */
   readonly #pyramid = new DepthPyramid();
   readonly #previousView = new Matrix4();
+  readonly #previousProjection = new Matrix4();
+  #previousDepth:
+    | {
+        texture: DepthTexture;
+        width: number;
+        height: number;
+        samples: number;
+        version: number;
+      }
+    | undefined;
   readonly #previousEye = new Vector3();
   readonly #occlusionView = uniform(new Matrix4());
   readonly #occlusionCut = uniform(1);
@@ -2246,6 +2286,8 @@ export class WorldGpuScene {
   /** The last landed tally's occlusion counts, and the running mean over every sample. */
   #occludedInstances = 0;
   #occludedTriangles = 0;
+  #occlusionTotalTriangles = 0;
+  #occlusionSample = -1;
   #occlusionSamples = 0;
   #occlusionSumInstances = 0;
   #occlusionSumTriangles = 0;
@@ -2281,9 +2323,12 @@ export class WorldGpuScene {
     const issued = this.#dispatched;
     this.#tallyRequested = issued;
     this.#tallyPending = true;
+    // Streaming may grow the args tail while this copy is in flight. Decode its own layout.
+    const regions = this.#regions.map((region) => ({ argsIndex: region.argsIndex }));
+    const occlusionReason = this.#occlusionReason;
     renderer
       .readback(args)
-      .then((bytes) => this.#landTally(bytes, issued))
+      .then((bytes) => this.#landTally(bytes, issued, regions, occlusionReason))
       .catch(() => {
         this.#tallyPending = false;
       });
@@ -2294,12 +2339,17 @@ export class WorldGpuScene {
    * divided by three. A record the GPU never wrote reads as the zero it holds, which is correct —
    * a key that selected nothing draws nothing.
    */
-  #landTally(bytes: ArrayBuffer, issued: number): void {
+  #landTally(
+    bytes: ArrayBuffer,
+    issued: number,
+    regions: readonly Pick<IRegion, "argsIndex">[],
+    occlusionReason: string,
+  ): void {
     this.#tallyPending = false;
     const words = new Uint32Array(bytes);
     let instances = 0;
     let products = 0;
-    for (const region of this.#regions) {
+    for (const region of regions) {
       const record = region.argsIndex * DRAW_ARGS_WORDS;
       const count = word(words, record + 1);
       instances += count;
@@ -2308,7 +2358,7 @@ export class WorldGpuScene {
     this.#tallyInstances = instances;
     this.#tallyTriangles = products / 3;
     this.#tallySample = issued;
-    if (this.#occlusion !== "off") this.#landOcclusion(words, issued);
+    if (this.#occlusion !== "off") this.#landOcclusion(words, issued, regions, occlusionReason);
   }
 
   /**
@@ -2319,16 +2369,42 @@ export class WorldGpuScene {
    * sums over the records, which is why both numbers can be divided into a share without a second
    * readback or a second clock.
    */
-  #landOcclusion(words: Uint32Array, issued: number): void {
+  #landOcclusion(
+    words: Uint32Array,
+    issued: number,
+    regions: readonly Pick<IRegion, "argsIndex">[],
+    sampleReason: string,
+  ): void {
+    let reason = sampleReason;
+    const tail = regions.length * DRAW_ARGS_WORDS;
+    if (reason === "" && words.length < tail + regions.length) reason = "skipped: short readback";
+    if (
+      reason === "" &&
+      regions.some(
+        (region, index) =>
+          word(words, tail + index) > word(words, region.argsIndex * DRAW_ARGS_WORDS + 1),
+      )
+    )
+      reason = "skipped: inconsistent readback";
+    if (reason !== "") {
+      this.#occlusionReason = reason;
+      console.info(
+        `TN_WORLD_GPU_SCENE_OCCLUSION mode=${this.#occlusion} dispatch=${String(issued)} skipped=1 reason=${reason}`,
+      );
+      return;
+    }
     let instances = 0;
     let products = 0;
-    for (const [index, region] of this.#regions.entries()) {
-      const count = word(words, this.#regions.length * DRAW_ARGS_WORDS + index);
+    for (const [index, region] of regions.entries()) {
+      const count = word(words, regions.length * DRAW_ARGS_WORDS + index);
       instances += count;
       products += count * word(words, region.argsIndex * DRAW_ARGS_WORDS);
     }
     this.#occludedInstances = instances;
     this.#occludedTriangles = products / 3;
+    this.#occlusionReason = "";
+    this.#occlusionSample = issued;
+    this.#occlusionTotalTriangles = this.#tallyTriangles;
     this.#occlusionSamples += 1;
     this.#occlusionSumInstances += instances;
     this.#occlusionSumTriangles += this.#occludedTriangles;
@@ -2375,11 +2451,12 @@ export class WorldGpuScene {
     const draws = this.#draws?.() ?? [];
     const issued = this.#dispatched;
     this.#validating = true;
+    const occlusionReason = this.#occlusionReason;
     Promise.all([renderer.readback(snapshot.args), renderer.readback(snapshot.drawn)])
       .then(([argsBytes, drawnBytes]) => {
         this.#validating = false;
         // The same landed args feed the tally, so a validation pays for it and this adds no copy.
-        this.#landTally(argsBytes, issued);
+        this.#landTally(argsBytes, issued, snapshot.regions, occlusionReason);
         this.#publish(
           renderer,
           this.#against(
