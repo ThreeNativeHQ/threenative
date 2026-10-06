@@ -232,8 +232,9 @@ this host, so it is not attributed. The prewarm (`e580e76cb`) stays off this PR,
 - [x] **B1 · [VQ-01](../done/PRD-VQ-01-native-asset-capabilities.md): native asset capability guard.** After: nothing.
   - It already has a draft PR, #396. `assertNativeAssetsCompatible` currently rejects KTX2 and meshopt on every Android and iOS build.
   - **Done 2026-10-05:** #396 merged its phases (2026-10-04). The last box, the lifecycle release, passes on nvidia/turing: geometryGrowth 0, textureGrowth 0. The old 6/3 was a baseline read before the first world pass had drawn, not a leak; every owned dispose was counted at 6 + 3 per enter. The PRD moved to `done/` in this PR.
-- [ ] **B2 · [PRD-485](PRD-485-high-quality-assets-go-through-the-cook.md): high-quality assets go through the cook.** After: B1 for its Android box only. 🎨👁
+- [x] **B2 · [PRD-485](../done/PRD-485-high-quality-assets-go-through-the-cook.md): high-quality assets go through the cook.** After: B1 for its Android box only. 🎨👁
   - fab-import-proof, lumen-hall and metahuman-lab drop their escape hatches.
+  - **Done 2026-10-06:** the last box, Android, passes on the emulator (not a phone): `fab-import-native.playtest.json --target android` 6/6 with 0 diagnostics, the Hornbeam cooked to KTX2 + Meshopt under Android V8. It needed Android V8 to admit KTX2/Meshopt and the native host to map ETC2/EAC/ASTC formats. The PRD moved to `done/`.
 - [ ] **B3 · Texture residency:** [VQ-10](../performance/PRD-VQ-10-texture-mip-residency.md) together with [PRD-454](PRD-454-worldcells-budget-real-resources.md). After: B2. ⏱🌍👁
   - Machinefall's 1024 texture cap is lifted to 2048 inside a hard GPU byte budget, with no black frames.
 - [ ] **B4 · [PRD-377](../assets/PRD-377-auto-lod-is-on-by-default.md) Phase 4: AutoLOD on by default.** After: B2. ⏱🎨👁

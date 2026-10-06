@@ -793,7 +793,30 @@ cpSync("public", out, { recursive: true });
         version: 1,
       }),
     );
-    await expect(assertNativeAssetsCompatible(root, "android", config)).rejects.toThrow(
+    const androidQuickJs = resolveRuntimeAssetCapabilities("android", undefined, undefined, {
+      THREENATIVE_GRADLE_ARGS: "-PthreenativeJsEngine=quickjs",
+    });
+    await expect(
+      assertNativeAssetsCompatible(root, "android", config, androidQuickJs),
+    ).rejects.toThrow("TN_NATIVE_MESH_COMPRESSION_UNSUPPORTED");
+    // Android V8 admits Meshopt (PRD-485's emulator proof); Draco stays refused there.
+    const androidV8 = resolveRuntimeAssetCapabilities("android", undefined, undefined, {});
+    await expect(
+      assertNativeAssetsCompatible(root, "android", config, androidV8),
+    ).resolves.toBeUndefined();
+    await writeFile(
+      manifestPath,
+      JSON.stringify({
+        entries: {
+          "models/hero.glb": {
+            extensions: ["KHR_draco_mesh_compression"],
+            output: "models/hero.12345678.glb",
+          },
+        },
+        version: 1,
+      }),
+    );
+    await expect(assertNativeAssetsCompatible(root, "android", config, androidV8)).rejects.toThrow(
       "TN_NATIVE_MESH_COMPRESSION_UNSUPPORTED",
     );
   });
