@@ -224,8 +224,10 @@ this host, so it is not attributed. The prewarm (`e580e76cb`) stays off this PR,
 - [ ] **A9 · PRD-478 acceptance.** After: A8. ⏱🌍👁
   - Done when: AC-1, AC-2 and AC-3 are ticked on a quiet host 🙋, and PRD-478 is in `done/`.
 - [ ] **A10 · PRD-477 Phases 2–3 and AC-1: budgets and switches become engine decisions.** After: A9. ⏱🌍👁
-- [ ] **A11 · [PRD-489](PRD-489-gpu-scene-occlusion-culling.md) Phase 1 only: the occlusion go/no-go.** After: A9. ⏱
+- [x] **A11 · [PRD-489](PRD-489-gpu-scene-occlusion-culling.md) Phase 1 only: the occlusion go/no-go.** After: A9. ⏱
   - If it declines, record the decision and close the PRD. If it goes ahead, its Phases 2–3 become row A12. 🌍👁
+  - **Done 2026-10-06: it goes ahead.** On 3 measure walks, a would-cull share of about 0.61 times a `gpuMain` p95 of about 8.9 ms, minus a 0.07 ms pyramid, gives about 5.4 ms, above the 1.0 ms threshold. Pixels sit at the control floor and errors are 0.
+- [ ] **A12 · [PRD-489](PRD-489-gpu-scene-occlusion-culling.md) Phases 2–3: GPU-scene occlusion culling ships.** After: A11. ⏱🌍👁
 
 ## Lane B — Fab-quality assets at that frame rate
 

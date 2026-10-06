@@ -1,6 +1,6 @@
 # PRD-489 — Occlusion culling re-tested on the GPU scene
 
-**Status:** PROPOSED
+**Status:** PHASE 1 DONE (2026-10-06) — the go/no-go says go; Phases 2–3 are next (runbook row A12).
 **Complexity:** 5 (MEDIUM) — 1–5 engine files (+1), a depth pyramid is a new mechanism (+2), previous-frame visibility is temporal GPU state (+2); risk override: none
 **Owner:** João
 **Depends on:** [PRD-478](./PRD-478-open-world-frame-architecture.md) (its Phase 2 moves shadow levels onto GPU-scene keys; occlusion must not reach them), [PRD-477](./PRD-477-worldcells-auto-on-measured-budgets.md) (the pop gate)
@@ -49,10 +49,19 @@ Risk: three's pass node may not expose last frame's depth to a compute dispatch 
 ## Execution Phases
 
 #### Phase 1: Measure whether occlusion still declines
-**Status:** NOT STARTED
+**Status:** LANDED 2026-10-06 — both boxes pass; go.
 **Files:** `packages/core/src/render/depth-pyramid.ts` (new), `packages/core/src/world-gpu-scene.ts`; `packages/core/__tests__/`
-- [ ] The CPU reference `cullAndSelect` gains the pyramid test, and a spec pins it: an occluded sphere is rejected, while a near-plane sphere, a sphere off-screen last frame, and any sphere on a camera-cut frame are all kept. proof: red-green `pnpm exec vitest run packages/core/__tests__/world-gpu-scene.spec.ts`.
-- [ ] map-walk under `?tnOcclusion=measure` reports would-cull triangles and instances per frame, pyramid build GPU p50/p95 including any depth copy, and `gpuMain` p95, over 3 runs. Each window must carry enough timestamped frames for a p95; the 2026-10-03 probe had about 15 in 300. proof: `TN_FRAME_BUDGET` from `node packages/playtest/dist/runner/cli.js perf` with the flag.
+- [x] The CPU reference `cullAndSelect` gains the pyramid test, and a spec pins it: an occluded sphere is rejected, while a near-plane sphere, a sphere off-screen last frame, and any sphere on a camera-cut frame are all kept. proof: red-green `pnpm exec vitest run packages/core/__tests__/world-gpu-scene.spec.ts`. **Pass 2026-10-06:** `afbc6b824` adds the CPU reference pyramid test (`render/depth-pyramid.ts`) with its red-green cases in `world-gpu-scene.spec.ts`; that file reads 78 passed on this branch.
+- [x] map-walk under `?tnOcclusion=measure` reports would-cull triangles and instances per frame, pyramid build GPU p50/p95 including any depth copy, and `gpuMain` p95, over 3 runs. Each window must carry enough timestamped frames for a p95; the 2026-10-03 probe had about 15 in 300. proof: `TN_FRAME_BUDGET` from `node packages/playtest/dist/runner/cli.js perf` with the flag. **Pass 2026-10-06, nvidia/turing, Machinefall map-walk** (served from a private copy of the client, with three.js free of the earlier lane's probe), 3 measure walks plus 3 control walks:
+  - would-cull share: median 0.61, max 0.84 — never above 1;
+  - zero samples: only the first sample of each walk (before the scene exists);
+  - errors: 0 console, 0 GPU validation;
+  - main draws: 39.6 / 34.2 / 35.4 against a 34.3–35.7 control;
+  - pyramid build (depth resolve + downsample): `gpuPyramid` p50 0.06 ms and p95 0.07 ms, in 55 / 40 / 50 windows;
+  - `gpuMain` p95: 8.9 / 6.5 / 19.8 ms under the flag against 7.6 / 6.5 / 20.2 ms without it, with `gpuMain` in 56 of 57, 41 of 42 and 51 of 52 windows (the third run is loaded on both sides);
+  - pixels: at the control floor at pose-start and walk-20.
+
+  Commits on this branch: the measure mode (`7abad7af5`, `1390a7beb`); the real main-pass depth (`1779c1df5`); the pyramid timing and an honest share (`1df557ab3`); and the frame-picking GPU sampler (`f26e82ae1`), without which the extra dispatch hid `gpuMain` in most windows. **Go/no-go:** share × `gpuMain` p95 − pyramid p95 = 0.61 × 8.9 − 0.07 ≈ **5.4 ms**, at least 2.5 ms under every reading tried, above the 1.0 ms threshold. **Occlusion goes ahead; Phases 2–3 become runbook row A12.**
 
 #### Phase 2: Cull on the GPU without popping
 **Status:** NOT STARTED
