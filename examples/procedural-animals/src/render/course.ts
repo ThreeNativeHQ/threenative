@@ -5,10 +5,14 @@ import {
   AmbientLight,
   BoxGeometry,
   Color,
+  DataTexture,
   DirectionalLight,
+  LinearFilter,
   Mesh,
   MeshStandardMaterial,
   type PerspectiveCamera,
+  RepeatWrapping,
+  SRGBColorSpace,
 } from "three";
 import { WebGPURenderer } from "three/webgpu";
 import { releaseAll } from "../cleanup.js";
@@ -36,10 +40,19 @@ export function course<TState extends Record<string, unknown>>(
     near: 0.1,
     far: 80,
   });
-  const floor = new Mesh(
-    new BoxGeometry(40, 0.5, 40),
-    new MeshStandardMaterial({ color: 0x667463, roughness: 1 }),
+  // Game-authored metre squares keep the sloped course readable in the outside view.
+  const floorGeometry = new BoxGeometry(40, 0.5, 40);
+  const floorMap = new DataTexture(
+    new Uint8Array([102, 116, 99, 255, 170, 181, 158, 255, 170, 181, 158, 255, 102, 116, 99, 255]),
+    2,
+    2,
   );
+  floorMap.wrapS = floorMap.wrapT = RepeatWrapping;
+  floorMap.repeat.set(floorGeometry.parameters.width / 2, floorGeometry.parameters.depth / 2);
+  floorMap.magFilter = floorMap.minFilter = LinearFilter;
+  floorMap.colorSpace = SRGBColorSpace;
+  floorMap.needsUpdate = true;
+  const floor = new Mesh(floorGeometry, new MeshStandardMaterial({ map: floorMap, roughness: 1 }));
   floor.name = "sloped-floor";
   floor.position.set(0, -0.25, -2);
   floor.rotation.z = Math.atan(0.1);
@@ -59,6 +72,7 @@ export function course<TState extends Record<string, unknown>>(
     () => floor.removeFromParent(),
     () => wall.removeFromParent(),
     () => floor.geometry.dispose(),
+    () => floorMap.dispose(),
     () => wall.geometry.dispose(),
     () => (floor.material as MeshStandardMaterial).dispose(),
     () => (wall.material as MeshStandardMaterial).dispose(),
