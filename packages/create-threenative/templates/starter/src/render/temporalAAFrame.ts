@@ -58,12 +58,8 @@ export function createTemporalAAFrame(
     return target;
   }
 
-  /**
-   * Establishes the jitter before the scene pass draws. Upstream's own pipeline callback asks for the
-   * drawing buffer, which is a canvas-sized step and not the smaller raster the scene pass is about to
-   * render; the pass sizes its own target from that buffer in its `updateBefore`, which runs after
-   * this callback, so the lattice is the buffer scaled by the pass's own resolution scale.
-   */
+  /** Establish jitter before the pass sizes and draws its raster in updateBefore. Its raster is
+   * the drawing buffer scaled by the pass's own resolution scale, rather than the canvas alone. */
   function jitterInput(renderer: Renderer): void {
     if (disposed) return;
     const colour = internals.beautyNode;
@@ -78,11 +74,8 @@ export function createTemporalAAFrame(
     internals.setViewOffset(input.x, input.y);
   }
 
-  /**
-   * Publishes this frame and updates history. `reset` marks a frame whose history cannot be reused:
-   * seeding history before the resolve is not enough, because motion would still sample that seed at
-   * shifted UVs, so the resolve kernel reads `historyValid` and weights current colour only.
-   */
+  /** Publish and update history. Reset weights current only: reseeding cannot prevent motion
+   * from sampling the seed at shifted history UVs. */
   function draw(renderer: Renderer, reset: boolean, currentFrame: number): void {
     frame = currentFrame;
     if (measure(renderer) === undefined)
@@ -119,9 +112,7 @@ export function createTemporalAAFrame(
       internals._needsPostProcessingSync = false;
     }
     historyValid.value = reset ? 0 : 1;
-    // History depth is an input-raster texture of its own: history is display sized, so a copy into its
-    // depth attachment would read one raster and write another. A missing or resized one is seeded with
-    // this frame's depth. Both axes count: a height-only resize keeps the width.
+    // Depth history stays input sized, independently of display history. Seed on either-axis resize.
     if (previousDepth?.image.width !== input.x || previousDepth?.image.height !== input.y) {
       previousDepth?.dispose();
       previousDepth = new DepthTexture(input.x, input.y, depth.value.type);
@@ -187,8 +178,7 @@ export function createTemporalAAFrame(
     measure,
     jitterInput,
     draw,
-    // The measured measurement, the one handed to the chain once, and the settle a diagnostic
-    // frame awaits. All three are the counter's own contract; this layer only forwards it.
+    // Forward the counter's measured report, drain and settle contracts.
     rejection: (): ITemporalRejectionMeasurement | undefined => counter?.report(frame),
     drainRejection: (): { frame: number; rejectionFraction: number } | undefined => {
       const drained = counter?.drain();

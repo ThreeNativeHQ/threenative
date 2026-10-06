@@ -1801,3 +1801,27 @@ No GPU run exercises this depth-boundary correction, and no source is published 
 requested by this step. Current develop `29fdae8bf` is outside the fixed historical diagnostic.
 Original acceptance boxes and the draft `prd:25%` status remain unchanged; publication/new CI
 and any later capture require parent coordination and fresh remote/non-critical guards.
+
+
+### Temporal readability repair — 2026-10-06
+
+The earlier related-run readability failure is now repaired: existing seam types/guard and report
+types move verbatim into the existing hooks/stage modules, with reexports preserving their prior
+addresses; repeated frame/math comments are shortened. The six affected render modules measure
+192/197/101/74/193/198 lines against the unchanged <200 limit. No rendering equation changes.
+Independent read-only review binds the final six file hashes and confirms erased type-only
+backedges, no new runtime cycle, and unchanged frame/depth/resolve behavior.
+
+Proof: the existing readability test records its real failure before repair; the focused
+`looks.spec.ts`, `temporal-aa.spec.ts`, and `temporal-resolve.spec.ts` run then passes **66/66**.
+Scoped strict TypeScript7 and Biome checks exit0. Actual no-install generation measures all
+thirteen trees, with only starter moving to
+`6a8355301a362156337f70d894183a6940e497b13109b7881af0e3e221767394`; the existing single
+scaffold-tree contract records red before the measured pin update, then passes (remaining
+scaffold tests were not run in this bounded check). Evidence remains in the delegated task
+directory, including `pr398-readability-final-files.json` and
+`pr398-readability-fresh-critic-review.md`.
+
+This closes the measured readability failure only. No broad workspace build, new-source GPU
+quality/recovery/cost, native, automatic-scale, final-budget or current-develop/required-CI gate
+is claimed; original acceptance boxes and draft prd:25% status remain unchanged.

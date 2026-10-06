@@ -5,7 +5,27 @@
 import type { OrthographicCamera, PerspectiveCamera } from "three";
 import type { Node, TextureNode } from "three/webgpu";
 import { createTemporalAA } from "./temporalAA.js";
+import type { ITemporalRejectionMeasurement } from "./temporalRejectionCounter.js";
 import type { ChainStage, IWorldEnvironmentStageContext } from "./worldEnvironment.js";
+
+export type TemporalResetReason =
+  | "initial"
+  | "camera-cut"
+  | "projection-change"
+  | "resize"
+  | "scene-reset"
+  | "device-loss";
+export interface ITemporalAAReport {
+  readonly frame: number;
+  readonly historyValid: boolean;
+  readonly resetReason: TemporalResetReason | null;
+  readonly inputWidth: number;
+  readonly inputHeight: number;
+  readonly outputWidth: number;
+  readonly outputHeight: number;
+  /** Absent until a counted copy lands, never a number the provider did not measure. */
+  readonly rejection?: ITemporalRejectionMeasurement;
+}
 
 /** The live provider, published once the chain has built the stage. */
 export type TemporalAAProvider = ReturnType<typeof createTemporalAA>;

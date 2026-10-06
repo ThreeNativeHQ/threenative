@@ -176,6 +176,7 @@ const BUG_REPORT_SKILL_PATHS = [
 // actual no-install generation changes only starter. All thirteen generator hashes were measured.
 // Recomputed for the additional matched-surface depth guard; all other twelve stay unchanged.
 // Recomputed for bounded integer depth donors; actual no-install generation changes only starter.
+// Recomputed after existing temporal declarations moved; all thirteen trees measured, only starter moves.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Measured through actual generated trees after merging PR440/develop d3c009e44
   // into reviewed temporal source 9e9ccc88f; preserve both features and original assertions.
@@ -190,7 +191,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   sailing: "e3c64feec14399a3101807c83ba0906ba55285706d4d50907b71cf9e41195f1b",
   shooter: "c8a9755cfbdd536f4a7a6074b3a8e873a97636eabbe57c7529193a1b83da1f1b",
   snow: "ca9a8fe4bb0f8f583db48ba60e68f6b3f60af1407a8827e72855dc67e2744e36",
-  starter: "5cab9180bd1cdf788698708df2d7c05c5e24bd3985fea8b2d12df11cd5004dfd",
+  starter: "6a8355301a362156337f70d894183a6940e497b13109b7881af0e3e221767394",
   "tower-defense": "0f6b5be43f264488c0899ffd3518016946ad74f13028b277451a3b81152374e5",
 };
 

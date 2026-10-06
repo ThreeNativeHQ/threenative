@@ -76,13 +76,8 @@ const reconstructionStruct = struct({
   variance: "vec4",
 });
 
-/**
- * Reconstruct the current frame at an output pixel from the input raster's 3×3 neighbourhood. Each
- * tap's weight is a Gaussian (Blackman-Harris approximation) evaluated at the distance between the
- * tap's jittered sample center and the output pixel, so the same kernel sharpens a lower input
- * raster and gathers the moments the variance clip needs. The provider keeps the plain
- * current sample at a 1:1 raster to avoid introducing additional spatial blur.
- */
+/** Gaussian reconstruction from nine input samples at their jittered centres. The same raw taps
+ * supply clipping moments; the provider retains the plain current sample at a 1:1 raster. */
 export function reconstructNeighbourhood(
   source: TextureNode,
   uvNode: Node<"vec2">,
@@ -113,7 +108,7 @@ export function reconstructNeighbourhood(
     const delta = pIn.sub(tapCenter);
     const weight = delta.dot(delta).mul(-2.29).exp();
     // Use max() to prevent NaN values from propagating.
-    // Match the colour sampler's clamp-to-edge support; robust out-of-bounds loads return zero.
+    // Match the colour sampler's clamp-to-edge support.
     const boundedTap = ivec2(vec2(tap).clamp(vec2(0), vec2(inputSize).sub(1)));
     const sample = source.load(boundedTap).max(0);
     sumColor.addAssign(sample.mul(weight));

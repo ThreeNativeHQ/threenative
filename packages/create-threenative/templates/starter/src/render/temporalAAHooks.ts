@@ -1,7 +1,47 @@
 // Generated user source: who owns the two pipeline callbacks a temporal AA compile borrows. Upstream
 // TRAANode's setup writes its own pair bound to that node, so the originals are the slots as they
 // stand before the first setup — a recompile must never capture them again as the originals.
-import type { Renderer } from "three/webgpu";
+import type { Matrix4 } from "three";
+import type { NodeMaterial, RenderTarget, Renderer, TextureNode } from "three/webgpu";
+import type { ITemporalResolvePinned } from "./temporalResolveDepth.js";
+
+export interface ITemporalAANode extends ITemporalResolvePinned {
+  _resolveMaterial: NodeMaterial;
+  _needsPostProcessingSync: boolean;
+  _historyValidUniform: { value: number };
+  _originalProjectionMatrix: Matrix4;
+  _velocityNode: {
+    projectionMatrix: Matrix4 | null;
+    setProjectionMatrix(matrix: Matrix4 | null): void;
+  } | null;
+  beautyNode: TextureNode & {
+    isRTTNode?: boolean;
+    autoResize?: boolean;
+    getResolutionScale?: () => number;
+    renderTarget?: RenderTarget;
+    passNode?: { renderTarget: RenderTarget; getResolutionScale?: () => number };
+  };
+  setSize(width: number, height: number): void;
+  setViewOffset(width: number, height: number): void;
+  clearViewOffset(): void;
+}
+
+/** Fail closed rather than half-drive a pinned seam whose shape this version does not have: a
+ * missing uniform reads as `undefined` in a shader and comes back as a black frame. */
+export function guardTemporalAASeams(node: ITemporalAANode): void {
+  if (
+    typeof node.setSize !== "function" ||
+    typeof node.setViewOffset !== "function" ||
+    typeof node.clearViewOffset !== "function" ||
+    node._resolveMaterial === undefined ||
+    node._previousDepthNode === undefined ||
+    node._cameraNearFar?.value === undefined ||
+    node._cameraWorldMatrix?.value === undefined ||
+    !Number.isFinite(node._resolveRenderTarget?.width) ||
+    !Number.isFinite(node._historyRenderTarget?.height)
+  )
+    throw new Error("Temporal AA requires the pinned TRAANode resolve seams of Three 0.185.1.");
+}
 
 export type PipelineContext = {
   onBeforeRenderPipeline?: () => void;

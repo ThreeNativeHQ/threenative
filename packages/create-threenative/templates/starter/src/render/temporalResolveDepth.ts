@@ -41,7 +41,9 @@ import {
   viewZToOrthographicDepth,
   viewZToPerspectiveDepth,
 } from "three/tsl";
-import type { Node, NodeMaterial, RenderTarget, TextureNode } from "three/webgpu";
+import type { Node, RenderTarget, TextureNode } from "three/webgpu";
+export type { ITemporalAANode } from "./temporalAAHooks.js";
+export { guardTemporalAASeams } from "./temporalAAHooks.js";
 import { temporalDepthHasDisocclusion, temporalDepthHistoryUV } from "./temporalDepthSamples.js";
 
 /** A TSL uniform node: the shader reads it as a node, this reconstruction writes its value. */
@@ -76,44 +78,6 @@ export interface ITemporalResolvePinned {
 }
 
 export type TemporalResolveNode = TRAANode & ITemporalResolvePinned;
-
-export interface ITemporalAANode extends ITemporalResolvePinned {
-  _resolveMaterial: NodeMaterial;
-  _needsPostProcessingSync: boolean;
-  _historyValidUniform: { value: number };
-  _originalProjectionMatrix: Matrix4;
-  _velocityNode: {
-    projectionMatrix: Matrix4 | null;
-    setProjectionMatrix(matrix: Matrix4 | null): void;
-  } | null;
-  beautyNode: TextureNode & {
-    isRTTNode?: boolean;
-    autoResize?: boolean;
-    getResolutionScale?: () => number;
-    renderTarget?: RenderTarget;
-    passNode?: { renderTarget: RenderTarget; getResolutionScale?: () => number };
-  };
-  setSize(width: number, height: number): void;
-  setViewOffset(width: number, height: number): void;
-  clearViewOffset(): void;
-}
-
-/** Fail closed rather than half-drive a pinned seam whose shape this version does not have: a
- * missing uniform reads as `undefined` in a shader and comes back as a black frame. */
-export function guardTemporalAASeams(node: ITemporalAANode): void {
-  if (
-    typeof node.setSize !== "function" ||
-    typeof node.setViewOffset !== "function" ||
-    typeof node.clearViewOffset !== "function" ||
-    node._resolveMaterial === undefined ||
-    node._previousDepthNode === undefined ||
-    node._cameraNearFar?.value === undefined ||
-    node._cameraWorldMatrix?.value === undefined ||
-    !Number.isFinite(node._resolveRenderTarget?.width) ||
-    !Number.isFinite(node._historyRenderTarget?.height)
-  )
-    throw new Error("Temporal AA requires the pinned TRAANode resolve seams of Three 0.185.1.");
-}
 
 /** The 3×3 neighbourhood depth test that decides whether last frame's colour is still legal. */
 export function createTemporalDepthRejection(

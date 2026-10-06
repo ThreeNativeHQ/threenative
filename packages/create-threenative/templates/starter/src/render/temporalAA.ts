@@ -7,32 +7,14 @@ import { uniform } from "three/tsl";
 import type { Node, TextureNode } from "three/webgpu";
 import { type ITemporalAANode, createTemporalAAFrame } from "./temporalAAFrame.js";
 import { type PipelineContext, createTemporalAAHooks } from "./temporalAAHooks.js";
-import type { ITemporalRejectionMeasurement } from "./temporalRejectionCounter.js";
+import type { ITemporalAAReport, TemporalResetReason } from "./temporalAAStage.js";
+export type { ITemporalAAReport, TemporalResetReason } from "./temporalAAStage.js";
 import { createExperimentalTemporalResolve } from "./temporalResolve.js";
 import {
   type TemporalDepthRejection,
   type TemporalResolveNode,
   createTemporalDepthRejection,
 } from "./temporalResolveDepth.js";
-
-export type TemporalResetReason =
-  | "initial"
-  | "camera-cut"
-  | "projection-change"
-  | "resize"
-  | "scene-reset"
-  | "device-loss";
-export interface ITemporalAAReport {
-  readonly frame: number;
-  readonly historyValid: boolean;
-  readonly resetReason: TemporalResetReason | null;
-  readonly inputWidth: number;
-  readonly inputHeight: number;
-  readonly outputWidth: number;
-  readonly outputHeight: number;
-  /** Absent until a counted copy lands, never a number the provider did not measure. */
-  readonly rejection?: ITemporalRejectionMeasurement;
-}
 
 /** Reuse TRAANode's jitter, depth rejection and variance clipping. In a RenderChain `traa` factory
  * pass context.velocityNode and the scene pass's depth, keep the scene pass single-sampled, reset
