@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-avbd-ropes-and-sails — Prototype bounded secondary GPU simulation
 
-**Status:** PARTIAL — installed hardware attempt fails accepted-anchor observation; fixed-clock/input repair awaits rebuilt consumer and retry
+**Status:** PARTIAL — first installed attempt fails accepted-anchor observation; reviewed fixed-clock/input repair is rebuilt and awaits corrected hardware retry
 **Priority:** P2 — Determine whether AVBD ropes and sails improve a real ThreeNative secondary-simulation workload before promoting a new subsystem.
 **Adoption order:** 3 of 3; independent of the other two plans.
 **Complexity:** 6 (HIGH); estimated 6–10 implementation files (+2), optional solver integration (+2), GPU scheduling/resource state (+2); risk override: shared-device buffer ownership and native GPU compatibility.
@@ -126,7 +126,7 @@ On a NO-GO, remove experimental package wiring/default registrations and retain 
 
 ## Blocked on
 
-Installed browser attempt 1 on NVIDIA Turing exits 2 before final assertions: acceptedAnchorVelocity ≥0.24 times out at last0. This is a functional blocker, not a measured solver NO-GO. Source controls reproduce and repair separate exact-clock and accepted-state publication defects; the corrected consumer rebuild/reseal awaits the parent CPU slot, and the unchanged browser retry follows Animals native under the parent GPU lease. Linux has not launched. Fifty hardware lifecycle cycles and the complete frozen comparison remain unrun; missing proof keeps this prototype open.
+Installed browser attempt 1 on NVIDIA Turing exits 2 before final assertions: acceptedAnchorVelocity ≥0.24 times out at last0. This is a functional blocker, not a measured solver NO-GO. Source controls reproduce and repair separate exact-clock and accepted-state publication defects; corrected consumer E is rebuilt/resealed from clean committed source, and the unchanged browser retry awaits the fresh parent GPU release after Strata's intervening diagnostic. Linux has not launched. Fifty hardware lifecycle cycles and the complete frozen comparison remain unrun; missing proof keeps this prototype open.
 
 2026-10-06 — Shared storage/device seam coordination: `IRendererLike` currently exposes compute/readback and `raw: unknown`, but no supported raw device/storage-buffer sharing contract. Windward's `ShipGpuSkin` instead casts `renderer.backend.createStorageAttribute/get`; the adapter must not copy that cast blindly. Its pinned solver package declares `three >=0.186.0`, while this checkout uses patched `three 0.185.1`. A bounded vendored source slice may avoid the package peer requirement, but exact renderer compatibility and native proof are still required before GPU attachment. No second Three.js, device, renderer or simulation loop has been introduced.
 
@@ -188,3 +188,6 @@ Installed browser attempt 1 on NVIDIA Turing exits 2 before final assertions: ac
 
 
 2026-10-06 — Parent grants the small serial CPU22 strict-check/consumer/reseal/normal-push slot, while GPU remains available to Strata. Current TypeScript 7 strict example checking passes after correcting a test-only extra argument to the scene's no-argument exit method (the first strict failure is retained). All148 owned example controls pass across17 files in10.67s on CPU22; no workspace-wide or native host build runs. Production clock/input source remains the independently reviewed repair. Consumer E and normal push hooks are next; hardware acceptance and all eight ACs remain open.
+
+
+2026-10-06 — Corrected installed consumer E (`/tmp/tn-avbd-installed-20261006-e`) is sealed to clean source `ae5fe83d538ec5e355f32da0ccf5ab20a64f5cfe`. Ordinary offline installation, installed TypeScript, browser build, same-entry Linux bundle and normal debug packaging all pass on approved CPU22. An initial sandbox install hits the read-only existing pnpm store; the unchanged normal approved retry passes, with the failed log retained. No native host is rebuilt. The three tarball hashes exactly match consumer D; entry SHA-256 is `96b54e9b539f1bc3325258098195132c34684d7608f1331fb0a69988924692ad`, native bundle `a97fbdc6e2aae47b170602aa5be757cacbf98ad322d35dc5f74fa1bb05f36c94`, packaged artifact `4a0d212497131530f882c47a67aa32c7ca039ac541d3a5fef0998871366a7626`; sealed host `14bc0aec4ef44b743a65b7cbb24e76bc84037d6564187410739e9234e6885058` is unchanged. Immutable build receipt SHA-256: `af625a8e47545d79c1a76f0a2f6d972dc8917b28ba2abe82b7b7afa60bd47650`. Fresh independent installed-path review matches all43 source/qualification entries, all17 donor port hashes and all regular installed package payloads (52/10/18 files); no new mapping/clock/threshold blocker is found. Original runtime timeout cause remains unconfirmed. Normal push hooks and the original hardware retry follow; all eight ACs remain open. GPU priority was relinquished during preparation, and no AVBD runtime or capture lease is held.
