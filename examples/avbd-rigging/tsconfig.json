@@ -1,0 +1,5 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": { "types": [] },
+  "include": ["src/physics/topology.ts", "__tests__/topology.spec.ts"]
+}
