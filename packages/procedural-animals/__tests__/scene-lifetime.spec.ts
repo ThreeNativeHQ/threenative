@@ -3,6 +3,7 @@ import {
   DataTexture,
   Group,
   Mesh,
+  OrthographicCamera,
   PerspectiveCamera,
   Scene as ThreeScene,
   Vector3,
@@ -110,8 +111,9 @@ const ctx = () => {
   const scene = new ThreeScene();
   return {
     scene,
+    camera: new OrthographicCamera(-64 / 3, 64 / 3, 12, -12, 0.1, 100),
     assets: {},
-    physics: {},
+    physics: { directSpaceState: { intersectRay: () => ({ position: { y: 0 } }) } },
     startup: { phase: "ready" },
     state: { set: vi.fn(), getState: () => ({ visibleCaptured: false }) },
     add: (...objects: Group[]) => scene.add(...objects),
@@ -133,7 +135,9 @@ describe("animal qualification scene acquisition and cleanup", () => {
       callback(1 / 60);
       owned.drift = 0;
       callback(1 / 60);
-      expect(vi.mocked(context.state.set).mock.calls.at(-1)?.[0]?.rootError).toBeCloseTo(0.002, 9);
+      const patch = vi.mocked(context.state.set).mock.calls.at(-1)?.[0];
+      if (typeof patch === "function") throw new Error("unexpected functional fixture patch");
+      expect(patch?.rootError).toBeCloseTo(0.002, 9);
     } finally {
       scene.exit();
     }

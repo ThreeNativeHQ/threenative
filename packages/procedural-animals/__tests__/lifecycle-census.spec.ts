@@ -39,7 +39,7 @@ async function fixture() {
   mesh.onBeforeRender(null as never, scene, camera, mesh.geometry, mesh.material, null as never);
   capture.finishFrame([]);
   const info = new Info();
-  info.frame = 9;
+  (info as { frame: number }).frame = 9;
   info.createAttribute(new BufferAttribute(new Float32Array(12), 3));
   const entities = new Registry();
   entities.add("wolf-1-0", {});

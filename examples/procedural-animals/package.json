@@ -20,6 +20,7 @@
     "@threenative/assets": "workspace:*",
     "@types/three": "0.185.3",
     "typescript": "catalog:",
-    "vite": "catalog:"
+    "vite": "catalog:",
+    "@threenative/playtest": "workspace:*"
   }
 }

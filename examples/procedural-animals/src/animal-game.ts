@@ -3,8 +3,10 @@ import { playtest } from "@threenative/core/playtest";
 import { rapier } from "@threenative/physics";
 import type { IPhysicsContext } from "@threenative/physics";
 import { type AnimalMode, Animals, type IAnimalsState } from "./Animals.js";
+import { makeAnimalPerformanceGame } from "./performance-game.js";
 
 export function makeAnimalGame(mode: AnimalMode) {
+  if (mode !== "qualification") return makeAnimalPerformanceGame(mode);
   class Workload extends Animals {
     constructor() {
       super(mode);
@@ -20,7 +22,7 @@ export function makeAnimalGame(mode: AnimalMode) {
         setup(ctx, runtime) {
           if (!runtime?.geometryCapture) throw new Error("TN_ANIMAL_GEOMETRY_CAPTURE_UNAVAILABLE");
           const capture = runtime.geometryCapture;
-          const expected = mode === "baseline" ? 0 : mode === "high" ? 1 : 32;
+          const expected = 32;
           let live = true;
           let pending = false;
           let visible = false;

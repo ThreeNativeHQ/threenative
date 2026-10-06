@@ -44,6 +44,7 @@
     "tsup": "8.5.1",
     "typescript": "catalog:",
     "@threenative/assets": "workspace:*",
-    "@threenative/physics": "workspace:*"
+    "@threenative/physics": "workspace:*",
+    "@threenative/playtest": "workspace:*"
   }
 }

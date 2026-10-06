@@ -6,10 +6,12 @@ import { createAnimalActor, loadAnimalBake } from "@threenative/procedural-anima
 import type { IAnimalBake } from "@threenative/procedural-animals";
 import { Group, PerspectiveCamera, Vector3 } from "three";
 import { releaseAll } from "./cleanup.js";
+import { performanceOrigin, performanceVelocity } from "./performance-path.js";
 import { QualificationClock } from "./qualification-clock.js";
 import { animalMaterial } from "./render/animal-material.js";
 import { course } from "./render/course.js";
 import { AnimalGPUProbe } from "./render/gpu-probe.js";
+import { performanceCamera } from "./render/performance-camera.js";
 import { qualificationCamera } from "./render/qualification-camera.js";
 import { wolfMotion } from "./render/wolf-motion.js";
 import { wolfCollision } from "./wolf-collision.js";
@@ -90,6 +92,8 @@ export class Animals extends Scene<IAnimalsState, IPhysicsContext> {
     const bake = this.#bake;
     if (!bake && this.#mode !== "baseline") throw new Error("TN_ANIMAL_MISSING_BAKE");
     this.#cleanup.push(course(ctx));
+    const performanceMode = this.#mode !== "qualification";
+    if (performanceMode) performanceCamera(ctx.camera);
     const ground = (x: number, z: number) => {
       const hit = ctx.physics.directSpaceState.intersectRay({
         from: { x, y: 50, z },
@@ -110,6 +114,11 @@ export class Animals extends Scene<IAnimalsState, IPhysicsContext> {
         collision.startHeight,
         index === 0 ? -8 : Math.floor(index / 8) * 2 - 3,
       );
+      if (performanceMode) {
+        root.position.copy(performanceOrigin(index, count, collision.radius));
+        root.position.y = collision.startHeight + ground(root.position.x, root.position.z);
+      }
+      const origin = root.position.clone();
       this.#cleanup.push(() => root.removeFromParent());
       ctx.add(root);
       const body = new CharacterBody3D({
@@ -133,7 +142,14 @@ export class Animals extends Scene<IAnimalsState, IPhysicsContext> {
       ctx.add(animal.object);
       this.#cleanup.push(() => ctx.entities.remove(`wolf-${index}`));
       ctx.entities.add(`wolf-${index}`, { body, mesh: animal.object });
-      return { root, body, animal, previous: root.position.clone(), velocity: new Vector3() };
+      return {
+        root,
+        body,
+        animal,
+        origin,
+        previous: root.position.clone(),
+        velocity: new Vector3(),
+      };
     });
     const probe = this.#mode === "qualification" && bake ? new AnimalGPUProbe(bake) : undefined;
     if (probe) {
@@ -225,6 +241,24 @@ export class Animals extends Scene<IAnimalsState, IPhysicsContext> {
       } else if (ready) elapsed += dt;
       const held = clock?.held === true;
       for (const actor of actors) {
+        if (performanceMode) {
+          if (!collision) throw new Error("TN_ANIMAL_MISSING_BAKE");
+          const desired = performanceVelocity(
+            actor.root.position,
+            actor.origin,
+            elapsed,
+            collision.radius,
+            actor.velocity,
+          );
+          actor.body.velocity.set(
+            ready ? desired.x : 0,
+            actor.body.velocity.y,
+            ready ? desired.z : 0,
+          );
+          actor.root.rotation.y = Math.atan2(desired.x, desired.z);
+          actor.body.moveAndSlide(dt);
+          continue;
+        }
         const turning = elapsed >= 3 && elapsed < 6;
         actor.root.rotation.y = turning ? Math.PI / 2 : Math.PI;
         actor.body.velocity.set(
@@ -235,7 +269,7 @@ export class Animals extends Scene<IAnimalsState, IPhysicsContext> {
         actor.body.moveAndSlide(dt);
       }
       const first = actors[0];
-      if (!first) return;
+      if (performanceMode || !first) return;
       if (elapsed >= 12 && !teleported) {
         teleported = true;
         const position = new Vector3(0, ground(0, -4) - (collision?.visualOriginOffset.y ?? 0), -4);

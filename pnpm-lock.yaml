@@ -719,6 +719,9 @@ importers:
       '@threenative/assets':
         specifier: workspace:*
         version: link:../../packages/assets
+      '@threenative/playtest':
+        specifier: workspace:*
+        version: link:../../packages/playtest
       '@types/three':
         specifier: 0.185.3
         version: 0.185.3
@@ -1149,6 +1152,9 @@ importers:
       '@threenative/physics':
         specifier: workspace:*
         version: link:../physics
+      '@threenative/playtest':
+        specifier: workspace:*
+        version: link:../playtest
       '@types/three':
         specifier: 0.185.3
         version: 0.185.3
