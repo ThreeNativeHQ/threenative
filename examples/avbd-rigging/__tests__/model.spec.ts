@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { hangingRigging } from "../src/game.js";
 import { AvbdRigging } from "../src/physics/avbd-adapter.js";
+import { riggingComparison } from "../src/physics/benchmark.js";
 import { buildRiggingModel } from "../src/physics/model.js";
 import { referenceRigging } from "../src/physics/topology.js";
 
@@ -29,6 +30,21 @@ describe("pinned secondary rigging construction", () => {
           snapshot: () => ({ anchors: [], proxies: [] }),
         }),
     ).toThrow(/constraints count 5188.*5187/);
+  });
+
+  it("applies pinned Windward stabilization to the real game with the required 60Hz clock", () => {
+    const model = buildRiggingModel(hangingRigging(), []);
+    const expected = {
+      dt: 1 / 60,
+      gravity: -9.81,
+      iterations: 12,
+      alpha: 0.95,
+      betaLin: 10000,
+      betaAng: 100,
+      gamma: 0.999,
+    };
+    expect(model.solver).toMatchObject(expected);
+    expect(riggingComparison.candidateParameters).toEqual(expected);
   });
 
   it("maps the frozen resolution to 1536 rigid pieces and preserves authored mass", () => {

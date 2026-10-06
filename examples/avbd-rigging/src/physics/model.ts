@@ -86,7 +86,8 @@ export function buildRiggingModel(
       `Rigging.bodies count ${bodyCount} exceeds capacity ${topology.limits.particles}.`,
     );
   const solver = new Solver();
-  Object.assign(solver, { dt: 1 / 60, gravity: -9.81, iterations: 12 });
+  // Windward 83b25 uses alpha=.95; the PRD fixes this workload at 60Hz.
+  Object.assign(solver, { dt: 1 / 60, gravity: -9.81, iterations: 12, alpha: 0.95 });
   const anchors: IRiggingModel["anchors"] = [];
   const bodyIndices = new Uint32Array(topology.masses.length);
   const localPositions = new Float32Array(topology.positions.length);
