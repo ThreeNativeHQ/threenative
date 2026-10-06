@@ -1116,9 +1116,33 @@ kits. The browser GLB export stays the path for other engines and tools.
 - FPS (K2): GPU timer 8–15 ms per view at 1080p; the playtest's per-view frame p95 includes bridge
   sampling of a ~9k-instance scene. Unharnessed rAF on private Xvfb ≈10 fps with Chrome's GPU process
   at 101% CPU, GPU ~30%, 4,754 of 5,000 ms in `SwapBuffers` (present path; blank page 60). On the
-  owner's display (Xwayland :0) both the kit AND the original preview game present at exactly 1 fps
-  today (the preview measured 60 there on 2026-10-03), a blank page 60 — an environment present-path
-  block, not a kit verdict. K2 open.
+  owner's display (Xwayland :0) both the kit AND the current original preview game present at exactly
+  1 fps. The October 3 preview result was p50 60 FPS, mean 36 FPS and interval p95 50 ms;
+  it did not prove sustained 60 FPS. The current preview shares later engine changes, and a blank
+  page does not exercise WebGPU presentation, so these controls do not isolate an environment cause.
+  K2 open.
+
+#### Phase 4 performance measurement repair (2026-10-06; K2 remains open)
+
+- At `d7838323129b4a75fca6c1c52ba5add102ca71e1`, an explicit
+  `TN_PLAYTEST_HOST_DISPLAY=1` request checked only the filesystem X socket and silently used
+  private Xvfb when that path was absent. That misclassifies abstract-only Xwayland displays.
+  The runner now verifies the X connection with `xdpyinfo` and fails by name when the requested
+  display cannot be used. Focused display tests: 14 baseline passed; six contract failures
+  reproduced; 19 passed after the fix. This repairs measurement provenance, not FPS.
+- The retained `examples/strata-terrain-preview/artifacts/playtest/starter-kit/capture.json` and
+  `console.json` record NVIDIA/turing, 1920×1080 and disabled GPU vsync/frame limits, but no
+  display provenance. Their frame windows include 229 long tasks (longest 903 ms),
+  stale GPU samples and short manually driven intervals. Median CPU window p95 values alone
+  cannot qualify K2 or prove displayed throughput.
+- Next controlled comparison: the current immutable packed kit, a frozen earlier build with its
+  exact engine, and a minimal hardware WebGPU animation, with identical display, Chromium flags
+  and resolution. Record passive presentation intervals separately from CPU callback duration
+  and GPU timestamps; rAF cadence alone does not establish displayed throughput. If the kit
+  differs from the minimal control, hold one scene and its assets constant while swapping
+  frozen/current engine builds before attributing the regression to engine or content. Compare
+  bridge enabled/disabled only if those controls implicate it. GPU execution awaits a
+  coordinated resource window.
 
 ## Verification and delivery
 
