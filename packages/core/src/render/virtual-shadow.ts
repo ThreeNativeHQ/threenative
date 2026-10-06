@@ -2182,10 +2182,23 @@ export class VirtualShadowNode extends ShadowBaseNode {
     // every time a residency update invalidates them.
     if (this.#updating) return undefined;
     this.#updating = true;
+    // Three runs this from the draw of the first object that uses the node, and that draw can be the
+    // first object of a `BundleGroup` the main pass is recording. Three keeps that bundle in
+    // `_currentRenderBundle` and does not save it across the nested `render()` a level is: the
+    // level's draws would be filed under the main bundle, and the level's own bundles leave the
+    // field `null`, so the main bundle's remaining draws are recorded but never listed — a replay
+    // refreshes only listed draws, so those keep the camera they were recorded with. On Machinefall
+    // that froze a cell's chunk forest on screen for twenty walk steps. The levels render outside
+    // the record, and the record gets its bundle back.
+    // quality-allow: three 0.185 does not expose the bundle it is recording.
+    const host = frame.renderer as unknown as { _currentRenderBundle?: unknown };
+    const recording = host._currentRenderBundle;
+    if (recording !== undefined) host._currentRenderBundle = null;
     try {
       this.#updateFrame(frame);
     } finally {
       this.#updating = false;
+      if (recording !== undefined) host._currentRenderBundle = recording;
     }
     return undefined;
   }
