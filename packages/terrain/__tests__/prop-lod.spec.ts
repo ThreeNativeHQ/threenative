@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { runInNewContext } from "node:vm";
 import type { IAssetLoader } from "@threenative/core";
 import {
   BoxGeometry,
@@ -7,18 +9,173 @@ import {
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
+  Vector2,
   Vector3,
 } from "three";
 import type { MeshPhysicalNodeMaterial } from "three/webgpu";
+import ts from "typescript";
 import { describe, expect, it, vi } from "vitest";
 import type { WorldName } from "../../../examples/strata-terrain-preview/src/render/biomes.js";
-import { loadPack } from "../../../examples/strata-terrain-preview/src/render/pack.js";
+import {
+  type ICanopyComparison,
+  loadPack,
+} from "../../../examples/strata-terrain-preview/src/render/pack.js";
 import {
   createProps,
   createPropsInSlices,
   variantFor,
 } from "../../../examples/strata-terrain-preview/src/render/props.js";
+import { defineGame } from "../../core/src/game.js";
+import { Scene, type SceneConstructor } from "../../core/src/scene.js";
 import type { IPlacement } from "../src/index.js";
+
+describe("canopy comparison scene lifetime", () => {
+  const source = ts.createSourceFile(
+    "game.ts",
+    readFileSync(
+      new URL("../../../examples/strata-terrain-preview/src/game.ts", import.meta.url),
+      "utf8",
+    ),
+    ts.ScriptTarget.Latest,
+    true,
+  );
+  let update = "";
+  function visit(node: ts.Node): void {
+    if (ts.isMethodDeclaration(node) && node.name.getText(source) === "update")
+      update = node.getText(source);
+    ts.forEachChild(node, visit);
+  }
+  visit(source);
+  if (!update) throw new Error("Missing production Strata update method");
+  it.each(["coastal", "coast"])(
+    "retains comparison through actual ctx.goto: %s",
+    async (action) => {
+      const comparison = { normals: "authored", specular: "standard" } as const;
+      const initialState = {
+        canopyComparison: { normals: "radial", specular: "disabled" } as ICanopyComparison,
+        worldReady: true,
+        view: "player",
+      };
+      const exports: { Probe?: SceneConstructor<typeof initialState> } = {};
+      // Execute the production controller; only player/water/rendering are replaced at their seams.
+      runInNewContext(
+        ts.transpileModule(
+          `export class Probe extends Scene {
+          static initialState = initialState;
+          #elapsed = 0; #surfaces; #ocean; #river; #lake; #sky;
+          #player = { velocity: { x: 0, y: 0, z: 0 }, moveAndSlide() {}, grounded: false };
+          ${update}
+        }`,
+          { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } },
+        ).outputText,
+        { exports, Scene, initialState, world: "forest", BIOMES: { forest: {}, coastal: {} } },
+      );
+      if (!exports.Probe) throw new Error("Production controller did not load");
+      const canvas = new EventTarget() as HTMLCanvasElement;
+      Object.defineProperties(canvas, {
+        clientHeight: { value: 180 },
+        clientWidth: { value: 320 },
+        parentElement: { value: null },
+      });
+      const game = defineGame({
+        renderer: {
+          canvas,
+          preferWebGPU: false,
+          webgl2Factory: () => ({
+            dispose: () => undefined,
+            domElement: canvas,
+            render: () => undefined,
+            setSize: () => undefined,
+          }),
+        },
+        scenes: { forest: exports.Probe, coastal: exports.Probe },
+        start: "forest",
+      });
+      try {
+        await game.start();
+        game.state.setState({ canopyComparison: comparison });
+        const ctx = game.ctx;
+        if (!ctx || !game.scene) throw new Error("Comparison scene failed to start");
+        vi.spyOn(ctx.startup, "phase", "get").mockReturnValue("ready");
+        vi.spyOn(ctx.input, "justPressed").mockImplementation((name) => name === action);
+        vi.spyOn(ctx.input, "vector").mockReturnValue(new Vector2());
+        const goto = vi.spyOn(ctx, "goto");
+        game.scene.update(ctx, 1 / 60);
+        expect(goto).toHaveBeenCalledOnce();
+        await goto.mock.results[0]?.value;
+        expect(game.sceneName).toBe("coastal");
+        expect(game.state.getState().canopyComparison).toEqual(comparison);
+      } finally {
+        game.stop();
+        vi.restoreAllMocks();
+      }
+    },
+  );
+});
+
+describe("canopy comparison startup", () => {
+  const code = ts.transpileModule(
+    readFileSync(
+      new URL("../../../examples/strata-terrain-preview/src/main.ts", import.meta.url),
+      "utf8",
+    ),
+    { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } },
+  ).outputText;
+  async function boot(search: string) {
+    let comparison: ICanopyComparison | undefined;
+    let startedComparison: ICanopyComparison | undefined;
+    const start = vi.fn(() => {
+      startedComparison = comparison;
+      return Promise.resolve();
+    });
+    const game = {
+      state: {
+        setState: (patch: { canopyComparison?: ICanopyComparison }) => {
+          comparison = patch.canopyComparison ?? comparison;
+        },
+      },
+      resumeScene: vi.fn(),
+      start,
+    };
+    const pack = await import("../../../examples/strata-terrain-preview/src/render/pack.js");
+    const imports: Record<string, unknown> = {
+      "./game.js": { __esModule: true, default: game },
+      "./render/biomes.js": { BIOMES: { forest: {}, coastal: {} } },
+      "./render/pack.js": pack,
+    };
+    runInNewContext(code, {
+      exports: {},
+      location: { search },
+      URLSearchParams,
+      require: (name: string) => {
+        if (!(name in imports)) throw new Error(`Unexpected startup dependency ${name}`);
+        return imports[name];
+      },
+    });
+    await Promise.resolve();
+    return { comparison: startedComparison, game };
+  }
+  it.each([
+    ["", { normals: "radial", specular: "disabled" }],
+    ["?canopyNormals=authored", { normals: "authored", specular: "disabled" }],
+    ["?canopySpecular=standard", { normals: "radial", specular: "standard" }],
+    [
+      "?canopyNormals=authored&canopySpecular=standard&world=coastal&showcase=1",
+      { normals: "authored", specular: "standard" },
+    ],
+  ] as const)("selects the same-tree comparison before loading %s", async (search, expected) => {
+    const { comparison, game } = await boot(search);
+    expect(comparison).toEqual(expected);
+    expect(game.start).toHaveBeenCalledOnce();
+    if (search.includes("world=coastal")) expect(game.resumeScene).toHaveBeenCalledWith("coastal");
+  });
+  it.each(["?canopyNormals=flat", "?canopySpecular=glossy", "?canopyNormals="])(
+    "rejects unsupported comparison settings before startup %s",
+    async (search) => {
+      await expect(boot(search)).rejects.toThrow(/canopy/);
+    },
+  );
+});
 
 describe("preview prop distance bookkeeping", () => {
   it("finishes the same prop work through the installed slice scheduler", async () => {
@@ -162,7 +319,7 @@ describe("licensed pack characterization", () => {
     root.add(mesh);
     return { root, mesh, geometry, material };
   }
-  async function loaded(near?: Group, far?: Group) {
+  async function loaded(near?: Group, far?: Group, comparison?: ICanopyComparison) {
     const assets = {
       resolve: async () => [],
       model: async (path: string) => {
@@ -171,8 +328,66 @@ describe("licensed pack characterization", () => {
         throw new Error(`Missing optional fixture ${path}`);
       },
     } as unknown as IAssetLoader;
-    return loadPack(assets);
+    return loadPack(assets, "forest", undefined, comparison);
   }
+  it.each([
+    { normals: "radial", specular: "disabled" },
+    { normals: "authored", specular: "disabled" },
+    { normals: "radial", specular: "standard" },
+    { normals: "authored", specular: "standard" },
+  ] as const)(
+    "isolates canopy comparison normals=$normals specular=$specular",
+    async (comparison) => {
+      const near = fixture();
+      const far = fixture({ mapped: false });
+      const authored = Array.from(near.geometry.getAttribute("normal").array);
+      const baseline = await loaded(near.root, far.root);
+      const candidate = await loaded(near.root, far.root, comparison);
+      try {
+        expect([...candidate.parts.keys()]).toEqual([...baseline.parts.keys()]);
+        const before = present(baseline.parts.get("spruce:0"));
+        const after = present(candidate.parts.get("spruce:0"));
+        expect(after.map((part) => [part.role, part.level, part.variant])).toEqual(
+          before.map((part) => [part.role, part.level, part.variant]),
+        );
+        for (const [index, part] of after.entries()) {
+          const original = present(before[index]);
+          for (const key of ["position", "uv", "inner"]) {
+            expect(Array.from(part.geometry.getAttribute(key).array)).toEqual(
+              Array.from(original.geometry.getAttribute(key).array),
+            );
+          }
+          expect(part.geometry.index?.array).toEqual(original.geometry.index?.array);
+          expect(part.geometry.drawRange).toEqual(original.geometry.drawRange);
+          const material = part.material as MeshPhysicalNodeMaterial;
+          const current = original.material as MeshPhysicalNodeMaterial;
+          expect(material.specularIntensity).toBe(comparison.specular === "standard" ? 1 : 0);
+          expect(material.roughness).toBe(current.roughness);
+          expect(material.normalMap).toBe(near.material.normalMap);
+          expect(material.normalNode).toBeNull();
+          for (const key of ["map", "alphaTest", "alphaToCoverage", "side", "shadowSide"] as const)
+            expect(material[key]).toBe(current[key]);
+          expect(material.castShadowPositionNode).toBe(material.positionNode);
+          const footprint = new Set<string>();
+          present(material.alphaTestNode).traverse((node) => {
+            if ("method" in node && typeof node.method === "string") footprint.add(node.method);
+          });
+          expect(footprint).toContain("dFdx");
+          expect(footprint).toContain("dFdy");
+          const expectedNormals =
+            comparison.normals === "authored"
+              ? authored
+              : Array.from(original.geometry.getAttribute("normal").array);
+          expect(Array.from(part.geometry.getAttribute("normal").array)).toEqual(expectedNormals);
+        }
+        expect(present(after[0]).material).toBe(present(after[1]).material);
+        expect(Array.from(near.geometry.getAttribute("normal").array)).toEqual(authored);
+      } finally {
+        candidate.dispose();
+        baseline.dispose();
+      }
+    },
+  );
   it("retains mapped near/far material identity and imported cutoff", async () => {
     const near = fixture();
     const pack = await loaded(near.root, fixture({ mapped: false }).root);

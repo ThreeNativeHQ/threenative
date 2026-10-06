@@ -23,7 +23,7 @@ import {
   spawnReadinessSnapshot,
 } from "./render/loading.js";
 import { createOcean, createWaterMesh } from "./render/ocean.js";
-import { loadPack, loadSkyLight } from "./render/pack.js";
+import { type ICanopyComparison, loadPack, loadSkyLight } from "./render/pack.js";
 import { loadPreparedProps } from "./render/prepared.js";
 import { createPropSurfaces } from "./render/propMaterials.js";
 import {
@@ -198,6 +198,7 @@ function median(values: readonly number[]): number {
 }
 
 const initialState = {
+  canopyComparison: { normals: "radial", specular: "disabled" } as ICanopyComparison,
   showcase: false,
   worldReady: false,
   loadingError: "",
@@ -673,7 +674,7 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
         propsStage = "assets";
         const [prepared, pack, skyLight] = await Promise.all([
           loadPreparedProps(ctx.assets),
-          loadPack(ctx.assets, world, data),
+          loadPack(ctx.assets, world, data, ctx.state.getState().canopyComparison),
           ctx.assets ? loadSkyLight(ctx.assets) : Promise.resolve(undefined),
         ]);
         preparedDispose = () => {

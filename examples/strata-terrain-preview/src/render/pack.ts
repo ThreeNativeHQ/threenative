@@ -68,6 +68,23 @@ interface IPackSpecies {
   readonly metres: number;
   readonly level?: number;
 }
+/** Independent same-asset probes; omitted fields keep the current forest appearance. */
+export interface ICanopyComparison {
+  /** Forest crown normals; other worlds already retain their imported geometry normals. */
+  readonly normals?: "radial" | "authored";
+  readonly specular?: "disabled" | "standard";
+}
+/** Fail closed so a labelled comparison cannot silently capture the current appearance. */
+export function canopyComparison(
+  normals: string | null,
+  specular: string | null,
+): ICanopyComparison {
+  if (normals !== null && normals !== "radial" && normals !== "authored")
+    throw new Error(`Unsupported canopyNormals '${normals}'`);
+  if (specular !== null && specular !== "disabled" && specular !== "standard")
+    throw new Error(`Unsupported canopySpecular '${specular}'`);
+  return { normals: normals ?? "radial", specular: specular ?? "disabled" };
+}
 const species: IPackSpecies[] = [];
 for (let i = 0; i < 5; i++) {
   species.push({
@@ -402,6 +419,7 @@ function surface(
   world: WorldName,
   snowMap?: Texture,
   skyLight?: Texture,
+  comparison?: ICanopyComparison,
 ): MeshPhysicalNodeMaterial {
   const stone = STONE.has(asset);
   const cutout = !stone && source.alphaTest > 0;
@@ -425,7 +443,15 @@ function surface(
     color: source.color,
     normalMap: source.normalMap,
     roughness: stone ? 0.96 : 1,
-    specularIntensity: canopy || (world === "tundra" && cutout) ? 0 : cutout ? 0.02 : 0.3,
+    specularIntensity: canopy
+      ? comparison?.specular === "standard"
+        ? 1
+        : 0
+      : world === "tundra" && cutout
+        ? 0
+        : cutout
+          ? 0.02
+          : 0.3,
     metalness: 0,
   });
   if (!otherBiome && canopy && !cutout) material.normalMap = source.normalMap;
@@ -516,7 +542,12 @@ function repairNormals(geometry: BufferGeometry): void {
 }
 
 /** Radial coverage per height band: tips see sky, needles near the trunk do not. */
-function addRadialCoverage(geometry: BufferGeometry, metres: number, world: WorldName): void {
+function addRadialCoverage(
+  geometry: BufferGeometry,
+  metres: number,
+  world: WorldName,
+  comparison?: ICanopyComparison,
+): void {
   const positions = geometry.getAttribute("position");
   const radii = new Float32Array(16);
   const band = (i: number) =>
@@ -533,7 +564,7 @@ function addRadialCoverage(geometry: BufferGeometry, metres: number, world: Worl
     ),
   );
   geometry.setAttribute("inner", new BufferAttribute(inner, 1));
-  if (world !== "forest") return;
+  if (world !== "forest" || comparison?.normals === "authored") return;
   // Texture cards describe a crown volume. Their planar normals flatten its lighting; modify only
   // this owned clone, leaving the asset loader's cached geometry intact.
   const crownNormals = new Float32Array(positions.count * 3);
@@ -584,6 +615,7 @@ export async function loadPack(
   assets?: IAssetLoader,
   world: WorldName = "forest",
   ground?: IPropGround,
+  comparison?: ICanopyComparison,
 ): Promise<IPackProps> {
   const parts = new Map<string, IPropPart[]>();
   const built: { geometry: BufferGeometry; material: Material }[] = [];
@@ -683,11 +715,11 @@ export async function loadPack(
         if (!source.map && one.level && !(inherited instanceof MeshPhysicalNodeMaterial)) continue;
         const geometry = prepareGeometry(mesh, one, world, stone, factor, box, size, section.group);
         if (source.alphaTest > 0 && (one.asset === "spruce" || one.asset === "sapling"))
-          addRadialCoverage(geometry, one.metres, world);
+          addRadialCoverage(geometry, one.metres, world, comparison);
         const material =
           inherited instanceof MeshPhysicalNodeMaterial
             ? inherited
-            : surface(source, one.asset, world, rockface[2], sky);
+            : surface(source, one.asset, world, rockface[2], sky, comparison);
         if (stone) rockGround?.apply(material);
         if (source !== section.material) source.dispose();
         built.push({ geometry, material });
