@@ -4070,6 +4070,7 @@ export class WorldCells extends Group implements IComputeDriven {
    */
   #prewarmOwed = 0;
   #prewarmDrawn = 0;
+  #prewarmEpoch = 0;
   #prewarmWait = 0;
   /**
    * Awaited meshes that only a shadow level can draw, and the share of them that have had one.
@@ -4089,7 +4090,14 @@ export class WorldCells extends Group implements IComputeDriven {
    */
   readonly #awaited = new Map<
     InstancedMesh,
-    { batch: SharedBatch; borrow: unknown; own: unknown; hadOwn: boolean; waited: number }
+    {
+      batch: SharedBatch;
+      borrow: unknown;
+      own: unknown;
+      hadOwn: boolean;
+      waited: number;
+      epoch: number;
+    }
   >();
   #prewarmSettled = false;
   #prewarmResolve: () => void = () => {
@@ -5175,6 +5183,8 @@ export class WorldCells extends Group implements IComputeDriven {
     // pair non-zero, and `pendingPrewarm` is documented `0` from here on.
     this.#prewarmOwed = 0;
     this.#prewarmDrawn = 0;
+    // Retained first-draw hooks belong to the counters just cleared, not later streamed work.
+    this.#prewarmEpoch += 1;
     this.#prewarmWait = 0;
     this.#settlePrewarm();
   }
@@ -5249,11 +5259,17 @@ export class WorldCells extends Group implements IComputeDriven {
    * keyed by the mesh object — so an object that is replaced has to be handed the borrow of the one
    * it replaces; see `#carryPrewarm`.
    */
-  #borrowDraw(shared: SharedBatch, mesh: InstancedMesh, hadOwn: boolean, own: unknown): void {
+  #borrowDraw(
+    shared: SharedBatch,
+    mesh: InstancedMesh,
+    hadOwn: boolean,
+    own: unknown,
+    epoch = this.#prewarmEpoch,
+  ): void {
     const caster = shared.role !== "main";
     const borrow = own as ((...args: unknown[]) => void) | undefined;
     const counted = (...args: unknown[]): void => {
-      this.#prewarmDrawn += 1;
+      if (epoch === this.#prewarmEpoch) this.#prewarmDrawn += 1;
       if (caster) {
         this.#prewarmCasterOwed -= 1;
         this.#prewarmCasterDrawn += 1;
@@ -5269,7 +5285,7 @@ export class WorldCells extends Group implements IComputeDriven {
     // ignores a marked borrow, so a streamed world's prewarmed batches stay eligible for the
     // collapse they exist to be folded into. Unmarked, 202 of them permanently declined it.
     markEngineRenderHook(counted);
-    this.#awaited.set(mesh, { batch: shared, borrow: counted, own, hadOwn, waited: 0 });
+    this.#awaited.set(mesh, { batch: shared, borrow: counted, own, hadOwn, waited: 0, epoch });
     mesh.onBeforeRender = counted as typeof mesh.onBeforeRender;
   }
 
@@ -7304,7 +7320,7 @@ export class WorldCells extends Group implements IComputeDriven {
     const entry = this.#awaited.get(old);
     if (entry === undefined) return;
     this.#awaited.delete(old);
-    this.#borrowDraw(entry.batch, next, entry.hadOwn, entry.own);
+    this.#borrowDraw(entry.batch, next, entry.hadOwn, entry.own, entry.epoch);
   }
 
   /**

@@ -3239,3 +3239,33 @@ runtime adapter emits no cooked cell-proxy records and retains its prepared cust
 deformation and per-placement reach. This path cannot activate a cooked cell proxy; no hardware
 activation counter or HLOD performance improvement was measured. The earlier "stays separate"
 wording in the publication comment was corrected to distinguish source integration from activation.
+
+### 2026-10-06 — late prewarm draw accounting (CPU red → green; GPU hold)
+
+The engine-owned `WorldCells` counter regression is reproduced through real fixture meshes and
+their first-draw callbacks. Initial readiness clears owed/drawn totals while retaining main draw
+hooks for the existing bounded lifetime. A callback submitted afterwards incorrectly made
+`pendingPrewarm` negative. An old callback also consumed unrelated, newly streamed prewarm work.
+The actual committed baseline fails both controls: settled `0` becomes `-1`, and new pending
+work falls from `4` to `3` when only an old hook draws.
+
+Each borrowed callback now keeps its accounting epoch. Clearing the totals advances that epoch;
+mesh replacement carries the original epoch forward. Expired callbacks still restore the original
+hook, clear the mesh's owed flag and perform caster bookkeeping, but do not consume current work.
+New streamed callbacks each decrement the current pending total once. There is no counter clamp
+or change to readiness timing, admission budgets, release bounds, density or rendering quality.
+
+All 70 focused WorldCells admission, streaming, static, shadow and lifecycle checks pass, plus
+39 Strata adapter/loading and core startup checks. Strict TS7 typechecking of the actual Strata
+source and new tests passes; Biome passes with existing complexity warnings. The private test
+configuration closes source, bundles and addons over the same reviewed Three dependency; its
+initial mixed-addon fixture failure is retained separately. Independent review reran all five
+streamed-warmup tests and passed the accounting fix. Carrying an expired hook through GPU mesh
+replacement is verified by inspection, without a dedicated new control.
+
+Fresh independent attachment review also passes: 24 focused CPU checks, both exact-runtime red
+controls, the three-line source/bundle delta and all 48 patch references. These fixes remain CPU
+evidence. The negative counter is not established as an OOM cause, and physical VRAM recovery,
+readiness, matched gameplay images, FPS and native acceptance remain open. No additional GPU
+capture or heavy build ran during the coordinated hold. Current published CI is skipped and does
+not qualify the full board. PRD-466 remains 50%; no acceptance box changed.
