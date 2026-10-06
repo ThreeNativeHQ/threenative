@@ -3,7 +3,6 @@ import {
   BufferAttribute,
   BufferGeometry,
   type Camera,
-  DynamicDrawUsage,
   Frustum,
   Group,
   InstancedBufferAttribute,
@@ -8376,7 +8375,8 @@ export class WorldCells extends Group implements IComputeDriven {
     const mesh = new InstancedMesh(surface.geometry, surface.material, capacity);
     mesh.count = capacity;
     mesh.frustumCulled = false;
-    mesh.instanceMatrix.setUsage(DynamicDrawUsage);
+    // Three's default usage uploads by version; grow/write/zero announce every matrix change through
+    // needsUpdate. DynamicDrawUsage would upload the same whole-map buffer on every settled draw.
     mesh.name = `tn-far:${assetId}`;
     // Drawn on layer 0, so this is a main-pass draw the frame budget counts under the impostor
     // aggregate's own source rather than under `other` (`RenderPassBudget`).

@@ -206,6 +206,20 @@ failure is the unchanged `docs/verification` tree at 72.7 MB against its shipped
 slice adds no evidence files and does not raise that cap. The CPU lane is shared, so no wall-time
 benchmark claim is made.
 
+The subsequent corrected bridge-off profile attributes 3.390 s of sampled CPU to attribute
+uploads in a 15.235 s window; that profile does not identify an exact mesh/buffer. Inspection and
+real installed-Three CPU controls reproduce unconditional far uploads caused by
+`DynamicDrawUsage`. The minimal correction removes that override. Growth, original-placement
+writes and near/far zero/restore handoffs retain their existing `needsUpdate` version signals;
+no static object flag or new dirty scheduler is added. Both the source attribute and interleaved
+shader buffer produced 60 uploads over 60 unchanged frames before the fix and zero afterward.
+Tests capture the actual production position graph, its four column bindings and its emitted FRAME
+sync event: real handoffs publish changed matrix/cull bytes, camera-only changes do not republish
+matrices, and real 85→86 growth allocates a fresh buffer and disposes the old mesh once. The seven
+nearest shader/residency/bundle/caster/static/HLOD specs pass 97/97; changed-source/tests strict
+TS7, Biome, and the rebuilt core declarations/publint pass. These are CPU backend-call controls,
+not measured GPU bandwidth or frame-time savings.
+
 Remaining validation must repeat the parent's profiler on the same production workload and compare
 actual eligibility checks/refreshes alongside total CPU frame time. HLOD needs nonzero active proxy
 observations on eligible content, same-pose near/middle/far and transition captures, approach/turn/
