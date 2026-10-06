@@ -189,6 +189,21 @@ export interface IRendererLike {
    */
   uploadAttributes?(geometries: Iterable<BufferGeometry>): number;
   /**
+   * Copies one streamed subtree's textures to the device, through three's own texture path, and
+   * reports how many it took.
+   *
+   * The same argument as `uploadAttributes`, one resource class over: `compileAsync` builds
+   * pipelines, not pixels, so a streamed chunk's textures reach the device inside `_renderObjectDirect`
+   * on the frame the chunk first draws. On a Machinefall map-walk with three's internals counted per
+   * render, that was 87 ms of a 94 ms first draw in one frame, 79 ms of 131 ms in another, and 519 ms
+   * in a third — 10 renders of 19,000 hold the whole 2,574 ms the run spends on first draws.
+   * `Textures.updateTexture` returns early when the texture is already at its current version, so this
+   * is a move rather than a second upload, and a material the world shares with what is already on
+   * screen costs one call and no work. WebGPU only — the WebGL fallback has no seam here — and
+   * absent or throwing answers 0, so the first draw uploads exactly as it did before.
+   */
+  uploadTextures?(object: Object3D): number;
+  /**
    * Copies one GPU storage attribute back to the CPU, asynchronously.
    *
    * It is on the wrapper for the same reason `compute` is: the call is WebGPU-only and a game that
@@ -831,6 +846,46 @@ function wrapRenderer(
       const height = texture.image.height ?? 0;
       if (width < 2 || height < 2) return undefined;
       return { height, texture, width, samples: Math.max(1, target.samples ?? 1) };
+    },
+    uploadTextures: (object) => {
+      // three's own texture path, not the backend's: `Textures.updateTexture` owns the bookkeeping
+      // (`initialized`, `generation`, the bind groups to invalidate) that is what makes the first draw
+      // skip the upload, and a backend call without it would upload twice.
+      const textures = (raw as { _textures?: { updateTexture?: (t: unknown, o: object) => void } })
+        ._textures;
+      if (kind !== "webgpu" || typeof textures?.updateTexture !== "function") return 0;
+      const pending = new Set<unknown>();
+      object.traverse((node) => {
+        const material = (node as { material?: unknown }).material;
+        if (material === undefined || material === null) return;
+        for (const entry of Array.isArray(material) ? material : [material]) {
+          if (typeof entry !== "object" || entry === null) continue;
+          // A material's texture slots are own enumerable values and a `ShaderMaterial`'s live ones
+          // are in `uniforms`; both are found by reading the value and asking whether it is a texture.
+          for (const value of Object.values(entry as Record<string, unknown>)) {
+            if ((value as { isTexture?: boolean } | null)?.isTexture === true) pending.add(value);
+          }
+          for (const uniform of Object.values(
+            (entry as { uniforms?: Record<string, { value?: unknown }> }).uniforms ?? {},
+          )) {
+            if ((uniform?.value as { isTexture?: boolean } | null)?.isTexture === true)
+              pending.add(uniform.value);
+          }
+        }
+      });
+      let created = 0;
+      try {
+        for (const texture of pending) {
+          // `updateTexture` fills width, height, mip levels and the image list into the options it is
+          // handed, so each texture needs an object of its own.
+          textures.updateTexture?.(texture, {});
+          created += 1;
+        }
+      } catch {
+        // A device that will not take the texture takes it on the frame that needs it, where the
+        // error belongs.
+      }
+      return created;
     },
     readback: async (attribute) => {
       if (kind !== "webgpu") throw new Error(`readback is unavailable on the ${kind} renderer.`);

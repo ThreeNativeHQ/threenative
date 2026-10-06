@@ -8627,6 +8627,21 @@ export class WorldCells extends Group implements IComputeDriven {
   }
 
   /**
+   * Hand this chunk's own textures to the device now, and report how many it took.
+   *
+   * The same argument as the buffers above, one resource class over: a compile builds pipelines, not
+   * pixels, so the bake's textures reached the device inside `_renderObjectDirect` on the frame the
+   * chunk first drew — 87 ms of a 94 ms first draw in one frame of a Machinefall map-walk, and 79 ms
+   * of 131 ms in another. A texture the world already shares with what is on screen is one early
+   * return inside three and no work here.
+   */
+  #uploadTextures(chunk: Object3D): number {
+    const upload = this.#renderer?.uploadTextures;
+    if (upload === undefined) return 0;
+    return upload(chunk);
+  }
+
+  /**
    * Compile a merged chunk before anything can draw it, and report whether the compile came back.
    *
    * A chunk's first draw is the most expensive frame a streaming world has: its own first draw built
@@ -8698,6 +8713,7 @@ export class WorldCells extends Group implements IComputeDriven {
           // in a browser walk, and up to 230 ms inside the frames that first submitted them.
           // `addInSlices` is the admission budget, so this is one chunk per update, never a batch.
           const uploaded = this.#uploadAttributes(object);
+          this.#uploadTextures(object);
           if (merge === undefined) this.#failures += 1;
           else {
             this.#failures += merge.failed;
