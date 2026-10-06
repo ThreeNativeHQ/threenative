@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { Quaternion } from "three";
-import { describe, expect, it } from "vitest";
+import { type AnimationAction, AnimationMixer, Quaternion } from "three";
+import { describe, expect, it, vi } from "vitest";
 import { AnimationComposer } from "../src/animation-composition.js";
 import { compositionRig } from "./fixtures/composition-rig.js";
 
@@ -136,6 +136,50 @@ describe("single masked/additive animation owner", () => {
     composer.update(0);
     expect(r.upper.position.x).toBeCloseTo(1, 5);
     composer.dispose();
+    expect(composer.mixer.stats.actions.total).toBe(0);
+  });
+
+  it("keeps mask ownership when a debugger renames prepared clips", () => {
+    const r = compositionRig();
+    const source = JSON.stringify(r.clips.map((clip) => clip.toJSON()));
+    const actions = new Set<AnimationAction>();
+    const clipAction = AnimationMixer.prototype.clipAction;
+    const capture = vi.spyOn(AnimationMixer.prototype, "clipAction").mockImplementation(function (
+      this: AnimationMixer,
+      ...args: Parameters<typeof clipAction>
+    ) {
+      const action = clipAction.call(this, ...args);
+      actions.add(action);
+      return action;
+    });
+    let composer: AnimationComposer;
+    try {
+      composer = new AnimationComposer({
+        root: r.root,
+        clips: r.clips,
+        samples: ["walk"],
+        layers: [{ name: "reload", clip: "reload", mode: "override", mask: { bones: ["Upper"] } }],
+      });
+    } finally {
+      capture.mockRestore();
+    }
+    try {
+      composer.setLayerWeight("reload", 0.25);
+      composer.update(0.5);
+      expect(actions.size).toBe(3);
+      let index = 0;
+      for (const action of actions) action.getClip().name = `debug-clip-${index++}`;
+      for (const weight of [0.25, 0.4, 1, 0]) {
+        composer.setLayerWeight("reload", weight);
+        composer.update(0);
+        expect(r.leg.position.x).toBeCloseTo(0.5, 5);
+        expect(r.upper.position.x).toBeCloseTo((1 - weight) * 1 + weight * 5, 5);
+      }
+      expect(JSON.stringify(r.clips.map((clip) => clip.toJSON()))).toBe(source);
+      expect(composer.resources.actions).toBe(3);
+    } finally {
+      composer.dispose();
+    }
     expect(composer.mixer.stats.actions.total).toBe(0);
   });
 

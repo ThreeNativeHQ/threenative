@@ -24,9 +24,14 @@ export interface IAnimationComposerOptions {
   readonly rootMotion?: IAnimationRootMotionOptions;
 }
 
+interface IComposerAction {
+  readonly action: AnimationAction;
+  readonly masked: boolean;
+}
+
 interface IComposerSample {
   readonly duration: number;
-  readonly actions: readonly AnimationAction[];
+  readonly actions: readonly IComposerAction[];
 }
 
 interface IComposerLayer {
@@ -98,9 +103,10 @@ export class AnimationComposer {
     });
     this.#samples = prepared.samples.map((sample) => ({
       duration: sample.duration,
-      actions: sample.clips.map((clip) =>
-        this.mixer.clipAction(clip).setEffectiveTimeScale(0).setEffectiveWeight(0).play(),
-      ),
+      actions: sample.clips.map((clip) => ({
+        action: this.mixer.clipAction(clip).setEffectiveTimeScale(0).setEffectiveWeight(0).play(),
+        masked: clip.name.endsWith(":masked"),
+      })),
     }));
     this.#layers = prepared.layers.map((layer) => ({
       options: layer.options,
@@ -135,7 +141,7 @@ export class AnimationComposer {
     return Array.from(this.#weights);
   }
   get sampleTimes(): readonly number[] {
-    return this.#samples.map((sample) => (sample.actions[0] as AnimationAction).time);
+    return this.#samples.map((sample) => (sample.actions[0] as IComposerAction).action.time);
   }
   get resources() {
     return {
@@ -322,12 +328,9 @@ export class AnimationComposer {
       this.#layers.find((layer) => layer.options.mode === "override")?.weight ?? 0;
     for (let i = 0; i < this.#samples.length; i += 1) {
       const sample = this.#samples[i] as IComposerSample;
-      for (const action of sample.actions) {
+      for (const { action, masked } of sample.actions) {
         action.time = this.phase * sample.duration;
-        action.setEffectiveWeight(
-          (this.#weights[i] as number) *
-            (action.getClip().name.endsWith(":masked") ? 1 - overrideWeight : 1),
-        );
+        action.setEffectiveWeight((this.#weights[i] as number) * (masked ? 1 - overrideWeight : 1));
       }
     }
     this.mixer.update(this.#tickDt);
