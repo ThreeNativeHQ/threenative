@@ -3,6 +3,7 @@ import {
   Bone,
   Group,
   InterpolateDiscrete,
+  type Object3D,
   Quaternion,
   QuaternionKeyframeTrack,
   Vector3,
@@ -61,11 +62,11 @@ describe("root motion has one body authority", () => {
     "does not count rendered %s crowd frames without animation updates",
     (mode) => {
       const source = characterSource();
-      const bodies: Group[] = [];
+      const bodies: Object3D[] = [];
       const benchmark = new CompositionBenchmark(
         {
           add: (object) => {
-            bodies.push(object as Group);
+            bodies.push(object);
             return object;
           },
         },

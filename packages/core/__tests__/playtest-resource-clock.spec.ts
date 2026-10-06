@@ -1,4 +1,4 @@
-import type { Page } from "playwright";
+import type { Page } from "@playwright/test";
 import { PerspectiveCamera, Scene } from "three";
 import { expect, test, vi } from "vitest";
 import { type IPlaytestBridgeV1, PLAYTEST_BRIDGE_GLOBAL } from "../../playtest/src/protocol.js";
