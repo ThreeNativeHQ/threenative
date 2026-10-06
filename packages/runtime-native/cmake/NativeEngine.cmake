@@ -243,6 +243,25 @@ else()
     message(WARNING "pnpm or node not found: native_engine_tsl_ir is not registered")
 endif()
 
+# PRD-527 phase 1: GPUParticles3D's mechanism (two vec3 storage buffers, start once, process per
+# render while emitting); tsl_compute_test runs it and the PRD-513 instance grid against programs.js
+# recorded in Chromium's WebGPU (compute_reference.json).
+add_library(tn_engine_particles STATIC src/engine/world/particles/gpu_particles.cpp)
+tn_native_engine_target(tn_engine_particles)
+target_link_libraries(tn_engine_particles PUBLIC tn_engine_renderer tn_engine_shader)
+if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "android")
+    tn_native_engine_test(tn-native-engine-tsl-compute-test tests/native-engine/tsl-compute/tsl_compute_test.cpp
+        native_engine_compute_instance_grid=instance_grid
+        native_engine_particles_lifetime=particles_lifetime)
+    target_link_libraries(tn-native-engine-tsl-compute-test PRIVATE tn_engine_particles tn_host_services)
+    target_compile_definitions(tn-native-engine-tsl-compute-test PRIVATE
+        TN_COMPUTE_REFERENCE="${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/tsl-compute/compute_reference.json")
+    if(TN_ENGINE_SANITIZE)
+        set_tests_properties(native_engine_compute_instance_grid native_engine_particles_lifetime PROPERTIES
+            ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0:abort_on_error=1;UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1")
+    endif()
+endif()
+
 # PRD-519 phase 3: the GPU cull and LOD kernel (clear, cull, clamp), built in the shader IR from
 # world-gpu-scene.ts's kernels; the test runs it on a real device against the CPU oracle above.
 add_library(tn_engine_gpu_scene_kernel STATIC src/engine/world/gpu_scene/cull_kernel.cpp)

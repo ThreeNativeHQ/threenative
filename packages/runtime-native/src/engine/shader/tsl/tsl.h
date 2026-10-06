@@ -80,6 +80,8 @@ inline Node float_(double value, Where where) { return program().constant(static
 /** TSL's `float(node)`: a conversion. */
 inline Node float_(Node value, Where where = Where::current()) { return program().construct(Type::f32(), {value.id}, where); }
 inline Node int_(int32_t value, Where where = Where::current()) { return program().constant(value, where); }
+/** TSL's `uint(node)`: a conversion. */
+inline Node uint_(Node value, Where where = Where::current()) { return program().construct(Type::u32(), {value.id}, where); }
 inline Node uint_(uint32_t value, Where where = Where::current()) {
     return program().construct(Type::u32(), {program().constant(static_cast<int32_t>(value), where)}, where);
 }

@@ -1,0 +1,111 @@
+/**
+ * The in-page half of the TSL compute reference (compute-reference.ts serves it): each program is
+ * authored in the pinned three's TSL, dispatched by WebGPURenderer, and its storage read back. The
+ * native twin (tsl_compute_test.cpp) authors the same program with the native TSL builder.
+ *
+ * Integer state is integral f32 or wrapping u32 on both sides, so counts compare exactly; positions
+ * are f32 arithmetic and compare within rounding.
+ */
+import * as three from "three";
+import {
+  Fn,
+  If,
+  float,
+  instanceIndex,
+  instancedArray,
+  sin,
+  uint,
+  uniform,
+  vec2,
+  vec3,
+  vec4,
+} from "three/tsl";
+import { GPUParticles3D } from "/core/particles.js";
+
+export const GRID_COUNT = 10_000;
+export const PARTICLE_AMOUNT = 256;
+export const PARTICLE_TICKS = 90;
+export const PARTICLE_SEED = 1337;
+
+/** u32 LCG, wrapping: the same bits under any WGSL implementation. */
+const lcg = (state) => state.mul(uint(1664525)).add(uint(1013904223));
+const modulo = (value, n) => value.sub(value.div(uint(n)).mul(uint(n)));
+
+async function read(renderer, attribute) {
+  return Array.from(new Float32Array(await renderer.getArrayBufferAsync(attribute)));
+}
+
+export const programs = {
+  /** PRD-513: one compute pass writes 10,000 instance positions on a 100 x 100 grid with a wave. */
+  async "instance-grid"(renderer) {
+    const positions = instancedArray(GRID_COUNT, "vec4");
+    const time = uniform(0.75);
+    const kernel = Fn(() => {
+      const row = instanceIndex.div(uint(100));
+      const column = float(instanceIndex.sub(row.mul(uint(100))));
+      positions
+        .element(instanceIndex)
+        .assign(vec4(column.mul(0.5), sin(column.mul(0.25).add(time)), float(row).mul(0.5), 1));
+    })().compute(GRID_COUNT);
+    await renderer.computeAsync(kernel);
+    return { positions: await read(renderer, positions.value) };
+  },
+
+  /**
+   * PRD-527: GPUParticles3D (the real core class) with a game-supplied emitter: each particle lives
+   * a seeded number of ticks, then is recycled with a new seed. `state` holds (life, generation).
+   */
+  async particles(renderer) {
+    const state = instancedArray(PARTICLE_AMOUNT, "vec2");
+    const seed = (generation) =>
+      lcg(lcg(instanceIndex.add(uint(PARTICLE_SEED)).add(generation.mul(uint(7919)))));
+    const spawn = (buffers, generation) => {
+      const s = seed(generation);
+      state.element(instanceIndex).assign(vec2(float(modulo(s, 60).add(uint(1))), float(generation)));
+      buffers.positions.element(instanceIndex).assign(vec3(0, 0, 0));
+      const x = float(modulo(s.div(uint(64)), 200)).sub(100).mul(0.01);
+      const z = float(modulo(s.div(uint(16384)), 200)).sub(100).mul(0.01);
+      buffers.velocities.element(instanceIndex).assign(vec3(x, 2, z));
+    };
+    const particles = new GPUParticles3D({
+      amount: PARTICLE_AMOUNT,
+      material: new three.SpriteNodeMaterial(),
+      start: (buffers) => Fn(() => spawn(buffers, uint(0)))().compute(PARTICLE_AMOUNT),
+      process: (buffers) =>
+        Fn(() => {
+          const current = state.element(instanceIndex);
+          const life = current.x.sub(1);
+          const generation = current.y;
+          const velocity = buffers.velocities.element(instanceIndex);
+          buffers.positions
+            .element(instanceIndex)
+            .assign(buffers.positions.element(instanceIndex).add(velocity.mul(1 / 60)));
+          velocity.assign(velocity.sub(vec3(0, 9.8 / 60, 0)));
+          state.element(instanceIndex).assign(vec2(life, generation));
+          If(life.lessThan(0.5), () => {
+            spawn(buffers, uint(generation.add(1)));
+          });
+        })().compute(PARTICLE_AMOUNT),
+    });
+    particles.attachRenderer(renderer);
+    for (let tick = 0; tick < PARTICLE_TICKS; tick += 1) particles.process(renderer);
+    await renderer.backend.device.queue.onSubmittedWorkDone();
+    return {
+      state: await read(renderer, state.value),
+      positions: await read(renderer, particles.buffers.positions.value),
+    };
+  },
+};
+
+/** Runs every program on one renderer and hands the results to the harness. */
+export async function runPrograms() {
+  const renderer = new three.WebGPURenderer({ antialias: false, forceWebGL: false });
+  await renderer.init();
+  const info = renderer.backend.adapter?.info ?? {};
+  const results = {};
+  for (const [name, program] of Object.entries(programs)) results[name] = await program(renderer);
+  return {
+    adapter: { vendor: info.vendor ?? "", architecture: info.architecture ?? "", device: info.device ?? "", description: info.description ?? "" },
+    results,
+  };
+}

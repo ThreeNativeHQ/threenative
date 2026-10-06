@@ -33,7 +33,7 @@ import {
  * Without the Vulkan feature Chromium never reaches the driver on Linux and serves WebGPU from
  * SwiftShader: the adapter answers, nothing errors, and the golden is a CPU rasteriser's frame.
  */
-const WEBGPU_BROWSER_ARGS = [
+export const WEBGPU_BROWSER_ARGS = [
   "--ozone-platform=x11",
   "--enable-unsafe-webgpu",
   "--disable-gpu-sandbox",
@@ -42,12 +42,12 @@ const WEBGPU_BROWSER_ARGS = [
 ];
 
 /** Every field is searched: which one carries the giveaway depends on the platform. */
-const SOFTWARE_ADAPTER =
+export const SOFTWARE_ADAPTER =
   /swiftshader|llvmpipe|lavapipe|softwarerasterizer|software adapter|basic render/i;
 
 const PAGE_FILE = path.join(import.meta.dirname, "render", "render-fixture-page.js");
 const OUTPUT_COLOR_SPACE_CONSTANTS = { srgb: "SRGBColorSpace", linear: "LinearSRGBColorSpace" };
-const CAPTURE_TIMEOUT_MS = 90_000;
+export const CAPTURE_TIMEOUT_MS = 90_000;
 
 export interface IRenderCapture {
   /** The PNG bytes exactly as the browser encoded them. */
@@ -69,7 +69,7 @@ export interface IRenderCaptureOptions {
 }
 
 /** The `three/webgpu` build directory, resolved from the package that links the catalog copy. */
-function threeBuildDir(): string {
+export function threeBuildDir(): string {
   const require = createRequire(path.join(REPO_ROOT, "packages", "runtime-native", "package.json"));
   return path.dirname(require.resolve("three/webgpu"));
 }
