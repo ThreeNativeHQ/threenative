@@ -1102,6 +1102,24 @@ kits. The browser GLB export stays the path for other engines and tools.
   instead of failing — open, cause unconfirmed. (4) Streamed terrain colliders arrive after a spawned
   player falls through; the kit builds one heightfield before `addForest` resolves.
 
+#### Phase 4 forest kit, rounds 2–4 (2026-10-05)
+
+- Engine fixes from the fresh game: impostor atlas V flip (`b962f8df1`); impostor instance sync on a
+  FRAME event, since three skips OBJECT updates for settled static batches (`0fed4b81d`) — far firs
+  now draw world-wide. Kit: streamed prop colliders (60 m), crown-bent foliage normals, matte foliage,
+  fir b + fir c mix, lighter haze. Pine LOD2 rejected (416k tris).
+- `test:kit` (committed harness) passes: groundError 0.039 m, stopped 0.81 m from the trunk, 198 live
+  prop colliders, 9,986 firs drawn, 8.6 MB cooked. K1 stays open on one clause: the forest kit has no
+  water body (the recipe's lake/river were removed because nothing drew them).
+- Judge: 2/10 → 3/10 → 3/10 (rounds 1, 3, 4); all three rubric rows still fail (dark card crowns,
+  single-layer ground without cover, impostor smear from high cameras, washed overview).
+- FPS (K2): GPU timer 8–15 ms per view at 1080p; the playtest's per-view frame p95 includes bridge
+  sampling of a ~9k-instance scene. Unharnessed rAF on private Xvfb ≈10 fps with Chrome's GPU process
+  at 101% CPU, GPU ~30%, 4,754 of 5,000 ms in `SwapBuffers` (present path; blank page 60). On the
+  owner's display (Xwayland :0) both the kit AND the original preview game present at exactly 1 fps
+  today (the preview measured 60 there on 2026-10-03), a blank page 60 — an environment present-path
+  block, not a kit verdict. K2 open.
+
 ## Verification and delivery
 
 Phase 1 implementation: `packages/terrain/src/index.ts` is headless, and
