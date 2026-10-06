@@ -342,16 +342,17 @@ describe("WorldCells admission budget", () => {
   });
 
   it("admits terrain tiles and colliders on the same budget, and still converges", async () => {
-    // 50 µs a frame is a budget no 129-resolution tile with three LOD levels fits inside, so the
-    // ground arrives over several frames instead of all in the first one.
-    const { world: cells } = await makeWorld({ admissionBudgetMs: 0.05 });
+    // A priced chunk costs more than the allowance: even the nearest tile must span updates.
+    const { world: cells } = await makeWorld({ admissionBudgetMs: 0.05, priced: true });
     const terrain = terrainOf(cells);
     cells.update();
-    const first = terrain.residentTileCount;
-    expect(first).toBeGreaterThan(0);
-    expect(first).toBeLessThan(9);
-
-    for (let frame = first; frame < 9; frame += 1) cells.update();
+    expect(terrain.residentTileCount).toBe(0);
+    expect(terrain.deferredAdmissions).toBe(1);
+    expect(terrain.debug().pendingConstruction).toBeDefined();
+    for (let frame = 0; frame < 10_000 && terrain.residentTileCount < 9; frame += 1) {
+      cells.update();
+      expect(cells.stats().admission.spentMs).toBeLessThanOrEqual(UNIT_MS);
+    }
     expect(terrain.residentTileCount).toBe(9);
     expect(cells.stats().failures).toBe(0);
     cells.dispose();

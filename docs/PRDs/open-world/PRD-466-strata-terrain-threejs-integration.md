@@ -3018,3 +3018,39 @@ Verdict: **reverted the prototype.** The per-material `envMap` is the smaller, p
 the surfaces that want IBL carry it — and the ground stays as tuned. `pack.ts` + `createPropSurfaces`
 keep `skyEnvironment()`; `scene.environment` is not retried without a ground opt-out that actually
 works.
+
+### 2026-10-06 — bounded streamed-terrain construction; loading gate still open
+
+The retained kit profile reaches `WorldCells.update → TerrainTiles.follow → createTile → buildLevel`
+inside the render callback. A spent admission allowance still forced a whole tile, including every
+LOD mesh and safety scan. Engine fix: sampling, normal-grid reads, geometry, bounds and LOD error
+checks now resume in 256-sample chunks under the existing allowance. Only completed tiles enter
+residency. Camera moves outside the selected ring and disposal release unfinished work; small
+camera movements retain it. Unbudgeted calls remain synchronous. Appearance inputs, resolution,
+LOD pop/transition thresholds and collision shapes are unchanged.
+
+Actual red-green: spent-budget sampling read 4,225 samples before, at most 256 after; the normal-grid
+test read 4,489 before. Geometry/bounds parity and cancellation pass. Independent review found
+alternating ±0.1 m camera movement could restart pending tiles forever: red at 1/9 residents after
+4,000 updates, green at 9/9 after retaining selected pending work. Six focused terrain/streaming specs
+pass **63/63**, plus **49/49** public terrain contracts, with three opt-in benchmarks skipped;
+changed-file Biome has no errors. Independent terrain review passed. Package type checks on both
+the original and current tile source report the same existing `EventNodeType` error at
+`world-impostor-surface.ts:256`; no new diagnostic. The root board, native lane and fresh GPU run
+have not executed here.
+
+CPU comparison against the original `72b12bd` terrain source, same sampler/camera, one CPU11 process,
+seven trials: median worst slice at 129² falls **8.33 → 2.39 ms**; worst cold/outlier slice
+**39.53 → 16.84 ms**. Every height, position, normal, index and bound matches. This measures CPU
+construction only; canonical field allocation, game collider callbacks and runtime/JIT pauses can
+still overshoot a chunk. Pending one-tile scratch is separate from completed-residency byte counters.
+It is neither a 2 ms hard ceiling nor a displayed-FPS result.
+
+Scope remains partial: the direct preview disables streamed terrain and keeps its global ground
+mesh; the fix covers the starter's streamed path. The canonical capability audit maps 26 exact
+`symbol`/`importPath` entries and the WorldCells options. Loading needs actual spawn-region terrain,
+visual and collider coverage, rather than `world.prewarmed` alone; a hold under an opaque curtain
+currently prevents the render-cadence admission that would finish it. PR #437 at immutable
+`7cce7825d6155124c93fe571cb8965ed235c1d37` has the identical original terrain-tile file and still
+has no regional-readiness/startup-admission contract. Align that shared extension before publication.
+No #437 mutation, foreign WIP import, quality reduction or publication occurred. K2 stays open.
