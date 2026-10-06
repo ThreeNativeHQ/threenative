@@ -18,10 +18,13 @@ transitions and assert that owned actions and animation-buffer bytes return to z
 
 Build with `pnpm --filter animation-composition build`; `build:desktop` bundles the same
 `src/game.ts` entry through the existing native bundler. Vite's benchmark define defaults to
-`none` when absent, including on native. The four scenarios have passed schema validation;
-The standalone tarball consumer passes strict typechecking, 14 public composition/layer
-tests, installed capability discovery and its web build. Browser and Linux-native rendered
-execution remain unverified.
+`none` when absent, including on native. The four scenarios pass schema validation. The standalone tarball consumer passes strict
+typechecking, 17 public composition/layer controls, installed capability discovery and its
+normal web/desktop builds. Current browser and Linux-native courses each pass 35/35
+assertions and 50 scene transitions on RTX 2080 WebGPU. The three original unprofiled
+100-rig pairs measure incremental CPU p95 of 0.20, 1.70 and 0.40 ms against the unchanged
+2 ms ceiling. The owning PRD records source/package identity, captures, individual results
+and noise; Linux correctness does not qualify native performance or other platforms.
 
 The ordinary scenario is shared by both runtimes:
 
