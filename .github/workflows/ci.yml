@@ -659,12 +659,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.scope.outputs.plan).goldenMatrix }}
-    # Hosted on purpose: ~25 short template legs run all at once on hosted runners while builds and
+    # Hosted on purpose: selected template legs share GitHub's hosted capacity while builds and
     # tests hold the local pool. On 5 local slots these legs waited 17-25 min for a runner (run
     # 37070815769); sharing the board across both pools is what shortens wall time.
     runs-on: ubuntu-24.04
     # The scenario arithmetic this number came from moved out to `template-nonvisual`, which now
-    # owns the non-visual sweep for all eight templates. What is left is `verify:golden-path` —
+    # owns the non-visual sweep for every selected kit. What is left is `verify:golden-path` —
     # pack, scaffold, install, dev, test, build, assert, once per matrix leg — which measured 309s
     # (starter) and 412s (platformer) on run 33690597861, plus a 27s browser smoke. 45 minutes is
     # a ceiling on patience with room to be wrong, not a performance assertion: nothing in this
@@ -703,7 +703,7 @@ jobs:
       # It used to pack the workspace, scaffold both templates and run their non-visual scenarios
       # here, and then `verify:golden-path` below packed and scaffolded the same template all over
       # again. Since 2026-09-01 `template-nonvisual` runs that identical sweep — same classifier,
-      # same runner, same flags — for all eight templates on every event, so the copy proved
+      # same runner, same flags — for the selected kits on every event, so the copy proved
       # nothing the run did not already know and cost 350s of the critical path (run 33690597861,
       # step "Run the scaffold's GPU-free assertions"). What is left here is the verifier, which is
       # this lane's subject, plus the one thing nothing else covers: the starter booting in a
@@ -776,7 +776,7 @@ jobs:
           # The `test` layer proves a stranger's `pnpm test` reaches a running scene and comes
           # back green. It does not have to prove every scenario in the template passes:
           # `template-nonvisual` runs this identical list — same `non-visual-scenarios.mjs`
-          # classifier, same `threenative-playtest` runner, same flags — for all eight templates,
+          # classifier, same `threenative-playtest` runner, same flags — for every selected kit,
           # in a job beside this one. On run 33712230560 the whole sweep took 353s of a 375s step
           # on the run's critical path and proved nothing the run did not already know. The layer
           # prints which scenarios it drove and which it left to the other lane.
@@ -788,11 +788,10 @@ jobs:
     # instead of by the merge that shipped it. `golden-path` above still owns the visual proof.
     needs: [scope, build-artifacts]
     if: ${{ (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template') }}
-    # One scaffold/install/typecheck/cook per template. Every nonvisual scenario still executes;
-    # Keep one leg per selected kit; eight hosted legs may run together without changing coverage.
+    # One scaffold/install/typecheck/cook per selected kit; every nonvisual scenario still executes.
+    # GitHub's shared hosted quota schedules these independent VMs without a second workflow cap.
     strategy:
       fail-fast: false
-      max-parallel: 8
       matrix: ${{ fromJSON(needs.scope.outputs.plan).templateMatrix }}
     # Hosted on purpose: template legs use hosted while the balancer routes builds and tests
     # to the local pool, avoiding one routing variable sending the whole burst to a single pool.
