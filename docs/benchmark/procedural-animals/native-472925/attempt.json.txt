@@ -54,8 +54,8 @@
         "resource.state.visibleMainDraws": 32,
         "resource.state.visibleShadowDraws": 32,
         "resource.state.gpuCases": 9,
-        "resource.state.gpuPositionError": 6.337275425425687e-7,
-        "resource.state.gpuNormalError": 4.978046099538083e-7
+        "resource.state.gpuPositionError": 6.337275425425687e-07,
+        "resource.state.gpuNormalError": 4.978046099538083e-07
       },
       "pngs": [
         {
@@ -124,8 +124,8 @@
         "resource.state.visibleMainDraws": 32,
         "resource.state.visibleShadowDraws": 32,
         "resource.state.gpuCases": 9,
-        "resource.state.gpuPositionError": 6.337275425425687e-7,
-        "resource.state.gpuNormalError": 4.978046099538083e-7,
+        "resource.state.gpuPositionError": 6.337275425425687e-07,
+        "resource.state.gpuNormalError": 4.978046099538083e-07,
         "resource.state.offFrustumCaptured": true,
         "resource.state.offFrustumMainDraws": 0
       },

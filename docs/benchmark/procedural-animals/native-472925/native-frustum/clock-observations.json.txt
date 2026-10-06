@@ -1762,6 +1762,8 @@
   "rawRunnerReportClock": "fixed-step",
   "rawRunnerLabelSource": "packages/playtest/src/runner/runner-support.ts:414 derives config.liveClock, not the native producer clock response; raw report preserved",
   "producerWallClockVerified": true,
-  "producerModes": ["wall-clock"],
+  "producerModes": [
+    "wall-clock"
+  ],
   "actualObservationCount": 185
 }

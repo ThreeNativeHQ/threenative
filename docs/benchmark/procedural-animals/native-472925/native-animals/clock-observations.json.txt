@@ -31,7 +31,7 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 64
+        "tick": 65
       },
       "order": 10,
       "method": "advance"
@@ -40,7 +40,7 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 78
+        "tick": 79
       },
       "order": 12,
       "method": "advance"
@@ -49,7 +49,7 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 92
+        "tick": 94
       },
       "order": 14,
       "method": "advance"
@@ -58,7 +58,7 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 104
+        "tick": 106
       },
       "order": 16,
       "method": "advance"
@@ -67,7 +67,7 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 133
+        "tick": 120
       },
       "order": 18,
       "method": "advance"
@@ -76,55 +76,45 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 138,
-        "timeMs": 4371.380296
+        "tick": 150
       },
-      "order": 19,
-      "method": "sample"
+      "order": 20,
+      "method": "advance"
     },
     {
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 158
+        "tick": 155,
+        "timeMs": 4653.767608
       },
       "order": 21,
-      "method": "advance"
-    },
-    {
-      "path": "body.result.clock",
-      "value": {
-        "mode": "wall-clock",
-        "tick": 163,
-        "timeMs": 4865.357627
-      },
-      "order": 22,
       "method": "sample"
     },
     {
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 182
+        "tick": 170
+      },
+      "order": 23,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 175,
+        "timeMs": 5074.196364
       },
       "order": 24,
-      "method": "advance"
-    },
-    {
-      "path": "body.result.clock",
-      "value": {
-        "mode": "wall-clock",
-        "tick": 187,
-        "timeMs": 5281.853515
-      },
-      "order": 25,
       "method": "sample"
     },
     {
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 202
+        "tick": 190
       },
       "order": 26,
       "method": "advance"
@@ -133,8 +123,8 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 207,
-        "timeMs": 5641.47774
+        "tick": 195,
+        "timeMs": 5444.088248
       },
       "order": 27,
       "method": "sample"
@@ -143,7 +133,7 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 217
+        "tick": 205
       },
       "order": 28,
       "method": "advance"
@@ -152,8 +142,8 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 222,
-        "timeMs": 5893.700049
+        "tick": 210,
+        "timeMs": 5719.455861
       },
       "order": 29,
       "method": "sample"
@@ -162,7 +152,7 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 230
+        "tick": 220
       },
       "order": 30,
       "method": "advance"
@@ -171,8 +161,8 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 232,
-        "timeMs": 6031.529035
+        "tick": 225,
+        "timeMs": 5986.853941
       },
       "order": 31,
       "method": "sample"
@@ -181,55 +171,55 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 234,
-        "timeMs": 6081.40069
+        "tick": 240
       },
       "order": 32,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 243,
+        "timeMs": 6268.225968
+      },
+      "order": 33,
       "method": "sample"
     },
     {
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 244
+        "tick": 245,
+        "timeMs": 6314.610694
       },
       "order": 34,
-      "method": "advance"
-    },
-    {
-      "path": "body.result.clock",
-      "value": {
-        "mode": "wall-clock",
-        "tick": 249,
-        "timeMs": 6368.131926
-      },
-      "order": 35,
       "method": "sample"
     },
     {
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 264
+        "tick": 271
+      },
+      "order": 36,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 276,
+        "timeMs": 6906.902934
       },
       "order": 37,
-      "method": "advance"
-    },
-    {
-      "path": "body.result.clock",
-      "value": {
-        "mode": "wall-clock",
-        "tick": 269,
-        "timeMs": 6708.677183
-      },
-      "order": 38,
       "method": "sample"
     },
     {
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 283
+        "tick": 291
       },
       "order": 39,
       "method": "advance"
@@ -238,8 +228,8 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 288,
-        "timeMs": 7069.838239
+        "tick": 291,
+        "timeMs": 7181.323122
       },
       "order": 40,
       "method": "sample"
@@ -248,7 +238,7 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 303
+        "tick": 306
       },
       "order": 41,
       "method": "advance"
@@ -257,8 +247,8 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 308,
-        "timeMs": 7433.653539
+        "tick": 310,
+        "timeMs": 7508.407389
       },
       "order": 42,
       "method": "sample"
@@ -267,7 +257,7 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 318
+        "tick": 320
       },
       "order": 43,
       "method": "advance"
@@ -276,8 +266,8 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 323,
-        "timeMs": 7709.127441
+        "tick": 325,
+        "timeMs": 7774.266478
       },
       "order": 44,
       "method": "sample"
@@ -286,7 +276,7 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 338
+        "tick": 340
       },
       "order": 45,
       "method": "advance"
@@ -295,8 +285,8 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 343,
-        "timeMs": 8060.899252
+        "tick": 345,
+        "timeMs": 8116.692944
       },
       "order": 46,
       "method": "sample"
@@ -305,7 +295,7 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 357
+        "tick": 355
       },
       "order": 47,
       "method": "advance"
@@ -314,8 +304,8 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 362,
-        "timeMs": 8399.814359
+        "tick": 360,
+        "timeMs": 8376.993326
       },
       "order": 48,
       "method": "sample"
@@ -324,7 +314,7 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 377
+        "tick": 370
       },
       "order": 49,
       "method": "advance"
@@ -333,8 +323,8 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 381,
-        "timeMs": 8731.729967
+        "tick": 375,
+        "timeMs": 8632.617836
       },
       "order": 50,
       "method": "sample"
@@ -343,7 +333,7 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 391
+        "tick": 385
       },
       "order": 51,
       "method": "advance"
@@ -352,8 +342,8 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 394,
-        "timeMs": 8914.05163
+        "tick": 390,
+        "timeMs": 8881.131547
       },
       "order": 52,
       "method": "sample"
@@ -362,17 +352,26 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 397,
-        "timeMs": 8962.372604
+        "tick": 405
       },
       "order": 53,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 409,
+        "timeMs": 9202.291579
+      },
+      "order": 54,
       "method": "sample"
     },
     {
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 406
+        "tick": 419
       },
       "order": 55,
       "method": "advance"
@@ -381,8 +380,8 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 411,
-        "timeMs": 9230.551689
+        "tick": 422,
+        "timeMs": 9373.605016
       },
       "order": 56,
       "method": "sample"
@@ -391,45 +390,36 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 426
+        "tick": 424,
+        "timeMs": 9420.792448
       },
-      "order": 58,
-      "method": "advance"
+      "order": 57,
+      "method": "sample"
     },
     {
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 431,
-        "timeMs": 9569.903074
+        "tick": 446
       },
       "order": 59,
-      "method": "sample"
-    },
-    {
-      "path": "body.result.clock",
-      "value": {
-        "mode": "wall-clock",
-        "tick": 441
-      },
-      "order": 60,
       "method": "advance"
     },
     {
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 446,
-        "timeMs": 9827.442562
+        "tick": 450,
+        "timeMs": 9922.674582
       },
-      "order": 61,
+      "order": 60,
       "method": "sample"
     },
     {
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 456
+        "tick": 465
       },
       "order": 62,
       "method": "advance"
@@ -438,8 +428,8 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 461,
-        "timeMs": 10078.322169
+        "tick": 469,
+        "timeMs": 10240.412374
       },
       "order": 63,
       "method": "sample"
@@ -448,7 +438,7 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 475
+        "tick": 484
       },
       "order": 64,
       "method": "advance"
@@ -457,8 +447,8 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 480,
-        "timeMs": 10396.782487
+        "tick": 489,
+        "timeMs": 10578.695355
       },
       "order": 65,
       "method": "sample"
@@ -467,7 +457,7 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 490
+        "tick": 499
       },
       "order": 66,
       "method": "advance"
@@ -476,8 +466,8 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 495,
-        "timeMs": 10647.712154
+        "tick": 504,
+        "timeMs": 10822.543604
       },
       "order": 67,
       "method": "sample"
@@ -486,7 +476,7 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 510
+        "tick": 518
       },
       "order": 68,
       "method": "advance"
@@ -495,8 +485,8 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 515,
-        "timeMs": 10996.543622
+        "tick": 523,
+        "timeMs": 11146.616249
       },
       "order": 69,
       "method": "sample"
@@ -505,7 +495,7 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 529
+        "tick": 538
       },
       "order": 70,
       "method": "advance"
@@ -514,8 +504,8 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 529,
-        "timeMs": 11249.892955
+        "tick": 543,
+        "timeMs": 11478.791966
       },
       "order": 71,
       "method": "sample"
@@ -524,7 +514,7 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 544
+        "tick": 553
       },
       "order": 72,
       "method": "advance"
@@ -533,8 +523,8 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 549,
-        "timeMs": 11583.672763
+        "tick": 557,
+        "timeMs": 11733.059103
       },
       "order": 73,
       "method": "sample"
@@ -543,7 +533,7 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 564
+        "tick": 567
       },
       "order": 74,
       "method": "advance"
@@ -552,8 +542,8 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 569,
-        "timeMs": 11926.526056
+        "tick": 571,
+        "timeMs": 11978.493023
       },
       "order": 75,
       "method": "sample"
@@ -562,7 +552,7 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 584
+        "tick": 585
       },
       "order": 76,
       "method": "advance"
@@ -571,8 +561,8 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 589,
-        "timeMs": 12273.917263
+        "tick": 590,
+        "timeMs": 12292.307028
       },
       "order": 77,
       "method": "sample"
@@ -581,7 +571,7 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 604
+        "tick": 605
       },
       "order": 78,
       "method": "advance"
@@ -590,8 +580,8 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 609,
-        "timeMs": 12618.924705
+        "tick": 610,
+        "timeMs": 12630.48283
       },
       "order": 79,
       "method": "sample"
@@ -600,7 +590,7 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 624
+        "tick": 625
       },
       "order": 80,
       "method": "advance"
@@ -609,8 +599,8 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 629,
-        "timeMs": 12959.999949
+        "tick": 630,
+        "timeMs": 12957.924655
       },
       "order": 81,
       "method": "sample"
@@ -619,7 +609,7 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 644
+        "tick": 639
       },
       "order": 82,
       "method": "advance"
@@ -628,8 +618,8 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 649,
-        "timeMs": 13302.090297
+        "tick": 644,
+        "timeMs": 13207.46126
       },
       "order": 83,
       "method": "sample"
@@ -638,7 +628,7 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 663
+        "tick": 654
       },
       "order": 84,
       "method": "advance"
@@ -647,8 +637,8 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 668,
-        "timeMs": 13648.41003
+        "tick": 659,
+        "timeMs": 13467.382854
       },
       "order": 85,
       "method": "sample"
@@ -657,7 +647,7 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 683
+        "tick": 669
       },
       "order": 86,
       "method": "advance"
@@ -666,8 +656,8 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 688,
-        "timeMs": 14001.747602
+        "tick": 674,
+        "timeMs": 13725.086471
       },
       "order": 87,
       "method": "sample"
@@ -676,7 +666,7 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 698
+        "tick": 688
       },
       "order": 88,
       "method": "advance"
@@ -685,8 +675,8 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 703,
-        "timeMs": 14271.957745
+        "tick": 688,
+        "timeMs": 13986.493436
       },
       "order": 89,
       "method": "sample"
@@ -695,7 +685,7 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 713
+        "tick": 703
       },
       "order": 90,
       "method": "advance"
@@ -704,8 +694,8 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 718,
-        "timeMs": 14519.86236
+        "tick": 708,
+        "timeMs": 14335.948961
       },
       "order": 91,
       "method": "sample"
@@ -714,7 +704,7 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 733
+        "tick": 718
       },
       "order": 92,
       "method": "advance"
@@ -723,8 +713,8 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 738,
-        "timeMs": 14867.220767
+        "tick": 723,
+        "timeMs": 14598.37025
       },
       "order": 93,
       "method": "sample"
@@ -733,7 +723,7 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 753
+        "tick": 738
       },
       "order": 94,
       "method": "advance"
@@ -742,8 +732,8 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 758,
-        "timeMs": 15211.479023
+        "tick": 743,
+        "timeMs": 14937.823134
       },
       "order": 95,
       "method": "sample"
@@ -752,7 +742,7 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 773
+        "tick": 758
       },
       "order": 96,
       "method": "advance"
@@ -761,8 +751,8 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 778,
-        "timeMs": 15540.28771
+        "tick": 763,
+        "timeMs": 15269.401495
       },
       "order": 97,
       "method": "sample"
@@ -771,7 +761,7 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 787
+        "tick": 778
       },
       "order": 98,
       "method": "advance"
@@ -780,8 +770,8 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 792,
-        "timeMs": 15762.996554
+        "tick": 783,
+        "timeMs": 15617.681467
       },
       "order": 99,
       "method": "sample"
@@ -790,17 +780,26 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 799,
-        "timeMs": 15854.035795
+        "tick": 797
       },
       "order": 100,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 802,
+        "timeMs": 15931.766551
+      },
+      "order": 101,
       "method": "sample"
     },
     {
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 811
+        "tick": 816
       },
       "order": 102,
       "method": "advance"
@@ -809,8 +808,8 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 815,
-        "timeMs": 16162.8998
+        "tick": 820,
+        "timeMs": 16233.329219
       },
       "order": 103,
       "method": "sample"
@@ -821,7 +820,7 @@
         "mode": "wall-clock",
         "tick": 830
       },
-      "order": 105,
+      "order": 104,
       "method": "advance"
     },
     {
@@ -829,7 +828,17 @@
       "value": {
         "mode": "wall-clock",
         "tick": 835,
-        "timeMs": 16498.298078
+        "timeMs": 16450.990942
+      },
+      "order": 105,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 838,
+        "timeMs": 16496.702542
       },
       "order": 106,
       "method": "sample"
@@ -838,45 +847,26 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 845
-      },
-      "order": 107,
-      "method": "advance"
-    },
-    {
-      "path": "body.result.clock",
-      "value": {
-        "mode": "wall-clock",
-        "tick": 850,
-        "timeMs": 16755.430808
+        "tick": 859
       },
       "order": 108,
-      "method": "sample"
-    },
-    {
-      "path": "body.result.clock",
-      "value": {
-        "mode": "wall-clock",
-        "tick": 860
-      },
-      "order": 109,
       "method": "advance"
     },
     {
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 865,
-        "timeMs": 17015.213793
+        "tick": 863,
+        "timeMs": 16989.061653
       },
-      "order": 110,
+      "order": 109,
       "method": "sample"
     },
     {
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 880
+        "tick": 881
       },
       "order": 111,
       "method": "advance"
@@ -885,8 +875,8 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 885,
-        "timeMs": 17396.982717
+        "tick": 886,
+        "timeMs": 17369.678093
       },
       "order": 112,
       "method": "sample"
@@ -895,7 +885,7 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 895
+        "tick": 900
       },
       "order": 113,
       "method": "advance"
@@ -904,8 +894,8 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 900,
-        "timeMs": 17675.357602
+        "tick": 905,
+        "timeMs": 17695.900806
       },
       "order": 114,
       "method": "sample"
@@ -914,7 +904,7 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 915
+        "tick": 920
       },
       "order": 115,
       "method": "advance"
@@ -923,8 +913,8 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 920,
-        "timeMs": 18011.768613
+        "tick": 925,
+        "timeMs": 18065.223993
       },
       "order": 116,
       "method": "sample"
@@ -933,7 +923,7 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 935
+        "tick": 940
       },
       "order": 117,
       "method": "advance"
@@ -942,8 +932,8 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 939,
-        "timeMs": 18342.108261
+        "tick": 940,
+        "timeMs": 18349.499263
       },
       "order": 118,
       "method": "sample"
@@ -952,7 +942,7 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 949
+        "tick": 955
       },
       "order": 119,
       "method": "advance"
@@ -961,8 +951,8 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 954,
-        "timeMs": 18607.571072
+        "tick": 960,
+        "timeMs": 18713.312903
       },
       "order": 120,
       "method": "sample"
@@ -971,7 +961,7 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 964
+        "tick": 974
       },
       "order": 121,
       "method": "advance"
@@ -980,8 +970,8 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 969,
-        "timeMs": 18864.224876
+        "tick": 979,
+        "timeMs": 19061.584795
       },
       "order": 122,
       "method": "sample"
@@ -990,7 +980,7 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 984
+        "tick": 989
       },
       "order": 123,
       "method": "advance"
@@ -999,8 +989,8 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 984,
-        "timeMs": 19117.006312
+        "tick": 993,
+        "timeMs": 19314.264271
       },
       "order": 124,
       "method": "sample"
@@ -1009,7 +999,7 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 999
+        "tick": 1003
       },
       "order": 125,
       "method": "advance"
@@ -1018,8 +1008,8 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 1004,
-        "timeMs": 19456.943933
+        "tick": 1008,
+        "timeMs": 19565.851045
       },
       "order": 126,
       "method": "sample"
@@ -1028,7 +1018,7 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 1018
+        "tick": 1023
       },
       "order": 127,
       "method": "advance"
@@ -1037,8 +1027,8 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 1022,
-        "timeMs": 19772.619977
+        "tick": 1028,
+        "timeMs": 19892.396595
       },
       "order": 128,
       "method": "sample"
@@ -1047,7 +1037,7 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 1037
+        "tick": 1038
       },
       "order": 129,
       "method": "advance"
@@ -1056,8 +1046,8 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 1042,
-        "timeMs": 20101.654362
+        "tick": 1043,
+        "timeMs": 20147.913885
       },
       "order": 130,
       "method": "sample"
@@ -1066,7 +1056,7 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 1057
+        "tick": 1053
       },
       "order": 131,
       "method": "advance"
@@ -1075,8 +1065,8 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 1061,
-        "timeMs": 20411.007025
+        "tick": 1058,
+        "timeMs": 20394.198249
       },
       "order": 132,
       "method": "sample"
@@ -1085,7 +1075,7 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 1075
+        "tick": 1073
       },
       "order": 133,
       "method": "advance"
@@ -1094,8 +1084,8 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 1079,
-        "timeMs": 20726.617689
+        "tick": 1078,
+        "timeMs": 20722.33063
       },
       "order": 134,
       "method": "sample"
@@ -1104,7 +1094,7 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 1094
+        "tick": 1088
       },
       "order": 135,
       "method": "advance"
@@ -1113,8 +1103,8 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 1099,
-        "timeMs": 21046.628548
+        "tick": 1093,
+        "timeMs": 20979.352081
       },
       "order": 136,
       "method": "sample"
@@ -1123,7 +1113,7 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 1108
+        "tick": 1103
       },
       "order": 137,
       "method": "advance"
@@ -1132,8 +1122,8 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 1113,
-        "timeMs": 21302.227797
+        "tick": 1108,
+        "timeMs": 21228.741887
       },
       "order": 138,
       "method": "sample"
@@ -1142,7 +1132,7 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 1128
+        "tick": 1123
       },
       "order": 139,
       "method": "advance"
@@ -1151,8 +1141,8 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 1133,
-        "timeMs": 21669.986214
+        "tick": 1128,
+        "timeMs": 21559.614132
       },
       "order": 140,
       "method": "sample"
@@ -1171,7 +1161,7 @@
       "value": {
         "mode": "wall-clock",
         "tick": 1148,
-        "timeMs": 21952.519214
+        "timeMs": 21887.019207
       },
       "order": 142,
       "method": "sample"
@@ -1180,7 +1170,7 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 1163
+        "tick": 1162
       },
       "order": 143,
       "method": "advance"
@@ -1189,8 +1179,8 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 1168,
-        "timeMs": 22317.770555
+        "tick": 1167,
+        "timeMs": 22237.913434
       },
       "order": 144,
       "method": "sample"
@@ -1199,7 +1189,7 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 1178
+        "tick": 1182
       },
       "order": 145,
       "method": "advance"
@@ -1208,8 +1198,8 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 1183,
-        "timeMs": 22599.395871
+        "tick": 1187,
+        "timeMs": 22629.737488
       },
       "order": 146,
       "method": "sample"
@@ -1218,7 +1208,7 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 1198
+        "tick": 1202
       },
       "order": 147,
       "method": "advance"
@@ -1227,8 +1217,8 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 1203,
-        "timeMs": 22962.444445
+        "tick": 1207,
+        "timeMs": 23009.955931
       },
       "order": 148,
       "method": "sample"
@@ -1237,7 +1227,7 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 1218
+        "tick": 1222
       },
       "order": 149,
       "method": "advance"
@@ -1246,8 +1236,8 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 1223,
-        "timeMs": 23314.318636
+        "tick": 1227,
+        "timeMs": 23378.722392
       },
       "order": 150,
       "method": "sample"
@@ -1265,8 +1255,8 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 1241,
-        "timeMs": 23618.990855
+        "tick": 1242,
+        "timeMs": 23649.676611
       },
       "order": 152,
       "method": "sample"
@@ -1275,7 +1265,7 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 1251
+        "tick": 1257
       },
       "order": 153,
       "method": "advance"
@@ -1284,8 +1274,8 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 1256,
-        "timeMs": 23864.001838
+        "tick": 1262,
+        "timeMs": 24016.680402
       },
       "order": 154,
       "method": "sample"
@@ -1294,7 +1284,7 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 1269
+        "tick": 1277
       },
       "order": 155,
       "method": "advance"
@@ -1303,8 +1293,8 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 1274,
-        "timeMs": 24183.231541
+        "tick": 1282,
+        "timeMs": 24370.463971
       },
       "order": 156,
       "method": "sample"
@@ -1313,7 +1303,7 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 1289
+        "tick": 1297
       },
       "order": 157,
       "method": "advance"
@@ -1322,8 +1312,8 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 1294,
-        "timeMs": 24536.396534
+        "tick": 1301,
+        "timeMs": 24692.383559
       },
       "order": 158,
       "method": "sample"
@@ -1332,7 +1322,7 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 1304
+        "tick": 1316
       },
       "order": 159,
       "method": "advance"
@@ -1341,8 +1331,8 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 1309,
-        "timeMs": 24809.799738
+        "tick": 1321,
+        "timeMs": 25027.640197
       },
       "order": 160,
       "method": "sample"
@@ -1351,7 +1341,7 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 1324
+        "tick": 1336
       },
       "order": 161,
       "method": "advance"
@@ -1360,8 +1350,8 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 1329,
-        "timeMs": 25162.227085
+        "tick": 1341,
+        "timeMs": 25383.890512
       },
       "order": 162,
       "method": "sample"
@@ -1370,7 +1360,7 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 1344
+        "tick": 1356
       },
       "order": 163,
       "method": "advance"
@@ -1379,8 +1369,8 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 1349,
-        "timeMs": 25535.013262
+        "tick": 1361,
+        "timeMs": 25737.714231
       },
       "order": 164,
       "method": "sample"
@@ -1389,7 +1379,7 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 1364
+        "tick": 1371
       },
       "order": 165,
       "method": "advance"
@@ -1398,8 +1388,8 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 1369,
-        "timeMs": 25895.66921
+        "tick": 1376,
+        "timeMs": 26020.162422
       },
       "order": 166,
       "method": "sample"
@@ -1408,7 +1398,7 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 1384
+        "tick": 1391
       },
       "order": 167,
       "method": "advance"
@@ -1417,8 +1407,8 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 1389,
-        "timeMs": 26244.667838
+        "tick": 1396,
+        "timeMs": 26419.244484
       },
       "order": 168,
       "method": "sample"
@@ -1427,7 +1417,7 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 1399
+        "tick": 1406
       },
       "order": 169,
       "method": "advance"
@@ -1436,8 +1426,8 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 1404,
-        "timeMs": 26506.936738
+        "tick": 1411,
+        "timeMs": 26721.359098
       },
       "order": 170,
       "method": "sample"
@@ -1446,7 +1436,7 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 1414
+        "tick": 1421
       },
       "order": 171,
       "method": "advance"
@@ -1455,8 +1445,8 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 1419,
-        "timeMs": 26757.882275
+        "tick": 1426,
+        "timeMs": 27005.752217
       },
       "order": 172,
       "method": "sample"
@@ -1465,7 +1455,7 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 1434
+        "tick": 1441
       },
       "order": 173,
       "method": "advance"
@@ -1474,8 +1464,8 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 1439,
-        "timeMs": 27090.215091
+        "tick": 1446,
+        "timeMs": 27390.078826
       },
       "order": 174,
       "method": "sample"
@@ -1484,7 +1474,7 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 1453
+        "tick": 1461
       },
       "order": 175,
       "method": "advance"
@@ -1493,8 +1483,8 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 1458,
-        "timeMs": 27412.378507
+        "tick": 1466,
+        "timeMs": 27772.447136
       },
       "order": 176,
       "method": "sample"
@@ -1503,7 +1493,7 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 1468
+        "tick": 1476
       },
       "order": 177,
       "method": "advance"
@@ -1512,8 +1502,8 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 1473,
-        "timeMs": 27662.23715
+        "tick": 1481,
+        "timeMs": 28038.193176
       },
       "order": 178,
       "method": "sample"
@@ -1522,7 +1512,7 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 1488
+        "tick": 1496
       },
       "order": 179,
       "method": "advance"
@@ -1531,8 +1521,8 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 1493,
-        "timeMs": 28002.35951
+        "tick": 1501,
+        "timeMs": 28400.975292
       },
       "order": 180,
       "method": "sample"
@@ -1541,7 +1531,7 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 1508
+        "tick": 1516
       },
       "order": 181,
       "method": "advance"
@@ -1550,8 +1540,8 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 1513,
-        "timeMs": 28340.499112
+        "tick": 1521,
+        "timeMs": 28767.103389
       },
       "order": 182,
       "method": "sample"
@@ -1560,7 +1550,7 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 1528
+        "tick": 1536
       },
       "order": 183,
       "method": "advance"
@@ -1569,8 +1559,8 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 1533,
-        "timeMs": 28674.07424
+        "tick": 1541,
+        "timeMs": 29126.544434
       },
       "order": 184,
       "method": "sample"
@@ -1579,7 +1569,7 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 1548
+        "tick": 1551
       },
       "order": 185,
       "method": "advance"
@@ -1588,8 +1578,8 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 1552,
-        "timeMs": 29003.337934
+        "tick": 1556,
+        "timeMs": 29408.795856
       },
       "order": 186,
       "method": "sample"
@@ -1598,7 +1588,7 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 1566
+        "tick": 1571
       },
       "order": 187,
       "method": "advance"
@@ -1607,8 +1597,8 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 1570,
-        "timeMs": 29312.667816
+        "tick": 1576,
+        "timeMs": 29770.018612
       },
       "order": 188,
       "method": "sample"
@@ -1617,7 +1607,7 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 1580
+        "tick": 1591
       },
       "order": 189,
       "method": "advance"
@@ -1626,8 +1616,8 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 1585,
-        "timeMs": 29560.520911
+        "tick": 1596,
+        "timeMs": 30127.775497
       },
       "order": 190,
       "method": "sample"
@@ -1636,7 +1626,7 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 1599
+        "tick": 1611
       },
       "order": 191,
       "method": "advance"
@@ -1645,8 +1635,8 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 1604,
-        "timeMs": 29868.76651
+        "tick": 1616,
+        "timeMs": 30485.276585
       },
       "order": 192,
       "method": "sample"
@@ -1655,7 +1645,7 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 1617
+        "tick": 1626
       },
       "order": 193,
       "method": "advance"
@@ -1664,8 +1654,8 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 1620,
-        "timeMs": 30111.195207
+        "tick": 1631,
+        "timeMs": 30751.65929
       },
       "order": 194,
       "method": "sample"
@@ -1674,18 +1664,17 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 1626,
-        "timeMs": 30201.155145
+        "tick": 1646
       },
       "order": 195,
-      "method": "sample"
+      "method": "advance"
     },
     {
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 1631,
-        "timeMs": 30290.456197
+        "tick": 1646,
+        "timeMs": 31035.700352
       },
       "order": 196,
       "method": "sample"
@@ -1694,74 +1683,47 @@
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 1633,
-        "timeMs": 30334.158749
+        "tick": 1661
       },
       "order": 197,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1665,
+        "timeMs": 31366.627426
+      },
+      "order": 198,
       "method": "sample"
     },
     {
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 1643
+        "tick": 1672,
+        "timeMs": 31457.759227
       },
       "order": 199,
-      "method": "advance"
+      "method": "sample"
     },
     {
       "path": "body.result.clock",
       "value": {
         "mode": "wall-clock",
-        "tick": 1646,
-        "timeMs": 30530.23681
+        "tick": 1693,
+        "timeMs": 31873.436931
       },
       "order": 200,
-      "method": "sample"
-    },
-    {
-      "path": "body.result.clock",
-      "value": {
-        "mode": "wall-clock",
-        "tick": 1655
-      },
-      "order": 202,
-      "method": "advance"
-    },
-    {
-      "path": "body.result.clock",
-      "value": {
-        "mode": "wall-clock",
-        "tick": 1657,
-        "timeMs": 30715.269957
-      },
-      "order": 203,
-      "method": "sample"
-    },
-    {
-      "path": "body.result.clock",
-      "value": {
-        "mode": "wall-clock",
-        "tick": 1659,
-        "timeMs": 30757.518317
-      },
-      "order": 204,
-      "method": "sample"
-    },
-    {
-      "path": "body.result.clock",
-      "value": {
-        "mode": "wall-clock",
-        "tick": 1676,
-        "timeMs": 31086.649482
-      },
-      "order": 205,
       "method": "sample"
     }
   ],
   "rawRunnerReportClock": "fixed-step",
   "rawRunnerLabelSource": "packages/playtest/src/runner/runner-support.ts:414 derives config.liveClock, not the native producer clock response; raw report preserved",
   "producerWallClockVerified": true,
-  "producerModes": ["wall-clock"],
-  "actualObservationCount": 185
+  "producerModes": [
+    "wall-clock"
+  ],
+  "actualObservationCount": 181
 }
