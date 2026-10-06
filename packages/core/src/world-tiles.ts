@@ -1842,6 +1842,14 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
   /** Merged super-tiles by block key, and the blocks a LOD or residency change left to rebuild. */
   readonly #blocks = new Map<string, IMergedBlock>();
   readonly #dirtyBlocks = new Set<string>();
+  /**
+   * Blocks whose merge job is out. A block re-dirtied while its own merge is in flight stays dirty
+   * and waits: dispatching it again would merge the same block twice, and the older reply would land
+   * first carrying the membership the block had when it was sent — a snapshot that no longer matches
+   * the resident set, so the record claims tiles its geometry does not hold and the second reply has
+   * to correct it. (PRD-478.)
+   */
+  readonly #mergingBlocks = new Set<string>();
   /** Tile key -> block key currently hiding it, so a settled member is not drawn twice. */
   readonly #mergedMembers = new Map<string, string>();
   #blockRebuilds = 0;
@@ -3044,11 +3052,13 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     if (!budget.admit(run)) this.#deferredAdmissions = 1;
   }
 
-  /** The lowest block key still waiting, so the one rebuild a frame spends is the same every time. */
+  /** The lowest block key still waiting for a merge of its own, so the one a frame spends is the same. */
   #nextDirtyBlock(): string | undefined {
     let first: string | undefined;
-    for (const candidate of this.#dirtyBlocks)
+    for (const candidate of this.#dirtyBlocks) {
+      if (this.#mergingBlocks.has(candidate)) continue;
       if (first === undefined || candidate < first) first = candidate;
+    }
     return first;
   }
 
@@ -3067,9 +3077,8 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
   #rebuildBlock(blockKey: string): void {
     const { lod, blockX, blockZ } = blockCoordinates(blockKey);
     const { members, parts } = this.#blockMembers(blockKey, lod);
-    const existing = this.#blocks.get(blockKey);
     if (parts.length < 2) {
-      if (existing !== undefined) this.#dissolveBlock(blockKey);
+      this.#dissolveBlock(blockKey);
       // The tiles that remain here (a lone member, or none) draw their own meshes again.
       for (const key of members) this.#showTile(key, blockKey);
       return;
@@ -3078,13 +3087,22 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
       x: blockX * TERRAIN_MERGE_BLOCK * this.tileSize,
       z: blockZ * TERRAIN_MERGE_BLOCK * this.tileSize,
     };
+    this.#mergingBlocks.add(blockKey);
     const job = timedSpan(SPANS.terrainBlock, () => this.#jobs.merge(mergeJob(parts, blockOrigin)));
-    settleJob(job, (result) => {
+    const apply = (result: ITerrainMergeResult): void => {
+      this.#mergingBlocks.delete(blockKey);
       if (this.#released) return;
       timedSpan(SPANS.terrainBlock, () =>
         this.#applyBlock({ blockKey, blockOrigin, lod, members }, result),
       );
-    });
+    };
+    if (job instanceof Promise)
+      job.then(apply, (error: unknown) => {
+        // Free the block for its next mark, and still name the failure.
+        this.#mergingBlocks.delete(blockKey);
+        console.error(`TN_TERRAIN_MERGE_FAILURE block=${blockKey} message=${String(error)}`);
+      });
+    else apply(job);
   }
 
   #applyBlock(
