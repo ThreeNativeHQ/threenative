@@ -1,0 +1,106 @@
+{
+  "name": "procedural-wolf-accepted-physics",
+  "schemaVersion": 1,
+  "subject": "32 baked crowd wolves follow accepted Rapier states on a sloped collision course; GPU/native qualification remains pending",
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 20,
+  "artifacts": {
+    "screenshots": true,
+    "console": true
+  },
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "wall",
+      "waitTicks": 120,
+      "release": true,
+      "screenshot": "wall"
+    },
+    {
+      "kind": "wait",
+      "label": "turn",
+      "waitTicks": 150,
+      "release": true,
+      "screenshot": "turn"
+    },
+    {
+      "kind": "wait",
+      "label": "stopped",
+      "waitTicks": 360,
+      "release": true,
+      "screenshot": "stopped"
+    },
+    {
+      "kind": "wait",
+      "label": "teleport-pause-actions",
+      "waitTicks": 870,
+      "release": true,
+      "screenshot": "posture"
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "GameState",
+        "path": "loaded",
+        "equals": true
+      },
+      {
+        "id": "GameState",
+        "path": "wolves",
+        "equals": 32
+      },
+      {
+        "id": "GameState",
+        "path": "rootError",
+        "lte": 0.0001
+      },
+      {
+        "id": "GameState",
+        "path": "vertices",
+        "lte": 8000
+      },
+      {
+        "id": "GameState",
+        "path": "bones",
+        "lte": 128
+      }
+    ],
+    "sceneNodes": [
+      {
+        "select": {
+          "type": "Mesh"
+        },
+        "minCount": 34,
+        "visible": true
+      }
+    ],
+    "visual": [
+      {
+        "entityVisible": {
+          "entity": "wolf-0",
+          "minProjectedPixels": 100
+        }
+      },
+      {
+        "region": {
+          "x": 0,
+          "y": 0,
+          "width": 1280,
+          "height": 720,
+          "minNonblankPixelRatio": 0.1
+        }
+      }
+    ]
+  }
+}

@@ -4,13 +4,13 @@ prd_contract: v1
 
 # PRD-procedural-animal-content — Bake procedural animals for a portable game consumer
 
-**Status:** NOT STARTED
+**Status:** PARTIAL
 **Priority:** P2 — Provide one deterministic, baked animal with WebGPU skinning and physics-follow integration before expanding the species catalogue.
 **Adoption order:** 2 of 3; independent of GGEZ animation composition.
 **Complexity:** 6 (HIGH); estimated 6–10 implementation files (+2), optional content integration (+2), build/runtime ownership and motion state (+2); risk override: binary-input validation and a custom skinning port require explicit high-risk proof.
-**Owner:** ThreeNative maintainers; implementation agent executes the plan.
+**Owner:** ThreeNative maintainers; isolated implementation lane `feat/procedural-animal-content` executes this PRD only.
 **Depends on:** None. [PRD-372](../assets/PRD-372-anycreature-through-the-asset-mcp.md) remains the separate anyCreature/MCP authoring workflow, not a prerequisite or replacement target.
-**Progress:** 0%
+**Progress:** 50%
 **Planning baseline:** `develop` at `ba72eed258b1aefabb9744dc86fd8282c3ab39a5`; 2026-10-05. This is planning only.
 
 ## Context
@@ -23,9 +23,9 @@ ThreeNative already has manifest-aware [asset resolution](https://github.com/Thr
 
 ## Solution
 
-Deliver one quadruped (wolf) through a build-first content pipeline, then prove it walking, turning and stopping under Rapier control. Retain the upstream [MIT notice](https://github.com/majidmanzarpour/threejs-procedural-animals/blob/c95ae49346aa8e140a924376cec6cf0073d99512/LICENSE) for imported files. Audit transitive files and generated-asset provenance before vendoring; this PR adds no upstream code or assets.
+Deliver one quadruped (wolf) through a build-first content pipeline, then prove it walking, turning and stopping under Rapier control. Retain the upstream [MIT notice](https://github.com/majidmanzarpour/threejs-procedural-animals/blob/c95ae49346aa8e140a924376cec6cf0073d99512/LICENSE) for imported files. The pinned build/serializer/wolf closure has 24 files and only external `three` imports; five motion files are retained as editable game source with the MIT notice. Generated bakes record donor revision, adapter version, pinned Node runtime and cache identity.
 
-Keep the integration optional. A proposed `@threenative/procedural-animals` package is justified only by isolating the upstream generator/motion dependency from core; separate its build-only entry from its runtime loader. If an existing optional content boundary can provide that isolation, use it instead and update this document. Do not add the generator to `@threenative/core`'s normal dependency graph.
+Keep the integration optional. The optional `@threenative/procedural-animals` package is justified only by isolating the upstream generator/motion dependency from core; separate its build-only entry from its runtime loader. If an existing optional content boundary can provide that isolation, use it instead and update this document. Do not add the generator to `@threenative/core`'s normal dependency graph.
 
 ### Build and data contract
 
@@ -60,39 +60,39 @@ flowchart LR
 | Capability | Reachable consumer/trigger | Replaces / disposition | Evidence |
 |---|---|---|---|
 | Deterministic baking | Existing asset build → optional build entry → cooked `.animal` | Replaces runtime generation in the shipped game; source generation remains authoring-only | AC-1 |
-| Portable load/render | Proposed installed `examples/procedural-animals/src/game.ts` → asset resolver → optional runtime entry → real mesh | No parallel manifest or GLB-only assumption | AC-2, AC-5, AC-6 |
+| Portable load/render | `examples/procedural-animals/src/game.ts` (installed proof pending) → asset resolver → optional runtime entry → real mesh | No parallel manifest or GLB-only assumption | AC-2, AC-5, AC-6 |
 | Procedural movement | Existing fixed-step character controller → accepted Rapier state → follow adapter | Replaces animal self-translation only for physics-owned instances | AC-3 |
 | Dependency isolation | Ordinary scaffold/build with no optional import | Existing core/physics paths unchanged; anyCreature/MCP stays separate | AC-8 |
 
-All package/API/test paths below are proposed, not shipped. Fill actual non-test caller locations while implementing and reuse existing asset/playtest fixtures where equivalent.
+Current non-test callers are `examples/procedural-animals/scripts/bake-assets.ts` (optional build entry and normal asset cook), `src/Animals.ts` (resolver, actors and accepted Rapier state), and `src/render/animal-material.ts` (editable DQS/normal/shadow TSL). Packed consumer and actual renderer qualification remain open.
 
 ## Execution Phases
 
 ### Phase 1 — A baked wolf reaches the real renderer
 
-**Status:** NOT STARTED
+**Status:** COMPLETE — local AC-1/AC-2 verified; renderer qualification remains Phase 3.
 **ACs:** AC-1, AC-2
-**Files:** Proposed optional package `src/build.ts`, `src/bake.ts`, `src/runtime.ts`, package exports; existing asset-build integration; example `src/render/animal-material.ts` and portable game entry.
+**Files:** Optional package `src/build.ts`, `src/format.ts`, `src/runtime.ts`, `src/pose.ts`, package exports; existing asset-build integration; example `src/render/animal-material.ts` and portable game entry.
 **Implementation:** Pin the smallest donor set, validate licenses and bytes, bake high/crowd variants, integrate normal manifest resolution, and port only base-surface DQS/normal/shadow behavior. Produce one working public consumer rather than an isolated meshing helper.
 
-- [ ] AC-1 [local; actor: implementation agent]: The real asset-build consumer produces identical payload hashes for repeated identical inputs and invalidates the cache when seed or geometry tier changes. proof: `pnpm exec vitest run packages/procedural-animals/__tests__/bake.spec.ts` (planned build-entry integration). Evidence: pending.
-- [ ] AC-2 [local; actor: implementation agent]: The runtime loader rejects malformed bakes before any GPU allocation and preserves the validated skinning data on a valid bake. proof: `pnpm exec vitest run packages/procedural-animals/__tests__/runtime.spec.ts` (planned public-loader test). Evidence: pending.
+- [x] AC-1 [local; actor: implementation agent]: The real asset-build consumer produces identical payload hashes for repeated identical inputs and invalidates the cache when seed or geometry tier changes. proof: `pnpm exec vitest run packages/procedural-animals/__tests__/bake.spec.ts` (real build-entry integration). Evidence: 2026-10-06 — 4 bake tests pass: actual uncached pinned wolf generations yield identical consumed SHA-256 payloads; seed/tier changes alter cooked hashes/manifest names; invalid options, corrupt cooking and interrupted partial writes preserve the last valid output. High/crowd individual parameters match. Normal compileAssets runs rather than a parallel manifest.
+- [x] AC-2 [local; actor: implementation agent]: The runtime loader rejects malformed bakes before any GPU allocation and preserves the validated skinning data on a valid bake. proof: `pnpm exec vitest run packages/procedural-animals/__tests__/runtime.spec.ts` (public-loader test). Evidence: 2026-10-06 — 33 public parser/loader tests and the actual cooked-wolf integration pass. Malformed limits/offsets/indices/weights/finite values, coercion, inherited joints, excessive metadata depth and finite-byte corruption reject before the BufferGeometry constructor; valid cooked wolf preserves every skin attribute. Streaming limits/abort/cancellation and buffered-response rejection pass. This CPU allocation-order proof does not qualify actual GPU output or native transport allocation.
 
 **Verification:** Distinguish metadata/cache hits from actual consumed payload hashes. Numerical deformation and shadow output are qualified through the GPU consumer in Phase 3, not claimed from parser tests.
-**Checkpoint:** Pending; self-review and one equivalent reviewer when available.
+**Checkpoint:** Focused single-worker suite at `2026-10-06T07:14:24.857000+00:00` on CPU 10: 57/57 tests pass (bake 4, runtime 33, follow 10, bounds 10). The fresh reviewer found parser/network/lifecycle/bounds defects; controls reproduced them before repairs. Optional package ESM/DTS/publint built before the later follow/bounds slice; current optional-package source typecheck passes; consumer/DTS graph and packed-consumer validation remain pending. No GPU/native/performance gate has run.
 
 ### Phase 2 — The wolf follows physics with bounded lifetime
 
-**Status:** NOT STARTED
+**Status:** COMPLETE — local AC-3/AC-4 verified; renderer qualification remains Phase 3.
 **ACs:** AC-3, AC-4
-**Files:** Proposed optional package `src/follow.ts`, `src/bounds.ts`; existing physics integration; example sloped collision course and lifecycle scenario.
+**Files:** Optional package `src/follow.ts`, `src/bounds.ts`; existing physics integration; example sloped collision course and lifecycle scenario.
 **Implementation:** Add the single-writer follow adapter, parent-space validation, height sampling, per-instance ownership, reset/disposal and conservative animated bounds. Keep expensive generation and worker modules outside runtime exports.
 
-- [ ] AC-3 [local; actor: implementation agent]: Through the game fixed-step path, a blocked/stopped/teleported Rapier actor determines the animal root transform without independent animal drift. proof: `pnpm exec vitest run packages/procedural-animals/__tests__/follow.spec.ts` (planned loop integration using real Rapier). Evidence: pending.
-- [ ] AC-4 [local; actor: implementation agent]: Every sampled deformed vertex in the selected gait/action corpus lies inside the instance's reported animated bounds. proof: `pnpm exec vitest run packages/procedural-animals/__tests__/bounds.spec.ts` (planned independent CPU deformation oracle). Evidence: pending.
+- [x] AC-3 [local; actor: implementation agent]: Through the game fixed-step path, a blocked/stopped/teleported Rapier actor determines the animal root transform without independent animal drift. proof: `pnpm exec vitest run packages/procedural-animals/__tests__/follow.spec.ts` (loop integration using real Rapier). Evidence: 2026-10-06 — 10 follow tests pass through the real FixedStepLoop, afterPhysics phase and Rapier backend: blocked/stopped/teleported accepted state is the only animal root authority. Identity-parent rejection, physics ground, pause/reset, completed/interrupted/disposed actions, two independently posed instances and 50 lifetimes per instance pass; owned geometry/material/texture disposal occurs exactly once. Reviewer-discovered partial-construction, failed ground and double-disposal controls failed before repair.
+- [x] AC-4 [local; actor: implementation agent]: Every sampled deformed vertex in the selected gait/action corpus lies inside the instance's reported animated bounds. proof: `pnpm exec vitest run packages/procedural-animals/__tests__/bounds.spec.ts` (independent CPU deformation oracle). Evidence: 2026-10-06 — 10 bounds tests pass, including every crowd vertex at 32 selected stand/walk/trot/turn/stop/sit/lie/reset samples against an independent double-precision DQS oracle. Opposed rotations distinguish DQS from collapsed LBS; normals remain unit length; the permitted weight tolerance and edited instance geometry are covered. Pause/zero-step refreshes bounds without pose or texture advancement; normalized edited skin attributes reject by name before their raw arrays could contradict shader-visible values. Formatted game motion agrees with the original pinned donor over 720 ticks (maximum packet error ≤1e-6). Frustum draw suppression and GPU position error ≤1e-4 m remain Phase 3 proof.
 
 **Verification:** Include two instances sharing a bake with different motion, cancellation during load, and fifty create/dispose cycles. Owned resources return to baseline; shared data remains unchanged. These are assertions in the same focused fixtures, not extra ceremony boxes.
-**Checkpoint:** Pending.
+**Checkpoint:** The same 57-test run verifies these local contracts. CPU tests exercise real Rapier and actual pinned wolf generation; renderer culling, GPU positions/normals/shadows and installed Linux ownership remain unverified.
 
 ### Phase 3 — Qualify the packaged web/native consumer
 
@@ -124,8 +124,16 @@ This is one species, two baked geometry tiers and the stated actions on browser/
 
 ## Blocked on
 
+2026-10-06 — The parent owns capacity and gives existing #398/#381 and Strata/HLOD priority. Focused work stays on CPU 10 with one test worker. The granted initial blender/assets/animal build passed; animal output predates the latest follow/bounds source. Pre-commit capability/API sync is authorized; the next sequential core/physics/animal/scaffolder/engine-mcp/playtest consumer build slot is pending, needed for current compiler/packed-consumer proof and normal pre-push. Parent-thread messaging returned “An earlier turn submission is not yet confirmed”; no delivery through that tool is confirmed. Hooks have not been bypassed.
+
+The native fetch host currently returns an already-buffered response without `Response.body`; the loader rejects oversized bytes before geometry, but this does not establish a native transport allocation limit. The real Linux consumer must establish the stated binary/GPU allocation boundary without silently claiming the browser streaming cap applies to the host.
+
 Phase 3 needs a provisioned hardware-WebGPU runner and Linux native build from the existing workflow; neither was run during planning. No external account, AI-generation service, publishing credential or mandatory owner approval is needed for this slice. Missing GPU observations keep the implementation open, not silently browser-only complete.
 
 ## Decisions
 
-2026-10-05 — User selected deterministic generation, baking, motion and physics-follow integration. Bake first, retain one physics authority, and qualify a base-surface wolf before claiming the full upstream catalogue or fur renderer. One documentation-only draft PR groups the three requested plans; implementation remains not started.
+2026-10-05 — User selected deterministic generation, baking, motion and physics-follow integration. Bake first, retain one physics authority, and qualify a base-surface wolf before claiming the full upstream catalogue or fur renderer. The documentation-only PR grouped the three plans; this implementation owns only the animal PRD and requires its own draft PR.
+
+2026-10-06 — Implementation base is actual fetched `origin/develop` at `29fdae8bf9141b4a82dac91b276dbb574a7d06a3` (documentation PR #446), with foreign work preserved in its existing checkouts. The smallest consumer is the wolf example: one portable entry loads high/crowd bakes through `ctx.assets.resolve`; build-time generation stages atomic source bakes before the normal asset cook. The optional package contains validated loading, build-only baking, per-instance pose/follow/lifetime and animated bounds; the example contains donor motion and DQS/normal/shadow TSL. The game entry is source-only until the scheduled consumer build and platform gates run. No core, physics, AnimationPlayer/composer or secondary-simulation source changed.
+
+2026-10-06 — Pinned donor archive SHA-256 is `7d0a04f0e1b910f13acc5fb3fe3d1372d73f8c257f8d168afe937a80fe34b82e`. Its root MIT notice is retained in `packages/procedural-animals/LICENSES/Procedural-Animals-MIT.txt`. Source/import/license inspection found a 24-file build/serializer/wolf closure and only external `three` imports; the generator is imported solely by the optional build export. Upstream serializes nondeterministic timing statistics (`weightsMs`, `coatMs`, `buildMs`), which must be excluded from deterministic payloads. Reuse upstream PANM serialization, pin the build runtime and include donor/species/options/tier identity in cache keys. Actual repeated consumed wolf hashes and atomic bake controls now pass AC-1. Runtime export isolation in a packed ordinary game remains AC-8.
