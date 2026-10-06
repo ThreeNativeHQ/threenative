@@ -12,6 +12,17 @@ target_include_directories(tn_host_services PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/i
 target_include_directories(tn_host_services PRIVATE ${THIRD_PARTY_DIR}/stb)
 if(TARGET dawn::webgpu)
     target_link_libraries(tn_host_services PUBLIC dawn::webgpu)
+    # These are the same Dawn platform dependencies the legacy host links below its engine-only
+    # early return. Engine consumers must carry them too, without linking the scripting host.
+    if(APPLE)
+        target_link_libraries(tn_host_services PUBLIC "-framework Metal" "-framework QuartzCore"
+            "-framework IOKit" "-framework IOSurface")
+    elseif(WIN32)
+        target_link_libraries(tn_host_services PUBLIC d3d12 dxgi dxguid)
+        if(MSVC)
+            target_link_libraries(tn_host_services PUBLIC OneCoreUap.lib)
+        endif()
+    endif()
 elseif(TARGET wgpu::wgpu)
     target_link_libraries(tn_host_services PUBLIC wgpu::wgpu)
 endif()
@@ -157,8 +168,9 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_renderer_multi_camera_layers=multi_camera_layers
         native_engine_renderer_callback=render_callback
         native_engine_renderer_instanced=instanced
-        native_engine_batched_vs_unbatched=batched_vs_unbatched)
-    target_link_libraries(tn-native-engine-render-database-test PRIVATE tn_engine_renderer tn_host_services)
+        native_engine_batched_vs_unbatched=batched_vs_unbatched
+        native_engine_skinned_batched_vs_unbatched=skinned_crowd)
+    target_link_libraries(tn-native-engine-render-database-test PRIVATE tn_engine_renderer tn_host_services tn_engine_player)
     target_compile_definitions(tn-native-engine-render-database-test PRIVATE
         TN_GOLDENS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../three-native/tests/compatibility/goldens/0.185.1"
         TN_NATIVE_LIT_OUT="${CMAKE_CURRENT_BINARY_DIR}/native-lit-render.rgba")
@@ -219,7 +231,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         # errors and undefined behaviour, not leaks. CPU-only engine tests keep leak checking.
         set_tests_properties(native_engine_gpu_upload_readback native_engine_gpu_deferred_destroy
             native_engine_gpu_async_only native_engine_lifetime_deferred_gpu ${tn_shader_validator} native_engine_shader_layouts
-            native_engine_cooked_package_load native_engine_renderer_geometry_cache native_engine_renderer_pipeline_cache native_engine_renderer_scene_lit native_engine_renderer_invalidation native_engine_renderer_scene_alpha native_engine_standard_materials_unsupported native_engine_renderer_updates native_engine_renderer_multi_camera_layers native_engine_renderer_callback native_engine_renderer_instanced native_engine_batched_vs_unbatched native_engine_animation_tick_vs_render native_engine_animation_material_revision native_engine_admission_failure native_engine_admission_cancel native_engine_loop_async_cancel native_engine_loop_render_ids native_engine_compute_readback native_engine_renderer_resize_readback native_engine_renderer_output_ramp native_engine_renderer_lit_reference native_engine_renderer_lambert_reference native_engine_renderer_phong_reference native_engine_renderer_physical_reference native_engine_renderer_alpha_transparency native_engine_renderer_alpha_test
+            native_engine_cooked_package_load native_engine_renderer_geometry_cache native_engine_renderer_pipeline_cache native_engine_renderer_scene_lit native_engine_renderer_invalidation native_engine_renderer_scene_alpha native_engine_standard_materials_unsupported native_engine_renderer_updates native_engine_renderer_multi_camera_layers native_engine_renderer_callback native_engine_renderer_instanced native_engine_batched_vs_unbatched native_engine_skinned_batched_vs_unbatched native_engine_animation_tick_vs_render native_engine_animation_material_revision native_engine_admission_failure native_engine_admission_cancel native_engine_loop_async_cancel native_engine_loop_render_ids native_engine_compute_readback native_engine_renderer_resize_readback native_engine_renderer_output_ramp native_engine_renderer_lit_reference native_engine_renderer_lambert_reference native_engine_renderer_phong_reference native_engine_renderer_physical_reference native_engine_renderer_alpha_transparency native_engine_renderer_alpha_test
             native_engine_shader_variants_gpu native_engine_device_loss_recover native_engine_device_stale_handle
             native_engine_device_no_adapter PROPERTIES
             ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0:abort_on_error=1;UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1")
@@ -302,7 +314,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     # can name them and a second, V8-linked player can reuse the loop; the executable names its game.
     # It reaches no JS engine: inspect-js-free.mjs proves it. The loop links SDL, never a VM.
     add_library(tn_engine_player STATIC src/engine/player/mailbox.cpp src/engine/player/demo.cpp
-        src/engine/player/run.cpp)
+        src/engine/player/run.cpp src/engine/player/skinned_crowd.cpp)
     tn_native_engine_target(tn_engine_player)
     target_link_libraries(tn_engine_player PUBLIC tn_engine_inspect tn_engine_scene tn_engine_world
         tn_engine_renderer tn_host_services)
@@ -315,7 +327,14 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     endif()
     add_executable(tn-native-engine-player src/engine/player/main.cpp)
     target_link_libraries(tn-native-engine-player PRIVATE tn_engine_player)
+    tn_native_engine_test(tn-native-engine-skinned-crowd-test tests/native-engine/animation/skinned_crowd_test.cpp
+        native_engine_skinned_crowd_cpu=crowd_cpu)
+    target_link_libraries(tn-native-engine-skinned-crowd-test PRIVATE tn_engine_player)
     tn_native_engine_target(tn-native-engine-player)
+    if(MSVC)
+        # PE files have no MSVC symbol table; keep the link's symbols for inspect-js-free.mjs.
+        target_link_options(tn-native-engine-player PRIVATE "/MAP:$<TARGET_FILE_DIR:tn-native-engine-player>/tn-native-engine-player.map")
+    endif()
 endif()
 
 if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "android")

@@ -29,8 +29,8 @@ std::string keyFor(int32_t tileX, int32_t tileZ) {
 
 /** blockKeyFor: the super-tile a tile's level at `(lod, tileX, tileZ)` belongs to. */
 std::string blockKeyFor(uint32_t lod, int32_t tileX, int32_t tileZ) {
-    return std::to_string(lod) + ":" + std::to_string(tileX / kTerrainMergeBlock) + ":" +
-           std::to_string(tileZ / kTerrainMergeBlock);
+    return std::to_string(lod) + ":" + std::to_string(static_cast<int32_t>(std::floor(static_cast<double>(tileX) / kTerrainMergeBlock))) + "," +
+           std::to_string(static_cast<int32_t>(std::floor(static_cast<double>(tileZ) / kTerrainMergeBlock)));
 }
 
 bool finiteNumber(double value) { return !std::isnan(value) && !std::isinf(value); }
@@ -634,6 +634,7 @@ void TerrainTiles::process() {
         if (tile.lodTransition.remainingFrames > 0) continue;
         maxLodTransitionFrames_ = std::max(maxLodTransitionFrames_, tile.lodTransition.elapsedFrames);
         tile.hasTransition = false;
+        markBlockDirty(tile.info.lodLevel, tile.info.tileX, tile.info.tileZ);
     }
     seamPass();
 }

@@ -5,6 +5,7 @@
 
 #include "check.h"
 #include "engine/renderer/render_database.h"
+#include "engine/player/skinned_crowd.h"
 #include "engine/scene/geometries.h"
 #include "mystral/webgpu/context.h"
 
@@ -558,13 +559,61 @@ void batchedVsUnbatched() {
     CHECK(database.diagnostics().empty());
 }
 
+// PRD-518 box 38: the same animated poses and refusals, with batching on and off, including shadows.
+void skinnedCrowdPixels() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(320, 180);
+    player::SkinnedCrowd crowd;
+    auto* bound = static_cast<SkinnedMesh*>(crowd.scene().getObjectByName("walker-0"));
+    bound->bindMatrix.makeTranslation(0.15, 0, 0);
+    auto* detached = static_cast<SkinnedMesh*>(crowd.scene().getObjectByName("walker-1"));
+    detached->attached = false;
+    crowd.scene().getObjectByName("walker-2")->scale.setScalar(1.2);
+    RenderDatabase database;
+    database.shadowMapEnabled = true;
+    for (int pose = 0; pose < 3; ++pose) {
+        for (int tick = 0; tick < 30; ++tick)
+            crowd.update(1.0 / 60);
+        database.batching = false;
+        database.render(renderer, crowd.scene(), crowd.camera());
+        const auto separate = read(renderer, events);
+        const auto exactStats = renderer.lastFrame();
+        database.batching = true;
+        database.render(renderer, crowd.scene(), crowd.camera());
+        const auto batched = read(renderer, events);
+        const auto stats = renderer.lastFrame();
+        CHECK(!batched.empty() && separate.size() == batched.size());
+        CHECK(stats.triangles == exactStats.triangles);
+        for (const auto& pass : {stats.mainSkinned, stats.shadowSkinned}) {
+            CHECK(pass.batches == 1 && pass.draws == 5 && pass.exactDraws == 4 && pass.instances == 64);
+        }
+        CHECK(exactStats.mainSkinned.draws == 68 && exactStats.shadowSkinned.draws == 68);
+        std::size_t covered = 0, differ = 0;
+        int worst = 0;
+        for (std::size_t p = 0; p + 3 < batched.size() && separate.size() == batched.size(); p += 4) {
+            int delta = 0;
+            for (int channel = 0; channel < 3; ++channel)
+                delta = std::max(delta, std::abs(int(batched[p + channel]) - int(separate[p + channel])));
+            worst = std::max(worst, delta);
+            differ += delta > 2;
+            covered += batched[p] + batched[p + 1] + batched[p + 2] > 0;
+        }
+        std::printf("skinned crowd pose %d: %zu covered, %zu pixels differ >2, worst %d\n", pose, covered, differ,
+                    worst);
+        // CPU f32 world-space palettes (world * bindInverse * bone * bind) round differently
+        // from the exact shader's model/bind transforms, moving a triangle edge across a pixel
+        // centre. The GPU measured 1 pixel >2 levels in each pose; allow at most 4 edge pixels.
+        CHECK(covered > 1000 && differ <= 4);
+        CHECK(database.diagnostics().empty());
+    }
+}
+
 }  // namespace
 
-TN_TEST_MAIN({"lit_scene", litScene}, {"invalidation", invalidation},
-            {"alpha_scene", alphaScene},
-            {"material_unsupported", materialUnsupported},
-            {"updates", updates},
-            {"multi_camera_layers", multiCameraLayers},
-            {"render_callback", renderCallback},
-            {"instanced", instanced},
-            {"batched_vs_unbatched", batchedVsUnbatched})
+TN_TEST_MAIN({"lit_scene", litScene}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
+             {"material_unsupported", materialUnsupported}, {"updates", updates},
+             {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
+             {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels})

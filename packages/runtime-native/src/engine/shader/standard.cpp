@@ -332,7 +332,11 @@ static LocalVertex localVertex(Program& v, const VertexVariant& variant, bool wi
     if (variant.skinned) {
         // getSkinnedPosition and getSkinnedNormalAndTangent, operand for operand.
         const uint32_t bones = v.storageBuffer("boneMatrices", Type::mat(4, 4));
-        const ExprId base = v.construct(Type::u32(), {v.uniform("boneBase", Type::f32())});
+        ExprId base = v.construct(Type::u32(), {v.uniform("boneBase", Type::f32())});
+        if (variant.skinnedPalette) {
+            const ExprId stride = v.construct(Type::u32(), {v.uniform("boneStride", Type::f32())});
+            base = v.add(base, v.mul(v.builtin("instanceIndex"), stride));
+        }
         const ExprId index = v.attribute("skinIndex", Type::vec(4, Type::Scalar::U32));
         const ExprId weight = v.attribute("skinWeight", Type::vec(4));
         const ExprId bindMatrix = v.uniform("bindMatrix", Type::mat(4, 4));

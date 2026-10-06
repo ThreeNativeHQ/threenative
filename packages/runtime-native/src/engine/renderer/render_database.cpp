@@ -2,6 +2,7 @@
 #include "render_database.h"
 
 #include "engine/animation/skinning/skeleton.h"
+#include "engine/renderer/projection/plan.h"
 
 #include <algorithm>
 #include <cmath>
@@ -218,6 +219,7 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
                     // three's skinning() updates each skeleton once per frame before its first draw.
                     const auto& skinned = static_cast<const SkinnedMesh&>(mesh);
                     DrawItem& d = items.back();
+                    d.skinnedRig = static_cast<SkinnedMesh*>(&object);
                     d.skinIndices = store(*mesh.geometry, "skinIndex");
                     d.skinWeights = store(*mesh.geometry, "skinWeight");
                     if (skinned.skeleton && d.skinIndices && d.skinWeights) {
@@ -305,14 +307,26 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
 // replaces each group of kMinBatchMembers or more with one instanced item: identity model matrix,
 // the members' world matrices (float32, as a uniform holds them) as instance matrices, drawn in the
 // first member's place.
-void RenderDatabase::batch(std::vector<DrawItem>& items) {
+void RenderDatabase::batch(std::vector<DrawItem>& items, Object3D& scene) {
+    const auto decision = std::any_of(items.begin(), items.end(), [](const DrawItem& item) { return item.skinnedRig; })
+                              ? projection::decide(scene) : projection::Decision{};
+    skinnedPalettes_.clear();
     std::vector<std::vector<std::size_t>> groups;
     for (std::size_t i = 0; i < items.size(); ++i) {
         const DrawItem& d = items[i];
-        if (!d.batchable)
+        const auto verdict = decision.verdict.find(d.skinnedRig);
+        const bool skinned = d.boneMatrices && verdict != decision.verdict.end() && verdict->second == "skinned";
+        if (!d.batchable && !skinned)
             continue;
         auto same = [&](const std::vector<std::size_t>& g) {
             const DrawItem& o = items[g.front()];
+            if (bool(o.skinnedRig) != bool(d.skinnedRig))
+                return false;
+            if (skinned &&
+                (o.skinnedRig->geometry != d.skinnedRig->geometry ||
+                 o.skinnedRig->skeleton->bones.size() != d.skinnedRig->skeleton->bones.size() ||
+                 projection::detail::batchFlags(*o.skinnedRig) != projection::detail::batchFlags(*d.skinnedRig)))
+                return false;
             return o.positions == d.positions && o.normals == d.normals && o.indices == d.indices &&
                    o.materialKey == d.materialKey && o.kind == d.kind && o.renderOrder == d.renderOrder &&
                    o.castShadow == d.castShadow && o.receiveShadow == d.receiveShadow;
@@ -326,8 +340,16 @@ void RenderDatabase::batch(std::vector<DrawItem>& items) {
     std::vector<bool> absorbed(items.size(), false);
     std::vector<DrawItem> merged;
     for (const std::vector<std::size_t>& g : groups) {
-        if (g.size() < kMinBatchMembers)
+        const bool skinned = items[g.front()].skinnedRig != nullptr;
+        if (!skinned && g.size() < kMinBatchMembers)
             continue;
+        SkinnedPalette* palette = nullptr;
+        if (skinned) {
+            skinnedPalettes_.push_back(
+                std::make_unique<SkinnedPalette>(items[g.front()].skinnedRig->skeleton->bones.size(), g.size(), false));
+            palette = skinnedPalettes_.back().get();
+            palette->begin();
+        }
         if (batchStores_.size() <= batchGroups_)
             batchStores_.push_back(std::make_shared<BufferStore>(Scalar::F32, 0));
         BufferStore& store = *batchStores_[batchGroups_++];
@@ -336,16 +358,30 @@ void RenderDatabase::batch(std::vector<DrawItem>& items) {
         std::vector<float> matrices;
         matrices.reserve(g.size() * 16);
         for (std::size_t i : g) {
-            for (double e : items[i].matrixWorld)
+            if (palette) {
+                const auto slot = palette->claim(items[i].skinnedRig);
+                palette->write(*slot, *items[i].skinnedRig, false); // project updated this skeleton once
+            }
+            // SkinnedPalette already folds world placement into the bones. Instance transforms
+            // must be identity; applying each rig's matrix here would transform it twice.
+            const Matrix identity{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+            for (double e : palette ? identity : items[i].matrixWorld)
                 matrices.push_back(static_cast<float>(e));
             absorbed[i] = true;
         }
         store.write(0, matrices.data(), matrices.size() * sizeof(float));
         store.needsUpdate();
         DrawItem d = items[g.front()];
+        d.sortOrigin = {d.matrixWorld[12], d.matrixWorld[13], d.matrixWorld[14]};
         d.matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
         d.instanceMatrices = &store;
         d.instanceCount = static_cast<uint32_t>(g.size());
+        if (palette) {
+            palette->end();
+            d.boneMatrices = &palette->matrices();
+            d.boneStride = palette->bones();
+            d.bindMatrix = d.bindMatrixInverse = d.matrixWorld;
+        }
         merged.push_back(d);
         batchMembers_ += g.size();
     }
@@ -360,7 +396,7 @@ void RenderDatabase::batch(std::vector<DrawItem>& items) {
     items = std::move(out);
 }
 
-uint64_t RenderDatabase::render(Renderer& renderer, Object3D& scene, Camera& camera, std::array<double, 4> clear) {
+std::vector<DrawItem> RenderDatabase::prepare(Object3D& scene, Camera& camera, LightState& lights) {
     ++frame_;
     diagnostics_.clear();
     hemisphere_ = 0;
@@ -377,7 +413,7 @@ uint64_t RenderDatabase::render(Renderer& renderer, Object3D& scene, Camera& cam
             o->updateProjectionMatrix();
     }
     std::vector<DrawItem> items;
-    LightState lights;
+    lights = LightState{};
     lights.hemisphereSky = lights.hemisphereGround = {0, 0, 0};
     callbacks_.clear();
     direct_.clear();
@@ -411,8 +447,16 @@ uint64_t RenderDatabase::render(Renderer& renderer, Object3D& scene, Camera& cam
         }
     }
     batchGroups_ = batchMembers_ = 0;
-    if (batching)
-        batch(items);
+    if (batching) {
+        CameraState state;
+        state.matrixWorldInverse = toArray(camera.matrixWorldInverse);
+        state.projectionMatrix = toArray(camera.projectionMatrix);
+        std::vector<DrawItem> ordered;
+        ordered.reserve(items.size());
+        for (const auto& [depth, item] : Renderer::sortDraws(items, state)) ordered.push_back(*item);
+        items = std::move(ordered);
+        batch(items, scene);
+    }
     // Resolve the scene fallback every frame: environment can change without a material version bump.
     const Scene* world = dynamic_cast<const Scene*>(&scene);
     for (DrawItem& item : items) {
@@ -424,6 +468,12 @@ uint64_t RenderDatabase::render(Renderer& renderer, Object3D& scene, Camera& cam
         item.envMapIntensity = env ? material.envMapIntensity : world ? world->environmentIntensity : 1;
         if (item.envMap && !item.envMap->hasImage()) item.envMap = nullptr;
     }
+    return items;
+}
+
+uint64_t RenderDatabase::render(Renderer& renderer, Object3D& scene, Camera& camera, std::array<double, 4> clear) {
+    LightState lights;
+    const auto items = prepare(scene, camera, lights);
     CameraState state;
     state.matrixWorld = toArray(camera.matrixWorld);
     state.matrixWorldInverse = toArray(camera.matrixWorldInverse);

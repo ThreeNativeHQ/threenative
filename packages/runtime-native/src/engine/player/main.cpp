@@ -7,15 +7,26 @@
 
 #include "engine/inspect/endpoint.h"
 #include "engine/player/demo.h"
+#include "engine/player/skinned_crowd.h"
 #include "engine/player/run.h"
 
 using namespace tn::engine;
 
 int main(int argc, char** argv) {
-    // The one argument the player takes is the game name; inspect-demo is the only built-in game.
+    // The first argument selects the built-in C++ game.
     const std::string game = argc > 1 && argv[1][0] != '\0' ? argv[1] : "inspect-demo";
+    if (game == "skinned-crowd") {
+        player::SkinnedCrowd crowd;
+        player::Game configured;
+        configured.name = game;
+        configured.scene = &crowd.scene();
+        configured.camera = &crowd.camera();
+        configured.shadowMapEnabled = true;
+        configured.update = [&crowd](double dt) { crowd.update(dt); };
+        return player::run(configured);
+    }
     if (game != "inspect-demo") {
-        std::printf("TN_PLAYER_UNKNOWN_GAME: %s; this player builds inspect-demo.\n", game.c_str());
+        std::printf("TN_PLAYER_UNKNOWN_GAME: %s; this player builds inspect-demo and skinned-crowd.\n", game.c_str());
         return 1;
     }
 

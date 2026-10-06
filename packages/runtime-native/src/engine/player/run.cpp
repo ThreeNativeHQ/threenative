@@ -31,20 +31,31 @@ constexpr double kTickStep = 1.0 / 60;
 
 struct Window {
     SDL_Window* handle = nullptr;
+#if defined(__APPLE__)
+    SDL_MetalView metalView = nullptr;
+#endif
     uint32_t width = kWidth;
     uint32_t height = kHeight;
 };
 
-/** The legacy host's window, minus its web-view and UI branches: an SDL window and its X11 handles. */
+/** The legacy host's platform presentation flags, without web-view or UI branches. */
 bool openWindow(Window& window) {
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) {
         std::printf("[Playtest] SDL_Init failed: %s\n", SDL_GetError());
         return false;
     }
+#if defined(__linux__)
     // Dawn's Xlib surface needs the X11 backend, as src/platform/window.cpp forces on Linux.
     SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "x11");
+#endif
+    SDL_WindowFlags flags = SDL_WINDOW_RESIZABLE;
+#if defined(__APPLE__)
+    flags |= SDL_WINDOW_METAL;
+#elif !defined(_WIN32)
+    flags |= SDL_WINDOW_VULKAN;
+#endif
     window.handle = SDL_CreateWindow("ThreeNative native engine", static_cast<int>(kWidth),
-                                     static_cast<int>(kHeight), SDL_WINDOW_RESIZABLE | SDL_WINDOW_VULKAN);
+                                     static_cast<int>(kHeight), flags);
     if (!window.handle) {
         std::printf("[Playtest] SDL_CreateWindow failed: %s\n", SDL_GetError());
         return false;
@@ -58,8 +69,17 @@ bool openWindow(Window& window) {
     return true;
 }
 
-/** The Dawn surface for this window, as src/runtime.cpp builds it on Linux. */
+/** SDL exposes the native handles needed by the host's existing Dawn surface API. */
 bool surfaceForWindow(mystral::webgpu::Context& context, Window& window) {
+#if defined(__APPLE__)
+    window.metalView = SDL_Metal_CreateView(window.handle);
+    void* layer = window.metalView ? SDL_Metal_GetLayer(window.metalView) : nullptr;
+    return layer && context.createSurface(layer, mystral::webgpu::Context::PLATFORM_METAL);
+#elif defined(_WIN32)
+    void* hwnd = SDL_GetPointerProperty(SDL_GetWindowProperties(window.handle),
+                                       SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr);
+    return hwnd && context.createSurface(hwnd, mystral::webgpu::Context::PLATFORM_WINDOWS);
+#else
     SDL_PropertiesID properties = SDL_GetWindowProperties(window.handle);
     void* display = SDL_GetPointerProperty(properties, SDL_PROP_WINDOW_X11_DISPLAY_POINTER, nullptr);
     const auto id = SDL_GetNumberProperty(properties, SDL_PROP_WINDOW_X11_WINDOW_NUMBER, 0);
@@ -69,6 +89,7 @@ bool surfaceForWindow(mystral::webgpu::Context& context, Window& window) {
     }
     return context.createSurfaceWithDisplay(display, reinterpret_cast<void*>(static_cast<std::uintptr_t>(id)),
                                            mystral::webgpu::Context::PLATFORM_XLIB);
+#endif
 }
 
 /** Quits on a close request; the runner ends a run with SIGTERM, not with a window message. */
@@ -138,10 +159,20 @@ int run(const Game& game) {
     };
     // What the scenario schema can read: the profile describe reports, a state snapshot a scenario
     // compares across labelled steps, and whatever else the game registers.
-    host.resource = [&game, &clock](const std::string& id) -> json::Value {
+    host.resource = [&game, &clock, &renderer](const std::string& id) -> json::Value {
         if (id == "profile")
             return json::Value::makeObject({{"engine", json::Value::makeString("native")},
                                             {"gameRuntime", json::Value::makeString(game.gameRuntime)}});
+        if (id == "render") {
+            const auto pass = [](const Renderer::FrameStats::SkinnedPass& stats) {
+                return json::Value::makeObject({{"skinnedBatches", json::Value::makeNumber(stats.batches)},
+                                                {"skinnedDraws", json::Value::makeNumber(stats.draws)},
+                                                {"skinnedExactDraws", json::Value::makeNumber(stats.exactDraws)},
+                                                {"skinnedInstances", json::Value::makeNumber(stats.instances)}});
+            };
+            const auto& stats = renderer.lastFrame();
+            return json::Value::makeObject({{"main", pass(stats.mainSkinned)}, {"shadow", pass(stats.shadowSkinned)}});
+        }
         return game.resource ? game.resource(id, clock.tick()) : json::Value::makeNull();
     };
     inspect::Endpoint endpoint(host);
@@ -155,6 +186,7 @@ int run(const Game& game) {
                 runner ? "on" : "off");
 
     RenderDatabase database;
+    database.shadowMapEnabled = game.shadowMapEnabled;
     bool readbackInFlight = false;
     while (pumpEvents(window)) {
         // One request frame in, one response frame out: advance, sample, describe and the input
@@ -200,6 +232,10 @@ int run(const Game& game) {
         }
     }
 
+#if defined(__APPLE__)
+    if (window.metalView)
+        SDL_Metal_DestroyView(window.metalView);
+#endif
     if (window.handle)
         SDL_DestroyWindow(window.handle);
     SDL_QuitSubSystem(SDL_INIT_VIDEO);

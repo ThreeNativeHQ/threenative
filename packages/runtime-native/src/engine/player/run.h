@@ -30,6 +30,7 @@ struct Game {
     /** The game runtime named in `describe` and `sample.profile`: "cpp" for a built-in game, "v8"
      *  for a game bundle on the V8 adapter. */
     std::string gameRuntime = "cpp";
+    bool shadowMapEnabled = false;
     /** One fixed tick; `dt` is the step in seconds. The loop calls it once per `advance` tick. */
     std::function<void(double dt)> update;
     /** A registered resource by id, or null. The loop answers `profile` itself; the `tick` is the

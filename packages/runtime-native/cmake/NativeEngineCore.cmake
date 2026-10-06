@@ -62,6 +62,14 @@ tn_native_engine_target(tn_engine_scene)
 target_link_libraries(tn_engine_scene PUBLIC tn_engine_foundation)
 target_include_directories(tn_engine_scene PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
+# Animation is a renderer/binding dependency, including in the browser-only build.
+add_library(tn_engine_animation STATIC src/engine/animation/interpolant.cpp src/engine/animation/property_binding.cpp
+    src/engine/animation/mixer.cpp src/engine/animation/schedule.cpp
+    src/engine/animation/skinning/skeleton.cpp src/engine/animation/skinning/palette.cpp)
+tn_native_engine_target(tn_engine_animation)
+target_link_libraries(tn_engine_animation PUBLIC tn_engine_scene)
+target_include_directories(tn_engine_animation PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+
 # The projected-size camera cull (PRD-519), ported from packages/core/src/render-camera-cull.ts over
 # the scene graph: it hides the renderables this camera cannot resolve. Portable, so it joins the
 # Wasm core.
@@ -367,6 +375,31 @@ if(EMSCRIPTEN)
     endif()
 endif()
 
+if(EMSCRIPTEN)
+    # PRD-532 box 62: catalog-authored JS scenes and cooked packages on a WebGPU canvas.
+    add_executable(tn-native-engine-wasm-browser tests/native-engine/wasm/browser.cpp
+        tests/native-engine/wasm/abi_module.cpp)
+    target_link_libraries(tn-native-engine-wasm-browser PRIVATE tn_engine_abi tn_engine_renderer)
+    target_include_directories(tn-native-engine-wasm-browser PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    tn_native_engine_target(tn-native-engine-wasm-browser)
+    target_link_options(tn-native-engine-wasm-browser PRIVATE --no-entry -sMODULARIZE=1
+        -sEXPORT_NAME=createTnBrowser -sENVIRONMENT=node,web -sALLOW_MEMORY_GROWTH=1 -sALLOW_TABLE_GROWTH=1
+        "-sEXPORTED_FUNCTIONS=_tn_engine_version,_tn_context_create,_tn_context_destroy,_tn_type_id,_tn_object_release,_tn_construct,_tn_invoke,_tn_get,_tn_set,_tn_set_callback,_tn_diagnostic_release,_tnw_fire_before_render,_tnw_init,_tnw_render,_tnw_verify_package,_tnw_load_package,_malloc,_free"
+        "-sEXPORTED_RUNTIME_METHODS=HEAPU8,HEAPU32,HEAPF64,UTF8ToString,stringToUTF8,lengthBytesUTF8,addFunction")
+    find_program(TN_WASM_NODE node REQUIRED)
+    configure_file(tests/native-engine/wasm/assets.html ${CMAKE_CURRENT_BINARY_DIR}/native-core-assets.html COPYONLY)
+    add_custom_target(tn-native-engine-wasm-assets
+        COMMAND ${TN_WASM_NODE} --import tsx tests/native-engine/wasm/assets-bundle.ts ${CMAKE_CURRENT_BINARY_DIR}
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        DEPENDS tn-native-engine-wasm-browser
+        COMMENT "Bundle the catalog browser adapter and cook TNPK geometry (no upstream three.js)")
+    # The browser preset builds this renderer/ABI slice; the full Wasm CPU lane remains unchanged.
+    option(TN_ENGINE_WASM_BROWSER_ONLY "Configure the browser renderer and ABI slice only" OFF)
+    if(TN_ENGINE_WASM_BROWSER_ONLY)
+        return()
+    endif()
+endif()
+
 # PRD-506: a compiled TypeScript closure called by the engine, through the native-TypeScript corpus
 # runner against this build's archives. The archives must link with a plain C++ driver, so not under
 # sanitizers, and the pinned compiler targets the host, so not for Wasm or a cross build.
@@ -393,12 +426,6 @@ tn_native_engine_target(tn-native-engine-identity)
 set_property(GLOBAL APPEND PROPERTY TN_NATIVE_ENGINE_TEST_TARGETS tn-native-engine-identity)
 
 # PRD-516: three's animation system, starting with its interpolants.
-add_library(tn_engine_animation STATIC src/engine/animation/interpolant.cpp src/engine/animation/property_binding.cpp
-    src/engine/animation/mixer.cpp src/engine/animation/schedule.cpp
-    src/engine/animation/skinning/skeleton.cpp src/engine/animation/skinning/palette.cpp)
-tn_native_engine_target(tn_engine_animation)
-target_link_libraries(tn_engine_animation PUBLIC tn_engine_scene)
-target_include_directories(tn_engine_animation PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 tn_native_engine_test(tn-native-engine-animation-interpolants-test tests/native-engine/animation/interpolants_test.cpp
     native_engine_animation_interpolants=interpolants)
 target_link_libraries(tn-native-engine-animation-interpolants-test PRIVATE tn_engine_animation)
@@ -494,6 +521,7 @@ target_include_directories(tn-native-engine-animation-skinned-palette-test PRIVA
 # LOD and collider decisions ported from packages/core/src/world-tiles.ts.
 add_library(tn_engine_world STATIC src/engine/world/loop/fixed_step.cpp
     src/engine/world/terrain/heights.cpp src/engine/world/tiles/terrain_tiles.cpp
+    src/engine/world/cells/world_cells.cpp
     src/engine/world/events/completion_queue.cpp
     src/engine/world/package/world_package.cpp)
 tn_native_engine_target(tn_engine_world)
@@ -524,6 +552,25 @@ if(TN_PNPM_TILES_EXECUTABLE)
     set_tests_properties(native_engine_world_tiles_reference_current PROPERTIES LABELS "native-engine")
 else()
     message(WARNING "pnpm not found: native_engine_world_tiles_reference_current is not registered")
+endif()
+# PRD-521 box 37: residency, bounded admission, chunk groups and chain LOD decisions.
+# The test reads its JSON table from disk, which a Wasm test under node cannot; the library still
+# builds for Wasm.
+if(NOT EMSCRIPTEN)
+    tn_native_engine_test(tn-native-engine-world-cells-test tests/native-engine/world/world_cells_test.cpp
+        native_engine_world_cells=world_cells)
+    target_link_libraries(tn-native-engine-world-cells-test PRIVATE tn_engine_world tn_engine_assets)
+    target_compile_definitions(tn-native-engine-world-cells-test PRIVATE
+        TN_WORLD_CELLS_REFERENCE="${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/world/world_cells_reference.json")
+endif()
+if(TN_PNPM_TILES_EXECUTABLE)
+    add_test(NAME native_engine_world_cells_reference_current
+        COMMAND ${TN_PNPM_TILES_EXECUTABLE} --workspace-root exec tsx
+            packages/runtime-native/tests/native-engine/world/world-cells-reference.ts --check
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../..)
+    set_tests_properties(native_engine_world_cells_reference_current PROPERTIES LABELS "native-engine")
+else()
+    message(WARNING "pnpm not found: native_engine_world_cells_reference_current is not registered")
 endif()
 # PRD-521 phase 1: the ported world.json validator and cellPlacements against world-package.ts.
 tn_native_engine_test(tn-native-engine-world-package-test tests/native-engine/world/world_package_test.cpp

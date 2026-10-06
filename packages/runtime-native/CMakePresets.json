@@ -133,6 +133,13 @@
       "binaryDir": "${sourceDir}/build/wasm",
       "toolchainFile": "$env{EMSDK}/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake",
       "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+    },
+    {
+      "name": "wasm-browser",
+      "inherits": "wasm",
+      "displayName": "ThreeNative Wasm catalog and cooked-asset browser proof",
+      "binaryDir": "${sourceDir}/build/wasm-browser",
+      "cacheVariables": { "TN_ENGINE_WASM_BROWSER_ONLY": "ON" }
     }
   ],
   "buildPresets": [
@@ -141,7 +148,8 @@
     { "name": "tn-macos", "configurePreset": "tn-macos" },
     { "name": "tn-android", "configurePreset": "tn-android" },
     { "name": "tn-ios", "configurePreset": "tn-ios" },
-    { "name": "wasm", "configurePreset": "wasm" }
+    { "name": "wasm", "configurePreset": "wasm" },
+    { "name": "wasm-browser", "configurePreset": "wasm-browser", "targets": ["tn-native-engine-wasm-assets"] }
   ],
   "testPresets": [
     { "name": "tn-linux", "configurePreset": "tn-linux", "output": { "outputOnFailure": true } }

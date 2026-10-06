@@ -24,6 +24,7 @@ namespace tn::engine {
 
 using Matrix = std::array<double, 16>;  // column-major, as three's Matrix4.elements
 
+class SkinnedMesh;
 class Texture;  // the material's diffuse `map` (engine/scene/texture.h)
 
 /** Which program a draw uses; each kind reads the StandardMaterial fields it needs. */
@@ -37,6 +38,8 @@ struct DrawItem {
     BufferStore* uvs = nullptr;          // vec2 float; only a mapped material's program reads it
     BufferStore* indices = nullptr;      // u16 or u32; null draws non-indexed
     Matrix matrixWorld{};
+    // A merged draw retains its first member's render-list origin when its model becomes identity.
+    std::optional<std::array<double, 3>> sortOrigin;
     const shader::StandardMaterial* material = nullptr;
     /** The material's diffuse `map`, if any: the fragment samples it at `uvTransform * vec3(uv, 1)`. */
     const Texture* map = nullptr;
@@ -57,6 +60,14 @@ struct DrawItem {
     const std::vector<double>* morphInfluences = nullptr;
     const std::vector<float>* boneMatrices = nullptr;
     Matrix bindMatrix{}, bindMatrixInverse{};
+    SkinnedMesh* skinnedRig = nullptr; // authored rig, for projection eligibility and palette writes
+    uint32_t boneStride = 0;           // palette matrices per instance; zero on exact skinned draws
+    /** three's flipSided: mirrored authored meshes reverse the front-face winding. */
+    [[nodiscard]] WGPUFrontFace frontFace() const {
+        Matrix4 world;
+        world.elements = matrixWorld;
+        return world.determinant() < 0 ? WGPUFrontFace_CW : WGPUFrontFace_CCW;
+    }
     bool castShadow = false;    // Object3D.castShadow: drawn into every shadow map
     bool receiveShadow = false; // Object3D.receiveShadow: its lit program reads the shadow maps
     uint8_t side = 0;           // material.side: 0 FrontSide, 1 BackSide, 2 DoubleSide
@@ -160,6 +171,10 @@ public:
     uint32_t width() const { return width_; }
     uint32_t height() const { return height_; }
 
+    /** The submission order, shared with batching so palette slots follow the exact draws. */
+    static std::vector<std::pair<double, const DrawItem*>> sortDraws(std::span<const DrawItem> items,
+                                                                  const CameraState& camera);
+
     /**
      * Draws one frame and returns its render ID (every render call gets its own, from 1). Items are
      * drawn in three's order: opaque by renderOrder, then depth front to back, then id; transparent
@@ -181,6 +196,10 @@ public:
     struct FrameStats {
         uint32_t draws = 0;
         uint64_t triangles = 0;
+        struct SkinnedPass {
+            uint32_t batches = 0, draws = 0, exactDraws = 0, instances = 0;
+        };
+        SkinnedPass mainSkinned, shadowSkinned;
     };
     const FrameStats& lastFrame() const { return lastFrame_; }
     /**
@@ -202,7 +221,7 @@ private:
         kMetalness, kEmissive, kSpecular, kShininess, kIor, kSpecularIntensity, kSpecularColor,
         kUvTransform, kHemisphereSky, kHemisphereGround, kHemisphereDirection, kAmbient, kBoneBase, kBindMatrix,
         kBindMatrixInverse, kMorphBase, kMorphInfluenceBase, kMorphVertexCount, kMorphBaseInfluence,
-        kEnvMapIntensity, kCameraWorldMatrix, kEnvMapTexelWidth, kEnvMapTexelHeight, kEnvMapMaxMip, kSlotCount
+        kEnvMapIntensity, kCameraWorldMatrix, kEnvMapTexelWidth, kEnvMapTexelHeight, kEnvMapMaxMip, kBoneStride, kSlotCount
     };
     // Per direct light i, `light{i}<Field>` (shader::LightLayout).
     enum LightField : uint8_t { kLightColor, kLightDirection, kLightPosition, kLightDistance, kLightDecay, kLightAxis,

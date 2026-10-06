@@ -61,6 +61,7 @@ struct VertexVariant {
      * `bindMatrixInverse` uniforms.
      */
     bool skinned = false;
+    bool skinnedPalette = false; // boneBase + instanceIndex * boneStride
     /**
      * three's morphReference(): `morphTargets` targets read from the storage buffer `morphData`
      * (vec4 per vertex and target; a normal entry after each position one when `morphNormals`) from
@@ -90,9 +91,10 @@ struct VertexVariant {
     MaterialNodes nodes;
     /** A stable key: two variants with the same key build the same program. */
     [[nodiscard]] std::string key() const {
-        return std::to_string(instanced) + std::to_string(instanceColor) + std::to_string(skinned) + "m" +
-               std::to_string(morphTargets) + (morphNormals ? "n" : "") + (map ? "t" : "") +
-               (mapSRGB ? "s" : "") + (environment ? "e" : "") + (positionNode ? "p:" + positionNode->key : "") + "|nodes:" + nodes.key();
+        return std::to_string(instanced) + std::to_string(instanceColor) + std::to_string(skinned) +
+               std::to_string(skinnedPalette) + "m" + std::to_string(morphTargets) + (morphNormals ? "n" : "") +
+               (map ? "t" : "") + (mapSRGB ? "s" : "") + (environment ? "e" : "") +
+               (positionNode ? "p:" + positionNode->key : "") + "|nodes:" + nodes.key();
     }
 };
 

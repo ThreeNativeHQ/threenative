@@ -135,11 +135,12 @@ void SkinnedPalette::hide(std::uint32_t slot) {
 
 void SkinnedPalette::restart(std::uint32_t slot) { fresh_.push_back(slot); }
 
-void SkinnedPalette::write(std::uint32_t slot, SkinnedMesh& rig) {
+void SkinnedPalette::write(std::uint32_t slot, SkinnedMesh& rig, bool updateSkeleton) {
     Skeleton* skeleton = rig.skeleton.get();
     if (skeleton == nullptr) return;
     // `#updated.get(skeleton) !== this.#frame`: a skeleton never seen is not "updated at frame 0".
-    if (const auto seen = updated_.find(skeleton); seen == updated_.end() || seen->second != frame_) {
+    if (const auto seen = updated_.find(skeleton);
+        updateSkeleton && (seen == updated_.end() || seen->second != frame_)) {
         skeleton->update();
         updated_[skeleton] = frame_;
         skeletonUpdates_ += 1;

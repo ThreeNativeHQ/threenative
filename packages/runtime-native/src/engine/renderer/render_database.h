@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "engine/renderer/renderer.h"
+#include "engine/animation/skinning/palette.h"
 #include "engine/scene/camera.h"
 #include "engine/scene/geometry.h"
 #include "engine/scene/lights.h"
@@ -36,16 +37,19 @@ class RenderDatabase {
   public:
     uint64_t render(Renderer& renderer, Object3D& scene, Camera& camera, std::array<double, 4> clear = {0, 0, 0, 1});
 
+    /** CPU preparation used by render; returned pointers remain valid until the next prepare. */
+    std::vector<DrawItem> prepare(Object3D& scene, Camera& camera, LightState& lights);
+
     /** Records rebuilt since construction; the invalidation test reads it. */
     [[nodiscard]] uint64_t rebuilds() const { return rebuilds_; }
     /** Why the last render left something out (TN_NATIVE_MATERIAL_UNSUPPORTED, TN_NATIVE_LIGHTS_UNSUPPORTED...). */
     [[nodiscard]] const std::vector<std::string>& diagnostics() const { return diagnostics_; }
 
     /**
-     * Automatic batching (PRD-519): opaque plain meshes that share a geometry and a material, at
-     * least kMinBatchMembers of them (projection-plan.ts's MIN_BATCH_MEMBERS) and none with a render
-     * callback, draw as one instanced draw whose instance matrices are their world matrices. On by
-     * default; off draws every mesh on its own, which must give the same frame.
+     * Automatic batching (PRD-519): opaque plain meshes that share a geometry and material,
+     * at least kMinBatchMembers of them and none with a render callback, draw as one instanced
+     * draw. Compatible skinned rigs share one palette draw per pass even across other draws.
+     * On by default; off draws every mesh on its own, subject to the measured pixel-edge budget.
      */
     bool batching = true;
     /** three's `renderer.shadowMap.enabled`: off, no light draws or reads a shadow map. */
@@ -70,8 +74,9 @@ class RenderDatabase {
         uint64_t seen = 0; // the render it was last projected in
     };
     void project(Object3D& object, const Camera& camera, std::vector<DrawItem>& items, LightState& lights);
-    void batch(std::vector<DrawItem>& items);
+    void batch(std::vector<DrawItem>& items, Object3D& scene);
     std::vector<std::shared_ptr<BufferStore>> batchStores_; // reused frame to frame, one per group
+    std::vector<std::unique_ptr<SkinnedPalette>> skinnedPalettes_; // borrowed by this frame's draws
     std::size_t batchGroups_ = 0, batchMembers_ = 0;
     Record& record(const Mesh& mesh);
 

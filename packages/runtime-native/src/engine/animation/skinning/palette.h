@@ -60,8 +60,8 @@ class SkinnedPalette {
     void hide(std::uint32_t slot);
     /** Marks a slot whose history must restart from its next pose. */
     void restart(std::uint32_t slot);
-    /** Writes one rig's world-space bone palette into `slot`. */
-    void write(std::uint32_t slot, SkinnedMesh& rig);
+    /** Writes one rig's world-space palette; the render database may supply an already updated skeleton. */
+    void write(std::uint32_t slot, SkinnedMesh& rig, bool updateSkeleton = true);
 
     /** Starts one frame: the frame's history becomes last frame's pose. */
     void begin();
@@ -70,6 +70,8 @@ class SkinnedPalette {
 
     /** This frame's world-space bone matrices, `capacity × bones` of them in slot order. */
     [[nodiscard]] std::span<const float> palette() const { return current_; }
+    /** Contiguous storage borrowed by a render draw; the palette owns its lifetime. */
+    [[nodiscard]] const std::vector<float>& matrices() const { return current_; }
     /** Last frame's palette, present only while velocity was asked for. */
     [[nodiscard]] std::span<const float> history() const {
         return velocity_ ? std::span<const float>(previous_) : std::span<const float>();

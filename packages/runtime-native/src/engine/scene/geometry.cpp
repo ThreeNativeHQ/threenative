@@ -180,10 +180,12 @@ double BufferAttribute::normalize(double value) const {
 // index * itemSize + component without wrapping: a caller-supplied index can be anything, and a
 // product that wrapped would land back inside the array.
 bool BufferAttribute::element(uint64_t index, int component, uint64_t& out) const {
-    uint64_t scaled = 0;
     if (component < 0 || itemSize <= 0) return false;
-    if (__builtin_mul_overflow(index, static_cast<uint64_t>(itemSize), &scaled)) return false;
-    if (__builtin_add_overflow(scaled, static_cast<uint64_t>(component), &out)) return false;
+    const uint64_t max = std::numeric_limits<uint64_t>::max();
+    if (index > max / static_cast<uint64_t>(itemSize)) return false;
+    const uint64_t scaled = index * static_cast<uint64_t>(itemSize);
+    if (static_cast<uint64_t>(component) > max - scaled) return false;
+    out = scaled + static_cast<uint64_t>(component);
     return out < store->count();
 }
 

@@ -1,6 +1,6 @@
 # PRD-533 — Platform qualification, performance and default promotion (N20)
 
-**Status:** PROPOSED
+**Status:** PARTIAL
 **Complexity:** 5 — release-scale qualification on real hardware with explicit investment gates
 **Owner:** João
 **Work package:** N20 — [native-engine batch](README.md)
@@ -47,11 +47,24 @@ targets (§2.3); software adapters and virtual displays are not performance evid
 - [ ] The web build runs one workload under three arms — current three.js, the Wasm engine with JavaScript game code, and the Wasm engine with Perry-to-Wasm game code — with identical presented work, and the result decides between options B and A of decision 12. proof: `pnpm bench:engines -- --target web --arms current,wasm-js,wasm-perry` (new arms)
 
 #### Phase 2: Artifact qualification
-**Status:** NOT STARTED
-**Files:** `.github/workflows/native-platforms.yml` (new job in the existing workflow)
+**Status:** PARTIAL
+**Files:** `.github/workflows/native-platforms.yml` (Linux), `.github/workflows/native-release.yml` (Windows/macOS matrix in the existing workflow)
 - [ ] The Linux desktop artifact on the native engine passes engine-only JS-free inspection and its playtest journey. proof: `native-platforms` CI job `native-engine-linux`
-- [ ] The Windows desktop artifact on the native engine passes engine-only JS-free inspection and its playtest journey. proof: `native-platforms` CI job `native-engine-windows`
-- [ ] The macOS desktop artifact on the native engine passes engine-only JS-free inspection and its playtest journey. proof: `native-platforms` CI job `native-engine-macos`
+- [ ] The Windows desktop artifact on the native engine passes engine-only JS-free inspection and its playtest journey. proof: `native-platforms` CI job `native-engine-windows` — open: the job now lives in `.github/workflows/native-release.yml` (native-engine-windows / native-engine-macos, dispatchable with `-f native_engine=true`), per the rule that a feature adds a job to an existing workflow; the run is pending.
+- [ ] The macOS desktop artifact on the native engine passes engine-only JS-free inspection and its playtest journey. proof: `native-platforms` CI job `native-engine-macos` — open: the job now lives in `.github/workflows/native-release.yml` (native-engine-windows / native-engine-macos, dispatchable with `-f native_engine=true`), per the rule that a feature adds a job to an existing workflow; the run is pending.
+
+Windows/macOS implementation: dispatch `native-release.yml` on the candidate branch with
+`native_engine=true`; it selects only these two legs, builds `tn-native-engine-player` with
+`TN_ENGINE_ONLY=ON`, inspects the binary, and runs the existing inspect/input/capture scenarios.
+Windows retains its MSVC linker map and records the observed adapter, including D3D12 WARP.
+Both qualification boxes remain open until their hosted builds and journeys execute successfully;
+MSVC/AppleClang compilation and GPU journeys were not run locally.
+Local validation: CI structure/needs specs **204 passed**, inspector **6 passed, 1 optional binary
+test skipped**, release-proof controls **61 passed**, Biome **passed**, and directly compiled
+geometry `out_of_range` **passed**. Node subprocess pipes return `EPERM` in this sandbox; the suites
+ran with temporary file-backed subprocess I/O, preserving their real commands and assertions.
+`actionlint` is not installed. Full local CMake regeneration encountered the other lane's
+in-flight, missing `tests/native-engine/world/world_cells_test.cpp`; that lane was left untouched.
 
 #### Phase 3: Promotion
 **Status:** NOT STARTED

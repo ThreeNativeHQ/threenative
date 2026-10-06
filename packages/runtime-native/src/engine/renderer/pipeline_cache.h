@@ -21,6 +21,7 @@ struct PipelineTarget {
     WGPUPipelineLayout layout = nullptr;  // explicit layout (dynamic-offset uniforms); null: auto
     // `skinIndex` as the geometry stores it: three's Uint8/16/32 attribute read as vec4<u32>.
     WGPUVertexFormat skinIndex = WGPUVertexFormat_Uint16x4;
+    WGPUFrontFace frontFace = WGPUFrontFace_CCW;
 };
 
 /**

@@ -75,13 +75,14 @@ inline const char* meshLaneReason(const Mesh& mesh) {
     return nullptr;
 }
 
-// skinnedLaneReason. A native material never moves its own vertices, so skinnedMaterialBlocked is
-// false for every one of them.
+// skinnedLaneReason: a material-owned position node keeps the authored skinning draw.
 inline const char* skinnedLaneReason(const SkinnedMesh& rig) {
     if (!rig.geometry) return "unsupportedGeometry";
     if (const char* reason = geometryLaneReason(*rig.geometry)) return reason;
     if (rig.renderOrder() != 0) return "renderOrder";
     if (!rig.material) return "unsupportedGeometry";
+    if (rig.material->positionNode || rig.material->nodes.positionNode)
+        return "skinnedMaterialBlocked";
     if (rig.material->transparent) return "transparent";
     if (!rig.skeleton || rig.skeleton->bones.empty() || itemSize(*rig.geometry, "normal") != 3 ||
         itemSize(*rig.geometry, "skinIndex") != 4 || itemSize(*rig.geometry, "skinWeight") != 4)

@@ -14,22 +14,22 @@ import { fileURLToPath } from "node:url";
 
 /** Symbol families of every JS engine and web view the native engine must not carry. */
 export const VM_SYMBOL_FAMILIES = [
-  { family: "v8", pattern: /\bv8::|\bv8_inspector::|\bV8_Fatal\b/ },
-  { family: "quickjs", pattern: /\bJS_(NewRuntime|NewContext|Eval|FreeRuntime)\b|\bquickjs\b/i },
-  { family: "javascriptcore", pattern: /\bJSGlobalContext\w*|\bJSEvaluateScript\b|\bJSC::/ },
-  { family: "hermes", pattern: /\bhermes::|\bfacebook::hermes\b/ },
-  { family: "webview", pattern: /\bwebkit_web_view\w*|\bWKWebView\b|\bICoreWebView2\w*/ },
-  { family: "embedded-runtime-scripts", pattern: /\bmystral::runtime_scripts::/ },
+  { family: "v8", pattern: /\bv8::|\bv8_inspector::|@v8@@|@v8_inspector@@|\b_?V8_Fatal\b/ },
+  { family: "quickjs", pattern: /\b_?JS_(NewRuntime|NewContext|Eval|FreeRuntime)\b|\bquickjs\b/i },
+  { family: "javascriptcore", pattern: /\b_?JSGlobalContext\w*|\b_?JSEvaluateScript\b|\bJSC::|@JSC@@/ },
+  { family: "hermes", pattern: /\bhermes::|\bfacebook::hermes\b|@hermes(?:@facebook)?@@/ },
+  { family: "webview", pattern: /\b_?webkit_web_view\w*|\bWKWebView\b|\bICoreWebView2\w*/ },
+  { family: "embedded-runtime-scripts", pattern: /\bmystral::runtime_scripts::|@runtime_scripts@mystral@@/ },
 ];
 
 /** Shared libraries that load a VM or a web view. */
-export const VM_LIBRARY = /(^|\/)(lib)?(v8|v8_libplatform|quickjs|JavaScriptCore|javascriptcoregtk[\w.-]*|hermes|webkit2gtk[\w.-]*|WebView2Loader)(\.|$)/i;
+export const VM_LIBRARY = /(^|[/\\])(lib)?(v8|v8_libplatform|quickjs|JavaScriptCore|javascriptcoregtk[\w.-]*|hermes|webkit2gtk[\w.-]*|WebView2Loader)(\.|$)/i;
 
 /** Bundler output that only an embedded script blob would put in a native binary. */
 export const SCRIPT_MARKERS = ["//# sourceMappingURL=", "Object.defineProperty(exports, \"__esModule\"", "__webpack_require__", "\"use strict\";\n"];
 
 /** Packaged files that are scripts, VM snapshots or bytecode. */
-export const SCRIPT_RESOURCE = /\.(m?js|cjs|jsbundle|hbc)$|(^|\/)(snapshot_blob|natives_blob)\.bin$/;
+export const SCRIPT_RESOURCE = /\.(m?js|cjs|jsbundle|hbc)$|(^|[/\\])(snapshot_blob|natives_blob)\.bin$/;
 
 export function findSymbolFindings(symbols) {
   const findings = [];
@@ -64,19 +64,26 @@ function run(tool, args) {
   }
 }
 
-function readSymbols(binary) {
-  if (process.platform === "win32") throw new Error("TN_JS_FREE_UNSUPPORTED_HOST: dumpbin inspection is not wired yet");
-  // Defined and undefined symbols both count: an import of v8:: is as much a VM as a definition.
-  const out = run("nm", process.platform === "darwin" ? ["-C", binary] : ["-C", "--no-sort", binary]);
-  return out.split("\n").filter(Boolean);
-}
-
-function readLibraries(binary) {
-  if (process.platform === "darwin") {
-    return run("otool", ["-L", binary]).split("\n").slice(1).map((line) => line.trim().split(" ")[0]).filter(Boolean);
+function readMetadata(binary, platform, execute) {
+  if (platform === "win32") {
+    // MSVC executables have no COFF symbol table. The link's /MAP sidecar retains public and
+    // static symbols (including statically linked VMs); /imports alone cannot prove JS freedom.
+    const map = readFileSync(`${binary.replace(/\.exe$/i, "")}.map`, "utf8");
+    const symbols = [...map.matchAll(/^\s*[\da-f]{4}:[\da-f]+\s+(\S+)\s+[\da-f]+\s/gim)].map((match) => match[1]);
+    if (symbols.length === 0) throw new Error(`TN_JS_FREE_NO_SYMBOLS: ${binary} has no linker map symbols to inspect`);
+    const imports = execute("dumpbin", ["/imports", binary]);
+    return {
+      symbols: [...symbols, ...imports.split("\n").filter(Boolean)],
+      libraries: [...imports.matchAll(/^\s+(\S+\.dll)\s*$/gim)].map((match) => match[1]),
+    };
   }
-  const out = run("readelf", ["-d", binary]);
-  return [...out.matchAll(/\(NEEDED\)\s+Shared library: \[([^\]]+)\]/g)].map((match) => match[1]);
+  // Defined and undefined symbols both count: an import of v8:: is as much a VM as a definition.
+  const out = execute("nm", platform === "darwin" ? ["-C", binary] : ["-C", "--no-sort", binary]);
+  const symbols = out.split("\n").filter(Boolean);
+  const libraries = platform === "darwin"
+    ? execute("otool", ["-L", binary]).split("\n").slice(1).map((line) => line.trim().split(" ")[0]).filter(Boolean)
+    : [...execute("readelf", ["-d", binary]).matchAll(/\(NEEDED\)\s+Shared library: \[([^\]]+)\]/g)].map((match) => match[1]);
+  return { symbols, libraries };
 }
 
 function listFiles(root) {
@@ -92,11 +99,10 @@ function listFiles(root) {
   return files;
 }
 
-export function inspect({ binary, resources }) {
+export function inspect({ binary, resources }, { platform = process.platform, run: execute = run } = {}) {
   const bytes = readFileSync(binary);
-  const symbols = readSymbols(binary);
+  const { symbols, libraries } = readMetadata(binary, platform, execute);
   if (symbols.length === 0) throw new Error(`TN_JS_FREE_NO_SYMBOLS: ${binary} has no symbol table to inspect`);
-  const libraries = readLibraries(binary);
   const findings = [
     ...findSymbolFindings(symbols),
     ...findLibraryFindings(libraries),
@@ -109,7 +115,7 @@ export function inspect({ binary, resources }) {
     symbolCount: symbols.length,
     libraries,
     resourcesInspected: Boolean(resources),
-    backend: symbols.some((s) => /\bdawn::native::|\bdawn::wire::/.test(s))
+    backend: symbols.some((s) => /\bdawn::native::|\bdawn::wire::|@(native|wire)@dawn@@/.test(s))
       ? "dawn"
       : symbols.some((s) => /\bwgpu_|wgpuGetVersion/.test(s))
         ? "wgpu-native"

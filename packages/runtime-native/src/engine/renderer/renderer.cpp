@@ -116,7 +116,7 @@ constexpr const char* kSlotNames[] = {
     "metalness", "emissive", "specular", "shininess", "ior", "specularIntensity", "specularColor", "uvTransform",
     "hemisphereSky", "hemisphereGround", "hemisphereDirection", "ambient", "boneBase", "bindMatrix",
     "bindMatrixInverse", "morphBase", "morphInfluenceBase", "morphVertexCount", "morphBaseInfluence",
-    "envMapIntensity", "cameraWorldMatrix", "envMapTexelWidth", "envMapTexelHeight", "envMapMaxMip"};
+    "envMapIntensity", "cameraWorldMatrix", "envMapTexelWidth", "envMapTexelHeight", "envMapMaxMip", "boneStride"};
 constexpr const char* kLightFieldNames[] = {"Color",       "Direction",        "Position",     "Distance",
                                             "Decay",       "Axis",             "ConeCos",      "PenumbraCos",
                                             "ShadowMatrix", "ShadowBias",      "ShadowNormalBias", "ShadowRadius",
@@ -929,6 +929,34 @@ void Renderer::rebuildGroups() {
     }
 }
 
+std::vector<std::pair<double, const DrawItem*>> Renderer::sortDraws(std::span<const DrawItem> items,
+                                                                 const CameraState& camera) {
+    // RenderList: z is the object origin's clip-space depth (setFromMatrixPosition, then the
+    // projection-view matrix); painterSortStable for opaques, reversePainterSortStable for the rest.
+    const Matrix projView = multiply(camera.projectionMatrix, camera.matrixWorldInverse);
+    std::vector<std::pair<double, const DrawItem*>> opaque, transparent;
+    for (const DrawItem& item : items) {
+        const Matrix& m = item.matrixWorld;
+        const auto origin = item.sortOrigin.value_or(std::array<double, 3>{m[12], m[13], m[14]});
+        const double z = projView[2] * origin[0] + projView[6] * origin[1] + projView[10] * origin[2] + projView[14];
+        const double w = projView[3] * origin[0] + projView[7] * origin[1] + projView[11] * origin[2] + projView[15];
+        (item.transparent ? transparent : opaque).push_back({z / w, &item});
+    }
+    std::sort(opaque.begin(), opaque.end(), [](const auto& a, const auto& b) {
+        if (a.second->renderOrder != b.second->renderOrder) return a.second->renderOrder < b.second->renderOrder;
+        if (a.first != b.first) return a.first < b.first;
+        return a.second->id < b.second->id;
+    });
+    std::sort(transparent.begin(), transparent.end(), [](const auto& a, const auto& b) {
+        if (a.second->renderOrder != b.second->renderOrder) return a.second->renderOrder < b.second->renderOrder;
+        if (a.first != b.first) return a.first > b.first;
+        return a.second->id < b.second->id;
+    });
+    opaque.insert(opaque.end(), transparent.begin(), transparent.end());
+
+    return opaque;
+}
+
 uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& camera, const LightState& lights,
                           std::array<double, 4> clear) {
     const uint64_t id = ++renderId_;
@@ -964,27 +992,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
         passDesc.timestampWrites = &sceneTimes;
     }
 
-    // RenderList: z is the object origin's clip-space depth (setFromMatrixPosition, then the
-    // projection-view matrix); painterSortStable for opaques, reversePainterSortStable for the rest.
-    const Matrix projView = multiply(camera.projectionMatrix, view);
-    std::vector<std::pair<double, const DrawItem*>> opaque, transparent;
-    for (const DrawItem& item : items) {
-        const Matrix& m = item.matrixWorld;
-        const double z = projView[2] * m[12] + projView[6] * m[13] + projView[10] * m[14] + projView[14];
-        const double w = projView[3] * m[12] + projView[7] * m[13] + projView[11] * m[14] + projView[15];
-        (item.transparent ? transparent : opaque).push_back({z / w, &item});
-    }
-    std::sort(opaque.begin(), opaque.end(), [](const auto& a, const auto& b) {
-        if (a.second->renderOrder != b.second->renderOrder) return a.second->renderOrder < b.second->renderOrder;
-        if (a.first != b.first) return a.first < b.first;
-        return a.second->id < b.second->id;
-    });
-    std::sort(transparent.begin(), transparent.end(), [](const auto& a, const auto& b) {
-        if (a.second->renderOrder != b.second->renderOrder) return a.second->renderOrder < b.second->renderOrder;
-        if (a.first != b.first) return a.first > b.first;
-        return a.second->id < b.second->id;
-    });
-    opaque.insert(opaque.end(), transparent.begin(), transparent.end());
+    const auto opaque = sortDraws(items, camera);
 
     // The light layout every lit program this frame is specialized for, in three's light order.
     // Upper case: the light casts a shadow, which a receiving mesh's program reads; a mesh that does
@@ -1091,6 +1099,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
         if (found == deforms.end()) return;
         const Deform& d = found->second;
         if (item.boneMatrices) {
+            put(frameUniforms_, v, vs[kBoneStride], std::array<double, 1>{double(item.boneStride)});
             put(frameUniforms_, v, vs[kBoneBase], std::array<double, 1>{d.boneBase});
             put(frameUniforms_, v, vs[kBindMatrix], item.bindMatrix);
             put(frameUniforms_, v, vs[kBindMatrixInverse], item.bindMatrixInverse);
@@ -1105,6 +1114,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
         v.instanced = item.instanceMatrices != nullptr;
         v.instanceColor = item.instanceColors != nullptr;
         v.skinned = item.boneMatrices != nullptr;
+        v.skinnedPalette = item.boneStride != 0;
         if (item.morphGeometry) {
             v.morphTargets = static_cast<uint8_t>(item.morphGeometry->morphPositions.size());
             v.morphNormals = !item.morphGeometry->morphNormals.empty();
@@ -1142,6 +1152,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
         PipelineTarget target{WGPUTextureFormat_RGBA16Float, WGPUTextureFormat_Depth32Float, cull, item.transparent,
                               item.depthWrite};
         target.layout = program.pipelineLayout;
+        target.frontFace = item.frontFace();
         target.skinIndex = skinIndexFormat(item);
         WGPURenderPipeline pipeline = pipelines_.get(program.vertex, &program.fragment, target);
         if (!pipeline) throw std::runtime_error("TN_NATIVE_PIPELINE_REFUSED: material program");
@@ -1235,6 +1246,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
                 item.side == 2 ? WGPUCullMode_None : item.side == 1 ? WGPUCullMode_Back : WGPUCullMode_Front;
             PipelineTarget target{WGPUTextureFormat_Undefined, WGPUTextureFormat_Depth24Plus, cull};
             target.layout = program.pipelineLayout;
+            target.frontFace = item.frontFace();
             target.skinIndex = skinIndexFormat(item);
             WGPURenderPipeline pipeline = pipelines_.get(program.vertex, nullptr, target);
             if (!pipeline) throw std::runtime_error("TN_NATIVE_PIPELINE_REFUSED: shadow depth program");
@@ -1345,6 +1357,16 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
             if (counted) lastFrame_.triangles += uint64_t{item.instanceCount} * (count / 3);
         }
         if (counted) ++lastFrame_.draws;
+        if (item.boneMatrices) {
+            auto& stats = counted ? lastFrame_.mainSkinned : lastFrame_.shadowSkinned;
+            ++stats.draws;
+            if (item.boneStride) {
+                ++stats.batches;
+                stats.instances += item.instanceCount;
+            } else {
+                ++stats.exactDraws;
+            }
+        }
     };
     for (const ShadowPass& shadowPlan : shadowPasses) {
         WGPURenderPassDepthStencilAttachment shadowDepth = {};
