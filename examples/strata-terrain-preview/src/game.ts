@@ -41,6 +41,7 @@ import { type IRiverWater, WATER_LAYER, createLakes, createRivers } from "./rend
 import { type IPlacementField, scatterProps } from "./render/scatter.js";
 import { type IOutdoorSky, createOutdoorSky, installOutdoorOcclusion } from "./render/sky.js";
 import { type IBakedWorld, createTerrain } from "./render/terrain.js";
+import { preparePropTextures } from "./render/texturePreparation.js";
 import baked from "./world/baked.json";
 
 /**
@@ -309,6 +310,7 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
       // ctx.goto carries state; camera names from the outgoing biome must not carry with it.
       ctx.state.set({ view: "player", worldReady: false, loadingError: "" });
       let released = false;
+      const textureUploads = new AbortController();
       let propsStage = "waiting-for-physics";
       let propsSettled = false;
       let preparation: IPropPreparationProgress | undefined;
@@ -598,6 +600,7 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
       ctx.entities.add("props-lifetime", {
         dispose: () => {
           released = true;
+          textureUploads.abort(new Error("Strata scene released during texture preparation."));
           admission.cancel();
           loading.finish();
           surfacesDispose?.();
@@ -701,6 +704,18 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
           surfaces.dispose();
           return;
         }
+        propsStage = "textures";
+        await preparePropTextures(
+          ctx.renderer,
+          [
+            ...[...propParts.values()].flatMap((parts) =>
+              parts.flatMap((part) => (part.material ? [part.material] : [])),
+            ),
+            ...Object.values(surfaces.materials),
+          ],
+          textureUploads.signal,
+        );
+        if (released) return;
         propsStage = "streaming";
         props = await createStreamedProps({
           placements: scatter.placements,

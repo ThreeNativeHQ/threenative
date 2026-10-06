@@ -1,4 +1,4 @@
-import type { BufferGeometry, Camera, Object3D } from "three";
+import type { BufferGeometry, Camera, Object3D, Texture } from "three";
 import { type PassNode, RenderPipeline } from "three/webgpu";
 import type { IFrameSurfaceState } from "./frame-budget.js";
 import {
@@ -174,6 +174,15 @@ export interface IRendererLike {
    */
   uploadAttributes?(geometries: Iterable<BufferGeometry>): number;
   /**
+   * Prepares unique cold compressed textures before their first compile or draw. WebGPU uses
+   * one upload lane, a measured 2 ms budget and at most 64 KiB per write; one final write may
+   * overshoot the time budget. Await this gate before exposing the textures to rendering.
+   * Original Texture/GPUTexture identities, formats and mip levels are retained. Cancellation
+   * releases this caller's interest; another caller of the same texture may still complete.
+   * Ordinary textures and the WebGL fallback retain their existing paths and report no work.
+   */
+  prepareTextures?(textures: Iterable<Texture>, signal?: AbortSignal): Promise<number>;
+  /**
    * Copies one GPU storage attribute back to the CPU, asynchronously.
    *
    * It is on the wrapper for the same reason `compute` is: the call is WebGPU-only and a game that
@@ -347,6 +356,10 @@ type RendererInstance = {
   domElement: HTMLCanvasElement;
   init?: () => Promise<void>;
   compileAsync?: (scene: Object3D, camera: Camera, targetScene?: Object3D) => Promise<void>;
+  prepareTextureAsync?: (
+    texture: Texture,
+    options: { budgetMs: number; maxBytesPerWrite: number; signal: AbortSignal },
+  ) => Promise<void>;
   compute?: (node: unknown) => void;
   getArrayBufferAsync?: (attribute: unknown) => Promise<ArrayBuffer>;
   render: (scene: Object3D, camera: Camera) => void;
@@ -430,6 +443,7 @@ function wrapRenderer(
   let activeCompiles = 0;
   let compileCount = 0;
   let disposed = false;
+  const texturePreparations = new Set<AbortController>();
   let pendingScale: { scale: number; source: "auto" | "auto-pinned" } | undefined;
   let pendingSize: Parameters<IRendererLike["setSize"]> | undefined;
   let timestampFrame = -1;
@@ -749,6 +763,37 @@ function wrapRenderer(
       }
       return created;
     },
+    prepareTextures: async (textures, signal) => {
+      if (disposed) throw new Error("Renderer disposed during texture preparation.");
+      if (kind !== "webgpu") return 0;
+      const unique = new Set(
+        [...textures].filter(
+          (texture) => "isCompressedTexture" in texture && texture.isCompressedTexture === true,
+        ),
+      );
+      if (unique.size === 0) return 0;
+      if (typeof raw.prepareTextureAsync !== "function")
+        throw new Error("WebGPU renderer lacks bounded compressed texture preparation.");
+      const controller = new AbortController();
+      const abort = () => controller.abort(signal?.reason);
+      if (signal?.aborted) abort();
+      else signal?.addEventListener("abort", abort, { once: true });
+      texturePreparations.add(controller);
+      try {
+        for (const texture of unique) {
+          if (controller.signal.aborted) throw controller.signal.reason;
+          await raw.prepareTextureAsync(texture, {
+            budgetMs: 2,
+            maxBytesPerWrite: 65_536,
+            signal: controller.signal,
+          });
+        }
+        return unique.size;
+      } finally {
+        texturePreparations.delete(controller);
+        signal?.removeEventListener("abort", abort);
+      }
+    },
     readback: async (attribute) => {
       if (kind !== "webgpu") throw new Error(`readback is unavailable on the ${kind} renderer.`);
       if (typeof raw.getArrayBufferAsync !== "function")
@@ -758,6 +803,9 @@ function wrapRenderer(
     dispose: () => {
       if (disposed) return;
       disposed = true;
+      for (const preparation of texturePreparations)
+        preparation.abort(new Error("Renderer disposed during texture preparation."));
+      texturePreparations.clear();
       pendingScale = undefined;
       pendingSize = undefined;
       for (const chain of renderChains) chain.dispose();
