@@ -240,13 +240,7 @@ export class AnimalPerformanceCollector {
         0,
       );
       if (measuredSimulationSubsteps < 1) this.#fail("NO_SIMULATION");
-      const frozen = this.#rows.map((row) =>
-        Object.freeze({
-          ...row,
-          main: Object.freeze([...row.main]),
-          shadow: Object.freeze([...row.shadow]),
-        }),
-      );
+      const frozen = this.recordedRows();
       this.#receipt = Object.freeze({
         warmupFrames: WARMUP_FRAMES,
         measuredFrames: MEASURED_FRAMES,
@@ -274,6 +268,18 @@ export class AnimalPerformanceCollector {
       this.#state = "complete";
       return this.#receipt;
     }
+  }
+  /** Immutable raw rows for post-failure diagnostics; incomplete rows do not form a receipt. */
+  recordedRows(): readonly Readonly<RecordedRow>[] {
+    return Object.freeze(
+      this.#rows.map((row) =>
+        Object.freeze({
+          ...row,
+          main: Object.freeze([...row.main]),
+          shadow: Object.freeze([...row.shadow]),
+        }),
+      ),
+    );
   }
   dispose() {
     this.#state = "disposed";

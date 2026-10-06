@@ -14,6 +14,22 @@ import {
 import { AnimalPerformanceCollector, type GpuFrameObservation } from "./performance-collector.js";
 import { performanceProjection } from "./render/performance-camera.js";
 
+// The runner retains console text; preserve AggregateError causes rather than only its label.
+function errorMessage(error: unknown): string {
+  return error instanceof AggregateError
+    ? `${String(error)}: [${error.errors.map(errorMessage).join("; ")}]`
+    : String(error);
+}
+
+function readDiagnostic<T>(read: () => T, errors: unknown[]): T | undefined {
+  try {
+    return read();
+  } catch (error) {
+    errors.push(error);
+    return undefined;
+  }
+}
+
 export function makeAnimalPerformanceGame(mode: Exclude<AnimalMode, "qualification">) {
   class Workload extends Animals {
     constructor() {
@@ -66,17 +82,43 @@ export function makeAnimalPerformanceGame(mode: Exclude<AnimalMode, "qualificati
           const fail = (error: unknown) => {
             if (finished || !live) return;
             finished = true;
-            let failure = error;
+            const diagnosticErrors: unknown[] = [];
+            const partialRows =
+              readDiagnostic(() => collector?.recordedRows(), diagnosticErrors) ?? [];
+            // Read only the already-resolved CPU queue; never wait for pending GPU work.
+            const partialGpu = readDiagnostic(() => observer?.take(), diagnosticErrors) ?? [];
+            const observerStatusBeforeCleanup = readDiagnostic(
+              () => observer?.status(),
+              diagnosticErrors,
+            );
+            let failure = diagnosticErrors.length
+              ? new AggregateError(
+                  [error, ...diagnosticErrors],
+                  "TN_ANIMAL_PERFORMANCE_DIAGNOSTICS",
+                )
+              : error;
+            let cleanupError: unknown;
             try {
               release();
             } catch (cleanup) {
-              failure = new AggregateError([error, cleanup], "TN_ANIMAL_PERFORMANCE_CLEANUP");
+              cleanupError = cleanup;
+              failure = new AggregateError([failure, cleanup], "TN_ANIMAL_PERFORMANCE_CLEANUP");
             }
             ctx.state.set({
               performanceFinished: true,
               performanceDone: false,
-              performanceError: String(failure),
+              performanceError: errorMessage(failure),
             });
+            // Cleanup ends measurement before any diagnostic I/O; partial rows never qualify.
+            console.log(
+              `TN_ANIMAL_PERFORMANCE_ABORT ${JSON.stringify({ mode, wolves: expected, recordedFrames: partialRows.length, resolvedGpuFrames: partialGpu.length, observerStatusBeforeCleanup, error: errorMessage(error), diagnosticErrors: diagnosticErrors.map(errorMessage), cleanupError: cleanupError === undefined ? undefined : errorMessage(cleanupError) })}`,
+            );
+            for (const [index, row] of partialRows.entries())
+              console.log(`TN_ANIMAL_PERFORMANCE_PARTIAL_ROW ${JSON.stringify({ index, ...row })}`);
+            for (const [index, sample] of partialGpu.entries())
+              console.log(
+                `TN_ANIMAL_PERFORMANCE_PARTIAL_GPU ${JSON.stringify({ index, ...sample })}`,
+              );
             console.error(failure);
           };
           consumeReport = (message) => {

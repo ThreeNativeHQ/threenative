@@ -102,6 +102,30 @@ function full(wolves: 0 | 1 | 32 = 32, substeps = 1) {
   return { observer, collector, now };
 }
 describe("game-owned exact performance collector staging", () => {
+  it("retains immutable partial CPU/GPU rows after failure cleanup without qualifying an incomplete series", () => {
+    const observer = new Observer();
+    const collector = new AnimalPerformanceCollector(0, observer);
+    world(collector, 12, 0);
+    collector.cpu(window(), 10);
+    observer.rows = [sample(12)];
+    expect(collector.poll(11)).toBeUndefined();
+    const rows = collector.recordedRows();
+    collector.dispose();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      frame: 12,
+      ended: true,
+      cpuWindow: 1,
+      cpuMs: 3,
+      gpu: sample(12),
+    });
+    expect(Object.isFrozen(rows)).toBe(true);
+    expect(Object.isFrozen(rows[0])).toBe(true);
+    expect(Object.isFrozen(required(rows[0]).main)).toBe(true);
+    expect(Object.isFrozen(required(rows[0]).shadow)).toBe(true);
+    expect(Object.isFrozen(required(rows[0]).gpu?.queries)).toBe(true);
+  });
+
   it("rejects 2100 rendered frames with a frozen simulation", () => {
     const { collector, observer, now } = full(32, 0);
     observer.rows = Array.from({ length: 2100 }, (_, i) => sample(i * 2));

@@ -2,8 +2,17 @@
 
 Optional bake-first wolf content. The build entry pins Procedural Animals at
 `c95ae49346aa8e140a924376cec6cf0073d99512` and Node 20.19.6. Runtime imports contain
-no generator, worker or Node dependency. Browser/Linux rendering and frame budgets
-are still unqualified; see the owning PRD.
+no generator, worker or Node dependency. Frozen installed browser/Linux correctness
+runs passed; paired frame budgets and fifty GPU lifecycle cycles remain unqualified.
+See the [owning PRD](../../docs/PRDs/ecosystem-absorption/PRD-procedural-animal-content.md).
+
+The installed engine MCP discovers this optional package through
+`engine_search_capabilities` and `engine_capability_detail`, using the ordinary
+generated capability manifest. Runtime capabilities are `createAnimalActor`,
+`createAnimalGeometry`, `loadAnimalBake` and `parseAnimalBake` from
+`@threenative/procedural-animals`. Build capabilities are `animalBakePass`,
+`bakeWolf` and `bakeWolfToFile` from `@threenative/procedural-animals/build`.
+Each entry reports the optional dependency, an example and its constraints.
 
 At build time, call `bakeWolfToFile({ seed: 7, tier: "crowd" }, destination)` from
 `@threenative/procedural-animals/build`, then pass `animalBakePass()` to the normal

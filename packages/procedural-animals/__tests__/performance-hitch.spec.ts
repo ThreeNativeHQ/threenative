@@ -37,7 +37,12 @@ async function admission() {
   const scene = new Scene();
   const camera = new PerspectiveCamera();
   const dispose = vi.fn();
-  const observer = { status: () => ({ state: "active", generation: 1 }), stop: vi.fn(), dispose };
+  const observer = {
+    take: vi.fn(() => [] as readonly unknown[]),
+    status: vi.fn(() => ({ state: "active", generation: 1 })),
+    stop: vi.fn(),
+    dispose,
+  };
   const ctx = {
     startup: { phase: "ready" },
     input: { justPressed: () => true },
@@ -69,10 +74,92 @@ async function admission() {
   beforeRender();
   expect(state.performanceStarted).toBe(true);
   const error = vi.spyOn(console, "error").mockImplementation(() => {});
-  return { budget, state, scene, camera, restoreScene, cleanup, dispose, error };
+  const log = vi.spyOn(console, "log").mockImplementation(() => {});
+  return { budget, state, scene, camera, restoreScene, cleanup, dispose, observer, error, log };
 }
 
 describe("animal benchmark hitch attribution", () => {
+  it("retains already-resolved GPU observations before cleanup without claiming a complete series", async () => {
+    const s = await admission();
+    const queued = Object.freeze({
+      generation: 1,
+      frame: 0,
+      batch: 1,
+      ms: 2,
+      queries: Object.freeze([Object.freeze({ uid: "r:main:f0", begin: 0, end: 1, ms: 2 })]),
+    });
+    s.observer.take.mockReturnValue([queued]);
+    s.budget.beginFrame(2500, 2500);
+    s.budget.markSimulationEnd(2501, 1);
+    s.budget.endFrame(2502);
+    expect(s.observer.take).toHaveBeenCalledTimes(1);
+    expect(s.observer.take.mock.invocationCallOrder[0]).toBeLessThan(
+      s.dispose.mock.invocationCallOrder[0] ?? 0,
+    );
+    const abort = String(s.log.mock.calls[0]?.[0]);
+    expect(abort).toContain('"resolvedGpuFrames":1');
+    expect(abort).toContain('"observerStatusBeforeCleanup":{"state":"active","generation":1}');
+    const partial = String(s.log.mock.calls[1]?.[0]);
+    expect(partial).toContain("TN_ANIMAL_PERFORMANCE_PARTIAL_GPU ");
+    expect(JSON.parse(partial.slice("TN_ANIMAL_PERFORMANCE_PARTIAL_GPU ".length))).toEqual({
+      index: 0,
+      ...queued,
+    });
+    expect(
+      s.log.mock.calls.every(([value]) => !String(value).includes("TN_ANIMAL_PERFORMANCE_END ")),
+    ).toBe(true);
+    expect(s.log.mock.invocationCallOrder[0]).toBeGreaterThan(
+      Math.max(...s.dispose.mock.invocationCallOrder),
+    );
+    s.cleanup?.();
+  });
+
+  it.each(["take", "status"] as const)(
+    "preserves the first error and releases resources when diagnostic %s fails",
+    async (method) => {
+      const s = await admission();
+      s.observer[method].mockImplementation(() => {
+        throw new Error(`diagnostic-${method}`);
+      });
+      s.budget.beginFrame(2500, 2500);
+      s.budget.markSimulationEnd(2501, 1);
+      s.budget.endFrame(2502);
+      expect(s.state.performanceFinished).toBe(true);
+      expect(s.state.performanceDone).toBe(false);
+      // The existing collector and release list both dispose the idempotent observer.
+      expect(s.dispose).toHaveBeenCalledTimes(2);
+      const abort = String(s.log.mock.calls[0]?.[0]);
+      expect(abort).toContain("TN_ANIMAL_PERFORMANCE_FRAME_HITCH:TN_FRAME_HITCH:");
+      expect(abort).toContain(`diagnostic-${method}`);
+      expect(s.error.mock.calls[0]?.[0]).toBeInstanceOf(AggregateError);
+      const failure = s.error.mock.calls[0]?.[0] as AggregateError;
+      expect(String(failure.errors[0])).toContain("TN_ANIMAL_PERFORMANCE_FRAME_HITCH:");
+      expect(String(failure.errors[1])).toContain(`diagnostic-${method}`);
+      s.cleanup?.();
+    },
+  );
+
+  it("preserves specific cleanup and diagnostic causes in captured console text", async () => {
+    const s = await admission();
+    s.observer.take.mockImplementation(() => {
+      throw new AggregateError([new Error("diagnostic-specific")], "diagnostic-wrapper");
+    });
+    s.dispose.mockImplementation(() => {
+      throw new Error("cleanup-specific");
+    });
+    s.budget.beginFrame(2500, 2500);
+    s.budget.markSimulationEnd(2501, 1);
+    s.budget.endFrame(2502);
+    const abort = String(s.log.mock.calls[0]?.[0]);
+    expect(abort).toContain("TN_ANIMAL_PERFORMANCE_FRAME_HITCH:TN_FRAME_HITCH:");
+    expect(abort).toContain("diagnostic-specific");
+    expect(abort).toContain("cleanup-specific");
+    expect(s.state.performanceFinished).toBe(true);
+    expect(s.state.performanceDone).toBe(false);
+    expect(s.dispose).toHaveBeenCalledTimes(2);
+    expect(() => s.cleanup?.()).toThrow("TN_ANIMAL_CLEANUP_FAILED");
+  });
+
   it("rejects and releases an armed collector on the exact public hitch marker before another render", async () => {
     const s = await admission();
     const renderer = { info: { frame: 1, update: () => {} } };
@@ -95,6 +182,19 @@ describe("animal benchmark hitch attribution", () => {
     expect(s.scene.onBeforeRender).toBe(s.restoreScene);
     expect(s.dispose).toHaveBeenCalled();
     expect(s.error.mock.calls).toHaveLength(1);
+    expect(s.log.mock.calls).toHaveLength(2);
+    expect(s.log.mock.invocationCallOrder[0]).toBeGreaterThan(
+      Math.max(...s.dispose.mock.invocationCallOrder),
+    );
+    const abort = s.log.mock.calls[0]?.[0];
+    const row = s.log.mock.calls[1]?.[0];
+    expect(abort).toContain("TN_ANIMAL_PERFORMANCE_ABORT ");
+    expect(abort).toContain('"recordedFrames":1');
+    expect(row).toContain("TN_ANIMAL_PERFORMANCE_PARTIAL_ROW ");
+    const partial = JSON.parse(String(row).slice("TN_ANIMAL_PERFORMANCE_PARTIAL_ROW ".length));
+    expect(partial).toMatchObject({ index: 0, frame: 1, ended: true, warmup: true });
+    expect(partial.cpuMs).toBeUndefined();
+    expect(partial.gpu).toBeUndefined();
     s.cleanup?.();
   });
 });
