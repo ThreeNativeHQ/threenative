@@ -1,0 +1,417 @@
+#include "engine/shader/graph/graph.h"
+
+#include "engine/shader/tsl/tsl.h"
+
+#include <bit>
+#include <unordered_map>
+#include <utility>
+
+namespace tn::engine::shader::graph {
+
+namespace {
+
+using tsl::program;
+
+std::shared_ptr<NodeData> makeNode(Kind kind, Type type) {
+    auto data = std::make_shared<NodeData>();
+    data->kind = kind;
+    data->type = type;
+    return data;
+}
+
+std::shared_ptr<NodeData> makeConstant(double value) {
+    auto data = std::make_shared<NodeData>();
+    data->kind = Kind::Constant;
+    data->type = Type::f32();
+    data->bits = std::bit_cast<uint32_t>(static_cast<float>(value));
+    return data;
+}
+
+std::shared_ptr<NodeData> makeBinary(BinOp op, Node a, Node b) {
+    auto data = std::make_shared<NodeData>();
+    data->kind = Kind::Binary;
+    data->binary = op;
+    data->args = {std::move(a), std::move(b)};
+    return data;
+}
+
+std::shared_ptr<NodeData> makeMath(std::string_view name, std::initializer_list<Node> args) {
+    auto data = std::make_shared<NodeData>();
+    data->kind = Kind::Math;
+    data->name = std::string(name);
+    data->args.assign(args.begin(), args.end());
+    return data;
+}
+
+std::shared_ptr<NodeData> makeJoin(uint8_t lanes, std::initializer_list<Node> parts) {
+    auto data = std::make_shared<NodeData>();
+    data->kind = Kind::Join;
+    data->type = Type::vec(lanes);
+    data->args.assign(parts.begin(), parts.end());
+    return data;
+}
+
+/** Walks a graph and lowers each node once, preserving statement order. */
+class Lowerer {
+public:
+    explicit Lowerer(Program& program) : program_(program) {}
+
+    ExprId expression(Node node);
+    void statements(const std::vector<Node>& list);
+
+private:
+    void statement(Node node);
+    VarId ensureVar(Node var);
+    uint32_t ensureStorage(const NodeData& element);
+    ExprId emit(Node node);
+
+    Program& program_;
+    std::unordered_map<const NodeData*, ExprId> exprs_;
+    std::unordered_map<const NodeData*, VarId> vars_;
+    std::unordered_map<std::string, uint32_t> buffers_;
+    std::unordered_map<const NodeData*, ExprId> loopIndex_;
+};
+
+ExprId Lowerer::expression(Node node) {
+    if (!node) return kInvalid;
+    const auto found = exprs_.find(node.get());
+    if (found != exprs_.end()) return found->second;
+    const ExprId id = emit(node);
+    exprs_.emplace(node.get(), id);
+    return id;
+}
+
+ExprId Lowerer::emit(Node node) {
+    const NodeData& d = *node;
+    switch (d.kind) {
+        case Kind::Constant:
+            if (d.type.scalar == Type::Scalar::F32)
+                return program_.constant(std::bit_cast<float>(static_cast<uint32_t>(d.bits)));
+            if (d.type.scalar == Type::Scalar::I32) return program_.constant(static_cast<int32_t>(d.bits));
+            if (d.type.scalar == Type::Scalar::Bool) return program_.constant(d.bits != 0);
+            return kInvalid;
+        case Kind::Uniform: return program_.uniform(d.name, d.type);
+        case Kind::Attribute: return tsl::attribute(d.name, d.type).id;
+        case Kind::Varying: return program_.varying(d.name, d.type);
+        case Kind::Builtin:
+            return d.name == "instanceIndex" ? tsl::instanceIndex().id : program_.builtin(d.name);
+        case Kind::PositionLocal: return tsl::positionLocal().id;
+        case Kind::Unary: return d.unary == UnOp::Negate ? program_.neg(expression(d.args[0])) : kInvalid;
+        case Kind::Binary: {
+            const ExprId a = expression(d.args[0]);
+            const ExprId b = expression(d.args[1]);
+            switch (d.binary) {
+                case BinOp::Add: return program_.add(a, b);
+                case BinOp::Sub: return program_.sub(a, b);
+                case BinOp::Mul: return program_.mul(a, b);
+                case BinOp::Div: return program_.div(a, b);
+                case BinOp::Less: return program_.less(a, b);
+                case BinOp::Greater: return program_.less(b, a);
+                case BinOp::Equal: return program_.equal(a, b);
+            }
+            return kInvalid;
+        }
+        case Kind::Math: {
+            std::vector<ExprId> ids;
+            for (const Node& arg : d.args) ids.push_back(expression(arg));
+            return program_.call(d.name, ids);
+        }
+        case Kind::Swizzle: return program_.swizzle(expression(d.args[0]), d.lanes);
+        case Kind::Join: {
+            std::vector<ExprId> ids;
+            for (const Node& part : d.args) ids.push_back(expression(part));
+            // `vec3(0.5)` splats a constant, as the builder's join does.
+            if (ids.size() == 1 && ids[0] != kInvalid && program_.expr(ids[0]).op == Op::Constant)
+                ids.assign(d.type.rows, ids[0]);
+            return program_.construct(d.type, ids);
+        }
+        case Kind::Convert: return program_.construct(d.type, {expression(d.args[0])});
+        case Kind::Select:
+            return program_.select(expression(d.args[0]), expression(d.args[1]), expression(d.args[2]));
+        case Kind::Texture: return tsl::texture(d.name, tsl::Node(expression(d.args[0]))).id;
+        case Kind::StorageElement:
+            return program_.loadStorage(ensureStorage(d), expression(d.args[0]));
+        case Kind::VarRead: return program_.load(ensureVar(d.args[0]));
+        case Kind::LoopIndex: {
+            const auto found = loopIndex_.find(&d);
+            return found == loopIndex_.end() ? kInvalid : found->second;
+        }
+        default: return kInvalid;
+    }
+}
+
+VarId Lowerer::ensureVar(Node var) {
+    const auto found = vars_.find(var.get());
+    if (found != vars_.end()) return found->second;
+    const VarId id = program_.var(var->type, expression(var->args[0]));
+    vars_.emplace(var.get(), id);
+    return id;
+}
+
+uint32_t Lowerer::ensureStorage(const NodeData& element) {
+    const auto found = buffers_.find(element.name);
+    if (found != buffers_.end()) return found->second;
+    const uint32_t buffer = program_.storageBuffer(element.name, element.type);
+    buffers_.emplace(element.name, buffer);
+    return buffer;
+}
+
+void Lowerer::statement(Node node) {
+    const NodeData& s = *node;
+    switch (s.kind) {
+        case Kind::Var: (void)ensureVar(node); return;
+        case Kind::Assign: {
+            const Node& target = s.args[0];
+            if (target->kind == Kind::Var) {
+                program_.assign(ensureVar(target), expression(s.args[1]));
+            } else {
+                const uint32_t buffer = ensureStorage(*target);
+                const ExprId index = expression(target->args[0]);
+                program_.store(buffer, index, expression(s.args[1]));
+            }
+            return;
+        }
+        case Kind::If: {
+            const ExprId condition = expression(s.args[0]);
+            if (s.otherwise.empty()) {
+                program_.If(condition, [this, &s] { statements(s.body); });
+            } else {
+                program_.If(condition, [this, &s] { statements(s.body); },
+                            [this, &s] { statements(s.otherwise); });
+            }
+            return;
+        }
+        case Kind::Loop: {
+            const ExprId count = expression(s.args[0]);
+            const Node indexNode = s.args[1];
+            program_.Loop(count, [this, &s, &indexNode](ExprId index) {
+                loopIndex_[indexNode.get()] = index;
+                statements(s.body);
+            });
+            return;
+        }
+        default: return;
+    }
+}
+
+void Lowerer::statements(const std::vector<Node>& list) {
+    for (const Node& node : list) statement(node);
+}
+
+}  // namespace
+
+Node float_(double value) { return makeConstant(value); }
+Node float_(Node value) {
+    auto data = makeNode(Kind::Convert, Type::f32());
+    data->args = {std::move(value)};
+    return data;
+}
+Node int_(int32_t value) {
+    auto data = std::make_shared<NodeData>();
+    data->kind = Kind::Constant;
+    data->type = Type::i32();
+    data->bits = static_cast<uint32_t>(value);
+    return data;
+}
+Node uint_(uint32_t value) {
+    auto data = makeNode(Kind::Convert, Type::u32());
+    data->args = {int_(static_cast<int32_t>(value))};
+    return data;
+}
+Node uint_(Node value) {
+    auto data = makeNode(Kind::Convert, Type::u32());
+    data->args = {std::move(value)};
+    return data;
+}
+
+Node add(Node a, Node b) { return makeBinary(BinOp::Add, std::move(a), std::move(b)); }
+Node sub(Node a, Node b) { return makeBinary(BinOp::Sub, std::move(a), std::move(b)); }
+Node mul(Node a, Node b) { return makeBinary(BinOp::Mul, std::move(a), std::move(b)); }
+Node div(Node a, Node b) { return makeBinary(BinOp::Div, std::move(a), std::move(b)); }
+Node lessThan(Node a, Node b) { return makeBinary(BinOp::Less, std::move(a), std::move(b)); }
+Node greaterThan(Node a, Node b) { return makeBinary(BinOp::Greater, std::move(a), std::move(b)); }
+Node equal(Node a, Node b) { return makeBinary(BinOp::Equal, std::move(a), std::move(b)); }
+
+Node negate(Node a) {
+    auto data = std::make_shared<NodeData>();
+    data->kind = Kind::Unary;
+    data->unary = UnOp::Negate;
+    data->args = {std::move(a)};
+    return data;
+}
+
+Node select(Node condition, Node whenTrue, Node whenFalse) {
+    auto data = std::make_shared<NodeData>();
+    data->kind = Kind::Select;
+    data->args = {std::move(condition), std::move(whenTrue), std::move(whenFalse)};
+    return data;
+}
+
+Node swizzle(Node value, std::string_view lanes) {
+    auto data = std::make_shared<NodeData>();
+    data->kind = Kind::Swizzle;
+    data->lanes = std::string(lanes);
+    data->args = {std::move(value)};
+    return data;
+}
+
+Node texture(std::string_view map, Node uvs) {
+    auto data = std::make_shared<NodeData>();
+    data->kind = Kind::Texture;
+    data->name = std::string(map);
+    data->args = {std::move(uvs)};
+    return data;
+}
+
+Node uniform(std::string_view name, Type type) {
+    auto data = makeNode(Kind::Uniform, type);
+    data->name = std::string(name);
+    return data;
+}
+Node attribute(std::string_view name, Type type) {
+    auto data = makeNode(Kind::Attribute, type);
+    data->name = std::string(name);
+    return data;
+}
+Node varying(std::string_view name, Type type) {
+    auto data = makeNode(Kind::Varying, type);
+    data->name = std::string(name);
+    return data;
+}
+Node builtin(std::string_view name) {
+    auto data = makeNode(Kind::Builtin, Type{});
+    data->name = std::string(name);
+    return data;
+}
+Node positionLocal() { return makeNode(Kind::PositionLocal, Type::vec(3)); }
+Node uv() { return attribute("uv", Type::vec(2)); }
+Node instanceIndex() { return builtin("instanceIndex"); }
+
+Node vec2(std::initializer_list<Node> parts) { return makeJoin(2, parts); }
+Node vec3(std::initializer_list<Node> parts) { return makeJoin(3, parts); }
+Node vec4(std::initializer_list<Node> parts) { return makeJoin(4, parts); }
+
+#define TN_GRAPH_UNARY(name) Node name(Node a) { return makeMath(#name, {std::move(a)}); }
+#define TN_GRAPH_BINARY(name) Node name(Node a, Node b) { return makeMath(#name, {std::move(a), std::move(b)}); }
+#define TN_GRAPH_TERNARY(name) \
+    Node name(Node a, Node b, Node c) { return makeMath(#name, {std::move(a), std::move(b), std::move(c)}); }
+TN_GRAPH_UNARY(abs)
+TN_GRAPH_UNARY(sin)
+TN_GRAPH_UNARY(cos)
+TN_GRAPH_UNARY(floor)
+TN_GRAPH_UNARY(fract)
+TN_GRAPH_UNARY(sqrt)
+TN_GRAPH_UNARY(exp)
+TN_GRAPH_UNARY(exp2)
+TN_GRAPH_UNARY(log2)
+TN_GRAPH_UNARY(normalize)
+TN_GRAPH_UNARY(length)
+TN_GRAPH_BINARY(min)
+TN_GRAPH_BINARY(max)
+TN_GRAPH_BINARY(pow)
+TN_GRAPH_BINARY(step)
+TN_GRAPH_BINARY(dot)
+TN_GRAPH_BINARY(distance)
+TN_GRAPH_BINARY(cross)
+TN_GRAPH_TERNARY(mix)
+TN_GRAPH_TERNARY(clamp)
+TN_GRAPH_TERNARY(smoothstep)
+#undef TN_GRAPH_UNARY
+#undef TN_GRAPH_BINARY
+#undef TN_GRAPH_TERNARY
+
+Node Var::read() const {
+    auto data = std::make_shared<NodeData>();
+    data->kind = Kind::VarRead;
+    data->args = {declaration};
+    return data;
+}
+
+Node Storage::element(Node index) const {
+    auto data = std::make_shared<NodeData>();
+    data->kind = Kind::StorageElement;
+    data->name = name;
+    data->type = elementType;
+    data->args = {std::move(index)};
+    return data;
+}
+
+Var Block::var(Node initial) {
+    auto data = std::make_shared<NodeData>();
+    data->kind = Kind::Var;
+    data->type = initial->type;
+    data->args = {std::move(initial)};
+    const Node declaration = data;
+    append(declaration);
+    return Var{declaration, data->type};
+}
+
+void Block::assign(Node target, Node value) {
+    auto data = std::make_shared<NodeData>();
+    data->kind = Kind::Assign;
+    data->args = {std::move(target), std::move(value)};
+    append(data);
+}
+
+void Block::If(Node condition, const std::function<void()>& then) {
+    auto body = std::make_shared<std::vector<Node>>();
+    blocks_.push_back(body);
+    if (then) then();
+    blocks_.pop_back();
+    auto data = std::make_shared<NodeData>();
+    data->kind = Kind::If;
+    data->args = {std::move(condition)};
+    data->body = *body;
+    append(data);
+}
+
+void Block::IfElse(Node condition, const std::function<void()>& then, const std::function<void()>& otherwise) {
+    auto body = std::make_shared<std::vector<Node>>();
+    blocks_.push_back(body);
+    if (then) then();
+    blocks_.pop_back();
+    auto alt = std::make_shared<std::vector<Node>>();
+    blocks_.push_back(alt);
+    if (otherwise) otherwise();
+    blocks_.pop_back();
+    auto data = std::make_shared<NodeData>();
+    data->kind = Kind::If;
+    data->args = {std::move(condition)};
+    data->body = *body;
+    data->otherwise = *alt;
+    append(data);
+}
+
+void Block::Loop(int32_t count, const std::function<void(Node)>& body) {
+    const Node index = makeNode(Kind::LoopIndex, Type::i32());
+    auto statements = std::make_shared<std::vector<Node>>();
+    blocks_.push_back(statements);
+    if (body) body(index);
+    blocks_.pop_back();
+    auto data = std::make_shared<NodeData>();
+    data->kind = Kind::Loop;
+    data->args = {int_(count), index};
+    data->body = *statements;
+    append(data);
+}
+
+void Block::append(Node statement) { blocks_.back()->push_back(std::move(statement)); }
+
+Node Block::node() const {
+    auto data = std::make_shared<NodeData>();
+    data->kind = Kind::Body;
+    data->body = *blocks_.front();
+    return data;
+}
+
+ExprId lower(const Graph& graph, Program& program) {
+    if (!graph) return kInvalid;
+    Lowerer lowerer(program);
+    if (graph->kind == Kind::Body) {
+        lowerer.statements(graph->body);
+        return kInvalid;
+    }
+    return lowerer.expression(graph);
+}
+
+}  // namespace tn::engine::shader::graph

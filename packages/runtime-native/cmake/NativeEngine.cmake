@@ -243,6 +243,23 @@ else()
     message(WARNING "pnpm or node not found: native_engine_tsl_ir is not registered")
 endif()
 
+# PRD-531 slice 1: the same corpus authored as a lazy shader graph (src/engine/shader/graph), built
+# with no program and lowered to IR through the native TSL builder, compared with the pinned three's
+# TSL node trees by the same differential.
+add_executable(tn-native-engine-tsl-graph EXCLUDE_FROM_ALL tests/native-engine/tsl-corpus/graph_corpus.cpp)
+tn_native_engine_target(tn-native-engine-tsl-graph)
+target_link_libraries(tn-native-engine-tsl-graph PRIVATE tn_engine_shader)
+set_property(GLOBAL APPEND PROPERTY TN_NATIVE_ENGINE_TEST_TARGETS tn-native-engine-tsl-graph)
+if(TN_PNPM_EXECUTABLE AND TN_NODE_EXECUTABLE)
+    add_test(NAME native_engine_tsl_graph
+        COMMAND ${TN_NODE_EXECUTABLE} tests/native-engine/differential.mjs --suite tsl-ir
+            --native $<TARGET_FILE:tn-native-engine-tsl-graph>
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+    set_tests_properties(native_engine_tsl_graph PROPERTIES LABELS "native-engine")
+else()
+    message(WARNING "pnpm or node not found: native_engine_tsl_graph is not registered")
+endif()
+
 # PRD-527 phase 1: GPUParticles3D's mechanism (two vec3 storage buffers, start once, process per
 # render while emitting); tsl_compute_test runs it and the PRD-513 instance grid against programs.js
 # recorded in Chromium's WebGPU (compute_reference.json).
