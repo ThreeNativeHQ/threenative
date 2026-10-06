@@ -194,7 +194,8 @@ this host, so it is not attributed. The prewarm (`e580e76cb`) stays off this PR,
 - [ ] **A4 · [PRD-494](PRD-494-the-main-pass-fits-the-draw-budget.md): the main pass fits the draw budget.** After: A3. ⏱🌍👁
   - The largest cost. Attribute the ~323 draws by source, then take the largest source off three's per-draw path, `bundles` or a merged path.
 - [ ] **A5 · PRD-478 Phase 2: shadow levels draw GPU-scene keys.** After: A4. ⏱🌍👁
-- [ ] **A6 · PRD-478 Phase 3: terrain merges and seams run in a worker.** After: A5. ⏱🌍👁
+- [x] **A6 · PRD-478 Phase 3: terrain merges and seams run in a worker.** After: A5. ⏱🌍👁
+  - **Done 2026-10-05:** both Phase 3 boxes are ticked. The worker path's main-thread `terrainBlock` and `terrainSeam` spans read 0 ms at p50 and ≤ 0.7 ms at p95 over 2 Machinefall walks; worker vs inline bytes are identical by spec. The workerless inline path hashes identically on web and on the native desktop host (`world-terrain-inline-hash`).
   - The settled terrain must be byte-identical to the inline path.
 - [ ] **A7 · No pipeline compiles mid-walk:** [PRD-459](PRD-459-smooth-streaming-one-admission-budget-per-frame.md) AC-3 with [PRD-387](../performance/critical/PRD-387-shader-variants-are-prepared-off-frame-and-bounded.md). After: A6. ⏱🌍👁
   - **Measured 2026-10-04, still open.** 8 pipeline creations attributable to a streamed batch after
