@@ -6,6 +6,11 @@
 // the compiler binary path. A cached, verified toolchain is a cache hit and
 // makes no network call. A checksum mismatch fails closed with the code
 // TN_NATIVE_TS_CHECKSUM.
+//
+// `opts.patches` is the fork ledger's patch set (patches.mjs). Each patch is applied inside the
+// extracted tree and the tree's cache key carries the patch set, so a patched toolchain is never
+// served to a run that asked for the toolchain exactly as upstream ships it. The unpatched cache
+// holds the only downloaded archive; a patched tree extracts from it without a second download.
 import { spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import fs from "node:fs";
@@ -15,11 +20,14 @@ import path from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
+import { UPSTREAM_KEY, applyPatches, patchKey } from "./patches.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const CHECKSUM_CODE = "TN_NATIVE_TS_CHECKSUM";
 /** Proof of a complete extraction, in the cache beside `toolchain`, holding the archive sha256. */
 const MARKER_NAME = ".verified";
+/** Proof that the tree in this cache carries the patch set its directory name claims. */
+const PATCH_MARKER_NAME = ".patches";
 
 export function loadLock(lockFile = path.join(HERE, "compiler.lock.json")) {
   return JSON.parse(fs.readFileSync(lockFile, "utf8"));
@@ -38,10 +46,14 @@ export function resolveHost(lock, host = process.env.TN_NATIVE_TS_HOST) {
   return preferred[0];
 }
 
-export function defaultCacheDir(lock, env = process.env) {
+export function defaultCacheDir(lock, env = process.env, variant = UPSTREAM_KEY) {
   const base =
     env.TN_NATIVE_TS_CACHE || path.join(os.homedir(), ".cache", "threenative", "native-typescript");
-  return path.join(base, lock.tag);
+  // The unpatched cache keeps the plain tag path it has always had, so an existing verified tree
+  // stays valid; a patched set gets its own sibling directory.
+  return variant === UPSTREAM_KEY
+    ? path.join(base, lock.tag)
+    : path.join(base, `${lock.tag}-${variant}`);
 }
 
 export async function provision(opts = {}) {
@@ -54,17 +66,25 @@ export async function provision(opts = {}) {
   if (typeof artifact.sha256 !== "string" || !/^[a-f0-9]{64}$/u.test(artifact.sha256)) {
     throw named(CHECKSUM_CODE, `the pinned sha256 for ${host} is not 64 lowercase hex`);
   }
-  const cacheDir = opts.cacheDir ?? defaultCacheDir(lock, opts.env);
+  const key = patchKey(opts.patches ?? []);
+  const cacheDir = opts.cacheDir ?? defaultCacheDir(lock, opts.env, key);
   const toolchainDir = path.join(cacheDir, "toolchain");
   const archiveName = path.basename(new URL(artifact.url).pathname);
-  const archivePath = path.join(cacheDir, archiveName);
+  // A patched tree extracts from the unpatched cache's archive, so a patch costs no second download.
+  const archivePath = path.join(
+    key === UPSTREAM_KEY ? cacheDir : defaultCacheDir(lock, opts.env),
+    archiveName,
+  );
   const fetchImpl = opts.fetchImpl ?? globalThis.fetch;
   const log = opts.log ?? ((m) => process.stderr.write(`${m}\n`));
 
   await fsp.mkdir(cacheDir, { recursive: true });
 
   const archiveOk = await fileMatches(archivePath, artifact);
-  const extractedOk = archiveOk && (await markerMatches(cacheDir, artifact));
+  const extractedOk =
+    archiveOk &&
+    (await markerMatches(cacheDir, artifact)) &&
+    (await patchMarkerMatches(cacheDir, key));
   const binary = () => (extractedOk ? findBinary(toolchainDir, lock.binaryCandidates) : undefined);
 
   if (opts.checkOnly) {
@@ -83,6 +103,7 @@ export async function provision(opts = {}) {
       cacheDir,
       toolchainDir,
       binaryPath: found,
+      patchKey: key,
       cacheHit: true,
     });
   }
@@ -118,11 +139,14 @@ export async function provision(opts = {}) {
   }
 
   log("extracting");
-  // The marker vouches for the tree, so it goes before the tree is touched: a run killed while the
+  // The markers vouch for the tree, so they go before the tree is touched: a run killed while the
   // old tree is half-deleted must not find a marker that still matches.
   await fsp.rm(path.join(cacheDir, MARKER_NAME), { force: true });
+  await fsp.rm(path.join(cacheDir, PATCH_MARKER_NAME), { force: true });
   const binaryPath = await extractAtomically(archivePath, toolchainDir, lock.binaryCandidates);
+  applyPatches(toolchainDir, opts.patches ?? []);
   await writeMarker(cacheDir, artifact);
+  await writeMarkerFile(path.join(cacheDir, PATCH_MARKER_NAME), key);
   return result({
     lock,
     host,
@@ -130,6 +154,7 @@ export async function provision(opts = {}) {
     cacheDir,
     toolchainDir,
     binaryPath,
+    patchKey: key,
     cacheHit: false,
   });
 }
@@ -167,16 +192,30 @@ async function extractAtomically(archivePath, toolchainDir, candidates) {
 }
 
 async function markerMatches(cacheDir, artifact) {
+  return (await readMarkerFile(path.join(cacheDir, MARKER_NAME))) === artifact.sha256;
+}
+
+/** A patched tree must carry the patch set its cache was keyed on, so an unpatched run cannot reuse it. */
+async function patchMarkerMatches(cacheDir, key) {
+  return (
+    key === UPSTREAM_KEY || (await readMarkerFile(path.join(cacheDir, PATCH_MARKER_NAME))) === key
+  );
+}
+
+async function readMarkerFile(file) {
   try {
-    const recorded = (await fsp.readFile(path.join(cacheDir, MARKER_NAME), "utf8")).trim();
-    return recorded === artifact.sha256;
+    return (await fsp.readFile(file, "utf8")).trim();
   } catch {
-    return false;
+    return undefined;
   }
 }
 
 async function writeMarker(cacheDir, artifact) {
-  await fsp.writeFile(path.join(cacheDir, MARKER_NAME), `${artifact.sha256}\n`, "utf8");
+  await writeMarkerFile(path.join(cacheDir, MARKER_NAME), artifact.sha256);
+}
+
+async function writeMarkerFile(file, value) {
+  await fsp.writeFile(file, `${value}\n`, "utf8");
 }
 
 function result(fields) {

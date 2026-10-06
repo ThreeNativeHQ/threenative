@@ -64,7 +64,7 @@ adapter and callback lifetime are [PRD-506](PRD-506-n05b-three-imports-bind-nati
 #### Phase 3: Fork ledger, if needed
 **Status:** NOT STARTED
 **Files:** proposed `tools/native-typescript/patches/`, `tools/native-typescript/FORK.md`
-- [ ] Each local patch has a minimized case in the corpus that fails without it and passes with it. proof: `node tools/native-typescript/run-corpus.mjs --native --without-patches` reports exactly the patched cases red
+- [x] Each local patch has a minimized case in the corpus that fails without it and passes with it. proof: `node tools/native-typescript/run-corpus.mjs --native --without-patches` reports exactly the patched cases red — 2026-10-05: ThreeNative applies 0 local patches to the pinned toolchain, and `tools/native-typescript/patches.json` now declares that as an empty set; `run-corpus.mjs --native --without-patches` provisions the toolchain exactly as upstream ships it, runs the corpus (16 of 16 PASS) and exits 0 only when its red set equals the ledger's declared cases ("0 local patches", "red set equals the declared set"). A future patch must name its minimized cases there or this fails. Red control: a phantom patch declared for `classes` is refused ("declared but green (the patch proves nothing)"). `patches.spec.ts` (19 cases, fail-closed ledger) and the whole `tools/native-typescript` suite pass, 36 of 36.
 
 ## Blocked on
 

@@ -8,6 +8,10 @@
 //   --out <dir>               where a cross target's artifacts land (default
 //                              artifacts/native-typescript, ignored by git)
 //   --case <name>             run only one case
+//   --without-patches         run the native side against the toolchain exactly as upstream ships
+//                              it (patches.json applied to none of it), then require the red case
+//                              set to equal the set patches.json declares, and exit 1 naming the
+//                              difference when it does not
 //   --expect-compile-error    the selected cases must be compile-error cases (their
 //                              .expected holds `# compile-error <text>`; nothing runs)
 //
@@ -39,6 +43,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { ENGINE_LIBS, buildStrict } from "../../packages/runtime-native/scripts/package-strict.mjs";
 import { androidLinker, ensureAndroidGc, findTarget, resolveNdk } from "./android.mjs";
+import { compareRedToDeclared, loadLedger } from "./patches.mjs";
 import { provision } from "./provision.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -577,6 +582,7 @@ async function main() {
   const wantReference = args.includes("--reference");
   const wantNative = args.includes("--native");
   const buildOnly = args.includes("--build-only");
+  const withoutPatches = args.includes("--without-patches");
   let target;
   let filter;
   let outDir = DEFAULT_OUT;
@@ -588,7 +594,13 @@ async function main() {
   if (!wantReference && !wantNative) {
     throw named(
       "TN_NATIVE_TS_USAGE",
-      "pass --reference and/or --native [--target <triple>] [--build-only] [--case <name>]",
+      "pass --reference and/or --native [--target <triple>] [--build-only] [--without-patches] [--case <name>]",
+    );
+  }
+  if (withoutPatches && !wantNative) {
+    throw named(
+      "TN_NATIVE_TS_USAGE",
+      "--without-patches compares the native red set against the ledger, so it needs --native",
     );
   }
   const cross = wantNative && target !== undefined && findTarget(target) !== undefined;
@@ -614,7 +626,12 @@ async function main() {
     }
   }
 
-  const info = wantNative ? await provision({ log: () => {} }) : undefined;
+  // The ledger is read for every native run: a malformed one fails closed rather than reading as
+  // "no patches", and an ordinary native run is the patched one it declares.
+  const ledger = wantNative ? loadLedger() : undefined;
+  const info = wantNative
+    ? await provision({ patches: withoutPatches ? [] : ledger.patches, log: () => {} })
+    : undefined;
   const plan = cross ? await crossPlan(findTarget(target).target, outDir) : { buildOnly };
   const rows = [];
   let failed = false;
@@ -662,7 +679,43 @@ async function main() {
   }
   printTable(rows);
   if (cross) console.log(plan.summary(rows));
-  if (failed) process.exitCode = 1;
+  if (withoutPatches) {
+    reportRedSet(rows, ledger, info);
+  } else if (failed) {
+    process.exitCode = 1;
+  }
+}
+
+/**
+ * What `--without-patches` exists to answer: with the toolchain exactly as upstream ships it, are
+ * the red cases the ones the ledger says each local patch is needed for? A declared case that stayed
+ * green and a red case the ledger does not declare are both differences, and a difference exits 1
+ * with the case names. So the exit code here is the comparison's, not the run's own.
+ */
+function reportRedSet(rows, ledger, info) {
+  const red = rows
+    .filter((row) => row.native === "FAIL")
+    .map((row) => row.name)
+    .sort();
+  const verdict = compareRedToDeclared(ledger.declaredCases, red);
+  const list = (names) => (names.length === 0 ? "none" : names.join(", "));
+  console.log(`unpatched toolchain: ${info.binaryPath}`);
+  console.log(
+    `${ledger.patches.length} local patches (${ledger.patches.map((p) => p.id).join(", ") || "none applied"})`,
+  );
+  console.log(`declared red cases: ${list(ledger.declaredCases)}`);
+  console.log(`red cases: ${list(red)}`);
+  if (verdict.ok) {
+    console.log("red set equals the declared set");
+    return;
+  }
+  if (verdict.missing.length > 0) {
+    console.log(`declared but green (the patch proves nothing): ${list(verdict.missing)}`);
+  }
+  if (verdict.extra.length > 0) {
+    console.log(`red but undeclared (no ledger patch owns it): ${list(verdict.extra)}`);
+  }
+  process.exitCode = 1;
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
