@@ -18,6 +18,10 @@ import { AnimationPlayer } from "./animation.js";
 
 export interface IAnimationComposerOptions {
   readonly root: Object3D;
+  /**
+   * Copied into owned pose snapshots at construction. Constant stock quaternion tracks use
+   * equivalent discrete sampling there; reauthor source keys before constructing a new composer.
+   */
   readonly clips: readonly AnimationClip[];
   readonly samples: readonly string[];
   readonly layers?: readonly IAnimationLayer[];

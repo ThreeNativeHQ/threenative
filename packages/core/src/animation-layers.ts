@@ -2,10 +2,13 @@ import {
   AnimationClip,
   AnimationUtils,
   type Bone,
+  InterpolateDiscrete,
+  InterpolateLinear,
   type KeyframeTrack,
   NormalAnimationBlendMode,
   type Object3D,
   PropertyBinding,
+  QuaternionKeyframeTrack,
 } from "three";
 import { animationFinite } from "./animation-blend.js";
 
@@ -243,5 +246,15 @@ export function prepareAnimationLayers(
     throw new Error(
       `AnimationComposer: requires ${all.length} actions; capacity is eight. Reduce samples or layers.`,
     );
+  // Pose snapshots only: root-motion validation keeps its authored linear interpolants.
+  // Constant stock quaternion keys need no SLERP; retain every key, track and owned buffer.
+  for (const clip of all)
+    for (const track of clip.tracks)
+      if (
+        Object.getPrototypeOf(track) === QuaternionKeyframeTrack.prototype &&
+        track.getInterpolation() === InterpolateLinear &&
+        track.values.every((value, index) => value === track.values[index % 4])
+      )
+        track.setInterpolation(InterpolateDiscrete);
   return { samples: preparedSamples, layers: preparedLayers, clips: all };
 }

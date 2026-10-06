@@ -1,10 +1,132 @@
 import { createHash } from "node:crypto";
-import { type AnimationAction, AnimationMixer, Quaternion } from "three";
+import {
+  type AnimationAction,
+  AnimationClip,
+  AnimationMixer,
+  InterpolateDiscrete,
+  InterpolateLinear,
+  Quaternion,
+  QuaternionKeyframeTrack,
+} from "three";
 import { describe, expect, it, vi } from "vitest";
-import { AnimationComposer } from "../src/animation-composition.js";
+import { AnimationComposer, type IAnimationComposerOptions } from "../src/animation-composition.js";
 import { compositionRig } from "./fixtures/composition-rig.js";
 
+function composerWithActions(options: IAnimationComposerOptions) {
+  const actions = new Set<AnimationAction>();
+  const clipAction = AnimationMixer.prototype.clipAction;
+  const capture = vi.spyOn(AnimationMixer.prototype, "clipAction").mockImplementation(function (
+    this: AnimationMixer,
+    ...args: Parameters<typeof clipAction>
+  ) {
+    const action = clipAction.call(this, ...args);
+    if (action === null) throw new Error("Expected a prepared animation action.");
+    actions.add(action);
+    return action;
+  });
+  try {
+    return { composer: new AnimationComposer(options), actions };
+  } finally {
+    capture.mockRestore();
+  }
+}
+
 describe("single masked/additive animation owner", () => {
+  it("retains constant quaternion keys and exact poses without spherical interpolation", () => {
+    for (const value of [
+      [0, 0, 0, 1],
+      [0.5, 0.5, 0.5, 0.5],
+    ]) {
+      const r = compositionRig();
+      const track = new QuaternionKeyframeTrack(
+        "Hand.quaternion",
+        [0, 0.25, 1],
+        [...value, ...value, ...value],
+      );
+      const clip = new AnimationClip("constant", 1, [track]);
+      const before = JSON.stringify(clip.toJSON());
+      const { composer, actions } = composerWithActions({
+        root: r.root,
+        clips: [clip],
+        samples: [clip.name],
+      });
+      const slerp = vi.spyOn(Quaternion, "slerpFlat");
+      try {
+        const copy = [...actions][0]?.getClip().tracks[0];
+        expect(copy?.times).toEqual(track.times);
+        expect(copy?.values).toEqual(track.values);
+        expect(copy?.values).not.toBe(track.values);
+        expect(copy?.getInterpolation()).toBe(InterpolateDiscrete);
+        for (const dt of [0, 0.125, 0.125, 0.75, 3.125]) {
+          composer.update(dt);
+          expect(r.hand.quaternion.toArray()).toEqual(value);
+        }
+        composer.paused = true;
+        composer.update(5);
+        expect(r.hand.quaternion.toArray()).toEqual(value);
+        expect(slerp).not.toHaveBeenCalled();
+        expect(composer.resources.actions).toBe(1);
+        expect(composer.resources.bindings).toBe(1);
+        expect(JSON.stringify(clip.toJSON())).toBe(before);
+        expect(track.getInterpolation()).toBe(InterpolateLinear);
+      } finally {
+        slerp.mockRestore();
+        composer.dispose();
+      }
+    }
+  });
+
+  it("retains linear interpolation for changing quaternions and custom track factories", () => {
+    class CustomQuaternionTrack extends QuaternionKeyframeTrack {
+      override InterpolantFactoryMethodLinear(
+        ...args: Parameters<QuaternionKeyframeTrack["InterpolantFactoryMethodLinear"]>
+      ) {
+        return super.InterpolantFactoryMethodLinear(...args);
+      }
+    }
+    const r = compositionRig();
+    for (const track of [
+      new QuaternionKeyframeTrack(
+        "Hand.quaternion",
+        [0, 0.5, 1],
+        [0, 0, 0, 1, 0, 0, Math.SQRT1_2, Math.SQRT1_2, 0, 0, 0, 1],
+      ),
+      new QuaternionKeyframeTrack(
+        "Hand.quaternion",
+        [0, 0.5, 1],
+        [0, 0, 0, 1, 0, 0, 1e-7, 1, 0, 0, 0, 1],
+      ),
+      new QuaternionKeyframeTrack(
+        "Hand.quaternion",
+        [0, 0.5, 1],
+        [0, 0, 0, 1, 0, 0, 0, -1, 0, 0, 0, 1],
+      ),
+      new CustomQuaternionTrack(
+        "Hand.quaternion",
+        [0, 0.5, 1],
+        [0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1],
+      ),
+    ]) {
+      const clip = new AnimationClip("guarded", 1, [track]);
+      const { composer, actions } = composerWithActions({
+        root: r.root,
+        clips: [clip],
+        samples: [clip.name],
+      });
+      try {
+        const copy = [...actions][0]?.getClip().tracks[0];
+        expect(copy?.getInterpolation()).toBe(InterpolateLinear);
+        for (const time of [-0.1, 0, 0.125, 0.5, 0.875, 1, 1.1]) {
+          expect(Array.from(copy?.InterpolantFactoryMethodLinear().evaluate(time) ?? [])).toEqual(
+            Array.from(track.InterpolantFactoryMethodLinear().evaluate(time)),
+          );
+        }
+      } finally {
+        composer.dispose();
+      }
+    }
+  });
+
   it("resolves different masks on clones of the same source without cross-talk", () => {
     const a = compositionRig();
     const b = compositionRig();
@@ -142,28 +264,12 @@ describe("single masked/additive animation owner", () => {
   it("keeps mask ownership when a debugger renames prepared clips", () => {
     const r = compositionRig();
     const source = JSON.stringify(r.clips.map((clip) => clip.toJSON()));
-    const actions = new Set<AnimationAction>();
-    const clipAction = AnimationMixer.prototype.clipAction;
-    const capture = vi.spyOn(AnimationMixer.prototype, "clipAction").mockImplementation(function (
-      this: AnimationMixer,
-      ...args: Parameters<typeof clipAction>
-    ) {
-      const action = clipAction.call(this, ...args);
-      if (action === null) throw new Error("Expected a prepared animation action.");
-      actions.add(action);
-      return action;
+    const { composer, actions } = composerWithActions({
+      root: r.root,
+      clips: r.clips,
+      samples: ["walk"],
+      layers: [{ name: "reload", clip: "reload", mode: "override", mask: { bones: ["Upper"] } }],
     });
-    let composer: AnimationComposer;
-    try {
-      composer = new AnimationComposer({
-        root: r.root,
-        clips: r.clips,
-        samples: ["walk"],
-        layers: [{ name: "reload", clip: "reload", mode: "override", mask: { bones: ["Upper"] } }],
-      });
-    } finally {
-      capture.mockRestore();
-    }
     try {
       composer.setLayerWeight("reload", 0.25);
       composer.update(0.5);
