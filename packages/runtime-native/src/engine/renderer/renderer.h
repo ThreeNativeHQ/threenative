@@ -342,7 +342,8 @@ private:
     WGPUPipelineLayout envPipelineLayout_ = nullptr;
     WGPURenderPipeline envEquirectPipeline_ = nullptr;
     WGPURenderPipeline envGgxPipeline_ = nullptr;
-    Handle envVertex_{};      // 36 vertices: 6 faces x 6, position vec3 + baseUv vec2 + face f32
+    Handle envVertex_{};      // per-LOD: 36 vertices, position vec3 + expandedUv vec2 + face f32
+    uint64_t envVertexCapacity_ = 0;
     Handle envUniforms_{};    // one aligned slice per PMREM pass
     uint64_t envUniformCapacity_ = 0;
 };

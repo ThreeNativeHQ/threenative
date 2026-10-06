@@ -171,13 +171,16 @@ ExprId cubeUv(Program& p, ExprId direction, ExprId face) {
 ExprId roughnessToMip(Program& p, ExprId roughness) {
     auto f = [&](float v) { return p.constant(v); };
     const VarId mip = p.var(Type::f32(), f(0));
-    auto segment = [&](float rHigh, float rLow, float mHigh, float mLow) {
-        return p.add(p.div(p.mul(p.sub(f(rHigh), roughness), f(mLow - mHigh)), f(rHigh - rLow)), f(mHigh));
+    auto segment = [&](double rHigh, double rLow, double mHigh, double mLow) {
+        // three emits unsuffixed WGSL literals: these constant subtractions fold as abstract-float,
+        // then convert to f32. Subtracting already-rounded f32 breakpoints changes two denominators.
+        return p.add(p.div(p.mul(p.sub(f(float(rHigh)), roughness), f(float(mLow - mHigh))),
+                           f(float(rHigh - rLow))), f(float(mHigh)));
     };
-    p.If(p.call("greaterEqual", {roughness, f(0.8f)}), [&] { p.assign(mip, segment(1.0f, 0.8f, -2.0f, -1.0f)); }, [&] {
-        p.If(p.call("greaterEqual", {roughness, f(0.4f)}), [&] { p.assign(mip, segment(0.8f, 0.4f, -1.0f, 2.0f)); }, [&] {
-            p.If(p.call("greaterEqual", {roughness, f(0.305f)}), [&] { p.assign(mip, segment(0.4f, 0.305f, 2.0f, 3.0f)); }, [&] {
-                p.If(p.call("greaterEqual", {roughness, f(0.21f)}), [&] { p.assign(mip, segment(0.305f, 0.21f, 3.0f, 4.0f)); },
+    p.If(p.call("greaterEqual", {roughness, f(0.8f)}), [&] { p.assign(mip, segment(1.0, 0.8, -2.0, -1.0)); }, [&] {
+        p.If(p.call("greaterEqual", {roughness, f(0.4f)}), [&] { p.assign(mip, segment(0.8, 0.4, -1.0, 2.0)); }, [&] {
+            p.If(p.call("greaterEqual", {roughness, f(0.305f)}), [&] { p.assign(mip, segment(0.4, 0.305, 2.0, 3.0)); }, [&] {
+                p.If(p.call("greaterEqual", {roughness, f(0.21f)}), [&] { p.assign(mip, segment(0.305, 0.21, 3.0, 4.0)); },
                      [&] { p.assign(mip, p.mul(f(-2.0f), p.call("log2", {p.mul(f(1.16f), roughness)}))); });
             });
         });
@@ -189,7 +192,7 @@ ExprId roughnessToMip(Program& p, ExprId roughness) {
 ExprId bilinearCubeUV(Program& p, uint32_t env, ExprId direction, ExprId mipInt) {
     auto f = [&](float v) { return p.constant(v); };
     auto v2 = [&](ExprId x, ExprId y) { return p.construct(Type::vec(2), {x, y}); };
-    const VarId face = p.var(Type::f32(), p.call("max", {cubeFace(p, direction), f(0)}));
+    const VarId face = p.var(Type::f32(), cubeFace(p, direction));
     const ExprId filterInt = p.call("max", {p.sub(f(4), mipInt), f(0)});
     const ExprId clamped = p.call("max", {mipInt, f(4)});
     const ExprId faceSize = p.call("exp2", {clamped});
@@ -622,7 +625,7 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
         const ExprId iblIrradiance =
             f.mul(f.mul(textureCubeUV(f, env, flipped(normalWorld), t.f(1)), t.f(kPi)), envIntensity);
         ExprId reflectVec = f.call("reflect", {f.neg(positionViewDirection), n});
-        reflectVec = f.call("normalize", {f.call("mix", {reflectVec, n, t.pow2(t.pow2(roughness))})});
+        reflectVec = f.call("normalize", {f.call("mix", {reflectVec, n, f.mul(f.mul(t.pow2(roughness), roughness), roughness)})});
         reflectVec = transformDirection(f, f.uniform("cameraWorldMatrix", Type::mat(4, 4)), reflectVec);
         const ExprId radiance = f.mul(textureCubeUV(f, env, flipped(reflectVec), roughness), envIntensity);
         const ExprId dotNV = t.saturate(t.dot(n, positionViewDirection));
@@ -638,8 +641,11 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
     }
 
     const ExprId emissive = f.uniform("emissive", Type::vec(3));
-    ExprId outgoing = f.add(f.add(f.add(directDiffuse, directSpecular), indirectDiffuse), emissive);
-    if (environmentDiffuse != kInvalid) outgoing = f.add(outgoing, f.add(environmentDiffuse, environmentSpecular));
+    // LightsNode: (directDiffuse + indirectDiffuse) + (directSpecular + indirectSpecular),
+    // then NodeMaterial adds emissive. Do not regroup the f32 sum by light source.
+    const ExprId totalIndirectDiffuse = environmentDiffuse == kInvalid ? indirectDiffuse : f.add(indirectDiffuse, environmentDiffuse);
+    const ExprId totalSpecular = environmentSpecular == kInvalid ? directSpecular : f.add(directSpecular, environmentSpecular);
+    const ExprId outgoing = f.add(f.add(f.add(directDiffuse, totalIndirectDiffuse), totalSpecular), emissive);
     ExprId alpha = f.swizzle(diffuse, "w");
     if (texel != kInvalid) alpha = f.mul(alpha, f.swizzle(texel, "w"));
     // Linear HDR out: tone mapping and the output colour space belong to the output pass (output.h).

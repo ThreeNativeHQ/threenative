@@ -2,6 +2,7 @@
 #include "engine/shader/standard.h"
 #include "engine/shader/wgsl.h"
 
+#include <bit>
 #include <cstdio>
 #include <string>
 
@@ -64,6 +65,41 @@ void builds() {
         CHECK(fragment.code.find("textureSampleLevel(t_env") != std::string::npos);
         CHECK(fragment.code.find("f_envMapIntensity") != std::string::npos);
         CHECK(fragment.code.rfind("dpdx") < fragment.code.find("if ("));
+        // EnvironmentNode's pow4 is ((r*r)*r)*r, not (r*r)*(r*r): f32 rounding is observable.
+        bool reflectionMix = false;
+        bool mipDenominators = false;
+        for (ExprId id = 1; id <= lit.fragment.exprCount(); ++id) {
+            const Expr& mix = lit.fragment.expr(id);
+            // three's unsuffixed WGSL breakpoint subtraction folds in abstract-float precision.
+            if (mix.op == Op::Div) {
+                const Expr& numerator = lit.fragment.expr(mix.args[0]);
+                if (numerator.op == Op::Mul) {
+                    const Expr& delta = lit.fragment.expr(numerator.args[0]);
+                    if (delta.op == Op::Sub && lit.fragment.expr(delta.args[0]).op == Op::Constant &&
+                        lit.fragment.expr(delta.args[1]).op == Op::LoadVar) {
+                        const float high = std::bit_cast<float>(uint32_t(lit.fragment.expr(delta.args[0]).immediate));
+                        const float expected = high == 1.0f ? 0.2f : high == 0.8f ? 0.4f : 0.095f;
+                        const Expr& denominator = lit.fragment.expr(mix.args[1]);
+                        CHECK(denominator.op == Op::Constant && denominator.immediate == std::bit_cast<uint32_t>(expected));
+                        mipDenominators = true;
+                    }
+                }
+            }
+            if (mix.op != Op::Call || mix.argc != 3) continue;
+            const Expr& reflection = lit.fragment.expr(mix.args[0]);
+            if (reflection.op != Op::Call || reflection.argc != 2) continue;
+            const Expr& incident = lit.fragment.expr(reflection.args[0]);
+            if (incident.op != Op::Neg) continue;
+            const Expr& fourth = lit.fragment.expr(mix.args[2]);
+            CHECK(fourth.op == Op::Mul);
+            const Expr& third = lit.fragment.expr(fourth.args[0]);
+            CHECK(third.op == Op::Mul && third.args[1] == fourth.args[1]);
+            const Expr& second = lit.fragment.expr(third.args[0]);
+            CHECK(second.op == Op::Mul && second.args[0] == fourth.args[1] && second.args[1] == fourth.args[1]);
+            reflectionMix = true;
+        }
+        CHECK(reflectionMix);
+        CHECK(mipDenominators);
     }
 }
 

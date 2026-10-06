@@ -138,37 +138,6 @@ std::array<double, 9> uvTransformOf(const Texture& t) {
             0, 0, 1};
 }
 
-// A float16 bit pattern from a float32, round to nearest. A FloatType map is stored as RGBA16Float:
-// rgba32float is unfilterable without the float32-filterable feature, which the host device does not
-// request, so three's linear float map could not be filtered natively. ponytail: half precision,
-// fine for a colour map; use RGBA32Float + float32-filterable if a full-precision float map lands.
-uint16_t halfFromFloat(float value) {
-    uint32_t bits;
-    std::memcpy(&bits, &value, sizeof bits);
-    const uint32_t sign = (bits >> 16) & 0x8000u;
-    int32_t exponent = static_cast<int32_t>((bits >> 23) & 0xffu) - 127 + 15;
-    uint32_t mantissa = bits & 0x7fffffu;
-    if (exponent <= 0) return static_cast<uint16_t>(sign);           // underflow: zero
-    if (exponent >= 31) return static_cast<uint16_t>(sign | 0x7c00u); // overflow: infinity
-    mantissa = (mantissa + 0x1000u) >> 13;                           // round to nearest even (approx)
-    if (mantissa & 0x400u) {
-        mantissa = 0;
-        if (++exponent >= 31) return static_cast<uint16_t>(sign | 0x7c00u);
-    }
-    return static_cast<uint16_t>(sign | (static_cast<uint32_t>(exponent) << 10) | mantissa);
-}
-
-std::vector<uint8_t> floatsToHalf(const std::vector<uint8_t>& bytes) {
-    std::vector<uint8_t> out(bytes.size() / 2);  // 16 bytes/texel -> 8
-    for (std::size_t i = 0; i + 4 <= bytes.size(); i += 4) {
-        float value;
-        std::memcpy(&value, bytes.data() + i, sizeof value);
-        const uint16_t half = halfFromFloat(value);
-        std::memcpy(out.data() + i / 2, &half, sizeof half);
-    }
-    return out;
-}
-
 // A program that samples a material `map` or an environment cannot have one shared fragment group:
 // each draw's group binds its own texture and sampler. Its group[1] is left null and built per draw.
 bool perDrawFragment(const shader::StageModule& stage) {
@@ -184,7 +153,7 @@ bool perDrawFragment(const shader::StageModule& stage) {
 const char* kPmremPrelude = R"WGSL(
 struct PmremUniforms {
   roughness: f32, mipInt: f32, texelWidth: f32, texelHeight: f32,
-  maxMip: f32, texelSize: f32, srgb: f32, pad: f32,
+  maxMip: f32, pad0: f32, pad1: f32, pad2: f32,
 };
 @group(0) @binding(0) var<uniform> u: PmremUniforms;
 @group(0) @binding(1) var t_src: texture_2d<f32>;
@@ -197,8 +166,7 @@ struct VsOut {
 @vertex fn vs(@location(0) a_pos: vec3<f32>, @location(1) a_uv: vec2<f32>, @location(2) a_face: f32) -> VsOut {
   var out: VsOut;
   out.position = vec4<f32>(a_pos.xy, 0.0, 1.0);
-  let t = u.texelSize;
-  out.uv = vec2<f32>(-t) + a_uv * (1.0 + 2.0 * t);
+  out.uv = a_uv;
   out.face = a_face;
   return out;
 }
@@ -239,31 +207,15 @@ fn pmremDirection(uvIn: vec2<f32>, face: f32) -> vec3<f32> {
 )WGSL";
 
 const char* kPmremEquirect = R"WGSL(
-fn srgbDecode(c: vec3<f32>) -> vec3<f32> {
-  let lo = c * 0.0773993808;
-  let hi = pow(c * 0.9478672986 + vec3<f32>(0.0521327014), vec3<f32>(2.4));
-  return select(hi, lo, c <= vec3<f32>(0.04045));
-}
 @fragment fn fs(in: VsOut) -> @location(0) vec4<f32> {
   let direction = normalize(pmremDirection(in.uv, in.face));
   let uEq = atan2(direction.z, direction.x) * 0.15915494309189535 + 0.5;
   let vEq = asin(clamp(direction.y, -1.0, 1.0)) * 0.3183098861837907 + 0.5;
-  var c = textureSampleLevel(t_src, s_src, vec2<f32>(uEq, vEq), 0.0);
-  if (u.srgb > 0.5) { c = vec4<f32>(srgbDecode(c.rgb), c.a); }
-  return c;
+  return textureSampleLevel(t_src, s_src, vec2<f32>(uEq, vEq), 0.0);
 }
 )WGSL";
 
 const char* kPmremGgx = R"WGSL(
-fn pmremRoughnessToMip(r: f32) -> f32 {
-  var mip = 0.0;
-  if (r >= 0.8) { mip = (1.0 - r) * (1.0) / (0.2) + -2.0; }
-  else if (r >= 0.4) { mip = (0.8 - r) * (3.0) / (0.4) + -1.0; }
-  else if (r >= 0.305) { mip = (0.4 - r) * (1.0) / (0.095) + 2.0; }
-  else if (r >= 0.21) { mip = (0.305 - r) * (1.0) / (0.095) + 3.0; }
-  else { mip = -2.0 * log2(1.16 * r); }
-  return mip;
-}
 fn pmremBilinear(directionIn: vec3<f32>, mipIn: f32) -> vec3<f32> {
   var mip = mipIn;
   var face = pmremFace(directionIn);
@@ -292,12 +244,12 @@ fn importanceSampleGGX_VNDF(Xi: vec2<f32>, V: vec3<f32>, roughness: f32) -> vec3
   let T1 = vec3<f32>(1.0, 0.0, 0.0);
   let T2 = cross(V, T1);
   let r = sqrt(Xi.x);
-  let phi = 6.283185307179586 * Xi.y;
+  let phi = (2.0 * 3.14159265359) * Xi.y;
   let t1 = r * cos(phi);
   var t2 = r * sin(phi);
   let s = 0.5 * (V.z + 1.0);
   t2 = (1.0 - s) * sqrt(1.0 - t1 * t1) + s * t2;
-  let Nh = T1 * t1 + T2 * t2 + V * sqrt(max(0.0, 1.0 - t1 * t1 - t2 * t2));
+  let Nh = T1 * t1 + T2 * t2 + V * sqrt(max(0.0, 1.0 - (t1 * t1 + t2 * t2)));
   return normalize(vec3<f32>(alpha * Nh.x, alpha * Nh.y, max(0.0, Nh.z)));
 }
 @fragment fn fs(in: VsOut) -> @location(0) vec4<f32> {
@@ -314,7 +266,7 @@ fn importanceSampleGGX_VNDF(Xi: vec2<f32>, V: vec3<f32>, roughness: f32) -> vec3
       let Xi = vec2<f32>(f32(i) / 512.0, radicalInverse(i));
       let Ht = importanceSampleGGX_VNDF(Xi, vec3<f32>(0.0, 0.0, 1.0), u.roughness);
       let H = normalize(tangent * Ht.x + bitangent * Ht.y + N * Ht.z);
-      let L = normalize(H * (2.0 * dot(N, H)) - N);
+      let L = normalize(H * (dot(N, H) * 2.0) - N);
       let NdotL = max(dot(N, L), 0.0);
       if (NdotL > 0.0) {
         prefiltered += pmremBilinear(L, u.mipInt) * NdotL;
@@ -530,16 +482,17 @@ const Renderer::MaterialTexture* Renderer::materialTexture(const Texture& textur
     if (record.sampler) wgpuSamplerRelease(record.sampler);
     if (record.gpu.type != 0) gpu_.destroy(record.gpu);
     record = MaterialTexture{};
-    // A FloatType map is stored as RGBA16Float (rgba32float is unfilterable); an 8-bit map is
-    // rgba8unorm, and an sRGB map's decode happens in the fragment (three's sRGBTransferEOTF), so the
-    // sample matches upstream's shader conversion rather than a differently rounded -srgb format.
-    const WGPUTextureFormat format =
-        texture.isFloat() ? WGPUTextureFormat_RGBA16Float : WGPUTextureFormat_RGBA8Unorm;
+    // Match WebGPUTextureUtils: FloatType stays RGBA32Float; sRGB byte textures decode before
+    // filtering in the GPU, not after filtering in the material/PMREM shader.
+    if (texture.isFloat() && !wgpuDeviceHasFeature(device_, WGPUFeatureName_Float32Filterable))
+        throw std::runtime_error("TN_NATIVE_TEXTURE_UNSUPPORTED: FloatType requires float32-filterable");
+    const WGPUTextureFormat format = texture.isFloat() ? WGPUTextureFormat_RGBA32Float
+                                    : texture.isSRGB() ? WGPUTextureFormat_RGBA8UnormSrgb
+                                                       : WGPUTextureFormat_RGBA8Unorm;
     if (texture.hasImage()) {
-        const std::vector<uint8_t> pixels = texture.isFloat() ? floatsToHalf(texture.data) : texture.data;
         record.gpu = gpu_.createTexture(texture.width, texture.height, format,
                                         WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst);
-        if (record.gpu.type != 0 && gpu_.writeTexture(record.gpu, pixels.data(), pixels.size()) == GpuStatus::Ok)
+        if (record.gpu.type != 0 && gpu_.writeTexture(record.gpu, texture.data.data(), texture.data.size()) == GpuStatus::Ok)
             record.view = view2d(gpu_.texture(record.gpu), format);
     }
     WGPUSamplerDescriptor sampler = {};
@@ -677,26 +630,6 @@ Renderer::EnvironmentGpu& Renderer::environment(const Texture& equirect) {
     env.version = equirect.version();
     const MaterialTexture* source = materialTexture(equirect);
     if (source->view == nullptr) throw std::runtime_error("TN_NATIVE_ENVIRONMENT_UPLOAD_FAILED");
-    if (envVertex_.type == 0) {
-        // three's _createPlanes: a 3x2 grid of face quads. Position in NDC, base uv in [0,1] and the
-        // face index; the vertex shader expands the uv by the pass's texel margin.
-        static const float kBaseUv[6][2] = {{0, 0}, {1, 0}, {1, 1}, {0, 0}, {1, 1}, {0, 1}};
-        static const unsigned kFaceLib[6] = {3, 1, 5, 0, 4, 2};
-        std::vector<float> data;
-        data.reserve(36 * 6);
-        for (unsigned face = 0; face < 6; ++face) {
-            const float x = float(face % 3) * 2.0f / 3.0f - 1.0f;
-            const float y = face > 2 ? 0.0f : -1.0f;
-            const float coordinates[6][3] = {{x, y, 0}, {x + 2.0f / 3.0f, y, 0}, {x + 2.0f / 3.0f, y + 1, 0},
-                                             {x, y, 0}, {x + 2.0f / 3.0f, y + 1, 0}, {x, y + 1, 0}};
-            for (int v = 0; v < 6; ++v) {
-                data.insert(data.end(), {coordinates[v][0], coordinates[v][1], coordinates[v][2], kBaseUv[v][0],
-                                         kBaseUv[v][1], float(kFaceLib[face])});
-            }
-        }
-        envVertex_ = gpu_.createBuffer(data.size() * 4, WGPUBufferUsage_Vertex | WGPUBufferUsage_CopyDst);
-        gpu_.writeBuffer(envVertex_, 0, data.data(), data.size() * 4);
-    }
     // three's _setSizeFromTexture: an equirect's cube size is image.width / 4.
     uint32_t cubeSize = std::max(equirect.width / 4, 1u);
     uint32_t lodMax = 0;
@@ -705,6 +638,40 @@ Renderer::EnvironmentGpu& Renderer::environment(const Texture& equirect) {
     env.cubeSize = cubeSize;
     env.lodMax = lodMax;
     env.lods = lodMax - 4 + 1 + 6;  // LOD_MIN=4, EXTRA_LOD_SIGMA.length=6 in pinned PMREMGenerator
+    // _createPlanes computes positions and each LOD's expanded UVs in JS doubles, then stores
+    // Float32Arrays. Expanding base UVs in the vertex shader adds a second, different f32 rounding.
+    std::vector<float> data;
+    data.reserve(env.lods * 36 * 6);
+    static const unsigned kFaceLib[6] = {3, 1, 5, 0, 4, 2};
+    for (uint32_t i = 0; i < env.lods; ++i) {
+        const double size = double(1u << std::max(int(lodMax) - int(i), 4));
+        const double texelSize = 1.0 / (size - 2);
+        const float min = float(-texelSize), max = float(1.0 + texelSize);
+        const float uv[6][2] = {{min, min}, {max, min}, {max, max}, {min, min}, {max, max}, {min, max}};
+        std::array<float, 36 * 6> vertices{};
+        for (unsigned face = 0; face < 6; ++face) {
+            const double x = double(face % 3) * 2.0 / 3.0 - 1.0;
+            const double y = face > 2 ? 0.0 : -1.0;
+            const double coordinates[6][3] = {{x, y, 0}, {x + 2.0 / 3.0, y, 0}, {x + 2.0 / 3.0, y + 1, 0},
+                                              {x, y, 0}, {x + 2.0 / 3.0, y + 1, 0}, {x, y + 1, 0}};
+            const unsigned faceIdx = kFaceLib[face];
+            for (unsigned v = 0; v < 6; ++v) {
+                const unsigned offset = (faceIdx * 6 + v) * 6;
+                for (unsigned c = 0; c < 3; ++c) vertices[offset + c] = float(coordinates[v][c]);
+                vertices[offset + 3] = uv[v][0];
+                vertices[offset + 4] = uv[v][1];
+                vertices[offset + 5] = float(faceIdx);
+            }
+        }
+        data.insert(data.end(), vertices.begin(), vertices.end());
+    }
+    const uint64_t vertexBytes = data.size() * sizeof(float);
+    if (envVertex_.type == 0 || envVertexCapacity_ < vertexBytes) {
+        if (envVertex_.type != 0) gpu_.destroy(envVertex_);
+        envVertexCapacity_ = vertexBytes;
+        envVertex_ = gpu_.createBuffer(vertexBytes, WGPUBufferUsage_Vertex | WGPUBufferUsage_CopyDst);
+    }
+    gpu_.writeBuffer(envVertex_, 0, data.data(), vertexBytes);
     const uint32_t width = 3 * std::max(cubeSize, 112u);
     const uint32_t height = 4 * cubeSize;
     env.width = width;
@@ -737,13 +704,12 @@ Renderer::EnvironmentGpu& Renderer::environment(const Texture& equirect) {
         WGPUSampler sampler;
         WGPURenderPipeline pipeline;
         float x, y, w, h;
-        float roughness, mipInt, texelSize, srgb;
+        float roughness, mipInt;
+        uint64_t vertexOffset;
     };
     std::vector<Pass> passes;
-    const float sizeLod0 = float(cubeSize);
     passes.push_back({env.view, source->view, source->sampler, envEquirectPipeline_, 0, 0,
-                      float(3 * cubeSize), float(2 * cubeSize), 0.0f, 0.0f,
-                      sizeLod0 > 2 ? 1.0f / (sizeLod0 - 2) : 0.0f, equirect.isSRGB() ? 1.0f : 0.0f});
+                      float(3 * cubeSize), float(2 * cubeSize), 0.0f, 0.0f, 0});
     int lod = int(lodMax);
     for (int i = 1; i < int(env.lods); ++i) {
         if (lod > 4) --lod;
@@ -757,9 +723,9 @@ Renderer::EnvironmentGpu& Renderer::environment(const Texture& equirect) {
         const float y = 4.0f * float(cubeSize - unsigned(size));
         // Render the GGX result into the ping-pong, then copy it back (roughness 0).
         passes.push_back({env.pingView, env.view, env.sampler, envGgxPipeline_, x, y, 3.0f * size, 2.0f * size,
-                          adjusted, shader::pmremMip(lodMax, i - 1), float(size) > 2 ? 1.0f / (size - 2) : 0.0f, 0.0f});
+                          adjusted, shader::pmremMip(lodMax, i - 1), uint64_t(i) * 36 * 24});
         passes.push_back({env.view, env.pingView, env.sampler, envGgxPipeline_, x, y, 3.0f * size, 2.0f * size,
-                          0.0f, shader::pmremMip(lodMax, i), float(size) > 2 ? 1.0f / (size - 2) : 0.0f, 0.0f});
+                          0.0f, shader::pmremMip(lodMax, i), uint64_t(i) * 36 * 24});
     }
     const uint64_t stride = aligned(32);
     const uint64_t total = stride * passes.size();
@@ -776,8 +742,6 @@ Renderer::EnvironmentGpu& Renderer::environment(const Texture& equirect) {
         slice[2] = env.texelWidth;
         slice[3] = env.texelHeight;
         slice[4] = env.maxMip;
-        slice[5] = passes[p].texelSize;
-        slice[6] = passes[p].srgb;
     }
     gpu_.writeBuffer(envUniforms_, 0, uniforms.data(), uniforms.size() * 4);
 
@@ -815,7 +779,7 @@ Renderer::EnvironmentGpu& Renderer::environment(const Texture& equirect) {
                                             uint32_t(passes[p].h));
         wgpuRenderPassEncoderSetPipeline(pass, passes[p].pipeline);
         wgpuRenderPassEncoderSetBindGroup(pass, 0, group, 0, nullptr);
-        wgpuRenderPassEncoderSetVertexBuffer(pass, 0, gpu_.buffer(envVertex_), 0, 36 * 24);
+        wgpuRenderPassEncoderSetVertexBuffer(pass, 0, gpu_.buffer(envVertex_), passes[p].vertexOffset, 36 * 24);
         wgpuRenderPassEncoderDraw(pass, 36, 1, 0, 0);
         wgpuRenderPassEncoderEnd(pass);
         wgpuRenderPassEncoderRelease(pass);
@@ -1127,7 +1091,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
         v.positionNode = item.positionNode;
         v.environment = item.envMap != nullptr;
         v.map = item.map != nullptr;
-        v.mapSRGB = item.map != nullptr && item.map->isSRGB();
+        v.mapSRGB = false;  // WGSLNodeBuilder uses GPU sRGB formats; no shader colour conversion.
         return v;
     };
 

@@ -485,6 +485,7 @@ static RequiredFeatures buildRequiredFeatures(WGPUAdapter adapter,
     result.hasPipelineCache = appendIfSupported(
         static_cast<WGPUFeatureName>(WGPUNativeFeature_PipelineCache), "pipeline-cache");
 #endif
+    appendIfSupported(WGPUFeatureName_Float32Filterable, "float32-filterable");
     appendIfSupported(WGPUFeatureName_RG11B10UfloatRenderable, "rg11b10ufloat-renderable");
 #if MYSTRAL_HAS_CORE_FEATURES_AND_LIMITS
     appendIfSupported(WGPUFeatureName_CoreFeaturesAndLimits, "core-features-and-limits");
