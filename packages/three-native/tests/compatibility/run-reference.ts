@@ -326,6 +326,14 @@ async function main(argv: readonly string[]): Promise<number> {
   const check = argv.includes("--check");
   const allowSoftware = argv.includes("--allow-software");
   const fixtures = selectFixtures(argv);
+  // A diagnostic invocation must never regenerate the pinned goldens.
+  if (process.env.TN_TRAA_DUMP) {
+    if (fixtures.length !== 1 || fixtures[0]?.name !== "traa-history")
+      throw new Error("TN_TRAA_DUMP requires --only traa-history");
+    await captureRenderFixtures(fixtures, { allowSoftware });
+    process.stdout.write(`TRAA dump: ${path.resolve(process.env.TN_TRAA_DUMP)}\n`);
+    return 0;
+  }
   const version = pinnedThreeVersion(REPO_ROOT);
 
   let run = await pass(fixtures, { allowSoftware });

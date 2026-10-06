@@ -4,7 +4,7 @@
 **Complexity:** 3 — one TS system to port onto the render graph
 **Owner:** João
 **Work package:** N14 — [native-engine batch](../../../native-engine/README.md)
-**Depends on:** [PRD-523 (N14a)](../../../native-engine/N14-native-render-chain-and-advanced-visuals/PRD-523-n14a-the-render-graph-owns-passes-and-history.md)
+**Depends on:** [PRD-523 (N14a)](PRD-523-n14a-the-render-graph-owns-passes-and-history.md)
 
 ## Context
 

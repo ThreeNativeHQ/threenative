@@ -60,6 +60,13 @@ export type OutputColorSpace = (typeof OUTPUT_COLOR_SPACES)[number];
 export interface IPixelsMetric {
   readonly maxPixelMismatchRatio: number;
   readonly maxPerceptualDeltaE: number;
+  /**
+   * Channel levels a pixel may differ by and still count as matching (default 0). Only for a
+   * frame that accumulates float state over many frames, where exact 8-bit agreement is not a
+   * reachable target; `levelsReason` says why.
+   */
+  readonly levels?: number;
+  readonly levelsReason?: string;
 }
 
 /** The one frame a render fixture renders, and the settings that frame is captured under. */
@@ -514,6 +521,19 @@ export function fixtureErrors(value: unknown, expectedName?: string): readonly s
       for (const key of ["maxPixelMismatchRatio", "maxPerceptualDeltaE"] as const) {
         if (!nonNegative(metric[key]) || (metric[key] as number) > 1)
           errors.push(`${at}.metric.${key}: must be a ratio between 0 and 1`);
+      }
+      if (metric.levels !== undefined) {
+        if (
+          !Number.isInteger(metric.levels) ||
+          (metric.levels as number) < 0 ||
+          (metric.levels as number) > 4
+        )
+          errors.push(`${at}.metric.levels: must be an integer between 0 and 4`);
+        else if (
+          (metric.levels as number) > 0 &&
+          (typeof metric.levelsReason !== "string" || metric.levelsReason.trim() === "")
+        )
+          errors.push(`${at}.metric.levelsReason: required when levels is above 0`);
       }
       continue;
     }

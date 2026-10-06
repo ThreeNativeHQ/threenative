@@ -21,6 +21,7 @@
 namespace tn::engine::shader::graph {
 
 struct NodeData;
+struct PostEffect;
 
 /** A graph node: an immutable, ref-counted value of one upstream TSL kind. */
 using Node = std::shared_ptr<const NodeData>;
@@ -29,7 +30,7 @@ enum class Kind : uint8_t {
     Constant, Uniform, Attribute, Builtin, Varying, PositionLocal,
     Unary, Binary, Math, Swizzle, Join, Convert, Select, Texture,
     StorageElement, VarRead, LoopIndex,
-    Body, Var, Assign, If, Loop,
+    Body, Var, Assign, If, Loop, RenderTexture, TextureSize, TextureLoad, Call, Return, Break, Continue, Discard, PostEffect,
 };
 
 enum class UnOp : uint8_t { Negate };
@@ -37,6 +38,7 @@ enum class BinOp : uint8_t { Add, Sub, Mul, Div, Less, Greater, Equal };
 
 struct NodeData {
     Kind kind = Kind::Constant;
+    std::shared_ptr<const PostEffect> post;
     Type type;
     std::string name;
     std::string lanes;
@@ -47,6 +49,8 @@ struct NodeData {
     std::vector<Node> args;
     std::vector<Node> body;
     std::vector<Node> otherwise;
+    double scale = 1;
+    uint32_t width = 0, height = 0; // RTT: zero means drawing-buffer size
 };
 
 Node float_(double value);

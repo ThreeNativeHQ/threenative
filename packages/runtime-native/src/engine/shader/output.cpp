@@ -11,6 +11,10 @@ ExprId srgbTransferOetf(Program& p, ExprId linear) {
 }
 
 OutputPrograms buildOutput(std::optional<ToneMapping> toneMapping, bool srgb, const PostNode* post) {
+    return buildOutput(toneMapping, srgb, post, true);
+}
+
+OutputPrograms buildOutput(std::optional<ToneMapping> toneMapping, bool srgb, const PostNode* post, bool outputTransform) {
     OutputPrograms out;
     Program& v = out.vertex;
     const ExprId position = v.attribute("position", Type::vec(2));
@@ -23,6 +27,7 @@ OutputPrograms buildOutput(std::optional<ToneMapping> toneMapping, bool srgb, co
     const uint32_t texture = f.texture2d("scene");
     const ExprId uv = f.varying("uv", Type::vec(2));
     const ExprId scene = post ? post->build(f, texture, uv) : f.sample(texture, uv);
+    if (!outputTransform) { f.output("color", scene); return out; }
     // RenderOutputNode: unpremultiply before nonlinear transforms, then premultiply in output space.
     const ExprId alpha = f.call("clamp", {f.swizzle(scene, "w"), f.constant(0.0f), f.constant(1.0f)});
     ExprId rgb = f.select(f.equal(alpha, f.constant(0.0f)), f.construct(Type::vec(3), {f.constant(0.0f)}),

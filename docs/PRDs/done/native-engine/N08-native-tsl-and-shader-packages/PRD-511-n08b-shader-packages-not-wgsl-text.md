@@ -35,7 +35,7 @@ already caches pipelines (`src/webgpu/bindings_pipeline_cache.cpp`) for the JS p
 ## Out of scope
 
 - PBR/lighting maths — [PRD-512](PRD-512-n08c-standard-pbr-and-deformation-that-shadows.md).
-- Pass scheduling across a frame — [PRD-523 (N14a)](../../../native-engine/N14-native-render-chain-and-advanced-visuals/PRD-523-n14a-the-render-graph-owns-passes-and-history.md).
+- Pass scheduling across a frame — [PRD-523 (N14a)](../N14-native-render-chain-and-advanced-visuals/PRD-523-n14a-the-render-graph-owns-passes-and-history.md).
 
 ## Execution Phases
 

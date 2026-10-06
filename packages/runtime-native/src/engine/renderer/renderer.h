@@ -28,6 +28,7 @@ using Matrix = std::array<double, 16>;  // column-major, as three's Matrix4.elem
 
 class SkinnedMesh;
 class TraaPass;
+class PostEffects;
 struct TraaOptions;
 class Texture;  // the material's diffuse `map` (engine/scene/texture.h)
 
@@ -181,7 +182,11 @@ public:
     void setOutput(const OutputState& output);
     /** A post pass between the scene and the output transform; null draws the scene straight out. */
     void setPostNode(std::shared_ptr<const shader::PostNode> post);
+    void setPostGraph(shader::graph::Node root);
+    /** A render-graph normal/history input supplied by its native producer; borrowed view. */
+    void setPostInput(const std::string& name, WGPUTextureView view);
     void setTraa(const TraaOptions& options);
+    TraaPass* traaDebugPass() const { return traa_.get(); }
     void cutHistory();
     const OutputState& output() const { return output_; }
 
@@ -347,6 +352,8 @@ private:
     OutputState output_;
     std::shared_ptr<const shader::PostNode> post_;
     std::unique_ptr<TraaPass> traa_;
+    std::unique_ptr<PostEffects> postEffects_;
+    std::map<std::string, std::vector<float>> postUniforms_;
     shader::StageModule blitVertex_, blitFragment_;  // blitTo's pass-through copy
     shader::StageModule outputVertex_;
     shader::StageModule outputFragment_;

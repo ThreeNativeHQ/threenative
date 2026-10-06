@@ -14,7 +14,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { createRequire } from "node:module";
 import path from "node:path";
@@ -84,6 +84,7 @@ function requestOf(fixture: IFixture): Record<string, unknown> {
   if (render === undefined) throw new Error(`TN_FIXTURE_RENDER_MISSING: ${fixture.name}`);
   return {
     fixture: { ops: fixture.ops },
+    ...(fixture.name === "traa-history" && process.env.TN_TRAA_DUMP ? { traaDump: true } : {}),
     scene: render.scene,
     camera: render.camera,
     width: render.width,
@@ -247,6 +248,34 @@ async function captureOne(
     settle = resolve;
   });
   await tab.exposeFunction("__tnRenderDone", (outcome: IPageOutcome) => settle?.(outcome));
+  if (fixture.name === "traa-history" && process.env.TN_TRAA_DUMP) {
+    const directory = path.resolve(process.env.TN_TRAA_DUMP);
+    mkdirSync(directory, { recursive: true });
+    await tab.exposeFunction(
+      "__tnTraaDump",
+      (name: string, metadata: Record<string, unknown>, values?: number[]) => {
+        if (!/^(capture|frame-\d+(?:-(beauty|velocity|history|resolved))?)$/.test(name))
+          throw new Error(`TN_TRAA_DUMP_NAME_INVALID: ${name}`);
+        if (values !== undefined) {
+          const { width, height, channels } = metadata;
+          if (
+            typeof width !== "number" ||
+            typeof height !== "number" ||
+            channels !== 4 ||
+            values.length !== width * height * channels
+          )
+            throw new Error(`TN_TRAA_DUMP_SIZE_INVALID: ${name}`);
+          const bytes = Buffer.alloc(values.length * 4);
+          values.forEach((value, i) => bytes.writeFloatLE(value, i * 4));
+          writeFileSync(path.join(directory, `${name}.bin`), bytes);
+        }
+        writeFileSync(
+          path.join(directory, `${name}.json`),
+          `${JSON.stringify(metadata, null, 2)}\n`,
+        );
+      },
+    );
+  }
   try {
     await tab.goto(`${origin}/?fixture=${encodeURIComponent(fixture.name)}`, {
       waitUntil: "domcontentloaded",

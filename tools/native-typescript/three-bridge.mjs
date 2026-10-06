@@ -70,7 +70,13 @@ export function buildEngineBridge({ outDir, engineBuild, render = false }) {
   };
   const renderSource = path.join(THREE, "tn_three_render.cpp");
   if (render) sources.push(renderSource);
-  const stamp = Math.max(...sources.map((file) => fs.statSync(file).mtimeMs), newest(include));
+  const stamp = Math.max(
+    ...sources.map((file) => fs.statSync(file).mtimeMs),
+    fs.statSync(fileURLToPath(import.meta.url)).mtimeMs,
+    newest(include),
+    newest(path.join(NATIVE, "src", "engine")),
+    ...(render ? [fs.statSync(path.join(engineBuild, "compile_commands.json")).mtimeMs] : []),
+  );
   if (
     fs.existsSync(archive) &&
     fs.existsSync(shim) &&

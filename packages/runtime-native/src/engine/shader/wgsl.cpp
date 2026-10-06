@@ -75,6 +75,10 @@ std::string WgslEmitter::expr(ExprId id) const {
         case Op::LoadVar:
         case Op::LoadStorage:
         case Op::AtomicAdd: return "l" + std::to_string(id);
+        case Op::TextureSize:
+            return "textureDimensions(t_" + p_.textures_[e.immediate] + ", " + expr(e.args[0]) + ")";
+        case Op::TextureLoad:
+            return "textureLoad(t_" + p_.textures_[e.immediate] + ", " + expr(e.args[0]) + ", " + expr(e.args[1]) + ")";
         case Op::SampleLevel: {
             const std::string& name = p_.textures_[e.immediate];
             return "textureSampleLevel(t_" + name + ", smp_" + name + ", " + expr(e.args[0]) + ", " + expr(e.args[1]) + ")";
@@ -155,6 +159,8 @@ void WgslEmitter::block(uint32_t index, int depth, std::string& out) const {
                     out += indent + "s_" + p_.storage_[s.a].name + "[" + expr(s.b) + "] = " + expr(s.c) + ";\n";
                 break;
             case Kind::Discard: out += indent + "discard;\n"; break;
+            case Kind::Break: out += indent + "break;\n"; break;
+            case Kind::Continue: out += indent + "continue;\n"; break;
             case Kind::Output: {
                 const std::string& name = p_.names_[p_.outputs_[s.a].name];
                 out += indent + "out." + (name == "position" || name == "color" ? name : "o_" + name) + " = " +

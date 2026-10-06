@@ -14,6 +14,9 @@
 #include "engine/scene/texture.h"
 #include "engine/renderer/graph/render_graph.h"
 #include "engine/renderer/post/traa.h"
+#include "engine/renderer/post/effects.h"
+#include "engine/shader/tsl/tsl.h"
+#include "engine/shader/graph/serialized.h"
 #include "mystral/webgpu_compat.h"
 
 namespace tn::engine {
@@ -477,13 +480,30 @@ void Renderer::setOutput(const OutputState& output) {
     outputFragment_ = shader::buildStage(programs.fragment, 0);
     if (!outputVertex_.wgsl.ok() || !outputFragment_.wgsl.ok()) throw std::runtime_error("TN_NATIVE_SHADER_INVALID: output program");
     releaseOutputGroup();  // its layout belongs to the previous program
+    gpu_.destroy(outputUniforms_);
+    outputUniforms_ = gpu_.createBuffer(std::max<uint32_t>(16, outputFragment_.uniformBlockSize), WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
 }
 
 void Renderer::setPostNode(std::shared_ptr<const shader::PostNode> post) {
+    auto effects = post && !post->passes.empty() ? std::make_unique<PostEffects>(device_,queue_,post->passes) : nullptr;
+    postEffects_.reset();
+    postUniforms_ = post ? post->uniforms : std::map<std::string,std::vector<float>>{};
     post_ = std::move(post);
     outputVertex_ = {};  // rebuild the output program with (or without) the post graph
     const OutputState output = output_;
     setOutput(output);
+    postEffects_ = std::move(effects);
+    if (postEffects_ && width_ && height_) postEffects_->resize(width_,height_);
+}
+
+void Renderer::setPostGraph(shader::graph::Node root) {
+    setPostNode(root ? std::make_shared<shader::PostNode>(shader::graph::serializedPost(root)) : nullptr);
+}
+
+void Renderer::setPostInput(const std::string& name, WGPUTextureView view) {
+    if (!postEffects_) throw std::runtime_error("TN_POST_GRAPH_MISSING");
+    postEffects_->input(name,view);
+    releaseOutputGroup();
 }
 
 void Renderer::setTraa(const TraaOptions& options) {
@@ -522,6 +542,7 @@ void Renderer::setSize(uint32_t width, uint32_t height) {
     colorView_ = view2d(gpu_.texture(color_), WGPUTextureFormat_RGBA8Unorm);
     depthView_ = view2d(depth_, WGPUTextureFormat_Depth32Float);
     if (traa_) traa_->resize(width, height);
+    if (postEffects_) postEffects_->resize(width, height);
 }
 
 // One stage's bind group, from the bindings its package declares: the uniform block, and for a
@@ -560,9 +581,11 @@ WGPUBindGroup Renderer::bindGroup(WGPUBindGroupLayout layout, const shader::Stag
                 e.textureView = virtualMap ? virtualShadows_.at(index).map.view : (b.cube ? cubeShadowMaps_ : shadowMaps_).at(index).view;
             else e.sampler = compareSampler_;
         } else if (b.kind == shader::BindingKind::Texture) {
-            e.textureView = b.name == "t_map" ? mapView : b.name == "t_env" ? envView : view;
+            const auto postView = postEffects_ ? postEffects_->view(b.name.substr(2)) : nullptr;
+            e.textureView = postView ? postView : b.name == "t_map" ? mapView : b.name == "t_env" ? envView : view;
         } else if (b.kind == shader::BindingKind::Sampler) {
-            e.sampler = b.name == "smp_map" ? mapSampler : b.name == "smp_env" ? envSampler : sampler;
+            const bool postView = postEffects_ && postEffects_->view(b.name.substr(4));
+            e.sampler = postView ? postEffects_->sampler(b.name.substr(4)) : b.name == "smp_map" ? mapSampler : b.name == "smp_env" ? envSampler : sampler;
         } else {
             throw std::runtime_error("TN_NATIVE_BINDING_UNSUPPORTED: " + b.name);
         }
@@ -1629,6 +1652,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
         wgpuRenderPassEncoderEnd(shadowPass);
         wgpuRenderPassEncoderRelease(shadowPass);
     }
+    if (traa_) traa_->seedHistory(encoder, sceneColor_);
     WGPURenderPassEncoder pass = wgpuCommandEncoderBeginRenderPass(encoder, &passDesc);
     bound = nullptr;
     boundIndex = nullptr;
@@ -1652,6 +1676,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
         wgpuRenderPassEncoderEnd(velocityPass); wgpuRenderPassEncoderRelease(velocityPass);
         traa_->resolve(encoder, sceneColor_, sceneView_, depth_, depthView_);
     }
+    if (postEffects_) postEffects_->render(encoder, traa_ ? traa_->resultView() : sceneView_, depthView_, gpu_.buffer(outputTriangle_), camera, renderId_);
     outputPass(encoder, timed);
     if (timed) wgpuCommandEncoderResolveQuerySet(encoder, timestamps_, 0, 4, gpu_.buffer(timestampResolve_), 0);
     WGPUCommandBufferDescriptor commandDesc = {};
@@ -1680,6 +1705,14 @@ void Renderer::outputPass(WGPUCommandEncoder encoder, bool timed) {
         outputVertex_, &outputFragment_, PipelineTarget{WGPUTextureFormat_RGBA8Unorm, WGPUTextureFormat_Undefined, WGPUCullMode_None});
     if (!pipeline) throw std::runtime_error("TN_NATIVE_PIPELINE_REFUSED: output program");
     std::vector<uint8_t> block(std::max<uint32_t>(outputFragment_.uniformBlockSize, 4));
+    for (const auto& field : outputFragment_.uniforms) {
+        const auto value = postUniforms_.find(field.name);
+        if (value == postUniforms_.end()) continue;
+        const auto& values = value->second;
+        if (values.size() != size_t(field.type.rows)*field.type.cols) throw std::runtime_error("TN_POST_UNIFORM_SIZE: " + field.name);
+        const size_t stride = field.type.isMatrix() ? shader::uniformLayout(shader::Type::vec(field.type.rows)).align : field.type.rows*4;
+        for (size_t col = 0; col < field.type.cols; ++col) std::memcpy(block.data()+field.offset+col*stride, values.data()+col*field.type.rows, field.type.rows*4);
+    }
     put(block, outputFragment_, "toneMappingExposure", std::array<double, 1>{output_.toneMappingExposure});
     if (outputFragment_.uniformBlockSize) gpu_.writeBuffer(outputUniforms_, 0, block.data(), outputFragment_.uniformBlockSize);
     if (!outputGroup_) {

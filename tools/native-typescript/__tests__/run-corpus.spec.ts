@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   discoverCases,
   missingExpectationNote,
@@ -9,6 +9,7 @@ import {
   runMeasured,
   unsupportedThreeImports,
 } from "../run-corpus.mjs";
+import { buildEngineBridge } from "../three-bridge.mjs";
 
 function tempDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "tn-run-corpus-"));
@@ -136,5 +137,32 @@ describe("unsupported dynamic graph red control", () => {
         throw "TN_TSL_DYNAMIC_UNSUPPORTED mod";
       }),
     ).not.toThrow();
+  });
+});
+
+// Internal C++ headers determine the stack allocation sizes of the in-process render host.
+describe("engine bridge cache", () => {
+  it("rebuilds when an internal engine header is newer than the archive", () => {
+    const outDir = tempDir();
+    buildEngineBridge({ outDir });
+    const cachedTime = Date.now() + 60_000;
+    for (const name of ["libtn-three-shim.a", "tn_three_shim.o", "tn_three_hooks.o"]) {
+      const file = path.join(outDir, name);
+      fs.utimesSync(file, cachedTime / 1000, cachedTime / 1000);
+    }
+    const stat = fs.statSync;
+    const probe = vi.spyOn(fs, "statSync").mockImplementation((...args) => {
+      const result = stat(...args);
+      if (String(args[0]).endsWith("/engine/renderer/renderer.h"))
+        result.mtimeMs = cachedTime + 60_000;
+      return result;
+    });
+    try {
+      const archive = buildEngineBridge({ outDir });
+      expect(fs.statSync(archive).mtimeMs).toBeLessThan(cachedTime);
+    } finally {
+      probe.mockRestore();
+      fs.rmSync(outDir, { recursive: true, force: true });
+    }
   });
 });

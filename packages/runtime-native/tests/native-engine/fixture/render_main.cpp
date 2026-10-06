@@ -3,12 +3,15 @@
 // `renderer.render(scene, camera)` takes — and writing the frame as a PNG for run-native to compare
 // with the browser's golden frame.
 #include "tsl_programs.h"
+#include "traa_dump.h"
 #include "driver.h"
 #include "engine/abi/bindings.h"
 #include "engine/renderer/render_database.h"
 #include "mystral/webgpu/context.h"
 
 #include <chrono>
+#include <algorithm>
+#include <cstdlib>
 #include <iostream>
 #include <memory>
 #include <sstream>
@@ -59,10 +62,22 @@ std::string draw(Gpu& gpu, tn::binding::Object& sceneObject, tn::binding::Object
     std::array<double, 4> clear{0, 0, 0, 0};
     if (scene.background) clear = {scene.background->r, scene.background->g, scene.background->b, 1};
     gpu.database.shadowMapEnabled = r.shadowMap;
+    const char* dumpDirectory = std::getenv("TN_TRAA_DUMP");
+    const bool dumpTraa = dumpDirectory && *dumpDirectory &&
+        std::any_of(r.tsl.begin(), r.tsl.end(), [](const auto& op) { return op.first == "traa-history"; });
+    const auto finishDump = [&](bool captured) -> std::string {
+        if (!dumpTraa) return "";
+        try {
+            if (auto* traa = renderer.traaDebugPass())
+                tn::fixture::finishTraaDump(*traa, gpu.context.getInstance(), dumpDirectory, captured);
+            return "";
+        } catch (const std::exception& error) { return error.what(); }
+    };
     const auto renderAt = [&](uint32_t width, uint32_t height) -> std::string {
         renderer.setSize(width, height);
         gpu.database.render(renderer, scene, *camera, clear);
         renderer.setSize(r.width, r.height);
+        if (const auto error = finishDump(false); !error.empty()) return error;
         return gpu.database.diagnostics().empty() ? "" : gpu.database.diagnostics().front();
     };
     for (auto [program, object] : r.tsl)
@@ -72,6 +87,7 @@ std::string draw(Gpu& gpu, tn::binding::Object& sceneObject, tn::binding::Object
             return failed;
     gpu.database.render(renderer, scene, *camera, clear);
     if (!gpu.database.diagnostics().empty()) return gpu.database.diagnostics().front();
+    if (const auto error = finishDump(true); !error.empty()) return error;
     std::vector<uint8_t> pixels;
     bool done = false;
     renderer.readPixels([&](GpuStatus s, std::vector<uint8_t> px) {

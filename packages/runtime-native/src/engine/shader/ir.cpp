@@ -462,6 +462,32 @@ ExprId Program::sampleLevel(uint32_t texture, ExprId uv, ExprId level, Where whe
     return pure(Expr{Op::SampleLevel, Type::vec(4), {uv, level}, 2, texture});
 }
 
+ExprId Program::textureSize(uint32_t texture, ExprId level, Where where) {
+    if (level == kInvalid) return kInvalid;
+    if (texture >= textures_.size() || textureKinds_[texture] != TextureKind::Float2d)
+        return fail("textureSize", "requires a 2D float texture", where);
+    if (exprs_[level].type != Type::i32()) return fail("textureSize", "mip must be i32", where);
+    return pure(Expr{Op::TextureSize, Type::vec(2, Type::Scalar::U32), {level}, 1, texture});
+}
+
+ExprId Program::textureLoad(uint32_t texture, ExprId coordinate, ExprId level, Where where) {
+    if (coordinate == kInvalid || level == kInvalid) return kInvalid;
+    if (texture >= textures_.size() || textureKinds_[texture] != TextureKind::Float2d)
+        return fail("textureLoad", "requires a 2D float texture", where);
+    if (exprs_[coordinate].type != Type::vec(2, Type::Scalar::I32) || exprs_[level].type != Type::i32())
+        return fail("textureLoad", "coordinates must be ivec2 and mip i32", where);
+    return pure(Expr{Op::TextureLoad, Type::vec(4), {coordinate, level}, 2, texture});
+}
+
+void Program::breakLoop(Where where) {
+    if (!loopDepth_) { fail("Break", "outside a loop", where); return; }
+    emit(Stmt{StmtKind::Break});
+}
+void Program::continueLoop(Where where) {
+    if (!loopDepth_) { fail("Continue", "outside a loop", where); return; }
+    emit(Stmt{StmtKind::Continue});
+}
+
 void Program::discard(Where where) {
     if (stage_ != Stage::Fragment) {
         fail("discard", "only fragment shaders discard", where);
@@ -534,7 +560,9 @@ void Program::Loop(ExprId count, const std::function<void(ExprId)>& body, Where 
     vars_.push_back(Var{Type::i32()});
     const uint32_t block = openBlock();
     current_ = block;
+    ++loopDepth_;
     body(ordered(Expr{Op::LoadVar, Type::i32(), {}, 0, index}));
+    --loopDepth_;
     current_ = parent;
     if (count != kInvalid) emit(Stmt{StmtKind::Loop, count, index, kInvalid, block});
 }

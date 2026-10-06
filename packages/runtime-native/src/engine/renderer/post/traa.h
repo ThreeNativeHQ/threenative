@@ -4,6 +4,9 @@
 #include "engine/renderer/graph/render_graph.h"
 #include "engine/shader/output.h"
 #include <webgpu/webgpu.h>
+#include <memory>
+#include <string>
+#include <vector>
 
 namespace tn::engine {
 
@@ -29,11 +32,30 @@ public:
     const Matrix& previousView() const { return previousView_; }
     WGPUTextureView velocityView() const { return velocityView_; }
     WGPUTextureView resultView() const { return resolveView_; }
+    void seedHistory(WGPUCommandEncoder encoder, WGPUTexture beauty);
     void resolve(WGPUCommandEncoder encoder, WGPUTexture beauty, WGPUTextureView beautyView,
                  WGPUTexture depth, WGPUTextureView depthView);
     bool needsSeed() const { return !history_.historyValid(0); }
     const graph::RenderGraph& renderGraph() const { return graph_; }
+    // Fixture diagnostics only. No allocation/readback unless explicitly enabled by the driver.
+    void enableDebugDump();
+    struct DebugDump {
+        struct Texture {
+            WGPUBuffer buffer;
+            std::string name;
+            uint32_t pitch;
+            uint64_t size;
+        };
+        std::vector<Texture> pending;
+        std::string metadata;
+        uint64_t frame = 0;
+        uint32_t width = 0, height = 0;
+        ~DebugDump() { for (const auto& texture : pending) wgpuBufferRelease(texture.buffer); }
+    };
+    DebugDump* debugDump() const { return debugDump_.get(); }
 private:
+    std::unique_ptr<DebugDump> debugDump_;
+    void stageDebugTexture(WGPUCommandEncoder encoder, WGPUTexture texture, const char* name);
     WGPUDevice device_;
     WGPUQueue queue_;
     TraaOptions options_;

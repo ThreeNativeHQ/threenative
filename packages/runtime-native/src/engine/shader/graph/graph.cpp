@@ -67,6 +67,7 @@ private:
     VarId ensureVar(Node var);
     uint32_t ensureStorage(const NodeData& element);
     ExprId emit(Node node);
+    ExprId convert(ExprId value, Type target);
 
     Program& program_;
     const std::unordered_map<std::string, ExprId>& inputs_;
@@ -74,7 +75,26 @@ private:
     std::unordered_map<const NodeData*, VarId> vars_;
     std::unordered_map<std::string, uint32_t> buffers_;
     std::unordered_map<const NodeData*, ExprId> loopIndex_;
+    static constexpr VarId noVar = UINT32_MAX;
+    VarId returnVar_ = noVar, doneVar_ = noVar;
+    Type returnType_;
 };
+
+ExprId Lowerer::convert(ExprId value, Type target) {
+    if (value == kInvalid) return kInvalid;
+    const auto source = program_.expr(value).type;
+    if (source == target) return value;
+    // NodeBuilder.format r185: truncate vectors, pad vec2 with z=0 and vec3 with w=1.
+    if (!source.isMatrix() && !target.isMatrix() && source.rows > target.rows)
+        return convert(program_.swizzle(value, std::string("xyzw").substr(0, target.rows)), target);
+    if (source.isVector() && target.isVector() && source.rows < target.rows) {
+        auto part = convert(value, Type::vec(source.rows));
+        if (source.rows == 2) part = program_.construct(Type::vec(3), {part, program_.constant(0.0f)});
+        if (target.rows == 4) part = program_.construct(Type::vec(4), {part, program_.constant(1.0f)});
+        return convert(part, target);
+    }
+    return program_.construct(target, {value});
+}
 
 ExprId Lowerer::expression(Node node) {
     if (!node) return kInvalid;
@@ -92,6 +112,39 @@ ExprId Lowerer::emit(Node node) {
         if (input != inputs_.end()) return input->second;
     }
     switch (d.kind) {
+        case Kind::Body: {
+            statements(d.body);
+            exprs_.clear();
+            if (d.args.empty()) return kInvalid;
+            if (returnVar_ == noVar) return expression(d.args[0]);
+            program_.If(program_.equal(program_.load(doneVar_), program_.constant(false)), [this, &d] {
+                exprs_.clear(); const ExprId result = expression(d.args[0]);
+                program_.assign(returnVar_, result == kInvalid || returnType_.scalar == Type::Scalar::Void || program_.expr(result).type == returnType_
+                    ? result : convert(result, returnType_));
+            });
+            return program_.load(returnVar_);
+        }
+        case Kind::Call: {
+            // Each invocation gets its own return slot; callbacks are inlined, like upstream
+            // ShaderCallNodeInternal without a layout. A return inside If remains local.
+            const VarId previousReturn = returnVar_, previousDone = doneVar_;
+            const Type previousType = returnType_; returnType_ = d.type;
+            returnVar_ = noVar; doneVar_ = program_.var(Type::boolean(), program_.constant(false));
+            const ExprId result = expression(d.args[0]);
+            ExprId value = returnVar_ == noVar ? result : program_.load(returnVar_);
+            if (value != kInvalid && returnType_.scalar != Type::Scalar::Void && program_.expr(value).type != returnType_)
+                value = convert(value, returnType_);
+            returnType_ = previousType;
+            returnVar_ = previousReturn; doneVar_ = previousDone;
+            return value;
+        }
+        case Kind::Var: { const auto variable = ensureVar(node); return variable == noVar ? kInvalid : program_.load(variable); }
+        case Kind::RenderTexture:
+            return program_.sample(program_.texture2d(d.name), expression(d.args[1]));
+        case Kind::TextureSize:
+            return program_.textureSize(program_.texture2d(d.name), d.args.empty() ? program_.constant(int32_t(0)) : expression(d.args[0]));
+        case Kind::TextureLoad:
+            return program_.textureLoad(program_.texture2d(d.name), expression(d.args[0]), d.args.size() < 2 ? program_.constant(int32_t(0)) : expression(d.args[1]));
         case Kind::Constant:
             if (d.type.scalar == Type::Scalar::F32)
                 return program_.constant(std::bit_cast<float>(static_cast<uint32_t>(d.bits)));
@@ -106,8 +159,18 @@ ExprId Lowerer::emit(Node node) {
         case Kind::PositionLocal: return tsl::positionLocal().id;
         case Kind::Unary: return d.unary == UnOp::Negate ? program_.neg(expression(d.args[0])) : kInvalid;
         case Kind::Binary: {
-            const ExprId a = expression(d.args[0]);
-            const ExprId b = expression(d.args[1]);
+            ExprId a = expression(d.args[0]);
+            ExprId b = expression(d.args[1]);
+            if (a == kInvalid || b == kInvalid) return kInvalid;
+            if (d.bits == 1) {
+                auto at = program_.expr(a).type, bt = program_.expr(b).type;
+                if (at.numeric() && bt.numeric() && !at.isMatrix() && !bt.isMatrix() && at.scalar != bt.scalar) {
+                    const bool compare = d.binary == BinOp::Less || d.binary == BinOp::Greater || d.binary == BinOp::Equal;
+                    const auto scalar = compare && at.isScalar() && bt.isScalar() ? Type::Scalar::F32 : at.rows >= bt.rows ? at.scalar : bt.scalar;
+                    if (at.scalar != scalar) a = program_.construct(Type::vec(at.rows, scalar), {a});
+                    if (bt.scalar != scalar) b = program_.construct(Type::vec(bt.rows, scalar), {b});
+                }
+            }
             switch (d.binary) {
                 case BinOp::Add: return program_.add(a, b);
                 case BinOp::Sub: return program_.sub(a, b);
@@ -122,6 +185,12 @@ ExprId Lowerer::emit(Node node) {
         case Kind::Math: {
             std::vector<ExprId> ids;
             for (const Node& arg : d.args) ids.push_back(expression(arg));
+            if (d.bits == 1 && ids.size() == 2 && (d.name == "min" || d.name == "max" || d.name == "pow" || d.name == "step")) {
+                if (ids[0] == kInvalid || ids[1] == kInvalid) return kInvalid;
+                const auto a = program_.expr(ids[0]).type, b = program_.expr(ids[1]).type;
+                const auto target = a.rows >= b.rows ? a : b;
+                for (auto& id : ids) if (program_.expr(id).type != target) id = program_.construct(target, {id});
+            }
             return program_.call(d.name, ids);
         }
         case Kind::Swizzle: return program_.swizzle(expression(d.args[0]), d.lanes);
@@ -133,9 +202,13 @@ ExprId Lowerer::emit(Node node) {
                 ids.assign(d.type.rows, ids[0]);
             return program_.construct(d.type, ids);
         }
-        case Kind::Convert: return program_.construct(d.type, {expression(d.args[0])});
+        case Kind::Convert: return convert(expression(d.args[0]), d.type);
         case Kind::Select:
             return program_.select(expression(d.args[0]), expression(d.args[1]), expression(d.args[2]));
+        case Kind::PostEffect: {
+            const auto sample = program_.sample(program_.texture2d(d.name), expression(uv()));
+            return d.type == Type::f32() ? program_.swizzle(sample,"x") : sample;
+        }
         case Kind::Texture: {
             const ExprId coordinate = expression(d.args[0]);
             if (coordinate == kInvalid) return kInvalid;
@@ -144,7 +217,7 @@ ExprId Lowerer::emit(Node node) {
         }
         case Kind::StorageElement:
             return program_.loadStorage(ensureStorage(d), expression(d.args[0]));
-        case Kind::VarRead: return program_.load(ensureVar(d.args[0]));
+        case Kind::VarRead: { const auto variable = ensureVar(d.args[0]); return variable == noVar ? kInvalid : program_.load(variable); }
         case Kind::LoopIndex: {
             const auto found = loopIndex_.find(&d);
             return found == loopIndex_.end() ? kInvalid : found->second;
@@ -156,7 +229,9 @@ ExprId Lowerer::emit(Node node) {
 VarId Lowerer::ensureVar(Node var) {
     const auto found = vars_.find(var.get());
     if (found != vars_.end()) return found->second;
-    const VarId id = program_.var(var->type, expression(var->args[0]));
+    const ExprId initial = expression(var->args[0]);
+    if (initial == kInvalid) return noVar;
+    const VarId id = program_.var(var->type.scalar == Type::Scalar::Void ? program_.expr(initial).type : var->type, initial);
     vars_.emplace(var.get(), id);
     return id;
 }
@@ -172,12 +247,47 @@ uint32_t Lowerer::ensureStorage(const NodeData& element) {
 void Lowerer::statement(Node node) {
     const NodeData& s = *node;
     switch (s.kind) {
+        case Kind::Break: program_.breakLoop(); return;
+        case Kind::Continue: program_.continueLoop(); return;
+        case Kind::Discard: program_.discard(); return;
+        case Kind::Body:
+            statements(s.body);
+            if (!s.args.empty()) statement(s.args[0]);
+            return;
+        case Kind::Call: (void)expression(node); return;
+        case Kind::Return: {
+            if (s.args.empty()) {
+                if (doneVar_ != noVar) program_.assign(doneVar_, program_.constant(true));
+                return;
+            }
+            ExprId value = expression(s.args[0]);
+            if (value == kInvalid) return;
+            if (returnType_.scalar != Type::Scalar::Void && program_.expr(value).type != returnType_)
+                value = convert(value, returnType_);
+            if (returnVar_ == noVar) returnVar_ = program_.var(program_.expr(value).type, value);
+            else program_.assign(returnVar_, value);
+            if (doneVar_ == noVar) doneVar_ = program_.var(Type::boolean(), program_.constant(false));
+            program_.assign(doneVar_, program_.constant(true));
+            return;
+        }
         case Kind::Var: (void)ensureVar(node); return;
         case Kind::Assign: {
             const Node& target = s.args[0];
             if (target->kind == Kind::Var) {
                 program_.assign(ensureVar(target), expression(s.args[1]));
-            } else {
+            } else if (target->kind == Kind::Swizzle && target->args[0]->kind == Kind::Var) {
+                const VarId variable = ensureVar(target->args[0]);
+                const ExprId old = program_.load(variable), source = expression(s.args[1]);
+                const Type type = program_.expr(old).type;
+                std::vector<ExprId> parts;
+                const std::string lanes = "xyzw";
+                for (uint8_t i = 0; i < type.rows; ++i) {
+                    const auto lane = target->lanes.find(lanes[i]);
+                    parts.push_back(lane == std::string::npos ? program_.swizzle(old, lanes.substr(i, 1))
+                        : target->lanes.size() == 1 ? source : program_.swizzle(source, lanes.substr(lane, 1)));
+                }
+                program_.assign(variable, program_.construct(type, parts));
+            } else if (target->kind == Kind::StorageElement) {
                 const uint32_t buffer = ensureStorage(*target);
                 const ExprId index = expression(target->args[0]);
                 program_.store(buffer, index, expression(s.args[1]));
@@ -198,7 +308,7 @@ void Lowerer::statement(Node node) {
             const ExprId count = expression(s.args[0]);
             const Node indexNode = s.args[1];
             program_.Loop(count, [this, &s, &indexNode](ExprId index) {
-                loopIndex_[indexNode.get()] = index;
+                loopIndex_[indexNode.get()] = s.args.size() > 2 ? program_.add(index, expression(s.args[2])) : index;
                 statements(s.body);
             });
             return;
@@ -208,7 +318,11 @@ void Lowerer::statement(Node node) {
 }
 
 void Lowerer::statements(const std::vector<Node>& list) {
-    for (const Node& node : list) statement(node);
+    for (const Node& node : list) {
+        exprs_.clear(); // ordered loads must observe assignments and stay in their lexical block
+        if (doneVar_ == noVar) statement(node);
+        else program_.If(program_.equal(program_.load(doneVar_), program_.constant(false)), [this, &node] { statement(node); });
+    }
 }
 
 }  // namespace
@@ -421,10 +535,6 @@ Node Block::node() const {
 ExprId lower(const Graph& graph, Program& program, const std::unordered_map<std::string, ExprId>& inputs) {
     if (!graph) return kInvalid;
     Lowerer lowerer(program, inputs);
-    if (graph->kind == Kind::Body) {
-        lowerer.statements(graph->body);
-        return kInvalid;
-    }
     return lowerer.expression(graph);
 }
 
@@ -438,7 +548,7 @@ std::string key(const Graph& graph) {
         out += std::to_string(it->second) + ";";
         if (!fresh) return;
         out += "{" + std::to_string(int(n->kind)) + "," + n->type.name() + "," +
-               std::to_string(n->bits) + "," + std::to_string(int(n->unary)) + "," +
+               std::to_string(n->bits) + "," + std::to_string(n->scale) + "," + std::to_string(n->width) + "," + std::to_string(n->height) + "," + std::to_string(int(n->unary)) + "," +
                std::to_string(int(n->binary)) + ";";
         text(n->name); text(n->lanes);
         for (const auto* list : {&n->args, &n->body, &n->otherwise}) {

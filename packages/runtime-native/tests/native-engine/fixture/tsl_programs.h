@@ -17,6 +17,7 @@
 #include "engine/scene/nodes.h"
 
 #include <functional>
+#include <cstdlib>
 #include <memory>
 #include <string>
 #include <vector>
@@ -204,6 +205,9 @@ inline std::string applyTslProgram(const std::string& program, binding::Object& 
         };
         pattern(0);
         renderer.setTraa(engine::TraaOptions{});
+        if (const char* directory = std::getenv("TN_TRAA_DUMP");
+            program == "traa-history" && directory && *directory)
+            renderer.traaDebugPass()->enableDebugDump();
         const auto draw = [&]() { camera->updateMatrixWorld(true); return renderAt(renderer.width(), renderer.height()); };
         for (int i = 0; i < 20; ++i) {
             mesh->position.x = i * 0.002;

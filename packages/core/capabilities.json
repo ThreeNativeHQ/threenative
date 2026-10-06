@@ -7699,6 +7699,21 @@
         "source": "three"
       },
       {
+        "symbol": "Sprite",
+        "kind": "class",
+        "source": "three/webgpu"
+      },
+      {
+        "symbol": "SpriteMaterial",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "SpriteNodeMaterial",
+        "kind": "class",
+        "source": "three/webgpu"
+      },
+      {
         "symbol": "Texture",
         "kind": "class",
         "source": "three"

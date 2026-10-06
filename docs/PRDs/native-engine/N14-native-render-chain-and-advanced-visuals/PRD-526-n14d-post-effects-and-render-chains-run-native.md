@@ -4,7 +4,7 @@
 **Complexity:** 4 — every template's post graph must compile and order natively
 **Owner:** João
 **Work package:** N14 — [native-engine batch](../README.md)
-**Depends on:** [PRD-523 (N14a)](PRD-523-n14a-the-render-graph-owns-passes-and-history.md), [N08 — native TSL](../N08-native-tsl-and-shader-packages/README.md)
+**Depends on:** [PRD-523 (N14a)](../../done/native-engine/N14-native-render-chain-and-advanced-visuals/PRD-523-n14a-the-render-graph-owns-passes-and-history.md), [N08 — native TSL](../N08-native-tsl-and-shader-packages/README.md)
 
 ## Context
 
@@ -39,6 +39,6 @@ graphs compile through N08 unchanged.
 #### Phase 2: Template post graphs
 **Status:** NOT STARTED
 **Files:** `packages/runtime-native/conformance/registry.json`
-- [ ] Every template's `src/render/postprocessing.ts` graph compiles to a validated shader package. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_template_post_packages`
+- [x] Every template's `src/render/postprocessing.ts` graph compiles to a validated shader package. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_template_post_packages` — 2026-10-06: green on Dawn, ASan and wgpu: `native_engine_template_post_packages` enumerates the templates from disk and exports each quality tier's real post graph (three r185 TSL), lowers it natively and validates the shader package: 36 graphs from 13 templates validate and the 3 snow tiers install no post chain (snow's WorldEnvironment applies direct tone mapping, worldEnvironment.ts:480-483; a guard fails if snow ever requests a stage). New native lowerings: TSL Fn, RTT, bloom, sharpen, GTAO, denoise, SMAA (exact SMAA lookup data), each with a unit check. Red control: a graph with an unlowered node fails naming the template and node; zero templates found fails.
 - [ ] The starter template's post chain matches the legacy backend within the visual-gate tolerance. proof: `pnpm visuals` on the native-engine arm
-- [ ] A TRAA fixture holds history through motion and resets it on a camera cut. proof: `pnpm parity` (new case `native-engine-traa-history`)
+- [x] A TRAA fixture holds history through motion and resets it on a camera cut. proof: `pnpm parity` (new case `native-engine-traa-history`) — 2026-10-06: green on Dawn: `pnpm parity -- --suite native-engine-traa --driver packages/runtime-native/build/tn-linux/tn-native-engine-render-driver --renders`, fixture `traa-history` (three r185 TRAANode in the browser; 24 frames with motion, a cut at frame 20). Root causes found with the TN_TRAA_DUMP per-frame dumps (beauty, velocity, jitter and projection identical on both sides): a history reset seeded from the current instead of the previous frame's beauty, and out-of-image beauty neighbours read as 0 instead of (0,0,0,1) as the browser does. Frames 20-23 now agree within 0.0005 per channel; the fixture states a one-level 8-bit budget (`metric.levels: 1` with its reason). Red controls: `currentWeight = 1.0` (no accumulation) and an empty `cameraCut()` both fail traa-history.

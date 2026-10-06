@@ -16,7 +16,7 @@ TSL, compiled through N08. The engine owns only the mechanism.
 
 | Key | PRD | Depends on |
 | --- | --- | --- |
-| N14a | [PRD-523 — The render graph owns passes and history](PRD-523-n14a-the-render-graph-owns-passes-and-history.md) | N09 |
+| N14a | [PRD-523 — The render graph owns passes and history](../../done/native-engine/N14-native-render-chain-and-advanced-visuals/PRD-523-n14a-the-render-graph-owns-passes-and-history.md) | N09 |
 | N14b | [PRD-524 — Virtual shadows run native](../../done/native-engine/N14-native-render-chain-and-advanced-visuals/PRD-524-n14b-virtual-shadows-run-native.md) | N14a, N12 |
 | N14c | [PRD-525 — Probes run native](../../done/native-engine/N14-native-render-chain-and-advanced-visuals/PRD-525-n14c-probes-run-native.md) | N14a |
 | N14d | [PRD-526 — Post effects and render chains run native](PRD-526-n14d-post-effects-and-render-chains-run-native.md) | N14a |

@@ -8,13 +8,13 @@
       "index": 0,
       "id": "scene",
       "kind": "pixels",
-      "value": "s:9da695afa85902b075111d672cc141f7e75993b097b6fc640ed1e64cea5ca112",
-      "decimal": "9da695afa85902b075111d672cc141f7e75993b097b6fc640ed1e64cea5ca112"
+      "value": "s:fac199bc50274092b2cfcbc97a47f85753a915a7daaa1da42beb0ad8fc07a237",
+      "decimal": "fac199bc50274092b2cfcbc97a47f85753a915a7daaa1da42beb0ad8fc07a237"
     }
   ],
   "render": {
     "png": "traa-history.png",
-    "pngSha256": "9da695afa85902b075111d672cc141f7e75993b097b6fc640ed1e64cea5ca112",
+    "pngSha256": "fac199bc50274092b2cfcbc97a47f85753a915a7daaa1da42beb0ad8fc07a237",
     "width": 320,
     "height": 240,
     "adapter": {

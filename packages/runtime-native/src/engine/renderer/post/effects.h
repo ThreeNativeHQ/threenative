@@ -1,0 +1,47 @@
+#pragma once
+#include "engine/shader/graph/post_effects.h"
+#include "engine/renderer/pipeline_cache.h"
+#include <webgpu/webgpu.h>
+#include <map>
+
+namespace tn::engine {
+struct CameraState;
+/** Executes the serialized r185 effect passes using the existing native pass scheduler/cache. */
+class PostEffects {
+  public:
+    PostEffects(WGPUDevice device, WGPUQueue queue, std::vector<shader::graph::PostPass> sources);
+    ~PostEffects();
+    PostEffects(const PostEffects&) = delete;
+    PostEffects& operator=(const PostEffects&) = delete;
+    void resize(uint32_t width, uint32_t height);
+    void input(const std::string& name, WGPUTextureView view);
+    void render(WGPUCommandEncoder encoder, WGPUTextureView scene, WGPUTextureView depth, WGPUBuffer triangle,
+                const CameraState& camera, uint64_t frame);
+    WGPUTextureView view(const std::string& name) const;
+    WGPUSampler sampler(const std::string& name) const;
+
+  private:
+    struct Image {
+        WGPUTexture texture = nullptr;
+        WGPUTextureView view = nullptr;
+        WGPUSampler sampler = nullptr;
+        uint32_t width = 0, height = 0;
+        WGPUTextureFormat format = WGPUTextureFormat_RGBA16Float;
+    };
+    struct Pass {
+        shader::graph::PostPass source;
+        WGPUBuffer uniforms = nullptr;
+        WGPURenderPipeline pipeline = nullptr; // borrowed from cache
+        bool rendered = false;
+    };
+    void clearTargets();
+    WGPUDevice device_;
+    WGPUQueue queue_;
+    PipelineCache pipelines_;
+    std::vector<Pass> passes_;
+    std::map<std::string, Image> targets_, images_;
+    std::map<std::string, WGPUTextureView> inputs_;
+    WGPUSampler linear_ = nullptr;
+    uint32_t width_ = 0, height_ = 0;
+};
+} // namespace tn::engine

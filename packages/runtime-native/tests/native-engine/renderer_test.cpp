@@ -1,4 +1,5 @@
 #include "check.h"
+#include "fixture/traa_dump.h"
 #include "engine/renderer/renderer.h"
 #include "engine/renderer/post/traa.h"
 #include "mystral/webgpu/context.h"
@@ -6,6 +7,10 @@
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
+#include <filesystem>
+#include <fstream>
+#include <iomanip>
+#include <iostream>
 #include <optional>
 #include <string>
 #include <thread>
@@ -57,6 +62,47 @@ void traaValidation() {
         }
         CHECK(pass.resultView() != nullptr && pass.resultView() != pass.velocityView());
         CHECK(pass.needsSeed());
+        // Use real begin/resolve calls so frame advancement and matrix column/sign mistakes
+        // are checked against upstream cameras by traa_reference_test.mjs, without a GPU.
+        WGPUTextureDescriptor texture{};
+        texture.dimension = WGPUTextureDimension_2D; texture.size = {320, 240, 1};
+        texture.mipLevelCount = texture.sampleCount = 1;
+        texture.usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopySrc;
+        texture.format = WGPUTextureFormat_RGBA16Float;
+        const auto beauty = wgpuDeviceCreateTexture(device, &texture);
+        const auto beautyView = wgpuTextureCreateView(beauty, nullptr);
+        texture.format = WGPUTextureFormat_Depth32Float;
+        const auto depth = wgpuDeviceCreateTexture(device, &texture);
+        const auto depthView = wgpuTextureCreateView(depth, nullptr);
+        const TraaPass::Matrix identity{1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1};
+        const TraaPass::Matrix projections[] = {
+            {.75,0,0,0,0,1,0,0,0,0,-10.0/9,-1,0,0,-10.0/9,0},
+            {1,0,0,0,0,1,0,0,0,0,-1,0,0,0,0,1}};
+        std::cout << std::setprecision(17) << "TRAA_PROJECTIONS [";
+        for (int kind = 0; kind < 2; ++kind) {
+            TraaPass jitter(device, queue, TraaOptions{});
+            jitter.resize(320, 240);
+            std::cout << (kind ? ",[" : "[");
+            for (int frame = 0; frame < 96; ++frame) {
+                const auto matrix = jitter.begin(projections[kind], identity, identity);
+                std::cout << (frame ? ",[" : "[");
+                for (int j = 0; j < 16; ++j) std::cout << (j ? "," : "") << matrix[j];
+                std::cout << "]";
+                const auto encoder = wgpuDeviceCreateCommandEncoder(device, nullptr);
+                jitter.seedHistory(encoder, beauty);
+                jitter.resolve(encoder, beauty, beautyView, depth, depthView);
+                const auto commands = wgpuCommandEncoderFinish(encoder, nullptr);
+                wgpuQueueSubmit(queue, 1, &commands);
+                wgpuCommandBufferRelease(commands); wgpuCommandEncoderRelease(encoder);
+            }
+            CHECK(!jitter.needsSeed());
+            jitter.cameraCut();
+            CHECK(jitter.needsSeed());
+            std::cout << "]";
+        }
+        std::cout << "]\n";
+        wgpuTextureViewRelease(beautyView); wgpuTextureViewRelease(depthView);
+        wgpuTextureRelease(beauty); wgpuTextureRelease(depth);
         EventQueue events;
         Renderer renderer(instance, device, queue, events);
         renderer.setSize(32, 24);
@@ -202,6 +248,46 @@ void traaAlpha() {
             CHECK(temporal[center + 3] == plain[center + 3]);
         }
     }
+}
+
+// Pin the reset input itself: clipping a flat image could conceal the wrong seed in the output.
+void traaResetSeed() {
+    mystral::webgpu::Context context;
+    const bool initialized = context.initializeHeadless();
+    CHECK(initialized);
+    if (!initialized) return;
+    WGPUAdapterInfo info{};
+    wgpuAdapterGetInfo(context.getAdapter(), &info);
+    const bool rendersPixels = info.backendType != WGPUBackendType_Null;
+    wgpuAdapterInfoFreeMembers(info);
+    CHECK(rendersPixels);
+    if (!rendersPixels) return;
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(16, 16);
+    renderer.setTraa(TraaOptions{});
+    const auto directory = std::filesystem::current_path() /
+        ("traa-reset-seed-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    auto* pass = renderer.traaDebugPass();
+    pass->enableDebugDump();
+    CameraState camera;
+    camera.projectionMatrix = camera.matrixWorld = camera.matrixWorldInverse =
+        {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    for (int frame = 0; frame <= 20; ++frame) {
+        if (frame == 20) renderer.cutHistory();
+        renderer.render({}, camera, LightState{}, frame == 20 ?
+            std::array<double, 4>{0.75, 0.25, 0.5, 1} : std::array<double, 4>{0.25, 0.5, 0.75, 1});
+        tn::fixture::finishTraaDump(*pass, context.getInstance(), directory);
+    }
+    const auto bytes = [&](const char* name) {
+        std::ifstream file(directory / name, std::ios::binary);
+        CHECK(file.good());
+        return std::string(std::istreambuf_iterator<char>(file), {});
+    };
+    const auto history = bytes("frame-20-history.bin");
+    CHECK(history.size() == 16 * 16 * 4 * sizeof(float));
+    CHECK(history == bytes("frame-19-beauty.bin"));
+    CHECK(history != bytes("frame-20-beauty.bin"));
 }
 
 // Pixels that differ from the clear colour (black), and whether the centre pixel is lit.
@@ -632,6 +718,7 @@ void alphaTest() {
 
 TN_TEST_MAIN({"resize_readback", resizeReadback}, {"output_ramp", outputRamp},
              {"traa_alpha", traaAlpha},
+             {"traa_reset_seed", traaResetSeed},
 #if defined(MYSTRAL_WEBGPU_DAWN)
              {"traa_validation", traaValidation},
 #endif

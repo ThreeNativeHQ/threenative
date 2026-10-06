@@ -53,7 +53,7 @@ Device loss currently logs from `onDeviceLost` and stops. Backend selection is
 ## Out of scope
 
 - Deciding what to draw — [PRD-514 (N09)](../done/native-engine/PRD-514-n09-native-renderer-and-standard-materials.md).
-- Render-graph transients and history — [PRD-523 (N14a)](N14-native-render-chain-and-advanced-visuals/PRD-523-n14a-the-render-graph-owns-passes-and-history.md).
+- Render-graph transients and history — [PRD-523 (N14a)](../done/native-engine/N14-native-render-chain-and-advanced-visuals/PRD-523-n14a-the-render-graph-owns-passes-and-history.md).
 - Removing `BindingsState` from the context — [PRD-499 (N02)](PRD-499-n02-the-host-links-without-a-js-engine.md).
 
 ## Execution Phases

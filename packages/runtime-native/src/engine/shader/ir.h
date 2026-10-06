@@ -44,7 +44,7 @@ enum class Op : uint8_t {
     Add, Sub, Mul, Div, Neg, Less, Equal, Select,
     Swizzle, Construct, Call,
     // Ordered reads: pinned as statements where created, so they observe prior writes.
-    LoadVar, LoadStorage, Sample, SampleLevel, AtomicAdd,
+    LoadVar, LoadStorage, Sample, SampleLevel, AtomicAdd, TextureSize, TextureLoad,
 };
 
 struct Expr {
@@ -121,10 +121,14 @@ public:
      * tiles in one mip, so a bilinearCubeUV tap is always level 0 — three's `.grad(vec2(), vec2())`.
      */
     ExprId sampleLevel(uint32_t texture, ExprId uv, ExprId level, Where where = Where::current());
+    ExprId textureSize(uint32_t texture, ExprId level, Where where = Where::current());
+    ExprId textureLoad(uint32_t texture, ExprId coordinate, ExprId level, Where where = Where::current());
     /** A depth texture (2D, or a cube) and its comparison sampler, bound together: a shadow map. */
     uint32_t textureDepth(std::string_view name, bool cube = false);
     /** f32 in [0, 1]: `reference` compared against the depth texture at `uv` (vec3 for a cube), filtered. */
     ExprId sampleCompare(uint32_t texture, ExprId uv, ExprId reference, Where where = Where::current());
+    void breakLoop(Where where = Where::current());
+    void continueLoop(Where where = Where::current());
     void discard(Where where = Where::current());
     /**
      * A stage output: "position" (vec4, vertex) and "color" (vec4, fragment) are the fixed ones;
@@ -153,10 +157,11 @@ public:
     void linkVaryings(const Program& fragment);
 
 private:
+    uint32_t loopDepth_ = 0;
     friend class WgslEmitter;
     friend StageModule buildStage(const Program& program, uint32_t group);
 
-    enum class StmtKind : uint8_t { Eval, Assign, Store, Discard, If, Loop, Output };
+    enum class StmtKind : uint8_t { Eval, Assign, Store, Discard, If, Loop, Output, Break, Continue };
     struct Stmt {
         StmtKind kind;
         uint32_t a = 0;  // var, buffer, condition, or count

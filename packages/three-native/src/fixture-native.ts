@@ -222,7 +222,7 @@ export interface IPixelComparison {
 export interface IRenderOptions {
   readonly frameDir: string;
   readonly goldensDir: string;
-  readonly compare: (golden: Uint8Array, native: Uint8Array) => IPixelComparison;
+  readonly compare: (golden: Uint8Array, native: Uint8Array, levels: number) => IPixelComparison;
 }
 
 export interface IRunFixturesOptions {
@@ -399,7 +399,11 @@ function comparePixels(
   const goldenPng = path.join(renders.goldensDir, golden.render.png);
   let measured: IPixelComparison;
   try {
-    measured = renders.compare(readFileSync(goldenPng), readFileSync(nativePng));
+    measured = renders.compare(
+      readFileSync(goldenPng),
+      readFileSync(nativePng),
+      metric.levels ?? 0,
+    );
   } catch (error) {
     return `frame comparison failed: ${error instanceof Error ? error.message : String(error)}`;
   }

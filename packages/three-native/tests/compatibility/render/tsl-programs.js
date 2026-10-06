@@ -1,6 +1,7 @@
 import {
   BackSide,
   BoxGeometry,
+  DataUtils,
   Mesh,
   MeshLambertNodeMaterial,
   PointLight,
@@ -259,7 +260,7 @@ async function probeLighting({ renderer, scene, camera, width, height }, mode) {
 
 // Dense pattern keeps old colours inside the 3x3 variance box after the cut; flat colours
 // would be clamped away and let a broken reset pass. Small rigid motion exercises reprojection.
-async function temporalFixture({ renderer, scene, camera }, firstCutFrame) {
+async function temporalFixture({ renderer, scene, camera, traaDump }, firstCutFrame) {
   const { traa } = await import("/addons/tsl/display/TRAANode.js");
   const { mrt, output, velocity } = await import("three/tsl");
   const mesh = scene.getObjectByName("temporalPattern");
@@ -283,6 +284,7 @@ async function temporalFixture({ renderer, scene, camera }, firstCutFrame) {
   // TRAANode exposes resize restart, but no cut API. Restart its own colour history and
   // sample current depth on the reset frame, matching the native graph's seeded depth.
   let reset = true;
+  let resolves = 0;
   const updateBefore = effect.updateBefore;
   effect.updateBefore = function (frame) {
     if (reset) {
@@ -293,10 +295,100 @@ async function temporalFixture({ renderer, scene, camera }, firstCutFrame) {
       reset = false;
     }
     updateBefore.call(this, frame);
+    resolves += 1;
   };
+  // Debug only: enqueue copies at the resolve boundary, after restart seeding and before the
+  // upstream history copy. Readback submits immediately; awaiting it happens outside render().
+  let dump;
+  if (traaDump && !firstCutFrame) {
+    let pending = [];
+    let jitter;
+    let lastFrame;
+    const setViewOffset = effect.setViewOffset;
+    effect.setViewOffset = function (width, height) {
+      setViewOffset.call(this, width, height);
+      jitter = {
+        jitterIndex: this._jitterIndex,
+        jitterPixels: [camera.view.offsetX, camera.view.offsetY],
+        projectionMatrix: [...camera.projectionMatrix.elements],
+      };
+    };
+    const read = async (name, target, textureIndex = 0) => {
+      const { width, height } = target;
+      const texture = target.textures[textureIndex];
+      const data = await renderer.readRenderTargetPixelsAsync(
+        target,
+        0,
+        0,
+        width,
+        height,
+        textureIndex,
+      );
+      const channels = 4;
+      const rowElements =
+        Math.ceil((width * channels * data.BYTES_PER_ELEMENT) / 256) *
+        (256 / data.BYTES_PER_ELEMENT);
+      const values = [];
+      for (let y = 0; y < height; ++y)
+        for (let x = 0; x < width * channels; ++x) {
+          const value = data[y * rowElements + x];
+          values.push(data instanceof Uint16Array ? DataUtils.fromHalfFloat(value) : value);
+        }
+      await globalThis.__tnTraaDump(
+        name,
+        {
+          width,
+          height,
+          channels,
+          dtype: "float32",
+          byteOrder: "little",
+          origin: "top-left",
+          sourceType: texture.type,
+        },
+        values,
+      );
+    };
+    const setRenderTarget = renderer.setRenderTarget;
+    renderer.setRenderTarget = function (target, ...args) {
+      if (target === effect._resolveRenderTarget) {
+        lastFrame = {
+          frame: resolves,
+          frameCount: resolves + 1,
+          indexBase: 0,
+          ...jitter,
+        };
+        if (resolves >= 18 && resolves <= 23) {
+          const prefix = `frame-${resolves}`;
+          pending.push(globalThis.__tnTraaDump(prefix, lastFrame));
+          pending.push(read(`${prefix}-beauty`, scenePass.renderTarget));
+          pending.push(
+            read(
+              `${prefix}-velocity`,
+              scenePass.renderTarget,
+              scenePass.renderTarget.textures.indexOf(effect.velocityNode.value),
+            ),
+          );
+          pending.push(read(`${prefix}-history`, effect._historyRenderTarget));
+        }
+      }
+      return setRenderTarget.call(this, target, ...args);
+    };
+    dump = async () => {
+      if (lastFrame.frame >= 18 && lastFrame.frame <= 23)
+        pending.push(read(`frame-${lastFrame.frame}-resolved`, effect._resolveRenderTarget));
+      await Promise.all(pending);
+      pending = [];
+      await globalThis.__tnTraaDump("capture", lastFrame);
+    };
+  }
   const draw = async () => {
+    // FRAME nodes advance on the renderer's animation tick, not queue completion.
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    const before = resolves;
     pipeline.render();
+    if (resolves !== before + 1) throw new Error("TRAA frame did not advance before capture");
     await renderer.backend.device.queue.onSubmittedWorkDone();
+    if (dump) await dump();
   };
   for (let i = 0; i < 20; ++i) {
     mesh.position.x = i * 0.002;
@@ -312,7 +404,7 @@ async function temporalFixture({ renderer, scene, camera }, firstCutFrame) {
     await draw();
   }
   mesh.position.x = (20 + steps) * 0.002;
-  return { render: () => pipeline.render() };
+  return { render: draw };
 }
 
 export const programs = {

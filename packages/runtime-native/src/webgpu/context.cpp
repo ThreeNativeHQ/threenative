@@ -510,6 +510,10 @@ Context::~Context() {
         wgpuSurfaceRelease(surface_);
         surface_ = nullptr;
     }
+    if (queue_) {
+        wgpuQueueRelease(queue_);
+        queue_ = nullptr;
+    }
     if (device_) {
         wgpuDeviceRelease(device_);
         device_ = nullptr;
@@ -522,7 +526,7 @@ Context::~Context() {
         wgpuInstanceRelease(instance_);
         instance_ = nullptr;
     }
-    std::cout << "[WebGPU] Context destroyed" << std::endl;
+    std::cerr << "[WebGPU] Context destroyed" << std::endl;  // stderr: stdout belongs to the game
 }
 
 bool Context::initialize() {

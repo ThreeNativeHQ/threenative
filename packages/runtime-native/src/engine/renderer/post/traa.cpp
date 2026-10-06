@@ -5,6 +5,8 @@
 #include <cstring>
 #include <cmath>
 #include <stdexcept>
+#include <iomanip>
+#include <sstream>
 
 namespace tn::engine {
 namespace {
@@ -12,6 +14,28 @@ TraaPass::Matrix inverse(const TraaPass::Matrix& a) {
     Matrix4 x; x.elements = a; x.invert(); return x.elements;
 }
 WGPUTextureView view(WGPUTexture texture) { return wgpuTextureCreateView(texture, nullptr); }
+}
+
+void TraaPass::enableDebugDump() {
+    debugDump_ = std::make_unique<DebugDump>();
+}
+
+void TraaPass::stageDebugTexture(WGPUCommandEncoder encoder, WGPUTexture texture, const char* name) {
+    if (!debugDump_ || history_.frame() < 18 || history_.frame() > 23) return;
+    if (wgpuTextureGetFormat(texture) != WGPUTextureFormat_RGBA16Float)
+        throw std::runtime_error("TN_TRAA_DUMP_FORMAT_INVALID");
+    const uint32_t pitch = (width_ * 8 + 255u) & ~255u;
+    const uint64_t size = uint64_t(pitch) * height_;
+    WGPUBufferDescriptor desc{};
+    desc.size = size; desc.usage = WGPUBufferUsage_CopyDst | WGPUBufferUsage_MapRead;
+    auto buffer = wgpuDeviceCreateBuffer(device_, &desc);
+    if (!buffer) throw std::runtime_error("TN_TRAA_DUMP_BUFFER_FAILED");
+    debugDump_->pending.push_back({buffer, name, pitch, size});
+    WGPUImageCopyTexture_Compat source{}; source.texture = texture; source.aspect = WGPUTextureAspect_All;
+    WGPUImageCopyBuffer_Compat destination{}; destination.buffer = buffer;
+    destination.layout.bytesPerRow = pitch; destination.layout.rowsPerImage = height_;
+    const WGPUExtent3D extent{width_, height_, 1};
+    wgpuCommandEncoderCopyTextureToBuffer(encoder, &source, &destination, &extent);
 }
 
 shader::OutputPrograms traaVelocityPrograms() {
@@ -37,7 +61,8 @@ shader::OutputPrograms traaVelocityPrograms() {
 }
 
 // Direct operation-for-operation translation of TRAANode.setup(), default WebGPU depth (0..1).
-// Integer loads intentionally return zero outside the image, like upstream textureLoad.
+// Out-of-image loads: depth reads zero, as upstream; a beauty neighbour reads (0, 0, 0, 1), which
+// is what the browser returns there (WGSL leaves it implementation-defined; measured with TN_TRAA_DUMP).
 const char* traaResolveWgsl() { return R"WGSL(
 struct Params {
     inverseProjection: mat4x4<f32>, previousInverseProjection: mat4x4<f32>,
@@ -54,7 +79,8 @@ struct Params {
 @group(0) @binding(6) var linearSampler: sampler;
 struct Vertex { @builtin(position) position: vec4<f32>, @location(0) uv: vec2<f32> }
 @vertex fn vs(@builtin(vertex_index) index: u32) -> Vertex {
-    let p = array<vec2<f32>, 3>(vec2(-1, -1), vec2(3, -1), vec2(-1, 3))[index];
+    var positions = array<vec2<f32>, 3>(vec2(-1, -1), vec2(3, -1), vec2(-1, 3));
+    let p = positions[index];
     return Vertex(vec4(p, 0, 1), p * vec2(0.5, -0.5) + 0.5);
 }
 fn clipAABB(current: vec4<f32>, old: vec4<f32>, low: vec4<f32>, high: vec4<f32>) -> vec4<f32> {
@@ -70,16 +96,17 @@ fn clipAABB(current: vec4<f32>, old: vec4<f32>, low: vec4<f32>, high: vec4<f32>)
     let texel = vec2<i32>(input.uv * u.size);
     var closest = 2.0;
     var farthest = -1.0;
-    var closestTexel = vec2<i32>(0);
+    var closestPosition = vec2<f32>(0);
     for (var x = -1; x <= 1; x++) {
         for (var y = -1; y <= 1; y++) {
-            let neighbor = texel + vec2(x, y);
-            let d = textureLoad(depth, neighbor, 0);
-            if (d < closest) { closest = d; closestTexel = neighbor; }
+            // Upstream adds to the floating pixel centre before converting to integer.
+            let neighbor = input.uv * u.size + vec2<f32>(f32(x), f32(y));
+            let d = textureLoad(depth, vec2<i32>(neighbor), 0);
+            if (d < closest) { closest = d; closestPosition = neighbor; }
             if (d > farthest) { farthest = d; }
         }
     }
-    let offset = textureLoad(velocity, closestTexel, 0).xy * vec2(0.5, -0.5);
+    let offset = textureLoad(velocity, vec2<i32>(closestPosition), 0).xy * vec2(0.5, -0.5);
     let historyUV = input.uv - offset;
     // DepthTexture defaults to nearest filtering; the colour history uses bilinear sampling.
     let previousTexel = clamp(vec2<i32>(floor(historyUV * u.size)), vec2<i32>(0), vec2<i32>(u.size) - 1);
@@ -95,8 +122,8 @@ fn clipAABB(current: vec4<f32>, old: vec4<f32>, low: vec4<f32>, high: vec4<f32>)
     let edge = farthest - closest > u.edgeDepthDiff;
     let disocclusion = closest - oldDepth > u.depthThreshold;
     let valid = validUV && (edge || !disocclusion);
-    let current = textureSampleLevel(beauty, linearSampler, input.uv, 0);
-    let old = textureSampleLevel(history, linearSampler, historyUV, 0);
+    let current = textureSampleLevel(beauty, linearSampler, input.uv, 0.0);
+    let old = textureSampleLevel(history, linearSampler, historyUV, 0.0);
     let motion = clamp(length((input.uv - historyUV) * u.size) / u.maxVelocityLength, 0.0, 1.0);
     var currentWeight = 0.05;
     if (u.subpixel != 0) {
@@ -106,16 +133,16 @@ fn clipAABB(current: vec4<f32>, old: vec4<f32>, low: vec4<f32>, high: vec4<f32>)
     }
     currentWeight = select(1.0, clamp(currentWeight + motion, 0.0, 1.0), valid);
     let gamma = mix(0.5, 1.0, (1 - motion) * (1 - motion));
-    let offsets = array<vec2<i32>, 8>(vec2(-1,-1), vec2(-1,1), vec2(1,-1), vec2(1,1),
+    var offsets = array<vec2<i32>, 8>(vec2(-1,-1), vec2(-1,1), vec2(1,-1), vec2(1,1),
         vec2(1,0), vec2(0,-1), vec2(0,1), vec2(-1,0));
     var moment1 = current;
     var moment2 = current * current;
     for (var i = 0u; i < 8u; i++) {
-        let neighbor = max(textureLoad(beauty, texel + offsets[i], 0), vec4(0));
+        let neighbor = max(select(vec4(0.0, 0.0, 0.0, 1.0), textureLoad(beauty, texel + offsets[i], 0), all(texel + offsets[i] >= vec2<i32>(0)) && all(texel + offsets[i] < vec2<i32>(u.size))), vec4(0.0));
         moment1 += neighbor; moment2 += neighbor * neighbor;
     }
     let mean = moment1 / 9;
-    let variance = sqrt(max(moment2 / 9 - mean * mean, vec4(0))) * gamma;
+    let variance = sqrt(max(moment2 / 9 - mean * mean, vec4(0.0))) * gamma;
     let low = mean - variance;
     let high = mean + variance;
     let clipped = clipAABB(clamp(mean, low, high), old, low, high);
@@ -206,10 +233,29 @@ TraaPass::Matrix TraaPass::begin(const Matrix& projection, const Matrix& world, 
     if (projection[11] == -1) { jittered[8] += 2 * jitter[0] / width_; jittered[9] -= 2 * jitter[1] / height_; }
     else { jittered[12] -= 2 * jitter[0] / width_; jittered[13] += 2 * jitter[1] / height_; }
     inverseProjection_ = inverse(jittered);
+    if (debugDump_) {
+        debugDump_->frame = history_.frame();
+        debugDump_->width = width_; debugDump_->height = height_;
+        std::ostringstream json; json << std::setprecision(17);
+        json << "{\"frame\":" << history_.frame() << ",\"frameCount\":" << history_.frame() + 1
+             << ",\"indexBase\":0,\"jitterIndex\":" << history_.frame() % 31
+             << ",\"jitterPixels\":[" << jitter[0] << ',' << jitter[1] << "],\"projectionMatrix\":[";
+        for (size_t i = 0; i < jittered.size(); ++i) json << (i ? "," : "") << jittered[i];
+        json << "]}\n"; debugDump_->metadata = json.str();
+    }
     return jittered;
 }
 TraaPass::Matrix TraaPass::previousModel(uint64_t object, const Matrix& world) {
     return history_.objectFrame(object, world, 0, 0);
+}
+void TraaPass::seedHistory(WGPUCommandEncoder encoder, WGPUTexture beauty) {
+    if (!needsSeed()) return;
+    // TRAANode.updateBefore copies the beauty target before the resolve quad updates its scene pass.
+    WGPUImageCopyTexture_Compat src{}, dst{};
+    src.texture = beauty; dst.texture = historyColor_;
+    src.aspect = dst.aspect = WGPUTextureAspect_All;
+    const WGPUExtent3D extent{width_, height_, 1};
+    wgpuCommandEncoderCopyTextureToTexture(encoder, &src, &dst, &extent);
 }
 void TraaPass::resolve(WGPUCommandEncoder encoder, WGPUTexture beauty, WGPUTextureView beautyView,
                         WGPUTexture depth, WGPUTextureView depthView) {
@@ -220,13 +266,17 @@ void TraaPass::resolve(WGPUCommandEncoder encoder, WGPUTexture beauty, WGPUTextu
         const WGPUExtent3D extent{width_, height_, 1};
         wgpuCommandEncoderCopyTextureToTexture(encoder, &src, &dst, &extent);
     };
-    if (needsSeed()) copy(beauty, historyColor_, false);
     // On the initial render/resize there is no previous depth allocation to sample.
     if (history_.frame() == 0 || history_.generation(0) > depthGeneration_) {
         copy(depth, historyDepth_, true);
         previousWorld_ = world_; previousInverseProjection_ = inverseProjection_;
     }
     depthGeneration_ = history_.generation(0);
+    if (debugDump_) {
+        stageDebugTexture(encoder, beauty, "beauty");
+        stageDebugTexture(encoder, velocity_, "velocity");
+        stageDebugTexture(encoder, historyColor_, "history");
+    }
     std::array<float, 88> data{};
     const Matrix* matrices[] = {&inverseProjection_, &previousInverseProjection_, &previousWorld_, &view_, &projection_};
     for (size_t i = 0; i < 5; ++i) for (size_t j = 0; j < 16; ++j) data[i * 16 + j] = float((*matrices[i])[j]);
@@ -252,6 +302,7 @@ void TraaPass::resolve(WGPUCommandEncoder encoder, WGPUTexture beauty, WGPUTextu
     wgpuRenderPassEncoderSetPipeline(pass, pipeline_); wgpuRenderPassEncoderSetBindGroup(pass, 0, group, 0, nullptr);
     wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0); wgpuRenderPassEncoderEnd(pass); wgpuRenderPassEncoderRelease(pass);
     wgpuBindGroupRelease(group); wgpuBindGroupLayoutRelease(layout);
+    if (debugDump_) stageDebugTexture(encoder, resolve_, "resolved");
     copy(resolve_, historyColor_, false); copy(depth, historyDepth_, true);
     history_.endFrame();
 }

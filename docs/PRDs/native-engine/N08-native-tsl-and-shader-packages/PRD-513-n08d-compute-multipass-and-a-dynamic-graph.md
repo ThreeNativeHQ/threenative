@@ -30,7 +30,7 @@ TSL `compute()` in JS (`packages/core/src/compute-driven.ts`).
 
 ## Out of scope
 
-- The general render graph, transients and temporal history — [PRD-523 (N14a)](../N14-native-render-chain-and-advanced-visuals/PRD-523-n14a-the-render-graph-owns-passes-and-history.md).
+- The general render graph, transients and temporal history — [PRD-523 (N14a)](../../done/native-engine/N14-native-render-chain-and-advanced-visuals/PRD-523-n14a-the-render-graph-owns-passes-and-history.md).
 - GPU particles and fluids — [PRD-527 (N14e)](../../done/native-engine/N14-native-render-chain-and-advanced-visuals/PRD-527-n14e-particles-and-fluids-run-native.md).
 
 ## Execution Phases

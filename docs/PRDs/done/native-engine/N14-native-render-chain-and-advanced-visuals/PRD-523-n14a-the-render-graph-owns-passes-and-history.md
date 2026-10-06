@@ -3,8 +3,8 @@
 **Status:** IN PROGRESS — phases 1 and 2 done; phase 3 (GPU temporal fixture) waits for the native renderer
 **Complexity:** 4 — new native subsystem every advanced pass plugs into; history rules are subtle
 **Owner:** João
-**Work package:** N14 — [native-engine batch](../README.md)
-**Depends on:** [PRD-514 (N09)](../../done/native-engine/PRD-514-n09-native-renderer-and-standard-materials.md); starts only after [PRD-534 (CP1)](../PRD-534-cp1-the-native-engine-earns-the-port.md) passes
+**Work package:** N14 — [native-engine batch](../../../native-engine/README.md)
+**Depends on:** [PRD-514 (N09)](../PRD-514-n09-native-renderer-and-standard-materials.md); starts only after [PRD-534 (CP1)](../../../native-engine/PRD-534-cp1-the-native-engine-earns-the-port.md) passes
 
 ## Context
 
@@ -30,9 +30,9 @@ pass dependencies and temporal-history requirements (§9.2); nothing native cons
 
 ## Out of scope
 
-- Specific effects: VSM ([PRD-524](../../done/native-engine/N14-native-render-chain-and-advanced-visuals/PRD-524-n14b-virtual-shadows-run-native.md)), probes
-  ([PRD-525](../../done/native-engine/N14-native-render-chain-and-advanced-visuals/PRD-525-n14c-probes-run-native.md)), post and chains
-  ([PRD-526](PRD-526-n14d-post-effects-and-render-chains-run-native.md)).
+- Specific effects: VSM ([PRD-524](PRD-524-n14b-virtual-shadows-run-native.md)), probes
+  ([PRD-525](PRD-525-n14c-probes-run-native.md)), post and chains
+  ([PRD-526](../../../native-engine/N14-native-render-chain-and-advanced-visuals/PRD-526-n14d-post-effects-and-render-chains-run-native.md)).
 - Shader package generation (N08b).
 
 ## Execution Phases
@@ -54,7 +54,7 @@ pass dependencies and temporal-history requirements (§9.2); nothing native cons
 #### Phase 3: On a GPU
 **Status:** NOT STARTED
 **Files:** `packages/runtime-native/conformance/registry.json`
-- [ ] A temporal fixture through a camera cut shows no ghosting frame after the cut on the native renderer. proof: `pnpm parity` (new case `native-engine-history-cut`)
+- [x] A temporal fixture through a camera cut shows no ghosting frame after the cut on the native renderer. proof: `pnpm parity` (new case `native-engine-history-cut`) — 2026-10-06: green on Dawn: `pnpm parity -- --suite native-engine-history --driver packages/runtime-native/build/tn-linux/tn-native-engine-render-driver --renders`, fixture `history-cut`: the first frame after the cut carries no pre-cut content. Red control: an empty `cameraCut()` fails history-cut (ghost visible). Same TRAA fixes and one-level budget as PRD-526 box 44.
 
 ## Decisions
 

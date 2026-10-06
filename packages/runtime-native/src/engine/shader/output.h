@@ -23,5 +23,6 @@ struct OutputPrograms {
  * "toneMappingExposure" (only when tone mapping).
  */
 OutputPrograms buildOutput(std::optional<ToneMapping> toneMapping, bool srgb, const PostNode* post = nullptr);
+OutputPrograms buildOutput(std::optional<ToneMapping> toneMapping, bool srgb, const PostNode* post, bool outputTransform);
 
 }  // namespace tn::engine::shader

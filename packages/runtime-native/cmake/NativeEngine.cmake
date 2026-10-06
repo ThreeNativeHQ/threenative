@@ -118,11 +118,24 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_renderer_physical_reference=physical_reference
         native_engine_renderer_alpha_transparency=alpha_transparency
         native_engine_renderer_alpha_test=alpha_test
-        native_engine_traa_alpha=traa_alpha)
+        native_engine_traa_alpha=traa_alpha
+        native_engine_traa_reset_seed=traa_reset_seed)
     target_link_libraries(tn-native-engine-renderer-test PRIVATE tn_engine_renderer tn_host_services)
+    if(TN_ENGINE_SANITIZE)
+        # Like Gate E, exercise ASan/UBSan without judging the GPU driver's exit allocations.
+        set_tests_properties(native_engine_traa_alpha PROPERTIES
+            LABELS "native-engine;native-sanitizer"
+            ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0:abort_on_error=1;UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1")
+    endif()
     if(TARGET dawn::webgpu)
         add_test(NAME native_engine_traa_validation COMMAND tn-native-engine-renderer-test traa_validation)
         set_tests_properties(native_engine_traa_validation PROPERTIES LABELS "native-engine")
+        add_test(NAME native_engine_traa_projection_reference COMMAND sh -c
+            "\"$1\" traa_validation > \"$3\" && node \"$2\" --projection < \"$3\"" --
+            $<TARGET_FILE:tn-native-engine-renderer-test>
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/traa_reference_test.mjs
+            ${CMAKE_CURRENT_BINARY_DIR}/traa-projections.txt)
+        set_tests_properties(native_engine_traa_projection_reference PROPERTIES LABELS "native-engine")
     endif()
     target_compile_definitions(tn-native-engine-renderer-test PRIVATE
         TN_GOLDENS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../three-native/tests/compatibility/goldens/0.185.1")
@@ -238,9 +251,10 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     if(TN_ENGINE_SANITIZE)
         # These own a real device, whose driver keeps allocations past exit: judged for memory
         # errors and undefined behaviour, not leaks. CPU-only engine tests keep leak checking.
+        # traa_reset_seed: exit trace contains libnvidia-glcore/glsi calloc and Dawn Vulkan Buffer::Create.
         set_tests_properties(native_engine_gpu_upload_readback native_engine_gpu_deferred_destroy
             native_engine_gpu_async_only native_engine_lifetime_deferred_gpu ${tn_shader_validator} native_engine_shader_layouts
-            native_engine_cooked_package_load native_engine_renderer_geometry_cache native_engine_renderer_pipeline_cache native_engine_renderer_scene_lit native_engine_renderer_invalidation native_engine_renderer_scene_alpha native_engine_standard_materials_unsupported native_engine_renderer_updates native_engine_renderer_multi_camera_layers native_engine_renderer_callback native_engine_renderer_instanced native_engine_batched_vs_unbatched native_engine_skinned_batched_vs_unbatched native_engine_animation_tick_vs_render native_engine_animation_material_revision native_engine_admission_failure native_engine_admission_cancel native_engine_loop_async_cancel native_engine_loop_render_ids native_engine_compute_readback native_engine_renderer_resize_readback native_engine_renderer_output_ramp native_engine_renderer_lit_reference native_engine_renderer_lambert_reference native_engine_renderer_phong_reference native_engine_renderer_physical_reference native_engine_renderer_alpha_transparency native_engine_renderer_alpha_test
+            native_engine_cooked_package_load native_engine_renderer_geometry_cache native_engine_renderer_pipeline_cache native_engine_renderer_scene_lit native_engine_renderer_invalidation native_engine_renderer_scene_alpha native_engine_standard_materials_unsupported native_engine_renderer_updates native_engine_renderer_multi_camera_layers native_engine_renderer_callback native_engine_renderer_instanced native_engine_batched_vs_unbatched native_engine_skinned_batched_vs_unbatched native_engine_animation_tick_vs_render native_engine_animation_material_revision native_engine_admission_failure native_engine_admission_cancel native_engine_loop_async_cancel native_engine_loop_render_ids native_engine_compute_readback native_engine_renderer_resize_readback native_engine_renderer_output_ramp native_engine_renderer_lit_reference native_engine_renderer_lambert_reference native_engine_renderer_phong_reference native_engine_renderer_physical_reference native_engine_renderer_alpha_transparency native_engine_renderer_alpha_test native_engine_traa_reset_seed
             native_engine_shader_variants_gpu native_engine_device_loss_recover native_engine_device_stale_handle
             native_engine_device_no_adapter PROPERTIES
             ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0:abort_on_error=1;UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1")
@@ -254,6 +268,33 @@ tn_native_engine_target(tn-native-engine-tsl-corpus)
 target_link_libraries(tn-native-engine-tsl-corpus PRIVATE tn_engine_shader)
 set_property(GLOBAL APPEND PROPERTY TN_NATIVE_ENGINE_TEST_TARGETS tn-native-engine-tsl-corpus)
 find_program(TN_NODE_EXECUTABLE node)
+add_executable(tn-native-engine-template-post-packages EXCLUDE_FROM_ALL tests/native-engine/template_post_packages.cpp)
+tn_native_engine_target(tn-native-engine-template-post-packages)
+target_link_libraries(tn-native-engine-template-post-packages PRIVATE tn_engine_shader tn_engine_graph)
+set_property(GLOBAL APPEND PROPERTY TN_NATIVE_ENGINE_TEST_TARGETS tn-native-engine-template-post-packages)
+file(GLOB TN_TEMPLATE_TINT_CANDIDATES "${CMAKE_CURRENT_SOURCE_DIR}/third_party/dawn/*/bin/tint")
+find_program(TN_TEMPLATE_TINT tint HINTS ${TN_TEMPLATE_TINT_CANDIDATES})
+if(NOT TN_TEMPLATE_TINT AND TN_TEMPLATE_TINT_CANDIDATES)
+    list(GET TN_TEMPLATE_TINT_CANDIDATES 0 TN_TEMPLATE_TINT)
+endif()
+if(TN_NODE_EXECUTABLE AND TN_TEMPLATE_TINT)
+    add_test(NAME native_engine_template_post_packages
+        COMMAND ${TN_NODE_EXECUTABLE} --import tsx tests/native-engine/template-post-packages.ts
+            $<TARGET_FILE:tn-native-engine-template-post-packages> ${TN_TEMPLATE_TINT} ${CMAKE_CURRENT_BINARY_DIR}
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+    set_tests_properties(native_engine_template_post_packages PROPERTIES LABELS "native-engine" TIMEOUT 180)
+    foreach(effect GTAONode DenoiseNode SMAANode FnNode RTTNode BloomNode SharpenNode)
+        add_test(NAME native_engine_post_${effect}
+            COMMAND ${CMAKE_COMMAND} -E env TN_POST_LOWERING=${effect}
+                ${TN_NODE_EXECUTABLE} --import tsx tests/native-engine/template-post-packages.ts
+                $<TARGET_FILE:tn-native-engine-template-post-packages> ${TN_TEMPLATE_TINT} ${CMAKE_CURRENT_BINARY_DIR}
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+        set_tests_properties(native_engine_post_${effect} PROPERTIES LABELS "native-engine" TIMEOUT 180)
+    endforeach()
+else()
+    add_test(NAME native_engine_template_post_packages
+        COMMAND ${CMAKE_COMMAND} -E false)
+endif()
 if(TN_PNPM_EXECUTABLE AND TN_NODE_EXECUTABLE)
     add_test(NAME native_engine_tsl_ir
         COMMAND ${TN_NODE_EXECUTABLE} tests/native-engine/differential.mjs --suite tsl-ir

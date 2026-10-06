@@ -50,7 +50,7 @@ target_include_directories(tn_engine_foundation PUBLIC ${CMAKE_CURRENT_SOURCE_DI
 # The N03 C ABI over the foundation: version handshake, contexts, generational object handles.
 add_library(tn_engine_abi STATIC src/engine/abi/abi.cpp src/engine/abi/identity.cpp)
 tn_native_engine_target(tn_engine_abi)
-target_link_libraries(tn_engine_abi PUBLIC tn_engine_foundation tn_engine_bindings)
+target_link_libraries(tn_engine_abi PUBLIC tn_engine_foundation tn_engine_bindings tn_engine_shader)
 target_include_directories(tn_engine_abi PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 # Scene graph, transforms and cameras (PRD-508 phases 1-2): Object3D, the node classes and the two
@@ -60,7 +60,7 @@ add_library(tn_engine_scene STATIC src/engine/scene/object3d.cpp src/engine/scen
     src/engine/scene/material.cpp src/engine/scene/lights.cpp src/engine/scene/static_transform.cpp)
 tn_native_engine_target(tn_engine_scene)
 target_link_libraries(tn_engine_scene PUBLIC tn_engine_foundation)
-target_include_directories(tn_engine_scene PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_include_directories(tn_engine_scene PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 # Animation is a renderer/binding dependency, including in the browser-only build.
 add_library(tn_engine_animation STATIC src/engine/animation/interpolant.cpp src/engine/animation/property_binding.cpp
@@ -91,7 +91,7 @@ target_include_directories(tn_engine_vsm PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 # Shader IR (N08): typed, hash-consed expressions and ordered effects. Portable like foundation.
 add_library(tn_engine_shader STATIC src/engine/shader/ir.cpp src/engine/shader/wgsl.cpp src/engine/shader/package.cpp
     src/engine/shader/standard.cpp src/engine/shader/tonemap.cpp src/engine/shader/output.cpp
-    src/engine/shader/graph/graph.cpp src/engine/shader/sprite.cpp)
+    src/engine/shader/graph/graph.cpp src/engine/shader/graph/serialized.cpp src/engine/shader/graph/post_effects.cpp src/engine/shader/sprite.cpp)
 tn_native_engine_target(tn_engine_shader)
 target_include_directories(tn_engine_shader PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
@@ -351,7 +351,7 @@ set(TN_ENGINE_RENDERER_SOURCES src/engine/renderer/gpu_resources.cpp src/engine/
     src/engine/renderer/presentation.cpp src/engine/renderer/package_loader.cpp
     src/engine/renderer/geometry_cache.cpp src/engine/renderer/pipeline_cache.cpp src/engine/renderer/renderer.cpp
     src/engine/renderer/render_database.cpp src/engine/renderer/compute.cpp
-    src/engine/renderer/post/traa.cpp src/engine/renderer/probes/capture.cpp)
+    src/engine/renderer/post/traa.cpp src/engine/renderer/post/effects.cpp src/engine/renderer/probes/capture.cpp)
 if(EMSCRIPTEN)
     # PRD-532: the same renderer over the browser's WebGPU through Dawn's emdawnwebgpu port, whose
     # webgpu.h is Dawn's. No host services: nothing here may assume a native driver.

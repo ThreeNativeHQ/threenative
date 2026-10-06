@@ -60,6 +60,7 @@ async function build(fixture, renderer, request) {
         camera: bound.get(request.camera),
         width: request.width,
         height: request.height,
+        traaDump: request.traaDump,
       });
       if (drawn?.render !== undefined) bound.set("\u0001render", drawn.render);
       continue;
@@ -124,7 +125,7 @@ export async function renderFixture(request) {
 
   const bound = await build(request.fixture, renderer, request);
   const render = bound.get("\u0001render");
-  if (render !== undefined) render();
+  if (render !== undefined) await render();
   else renderer.render(bound.get(request.scene), bound.get(request.camera));
   // The harness screenshots the presented frame, so wait for the work to land and for the
   // compositor to hold it before the page reports back.

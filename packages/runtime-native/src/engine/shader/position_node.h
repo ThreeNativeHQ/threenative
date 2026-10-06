@@ -5,6 +5,7 @@
 #include <string>
 #include <array>
 #include "engine/shader/graph/graph.h"
+#include "engine/shader/graph/post_effects.h"
 
 namespace tn::engine::shader {
 
@@ -44,6 +45,8 @@ struct PositionNode {
 struct PostNode {
     std::string key;
     std::function<uint32_t(Program& fragment, uint32_t sceneTexture, uint32_t screenUv)> build;
+    std::vector<graph::PostPass> passes;
+    std::map<std::string, std::vector<float>> uniforms;
 };
 
 }  // namespace tn::engine::shader
