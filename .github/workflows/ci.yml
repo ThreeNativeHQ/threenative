@@ -292,7 +292,10 @@ jobs:
     # cache action's post step, which is the product every pull request into develop reads. No step
     # below is gated on a full selection, so a develop push warms them.
     if: ${{ (needs.scope.outputs.selection == 'full' && fromJSON(needs.scope.outputs.plan).jobs['test-native'].required) || needs.scope.outputs.selection == 'warm' }}
-    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    # PRD-496: provider activation is deliberately unavailable. Non-off, forced-hosted and
+    # rerun attempts choose one standard hosted label directly, even with reused selector outputs.
+    # Default-off owner routing and the unenrolled cache-warming producer remain unchanged.
+    runs-on: ${{ needs.scope.outputs.selection != 'warm' && (github.run_attempt > 1 || vars.TN_BLACKSMITH_FORCE_HOSTED == 'true' || (vars.TN_BLACKSMITH_MODE != '' && vars.TN_BLACKSMITH_MODE != 'off')) && 'ubuntu-24.04' || (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 75
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
@@ -1335,6 +1338,12 @@ jobs:
             echo 'Timing API unavailable; no queue/execution improvement is claimed.' >> "$GITHUB_STEP_SUMMARY"
           fi
           printf 'Tested candidate: `%s`; workflow definition: `%s`\n' "$TN_CI_SHA" '${{ github.workflow_sha }}' >> "$GITHUB_STEP_SUMMARY"
+      - name: Report the disabled Blacksmith admission boundary
+        env:
+          TN_BLACKSMITH_MODE: ${{ vars.TN_BLACKSMITH_MODE }}
+          TN_BLACKSMITH_FORCE_HOSTED: ${{ vars.TN_BLACKSMITH_FORCE_HOSTED }}
+          TN_CI_SELECTION: ${{ needs.scope.outputs.selection }}
+        run: node scripts/ci-blacksmith-routing.mjs
       - name: Report every job's verdict, and why a skipped one never ran
         env:
           # `toJSON(needs)` is every upstream result at once. Passed through a file rather than an

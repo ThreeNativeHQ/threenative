@@ -1073,6 +1073,8 @@ describe("CI pipeline structure", () => {
     "${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}";
   const lightRouting =
     "${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER_LIGHT) && 'ubuntu-24.04' || vars.TN_RUNNER_LIGHT }}";
+  const guardedNativeRouting =
+    "${{ needs.scope.outputs.selection != 'warm' && (github.run_attempt > 1 || vars.TN_BLACKSMITH_FORCE_HOSTED == 'true' || (vars.TN_BLACKSMITH_MODE != '' && vars.TN_BLACKSMITH_MODE != 'off')) && 'ubuntu-24.04' || (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}";
   // The hosted jobs that stay hosted, per workflow. `supply-chain` runs gitleaks through
   // `docker run`; a self-hosted container would need the host Docker socket mounted to do that,
   // which would hand every job root on the owner's machine. `publish-android-v8` is the release
@@ -1217,7 +1219,11 @@ describe("CI pipeline structure", () => {
             expect(runner, `${target} is not Linux`).not.toContain(lightRouting);
             continue;
           }
-          const onHeavy = runner === routing;
+          const onHeavy =
+            runner === routing ||
+            (relative === ".github/workflows/ci.yml" &&
+              name === "test-native" &&
+              runner === guardedNativeRouting);
           const onLight = runner === lightRouting;
           if (keepHosted.has(name)) {
             expect(

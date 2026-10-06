@@ -1,6 +1,6 @@
 # PRD-496 — Heavy CI uses Blacksmith only while free budget remains
 
-**Status:** NOT STARTED — draft; documentation only, nothing enabled.
+**Status:** PARTIAL — 2/8 implementation boxes verified; draft, provider dispatch disabled.
 **Priority:** P2 — reduce heavy CI feedback time without introducing paid runner dependency.
 **Tier:** scripts / CI infrastructure.
 **Depends on:** Existing runner and work-selection contracts from [PRD-480](PRD-480-linux-ci-runs-on-the-owner-machine.md) and [PRD-481](PRD-481-ci-does-each-piece-of-work-once.md); preserve the shipped [PRD-483 impact-driven CI](../done/PRD-483-impact-driven-ci-without-repeated-template-setup.md). This optional acceleration does not block those PRDs or releases.
@@ -31,6 +31,8 @@ Inspected `develop` at `d3c009e4404abcc2041f58124693edb9c78d802b`:
 2026-10-06 — owner requested one PR first: [#444](https://github.com/ThreeNativeHQ/threenative/pull/444) retains this PRD and absorbs the source history and migration intent of [#445](https://github.com/ThreeNativeHQ/threenative/pull/445). The original PRD head is `f9f52492597e95c3a612b6d5ee044f2e635e913f`; bot heads `e59e245e9f58366db2c81ac124ea798178dff0a3`, `422adc7a12a64ed77817fd0bc146a517131f2df4`, and `768b90cf1953a8c68446a93df126313792c06e2d` are preserved in the retained branch history. The bot's broad runner and checkout substitutions are superseded by the guarded, allowlisted rollout below; they are not enabled by consolidation. The bot branch remains preserved. #444 stays draft with existing GitHub/owner routing and no Blacksmith dispatch.
 
 Official documentation confirms the allowance and 4-vCPU multiplier, but the spending settings describe alerts without establishing a hard no-paid-overage stop. Historical estimated usage does not establish authenticated credit expiry, reporting completeness, or billing-period boundaries. These missing facts keep enforcement off; expired, exhausted, unavailable, or unverifiable credit must select standard GitHub before dispatch. [Runner FAQ](https://docs.blacksmith.sh/blacksmith-runners/overview#faq), [account settings](https://docs.blacksmith.sh/introduction/settings).
+
+The closure-time bot head `9cd80dd09f395ea98aa66c5d93160e109e216d8e` is also preserved in this branch history. #445 closed at `2026-10-06T01:56:14Z`; implementation continues only in #444. The disabled bootstrap uses three small CI scripts and adjacent tests, without deploying a controller or state ref. Internal normalized observations are controller contracts, not invented authenticated provider fixtures.
 
 | Choice | Proposed policy |
 | --- | --- |
@@ -151,25 +153,36 @@ Compare identical candidates on the existing hosted baseline and Blacksmith with
 ### Phase 1 — Budget engine without live spending
 
 - [ ] Implement the validated provider-usage/catalog adapter. proof: `pnpm exec vitest run scripts/__tests__/ci-blacksmith-usage.spec.ts` covers schema changes, partial reports, SKU conversions, and unavailable credentials.
-- [ ] Implement the atomic reservation ledger. proof: `pnpm exec vitest run scripts/__tests__/ci-blacksmith-ledger.spec.ts` covers concurrent admission, idempotency, settlement attribution, corruption, and reset boundaries.
-- [ ] Implement the pure eligibility and fallback policy. proof: `pnpm exec vitest run scripts/__tests__/ci-blacksmith-policy.spec.ts` covers exact budget boundaries, timeout reservations, stale usage, modes, and trusted-event selection.
+- [x] Implement the atomic reservation ledger. proof: `pnpm exec vitest run scripts/__tests__/ci-blacksmith-ledger.spec.ts` — 11 PASS, exit 0; twenty-writer CAS race, exact idempotency, SHA-checked Contents transport, attributed settlement, corruption/reset rejection, and high-water persistence on duplicate/denied requests. No live state ref is deployed.
+- [x] Implement the pure eligibility and fallback policy. proof: `pnpm exec vitest run scripts/__tests__/ci-blacksmith-policy.spec.ts` — 41 PASS, exit 0; exact ceilings, timeout/tail reservations, verified dispatch-delay horizon, expired/stale/unknown credit, modes, allowlist and trust gates. These tests use internal observations; no live billing compatibility is claimed.
 
 **Gate:** Unit fixtures can exercise exhaustion and concurrency without a Blacksmith account or paid runner.
 
 ### Phase 2 — Existing CI routes eligible jobs safely
 
 - [ ] Integrate attempt-bound runner selection into the enrolled existing job. proof: `pnpm exec vitest run scripts/__tests__/ci-blacksmith-routing.spec.ts scripts/__tests__/ci-structure.spec.ts scripts/__tests__/ci-needs.spec.ts` preserves selected work and forces stale-output reruns onto hosted compute.
+  Partial: 21 routing tests PASS, including evaluation of the actual scalar `runs-on` expression; default-off/warm owner routing, names, needs, timeout, candidates and required joins remain intact. Non-off, forced-hosted and non-warm rerun attempts select `ubuntu-24.04` directly. No provider output can authorize dispatch. Live enrollment waits for the activation gates.
 - [ ] Isolate the trusted accounting controller from candidate execution. proof: `pnpm exec vitest run scripts/__tests__/ci-blacksmith-security.spec.ts` rejects fork, unauthorized actor, modified privileged workflow, and secret exposure paths.
+  Blocked deployment: candidate execution has no added credential or ledger permission, but independently pinned controller/token isolation and organization runner-label access restrictions remain unverified. No permissions or installation settings are changed here.
 - [ ] Add completion reconciliation and bounded recovery in the existing control paths. proof: `pnpm exec vitest run scripts/__tests__/ci-blacksmith-reconcile.spec.ts` covers cancellation, provider lag/outage, missing completion events, and pending reset exposure.
+  Partial: controller-core tests retain uncertain cancellation exposure and settle exact completed-attempt attribution in an active period. Historical closed-period settlement and control-path wiring remain incomplete; unresolved prior-period work keeps new admissions hosted. No automatic renewal claim is made.
 
 **Gate:** The normal hosted path remains operational when every provider dependency is unavailable. Enforcement remains disabled pending the external gates below.
 
 ### Phase 3 — Operator control and rollout support
 
 - [ ] Add sanitized usage/routing summaries and the operator runbook. proof: `pnpm exec vitest run scripts/__tests__/ci-blacksmith-reporting.spec.ts` validates normalized units, redaction, and fallback reasons; `pnpm check:docs` validates the runbook links.
+  Partial: the existing optional run-summary reports the disabled boundary using stable reason codes, without private usage/token/account details; routing tests cover redaction. Authenticated allocation/period reporting waits for the provider adapter.
 - [ ] Implement default-off, shadow, capped-pilot, and kill-switch configuration. proof: `pnpm exec vitest run scripts/__tests__/ci-blacksmith-rollout.spec.ts` verifies that none of these paths can bypass the confirmed free ceiling or silently enable paid add-ons.
+  Partial: pure policy tests cover off/shadow/enforce, the 300-unit pilot ceiling, maximum 2,700-unit ceiling and forced-hosted behavior. Deployed shadow accounting and any live pilot remain disabled.
 
-**Gate:** All proposed focused tests and the existing affected CI contracts pass. The commands above are planned implementation proofs, not claims that these files exist or have passed in this documentation-only draft.
+**Gate:** Current focused policy/ledger/routing plus existing CI structure, needs and Integration contracts: 352 PASS across six files, exit 0. Focused TypeScript 7 strict/noUncheckedIndexedAccess check PASS. Unchecked proof commands above remain planned; full repository/native/GPU/live-provider gates were not run. Final publication uses normal hooks.
+
+## Operator behavior in the disabled bootstrap
+
+An absent or `off` `TN_BLACKSMITH_MODE` preserves existing owner/GitHub routing. `shadow`, `enforce`, or an unknown nonempty value routes the selected non-warm native job to standard GitHub; none can activate Blacksmith. `TN_BLACKSMITH_FORCE_HOSTED=true` also selects standard GitHub for that job. Every non-warm rerun uses GitHub directly even if old selector outputs are reused. Warm producers retain their existing routing and cache contracts.
+
+Keep the mode off while activation facts are unavailable. Turning it off does not migrate queued/running work or erase reservations. A provider outage uses the existing cancel/rerun operation; the new attempt is hosted, while uncertain prior billing remains reserved. Do not release exposure from cancellation or elapsed time alone, and do not reset the ledger at a guessed calendar boundary. No watchdog, paid add-on, new secret, or broad permission is installed by this bootstrap.
 
 ## Acceptance scenarios
 
@@ -195,10 +208,14 @@ Owner / provider — confirm free eligibility, billing-unit mapping, period boun
 
 Owner — supply a machine organization token through protected CI secrets after approving its actual permissions. Do not paste tokens into a PR, issue, or conversation. If minimum safe permissions are unavailable, keep automated admission disabled.
 
+Owner / provider — prove organization runner access or ref restrictions and the no-overage boundary against direct label dispatch outside the controller. Protecting the accounting token alone does not restrict a modified workflow from naming a provider runner.
+
+Provider / live environment — establish a bounded admission-to-start queue delay, complete timeout/post-job billing tail, and final historical per-attempt attribution before enabling reset/renewal. The five-minute tail and test dispatch-delay values are internal examples, not verified billing guarantees.
+
 Live environment — after those gates, run the capped compatibility/performance pilot, compare the provider's usage with the ledger, and exercise fallback using a deliberately lowered local budget rather than exhausting the real allowance. Record results inline here before declaring production readiness. Until then live performance, billing reconciliation, and zero-charge exhaustion remain unverified.
 
 ## Non-goals and exit condition
 
 No migration away from GitHub Actions, paid capacity purchase, new hardware, replacement of the owner-runner work, weakened test selection, full fleet scheduler, or new render-quality qualification. No generalized multi-provider abstraction.
 
-The implementation is ready only when the phase work is verified and the live activation evidence above is available. With only external gates remaining, follow the repository's blocked-PRD filing rules. This drafting PR starts at zero verified implementation progress and stays a draft.
+The implementation is ready only when the phase work is verified and the live activation evidence above is available. With only external gates remaining, follow the repository's blocked-PRD filing rules. This partial implementation stays a draft; the unverified adapter, deployment, recovery and live rollout remain open.
