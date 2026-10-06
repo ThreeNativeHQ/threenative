@@ -613,7 +613,15 @@ describe("the main pass's draw bundles", () => {
 
     // No group, and the marker and the stats say so.
     expect(bundleGroup(cells)).toBeUndefined();
-    expect(cells.stats().bundle).toEqual({ children: 0, on: false, reason: "option", records: 0 });
+    expect(cells.stats().bundle).toEqual({
+      children: 0,
+      cpuMeshes: 0,
+      gpuMeshes: 0,
+      eligibility: { checks: 0, refreshes: 0, validations: 0, uncached: 0 },
+      on: false,
+      reason: "option",
+      records: 0,
+    });
     const dressed = mainKeys(cells);
     expect(dressed.length).toBeGreaterThan(0);
     for (const mesh of dressed) expect(mesh.parent).toBe(cells);
@@ -844,6 +852,153 @@ describe("the main pass's draw bundles", () => {
     cells.dispose();
   });
 
+  it("reuses structural bundle eligibility without recursive values allocations on a settled CPU frame", async () => {
+    const painted = new MeshStandardNodeMaterial();
+    const probe = {
+      isBundleProbe: true,
+      nested: { node: { isNode: true, updateBeforeType: "none" } },
+    };
+    painted.userData.bundleProbe = probe;
+    const values = vi.spyOn(Object, "values");
+    const { renderer, world: cells } = await world({
+      bundles: true,
+      gpuScene: false,
+      chunkModel: (url) => standAtCellOf(url, chunkOf([painted])),
+    });
+    try {
+      cells.update(renderer, playerCamera());
+      await flushed(cells, renderer, playerCamera());
+      expect(mainKeys(cells).length).toBeGreaterThan(1);
+      values.mockClear();
+      const records = cells.stats().bundle.records;
+      for (let frame = 0; frame < 20; frame++) cells.update(renderer, playerCamera());
+      expect(values.mock.calls.filter(([value]) => value === probe)).toHaveLength(0);
+      expect(cells.stats().bundle.records).toBe(records);
+      expect(cells.stats().bundle).toMatchObject({
+        on: true,
+        cpuMeshes: expect.any(Number),
+        gpuMeshes: 0,
+      });
+      expect(cells.stats().bundle.cpuMeshes).toBeGreaterThan(0);
+    } finally {
+      cells.dispose();
+    }
+  });
+  it("removes CPU keys on a deep unsafe graph edit without needsUpdate and records them again after repair", async () => {
+    const painted = new MeshStandardNodeMaterial();
+    const branch: { child?: unknown } = {};
+    painted.userData.branch = branch;
+    const { renderer, world: cells } = await world({
+      bundles: true,
+      gpuScene: false,
+      chunkModel: (url) => standAtCellOf(url, chunkOf([painted])),
+    });
+    try {
+      cells.update(renderer, playerCamera());
+      await flushed(cells, renderer, playerCamera());
+      const keys = mainKeys(cells);
+      expect(keys.length).toBeGreaterThan(0);
+      expect(keys.every((mesh) => mesh.userData.tnBundled)).toBe(true);
+      branch.child = { isNode: true, updateBefore() {}, updateBeforeType: "render" };
+      cells.update(renderer, playerCamera());
+      expect(keys.every((mesh) => mesh.userData.tnBundled === false)).toBe(true);
+      expect(keys.every((mesh) => mesh.parent === cells)).toBe(true);
+      const refused = cells.stats().bundle.records;
+      Reflect.deleteProperty(branch, "child");
+      cells.update(renderer, playerCamera());
+      expect(keys.every((mesh) => mesh.userData.tnBundled)).toBe(true);
+      expect(cells.stats().bundle.records).toBeGreaterThan(refused);
+      const recorded = cells.stats().bundle.records;
+      painted.needsUpdate = true;
+      cells.update(renderer, playerCamera());
+      expect(cells.stats().bundle.records).toBeGreaterThan(recorded);
+    } finally {
+      cells.dispose();
+    }
+  });
+  it("rerecords live CPU material visibility changes without needsUpdate", async () => {
+    const painted = new MeshStandardNodeMaterial();
+    const { renderer, world: cells } = await world({
+      bundles: true,
+      gpuScene: false,
+      chunkModel: (url) => standAtCellOf(url, chunkOf([painted])),
+    });
+    try {
+      cells.update(renderer, playerCamera());
+      await flushed(cells, renderer, playerCamera());
+      const before = cells.stats().bundle.records;
+      painted.visible = false;
+      cells.update(renderer, playerCamera());
+      const hidden = cells.stats().bundle.records;
+      expect(hidden).toBeGreaterThan(before);
+      painted.visible = true;
+      cells.update(renderer, playerCamera());
+      expect(cells.stats().bundle.records).toBeGreaterThan(hidden);
+    } finally {
+      cells.dispose();
+    }
+  });
+  it("keeps mutable CPU array materials on the per-object path", async () => {
+    const painted = new MeshStandardNodeMaterial();
+    const { renderer, world: cells } = await world({
+      bundles: true,
+      gpuScene: false,
+      chunkModel: (url) => standAtCellOf(url, chunkOf([painted])),
+    });
+    try {
+      cells.update(renderer, playerCamera());
+      await flushed(cells, renderer, playerCamera());
+      const keys = mainKeys(cells);
+      expect(keys.length).toBeGreaterThan(0);
+      for (const mesh of keys) mesh.material = [painted, new MeshStandardNodeMaterial()];
+      cells.update(renderer, playerCamera());
+      expect(keys.every((mesh) => mesh.userData.tnBundled === false)).toBe(true);
+      expect(keys.every((mesh) => mesh.parent === cells)).toBe(true);
+    } finally {
+      cells.dispose();
+    }
+  });
+  it.each(["root", "flag", "transparent", "transmission", "hook", "node-version"] as const)(
+    "invalidates CPU bundle eligibility and records on %s mutation",
+    async (mutation) => {
+      const painted = new MeshStandardNodeMaterial();
+      const node = { isNode: true, updateBefore() {}, updateBeforeType: "none", version: 0 };
+      const branch = { child: node, pixels: new Uint8Array(64) };
+      painted.userData.branch = branch;
+      Reflect.set(branch, "self", branch);
+      const { renderer, world: cells } = await world({
+        bundles: true,
+        gpuScene: false,
+        chunkModel: (url) => standAtCellOf(url, chunkOf([painted])),
+      });
+      try {
+        cells.update(renderer, playerCamera());
+        await flushed(cells, renderer, playerCamera());
+        const keys = mainKeys(cells);
+        expect(keys.length).toBeGreaterThan(0);
+        const before = cells.stats().bundle.records;
+        if (mutation === "root")
+          painted.userData.branch = {
+            child: { isNode: true, updateBefore() {}, updateBeforeType: "render" },
+          };
+        if (mutation === "flag") node.updateBeforeType = "render";
+        if (mutation === "transparent") painted.transparent = true;
+        if (mutation === "transmission") Reflect.set(painted, "transmission", 0.5);
+        if (mutation === "hook") for (const mesh of keys) mesh.onBeforeRender = () => undefined;
+        if (mutation === "node-version") node.version++;
+        cells.update(renderer, playerCamera());
+        if (mutation === "node-version") {
+          expect(keys.every((mesh) => mesh.userData.tnBundled)).toBe(true);
+          expect(cells.stats().bundle.records).toBeGreaterThan(before);
+        } else {
+          expect(keys.every((mesh) => mesh.userData.tnBundled === false)).toBe(true);
+          expect(keys.every((mesh) => mesh.parent === cells)).toBe(true);
+        }
+      } finally {
+        cells.dispose();
+      }
+    },
+  );
   it("records by default, and the marker says the run asked for nothing else", async () => {
     // Phase 2 box 2: the default follows the measurement. AC-2 measured the walking `draw` span at
     // -5.0 ms against develop over 3 interleaved runs with bundles on, so a world that says nothing

@@ -727,6 +727,7 @@ export type {
   IWorldAssetBounds,
   IWorldAssetLod,
   IWorldCell,
+  IWorldCellProxy,
   IWorldExtent,
   IWorldPackage,
   IWorldPackageError,
