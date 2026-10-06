@@ -1383,21 +1383,25 @@ void* Context::getCurrentTextureView() {
     viewDesc.aspect = WGPUTextureAspect_All;
 
     surfaceView_ = wgpuTextureCreateView(surfaceTexture.texture, &viewDesc);
-    // The view retains the texture; the acquired reference is ours to release separately.
-    wgpuTextureRelease(surfaceTexture.texture);
+    // wgpu-native's acquired handle discards an unpresented frame when released, even if a
+    // view survives. Keep it through present on both backends; release each reference once.
+    surfaceTexture_ = surfaceTexture.texture;
+    if (!surfaceView_) releaseSurfaceView();
     return surfaceView_;
 }
 
 void Context::releaseSurfaceView() {
     if (surfaceView_) wgpuTextureViewRelease(surfaceView_);
     surfaceView_ = nullptr;
+    if (surfaceTexture_) wgpuTextureRelease(surfaceTexture_);
+    surfaceTexture_ = nullptr;
 }
 
 void Context::present() {
-    releaseSurfaceView();
     if (surface_) {
         wgpuSurfacePresent(surface_);
     }
+    releaseSurfaceView();
 }
 
 // Screenshot callback data

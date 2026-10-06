@@ -20,7 +20,7 @@
 ## Out of scope
 
 - Cell and tile residency policy: [PRD-521 (N13b)](PRD-521-n13b-worldcells-and-worldtiles-run-native.md)
-- The end-to-end world fixture: [PRD-522 (N13c)](../../../native-engine/N13-native-streaming-and-world/PRD-522-n13c-a-world-loads-walks-and-unloads-without-growth.md)
+- The end-to-end world fixture: [PRD-522 (N13c)](PRD-522-n13c-a-world-loads-walks-and-unloads-without-growth.md)
 
 ## Execution Phases
 

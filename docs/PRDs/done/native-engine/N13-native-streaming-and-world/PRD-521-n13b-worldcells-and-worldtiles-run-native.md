@@ -21,7 +21,7 @@
 ## Out of scope
 
 - Virtual shadows and probes inside the world: [N14](../../../native-engine/N14-native-render-chain-and-advanced-visuals/README.md)
-- The end-to-end walk and memory proof: [PRD-522 (N13c)](../../../native-engine/N13-native-streaming-and-world/PRD-522-n13c-a-world-loads-walks-and-unloads-without-growth.md)
+- The end-to-end walk and memory proof: [PRD-522 (N13c)](PRD-522-n13c-a-world-loads-walks-and-unloads-without-growth.md)
 
 ## Execution Phases
 

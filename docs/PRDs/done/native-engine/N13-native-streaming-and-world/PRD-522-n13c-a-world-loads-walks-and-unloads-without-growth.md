@@ -3,12 +3,12 @@
 **Status:** PROPOSED
 **Complexity:** 3 — integration proof over N13a/N13b; the new work is the fixture, the memory accounting and the failure injection
 **Owner:** João
-**Work package:** N13 — [native-engine batch](../README.md) · [N13 umbrella](README.md)
-**Depends on:** [PRD-521 (N13b)](../../done/native-engine/N13-native-streaming-and-world/PRD-521-n13b-worldcells-and-worldtiles-run-native.md)
+**Work package:** N13 — [native-engine batch](../../../native-engine/README.md) · [N13 umbrella](../../../native-engine/N13-native-streaming-and-world/README.md)
+**Depends on:** [PRD-521 (N13b)](PRD-521-n13b-worldcells-and-worldtiles-run-native.md)
 
 ## Context
 
-§16 sets N13's acceptance as a world-load/walk/unload fixture with budgets and failure/recovery behaviour. §15.4 requires no sustained memory growth across repeated bounded load/unload cycles, with CPU and GPU allocation accounting published. §15.3 names streaming Machinefall content as a representative workload. Its current baseline (`?scene=map-walk`) is recorded in `docs/verification/runtime-perf-state.md`, measured in a browser under Xvfb, so it must be reproduced on the native host before it counts as a native baseline (§3 R4). Machinefall is a game outside this repository. The fixture runs through the N01 runner ([PRD-498](../PRD-498-n01-baseline-and-differential-fixture-runner.md)).
+§16 sets N13's acceptance as a world-load/walk/unload fixture with budgets and failure/recovery behaviour. §15.4 requires no sustained memory growth across repeated bounded load/unload cycles, with CPU and GPU allocation accounting published. §15.3 names streaming Machinefall content as a representative workload. Its current baseline (`?scene=map-walk`) is recorded in `docs/verification/runtime-perf-state.md`, measured in a browser under Xvfb, so it must be reproduced on the native host before it counts as a native baseline (§3 R4). Machinefall is a game outside this repository. The fixture runs through the N01 runner ([PRD-498](../../../native-engine/PRD-498-n01-baseline-and-differential-fixture-runner.md)).
 
 ## Solution
 
@@ -19,7 +19,7 @@
 
 ## Out of scope
 
-- Device performance claims against current ThreeNative: [PRD-533 (N20)](../PRD-533-n20-platform-qualification-performance-default-promotion.md)
+- Device performance claims against current ThreeNative: [PRD-533 (N20)](../../../native-engine/PRD-533-n20-platform-qualification-performance-default-promotion.md)
 
 ## Execution Phases
 
@@ -32,7 +32,7 @@
 #### Phase 2: Memory and failure
 **Status:** NOT STARTED
 **Files:** proposed `packages/runtime-native/scenarios/native-engine-world-cycles.playtest.json`, `.../native-engine-world-fault.playtest.json`
-- [ ] Ten load/unload cycles show a flat CPU, GPU and handle-count slope within the documented noise band. proof: `node packages/playtest/dist/runner/cli.js packages/runtime-native/scenarios/native-engine-world-cycles.playtest.json --target desktop` — open (2026-10-06): the scenario fails with real measurements: CPU +177,505 bytes per cycle (range 1,608,336; allowed ±65,536 / 524,288) and one 6.27 ms admission frame (allowance 4); GPU bytes and handles flat. Root cause in progress; no threshold changed.
+- [x] Ten load/unload cycles show a flat CPU, GPU and handle-count slope within the documented noise band. proof: `node packages/playtest/dist/runner/cli.js packages/runtime-native/scenarios/native-engine-world-cycles.playtest.json --target desktop` — 2026-10-06: green on Dawn (NVIDIA Turing): `node packages/playtest/dist/runner/cli.js packages/runtime-native/scenarios/native-engine-world-cycles.playtest.json --target desktop --executable packages/runtime-native/build/tn-linux/tn-native-engine-player --host-arg world-cycles` passes: CPU slope 11,751 bytes per cycle (allowed ±65,536), GPU bytes and handles flat, admission max 0.19 ms (allowance 4). The first run failed with real growth (+177,505 bytes per cycle, one 6.27 ms admission frame); root causes fixed in the engine: the shared WebGPU Context kept every swapchain texture and view (every native player grew per frame; on wgpu the texture is now released once after present), and the loader created and joined worker threads inside the admission timer on each reload (workers now persist, parked by a reviewed worker-only wait). CPU tests: 300 surface frames retain 0 texture and 0 view references; LeakSanitizer clean with only Dawn's null device/queue suppressed.
 - [x] A corrupt cell file produces a coded error, the walk continues, and recovery follows the documented class. proof: `node packages/playtest/dist/runner/cli.js packages/runtime-native/scenarios/native-engine-world-fault.playtest.json --target desktop` — 2026-10-06: green on Dawn: `node packages/playtest/dist/runner/cli.js packages/runtime-native/scenarios/native-engine-world-fault.playtest.json --target desktop --executable packages/runtime-native/build/tn-linux/tn-native-engine-player --host-arg world-fault` passes: the corrupt cell fails its load with a coded error (5 attempts, 4 completed), the walk continues to its end (24 m, 4 evictions) and the documented recovery class applies; budget max 1.2 ms, 0 violations.
 
 ## Blocked on

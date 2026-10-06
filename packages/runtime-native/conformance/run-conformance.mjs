@@ -2657,7 +2657,7 @@ async function main(argv = process.argv.slice(2)) {
     // PRD proofs name (`--suite native-engine-buffer-version`).
     const group = suite.startsWith("native-engine-") ? suite.slice("native-engine-".length) : null;
     if (suite !== "native-engine" && !group) throw new Error(`--suite must be native-engine or native-engine-<group>; received ${suite}`);
-    runFixtureSuite(argv, suite, group === null ? null : `${group}-*`);
+    runFixtureSuite(argv, suite, group === null ? null : `${group},${group}-*`);
     return;
   }
   const projectArgument = valueAfter(argv, "--project");

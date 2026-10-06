@@ -29,7 +29,7 @@ PackageLoads::PackageLoads(CompletionQueue& completions, GpuResources& gpu, uint
                     std::string path;
                     {
                         std::unique_lock lock(mutex_);
-                        work_.wait(lock, [this] { return stopping_ || !pending_.empty(); });
+                        work_.wait(lock, [this] { return stopping_ || !pending_.empty(); }); // TN_WORKER_ONLY: persistent IO worker entry; load/admit never wait.
                         if (stopping_)
                             return;
                         id = pending_.front().first;

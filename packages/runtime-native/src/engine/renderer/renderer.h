@@ -16,6 +16,7 @@
 #include "engine/renderer/geometry_cache.h"
 #include "engine/renderer/gpu_resources.h"
 #include "engine/renderer/pipeline_cache.h"
+#include "engine/renderer/probes/volume.h"
 #include "engine/renderer/shadows/virtual/atlas.h"
 #include "engine/shader/output.h"
 #include "engine/shader/package.h"
@@ -26,6 +27,8 @@ namespace tn::engine {
 using Matrix = std::array<double, 16>;  // column-major, as three's Matrix4.elements
 
 class SkinnedMesh;
+class TraaPass;
+struct TraaOptions;
 class Texture;  // the material's diffuse `map` (engine/scene/texture.h)
 
 /** Which program a draw uses; each kind reads the StandardMaterial fields it needs. */
@@ -167,11 +170,19 @@ public:
 
     // VirtualShadowNode's explicit depth, fixed refresh/gate path. Unsupported policies are
     // named at this boundary rather than silently selected by a light's ordinary shadow.
+    /** ProbeVolume's seven padded SH sub-volumes, bound by the sampling node's name. */
+    void setProbeVolume(const std::string& name, const probes::ProbeVolume& volume, bool capture = false);
+    /** Linear HDR capture before post/tone mapping; tightly packed RGBA16Float bytes. */
+    GpuStatus readProbePixels(ReadbackCallback done);
+    /** Separate capture targets: probe work never resizes the presented frame or its post history. */
+    Renderer& probeCaptureRenderer();
     void setVirtualShadow(std::size_t light, const shadows::AtlasOptions& options);
     void cutVirtualShadows() { virtualCut_ = true; }
     void setOutput(const OutputState& output);
     /** A post pass between the scene and the output transform; null draws the scene straight out. */
     void setPostNode(std::shared_ptr<const shader::PostNode> post);
+    void setTraa(const TraaOptions& options);
+    void cutHistory();
     const OutputState& output() const { return output_; }
 
     /** Reallocates the targets; the next render draws at the new extent. Zero sizes clamp to 1. */
@@ -199,6 +210,7 @@ public:
     /** The last frame's pixels, RGBA8 rows tightly packed, delivered from poll(). */
     GpuStatus readPixels(ReadbackCallback done);
     void poll() { gpu_.poll(); }
+    EventQueue& events() { return events_; }
 
     /** What the last render() submitted, as three's renderer.info.render counts it. */
     struct FrameStats {
@@ -291,7 +303,10 @@ private:
     void releaseOutputGroup();
     void outputPass(WGPUCommandEncoder encoder, bool timed);
 
+    WGPUInstance instance_;
+    std::unique_ptr<Renderer> probeCapture_;
     WGPUDevice device_;
+    WGPUQueue queue_;
     EventQueue& events_;
     GpuResources gpu_;
     GeometryCache geometry_;
@@ -331,6 +346,7 @@ private:
     WGPUTextureView sceneView_ = nullptr;
     OutputState output_;
     std::shared_ptr<const shader::PostNode> post_;
+    std::unique_ptr<TraaPass> traa_;
     shader::StageModule blitVertex_, blitFragment_;  // blitTo's pass-through copy
     shader::StageModule outputVertex_;
     shader::StageModule outputFragment_;
@@ -365,6 +381,13 @@ private:
         Handle buffer;
         uint64_t capacity = 0;
     };
+    struct ProbeTexture {
+        WGPUTexture texture = nullptr;
+        WGPUTextureView view = nullptr;
+        WGPUSampler sampler = nullptr;
+        WGPUExtent3D size{};
+    };
+    std::map<std::string, ProbeTexture> probeTextures_;
     std::map<std::string, FrameStorage> storages_;
     std::map<std::string, std::pair<Handle, uint64_t>> externalStorage_;  // setStorage, by name
     // A material's diffuse map: its GPU texture/sampler, and, per (program, texture), the bind group

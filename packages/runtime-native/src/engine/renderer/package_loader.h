@@ -8,6 +8,20 @@
 
 namespace tn::engine {
 
+/** TNPK v1 wire codes, independent of the backend's WGPUTextureFormat enum. */
+inline WGPUTextureFormat packageTextureFormat(uint32_t wire) {
+    switch (wire) {
+    case 18: // packages/assets writer (wgpu-native's original numbering)
+    case 22: // legacy Dawn-cooked fixtures
+        return WGPUTextureFormat_RGBA8Unorm;
+    case 19:
+    case 23:
+        return WGPUTextureFormat_RGBA8UnormSrgb;
+    default:
+        return WGPUTextureFormat_Undefined;
+    }
+}
+
 /** One verified package entry made resident on the GPU. */
 struct LoadedEntry {
     std::string name;

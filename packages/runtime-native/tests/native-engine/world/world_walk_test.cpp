@@ -37,11 +37,13 @@ WGPUFuture __wrap_wgpuInstanceRequestAdapter(WGPUInstance i, const WGPURequestAd
 }
 void __real_wgpuSurfaceRelease(WGPUSurface);
 void __wrap_wgpuSurfaceRelease(WGPUSurface s) {
+    if (surfaceMock) CHECK(textureRefs == 0 && viewRefs == 0);
     if (!surfaceMock)
         __real_wgpuSurfaceRelease(s);
 }
 WGPUStatus __real_wgpuSurfacePresent(WGPUSurface);
 WGPUStatus __wrap_wgpuSurfacePresent(WGPUSurface s) {
+    if (surfaceMock) CHECK(textureRefs == 1 && viewRefs == 1);
     return surfaceMock ? WGPUStatus_Success : __real_wgpuSurfacePresent(s);
 }
 void __real_wgpuSurfaceGetCurrentTexture(WGPUSurface, WGPUSurfaceTexture*);
@@ -89,6 +91,12 @@ std::vector<uint8_t> read(const std::filesystem::path& path) {
     return {std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
 }
 void world_walk_fixture() {
+    CHECK(packageTextureFormat(18) == WGPUTextureFormat_RGBA8Unorm);
+    CHECK(packageTextureFormat(22) == WGPUTextureFormat_RGBA8Unorm);
+    CHECK(packageTextureFormat(19) == WGPUTextureFormat_RGBA8UnormSrgb);
+    CHECK(packageTextureFormat(23) == WGPUTextureFormat_RGBA8UnormSrgb);
+    CHECK(packageTextureFormat(0) == WGPUTextureFormat_Undefined);
+    CHECK(packageTextureFormat(21) == WGPUTextureFormat_Undefined);
     const std::filesystem::path root = TN_WORLD_WALK_FIXTURE;
     uint64_t total = 0;
     for (const auto& file : std::filesystem::directory_iterator(root))
@@ -109,7 +117,8 @@ void world_walk_fixture() {
         CHECK(package.entries[1].name == "albedo" && package.entries[1].kind == 2 && package.entries[1].size == 16);
         CHECK(package.entries[0].uploadSize == 72 && package.entries[1].uploadSize == 4);
         const auto texture = package.data(package.entries[1]);
-        CHECK(texture[0] == 1 && texture[4] == 1 && texture[8] == uint8_t(WGPUTextureFormat_RGBA8Unorm));
+        CHECK(texture[0] == 1 && texture[4] == 1 && texture[8] == 22); // legacy Dawn wire code
+        CHECK(packageTextureFormat(texture[8]) == WGPUTextureFormat_RGBA8Unorm);
     }
     const auto corrupt = read(root / "cell-1-corrupt.tnpk");
     assets::Package package;
@@ -131,7 +140,7 @@ void surface_lifetime_cpu() {
         surfaceDevice = context.getDevice();
         for (int frame = 0; frame < 300; ++frame) {
             const auto view = context.getCurrentTextureView();
-            CHECK(view != nullptr && textureRefs == 0 && viewRefs == 1);
+            CHECK(view != nullptr && textureRefs == 1 && viewRefs == 1);
             CHECK(context.getCurrentTextureView() == view && acquisitions == frame + 1);
             context.present();
             CHECK(textureRefs == 0 && viewRefs == 0);

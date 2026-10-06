@@ -27,7 +27,7 @@ void load() {
     std::vector<uint8_t> texture;
     tn::test::put(texture, 8, 4);
     tn::test::put(texture, 4, 4);
-    tn::test::put(texture, WGPUTextureFormat_RGBA8Unorm, 4);
+    tn::test::put(texture, 18, 4); // TNPK wire code, not the active backend enum
     for (int i = 0; i < 8 * 4 * 4; ++i) texture.push_back(static_cast<uint8_t>(255 - i));
     const auto file = tn::test::writePackage({{"geometry/positions", 1, 0, vertices, 256, {}},
                                               {"textures/albedo", 2, 0, texture, 128, {}},

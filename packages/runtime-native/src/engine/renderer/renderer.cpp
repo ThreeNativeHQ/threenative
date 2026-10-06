@@ -13,6 +13,7 @@
 #include "engine/shader/sprite.h"
 #include "engine/scene/texture.h"
 #include "engine/renderer/graph/render_graph.h"
+#include "engine/renderer/post/traa.h"
 #include "mystral/webgpu_compat.h"
 
 namespace tn::engine {
@@ -302,7 +303,7 @@ fn importanceSampleGGX_VNDF(Xi: vec2<f32>, V: vec3<f32>, roughness: f32) -> vec3
 }  // namespace
 
 Renderer::Renderer(WGPUInstance instance, WGPUDevice device, WGPUQueue queue, EventQueue& events)
-    : device_(device), events_(events), gpu_(instance, device, queue, events, 1), geometry_(gpu_), pipelines_(device) {
+    : instance_(instance), device_(device), queue_(queue), events_(events), gpu_(instance, device, queue, events, 1), geometry_(gpu_), pipelines_(device) {
     // The DFG lookup the standard BRDF samples: three's 16x16 RG half-float table, linear filtered.
     WGPUTextureDescriptor lutDesc = {};
     lutDesc.dimension = WGPUTextureDimension_2D;
@@ -357,6 +358,52 @@ Renderer::Renderer(WGPUInstance instance, WGPUDevice device, WGPUQueue queue, Ev
     setSize(1, 1);
 }
 
+Renderer& Renderer::probeCaptureRenderer() {
+    if (!probeCapture_) probeCapture_ = std::make_unique<Renderer>(instance_, device_, queue_, events_);
+    return *probeCapture_;
+}
+
+void Renderer::setProbeVolume(const std::string& name, const probes::ProbeVolume& volume, bool capture) {
+    if (!wgpuDeviceHasFeature(device_, WGPUFeatureName_Float32Filterable))
+        throw std::runtime_error("TN_PROBES_TEXTURE_UNSUPPORTED: requires float32-filterable");
+    auto& atlas = probeTextures_[shader::probeStorageName(name)];
+    const auto& p = volume.placement();
+    const WGPUExtent3D size{p.resolution[0], p.resolution[1], p.atlasDepth};
+    const bool resized = atlas.texture && (atlas.size.width != size.width || atlas.size.height != size.height ||
+                                            atlas.size.depthOrArrayLayers != size.depthOrArrayLayers);
+    if (resized) {
+        wgpuTextureViewRelease(atlas.view);
+        wgpuSamplerRelease(atlas.sampler);
+        wgpuTextureRelease(atlas.texture);
+        atlas = {};
+    }
+    if (!atlas.texture) {
+        WGPUTextureDescriptor descriptor{};
+        descriptor.dimension = WGPUTextureDimension_3D;
+        descriptor.size = size;
+        descriptor.format = WGPUTextureFormat_RGBA32Float;
+        descriptor.usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst;
+        descriptor.mipLevelCount = descriptor.sampleCount = 1;
+        atlas.texture = wgpuDeviceCreateTexture(device_, &descriptor);
+        atlas.view = wgpuTextureCreateView(atlas.texture, nullptr);
+        WGPUSamplerDescriptor sampler{};
+        sampler.addressModeU = sampler.addressModeV = sampler.addressModeW = WGPUAddressMode_ClampToEdge;
+        sampler.magFilter = sampler.minFilter = WGPUFilterMode_Linear;
+        sampler.maxAnisotropy = 1;
+        atlas.sampler = wgpuDeviceCreateSampler(device_, &sampler);
+        atlas.size = size;
+    }
+    const auto data = capture ? volume.samplingAtlas() : volume.displayAtlas();
+    WGPUImageCopyTexture_Compat destination{};
+    destination.texture = atlas.texture;
+    destination.aspect = WGPUTextureAspect_All;
+    WGPUTextureDataLayout_Compat layout{};
+    layout.bytesPerRow = size.width * 4 * sizeof(float);
+    layout.rowsPerImage = size.height;
+    wgpuQueueWriteTexture(queue_, &destination, data.data(), data.size_bytes(), &layout, &size);
+    if (resized && uniformCapacity_) rebuildGroups();
+}
+
 void Renderer::setVirtualShadow(std::size_t light, const shadows::AtlasOptions& options) {
     if (virtualShadows_.count(light)) throw std::runtime_error("TN_VIRTUAL_SHADOW_UNSUPPORTED: reconfiguration of an active light");
     std::string error;
@@ -377,6 +424,11 @@ Renderer::~Renderer() {
             if (program->layouts[g]) wgpuBindGroupLayoutRelease(program->layouts[g]);
         }
         if (program->pipelineLayout) wgpuPipelineLayoutRelease(program->pipelineLayout);
+    }
+    for (auto& [name, atlas] : probeTextures_) {
+        if (atlas.view) wgpuTextureViewRelease(atlas.view);
+        if (atlas.sampler) wgpuSamplerRelease(atlas.sampler);
+        if (atlas.texture) wgpuTextureRelease(atlas.texture);
     }
     releaseTargets();
     releaseOutputGroup();
@@ -434,6 +486,14 @@ void Renderer::setPostNode(std::shared_ptr<const shader::PostNode> post) {
     setOutput(output);
 }
 
+void Renderer::setTraa(const TraaOptions& options) {
+    traa_ = std::make_unique<TraaPass>(device_, queue_, options);
+    if (width_ && height_) traa_->resize(width_, height_);
+    releaseOutputGroup();
+}
+
+void Renderer::cutHistory() { if (traa_) traa_->cameraCut(); }
+
 void Renderer::setSize(uint32_t width, uint32_t height) {
     width = std::max(width, 1u);
     height = std::max(height, 1u);
@@ -450,17 +510,18 @@ void Renderer::setSize(uint32_t width, uint32_t height) {
     depthDesc.dimension = WGPUTextureDimension_2D;
     depthDesc.size = {width, height, 1};
     depthDesc.format = WGPUTextureFormat_Depth32Float;
-    depthDesc.usage = WGPUTextureUsage_RenderAttachment;
+    depthDesc.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopySrc;
     depthDesc.mipLevelCount = 1;
     depthDesc.sampleCount = 1;
     depth_ = wgpuDeviceCreateTexture(device_, &depthDesc);
     WGPUTextureDescriptor sceneDesc = depthDesc;
     sceneDesc.format = WGPUTextureFormat_RGBA16Float;
-    sceneDesc.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding;
+    sceneDesc.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopySrc;
     sceneColor_ = wgpuDeviceCreateTexture(device_, &sceneDesc);
     sceneView_ = view2d(sceneColor_, WGPUTextureFormat_RGBA16Float);
     colorView_ = view2d(gpu_.texture(color_), WGPUTextureFormat_RGBA8Unorm);
     depthView_ = view2d(depth_, WGPUTextureFormat_Depth32Float);
+    if (traa_) traa_->resize(width, height);
 }
 
 // One stage's bind group, from the bindings its package declares: the uniform block, and for a
@@ -485,6 +546,10 @@ WGPUBindGroup Renderer::bindGroup(WGPUBindGroupLayout layout, const shader::Stag
             const FrameStorage& storage = storages_.at(b.name.substr(2)); // "s_<name>"
             e.buffer = gpu_.buffer(storage.buffer);
             e.size = storage.capacity;
+        } else if (b.volume) {
+            const auto& atlas = probeTextures_.at(b.name.substr(b.kind == shader::BindingKind::Texture ? 2 : 4));
+            if (b.kind == shader::BindingKind::Texture) e.textureView = atlas.view;
+            else e.sampler = atlas.sampler;
         } else if (b.depth) {
             // `t_shadow{i}` / `t_shadowCube{i}` and their samplers: direct light i's shadow map (2D, or a
             // point light's cube) and the comparison sampler.
@@ -845,7 +910,8 @@ void Renderer::buildLayouts(Program& program) {
                 e.buffer.minBindingSize = b.minSize;
             } else if (b.kind == shader::BindingKind::Texture) {
                 e.texture.sampleType = b.depth ? WGPUTextureSampleType_Depth : WGPUTextureSampleType_Float;
-                e.texture.viewDimension = b.cube ? WGPUTextureViewDimension_Cube : WGPUTextureViewDimension_2D;
+                e.texture.viewDimension = b.volume ? WGPUTextureViewDimension_3D
+                                          : b.cube ? WGPUTextureViewDimension_Cube : WGPUTextureViewDimension_2D;
             } else if (b.kind == shader::BindingKind::Sampler) {
                 e.sampler.type = b.depth ? WGPUSamplerBindingType_Comparison : WGPUSamplerBindingType_Filtering;
             } else {
@@ -974,9 +1040,11 @@ std::vector<std::pair<double, const DrawItem*>> Renderer::sortDraws(std::span<co
     return opaque;
 }
 
-uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& camera, const LightState& lights,
+uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& unjitteredCamera, const LightState& lights,
                           std::array<double, 4> clear) {
     const uint64_t id = ++renderId_;
+    CameraState camera = unjitteredCamera;
+    if (traa_) camera.projectionMatrix = traa_->begin(camera.projectionMatrix, camera.matrixWorld, camera.matrixWorldInverse);
     const Matrix& view = camera.matrixWorldInverse;
     geometry_.sweep();  // GPU copies of attributes released since the last frame
 
@@ -1141,7 +1209,8 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
     // Each morphed draw's targets and influences likewise (three's morph texture, as vec4 per vertex
     // and target, the normal after the position), and its base influence: 1 for relative targets,
     // else 1 minus the influences' sum, summed in double as JS reduces them.
-    for (auto& [name, storage] : storages_) storage.data.clear();
+    for (auto& [name, storage] : storages_)
+        if (name.rfind("probe_", 0) != 0) storage.data.clear();
     for (const auto& [i, shadow] : virtualShadows_) storages_["vsmTable" + std::to_string(i)].data = shadow.atlas.table();
     std::vector<float>& bones = storages_["boneMatrices"].data;
     std::vector<float>& morphData = storages_["morphData"].data;
@@ -1204,6 +1273,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
     auto variantOf = [](const DrawItem& item) {
         shader::VertexVariant v;
         v.sprite = item.sprite;
+        v.backSide = item.side == 1;
         v.instanced = item.instanceMatrices != nullptr;
         v.instanceColor = item.instanceColors != nullptr;
         v.skinned = item.boneMatrices != nullptr;
@@ -1228,7 +1298,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
         uint32_t vertexOffset, fragmentOffset;
         WGPUBindGroup mapGroup = nullptr;  // a mapped material's fragment group, else the program's
     };
-    std::vector<Planned> plan;
+    std::vector<Planned> plan, velocityPlan;
     plan.reserve(opaque.size());
     frameUniforms_.clear();
     for (const auto& [depthKey, drawn] : opaque) {
@@ -1374,6 +1444,40 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
 
     // One buffer for the frame's uniforms, grown (and its bind groups rebuilt) when it is too small,
     // written once: a queue write, so it lands before this frame's commands and after the last's.
+    if (traa_) {
+        const std::string key = "traa-velocity";
+        if (!programs_.count(key)) {
+            auto source = traaVelocityPrograms();
+            add(key, shader::buildStage(source.vertex, 0), shader::buildStage(source.fragment, 1));
+        }
+        Program& velocity = *programs_.at(key);
+        for (const Planned& draw : plan) {
+            const DrawItem& item = *draw.item;
+            // Previous deformed vertex data is not yet retained by these variants. Refuse it;
+            // ordinary rigid object/camera motion goes through the real VelocityNode equations.
+            if (item.instanceMatrices || item.skinIndices || item.morphGeometry || item.sprite ||
+                item.positionNode || item.nodes.positionNode || item.transparent || item.material->alphaTest > 0)
+                throw std::runtime_error("TN_TRAA_VELOCITY_UNSUPPORTED: deformed/instanced/sprite/alpha-tested/transparent draw");
+            PipelineTarget target{WGPUTextureFormat_RGBA16Float, WGPUTextureFormat_Depth32Float,
+                item.side == 2 ? WGPUCullMode_None : item.side == 1 ? WGPUCullMode_Front : WGPUCullMode_Back};
+            target.layout = velocity.pipelineLayout; target.depthWrite = false;
+            target.depthCompare = WGPUCompareFunction_Equal; target.frontFace = item.frontFace();
+            const auto pipeline = pipelines_.get(velocity.vertex, &velocity.fragment, target);
+            if (!pipeline) throw std::runtime_error("TN_TRAA_VELOCITY_PIPELINE_REFUSED");
+            const uint32_t offset = frameUniforms_.size();
+            frameUniforms_.resize(offset + aligned(velocity.vertex.uniformBlockSize), 0);
+            put(frameUniforms_, offset, velocity.vertexSlots[kModelMatrix], item.matrixWorld);
+            put(frameUniforms_, offset, velocity.vertexSlots[kViewMatrix], camera.matrixWorldInverse);
+            put(frameUniforms_, offset, velocity.vertexSlots[kProjectionMatrix], camera.projectionMatrix);
+            for (const auto& field : velocity.vertex.uniforms) {
+                if (field.name == "unjitteredProjection") put(frameUniforms_, offset, &field, unjitteredCamera.projectionMatrix);
+                if (field.name == "previousModel") put(frameUniforms_, offset, &field, traa_->previousModel(item.key, item.matrixWorld));
+                if (field.name == "previousProjection") put(frameUniforms_, offset, &field, traa_->previousProjection());
+                if (field.name == "previousView") put(frameUniforms_, offset, &field, traa_->previousView());
+            }
+            velocityPlan.push_back({&item, &velocity, pipeline, offset, 0});
+        }
+    }
     if (frameUniforms_.size() > uniformCapacity_) {
         if (uniformCapacity_ != 0) gpu_.destroy(uniformBuffer_);
         uniformCapacity_ = std::max<uint64_t>(frameUniforms_.size() * 2, 64 * 1024);
@@ -1531,6 +1635,23 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
     for (const Planned& p : plan) encode(pass, p, true);
     wgpuRenderPassEncoderEnd(pass);
     wgpuRenderPassEncoderRelease(pass);
+    if (traa_) {
+        WGPURenderPassColorAttachment motion{};
+        motion.view = traa_->velocityView(); motion.loadOp = WGPULoadOp_Clear; motion.storeOp = WGPUStoreOp_Store;
+#if defined(MYSTRAL_WEBGPU_DAWN)
+        motion.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
+#endif
+        WGPURenderPassDepthStencilAttachment motionDepth{};
+        motionDepth.view = depthView_; motionDepth.depthReadOnly = true;
+        WGPURenderPassDescriptor motionDesc{};
+        motionDesc.colorAttachmentCount = 1; motionDesc.colorAttachments = &motion;
+        motionDesc.depthStencilAttachment = &motionDepth;
+        auto velocityPass = wgpuCommandEncoderBeginRenderPass(encoder, &motionDesc);
+        bound = nullptr; boundIndex = nullptr;
+        for (const Planned& p : velocityPlan) encode(velocityPass, p, false);
+        wgpuRenderPassEncoderEnd(velocityPass); wgpuRenderPassEncoderRelease(velocityPass);
+        traa_->resolve(encoder, sceneColor_, sceneView_, depth_, depthView_);
+    }
     outputPass(encoder, timed);
     if (timed) wgpuCommandEncoderResolveQuerySet(encoder, timestamps_, 0, 4, gpu_.buffer(timestampResolve_), 0);
     WGPUCommandBufferDescriptor commandDesc = {};
@@ -1563,7 +1684,7 @@ void Renderer::outputPass(WGPUCommandEncoder encoder, bool timed) {
     if (outputFragment_.uniformBlockSize) gpu_.writeBuffer(outputUniforms_, 0, block.data(), outputFragment_.uniformBlockSize);
     if (!outputGroup_) {
         WGPUBindGroupLayout layout = wgpuRenderPipelineGetBindGroupLayout(pipeline, 0);
-        outputGroup_ = bindGroup(layout, outputFragment_, outputUniforms_, sceneView_, outputSampler_);
+        outputGroup_ = bindGroup(layout, outputFragment_, outputUniforms_, traa_ ? traa_->resultView() : sceneView_, outputSampler_);
         wgpuBindGroupLayoutRelease(layout);
     }
     WGPURenderPassColorAttachment color = {};
@@ -1593,6 +1714,35 @@ void Renderer::outputPass(WGPUCommandEncoder encoder, bool timed) {
     ++lastFrame_.triangles;
     wgpuRenderPassEncoderEnd(pass);
     wgpuRenderPassEncoderRelease(pass);
+}
+
+GpuStatus Renderer::readProbePixels(ReadbackCallback done) {
+    if (!done) return GpuStatus::OutOfRange;
+    if (!sceneColor_) return GpuStatus::InvalidHandle;
+    const uint32_t width = width_, height = height_, row = width * 8, pitch = (row + 255u) & ~255u;
+    const Handle staging = gpu_.createBuffer(uint64_t(pitch) * height, WGPUBufferUsage_CopyDst | WGPUBufferUsage_CopySrc);
+    WGPUCommandEncoderDescriptor descriptor{};
+    auto encoder = wgpuDeviceCreateCommandEncoder(device_, &descriptor);
+    WGPUTexelCopyTextureInfo source{}; source.texture = sceneColor_; source.aspect = WGPUTextureAspect_All;
+    WGPUTexelCopyBufferInfo destination{}; destination.buffer = gpu_.buffer(staging);
+    destination.layout.bytesPerRow = pitch; destination.layout.rowsPerImage = height;
+    const WGPUExtent3D extent{width, height, 1};
+    wgpuCommandEncoderCopyTextureToBuffer(encoder, &source, &destination, &extent);
+    WGPUCommandBufferDescriptor command{};
+    gpu_.submit(wgpuCommandEncoderFinish(encoder, &command));
+    wgpuCommandEncoderRelease(encoder);
+    const auto result = gpu_.readBuffer(staging, 0, uint64_t(pitch) * height,
+        [width, height, row, pitch, done = std::move(done)](GpuStatus status, std::vector<uint8_t> bytes) {
+            if (status != GpuStatus::Ok || bytes.size() != uint64_t(pitch) * height) {
+                done(status == GpuStatus::Ok ? GpuStatus::OutOfRange : status, {}); return;
+            }
+            std::vector<uint8_t> packed(uint64_t(row) * height);
+            for (uint32_t y = 0; y < height; ++y)
+                std::memcpy(packed.data() + uint64_t(y) * row, bytes.data() + uint64_t(y) * pitch, row);
+            done(GpuStatus::Ok, std::move(packed));
+        });
+    gpu_.destroy(staging);
+    return result;
 }
 
 GpuStatus Renderer::readPixels(ReadbackCallback done) { return gpu_.readTexture(color_, std::move(done)); }

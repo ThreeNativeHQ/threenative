@@ -1,4 +1,14 @@
-import { RenderPipeline } from "three";
+import {
+  BackSide,
+  BoxGeometry,
+  Mesh,
+  MeshLambertNodeMaterial,
+  PointLight,
+  RenderPipeline,
+  RenderTarget,
+  Scene,
+  Vector3,
+} from "three";
 import {
   Fn,
   float,
@@ -6,9 +16,11 @@ import {
   instancedArray,
   length,
   normalViewGeometry,
+  normalWorld,
   normalize,
   pass,
   positionLocal,
+  positionWorld,
   screenUV,
   sin,
   uint,
@@ -97,7 +109,228 @@ async function virtualShadow({ target, renderer, scene, camera }, cut = false) {
   }
 }
 
+/** Real static captures and material sampling through the game's shipped ProbeVolume API. */
+async function probeLighting({ renderer, scene, camera, width, height }, mode) {
+  const { ProbeVolume } = await import("/core/probe-volume.js");
+  const captureCounts = new WeakMap();
+  const raw = new Proxy(renderer, {
+    get(target, key) {
+      if (key === "render")
+        return (capture, view) => {
+          captureCounts.set(capture, (captureCounts.get(capture) ?? 0) + 1);
+          return target.render(capture, view);
+        };
+      const value = Reflect.get(target, key, target);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+    set: (target, key, value) => Reflect.set(target, key, value, target),
+  });
+  const attached = {
+    kind: "webgpu",
+    raw,
+    compileAsync: (capture, view) => renderer.compileAsync(capture, view),
+  };
+  const volume = () =>
+    new ProbeVolume({
+      bounds: { min: new Vector3(-0.5, -0.5, -0.5), max: new Vector3(0.5, 0.5, 0.5) },
+      density: 1,
+      cubemapSize: 8,
+      near: 0.1,
+      far: 20,
+      bounces: 1,
+      bakeBudgetMs: 1000,
+      maxWorkItemsPerFrame: 1,
+      report: () => {},
+    });
+  const capture = (probes) => {
+    const captureScene = new Scene();
+    const material = new MeshLambertNodeMaterial({ color: 0xffffff, side: BackSide });
+    material.emissiveNode = probes.sample().div(Math.PI);
+    captureScene.add(new Mesh(new BoxGeometry(6, 6, 6), material));
+    const light = new PointLight(0xffffff, 32, 0, 2);
+    light.color.setRGB(0.2, 0.8, 1);
+    light.position.set(-1, 0, 1);
+    captureScene.add(light);
+    captureScene.updateMatrixWorld(true);
+    return { scene: captureScene, light };
+  };
+  const bind = (probes, name, center) => {
+    scene.getObjectByName(name).material.emissiveNode = probes
+      .sampleNode(positionWorld.sub(vec3(center, 0, 0)), normalWorld)
+      .div(Math.PI);
+  };
+  const converge = async (probes, pending) => {
+    for (let frame = 0; frame < 1000 && probes.observation.status !== "ready"; ++frame) {
+      probes.process(attached);
+      await renderer.backend.device.queue.onSubmittedWorkDone();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    if (probes.observation.status !== "ready") throw new Error("probe fixture did not converge");
+    await pending;
+  };
+  const snapshot = async () => {
+    const snapshotTarget = new RenderTarget(width, height);
+    const previous = renderer.getRenderTarget();
+    renderer.setRenderTarget(snapshotTarget);
+    renderer.render(scene, camera);
+    renderer.setRenderTarget(previous);
+    const pixels = await renderer.readRenderTargetPixelsAsync(snapshotTarget, 0, 0, width, height);
+    snapshotTarget.dispose();
+    return pixels;
+  };
+  const requireSignal = (pixels) => {
+    let lit = 0;
+    for (let i = 0; i < pixels.length; i += 4)
+      if (Math.max(pixels[i], pixels[i + 1], pixels[i + 2]) > 8) lit += 1;
+    if (lit <= width * height * 0.02)
+      throw new Error("probe fixture has no discriminating irradiance");
+  };
+  const affected = volume();
+  const unaffected = volume();
+  bind(affected, "probeReceiver", -1.1);
+  bind(unaffected, "unaffectedReceiver", 1.1);
+  if (mode === "baked") {
+    for (const probes of [affected, unaffected]) {
+      for (let iz = 0; iz < 2; ++iz)
+        for (let iy = 0; iy < 2; ++iy)
+          for (let ix = 0; ix < 2; ++ix) {
+            const coefficients = [{ r: 0.4 + 0.2 * ix, g: 1.2 + 0.2 * iy, b: 2 + 0.2 * iz }];
+            for (let i = 1; i < 9; ++i)
+              coefficients.push({
+                r: 0.03 * i * (ix ? 1 : -1),
+                g: 0.02 * i * (iy ? 1 : -1),
+                b: 0.01 * i * (iz ? 1 : -1),
+              });
+            probes.setProbeCoefficients(ix, iy, iz, coefficients);
+          }
+    }
+    // No attachRenderer/requestBake: the cooked CPU atlas is sampled without scene recapture.
+    requireSignal(await snapshot());
+    return;
+  }
+  const affectedCapture = capture(affected);
+  const unaffectedCapture = capture(unaffected);
+  for (const [probes, captured] of [
+    [affected, affectedCapture],
+    [unaffected, unaffectedCapture],
+  ]) {
+    probes.attachRenderer(attached);
+    await converge(probes, probes.requestBake(captured.scene));
+  }
+  for (const captured of [affectedCapture, unaffectedCapture])
+    if (captureCounts.get(captured.scene) !== 96)
+      throw new Error("probe fixture did not capture two complete passes");
+  const before = await snapshot();
+  requireSignal(before);
+  if (mode !== "relight") return;
+  const unaffectedBefore = captureCounts.get(unaffectedCapture.scene);
+  affectedCapture.light.position.set(1, 0, 1);
+  affectedCapture.light.color.setRGB(1, 0.25, 0.05);
+  affectedCapture.scene.updateMatrixWorld(true);
+  const pending = affected.requestBake(affectedCapture.scene);
+  if (!affected.observation.samplingIsolated || affected.observation.bakeProgress.completed !== 0)
+    throw new Error("rebake did not isolate the previous atlas immediately");
+  const isolated = await snapshot();
+  for (let y = 42; y < height - 42; ++y)
+    for (let x = 43; x < 277; ++x) {
+      if (x >= 151 && x < 169) continue;
+      const offset = (y * width + x) * 4;
+      for (let channel = 0; channel < 3; ++channel) {
+        if (x < 151 && isolated[offset + channel] !== 0)
+          throw new Error("first frame after rebake contains stale probe light");
+        if (x >= 169 && isolated[offset + channel] !== before[offset + channel])
+          throw new Error("rebake modified the unrelated receiver");
+      }
+    }
+  await converge(affected, pending);
+  if (captureCounts.get(unaffectedCapture.scene) !== unaffectedBefore)
+    throw new Error("rebake scheduled work for the unrelated volume");
+  const after = await snapshot();
+  let changed = 0;
+  for (let pixel = 0; pixel < width * height; ++pixel)
+    if (
+      [0, 1, 2].some(
+        (channel) => Math.abs(after[pixel * 4 + channel] - before[pixel * 4 + channel]) > 8,
+      )
+    )
+      changed += 1;
+  if (changed <= width * height * 0.02) throw new Error("light move did not change probe lighting");
+}
+
+// Dense pattern keeps old colours inside the 3x3 variance box after the cut; flat colours
+// would be clamped away and let a broken reset pass. Small rigid motion exercises reprojection.
+async function temporalFixture({ renderer, scene, camera }, firstCutFrame) {
+  const { traa } = await import("/addons/tsl/display/TRAANode.js");
+  const { mrt, output, velocity } = await import("three/tsl");
+  const mesh = scene.getObjectByName("temporalPattern");
+  const phase = uniform(0);
+  const pattern = sin(uv().x.mul(900).add(phase)).mul(sin(uv().y.mul(700)));
+  mesh.material.colorNode = vec4(vec3(pattern.mul(0.45).add(0.5)), 1);
+  const scenePass = pass(scene, camera);
+  scenePass.setMRT(mrt({ output, velocity }));
+  const effect = traa(
+    scenePass.getTextureNode("output"),
+    scenePass.getTextureNode("depth"),
+    scenePass.getTextureNode("velocity"),
+    camera,
+  );
+  const pipeline = new RenderPipeline(renderer);
+  pipeline.outputNode = effect;
+  // Compile with upstream's own initialization: depth is allocated by the resolve before
+  // TRAANode copies it. Build first so the first beauty frame receives jitter index 0, too.
+  pipeline._update();
+  await renderer.compileAsync(pipeline._quadMesh, pipeline._quadMesh.camera);
+  // TRAANode exposes resize restart, but no cut API. Restart its own colour history and
+  // sample current depth on the reset frame, matching the native graph's seeded depth.
+  let reset = true;
+  const updateBefore = effect.updateBefore;
+  effect.updateBefore = function (frame) {
+    if (reset) {
+      this.setSize(1, 1);
+      this._previousDepthNode.value = this.depthNode.value;
+      this._cameraWorldMatrix.value.copy(camera.matrixWorld);
+      this._cameraProjectionMatrixInverse.value.copy(camera.projectionMatrixInverse);
+      reset = false;
+    }
+    updateBefore.call(this, frame);
+  };
+  const draw = async () => {
+    pipeline.render();
+    await renderer.backend.device.queue.onSubmittedWorkDone();
+  };
+  for (let i = 0; i < 20; ++i) {
+    mesh.position.x = i * 0.002;
+    await draw();
+  }
+  camera.position.z = 5.01;
+  camera.updateMatrixWorld(true);
+  phase.value = Math.PI; // complementary pre/post views at the same pixels
+  reset = true;
+  const steps = firstCutFrame ? 0 : 3;
+  for (let i = 0; i < steps; ++i) {
+    mesh.position.x = (20 + i) * 0.002;
+    await draw();
+  }
+  mesh.position.x = (20 + steps) * 0.002;
+  return { render: () => pipeline.render() };
+}
+
 export const programs = {
+  async "traa-history"(context) {
+    return temporalFixture(context, false);
+  },
+  async "history-cut"(context) {
+    return temporalFixture(context, true);
+  },
+  async probes(context) {
+    await probeLighting(context, "live");
+  },
+  async "probes-baked"(context) {
+    await probeLighting(context, "baked");
+  },
+  async "probes-relight"(context) {
+    await probeLighting(context, "relight");
+  },
   async "vsm-basic"(context) {
     await virtualShadow(context);
   },

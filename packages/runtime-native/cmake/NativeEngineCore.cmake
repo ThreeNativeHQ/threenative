@@ -236,6 +236,13 @@ tn_native_engine_test(tn-native-engine-render-graph-test tests/native-engine/ren
     native_engine_history_objects=objects
     native_engine_history_multi_render=multi_render)
 target_link_libraries(tn-native-engine-render-graph-test PRIVATE tn_engine_graph)
+if(NOT EMSCRIPTEN)
+    add_test(NAME native_engine_traa_jitter_reference COMMAND sh -c
+        "\"$1\" jitter_dump | node \"$2\"" --
+        $<TARGET_FILE:tn-native-engine-render-graph-test>
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/traa_reference_test.mjs)
+    set_tests_properties(native_engine_traa_jitter_reference PROPERTIES LABELS "native-engine")
+endif()
 
 tn_native_engine_test(tn-native-engine-abi-test tests/native-engine/abi_test.cpp
     native_engine_abi_version=version
@@ -331,19 +338,27 @@ if(NOT EMSCRIPTEN)
     set_tests_properties(native_engine_registry_snapshot PROPERTIES LABELS "native-engine")
 endif()
 
+# PRD-525: probe capture projection, convergence and cooked volumes share the portable CPU core.
+add_library(tn_engine_probes STATIC src/engine/renderer/probes/schedule.cpp
+    src/engine/renderer/probes/volume.cpp src/engine/assets/probe_volume.cpp)
+tn_native_engine_target(tn_engine_probes)
+target_link_libraries(tn_engine_probes PUBLIC tn_engine_foundation tn_engine_assets)
+target_include_directories(tn_engine_probes PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+
 # The renderer's sources, shared by the native build (NativeEngine.cmake, over the host's WebGPU
 # backend) and the browser build below.
 set(TN_ENGINE_RENDERER_SOURCES src/engine/renderer/gpu_resources.cpp src/engine/renderer/device_state.cpp
     src/engine/renderer/presentation.cpp src/engine/renderer/package_loader.cpp
     src/engine/renderer/geometry_cache.cpp src/engine/renderer/pipeline_cache.cpp src/engine/renderer/renderer.cpp
-    src/engine/renderer/render_database.cpp src/engine/renderer/compute.cpp)
+    src/engine/renderer/render_database.cpp src/engine/renderer/compute.cpp
+    src/engine/renderer/post/traa.cpp src/engine/renderer/probes/capture.cpp)
 if(EMSCRIPTEN)
     # PRD-532: the same renderer over the browser's WebGPU through Dawn's emdawnwebgpu port, whose
     # webgpu.h is Dawn's. No host services: nothing here may assume a native driver.
     add_library(tn_engine_renderer STATIC ${TN_ENGINE_RENDERER_SOURCES})
     tn_native_engine_target(tn_engine_renderer)
     target_link_libraries(tn_engine_renderer PUBLIC tn_engine_foundation tn_engine_assets tn_engine_shader tn_engine_scene
-        tn_engine_animation tn_engine_vsm tn_engine_graph)
+        tn_engine_animation tn_engine_vsm tn_engine_graph tn_engine_probes)
     target_compile_definitions(tn_engine_renderer PUBLIC MYSTRAL_WEBGPU_DAWN)
     target_compile_options(tn_engine_renderer PUBLIC --use-port=emdawnwebgpu)
     target_link_options(tn_engine_renderer PUBLIC --use-port=emdawnwebgpu)

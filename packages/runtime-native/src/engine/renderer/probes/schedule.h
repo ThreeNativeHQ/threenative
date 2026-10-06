@@ -126,7 +126,7 @@ class ProbeScheduler {
      * Runs one bounded frame slice. `clockMs` is advanced by each work item's measured cost. The
      * work items that ran, in order, are appended to `out`.
      */
-    ProbeStepStatus process(double& clockMs, std::vector<ProbeWorkItem>& out);
+    ProbeStepStatus process(double& clockMs, std::vector<ProbeWorkItem>& out, uint32_t limit = UINT32_MAX);
 
     [[nodiscard]] bool pending() const { return pending_; }
     [[nodiscard]] bool finished() const { return !pending_ && started_; }

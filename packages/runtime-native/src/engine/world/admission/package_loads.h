@@ -1,7 +1,7 @@
 #pragma once
 
 #include <cstdint>
-#include <condition_variable>
+#include <condition_variable> // TN_WORKER_ONLY: PackageLoads IO worker parking, never game-thread completion.
 #include <deque>
 #include <functional>
 #include <memory>
@@ -93,7 +93,7 @@ class PackageLoads {
     std::vector<std::unique_ptr<Request>> requests_; // game thread only
     std::vector<std::thread> workers_;
     std::mutex mutex_;
-    std::condition_variable work_;
+    std::condition_variable work_; // TN_WORKER_ONLY: only the persistent IO worker entry waits.
     std::deque<std::pair<uint64_t, std::string>> pending_;
     bool stopping_ = false;
     std::shared_ptr<int> alive_ = std::make_shared<int>(0); // completions hold it weakly

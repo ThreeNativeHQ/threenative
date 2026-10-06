@@ -38,15 +38,16 @@ bool loadEntry(const assets::Package& package, const assets::PackageEntry& e, Gp
             out.push_back({e.name, buffer});
         } else if (e.kind == static_cast<uint16_t>(assets::EntryKind::Texture)) {
             if (data.size() < 12) return fail(error, e.name, "texture header truncated");
-            const uint32_t width = u32(data.data()), height = u32(data.data() + 4), format = u32(data.data() + 8);
-            if (format != WGPUTextureFormat_RGBA8Unorm && format != WGPUTextureFormat_RGBA8UnormSrgb) {
+            const uint32_t width = u32(data.data()), height = u32(data.data() + 4);
+            const WGPUTextureFormat format = packageTextureFormat(u32(data.data() + 8));
+            if (format == WGPUTextureFormat_Undefined) {
                 return fail(error, e.name, "texture format is not RGBA8 (format v1)");
             }
             if (width == 0 || height == 0 || width > 16384 || height > 16384 ||
                 data.size() - 12 != uint64_t{width} * height * 4) {
                 return fail(error, e.name, "texture size does not match its pixels");
             }
-            const Handle texture = gpu.createTexture(width, height, static_cast<WGPUTextureFormat>(format),
+            const Handle texture = gpu.createTexture(width, height, format,
                                                      WGPUTextureUsage_CopyDst | WGPUTextureUsage_CopySrc |
                                                          WGPUTextureUsage_TextureBinding);
             if (texture.type == 0 || gpu.writeTexture(texture, data.data() + 12, data.size() - 12) != GpuStatus::Ok) {

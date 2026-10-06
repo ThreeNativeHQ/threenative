@@ -573,7 +573,7 @@ export declare class DirectionalLight extends Object3D {
 constructor();
 intensity: number;
 color: Color;
-readonly target: Object3D;
+target: Object3D;
 }
 
 /** Catalog partial (native-not-implemented): three/DoubleSide. */
@@ -2121,6 +2121,64 @@ theta: number;
   setFromVector3(v: Vector3): this;
 
   setFromCartesianCoords(x: number, y: number, z: number): this;
+}
+
+/** Catalog supported: three/webgpu/Sprite. */
+export declare class Sprite extends Object3D {
+constructor();
+count: number;
+readonly morphTargetInfluences: number[];
+readonly geometry: BufferGeometry;
+material: SpriteMaterial;
+
+  updateMorphTargets(): void;
+}
+
+/** Catalog supported: three/SpriteMaterial. */
+export declare class SpriteMaterial extends Material {
+constructor();
+alphaTest: number;
+depthTest: boolean;
+depthWrite: boolean;
+readonly id: number;
+name: string;
+opacity: number;
+rotation: number;
+side: Side;
+sizeAttenuation: boolean;
+toneMapped: boolean;
+transparent: boolean;
+readonly type: string;
+visible: boolean;
+color: Color;
+map: Texture | null;
+}
+
+/** Catalog supported: three/webgpu/SpriteNodeMaterial. */
+export declare class SpriteNodeMaterial extends NodeMaterial {
+constructor();
+alphaTest: number;
+colorNode: Node<"float"> | Node<"vec2"> | Node<"vec3"> | Node<"vec4"> | Node<"color"> | null;
+depthTest: boolean;
+depthWrite: boolean;
+emissiveNode: Node | null;
+readonly id: number;
+metalnessNode: Node | null;
+name: string;
+normalNode: Node | null;
+opacity: number;
+opacityNode: Node | null;
+positionNode: Node | null;
+rotation: number;
+roughnessNode: Node | null;
+side: Side;
+sizeAttenuation: boolean;
+toneMapped: boolean;
+transparent: boolean;
+readonly type: string;
+visible: boolean;
+color: Color;
+map: Texture | null;
 }
 
 /** Catalog partial (native-not-implemented): three/SrcAlphaFactor. */

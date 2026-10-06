@@ -1,5 +1,6 @@
 #include "check.h"
 #include "engine/renderer/renderer.h"
+#include "engine/renderer/post/traa.h"
 #include "mystral/webgpu/context.h"
 
 #include <chrono>
@@ -12,6 +13,97 @@
 using namespace tn::engine;
 
 namespace {
+
+#if defined(MYSTRAL_WEBGPU_DAWN)
+// Dawn's Null backend validates the complete command stream without a GPU.
+void traaValidation() {
+    WGPUInstance instance = wgpuCreateInstance(nullptr);
+    WGPUAdapter adapter = nullptr;
+    WGPURequestAdapterOptions options{};
+    options.backendType = WGPUBackendType_Null;
+    WGPURequestAdapterCallbackInfo adapterInfo{};
+    adapterInfo.mode = WGPUCallbackMode_AllowProcessEvents;
+    adapterInfo.userdata1 = &adapter;
+    adapterInfo.callback = [](WGPURequestAdapterStatus, WGPUAdapter a, WGPUStringView, void* user, void*) {
+        *static_cast<WGPUAdapter*>(user) = a;
+    };
+    wgpuInstanceRequestAdapter(instance, &options, adapterInfo);
+    wgpuInstanceProcessEvents(instance);
+    CHECK(adapter != nullptr);
+    if (!adapter) { wgpuInstanceRelease(instance); return; }
+    WGPUDevice device = nullptr;
+    WGPURequestDeviceCallbackInfo deviceInfo{};
+    deviceInfo.mode = WGPUCallbackMode_AllowProcessEvents;
+    deviceInfo.userdata1 = &device;
+    deviceInfo.callback = [](WGPURequestDeviceStatus, WGPUDevice d, WGPUStringView, void* user, void*) {
+        *static_cast<WGPUDevice*>(user) = d;
+    };
+    wgpuAdapterRequestDevice(adapter, nullptr, deviceInfo);
+    wgpuInstanceProcessEvents(instance);
+    CHECK(device != nullptr);
+    if (!device) { wgpuAdapterRelease(adapter); wgpuInstanceRelease(instance); return; }
+    WGPUQueue queue = wgpuDeviceGetQueue(device);
+    wgpuDevicePushErrorScope(device, WGPUErrorFilter_Validation);
+    {
+        TraaPass pass(device, queue, TraaOptions{});
+        pass.resize(32, 24);
+        const auto& graph = pass.renderGraph();
+        const auto compiled = graph.compile();
+        CHECK(compiled.ok() && compiled.order.size() == 3);
+        if (compiled.order.size() == 3) {
+            CHECK(graph.passName(compiled.order[0]) == "traa-velocity");
+            CHECK(graph.passName(compiled.order[1]) == "traa-resolve");
+            CHECK(graph.passName(compiled.order[2]) == "traa-store-history");
+        }
+        CHECK(pass.resultView() != nullptr && pass.resultView() != pass.velocityView());
+        CHECK(pass.needsSeed());
+        EventQueue events;
+        Renderer renderer(instance, device, queue, events);
+        renderer.setSize(32, 24);
+        renderer.setOutput(OutputState{});
+        renderer.setTraa(TraaOptions{});
+        CameraState camera;
+        camera.projectionMatrix = camera.matrixWorld = camera.matrixWorldInverse =
+            {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+        const float triangle[] = {-1, -1, 0.5, 1, -1, 0.5, 0, 1, 0.5};
+        BufferStore positions(Scalar::F32, 9);
+        positions.write(0, triangle, sizeof triangle);
+        shader::StandardMaterial material;
+        DrawItem item;
+        item.key = item.id = 1; item.kind = MaterialKind::Basic;
+        item.positions = &positions; item.material = &material; item.matrixWorld = camera.matrixWorld;
+        const std::span<const DrawItem> items(&item, 1);
+        renderer.render(items, camera, LightState{}, {0.1, 0.2, 0.3, 0.5});
+        item.matrixWorld[12] += 0.01;
+        renderer.render(items, camera, LightState{}, {0.1, 0.2, 0.3, 0.5});
+        renderer.cutHistory();
+        renderer.render(items, camera, LightState{}, {0.1, 0.2, 0.3, 0.5});
+        renderer.setSize(16, 12);
+        renderer.render(items, camera, LightState{}, {0.1, 0.2, 0.3, 0.5});
+        bool readDone = false;
+        renderer.readPixels([&](GpuStatus status, std::vector<uint8_t> pixels) {
+            CHECK(status == GpuStatus::Ok && pixels.size() == 16 * 12 * 4);
+            readDone = true;
+        });
+        for (int i = 0; i < 1000 && !readDone; ++i) { renderer.poll(); events.drain(); }
+        CHECK(readDone);
+    }
+    bool done = false;
+    WGPUPopErrorScopeCallbackInfo errorInfo{};
+    errorInfo.mode = WGPUCallbackMode_AllowProcessEvents;
+    errorInfo.userdata1 = &done;
+    errorInfo.callback = [](WGPUPopErrorScopeStatus status, WGPUErrorType type, WGPUStringView message, void* user, void*) {
+        if (type != WGPUErrorType_NoError) std::fprintf(stderr, "TRAA validation: %.*s\n", int(message.length), message.data);
+        CHECK(status == WGPUPopErrorScopeStatus_Success);
+        CHECK(type == WGPUErrorType_NoError);
+        *static_cast<bool*>(user) = true;
+    };
+    wgpuDevicePopErrorScope(device, errorInfo);
+    wgpuInstanceProcessEvents(instance);
+    CHECK(done);
+    wgpuQueueRelease(queue); wgpuDeviceRelease(device); wgpuAdapterRelease(adapter); wgpuInstanceRelease(instance);
+}
+#endif
 
 constexpr double kPi = 3.141592653589793;
 
@@ -73,6 +165,43 @@ std::vector<uint8_t> read(Renderer& r, EventQueue& events) {
         if (!done) std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
     return out;
+}
+
+// A constant premultiplied frame must survive TRAA and the shared RenderOutputNode transform.
+void traaAlpha() {
+    mystral::webgpu::Context context;
+    const bool initialized = context.initializeHeadless();
+    CHECK(initialized);
+    if (!initialized) return;
+    WGPUAdapterInfo info{};
+    wgpuAdapterGetInfo(context.getAdapter(), &info);
+    const bool rendersPixels = info.backendType != WGPUBackendType_Null;
+    wgpuAdapterInfoFreeMembers(info);
+    if (!rendersPixels) std::fprintf(stderr, "TN_TRAA_ALPHA_REQUIRES_RENDERING_BACKEND: Null cannot verify pixels\n");
+    CHECK(rendersPixels);
+    if (!rendersPixels) return;
+    EventQueue events;
+    CameraState camera;
+    camera.projectionMatrix = camera.matrixWorld = camera.matrixWorldInverse =
+        {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    for (bool srgb : {false, true}) for (double alpha : {0.0, 0.5, 1.0}) {
+        Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+        renderer.setSize(16, 16);
+        renderer.setOutput(OutputState{shader::ToneMapping::ACESFilmic, 1, srgb});
+        const std::array<double, 4> clear{0.2 * alpha, 0.4 * alpha, 0.6 * alpha, alpha};
+        renderer.render({}, camera, LightState{}, clear);
+        const auto plain = read(renderer, events);
+        renderer.setTraa(TraaOptions{});
+        for (int frame = 0; frame < 3; ++frame) {
+            renderer.render({}, camera, LightState{}, clear);
+            const auto temporal = read(renderer, events);
+            CHECK(plain.size() == 16 * 16 * 4 && temporal.size() == plain.size());
+            if (plain.size() != 16 * 16 * 4 || temporal.size() != plain.size()) continue;
+            const size_t center = (8 * 16 + 8) * 4;
+            for (int c = 0; c < 4; ++c) CHECK(std::abs(int(temporal[center + c]) - int(plain[center + c])) <= 1);
+            CHECK(temporal[center + 3] == plain[center + 3]);
+        }
+    }
 }
 
 // Pixels that differ from the clear colour (black), and whether the centre pixel is lit.
@@ -502,6 +631,10 @@ void alphaTest() {
 }  // namespace
 
 TN_TEST_MAIN({"resize_readback", resizeReadback}, {"output_ramp", outputRamp},
+             {"traa_alpha", traaAlpha},
+#if defined(MYSTRAL_WEBGPU_DAWN)
+             {"traa_validation", traaValidation},
+#endif
              {"lit_reference", litReference},
              {"lambert_reference", lambertReference},
              {"phong_reference", phongReference},

@@ -27,7 +27,9 @@ namespace tn::engine::assets {
  *   ...           entry data, anywhere after the table, at the offsets the entries name
  *
  * Entry data by kind: Buffer is raw bytes (size a multiple of 4). Texture is a 12-byte header —
- * u32 width, u32 height, u32 WGPUTextureFormat (RGBA8 formats in v1) — then tightly packed rows.
+ * u32 width, u32 height, u32 format — then tightly packed rows. V1 wire codes are 18 (RGBA8Unorm)
+ * and 19 (RGBA8UnormSrgb); legacy Dawn-cooked entries use 22 and 23 for the same formats. These
+ * are package codes, not the active backend's WGPUTextureFormat values.
  *
  * `packages/assets` writes this format; the engine reads it here. Every field is untrusted: each
  * range is checked with overflow-safe arithmetic before anything is read, and every hash is

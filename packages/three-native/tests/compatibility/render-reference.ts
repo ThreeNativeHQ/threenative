@@ -148,10 +148,26 @@ async function withServer(
     });
     served.set("/core/virtual-shadow.js", ["text/javascript", virtual.outputFiles[0].text]);
   }
+  if (
+    [...fixtures.values()].some(
+      (fixture) => fixture.name === "probes" || fixture.name.startsWith("probes-"),
+    )
+  ) {
+    const probes = buildSync({
+      entryPoints: [path.join(REPO_ROOT, "packages/core/src/render/probe-volume.ts")],
+      bundle: true,
+      format: "esm",
+      platform: "browser",
+      external: ["three", "three/*"],
+      write: false,
+    });
+    served.set("/core/probe-volume.js", ["text/javascript", probes.outputFiles[0].text]);
+  }
   // GLTFLoader and the two helpers it imports, resolving `three` through the page's import map; and
   // every glTF a fixture loads, from the repository.
   for (const addon of [
     "loaders/GLTFLoader.js",
+    "tsl/display/TRAANode.js",
     "utils/BufferGeometryUtils.js",
     "utils/SkeletonUtils.js",
   ])

@@ -136,7 +136,12 @@ ExprId Lowerer::emit(Node node) {
         case Kind::Convert: return program_.construct(d.type, {expression(d.args[0])});
         case Kind::Select:
             return program_.select(expression(d.args[0]), expression(d.args[1]), expression(d.args[2]));
-        case Kind::Texture: return tsl::texture(d.name, tsl::Node(expression(d.args[0]))).id;
+        case Kind::Texture: {
+            const ExprId coordinate = expression(d.args[0]);
+            if (coordinate == kInvalid) return kInvalid;
+            return program_.sample(program_.expr(coordinate).type == Type::vec(3)
+                                       ? program_.texture3d(d.name) : program_.texture2d(d.name), coordinate);
+        }
         case Kind::StorageElement:
             return program_.loadStorage(ensureStorage(d), expression(d.args[0]));
         case Kind::VarRead: return program_.load(ensureVar(d.args[0]));

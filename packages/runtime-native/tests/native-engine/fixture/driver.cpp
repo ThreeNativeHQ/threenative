@@ -262,7 +262,10 @@ int Driver::run(std::istream& in, std::ostream& out) {
                 request.shadowMap = t.size() == 10;
                 request.tsl = std::move(tsl_);
                 tsl_.clear();
-                if (const std::string failed = render(scene->second, camera->second, request); !failed.empty()) throw Unsupported{failed};
+                if (const std::string failed = render(scene->second, camera->second, request); !failed.empty()) {
+                    if (failed.starts_with("TN_FIXTURE_PROBES_")) throw std::runtime_error(failed);
+                    throw Unsupported{failed};
+                }
                 frame_ = request.png;
                 continue;
             }

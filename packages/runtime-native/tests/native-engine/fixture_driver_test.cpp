@@ -118,6 +118,20 @@ void lightTargets() {
     CHECK(driver.ref<tn::engine::DirectionalLight>(sun, "DirectionalLight").target.get() == driver.find(aim)->ptr.get());
 }
 
+void probeFailures() {
+    for (const char* reason : {"TN_FIXTURE_PROBES_NO_IRRADIANCE", "TN_FIXTURE_PROBES_BAKED_RECAPTURE",
+                               "TN_FIXTURE_PROBES_STALE_FRAME: 123"}) {
+        Driver driver;
+        registerAll(driver.classes);
+        driver.render = [reason](Object&, Object&, const RenderRequest&) { return std::string(reason); };
+        std::istringstream in("new scene Scene\nnew camera PerspectiveCamera\nrender scene camera 320 240 aces " +
+                              hex(1) + " srgb s:unused.png\nobserve 0 scene - - pixels\nend\n");
+        std::ostringstream out;
+        CHECK(driver.run(in, out) == 0);
+        CHECK(out.str().starts_with("error TN_FIXTURE_PROBES_"));
+    }
+}
+
 }  // namespace
 
-TN_TEST_MAIN({"protocol", protocol}, {"node_materials", nodeMaterials}, {"light_targets", lightTargets})
+TN_TEST_MAIN({"protocol", protocol}, {"probe_failures", probeFailures}, {"node_materials", nodeMaterials}, {"light_targets", lightTargets})

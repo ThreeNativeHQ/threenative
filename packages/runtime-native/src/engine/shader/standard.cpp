@@ -6,6 +6,8 @@
 // BRDF_BlinnPhong) as materials/nodes/Mesh{Lambert,Phong}NodeMaterial.js wire them.
 
 #include "standard.h"
+#include <stdexcept>
+#include <algorithm>
 #include "engine/shader/tsl/tsl.h"
 
 #include <numbers>
@@ -674,7 +676,7 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
     v.output("position", v.mul(v.uniform("projectionMatrix", Type::mat(4, 4)), positionView));
     // transformNormalToView: normalize(view * vec4(modelNormalMatrix * normal, 0)), normalized per
     // vertex before it is interpolated (v_normalViewGeometry); normalMatrix is that product.
-    v.output("normalView", v.call("normalize", {v.mul(normalMatrix, normal)}));
+    v.output("normalView", v.call("normalize", {v.mul(normalMatrix, variant.backSide ? v.neg(normal) : normal)}));
     v.output("positionView", v.swizzle(positionView, "xyz"));
     // positionWorld, before instanceColor: varyings take locations in creation order in both stages.
     if (lights.shadowed()) v.output("positionWorld", v.swizzle(v.mul(model, position), "xyz"));
@@ -796,6 +798,53 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
     return out;
 }
 
+std::string probeStorageName(std::string_view name) {
+    auto letter = [](char c) { return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_'; };
+    if (name.empty() || !letter(name.front()) || !std::all_of(name.begin(), name.end(), [&](char c) {
+            return letter(c) || (c >= '0' && c <= '9'); }))
+        throw std::invalid_argument("TN_PROBES_BINDING: expected shader identifier");
+    return "probe_" + std::string(name);
+}
+
+graph::Node probeSample(const probes::ProbePlacement& placement, const std::string& name,
+                        graph::Node position, graph::Node normal) {
+    namespace g = graph;
+    if (!position) position = g::varying("positionWorld", Type::vec(3));
+    if (!normal) normal = g::normalize(g::swizzle(g::mul(
+        g::vec4({g::normalize(g::varying("normalView", Type::vec(3))), g::float_(0)}),
+        g::uniform("viewMatrix", Type::mat(4, 4))), "xyz"));
+    auto vector = [](const double* v) { return g::vec3({g::float_(v[0]), g::float_(v[1]), g::float_(v[2])}); };
+    const auto local = g::clamp(g::div(g::sub(position, vector(placement.boundsMin)), vector(placement.boundsSize)),
+                               g::vec3({g::float_(0)}), g::vec3({g::float_(1)}));
+    const auto& r = placement.resolution;
+    const auto atlasX = g::div(g::add(g::mul(g::swizzle(local, "x"), g::float_(r[0] - 1)), g::float_(0.5)), g::float_(r[0]));
+    const auto atlasY = g::div(g::add(g::mul(g::swizzle(local, "y"), g::float_(r[1] - 1)), g::float_(0.5)), g::float_(r[1]));
+    std::array<g::Node, 7> packed;
+    for (uint32_t sub = 0; sub < 7; ++sub) {
+        const auto atlasZ = g::div(g::add(g::mul(g::swizzle(local, "z"), g::float_(r[2] - 1)),
+                                         g::float_(1.5 + sub * placement.paddedSlices)), g::float_(placement.atlasDepth));
+        packed[sub] = g::texture(probeStorageName(name), g::vec3({atlasX, atlasY, atlasZ}));
+    }
+    std::array<g::Node,9> coefficients;
+    constexpr const char* lanes[] = {"x","y","z","w"};
+    for (uint32_t i=0; i<9; ++i) {
+        auto channel = [&](uint32_t c) { const auto flat=i*3+c; return g::swizzle(packed[flat/4], lanes[flat%4]); };
+        coefficients[i] = g::vec3({channel(0),channel(1),channel(2)});
+    }
+    const auto n = g::normalize(normal), x=g::swizzle(n,"x"), y=g::swizzle(n,"y"), z=g::swizzle(n,"z");
+    auto irradiance = g::mul(coefficients[0],g::float_(0.886227));
+    auto weighted = [&](uint32_t i, g::Node direction, double factor) {
+        return g::mul(g::mul(coefficients[i],direction),g::float_(factor));
+    };
+    const std::array<g::Node,8> terms = {
+        weighted(1,y,1.023328), weighted(2,z,1.023328), weighted(3,x,1.023328),
+        weighted(4,g::mul(x,y),0.858086), weighted(5,g::mul(y,z),0.858086),
+        g::mul(coefficients[6],g::sub(g::mul(g::mul(z,z),g::float_(0.743125)),g::float_(0.247708))),
+        weighted(7,g::mul(x,z),0.858086), weighted(8,g::sub(g::mul(x,x),g::mul(y,y)),0.429043)};
+    for (const auto& term : terms) irradiance=g::add(irradiance,term);
+    return g::max(irradiance,g::vec3({g::float_(0)}));
+}
+
 StandardPrograms buildStandard(const StandardMaterial& material, const VertexVariant& variant, const LightLayout& lights) {
     return buildStandardProgram(material, false, variant, lights);
 }
@@ -820,7 +869,7 @@ StandardPrograms buildLit(bool phong, const VertexVariant& variant, const LightL
     v.output("position", v.mul(v.uniform("projectionMatrix", Type::mat(4, 4)), positionView));
     // transformNormalToView: normalize(view * vec4(modelNormalMatrix * normal, 0)), normalized per
     // vertex before it is interpolated (v_normalViewGeometry); normalMatrix is that product.
-    v.output("normalView", v.call("normalize", {v.mul(normalMatrix, normal)}));
+    v.output("normalView", v.call("normalize", {v.mul(normalMatrix, variant.backSide ? v.neg(normal) : normal)}));
     v.output("positionView", v.swizzle(positionView, "xyz"));
     // positionWorld, before instanceColor: varyings take locations in creation order in both stages.
     if (lights.shadowed()) v.output("positionWorld", v.swizzle(v.mul(model, position), "xyz"));

@@ -9,6 +9,7 @@
 typedef struct WGPUInstanceImpl* WGPUInstance;
 typedef struct WGPUSurfaceImpl* WGPUSurface;
 typedef struct WGPUTextureViewImpl* WGPUTextureView;
+typedef struct WGPUTextureImpl* WGPUTexture;
 typedef struct WGPUAdapterImpl* WGPUAdapter;
 typedef struct WGPUDeviceImpl* WGPUDevice;
 typedef struct WGPUQueueImpl* WGPUQueue;
@@ -222,6 +223,7 @@ private:
 
     WGPUInstance instance_ = nullptr;
     WGPUSurface surface_ = nullptr;
+    WGPUTexture surfaceTexture_ = nullptr;
     WGPUTextureView surfaceView_ = nullptr;
     void* surfaceNativeHandle_ = nullptr;
     int surfacePlatformType_ = -1;

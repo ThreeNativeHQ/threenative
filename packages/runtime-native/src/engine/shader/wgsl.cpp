@@ -227,9 +227,10 @@ WgslModule WgslEmitter::emit(const Program& program, uint32_t group) {
     for (std::size_t i = 0; i < program.textures_.size(); ++i) {
         const std::string& name = program.textures_[i];
         const auto kind = program.textureKinds_[i];
-        const bool depth = kind != Program::TextureKind::Float2d;
+        const bool depth = kind == Program::TextureKind::Depth2d || kind == Program::TextureKind::DepthCube;
         out += "@group(" + std::to_string(group) + ") @binding(" + std::to_string(binding++) + ") var t_" + name +
                (kind == Program::TextureKind::DepthCube ? ": texture_depth_cube;\n"
+                : kind == Program::TextureKind::Float3d ? ": texture_3d<f32>;\n"
                 : depth                                 ? ": texture_depth_2d;\n"
                                                         : ": texture_2d<f32>;\n");
         out += "@group(" + std::to_string(group) + ") @binding(" + std::to_string(binding++) + ") var smp_" + name +

@@ -3,6 +3,8 @@
 #include "engine/renderer/graph/render_graph.h"
 
 #include <set>
+#include <iostream>
+#include <iomanip>
 #include <string>
 
 using namespace tn::engine::graph;
@@ -101,6 +103,16 @@ void diagnostics() {
     CHECK(!f.ok() && f.errors[0].code == "TN_GRAPH_FORMAT");
 }
 
+void jitterDump() {
+    std::cout << std::setprecision(17) << "[";
+    for (int i = 0; i < 96; ++i) {
+        const auto j = traaJitter(i);
+        if (i) std::cout << ",";
+        std::cout << "[" << j[0] << "," << j[1] << "]";
+    }
+    std::cout << "]\n";
+}
+
 void cutResize() {
     HistoryTracker h;
     CHECK(!h.historyValid(1));          // nothing presented yet: the reset input
@@ -161,4 +173,4 @@ void multiRender() {
 }  // namespace
 
 TN_TEST_MAIN({"order", order}, {"aliasing", aliasing}, {"diagnostics", diagnostics}, {"cut_resize", cutResize},
-             {"objects", objects}, {"multi_render", multiRender})
+             {"objects", objects}, {"multi_render", multiRender}, {"jitter_dump", jitterDump})

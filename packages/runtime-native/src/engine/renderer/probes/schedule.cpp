@@ -210,7 +210,7 @@ void ProbeScheduler::advance() {
     }
 }
 
-ProbeStepStatus ProbeScheduler::process(double& clockMs, std::vector<ProbeWorkItem>& out) {
+ProbeStepStatus ProbeScheduler::process(double& clockMs, std::vector<ProbeWorkItem>& out, uint32_t limit) {
     if (refused_)
         return ProbeStepStatus::Refused;
     if (!pending_)
@@ -218,7 +218,7 @@ ProbeStepStatus ProbeScheduler::process(double& clockMs, std::vector<ProbeWorkIt
 
     const double started = clockMs;
     uint32_t workItems = 0;
-    while (pending_ && workItems < options_.maxWorkItemsPerFrame) {
+    while (pending_ && workItems < options_.maxWorkItemsPerFrame && workItems < limit) {
         // Reference Math.max(0, now() - started). The clock only ever advances by finite costs, so the
         // NaN and negative branches of that JS idiom have no case here.
         const double elapsedBefore = std::max(0.0, clockMs - started);

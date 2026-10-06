@@ -34,6 +34,7 @@ struct Binding {
     uint32_t minSize = 0;  // bytes; for storage, one element's stride
     bool depth = false;    // texture: texture_depth_2d (or _cube); sampler: sampler_comparison
     bool cube = false;     // a depth texture's view is a cube
+    bool volume = false;   // a float texture's view is 3D
 };
 
 struct VertexAttribute {

@@ -39,10 +39,9 @@ export const NativeDecoderBits = {
 } as const;
 
 /**
- * The texture header stores the renderer's raw `WGPUTextureFormat`. The native engine's product
- * backend is wgpu-native, where `WGPUTextureFormat_RGBA8Unorm` is 18; Dawn (the Android-only
- * spike) assigns it 22. Format v1 cannot encode both, so the emitter writes the product backend's
- * value. A Dawn build cannot read an RGBA8 entry until the format normalizes this enum.
+ * TNPK v1's RGBA8Unorm wire code is 18 (originally wgpu-native's enum value). The reader maps
+ * this package code to its backend enum and also accepts legacy Dawn-cooked code 22. The wire
+ * value stays stable across backends; it must not be replaced with the active backend's enum.
  */
 export const WGPU_TEXTURE_FORMAT_RGBA8_UNORM = 18;
 

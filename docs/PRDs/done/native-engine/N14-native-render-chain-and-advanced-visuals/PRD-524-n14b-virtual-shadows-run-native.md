@@ -27,7 +27,7 @@ which pages.
 
 ## Out of scope
 
-- Ordinary shadow maps (N09). Probes ([PRD-525](../../../native-engine/N14-native-render-chain-and-advanced-visuals/PRD-525-n14c-probes-run-native.md)).
+- Ordinary shadow maps (N09). Probes ([PRD-525](PRD-525-n14c-probes-run-native.md)).
 
 ## Execution Phases
 

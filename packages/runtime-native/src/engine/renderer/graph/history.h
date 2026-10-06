@@ -7,6 +7,9 @@
 
 namespace tn::engine::graph {
 
+/** TRAANode r185: 32 Halton offsets, clearViewOffset wraps at length - 1. */
+std::array<double, 2> traaJitter(uint64_t frame);
+
 /**
  * Temporal history as a first-class resource (PRD-523 phase 2). Per view: a generation that a cut
  * or a resize invalidates, so the next read gets the defined reset input rather than another

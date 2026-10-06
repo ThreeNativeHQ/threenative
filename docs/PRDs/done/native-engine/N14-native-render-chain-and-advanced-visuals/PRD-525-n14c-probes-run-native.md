@@ -3,8 +3,8 @@
 **Status:** IN PROGRESS
 **Complexity:** 3 — one TS system to port onto the render graph
 **Owner:** João
-**Work package:** N14 — [native-engine batch](../README.md)
-**Depends on:** [PRD-523 (N14a)](PRD-523-n14a-the-render-graph-owns-passes-and-history.md)
+**Work package:** N14 — [native-engine batch](../../../native-engine/README.md)
+**Depends on:** [PRD-523 (N14a)](../../../native-engine/N14-native-render-chain-and-advanced-visuals/PRD-523-n14a-the-render-graph-owns-passes-and-history.md)
 
 ## Context
 
@@ -37,6 +37,6 @@ render-graph passes with history (an accumulated irradiance volume), so they wai
 #### Phase 2: Rendered parity and cooking
 **Status:** NOT STARTED
 **Files:** `packages/runtime-native/conformance/registry.json`
-- [ ] A probe-lit fixture matches the legacy backend within tolerance after convergence. proof: `pnpm parity` (new case `native-engine-probes`)
-- [ ] A baked probe volume loads from a cooked package and renders without recapture. proof: `pnpm parity` (new case `native-engine-probes-baked`)
-- [ ] Moving a light invalidates and reconverges the affected probes with no stale frame. proof: `pnpm parity` (new case `native-engine-probes-relight`)
+- [x] A probe-lit fixture matches the legacy backend within tolerance after convergence. proof: `pnpm parity` (new case `native-engine-probes`) — 2026-10-06: green on Dawn: `pnpm parity -- --suite native-engine-probes --driver packages/runtime-native/build/tn-linux/tn-native-engine-render-driver --renders`, fixture `probes` (the real core probe system: cubemap capture, f32 SH projection, convergence, packed RGBA32F 3D atlas sampled with normalised linear filtering as the browser does). Red control: sampling returning zero fails all three probe fixtures (guards now report a failure, not a block).
+- [x] A baked probe volume loads from a cooked package and renders without recapture. proof: `pnpm parity` (new case `native-engine-probes-baked`) — 2026-10-06: green on Dawn: fixture `probes-baked`: a TNPK baked volume with coefficients distinct from any recapture loads and renders with zero captures after load. Red control: dropping the loaded volume (`out = std::move(volume)` removed) fails probes-baked only.
+- [x] Moving a light invalidates and reconverges the affected probes with no stale frame. proof: `pnpm parity` (new case `native-engine-probes-relight`) — 2026-10-06: green on Dawn: fixture `probes-relight`: the first frames after the light moves show no stale lighting; all 8 affected probes reconverge and the unrelated volume's capture count stays unchanged. Red control: `ProbeVolume::invalidate` returning early fails probes-relight only (stale frame).

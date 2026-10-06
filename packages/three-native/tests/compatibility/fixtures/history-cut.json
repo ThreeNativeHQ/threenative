@@ -1,0 +1,105 @@
+{
+  "name": "history-cut",
+  "adaptedFrom": "PRD-526/523: real TRAANode, 20 moving frames, complementary dense pattern on a camera cut, capture first cut frame (stale ghost must exceed 2% pixels in red control)",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "scene",
+      "class": "Scene",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "camera",
+      "class": "PerspectiveCamera",
+      "args": [50, 1.3333333333333333, 0.1, 100]
+    },
+    {
+      "op": "set",
+      "id": "camera",
+      "path": "position.z",
+      "value": 5
+    },
+    {
+      "op": "new",
+      "id": "geometry",
+      "class": "PlaneGeometry",
+      "args": [8, 6]
+    },
+    {
+      "op": "new",
+      "id": "material",
+      "class": "MeshBasicNodeMaterial",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "mesh",
+      "class": "Mesh",
+      "args": [
+        {
+          "ref": "geometry"
+        },
+        {
+          "ref": "material"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "mesh",
+      "path": "name",
+      "value": "temporalPattern"
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "mesh"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "camera",
+      "method": "updateProjectionMatrix",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "updateMatrixWorld",
+      "args": [true]
+    },
+    {
+      "op": "tsl",
+      "id": "scene",
+      "program": "history-cut"
+    }
+  ],
+  "observe": [
+    {
+      "id": "scene",
+      "kind": "pixels",
+      "metric": {
+        "maxPixelMismatchRatio": 0.01,
+        "maxPerceptualDeltaE": 0.02
+      }
+    }
+  ],
+  "render": {
+    "scene": "scene",
+    "camera": "camera",
+    "width": 320,
+    "height": 240,
+    "toneMapping": "none",
+    "toneMappingExposure": 1,
+    "outputColorSpace": "srgb",
+    "shadowMap": false
+  }
+}

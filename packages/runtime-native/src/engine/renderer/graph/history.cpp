@@ -2,6 +2,17 @@
 
 namespace tn::engine::graph {
 
+std::array<double, 2> traaJitter(uint64_t frame) {
+    const auto halton = [](uint32_t index, uint32_t base) {
+        double fraction = 1, result = 0;
+        while (index > 0) { fraction /= base; result += fraction * (index % base); index /= base; }
+        return result;
+    };
+    const auto index = uint32_t(frame % 31) + 1;
+    return {halton(index, 2) - 0.5, halton(index, 3) - 0.5};
+}
+
+
 uint64_t HistoryTracker::beginRender(ViewId view, bool presented) {
     View& v = views_[view];
     v.presentedThisFrame = v.presentedThisFrame || presented;

@@ -143,6 +143,8 @@ const METHOD_OVERRIDE: Record<string, { parameters: ICatalogParameter[]; returns
   ],
   // The binding's `toArray()` takes no argument and returns the plain array.
   "Vector2.toArray": [{ parameters: [], returns: "number[]" }],
+  // The native Sprite shares Mesh's morph storage and binding surface.
+  "Sprite.updateMorphTargets": [{ parameters: [], returns: "void" }],
 };
 
 /**
@@ -157,6 +159,10 @@ const UNDECLARED_FIELDS: Record<string, string> = {
   "MeshBasicNodeMaterial.emissiveNode": "Node | null",
   "MeshBasicNodeMaterial.roughnessNode": "Node | null",
   "MeshBasicNodeMaterial.metalnessNode": "Node | null",
+  "Sprite.morphTargetInfluences": "number[]",
+  "SpriteNodeMaterial.emissiveNode": "Node | null",
+  "SpriteNodeMaterial.roughnessNode": "Node | null",
+  "SpriteNodeMaterial.metalnessNode": "Node | null",
 };
 
 function registryMembers(binding: IRegistryClass): Set<string> {
@@ -485,6 +491,7 @@ function applyMemberStatuses(dump: IRegistryDump, byName: Map<string, MutableCla
     for (const field of entry.fields) {
       if (bound.has(field.name)) {
         field.status = SUPPORTED;
+        if (binding.setters.includes(field.name)) field.mutable = true;
         const override = FIELD_TYPE_OVERRIDE[`${name}.${field.name}`];
         if (override !== undefined) field.type = override;
       } else if (field.status?.kind !== "unsupported") {

@@ -6,12 +6,19 @@
 #include <vector>
 
 #include "engine/shader/ir.h"
+#include "engine/renderer/probes/schedule.h"
 #include "engine/shader/position_node.h"
 
 namespace tn::engine::shader {
 
 // PMREM's extra 16px tiles use mipInt 3 through -2, not hardware mip levels.
 constexpr float pmremMip(int lodMax, int lod) { return float(lodMax - lod); }
+
+std::string probeStorageName(std::string_view name);
+
+/** ProbeVolume.sampleNode: padded atlas trilinear sampling followed by RGB L2 irradiance. */
+graph::Node probeSample(const probes::ProbePlacement& placement, const std::string& name,
+                        graph::Node position = {}, graph::Node normal = {});
 
 /**
  * MeshStandardMaterial / MeshPhysicalMaterial as the native engine reads them (PRD-512). Every field
@@ -54,6 +61,7 @@ struct StandardMaterial {
  */
 struct VertexVariant {
     bool sprite = false;
+    bool backSide = false;
     bool instanced = false;
     bool instanceColor = false;
     /**
@@ -92,7 +100,7 @@ struct VertexVariant {
     MaterialNodes nodes;
     /** A stable key: two variants with the same key build the same program. */
     [[nodiscard]] std::string key() const {
-        return (sprite ? "sprite|" : "") + std::to_string(instanced) + std::to_string(instanceColor) + std::to_string(skinned) +
+        return std::string(sprite ? "sprite|" : "") + (backSide ? "back|" : "") + std::to_string(instanced) + std::to_string(instanceColor) + std::to_string(skinned) +
                std::to_string(skinnedPalette) + "m" + std::to_string(morphTargets) + (morphNormals ? "n" : "") +
                (map ? "t" : "") + (mapSRGB ? "s" : "") + (environment ? "e" : "") +
                (positionNode ? "p:" + positionNode->key : "") + "|nodes:" + nodes.key();

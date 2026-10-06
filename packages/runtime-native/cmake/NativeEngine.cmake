@@ -37,7 +37,7 @@ endif()
 add_library(tn_engine_renderer STATIC ${TN_ENGINE_RENDERER_SOURCES})
 tn_native_engine_target(tn_engine_renderer)
 target_link_libraries(tn_engine_renderer PUBLIC tn_engine_foundation tn_engine_assets tn_engine_shader tn_engine_scene
-    tn_engine_animation tn_engine_vsm tn_engine_graph tn_host_services)
+    tn_engine_animation tn_engine_vsm tn_engine_graph tn_engine_probes tn_host_services)
 if(TARGET dawn::webgpu)
     target_link_libraries(tn_engine_renderer PUBLIC dawn::webgpu)
 elseif(TARGET wgpu::wgpu)
@@ -117,8 +117,13 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_renderer_phong_reference=phong_reference
         native_engine_renderer_physical_reference=physical_reference
         native_engine_renderer_alpha_transparency=alpha_transparency
-        native_engine_renderer_alpha_test=alpha_test)
+        native_engine_renderer_alpha_test=alpha_test
+        native_engine_traa_alpha=traa_alpha)
     target_link_libraries(tn-native-engine-renderer-test PRIVATE tn_engine_renderer tn_host_services)
+    if(TARGET dawn::webgpu)
+        add_test(NAME native_engine_traa_validation COMMAND tn-native-engine-renderer-test traa_validation)
+        set_tests_properties(native_engine_traa_validation PROPERTIES LABELS "native-engine")
+    endif()
     target_compile_definitions(tn-native-engine-renderer-test PRIVATE
         TN_GOLDENS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../three-native/tests/compatibility/goldens/0.185.1")
 
@@ -138,6 +143,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
                 "standard_materials_fixtures:alpha-test,lit-render*,materials-*"
                 "render_alpha:alpha-*" "render_lights:lights-*" "render_shadows:shadows-*"
                 "render_vsm:vsm-*"
+                "traa_history:traa-history" "history_cut:history-cut"
                 "render_particles:particles-sprite,fluid-particles"
                 "render_skinned:skinned-*" "render_morph:morph-*" "render_gltf:gltf-model-*")
             string(REPLACE ":" ";" render_pair "${render_case}")
@@ -461,17 +467,19 @@ else()
 endif()
 
 # PRD-525: probe placement and the bounded incremental update schedule as pure CPU functions, ported
-# from packages/core/src/render/probe-volume.ts. It links the foundation only and owns no GPU
+# from packages/core/src/render/probe-volume.ts. It links CPU math and cooked assets and owns no GPU
 # resource; `native_engine_probes_reference_current` keeps the committed table equal to what the core
 # module produces today.
-add_library(tn_engine_probes STATIC src/engine/renderer/probes/schedule.cpp)
-tn_native_engine_target(tn_engine_probes)
-target_link_libraries(tn_engine_probes PUBLIC tn_engine_foundation)
-target_include_directories(tn_engine_probes PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 tn_native_engine_test(tn-native-engine-probe-schedule-test tests/native-engine/probes/probe_schedule_test.cpp
     native_engine_probe_schedule=schedule
     native_engine_probe_budget=budget)
 target_link_libraries(tn-native-engine-probe-schedule-test PRIVATE tn_engine_probes)
+tn_native_engine_test(tn-native-engine-probe-volume-test tests/native-engine/probes/probe_volume_test.cpp
+    native_engine_probe_projection=projection native_engine_probe_atlas=sampling
+    native_engine_probe_convergence=bake native_engine_probe_cooked=cooked
+    native_engine_probe_shader=shader native_engine_probe_async=async)
+target_link_libraries(tn-native-engine-probe-volume-test PRIVATE tn_engine_probes tn_engine_shader)
+
 target_include_directories(tn-native-engine-probe-schedule-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/probes)
 if(TN_PNPM_EXECUTABLE)
     add_test(NAME native_engine_probes_reference_current

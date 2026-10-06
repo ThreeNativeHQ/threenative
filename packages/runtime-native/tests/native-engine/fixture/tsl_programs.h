@@ -4,8 +4,10 @@
 // material (and any GPU work it needs) just before the frame is drawn.
 
 #include "engine/abi/binding.h"
+#include "probes.h"
 #include "engine/renderer/compute.h"
 #include "engine/renderer/renderer.h"
+#include "engine/renderer/post/traa.h"
 #include "engine/scene/material.h"
 #include "engine/scene/camera.h"
 #include "engine/scene/lights.h"
@@ -187,6 +189,43 @@ inline void postChromatic(engine::Renderer& renderer) {
 inline std::string applyTslProgram(const std::string& program, binding::Object& object, engine::Renderer& renderer,
                                    WGPUDevice device, const std::function<std::string(uint32_t, uint32_t)>& renderAt,
                                    std::vector<std::shared_ptr<void>>& resources, engine::Camera* camera = nullptr) {
+    if (program == "traa-history" || program == "history-cut") {
+        if (object.cls != "Scene" || !camera) return "TN_FIXTURE_TRAA_INVALID: scene/camera";
+        auto* scene = static_cast<engine::Scene*>(object.ptr.get());
+        auto* mesh = dynamic_cast<engine::Mesh*>(scene->getObjectByName("temporalPattern"));
+        if (!mesh || !mesh->material) return "TN_FIXTURE_TRAA_INVALID: temporalPattern/material";
+        namespace g = engine::shader::graph;
+        const auto pattern = [&](float phase) {
+            const auto value = g::mul(g::sin(g::add(g::mul(g::swizzle(g::uv(), "x"), g::float_(900)),
+                g::uniform("temporalPhase", engine::shader::Type::f32(), {phase}))),
+                g::sin(g::mul(g::swizzle(g::uv(), "y"), g::float_(700))));
+            mesh->material->nodes.colorNode = g::vec4({g::vec3({g::add(g::mul(value, g::float_(0.45)), g::float_(0.5))}), g::float_(1)});
+            mesh->material->needsUpdate();
+        };
+        pattern(0);
+        renderer.setTraa(engine::TraaOptions{});
+        const auto draw = [&]() { camera->updateMatrixWorld(true); return renderAt(renderer.width(), renderer.height()); };
+        for (int i = 0; i < 20; ++i) {
+            mesh->position.x = i * 0.002;
+            if (const auto error = draw(); !error.empty()) return error;
+        }
+        camera->position.z = 5.01; camera->updateMatrixWorld(true);
+        pattern(float(3.141592653589793));
+        renderer.cutHistory();
+        const int steps = program == "history-cut" ? 0 : 3;
+        for (int i = 0; i < steps; ++i) {
+            mesh->position.x = (20 + i) * 0.002;
+            if (const auto error = draw(); !error.empty()) return error;
+        }
+        mesh->position.x = (20 + steps) * 0.002;
+        return "";
+    }
+    if (program == "probes" || program == "probes-baked" || program == "probes-relight") {
+        if (object.cls != "Scene") return "TN_FIXTURE_PROBES_SCENE";
+        const auto error = tsl_detail::probeFixture(program, *static_cast<engine::Scene*>(object.ptr.get()), renderer, renderAt);
+        return error.empty() || error.starts_with("TN_FIXTURE_PROBES_")
+                   ? error : "TN_FIXTURE_PROBES_FAILURE: " + error;
+    }
     if (program == "particles-sprite" || program == "fluid-particles")
         return tsl_detail::particleSprites(object, renderer, device, resources, program == "fluid-particles");
     if (program == "vsm-basic" || program == "vsm-cut") {

@@ -100,5 +100,16 @@ describe("the catalog and the binding registry", () => {
     for (const name of Object.keys(dump.classes)) {
       expect(table, name).toContain(`TN_CATALOG_TYPE("${name}",`);
     }
+    const names = [...table.matchAll(/TN_CATALOG_TYPE\("([^"]+)"/gu)].map((match) => match[1]);
+    expect(new Set(names).size).toBe(names.length);
+  });
+
+  it("publishes DirectionalLight.target as assignable", () => {
+    const light = loadCatalog(REPO).entries.find(
+      (entry): entry is ICatalogClassEntry =>
+        entry.kind === "class" && entry.name === "DirectionalLight",
+    );
+    expect(dump.classes.DirectionalLight?.setters).toContain("target");
+    expect(light?.fields.find((field) => field.name === "target")?.mutable).toBe(true);
   });
 });
