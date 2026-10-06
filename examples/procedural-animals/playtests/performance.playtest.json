@@ -62,6 +62,12 @@
       "noRuntimeDiagnostics": true,
       "runtimeReady": true,
       "noNetworkErrors": true
+    },
+    "performance": {
+      "maxPassDrawCalls": {
+        "main": 35,
+        "shadow": 32
+      }
     }
   }
 }
