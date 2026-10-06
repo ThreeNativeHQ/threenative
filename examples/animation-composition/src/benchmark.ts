@@ -53,9 +53,9 @@ export class CompositionBenchmark {
           strideSync: false,
         });
         player.playWeighted([
-          { name: "walk", weight: 0.25 },
-          { name: "run", weight: 0.5 },
-          { name: "strafe", weight: 0.25 },
+          { clip: "walk", weight: 0.25 },
+          { clip: "run", weight: 0.5 },
+          { clip: "strafe", weight: 0.25 },
         ]);
         this.#players.push(player);
       }

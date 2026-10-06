@@ -19,7 +19,9 @@ transitions and assert that owned actions and animation-buffer bytes return to z
 Build with `pnpm --filter animation-composition build`; `build:desktop` bundles the same
 `src/game.ts` entry through the existing native bundler. Vite's benchmark define defaults to
 `none` when absent, including on native. The four scenarios have passed schema validation;
-browser, Linux-native and packed-consumer execution are still unverified.
+The standalone tarball consumer passes strict typechecking, 14 public composition/layer
+tests, installed capability discovery and its web build. Browser and Linux-native rendered
+execution remain unverified.
 
 The ordinary scenario is shared by both runtimes:
 

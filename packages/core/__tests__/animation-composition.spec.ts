@@ -1,8 +1,6 @@
+import { AnimationComposer, AnimationPlayer, BlendSpace1D, BlendSpace2D } from "@threenative/core";
 import { AnimationClip, Group, VectorKeyframeTrack } from "three";
 import { describe, expect, it } from "vitest";
-import { BlendSpace1D, BlendSpace2D } from "../src/animation-blend.js";
-import { AnimationComposer } from "../src/animation-composition.js";
-import { AnimationPlayer } from "../src/animation.js";
 import { compositionRig } from "./fixtures/composition-rig.js";
 
 describe("one normalized phase owner", () => {

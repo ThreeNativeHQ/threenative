@@ -52,20 +52,46 @@ function travellingRig(yaw = 0) {
 }
 
 describe("root motion has one body authority", () => {
-  it("does not count rendered frames whose crowd never performed an animation update", () => {
-    const source = characterSource();
-    const benchmark = new CompositionBenchmark({ add: (object) => object }, source, "candidate");
-    try {
-      for (let i = 0; i < 2100; i += 1) benchmark.rendered();
-      expect(benchmark.observation().measuredFrames).toBe(0);
-      expect(benchmark.observation().cpuP95Ms).toBeNull();
-    } finally {
-      benchmark.dispose();
-      source.skin.skeleton.dispose();
-      source.geometry.dispose();
-      source.material.dispose();
-    }
-  });
+  it.each(["baseline", "candidate"] as const)(
+    "does not count rendered %s crowd frames without animation updates",
+    (mode) => {
+      const source = characterSource();
+      const bodies: Group[] = [];
+      const benchmark = new CompositionBenchmark(
+        {
+          add: (object) => {
+            bodies.push(object as Group);
+            return object;
+          },
+        },
+        source,
+        mode,
+      );
+      try {
+        expect(bodies).toHaveLength(100);
+        expect(new Set(bodies.map((body) => body.getObjectByName("LeftLeg"))).size).toBe(100);
+        expect(benchmark.observation().actions).toBe(mode === "baseline" ? 3 : 8);
+        for (let i = 0; i < 2100; i += 1) benchmark.rendered();
+        expect(benchmark.observation().measuredFrames).toBe(0);
+        expect(benchmark.observation().cpuP95Ms).toBeNull();
+        benchmark.update(1 / 60);
+        benchmark.rendered();
+        expect(benchmark.observation().warmupFrames).toBe(1);
+        expect(benchmark.observation().warmupUpdates).toBe(1);
+        for (const body of bodies) {
+          const leg = body.getObjectByName("LeftLeg");
+          expect(leg).toBeDefined();
+          expect(Number.isFinite(leg?.quaternion.x)).toBe(true);
+          expect(leg?.quaternion.x).not.toBe(0);
+        }
+      } finally {
+        benchmark.dispose();
+        source.skin.skeleton.dispose();
+        source.geometry.dispose();
+        source.material.dispose();
+      }
+    },
+  );
   it("rejects nonfinite observed body coordinates instead of accepting an unobserved delta", () => {
     const r = travellingRig();
     r.composer.advance(0.1);
