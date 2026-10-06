@@ -94,6 +94,11 @@ class InstancedMesh : public Mesh {
     InstancedMesh& setColorAt(uint32_t index, const Color& color);
     Color& getColorAt(uint32_t index, Color& target) const;
 
+    /** three's `Mesh.boundingSphere`, which InstancedMesh computes over its instances, not the geometry. */
+    std::shared_ptr<Sphere> boundingSphere;
+    /** three's `InstancedMesh.computeBoundingSphere`: the union of every drawn instance's own sphere. */
+    void computeBoundingSphere();
+
     std::shared_ptr<BufferAttribute> instanceMatrix; // 16 floats per instance
     std::shared_ptr<BufferAttribute> instanceColor;  // 3 floats per instance; null until setColorAt
     uint32_t count;                                  // how many instances draw (at most the capacity)

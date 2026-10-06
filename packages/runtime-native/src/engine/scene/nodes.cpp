@@ -65,4 +65,20 @@ Color& InstancedMesh::getColorAt(uint32_t index, Color& target) const {
     return target;
 }
 
+// three's InstancedMesh.computeBoundingSphere, in its order: the geometry's own sphere first, then
+// every drawn instance's copy of it under its own matrix, unioned in.
+void InstancedMesh::computeBoundingSphere() {
+    if (!boundingSphere) boundingSphere = std::make_shared<Sphere>();
+    if (!geometry) return;
+    if (!geometry->boundingSphere) geometry->computeBoundingSphere();
+    boundingSphere->makeEmpty();
+    Matrix4 instance;
+    Sphere world;
+    for (uint32_t i = 0; i < count; ++i) {
+        getMatrixAt(i, instance);
+        world.copy(*geometry->boundingSphere).applyMatrix4(instance);
+        boundingSphere->unionWith(world);
+    }
+}
+
 } // namespace tn::engine

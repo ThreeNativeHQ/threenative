@@ -20,6 +20,9 @@
 
 namespace tn::engine::lod {
 
+/** DISCRETE_LOD_DEFAULT_HYSTERESIS: how far inside the budget a candidate must sit before coarsening. */
+inline constexpr double kDiscreteLodDefaultHysteresis = 0.15;
+
 /** A non-positive viewport height is refused by this name. */
 inline constexpr std::string_view kLodViewportCode = "TN_LOD_VIEWPORT";
 /** An orthographic frustum without a positive height is refused by this name. */

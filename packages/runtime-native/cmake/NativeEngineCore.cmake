@@ -423,6 +423,9 @@ target_include_directories(tn-native-engine-animation-mixer-test PRIVATE ${CMAKE
 if(NOT EMSCRIPTEN)
     tn_native_engine_test(tn-native-engine-projection-plan-test tests/native-engine/projection/plan_test.cpp
         native_engine_projection_plan=plan)
+    # PRD-519 box 32 names the projection-*.spec.ts verdicts beside instanced-batch.spec.ts.
+    add_test(NAME native_engine_batching_eligibility_projection COMMAND tn-native-engine-projection-plan-test plan)
+    set_tests_properties(native_engine_batching_eligibility_projection PROPERTIES LABELS "native-engine")
     target_link_libraries(tn-native-engine-projection-plan-test PRIVATE tn_engine_animation)
     target_include_directories(tn-native-engine-projection-plan-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
     target_compile_definitions(tn-native-engine-projection-plan-test PRIVATE
