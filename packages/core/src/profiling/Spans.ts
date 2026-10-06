@@ -72,6 +72,10 @@ export const SPANS = {
   sort: 12,
   /** Per-draw submission inside a render call, accumulated across the draws of one pass. */
   draw: 13,
+  /** Terrain block rebuild and merged-attribute swap on the calling thread. */
+  terrainBlock: 14,
+  /** Terrain seam reconciliation and bridge-attribute swap on the calling thread. */
+  terrainSeam: 15,
 } as const;
 
 export type SpanId = (typeof SPANS)[keyof typeof SPANS];
@@ -92,6 +96,8 @@ export const SPAN_NAMES: readonly string[] = [
   "projectObject",
   "sort",
   "draw",
+  "terrainBlock",
+  "terrainSeam",
 ];
 
 export const SPAN_COUNT = SPAN_NAMES.length;

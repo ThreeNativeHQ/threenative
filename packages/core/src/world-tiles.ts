@@ -12,6 +12,7 @@ import {
 import type { InterleavedBufferAttribute } from "three";
 import type { IAssetLoader } from "./assets.js";
 import type { IComputeDriven } from "./compute-driven.js";
+import { SPANS, type SpanId, addSpan, spanNow, spanRecorder } from "./profiling/Spans.js";
 import type { IRendererLike } from "./renderer.js";
 import {
   type ITerrainBridgeAttributes,
@@ -448,6 +449,25 @@ function tileEdgeFrame(field: Heightfield, side: keyof IEdgeSamples): ITerrainEd
 function settleJob<T>(result: T | Promise<T>, apply: (value: T) => void): void {
   if (result instanceof Promise) result.then(apply);
   else apply(result);
+}
+
+/**
+ * Runs one unit of main-thread terrain work and charges it to a frame span.
+ *
+ * Added, not bracketed: a worker host's block swap arrives in a job reply and an inline host's runs
+ * inside the same `follow`, so `begin`/`end` at both call sites would nest and count one unit twice.
+ * `addSpan` accumulates whatever runs on this thread with no nesting to get wrong, and costs one
+ * guarded return when spans are off — no clock read, no allocation. The frame-span table's
+ * `TN_FRAME_SPANS` report is where the number surfaces; nothing here decides anything.
+ */
+function timedSpan<T>(id: SpanId, run: () => T): T {
+  if (spanRecorder() === undefined) return run();
+  const start = spanNow();
+  try {
+    return run();
+  } finally {
+    addSpan(id, spanNow() - start);
+  }
 }
 
 function edgeVertexIndex(level: ILevelGeometry, side: keyof IEdgeSamples, index: number): number {
@@ -2744,7 +2764,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
       if (!active.has(key)) this.#removeStitch(key);
     }
     if (requests.length === 0) {
-      this.#settleSeamPass(pairs, reconciled, active);
+      timedSpan(SPANS.terrainSeam, () => this.#settleSeamPass(pairs, reconciled, active));
       return;
     }
     const job: ITerrainSeamJob = {
@@ -2755,14 +2775,17 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     // own copy of the pairs and not whatever the next pass left there.
     const snapshot = [...pairs];
     this.#seamPending = true;
-    settleJob(this.#jobs.seam(job), (result) => {
+    const result = timedSpan(SPANS.terrainSeam, () => this.#jobs.seam(job));
+    settleJob(result, (settled) => {
       if (this.#released) return;
-      for (const [index, pending] of requests.entries()) {
-        const data = result.bridges[index];
-        if (data === undefined) continue;
-        this.#applyStitch(pending.key, pending.previousBytes, pending.request, data);
-      }
-      this.#settleSeamPass(snapshot, reconciled, active);
+      timedSpan(SPANS.terrainSeam, () => {
+        for (const [index, pending] of requests.entries()) {
+          const data = settled.bridges[index];
+          if (data === undefined) continue;
+          this.#applyStitch(pending.key, pending.previousBytes, pending.request, data);
+        }
+        this.#settleSeamPass(snapshot, reconciled, active);
+      });
     });
   }
 
@@ -3055,9 +3078,12 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
       x: blockX * TERRAIN_MERGE_BLOCK * this.tileSize,
       z: blockZ * TERRAIN_MERGE_BLOCK * this.tileSize,
     };
-    settleJob(this.#jobs.merge(mergeJob(parts, blockOrigin)), (result) => {
+    const job = timedSpan(SPANS.terrainBlock, () => this.#jobs.merge(mergeJob(parts, blockOrigin)));
+    settleJob(job, (result) => {
       if (this.#released) return;
-      this.#applyBlock({ blockKey, blockOrigin, lod, members }, result);
+      timedSpan(SPANS.terrainBlock, () =>
+        this.#applyBlock({ blockKey, blockOrigin, lod, members }, result),
+      );
     });
   }
 
