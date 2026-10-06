@@ -149,6 +149,7 @@ describe("single masked/additive animation owner", () => {
       ...args: Parameters<typeof clipAction>
     ) {
       const action = clipAction.call(this, ...args);
+      if (action === null) throw new Error("Expected a prepared animation action.");
       actions.add(action);
       return action;
     });
