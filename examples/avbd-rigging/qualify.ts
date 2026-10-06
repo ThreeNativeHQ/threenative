@@ -22,9 +22,9 @@ if (config.target !== "browser" && config.target !== "desktop")
   );
 if (config.allowSoftwareAdapter === true || (config.target === "browser" && config.headless))
   throw new Error("TN_AVBD_QUALIFICATION: a recorded hardware WebGPU capture is required.");
-if (config.target === "browser" && config.liveClock !== true)
+if (config.liveClock === true)
   throw new Error(
-    "TN_AVBD_QUALIFICATION: this same entry requires explicit browser --live-clock attribution.",
+    "TN_AVBD_QUALIFICATION: correctness and lifecycle require the existing exact fixed-step clock; live clock belongs to performance comparisons.",
   );
 if (config.captureArtifactScreenshots === false)
   throw new Error("TN_AVBD_QUALIFICATION: captured rope/sail/flag evidence is required.");

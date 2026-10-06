@@ -17,7 +17,7 @@ import {
 import {
   type IPlaytestBridgeHost,
   PLAYTEST_BRIDGE_GLOBAL,
-  PLAYTEST_CLOCK_GLOBAL,
+  requestedPlaytestClockMode,
 } from "@threenative/playtest/protocol";
 import { Group, Mesh } from "three";
 import { MeshBasicNodeMaterial, ReadbackBuffer, StorageBufferAttribute } from "three/webgpu";
@@ -78,6 +78,10 @@ interface IRiggingState extends Record<string, unknown> {
   fixedColorsValidated: number;
   contactsMaximum: number;
   acceptedAnchorVelocity: number;
+  acceptedAnchorDelta: number;
+  anchorMoveRequests: number;
+  anchorMoving: number;
+  requestedAnchorX: number;
   paused: number;
   pauseKeyHeld: number;
   pausedAdditionalSteps: number;
@@ -118,6 +122,10 @@ const initial: IRiggingState = {
   fixedColorsValidated: 0,
   contactsMaximum: 0,
   acceptedAnchorVelocity: 0,
+  acceptedAnchorDelta: 0,
+  anchorMoveRequests: 0,
+  anchorMoving: 0,
+  requestedAnchorX: 0,
   paused: 0,
   pauseKeyHeld: 0,
   pausedAdditionalSteps: 0,
@@ -351,6 +359,12 @@ export class RiggingScene extends Scene<IRiggingState, IPhysicsContext> {
   #penetrationMaximum: number | undefined;
   #previousAcceptedAnchor = 0;
   #acceptedAnchorVelocity = 0;
+  #acceptedAnchorDelta = 0;
+  #anchorMoveRequests = 0;
+  #requestedAnchorX = 0;
+  #anchorInputPending = false;
+  #anchorInputLogged = false;
+  #anchorAcceptedLogged = false;
   #storageBaseline: IStorageObservation | undefined;
   #renderer: ICtx<IRiggingState, IPhysicsContext>["renderer"] | undefined;
   #benchmarkRun = riggingRuns[benchmarkIndex];
@@ -421,7 +435,36 @@ export class RiggingScene extends Scene<IRiggingState, IPhysicsContext> {
       timings: this.#benchmarkRun !== undefined,
       snapshot: (model) => {
         const acceptedX = this.#mast.position.x;
-        this.#acceptedAnchorVelocity = (acceptedX - this.#previousAcceptedAnchor) * 60;
+        this.#acceptedAnchorDelta = acceptedX - this.#previousAcceptedAnchor;
+        this.#acceptedAnchorVelocity = this.#acceptedAnchorDelta * 60;
+        if (this.#anchorInputPending) {
+          console.log(
+            `TN_AVBD_ANCHOR_ACCEPTED:${JSON.stringify({
+              solverStep: this.#rigging?.steps ?? 0,
+              requestedX: this.#requestedAnchorX,
+              previousAcceptedX: this.#previousAcceptedAnchor,
+              acceptedX,
+              acceptedDelta: this.#acceptedAnchorDelta,
+              acceptedVelocity: this.#acceptedAnchorVelocity,
+              moving: this.#moving,
+              clock: requestedPlaytestClockMode() ?? "fixed-step",
+            })}`,
+          );
+          this.#anchorInputPending = false;
+          this.#anchorAcceptedLogged = true;
+        }
+        if (this.#benchmarkRun === undefined) {
+          // Exact fixed-step polling observes accepted physics before another render is required.
+          ctx.state.set({
+            anchorX: acceptedX,
+            acceptedAnchorVelocity: this.#acceptedAnchorVelocity,
+            acceptedAnchorDelta: this.#acceptedAnchorDelta,
+            anchorMoveRequests: this.#anchorMoveRequests,
+            anchorMoving: Number(this.#moving),
+            requestedAnchorX: this.#requestedAnchorX,
+          });
+          // The existing store reads this patch immediately; publish subscribers after dispatch.
+        }
         this.#previousAcceptedAnchor = acceptedX;
         return {
           // The physics plugin has already applied accepted transforms to these objects.
@@ -566,9 +609,30 @@ export class RiggingScene extends Scene<IRiggingState, IPhysicsContext> {
       void ctx.goto(this.mode);
       return;
     }
-    if (ctx.input.justPressed("moveAnchor")) this.#moving = true;
+    if (ctx.input.justPressed("moveAnchor")) {
+      this.#moving = true;
+      this.#anchorMoveRequests += 1;
+      this.#anchorInputPending = this.#rigging !== undefined && !this.#anchorAcceptedLogged;
+    }
     if (ctx.input.justPressed("fastStop")) this.#moving = false;
-    if (this.#moving) this.#mast.position.x = Math.min(1, this.#mast.position.x + dt * 0.25);
+    if (this.#moving) {
+      this.#requestedAnchorX = Math.min(1, this.#mast.position.x + dt * 0.25);
+      this.#mast.position.x = this.#requestedAnchorX;
+    }
+    if (this.#anchorInputPending && !this.#anchorInputLogged) {
+      this.#anchorInputLogged = true;
+      console.log(
+        `TN_AVBD_ANCHOR_INPUT:${JSON.stringify({
+          solverStep: this.#rigging?.steps ?? this.#cloth[0]?.steps ?? 0,
+          edge: ctx.input.justPressed("moveAnchor"),
+          held: ctx.input.raw.keys.has("KeyA"),
+          requests: this.#anchorMoveRequests,
+          moving: this.#moving,
+          requestedX: this.#requestedAnchorX,
+          previousAcceptedX: this.#previousAcceptedAnchor,
+        })}`,
+      );
+    }
     for (const [action, speed, gust] of [
       ["still", 0, 0],
       ["stepWind", 6, 0],
@@ -698,6 +762,10 @@ export class RiggingScene extends Scene<IRiggingState, IPhysicsContext> {
       benchmarkResults,
       anchorX: this.#mast.position.x,
       acceptedAnchorVelocity: this.#acceptedAnchorVelocity,
+      acceptedAnchorDelta: this.#acceptedAnchorDelta,
+      anchorMoveRequests: this.#anchorMoveRequests,
+      anchorMoving: Number(this.#moving),
+      requestedAnchorX: this.#requestedAnchorX,
       fixedColorsValidated: Number(rigging?.fixedColorsValidated ?? false),
       windSpeed: this.#speed,
       gustStrength: this.#gust,
@@ -990,8 +1058,7 @@ export class RiggingScene extends Scene<IRiggingState, IPhysicsContext> {
   }
 }
 
-// Existing harness opt-in, shared by this same browser/native entry; this does not create a clock.
-(globalThis as Record<string, unknown>)[PLAYTEST_CLOCK_GLOBAL] = "wall-clock";
+// The existing harness chooses exact fixed steps by default; timing runs explicitly opt into live clock.
 let rendererControl: Record<string, unknown> | undefined;
 let pendingCycleTarget = 0;
 class SpringScene extends RiggingScene {
