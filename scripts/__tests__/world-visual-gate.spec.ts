@@ -12,6 +12,15 @@ afterEach(() => {
 const read = (file: string) => JSON.parse(readFileSync(file, "utf8"));
 const write = (file: string, value: unknown) =>
   writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`);
+/** Cross-series absence: this series draws no band the other series draws at this walk index. */
+const crossSeries = {
+  element: "forest band beyond the road",
+  kind: "missing",
+  from: "frame-002",
+  to: "frame-002",
+  distanceMeters: 300,
+  description: "The other series draws the band at this walk index; this series draws sky.",
+};
 
 async function fixture() {
   const root = await makeTempDir("world-visual-gate-");
@@ -48,7 +57,7 @@ async function fixture() {
       nearBandMeters: 25,
       capture: "capture.json",
       landmarks: [{ id: "pine-1", position: [0, 0, 8] }],
-      samePose: [frame("forest"), frame("road")],
+      samePose: [frame("forest"), frame("road"), frame("step-2", 2)],
       walk: [0, 1, 2].map((time) => ({ ...frame(`step-${time}`, time), timeMs: time * 100 })),
     };
     const file = path.join(directory, "world.json");
@@ -69,8 +78,89 @@ async function ready() {
   return { ...f, built, bundle: read(path.join(built.bundle, "bundle.json")) };
 }
 
+/** Two or more runs per side, so the reference's own run-to-run spread can be measured. */
+async function multiFixture(beforeRuns = 2, afterRuns = 2) {
+  const root = await makeTempDir("world-visual-gate-multirun-");
+  roots.push(root);
+  const png = new PNG({ width: 16, height: 16 });
+  for (let i = 0; i < png.data.length; i += 4) {
+    png.data[i] = (i / 4) % 256;
+    png.data[i + 1] = (i / 2) % 256;
+    png.data[i + 2] = 255 - ((i / 4) % 256);
+    png.data[i + 3] = 255;
+  }
+  const image = PNG.sync.write(png);
+  const run = (side: "reference" | "candidate", index: number) => {
+    const directory = path.join(root, `${side}-run-${index}`);
+    mkdirSync(directory);
+    write(path.join(directory, "capture.json"), {
+      adapter: { vendor: "nvidia", architecture: "turing", description: "NVIDIA RTX 2080" },
+      browserArgs: ["--enable-unsafe-webgpu", "--enable-features=Vulkan"],
+      captureMethod: "page.screenshot",
+      rendererKind: "webgpu",
+      target: "web",
+      viewport: { width: 16, height: 16 },
+    });
+    const frame = (id: string, x = 0) => {
+      writeFileSync(path.join(directory, `${id}.png`), image);
+      return { id, image: `${id}.png`, position: [x, 2, 0], target: [x, 0, 10] };
+    };
+    const manifest = {
+      schemaVersion: 1,
+      world: "test-world",
+      build: `${side}-${index}`,
+      route: "fixed-leg",
+      seed: "42",
+      nearBandMeters: 25,
+      capture: "capture.json",
+      landmarks: [{ id: "pine-1", position: [0, 0, 8] }],
+      samePose: [frame("forest"), frame("road"), frame("step-2", 2)],
+      walk: [0, 1, 2].map((time) => ({ ...frame(`step-${time}`, time), timeMs: time * 100 })),
+    };
+    const file = path.join(directory, "world.json");
+    write(file, manifest);
+    return file;
+  };
+  const before = Array.from({ length: beforeRuns }, (_, index) => run("reference", index));
+  const after = Array.from({ length: afterRuns }, (_, index) => run("candidate", index));
+  return { root, before, after, out: path.join(root, "gate") };
+}
+
+async function multiReady(beforeRuns = 2, afterRuns = 2) {
+  const f = await multiFixture(beforeRuns, afterRuns);
+  const built = buildWorldVisualBundle(f.before, f.after, f.out);
+  return { ...f, built, bundle: read(path.join(built.bundle, "bundle.json")) };
+}
+
+/** A near-band event injected into the anonymous series for one side. */
+function poppingInto(
+  v: { series: { label: string; transitions: { events: unknown[] }[] }[] },
+  label: string,
+  kind: "appear" | "disappear" | "lod-swap",
+  distanceMeters: number,
+) {
+  const series = v.series.find((entry) => entry.label === label) as {
+    transitions: { events: unknown[] }[];
+  };
+  series.transitions[0]?.events.push({
+    element: "pine beside the road",
+    kind,
+    distanceMeters,
+    description: "Abrupt change without occlusion or leaving the view.",
+  });
+}
+
+interface IVerdictFixture {
+  root: string;
+  built: { bundle: string; bundleSha256: string };
+  bundle: {
+    promptSha256: string;
+    samePose: { label: string }[];
+    walk: { label: string; frames: { label: string }[] }[];
+  };
+}
 // These are deliberately synthetic unit-test judgments, never real visual acceptance evidence.
-function verdicts(f: Awaited<ReturnType<typeof ready>>) {
+function verdicts(f: IVerdictFixture) {
   return [1, 2, 3].map((critic) => {
     const file = path.join(f.root, `critic-${critic}.json`);
     write(file, {
@@ -85,6 +175,7 @@ function verdicts(f: Awaited<ReturnType<typeof ready>>) {
           to: frame.label,
           events: [],
         })),
+        missing: [],
       })),
     });
     return file;
@@ -93,7 +184,7 @@ function verdicts(f: Awaited<ReturnType<typeof ready>>) {
 
 it("blinds both arms, keeps every walk chronological, and binds the rubric and images", async () => {
   const f = await ready();
-  expect(f.bundle.samePose).toHaveLength(6);
+  expect(f.bundle.samePose).toHaveLength(8);
   expect(f.bundle.walk).toHaveLength(2);
   expect(
     f.bundle.walk.map((s: { frames: { timeMs: number }[] }) =>
@@ -201,6 +292,117 @@ it("reports far-band events without treating them as near-band failure", async (
     });
   write(files[0] as string, v);
   expect(scoreWorldVisualBundle(f.out, files).exitCode).toBe(0);
+});
+
+it("accepts two capture runs per side and blinds every series", async () => {
+  const f = await multiReady();
+  expect(f.bundle.walk).toHaveLength(4);
+  const seal = read(path.join(f.out, "seal.json"));
+  expect(seal.series).toHaveLength(4);
+  expect(seriesFor(f, "before")).toHaveLength(2);
+  expect(seriesFor(f, "after")).toHaveLength(2);
+  expect(new Set(seal.series.map((entry: { run: number }) => entry.run))).toEqual(new Set([0, 1]));
+  const publicManifest = JSON.stringify(f.bundle);
+  for (const secret of ["reference", "candidate", "before", "after", "test-world"])
+    expect(publicManifest).not.toContain(secret);
+  expect(scoreWorldVisualBundle(f.out, verdicts(f)).exitCode).toBe(0);
+});
+
+it("does not reject a bundle whose runs are not identical to each other", async () => {
+  const f = await multiReady(1, 1);
+  expect(f.bundle.walk).toHaveLength(2);
+  expect(scoreWorldVisualBundle(f.out, verdicts(f)).exitCode).toBe(0);
+});
+
+it("fails a candidate event in every candidate run and no reference run", async () => {
+  const f = await multiReady();
+  const files = verdicts(f);
+  const v = read(files[0] as string);
+  for (const label of seriesFor(f, "after")) poppingInto(v, label, "disappear", 20);
+  write(files[0] as string, v);
+  const result = scoreWorldVisualBundle(f.out, files);
+  expect(result.exitCode).toBe(1);
+  expect(result.popping.some((event) => event.disallowed && event.candidate)).toBe(true);
+});
+
+it("does not fail when a reference run shows the same event", async () => {
+  const f = await multiReady();
+  const files = verdicts(f);
+  const v = read(files[0] as string);
+  for (const label of [...seriesFor(f, "after"), seriesFor(f, "before")[0] as string])
+    poppingInto(v, label, "disappear", 20);
+  write(files[0] as string, v);
+  const result = scoreWorldVisualBundle(f.out, files);
+  expect(result.exitCode).toBe(0);
+  expect(result.popping.some((event) => event.disallowed)).toBe(false);
+});
+
+it("does not fail when only one candidate run shows the event", async () => {
+  const f = await multiReady();
+  const files = verdicts(f);
+  const v = read(files[0] as string);
+  poppingInto(v, seriesFor(f, "after")[0] as string, "disappear", 20);
+  write(files[0] as string, v);
+  expect(scoreWorldVisualBundle(f.out, files).exitCode).toBe(0);
+});
+
+it("fails a candidate missing event present in every candidate run only", async () => {
+  const f = await multiReady();
+  const files = verdicts(f);
+  const v = read(files[0] as string);
+  for (const label of seriesFor(f, "after")) missingInto(v, label);
+  write(files[0] as string, v);
+  const result = scoreWorldVisualBundle(f.out, files);
+  expect(result.exitCode).toBe(1);
+  expect(result.popping.some((event) => event.kind === "missing" && event.disallowed)).toBe(true);
+});
+
+/** The private seal is the instrument's own answer; the specs use it to aim an anonymous event. */
+const seriesFor = (f: { out: string }, side: "before" | "after"): string[] =>
+  (read(path.join(f.out, "seal.json")).series as { label: string; arm: string }[])
+    .filter((entry) => entry.arm === side)
+    .map((entry) => entry.label);
+const arm = (f: { out: string }) => seriesFor(f, "after")[0] as string;
+const missingInto = (v: { series: { label: string; missing: unknown[] }[] }, label: string) =>
+  (v.series.find((entry) => entry.label === label) as { missing: unknown[] }).missing.push(
+    crossSeries,
+  );
+
+it("fails a candidate that never draws what the other series draws, at any distance", async () => {
+  const f = await ready();
+  const files = verdicts(f);
+  const v = read(files[0] as string);
+  missingInto(v, arm(f));
+  write(files[0] as string, v);
+  const result = scoreWorldVisualBundle(f.out, files);
+  expect(result.exitCode).toBe(1);
+  expect(result.popping).toContainEqual(
+    expect.objectContaining({ kind: "missing", candidate: true, disallowed: true }),
+  );
+});
+
+it("reports a reference-side missing event without failing the candidate", async () => {
+  const f = await ready();
+  const files = verdicts(f);
+  const v = read(files[0] as string);
+  missingInto(v, f.bundle.walk.find((s: { label: string }) => s.label !== arm(f)).label);
+  write(files[0] as string, v);
+  const result = scoreWorldVisualBundle(f.out, files);
+  expect(result.exitCode).toBe(0);
+  expect(result.popping).toContainEqual(
+    expect.objectContaining({ kind: "missing", candidate: false, disallowed: false }),
+  );
+});
+
+it.each(["from", "to"])("rejects a missing event without its %s frame id", async (id) => {
+  const f = await ready();
+  const files = verdicts(f);
+  const v = read(files[0] as string);
+  const event: Record<string, unknown> = { ...crossSeries };
+  delete event[id];
+  (v.series[0].missing as unknown[]).push(event);
+  write(files[0] as string, v);
+  expect(() => scoreWorldVisualBundle(f.out, files)).toThrow();
 });
 
 it.each([
@@ -346,7 +548,12 @@ it("does not silently reuse a populated bundle directory", async () => {
 it("maps scored pose rows back to the source IDs only after judging", async () => {
   const f = await ready();
   const result = scoreWorldVisualBundle(f.out, verdicts(f));
-  expect(result.samePose.rows.map(({ template }) => template).sort()).toEqual(["forest", "road"]);
+  // The walk's own last pose is scored too: content that only appears at the end never pops.
+  expect(result.samePose.rows.map(({ template }) => template).sort()).toEqual([
+    "forest",
+    "road",
+    "step-2",
+  ]);
 });
 
 it("binds the external verdict files in the final score", async () => {
