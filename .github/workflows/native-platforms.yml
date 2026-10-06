@@ -1013,7 +1013,7 @@ jobs:
           - platform: macOS
             runner: blacksmith-6vcpu-macos-15
           - platform: Windows
-            runner: blacksmith-4vcpu-windows-2025
+            runner: windows-2025
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
     env:

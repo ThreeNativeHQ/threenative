@@ -415,7 +415,7 @@ jobs:
             tools_asset: threenative-tools-darwin-arm64
           - key: win32-x64
             published: true
-            runner: blacksmith-4vcpu-windows-2025
+            runner: windows-2025
             preset: tn-windows
             executable: mystral.exe
             asset: threenative-runtime-win32-x64.exe
