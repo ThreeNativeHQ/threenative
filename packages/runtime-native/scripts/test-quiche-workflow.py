@@ -10,6 +10,7 @@ Run: python3 test-quiche-workflow.py
 """
 import importlib.util
 import os
+import re
 import subprocess
 import unittest
 
@@ -122,7 +123,7 @@ def check_workflow(doc):
         if target not in found:
             raise WorkflowCheckError(f"matrix misses target {target}")
         actual_os, actual_sdk = found[target]
-        if not actual_os.startswith(os_prefix):
+        if not re.sub(r"^blacksmith-\d+vcpu-", "", actual_os).startswith(os_prefix):
             raise WorkflowCheckError(
                 f"matrix target {target} runs on unsuitable os {actual_os!r}")
         if actual_sdk != sdk:
