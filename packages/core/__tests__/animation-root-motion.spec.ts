@@ -52,6 +52,11 @@ function travellingRig(yaw = 0) {
 }
 
 describe("root motion has one body authority", () => {
+  it("constructs the authored game through its public entry", async () => {
+    await expect(
+      import("../../../examples/animation-composition/src/game.js"),
+    ).resolves.toHaveProperty("default");
+  });
   it.each(["baseline", "candidate"] as const)(
     "does not count rendered %s crowd frames without animation updates",
     (mode) => {

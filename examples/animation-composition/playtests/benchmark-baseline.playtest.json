@@ -85,7 +85,8 @@
     "sceneNodes": [
       {
         "select": {
-          "name": "characterSkin"
+          "name": "characterSkin",
+          "limit": 100
         },
         "minCount": 100,
         "maxCount": 100,

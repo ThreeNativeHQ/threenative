@@ -4,6 +4,7 @@ import { type IPhysicsContext, rapier } from "@threenative/physics";
 import { CompositionCourse } from "./course.js";
 
 const game = defineGame<Record<string, unknown>, IPhysicsContext>({
+  initialState: {},
   input: {
     forward: { keys: ["KeyW"] },
     strafe: { keys: ["KeyD"] },
