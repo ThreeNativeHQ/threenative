@@ -1,11 +1,12 @@
 import { type Group, Scene as ThreeScene } from "three";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { Registry } from "../../core/src/entities.js";
 import { createAfterPhysicsPhase } from "../../core/src/loop.js";
 import type { ICtx } from "../../core/src/scene.js";
 import "../../physics/src/web.js";
 import { parseAnimalBake } from "@threenative/procedural-animals";
 import { createLifecycleGeneration } from "../../../examples/procedural-animals/src/lifecycle-generation.js";
+import * as wolfMotionSource from "../../../examples/procedural-animals/src/render/wolf-motion.js";
 import { CollisionShape3D } from "../../physics/src/CollisionShape3D.js";
 import { RigidBody3D } from "../../physics/src/RigidBody3D.js";
 import { type IPhysicsContext, rapier } from "../../physics/src/plugin.js";
@@ -84,6 +85,83 @@ describe("actual wolf lifecycle generation ownership", () => {
       }
       expect(bake.pos).toEqual(original);
     } finally {
+      run.dispose();
+    }
+  }, 60_000);
+  it("releases every generation owner after a teleport disposes one actor", async () => {
+    const bake = parseAnimalBake(await bakeWolf({ seed: 7, tier: "crowd" }));
+    const run = await context();
+    try {
+      const generation = createLifecycleGeneration(run.ctx, bake, 1);
+      generation.update(1 / 60);
+      run.step(1 / 60);
+      const space = run.ctx.physics.directSpaceState;
+      const intersectRay = space.intersectRay.bind(space);
+      let calls = 0;
+      const ground = vi
+        .spyOn(space, "intersectRay")
+        .mockImplementation((request) => (++calls <= 2 ? intersectRay(request) : undefined));
+      try {
+        let teleportError: unknown;
+        try {
+          generation.teleportAndPause();
+        } catch (error) {
+          teleportError = error;
+        }
+        expect(teleportError).toBeInstanceOf(Error);
+        expect(generation.ownership().actors).toBe(31);
+      } finally {
+        ground.mockRestore();
+      }
+      expect(() => generation.dispose()).toThrow();
+      await generation.settled();
+      expect(run.ctx.physics.numBodies()).toBe(1);
+      expect(run.ctx.entities.snapshot()).toEqual({});
+      expect(run.ctx.scene.children).toHaveLength(0);
+      expect(generation.ownership()).toMatchObject({
+        actors: 0,
+        attached: 0,
+        listeners: 0,
+        callbacks: 0,
+        pendingActions: 0,
+        disposedActions: 31,
+        disposals: 96,
+      });
+      run.step(1 / 60);
+      generation.dispose();
+    } finally {
+      run.phase.clear();
+      run.dispose();
+    }
+  }, 60_000);
+  it("observes rejected disposal actions and settles their pending count while retaining failure", async () => {
+    const bake = parseAnimalBake(await bakeWolf({ seed: 7, tier: "crowd" }));
+    const run = await context();
+    const actionError = new Error("motion action rejected during disposal");
+    const originalMotion = wolfMotionSource.wolfMotion;
+    const motion = vi.spyOn(wolfMotionSource, "wolfMotion").mockImplementation((context) =>
+      Object.assign(originalMotion(context), {
+        play() {
+          throw actionError;
+        },
+      }),
+    );
+    try {
+      const generation = createLifecycleGeneration(run.ctx, bake, 1);
+      generation.dispose();
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(generation.ownership()).toMatchObject({
+        actors: 0,
+        callbacks: 0,
+        pendingActions: 0,
+        disposedActions: 0,
+        disposals: 96,
+      });
+      await expect(generation.settled()).rejects.toBe(actionError);
+      expect(run.ctx.physics.numBodies()).toBe(1);
+      expect(run.ctx.entities.snapshot()).toEqual({});
+    } finally {
+      motion.mockRestore();
       run.dispose();
     }
   }, 60_000);

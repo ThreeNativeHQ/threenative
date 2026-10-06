@@ -99,7 +99,9 @@ function fixture(fault = "") {
       actionDisposed = false;
       changed = false;
       return {
-        teleportAndPause() {},
+        teleportAndPause() {
+          if (fault === "teleport-and-cleanup") throw new Error("teleport original failure");
+        },
         resume() {
           changed = fault !== "frozen-pose";
         },
@@ -110,6 +112,7 @@ function fixture(fault = "") {
           if (fault !== "leaked-buffer") for (const resource of liveBuffers) resource.destroy();
           for (const resource of liveTextures) resource.destroy();
           actionDisposed = fault !== "unresolved-action";
+          if (fault === "teleport-and-cleanup") throw new Error("cleanup additional failure");
         },
         async settled() {},
         ownership: () => ({
@@ -171,6 +174,29 @@ describe("portable fifty-generation animal lifecycle driver", () => {
       await expect(runAnimalLifetimes(run.port)).rejects.toThrow(/TN_ANIMAL_LIFECYCLE/);
       expect(run.generations.length).toBeLessThanOrEqual(1);
       expect(run.rows.some((row) => Reflect.get(row, "completed") === true)).toBe(false);
+    } finally {
+      run.cleanup();
+    }
+  });
+  it("preserves teleport and cleanup failures without completing a cycle", async () => {
+    const run = fixture("teleport-and-cleanup");
+    try {
+      let failure: unknown;
+      try {
+        await runAnimalLifetimes(run.port);
+      } catch (error) {
+        failure = error;
+      }
+      expect(failure).toBeInstanceOf(AggregateError);
+      expect((failure as AggregateError).errors.map(String)).toEqual([
+        "Error: teleport original failure",
+        "Error: cleanup additional failure",
+      ]);
+      expect(String(failure)).toContain("teleport original failure");
+      expect(String(failure)).toContain("cleanup additional failure");
+      expect(run.generations).toEqual([1]);
+      expect(run.rows.some((row) => Reflect.get(row, "completed") === true)).toBe(false);
+      expect(run.gpu.snapshot().textures).toBe(0);
     } finally {
       run.cleanup();
     }

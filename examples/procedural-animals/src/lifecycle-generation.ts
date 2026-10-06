@@ -70,20 +70,36 @@ export function createLifecycleGeneration(
   const dispose = () => {
     if (!live) return;
     live = false;
-    if (wolves.length === 32) {
-      pendingActions = wolves.length;
-      actions = Promise.all(
-        wolves.map(({ animal }) =>
-          animal.play("lie").then((result) => {
-            pendingActions--;
-            if (result !== "disposed")
-              throw new Error(`TN_ANIMAL_LIFECYCLE_ACTION_RESULT: ${result}`);
-            disposedActions++;
-          }),
-        ),
-      ).then(() => undefined);
-    }
-    releaseAll(cleanup.splice(0).reverse());
+    releaseAll([
+      () => {
+        if (wolves.length !== 32) return;
+        const requests: Promise<void>[] = [];
+        try {
+          releaseAll(
+            wolves.map(({ animal }) => () => {
+              const action = animal.play("lie");
+              pendingActions++;
+              requests.push(
+                action
+                  .then((result) => {
+                    if (result !== "disposed")
+                      throw new Error(`TN_ANIMAL_LIFECYCLE_ACTION_RESULT: ${result}`);
+                    disposedActions++;
+                  })
+                  .finally(() => {
+                    pendingActions--;
+                  }),
+              );
+            }),
+          );
+        } finally {
+          actions = Promise.all(requests).then(() => undefined);
+          // Error cleanup/scene exit may not await settled(); its original failure stays observable.
+          void actions.catch(() => undefined);
+        }
+      },
+      ...cleanup.splice(0).reverse(),
+    ]);
   };
   try {
     for (let index = 0; index < 32; index++) {

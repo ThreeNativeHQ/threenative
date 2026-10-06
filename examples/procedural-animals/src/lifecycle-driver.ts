@@ -201,8 +201,14 @@ export async function runAnimalLifetimes(port: ILifetimePort): Promise<number> {
     }
     return 50;
   } catch (error) {
+    try {
+      current?.dispose();
+    } catch (cleanupError) {
+      throw new AggregateError(
+        [error, cleanupError],
+        `TN_ANIMAL_LIFECYCLE_FAILED: ${String(error)}; cleanup: ${String(cleanupError)}`,
+      );
+    }
     throw new Error(`TN_ANIMAL_LIFECYCLE_FAILED: ${String(error)}`, { cause: error });
-  } finally {
-    current?.dispose();
   }
 }
