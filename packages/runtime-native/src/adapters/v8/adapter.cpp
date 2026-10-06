@@ -1,4 +1,5 @@
 #include "adapter.h"
+#include "tsl.h"
 
 #include <cstdio>
 #include <string>
@@ -143,7 +144,7 @@ struct MethodData {
 
 }  // namespace
 
-Adapter::Adapter(v8::Isolate* isolate, tn_context_t* context) : isolate_(isolate), context_(context) {
+Adapter::Adapter(v8::Isolate* isolate, tn_context_t* context) : tsl_(std::make_unique<Tsl>(isolate)), isolate_(isolate), context_(context) {
     v8::HandleScope scope(isolate_);
     v8::Local<v8::ObjectTemplate> instance = v8::ObjectTemplate::New(isolate_);
     instance->SetInternalFieldCount(1);
@@ -324,6 +325,7 @@ void Adapter::setCallback(const v8::FunctionCallbackInfo<v8::Value>& info) {
 }
 
 void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> target) {
+    tsl_->install(context, target);
     v8::HandleScope scope(isolate_);
     context_v8_.Reset(isolate_, context);
     v8::Local<v8::External> self = v8::External::New(isolate_, this);

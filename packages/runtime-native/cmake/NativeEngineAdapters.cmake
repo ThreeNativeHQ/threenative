@@ -2,22 +2,37 @@
 # are configured; nothing in NativeEngine*.cmake may link these targets.
 
 if(TARGET v8::v8 AND MYSTRAL_USE_V8 AND NOT MYSTRAL_PLATFORM STREQUAL "ios")
-    add_library(tn_adapter_v8 STATIC src/adapters/v8/adapter.cpp)
+    add_library(tn_adapter_v8 STATIC src/adapters/v8/adapter.cpp src/adapters/v8/tsl.cpp)
     # Not tn_native_engine_target: an adapter is not an engine target, and the graph check would
     # rightly fail on its V8 link.
     set_target_properties(tn_adapter_v8 PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON POSITION_INDEPENDENT_CODE ON)
     target_include_directories(tn_adapter_v8 PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
-    target_link_libraries(tn_adapter_v8 PUBLIC tn_engine_abi tn_engine_bindings v8::v8 ${V8_SYSTEM_LIBS})
+    target_link_libraries(tn_adapter_v8 PUBLIC tn_engine_abi tn_engine_bindings tn_engine_shader v8::v8 ${V8_SYSTEM_LIBS})
 
     add_executable(tn-native-engine-v8-test EXCLUDE_FROM_ALL tests/native-engine/v8_adapter_test.cpp)
     target_link_libraries(tn-native-engine-v8-test PRIVATE tn_adapter_v8)
     target_include_directories(tn-native-engine-v8-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine)
     set_target_properties(tn-native-engine-v8-test PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
-    foreach(case handles unsupported gc_release runtime_churn crossing_bench scene catalog_coverage callback_cycle)
+    foreach(case handles unsupported gc_release runtime_churn crossing_bench scene catalog_coverage callback_cycle tsl_api)
         add_test(NAME native_engine_v8_${case} COMMAND tn-native-engine-v8-test ${case})
         set_tests_properties(native_engine_v8_${case} PROPERTIES LABELS "native-engine")
     endforeach()
     add_dependencies(tn-native-engine-tests tn-native-engine-v8-test)
+
+    # PRD-531 slice 2: the upstream corpus authored in JS through the native lazy graph.
+    add_executable(tn-native-engine-tsl-js EXCLUDE_FROM_ALL tests/native-engine/tsl-corpus/tsl_js.cpp)
+    target_link_libraries(tn-native-engine-tsl-js PRIVATE tn_adapter_v8)
+    target_compile_definitions(tn-native-engine-tsl-js PRIVATE
+        TN_TSL_CORPUS="${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/tsl-corpus/corpus.js")
+    set_target_properties(tn-native-engine-tsl-js PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
+    add_dependencies(tn-native-engine-tests tn-native-engine-tsl-js)
+    if(TN_PNPM_EXECUTABLE AND TN_NODE_EXECUTABLE)
+        add_test(NAME native_engine_tsl_js
+            COMMAND ${TN_NODE_EXECUTABLE} tests/native-engine/differential.mjs --suite tsl-ir
+                --native $<TARGET_FILE:tn-native-engine-tsl-js>
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+        set_tests_properties(native_engine_tsl_js PROPERTIES LABELS "native-engine")
+    endif()
 
     # CP1's game host (PRD-534): a workload script on V8 through the adapter (native-v8), or its C++
     # twin (--cpp, native-cpp), drawn through the native renderer and measured per frame.

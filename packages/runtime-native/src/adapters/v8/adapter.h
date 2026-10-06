@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 #include <set>
 #include <string>
 #include <unordered_map>
@@ -10,6 +11,8 @@
 #include "threenative/abi/tn_abi.h"
 
 namespace tn::adapters::v8adapter {
+
+class Tsl;
 
 /**
  * The V8 game-runtime adapter (PRD-531): JS sees the engine's classes as ordinary constructors
@@ -44,6 +47,8 @@ public:
     /** The handle a wrapper holds; false for anything that is not an engine object. */
     bool unwrap(v8::Local<v8::Value> value, tn_handle_t& out) const;
 
+    Tsl& tsl() const { return *tsl_; }
+
     tn_context_t* context() const { return context_; }
     v8::Isolate* isolate() const { return isolate_; }
     size_t liveWrappers() const { return wrappers_.size(); }
@@ -61,6 +66,7 @@ private:
     static void setCallback(const v8::FunctionCallbackInfo<v8::Value>& info);
     static void getCallback(const v8::FunctionCallbackInfo<v8::Value>& info);
 
+    std::unique_ptr<Tsl> tsl_;
     v8::Isolate* isolate_;
     tn_context_t* context_;
     v8::Global<v8::ObjectTemplate> instanceTemplate_;
