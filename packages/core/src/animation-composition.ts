@@ -239,6 +239,14 @@ export class AnimationComposer {
     if (animationFinite(dt, "dt") < 0)
       throw new Error("AnimationComposer: dt must be nonnegative.");
     this.#rootMotion?.validateSpace();
+    if (this.#rootMotion !== undefined) {
+      const position = this.#rootMotion.body.position;
+      this.#before.set(
+        animationFinite(position.x, "body.x"),
+        animationFinite(position.y, "body.y"),
+        animationFinite(position.z, "body.z"),
+      );
+    }
     const elapsed = this.paused ? 0 : dt;
     this.#elapsed = Math.min(this.#duration, this.#elapsed + elapsed);
     const progress = this.#duration > 0 ? this.#elapsed / this.#duration : 1;
@@ -256,7 +264,6 @@ export class AnimationComposer {
     this.#proposal.translation.set(0, 0, 0);
     this.#proposal.yaw = 0;
     if (this.#rootMotion !== undefined) {
-      this.#before.copy(this.#rootMotion.body.position);
       this.#beforeRotation.copy(this.#rootMotion.body.quaternion);
       const proposal = this.#rootMotion.sample(previous, this.#clock, this.#weights);
       this.#proposal.translation.copy(proposal.translation);
@@ -292,9 +299,15 @@ export class AnimationComposer {
       // Float32 physics round-off is a scale of a quaternion, not a different rotation.
       this.#observedRotation.copy(body.quaternion).normalize();
       if (
-        Math.abs(body.position.x - this.#before.x - this.#accepted.x) > 1e-5 ||
-        Math.abs(body.position.y - this.#before.y - this.#accepted.y) > 1e-5 ||
-        Math.abs(body.position.z - this.#before.z - this.#accepted.z) > 1e-5 ||
+        Math.abs(
+          animationFinite(body.position.x, "observed body.x") - this.#before.x - this.#accepted.x,
+        ) > 1e-5 ||
+        Math.abs(
+          animationFinite(body.position.y, "observed body.y") - this.#before.y - this.#accepted.y,
+        ) > 1e-5 ||
+        Math.abs(
+          animationFinite(body.position.z, "observed body.z") - this.#before.z - this.#accepted.z,
+        ) > 1e-5 ||
         this.#expectedRotation.angleTo(this.#observedRotation) > 1e-5
       )
         throw new Error(

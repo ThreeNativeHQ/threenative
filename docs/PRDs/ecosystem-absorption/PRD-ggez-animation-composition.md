@@ -10,7 +10,7 @@ prd_contract: v1
 **Complexity:** 6 (MEDIUM); estimated 6–10 implementation files (+2), new composition mechanism (+2), coupled animation/physics state (+2); risk override: none.
 **Owner:** ThreeNative maintainers; implementation agent executes the plan.
 **Depends on:** The masked-layer behavior specified by [PRD-VQ-05](../animation/PRD-VQ-05-masked-additive-animation.md). That behavior may land in the same implementation; completion of the entire VQ-05 document is not a prerequisite.
-**Progress:** 25%
+**Progress:** 50%
 **Planning baseline:** `develop` at `ba72eed258b1aefabb9744dc86fd8282c3ab39a5`; 2026-10-05. This document authorizes no implementation, release or merge.
 
 ## Context
@@ -52,12 +52,12 @@ flowchart LR
 
 | Capability | Reachable consumer/trigger | Replaces / disposition | Evidence |
 |---|---|---|---|
-| Synchronized blending | Proposed `examples/animation-composition/src/game.ts` scene update → public composition entry → existing mixer | Replaces per-example weight/phase plumbing; existing player remains the default | AC-1, AC-5, AC-6 |
+| Synchronized blending | `examples/animation-composition/src/game.ts` → `CompositionCourse.enter` frame → public `AnimationComposer` → incumbent player's mixer | Replaces per-example weight/phase plumbing; existing player remains the default | Source caller present; public build and AC-5/AC-6 open |
 | Masked actions | Same character → VQ-05 layer owner → final pose | One implementation and shared tests with VQ-05; no second layer stack | AC-2 |
 | Root motion | Fixed-step animation intent → existing character movement → accepted transform | Opt-in alternative to velocity-driven stride authority, never concurrent body writers | AC-3 |
 | Consumer discovery | Exported capability → generated agent guidance → installed example | Document only after the export ships; no editor workflow | AC-8 |
 
-All new paths/APIs below are proposed. Fill actual caller locations when implementing. Shared VQ-05 assertions produce one evidence record reused by both documents; this PRD does not close or rewrite VQ-05.
+The source caller is `examples/animation-composition/src/character.ts`: `update` queues intent, `afterPhysics` observes accepted Rapier movement and finishes the pose, then `CompositionPose.apply` runs existing Three CCD. Shared VQ-05 assertions produce one evidence record reused by both documents; this PRD does not close or rewrite VQ-05.
 
 ## Execution Phases
 
@@ -69,7 +69,7 @@ All new paths/APIs below are proposed. Fill actual caller locations when impleme
 **Implementation:** Audit donor files/transitive licenses; adapt the smallest useful algorithms to existing Three objects; resolve blend and synchronization data at load; extend the existing layered fixture rather than cloning it. The example must call the public export.
 
 - [ ] AC-1 [local; actor: implementation agent]: Public composition updates produce the independently calculated blend weights and synchronized sample times for the locomotion fixture. proof: `pnpm exec vitest run packages/core/__tests__/animation-composition.spec.ts` (planned; includes invalid layouts and loop/interruption traces). Evidence: pending.
-  Source controls pass (8 tests); public JS/DTS build and actual example caller remain unverified.
+  Source controls pass (8 tests) and the authored example calls the public export. Public JS/DTS build and packed import remain unverified.
 - [x] AC-2 [local; actor: implementation agent]: The shared VQ-05 consumer preserves the lower-body pose while applying an upper-body action; weight zero restores the base pose within 1e-5 local-transform tolerance. proof: `pnpm exec vitest run packages/core/__tests__/vq-masked-additive-animation.spec.ts --maxWorkers=1`. Evidence: 2026-10-06, CPU 10, exit 0, 6 tests; exact override/lower-body/zero tolerance, additive reference, distinct cloned masks, once pause/replay/cancellation and 50 shared-source disposal cycles. The canonical VQ-05 PRD is unchanged.
 
 **Verification:** Compare against hand-calculated weight/phase cases and independent base-only samples, not a second call to the same helper.
@@ -77,21 +77,20 @@ All new paths/APIs below are proposed. Fill actual caller locations when impleme
 
 ### Phase 2 — Movement has one authority
 
-**Status:** PARTIAL
+**Status:** COMPLETE (local source behavior; packaged runtime gates remain in Phase 3)
 **ACs:** AC-3, AC-4
 **Files:** Proposed `packages/core/src/animation-root-motion.ts`; existing character/physics integration identified before editing; example collision course and focused regression fixture.
 **Implementation:** Handle loop-seam deltas and reference transforms; route movement through Rapier; exclude the consumed root contribution from skin pose; retain velocity-driven defaults and IK ordering. No new native ABI is assumed.
 
-- [ ] AC-3 [local; actor: implementation agent]: Through the actual game fixed-step path, a root-motion character stops at a collider and its transform follows accepted Rapier displacement with no duplicate root translation. proof: `pnpm exec vitest run packages/core/__tests__/animation-root-motion.spec.ts` (planned real Rapier/loop integration, not a mocked movement helper). Evidence: pending.
-  Real Rapier and FixedStepLoop controls pass (6 tests, 240 collision ticks); actual example fixed-step caller and existing IK integration remain to be exercised.
+- [x] AC-3 [local; actor: implementation agent]: Through the actual game fixed-step path, a root-motion character stops at a collider and its transform follows accepted Rapier displacement with no duplicate root translation. proof: focused Vitest source lane on CPU 10, one worker, `animation-root-motion.spec.ts` (11 tests, exit 0). Evidence: 2026-10-06; actual `CompositionCharacter` caller with real Rapier/FixedStepLoop stops at the wall over 240 ticks; turning seams run 180 ticks; authored nine-bone skin with eight actions runs 120 ticks and existing Three CCD after final pose. Lower/zero local-transform tolerance remains 1e-5. A source-only test alias supplies the unbuilt public animation import for the benchmark control; it is not public-package evidence.
 - [x] AC-4 [local; actor: implementation agent]: A character using only the incumbent player retains its previous sampled pose/stride trace when composition is unused. proof: `pnpm exec vitest run packages/core/__tests__/animation-composition.spec.ts packages/core/__tests__/animation.spec.ts --maxWorkers=1`. Evidence: 2026-10-06, CPU 10, exit 0; independent four-tick incumbent pose/stride trace and action/binding baseline pass, plus 51 incumbent-player regression tests. Composition creates no unused-path owner or update registration.
 
 **Verification:** Exercise paused/interrupted/root-loop movement and IK-after-animation ordering; reject unsupported transforms with actionable diagnostics.
-**Checkpoint:** Pending; record results on the owning boxes only.
+**Checkpoint:** Independent review exposed NaN observed coordinates, an unmatched callback on synchronous scene reset, frozen benchmark frame counting and incomplete removal observations. Reproduced failures and corresponding fixes pass: finite body-coordinate validation; pending-intent guard in the example; only rendered frames with actual animation updates count; Spine/Arm/RightHand authored local transforms are observed before IK. Full focused source lane: 76/76 tests, four files, CPU 10, one worker. Normal public builds remain unverified.
 
 ### Phase 3 — The installed consumer works on two runtimes
 
-**Status:** NOT STARTED
+**Status:** PARTIAL (source fixture and scenarios ready; execution unverified)
 **ACs:** AC-5, AC-6
 **Files:** Proposed `examples/animation-composition/playtests/composition.playtest.json`, example packaging, capability comments and generated agent guidance; reuse existing playtest runner.
 **Implementation:** Package the same game entry for browser and Linux desktop. Scenario drives locomotion, strafe, reload, blocked movement and reset, observing bones/body state and actual rendered output. Test an installed/tarball consumer, not only workspace aliases.
@@ -100,7 +99,7 @@ All new paths/APIs below are proposed. Fill actual caller locations when impleme
 - [ ] AC-6 [shared; actor: implementation agent on the Linux native runner]: The same packaged entry passes the composition scenario on Linux native. proof: `node packages/playtest/dist/runner/cli.js examples/animation-composition/playtests/composition.playtest.json --target desktop --executable ${TN_NATIVE_EXECUTABLE:?}`. Evidence: pending.
 
 **Verification:** Record revision, package hashes, adapter/driver, collected assertions and actual result. These are future implementation gates; none ran during planning.
-**Checkpoint:** Pending. No Windows, macOS, Android or iOS qualification is implied by Linux evidence.
+**Checkpoint:** Authored example and four scenarios are present. Actual scenario loader accepts all four (4/4, exit 0); the positive course includes 50 separate scene transitions and the negative control requires forbidden residual skin-root translation. The paired crowd preserves 100 rigs, nine bones, at most eight actions, 300 warm-up/1,800 measured frames and the original 2 ms incremental p95 target. No browser/native/performance run has executed. No Windows, macOS, Android or iOS qualification is implied by Linux evidence.
 
 ## Acceptance Criteria
 
@@ -119,7 +118,7 @@ If selective extraction becomes a dependency on GGEZ's graph compiler, keep upst
 
 ## Blocked on
 
-Phase 3 requires an actual WebGPU runner and a built Linux native executable supplied through the existing playtest/native workflow. These were not provisioned or exercised in this planning session. Additional platform qualification is outside this bounded first slice and must precede claims for those targets. No owner sign-off, publication or credential gate is required to implement the slice.
+Parent scheduling currently permits only source work and tiny tests on CPU 10/22. The normal first push of commit `0022245` failed its existing `ci:fast` hook because `packages/assets/dist` is missing; no hook was bypassed and no PR exists yet. Requested next slot: isolated dependency install plus manifest-derived package JS/DTS build, focused typecheck, normal pre-push and packed public consumer. GPU priority remains with PRs 381/398. Phase 3 still requires an actual hardware WebGPU runner and compatible built Linux native executable through the existing workflow. Additional platform qualification is outside this bounded first slice. No publication or credential change is authorized.
 
 ## Decisions
 

@@ -9,6 +9,7 @@ export class CompositionCharacter {
   readonly #rotation = new Quaternion();
   readonly #accepted = new Vector3();
   readonly #up = new Vector3(0, 1, 0);
+  #pendingIntent = false;
   ticks = 0;
   blockedTicks = 0;
 
@@ -27,20 +28,25 @@ export class CompositionCharacter {
     this.#rotation.setFromAxisAngle(this.#up, proposal.yaw);
     this.body.object.quaternion.multiply(this.#rotation);
     this.body.move(proposal.translation);
+    this.#pendingIntent = true;
   }
 
   afterPhysics(): void {
+    // A synchronous scene transition can install this callback during the outgoing tick.
+    if (!this.#pendingIntent) return;
     this.#accepted.copy(this.body.object.position).sub(this.#before);
     this.#rotation.copy(this.#beforeRotation).invert().multiply(this.body.object.quaternion);
     const yaw = 2 * Math.atan2(this.#rotation.y, this.#rotation.w);
     this.beforePose();
     this.animation.finish({ translation: this.#accepted, yaw });
+    this.#pendingIntent = false;
     this.afterPose();
     this.ticks += 1;
     if (this.animation.blocked) this.blockedTicks += 1;
   }
 
   dispose(): void {
+    this.#pendingIntent = false;
     this.animation.dispose();
     this.body.dispose();
   }

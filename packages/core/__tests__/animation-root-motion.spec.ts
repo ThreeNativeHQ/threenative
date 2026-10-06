@@ -9,8 +9,20 @@ import {
   VectorKeyframeTrack,
 } from "three";
 import { describe, expect, it } from "vitest";
+import { CompositionBenchmark } from "../../../examples/animation-composition/src/benchmark.js";
 import { CompositionCharacter } from "../../../examples/animation-composition/src/character.js";
+import {
+  compositionClips,
+  compositionLayers,
+  compositionSamples,
+} from "../../../examples/animation-composition/src/clips.js";
+import { CompositionPose } from "../../../examples/animation-composition/src/pose.js";
+import {
+  characterSource,
+  cloneCharacter,
+} from "../../../examples/animation-composition/src/render/character.js";
 import { AnimationComposer } from "../src/animation-composition.js";
+import { GroundSnap } from "../src/grounding.js";
 import { FixedStepLoop } from "../src/loop.js";
 import "../../physics/src/web.js";
 import { CharacterBody3D } from "../../physics/src/CharacterBody3D.js";
@@ -40,6 +52,53 @@ function travellingRig(yaw = 0) {
 }
 
 describe("root motion has one body authority", () => {
+  it("does not count rendered frames whose crowd never performed an animation update", () => {
+    const source = characterSource();
+    const benchmark = new CompositionBenchmark({ add: (object) => object }, source, "candidate");
+    try {
+      for (let i = 0; i < 2100; i += 1) benchmark.rendered();
+      expect(benchmark.observation().measuredFrames).toBe(0);
+      expect(benchmark.observation().cpuP95Ms).toBeNull();
+    } finally {
+      benchmark.dispose();
+      source.skin.skeleton.dispose();
+      source.geometry.dispose();
+      source.material.dispose();
+    }
+  });
+  it("rejects nonfinite observed body coordinates instead of accepting an unobserved delta", () => {
+    const r = travellingRig();
+    r.composer.advance(0.1);
+    r.body.position.x = Number.NaN;
+    expect(() => r.composer.finish({ translation: new Vector3(), yaw: 0 })).toThrow(/finite/i);
+    r.composer.dispose();
+  });
+  it("observes removal on every affected authored bone before the existing IK solve", () => {
+    const source = characterSource();
+    const rig = cloneCharacter(source);
+    const animation = new AnimationComposer({
+      root: rig.root,
+      clips: compositionClips,
+      samples: compositionSamples,
+      layers: compositionLayers,
+    });
+    const pose = new CompositionPose(rig, animation, new GroundSnap(rig.root));
+    try {
+      for (const index of [3, 5, 7]) {
+        for (const bone of rig.bones) bone.quaternion.identity();
+        rig.bones[index]?.quaternion.setFromAxisAngle(new Vector3(0, 0, 1), 0.2);
+        pose.apply();
+        expect(pose.zeroError).toBeGreaterThan(0.09);
+        expect(pose.layersRemoved).toBe(false);
+      }
+    } finally {
+      animation.dispose();
+      rig.skin.skeleton.dispose();
+      source.skin.skeleton.dispose();
+      source.geometry.dispose();
+      source.material.dispose();
+    }
+  });
   it("keeps turning trajectories identical across fixed-tick subdivisions and loop seams", () => {
     const trace = (steps: readonly number[]) => {
       const r = travellingRig(Math.PI / 2);
@@ -223,6 +282,9 @@ describe("root motion has one body authority", () => {
     });
     const character = new CompositionCharacter(r.composer, body);
     try {
+      // A synchronous Scene.goto installs this callback before the incoming scene's first tick.
+      expect(() => character.afterPhysics()).not.toThrow();
+      expect(character.ticks).toBe(0);
       for (let i = 0; i < 180; i += 1) {
         character.update(1 / 60);
         plugin.update?.(ctx, 1 / 60);
@@ -234,6 +296,61 @@ describe("root motion has one body authority", () => {
       expect(r.composer.phase).toBeCloseTo(0);
     } finally {
       character.dispose();
+      plugin.dispose?.(ctx);
+    }
+  });
+
+  it("uses the actual skinned course caller with eight actions, real Rapier and existing Three IK", async () => {
+    const plugin = rapier({ gravity: { x: 0, y: 0, z: 0 } });
+    const ctx = { physics: undefined } as never;
+    await plugin.setup?.(ctx);
+    const source = characterSource();
+    const rig = cloneCharacter(source);
+    const object = new Group();
+    object.position.y = 0.85;
+    object.add(rig.root);
+    const body = new CharacterBody3D({
+      object,
+      physics: (ctx as { physics: never }).physics,
+      gravity: 0,
+      shape: CollisionShape3D.capsule(0.55, 0.3),
+    });
+    const animation = new AnimationComposer({
+      root: rig.root,
+      clips: compositionClips,
+      samples: compositionSamples,
+      layers: compositionLayers,
+      rootMotion: { body: object, bone: "Hips" },
+    });
+    animation.setWeights([0.5, 0.5, 0]);
+    const pose = new CompositionPose(rig, animation, new GroundSnap(rig.root));
+    const character = new CompositionCharacter(
+      animation,
+      body,
+      () => pose.restore(),
+      () => pose.apply(),
+    );
+    expect(rig.bones.length).toBe(9);
+    expect(animation.resources.actions).toBe(8);
+    try {
+      for (let i = 0; i < 120; i += 1) {
+        pose.reloadWeight = i >= 30 && i < 90 ? 0.5 : 0;
+        animation.setLayerWeight("reload", pose.reloadWeight);
+        character.update(1 / 60);
+        plugin.update?.(ctx, 1 / 60);
+        character.afterPhysics();
+        expect(pose.poseBeforeIK).toBe(true);
+        expect(pose.lowerError).toBeLessThan(1e-5);
+        expect(pose.ikError).toBeLessThan(0.05);
+        if (pose.reloadWeight === 0) expect(pose.zeroError).toBeLessThan(1e-5);
+        expect(rig.bones[0]?.position.z).toBe(0);
+      }
+    } finally {
+      character.dispose();
+      rig.skin.skeleton.dispose();
+      source.skin.skeleton.dispose();
+      source.geometry.dispose();
+      source.material.dispose();
       plugin.dispose?.(ctx);
     }
   });
