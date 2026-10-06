@@ -3342,3 +3342,38 @@ scaffold trees regain their published fingerprints when only the old Three patch
 Independent review passes. The original hardware result above remains red: this CPU fix does not
 yet prove physical OOM recovery, readiness, a gameplay screenshot or an FPS improvement. No new
 GPU/native run was performed for this candidate; Phase 4 remains open and progress remains 50%.
+
+### 2026-10-06 — bounded depth validation and async validation-scope correction
+
+The single authorized hardware run of `14aa2c1a99f902a92e7ffd7c7201d6168b87f734`
+remains **red**. It exited 2 after 79.15 s with one recorded device-loss event, reason
+`unknown`, message `A valid external Instance reference no longer exists.` There were no
+recorded GPU OOM or validation errors; the run-owned process peaked at 956 MiB and sampled
+global free memory stayed at least 5,737 MiB. These observations do not identify the cause or
+qualify OOM recovery. The loss at page time 69,311.6 ms preceded the late curtain release,
+adapter-provenance failure and pagehide; no renderer-dispose or device-destroy call was recorded.
+The harness therefore received no GameState readiness replies or gameplay frames. The actual
+loading cover is byte-identical to the preceding published curtain above. All eleven original
+owned process identities exited, the observer stopped and the canonical capture lease was free
+at cleanup; no foreign process was signalled. No further GPU run was launched.
+
+CPU diagnosis found a separate, reproducible error-attribution defect in Three's asynchronous
+render-pipeline creation: its validation scope remained on the device stack while compilation
+was pending, so unrelated loading-overlay commands could enter it. A rejected scope result also
+escaped as an unhandled rejection. The package-owned patch now closes the scope before yielding,
+attaches its rejection handler immediately and still waits for pipeline creation and scope
+results before completing compilation. Pipeline errors continue to mark their own pipeline and
+request shader diagnostics. This corrects error observation; it does not establish why the
+physical device was lost.
+
+`three-pipeline-scopes.spec.ts` reproduced eight failing checks and unhandled scope rejections
+against the preserved release. The candidate passes **12/12 with each WebGPU bundle**, covering
+unrelated render errors, the caller's scope, reverse-order pipeline completion, early scope
+rejection and delayed scope results. The focused scope/renderer/attachment/package checks pass
+**67/67**. Strict TypeScript 7 and Biome pass. All thirteen actual scaffold trees recover their
+previous fingerprints by restoring only the previous Three patch; scaffold contracts pass
+**66/66**. Stock and previous-release postinstall applications pass and reapplication is unchanged.
+Independent review passes for this bounded fix. A pre-existing rejected shader-diagnostic reporter
+can still produce an unhandled rejection; it reproduces before and after this correction. The retained CPU profile maps
+11.03 s of self samples to loading-overlay queue submission; it is not a steady-state FPS result.
+Readiness, matched gameplay captures, FPS and native acceptance remain open; progress stays 50%.

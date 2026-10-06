@@ -1077,7 +1077,32 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..dd0bf13ed56418d9a7354121f0df58ba
  	}
  
  	/**
-@@ -83814,6 +84120,27 @@ class WebGPUBackend extends Backend {
+@@ -82553,6 +82859,15 @@
+ 
+ 					_renderPipelineDescriptor.reset();
+ 
++					// Close the scope before yielding so unrelated render commands cannot enter it.
++					// Handle rejection immediately even if the pipeline promise is still pending.
++					const errorScopePromise = device.popErrorScope().catch( ( err ) => {
++
++						asyncError ??= err;
++						return null;
++
++					} );
++
+ 					if ( pipelinePromise !== null ) {
+ 
+ 						try {
+@@ -82567,7 +82882,7 @@
+ 
+ 					}
+ 
+-					const errorScope = await device.popErrorScope();
++					const errorScope = await errorScopePromise;
+ 
+ 					if ( errorScope !== null || asyncError !== null ) {
+ 
+@@ -83814,6 +84129,27 @@ class WebGPUBackend extends Backend {
  		 */
  		this.compatibilityMode = null;
  
@@ -1105,7 +1130,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..dd0bf13ed56418d9a7354121f0df58ba
  		/**
  		 * A reference to the device.
  		 *
-@@ -83926,7 +84253,11 @@ class WebGPUBackend extends Backend {
+@@ -83926,7 +84262,11 @@ class WebGPUBackend extends Backend {
  				xrCompatible: renderer.xr.enabled
  			};
  
@@ -1118,7 +1143,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..dd0bf13ed56418d9a7354121f0df58ba
  
  			if ( adapter === null ) {
  
-@@ -84153,7 +84484,9 @@
+@@ -84153,7 +84493,9 @@
  
  		let descriptor = canvasData.descriptor;
  
@@ -1129,7 +1154,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..dd0bf13ed56418d9a7354121f0df58ba
  
  			descriptor = new GPURenderPassDescriptor();
  			descriptor.colorAttachments.push( new GPURenderPassColorAttachment() );
-@@ -84180,6 +84513,9 @@
+@@ -84180,6 +84522,9 @@
  
  			canvasData.descriptor = descriptor;
  			canvasData.samples = samples;
@@ -1139,7 +1164,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..dd0bf13ed56418d9a7354121f0df58ba
  
  		}
  
-@@ -85461,13 +85797,12 @@ class WebGPUBackend extends Backend {
+@@ -85461,13 +85806,12 @@ class WebGPUBackend extends Backend {
  		for ( let i = 0, l = bindings.length; i < l; i ++ ) {
  
  			const bindGroup = bindings[ i ];
@@ -1156,7 +1181,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..dd0bf13ed56418d9a7354121f0df58ba
  
  			}
  
-@@ -85766,6 +86101,7 @@ class WebGPUBackend extends Backend {
+@@ -85766,6 +86110,7 @@ class WebGPUBackend extends Backend {
  		const utils = this.utils;
  
  		const sampleCount = utils.getSampleCountRenderContext( renderObject.context );
@@ -1164,7 +1189,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..dd0bf13ed56418d9a7354121f0df58ba
  		const colorSpace = utils.getCurrentColorSpace( renderObject.context );
  		const colorFormat = utils.getCurrentColorFormat( renderObject.context );
  		const depthStencilFormat = utils.getCurrentDepthStencilFormat( renderObject.context );
-@@ -85787,7 +86123,8 @@ class WebGPUBackend extends Backend {
+@@ -85787,7 +86132,8 @@ class WebGPUBackend extends Backend {
  			data.colorFormat !== colorFormat || data.depthStencilFormat !== depthStencilFormat ||
  			data.primitiveTopology !== primitiveTopology ||
  			data.frontFaceCW !== frontFaceCW ||
@@ -1174,7 +1199,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..dd0bf13ed56418d9a7354121f0df58ba
  		) {
  
  			data.material = material; data.materialVersion = material.version;
-@@ -85807,6 +86144,7 @@ class WebGPUBackend extends Backend {
+@@ -85807,6 +86153,7 @@ class WebGPUBackend extends Backend {
  			data.primitiveTopology = primitiveTopology;
  			data.frontFaceCW = frontFaceCW;
  			data.clippingContextCacheKey = renderObject.clippingContextCacheKey;
@@ -1182,7 +1207,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..dd0bf13ed56418d9a7354121f0df58ba
  
  			needsUpdate = true;
  
-@@ -85828,6 +86166,7 @@ class WebGPUBackend extends Backend {
+@@ -85828,6 +86175,7 @@ class WebGPUBackend extends Backend {
  
  		const utils = this.utils;
  		const renderContext = renderObject.context;
@@ -1190,7 +1215,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..dd0bf13ed56418d9a7354121f0df58ba
  
  		// meshes with negative scale have a different frontFace render pipeline
  		// descriptor value so the following must be honored in the cache key
-@@ -85846,6 +86185,7 @@ class WebGPUBackend extends Backend {
+@@ -85846,6 +86194,7 @@ class WebGPUBackend extends Backend {
  			material.side,
  			frontFaceCW,
  			utils.getSampleCountRenderContext( renderContext ),
@@ -1980,7 +2005,32 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..a3c4504d618112568933b705105988da
  
  		backend.delete( attribute );
  
-@@ -84153,7 +84397,9 @@
+@@ -82553,6 +82797,15 @@
+ 
+ 					_renderPipelineDescriptor.reset();
+ 
++					// Close the scope before yielding so unrelated render commands cannot enter it.
++					// Handle rejection immediately even if the pipeline promise is still pending.
++					const errorScopePromise = device.popErrorScope().catch( ( err ) => {
++
++						asyncError ??= err;
++						return null;
++
++					} );
++
+ 					if ( pipelinePromise !== null ) {
+ 
+ 						try {
+@@ -82567,7 +82820,7 @@
+ 
+ 					}
+ 
+-					const errorScope = await device.popErrorScope();
++					const errorScope = await errorScopePromise;
+ 
+ 					if ( errorScope !== null || asyncError !== null ) {
+ 
+@@ -84153,7 +84406,9 @@
  
  		let descriptor = canvasData.descriptor;
  
@@ -1991,7 +2041,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..a3c4504d618112568933b705105988da
  
  			descriptor = new GPURenderPassDescriptor();
  			descriptor.colorAttachments.push( new GPURenderPassColorAttachment() );
-@@ -84180,6 +84426,9 @@
+@@ -84180,6 +84435,9 @@
  
  			canvasData.descriptor = descriptor;
  			canvasData.samples = samples;
@@ -3102,6 +3152,35 @@ index da4bd473bd8df021159108bac235d211ff2a011f..a5da7ca09f746c0b2859ef173df663cc
  	}
  
  	/**
+diff --git a/src/renderers/webgpu/utils/WebGPUPipelineUtils.js b/src/renderers/webgpu/utils/WebGPUPipelineUtils.js
+index 764267c..3480fea 100644
+--- a/src/renderers/webgpu/utils/WebGPUPipelineUtils.js
++++ b/src/renderers/webgpu/utils/WebGPUPipelineUtils.js
+@@ -299,6 +299,15 @@
+ 
+ 					_renderPipelineDescriptor.reset();
+ 
++					// Close the scope before yielding so unrelated render commands cannot enter it.
++					// Handle rejection immediately even if the pipeline promise is still pending.
++					const errorScopePromise = device.popErrorScope().catch( ( err ) => {
++
++						asyncError ??= err;
++						return null;
++
++					} );
++
+ 					if ( pipelinePromise !== null ) {
+ 
+ 						try {
+@@ -313,7 +322,7 @@
+ 
+ 					}
+ 
+-					const errorScope = await device.popErrorScope();
++					const errorScope = await errorScopePromise;
+ 
+ 					if ( errorScope !== null || asyncError !== null ) {
+ 
 diff --git a/src/renderers/webgpu/utils/WebGPUTextureUtils.js b/src/renderers/webgpu/utils/WebGPUTextureUtils.js
 index ff8ee2dbace2816105aa7152891c04f2333f33e8..965e3e8359cbb10984f82152e4f24621f589b535 100644
 --- a/src/renderers/webgpu/utils/WebGPUTextureUtils.js
