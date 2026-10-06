@@ -56,7 +56,7 @@ library. Platform input and lifecycle already exist in `packages/runtime-native/
 #### Phase 3: Input and services without a JS core
 **Status:** NOT STARTED
 **Files:** proposed `packages/runtime-native/src/engine/services/`
-- [ ] Injected input reaches a game callback in the same tick on the desktop native-engine player. proof: `node packages/playtest/dist/runner/cli.js native-engine-input.playtest.json --target desktop`
+- [x] Injected input reaches a game callback in the same tick on the desktop native-engine player. proof: `node packages/playtest/dist/runner/cli.js native-engine-input.playtest.json --target desktop` — 2026-10-06: green, run as `node packages/playtest/dist/runner/cli.js packages/runtime-native/tests/native-engine/playtests/native-engine-input.playtest.json --target desktop --executable packages/runtime-native/build/tn-linux/tn-native-engine-player`. The endpoint stamps each queued input with the tick it is for; the C++ game's per-tick `update(dt)` records the tick it first saw it in (`sample.resources.input`): injected for tick 5, seen in tick 5, and the player moved 0.8. The binary inspects JS-free. Red control: input delivered one tick late, seen in tick 6 and the scenario fails.
 - [ ] The same input scenario passes on the Android emulator. proof: `node packages/playtest/dist/runner/cli.js native-engine-input.playtest.json --target android`
 
 ## Decisions

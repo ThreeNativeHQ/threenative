@@ -21,6 +21,12 @@ struct InputEvent {
     int pointerId = 1;
     std::string pointerType = "mouse";
     bool isPrimary = true;
+    /**
+     * The simulation tick this input was queued for: input injected while tick N-1 has run is
+     * consumed by tick N. The game's per-tick callback records it beside the tick it first saw the
+     * input, so a playtest can prove both are the same tick (PRD-528 box 59).
+     */
+    uint64_t injectedTick = 0;
 };
 
 /** What the endpoint drives: the scene it samples and the engine's own tick. */
@@ -52,6 +58,10 @@ class Endpoint {
     std::string handle(std::string_view frame);
     /** The input queued since the last call, in injection order; the host applies it per tick. */
     std::vector<InputEvent> takeInput() { return std::exchange(input_, {}); }
+
+    /** The simulation tick that last ran, as the host reports it, so a game callback can stamp
+     *  what it first saw. */
+    [[nodiscard]] uint64_t tick() const { return host_.tick ? host_.tick() : 0; }
 
     static constexpr std::size_t kMaxPayloadBytes = 1'000'000;
 

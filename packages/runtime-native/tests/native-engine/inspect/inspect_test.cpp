@@ -8,6 +8,7 @@
 #include "engine/inspect/endpoint.h"
 #include "engine/world/loop/fixed_step.h"
 
+#include <cstdint>
 #include <cstdio>
 #include <iterator>
 #include <memory>
@@ -28,6 +29,7 @@ struct Game {
     world::FixedStepClock clock{1.0 / 60, 5};
     std::set<std::string> held;          // keys down, as game code reads them
     std::vector<std::string> seenAtTick; // "tick:key" for each key first seen down
+    std::vector<uint64_t> injectedTicks; // the tick each injected keydown was for
     std::unique_ptr<Endpoint> endpoint;
     double now = 0;
     Game() {
@@ -43,8 +45,10 @@ struct Game {
             clock.advance(now);
             // The loop applies queued input at the start of the tick, before game code runs.
             for (const InputEvent& e : endpoint->takeInput()) {
-                if (e.type == "keydown")
+                if (e.type == "keydown") {
                     held.insert(e.key);
+                    injectedTicks.push_back(e.injectedTick);
+                }
                 if (e.type == "keyup")
                     held.erase(e.key);
             }
@@ -166,8 +170,10 @@ void inputTick() {
     send("advance", "1");
     send("input.keyUp", "{\"key\":\"KeyW\"}");
     send("advance", "2");
-    std::printf("input tick: seen %s\n", game.seenAtTick.empty() ? "nothing" : game.seenAtTick.front().c_str());
+    std::printf("input tick: seen %s for %s\n", game.seenAtTick.empty() ? "nothing" : game.seenAtTick.front().c_str(),
+                game.injectedTicks.empty() ? "nothing" : std::to_string(game.injectedTicks.front()).c_str());
     CHECK(game.seenAtTick == std::vector<std::string>{"4:w"}); // tick 4 only, as "w" (KeyW -> w)
+    CHECK(game.injectedTicks == std::vector<uint64_t>{4});     // and it was injected for tick 4
 }
 
 } // namespace

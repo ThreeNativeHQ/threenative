@@ -125,19 +125,18 @@ int main(int argc, char** argv) {
     player::InspectDemo demo(game);
     world::FixedStepClock clock(kTickStep, 5);
     clock.start(0);
-    inspect::Endpoint* endpointPtr = nullptr;
     double nowMs = 0;
     inspect::Host host;
     host.scene = &demo.scene();
     host.tick = [&clock] { return clock.tick(); };
-    host.step = [&clock, &demo, &endpointPtr, &nowMs] {
+    host.step = [&clock, &demo, &nowMs] {
         // One fixed update per driven tick, so the reported clock is the engine's own.
         nowMs += 1000.0 * kTickStep;
         clock.advance(nowMs);
-        demo.step(*endpointPtr);
+        demo.update(kTickStep);
     };
-    // What the scenario schema can read: the profile describe reports, and the state snapshot a
-    // scenario compares across labelled steps.
+    // What the scenario schema can read: the profile describe reports, the state snapshot a
+    // scenario compares across labelled steps, and the input latch the per-tick callback fills.
     host.resource = [&demo, &clock](const std::string& id) -> json::Value {
         if (id == "profile")
             return json::Value::makeObject({{"engine", json::Value::makeString("native")},
@@ -150,10 +149,17 @@ int main(int argc, char** argv) {
                  {"playerZ", json::Value::makeNumber(at.z)},
                  {"tick", json::Value::makeNumber(double(clock.tick()))}});
         }
+        if (id == "input") {
+            const player::InspectDemo::InputLatch& latch = demo.inputLatch();
+            return json::Value::makeObject({{"key", json::Value::makeString(latch.key)},
+                                            {"latched", json::Value::makeBool(latch.latched)},
+                                            {"injectedTick", json::Value::makeNumber(double(latch.injectedTick))},
+                                            {"seenTick", json::Value::makeNumber(double(latch.seenTick))}});
+        }
         return json::Value::makeNull();
     };
     inspect::Endpoint endpoint(host);
-    endpointPtr = &endpoint;
+    demo.attachEndpoint(endpoint);
 
     player::Mailbox mailbox(player::Mailbox::rootFromEnvironment());
     const bool runner = mailbox.announceReady();

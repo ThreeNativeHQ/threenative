@@ -11,8 +11,8 @@ namespace tn::engine::player {
 
 namespace {
 
-/** One metre per tick step, on the floor plane. */
-constexpr double kStep = 0.1;
+/** Metres per second on the floor plane; one 1/60 s tick moves the player 0.1. */
+constexpr double kSpeed = 6.0;
 
 std::shared_ptr<Material> colour(double r, double g, double b, double roughness) {
     auto material = std::make_shared<Material>(MaterialType::Standard);
@@ -70,20 +70,31 @@ void InspectDemo::apply(const inspect::InputEvent& event) {
         heldBack_ = down;
 }
 
-void InspectDemo::step(inspect::Endpoint& endpoint) {
-    // The tick boundary: everything injected since the last tick is read before this tick runs.
-    for (const inspect::InputEvent& event : endpoint.takeInput())
-        apply(event);
+void InspectDemo::update(double dt) {
+    if (endpoint_ != nullptr) {
+        const uint64_t tick = endpoint_->tick();
+        // The tick boundary: everything injected since the last tick is read before this tick runs.
+        for (const inspect::InputEvent& event : endpoint_->takeInput()) {
+            if (!latch_.latched && event.type == "keydown") {
+                latch_.latched = true;
+                latch_.key = event.key;
+                latch_.injectedTick = event.injectedTick;
+                latch_.seenTick = tick;
+            }
+            apply(event);
+        }
+    }
 
+    const double step = kSpeed * dt;
     double dx = 0, dz = 0;
     if (heldRight_)
-        dx += kStep;
+        dx += step;
     if (heldLeft_)
-        dx -= kStep;
+        dx -= step;
     if (heldBack_)
-        dz += kStep;
+        dz += step;
     if (heldForward_)
-        dz -= kStep;
+        dz -= step;
     player_.position.x += dx;
     player_.position.z += dz;
     player_.position.y = 0.7;  // the floor keeps its feet on it

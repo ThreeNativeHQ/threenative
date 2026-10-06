@@ -257,6 +257,8 @@ bool Endpoint::input(const std::string& method, const Value* argument, std::stri
     };
     if (!argument || !argument->isObject())
         return invalid("Device " + method + " requires an object argument.");
+    // Input queued while tick N-1 has run is consumed by tick N, which is the tick it is for.
+    const uint64_t forTick = tick() + 1;
     if (method == "input.keyDown" || method == "input.keyUp") {
         const Value* key = argument->find("key");
         if (!key || !key->isString())
@@ -266,7 +268,9 @@ bool Endpoint::input(const std::string& method, const Value* argument, std::stri
         std::string named = code;
         if (std::regex_match(code, letter))
             named = std::string(1, char(code[3] - 'A' + 'a'));
-        input_.push_back({method == "input.keyDown" ? "keydown" : "keyup", named, code});
+        InputEvent e{method == "input.keyDown" ? "keydown" : "keyup", named, code};
+        e.injectedTick = forTick;
+        input_.push_back(e);
         return true;
     }
     if (method == "input.pointer") {
@@ -279,6 +283,7 @@ bool Endpoint::input(const std::string& method, const Value* argument, std::stri
         e.x = x->number();
         e.y = y->number();
         e.buttons = buttons->number();
+        e.injectedTick = forTick;
         input_.push_back(e);
         return true;
     }
@@ -319,6 +324,7 @@ bool Endpoint::input(const std::string& method, const Value* argument, std::stri
             e.pointerId = p.id;
             e.pointerType = "touch";
             e.isPrimary = primary;
+            e.injectedTick = forTick;
             input_.push_back(e);
         };
         for (const Pointer& p : pointers_)
