@@ -60,4 +60,4 @@ Calls made from the code by the agent, accepted by the owner ("go with what you 
 9. **Binding crossing cost:** the per-object API stays Three-compatible. Bulk typed-array paths, shaped like the existing physics ABI, are added only where CP1 shows that crossings cost real frame time.
 10. **The legacy JS-owned engine is deleted** one release after [PRD-533 (N20)](PRD-533-n20-platform-qualification-performance-default-promotion.md) makes native the default ([PRD-535 (N21)](PRD-535-n21-the-js-engine-is-deleted.md)).
 
-Fixed by the proposal: C++20 for the engine, Dawn and wgpu-native retained, no upstream Three.js bundle inside the native engine, TypeScriptCompiler as the first AOT candidate (§1, §4).
+Fixed by the proposal: C++20 for the engine, Dawn and wgpu-native retained, no upstream Three.js bundle inside the native engine, TypeScriptCompiler as the first AOT candidate (§1, §4) — superseded 2026-10-05 by decision 11: Perry compiles game code.

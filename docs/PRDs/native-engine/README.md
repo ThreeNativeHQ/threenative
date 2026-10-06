@@ -10,7 +10,7 @@ All new package names, configuration fields, ABI names, status markers, and work
 
 ## PRD index
 
-**Batch status: IN PROGRESS — 172/237 phase boxes (72%) as of 2026-10-05, on `feat/native-engine` (PR #438).** This file is the batch index and the source proposal; the PRDs below carry the boxes. Work packages too large for one PRD (at most 3 phases, about 8 boxes) are a folder with its own `README.md` and child PRDs. The batch moves to `done/` whole only when every PRD in it is finished.
+**Batch status: IN PROGRESS — 160/237 phase boxes (67%) as of 2026-10-05, on `feat/native-engine` (PR #438).** This file is the batch index and the source proposal; the PRDs below carry the boxes. Work packages too large for one PRD (at most 3 phases, about 8 boxes) are a folder with its own `README.md` and child PRDs. The batch moves to `done/` whole only when every PRD in it is finished.
 
 ### Progress
 
@@ -26,9 +26,9 @@ Generated from the PRD files' boxes; a PRD is done when every box is ticked.
 | [PRD-502](N04-lifetime-and-numerics/PRD-502-n04b-handles-keep-identity-and-aliases.md) | Handles keep identity and aliases (N04b) | 5/5 | done |
 | [PRD-503](N04-lifetime-and-numerics/PRD-503-n04c-unreachable-cycles-are-reclaimed.md) | Unreachable cycles are reclaimed (N04c) | 7/7 | done |
 | [PRD-504](N04-lifetime-and-numerics/PRD-504-n04d-buffers-cross-the-abi-with-an-owner.md) | Buffers cross the ABI with an owner (N04d) | 7/7 | done |
-| [PRD-505](N05-native-typescript-qualification/PRD-505-n05a-the-language-corpus-compiles-on-linux-x64.md) | The language corpus compiles on Linux x64 (N05a) | 6/6 | done |
-| [PRD-506](N05-native-typescript-qualification/PRD-506-n05b-three-imports-bind-natively-and-callbacks-are-reclaimed.md) | Three imports bind natively and callbacks are reclaimed (N05b) | 5/6 | in progress |
-| [PRD-507](N05-native-typescript-qualification/PRD-507-n05c-the-same-corpus-runs-on-android-arm64.md) | The same corpus runs on Android arm64 (N05c) | 1/4 | in progress |
+| [PRD-505](N05-native-typescript-qualification/PRD-505-n05a-the-language-corpus-compiles-on-linux-x64.md) | The language corpus compiles on Linux x64 (N05a) | 1/6 | in progress |
+| [PRD-506](N05-native-typescript-qualification/PRD-506-n05b-three-imports-bind-natively-and-callbacks-are-reclaimed.md) | Three imports bind natively and callbacks are reclaimed (N05b) | 0/6 | not started |
+| [PRD-507](N05-native-typescript-qualification/PRD-507-n05c-the-same-corpus-runs-on-android-arm64.md) | The same corpus runs on Android arm64 (N05c) | 0/4 | not started |
 | [PRD-508](PRD-508-n06-native-scene-graph-transforms-cameras-geometry.md) | Native scene graph, transforms, cameras and geometry (N06) | 7/7 | done |
 | [PRD-509](PRD-509-n07-gpu-resources-presentation-and-device-loss.md) | GPU resources, presentation and device loss (N07) | 7/8 | in progress |
 | [PRD-510](N08-native-tsl-and-shader-packages/PRD-510-n08a-a-typed-shader-ir-with-ordered-effects.md) | A typed shader IR with ordered effects (N08a) | 4/4 | done |
@@ -51,7 +51,7 @@ Generated from the PRD files' boxes; a PRD is done when every box is ticked.
 | [PRD-527](N14-native-render-chain-and-advanced-visuals/PRD-527-n14e-particles-and-fluids-run-native.md) | Particles and fluids run native (N14e) | 1/4 | in progress |
 | [PRD-528](PRD-528-n15-framework-loop-rapier-sync-input-services.md) | Framework loop, Rapier sync, input and services (N15) | 5/7 | in progress |
 | [PRD-529](PRD-529-n16-native-playtest-inspection-telemetry.md) | Native playtest, inspection and telemetry (N16) | 2/6 | in progress |
-| [PRD-530](PRD-530-n17-strict-native-typescript-game-packaging.md) | Strict native-TypeScript game packaging (N17) | 4/7 | in progress |
+| [PRD-530](PRD-530-n17-strict-native-typescript-game-packaging.md) | Strict native-TypeScript game packaging (N17) | 3/7 | in progress |
 | [PRD-531](PRD-531-n18-v8-game-runtime-adapter.md) | V8 game runtime adapter (N18) | 7/8 | in progress |
 | [PRD-532](PRD-532-n19-webassembly-native-core-browser-port.md) | WebAssembly native-core browser port (N19) | 7/8 | in progress |
 | [PRD-533](PRD-533-n20-platform-qualification-performance-default-promotion.md) | Platform qualification, performance and default promotion (N20) | 0/8 | not started |
@@ -226,7 +226,7 @@ Existing projection-skinned code preserves authored objects while rendering comp
 |---|---|---|
 | Engine implementation | C++20 | Native libraries; no scripting headers in public core APIs. |
 | Native GPU access | Existing WebGPU context, Dawn/wgpu-native | Thin backend adapter; no new general graphics abstraction. |
-| Native game-language prototype | TypeScriptCompiler | Compile game code/binding glue only; qualified separately. |
+| Native game-language compiler | Perry (pinned; owner decision 2026-10-05) | Compile game code and the generated facade only, through a small Perry adapter over the versioned C ABI; qualified separately. |
 | Existing JS runtime | Optional compatibility adapter | Not linked into strict native artifacts. |
 | Three.js source | Pinned reference, tests, selectively ported algorithms | No imported Three.js engine bundle in native implementation. |
 | glTF parsing | cgltf | Parser only; scene creation, extensions, decoding, and lifetime remain owned. |
@@ -356,9 +356,13 @@ In a native-AOT application the wrappers compile too. A property assignment can 
 
 ### 8.4 Compiler selection and fork policy
 
-Use ASDAlexander77/TypeScriptCompiler as the first native-TS candidate. It already documents executable generation and C-binding generation. Its `tsbindgen` emits C declarations; C++ class exposure and normal module integration are not magically solved by it. The current example uses generated `.ts` declarations and reference directives, so the package/module adapter must be explicitly qualified. [R14]
+**Owner decision, 2026-10-05: Perry is the native-TS compiler** (decision 11 in [NATIVE-ENGINE-DECISION.md](../../architecture/NATIVE-ENGINE-DECISION.md)). It compiles the game and the generated Three-compatible facade, not the engine. Perry targets Linux, Windows, macOS, iOS and Android from one codebase, and its native-library system already provides linked native functions, opaque handles, buffer-plus-length arguments, promises, closures, GC roots and event-pump integration. [R14]
 
-Start against a pinned upstream commit. Create an isolated fork only for a reduced failing case needed by the approved language/binding contract. Each patch requires a minimized reproduction, semantic test, native target test, and upstreamable change. Do not fork LLVM or extend the language broadly for unrelated npm packages.
+ASDAlexander77/TypeScriptCompiler, the first candidate, is dropped: its pinned v0.0-pre-alpha87 segfaults compiling its default library for any non-host target, and alpha89 and alpha90 fail the same way, so no Android arm64 library resolves its runtime. Its Linux x64 results stay recorded in PRD-505..507 as history.
+
+The engine knows nothing of Perry's value representation, closures or GC: a small Perry adapter over the versioned C ABI owns them, so a later compiler change is a new adapter. Perry, its runtime and the adapter are pinned as one version (its 0.5.x FFI changed without a major bump). Strict builds use Perry's strict controls so `eval`, `new Function` and dynamic import fail at compile time, and the artifact audit still runs. Perry's weak references retain their targets and its finalizers do not run, so engine resource lifetimes are explicit and repeated load/unload is an acceptance test. Perry's TSX is not React's reconciler: a game's React HUD is qualified under Perry before that game is called strict native. [R15]
+
+Change Perry only for a reduced failing case needed by the approved language/binding contract, each with a minimized reproduction, semantic test, native target test and upstreamable change. If Perry needs broad redesign to pass the gameplay and HUD corpus, stop expanding it and try the same C ABI with another compiler; never fall back to V8 silently in a strict build.
 
 The first qualification corpus includes classes, inheritance, getters/setters, constructors with object options, enums/unions, ordinary imports including cycles used by the fixtures, typed arrays, closures, native callbacks, exceptions, native resource lifetime, and asynchronous loading/compilation behavior required by the first game.
 
@@ -644,8 +648,8 @@ The repository files below were inspected through the connected GitHub source at
 - R11: threepp README.
 - R12: Filament README.
 - R13: Three.js Object3D documentation; pinned source/tests remain the actual compatibility oracle.
-- R14: TypeScriptCompiler README, native executable and tsbindgen sections.
-- R15: TypeScriptCompiler `docs/memory-models.md`.
+- R14: Perry README and platforms guide; native-library (FFI) documentation.
+- R15: Perry documentation on strict dynamic-code controls, weak references and finalizers, and TSX semantics.
 - R16: Static Hermes compilation/runtime modes and typed-language documentation.
 - R17: Emscripten WebGPU support documentation.
 
@@ -660,8 +664,8 @@ https://github.com/guillaumeblanc/ozz-animation
 https://github.com/markaren/threepp
 https://github.com/google/filament
 https://threejs.org/docs/pages/Object3D.html
-https://github.com/ASDAlexander77/TypeScriptCompiler/blob/main/README.md
-https://github.com/ASDAlexander77/TypeScriptCompiler/blob/main/docs/memory-models.md
+https://github.com/PerryTS/perry/blob/main/README.md
+https://perryts.github.io/perry/platforms/overview.html
 https://github.com/facebook/hermes/blob/static_h/doc/blog/2025-11-02-hermes-compilation-runtime-modes.md
 https://github.com/facebook/hermes/blob/static_h/doc/TypedLanguage.md
 https://emscripten.org/docs/porting/multimedia_and_graphics/WebGPU-support.html

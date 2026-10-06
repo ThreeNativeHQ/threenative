@@ -6,7 +6,7 @@
 
 N05 decides whether gate **T** (§1) is reachable before the engine rewrite widens. It must show one
 Three-shaped TypeScript fixture, written against the familiar `three`, `three/webgpu` and
-`three/tsl` imports, compiled ahead of time by a pinned TypeScriptCompiler and running natively on
+`three/tsl` imports, compiled ahead of time by a pinned Perry (decision 11; TypeScriptCompiler was dropped 2026-10-05) and running natively on
 Linux x64 and Android arm64, with a proven rooting/reclamation path for callbacks that capture
 engine wrappers (§7.1, §8.4). If the agreed corpus needs a broad compiler or runtime redesign, the
 stop rule in [PRD-505](PRD-505-n05a-the-language-corpus-compiles-on-linux-x64.md#decisions) applies.

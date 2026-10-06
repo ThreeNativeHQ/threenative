@@ -119,8 +119,37 @@ best"), 2026-10-04:
     makes native the default
     ([PRD-535 (N21)](../PRDs/native-engine/PRD-535-n21-the-js-engine-is-deleted.md)).
 
+11. **The game-code compiler is Perry (owner decision, 2026-10-05).** Perry (`PerryTS/perry`,
+    MIT, LLVM back end) compiles the game's TypeScript and the generated Three-compatible facade;
+    it does not compile the engine. It replaces ASDAlexander77/TypeScriptCompiler ("tslang"),
+    which is dropped: its pinned v0.0-pre-alpha87 segfaults compiling its default library for any
+    non-host target, and alpha89 and alpha90 fail the same way, so no arm64 library resolves its
+    runtime. Rules that follow from this decision:
+    - **One boundary.** Compiled game code reaches the engine only through the versioned C ABI of
+      [PRD-500 (N03)](../PRDs/native-engine/PRD-500-n03-api-catalog-binding-abi-and-version-protocol.md),
+      through a small Perry adapter that owns Perry's value representation, GC roots for retained
+      callbacks and completion routing. The engine knows nothing of Perry. Changing the compiler
+      later is a new adapter, not an engine change.
+    - **Pinned together.** The Perry compiler, its runtime and the adapter are pinned as one
+      version and upgraded on purpose: Perry's 0.5.x FFI surface has changed without a major
+      version bump.
+    - **Strict builds reject, at compile time,** every unsupported dynamic path (`eval`,
+      `new Function`, dynamic import) with Perry's strict controls, and the artifact audit still
+      proves no interpreter or JIT is present. A compiled executable alone proves nothing.
+    - **Resource lifetimes are explicit.** Perry's `WeakMap`, `WeakSet` and `WeakRef` retain their
+      targets and `FinalizationRegistry` callbacks do not run, so no native texture, geometry,
+      scene or callback registration depends on a finalizer. Repeated scene load/unload and UI
+      mount/dispose are acceptance tests.
+    - **The HUD is qualified separately.** The native CSS backend stays; Perry's TSX is not React's
+      reconciler, so the game's React HUD (`react-reconciler`, hooks, handlers, scheduler) must
+      compile and behave under Perry before a game with a React HUD is called strict native.
+    - **Stopping rule.** If Perry needs broad compiler or runtime redesign to pass the gameplay and
+      HUD corpus, its integration stops expanding and the same C ABI is tried with another
+      compiler. A strict build never falls back to V8 silently.
+
 Fixed by the proposal: C++20 for the engine, Dawn and wgpu-native retained, no upstream Three.js
-bundle inside the native engine, TypeScriptCompiler as the first AOT candidate.
+bundle inside the native engine. The proposal named TypeScriptCompiler as the first AOT candidate;
+decision 11 replaces it with Perry.
 
 ## 4. The two gates
 
