@@ -185,9 +185,10 @@ this host, so it is not attributed. The prewarm (`e580e76cb`) stays off this PR,
   - Only about 15 of 300 frames carry a GPU timestamp, too few for a GPU p95.
   - Done when: each gap has a ticked box in PRD-389.
   - **Done 2026-10-05:** PRD-389 Phase 4 ("the 2026-10-03 Machinefall probe's gaps") reads 5 ticked / 0 open on `origin/develop`, one box per gap above (counted tick batch charged to `update`, main-pass GPU-selected triangles beside three's CPU figure, the 1-in-N GPU sampler counting drawn frames, a standing scene measurable under the wall-clock opt-in); landed by #423, merged 2026-10-04.
-- [ ] **A2 · [PRD-477](PRD-477-worldcells-auto-on-measured-budgets.md) Phase 1: the world gate goes red, then green.** After: nothing; runs alongside A1.
+- [x] **A2 · [PRD-477](PRD-477-worldcells-auto-on-measured-budgets.md) Phase 1: the world gate goes red, then green.** After: nothing; runs alongside A1.
   - The gate must red on an impostors-on build (#375) and green on develop. Every later 🌍 row trusts it.
   - Done when: both Phase 1 boxes are ticked.
+  - **Done 2026-10-05:** both Phase 1 boxes ticked in this PR. On Machinefall with 2 + 2 runs and 3 blind critics each: develop vs develop **passes** (exit 0); develop vs impostors-default-on **reds** (exit 1, distant crowns missing in every impostor run). The gate change in this PR scores a candidate event only when it is in every candidate run and in no reference run.
 - [ ] **A3 · PRD-478 Phase 1: measure the shadow-window work that #390 already merged.** After: A1 and A2. ⏱🌍👁🙋
   - The owner side-by-sides the camp and highway aerials against `?refShadow=1`. The first candidate failed exactly that review.
 - [ ] **A4 · [PRD-494](PRD-494-the-main-pass-fits-the-draw-budget.md): the main pass fits the draw budget.** After: A3. ⏱🌍👁
