@@ -1,4 +1,4 @@
-import { type IFrameBudgetWindow, defineGame } from "@threenative/core";
+import { FRAME_HITCH_MARKER, type IFrameBudgetWindow, defineGame } from "@threenative/core";
 import { playtest } from "@threenative/core/playtest";
 import { type IPhysicsContext, rapier } from "@threenative/physics";
 import { Mesh } from "three";
@@ -21,6 +21,7 @@ export function makeAnimalPerformanceGame(mode: Exclude<AnimalMode, "qualificati
     }
   }
   let requested = false;
+  let consumeReport: ((message: string) => void) | undefined;
   let consumeWindow: ((window: IFrameBudgetWindow) => void) | undefined;
   return defineGame<IAnimalsState, IPhysicsContext>({
     assets: { basePath: "" },
@@ -77,6 +78,11 @@ export function makeAnimalPerformanceGame(mode: Exclude<AnimalMode, "qualificati
               performanceError: String(failure),
             });
             console.error(failure);
+          };
+          consumeReport = (message) => {
+            if (!live || finished || !collector || !message.startsWith(`${FRAME_HITCH_MARKER}:`))
+              return;
+            fail(new Error(`TN_ANIMAL_PERFORMANCE_FRAME_HITCH:${message}`));
           };
           consumeWindow = (window) => {
             const previousTick = previousWindowTick;
@@ -248,6 +254,7 @@ export function makeAnimalPerformanceGame(mode: Exclude<AnimalMode, "qualificati
           return () => {
             live = false;
             consumeWindow = undefined;
+            consumeReport = undefined;
             releaseAll([remove, release]);
           };
         },
@@ -262,7 +269,7 @@ export function makeAnimalPerformanceGame(mode: Exclude<AnimalMode, "qualificati
     camera: performanceProjection,
     frameBudget: {
       reportEvery: 1,
-      report: () => {},
+      report: (message) => consumeReport?.(message),
       onWindow: (window) => consumeWindow?.(window),
     },
     scenes: { animals: Workload },
