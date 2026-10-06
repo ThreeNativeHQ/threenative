@@ -35,6 +35,9 @@ struct Host {
     std::function<uint64_t()> tick; // the simulation tick that last ran
     std::function<void()> step;     // runs one simulation tick; it takes the queued input first
     std::string name = "threenative-native-engine";
+    /** The artifact's game runtime, reported in `describe.profile`: "cpp" for a built-in game, "v8"
+     *  for a game bundle on the V8 adapter. Mirrored into `sample.resources.profile`. */
+    std::string gameRuntime = "cpp";
     /** One JSON-safe registered resource by id, or null for an id this player does not carry. */
     std::function<json::Value(const std::string& id)> resource;
 };

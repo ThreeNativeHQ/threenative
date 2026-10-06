@@ -30,6 +30,20 @@ if(TARGET v8::v8 AND MYSTRAL_USE_V8 AND NOT MYSTRAL_PLATFORM STREQUAL "ios")
         target_link_options(tn-native-engine-host PRIVATE "LINKER:--allow-multiple-definition")
     endif()
     add_dependencies(tn-native-engine-tests tn-native-engine-host)
+
+    # PRD-531 phase 3: the desktop player with a game bundle on V8. It reuses the JS-free player's
+    # window/loop/render/mailbox path (tn_engine_player), so only the game side differs. It links
+    # the adapter, so it is a JS artifact and never a tn_native_engine_target:
+    #   node packages/playtest/dist/runner/cli.js <scenario> --target desktop \
+    #     --executable <build>/tn-native-engine-player-v8 --host-arg <game>.js
+    add_executable(tn-native-engine-player-v8 EXCLUDE_FROM_ALL src/engine/player/v8_main.cpp)
+    target_link_libraries(tn-native-engine-player-v8 PRIVATE tn_adapter_v8 tn_engine_player)
+    set_target_properties(tn-native-engine-player-v8 PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
+    if(NOT APPLE AND NOT WIN32)
+        target_link_options(tn-native-engine-player-v8 PRIVATE "LINKER:--allow-multiple-definition")
+    endif()
+    add_dependencies(tn-native-engine-tests tn-native-engine-player-v8)
+
     # Both CP1 arms on a small L4: 64 cubes + the ground + the output pass, 66 draws in each.
     set(TN_ESBUILD ${CMAKE_CURRENT_SOURCE_DIR}/../../node_modules/.bin/esbuild)
     set(TN_L4_SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/../../examples/engine-load-test/native-engine/l4-workload.ts)

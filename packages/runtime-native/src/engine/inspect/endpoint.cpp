@@ -107,9 +107,10 @@ Value Endpoint::describe() const {
                                 {"operationTimeoutMs", num(5000)}})},
                 {"name", str(host_.name)},
                 // PRD-529 solution 3: which artifact is running. Engine `native` (the C++ engine,
-                // never the legacy host) and game runtime `cpp` (a built-in game, no VM). Mirrored
-                // into sample.resources["profile"] so the existing scenario schema can assert it.
-                {"profile", obj({{"engine", str("native")}, {"gameRuntime", str("cpp")}})},
+                // never the legacy host) and the game runtime: `cpp` for a built-in game, `v8` for a
+                // game bundle on the adapter. Mirrored into sample.resources["profile"] so the
+                // existing scenario schema can assert it.
+                {"profile", obj({{"engine", str("native")}, {"gameRuntime", str(host_.gameRuntime)}})},
                 {"protocolVersion", num(1)}});
 }
 

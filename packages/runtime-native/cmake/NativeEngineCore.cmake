@@ -433,6 +433,18 @@ if(NOT EMSCRIPTEN)
         TN_PROJECTION_REFERENCE="${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/projection/projection_reference.json")
 endif()
 
+# PRD-508 phase 2: the native OrthographicCamera's projection matrix and its inverse, bit-for-bit
+# against the pinned three (ortho_projection_reference.json): zoom, asymmetric frusta, view offsets,
+# both renderer coordinate systems and reversed depth. The test reads its table from disk, which a
+# Wasm test under node cannot; the camera itself compiles the same there.
+if(NOT EMSCRIPTEN)
+    tn_native_engine_test(tn-native-engine-ortho-projection-test tests/native-engine/projection/ortho_projection_test.cpp
+        native_engine_ortho_projection=ortho_projection)
+    target_link_libraries(tn-native-engine-ortho-projection-test PRIVATE tn_engine_scene)
+    target_compile_definitions(tn-native-engine-ortho-projection-test PRIVATE
+        TN_ORTHO_PROJECTION_REFERENCE="${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/projection/ortho_projection_reference.json")
+endif()
+
 # PRD-531: three's `MathUtils` functions and the constants the minimal template imports, bit-exact
 # against the pinned three (mathutils_reference.json). The test drives the binding registry, so it
 # proves the bound surface, and reads its table from disk, which a Wasm test under node cannot.
@@ -596,6 +608,12 @@ if(NOT EMSCRIPTEN)
                 packages/runtime-native/tests/native-engine/projection/projection-reference.ts --check
             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../..)
         set_tests_properties(native_engine_projection_plan_reference_current PROPERTIES LABELS "native-engine")
+        # The committed orthographic camera table is what the pinned three produces today.
+        add_test(NAME native_engine_ortho_projection_reference_current
+            COMMAND ${TN_PNPM_EXECUTABLE} --workspace-root exec tsx
+                packages/runtime-native/tests/native-engine/projection/ortho_projection-reference.ts --check
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../..)
+        set_tests_properties(native_engine_ortho_projection_reference_current PROPERTIES LABELS "native-engine")
         # PRD-531: the committed MathUtils table is what the pinned three produces today.
         add_test(NAME native_engine_mathutils_reference_current
             COMMAND ${TN_PNPM_EXECUTABLE} --workspace-root exec tsx
