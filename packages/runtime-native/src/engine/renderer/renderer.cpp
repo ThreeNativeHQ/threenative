@@ -97,7 +97,8 @@ constexpr const char* kSlotNames[] = {
     "modelMatrix", "viewMatrix", "projectionMatrix", "normalMatrix", "diffuse", "alphaTest", "opaque", "roughness",
     "metalness", "emissive", "specular", "shininess", "ior", "specularIntensity", "specularColor", "uvTransform",
     "hemisphereSky", "hemisphereGround", "hemisphereDirection", "ambient", "boneBase", "bindMatrix",
-    "bindMatrixInverse", "morphBase", "morphInfluenceBase", "morphVertexCount", "morphBaseInfluence"};
+    "bindMatrixInverse", "morphBase", "morphInfluenceBase", "morphVertexCount", "morphBaseInfluence",
+    "envMapIntensity", "cameraWorldMatrix", "envMapTexelWidth", "envMapTexelHeight", "envMapMaxMip"};
 constexpr const char* kLightFieldNames[] = {"Color",       "Direction",        "Position",     "Distance",
                                             "Decay",       "Axis",             "ConeCos",      "PenumbraCos",
                                             "ShadowMatrix", "ShadowBias",      "ShadowNormalBias", "ShadowRadius",
@@ -168,13 +169,163 @@ std::vector<uint8_t> floatsToHalf(const std::vector<uint8_t>& bytes) {
     return out;
 }
 
-// A program that samples a material `map` cannot have one shared fragment group: each draw's group
-// binds its own texture and sampler. Its group[1] is left null and built per draw instead.
-bool samplesMaterialMap(const shader::StageModule& stage) {
+// A program that samples a material `map` or an environment cannot have one shared fragment group:
+// each draw's group binds its own texture and sampler. Its group[1] is left null and built per draw.
+bool perDrawFragment(const shader::StageModule& stage) {
     for (const shader::Binding& binding : stage.bindings)
-        if (binding.name == "t_map") return true;
+        if (binding.name == "t_map" || binding.name == "t_env") return true;
     return false;
 }
+
+// The PMREM generator's shaders, three's PMREMGenerator/PMREMUtils WGSL, ported operation for
+// operation: getDirection/getFace/getUV/roughnessToMip/bilinearCubeUV/textureCubeUV and the GGX
+// VNDF convolution (512 samples). Hand-written because the material IR has no u32 loop or bit ops;
+// this is renderer-internal plumbing, not a material.
+const char* kPmremPrelude = R"WGSL(
+struct PmremUniforms {
+  roughness: f32, mipInt: f32, texelWidth: f32, texelHeight: f32,
+  maxMip: f32, texelSize: f32, srgb: f32, pad: f32,
+};
+@group(0) @binding(0) var<uniform> u: PmremUniforms;
+@group(0) @binding(1) var t_src: texture_2d<f32>;
+@group(0) @binding(2) var s_src: sampler;
+struct VsOut {
+  @builtin(position) position: vec4<f32>,
+  @location(0) uv: vec2<f32>,
+  @location(1) face: f32,
+};
+@vertex fn vs(@location(0) a_pos: vec3<f32>, @location(1) a_uv: vec2<f32>, @location(2) a_face: f32) -> VsOut {
+  var out: VsOut;
+  out.position = vec4<f32>(a_pos.xy, 0.0, 1.0);
+  let t = u.texelSize;
+  out.uv = vec2<f32>(-t) + a_uv * (1.0 + 2.0 * t);
+  out.face = a_face;
+  return out;
+}
+fn pmremFace(direction: vec3<f32>) -> f32 {
+  let a = abs(direction);
+  var face = -1.0;
+  if (a.x > a.z) {
+    if (a.x > a.y) { face = select(3.0, 0.0, direction.x > 0.0); }
+    else { face = select(4.0, 1.0, direction.y > 0.0); }
+  } else {
+    if (a.z > a.y) { face = select(5.0, 2.0, direction.z > 0.0); }
+    else { face = select(4.0, 1.0, direction.y > 0.0); }
+  }
+  return face;
+}
+fn pmremUv(direction: vec3<f32>, face: f32) -> vec2<f32> {
+  var uv = vec2<f32>(0.0);
+  let a = abs(direction);
+  if (face == 0.0) { uv = vec2<f32>(direction.z, direction.y) / a.x; }
+  else if (face == 1.0) { uv = vec2<f32>(-direction.x, -direction.z) / a.y; }
+  else if (face == 2.0) { uv = vec2<f32>(-direction.x, direction.y) / a.z; }
+  else if (face == 3.0) { uv = vec2<f32>(-direction.z, direction.y) / a.x; }
+  else if (face == 4.0) { uv = vec2<f32>(-direction.x, direction.z) / a.y; }
+  else { uv = vec2<f32>(direction.x, direction.y) / a.z; }
+  return 0.5 * (uv + vec2<f32>(1.0));
+}
+fn pmremDirection(uvIn: vec2<f32>, face: f32) -> vec3<f32> {
+  let uv = uvIn * 2.0 - 1.0;
+  var d = vec3<f32>(uv, 1.0);
+  if (face == 0.0) { d = d.zyx; }
+  else if (face == 1.0) { d = d.xzy; d = vec3<f32>(-d.x, d.y, -d.z); }
+  else if (face == 2.0) { d.x *= -1.0; }
+  else if (face == 3.0) { d = d.zyx; d = vec3<f32>(-d.x, d.y, -d.z); }
+  else if (face == 4.0) { d = d.xzy; d = vec3<f32>(-d.x, -d.y, d.z); }
+  else { d.z *= -1.0; }
+  return d;
+}
+)WGSL";
+
+const char* kPmremEquirect = R"WGSL(
+fn srgbDecode(c: vec3<f32>) -> vec3<f32> {
+  let lo = c * 0.0773993808;
+  let hi = pow(c * 0.9478672986 + vec3<f32>(0.0521327014), vec3<f32>(2.4));
+  return select(hi, lo, c <= vec3<f32>(0.04045));
+}
+@fragment fn fs(in: VsOut) -> @location(0) vec4<f32> {
+  let direction = normalize(pmremDirection(in.uv, in.face));
+  let uEq = atan2(direction.z, direction.x) * 0.15915494309189535 + 0.5;
+  let vEq = asin(clamp(direction.y, -1.0, 1.0)) * 0.3183098861837907 + 0.5;
+  var c = textureSampleLevel(t_src, s_src, vec2<f32>(uEq, vEq), 0.0);
+  if (u.srgb > 0.5) { c = vec4<f32>(srgbDecode(c.rgb), c.a); }
+  return c;
+}
+)WGSL";
+
+const char* kPmremGgx = R"WGSL(
+fn pmremRoughnessToMip(r: f32) -> f32 {
+  var mip = 0.0;
+  if (r >= 0.8) { mip = (1.0 - r) * (1.0) / (0.2) + -2.0; }
+  else if (r >= 0.4) { mip = (0.8 - r) * (3.0) / (0.4) + -1.0; }
+  else if (r >= 0.305) { mip = (0.4 - r) * (1.0) / (0.095) + 2.0; }
+  else if (r >= 0.21) { mip = (0.305 - r) * (1.0) / (0.095) + 3.0; }
+  else { mip = -2.0 * log2(1.16 * r); }
+  return mip;
+}
+fn pmremBilinear(directionIn: vec3<f32>, mipIn: f32) -> vec3<f32> {
+  var mip = mipIn;
+  var face = pmremFace(directionIn);
+  let filterInt = max(4.0 - mip, 0.0);
+  mip = max(mip, 4.0);
+  let faceSize = exp2(mip);
+  var uv = pmremUv(directionIn, face) * (faceSize - 2.0) + 1.0;
+  if (face > 2.0) { uv.y += faceSize; face -= 3.0; }
+  uv.x += face * faceSize;
+  uv.x += filterInt * 48.0;
+  uv.y += 4.0 * (exp2(u.maxMip) - faceSize);
+  uv *= vec2<f32>(u.texelWidth, u.texelHeight);
+  return textureSampleLevel(t_src, s_src, uv, 0.0).xyz;
+}
+fn radicalInverse(bitsIn: u32) -> f32 {
+  var bits = bitsIn;
+  bits = (bits << 16u) | (bits >> 16u);
+  bits = ((bits & 0x55555555u) << 1u) | ((bits & 0xAAAAAAAAu) >> 1u);
+  bits = ((bits & 0x33333333u) << 2u) | ((bits & 0xCCCCCCCCu) >> 2u);
+  bits = ((bits & 0x0F0F0F0Fu) << 4u) | ((bits & 0xF0F0F0F0u) >> 4u);
+  bits = ((bits & 0x00FF00FFu) << 8u) | ((bits & 0xFF00FF00u) >> 8u);
+  return f32(bits) * 2.3283064365386963e-10;
+}
+fn importanceSampleGGX_VNDF(Xi: vec2<f32>, V: vec3<f32>, roughness: f32) -> vec3<f32> {
+  let alpha = roughness * roughness;
+  let T1 = vec3<f32>(1.0, 0.0, 0.0);
+  let T2 = cross(V, T1);
+  let r = sqrt(Xi.x);
+  let phi = 6.283185307179586 * Xi.y;
+  let t1 = r * cos(phi);
+  var t2 = r * sin(phi);
+  let s = 0.5 * (V.z + 1.0);
+  t2 = (1.0 - s) * sqrt(1.0 - t1 * t1) + s * t2;
+  let Nh = T1 * t1 + T2 * t2 + V * sqrt(max(0.0, 1.0 - t1 * t1 - t2 * t2));
+  return normalize(vec3<f32>(alpha * Nh.x, alpha * Nh.y, max(0.0, Nh.z)));
+}
+@fragment fn fs(in: VsOut) -> @location(0) vec4<f32> {
+  let N = normalize(pmremDirection(in.uv, in.face));
+  var prefiltered = vec3<f32>(0.0);
+  var totalWeight = 0.0;
+  if (u.roughness < 0.001) {
+    prefiltered = pmremBilinear(N, u.mipInt);
+  } else {
+    let up = select(vec3<f32>(1.0, 0.0, 0.0), vec3<f32>(0.0, 0.0, 1.0), abs(N.z) < 0.999);
+    let tangent = normalize(cross(up, N));
+    let bitangent = cross(N, tangent);
+    for (var i = 0u; i < 512u; i = i + 1u) {
+      let Xi = vec2<f32>(f32(i) / 512.0, radicalInverse(i));
+      let Ht = importanceSampleGGX_VNDF(Xi, vec3<f32>(0.0, 0.0, 1.0), u.roughness);
+      let H = normalize(tangent * Ht.x + bitangent * Ht.y + N * Ht.z);
+      let L = normalize(H * (2.0 * dot(N, H)) - N);
+      let NdotL = max(dot(N, L), 0.0);
+      if (NdotL > 0.0) {
+        prefiltered += pmremBilinear(L, u.mipInt) * NdotL;
+        totalWeight += NdotL;
+      }
+    }
+    if (totalWeight > 0.0) { prefiltered /= totalWeight; }
+  }
+  return vec4<f32>(prefiltered, 1.0);
+}
+)WGSL";
 
 }  // namespace
 
@@ -257,6 +408,7 @@ Renderer::~Renderer() {
     }
     wgpuTextureViewRelease(lutView_);
     wgpuTextureRelease(lut_);
+    releaseEnvironments();
     releaseMaterialTextures();
 }
 
@@ -332,7 +484,7 @@ void Renderer::setSize(uint32_t width, uint32_t height) {
 // for a texture/sampler pair the view and sampler given.
 WGPUBindGroup Renderer::bindGroup(WGPUBindGroupLayout layout, const shader::StageModule& stage, Handle uniforms,
                                   WGPUTextureView view, WGPUSampler sampler, WGPUTextureView mapView,
-                                  WGPUSampler mapSampler) {
+                                  WGPUSampler mapSampler, WGPUTextureView envView, WGPUSampler envSampler) {
     std::vector<WGPUBindGroupEntry> entries;
     for (const shader::Binding& b : stage.bindings) {
         WGPUBindGroupEntry e = {};
@@ -356,9 +508,9 @@ WGPUBindGroup Renderer::bindGroup(WGPUBindGroupLayout layout, const shader::Stag
             if (b.kind == shader::BindingKind::Texture) e.textureView = (b.cube ? cubeShadowMaps_ : shadowMaps_).at(index).view;
             else e.sampler = compareSampler_;
         } else if (b.kind == shader::BindingKind::Texture) {
-            e.textureView = b.name == "t_map" ? mapView : view;
+            e.textureView = b.name == "t_map" ? mapView : b.name == "t_env" ? envView : view;
         } else if (b.kind == shader::BindingKind::Sampler) {
-            e.sampler = b.name == "smp_map" ? mapSampler : sampler;
+            e.sampler = b.name == "smp_map" ? mapSampler : b.name == "smp_env" ? envSampler : sampler;
         } else {
             throw std::runtime_error("TN_NATIVE_BINDING_UNSUPPORTED: " + b.name);
         }
@@ -412,6 +564,267 @@ void Renderer::releaseMaterialTextures() {
     for (auto& [key, group] : mapGroups_)
         if (group) wgpuBindGroupRelease(group);
     mapGroups_.clear();
+}
+
+void Renderer::releaseEnvironments() {
+    for (auto& [texture, env] : environments_) {
+        if (env.view) wgpuTextureViewRelease(env.view);
+        if (env.pingView) wgpuTextureViewRelease(env.pingView);
+        if (env.texture) wgpuTextureRelease(env.texture);
+        if (env.pingpong) wgpuTextureRelease(env.pingpong);
+        if (env.sampler) wgpuSamplerRelease(env.sampler);
+    }
+    environments_.clear();
+    if (envEquirectPipeline_) wgpuRenderPipelineRelease(envEquirectPipeline_);
+    if (envGgxPipeline_) wgpuRenderPipelineRelease(envGgxPipeline_);
+    if (envPipelineLayout_) wgpuPipelineLayoutRelease(envPipelineLayout_);
+    if (envLayout_) wgpuBindGroupLayoutRelease(envLayout_);
+    envEquirectPipeline_ = envGgxPipeline_ = nullptr;
+    envPipelineLayout_ = nullptr;
+    envLayout_ = nullptr;
+}
+
+void Renderer::buildEnvironmentPipelines() {
+    if (envGgxPipeline_) return;
+    WGPUBindGroupLayoutEntry entries[3] = {};
+    entries[0].binding = 0;
+    entries[0].visibility = WGPUShaderStage_Vertex | WGPUShaderStage_Fragment;
+    entries[0].buffer.type = WGPUBufferBindingType_Uniform;
+    entries[0].buffer.minBindingSize = 32;
+    entries[1].binding = 1;
+    entries[1].visibility = WGPUShaderStage_Fragment;
+    entries[1].texture.sampleType = WGPUTextureSampleType_Float;
+    entries[1].texture.viewDimension = WGPUTextureViewDimension_2D;
+    entries[2].binding = 2;
+    entries[2].visibility = WGPUShaderStage_Fragment;
+    entries[2].sampler.type = WGPUSamplerBindingType_Filtering;
+    WGPUBindGroupLayoutDescriptor layoutDesc = {};
+    layoutDesc.entryCount = 3;
+    layoutDesc.entries = entries;
+    envLayout_ = wgpuDeviceCreateBindGroupLayout(device_, &layoutDesc);
+    WGPUPipelineLayoutDescriptor pipelineLayoutDesc = {};
+    pipelineLayoutDesc.bindGroupLayoutCount = 1;
+    pipelineLayoutDesc.bindGroupLayouts = &envLayout_;
+    envPipelineLayout_ = wgpuDeviceCreatePipelineLayout(device_, &pipelineLayoutDesc);
+
+    WGPUVertexAttribute attributes[3] = {};
+    attributes[0].format = WGPUVertexFormat_Float32x3;
+    attributes[0].offset = 0;
+    attributes[0].shaderLocation = 0;
+    attributes[1].format = WGPUVertexFormat_Float32x2;
+    attributes[1].offset = 12;
+    attributes[1].shaderLocation = 1;
+    attributes[2].format = WGPUVertexFormat_Float32;
+    attributes[2].offset = 20;
+    attributes[2].shaderLocation = 2;
+    WGPUVertexBufferLayout vertexBuffer = {};
+    vertexBuffer.arrayStride = 24;
+    vertexBuffer.stepMode = WGPUVertexStepMode_Vertex;
+    vertexBuffer.attributeCount = 3;
+    vertexBuffer.attributes = attributes;
+
+    auto pipeline = [&](const char* fragment) {
+        std::string code = kPmremPrelude;
+        code += fragment;
+        WGPUShaderModuleWGSLDescriptor_Compat wgsl = {};
+        WGPUShaderModuleDescriptor shaderDesc = {};
+        setupShaderModuleWGSL(&shaderDesc, &wgsl, code.c_str());
+        WGPUShaderModule module = wgpuDeviceCreateShaderModule(device_, &shaderDesc);
+        WGPUColorTargetState color = {};
+        color.format = WGPUTextureFormat_RGBA16Float;
+        color.writeMask = WGPUColorWriteMask_All;
+        WGPUFragmentState fragmentState = {};
+        fragmentState.module = module;
+        WGPU_SET_ENTRY_POINT(fragmentState, "fs");
+        fragmentState.targetCount = 1;
+        fragmentState.targets = &color;
+        WGPURenderPipelineDescriptor desc = {};
+        desc.layout = envPipelineLayout_;
+        desc.vertex.module = module;
+        WGPU_SET_ENTRY_POINT(desc.vertex, "vs");
+        desc.vertex.bufferCount = 1;
+        desc.vertex.buffers = &vertexBuffer;
+        desc.primitive.topology = WGPUPrimitiveTopology_TriangleList;
+        desc.primitive.cullMode = WGPUCullMode_None;
+        desc.primitive.frontFace = WGPUFrontFace_CCW;
+        desc.multisample.count = 1;
+        desc.multisample.mask = 0xffffffffu;
+        desc.fragment = &fragmentState;
+        WGPURenderPipeline created = wgpuDeviceCreateRenderPipeline(device_, &desc);
+        wgpuShaderModuleRelease(module);
+        return created;
+    };
+    envEquirectPipeline_ = pipeline(kPmremEquirect);
+    envGgxPipeline_ = pipeline(kPmremGgx);
+}
+
+Renderer::EnvironmentGpu& Renderer::environment(const Texture& equirect) {
+    if (equirect.mapping != 303)
+        throw std::runtime_error("TN_NATIVE_ENVIRONMENT_UNSUPPORTED: requires EquirectangularReflectionMapping");
+    if (equirect.width < 64 || !equirect.hasImage() || equirect.format != kTextureRGBAFormat ||
+        (equirect.type != kTextureFloatType && equirect.type != kTextureUnsignedByteType) ||
+        uint64_t(equirect.width) * equirect.height * (equirect.isFloat() ? 16u : 4u) != equirect.data.size())
+        throw std::runtime_error("TN_NATIVE_ENVIRONMENT_INVALID: requires decoded RGBA equirectangular pixels, width >= 64");
+    EnvironmentGpu& env = environments_[&equirect];
+    if (env.view != nullptr && env.version == equirect.version()) return env;
+    if (env.view) wgpuTextureViewRelease(env.view);
+    if (env.pingView) wgpuTextureViewRelease(env.pingView);
+    if (env.texture) wgpuTextureRelease(env.texture);
+    if (env.pingpong) wgpuTextureRelease(env.pingpong);
+    if (env.sampler) wgpuSamplerRelease(env.sampler);
+    env = EnvironmentGpu{};
+    env.source = &equirect;
+    env.version = equirect.version();
+    const MaterialTexture* source = materialTexture(equirect);
+    if (source->view == nullptr) throw std::runtime_error("TN_NATIVE_ENVIRONMENT_UPLOAD_FAILED");
+    if (envVertex_.type == 0) {
+        // three's _createPlanes: a 3x2 grid of face quads. Position in NDC, base uv in [0,1] and the
+        // face index; the vertex shader expands the uv by the pass's texel margin.
+        static const float kBaseUv[6][2] = {{0, 0}, {1, 0}, {1, 1}, {0, 0}, {1, 1}, {0, 1}};
+        static const unsigned kFaceLib[6] = {3, 1, 5, 0, 4, 2};
+        std::vector<float> data;
+        data.reserve(36 * 6);
+        for (unsigned face = 0; face < 6; ++face) {
+            const float x = float(face % 3) * 2.0f / 3.0f - 1.0f;
+            const float y = face > 2 ? 0.0f : -1.0f;
+            const float coordinates[6][3] = {{x, y, 0}, {x + 2.0f / 3.0f, y, 0}, {x + 2.0f / 3.0f, y + 1, 0},
+                                             {x, y, 0}, {x + 2.0f / 3.0f, y + 1, 0}, {x, y + 1, 0}};
+            for (int v = 0; v < 6; ++v) {
+                data.insert(data.end(), {coordinates[v][0], coordinates[v][1], coordinates[v][2], kBaseUv[v][0],
+                                         kBaseUv[v][1], float(kFaceLib[face])});
+            }
+        }
+        envVertex_ = gpu_.createBuffer(data.size() * 4, WGPUBufferUsage_Vertex | WGPUBufferUsage_CopyDst);
+        gpu_.writeBuffer(envVertex_, 0, data.data(), data.size() * 4);
+    }
+    // three's _setSizeFromTexture: an equirect's cube size is image.width / 4.
+    uint32_t cubeSize = std::max(equirect.width / 4, 1u);
+    uint32_t lodMax = 0;
+    while ((2u << lodMax) <= cubeSize) ++lodMax;
+    cubeSize = 1u << lodMax;
+    env.cubeSize = cubeSize;
+    env.lodMax = lodMax;
+    env.lods = lodMax - 4 + 1 + 6;  // LOD_MIN=4, EXTRA_LOD_SIGMA.length=6 in pinned PMREMGenerator
+    const uint32_t width = 3 * std::max(cubeSize, 112u);
+    const uint32_t height = 4 * cubeSize;
+    env.width = width;
+    env.height = height;
+    env.texelWidth = 1.0f / float(width);
+    env.texelHeight = 1.0f / float(height);
+    env.maxMip = float(lodMax);
+    WGPUTextureDescriptor target = {};
+    target.dimension = WGPUTextureDimension_2D;
+    target.size = {width, height, 1};
+    target.format = WGPUTextureFormat_RGBA16Float;
+    target.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding;
+    target.mipLevelCount = 1;
+    target.sampleCount = 1;
+    env.texture = wgpuDeviceCreateTexture(device_, &target);
+    env.pingpong = wgpuDeviceCreateTexture(device_, &target);
+    env.view = view2d(env.texture, WGPUTextureFormat_RGBA16Float);
+    env.pingView = view2d(env.pingpong, WGPUTextureFormat_RGBA16Float);
+    WGPUSamplerDescriptor sampler = {};
+    sampler.magFilter = sampler.minFilter = WGPUFilterMode_Linear;
+    sampler.addressModeU = sampler.addressModeV = sampler.addressModeW = WGPUAddressMode_ClampToEdge;
+    sampler.maxAnisotropy = 1;
+    env.sampler = wgpuDeviceCreateSampler(device_, &sampler);
+    buildEnvironmentPipelines();
+
+    // Every pass's uniform slice, then the passes themselves.
+    struct Pass {
+        WGPUTextureView target;
+        WGPUTextureView source;
+        WGPUSampler sampler;
+        WGPURenderPipeline pipeline;
+        float x, y, w, h;
+        float roughness, mipInt, texelSize, srgb;
+    };
+    std::vector<Pass> passes;
+    const float sizeLod0 = float(cubeSize);
+    passes.push_back({env.view, source->view, source->sampler, envEquirectPipeline_, 0, 0,
+                      float(3 * cubeSize), float(2 * cubeSize), 0.0f, 0.0f,
+                      sizeLod0 > 2 ? 1.0f / (sizeLod0 - 2) : 0.0f, equirect.isSRGB() ? 1.0f : 0.0f});
+    int lod = int(lodMax);
+    for (int i = 1; i < int(env.lods); ++i) {
+        if (lod > 4) --lod;
+        const float size = float(1u << lod);
+        // _applyGGXFilter computes these in JavaScript doubles and rounds once, on upload to f32.
+        const double targetRoughness = double(i) / double(env.lods - 1);
+        const double sourceRoughness = double(i - 1) / double(env.lods - 1);
+        const double incremental = std::sqrt(targetRoughness * targetRoughness - sourceRoughness * sourceRoughness);
+        const float adjusted = float(incremental * (0.0 + targetRoughness * 1.25));
+        const float x = 3.0f * size * float(i > int(lodMax) - 4 ? i - int(lodMax) + 4 : 0);
+        const float y = 4.0f * float(cubeSize - unsigned(size));
+        // Render the GGX result into the ping-pong, then copy it back (roughness 0).
+        passes.push_back({env.pingView, env.view, env.sampler, envGgxPipeline_, x, y, 3.0f * size, 2.0f * size,
+                          adjusted, shader::pmremMip(lodMax, i - 1), float(size) > 2 ? 1.0f / (size - 2) : 0.0f, 0.0f});
+        passes.push_back({env.view, env.pingView, env.sampler, envGgxPipeline_, x, y, 3.0f * size, 2.0f * size,
+                          0.0f, shader::pmremMip(lodMax, i), float(size) > 2 ? 1.0f / (size - 2) : 0.0f, 0.0f});
+    }
+    const uint64_t stride = aligned(32);
+    const uint64_t total = stride * passes.size();
+    if (envUniforms_.type == 0 || envUniformCapacity_ < total) {
+        if (envUniforms_.type != 0) gpu_.destroy(envUniforms_);
+        envUniformCapacity_ = std::max<uint64_t>(total, 4096);
+        envUniforms_ = gpu_.createBuffer(envUniformCapacity_, WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
+    }
+    std::vector<float> uniforms(envUniformCapacity_ / 4, 0.0f);
+    for (std::size_t p = 0; p < passes.size(); ++p) {
+        float* slice = uniforms.data() + (p * stride) / 4;
+        slice[0] = passes[p].roughness;
+        slice[1] = passes[p].mipInt;
+        slice[2] = env.texelWidth;
+        slice[3] = env.texelHeight;
+        slice[4] = env.maxMip;
+        slice[5] = passes[p].texelSize;
+        slice[6] = passes[p].srgb;
+    }
+    gpu_.writeBuffer(envUniforms_, 0, uniforms.data(), uniforms.size() * 4);
+
+    WGPUCommandEncoderDescriptor encoderDesc = {};
+    WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(device_, &encoderDesc);
+    for (std::size_t p = 0; p < passes.size(); ++p) {
+        WGPUBindGroupEntry entries[3] = {};
+        entries[0].binding = 0;
+        entries[0].buffer = gpu_.buffer(envUniforms_);
+        entries[0].offset = p * stride;
+        entries[0].size = 32;
+        entries[1].binding = 1;
+        entries[1].textureView = passes[p].source;
+        entries[2].binding = 2;
+        entries[2].sampler = passes[p].sampler;
+        WGPUBindGroupDescriptor groupDesc = {};
+        groupDesc.layout = envLayout_;
+        groupDesc.entryCount = 3;
+        groupDesc.entries = entries;
+        WGPUBindGroup group = wgpuDeviceCreateBindGroup(device_, &groupDesc);
+        WGPURenderPassColorAttachment color = {};
+        color.view = passes[p].target;
+        color.loadOp = p == 0 ? WGPULoadOp_Clear : WGPULoadOp_Load;
+        color.storeOp = WGPUStoreOp_Store;
+        color.clearValue = {0, 0, 0, 1};
+#if defined(MYSTRAL_WEBGPU_DAWN)
+        color.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
+#endif
+        WGPURenderPassDescriptor passDesc = {};
+        passDesc.colorAttachmentCount = 1;
+        passDesc.colorAttachments = &color;
+        WGPURenderPassEncoder pass = wgpuCommandEncoderBeginRenderPass(encoder, &passDesc);
+        wgpuRenderPassEncoderSetViewport(pass, passes[p].x, passes[p].y, passes[p].w, passes[p].h, 0.0f, 1.0f);
+        wgpuRenderPassEncoderSetScissorRect(pass, uint32_t(passes[p].x), uint32_t(passes[p].y), uint32_t(passes[p].w),
+                                            uint32_t(passes[p].h));
+        wgpuRenderPassEncoderSetPipeline(pass, passes[p].pipeline);
+        wgpuRenderPassEncoderSetBindGroup(pass, 0, group, 0, nullptr);
+        wgpuRenderPassEncoderSetVertexBuffer(pass, 0, gpu_.buffer(envVertex_), 0, 36 * 24);
+        wgpuRenderPassEncoderDraw(pass, 36, 1, 0, 0);
+        wgpuRenderPassEncoderEnd(pass);
+        wgpuRenderPassEncoderRelease(pass);
+        wgpuBindGroupRelease(group);
+    }
+    WGPUCommandBufferDescriptor commandDesc = {};
+    gpu_.submit(wgpuCommandEncoderFinish(encoder, &commandDesc));
+    wgpuCommandEncoderRelease(encoder);
+    return env;
 }
 
 // Each stage's layout from the bindings its package declares, the uniform block with a dynamic
@@ -508,7 +921,7 @@ Renderer::Program& Renderer::add(const std::string& key, shader::StageModule ver
     buildLayouts(*built);
     if (uniformCapacity_ != 0) {
         for (int g = 0; g < 2; ++g) {
-            if (g == 1 && samplesMaterialMap(built->fragment)) continue;  // per-draw groups instead
+            if (g == 1 && perDrawFragment(built->fragment)) continue;  // per-draw groups instead
             built->groups[g] = bindGroup(built->layouts[g], g == 0 ? built->vertex : built->fragment, uniformBuffer_,
                                          lutView_, lutSampler_);
         }
@@ -523,7 +936,7 @@ void Renderer::rebuildGroups() {
     for (auto& [key, program] : programs_) {
         for (int g = 0; g < 2; ++g) {
             if (program->groups[g]) wgpuBindGroupRelease(program->groups[g]);
-            program->groups[g] = (g == 1 && samplesMaterialMap(program->fragment))
+            program->groups[g] = (g == 1 && perDrawFragment(program->fragment))
                                      ? nullptr
                                      : bindGroup(program->layouts[g], g == 0 ? program->vertex : program->fragment,
                                                  uniformBuffer_, lutView_, lutSampler_);
@@ -712,6 +1125,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
             v.morphNormals = !item.morphGeometry->morphNormals.empty();
         }
         v.positionNode = item.positionNode;
+        v.environment = item.envMap != nullptr;
         v.map = item.map != nullptr;
         v.mapSRGB = item.map != nullptr && item.map->isSRGB();
         return v;
@@ -771,6 +1185,14 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
         put(frameUniforms_, f, fs[kSpecularIntensity], std::array<double, 1>{m.specularIntensity});
         put(frameUniforms_, f, fs[kSpecularColor], std::array<double, 3>{m.specularColor[0], m.specularColor[1], m.specularColor[2]});
         if (item.map) put(frameUniforms_, f, fs[kUvTransform], uvTransformOf(*item.map));
+        if (item.envMap) {
+            const EnvironmentGpu& env = environment(*item.envMap);
+            put(frameUniforms_, f, fs[kEnvMapIntensity], std::array<double, 1>{item.envMapIntensity});
+            put(frameUniforms_, f, fs[kCameraWorldMatrix], camera.matrixWorld);
+            put(frameUniforms_, f, fs[kEnvMapTexelWidth], std::array<double, 1>{env.texelWidth});
+            put(frameUniforms_, f, fs[kEnvMapTexelHeight], std::array<double, 1>{env.texelHeight});
+            put(frameUniforms_, f, fs[kEnvMapMaxMip], std::array<double, 1>{env.maxMip});
+        }
         for (std::size_t i = 0; i < lights.direct.size() && i < program.lightSlots.size(); ++i) {
             const DirectLight& l = lights.direct[i];
             const auto& slot = program.lightSlots[i];
@@ -863,17 +1285,20 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
     // A mapped draw's fragment group binds its own texture and sampler beside the frame's uniforms.
     // Created here, after the uniform buffer exists; cached per program and texture.
     for (Planned& p : plan) {
-        if (!p.item->map) continue;
-        const MaterialTexture* map = materialTexture(*p.item->map);
-        if (map->view == nullptr) continue;  // an image-less texture draws without its map
+        if (!p.item->map && !p.item->envMap) continue;
+        const MaterialTexture* map = p.item->map ? materialTexture(*p.item->map) : nullptr;
+        const EnvironmentGpu* env = p.item->envMap ? &environment(*p.item->envMap) : nullptr;
+        const WGPUTextureView mapView = map ? map->view : nullptr, envView = env ? env->view : nullptr;
+        const WGPUSampler mapSampler = map ? map->sampler : nullptr, envSampler = env ? env->sampler : nullptr;
         const std::string key = std::to_string(reinterpret_cast<uintptr_t>(p.program)) + "|" +
-                                std::to_string(reinterpret_cast<uintptr_t>(map->view)) + "|" +
-                                std::to_string(reinterpret_cast<uintptr_t>(map->sampler));
+                                std::to_string(reinterpret_cast<uintptr_t>(mapView)) + "|" +
+                                std::to_string(reinterpret_cast<uintptr_t>(mapSampler)) + "|" +
+                                std::to_string(reinterpret_cast<uintptr_t>(envView));
         const auto found = mapGroups_.find(key);
         p.mapGroup = found != mapGroups_.end()
                          ? found->second
                          : mapGroups_.emplace(key, bindGroup(p.program->layouts[1], p.program->fragment, uniformBuffer_,
-                                                             lutView_, lutSampler_, map->view, map->sampler))
+                                                             lutView_, lutSampler_, mapView, mapSampler, envView, envSampler))
                                .first->second;
     }
 

@@ -117,6 +117,132 @@ ExprId brdfBlinnPhong(Tsl& t, ExprId normalView, ExprId positionViewDirection, E
     return p.mul(p.mul(F, t.f(0.25f)), dBlinnPhong(t, shininess, dotNH));
 }
 
+// ---------------------------------------------------------------------------------------------
+// Environment (IBL): three's PMREM cubeUV sampling, nodes/pmrem/PMREMUtils.js ported operation
+// for operation. getFace/getUV/roughnessToMip/bilinearCubeUV/textureCubeUV, with the cubeUV layout
+// constants the PMREM generator packs (r0=1, r1=0.8, r4=0.4, r5=0.305, r6=0.21 and their mips).
+
+// getFace(direction): PMREM face index, RH/PMREM convention.
+ExprId cubeFace(Program& p, ExprId direction) {
+    auto f = [&](float v) { return p.constant(v); };
+    const ExprId absDir = p.call("abs", {direction});
+    const VarId face = p.var(Type::f32(), f(-1));
+    auto pick = [&](const char* comp, float positive, float negative) {
+        return p.select(p.less(f(0), p.swizzle(direction, comp)), f(positive), f(negative));
+    };
+    const ExprId x = p.swizzle(absDir, "x"), y = p.swizzle(absDir, "y"), z = p.swizzle(absDir, "z");
+    p.If(p.less(z, x),
+         [&] {
+             p.If(p.less(y, x), [&] { p.assign(face, pick("x", 0, 3)); },
+                 [&] { p.assign(face, pick("y", 1, 4)); });
+         },
+         [&] {
+             p.If(p.less(y, z), [&] { p.assign(face, pick("z", 2, 5)); },
+                 [&] { p.assign(face, pick("y", 1, 4)); });
+         });
+    return p.load(face);
+}
+
+// getUV(direction, face)
+ExprId cubeUv(Program& p, ExprId direction, ExprId face) {
+    auto f = [&](float v) { return p.constant(v); };
+    auto v2 = [&](ExprId x, ExprId y) { return p.construct(Type::vec(2), {x, y}); };
+    auto neg = [&](ExprId v) { return p.neg(v); };
+    const ExprId d = direction;
+    const ExprId ax = p.swizzle(p.call("abs", {d}), "x"), ay = p.swizzle(p.call("abs", {d}), "y"),
+                 az = p.swizzle(p.call("abs", {d}), "z");
+    const ExprId dx = p.swizzle(d, "x"), dy = p.swizzle(d, "y"), dz = p.swizzle(d, "z");
+    const VarId uv = p.var(Type::vec(2), v2(f(0), f(0)));
+    auto set = [&](ExprId value) { p.assign(uv, value); };
+    p.If(p.equal(face, f(0)), [&] { set(p.div(v2(dz, dy), ax)); }, [&] {
+        p.If(p.equal(face, f(1)), [&] { set(p.div(v2(neg(dx), neg(dz)), ay)); }, [&] {
+            p.If(p.equal(face, f(2)), [&] { set(p.div(v2(neg(dx), dy), az)); }, [&] {
+                p.If(p.equal(face, f(3)), [&] { set(p.div(v2(neg(dz), dy), ax)); }, [&] {
+                    p.If(p.equal(face, f(4)), [&] { set(p.div(v2(neg(dx), dz), ay)); },
+                         [&] { set(p.div(v2(dx, dy), az)); });
+                });
+            });
+        });
+    });
+    return p.mul(f(0.5f), p.add(p.load(uv), v2(f(1), f(1))));
+}
+
+// roughnessToMip(roughness)
+ExprId roughnessToMip(Program& p, ExprId roughness) {
+    auto f = [&](float v) { return p.constant(v); };
+    const VarId mip = p.var(Type::f32(), f(0));
+    auto segment = [&](float rHigh, float rLow, float mHigh, float mLow) {
+        return p.add(p.div(p.mul(p.sub(f(rHigh), roughness), f(mLow - mHigh)), f(rHigh - rLow)), f(mHigh));
+    };
+    p.If(p.call("greaterEqual", {roughness, f(0.8f)}), [&] { p.assign(mip, segment(1.0f, 0.8f, -2.0f, -1.0f)); }, [&] {
+        p.If(p.call("greaterEqual", {roughness, f(0.4f)}), [&] { p.assign(mip, segment(0.8f, 0.4f, -1.0f, 2.0f)); }, [&] {
+            p.If(p.call("greaterEqual", {roughness, f(0.305f)}), [&] { p.assign(mip, segment(0.4f, 0.305f, 2.0f, 3.0f)); }, [&] {
+                p.If(p.call("greaterEqual", {roughness, f(0.21f)}), [&] { p.assign(mip, segment(0.305f, 0.21f, 3.0f, 4.0f)); },
+                     [&] { p.assign(mip, p.mul(f(-2.0f), p.call("log2", {p.mul(f(1.16f), roughness)}))); });
+            });
+        });
+    });
+    return p.load(mip);
+}
+
+// bilinearCubeUV(envMap, direction, mipInt)
+ExprId bilinearCubeUV(Program& p, uint32_t env, ExprId direction, ExprId mipInt) {
+    auto f = [&](float v) { return p.constant(v); };
+    auto v2 = [&](ExprId x, ExprId y) { return p.construct(Type::vec(2), {x, y}); };
+    const VarId face = p.var(Type::f32(), p.call("max", {cubeFace(p, direction), f(0)}));
+    const ExprId filterInt = p.call("max", {p.sub(f(4), mipInt), f(0)});
+    const ExprId clamped = p.call("max", {mipInt, f(4)});
+    const ExprId faceSize = p.call("exp2", {clamped});
+    const VarId uv = p.var(Type::vec(2), p.add(p.mul(cubeUv(p, direction, p.load(face)), p.sub(faceSize, f(2))), v2(f(1), f(1))));
+    p.If(p.less(f(2), p.load(face)), [&] {
+        p.assign(uv, p.add(p.load(uv), v2(f(0), faceSize)));
+        p.assign(face, p.sub(p.load(face), f(3)));
+    });
+    ExprId x = p.add(p.swizzle(p.load(uv), "x"), p.mul(p.load(face), faceSize));
+    x = p.add(x, p.mul(filterInt, f(48)));  // 3 * minTileSize(16)
+    ExprId y = p.add(p.swizzle(p.load(uv), "y"),
+                     p.mul(f(4), p.sub(p.call("exp2", {p.uniform("envMapMaxMip", Type::f32())}), faceSize)));
+    x = p.mul(x, p.uniform("envMapTexelWidth", Type::f32()));
+    y = p.mul(y, p.uniform("envMapTexelHeight", Type::f32()));
+    return p.swizzle(p.sampleLevel(env, v2(x, y), f(0)), "xyz");
+}
+
+// textureCubeUV(envMap, sampleDir, roughness)
+ExprId textureCubeUV(Program& p, uint32_t env, ExprId direction, ExprId roughness) {
+    auto f = [&](float v) { return p.constant(v); };
+    const ExprId mip = p.call("clamp", {roughnessToMip(p, roughness), f(-2.0f), p.uniform("envMapMaxMip", Type::f32())});
+    const ExprId mipF = p.call("fract", {mip});
+    const ExprId mipInt = p.call("floor", {mip});
+    const VarId color = p.var(Type::vec(3), bilinearCubeUV(p, env, direction, mipInt));
+    p.If(p.equal(mipF, f(0)), [] {}, [&] {
+        const ExprId next = bilinearCubeUV(p, env, direction, p.add(mipInt, f(1)));
+        p.assign(color, p.call("mix", {p.load(color), next, mipF}));
+    });
+    return p.load(color);
+}
+
+// three's computeMultiscattering, returning (singleScatter, multiScatter) for one f0.
+struct Multiscatter {
+    ExprId single;
+    ExprId multi;
+};
+Multiscatter computeMultiscattering(Tsl& t, ExprId roughness, ExprId dotNV, ExprId f0, ExprId specularF90, uint32_t dfg) {
+    Program& p = t.p;
+    auto f = [&](float v) { return p.constant(v); };
+    const ExprId fab = p.swizzle(p.sample(dfg, p.construct(Type::vec(2), {roughness, dotNV})), "xy");
+    const ExprId FssEss = p.add(p.mul(f0, p.swizzle(fab, "x")), p.mul(specularF90, p.swizzle(fab, "y")));
+    const ExprId Ess = p.add(p.swizzle(fab, "x"), p.swizzle(fab, "y"));
+    const ExprId Ems = p.sub(f(1), Ess);
+    const ExprId Favg = p.add(f0, p.mul(t.oneMinus(f0), f(0.047619f)));
+    const ExprId Fms = p.div(p.mul(FssEss, Favg), p.sub(f(1), p.mul(Ems, Favg)));
+    return {FssEss, p.mul(Fms, Ems)};
+}
+
+// three's `direction.transformDirection(cameraWorldMatrix)`: normalize((mat4 * vec4(v, 0)).xyz).
+ExprId transformDirection(Program& p, ExprId m, ExprId v) {
+    return p.call("normalize", {p.swizzle(p.mul(m, p.construct(Type::vec(4), {v, p.constant(0.0f)})), "xyz")});
+}
+
 }  // namespace
 
 std::vector<std::string> unsupportedFeatures(const StandardMaterial& m) {
@@ -437,13 +563,17 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
                                       f.call("abs", {f.call("dFdy", {normalViewGeometry})})});
     const ExprId geometryRoughness =
         f.call("max", {f.call("max", {f.swizzle(dxy, "x"), f.swizzle(dxy, "y")}), f.swizzle(dxy, "z")});
-    const ExprId roughness = f.call("min", {f.add(f.call("max", {f.uniform("roughness", Type::f32()), t.f(0.0525f)}),
+    ExprId roughness = f.call("min", {f.add(f.call("max", {f.uniform("roughness", Type::f32()), t.f(0.0525f)}),
                                                   geometryRoughness), t.f(1)});
 
     // MeshStandardNodeMaterial.setupSpecular, or MeshPhysicalNodeMaterial's setupSpecular.
+    // Derivatives must execute before cubeUV's per-fragment branches (three's roughness variable).
+    if (variant.environment) roughness = f.load(f.var(Type::f32(), roughness));
     // specularF90 (mix(specularIntensity, 1, metalness)) feeds only PhysicalLightingModel's indirect
     // specular, which arrives with environment lighting; direct light passes f90: 1 for every material.
     ExprId specularColorBlended;
+    ExprId specularF90;
+    ExprId f0Dielectric;
     if (physical) {
         const ExprId ior = f.uniform("ior", Type::f32());
         const ExprId specularIntensity = f.uniform("specularIntensity", Type::f32());
@@ -451,11 +581,13 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
             f.call("min", {f.mul(t.pow2(f.div(f.sub(ior, t.f(1)), f.add(ior, t.f(1)))),
                                  f.uniform("specularColor", Type::vec(3))),
                            f.construct(Type::vec(3), {t.f(1)})});
-        const ExprId specularColor = f.mul(f0Base, specularIntensity);
-        specularColorBlended = f.call("mix", {specularColor, diffuseColor, metalness});
+        f0Dielectric = f.mul(f0Base, specularIntensity);
+        specularColorBlended = f.call("mix", {f0Dielectric, diffuseColor, metalness});
+        specularF90 = f.call("mix", {specularIntensity, t.f(1), metalness});
     } else {
-        specularColorBlended =
-            f.call("mix", {f.construct(Type::vec(3), {t.f(0.04f)}), diffuseColor, metalness});
+        f0Dielectric = f.construct(Type::vec(3), {t.f(0.04f)});
+        specularColorBlended = f.call("mix", {f0Dielectric, diffuseColor, metalness});
+        specularF90 = t.f(1);
     }
     const ExprId diffuseContribution = f.mul(diffuseColor, t.oneMinus(metalness));
     const Surface surface{n, positionViewDirection, roughness, specularColorBlended, t.f(1), f.texture2d("dfg")};
@@ -477,8 +609,37 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
     const ExprId indirectIrradiance = f.add(hemisphere, f.uniform("ambient", Type::vec(3)));
     const ExprId indirectDiffuse = f.mul(indirectIrradiance, brdfLambert);
 
+    // EnvironmentNode: IBL irradiance (normalWorld, level 1) and radiance (the roughness-mixed
+    // reflection, level = roughness), then PhysicalLightingModel.indirect. The PMREM texture is a
+    // render target, so three negates the sample direction's y before textureCubeUV.
+    ExprId environmentDiffuse = kInvalid, environmentSpecular = kInvalid;
+    if (variant.environment) {
+        const uint32_t env = f.texture2d("env");
+        const ExprId envIntensity = f.uniform("envMapIntensity", Type::f32());
+        auto flipped = [&](ExprId v) {
+            return f.construct(Type::vec(3), {f.swizzle(v, "x"), f.neg(f.swizzle(v, "y")), f.swizzle(v, "z")});
+        };
+        const ExprId iblIrradiance =
+            f.mul(f.mul(textureCubeUV(f, env, flipped(normalWorld), t.f(1)), t.f(kPi)), envIntensity);
+        ExprId reflectVec = f.call("reflect", {f.neg(positionViewDirection), n});
+        reflectVec = f.call("normalize", {f.call("mix", {reflectVec, n, t.pow2(t.pow2(roughness))})});
+        reflectVec = transformDirection(f, f.uniform("cameraWorldMatrix", Type::mat(4, 4)), reflectVec);
+        const ExprId radiance = f.mul(textureCubeUV(f, env, flipped(reflectVec), roughness), envIntensity);
+        const ExprId dotNV = t.saturate(t.dot(n, positionViewDirection));
+        const uint32_t dfg = f.texture2d("dfg");
+        const Multiscatter dielectric = computeMultiscattering(t, roughness, dotNV, f0Dielectric, specularF90, dfg);
+        const Multiscatter metallic = computeMultiscattering(t, roughness, dotNV, diffuseColor, specularF90, dfg);
+        const ExprId single = f.call("mix", {dielectric.single, metallic.single, metalness});
+        const ExprId multi = f.call("mix", {dielectric.multi, metallic.multi, metalness});
+        const ExprId energyLoss = t.oneMinus(f.add(dielectric.single, dielectric.multi));
+        const ExprId cosineWeightedIrradiance = f.mul(iblIrradiance, t.f(1 / kPi));
+        environmentSpecular = f.add(f.mul(radiance, single), f.mul(multi, cosineWeightedIrradiance));
+        environmentDiffuse = f.mul(f.mul(diffuseContribution, energyLoss), cosineWeightedIrradiance);
+    }
+
     const ExprId emissive = f.uniform("emissive", Type::vec(3));
-    const ExprId outgoing = f.add(f.add(f.add(directDiffuse, directSpecular), indirectDiffuse), emissive);
+    ExprId outgoing = f.add(f.add(f.add(directDiffuse, directSpecular), indirectDiffuse), emissive);
+    if (environmentDiffuse != kInvalid) outgoing = f.add(outgoing, f.add(environmentDiffuse, environmentSpecular));
     ExprId alpha = f.swizzle(diffuse, "w");
     if (texel != kInvalid) alpha = f.mul(alpha, f.swizzle(texel, "w"));
     // Linear HDR out: tone mapping and the output colour space belong to the output pass (output.h).

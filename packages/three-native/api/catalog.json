@@ -10884,8 +10884,7 @@
           "mutable": true,
           "lifetime": "reference",
           "status": {
-            "kind": "unsupported",
-            "diagnostic": "TN_NATIVE_UNSUPPORTED_UNRESOLVED_TYPE"
+            "kind": "supported"
           }
         },
         {
@@ -10904,8 +10903,7 @@
           "mutable": true,
           "lifetime": "owned",
           "status": {
-            "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "kind": "supported"
           }
         },
         {
@@ -15512,8 +15510,7 @@
           "mutable": true,
           "lifetime": "reference",
           "status": {
-            "kind": "unsupported",
-            "diagnostic": "TN_NATIVE_UNSUPPORTED_TEXTURE_DECODE"
+            "kind": "supported"
           }
         },
         {
@@ -16893,6 +16890,15 @@
           "name": "repeat",
           "type": "Vector2",
           "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "mapping",
+          "type": "number",
+          "mutable": true,
           "lifetime": "owned",
           "status": {
             "kind": "supported"

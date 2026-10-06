@@ -292,6 +292,15 @@ ExprId Program::call(std::string_view function, const std::vector<ExprId>& args,
         known = true;
         if (args.size() != 2 || type(0) != Type::vec(3) || type(1) != Type::vec(3)) error = "takes two vec3<f32>";
         else result = Type::vec(3);
+    } else if (function == "reflect") {
+        known = true;
+        if (args.size() != 2 || !floating(0) || !type(0).isVector() || type(0) != type(1)) error = "takes two equal float vectors";
+        else result = type(0);
+    } else if (function == "greaterEqual" || function == "lessEqual") {
+        known = true;
+        if (args.size() != 2 || !type(0).numeric() || type(0).isMatrix() || type(0) != type(1))
+            error = "takes two equal numeric values";
+        else result = Type::vec(type(0).rows, Type::Scalar::Bool);
     } else if (function == "mix" || function == "clamp" || function == "smoothstep") {
         known = true;
         // mix(a, b, t) and clamp(x, lo, hi) follow their first operand; smoothstep(e0, e1, x) its last.
@@ -433,6 +442,17 @@ ExprId Program::sample(uint32_t texture, ExprId uv, Where where) {
     return pure(Expr{Op::Sample, Type::vec(4), {uv}, 1, texture});
 }
 
+ExprId Program::sampleLevel(uint32_t texture, ExprId uv, ExprId level, Where where) {
+    if (uv == kInvalid || level == kInvalid) return kInvalid;
+    if (texture >= textures_.size() || textureKinds_[texture] != TextureKind::Float2d)
+        return fail("sampleLevel", "no such texture", where);
+    if (exprs_[uv].type != Type::vec(2))
+        return fail("sampleLevel " + textures_[texture], "uv is " + exprs_[uv].type.name(), where);
+    if (exprs_[level].type != Type::f32())
+        return fail("sampleLevel " + textures_[texture], "level is " + exprs_[level].type.name(), where);
+    return pure(Expr{Op::SampleLevel, Type::vec(4), {uv, level}, 2, texture});
+}
+
 void Program::discard(Where where) {
     if (stage_ != Stage::Fragment) {
         fail("discard", "only fragment shaders discard", where);
@@ -540,6 +560,9 @@ std::string Program::describeUntyped(ExprId id, std::vector<int>& numbering) con
                 return "sampleCompare:" + textures_[e.immediate] + "(" + describe(e.args[0], numbering) + ", " +
                        describe(e.args[1], numbering) + ")";
             return "sample:" + textures_[e.immediate] + "(" + describe(e.args[0], numbering) + ")";
+        case Op::SampleLevel:
+            return "sampleLevel:" + textures_[e.immediate] + "(" + describe(e.args[0], numbering) + ", " +
+                   describe(e.args[1], numbering) + ")";
         case Op::Swizzle: {
             std::string lanes;
             const unsigned n = static_cast<unsigned>(e.immediate >> 8);

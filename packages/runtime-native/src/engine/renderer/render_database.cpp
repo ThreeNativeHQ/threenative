@@ -112,6 +112,7 @@ shader::StandardMaterial paramsOf(const Material& m) {
     p.alphaTest = float(m.alphaTest);
     p.roughness = float(m.roughness);
     p.metalness = float(m.metalness);
+    p.envMapIntensity = float(m.envMapIntensity);
     p.emissive = {float(m.emissive.r), float(m.emissive.g), float(m.emissive.b)};
     p.emissiveIntensity = float(m.emissiveIntensity);
     p.specular = {float(m.specular.r), float(m.specular.g), float(m.specular.b)};
@@ -409,7 +410,19 @@ uint64_t RenderDatabase::render(Renderer& renderer, Object3D& scene, Camera& cam
     batchGroups_ = batchMembers_ = 0;
     if (batching)
         batch(items);
+    // Resolve the scene fallback every frame: environment can change without a material version bump.
+    const Scene* world = dynamic_cast<const Scene*>(&scene);
+    for (DrawItem& item : items) {
+        if (item.kind != MaterialKind::Standard && item.kind != MaterialKind::Physical) continue;
+        const Material& material = *static_cast<const Material*>(item.materialKey);
+        const auto found = material.maps.find("envMap");
+        const Texture* env = found != material.maps.end() ? found->second.get() : nullptr;
+        item.envMap = env ? env : world ? world->environment.get() : nullptr;
+        item.envMapIntensity = env ? material.envMapIntensity : world ? world->environmentIntensity : 1;
+        if (item.envMap && !item.envMap->hasImage()) item.envMap = nullptr;
+    }
     CameraState state;
+    state.matrixWorld = toArray(camera.matrixWorld);
     state.matrixWorldInverse = toArray(camera.matrixWorldInverse);
     state.projectionMatrix = toArray(camera.projectionMatrix);
     return renderer.render(items, state, lights, clear);

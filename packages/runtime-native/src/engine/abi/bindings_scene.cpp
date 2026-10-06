@@ -26,6 +26,7 @@
 #include "engine/scene/geometry.h"
 #include "engine/scene/material.h"
 #include "engine/scene/nodes.h"
+#include "engine/scene/texture.h"
 #include "engine/scene/object3d.h"
 
 #include <array>
@@ -528,6 +529,16 @@ void registerScene(ClassBinding& b) {
         b.getters[name] = [field](void* self) { return Value::of(as<Scene>(self)->*field); };
         b.setters[name] = [field](void* self, const Value& v) { as<Scene>(self)->*field = number(v); };
     }
+    b.members["environment"] = [](void* self, const Args&, Store& store) -> Value {
+        return store.share("Texture", as<Scene>(self)->environment);
+    };
+    b.setters["environment"] = [](void* self, const Value& v, Store& store) {
+        if (v.kind == Value::Kind::Null) { as<Scene>(self)->environment.reset(); return; }
+        Object* texture = store.find(v);
+        if (!texture || (texture->cls != "Texture" && texture->cls != "DataTexture"))
+            throw Unsupported{"environment must be a Texture or null"};
+        as<Scene>(self)->environment = std::static_pointer_cast<Texture>(texture->ptr);
+    };
     // `background` is the caller's Color itself, as in three: `scene.background = c` keeps `c`, so a
     // later write to `c` is a background change, and reading it back answers `c`.
     b.members["background"] = [](void* self, const Args&, Store& store) -> Value {

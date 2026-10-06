@@ -848,6 +848,7 @@
       "getters": [
         "colorSpace",
         "magFilter",
+        "mapping",
         "minFilter",
         "name",
         "offset.x",
@@ -862,6 +863,7 @@
       "setters": [
         "colorSpace",
         "magFilter",
+        "mapping",
         "minFilter",
         "name",
         "needsUpdate",
@@ -2190,6 +2192,7 @@
         "emissive.g",
         "emissive.r",
         "emissiveIntensity",
+        "envMapIntensity",
         "id",
         "ior",
         "iridescence",
@@ -2225,6 +2228,8 @@
         "emissive.g",
         "emissive.r",
         "emissiveIntensity",
+        "envMap",
+        "envMapIntensity",
         "ior",
         "iridescence",
         "map",
@@ -2245,7 +2250,7 @@
         "transparent",
         "visible"
       ],
-      "members": ["color", "emissive", "map", "specularColor"],
+      "members": ["color", "emissive", "envMap", "map", "specularColor"],
       "callbacks": []
     },
     "MeshStandardMaterial": {
@@ -2262,6 +2267,7 @@
         "emissive.g",
         "emissive.r",
         "emissiveIntensity",
+        "envMapIntensity",
         "id",
         "metalness",
         "name",
@@ -2286,6 +2292,8 @@
         "emissive.g",
         "emissive.r",
         "emissiveIntensity",
+        "envMap",
+        "envMapIntensity",
         "map",
         "metalness",
         "name",
@@ -2297,7 +2305,7 @@
         "transparent",
         "visible"
       ],
-      "members": ["color", "emissive", "map"],
+      "members": ["color", "emissive", "envMap", "map"],
       "callbacks": []
     },
     "Object3D": {
@@ -3161,6 +3169,7 @@
         "backgroundBlurriness",
         "backgroundIntensity",
         "castShadow",
+        "environment",
         "environmentIntensity",
         "frustumCulled",
         "layers.mask",
@@ -3193,6 +3202,7 @@
       ],
       "members": [
         "background",
+        "environment",
         "matrix",
         "matrixWorld",
         "parent",
@@ -3723,6 +3733,7 @@
       "getters": [
         "colorSpace",
         "magFilter",
+        "mapping",
         "minFilter",
         "name",
         "offset.x",
@@ -3737,6 +3748,7 @@
       "setters": [
         "colorSpace",
         "magFilter",
+        "mapping",
         "minFilter",
         "name",
         "needsUpdate",

@@ -137,23 +137,23 @@ void materialColor(ClassBinding& b, const char* name, Color Material::*field) {
 }
 
 /** three's `material.map`: read as a member (`material.map`) and written whole (`material.map = ref`). */
-void materialMapSlot(ClassBinding& b) {
-    b.members["map"] = [](void* self, const Args&, Store& store) -> Value {
-        const auto found = as<Material>(self)->maps.find("map");
+void materialMapSlot(ClassBinding& b, const std::string& slot = "map") {
+    b.members[slot] = [slot](void* self, const Args&, Store& store) -> Value {
+        const auto found = as<Material>(self)->maps.find(slot);
         if (found == as<Material>(self)->maps.end() || !found->second) return Value{};
         return store.share("Texture", std::const_pointer_cast<Texture>(found->second));
     };
-    b.setters["map"] = [](void* self, const Value& v, Store& store) {
+    b.setters[slot] = [slot](void* self, const Value& v, Store& store) {
         Material& material = *as<Material>(self);
         if (v.kind == Value::Kind::Null) {
-            material.maps.erase("map");
+            material.maps.erase(slot);
             material.needsUpdate();
             return;
         }
         Object* object = store.find(v);
         if (object == nullptr || (object->cls != "Texture" && object->cls != "DataTexture"))
-            throw Unsupported{"map must be a Texture"};
-        material.maps["map"] = std::static_pointer_cast<const Texture>(object->ptr);
+            throw Unsupported{slot + " must be a Texture"};
+        material.maps[slot] = std::static_pointer_cast<const Texture>(object->ptr);
         material.needsUpdate();
     };
 }
@@ -171,6 +171,8 @@ void registerTypeFields(ClassBinding& b, MaterialType type) {
         materialNumber(b, "shininess", &Material::shininess);
         return;
     }
+    materialMapSlot(b, "envMap");
+    materialNumber(b, "envMapIntensity", &Material::envMapIntensity);
     materialNumber(b, "roughness", &Material::roughness);
     materialNumber(b, "metalness", &Material::metalness);
     if (type == MaterialType::Standard) return;
@@ -367,6 +369,7 @@ void registerTextureFields(ClassBinding& b) {
     b.setters["needsUpdate"] = [](void* self, const Value& v) {
         if (flag(v)) as<Texture>(self)->needsUpdate();
     };
+    textureNumber<Texture>(b, "mapping", &Texture::mapping);
     textureNumber<Texture>(b, "wrapS", &Texture::wrapS);
     textureNumber<Texture>(b, "wrapT", &Texture::wrapT);
     textureNumber<Texture>(b, "magFilter", &Texture::magFilter);

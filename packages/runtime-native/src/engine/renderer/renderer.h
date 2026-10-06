@@ -40,6 +40,9 @@ struct DrawItem {
     const shader::StandardMaterial* material = nullptr;
     /** The material's diffuse `map`, if any: the fragment samples it at `uvTransform * vec3(uv, 1)`. */
     const Texture* map = nullptr;
+    /** The environment (scene.environment or material.envMap): its PMREM is sampled for IBL. */
+    const Texture* envMap = nullptr;
+    double envMapIntensity = 1;
     MaterialKind kind = MaterialKind::Standard;
     // Render-list inputs, as three's RenderList reads them.
     uint64_t id = 0;           // Object3D.id: the sort's last tiebreak
@@ -69,6 +72,9 @@ struct DrawItem {
 
 struct CameraState {
     Matrix matrixWorldInverse{};
+    // The camera's own world matrix: three transforms a view-space reflection direction by it
+    // (cameraWorldMatrix) for environment radiance.
+    Matrix matrixWorld{};
     // In three's WebGPUCoordinateSystem (clip z 0..1): WebGPURenderer.render switches a camera to it
     // and recomputes projectionMatrix, so the render database does the same before it fills this.
     Matrix projectionMatrix{};
@@ -194,7 +200,8 @@ private:
         kModelMatrix, kViewMatrix, kProjectionMatrix, kNormalMatrix, kDiffuse, kAlphaTest, kOpaque, kRoughness,
         kMetalness, kEmissive, kSpecular, kShininess, kIor, kSpecularIntensity, kSpecularColor,
         kUvTransform, kHemisphereSky, kHemisphereGround, kHemisphereDirection, kAmbient, kBoneBase, kBindMatrix,
-        kBindMatrixInverse, kMorphBase, kMorphInfluenceBase, kMorphVertexCount, kMorphBaseInfluence, kSlotCount
+        kBindMatrixInverse, kMorphBase, kMorphInfluenceBase, kMorphVertexCount, kMorphBaseInfluence,
+        kEnvMapIntensity, kCameraWorldMatrix, kEnvMapTexelWidth, kEnvMapTexelHeight, kEnvMapMaxMip, kSlotCount
     };
     // Per direct light i, `light{i}<Field>` (shader::LightLayout).
     enum LightField : uint8_t { kLightColor, kLightDirection, kLightPosition, kLightDistance, kLightDecay, kLightAxis,
@@ -221,7 +228,8 @@ private:
     Program& add(const std::string& key, shader::StageModule vertex, shader::StageModule fragment);
     WGPUBindGroup bindGroup(WGPUBindGroupLayout layout, const shader::StageModule& stage, Handle uniforms,
                             WGPUTextureView view, WGPUSampler sampler,
-                            WGPUTextureView mapView = nullptr, WGPUSampler mapSampler = nullptr);
+                            WGPUTextureView mapView = nullptr, WGPUSampler mapSampler = nullptr,
+                            WGPUTextureView envView = nullptr, WGPUSampler envSampler = nullptr);
     /** The GPU texture and sampler for a material map, (re)built when the texture's version moves. */
     struct MaterialTexture {
         Handle gpu;
@@ -231,6 +239,25 @@ private:
     };
     const MaterialTexture* materialTexture(const Texture& texture);
     void releaseMaterialTextures();
+    /**
+     * The PMREM cubeUV form of an equirectangular (or PMREM) environment, built on first use and
+     * rebuilt when the source texture's version moves (three's PMREMGenerator.fromEquirectangular).
+     */
+    struct EnvironmentGpu {
+        const Texture* source = nullptr;
+        uint32_t version = 0;
+        WGPUTexture texture = nullptr;   // the cubeUV render target, sampled by the material
+        WGPUTextureView view = nullptr;
+        WGPUTexture pingpong = nullptr;
+        WGPUTextureView pingView = nullptr;
+        WGPUSampler sampler = nullptr;
+        uint32_t width = 0, height = 0, cubeSize = 0;
+        uint32_t lodMax = 0, lods = 0;
+        float texelWidth = 0, texelHeight = 0, maxMip = 0;
+    };
+    EnvironmentGpu& environment(const Texture& equirect);
+    void buildEnvironmentPipelines();
+    void releaseEnvironments();
     void rebuildGroups();
     void releaseTargets();
     void releaseOutputGroup();
@@ -308,6 +335,16 @@ private:
     // that binds it alongside the frame's uniforms. Cleared when the uniform buffer is rebuilt.
     std::unordered_map<const Texture*, MaterialTexture> materialTextures_;
     std::map<std::string, WGPUBindGroup> mapGroups_;
+    // PMREM (three's PMREMGenerator.fromEquirectangular): the cubeUV tiles and the pipelines that
+    // fill them, keyed by the equirect source texture.
+    std::map<const Texture*, EnvironmentGpu> environments_;
+    WGPUBindGroupLayout envLayout_ = nullptr;
+    WGPUPipelineLayout envPipelineLayout_ = nullptr;
+    WGPURenderPipeline envEquirectPipeline_ = nullptr;
+    WGPURenderPipeline envGgxPipeline_ = nullptr;
+    Handle envVertex_{};      // 36 vertices: 6 faces x 6, position vec3 + baseUv vec2 + face f32
+    Handle envUniforms_{};    // one aligned slice per PMREM pass
+    uint64_t envUniformCapacity_ = 0;
 };
 
 }  // namespace tn::engine

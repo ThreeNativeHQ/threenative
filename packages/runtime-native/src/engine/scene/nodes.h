@@ -23,6 +23,7 @@ namespace tn::engine {
 
 class BufferGeometry;
 class Material;
+class Texture;
 
 /** three's Scene: an Object3D root plus what the renderer reads about the whole frame. */
 class Scene : public Object3D {
@@ -30,7 +31,7 @@ class Scene : public Object3D {
     [[nodiscard]] std::string_view type() const override { return "Scene"; }
 
     std::shared_ptr<Color> background; // null = no background
-    void* environment = nullptr;       // Texture*
+    std::shared_ptr<Texture> environment;
     void* fog = nullptr;               // Fog* or FogExp2*
     void* overrideMaterial = nullptr;
 

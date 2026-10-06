@@ -1289,6 +1289,7 @@ normalMapType: NormalMapTypes;
 normalScale: Vector2;
 displacementScale: number;
 displacementBias: number;
+envMap: Texture | null;
 envMapRotation: Euler;
 envMapIntensity: number;
 wireframe: boolean;
@@ -1904,6 +1905,7 @@ export declare class Scene extends Object3D {
 constructor();
 readonly isScene: boolean;
 background: Color | null;
+environment: Texture | null;
 fog: (Fog | FogExp2) | null;
 backgroundBlurriness: number;
 backgroundIntensity: number;
@@ -2095,6 +2097,7 @@ wrapS: Wrapping;
 wrapT: Wrapping;
 readonly offset: Vector2;
 readonly repeat: Vector2;
+mapping: number;
 }
 
 /** Catalog supported: three/webgpu/TorusGeometry. */

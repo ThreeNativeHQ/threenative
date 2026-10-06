@@ -120,6 +120,12 @@ void types() {
              line = __LINE__ + 1;
              p.construct(Type::vec(4), {x, x});
          }},
+        {"sampleLevel integer level", Stage::Fragment, [](Program& p, uint32_t& line) {
+             const auto texture = p.texture2d("env");
+             const auto uv = p.construct(Type::vec(2), {p.constant(0.5f)});
+             line = __LINE__ + 1;
+             p.sampleLevel(texture, uv, p.constant(int32_t(0)));
+         }},
         {"dot of scalars", Stage::Fragment, [](Program& p, uint32_t& line) {
              const ExprId x = p.constant(1.0f);
              line = __LINE__ + 1;

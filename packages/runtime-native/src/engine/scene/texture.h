@@ -33,6 +33,7 @@ public:
     std::string name;
     int source = -1;  // the glTF image index a loaded texture records before its bytes are decoded
     // three's Texture defaults (DataTexture overrides magFilter/minFilter to Nearest).
+    uint16_t mapping = 300;  // UVMapping; equirectangular reflection is 303
     uint16_t wrapS = static_cast<uint16_t>(TextureWrap::ClampToEdge);
     uint16_t wrapT = static_cast<uint16_t>(TextureWrap::ClampToEdge);
     uint16_t magFilter = static_cast<uint16_t>(TextureFilter::Linear);

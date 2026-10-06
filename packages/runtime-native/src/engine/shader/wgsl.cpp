@@ -75,6 +75,10 @@ std::string WgslEmitter::expr(ExprId id) const {
         case Op::LoadVar:
         case Op::LoadStorage:
         case Op::AtomicAdd: return "l" + std::to_string(id);
+        case Op::SampleLevel: {
+            const std::string& name = p_.textures_[e.immediate];
+            return "textureSampleLevel(t_" + name + ", smp_" + name + ", " + expr(e.args[0]) + ", " + expr(e.args[1]) + ")";
+        }
         case Op::Sample: {
             const std::string& name = p_.textures_[e.immediate];
             if (e.argc == 2)  // three's generateTextureCompare
@@ -95,6 +99,11 @@ std::string WgslEmitter::expr(ExprId id) const {
         }
         case Op::Construct:
         case Op::Call: {
+            if (e.op == Op::Call) {
+                const std::string& fn = p_.names_[e.immediate];
+                if (fn == "greaterEqual") return "(" + expr(e.args[0]) + " >= " + expr(e.args[1]) + ")";
+                if (fn == "lessEqual") return "(" + expr(e.args[0]) + " <= " + expr(e.args[1]) + ")";
+            }
             std::string out = e.op == Op::Call ? p_.names_[e.immediate] : type(e.type);
             if (out == "dFdx") out = "dpdx";
             if (out == "dFdy") out = "dpdy";

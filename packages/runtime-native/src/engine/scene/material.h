@@ -49,6 +49,7 @@ public:
     Color emissive{0, 0, 0};
     double emissiveIntensity = 1;
     double roughness = 1;            // Standard, Physical
+    double envMapIntensity = 1;
     double metalness = 0;            // Standard, Physical
     Color specular;                  // Phong: Color(0x111111)
     double shininess = 30;           // Phong

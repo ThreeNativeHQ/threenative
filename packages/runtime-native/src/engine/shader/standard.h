@@ -10,6 +10,9 @@
 
 namespace tn::engine::shader {
 
+// PMREM's extra 16px tiles use mipInt 3 through -2, not hardware mip levels.
+constexpr float pmremMip(int lodMax, int lod) { return float(lodMax - lod); }
+
 /**
  * MeshStandardMaterial / MeshPhysicalMaterial as the native engine reads them (PRD-512). Every field
  * defaults to the three@0.185.1 constructor value. A physical feature the native engine has not
@@ -32,6 +35,8 @@ struct StandardMaterial {
     float ior = 1.5f;
     float specularIntensity = 1;
     std::array<float, 3> specularColor{1, 1, 1};
+    /** MeshStandardMaterial.envMapIntensity: scales the environment's radiance and irradiance. */
+    float envMapIntensity = 1;
     // MeshPhysicalMaterial: any non-default value is a feature in use.
     float clearcoat = 0;
     float sheen = 0;
@@ -77,11 +82,16 @@ struct VertexVariant {
      * hardware -srgb texture format (whose rounding differs from the shader formula).
      */
     bool mapSRGB = false;
+    /**
+     * The scene sets an environment (or the material an envMap): the fragment samples the PMREM
+     * cubeUV texture `env` for IBL irradiance and radiance (three's EnvironmentNode).
+     */
+    bool environment = false;
     /** A stable key: two variants with the same key build the same program. */
     [[nodiscard]] std::string key() const {
         return std::to_string(instanced) + std::to_string(instanceColor) + std::to_string(skinned) + "m" +
                std::to_string(morphTargets) + (morphNormals ? "n" : "") + (map ? "t" : "") +
-               (mapSRGB ? "s" : "") + (positionNode ? "p:" + positionNode->key : "");
+               (mapSRGB ? "s" : "") + (environment ? "e" : "") + (positionNode ? "p:" + positionNode->key : "");
     }
 };
 

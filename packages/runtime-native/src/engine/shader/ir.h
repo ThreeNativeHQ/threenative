@@ -44,7 +44,7 @@ enum class Op : uint8_t {
     Add, Sub, Mul, Div, Neg, Less, Equal, Select,
     Swizzle, Construct, Call,
     // Ordered reads: pinned as statements where created, so they observe prior writes.
-    LoadVar, LoadStorage, Sample, AtomicAdd,
+    LoadVar, LoadStorage, Sample, SampleLevel, AtomicAdd,
 };
 
 struct Expr {
@@ -115,6 +115,11 @@ public:
     uint32_t texture2d(std::string_view name);
     /** vec4<f32>; implicit derivatives in a fragment stage, level 0 elsewhere. */
     ExprId sample(uint32_t texture, ExprId uv, Where where = Where::current());
+    /**
+     * vec4<f32> at an explicit mip `level` (textureSampleLevel). A cubeUV environment's levels are
+     * tiles in one mip, so a bilinearCubeUV tap is always level 0 — three's `.grad(vec2(), vec2())`.
+     */
+    ExprId sampleLevel(uint32_t texture, ExprId uv, ExprId level, Where where = Where::current());
     /** A depth texture (2D, or a cube) and its comparison sampler, bound together: a shadow map. */
     uint32_t textureDepth(std::string_view name, bool cube = false);
     /** f32 in [0, 1]: `reference` compared against the depth texture at `uv` (vec3 for a cube), filtered. */
