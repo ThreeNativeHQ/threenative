@@ -7399,6 +7399,16 @@
     "shaderPackage": 1,
     "symbols": [
       {
+        "symbol": "ACESFilmicToneMapping",
+        "kind": "constant",
+        "source": "three"
+      },
+      {
+        "symbol": "AgXToneMapping",
+        "kind": "constant",
+        "source": "three"
+      },
+      {
         "symbol": "AmbientLight",
         "kind": "class",
         "source": "three/webgpu"
@@ -7469,6 +7479,11 @@
         "source": "three/webgpu"
       },
       {
+        "symbol": "DataTexture",
+        "kind": "class",
+        "source": "three"
+      },
+      {
         "symbol": "DirectionalLight",
         "kind": "class",
         "source": "three/webgpu"
@@ -7477,6 +7492,11 @@
         "symbol": "Euler",
         "kind": "class",
         "source": "three"
+      },
+      {
+        "symbol": "Float32BufferAttribute",
+        "kind": "class",
+        "source": "three/webgpu"
       },
       {
         "symbol": "Frustum",
@@ -7500,6 +7520,16 @@
       },
       {
         "symbol": "InstancedMesh",
+        "kind": "class",
+        "source": "three/webgpu"
+      },
+      {
+        "symbol": "LinearSRGBColorSpace",
+        "kind": "constant",
+        "source": "three"
+      },
+      {
+        "symbol": "MathUtils",
         "kind": "class",
         "source": "three/webgpu"
       },
@@ -7544,6 +7574,16 @@
         "source": "three"
       },
       {
+        "symbol": "NeutralToneMapping",
+        "kind": "constant",
+        "source": "three"
+      },
+      {
+        "symbol": "NoColorSpace",
+        "kind": "constant",
+        "source": "three"
+      },
+      {
         "symbol": "Object3D",
         "kind": "class",
         "source": "three"
@@ -7552,6 +7592,11 @@
         "symbol": "OrthographicCamera",
         "kind": "class",
         "source": "three/webgpu"
+      },
+      {
+        "symbol": "PCFSoftShadowMap",
+        "kind": "constant",
+        "source": "three"
       },
       {
         "symbol": "PerspectiveCamera",
@@ -7615,6 +7660,11 @@
       },
       {
         "symbol": "SpotLight",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "Texture",
         "kind": "class",
         "source": "three"
       },

@@ -45,7 +45,7 @@ const FUNCTIONS: readonly IFunctionTable[] = [
         [1, 0, 2],
         [Number.NaN, 0, 2],
         [0, -0, 2],
-        [Infinity, 0, 2],
+        [Number.POSITIVE_INFINITY, 0, 2],
         [1, 2, 0],
         [-0, 0, 1],
       ],
@@ -113,10 +113,14 @@ const text = `${JSON.stringify(table, null, 2)}\n`;
 
 if (process.argv.includes("--check")) {
   if (readFileSync(OUT, "utf8") !== text) {
-    console.error(`TN_MATHUTILS_REFERENCE_STALE: ${OUT} is not what the pinned three produces today`);
+    console.error(
+      `TN_MATHUTILS_REFERENCE_STALE: ${OUT} is not what the pinned three produces today`,
+    );
     process.exit(1);
   }
-  console.log(`MathUtils reference current: ${FUNCTIONS.length} functions, ${CONSTANTS.length} constants`);
+  console.log(
+    `MathUtils reference current: ${FUNCTIONS.length} functions, ${CONSTANTS.length} constants`,
+  );
 } else {
   writeFileSync(OUT, text);
   console.log(`wrote ${FUNCTIONS.length} functions and ${CONSTANTS.length} constants to ${OUT}`);
