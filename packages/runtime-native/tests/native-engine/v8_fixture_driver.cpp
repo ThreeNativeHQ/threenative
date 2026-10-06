@@ -156,6 +156,34 @@ private:
     }
     void setId(const std::string& id) { setGlobal("__id", str(id)); }
 
+    // An `a:<type>:<hex,...>` argument: a JS typed array of the bits' binary64 values, as a game
+    // passing `new Float32Array([...])` to a BufferAttribute constructor would hold.
+    v8::Local<v8::Value> typedArray(v8::Local<v8::Context> ctx, const std::string& token) {
+        const size_t second = token.find(':', 2);
+        if (second == std::string::npos) throw Unsupported{"unknown argument token " + token};
+        const std::string type = token.substr(2, second - 2);
+        if (type != "Float32Array" && type != "Uint8Array" && type != "Uint16Array" && type != "Uint32Array")
+            throw Unsupported{"unknown argument token " + token};
+        v8::Local<v8::Array> items = v8::Array::New(isolate_);
+        uint32_t length = 0;
+        std::string rest = token.substr(second + 1);
+        while (!rest.empty()) {
+            const size_t comma = rest.find(',');
+            const std::string hex = comma == std::string::npos ? rest : rest.substr(0, comma);
+            items->Set(ctx, length++, v8::Number::New(isolate_, std::bit_cast<double>(std::stoull(hex, nullptr, 16)))).Check();
+            if (comma == std::string::npos) break;
+            rest = rest.substr(comma + 1);
+        }
+        v8::Local<v8::Value> ctor;
+        if (!ctx->Global()->Get(ctx, str(type)).ToLocal(&ctor) || !ctor->IsFunction())
+            throw Unsupported{"unknown argument token " + token};
+        v8::Local<v8::Value> element = items;
+        v8::Local<v8::Value> made;
+        if (!ctor.As<v8::Function>()->NewInstance(ctx, 1, &element).ToLocal(&made))
+            throw Unsupported{"cannot build " + type};
+        return made;
+    }
+
     void setArgs(const std::vector<std::string>& t, size_t from) {
         v8::Local<v8::Context> ctx = isolate_->GetCurrentContext();
         v8::Local<v8::Array> args = v8::Array::New(isolate_, static_cast<int>(t.size() - from));
@@ -168,6 +196,7 @@ private:
             else if (token.rfind("s:", 0) == 0) v = str(decode(token.substr(2)));
             else if (token == "b:1" || token == "b:0") v = v8::Boolean::New(isolate_, token == "b:1");
             else if (token.rfind("r:", 0) == 0) v = ids->Get(ctx, str(token.substr(2))).ToLocalChecked();
+            else if (token.rfind("a:", 0) == 0) v = typedArray(ctx, token);
             else throw Unsupported{"unknown argument token " + token};
             args->Set(ctx, static_cast<uint32_t>(i - from), v).Check();
         }

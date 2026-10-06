@@ -10,7 +10,7 @@ namespace tn::engine {
 
 namespace {
 
-constexpr double DEG2RAD = PI / 180.0;
+constexpr double kDeg2Rad = PI / 180.0;  // local, to avoid the MathUtils DEG2RAD name
 constexpr double RAD2DEG = 180.0 / PI;
 
 Vector3 scratchPosition;
@@ -97,12 +97,12 @@ void PerspectiveCamera::setFocalLength(double focalLength) {
 }
 
 double PerspectiveCamera::getFocalLength() const {
-    const double vExtentSlope = ieee754::tan(DEG2RAD * 0.5 * fov);
+    const double vExtentSlope = ieee754::tan(kDeg2Rad * 0.5 * fov);
     return 0.5 * getFilmHeight() / vExtentSlope;
 }
 
 double PerspectiveCamera::getEffectiveFOV() const {
-    return RAD2DEG * 2 * ieee754::atan(ieee754::tan(DEG2RAD * 0.5 * fov) / zoom);
+    return RAD2DEG * 2 * ieee754::atan(ieee754::tan(kDeg2Rad * 0.5 * fov) / zoom);
 }
 
 double PerspectiveCamera::getFilmWidth() const {
@@ -148,7 +148,7 @@ void PerspectiveCamera::clearViewOffset() {
 
 void PerspectiveCamera::updateProjectionMatrix() {
     const double n = near;
-    double top = n * ieee754::tan(DEG2RAD * 0.5 * fov) / zoom;
+    double top = n * ieee754::tan(kDeg2Rad * 0.5 * fov) / zoom;
     double height = 2 * top;
     double width = aspect * height;
     double left = -0.5 * width;

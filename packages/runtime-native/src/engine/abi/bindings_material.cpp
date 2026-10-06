@@ -13,6 +13,7 @@
 #include "engine/scene/lights.h"
 #include "engine/scene/material.h"
 #include "engine/scene/object3d.h"
+#include "engine/scene/texture.h"
 
 #include <memory>
 #include <string>
@@ -135,9 +136,32 @@ void materialColor(ClassBinding& b, const char* name, Color Material::*field) {
     b.setters[name] = colorSetter(field, true);
 }
 
+/** three's `material.map`: read as a member (`material.map`) and written whole (`material.map = ref`). */
+void materialMapSlot(ClassBinding& b) {
+    b.members["map"] = [](void* self, const Args&, Store& store) -> Value {
+        const auto found = as<Material>(self)->maps.find("map");
+        if (found == as<Material>(self)->maps.end() || !found->second) return Value{};
+        return store.share("Texture", std::const_pointer_cast<Texture>(found->second));
+    };
+    b.setters["map"] = [](void* self, const Value& v, Store& store) {
+        Material& material = *as<Material>(self);
+        if (v.kind == Value::Kind::Null) {
+            material.maps.erase("map");
+            material.needsUpdate();
+            return;
+        }
+        Object* object = store.find(v);
+        if (object == nullptr || (object->cls != "Texture" && object->cls != "DataTexture"))
+            throw Unsupported{"map must be a Texture"};
+        material.maps["map"] = std::static_pointer_cast<const Texture>(object->ptr);
+        material.needsUpdate();
+    };
+}
+
 /** Exactly the fields three declares on each class, so a class publishes no sibling's surface. */
 void registerTypeFields(ClassBinding& b, MaterialType type) {
     materialColor(b, "color", &Material::color);
+    materialMapSlot(b);
     if (type == MaterialType::Basic) return;
     materialColor(b, "emissive", &Material::emissive);
     materialNumber(b, "emissiveIntensity", &Material::emissiveIntensity);
@@ -300,6 +324,81 @@ void registerHemisphereLight(ClassBinding& b) {
     b.setters["groundColor"] = colorSetter(&HemisphereLight::groundColor, false);
 }
 
+// ------------------------------------------------------------------------------ textures
+
+/** A number field of any class: getter and setter over one member, bumping the texture's version. */
+template <typename Owner, typename T>
+void textureNumber(ClassBinding& b, const char* name, T Owner::*member) {
+    b.getters[name] = [member](void* self) { return Value::of(double(as<Owner>(self)->*member)); };
+    b.setters[name] = [member](void* self, const Value& v) {
+        as<Owner>(self)->*member = static_cast<T>(number(v));
+        as<Owner>(self)->needsUpdate();
+    };
+}
+
+/** A Vector2 field (`repeat`, `offset`): its x/y by path, and the member itself as one alias. */
+template <typename Owner>
+void textureVector2(ClassBinding& b, const char* field, Vector2 Owner::*member) {
+    const char* const names[2] = {"x", "y"};
+    for (int i = 0; i < 2; ++i) {
+        const std::string path = std::string(field) + "." + names[i];
+        b.getters[path] = [member, i](void* self) {
+            const Vector2& v = as<Owner>(self)->*member;
+            return Value::of(i == 0 ? v.x : v.y);
+        };
+        b.setters[path] = [member, i](void* self, const Value& value) {
+            Vector2& v = as<Owner>(self)->*member;
+            (i == 0 ? v.x : v.y) = number(value);
+            as<Owner>(self)->needsUpdate();
+        };
+    }
+    fixedMember(b, field, [member](void* self, const Args&, Store& store) {
+        return memberAlias(store, self, as<Owner>(self)->*member, "Vector2");
+    });
+}
+
+void registerTextureFields(ClassBinding& b) {
+    b.getters["name"] = [](void* self) { return string(as<Texture>(self)->name); };
+    b.setters["name"] = [](void* self, const Value& v) {
+        if (v.kind != Value::Kind::String) throw Unsupported{"name must be a string"};
+        as<Texture>(self)->name = v.text;
+    };
+    b.getters["version"] = [](void* self) { return Value::of(double(as<Texture>(self)->version())); };
+    b.setters["needsUpdate"] = [](void* self, const Value& v) {
+        if (flag(v)) as<Texture>(self)->needsUpdate();
+    };
+    textureNumber<Texture>(b, "wrapS", &Texture::wrapS);
+    textureNumber<Texture>(b, "wrapT", &Texture::wrapT);
+    textureNumber<Texture>(b, "magFilter", &Texture::magFilter);
+    textureNumber<Texture>(b, "minFilter", &Texture::minFilter);
+    textureNumber<Texture>(b, "rotation", &Texture::rotation);
+    textureVector2<Texture>(b, "repeat", &Texture::repeat);
+    textureVector2<Texture>(b, "offset", &Texture::offset);
+    b.getters["colorSpace"] = [](void* self) { return string(as<Texture>(self)->isSRGB() ? "srgb" : ""); };
+    b.setters["colorSpace"] = [](void* self, const Value& v) {
+        if (v.kind != Value::Kind::String) throw Unsupported{"colorSpace must be a string"};
+        as<Texture>(self)->colorSpace = v.text == "srgb" ? TextureColorSpace::SRGB : TextureColorSpace::None;
+        as<Texture>(self)->needsUpdate();
+    };
+}
+
+void registerTextureClass(ClassBinding& b, bool data) {
+    b.ctor = [data](const Args& a, Store&) -> std::shared_ptr<void> {
+        if (!data) return std::static_pointer_cast<void>(std::make_shared<Texture>());
+        auto texture = std::make_shared<DataTexture>();
+        if (!a.empty() && a[0].kind == Value::Kind::Numbers) {
+            const uint32_t width = a.size() > 1 ? static_cast<uint32_t>(number(a[1])) : 1;
+            const uint32_t height = a.size() > 2 ? static_cast<uint32_t>(number(a[2])) : 1;
+            const uint16_t format = a.size() > 3 ? static_cast<uint16_t>(number(a[3])) : kTextureRGBAFormat;
+            const uint16_t type = a.size() > 4 ? static_cast<uint16_t>(number(a[4])) : kTextureUnsignedByteType;
+            if (format != kTextureRGBAFormat) throw Unsupported{"DataTexture format must be RGBAFormat"};
+            texture->setImage(a[0].numbers, a[0].text, width, height, format, type);
+        }
+        return std::static_pointer_cast<void>(texture);
+    };
+    registerTextureFields(b);
+}
+
 }  // namespace
 
 void registerMaterialBindings(Registry& classes) {
@@ -313,6 +412,11 @@ void registerMaterialBindings(Registry& classes) {
     registerPointLight(classes["PointLight"]);
     registerSpotLight(classes["SpotLight"]);
     registerHemisphereLight(classes["HemisphereLight"]);
+}
+
+void registerTextureBindings(Registry& classes) {
+    registerTextureClass(classes["Texture"], false);
+    registerTextureClass(classes["DataTexture"], true);
 }
 
 }  // namespace tn::binding

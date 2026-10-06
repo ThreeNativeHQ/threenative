@@ -292,8 +292,8 @@ set_property(GLOBAL APPEND PROPERTY TN_NATIVE_ENGINE_TEST_TARGETS tn-native-engi
 # The native side of the differential fixture runner (PRD-498): run-native.ts spawns the driver.
 # The engine's binding registry for the math and scene classes: one model the fixture driver and the
 # C ABI share.
-add_library(tn_engine_bindings STATIC src/engine/abi/bindings_math.cpp src/engine/abi/bindings_scene.cpp
-    src/engine/abi/bindings_geometry.cpp src/engine/abi/bindings_material.cpp)
+add_library(tn_engine_bindings STATIC src/engine/abi/bindings_math.cpp src/engine/abi/bindings_mathutils.cpp
+    src/engine/abi/bindings_scene.cpp src/engine/abi/bindings_geometry.cpp src/engine/abi/bindings_material.cpp)
 tn_native_engine_target(tn_engine_bindings)
 target_link_libraries(tn_engine_bindings PUBLIC tn_engine_foundation tn_engine_scene tn_engine_animation)
 if(EMSCRIPTEN)
@@ -431,6 +431,18 @@ if(NOT EMSCRIPTEN)
     target_include_directories(tn-native-engine-projection-plan-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
     target_compile_definitions(tn-native-engine-projection-plan-test PRIVATE
         TN_PROJECTION_REFERENCE="${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/projection/projection_reference.json")
+endif()
+
+# PRD-531: three's `MathUtils` functions and the constants the minimal template imports, bit-exact
+# against the pinned three (mathutils_reference.json). The test drives the binding registry, so it
+# proves the bound surface, and reads its table from disk, which a Wasm test under node cannot.
+if(NOT EMSCRIPTEN)
+    tn_native_engine_test(tn-native-engine-mathutils-test tests/native-engine/mathutils/mathutils_test.cpp
+        native_engine_mathutils=mathutils)
+    target_link_libraries(tn-native-engine-mathutils-test PRIVATE tn_engine_bindings)
+    target_include_directories(tn-native-engine-mathutils-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_compile_definitions(tn-native-engine-mathutils-test PRIVATE
+        TN_MATHUTILS_REFERENCE="${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/mathutils/mathutils_reference.json")
 endif()
 
 # PRD-518 phase 1: the recorded Bone/Skeleton poses reproduce over the native port.
@@ -584,6 +596,12 @@ if(NOT EMSCRIPTEN)
                 packages/runtime-native/tests/native-engine/projection/projection-reference.ts --check
             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../..)
         set_tests_properties(native_engine_projection_plan_reference_current PROPERTIES LABELS "native-engine")
+        # PRD-531: the committed MathUtils table is what the pinned three produces today.
+        add_test(NAME native_engine_mathutils_reference_current
+            COMMAND ${TN_PNPM_EXECUTABLE} --workspace-root exec tsx
+                packages/runtime-native/tests/native-engine/mathutils/mathutils-reference.ts --check
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../..)
+        set_tests_properties(native_engine_mathutils_reference_current PROPERTIES LABELS "native-engine")
         # PRD-518 phase 1: the committed skeleton table is what the pinned three's Bone/Skeleton produce.
         add_test(NAME native_engine_skeleton_reference_current
             COMMAND ${TN_PNPM_EXECUTABLE} --workspace-root exec tsx

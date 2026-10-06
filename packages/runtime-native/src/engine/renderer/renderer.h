@@ -24,6 +24,8 @@ namespace tn::engine {
 
 using Matrix = std::array<double, 16>;  // column-major, as three's Matrix4.elements
 
+class Texture;  // the material's diffuse `map` (engine/scene/texture.h)
+
 /** Which program a draw uses; each kind reads the StandardMaterial fields it needs. */
 enum class MaterialKind : uint8_t { Standard, Basic, Lambert, Phong, Physical };
 
@@ -32,9 +34,12 @@ struct DrawItem {
     uint64_t key = 0;                    // the renderable's stable identity; its GPU record persists under it
     BufferStore* positions = nullptr;    // vec3 float
     BufferStore* normals = nullptr;      // vec3 float; unused by Basic
+    BufferStore* uvs = nullptr;          // vec2 float; only a mapped material's program reads it
     BufferStore* indices = nullptr;      // u16 or u32; null draws non-indexed
     Matrix matrixWorld{};
     const shader::StandardMaterial* material = nullptr;
+    /** The material's diffuse `map`, if any: the fragment samples it at `uvTransform * vec3(uv, 1)`. */
+    const Texture* map = nullptr;
     MaterialKind kind = MaterialKind::Standard;
     // Render-list inputs, as three's RenderList reads them.
     uint64_t id = 0;           // Object3D.id: the sort's last tiebreak
@@ -188,7 +193,7 @@ private:
     enum Slot : uint8_t {
         kModelMatrix, kViewMatrix, kProjectionMatrix, kNormalMatrix, kDiffuse, kAlphaTest, kOpaque, kRoughness,
         kMetalness, kEmissive, kSpecular, kShininess, kIor, kSpecularIntensity, kSpecularColor,
-        kHemisphereSky, kHemisphereGround, kHemisphereDirection, kAmbient, kBoneBase, kBindMatrix,
+        kUvTransform, kHemisphereSky, kHemisphereGround, kHemisphereDirection, kAmbient, kBoneBase, kBindMatrix,
         kBindMatrixInverse, kMorphBase, kMorphInfluenceBase, kMorphVertexCount, kMorphBaseInfluence, kSlotCount
     };
     // Per direct light i, `light{i}<Field>` (shader::LightLayout).
@@ -215,7 +220,17 @@ private:
     Program& depthProgram(const shader::VertexVariant& variant);
     Program& add(const std::string& key, shader::StageModule vertex, shader::StageModule fragment);
     WGPUBindGroup bindGroup(WGPUBindGroupLayout layout, const shader::StageModule& stage, Handle uniforms,
-                            WGPUTextureView view, WGPUSampler sampler);
+                            WGPUTextureView view, WGPUSampler sampler,
+                            WGPUTextureView mapView = nullptr, WGPUSampler mapSampler = nullptr);
+    /** The GPU texture and sampler for a material map, (re)built when the texture's version moves. */
+    struct MaterialTexture {
+        Handle gpu;
+        WGPUTextureView view = nullptr;
+        WGPUSampler sampler = nullptr;
+        uint32_t version = 0;
+    };
+    const MaterialTexture* materialTexture(const Texture& texture);
+    void releaseMaterialTextures();
     void rebuildGroups();
     void releaseTargets();
     void releaseOutputGroup();
@@ -289,6 +304,10 @@ private:
     };
     std::map<std::string, FrameStorage> storages_;
     std::map<std::string, std::pair<Handle, uint64_t>> externalStorage_;  // setStorage, by name
+    // A material's diffuse map: its GPU texture/sampler, and, per (program, texture), the bind group
+    // that binds it alongside the frame's uniforms. Cleared when the uniform buffer is rebuilt.
+    std::unordered_map<const Texture*, MaterialTexture> materialTextures_;
+    std::map<std::string, WGPUBindGroup> mapGroups_;
 };
 
 }  // namespace tn::engine

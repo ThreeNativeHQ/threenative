@@ -38,6 +38,12 @@ inline double euclideanModulo(double n, double m) { return std::fmod(std::fmod(n
 /** three's `lerp`: `(1 - t) * x + t * y`, in that order, so a t of 1 is not exactly y. */
 inline double lerp(double x, double y, double t) { return (1 - t) * x + t * y; }
 
+/** three's `DEG2RAD`, one binary64 value; `degToRad` multiplies by it, it does not divide by 180. */
+inline constexpr double DEG2RAD = PI / 180.0;
+
+/** three's `degToRad`: `degrees * DEG2RAD`, so the product rounds once, by the pinned constant. */
+inline double degToRad(double degrees) { return degrees * DEG2RAD; }
+
 /**
  * `Math.round`: ties go toward +Infinity (`Math.round(-1.5)` is -1), and a zero result keeps the
  * input's sign (`Math.round(-0.5)` is -0). std::round rounds halves away from zero and loses that.

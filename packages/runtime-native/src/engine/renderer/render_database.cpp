@@ -165,7 +165,15 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh) {
     d.key = d.id = mesh.id();
     d.positions = store(*mesh.geometry, "position");
     d.normals = store(*mesh.geometry, "normal");
+    d.uvs = store(*mesh.geometry, "uv");
     d.indices = mesh.geometry->index ? mesh.geometry->index->store.get() : nullptr;
+    // The diffuse map is sampled only when its image is decoded and the geometry carries uv; an
+    // image-less glTF placeholder (source only) keeps drawing its flat colour as before.
+    if (d.uvs != nullptr) {
+        const auto found = material->maps.find("map");
+        if (found != material->maps.end() && found->second && found->second->hasImage())
+            d.map = found->second.get();
+    }
     d.matrixWorld = toArray(mesh.matrixWorld);
     d.kind = kindOf(material->type);
     d.renderOrder = mesh.renderOrder();

@@ -90,6 +90,7 @@ private:
         uint64_t size = 0;
         uint32_t width = 0;
         uint32_t height = 0;
+        uint32_t bytesPerPixel = 4;  // RGBA8 by default; RGBA32Float is 16
     };
     struct PendingDestroy {
         uint64_t afterSerial;

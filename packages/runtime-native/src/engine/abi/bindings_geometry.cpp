@@ -518,6 +518,20 @@ void registerGeometryBindings(Registry& classes) {
     ClassBinding& instanced = classes["InstancedBufferAttribute"];
     registerBufferAttribute(instanced);
     instanced.getters["meshPerAttribute"] = [](void*) { return Value::of(1.0); };
+    // three's Float32BufferAttribute: the same attribute, but its constructor wraps whatever it is
+    // given in a Float32Array, so the storage is F32 and each value rounds once to binary32.
+    ClassBinding& float32 = classes["Float32BufferAttribute"];
+    registerBufferAttribute(float32);
+    float32.ctor = [](const Args& a, Store&) {
+        std::vector<double> values;
+        if (!a.empty() && a.at(0).kind == Value::Kind::Numbers) values = a.at(0).numbers;
+        const double itemSize = optional(a, 1, 1);
+        if (!(itemSize >= 1 && itemSize <= 65536) || itemSize != std::floor(itemSize))
+            throw Unsupported{"itemSize must be a positive integer"};
+        const bool normalized = a.size() > 2 && flag(a.at(2));
+        return std::static_pointer_cast<void>(
+            BufferAttribute::fromDoubles(Scalar::F32, values, static_cast<int>(itemSize), normalized));
+    };
     registerBufferGeometry(classes["BufferGeometry"]);
     registerGeometryGenerators(classes);
 }

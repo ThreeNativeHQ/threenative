@@ -2,6 +2,7 @@
 #include "check.h"
 #include "engine/abi/abi_internal.h"
 #include "engine/abi/bindings.h"
+#include "engine/foundation/ThreeConstants.h"
 #include "engine/scene/nodes.h"
 #include "engine/scene/object3d.h"
 
@@ -295,7 +296,29 @@ void catalogCoverage() {
         if (tn_type_id(symbol.c_str()) != 0) installed.insert(symbol);
     }
     CHECK(installed == expectedClasses);
-    CHECK(installed.size() == tn_engine_version().capability_count);
+    // three's scalar constants the minimal template imports (PRD-531 small bindings): globals beside
+    // the classes. Their bit-exactness against three is the mathutils reference test's; this proves
+    // the wiring: present, of the right kind, with the header's value.
+    const std::map<std::string, double> numbers = {
+        {"ACESFilmicToneMapping", tn::engine::ACESFilmicToneMapping},
+        {"AgXToneMapping", tn::engine::AgXToneMapping},
+        {"NeutralToneMapping", tn::engine::NeutralToneMapping},
+        {"PCFSoftShadowMap", tn::engine::PCFSoftShadowMap},
+    };
+    const std::map<std::string, std::string> strings = {
+        {"NoColorSpace", tn::engine::NoColorSpace},
+        {"LinearSRGBColorSpace", tn::engine::LinearSRGBColorSpace},
+    };
+    for (const auto& [name, want] : numbers) {
+        v8::Local<v8::Value> value;
+        CHECK(global->Get(ctx, key(name)).ToLocal(&value) && value->IsNumber() &&
+              value.As<v8::Number>()->Value() == want);
+    }
+    for (const auto& [name, want] : strings) {
+        v8::Local<v8::Value> value;
+        CHECK(global->Get(ctx, key(name)).ToLocal(&value) && value->IsString() && text(value) == want);
+    }
+    CHECK(installed.size() + numbers.size() + strings.size() == tn_engine_version().capability_count);
 
     // Every class's prototype exposes exactly its registry members: methods, top-level getters and
     // member objects. A dotted key is a protocol path, skipped on both sides.

@@ -18,8 +18,7 @@
       "kind": "constant",
       "source": "three",
       "status": {
-        "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "kind": "supported"
       },
       "type": "number",
       "value": "4"
@@ -73,8 +72,7 @@
       "kind": "constant",
       "source": "three",
       "status": {
-        "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "kind": "supported"
       },
       "type": "number",
       "value": "6"
@@ -4539,10 +4537,9 @@
       "kind": "class",
       "source": "three",
       "status": {
-        "kind": "unsupported",
-        "diagnostic": "TN_NATIVE_UNSUPPORTED_DATATEXTURE"
+        "kind": "supported"
       },
-      "extends": null,
+      "extends": "Texture",
       "constructor": [],
       "fields": [],
       "methods": []
@@ -5382,11 +5379,26 @@
       "kind": "class",
       "source": "three/webgpu",
       "status": {
-        "kind": "unsupported",
-        "diagnostic": "TN_NATIVE_UNSUPPORTED_FLOAT32BUFFERATTRIBUTE"
+        "kind": "supported"
       },
-      "extends": null,
-      "constructor": [],
+      "extends": "BufferAttribute",
+      "constructor": [
+        {
+          "name": "array",
+          "type": "TypedArray",
+          "optional": false
+        },
+        {
+          "name": "itemSize",
+          "type": "number",
+          "optional": false
+        },
+        {
+          "name": "normalized",
+          "type": "boolean",
+          "optional": true
+        }
+      ],
       "fields": [],
       "methods": []
     },
@@ -6961,8 +6973,7 @@
       "kind": "constant",
       "source": "three",
       "status": {
-        "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "kind": "supported"
       },
       "type": "string",
       "value": "\"srgb-linear\""
@@ -7040,8 +7051,8 @@
       "kind": "enum",
       "source": "three",
       "status": {
-        "kind": "unsupported",
-        "diagnostic": "TN_NATIVE_UNSUPPORTED_ENUM_MAGNIFICATIONTEXTUREFILTER"
+        "kind": "partial",
+        "gaps": ["native-not-implemented"]
       },
       "values": [
         {
@@ -7602,13 +7613,114 @@
       "kind": "class",
       "source": "three/webgpu",
       "status": {
-        "kind": "unsupported",
-        "diagnostic": "TN_NATIVE_UNSUPPORTED_MATHUTILS"
+        "kind": "supported"
       },
       "extends": null,
       "constructor": [],
       "fields": [],
-      "methods": []
+      "methods": [
+        {
+          "name": "clamp",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "value",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "min",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "max",
+                  "type": "number",
+                  "optional": false
+                }
+              ],
+              "returns": "number"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "lerp",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "x",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "y",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "t",
+                  "type": "number",
+                  "optional": false
+                }
+              ],
+              "returns": "number"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "degToRad",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "degrees",
+                  "type": "number",
+                  "optional": false
+                }
+              ],
+              "returns": "number"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "euclideanModulo",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "n",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "m",
+                  "type": "number",
+                  "optional": false
+                }
+              ],
+              "returns": "number"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ]
     },
     {
       "name": "Matrix3",
@@ -9841,8 +9953,7 @@
           "mutable": true,
           "lifetime": "reference",
           "status": {
-            "kind": "unsupported",
-            "diagnostic": "TN_NATIVE_UNSUPPORTED_UNRESOLVED_TYPE"
+            "kind": "supported"
           }
         },
         {
@@ -10586,8 +10697,7 @@
           "mutable": true,
           "lifetime": "reference",
           "status": {
-            "kind": "unsupported",
-            "diagnostic": "TN_NATIVE_UNSUPPORTED_UNRESOLVED_TYPE"
+            "kind": "supported"
           }
         },
         {
@@ -10948,8 +11058,8 @@
       "kind": "enum",
       "source": "three",
       "status": {
-        "kind": "unsupported",
-        "diagnostic": "TN_NATIVE_UNSUPPORTED_ENUM_MINIFICATIONTEXTUREFILTER"
+        "kind": "partial",
+        "gaps": ["native-not-implemented"]
       },
       "values": [
         {
@@ -11098,8 +11208,7 @@
       "kind": "constant",
       "source": "three",
       "status": {
-        "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "kind": "supported"
       },
       "type": "number",
       "value": "7"
@@ -11153,8 +11262,7 @@
       "kind": "constant",
       "source": "three",
       "status": {
-        "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "kind": "supported"
       },
       "type": "string",
       "value": "\"\""
@@ -13020,8 +13128,7 @@
       "kind": "constant",
       "source": "three",
       "status": {
-        "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "kind": "supported"
       },
       "type": "number",
       "value": "2"
@@ -16696,12 +16803,102 @@
       "kind": "class",
       "source": "three",
       "status": {
-        "kind": "unsupported",
-        "diagnostic": "TN_NATIVE_UNSUPPORTED_TEXTURE"
+        "kind": "supported"
       },
-      "extends": null,
+      "extends": "EventDispatcher",
       "constructor": [],
-      "fields": [],
+      "fields": [
+        {
+          "name": "colorSpace",
+          "type": "string",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "magFilter",
+          "type": "MagnificationTextureFilter",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "minFilter",
+          "type": "MinificationTextureFilter",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "rotation",
+          "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "version",
+          "type": "number",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "wrapS",
+          "type": "Wrapping",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "wrapT",
+          "type": "Wrapping",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "offset",
+          "type": "Vector2",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "repeat",
+          "type": "Vector2",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ],
       "methods": []
     },
     {
@@ -21353,8 +21550,8 @@
       "kind": "enum",
       "source": "three",
       "status": {
-        "kind": "unsupported",
-        "diagnostic": "TN_NATIVE_UNSUPPORTED_ENUM_WRAPPING"
+        "kind": "partial",
+        "gaps": ["native-not-implemented"]
       },
       "values": [
         {
@@ -22387,6 +22584,15 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "map",
+          "type": "Texture | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": []
@@ -22539,6 +22745,15 @@
         {
           "name": "specular",
           "type": "Color",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "map",
+          "type": "Texture | null",
           "mutable": true,
           "lifetime": "owned",
           "status": {

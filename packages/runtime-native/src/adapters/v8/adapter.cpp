@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "engine/abi/bindings.h"
+#include "engine/foundation/ThreeConstants.h"
 
 namespace tn::adapters::v8adapter {
 
@@ -80,6 +81,20 @@ bool toValues(Adapter& a, const v8::FunctionCallbackInfo<v8::Value>& info, std::
             a.holdIfCallback(h);
         } else if (arg->IsArray()) {
             v8::Local<v8::Array> array = arg.As<v8::Array>();
+            std::vector<double> numbers(array->Length());
+            for (uint32_t k = 0; k < array->Length(); ++k) {
+                v8::Local<v8::Value> e;
+                if (!array->Get(ctx, k).ToLocal(&e) || !e->IsNumber()) return false;
+                numbers[k] = e.As<v8::Number>()->Value();
+            }
+            arrays.push_back(std::move(numbers));
+            v.kind = TN_VALUE_NUMBERS;
+            v.numbers = arrays.back().data();
+            v.count = arrays.back().size();
+        } else if (arg->IsTypedArray()) {
+            // The template builds attributes from real typed arrays (`new Float32Array(...)`), so a
+            // typed array crosses as its binary64 values, exactly as a plain array of them would.
+            v8::Local<v8::TypedArray> array = arg.As<v8::TypedArray>();
             std::vector<double> numbers(array->Length());
             for (uint32_t k = 0; k < array->Length(); ++k) {
                 v8::Local<v8::Value> e;
@@ -458,6 +473,20 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
         classes_[type].Reset(isolate_, ctor);
         target->Set(context, str(isolate_, name), ctor->GetFunction(context).ToLocalChecked()).Check();
     }
+    // three's scalar constants the minimal template imports (PRD-531 small bindings): plain values
+    // beside the classes, read as globals the way the classes are. The values are three r185's
+    // (ThreeConstants.h, proven bit-exact by the mathutils reference test); this only wires them.
+    target->Set(context, str(isolate_, "ACESFilmicToneMapping"),
+                v8::Number::New(isolate_, tn::engine::ACESFilmicToneMapping)).Check();
+    target->Set(context, str(isolate_, "AgXToneMapping"),
+                v8::Number::New(isolate_, tn::engine::AgXToneMapping)).Check();
+    target->Set(context, str(isolate_, "NeutralToneMapping"),
+                v8::Number::New(isolate_, tn::engine::NeutralToneMapping)).Check();
+    target->Set(context, str(isolate_, "PCFSoftShadowMap"),
+                v8::Number::New(isolate_, tn::engine::PCFSoftShadowMap)).Check();
+    target->Set(context, str(isolate_, "NoColorSpace"), str(isolate_, tn::engine::NoColorSpace)).Check();
+    target->Set(context, str(isolate_, "LinearSRGBColorSpace"),
+                str(isolate_, tn::engine::LinearSRGBColorSpace)).Check();
 }
 
 }  // namespace tn::adapters::v8adapter

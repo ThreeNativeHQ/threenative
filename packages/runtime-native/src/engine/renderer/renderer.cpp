@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <unordered_map>
 #include <iterator>
 #include <cstring>
@@ -9,6 +10,7 @@
 #include <vector>
 
 #include "engine/shader/dfg_lut.h"
+#include "engine/scene/texture.h"
 #include "mystral/webgpu_compat.h"
 
 namespace tn::engine {
@@ -93,7 +95,7 @@ void put(std::vector<uint8_t>& block, size_t base, const shader::UniformField* f
 
 constexpr const char* kSlotNames[] = {
     "modelMatrix", "viewMatrix", "projectionMatrix", "normalMatrix", "diffuse", "alphaTest", "opaque", "roughness",
-    "metalness", "emissive", "specular", "shininess", "ior", "specularIntensity", "specularColor",
+    "metalness", "emissive", "specular", "shininess", "ior", "specularIntensity", "specularColor", "uvTransform",
     "hemisphereSky", "hemisphereGround", "hemisphereDirection", "ambient", "boneBase", "bindMatrix",
     "bindMatrixInverse", "morphBase", "morphInfluenceBase", "morphVertexCount", "morphBaseInfluence"};
 constexpr const char* kLightFieldNames[] = {"Color",       "Direction",        "Position",     "Distance",
@@ -111,6 +113,67 @@ WGPUTextureView view2d(WGPUTexture texture, WGPUTextureFormat format) {
     desc.arrayLayerCount = 1;
     desc.format = format;
     return wgpuTextureCreateView(texture, &desc);
+}
+
+// three's wrapping and filter constants (1000/1001/1002, 1000/1001) to WebGPU's.
+WGPUAddressMode addressMode(uint16_t wrap) {
+    switch (static_cast<TextureWrap>(wrap)) {
+        case TextureWrap::Repeat: return WGPUAddressMode_Repeat;
+        case TextureWrap::MirroredRepeat: return WGPUAddressMode_MirrorRepeat;
+        default: return WGPUAddressMode_ClampToEdge;
+    }
+}
+WGPUFilterMode filterMode(uint16_t filter) {
+    return filter == static_cast<uint16_t>(TextureFilter::Linear) ? WGPUFilterMode_Linear : WGPUFilterMode_Nearest;
+}
+
+// three's Texture.updateMatrix: Matrix3.setUvTransform(offset.x, offset.y, repeat.x, repeat.y,
+// rotation, center.x, center.y), column-major, as the fragment's mat3x3 uniform reads it.
+std::array<double, 9> uvTransformOf(const Texture& t) {
+    const double c = std::cos(t.rotation), s = std::sin(t.rotation);
+    const double cx = t.center.x, cy = t.center.y, sx = t.repeat.x, sy = t.repeat.y, tx = t.offset.x, ty = t.offset.y;
+    return {sx * c, sx * s, -sx * (c * cx + s * cy) + cx + tx,   // column 0
+            -sy * s, sy * c, -sy * (-s * cx + c * cy) + cy + ty,  // column 1
+            0, 0, 1};
+}
+
+// A float16 bit pattern from a float32, round to nearest. A FloatType map is stored as RGBA16Float:
+// rgba32float is unfilterable without the float32-filterable feature, which the host device does not
+// request, so three's linear float map could not be filtered natively. ponytail: half precision,
+// fine for a colour map; use RGBA32Float + float32-filterable if a full-precision float map lands.
+uint16_t halfFromFloat(float value) {
+    uint32_t bits;
+    std::memcpy(&bits, &value, sizeof bits);
+    const uint32_t sign = (bits >> 16) & 0x8000u;
+    int32_t exponent = static_cast<int32_t>((bits >> 23) & 0xffu) - 127 + 15;
+    uint32_t mantissa = bits & 0x7fffffu;
+    if (exponent <= 0) return static_cast<uint16_t>(sign);           // underflow: zero
+    if (exponent >= 31) return static_cast<uint16_t>(sign | 0x7c00u); // overflow: infinity
+    mantissa = (mantissa + 0x1000u) >> 13;                           // round to nearest even (approx)
+    if (mantissa & 0x400u) {
+        mantissa = 0;
+        if (++exponent >= 31) return static_cast<uint16_t>(sign | 0x7c00u);
+    }
+    return static_cast<uint16_t>(sign | (static_cast<uint32_t>(exponent) << 10) | mantissa);
+}
+
+std::vector<uint8_t> floatsToHalf(const std::vector<uint8_t>& bytes) {
+    std::vector<uint8_t> out(bytes.size() / 2);  // 16 bytes/texel -> 8
+    for (std::size_t i = 0; i + 4 <= bytes.size(); i += 4) {
+        float value;
+        std::memcpy(&value, bytes.data() + i, sizeof value);
+        const uint16_t half = halfFromFloat(value);
+        std::memcpy(out.data() + i / 2, &half, sizeof half);
+    }
+    return out;
+}
+
+// A program that samples a material `map` cannot have one shared fragment group: each draw's group
+// binds its own texture and sampler. Its group[1] is left null and built per draw instead.
+bool samplesMaterialMap(const shader::StageModule& stage) {
+    for (const shader::Binding& binding : stage.bindings)
+        if (binding.name == "t_map") return true;
+    return false;
 }
 
 }  // namespace
@@ -194,6 +257,7 @@ Renderer::~Renderer() {
     }
     wgpuTextureViewRelease(lutView_);
     wgpuTextureRelease(lut_);
+    releaseMaterialTextures();
 }
 
 void Renderer::releaseTargets() {
@@ -267,7 +331,8 @@ void Renderer::setSize(uint32_t width, uint32_t height) {
 // A stage's bind group: its uniform slice of `uniforms` (dynamic offset when the layout says so), and
 // for a texture/sampler pair the view and sampler given.
 WGPUBindGroup Renderer::bindGroup(WGPUBindGroupLayout layout, const shader::StageModule& stage, Handle uniforms,
-                                  WGPUTextureView view, WGPUSampler sampler) {
+                                  WGPUTextureView view, WGPUSampler sampler, WGPUTextureView mapView,
+                                  WGPUSampler mapSampler) {
     std::vector<WGPUBindGroupEntry> entries;
     for (const shader::Binding& b : stage.bindings) {
         WGPUBindGroupEntry e = {};
@@ -291,9 +356,9 @@ WGPUBindGroup Renderer::bindGroup(WGPUBindGroupLayout layout, const shader::Stag
             if (b.kind == shader::BindingKind::Texture) e.textureView = (b.cube ? cubeShadowMaps_ : shadowMaps_).at(index).view;
             else e.sampler = compareSampler_;
         } else if (b.kind == shader::BindingKind::Texture) {
-            e.textureView = view;
+            e.textureView = b.name == "t_map" ? mapView : view;
         } else if (b.kind == shader::BindingKind::Sampler) {
-            e.sampler = sampler;
+            e.sampler = b.name == "smp_map" ? mapSampler : sampler;
         } else {
             throw std::runtime_error("TN_NATIVE_BINDING_UNSUPPORTED: " + b.name);
         }
@@ -304,6 +369,49 @@ WGPUBindGroup Renderer::bindGroup(WGPUBindGroupLayout layout, const shader::Stag
     desc.entryCount = entries.size();
     desc.entries = entries.data();
     return wgpuDeviceCreateBindGroup(device_, &desc);
+}
+
+const Renderer::MaterialTexture* Renderer::materialTexture(const Texture& texture) {
+    MaterialTexture& record = materialTextures_[&texture];
+    if (record.view != nullptr && record.version == texture.version()) return &record;
+    if (record.view) wgpuTextureViewRelease(record.view);
+    if (record.sampler) wgpuSamplerRelease(record.sampler);
+    if (record.gpu.type != 0) gpu_.destroy(record.gpu);
+    record = MaterialTexture{};
+    // A FloatType map is stored as RGBA16Float (rgba32float is unfilterable); an 8-bit map is
+    // rgba8unorm, and an sRGB map's decode happens in the fragment (three's sRGBTransferEOTF), so the
+    // sample matches upstream's shader conversion rather than a differently rounded -srgb format.
+    const WGPUTextureFormat format =
+        texture.isFloat() ? WGPUTextureFormat_RGBA16Float : WGPUTextureFormat_RGBA8Unorm;
+    if (texture.hasImage()) {
+        const std::vector<uint8_t> pixels = texture.isFloat() ? floatsToHalf(texture.data) : texture.data;
+        record.gpu = gpu_.createTexture(texture.width, texture.height, format,
+                                        WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst);
+        if (record.gpu.type != 0 && gpu_.writeTexture(record.gpu, pixels.data(), pixels.size()) == GpuStatus::Ok)
+            record.view = view2d(gpu_.texture(record.gpu), format);
+    }
+    WGPUSamplerDescriptor sampler = {};
+    sampler.addressModeU = addressMode(texture.wrapS);
+    sampler.addressModeV = addressMode(texture.wrapT);
+    sampler.addressModeW = WGPUAddressMode_ClampToEdge;
+    sampler.magFilter = filterMode(texture.magFilter);
+    sampler.minFilter = filterMode(texture.minFilter);
+    sampler.maxAnisotropy = 1;
+    record.sampler = wgpuDeviceCreateSampler(device_, &sampler);
+    record.version = texture.version();
+    return &record;
+}
+
+void Renderer::releaseMaterialTextures() {
+    for (auto& [texture, record] : materialTextures_) {
+        if (record.view) wgpuTextureViewRelease(record.view);
+        if (record.sampler) wgpuSamplerRelease(record.sampler);
+        if (record.gpu.type != 0) gpu_.destroy(record.gpu);
+    }
+    materialTextures_.clear();
+    for (auto& [key, group] : mapGroups_)
+        if (group) wgpuBindGroupRelease(group);
+    mapGroups_.clear();
 }
 
 // Each stage's layout from the bindings its package declares, the uniform block with a dynamic
@@ -382,6 +490,7 @@ Renderer::Program& Renderer::program(MaterialKind kind, const shader::VertexVari
 Renderer::Program& Renderer::depthProgram(const shader::VertexVariant& variant) {
     shader::VertexVariant kind = variant;
     kind.instanceColor = false; // a depth pass reads no colour
+    kind.map = false;           // ...nor a diffuse map: no uv passes through the depth program
     const std::string key = "depth|" + kind.key();
     if (const auto found = programs_.find(key); found != programs_.end()) return *found->second;
     // three's shadow pass draws with the default positionNode, the same transform as a basic material.
@@ -398,19 +507,26 @@ Renderer::Program& Renderer::add(const std::string& key, shader::StageModule ver
     built->fragment = std::move(fragment);
     buildLayouts(*built);
     if (uniformCapacity_ != 0) {
-        for (int g = 0; g < 2; ++g)
+        for (int g = 0; g < 2; ++g) {
+            if (g == 1 && samplesMaterialMap(built->fragment)) continue;  // per-draw groups instead
             built->groups[g] = bindGroup(built->layouts[g], g == 0 ? built->vertex : built->fragment, uniformBuffer_,
                                          lutView_, lutSampler_);
+        }
     }
     return *programs_.emplace(key, std::move(built)).first->second;
 }
 
 void Renderer::rebuildGroups() {
+    for (auto& [key, group] : mapGroups_)  // they bind the old uniform buffer
+        if (group) wgpuBindGroupRelease(group);
+    mapGroups_.clear();
     for (auto& [key, program] : programs_) {
         for (int g = 0; g < 2; ++g) {
             if (program->groups[g]) wgpuBindGroupRelease(program->groups[g]);
-            program->groups[g] = bindGroup(program->layouts[g], g == 0 ? program->vertex : program->fragment,
-                                           uniformBuffer_, lutView_, lutSampler_);
+            program->groups[g] = (g == 1 && samplesMaterialMap(program->fragment))
+                                     ? nullptr
+                                     : bindGroup(program->layouts[g], g == 0 ? program->vertex : program->fragment,
+                                                 uniformBuffer_, lutView_, lutSampler_);
         }
     }
 }
@@ -596,6 +712,8 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
             v.morphNormals = !item.morphGeometry->morphNormals.empty();
         }
         v.positionNode = item.positionNode;
+        v.map = item.map != nullptr;
+        v.mapSRGB = item.map != nullptr && item.map->isSRGB();
         return v;
     };
 
@@ -605,6 +723,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
         Program* program;
         WGPURenderPipeline pipeline;
         uint32_t vertexOffset, fragmentOffset;
+        WGPUBindGroup mapGroup = nullptr;  // a mapped material's fragment group, else the program's
     };
     std::vector<Planned> plan;
     plan.reserve(opaque.size());
@@ -651,6 +770,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
         put(frameUniforms_, f, fs[kIor], std::array<double, 1>{m.ior});
         put(frameUniforms_, f, fs[kSpecularIntensity], std::array<double, 1>{m.specularIntensity});
         put(frameUniforms_, f, fs[kSpecularColor], std::array<double, 3>{m.specularColor[0], m.specularColor[1], m.specularColor[2]});
+        if (item.map) put(frameUniforms_, f, fs[kUvTransform], uvTransformOf(*item.map));
         for (std::size_t i = 0; i < lights.direct.size() && i < program.lightSlots.size(); ++i) {
             const DirectLight& l = lights.direct[i];
             const auto& slot = program.lightSlots[i];
@@ -740,6 +860,23 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
         if (!storage.data.empty()) gpu_.writeBuffer(storage.buffer, 0, storage.data.data(), storage.data.size() * 4);
     }
 
+    // A mapped draw's fragment group binds its own texture and sampler beside the frame's uniforms.
+    // Created here, after the uniform buffer exists; cached per program and texture.
+    for (Planned& p : plan) {
+        if (!p.item->map) continue;
+        const MaterialTexture* map = materialTexture(*p.item->map);
+        if (map->view == nullptr) continue;  // an image-less texture draws without its map
+        const std::string key = std::to_string(reinterpret_cast<uintptr_t>(p.program)) + "|" +
+                                std::to_string(reinterpret_cast<uintptr_t>(map->view)) + "|" +
+                                std::to_string(reinterpret_cast<uintptr_t>(map->sampler));
+        const auto found = mapGroups_.find(key);
+        p.mapGroup = found != mapGroups_.end()
+                         ? found->second
+                         : mapGroups_.emplace(key, bindGroup(p.program->layouts[1], p.program->fragment, uniformBuffer_,
+                                                             lutView_, lutSampler_, map->view, map->sampler))
+                               .first->second;
+    }
+
     // Encode: state changes only where they change; per draw, its dynamic offsets and the draw. The
     // shadow passes first, so the main pass samples this frame's maps.
     WGPURenderPipeline bound = nullptr;
@@ -758,6 +895,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
             const bool column = a.name.rfind("instanceMatrix", 0) == 0;
             BufferStore& store = a.name == "position"        ? *item.positions
                                  : a.name == "normal"        ? *item.normals
+                                 : a.name == "uv"            ? *item.uvs
                                  : a.name == "instanceColor" ? *item.instanceColors
                                  : a.name == "skinIndex"     ? *item.skinIndices
                                  : a.name == "skinWeight"    ? *item.skinWeights
@@ -771,7 +909,8 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
         wgpuRenderPassEncoderSetBindGroup(pass, 0, p.program->groups[0], 1, &p.vertexOffset);
         // The depth program's fragment group is empty: no uniform block, no dynamic offset.
         const bool fragmentBlock = p.program->fragment.uniformBlockSize != 0;
-        wgpuRenderPassEncoderSetBindGroup(pass, 1, p.program->groups[1], fragmentBlock ? 1 : 0, &p.fragmentOffset);
+        wgpuRenderPassEncoderSetBindGroup(pass, 1, p.mapGroup ? p.mapGroup : p.program->groups[1],
+                                          fragmentBlock ? 1 : 0, &p.fragmentOffset);
         if (item.indices) {
             const Handle indices = geometry_.sync(*item.indices, WGPUBufferUsage_Index);
             const bool wide = item.indices->scalar() == Scalar::U32;

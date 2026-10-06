@@ -842,6 +842,40 @@
       ],
       "callbacks": []
     },
+    "DataTexture": {
+      "constructor": true,
+      "methods": [],
+      "getters": [
+        "colorSpace",
+        "magFilter",
+        "minFilter",
+        "name",
+        "offset.x",
+        "offset.y",
+        "repeat.x",
+        "repeat.y",
+        "rotation",
+        "version",
+        "wrapS",
+        "wrapT"
+      ],
+      "setters": [
+        "colorSpace",
+        "magFilter",
+        "minFilter",
+        "name",
+        "needsUpdate",
+        "offset.x",
+        "offset.y",
+        "repeat.x",
+        "repeat.y",
+        "rotation",
+        "wrapS",
+        "wrapT"
+      ],
+      "members": ["offset", "repeat"],
+      "callbacks": []
+    },
     "DirectionalLight": {
       "constructor": true,
       "methods": [
@@ -1016,6 +1050,47 @@
       ],
       "getters": ["order", "x", "y", "z"],
       "setters": ["order", "x", "y", "z"],
+      "members": [],
+      "callbacks": []
+    },
+    "Float32BufferAttribute": {
+      "constructor": true,
+      "methods": [
+        "addUpdateRange",
+        "applyMatrix3",
+        "applyMatrix4",
+        "applyNormalMatrix",
+        "clearUpdateRanges",
+        "copyAt",
+        "getComponent",
+        "getW",
+        "getX",
+        "getY",
+        "getZ",
+        "setComponent",
+        "setW",
+        "setX",
+        "setXY",
+        "setXYZ",
+        "setXYZW",
+        "setY",
+        "setZ",
+        "transformDirection"
+      ],
+      "getters": [
+        "array",
+        "array.length",
+        "count",
+        "gpuType",
+        "id",
+        "itemSize",
+        "name",
+        "normalized",
+        "updateRanges",
+        "usage",
+        "version"
+      ],
+      "setters": ["name", "needsUpdate"],
       "members": [],
       "callbacks": []
     },
@@ -1618,6 +1693,14 @@
       ],
       "callbacks": ["onBeforeRender"]
     },
+    "MathUtils": {
+      "constructor": true,
+      "methods": ["clamp", "degToRad", "euclideanModulo", "lerp"],
+      "getters": [],
+      "setters": [],
+      "members": [],
+      "callbacks": []
+    },
     "Matrix3": {
       "constructor": true,
       "methods": [
@@ -1973,6 +2056,7 @@
         "color.r",
         "depthTest",
         "depthWrite",
+        "map",
         "name",
         "needsUpdate",
         "opacity",
@@ -1981,7 +2065,7 @@
         "transparent",
         "visible"
       ],
-      "members": ["color"],
+      "members": ["color", "map"],
       "callbacks": []
     },
     "MeshLambertMaterial": {
@@ -2020,6 +2104,7 @@
         "emissive.g",
         "emissive.r",
         "emissiveIntensity",
+        "map",
         "name",
         "needsUpdate",
         "opacity",
@@ -2028,7 +2113,7 @@
         "transparent",
         "visible"
       ],
-      "members": ["color", "emissive"],
+      "members": ["color", "emissive", "map"],
       "callbacks": []
     },
     "MeshPhongMaterial": {
@@ -2071,6 +2156,7 @@
         "emissive.g",
         "emissive.r",
         "emissiveIntensity",
+        "map",
         "name",
         "needsUpdate",
         "opacity",
@@ -2084,7 +2170,7 @@
         "transparent",
         "visible"
       ],
-      "members": ["color", "emissive", "specular"],
+      "members": ["color", "emissive", "map", "specular"],
       "callbacks": []
     },
     "MeshPhysicalMaterial": {
@@ -2141,6 +2227,7 @@
         "emissiveIntensity",
         "ior",
         "iridescence",
+        "map",
         "metalness",
         "name",
         "needsUpdate",
@@ -2158,7 +2245,7 @@
         "transparent",
         "visible"
       ],
-      "members": ["color", "emissive", "specularColor"],
+      "members": ["color", "emissive", "map", "specularColor"],
       "callbacks": []
     },
     "MeshStandardMaterial": {
@@ -2199,6 +2286,7 @@
         "emissive.g",
         "emissive.r",
         "emissiveIntensity",
+        "map",
         "metalness",
         "name",
         "needsUpdate",
@@ -2209,7 +2297,7 @@
         "transparent",
         "visible"
       ],
-      "members": ["color", "emissive"],
+      "members": ["color", "emissive", "map"],
       "callbacks": []
     },
     "Object3D": {
@@ -3628,6 +3716,40 @@
         "up"
       ],
       "callbacks": ["onBeforeRender"]
+    },
+    "Texture": {
+      "constructor": true,
+      "methods": [],
+      "getters": [
+        "colorSpace",
+        "magFilter",
+        "minFilter",
+        "name",
+        "offset.x",
+        "offset.y",
+        "repeat.x",
+        "repeat.y",
+        "rotation",
+        "version",
+        "wrapS",
+        "wrapT"
+      ],
+      "setters": [
+        "colorSpace",
+        "magFilter",
+        "minFilter",
+        "name",
+        "needsUpdate",
+        "offset.x",
+        "offset.y",
+        "repeat.x",
+        "repeat.y",
+        "rotation",
+        "wrapS",
+        "wrapT"
+      ],
+      "members": ["offset", "repeat"],
+      "callbacks": []
     },
     "TorusGeometry": {
       "constructor": true,

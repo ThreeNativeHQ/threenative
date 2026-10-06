@@ -4,31 +4,24 @@
 
 // three@0.185.1's Material and the five mesh materials, as the properties the native renderer
 // reads (PRD-514). One class carries every type's fields; `type` says which three class it is, and
-// each constructor sets that class's defaults. Skipped: maps (no texture binding yet), blending
-// modes other than NormalBlending, stencil, clipping planes, polygon offset, dithering, fog, node
-// slots (colorNode etc.), userData, clone/toJSON. Physical features beyond ior/specular are kept as
-// numbers so the renderer can refuse them by name (TN_MATERIAL_UNSUPPORTED) rather than drop them.
+// each constructor sets that class's defaults. Skipped: maps other than `map` (only the diffuse map
+// is sampled so far), blending modes other than NormalBlending, stencil, clipping planes, polygon
+// offset, dithering, fog, node slots (colorNode etc.), userData, clone/toJSON. Physical features
+// beyond ior/specular are kept as numbers so the renderer can refuse them by name (TN_MATERIAL_UNSUPPORTED)
+// rather than drop them.
 
 #include <cstdint>
 #include <string>
 #include <string_view>
 
 #include "engine/foundation/math/Color.h"
+#include "engine/scene/texture.h"
 #include "engine/shader/position_node.h"
 
 namespace tn::engine {
 
 enum class MaterialType : uint8_t { Basic, Lambert, Phong, Standard, Physical };
 enum class Side : uint8_t { Front = 0, Back = 1, Double = 2 };  // three's FrontSide/BackSide/DoubleSide
-
-/**
- * A texture as a material slot names it: until the native texture path (N07) owns image data, a
- * loaded glTF texture records its name and the glTF image it reads.
- */
-struct Texture {
-    std::string name;
-    int source = -1; // the glTF image index
-};
 
 class Material {
 public:

@@ -24,7 +24,15 @@ namespace {
 
 constexpr uint32_t kBytesPerPixel = 4;
 
-uint32_t alignedRow(uint32_t width) { return (width * kBytesPerPixel + 255u) & ~255u; }
+// The formats this table uploads: RGBA8 (4 bytes), RGBA16Float (8) and RGBA32Float (16). Anything
+// else keeps 4 so a new format fails its size check rather than writing a wrong row pitch.
+uint32_t bytesPerPixel(WGPUTextureFormat format) {
+    if (format == WGPUTextureFormat_RGBA32Float) return 16u;
+    if (format == WGPUTextureFormat_RGBA16Float) return 8u;
+    return kBytesPerPixel;
+}
+
+uint32_t alignedRow(uint32_t width, uint32_t bpp) { return (width * bpp + 255u) & ~255u; }
 
 GpuStatus fromHandleError(HandleError error) {
     switch (error) {
@@ -109,7 +117,8 @@ Handle GpuResources::createTexture(uint32_t width, uint32_t height, WGPUTextureF
     if (!texture) return Handle{};
     const Handle handle = handles_.allocate(kTexture);
     if (records_.size() <= handle.index) records_.resize(handle.index + 1);
-    records_[handle.index] = Record{nullptr, texture, uint64_t{width} * height * kBytesPerPixel, width, height};
+    const uint32_t bpp = bytesPerPixel(format);
+    records_[handle.index] = Record{nullptr, texture, uint64_t{width} * height * bpp, width, height, bpp};
     return handle;
 }
 
@@ -133,7 +142,7 @@ GpuStatus GpuResources::writeTexture(Handle texture, const void* pixels, uint64_
     destination.texture = target->texture;
     destination.aspect = WGPUTextureAspect_All;
     WGPUTextureDataLayout_Compat layout = {};
-    layout.bytesPerRow = target->width * kBytesPerPixel;
+    layout.bytesPerRow = target->width * target->bytesPerPixel;
     layout.rowsPerImage = target->height;
     const WGPUExtent3D extent = {target->width, target->height, 1};
     wgpuQueueWriteTexture(queue_, &destination, pixels, size, &layout, &extent);
@@ -214,7 +223,8 @@ GpuStatus GpuResources::readTexture(Handle texture, ReadbackCallback done) {
     if (!source) return status;
     const uint32_t width = source->width;
     const uint32_t height = source->height;
-    const uint32_t paddedRow = alignedRow(width);
+    const uint32_t bpp = source->bytesPerPixel;
+    const uint32_t paddedRow = alignedRow(width, bpp);
     const uint64_t stagingSize = uint64_t{paddedRow} * height;
 
     WGPUBufferDescriptor stagingDesc = {};
@@ -238,9 +248,9 @@ GpuStatus GpuResources::readTexture(Handle texture, ReadbackCallback done) {
     auto finish = std::make_shared<ReadbackCallback>(std::move(done));
     readInto(
         encoder, staging, stagingSize,
-        [width, height, paddedRow, finish](const uint8_t* bytes) {
+        [width, height, paddedRow, bpp, finish](const uint8_t* bytes) {
             // Rows arrive 256-byte aligned; the caller gets them tightly packed.
-            const uint32_t row = width * kBytesPerPixel;
+            const uint32_t row = width * bpp;
             std::vector<uint8_t> pixels(uint64_t{row} * height);
             for (uint32_t y = 0; y < height; ++y) std::memcpy(&pixels[uint64_t{y} * row], bytes + uint64_t{y} * paddedRow, row);
             (*finish)(GpuStatus::Ok, std::move(pixels));

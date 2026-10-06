@@ -6,7 +6,7 @@ export interface IUnsupportedCatalogSymbol<Name extends string> {
   new (...arguments_: never[]): never;
 }
 
-/** Catalog partial (native-not-implemented): three/ACESFilmicToneMapping. */
+/** Catalog supported: three/ACESFilmicToneMapping. */
 export declare const ACESFilmicToneMapping: 4;
 
 /** Catalog partial (native-not-implemented): three/AddEquation. */
@@ -21,7 +21,7 @@ export declare const AdditiveAnimationBlendMode: 2501;
 /** Catalog partial (native-not-implemented): three/AdditiveBlending. */
 export declare const AdditiveBlending: 2;
 
-/** Catalog partial (native-not-implemented): three/AgXToneMapping. */
+/** Catalog supported: three/AgXToneMapping. */
 export declare const AgXToneMapping: 6;
 
 /** Catalog partial (native-not-implemented): three/AlphaFormat. */
@@ -535,6 +535,11 @@ y: number;
   setFromCartesianCoords(x: number, y: number, z: number): this;
 }
 
+/** Catalog supported: three/DataTexture. */
+export declare class DataTexture extends Texture {
+constructor();
+}
+
 /** Catalog partial (native-not-implemented): three/DecrementStencilOp. */
 export declare const DecrementStencilOp: 7283;
 
@@ -658,6 +663,11 @@ constructor();
 
 /** Catalog partial (native-not-implemented): three/EventListener. */
 export type EventListener = (event: unknown & Event) => void;
+
+/** Catalog supported: three/webgpu/Float32BufferAttribute. */
+export declare class Float32BufferAttribute extends BufferAttribute {
+constructor(array: TypedArray, itemSize: number, normalized?: boolean);
+}
 
 /** Catalog partial (native-not-implemented): three/FloatType. */
 export declare const FloatType: 1015;
@@ -882,7 +892,7 @@ export declare const LinearMipmapLinearFilter: 1008;
 /** Catalog partial (native-not-implemented): three/LinearMipmapNearestFilter. */
 export declare const LinearMipmapNearestFilter: 1007;
 
-/** Catalog partial (native-not-implemented): three/LinearSRGBColorSpace. */
+/** Catalog supported: three/LinearSRGBColorSpace. */
 export declare const LinearSRGBColorSpace: "srgb-linear";
 
 /** Catalog partial (native-not-implemented): three/LinearToneMapping. */
@@ -899,6 +909,13 @@ export declare const LoopPingPong: 2202;
 
 /** Catalog partial (native-not-implemented): three/LoopRepeat. */
 export declare const LoopRepeat: 2201;
+
+/** Catalog partial (native-not-implemented): three/MagnificationTextureFilter. */
+export declare const MagnificationTextureFilter = {
+  NearestFilter: 1003,
+  LinearFilter: 1006,
+} as const;
+export type MagnificationTextureFilter = (typeof MagnificationTextureFilter)[keyof typeof MagnificationTextureFilter];
 
 /** Catalog partial (renderer-private-hooks, json-serialization): three/Material. */
 export declare class Material extends EventDispatcher {
@@ -966,6 +983,19 @@ export declare const MaterialBlending: 6;
 
 /** Catalog partial (shader-parameters): three/MaterialParameters. */
 export type MaterialParameters = {  };
+
+/** Catalog supported: three/webgpu/MathUtils. */
+export declare class MathUtils {
+constructor();
+
+  clamp(value: number, min: number, max: number): number;
+
+  lerp(x: number, y: number, t: number): number;
+
+  degToRad(degrees: number): number;
+
+  euclideanModulo(n: number, m: number): number;
+}
 
 /** Catalog supported: three/Matrix3. */
 export declare class Matrix3 {
@@ -1179,6 +1209,7 @@ visible: boolean;
 toneMapped: boolean;
 userData: Record<string, any>;
 color: Color;
+map: Texture | null;
 lightMapIntensity: number;
 aoMapIntensity: number;
 envMapRotation: Euler;
@@ -1248,6 +1279,7 @@ userData: Record<string, any>;
 color: Color;
 roughness: number;
 metalness: number;
+map: Texture | null;
 lightMapIntensity: number;
 aoMapIntensity: number;
 emissive: Color;
@@ -1278,6 +1310,21 @@ export type MeshStandardMaterialParameters = {  };
 /** Catalog partial (native-not-implemented): three/MinEquation. */
 export declare const MinEquation: 103;
 
+/** Catalog partial (native-not-implemented): three/MinificationTextureFilter. */
+export declare const MinificationTextureFilter = {
+  NearestFilter: 1003,
+  NearestMipmapNearestFilter: 1004,
+  NearestMipMapNearestFilter: 1004,
+  NearestMipmapLinearFilter: 1005,
+  NearestMipMapLinearFilter: 1005,
+  LinearFilter: 1006,
+  LinearMipmapNearestFilter: 1007,
+  LinearMipMapNearestFilter: 1007,
+  LinearMipmapLinearFilter: 1008,
+  LinearMipMapLinearFilter: 1008,
+} as const;
+export type MinificationTextureFilter = (typeof MinificationTextureFilter)[keyof typeof MinificationTextureFilter];
+
 /** Catalog partial (native-not-implemented): three/MirroredRepeatWrapping. */
 export declare const MirroredRepeatWrapping: 1002;
 
@@ -1305,7 +1352,7 @@ export declare const NearestMipmapLinearFilter: 1005;
 /** Catalog partial (native-not-implemented): three/NearestMipmapNearestFilter. */
 export declare const NearestMipmapNearestFilter: 1004;
 
-/** Catalog partial (native-not-implemented): three/NeutralToneMapping. */
+/** Catalog supported: three/NeutralToneMapping. */
 export declare const NeutralToneMapping: 7;
 
 /** Catalog partial (native-not-implemented): three/NeverCompare. */
@@ -1320,7 +1367,7 @@ export declare const NeverStencilFunc: 512;
 /** Catalog partial (native-not-implemented): three/NoBlending. */
 export declare const NoBlending: 0;
 
-/** Catalog partial (native-not-implemented): three/NoColorSpace. */
+/** Catalog supported: three/NoColorSpace. */
 export declare const NoColorSpace: "";
 
 /** Catalog partial (native-not-implemented): three/NoNormalPacking. */
@@ -1519,7 +1566,7 @@ zoom: number;
 /** Catalog partial (native-not-implemented): three/PCFShadowMap. */
 export declare const PCFShadowMap: 1;
 
-/** Catalog partial (native-not-implemented): three/PCFSoftShadowMap. */
+/** Catalog supported: three/PCFSoftShadowMap. */
 export declare const PCFSoftShadowMap: 2;
 
 /** Catalog supported: three/webgpu/PerspectiveCamera. */
@@ -2035,6 +2082,21 @@ export declare const SubtractiveBlending: 3;
 /** Catalog partial (native-not-implemented): three/TangentSpaceNormalMap. */
 export declare const TangentSpaceNormalMap: 0;
 
+/** Catalog supported: three/Texture. */
+export declare class Texture extends EventDispatcher {
+constructor();
+colorSpace: string;
+magFilter: MagnificationTextureFilter;
+minFilter: MinificationTextureFilter;
+name: string;
+rotation: number;
+readonly version: number;
+wrapS: Wrapping;
+wrapT: Wrapping;
+readonly offset: Vector2;
+readonly repeat: Vector2;
+}
+
 /** Catalog supported: three/webgpu/TorusGeometry. */
 export declare class TorusGeometry extends BufferGeometry {
 constructor();
@@ -2531,6 +2593,14 @@ export declare const WebGPUCoordinateSystem: 2001;
 /** Catalog partial (native-not-implemented): three/WrapAroundEnding. */
 export declare const WrapAroundEnding: 2402;
 
+/** Catalog partial (native-not-implemented): three/Wrapping. */
+export declare const Wrapping = {
+  RepeatWrapping: 1000,
+  ClampToEdgeWrapping: 1001,
+  MirroredRepeatWrapping: 1002,
+} as const;
+export type Wrapping = (typeof Wrapping)[keyof typeof Wrapping];
+
 /** Catalog partial (native-not-implemented): three/ZeroCurvatureEnding. */
 export declare const ZeroCurvatureEnding: 2400;
 
@@ -2560,6 +2630,7 @@ readonly type: string;
 visible: boolean;
 color: Color;
 emissive: Color;
+map: Texture | null;
 }
 
 /** Catalog supported: three/MeshPhongMaterial. */
@@ -2581,6 +2652,7 @@ visible: boolean;
 color: Color;
 emissive: Color;
 specular: Color;
+map: Texture | null;
 }
 
 /** Catalog supported: three/MeshPhysicalMaterial. */

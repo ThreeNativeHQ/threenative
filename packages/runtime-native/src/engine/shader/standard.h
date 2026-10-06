@@ -66,11 +66,22 @@ struct VertexVariant {
     bool morphNormals = false;
     /** The material's positionNode, applied after every variant above; null keeps positionLocal. */
     std::shared_ptr<const PositionNode> positionNode;
+    /**
+     * The material has a diffuse `map`: the vertex stage passes `uv` through and the fragment samples
+     * `t_map` at `uvTransform * vec3(uv, 1)`, multiplying the diffuse colour and alpha.
+     */
+    bool map = false;
+    /**
+     * The map's colorSpace is SRGBColorSpace: the sampled texel is decoded with three's
+     * `sRGBTransferEOTF` in the fragment, as upstream's ColorSpaceNode does, rather than by a
+     * hardware -srgb texture format (whose rounding differs from the shader formula).
+     */
+    bool mapSRGB = false;
     /** A stable key: two variants with the same key build the same program. */
     [[nodiscard]] std::string key() const {
         return std::to_string(instanced) + std::to_string(instanceColor) + std::to_string(skinned) + "m" +
-               std::to_string(morphTargets) + (morphNormals ? "n" : "") +
-               (positionNode ? "p:" + positionNode->key : "");
+               std::to_string(morphTargets) + (morphNormals ? "n" : "") + (map ? "t" : "") +
+               (mapSRGB ? "s" : "") + (positionNode ? "p:" + positionNode->key : "");
     }
 };
 

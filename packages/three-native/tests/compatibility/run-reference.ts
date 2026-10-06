@@ -177,10 +177,14 @@ export async function referenceGolden(
     }
     if (op.op === "new") {
       const Constructor = three[op.class];
+      // `MathUtils` is a namespace object, not a constructor: bind it as the one object three exports,
+      // so a `call` reaches its stateless functions as a game does. Everything else is constructible.
+      if (typeof Constructor !== "function" && typeof Constructor === "object" && Constructor !== null) {
+        bound.set(op.id, Constructor);
+        continue;
+      }
       if (typeof Constructor !== "function")
-        throw new Error(
-          `TN_FIXTURE_CLASS_UNKNOWN: ${op.class} is not exported by three ${version}`,
-        );
+        throw new Error(`TN_FIXTURE_CLASS_UNKNOWN: ${op.class} is not exported by three ${version}`);
       bound.set(
         op.id,
         new (Constructor as new (...args: unknown[]) => unknown)(

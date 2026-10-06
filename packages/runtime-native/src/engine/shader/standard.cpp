@@ -142,6 +142,7 @@ struct LocalVertex {
     ExprId normal;        // vec3; kInvalid without one
     ExprId instanceColor; // vec3; kInvalid without one. Written last (outputInstanceColor): varyings
                           // take locations in first-use order, and every fragment reads it last.
+    ExprId uv;            // vec2; kInvalid without a map. Written after instanceColor for the same reason.
 };
 
 static LocalVertex localVertex(Program& v, const VertexVariant& variant, bool withNormal) {
@@ -219,11 +220,43 @@ static LocalVertex localVertex(Program& v, const VertexVariant& variant, bool wi
     // NodeMaterial.setupPosition: `positionLocal.assign(positionNode)` after morph, skinning and instancing.
     if (variant.positionNode) position = variant.positionNode->build(v, position);
     const ExprId instanceColor = variant.instanceColor ? v.attribute("instanceColor", Type::vec(3)) : kInvalid;
-    return {v.construct(Type::vec(4), {position, v.constant(1.0f)}), normal, instanceColor};
+    // Read last: a map's uv joins the varying set after instanceColor, so the fragment reads it there.
+    const ExprId uv = variant.map ? v.attribute("uv", Type::vec(2)) : kInvalid;
+    return {v.construct(Type::vec(4), {position, v.constant(1.0f)}), normal, instanceColor, uv};
 }
 
 static void outputInstanceColor(Program& v, const LocalVertex& local) {
     if (local.instanceColor != kInvalid) v.output("instanceColor", local.instanceColor);
+}
+
+// A map's uv varying, written after instanceColor so both stages agree on the location order.
+static void outputMapUv(Program& v, const LocalVertex& local) {
+    if (local.uv != kInvalid) v.output("uv", local.uv);
+}
+
+// three's sRGBTransferEOTF (ColorManagement): one sRGB channel to linear-sRGB, its exact constants
+// and order: `c <= 0.04045 ? c * 0.0773993808 : pow(c * 0.9478672986 + 0.0521327014, 2.4)`.
+static ExprId srgbDecode(Program& f, ExprId channel) {
+    const ExprId a = f.call("pow", {f.add(f.mul(channel, f.constant(0.9478672986f)), f.constant(0.0521327014f)),
+                                    f.constant(2.4f)});
+    const ExprId b = f.mul(channel, f.constant(0.0773993808f));
+    return f.select(f.less(channel, f.constant(0.04045f)), b, a);
+}
+
+// three's setupDiffuseColor: the map texel multiplies the diffuse colour and alpha. It is sampled at
+// the texture's uv transform (repeat/offset/rotation/center); an sRGB map is decoded here, as
+// upstream's ColorSpaceNode does, so the sample is linear.
+static ExprId mapTexel(Program& f, const VertexVariant& variant) {
+    if (!variant.map) return kInvalid;
+    const ExprId uv = f.varying("uv", Type::vec(2));
+    const ExprId transform = f.uniform("uvTransform", Type::mat(3, 3));
+    const ExprId at = f.swizzle(f.mul(transform, f.construct(Type::vec(3), {uv, f.constant(1.0f)})), "xy");
+    const ExprId texel = f.sample(f.texture2d("map"), at);
+    if (!variant.mapSRGB) return texel;
+    const ExprId rgb = f.construct(Type::vec(3), {srgbDecode(f, f.swizzle(texel, "x")),
+                                                   srgbDecode(f, f.swizzle(texel, "y")),
+                                                   srgbDecode(f, f.swizzle(texel, "z"))});
+    return f.construct(Type::vec(4), {rgb, f.swizzle(texel, "w")});
 }
 
 // setupDiffuseColor: an instanced mesh with instanceColor multiplies the material colour by it.
@@ -379,6 +412,7 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
     // positionWorld, before instanceColor: varyings take locations in creation order in both stages.
     if (lights.shadowed()) v.output("positionWorld", v.swizzle(v.mul(model, position), "xyz"));
     outputInstanceColor(v, local);
+    outputMapUv(v, local);
 
     Program& f = out.fragment;
     Tsl t{f};
@@ -393,7 +427,9 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
     const ExprId normalWorld = f.call("normalize", {f.swizzle(f.mul(f.construct(Type::vec(4), {n, f.constant(0.0f)}),
                                                                      f.uniform("viewMatrix", Type::mat(4, 4))), "xyz")});
     const ExprId diffuse = f.uniform("diffuse", Type::vec(4));
-    const ExprId diffuseColor = materialColor(f, variant, diffuse);
+    const ExprId texel = mapTexel(f, variant);
+    ExprId diffuseColor = materialColor(f, variant, diffuse);
+    if (texel != kInvalid) diffuseColor = f.mul(diffuseColor, f.swizzle(texel, "xyz"));
     const ExprId metalness = f.uniform("metalness", Type::f32());
 
     // getRoughness: max(roughness, 0.0525) + getGeometryRoughness, capped at 1.
@@ -443,8 +479,10 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
 
     const ExprId emissive = f.uniform("emissive", Type::vec(3));
     const ExprId outgoing = f.add(f.add(f.add(directDiffuse, directSpecular), indirectDiffuse), emissive);
+    ExprId alpha = f.swizzle(diffuse, "w");
+    if (texel != kInvalid) alpha = f.mul(alpha, f.swizzle(texel, "w"));
     // Linear HDR out: tone mapping and the output colour space belong to the output pass (output.h).
-    f.output("color", f.construct(Type::vec(4), {outgoing, materialAlpha(f, f.swizzle(diffuse, "w"))}));
+    f.output("color", f.construct(Type::vec(4), {outgoing, materialAlpha(f, alpha)}));
     for (const Program* stage : {&out.vertex, &out.fragment}) {
         for (const Diagnostic& d : stage->diagnostics()) {
             out.diagnostics.push_back(d.code + " " + d.node + ": " + d.reason + " (" + d.file + ":" + std::to_string(d.line) + ")");
@@ -482,6 +520,7 @@ StandardPrograms buildLit(bool phong, const VertexVariant& variant, const LightL
     // positionWorld, before instanceColor: varyings take locations in creation order in both stages.
     if (lights.shadowed()) v.output("positionWorld", v.swizzle(v.mul(model, position), "xyz"));
     outputInstanceColor(v, local);
+    outputMapUv(v, local);
 
     Program& f = out.fragment;
     Tsl t{f};
@@ -493,7 +532,9 @@ StandardPrograms buildLit(bool phong, const VertexVariant& variant, const LightL
     const ExprId normalWorld = f.call("normalize", {f.swizzle(f.mul(f.construct(Type::vec(4), {n, f.constant(0.0f)}),
                                                                      f.uniform("viewMatrix", Type::mat(4, 4))), "xyz")});
     const ExprId diffuse = f.uniform("diffuse", Type::vec(4));
-    const ExprId diffuseColor = materialColor(f, variant, diffuse);
+    const ExprId texel = mapTexel(f, variant);
+    ExprId diffuseColor = materialColor(f, variant, diffuse);
+    if (texel != kInvalid) diffuseColor = f.mul(diffuseColor, f.swizzle(texel, "xyz"));
 
     // PhongLightingModel.direct for each light, in three's order: BRDF_Lambert, and with phong the
     // Blinn-Phong specular (shininess clamped to 1e-4, the material's specular colour).
@@ -520,8 +561,10 @@ StandardPrograms buildLit(bool phong, const VertexVariant& variant, const LightL
     if (phong) lighting = f.add(lighting, directSpecular);
     const ExprId emissive = f.uniform("emissive", Type::vec(3));
     const ExprId outgoing = f.add(lighting, emissive);
+    ExprId alpha = f.swizzle(diffuse, "w");
+    if (texel != kInvalid) alpha = f.mul(alpha, f.swizzle(texel, "w"));
     // Linear HDR out: tone mapping and the output colour space belong to the output pass (output.h).
-    f.output("color", f.construct(Type::vec(4), {outgoing, materialAlpha(f, f.swizzle(diffuse, "w"))}));
+    f.output("color", f.construct(Type::vec(4), {outgoing, materialAlpha(f, alpha)}));
     for (const Program* stage : {&out.vertex, &out.fragment}) {
         for (const Diagnostic& d : stage->diagnostics()) {
             out.diagnostics.push_back(d.code + " " + d.node + ": " + d.reason + " (" + d.file + ":" + std::to_string(d.line) + ")");
@@ -542,9 +585,15 @@ StandardPrograms buildBasic(const VertexVariant& variant) {
     v.output("position", v.mul(v.uniform("projectionMatrix", Type::mat(4, 4)),
                                v.mul(v.uniform("viewMatrix", Type::mat(4, 4)), v.mul(v.uniform("modelMatrix", Type::mat(4, 4)), local.position))));
     outputInstanceColor(v, local);
+    outputMapUv(v, local);
     Program& f = out.fragment;
     const ExprId diffuse = f.uniform("diffuse", Type::vec(4));
-    f.output("color", f.construct(Type::vec(4), {materialColor(f, variant, diffuse), materialAlpha(f, f.swizzle(diffuse, "w"))}));
+    const ExprId texel = mapTexel(f, variant);
+    ExprId diffuseColor = materialColor(f, variant, diffuse);
+    if (texel != kInvalid) diffuseColor = f.mul(diffuseColor, f.swizzle(texel, "xyz"));
+    ExprId alpha = f.swizzle(diffuse, "w");
+    if (texel != kInvalid) alpha = f.mul(alpha, f.swizzle(texel, "w"));
+    f.output("color", f.construct(Type::vec(4), {diffuseColor, materialAlpha(f, alpha)}));
     return out;
 }
 
