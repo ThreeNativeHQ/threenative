@@ -4,9 +4,18 @@
 //   --reference               run each case with tsx, compare stdout and exit to <case>.expected
 //   --native --target <triple> compile each case with the pinned compiler to an
 //                              executable and compare stdout and exit to <case>.expected
+//   --build-only              link every case and run none of them
+//   --out <dir>               where a cross target's artifacts land (default
+//                              artifacts/native-typescript, ignored by git)
 //   --case <name>             run only one case
 //   --expect-compile-error    the selected cases must be compile-error cases (their
 //                              .expected holds `# compile-error <text>`; nothing runs)
+//
+// A cross target is a file in targets/ whose `triple` names it (PRD-507): `--target
+// aarch64-linux-android` reads targets/android-arm64.json for the ABI, the API level, the page size
+// and the pinned GC, and links with the NDK's own driver, because the pinned compiler's link step
+// drives ld.lld with the host's search paths and finds no Android crt objects, libc++ or
+// compiler-rt builtins. Such a run leaves one <case>.so per linked case under <out>/<abi-ish>/.
 //
 // Each `<case>.expected` holds the reference stdout, optionally followed by a
 // `# exit <n>` line naming the reference exit code (absent means 0).
@@ -28,12 +37,14 @@ import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { buildStrict } from "../../packages/runtime-native/scripts/package-strict.mjs";
+import { ENGINE_LIBS, buildStrict } from "../../packages/runtime-native/scripts/package-strict.mjs";
+import { androidLinker, ensureAndroidGc, findTarget, resolveNdk } from "./android.mjs";
 import { provision } from "./provision.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const CORPUS = path.join(HERE, "corpus");
 const REPO = path.resolve(HERE, "..", "..");
+const DEFAULT_OUT = path.join(REPO, "artifacts", "native-typescript");
 const RSS_LIMIT_BYTES = 512 * 1024 * 1024;
 const IMPORT_RE = /\bfrom\s*["']([^"']+)["']|\bimport\s*["']([^"']+)["']/g;
 const THREE_IMPORT_RE = /\bfrom\s*["']three["']/g;
@@ -251,7 +262,60 @@ function runReference(name) {
   return { ok: true, note: "", exit: status };
 }
 
-async function runNative(name, info, target) {
+/**
+ * The compiled form of one case. The host target compiles the entry straight to an executable and
+ * hands the module objects to it with `--obj`; a cross target emits every object and leaves the
+ * link to the toolchain that owns the target's sysroot, the way the strict game build does. A
+ * cross-built case that imports "three" gets the facade staged beside its entry, as buildStrict
+ * stages it, because the corpus resolves "three" from beside the case itself.
+ */
+function emitCase({ entry, exe, modules, name, objects, tmp, triple, cross, compile }) {
+  let sources = modules.slice(1);
+  let entrySource = entry;
+  if (cross && importsThree(entry)) {
+    const staged = path.join(tmp, "src");
+    const facade = [
+      "three.ts",
+      ...(/\bfrom\s*["']three-aot["']/u.test(fs.readFileSync(entry, "utf8"))
+        ? ["three-aot.ts"]
+        : []),
+    ];
+    fs.mkdirSync(staged, { recursive: true });
+    for (const file of facade)
+      fs.copyFileSync(path.join(HERE, "three", file), path.join(staged, file));
+    entrySource = path.join(staged, path.basename(entry));
+    fs.copyFileSync(entry, entrySource);
+    sources = [...facade.map((file) => path.join(staged, file)), ...modules.slice(1)];
+  }
+  for (const source of sources) {
+    const object = path.join(tmp, `${path.basename(source, ".ts")}.o`);
+    compile(source, ["--emit=obj", source, "-relocation-model=pic", ...triple, `-o=${object}`]);
+    objects.push(object);
+  }
+  if (!cross) {
+    compile(entry, [
+      "--emit=exe",
+      entry,
+      "-relocation-model=pic",
+      ...triple,
+      `-o=${exe}`,
+      ...objects.map((object) => `--obj=${object}`),
+    ]);
+    return;
+  }
+  const main = path.join(tmp, `${name}.main.o`);
+  compile(entrySource, [
+    "--emit=obj",
+    "--entry-point",
+    entrySource,
+    "-relocation-model=pic",
+    ...triple,
+    `-o=${main}`,
+  ]);
+  objects.push(main);
+}
+
+async function runNative(name, info, target, plan = {}) {
   const missing = missingExpectationNote(name);
   if (missing !== undefined) return { ok: false, note: missing };
 
@@ -284,6 +348,7 @@ async function runNative(name, info, target) {
   };
 
   const exe = path.join(tmp, name);
+  const objects = [];
   const refusedImports = unsupportedThreeImports(
     fs.readFileSync(entry, "utf8"),
     JSON.parse(
@@ -292,23 +357,20 @@ async function runNative(name, info, target) {
   );
   if (refusedImports.length > 0) {
     compileErrors.push(...refusedImports);
-  } else if (importsThree(entry)) {
+  } else if (importsThree(entry) && plan.link === undefined) {
     linkWithEngine({ name, entry, modules, tmp, triple, compileErrors, info });
   } else {
-    const objects = [];
-    for (const module of modules.slice(1)) {
-      const object = path.join(tmp, `${path.basename(module, ".ts")}.o`);
-      compile(module, ["--emit=obj", module, "-relocation-model=pic", ...triple, `-o=${object}`]);
-      objects.push(object);
-    }
-    compile(entry, [
-      "--emit=exe",
+    emitCase({
       entry,
-      "-relocation-model=pic",
-      ...triple,
-      `-o=${exe}`,
-      ...objects.map((object) => `--obj=${object}`),
-    ]);
+      exe,
+      modules,
+      name,
+      objects,
+      tmp,
+      triple,
+      cross: plan.link !== undefined,
+      compile,
+    });
   }
 
   const expectedCompile = parseExpected(fs.readFileSync(expectedPath(name))).compileError;
@@ -323,6 +385,16 @@ async function runNative(name, info, target) {
   if (compileErrors.length > 0) {
     return { ok: false, note: `TN_NATIVE_TS_COMPILE ${name}: ${compileErrors[0]}` };
   }
+  if (plan.link !== undefined) {
+    if (plan.blockedThreeImport !== undefined && importsThree(entry))
+      return { ok: false, note: `TN_NATIVE_TS_TARGET_BLOCKED ${name}: ${plan.blockedThreeImport}` };
+    const out = path.join(plan.outDir, plan.target.output.replace("{case}", name));
+    const error = plan.link(objects, out);
+    return error === undefined
+      ? { ok: true, note: `linked ${path.relative(REPO, out)}` }
+      : { ok: false, note: `TN_NATIVE_TS_LINK ${name}: ${error}` };
+  }
+  if (plan.buildOnly) return { ok: true, note: "linked, not run (--build-only)" };
 
   const envWithLibs = mergeEnv(env, [["LD_LIBRARY_PATH", root]]);
   const measured =
@@ -460,26 +532,70 @@ function printTable(rows) {
   }
 }
 
+/**
+ * What a cross target links with: the NDK its target file pins, the GC runtime cross-built for it,
+ * and one output directory. A case that imports "three" is refused here, naming what is missing —
+ * the engine archives exist for no Android build tree, and the three-import link step
+ * (package-strict.mjs) compiles the shim and the hooks with the host driver.
+ */
+async function crossPlan(target, outDir) {
+  const ndk = resolveNdk(target);
+  const gc = await ensureAndroidGc(target, {
+    ndk,
+    log: (message) => process.stderr.write(`${message}\n`),
+  });
+  const dir = path.join(outDir, target.outDir);
+  await fsp.mkdir(dir, { recursive: true });
+  const engineBuild = path.join(
+    REPO,
+    "packages",
+    "runtime-native",
+    "build",
+    `android-core-${target.abi}`,
+  );
+  const missing = ENGINE_LIBS.filter(
+    (lib) => !fs.existsSync(path.join(engineBuild, `lib${lib}.a`)),
+  ).map((lib) => `lib${lib}.a`);
+  return {
+    target,
+    outDir: dir,
+    link: androidLinker(target, { ndk, gc }),
+    blockedThreeImport:
+      missing.length === 0
+        ? undefined
+        : `its TypeScript objects cross-compiled, but ${missing.join(", ")} exist for no ${target.abi} engine build and the three-import link step uses the host driver`,
+    summary: (rows) => {
+      const ok = rows.filter((row) => row.native === "PASS").length;
+      const libraries = fs.readdirSync(dir).filter((file) => file.endsWith(".so")).length;
+      return `${target.triple}: NDK ${ndk.version}, ${target.gc.name} ${target.gc.version} cross-built, ${target.maxPageSize}-byte pages — ${ok}/${rows.length} cases ok, ${libraries} libraries in ${path.relative(REPO, dir)}`;
+    },
+  };
+}
+
 async function main() {
   const args = process.argv.slice(2);
   const wantReference = args.includes("--reference");
   const wantNative = args.includes("--native");
+  const buildOnly = args.includes("--build-only");
   let target;
   let filter;
+  let outDir = DEFAULT_OUT;
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "--target") target = args[++i];
     else if (args[i] === "--case") filter = args[++i];
+    else if (args[i] === "--out") outDir = path.resolve(args[++i]);
   }
   if (!wantReference && !wantNative) {
     throw named(
       "TN_NATIVE_TS_USAGE",
-      "pass --reference and/or --native [--target <triple>] [--case <name>]",
+      "pass --reference and/or --native [--target <triple>] [--build-only] [--case <name>]",
     );
   }
-  if (wantNative && target && !target.startsWith("x86_64-linux")) {
+  const cross = wantNative && target !== undefined && findTarget(target) !== undefined;
+  if (wantNative && target && !target.startsWith("x86_64-linux") && !cross) {
     throw named(
       "TN_NATIVE_TS_TARGET",
-      `unsupported target ${target} (only x86_64-linux is pinned)`,
+      `unsupported target ${target}: pin it in tools/native-typescript/targets/<name>.json or use x86_64-linux-gnu`,
     );
   }
 
@@ -499,6 +615,7 @@ async function main() {
   }
 
   const info = wantNative ? await provision({ log: () => {} }) : undefined;
+  const plan = cross ? await crossPlan(findTarget(target).target, outDir) : { buildOnly };
   const rows = [];
   let failed = false;
   for (const name of names) {
@@ -529,7 +646,7 @@ async function main() {
     if (wantNative) {
       let result;
       try {
-        result = await runNative(name, info, target);
+        result = await runNative(name, info, target, plan);
       } catch (error) {
         result = { ok: false, note: error instanceof Error ? error.message : String(error) };
       }
@@ -544,6 +661,7 @@ async function main() {
     rows.push(row);
   }
   printTable(rows);
+  if (cross) console.log(plan.summary(rows));
   if (failed) process.exitCode = 1;
 }
 

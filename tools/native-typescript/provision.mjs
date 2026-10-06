@@ -209,6 +209,11 @@ async function downloadVerified(fetchImpl, artifact, archivePath) {
   await fsp.rename(part, archivePath);
 }
 
+/** The same rule for a caller that pins its own archive: fetch it, prove it, then publish it. */
+export function verifiedFetch(url, sha256, archivePath, opts = {}) {
+  return downloadVerified(opts.fetchImpl ?? globalThis.fetch, { url, sha256 }, archivePath);
+}
+
 async function fileMatches(file, artifact) {
   try {
     const st = await fsp.stat(file);
