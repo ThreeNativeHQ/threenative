@@ -1,9 +1,9 @@
 /**
  * Incremental strict builds (PRD-530, Solution item 3): the compiler and the engine are prebuilt
- * inputs, so a game-source-only edit recompiles the TypeScript and relinks, and nothing else runs:
- * no engine or Dawn build, no compiler build, not even the shim or the hooks. The first part drives
- * buildStrict with recording tools; the second builds a real game with the pinned tslang against
- * this checkout's engine archives when both are on disk.
+ * inputs, so a game-source-only edit re-stages and re-runs Perry (which recompiles only the changed
+ * module and relinks), and nothing else runs: no engine or Dawn build, no compiler build, not even
+ * the shim or the hooks. The first part drives buildStrict with recording tools; the second builds a
+ * real game with the pinned Perry against this checkout's engine archives when both are on disk.
  */
 
 import { spawnSync } from "node:child_process";
@@ -34,7 +34,7 @@ function tempRoot(prefix: string): string {
   return root;
 }
 
-const COMPILER = "/opt/tslang/tslang";
+const COMPILER = "/opt/perry/perry";
 
 /**
  * Records every tool call and writes each output as a digest of the call and the source it reads,
@@ -46,7 +46,13 @@ function recordingExec(calls: string[][], fail?: (tool: string, args: string[]) 
     if (fail?.(tool, args)) return `${tool}: error: refused`;
     const outFlag = args.find((arg) => arg.startsWith("-o="));
     const flag = args.includes("-o") ? "-o" : "--write";
-    const output = outFlag ? outFlag.slice(3) : args[args.indexOf(flag) + 1];
+    const output = outFlag
+      ? outFlag.slice(3)
+      : args.includes(flag)
+        ? args[args.indexOf(flag) + 1]
+        : tool === "ar"
+          ? args[1]
+          : undefined;
     if (output === undefined || !output.startsWith("/"))
       throw new Error(`no absolute output in ${args.join(" ")}`);
     const source = args.find((arg) => /\.(ts|c|cpp)$/u.test(arg));
@@ -72,7 +78,7 @@ function setup() {
       entry,
       outDir: join(root, "out"),
       engineBuild,
-      compiler: { binaryPath: COMPILER, identity: "tslang test" },
+      compiler: { binaryPath: COMPILER, identity: "perry test" },
       exec,
     });
   return { root, engineBuild, entry, calls, build };
@@ -102,8 +108,8 @@ describe("strict builds are incremental", () => {
     const rebuilt = build();
     expect(rebuilt.errors).toEqual([]);
     expect(rebuilt.ran).toEqual(["typescript", "link"]);
-    // The compiler for each TypeScript module, then the one link; no cc, no hooks, no engine build.
-    expect(toolsOf(calls)).toEqual([COMPILER, COMPILER, "c++"]);
+    // One Perry invocation compiles the graph and links it; no cc, no hooks, no engine build.
+    expect(toolsOf(calls)).toEqual(["ar", COMPILER]);
     expect(calls.at(-1)).toContain("-o");
     expect(calls.flat().some((arg) => /cmake|ninja|download-deps/u.test(arg))).toBe(false);
   });
@@ -129,8 +135,8 @@ describe("strict builds are incremental", () => {
     const { calls, build } = setup();
     const failed = build(recordingExec(calls, (tool) => tool === COMPILER));
     expect(failed.errors[0]).toMatch(/error: refused/u);
-    expect(failed.ran).toEqual(["typescript", "shim", "hooks"]);
-    expect(build().ran).toEqual(["typescript", "link", "identity"]);
+    expect(failed.ran).toEqual(["typescript", "shim", "hooks", "link"]);
+    expect(build().ran).toEqual(["link", "identity"]);
   });
 });
 
@@ -143,7 +149,7 @@ const realLane =
   (ENGINE_LIBS as string[]).every((lib) => existsSync(join(ENGINE_BUILD, `lib${lib}.a`))) &&
   existsSync(join(ENGINE_BUILD, "tn-native-engine-identity"));
 
-describe.runIf(realLane)("a real strict build with the pinned tslang", () => {
+describe.runIf(realLane)("a real strict build with the pinned Perry", () => {
   it("relinks a game edit without touching the engine, and the artifact runs and checks", () => {
     const root = tempRoot("tn-strict-real-");
     const entry = join(root, "game.ts");
@@ -156,7 +162,7 @@ describe.runIf(realLane)("a real strict build with the pinned tslang", () => {
         engineBuild: ENGINE_BUILD,
         compiler: {
           binaryPath: compiler.binaryPath,
-          identity: `tslang ${compiler.lock.tag} ${compiler.artifact.sha256}`,
+          identity: `perry ${compiler.lock.tag} ${compiler.artifact.sha256}`,
         },
       });
     const first = build();

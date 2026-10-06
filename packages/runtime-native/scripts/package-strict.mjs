@@ -1,11 +1,17 @@
-// The strict native build (PRD-530): a TypeScript game compiled ahead of time by the pinned tslang
-// and linked against the engine's prebuilt static archives, with the identity manifest beside the
-// executable. The compiler and the engine are inputs, never rebuilt here: a missing engine archive
-// is refused, not built.
+// The strict native build (PRD-530, decision 11): a TypeScript game compiled ahead of time by the
+// pinned Perry and linked against the engine's prebuilt static archives, with the identity manifest
+// beside the executable. The compiler and the engine are inputs, never rebuilt here: a missing
+// engine archive is refused, not built.
+//
+// Perry compiles the whole module graph in one invocation and links it itself, so the game project
+// is staged the way the corpus stages a case (tools/native-typescript/run-corpus.mjs): the game and
+// its modules under `src/`, the three facade as the `three` package, and the Perry adapter package
+// whose manifest names the shim archive, the engine archives and the C++ runtime Perry links.
 //
 // Each step records the sha256 of its inputs in `<outDir>/.strict-cache/<step>.sha256` and is
-// skipped when they match the last build, so a game-source-only edit recompiles the TypeScript
-// objects and relinks, and nothing else runs.
+// skipped when they match the last build, so a game-source-only edit restages and re-runs Perry
+// (Perry's own per-module cache recompiles only the changed module and relinks), and nothing else
+// runs.
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
@@ -14,6 +20,7 @@ import { fileURLToPath } from "node:url";
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const THREE_DIR = path.join(REPO, "tools", "native-typescript", "three");
+const ADAPTER_PACKAGE = "tn-three-adapter";
 const NATIVE = path.join(REPO, "packages", "runtime-native");
 export const ENGINE_LIBS = [
   "tn_engine_abi",
@@ -22,12 +29,22 @@ export const ENGINE_LIBS = [
   "tn_engine_scene",
   "tn_engine_foundation",
 ];
+/** Perry's strict dynamic-code controls (decision 11), the same flags the corpus compiles with. */
+export const STRICT_FLAGS = ["--strict-eval", "--strict-dynamic-import", "--strict-unimplemented"];
 
 /** The first error line of a tool run, or undefined when it succeeded. */
-function defaultExec(tool, args, env) {
-  const run = spawnSync(tool, args, { encoding: "utf8", maxBuffer: 64 * 1024 * 1024, env });
+function defaultExec(tool, args, env, opts = {}) {
+  const run = spawnSync(tool, args, {
+    encoding: "utf8",
+    maxBuffer: 64 * 1024 * 1024,
+    env,
+    cwd: opts.cwd,
+  });
   const output = `${run.stdout ?? ""}${run.stderr ?? ""}`;
-  const firstError = output.split("\n").find((line) => line.includes("error:"));
+  const firstError = output
+    .split("\n")
+    .map((line) => line.trim())
+    .find((line) => /^Error:|error\[|error:|undefined reference/.test(line));
   if (run.status === 0 && !firstError) return undefined;
   return firstError ?? `${path.basename(tool)} exited ${run.status}: ${output.split("\n")[0]}`;
 }
@@ -38,10 +55,29 @@ function digest(parts) {
   return hash.digest("hex");
 }
 
+/** The packages the staged project resolves a game's `three` and adapter imports from. */
+function writeStagedPackage(dir, name, main) {
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, "package.json"),
+    `${JSON.stringify({ name, version: "0.185.1", main, types: main }, undefined, 2)}\n`,
+  );
+}
+
+/** Adds the link fields to the staged adapter's manifest; the adapter's own stays pathless. */
+function writeAdapterManifest(packageDir, libDirs, libs) {
+  const manifestPath = path.join(packageDir, "package.json");
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+  const linux = manifest.perry.nativeLibrary.targets.linux;
+  linux.libDirs = libDirs;
+  linux.libs = libs;
+  fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, undefined, 2)}\n`);
+}
+
 /**
  * Builds `<outDir>/<name>` from `entry` (and the relative modules it imports, `modules`), linked
  * with the three facade, its shim and hooks, and the engine archives in `engineBuild`.
- * `compiler` is the provisioned tslang: `{ binaryPath, identity }`, `identity` naming its version
+ * `compiler` is the provisioned Perry: `{ binaryPath, identity }`, `identity` naming its version
  * and checksum. Returns the executable, the steps that ran, and the first errors (empty on success).
  */
 export function buildStrict({
@@ -69,8 +105,7 @@ export function buildStrict({
   }
   const cache = path.join(outDir, ".strict-cache");
   fs.mkdirSync(cache, { recursive: true });
-  const root = path.dirname(compiler.binaryPath);
-  const env = { ...process.env, GC_LIB_PATH: root, TSLANG_LIB_PATH: root, DEFAULT_LIB_PATH: root };
+  const env = { ...process.env, PERRY_CACHE_DIR: path.join(outDir, ".perry") };
   const engineDigest = digest(archives.map((archive) => fs.readFileSync(archive)));
 
   // Runs `work` unless the inputs digest matches the last successful run and every output exists.
@@ -85,31 +120,64 @@ export function buildStrict({
     if (errors.length === before) fs.writeFileSync(keyFile, key);
     else fs.rmSync(keyFile, { force: true });
   };
-  const run = (tool, args) => {
-    const error = exec(tool, args, env);
+  const run = (tool, args, opts) => {
+    const error = exec(tool, args, env, opts);
     if (error !== undefined) errors.push(error);
   };
 
-  // The TypeScript objects: one step, since each module's object depends on its imports' types.
-  const facade = [path.join(THREE_DIR, "three.ts")];
-  if (/\bfrom\s*["']three-aot["']/.test(fs.readFileSync(entry, "utf8"))) facade.push(path.join(THREE_DIR, "three-aot.ts"));
+  // The staged project: the game and its modules beside the `three`, `three-aot` and adapter
+  // packages Perry resolves them from.
   const staged = path.join(outDir, "src");
-  fs.mkdirSync(staged, { recursive: true });
-  const sources = [...facade, ...modules, entry];
-  const tsObjects = sources.map((file) =>
-    path.join(outDir, file === entry ? `${name}.main.o` : `${path.basename(file, ".ts")}.o`),
+  const stagedEntry = path.join(staged, path.basename(entry));
+  const facadeDir = path.join(outDir, "node_modules", "three");
+  const aotDir = path.join(outDir, "node_modules", "three-aot");
+  const adapterDir = path.join(outDir, "node_modules", ADAPTER_PACKAGE);
+  const bridgeDir = path.join(outDir, "three-bridge");
+  const sources = [path.join(THREE_DIR, "three.ts"), path.join(THREE_DIR, "three-aot.ts"), ...modules, entry];
+  step(
+    "typescript",
+    [engineBuild, bridgeDir, ...sources.map((file) => fs.readFileSync(file))],
+    [stagedEntry, path.join(outDir, "package.json"), path.join(facadeDir, "three.ts"), path.join(adapterDir, "package.json")],
+    () => {
+      fs.mkdirSync(staged, { recursive: true });
+      for (const file of modules) fs.copyFileSync(file, path.join(staged, path.basename(file)));
+      fs.copyFileSync(entry, stagedEntry);
+      writeStagedPackage(facadeDir, "three", "three.ts");
+      fs.copyFileSync(path.join(THREE_DIR, "three.ts"), path.join(facadeDir, "three.ts"));
+      writeStagedPackage(aotDir, "three-aot", "three-aot.ts");
+      fs.copyFileSync(path.join(THREE_DIR, "three-aot.ts"), path.join(aotDir, "three-aot.ts"));
+      fs.cpSync(path.join(THREE_DIR, "perry-adapter"), adapterDir, {
+        recursive: true,
+        filter: (source) => !source.includes(`${path.sep}target${path.sep}`),
+      });
+      writeAdapterManifest(adapterDir, [bridgeDir, engineBuild], [
+        "tn-three-shim",
+        ...ENGINE_LIBS,
+        "stdc++",
+        "m",
+        "pthread",
+        "dl",
+      ]);
+      fs.writeFileSync(
+        path.join(outDir, "package.json"),
+        `${JSON.stringify(
+          {
+            name: "tn-strict-game",
+            version: "0.0.0",
+            private: true,
+            dependencies: {
+              three: "file:node_modules/three",
+              "three-aot": "file:node_modules/three-aot",
+              [ADAPTER_PACKAGE]: `file:node_modules/${ADAPTER_PACKAGE}`,
+            },
+            perry: { allow: { nativeLibrary: [ADAPTER_PACKAGE] } },
+          },
+          undefined,
+          2,
+        )}\n`,
+      );
+    },
   );
-  step("typescript", [compiler.identity, ...triple, ...sources.map((file) => fs.readFileSync(file))], tsObjects, () => {
-    // The facade stands beside the game as its "three" module; the game's own files stay where they are.
-    for (const file of facade) fs.copyFileSync(file, path.join(staged, path.basename(file)));
-    const stagedEntry = path.join(staged, path.basename(entry));
-    fs.copyFileSync(entry, stagedEntry);
-    sources.forEach((file, i) => {
-      const source = facade.includes(file) ? path.join(staged, path.basename(file)) : file === entry ? stagedEntry : file;
-      const entryPoint = file === entry ? ["--entry-point"] : [];
-      run(compiler.binaryPath, ["--emit=obj", ...entryPoint, source, "-relocation-model=pic", ...triple, `-o=${tsObjects[i]}`]);
-    });
-  });
 
   const include = path.join(NATIVE, "include");
   const shim = path.join(outDir, "tn_three_shim.o");
@@ -125,22 +193,19 @@ export function buildStrict({
   );
   if (errors.length > 0) return { exe, ran, errors };
 
-  const objects = [...tsObjects, shim, hooks];
-  step("link", [compiler.identity, engineDigest, ...objects.map((object) => fs.readFileSync(object))], [exe], () =>
-    run("c++", [
-      "-o",
-      exe,
-      ...objects,
-      ...archives,
-      `-L${path.join(root, "defaultlib", "lib", "release", "gc")}`,
-      "-lTypeScriptDefaultLib",
-      "-lTypeScriptDefaultLibCore",
-      path.join(root, "libTypeScriptAsyncRuntime.a"),
-      path.join(root, "libgc.a"),
-      "-lpthread",
-      "-ldl",
-      "-lm",
-    ]),
+  // Perry compiles the staged game and links it in one invocation, resolving the shim archive, the
+  // engine archives and the C++ runtime through the staged adapter's manifest.
+  const bridge = path.join(bridgeDir, "libtn-three-shim.a");
+  step(
+    "link",
+    [compiler.identity, engineDigest, ...triple, ...sources.map((file) => fs.readFileSync(file)), fs.readFileSync(shim), fs.readFileSync(hooks)],
+    [bridge, exe],
+    () => {
+      fs.mkdirSync(bridgeDir, { recursive: true });
+      run("ar", ["crs", bridge, shim, hooks]);
+      if (errors.length > 0) return;
+      run(compiler.binaryPath, ["compile", stagedEntry, "-o", exe, ...STRICT_FLAGS, ...triple], { cwd: outDir });
+    },
   );
   if (manifest && errors.length === 0) {
     const identity = `${exe}.identity`;
