@@ -4,7 +4,7 @@
 **Complexity:** 4 — compute dispatch, render-target chaining, and the first TSL graph built by AOT-compiled game code
 **Owner:** João
 **Work package:** N08 — [native-engine batch](../README.md) · [N08 index](README.md)
-**Depends on:** [PRD-511](PRD-511-n08b-shader-packages-not-wgsl-text.md), [PRD-506 (N05b)](../N05-native-typescript-qualification/PRD-506-n05b-three-imports-bind-natively-and-callbacks-are-reclaimed.md)
+**Depends on:** [PRD-511](../../done/native-engine/N08-native-tsl-and-shader-packages/PRD-511-n08b-shader-packages-not-wgsl-text.md), [PRD-506 (N05b)](../N05-native-typescript-qualification/PRD-506-n05b-three-imports-bind-natively-and-callbacks-are-reclaimed.md)
 
 ## Context
 
@@ -55,4 +55,4 @@ TSL `compute()` in JS (`packages/core/src/compute-driven.ts`).
 
 ## Blocked on
 
-- Phase 3 waits on the [PRD-505](../N05-native-typescript-qualification/PRD-505-n05a-the-language-corpus-compiles-on-linux-x64.md) stop rule not firing; if it fires, the owner (João) decides the replacement language profile.
+- Phase 3 waits on the [PRD-505](../../done/native-engine/N05-native-typescript-qualification/PRD-505-n05a-the-language-corpus-compiles-on-linux-x64.md) stop rule not firing; if it fires, the owner (João) decides the replacement language profile.

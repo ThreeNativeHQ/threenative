@@ -10,9 +10,9 @@ executes from a complete shader package, not WGSL text alone (§9.2).
 
 | Key | PRD | Depends on |
 | --- | --- | --- |
-| N08a | [PRD-510 — A typed shader IR with ordered effects](PRD-510-n08a-a-typed-shader-ir-with-ordered-effects.md) | [N03](../PRD-500-n03-api-catalog-binding-abi-and-version-protocol.md) |
-| N08b | [PRD-511 — Shader packages, not WGSL text](PRD-511-n08b-shader-packages-not-wgsl-text.md) | N08a, [N07](../PRD-509-n07-gpu-resources-presentation-and-device-loss.md) |
-| N08c | [PRD-512 — Standard PBR and deformation that shadows](PRD-512-n08c-standard-pbr-and-deformation-that-shadows.md) | N08b |
+| N08a | [PRD-510 — A typed shader IR with ordered effects](../../done/native-engine/N08-native-tsl-and-shader-packages/PRD-510-n08a-a-typed-shader-ir-with-ordered-effects.md) | [N03](../../done/native-engine/PRD-500-n03-api-catalog-binding-abi-and-version-protocol.md) |
+| N08b | [PRD-511 — Shader packages, not WGSL text](../../done/native-engine/N08-native-tsl-and-shader-packages/PRD-511-n08b-shader-packages-not-wgsl-text.md) | N08a, [N07](../PRD-509-n07-gpu-resources-presentation-and-device-loss.md) |
+| N08c | [PRD-512 — Standard PBR and deformation that shadows](../../done/native-engine/N08-native-tsl-and-shader-packages/PRD-512-n08c-standard-pbr-and-deformation-that-shadows.md) | N08b |
 | N08d | [PRD-513 — Compute, multipass and a dynamic graph](PRD-513-n08d-compute-multipass-and-a-dynamic-graph.md) | N08b, [N05b](../N05-native-typescript-qualification/PRD-506-n05b-three-imports-bind-natively-and-callbacks-are-reclaimed.md) |
 
 ```mermaid

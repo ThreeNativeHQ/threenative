@@ -4,7 +4,7 @@
 **Complexity:** 3 — integration proof over N13a/N13b; the new work is the fixture, the memory accounting and the failure injection
 **Owner:** João
 **Work package:** N13 — [native-engine batch](../README.md) · [N13 umbrella](README.md)
-**Depends on:** [PRD-521 (N13b)](PRD-521-n13b-worldcells-and-worldtiles-run-native.md)
+**Depends on:** [PRD-521 (N13b)](../../done/native-engine/N13-native-streaming-and-world/PRD-521-n13b-worldcells-and-worldtiles-run-native.md)
 
 ## Context
 

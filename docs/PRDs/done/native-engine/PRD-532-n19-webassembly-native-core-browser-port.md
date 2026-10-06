@@ -4,8 +4,8 @@
 **Priority:** P1 — qualify cooked-asset rendering on the mandatory browser engine
 **Complexity:** 4 — new platform build with its own async, memory and threading rules
 **Owner:** João
-**Work package:** N19 — [native-engine batch](README.md)
-**Depends on:** [PRD-500 (N03)](PRD-500-n03-api-catalog-binding-abi-and-version-protocol.md), [PRD-509 (N07)](PRD-509-n07-gpu-resources-presentation-and-device-loss.md), [N08 — native TSL](N08-native-tsl-and-shader-packages/README.md), [PRD-514 (N09)](PRD-514-n09-native-renderer-and-standard-materials.md), [PRD-531 (N18)](PRD-531-n18-v8-game-runtime-adapter.md) (the generator)
+**Work package:** N19 — [native-engine batch](../../native-engine/README.md)
+**Depends on:** [PRD-500 (N03)](PRD-500-n03-api-catalog-binding-abi-and-version-protocol.md), [PRD-509 (N07)](../../native-engine/PRD-509-n07-gpu-resources-presentation-and-device-loss.md), [N08 — native TSL](../../native-engine/N08-native-tsl-and-shader-packages/README.md), [PRD-514 (N09)](PRD-514-n09-native-renderer-and-standard-materials.md), [PRD-531 (N18)](../../native-engine/PRD-531-n18-v8-game-runtime-adapter.md) (the generator)
 
 ## Context
 
@@ -31,19 +31,19 @@ browser's own JS engine and reaches the Wasm engine through the catalog's browse
 3. Platform dependencies stay behind the N02 interfaces, so nothing here forks engine code. The
    Wasm-safe rules N02, N04 and N07 adopt from day one (single-thread fallback, growth-safe views,
    no blocking waits) are what make this a build rather than a port.
-4. The generator from [PRD-531 (N18)](PRD-531-n18-v8-game-runtime-adapter.md) gets a browser-JS back
+4. The generator from [PRD-531 (N18)](../../native-engine/PRD-531-n18-v8-game-runtime-adapter.md) gets a browser-JS back
    end: `three*` imports in a web game resolve to stubs over the Wasm engine, with handles kept in
    wrapper objects and lifetimes registered with the N04c reachability layer.
 5. Rollback: the upstream web path remains the shipped web product until this passes N20.
 
 Decision 12 fixes the web shape: JavaScript game code over the Wasm engine first, with render
 bundles, indirect draws, worker rendering and a bulk game-to-engine API; Perry-to-Wasm game code is
-option A, adopted only on [PRD-533 (N20)](PRD-533-n20-platform-qualification-performance-default-promotion.md)'s
+option A, adopted only on [PRD-533 (N20)](../../native-engine/PRD-533-n20-platform-qualification-performance-default-promotion.md)'s
 measurement.
 
 ## Out of scope
 
-- WebGL2 (§14). Making it the web default (N20). Deleting upstream Three.js from web bundles ([PRD-535 (N21)](PRD-535-n21-the-js-engine-is-deleted.md)).
+- WebGL2 (§14). Making it the web default (N20). Deleting upstream Three.js from web bundles ([PRD-535 (N21)](../../native-engine/PRD-535-n21-the-js-engine-is-deleted.md)).
 
 ## Execution Phases
 

@@ -4,7 +4,7 @@
 **Complexity:** 5 — ports the framework's render projection, culling and LOD rules, each with an eligibility test and a correct unbatched fallback
 **Owner:** João
 **Work package:** N12 — [native-engine batch](README.md)
-**Depends on:** [PRD-514 (N09)](PRD-514-n09-native-renderer-and-standard-materials.md), [N11 animation](N11-native-animation/README.md); starts only after [PRD-534 (CP1)](PRD-534-cp1-the-native-engine-earns-the-port.md) passes
+**Depends on:** [PRD-514 (N09)](../done/native-engine/PRD-514-n09-native-renderer-and-standard-materials.md), [N11 animation](N11-native-animation/README.md); starts only after [PRD-534 (CP1)](PRD-534-cp1-the-native-engine-earns-the-port.md) passes
 
 ## Context
 

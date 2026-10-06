@@ -3,7 +3,7 @@
 **Status:** DONE 2026-10-04 — record written, inventory committed and enforced
 **Complexity:** 3 — docs and one inventory script; no runtime code, but it reverses standing product rules
 **Owner:** João
-**Work package:** N00 — [native-engine batch](README.md)
+**Work package:** N00 — [native-engine batch](../../native-engine/README.md)
 **Depends on:** None
 
 ## Context
@@ -15,7 +15,7 @@ The compatibility target is the workspace-pinned `three: 0.185.1` in `pnpm-works
 ## Solution
 
 1. **Decision record** (proposed: `docs/architecture/NATIVE-ENGINE-DECISION.md`) carrying the ten decisions under `## Decisions` below, word for word in substance. It quotes the charter rules it amends in plain words.
-2. **Charter and package docs follow the executables.** `CHARTER.md`, `packages/runtime-native/AGENTS.md` and `docs/architecture/NATIVE-RUNTIME.md` get only a pointer to the record now. Their rule text changes in the commit that ships the first native-engine artifact (gate E, [PRD-499](PRD-499-n02-the-host-links-without-a-js-engine.md)), because primary docs name only shipped things.
+2. **Charter and package docs follow the executables.** `CHARTER.md`, `packages/runtime-native/AGENTS.md` and `docs/architecture/NATIVE-RUNTIME.md` get only a pointer to the record now. Their rule text changes in the commit that ships the first native-engine artifact (gate E, [PRD-499](../../native-engine/PRD-499-n02-the-host-links-without-a-js-engine.md)), because primary docs name only shipped things.
 3. **Definitions** in the same record: native engine, game runtime, native-engine artifact (engine JS-free, game code on a VM — the first product), strict native artifact (no VM at all — gate T), WebView-UI labelling (§2.1), and the non-goals (§2.3). The configuration dimensions are engine implementation × game runtime × UI, and contradictory combinations are rejected (§13).
 4. **Pinned reference**: three@0.185.1 plus the ThreeNative patch is the behavioural oracle. Upgrading it is a deliberate batch, never drift (§18).
 5. **Module classification** (proposed: `docs/architecture/native-engine-inventory.json`, produced by `scripts/native-engine-inventory.ts`). Each `packages/core/src` module, and each module reachable from it, gets one class: `native-engine`, `binding-glue`, `build-tool`, `game-specific` or `unsupported`. Each entry also names its owning work-package key (§11.3). The script fails closed on an unclassified module.
@@ -23,7 +23,7 @@ The compatibility target is the workspace-pinned `three: 0.185.1` in `pnpm-works
 
 ## Out of scope
 
-- The reference outputs and baselines: [PRD-498](PRD-498-n01-baseline-and-differential-fixture-runner.md).
+- The reference outputs and baselines: [PRD-498](../../native-engine/PRD-498-n01-baseline-and-differential-fixture-runner.md).
 - The API catalog that turns the inventory into bindings: [PRD-500](PRD-500-n03-api-catalog-binding-abi-and-version-protocol.md).
 
 ## Execution Phases
@@ -47,9 +47,9 @@ The compatibility target is the workspace-pinned `three: 0.185.1` in `pnpm-works
 Owner decisions, João, 2026-10-04 (interview):
 
 1. **The engine is JS-free.** Every engine system runs in C++: traversal, transforms, animation, batching, materials and TSL, visibility, streaming and rendering. No JS implementation of an engine system ships on any target. Gate E is mandatory.
-2. **Speed first; a JS-free game binary later.** Game code keeps running on a JS VM (V8 on desktop and Android, the browser's own engine on web) through generated bindings. That makes [PRD-531 (N18)](PRD-531-n18-v8-game-runtime-adapter.md) the first shipping game runtime. Gate T ([N05](N05-native-typescript-qualification/README.md), [PRD-530](PRD-530-n17-strict-native-typescript-game-packaging.md)) is a later milestone. The N05 spike still runs early, but it gates nothing on the path to promotion.
-3. **An early perf checkpoint can stop the program.** [PRD-534 (CP1)](PRD-534-cp1-the-native-engine-earns-the-port.md) measures native against current ThreeNative after N06 + N09. With no CPU win in the engine hot paths, N11–N15 do not start until the owner re-plans.
-4. **One engine everywhere.** The web runs the same C++ core in Wasm ([PRD-532 (N19)](PRD-532-n19-webassembly-native-core-browser-port.md) is mandatory). The TS framework-system implementations and the upstream Three.js runtime are deleted once it ships ([PRD-535 (N21)](PRD-535-n21-the-js-engine-is-deleted.md)). The core is Wasm-safe from day one: single-thread fallback, retained views that survive memory growth, no blocking waits.
+2. **Speed first; a JS-free game binary later.** Game code keeps running on a JS VM (V8 on desktop and Android, the browser's own engine on web) through generated bindings. That makes [PRD-531 (N18)](../../native-engine/PRD-531-n18-v8-game-runtime-adapter.md) the first shipping game runtime. Gate T ([N05](../../native-engine/N05-native-typescript-qualification/README.md), [PRD-530](../../native-engine/PRD-530-n17-strict-native-typescript-game-packaging.md)) is a later milestone. The N05 spike still runs early, but it gates nothing on the path to promotion.
+3. **An early perf checkpoint can stop the program.** [PRD-534 (CP1)](../../native-engine/PRD-534-cp1-the-native-engine-earns-the-port.md) measures native against current ThreeNative after N06 + N09. With no CPU win in the engine hot paths, N11–N15 do not start until the owner re-plans.
+4. **One engine everywhere.** The web runs the same C++ core in Wasm ([PRD-532 (N19)](PRD-532-n19-webassembly-native-core-browser-port.md) is mandatory). The TS framework-system implementations and the upstream Three.js runtime are deleted once it ships ([PRD-535 (N21)](../../native-engine/PRD-535-n21-the-js-engine-is-deleted.md)). The core is Wasm-safe from day one: single-thread fallback, retained views that survive memory growth, no blocking waits.
 
 Calls made from the code by the agent, accepted by the owner ("go with what you think will be best"), 2026-10-04:
 
@@ -58,6 +58,6 @@ Calls made from the code by the agent, accepted by the owner ("go with what you 
 7. **`ctx.renderer.raw` survives as the compatible `WebGPURenderer`.** Templates read only public renderer fields through it (`toneMapping`, `toneMappingExposure`, `shadowMap`, and setup passed to `setupLighting`), so it returns the engine's Three-compatible renderer object. Renderer-private fields and the raw GPU device are unsupported and named as such.
 8. **Bindings are generated from one catalog for several VMs:** V8 first (N18), browser JS over Wasm next (N19), JSC when iOS returns. iOS is out of the first program but not designed out.
 9. **Binding crossing cost:** the per-object API stays Three-compatible. Bulk typed-array paths, shaped like the existing physics ABI, are added only where CP1 shows that crossings cost real frame time.
-10. **The legacy JS-owned engine is deleted** one release after [PRD-533 (N20)](PRD-533-n20-platform-qualification-performance-default-promotion.md) makes native the default ([PRD-535 (N21)](PRD-535-n21-the-js-engine-is-deleted.md)).
+10. **The legacy JS-owned engine is deleted** one release after [PRD-533 (N20)](../../native-engine/PRD-533-n20-platform-qualification-performance-default-promotion.md) makes native the default ([PRD-535 (N21)](../../native-engine/PRD-535-n21-the-js-engine-is-deleted.md)).
 
 Fixed by the proposal: C++20 for the engine, Dawn and wgpu-native retained, no upstream Three.js bundle inside the native engine, TypeScriptCompiler as the first AOT candidate (§1, §4) — superseded 2026-10-05 by decision 11: Perry compiles game code.

@@ -4,11 +4,11 @@
 **Complexity:** 4 — wide deletion across core, templates' dependencies and the native host; reversible only by revert
 **Owner:** João
 **Work package:** N21 — [native-engine batch](README.md)
-**Depends on:** [PRD-533 (N20)](PRD-533-n20-platform-qualification-performance-default-promotion.md) plus one release on the native default, [PRD-532 (N19)](PRD-532-n19-webassembly-native-core-browser-port.md)
+**Depends on:** [PRD-533 (N20)](PRD-533-n20-platform-qualification-performance-default-promotion.md) plus one release on the native default, [PRD-532 (N19)](../done/native-engine/PRD-532-n19-webassembly-native-core-browser-port.md)
 
 ## Context
 
-Owner decisions 4 and 10 ([PRD-497](PRD-497-n00-architecture-decision-and-compatibility-inventory.md)) make one engine everywhere the end state. That leaves nothing for the legacy JS-owned engine, the TypeScript implementations of framework systems, or upstream Three.js at runtime. Keeping them would mean two implementations of every system and two looks. Today they are the JS-owned path documented in `packages/runtime-native/AGENTS.md`, the systems under `packages/core/src` classed `native-engine` by PRD-497's inventory, and the upstream `three` that every game bundle ships.
+Owner decisions 4 and 10 ([PRD-497](../done/native-engine/PRD-497-n00-architecture-decision-and-compatibility-inventory.md)) make one engine everywhere the end state. That leaves nothing for the legacy JS-owned engine, the TypeScript implementations of framework systems, or upstream Three.js at runtime. Keeping them would mean two implementations of every system and two looks. Today they are the JS-owned path documented in `packages/runtime-native/AGENTS.md`, the systems under `packages/core/src` classed `native-engine` by PRD-497's inventory, and the upstream `three` that every game bundle ships.
 
 ## Solution
 

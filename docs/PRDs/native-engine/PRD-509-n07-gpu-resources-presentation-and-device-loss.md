@@ -4,7 +4,7 @@
 **Complexity:** 4 — reuses the existing WebGPU context; the new work is resource ownership and the device-loss state machine on two backends
 **Owner:** João
 **Work package:** N07 — [native-engine batch](README.md)
-**Depends on:** [PRD-499 (N02) — The host links and runs without a JS engine](PRD-499-n02-the-host-links-without-a-js-engine.md), [PRD-500 (N03)](PRD-500-n03-api-catalog-binding-abi-and-version-protocol.md)
+**Depends on:** [PRD-499 (N02) — The host links and runs without a JS engine](PRD-499-n02-the-host-links-without-a-js-engine.md), [PRD-500 (N03)](../done/native-engine/PRD-500-n03-api-catalog-binding-abi-and-version-protocol.md)
 
 ## Context
 
@@ -52,7 +52,7 @@ Device loss currently logs from `onDeviceLost` and stops. Backend selection is
 
 ## Out of scope
 
-- Deciding what to draw — [PRD-514 (N09)](PRD-514-n09-native-renderer-and-standard-materials.md).
+- Deciding what to draw — [PRD-514 (N09)](../done/native-engine/PRD-514-n09-native-renderer-and-standard-materials.md).
 - Render-graph transients and history — [PRD-523 (N14a)](N14-native-render-chain-and-advanced-visuals/PRD-523-n14a-the-render-graph-owns-passes-and-history.md).
 - Removing `BindingsState` from the context — [PRD-499 (N02)](PRD-499-n02-the-host-links-without-a-js-engine.md).
 

@@ -4,7 +4,7 @@
 **Complexity:** 3 — new native endpoint behind the existing playtest protocol
 **Owner:** João
 **Work package:** N16 — [native-engine batch](README.md)
-**Depends on:** [PRD-499 (N02)](PRD-499-n02-the-host-links-without-a-js-engine.md), [PRD-500 (N03)](PRD-500-n03-api-catalog-binding-abi-and-version-protocol.md), [PRD-508 (N06)](PRD-508-n06-native-scene-graph-transforms-cameras-geometry.md)
+**Depends on:** [PRD-499 (N02)](PRD-499-n02-the-host-links-without-a-js-engine.md), [PRD-500 (N03)](../done/native-engine/PRD-500-n03-api-catalog-binding-abi-and-version-protocol.md), [PRD-508 (N06)](../done/native-engine/PRD-508-n06-native-scene-graph-transforms-cameras-geometry.md)
 
 ## Context
 

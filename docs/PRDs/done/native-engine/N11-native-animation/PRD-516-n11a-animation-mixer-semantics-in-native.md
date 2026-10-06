@@ -3,8 +3,8 @@
 **Status:** DONE
 **Complexity:** 4 — the mixer has a lot of observable state (weights, fades, warps, loops, events), and all of it is compared against the reference
 **Owner:** João
-**Work package:** N11 — [native-engine batch](../README.md) · [N11 umbrella](README.md)
-**Depends on:** [PRD-508 (N06)](../PRD-508-n06-native-scene-graph-transforms-cameras-geometry.md); starts only after [PRD-534 (CP1)](../PRD-534-cp1-the-native-engine-earns-the-port.md) passes
+**Work package:** N11 — [native-engine batch](../../../native-engine/README.md) · [N11 umbrella](../../../native-engine/N11-native-animation/README.md)
+**Depends on:** [PRD-508 (N06)](../PRD-508-n06-native-scene-graph-transforms-cameras-geometry.md); starts only after [PRD-534 (CP1)](../../../native-engine/PRD-534-cp1-the-native-engine-earns-the-port.md) passes
 
 ## Context
 
@@ -47,4 +47,4 @@
 ## Decisions
 
 - Native scheduling never replaces `AnimationMixer` semantics with an unrelated scheduler (§4).
-- ozz is deferred; see the [N11 umbrella](README.md).
+- ozz is deferred; see the [N11 umbrella](../../../native-engine/N11-native-animation/README.md).

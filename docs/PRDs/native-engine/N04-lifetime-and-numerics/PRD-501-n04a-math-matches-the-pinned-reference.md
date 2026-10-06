@@ -4,7 +4,7 @@
 **Complexity:** 3 — scalar math classes ported against a fixed oracle; wide but shallow
 **Owner:** João
 **Work package:** N04 — [lifetime and numerics](README.md), [native-engine batch](../README.md)
-**Depends on:** [PRD-500](../PRD-500-n03-api-catalog-binding-abi-and-version-protocol.md), [PRD-498](../PRD-498-n01-baseline-and-differential-fixture-runner.md) (fixture runner)
+**Depends on:** [PRD-500](../../done/native-engine/PRD-500-n03-api-catalog-binding-abi-and-version-protocol.md), [PRD-498](../PRD-498-n01-baseline-and-differential-fixture-runner.md) (fixture runner)
 
 ## Context
 
@@ -19,8 +19,8 @@
 
 ## Out of scope
 
-- `Object3D` matrix update semantics (`matrixAutoUpdate`, `updateMatrixWorld`): [PRD-508](../PRD-508-n06-native-scene-graph-transforms-cameras-geometry.md).
-- `.elements` retained-array aliasing through bindings: [PRD-502](PRD-502-n04b-handles-keep-identity-and-aliases.md) and [PRD-504](PRD-504-n04d-buffers-cross-the-abi-with-an-owner.md).
+- `Object3D` matrix update semantics (`matrixAutoUpdate`, `updateMatrixWorld`): [PRD-508](../../done/native-engine/PRD-508-n06-native-scene-graph-transforms-cameras-geometry.md).
+- `.elements` retained-array aliasing through bindings: [PRD-502](../../done/native-engine/N04-lifetime-and-numerics/PRD-502-n04b-handles-keep-identity-and-aliases.md) and [PRD-504](../../done/native-engine/N04-lifetime-and-numerics/PRD-504-n04d-buffers-cross-the-abi-with-an-owner.md).
 
 ## Execution Phases
 

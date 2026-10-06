@@ -3,7 +3,7 @@
 **Status:** IN PROGRESS — C++ store, lease, views done; fuzz run and the two reference-fixture boxes open
 **Complexity:** 4 — buffer ownership, leases and version semantics where game code holds typed views
 **Owner:** João
-**Work package:** N04 — [lifetime and numerics](README.md), [native-engine batch](../README.md)
+**Work package:** N04 — [lifetime and numerics](../../../native-engine/N04-lifetime-and-numerics/README.md), [native-engine batch](../../../native-engine/README.md)
 **Depends on:** [PRD-502](PRD-502-n04b-handles-keep-identity-and-aliases.md), [PRD-500](../PRD-500-n03-api-catalog-binding-abi-and-version-protocol.md)
 
 ## Context
@@ -20,7 +20,7 @@
 
 ## Out of scope
 
-- GPU upload/readback mechanics: [PRD-509](../PRD-509-n07-gpu-resources-presentation-and-device-loss.md).
+- GPU upload/readback mechanics: [PRD-509](../../../native-engine/PRD-509-n07-gpu-resources-presentation-and-device-loss.md).
 - Geometry classes that own attributes: [PRD-508](../PRD-508-n06-native-scene-graph-transforms-cameras-geometry.md).
 
 ## Execution Phases

@@ -3,7 +3,7 @@
 **Status:** IN PROGRESS — the standard material is ported (BRDF_GGX_Multiscatter with the DFG lookup, Lambert, getRoughness, directional/hemisphere/ambient, sRGB OETF) and renders the grid natively; the browser-parity boxes, tonemapping and the deformation case are open
 **Complexity:** 4 — reference-pinned lighting maths plus a shadow pass that must reuse the deformed position
 **Owner:** João
-**Work package:** N08 — [native-engine batch](../README.md) · [N08 index](README.md)
+**Work package:** N08 — [native-engine batch](../../../native-engine/README.md) · [N08 index](../../../native-engine/N08-native-tsl-and-shader-packages/README.md)
 **Depends on:** [PRD-511](PRD-511-n08b-shader-packages-not-wgsl-text.md)
 
 ## Context

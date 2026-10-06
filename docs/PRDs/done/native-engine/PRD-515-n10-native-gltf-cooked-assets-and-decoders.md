@@ -3,8 +3,8 @@
 **Status:** DONE (2026-10-05) — every box is ticked: the native glTF loader in GLTFLoader's shape, a loaded model rendering against the upstream capture, TNPK packages without JS, and fuzzed readers. Mobile KTX2/Draco qualification stays refused by name until the device run (see Blocked on).
 **Complexity:** 4 — parser reuse, but scene construction, a cooked package format and decoder qualification are all new and face untrusted input
 **Owner:** João
-**Work package:** N10 — [native-engine batch](README.md)
-**Depends on:** [PRD-508 (N06)](PRD-508-n06-native-scene-graph-transforms-cameras-geometry.md), [PRD-509 (N07)](PRD-509-n07-gpu-resources-presentation-and-device-loss.md)
+**Work package:** N10 — [native-engine batch](../../native-engine/README.md)
+**Depends on:** [PRD-508 (N06)](PRD-508-n06-native-scene-graph-transforms-cameras-geometry.md), [PRD-509 (N07)](../../native-engine/PRD-509-n07-gpu-resources-presentation-and-device-loss.md)
 
 ## Context
 
@@ -21,8 +21,8 @@
 
 ## Out of scope
 
-- Streaming admission, world packages and budgets: [N13](N13-native-streaming-and-world/README.md)
-- Animation evaluation of the loaded clips: [N11](N11-native-animation/README.md)
+- Streaming admission, world packages and budgets: [N13](../../native-engine/N13-native-streaming-and-world/README.md)
+- Animation evaluation of the loaded clips: [N11](../../native-engine/N11-native-animation/README.md)
 - Material shading parity: [PRD-514 (N09)](PRD-514-n09-native-renderer-and-standard-materials.md)
 
 ## Execution Phases

@@ -3,7 +3,7 @@
 **Status:** PROPOSED
 **Complexity:** 4 — ports tested compatibility rules and visual invariants from `projection-skinned.ts`, plus previous-pose data for temporal effects
 **Owner:** João
-**Work package:** N11 — [native-engine batch](../README.md) · [N11 umbrella](README.md)
+**Work package:** N11 — [native-engine batch](../../../native-engine/README.md) · [N11 umbrella](../../../native-engine/N11-native-animation/README.md)
 **Depends on:** [PRD-516 (N11a)](PRD-516-n11a-animation-mixer-semantics-in-native.md), [PRD-515 (N10)](../PRD-515-n10-native-gltf-cooked-assets-and-decoders.md)
 
 ## Context
@@ -20,8 +20,8 @@
 
 ## Out of scope
 
-- Static and instanced batching, culling and LOD: [PRD-519 (N12)](../PRD-519-n12-native-batching-visibility-lod-gpu-scene.md)
-- Temporal consumers of velocity (TRAA and similar): [N14](../N14-native-render-chain-and-advanced-visuals/README.md)
+- Static and instanced batching, culling and LOD: [PRD-519 (N12)](../../../native-engine/PRD-519-n12-native-batching-visibility-lod-gpu-scene.md)
+- Temporal consumers of velocity (TRAA and similar): [N14](../../../native-engine/N14-native-render-chain-and-advanced-visuals/README.md)
 
 ## Execution Phases
 
@@ -48,4 +48,4 @@
 
 ## Blocked on
 
-- Crowd CPU-cost comparison against current ThreeNative needs a physical Android device run (owner attaches the device; tracked as a performance gate in [PRD-533](../PRD-533-n20-platform-qualification-performance-default-promotion.md)).
+- Crowd CPU-cost comparison against current ThreeNative needs a physical Android device run (owner attaches the device; tracked as a performance gate in [PRD-533](../../../native-engine/PRD-533-n20-platform-qualification-performance-default-promotion.md)).

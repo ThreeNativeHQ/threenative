@@ -6,10 +6,10 @@ N04 must show that the native public object graph keeps Three.js semantics where
 
 | Key | PRD | Depends on |
 | --- | --- | --- |
-| N04a | [PRD-501 — Math matches the pinned reference](PRD-501-n04a-math-matches-the-pinned-reference.md) | [PRD-500](../PRD-500-n03-api-catalog-binding-abi-and-version-protocol.md) |
-| N04b | [PRD-502 — Handles keep identity and aliases](PRD-502-n04b-handles-keep-identity-and-aliases.md) | PRD-500 |
-| N04c | [PRD-503 — Unreachable cycles are reclaimed](PRD-503-n04c-unreachable-cycles-are-reclaimed.md) | PRD-502 |
-| N04d | [PRD-504 — Buffers cross the ABI with an owner](PRD-504-n04d-buffers-cross-the-abi-with-an-owner.md) | PRD-502 |
+| N04a | [PRD-501 — Math matches the pinned reference](PRD-501-n04a-math-matches-the-pinned-reference.md) | [PRD-500](../../done/native-engine/PRD-500-n03-api-catalog-binding-abi-and-version-protocol.md) |
+| N04b | [PRD-502 — Handles keep identity and aliases](../../done/native-engine/N04-lifetime-and-numerics/PRD-502-n04b-handles-keep-identity-and-aliases.md) | PRD-500 |
+| N04c | [PRD-503 — Unreachable cycles are reclaimed](../../done/native-engine/N04-lifetime-and-numerics/PRD-503-n04c-unreachable-cycles-are-reclaimed.md) | PRD-502 |
+| N04d | [PRD-504 — Buffers cross the ABI with an owner](../../done/native-engine/N04-lifetime-and-numerics/PRD-504-n04d-buffers-cross-the-abi-with-an-owner.md) | PRD-502 |
 
 A minimal N04a + N04b fixture is enough to unblock the early compiler gate ([N05](../N05-native-typescript-qualification/README.md)). N04c must land before N05b's callback-rooting proof.
 

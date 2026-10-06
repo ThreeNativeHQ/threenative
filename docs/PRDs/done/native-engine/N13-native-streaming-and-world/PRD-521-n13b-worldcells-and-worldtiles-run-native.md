@@ -3,8 +3,8 @@
 **Status:** IN PROGRESS
 **Complexity:** 5 — the largest framework subsystem to port (cells, tiles, chunk merging, terrain, GPU-scene residency), with a deep spec suite to keep
 **Owner:** João
-**Work package:** N13 — [native-engine batch](../README.md) · [N13 umbrella](README.md)
-**Depends on:** [PRD-520 (N13a)](PRD-520-n13a-bounded-streaming-admission-and-io-events.md), [PRD-519 (N12)](../PRD-519-n12-native-batching-visibility-lod-gpu-scene.md)
+**Work package:** N13 — [native-engine batch](../../../native-engine/README.md) · [N13 umbrella](../../../native-engine/N13-native-streaming-and-world/README.md)
+**Depends on:** [PRD-520 (N13a)](PRD-520-n13a-bounded-streaming-admission-and-io-events.md), [PRD-519 (N12)](../../../native-engine/PRD-519-n12-native-batching-visibility-lod-gpu-scene.md)
 
 ## Context
 
@@ -20,8 +20,8 @@
 
 ## Out of scope
 
-- Virtual shadows and probes inside the world: [N14](../N14-native-render-chain-and-advanced-visuals/README.md)
-- The end-to-end walk and memory proof: [PRD-522 (N13c)](PRD-522-n13c-a-world-loads-walks-and-unloads-without-growth.md)
+- Virtual shadows and probes inside the world: [N14](../../../native-engine/N14-native-render-chain-and-advanced-visuals/README.md)
+- The end-to-end walk and memory proof: [PRD-522 (N13c)](../../../native-engine/N13-native-streaming-and-world/PRD-522-n13c-a-world-loads-walks-and-unloads-without-growth.md)
 
 ## Execution Phases
 

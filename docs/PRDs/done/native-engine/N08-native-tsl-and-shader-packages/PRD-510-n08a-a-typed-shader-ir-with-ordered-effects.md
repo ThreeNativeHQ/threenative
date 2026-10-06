@@ -3,7 +3,7 @@
 **Status:** IN PROGRESS — phase 1 done
 **Complexity:** 4 — new native data model with a large operator surface; no GPU needed to test it
 **Owner:** João
-**Work package:** N08 — [native-engine batch](../README.md) · [N08 index](README.md)
+**Work package:** N08 — [native-engine batch](../../../native-engine/README.md) · [N08 index](../../../native-engine/N08-native-tsl-and-shader-packages/README.md)
 **Depends on:** [PRD-500 (N03) — API catalog, binding ABI and version protocol](../PRD-500-n03-api-catalog-binding-abi-and-version-protocol.md)
 
 ## Context
@@ -36,7 +36,7 @@ functions are supported.
 ## Out of scope
 
 - WGSL emission, layouts and validation — [PRD-511](PRD-511-n08b-shader-packages-not-wgsl-text.md).
-- Graphs built from compiled game code — [PRD-513](PRD-513-n08d-compute-multipass-and-a-dynamic-graph.md).
+- Graphs built from compiled game code — [PRD-513](../../../native-engine/N08-native-tsl-and-shader-packages/PRD-513-n08d-compute-multipass-and-a-dynamic-graph.md).
 
 ## Execution Phases
 

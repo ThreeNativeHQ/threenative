@@ -3,8 +3,8 @@
 **Status:** IN PROGRESS
 **Complexity:** 3 — an engine event queue plus a frame-budgeted admission scheduler, both with existing TS references
 **Owner:** João
-**Work package:** N13 — [native-engine batch](../README.md) · [N13 umbrella](README.md)
-**Depends on:** [PRD-515 (N10)](../PRD-515-n10-native-gltf-cooked-assets-and-decoders.md); starts only after [PRD-534 (CP1)](../PRD-534-cp1-the-native-engine-earns-the-port.md) passes
+**Work package:** N13 — [native-engine batch](../../../native-engine/README.md) · [N13 umbrella](../../../native-engine/N13-native-streaming-and-world/README.md)
+**Depends on:** [PRD-515 (N10)](../PRD-515-n10-native-gltf-cooked-assets-and-decoders.md); starts only after [PRD-534 (CP1)](../../../native-engine/PRD-534-cp1-the-native-engine-earns-the-port.md) passes
 
 ## Context
 
@@ -20,7 +20,7 @@
 ## Out of scope
 
 - Cell and tile residency policy: [PRD-521 (N13b)](PRD-521-n13b-worldcells-and-worldtiles-run-native.md)
-- The end-to-end world fixture: [PRD-522 (N13c)](PRD-522-n13c-a-world-loads-walks-and-unloads-without-growth.md)
+- The end-to-end world fixture: [PRD-522 (N13c)](../../../native-engine/N13-native-streaming-and-world/PRD-522-n13c-a-world-loads-walks-and-unloads-without-growth.md)
 
 ## Execution Phases
 

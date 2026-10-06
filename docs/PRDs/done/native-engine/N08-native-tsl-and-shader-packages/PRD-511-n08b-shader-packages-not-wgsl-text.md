@@ -3,8 +3,8 @@
 **Status:** DONE 2026-10-04
 **Complexity:** 4 — code generation plus the layout/variant/schedule metadata that makes it executable
 **Owner:** João
-**Work package:** N08 — [native-engine batch](../README.md) · [N08 index](README.md)
-**Depends on:** [PRD-510](PRD-510-n08a-a-typed-shader-ir-with-ordered-effects.md), [PRD-509 (N07)](../PRD-509-n07-gpu-resources-presentation-and-device-loss.md)
+**Work package:** N08 — [native-engine batch](../../../native-engine/README.md) · [N08 index](../../../native-engine/N08-native-tsl-and-shader-packages/README.md)
+**Depends on:** [PRD-510](PRD-510-n08a-a-typed-shader-ir-with-ordered-effects.md), [PRD-509 (N07)](../../../native-engine/PRD-509-n07-gpu-resources-presentation-and-device-loss.md)
 
 ## Context
 
@@ -35,7 +35,7 @@ already caches pipelines (`src/webgpu/bindings_pipeline_cache.cpp`) for the JS p
 ## Out of scope
 
 - PBR/lighting maths — [PRD-512](PRD-512-n08c-standard-pbr-and-deformation-that-shadows.md).
-- Pass scheduling across a frame — [PRD-523 (N14a)](../N14-native-render-chain-and-advanced-visuals/PRD-523-n14a-the-render-graph-owns-passes-and-history.md).
+- Pass scheduling across a frame — [PRD-523 (N14a)](../../../native-engine/N14-native-render-chain-and-advanced-visuals/PRD-523-n14a-the-render-graph-owns-passes-and-history.md).
 
 ## Execution Phases
 

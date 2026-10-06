@@ -10,7 +10,7 @@ All new package names, configuration fields, ABI names, status markers, and work
 
 ## PRD index
 
-**Batch status: IN PROGRESS — 183/238 phase boxes (76%) as of 2026-10-05, on `feat/native-engine` (PR #438).** This file is the batch index and the source proposal; the PRDs below carry the boxes. Work packages too large for one PRD (at most 3 phases, about 8 boxes) are a folder with its own `README.md` and child PRDs. The batch moves to `done/` whole only when every PRD in it is finished.
+**Batch status: IN PROGRESS — 190/238 phase boxes (79%) as of 2026-10-06, on `feat/native-engine` (PR #438).** This file is the batch index and the source proposal; the PRDs below carry the boxes. Work packages too large for one PRD (at most 3 phases, about 8 boxes) are a folder with its own `README.md` and child PRDs. The batch moves to `done/` whole only when every PRD in it is finished.
 
 ### Progress
 
@@ -18,42 +18,42 @@ Generated from the PRD files' boxes; a PRD is done when every box is ticked.
 
 | PRD | Work package | Boxes | State |
 | --- | --- | --- | --- |
-| [PRD-497](PRD-497-n00-architecture-decision-and-compatibility-inventory.md) | Architecture decision, scope and compatibility inventory (N00) | 6/6 | done |
+| [PRD-497](../done/native-engine/PRD-497-n00-architecture-decision-and-compatibility-inventory.md) | Architecture decision, scope and compatibility inventory (N00) | 6/6 | done |
 | [PRD-498](PRD-498-n01-baseline-and-differential-fixture-runner.md) | Baseline and differential fixture runner (N01) | 3/4 | in progress |
 | [PRD-499](PRD-499-n02-the-host-links-without-a-js-engine.md) | The host links and runs without a JS engine (N02) | 7/8 | in progress |
-| [PRD-500](PRD-500-n03-api-catalog-binding-abi-and-version-protocol.md) | API catalog, binding ABI and version protocol (N03) | 7/7 | done |
+| [PRD-500](../done/native-engine/PRD-500-n03-api-catalog-binding-abi-and-version-protocol.md) | API catalog, binding ABI and version protocol (N03) | 7/7 | done |
 | [PRD-501](N04-lifetime-and-numerics/PRD-501-n04a-math-matches-the-pinned-reference.md) | Math matches the pinned reference (N04a) | 4/5 | in progress |
-| [PRD-502](N04-lifetime-and-numerics/PRD-502-n04b-handles-keep-identity-and-aliases.md) | Handles keep identity and aliases (N04b) | 5/5 | done |
-| [PRD-503](N04-lifetime-and-numerics/PRD-503-n04c-unreachable-cycles-are-reclaimed.md) | Unreachable cycles are reclaimed (N04c) | 7/7 | done |
-| [PRD-504](N04-lifetime-and-numerics/PRD-504-n04d-buffers-cross-the-abi-with-an-owner.md) | Buffers cross the ABI with an owner (N04d) | 7/7 | done |
-| [PRD-505](N05-native-typescript-qualification/PRD-505-n05a-the-language-corpus-compiles-on-linux-x64.md) | The language corpus compiles on Linux x64 (N05a) | 6/6 | done |
+| [PRD-502](../done/native-engine/N04-lifetime-and-numerics/PRD-502-n04b-handles-keep-identity-and-aliases.md) | Handles keep identity and aliases (N04b) | 5/5 | done |
+| [PRD-503](../done/native-engine/N04-lifetime-and-numerics/PRD-503-n04c-unreachable-cycles-are-reclaimed.md) | Unreachable cycles are reclaimed (N04c) | 7/7 | done |
+| [PRD-504](../done/native-engine/N04-lifetime-and-numerics/PRD-504-n04d-buffers-cross-the-abi-with-an-owner.md) | Buffers cross the ABI with an owner (N04d) | 7/7 | done |
+| [PRD-505](../done/native-engine/N05-native-typescript-qualification/PRD-505-n05a-the-language-corpus-compiles-on-linux-x64.md) | The language corpus compiles on Linux x64 (N05a) | 6/6 | done |
 | [PRD-506](N05-native-typescript-qualification/PRD-506-n05b-three-imports-bind-natively-and-callbacks-are-reclaimed.md) | Three imports bind natively and callbacks are reclaimed (N05b) | 5/6 | in progress |
 | [PRD-507](N05-native-typescript-qualification/PRD-507-n05c-the-same-corpus-runs-on-android-arm64.md) | The same corpus runs on Android arm64 (N05c) | 0/4 | not started |
-| [PRD-508](PRD-508-n06-native-scene-graph-transforms-cameras-geometry.md) | Native scene graph, transforms, cameras and geometry (N06) | 7/7 | done |
+| [PRD-508](../done/native-engine/PRD-508-n06-native-scene-graph-transforms-cameras-geometry.md) | Native scene graph, transforms, cameras and geometry (N06) | 7/7 | done |
 | [PRD-509](PRD-509-n07-gpu-resources-presentation-and-device-loss.md) | GPU resources, presentation and device loss (N07) | 7/8 | in progress |
-| [PRD-510](N08-native-tsl-and-shader-packages/PRD-510-n08a-a-typed-shader-ir-with-ordered-effects.md) | A typed shader IR with ordered effects (N08a) | 4/4 | done |
-| [PRD-511](N08-native-tsl-and-shader-packages/PRD-511-n08b-shader-packages-not-wgsl-text.md) | Shader packages, not WGSL text (N08b) | 6/6 | done |
-| [PRD-512](N08-native-tsl-and-shader-packages/PRD-512-n08c-standard-pbr-and-deformation-that-shadows.md) | Standard PBR and deformation that shadows (N08c) | 5/5 | done |
+| [PRD-510](../done/native-engine/N08-native-tsl-and-shader-packages/PRD-510-n08a-a-typed-shader-ir-with-ordered-effects.md) | A typed shader IR with ordered effects (N08a) | 4/4 | done |
+| [PRD-511](../done/native-engine/N08-native-tsl-and-shader-packages/PRD-511-n08b-shader-packages-not-wgsl-text.md) | Shader packages, not WGSL text (N08b) | 6/6 | done |
+| [PRD-512](../done/native-engine/N08-native-tsl-and-shader-packages/PRD-512-n08c-standard-pbr-and-deformation-that-shadows.md) | Standard PBR and deformation that shadows (N08c) | 5/5 | done |
 | [PRD-513](N08-native-tsl-and-shader-packages/PRD-513-n08d-compute-multipass-and-a-dynamic-graph.md) | Compute, multipass and a dynamic graph (N08d) | 3/6 | in progress |
-| [PRD-514](PRD-514-n09-native-renderer-and-standard-materials.md) | Native renderer and standard materials (N09) | 8/8 | done |
-| [PRD-515](PRD-515-n10-native-gltf-cooked-assets-and-decoders.md) | Native glTF, cooked assets and decoders (N10) | 7/7 | done |
-| [PRD-516](N11-native-animation/PRD-516-n11a-animation-mixer-semantics-in-native.md) | AnimationMixer semantics in native (N11a) | 6/6 | done |
-| [PRD-517](N11-native-animation/PRD-517-n11b-morph-targets-and-property-tracks.md) | Morph targets and property tracks (N11b) | 4/4 | done |
-| [PRD-518](N11-native-animation/PRD-518-n11c-skinning-palettes-and-pose-history.md) | Skinning palettes and pose history (N11c) | 7/7 | done |
+| [PRD-514](../done/native-engine/PRD-514-n09-native-renderer-and-standard-materials.md) | Native renderer and standard materials (N09) | 8/8 | done |
+| [PRD-515](../done/native-engine/PRD-515-n10-native-gltf-cooked-assets-and-decoders.md) | Native glTF, cooked assets and decoders (N10) | 7/7 | done |
+| [PRD-516](../done/native-engine/N11-native-animation/PRD-516-n11a-animation-mixer-semantics-in-native.md) | AnimationMixer semantics in native (N11a) | 6/6 | done |
+| [PRD-517](../done/native-engine/N11-native-animation/PRD-517-n11b-morph-targets-and-property-tracks.md) | Morph targets and property tracks (N11b) | 4/4 | done |
+| [PRD-518](../done/native-engine/N11-native-animation/PRD-518-n11c-skinning-palettes-and-pose-history.md) | Skinning palettes and pose history (N11c) | 7/7 | done |
 | [PRD-519](PRD-519-n12-native-batching-visibility-lod-gpu-scene.md) | Native batching, visibility, LOD and GPU scene (N12) | 6/7 | in progress |
-| [PRD-520](N13-native-streaming-and-world/PRD-520-n13a-bounded-streaming-admission-and-io-events.md) | Bounded streaming admission and IO events (N13a) | 4/5 | in progress |
-| [PRD-521](N13-native-streaming-and-world/PRD-521-n13b-worldcells-and-worldtiles-run-native.md) | WorldCells and WorldTiles run native (N13b) | 5/6 | in progress |
+| [PRD-520](../done/native-engine/N13-native-streaming-and-world/PRD-520-n13a-bounded-streaming-admission-and-io-events.md) | Bounded streaming admission and IO events (N13a) | 5/5 | done |
+| [PRD-521](../done/native-engine/N13-native-streaming-and-world/PRD-521-n13b-worldcells-and-worldtiles-run-native.md) | WorldCells and WorldTiles run native (N13b) | 6/6 | done |
 | [PRD-522](N13-native-streaming-and-world/PRD-522-n13c-a-world-loads-walks-and-unloads-without-growth.md) | A world loads, walks and unloads without growth (N13c) | 0/4 | not started |
 | [PRD-523](N14-native-render-chain-and-advanced-visuals/PRD-523-n14a-the-render-graph-owns-passes-and-history.md) | The render graph owns passes and history (N14a) | 6/7 | in progress |
-| [PRD-524](N14-native-render-chain-and-advanced-visuals/PRD-524-n14b-virtual-shadows-run-native.md) | Virtual shadows run native (N14b) | 2/5 | in progress |
+| [PRD-524](N14-native-render-chain-and-advanced-visuals/PRD-524-n14b-virtual-shadows-run-native.md) | Virtual shadows run native (N14b) | 4/5 | in progress |
 | [PRD-525](N14-native-render-chain-and-advanced-visuals/PRD-525-n14c-probes-run-native.md) | Probes run native (N14c) | 2/5 | in progress |
 | [PRD-526](N14-native-render-chain-and-advanced-visuals/PRD-526-n14d-post-effects-and-render-chains-run-native.md) | Post effects and render chains run native (N14d) | 2/5 | in progress |
-| [PRD-527](N14-native-render-chain-and-advanced-visuals/PRD-527-n14e-particles-and-fluids-run-native.md) | Particles and fluids run native (N14e) | 1/4 | in progress |
+| [PRD-527](N14-native-render-chain-and-advanced-visuals/PRD-527-n14e-particles-and-fluids-run-native.md) | Particles and fluids run native (N14e) | 4/4 | done |
 | [PRD-528](PRD-528-n15-framework-loop-rapier-sync-input-services.md) | Framework loop, Rapier sync, input and services (N15) | 6/7 | in progress |
 | [PRD-529](PRD-529-n16-native-playtest-inspection-telemetry.md) | Native playtest, inspection and telemetry (N16) | 5/6 | in progress |
 | [PRD-530](PRD-530-n17-strict-native-typescript-game-packaging.md) | Strict native-TypeScript game packaging (N17) | 4/7 | in progress |
 | [PRD-531](PRD-531-n18-v8-game-runtime-adapter.md) | V8 game runtime adapter (N18) | 7/8 | in progress |
-| [PRD-532](PRD-532-n19-webassembly-native-core-browser-port.md) | WebAssembly native-core browser port (N19) | 8/8 | done |
+| [PRD-532](../done/native-engine/PRD-532-n19-webassembly-native-core-browser-port.md) | WebAssembly native-core browser port (N19) | 8/8 | done |
 | [PRD-533](PRD-533-n20-platform-qualification-performance-default-promotion.md) | Platform qualification, performance and default promotion (N20) | 2/9 | in progress |
 | [PRD-534](PRD-534-cp1-the-native-engine-earns-the-port.md) | The native engine earns the port (CP1) | 2/5 | in progress |
 | [PRD-535](PRD-535-n21-the-js-engine-is-deleted.md) | The JS engine is deleted (N21) | 0/7 | not started |
@@ -62,59 +62,59 @@ Generated from the PRD files' boxes; a PRD is done when every box is ticked.
 
 ### Owner decisions (2026-10-04)
 
-Full text and rationale: [PRD-497 § Decisions](PRD-497-n00-architecture-decision-and-compatibility-inventory.md#decisions). **Where these differ from the proposal below, these win.**
+Full text and rationale: [PRD-497 § Decisions](../done/native-engine/PRD-497-n00-architecture-decision-and-compatibility-inventory.md#decisions). **Where these differ from the proposal below, these win.**
 
 1. **The engine is JS-free.** Every engine system runs in C++ on every target. Gate E is mandatory.
 2. **Speed first.** Game code ships on V8 through generated bindings: [N18](PRD-531-n18-v8-game-runtime-adapter.md) is the first game runtime, no longer optional. Gate T ([N05](N05-native-typescript-qualification/README.md), [N17](PRD-530-n17-strict-native-typescript-game-packaging.md)) is a later milestone; the N05 spike still runs early and blocks nothing.
 3. **Early perf checkpoint.** [CP1](PRD-534-cp1-the-native-engine-earns-the-port.md) measures native against current ThreeNative after N06 + N09. If it fails, N11–N15 do not start.
-4. **One engine everywhere.** The web runs the C++ core in Wasm ([N19](PRD-532-n19-webassembly-native-core-browser-port.md) is mandatory), so the core is Wasm-safe from day one. The legacy engine, the TS systems and upstream Three.js at runtime are deleted ([N21](PRD-535-n21-the-js-engine-is-deleted.md)).
+4. **One engine everywhere.** The web runs the C++ core in Wasm ([N19](../done/native-engine/PRD-532-n19-webassembly-native-core-browser-port.md) is mandatory), so the core is Wasm-safe from day one. The legacy engine, the TS systems and upstream Three.js at runtime are deleted ([N21](PRD-535-n21-the-js-engine-is-deleted.md)).
 5. **Accepted agent calls:** the game API stays vanilla Three.js, measured from what templates import; `ctx.renderer.raw` survives as the compatible renderer; one binding catalog serves several VMs; bulk paths only where CP1 shows crossing cost; legacy is deleted one release after promotion.
 
 ### Execution order
 
 | Wave | Start when | PRDs (parallel within a wave) |
 | --- | --- | --- |
-| 1 | now | N00 [PRD-497](PRD-497-n00-architecture-decision-and-compatibility-inventory.md), N01 [PRD-498](PRD-498-n01-baseline-and-differential-fixture-runner.md), N02 [PRD-499](PRD-499-n02-the-host-links-without-a-js-engine.md), N03 [PRD-500](PRD-500-n03-api-catalog-binding-abi-and-version-protocol.md) |
-| 2 | N02 + N03 land | N04a–d, N07 [PRD-509](PRD-509-n07-gpu-resources-presentation-and-device-loss.md), N08a [PRD-510](N08-native-tsl-and-shader-packages/PRD-510-n08a-a-typed-shader-ir-with-ordered-effects.md); N05 spike alongside, off the critical path |
-| 3 | N04 + N07 land | N06 [PRD-508](PRD-508-n06-native-scene-graph-transforms-cameras-geometry.md), N08b–d, N10 [PRD-515](PRD-515-n10-native-gltf-cooked-assets-and-decoders.md), N18 phases 1–2 [PRD-531](PRD-531-n18-v8-game-runtime-adapter.md) |
-| 4 | N06 + N08 land | N09 [PRD-514](PRD-514-n09-native-renderer-and-standard-materials.md), then **CP1 [PRD-534](PRD-534-cp1-the-native-engine-earns-the-port.md) — go/stop** |
+| 1 | now | N00 [PRD-497](../done/native-engine/PRD-497-n00-architecture-decision-and-compatibility-inventory.md), N01 [PRD-498](PRD-498-n01-baseline-and-differential-fixture-runner.md), N02 [PRD-499](PRD-499-n02-the-host-links-without-a-js-engine.md), N03 [PRD-500](../done/native-engine/PRD-500-n03-api-catalog-binding-abi-and-version-protocol.md) |
+| 2 | N02 + N03 land | N04a–d, N07 [PRD-509](PRD-509-n07-gpu-resources-presentation-and-device-loss.md), N08a [PRD-510](../done/native-engine/N08-native-tsl-and-shader-packages/PRD-510-n08a-a-typed-shader-ir-with-ordered-effects.md); N05 spike alongside, off the critical path |
+| 3 | N04 + N07 land | N06 [PRD-508](../done/native-engine/PRD-508-n06-native-scene-graph-transforms-cameras-geometry.md), N08b–d, N10 [PRD-515](../done/native-engine/PRD-515-n10-native-gltf-cooked-assets-and-decoders.md), N18 phases 1–2 [PRD-531](PRD-531-n18-v8-game-runtime-adapter.md) |
+| 4 | N06 + N08 land | N09 [PRD-514](../done/native-engine/PRD-514-n09-native-renderer-and-standard-materials.md), then **CP1 [PRD-534](PRD-534-cp1-the-native-engine-earns-the-port.md) — go/stop** |
 | 5 | CP1 passes | N11, N12, N13, N14, N15, N16, N18 phase 3; N19 may start at wave 4 because CP1 does not gate it |
 | 6 | wave 5 done | N20 [PRD-533](PRD-533-n20-platform-qualification-performance-default-promotion.md) promotion, then N21 [PRD-535](PRD-535-n21-the-js-engine-is-deleted.md) one release later |
 | later | after N20 | Gate T: N17 [PRD-530](PRD-530-n17-strict-native-typescript-game-packaging.md) on top of the N05 result |
 
 | Key | PRD | Depends on |
 | --- | --- | --- |
-| N00 | [PRD-497 — Architecture decision, scope and compatibility inventory](PRD-497-n00-architecture-decision-and-compatibility-inventory.md) | — |
+| N00 | [PRD-497 — Architecture decision, scope and compatibility inventory](../done/native-engine/PRD-497-n00-architecture-decision-and-compatibility-inventory.md) | — |
 | N01 | [PRD-498 — Baseline and differential fixture runner](PRD-498-n01-baseline-and-differential-fixture-runner.md) | N00 |
 | N02 | [PRD-499 — The host links and runs without a JS engine](PRD-499-n02-the-host-links-without-a-js-engine.md) | N00 |
-| N03 | [PRD-500 — API catalog, binding ABI and version protocol](PRD-500-n03-api-catalog-binding-abi-and-version-protocol.md) | N00 |
+| N03 | [PRD-500 — API catalog, binding ABI and version protocol](../done/native-engine/PRD-500-n03-api-catalog-binding-abi-and-version-protocol.md) | N00 |
 | N04 | [Lifetime and numerical foundation](N04-lifetime-and-numerics/README.md) | N03 |
 | N04a | ↳ [PRD-501 — Math matches the pinned reference](N04-lifetime-and-numerics/PRD-501-n04a-math-matches-the-pinned-reference.md) | N03 |
-| N04b | ↳ [PRD-502 — Handles keep identity and aliases](N04-lifetime-and-numerics/PRD-502-n04b-handles-keep-identity-and-aliases.md) | N03 |
-| N04c | ↳ [PRD-503 — Unreachable cycles are reclaimed](N04-lifetime-and-numerics/PRD-503-n04c-unreachable-cycles-are-reclaimed.md) | N04b |
-| N04d | ↳ [PRD-504 — Buffers cross the ABI with an owner](N04-lifetime-and-numerics/PRD-504-n04d-buffers-cross-the-abi-with-an-owner.md) | N04b |
+| N04b | ↳ [PRD-502 — Handles keep identity and aliases](../done/native-engine/N04-lifetime-and-numerics/PRD-502-n04b-handles-keep-identity-and-aliases.md) | N03 |
+| N04c | ↳ [PRD-503 — Unreachable cycles are reclaimed](../done/native-engine/N04-lifetime-and-numerics/PRD-503-n04c-unreachable-cycles-are-reclaimed.md) | N04b |
+| N04d | ↳ [PRD-504 — Buffers cross the ABI with an owner](../done/native-engine/N04-lifetime-and-numerics/PRD-504-n04d-buffers-cross-the-abi-with-an-owner.md) | N04b |
 | N05 | [Native TypeScript compiler qualification](N05-native-typescript-qualification/README.md) | N03 + minimal N04 |
-| N05a | ↳ [PRD-505 — The language corpus compiles on Linux x64](N05-native-typescript-qualification/PRD-505-n05a-the-language-corpus-compiles-on-linux-x64.md) | N03 |
+| N05a | ↳ [PRD-505 — The language corpus compiles on Linux x64](../done/native-engine/N05-native-typescript-qualification/PRD-505-n05a-the-language-corpus-compiles-on-linux-x64.md) | N03 |
 | N05b | ↳ [PRD-506 — Three imports bind natively and callbacks are reclaimed](N05-native-typescript-qualification/PRD-506-n05b-three-imports-bind-natively-and-callbacks-are-reclaimed.md) | N05a, N04b, N04c |
 | N05c | ↳ [PRD-507 — The same corpus runs on Android arm64](N05-native-typescript-qualification/PRD-507-n05c-the-same-corpus-runs-on-android-arm64.md) | N05a |
-| N06 | [PRD-508 — Native scene graph, transforms, cameras and geometry](PRD-508-n06-native-scene-graph-transforms-cameras-geometry.md) | N04 |
+| N06 | [PRD-508 — Native scene graph, transforms, cameras and geometry](../done/native-engine/PRD-508-n06-native-scene-graph-transforms-cameras-geometry.md) | N04 |
 | N07 | [PRD-509 — GPU resources, presentation and device loss](PRD-509-n07-gpu-resources-presentation-and-device-loss.md) | N02, N03 |
 | N08 | [Native TSL and shader packages](N08-native-tsl-and-shader-packages/README.md) | N03, N07 |
-| N08a | ↳ [PRD-510 — A typed shader IR with ordered effects](N08-native-tsl-and-shader-packages/PRD-510-n08a-a-typed-shader-ir-with-ordered-effects.md) | N03 |
-| N08b | ↳ [PRD-511 — Shader packages, not WGSL text](N08-native-tsl-and-shader-packages/PRD-511-n08b-shader-packages-not-wgsl-text.md) | N08a, N07 |
-| N08c | ↳ [PRD-512 — Standard PBR and deformation that shadows](N08-native-tsl-and-shader-packages/PRD-512-n08c-standard-pbr-and-deformation-that-shadows.md) | N08b |
+| N08a | ↳ [PRD-510 — A typed shader IR with ordered effects](../done/native-engine/N08-native-tsl-and-shader-packages/PRD-510-n08a-a-typed-shader-ir-with-ordered-effects.md) | N03 |
+| N08b | ↳ [PRD-511 — Shader packages, not WGSL text](../done/native-engine/N08-native-tsl-and-shader-packages/PRD-511-n08b-shader-packages-not-wgsl-text.md) | N08a, N07 |
+| N08c | ↳ [PRD-512 — Standard PBR and deformation that shadows](../done/native-engine/N08-native-tsl-and-shader-packages/PRD-512-n08c-standard-pbr-and-deformation-that-shadows.md) | N08b |
 | N08d | ↳ [PRD-513 — Compute, multipass and a dynamic graph](N08-native-tsl-and-shader-packages/PRD-513-n08d-compute-multipass-and-a-dynamic-graph.md) | N08b, N05b |
-| N09 | [PRD-514 — Native renderer and standard materials](PRD-514-n09-native-renderer-and-standard-materials.md) | N06, N07, N08 |
+| N09 | [PRD-514 — Native renderer and standard materials](../done/native-engine/PRD-514-n09-native-renderer-and-standard-materials.md) | N06, N07, N08 |
 | CP1 | [PRD-534 — The native engine earns the port](PRD-534-cp1-the-native-engine-earns-the-port.md) | N01, N06, N09, N18 phases 1–2 |
-| N10 | [PRD-515 — Native glTF, cooked assets and decoders](PRD-515-n10-native-gltf-cooked-assets-and-decoders.md) | N06, N07 |
+| N10 | [PRD-515 — Native glTF, cooked assets and decoders](../done/native-engine/PRD-515-n10-native-gltf-cooked-assets-and-decoders.md) | N06, N07 |
 | N11 | [Native animation, morphs and skinning](N11-native-animation/README.md) | CP1, N06, N08, N10 |
-| N11a | ↳ [PRD-516 — AnimationMixer semantics in native](N11-native-animation/PRD-516-n11a-animation-mixer-semantics-in-native.md) | N06 |
-| N11b | ↳ [PRD-517 — Morph targets and property tracks](N11-native-animation/PRD-517-n11b-morph-targets-and-property-tracks.md) | N11a, N08 |
-| N11c | ↳ [PRD-518 — Skinning palettes and pose history](N11-native-animation/PRD-518-n11c-skinning-palettes-and-pose-history.md) | N11a, N10 |
+| N11a | ↳ [PRD-516 — AnimationMixer semantics in native](../done/native-engine/N11-native-animation/PRD-516-n11a-animation-mixer-semantics-in-native.md) | N06 |
+| N11b | ↳ [PRD-517 — Morph targets and property tracks](../done/native-engine/N11-native-animation/PRD-517-n11b-morph-targets-and-property-tracks.md) | N11a, N08 |
+| N11c | ↳ [PRD-518 — Skinning palettes and pose history](../done/native-engine/N11-native-animation/PRD-518-n11c-skinning-palettes-and-pose-history.md) | N11a, N10 |
 | N12 | [PRD-519 — Native batching, visibility, LOD and GPU scene](PRD-519-n12-native-batching-visibility-lod-gpu-scene.md) | CP1, N09, N11 |
 | N13 | [Native streaming and world systems](N13-native-streaming-and-world/README.md) | CP1, N10, N12 |
-| N13a | ↳ [PRD-520 — Bounded streaming admission and IO events](N13-native-streaming-and-world/PRD-520-n13a-bounded-streaming-admission-and-io-events.md) | N10 |
-| N13b | ↳ [PRD-521 — WorldCells and WorldTiles run native](N13-native-streaming-and-world/PRD-521-n13b-worldcells-and-worldtiles-run-native.md) | N13a, N12 |
+| N13a | ↳ [PRD-520 — Bounded streaming admission and IO events](../done/native-engine/N13-native-streaming-and-world/PRD-520-n13a-bounded-streaming-admission-and-io-events.md) | N10 |
+| N13b | ↳ [PRD-521 — WorldCells and WorldTiles run native](../done/native-engine/N13-native-streaming-and-world/PRD-521-n13b-worldcells-and-worldtiles-run-native.md) | N13a, N12 |
 | N13c | ↳ [PRD-522 — A world loads, walks and unloads without growth](N13-native-streaming-and-world/PRD-522-n13c-a-world-loads-walks-and-unloads-without-growth.md) | N13b |
 | N14 | [Native render chain and advanced visuals](N14-native-render-chain-and-advanced-visuals/README.md) | CP1, N08, N09, N12 |
 | N14a | ↳ [PRD-523 — The render graph owns passes and history](N14-native-render-chain-and-advanced-visuals/PRD-523-n14a-the-render-graph-owns-passes-and-history.md) | N09 |
@@ -126,7 +126,7 @@ Full text and rationale: [PRD-497 § Decisions](PRD-497-n00-architecture-decisio
 | N16 | [PRD-529 — Native playtest, inspection and telemetry](PRD-529-n16-native-playtest-inspection-telemetry.md) | N02, N03, N06 |
 | N17 | [PRD-530 — Strict native-TypeScript game packaging](PRD-530-n17-strict-native-typescript-game-packaging.md) (later milestone, gate T) | N05, N20 |
 | N18 | [PRD-531 — V8 game runtime adapter](PRD-531-n18-v8-game-runtime-adapter.md) | N03, N04, N06; phase 3 also N09 |
-| N19 | [PRD-532 — WebAssembly native-core browser port](PRD-532-n19-webassembly-native-core-browser-port.md) (mandatory) | N03, N07–N09, N18 |
+| N19 | [PRD-532 — WebAssembly native-core browser port](../done/native-engine/PRD-532-n19-webassembly-native-core-browser-port.md) (mandatory) | N03, N07–N09, N18 |
 | N20 | [PRD-533 — Platform qualification, performance and default promotion](PRD-533-n20-platform-qualification-performance-default-promotion.md) | CP1, N00–N16, N18, N19 |
 | N21 | [PRD-535 — The JS engine is deleted](PRD-535-n21-the-js-engine-is-deleted.md) | N20 + one release, N19 |
 

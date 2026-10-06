@@ -8,9 +8,9 @@ The work package must prove the supported `AnimationMixer` semantics running nat
 
 | Key | PRD | Depends on |
 | --- | --- | --- |
-| N11a | [PRD-516 — AnimationMixer semantics in native](PRD-516-n11a-animation-mixer-semantics-in-native.md) | [PRD-508 (N06)](../PRD-508-n06-native-scene-graph-transforms-cameras-geometry.md) |
-| N11b | [PRD-517 — Morph targets and property tracks](PRD-517-n11b-morph-targets-and-property-tracks.md) | N11a, [N08](../N08-native-tsl-and-shader-packages/README.md) |
-| N11c | [PRD-518 — Skinning palettes and pose history](PRD-518-n11c-skinning-palettes-and-pose-history.md) | N11a, [PRD-515 (N10)](../PRD-515-n10-native-gltf-cooked-assets-and-decoders.md) |
+| N11a | [PRD-516 — AnimationMixer semantics in native](../../done/native-engine/N11-native-animation/PRD-516-n11a-animation-mixer-semantics-in-native.md) | [PRD-508 (N06)](../../done/native-engine/PRD-508-n06-native-scene-graph-transforms-cameras-geometry.md) |
+| N11b | [PRD-517 — Morph targets and property tracks](../../done/native-engine/N11-native-animation/PRD-517-n11b-morph-targets-and-property-tracks.md) | N11a, [N08](../N08-native-tsl-and-shader-packages/README.md) |
+| N11c | [PRD-518 — Skinning palettes and pose history](../../done/native-engine/N11-native-animation/PRD-518-n11c-skinning-palettes-and-pose-history.md) | N11a, [PRD-515 (N10)](../../done/native-engine/PRD-515-n10-native-gltf-cooked-assets-and-decoders.md) |
 
 ```mermaid
 flowchart LR

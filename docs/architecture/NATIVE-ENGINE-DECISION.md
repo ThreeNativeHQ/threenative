@@ -12,7 +12,7 @@ native-engine artifact (gate E, [PRD-499](../PRDs/native-engine/PRD-499-n02-the-
 because primary docs name only shipped things.
 
 **Work package:** N00 of the [native-engine batch](../PRDs/native-engine/README.md).
-**Source PRD:** [PRD-497](../PRDs/native-engine/PRD-497-n00-architecture-decision-and-compatibility-inventory.md).
+**Source PRD:** [PRD-497](../PRDs/done/native-engine/PRD-497-n00-architecture-decision-and-compatibility-inventory.md).
 
 ---
 
@@ -34,7 +34,7 @@ flowchart LR
 **Out of scope of this record:** the reference outputs and baselines
 ([PRD-498](../PRDs/native-engine/PRD-498-n01-baseline-and-differential-fixture-runner.md)) and the
 API catalog that turns the inventory into bindings
-([PRD-500](../PRDs/native-engine/PRD-500-n03-api-catalog-binding-abi-and-version-protocol.md)).
+([PRD-500](../PRDs/done/native-engine/PRD-500-n03-api-catalog-binding-abi-and-version-protocol.md)).
 
 ## 2. The charter rules this amends, in plain words
 
@@ -83,7 +83,7 @@ Owner decisions, João, 2026-10-04 (interview):
    native against current ThreeNative after N06 + N09. With no CPU win in the engine hot paths,
    N11–N15 do not start until the owner re-plans.
 4. **One engine everywhere.** The web runs the same C++ core in Wasm
-   ([PRD-532 (N19)](../PRDs/native-engine/PRD-532-n19-webassembly-native-core-browser-port.md) is
+   ([PRD-532 (N19)](../PRDs/done/native-engine/PRD-532-n19-webassembly-native-core-browser-port.md) is
    mandatory). The TS framework-system implementations and the upstream Three.js runtime are deleted
    once it ships
    ([PRD-535 (N21)](../PRDs/native-engine/PRD-535-n21-the-js-engine-is-deleted.md)). The core is
@@ -126,7 +126,7 @@ best"), 2026-10-04:
     non-host target, and alpha89 and alpha90 fail the same way, so no arm64 library resolves its
     runtime. Rules that follow from this decision:
     - **One boundary.** Compiled game code reaches the engine only through the versioned C ABI of
-      [PRD-500 (N03)](../PRDs/native-engine/PRD-500-n03-api-catalog-binding-abi-and-version-protocol.md),
+      [PRD-500 (N03)](../PRDs/done/native-engine/PRD-500-n03-api-catalog-binding-abi-and-version-protocol.md),
       through a small Perry adapter that owns Perry's value representation, GC roots for retained
       callbacks and completion routing. The engine knows nothing of Perry. Changing the compiler
       later is a new adapter, not an engine change.
@@ -153,7 +153,7 @@ decision 11 replaces it with Perry.
 
 12. **The web build: Wasm engine, JavaScript game code first (owner decision, 2026-10-05).** On the
     web the C++ engine compiles to WebAssembly with Emscripten and renders through the browser's
-    WebGPU ([PRD-532 (N19)](../PRDs/native-engine/PRD-532-n19-webassembly-native-core-browser-port.md));
+    WebGPU ([PRD-532 (N19)](../PRDs/done/native-engine/PRD-532-n19-webassembly-native-core-browser-port.md));
     the game's TypeScript stays ordinary JavaScript run by the browser's JIT (option B). JavaScript
     cannot leave the browser entirely: a page starts from it and Wasm reaches WebGPU, input and the
     DOM through JS glue, so "no JS" on the web means no three.js engine in JS (PRD-535's bundle

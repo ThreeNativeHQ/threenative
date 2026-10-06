@@ -3,8 +3,8 @@
 **Status:** PROPOSED
 **Complexity:** 4 — many classes with reference-pinned semantics, but no GPU work and no new dependency
 **Owner:** João
-**Work package:** N06 — [native-engine batch](README.md)
-**Depends on:** [N04 — Lifetime and numerical foundation](N04-lifetime-and-numerics/README.md) (handles, math, buffers); fixtures from [PRD-498 (N01)](PRD-498-n01-baseline-and-differential-fixture-runner.md)
+**Work package:** N06 — [native-engine batch](../../native-engine/README.md)
+**Depends on:** [N04 — Lifetime and numerical foundation](../../native-engine/N04-lifetime-and-numerics/README.md) (handles, math, buffers); fixtures from [PRD-498 (N01)](../../native-engine/PRD-498-n01-baseline-and-differential-fixture-runner.md)
 
 ## Context
 
@@ -15,7 +15,7 @@ semantics to `three@0.185.1` (the `catalog:` pin in `pnpm-workspace.yaml`, with
 `updateMatrix`/`updateMatrixWorld`/`updateWorldMatrix`, manual matrices, stale reads where the
 reference leaves them stale. Today the scene lives in JS inside the host (§3, R1); nothing in
 `packages/runtime-native/src/` owns scene state. Materials, textures and shader nodes are
-[N08](N08-native-tsl-and-shader-packages/README.md)/[N09](PRD-514-n09-native-renderer-and-standard-materials.md); animation objects are [N11](N11-native-animation/README.md).
+[N08](../../native-engine/N08-native-tsl-and-shader-packages/README.md)/[N09](PRD-514-n09-native-renderer-and-standard-materials.md); animation objects are [N11](../../native-engine/N11-native-animation/README.md).
 
 ## Solution
 
@@ -40,7 +40,7 @@ reference leaves them stale. Today the scene lives in JS inside the host (§3, R
 6. **Unsupported:** any catalogued member without a native implementation throws
    `TN_NATIVE_UNSUPPORTED <Class>.<member>` at call time and is marked so in the capability manifest.
 7. **Rollback:** the legacy JS scene path remains the selected backend; nothing here is reachable
-   from a shipped game until [N17](PRD-530-n17-strict-native-typescript-game-packaging.md).
+   from a shipped game until [N17](../../native-engine/PRD-530-n17-strict-native-typescript-game-packaging.md).
 
 ## Out of scope
 

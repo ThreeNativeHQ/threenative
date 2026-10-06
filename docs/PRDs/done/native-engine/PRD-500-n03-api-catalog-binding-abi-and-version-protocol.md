@@ -3,7 +3,7 @@
 **Status:** DONE 2026-10-04
 **Complexity:** 5 — the one contract every adapter, generator and engine module depends on
 **Owner:** João
-**Work package:** N03 — [native-engine batch](README.md)
+**Work package:** N03 — [native-engine batch](../../native-engine/README.md)
 **Depends on:** [PRD-497](PRD-497-n00-architecture-decision-and-compatibility-inventory.md)
 
 ## Context
@@ -18,12 +18,12 @@ The repo's existing capability surface is `packages/create-threenative/capabilit
 2. **Generators** (proposed: `packages/three-native/scripts/generate.ts`) emit `generated/*.d.ts`, the C header `packages/runtime-native/include/threenative/abi/tn_abi.h`, and ABI conformance tests. Generation adapts names and shapes; it implements no algorithm (§8.3).
 3. **ABI rules**: handles are `{type, context, index, generation}` structs. JS-facing adapters never carry them as plain numbers (§8.2). Every entry point returns a status code plus an owned diagnostic. Buffer descriptors state owner, length, stride, scalar type and mutability, with full ownership semantics in [PRD-504](N04-lifetime-and-numerics/PRD-504-n04d-buffers-cross-the-abi-with-an-owner.md).
 4. **Version handshake**: the four version numbers plus the capability set are checked at load. A mismatch fails with a named code before any game code runs.
-5. **Fuzzing**: a libFuzzer target feeds random handles, descriptors and strings through the ABI dispatch. It runs under the sanitizer label from [PRD-499](PRD-499-n02-the-host-links-without-a-js-engine.md).
+5. **Fuzzing**: a libFuzzer target feeds random handles, descriptors and strings through the ABI dispatch. It runs under the sanitizer label from [PRD-499](../../native-engine/PRD-499-n02-the-host-links-without-a-js-engine.md).
 
 ## Out of scope
 
-- Handle storage, aliasing and reclamation: [N04](N04-lifetime-and-numerics/README.md).
-- AOT wrapper compilation: [N05](N05-native-typescript-qualification/README.md). V8 wrappers: [PRD-531](PRD-531-n18-v8-game-runtime-adapter.md).
+- Handle storage, aliasing and reclamation: [N04](../../native-engine/N04-lifetime-and-numerics/README.md).
+- AOT wrapper compilation: [N05](../../native-engine/N05-native-typescript-qualification/README.md). V8 wrappers: [PRD-531](../../native-engine/PRD-531-n18-v8-game-runtime-adapter.md).
 
 ## Execution Phases
 

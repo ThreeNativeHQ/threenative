@@ -3,8 +3,8 @@
 **Status:** IN PROGRESS
 **Complexity:** 3 — the evaluator comes from N11a; the new work is GPU morph blending and binding to non-skeletal properties
 **Owner:** João
-**Work package:** N11 — [native-engine batch](../README.md) · [N11 umbrella](README.md)
-**Depends on:** [PRD-516 (N11a)](PRD-516-n11a-animation-mixer-semantics-in-native.md), [N08 shader packages](../N08-native-tsl-and-shader-packages/README.md)
+**Work package:** N11 — [native-engine batch](../../../native-engine/README.md) · [N11 umbrella](../../../native-engine/N11-native-animation/README.md)
+**Depends on:** [PRD-516 (N11a)](PRD-516-n11a-animation-mixer-semantics-in-native.md), [N08 shader packages](../../../native-engine/N08-native-tsl-and-shader-packages/README.md)
 
 ## Context
 
@@ -20,7 +20,7 @@
 ## Out of scope
 
 - Skeletal palettes: [PRD-518 (N11c)](PRD-518-n11c-skinning-palettes-and-pose-history.md)
-- Batching eligibility itself: [PRD-519 (N12)](../PRD-519-n12-native-batching-visibility-lod-gpu-scene.md)
+- Batching eligibility itself: [PRD-519 (N12)](../../../native-engine/PRD-519-n12-native-batching-visibility-lod-gpu-scene.md)
 
 ## Execution Phases
 

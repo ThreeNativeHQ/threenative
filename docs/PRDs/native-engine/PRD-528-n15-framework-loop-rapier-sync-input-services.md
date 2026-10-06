@@ -4,7 +4,7 @@
 **Complexity:** 4 — the frame contract, physics sync and platform services all move under native ownership
 **Owner:** João
 **Work package:** N15 — [native-engine batch](README.md)
-**Depends on:** [PRD-508 (N06)](PRD-508-n06-native-scene-graph-transforms-cameras-geometry.md), [N11 — native animation](N11-native-animation/README.md), [PRD-499 (N02)](PRD-499-n02-the-host-links-without-a-js-engine.md); starts only after [PRD-534 (CP1)](PRD-534-cp1-the-native-engine-earns-the-port.md) passes
+**Depends on:** [PRD-508 (N06)](../done/native-engine/PRD-508-n06-native-scene-graph-transforms-cameras-geometry.md), [N11 — native animation](N11-native-animation/README.md), [PRD-499 (N02)](PRD-499-n02-the-host-links-without-a-js-engine.md); starts only after [PRD-534 (CP1)](PRD-534-cp1-the-native-engine-earns-the-port.md) passes
 
 ## Context
 

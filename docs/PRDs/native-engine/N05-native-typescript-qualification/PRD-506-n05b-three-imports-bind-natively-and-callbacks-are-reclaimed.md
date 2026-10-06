@@ -4,7 +4,7 @@
 **Complexity:** 5 — crosses the compiler's module system, the generated ABI and the engine lifetime protocol at once
 **Owner:** João
 **Work package:** N05 — [native-engine batch](../README.md) · [N05 index](README.md)
-**Depends on:** [PRD-505](PRD-505-n05a-the-language-corpus-compiles-on-linux-x64.md), [PRD-502 — Handles keep identity and aliases](../N04-lifetime-and-numerics/PRD-502-n04b-handles-keep-identity-and-aliases.md), [PRD-503 — Unreachable cycles are reclaimed](../N04-lifetime-and-numerics/PRD-503-n04c-unreachable-cycles-are-reclaimed.md)
+**Depends on:** [PRD-505](../../done/native-engine/N05-native-typescript-qualification/PRD-505-n05a-the-language-corpus-compiles-on-linux-x64.md), [PRD-502 — Handles keep identity and aliases](../../done/native-engine/N04-lifetime-and-numerics/PRD-502-n04b-handles-keep-identity-and-aliases.md), [PRD-503 — Unreachable cycles are reclaimed](../../done/native-engine/N04-lifetime-and-numerics/PRD-503-n04c-unreachable-cycles-are-reclaimed.md)
 
 ## Context
 
@@ -35,8 +35,8 @@ rooting/tracing path is not qualified. The minimal native object fixture comes f
 
 ## Out of scope
 
-- The language corpus itself — [PRD-505](PRD-505-n05a-the-language-corpus-compiles-on-linux-x64.md).
-- Generating the catalog and ABI — [PRD-500 (N03)](../PRD-500-n03-api-catalog-binding-abi-and-version-protocol.md).
+- The language corpus itself — [PRD-505](../../done/native-engine/N05-native-typescript-qualification/PRD-505-n05a-the-language-corpus-compiles-on-linux-x64.md).
+- Generating the catalog and ABI — [PRD-500 (N03)](../../done/native-engine/PRD-500-n03-api-catalog-binding-abi-and-version-protocol.md).
 - TSL graphs built from compiled code — [PRD-513 (N08d)](../N08-native-tsl-and-shader-packages/PRD-513-n08d-compute-multipass-and-a-dynamic-graph.md).
 
 ## Execution Phases
@@ -57,4 +57,4 @@ rooting/tracing path is not qualified. The minimal native object fixture comes f
 
 ## Decisions
 
-- **No permanent rooting of callbacks (§7.1).** A compiler that can only pin closures forever is not qualified for this profile; the stop rule in [PRD-505](PRD-505-n05a-the-language-corpus-compiles-on-linux-x64.md#decisions) applies.
+- **No permanent rooting of callbacks (§7.1).** A compiler that can only pin closures forever is not qualified for this profile; the stop rule in [PRD-505](../../done/native-engine/N05-native-typescript-qualification/PRD-505-n05a-the-language-corpus-compiles-on-linux-x64.md#decisions) applies.

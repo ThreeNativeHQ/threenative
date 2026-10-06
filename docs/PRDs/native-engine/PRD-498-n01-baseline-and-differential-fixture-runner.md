@@ -4,7 +4,7 @@
 **Complexity:** 4 — a new runner that drives the pinned upstream and the native engine through one fixture format, plus native-host baselines
 **Owner:** João
 **Work package:** N01 — [native-engine batch](README.md)
-**Depends on:** [PRD-497](PRD-497-n00-architecture-decision-and-compatibility-inventory.md)
+**Depends on:** [PRD-497](../done/native-engine/PRD-497-n00-architecture-decision-and-compatibility-inventory.md)
 
 ## Context
 

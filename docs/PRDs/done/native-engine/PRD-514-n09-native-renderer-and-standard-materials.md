@@ -3,8 +3,8 @@
 **Status:** IN PROGRESS — the draw core, geometry and pipeline caches land first; the render database waits on N06
 **Complexity:** 5 — first C++ renderer in the repo; reads native scene state and draws standard materials against a pinned reference
 **Owner:** João
-**Work package:** N09 — [native-engine batch](README.md)
-**Depends on:** [PRD-508 (N06)](PRD-508-n06-native-scene-graph-transforms-cameras-geometry.md), [PRD-509 (N07)](PRD-509-n07-gpu-resources-presentation-and-device-loss.md), [N08 shader packages](N08-native-tsl-and-shader-packages/README.md)
+**Work package:** N09 — [native-engine batch](../../native-engine/README.md)
+**Depends on:** [PRD-508 (N06)](PRD-508-n06-native-scene-graph-transforms-cameras-geometry.md), [PRD-509 (N07)](../../native-engine/PRD-509-n07-gpu-resources-presentation-and-device-loss.md), [N08 shader packages](../../native-engine/N08-native-tsl-and-shader-packages/README.md)
 
 ## Context
 
@@ -21,10 +21,10 @@
 
 ## Out of scope
 
-- Batching, instancing, culling and LOD eligibility: [PRD-519 (N12)](PRD-519-n12-native-batching-visibility-lod-gpu-scene.md)
-- Render graph, temporal history and post chains: [N14](N14-native-render-chain-and-advanced-visuals/README.md)
-- Skinned and morphed draws: [N11](N11-native-animation/README.md)
-- Shader IR and package generation: [N08](N08-native-tsl-and-shader-packages/README.md)
+- Batching, instancing, culling and LOD eligibility: [PRD-519 (N12)](../../native-engine/PRD-519-n12-native-batching-visibility-lod-gpu-scene.md)
+- Render graph, temporal history and post chains: [N14](../../native-engine/N14-native-render-chain-and-advanced-visuals/README.md)
+- Skinned and morphed draws: [N11](../../native-engine/N11-native-animation/README.md)
+- Shader IR and package generation: [N08](../../native-engine/N08-native-tsl-and-shader-packages/README.md)
 
 ## Execution Phases
 

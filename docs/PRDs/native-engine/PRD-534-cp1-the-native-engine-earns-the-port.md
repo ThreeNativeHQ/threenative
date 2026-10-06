@@ -4,11 +4,11 @@
 **Complexity:** 3 — measurement only, on existing workloads; the verdict can stop the program
 **Owner:** João
 **Work package:** CP1 — [native-engine batch](README.md)
-**Depends on:** [PRD-498 (N01)](PRD-498-n01-baseline-and-differential-fixture-runner.md), [PRD-508 (N06)](PRD-508-n06-native-scene-graph-transforms-cameras-geometry.md), [PRD-514 (N09)](PRD-514-n09-native-renderer-and-standard-materials.md), [PRD-531 (N18)](PRD-531-n18-v8-game-runtime-adapter.md) phases 1–2
+**Depends on:** [PRD-498 (N01)](PRD-498-n01-baseline-and-differential-fixture-runner.md), [PRD-508 (N06)](../done/native-engine/PRD-508-n06-native-scene-graph-transforms-cameras-geometry.md), [PRD-514 (N09)](../done/native-engine/PRD-514-n09-native-renderer-and-standard-materials.md), [PRD-531 (N18)](PRD-531-n18-v8-game-runtime-adapter.md) phases 1–2
 
 ## Context
 
-Owner decision 3 ([PRD-497](PRD-497-n00-architecture-decision-and-compatibility-inventory.md)): after the native scene graph (N06) and renderer (N09) exist, measure before porting the framework systems (N11–N15), which are most of the work. §15.3 sets the comparison: current optimized ThreeNative, projection and batching included, never vanilla Three.js alone. The decision to keep game code on V8 (decision 2) means the result only counts through the V8 adapter (N18). A C++-driver number alone would hide the crossing cost.
+Owner decision 3 ([PRD-497](../done/native-engine/PRD-497-n00-architecture-decision-and-compatibility-inventory.md)): after the native scene graph (N06) and renderer (N09) exist, measure before porting the framework systems (N11–N15), which are most of the work. §15.3 sets the comparison: current optimized ThreeNative, projection and batching included, never vanilla Three.js alone. The decision to keep game code on V8 (decision 2) means the result only counts through the V8 adapter (N18). A C++-driver number alone would hide the crossing cost.
 
 Workloads that already exist: `examples/engine-load-test` (heterogeneous renderables, `skinned-crowd.html`, projection conformance), `examples/native-cpu-load-test`, driven by `pnpm bench:engines` and `pnpm profile:native-cpu`. Skinned content is out of reach until N11, so CP1 uses the static heterogeneous scene only.
 

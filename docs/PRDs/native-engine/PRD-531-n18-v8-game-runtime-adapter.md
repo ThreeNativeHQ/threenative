@@ -4,11 +4,11 @@
 **Complexity:** 4 — the first shipping game runtime over the C++ engine; lifetime and crossing cost are the hard parts
 **Owner:** João
 **Work package:** N18 — [native-engine batch](README.md)
-**Depends on:** [PRD-500 (N03)](PRD-500-n03-api-catalog-binding-abi-and-version-protocol.md), [N04 — lifetime and numerics](N04-lifetime-and-numerics/README.md), [PRD-508 (N06)](PRD-508-n06-native-scene-graph-transforms-cameras-geometry.md); Phase 3 also needs [PRD-514 (N09)](PRD-514-n09-native-renderer-and-standard-materials.md)
+**Depends on:** [PRD-500 (N03)](../done/native-engine/PRD-500-n03-api-catalog-binding-abi-and-version-protocol.md), [N04 — lifetime and numerics](N04-lifetime-and-numerics/README.md), [PRD-508 (N06)](../done/native-engine/PRD-508-n06-native-scene-graph-transforms-cameras-geometry.md); Phase 3 also needs [PRD-514 (N09)](../done/native-engine/PRD-514-n09-native-renderer-and-standard-materials.md)
 
 ## Context
 
-Owner decision 2 ([PRD-497](PRD-497-n00-architecture-decision-and-compatibility-inventory.md)) makes this the first product: game TypeScript keeps running on the V8 that desktop and Android already ship (`packages/runtime-native/src/js/v8_engine.cpp`; Android defaults to V8 since PRD-130). The engine underneath it is C++. §2.1 still applies: the adapter brings no JavaScript implementation of animation, traversal, batching or materials, so the engine stays JS-free (decision 1) while the game is not yet (gate T is later). §8.2 forbids carrying 64-bit handles as plain JS numbers. §7.1 requires the adapter to take part in the lifetime protocol: callbacks that capture wrappers form cross-language cycles, and rooting them forever is not acceptable.
+Owner decision 2 ([PRD-497](../done/native-engine/PRD-497-n00-architecture-decision-and-compatibility-inventory.md)) makes this the first product: game TypeScript keeps running on the V8 that desktop and Android already ship (`packages/runtime-native/src/js/v8_engine.cpp`; Android defaults to V8 since PRD-130). The engine underneath it is C++. §2.1 still applies: the adapter brings no JavaScript implementation of animation, traversal, batching or materials, so the engine stays JS-free (decision 1) while the game is not yet (gate T is later). §8.2 forbids carrying 64-bit handles as plain JS numbers. §7.1 requires the adapter to take part in the lifetime protocol: callbacks that capture wrappers form cross-language cycles, and rooting them forever is not acceptable.
 
 The CP1 checkpoint ([PRD-534](PRD-534-cp1-the-native-engine-earns-the-port.md)) measures through this adapter, because the speed claim has to hold with game code on V8.
 
@@ -24,7 +24,7 @@ The CP1 checkpoint ([PRD-534](PRD-534-cp1-the-native-engine-earns-the-port.md)) 
 
 ## Out of scope
 
-- The browser-JS back end ([PRD-532](PRD-532-n19-webassembly-native-core-browser-port.md)). The AOT game runtime ([N05](N05-native-typescript-qualification/README.md)).
+- The browser-JS back end ([PRD-532](../done/native-engine/PRD-532-n19-webassembly-native-core-browser-port.md)). The AOT game runtime ([N05](N05-native-typescript-qualification/README.md)).
 
 ## Execution Phases
 
