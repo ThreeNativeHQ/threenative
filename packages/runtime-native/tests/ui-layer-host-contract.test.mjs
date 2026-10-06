@@ -350,3 +350,50 @@ int main() {
   const run = spawnSync(executable, { encoding: 'utf8' });
   assert.equal(run.status, 0, run.stderr);
 });
+
+test('native CSS scroll traces round-trip the host double offsets without rounding', async () => {
+  const source = readFileSync(new URL('../src/platform/ui_overlay.cpp', import.meta.url), 'utf8');
+  const trace = /void traceCssState\(\) \{[\s\S]*?\n\}/u.exec(source)?.[0];
+  assert.ok(trace, 'execute the actual trace function');
+  const directory = makeTempDirSync('tn-css-state-precision-');
+  const path = join(directory, 'trace.cpp');
+  const executable = join(directory, 'trace');
+  writeFileSync(path, `#include <cstdlib>
+#include <cstdint>
+#include <iostream>
+#include <iomanip>
+#include <limits>
+#include <sstream>
+#include <string>
+#include <vector>
+size_t tn_css_ui_scrolled_ids(uint32_t* ids, size_t capacity) { if (ids && capacity) ids[0] = 7; return 1; }
+uint32_t tn_css_ui_focused_id() { return 7; }
+int tn_css_ui_scroll_offset(uint32_t, double* x, double* y) { *x = 1234567.0; *y = 0.123456789012345; return 1; }
+${trace}
+int main() { setenv("TN_CSS_UI_STATE_TRACE", "1", 1); traceCssState(); }
+`);
+  const compile = spawnSync('c++', ['-std=c++17', path, '-o', executable], { encoding: 'utf8' });
+  assert.equal(compile.status, 0, compile.stderr || compile.error?.message);
+  const run = spawnSync(executable, { encoding: 'utf8' });
+  assert.equal(run.status, 0, run.stderr);
+  const { cssStateAt } = await import('../../../examples/native-css-hud/corpus/interactions-desktop.mjs');
+  assert.deepEqual(cssStateAt(run.stdout.trim().split('\n')).scrollOf(7), [1234567, 0.123456789012345]);
+});
+
+test('Android corpus fails when any interaction observation is skipped or unreachable', () => {
+  const source = readFileSync(new URL('../../../examples/native-css-hud/corpus/android.mjs', import.meta.url), 'utf8');
+  // Execute the verdict in the real runner without launching its device/browser main program.
+  const assignment = /entry\.pass\s*=\s*[\s\S]*?;/u.exec(source.slice(source.indexOf("async function runInteraction(")))?.[0];
+  assert.ok(assignment, 'the Android interaction verdict must exist');
+  const pass = new Function('entry', 'problems', 'exitOk', `${assignment} return entry.pass;`);
+  const complete = { observations: 2, compared: [{ index: 0 }, { index: 1 }], skipped: 0, unreachable: [], mismatches: [] };
+  assert.equal(pass(complete, [], true), true);
+  for (const entry of [
+    { ...complete, skipped: 1, unreachable: [{ index: 1, why: 'unsupported observation' }], compared: [{ index: 0 }] },
+    { ...complete, unreachable: [{ index: 1, why: 'unsupported observation' }] },
+    { ...complete, skipped: 1 },
+    { ...complete, compared: [{ index: 0 }] },
+  ]) assert.equal(pass(entry, [], true), false, JSON.stringify(entry));
+  assert.equal(pass(complete, ['wrong backend'], true), false);
+  assert.equal(pass(complete, [], false), false);
+});

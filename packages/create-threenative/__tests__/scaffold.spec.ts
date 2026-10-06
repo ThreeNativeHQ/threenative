@@ -174,22 +174,26 @@ const BUG_REPORT_SKILL_PATHS = [
 // against reviewed 8bf trees; only the copied Three compute-only Storage3DTexture patch changed.
 // Re-measured on current develop plus TS7: restoring only each compiler manifest and
 // rain's shader API import recovers all 13 develop fingerprints.
+// PR388 producer delivery: compared all 13 immutable eab0cdbfe/generated trees. Only
+// package.json patch declarations and copied Vite/Tailwind patch bytes differ; every other
+// generated file remains byte-identical. Fingerprints still cover the complete tree.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
-  // Re-measured through this generator contract on PR440 merged with develop 45565868:
+  // PR388 re-measured on top of develop: only package.json patch declarations and the copied
+  // Vite/Tailwind patch bytes differ. Base: PR440 merged with develop 45565868:
   // TS7/API6 compiler pins plus shared render graph and actual-render-camera light layers.
-  "action-rpg": "913c20b4a7a15458204570daae4f1aa30e75dba67e42702ff507a9ec781ef692",
-  minimal: "151aec43f5bd3a697abe1e3c48cd1246468f4544a48f1f1ef3e8f9f4d0db792f",
-  platformer: "277d034652896c733071d3def3b32c29ceb2211360ffdc3de08b0a719b0d975e",
-  puzzle: "f867724339566fb2d67a4614261da0e5d23167d51138fa81bea79085741ef141",
-  racing: "20c92ebf0762f6e80a6ee6e542c3e4d7144f2b43675eeb95beabf3bb93642f8b",
-  rain: "21dbd2a9100f3e1dfc9ea0a474fd5f3b429a55ae4e968a3741dccaf57e05bfc8",
-  rts: "03e1b67e66f104c305d513af145913579e6529aa000f0bf44f734a8a92c89fe8",
-  runner: "7ef226bda60aa813b2d85ee1da30bebbc2c63aac2d38828d40967c254163863e",
-  sailing: "2d9a3bbfbb15f81699c779950a96d30526f05956ab8e52e1327dd884c0e39493",
-  shooter: "7913e84a7b59ef54e5e45996be13143bb41aa531b9597eaf196c590532ca716d",
-  snow: "ce85dc72f12d267a394bf6befefe59da537d52f565a96fde703a50ff06c46754",
-  starter: "af8956584e6dc12af8ae7c9f78a21d5cc45f6c8ed3650218e433bae414a6ba52",
-  "tower-defense": "b915904e5ceb4769a1a9a7a2a82260d14346b3ffa6ea724d1c8dc5ec93c28156",
+  "action-rpg": "62b63ac291984438e0dc555c06b234b55acdfe329729f8686a93cafa8a67e1fe",
+  minimal: "730163cac8e2207818cdb2032d15fcecd571a4b394e19eec331eee22439eab17",
+  platformer: "9ee3d5cc9129c328a0c8b03be4392486440669ced7b17176da15cbfccade4cac",
+  puzzle: "df5af80355cac776259a2e98be6ab7430ce53cea0ef74f597c0e7ab80ca658ba",
+  racing: "45864c6c8bf9ed408a1cbb825fed7940dd192d5bde0fb14e2b66936d918e497b",
+  rain: "07e065b9ee6558956a23c5cbe2918efd8b8fc9e8be3764040896acb9686c0899",
+  rts: "12e30a83a8c9b2ab3057839ffdb5b4b5c38533b69b642ab080467cd6ecf49f31",
+  runner: "cc2c2de62825a49a54c40d9fe40f497b3a4587b2762cc99e4f83da524dfa3a8f",
+  sailing: "7721c450b8b126e6d485abf6ec55950173882ded6ceeabc94de70168e74a1fe7",
+  shooter: "1855b4fbad7cc3f7b0dff9703b5160d118be0f786245b1f0b9594a283f00d236",
+  snow: "685118f41ecbcf92a95b8139896be34ceec07c724db701858994f599d3456e2d",
+  starter: "b3c1ffdc04514b3a5a86b069710c6b0b3dd4ecc276f2c6bf4b3c96597a63d1a6",
+  "tower-defense": "6cf2cb55734d2d3789d31f6adb92cdb875668be021544232c42381db027d6200",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
@@ -272,6 +276,8 @@ const STARTER_PATHS = [
   "kit.json",
   "package.json",
   "patches/three@0.185.1.patch",
+  "patches/vite@8.2.0.patch",
+  "patches/@tailwindcss__node@4.3.3.patch",
   "threenative.config.ts",
   "tools/look.mjs",
   "scripts/reference.mjs",
@@ -818,6 +824,8 @@ describe("create-threenative", () => {
       };
       expect(packageManifest.pnpm?.patchedDependencies).toEqual({
         "three@0.185.1": "patches/three@0.185.1.patch",
+        "vite@8.2.0": "patches/vite@8.2.0.patch",
+        "@tailwindcss/node@4.3.3": "patches/@tailwindcss__node@4.3.3.patch",
       });
       expect(STARTER_PATHS).toContain("playtests/survives.playtest.json");
       for (const relativePath of STARTER_PATHS) {
