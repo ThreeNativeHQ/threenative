@@ -25,7 +25,7 @@ index 0bb9262cd029f411933d077fd44197a51ec5e8e9..868a634b4294be5f32664912a50813d5
  	 * Constructs a new batched mesh.
  	 *
 diff --git a/build/three.webgpu.js b/build/three.webgpu.js
-index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..5c5ef3c06885c724c1c2288295e7e68483ee1f6e 100644
+index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..dd0bf13ed56418d9a7354121f0df58ba74dd6ace 100644
 --- a/build/three.webgpu.js
 +++ b/build/three.webgpu.js
 @@ -141,6 +141,15 @@ class NodeMaterialObserver {
@@ -814,6 +814,26 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..5c5ef3c06885c724c1c2288295e7e684
  
  			usage |= GPUTextureUsage.RENDER_ATTACHMENT;
  
+@@ -76726,7 +76998,7 @@
+ 		const colorTexture = canvasTarget.colorTexture;
+ 		const colorTextureData = backend.get( colorTexture );
+ 
+-		if ( colorTexture.width === width && colorTexture.height === height && colorTexture.samples === samples ) {
++		if ( colorTextureData.texture !== undefined && colorTexture.width === width && colorTexture.height === height && colorTexture.samples === samples ) {
+ 
+ 			return colorTextureData.texture;
+ 
+@@ -76751,8 +77023,8 @@
+ 
+ 		//
+ 
+-		colorTexture.source.width = width;
+-		colorTexture.source.height = height;
++		colorTexture.image.width = width;
++		colorTexture.image.height = height;
+ 		colorTexture.samples = samples;
+ 
+ 		colorTextureData.texture = colorBuffer;
 @@ -79004,7 +79276,14 @@ class WGSLNodeBuilder extends NodeBuilder {
  
  		} else {
@@ -1009,7 +1029,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..5c5ef3c06885c724c1c2288295e7e684
  			utils.getPrimitiveTopology( object, material ),
  			renderObject.getGeometryCacheKey(),
 diff --git a/build/three.webgpu.nodes.js b/build/three.webgpu.nodes.js
-index f707acc24f5711fdae065ce920b08435b0869c1b..3d47c1151d563f1e0ae2bb4b92edd057fe0df2b3 100644
+index f707acc24f5711fdae065ce920b08435b0869c1b..a3c4504d618112568933b705105988da69db712c 100644
 --- a/build/three.webgpu.nodes.js
 +++ b/build/three.webgpu.nodes.js
 @@ -141,6 +141,15 @@ class NodeMaterialObserver {
@@ -1587,6 +1607,26 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..3d47c1151d563f1e0ae2bb4b92edd057
  
  			usage |= GPUTextureUsage.RENDER_ATTACHMENT;
  
+@@ -76726,7 +76941,7 @@
+ 		const colorTexture = canvasTarget.colorTexture;
+ 		const colorTextureData = backend.get( colorTexture );
+ 
+-		if ( colorTexture.width === width && colorTexture.height === height && colorTexture.samples === samples ) {
++		if ( colorTextureData.texture !== undefined && colorTexture.width === width && colorTexture.height === height && colorTexture.samples === samples ) {
+ 
+ 			return colorTextureData.texture;
+ 
+@@ -76751,8 +76966,8 @@
+ 
+ 		//
+ 
+-		colorTexture.source.width = width;
+-		colorTexture.source.height = height;
++		colorTexture.image.width = width;
++		colorTexture.image.height = height;
+ 		colorTexture.samples = samples;
+ 
+ 		colorTextureData.texture = colorBuffer;
 @@ -79004,7 +79219,14 @@ class WGSLNodeBuilder extends NodeBuilder {
  
  		} else {
@@ -2702,7 +2742,7 @@ index da4bd473bd8df021159108bac235d211ff2a011f..a5da7ca09f746c0b2859ef173df663cc
  
  	/**
 diff --git a/src/renderers/webgpu/utils/WebGPUTextureUtils.js b/src/renderers/webgpu/utils/WebGPUTextureUtils.js
-index ff8ee2dbace2816105aa7152891c04f2333f33e8..5c999c162840d266c676c83affdd2788f2fa47eb 100644
+index ff8ee2dbace2816105aa7152891c04f2333f33e8..965e3e8359cbb10984f82152e4f24621f589b535 100644
 --- a/src/renderers/webgpu/utils/WebGPUTextureUtils.js
 +++ b/src/renderers/webgpu/utils/WebGPUTextureUtils.js
 @@ -359,7 +359,12 @@ class WebGPUTextureUtils {
@@ -2719,3 +2759,23 @@ index ff8ee2dbace2816105aa7152891c04f2333f33e8..5c999c162840d266c676c83affdd2788
  
  			usage |= GPUTextureUsage.RENDER_ATTACHMENT;
  
+@@ -472,7 +477,7 @@
+ 		const colorTexture = canvasTarget.colorTexture;
+ 		const colorTextureData = backend.get( colorTexture );
+ 
+-		if ( colorTexture.width === width && colorTexture.height === height && colorTexture.samples === samples ) {
++		if ( colorTextureData.texture !== undefined && colorTexture.width === width && colorTexture.height === height && colorTexture.samples === samples ) {
+ 
+ 			return colorTextureData.texture;
+ 
+@@ -497,8 +502,8 @@
+ 
+ 		//
+ 
+-		colorTexture.source.width = width;
+-		colorTexture.source.height = height;
++		colorTexture.image.width = width;
++		colorTexture.image.height = height;
+ 		colorTexture.samples = samples;
+ 
+ 		colorTextureData.texture = colorBuffer;

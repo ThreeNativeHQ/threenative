@@ -3199,3 +3199,43 @@ and cleanup receipts remain in the task workspace's `readiness-fixed-qualificati
 `oom-diagnosis/`. Owned browsers and monitor stopped; the canonical GPU lease was released
 at 08:35:50 UTC. No additional Strata capture is authorized before the next consumer releases
 the GPU window. PRD-466 remains 50%; no acceptance box changed.
+
+### 2026-10-06 — default color attachment cache (CPU red → green; GPU hold)
+
+The engine-owned Three patch now fixes the demonstrated default color-attachment cache defect.
+It writes dimensions through `colorTexture.image`, which is what Three's width/height getters
+read, and requires a live backend texture before reusing the cached size/sample match. The latter
+preserves recreation after explicit destruction at the same dimensions. Source and both compiled
+WebGPU copies differ by exactly these three lines; no Renderer, CanvasTarget, tone, CSS, surface
+resolution, sample policy or native contract was changed. The new patch SHA256 is
+`ce6812d83fbe0e932da427b7a85ed3ad48d8e7a66a3c7e3c64f34f4985cc029e`; all 48 lock references match.
+
+Actual methods in the immutable sealed `c2e051df…` runtime failed six checks and passed two:
+an initial color request plus 50 unchanged repeats allocated 51 textures instead of one, and
+50 alternating 4/0 render cycles allocated 50 color textures instead of one. An isolated copy
+upgraded by the real package postinstall passes all eight lifecycle cases, and a second patch
+application is unchanged. Source modules and the shipped WebGPU bundle are both exercised with
+a fake device; no GPU device initialization or draw submission is performed. Resize/sample replacement,
+exact descriptors and destruction/recreation remain covered. All 37 focused attachment,
+patch-upgrade, storage, binding, disposal and surface checks pass; strict TS7 test typecheck and
+Biome pass. Independent review reproduced the exact-runtime red and candidate green, verified
+the three-file delta and passed 12 focused checks.
+
+Depth sample switching is still present: the same 50 synthetic cycles allocate 100 depth
+attachments, alternating 1920×1080 sample counts 4 and 1, and destroy each once by final cleanup.
+The test establishes logical allocation lifetime, not driver completion or physical VRAM release.
+Hardware OOM recovery, readiness, frame/visual/native acceptance and controlled FPS improvement
+remain open. The published OOM run and PNGs above predate this attachment fix. GGEZ's separate
+1280×720-to-3×3 shrink was traced to missing example-owned full-size canvas CSS; it is not evidence
+of a shared renderer resizing defect. GPU hold remains in effect.
+
+HLOD ancestry clarification: published source already includes cook/schema/selection
+`710b68c5cc09ee88058c3ebc5c156564d3db95c5`, runtime consumption
+`b73d27ce925569ec9c1d23cada4c649e929b3fe5`, far-matrix write suppression
+`9b33b68e287f0f17dca6ef8cd7d3109c14e5eae6` and bundle validation
+`b954abe23`/`ea0a0621b`. Reviewed `f025c748a9be6f36c3697d58d01ee694d8eeebb2`
+is incorporated by equivalent commit `ea0a0621b`. No completed source was dropped. Strata's
+runtime adapter emits no cooked cell-proxy records and retains its prepared custom models,
+deformation and per-placement reach. This path cannot activate a cooked cell proxy; no hardware
+activation counter or HLOD performance improvement was measured. The earlier "stays separate"
+wording in the publication comment was corrected to distinguish source integration from activation.
