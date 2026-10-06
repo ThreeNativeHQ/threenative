@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-avbd-ropes-and-sails — Prototype bounded secondary GPU simulation
 
-**Status:** NOT STARTED
+**Status:** PARTIAL — bounded topology only; no GPU solver or qualified game
 **Priority:** P2 — Determine whether AVBD ropes and sails improve a real ThreeNative secondary-simulation workload before promoting a new subsystem.
 **Adoption order:** 3 of 3; independent of the other two plans.
 **Complexity:** 6 (HIGH); estimated 6–10 implementation files (+2), optional solver integration (+2), GPU scheduling/resource state (+2); risk override: shared-device buffer ownership and native GPU compatibility.
@@ -76,16 +76,16 @@ Proposed paths below must be updated to actual entry points before a phase is co
 
 ### Phase 1 — One bounded rigging scene runs through ThreeNative
 
-**Status:** NOT STARTED
+**Status:** PARTIAL — isolated topology constructor; renderer integration pending
 **ACs:** AC-1, AC-2
 **Files:** Proposed `examples/avbd-rigging/src/physics/avbd-adapter.ts`, `topology.ts`, pinned donor subset/notices, `src/game.ts` and game-owned materials; existing compute seam only if a bounded safe extension is necessary.
 **Implementation:** Lock one consistent solver revision/layout; verify peer/API compatibility; construct bounded topology; attach to the real renderer; use existing warm-up/fixed-step ownership. No production-default changes.
 
-- [ ] AC-1 [local; actor: implementation agent]: The game-facing construction path produces the specified anchored rope/sail topology and rejects over-capacity or invalid indices. proof: `pnpm exec vitest run examples/avbd-rigging/__tests__/topology.spec.ts` (planned adapter-entry test). Evidence: pending.
+- [ ] AC-1 [local; actor: implementation agent]: The game-facing construction path produces the specified anchored rope/sail topology and rejects over-capacity or invalid indices. proof: `pnpm exec vitest run --config examples/avbd-rigging/vitest.config.ts`. Partial evidence: 2026-10-06, 19 topology tests pass (one worker on CPU 10), including named malformed/capacity/kind/Float32 rejections and exact pin indices; the actual game-facing adapter entry remains pending, so this box is open.
 - [ ] AC-2 [local; actor: implementation agent]: The real compute registry invokes exactly one solver step per fixed tick and none while paused or detached. proof: `pnpm exec vitest run examples/avbd-rigging/__tests__/lifecycle.spec.ts` (planned registry integration, not a standalone solver call). Evidence: pending.
 
 **Verification:** Count real registry/adapter invocations; GPU state correctness belongs to Phase 3, not to a stubbed-device test.
-**Checkpoint:** Pending; self-review and one equivalent reviewer when available.
+**Checkpoint:** 2026-10-06 — fresh read-only reviewer found descriptor-kind and unknown-limit-key defects; regression controls failed, fixes passed, and follow-up found no remaining validation defect in the inspected files. Focused topology/source-test typecheck passed with TypeScript 5.9.3 under the repository's strict settings; the current-cohort workspace typecheck remains unrun. Biome checked the three example files without warnings. No lifecycle, packaged consumer, GPU, native or performance acceptance follows from these CPU results.
 
 ### Phase 2 — Coupling and resource lifetime are explicit
 
@@ -126,8 +126,14 @@ On a NO-GO, remove experimental package wiring/default registrations and retain 
 
 ## Blocked on
 
-Actual hardware-WebGPU and Linux native runners are required for Phase 3; they were not exercised during planning. A discovered unsupported device/buffer seam or required Three.js cohort upgrade must be recorded here with the concrete failure before implementation continues. No external account or release action is needed. Missing proof keeps this prototype open.
+Actual hardware-WebGPU and Linux native runners are required for Phase 3; they have not been exercised for this implementation. A discovered unsupported device/buffer seam or required Three.js cohort upgrade must be recorded here with the concrete failure before implementation continues. No external account or release action is needed. Missing proof keeps this prototype open.
+
+2026-10-06 — Shared storage/device seam coordination: `IRendererLike` currently exposes compute/readback and `raw: unknown`, but no supported raw device/storage-buffer sharing contract. Windward's `ShipGpuSkin` instead casts `renderer.backend.createStorageAttribute/get`; the adapter must not copy that cast blindly. Its pinned solver package declares `three >=0.186.0`, while this checkout uses patched `three 0.185.1`. A bounded vendored source slice may avoid the package peer requirement, but exact renderer compatibility and native proof are still required before GPU attachment. No second Three.js, device, renderer or simulation loop has been introduced.
+
+2026-10-06 — Parent reserves broad builds and GPU/native scheduling for PRs #398 and #381 first. This fresh lane has no dependency/build output; the normal pre-push hook requires built assets, physics and scaffolder packages. An assigned setup/build slot is required before the dedicated draft PR can be pushed without bypassing hooks. Parent task-message attempts returned `An earlier turn submission is not yet confirmed`; execution allocation has not been confirmed.
 
 ## Decisions
 
 2026-10-05 — User selected a bounded ropes/sails prototype, with debris only a later option. Preserve Rapier authority, compare against existing cloth and allow an evidence-backed NO-GO rather than forcing adoption. The three plans share one documentation-only draft PR as requested; this is not permission to implement or merge them.
+
+2026-10-06 — User delegated a separate implementation PR for this PRD, with original correctness/performance bars and authentic PR screenshots retained. The chosen source is Windward `83b25adb24f671e93a55683913ca9a794dc0f613` with solver `b3675dea83c78aba9644b059975f48285bf02a47`; static import-closure audit found all 17 required solver files (6,399 lines) byte-identical. Archive SHA-256: Windward `2f74256dfaea48fc16e2d37cd0b41460d10a173e3de8de50fb6f43725edc545a`, solver `a36e9b02b1ccad99eb484b3faa597c02471b899bf0c5d86633c31b9619a493e3`. The isolated prototype currently owns only `examples/avbd-rigging/src/physics/topology.ts`, its focused tests and test configuration. No donor solver or ship assets have been copied into the repository, no package has been promoted, and no GO/NO-GO result exists. The original eight boxes remain open.
