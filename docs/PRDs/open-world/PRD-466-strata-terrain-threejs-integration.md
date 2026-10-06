@@ -3299,7 +3299,7 @@ The final actual reply at page 188,344 ms has 6/6 spawn cells, 48 loaded/residen
 `Strata spawn admission exceeded 120000 ms`. Across 458 retained actual replies the prewarm
 counter stays nonnegative (0–148), and is zero in all three worlds at the terminal sample.
 All three worlds also report HLOD loaded/compiled/observed/active/pending at zero, consistent
-with this custom adapter's exact source fallback. This is now an actual activation observation;
+with this custom adapter's exact source fallback. This is observed HLOD runtime status;
 integrated HLOD source remains intact.
 
 The unmodified [attachment-fix curtain PNG](../../benchmark/strata-loading-2026-10-06/attachment-fix-curtain.png)
@@ -3313,3 +3313,32 @@ All ten original owned processes exited, the resource monitor stopped and the ca
 lease was free at cleanup. No foreign process was signalled; no further GPU run is requested here.
 The remaining depth allocation/lifetime path needs a CPU reproducer before another hardware run.
 PRD-466 remains 50%; readiness, full-board/native acceptance and FPS improvement remain open.
+
+
+### Remaining default depth allocation fix — CPU verified, hardware pending
+
+The remaining failure was reproduced in the renderer mechanism. `RenderPipeline.render()`
+temporarily uses working color space and no tone mapping, so its canvas output uses the authored
+4 samples. The direct loading overlay restores authored output conversion, whose final canvas
+pass uses effective sample count 1. The previous allocator replaced a single canvas depth slot on
+every transition: **100 depth allocations in 50 output/overlay cycles**. Separate offscreen scene,
+shadow and postprocessing render targets remain independent consumers.
+
+The package-owned Three patch now retains at most **two** default depth attachments per canvas,
+physical size and depth format, keyed by the existing WebGPU sample normalization (1 or 4).
+Resize, pixel ratio, stencil/reversed-depth format changes, explicit texture/canvas disposal and
+allocator teardown retire the owned pair exactly once. The canonical canvas depth texture keeps
+its identity and active GPU metadata; actual default-pass descriptors refresh after disposal or
+format changes. MSAA, authored tone/color conversion, resolution, asset density and the original
+120000 ms admission deadline are unchanged.
+
+**CPU evidence:** the preserved release fails **26 of 34** lifecycle checks; the candidate passes
+**34/34 with each shipped WebGPU bundle**, including the real `RenderPipeline.render()` sample
+transition, competing canvases and live offscreen depth controls. The focused Three/renderer
+contracts pass **67/67**; scaffold contracts pass **66/66** using durable temporary storage below
+the installed core consumer. Strict TypeScript 7 and Biome pass. Stock and previous-release postinstall
+applications accept the patch and reapplication is unchanged. All thirteen actual no-install
+scaffold trees regain their published fingerprints when only the old Three patch is substituted.
+Independent review passes. The original hardware result above remains red: this CPU fix does not
+yet prove physical OOM recovery, readiness, a gameplay screenshot or an FPS improvement. No new
+GPU/native run was performed for this candidate; Phase 4 remains open and progress remains 50%.
