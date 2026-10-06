@@ -81,16 +81,19 @@ async function virtualShadow({ target, renderer, scene, camera }, cut = false) {
     shadowLodBias: false,
     marker: false,
   });
-  const x = camera.position.x;
-  if (cut) camera.position.x += 100;
-  // Warm both levels, then cut immediately before the captured render. No post-cut warm-up.
+  // Warm both levels at the capture's eye position: a rotation cut must reuse these page keys.
   for (let i = 0; i < 2; ++i) {
     renderer.render(scene, camera);
     await renderer.backend.device.queue.onSubmittedWorkDone();
   }
   if (cut) {
-    camera.position.x = x;
+    // Index-only edits leave caster bounds/position versions intact. Cached maps still hold
+    // the wide box; a fresh map sees only degenerate triangles, leaving the floor unshadowed.
+    const geometry = scene.getObjectByName("cutCaster").geometry;
+    geometry.setIndex(new Array(geometry.index.count).fill(0));
+    camera.lookAt(0, 0.4, 0);
     camera.updateMatrixWorld(true);
+    target.shadow.shadowNode.invalidateAll();
   }
 }
 

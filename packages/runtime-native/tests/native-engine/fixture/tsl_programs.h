@@ -8,6 +8,7 @@
 #include "engine/renderer/renderer.h"
 #include "engine/scene/material.h"
 #include "engine/scene/camera.h"
+#include "engine/scene/lights.h"
 #include "engine/shader/tsl/tsl.h"
 #include "engine/world/particles/gpu_particles.h"
 #include "engine/world/fluids/fluid_particles.h"
@@ -194,14 +195,18 @@ inline std::string applyTslProgram(const std::string& program, binding::Object& 
         options.clipExtents = {8, 24}; options.mapSize = 256; options.pageTexels = 64;
         options.lightDistance = 20; options.depthRange = 40; options.refreshStep = {0};
         renderer.setVirtualShadow(0, options);
-        const double x = camera->position.x;
-        if (program == "vsm-cut") camera->position.x += 100;
         for (int i = 0; i < 2; ++i) {
             camera->updateMatrixWorld(true);
             if (const std::string error = renderAt(renderer.width(), renderer.height()); !error.empty()) return error;
         }
         if (program == "vsm-cut") {
-            camera->position.x = x; camera->updateMatrixWorld(true);
+            // Same eye/page keys, changed indices only: neither bounds nor position signatures
+            // invalidate this cached shadow. Only the cut removes the box's broad ghost shadow.
+            auto* light = static_cast<engine::DirectionalLight*>(object.ptr.get());
+            auto* caster = light->parent ? dynamic_cast<engine::Mesh*>(light->parent->getObjectByName("cutCaster")) : nullptr;
+            if (!caster || !caster->geometry || !caster->geometry->index) return "TN_FIXTURE_VSM_INVALID: cutCaster/index";
+            caster->geometry->setIndexFromArray(std::vector<uint32_t>(caster->geometry->index->count(), 0));
+            camera->lookAt(engine::Vector3(0, 0.4, 0)); camera->updateMatrixWorld(true);
             renderer.cutVirtualShadows();
         }
         return "";

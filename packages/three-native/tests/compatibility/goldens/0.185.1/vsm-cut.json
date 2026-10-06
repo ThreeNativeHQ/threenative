@@ -1,7 +1,7 @@
 {
   "name": "vsm-cut",
   "threeVersion": "0.185.1",
-  "adaptedFrom": "PRD-524: native page atlas versus the shipped VirtualShadowNode; capture the first frame after a warmed camera cut",
+  "adaptedFrom": "PRD-524: warm both clip levels, collapse a wide caster via an index-only edit, then capture the first rotation-cut frame at the same eye/page keys; cut invalidation alone clears the ghost shadow",
   "blocked": null,
   "observations": [
     {
@@ -16,13 +16,13 @@
       "index": 1,
       "id": "scene",
       "kind": "pixels",
-      "value": "s:de7230c232ae38add6d4a7c0776bf9905be1e9bcc01ca361d7728f8f85a7babd",
-      "decimal": "de7230c232ae38add6d4a7c0776bf9905be1e9bcc01ca361d7728f8f85a7babd"
+      "value": "s:0f5154fac8e9ee255c1111ecd28ebc98a299abd9d2e421bb002fbf089f0f4511",
+      "decimal": "0f5154fac8e9ee255c1111ecd28ebc98a299abd9d2e421bb002fbf089f0f4511"
     }
   ],
   "render": {
     "png": "vsm-cut.png",
-    "pngSha256": "de7230c232ae38add6d4a7c0776bf9905be1e9bcc01ca361d7728f8f85a7babd",
+    "pngSha256": "0f5154fac8e9ee255c1111ecd28ebc98a299abd9d2e421bb002fbf089f0f4511",
     "width": 320,
     "height": 240,
     "adapter": {

@@ -1,6 +1,6 @@
 {
   "name": "vsm-cut",
-  "adaptedFrom": "PRD-524: native page atlas versus the shipped VirtualShadowNode; capture the first frame after a warmed camera cut",
+  "adaptedFrom": "PRD-524: warm both clip levels, collapse a wide caster via an index-only edit, then capture the first rotation-cut frame at the same eye/page keys; cut invalidation alone clears the ghost shadow",
   "tolerance": {
     "abs": 0
   },
@@ -35,7 +35,7 @@
       "op": "set",
       "id": "camera",
       "path": "position.x",
-      "value": 0.5
+      "value": -3
     },
     {
       "op": "set",
@@ -53,7 +53,7 @@
       "op": "call",
       "id": "camera",
       "method": "lookAt",
-      "args": [0, 0.4, 0]
+      "args": [-2, 0.4, 0]
     },
     {
       "op": "new",
@@ -138,7 +138,7 @@
       "op": "new",
       "id": "waveGeometry",
       "class": "BoxGeometry",
-      "args": [3, 1.5, 2]
+      "args": [5, 3, 1.5]
     },
     {
       "op": "new",
@@ -182,6 +182,12 @@
           "ref": "waveMaterial"
         }
       ]
+    },
+    {
+      "op": "set",
+      "id": "wave",
+      "path": "name",
+      "value": "cutCaster"
     },
     {
       "op": "set",
@@ -274,200 +280,6 @@
       "args": [
         {
           "ref": "sunTarget"
-        }
-      ]
-    },
-    {
-      "op": "new",
-      "id": "standardFloorMaterial",
-      "class": "MeshStandardMaterial",
-      "args": []
-    },
-    {
-      "op": "set",
-      "id": "standardFloorMaterial",
-      "path": "roughness",
-      "value": 1
-    },
-    {
-      "op": "new",
-      "id": "standardFloor",
-      "class": "Mesh",
-      "args": [
-        {
-          "ref": "floorGeometry"
-        },
-        {
-          "ref": "standardFloorMaterial"
-        }
-      ]
-    },
-    {
-      "op": "set",
-      "id": "standardFloor",
-      "path": "rotation.x",
-      "value": -1.5707963267948966
-    },
-    {
-      "op": "set",
-      "id": "standardFloor",
-      "path": "position.x",
-      "value": 12
-    },
-    {
-      "op": "set",
-      "id": "standardFloor",
-      "path": "receiveShadow",
-      "value": true
-    },
-    {
-      "op": "call",
-      "id": "scene",
-      "method": "add",
-      "args": [
-        {
-          "ref": "standardFloor"
-        }
-      ]
-    },
-    {
-      "op": "new",
-      "id": "secondCaster",
-      "class": "Mesh",
-      "args": [
-        {
-          "ref": "waveGeometry"
-        },
-        {
-          "ref": "waveMaterial"
-        }
-      ]
-    },
-    {
-      "op": "set",
-      "id": "secondCaster",
-      "path": "position.x",
-      "value": 12
-    },
-    {
-      "op": "set",
-      "id": "secondCaster",
-      "path": "position.y",
-      "value": 1.6
-    },
-    {
-      "op": "set",
-      "id": "secondCaster",
-      "path": "rotation.x",
-      "value": -1.5707963267948966
-    },
-    {
-      "op": "set",
-      "id": "secondCaster",
-      "path": "castShadow",
-      "value": true
-    },
-    {
-      "op": "call",
-      "id": "scene",
-      "method": "add",
-      "args": [
-        {
-          "ref": "secondCaster"
-        }
-      ]
-    },
-    {
-      "op": "new",
-      "id": "oldFloor",
-      "class": "Mesh",
-      "args": [
-        {
-          "ref": "floorGeometry"
-        },
-        {
-          "ref": "floorMaterial"
-        }
-      ]
-    },
-    {
-      "op": "set",
-      "id": "oldFloor",
-      "path": "position.x",
-      "value": 106
-    },
-    {
-      "op": "set",
-      "id": "oldFloor",
-      "path": "position.y",
-      "value": 0
-    },
-    {
-      "op": "set",
-      "id": "oldFloor",
-      "path": "rotation.x",
-      "value": -1.5707963267948966
-    },
-    {
-      "op": "set",
-      "id": "oldFloor",
-      "path": "receiveShadow",
-      "value": true
-    },
-    {
-      "op": "call",
-      "id": "scene",
-      "method": "add",
-      "args": [
-        {
-          "ref": "oldFloor"
-        }
-      ]
-    },
-    {
-      "op": "new",
-      "id": "oldCaster",
-      "class": "Mesh",
-      "args": [
-        {
-          "ref": "waveGeometry"
-        },
-        {
-          "ref": "waveMaterial"
-        }
-      ]
-    },
-    {
-      "op": "set",
-      "id": "oldCaster",
-      "path": "position.x",
-      "value": 106
-    },
-    {
-      "op": "set",
-      "id": "oldCaster",
-      "path": "position.y",
-      "value": 1.6
-    },
-    {
-      "op": "set",
-      "id": "oldCaster",
-      "path": "rotation.x",
-      "value": -1.5707963267948966
-    },
-    {
-      "op": "set",
-      "id": "oldCaster",
-      "path": "castShadow",
-      "value": true
-    },
-    {
-      "op": "call",
-      "id": "scene",
-      "method": "add",
-      "args": [
-        {
-          "ref": "oldCaster"
         }
       ]
     },
