@@ -113,7 +113,7 @@ it("routes a real KeyA edge through the actual scene into 120 accepted Rapier st
     expect(state.anchorX).toBeCloseTo(0.5, 5);
     expect(state.anchorMoving).toBe(0);
   } finally {
-    scene.exit(ctx);
+    scene.exit();
     plugin.dispose?.(ctx);
     input.dispose();
   }
