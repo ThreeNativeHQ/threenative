@@ -28,6 +28,7 @@ declare module "three/src/renderers/common/StorageBuffer.js" {
 declare module "three/src/renderers/common/Attributes.js" {
   export default class Attributes {
     constructor(backend: object, info: object);
+    get(attribute: object): { version?: number };
     update(attribute: object, type: number): void;
   }
 }

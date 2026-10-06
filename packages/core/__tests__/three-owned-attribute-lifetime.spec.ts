@@ -1,4 +1,3 @@
-// @ts-expect-error Exercise the actual pinned manager without initializing a device.
 import Attributes from "three/src/renderers/common/Attributes.js";
 import { StorageBufferAttribute, WebGPURenderer } from "three/webgpu";
 import { describe, expect, it, vi } from "vitest";
