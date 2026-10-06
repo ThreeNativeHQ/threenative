@@ -1,4 +1,12 @@
-import { type BufferAttribute, type Camera, Frustum, Matrix4, Vector3, Vector4 } from "three";
+import {
+  type BufferAttribute,
+  type Camera,
+  Frustum,
+  Matrix4,
+  PerspectiveCamera,
+  Vector3,
+  Vector4,
+} from "three";
 import {
   Fn,
   If,
@@ -6,6 +14,7 @@ import {
   Return,
   abs,
   atomicAdd,
+  float,
   instanceIndex,
   int,
   length,
@@ -23,7 +32,12 @@ import {
   StorageInstancedBufferAttribute,
 } from "three/webgpu";
 import { biasedLodDistance } from "./model-lod.js";
-import { type IKernelOcclusion, occludedBy } from "./render/depth-pyramid.js";
+import {
+  DepthPyramid,
+  type IKernelOcclusion,
+  type OcclusionMode,
+  occludedBy,
+} from "./render/depth-pyramid.js";
 import type { IRendererLike } from "./renderer.js";
 
 /**
@@ -47,6 +61,18 @@ const PLACEMENT_WORDS = 24;
 const DRAW_ARGS_WORDS = 5;
 /** The same record in bytes, which is the unit `BufferGeometry.setIndirect` takes its offset in. */
 export const DRAW_ARGS_BYTES = DRAW_ARGS_WORDS * 4;
+
+/**
+ * How many words the args buffer holds for `keys` keys: one indirect record each, plus one word
+ * each of measured-occlusion tally past the last record.
+ *
+ * The tally rides this buffer rather than a buffer of its own so a measured run reads the two out
+ * of the one readback the GPU-selected tally already issues on its own clock — a second readback on
+ * a second buffer is a second queue submission per window for eight bytes.
+ */
+function argsWords(keys: number): number {
+  return keys * DRAW_ARGS_WORDS + keys;
+}
 /** One `vec4` per key, per asset slot and per level gate. */
 const VEC4_WORDS = 4;
 /** `mat4` per key: the part's own offset inside the model, the same matrix the CPU composes. */
@@ -522,7 +548,9 @@ function select(input: IKernelInput, shadow: IShadowLevel | undefined): IKernelR
     args,
     counts,
     drawn: matrix,
-    ...(occlusion === undefined ? {} : { occluded: { instances: occludedInstances, triangles: occludedTriangles } }),
+    ...(occlusion === undefined
+      ? {}
+      : { occluded: { instances: occludedInstances, triangles: occludedTriangles } }),
   };
 }
 
@@ -1135,6 +1163,27 @@ export interface IWorldGpuSceneReport {
   readonly gpuTriangles?: number;
   /** Dispatches between the tally's bytes being issued and now; grows until the first lands. */
   readonly gpuTallyAgeFrames?: number;
+  /**
+   * What the pyramid occlusion test would cull, when a launch asked it to measure. Absent unless
+   * `?tnOcclusion=measure` asked, `reason` names why it measured nothing (`no scene depth`), and the
+   * counts come from the same landed readback as `gpuTriangles`, so the share is one window's.
+   */
+  readonly occlusion?: {
+    readonly mode: OcclusionMode;
+    readonly reason: string;
+    /** Pyramid levels and the dispatches that rebuild them each frame. */
+    readonly levels: number;
+    readonly buildDispatches: number;
+    /** The last landed sample, and the mean over every sample that landed. */
+    readonly instances: number;
+    readonly triangles: number;
+    readonly meanInstances: number;
+    readonly meanTriangles: number;
+    readonly samples: number;
+    /** `triangles / gpuTriangles` of the same sample, which is what the go/no-go multiplies. */
+    readonly share: number;
+    readonly ageFrames: number;
+  };
 }
 
 /**
@@ -1231,6 +1280,20 @@ function cameraPlanes(camera: Camera, out: Float32Array): void {
 const _proj = new Matrix4();
 const _cullFrustum = new Frustum();
 const _eye = new Vector3();
+const _view = new Matrix4();
+
+/** Camera travel in one dispatch that the occlusion test reads as a cut rather than a turn. */
+const OCCLUSION_CUT_METRES = 2;
+
+/** Two `viewProjection` products are the same projection when every element is within this. */
+const VIEW_EPSILON = 1e-6;
+
+/** Whether two camera matrices are the same projection and the same point of view. */
+function sameView(left: Matrix4, right: Matrix4): boolean {
+  for (const [index, element] of right.elements.entries())
+    if (Math.abs((left.elements[index] as number) - element) > VIEW_EPSILON) return false;
+  return true;
+}
 
 /**
  * A TSL node this module pokes at through the swizzles and the `.element()` chain.
@@ -1451,9 +1514,11 @@ export class WorldGpuScene {
     wanted: boolean,
     validate = false,
     tally = false,
+    occlusion: OcclusionMode = "off",
   ): boolean {
     this.#validate = validate;
-    this.#tally = tally;
+    this.#tally = tally || occlusion !== "off";
+    this.#occlusion = occlusion;
     if (this.#on) return true;
     if (this.#reported) return false;
     if (renderer === undefined) {
@@ -1603,6 +1668,30 @@ export class WorldGpuScene {
             gpuTallyAgeFrames: this.#dispatched - this.#tallySample,
             gpuTriangles: this.#tallyTriangles,
           }),
+      ...(this.#occlusion === "off"
+        ? {}
+        : {
+            occlusion: {
+              ageFrames: this.#dispatched - this.#tallySample,
+              buildDispatches: this.#pyramid.levels,
+              instances: this.#occludedInstances,
+              levels: this.#pyramid.levels,
+              meanInstances:
+                this.#occlusionSamples === 0
+                  ? 0
+                  : Math.round(this.#occlusionSumInstances / this.#occlusionSamples),
+              meanTriangles:
+                this.#occlusionSamples === 0
+                  ? 0
+                  : Math.round(this.#occlusionSumTriangles / this.#occlusionSamples),
+              mode: this.#occlusion,
+              reason: this.#occlusionReason,
+              samples: this.#occlusionSamples,
+              share:
+                this.#tallyTriangles === 0 ? 0 : this.#occludedTriangles / this.#tallyTriangles,
+              triangles: this.#occludedTriangles,
+            },
+          }),
     };
   }
 
@@ -1630,7 +1719,7 @@ export class WorldGpuScene {
       const regrown = this.#regions.length - 1;
       this.#growOf("keys", regrown + 1);
       this.#growOf("locals", regrown + 1);
-      this.#growOf("args", (regrown + 1) * DRAW_ARGS_WORDS);
+      this.#growOf("args", argsWords(regrown + 1));
       this.#growDrawn();
       this.#writeKey(this.#regions.length - 1);
       return this.#regions.length - 1;
@@ -1662,7 +1751,7 @@ export class WorldGpuScene {
     this.#drawnCapacity += capacity;
     this.#growOf("keys", index + 1);
     this.#growOf("locals", index + 1);
-    this.#growOf("args", (index + 1) * DRAW_ARGS_WORDS);
+    this.#growOf("args", argsWords(index + 1));
     this.#growDrawn();
     this.#writeKey(index);
     return index;
@@ -2015,6 +2104,7 @@ export class WorldGpuScene {
     this.#eye.value.copy(_eye);
     // `(placements, slots, keys, keys)`: the last two are the same count, and the clear dispatch is
     // one thread per key.
+    if (this.#occlusion !== "off") this.#measureOcclusion(renderer, camera);
     const keys = this.#regions.length;
     this.#counts.value.set(this.placements.length, this.#order.length, keys, keys);
     renderer.compute(kernel.clear);
@@ -2036,6 +2126,59 @@ export class WorldGpuScene {
       (this.#tallyRequested < 0 || this.#dispatched - this.#tallyRequested >= TALLY_EVERY)
     )
       this.#tallyRead(renderer);
+  }
+
+  /**
+   * One frame of `?tnOcclusion=measure`: rebuild the max-distance chain from the depth the previous
+   * frame's scene pass left behind, and point the test at the camera that depth was rendered with.
+   *
+   * The depth is last frame's on purpose. This runs in `beforeRender`, before the frame's own scene
+   * pass draws, so the texture still holds what the last one wrote — which is the only depth there
+   * is, and the reason the test reprojects rather than sampling the current frame.
+   *
+   * With no scene-pass depth — no render chain installed, so nothing rendered into a target of its
+   * own — the mode refuses and says so in `report().occlusion.reason` rather than reporting nothing
+   * hidden and reading as a cull that found no work.
+   */
+  #measureOcclusion(renderer: IRendererLike, camera: Camera): void {
+    // The main pass returns on an orthographic camera before it gets here (that is a shadow level's
+    // own), and a linear depth in metres is a perspective projection's to begin with.
+    if (!(camera instanceof PerspectiveCamera)) {
+      this.#occlusionReason = "refused: not a perspective camera";
+      return;
+    }
+    const depth = renderer.scenePassDepth?.();
+    const width = depth?.width ?? 0;
+    const height = depth?.height ?? 0;
+    if (depth === undefined || width < 2 || height < 2) {
+      this.#occlusionReason = "refused: no scene depth";
+      return;
+    }
+    this.#occlusionReason = "";
+    // A resized depth resizes the chain, and the chain's two buffers are what the cull kernel reads,
+    // so a new chain is a new pipeline: structural, like every other grow in this class.
+    if (this.#pyramid.resize(width, height)) {
+      this.#kernel = undefined;
+      this.#version += 1;
+    }
+    _view.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+    _eye.setFromMatrixPosition(camera.matrixWorld);
+    // A cut skips the test for the frame: a teleport moved the camera further than a walk step, and
+    // a projection change means the pyramid is a different camera's depth altogether.
+    // ponytail: 2 m of camera travel in one dispatch is a cut. A game that teleports further per
+    // step than that raises the bound; one that cuts under it gets a frame of frustum-only.
+    this.#occlusionCut.value =
+      this.#dispatched === 0 ||
+      !sameView(this.#previousView, _view) ||
+      _eye.distanceTo(this.#previousEye) > OCCLUSION_CUT_METRES
+        ? 1
+        : 0;
+    // The chain first, then the camera the chain belongs to: last frame's, which is what the
+    // previous frame's depth recorded.
+    this.#pyramid.build(renderer, depth.texture, camera.near, camera.far);
+    this.#occlusionView.value.copy(this.#previousView);
+    this.#previousView.copy(_view);
+    this.#previousEye.copy(_eye);
   }
 
   /**
@@ -2087,6 +2230,22 @@ export class WorldGpuScene {
   #validating = false;
   /** Whether the owner asked for the GPU-selected main-pass tally; a validation turns it on too. */
   #tally = false;
+  /** What a launch asked the pyramid occlusion test to do. `measure` never changes what is drawn. */
+  #occlusion: OcclusionMode = "off";
+  /** The max-distance chain, and the previous frame's camera the test reprojects into. */
+  readonly #pyramid = new DepthPyramid();
+  readonly #previousView = new Matrix4();
+  readonly #previousEye = new Vector3();
+  readonly #occlusionView = uniform(new Matrix4());
+  readonly #occlusionCut = uniform(1);
+  /** Why the measure mode measured nothing, or `""` while it is measuring. */
+  #occlusionReason = "";
+  /** The last landed tally's occlusion counts, and the running mean over every sample. */
+  #occludedInstances = 0;
+  #occludedTriangles = 0;
+  #occlusionSamples = 0;
+  #occlusionSumInstances = 0;
+  #occlusionSumTriangles = 0;
   #tallyPending = false;
   /** Dispatch the in-flight tally readback was issued on, or `-1` when none is in flight. */
   #tallyRequested = -1;
@@ -2146,6 +2305,39 @@ export class WorldGpuScene {
     this.#tallyInstances = instances;
     this.#tallyTriangles = products / 3;
     this.#tallySample = issued;
+    if (this.#occlusion !== "off") this.#landOcclusion(words, issued);
+  }
+
+  /**
+   * What the measured cull hid, out of the same landed bytes as the drawn counts.
+   *
+   * The tail of the args buffer is one word per key of measured-occlusion instances, so a hidden
+   * part's triangles are that word times its own `indexCount` — the same product the tally above
+   * sums over the records, which is why both numbers can be divided into a share without a second
+   * readback or a second clock.
+   */
+  #landOcclusion(words: Uint32Array, issued: number): void {
+    let instances = 0;
+    let products = 0;
+    for (const [index, region] of this.#regions.entries()) {
+      const count = word(words, this.#regions.length * DRAW_ARGS_WORDS + index);
+      instances += count;
+      products += count * word(words, region.argsIndex * DRAW_ARGS_WORDS);
+    }
+    this.#occludedInstances = instances;
+    this.#occludedTriangles = products / 3;
+    this.#occlusionSamples += 1;
+    this.#occlusionSumInstances += instances;
+    this.#occlusionSumTriangles += this.#occludedTriangles;
+    const report = this.report().occlusion;
+    if (report === undefined) return;
+    const line =
+      `TN_WORLD_GPU_SCENE_OCCLUSION mode=${report.mode} levels=${String(report.levels)} ` +
+      `dispatch=${String(issued)} reason=${report.reason || "none"} ` +
+      `wouldCullInstances=${String(report.instances)} wouldCullTriangles=${String(report.triangles)} ` +
+      `gpuInstances=${String(this.#tallyInstances)} gpuTriangles=${String(this.#tallyTriangles)} ` +
+      `share=${report.share.toFixed(4)}`;
+    console.info(line);
   }
 
   /**
@@ -2396,6 +2588,7 @@ export class WorldGpuScene {
     this.#tallyPending = false;
     this.#tallyRequested = -1;
     this.#tallySample = -1;
+    this.#pyramid.dispose();
   }
 
   readonly #planeVectors = Array.from({ length: 6 }, () => new Vector4());
@@ -2589,11 +2782,22 @@ export class WorldGpuScene {
     const eye = nodes(this.#eye);
     const bias = nodes(this.#lodBias);
     const planes = this.#planeUniforms.map((plane) => nodes(plane));
+    // Measuring doubles the clear: the second thread per key zeroes that key's word of the
+    // measured-occlusion tally, which is why the args buffer is sized for it (see `argsWords`).
+    // A run that is not measuring never pays the second thread.
+    const clearWidth = this.#occlusion === "off" ? 1 : 2;
     const clear = Fn(() => {
-      If(instanceIndex.greaterThanEqual(counts.w), () => Return());
-      const key = keys.element(instanceIndex);
-      argsPlain.element(key.z.mul(DRAW_ARGS_WORDS).add(1)).assign(int(0));
-    })().compute(Math.max(1, buffers.keys.count));
+      If(instanceIndex.greaterThanEqual(counts.w.mul(clearWidth)), () => Return());
+      If(instanceIndex.lessThan(counts.w), () => {
+        const key = keys.element(instanceIndex);
+        argsPlain.element(key.z.mul(DRAW_ARGS_WORDS).add(1)).assign(int(0));
+      });
+      If(instanceIndex.greaterThanEqual(counts.w), () => {
+        argsPlain
+          .element(counts.w.mul(DRAW_ARGS_WORDS).add(instanceIndex.sub(counts.w)))
+          .assign(int(0));
+      });
+    })().compute(Math.max(1, buffers.keys.count * clearWidth));
     const cull = Fn(() => {
       If(instanceIndex.greaterThanEqual(counts.x), () => Return());
       const placement = source.element(instanceIndex);
@@ -2645,9 +2849,20 @@ export class WorldGpuScene {
         });
       });
       const at = levels.element(gate.x.add(level));
+      // The pyramid test, once per placement: a placement the frustum and the gates kept, reprojected
+      // into the previous frame's pyramid. Measured only, so the write below happens either way and
+      // the indirect counts are develop's.
+      const hidden = float(0).toVar();
+      if (this.#occlusion !== "off")
+        hidden.assign(
+          this.#pyramid.occluded(centre.xyz, radius, this.#occlusionView, this.#occlusionCut),
+        );
       Loop({ start: int(0), end: at.z, type: "int", condition: "<" }, ({ i }: { i: unknown }) => {
         const keyIndex = at.y.add(i as never);
         const key = keys.element(keyIndex);
+        If(hidden.greaterThan(0.5), () => {
+          atomicAdd(argsAtomic.element(counts.w.mul(DRAW_ARGS_WORDS).add(keyIndex)), int(1));
+        });
         const taken = nodes(
           atomicAdd(argsAtomic.element(key.z.mul(DRAW_ARGS_WORDS).add(1)), int(1)),
         );
@@ -2767,11 +2982,22 @@ export class WorldGpuScene {
     const gate = nodes(this.#shadowGate);
     const base = nodes(this.#shadowBase);
     const planes = this.#shadowPlaneUniforms.map((plane) => nodes(plane));
+    // Measuring doubles the clear: the second thread per key zeroes that key's word of the
+    // measured-occlusion tally, which is why the args buffer is sized for it (see `argsWords`).
+    // A run that is not measuring never pays the second thread.
+    const clearWidth = this.#occlusion === "off" ? 1 : 2;
     const clear = Fn(() => {
-      If(instanceIndex.greaterThanEqual(counts.w), () => Return());
-      const key = keys.element(instanceIndex);
-      argsPlain.element(key.z.mul(DRAW_ARGS_WORDS).add(1)).assign(int(0));
-    })().compute(Math.max(1, buffers.keys.count));
+      If(instanceIndex.greaterThanEqual(counts.w.mul(clearWidth)), () => Return());
+      If(instanceIndex.lessThan(counts.w), () => {
+        const key = keys.element(instanceIndex);
+        argsPlain.element(key.z.mul(DRAW_ARGS_WORDS).add(1)).assign(int(0));
+      });
+      If(instanceIndex.greaterThanEqual(counts.w), () => {
+        argsPlain
+          .element(counts.w.mul(DRAW_ARGS_WORDS).add(instanceIndex.sub(counts.w)))
+          .assign(int(0));
+      });
+    })().compute(Math.max(1, buffers.keys.count * clearWidth));
     const cull = Fn(() => {
       If(instanceIndex.greaterThanEqual(counts.x), () => Return());
       const placement = source.element(instanceIndex);

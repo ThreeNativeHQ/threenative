@@ -26,6 +26,7 @@ import { InstancedBatch } from "./instanced-batch.js";
 import { mergeByMaterial } from "./merge-parts.js";
 import { type ILodChain, biasedLodDistance, lodChainOf, setLodBias } from "./model-lod.js";
 import { displacesVertices } from "./projection-plan.js";
+import { type OcclusionMode, occlusionMode } from "./render/depth-pyramid.js";
 import { cutoutSurface } from "./render/foliage-alpha.js";
 import { materialKey } from "./render/material-key.js";
 import {
@@ -61,6 +62,7 @@ import {
   type ILiveAsset,
   type IMeshDraw,
   type IShadowLevel,
+  type IWorldGpuSceneReport,
   WorldGpuScene,
   bundlesAsked,
   gpuSceneRequested,
@@ -563,6 +565,20 @@ export interface IWorldCellsLoadOptions {
    */
   readonly gpuSceneTally?: boolean;
   /**
+   * Run the hierarchical-depth occlusion test in the cull kernel and report what it would cull.
+   *
+   * `"measure"` (the default unless `?tnOcclusion=off`, `TN_OCCLUSION=off` or a caller's own value
+   * says otherwise) builds a max-distance pyramid from the previous frame's scene-pass depth and
+   * counts the placements the test hides **while drawing all of them**: a measured frame is the frame
+   * an unmeasured run draws, so the only difference between the two runs is the count and the cost of
+   * building the pyramid. `"off"` runs no test and allocates nothing. `stats().gpuScene.occlusion`
+   * reports the counts, the pyramid's own cost, and `refused: no scene depth` when no render chain
+   * installed a pass to take a depth from.
+   *
+   * See {@link occlusionMode} and `render/depth-pyramid.ts`.
+   */
+  readonly occlusion?: OcclusionMode;
+  /**
    * Record every GPU-dressed main batch mesh and every resident cell's hand-placed chunks into
    * `BundleGroup`s, and replay the records instead of re-walking three's per-object path for each
    * draw. On by default: PRD-494 AC-2 measured the walking `draw` span at a 5.0 ms lower p95 than
@@ -725,6 +741,12 @@ export interface IWorldCellsStats {
     readonly gpuInstances?: number;
     readonly gpuTriangles?: number;
     readonly gpuTallyAgeFrames?: number;
+    /**
+     * What the pyramid occlusion test would cull, when a launch asked it to measure. `share` is the
+     * would-cull share of the main pass's GPU-selected triangles from the same landed readback, which
+     * is the number the go/no-go multiplies by `gpuMain`; `reason` names why nothing was measured.
+     */
+    readonly occlusion?: NonNullable<IWorldGpuSceneReport["occlusion"]>;
   };
   /**
    * What the main pass's draw bundles are doing: `children` is how many objects are recorded — every
@@ -3987,6 +4009,7 @@ export class WorldCells extends Group implements IComputeDriven {
    * also turns it on when the frame budget is, so a game pays nothing when neither is.
    */
   #gpuTally = false;
+  readonly #occlusion: OcclusionMode;
   /** Resident placements per canonical asset, which is the capacity a key of that asset needs. */
   readonly #gpuResident = new Map<string, number>();
   /**
@@ -4175,6 +4198,7 @@ export class WorldCells extends Group implements IComputeDriven {
     this.#lodBiasFrameAt = this.#lodBiasStartedAt;
     this.#lodBiasToldAt = this.#lodBiasStartedAt - LOD_BIAS_MARKER_SECONDS * 1000;
     this.#gpuValidate = init.gpuSceneValidate;
+    this.#occlusion = init.occlusion ?? occlusionMode();
     this.#gpuTally = init.gpuSceneTally === true;
     this.#castShadowLevels =
       init.shadows?.cast === true
@@ -4369,6 +4393,7 @@ export class WorldCells extends Group implements IComputeDriven {
         this.#gpuWanted,
         this.#gpuValidate ?? gpuSceneValidationRequested(),
         this.#gpuTally,
+        this.#occlusion,
       );
     // The one check the scene cannot make for itself, and the only one that reads this class's own
     // numbers rather than the scene's tables: a dressed main mesh's own indirect record, against the
@@ -5182,6 +5207,7 @@ export class WorldCells extends Group implements IComputeDriven {
               gpuTallyAgeFrames: gpu.gpuTallyAgeFrames,
               gpuTriangles: gpu.gpuTriangles,
             }),
+        ...(gpu.occlusion === undefined ? {} : { occlusion: gpu.occlusion }),
       },
       impostor: this.#impostorStats(),
       instances: this.#instances,

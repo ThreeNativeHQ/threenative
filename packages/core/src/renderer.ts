@@ -1,4 +1,4 @@
-import type { BufferGeometry, Camera, Object3D, WebGLRenderer } from "three";
+import type { BufferGeometry, Camera, DepthTexture, Object3D, WebGLRenderer } from "three";
 import { type PassNode, RenderPipeline } from "three/webgpu";
 import type { IFrameSurfaceState } from "./frame-budget.js";
 import {
@@ -195,6 +195,17 @@ export interface IRendererLike {
    * instead of a silent one.
    */
   readback(attribute: unknown): Promise<ArrayBuffer>;
+  /**
+   * The scene pass's own depth texture, which is the previous frame's scene-pass depth an occlusion
+   * cull tests against, or `undefined` when no output graph installed a pass to render one.
+   *
+   * Optional because a backend that cannot render into a target of its own has no scene-pass depth to
+   * hand over. A cull reads this every dispatch: on the frame it answers, the texture holds what the
+   * previous frame's pass wrote, because this is asked before the frame draws.
+   */
+  scenePassDepth?():
+    | { readonly texture: DepthTexture; readonly width: number; readonly height: number }
+    | undefined;
   render(scene: Object3D, camera: Camera): void;
   /** Draws after the world without clearing or passing through the world's output pipeline. */
   renderOverlay(scene: Object3D, camera: Camera): void;
@@ -760,6 +771,16 @@ function wrapRenderer(
         // that needs it tries again there, where the error belongs.
       }
       return created;
+    },
+    scenePassDepth: () => {
+      const target = outputPass?.renderTarget;
+      const texture = target?.depthTexture ?? undefined;
+      if (target === undefined || texture === undefined) return undefined;
+      return {
+        height: texture.image?.height ?? target.height,
+        texture,
+        width: texture.image?.width ?? target.width,
+      };
     },
     readback: async (attribute) => {
       if (kind !== "webgpu") throw new Error(`readback is unavailable on the ${kind} renderer.`);

@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import {
   BoxGeometry,
   type BufferGeometry,
+  type DepthTexture,
   Frustum,
   Group,
   InstancedMesh,
@@ -19,10 +20,10 @@ import RenderObject from "three/src/renderers/common/RenderObject.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { lodBias, setLodBias } from "../src/model-lod.js";
 import {
-  buildDepthPyramid,
   type IDepthPyramid,
   type IKernelOcclusion,
   type IOcclusionFrame,
+  buildDepthPyramid,
 } from "../src/render/depth-pyramid.js";
 import type { IRendererLike } from "../src/renderer.js";
 import { isStatic } from "../src/static-transform.js";
@@ -3714,6 +3715,102 @@ describe("WorldGpuScene GPU-selected main-pass tally", () => {
     scene.dispatch(renderer, camera);
     expect(requests.count).toBe(2);
     scene.dispose();
+  });
+});
+
+/**
+ * The measured occlusion cull: `?tnOcclusion=measure` builds the pyramid from the scene pass's own
+ * depth, counts what the test hides, and draws all of it.
+ *
+ * The counters ride the args buffer's own tail and land with the GPU-selected tally, so the drawn
+ * counts and the would-cull share come out of one readback of one frame.
+ */
+describe("WorldGpuScene measured occlusion cull", () => {
+  /** A renderer whose compute calls are counted, so the chain's dispatches are observable. */
+  function measureRenderer(
+    bytes: () => ArrayBuffer,
+    depth: { width: number; height: number } | undefined,
+    computes: { count: number },
+  ): IRendererLike {
+    return {
+      compute: (): void => {
+        computes.count += 1;
+      },
+      kind: "webgpu",
+      log: (): void => {},
+      raw: { backend: { hasFeature: (): boolean => true } },
+      readback: (): Promise<ArrayBuffer> => Promise.resolve(bytes()),
+      scenePassDepth: () =>
+        depth === undefined
+          ? undefined
+          : {
+              height: depth.height,
+              texture: { image: { height: depth.height, width: depth.width } } as DepthTexture,
+              width: depth.width,
+            },
+    } as unknown as IRendererLike;
+  }
+
+  /** One main key: a 5-word record and, past it, the one word the occlusion tail holds. */
+  function scene(): WorldGpuScene {
+    const own = new WorldGpuScene();
+    own.key("pine:0:0", LOCAL, 16, { group: "pine:0", part: 0, parts: 1 });
+    return own;
+  }
+
+  it("counts the hidden instances out of the same readback that counts the drawn ones", async () => {
+    const world = scene();
+    const computes = { count: 0 };
+    // Record: indexCount 36, instanceCount 5, so 60 drawn triangles; tail: 3 hidden parts, so 36.
+    const renderer = measureRenderer(
+      () => Uint32Array.from([36, 5, 0, 0, 0, 3]).buffer,
+      { width: 1280, height: 720 },
+      computes,
+    );
+    expect(world.enable(renderer, true, false, false, "measure")).toBe(true);
+    const { camera } = cameraAt(0, 0);
+    world.dispatch(renderer, camera as PerspectiveCamera);
+    await flush();
+    const report = world.report().occlusion;
+    // The chain is half the depth's own resolution, one level per halving down to one texel.
+    expect(report?.levels).toBe(10);
+    expect(report?.reason).toBe("");
+    expect(report?.instances).toBe(3);
+    expect(report?.triangles).toBe(36);
+    expect(report?.share).toBeCloseTo(0.6, 6);
+    expect(report?.samples).toBe(1);
+    // A clear and a cull, plus one dispatch per level of the chain.
+    expect(computes.count).toBe(12);
+    world.dispose();
+  });
+
+  it("refuses with a reason when no render chain installed a depth to test against", () => {
+    const world = scene();
+    const renderer = measureRenderer(() => new ArrayBuffer(0), undefined, { count: 0 });
+    expect(world.enable(renderer, true, false, false, "measure")).toBe(true);
+    const { camera } = cameraAt(0, 0);
+    world.dispatch(renderer, camera as PerspectiveCamera);
+    const report = world.report().occlusion;
+    expect(report?.reason).toBe("refused: no scene depth");
+    expect(report?.levels).toBe(0);
+    world.dispose();
+  });
+
+  it("runs no test and no pyramid when the mode is off", () => {
+    const world = scene();
+    const computes = { count: 0 };
+    const renderer = measureRenderer(
+      () => new ArrayBuffer(0),
+      { width: 1280, height: 720 },
+      computes,
+    );
+    expect(world.enable(renderer, true, false, false, "off")).toBe(true);
+    const { camera } = cameraAt(0, 0);
+    world.dispatch(renderer, camera as PerspectiveCamera);
+    // A clear and a cull, and nothing else: no chain, no test.
+    expect(computes.count).toBe(2);
+    expect(world.report().occlusion).toBeUndefined();
+    world.dispose();
   });
 });
 
