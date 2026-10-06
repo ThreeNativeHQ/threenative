@@ -399,6 +399,9 @@ void Program::store(uint32_t buffer, ExprId index, ExprId value, Where where) {
 }
 
 uint32_t Program::texture2d(std::string_view name) {
+    // One texture is one binding however often it is sampled, as upstream binds a TextureNode once.
+    for (std::size_t i = 0; i < textures_.size(); ++i)
+        if (textures_[i] == name && textureKinds_[i] == TextureKind::Float2d) return static_cast<uint32_t>(i);
     textures_.emplace_back(name);
     textureKinds_.push_back(TextureKind::Float2d);
     return static_cast<uint32_t>(textures_.size() - 1);

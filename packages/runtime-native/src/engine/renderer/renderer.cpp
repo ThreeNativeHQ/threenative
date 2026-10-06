@@ -219,11 +219,18 @@ void Renderer::setOutput(const OutputState& output) {
     const bool programChanged = outputVertex_.wgsl.code.empty() || output.toneMapping != output_.toneMapping || output.srgb != output_.srgb;
     output_ = output;
     if (!programChanged) return;
-    const shader::OutputPrograms programs = shader::buildOutput(output.toneMapping, output.srgb);
+    const shader::OutputPrograms programs = shader::buildOutput(output.toneMapping, output.srgb, post_.get());
     outputVertex_ = shader::buildStage(programs.vertex, 0);
     outputFragment_ = shader::buildStage(programs.fragment, 0);
     if (!outputVertex_.wgsl.ok() || !outputFragment_.wgsl.ok()) throw std::runtime_error("TN_NATIVE_SHADER_INVALID: output program");
     releaseOutputGroup();  // its layout belongs to the previous program
+}
+
+void Renderer::setPostNode(std::shared_ptr<const shader::PostNode> post) {
+    post_ = std::move(post);
+    outputVertex_ = {};  // rebuild the output program with (or without) the post graph
+    const OutputState output = output_;
+    setOutput(output);
 }
 
 void Renderer::setSize(uint32_t width, uint32_t height) {

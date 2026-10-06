@@ -161,6 +161,9 @@ inline Node select(Node condition, Node whenTrue, Node whenFalse, Where w = Wher
     return program().select(condition.id, whenTrue.id, whenFalse.id, w);
 }
 
+/** `textureNode.sample(uv)` on a texture already declared (e.g. a pass's output). */
+inline Node sample(uint32_t texture, Node uvs, Where w = Where::current()) { return program().sample(texture, uvs.id, w); }
+
 /** `texture(map, uv)`: the map is declared by name on first use. */
 inline Node texture(std::string_view map, Node uvs, Where w = Where::current()) {
     return program().sample(program().texture2d(map), uvs.id, w);

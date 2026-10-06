@@ -44,7 +44,7 @@ TSL `compute()` in JS (`packages/core/src/compute-driven.ts`).
 #### Phase 2: Multipass through a render target
 **Status:** NOT STARTED
 **Files:** proposed `packages/runtime-native/conformance/scenes/native-engine-multipass/`
-- [ ] Scene → render target → TSL post pass → surface matches the reference, before and after a resize. proof: `pnpm parity -- --case native-engine-multipass`
+- [x] Scene → render target → TSL post pass → surface matches the reference, before and after a resize. proof: `pnpm parity -- --case native-engine-multipass` — 2026-10-05: green, run as `pnpm parity -- --suite native-engine-tsl --driver packages/runtime-native/build/tn-linux/tn-native-engine-render-driver --renders` (fixtures `tsl-post-chromatic` and `tsl-post-resized`): the scene renders into the HDR target, a TSL post graph (`PostNode`: a 2-texel chromatic split at texel centres and a radial vignette over `pass(scene, camera)`) runs before the output transform as RenderPipeline's `outputColorTransform` does, and the resized case draws once at 200x150 before the captured 320x240 frame. Both at 0.31% of pixels / deltaE 0.0019 (budget 1% / 0.02); the full suite 100 pass, 0 fail. Red controls: the post pass dropped, both fail; the output binding kept across a resize, the resized case fails.
 
 #### Phase 3: A graph built by compiled game code
 **Status:** NOT STARTED

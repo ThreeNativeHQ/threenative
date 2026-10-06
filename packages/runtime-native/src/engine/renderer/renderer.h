@@ -139,6 +139,8 @@ public:
     void setStorage(const std::string& name, Handle buffer, uint64_t bytes) { externalStorage_[name] = {buffer, bytes}; }
 
     void setOutput(const OutputState& output);
+    /** A post pass between the scene and the output transform; null draws the scene straight out. */
+    void setPostNode(std::shared_ptr<const shader::PostNode> post);
     const OutputState& output() const { return output_; }
 
     /** Reallocates the targets; the next render draws at the new extent. Zero sizes clamp to 1. */
@@ -244,6 +246,7 @@ private:
     WGPUTexture sceneColor_ = nullptr;  // linear HDR, what materials draw into
     WGPUTextureView sceneView_ = nullptr;
     OutputState output_;
+    std::shared_ptr<const shader::PostNode> post_;
     shader::StageModule outputVertex_;
     shader::StageModule outputFragment_;
     Handle outputTriangle_;

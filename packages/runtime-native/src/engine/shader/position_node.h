@@ -21,4 +21,15 @@ struct PositionNode {
     std::function<uint32_t(Program& vertex, uint32_t positionLocal)> build;
 };
 
+/**
+ * A post pass (three's RenderPipeline.outputNode over `pass(scene, camera)`): a TSL graph over the
+ * scene's linear colour, applied before the output transform (tone mapping, colour space), as
+ * RenderPipeline's outputColorTransform does. `build` receives the fragment program, the scene
+ * texture (declared as texture "scene") and the screen uv (vec2), and returns the linear vec4.
+ */
+struct PostNode {
+    std::string key;
+    std::function<uint32_t(Program& fragment, uint32_t sceneTexture, uint32_t screenUv)> build;
+};
+
 }  // namespace tn::engine::shader

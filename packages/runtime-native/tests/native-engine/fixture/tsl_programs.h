@@ -9,6 +9,7 @@
 #include "engine/scene/material.h"
 #include "engine/shader/tsl/tsl.h"
 
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -77,11 +78,44 @@ inline std::string wavePlane(engine::Material& material) {
     return "";
 }
 
+/**
+ * PRD-513: a post pass over the scene texture: a 2-texel chromatic split (texel centres, so the
+ * sampler's filter cannot matter) and a radial vignette, before tone mapping.
+ */
+inline void postChromatic(engine::Renderer& renderer) {
+    using namespace engine::shader;
+    using namespace engine::shader::tsl;
+    renderer.setPostNode(std::make_shared<PostNode>(PostNode{
+        "post-chromatic", [](Program& fragment, uint32_t scene, ExprId screenUv) {
+            Build build(fragment);
+            const Node uv(screenUv);
+            const Node offset = vec2({2.0 / 320.0, 0});
+            const Node r = sample(scene, uv.add(offset)).x();
+            const Node g = sample(scene, uv).y();
+            const Node b = sample(scene, uv.sub(offset)).z();
+            const Node vignette = float_(1).sub(length(uv.sub(0.5)).mul(0.6));
+            return vec4({vec3({r, g, b}).mul(vignette), 1}).id;
+        }}));
+}
+
 }  // namespace tsl_detail
 
-/** Applies the named program; empty on success, else why not (an unknown name included). */
+/**
+ * Applies the named program; empty on success, else why not (an unknown name included).
+ * `renderAt(width, height)` draws the fixture's scene once at that size, for a program that
+ * renders before the captured frame (a resize).
+ */
 inline std::string applyTslProgram(const std::string& program, binding::Object& object, engine::Renderer& renderer,
-                                   WGPUDevice device) {
+                                   WGPUDevice device, const std::function<std::string(uint32_t, uint32_t)>& renderAt) {
+    if (program == "post-chromatic") {
+        tsl_detail::postChromatic(renderer);
+        return "";
+    }
+    if (program == "post-chromatic-resized") {
+        // Drawn once at another size first, so the captured frame is the one after a resize.
+        tsl_detail::postChromatic(renderer);
+        return renderAt(200, 150);
+    }
     engine::Material* material = tsl_detail::materialOf(object);
     if (material == nullptr) return "tsl " + program + ": " + object.cls + " is not a material";
     if (program == "storage-instances") return tsl_detail::storageInstances(*material, renderer, device);

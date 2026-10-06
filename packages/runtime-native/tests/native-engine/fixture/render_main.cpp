@@ -57,11 +57,18 @@ std::string draw(Gpu& gpu, tn::binding::Object& sceneObject, tn::binding::Object
     // three's background colour is the clear colour; without one the renderer clears to black.
     std::array<double, 4> clear{0, 0, 0, 1};
     if (scene.background) clear = {scene.background->r, scene.background->g, scene.background->b, 1};
+    gpu.database.shadowMapEnabled = r.shadowMap;
+    const auto renderAt = [&](uint32_t width, uint32_t height) -> std::string {
+        renderer.setSize(width, height);
+        gpu.database.render(renderer, scene, *camera, clear);
+        renderer.setSize(r.width, r.height);
+        return gpu.database.diagnostics().empty() ? "" : gpu.database.diagnostics().front();
+    };
     for (auto [program, object] : r.tsl)
-        if (const std::string failed = tn::fixture::applyTslProgram(program, object, renderer, gpu.context.getDevice());
+        if (const std::string failed =
+                tn::fixture::applyTslProgram(program, object, renderer, gpu.context.getDevice(), renderAt);
             !failed.empty())
             return failed;
-    gpu.database.shadowMapEnabled = r.shadowMap;
     gpu.database.render(renderer, scene, *camera, clear);
     if (!gpu.database.diagnostics().empty()) return gpu.database.diagnostics().front();
     std::vector<uint8_t> pixels;

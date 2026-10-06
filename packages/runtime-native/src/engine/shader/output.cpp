@@ -10,7 +10,7 @@ ExprId srgbTransferOetf(Program& p, ExprId linear) {
     return p.call("mix", {a, b, le});
 }
 
-OutputPrograms buildOutput(std::optional<ToneMapping> toneMapping, bool srgb) {
+OutputPrograms buildOutput(std::optional<ToneMapping> toneMapping, bool srgb, const PostNode* post) {
     OutputPrograms out;
     Program& v = out.vertex;
     const ExprId position = v.attribute("position", Type::vec(2));
@@ -20,7 +20,9 @@ OutputPrograms buildOutput(std::optional<ToneMapping> toneMapping, bool srgb) {
                                               v.sub(v.constant(0.5f), v.mul(v.swizzle(position, "y"), v.constant(0.5f)))}));
 
     Program& f = out.fragment;
-    const ExprId scene = f.sample(f.texture2d("scene"), f.varying("uv", Type::vec(2)));
+    const uint32_t texture = f.texture2d("scene");
+    const ExprId uv = f.varying("uv", Type::vec(2));
+    const ExprId scene = post ? post->build(f, texture, uv) : f.sample(texture, uv);
     ExprId rgb = f.swizzle(scene, "xyz");
     if (toneMapping) rgb = toneMap(f, *toneMapping, rgb, f.uniform("toneMappingExposure", Type::f32()));
     if (srgb) rgb = srgbTransferOetf(f, rgb);

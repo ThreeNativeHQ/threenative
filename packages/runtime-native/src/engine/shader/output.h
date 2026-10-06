@@ -3,6 +3,7 @@
 #include <optional>
 
 #include "engine/shader/ir.h"
+#include "engine/shader/position_node.h"
 #include "engine/shader/tonemap.h"
 
 namespace tn::engine::shader {
@@ -21,6 +22,6 @@ struct OutputPrograms {
  * full-screen triangle: attribute "position" (vec2, clip space), texture "scene", uniform
  * "toneMappingExposure" (only when tone mapping).
  */
-OutputPrograms buildOutput(std::optional<ToneMapping> toneMapping, bool srgb);
+OutputPrograms buildOutput(std::optional<ToneMapping> toneMapping, bool srgb, const PostNode* post = nullptr);
 
 }  // namespace tn::engine::shader

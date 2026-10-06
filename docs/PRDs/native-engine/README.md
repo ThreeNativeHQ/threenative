@@ -10,7 +10,7 @@ All new package names, configuration fields, ABI names, status markers, and work
 
 ## PRD index
 
-**Batch status: IN PROGRESS — 160/237 phase boxes (67%) as of 2026-10-05, on `feat/native-engine` (PR #438).** This file is the batch index and the source proposal; the PRDs below carry the boxes. Work packages too large for one PRD (at most 3 phases, about 8 boxes) are a folder with its own `README.md` and child PRDs. The batch moves to `done/` whole only when every PRD in it is finished.
+**Batch status: IN PROGRESS — 162/237 phase boxes (68%) as of 2026-10-05, on `feat/native-engine` (PR #438).** This file is the batch index and the source proposal; the PRDs below carry the boxes. Work packages too large for one PRD (at most 3 phases, about 8 boxes) are a folder with its own `README.md` and child PRDs. The batch moves to `done/` whole only when every PRD in it is finished.
 
 ### Progress
 
@@ -34,7 +34,7 @@ Generated from the PRD files' boxes; a PRD is done when every box is ticked.
 | [PRD-510](N08-native-tsl-and-shader-packages/PRD-510-n08a-a-typed-shader-ir-with-ordered-effects.md) | A typed shader IR with ordered effects (N08a) | 4/4 | done |
 | [PRD-511](N08-native-tsl-and-shader-packages/PRD-511-n08b-shader-packages-not-wgsl-text.md) | Shader packages, not WGSL text (N08b) | 6/6 | done |
 | [PRD-512](N08-native-tsl-and-shader-packages/PRD-512-n08c-standard-pbr-and-deformation-that-shadows.md) | Standard PBR and deformation that shadows (N08c) | 4/5 | in progress |
-| [PRD-513](N08-native-tsl-and-shader-packages/PRD-513-n08d-compute-multipass-and-a-dynamic-graph.md) | Compute, multipass and a dynamic graph (N08d) | 2/6 | in progress |
+| [PRD-513](N08-native-tsl-and-shader-packages/PRD-513-n08d-compute-multipass-and-a-dynamic-graph.md) | Compute, multipass and a dynamic graph (N08d) | 3/6 | in progress |
 | [PRD-514](PRD-514-n09-native-renderer-and-standard-materials.md) | Native renderer and standard materials (N09) | 8/8 | done |
 | [PRD-515](PRD-515-n10-native-gltf-cooked-assets-and-decoders.md) | Native glTF, cooked assets and decoders (N10) | 7/7 | done |
 | [PRD-516](N11-native-animation/PRD-516-n11a-animation-mixer-semantics-in-native.md) | AnimationMixer semantics in native (N11a) | 6/6 | done |
@@ -42,7 +42,7 @@ Generated from the PRD files' boxes; a PRD is done when every box is ticked.
 | [PRD-518](N11-native-animation/PRD-518-n11c-skinning-palettes-and-pose-history.md) | Skinning palettes and pose history (N11c) | 6/7 | in progress |
 | [PRD-519](PRD-519-n12-native-batching-visibility-lod-gpu-scene.md) | Native batching, visibility, LOD and GPU scene (N12) | 6/7 | in progress |
 | [PRD-520](N13-native-streaming-and-world/PRD-520-n13a-bounded-streaming-admission-and-io-events.md) | Bounded streaming admission and IO events (N13a) | 4/5 | in progress |
-| [PRD-521](N13-native-streaming-and-world/PRD-521-n13b-worldcells-and-worldtiles-run-native.md) | WorldCells and WorldTiles run native (N13b) | 3/6 | in progress |
+| [PRD-521](N13-native-streaming-and-world/PRD-521-n13b-worldcells-and-worldtiles-run-native.md) | WorldCells and WorldTiles run native (N13b) | 4/6 | in progress |
 | [PRD-522](N13-native-streaming-and-world/PRD-522-n13c-a-world-loads-walks-and-unloads-without-growth.md) | A world loads, walks and unloads without growth (N13c) | 0/4 | not started |
 | [PRD-523](N14-native-render-chain-and-advanced-visuals/PRD-523-n14a-the-render-graph-owns-passes-and-history.md) | The render graph owns passes and history (N14a) | 6/7 | in progress |
 | [PRD-524](N14-native-render-chain-and-advanced-visuals/PRD-524-n14b-virtual-shadows-run-native.md) | Virtual shadows run native (N14b) | 2/5 | in progress |

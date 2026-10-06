@@ -3,18 +3,39 @@
  * twin of the same name in runtime-native/tests/native-engine/fixture/tsl_programs.h, authored with
  * the native TSL builder; the fixture's golden is what this one draws.
  */
+import { RenderPipeline } from "three";
 import {
   Fn,
   float,
   instanceIndex,
   instancedArray,
+  length,
+  pass,
   positionLocal,
+  screenUV,
   sin,
   uint,
   uniform,
+  vec2,
   vec3,
   vec4,
 } from "three/tsl";
+
+/**
+ * PRD-513: a post pass over the scene texture: a 2-texel chromatic split (texel centres, so the
+ * sampler's filter cannot matter) and a radial vignette, before the output transform.
+ */
+function chromatic(renderer, scene, camera) {
+  const pipeline = new RenderPipeline(renderer);
+  const color = pass(scene, camera).getTextureNode();
+  const offset = vec2(2 / 320, 0);
+  const r = color.sample(screenUV.add(offset)).x;
+  const g = color.sample(screenUV).y;
+  const b = color.sample(screenUV.sub(offset)).z;
+  const vignette = float(1).sub(length(screenUV.sub(0.5)).mul(0.6));
+  pipeline.outputNode = vec4(vec3(r, g, b).mul(vignette), 1);
+  return pipeline;
+}
 
 export const GRID_COUNT = 10_000;
 
@@ -35,6 +56,21 @@ export const programs = {
     })().compute(GRID_COUNT);
     await renderer.computeAsync(kernel);
     target.positionNode = positionLocal.add(positions.element(instanceIndex).xyz);
+  },
+
+  async "post-chromatic"({ renderer, scene, camera }) {
+    const pipeline = chromatic(renderer, scene, camera);
+    return { render: () => pipeline.render() };
+  },
+
+  /** The same pass, drawn once at 200 x 150 first: the captured frame is the one after a resize. */
+  async "post-chromatic-resized"({ renderer, scene, camera, width, height }) {
+    const pipeline = chromatic(renderer, scene, camera);
+    renderer.setSize(200, 150, false);
+    pipeline.render();
+    await renderer.backend.device.queue.onSubmittedWorkDone();
+    renderer.setSize(width, height, false);
+    return { render: () => pipeline.render() };
   },
 
   /** PRD-512: a plane bent by a sine wave along its own z, which its shadow must follow. */

@@ -44,7 +44,7 @@ function writePath(root, dotted, value) {
 }
 
 /** Executes the fixture's ops in `three`, the same reads the Node reference makes. */
-async function build(fixture, renderer) {
+async function build(fixture, renderer, request) {
   const bound = new Map();
   for (const op of fixture.ops) {
     if (op.op === "tsl") {
@@ -52,7 +52,16 @@ async function build(fixture, renderer) {
       const { programs } = await import("/tsl-programs.js");
       const program = programs[op.program];
       if (typeof program !== "function") throw new Error(`TN_FIXTURE_TSL_UNKNOWN: ${op.program}`);
-      await program({ target: bound.get(op.id), renderer });
+      // A program may draw the frame itself (a RenderPipeline): it returns that `render`.
+      const drawn = await program({
+        target: bound.get(op.id),
+        renderer,
+        scene: bound.get(request.scene),
+        camera: bound.get(request.camera),
+        width: request.width,
+        height: request.height,
+      });
+      if (drawn?.render !== undefined) bound.set("\u0001render", drawn.render);
       continue;
     }
     if (op.op === "gltf") {
@@ -113,8 +122,10 @@ export async function renderFixture(request) {
   renderer.outputColorSpace = three[request.outputColorSpaceConstant];
   renderer.shadowMap.enabled = request.shadowMap === true;
 
-  const bound = await build(request.fixture, renderer);
-  renderer.render(bound.get(request.scene), bound.get(request.camera));
+  const bound = await build(request.fixture, renderer, request);
+  const render = bound.get("\u0001render");
+  if (render !== undefined) render();
+  else renderer.render(bound.get(request.scene), bound.get(request.camera));
   // The harness screenshots the presented frame, so wait for the work to land and for the
   // compositor to hold it before the page reports back.
   await renderer.backend.device.queue.onSubmittedWorkDone();
