@@ -35,7 +35,7 @@
 **Status:** NOT STARTED
 **Files:** proposed `packages/runtime-native/src/engine/world/cells/`, `.../tiles/`
 - [ ] Residency, chunk merge under the byte cap and chain LOD decisions match the `world-cells*.spec.ts` fixtures. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_world_cells`
-- [ ] Tile admission and collider placement match the `world-terrain-tiles.spec.ts` and `world-tiles-cost.spec.ts` fixtures. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_world_tiles`
+- [x] Tile admission and collider placement match the `world-terrain-tiles.spec.ts` and `world-tiles-cost.spec.ts` fixtures. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_world_tiles` — 2026-10-05: green on Dawn, ASan, wgpu and Wasm (`native_engine_world_tiles`, 636 observations over 14 scenes, 0 differ). `TerrainTiles`' decisions (`src/engine/world/tiles/terrain_tiles.{h,cpp}`) against the real class (`world-tiles-reference.ts`): byte and resident budgets, forced first admission, deferral, eviction, LOD level per tile (distance, neighbour fixpoint, coarsest selectable), collider placement inside `colliderRadius` with its heights, bridge bytes and caps. The specs' remaining cases assert rendering (morph geometry, stitched topology, seams, merged draws), not admission or colliders, and are not compared. Red controls: resident budget off by one, 13 differ; collider grid one row off, 303; LOD distance ignored, 271.
 
 #### Phase 3: GPU-scene residency and bindings
 **Status:** NOT STARTED

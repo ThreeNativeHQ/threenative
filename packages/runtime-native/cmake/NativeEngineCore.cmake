@@ -446,9 +446,11 @@ target_link_libraries(tn-native-engine-animation-skinned-palette-test PRIVATE tn
 target_include_directories(tn-native-engine-animation-skinned-palette-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/animation)
 
 # PRD-528 phase 1, PRD-521 phase 3: the fixed-step clock and the world height buffer, ported from
-# packages/core/src/loop.ts, world-heightmap.ts and world.ts.
+# packages/core/src/loop.ts, world-heightmap.ts and world.ts. PRD-521 box 38 adds the tile admission,
+# LOD and collider decisions ported from packages/core/src/world-tiles.ts.
 add_library(tn_engine_world STATIC src/engine/world/loop/fixed_step.cpp
-    src/engine/world/terrain/heights.cpp src/engine/world/events/completion_queue.cpp
+    src/engine/world/terrain/heights.cpp src/engine/world/tiles/terrain_tiles.cpp
+    src/engine/world/events/completion_queue.cpp
     src/engine/world/package/world_package.cpp)
 tn_native_engine_target(tn_engine_world)
 target_link_libraries(tn_engine_world PUBLIC tn_engine_foundation)
@@ -461,6 +463,24 @@ tn_native_engine_test(tn-native-engine-world-heights-test tests/native-engine/wo
     native_engine_world_heights=heights)
 target_link_libraries(tn-native-engine-world-heights-test PRIVATE tn_engine_world)
 target_include_directories(tn-native-engine-world-heights-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/world)
+# PRD-521 box 38: which tiles a follow admits under the caps, which it defers or evicts, the level
+# each resident tile may show, and which tiles carry a collider body. The port owns no GPU resource;
+# `native_engine_world_tiles_reference_current` keeps the committed table equal to what the core
+# module produces today.
+tn_native_engine_test(tn-native-engine-world-tiles-test tests/native-engine/world/world_tiles_test.cpp
+    native_engine_world_tiles=world_tiles)
+target_link_libraries(tn-native-engine-world-tiles-test PRIVATE tn_engine_world)
+target_include_directories(tn-native-engine-world-tiles-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/world)
+find_program(TN_PNPM_TILES_EXECUTABLE pnpm)
+if(TN_PNPM_TILES_EXECUTABLE)
+    add_test(NAME native_engine_world_tiles_reference_current
+        COMMAND ${TN_PNPM_TILES_EXECUTABLE} --workspace-root exec tsx
+            packages/runtime-native/tests/native-engine/world/world-tiles-reference.ts --check
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../..)
+    set_tests_properties(native_engine_world_tiles_reference_current PROPERTIES LABELS "native-engine")
+else()
+    message(WARNING "pnpm not found: native_engine_world_tiles_reference_current is not registered")
+endif()
 # PRD-521 phase 1: the ported world.json validator and cellPlacements against world-package.ts.
 tn_native_engine_test(tn-native-engine-world-package-test tests/native-engine/world/world_package_test.cpp
     native_engine_world_package=world_package)
