@@ -241,6 +241,26 @@ concrete blocker. The earlier red output and raw profiles remain retained; this 
 not establish lower production frame time. The parent owns the fresh profile, readiness/cadence
 repair and GPU/visual acceptance; no new GPU, native, full-board or publication gate ran here.
 
+Before integration, the owner's inherited-link check compared the guard with installed
+Three 0.185.1 `Node.getChildren` / `_getChildren` and `NodeMaterial._getNodeChildren`.
+Direct inherited Node children are ignored by Three and remain ignored. Three does consume
+non-enumerable own Node/Material slots, inherited entries in plain node dictionaries and inherited
+indices in sparse node arrays; the earlier `Object.values` guard missed these too. Four real
+regressions reproduce those omissions, including a dictionary prototype change with unchanged own
+keys/version. The guard now uses own property names for Node/Material slots and the installed Node
+child reader for the remaining semantics, retaining reader identity and ordered child identities
+as live snapshot witnesses. Deep unsafe edits refuse bundles and repaired graphs rejoin without
+requiring `needsUpdate`. The TSL inherited-method regression still observes zero discarded probes.
+
+Stored child identities are capped at 8,192 and count toward the existing snapshot-link limit.
+Unsupported, malformed, oversized or throwing reader/iterator output retains the original source
+path, with repair controls; three additional exceptions reproduced before that refusal fix.
+Three's child reader eagerly scans authored array lengths before yielding, which this witness cap
+does not bound. Child discovery allocates arrays/sets; this safety follow-up makes no production
+speed claim. The final seven affected CPU specs pass 118/118 (36 bundle controls), package typecheck,
+changed-source/tests strict TS7 and Biome pass, and independent review finds no remaining concrete
+blocker. No GPU, native, broad board, publication or performance acceptance gate ran here.
+
 Remaining validation must repeat the parent's profiler on the same production workload and compare
 actual eligibility checks/refreshes alongside total CPU frame time. HLOD needs nonzero active proxy
 observations on eligible content, same-pose near/middle/far and transition captures, approach/turn/

@@ -776,8 +776,8 @@ export interface IWorldCellsStats {
    * geometry changes and CPU window repacks invalidate; GPU indirect count updates do not.
    *
    * `eligibility` counts CPU material checks, snapshot validations, fresh structural walks and
-   * oversized uncached graphs. Snapshots still check graph links each frame; they avoid recursive
-   * traversal allocations on stable graphs and detect deep edits without requiring `needsUpdate`.
+   * oversized or unsupported child output. Snapshots check own links and Three's child readers on
+   * every check, detecting deep edits without requiring `needsUpdate`; child discovery still allocates.
    *
    * `reason` is who asked: `default` is a run that set nothing, `option` is a load that named
    * `bundles`, and `launch` is `?tnBundles` / `TN_BUNDLES` / `__tnBundles`. It is on the marker line
@@ -2997,6 +2997,8 @@ interface IBundleGraphSnapshot {
   readonly before: string;
   readonly version: unknown;
   readonly terminal: boolean;
+  readonly childReader: unknown;
+  readonly children: readonly object[] | undefined;
 }
 interface IBundleGraphCapture {
   readonly rows: IBundleGraphSnapshot[];
@@ -3013,9 +3015,9 @@ interface IBundleMaterialCheck {
   readonly rows: readonly IBundleGraphSnapshot[];
 }
 
-/** Flat mutation snapshots avoid recursive traversal allocations on stable graphs. Deep unversioned
+/** Own-link and installed-Node child snapshots avoid inherited TSL method scans. Deep unversioned
  * edits still invalidate: version/root identity alone cannot certify a mutable node graph. A large
- * graph uses the original uncached walk, and conservatively rerecords rather than reusing a verdict. */
+ * graph uses the uncached safety walk, and conservatively rerecords rather than reusing a verdict. */
 class BundleMaterialSafety {
   #checks = new WeakMap<Material, IBundleMaterialCheck>();
   #revision = 0;
@@ -3069,9 +3071,9 @@ function graphSnapshotCurrent(row: IBundleGraphSnapshot): boolean {
   )
     return false;
   if (row.terminal) return true; // Still a framebuffer reader, whatever its other children do.
-  // Object.values observes only own enumerable keys. A TSL node's prototype carries thousands
-  // of enumerable chaining methods, so for-in + hasOwn paid for all of them on every validation.
-  const keys = Object.keys(node);
+  // TSL prototypes carry thousands of enumerable chaining methods, which are not child links.
+  // Own slots stay cheap; Three's actual child reader witnesses inherited container links below.
+  const keys = bundleGraphKeys(node);
   if (keys.length !== row.keys.length) return false;
   for (let index = 0; index < keys.length; index++) {
     const key = keys[index] as string;
@@ -3080,21 +3082,72 @@ function graphSnapshotCurrent(row: IBundleGraphSnapshot): boolean {
     if ((value !== null && typeof value === "object" ? value : undefined) !== row.links[index])
       return false;
   }
-  return true;
+  const reader = bundleGraphChildReader(node);
+  if (reader !== row.childReader) return false;
+  const children = readBundleGraphChildren(node, reader);
+  return (
+    children !== undefined &&
+    row.children !== undefined &&
+    children.length === row.children.length &&
+    children.every((child, index) => child === row.children?.[index])
+  );
+}
+
+/** Three reads non-enumerable own Node/Material slots, but never inherited TSL chain methods. */
+function bundleGraphKeys(node: object): string[] {
+  return Reflect.get(node, "isNode") === true || Reflect.get(node, "isMaterial") === true
+    ? Object.getOwnPropertyNames(node)
+    : Object.keys(node);
+}
+function bundleGraphChildReader(node: object): unknown {
+  return Reflect.get(node, "isNode") === true ? Reflect.get(node, "getChildren") : undefined;
+}
+function readBundleGraphChildren(node: object, reader: unknown): readonly object[] | undefined {
+  if (reader === undefined) return [];
+  if (typeof reader !== "function") return undefined;
+  try {
+    const result: unknown = reader.call(node);
+    if (
+      result === null ||
+      typeof result !== "object" ||
+      typeof Reflect.get(result, Symbol.iterator) !== "function"
+    )
+      return undefined;
+    const children: object[] = [];
+    for (const child of result as Iterable<unknown>) {
+      if (
+        children.length >= 8192 ||
+        child === null ||
+        typeof child !== "object" ||
+        Reflect.get(child, "isNode") !== true
+      )
+        return undefined;
+      children.push(child);
+    }
+    return children;
+  } catch {
+    return undefined;
+  }
 }
 function captureBundleGraph(
   node: object,
   terminal: boolean,
   capture: IBundleGraphCapture,
+  childReader: unknown,
+  children: readonly object[] | undefined,
 ): readonly unknown[] {
-  if (capture.overflow) return terminal ? [] : Object.values(node);
-  const entries = terminal ? [] : Object.entries(node);
-  capture.links += entries.length;
+  const entries = terminal
+    ? []
+    : bundleGraphKeys(node).map((key) => [key, Reflect.get(node, key)] as const);
+  capture.links += entries.length + (children?.length ?? 0);
+  if (children === undefined) capture.overflow = true;
   if (capture.rows.length >= 1024 || capture.links > 8192) capture.overflow = true;
   if (!capture.overflow)
     capture.rows.push({
       node,
       terminal,
+      childReader,
+      children,
       keys: entries.map(([key]) => key),
       links: entries.map(([, value]) =>
         value !== null && typeof value === "object" ? value : undefined,
@@ -3126,12 +3179,21 @@ function samplesFramebuffer(
     typeof candidate.updateBefore === "function" &&
     candidate.updateBeforeType === PER_RENDER_UPDATE
   ) {
-    if (capture !== undefined) captureBundleGraph(node, true, capture);
+    if (capture !== undefined) captureBundleGraph(node, true, capture, undefined, []);
     return true;
   }
-  for (const value of capture === undefined
-    ? Object.values(node)
-    : captureBundleGraph(node, false, capture)) {
+  // getChildren owns Three's non-enumerable, dictionary and sparse-array child semantics. Its
+  // ordered identities are a live witness, including prototype edits with unchanged own keys.
+  const reader = bundleGraphChildReader(node);
+  const children = readBundleGraphChildren(node, reader);
+  const values =
+    capture === undefined
+      ? bundleGraphKeys(node).map((key) => Reflect.get(node, key))
+      : captureBundleGraph(node, false, capture, reader, children);
+  // Malformed/oversized child output retains the live source path. The stored witness is capped;
+  // Three's eager getChildren implementation can still scan an authored array before yielding.
+  if (children === undefined) return true;
+  for (const value of [...values, ...children]) {
     if (value === null || typeof value !== "object") continue;
     if (samplesFramebuffer(value, seen, capture)) return true;
   }

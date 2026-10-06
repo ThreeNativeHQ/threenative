@@ -914,6 +914,170 @@ describe("the main pass's draw bundles", () => {
       cells.dispose();
     }
   });
+  it("matches Three's exclusion of a directly inherited Node child", async () => {
+    const painted = new MeshStandardNodeMaterial();
+    const node = uniform(1);
+    const reader = viewportSharedTexture();
+    const prototype = Object.create(Object.getPrototypeOf(node));
+    prototype.bundleInheritedChild = reader;
+    Object.setPrototypeOf(node, prototype);
+    painted.colorNode = node;
+    expect([...node.getChildren()]).not.toContain(reader);
+    const { renderer, world: cells } = await world({
+      bundles: true,
+      gpuScene: false,
+      chunkModel: (url) => standAtCellOf(url, chunkOf([painted])),
+    });
+    try {
+      cells.update(renderer, playerCamera());
+      await flushed(cells, renderer, playerCamera());
+      const keys = mainKeys(cells);
+      expect(keys.length).toBeGreaterThan(0);
+      expect(keys.every((mesh) => mesh.userData.tnBundled)).toBe(true);
+    } finally {
+      cells.dispose();
+    }
+  });
+  it.each(["node", "material"] as const)(
+    "checks a renderer-visible non-enumerable %s child and its deep mutation",
+    async (target) => {
+      const painted = new MeshStandardNodeMaterial();
+      const root = uniform(1);
+      const child = uniform(2);
+      Reflect.set(child, "updateBefore", () => undefined);
+      if (target === "node") {
+        Object.defineProperty(root, "bundleHiddenChild", {
+          value: child,
+          enumerable: false,
+          configurable: true,
+        });
+        painted.colorNode = root;
+        expect([...root.getChildren()]).toContain(child);
+      } else {
+        Object.defineProperty(painted, "colorNode", {
+          value: child,
+          enumerable: false,
+          configurable: true,
+        });
+        const getNodes = Reflect.get(painted, "_getNodeChildren") as () => { childNode: unknown }[];
+        expect(getNodes.call(painted).map((entry) => entry.childNode)).toContain(child);
+      }
+      const { renderer, world: cells } = await world({
+        bundles: true,
+        gpuScene: false,
+        chunkModel: (url) => standAtCellOf(url, chunkOf([painted])),
+      });
+      try {
+        cells.update(renderer, playerCamera());
+        await flushed(cells, renderer, playerCamera());
+        const keys = mainKeys(cells);
+        expect(keys.length).toBeGreaterThan(0);
+        expect(keys.every((mesh) => mesh.userData.tnBundled)).toBe(true);
+        Reflect.set(child, "updateBeforeType", "render");
+        cells.update(renderer, playerCamera());
+        expect(keys.every((mesh) => mesh.userData.tnBundled === false)).toBe(true);
+        Reflect.set(child, "updateBeforeType", "none");
+        cells.update(renderer, playerCamera());
+        expect(keys.every((mesh) => mesh.userData.tnBundled)).toBe(true);
+      } finally {
+        cells.dispose();
+      }
+    },
+  );
+  it.each(["dictionary", "sparse-array"] as const)(
+    "checks Three's inherited %s child, prototype change and unversioned mutation",
+    async (container) => {
+      const painted = new MeshStandardNodeMaterial();
+      const root = uniform(1);
+      const child = uniform(2);
+      Reflect.set(child, "updateBefore", () => undefined);
+      const branch = container === "dictionary" ? Object.create(null) : new Array(105);
+      Reflect.set(root, "bundleChildren", branch);
+      painted.colorNode = root;
+      const { renderer, world: cells } = await world({
+        bundles: true,
+        gpuScene: false,
+        chunkModel: (url) => standAtCellOf(url, chunkOf([painted])),
+      });
+      const prototype = container === "dictionary" ? Object.prototype : Array.prototype;
+      const arrayLength = Object.getOwnPropertyDescriptor(Array.prototype, "length");
+      const key = container === "dictionary" ? "bundleInheritedChild" : "104";
+      expect(Object.hasOwn(prototype, key)).toBe(false);
+      try {
+        cells.update(renderer, playerCamera());
+        await flushed(cells, renderer, playerCamera());
+        const keys = mainKeys(cells);
+        expect(keys.length).toBeGreaterThan(0);
+        expect([...root.getChildren()]).not.toContain(child);
+        const records = cells.stats().bundle.records;
+        Object.defineProperty(prototype, key, {
+          value: child,
+          writable: true,
+          enumerable: true,
+          configurable: true,
+        });
+        if (container === "dictionary") Object.setPrototypeOf(branch, Object.prototype);
+        expect([...root.getChildren()]).toContain(child);
+        cells.update(renderer, playerCamera());
+        expect(cells.stats().bundle.records).toBeGreaterThan(records);
+        Reflect.set(child, "updateBeforeType", "render");
+        cells.update(renderer, playerCamera());
+        expect(keys.every((mesh) => mesh.userData.tnBundled === false)).toBe(true);
+        Reflect.set(child, "updateBeforeType", "none");
+        cells.update(renderer, playerCamera());
+        expect(keys.every((mesh) => mesh.userData.tnBundled)).toBe(true);
+      } finally {
+        Reflect.deleteProperty(prototype, key);
+        if (container === "sparse-array" && arrayLength !== undefined)
+          Object.defineProperty(Array.prototype, "length", arrayLength);
+        cells.dispose();
+      }
+    },
+  );
+  it.each([
+    "malformed",
+    "oversized",
+    "reader-error",
+    "iterator-error",
+    "invalid-iterator",
+  ] as const)(
+    "retains the source path for %s Node child output and permits repair",
+    async (output) => {
+      const painted = new MeshStandardNodeMaterial();
+      const root = uniform(1);
+      const child = uniform(2);
+      painted.colorNode = root;
+      const { renderer, world: cells } = await world({
+        bundles: true,
+        gpuScene: false,
+        chunkModel: (url) => standAtCellOf(url, chunkOf([painted])),
+      });
+      try {
+        cells.update(renderer, playerCamera());
+        await flushed(cells, renderer, playerCamera());
+        const keys = mainKeys(cells);
+        expect(keys.length).toBeGreaterThan(0);
+        Reflect.set(root, "getChildren", () => {
+          if (output === "reader-error") throw new Error("reader failed");
+          if (output === "invalid-iterator")
+            return { [Symbol.iterator]: () => ({ next: () => 1 }) };
+          return (function* () {
+            if (output === "iterator-error") throw new Error("iterator failed");
+            if (output === "malformed") yield {};
+            else for (let index = 0; index < 8193; index++) yield child;
+          })();
+        });
+        cells.update(renderer, playerCamera());
+        expect(keys.every((mesh) => mesh.userData.tnBundled === false)).toBe(true);
+        expect(keys.every((mesh) => mesh.parent === cells)).toBe(true);
+        Reflect.deleteProperty(root, "getChildren");
+        cells.update(renderer, playerCamera());
+        expect(keys.every((mesh) => mesh.userData.tnBundled)).toBe(true);
+      } finally {
+        cells.dispose();
+      }
+    },
+  );
   it("removes CPU keys on a deep unsafe graph edit without needsUpdate and records them again after repair", async () => {
     const painted = new MeshStandardNodeMaterial();
     const branch: { child?: unknown } = {};
