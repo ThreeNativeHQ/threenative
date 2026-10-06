@@ -1,0 +1,288 @@
+{
+  "version": 1,
+  "result": "PASS",
+  "sourceHead": "3a1b02d28d193afa853ca0b49e4926bce72f0678",
+  "artifactSha256": "5afd7118304ebb36ed1076723fc65133819a26f332898f6bd7260b589d9e3e83",
+  "readySeal": {
+    "bytes": 18087,
+    "sha256": "584cd2443e9f57234f4771dd9a05f90f145d98212dd7739785a20706e4d6976a"
+  },
+  "wrapper": {
+    "bytes": 11494,
+    "sha256": "53dad9c1a30996dd9145c592dfec4629dc8e59b0b9e60bead7987090a7a2415b"
+  },
+  "scenario": "strata-readiness-scene-transition-walk",
+  "executed": "2026-10-06T21:43:05.272525+00:00",
+  "process": {
+    "exitCode": 0,
+    "finishedAt": "2026-10-06T21:45:40.197832+00:00",
+    "elapsedSeconds": 154.92700587399304
+  },
+  "verification": {
+    "sealedDependenciesRehashed": 92,
+    "artifactFilesRehashed": 353,
+    "artifactAggregateVerified": true,
+    "rawStdoutExtractionExact": true,
+    "processExitCode": 0,
+    "elapsedSeconds": 154.92700587399304,
+    "reportPass": true,
+    "actualChecksPassed": 12,
+    "diagnostics": 0,
+    "captureMatches": true
+  },
+  "actualStateSeries": [
+    {
+      "label": "forest-ready",
+      "tick": 1721,
+      "world": "forest",
+      "worldReady": true,
+      "travel": 0.05773051479995056,
+      "spawnCellsRequired": 6,
+      "spawnCellsLoaded": 6,
+      "streamingResidentCells": 48,
+      "streamingLoadedCells": 48,
+      "streamingPendingPrewarm": 0,
+      "streamingLoadsInFlight": 0,
+      "streamingAdmissionBacklog": 0,
+      "streamingFailures": 0,
+      "propInstances": 18398,
+      "propDraws": 55
+    },
+    {
+      "label": "coastal-requested",
+      "tick": 1930,
+      "world": "coastal",
+      "worldReady": false,
+      "travel": 0,
+      "spawnCellsRequired": 6,
+      "spawnCellsLoaded": 6,
+      "streamingResidentCells": 0,
+      "streamingLoadedCells": 0,
+      "streamingPendingPrewarm": 0,
+      "streamingLoadsInFlight": 0,
+      "streamingAdmissionBacklog": 0,
+      "streamingFailures": 0,
+      "propInstances": 0,
+      "propDraws": 0
+    },
+    {
+      "label": "coastal-loading",
+      "tick": 1945,
+      "world": "coastal",
+      "worldReady": false,
+      "travel": 0.0002288818359375,
+      "spawnCellsRequired": 6,
+      "spawnCellsLoaded": 6,
+      "streamingResidentCells": 0,
+      "streamingLoadedCells": 0,
+      "streamingPendingPrewarm": 0,
+      "streamingLoadsInFlight": 0,
+      "streamingAdmissionBacklog": 0,
+      "streamingFailures": 0,
+      "propInstances": 0,
+      "propDraws": 0
+    },
+    {
+      "label": "coastal-ready",
+      "tick": 2963,
+      "world": "coastal",
+      "worldReady": true,
+      "travel": 0.0157623291015625,
+      "spawnCellsRequired": 3,
+      "spawnCellsLoaded": 3,
+      "streamingResidentCells": 45,
+      "streamingLoadedCells": 31,
+      "streamingPendingPrewarm": 0,
+      "streamingLoadsInFlight": 0,
+      "streamingAdmissionBacklog": 49,
+      "streamingFailures": 0,
+      "propInstances": 4711,
+      "propDraws": 22
+    },
+    {
+      "label": "walk-coastal",
+      "tick": 3197,
+      "world": "coastal",
+      "worldReady": true,
+      "travel": 12.012309385824365,
+      "spawnCellsRequired": 3,
+      "spawnCellsLoaded": 3,
+      "streamingResidentCells": 45,
+      "streamingLoadedCells": 45,
+      "streamingPendingPrewarm": 0,
+      "streamingLoadsInFlight": 0,
+      "streamingAdmissionBacklog": 0,
+      "streamingFailures": 0,
+      "propInstances": 4002,
+      "propDraws": 31
+    },
+    {
+      "label": "coastal-walked",
+      "tick": 3211,
+      "world": "coastal",
+      "worldReady": true,
+      "travel": 12.012309385824365,
+      "spawnCellsRequired": 3,
+      "spawnCellsLoaded": 3,
+      "streamingResidentCells": 45,
+      "streamingLoadedCells": 45,
+      "streamingPendingPrewarm": 0,
+      "streamingLoadsInFlight": 0,
+      "streamingAdmissionBacklog": 0,
+      "streamingFailures": 0,
+      "propInstances": 4002,
+      "propDraws": 31
+    }
+  ],
+  "sceneLocalTravelMeters": 12.012309385824365,
+  "startup": {
+    "phase": "ready",
+    "progress": 1,
+    "warmup": {
+      "attempted": 1,
+      "candidates": 375,
+      "observed": {
+        "created": 2,
+        "failed": 0,
+        "pending": 0,
+        "uniquePrograms": 2,
+        "uniquePipelines": 2,
+        "status": "complete"
+      },
+      "status": "complete"
+    },
+    "compileSettled": true,
+    "timeline": {
+      "loadStartedMs": 1626.800000011921,
+      "enteredMs": 2537,
+      "compileSettledMs": 5053.5,
+      "frameworkReadyMs": 5170,
+      "readyMs": 89269.20000004768
+    },
+    "rule": "sustained-frames"
+  },
+  "capture": {
+    "rendererKind": "webgpu",
+    "adapterVendor": "nvidia",
+    "adapterArchitecture": "turing",
+    "viewport": {
+      "height": 1080,
+      "width": 1920
+    },
+    "browserArgs": [
+      "--ozone-platform=x11",
+      "--enable-unsafe-webgpu",
+      "--disable-gpu-sandbox",
+      "--ignore-gpu-blocklist",
+      "--enable-features=Vulkan",
+      "--disable-frame-rate-limit",
+      "--disable-gpu-vsync",
+      "--enable-logging=stderr",
+      "--log-level=1"
+    ]
+  },
+  "images": [
+    {
+      "path": "docs/verification/visuals/strata/corrected-readiness-20261006/forest-ready.png",
+      "name": "forest-ready.png",
+      "bytes": 3435065,
+      "sha256": "d99e1d78e3f83a55252813f26b2449fd14b86c60c3c41547d8d860b56117d857",
+      "capturedAt": "2026-10-06T21:44:39.190094+00:00"
+    },
+    {
+      "path": "docs/verification/visuals/strata/corrected-readiness-20261006/coastal-ready.png",
+      "name": "coastal-ready.png",
+      "bytes": 1535760,
+      "sha256": "2c7be909b074ee55b4a3919ec3cdd447ddabd52f792d7d8261fab2f42f600728",
+      "capturedAt": "2026-10-06T21:45:15.188841+00:00"
+    },
+    {
+      "path": "docs/verification/visuals/strata/corrected-readiness-20261006/coastal-walked.png",
+      "name": "coastal-walked.png",
+      "bytes": 1548093,
+      "sha256": "6ec66a48459bd21400af54c49c9d646883888bc0ef211b7cd20bcfb5048fd29f",
+      "capturedAt": "2026-10-06T21:45:21.575796+00:00"
+    },
+    {
+      "path": "docs/verification/visuals/strata/corrected-readiness-20261006/after.png",
+      "name": "after.png",
+      "bytes": 1547375,
+      "sha256": "784c8e55139f5781cee73b1ca208ec2020d38cc8ba9ace6b3269688c769da829",
+      "capturedAt": "2026-10-06T21:45:34.616705+00:00"
+    }
+  ],
+  "independentReview": {
+    "sha256": "3cce996b79e5fcb3ae97615033e0436d51ecfd47dcf8fa1e96bd095f0f410347",
+    "result": "PASS"
+  },
+  "compressedUploadAttribution": {
+    "function": "writeTextureLayer",
+    "through": "_copyCompressedBufferToTexture",
+    "selfWeightedMs": 8381.530000000032,
+    "percentOfTask": 94.81368778280579,
+    "callContexts": 4,
+    "meaning": "Sampled JavaScript wall-time ownership of synchronous compressed mip/layer upload helper calling device.queue.writeTexture; not active CPU utilization,native GPU duration or single-write timing."
+  },
+  "evidenceHashes": {
+    "runner.log": {
+      "bytes": 2776382,
+      "sha256": "948f474fc018686ed1c50736a5d60d564b4654f13759eefc4700553e40c16539"
+    },
+    "actual-report.json": {
+      "bytes": 2776006,
+      "sha256": "b3326dfd397477a210fed31f37413028a68268f9e96acfb6d190916b91ec7659"
+    },
+    "actual-report-provenance.json": {
+      "bytes": 263,
+      "sha256": "4966a6dee250759f4913327479e2c1fb93db028a3a7256ae1f9747f5ae706d2b"
+    },
+    "process-result.json": {
+      "bytes": 112,
+      "sha256": "d7f76cd2de68f88ca3d53744c01ed5cb4326cdb79921bd38d01cbd14fcf188d3"
+    },
+    "capture.json": {
+      "bytes": 1184,
+      "sha256": "2aa7a2ea82daddc4e3b9607cc66eb70f695087667486be1f065d42ebf17b6fee"
+    },
+    "browser.cpuprofile": {
+      "bytes": 12118731,
+      "sha256": "de1ec35f545b15f6d4d700c677ac8bca9ac57347c8e03518bc2a9126c31f2f10"
+    },
+    "cpu-profile-clock.json": {
+      "bytes": 338,
+      "sha256": "e2a1d8614af9b759da65bb4c2ed64b6d6da800534fd7bf2239e8a51a4d0898cc"
+    },
+    "long-task-observations.json": {
+      "bytes": 2031,
+      "sha256": "e70b76b841f4e71daf8c2feae3f390b51dcdcb01370f0fe8a97131a938b68024"
+    },
+    "browser-stderr-final.json": {
+      "bytes": 9102,
+      "sha256": "4d543e87fb2379111a1ad9c8d4be7964db8daeab4dd5127e08b40c9eb2c11ef5"
+    },
+    "cleanup-verification.json": {
+      "bytes": 1677,
+      "sha256": "d363347cdd45818d43aecfd1ac3e78d9db5e7a5405177405570520ded86a4b25"
+    }
+  },
+  "cleanup": {
+    "bytes": 1677,
+    "sha256": "d363347cdd45818d43aecfd1ac3e78d9db5e7a5405177405570520ded86a4b25",
+    "at": "2026-10-06T21:48:49.824099+00:00",
+    "ownedPidsChecked": 12,
+    "liveOriginalOwnedPids": [],
+    "executorPidPresent": false,
+    "canonicalLeasePresent": false,
+    "monitorStopped": true,
+    "foreignSignals": 0,
+    "meaning": "Read-only review of parent-retained cleanup receipt; this reviewer performed no process or hardware query."
+  },
+  "limits": [
+    "Corrected scenario readiness/transitions and scene-local movement are accepted by actual report; steady FPS and matched performance are unqualified.",
+    "At coastal-ready admission backlog49,loadedCells31,residentCells45 remain. worldReady is spawn readiness,not all-cell completion. By coastal-walked backlog0 and loaded/resident45.",
+    "GPU-view count0 remains; private-display/CPU frame summaries do not establish displayed FPS or physical GPU timing.",
+    "Frozen live-clock resource polling has redundant natural-frame waits; preserve the qualification in timing/failure interpretation.",
+    "The earlier stationary scenario remains RED TN_PLAYTEST_SCENARIO_ASSERTS_NOTHING. This corrected scenario is separate.",
+    "No matched before/after speedup, steady FPS, physical GPU timing or native acceptance. PRD-466 remains50% (2/4 phases,7/13 boxes)."
+  ]
+}
