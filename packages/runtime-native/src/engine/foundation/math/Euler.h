@@ -37,9 +37,14 @@ public:
     Euler() = default;
     Euler(double x, double y, double z, EulerOrder order = EulerOrder::XYZ)
         : x(x), y(y), z(z), order(order) {}
+    /** three's `clone()`: values only, and the new value carries no change callback. */
+    Euler(const Euler& other) : x(other.x), y(other.y), z(other.z), order(other.order) {}
+    /** three's `copy(other)`: values plus the target's own callback, which then fires. */
+    Euler& operator=(const Euler& other) { return copy(other); }
 
     Euler& set(double x, double y, double z, EulerOrder order = EulerOrder::XYZ);
     [[nodiscard]] Euler clone() const { return *this; }
+    /** Overwrites the values, keeps this object's callback, and notifies, as three's `copy` does. */
     Euler& copy(const Euler& euler);
     /** `matrix` is read through its upper 3x3 only, and must be a pure rotation matrix. */
     Euler& setFromRotationMatrix(const Matrix4& m, EulerOrder order = EulerOrder::XYZ, bool update = true);

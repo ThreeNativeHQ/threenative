@@ -990,6 +990,101 @@ void upstream() {
     }
 }
 
+// three's Object3D couples rotation and quaternion through each math class's change callback, so a
+// component write on either reaches the other, and `updateMatrix` composes from the quaternion. A
+// C++ `rotation.x = a` must do the same, or a floor authored as a rotated plane renders as a wall.
+void rotation_sync() {
+    Object3D floor;
+    floor.rotation.x = -PI / 2;
+    CHECK(floor.quaternion.x == -0.7071067811865475);
+    CHECK(floor.quaternion.y == 0);
+    CHECK(floor.quaternion.z == 0);
+    CHECK(floor.quaternion.w == 0.7071067811865476);
+
+    floor.updateMatrixWorld();
+    // three@0.185.1's own bits for an Object3D at the origin, scale 1, rotation.x = -PI/2.
+    const std::array<double, 16> expected = {
+        1, 0, 0, 0,
+        0, 2.220446049250313e-16, -1, 0,
+        0, 1, 2.220446049250313e-16, 0,
+        0, 0, 0, 1};
+    CHECK(floor.matrix.elements == expected);
+    CHECK(floor.matrixWorld.elements == expected);
+
+    // The reverse: a quaternion component write moves the Euler, exactly as three's second callback.
+    Object3D spinner;
+    spinner.quaternion.z = std::sin(PI / 4);
+    spinner.quaternion.w = std::cos(PI / 4);
+    CHECK(spinner.rotation.x == 0);
+    CHECK(spinner.rotation.y == 0);
+    CHECK(spinner.rotation.z == 1.5707963267948963);
+
+    // The Euler's own methods still write the plain field, and the quaternion view reads it back.
+    Object3D spun;
+    spun.rotation.set(0.3, 0.9, -0.2);
+    CHECK(spun.quaternion.x == 0.09095239857348537);
+    CHECK(spun.quaternion.y == 0.4413664224282834);
+    CHECK(spun.quaternion.z == -0.024209584369452933);
+    CHECK(spun.quaternion.w == 0.8923772959747721);
+
+    // Copy semantics are three's: construction is `clone` (values only, detached) and assignment is
+    // `copy` (values plus this object's own callback, which fires). A copied `rotation` that still
+    // pointed at the source would rewrite the source's quaternion on the first component write.
+    Object3D original;
+    original.rotation.set(0.3, 0.9, -0.2);
+    const Quaternion originalQ = original.quaternion;
+    auto copiedRotation = original.rotation;
+    copiedRotation.x = 1.0;
+    CHECK(original.rotation.x == 0.3);
+    CHECK(original.quaternion.x == originalQ.x && original.quaternion.y == originalQ.y &&
+          original.quaternion.z == originalQ.z && original.quaternion.w == originalQ.w);
+
+    // `Euler e = obj.rotation` must not carry obj's callback. If it did, `e.set` would fire obj's
+    // callback and recompute obj.quaternion from obj.rotation; three's `clone` leaves obj alone. The
+    // quaternion is held deliberately out of step with the Euler so a fired callback is observable.
+    Object3D cloned;
+    cloned.rotation.set(0.3, 0.9, -0.2);
+    cloned.quaternion.onChange(nullptr, nullptr);
+    cloned.quaternion.set(1, 0, 0, 0);
+    Euler detached = cloned.rotation;
+    detached.set(1.0, 1.0, 1.0);
+    CHECK(cloned.rotation.x == 0.3);
+    CHECK(cloned.quaternion.x == 1 && cloned.quaternion.y == 0 && cloned.quaternion.z == 0 &&
+          cloned.quaternion.w == 0);
+
+    Object3D assigned;
+    assigned.rotation = Euler(0.3, 0.9, -0.2);
+    CHECK(assigned.quaternion.x == 0.09095239857348537);
+    CHECK(assigned.quaternion.y == 0.4413664224282834);
+    CHECK(assigned.quaternion.z == -0.024209584369452933);
+    CHECK(assigned.quaternion.w == 0.8923772959747721);
+
+    // The same three rules for the quaternion.
+    Object3D quatOriginal;
+    quatOriginal.quaternion.set(0, 0, std::sin(PI / 4), std::cos(PI / 4));
+    const double quatOriginalRotZ = quatOriginal.rotation.z;
+    auto copiedQuaternion = quatOriginal.quaternion;
+    copiedQuaternion.x = 1.0;
+    CHECK(quatOriginal.quaternion.x == 0);
+    CHECK(quatOriginal.rotation.z == quatOriginalRotZ);
+
+    Object3D quatCloned;
+    quatCloned.quaternion.set(0, 0, std::sin(PI / 4), std::cos(PI / 4));
+    quatCloned.rotation.onChange(nullptr, nullptr);
+    quatCloned.rotation.set(0.3, 0.9, -0.2);
+    Quaternion detachedQuaternion = quatCloned.quaternion;
+    detachedQuaternion.set(1, 0, 0, 0);
+    CHECK(quatCloned.quaternion.x == 0 && quatCloned.quaternion.z == std::sin(PI / 4));
+    CHECK(quatCloned.rotation.x == 0.3);
+
+    Object3D quatAssigned;
+    quatAssigned.quaternion = Quaternion(0, 0, std::sin(PI / 4), std::cos(PI / 4));
+    CHECK(quatAssigned.rotation.x == 0);
+    CHECK(quatAssigned.rotation.y == 0);
+    CHECK(quatAssigned.rotation.z == 1.5707963267948963);
+}
+
 }  // namespace
 
-TN_TEST_MAIN({"hierarchy", hierarchy}, {"alias", alias}, {"revision", revision}, {"upstream", upstream})
+TN_TEST_MAIN({"hierarchy", hierarchy}, {"alias", alias}, {"revision", revision}, {"upstream", upstream},
+             {"rotation_sync", rotation_sync})

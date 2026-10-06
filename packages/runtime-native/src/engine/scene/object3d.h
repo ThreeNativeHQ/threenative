@@ -114,6 +114,107 @@ public:
     [[nodiscard]] bool isEnabled(int layer) const { return (mask & (static_cast<uint32_t>(1) << layer)) != 0; }
 };
 
+/**
+ * An Object3D's `rotation` and `quaternion` are two views of one orientation, as three's are: an
+ * Euler component write fires `_onChangeCallback`, which writes the quaternion, and a quaternion
+ * component write fires the other callback. The math classes expose their components as plain
+ * fields, so a C++ `object.rotation.x = a` would write the field and bypass the callback. These two
+ * subclasses add three's component setters: they write the inherited field, then notify, so a C++
+ * author gets the same coupling the bindings already give a JS one. Every method and every
+ * `Euler&`/`Quaternion&` view still reads and writes the same plain fields underneath.
+ */
+class SyncedEuler : public Euler {
+public:
+    SyncedEuler() = default;
+    /**
+     * A copy is three's `clone`: the values come over (base copy ctor, no callback), and the
+     * accessors default-initialise against the new object, so a write to the copy cannot reach the
+     * source. Without this the copied accessors would keep the source's `this`.
+     */
+    SyncedEuler(const SyncedEuler& other) : Euler(other) {}
+    /** Keep this object's callback and accessors; the base copy overwrites the values and notifies. */
+    SyncedEuler& operator=(const SyncedEuler& other) { Euler::operator=(other); return *this; }
+    /** The plain Euler form, so `object.rotation = someEuler` syncs the quaternion, as three does. */
+    SyncedEuler& operator=(const Euler& other) { Euler::operator=(other); return *this; }
+
+    /** three's `euler.x = v`: write the field, then fire `_onChangeCallback`. */
+    class Angle {
+    public:
+        Angle(Euler* owner, double Euler::* field) : owner_(owner), field_(field) {}
+        Angle& operator=(double value) {
+            owner_->*field_ = value;
+            owner_->notify();
+            return *this;
+        }
+        Angle& operator=(const Angle& other) { return *this = static_cast<double>(other); }
+        [[nodiscard]] operator double() const { return owner_->*field_; }
+
+    private:
+        Euler* owner_;
+        double Euler::* field_;
+    };
+    /** three's `euler.order = v`: reorders the angles, then fires `_onChangeCallback`. */
+    class Order {
+    public:
+        Order(Euler* owner, EulerOrder Euler::* field) : owner_(owner), field_(field) {}
+        Order& operator=(EulerOrder value) {
+            owner_->*field_ = value;
+            owner_->notify();
+            return *this;
+        }
+        Order& operator=(const Order& other) { return *this = static_cast<EulerOrder>(other); }
+        [[nodiscard]] operator EulerOrder() const { return owner_->*field_; }
+
+    private:
+        Euler* owner_;
+        EulerOrder Euler::* field_;
+    };
+
+    Angle x{this, &Euler::x};
+    Angle y{this, &Euler::y};
+    Angle z{this, &Euler::z};
+    Order order{this, &Euler::order};
+};
+
+/** three's quaternion setters: the same coupling, the other direction. */
+class SyncedQuaternion : public Quaternion {
+public:
+    SyncedQuaternion() = default;
+    /** A copy is three's `clone`: values only, with the accessors bound to the new object. */
+    SyncedQuaternion(const SyncedQuaternion& other) : Quaternion(other) {}
+    /** Keep this object's callback and accessors; the base copy overwrites the values and notifies. */
+    SyncedQuaternion& operator=(const SyncedQuaternion& other) {
+        Quaternion::operator=(other);
+        return *this;
+    }
+    /** The plain Quaternion form, so `object.quaternion = someQuaternion` syncs the Euler. */
+    SyncedQuaternion& operator=(const Quaternion& other) {
+        Quaternion::operator=(other);
+        return *this;
+    }
+
+    class Component {
+    public:
+        Component(Quaternion* owner, double Quaternion::* field) : owner_(owner), field_(field) {}
+        Component& operator=(double value) {
+            owner_->*field_ = value;
+            owner_->notify();
+            return *this;
+        }
+        Component& operator=(const Component& other) { return *this = static_cast<double>(other); }
+        [[nodiscard]] operator double() const { return owner_->*field_; }
+
+    private:
+        Quaternion* owner_;
+        double Quaternion::* field_;
+    };
+
+    Component x{this, &Quaternion::x};
+    Component y{this, &Quaternion::y};
+    Component z{this, &Quaternion::z};
+    Component w{this, &Quaternion::w};
+};
+
 class Object3D : public EventDispatcher, public std::enable_shared_from_this<Object3D> {
 public:
     Object3D();
@@ -143,9 +244,11 @@ public:
     static bool defaultMatrixWorldAutoUpdate;
 
     // The transform. Plain fields: their addresses are stable for the object's whole life.
+    // `rotation` and `quaternion` are the synced subclasses, so a component write reaches the other
+    // form; every `Euler&`/`Quaternion&` view of them still sees the same plain fields.
     Vector3 position;
-    Euler rotation;
-    Quaternion quaternion;
+    SyncedEuler rotation;
+    SyncedQuaternion quaternion;
     Vector3 scale{1, 1, 1};
     Vector3 up{0, 1, 0};
     Matrix4 matrix;
@@ -183,10 +286,11 @@ public:
      * when they change the matrix bits (three recomposes every auto-update object every frame, so an
      * unchanged recompose is not a change), `add`/`remove`/`attach`/
      * `clear` (which bump the object they are called on, so `child.removeFromParent()` bumps the
-     * parent), every setter above, and `copy`. A direct write to `position`, `quaternion`,
-     * `rotation`, `scale`, `up`, `matrix`, `matrixWorld`, `pivot` or the auto-update flags is a C++
-     * field write the engine cannot see; its sync point is `updateMatrix`, which the renderer calls
-     * when `matrixAutoUpdate` is on.
+     * parent), every setter above, and `copy`. A direct write to `position`, `scale`, `up`,
+     * `matrix`, `matrixWorld`, `pivot` or the auto-update flags is a C++ field write the engine
+     * cannot see; its sync point is `updateMatrix`, which the renderer calls when `matrixAutoUpdate`
+     * is on. A write to a component of `rotation` or `quaternion` goes through three's setters and
+     * syncs the other form immediately, as three does.
      */
     [[nodiscard]] uint64_t revision() const { return revision_; }
 

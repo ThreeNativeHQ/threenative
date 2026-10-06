@@ -43,9 +43,14 @@ public:
 
     Quaternion() = default;
     Quaternion(double x, double y, double z, double w) : x(x), y(y), z(z), w(w) {}
+    /** three's `clone()`: values only, and the new value carries no change callback. */
+    Quaternion(const Quaternion& other) : x(other.x), y(other.y), z(other.z), w(other.w) {}
+    /** three's `copy(other)`: values plus the target's own callback, which then fires. */
+    Quaternion& operator=(const Quaternion& other) { return copy(other); }
 
     Quaternion& set(double x, double y, double z, double w);
     [[nodiscard]] Quaternion clone() const { return *this; }
+    /** Overwrites the values, keeps this object's callback, and notifies, as three's `copy` does. */
     Quaternion& copy(const Quaternion& q);
     /** `update` is three's own flag: false suppresses the notification Object3D's sync relies on. */
     Quaternion& setFromEuler(const Euler& euler, bool update = true);

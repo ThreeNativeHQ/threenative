@@ -89,8 +89,8 @@ void nestedVector(ClassBinding& b, const char* prefix, Vector3 T::*field) {
 }
 
 /** Registers `<prefix>.x`/`y`/`z`/`w` for a Quaternion field, read and written. */
-template <typename T>
-void nestedQuaternion(ClassBinding& b, const char* prefix, Quaternion T::*field) {
+template <typename T, typename Q>
+void nestedQuaternion(ClassBinding& b, const char* prefix, Q T::*field) {
     const char* const names[4] = {"x", "y", "z", "w"};
     for (int i = 0; i < 4; ++i) {
         const std::string path = std::string(prefix) + "." + names[i];
@@ -233,8 +233,9 @@ void registerObject3D(ClassBinding& b) {
     }
     b.getters["rotation.order"] = [](void* self) {
         static const char* const kNames[] = {"XYZ", "YXZ", "ZXY", "ZYX", "YZX", "XZY"};
+        const Euler& rotation = as<Object3D>(self)->rotation;
         return Value{Value::Kind::String, 0,
-                     std::string(kNames[static_cast<int>(as<Object3D>(self)->rotation.order)])};
+                     std::string(kNames[static_cast<int>(rotation.order)])};
     };
     b.setters["rotation.order"] = [](void* self, const Value& v) {
         static const char* const kNames[] = {"XYZ", "YXZ", "ZXY", "ZYX", "YZX", "XZY"};
