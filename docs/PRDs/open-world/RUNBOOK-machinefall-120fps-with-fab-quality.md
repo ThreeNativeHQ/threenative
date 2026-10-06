@@ -251,6 +251,7 @@ this host, so it is not attributed. The prewarm (`e580e76cb`) stays off this PR,
 - [x] **C2 · [PRD-492](../done/PRD-492-colour-grading-and-film-grain.md): colour grading and film grain.** 🎨👁
   - **Done 2026-10-05:** AC-2: 3 blind raters score the graded frame equal to the ungraded one, and the HUD is not graded. AC-1: grade + grain cost 0.0 ± 0.1 ms GPU at 1080p. The table loads as float, so an identity round trip is exact. The identity frame matches the chain-rebuild control; the proof decision is recorded in the PRD. The PRD moved to `done/` in this PR.
 - [ ] **C3 · [PRD-493](PRD-493-terrain-layers-past-sixteen-textures.md): terrain layers past sixteen textures.** ⏱🌍👁
+  - **Progress 2026-10-06:** the Android box passes on the emulator (not a phone): `terrain-splat-array` matches the browser reference at 0 pixel mismatch and 0 ΔE, with `samplers=4`. All three phases have landed. AC-1 and AC-2 still need Machinefall's private walk.
 - [ ] **C4 · [PRD-491](PRD-491-water-and-atmosphere-run-native.md): water and atmosphere run native.** 👁
   - Compare native frames against web frames with the same judges.
 - [ ] **C5 · [PRD-490](PRD-490-cluster-lod-wins-on-native.md): cluster LOD wins on native.** ⏱👁

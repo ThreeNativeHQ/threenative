@@ -1,6 +1,6 @@
 # PRD-493 — Terrain layers past sixteen textures
 
-**Status:** PARTIAL — phases 1, 2 and the desktop half of 3 landed; the Android row and both Machinefall acceptance criteria are blocked on what is listed under `## Blocked on`
+**Status:** PARTIAL — phases 1, 2 and 3 landed; both Machinefall acceptance criteria are blocked on what is listed under `## Blocked on`
 **Complexity:** 3 (LOW) — 1–5 implementation files (`world-terrain-splat.ts`, the two identical `export_world.py` recipe copies) (+1); Machinefall re-exports its table and releases separately (+2); risk override: none
 **Owner:** João
 **Depends on:** None
@@ -34,7 +34,6 @@ The blend curve keeps its current form (mask, `lo`/`hi`, breakup push, macro noi
 ## Blocked on
 
 - **Machinefall's own walk (AC-1, AC-2)** — the private repo holding `apps/client/src/level/World.ts`; the owner has to run the walk and the three interleaved perf runs, or make it reachable.
-- **The Android conformance row** — one Android V8 build receipt on a Linux x64 host (`pnpm native:build`); without it `:app:verifyV8Dependency` refuses to bundle the APK, which is the only step the row has left.
 
 ## Integration Ledger
 
@@ -71,10 +70,10 @@ Uncompressed layers stack through `renderer.copyTextureToTexture` per layer (`IL
   layer catches the light.
 
 #### Phase 3: Native and mobile sample the arrays
-**Status:** LANDED (desktop) / PARTIAL (Android)
+**Status:** LANDED
 **Files:** `packages/runtime-native/conformance/scenes/shared/terrain-splat-array.js` (new), `registry.json`
 - [x] A conformance row renders a 16-layer uncompressed splat package (albedo, normal and ORM per layer) on desktop within tolerance of the browser reference, with `samplers=4` in its marker. proof: `pnpm parity --target web --only-tests terrain-splat-array` captured the browser reference (pass, 1280x720, non-uniform), then `pnpm parity --target desktop --only-tests terrain-splat-array` — pass, 16.6 s, `metrics.pixelMismatchRatio: 0`, `metrics.perceptualDeltaE: 0`, 0 GPU validation errors; the scene throws unless the marker reads `layers=16 samplers=4 stacked=3`. `packages/runtime-native` conformance suite 76/76 green. Captures for a judge: `/home/joao/projects/threenative/threenative-engine/.afk/scratch/prd493-captures/phase-3/` (`before.png` the browser reference, `after.png` the desktop-native frame, same pose; develop has no such row to capture from).
-- [ ] The same row on the Android emulator, which is the host without a KTX2 transcoder. proof: `pnpm parity --target android --only-tests terrain-splat-array` — attempted, `fail` at `phase: build`: `:app:verifyV8Dependency` refuses to bundle because `packages/runtime-native/third_party/v8-android/build-receipt.json` does not exist, and the receipt is written only by a V8 source cross-compile for arm64-v8a + x86_64 (`pnpm native:build`, hours; `provisionAndroidV8` deletes an unverifiable cache and rebuilds). The emulator itself is up (`emulator-5554`, API 35, x86_64) and the lane got as far as gradle, so the blocker is that dependency and not the device. Unblocks when one Android V8 build has been produced on a Linux x64 host.
+- [x] The same row on the Android emulator, which is the host without a KTX2 transcoder. proof: `pnpm parity --target web --only-tests terrain-splat-array` captured the browser reference (pass, nvidia/turing, 1280x720, non-uniform), then `pnpm parity --target android --only-tests terrain-splat-array --device emulator-5554` (2026-10-06, AVD `threenative_api35`, API 35, x86_64, `-gpu host`, not a phone): the row is `pass`, `metrics.pixelMismatchRatio: 0`, `metrics.perceptualDeltaE: 0`, 0 GPU validation errors, fresh install, APK bundle verified. The scene throws unless the marker reads `layers=16 samplers=4 stacked=3`, so the pass is that marker on Android. The earlier `:app:verifyV8Dependency` refusal is gone because this worktree carries a receipt-verified `third_party/v8-android` (PRD-485's lane). The command still exits 1: its separate `supplemental.androidMultitouch` lane (`examples/native-smoke` multitouch playtest) fails with `maxPointers: 1` and `TN_PLAYTEST_AXIS_DELTA_ASSERTION_FAILED`, which is not this row. Note: since PRD-485, Android V8 does transcode KTX2, so "no KTX2 transcoder" now holds for Android QuickJS and iOS only. The row's fixture is `DataTexture`s, so it proves the uncompressed stack on Android, not the compressed one.
 
 The row builds its 48 maps as `DataTexture`s from a pure function of their cell, so both lanes
 derive the same bytes; a 4x4 mask grid gives each layer its own region, which is what makes one
