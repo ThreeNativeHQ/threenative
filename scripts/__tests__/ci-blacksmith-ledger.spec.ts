@@ -116,6 +116,20 @@ describe("organization-wide Blacksmith reservation CAS", () => {
       "blacksmith",
     );
   });
+  it.each(["periodStart", "periodEnd"])(
+    "binds immutable %s to a provider period",
+    async (field) => {
+      const state = store();
+      await admit(state, request(), observation(), control(), now);
+      const before = structuredClone(state.value());
+      const changed = {
+        ...observation(),
+        [field]: observation()[field as "periodStart" | "periodEnd"] - 1,
+      };
+      expect((await admit(state, request(), changed, control(), now)).provider).toBe("github");
+      expect(state.value()).toEqual(before);
+    },
+  );
   it("hosts malformed deadlines instead of throwing from the scheduling boundary", async () => {
     expect(
       (await admit(store(), request(), observation(), control(), now, { deadlineMs: Number.NaN }))
@@ -187,5 +201,41 @@ describe("organization-wide Blacksmith reservation CAS", () => {
     expect((await admit(missing, request(), observation(), control(), now)).provider).toBe(
       "github",
     );
+  });
+  it("rejects final billing with an inherited snapshot instead of an owned period", async () => {
+    const corrupted = ledger();
+    const identity = { ...request(), period: "constructor" };
+    const key = reservationKey(identity);
+    corrupted.entries[key] = {
+      request: identity,
+      state: "settled",
+      units: 160,
+      finalBilling: {
+        key,
+        billingComplete: true,
+        billedPeriods: ["constructor"],
+        billingEndedAt: now,
+      },
+    };
+    const authority = createContentsLedger("test-only-token", async () =>
+      Response.json({
+        sha: "fixture-sha",
+        encoding: "base64",
+        content: Buffer.from(JSON.stringify(corrupted)).toString("base64"),
+      }),
+    );
+    await expect(authority.read()).rejects.toThrow("ledger-corrupt");
+  });
+  it("does not recreate a lost period snapshot from a lower usage report", async () => {
+    const state = store();
+    await admit(state, request(), observation(100), control(430), now);
+    const lost = structuredClone(state.value());
+    lost.snapshots = {};
+    const authority = store(lost);
+    expect(await admit(authority, request(), observation(90), control(430), now)).toMatchObject({
+      provider: "github",
+      reason: "ledger-corrupt",
+    });
+    expect(authority.value()).toEqual(lost);
   });
 });

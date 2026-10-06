@@ -32,6 +32,8 @@ Inspected `develop` at `d3c009e4404abcc2041f58124693edb9c78d802b`:
 
 Official documentation confirms the allowance and 4-vCPU multiplier, but the spending settings describe alerts without establishing a hard no-paid-overage stop. Historical estimated usage does not establish authenticated credit expiry, reporting completeness, or billing-period boundaries. These missing facts keep enforcement off; expired, exhausted, unavailable, or unverifiable credit must select standard GitHub before dispatch. [Runner FAQ](https://docs.blacksmith.sh/blacksmith-runners/overview#faq), [account settings](https://docs.blacksmith.sh/introduction/settings).
 
+2026-10-06 — the owner reports no credit card on the account. Blacksmith's product representative described historical no-card workloads continuing past free credits and announced a control to prevent further runs at exhaustion. This establishes historical provider behavior, not this account's current charges or the control's current availability/enabled state. The next account step is read-only inspection of the existing `ThreeNativeHQ` Wallet/Billing view: exact credit-stop wording/state, balance, reset/expiry and scope for in-flight jobs and optional services. Public alerts alone do not satisfy the activation gate. No new credentials or account setting change is performed here. [Provider explanation](https://news.ycombinator.com/item?id=48476323), [announced control](https://news.ycombinator.com/item?id=48482211).
+
 The closure-time bot head `9cd80dd09f395ea98aa66c5d93160e109e216d8e` is also preserved in this branch history. #445 closed at `2026-10-06T01:56:14Z`; implementation continues only in #444. The disabled bootstrap uses three small CI scripts and adjacent tests, without deploying a controller or state ref. Internal normalized observations are controller contracts, not invented authenticated provider fixtures.
 
 | Choice | Proposed policy |
@@ -57,7 +59,7 @@ The integration requires a Blacksmith account and its GitHub integration on a Gi
 
 There is a documented machine-readable usage interface: `blacksmith usage`, with absolute time bounds and breakdowns, plus `blacksmith runners catalog`. Use it rather than scraping the dashboard. The current CLI supports organization tokens and disabling automatic updates. [Usage reporting](https://docs.blacksmith.sh/blacksmith-cli/usage), [CLI authentication and version control](https://docs.blacksmith.sh/blacksmith-cli/overview)
 
-**Unverified:** a provider-enforced zero-paid-overage cap, what happens without a card at exhaustion, exact billing-period boundaries, reporting delay, and the complete billable lifecycle. Local estimates and a safety buffer are not a billing guarantee. Paid dispatch stays disabled until the owner's provider configuration has a confirmed no-charge exhaustion contract. If that protection is unavailable, remain `off`/`shadow`; accepting financial risk is a separate owner decision, not part of this request.
+**Unverified:** this account's provider-enforced zero-paid-overage cap, exact billing-period boundaries, reporting delay, and the complete billable lifecycle. Local estimates and a safety buffer are not a billing guarantee. Provider dispatch stays disabled until the owner's provider configuration has a confirmed no-charge exhaustion contract. If that protection is unavailable, remain `off`/`shadow`.
 
 ## Design contract
 
@@ -153,7 +155,7 @@ Compare identical candidates on the existing hosted baseline and Blacksmith with
 ### Phase 1 — Budget engine without live spending
 
 - [ ] Implement the validated provider-usage/catalog adapter. proof: `pnpm exec vitest run scripts/__tests__/ci-blacksmith-usage.spec.ts` covers schema changes, partial reports, SKU conversions, and unavailable credentials.
-- [x] Implement the atomic reservation ledger. proof: `pnpm exec vitest run scripts/__tests__/ci-blacksmith-ledger.spec.ts` — 11 PASS, exit 0; twenty-writer CAS race, exact idempotency, SHA-checked Contents transport, attributed settlement, corruption/reset rejection, and high-water persistence on duplicate/denied requests. No live state ref is deployed.
+- [x] Implement the atomic reservation ledger. proof: `pnpm exec vitest run scripts/__tests__/ci-blacksmith-ledger.spec.ts` — 15 PASS, exit 0; twenty-writer CAS race, exact idempotency, SHA-checked Contents transport, attributed settlement, corruption/reset rejection, immutable period boundaries, missing/inherited snapshot rejection, and high-water persistence on duplicate/denied requests. No live state ref is deployed.
 - [x] Implement the pure eligibility and fallback policy. proof: `pnpm exec vitest run scripts/__tests__/ci-blacksmith-policy.spec.ts` — 41 PASS, exit 0; exact ceilings, timeout/tail reservations, verified dispatch-delay horizon, expired/stale/unknown credit, modes, allowlist and trust gates. These tests use internal observations; no live billing compatibility is claimed.
 
 **Gate:** Unit fixtures can exercise exhaustion and concurrency without a Blacksmith account or paid runner.
@@ -165,7 +167,7 @@ Compare identical candidates on the existing hosted baseline and Blacksmith with
 - [ ] Isolate the trusted accounting controller from candidate execution. proof: `pnpm exec vitest run scripts/__tests__/ci-blacksmith-security.spec.ts` rejects fork, unauthorized actor, modified privileged workflow, and secret exposure paths.
   Blocked deployment: candidate execution has no added credential or ledger permission, but independently pinned controller/token isolation and organization runner-label access restrictions remain unverified. No permissions or installation settings are changed here.
 - [ ] Add completion reconciliation and bounded recovery in the existing control paths. proof: `pnpm exec vitest run scripts/__tests__/ci-blacksmith-reconcile.spec.ts` covers cancellation, provider lag/outage, missing completion events, and pending reset exposure.
-  Partial: controller-core tests retain uncertain cancellation exposure and settle exact completed-attempt attribution in an active period. Historical closed-period settlement and control-path wiring remain incomplete; unresolved prior-period work keeps new admissions hosted. No automatic renewal claim is made.
+  Partial: 28 recovery tests PASS, exit 0. Completion updates and closed-period settlement use bounded SHA compare-and-swap; historical settlement requires fresh final organization totals, matching immutable period bounds and exact per-attempt final billing confined to that period. Running/reserved/omitted attempts, cancellation alone, partial reports, regressing totals and cross-period billing retain exposure. Inherited object properties cannot identify a reservation. Tests prove verified historical settlement permits next-period admission while preserving history. These are internal trusted-controller contracts, not authenticated vendor fixtures. Existing control-path wiring and live renewal remain undeployed and unverified.
 
 **Gate:** The normal hosted path remains operational when every provider dependency is unavailable. Enforcement remains disabled pending the external gates below.
 
@@ -176,7 +178,7 @@ Compare identical candidates on the existing hosted baseline and Blacksmith with
 - [ ] Implement default-off, shadow, capped-pilot, and kill-switch configuration. proof: `pnpm exec vitest run scripts/__tests__/ci-blacksmith-rollout.spec.ts` verifies that none of these paths can bypass the confirmed free ceiling or silently enable paid add-ons.
   Partial: pure policy tests cover off/shadow/enforce, the 300-unit pilot ceiling, maximum 2,700-unit ceiling and forced-hosted behavior. Deployed shadow accounting and any live pilot remain disabled.
 
-**Gate:** Current focused policy/ledger/routing plus existing CI structure, needs and Integration contracts: 352 PASS across six files, exit 0. Focused TypeScript 7 strict/noUncheckedIndexedAccess check PASS. Unchecked proof commands above remain planned; full repository/native/GPU/live-provider gates were not run. Final publication uses normal hooks.
+**Gate:** Current focused policy/ledger/recovery/routing plus existing CI structure, needs and Integration contracts: 384 PASS across seven files, exit 0. Focused TypeScript 7 strict/noUncheckedIndexedAccess check PASS; documentation check validates 2,425 links across 1,238 Markdown files. Unchecked proof commands above remain planned; full repository/native/GPU/live-provider gates were not run. Publication uses normal hooks.
 
 ## Operator behavior in the disabled bootstrap
 
@@ -202,7 +204,7 @@ Keep the mode off while activation facts are unavailable. Turning it off does no
 
 ## Blocked on
 
-Owner — create/access the Blacksmith account and have a GitHub organization owner authorize the app for `ThreeNativeHQ`, with the minimum available installation scope. No account, subscription, app installation, credential change, or service activation is performed by this draft PR.
+Owner — inspect the existing `ThreeNativeHQ` Blacksmith account read-only and supply a redacted Wallet/Billing view of the credit-stop control and free-credit balance/reset/expiry. This execution environment has no authenticated Blacksmith browser/CLI session; GitHub organization-admin membership does not supply one. Do not recreate the account or expand installation scope to perform this check. No account, subscription, app installation, credential change, or service activation is performed by this draft PR.
 
 Owner / provider — confirm free eligibility, billing-unit mapping, period boundaries, rounding/lifecycle rules, reporting completeness, and **provider-enforced no-paid-overage behavior**, including optional services. No-card signup alone does not establish that contract.
 

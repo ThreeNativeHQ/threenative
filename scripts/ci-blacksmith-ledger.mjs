@@ -29,6 +29,15 @@ export function reservationKey(request) {
     identity.matrix,
   ].join(":");
 }
+function validateSnapshot(period, snapshot) {
+  if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$/u.test(period)) throw new Error("ledger-corrupt");
+  integer(snapshot.used);
+  integer(snapshot.dataThrough);
+  integer(snapshot.periodStart);
+  integer(snapshot.periodEnd);
+  if (snapshot.periodStart >= snapshot.periodEnd || snapshot.dataThrough < snapshot.periodStart)
+    throw new Error("ledger-corrupt");
+}
 function validated(ledger) {
   if (
     ledger?.version !== 1 ||
@@ -44,22 +53,28 @@ function validated(ledger) {
   for (const [key, entry] of Object.entries(ledger.entries)) {
     if (
       reservationKey(entry.request) !== key ||
+      !Object.hasOwn(ledger.snapshots, entry.request.period) ||
       !STATES.includes(entry.state) ||
       entry.units !==
         estimatedUnits((entry.request.timeoutMinutes + entry.request.tailMinutes) * 60, 2)
     )
       throw new Error("ledger-corrupt");
   }
-  for (const [period, snapshot] of Object.entries(ledger.snapshots)) {
-    if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$/u.test(period)) throw new Error("ledger-corrupt");
-    integer(snapshot.used);
-    integer(snapshot.dataThrough);
+  for (const [period, snapshot] of Object.entries(ledger.snapshots))
+    validateSnapshot(period, snapshot);
+  for (const [key, entry] of Object.entries(ledger.entries)) {
+    if (entry.finalBilling === undefined) continue;
+    if (!Object.hasOwn(ledger.snapshots, entry.request.period)) throw new Error("ledger-corrupt");
+    const snapshot = ledger.snapshots[entry.request.period];
+    if (!snapshot || entry.state !== "settled") throw new Error("ledger-corrupt");
+    finalAttribution(entry.finalBilling, key, entry.request.period, snapshot);
   }
   return structuredClone(ledger);
 }
 // GitHub cancellation or elapsed lease alone never supplies either authority below.
 export function reconcile(ledger, completion) {
   const next = validated(ledger);
+  if (!Object.hasOwn(next.entries, completion.key)) throw new Error("unknown-reservation");
   const entry = next.entries[completion.key];
   if (!entry) throw new Error("unknown-reservation");
   if (completion.state === "running" && entry.state === "reserved") entry.state = "running";
@@ -81,7 +96,13 @@ function observe(ledger, report) {
     : undefined;
   if (previous && (report.used < previous.used || report.dataThrough < previous.dataThrough))
     throw new Error("usage-regressed");
+  if (
+    previous &&
+    (report.periodStart !== previous.periodStart || report.periodEnd !== previous.periodEnd)
+  )
+    throw new Error("usage-period-mismatch");
   for (const key of report.includedKeys) {
+    if (!Object.hasOwn(ledger.entries, key)) continue;
     const entry = ledger.entries[key];
     if (!entry) continue; // The organization report also includes unenrolled repositories.
     if (
@@ -91,7 +112,12 @@ function observe(ledger, report) {
       throw new Error("usage-attribution-unverified");
     entry.state = "settled";
   }
-  ledger.snapshots[report.period] = { used: report.used, dataThrough: report.dataThrough };
+  ledger.snapshots[report.period] = {
+    used: report.used,
+    dataThrough: report.dataThrough,
+    periodStart: report.periodStart,
+    periodEnd: report.periodEnd,
+  };
 }
 async function bounded(promise, milliseconds) {
   let timer;
@@ -150,11 +176,145 @@ export async function admit(authority, request, report, config, now, { deadlineM
     return hosted("ledger-conflict");
   } catch (error) {
     return hosted(
-      ["usage-regressed", "usage-attribution-unverified", "ledger-corrupt"].includes(error?.message)
+      [
+        "usage-regressed",
+        "usage-attribution-unverified",
+        "usage-period-mismatch",
+        "ledger-corrupt",
+      ].includes(error?.message)
         ? error.message
         : "provider-error",
     );
   }
+}
+function finalAttribution(attempt, key, period, snapshot) {
+  if (
+    attempt?.key !== key ||
+    attempt.billingComplete !== true ||
+    !Array.isArray(attempt.billedPeriods) ||
+    attempt.billedPeriods.length !== 1 ||
+    attempt.billedPeriods[0] !== period ||
+    !Number.isSafeInteger(attempt.billingEndedAt) ||
+    attempt.billingEndedAt < snapshot.periodStart ||
+    attempt.billingEndedAt > snapshot.periodEnd
+  )
+    throw new Error("usage-attribution-unverified");
+  return {
+    key,
+    billingComplete: true,
+    billedPeriods: [period],
+    billingEndedAt: attempt.billingEndedAt,
+  };
+}
+function validateHistoricalReport(report, now) {
+  integer(now);
+  if (
+    report?.organization !== ORGANIZATION ||
+    report.scope !== "organization" ||
+    report.complete !== true ||
+    report.final !== true ||
+    report.units !== "x64-2vcpu-minutes" ||
+    !Array.isArray(report.attempts) ||
+    report.attempts.length === 0
+  )
+    throw new Error("historical-report-unverified");
+  for (const field of ["used", "observedAt", "dataThrough", "periodStart", "periodEnd"])
+    integer(report[field]);
+  if (
+    report.observedAt > now ||
+    now - report.observedAt > 300000 ||
+    report.periodStart >= report.periodEnd ||
+    report.periodEnd > now ||
+    report.dataThrough < report.periodEnd ||
+    report.dataThrough > report.observedAt
+  )
+    throw new Error("historical-report-unverified");
+}
+function historical(ledger, report, now) {
+  validateHistoricalReport(report, now);
+  const previous = Object.hasOwn(ledger.snapshots, report.period)
+    ? ledger.snapshots[report.period]
+    : undefined;
+  if (
+    !previous ||
+    previous.periodStart !== report.periodStart ||
+    previous.periodEnd !== report.periodEnd
+  )
+    throw new Error("usage-period-mismatch");
+  if (report.used < previous.used || report.dataThrough < previous.dataThrough)
+    throw new Error("usage-regressed");
+  const seen = new Set();
+  for (const attempt of report.attempts) {
+    if (!Object.hasOwn(ledger.entries, attempt?.key))
+      throw new Error("usage-attribution-unverified");
+    const entry = ledger.entries[attempt?.key];
+    if (
+      typeof attempt?.key !== "string" ||
+      seen.has(attempt.key) ||
+      !entry ||
+      entry.request.period !== report.period ||
+      !["completed-unreconciled", "settled"].includes(entry.state)
+    )
+      throw new Error("usage-attribution-unverified");
+    seen.add(attempt.key);
+    const verified = finalAttribution(attempt, attempt.key, report.period, previous);
+    if (
+      entry.finalBilling !== undefined &&
+      JSON.stringify(finalAttribution(entry.finalBilling, attempt.key, report.period, previous)) !==
+        JSON.stringify(verified)
+    )
+      throw new Error("usage-attribution-unverified");
+    entry.state = "settled";
+    entry.finalBilling = verified;
+  }
+  ledger.snapshots[report.period] = {
+    ...previous,
+    used: report.used,
+    dataThrough: report.dataThrough,
+  };
+  return ledger;
+}
+async function commitUpdate(authority, update, { deadlineMs = 15000 } = {}) {
+  try {
+    const deadline = Date.now() + Math.min(15000, Math.max(1, integer(deadlineMs)));
+    for (let attempt = 0; attempt < 20; attempt++) {
+      const before = await bounded(authority.read(), Math.max(1, deadline - Date.now()));
+      if (Date.now() >= deadline) throw new Error("deadline");
+      if (typeof before.sha !== "string" || before.sha.length === 0)
+        throw new Error("ledger-corrupt");
+      const next = validated(update(validated(before.ledger)));
+      const committed = await bounded(
+        authority.compareAndSwap(before.sha, next),
+        Math.max(1, deadline - Date.now()),
+      );
+      if (Date.now() >= deadline) throw new Error("deadline");
+      if (committed) return { ok: true };
+    }
+    return { ok: false, reason: "ledger-conflict" };
+  } catch (error) {
+    return {
+      ok: false,
+      reason: [
+        "ledger-corrupt",
+        "unknown-reservation",
+        "completion-unverified",
+        "historical-report-unverified",
+        "usage-period-mismatch",
+        "usage-regressed",
+        "usage-attribution-unverified",
+      ].includes(error?.message)
+        ? error.message
+        : "provider-error",
+    };
+  }
+}
+// These inputs are independently verified trusted-controller contracts, never PR outputs
+// or claimed provider JSON schemas. Missing/partial historical attribution retains exposure.
+export function recordCompletion(authority, completion, options) {
+  return commitUpdate(authority, (ledger) => reconcile(ledger, completion), options);
+}
+export function recoverClosedPeriod(authority, report, now, options) {
+  return commitUpdate(authority, (ledger) => historical(ledger, report, now), options);
 }
 // Deployment is intentionally absent. Only an independently pinned trusted controller may
 // supply this token. Candidate jobs/workflows never call this adapter or receive its token.
