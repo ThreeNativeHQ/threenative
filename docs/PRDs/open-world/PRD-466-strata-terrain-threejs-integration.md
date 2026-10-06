@@ -3275,3 +3275,41 @@ passed). All thirteen real no-install `createProject` trees recover their exact 
 when only the previous Three patch bytes are restored in memory. The expected fingerprints were
 refreshed for that proven dependency change; the full-tree assertion and exclusions are unchanged.
 All 66 scaffold checks and Biome pass. No generated gameplay source or quality setting changed.
+
+### 2026-10-06 — attachment-fix hardware validation (depth OOM; readiness red)
+
+One authorized run used exact published source `71940f31eec1e1cd093a86c008a3fc923696bb3f`
+and artifact `18c13dca63f68af754aa04930e64fdd74c973e27db2bde9b6f09cb35516a7d0f`.
+Independent review rehashed all 353 artifact files, 323 licensed assets (212,536,550 bytes),
+five frozen worlds and all 20 Three modules/sourcemap contents. The shipped allocator contains
+the three color-cache fix lines; no stale c2/e5 Three is bundled. Quality remains 1920×1080,
+scale 1 and MSAA 4, with the original 90 warmup frames, 120,000 ms admission deadline,
+60,000 ms resource wait and 360 s outer bound. No GPU retry or concurrent capture ran.
+
+The run exited 2 after 189.89 s: 21 GPU OOM messages, all for `depthBuffer`, 63 validation errors
+and 86 console error rows. There are no recorded `colorBuffer` OOM or device-loss messages.
+The first OOM was delivered to the host at 09:59:56.355 UTC, before prop admission. Run-owned
+GPU framebuffer memory reached 6683 MiB; sampled global usage reached 7782 MiB and free memory
+fell to 11 MiB. Outside-tree framebuffer samples remain 866–886 MiB. The sample nearest the first
+delivered error still reports 5381 MiB free: separate NVML queries and host delivery timestamps
+do not establish physical allocation size or free memory at the GPU's failure instant.
+
+The final actual reply at page 188,344 ms has 6/6 spawn cells, 48 loaded/resident cells and
+218,809 placements. Readiness is false with the original terminal error
+`Strata spawn admission exceeded 120000 ms`. Across 458 retained actual replies the prewarm
+counter stays nonnegative (0–148), and is zero in all three worlds at the terminal sample.
+All three worlds also report HLOD loaded/compiled/observed/active/pending at zero, consistent
+with this custom adapter's exact source fallback. This is now an actual activation observation;
+integrated HLOD source remains intact.
+
+The unmodified [attachment-fix curtain PNG](../../benchmark/strata-loading-2026-10-06/attachment-fix-curtain.png)
+is 9308 bytes, SHA256 `43872ae4c4110356e1300abfb81e999032476fcb4aa20441d523fe1fa464c7f2`.
+The observer verified the curtain across that capture, then stopped at its existing 5 s read
+deadline. There is no gameplay PNG or matched post-fix visual/FPS claim. Shared native CPU work
+also prevents a controlled speed comparison. Raw profiles, console delivery timestamps, actual
+replies and memory timeline are retained in `attachment-fixed-qualification/` in the task workspace.
+
+All ten original owned processes exited, the resource monitor stopped and the canonical capture
+lease was free at cleanup. No foreign process was signalled; no further GPU run is requested here.
+The remaining depth allocation/lifetime path needs a CPU reproducer before another hardware run.
+PRD-466 remains 50%; readiness, full-board/native acceptance and FPS improvement remain open.
