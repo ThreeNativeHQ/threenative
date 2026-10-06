@@ -48,6 +48,36 @@ The CP1 checkpoint ([PRD-534](PRD-534-cp1-the-native-engine-earns-the-port.md)) 
 - [x] Per-call cost of a property write and a method call through the adapter is reported. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_v8_crossing_bench` — 2026-10-04: `native_engine_v8_crossing_bench` prints `TN_V8_CROSSING`; first reading on this host (RTX 2080 desktop, V8 13.1, Release): property write 108 ns, method call with an object argument 365 ns, property read 81 ns. The cost is string-keyed member lookup and string-encoded object refs per call; CP1 decides between member ids and bulk paths (decision 9)
 - [ ] The minimal template, unchanged, runs its playtest journey on the native engine profile on desktop. proof: `node packages/playtest/dist/runner/cli.js <minimal journey>.playtest.json --target desktop`
 
+## Design: the minimal template's path (2026-10-06)
+
+Inventory of the minimal template (`packages/create-threenative/templates/minimal`, 28 files): its
+`src/render/` authors the look with `three/webgpu` NodeMaterials, 35 `three/tsl` functions and nine
+post-processing addons; it also needs textures (done), `MathUtils` and its constants (done), the
+skeletal path and the `@threenative/core` loop, input and conventions. A JS game already runs in the
+native player through V8 (`tn-native-engine-player-v8`, slice 1). The remaining work is in slices,
+each proven before the next:
+
+1. **A native lazy shader graph.** `src/engine/shader/graph/`: one node per upstream TSL node kind
+   (constant, uniform, attribute, operator, math, split, join, convert, conditional, texture,
+   storage element, variable, assign, if, loop, function), built without a program and lowered to IR
+   through the native TSL builder when a material's program is built. Proof: the 25 graphs of the
+   TSL corpus built as graphs lower to the same typed IR dumps as the builder builds them.
+2. **TSL from JS.** The V8 adapter binds the TSL authoring functions over that graph (a `Fn`
+   callback runs once, at definition, inside a captured stack, as upstream does). Proof: the TSL
+   corpus's JS source, run in V8 against the native module, gives the same IR dumps as upstream
+   TSL (`differential.mjs --suite tsl-ir`). Perry later calls the same graph through the C ABI.
+3. **NodeMaterials.** `MeshStandardNodeMaterial` and `MeshBasicNodeMaterial` with `colorNode`,
+   `positionNode`, `normalNode`, `emissiveNode`, `roughnessNode`, `metalnessNode` and
+   `opacityNode`, lowered into the standard programs. Proof: render fixtures against the browser.
+4. **The render pipeline.** `RenderPipeline`, `pass()` and the template's post nodes, lowered into
+   the post pass. Each addon the template uses is its own fixture.
+5. **The framework.** The `@threenative/core` loop, input and conventions run in V8 over the
+   native classes, and the template's renderer setup maps to the native renderer; then the
+   template's own playtest journey, unchanged (box 49).
+
+The same graph serves Perry (decision 11): a later facade reaches it through the C ABI, and no
+upstream TSL JavaScript runs inside a native artifact.
+
 ## Decisions
 
 - This game runtime is the default until gate T ships, and it is never called a JS-free *application* (§2.1). The engine under it is JS-free (owner, 2026-10-04).
