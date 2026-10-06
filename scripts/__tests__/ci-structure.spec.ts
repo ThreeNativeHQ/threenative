@@ -2548,7 +2548,7 @@ describe("CI pipeline structure", () => {
     );
     expect(performance).toMatch(/matrix:[\s\S]*runner: ubuntu-24\.04/u);
     expect(performance).toMatch(
-      /lane: native-windows[\s\S]*result_key: native-windows[\s\S]*runner: windows-2025/u,
+      /lane: native-windows[\s\S]*result_key: native-windows[\s\S]*runner: (blacksmith-\d+vcpu-)?windows-2025/u,
     );
     expect(performance).toMatch(
       /lane: native-macos[\s\S]*result_key: native-macos[\s\S]*runner: macos-15/u,
