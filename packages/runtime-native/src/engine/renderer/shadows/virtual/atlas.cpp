@@ -68,10 +68,11 @@ bool PageAtlas::overlaps(const AtlasPage& page, const Box3& bounds) const {
 std::vector<AtlasPage> PageAtlas::update(const Vector3& eye, const Vector3& towards, bool cameraCut) {
     Vector3 direction = towards;
     direction.normalize();
-    // Implicit teleport and explicit cut both reseed. Ordinary walking retains held windows.
+    // A cut requests fresh windows, but deferred levels retain their rendered matrices/pages,
+    // as VirtualShadowNode does. Protect them until their own replacement is rendered.
     cameraCut = cameraCut || (started_ && previousEye_.distanceTo(eye) > options_.clipExtents.front());
     const bool changed = !started_ || !direction.equals(direction_);
-    if (changed || cameraCut) {
+    if (changed) {
         std::string error;
         std::vector<double> guards;
         for (int i = 0; i < int(levels_.size()); ++i) guards.push_back(at(options_.selectionGuard, i) - at(options_.refreshStep, i));
@@ -81,6 +82,7 @@ std::vector<AtlasPage> PageAtlas::update(const Vector3& eye, const Vector3& towa
         pool_ = PhysicalPagePool::create(tiles() * tiles() * int(levels_.size()), error);
         for (auto& level : levels_) level = Level{};
     }
+    if (cameraCut) invalidateAll();
     direction_ = direction;
     previousEye_ = eye;
     started_ = true;

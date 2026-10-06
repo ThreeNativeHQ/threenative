@@ -3,6 +3,7 @@
 #include "engine/shader/standard.h"
 #include "engine/shader/package.h"
 
+#include <algorithm>
 #include <cmath>
 
 using namespace tn::engine;
@@ -37,13 +38,44 @@ void atlas() {
     Box3 changed; changed.set(Vector3(-1, 0, -1), Vector3(1, 2, 1));
     atlas->invalidate(changed);
     CHECK(atlas->update(eye, sun).size() == 16);
+    const auto held = atlas->table();
     pages = atlas->update(Vector3(100, 0, 0), sun);
     CHECK(pages.size() == 16 && pages.front().level == 0);
-    CHECK(atlas->table()[35] == 1 && atlas->table()[71] == 0); // no stale coarse-page frame
+    CHECK(atlas->table()[35] == 1 && atlas->table()[71] == 1);
+    // The deferred coarse map keeps its own matrix/window and protected physical pages.
+    CHECK(std::equal(held.begin() + 36, held.begin() + 72, atlas->table().begin() + 36));
+    CHECK(std::equal(held.begin() + 136, held.end(), atlas->table().begin() + 136));
+    for (const auto& page : pages) {
+        const auto [px, py] = atlas->origin(page.slot);
+        for (int i = 136; i < 200; i += 4)
+            CHECK(atlas->table()[i] != px || atlas->table()[i + 1] != py);
+    }
     CHECK(atlas->table()[16] == -100);
     CHECK(atlas->update(Vector3(100, 0, 0), sun).size() == 16);
     CHECK(atlas->update(Vector3(100, 0, 0), sun, true).size() == 16); // explicit rotation cut
-    CHECK(atlas->table()[71] == 0);
+    CHECK(atlas->table()[71] == 1);
+    CHECK(atlas->update(Vector3(100, 0, 0), sun).size() == 16);
+    CHECK(atlas->update(Vector3(100, 0, 0), sun).empty());
+
+    // vsm-cut: two pre-cut renders, then inspect the first post-cut plan without warming it.
+    auto cut = PageAtlas::create(options, error), fresh = PageAtlas::create(options, error);
+    const Vector3 after(0.5, 5.5, 6.5), before(100.5, 5.5, 6.5), light(-2, 6, 1);
+    CHECK(cut->update(before, light).size() == 16);
+    CHECK(cut->update(before, light).size() == 16);
+    const auto beforeTable = cut->table();
+    pages = cut->update(after, light, true);
+    const auto first = fresh->update(after, light);
+    CHECK(pages.size() == first.size() && pages.front().level == 0);
+    CHECK(std::equal(cut->table().begin(), cut->table().begin() + 36, fresh->table().begin()));
+    CHECK(std::equal(beforeTable.begin() + 36, beforeTable.begin() + 72, cut->table().begin() + 36));
+    for (int i = 0; i < int(pages.size()); ++i) {
+        CHECK(pages[i].view.elements == first[i].view.elements);
+        CHECK(pages[i].projection.elements == first[i].projection.elements);
+    }
+    CHECK(cut->update(after, light).size() == 16);
+    CHECK(fresh->update(after, light).size() == 16);
+    CHECK(std::equal(cut->table().begin(), cut->table().begin() + 72, fresh->table().begin()));
+    CHECK(cut->update(after, light).empty());
     options.adaptiveRefresh = true;
     CHECK(!PageAtlas::create(options, error) && error == "TN_VIRTUAL_SHADOW_UNSUPPORTED: adaptiveRefresh");
     options.adaptiveRefresh = false;

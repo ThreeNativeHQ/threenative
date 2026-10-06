@@ -378,30 +378,6 @@
       ]
     },
     {
-      "op": "set",
-      "id": "camera",
-      "path": "position.x",
-      "value": 6
-    },
-    {
-      "op": "set",
-      "id": "camera",
-      "path": "position.y",
-      "value": 10
-    },
-    {
-      "op": "set",
-      "id": "camera",
-      "path": "position.z",
-      "value": 12
-    },
-    {
-      "op": "call",
-      "id": "camera",
-      "method": "lookAt",
-      "args": [6, 0.4, 0]
-    },
-    {
       "op": "new",
       "id": "oldFloor",
       "class": "Mesh",
