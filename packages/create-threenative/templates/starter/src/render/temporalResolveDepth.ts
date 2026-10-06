@@ -32,6 +32,7 @@ import {
   float,
   getViewPosition,
   int,
+  ivec2,
   logarithmicDepthToViewZ,
   struct,
   texture,
@@ -129,11 +130,14 @@ export function createTemporalDepthRejection(
   });
   // Samples 3×3 neighborhood pixels and returns the closest depth and its texel.
   const currentDepth = Fn(([positionTexel]: [Node<"vec2">]) => {
+    const inputSize = vec2(node.depthNode.size(int(0)) as Node<"uvec2">);
     const closestDepth = float(2).toVar();
     const closestPositionTexel = vec2(0).toVar();
     for (let x = -1; x <= 1; ++x)
       for (let y = -1; y <= 1; ++y) {
-        const neighbor = positionTexel.add(vec2(x, y)).toVar();
+        const neighbor = vec2(ivec2(positionTexel.add(vec2(x, y))))
+          .clamp(vec2(0), inputSize.sub(1))
+          .toVar();
         let depth = node.depthNode.load(neighbor).r;
         if (renderer.reversedDepthBuffer) depth = depth.oneMinus();
         if (renderer.logarithmicDepthBuffer) depth = toPerspectiveDepth(depth);

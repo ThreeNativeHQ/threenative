@@ -48,6 +48,53 @@ const weights = (phase: number) =>
   );
 
 describe("authored temporal reconstruction kernel", () => {
+  it.each([
+    { reversedDepthBuffer: false, logarithmicDepthBuffer: false },
+    { reversedDepthBuffer: true, logarithmicDepthBuffer: false },
+    { reversedDepthBuffer: false, logarithmicDepthBuffer: true },
+    { reversedDepthBuffer: true, logarithmicDepthBuffer: true },
+  ])("bounds every integer depth donor before reading or returning it: %j", (depthMode) => {
+    const renderer = offlineRenderer();
+    const camera = new PerspectiveCamera();
+    const scenePass = pass(new Scene(), camera);
+    scenePass.setSize(426, 240);
+    const source = traa(
+      scenePass.getTextureNode(),
+      scenePass.getTextureNode("depth"),
+      scenePass.getTextureNode("velocity"),
+      camera,
+    );
+    const mesh = new Mesh(new PlaneGeometry(2, 2), new MeshBasicNodeMaterial());
+    try {
+      const rejection = createTemporalDepthRejection(source as TemporalResolveNode, depthMode);
+      const graph = Fn(() => {
+        const sample = rejection.currentDepth(
+          uv().mul(source.depthNode.size(int(0)) as Node<"uvec2">),
+        );
+        return vec4(
+          sample.get("closestPositionTexel") as Node<"vec2">,
+          sample.get("closestDepth") as Node<"float">,
+          float(1),
+        );
+      })();
+      const shader = fragment(renderer, mesh, graph);
+      // At a screen edge an unbounded textureLoad may return zero or another in-bounds texel.
+      // The depth winner must retain the same legal integer texel for the velocity lookup.
+      const donors = [...shader.matchAll(/(\w+) = clamp\( vec2<f32>\( vec2<i32>\(/gu)];
+      expect(donors).toHaveLength(9);
+      expect(shader.match(/textureLoad\(/gu)).toHaveLength(9);
+      expect(shader.match(/textureDimensions\([^\n]* - vec2<f32>\( 1\.0 \)/gu)).toHaveLength(9);
+      for (const [, donor] of donors) {
+        expect(shader).toContain(`vec2<i32>( ${donor} ), u32( 0u )`);
+        expect(shader).toMatch(new RegExp(`\\w+ = ${donor};`));
+      }
+    } finally {
+      source.dispose();
+      scenePass.dispose();
+      mesh.geometry.dispose();
+      mesh.material.dispose();
+    }
+  });
   it("ordinary blending retains the existing current weight without luminance reweighting", () => {
     const renderer = offlineRenderer();
     const camera = new PerspectiveCamera();

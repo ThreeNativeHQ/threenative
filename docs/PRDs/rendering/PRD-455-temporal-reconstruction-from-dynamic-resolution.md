@@ -1758,3 +1758,46 @@ and use mocked double-precision TSL algebra, so they establish conditional colou
 The existing original 31-arm qualification remains unlaunched until competing capture activity
 finishes and fresh source, remote, non-critical and canonical-lease checks pass. No GPU/native
 claim, acceptance checkbox, threshold, appearance policy, publication or new CI is advanced here.
+
+
+### Retained attachment diagnosis and bounded integer depth donors — 2026-10-06
+
+The authorized diagnostic at fixed historical source `0642e8e4bf94b738a8c0be672657348cc1ce8fc5`
+completed on NVIDIA/Turing browser WebGPU, fixed-step, 06:57:32.473–06:57:39.014 UTC.
+It retained eleven witnesses at each of source draws 27, 28 and 32, with no diagnostics,
+all five cleanup checks true and the canonical capture lease released. Its three PNGs are
+byte-identical to original failed `73fd4721a` quality frames 28, 29 and 33. Independent CPU
+review passes thirteen retained-data and seven reference/projection checks. Against the original
+finite 4× reference, x192 clipping removes excess brightness correctly; x219/source32 shows bright
+current reconstruction attenuated by approximately 90% dark accepted history; x358/source32 has
+nine background taps despite a bright reference pixel. Both latter errors match the never-occluded
+control. At x321/source28 old red is rejected, but current Gaussian reconstruction introduces
+neutral excess. The original +1 recovery sample (fixture30) was not retained. These selected
+readbacks establish local mechanisms, not full quality or appearance-continuity qualification.
+The first projection checker used the wrong depth convention; the separately preserved independent
+check uses native WebGPU depth and confirms all 297 nominal point positions. It does not
+independently authenticate GPU uniforms, rasterizer coverage or every contributor's surface motion.
+
+A separate source defect lets the current 3×3 depth gather address outside the input texture at
+screen boundaries. Out-of-bounds texture loads cannot supply a reliable donor. The generated
+starter kernel now truncates each requested coordinate to the same integer used by textureLoad,
+clamps it to actual depth dimensions, and retains that bounded coordinate for the velocity donor.
+No depth mode, tie order, threshold, current weight, clipping policy or acceptance bar changes.
+This addresses screen boundaries; none of the selected interior witnesses had an illegal donor.
+
+Proof in the delegated task directory: `pr398-depth-boundary-implementation-red.json` records
+four expected offline-WGSL failures and seven existing passes before correction; the focused
+kernel suite then passes 11/11, including the actual provider and rejection-count compute graph.
+Strict scoped TypeScript7 passes after adding declared struct-member types to the new test; the
+initial typecheck failure is preserved. Actual no-install generation measures all thirteen trees;
+only starter changes to `5cab9180bd1cdf788698708df2d7c05c5e24bd3985fea8b2d12df11cd5004dfd`.
+The related eight-file CPU run records 158/159 passes: `looks.spec.ts` still rejects unchanged
+210-line `temporalAA.ts` against its unchanged <200-line limit. The touched depth file already
+exceeded that same limit at225 lines and is now229. This pre-existing readability gate remains
+open; no limit is raised or exception added. Full workspace, final budgets, new-source runtime,
+original quality/recovery/cost, native and automatic-scale qualification remain pending.
+
+No GPU run exercises this depth-boundary correction, and no source is published or new CI
+requested by this step. Current develop `29fdae8bf` is outside the fixed historical diagnostic.
+Original acceptance boxes and the draft `prd:25%` status remain unchanged; publication/new CI
+and any later capture require parent coordination and fresh remote/non-critical guards.
