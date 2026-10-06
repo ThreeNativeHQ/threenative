@@ -53,6 +53,9 @@ it("streams Strata's exact grounded transforms, seeded cover density and origina
   expect(streamed?.worlds[0]).toBeInstanceOf(WorldCells);
   if (!streamed) throw new Error("cancelled");
   try {
+    for (const world of streamed.worlds) world.update();
+    expect(streamed.stats().loadedCells).toBe(0);
+    expect(streamed.stats().residentCells).toBeGreaterThan(0);
     expect(streamed.byId.size).toBe(placements.length);
     for (const placement of placements)
       expect(streamed.byId.get(placement.id)?.pose.elements).toEqual(

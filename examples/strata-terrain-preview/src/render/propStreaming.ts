@@ -318,7 +318,7 @@ export async function createStreamedProps(options: IStreamOptions) {
         const s = world.stats();
         return {
           residentCells: sum.residentCells + s.residentCells,
-          loadedCells: sum.loadedCells + s.residentCells + s.evictions,
+          loadedCells: sum.loadedCells + s.loadedCells,
           instances: sum.instances + s.instances,
           evictions: sum.evictions + s.evictions,
           failures: sum.failures + s.failures,
@@ -350,6 +350,17 @@ export async function createStreamedProps(options: IStreamOptions) {
     byId,
     stats,
     compileSlices,
+    readinessAt(position: { readonly x: number; readonly z: number }, radius = 60) {
+      const regions = worlds.map((world) => world.readinessAt(position, radius));
+      const required = regions.reduce((n, r) => n + r.requiredCells, 0);
+      const loaded = regions.reduce((n, r) => n + r.loadedCells, 0);
+      return {
+        required,
+        loaded,
+        failures: regions.reduce((n, r) => n + r.failures, 0),
+        ready: warmed.size === worlds.length && regions.every((r) => r.ready),
+      };
+    },
     get ready() {
       const s = stats();
       return (

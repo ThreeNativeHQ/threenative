@@ -1116,9 +1116,33 @@ kits. The browser GLB export stays the path for other engines and tools.
 - FPS (K2): GPU timer 8–15 ms per view at 1080p; the playtest's per-view frame p95 includes bridge
   sampling of a ~9k-instance scene. Unharnessed rAF on private Xvfb ≈10 fps with Chrome's GPU process
   at 101% CPU, GPU ~30%, 4,754 of 5,000 ms in `SwapBuffers` (present path; blank page 60). On the
-  owner's display (Xwayland :0) both the kit AND the original preview game present at exactly 1 fps
-  today (the preview measured 60 there on 2026-10-03), a blank page 60 — an environment present-path
-  block, not a kit verdict. K2 open.
+  owner's display (Xwayland :0) both the kit AND the current original preview game present at exactly
+  1 fps. The October 3 preview result was p50 60 FPS, mean 36 FPS and interval p95 50 ms;
+  it did not prove sustained 60 FPS. The current preview shares later engine changes, and a blank
+  page does not exercise WebGPU presentation, so these controls do not isolate an environment cause.
+  K2 open.
+
+#### Phase 4 performance measurement repair (2026-10-06; K2 remains open)
+
+- At `d7838323129b4a75fca6c1c52ba5add102ca71e1`, an explicit
+  `TN_PLAYTEST_HOST_DISPLAY=1` request checked only the filesystem X socket and silently used
+  private Xvfb when that path was absent. That misclassifies abstract-only Xwayland displays.
+  The runner now verifies the X connection with `xdpyinfo` and fails by name when the requested
+  display cannot be used. Focused display tests: 14 baseline passed; six contract failures
+  reproduced; 19 passed after the fix. This repairs measurement provenance, not FPS.
+- The retained `examples/strata-terrain-preview/artifacts/playtest/starter-kit/capture.json` and
+  `console.json` record NVIDIA/turing, 1920×1080 and disabled GPU vsync/frame limits, but no
+  display provenance. Their frame windows include 229 long tasks (longest 903 ms),
+  stale GPU samples and short manually driven intervals. Median CPU window p95 values alone
+  cannot qualify K2 or prove displayed throughput.
+- Next controlled comparison: the current immutable packed kit, a frozen earlier build with its
+  exact engine, and a minimal hardware WebGPU animation, with identical display, Chromium flags
+  and resolution. Record passive presentation intervals separately from CPU callback duration
+  and GPU timestamps; rAF cadence alone does not establish displayed throughput. If the kit
+  differs from the minimal control, hold one scene and its assets constant while swapping
+  frozen/current engine builds before attributing the regression to engine or content. Compare
+  bridge enabled/disabled only if those controls implicate it. GPU execution awaits a
+  coordinated resource window.
 
 ## Verification and delivery
 
@@ -2994,3 +3018,73 @@ Verdict: **reverted the prototype.** The per-material `envMap` is the smaller, p
 the surfaces that want IBL carry it — and the ground stays as tuned. `pack.ts` + `createPropSurfaces`
 keep `skyEnvironment()`; `scene.environment` is not retried without a ground opt-out that actually
 works.
+
+### 2026-10-06 — bounded streamed-terrain construction; loading gate still open
+
+The retained kit profile reaches `WorldCells.update → TerrainTiles.follow → createTile → buildLevel`
+inside the render callback. A spent admission allowance still forced a whole tile, including every
+LOD mesh and safety scan. Engine fix: sampling, normal-grid reads, geometry, bounds and LOD error
+checks now resume in 256-sample chunks under the existing allowance. Only completed tiles enter
+residency. Camera moves outside the selected ring and disposal release unfinished work; small
+camera movements retain it. Unbudgeted calls remain synchronous. Appearance inputs, resolution,
+LOD pop/transition thresholds and collision shapes are unchanged.
+
+Actual red-green: spent-budget sampling read 4,225 samples before, at most 256 after; the normal-grid
+test read 4,489 before. Geometry/bounds parity and cancellation pass. Independent review found
+alternating ±0.1 m camera movement could restart pending tiles forever: red at 1/9 residents after
+4,000 updates, green at 9/9 after retaining selected pending work. Six focused terrain/streaming specs
+pass **63/63**, plus **49/49** public terrain contracts, with three opt-in benchmarks skipped;
+changed-file Biome has no errors. Independent terrain review passed. Package type checks on both
+the original and current tile source report the same existing `EventNodeType` error at
+`world-impostor-surface.ts:256`; no new diagnostic. The root board, native lane and fresh GPU run
+have not executed here.
+
+CPU comparison against the original `72b12bd` terrain source, same sampler/camera, one CPU11 process,
+seven trials: median worst slice at 129² falls **8.33 → 2.39 ms**; worst cold/outlier slice
+**39.53 → 16.84 ms**. Every height, position, normal, index and bound matches. This measures CPU
+construction only; canonical field allocation, game collider callbacks and runtime/JIT pauses can
+still overshoot a chunk. Pending one-tile scratch is separate from completed-residency byte counters.
+It is neither a 2 ms hard ceiling nor a displayed-FPS result.
+
+Scope remains partial: the direct preview disables streamed terrain and keeps its global ground
+mesh; the fix covers the starter's streamed path. The canonical capability audit maps 26 exact
+`symbol`/`importPath` entries and the WorldCells options. Loading needs actual spawn-region terrain,
+visual and collider coverage, rather than `world.prewarmed` alone; a hold under an opaque curtain
+currently prevents the render-cadence admission that would finish it. PR #437 at immutable
+`7cce7825d6155124c93fe571cb8965ed235c1d37` has the identical original terrain-tile file and still
+has no regional-readiness/startup-admission contract. Align that shared extension before publication.
+No #437 mutation, foreign WIP import, quality reduction or publication occurred. K2 stays open.
+
+### 2026-10-06 — spawn loading gate and consumer lifecycle (CPU verified)
+
+Both visible consumers now draw a game-owned loading curtain. The direct preview still owns its
+baked global ground mesh and streams props through WorldCells; the copied forest kit streams both
+props and terrain through the same engine owner. Neither replaces the streamer or changes authored
+placement transforms/count, terrain resolution, LOD thresholds or licensed appearance.
+
+The existing opaque startup gate suppressed WorldCells render admission, deadlocking a hold for
+spawn coverage. Render-driven streaming now explicitly opts into admission after initial compilation;
+ordinary compute still waits. CanvasLayer can opt into world preparation behind an opaque cover on
+later scene transitions too. Actual game-loop regression failed before and passes after the change.
+WorldCells reports completed initial runs/chunks as loadedCells and exposes local readinessAt with
+completed terrain tiles. Shader prewarmed remains a separate gate; reserved cells are not coverage.
+The launch consumer waits for its fixed 60 m spawn region plus prewarm, then latches success while
+distant content continues streaming. Spawn eviction after launch cannot disable controls. Failure,
+120-second timeout and cancellation remain distinct from the engine's general fail-open startup
+policy: failed loading stays covered, names the failure and prevents gameplay input.
+
+The copied kit places its follow camera before loading, shares decoded manifest/placements/heightmap
+with WorldCells and whole-world ground collision, checks scene currency across awaits and releases
+consumer-owned resources on cancellation/exit. PropColliders uses consistent world coordinates,
+including parent-only movement. It retains the original 60 m collision reach. The installed Three.js
+runtime accepts EventNode.FRAME while its declaration omits FRAME from the constructor union; an
+actual TS2345 baseline regression now passes with a narrow assertion of that runtime-supported value.
+
+Current-source targeted checks: **185 tests across 12 files pass**, including real copied Forest
+lifecycle/control execution, failure/cancellation, grounded transform/density, startup/transition and
+terrain contracts. Independent startup review reran **9/9** consumer tests and passed. Core and direct
+consumer source typechecks pass. The full board, native consumer lane and fresh sealed GPU captures
+remain unrun at this checkpoint; K2 and original frame/visual thresholds stay open. Remaining adjacent
+API gaps are splat manifest reuse and explicit splat texture ownership. HLOD is a separate authorized
+lane: current cell-proxy cook output is not consumed by this runtime, and scatter-only Strata emits no
+proxy-eligible chunks. Per-model LOD, fir impostors and merged terrain blocks do not establish HLOD.

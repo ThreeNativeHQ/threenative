@@ -25,6 +25,60 @@ const MIN_X = manifest.extent.minX;
 const MIN_Z = manifest.extent.minZ;
 const surface = new MeshBasicMaterial();
 const budgets = { bytes: 1_000_000_000, instances: 1_000_000, residentCells: 64 };
+it("reports completed spawn coverage separately from reserved cells and distant work", async () => {
+  const { world, follow } = await makeWorld({ admissionBudgetMs: 2, priced: true });
+  const at = { ...follow.position };
+  try {
+    expect(world.readinessAt(at, 0).ready).toBe(false);
+    world.update();
+    expect(world.stats().residentCells).toBeGreaterThan(0);
+    expect(world.stats().loadedCells).toBe(0);
+    await flush();
+    for (let i = 0; i < 4000 && !world.readinessAt(at, 0).ready; i++) world.update();
+    const local = world.readinessAt(at, 0);
+    expect(
+      local,
+      JSON.stringify({ local, stats: world.stats(), terrain: terrainOf(world).debug() }),
+    ).toMatchObject({ ready: true });
+    expect(local.loadedCells).toBe(local.requiredCells);
+    expect(local.loadedTerrainTiles).toBe(local.requiredTerrainTiles);
+    expect(terrainOf(world).residentTileCount).toBeLessThan(terrainOf(world).residentTileBudget);
+    world.dispose();
+    expect(world.readinessAt(at, 0).cancelled).toBe(true);
+    expect(world.readinessAt(at, 0).ready).toBe(false);
+  } finally {
+    world.dispose();
+  }
+});
+
+it("keeps a failed spawn pending and reports its model failure by region", async () => {
+  stubFixtureFetch();
+  const at = cellCenter(1, 1);
+  const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+  const world = await WorldCells.load({
+    url: "/world/world.json",
+    surface,
+    follow: followAt(at.x, at.z),
+    terrain: false,
+    ring: 0,
+    budgets,
+    loadModel: async () => {
+      throw new Error("missing spawn model");
+    },
+  });
+  try {
+    world.update();
+    await flush();
+    world.update();
+    expect(world.readinessAt(at).failures).toBeGreaterThan(0);
+    expect(world.readinessAt(at).ready).toBe(false);
+    expect(world.stats().loadedCells).toBe(0);
+    expect(() => world.readinessAt({ x: Number.NaN, z: 0 })).toThrow("finite");
+  } finally {
+    world.dispose();
+    warning.mockRestore();
+  }
+});
 /** What one unit of admission work costs on the injected clock: `admit` reads it twice per unit. */
 const UNIT_MS = 1;
 
@@ -342,16 +396,17 @@ describe("WorldCells admission budget", () => {
   });
 
   it("admits terrain tiles and colliders on the same budget, and still converges", async () => {
-    // 50 µs a frame is a budget no 129-resolution tile with three LOD levels fits inside, so the
-    // ground arrives over several frames instead of all in the first one.
-    const { world: cells } = await makeWorld({ admissionBudgetMs: 0.05 });
+    // A priced chunk costs more than the allowance: even the nearest tile must span updates.
+    const { world: cells } = await makeWorld({ admissionBudgetMs: 0.05, priced: true });
     const terrain = terrainOf(cells);
     cells.update();
-    const first = terrain.residentTileCount;
-    expect(first).toBeGreaterThan(0);
-    expect(first).toBeLessThan(9);
-
-    for (let frame = first; frame < 9; frame += 1) cells.update();
+    expect(terrain.residentTileCount).toBe(0);
+    expect(terrain.deferredAdmissions).toBe(1);
+    expect(terrain.debug().pendingConstruction).toBeDefined();
+    for (let frame = 0; frame < 10_000 && terrain.residentTileCount < 9; frame += 1) {
+      cells.update();
+      expect(cells.stats().admission.spentMs).toBeLessThanOrEqual(UNIT_MS);
+    }
     expect(terrain.residentTileCount).toBe(9);
     expect(cells.stats().failures).toBe(0);
     cells.dispose();
