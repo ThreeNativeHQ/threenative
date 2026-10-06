@@ -1,4 +1,5 @@
 import {
+  type CanvasTexture,
   type Mesh,
   type MeshBasicMaterial,
   OrthographicCamera,
@@ -25,6 +26,51 @@ function host(ready: Promise<void>) {
     startup: { progress: 0.5, whenReady: () => ready },
   };
 }
+
+it("uploads the status canvas only when its displayed text changes", async () => {
+  const drawn: string[] = [];
+  const canvas = {
+    width: 0,
+    height: 0,
+    getContext: () => ({
+      clearRect: () => undefined,
+      fillText: (text: string) => drawn.push(text),
+    }),
+  };
+  vi.stubGlobal("document", { createElement: () => canvas });
+  let reject: (reason: Error) => void = () => undefined;
+  const source = host(
+    new Promise<void>((_resolve, fail) => {
+      reject = fail;
+    }),
+  );
+  const screen = createLoadingScreen(source);
+  try {
+    const status = source.canvasLayer.scene.children[3] as Mesh<never, MeshBasicMaterial>;
+    const texture = status.material.map as CanvasTexture;
+    source.startup.progress = 0.95;
+    screen.update();
+    const version = texture.version;
+    for (let frame = 0; frame < 100; frame += 1) screen.update();
+    source.startup.progress = 0.951;
+    screen.update();
+    expect(texture.version).toBe(version);
+    expect(drawn).toEqual(["0%", "95%"]);
+    source.startup.progress = 0.96;
+    screen.update();
+    expect(texture.version).toBe(version + 1);
+    expect(drawn).toEqual(["0%", "95%", "96%"]);
+    reject(new Error("Forest spawn: missing cell"));
+    await Promise.resolve();
+    screen.update();
+    expect(texture.version).toBe(version + 2);
+    expect(drawn.at(-1)).toBe("Forest spawn: missing cell");
+    expect(source.canvasLayer.opaque).toBe(true);
+  } finally {
+    screen.finish();
+    vi.unstubAllGlobals();
+  }
+});
 
 it("keeps the curtain and names a failed spawn even after framework readiness fails open", async () => {
   let reject: (reason: Error) => void = () => undefined;

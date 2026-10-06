@@ -180,18 +180,17 @@ function statusMesh(layer: ILoadingHost["canvasLayer"]):
     new MeshBasicMaterial({ depthTest: false, depthWrite: false, map: texture, transparent: true }),
     4,
   );
+  let displayedText: string | undefined;
   const update = (value: number | string): void => {
+    const text = typeof value === "string" ? value : `${Math.round(value * 100)}%`;
+    if (text === displayedText) return;
     context.clearRect(0, 0, canvas.width, canvas.height);
     context.fillStyle = "#ffffff";
     context.font = "700 20px monospace";
     context.textAlign = "center";
     context.textBaseline = "middle";
-    context.fillText(
-      typeof value === "string" ? value : `${Math.round(value * 100)}%`,
-      canvas.width / 2,
-      canvas.height / 2,
-      980,
-    );
+    context.fillText(text, canvas.width / 2, canvas.height / 2, 980);
+    displayedText = text;
     texture.needsUpdate = true;
   };
   update(0);

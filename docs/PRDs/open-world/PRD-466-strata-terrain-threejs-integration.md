@@ -3116,3 +3116,32 @@ capture lease was released at 03:37:22.944 UTC. Raw evidence is retained in
 `performance-resume-20261006/focused-runs/2026-10-06T03-35-41.180Z` in the task workspace.
 K2, matched screenshots, ground contact and original visual/frame/native acceptance remain open;
 no quality or acceptance limit was reduced.
+
+### 2026-10-06 — loading status upload regression (CPU verified; runtime follow-up open)
+
+One candidate-only hardware run at `ea0a0621b988eaa26fa2cd6450f03473cbf3fa17` used
+the existing seven WebGPU/performance flags, the original 90-frame warmup and readiness
+deadlines, 1920×1080, resolution scale 1 and MSAA 4. It first observed playable spawn
+coverage at 116.081 s; final startup/curtain release was stamped at 117.618 s. All six
+required spawn cells completed, with 48 resident/loaded cells and 218,809 admitted
+placements at the end. The retained initial forest image submitted 18,391 visible prop
+instances, 55 prop draws and 12,311,836 prop triangles. No admission error or device loss
+was recorded. This establishes candidate loading and initial geometry observations only.
+
+The overall run remains **RED**: `TN_STARTUP_STALLED` reported unchanged 95% progress
+at 100 s, and the shortened readiness scenario waived every triviality-eligible assertion.
+The original full scenario, frame/visual/native acceptance and matched before/after remain
+open. Foreign GPU activity overlapped 12 monitored process samples after a clean launch
+guard, so this run cannot establish controlled performance. Raw profiles, exact arguments,
+curtain/forest PNGs and cleanup receipts are retained in the task workspace under
+`performance-resume-20261006/readiness-qualification/`; no screenshot depicts the later fix.
+
+Independent profile/source review identified repeated status-canvas uploads in the loading
+overlay: that call path accounts for 94.433 s of V8 samples, compared with 0.057 s for all
+other image-upload paths. Strata marked its unchanged rounded percentage texture dirty
+every render. A real Texture.version regression failed at 105 versus expected 4 after
+repeated unchanged text. The game now repaints/uploads only when the displayed text changes;
+bar/layout updates, canvas resolution, readiness and error messages remain intact. All seven
+Strata loading tests pass, including changed-percentage and error-message controls. Runtime
+loading-speed improvement and a fresh post-fix screenshot remain unverified; no deadline,
+quality setting or acceptance threshold was relaxed.
