@@ -196,15 +196,20 @@ export interface IRendererLike {
    */
   readback(attribute: unknown): Promise<ArrayBuffer>;
   /**
-   * The scene pass's own depth texture, which is the previous frame's scene-pass depth an occlusion
-   * cull tests against, or `undefined` when no output graph installed a pass to render one.
+   * The scene pass's stored depth attachment and sample count, from an authored pass or three's
+   * internal framebuffer target. `undefined` when neither has rendered a depth to read.
    *
    * Optional because a backend that cannot render into a target of its own has no scene-pass depth to
    * hand over. A cull reads this every dispatch: on the frame it answers, the texture holds what the
    * previous frame's pass wrote, because this is asked before the frame draws.
    */
   scenePassDepth?():
-    | { readonly texture: DepthTexture; readonly width: number; readonly height: number }
+    | {
+        readonly texture: DepthTexture;
+        readonly width: number;
+        readonly height: number;
+        readonly samples?: number;
+      }
     | undefined;
   render(scene: Object3D, camera: Camera): void;
   /** Draws after the world without clearing or passing through the world's output pipeline. */
@@ -773,69 +778,27 @@ function wrapRenderer(
       return created;
     },
     scenePassDepth: () => {
-      // Where the world was drawn, in the order three picks its own depth from: an explicit pass
-      // when a chain installed one, else the internal framebuffer target three renders into for
-      // tone mapping, else the canvas. The framebuffer target is the one a game without a chain
-      // uses — `Renderer.js` draws the world into it and blits the tone-mapped result to the
-      // canvas — so its depth is the previous frame's scene-pass depth, and the canvas depth is
-      // never written at all.
+      // Three's implicit depth is in Textures.updateRenderTarget's data, not target.depthTexture.
+      // Never fall through to presentation depth: the output blit does not draw the world there.
+      // Read the existing attachment without creating a target or claiming texture bookkeeping.
       const host = raw as {
-        getCanvasTarget?: () => { depthTexture?: DepthTexture };
         needsFrameBufferTarget?: boolean;
         _getFrameBufferTarget?: () => {
-          depthTexture?: DepthTexture;
-          width?: number;
-          height?: number;
+          depthTexture?: DepthTexture | null;
+          samples?: number;
         } | null;
+        _textures?: { get(t: unknown): { depthTexture?: DepthTexture | null } };
       };
-      const frameBuffer =
-        host.needsFrameBufferTarget === true ? host._getFrameBufferTarget?.() : undefined;
-      const pass = outputPass?.renderTarget;
-      const surface = host.getCanvasTarget?.()?.depthTexture;
-      const backend = (
-        raw as {
-          backend?: {
-            get?: (t: unknown) => { texture?: unknown; initialized?: boolean } | undefined;
-          };
-        }
-      ).backend;
-      const textures = (
-        raw as {
-          _textures?: { get(t: unknown): { initialized?: boolean; version?: number } };
-        }
-      )._textures;
-      for (const [texture, fallback] of [
-        [pass?.depthTexture, pass],
-        [frameBuffer?.depthTexture, frameBuffer],
-        [surface, undefined],
-      ] as const) {
-        if (texture === undefined || texture === null) continue;
-        const width = texture.image?.width ?? fallback?.width ?? 0;
-        const height = texture.image?.height ?? fallback?.height ?? 0;
-        // Under two pixels is a surface depth that has not been sized by a render yet: it answers a
-        // question about a 1x1 texture, which is not the frame.
-        if (width < 2 || height < 2) continue;
-        // The surface's depth attachment is not marked as a render-target texture, so three's texture
-        // utils try to upload it as an ordinary sampled texture when a shader binds it and refuse:
-        // `THREE.WebGPUTextureUtils: Texture already initialized`. It *is* a render attachment —
-        // that is where the frame's depth lives — and this is the flag that tells the utils to leave
-        // it alone. A pass's own depth already carries it.
-        if (texture.isRenderTargetTexture !== true) texture.isRenderTargetTexture = true;
-        // The canvas target's depth is not a `RenderTarget`'s, so three never registered it in its
-        // own texture bookkeeping and the sampled bind would try to create it a second time. Claim
-        // it at its current version so the bind reuses the GPU texture the frame already wrote —
-        // but only once that GPU texture exists, or the claim would stop three creating it at all.
-        const gpu = backend?.get?.(texture);
-        if (gpu?.texture !== undefined) {
-          const data = textures?.get(texture);
-          if (data !== undefined) {
-            data.initialized = true;
-            data.version = texture.version;
-          }
-        }
-        return { height, texture, width };
-      }
-      return undefined;
+      const target =
+        outputPass?.renderTarget ??
+        (host.needsFrameBufferTarget === true ? host._getFrameBufferTarget?.() : undefined);
+      if (!target) return undefined;
+      const texture = host._textures?.get(target).depthTexture ?? target.depthTexture;
+      if (!texture) return undefined;
+      const width = texture.image.width ?? 0;
+      const height = texture.image.height ?? 0;
+      if (width < 2 || height < 2) return undefined;
+      return { height, texture, width, samples: Math.max(1, target.samples ?? 1) };
     },
     readback: async (attribute) => {
       if (kind !== "webgpu") throw new Error(`readback is unavailable on the ${kind} renderer.`);

@@ -2088,8 +2088,6 @@ export class WorldGpuScene {
   dispatch(renderer: IRendererLike, camera: Camera): void {
     if (this.#on === false) return;
     if (this.#buffers === undefined) return;
-    const kernel = this.#kernel ?? this.#buildKernel();
-    if (kernel === undefined) return;
     cameraPlanes(camera, this.#planes);
     for (const [index, plane] of this.#planeVectors.entries()) {
       const at = index * 4;
@@ -2105,6 +2103,10 @@ export class WorldGpuScene {
     // `(placements, slots, keys, keys)`: the last two are the same count, and the clear dispatch is
     // one thread per key.
     if (this.#occlusion !== "off") this.#measureOcclusion(renderer, camera);
+    // Measurement may replace the pyramid buffer on first use or resize. Bind the new buffer in
+    // this frame's cull, rather than dispatching a kernel captured before the replacement.
+    const kernel = this.#kernel ?? this.#buildKernel();
+    if (kernel === undefined) return;
     const keys = this.#regions.length;
     this.#counts.value.set(this.placements.length, this.#order.length, keys, keys);
     renderer.compute(kernel.clear);
@@ -2141,6 +2143,7 @@ export class WorldGpuScene {
    * hidden and reading as a cull that found no work.
    */
   #measureOcclusion(renderer: IRendererLike, camera: Camera): void {
+    this.#occlusionCut.value = 1;
     // The main pass returns on an orthographic camera before it gets here (that is a shadow level's
     // own), and a linear depth in metres is a perspective projection's to begin with.
     if (!(camera instanceof PerspectiveCamera)) {
@@ -2175,7 +2178,7 @@ export class WorldGpuScene {
         : 0;
     // The chain first, then the camera the chain belongs to: last frame's, which is what the
     // previous frame's depth recorded.
-    this.#pyramid.build(renderer, depth.texture, camera.near, camera.far);
+    this.#pyramid.build(renderer, depth.texture, camera.near, camera.far, depth.samples ?? 1);
     this.#occlusionView.value.copy(this.#previousView);
     this.#previousView.copy(_view);
     this.#previousEye.copy(_eye);

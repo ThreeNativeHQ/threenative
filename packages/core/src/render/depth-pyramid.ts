@@ -315,6 +315,8 @@ export class DepthPyramid {
   readonly #nearFar = uniform(new Vector2(0.1, 1000));
   #levels: { width: number; height: number; offset: number }[] = [];
   #kernels: Kernel[] = [];
+  #depth: DepthTexture | undefined;
+  #samples = 1;
   #disposed = false;
 
   /** The chain's level count, which is also the clamp the test's level selection runs into. */
@@ -375,29 +377,21 @@ export class DepthPyramid {
   }
 
   /**
-   * Rebuild the chain from the depth the frame before this one left behind, and answer how many
-   * dispatches it cost so a measurement can time the whole chain.
+   * Resolve every sample of the previous frame's stored depth into level 0, then reduce the chain.
+   * The resolve shares level 0's dispatch, so timing the whole chain includes that cost.
    */
   build(
     renderer: { compute(node: unknown): void },
     depth: DepthTexture,
     near: number,
     far: number,
+    samples = 1,
   ): number {
     if (this.#disposed || this.#levels.length === 0) return 0;
-    const host = globalThis as { __tnPyrDbg?: number };
-    if ((host.__tnPyrDbg ?? 0) < 4) {
-      host.__tnPyrDbg = (host.__tnPyrDbg ?? 0) + 1;
-      const d = depth as unknown as {
-        isDepthTexture?: boolean;
-        isRenderTargetTexture?: boolean;
-        version?: number;
-      };
-      console.info(
-        `[a11] pyramid.build depth isDepth=${String(d.isDepthTexture)} isRT=${String(
-          d.isRenderTargetTexture,
-        )} version=${String(d.version)}`,
-      );
+    if (depth !== this.#depth || samples !== this.#samples) {
+      this.#kernels = [];
+      this.#depth = depth;
+      this.#samples = samples;
     }
     this.#depthSize.value.set(depth.image.width ?? 0, depth.image.height ?? 0);
     this.#nearFar.value.set(near, far);
@@ -426,45 +420,53 @@ export class DepthPyramid {
         // One thread per texel of this level, addressed as a float: TSL's clamp is float-only, so
         // the whole reduction stays in floats and converts once, at the storage index.
         const linear = float(instanceIndex);
-        If(linear.greaterThanEqual(own.width * own.height), () => Return());
+        If(linear.greaterThanEqual(own.width * own.height), () => {
+          Return();
+        });
         const y = linear.div(own.width).floor();
         const x = linear.sub(y.mul(own.width));
         const far = float(0).toVar();
         for (const [dx, dy] of FOOTPRINT) {
-          const sample =
-            below === undefined
-              ? // One sample of a multisampled depth is that sample's depth; the max over the
-                // samples is the resolve, and the two differ by less than the level-0 texel.
-                // ponytail: read every sample when a cull turns this on.
-                nodes(nearFar.x)
-                  .mul(nodes(nearFar.y))
-                  .div(
-                    nodes(nearFar.y).sub(
-                      nodes(nearFar.y)
-                        .sub(nodes(nearFar.x))
-                        .mul(
-                          textureLoad(
-                            depth,
-                            nodes(
-                              ivec2(
-                                int(nodes(x.mul(2).add(dx)).clamp(0, nodes(depthSize.x).sub(1))),
-                                int(nodes(y.mul(2).add(dy)).clamp(0, nodes(depthSize.y).sub(1))),
+          // Resolve the stored MSAA attachment into this single-distance buffer. Max over every
+          // sample keeps an uncovered edge sample; copying depth or changing the main pass is unnecessary.
+          for (
+            let sampleIndex = 0;
+            sampleIndex < (below === undefined ? this.#samples : 1);
+            sampleIndex += 1
+          ) {
+            const sample =
+              below === undefined
+                ? nodes(nearFar.x)
+                    .mul(nodes(nearFar.y))
+                    .div(
+                      nodes(nearFar.y).sub(
+                        nodes(nearFar.y)
+                          .sub(nodes(nearFar.x))
+                          .mul(
+                            textureLoad(
+                              depth,
+                              nodes(
+                                ivec2(
+                                  int(nodes(x.mul(2).add(dx)).clamp(0, nodes(depthSize.x).sub(1))),
+                                  int(nodes(y.mul(2).add(dy)).clamp(0, nodes(depthSize.y).sub(1))),
+                                ),
                               ),
+                              float(sampleIndex),
                             ),
                           ),
-                        ),
-                    ),
-                  )
-              : chain.element(
-                  float(below.offset)
-                    .add(
-                      nodes(y.mul(2).add(dy))
-                        .clamp(0, below.height - 1)
-                        .mul(below.width),
+                      ),
                     )
-                    .add(nodes(x.mul(2).add(dx)).clamp(0, below.width - 1)),
-                );
-          far.assign(max(far, nodes(sample)));
+                : chain.element(
+                    float(below.offset)
+                      .add(
+                        nodes(y.mul(2).add(dy))
+                          .clamp(0, below.height - 1)
+                          .mul(below.width),
+                      )
+                      .add(nodes(x.mul(2).add(dx)).clamp(0, below.width - 1)),
+                  );
+            far.assign(max(far, nodes(sample)));
+          }
         }
         chain
           .element(
@@ -550,5 +552,6 @@ export class DepthPyramid {
     this.#disposed = true;
     this.#kernels = [];
     this.#levels = [];
+    this.#depth = undefined;
   }
 }
