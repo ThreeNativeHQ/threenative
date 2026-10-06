@@ -3267,5 +3267,11 @@ Fresh independent attachment review also passes: 24 focused CPU checks, both exa
 controls, the three-line source/bundle delta and all 48 patch references. These fixes remain CPU
 evidence. The negative counter is not established as an OOM cause, and physical VRAM recovery,
 readiness, matched gameplay images, FPS and native acceptance remain open. No additional GPU
-capture or heavy build ran during the coordinated hold. Current published CI is skipped and does
-not qualify the full board. PRD-466 remains 50%; no acceptance box changed.
+capture or heavy build ran during the coordinated hold. The preceding published CI was skipped
+and did not qualify the full board. PRD-466 remains 50%; no acceptance box changed.
+
+The normal publication hook initially failed its scaffold byte snapshots (321 other drift checks
+passed). All thirteen real no-install `createProject` trees recover their exact published hashes
+when only the previous Three patch bytes are restored in memory. The expected fingerprints were
+refreshed for that proven dependency change; the full-tree assertion and exclusions are unchanged.
+All 66 scaffold checks and Biome pass. No generated gameplay source or quality setting changed.
