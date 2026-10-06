@@ -137,8 +137,11 @@ public:
     bool ok() const { return diagnostics_.empty(); }
     Stage stage() const { return stage_; }
 
-    /** Canonical text: one line per statement, expressions numbered by first use. */
-    std::string dump() const;
+    /**
+     * Canonical text: one line per statement, expressions numbered by first use. `typed` suffixes
+     * every expression with `:<type>` (the TSL differential compares structure and types).
+     */
+    std::string dump(bool typed = false) const;
 
 private:
     friend class WgslEmitter;
@@ -171,6 +174,8 @@ private:
     void emit(Stmt stmt) { blocks_[current_].push_back(stmt); }
     void dumpBlock(uint32_t block, int depth, std::string& out, std::vector<int>& numbering, int& next) const;
     std::string describe(ExprId id, std::vector<int>& numbering) const;
+    std::string describeUntyped(ExprId id, std::vector<int>& numbering) const;
+    mutable bool typed_ = false;
 
     Stage stage_;
     std::vector<Expr> exprs_;

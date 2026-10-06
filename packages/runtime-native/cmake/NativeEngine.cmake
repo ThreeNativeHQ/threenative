@@ -226,6 +226,23 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     endif()
 endif()
 
+# PRD-510 phase 2: the native TSL builder's corpus (src/engine/shader/tsl/tsl.h), compared graph for
+# graph with the pinned three's TSL node trees by differential.mjs --suite tsl-ir.
+add_executable(tn-native-engine-tsl-corpus EXCLUDE_FROM_ALL tests/native-engine/tsl-corpus/tsl_corpus.cpp)
+tn_native_engine_target(tn-native-engine-tsl-corpus)
+target_link_libraries(tn-native-engine-tsl-corpus PRIVATE tn_engine_shader)
+set_property(GLOBAL APPEND PROPERTY TN_NATIVE_ENGINE_TEST_TARGETS tn-native-engine-tsl-corpus)
+find_program(TN_NODE_EXECUTABLE node)
+if(TN_PNPM_EXECUTABLE AND TN_NODE_EXECUTABLE)
+    add_test(NAME native_engine_tsl_ir
+        COMMAND ${TN_NODE_EXECUTABLE} tests/native-engine/differential.mjs --suite tsl-ir
+            --native $<TARGET_FILE:tn-native-engine-tsl-corpus>
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+    set_tests_properties(native_engine_tsl_ir PROPERTIES LABELS "native-engine")
+else()
+    message(WARNING "pnpm or node not found: native_engine_tsl_ir is not registered")
+endif()
+
 # PRD-519 phase 3: the GPU cull and LOD kernel (clear, cull, clamp), built in the shader IR from
 # world-gpu-scene.ts's kernels; the test runs it on a real device against the CPU oracle above.
 add_library(tn_engine_gpu_scene_kernel STATIC src/engine/world/gpu_scene/cull_kernel.cpp)
@@ -290,6 +307,30 @@ if(TN_PNPM_EXECUTABLE)
     set_tests_properties(native_engine_model_lod_reference_current PROPERTIES LABELS "native-engine")
 else()
     message(WARNING "pnpm not found: native_engine_model_lod_reference_current is not registered")
+endif()
+
+# PRD-519: InstancedBatch's own decisions, ported from packages/core/src/instanced-batch.ts and
+# instanced-batch-lod.ts: which placements a batch holds, the mesh it builds or refuses, and the
+# render partition and LOD level every placement draws at. It reuses the LOD selection above and
+# creates no GPU resource, so it links the scene classes and nothing else;
+# `native_engine_batching_eligibility_reference_current` keeps the committed table equal to what the
+# core module decides today, one step per case of instanced-batch.spec.ts.
+add_library(tn_engine_batch STATIC src/engine/renderer/projection/instanced_batch.cpp)
+tn_native_engine_target(tn_engine_batch)
+target_link_libraries(tn_engine_batch PUBLIC tn_engine_lod)
+target_include_directories(tn_engine_batch PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+tn_native_engine_test(tn-native-engine-instanced-batch-test tests/native-engine/projection/instanced_batch_test.cpp
+    native_engine_batching_eligibility=batching_eligibility)
+target_link_libraries(tn-native-engine-instanced-batch-test PRIVATE tn_engine_batch)
+target_include_directories(tn-native-engine-instanced-batch-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/projection)
+if(TN_PNPM_EXECUTABLE)
+    add_test(NAME native_engine_batching_eligibility_reference_current
+        COMMAND ${TN_PNPM_EXECUTABLE} --workspace-root exec tsx
+            packages/runtime-native/tests/native-engine/projection/instanced-batch-reference.ts --check
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../..)
+    set_tests_properties(native_engine_batching_eligibility_reference_current PROPERTIES LABELS "native-engine")
+else()
+    message(WARNING "pnpm not found: native_engine_batching_eligibility_reference_current is not registered")
 endif()
 
 # PRD-521: the GPU-driven main pass's per-placement CPU oracle, ported from

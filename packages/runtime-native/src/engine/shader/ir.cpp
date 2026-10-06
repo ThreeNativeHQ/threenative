@@ -508,6 +508,12 @@ void Program::Loop(ExprId count, const std::function<void(ExprId)>& body, Where 
 }
 
 std::string Program::describe(ExprId id, std::vector<int>& numbering) const {
+    std::string out = describeUntyped(id, numbering);
+    if (typed_ && id != kInvalid && numbering[id] < 0) out += ":" + exprs_[id].type.name();
+    return out;
+}
+
+std::string Program::describeUntyped(ExprId id, std::vector<int>& numbering) const {
     if (id == kInvalid) return "<invalid>";
     const Expr& e = exprs_[id];
     if (numbering[id] >= 0) return "%" + std::to_string(numbering[id]);
@@ -594,11 +600,13 @@ void Program::dumpBlock(uint32_t block, int depth, std::string& out, std::vector
     }
 }
 
-std::string Program::dump() const {
+std::string Program::dump(bool typed) const {
+    typed_ = typed;
     std::string out;
     std::vector<int> numbering(exprs_.size(), -1);
     int next = 0;
     dumpBlock(0, 0, out, numbering, next);
+    typed_ = false;
     return out;
 }
 
