@@ -1784,7 +1784,8 @@ describe("CI pipeline structure", () => {
     expect(lane).toContain('for scenario in "${scenarios[@]}"');
     expect(lane).toContain('test "${#scenarios[@]}" -gt 0');
     expect(lane).not.toContain("SHARD");
-    expect(lane).toContain("max-parallel: 8");
+    // GitHub's shared hosted quota owns capacity; the workflow must not hold selected kits back.
+    expect(lane).not.toMatch(/^\s+max-parallel:/mu);
     expect(lane).toContain("fail-fast: false");
     expect(lane).toContain("runs-on: ubuntu-24.04");
   });
