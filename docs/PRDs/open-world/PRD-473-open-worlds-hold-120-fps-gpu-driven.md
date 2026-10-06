@@ -220,6 +220,27 @@ nearest shader/residency/bundle/caster/static/HLOD specs pass 97/97; changed-sou
 TS7, Biome, and the rebuilt core declarations/publint pass. These are CPU backend-call controls,
 not measured GPU bandwidth or frame-time savings.
 
+The parent's matched baseline `786e2367` / candidate `9b33b68e` pair failed the same 120-second
+spawn-admission gate with all 6 required cells loaded and `worldReady` false. Each 90-frame warmup
+took about 90 seconds; neither arm reached the original 17-view gameplay/visual acceptance. The
+candidate's `graphSnapshotCurrent` consumes 17.383 sampled self-seconds over the actual 183.154-second
+browser profile (9.49%). This is loading-path cost, not a qualified steady gameplay comparison.
+The retained final counters show 55 eligible CPU bundle members, so they do not establish an
+unsafe-verdict-only cache as the measured fix.
+
+The narrow correction replaces `for-in` plus `hasOwn` with `Object.keys` in snapshot validation.
+Installed TSL node prototypes carry thousands of enumerable chaining methods that the original
+own-property safety walk never observes. A real installed-node regression reproduces 186,400
+inherited-method probes over 20 unchanged frames before the change and zero afterward, while
+validation continues and records stay unchanged. Own-key order, link identity, headers, deep
+unversioned mutation and node-version checks remain live on every eligibility check; each validated
+row now allocates an own-key array. No new pass cache or version-only authority is introduced.
+The seven nearest CPU specs pass 108/108, core package typecheck and changed source/tests strict
+TS7 pass, and Biome passes with existing warnings. Fresh independent source review finds no
+concrete blocker. The earlier red output and raw profiles remain retained; this source proof does
+not establish lower production frame time. The parent owns the fresh profile, readiness/cadence
+repair and GPU/visual acceptance; no new GPU, native, full-board or publication gate ran here.
+
 Remaining validation must repeat the parent's profiler on the same production workload and compare
 actual eligibility checks/refreshes alongside total CPU frame time. HLOD needs nonzero active proxy
 observations on eligible content, same-pose near/middle/far and transition captures, approach/turn/

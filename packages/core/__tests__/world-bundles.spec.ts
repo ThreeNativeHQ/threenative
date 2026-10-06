@@ -17,7 +17,7 @@ import {
 // one rather than the `Frustum` this file's world was built with.
 import { Frustum } from "three/src/math/Frustum.js";
 import Renderer from "three/src/renderers/common/Renderer.js";
-import { viewportSharedTexture } from "three/tsl";
+import { uniform, viewportSharedTexture } from "three/tsl";
 import {
   BundleGroup,
   type Material,
@@ -880,6 +880,36 @@ describe("the main pass's draw bundles", () => {
         gpuMeshes: 0,
       });
       expect(cells.stats().bundle.cpuMeshes).toBeGreaterThan(0);
+    } finally {
+      cells.dispose();
+    }
+  });
+  it("validates own TSL graph properties without visiting inherited chain methods", async () => {
+    const painted = new MeshStandardNodeMaterial();
+    const node = uniform(1);
+    painted.colorNode = node;
+    // The installed TSL prototype carries thousands of enumerable chaining methods. They are
+    // outside Object.values' safety graph, so scanning them cannot certify any additional link.
+    const inherited = new Set<string>();
+    for (const key in node) if (!Object.hasOwn(node, key)) inherited.add(key);
+    expect(inherited.size).toBeGreaterThan(1000);
+    const { renderer, world: cells } = await world({
+      bundles: true,
+      gpuScene: false,
+      chunkModel: (url) => standAtCellOf(url, chunkOf([painted])),
+    });
+    try {
+      cells.update(renderer, playerCamera());
+      await flushed(cells, renderer, playerCamera());
+      const records = cells.stats().bundle.records;
+      const validations = cells.stats().bundle.eligibility.validations;
+      const hasOwn = vi.spyOn(Object, "hasOwn");
+      for (let frame = 0; frame < 20; frame++) cells.update(renderer, playerCamera());
+      expect(cells.stats().bundle.eligibility.validations).toBeGreaterThan(validations);
+      expect(cells.stats().bundle.records).toBe(records);
+      expect(
+        hasOwn.mock.calls.filter(([object, key]) => object === node && inherited.has(String(key))),
+      ).toHaveLength(0);
     } finally {
       cells.dispose();
     }

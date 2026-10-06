@@ -3069,17 +3069,18 @@ function graphSnapshotCurrent(row: IBundleGraphSnapshot): boolean {
   )
     return false;
   if (row.terminal) return true; // Still a framebuffer reader, whatever its other children do.
-  let index = 0;
-  // Same own enumerable keys as Object.values, without allocating another values/key array or Set.
-  for (const key in node) {
-    if (!Object.hasOwn(node, key)) continue;
+  // Object.values observes only own enumerable keys. A TSL node's prototype carries thousands
+  // of enumerable chaining methods, so for-in + hasOwn paid for all of them on every validation.
+  const keys = Object.keys(node);
+  if (keys.length !== row.keys.length) return false;
+  for (let index = 0; index < keys.length; index++) {
+    const key = keys[index] as string;
     if (row.keys[index] !== key) return false;
     const value = Reflect.get(node, key);
     if ((value !== null && typeof value === "object" ? value : undefined) !== row.links[index])
       return false;
-    index++;
   }
-  return index === row.keys.length;
+  return true;
 }
 function captureBundleGraph(
   node: object,
