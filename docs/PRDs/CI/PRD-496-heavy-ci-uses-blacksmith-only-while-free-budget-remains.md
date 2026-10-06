@@ -28,6 +28,10 @@ Inspected `develop` at `d3c009e4404abcc2041f58124693edb9c78d802b`:
 
 2026-10-05 — requested by the owner: heavy work gets free Blacksmith capacity, then falls back to ordinary GitHub Actions. This draft proposes the following implementation choices for review:
 
+2026-10-06 — owner requested one PR first: [#444](https://github.com/ThreeNativeHQ/threenative/pull/444) retains this PRD and absorbs the source history and migration intent of [#445](https://github.com/ThreeNativeHQ/threenative/pull/445). The original PRD head is `f9f52492597e95c3a612b6d5ee044f2e635e913f`; bot heads `e59e245e9f58366db2c81ac124ea798178dff0a3`, `422adc7a12a64ed77817fd0bc146a517131f2df4`, and `768b90cf1953a8c68446a93df126313792c06e2d` are preserved in the retained branch history. The bot's broad runner and checkout substitutions are superseded by the guarded, allowlisted rollout below; they are not enabled by consolidation. The bot branch remains preserved. #444 stays draft with existing GitHub/owner routing and no Blacksmith dispatch.
+
+Official documentation confirms the allowance and 4-vCPU multiplier, but the spending settings describe alerts without establishing a hard no-paid-overage stop. Historical estimated usage does not establish authenticated credit expiry, reporting completeness, or billing-period boundaries. These missing facts keep enforcement off; expired, exhausted, unavailable, or unverifiable credit must select standard GitHub before dispatch. [Runner FAQ](https://docs.blacksmith.sh/blacksmith-runners/overview#faq), [account settings](https://docs.blacksmith.sh/introduction/settings).
+
 | Choice | Proposed policy |
 | --- | --- |
 | Provider | Blacksmith runners within GitHub Actions, not a new CI platform |
@@ -144,7 +148,7 @@ Ship `off` by default. In `shadow`, report simulated decisions without reserving
 
 Compare identical candidates on the existing hosted baseline and Blacksmith with cold and warm caches. Measure end-to-end time including queue, admission, setup, compilation, cache transfer, and downstream waits; report normalized units per successful required check. Expand only for demonstrated feedback-time benefit. Vendor speed claims are not acceptance evidence. Avoid creating duplicate expensive proof on every push just to benchmark.
 
-## Phase 1 — Budget engine without live spending
+### Phase 1 — Budget engine without live spending
 
 - [ ] Implement the validated provider-usage/catalog adapter. proof: `pnpm exec vitest run scripts/__tests__/ci-blacksmith-usage.spec.ts` covers schema changes, partial reports, SKU conversions, and unavailable credentials.
 - [ ] Implement the atomic reservation ledger. proof: `pnpm exec vitest run scripts/__tests__/ci-blacksmith-ledger.spec.ts` covers concurrent admission, idempotency, settlement attribution, corruption, and reset boundaries.
@@ -152,7 +156,7 @@ Compare identical candidates on the existing hosted baseline and Blacksmith with
 
 **Gate:** Unit fixtures can exercise exhaustion and concurrency without a Blacksmith account or paid runner.
 
-## Phase 2 — Existing CI routes eligible jobs safely
+### Phase 2 — Existing CI routes eligible jobs safely
 
 - [ ] Integrate attempt-bound runner selection into the enrolled existing job. proof: `pnpm exec vitest run scripts/__tests__/ci-blacksmith-routing.spec.ts scripts/__tests__/ci-structure.spec.ts scripts/__tests__/ci-needs.spec.ts` preserves selected work and forces stale-output reruns onto hosted compute.
 - [ ] Isolate the trusted accounting controller from candidate execution. proof: `pnpm exec vitest run scripts/__tests__/ci-blacksmith-security.spec.ts` rejects fork, unauthorized actor, modified privileged workflow, and secret exposure paths.
@@ -160,7 +164,7 @@ Compare identical candidates on the existing hosted baseline and Blacksmith with
 
 **Gate:** The normal hosted path remains operational when every provider dependency is unavailable. Enforcement remains disabled pending the external gates below.
 
-## Phase 3 — Operator control and rollout support
+### Phase 3 — Operator control and rollout support
 
 - [ ] Add sanitized usage/routing summaries and the operator runbook. proof: `pnpm exec vitest run scripts/__tests__/ci-blacksmith-reporting.spec.ts` validates normalized units, redaction, and fallback reasons; `pnpm check:docs` validates the runbook links.
 - [ ] Implement default-off, shadow, capped-pilot, and kill-switch configuration. proof: `pnpm exec vitest run scripts/__tests__/ci-blacksmith-rollout.spec.ts` verifies that none of these paths can bypass the confirmed free ceiling or silently enable paid add-ons.
