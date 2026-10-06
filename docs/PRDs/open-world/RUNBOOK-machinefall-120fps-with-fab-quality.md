@@ -61,6 +61,17 @@ Last measured 2026-10-03 against `origin/develop` `4d5e07c98`: nvidia/turing, 12
 
 AC-1 and AC-2 stay open.
 
+**Update 2026-10-06 (what is left of AC-1, measured):** the steady walking frame of this PR reads render p95 7.2 ms on a quiet host (lenient reading). AC-1's own reading is held up by its slow windows, and they are not what they first looked like:
+
+- Not the present path: headless and private-Xvfb walks read the same.
+- Not texture uploads: 586 compressed uploads, each once; 0.18 ms of a 2.6 ms slow-window gap.
+- Not chunk merges: now 4x faster, byte-identical, under 0.5 s per walk.
+- Not GPU-scene queue calls: coalescing them cut 99% of those writes and moved nothing.
+
+What is left is renderer JavaScript per render object. three's `Bindings.updateForRender` makes about 750 uniform writes a frame, 72% of all `writeBuffer` calls, plus the first draws of newly streamed chunks.
+
+Skipping settled bundle records cannot remove that cost. Each record holds a private copy of the shared render-group uniforms: the material's bind group mixes object and render groups, so `sharedGroup` is false. Every skip either left that copy stale (a dark tree band) or kept no win. The lever is [PRD-400](../performance/PRD-400-the-frame-gets-cheaper-one-measured-cost-at-a-time.md)'s `bindings.updateForRender` mass: bind the shared groups once per pass.
+
 **Update 2026-10-03 evening (PRD-494, #424):** 3 interleaved runs per arm, nvidia/turing, 1280×720, load 3.8–6.4 (quiet).
 
 | | Walking render p50 / p95 | Walking GPU p50 / p95 | Walking main draws p50 | Idle render p95 |
