@@ -45,10 +45,10 @@ Generated from the PRD files' boxes; a PRD is done when every box is ticked.
 | [PRD-521](../done/native-engine/N13-native-streaming-and-world/PRD-521-n13b-worldcells-and-worldtiles-run-native.md) | WorldCells and WorldTiles run native (N13b) | 6/6 | done |
 | [PRD-522](N13-native-streaming-and-world/PRD-522-n13c-a-world-loads-walks-and-unloads-without-growth.md) | A world loads, walks and unloads without growth (N13c) | 3/4 | in progress |
 | [PRD-523](N14-native-render-chain-and-advanced-visuals/PRD-523-n14a-the-render-graph-owns-passes-and-history.md) | The render graph owns passes and history (N14a) | 6/7 | in progress |
-| [PRD-524](N14-native-render-chain-and-advanced-visuals/PRD-524-n14b-virtual-shadows-run-native.md) | Virtual shadows run native (N14b) | 5/5 | done |
+| [PRD-524](../done/native-engine/N14-native-render-chain-and-advanced-visuals/PRD-524-n14b-virtual-shadows-run-native.md) | Virtual shadows run native (N14b) | 5/5 | done |
 | [PRD-525](N14-native-render-chain-and-advanced-visuals/PRD-525-n14c-probes-run-native.md) | Probes run native (N14c) | 2/5 | in progress |
 | [PRD-526](N14-native-render-chain-and-advanced-visuals/PRD-526-n14d-post-effects-and-render-chains-run-native.md) | Post effects and render chains run native (N14d) | 2/5 | in progress |
-| [PRD-527](N14-native-render-chain-and-advanced-visuals/PRD-527-n14e-particles-and-fluids-run-native.md) | Particles and fluids run native (N14e) | 4/4 | done |
+| [PRD-527](../done/native-engine/N14-native-render-chain-and-advanced-visuals/PRD-527-n14e-particles-and-fluids-run-native.md) | Particles and fluids run native (N14e) | 4/4 | done |
 | [PRD-528](PRD-528-n15-framework-loop-rapier-sync-input-services.md) | Framework loop, Rapier sync, input and services (N15) | 6/7 | in progress |
 | [PRD-529](PRD-529-n16-native-playtest-inspection-telemetry.md) | Native playtest, inspection and telemetry (N16) | 5/6 | in progress |
 | [PRD-530](PRD-530-n17-strict-native-typescript-game-packaging.md) | Strict native-TypeScript game packaging (N17) | 4/7 | in progress |
@@ -118,10 +118,10 @@ Full text and rationale: [PRD-497 § Decisions](../done/native-engine/PRD-497-n0
 | N13c | ↳ [PRD-522 — A world loads, walks and unloads without growth](N13-native-streaming-and-world/PRD-522-n13c-a-world-loads-walks-and-unloads-without-growth.md) | N13b |
 | N14 | [Native render chain and advanced visuals](N14-native-render-chain-and-advanced-visuals/README.md) | CP1, N08, N09, N12 |
 | N14a | ↳ [PRD-523 — The render graph owns passes and history](N14-native-render-chain-and-advanced-visuals/PRD-523-n14a-the-render-graph-owns-passes-and-history.md) | N09 |
-| N14b | ↳ [PRD-524 — Virtual shadows run native](N14-native-render-chain-and-advanced-visuals/PRD-524-n14b-virtual-shadows-run-native.md) | N14a, N12 |
+| N14b | ↳ [PRD-524 — Virtual shadows run native](../done/native-engine/N14-native-render-chain-and-advanced-visuals/PRD-524-n14b-virtual-shadows-run-native.md) | N14a, N12 |
 | N14c | ↳ [PRD-525 — Probes run native](N14-native-render-chain-and-advanced-visuals/PRD-525-n14c-probes-run-native.md) | N14a |
 | N14d | ↳ [PRD-526 — Post effects and render chains run native](N14-native-render-chain-and-advanced-visuals/PRD-526-n14d-post-effects-and-render-chains-run-native.md) | N14a |
-| N14e | ↳ [PRD-527 — Particles and fluids run native](N14-native-render-chain-and-advanced-visuals/PRD-527-n14e-particles-and-fluids-run-native.md) | N14a, N08d |
+| N14e | ↳ [PRD-527 — Particles and fluids run native](../done/native-engine/N14-native-render-chain-and-advanced-visuals/PRD-527-n14e-particles-and-fluids-run-native.md) | N14a, N08d |
 | N15 | [PRD-528 — Framework loop, Rapier sync, input and services](PRD-528-n15-framework-loop-rapier-sync-input-services.md) | CP1, N06, N11, N02 |
 | N16 | [PRD-529 — Native playtest, inspection and telemetry](PRD-529-n16-native-playtest-inspection-telemetry.md) | N02, N03, N06 |
 | N17 | [PRD-530 — Strict native-TypeScript game packaging](PRD-530-n17-strict-native-typescript-game-packaging.md) (later milestone, gate T) | N05, N20 |

@@ -22,7 +22,7 @@
 ## Out of scope
 
 - World streaming and residency: [N13](N13-native-streaming-and-world/README.md)
-- Virtual-shadow caster culling: [PRD-524 (N14b)](N14-native-render-chain-and-advanced-visuals/PRD-524-n14b-virtual-shadows-run-native.md)
+- Virtual-shadow caster culling: [PRD-524 (N14b)](../done/native-engine/N14-native-render-chain-and-advanced-visuals/PRD-524-n14b-virtual-shadows-run-native.md)
 
 ## Execution Phases
 

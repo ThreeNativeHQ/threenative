@@ -3,8 +3,8 @@
 **Status:** IN PROGRESS
 **Complexity:** 4 — port of a paged shadow system with GPU feedback
 **Owner:** João
-**Work package:** N14 — [native-engine batch](../README.md)
-**Depends on:** [PRD-523 (N14a)](PRD-523-n14a-the-render-graph-owns-passes-and-history.md), [PRD-519 (N12)](../PRD-519-n12-native-batching-visibility-lod-gpu-scene.md)
+**Work package:** N14 — [native-engine batch](../../../native-engine/README.md)
+**Depends on:** [PRD-523 (N14a)](../../../native-engine/N14-native-render-chain-and-advanced-visuals/PRD-523-n14a-the-render-graph-owns-passes-and-history.md), [PRD-519 (N12)](../../../native-engine/PRD-519-n12-native-batching-visibility-lod-gpu-scene.md)
 
 ## Context
 
@@ -27,7 +27,7 @@ which pages.
 
 ## Out of scope
 
-- Ordinary shadow maps (N09). Probes ([PRD-525](PRD-525-n14c-probes-run-native.md)).
+- Ordinary shadow maps (N09). Probes ([PRD-525](../../../native-engine/N14-native-render-chain-and-advanced-visuals/PRD-525-n14c-probes-run-native.md)).
 
 ## Execution Phases
 

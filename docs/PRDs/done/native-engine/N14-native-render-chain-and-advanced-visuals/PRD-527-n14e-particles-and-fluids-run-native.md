@@ -3,8 +3,8 @@
 **Status:** PROPOSED
 **Complexity:** 3 — compute-driven systems on top of N08d's compute proof
 **Owner:** João
-**Work package:** N14 — [native-engine batch](../README.md)
-**Depends on:** [PRD-523 (N14a)](PRD-523-n14a-the-render-graph-owns-passes-and-history.md), [PRD-513 (N08d)](../N08-native-tsl-and-shader-packages/PRD-513-n08d-compute-multipass-and-a-dynamic-graph.md)
+**Work package:** N14 — [native-engine batch](../../../native-engine/README.md)
+**Depends on:** [PRD-523 (N14a)](../../../native-engine/N14-native-render-chain-and-advanced-visuals/PRD-523-n14a-the-render-graph-owns-passes-and-history.md), [PRD-513 (N08d)](../../../native-engine/N08-native-tsl-and-shader-packages/PRD-513-n08d-compute-multipass-and-a-dynamic-graph.md)
 
 ## Context
 
