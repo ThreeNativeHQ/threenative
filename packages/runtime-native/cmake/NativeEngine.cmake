@@ -398,6 +398,42 @@ else()
     message(WARNING "pnpm not found: native_engine_probes_reference_current is not registered")
 endif()
 
+# PRD-528 boxes 53/54: native Rapier stepped by the engine's FixedStepClock, with every body's
+# transform written into the native scene graph. The world is the prebuilt Rust Rapier library, so
+# this target exists only where the host build has it (never the Wasm core, which has no native
+# physics) and reaches no JS engine. `native_engine_rapier_sync` replays the shared parity scenario
+# against the TypeScript-driven path's recorded transforms, and
+# `native_engine_rapier_sync_reference_current` keeps the committed table equal to what
+# packages/physics produces today.
+if(TN_ENABLE_NATIVE_PHYSICS)
+    add_library(tn_engine_physics_sync STATIC src/engine/world/physics_sync.cpp)
+    tn_native_engine_target(tn_engine_physics_sync)
+    target_link_libraries(tn_engine_physics_sync PUBLIC tn_engine_world tn_engine_scene
+        threenative-native-physics)
+    target_include_directories(tn_engine_physics_sync PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    tn_native_engine_test(tn-native-engine-physics-sync-test tests/native-engine/world/physics_sync_test.cpp
+        native_engine_rapier_sync=sync native_engine_rapier_events=events)
+    target_link_libraries(tn-native-engine-physics-sync-test PRIVATE tn_engine_physics_sync)
+    target_include_directories(tn-native-engine-physics-sync-test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/world)
+    target_compile_definitions(tn-native-engine-physics-sync-test PRIVATE
+        TN_PHYSICS_SYNC_SCENARIO="${CMAKE_CURRENT_SOURCE_DIR}/../../packages/physics/__tests__/fixtures/physics-parity.scenario.json"
+        TN_PHYSICS_SYNC_REFERENCE="${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/world/physics_sync_reference.json")
+    find_program(TN_PHYSICS_SYNC_PNPM pnpm)
+    if(TN_PHYSICS_SYNC_PNPM)
+        add_test(NAME native_engine_rapier_sync_reference_current
+            COMMAND ${TN_PHYSICS_SYNC_PNPM} --workspace-root exec tsx
+                packages/runtime-native/tests/native-engine/world/physics-sync-reference.ts --check
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../..)
+        set_tests_properties(native_engine_rapier_sync_reference_current PROPERTIES LABELS "native-engine")
+    else()
+        message(WARNING "pnpm not found: native_engine_rapier_sync_reference_current is not registered")
+    endif()
+else()
+    message(STATUS "native physics disabled: the engine PhysicsSync and its test are not built")
+endif()
+
 get_property(tn_native_engine_test_targets GLOBAL PROPERTY TN_NATIVE_ENGINE_TEST_TARGETS)
 add_custom_target(tn-native-engine-tests DEPENDS ${tn_native_engine_test_targets})
 
