@@ -1,0 +1,19 @@
+[package]
+name = "tn-perry-adapter"
+version = "0.5.1520"
+edition = "2021"
+license = "MIT"
+description = "Perry adapter over the ThreeNative engine C ABI (decision 11)"
+publish = false
+
+[lib]
+name = "tn_perry_adapter"
+crate-type = ["staticlib"]
+
+[dependencies]
+# The Perry release pin: compiler, runtime and this adapter move as one version (decision 11).
+perry-ffi = { git = "https://github.com/PerryTS/perry", tag = "v0.5.1520" }
+
+[profile.release]
+# Perry links its runtime panic=abort; a foreign exception must not unwind through this crate.
+panic = "abort"

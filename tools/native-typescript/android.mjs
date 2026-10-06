@@ -1,26 +1,18 @@
 #!/usr/bin/env node
-// The Android arm64 build lane: which NDK links the corpus, and the GC runtime it links.
+// The Android arm64 build lane: which NDK Perry links with, and which cross runtime it links.
 //
-// The pinned toolchain emits aarch64 objects for `--mtriple=aarch64-linux-android`, but its own
-// link step drives `ld.lld` with the host's search paths, so it cannot find crtbegin_dynamic.o,
-// libc++, libunwind or the compiler-rt builtins. This module therefore does what the strict game
-// build already does — compile objects with the pinned compiler, then link with a host driver —
-// except that the driver is the NDK's own `aarch64-linux-android<api>-clang`, which carries its
-// sysroot with it. Every ELF it produces is linked `-Wl,-z,max-page-size=16384`, because Android
-// 15+ can run with 16 KB pages and a 4 KB-aligned library cannot be loaded at all.
-//
-// The GC runtime is the compiler's own (Boehm GC, pinned in the target file), cross-built here for
-// arm64 with that NDK: the pinned archive ships an x86_64 `libgc.a` and no arm64 one, and a
-// different collector would not be the runtime the Linux x64 target links.
+// Decision 11: Perry compiles the cross target itself, so this lane no longer emits objects for a
+// host linker to combine. It resolves the NDK, provisions the pinned Perry cross runtime for the
+// target triple, and reports how Perry is invoked. Perry links the target's own archives — runtime,
+// stdlib and UI — so the page size comes from the NDK driver Perry invokes.
 //
 // Everything this builds is cached outside the repository and keyed by the target's own pins.
 import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { verifiedFetch } from "./provision.mjs";
+import { loadLock, provisionCross } from "./provision.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const TARGETS = path.join(HERE, "targets");
@@ -44,6 +36,20 @@ export function findTarget(triple, dir = TARGETS) {
     if (target.triple === triple) return { file: path.join(dir, file), target };
   }
   return undefined;
+}
+
+/** The `--target` value Perry takes for a triple in targets/. */
+export function perryTarget(triple) {
+  switch (triple) {
+    case "aarch64-linux-android":
+      return "android";
+    case "x86_64-linux-android":
+      return "android-x86_64";
+    case "aarch64-apple-ios":
+      return "ios";
+    default:
+      return undefined;
+  }
 }
 
 /** Newest of `versions` whose leading number is in `majors`; undefined when none is. */
@@ -117,128 +123,33 @@ function hostTag(ndkDir) {
   return fs.readdirSync(prebuilt)[0];
 }
 
-function sha256File(file) {
-  return createHash("sha256").update(fs.readFileSync(file)).digest("hex");
-}
-
-/** Fetch each pinned archive, prove its checksum, and unpack it once. */
-async function fetchGcSources(sources, { log }) {
-  for (const source of sources) {
-    if (!fs.existsSync(source.archive)) {
-      log(`fetching ${path.basename(source.dir)}`);
-      fs.mkdirSync(path.dirname(source.archive), { recursive: true });
-      await verifiedFetch(source.url, source.sha256, source.archive);
-    }
-    const actual = sha256File(source.archive);
-    if (actual !== source.sha256)
-      throw named(
-        "TN_NATIVE_TS_CHECKSUM",
-        `${path.basename(source.archive)}: pinned sha256 ${source.sha256}, actual ${actual}`,
-      );
-    if (fs.existsSync(path.join(source.dir, "CMakeLists.txt"))) continue;
-    fs.mkdirSync(source.dir, { recursive: true });
-    const untar = spawnSync(
-      "tar",
-      ["-xzf", source.archive, "-C", source.dir, "--strip-components=1"],
-      {
-        stdio: "inherit",
-      },
-    );
-    if (untar.status !== 0)
-      throw named("TN_NATIVE_TS_GC", `tar exited ${untar.status} for ${source.archive}`);
-  }
+/**
+ * The cross runtime Perry links a target with, plus the NDK it drives. Perry refuses a runtime whose
+ * embedded build stamp does not match its own compiler, so the stamp is read here and reported as
+ * this lane's own failure rather than surfacing later as a link error.
+ */
+export async function ensureAndroidRuntime(
+  target,
+  { ndk, env = process.env, log = () => {} } = {},
+) {
+  const lock = loadLock();
+  const provisioned = await provisionCross(target.triple, { lock, env, log });
+  const stamps = stampReport(path.join(provisioned.dir, "libperry_runtime.a"));
+  if (stamps !== undefined) return { ...provisioned, ndk, stamps };
+  return { ...provisioned, ndk };
 }
 
 /**
- * The GC runtime for arm64, cross-built from the target's pinned sources with the pinned NDK and
- * cached by that pin. A cached archive whose tarball no longer matches is rebuilt, never trusted.
+ * Perry's runtime stamp, next to the compiler's own: an out-of-tree cross runtime built from a
+ * different source tree than the pinned compiler is refused by Perry at link time, so it is
+ * reported here, where the reason is actionable.
  */
-export async function ensureAndroidGc(target, { ndk, env = process.env, log = () => {} } = {}) {
-  const base =
-    env.TN_NATIVE_TS_ANDROID_CACHE ??
-    path.join(os.homedir(), ".cache", "threenative", "android-target");
-  const cache = path.join(base, `${target.gc.version}-${target.abi}`);
-  const src = path.join(cache, "src");
-  const build = path.join(cache, "build");
-  const archive = path.join(build, "libgc.a");
-  if (fs.existsSync(archive)) return { archive, cache };
-
-  const sources = [
-    {
-      version: target.gc.version,
-      url: target.gc.url,
-      sha256: target.gc.sha256,
-      dir: path.join(src, `gc-${target.gc.version}`),
-      archive: path.join(cache, path.basename(new URL(target.gc.url).pathname)),
-    },
-    {
-      version: target.gc.libatomicOps.version,
-      url: target.gc.libatomicOps.url,
-      sha256: target.gc.libatomicOps.sha256,
-      dir: path.join(src, `libatomic_ops-${target.gc.libatomicOps.version}`),
-      archive: path.join(cache, path.basename(new URL(target.gc.libatomicOps.url).pathname)),
-    },
-  ];
-  await fetchGcSources(sources, { log });
-
-  // Boehm's own release recipe puts libatomic_ops inside the gc source tree.
-  const atomicOps = path.join(sources[0].dir, "libatomic_ops");
-  if (!fs.existsSync(atomicOps)) {
-    fs.mkdirSync(atomicOps, { recursive: true });
-    for (const entry of fs.readdirSync(sources[1].dir))
-      fs.cpSync(path.join(sources[1].dir, entry), path.join(atomicOps, entry), { recursive: true });
-  }
-
-  log(`cross-building ${target.gc.name} ${target.gc.version} for ${target.abi}`);
-  fs.mkdirSync(build, { recursive: true });
-  const configure = spawnSync(
-    "cmake",
-    [
-      sources[0].dir,
-      "-G",
-      "Ninja",
-      `-DCMAKE_TOOLCHAIN_FILE=${path.join(ndk.dir, "build", "cmake", "android.toolchain.cmake")}`,
-      `-DANDROID_ABI=${target.abi}`,
-      `-DANDROID_PLATFORM=android-${target.apiLevel}`,
-      "-DCMAKE_BUILD_TYPE=Release",
-      "-DBUILD_SHARED_LIBS=OFF",
-      "-DCMAKE_POSITION_INDEPENDENT_CODE=ON",
-      "-Denable_threads=ON",
-      "-Denable_cplusplus=OFF",
-      "-Wno-dev",
-    ],
-    { cwd: build, stdio: "inherit" },
-  );
-  if (configure.status !== 0)
-    throw named(
-      "TN_NATIVE_TS_GC",
-      `cmake configure exited ${configure.status} for ${target.gc.name}`,
-    );
-  const compiled = spawnSync("cmake", ["--build", ".", "-j", "8"], {
-    cwd: build,
-    stdio: "inherit",
+export function stampReport(runtimeArchive) {
+  if (!fs.existsSync(runtimeArchive)) return undefined;
+  const run = spawnSync("sh", ["-c", `strings -a "${runtimeArchive}" | head -c 200000`], {
+    encoding: "utf8",
+    maxBuffer: 64 * 1024 * 1024,
   });
-  if (compiled.status !== 0 || !fs.existsSync(archive))
-    throw named("TN_NATIVE_TS_GC", `cmake --build exited ${compiled.status} without ${archive}`);
-  return { archive, cache };
-}
-
-/**
- * The link step for the target: the NDK's own arm64 driver, the cross-built GC, and the page size
- * every Android 15+ device needs. Returns the first error line, or undefined when it linked.
- */
-export function androidLinker(target, { ndk, gc, env = process.env } = {}) {
-  const driver = path.join(ndk.bin, "bin", `aarch64-linux-android${target.apiLevel}-clang`);
-  return (objects, out) => {
-    const link = spawnSync(
-      driver,
-      ["-shared", "-o", out, ...objects, gc.archive, `-Wl,-z,max-page-size=${target.maxPageSize}`],
-      { encoding: "utf8", maxBuffer: 64 * 1024 * 1024, env },
-    );
-    const output = `${link.stdout ?? ""}${link.stderr ?? ""}`;
-    if (link.status === 0 && !output.includes("error:")) return undefined;
-    return (
-      output.split("\n").find((line) => line.includes("error:")) ?? `linker exited ${link.status}`
-    );
-  };
+  const found = /build=([a-z]+:[0-9a-f]+)/u.exec(run.stdout ?? "")?.[1];
+  return found === undefined ? undefined : { build: found };
 }

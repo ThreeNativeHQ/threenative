@@ -2,7 +2,7 @@
 // Run the native-TypeScript language corpus twice and compare.
 //
 //   --reference               run each case with tsx, compare stdout and exit to <case>.expected
-//   --native --target <triple> compile each case with the pinned compiler to an
+//   --native --target <triple> compile each case with the pinned Perry to an
 //                              executable and compare stdout and exit to <case>.expected
 //   --build-only              link every case and run none of them
 //   --out <dir>               where a cross target's artifacts land (default
@@ -15,11 +15,16 @@
 //   --expect-compile-error    the selected cases must be compile-error cases (their
 //                              .expected holds `# compile-error <text>`; nothing runs)
 //
+// Perry compiles a whole module graph in one invocation, so a case and the modules it imports are
+// staged into a temporary project and compiled from its entry. Strict builds pass Perry's strict
+// controls (decision 11): `--strict-eval` and `--strict-dynamic-import` make every runtime-unknown
+// `eval`, `new Function` and dynamic `import` a compile-time error, and `--strict-unimplemented`
+// does the same for a recognized-but-unimplemented stdlib API, so none of them survives to runtime.
+//
 // A cross target is a file in targets/ whose `triple` names it (PRD-507): `--target
-// aarch64-linux-android` reads targets/android-arm64.json for the ABI, the API level, the page size
-// and the pinned GC, and links with the NDK's own driver, because the pinned compiler's link step
-// drives ld.lld with the host's search paths and finds no Android crt objects, libc++ or
-// compiler-rt builtins. Such a run leaves one <case>.so per linked case under <out>/<abi-ish>/.
+// aarch64-linux-android` reads targets/android-arm64.json for its triple, API level and page size,
+// and links with Perry's own Android target, which needs the pinned cross runtime and the NDK's
+// own driver. Such a run leaves one <case>.so per linked case under <out>/<abi-ish>/.
 //
 // Each `<case>.expected` holds the reference stdout, optionally followed by a
 // `# exit <n>` line naming the reference exit code (absent means 0).
@@ -30,9 +35,10 @@
 //
 // A case that imports "three" is game code against the engine (PRD-506): the reference
 // build resolves "three" to the workspace's pinned three@<catalog>, the native build to
-// three/three.ts linked with three/tn_three_shim.c and the engine's static libraries from
-// TN_NATIVE_ENGINE_BUILD (default packages/runtime-native/build/tn-linux). The case's own
-// source is never edited.
+// three/three.ts, which reaches the engine only through the Perry adapter
+// (three/perry-adapter) and the C ABI, linked with three/tn_three_shim.c and the engine's
+// static libraries from TN_NATIVE_ENGINE_BUILD (default packages/runtime-native/build/tn-linux).
+// The case's own source is never edited.
 import { spawn, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
@@ -41,10 +47,10 @@ import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { ENGINE_LIBS, buildStrict } from "../../packages/runtime-native/scripts/package-strict.mjs";
-import { androidLinker, ensureAndroidGc, findTarget, resolveNdk } from "./android.mjs";
+import { ensureAndroidRuntime, findTarget, perryTarget, resolveNdk } from "./android.mjs";
 import { compareRedToDeclared, loadLedger } from "./patches.mjs";
 import { provision } from "./provision.mjs";
+import { ENGINE_LIBS, bridgeFor, buildEngineBridge } from "./three-bridge.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const CORPUS = path.join(HERE, "corpus");
@@ -53,6 +59,10 @@ const DEFAULT_OUT = path.join(REPO, "artifacts", "native-typescript");
 const RSS_LIMIT_BYTES = 512 * 1024 * 1024;
 const IMPORT_RE = /\bfrom\s*["']([^"']+)["']|\bimport\s*["']([^"']+)["']/g;
 const THREE_IMPORT_RE = /\bfrom\s*["']three["']/g;
+const ADAPTER_PACKAGE = "tn-three-adapter";
+
+/** Every case, strictly compiled: no runtime-unknown eval, Function or dynamic import may survive. */
+export const STRICT_FLAGS = ["--strict-eval", "--strict-dynamic-import", "--strict-unimplemented"];
 
 // Environment variable names are SCREAMING_SNAKE and must keep that spelling.
 function mergeEnv(base, entries) {
@@ -99,29 +109,6 @@ export function unsupportedThreeImports(source, catalog) {
 
 function importsThree(file) {
   return /\bfrom\s*["']three["']/.test(fs.readFileSync(file, "utf8"));
-}
-
-/**
- * A case that imports "three" is built the way a strict game is (package-strict.mjs): the facade
- * staged as its "three" module, the TypeScript compiled to objects and linked with the shim, the
- * hooks and the engine's archives through the host C++ driver (tslang's own link step takes no
- * C++ archives). The corpus checks behaviour, so it writes no identity manifest.
- */
-function linkWithEngine({ name, entry, modules, tmp, triple, compileErrors, info }) {
-  const { errors } = buildStrict({
-    name,
-    entry,
-    modules: modules.slice(1),
-    outDir: tmp,
-    engineBuild: process.env.TN_NATIVE_ENGINE_BUILD,
-    compiler: {
-      binaryPath: info.binaryPath,
-      identity: `tslang ${info.lock.tag} ${info.artifact.sha256}`,
-    },
-    triple,
-    manifest: false,
-  });
-  compileErrors.push(...errors.map((error) => error.replace(path.join(CORPUS, ""), "")));
 }
 
 /** The workspace's pinned three, resolved the way the fixture reference runner resolves it. */
@@ -268,56 +255,88 @@ function runReference(name) {
 }
 
 /**
- * The compiled form of one case. The host target compiles the entry straight to an executable and
- * hands the module objects to it with `--obj`; a cross target emits every object and leaves the
- * link to the toolchain that owns the target's sysroot, the way the strict game build does. A
- * cross-built case that imports "three" gets the facade staged beside its entry, as buildStrict
- * stages it, because the corpus resolves "three" from beside the case itself.
+ * The temporary project one case compiles in. Perry takes one entry and resolves the rest, so the
+ * case and every module it imports are copied under `src/` with their imports intact. A case that
+ * imports "three" gets the facade staged as its `three` module and the Perry adapter as a package
+ * it may import, because the corpus resolves both from beside the case itself.
  */
-function emitCase({ entry, exe, modules, name, objects, tmp, triple, cross, compile }) {
-  let sources = modules.slice(1);
-  let entrySource = entry;
-  if (cross && importsThree(entry)) {
-    const staged = path.join(tmp, "src");
-    const facade = [
-      "three.ts",
-      ...(/\bfrom\s*["']three-aot["']/u.test(fs.readFileSync(entry, "utf8"))
-        ? ["three-aot.ts"]
-        : []),
-    ];
-    fs.mkdirSync(staged, { recursive: true });
-    for (const file of facade)
-      fs.copyFileSync(path.join(HERE, "three", file), path.join(staged, file));
-    entrySource = path.join(staged, path.basename(entry));
-    fs.copyFileSync(entry, entrySource);
-    sources = [...facade.map((file) => path.join(staged, file)), ...modules.slice(1)];
+async function stageProject({ entry, modules, tmp, three, bridge }) {
+  const src = path.join(tmp, "src");
+  await fsp.mkdir(src, { recursive: true });
+  for (const file of modules) {
+    await fsp.copyFile(file, path.join(src, path.basename(file)));
   }
-  for (const source of sources) {
-    const object = path.join(tmp, `${path.basename(source, ".ts")}.o`);
-    compile(source, ["--emit=obj", source, "-relocation-model=pic", ...triple, `-o=${object}`]);
-    objects.push(object);
+  const entryName = path.basename(entry);
+  if (three) {
+    // A case imports "three" and "three-aot" by name, so both are staged as the packages it
+    // resolves: "three" is the facade over the engine C ABI, and the adapter is the Perry native
+    // library the facade imports.
+    // "three-aot" is its own package too, so a case that imports only the hooks resolves them.
+    for (const [name, facade] of [
+      ["three", "three.ts"],
+      ["three-aot", "three-aot.ts"],
+    ]) {
+      const dir = path.join(tmp, "node_modules", name);
+      await fsp.mkdir(dir, { recursive: true });
+      await fsp.copyFile(path.join(HERE, "three", facade), path.join(dir, facade));
+      await fsp.writeFile(
+        path.join(dir, "package.json"),
+        `${JSON.stringify({ name, version: "0.185.1", main: facade, types: facade }, undefined, 2)}\n`,
+      );
+    }
+    const packageDir = path.join(tmp, "node_modules", ADAPTER_PACKAGE);
+    await fsp.cp(path.join(HERE, "three", "perry-adapter"), packageDir, {
+      recursive: true,
+      filter: (source) => !source.includes(`${path.sep}target${path.sep}`),
+    });
+    await bridge.writeManifest(packageDir);
   }
-  if (!cross) {
-    compile(entry, [
-      "--emit=exe",
-      entry,
-      "-relocation-model=pic",
-      ...triple,
-      `-o=${exe}`,
-      ...objects.map((object) => `--obj=${object}`),
-    ]);
-    return;
+  await fsp.writeFile(
+    path.join(tmp, "package.json"),
+    `${JSON.stringify(
+      {
+        name: "tn-corpus-case",
+        version: "0.0.0",
+        private: true,
+        ...(three
+          ? {
+              dependencies: {
+                three: "file:node_modules/three",
+                "three-aot": "file:node_modules/three-aot",
+                [ADAPTER_PACKAGE]: `file:node_modules/${ADAPTER_PACKAGE}`,
+              },
+            }
+          : {}),
+        perry: three ? { allow: { nativeLibrary: [ADAPTER_PACKAGE] } } : {},
+      },
+      undefined,
+      2,
+    )}\n`,
+  );
+  return { dir: tmp, entry: path.join(src, entryName) };
+}
+
+/**
+ * Compiles one case with Perry. A failure is named from its first error line, so a Perry refusal
+ * (`eval` under strict controls, an unresolvable dynamic import) is reported as itself.
+ */
+function compileWithPerry({ perry, project, out, env, extraFlags = [] }) {
+  const args = ["compile", project.entry, "-o", out, ...STRICT_FLAGS, ...extraFlags];
+  const run = spawnSync(perry, args, {
+    cwd: project.dir,
+    encoding: "utf8",
+    maxBuffer: 64 * 1024 * 1024,
+    env,
+  });
+  const output = `${run.stdout ?? ""}${run.stderr ?? ""}`;
+  const error = output
+    .split("\n")
+    .map((line) => line.trim())
+    .find((line) => /^Error:|error\[|error:|undefined reference/.test(line));
+  if (run.status !== 0 || error) {
+    return { ok: false, error: error ?? `perry exited ${run.status}`, output };
   }
-  const main = path.join(tmp, `${name}.main.o`);
-  compile(entrySource, [
-    "--emit=obj",
-    "--entry-point",
-    entrySource,
-    "-relocation-model=pic",
-    ...triple,
-    `-o=${main}`,
-  ]);
-  objects.push(main);
+  return { ok: true, output };
 }
 
 async function runNative(name, info, target, plan = {}) {
@@ -327,56 +346,31 @@ async function runNative(name, info, target, plan = {}) {
   const entry = path.join(CORPUS, `${name}.ts`);
   const modules = collectModules(entry);
   const tmp = await fsp.mkdtemp(path.join(os.tmpdir(), "tn-native-ts-"));
-  const root = path.dirname(info.binaryPath);
-  const env = mergeEnv(process.env, [
-    ["GC_LIB_PATH", root],
-    ["TSLANG_LIB_PATH", root],
-    ["DEFAULT_LIB_PATH", root],
-  ]);
-  // `--target` reaches the compiler as its own triple flag (`--mtriple=`, per `tslang --help`);
-  // without it the compiler emits for the host triple the pinned artifact was built for.
-  const triple = target ? [`--mtriple=${target}`] : [];
-  const compileErrors = [];
-  const compile = (file, args) => {
-    const run = spawnSync(info.binaryPath, args, {
-      encoding: "utf8",
-      maxBuffer: 64 * 1024 * 1024,
-      env,
-    });
-    const output = `${run.stdout ?? ""}${run.stderr ?? ""}`;
-    const firstError = output.split("\n").find((line) => line.includes("error:"));
-    if (run.status !== 0 || firstError) {
-      compileErrors.push(
-        (firstError ?? `compiler exited ${run.status}`).replace(path.join(CORPUS, ""), ""),
-      );
-    }
-  };
+  const three = importsThree(entry);
+  // A cross target with no engine archives for its ABI cannot link a three-import case: refuse it
+  // with the missing archives named, rather than trying the host archives and reporting a link error.
+  if (three && plan.blockedThreeImport) return { ok: false, note: plan.blockedThreeImport };
+  const bridge = three ? await bridgeFor({ target, ndk: plan.ndk }) : undefined;
+  const env = mergeEnv(process.env, [["PERRY_CACHE_DIR", path.join(tmp, ".perry")]]);
+  for (const [key, value] of plan.env ?? []) env[key] = value;
 
-  const exe = path.join(tmp, name);
-  const objects = [];
   const refusedImports = unsupportedThreeImports(
     fs.readFileSync(entry, "utf8"),
     JSON.parse(
       fs.readFileSync(path.join(REPO, "packages", "three-native", "api", "catalog.json"), "utf8"),
     ),
   );
-  if (refusedImports.length > 0) {
-    compileErrors.push(...refusedImports);
-  } else if (importsThree(entry) && plan.link === undefined) {
-    linkWithEngine({ name, entry, modules, tmp, triple, compileErrors, info });
-  } else {
-    emitCase({
-      entry,
-      exe,
-      modules,
-      name,
-      objects,
-      tmp,
-      triple,
-      cross: plan.link !== undefined,
-      compile,
-    });
-  }
+  const exe = path.join(tmp, name);
+  const project = await stageProject({ entry, modules, tmp, three, bridge });
+  const compile = compileWithPerry({
+    perry: info.binaryPath,
+    project,
+    out: exe,
+    env,
+    extraFlags: plan.perryFlags ?? [],
+  });
+  const compileErrors = [...refusedImports];
+  if (refusedImports.length === 0 && !compile.ok) compileErrors.push(compile.error);
 
   const expectedCompile = parseExpected(fs.readFileSync(expectedPath(name))).compileError;
   if (expectedCompile !== undefined) {
@@ -390,22 +384,16 @@ async function runNative(name, info, target, plan = {}) {
   if (compileErrors.length > 0) {
     return { ok: false, note: `TN_NATIVE_TS_COMPILE ${name}: ${compileErrors[0]}` };
   }
-  if (plan.link !== undefined) {
-    if (plan.blockedThreeImport !== undefined && importsThree(entry))
-      return { ok: false, note: `TN_NATIVE_TS_TARGET_BLOCKED ${name}: ${plan.blockedThreeImport}` };
-    const out = path.join(plan.outDir, plan.target.output.replace("{case}", name));
-    const error = plan.link(objects, out);
-    return error === undefined
-      ? { ok: true, note: `linked ${path.relative(REPO, out)}` }
-      : { ok: false, note: `TN_NATIVE_TS_LINK ${name}: ${error}` };
-  }
   if (plan.buildOnly) return { ok: true, note: "linked, not run (--build-only)" };
 
-  const envWithLibs = mergeEnv(env, [["LD_LIBRARY_PATH", root]]);
   const measured =
     name === "alloc-loop"
-      ? await runMeasured(exe, envWithLibs)
-      : { ...(await runExecutable(exe, envWithLibs)), peakRssBytes: 0 };
+      ? await runMeasured(exe, env)
+      : { ...(await runExecutable(exe, env)), peakRssBytes: 0 };
+  if (process.env.TN_NATIVE_TS_DEBUG === "1") {
+    console.error(measured.stderr);
+    console.error(`stdout: ${measured.stdout.toString()}`);
+  }
   const expected = parseExpected(fs.readFileSync(expectedPath(name)));
 
   if (!measured.stdout.equals(expected.stdout)) {
@@ -538,41 +526,39 @@ function printTable(rows) {
 }
 
 /**
- * What a cross target links with: the NDK its target file pins, the GC runtime cross-built for it,
- * and one output directory. A case that imports "three" is refused here, naming what is missing —
- * the engine archives exist for no Android build tree, and the three-import link step
- * (package-strict.mjs) compiles the shim and the hooks with the host driver.
+ * What a cross target links with: the Perry cross runtime for its triple and the NDK its target
+ * file pins. A case that imports "three" is refused here, naming what is missing — the engine
+ * archives exist for no Android build tree in every lane this runner can rely on, and Perry's
+ * Android target links its own runtime rather than objects the runner emits.
  */
-async function crossPlan(target, outDir) {
-  const ndk = resolveNdk(target);
-  const gc = await ensureAndroidGc(target, {
-    ndk,
-    log: (message) => process.stderr.write(`${message}\n`),
-  });
-  const dir = path.join(outDir, target.outDir);
+async function crossPlan(targetFile, outDir) {
+  const ndk = resolveNdk(targetFile);
+  const runtime = await ensureAndroidRuntime(targetFile, { ndk, log: () => {} });
+  const dir = path.join(outDir, targetFile.outDir);
   await fsp.mkdir(dir, { recursive: true });
   const engineBuild = path.join(
     REPO,
     "packages",
     "runtime-native",
-    "build",
-    `android-core-${target.abi}`,
+    `android-core-${targetFile.abi}`,
   );
   const missing = ENGINE_LIBS.filter(
     (lib) => !fs.existsSync(path.join(engineBuild, `lib${lib}.a`)),
   ).map((lib) => `lib${lib}.a`);
   return {
-    target,
+    target: targetFile,
+    ndk,
     outDir: dir,
-    link: androidLinker(target, { ndk, gc }),
+    perryFlags: ["--target", perryTarget(targetFile.triple)],
+    // Perry links its own cross runtime from here; without it the target has no runtime to link.
+    env: [["PERRY_RUNTIME_DIR", runtime.dir]],
     blockedThreeImport:
       missing.length === 0
         ? undefined
-        : `its TypeScript objects cross-compiled, but ${missing.join(", ")} exist for no ${target.abi} engine build and the three-import link step uses the host driver`,
+        : `three-import link is blocked: ${missing.join(", ")} exist for no ${targetFile.abi} engine build (packages/runtime-native/android-core-${targetFile.abi})`,
     summary: (rows) => {
       const ok = rows.filter((row) => row.native === "PASS").length;
-      const libraries = fs.readdirSync(dir).filter((file) => file.endsWith(".so")).length;
-      return `${target.triple}: NDK ${ndk.version}, ${target.gc.name} ${target.gc.version} cross-built, ${target.maxPageSize}-byte pages — ${ok}/${rows.length} cases ok, ${libraries} libraries in ${path.relative(REPO, dir)}`;
+      return `${targetFile.triple}: Perry ${perryTarget(targetFile.triple)}, NDK ${ndk.version}, ${targetFile.maxPageSize}-byte pages — ${ok}/${rows.length} cases ok`;
     },
   };
 }
@@ -588,8 +574,10 @@ async function main() {
   let outDir = DEFAULT_OUT;
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "--target") target = args[++i];
-    else if (args[i] === "--case") filter = args[++i];
-    else if (args[i] === "--out") outDir = path.resolve(args[++i]);
+    else if (args[i] === "--case") {
+      i += 1;
+      filter = args[i];
+    } else if (args[i] === "--out") outDir = path.resolve(args[++i]);
   }
   if (!wantReference && !wantNative) {
     throw named(
@@ -603,7 +591,8 @@ async function main() {
       "--without-patches compares the native red set against the ledger, so it needs --native",
     );
   }
-  const cross = wantNative && target !== undefined && findTarget(target) !== undefined;
+  const targetFile = wantNative && target !== undefined ? findTarget(target) : undefined;
+  const cross = targetFile !== undefined;
   if (wantNative && target && !target.startsWith("x86_64-linux") && !cross) {
     throw named(
       "TN_NATIVE_TS_TARGET",
@@ -632,7 +621,7 @@ async function main() {
   const info = wantNative
     ? await provision({ patches: withoutPatches ? [] : ledger.patches, log: () => {} })
     : undefined;
-  const plan = cross ? await crossPlan(findTarget(target).target, outDir) : { buildOnly };
+  const plan = cross ? await crossPlan(targetFile.target, outDir) : { buildOnly };
   const rows = [];
   let failed = false;
   for (const name of names) {

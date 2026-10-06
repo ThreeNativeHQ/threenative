@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Provision the pinned ASDAlexander77/TypeScriptCompiler toolchain.
+// Provision the pinned Perry toolchain (decision 11).
 //
 // Downloads the per-host archive named in compiler.lock.json into a cache
 // outside the repository, verifies its SHA-256 before extracting, and prints
@@ -26,6 +26,8 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const CHECKSUM_CODE = "TN_NATIVE_TS_CHECKSUM";
 /** Proof of a complete extraction, in the cache beside `toolchain`, holding the archive sha256. */
 const MARKER_NAME = ".verified";
+/** Perry's cross runtime archives hold no compiler binary, so they get their own extraction root. */
+const CROSS_DIR_NAME = "cross";
 /** Proof that the tree in this cache carries the patch set its directory name claims. */
 const PATCH_MARKER_NAME = ".patches";
 
@@ -251,6 +253,109 @@ async function downloadVerified(fetchImpl, artifact, archivePath) {
 /** The same rule for a caller that pins its own archive: fetch it, prove it, then publish it. */
 export function verifiedFetch(url, sha256, archivePath, opts = {}) {
   return downloadVerified(opts.fetchImpl ?? globalThis.fetch, { url, sha256 }, archivePath);
+}
+
+/**
+ * Perry's cross runtime archive for `triple`: the runtime, stdlib and UI archives a cross `--target`
+ * links, fetched and verified exactly like the host toolchain and extracted under its own cache
+ * root. The returned directory is what `PERRY_RUNTIME_DIR` must point at, and its `manifest.json`
+ * (Perry's own, naming the triple and each archive's sha256) is checked against the pin, so a
+ * mirror serving another target's archives fails closed instead of linking them.
+ */
+export async function provisionCross(triple, opts = {}) {
+  const lock = opts.lock ?? loadLock(opts.lockFile);
+  const artifact = lock.crossArtifacts?.[triple];
+  if (!artifact) {
+    throw named("TN_NATIVE_TS_HOST", `no pinned Perry cross runtime for ${triple}`);
+  }
+  if (typeof artifact.sha256 !== "string" || !/^[a-f0-9]{64}$/u.test(artifact.sha256)) {
+    throw named(CHECKSUM_CODE, `the pinned sha256 for ${triple} is not 64 lowercase hex`);
+  }
+  const base =
+    opts.env?.TN_NATIVE_TS_CACHE ??
+    process.env.TN_NATIVE_TS_CACHE ??
+    path.join(os.homedir(), ".cache", "threenative", "native-typescript");
+  const cacheDir = opts.cacheDir ?? path.join(base, lock.tag, CROSS_DIR_NAME, triple);
+  const archiveName = path.basename(new URL(artifact.url).pathname);
+  const archivePath = path.join(cacheDir, archiveName);
+  const dir = path.join(cacheDir, "toolchain");
+  const fetchImpl = opts.fetchImpl ?? globalThis.fetch;
+  const log = opts.log ?? ((m) => process.stderr.write(`${m}\n`));
+
+  await fsp.mkdir(cacheDir, { recursive: true });
+  const marker = path.join(cacheDir, MARKER_NAME);
+  if (
+    (await fileMatches(archivePath, artifact)) &&
+    (await readMarkerFile(marker)) === artifact.sha256 &&
+    (await crossManifestOk(dir, triple))
+  ) {
+    log("cache hit");
+    return { triple, artifact, cacheDir, dir, manifestPath: path.join(dir, "manifest.json") };
+  }
+  if (!fs.existsSync(archivePath)) {
+    if (typeof fetchImpl !== "function") {
+      throw named("TN_NATIVE_TS_FETCH", `no fetch available to download ${artifact.url}`);
+    }
+    log(`downloading ${artifact.url}`);
+    await downloadVerified(fetchImpl, artifact, archivePath);
+  } else {
+    await verifyOrThrow(archivePath, artifact);
+  }
+  log("extracting");
+  const staging = `${dir}.${process.pid}.${randomUUID()}.tmp`;
+  await fsp.rm(staging, { recursive: true, force: true });
+  await fsp.mkdir(staging, { recursive: true });
+  const tar = spawnSync("tar", ["-xzf", archivePath, "-C", staging], { stdio: "inherit" });
+  if (tar.status !== 0) {
+    await fsp.rm(staging, { recursive: true, force: true });
+    throw named("TN_NATIVE_TS_EXTRACT", `tar exited ${tar.status} for ${archivePath}`);
+  }
+  const manifestPath = path.join(staging, "manifest.json");
+  const why = crossManifestProblem(staging, triple);
+  if (why !== undefined) {
+    await fsp.rm(staging, { recursive: true, force: true });
+    throw named(CHECKSUM_CODE, `${archiveName}: ${why}`);
+  }
+  await fsp.rm(dir, { recursive: true, force: true });
+  await fsp.rename(staging, dir);
+  await writeMarker(cacheDir, artifact);
+  return { triple, artifact, cacheDir, dir, manifestPath };
+}
+
+/** Perry's own cross manifest: it names the triple and pins every archive inside it. */
+function readCrossManifest(dir) {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(dir, "manifest.json"), "utf8"));
+  } catch {
+    return undefined;
+  }
+}
+
+function crossManifestProblem(dir, triple) {
+  const manifest = readCrossManifest(dir);
+  if (manifest === undefined) return "the archive holds no manifest.json";
+  if (manifest.target_triple !== triple) {
+    return `its manifest names target_triple ${manifest.target_triple}, not ${triple}`;
+  }
+  for (const file of manifest.files ?? []) {
+    let stat;
+    try {
+      stat = fs.statSync(path.join(dir, file.path));
+    } catch {
+      return `its manifest lists ${file.path}, which the archive does not hold`;
+    }
+    if (stat.size !== file.size) {
+      return `${file.path} is ${stat.size} bytes, its manifest says ${file.size}`;
+    }
+  }
+  return undefined;
+}
+
+async function crossManifestOk(dir, triple) {
+  return (
+    fs.existsSync(path.join(dir, "manifest.json")) &&
+    crossManifestProblem(dir, triple) === undefined
+  );
 }
 
 async function fileMatches(file, artifact) {

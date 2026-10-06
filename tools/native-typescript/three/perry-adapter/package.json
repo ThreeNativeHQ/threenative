@@ -1,0 +1,117 @@
+{
+  "name": "tn-three-adapter",
+  "version": "0.5.1520",
+  "description": "Perry adapter over the ThreeNative engine C ABI (decision 11)",
+  "license": "MIT",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "private": true,
+  "perry": {
+    "nativeLibrary": {
+      "abiVersion": "0.5",
+      "functions": [
+        {
+          "name": "js_tn_init",
+          "params": [],
+          "returns": "i32"
+        },
+        {
+          "name": "js_tn_arg_number",
+          "params": ["f64"],
+          "returns": "void"
+        },
+        {
+          "name": "js_tn_arg_object",
+          "params": ["i64"],
+          "returns": "void"
+        },
+        {
+          "name": "js_tn_construct",
+          "params": ["string"],
+          "returns": "i64"
+        },
+        {
+          "name": "js_tn_invoke",
+          "params": ["i64", "string"],
+          "returns": "i32"
+        },
+        {
+          "name": "js_tn_get",
+          "params": ["i64", "string"],
+          "returns": "i32"
+        },
+        {
+          "name": "js_tn_set_number",
+          "params": ["i64", "string", "f64"],
+          "returns": "i32"
+        },
+        {
+          "name": "js_tn_result_number",
+          "params": [],
+          "returns": "f64"
+        },
+        {
+          "name": "js_tn_result_object",
+          "params": [],
+          "returns": "i64"
+        },
+        {
+          "name": "js_tn_result_string",
+          "params": [],
+          "returns": "string"
+        },
+        {
+          "name": "js_tn_set_callback",
+          "params": ["i64", "string", "jsvalue"],
+          "returns": "i32"
+        },
+        {
+          "name": "js_tn_safe_point",
+          "params": [],
+          "returns": "void"
+        },
+        {
+          "name": "js_tn_held",
+          "params": ["i64"],
+          "returns": "i32"
+        },
+        {
+          "name": "js_tn_live",
+          "params": [],
+          "returns": "i32"
+        },
+        {
+          "name": "js_tn_resident_kb",
+          "params": [],
+          "returns": "i32"
+        },
+        {
+          "name": "js_tn_fire_before_render",
+          "params": ["i64"],
+          "returns": "string"
+        },
+        {
+          "name": "js_tn_callback_error",
+          "params": ["string"],
+          "returns": "void"
+        },
+        {
+          "name": "js_tn_collect",
+          "params": [],
+          "returns": "void"
+        },
+        {
+          "name": "js_tn_release",
+          "params": ["i64"],
+          "returns": "void"
+        }
+      ],
+      "targets": {
+        "linux": {
+          "crate": ".",
+          "lib": "tn_perry_adapter"
+        }
+      }
+    }
+  }
+}

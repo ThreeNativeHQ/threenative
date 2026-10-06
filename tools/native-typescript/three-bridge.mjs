@@ -1,0 +1,132 @@
+#!/usr/bin/env node
+// The link bridge between Perry and the ThreeNative engine (decision 11).
+//
+// The Perry adapter (three/perry-adapter) is a Rust staticlib built by Perry's native-library
+// mechanism. It calls the engine through the versioned C ABI, so this module's whole job is to
+// compile the C half of the boundary — three/tn_three_shim.c and three/tn_three_hooks.cpp — into one
+// archive, and to write the manifest fields that put that archive, the engine's own static
+// libraries and the C++ runtime on Perry's link line. The engine is an input here and is never
+// rebuilt: a missing archive is refused, not built.
+//
+// The staged adapter's package.json is the checked-in one plus these link fields, so the adapter's
+// own manifest stays free of machine paths and the corpus runner owns them.
+import { spawnSync } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const REPO = path.resolve(HERE, "..", "..");
+const NATIVE = path.join(REPO, "packages", "runtime-native");
+const THREE = path.join(HERE, "three");
+
+/** The engine archives a game-code link needs: the C ABI, its bindings and the systems behind them. */
+export const ENGINE_LIBS = [
+  "tn_engine_abi",
+  "tn_engine_bindings",
+  "tn_engine_animation",
+  "tn_engine_scene",
+  "tn_engine_foundation",
+];
+
+function named(code, message) {
+  const error = new Error(`${code}: ${message}`);
+  error.code = code;
+  return error;
+}
+
+function firstError(output, tool) {
+  const line = output
+    .split("\n")
+    .map((entry) => entry.trim())
+    .find((entry) => entry.includes("error:"));
+  return line ?? `${tool} failed: ${output.split("\n")[0]}`;
+}
+
+/**
+ * The archive holding the C half of the boundary: the shim (engine handle table, argument staging)
+ * and the hooks (the engine's own RenderCallback, which needs the engine's internal headers).
+ * Rebuilt only when its sources or the engine include tree change.
+ */
+export function buildEngineBridge({ outDir, engineBuild }) {
+  fs.mkdirSync(outDir, { recursive: true });
+  const include = path.join(NATIVE, "include");
+  const archive = path.join(outDir, "libtn-three-shim.a");
+  const shim = path.join(outDir, "tn_three_shim.o");
+  const hooks = path.join(outDir, "tn_three_hooks.o");
+  const sources = [path.join(THREE, "tn_three_shim.c"), path.join(THREE, "tn_three_hooks.cpp")];
+  const newest = (dir) => {
+    let latest = 0;
+    const walk = (current) => {
+      for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+        const file = path.join(current, entry.name);
+        if (entry.isDirectory()) walk(file);
+        else latest = Math.max(latest, fs.statSync(file).mtimeMs);
+      }
+    };
+    if (fs.existsSync(dir)) walk(dir);
+    return latest;
+  };
+  const stamp = Math.max(...sources.map((file) => fs.statSync(file).mtimeMs), newest(include));
+  if (
+    fs.existsSync(archive) &&
+    fs.existsSync(shim) &&
+    fs.existsSync(hooks) &&
+    fs.statSync(archive).mtimeMs >= stamp
+  ) {
+    return archive;
+  }
+
+  const compile = (tool, args) => {
+    const run = spawnSync(tool, args, { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+    const output = `${run.stdout ?? ""}${run.stderr ?? ""}`;
+    if (run.status !== 0) throw named("TN_STRICT_SHIM", firstError(output, tool));
+  };
+  compile("cc", ["-c", "-fPIC", `-I${include}`, sources[0], "-o", shim]);
+  compile("c++", [
+    "-c",
+    "-fPIC",
+    "-std=c++20",
+    `-I${include}`,
+    `-I${path.join(NATIVE, "src")}`,
+    sources[1],
+    "-o",
+    hooks,
+  ]);
+  compile("ar", ["crs", archive, shim, hooks]);
+  return archive;
+}
+
+/**
+ * The bridge one run links with: the C archive plus the engine archives beside it. Every archive is
+ * refused when absent — the engine is an input to a game build, never rebuilt by one.
+ */
+export async function bridgeFor({ target, engineBuild: override } = {}) {
+  const outDir = path.join(override ?? path.join(NATIVE, "build", "tn-linux"), "three-bridge");
+  const engineBuild = override ?? path.join(NATIVE, "build", "tn-linux");
+  for (const lib of ENGINE_LIBS) {
+    const archive = path.join(engineBuild, `lib${lib}.a`);
+    if (!fs.existsSync(archive)) {
+      throw named(
+        "TN_STRICT_ENGINE_MISSING",
+        `${archive}; build or install the engine first (TN_NATIVE_ENGINE_BUILD names another tree)`,
+      );
+    }
+  }
+  const archive = buildEngineBridge({ outDir, engineBuild });
+  return {
+    archive,
+    engineBuild,
+    libDirs: [outDir, engineBuild],
+    libs: ["tn-three-shim", ...ENGINE_LIBS, "stdc++", "m", "pthread", "dl"],
+    /** Writes the link fields into the staged adapter's manifest; the adapter's own stays pathless. */
+    async writeManifest(packageDir) {
+      const manifestPath = path.join(packageDir, "package.json");
+      const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+      const linux = manifest.perry.nativeLibrary.targets.linux;
+      linux.libDirs = this.libDirs;
+      linux.libs = this.libs;
+      fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, undefined, 2)}\n`);
+    },
+  };
+}
