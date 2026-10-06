@@ -241,7 +241,10 @@ void Renderer::setSize(uint32_t width, uint32_t height) {
     width_ = width;
     height_ = height;
     color_ = gpu_.createTexture(width, height, WGPUTextureFormat_RGBA8Unorm,
-                                WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_CopySrc);
+                                // TextureBinding too: a windowed player samples this finished frame to
+                                // put it on the screen (Renderer::blitTo).
+                                WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_CopySrc |
+                                    WGPUTextureUsage_TextureBinding);
     WGPUTextureDescriptor depthDesc = {};
     depthDesc.dimension = WGPUTextureDimension_2D;
     depthDesc.size = {width, height, 1};
@@ -874,5 +877,54 @@ void Renderer::outputPass(WGPUCommandEncoder encoder, bool timed) {
 }
 
 GpuStatus Renderer::readPixels(ReadbackCallback done) { return gpu_.readTexture(color_, std::move(done)); }
+
+// The output triangle again, this time sampling the finished RGBA8 frame into a window surface. The
+// program's own variant is chosen by the target format, so a BGRA swapchain gets a BGRA pipeline.
+bool Renderer::blitTo(WGPUQueue queue, WGPUTextureView target, WGPUTextureFormat format) {
+    if (!target || !colorView_)
+        return false;
+    // The finished frame is already tone mapped and encoded: the blit copies it, never re-encodes it.
+    if (blitVertex_.wgsl.code.empty()) {
+        const shader::OutputPrograms copy = shader::buildOutput(std::nullopt, false);
+        blitVertex_ = shader::buildStage(copy.vertex, 0);
+        blitFragment_ = shader::buildStage(copy.fragment, 0);
+    }
+    WGPURenderPipeline pipeline = pipelines_.get(
+        blitVertex_, &blitFragment_, PipelineTarget{format, WGPUTextureFormat_Undefined, WGPUCullMode_None});
+    if (!pipeline)
+        return false;
+    WGPUBindGroupLayout layout = wgpuRenderPipelineGetBindGroupLayout(pipeline, 0);
+    WGPUBindGroup group = bindGroup(layout, blitFragment_, outputUniforms_, colorView_, outputSampler_);
+    wgpuBindGroupLayoutRelease(layout);
+    if (!group)
+        return false;
+
+    WGPUCommandEncoderDescriptor encoderDesc = {};
+    WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(device_, &encoderDesc);
+    WGPURenderPassColorAttachment color = {};
+    color.view = target;
+    color.loadOp = WGPULoadOp_Clear;
+    color.storeOp = WGPUStoreOp_Store;
+    color.clearValue = {0, 0, 0, 1};
+#if defined(MYSTRAL_WEBGPU_DAWN)
+    color.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
+#endif
+    WGPURenderPassDescriptor passDesc = {};
+    passDesc.colorAttachmentCount = 1;
+    passDesc.colorAttachments = &color;
+    WGPURenderPassEncoder pass = wgpuCommandEncoderBeginRenderPass(encoder, &passDesc);
+    wgpuRenderPassEncoderSetPipeline(pass, pipeline);
+    wgpuRenderPassEncoderSetBindGroup(pass, 0, group, 0, nullptr);
+    wgpuRenderPassEncoderSetVertexBuffer(pass, blitVertex_.attributes.at(0).location,
+                                         gpu_.buffer(outputTriangle_), 0, 24);
+    wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0);
+    wgpuRenderPassEncoderEnd(pass);
+    wgpuRenderPassEncoderRelease(pass);
+    WGPUCommandBufferDescriptor commandDesc = {};
+    gpu_.submit(wgpuCommandEncoderFinish(encoder, &commandDesc));
+    wgpuCommandEncoderRelease(encoder);
+    wgpuBindGroupRelease(group);
+    return true;
+}
 
 }  // namespace tn::engine

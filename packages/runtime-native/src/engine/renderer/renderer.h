@@ -155,6 +155,12 @@ public:
      */
     uint64_t render(std::span<const DrawItem> items, const CameraState& camera, const LightState& lights,
                     std::array<double, 4> clear = {0, 0, 0, 1});
+    /**
+     * Draws the last render() output into `target` and submits it, so a windowed player puts the
+     * very same frame on the screen the render database just built. `format` is the target view's
+     * format. Returns false when the program for it is refused; the frame stays readable either way.
+     */
+    bool blitTo(WGPUQueue queue, WGPUTextureView target, WGPUTextureFormat format);
     /** The last frame's pixels, RGBA8 rows tightly packed, delivered from poll(). */
     GpuStatus readPixels(ReadbackCallback done);
     void poll() { gpu_.poll(); }
@@ -247,6 +253,7 @@ private:
     WGPUTextureView sceneView_ = nullptr;
     OutputState output_;
     std::shared_ptr<const shader::PostNode> post_;
+    shader::StageModule blitVertex_, blitFragment_;  // blitTo's pass-through copy
     shader::StageModule outputVertex_;
     shader::StageModule outputFragment_;
     Handle outputTriangle_;

@@ -280,6 +280,26 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
 endif()
 
 if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "android")
+    # PRD-529 phase 2: the desktop player the playtest runner drives with --target desktop. The
+    # mailbox and the inspect-demo game are library code so the scenarios can name them; the
+    # executable is window and loop. It reaches no JS engine: inspect-js-free.mjs proves it.
+    add_library(tn_engine_player STATIC src/engine/player/mailbox.cpp src/engine/player/demo.cpp)
+    tn_native_engine_target(tn_engine_player)
+    target_link_libraries(tn_engine_player PUBLIC tn_engine_inspect tn_engine_scene tn_engine_world
+        tn_engine_renderer tn_host_services)
+    target_include_directories(tn_engine_player PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    add_executable(tn-native-engine-player src/engine/player/main.cpp)
+    target_link_libraries(tn-native-engine-player PRIVATE tn_engine_player)
+    if(SDL3_STATIC_TARGET)
+        target_link_libraries(tn-native-engine-player PRIVATE ${SDL3_STATIC_TARGET})
+    elseif(SDL3_LIBRARY)
+        target_link_libraries(tn-native-engine-player PRIVATE ${SDL3_LIBRARY})
+        target_include_directories(tn-native-engine-player PRIVATE ${SDL3_INCLUDE_DIR})
+    endif()
+    tn_native_engine_target(tn-native-engine-player)
+endif()
+
+if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "android")
     # A progress screenshot of the native path (IR -> WGSL package -> native GPU -> PNG); evidence, not a test.
     add_executable(tn-native-engine-showcase EXCLUDE_FROM_ALL tests/native-engine/showcase.cpp)
     target_link_libraries(tn-native-engine-showcase PRIVATE tn_engine_shader tn_engine_renderer tn_host_services)

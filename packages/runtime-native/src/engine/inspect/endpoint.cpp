@@ -97,12 +97,19 @@ bool Endpoint::dispatch(const std::string& method, const Value* argument, Value&
 }
 
 Value Endpoint::describe() const {
-    return obj({{"capabilities", Value::makeArray({str("runtime.fixedStep"), str("runtime.entities")})},
+    // Only names in packages/playtest/src/capabilities.ts: an unregistered name fails the run with
+    // TN_PLAYTEST_BRIDGE_CAPABILITY_UNKNOWN. runtime.fixedStep is mandatory on a device bridge.
+    return obj({{"capabilities", Value::makeArray({str("runtime.fixedStep"), str("entity.observe"),
+                                                   str("entity.setup"), str("runtime.resources")})},
                 {"limits", obj({{"maxEntitiesPerSample", num(100)},
                                 {"maxEventsPerDrain", num(1000)},
                                 {"maxPayloadBytes", num(double(kMaxPayloadBytes))},
                                 {"operationTimeoutMs", num(5000)}})},
                 {"name", str(host_.name)},
+                // PRD-529 solution 3: which artifact is running. Engine `native` (the C++ engine,
+                // never the legacy host) and game runtime `cpp` (a built-in game, no VM). Mirrored
+                // into sample.resources["profile"] so the existing scenario schema can assert it.
+                {"profile", obj({{"engine", str("native")}, {"gameRuntime", str("cpp")}})},
                 {"protocolVersion", num(1)}});
 }
 
@@ -114,10 +121,30 @@ bool Endpoint::sample(const Value* argument, Value& result, std::string& error) 
     if (argument && !argument->isNull() && !argument->isObject())
         return fail(error, "TN_INSPECT_INVALID_ARGUMENT: sample takes a request object.");
     std::vector<Value> entities;
+    std::vector<std::pair<std::string, Value>> resources;
+    bool askedResources = false;
     if (argument && argument->isObject()) {
         for (const auto& [field, value] : argument->members()) {
-            if (field == "label")
+            // The step label labels a sample series the runner keeps; it changes no observation.
+            // `include` names observation families, and this endpoint always sends what it has.
+            if (field == "label" || field == "include")
                 continue;
+            if (field == "resources") {
+                if (!value.isArray())
+                    return fail(error, "TN_INSPECT_INVALID_ARGUMENT: sample.resources must be an array.");
+                askedResources = true;
+                for (const Value& id : value.items()) {
+                    if (!id.isString())
+                        return fail(error, "TN_INSPECT_INVALID_ARGUMENT: sample.resources holds resource ids.");
+                    // An id this player does not carry is absent, as on the web bridge.
+                    if (!host_.resource)
+                        continue;
+                    const Value carried = host_.resource(id.string());
+                    if (!carried.isNull())
+                        resources.emplace_back(id.string(), carried);
+                }
+                continue;
+            }
             if (field != "entities")
                 return fail(error, "TN_INSPECT_UNSUPPORTED: sample." + field +
                                        " is not carried by the native-engine player yet.");
@@ -147,6 +174,8 @@ bool Endpoint::sample(const Value* argument, Value& result, std::string& error) 
     std::vector<std::pair<std::string, Value>> snapshot{{"clock", clock()}};
     if (argument && argument->find("entities"))
         snapshot.emplace_back("entities", Value::makeArray(std::move(entities)));
+    if (askedResources)
+        snapshot.emplace_back("resources", obj(std::move(resources)));
     result = obj(std::move(snapshot));
     return true;
 }

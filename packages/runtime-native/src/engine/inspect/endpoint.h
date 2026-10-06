@@ -29,6 +29,8 @@ struct Host {
     std::function<uint64_t()> tick; // the simulation tick that last ran
     std::function<void()> step;     // runs one simulation tick; it takes the queued input first
     std::string name = "threenative-native-engine";
+    /** One JSON-safe registered resource by id, or null for an id this player does not carry. */
+    std::function<json::Value(const std::string& id)> resource;
 };
 
 /**
