@@ -1825,3 +1825,46 @@ directory, including `pr398-readability-final-files.json` and
 This closes the measured readability failure only. No broad workspace build, new-source GPU
 quality/recovery/cost, native, automatic-scale, final-budget or current-develop/required-CI gate
 is claimed; original acceptance boxes and draft prd:25% status remain unchanged.
+
+
+### Current develop integration and bounded support contracts — 2026-10-06
+
+The isolated lane integrates published develop `29fdae8bf9141b4a82dac91b276dbb574a7d06a3`
+(UI388 and docs446) into reviewed temporal source `2e9af7dcd`. The only merge conflict is the
+scaffold fingerprint table. All thirteen actual no-install trees are measured from the merged
+source, and the original complete-tree assertion records red with old pins, then green with
+the measured pins. The focused temporal/readability suites pass 66/66, the selected scaffold
+contract passes 1/1 (65 other tests skipped), and scoped strict TypeScript7 passes. The first
+`tsgo` invocation is unavailable; the successful check uses this repository's actual `tsc`.
+The six reviewed temporal file hashes remain identical to `2e9af7dcd`. No dependency install,
+broad workspace build or current-base runtime qualification has run.
+
+A separate task-local CPU point-list prototype now passes 38 contracts after recorded red/green
+repairs for two-frame lifetime, immutable ownership, finite HDR means, packet aliasing/reentry
+and sparse arrays. It retains distinct physical raw observations, reassigns their half-open
+display owner individually, expires by absolute birth age and permanently discards support
+on an intervening rejection. Projection, visibility and reuse policies are injected; this is
+not a production GPU estimator. Source-grounded fence geometry puts one source30 observation
+in display owner359/137 at birth and358/137 by source31/32; source31 supplies no fence point.
+Thus a one-prior-frame support horizon is insufficient in that model. A conditional 3x3 search
+proof passes 855 exact rational trials: with input dimensions no greater than display and
+total birth-to-current displacement below half an input texel on each axis, each old phase
+contributes at most four physical points and two old phases plus current require at most nine.
+Unsupported motion is outside this proof; neither CPU geometry nor symbolic RGB supplies
+missing real attachment data, pixel area, appearance continuity or GPU rounding/cost evidence.
+
+Actual retained-data replay falsifies a blanket fresh-point override: at source32/x219/140
+maximum linear RGB error falls from .323238 to .126774, but at x321/137 it rises from .066985
+to .384858. Source32/x358/137 has no current observation. Before any production support blend,
+the next bounded diagnostic must retain missing source29/30/31 data (including the original
++1 recovery sample), old-point velocity, matched camera/jitter stamps and the shared rejection
+predicate at each changing owner; compare both improvement and regression witnesses. The
+proposed two-old-phase raw snapshots also need per-frame rejection/lifecycle ownership and
+original quality/stability/recovery/cost/native qualification. No production weighting rule
+changes here. Evidence lives in the delegated task directory under `pr398-develop29-*`,
+`pr398-bounded-point-cache-*`, `pr398-bounded-fence-phase-oracle-*` and
+`pr398-point-stencil-bound-controls.*`.
+
+Original acceptance boxes, thresholds and draft prd:25% status remain unchanged. Parent
+coordination still controls substantial builds, GPU/native runs and publication/new CI; no
+new capture, upload, push or required-CI qualification is claimed by this local integration.

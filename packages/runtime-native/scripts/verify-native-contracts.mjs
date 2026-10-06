@@ -58,6 +58,13 @@ export const executionContracts = {
   "threenative-render-pass-class-table-test": {
     invocations: [{ args: [], passLine: "render-pass-class-table: prototype=shared" }],
   },
+  // One pass line for both lanes. With `TN_ENABLE_CSS_UI=ON` it is the CSS backend's own contract
+  // (frames, hit test, one click in the game's queue); with the option off, which is what these two
+  // configurations are, it is the refusal contract — the renderer is refused by name and the host
+  // reports no overlay. Neither arm is a no-op that passes by printing.
+  "threenative-css-ui-overlay-test": {
+    invocations: [{ args: [], passLine: "native-css overlay contract passed: " }],
+  },
   "threenative-crash-handler-policy-test": {
     // POSIX only. The test drives `sigaction` and `siginfo_t` directly, which MSVC does not
     // provide, and the Windows host installs a different crash handler — so on Windows this is a

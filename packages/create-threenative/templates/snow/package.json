@@ -52,7 +52,9 @@
     },
     "onlyBuiltDependencies": ["@threenative/core", "@threenative/runtime-native"],
     "patchedDependencies": {
-      "three@0.185.1": "patches/three@0.185.1.patch"
+      "three@0.185.1": "patches/three@0.185.1.patch",
+      "vite@8.2.0": "patches/vite@8.2.0.patch",
+      "@tailwindcss/node@4.3.3": "patches/@tailwindcss__node@4.3.3.patch"
     }
   }
 }
