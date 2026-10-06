@@ -245,6 +245,7 @@ describe("pyramid GPU timestamps", () => {
     pyramid.resize(8, 8);
     const depth = new DepthTexture(8, 8);
     try {
+      renderer.beginFrame?.();
       pyramid.build(renderer, depth, 0.1, 1000, 4);
       const group = groups[0] as { name: string }[];
       expect(group.map((node) => node.name)).toEqual([
@@ -253,7 +254,8 @@ describe("pyramid GPU timestamps", () => {
         "tnDepthPyramid2",
       ]);
       expect(renderer.gpuPyramidMs?.()).toBeUndefined();
-      renderer.compute({}); // Cadence off when the frame asks to resolve.
+      renderer.beginFrame?.(); // Cadence off when the frame asks to resolve.
+      renderer.compute({});
       expect(backend.trackTimestamp).toBe(false);
       renderer.resolveGpuFrame();
       expect(backend.trackTimestamp).toBe(false);
@@ -266,10 +268,11 @@ describe("pyramid GPU timestamps", () => {
       expect(renderer.gpuPyramidMs?.()).toBe(0.25);
       expect(renderer.gpuPyramidMs?.()).toBeUndefined();
       expect(renderer.gpuComputeMs?.()).toBe(0.25);
-      // Two builds on a fixed dispatch cadence still sample independently, once per two builds.
+      // Extra dispatches do not change the frame's sample decision.
       pyramid.build(renderer, depth, 0.1, 1000, 4);
       expect(pool.queryOffsets.size).toBe(0);
       renderer.compute({});
+      renderer.beginFrame?.();
       pyramid.build(renderer, depth, 0.1, 1000, 4);
       renderer.resolveGpuFrame();
       await Promise.resolve();

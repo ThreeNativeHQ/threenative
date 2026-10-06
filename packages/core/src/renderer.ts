@@ -174,6 +174,8 @@ export interface IRendererLike {
    * exposes the same four `adapter.info` fields, so the same read works on every target.
    */
   readonly softwareAdapter?: string;
+  /** Advances the GPU sample once before a presented frame's simulation and render passes. */
+  beginFrame?(): void;
   compute(node: unknown, span?: "depthPyramid"): void;
   /**
    * Creates the GPU buffers these geometries draw from, through the backend's own attribute path,
@@ -465,16 +467,11 @@ function wrapRenderer(
   let pendingScale: { scale: number; source: "auto" | "auto-pinned" } | undefined;
   let pendingSize: Parameters<IRendererLike["setSize"]> | undefined;
   let timestampFrame = -1;
-  let pyramidBuild = 0;
+  let timestampFramesManaged = false;
   const pyramidQueries: string[][] = [];
   const setTimestampTracking = (): void => {
-    // Three writes `info.frame` only inside its own animation loop, which the engine deliberately
-    // does not run -- the game drives frames through here -- so it sat at 0 for the whole session.
-    // Everything downstream reads it: this sampler derived its frame from it, `0 % 8 === 0`
-    // recorded a timestamp on *every* frame, the 2048-query pool filled in ~38 frames and every
-    // later read was null (~15 timestamps in a 300-frame window that had asked for 37), and three
-    // keys each query uid by it, so the per-pass split filed every uid under one hot frame id. The
-    // engine owns the cadence, so the engine is what advances the clock.
+    // Three advances info.frame only in its own animation loop, which we do not run.
+    // Advance once per presented frame: compute, world and overlay share its sample and query id.
     timestampFrame += 1;
     const rawInfo = (raw as { info?: { frame: number } | null }).info;
     if (rawInfo !== undefined && rawInfo !== null) rawInfo.frame = timestampFrame;
@@ -771,16 +768,15 @@ function wrapRenderer(
         }
       }
     },
+    beginFrame: () => {
+      timestampFramesManaged = true;
+      setTimestampTracking();
+    },
     compute: (node, span) => {
       if (kind !== "webgpu") throw new Error(`compute is unavailable on the ${kind} renderer.`);
       if (typeof raw.compute !== "function")
         throw new Error("webgpu renderer does not expose compute().");
-      setTimestampTracking();
       const backend = raw.backend;
-      // Sample builds, not arbitrary dispatch positions: a fixed number of world dispatches per
-      // frame must not alias the cadence and leave every pyramid unmeasured.
-      if (span === "depthPyramid" && timestampCapable && backend !== undefined)
-        backend.trackTimestamp = pyramidBuild++ % timestampFrameInterval === 0;
       const before = backend?.timestampQueryPool?.compute?.queryOffsets?.size ?? 0;
       raw.compute(node);
       if (span === "depthPyramid") {
@@ -858,7 +854,8 @@ function wrapRenderer(
       raw.dispose?.();
     },
     render: (scene, camera) => {
-      setTimestampTracking();
+      // Standalone render callers retain one frame per draw unless they supply beginFrame().
+      if (!timestampFramesManaged) setTimestampTracking();
       renderingFrame += 1;
       try {
         renderFrame(scene, camera);
@@ -867,7 +864,6 @@ function wrapRenderer(
       }
     },
     renderOverlay: (scene, camera) => {
-      setTimestampTracking();
       renderingFrame += 1;
       try {
         renderOverlayFrame(scene, camera);

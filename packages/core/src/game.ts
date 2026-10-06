@@ -1588,13 +1588,16 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       ...(frameBudget === undefined ? {} : { budget: frameBudget }),
       ...(spans === undefined ? {} : { spans }),
       maxSteps: this.#config.maxSteps,
-      onRender: () => {
-        observeCompilation();
+      onBeginFrame: () => {
         // The engine owns this requestAnimationFrame loop instead of delegating to Three's
         // setAnimationLoop(). Three's renderer therefore cannot reset its frame counters for us;
         // a concurrent internal renderer callback can otherwise leave stale work in the first
         // sample after a held playtest start.
         resetRendererPerformanceMetrics(renderer.raw);
+        renderer.beginFrame?.();
+      },
+      onRender: () => {
+        observeCompilation();
         renderPassBudget?.beginFrame();
         // Runs on web as well as native, so the two stay one behaviour rather than diverging into
         // a fast path nobody tests. When the world is drawn, reconciliation happens immediately
