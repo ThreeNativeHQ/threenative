@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <fstream>
 #include <iterator>
+#include <stdexcept>
 #include <utility>
 
 namespace tn::engine::world {
@@ -15,12 +16,78 @@ Recovery recoveryOf(const std::string& code) { return code == "TN_PACKAGE_VERSIO
 
 } // namespace
 
-PackageLoads::PackageLoads(CompletionQueue& completions, GpuResources& gpu, uint32_t availableDecoders)
-    : poster_(completions.poster()), gpu_(gpu), decoders_(availableDecoders) {}
+PackageLoads::PackageLoads(CompletionQueue& completions, GpuResources& gpu, uint32_t availableDecoders,
+                           uint32_t concurrency)
+    : poster_(completions.poster()), gpu_(gpu), decoders_(availableDecoders) {
+    if (!concurrency)
+        throw std::invalid_argument("TN_WORLD_CONCURRENCY: expected positive worker count");
+    try {
+        for (uint32_t i = 0; i < concurrency; ++i)
+            workers_.emplace_back([this, poster = poster_]() {
+                for (;;) {
+                    uint64_t id;
+                    std::string path;
+                    {
+                        std::unique_lock lock(mutex_);
+                        work_.wait(lock, [this] { return stopping_ || !pending_.empty(); });
+                        if (stopping_)
+                            return;
+                        id = pending_.front().first;
+                        path = std::move(pending_.front().second);
+                        pending_.pop_front();
+                    }
+                    // Worker thread: read and verify. Only the completion touches the request, on the game thread.
+                    auto bytes = std::make_shared<std::vector<uint8_t>>();
+                    std::optional<LoadError> error;
+                    assets::Package package;
+                    std::ifstream in(path, std::ios::binary);
+                    if (!in) {
+                        error = LoadError{"TN_WORLD_IO_UNAVAILABLE", "io", path, Recovery::Retry,
+                                          "the file could not be opened"};
+                    } else {
+                        bytes->assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+                        assets::PackageError failure;
+                        if (!assets::parsePackage(*bytes, package, failure) ||
+                            !assets::verifyPackage(package, decoders_, failure))
+                            error = LoadError{failure.code, "assets", path, recoveryOf(failure.code), failure.detail};
+                    }
+                    poster.post([this, life = std::weak_ptr<int>(alive_), id, bytes, package = std::move(package),
+                                 error = std::move(error)]() mutable {
+                        if (life.expired())
+                            return; // these loads are gone; the world may still drain
+                        Request* request = find(id);
+                        if (!request)
+                            return; // cancelled while it was read
+                        if (error)
+                            return finish(id, LoadResult{{}, std::move(error)});
+                        request->bytes = std::move(bytes);
+                        request->package = std::move(package);
+                        request->verified = true;
+                    });
+                }
+            });
+    } catch (...) {
+        {
+            std::lock_guard lock(mutex_);
+            stopping_ = true;
+        }
+        work_.notify_all();
+        for (auto& worker : workers_)
+            worker.join();
+        throw;
+    }
+}
 
 PackageLoads::~PackageLoads() {
-    for (std::thread& worker : workers_)
+    {
+        std::lock_guard lock(mutex_);
+        stopping_ = true;
+        pending_.clear();
+    }
+    work_.notify_all();
+    for (auto& worker : workers_)
         worker.join();
+    alive_.reset();
     for (const auto& request : requests_)
         for (const LoadedEntry& entry : request->uploaded)
             gpu_.destroy(entry.resource);
@@ -33,34 +100,11 @@ uint64_t PackageLoads::load(std::string path, Done done) {
     request->path = path;
     request->done = std::move(done);
     requests_.push_back(std::move(request));
-    workers_.emplace_back([this, id, path = std::move(path), poster = poster_]() mutable {
-        // Worker thread: read and verify. Only the completion touches the request, on the game thread.
-        auto bytes = std::make_shared<std::vector<uint8_t>>();
-        std::optional<LoadError> error;
-        assets::Package package;
-        std::ifstream in(path, std::ios::binary);
-        if (!in) {
-            error = LoadError{"TN_WORLD_IO_UNAVAILABLE", "io", path, Recovery::Retry, "the file could not be opened"};
-        } else {
-            bytes->assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
-            assets::PackageError failure;
-            if (!assets::parsePackage(*bytes, package, failure) || !assets::verifyPackage(package, decoders_, failure))
-                error = LoadError{failure.code, "assets", path, recoveryOf(failure.code), failure.detail};
-        }
-        poster.post([this, life = std::weak_ptr<int>(alive_), id, bytes, package = std::move(package),
-                     error = std::move(error)]() mutable {
-            if (life.expired())
-                return; // these loads are gone; the world may still drain
-            Request* request = find(id);
-            if (!request)
-                return; // cancelled while it was read
-            if (error)
-                return finish(id, LoadResult{{}, std::move(error)});
-            request->bytes = std::move(bytes);
-            request->package = std::move(package);
-            request->verified = true;
-        });
-    });
+    {
+        std::lock_guard lock(mutex_);
+        pending_.emplace_back(id, std::move(path));
+    }
+    work_.notify_one();
     return id;
 }
 
@@ -79,6 +123,10 @@ std::vector<LoadedEntry> PackageLoads::uploaded(uint64_t id) const {
 }
 
 void PackageLoads::cancel(uint64_t id) {
+    {
+        std::lock_guard lock(mutex_);
+        std::erase_if(pending_, [id](const auto& job) { return job.first == id; });
+    }
     const auto it = std::find_if(requests_.begin(), requests_.end(), [&](const auto& r) { return r->id == id; });
     if (it == requests_.end())
         return;
@@ -127,7 +175,8 @@ uint64_t PackageLoads::admit(uint64_t byteAllowance) {
             continue; // finish removed it; the same index is now the next request
         complete = request.next == request.package.entries.size();
         if (complete) {
-            LoadResult result{std::move(request.uploaded), std::nullopt};
+            LoadResult result{std::move(request.uploaded), std::nullopt, std::move(request.bytes),
+                              std::move(request.package)};
             request.uploaded.clear();
             finish(request.id, std::move(result));
             continue;

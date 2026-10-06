@@ -343,6 +343,17 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     target_link_libraries(tn-native-engine-world-walk-test PRIVATE tn_engine_player)
     target_compile_definitions(tn-native-engine-world-walk-test PRIVATE
         TN_WORLD_WALK_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/world/walk")
+    if(TARGET dawn::webgpu AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        target_compile_definitions(tn-native-engine-world-walk-test PRIVATE TN_WORLD_CPU_NULL=1)
+        foreach(api InstanceCreateSurface InstanceRequestAdapter SurfaceRelease SurfacePresent
+                    SurfaceGetCurrentTexture TextureCreateView TextureRelease TextureViewRelease)
+            target_link_options(tn-native-engine-world-walk-test PRIVATE "-Wl,--wrap=wgpu${api}")
+        endforeach()
+        add_test(NAME native_engine_world_cycles_cpu COMMAND tn-native-engine-world-walk-test world_walk_cycles_cpu)
+        add_test(NAME native_engine_surface_lifetime_cpu COMMAND tn-native-engine-world-walk-test surface_lifetime_cpu)
+        set_tests_properties(native_engine_world_cycles_cpu native_engine_surface_lifetime_cpu PROPERTIES LABELS "native-engine"
+            ENVIRONMENT "ASAN_OPTIONS=detect_leaks=1:abort_on_error=1;LSAN_OPTIONS=suppressions=${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/lsan-dawn-null.supp;UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1")
+    endif()
     tn_native_engine_test(tn-native-engine-skinned-crowd-test tests/native-engine/animation/skinned_crowd_test.cpp
         native_engine_skinned_crowd_cpu=crowd_cpu)
     target_link_libraries(tn-native-engine-skinned-crowd-test PRIVATE tn_engine_player)

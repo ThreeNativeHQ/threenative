@@ -1,0 +1,5 @@
+# LeakSanitizer: Dawn's null backend keeps its device and queue alive past process exit; these
+# two frames are that driver allocation, never engine code. Texture and view references stay
+# reported (the surface-lifetime test exists to catch them).
+leak:dawn::native::null::Device::Initialize
+leak:dawn::native::QueueBase::QueueBase

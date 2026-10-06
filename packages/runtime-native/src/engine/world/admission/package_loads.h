@@ -1,6 +1,8 @@
 #pragma once
 
 #include <cstdint>
+#include <condition_variable>
+#include <deque>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -34,6 +36,9 @@ struct LoadError {
 struct LoadResult {
     std::vector<LoadedEntry> entries;
     std::optional<LoadError> error;
+    // Verified CPU data stays valid through done(), without an upload/readback round trip.
+    std::shared_ptr<const std::vector<uint8_t>> bytes;
+    assets::Package package;
 };
 
 /**
@@ -47,13 +52,14 @@ struct LoadResult {
  * that may use them has completed. Destroying the world's queue first is safe too: a worker's
  * completion is refused, so nothing of that world runs afterwards.
  *
- * ponytail: one thread per load; a pool comes with the measured concurrency default (PRD-520 §2).
+ * IO workers are reused across requests; dispatch never creates or joins a thread.
  */
 class PackageLoads {
   public:
     using Done = std::function<void(LoadResult)>;
 
-    PackageLoads(CompletionQueue& completions, GpuResources& gpu, uint32_t availableDecoders);
+    PackageLoads(CompletionQueue& completions, GpuResources& gpu, uint32_t availableDecoders,
+                 uint32_t concurrency = 12);
     ~PackageLoads();
     PackageLoads(const PackageLoads&) = delete;
     PackageLoads& operator=(const PackageLoads&) = delete;
@@ -86,6 +92,10 @@ class PackageLoads {
     uint64_t nextId_ = 0;
     std::vector<std::unique_ptr<Request>> requests_; // game thread only
     std::vector<std::thread> workers_;
+    std::mutex mutex_;
+    std::condition_variable work_;
+    std::deque<std::pair<uint64_t, std::string>> pending_;
+    bool stopping_ = false;
     std::shared_ptr<int> alive_ = std::make_shared<int>(0); // completions hold it weakly
 };
 

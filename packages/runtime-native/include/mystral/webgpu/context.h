@@ -8,6 +8,7 @@
 // Forward declare WebGPU types to avoid header dependency
 typedef struct WGPUInstanceImpl* WGPUInstance;
 typedef struct WGPUSurfaceImpl* WGPUSurface;
+typedef struct WGPUTextureViewImpl* WGPUTextureView;
 typedef struct WGPUAdapterImpl* WGPUAdapter;
 typedef struct WGPUDeviceImpl* WGPUDevice;
 typedef struct WGPUQueueImpl* WGPUQueue;
@@ -112,7 +113,7 @@ public:
 
     /**
      * Get the current texture to render to
-     * @return WGPUTextureView or nullptr if failed
+     * @return WGPUTextureView owned by this context until present/reconfigure, or nullptr if failed
      */
     void* getCurrentTextureView();
 
@@ -215,11 +216,13 @@ public:
     };
 
 private:
+    void releaseSurfaceView();
     /** Builds a surface handle for a native window without touching any member state. */
     WGPUSurface makeSurface(void* nativeHandle, int platformType);
 
     WGPUInstance instance_ = nullptr;
     WGPUSurface surface_ = nullptr;
+    WGPUTextureView surfaceView_ = nullptr;
     void* surfaceNativeHandle_ = nullptr;
     int surfacePlatformType_ = -1;
     WGPUAdapter adapter_ = nullptr;

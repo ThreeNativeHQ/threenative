@@ -496,6 +496,7 @@ static RequiredFeatures buildRequiredFeatures(WGPUAdapter adapter,
 Context::Context() = default;
 
 Context::~Context() {
+    releaseSurfaceView();
     // Clean up offscreen resources
     if (offscreenTextureView_) {
         wgpuTextureViewRelease((WGPUTextureView)offscreenTextureView_);
@@ -1213,6 +1214,7 @@ bool Context::configureSurface(uint32_t width, uint32_t height, bool vsync) {
         return false;
     }
 
+    releaseSurfaceView();
     surfaceWidth_ = width;
     surfaceHeight_ = height;
 
@@ -1334,6 +1336,7 @@ bool Context::rebuildSurface(void* nativeHandle, int platformType) {
     if (surface_) {
         // Unconfigure before release so the old swapchain is torn down explicitly rather than at
         // whatever moment the last reference happens to drop.
+        releaseSurfaceView();
         wgpuSurfaceUnconfigure(surface_);
         wgpuSurfaceRelease(surface_);
     }
@@ -1356,15 +1359,17 @@ void Context::resizeSurface(uint32_t width, uint32_t height) {
 }
 
 void* Context::getCurrentTextureView() {
+    if (surfaceView_) return surfaceView_;
     if (!surface_) {
         return nullptr;
     }
 
-    WGPUSurfaceTexture surfaceTexture;
+    WGPUSurfaceTexture surfaceTexture = {};
     wgpuSurfaceGetCurrentTexture(surface_, &surfaceTexture);
 
     if (!wgpuSurfaceTextureStatusIsSuccess(surfaceTexture.status)) {
         std::cerr << "[WebGPU] Failed to get current texture, status: " << surfaceTexture.status << std::endl;
+        if (surfaceTexture.texture) wgpuTextureRelease(surfaceTexture.texture);
         return nullptr;
     }
 
@@ -1377,10 +1382,19 @@ void* Context::getCurrentTextureView() {
     viewDesc.arrayLayerCount = 1;
     viewDesc.aspect = WGPUTextureAspect_All;
 
-    return wgpuTextureCreateView(surfaceTexture.texture, &viewDesc);
+    surfaceView_ = wgpuTextureCreateView(surfaceTexture.texture, &viewDesc);
+    // The view retains the texture; the acquired reference is ours to release separately.
+    wgpuTextureRelease(surfaceTexture.texture);
+    return surfaceView_;
+}
+
+void Context::releaseSurfaceView() {
+    if (surfaceView_) wgpuTextureViewRelease(surfaceView_);
+    surfaceView_ = nullptr;
 }
 
 void Context::present() {
+    releaseSurfaceView();
     if (surface_) {
         wgpuSurfacePresent(surface_);
     }

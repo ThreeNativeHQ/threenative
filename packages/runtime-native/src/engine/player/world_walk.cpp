@@ -7,6 +7,14 @@
 #include <fstream>
 #include <iterator>
 #include <stdexcept>
+#if defined(__has_feature)
+#if __has_feature(address_sanitizer)
+#define TN_WORLD_WALK_ASAN 1
+#endif
+#endif
+#if defined(__SANITIZE_ADDRESS__) || defined(TN_WORLD_WALK_ASAN)
+extern "C" std::size_t __sanitizer_get_current_allocated_bytes();
+#endif
 #if defined(__linux__)
 #include <malloc.h>
 #elif defined(__APPLE__)
@@ -41,7 +49,9 @@ std::vector<uint8_t> read(const std::filesystem::path& path) {
     return bytes;
 }
 double heapBytes() {
-#if defined(__linux__)
+#if defined(__SANITIZE_ADDRESS__) || defined(TN_WORLD_WALK_ASAN)
+    return double(__sanitizer_get_current_allocated_bytes());
+#elif defined(__linux__)
     const auto heap = mallinfo2();
     return double(heap.uordblks) + double(heap.hblkhd);
 #elif defined(__APPLE__)
@@ -52,8 +62,8 @@ double heapBytes() {
     return -1; // Missing allocator observation fails the scenario; no invented CPU-memory claim.
 #endif
 }
-std::shared_ptr<BufferGeometry> geometry(const std::vector<uint8_t>& bytes, const world::HeightSampler& heights,
-                                       const std::array<double, 2>& origin) {
+std::shared_ptr<BufferGeometry> geometry(std::span<const uint8_t> bytes, const world::HeightSampler& heights,
+                                         const std::array<double, 2>& origin) {
     if (bytes.size() != kPositionBytes)
         throw std::runtime_error("TN_WORLD_CELL_LAYOUT: positions must be six vec3 f32 vertices");
     auto attribute = std::make_shared<BufferAttribute>(Scalar::F32, 18, 3);
@@ -147,13 +157,22 @@ Game WorldWalk::game() {
     configured.initialize = [this](Renderer& renderer) {
         renderer_ = &renderer;
         geometryUploaded_ = renderer.geometry().stats().bytesUploaded;
+        completions_ = std::make_unique<world::CompletionQueue>();
+        loads_ = std::make_unique<world::PackageLoads>(*completions_, renderer.gpu(), assets::targetDecoders(), 2);
     };
     configured.update = [this](double) { update(); };
     configured.resource = [this](const std::string& id, uint64_t) {
         return id == "world" ? snapshot() : json::Value::makeNull();
     };
     configured.frameComplete = [this](Renderer& renderer, const auto& diagnostics) { frameComplete(renderer, diagnostics); };
-    configured.shutdown = [this] { unload(); alive_.reset(); renderer_ = nullptr; };
+    configured.shutdown = [this] {
+        unload();
+        if (completions_)
+            completions_->destroy();
+        loads_.reset();
+        completions_.reset();
+        renderer_ = nullptr;
+    };
     return configured;
 }
 
@@ -178,15 +197,13 @@ void WorldWalk::begin() {
         error({failure, "world", (fixture_ / "world.json").string(), world::Recovery::Fatal, "world creation refused"});
         return;
     }
-    completions_ = std::make_unique<world::CompletionQueue>();
-    loads_ = std::make_unique<world::PackageLoads>(*completions_, renderer_->gpu(), assets::targetDecoders());
     skipped_.clear();
     walkTick_ = settleTicks_ = waitingTicks_ = 0;
     phase_ = "walking";
 }
 
 void WorldWalk::release(Cell& cell) {
-    ++cell.generation; // GPU readbacks/completions from an evicted residency cannot publish later.
+    ++cell.generation; // Completions from an evicted residency cannot publish later.
     if (cell.request && loads_) loads_->cancel(cell.request);
     cell.request = 0;
     for (const auto& entry : cell.entries) renderer_->gpu().destroy(entry.resource);
@@ -195,14 +212,13 @@ void WorldWalk::release(Cell& cell) {
     cell.mesh.reset();
     cell.geometry.reset();
     cell.bufferBytes = cell.textureBytes = 0;
-    cell.reading = cell.ready = false;
+    cell.ready = false;
 }
 
 void WorldWalk::unload() {
-    if (completions_) completions_->destroy();
     for (auto& cell : cells_) release(cell);
-    loads_.reset(); // joins IO workers and releases half-uploaded requests
-    completions_.reset();
+    if (completions_)
+        completions_->drain(); // cancelled/generation-stale results publish nothing
     if (world_) {
         evictions_ += world_->evictions();
         world_->dispose();
@@ -215,6 +231,7 @@ void WorldWalk::update() {
     updated_ = true;
     frameBytes_ = 0;
     const double start = now();
+    completions_->drain(); // also retire cancelled loads during post-unload settling
     if (phase_ == "ready") begin();
     if (phase_ != "walking") { frameMs_ = now() - start; return; }
     if (walkTick_ >= kWalkTicks) {
@@ -223,7 +240,6 @@ void WorldWalk::update() {
         frameMs_ = now() - start;
         return;
     }
-    completions_->drain();
     const uint32_t segment = std::min(walkTick_ / 24, uint32_t(kPath.size() - 2));
     const double blend = std::min(1.0, double(walkTick_ - segment * 24) / 24);
     const double x = kPath[segment] + (kPath[segment + 1] - kPath[segment]) * blend;
@@ -238,7 +254,8 @@ void WorldWalk::update() {
         auto& cell = cells_[index];
         const bool wanted = std::find(resident.begin(), resident.end(), cell.key) != resident.end();
         if (!wanted) { release(cell); continue; }
-        if (cell.request || cell.reading || cell.ready || skipped_.contains(cell.key)) continue;
+        if (cell.request || cell.ready || skipped_.contains(cell.key))
+            continue;
         ++attempts_;
         const auto generation = ++cell.generation;
         const std::string file = mode_ == "world-fault" && index == 1 ? "cell-1-corrupt.tnpk" : cell.file;
@@ -253,40 +270,24 @@ void WorldWalk::update() {
                 return;
             }
             current.entries = std::move(result.entries);
-            const auto position = std::find_if(current.entries.begin(), current.entries.end(), [](const auto& e) { return e.name == "positions"; });
-            if (position == current.entries.end() || current.entries.size() != 2) {
+            const auto position = std::find_if(result.package.entries.begin(), result.package.entries.end(),
+                                               [](const auto& e) { return e.name == "positions"; });
+            if (!result.bytes || position == result.package.entries.end() || current.entries.size() != 2) {
                 error({"TN_WORLD_CELL_LAYOUT", "world", current.file, world::Recovery::Fatal, "missing cooked resources"});
                 return;
             }
             current.bufferBytes = kPositionBytes;
             current.textureBytes = 4;
-            current.reading = true;
-            // Render the actual verified/uploaded positions. The GPU completion queues its CPU
-            // geometry construction for the next measured admission, never inside a GPU callback.
-            const auto poster = completions_->poster();
-            const auto life = std::weak_ptr<int>(alive_);
-            const auto status = renderer_->gpu().readBuffer(position->resource, 0, kPositionBytes,
-                [this, index, generation, poster, life](GpuStatus status, std::vector<uint8_t> bytes) mutable {
-                    poster.post([this, index, generation, life, status, bytes = std::move(bytes)] {
-                        if (life.expired() || cells_[index].generation != generation) return;
-                        auto& cell = cells_[index];
-                        cell.reading = false;
-                        if (status != GpuStatus::Ok) {
-                            error({"TN_WORLD_READBACK_REFUSED", "gpu", cell.file, world::Recovery::Fatal, "position readback failed"});
-                            return;
-                        }
-                        cell.geometry = geometry(bytes, *heights_, cell.origin);
-                        if (!world_->completeAsset(cell.asset, {{{{}, {2}, false}}})) {
-                            error({"TN_WORLD_CELL_LAYOUT", "world", cell.file, world::Recovery::Fatal, "model observation refused"});
-                            return;
-                        }
-                        cell.ready = true;
-                        ++completedLoads_;
-                        visited_.insert(cell.key);
-                    });
-                });
-            if (status != GpuStatus::Ok)
-                error({"TN_WORLD_READBACK_REFUSED", "gpu", current.file, world::Recovery::Fatal, "position readback refused"});
+            // Use the same verified bytes that loadEntry uploaded; no GPU readback is needed.
+            current.geometry = geometry(result.package.data(*position), *heights_, current.origin);
+            if (!world_->completeAsset(current.asset, {{{{}, {2}, false}}})) {
+                error({"TN_WORLD_CELL_LAYOUT", "world", current.file, world::Recovery::Fatal,
+                       "model observation refused"});
+                return;
+            }
+            current.ready = true;
+            ++completedLoads_;
+            visited_.insert(current.key);
         });
     }
     frameBytes_ = loads_->admit(kByteAllowance);
@@ -305,8 +306,7 @@ void WorldWalk::update() {
             scene_.add(*cell.mesh);
         }
     }
-    const bool pending = loads_->inFlight() || world_->deferred() ||
-        std::any_of(cells_.begin(), cells_.end(), [](const auto& cell) { return cell.reading; });
+    const bool pending = loads_->inFlight() || world_->deferred();
     if (pending) {
         if (++waitingTicks_ > 300)
             error({"TN_WORLD_LOAD_TIMEOUT", "world", fixture_.string(), world::Recovery::Fatal, "cell did not settle in 300 rendered ticks"});

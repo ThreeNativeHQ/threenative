@@ -33,7 +33,7 @@ class WorldWalk {
         std::array<double, 2> origin{};
         uint64_t request = 0, generation = 0;
         uint64_t bufferBytes = 0, textureBytes = 0;
-        bool reading = false, ready = false;
+        bool ready = false;
         std::vector<LoadedEntry> entries;
         std::shared_ptr<BufferGeometry> geometry;
         std::shared_ptr<Mesh> mesh;
@@ -63,7 +63,6 @@ class WorldWalk {
     std::unique_ptr<world::CompletionQueue> completions_;
     std::unique_ptr<world::PackageLoads> loads_;
     Renderer* renderer_ = nullptr;
-    std::shared_ptr<int> alive_ = std::make_shared<int>(0);
     std::set<std::string> skipped_, visited_, rendererDiagnostics_;
     std::vector<world::LoadError> errors_;
     std::vector<Sample> samples_;
