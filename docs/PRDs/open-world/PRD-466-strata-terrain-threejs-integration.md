@@ -3143,5 +3143,59 @@ every render. A real Texture.version regression failed at 105 versus expected 4 
 repeated unchanged text. The game now repaints/uploads only when the displayed text changes;
 bar/layout updates, canvas resolution, readiness and error messages remain intact. All seven
 Strata loading tests pass, including changed-percentage and error-message controls. Runtime
-loading-speed improvement and a fresh post-fix screenshot remain unverified; no deadline,
-quality setting or acceptance threshold was relaxed.
+loading-speed improvement remains unverified; the follow-up below records the post-fix failure.
+No deadline, quality setting or acceptance threshold was relaxed.
+
+### 2026-10-06 — post-fix qualification (GPU OOM; readiness remains red)
+
+One post-fix run at `afd3ccef62f1dad335f839c71f1384483894e52b` used artifact SHA256
+`e9ca2430c17bdc011faf25dabf8998c677bf8be0a5448bd80f0d7a2019b80388`, the same browser,
+1920×1080, scale 1, MSAA 4, warmup and original deadlines. Independent rehashing verified
+all 323 licensed cooked files (212,536,550 bytes) unchanged. It ran from 08:31:44.292 UTC
+for 194.626 s and exited 2. The actual outcome is **RED**: 54 GPU out-of-memory errors
+(26 `depthBuffer`, 28 `colorBuffer`), 124 GPU validation errors, terminal spawn-admission
+timeout and resource-predicate timeout. No device-loss signature was recorded.
+
+The first OOM console row reports `vkAllocateMemory failed with VK_ERROR_OUT_OF_DEVICE_MEMORY`
+while creating the default depth attachment, before props were admitted. Console rows have no
+UTC timestamps, so its exact failure time cannot be recovered. Late replies reached all six
+spawn cells and 48 loaded/resident cells, but correctly retained `worldReady=false` and
+`Strata spawn admission exceeded 120000 ms`. The curtain did not release. A late
+`streamingPendingPrewarm=-5` is a separate unresolved counter defect, not evidence of readiness.
+
+V8 sampled image-upload self time was 94.491 s in the pre-fix run and 5.552 s in the post-fix
+run (overlay portions 94.436 s and 5.325 s). These are instrumented attribution observations
+from runs with different failures and resource conditions, not a controlled loading speedup
+or FPS result. The loading regression and 51 affected CPU tests pass; direct strict source
+typecheck, changed-file Biome and doc links pass. Documentation contracts pass 242/243 checks;
+the existing `docs/verification` tree is 72.7 MiB against its 72 MiB cap, unchanged by this slice.
+The new PNGs leave `docs/benchmark` at 164.3 MiB against its 200 MiB cap. Normal consumer
+declarations were missing from the local setup, and full-board/native/visual/frame acceptance
+remain unrun or open.
+
+Read-only process accounting recorded the run-owned GPU process rising from 805 MiB at
+9.708 s to 6,648 MiB at 11.708 s, peaking at 6,701 MiB at 08:32:32 UTC. Processes outside
+the recorded tree stayed between 864 and 937 MiB. This establishes allocation pressure in
+the run-owned GPU process; it does not identify the source allocator or measure authoritative
+free VRAM, driver reservations or fragmentation at the failure. The RTX 2080 has 8,192 MiB capacity.
+
+An independent CPU probe used the sealed runtime's Three 0.185.1 `c2e051df…` patch with a
+fake device; the publication worktree's `e5f4c8f8…` dependency has different whole source files.
+Its color-buffer cache writes `source.width/height` while texture dimensions read `source.data`.
+Three synthetic repeated color-buffer reads allocate three textures and destroy two. A stable
+MSAA-4 render-pass descriptor allocates only one depth/color pair; synthetic alternating
+4/0 descriptors allocate nine textures, destroy seven and leave two logically live. Strata's
+post pipeline and direct overlay expose this sample-switching path. Actual sample transitions,
+allocation counts and deferred GPU frees were not recorded, so this establishes churn rather
+than an OOM cause or retained leak. No production renderer/tone change was made.
+
+The original [pre-fix forest PNG](../../benchmark/strata-loading-2026-10-06/pre-fix-forest.png)
+comes from `ea0a0621b988eaa26fa2cd6450f03473cbf3fa17`; its run reached spawn but failed the
+overall gate. The [post-fix curtain PNG](../../benchmark/strata-loading-2026-10-06/post-fix-curtain.png)
+comes from `afd3ccef62f1dad335f839c71f1384483894e52b` and depicts loading cover only.
+Both are unmodified 1920×1080 captures. They are not matched before/after gameplay evidence;
+there is no post-fix gameplay image. Raw profiles, memory timeline, console errors, CPU probe
+and cleanup receipts remain in the task workspace's `readiness-fixed-qualification/` and
+`oom-diagnosis/`. Owned browsers and monitor stopped; the canonical GPU lease was released
+at 08:35:50 UTC. No additional Strata capture is authorized before the next consumer releases
+the GPU window. PRD-466 remains 50%; no acceptance box changed.
