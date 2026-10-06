@@ -1,0 +1,65 @@
+{
+  "name": "avbd-rigging-frozen-comparison",
+  "schemaVersion": 1,
+  "subject": "three frozen alternating candidate/spring pairs and separately costed candidate diagnostics on the existing live fixed-step pump",
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 300,
+  "artifacts": {
+    "screenshots": "before-after",
+    "console": true
+  },
+  "steps": [
+    {
+      "kind": "input",
+      "label": "start-frozen-comparison",
+      "press": "KeyB",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "all-seven-complete-windows",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkCompleted",
+        "equals": 7
+      },
+      "timeoutMs": 900000,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "GameState",
+        "path": "benchmarkFailures",
+        "equals": 0,
+        "throughoutSteps": true
+      },
+      {
+        "id": "GameState",
+        "path": "benchmarkCompleted",
+        "equals": 7
+      },
+      {
+        "id": "GameState",
+        "path": "benchmarkRun",
+        "equals": "off"
+      },
+      {
+        "id": "GameState",
+        "path": "pausedAdditionalSteps",
+        "equals": 0,
+        "throughoutSteps": true
+      }
+    ]
+  }
+}

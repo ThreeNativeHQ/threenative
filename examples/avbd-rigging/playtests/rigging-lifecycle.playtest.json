@@ -1,0 +1,138 @@
+{
+  "name": "avbd-rigging-lifecycle",
+  "schemaVersion": 1,
+  "subject": "fifty real rigging retirements restore owned GPU allocations and registrations while preserving the renderer device",
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 300,
+  "artifacts": {
+    "screenshots": "before-after"
+  },
+  "steps": [
+    {
+      "kind": "input",
+      "label": "request-fifty-cycles",
+      "press": "KeyL",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "fifty-retired-generations",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "completedCycles",
+        "gte": 50
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "replacement-draw-observed",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "measured",
+        "equals": 1
+      },
+      "timeoutMs": 120000,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "GameState",
+        "path": "mode",
+        "equals": "candidate",
+        "throughoutSteps": true
+      },
+      {
+        "id": "GameState",
+        "path": "completedCycles",
+        "gte": 50
+      },
+      {
+        "id": "GameState",
+        "path": "lifecycleObserved",
+        "gte": 50
+      },
+      {
+        "id": "GameState",
+        "path": "releasedBuffers",
+        "equals": 0
+      },
+      {
+        "id": "GameState",
+        "path": "releasedBytes",
+        "equals": 0
+      },
+      {
+        "id": "GameState",
+        "path": "releasedQuerySets",
+        "equals": 0
+      },
+      {
+        "id": "GameState",
+        "path": "releasedStorage",
+        "equals": 0
+      },
+      {
+        "id": "GameState",
+        "path": "registryBaseline",
+        "equals": 0
+      },
+      {
+        "id": "GameState",
+        "path": "registryCount",
+        "equals": 1
+      },
+      {
+        "id": "GameState",
+        "path": "deviceMismatch",
+        "equals": 0,
+        "throughoutSteps": true
+      },
+      {
+        "id": "GameState",
+        "path": "lifecycleFailures",
+        "equals": 0,
+        "throughoutSteps": true
+      },
+      {
+        "id": "GameState",
+        "path": "cleanupFailed",
+        "equals": 0,
+        "throughoutSteps": true
+      },
+      {
+        "id": "GameState",
+        "path": "readbackFailures",
+        "equals": 0,
+        "throughoutSteps": true
+      },
+      {
+        "id": "GameState",
+        "path": "observationFailures",
+        "equals": 0,
+        "throughoutSteps": true
+      },
+      {
+        "id": "GameState",
+        "path": "rendererControl.solverAllocations",
+        "equals": 0
+      },
+      {
+        "id": "GameState",
+        "path": "fixedColorsValidated",
+        "equals": 1
+      }
+    ]
+  }
+}

@@ -1,5 +1,13 @@
 {
   "extends": "../../tsconfig.base.json",
-  "compilerOptions": { "types": [] },
-  "include": ["src/physics/topology.ts", "__tests__/topology.spec.ts"]
+  "compilerOptions": {
+    "types": ["node", "@webgpu/types"]
+  },
+  "include": [
+    "src/**/*.ts",
+    "__tests__/*.ts",
+    "vitest.config.ts",
+    "qualify.ts",
+    "verify-capture.ts"
+  ]
 }
