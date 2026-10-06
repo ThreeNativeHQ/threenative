@@ -78,6 +78,16 @@ each proven before the next:
 The same graph serves Perry (decision 11): a later facade reaches it through the C ABI, and no
 upstream TSL JavaScript runs inside a native artifact.
 
+Slice 5, first part (2026-10-06): `tests/native-engine/playtests/game-core-demo/bundle.mjs`
+bundles the real core `defineGame`, scene, loop, input, renderer and viewport with runtime-owned
+import shims. The V8 player exposes native child enumeration/traversal and pumps boot microtasks;
+core is unchanged. Projection is explicitly declined and world matrices use the native full walk.
+A CPU-only probe over the bundle in V8 measured ArrowUp −0.8 m and ArrowRight +0.8 m in eight ticks
+each, then no movement on release. The desktop scenario `native-engine-core-v8.playtest.json`
+asserts movement and the native/V8 profile; verified 2026-10-06 on the desktop target: 3 of 3 runs pass
+(box moved, profile native/V8), the earlier V8 and JS-free player scenarios still pass, and the
+JS-free player still inspects JS-free. Red control: the demo's move speed zeroed, the scenario fails. The unchanged minimal-template journey box stays open.
+
 ## Decisions
 
 - This game runtime is the default until gate T ships, and it is never called a JS-free *application* (§2.1). The engine under it is JS-free (owner, 2026-10-04).

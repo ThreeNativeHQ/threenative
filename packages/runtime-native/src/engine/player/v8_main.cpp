@@ -21,6 +21,8 @@
 //
 // `tn.input.isDown(key)` is true while `key` is held; `key` is a DOM key ("w", "ArrowLeft", ...),
 // the names the endpoint's injected input carries.
+// `tn.children(object)` and `tn.traverse(object, callback, visibleOnly)` expose the native scene
+// walk to the core import shim. They enumerate native objects; no JS scene graph is maintained.
 #include <libplatform/libplatform.h>
 
 #include <cstdint>
@@ -30,6 +32,7 @@
 #include <set>
 #include <sstream>
 #include <string>
+#include <vector>
 
 #include "adapters/v8/adapter.h"
 #include "engine/abi/abi_internal.h"
@@ -47,8 +50,8 @@ v8::Local<v8::String> v8str(v8::Isolate* isolate, const std::string& s) {
         .ToLocalChecked();
 }
 
-// The host object, defined before the bundle so the bundle imports nothing. Only `isDown` reaches
-// C++ (the held-key set); `onUpdate`, `scene` and `camera` are plain JS properties the host reads.
+// The host object, defined before the bundle so the bundle imports nothing. `isDown` reads the
+// held-key set; `onUpdate`, `scene` and `camera` are plain JS properties the host reads.
 constexpr const char* kPrelude = R"JS(
 globalThis.tn = {
   __update: null,
@@ -62,6 +65,74 @@ void isDownCallback(const v8::FunctionCallbackInfo<v8::Value>& info) {
     v8::String::Utf8Value key(info.GetIsolate(), info[0]);
     const std::string name = *key ? *key : "";
     info.GetReturnValue().Set(held->count(name) != 0);
+}
+
+void sceneWalkCallback(const v8::FunctionCallbackInfo<v8::Value>& info) {
+    auto& adapter = *static_cast<tn::adapters::v8adapter::Adapter*>(info.Data().As<v8::External>()->Value());
+    auto* isolate = info.GetIsolate();
+    const auto ctx = isolate->GetCurrentContext();
+    tn_handle_t root{};
+    if (!adapter.unwrap(info[0], root)) {
+        isolate->ThrowException(v8::Exception::TypeError(v8str(isolate, "TN_CORE_SCENE: expected a native Object3D")));
+        return;
+    }
+    auto* binding = tn::abi::objectOf(root);
+    // Only scene classes carry the parent's member; reject math/material handles before casting.
+    tn_value_t parent{};
+    tn_diagnostic_t diagnostic{nullptr, 0};
+    if (binding == nullptr || tn_get(root, "parent", &parent, &diagnostic) != TN_OK) {
+        tn_diagnostic_release(&diagnostic);
+        isolate->ThrowException(v8::Exception::TypeError(v8str(isolate, "TN_CORE_SCENE: expected a scene object")));
+        return;
+    }
+    tn_diagnostic_release(&diagnostic);
+    auto* object = static_cast<Object3D*>(binding->ptr.get());
+    const bool walking = info.Length() > 1;
+    if (walking && !info[1]->IsFunction()) {
+        isolate->ThrowException(v8::Exception::TypeError(v8str(isolate, "TN_CORE_SCENE: expected a traversal callback")));
+        return;
+    }
+    std::vector<Object3D*> objects;
+    if (walking) {
+        const auto collect = [](Object3D& child, void* out) {
+            static_cast<std::vector<Object3D*>*>(out)->push_back(&child);
+        };
+        if (info[2]->IsTrue()) object->traverseVisible(collect, &objects);
+        else object->traverse(collect, &objects);
+    } else objects = object->children;
+    auto array = v8::Array::New(isolate, static_cast<int>(objects.size()));
+    // ponytail: O(n²) ID lookup for this tiny scene; add bulk reflection if traversal cost matters.
+    for (size_t i = 0; i < objects.size(); ++i) {
+        tn_value_t id{};
+        id.kind = TN_VALUE_NUMBER;
+        id.number = static_cast<double>(objects[i]->id());
+        tn_value_t result{};
+        if (tn_invoke(root, "getObjectById", &id, 1, &result, &diagnostic) != TN_OK || result.kind != TN_VALUE_HANDLE) {
+            tn_diagnostic_release(&diagnostic);
+            isolate->ThrowException(v8::Exception::Error(v8str(isolate, "TN_CORE_SCENE: child lookup failed")));
+            return;
+        }
+        tn_diagnostic_release(&diagnostic);
+        auto child = adapter.wrap(result.handle);
+        if (!array->Set(ctx, static_cast<uint32_t>(i), child).FromMaybe(false)) return;
+    }
+    // Root every wrapper before callbacks: a callback may detach a later child from the scene.
+    if (walking) {
+        for (uint32_t i = 0; i < array->Length(); ++i) {
+            v8::Local<v8::Value> child;
+            if (!array->Get(ctx, i).ToLocal(&child)) return;
+            v8::Local<v8::Value> ignored;
+            if (!info[1].As<v8::Function>()->Call(ctx, info[0], 1, &child).ToLocal(&ignored)) return;
+        }
+    } else info.GetReturnValue().Set(array);
+}
+
+void logCallback(const v8::FunctionCallbackInfo<v8::Value>& info) {
+    for (int i = 0; i < info.Length(); ++i) {
+        v8::String::Utf8Value message(info.GetIsolate(), info[i]);
+        std::printf("%s%s", i == 0 ? "" : " ", *message ? *message : "?");
+    }
+    std::printf("\n");
 }
 
 /** A game bundle on V8: the isolate, the adapter, the `tn` host object and the native world it built. */
@@ -133,10 +204,21 @@ bool V8Game::start(const std::string& path, std::string& error) {
     v8::Local<v8::Value> ignored;
     if (!v8::Script::Compile(ctx, v8str(isolate_, kPrelude)).ToLocal(&prelude) || !prelude->Run(ctx).ToLocal(&ignored))
         return error = "host prelude failed", false;
+    const auto host = ctx->Global()->Get(ctx, v8str(isolate_, "tn")).ToLocalChecked().As<v8::Object>();
+    const auto sceneWalk = v8::Function::New(ctx, &sceneWalkCallback, v8::External::New(isolate_, adapter_.get())).ToLocalChecked();
+    host->Set(ctx, v8str(isolate_, "children"), sceneWalk).Check();
+    host->Set(ctx, v8str(isolate_, "traverse"), sceneWalk).Check();
+    host->Set(ctx, v8str(isolate_, "log"), v8::Function::New(ctx, &logCallback).ToLocalChecked()).Check();
     v8::Local<v8::Script> script;
     if (!v8::Script::Compile(ctx, v8str(isolate_, source.str())).ToLocal(&script) || !script->Run(ctx).ToLocal(&ignored)) {
         v8::String::Utf8Value message(isolate_, tryCatch.Exception());
         return error = std::string("the game bundle failed: ") + (*message ? *message : "?"), false;
+    }
+    isolate_->PerformMicrotaskCheckpoint();
+    v8::Local<v8::Value> startupError;
+    if (host->Get(ctx, v8str(isolate_, "__startupError")).ToLocal(&startupError) && !startupError->IsUndefined()) {
+        v8::String::Utf8Value message(isolate_, startupError);
+        return error = std::string("core startup failed: ") + (*message ? *message : "?"), false;
     }
 
     v8::Local<v8::Value> tnValue;
