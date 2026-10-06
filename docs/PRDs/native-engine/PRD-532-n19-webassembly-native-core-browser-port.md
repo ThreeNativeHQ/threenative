@@ -35,6 +35,11 @@ browser's own JS engine and reaches the Wasm engine through the catalog's browse
    wrapper objects and lifetimes registered with the N04c reachability layer.
 5. Rollback: the upstream web path remains the shipped web product until this passes N20.
 
+Decision 12 fixes the web shape: JavaScript game code over the Wasm engine first, with render
+bundles, indirect draws, worker rendering and a bulk game-to-engine API; Perry-to-Wasm game code is
+option A, adopted only on [PRD-533 (N20)](PRD-533-n20-platform-qualification-performance-default-promotion.md)'s
+measurement.
+
 ## Out of scope
 
 - WebGL2 (§14). Making it the web default (N20). Deleting upstream Three.js from web bundles ([PRD-535 (N21)](PRD-535-n21-the-js-engine-is-deleted.md)).

@@ -44,6 +44,7 @@ targets (§2.3); software adapters and virtual displays are not performance evid
 **Files:** `scripts/engine-load-test/`, `docs/verification/runtime-perf-state.md`
 - [ ] The four workloads run under both the current-ThreeNative arm and the native arm with identical presented workload. proof: `pnpm bench:engines -- --arms current,native --workloads all`
 - [ ] The native C++ driver and the native-AOT driver run the same workload, so binding overhead is reported. proof: `pnpm bench:engines -- --arms native-cpp,native-aot`
+- [ ] The web build runs one workload under three arms — current three.js, the Wasm engine with JavaScript game code, and the Wasm engine with Perry-to-Wasm game code — with identical presented work, and the result decides between options B and A of decision 12. proof: `pnpm bench:engines -- --target web --arms current,wasm-js,wasm-perry` (new arms)
 
 #### Phase 2: Artifact qualification
 **Status:** NOT STARTED

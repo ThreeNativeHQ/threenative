@@ -64,7 +64,7 @@ The charter outranks every `AGENTS.md`, so the reversal is quoted here rather th
 Everything else in the charter stands, including the kill switch, "never own the look", and the
 rule that the supported API is the measured denominator.
 
-## 3. The ten decisions
+## 3. The decisions
 
 Owner decisions, João, 2026-10-04 (interview):
 
@@ -150,6 +150,26 @@ best"), 2026-10-04:
 Fixed by the proposal: C++20 for the engine, Dawn and wgpu-native retained, no upstream Three.js
 bundle inside the native engine. The proposal named TypeScriptCompiler as the first AOT candidate;
 decision 11 replaces it with Perry.
+
+12. **The web build: Wasm engine, JavaScript game code first (owner decision, 2026-10-05).** On the
+    web the C++ engine compiles to WebAssembly with Emscripten and renders through the browser's
+    WebGPU ([PRD-532 (N19)](../PRDs/native-engine/PRD-532-n19-webassembly-native-core-browser-port.md));
+    the game's TypeScript stays ordinary JavaScript run by the browser's JIT (option B). JavaScript
+    cannot leave the browser entirely: a page starts from it and Wasm reaches WebGPU, input and the
+    DOM through JS glue, so "no JS" on the web means no three.js engine in JS (PRD-535's bundle
+    audit). Rules:
+    - **The GPU-side design comes first, in either option:** the engine owns scene state in Wasm
+      memory; static draws are recorded once as render bundles; culled instances draw indirectly;
+      uniforms share one buffer with dynamic offsets; the renderer runs in a Web Worker on an
+      `OffscreenCanvas`; animation, culling and decode use Wasm threads over `SharedArrayBuffer`
+      where the host serves cross-origin isolation (COOP/COEP).
+    - **The game-to-engine API is bulk by default:** typed-array views into Wasm memory and dirty
+      flags, not per-property calls every frame. Per-object calls stay available for authoring and
+      tooling.
+    - **Option A is measured, not assumed:** the game compiled by Perry into the same Wasm module as
+      the engine (one boundary, one GC, the native build's semantics). It replaces B only if the
+      three-arm web benchmark (PRD-533) shows a clear gain, or if template journeys show JS and
+      native builds behaving differently.
 
 ## 4. The two gates
 
