@@ -15,11 +15,7 @@
       "op": "new",
       "id": "background",
       "class": "Color",
-      "args": [
-        0.05,
-        0.06,
-        0.08
-      ]
+      "args": [0.05, 0.06, 0.08]
     },
     {
       "op": "set",
@@ -33,12 +29,7 @@
       "op": "new",
       "id": "camera",
       "class": "PerspectiveCamera",
-      "args": [
-        50,
-        1.3333333333333333,
-        0.1,
-        100
-      ]
+      "args": [50, 1.3333333333333333, 0.1, 100]
     },
     {
       "op": "set",
@@ -62,20 +53,13 @@
       "op": "call",
       "id": "camera",
       "method": "lookAt",
-      "args": [
-        0,
-        0.4,
-        0
-      ]
+      "args": [0, 0.4, 0]
     },
     {
       "op": "new",
       "id": "sun",
       "class": "DirectionalLight",
-      "args": [
-        16777215,
-        2.5
-      ]
+      "args": [16777215, 2.5]
     },
     {
       "op": "set",
@@ -111,20 +95,13 @@
       "op": "new",
       "id": "sky",
       "class": "HemisphereLight",
-      "args": [
-        13426943,
-        3351057,
-        0.5
-      ]
+      "args": [13426943, 3351057, 0.5]
     },
     {
       "op": "new",
       "id": "floorGeometry",
       "class": "PlaneGeometry",
-      "args": [
-        12,
-        12
-      ]
+      "args": [12, 12]
     },
     {
       "op": "new",
@@ -161,12 +138,7 @@
       "op": "new",
       "id": "waveGeometry",
       "class": "PlaneGeometry",
-      "args": [
-        4,
-        2.5,
-        96,
-        4
-      ]
+      "args": [4, 2.5, 96, 4]
     },
     {
       "op": "new",
@@ -284,9 +256,7 @@
       "op": "call",
       "id": "scene",
       "method": "updateMatrixWorld",
-      "args": [
-        true
-      ]
+      "args": [true]
     }
   ],
   "observe": [
