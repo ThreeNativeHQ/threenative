@@ -10,6 +10,11 @@
 // throws.
 
 #include <charconv>
+#include <cerrno>
+#include <cmath>
+#if defined(__APPLE__)
+#include <xlocale.h>
+#endif
 #include <cstdint>
 #include <cstdlib>
 #include <limits>
@@ -210,9 +215,24 @@ class Parser {
     // the token's decimal exponent at its first significant digit.
     static double toDouble(std::string_view token) {
         double value = 0;
+#if defined(__APPLE__)
+        // Apple's libc++ has no floating-point from_chars: strtod_l in the C locale is the same
+        // correctly rounded, locale-free parse. ERANGE with 0 or ±HUGE_VAL is an overflow or an
+        // underflow (handled below); a subnormal result is a valid value.
+        static const locale_t cLocale = newlocale(LC_ALL_MASK, "C", nullptr);
+        const std::string text(token);
+        char* end = nullptr;
+        errno = 0;
+        value = strtod_l(text.c_str(), &end, cLocale);
+        const bool range = errno == ERANGE && (value == 0 || std::abs(value) == HUGE_VAL);
+        if (!range && end == text.c_str() + text.size())
+            return value;
+        value = 0;
+#else
         const auto [end, ec] = std::from_chars(token.data(), token.data() + token.size(), value);
         if (ec == std::errc() && end == token.data() + token.size())
             return value;
+#endif
         const bool negative = token.front() == '-';
         long exponent = 0, firstSignificant = 0;
         bool seen = false, afterPoint = false;
