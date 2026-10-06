@@ -4,13 +4,13 @@ prd_contract: v1
 
 # PRD-ggez-animation-composition — Selectively absorb GGEZ animation mechanics
 
-**Status:** NOT STARTED
+**Status:** PARTIAL
 **Priority:** P2 — Add synchronized locomotion blending and collision-safe root-motion composition without replacing the existing player.
 **Adoption order:** 1 of 3 in this batch; ordering is preference, not a dependency on the other two PRDs.
 **Complexity:** 6 (MEDIUM); estimated 6–10 implementation files (+2), new composition mechanism (+2), coupled animation/physics state (+2); risk override: none.
 **Owner:** ThreeNative maintainers; implementation agent executes the plan.
 **Depends on:** The masked-layer behavior specified by [PRD-VQ-05](../animation/PRD-VQ-05-masked-additive-animation.md). That behavior may land in the same implementation; completion of the entire VQ-05 document is not a prerequisite.
-**Progress:** 0%
+**Progress:** 25%
 **Planning baseline:** `develop` at `ba72eed258b1aefabb9744dc86fd8282c3ab39a5`; 2026-10-05. This document authorizes no implementation, release or merge.
 
 ## Context
@@ -63,26 +63,28 @@ All new paths/APIs below are proposed. Fill actual caller locations when impleme
 
 ### Phase 1 — A character blends and composes actions
 
-**Status:** NOT STARTED
+**Status:** PARTIAL
 **ACs:** AC-1, AC-2
 **Files:** Proposed `packages/core/src/animation-composition.ts`; existing `animation.ts`, `index.ts`; VQ-05's canonical layer implementation/tests; new example game entry.
 **Implementation:** Audit donor files/transitive licenses; adapt the smallest useful algorithms to existing Three objects; resolve blend and synchronization data at load; extend the existing layered fixture rather than cloning it. The example must call the public export.
 
 - [ ] AC-1 [local; actor: implementation agent]: Public composition updates produce the independently calculated blend weights and synchronized sample times for the locomotion fixture. proof: `pnpm exec vitest run packages/core/__tests__/animation-composition.spec.ts` (planned; includes invalid layouts and loop/interruption traces). Evidence: pending.
-- [ ] AC-2 [local; actor: implementation agent]: The shared VQ-05 consumer preserves the lower-body pose while applying an upper-body action; weight zero restores the base pose within 1e-5 local-transform tolerance. proof: `pnpm exec vitest run packages/core/__tests__/vq-masked-additive-animation.spec.ts` (reuse/extend planned VQ-05 proof). Evidence: pending.
+  Source controls pass (8 tests); public JS/DTS build and actual example caller remain unverified.
+- [x] AC-2 [local; actor: implementation agent]: The shared VQ-05 consumer preserves the lower-body pose while applying an upper-body action; weight zero restores the base pose within 1e-5 local-transform tolerance. proof: `pnpm exec vitest run packages/core/__tests__/vq-masked-additive-animation.spec.ts --maxWorkers=1`. Evidence: 2026-10-06, CPU 10, exit 0, 6 tests; exact override/lower-body/zero tolerance, additive reference, distinct cloned masks, once pause/replay/cancellation and 50 shared-source disposal cycles. The canonical VQ-05 PRD is unchanged.
 
 **Verification:** Compare against hand-calculated weight/phase cases and independent base-only samples, not a second call to the same helper.
-**Checkpoint:** Pending; self-review plus one equivalent reviewer when available, not a separate acceptance box.
+**Checkpoint:** Independent reviewer reproduced five initial defects; red/green controls now pass for turning subdivision/seams, collinear boundary projection, body/ancestor ownership, root interpolation and quaternion track types. A second pass verified mixed-root interval math and found one additional body-hierarchy defect; its red/green control now passes. Build/package/runtime qualification remains open.
 
 ### Phase 2 — Movement has one authority
 
-**Status:** NOT STARTED
+**Status:** PARTIAL
 **ACs:** AC-3, AC-4
 **Files:** Proposed `packages/core/src/animation-root-motion.ts`; existing character/physics integration identified before editing; example collision course and focused regression fixture.
 **Implementation:** Handle loop-seam deltas and reference transforms; route movement through Rapier; exclude the consumed root contribution from skin pose; retain velocity-driven defaults and IK ordering. No new native ABI is assumed.
 
 - [ ] AC-3 [local; actor: implementation agent]: Through the actual game fixed-step path, a root-motion character stops at a collider and its transform follows accepted Rapier displacement with no duplicate root translation. proof: `pnpm exec vitest run packages/core/__tests__/animation-root-motion.spec.ts` (planned real Rapier/loop integration, not a mocked movement helper). Evidence: pending.
-- [ ] AC-4 [local; actor: implementation agent]: A character using only the incumbent player retains its previous sampled pose/stride trace when composition is unused. proof: `pnpm exec vitest run packages/core/__tests__/animation-composition.spec.ts` (planned baseline regression arm). Evidence: pending.
+  Real Rapier and FixedStepLoop controls pass (6 tests, 240 collision ticks); actual example fixed-step caller and existing IK integration remain to be exercised.
+- [x] AC-4 [local; actor: implementation agent]: A character using only the incumbent player retains its previous sampled pose/stride trace when composition is unused. proof: `pnpm exec vitest run packages/core/__tests__/animation-composition.spec.ts packages/core/__tests__/animation.spec.ts --maxWorkers=1`. Evidence: 2026-10-06, CPU 10, exit 0; independent four-tick incumbent pose/stride trace and action/binding baseline pass, plus 51 incumbent-player regression tests. Composition creates no unused-path owner or update registration.
 
 **Verification:** Exercise paused/interrupted/root-loop movement and IK-after-animation ordering; reject unsupported transforms with actionable diagnostics.
 **Checkpoint:** Pending; record results on the owning boxes only.
@@ -120,5 +122,7 @@ If selective extraction becomes a dependency on GGEZ's graph compiler, keep upst
 Phase 3 requires an actual WebGPU runner and a built Linux native executable supplied through the existing playtest/native workflow. These were not provisioned or exercised in this planning session. Additional platform qualification is outside this bounded first slice and must precede claims for those targets. No owner sign-off, publication or credential gate is required to implement the slice.
 
 ## Decisions
+
+2026-10-06 — User authorized this dedicated implementation lane after planning PR 446 merged. Isolated branch `feat/ggez-animation-composition` starts at fetched `origin/develop` `29fdae8bf9141b4a82dac91b276dbb574a7d06a3`. Existing VQ-05 has no landed layer owner or active animation-editing PR; this lane supplies its one shared layer-preparation fixture. PRs 437/438 remain read-only. No GGEZ runtime dependency is introduced: inspected `anim-runtime`, `anim-core`, `anim-schema` and `anim-utils` are MIT; schema's Zod dependency is not imported. Adapted helper/yaw paths retain the pinned donor MIT notice in source. Donor `anim-core/src/clip.ts` was also inspected; its per-call full-pose allocations and loop iteration were not adopted. Browser, Linux native, packed public consumer and the original hardware performance target remain unverified and unticked.
 
 2026-10-05 — User selected GGEZ for selective absorption. Preserve existing animation/physics ownership and share VQ-05's masked-layer implementation. The user requested one documentation-only draft PR containing all three plans; this planning-only batch does not authorize implementing three PRDs in one feature PR. All implementation progress remains zero.
