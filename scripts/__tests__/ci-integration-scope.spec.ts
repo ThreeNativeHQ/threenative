@@ -633,6 +633,14 @@ describe("fluid CI observer ownership", () => {
 });
 
 describe("reviewed producer and independent feature boundaries", () => {
+  it.each(["Area", "Footprint", "FootprintMath", "Producer", "Replay", "Selection", "Visibility"])(
+    "routes isolated temporalCurrent%s edits to temporal alone",
+    (suffix) => {
+      const file = `packages/create-threenative/templates/starter/src/render/temporalCurrent${suffix}.ts`;
+      expect(select(workflow, [file])).toEqual({ ...none, temporal: true });
+      expect(select(workflow, [file.replace(".ts", ".txt")])).toEqual(none);
+    },
+  );
   it("routes an isolated rejection-counter edit to its temporal evidence lane", () => {
     const file =
       "packages/create-threenative/templates/starter/src/render/temporalRejectionCounter.ts";

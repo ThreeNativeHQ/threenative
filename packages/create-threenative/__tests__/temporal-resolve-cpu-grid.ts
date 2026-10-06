@@ -46,6 +46,9 @@ export class Value {
   floor() {
     return this.map(Math.floor);
   }
+  ceil() {
+    return this.map(Math.ceil);
+  }
   fract() {
     return this.map((x) => x - Math.floor(x));
   }
@@ -67,6 +70,24 @@ export class Value {
   lessThan(b: Value | number) {
     return this.op(b, (x, y) => Number(x < y));
   }
+  lessThanEqual(b: Value | number) {
+    return this.op(b, (x, y) => Number(x <= y));
+  }
+  greaterThanEqual(b: Value | number) {
+    return this.op(b, (x, y) => Number(x >= y));
+  }
+  and(b: Value) {
+    return this.op(b, (x, y) => Number(Boolean(x && y)));
+  }
+  not() {
+    return this.map((x) => Number(!x));
+  }
+  all() {
+    return new Value([Number(this.values.every(Boolean))]);
+  }
+  any() {
+    return new Value([Number(this.values.some(Boolean))]);
+  }
   equal(b: Value | number) {
     return this.op(b, (x, y) => Number(x === y));
   }
@@ -82,8 +103,8 @@ export class Value {
   toVar() {
     return new Value([...this.values]);
   }
-  assign(b: Value) {
-    this.values = [...b.values];
+  assign(b: Value | number) {
+    this.values = b instanceof Value ? [...b.values] : Array(this.values.length).fill(b);
     return this;
   }
   addAssign(b: Value) {
@@ -165,7 +186,7 @@ export const cpuTSL = {
     const call = (...args: Value[]) => fn(args);
     return Object.assign(call, { setLayout: () => call });
   },
-  float: (a: number) => new Value([a]),
+  float: (a: number | Value) => (a instanceof Value ? a.toVar() : new Value([a])),
   int: (a: number) => new Value([a]),
   vec2: (...a: (Value | number)[]) => vector(2, a),
   ivec2: (...a: (Value | number)[]) => vector(2, a).map(Math.trunc),

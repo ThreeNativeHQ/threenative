@@ -10,6 +10,7 @@ import {
   RendererUtils,
   type TextureNode,
 } from "three/webgpu";
+import { createTemporalAAInput } from "./temporalAAInput.js";
 import {
   type ITemporalRejectionCounter,
   type ITemporalRejectionMeasurement,
@@ -34,45 +35,20 @@ export function createTemporalAAFrame(
   depth: TextureNode,
   historyValid: { value: number },
   rejection: () => TemporalDepthRejection | undefined,
+  publishCurrentDepth?: (renderer: Renderer) => void,
 ) {
   const quadMesh = new QuadMesh();
   quadMesh.name = "Temporal AA";
-  const input = new Vector2();
   const display = new Vector2();
   let previousDepth: DepthTexture | null = null;
   let depthReady = false;
   let disposed = false;
   let frame = 0;
   let counter: ITemporalRejectionCounter | undefined;
+  let counterEquations: TemporalDepthRejection | undefined;
   let rendererState: Parameters<typeof RendererUtils.resetRendererState>[1] | undefined;
 
-  /** The scene pass raster, from its real GPU target and never from a canvas label. */
-  function measureInput(): RenderTarget | undefined {
-    const target = internals.beautyNode.isRTTNode
-      ? internals.beautyNode.renderTarget
-      : internals.beautyNode.passNode?.renderTarget;
-    if (target === undefined) return undefined;
-    if (!Number.isFinite(target.width) || target.width < 1) return undefined;
-    if (!Number.isFinite(target.height) || target.height < 1) return undefined;
-    input.set(target.width, target.height);
-    return target;
-  }
-
-  /** Establish jitter before the pass sizes and draws its raster in updateBefore. Its raster is
-   * the drawing buffer scaled by the pass's own resolution scale, rather than the canvas alone. */
-  function jitterInput(renderer: Renderer): void {
-    if (disposed) return;
-    const colour = internals.beautyNode;
-    // A fixed RTT owns its raster; an automatic RTT and a pass size themselves from the buffer.
-    if (colour.isRTTNode && colour.autoResize === false) {
-      if (measureInput() !== undefined) internals.setViewOffset(input.x, input.y);
-      return;
-    }
-    const scale = (colour.isRTTNode ? colour : colour.passNode)?.getResolutionScale?.() ?? 1;
-    renderer.getDrawingBufferSize(input);
-    if (scale !== 1) input.set(Math.floor(input.x * scale), Math.floor(input.y * scale));
-    internals.setViewOffset(input.x, input.y);
-  }
+  const { input, measureInput, jitterInput } = createTemporalAAInput(internals, () => disposed);
 
   /** Publish and update history. Reset weights current only: reseeding cannot prevent motion
    * from sampling the seed at shifted history UVs. */
@@ -150,9 +126,15 @@ export function createTemporalAAFrame(
       // Between the resolve and the depth copy, so it reads the depth and matrices just drawn with.
       const equations = rejection();
       if (equations !== undefined) {
+        if (counterEquations !== equations) {
+          counter?.dispose();
+          counter = undefined;
+          counterEquations = equations;
+        }
         counter ??= createTemporalRejectionCounter(equations);
         counter.sample(renderer, frame, display.x, display.y);
       }
+      publishCurrentDepth?.(renderer);
       // History is the resolve this frame produced, at the same size, so the copy never crosses rasters.
       if (seeded === false) renderer.copyTextureToTexture(depth.value, depthHistory);
       renderer.copyTextureToTexture(

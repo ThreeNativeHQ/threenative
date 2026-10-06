@@ -2,6 +2,7 @@ import { OrthographicCamera, PerspectiveCamera, Vector2, Vector3 } from "three";
 import { float, vec2 } from "three/tsl";
 import type { Node } from "three/webgpu";
 import { describe, expect, it } from "vitest";
+import { CURRENT_SAMPLE_POSITIONS } from "../templates/starter/src/render/temporalCurrentFootprintMath.js";
 import {
   temporalDepthHasDisocclusion,
   temporalDepthHistoryUV,
@@ -128,6 +129,16 @@ describe("both colour support and chosen surface retain their rejection authorit
     )[0] === 1;
   it("rejects a removed centre occluder even when the selected foreground neighbor still matches", () => {
     expect(rejected(0.98, 0.97, 0.98)).toBe(true);
+  });
+  it("proves a four-site packet alone cannot retain the original centre veto", () => {
+    // Two prior states are identical at all raw4 sites. Only the centre sees the tiny occluder.
+    // This is an information counterexample, independent of any benchmark recovery witness.
+    const depthAt = (x: number, y: number) => (Math.hypot(x - 0.5, y - 0.5) < 0.05 ? 0.2 : 1);
+    expect(CURRENT_SAMPLE_POSITIONS.map(([x, y]) => depthAt(x, y))).toEqual([1, 1, 1, 1]);
+    expect(rejected(0.9, 1, 1)).toBe(false);
+    expect(rejected(0.9, depthAt(0.5, 0.5), 1)).toBe(true);
+    // The other original veto also keeps independent authority with the same threshold.
+    expect(rejected(0.9, 1, 0.2)).toBe(true);
   });
   it("rejects the chosen sample's revealed surface even when the colour centre previously saw background", () => {
     expect(rejected(0.98, 1, 0.97)).toBe(true);

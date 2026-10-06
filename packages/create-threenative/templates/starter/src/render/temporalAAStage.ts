@@ -3,7 +3,7 @@
 // disposes. The chain hands the stage the *sampled* velocity texture, while the accessor TRAANode
 // needs for its unjittered projection reaches it separately through the graph context.
 import type { OrthographicCamera, PerspectiveCamera } from "three";
-import type { Node, TextureNode } from "three/webgpu";
+import type { Node, PassNode, TextureNode } from "three/webgpu";
 import { createTemporalAA } from "./temporalAA.js";
 import type { ITemporalRejectionMeasurement } from "./temporalRejectionCounter.js";
 import type { ChainStage, IWorldEnvironmentStageContext } from "./worldEnvironment.js";
@@ -42,6 +42,7 @@ export interface ITemporalAAStageSink {
 export function temporalAAStages(
   context: IWorldEnvironmentStageContext,
   sink: ITemporalAAStageSink = {},
+  currentPass?: PassNode,
 ): readonly ChainStage[] {
   const camera = context.camera as PerspectiveCamera | OrthographicCamera;
   let provider: TemporalAAProvider | undefined;
@@ -58,6 +59,7 @@ export function temporalAAStages(
           context.depthNode,
           chain.velocityNode as TextureNode,
           camera,
+          currentPass,
         );
         sink.onProvider?.(provider);
         return provider.node;

@@ -183,21 +183,21 @@ const BUG_REPORT_SKILL_PATHS = [
 // package.json patch declarations and copied Vite/Tailwind patch bytes differ; every other
 // generated file remains byte-identical. Fingerprints still cover the complete tree.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
-  // Actual no-install generation of reviewed temporal source 2e9af7dcd plus develop 29fdae8bf.
-  // Re-measured native-axis current reconstruction: only starter changes across all 13 trees.
-  "action-rpg": "4665dee3e53e702cd7dbf4c15652c16b5b675978b8c54fcff673b06689f479f9",
-  minimal: "b721ce7db282535c454767789db782f13a2b3b0f5bd3ed739f4b835585ca2f58",
-  platformer: "ea1c7d4f1c84ae0a6a6ec408b443dc0f07b15e8cb24cc327a3dd8fe13e8e9daf",
-  puzzle: "3b856b0fc8bcfbe1d7fd81843e6f80e777e5dab557123d29764a0aae2c9c7def",
-  racing: "dd2f27e004d4e5fef1ec24108a3063c07959c7e946348a5222295f616b6af670",
-  rain: "1757f8c433b8ead86da8cc7ca73d69de5c46806175218bf2170261024da00ba5",
-  rts: "d5b0db431b0137b783cd54a03c82baac512818d8f8600a1cdb2641287439b98c",
-  runner: "75278d4d1ac466be2adf4e56988f6c8920a5c382a54393b741769283681b0b63",
-  sailing: "e277d785065516134f88f1fd4cc0b6ffdf1382f3c5c6ccbf03778e56db3c1bc3",
-  shooter: "fd60a8083302674b8225592930f29a6741a009eb330469b0f24a4ead84873b4e",
-  snow: "6574ecefb7fa70bab9a787d5ecd8eea4313e961c483ce5562f1eb5e9dd380310",
-  starter: "1b44755328a8768fc8253ccf8f1f9311528a9cbeaa1c027d633e04d6d8e98b6d",
-  "tower-defense": "419a11f74f93d6e5a3a8e55a195804db1bc2a505699791c0322594bdf9fec65a",
+  // Actual no-install generation of the isolated raw4 candidate at parent4e86/develop29f.
+  // The canonical Three patch changes every kit; only starter also changes render source/docs.
+  "action-rpg": "caf3c4f2f63afdf886eb2354d23acd416fff7651c15274a53348d7ade2aaf6fc",
+  minimal: "b6b01a63b921f0b30f0aca3938a656aa2fceb99bb3d7b8ce99c0bfb97359ffb6",
+  platformer: "fe5877b9615cbabe934562643c34de3155460bd34b64ec475b610c62f06f9b11",
+  puzzle: "b2c9e31047a38e651778fe16f74153a7d151089285788576a811d07bc68b0b1e",
+  racing: "1064a22a6a705bdf3f18f8624c76e2c15fdcfb1151c8e13b0bbdad1a897de66a",
+  rain: "ea37bdc0482b09be95a54a7418276b87e4173d472fd6e261879ade1668ff5c54",
+  rts: "7f937142785ca49c931bfd8379b43eece8bb96cd499fadf7bb957275da033bbb",
+  runner: "f0d1d02f927b3449797912a574bf2dfa8ac63a337f4557d4f8620a15a56ad095",
+  sailing: "e8dead635de1cd7bcebb0e6210a90c5ecf49890f8fe8b3f2bd47f9985907b7e7",
+  shooter: "de306f0bfb63c3aa3f9fc77cbd31931327849f412f871a038baff910dba7d5fe",
+  snow: "4f04686e95bc423c20d6edaf88bd89dee0758923bef772cd6df4d4b345afa00b",
+  starter: "3df21e2a4fec92f52c8203a988bdde7d8994d796878626a498063541eb6afbe2",
+  "tower-defense": "6c2f7a2f4e17e1378c8d9be492fa8a8db20a7293141ad775f79e4b66631c687a",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
@@ -298,6 +298,15 @@ const STARTER_PATHS = [
   "src/render/postprocessing.ts",
   "src/render/worldEnvironment.ts",
   "src/render/temporalAA.ts",
+  "src/render/temporalAAInput.ts",
+  "src/render/temporalAAResolve.ts",
+  "src/render/temporalCurrentArea.ts",
+  "src/render/temporalCurrentFootprint.ts",
+  "src/render/temporalCurrentFootprintMath.ts",
+  "src/render/temporalCurrentProducer.ts",
+  "src/render/temporalCurrentReplay.ts",
+  "src/render/temporalCurrentSelection.ts",
+  "src/render/temporalCurrentVisibility.ts",
   "src/render/temporalResolve.ts",
   "src/render/exposure.ts",
   "src/render/autoExposure.ts",

@@ -167,6 +167,17 @@ const FLUID_DEVELOP_BLOBS = {
   "src/renderers/webgpu/utils/WebGPUAttributeUtils.js": "83bbe189915c8450c4e14108e6a3f4ed98c4b016",
 };
 
+// Exact Three blobs consumed by published PR398 4e86 (patch7036a173).
+const CURRENT_RECONSTRUCTION_BLOBS = {
+  "build/three.webgpu.js": "9166d6f2dd1ac1505fa27b625f1976dff6b8ebc1",
+  "build/three.webgpu.nodes.js": "9e7c7f74be1191b761711bd70ee59cc033e586cb",
+  "src/nodes/display/PassNode.js": "cc827a55cb82a6325296dcc5c55a4246f4f70aed",
+  "src/nodes/accessors/TextureNode.js": "f886ed21397ab39d6fdbc58e5ac57729f1871f8a",
+  "src/nodes/accessors/TextureSizeNode.js": "d4668281657ef8b1acad761e0d86a0716909eee4",
+  "src/renderers/webgpu/nodes/WGSLNodeBuilder.js": "2acc832a628f43adac49614dad8e593ef058c398",
+  "src/renderers/webgpu/utils/WebGPUBindingUtils.js": "a5da7ca09f746c0b2859ef173df663ccdc851ebc",
+};
+
 function blobHash(contents: string): string {
   return createHash("sha1")
     .update(`blob ${Buffer.byteLength(contents)}\0`)
@@ -215,6 +226,7 @@ describe.each([
   ["published PR393 daef254c", RECOMPILE_BLOBS],
   ["published PR398 63aa4b9b", TEMPORAL_PUBLISHED_BLOBS],
   ["develop fluid c2e051df", FLUID_DEVELOP_BLOBS],
+  ["published PR398 4e86 /7036a173", CURRENT_RECONSTRUCTION_BLOBS],
 ])("actual previously shipped Three files (%s)", (_name, priorBlobs) => {
   it.each([false, true])(
     "upgrades the exact prior patch and remains idempotent (CRLF=%s)",

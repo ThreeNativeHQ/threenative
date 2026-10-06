@@ -1895,3 +1895,59 @@ and measured paired GPU/native cost. No fixture raster assertion or automatic-sc
 changed to adopt it. Raw MSAA aliases, matched sample motion/depth, sample positions and alpha
 material ownership require separate producer design; resolved cell averages alone do not provide
 current display-footprint radiance.
+
+### Original-raster raw4 current-footprint candidate — bounded CPU implementation
+
+An isolated candidate on published parent `4e86d370d853da5e0d902224e944834ea1a17433`
+implements the accepted original426x240 input/display640x360 design. The existing scene
+pass scale supplies actual dimensions; no fixed-resolution replacement, quality-tier enablement,
+fixture arm, scorer or original threshold changes. The optional exact scene-pass argument owns
+four-sample beauty, sample-interpolated alpha-tested visibility, matching cheap depth/motion
+replays and one previous four-depth packet. Opaque PBR RGB remains a pixel-frequency spatial
+approximation. Unsupported or custom inputs fall back to the ordinary provider.
+
+The pinned Three patch supplies distinct raw/resolved semantic bindings to the actual owner GPU
+resource, integer sample loads, pass-scoped sample interpolation and invariant vertex positions.
+Actual builder/cache controls verify ordinary opaque shading stays at pixel frequency, alpha
+and instance/skinning paths retain their scheduled buffers, and replay does not advance a second
+VelocityTracker. Visibility preserves render-list ordering, alpha/depth/deformation and draw
+selection. Custom scene/light/shadow node graphs and shadow callbacks, clipping, bundles, textured backgrounds,
+unscheduled morph/displacement and unsupported material paths decline the candidate.
+
+The consumer integrates finite periodic sample-cell overlap into current colour and clipping
+moments. History matches each contributor's own motion/jitter, nearest prior physical sample,
+depth-packet channel and prior projection site. Four periodic nearest candidates preserve the
+exhaustive row/cell/sample tie rule in8192 independent CPU trials. Both original .0005 depth
+vetoes remain authoritative and are ANDed with new rejection; mandatory RGB clipping remains.
+The packet publishes after both resolve and counter readers. Failures reset history before the
+next temporal draw; retargeting and disposal preserve a later owner's state.
+
+The original centre-depth replay is retained because a CPU occluder control places foreground at
+the centre while all four raw sites are background. Conservative input storage is168L
+(16.38MiB at426x240), plus proven-needed centre replay16L (1.56MiB); display resolve/history16N
+and native allocator overhead are separate. Counter resize/disposal releases real compute nodes
+and exclusively owned storage through the existing Attributes deletion path, waiting for any
+readback. Source code can evaluate up to108 polygon-overlap candidates per display pixel across
+current reconstruction, resolve validity and counter validity. These costs belong to the
+unmeasured auxiliary budget; no performance win or actual resources-zero proof is claimed.
+
+Bounded evidence is retained in the delegated task directory under `pr398-raw4-*`: real raw
+binding/layout/disposal and policy RED/GREEN controls, all22 exact predecessor migration cases,
+independent finite-area/motion/tie/veto controls, actual combined resolve-fragment and counter
+WGSL construction, scoped strict TS7/Biome, unchanged readability guards, and measured complete
+trees for all13 no-install templates. The scaffold contract records red with old fingerprints
+before the measured update. Source-adapted replay matches all65 retained low-input witnesses
+within their original explicit f32/RGBA16F comparison tolerances; the original +1 recovery
+witness still fails (.11045044 authored staleness versus .1). This replay checks preservation of
+the ordinary kernel, not raw4 runtime quality. Offline WGSL construction is not device compilation.
+
+Isolated edits to all seven `temporalCurrent*.ts` modules now select the existing temporal CI
+lane, after seven actual-selector RED controls. Existing producer ownership, independent lanes
+and safe unknown fallback remain unchanged. No workflow run is dispatched by this CPU check.
+
+This remains an isolated, unpublished CPU candidate pending parent-coordinated publication and
+new CI. Fresh graphics/implementation review precedes any GPU work. Original31-arm quality,
+foliage/edge/recovery and cost gates, actual WorldEnvironment/ResolutionScaler integration,
+automatic-scale allocation, full workspace/build and native/platform evidence remain open.
+Acceptance checkboxes and draft prd:25% status are unchanged. No new GPU/native run or external
+image upload is included.

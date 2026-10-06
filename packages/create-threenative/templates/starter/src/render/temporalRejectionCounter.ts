@@ -3,7 +3,7 @@
 // a report states cannot drift from the decision the resolve drew with. One compute reset runs first,
 // in its own single-thread dispatch, so no group can read a partial sum; the copy back is asynchronous
 // and one at a time, so the frame never blocks on it.
-import { Vector2 } from "three";
+import { type BufferAttribute, Vector2 } from "three";
 import {
   Fn,
   If,
@@ -73,6 +73,11 @@ export function createTemporalRejectionCounter(
   let unpublished = false;
   let failure: string | undefined;
   let disposed = false;
+  const owners = new Set<Renderer & { deleteAttribute(attribute: BufferAttribute): unknown }>();
+  function releaseStorage() {
+    for (const renderer of owners) renderer.deleteAttribute(counter.value);
+    owners.clear();
+  }
 
   /** The newest measurement is withdrawn and the reason kept, so nothing stale stays claimable. */
   function absent(reason: string): void {
@@ -89,9 +94,13 @@ export function createTemporalRejectionCounter(
           `Temporal AA rejection counting needs whole numbers, got frame ${frame} at ${width}x${height}.`,
         );
       if (width < 1 || height < 1) return;
+      if (typeof Reflect.get(renderer, "deleteAttribute") !== "function")
+        throw new Error("Temporal rejection counting requires owned attribute disposal.");
+      owners.add(renderer as Renderer & { deleteAttribute(attribute: BufferAttribute): unknown });
       // The dispatch size is part of the compute node, so a new display raster builds a new one over
       // the same counter rather than a new counter.
       if (pixels !== width * height) {
+        dispatched?.dispose();
         pixels = width * height;
         size.value.set(width, height);
         dispatched = count.compute(pixels);
@@ -138,6 +147,7 @@ export function createTemporalRejectionCounter(
         })
         .finally(() => {
           inFlight = undefined;
+          if (disposed) releaseStorage();
         });
     },
     report(frame: number): ITemporalRejectionMeasurement | undefined {
@@ -154,12 +164,16 @@ export function createTemporalRejectionCounter(
       if (failure !== undefined) throw new Error(failure);
     },
     dispose(): void {
+      if (disposed) return;
       disposed = true;
       latest = undefined;
       unpublished = false;
       failure = undefined;
+      reset.dispose();
+      dispatched?.dispose();
       dispatched = undefined;
       pixels = 0;
+      if (inFlight === undefined) releaseStorage();
     },
   };
 }

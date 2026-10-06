@@ -4,27 +4,32 @@
 import { Matrix4, type OrthographicCamera, type PerspectiveCamera, Vector2 } from "three";
 import { traa } from "three/addons/tsl/display/TRAANode.js";
 import { uniform } from "three/tsl";
-import type { Node, TextureNode } from "three/webgpu";
+import type { Node, PassNode, Renderer, TextureNode } from "three/webgpu";
 import { type ITemporalAANode, createTemporalAAFrame } from "./temporalAAFrame.js";
 import { type PipelineContext, createTemporalAAHooks } from "./temporalAAHooks.js";
+import { disposeTemporalAAInput } from "./temporalAAInput.js";
 import type { ITemporalAAReport, TemporalResetReason } from "./temporalAAStage.js";
+import { createTemporalCurrentProducer } from "./temporalCurrentProducer.js";
+import { ownsCurrentInput } from "./temporalCurrentSelection.js";
 export type { ITemporalAAReport, TemporalResetReason } from "./temporalAAStage.js";
-import { createExperimentalTemporalResolve } from "./temporalResolve.js";
-import {
-  type TemporalDepthRejection,
-  type TemporalResolveNode,
-  createTemporalDepthRejection,
-} from "./temporalResolveDepth.js";
+import { createTemporalAAResolve } from "./temporalAAResolve.js";
+import type { TemporalResolveNode } from "./temporalResolveDepth.js";
 
 /** Reuse TRAANode's jitter, depth rejection and variance clipping. In a RenderChain `traa` factory
  * pass context.velocityNode and the scene pass's depth, keep the scene pass single-sampled, reset
  * history on teleports, and dispose with the owning stage. */
 export function createTemporalAA(
   colour: Node,
-  depth: TextureNode,
-  velocity: TextureNode,
+  depthInput: TextureNode,
+  velocityInput: TextureNode,
   camera: PerspectiveCamera | OrthographicCamera,
+  currentPass?: PassNode,
 ) {
+  const currentProducer = ownsCurrentInput(colour, depthInput, velocityInput, camera, currentPass)
+    ? createTemporalCurrentProducer(currentPass)
+    : undefined;
+  const depth = currentProducer?.depth ?? depthInput;
+  const velocity = currentProducer?.motion ?? velocityInput;
   const node = traa(colour, depth, velocity, camera);
   // Three 0.185.1 exposes no reset API, so its pinned seams are isolated here instead.
   const historyValid = uniform(1);
@@ -37,14 +42,28 @@ export function createTemporalAA(
   internals._previousJitterUV = uniform(new Vector2());
   // One instance of the depth-rejection equations, shared by the resolve, the counter and every
   // recompile, so a measured fraction cannot describe a different decision than the one drawn.
-  let rejection: TemporalDepthRejection | undefined;
-  const frames = createTemporalAAFrame(internals, camera, depth, historyValid, () => rejection);
+  const resolve = createTemporalAAResolve(
+    node as TemporalResolveNode,
+    jitterOffset,
+    currentProducer,
+  );
+  const frames = createTemporalAAFrame(
+    internals,
+    camera,
+    depth,
+    historyValid,
+    resolve.equations,
+    currentProducer?.publishDepth,
+  );
   const hooks = createTemporalAAHooks(frames.jitterInput);
   let ownedViewOffset: { width: number; height: number } | null = null;
   const projection = new Matrix4().copy(camera.projectionMatrix);
   const setViewOffset = internals.setViewOffset.bind(node);
   const clearViewOffset = internals.clearViewOffset.bind(node);
   let pending: TemporalResetReason | null = "initial";
+  currentProducer?.onFailure(() => {
+    pending = "scene-reset";
+  });
   let disposed = false;
   let report: ITemporalAAReport = {
     frame: 0,
@@ -55,6 +74,10 @@ export function createTemporalAA(
     outputWidth: 0,
     outputHeight: 0,
   };
+  currentProducer?.onModeChange((renderer) => {
+    pending = "resize";
+    resolve.invalidate(renderer);
+  });
   internals.clearViewOffset = () => {
     try {
       clearViewOffset();
@@ -90,17 +113,8 @@ export function createTemporalAA(
     // The originals are read before upstream's setup writes the node's own pair over them.
     if (pipeline !== undefined) hooks.captureBeforeSetup(pipeline.context);
     const output = setup(builder);
-    rejection ??= createTemporalDepthRejection(node as TemporalResolveNode, builder.renderer);
+    resolve.configure(builder.renderer);
     // Upstream's resolve is what this replaces, so the reset kernel runs by default.
-    internals._resolveMaterial.colorNode = createExperimentalTemporalResolve(
-      node,
-      builder.renderer,
-      jitterOffset,
-      "linear",
-      // Keep the blend linear in coverage; luminance reweighting darkens thin moving geometry.
-      "ordinary",
-      rejection,
-    );
     if (pipeline !== undefined) hooks.installAfterSetup(pipeline.context, builder.renderer);
     // VelocityNode keeps whichever projection source that input pass first compiles: prime ours.
     if (ownedViewOffset === null) {
@@ -175,18 +189,9 @@ export function createTemporalAA(
       if (disposed) return;
       disposed = true;
       hooks.dispose();
+      currentProducer?.dispose();
       frames.dispose();
-      if (internals._velocityNode?.projectionMatrix === internals._originalProjectionMatrix) {
-        if (ownedViewOffset !== null) internals.clearViewOffset();
-        else internals._velocityNode.setProjectionMatrix(null);
-      }
-      node.dispose();
-      if (internals.beautyNode !== colour && internals.beautyNode.isRTTNode) {
-        internals.beautyNode.renderTarget?.dispose();
-        (
-          internals.beautyNode as unknown as { _quadMesh: { material: { dispose(): void } } }
-        )._quadMesh.material.dispose();
-      }
+      disposeTemporalAAInput(internals, colour, ownedViewOffset !== null, () => node.dispose());
     },
   };
 }

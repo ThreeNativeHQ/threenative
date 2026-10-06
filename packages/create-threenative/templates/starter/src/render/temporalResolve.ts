@@ -5,6 +5,7 @@
 import type TRAANode from "three/addons/tsl/display/TRAANode.js";
 import { Fn, add, float, int, luminance, max, mix, texture, uv } from "three/tsl";
 import type { Node } from "three/webgpu";
+import type { TemporalCurrentFootprint } from "./temporalCurrentFootprint.js";
 import {
   type TemporalDepthRejection,
   type TemporalResolveNode,
@@ -71,6 +72,7 @@ export function createExperimentalTemporalResolve(
     source as TemporalResolveNode,
     renderer,
   ),
+  current?: TemporalCurrentFootprint,
 ) {
   const node = source as TemporalResolveNode;
   const { historyValidity } = rejection;
@@ -91,13 +93,9 @@ export function createExperimentalTemporalResolve(
     // Reconstruction: gather the current frame's 3×3 input neighbourhood around the jittered sample
     // the scene pass drew, and read its moments for the variance clip from the same taps. At a 1:1
     // raster the plain current sample is exact; retain it instead of adding Gaussian blur.
-    const reconstruction = reconstructNeighbourhood(
-      node.beautyNode,
-      uvNode,
-      inputSize,
-      jitterOffset,
-      displaySize,
-    );
+    const reconstruction =
+      current?.reconstruct(uvNode, displaySize) ??
+      reconstructNeighbourhood(node.beautyNode, uvNode, inputSize, jitterOffset, displaySize);
     const upsampled = inputSize.x.lessThan(displaySize.x).or(inputSize.y.lessThan(displaySize.y));
     const currentColor = upsampled.select(
       reconstruction.get("color") as Node<"vec4">,

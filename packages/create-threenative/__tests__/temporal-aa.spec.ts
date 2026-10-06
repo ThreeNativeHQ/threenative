@@ -1,5 +1,5 @@
 import { type Color, PerspectiveCamera, Scene, Vector2 } from "three";
-import { pass, rtt, velocity } from "three/tsl";
+import { context, mrt, output, pass, rtt, velocity } from "three/tsl";
 import type {
   Node,
   NodeBuilder,
@@ -11,12 +11,94 @@ import type {
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { RenderChain } from "../../core/src/render/chain.js";
 import { createTemporalAA } from "../templates/starter/src/render/temporalAA.js";
+import { createTemporalAAFrame } from "../templates/starter/src/render/temporalAAFrame.js";
 import {
   type TemporalAAProvider,
   temporalAAStages,
 } from "../templates/starter/src/render/temporalAAStage.js";
+import { createTemporalDepthRejection } from "../templates/starter/src/render/temporalResolveDepth.js";
 
 afterEach(() => vi.restoreAllMocks());
+
+describe("current producer input ownership", () => {
+  it("resets the next successful temporal frame after its wrapped input draw failed before temporal update", () => {
+    let fail = false;
+    const f = fixture({
+      current: true,
+      inputDraw: () => {
+        if (fail) throw new Error("input replay failed");
+      },
+    });
+    try {
+      f.temporal.node.updateBefore(f.frame);
+      f.temporal.node.updateBefore(f.frame);
+      expect(f.temporal.report().historyValid).toBe(true);
+      fail = true;
+      expect(() => f.scenePass.updateBefore(f.frame)).toThrow("input replay failed");
+      fail = false;
+      f.scenePass.updateBefore(f.frame);
+      f.temporal.node.updateBefore(f.frame);
+      expect(f.temporal.report()).toMatchObject({
+        historyValid: false,
+        resetReason: "scene-reset",
+      });
+      f.temporal.node.updateBefore(f.frame);
+      expect(f.temporal.report().historyValid).toBe(true);
+    } finally {
+      f.temporal.dispose();
+      f.scenePass.dispose();
+    }
+  });
+  it("uses the original lane for a composed colour, foreign depth/motion or camera", () => {
+    const camera = new PerspectiveCamera();
+    const source = pass(new Scene(), camera);
+    const other = pass(new Scene(), camera);
+    source.setMRT(mrt({ output, velocity }));
+    const original = source.updateBefore;
+    for (const inputs of [
+      [
+        source.getTextureNode().mul(0.9),
+        source.getTextureNode("depth"),
+        source.getTextureNode("velocity"),
+        camera,
+      ],
+      [
+        source.getTextureNode(),
+        other.getTextureNode("depth"),
+        source.getTextureNode("velocity"),
+        camera,
+      ],
+      [
+        source.getTextureNode(),
+        source.getTextureNode("depth"),
+        other.getTextureNode("velocity"),
+        camera,
+      ],
+      [
+        source.getTextureNode(),
+        source.getTextureNode("depth"),
+        source.getTextureNode("velocity"),
+        new PerspectiveCamera(),
+      ],
+    ] as const) {
+      const provider = createTemporalAA(inputs[0], inputs[1], inputs[2], inputs[3], source);
+      expect(source.updateBefore).toBe(original);
+      provider.dispose();
+    }
+    const owned = createTemporalAA(
+      source.getTextureNode(),
+      source.getTextureNode("depth"),
+      source.getTextureNode("velocity"),
+      camera,
+      source,
+    );
+    expect(source.updateBefore).not.toBe(original);
+    owned.dispose();
+    expect(source.updateBefore).toBe(original);
+    source.dispose();
+    other.dispose();
+  });
+});
 
 const DISPLAY = { width: 1920, height: 1080 };
 /** Two thirds, the deliberate fraction the scaled fixture uses; not a divisor of the display. */
@@ -49,6 +131,9 @@ function stubRenderer(display = DISPLAY) {
     toneMapping: 0,
     toneMappingExposure: 1,
     outputColorSpace: "",
+    contextNode: context(),
+    backend: { isWebGPUBackend: false },
+    getOutputRenderTarget: () => null,
     getRenderTarget: () => target,
     getActiveCubeFace: () => 0,
     getActiveMipmapLevel: () => 0,
@@ -83,6 +168,7 @@ function stubRenderer(display = DISPLAY) {
       order.push(typeof node === "object" && node !== null ? "compute" : "compute?");
       computed.push(node);
     },
+    deleteAttribute: () => {},
     getArrayBufferAsync: () => readback(),
   };
   return {
@@ -108,6 +194,8 @@ function fixture(
     renderPipeline?: boolean;
     /** Who owns the pipeline callbacks before the provider's first setup runs. */
     pipelineCallbacks?: PipelineCallbacks;
+    current?: boolean;
+    inputDraw?: () => void;
   } = {},
 ) {
   // GPU execution belongs to the runtime fixture. Unit tests isolate sizing, reset and lifetime.
@@ -125,11 +213,18 @@ function fixture(
   scenePass.setSize(display.width, display.height);
   // Render-target initialization normally sizes depth on the GPU renderer.
   scenePass.getTextureNode("depth").value.image = { width: input.width, height: input.height };
+  if (options.current) scenePass.setMRT(mrt({ output, velocity }));
+  if (options.inputDraw)
+    scenePass.updateBefore = () => {
+      options.inputDraw?.();
+      return undefined;
+    };
   const temporal = createTemporalAA(
     options.colour?.(scenePass) ?? scenePass.getTextureNode(),
     scenePass.getTextureNode("depth"),
     scenePass.getTextureNode("velocity"),
     camera,
+    options.current ? scenePass : undefined,
   );
   const stub = stubRenderer(display);
   const frame = { renderer: stub.renderer } as unknown as NodeFrame;
@@ -757,6 +852,33 @@ describe("opt-in temporal AA", () => {
     // A reset frame carries no legal history at any pixel, so 1.0 is the decision, not an estimate.
     temporal.dispose();
     scenePass.dispose();
+  });
+  it("publishes a new current-depth packet after both resolve and counter readers", () => {
+    const f = fixture();
+    const equations = createTemporalDepthRejection(
+      f.temporal.node as never,
+      f.stub.renderer as never,
+    );
+    const frame = createTemporalAAFrame(
+      f.temporal.node as never,
+      f.camera,
+      f.scenePass.getTextureNode("depth"),
+      { value: 0 },
+      () => equations,
+      () => f.order.push("packet"),
+    );
+    try {
+      frame.draw(f.stub.renderer as never, true, 1);
+      const packet = f.order.indexOf("packet");
+      const counter = f.order.lastIndexOf("compute");
+      expect(packet).toBeGreaterThan(counter);
+      expect(counter).toBeGreaterThan(f.order.indexOf("resolve"));
+      expect(f.order.at(-1)).toBe("copy");
+    } finally {
+      frame.dispose();
+      f.temporal.dispose();
+      f.scenePass.dispose();
+    }
   });
 
   it("hands each completed measurement to the chain once and reports its stale age", async () => {
