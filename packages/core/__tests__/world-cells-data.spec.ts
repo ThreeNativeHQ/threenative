@@ -252,6 +252,12 @@ it("yields to host while validating and indexing decoded reach records before lo
   };
   const assets = createAssetLoader();
   vi.spyOn(assets, "resolve").mockResolvedValue([]);
+  // Charge the real preparation units so this checks a spent budget, not a record count.
+  let clock = 0;
+  const preparationClock = vi.spyOn(performance, "now").mockImplementation(() => {
+    clock += 3;
+    return clock;
+  });
   let hostProgress = false;
   const timer = setTimeout(() => {
     hostProgress = true;
@@ -273,6 +279,97 @@ it("yields to host while validating and indexing decoded reach records before lo
   } finally {
     clearTimeout(timer);
     world.dispose();
+    preparationClock.mockRestore();
+  }
+});
+
+it("separates the validation and indexing budgets with a host turn", async () => {
+  const count = 512;
+  const packed = new Float32Array(count * 8);
+  const dense = {
+    ...manifest,
+    cells: [{ x: 0, z: 0, runs: [{ asset: "tree", offset: 0, count }] }],
+  };
+  const assets = createAssetLoader();
+  vi.spyOn(assets, "resolve").mockResolvedValue([]);
+  let clock = 0;
+  let firstRecordReads = 0;
+  let hostProgress = false;
+  let indexedAfterHostTurn = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const reach = new Proxy(new Float32Array(count).fill(50), {
+    get(target, key) {
+      if (key === "0") {
+        firstRecordReads++;
+        clock += 7;
+        if (firstRecordReads === 1)
+          timer = setTimeout(() => {
+            hostProgress = true;
+          }, 0);
+        if (firstRecordReads === 2) indexedAfterHostTurn = hostProgress;
+      }
+      return Reflect.get(target, key, target);
+    },
+  });
+  const preparationClock = vi.spyOn(performance, "now").mockImplementation(() => clock);
+  let world: WorldCells | undefined;
+  try {
+    world = await WorldCells.load({
+      url: "world.json",
+      assets,
+      surface: new MeshBasicMaterial(),
+      follow: { position: new Vector3() },
+      ring: 0,
+      terrain: false,
+      data: { manifest: dense, placements: packed.buffer },
+      placementReach: reach,
+      budgets: { bytes: count * 32, instances: count, residentCells: 1 },
+      loadModel: async () => new Group(),
+    });
+    expect(firstRecordReads).toBe(2);
+    expect(indexedAfterHostTurn).toBe(true);
+  } finally {
+    clearTimeout(timer);
+    world?.dispose();
+    preparationClock.mockRestore();
+  }
+});
+
+it("does not spend one host turn per decoded reach chunk when preparation stays below its time budget", async () => {
+  const count = 65_537;
+  const packed = new Float32Array(count * 8);
+  for (let i = 0; i < count; i++) packed.set([32, i % 3, 32, 0, 0, 0, 1, 1], i * 8);
+  const dense = {
+    ...manifest,
+    cells: [{ x: 0, z: 0, runs: [{ asset: "tree", offset: 0, count }] }],
+  };
+  const assets = createAssetLoader();
+  vi.spyOn(assets, "resolve").mockResolvedValue([]);
+  // A controlled cheap-work clock isolates pacing from machine load. The production loops
+  // still validate every actual record and construct their actual reach ranges.
+  const preparationClock = vi.spyOn(performance, "now").mockReturnValue(0);
+  const hostTurns = vi.spyOn(globalThis, "setTimeout");
+  let world: WorldCells | undefined;
+  try {
+    world = await WorldCells.load({
+      url: "world.json",
+      assets,
+      surface: new MeshBasicMaterial(),
+      follow: { position: new Vector3(32, 0, 32) },
+      ring: 0,
+      terrain: false,
+      data: { manifest: dense, placements: packed.buffer },
+      placementReach: new Float32Array(count).fill(50),
+      budgets: { bytes: count * 32, instances: count, residentCells: 1 },
+      loadModel: async () => new Group(),
+    });
+    expect(world.released).toBe(false);
+    expect(world.stats().failures).toBe(0);
+    expect(hostTurns.mock.calls.length).toBeLessThanOrEqual(1);
+  } finally {
+    world?.dispose();
+    preparationClock.mockRestore();
+    hostTurns.mockRestore();
   }
 });
 

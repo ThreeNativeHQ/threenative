@@ -4606,7 +4606,8 @@ export class WorldCells extends Group implements IComputeDriven {
       Map<string, { min: number; max: number; minY: number; maxY: number }>
     >();
     if (reach !== undefined) {
-      // Cap each load-time unit as well as yielding between units: admission begins only after load.
+      // Cap each load-time unit, then yield when the measured slice budget is spent.
+      // One host turn per cheap chunk delays registration behind hundreds of loading frames.
       function* validationChunks() {
         for (let start = 0; start < (reach as Float32Array).length; start += 512) yield start;
       }
@@ -4621,8 +4622,10 @@ export class WorldCells extends Group implements IComputeDriven {
               );
           }
         },
-        { sliceSize: 1, marker: false },
+        { marker: false },
       );
+      // Start indexing in a fresh host turn instead of combining two separate slice budgets.
+      await yieldToHost();
       const records = new Float32Array(placements);
       function* chunks() {
         for (const cell of manifest.cells)
@@ -4656,7 +4659,7 @@ export class WorldCells extends Group implements IComputeDriven {
           ranges.set(id, range);
           reachRanges.set(cell, ranges);
         },
-        { sliceSize: 1, marker: false },
+        { marker: false },
       );
     }
     const named = Object.keys(manifest.assets).length;

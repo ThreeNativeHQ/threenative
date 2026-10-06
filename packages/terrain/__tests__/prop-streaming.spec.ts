@@ -1,3 +1,4 @@
+import { createAssetLoader } from "@threenative/core";
 import { WorldCells } from "@threenative/core/world";
 import {
   Box3,
@@ -11,6 +12,11 @@ import {
 } from "three";
 import { expect, it, vi } from "vitest";
 import {
+  createSpawnReadiness,
+  spawnReadinessSnapshot,
+} from "../../../examples/strata-terrain-preview/src/render/loading.js";
+import {
+  type IPropPreparationProgress,
   createStreamedProps,
   invalidatePropShadows,
 } from "../../../examples/strata-terrain-preview/src/render/propStreaming.js";
@@ -19,6 +25,103 @@ import {
   variantFor,
 } from "../../../examples/strata-terrain-preview/src/render/props.js";
 import type { IPlacement } from "../src/index.js";
+
+it("reports an outstanding world load before the factory returns or attaches it", async () => {
+  const placement = {
+    id: "spruce:pending",
+    asset: "spruce",
+    position: [0, 0, 0],
+    rotation: 0,
+    scale: 1,
+    normal: [0, 1, 0],
+    alignToNormal: false,
+  } as IPlacement;
+  const material = new MeshBasicMaterial();
+  const geometry = new BoxGeometry();
+  const assets = createAssetLoader();
+  let release: () => void = () => undefined;
+  const blocked = new Promise<void>((done) => {
+    release = done;
+  });
+  let entered: () => void = () => undefined;
+  const resolving = new Promise<void>((done) => {
+    entered = done;
+  });
+  vi.spyOn(assets, "resolve").mockImplementation(async () => {
+    entered();
+    await blocked;
+    return [];
+  });
+  let progress: IPropPreparationProgress | undefined;
+  const work = createStreamedProps({
+    placements: [placement],
+    parts: new Map([
+      [
+        `spruce:${variantFor(placement, "spruce")}`,
+        [{ geometry, material, role: "bark", variant: 0 }],
+      ],
+    ]),
+    materials: { bark: material } as never,
+    groundAt: () => ({ height: 0, offset: 0 }),
+    follow: { position: new Vector3() },
+    size: 512,
+    assets,
+    whileCurrent: () => true,
+    onProgress: (value) => {
+      progress = value;
+    },
+  });
+  await resolving;
+  let streamed: Awaited<typeof work>;
+  try {
+    expect(progress?.phase).toBe("world-load");
+    expect(progress?.bucket).toBe("horizon:true");
+    expect(progress?.worlds).toHaveLength(0);
+    vi.useFakeTimers();
+    let receipt: ReturnType<typeof spawnReadinessSnapshot> | undefined;
+    const spawn = createSpawnReadiness("Controlled spawn", 100, (reason) => {
+      receipt = spawnReadinessSnapshot({
+        reason,
+        atMs: performance.now(),
+        world: "forest",
+        sceneUuid: "controlled-scene",
+        released: false,
+        gate: spawn,
+        stage: "streaming",
+        propsSettled: false,
+        preparation: progress,
+        assets: assets.progress,
+        startup: { phase: "collapsing", progress: 0.95, compileSettled: true, timeline: {} },
+      });
+    });
+    const rejection = expect(spawn.promise).rejects.toThrow("admission exceeded 100 ms");
+    try {
+      await vi.advanceTimersByTimeAsync(100);
+      await rejection;
+      expect(receipt?.gate).toEqual({ ready: false, error: "" });
+      expect(receipt?.preparation.phase).toBe("world-load");
+      expect(receipt?.preparation.worldCount).toBe(0);
+      expect(receipt?.released).toBe(false);
+    } finally {
+      spawn.cancel();
+      vi.useRealTimers();
+    }
+    release();
+    streamed = await work;
+    expect(progress?.phase).toBe("complete");
+    expect(progress?.worlds).toEqual(streamed?.worlds);
+    expect(streamed?.worlds[0]?.parent).toBeNull();
+    expect(streamed?.worlds[0]?.released).toBe(false);
+    expect(progress?.prewarmedWorlds).toBe(0);
+    expect(receipt?.preparation.worldCount).toBe(0);
+  } finally {
+    release();
+    streamed ??= await work;
+    streamed?.dispose();
+    geometry.dispose();
+    material.dispose();
+  }
+});
 
 it("streams Strata's exact grounded transforms, seeded cover density and original placement count", async () => {
   const placements = Array.from({ length: 60 }, (_, i) => ({
@@ -152,6 +255,7 @@ it("retains every unlimited canopy placement and keeps prewarm pending until sce
     ]),
   );
   const follow = { position: new Vector3(0, 10, 0) };
+  let preparation: IPropPreparationProgress | undefined;
   const streamed = await createStreamedProps({
     placements,
     parts,
@@ -161,10 +265,14 @@ it("retains every unlimited canopy placement and keeps prewarm pending until sce
     size: 1024,
     horizonDistance: 5000,
     whileCurrent: () => true,
+    onProgress: (value) => {
+      preparation = value;
+    },
   });
   if (!streamed) throw new Error("cancelled");
   try {
     expect(streamed.ready).toBe(false);
+    expect(preparation?.prewarmedWorlds).toBe(0);
     for (let frame = 0; frame < 200; frame++) {
       for (const world of streamed.worlds) world.update();
       await Promise.resolve();
@@ -191,6 +299,7 @@ it("retains every unlimited canopy placement and keeps prewarm pending until sce
       await Promise.resolve();
     }
     expect(streamed.ready).toBe(true);
+    expect(preparation?.prewarmedWorlds).toBe(streamed.worlds.length);
     expect(streamed.stats().pendingPrewarm).toBe(0);
     for (const x of [4000, 0]) {
       follow.position.x = x;

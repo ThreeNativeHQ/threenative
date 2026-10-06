@@ -33,6 +33,25 @@ interface IStreamOptions {
   readonly assets?: IAssetLoader;
   readonly whileCurrent: () => boolean;
   readonly invalidateShadows?: (region?: IShadowRegion) => void;
+  readonly onProgress?: (progress: IPropPreparationProgress) => void;
+}
+
+/** Consumer preparation only; the worlds still own admission, residency and prewarm. */
+export interface IPropPreparationProgress {
+  readonly phase:
+    | "grounding"
+    | "partition"
+    | "bounds"
+    | "models"
+    | "records"
+    | "world-load"
+    | "complete";
+  readonly bucket: string;
+  readonly added: number;
+  readonly total: number;
+  readonly worlds: readonly WorldCells[];
+  /** Live promise settlements, distinct from load completion and the last rendered counters. */
+  readonly prewarmedWorlds: number;
 }
 /** Keep WorldCells' changed caster bounds when forwarding to the existing shadow renderer. */
 export function invalidatePropShadows(
@@ -61,8 +80,32 @@ const CELL_SIZE = 128;
 export async function createStreamedProps(options: IStreamOptions) {
   if (!options.whileCurrent()) return undefined;
   let compileSlices = 0;
+  const worlds: WorldCells[] = [];
+  const warmed = new Set<WorldCells>();
+  let phase: IPropPreparationProgress["phase"] = "grounding";
+  let currentBucket = "";
+  function progress(added: number, total: number): void {
+    options.onProgress?.({
+      phase,
+      bucket: currentBucket,
+      added,
+      total,
+      worlds,
+      get prewarmedWorlds() {
+        return warmed.size;
+      },
+    });
+  }
+  function startPhase(next: IPropPreparationProgress["phase"], bucket = "", total = 0): void {
+    phase = next;
+    currentBucket = bucket;
+    progress(0, total);
+  }
   async function compile<T>(items: Iterable<T>, visit: (item: T) => void): Promise<boolean> {
-    const report = await addInSlices(items, visit, { while: options.whileCurrent });
+    const report = await addInSlices(items, visit, {
+      while: options.whileCurrent,
+      onProgress: ({ added, total }) => progress(added, total),
+    });
     compileSlices += report.slices;
     // Separate short dependent passes too: their combined work must not become one host task.
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
@@ -78,6 +121,7 @@ export async function createStreamedProps(options: IStreamOptions) {
   >();
   const variantIndices = new Map<string, number>();
   const shapes = new Map<string, { parts: IPropPart[]; ratio: Vector3 }>();
+  startPhase("grounding", "", options.placements.length);
   const report = await addInSlices(
     options.placements,
     (placement) => {
@@ -115,13 +159,17 @@ export async function createStreamedProps(options: IStreamOptions) {
       records.push({ key, placement, pose, reach, ratio, position, quaternion, scale: scalar });
       byId.set(placement.id, { ...pose, pose: pose.matrix, placement });
     },
-    { while: options.whileCurrent },
+    {
+      while: options.whileCurrent,
+      onProgress: ({ added, total }) => progress(added, total),
+    },
   );
   if (report.stopped || !options.whileCurrent()) return undefined;
 
   // Infinite-reach canopy retains the whole authored world. Local cover can evict cells beyond its
   // existing draw reach; shadow policy stays the game's existing policy, not a quality reduction.
   const buckets = new Map<string, IRecord[]>();
+  startPhase("partition", "", records.length);
   if (
     !(await compile(records, (record) => {
       const bucket = `${record.reach === Number.POSITIVE_INFINITY ? "horizon" : "local"}:${!NO_SHADOW_ASSETS.has(record.placement.asset)}`;
@@ -131,9 +179,7 @@ export async function createStreamedProps(options: IStreamOptions) {
     }))
   )
     return undefined;
-  const worlds: WorldCells[] = [];
   const assets = options.assets ?? createAssetLoader();
-  const warmed = new Set<WorldCells>();
   try {
     for (const [bucket, list] of buckets) {
       if (!options.whileCurrent()) {
@@ -147,6 +193,7 @@ export async function createStreamedProps(options: IStreamOptions) {
       let minY = Number.POSITIVE_INFINITY;
       let maxY = Number.NEGATIVE_INFINITY;
       let maxReach = 0;
+      startPhase("bounds", bucket, list.length);
       if (
         !(await compile(list, (record) => {
           minX = Math.min(minX, record.position.x);
@@ -169,6 +216,7 @@ export async function createStreamedProps(options: IStreamOptions) {
       const grouped = new Map<string, Map<string, IRecord[]>>();
       const definitions: Record<string, IWorldAsset> = {};
       const models = new Map<string, Group>();
+      startPhase("models", bucket, list.length);
       if (
         !(await compile(list, (record) => {
           const x = Math.floor((record.position.x - minX) / CELL_SIZE);
@@ -228,6 +276,7 @@ export async function createStreamedProps(options: IStreamOptions) {
         }
       }
       let offset = 0;
+      startPhase("records", bucket, list.length);
       if (
         !(await compile(ordered(), (record) => {
           placements.set(
@@ -264,6 +313,7 @@ export async function createStreamedProps(options: IStreamOptions) {
         : Math.ceil(
             (options.horizonDistance ?? Math.hypot(extent.sizeX, extent.sizeZ)) / CELL_SIZE,
           ) + 1;
+      startPhase("world-load", bucket, list.length);
       const world = await WorldCells.load({
         url: "world.json",
         assets,
@@ -304,6 +354,9 @@ export async function createStreamedProps(options: IStreamOptions) {
       worlds.push(world);
       void world.prewarmed.then(() => warmed.add(world));
     }
+    phase = "complete";
+    currentBucket = "";
+    progress(options.placements.length, options.placements.length);
   } catch (error) {
     for (const world of worlds) world.dispose();
     throw error;

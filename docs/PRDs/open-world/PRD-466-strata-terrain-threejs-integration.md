@@ -3377,3 +3377,45 @@ Independent review passes for this bounded fix. A pre-existing rejected shader-d
 can still produce an unhandled rejection; it reproduces before and after this correction. The retained CPU profile maps
 11.03 s of self samples to loading-overlay queue submission; it is not a steady-state FPS result.
 Readiness, matched gameplay captures, FPS and native acceptance remain open; progress stays 50%.
+
+### 2026-10-06 — reach preparation pacing and pre-failure readiness receipt
+
+The single coordinated hardware diagnostic of `2d3a244cd0af59c180ee6b7f84b74b8f6bd11b08`
+exited 2 after 192.044 s. Device loss did not reproduce: 192 process samples retained the same
+GPU process generation and its initialized crash count was zero. The actual first application
+error reported startup stalled at 95%, followed by `Strata spawn admission exceeded 120000 ms`.
+No gameplay frames were evaluated. The 459 readiness replies began after the admission error;
+later replies reached 48 loaded cells, zero pending prewarm and zero admission backlog while
+`worldReady` remained false. Timeout latches failure without disposing the worlds, so those later
+counters do not establish what was pending at failure. The browser exited normally during runner
+cleanup; all owned identities exited and the canonical GPU lease was released.
+
+CPU diagnosis found a separate registration barrier in `WorldCells.load`: both reach preparation
+passes yielded a host turn after each 512-record unit regardless of measured work. A real decoded
+65,537-record regression reproduced 256 such turns with a controlled cheap-work clock. Both passes
+now use the existing 8 ms measured scheduler, with one host yield separating their independent
+budgets. The regression takes one fixed turn; a spent-budget control still yields, and a
+phase-ordering control proves indexing starts after a host turn. Validation, 512-record units,
+2 ms admission, placement transforms/count, canopy reach, rendering quality and deadlines remain
+unchanged. This is a CPU-verified scheduling fix, not proof that the hardware timeout is cleared.
+
+Strata's existing preparation path now reports its current pass and bucket through
+`addInSlices.onProgress`. Before the spawn gate rejects, `TN_STRATA_SPAWN_FAILURE` captures a
+bounded scalar receipt: scene/world generations, attachment/release state, preparation counts,
+asset ledger, startup compile/warmup milestones, exact spawn coverage, settled prewarm promises,
+and live admission/prewarm counters. Its observer
+cannot settle or cancel the gate, replace the original error, or mutate the receipt through later
+world changes. Output keeps at most four worlds and four pending paths, retaining total counts;
+Unicode, escaped-control and lone-surrogate controls stay below 16 KiB. A real blocked
+`WorldCells.load` integration captures `world-load` and zero constructed worlds before timeout,
+then verifies that later completion leaves that receipt unchanged.
+
+The five source-aliased CPU suites (`world-cells-data`, `world-cells-admission`, `streaming`,
+`prop-streaming`, `strata-loading`) pass **89/89**. Strict TypeScript 7 passes against actual
+Strata/core source and the changed tests; Biome exits 0 with existing complexity warnings.
+The retained profile's first 120 seconds attribute 52.94 s of inclusive samples to loading-overlay
+rendering and 53.68 s to queue submission; these overlap and can include blocked native calls.
+They do not separate driver compilation, GPU execution and upload cost or establish steady FPS.
+No additional GPU/native run or broad build was performed for this CPU slice. Readiness, matched
+playable screenshots, FPS and full-board/native acceptance remain open; computed progress stays
+**50%** (2/4 phases, 7/13 boxes). No acceptance box changed.

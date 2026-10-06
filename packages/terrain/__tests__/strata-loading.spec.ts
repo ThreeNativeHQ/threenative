@@ -10,6 +10,7 @@ import { expect, it, vi } from "vitest";
 import {
   createLoadingScreen,
   createSpawnReadiness,
+  spawnReadinessSnapshot,
 } from "../../../examples/strata-terrain-preview/src/render/loading.js";
 
 function host(ready: Promise<void>) {
@@ -26,6 +27,75 @@ function host(ready: Promise<void>) {
     startup: { progress: 0.5, whenReady: () => ready },
   };
 }
+
+it.each(["世界", "\u0000", "\uD800"])(
+  "bounds failure receipts for %j without retaining scene objects or resident key arrays",
+  (text) => {
+    const stats = {
+      residentCells: 16,
+      loadedCells: 12,
+      loadsInFlight: 1,
+      loadsQueued: 2,
+      pendingPrewarm: 3,
+      prewarmMinted: 4,
+      failures: 0,
+      admission: { spentMs: 1.5, deferred: 2, backlog: 5 },
+      residentKeys: ["must-not-copy"],
+    };
+    const stream = {
+      uuid: "generation".repeat(100),
+      name: text.repeat(1_000),
+      parent: { uuid: "scene".repeat(100) },
+      released: false,
+      stats: () => stats,
+    };
+    const receipt = spawnReadinessSnapshot({
+      reason: text.repeat(10_000),
+      atMs: 120_000,
+      world: "forest",
+      sceneUuid: "scene-generation",
+      released: false,
+      gate: { ready: false, error: "" },
+      stage: "streaming",
+      propsSettled: false,
+      preparation: {
+        phase: "world-load",
+        bucket: text.repeat(1_000),
+        added: 0,
+        total: 213_968,
+        prewarmedWorlds: 3,
+        worlds: Array.from({ length: 20 }, () => stream) as never,
+      },
+      assets: {
+        requested: 323,
+        settled: 300,
+        requestedBytes: 500,
+        settledBytes: 450,
+        pending: Array.from({ length: 20 }, () => text.repeat(10_000)),
+      },
+      startup: {
+        phase: "collapsing",
+        progress: 0.95,
+        compileSettled: true,
+        timeline: { enteredMs: 10, compileSettledMs: 50 },
+      },
+      coverage: { required: 16, loaded: 12, failures: 0, ready: false },
+    });
+    const encoded = JSON.stringify(receipt);
+    expect(Buffer.byteLength(encoded)).toBeLessThan(16_384);
+    expect(receipt.preparation.worldCount).toBe(20);
+    expect(receipt.preparation.prewarmedWorlds).toBe(3);
+    expect(receipt.coverage).toEqual({ required: 16, loaded: 12, failures: 0, ready: false });
+    expect(receipt.worlds).toHaveLength(4);
+    expect(receipt.assets.pendingCount).toBe(20);
+    expect(receipt.assets.pending).toHaveLength(4);
+    expect(encoded).not.toContain("must-not-copy");
+    stats.pendingPrewarm = 0;
+    stream.released = true;
+    expect(receipt.worlds[0]?.pendingPrewarm).toBe(3);
+    expect(receipt.worlds[0]?.released).toBe(false);
+  },
+);
 
 it("uploads the status canvas only when its displayed text changes", async () => {
   const drawn: string[] = [];
@@ -136,6 +206,66 @@ it("rejects a timed out spawn and never treats later coverage as playable", asyn
   spawn.cancel();
   vi.useRealTimers();
 });
+
+it("captures the pending gate before timeout latches or rejects, once per failure", async () => {
+  vi.useFakeTimers();
+  const events: string[] = [];
+  const spawn = createSpawnReadiness("Forest spawn", 100, (reason) => {
+    events.push(`capture:${spawn.ready}:${spawn.error}:${reason}`);
+  });
+  const rejection = spawn.promise.catch((error: Error) => events.push(`rejected:${error.message}`));
+  try {
+    await vi.advanceTimersByTimeAsync(100);
+    await rejection;
+    spawn.observe(true);
+    spawn.fail("late failure");
+    spawn.cancel();
+    expect(events).toEqual([
+      "capture:false::Forest spawn admission exceeded 100 ms",
+      "rejected:Forest spawn admission exceeded 100 ms",
+    ]);
+    expect(spawn.ready).toBe(false);
+    expect(vi.getTimerCount()).toBe(0);
+  } finally {
+    spawn.cancel();
+    vi.useRealTimers();
+  }
+});
+
+it("keeps the original admission failure when its diagnostic capture throws", async () => {
+  vi.useFakeTimers();
+  const capture = vi.fn(() => {
+    throw new Error("diagnostic observer failed");
+  });
+  const spawn = createSpawnReadiness("Forest spawn", 100, capture);
+  const rejection = expect(spawn.promise).rejects.toThrow("Forest spawn assets failed to load");
+  try {
+    spawn.observe(false, 1);
+    await rejection;
+    expect(capture).toHaveBeenCalledOnce();
+    expect(spawn.error).toBe("Forest spawn assets failed to load");
+    expect(vi.getTimerCount()).toBe(0);
+  } finally {
+    spawn.cancel();
+    vi.useRealTimers();
+  }
+});
+
+it.each(["observe", "cancel"])(
+  "keeps capture reentry through %s from changing failure settlement",
+  async (action) => {
+    const spawn = createSpawnReadiness("Controlled spawn", 100, () => {
+      if (action === "observe") spawn.observe(true);
+      else spawn.cancel();
+    });
+    const rejection = expect(spawn.promise).rejects.toThrow("original admission failure");
+    spawn.fail("original admission failure");
+    await rejection;
+    expect(spawn.ready).toBe(false);
+    expect(spawn.error).toBe("original admission failure");
+    spawn.cancel();
+  },
+);
 
 it("cancels a pending scene without leaving its readiness promise or timer behind", async () => {
   vi.useFakeTimers();

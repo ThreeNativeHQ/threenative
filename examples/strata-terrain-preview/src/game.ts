@@ -17,12 +17,20 @@ import {
   Vector3,
 } from "three";
 import { BIOMES, type WorldName } from "./render/biomes.js";
-import { createLoadingScreen, createSpawnReadiness } from "./render/loading.js";
+import {
+  createLoadingScreen,
+  createSpawnReadiness,
+  spawnReadinessSnapshot,
+} from "./render/loading.js";
 import { createOcean, createWaterMesh } from "./render/ocean.js";
 import { loadPack, loadSkyLight } from "./render/pack.js";
 import { loadPreparedProps } from "./render/prepared.js";
 import { createPropSurfaces } from "./render/propMaterials.js";
-import { createStreamedProps, invalidatePropShadows } from "./render/propStreaming.js";
+import {
+  type IPropPreparationProgress,
+  createStreamedProps,
+  invalidatePropShadows,
+} from "./render/propStreaming.js";
 import {
   type PropGroundQuery,
   buildPropVariants,
@@ -299,7 +307,31 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
       if (!data) throw new Error(`World ${world} was not loaded`);
       // ctx.goto carries state; camera names from the outgoing biome must not carry with it.
       ctx.state.set({ view: "player", worldReady: false, loadingError: "" });
-      const admission = createSpawnReadiness("Strata spawn");
+      let released = false;
+      let propsStage = "waiting-for-physics";
+      let propsSettled = false;
+      let preparation: IPropPreparationProgress | undefined;
+      const admission = createSpawnReadiness("Strata spawn", 120_000, captureSpawnFailure);
+      function captureSpawnFailure(reason: string): void {
+        console.error(
+          `TN_STRATA_SPAWN_FAILURE ${JSON.stringify(
+            spawnReadinessSnapshot({
+              reason,
+              atMs: performance.now(),
+              world,
+              sceneUuid: ctx.scene.uuid,
+              released,
+              gate: admission,
+              stage: propsStage,
+              propsSettled,
+              ...(preparation === undefined ? {} : { preparation }),
+              coverage: props?.readinessAt(spawn),
+              assets: ctx.assets.progress,
+              startup: ctx.startup,
+            }),
+          )}`,
+        );
+      }
       const failSpawn = (reason: unknown): void => {
         admission.fail(reason);
         ctx.state.set({ worldReady: admission.ready, loadingError: admission.error });
@@ -561,7 +593,6 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
       // number in the run report says which level is off the ground and a stack trace does not.
       let preparedLodBaseSpread = 0;
       let preparedLevelsWithoutSolid = 0;
-      let released = false;
       let surfacesDispose: (() => void) | undefined;
       ctx.entities.add("props-lifetime", {
         dispose: () => {
@@ -639,6 +670,7 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
       // loaders run together and fail soft per file, so one missing species costs that species and
       // nothing else. One load, because `afterPhysics` runs every frame.
       const buildProps = async (): Promise<void> => {
+        propsStage = "assets";
         const [prepared, pack, skyLight] = await Promise.all([
           loadPreparedProps(ctx.assets),
           loadPack(ctx.assets, world, data),
@@ -660,6 +692,7 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
         if (world === "desert" && dryStone && !pack.parts.has("boulder:0"))
           parts.set("boulder:0", dryStone);
         propParts = buildPropVariants(parts, fallbackSaplingHeight);
+        propsStage = "surfaces";
         const surfaces = await createPropSurfaces(ctx.assets, data, biome, skyLight);
         this.#surfaces = surfaces;
         surfacesDispose = surfaces.dispose;
@@ -667,6 +700,7 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
           surfaces.dispose();
           return;
         }
+        propsStage = "streaming";
         props = await createStreamedProps({
           placements: scatter.placements,
           groundAt,
@@ -680,6 +714,9 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
               ? ctx.camera.far
               : 5000,
           whileCurrent: () => !released,
+          onProgress: (progress) => {
+            preparation = progress;
+          },
           invalidateShadows: (region) => {
             const shadows = sky.sun.shadow.shadowNode;
             if (shadows instanceof VirtualShadowNode) invalidatePropShadows(shadows, region);
@@ -692,6 +729,7 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
         }
         // ctx.add registers render-cadence processing. Never manually update these worlds.
         for (const stream of props.worlds) ctx.add(stream);
+        propsStage = "attached";
 
         const alpineCrags =
           world === "alpine"
@@ -857,9 +895,15 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
           building = true;
           const work = buildProps();
           if (ctx.startup.phase !== "ready") ctx.startup.hold("strata-props", work);
-          void work.catch((error) => {
-            if (!released) failSpawn(error);
-          });
+          void work.then(
+            () => {
+              propsSettled = true;
+            },
+            (error) => {
+              propsSettled = true;
+              if (!released) failSpawn(error);
+            },
+          );
         }
         frames++;
         const streaming = props?.stats();
