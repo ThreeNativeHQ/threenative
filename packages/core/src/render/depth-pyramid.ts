@@ -277,6 +277,9 @@ function nodes(value: unknown): Kernel {
   return value as Kernel;
 }
 
+/** Words of per-level table each level's row occupies, at the head of the pyramid's one buffer. */
+const TABLE_WORDS = 4;
+
 /** The 2x2 footprint every level of the chain reduces, in the order the loop walks it. */
 const FOOTPRINT = [
   [0, 0],
@@ -294,11 +297,18 @@ const FOOTPRINT = [
  * is the granularity this shape of cull always has: a sphere narrower than a texel cannot be
  * tested at all, and a finer level 0 would only lengthen the chain without rejecting more.
  */
+/**
+ * The GPU half of the same rule, and the whole pyramid in one storage buffer.
+ *
+ * One buffer and not two is a device limit, not a taste: the cull kernel already binds seven storage
+ * buffers and WebGPU refuses a pipeline over eight per stage unless the device was asked for more —
+ * measured on the RTX 2080 as `The number of storage buffers (9) in the Compute stage exceeds the
+ * maximum per-stage limit (8)`. So the per-level table is the head of this one buffer, four words a
+ * level, and the distances follow at each level's own offset.
+ */
 export class DepthPyramid {
-  /** Farthest view-axis distance per texel, every level in one buffer at its own offset. */
-  distance = new StorageBufferAttribute(new Float32Array(1), 1);
-  /** `(width, height, offset, 0)` per level, written when the chain is sized and read every frame. */
-  meta = new StorageBufferAttribute(new Float32Array(4), 4);
+  /** `[width, height, offset, 0]` per level, then every level's distances. */
+  #words = new StorageBufferAttribute(new Float32Array(TABLE_WORDS), 1);
   /** The depth texture's own size, which level 0 reads its 2x2 footprint out of. */
   readonly #depthSize = uniform(new Vector2(1, 1));
   /** `(near, far)` of the frame the depth came from, which turn its NDC depth into metres. */
@@ -312,36 +322,33 @@ export class DepthPyramid {
     return this.#levels.length;
   }
 
-  /** The per-level table, as the TSL storage node the cull kernel addresses the chain by. */
-  get table(): Kernel {
-    return nodes(storage(this.meta, "vec4", this.meta.count));
-  }
-
-  /** The distance chain, as the TSL storage node the cull kernel samples. */
+  /** One storage binding for the table and the distances together, as the cull kernel reads it. */
   get chain(): Kernel {
-    return nodes(storage(this.distance, "float", this.distance.count));
+    return nodes(storage(this.#words, "float", this.#words.count));
   }
 
   /**
    * Size the chain for a depth texture and write its per-level table.
    *
-   * Structural: a resize replaces both buffers, so every level kernel is a new pipeline. A depth
-   * that did not change size is left alone, because a frame never reallocates.
+   * Structural: a resize replaces the buffer, so every level kernel is a new pipeline. A depth that
+   * did not change size is left alone, because a frame never reallocates.
    */
   resize(depthWidth: number, depthHeight: number): boolean {
     const levels: { width: number; height: number; offset: number }[] = [];
-    let offset = 0;
+    let span = 0;
     let width = Math.max(1, depthWidth >> 1);
     let height = Math.max(1, depthHeight >> 1);
     // Down to a single texel, and the loop condition is that texel rather than `width > 0`: a `1`
     // halved is `0` and floored back to `1`, so a positive-width test never ends.
     while (true) {
-      levels.push({ width, height, offset });
-      offset += width * height;
+      levels.push({ width, height, offset: span });
+      span += width * height;
       if (width === 1 && height === 1) break;
       width = Math.max(1, width >> 1);
       height = Math.max(1, height >> 1);
     }
+    // The distances start after the table, whose width the loop above only now knows.
+    for (const level of levels) level.offset += levels.length * TABLE_WORDS;
     const held = this.#levels;
     if (
       levels.length === held.length &&
@@ -351,15 +358,17 @@ export class DepthPyramid {
       })
     )
       return false;
-    this.distance = new StorageBufferAttribute(new Float32Array(offset), 1);
-    this.meta = new StorageBufferAttribute(new Float32Array(levels.length * 4), 4);
-    const table = this.meta.array as Float32Array;
+    this.#words = new StorageBufferAttribute(
+      new Float32Array(levels.length * TABLE_WORDS + span),
+      1,
+    );
+    const table = this.#words.array as Float32Array;
     for (const [index, level] of levels.entries()) {
-      table[index * 4] = level.width;
-      table[index * 4 + 1] = level.height;
-      table[index * 4 + 2] = level.offset;
+      table[index * TABLE_WORDS] = level.width;
+      table[index * TABLE_WORDS + 1] = level.height;
+      table[index * TABLE_WORDS + 2] = level.offset;
     }
-    this.meta.needsUpdate = true;
+    this.#words.needsUpdate = true;
     this.#levels = levels;
     this.#kernels = [];
     return true;
@@ -376,6 +385,20 @@ export class DepthPyramid {
     far: number,
   ): number {
     if (this.#disposed || this.#levels.length === 0) return 0;
+    const host = globalThis as { __tnPyrDbg?: number };
+    if ((host.__tnPyrDbg ?? 0) < 4) {
+      host.__tnPyrDbg = (host.__tnPyrDbg ?? 0) + 1;
+      const d = depth as unknown as {
+        isDepthTexture?: boolean;
+        isRenderTargetTexture?: boolean;
+        version?: number;
+      };
+      console.info(
+        `[a11] pyramid.build depth isDepth=${String(d.isDepthTexture)} isRT=${String(
+          d.isRenderTargetTexture,
+        )} version=${String(d.version)}`,
+      );
+    }
     this.#depthSize.value.set(depth.image.width ?? 0, depth.image.height ?? 0);
     this.#nearFar.value.set(near, far);
     for (const [index] of this.#levels.entries()) renderer.compute(this.#levelKernel(index, depth));
@@ -385,19 +408,17 @@ export class DepthPyramid {
   /**
    * One level's reduction, as its own pipeline with its own level baked in.
    *
-   * The level is a constant rather than a uniform because a uniform written between two dispatches
-   * of the same frame only re-uploads if the node happens to flush per dispatch, and a pyramid that
-   * reduced the wrong level is still a pyramid. One small pipeline per level is the price of not
-   * having to prove that.
+   * The level is a constant rather than a uniform because a uniform written between two dispatches of
+   * the same frame only re-uploads if the node happens to flush per dispatch, and a pyramid that
+   * reduced the wrong level is still a pyramid. With the level constant the level it reads is a
+   * constant too, so this shader carries no table reads at all.
    */
   #levelKernel(index: number, depth: DepthTexture): unknown {
     const held = this.#kernels[index];
     if (held !== undefined) return held;
-    const level = this.#levels[index] as { width: number; height: number; offset: number };
-    const distance = this.chain;
-    const table = this.table;
-    const own = table.element(index);
-    const below = index === 0 ? undefined : table.element(index - 1);
+    const own = this.#levels[index] as { width: number; height: number; offset: number };
+    const below = this.#levels[index - 1];
+    const chain = this.chain;
     const depthSize = nodes(this.#depthSize);
     const nearFar = nodes(this.#nearFar);
     const built = nodes(
@@ -405,11 +426,9 @@ export class DepthPyramid {
         // One thread per texel of this level, addressed as a float: TSL's clamp is float-only, so
         // the whole reduction stays in floats and converts once, at the storage index.
         const linear = float(instanceIndex);
-        const width = own.x;
-        const height = own.y;
-        If(linear.greaterThanEqual(width.mul(height)), () => Return());
-        const y = linear.div(width).floor();
-        const x = linear.sub(y.mul(width));
+        If(linear.greaterThanEqual(own.width * own.height), () => Return());
+        const y = linear.div(own.width).floor();
+        const x = linear.sub(y.mul(own.width));
         const far = float(0).toVar();
         for (const [dx, dy] of FOOTPRINT) {
           const sample =
@@ -436,17 +455,25 @@ export class DepthPyramid {
                         ),
                     ),
                   )
-              : distance.element(
-                  nodes(
-                    below.z
-                      .add(nodes(y.mul(2).add(dy)).clamp(0, nodes(below.y).sub(1)).mul(below.x))
-                      .add(nodes(x.mul(2).add(dx)).clamp(0, nodes(below.x).sub(1))),
-                  ),
+              : chain.element(
+                  float(below.offset)
+                    .add(
+                      nodes(y.mul(2).add(dy))
+                        .clamp(0, below.height - 1)
+                        .mul(below.width),
+                    )
+                    .add(nodes(x.mul(2).add(dx)).clamp(0, below.width - 1)),
                 );
           far.assign(max(far, nodes(sample)));
         }
-        distance.element(nodes(own.z.add(y.mul(width)).add(x))).assign(far);
-      })().compute(Math.max(1, level.width * level.height)),
+        chain
+          .element(
+            float(own.offset)
+              .add(nodes(y.mul(own.width)))
+              .add(x),
+          )
+          .assign(far);
+      })().compute(Math.max(1, own.width * own.height)),
     );
     built.name = `tnDepthPyramid${String(index)}`;
     this.#kernels[index] = built;
@@ -455,19 +482,18 @@ export class DepthPyramid {
 
   /**
    * The test, in the cull kernel's own language: the same four keeps and the same comparison, read
-   * off the same two buffers {@link occludedBy} reads off its own arrays.
+   * off the same buffer {@link occludedBy} reads off its own arrays.
    *
    * `centre` is a TSL world position, `radius` its bounding-sphere radius, `viewProjection` the
-   * previous frame's `projection * viewInverse` as a `mat4` uniform and `cut` this frame's cut
-   * flag. The matrix holds the projection's diagonal on its diagonal: element 0 is column 0, so
-   * its `x` is `P00`, and element 1's `y` is `P11`.
+   * previous frame's `projection * viewInverse` as a `mat4` uniform and `cut` this frame's cut flag.
+   * The matrix holds the projection's diagonal on its diagonal: element 0 is column 0, so its `x` is
+   * `P00`, and element 1's `y` is `P11`.
    *
    * The answer is a float, not a bool: `1` is hidden. A cull kernel runs the test once per part of a
-   * placement's level and has to branch on the answer each time, and a float is what a TSL variable
-   * can hold across those branches without recomputing the whole test per part.
+   * placement's level and branches on the answer each time, and a float is what a TSL variable holds
+   * across those branches without recomputing the test per part.
    */
   occluded(centre: Kernel, radius: Kernel, viewProjection: Kernel, cut: Kernel): Kernel {
-    const table = this.table;
     const chain = this.chain;
     const last = Math.max(0, this.levels - 1);
     const clip = viewProjection.mul(vec4(centre, 1));
@@ -476,24 +502,38 @@ export class DepthPyramid {
     const ndc = clip.xyz.div(depth);
     const halfX = abs(viewProjection.element(0).x).mul(radius).div(depth);
     const halfY = abs(viewProjection.element(1).y).mul(radius).div(depth);
-    const base = table.element(0);
-    const diameter = max(float(1), max(halfX.mul(base.x), halfY.mul(base.y)));
-    const own = table.element(int(nodes(ceil(log2(diameter)).clamp(0, last))));
-    const width = own.x;
-    const height = own.y;
+    // The level a footprint this wide needs, and that level's own row of the table.
+    const row = int(
+      nodes(
+        ceil(log2(max(float(1), max(halfX.mul(chain.element(0)), halfY.mul(chain.element(1)))))),
+      )
+        .clamp(0, last)
+        .mul(TABLE_WORDS),
+    ).toVar();
+    const width = chain.element(row);
+    const height = chain.element(nodes(row).add(1));
     const far = float(0).toVar();
     for (const [dx, dy] of FOOTPRINT) {
-      // The footprint spans about one texel of this level, so the 2x2 block under its corner is
-      // the whole of it.
-      const at = nodes(ndc.x.mul(0.5).add(0.5).mul(width).sub(halfX.mul(width).div(2)))
+      // The footprint spans about one texel of this level, so the 2x2 block under its corner is the
+      // whole of it.
+      const x = nodes(ndc.x.mul(0.5).add(0.5).mul(width).sub(halfX.mul(width).div(2)))
         .floor()
         .add(dx)
         .clamp(0, nodes(width).sub(1));
-      const row = nodes(ndc.y.mul(0.5).add(0.5).mul(height).sub(halfY.mul(height).div(2)))
+      const y = nodes(ndc.y.mul(0.5).add(0.5).mul(height).sub(halfY.mul(height).div(2)))
         .floor()
         .add(dy)
         .clamp(0, nodes(height).sub(1));
-      far.assign(max(far, chain.element(int(nodes(own.z).add(nodes(row).mul(width)).add(at)))));
+      far.assign(
+        max(
+          far,
+          chain.element(
+            nodes(chain.element(nodes(row).add(2)))
+              .add(nodes(y).mul(width))
+              .add(x),
+          ),
+        ),
+      );
     }
     const keeps = w
       .lessThanEqual(radius)

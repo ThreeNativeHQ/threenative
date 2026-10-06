@@ -2794,7 +2794,11 @@ export class WorldGpuScene {
       });
       If(instanceIndex.greaterThanEqual(counts.w), () => {
         argsPlain
-          .element(counts.w.mul(DRAW_ARGS_WORDS).add(instanceIndex.sub(counts.w)))
+          .element(
+            nodes(counts.w.mul(DRAW_ARGS_WORDS)).add(
+              nodes(float(instanceIndex).sub(counts.w).floor()),
+            ),
+          )
           .assign(int(0));
       });
     })().compute(Math.max(1, buffers.keys.count * clearWidth));
@@ -2994,7 +2998,11 @@ export class WorldGpuScene {
       });
       If(instanceIndex.greaterThanEqual(counts.w), () => {
         argsPlain
-          .element(counts.w.mul(DRAW_ARGS_WORDS).add(instanceIndex.sub(counts.w)))
+          .element(
+            nodes(counts.w.mul(DRAW_ARGS_WORDS)).add(
+              nodes(float(instanceIndex).sub(counts.w).floor()),
+            ),
+          )
           .assign(int(0));
       });
     })().compute(Math.max(1, buffers.keys.count * clearWidth));
