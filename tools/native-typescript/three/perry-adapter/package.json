@@ -104,6 +104,36 @@
           "name": "js_tn_release",
           "params": ["i64"],
           "returns": "void"
+        },
+        {
+          "name": "js_tn_tsl_build",
+          "params": ["string", "i64", "i64", "i64", "f64"],
+          "returns": "i64"
+        },
+        {
+          "name": "js_tn_tsl_error",
+          "params": [],
+          "returns": "string"
+        },
+        {
+          "name": "js_tn_tsl_set",
+          "params": ["i64", "i64"],
+          "returns": "i32"
+        },
+        {
+          "name": "js_tn_tsl_compile",
+          "params": ["i64"],
+          "returns": "i32"
+        },
+        {
+          "name": "js_tn_tsl_release",
+          "params": ["i64"],
+          "returns": "void"
+        },
+        {
+          "name": "js_tn_render",
+          "params": ["i64", "i64"],
+          "returns": "string"
         }
       ],
       "targets": {

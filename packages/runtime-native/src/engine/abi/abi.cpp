@@ -2,9 +2,13 @@
 // Nothing here throws across the boundary and nothing here holds an STL type in a signature; every
 // failure is a status code plus an owned diagnostic the caller releases.
 
-#include "threenative/abi/tn_abi.h"
+#include "threenative/abi/tn_tsl.h"
 
 #include <cstdio>
+#include <cmath>
+#include <fstream>
+#include "engine/shader/standard.h"
+#include "engine/shader/wgsl.h"
 #include <cstdlib>
 #include <cstring>
 #include <atomic>
@@ -30,6 +34,8 @@ extern "C" uint16_t tn_type_id(const char* name);
 struct tn_context : tn::binding::Store {
     explicit tn_context(uint16_t id) : objects(id) {}
     tn::engine::HandleTable objects;
+    std::unordered_map<uint64_t, tn::engine::shader::graph::Node> tslNodes;
+    uint64_t nextTslNode = 0;
     std::vector<tn::binding::Object> values;  // by handle index
     // (address, class) -> the one handle naming it: member aliases and shared objects. The class is
     // part of the key because a first member shares its owner's address (Box3::min).
@@ -591,3 +597,71 @@ void tn_diagnostic_release(tn_diagnostic_t* diagnostic) {
 }
 
 }  // extern "C"
+
+extern "C" tn_status_t tn_tsl_build(tn_context_t* context, const char* operation,
+                                     uint64_t a, uint64_t b, uint64_t c, double value,
+                                     uint64_t* out_node, tn_diagnostic_t* diagnostic) {
+    if (!context || !operation || !out_node || !std::isfinite(value))
+        return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_TSL_ARGUMENT");
+    *out_node = 0;
+    return guarded(diagnostic, [&]() -> tn_status_t {
+        namespace g = tn::engine::shader::graph;
+        const auto node = [&](uint64_t id) -> g::Node {
+            const auto it = context->tslNodes.find(id);
+            if (it == context->tslNodes.end()) throw std::runtime_error("TN_TSL_NODE_INVALID");
+            return it->second;
+        };
+        const std::string_view op(operation);
+        g::Node result;
+        if (op == "float") result = g::float_(value);
+        else if (op == "uv") result = g::uv();
+        else if (op == "x") result = g::swizzle(node(a), "x");
+        else if (op == "add") result = g::add(node(a), node(b));
+        else if (op == "mul") result = g::mul(node(a), node(b));
+        else if (op == "sin") result = g::sin(node(a));
+        else if (op == "vec3") result = g::vec3({node(a), node(b), node(c)});
+        else return report(diagnostic, TN_ERROR_UNSUPPORTED, 0,
+                           ("TN_TSL_DYNAMIC_UNSUPPORTED " + std::string(op)).c_str());
+        const uint64_t id = ++context->nextTslNode;
+        context->tslNodes.emplace(id, std::move(result));
+        *out_node = id;
+        return ok(diagnostic);
+    });
+}
+
+extern "C" tn_status_t tn_tsl_release(tn_context_t* context, uint64_t node, tn_diagnostic_t* diagnostic) {
+    if (!context || context->tslNodes.erase(node) != 1)
+        return report(diagnostic, TN_ERROR_INVALID_HANDLE, 0, "TN_TSL_NODE_INVALID");
+    return ok(diagnostic);
+}
+
+extern "C" tn_status_t tn_tsl_set(tn_context_t* context, tn_handle_t material, const char* path,
+                                   uint64_t node, tn_diagnostic_t* diagnostic) {
+    if (!context || material.context != context->objects.context() || !path || !context->tslNodes.contains(node))
+        return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_TSL_ARGUMENT");
+    return guarded(diagnostic, [&]() -> tn_status_t {
+        tn::abi::setShaderNode(material, path, context->tslNodes.at(node));
+        return ok(diagnostic);
+    });
+}
+
+extern "C" tn_status_t tn_tsl_compile(tn_handle_t material, const char* wgsl_path, tn_diagnostic_t* diagnostic) {
+    return guarded(diagnostic, [&]() -> tn_status_t {
+        namespace s = tn::engine::shader;
+        s::VertexVariant variant;
+        variant.nodes.colorNode = tn::abi::shaderNode(material, "colorNode");
+        if (!variant.nodes.colorNode) return report(diagnostic, TN_ERROR_INVALID_STATE, 0, "TN_TSL_GRAPH_MISSING");
+        const auto programs = s::buildBasic(variant);
+        const auto vertex = s::WgslEmitter::emit(programs.vertex);
+        const auto fragment = s::WgslEmitter::emit(programs.fragment, 1);
+        if (!programs.diagnostics.empty() || !vertex.ok() || !fragment.ok())
+            return report(diagnostic, TN_ERROR_UNSUPPORTED, 0, "TN_TSL_DYNAMIC_UNSUPPORTED graph lowering");
+        if (wgsl_path && *wgsl_path) {
+            std::ofstream file(wgsl_path);
+            file << vertex.code << "\n" << fragment.code;
+            file.close();
+            if (!file) return report(diagnostic, TN_ERROR_INVALID_STATE, 0, "TN_TSL_WGSL_WRITE_FAILED");
+        }
+        return ok(diagnostic);
+    });
+}

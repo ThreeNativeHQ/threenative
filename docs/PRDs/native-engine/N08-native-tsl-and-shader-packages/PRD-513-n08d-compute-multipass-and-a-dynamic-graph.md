@@ -4,7 +4,7 @@
 **Complexity:** 4 — compute dispatch, render-target chaining, and the first TSL graph built by AOT-compiled game code
 **Owner:** João
 **Work package:** N08 — [native-engine batch](../README.md) · [N08 index](README.md)
-**Depends on:** [PRD-511](../../done/native-engine/N08-native-tsl-and-shader-packages/PRD-511-n08b-shader-packages-not-wgsl-text.md), [PRD-506 (N05b)](../N05-native-typescript-qualification/PRD-506-n05b-three-imports-bind-natively-and-callbacks-are-reclaimed.md)
+**Depends on:** [PRD-511](../../done/native-engine/N08-native-tsl-and-shader-packages/PRD-511-n08b-shader-packages-not-wgsl-text.md), [PRD-506 (N05b)](../../done/native-engine/N05-native-typescript-qualification/PRD-506-n05b-three-imports-bind-natively-and-callbacks-are-reclaimed.md)
 
 ## Context
 
@@ -50,8 +50,8 @@ TSL `compute()` in JS (`packages/core/src/compute-driven.ts`).
 **Status:** NOT STARTED
 **Files:** proposed `tools/native-typescript/corpus/dynamic-tsl/`
 - [ ] The AOT-compiled fixture builds its TSL graph at runtime and renders matching the same TS run under the upstream reference. proof: `node tools/native-typescript/run-corpus.mjs --native --case dynamic-tsl --render`
-- [ ] A dynamic feature the builder cannot lower raises `TN_TSL_DYNAMIC_UNSUPPORTED`. proof: `node tools/native-typescript/run-corpus.mjs --native --case dynamic-tsl-unsupported`
-- [ ] The fixture's binary links no JS engine and no upstream `three`. proof: `node packages/runtime-native/scripts/inspect-js-free.mjs <dynamic-tsl binary>`
+- [x] A dynamic feature the builder cannot lower raises `TN_TSL_DYNAMIC_UNSUPPORTED`. proof: `node tools/native-typescript/run-corpus.mjs --native --case dynamic-tsl-unsupported` — 2026-10-06: green: `node tools/native-typescript/run-corpus.mjs --native --case dynamic-tsl-unsupported` passes: the Perry-compiled case raises `TN_TSL_DYNAMIC_UNSUPPORTED` with its expected stdout and exit. Red control (runner checks): a missing or different diagnostic fails the case.
+- [x] The fixture's binary links no JS engine and no upstream `three`. proof: `node packages/runtime-native/scripts/inspect-js-free.mjs <dynamic-tsl binary>` — 2026-10-06: green: the corpus runner inspects the produced `dynamic-tsl` binary with `inspect-js-free.mjs` before running it (`TN_NATIVE_TS_JS_FREE` otherwise) and the case proceeds, so the binary carries no VM symbol, no web view and no embedded script or upstream three. Red control: inspector tests with a planted V8 symbol and an embedded upstream three module exit 1.
 
 ## Blocked on
 

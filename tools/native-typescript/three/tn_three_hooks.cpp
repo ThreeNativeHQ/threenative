@@ -21,3 +21,9 @@ extern "C" const char* tnx_fire_before_render(int slot) {
                  : "TN_CALLBACK_FAILED onBeforeRender: " + error;
     return answer.c_str();
 }
+
+#ifndef TN_TSL_RENDER
+extern "C" const char* tnx_render(int64_t, int64_t) {
+    return "TN_TSL_RENDER_UNBUILT: compile with --render";
+}
+#endif

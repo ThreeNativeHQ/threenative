@@ -9,6 +9,7 @@ import {
   findScriptMarkers,
   findSymbolFindings,
   findWorldModuleFindings,
+  findThreeModuleFindings,
   inspect,
 } from "../scripts/inspect-js-free.mjs";
 
@@ -19,7 +20,7 @@ function compile(name, source) {
   const file = join(work, `${name}.cpp`);
   const binary = join(work, name);
   writeFileSync(file, source);
-  execFileSync("c++", ["-O0", "-o", binary, file]);
+  execFileSync("c++", ["-O0", "-o", binary, file], { stdio: ["ignore", "pipe", "pipe"] });
   return binary;
 }
 
@@ -61,6 +62,10 @@ describe("inspect-js-free", () => {
     ]).map((finding) => finding.family);
     expect(families).toEqual(["v8", "quickjs", "javascriptcore", "hermes", "webview", "embedded-runtime-scripts"]);
     expect(findSymbolFindings(["0000 T dawn::native::Instance::Create()", "U wgpuDeviceCreateBuffer"])).toEqual([]);
+    expect(findSymbolFindings(["T perry_runtime::v8::promise_hook_after", "T <Vec<v8::Isolate>>::grow"])).toEqual([
+      expect.objectContaining({ family: "v8" }),
+    ]);
+    expect(findSymbolFindings(["T perry_runtime::v8::promise_hook_after"])).toEqual([]);
     expect(findSymbolFindings(["U _JS_NewRuntime", "U _JSEvaluateScript"])).toHaveLength(2);
   });
 
@@ -119,6 +124,18 @@ describe("inspect-js-free", () => {
     expect(redReport.jsFree).toBe(false);
     expect(redReport.findings.map((finding) => finding.family)).toContain("v8");
     expect(inspect({ binary: green }).jsFree).toBe(true);
+  });
+
+  it("rejects planted upstream modules in a compiled binary and data resources", () => {
+    for (const module of ["three.module.js", "three.webgpu.js", "three.tsl.js", "three/src/nodes/core/NodeBuilder.js", "class NodeBuilder {}"]) {
+      expect(findThreeModuleFindings(Buffer.from(module), "planted")).not.toHaveLength(0);
+    }
+    const red = compile("three-red", 'const char* volatile module = "three/src/nodes/core/NodeBuilder.js"; int main() { return module[0] == 0; }');
+    expect(inspect({ binary: red }).findings).toContainEqual(expect.objectContaining({ kind: "upstream-three" }));
+    const resources = join(work, "three-resources");
+    mkdirSync(resources);
+    writeFileSync(join(resources, "bundle.dat"), "class NodeBuilder {}");
+    expect(inspect({ binary: compile("three-green", "int main() { return 0; }"), resources }).jsFree).toBe(false);
   });
 
   it("fails a packaged resource directory that carries a script bundle", () => {

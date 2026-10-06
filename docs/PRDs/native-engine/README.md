@@ -10,7 +10,7 @@ All new package names, configuration fields, ABI names, status markers, and work
 
 ## PRD index
 
-**Batch status: IN PROGRESS — 198/238 phase boxes (83%) as of 2026-10-06, on `feat/native-engine` (PR #438).** This file is the batch index and the source proposal; the PRDs below carry the boxes. Work packages too large for one PRD (at most 3 phases, about 8 boxes) are a folder with its own `README.md` and child PRDs. The batch moves to `done/` whole only when every PRD in it is finished.
+**Batch status: IN PROGRESS — 201/238 phase boxes (84%) as of 2026-10-06, on `feat/native-engine` (PR #438).** This file is the batch index and the source proposal; the PRDs below carry the boxes. Work packages too large for one PRD (at most 3 phases, about 8 boxes) are a folder with its own `README.md` and child PRDs. The batch moves to `done/` whole only when every PRD in it is finished.
 
 ### Progress
 
@@ -27,14 +27,14 @@ Generated from the PRD files' boxes; a PRD is done when every box is ticked.
 | [PRD-503](../done/native-engine/N04-lifetime-and-numerics/PRD-503-n04c-unreachable-cycles-are-reclaimed.md) | Unreachable cycles are reclaimed (N04c) | 7/7 | done |
 | [PRD-504](../done/native-engine/N04-lifetime-and-numerics/PRD-504-n04d-buffers-cross-the-abi-with-an-owner.md) | Buffers cross the ABI with an owner (N04d) | 7/7 | done |
 | [PRD-505](../done/native-engine/N05-native-typescript-qualification/PRD-505-n05a-the-language-corpus-compiles-on-linux-x64.md) | The language corpus compiles on Linux x64 (N05a) | 6/6 | done |
-| [PRD-506](N05-native-typescript-qualification/PRD-506-n05b-three-imports-bind-natively-and-callbacks-are-reclaimed.md) | Three imports bind natively and callbacks are reclaimed (N05b) | 5/6 | in progress |
+| [PRD-506](../done/native-engine/N05-native-typescript-qualification/PRD-506-n05b-three-imports-bind-natively-and-callbacks-are-reclaimed.md) | Three imports bind natively and callbacks are reclaimed (N05b) | 6/6 | done |
 | [PRD-507](N05-native-typescript-qualification/PRD-507-n05c-the-same-corpus-runs-on-android-arm64.md) | The same corpus runs on Android arm64 (N05c) | 0/4 | not started |
 | [PRD-508](../done/native-engine/PRD-508-n06-native-scene-graph-transforms-cameras-geometry.md) | Native scene graph, transforms, cameras and geometry (N06) | 7/7 | done |
 | [PRD-509](PRD-509-n07-gpu-resources-presentation-and-device-loss.md) | GPU resources, presentation and device loss (N07) | 7/8 | in progress |
 | [PRD-510](../done/native-engine/N08-native-tsl-and-shader-packages/PRD-510-n08a-a-typed-shader-ir-with-ordered-effects.md) | A typed shader IR with ordered effects (N08a) | 4/4 | done |
 | [PRD-511](../done/native-engine/N08-native-tsl-and-shader-packages/PRD-511-n08b-shader-packages-not-wgsl-text.md) | Shader packages, not WGSL text (N08b) | 6/6 | done |
 | [PRD-512](../done/native-engine/N08-native-tsl-and-shader-packages/PRD-512-n08c-standard-pbr-and-deformation-that-shadows.md) | Standard PBR and deformation that shadows (N08c) | 5/5 | done |
-| [PRD-513](N08-native-tsl-and-shader-packages/PRD-513-n08d-compute-multipass-and-a-dynamic-graph.md) | Compute, multipass and a dynamic graph (N08d) | 3/6 | in progress |
+| [PRD-513](N08-native-tsl-and-shader-packages/PRD-513-n08d-compute-multipass-and-a-dynamic-graph.md) | Compute, multipass and a dynamic graph (N08d) | 5/6 | in progress |
 | [PRD-514](../done/native-engine/PRD-514-n09-native-renderer-and-standard-materials.md) | Native renderer and standard materials (N09) | 8/8 | done |
 | [PRD-515](../done/native-engine/PRD-515-n10-native-gltf-cooked-assets-and-decoders.md) | Native glTF, cooked assets and decoders (N10) | 7/7 | done |
 | [PRD-516](../done/native-engine/N11-native-animation/PRD-516-n11a-animation-mixer-semantics-in-native.md) | AnimationMixer semantics in native (N11a) | 6/6 | done |
@@ -95,7 +95,7 @@ Full text and rationale: [PRD-497 § Decisions](../done/native-engine/PRD-497-n0
 | N04d | ↳ [PRD-504 — Buffers cross the ABI with an owner](../done/native-engine/N04-lifetime-and-numerics/PRD-504-n04d-buffers-cross-the-abi-with-an-owner.md) | N04b |
 | N05 | [Native TypeScript compiler qualification](N05-native-typescript-qualification/README.md) | N03 + minimal N04 |
 | N05a | ↳ [PRD-505 — The language corpus compiles on Linux x64](../done/native-engine/N05-native-typescript-qualification/PRD-505-n05a-the-language-corpus-compiles-on-linux-x64.md) | N03 |
-| N05b | ↳ [PRD-506 — Three imports bind natively and callbacks are reclaimed](N05-native-typescript-qualification/PRD-506-n05b-three-imports-bind-natively-and-callbacks-are-reclaimed.md) | N05a, N04b, N04c |
+| N05b | ↳ [PRD-506 — Three imports bind natively and callbacks are reclaimed](../done/native-engine/N05-native-typescript-qualification/PRD-506-n05b-three-imports-bind-natively-and-callbacks-are-reclaimed.md) | N05a, N04b, N04c |
 | N05c | ↳ [PRD-507 — The same corpus runs on Android arm64](N05-native-typescript-qualification/PRD-507-n05c-the-same-corpus-runs-on-android-arm64.md) | N05a |
 | N06 | [PRD-508 — Native scene graph, transforms, cameras and geometry](../done/native-engine/PRD-508-n06-native-scene-graph-transforms-cameras-geometry.md) | N04 |
 | N07 | [PRD-509 — GPU resources, presentation and device loss](PRD-509-n07-gpu-resources-presentation-and-device-loss.md) | N02, N03 |

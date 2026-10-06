@@ -13,7 +13,7 @@
 ## Solution
 
 1. **Schema-driven tracer** (proposed: `packages/runtime-native/src/engine/foundation/reachability.{h,cpp}`). Each engine type declares its observable edges from the catalog annotations. A mark phase from the roots runs at safe points (between frames, or on explicit `collect()` in tests) under a work budget.
-2. **Root API** in the ABI: `tn_root_acquire` and `tn_root_release` for wrappers and callbacks. A weak-wrapper hook lets an adapter report wrapper reachability, so cross-language cycles can be collected (consumed by [PRD-506](../../../native-engine/N05-native-typescript-qualification/PRD-506-n05b-three-imports-bind-natively-and-callbacks-are-reclaimed.md) and [PRD-531](../../../native-engine/PRD-531-n18-v8-game-runtime-adapter.md)).
+2. **Root API** in the ABI: `tn_root_acquire` and `tn_root_release` for wrappers and callbacks. A weak-wrapper hook lets an adapter report wrapper reachability, so cross-language cycles can be collected (consumed by [PRD-506](../N05-native-typescript-qualification/PRD-506-n05b-three-imports-bind-natively-and-callbacks-are-reclaimed.md) and [PRD-531](../../../native-engine/PRD-531-n18-v8-game-runtime-adapter.md)).
 3. **Deferred GPU destruction**: a reclaimed object's GPU resources go to a per-device-generation queue that is drained only after the submission that last used them completes. `dispose()` releases GPU resources and leaves the public object alive.
 4. **Accounting**: live-object counts per type, reclaimed counts and pause time per safe point, published through telemetry.
 

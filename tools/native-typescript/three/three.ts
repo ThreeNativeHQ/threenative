@@ -13,6 +13,7 @@
 // argument, so a wrapper never crosses the FFI boundary — that would make it immortal. The wrapper
 // table lives here instead, and the adapter is told to release an engine object from `forget()`.
 import * as adapter from "tn-three-adapter";
+import type { TslNode } from "./three-tsl";
 
 /** An engine object, named by the adapter's number for it; 0 is no object. */
 type Handle = adapter.TnObject;
@@ -109,8 +110,8 @@ export class BoxGeometry {
 
 export class MeshStandardMaterial {
   slot: Handle;
-  constructor() {
-    this.slot = create("MeshStandardMaterial");
+  constructor(className = "MeshStandardMaterial") {
+    this.slot = create(className);
     objects[this.slot] = this;
   }
   get type(): string {
@@ -287,4 +288,40 @@ export function releaseUnreferenced(): number {
     released += 1;
   }
   return released;
+}
+
+export class MeshBasicNodeMaterial extends MeshStandardMaterial {
+  node: TslNode | undefined;
+  constructor() {
+    super("MeshBasicNodeMaterial");
+  }
+  get colorNode(): TslNode | undefined {
+    return this.node;
+  }
+  set colorNode(node: TslNode) {
+    if (adapter.tslSet(this.slot, node.slot) !== 0) throw adapter.tslError();
+    this.node = node;
+    if (adapter.tslCompile(this.slot) !== 0) throw adapter.tslError();
+  }
+}
+export class OrthographicCamera extends Object3D {
+  constructor(left: number, right: number, top: number, bottom: number, near: number, far: number) {
+    adapter.argNumber(left);
+    adapter.argNumber(right);
+    adapter.argNumber(top);
+    adapter.argNumber(bottom);
+    adapter.argNumber(near);
+    adapter.argNumber(far);
+    super(create("OrthographicCamera"));
+  }
+}
+export class WebGPURenderer {
+  async init(): Promise<void> {}
+  setSize(width: number, height: number): void {
+    if (width !== 320 || height !== 240) throw "TN_TSL_DYNAMIC_UNSUPPORTED fixture dimensions";
+  }
+  render(scene: Scene, camera: OrthographicCamera): void {
+    const error = adapter.render(scene.slot, camera.slot);
+    if (error !== "") throw error;
+  }
 }

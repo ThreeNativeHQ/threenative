@@ -37,7 +37,10 @@ describe("discoverCases", () => {
     expect(names).toContain("three-fixture");
     expect(names).toContain("unsupported-export");
     expect(names).toContain("callback-cycle");
-    expect(names).toHaveLength(16);
+    expect(names).toContain("dynamic-tsl");
+    expect(names).toContain("dynamic-tsl-unsupported");
+    expect(names).toContain("import-identity");
+    expect(names).toHaveLength(19);
   });
 
   it("turns a top-level .ts with no .expected into a named failure, not a skip", () => {
@@ -98,7 +101,40 @@ describe("unsupportedThreeImports", () => {
     ]);
   });
 
+  it("admits only the implemented AOT bindings when the VM catalog refuses them", () => {
+    const aot = { "three/tsl": ["float"] };
+    expect(unsupportedThreeImports('import { float } from "three/tsl";', catalog, aot)).toEqual([]);
+    expect(
+      unsupportedThreeImports('import { wgslFn } from "three/tsl";', catalog, aot),
+    ).toHaveLength(1);
+    expect(unsupportedThreeImports('import { float } from "three";', catalog, aot)).toHaveLength(1);
+  });
+
   it("ignores imports from other modules", () => {
     expect(unsupportedThreeImports('import { Raycaster } from "./local";', catalog)).toEqual([]);
+  });
+});
+
+describe("unsupported dynamic graph red control", () => {
+  it("the unsupported corpus refuses an implementation that succeeds or raises a different code", () => {
+    const source = fs.readFileSync(
+      new URL("../corpus/dynamic-tsl-unsupported.ts", import.meta.url),
+      "utf8",
+    );
+    const body = source.replace(/^import[^\n]+\n/, "");
+    const run = (mod: () => void): void => {
+      new Function("float", body)(() => ({ mod }));
+    };
+    expect(() => run(() => {})).toThrow(/did not raise TN_TSL_DYNAMIC_UNSUPPORTED/);
+    expect(() =>
+      run(() => {
+        throw "WRONG_CODE mod";
+      }),
+    ).toThrow("WRONG_CODE mod");
+    expect(() =>
+      run(() => {
+        throw "TN_TSL_DYNAMIC_UNSUPPORTED mod";
+      }),
+    ).not.toThrow();
   });
 });

@@ -123,3 +123,34 @@ export function release(object: TnObject): void {
 export function collect(): void {
   js_tn_collect();
 }
+
+declare function js_tn_tsl_build(
+  op: string,
+  a: number,
+  b: number,
+  c: number,
+  value: number,
+): number;
+declare function js_tn_tsl_error(): string;
+declare function js_tn_tsl_set(material: number, node: number): number;
+declare function js_tn_tsl_compile(material: number): number;
+declare function js_tn_tsl_release(node: number): void;
+declare function js_tn_render(scene: number, camera: number): string;
+export function tslBuild(op: string, a: number, b: number, c: number, value: number): number {
+  return js_tn_tsl_build(op, a, b, c, value);
+}
+export function tslError(): string {
+  return js_tn_tsl_error();
+}
+export function tslSet(material: number, node: number): number {
+  return js_tn_tsl_set(material, node);
+}
+export function tslCompile(material: number): number {
+  return js_tn_tsl_compile(material);
+}
+export function tslRelease(node: number): void {
+  js_tn_tsl_release(node);
+}
+export function render(scene: number, camera: number): string {
+  return js_tn_render(scene, camera);
+}

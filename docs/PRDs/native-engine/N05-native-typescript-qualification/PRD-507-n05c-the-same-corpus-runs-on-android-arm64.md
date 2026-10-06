@@ -4,7 +4,7 @@
 **Complexity:** 4 — cross-compilation, NDK linking and packaging for a third-party compiler runtime
 **Owner:** João
 **Work package:** N05 — [native-engine batch](../README.md) · [N05 index](README.md)
-**Depends on:** [PRD-505](../../done/native-engine/N05-native-typescript-qualification/PRD-505-n05a-the-language-corpus-compiles-on-linux-x64.md); the `three-fixture` and callback cases from [PRD-506](PRD-506-n05b-three-imports-bind-natively-and-callbacks-are-reclaimed.md) join once they exist
+**Depends on:** [PRD-505](../../done/native-engine/N05-native-typescript-qualification/PRD-505-n05a-the-language-corpus-compiles-on-linux-x64.md); the `three-fixture` and callback cases from [PRD-506](../../done/native-engine/N05-native-typescript-qualification/PRD-506-n05b-three-imports-bind-natively-and-callbacks-are-reclaimed.md) join once they exist
 
 ## Context
 

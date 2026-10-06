@@ -14,7 +14,7 @@ stop rule in [PRD-505](../../done/native-engine/N05-native-typescript-qualificat
 | Key | PRD | Depends on |
 | --- | --- | --- |
 | N05a | [PRD-505 — The language corpus compiles on Linux x64](../../done/native-engine/N05-native-typescript-qualification/PRD-505-n05a-the-language-corpus-compiles-on-linux-x64.md) | [N03](../../done/native-engine/PRD-500-n03-api-catalog-binding-abi-and-version-protocol.md) |
-| N05b | [PRD-506 — Three imports bind natively and callbacks are reclaimed](PRD-506-n05b-three-imports-bind-natively-and-callbacks-are-reclaimed.md) | N05a, [N04b](../../done/native-engine/N04-lifetime-and-numerics/PRD-502-n04b-handles-keep-identity-and-aliases.md), [N04c](../../done/native-engine/N04-lifetime-and-numerics/PRD-503-n04c-unreachable-cycles-are-reclaimed.md) |
+| N05b | [PRD-506 — Three imports bind natively and callbacks are reclaimed](../../done/native-engine/N05-native-typescript-qualification/PRD-506-n05b-three-imports-bind-natively-and-callbacks-are-reclaimed.md) | N05a, [N04b](../../done/native-engine/N04-lifetime-and-numerics/PRD-502-n04b-handles-keep-identity-and-aliases.md), [N04c](../../done/native-engine/N04-lifetime-and-numerics/PRD-503-n04c-unreachable-cycles-are-reclaimed.md) |
 | N05c | [PRD-507 — The same corpus runs on Android arm64](PRD-507-n05c-the-same-corpus-runs-on-android-arm64.md) | N05a |
 
 ```mermaid

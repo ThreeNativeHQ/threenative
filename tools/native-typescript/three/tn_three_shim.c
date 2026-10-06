@@ -8,7 +8,7 @@
 // here is Boehm's, which Perry does not use, so the wrapper table, the finalizer, the safe point and
 // the collection loop live on the Perry side. What stays is the engine's own state: the handle
 // table, the argument staging and the result register.
-#include "threenative/abi/tn_abi.h"
+#include "threenative/abi/tn_tsl.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -61,7 +61,7 @@ static int slotOf(tn_handle_t handle) {
     return slot;
 }
 
-tn_handle_t tnx_handle(int slot) { return objects[slot]; }
+tn_handle_t tnx_handle(int slot) { return slot > 0 && slot < objectCount ? objects[slot] : (tn_handle_t){0}; }
 int tnx_live(void) { return live; }
 
 // Resident set, from /proc/self/statm (Linux, 4 KiB pages); -1 when unreadable.
@@ -179,3 +179,18 @@ void tnx_release_slot(int slot) {
     freeSlots[freeCount++] = slot;
     --live;
 }
+/* The graph builder is the same versioned C ABI as object bindings. */
+static tn_diagnostic_t tslDiagnostic;
+const char* tnx_tsl_error(void) { return tslDiagnostic.message ? tslDiagnostic.message : ""; }
+long tnx_tsl_build(const char* op, long a, long b, long c, double value) {
+    uint64_t out = 0;
+    tn_tsl_build(context, op, a, b, c, value, &out, &tslDiagnostic);
+    return (long)out;
+}
+int tnx_tsl_set(long material, long node) {
+    return tn_tsl_set(context, tnx_handle((int)material), "colorNode", node, &tslDiagnostic);
+}
+int tnx_tsl_compile(long material) {
+    return tn_tsl_compile(tnx_handle((int)material), getenv("TN_TSL_WGSL"), &tslDiagnostic);
+}
+void tnx_tsl_release(long node) { tn_tsl_release(context, node, &tslDiagnostic); }

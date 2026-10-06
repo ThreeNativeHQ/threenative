@@ -47,6 +47,8 @@ import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { format } from "node:util";
+import { inspect } from "../../packages/runtime-native/scripts/inspect-js-free.mjs";
 import { ensureAndroidRuntime, findTarget, perryTarget, resolveNdk } from "./android.mjs";
 import { compareRedToDeclared, loadLedger } from "./patches.mjs";
 import { provision } from "./provision.mjs";
@@ -58,7 +60,7 @@ const REPO = path.resolve(HERE, "..", "..");
 const DEFAULT_OUT = path.join(REPO, "artifacts", "native-typescript");
 const RSS_LIMIT_BYTES = 512 * 1024 * 1024;
 const IMPORT_RE = /\bfrom\s*["']([^"']+)["']|\bimport\s*["']([^"']+)["']/g;
-const THREE_IMPORT_RE = /\bfrom\s*["']three["']/g;
+const THREE_IMPORT_RE = /\bfrom\s*["'](three(?:\/[\w-]+)?)["']/g;
 const ADAPTER_PACKAGE = "tn-three-adapter";
 
 /** Every case, strictly compiled: no runtime-unknown eval, Function or dynamic import may survive. */
@@ -82,7 +84,7 @@ function named(code, message) {
  * supported: each fails the build as TN_NATIVE_TS_UNSUPPORTED_EXPORT <specifier>#<name>, with the
  * catalog's own diagnostic when it records one, before anything compiles.
  */
-export function unsupportedThreeImports(source, catalog) {
+export function unsupportedThreeImports(source, catalog, nativeExports = {}) {
   const entries = new Map(catalog.entries.map((entry) => [entry.name, entry]));
   const refused = [];
   for (const match of source.matchAll(
@@ -95,7 +97,7 @@ export function unsupportedThreeImports(source, catalog) {
         ?.trim();
       if (!name) continue;
       const entry = entries.get(name);
-      if (entry?.status?.kind === "supported") continue;
+      if (entry?.status?.kind === "supported" || nativeExports[match[2]]?.includes(name)) continue;
       const diagnostic = entry?.status?.diagnostic
         ? ` (${entry.status.diagnostic})`
         : entry
@@ -108,11 +110,11 @@ export function unsupportedThreeImports(source, catalog) {
 }
 
 function importsThree(file) {
-  return /\bfrom\s*["']three["']/.test(fs.readFileSync(file, "utf8"));
+  return /\bfrom\s*["']three(?:\/[\w-]+)?["']/.test(fs.readFileSync(file, "utf8"));
 }
 
 /** The workspace's pinned three, resolved the way the fixture reference runner resolves it. */
-function pinnedThreeModuleUrl() {
+function pinnedThreeModuleUrl(specifier = "three") {
   const pinned = /^\s*three:\s*([^\s#]+)/m.exec(
     fs.readFileSync(path.join(REPO, "pnpm-workspace.yaml"), "utf8"),
   )?.[1];
@@ -126,7 +128,16 @@ function pinnedThreeModuleUrl() {
       "TN_NATIVE_TS_THREE_MISMATCH",
       `packages/core links three ${version}, the catalog pins ${pinned}`,
     );
-  return pathToFileURL(path.join(build, "three.module.js")).href;
+  return pathToFileURL(
+    path.join(
+      build,
+      specifier === "three"
+        ? "three.module.js"
+        : specifier === "three/webgpu"
+          ? "three.webgpu.js"
+          : "three.tsl.js",
+    ),
+  ).href;
 }
 
 /** Splits a `.expected` file into its stdout bytes and its stored reference exit code. */
@@ -213,18 +224,54 @@ export function discoverCases(filter, corpusDir = CORPUS) {
   return filter ? names.filter((name) => name === filter) : names;
 }
 
-function runReference(name) {
+async function runReference(name, plan = {}) {
   let file = path.join(CORPUS, `${name}.ts`);
   const expected = parseExpected(fs.readFileSync(expectedPath(name)));
   if (expected.compileError !== undefined || expected.nativeOnly)
     return { ok: true, notApplicable: true };
   if (importsThree(file)) {
-    const staged = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "tn-ref-three-")), `${name}.ts`);
+    const staged = path.join(
+      fs.mkdtempSync(path.join(os.tmpdir(), "tn-ref-three-")),
+      `${name}.mts`,
+    );
     fs.writeFileSync(
       staged,
-      fs.readFileSync(file, "utf8").replace(THREE_IMPORT_RE, `from "${pinnedThreeModuleUrl()}"`),
+      fs
+        .readFileSync(file, "utf8")
+        .replace(THREE_IMPORT_RE, (_, specifier) => `from "${pinnedThreeModuleUrl(specifier)}"`),
     );
     file = staged;
+  }
+  if (plan.render) {
+    const { renderReference } = await import("./render-reference.mjs");
+    await renderReference(file, path.join(plan.outDir, `${name}-reference.png`));
+    return { ok: true, note: "reference frame dumped" };
+  }
+  // Run scene fixtures through tsx's module API: no CLI IPC socket or child Node is needed.
+  if (importsThree(path.join(CORPUS, `${name}.ts`))) {
+    const { tsImport } = await import("tsx/esm/api");
+    const log = console.log;
+    let output = "";
+    let error;
+    console.log = (...args) => {
+      output += `${format(...args)}\n`;
+    };
+    try {
+      await tsImport(file, import.meta.url);
+    } catch (thrown) {
+      error = thrown;
+    } finally {
+      console.log = log;
+    }
+    return {
+      ok: error === undefined && Buffer.from(output).equals(expected.stdout),
+      note:
+        error === undefined
+          ? Buffer.from(output).equals(expected.stdout)
+            ? ""
+            : "stdout mismatch"
+          : String(error),
+    };
   }
   const run = spawnSync("pnpm", ["exec", "tsx", path.relative(REPO, file)], {
     cwd: REPO,
@@ -282,6 +329,16 @@ async function stageProject({ entry, modules, tmp, three, bridge }) {
       await fsp.writeFile(
         path.join(dir, "package.json"),
         `${JSON.stringify({ name, version: "0.185.1", main: facade, types: facade }, undefined, 2)}\n`,
+      );
+    }
+    for (const [file, staged] of [
+      ["three-tsl.ts", "three-tsl.ts"],
+      ["three-tsl.ts", "tsl.ts"],
+      ["webgpu.ts", "webgpu.ts"],
+    ]) {
+      await fsp.copyFile(
+        path.join(HERE, "three", file),
+        path.join(tmp, "node_modules", "three", staged),
       );
     }
     const packageDir = path.join(tmp, "node_modules", ADAPTER_PACKAGE);
@@ -350,8 +407,16 @@ async function runNative(name, info, target, plan = {}) {
   // A cross target with no engine archives for its ABI cannot link a three-import case: refuse it
   // with the missing archives named, rather than trying the host archives and reporting a link error.
   if (three && plan.blockedThreeImport) return { ok: false, note: plan.blockedThreeImport };
-  const bridge = three ? await bridgeFor({ target, ndk: plan.ndk }) : undefined;
+  const bridge = three
+    ? await bridgeFor({
+        target,
+        ndk: plan.ndk,
+        render: plan.render,
+        engineBuild: process.env.TN_NATIVE_ENGINE_BUILD,
+      })
+    : undefined;
   const env = mergeEnv(process.env, [["PERRY_CACHE_DIR", path.join(tmp, ".perry")]]);
+  if (plan.render) env.TN_TSL_FRAME = path.join(plan.outDir, `${name}-native.png`);
   for (const [key, value] of plan.env ?? []) env[key] = value;
 
   const refusedImports = unsupportedThreeImports(
@@ -359,6 +424,8 @@ async function runNative(name, info, target, plan = {}) {
     JSON.parse(
       fs.readFileSync(path.join(REPO, "packages", "three-native", "api", "catalog.json"), "utf8"),
     ),
+    // AOT TSL/renderer bindings are qualified here; the VM catalog still refuses these names.
+    { "three/tsl": ["float", "uv", "sin", "vec3"], "three/webgpu": ["WebGPURenderer"] },
   );
   const exe = path.join(tmp, name);
   const project = await stageProject({ entry, modules, tmp, three, bridge });
@@ -367,7 +434,10 @@ async function runNative(name, info, target, plan = {}) {
     project,
     out: exe,
     env,
-    extraFlags: plan.perryFlags ?? [],
+    extraFlags: [
+      ...(name === "dynamic-tsl" ? ["--debug-symbols"] : []),
+      ...(plan.perryFlags ?? []),
+    ],
   });
   const compileErrors = [...refusedImports];
   if (refusedImports.length === 0 && !compile.ok) compileErrors.push(compile.error);
@@ -384,8 +454,17 @@ async function runNative(name, info, target, plan = {}) {
   if (compileErrors.length > 0) {
     return { ok: false, note: `TN_NATIVE_TS_COMPILE ${name}: ${compileErrors[0]}` };
   }
+  await fsp.mkdir(plan.outDir, { recursive: true });
+  const artifact = path.join(plan.outDir, name);
+  await fsp.copyFile(exe, artifact);
+  if (name === "dynamic-tsl") {
+    const audit = inspect({ binary: artifact });
+    if (!audit.jsFree)
+      return { ok: false, note: `TN_NATIVE_TS_JS_FREE ${JSON.stringify(audit.findings)}` };
+  }
   if (plan.buildOnly) return { ok: true, note: "linked, not run (--build-only)" };
 
+  if (plan.render) await fsp.rm(env.TN_TSL_FRAME, { force: true });
   const measured =
     name === "alloc-loop"
       ? await runMeasured(exe, env)
@@ -414,6 +493,8 @@ async function runNative(name, info, target, plan = {}) {
       note: `peak RSS ${(measured.peakRssBytes / (1024 * 1024)).toFixed(1)} MB over 512 MB`,
     };
   }
+  if (plan.render && (!fs.existsSync(env.TN_TSL_FRAME) || fs.statSync(env.TN_TSL_FRAME).size === 0))
+    return { ok: false, note: "TN_NATIVE_TS_FRAME_MISSING" };
   return {
     ok: true,
     note:
@@ -568,6 +649,7 @@ async function main() {
   const wantReference = args.includes("--reference");
   const wantNative = args.includes("--native");
   const buildOnly = args.includes("--build-only");
+  const render = args.includes("--render");
   const withoutPatches = args.includes("--without-patches");
   let target;
   let filter;
@@ -600,6 +682,8 @@ async function main() {
     );
   }
 
+  if (render && filter !== "dynamic-tsl")
+    throw named("TN_NATIVE_TS_USAGE", "--render requires --case dynamic-tsl");
   const names = discoverCases(filter);
   if (names.length === 0) throw named("TN_NATIVE_TS_CASE", `no corpus case matches '${filter}'`);
   // --expect-compile-error states the selected cases are compile-error cases; a case that is not
@@ -621,7 +705,7 @@ async function main() {
   const info = wantNative
     ? await provision({ patches: withoutPatches ? [] : ledger.patches, log: () => {} })
     : undefined;
-  const plan = cross ? await crossPlan(targetFile.target, outDir) : { buildOnly };
+  const plan = cross ? await crossPlan(targetFile.target, outDir) : { buildOnly, render, outDir };
   const rows = [];
   let failed = false;
   for (const name of names) {
@@ -641,7 +725,7 @@ async function main() {
       continue;
     }
     if (wantReference) {
-      const result = runReference(name);
+      const result = await runReference(name, plan);
       // A native compile-error case has no reference run to compare.
       row.reference = result.notApplicable ? "n/a" : result.ok ? "PASS" : "FAIL";
       if (!result.ok) {

@@ -15,7 +15,7 @@ implementation language. Nothing in this repository compiles TypeScript ahead of
 native host transpiles with SWC (`MYSTRAL_USE_SWC` in `packages/runtime-native/CMakeLists.txt`) and
 executes in QuickJS or V8. §17 requires the compiler to be a cached, checksum-pinned SDK artifact,
 never an LLVM rebuild per game. This PRD qualifies the language subset only; the `three` module
-adapter and callback lifetime are [PRD-506](../../../native-engine/N05-native-typescript-qualification/PRD-506-n05b-three-imports-bind-natively-and-callbacks-are-reclaimed.md).
+adapter and callback lifetime are [PRD-506](PRD-506-n05b-three-imports-bind-natively-and-callbacks-are-reclaimed.md).
 
 ## Solution
 
@@ -42,7 +42,7 @@ adapter and callback lifetime are [PRD-506](../../../native-engine/N05-native-ty
 
 ## Out of scope
 
-- `three` / `three/webgpu` / `three/tsl` import resolution, native callbacks, wrapper rooting — [PRD-506](../../../native-engine/N05-native-typescript-qualification/PRD-506-n05b-three-imports-bind-natively-and-callbacks-are-reclaimed.md).
+- `three` / `three/webgpu` / `three/tsl` import resolution, native callbacks, wrapper rooting — [PRD-506](PRD-506-n05b-three-imports-bind-natively-and-callbacks-are-reclaimed.md).
 - Android arm64 — [PRD-507](../../../native-engine/N05-native-typescript-qualification/PRD-507-n05c-the-same-corpus-runs-on-android-arm64.md).
 - Shipping a game artifact — [PRD-530 (N17)](../../../native-engine/PRD-530-n17-strict-native-typescript-game-packaging.md).
 

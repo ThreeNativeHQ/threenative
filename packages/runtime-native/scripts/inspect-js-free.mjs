@@ -12,9 +12,11 @@ import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "n
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
+/** Root C++ namespace matters: Perry has a Rust perry_runtime::v8 Node API implementation,
+ * which contains no VM. Symbols of V8 itself still include root v8::, even inside a template. */
 /** Symbol families of every JS engine and web view the native engine must not carry. */
 export const VM_SYMBOL_FAMILIES = [
-  { family: "v8", pattern: /\bv8::|\bv8_inspector::|@v8@@|@v8_inspector@@|\b_?V8_Fatal\b/ },
+  { family: "v8", pattern: /(?<![\w:])v8::|(?<![\w:])v8_inspector::|@v8@@|@v8_inspector@@|\b_?V8_Fatal\b/ },
   { family: "quickjs", pattern: /\b_?JS_(NewRuntime|NewContext|Eval|FreeRuntime)\b|\bquickjs\b/i },
   { family: "javascriptcore", pattern: /\b_?JSGlobalContext\w*|\b_?JSEvaluateScript\b|\bJSC::|@JSC@@/ },
   { family: "hermes", pattern: /\bhermes::|\bfacebook::hermes\b|@hermes(?:@facebook)?@@/ },
@@ -40,6 +42,15 @@ export function findWorldModuleFindings(bytes, origin) {
   return [...new Set([...(text.match(TS_WORLD_MODULE) ?? []), ...(text.match(TS_WORLD_SOURCE) ?? [])])].map((module) => ({
     kind: "ts-world-module",
     evidence: `${origin}: ${module}`,
+  }));
+}
+
+/** Upstream shader/runtime module IDs and unbundled engine source; facade class symbols are legal. */
+export function findThreeModuleFindings(bytes, origin) {
+  const text = bytes.toString("latin1");
+  const pattern = /three\.(?:module|webgpu|tsl)(?:\.min)?\.js\b|three\/(?:build|src)\/[\w./-]+|\bclass\s+NodeBuilder\b/g;
+  return [...new Set(text.match(pattern) ?? [])].map((module) => ({
+    kind: "upstream-three", evidence: `${origin}: ${module}`,
   }));
 }
 
@@ -119,8 +130,14 @@ export function inspect({ binary, resources, nativeWorld = false }, { platform =
     ...findSymbolFindings(symbols),
     ...findLibraryFindings(libraries),
     ...findScriptMarkers(bytes),
+    ...findThreeModuleFindings(bytes, binary),
+    ...findThreeModuleFindings(Buffer.from(symbols.join("\n")), "symbols"),
     ...(resources ? findResourceFindings(listFiles(resources)) : []),
   ];
+  if (resources) for (const file of listFiles(resources)) {
+    findings.push(...findThreeModuleFindings(Buffer.from(file), "resource path"));
+    findings.push(...findThreeModuleFindings(readFileSync(join(resources, file)), file));
+  }
   if (nativeWorld) {
     findings.push(...findWorldModuleFindings(bytes, binary));
     findings.push(...findWorldModuleFindings(Buffer.from(symbols.join("\n")), "symbols"));

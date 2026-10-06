@@ -455,3 +455,30 @@ pub unsafe extern "C" fn js_tn_dispatch(
     *error.add(length) = 0;
     1
 }
+
+extern "C" {
+    fn tnx_tsl_build(op: *const c_char, a: i64, b: i64, c: i64, value: f64) -> i64;
+    fn tnx_tsl_error() -> *const c_char;
+    fn tnx_tsl_set(material: i64, node: i64) -> c_int;
+    fn tnx_tsl_compile(material: i64) -> c_int;
+    fn tnx_tsl_release(node: i64);
+    fn tnx_render(scene: i64, camera: i64) -> *const c_char;
+}
+#[no_mangle]
+pub extern "C" fn js_tn_tsl_build(op: JsString, a: i64, b: i64, c: i64, value: f64) -> i64 {
+    with_c_string(op, 0, |op| unsafe { tnx_tsl_build(op, a, b, c, value) })
+}
+#[no_mangle]
+pub extern "C" fn js_tn_tsl_error() -> *mut perry_ffi::StringHeader {
+    unsafe { alloc_string(CStr::from_ptr(tnx_tsl_error()).to_str().unwrap_or("TN_TSL_ERROR_UTF8")).as_raw() }
+}
+#[no_mangle]
+pub extern "C" fn js_tn_tsl_set(material: i64, node: i64) -> c_int { unsafe { tnx_tsl_set(material, node) } }
+#[no_mangle]
+pub extern "C" fn js_tn_tsl_compile(material: i64) -> c_int { unsafe { tnx_tsl_compile(material) } }
+#[no_mangle]
+pub extern "C" fn js_tn_tsl_release(node: i64) { unsafe { tnx_tsl_release(node) } }
+#[no_mangle]
+pub extern "C" fn js_tn_render(scene: i64, camera: i64) -> *mut perry_ffi::StringHeader {
+    unsafe { alloc_string(CStr::from_ptr(tnx_render(scene, camera)).to_str().unwrap_or("TN_RENDER_ERROR_UTF8")).as_raw() }
+}
