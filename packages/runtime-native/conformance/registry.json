@@ -831,6 +831,21 @@
       "required": true
     },
     {
+      "id": "world-terrain-inline-hash",
+      "title": "terrain merge and seam jobs settle inline on a workerless host",
+      "category": "world",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/terrain-inline-jobs.js",
+      "browserRecipe": "webgpu",
+      "tolerance": {
+        "pixelMismatchRatio": 0.04,
+        "perceptualDeltaE": 6.0
+      },
+      "desktopGate": true,
+      "required": true,
+      "reason": "The block merge and the seam bridge strip move off the main thread where a worker exists; a host with no worker runs the same functions inline. The scene hides Worker for the settle, hashes every settled block and bridge by raw position/normal/index bytes, and requires the fingerprint to equal the node inline path's pinned constant. A host that dropped, reordered or approximated the inline result fails on the hash before the frame is compared, and the frame is compared to the browser reference within the row's tolerance."
+    },
+    {
       "id": "100-world-field-hash",
       "title": "procedural world field hash parity",
       "category": "world",
