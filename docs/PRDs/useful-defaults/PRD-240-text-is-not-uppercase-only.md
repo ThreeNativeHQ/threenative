@@ -6,6 +6,7 @@ prd_contract: v1
 
 **Status: PROPOSED, 2026-08-28. Nothing below has been executed.**
 
+**Priority:** P2 — Open boxes build a deterministic font atlas and metrics table, failing on missing glyphs.
 Source of the borrowed architecture: [`pmndrs/glyph`](https://github.com/pmndrs/glyph), MIT, cloned
 at depth 1 on 2026-08-28. **The package is refused as a runtime dependency, on evidence read from
 that clone.** What is mined is its build-time/runtime split, which is the whole insight.

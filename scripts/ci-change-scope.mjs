@@ -127,6 +127,7 @@ const FULL_JOBS = [
   "budgets",
   "performance-contracts",
   "native-platforms",
+  "integration",
 ];
 // Every check the plan can require, in the order the plan declares it. A reused run has to have
 // concluded every leg of the set its own profile requires; the reporting jobs are not evidence.
@@ -153,13 +154,14 @@ export function selectionPlan(
   native = false,
   reusedRunId = 0,
   target = "",
+  qualification = selection === "full" && target !== "develop",
 ) {
   const full = selection === "full";
   const reused = selection === "reused";
   const ciLane = selection === "ci";
   const warm = selection === "warm";
   const template = selection === "template";
-  const representative = full && representativeTemplates(files, target);
+  const representative = full && !qualification && representativeTemplates(files, target);
   const checks = {
     docs: !reused,
     ci: files.some((file) => CI_CONFIG_PATHS.some((pattern) => pattern.test(file))),
@@ -214,6 +216,12 @@ export function selectionPlan(
       : exemption(
           "Exempt: a Markdown-only change runs no gate; docs are re-validated on the develop nightly and at promotion",
         );
+  jobs.integration = {
+    required: !exemptLane,
+    reason: !exemptLane
+      ? "Exact candidate integration inventory and current-attempt receipts"
+      : exemptReason("integration gates"),
+  };
   jobs.lint = {
     required: !exemptLane || ciLane,
     reason: exemptLane
@@ -245,9 +253,12 @@ export function selectionPlan(
   // owes all of them can never disagree about which one this is. A reused plan keeps the `native`
   // flag of the full plan it stands in for, because what it owes did not change when it stopped
   // running the work itself.
-  const nativeTier = validationProfile({ baseRef: target, nativeRequired: native }).native;
+  const nativeTier = qualification
+    ? "full"
+    : validationProfile({ baseRef: target, nativeRequired: native }).native;
   return {
-    version: 1,
+    version: 2,
+    qualification,
     files,
     reason,
     scope: selection,
@@ -283,7 +294,10 @@ export function validatePlan(value) {
   if (
     !value ||
     typeof value !== "object" ||
-    value.version !== 1 ||
+    value.version !== 2 ||
+    typeof value.qualification !== "boolean" ||
+    (value.qualification &&
+      (value.selection !== "full" || !value.native || value.reusedRunId !== 0)) ||
     !SELECTIONS.has(value.selection) ||
     typeof value.reason !== "string" ||
     !value.reason ||
@@ -314,6 +328,7 @@ export function validatePlan(value) {
     value.native,
     value.reusedRunId,
     value.target,
+    value.qualification,
   );
   for (const field of [
     "scope",
@@ -329,6 +344,33 @@ export function validatePlan(value) {
     }
   }
   return expected;
+}
+
+export function validateEventPlan(value, { eventName, baseRef, forceFull = false } = {}) {
+  const plan = validatePlan(value);
+  // Event minima are independent of the plan's self-description. A valid review plan does not
+  // qualify a queue candidate, promotion, audit or unknown event, even with green aggregate jobs.
+  const event = eventName;
+  const target = (baseRef ?? "").replace(/^refs\/heads\//u, "");
+  const review = event === "pull_request" && target === "develop";
+  const warm = event === "push" && target === "develop" && plan.selection === "warm";
+  if ((!review && !warm) || forceFull) {
+    if (
+      !plan.qualification ||
+      plan.selection !== "full" ||
+      !plan.native ||
+      plan.nativeTier !== "full" ||
+      plan.reusedRunId !== 0 ||
+      Object.values(plan.jobs).some((job) => !job.required) ||
+      JSON.stringify(plan.templateMatrix.template) !== JSON.stringify(TEMPLATE_NAMES) ||
+      JSON.stringify(plan.goldenMatrix.template) !== JSON.stringify(["starter", "platformer"]) ||
+      JSON.stringify(plan.unitMatrix.shard) !== JSON.stringify(["1/4", "2/4", "3/4", "4/4"])
+    )
+      throw new Error(
+        "CI_REQUIRED_QUALIFICATION_MINIMUM: event requires fresh exhaustive candidate verification",
+      );
+  }
+  return plan;
 }
 
 function requiredValue(argv, index, argument) {
@@ -527,6 +569,7 @@ export function sourceVerdict({ runId, current }) {
 // Even two matching expanded graphs can omit the same leg. Until an authoritative expansion and
 // per-leg routing exists, these boards must execute normally rather than reuse an unproven pass.
 const UNPROVEN_REUSE_BOARDS = new Set([
+  "integration",
   "test-unit",
   "golden-path-template",
   "template-nonvisual",
@@ -614,7 +657,8 @@ export function validationProfile({ eventName, baseRef = "", nativeRequired = fa
       : baseRef === "develop" || eventName === "merge_group"
         ? "develop"
         : "other";
-  return { target, native: nativeRequired ? (target === "develop" ? "reduced" : "full") : "none" };
+  const review = target === "develop" && (eventName === "pull_request" || eventName === undefined);
+  return { target, native: nativeRequired ? (review ? "reduced" : "full") : "none" };
 }
 
 /** Equal or stronger, axis by axis. Weaker on either axis is a miss. */
@@ -792,9 +836,18 @@ export function classify(input) {
   // A full selection reached without a resolved pull-request diff cannot prove the change avoids
   // native code, so it is native-blocking by default. Only the clean-diff path below may clear it.
   const target = (options.target ?? "").replace(/^refs\/heads\//u, "");
-  const full = (reason, files = [], native = true) =>
+  const full = (reason, files = [], native = true, qualification = true) =>
     reuseOrKeep(
-      selectionPlan("full", reason, files, candidateSha, native, 0, target),
+      selectionPlan(
+        "full",
+        reason,
+        files,
+        candidateSha,
+        qualification || native,
+        0,
+        target,
+        qualification,
+      ),
       options,
       candidateSha,
     );
@@ -819,12 +872,9 @@ export function classify(input) {
   // before anything lands — the narrowings below are for reviewing a change, never for qualifying a
   // tree, which is why the queue, a push, the nightly, an explicit audit and a promotion into main
   // are all excluded here rather than narrowed further downstream.
-  if (
-    options.eventName !== undefined &&
-    !["pull_request", "merge_group"].includes(options.eventName)
-  )
+  if (!["pull_request", "merge_group"].includes(options.eventName))
     return full(`event ${JSON.stringify(options.eventName)} requires complete verification`);
-  if (options.target !== undefined && options.target !== "develop")
+  if (options.target !== "develop")
     return full(
       `target ${JSON.stringify(options.target)} requires complete verification (promotion/rollback policy)`,
     );
@@ -848,6 +898,8 @@ export function classify(input) {
   }
   const parsed = changedPaths(options);
   if ("error" in parsed) return full(parsed.error);
+  if (options.eventName === "merge_group")
+    return full("merge groups qualify the complete exact candidate", parsed.paths);
   // `native-platforms.yml` is the one workflow the CI-configuration rule would otherwise narrow, and
   // it is the matrix's own definition: exempting it would waive the very lane that has to prove the
   // change. Any native path therefore keeps `full`, not merely `native: true`. Computed over the
@@ -855,7 +907,13 @@ export function classify(input) {
   const native = parsed.paths.find(
     (file) => pathFamily(file, options.target === "develop") !== "prose" && isNativePath(file),
   );
-  if (native !== undefined) return full(`${JSON.stringify(native)} is a native path`, parsed.paths);
+  if (native !== undefined)
+    return full(
+      `${JSON.stringify(native)} is a native path`,
+      parsed.paths,
+      true,
+      !representativeTemplates(parsed.paths, target),
+    );
   const narrowed = diffSelection(parsed.paths, options.target === "develop");
   if (narrowed.blocked !== undefined)
     return full(
@@ -868,6 +926,7 @@ export function classify(input) {
           ["prose", "instructions", "ci", "template"].includes(pathFamily(file, true)) ||
           /^scripts\/(?:__tests__\/)?verify-template-playtests(?:\.spec)?\.ts$/u.test(file),
       ),
+      !representativeTemplates(parsed.paths, target),
     );
 
   const reason = `all ${String(parsed.paths.length)} changed path(s) match explicit ${[...narrowed.families].sort().join(" + ")} dependency rules`;
@@ -919,6 +978,7 @@ function reuseOrKeep(plan, options, candidateSha) {
       plan.native,
       0,
       plan.target,
+      plan.qualification,
     );
   if (!("runId" in found)) return unavailable(found.error);
   const current = currentRun({
@@ -931,6 +991,7 @@ function reuseOrKeep(plan, options, candidateSha) {
       .map(([name]) => name),
   });
   if ("error" in current) return unavailable(current.error);
+  if (plan.qualification) return unavailable("qualification requires fresh candidate verification");
   const verdict = sourceVerdict({ runId: found.runId, current });
   if (!("succeeded" in verdict)) return unavailable(verdict.error);
   return selectionPlan(

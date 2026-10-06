@@ -86,6 +86,14 @@ vocabulary behind them is in [docs/reference.md](docs/reference.md).
   `{ available: false, reason }`; a stride the producer never reported is
   `TN_PLAYTEST_STRIDE_UNOBSERVED`, not zero slide; a walk past its cap reports `truncated: true`
   so a floor is never read as a total.
+- **Desktop input goes through the host's own UI routing** (`playtestInput` in `runtime.cpp`): a
+  `press` held set carries modifiers (`["Shift","Tab"]`), `pointers` are touch (no hover) and
+  `pointerPosition` is the mouse, `wheel` turns at its optional normalized `x`/`y`, and a step's
+  `media` (`colorScheme`, `reducedMotion`) restyles a native-css UI. Android takes `wheel` and
+  `media` over that same mailbox route, because its host is the same C++; iOS refuses both, because
+  its overlay is a web-view mirror with no native-css scroller or environment. With
+  `TN_CSS_UI_FIXED_STEP_MS=<ms>` in the host's environment the native-css animation clock moves
+  `<ms>` per advanced tick, never with the wall clock (`TN_CSS_UI_CLOCK` is logged).
 - **An assertion that only means something on one target is a fork of the harness.** The
   negative-control scenarios in `examples/native-smoke/playtests/` (`-misspelled`,
   `-wrong-value`) prove the device path still fails closed — run them when you touch transport or

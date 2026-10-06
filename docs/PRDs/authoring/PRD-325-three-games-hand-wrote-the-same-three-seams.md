@@ -7,6 +7,7 @@ prd_contract: v1
 **Status: PROPOSED, 2026-09-01.** Mined read-only from three sandbox games at engine baseline
 `b28cf543`:
 
+**Priority:** P1 — Engine-ordered seam, buildStaticColliders and zero-collider errors unlanded; three games still hand-roll them.
 | Game | Path | src LOC |
 | --- | --- | --- |
 | lumen-hall | `sandbox/lumen-hall/` | 7,452 |

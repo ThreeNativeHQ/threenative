@@ -257,6 +257,26 @@ public final class Build {
   public static final class VERSION_CODES { public static final int R = 30; }
 }
 `,
+    // The packaged `assets/` tree, as AssetManager lists it: a directory lists its children, a
+    // file lists nothing and opens.
+    'android/content/res/AssetManager.java': `package android.content.res;
+
+public final class AssetManager {
+  public static final java.util.Map<String, String> files = new java.util.HashMap<>();
+  public String[] list(String path) {
+    java.util.TreeSet<String> children = new java.util.TreeSet<>();
+    for (String file : files.keySet()) {
+      if (file.startsWith(path + "/")) children.add(file.substring(path.length() + 1).split("/")[0]);
+    }
+    return children.toArray(new String[0]);
+  }
+  public java.io.InputStream open(String path) throws java.io.IOException {
+    String body = files.get(path);
+    if (body == null) throw new java.io.FileNotFoundException(path);
+    return new java.io.ByteArrayInputStream(body.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+  }
+}
+`,
     'android/util/Log.java': `package android.util;
 
 public final class Log {
@@ -404,6 +424,8 @@ public class SDLActivity {
   }
   public int externalFilesDirCallCount() { return externalFilesDirCalls; }
   public File getFilesDir() { return new File(System.getProperty("java.io.tmpdir")); }
+  private final android.content.res.AssetManager assets = new android.content.res.AssetManager();
+  public android.content.res.AssetManager getAssets() { return assets; }
   public int requestedOrientation = Integer.MIN_VALUE;
   public void setRequestedOrientation(int orientation) { requestedOrientation = orientation; }
   public void setOrientationBis(int width, int height, boolean resizable, String hint) {
@@ -524,6 +546,25 @@ public final class MetadataProbe {
     typo.configureMetadata(metadata);
     typo.create();
     require(TnUiOverlay.attachCount == 1, "an unrecognised ui.renderer must not attach an overlay");
+    require("".equals(typo.arguments()[7]), "only native-css hands the runtime a CSS UI root");
+
+    // native-css: no WebView, and the packaged ui/ tree extracted to a real directory whose path
+    // reaches the runtime, replacing whatever a previous launch left there.
+    android.content.res.AssetManager.files.put("ui/index-abc.css", ".hud{color:red}");
+    android.content.res.AssetManager.files.put("ui/fonts/Noto.ttf", "font");
+    java.io.File stale = new java.io.File(System.getProperty("java.io.tmpdir"), "tn-ui-css/old.css");
+    stale.getParentFile().mkdirs();
+    try { new java.io.FileOutputStream(stale).close(); } catch (java.io.IOException e) { throw new AssertionError(e); }
+    metadata.putString("TN_UI_RENDERER", "native-css");
+    ProbeActivity css = new ProbeActivity();
+    css.configureMetadata(metadata);
+    css.create();
+    require(TnUiOverlay.attachCount == 1, "ui.renderer native-css must not attach a WebView overlay");
+    java.io.File root = new java.io.File(css.arguments()[7]);
+    require(root.getName().equals("tn-ui-css"), "the CSS UI root must be forwarded to native");
+    require(new java.io.File(root, "index-abc.css").length() == 15, "the stylesheet was not extracted");
+    require(new java.io.File(root, "fonts/Noto.ttf").isFile(), "a nested font was not extracted");
+    require(!stale.exists(), "a previous launch's stylesheet must not survive extraction");
   }
 }
 `,

@@ -6,7 +6,7 @@ import {
   Scene as ThreeScene,
   Vector2,
 } from "three";
-import { type IAssetLoader, type IAssetLoaderOptions, createAssetLoader } from "./assets.js";
+import { type IAssetLoaderOptions, createAssetLoader } from "./assets.js";
 import { CanvasLayer } from "./canvas-layer.js";
 import { updateClusteredMeshes } from "./clustered-mesh.js";
 import { ComputeDrivenRegistry, isComputeDriven } from "./compute-driven.js";
@@ -693,7 +693,6 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
   #cleanup: Array<() => void> = [];
   #computeDriven = new ComputeDrivenRegistry();
   #entities: Registry | undefined;
-  #random: IRandom | undefined;
   #picker: ScenePicker | undefined;
   #pointerEvents: PointerEvents3D | undefined;
   #scheduler: Scheduler | undefined;
@@ -1381,7 +1380,6 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     };
     this.#ctx = ctx;
     this.#entities = entities;
-    this.#random = random;
     this.#scheduler = scheduler;
     this.#afterPhysicsPhase = afterPhysicsPhase;
     const devToolsHost =
@@ -2229,7 +2227,6 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     this.#ctx = undefined;
     this.#hasDepthCoupledOutput = false;
     this.#loop = undefined;
-    this.#random = undefined;
     this.#pointerEvents?.dispose();
     this.#pointerEvents = undefined;
     this.#picker?.dispose();

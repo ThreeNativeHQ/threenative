@@ -380,6 +380,37 @@ test("missing or malformed native console is not reported as a clean observed ch
   }
 });
 
+test("pre-report verifier failures retain distinct bounded identities without leaking error text", () => {
+  for (const [message, diagnostic] of [
+    ["Xvfb did not report a display within 10000ms.", "XVFB_DISPLAY_TIMEOUT"],
+    ["Desktop playtest did not produce a report.", "PLAYTEST_REPORT_MISSING"],
+    ["/home/private-person/game.js token=very-secret-token", "UNCLASSIFIED_VERIFIER_ERROR"],
+    [
+      "Xvfb did not report a display within 10000ms. token=very-secret-token",
+      "UNCLASSIFIED_VERIFIER_ERROR",
+    ],
+  ]) {
+    const result = nativeFluidFailureDetails(undefined, undefined, 120000, new Error(message));
+    expect(result).toMatchObject({
+      startupTimeoutMs: 120000,
+      reportDiagnosticChannel: "unavailable",
+      hostDiagnosticChannel: "unavailable",
+      verifierDiagnostic: diagnostic,
+    });
+    expect(result.diagnostics).toBeUndefined();
+    expect(result.hostErrors).toBeUndefined();
+    expect(JSON.stringify(result)).not.toMatch(/private-person|very-secret-token|\/home\//u);
+  }
+  expect(nativeFluidFailureDetails(undefined, undefined, 120000)).not.toHaveProperty(
+    "verifierDiagnostic",
+  );
+  for (const error of [null, "private-person very-secret-token", { message: "private-person" }]) {
+    const result = nativeFluidFailureDetails(undefined, undefined, 120000, error);
+    expect(result.verifierDiagnostic).toBe("UNCLASSIFIED_VERIFIER_ERROR");
+    expect(JSON.stringify(result)).not.toMatch(/private-person|very-secret-token/u);
+  }
+});
+
 test("native failure publication is bounded and contains only known technical tokens", () => {
   const input = Array.from({ length: 100 }, (_, index) => ({
     type: "error",

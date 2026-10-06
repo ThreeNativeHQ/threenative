@@ -14,6 +14,7 @@ commit messages written before the rename still say "PRD-324" and mean this docu
 **Status: PARTIAL, 2026-09-04 (filed as PRD-324). Phases 0–2 DONE and shipped; Phases 3–7 OPEN.** Consumer census:
 [`docs/verification/PRD-324-second-consumer-census.md`](../../verification/PRD-324-second-consumer-census.md).
 
+**Priority:** P1 — AC1 states imported-rig deformation is broken and needs a red-green fix.
 **The defect that opened this PRD is fixed.** Phases 0–2 landed 2026-09-02 and stand: the pose
 defect was found and fixed in the engine loader (`reconcileMirroredClips`, clips z-mirrored against
 their own bind), with the instrument (`boneLengths`/`boneLengthDeviations`,

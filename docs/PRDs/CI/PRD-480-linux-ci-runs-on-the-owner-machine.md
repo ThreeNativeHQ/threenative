@@ -5,6 +5,7 @@ prd_contract: v1
 # PRD-480 — Linux CI runs on the owner's machine
 
 **Status:** PARTIAL — phases 1 and 3 verified (#404, #410); AC-1 green; AC-2 measured, needs the owner's call
+**Priority:** P1 — AC-2 open: prove queue waiting time meets budget; runs waited up to 239 minutes.
 **Complexity:** 5 (HIGH)
 **Owner:** CI tooling
 **Depends on:** None

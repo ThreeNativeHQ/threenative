@@ -11,6 +11,7 @@ observed red on the phone. No device number is revised by this file, and no mobi
 claimed by it; the open physical criteria are queued as Lane C device tails in the night batch of
 2026-08-24.
 
+**Priority:** P1 — Open boxes prove one shared device-condition gate; low battery and thermal must exit non-zero.
 **Outcome:** the device-condition gate that already works in the engine load test becomes the
 gate every device measurement passes through, and it covers thermal state and charging as well as
 battery. A measurement taken outside its declared conditions comes back non-zero naming the

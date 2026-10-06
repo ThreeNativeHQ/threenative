@@ -9,6 +9,7 @@ the decent-defaults batch. Depends on
 [PRD-278](../done/PRD-278-every-template-ships-the-render-chain-and-says-what-ran.md) for a chain that
 has pipelines to compile.
 
+**Priority:** P2 — Open ACs warm the post-chain output graph and count first-frame compile cost.
 **Goal: a scaffolded game's loading screen ends when the game is ready to run, not when the scene is
 ready and the post chain has not been compiled yet.** A five-stage TSL chain in seven templates adds
 pipelines that nothing currently warms, on the platform least able to absorb the stall.

@@ -924,19 +924,19 @@ async function validateBootSplash(
 }
 
 /** Which renderer draws `src/ui/`. @see IThreeNativeConfig.ui */
-const UI_RENDERERS: readonly ThreeNativeUiRenderer[] = ["native", "web"];
+const UI_RENDERERS: readonly ThreeNativeUiRenderer[] = ["native", "native-css", "web"];
 
 /**
- * The public surface is exactly two words. Which web view a `"web"` game lands on — and whether
+ * The public surface is exactly three words. Which web view a `"web"` game lands on — and whether
  * a platform composites a sibling layer or renders to a texture — is the host's business, so a
- * typo here fails naming the two valid values rather than defaulting to one of them.
+ * typo here fails naming the valid values rather than defaulting to one of them.
  */
 function validateUi(raw: unknown): IResolvedThreeNativeConfig["ui"] {
   const ui = assertRecord(raw, "ui");
   assertKeys(ui, "ui", ["renderer"]);
   const renderer = ui.renderer === undefined ? "web" : ui.renderer;
   if (typeof renderer !== "string" || !UI_RENDERERS.includes(renderer as ThreeNativeUiRenderer)) {
-    fail("TN_CONFIG_UI_RENDERER_INVALID", "ui.renderer must be web or native.");
+    fail("TN_CONFIG_UI_RENDERER_INVALID", "ui.renderer must be web, native or native-css.");
   }
   return { renderer: renderer as ThreeNativeUiRenderer };
 }

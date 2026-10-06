@@ -351,6 +351,7 @@ describe("scenario schema boundaries", () => {
     expect(validateStep({ kind: "wait", label: "message", overlayMessage: { overlayId: "hud", payload: { ok: true }, type: "toast" }, waitTicks: 1 }, "steps.json", 0)).toMatchObject({ kind: "wait", overlayMessage: { type: "toast" } });
     expect(validateStep({ kind: "click", at: { entity: "button" }, label: "click", release: false, screenshot: "clicked" }, "steps.json", 1)).toMatchObject({ kind: "click", at: { entity: "button" } });
     expect(validateStep({ kind: "input", holdTicks: 2, label: "input", pointerPosition: { buttons: 1, x: 0.5, y: 0.5 }, pointers: [{ buttons: 1, id: 1, x: 0.5, y: 0.5 }], press: ["KeyW", "ShiftLeft"], release: true, wheel: { deltaX: 1, deltaY: -1 } }, "steps.json", 2)).toMatchObject({ pointers: [{ id: 1 }], wheel: { deltaY: -1 } });
+    expect(validateStep({ media: { colorScheme: "dark", reducedMotion: "reduce" }, wheel: { deltaY: 50, x: 0.25, y: 1 }, waitTicks: 1 }, "steps.json", 5)).toMatchObject({ media: { colorScheme: "dark", reducedMotion: "reduce" }, wheel: { deltaY: 50, x: 0.25, y: 1 } });
     expect(validateStep({ kind: "aimAt", label: "aim", pitch: 0.2, target: { x: 1, z: 2 }, waitTicks: 1, release: true }, "steps.json", 3)).toMatchObject({ target: { x: 1, z: 2 } });
     expect(validateStep({ kind: "wait", label: "resize", release: true, window: { height: 480, operation: "resize", width: 640 } }, "steps.json", 4)).toMatchObject({ window: { operation: "resize" } });
     expect(validateAimTarget({ entity: "player" }, "steps.json", 0)).toEqual({ entity: "player" });
@@ -463,6 +464,14 @@ describe("scenario schema boundaries", () => {
       { pointers: [{ id: 1, x: 0, y: 0 }, { id: 1, x: 1, y: 1 }], waitTicks: 1 },
       { pointers: {}, waitTicks: 1 },
       { wheel: { deltaY: Number.NaN }, waitTicks: 1 },
+      { wheel: { deltaY: 1, x: 0.5 }, waitTicks: 1 },
+      { wheel: { deltaY: 1, x: 1.5, y: 0.5 }, waitTicks: 1 },
+      { wheel: { deltaY: 1, x: 0.5, y: 0.5, z: 0 }, waitTicks: 1 },
+      { media: {}, waitTicks: 1 },
+      { media: { colorScheme: "sepia" }, waitTicks: 1 },
+      { media: { reducedMotion: true }, waitTicks: 1 },
+      { media: { colorScheme: "dark", contrast: "more" }, waitTicks: 1 },
+      { kind: "click", at: { x: 0, y: 0 }, media: { colorScheme: "dark" } },
       { screenshot: "not safe!", waitTicks: 1 },
       { label: " ", waitTicks: 1 },
       { window: { height: 0, operation: "resize", width: 640 }, waitTicks: 1 },

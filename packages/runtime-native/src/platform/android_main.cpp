@@ -9,6 +9,7 @@
 
 #include "mystral/runtime.h"
 #include "mystral/cold_start.h"
+#include "mystral/platform/ui_overlay.h"
 #include "../webgpu/pipeline_cache.h"
 #include <SDL3/SDL.h>
 #include <iostream>
@@ -270,7 +271,32 @@ extern "C" __attribute__((visibility("default"))) int SDL_main(int argc, char* a
             "threenative-playtest-mailbox.js"
         );
         LOGI("Device playtest mailbox configured");
+        // An Android app inherits no environment, and `am start` passes none, so the two test-only
+        // knobs the native-css UI reads with getenv arrive as intent extras instead: its animation
+        // clock (`TN_CSS_UI_FIXED_STEP_MS`, read by the attach below before anything is laid out)
+        // and the focus/scroll state line (`TN_CSS_UI_STATE_TRACE`). Inside this block because they
+        // are playtest configuration: a launch without a mailbox configures neither.
+        if (argc > 9 && argv[9] && argv[9][0] != '\0') {
+            ::setenv("TN_CSS_UI_FIXED_STEP_MS", argv[9], 1);
+            LOGI("Fixed UI clock: %s ms per tick", argv[9]);
+        }
+        if (argc > 10 && argv[10] && argv[10][0] != '\0') {
+            ::setenv("TN_CSS_UI_STATE_TRACE", argv[10], 1);
+            LOGI("UI state trace: on");
+        }
     }
+    // `ui.renderer: "native-css"`: the activity extracted the packaged `ui/` stylesheets, fonts and
+    // images to a real directory (APK assets are not one) and passes it here. Attached on this
+    // thread because the document is thread-local and the game loop below is what pumps, posts to
+    // and composites it. Fail closed, as on desktop: a game that asked for a HUD and has none would
+    // look like a HUD with nothing to show.
+    if (argc > 8 && argv[8] && argv[8][0] != '\0') {
+        if (!mystral::platform::attachDesktopCssUi(argv[8])) {
+            LOGE("TN_UI_LOAD_FAILED: the requested native-css UI could not attach from %s", argv[8]);
+            return 1;
+        }
+    }
+
     // Execute the script
     LOGI("About to call evalScript...");
     // The runtime evaluates its own bootstrap scripts first, so the engine's compile markers

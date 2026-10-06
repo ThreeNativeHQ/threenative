@@ -10,6 +10,7 @@ prd_contract: v1
 [TheLongSilence](https://github.com/achimala/TheLongSilence) `src/world/Fleet.js:57-140`, the
 `BEACON_VERT` / `BEACON_FRAG` pair and the `BEACON_HDR` note.
 
+**Priority:** P2 — Proposed pixel-floor point lights with a 10 m-to-10 km playtest and two scaler rungs.
 **Goal: a distant object still reads as a working machine, and an emissive authored by a game
 arrives at the tonemapper with the value it needs.** Two small mechanisms, one of which is a trap
 this repository has the ingredients to fall into.

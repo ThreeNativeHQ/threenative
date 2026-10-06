@@ -7,6 +7,7 @@ prd_contract: v1
 **Status:** PROPOSED, 2026-08-15. Planning only; no latency, autonomous-repair, or performance
 result is claimed by this document.
 
+**Priority:** P2 — Planning-only: agentEvidenceV1 schema and closed-loop repair benchmark unbuilt.
 **Outcome:** after an edit, one bounded machine-readable report tells an agent what project ran,
 what the runtime can observe, what failed, what changed in the game, whether visual/gameplay gates
 passed, how performance moved, whether hot reload preserved state, and exactly how to rerun the

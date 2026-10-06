@@ -40,6 +40,7 @@
         "./package.json",
         "./playtest",
         "./react",
+        "./react-css",
         "./ui-layer",
         "./world"
       ],
@@ -48,6 +49,7 @@
         "@threenative/core/hot#assertPortableState": "export function assertPortableState(state: unknown): void { … }",
         "@threenative/core/net#connect": "export function connect(url: string, options: INetworkOptions): Promise<INetworkConnection> { … }",
         "@threenative/core/playtest#playtest": "export function playtest< TState extends Record<string, unknown> = Record<string, unknown>, TPhysics = undefined, >(options: IPlaytestOptions = { … }",
+        "@threenative/core/react-css#createCssUiRoot": "export function createCssUiRoot(options: ICssUiRootOptions = { … }",
         "@threenative/core/react#createReactOverlay": "export function createReactOverlay(options: IReactOverlayOptions): IReactOverlay { … }",
         "@threenative/core/react#measureText": "export function measureText(text: string, fontSize: number, letterSpacing = 0): number { … }",
         "@threenative/core/react#supportedGlyphs": "export function supportedGlyphs(): string { … }",
@@ -256,6 +258,7 @@
         "@threenative/playtest/capture#assertCaptureNotBlank": "export function assertCaptureNotBlank(png: Buffer, label: string): ICaptureFrameStats { … }",
         "@threenative/playtest/capture#assertFrameShowsSomething": "assertFrameShowsSomething = assertCaptureNotBlank",
         "@threenative/playtest/capture#CaptureGuardError": "export class CaptureGuardError extends Error { … }",
+        "@threenative/playtest/capture#collectRegionalTone": "export function collectRegionalTone( png: Buffer, assertions: readonly IPlaytestToneAssertion[], label: string, atStep?: string, ): IPlaytestRegionalToneObservation[] { … }",
         "@threenative/playtest/capture#inspectFrame": "export function inspectFrame(png: Buffer): ICaptureFrameStats { … }",
         "@threenative/playtest/protocol#assertJsonSafe": "export function assertJsonSafe(value: unknown, path = \"$\"): asserts value is JsonValue { … }",
         "@threenative/playtest/protocol#jsonByteLength": "export function jsonByteLength(value: JsonValue): number { … }",

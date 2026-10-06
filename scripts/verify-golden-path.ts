@@ -1170,15 +1170,24 @@ export async function verifyPackedMutationControl(
   }
   const root = await mkdtemp(path.join(os.tmpdir(), "threenative-golden-path-mutated-"));
   try {
-    const mutatedPackage = path.join(root, "create-threenative");
+    const mutatedPackage = path.join(root, "packages", "create-threenative");
+    const generatedPatches = path.join(
+      REPO_ROOT,
+      "packages/create-threenative/template-assets/patches",
+    );
     await cp(path.join(REPO_ROOT, "packages/create-threenative"), mutatedPackage, {
-      filter: (source) => path.basename(source) !== "node_modules",
+      filter: (source) => path.basename(source) !== "node_modules" && source !== generatedPatches,
       recursive: true,
     });
-    // create-threenative's prepack copies core's Three.js patch from its sibling directory.
-    await cp(path.join(REPO_ROOT, "packages/core/patches"), path.join(root, "core", "patches"), {
-      recursive: true,
-    });
+    // Reproduce prepack's repository-relative inputs, including Vite and Tailwind's patches.
+    await cp(
+      path.join(REPO_ROOT, "packages/core/patches"),
+      path.join(root, "packages/core/patches"),
+      {
+        recursive: true,
+      },
+    );
+    await cp(path.join(REPO_ROOT, "patches"), path.join(root, "patches"), { recursive: true });
     await materializeTemporaryPackageVersions(mutatedPackage);
     const templateManifestPath = path.join(mutatedPackage, "templates", template, PACKAGE_FILE);
     const templateManifest = JSON.parse(await readFile(templateManifestPath, "utf8")) as Record<

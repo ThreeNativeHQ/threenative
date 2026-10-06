@@ -7,6 +7,7 @@ prd_contract: v1
 **Status:** PARTIAL, filed 2026-08-31 against `2e014460`, phase 1 instrument built 2026-08-31.
 Evidence: [`projection-exact-lane-2026-08-31`](../../verification/projection-exact-lane-2026-08-31.md).
 
+**Priority:** P2 — Planned culling projection with 30 open gates and reason codes.
 **Phase 1's instrument landed; Phase 1's measurement did not.** `TN_PROJECTION` is now printed on
 every frame-budget window with the exact lane broken down by reason, `drawsPlanned` beside the draw
 count the renderer actually counted, and the playtest `perf` command ranks the reasons. What has

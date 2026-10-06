@@ -7,7 +7,7 @@ import {
 } from "./proof.js";
 
 type ColdBootReport = Parameters<typeof assertExposureRuntime>[0] & {
-  observations?: { tone?: readonly { code: string; atStep?: string; p99: number }[] };
+  observations?: { tone?: readonly { code: string; atStep?: string; p99?: number }[] };
 };
 const timingFields = [
   "updates",

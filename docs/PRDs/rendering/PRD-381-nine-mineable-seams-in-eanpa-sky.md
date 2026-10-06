@@ -7,6 +7,7 @@ prd_contract: v1
 **Status: PROPOSED, 2026-09-11.** Filed for later. Nothing here is built, measured or scheduled;
 no box below may be ticked from this filing.
 
+**Priority:** P2 — Open ACs are seam-mining checks that file child PRDs per observed row.
 **Complexity:** +1 for 1–5 implementation files (rows 1 and 2 only; rows 3–7 carry their own
 scores in their own PRDs), +2 for a renderer adapter with cache-lifetime semantics = **3 → LOW
 mode.** Self-review at each checkpoint.

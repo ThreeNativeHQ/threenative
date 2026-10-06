@@ -9,6 +9,7 @@ prd_contract: v1
 [TheLongSilence](https://github.com/achimala/TheLongSilence) `src/gfx/greeble.js` — `occupancy()` at
 :1576, `bakeSurface()` at :1644, `place()` at :1739, `weld()` at :2019.
 
+**Priority:** P2 — Proposed baked occlusion: crease-versus-plate bake, calibration, continuous detail.
 **Goal: a procedurally-assembled object arrives with contact shadow in its creases and wear on its
 exposed edges, without a lightmap, a UV set, an authoring step, or a per-frame cost.** This is the
 difference between "a pile of boxes" and "a machine", and it is the cheapest AAA cue in the batch.

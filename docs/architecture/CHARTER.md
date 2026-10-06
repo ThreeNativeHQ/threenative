@@ -391,12 +391,23 @@ a UI that is part of the rendered frame, a target with no WebView, or zero extra
 owns the appearance difference that comes with it — the quad renderer implements twenty style keys
 and a bitmap font against the browser's whole CSS, SVG and font stack.
 
+**A native CSS renderer is available as an experimental opt-in, desktop only.** The same JSX and
+the same Tailwind or plain CSS run with no WebView: the game's own JS realm reconciles React into
+an element tree held by an in-process, third-party CSS engine (Stylo, Taffy and Parley through
+Blitz), and the result is painted into a CPU surface that the compositor draws over the frame. This
+is the one exception to "no second renderer": the engine owns a UI-only element tree and a UI-only
+surface. It never renders the 3D game, exposes no scene or style IR to game code, does not replace
+Three.js, and imposes no look — the stylesheet is the game's own, from the same Vite and Tailwind
+build the web renderer uses. It claims only what its fixtures prove; unsupported CSS is not
+diagnosed yet, so anything outside the fixtures is unverified.
+
 ```ts
-ui: { renderer: 'web' }      // default — the platform picks the surface
-ui: { renderer: 'native' }   // CanvasLayer quads, no WebView
+ui: { renderer: 'web' }        // default — the platform picks the surface
+ui: { renderer: 'native' }     // CanvasLayer quads, no WebView
+ui: { renderer: 'native-css' } // real CSS, in-process engine, no WebView (experimental)
 ```
 
-Neither renderer touches `THREE.Scene`, and `react-dom` stays out of the **portable entry** on
+No renderer touches `THREE.Scene`, and `react-dom` stays out of the **portable entry** on
 every target.
 
 **The 60fps problem.** React must never re-render on the game loop. The bridge is a plain external

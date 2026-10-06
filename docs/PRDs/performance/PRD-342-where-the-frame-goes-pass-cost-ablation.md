@@ -10,6 +10,7 @@ prd_contract: v1
 [TheLongSilence](https://github.com/achimala/TheLongSilence) `tools/passcost.mjs`,
 `tools/drawcost.mjs`.
 
+**Priority:** P2 — Proposed runner mode pinning the scaler and toggling one stage; a measurement tool.
 **Goal: "which stage is the frame going to?" is one command, not an afternoon.** Every quality tier
 in every template is currently a guess about relative cost that nobody has measured on the device
 that has to hold it.
