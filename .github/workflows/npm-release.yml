@@ -139,6 +139,7 @@ jobs:
       #   @threenative/metahuman
       #   @threenative/physics
       #   @threenative/playtest
+      #   @threenative/procedural-animals
       #   @threenative/raw-unreal
       #   @threenative/runtime-native
       #   @threenative/ueformat
