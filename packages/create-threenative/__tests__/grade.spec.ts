@@ -26,23 +26,25 @@ function writeTable(...flags: readonly string[]): string {
 }
 
 /**
- * `LUTCubeLoader.parse`, reduced to what it decides: the edge length, and four bytes per texel in
- * x, y, z order with the load's `Number(text) * 255` written into a `Uint8Array` — so each stored
- * value is *truncated*, not rounded. A fact this file's arithmetic depends on more than any other,
- * and the four-bytes-per-texel stride is load-bearing for every read below.
+ * `LUTCubeLoader.parse` in the shape `grade.ts` loads it — `setType(FloatType)` — reduced to what it
+ * decides: the edge length, and four floats per texel in x, y, z order holding the file's own
+ * numbers (`scale` is 1 on this path, so nothing is quantised on the way in). The four-bytes-per-
+ * texel stride is load-bearing for every read below, and so is the fact that a 3D texture is
+ * sampled, not indexed: the loader also defaults to `UnsignedByteType`, which *truncates*
+ * `value * 255` into a `Uint8Array` and is what this path exists to avoid.
  */
-function loadTable(source: string): { size: number; bytes: Uint8Array } {
+function loadTable(source: string): { size: number; bytes: Float32Array } {
   const declared = /LUT_3D_SIZE +(\d+)/u.exec(source)?.[1];
   const size = Number(declared);
   if (!Number.isInteger(size) || size < 2) throw new Error("no LUT_3D_SIZE");
-  const bytes = new Uint8Array(size ** 3 * 4);
+  const bytes = new Float32Array(size ** 3 * 4);
   let texels = 0;
   for (const [, r, g, b] of source.matchAll(/^([\d.e+-]+) +([\d.e+-]+) +([\d.e+-]+) *$/gmu)) {
     const at = texels * 4;
-    bytes[at] = Number(r) * 255;
-    bytes[at + 1] = Number(g) * 255;
-    bytes[at + 2] = Number(b) * 255;
-    bytes[at + 3] = 255;
+    bytes[at] = Number(r);
+    bytes[at + 1] = Number(g);
+    bytes[at + 2] = Number(b);
+    bytes[at + 3] = 1;
     texels += 1;
   }
   if (texels !== size ** 3) throw new Error(`parsed ${texels} texels, expected ${size ** 3}`);
@@ -51,13 +53,13 @@ function loadTable(source: string): { size: number; bytes: Uint8Array } {
 
 /**
  * What `lut3D` does to one channel: pull in by half a texel so the sample starts at the centre of
- * the edge texels, then filter the uploaded bytes.
+ * the edge texels, then filter the uploaded values.
  *
  * The grid is separable — every texel's red depends only on x, green only on y, blue only on z —
  * so the hardware's trilinear filter collapses to one linear interpolation along this channel's own
  * axis, and that is what is computed here.
  */
-function sampled(bytes: Uint8Array, size: number, value: number, channel: number): number {
+function sampled(bytes: Float32Array, size: number, value: number, channel: number): number {
   const stride = channel === 0 ? 1 : channel === 1 ? size : size ** 2;
   // Texel `i` of a Data3DTexture is sampled at normalised `(i + 0.5) / size`, so `value` 0 and 1
   // land on the first and last texel centre — which is what lut3D's half-texel pull-in arranges.
@@ -65,7 +67,7 @@ function sampled(bytes: Uint8Array, size: number, value: number, channel: number
   const low = Math.min(size - 2, Math.max(0, Math.floor(coord)));
   const frac = Math.min(1, Math.max(0, coord - low));
   const at = (index: number): number => bytes[index * stride * 4 + channel] ?? 0;
-  return (at(low) * (1 - frac) + at(low + 1) * frac) / 255;
+  return at(low) * (1 - frac) + at(low + 1) * frac;
 }
 
 /** The shipped table read back through the loader, so a change in the file cannot pass unnoticed. */
@@ -88,19 +90,28 @@ describe("starter grade table", () => {
   it("round-trips every value the frame can hold within one 8-bit step", () => {
     let worst = 0;
     let at = "";
+    let signed = 0;
+    let samples = 0;
     for (let channel = 0; channel < 3; channel++) {
       for (let code = 0; code <= 255; code++) {
         const value = code / 255;
-        const delta =
-          Math.abs(sampled(identity.bytes, identity.size, value, channel) - value) * 255;
-        if (delta > worst) {
-          worst = delta;
+        const delta = (sampled(identity.bytes, identity.size, value, channel) - value) * 255;
+        if (Math.abs(delta) > worst) {
+          worst = Math.abs(delta);
           at = `channel ${channel} at display value ${value.toFixed(4)}`;
         }
+        signed += delta;
+        samples += 1;
       }
     }
-    // The load truncates, so the table reads low by up to one step and never by two.
+    // A float table stores the file's own numbers, so the round trip is the box's one step rather
+    // than the truncation an 8-bit load made of it — and it is not biased low, which is what the
+    // measured frame half saw at a signed mean of −0.5737 codes.
     expect(worst, `worst ${at}`).toBeLessThanOrEqual(1);
+    expect(
+      Math.abs(signed / samples),
+      `signed mean ${(signed / samples).toFixed(4)} codes`,
+    ).toBeLessThanOrEqual(0.01);
   });
 
   it("keeps the 9³ grid inside 8 steps of the grade the generator wrote", () => {

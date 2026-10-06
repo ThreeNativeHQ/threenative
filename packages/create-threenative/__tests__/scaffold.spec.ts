@@ -183,6 +183,9 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // verbatim into every tree), so all thirteen values move again by those bytes. No template
   // source or scaffold implementation changed on top of the values above. Values are the merged
   // tree's measurement, not either lane's.
+  // Recomputed 2026-10-05 for PRD-492's float `.cube` load: the starter's
+  // `src/render/postprocessing.ts` now asks `LUTCubeLoader` for `FloatType`, so only the
+  // `starter` value moves. No other kit carries a grade, and no scaffold implementation changed.
   "action-rpg": "1c5c5ace0750a03966baa44d4c8b4496967cd844dee4df7c1811b51a306e4b68",
   minimal: "2a8127c43e2c6202fcb5aab54ff6d977ad161b474047950b264698c97cc77703",
   platformer: "5a0b03e694be11f8f8f094582d537d7530c13abe655ac8e73f4403ee7a1d5ba4",
@@ -194,7 +197,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   sailing: "0749be7c702636047708a412ee939ccb775faac97957a93964a1e9a6eb5f0b2d",
   shooter: "c1c3d0f2bc3143b4241e4c881a20cb33559b8711eb2dcf8c8f33de9b8802d383",
   snow: "f86062167908502ee2bc76571374e8f402a5e87bbf636eee174cd7ea87b976cc",
-  starter: "27e43388e753e838d52ec00b453e2adee43286d83319cbc953acef19cb5e616a",
+  starter: "6adaafe3e9a78699bace2c1d7e589c5d17888b912f955c883e98a88d1e30b370",
   "tower-defense": "ca6f27d9e5d853d3c48f2ca0257ac9d329ebb718c11f3d4f7fc3d1fc297210a3",
 };
 

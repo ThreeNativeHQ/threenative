@@ -10,7 +10,7 @@
 // run — a desktop that is dropping frames, a capture you want to compare — pass it:
 // `setupPost(renderer, scene, camera, { tier: "low" })`. Overriding does not silence the report:
 // `TN_QUALITY_TIER` names the tier that ran either way.
-import type { Camera, DirectionalLight, Scene } from "three";
+import { type Camera, type DirectionalLight, FloatType, type Scene } from "three";
 import { LUTCubeLoader } from "three/addons/loaders/LUTCubeLoader.js";
 import {
   type IAdaptiveQualityOptions,
@@ -97,7 +97,11 @@ export function setupPost(
   apply();
   // The table is a file, so it lands after the chain that would read it. Until then both stages
   // are refused with a reason rather than grading nothing, and the chain is rebuilt once it does.
-  const tableLoader = new LUTCubeLoader();
+  // `FloatType`, because the default 8-bit load *truncates* `value * 255` into a `Uint8Array`: an
+  // identity table then reads low by up to 0.875 of a step and the round trip through the grade is
+  // never the frame the game drew. A float table keeps the file's own numbers, so the arithmetic in
+  // `__tests__/grade.spec.ts` and the frame agree at one step.
+  const tableLoader = new LUTCubeLoader().setType(FloatType);
   void tableLoader.loadAsync(GRADE_TABLE_URL).then(
     (loaded) => {
       table?.texture.dispose();

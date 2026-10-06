@@ -235,6 +235,7 @@ this host, so it is not attributed. The prewarm (`e580e76cb`) stays off this PR,
 - [x] **C1 · [PRD-339](../done/PRD-339-the-frame-sets-its-own-exposure.md): auto exposure.** 🎨👁
   - **Done 2026-10-05:** #397 merged 2026-10-04; `docs/PRDs/done/PRD-339-the-frame-sets-its-own-exposure.md` on `origin/develop` reads 11 ticked / 0 open.
 - [ ] **C2 · [PRD-492](PRD-492-colour-grading-and-film-grain.md): colour grading and film grain.** 🎨👁
+  - **Re-measured 2026-10-05, still open on one box:** the starter's `.cube` now loads as `FloatType`, which makes the identity round trip exact in the arithmetic (max delta 0.000000 codes) and removes the frame's −0.583-code truncation bias (now +0.032 on stable pixels). The box's whole-frame `maxChannelDelta` ≤ 1 stays unreadable: a canvas readback is bit-identical inside a run, but two runs of the same build differ by 35 codes.
 - [ ] **C3 · [PRD-493](PRD-493-terrain-layers-past-sixteen-textures.md): terrain layers past sixteen textures.** ⏱🌍👁
 - [ ] **C4 · [PRD-491](PRD-491-water-and-atmosphere-run-native.md): water and atmosphere run native.** 👁
   - Compare native frames against web frames with the same judges.
