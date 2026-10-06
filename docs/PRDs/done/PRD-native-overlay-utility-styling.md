@@ -507,3 +507,37 @@ All 32 affected packaging/test-contract tests pass, including the cold pack/scaf
 on CPUs 11 and 23 with one test worker. The four reviewed engine production repairs remain
 byte-for-byte unchanged. No additional native host, browser, device or performance board was
 run for this CI follow-up; the normal candidate and merge-queue checks determine eligibility.
+
+## Native CI diagnostic follow-up — 2026-10-06
+
+Published candidate `54ab2fb2` ran CI `37389995427`, attempt 1, against develop
+`d3c009e4` through merge candidate `1d02c792`. The run ended with 63 successful jobs,
+4 failed jobs and 1 skipped job. Native fluid exited 1 before producing a report;
+its failure artifact has unavailable report and host diagnostic channels. Native
+locomotion exited 2 with `TN_PLAYTEST_BRIDGE_MISSING`, zero scenario frames and zero
+response observations. Those failures blocked the integration join and `ci-required`.
+The platform native legs, both golden paths and all four unit shards passed. A
+software-device-loss diagnostic in the passing platformer golden job is not render proof.
+
+The preceding corresponding fluid and locomotion jobs passed using the same runtime
+binary (SHA-256 `2006359fe9fd8040046d52aec79ff22b16c631afc3404f3de2161ff599d5ee95`).
+The fluid gate bundle and eight tracked fluid proof inputs also match. This comparison
+does not identify the current startup cause or qualify the failed candidate. The
+roughly 11-second fluid failure after bundling is consistent with the existing
+10-second display initializer timeout, but the scrubbed error also admits a missing
+report and does not establish which happened.
+
+The fluid verifier now preserves fixed diagnostic identities for a display timeout,
+a missing playtest report and an unclassified verifier exception. Existing private-text
+scrubbing, unavailable-channel reporting, assertion verdicts and startup deadlines are
+unchanged. The missing diagnostic reproduced as 1 FAIL before the correction; all
+23 native-fluid/preflight and existing fluid-proof CPU tests pass on CPUs 11 and 23
+with one worker. No new native startup, device, pixel or performance result is claimed.
+The root scripts/test typecheck (`tsc` 7.0.2) exits 1 with missing example dependency
+types and downstream errors. A temporary copy of the immutable `54ab2fb2` scripts,
+using the same compiler and unchanged checkout dependencies, also exits 1 with the
+exact same diagnostics (log SHA-256 `549aa760c5023a484f3d74d595b70b651578aa6c0953c794af7f3710c46bfddf`).
+This comparison establishes no additional type errors from this diagnostic correction;
+it is not an overall typecheck pass.
+The proposed bridge budget increase remains unapplied. A fresh required CI result
+and normal merge-queue checks remain necessary before this candidate can merge.

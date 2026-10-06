@@ -262,7 +262,18 @@ export function nativeFluidFailureDetails(
   report: { pass: boolean; diagnostics: readonly { code: string }[] } | undefined,
   nativeConsole: unknown,
   startupTimeoutMs: number,
+  verifierError?: unknown,
 ) {
+  const verifierDiagnostic =
+    verifierError === undefined
+      ? undefined
+      : verifierError instanceof Error &&
+          /^Xvfb did not report a display within \d+ms\.$/u.test(verifierError.message)
+        ? "XVFB_DISPLAY_TIMEOUT"
+        : verifierError instanceof Error &&
+            verifierError.message === "Desktop playtest did not produce a report."
+          ? "PLAYTEST_REPORT_MISSING"
+          : "UNCLASSIFIED_VERIFIER_ERROR";
   const observed =
     Array.isArray(nativeConsole) &&
     nativeConsole.length > 0 &&
@@ -300,6 +311,7 @@ export function nativeFluidFailureDetails(
     ),
     hostDiagnosticChannel: observed ? "observed" : "unavailable",
     ...(hostErrors === undefined ? {} : { hostErrors }),
+    ...(verifierDiagnostic === undefined ? {} : { verifierDiagnostic }),
   };
 }
 
@@ -462,7 +474,7 @@ async function main(): Promise<void> {
     );
   } catch (error) {
     const nativeConsole = await captureNativeConsole?.().catch(() => undefined);
-    const failure = nativeFluidFailureDetails(lastReport, nativeConsole, startupTimeoutMs);
+    const failure = nativeFluidFailureDetails(lastReport, nativeConsole, startupTimeoutMs, error);
     await writeFile(
       path.join(output, "failure.json"),
       `${JSON.stringify(
