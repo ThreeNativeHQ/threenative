@@ -1,10 +1,11 @@
 import type { ICtx } from "@threenative/core";
-import { CharacterBody3D, CollisionShape3D, type IPhysicsContext } from "@threenative/physics";
+import { CharacterBody3D, type IPhysicsContext } from "@threenative/physics";
 import { type IAnimalBake, createAnimalActor } from "@threenative/procedural-animals";
 import { Group, Vector3 } from "three";
 import { releaseAll } from "./cleanup.js";
 import { animalMaterial } from "./render/animal-material.js";
 import { wolfMotion } from "./render/wolf-motion.js";
+import { wolfCollision } from "./wolf-collision.js";
 
 type Animal = ReturnType<typeof createAnimalActor>;
 interface IWolf {
@@ -46,6 +47,7 @@ export function createLifecycleGeneration(
 ) {
   if (!Number.isInteger(cycle) || cycle < 1 || cycle > 50)
     throw new Error("TN_ANIMAL_LIFECYCLE_GENERATION");
+  const collision = wolfCollision(bake);
   const wolves: IWolf[] = [];
   const resources: object[] = [];
   const cleanup: (() => void)[] = [];
@@ -87,13 +89,17 @@ export function createLifecycleGeneration(
     for (let index = 0; index < 32; index++) {
       const root = new Group();
       root.name = `wolf-body-${cycle}-${index}`;
-      root.position.set(((index % 8) - 3.5) * 1.45, 1.2, Math.floor(index / 8) * 2 - 3);
+      root.position.set(
+        ((index % 8) - 3.5) * 1.45,
+        collision.startHeight,
+        Math.floor(index / 8) * 2 - 3,
+      );
       ctx.add(root);
       cleanup.push(() => root.removeFromParent());
       const body = new CharacterBody3D({
         object: root,
         physics: ctx.physics,
-        shape: CollisionShape3D.capsule(0.12, 0.25),
+        shape: collision.shape(),
         collisionLayer: 2,
         collisionMask: 5,
       });
@@ -102,7 +108,7 @@ export function createLifecycleGeneration(
         material: animalMaterial,
         motion: wolfMotion,
         ground,
-        visualOriginOffset: { x: 0, y: -0.37, z: 0 },
+        visualOriginOffset: collision.visualOriginOffset,
       });
       cleanup.push(() => animal.dispose());
       for (const resource of [animal.mesh.geometry, animal.mesh.material, animal.pose.texture]) {
@@ -159,7 +165,7 @@ export function createLifecycleGeneration(
       for (const wolf of wolves) {
         const position = wolf.root.position.clone();
         position.z += 0.125;
-        position.y = ground(position.x, position.z) + 0.37;
+        position.y = ground(position.x, position.z) - collision.visualOriginOffset.y;
         wolf.body.teleport(position);
         wolf.previous.copy(position);
         wolf.animal.teleport({ position, velocity: new Vector3(), heading: wolf.root.rotation.y });

@@ -1,7 +1,7 @@
 {
   "name": "procedural-wolf-accepted-physics",
   "schemaVersion": 1,
-  "subject": "Installed 32-wolf DQS qualification: accepted Rapier motion, actual GPU position/normal output and deformed shadows; run with --live-clock",
+  "subject": "wolf-0",
   "target": "web",
   "viewport": {
     "width": 1280,

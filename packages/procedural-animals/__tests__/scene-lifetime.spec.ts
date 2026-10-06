@@ -36,13 +36,18 @@ const owned = vi.hoisted(() => ({
   throwDispose: -1,
   course: vi.fn(),
   unregister: vi.fn(),
+  callbacks: [] as ((dt: number) => void)[],
+  drift: 0,
   readbackDispose: vi.fn(),
 }));
 vi.mock(
   "../../../examples/procedural-animals/node_modules/@threenative/core/dist/index.js",
   async () => ({
     Scene: (await import("../../core/src/scene.js")).Scene,
-    afterPhysics: () => owned.unregister,
+    afterPhysics: (_ctx: unknown, callback: (dt: number) => void) => {
+      owned.callbacks.push(callback);
+      return owned.unregister;
+    },
     GPUReadback: class {
       dispose() {
         owned.readbackDispose();
@@ -51,7 +56,7 @@ vi.mock(
   }),
 );
 vi.mock("@threenative/physics", () => ({
-  CollisionShape3D: { capsule: () => ({}) },
+  CollisionShape3D: { sphere: () => ({}) },
   CharacterBody3D: class {
     velocity = new Vector3();
     dispose = vi.fn();
@@ -73,6 +78,10 @@ vi.mock("@threenative/procedural-animals", () => ({
     return {
       object,
       mesh: new Mesh(),
+      follow: (state: { position: Vector3 }) => {
+        object.position.copy(state.position);
+        object.position.x += owned.drift;
+      },
       dispose: () => {
         try {
           dispose();
@@ -90,7 +99,8 @@ import { Animals } from "../../../examples/procedural-animals/src/Animals.js";
 import { AnimalGPUProbe } from "../../../examples/procedural-animals/src/render/gpu-probe.js";
 
 beforeEach(() => {
-  owned.bodies.length = owned.animals.length = 0;
+  owned.bodies.length = owned.animals.length = owned.callbacks.length = 0;
+  owned.drift = 0;
   owned.failActor = owned.throwDispose = -1;
   owned.course.mockReset();
   owned.unregister.mockReset();
@@ -102,6 +112,8 @@ const ctx = () => {
     scene,
     assets: {},
     physics: {},
+    startup: { phase: "ready" },
+    state: { set: vi.fn(), getState: () => ({ visibleCaptured: false }) },
     add: (...objects: Group[]) => scene.add(...objects),
     entities: { add: vi.fn(), remove: vi.fn() },
     afterPhysics: () => owned.unregister,
@@ -109,6 +121,23 @@ const ctx = () => {
 };
 
 describe("animal qualification scene acquisition and cleanup", () => {
+  it("retains a transient root error after a later completed step returns to agreement", async () => {
+    const scene = new Animals("crowd");
+    const context = ctx();
+    await scene.load(context);
+    scene.enter(context);
+    try {
+      const callback = owned.callbacks[0];
+      if (!callback) throw new Error("missing actual scene afterPhysics callback");
+      owned.drift = 0.002;
+      callback(1 / 60);
+      owned.drift = 0;
+      callback(1 / 60);
+      expect(vi.mocked(context.state.set).mock.calls.at(-1)?.[0]?.rootError).toBeCloseTo(0.002, 9);
+    } finally {
+      scene.exit();
+    }
+  });
   it("releases every body and course after an actor disposer throws", async () => {
     const scene = new Animals("crowd");
     const context = ctx();

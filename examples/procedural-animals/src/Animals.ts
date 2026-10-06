@@ -1,6 +1,6 @@
 import { Scene, afterPhysics } from "@threenative/core";
 import type { ICtx, SceneFrame } from "@threenative/core";
-import { CharacterBody3D, CollisionShape3D } from "@threenative/physics";
+import { CharacterBody3D } from "@threenative/physics";
 import type { IPhysicsContext } from "@threenative/physics";
 import { createAnimalActor, loadAnimalBake } from "@threenative/procedural-animals";
 import type { IAnimalBake } from "@threenative/procedural-animals";
@@ -12,6 +12,7 @@ import { course } from "./render/course.js";
 import { AnimalGPUProbe } from "./render/gpu-probe.js";
 import { qualificationCamera } from "./render/qualification-camera.js";
 import { wolfMotion } from "./render/wolf-motion.js";
+import { wolfCollision } from "./wolf-collision.js";
 
 export type AnimalMode = "qualification" | "crowd" | "high" | "baseline";
 
@@ -98,16 +99,15 @@ export class Animals extends Scene<IAnimalsState, IPhysicsContext> {
       if (!hit) throw new Error("TN_ANIMAL_GROUND_MISSING");
       return hit.position.y;
     };
-    const halfHeight = 0.12;
-    const radius = 0.25;
+    const collision = bake ? wolfCollision(bake) : undefined;
     const count = this.#mode === "baseline" ? 0 : this.#mode === "high" ? 1 : 32;
     const actors = Array.from({ length: count }, (_, index) => {
-      if (!bake) throw new Error("TN_ANIMAL_MISSING_BAKE");
+      if (!bake || !collision) throw new Error("TN_ANIMAL_MISSING_BAKE");
       const root = new Group();
       root.name = `wolf-body-${index}`;
       root.position.set(
         ((index % 8) - 3.5) * 1.45,
-        1.2,
+        collision.startHeight,
         index === 0 ? -8 : Math.floor(index / 8) * 2 - 3,
       );
       this.#cleanup.push(() => root.removeFromParent());
@@ -115,7 +115,7 @@ export class Animals extends Scene<IAnimalsState, IPhysicsContext> {
       const body = new CharacterBody3D({
         object: root,
         physics: ctx.physics,
-        shape: CollisionShape3D.capsule(halfHeight, radius),
+        shape: collision.shape(),
         collisionLayer: 2,
         collisionMask: 5,
       });
@@ -124,7 +124,7 @@ export class Animals extends Scene<IAnimalsState, IPhysicsContext> {
         material: animalMaterial,
         motion: wolfMotion,
         ground,
-        visualOriginOffset: { x: 0, y: -(halfHeight + radius), z: 0 },
+        visualOriginOffset: collision.visualOriginOffset,
       });
       this.#cleanup.push(() => animal.dispose());
       animal.object.name = `wolf-${index}`;
@@ -145,14 +145,22 @@ export class Animals extends Scene<IAnimalsState, IPhysicsContext> {
     let probeArmed = false;
     let teleported = false;
     let posture = 0;
+    const cameraTarget = new Vector3();
+    let rootError = 0;
     this.#cleanup.push(
       afterPhysics(ctx, (dt) => {
-        let rootError = 0;
         for (const { root, animal, previous, velocity } of actors) {
           velocity.copy(root.position).sub(previous).divideScalar(dt);
           animal.follow({ position: root.position, velocity, heading: root.rotation.y }, dt);
           previous.copy(root.position);
           rootError = Math.max(rootError, animal.object.position.distanceTo(root.position));
+        }
+        const first = actors[0];
+        if (clock && collision && first && elapsed >= 1.5 && ctx.state.getState().visibleCaptured) {
+          if (!(ctx.camera instanceof PerspectiveCamera))
+            throw new Error("TN_ANIMAL_CAMERA_REQUIRED");
+          first.animal.object.localToWorld(cameraTarget.copy(collision.cameraCenter));
+          qualificationCamera(ctx.camera, cameraTarget, clock.outside);
         }
         if (probe && probeArmed && ctx.startup.phase === "ready") {
           const label =
@@ -228,14 +236,9 @@ export class Animals extends Scene<IAnimalsState, IPhysicsContext> {
       }
       const first = actors[0];
       if (!first) return;
-      if (clock && elapsed >= 1.5 && ctx.state.getState().visibleCaptured) {
-        if (!(ctx.camera instanceof PerspectiveCamera))
-          throw new Error("TN_ANIMAL_CAMERA_REQUIRED");
-        qualificationCamera(ctx.camera, first.root.position, clock.outside);
-      }
       if (elapsed >= 12 && !teleported) {
         teleported = true;
-        const position = new Vector3(0, ground(0, -4) + halfHeight + radius, -4);
+        const position = new Vector3(0, ground(0, -4) - (collision?.visualOriginOffset.y ?? 0), -4);
         first.body.teleport(position);
         first.previous.copy(position);
         first.animal.teleport({

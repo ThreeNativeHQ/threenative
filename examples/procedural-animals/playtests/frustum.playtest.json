@@ -1,7 +1,7 @@
 {
   "name": "procedural-wolf-frustum-suppression",
   "schemaVersion": 1,
-  "subject": "The same 32 visible baked wolves leave the camera frustum; require captured actual main submissions to become zero",
+  "subject": "wolf-0",
   "target": "web",
   "viewport": {
     "width": 1280,
