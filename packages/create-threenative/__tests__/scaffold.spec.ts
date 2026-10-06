@@ -184,7 +184,7 @@ const BUG_REPORT_SKILL_PATHS = [
 // generated file remains byte-identical. Fingerprints still cover the complete tree.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Actual no-install generation of reviewed temporal source 2e9af7dcd plus develop 29fdae8bf.
-  // Preserve temporal repairs and PR388 patch delivery; retain the complete-tree assertion.
+  // Re-measured native-axis current reconstruction: only starter changes across all 13 trees.
   "action-rpg": "4665dee3e53e702cd7dbf4c15652c16b5b675978b8c54fcff673b06689f479f9",
   minimal: "b721ce7db282535c454767789db782f13a2b3b0f5bd3ed739f4b835585ca2f58",
   platformer: "ea1c7d4f1c84ae0a6a6ec408b443dc0f07b15e8cb24cc327a3dd8fe13e8e9daf",
@@ -196,7 +196,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   sailing: "e277d785065516134f88f1fd4cc0b6ffdf1382f3c5c6ccbf03778e56db3c1bc3",
   shooter: "fd60a8083302674b8225592930f29a6741a009eb330469b0f24a4ead84873b4e",
   snow: "6574ecefb7fa70bab9a787d5ecd8eea4313e961c483ce5562f1eb5e9dd380310",
-  starter: "7300de85d9a657be78e67e477f10f474495f7f1ca84694e477a65923cf514b85",
+  starter: "1b44755328a8768fc8253ccf8f1f9311528a9cbeaa1c027d633e04d6d8e98b6d",
   "tower-defense": "419a11f74f93d6e5a3a8e55a195804db1bc2a505699791c0322594bdf9fec65a",
 };
 

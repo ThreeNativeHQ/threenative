@@ -143,15 +143,13 @@ describe("raw reconstruction footprint", () => {
       "ordinary",
       rejection as never,
     ) as unknown as Value;
-    // Independently place the nine physical input samples about (4,2). The lit sample is (4,2)
-    // at physical (4.5,2.75), while the closest gather centre is raw (4,1).
+    // The native width retains column4. Independently place its three vertical input samples:
+    // the lit sample (4,2) is at physical y2.75, while the closest gather row is raw1.
     let total = 0;
-    for (let y = 0; y <= 2; y++)
-      for (let x = 3; x <= 5; x++)
-        total += Math.exp(-2.29 * ((4 - (x + 0.5)) ** 2 + (2 - (y + 0.75)) ** 2));
-    const expected = Math.exp(-2.29 * (0.5 ** 2 + 0.75 ** 2)) / total;
+    for (let y = 0; y <= 2; y++) total += Math.exp(-2.29 * (2 - (y + 0.75)) ** 2);
+    const expected = Math.exp(-2.29 * 0.75 ** 2) / total;
     expect(current.sample(new Value([0.5, 0.5])).values[0]).toBe(0.25);
-    expect(expected).toBeLessThan(0.2);
+    expect(expected).not.toBeCloseTo(0.25, 3);
     for (const channel of output.values.slice(0, 3)) expect(channel).toBeCloseTo(expected, 12);
   });
   it("keeps stable constant coverage and ignores white history when history is invalid", () => {

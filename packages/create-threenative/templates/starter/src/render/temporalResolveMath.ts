@@ -76,28 +76,21 @@ const reconstructionStruct = struct({
   variance: "vec4",
 });
 
-/** Gaussian reconstruction from nine input samples at their jittered centres. The same raw taps
- * supply clipping moments; the provider retains the plain current sample at a 1:1 raster. */
+/** Gaussian reconstruction on reduced axes at the samples' jittered centres. Native axes retain
+ * their owned point; all nine raw taps still supply the unchanged clipping moments. Omitting
+ * displaySize retains the original two-axis filter for existing helper calls. */
 export function reconstructNeighbourhood(
   source: TextureNode,
   uvNode: Node<"vec2">,
   inputSize: Node<"uvec2">,
   jitterOffset: Node<"vec2">,
+  displaySize?: Node<"uvec2">,
 ) {
   const inputSizeF = vec2(inputSize);
   const pIn = uvNode.mul(inputSizeF);
   const closestTap = ivec2(pIn.sub(vec2(0.5).add(jitterOffset)).round());
-  const offsets = [
-    [-1, -1],
-    [0, -1],
-    [1, -1],
-    [-1, 0],
-    [0, 0],
-    [1, 0],
-    [-1, 1],
-    [0, 1],
-    [1, 1],
-  ] as const;
+  const offsets = [-1, 0, 1].flatMap((y) => [-1, 0, 1].map((x) => [x, y] as const));
+  const nativeAxes = displaySize === undefined ? undefined : inputSizeF.equal(vec2(displaySize));
   const sumColor = vec4(0).toVar();
   const sumWeight = float(0).toVar();
   const moment1 = vec4(0).toVar();
@@ -106,7 +99,12 @@ export function reconstructNeighbourhood(
     const tap = closestTap.add(ivec2(x, y));
     const tapCenter = vec2(tap).add(vec2(0.5).add(jitterOffset));
     const delta = pIn.sub(tapCenter);
-    const weight = delta.dot(delta).mul(-2.29).exp();
+    const weight = delta
+      .dot(delta)
+      .mul(-2.29)
+      .exp()
+      .mul(x === 0 ? 1 : (nativeAxes?.x.select(0, 1) ?? 1))
+      .mul(y === 0 ? 1 : (nativeAxes?.y.select(0, 1) ?? 1));
     // Use max() to prevent NaN values from propagating.
     // Match the colour sampler's clamp-to-edge support.
     const boundedTap = ivec2(vec2(tap).clamp(vec2(0), vec2(inputSize).sub(1)));

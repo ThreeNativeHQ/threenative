@@ -96,6 +96,7 @@ export function createExperimentalTemporalResolve(
       uvNode,
       inputSize,
       jitterOffset,
+      displaySize,
     );
     const upsampled = inputSize.x.lessThan(displaySize.x).or(inputSize.y.lessThan(displaySize.y));
     const currentColor = upsampled.select(

@@ -67,6 +67,9 @@ export class Value {
   lessThan(b: Value | number) {
     return this.op(b, (x, y) => Number(x < y));
   }
+  equal(b: Value | number) {
+    return this.op(b, (x, y) => Number(x === y));
+  }
   or(b: Value) {
     return this.op(b, (x, y) => Number(Boolean(x || y)));
   }

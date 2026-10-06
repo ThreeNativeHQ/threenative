@@ -1868,3 +1868,30 @@ changes here. Evidence lives in the delegated task directory under `pr398-develo
 Original acceptance boxes, thresholds and draft prd:25% status remain unchanged. Parent
 coordination still controls substantial builds, GPU/native runs and publication/new CI; no
 new capture, upload, push or required-CI qualification is claimed by this local integration.
+
+
+### Current reconstruction on a native input axis — bounded CPU candidate
+
+A height-only reduced input currently applies the full two-dimensional Gaussian, importing
+current light from an adjacent native-width pixel. The inverse case imports an adjacent native
+row. Six actual authored-graph controls failed before the fix (one HDR column leakage measured
+`.942571961` red). Current colour now retains the owned point on each input axis equal to display
+size while filtering the other axis. All nine clipping moments, both depth-history vetoes,
+mandatory RGB clipping, full-resolution current sampling and the original low-input policy remain.
+The optional four-argument helper keeps its original Gaussian behavior.
+
+[Bounded CPU evidence](../../verification/prd455/native-axis-cpu.json):73 focused tests pass,
+including11 actual offline WGSL tests; scoped TS7 strict checking, Biome and the existing
+readability/ownership guard pass. Actual no-install generation preserves12 complete kit hashes and
+updates only starter. Source-adapted replay of all65 recorded low-input witnesses is exactly equal
+to the earlier CPU replay, including the still-red original recovery pixel. This is a current
+filter ownership fix, not an original quality/performance/platform qualification. No new browser,
+GPU, native or external upload ran. Phase2/3 boxes and draft25% stay open.
+
+A native-width/reduced-height scene raster is only a proposed bounded estimator:640x240 uses
+50.23% more pixels than the original426x240 arm. It still needs explicit producer sizing before
+jitter, a matched spatial arm, original scorer/foliage/edge/recovery controls, controller semantics
+and measured paired GPU/native cost. No fixture raster assertion or automatic-scaler policy was
+changed to adopt it. Raw MSAA aliases, matched sample motion/depth, sample positions and alpha
+material ownership require separate producer design; resolved cell averages alone do not provide
+current display-footprint radiance.
