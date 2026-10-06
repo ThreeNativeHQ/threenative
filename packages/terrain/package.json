@@ -64,6 +64,7 @@
     "three": "catalog:",
     "tsup": "catalog:",
     "typescript": "catalog:",
+    "@typescript/native": "catalog:",
     "vite": "catalog:",
     "@threenative/core": "workspace:*"
   },

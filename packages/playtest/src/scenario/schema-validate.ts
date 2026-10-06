@@ -1,4 +1,5 @@
 import { TONE_METRICS } from "../tone.js";
+import type { IToneRegion } from "../tone.js";
 import type { IPlaytestToneAssertion } from "./schema-base.js";
 import { PLAYTEST_ASSERTION_REGISTRY } from "../assertions.js";
 import { invalidScenario, invalidStep, rejectUnknownKeys } from "./errors.js";
@@ -362,6 +363,7 @@ export const PLAYTEST_STEP_KEYS = [
   "kind",
   "label",
   "lifecycle",
+  "media",
   "overlayMessage",
   "pitch",
   "pointerPosition",
@@ -403,6 +405,7 @@ export function validateStep(value: unknown, scenarioPath: string, index: number
       "holdTicks",
       "kind",
       "lifecycle",
+      "media",
       "overlayMessage",
       "pitch",
       "pointerPosition",
@@ -463,17 +466,21 @@ export function validateStep(value: unknown, scenarioPath: string, index: number
     ? value.pointers.map((pointer, pointerIndex) =>
         validatePointer(pointer, scenarioPath, index, pointerIndex))
     : undefined;
-  // Preserve a validated wheel sample for the browser transport. Native runners must reject this
-  // field before startup until they expose a real wheel injector; dropping it would report green
-  // while the game never received the requested input.
+  // Preserve a validated wheel sample for every transport. A runner whose target cannot turn the
+  // wheel must reject this field before startup; dropping it would report green while the game
+  // never received the requested input.
+  const unit = (n: unknown): n is number => typeof n === "number" && Number.isFinite(n) && n >= 0 && n <= 1;
   const wheel = isRecord(value.wheel)
     && typeof value.wheel.deltaY === "number"
     && Number.isFinite(value.wheel.deltaY)
     && (value.wheel.deltaX === undefined
       || (typeof value.wheel.deltaX === "number" && Number.isFinite(value.wheel.deltaX)))
+    && ((value.wheel.x === undefined && value.wheel.y === undefined)
+      || (unit(value.wheel.x) && unit(value.wheel.y)))
     ? {
         ...(typeof value.wheel.deltaX === "number" ? { deltaX: value.wheel.deltaX } : {}),
         deltaY: value.wheel.deltaY,
+        ...(unit(value.wheel.x) && unit(value.wheel.y) ? { x: value.wheel.x, y: value.wheel.y } : {}),
       }
     : undefined;
   if (isRecord(value.overlayMessage)) {
@@ -483,8 +490,9 @@ export function validateStep(value: unknown, scenarioPath: string, index: number
     rejectUnknownKeys(value.pointerPosition, ["buttons", "x", "y"], scenarioPath, `steps[${index}].pointerPosition`);
   }
   if (isRecord(value.wheel)) {
-    rejectUnknownKeys(value.wheel, ["deltaX", "deltaY"], scenarioPath, `steps[${index}].wheel`);
+    rejectUnknownKeys(value.wheel, ["deltaX", "deltaY", "x", "y"], scenarioPath, `steps[${index}].wheel`);
   }
+  const media = validateMedia(value.media, scenarioPath, index);
   if (pointers !== undefined && new Set(pointers.map(({ id }) => id)).size !== pointers.length) {
     throw invalidStep(scenarioPath, `Scenario step ${index} pointers must use unique ids.`);
   }
@@ -537,7 +545,7 @@ export function validateStep(value: unknown, scenarioPath: string, index: number
     if (at === undefined) {
       throw invalidStep(scenarioPath, `Scenario step ${index} with kind 'click' must define at as { x, y } or { entity }.`);
     }
-    for (const forbidden of ["overlayMessage", "pointerPosition", "pointers", "press", "target", "wheel", "window"] as const) {
+    for (const forbidden of ["media", "overlayMessage", "pointerPosition", "pointers", "press", "target", "wheel", "window"] as const) {
       if (value[forbidden] !== undefined) {
         throw invalidStep(scenarioPath, `Scenario step ${index} with kind 'click' cannot define ${forbidden}.`);
       }
@@ -558,7 +566,7 @@ export function validateStep(value: unknown, scenarioPath: string, index: number
     if (target === undefined) {
       throw invalidStep(scenarioPath, `Scenario step ${index} with kind 'aimAt' must define target as { x, z } or { entity }.`);
     }
-    for (const forbidden of ["overlayMessage", "pointerPosition", "pointers", "press", "wheel", "window"] as const) {
+    for (const forbidden of ["media", "overlayMessage", "pointerPosition", "pointers", "press", "wheel", "window"] as const) {
       if (value[forbidden] !== undefined) {
         throw invalidStep(scenarioPath, `Scenario step ${index} with kind 'aimAt' cannot define ${forbidden}; apply aim in its own step.`);
       }
@@ -587,7 +595,7 @@ export function validateStep(value: unknown, scenarioPath: string, index: number
     throw invalidStep(scenarioPath, `Scenario step ${index} pointers must be an array.`);
   }
   if (value.wheel !== undefined && wheel === undefined) {
-    throw invalidStep(scenarioPath, `Scenario step ${index} wheel must define finite deltaY and optional finite deltaX values.`);
+    throw invalidStep(scenarioPath, `Scenario step ${index} wheel must define finite deltaY, optional finite deltaX, and optionally both normalized x and y from 0 through 1.`);
   }
   if (value.screenshot !== undefined && screenshot === undefined) {
     throw invalidStep(scenarioPath, `Scenario step ${index} screenshot must be a stable file-safe name.`);
@@ -616,6 +624,7 @@ export function validateStep(value: unknown, scenarioPath: string, index: number
       "holdFrames",
       "holdTicks",
       "label",
+      "media",
       "overlayMessage",
       "pointerPosition",
       "pointers",
@@ -632,8 +641,8 @@ export function validateStep(value: unknown, scenarioPath: string, index: number
       }
     }
   }
-  if (at === undefined && press === undefined && overlayMessage === undefined && pointerPosition === undefined && pointers === undefined && wheel === undefined && window === undefined && waitFrames === undefined && waitTicks === undefined && target === undefined && waitForResource === undefined && lifecycle === undefined) {
-    throw invalidStep(scenarioPath, `Scenario step ${index} must define click at, press, overlayMessage, pointerPosition, pointers, wheel, window, aimAt target, lifecycle operation, or waitFrames/waitTicks.`);
+  if (at === undefined && press === undefined && overlayMessage === undefined && pointerPosition === undefined && pointers === undefined && wheel === undefined && media === undefined && window === undefined && waitFrames === undefined && waitTicks === undefined && target === undefined && waitForResource === undefined && lifecycle === undefined) {
+    throw invalidStep(scenarioPath, `Scenario step ${index} must define click at, press, overlayMessage, pointerPosition, pointers, wheel, media, window, aimAt target, lifecycle operation, or waitFrames/waitTicks.`);
   }
   if (value.holdFrames !== undefined && holdFrames === undefined) {
     throw invalidStep(scenarioPath, `Scenario step ${index} holdFrames must be a positive integer.`);
@@ -666,6 +675,7 @@ export function validateStep(value: unknown, scenarioPath: string, index: number
     ...(typeof value.label === "string" ? { label: value.label } : {}),
     ...(at === undefined ? {} : { at }),
     ...(lifecycle === undefined ? {} : { lifecycle }),
+    ...(media === undefined ? {} : { media }),
     ...(overlayMessage === undefined ? {} : { overlayMessage }),
     ...(pitch === undefined ? {} : { pitch }),
     ...(pointerPosition === undefined ? {} : { pointerPosition }),
@@ -680,6 +690,27 @@ export function validateStep(value: unknown, scenarioPath: string, index: number
     ...(waitTicks === undefined ? {} : { waitTicks }),
     ...(wheel === undefined ? {} : { wheel }),
     ...(window === undefined ? {} : { window }),
+  };
+}
+
+/** `media` names at least one feature, each with one of its own values; nothing is defaulted. */
+function validateMedia(value: unknown, scenarioPath: string, index: number): IPlaytestStep["media"] {
+  if (value === undefined) return undefined;
+  if (!isRecord(value)) throw invalidStep(scenarioPath, `Scenario step ${index} media must be an object.`);
+  rejectUnknownKeys(value, ["colorScheme", "reducedMotion"], scenarioPath, `steps[${index}].media`);
+  const { colorScheme, reducedMotion } = value;
+  if (colorScheme !== undefined && colorScheme !== "dark" && colorScheme !== "light") {
+    throw invalidStep(scenarioPath, `Scenario step ${index} media.colorScheme must be 'dark' or 'light'.`);
+  }
+  if (reducedMotion !== undefined && reducedMotion !== "reduce" && reducedMotion !== "no-preference") {
+    throw invalidStep(scenarioPath, `Scenario step ${index} media.reducedMotion must be 'reduce' or 'no-preference'.`);
+  }
+  if (colorScheme === undefined && reducedMotion === undefined) {
+    throw invalidStep(scenarioPath, `Scenario step ${index} media must set colorScheme or reducedMotion.`);
+  }
+  return {
+    ...(colorScheme === undefined ? {} : { colorScheme }),
+    ...(reducedMotion === undefined ? {} : { reducedMotion }),
   };
 }
 
@@ -1353,8 +1384,19 @@ export function validateGeometryCaptureRequest(
 
 function validateToneAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestToneAssertion {
   const record = requireRecord(value, scenarioPath, objectPath);
-  rejectUnknownKeys(record, ["atStep", ...TONE_METRICS], scenarioPath, objectPath);
+  rejectUnknownKeys(record, ["atStep", "region", "compare", ...TONE_METRICS], scenarioPath, objectPath);
   const result: IPlaytestToneAssertion = {};
+  if (record.region !== undefined) result.region = validateToneRegion(record.region, scenarioPath, `${objectPath}.region`);
+  if (record.compare !== undefined) {
+    if (result.region === undefined) throw invalidScenario(scenarioPath, `${objectPath}.compare requires region.`);
+    const compare = requireRecord(record.compare, scenarioPath, `${objectPath}.compare`);
+    rejectUnknownKeys(compare, ["region", "metric", "minDelta"], scenarioPath, `${objectPath}.compare`);
+    if (!TONE_METRICS.includes(compare.metric as keyof import("../tone.js").IToneMetrics)) throw invalidScenario(scenarioPath, `${objectPath}.compare.metric is unsupported.`);
+    const metric = compare.metric as keyof import("../tone.js").IToneMetrics;
+    const maximum = metric.endsWith("Fraction") ? 1 : 255;
+    if (typeof compare.minDelta !== "number" || !Number.isFinite(compare.minDelta) || Math.abs(compare.minDelta) > maximum) throw invalidScenario(scenarioPath, `${objectPath}.compare.minDelta must be finite in [-${maximum}, ${maximum}].`);
+    result.compare = { region: validateToneRegion(compare.region, scenarioPath, `${objectPath}.compare.region`), metric, minDelta: compare.minDelta };
+  }
   if (record.atStep !== undefined) result.atStep = requireString(record, "atStep", scenarioPath, objectPath);
   for (const metric of TONE_METRICS) {
     if (record[metric] === undefined) continue;
@@ -1373,6 +1415,29 @@ function validateToneAssertion(value: unknown, scenarioPath: string, objectPath:
     }
     result[metric] = { ...present("min", bound.min as number | undefined), ...present("max", bound.max as number | undefined) };
   }
-  if (!TONE_METRICS.some((key) => result[key] !== undefined)) throw invalidScenario(scenarioPath, `${objectPath} requires at least one metric bound.`);
+  if (result.compare === undefined && !TONE_METRICS.some((key) => result[key] !== undefined)) throw invalidScenario(scenarioPath, `${objectPath} requires at least one metric bound.`);
   return result;
+}
+
+function validateToneRegion(value: unknown, scenarioPath: string, objectPath: string): IToneRegion {
+  const record = requireRecord(value, scenarioPath, objectPath);
+  rejectUnknownKeys(record, ["x", "y", "width", "height"], scenarioPath, objectPath);
+  for (const key of ["x", "y", "width", "height"] as const) {
+    const minimum = key === "x" || key === "y" ? 0 : 1;
+    if (
+      typeof record[key] !== "number" ||
+      !Number.isSafeInteger(record[key]) ||
+      record[key] < minimum
+    )
+      throw invalidScenario(
+        scenarioPath,
+        `${objectPath}.${key} must be a safe integer >= ${minimum}.`,
+      );
+  }
+  return {
+    x: record.x as number,
+    y: record.y as number,
+    width: record.width as number,
+    height: record.height as number,
+  };
 }

@@ -206,6 +206,7 @@ export type {
   IPlaytestVisualRegion,
   IPlaytestVisualRegionBounds,
   IPlaytestVisualRegionTarget,
+  IPlaytestMedia,
   IPlaytestWheel,
   IPlaytestWorldRuntimeAssertion,
 } from "./scenario.js";

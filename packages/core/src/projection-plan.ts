@@ -920,11 +920,7 @@ function addToMaterialGroup(
  * still listed in it, so the below-floor sweep hands them to the exact lane exactly once. What
  * this removes them from is the batch they can no longer honestly join.
  */
-function evictGeometryMembers(
-  workspace: IProjectionScanWorkspace,
-  group: IProjectionMaterialGroup,
-  geometry: BufferGeometry,
-): void {
+function evictGeometryMembers(group: IProjectionMaterialGroup, geometry: BufferGeometry): void {
   let writeIndex = 0;
   for (let readIndex = 0; readIndex < group.memberCount; readIndex += 1) {
     const member = group.members[readIndex] as Mesh;
@@ -955,7 +951,7 @@ function watchMaterialGroupGeometries(workspace: IProjectionScanWorkspace): void
       workspace.streamedGeometries.add(geometry);
       group.geometries.delete(geometry);
       group.revision += 1;
-      evictGeometryMembers(workspace, group, geometry);
+      evictGeometryMembers(group, geometry);
     }
   }
 }

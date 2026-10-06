@@ -8,6 +8,7 @@ prd_contract: v1
 The bisect executed on the physical Pixel 8 on 2026-08-23 and the permanent instrumentation and
 budget gate have landed. Evidence: `docs/verification/prd-214-2026-08-23.md`.
 
+**Priority:** P1 — Open boxes require 30 fps sustained on a Pixel 8 at unchanged visuals.
 **Complexity:** +3 for 10+ files across measurement and mechanism work, +2 complex performance
 work, +2 multi-package = **7 → HIGH mode**, checkpoint after every phase.
 

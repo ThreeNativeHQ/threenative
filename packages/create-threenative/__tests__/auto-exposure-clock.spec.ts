@@ -2,6 +2,8 @@ import { Color, Texture } from "three";
 import { texture } from "three/tsl";
 import { type NodeBuilder, NodeFrame, QuadMesh, type Renderer, RendererUtils } from "three/webgpu";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { resetLaunchFailures, watchStartupStall } from "../../core/src/launch-diagnostics.js";
+import { STARTUP_STALL_MS, StartupReadiness } from "../../core/src/startup-readiness.js";
 import { AutoExposureNode } from "../template-assets/autoExposure.js";
 import { exposureSettings } from "../template-assets/exposure.js";
 import {
@@ -14,7 +16,10 @@ describe("exposure deterministic render clock", () => {
     vi.spyOn(QuadMesh.prototype, "render").mockImplementation(() => {});
     vi.spyOn(console, "info").mockImplementation(() => {});
   });
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
 
   function harness() {
     const node = new ObservedExposureNode(
@@ -141,9 +146,12 @@ describe("exposure deterministic render clock", () => {
       releaseReady = resolve;
     });
     const hold = (label: string, work: Promise<unknown>, budgetMs?: number) => {
-      expect(label).toBe("exposure-warmup");
-      expect(budgetMs).toBe(60_000);
-      held = work;
+      expect(budgetMs).toBeGreaterThan(0);
+      expect(budgetMs).toBeLessThanOrEqual(60_000);
+      if (label === "exposure-warmup") {
+        expect(budgetMs).toBe(60_000);
+        held = work;
+      }
     };
     node.holdStartup({ hold, whenReady: () => ready });
     const settled = vi.fn();
@@ -182,6 +190,160 @@ describe("exposure deterministic render clock", () => {
     ).toBe(true);
     node.dispose();
   });
+
+  function startupHarness() {
+    vi.useFakeTimers();
+    resetLaunchFailures();
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const afterHolds = vi.fn();
+    const readiness = new StartupReadiness({ afterHolds });
+    const fixture = harness();
+    fixture.node.holdStartup({
+      hold: (label, work, budget) => readiness.hold(label, work, budget),
+      whenReady: () => readiness.whenReady(),
+    });
+    readiness.start();
+    for (let i = 0; i < 5; i++) readiness.observe(1);
+    const stop = watchStartupStall({
+      pending: () => readiness.pendingHolds,
+      progress: () => 0.9 + 0.1 * (1 - readiness.pendingHolds.length / readiness.holdReport.length),
+      stallMs: STARTUP_STALL_MS,
+    });
+    void readiness.whenReady().then(stop);
+    return { ...fixture, readiness, afterHolds, stop };
+  }
+
+  it("keeps real accepted warmup progress visible across the retained 52-second cadence", async () => {
+    const { node, frame, readiness, afterHolds } = startupHarness();
+    const holds = readiness.holdReport.length;
+    expect(holds).toBe(6);
+    for (let sample = 1; sample <= 180; sample++) {
+      await vi.advanceTimersByTimeAsync(289);
+      node.updateBefore(frame);
+      await vi.advanceTimersByTimeAsync(0);
+      frame.time += 0.289;
+      frame.frameId++;
+      expect(readiness.holdReport).toHaveLength(holds);
+      if (sample < 180) expect(readiness.ready).toBe(false);
+    }
+    expect(console.error).not.toHaveBeenCalled();
+    expect(readiness.ready).toBe(true);
+    expect(afterHolds).toHaveBeenCalledOnce();
+    expect(node.getProgress().sampleFrames).toBe(180);
+    expect(readiness.holdReport.every(({ expired }) => !expired)).toBe(true);
+    node.dispose();
+  });
+
+  it("cannot accept terminal completion arriving after the unchanged hold deadline", async () => {
+    const { node, frame, read, readiness, afterHolds } = startupHarness();
+    for (let sample = 1; sample < 180; sample++) {
+      await vi.advanceTimersByTimeAsync(289);
+      node.updateBefore(frame);
+      await vi.advanceTimersByTimeAsync(0);
+      frame.time += 0.289;
+      frame.frameId++;
+    }
+    let finish!: (values: Float32Array) => void;
+    read.mockReturnValueOnce(
+      new Promise<Float32Array>((resolve) => {
+        finish = resolve;
+      }),
+    );
+    node.updateBefore(frame);
+    await vi.advanceTimersByTimeAsync(60_001 - 179 * 289);
+    expect(readiness.ready).toBe(true);
+    expect(readiness.holdReport.find(({ label }) => label === "exposure-warmup")?.expired).toBe(
+      true,
+    );
+    expect(afterHolds).toHaveBeenCalledOnce();
+    const messages = () => vi.mocked(console.info).mock.calls.map(([text]) => String(text));
+    const ready = messages().find((text) => text.startsWith("TN_EXPOSURE_READY:"));
+    expect(JSON.parse(ready?.slice(18) ?? "{}").warmupComplete).toBe(false);
+    expect(messages().some((text) => text.startsWith("TN_EXPOSURE_WARMUP:"))).toBe(false);
+    finish(new Float32Array([0, 0.18, 0, 1]));
+    await vi.advanceTimersByTimeAsync(0);
+    const warmup = messages().find((text) => text.startsWith("TN_EXPOSURE_WARMUP:"));
+    expect(JSON.parse(warmup?.slice(19) ?? "{}").elapsedMs).toBeGreaterThan(60_000);
+    expect(messages().filter((text) => text.startsWith("TN_EXPOSURE_READY:"))).toEqual([ready]);
+    node.dispose();
+  });
+
+  it("does not release or resubmit a checkpoint after disposal and late completion", async () => {
+    const { node, frame, read, readiness, stop } = startupHarness();
+    for (let sample = 1; sample < 30; sample++) {
+      node.updateBefore(frame);
+      await vi.advanceTimersByTimeAsync(0);
+      frame.time += 0.07;
+      frame.frameId++;
+    }
+    let finish!: (values: Float32Array) => void;
+    read.mockReturnValueOnce(
+      new Promise<Float32Array>((resolve) => {
+        finish = resolve;
+      }),
+    );
+    node.updateBefore(frame);
+    const pending = [...readiness.pendingHolds];
+    node.dispose();
+    const progress = vi.fn();
+    node.onProgress = progress;
+    vi.mocked(console.info).mockClear();
+    finish(new Float32Array([0, 0.18, 0, 1]));
+    await vi.advanceTimersByTimeAsync(0);
+    node.updateBefore(frame);
+    expect(read).toHaveBeenCalledTimes(30);
+    expect(node.getProgress().sampleFrames).toBe(29);
+    expect(readiness.pendingHolds).toEqual(pending);
+    expect(progress).not.toHaveBeenCalled();
+    expect(console.info).not.toHaveBeenCalled();
+    stop();
+  });
+
+  it("still diagnoses no accepted sample at 45 seconds and expires every hold at the original deadline", async () => {
+    const { node, readiness, afterHolds } = startupHarness();
+    await vi.advanceTimersByTimeAsync(STARTUP_STALL_MS);
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining("TN_STARTUP_STALLED"));
+    expect(readiness.ready).toBe(false);
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(readiness.ready).toBe(true);
+    expect(readiness.holdReport.every(({ expired }) => expired)).toBe(true);
+    expect(afterHolds).toHaveBeenCalledOnce();
+    expect(node.getProgress().sampleFrames).toBe(0);
+    expect(
+      vi
+        .mocked(console.info)
+        .mock.calls.some(
+          ([text]) =>
+            String(text).startsWith("TN_EXPOSURE_READY:") &&
+            JSON.parse(String(text).slice(18)).warmupComplete === false,
+        ),
+    ).toBe(true);
+    node.dispose();
+  });
+
+  it.each(["NaN", "reject", "missing"])(
+    "does not release a checkpoint on a %s readback",
+    async (fault) => {
+      const { node, frame, read, readiness, stop } = startupHarness();
+      for (let sample = 1; sample < 30; sample++) {
+        node.updateBefore(frame);
+        await vi.advanceTimersByTimeAsync(0);
+        frame.time += 0.07;
+        frame.frameId++;
+      }
+      const pending = [...readiness.pendingHolds];
+      if (fault === "NaN") read.mockResolvedValueOnce(new Float32Array([Number.NaN, 0.18, 0, 1]));
+      if (fault === "reject") read.mockRejectedValueOnce(new Error("readback failed"));
+      if (fault === "missing") read.mockReturnValueOnce(new Promise(() => {}));
+      node.updateBefore(frame);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(node.getProgress().sampleFrames).toBe(29);
+      expect(readiness.pendingHolds).toEqual(pending);
+      expect(readiness.ready).toBe(false);
+      node.dispose();
+      stop();
+    },
+  );
   it.each(["resolve", "reject"])(
     "invalidates a delayed readback after disposal: %s",
     async (outcome) => {

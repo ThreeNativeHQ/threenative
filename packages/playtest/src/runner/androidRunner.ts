@@ -238,10 +238,8 @@ async function runDevicePlaytestInternal(
     await throwIfAborted(target);
     setupApplication = bridge.setupApplication;
     await throwIfAborted(target);
-    if (scenario.warmupFrames > 0) await bridge.advance(scenario.warmupFrames);
-    await throwIfAborted(target);
-    // Same boundary as the browser lane: a fixed-step warmup is a tick count, not the clock the
-    // application's launch runs on, so wait for the device to say its world is safe to observe.
+    // Startup owns temporary operation timeouts during first-use compilation. Complete that
+    // gate before the scenario warmup, whose full tick count must run against the ready world.
     const attached = bridge;
     const startupOutcome = scenario.awaitStartup === false
       ? undefined
@@ -254,6 +252,8 @@ async function runDevicePlaytestInternal(
         hostAlive: () => target.driver.isAlive().catch(() => undefined),
         pump: () => attached.advance(1),
       });
+    await throwIfAborted(target);
+    if (scenario.warmupFrames > 0) await bridge.advance(scenario.warmupFrames);
     await throwIfAborted(target);
 
     const entityIds = observedEntityIds(scenario);
@@ -399,10 +399,25 @@ async function runDevicePlaytestInternal(
           await setDevicePointers(target, transport, step.pointers, scenario.viewport);
           pointerCount = step.pointers.length;
         }
+        if (step.media !== undefined) {
+          await transport.call("input.media", {
+            dark: step.media.colorScheme === undefined ? -1 : step.media.colorScheme === "dark" ? 1 : 0,
+            reducedMotion: step.media.reducedMotion === undefined ? -1 : step.media.reducedMotion === "reduce" ? 1 : 0,
+          });
+        }
+        if (step.wheel !== undefined) {
+          // Viewport pixels, like every other device pointer; the centre when the step names no point,
+          // which is where the browser lane turns the wheel too.
+          await transport.call("input.wheel", {
+            deltaX: step.wheel.deltaX ?? 0,
+            deltaY: step.wheel.deltaY,
+            x: (step.wheel.x ?? 0.5) * scenario.viewport.width,
+            y: (step.wheel.y ?? 0.5) * scenario.viewport.height,
+          });
+        }
         if (typeof pressed === "string") {
           if (!heldKeys.has(pressed)) {
-            await transport.call("input.keyDown", { key: pressed });
-            await sendAndroidTextInput(target, pressed);
+            await pressKey(target, transport, pressed);
             heldKeys.add(pressed);
           }
         } else if (pressed !== undefined) {
@@ -414,8 +429,7 @@ async function runDevicePlaytestInternal(
           }
           for (const key of pressed) {
             if (!heldKeys.has(key)) {
-              await transport.call("input.keyDown", { key });
-              await sendAndroidTextInput(target, key);
+              await pressKey(target, transport, key);
               heldKeys.add(key);
             }
           }
@@ -570,6 +584,10 @@ async function runDevicePlaytestInternal(
   } catch (error) {
     if (error instanceof PlaytestBridgeError) {
       let diagnostic = error.diagnostic;
+      // Preserve this failed host's output before stop/transport cleanup. Diagnostic
+      // collection is best effort and must never replace the original failure.
+      const consoleEntries = await target.driver.captureConsole().catch(() => []);
+      await writeFile(join(config.artifactDirectory, "console.json"), `${JSON.stringify(consoleEntries, null, 2)}\n`, "utf8").catch(() => undefined);
       if (
         diagnostic.code === "TN_PLAYTEST_OPERATION_TIMEOUT" ||
         diagnostic.code === "TN_PLAYTEST_STARTUP_HOST_EXITED"
@@ -578,14 +596,20 @@ async function runDevicePlaytestInternal(
         // a crash with evidence in its console tail, not a generic timeout (PRD-167).
         const hostAlive = await target.driver.isAlive().catch(() => undefined);
         const lastConsoleLines = hostAlive === false
-          ? (await target.driver.captureConsole().catch(() => [])).slice(-6).map((entry) => entry.text)
+          ? consoleEntries.slice(-6).map((entry) => entry.text)
           : [];
         diagnostic = deviceTimeoutDiagnostic(diagnostic, hostAlive, lastConsoleLines);
       }
-      return failureReport(config, scenario, diagnostic, target.name);
+      return { ...failureReport(config, scenario, diagnostic, target.name), observations: { console: consoleEntries, hud: {}, network: [], resources: {} } };
     }
     throw error;
   } finally {
+    // The timed-out request remains available until close; retain it even if
+    // console capture failed. An unavailable artifact must not mask the verdict.
+    await Promise.resolve().then(async () => {
+      const request = transport.getPendingRequest?.();
+      if (request !== undefined) await writeFile(join(config.artifactDirectory, "device-request-context.json"), `${JSON.stringify(request, null, 2)}\n`, "utf8");
+    }).catch(() => undefined);
     const cleanupErrors: unknown[] = [];
     const attemptCleanup = async (cleanup: () => Promise<void>): Promise<void> => {
       try {
@@ -769,6 +793,24 @@ async function deviceClickPoint(
     ));
   }
   return { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
+}
+
+/**
+ * One key down through the mailbox, plus the OS key event a focused web-view input needs.
+ *
+ * A host whose native-css UI took the key says so (`consumedByUi`), and the OS event is then a
+ * second delivery of the same key: a Space the UI already activated on, activated again by SDL's
+ * own copy of it. A web-view overlay never consumes a mailbox key, so its OS event still goes out.
+ */
+async function pressKey(
+  target: IDevicePlaytestTarget,
+  transport: IDevicePlaytestTransport,
+  key: string,
+): Promise<void> {
+  const reply = await transport.call<unknown>("input.keyDown", { key });
+  const consumed = typeof reply === "object" && reply !== null
+    && (reply as { consumedByUi?: unknown }).consumedByUi === true;
+  if (!consumed) await sendAndroidTextInput(target, key);
 }
 
 async function sendAndroidTextInput(target: IDevicePlaytestTarget, key: string): Promise<void> {
@@ -1046,10 +1088,25 @@ function unsupportedAssertion(
       target,
     );
   }
-  if (scenario.steps.some((step) => step.wheel !== undefined)) {
+  // A wheel and a media step reach Android the way they reach desktop: `input.wheel` /
+  // `input.media` over the mailbox, into `playtestInput` on the host, then `uiOverlayRouteWheel` /
+  // `uiOverlaySetEnvironment` — all host-neutral (runtime.cpp, ui_overlay.cpp), and the Android
+  // build attaches the same native-css document (`attachDesktopCssUi` from android_main.cpp). A
+  // wheel a scroller did not take, and a media set on a build with no CSS UI attached, both fail
+  // by name from the host itself (packages/playtest/src/three/device.ts), so nothing here has to
+  // guess on the host's behalf. iOS keeps its refusal: its overlay is a WKWebView mirror
+  // (`attachIosUiOverlay`), which has no native-css environment to emulate or scroll.
+  if (target === "ios" && scenario.steps.some((step) => step.wheel !== undefined)) {
     return unsupportedDiagnostic(
       "wheel input steps",
-      "Run wheel input steps on --target browser; Android, desktop, and iOS runners have no wheel injector and will not skip the sample.",
+      "Run wheel input steps on --target browser, --target desktop or --target android; the iOS overlay is a web-view mirror with no native-css scroller to turn, and will not skip the sample.",
+      target,
+    );
+  }
+  if (target === "ios" && scenario.steps.some((step) => step.media !== undefined)) {
+    return unsupportedDiagnostic(
+      "media steps",
+      "Run media steps on --target browser, --target desktop or --target android (native-css UI); the iOS overlay is a web-view mirror with no native-css environment to emulate, and will not skip the step.",
       target,
     );
   }

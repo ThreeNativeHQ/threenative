@@ -172,7 +172,14 @@ const BUG_REPORT_SKILL_PATHS = [
 // docs/verification/prd339-exposure-proof/completion-consumer-8bf16f4.json.
 // Current develop c18a42b integration: all13 actual generated trees were byte-compared
 // against reviewed 8bf trees; only the copied Three compute-only Storage3DTexture patch changed.
+// Re-measured on current develop plus TS7: restoring only each compiler manifest and
+// rain's shader API import recovers all 13 develop fingerprints.
+// PR388 producer delivery: compared all 13 immutable eab0cdbfe/generated trees. Only
+// package.json patch declarations and copied Vite/Tailwind patch bytes differ; every other
+// generated file remains byte-identical. Fingerprints still cover the complete tree.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
+  // Measured by the actual thirteen-tree createProject equality test on the Oct 6
+  // af6dfc8 + ba72eed publication merge, after capability and canonical patch generation.
   // Measured through all thirteen actual createProject trees on the Oct 4 published-head
   // merge with develop 15adf350; preserves Strata instructions and develop template changes.
   // Recomputed 2026-10-01 on merging develop (#375, #376) into the PRD-466/467/468 branch: every
@@ -207,20 +214,20 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // then again on the merge carrying the WebGPU adapter-retention Three patch: the scaffolded
   // `patches/three@0.185.1.patch` is the only byte that moved on top of the exposure/fog tree, so
   // all thirteen trees move again. Values below are the merged-tree measurement, not either side's.
-  "action-rpg": "6693c303f5095bf84c9e335c1502e32bc343258bd3b779c17cf7554267da2eb9",
-  minimal: "bdb89b4ca8ecb6bbbbcab3bfccb5981988085e886da4e0ba0950ee931650f9d4",
-  platformer: "ac9799677564917bac27d449642c6077b739d318f1b937c5eec0107301d62189",
-  puzzle: "35e07a21868e1d63ac3df7fd2db323d716e40c4f67a9c2d898039beae1fce949",
-  racing: "3d097fb476035f23b2c2fe5de6ce28ae073eb7d04421251800748210afbb60c3",
-  rain: "35ae946a5886ee8fbc2bae984237d5d5742a6748a041c647b59e94c374525fab",
-  rts: "2dec7875668a18c10b1e12b9d8d2c503324417b47d2af7aedf206c76503dad5d",
-  runner: "584aa37ac89ee6572299b8ba6f15542fdac7a2113dca497c8bb0c60ab68da2a8",
+  "action-rpg": "df91be76d7c53306915d1c742a639b96c4d0f124b3eb0ab1de4d0d636dd25cb3",
+  minimal: "7a130ebd0b4c77dc9c9c3720a66fe09d3fa5963dbe96c085be4bcfa940c1776a",
+  platformer: "fe8eace312590ea82a55744fe9e727fef70f307782c0dcdef98614c26be7aa0f",
+  puzzle: "744a735f62377462d9d094c67e8692ed9a1f83a056bee9454df087da47380002",
+  racing: "c341e8ddfc5d6688649920d49332a208994dea6e0d27fae12add3b65228b2c78",
+  rain: "850e123ba68ce9c507b5b28ea1f489aa73d0c020e9ed97cd1dff4ae019789751",
+  rts: "dd700df60af7f5d671aa072ae00ee05b3b4cfb8817e14b6e3c990a7335bc4e98",
+  runner: "bfe225ed8dcda28259951bace53be2e3a3e26c607a862393a3762849cd4c65ec",
   // Initial finite-height readiness plus its scene-owned lifecycle helper and mirrored docs.
-  sailing: "1e30c263a83984ed897715c622b2e7f3994a785aaad4e668f42898d395daea22",
-  shooter: "be6928dc9328386a871fd92d55fbe278ec9cbeab821f520967e155e802aa5b1c",
-  snow: "4d5f11455b152d33dff13b92759806a089ec07bbec24781f1f84904e055b69f4",
-  starter: "5e638d896c0535814c74f9d610ab65dfa469694397019998a8d73661374eca34",
-  "tower-defense": "e79d718b32f7c8e3c73c9aeacd868b9e71e711b35d479bf4e0c7551062f7b2d3",
+  sailing: "f8cd64d91a1d7d3e61a018d6421d27c28d682a1be34d168f6e035f0a472226e5",
+  shooter: "8f6ec08cef7066a65bf29824852fedd7dcfaac88c5eb41d428e774c6e0c57dbd",
+  snow: "0fcb7a48be91196244d9b8743a2454b616d48b511cc933050cfea8efe98207d2",
+  starter: "93f1677616b0ff8e42c4ca98c93f8613a03c2a5b3250510692cf728f11809b0b",
+  "tower-defense": "328a742eb57d534247a8727384f55cc3e5424b6ca15dfee6f4334bdcf6a19784",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
@@ -303,6 +310,8 @@ const STARTER_PATHS = [
   "kit.json",
   "package.json",
   "patches/three@0.185.1.patch",
+  "patches/vite@8.2.0.patch",
+  "patches/@tailwindcss__node@4.3.3.patch",
   "threenative.config.ts",
   "tools/look.mjs",
   "scripts/reference.mjs",
@@ -849,6 +858,8 @@ describe("create-threenative", () => {
       };
       expect(packageManifest.pnpm?.patchedDependencies).toEqual({
         "three@0.185.1": "patches/three@0.185.1.patch",
+        "vite@8.2.0": "patches/vite@8.2.0.patch",
+        "@tailwindcss/node@4.3.3": "patches/@tailwindcss__node@4.3.3.patch",
       });
       expect(STARTER_PATHS).toContain("playtests/survives.playtest.json");
       for (const relativePath of STARTER_PATHS) {

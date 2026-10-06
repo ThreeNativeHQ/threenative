@@ -1,6 +1,7 @@
 # PRD-489 — Occlusion culling re-tested on the GPU scene
 
 **Status:** PROPOSED
+**Priority:** P2 — Re-test unbuilt: gpuMain p95 target, no-visual-loss A/B, measurement mode.
 **Complexity:** 5 (MEDIUM) — 1–5 engine files (+1), a depth pyramid is a new mechanism (+2), previous-frame visibility is temporal GPU state (+2); risk override: none
 **Owner:** João
 **Depends on:** [PRD-478](./PRD-478-open-world-frame-architecture.md) (its Phase 2 moves shadow levels onto GPU-scene keys; occlusion must not reach them), [PRD-477](./PRD-477-worldcells-auto-on-measured-budgets.md) (the pop gate)

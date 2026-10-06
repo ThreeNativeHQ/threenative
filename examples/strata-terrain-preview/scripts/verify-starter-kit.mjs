@@ -212,7 +212,10 @@ export const stand = {
   cpSync(join(FIXTURES, "playtests/kit.playtest.json"), join(game, "playtests/kit.playtest.json"));
   mkdirSync(join(game, "src/scenes"), { recursive: true });
   cpSync(join(FIXTURES, "Forest.ts"), join(game, "src/scenes/Forest.ts"));
-  cpSync(join(import.meta.dirname, "../src/render/loading.ts"), join(game, "src/render/loading.ts"));
+  cpSync(
+    join(import.meta.dirname, "../src/render/loading.ts"),
+    join(game, "src/render/loading.ts"),
+  );
 
   // --- it has to typecheck and build, and ship no authoring package ----------------------------------
   run("pnpm", ["typecheck"], { cwd: game });

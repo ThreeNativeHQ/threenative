@@ -3,7 +3,6 @@ import {
   BufferAttribute,
   BufferGeometry,
   LOD,
-  type Matrix3,
   type Matrix4,
   Mesh,
   Object3D,

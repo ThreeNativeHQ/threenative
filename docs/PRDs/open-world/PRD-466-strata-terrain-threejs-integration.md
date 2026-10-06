@@ -1,6 +1,7 @@
 # PRD-466 — Agent-authored Strata terrain through the Three.js contract
 
 **Status:** PARTIAL
+**Priority:** P2 — Remaining five-world art and portable kit/performance qualification.
 **Complexity:** 7 (HIGH); risk override: none
 **Owner:** ThreeNative maintainers
 **Depends on:** None
@@ -3088,3 +3089,30 @@ remain unrun at this checkpoint; K2 and original frame/visual thresholds stay op
 API gaps are splat manifest reuse and explicit splat texture ownership. HLOD is a separate authorized
 lane: current cell-proxy cook output is not consumed by this runtime, and scatter-only Strata emits no
 proxy-eligible chunks. Per-model LOD, fir impostors and merged terrain blocks do not establish HLOD.
+
+### 2026-10-06 — sealed startup diagnostic (GPU red; acceptance remains open)
+
+The authenticated host-display attempt ran both bridge arms at source `af6dfc8`, using sealed
+artifact SHA256 `3a0365201a15e53401bd109a3a3442d8bd02a34055375a63bfdd71d49fea953d`,
+1920×1080, scale 1, MSAA 4 and the same camera. Both reached 4/4 spawn cells, 9/9 spawn terrain
+tiles, 205 nearby prop colliders and completed prewarm, with 64 loaded/resident cells, 4,820 resident
+instances and no admission backlog or streaming failures. These snapshots establish the loading
+handoff only; their ground-error sentinel does not establish ground contact.
+
+Both arms subsequently lost the WebGPU device on RTX 2080 / NVIDIA 615.71.09 / Chrome
+151.0.7922.34. Bridge-off failed at 03:36:20.301 UTC and bridge-on at 03:37:03.592 UTC, with
+`A valid external Instance reference no longer exists.` and device-loss reason `unknown`.
+The first stack-backed phase was timestamp-query resolution (`_resolveQueries` →
+`resolveTimestampsAsync` → `resolveGpuFrame` → `onRender`); the stack may be a consequence of
+device loss and does not identify its cause. No evidence establishes premature renderer disposal,
+missing adapter retention or memory exhaustion. The earlier sealed `72b12bd` bridge-on capture
+has no such signature, but its trace timed out, so it is an incomplete baseline.
+
+The five-second bridge-on trace completed without data loss and ended 2.55 seconds before device
+loss. Its fifteen-second measurement crossed the loss and cannot qualify steady rendering. Both
+screenshots timed out. Preflight GPU utilization was 37%, so this is functional/diagnostic evidence,
+not a controlled speedup or displayed-FPS comparison. Owned browsers stopped and the canonical
+capture lease was released at 03:37:22.944 UTC. Raw evidence is retained in
+`performance-resume-20261006/focused-runs/2026-10-06T03-35-41.180Z` in the task workspace.
+K2, matched screenshots, ground contact and original visual/frame/native acceptance remain open;
+no quality or acceptance limit was reduced.

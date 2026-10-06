@@ -6,6 +6,7 @@ prd_contract: v1
 
 **Status: PROPOSED, 2026-09-04.** Filed in `agent-leverage/`, measured at `dae30759`.
 
+**Priority:** P2 — Gate recall at one in fifty; precision corpus unbuilt, and it follows PRD-354.
 **Complexity:** +3 for 10+ files, +2 for a new shipped module (the detector leaves `scripts/`),
 +2 for multi-package (`create-threenative`, `engine-mcp`, `playtest`, `scripts/`) = **7 → HIGH
 mode.** Run a `prd-work-reviewer` checkpoint after every phase.

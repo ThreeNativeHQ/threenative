@@ -1,6 +1,7 @@
 # PRD-468 — Live world atmosphere, controller cameras, and asset injection
 
 **Status:** IN PROGRESS
+**Priority:** P2 — Remaining shipped handoff and EXR/native/mobile qualification.
 **Complexity:** 7 (HIGH); risk override: none
 **Owner:** ThreeNative maintainers
 **Depends on:** PRD-466's public rendering/asset/export contract and PRD-467 phase 1's shared document/live session

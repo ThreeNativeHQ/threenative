@@ -187,17 +187,68 @@ function findOutbound(scope: IScope, end: UiBridgeEnd): ((frame: string) => void
 
 const BROKER_KEY = "__tnUiBridgeBroker";
 
+interface IInbound {
+  readonly receivers: Set<(frame: unknown) => void>;
+  readonly dispatch: (frame: unknown) => void;
+}
+
 interface IBroker {
   game: Set<(message: IUiMessage) => void>;
   ui: Set<(message: IUiMessage) => void>;
+  /** One dispatcher per host inbound global, however many connections share it. */
+  inbound: Map<string, IInbound>;
 }
 
 function broker(scope: IScope): IBroker {
   const existing = scope[BROKER_KEY] as IBroker | undefined;
   if (existing !== undefined) return existing;
-  const created: IBroker = { game: new Set(), ui: new Set() };
+  const created: IBroker = { game: new Set(), ui: new Set(), inbound: new Map() };
   scope[BROKER_KEY] = created;
   return created;
+}
+
+/**
+ * Install `deliver` as one receiver of a host inbound global.
+ *
+ * The host calls one global with each frame, so a second connection that simply assigned it would
+ * silence the first — a game's own `game.ui` bridge starting after a React host had connected took
+ * every click away from the React host. Receivers share one dispatcher instead, and a closed
+ * connection removes only itself.
+ */
+function installInbound(scope: IScope, key: string, deliver: (frame: unknown) => void): () => void {
+  const bus = broker(scope);
+  let slot = bus.inbound.get(key);
+  if (slot === undefined) {
+    const receivers = new Set<(frame: unknown) => void>();
+    slot = {
+      receivers,
+      dispatch: (frame) => {
+        // One throwing receiver must not starve the others; the first error is rethrown after
+        // the loop so the host still logs it.
+        let firstError: unknown;
+        let failed = false;
+        for (const receiver of [...receivers]) {
+          try {
+            receiver(frame);
+          } catch (error) {
+            if (!failed) {
+              failed = true;
+              firstError = error;
+            }
+          }
+        }
+        if (failed) throw firstError;
+      },
+    };
+    bus.inbound.set(key, slot);
+  }
+  slot.receivers.add(deliver);
+  scope[key] = slot.dispatch;
+  const installed = slot;
+  return () => {
+    installed.receivers.delete(deliver);
+    if (installed.receivers.size === 0 && scope[key] === installed.dispatch) scope[key] = undefined;
+  };
 }
 
 /**
@@ -259,7 +310,7 @@ export function connectUiBridge(options: IConnectOptions): IUiBridge {
     };
   }
 
-  scope[inboundKey] = deliver;
+  const uninstall = installInbound(scope, inboundKey, deliver);
   // Android's injected object also raises `onmessage`; wiring it to the same entry point keeps
   // one inbound path on every host rather than one per host.
   const injected = scope[UI_BRIDGE_GLOBALS.uiHost] as { onmessage?: unknown } | undefined;
@@ -289,7 +340,7 @@ export function connectUiBridge(options: IConnectOptions): IUiBridge {
     close() {
       closed = true;
       listeners.clear();
-      if (scope[inboundKey] === deliver) scope[inboundKey] = undefined;
+      uninstall();
       if (end === "ui" && injected !== undefined && typeof injected === "object") {
         injected.onmessage = undefined;
       }

@@ -10,6 +10,7 @@ prd_contract: v1
 [TheLongSilence](https://github.com/achimala/TheLongSilence) `src/world/Surface.js:3873-4030`, the
 `PLACE_VERT` / `PLACE_FRAG` / `PLACE_FETCH` trio.
 
+**Priority:** P2 — Proposed per-instance scatter evaluation with unrun playtest and malformed-input rules.
 **Goal: a game can scatter tens of thousands of props across a world by writing one rule, and pay
 for that rule once per prop rather than once per vertex.** Density is most of what separates an AAA
 exterior from a Three.js demo, and the naive way to get it is vertex-bound in a way no resolution

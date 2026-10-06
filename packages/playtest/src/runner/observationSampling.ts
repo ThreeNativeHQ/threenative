@@ -153,9 +153,9 @@ export async function readCaptureProvenance(
   const observed = await page.evaluate(async () => {
     type Adapter = {
       features?: Iterable<string>;
-      info?: Record<string, unknown>;
-      limits?: Record<string, number | undefined>;
-      requestAdapterInfo?: () => Promise<Record<string, unknown>>;
+      info?: Partial<Record<"architecture" | "description" | "device" | "vendor", unknown>>;
+      limits?: Partial<Record<"maxBindGroups" | "maxTextureDimension2D" | "maxStorageBufferBindingSize", number>>;
+      requestAdapterInfo?: () => Promise<Partial<Record<"architecture" | "description" | "device" | "vendor", unknown>>>;
     };
     const gpu = (globalThis.navigator as Navigator & { gpu?: { requestAdapter(): Promise<Adapter | null> } }).gpu;
     // Which of the four ways an adapter can be unavailable actually happened is the diagnosis:
@@ -181,7 +181,7 @@ export async function readCaptureProvenance(
     const info = infoCandidate === undefined || Object.keys(infoCandidate).length === 0
       ? legacyInfo ?? infoCandidate
       : infoCandidate;
-    const adapterIdentityKeys = ["architecture", "description", "device", "vendor"];
+    const adapterIdentityKeys = ["architecture", "description", "device", "vendor"] as const;
     const adapterIdentityEntries: Array<[string, string]> = info === undefined
       ? []
       : adapterIdentityKeys.flatMap((key) => {
@@ -195,7 +195,7 @@ export async function readCaptureProvenance(
       if (features.length > 0) webgpuAdapterEntries.push(["features", features.join(",")]);
     }
     if (adapterIdentityEntries.length > 0) {
-      for (const key of ["maxBindGroups", "maxTextureDimension2D", "maxStorageBufferBindingSize"]) {
+      for (const key of ["maxBindGroups", "maxTextureDimension2D", "maxStorageBufferBindingSize"] as const) {
         const value = adapter?.limits?.[key];
         if (typeof value === "number" && Number.isFinite(value)) webgpuAdapterEntries.push([`limit.${key}`, String(value)]);
       }

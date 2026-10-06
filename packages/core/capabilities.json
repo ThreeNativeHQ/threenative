@@ -3483,6 +3483,27 @@
     {
       "aliases": [],
       "constraints": [
+        "desktop only, and the game host must be built with the CSS backend (`TN_ENABLE_CSS_UI=1`); Android, iOS and web phones render a React HUD in a web overlay instead",
+        "import `react`, never `react-dom`, from a native entry",
+        "styling is CSS resolved by the native engine; JS only mirrors the element tree"
+      ],
+      "example": "const root = createCssUiRoot();\nroot.render(createElement(\"section\", { className: \"fixed inset-0 bg-zinc-900/90\" }, \"READY\"));",
+      "importPath": "@threenative/core/react-css",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function createCssUiRoot(options: ICssUiRootOptions = { … }",
+      "situations": [
+        "mount a React HUD on the desktop host with no DOM in the runtime",
+        "write one React component and run it on the web and on the desktop host"
+      ],
+      "summary": "Mount React into a native CSS engine.",
+      "supersedes": [],
+      "symbol": "createCssUiRoot"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "styling is the `style` prop; Tailwind class names are CSS and cannot cross",
         "import `react`, never `react-dom`, from the portable native entry",
         "import `react`, never `react-dom`, from a native entry"
@@ -4836,6 +4857,20 @@
       "summary": "Explain why a captured frame failed the non-blank guard.",
       "supersedes": [],
       "symbol": "CaptureGuardError"
+    },
+    {
+      "aliases": [],
+      "constraints": ["does not acquire another screenshot or alter frame timing"],
+      "example": "collectRegionalTone(png, assertions, \"character\", \"posed\");",
+      "importPath": "@threenative/playtest/capture",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function collectRegionalTone( png: Buffer, assertions: readonly IPlaytestToneAssertion[], label: string, atStep?: string, ): IPlaytestRegionalToneObservation[] { … }",
+      "situations": ["measure a specified pixel crop in a captured playtest frame"],
+      "summary": "Collect opt-in regional tone observations from the same acquired PNG.",
+      "supersedes": [],
+      "symbol": "collectRegionalTone"
     },
     {
       "aliases": [],

@@ -5,6 +5,7 @@ prd_contract: v1
 # PRD-VQ-09 — Diffuse probes refresh bounded changed regions without a visible half-bake
 
 **Status:** PROPOSED — 2026-10-01. No implementation or qualification is claimed.
+**Priority:** P2 — Proposed revision-aware dirty-region rebaking against a full-rebake reference.
 **Batch:** Visual quality execution batch. **Wave:** 3 / gated GI extension.
 **Dependencies:** First reconcile and qualify existing PRD-268. The incumbent ProbeVolume remains the single diffuse-probe owner.
 
