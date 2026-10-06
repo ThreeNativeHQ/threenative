@@ -10,12 +10,15 @@ import {
   instanceIndex,
   instancedArray,
   length,
+  normalViewGeometry,
+  normalize,
   pass,
   positionLocal,
   screenUV,
   sin,
   uint,
   uniform,
+  uv,
   vec2,
   vec3,
   vec4,
@@ -40,6 +43,20 @@ function chromatic(renderer, scene, camera) {
 export const GRID_COUNT = 10_000;
 
 export const programs = {
+  async "nodemat-color-uv"({ target }) {
+    target.colorNode = vec4(uv(), uniform(0.35).setName("nodeTint"), 1);
+  },
+  async "nodemat-standard-nodes"({ target }) {
+    target.roughnessNode = uv().x.mul(0.7).add(0.2);
+    target.metalnessNode = uv().y.mul(0.8);
+    target.emissiveNode = vec3(sin(uv().x.mul(8)).mul(0.15).add(0.15), 0, 0);
+  },
+  async "nodemat-normal-opacity"({ target }) {
+    target.normalNode = normalize(
+      normalViewGeometry.add(vec3(sin(uv().x.mul(10)).mul(0.35), 0, 0)),
+    );
+    target.opacityNode = uv().y.mul(0.6).add(0.2);
+  },
   /**
    * PRD-513: a compute pass writes 10,000 instance positions on a 100 x 100 grid with a wave, and
    * the material's positionNode places each instance at its own entry.

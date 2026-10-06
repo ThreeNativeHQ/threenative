@@ -2,6 +2,7 @@
 
 #include <bit>
 #include <cstdio>
+#include <algorithm>
 
 namespace tn::engine::shader {
 
@@ -634,6 +635,27 @@ std::string Program::dump(bool typed) const {
     dumpBlock(0, 0, out, numbering, next);
     typed_ = false;
     return out;
+}
+
+std::vector<std::pair<std::string, Type>> Program::varyings() const {
+    std::vector<std::pair<std::string, Type>> result;
+    for (const auto& e : exprs_) if (e.op == Op::Varying) result.emplace_back(names_[e.immediate], e.type);
+    return result;
+}
+
+void Program::linkVaryings(const Program& fragment) {
+    const auto inputs = fragment.varyings();
+    const auto previous = outputs_;
+    const auto rank = [&](const OutputSlot& o) {
+        for (size_t i = 0; i < inputs.size(); ++i) if (inputs[i].first == names_[o.name]) return i;
+        return inputs.size();
+    };
+    std::stable_sort(outputs_.begin(), outputs_.end(), [&](const auto& a, const auto& b) { return rank(a) < rank(b); });
+    for (auto& block : blocks_) for (auto& stmt : block) {
+        if (stmt.kind != StmtKind::Output) continue;
+        const auto name = previous[stmt.a].name;
+        for (size_t i = 0; i < outputs_.size(); ++i) if (outputs_[i].name == name) { stmt.a = i; break; }
+    }
 }
 
 }  // namespace tn::engine::shader

@@ -32,7 +32,15 @@ export interface IEngineRef {
   readonly type: number;
 }
 
-export type EngineValue = null | number | boolean | string | readonly number[] | IEngineRef;
+export type EngineValue =
+  | null
+  | undefined
+  | number
+  | boolean
+  | string
+  | readonly EngineValue[]
+  | IEngineRef
+  | { readonly [key: string]: EngineValue };
 
 /** What the classes call; the Wasm ABI implements it, and a surface-only runtime refuses every call. */
 export interface IBrowserRuntime {
@@ -125,7 +133,7 @@ export function defineBrowserClasses(
     if (typeof value === "number" || typeof value === "boolean" || typeof value === "string")
       return value;
     if (Array.isArray(value) || ArrayBuffer.isView(value))
-      return Array.from(value as ArrayLike<number>, Number);
+      return Array.from(value as ArrayLike<unknown>, toEngine);
     if (typeof value === "object" && REF in value) {
       // An object with callbacks passed into the engine is held until the next safe point.
       if (callbackNames.has((value as IWrapped)[REF].key)) held.add(value);
@@ -135,7 +143,15 @@ export function defineBrowserClasses(
       `TN_BROWSER_ARGUMENT_UNSUPPORTED: ${typeof value} cannot cross to the engine`,
     );
   };
-  const fromEngine = (value: EngineValue): unknown => (isRef(value) ? wrap(value) : value);
+  const fromEngine = (value: EngineValue): unknown => {
+    if (isRef(value)) return wrap(value);
+    if (Array.isArray(value)) return value.map(fromEngine);
+    if (typeof value === "object" && value !== null)
+      return Object.fromEntries(
+        Object.entries(value).map(([key, item]) => [key, fromEngine(item)]),
+      );
+    return value;
+  };
 
   for (const [name, binding] of Object.entries(registry.classes)) {
     const cls = function (this: object, ...args: unknown[]) {
@@ -153,7 +169,22 @@ export function defineBrowserClasses(
         configurable: true,
         writable: true,
         value(this: object, ...args: unknown[]) {
-          return fromEngine(runtime.invoke(refOf(this), method, args.map(toEngine)));
+          const intersections = method === "intersectObject" || method === "intersectObjects";
+          const result = fromEngine(
+            runtime.invoke(
+              refOf(this),
+              method,
+              (intersections ? args.slice(0, 2) : args).map(toEngine),
+            ),
+          );
+          if (intersections && args[2] !== undefined) {
+            if (!Array.isArray(args[2]) || !Array.isArray(result))
+              throw new TypeError("intersection target must be an array");
+            args[2].push(...result);
+            args[2].sort((a, b) => a.distance - b.distance);
+            return args[2];
+          }
+          return result;
         },
       });
     }
@@ -255,7 +286,17 @@ export type TnAbiModule = Record<AbiCall, (...args: number[]) => number> &
 // 8 bytes (message 0, code 4); tn_version_info_t 32 bytes. A struct passed by value goes by pointer.
 const HANDLE = 12;
 const VALUE = 56;
-const KIND = { null: 0, number: 1, bool: 2, string: 3, handle: 4, numbers: 5 } as const;
+const KIND = {
+  null: 0,
+  number: 1,
+  bool: 2,
+  string: 3,
+  handle: 4,
+  numbers: 5,
+  array: 6,
+  record: 7,
+  undefined: 8,
+} as const;
 
 /** The runtime over a loaded ABI module: one engine context, every call checked. */
 export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
@@ -317,6 +358,7 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
   const writeValue = (pointer: number, value: EngineValue) => {
     const v = view();
     if (value === null) return v.setUint32(pointer, KIND.null, true);
+    if (value === undefined) return v.setUint32(pointer, KIND.undefined, true);
     if (typeof value === "number") {
       v.setUint32(pointer, KIND.number, true);
       return v.setFloat64(pointer + 8, value, true);
@@ -336,12 +378,21 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
       v.setUint32(pointer, KIND.handle, true);
       return writeHandle(pointer + 16, value);
     }
-    const numbers = alloc(Math.max(8, value.length * 8));
-    abi.HEAPF64.set(value, numbers / 8);
-    const w = view();
-    w.setUint32(pointer, KIND.numbers, true);
-    w.setUint32(pointer + 48, numbers, true);
-    w.setBigUint64(pointer + 40, BigInt(value.length), true);
+    if (!Array.isArray(value)) throw new TypeError("TN_ABI_VALUE: input record unsupported");
+    if (value.every((item) => typeof item === "number")) {
+      const numbers = alloc(Math.max(8, value.length * 8));
+      abi.HEAPF64.set(value as number[], numbers / 8);
+      const w = view();
+      w.setUint32(pointer, KIND.numbers, true);
+      w.setUint32(pointer + 48, numbers, true);
+      w.setBigUint64(pointer + 40, BigInt(value.length), true);
+    } else {
+      const children = values(value);
+      const w = view();
+      w.setUint32(pointer, KIND.array, true);
+      w.setUint32(pointer + 48, children, true);
+      w.setBigUint64(pointer + 40, BigInt(value.length), true);
+    }
   };
   const values = (args: readonly EngineValue[]): number => {
     const pointer = alloc(Math.max(VALUE, args.length * VALUE));
@@ -351,6 +402,8 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
   const readValue = (pointer: number): EngineValue => {
     const v = view();
     switch (v.getUint32(pointer, true)) {
+      case KIND.undefined:
+        return undefined;
       case KIND.number:
         return v.getFloat64(pointer + 8, true);
       case KIND.bool:
@@ -362,6 +415,22 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
         );
       case KIND.handle:
         return keyOf(pointer + 16);
+      case KIND.array: {
+        const at = v.getUint32(pointer + 48, true);
+        return Array.from({ length: Number(v.getBigUint64(pointer + 40, true)) }, (_, i) =>
+          readValue(at + i * VALUE),
+        );
+      }
+      case KIND.record: {
+        const at = v.getUint32(pointer + 48, true);
+        return Object.fromEntries(
+          Array.from({ length: Number(v.getBigUint64(pointer + 40, true)) }, (_, i) => {
+            const key = readValue(at + i * 2 * VALUE);
+            if (typeof key !== "string") throw new TypeError("TN_ABI_RECORD_KEY: expected string");
+            return [key, readValue(at + (i * 2 + 1) * VALUE)];
+          }),
+        );
+      }
       case KIND.numbers: {
         const at = v.getUint32(pointer + 48, true) / 8;
         return Array.from(

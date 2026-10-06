@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <atomic>
+#include <deque>
 #include <memory>
 #include <new>
 #include <string_view>
@@ -37,6 +38,9 @@ struct tn_context : tn::binding::Store {
     std::unordered_map<const void*, tn_handle_t> primary_;  // an object's own handle, by address
     std::unordered_map<const void*, std::shared_ptr<void>> owners_;  // an object pointer -> its record
     std::string scratchText;                  // a returned string, valid until the next call
+    std::deque<std::vector<tn_value_t>> scratchValues;
+    std::deque<std::string> scratchStrings;
+    std::deque<std::vector<double>> scratchArrays;
     std::vector<double> scratchNumbers;       // a returned array, valid until the next call
 
     // A Ref's text is the handle itself: a marker byte and its type, index and generation, 11 bytes
@@ -319,12 +323,14 @@ const tn::binding::Registry& classRegistry() {
     return classes;
 }
 
-bool toBinding(tn_context* context, const tn_value_t* in, uint32_t count, tn::binding::Args& out) {
+bool toBinding(tn_context* context, const tn_value_t* in, uint32_t count, tn::binding::Args& out, unsigned depth = 0) {
+    if (depth > 64 || (count && !in)) return false;
     using Kind = tn::binding::Value::Kind;
     for (uint32_t i = 0; i < count; ++i) {
         const tn_value_t& v = in[i];
         switch (v.kind) {
-            case TN_VALUE_NULL: out.push_back({}); break;
+            case TN_VALUE_NULL:
+            case TN_VALUE_UNDEFINED: out.push_back({}); break;
             case TN_VALUE_NUMBER: out.push_back(tn::binding::Value::of(v.number)); break;
             case TN_VALUE_BOOL: out.push_back(tn::binding::Value::of(v.boolean != 0)); break;
             case TN_VALUE_STRING:
@@ -337,38 +343,65 @@ bool toBinding(tn_context* context, const tn_value_t* in, uint32_t count, tn::bi
                 break;
             case TN_VALUE_NUMBERS:
                 if (!v.numbers && v.count) return false;
-                out.push_back(tn::binding::Value::list(std::vector<double>(v.numbers, v.numbers + v.count)));
+                out.push_back(tn::binding::Value::list(v.count ? std::vector<double>(v.numbers, v.numbers + v.count) : std::vector<double>{}));
                 break;
+            case TN_VALUE_ARRAY: {
+                if (v.count > UINT32_MAX) return false;
+                tn::binding::Args items;
+                if (!toBinding(context, v.values, uint32_t(v.count), items, depth + 1)) return false;
+                out.push_back(tn::binding::Value::array(std::move(items)));
+                break;
+            }
             default: return false;
         }
     }
     return true;
 }
 
-void fromBinding(tn_context* context, tn_handle_t self, const tn::binding::Value& in, tn_value_t* out) {
+void fromBinding(tn_context* context, tn_handle_t self, const tn::binding::Value& in, tn_value_t* out, bool root = true) {
+    if (root) { context->scratchValues.clear(); context->scratchStrings.clear(); context->scratchArrays.clear(); }
     using Kind = tn::binding::Value::Kind;
     *out = tn_value_t{};
     switch (in.kind) {
+        case Kind::Undefined: out->kind = TN_VALUE_UNDEFINED; break;
         case Kind::Null: break;
         case Kind::Number: out->kind = TN_VALUE_NUMBER; out->number = in.number; break;
         case Kind::Bool: out->kind = TN_VALUE_BOOL; out->boolean = in.flag ? 1 : 0; break;
         case Kind::String:
-            context->scratchText = in.text;
+            context->scratchStrings.push_back(in.text);
             out->kind = TN_VALUE_STRING;
-            out->text = context->scratchText.c_str();
-            out->count = context->scratchText.size();
+            out->text = context->scratchStrings.back().c_str();
+            out->count = in.text.size();
             break;
         case Kind::Numbers:
-            context->scratchNumbers = in.numbers;
+            context->scratchArrays.push_back(in.numbers);
             out->kind = TN_VALUE_NUMBERS;
-            out->numbers = context->scratchNumbers.data();
-            out->count = context->scratchNumbers.size();
+            out->numbers = context->scratchArrays.back().data();
+            out->count = in.numbers.size();
             break;
         case Kind::Ref:
             out->kind = TN_VALUE_HANDLE;
             if (in.text == "\x01self") out->handle = self;
             else context->decode(in.text, out->handle);
             break;
+        case Kind::Array:
+        case Kind::Record: {
+            const bool record = in.kind == Kind::Record;
+            const size_t count = record ? in.fields.size() : in.items.size();
+            context->scratchValues.emplace_back(count * (record ? 2 : 1));
+            auto& values = context->scratchValues.back();
+            out->kind = record ? TN_VALUE_RECORD : TN_VALUE_ARRAY;
+            out->count = count;
+            out->values = values.data();
+            for (size_t i = 0; i < count; ++i) {
+                if (record) {
+                    fromBinding(context, self, tn::binding::Value{Kind::String, 0, in.fields[i].first}, &values[i * 2], false);
+                    fromBinding(context, self, in.fields[i].second, &values[i * 2 + 1], false);
+                } else fromBinding(context, self, in.items[i], &values[i], false);
+            }
+            break;
+        }
+        case Kind::ShaderNode: break; // graph values use the in-process node bridge
         case Kind::Refs: break; // an argument shape only; no binding returns one
     }
 }
@@ -402,6 +435,28 @@ namespace tn::abi {
 tn::binding::Object* objectOf(tn_handle_t handle) {
     tn_context* context = contextFor(handle.context);
     return context ? context->object(handle) : nullptr;
+}
+
+engine::shader::graph::Node shaderNode(tn_handle_t handle, const std::string& path) {
+    auto* object = objectOf(handle);
+    if (!object) throw std::runtime_error("TN_HANDLE_INVALID: shader node owner");
+    const auto& getters = classRegistry().at(object->cls).getters;
+    const auto found = getters.find(path);
+    if (found == getters.end()) throw std::runtime_error("TN_NATIVE_UNSUPPORTED: " + path);
+    const auto value = found->second(object->ptr.get());
+    if (value.kind != binding::Value::Kind::Null && value.kind != binding::Value::Kind::ShaderNode)
+        throw std::runtime_error("TN_TSL_PROPERTY: " + path);
+    return value.node;
+}
+
+void setShaderNode(tn_handle_t handle, const std::string& path, engine::shader::graph::Node node) {
+    auto* context = contextFor(handle.context);
+    auto* object = context ? context->object(handle) : nullptr;
+    if (!object) throw std::runtime_error("TN_HANDLE_INVALID: shader node owner");
+    const auto& setters = classRegistry().at(object->cls).setters;
+    const auto found = setters.find(path);
+    if (found == setters.end()) throw std::runtime_error("TN_NATIVE_UNSUPPORTED: " + path);
+    found->second(object->ptr.get(), binding::Value::shaderNode(std::move(node)), *context);
 }
 
 uint64_t crossings() { return gCrossings.load(std::memory_order_relaxed); }
@@ -465,7 +520,10 @@ tn_status_t tn_get(tn_handle_t self, const char* path, tn_value_t* result, tn_di
         return report(diagnostic, TN_ERROR_UNSUPPORTED, 0, ("TN_NATIVE_UNSUPPORTED " + object->cls + "." + path).c_str());
     return guarded(diagnostic, [&]() -> tn_status_t {
         void* ptr = object->ptr.get();
-        fromBinding(context, self, g != binding.getters.end() ? g->second(ptr) : m->second(ptr, {}, *context), result);
+        const auto value = g != binding.getters.end() ? g->second(ptr) : m->second(ptr, {}, *context);
+        if (value.kind == tn::binding::Value::Kind::ShaderNode)
+            return report(diagnostic, TN_ERROR_UNSUPPORTED, 0, "TN_TSL_NATIVE_BRIDGE: shader graph requires the node adapter");
+        fromBinding(context, self, value, result);
         return ok(diagnostic);
     });
 }

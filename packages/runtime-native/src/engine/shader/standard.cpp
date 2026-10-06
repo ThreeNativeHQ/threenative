@@ -6,6 +6,7 @@
 // BRDF_BlinnPhong) as materials/nodes/Mesh{Lambert,Phong}NodeMaterial.js wire them.
 
 #include "standard.h"
+#include "engine/shader/tsl/tsl.h"
 
 #include <numbers>
 
@@ -274,6 +275,20 @@ struct LocalVertex {
     ExprId uv;            // vec2; kInvalid without a map. Written after instanceColor for the same reason.
 };
 
+// The slot's requested type is three's subBuild/vecN/float conversion, including vector padding.
+static ExprId nodeType(Program& p, ExprId id, Type type) {
+    if (id == kInvalid) return p.call("invalid NodeMaterial expression", {});
+    const Type source = p.expr(id).type;
+    if (source.rows > type.rows && !source.isMatrix())
+        return p.construct(type, {p.swizzle(id, std::string_view("xyzw").substr(0, type.rows))});
+    if (source.isVector() && type.isVector() && source.rows < type.rows) {
+        std::vector<ExprId> parts{id};
+        for (unsigned lane = source.rows; lane < type.rows; ++lane) parts.push_back(p.constant(lane == 3 ? 1.0f : 0.0f));
+        return p.construct(type, parts);
+    }
+    return p.construct(type, {id});
+}
+
 static LocalVertex localVertex(Program& v, const VertexVariant& variant, bool withNormal) {
     ExprId position = v.attribute("position", Type::vec(3));
     ExprId normal = withNormal ? v.attribute("normal", Type::vec(3)) : kInvalid;
@@ -348,6 +363,10 @@ static LocalVertex localVertex(Program& v, const VertexVariant& variant, bool wi
     }
     // NodeMaterial.setupPosition: `positionLocal.assign(positionNode)` after morph, skinning and instancing.
     if (variant.positionNode) position = variant.positionNode->build(v, position);
+    if (variant.nodes.positionNode) {
+        tsl::Build build(v);
+        position = nodeType(v, graph::lower(variant.nodes.positionNode, v, {{"positionLocal", position}}), Type::vec(3));
+    }
     const ExprId instanceColor = variant.instanceColor ? v.attribute("instanceColor", Type::vec(3)) : kInvalid;
     // Read last: a map's uv joins the varying set after instanceColor, so the fragment reads it there.
     const ExprId uv = variant.map ? v.attribute("uv", Type::vec(2)) : kInvalid;
@@ -392,6 +411,52 @@ static ExprId mapTexel(Program& f, const VertexVariant& variant) {
 static ExprId materialColor(Program& f, const VertexVariant& variant, ExprId diffuse) {
     const ExprId color = f.swizzle(diffuse, "xyz");
     return variant.instanceColor ? f.mul(f.varying("instanceColor", Type::vec(3)), color) : color;
+}
+
+// The node slots replace upstream's material accessors, not their already-mapped results.
+static ExprId nodeValue(Program& f, const graph::Node& node, Type type, ExprId fallback,
+                        ExprId geometryNormal = kInvalid) {
+    if (!node) return fallback;
+    tsl::Build build(f);
+    const ExprId id = graph::lower(node, f, geometryNormal == kInvalid
+        ? std::unordered_map<std::string, ExprId>{}
+        : std::unordered_map<std::string, ExprId>{{"normalViewGeometry", geometryNormal}});
+    return nodeType(f, id, type);
+}
+
+static ExprId diffuseAlpha(Program& f, const VertexVariant& variant, ExprId diffuse, ExprId texel) {
+    ExprId alpha = f.swizzle(diffuse, "w");
+    if (variant.nodes.colorNode) {
+        alpha = f.mul(alpha, nodeValue(f, variant.nodes.opacityNode, Type::f32(),
+                                       f.swizzle(f.uniform("diffuse", Type::vec(4)), "w")));
+    } else {
+        if (texel != kInvalid) alpha = f.mul(alpha, f.swizzle(texel, "w"));
+        if (variant.nodes.opacityNode) {
+            // material colour's alpha is the map alpha; opacityNode replaces material.opacity.
+            alpha = f.mul(texel == kInvalid ? f.constant(1.0f) : f.swizzle(texel, "w"),
+                          nodeValue(f, variant.nodes.opacityNode, Type::f32(), kInvalid));
+        }
+    }
+    return alpha;
+}
+
+// Graph attributes can be first used in any slot. Link the two stages by name, in fragment order.
+static void linkNodes(StandardPrograms& out, const VertexVariant& variant, const LocalVertex& local) {
+    bool hasNodes = false;
+    for (const auto& node : variant.nodes.graphs()) hasNodes |= bool(node);
+    if (!hasNodes) return;
+    Program& v = out.vertex;
+    for (const auto& [name, type] : out.fragment.varyings()) {
+        if (name == "normalView" || name == "positionView" ||
+            (name == "instanceColor" && variant.instanceColor) || (name == "uv" && variant.map)) continue;
+        ExprId value;
+        if (name == "positionWorld")
+            value = v.swizzle(v.mul(v.uniform("modelMatrix", Type::mat(4, 4)), local.position), "xyz");
+        else if (name == "positionLocal") value = v.swizzle(local.position, "xyz");
+        else value = v.attribute(name, type);
+        v.output(name, value);
+    }
+    v.linkVaryings(out.fragment);
 }
 
 // One direct light's direction and colour, three's setupDirect for DirectionalLightNode,
@@ -547,26 +612,26 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
     Tsl t{f};
     // normalViewGeometry is the varying renormalized (three's .normalize().toVar()); getGeometryRoughness
     // differentiates that, not the raw varying.
-    const ExprId n = f.call("normalize", {f.varying("normalView", Type::vec(3))});
-    const ExprId normalViewGeometry = n;
+    const ExprId normalViewGeometry = f.call("normalize", {f.varying("normalView", Type::vec(3))});
+    const ExprId n = nodeValue(f, variant.nodes.normalNode, Type::vec(3), normalViewGeometry, normalViewGeometry);
     const ExprId positionViewDirection = f.call("normalize", {f.neg(f.varying("positionView", Type::vec(3)))});
     const ExprId positionWorld = lights.shadowed() ? f.varying("positionWorld", Type::vec(3)) : kInvalid;
     // normalWorld = normalView.transformNormalByInverseViewMatrix(cameraViewMatrix), in the fragment:
     // normalize((vec4(normalView, 0) * viewMatrix).xyz).
     const ExprId normalWorld = f.call("normalize", {f.swizzle(f.mul(f.construct(Type::vec(4), {n, f.constant(0.0f)}),
                                                                      f.uniform("viewMatrix", Type::mat(4, 4))), "xyz")});
-    const ExprId diffuse = f.uniform("diffuse", Type::vec(4));
-    const ExprId texel = mapTexel(f, variant);
+    const ExprId diffuse = nodeValue(f, variant.nodes.colorNode, Type::vec(4), f.uniform("diffuse", Type::vec(4)));
+    const ExprId texel = variant.nodes.colorNode ? kInvalid : mapTexel(f, variant);
     ExprId diffuseColor = materialColor(f, variant, diffuse);
     if (texel != kInvalid) diffuseColor = f.mul(diffuseColor, f.swizzle(texel, "xyz"));
-    const ExprId metalness = f.uniform("metalness", Type::f32());
+    const ExprId metalness = nodeValue(f, variant.nodes.metalnessNode, Type::f32(), variant.nodes.metalnessNode ? kInvalid : f.uniform("metalness", Type::f32()));
 
     // getRoughness: max(roughness, 0.0525) + getGeometryRoughness, capped at 1.
     const ExprId dxy = f.call("max", {f.call("abs", {f.call("dFdx", {normalViewGeometry})}),
                                       f.call("abs", {f.call("dFdy", {normalViewGeometry})})});
     const ExprId geometryRoughness =
         f.call("max", {f.call("max", {f.swizzle(dxy, "x"), f.swizzle(dxy, "y")}), f.swizzle(dxy, "z")});
-    ExprId roughness = f.call("min", {f.add(f.call("max", {f.uniform("roughness", Type::f32()), t.f(0.0525f)}),
+    ExprId roughness = f.call("min", {f.add(f.call("max", {nodeValue(f, variant.nodes.roughnessNode, Type::f32(), variant.nodes.roughnessNode ? kInvalid : f.uniform("roughness", Type::f32())), t.f(0.0525f)}),
                                                   geometryRoughness), t.f(1)});
 
     // MeshStandardNodeMaterial.setupSpecular, or MeshPhysicalNodeMaterial's setupSpecular.
@@ -640,16 +705,16 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
         environmentDiffuse = f.mul(f.mul(diffuseContribution, energyLoss), cosineWeightedIrradiance);
     }
 
-    const ExprId emissive = f.uniform("emissive", Type::vec(3));
+    const ExprId emissive = nodeValue(f, variant.nodes.emissiveNode, Type::vec(3), variant.nodes.emissiveNode ? kInvalid : f.uniform("emissive", Type::vec(3)));
     // LightsNode: (directDiffuse + indirectDiffuse) + (directSpecular + indirectSpecular),
     // then NodeMaterial adds emissive. Do not regroup the f32 sum by light source.
     const ExprId totalIndirectDiffuse = environmentDiffuse == kInvalid ? indirectDiffuse : f.add(indirectDiffuse, environmentDiffuse);
     const ExprId totalSpecular = environmentSpecular == kInvalid ? directSpecular : f.add(directSpecular, environmentSpecular);
     const ExprId outgoing = f.add(f.add(f.add(directDiffuse, totalIndirectDiffuse), totalSpecular), emissive);
-    ExprId alpha = f.swizzle(diffuse, "w");
-    if (texel != kInvalid) alpha = f.mul(alpha, f.swizzle(texel, "w"));
+    const ExprId alpha = diffuseAlpha(f, variant, diffuse, texel);
     // Linear HDR out: tone mapping and the output colour space belong to the output pass (output.h).
     f.output("color", f.construct(Type::vec(4), {outgoing, materialAlpha(f, alpha)}));
+    linkNodes(out, variant, local);
     for (const Program* stage : {&out.vertex, &out.fragment}) {
         for (const Diagnostic& d : stage->diagnostics()) {
             out.diagnostics.push_back(d.code + " " + d.node + ": " + d.reason + " (" + d.file + ":" + std::to_string(d.line) + ")");
@@ -698,8 +763,8 @@ StandardPrograms buildLit(bool phong, const VertexVariant& variant, const LightL
     // normalize((vec4(normalView, 0) * viewMatrix).xyz).
     const ExprId normalWorld = f.call("normalize", {f.swizzle(f.mul(f.construct(Type::vec(4), {n, f.constant(0.0f)}),
                                                                      f.uniform("viewMatrix", Type::mat(4, 4))), "xyz")});
-    const ExprId diffuse = f.uniform("diffuse", Type::vec(4));
-    const ExprId texel = mapTexel(f, variant);
+    const ExprId diffuse = nodeValue(f, variant.nodes.colorNode, Type::vec(4), f.uniform("diffuse", Type::vec(4)));
+    const ExprId texel = variant.nodes.colorNode ? kInvalid : mapTexel(f, variant);
     ExprId diffuseColor = materialColor(f, variant, diffuse);
     if (texel != kInvalid) diffuseColor = f.mul(diffuseColor, f.swizzle(texel, "xyz"));
 
@@ -726,12 +791,12 @@ StandardPrograms buildLit(bool phong, const VertexVariant& variant, const LightL
 
     ExprId lighting = f.add(directDiffuse, indirectDiffuse);
     if (phong) lighting = f.add(lighting, directSpecular);
-    const ExprId emissive = f.uniform("emissive", Type::vec(3));
+    const ExprId emissive = nodeValue(f, variant.nodes.emissiveNode, Type::vec(3), variant.nodes.emissiveNode ? kInvalid : f.uniform("emissive", Type::vec(3)));
     const ExprId outgoing = f.add(lighting, emissive);
-    ExprId alpha = f.swizzle(diffuse, "w");
-    if (texel != kInvalid) alpha = f.mul(alpha, f.swizzle(texel, "w"));
+    const ExprId alpha = diffuseAlpha(f, variant, diffuse, texel);
     // Linear HDR out: tone mapping and the output colour space belong to the output pass (output.h).
     f.output("color", f.construct(Type::vec(4), {outgoing, materialAlpha(f, alpha)}));
+    linkNodes(out, variant, local);
     for (const Program* stage : {&out.vertex, &out.fragment}) {
         for (const Diagnostic& d : stage->diagnostics()) {
             out.diagnostics.push_back(d.code + " " + d.node + ": " + d.reason + " (" + d.file + ":" + std::to_string(d.line) + ")");
@@ -754,13 +819,13 @@ StandardPrograms buildBasic(const VertexVariant& variant) {
     outputInstanceColor(v, local);
     outputMapUv(v, local);
     Program& f = out.fragment;
-    const ExprId diffuse = f.uniform("diffuse", Type::vec(4));
-    const ExprId texel = mapTexel(f, variant);
+    const ExprId diffuse = nodeValue(f, variant.nodes.colorNode, Type::vec(4), f.uniform("diffuse", Type::vec(4)));
+    const ExprId texel = variant.nodes.colorNode ? kInvalid : mapTexel(f, variant);
     ExprId diffuseColor = materialColor(f, variant, diffuse);
     if (texel != kInvalid) diffuseColor = f.mul(diffuseColor, f.swizzle(texel, "xyz"));
-    ExprId alpha = f.swizzle(diffuse, "w");
-    if (texel != kInvalid) alpha = f.mul(alpha, f.swizzle(texel, "w"));
-    f.output("color", f.construct(Type::vec(4), {diffuseColor, materialAlpha(f, alpha)}));
+    const ExprId alpha = diffuseAlpha(f, variant, diffuse, texel);
+    f.output("color", f.construct(Type::vec(4), {variant.nodes.emissiveNode ? f.add(diffuseColor, nodeValue(f, variant.nodes.emissiveNode, Type::vec(3), kInvalid)) : diffuseColor, materialAlpha(f, alpha)}));
+    linkNodes(out, variant, local);
     return out;
 }
 

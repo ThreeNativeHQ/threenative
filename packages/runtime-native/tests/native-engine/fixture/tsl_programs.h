@@ -21,8 +21,7 @@ namespace tsl_detail {
 inline constexpr uint32_t kGridCount = 10000;
 
 inline engine::Material* materialOf(binding::Object& object) {
-    const std::string& cls = object.cls;
-    if (cls.size() < 8 || cls.compare(cls.size() - 8, 8, "Material") != 0) return nullptr;
+    if (!binding::isMaterialClass(object.cls)) return nullptr;
     return static_cast<engine::Material*>(object.ptr.get());
 }
 
@@ -118,9 +117,28 @@ inline std::string applyTslProgram(const std::string& program, binding::Object& 
     }
     engine::Material* material = tsl_detail::materialOf(object);
     if (material == nullptr) return "tsl " + program + ": " + object.cls + " is not a material";
-    if (program == "storage-instances") return tsl_detail::storageInstances(*material, renderer, device);
-    if (program == "wave-plane") return tsl_detail::wavePlane(*material);
-    return "TN_FIXTURE_TSL_UNKNOWN: " + program;
+    // PRD-531 slice 3: the upstream fixture programs above, built as native lazy graphs.
+    namespace g = engine::shader::graph;
+    using engine::shader::Type;
+    const auto x = g::swizzle(g::uv(), "x"), y = g::swizzle(g::uv(), "y");
+    if (program == "nodemat-color-uv") {
+        material->nodes.colorNode = g::vec4({g::uv(), g::uniform("nodeTint", Type::f32(), {0.35f}), g::float_(1)});
+    } else if (program == "nodemat-standard-nodes") {
+        material->nodes.roughnessNode = g::add(g::mul(x, g::float_(0.7)), g::float_(0.2));
+        material->nodes.metalnessNode = g::mul(y, g::float_(0.8));
+        material->nodes.emissiveNode = g::vec3({g::add(g::mul(g::sin(g::mul(x, g::float_(8))), g::float_(0.15)),
+                                                    g::float_(0.15)), g::float_(0), g::float_(0)});
+    } else if (program == "nodemat-normal-opacity") {
+        material->nodes.normalNode = g::normalize(g::add(g::varying("normalViewGeometry", Type::vec(3)),
+            g::vec3({g::mul(g::sin(g::mul(x, g::float_(10))), g::float_(0.35)), g::float_(0), g::float_(0)})));
+        material->nodes.opacityNode = g::add(g::mul(y, g::float_(0.6)), g::float_(0.2));
+    } else {
+        if (program == "storage-instances") return tsl_detail::storageInstances(*material, renderer, device);
+        if (program == "wave-plane") return tsl_detail::wavePlane(*material);
+        return "TN_FIXTURE_TSL_UNKNOWN: " + program;
+    }
+    material->needsUpdate();
+    return "";
 }
 
 }  // namespace tn::fixture

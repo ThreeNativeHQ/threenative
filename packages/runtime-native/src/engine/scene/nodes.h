@@ -7,8 +7,6 @@
 //   - `Scene`'s background/environment/fog/overrideMaterial are `Color`, `Texture`, `Fog` and
 //     `Material` values (N08/N09), so they are opaque pointers here until those classes exist. Their
 //     numeric companions (intensity, blurriness, the two rotations) are ported.
-//   - `Mesh`'s morph targets, `getVertexPosition` and `raycast` need BufferGeometry (PRD-508 phase 3),
-//     so `geometry` and `material` are opaque pointers for now.
 //   - `toJSON`, `clone`: out of scope for the object model, as in Object3D.
 
 #include <memory>
@@ -69,6 +67,8 @@ class Mesh : public Object3D {
         morphTargetInfluences.assign(count, 0.0);
     }
     std::vector<double> morphTargetInfluences;
+    virtual Vector3& getVertexPosition(uint64_t index, Vector3& target) const;
+    bool raycast(const Raycaster& raycaster, std::vector<Intersection>& intersects) override;
 
     [[nodiscard]] std::string_view type() const override { return "Mesh"; }
 
@@ -99,6 +99,7 @@ class InstancedMesh : public Mesh {
     std::shared_ptr<Sphere> boundingSphere;
     /** three's `InstancedMesh.computeBoundingSphere`: the union of every drawn instance's own sphere. */
     void computeBoundingSphere();
+    bool raycast(const Raycaster& raycaster, std::vector<Intersection>& intersects) override;
 
     std::shared_ptr<BufferAttribute> instanceMatrix; // 16 floats per instance
     std::shared_ptr<BufferAttribute> instanceColor;  // 3 floats per instance; null until setColorAt

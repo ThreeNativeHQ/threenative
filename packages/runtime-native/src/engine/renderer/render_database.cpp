@@ -1,3 +1,4 @@
+#include "engine/scene/raycaster.h"
 #include "render_database.h"
 
 #include "engine/animation/skinning/skeleton.h"
@@ -182,6 +183,7 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh) {
     d.depthWrite = material->depthWrite;
     d.materialKey = material;
     d.positionNode = material->positionNode;
+    d.nodes = material->nodes;
     d.side = static_cast<uint8_t>(material->side);
     r.drawable = d.positions != nullptr;
     return r;
@@ -191,6 +193,7 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
     if (!object.visible())
         return;
     if (object.layers().test(camera.layers())) {
+        if (auto* lod = dynamic_cast<LOD*>(&object); lod && lod->autoUpdate) lod->update(camera);
         const std::string_view type = object.type();
         if (type == "Mesh" || type == "InstancedMesh" || type == "SkinnedMesh") {
             const auto& mesh = static_cast<const Mesh&>(object);
@@ -203,7 +206,7 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
                 r.item.material = &r.params;
                 // A positionNode deforms per material: its own draw, as the TS projection keeps it exact.
                 r.item.batchable = type == "Mesh" && !mesh.onBeforeRender && !r.material->transparent &&
-                                   !r.material->positionNode;
+                                   !r.material->positionNode && !r.material->nodes.positionNode;
                 r.item.castShadow = mesh.castShadow();
                 r.item.receiveShadow = mesh.receiveShadow();
                 const bool morphed = !mesh.geometry->morphPositions.empty() && !mesh.morphTargetInfluences.empty();

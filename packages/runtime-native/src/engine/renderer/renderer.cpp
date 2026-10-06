@@ -93,6 +93,24 @@ void put(std::vector<uint8_t>& block, size_t base, const shader::UniformField* f
     }
 }
 
+// Authored uniform data accompanies the graph, not the cached program. Both colour and shadow
+// draws bind it, so a graph positionNode has exactly the same deformation in the two passes.
+void putNodes(std::vector<uint8_t>& block, size_t base, const shader::StageModule& stage,
+              const shader::MaterialNodes& nodes) {
+    std::map<std::string, std::vector<float>> values;
+    for (const auto& node : nodes.graphs()) for (const auto& [name, value] : shader::graph::uniforms(node)) {
+        const auto [it, fresh] = values.emplace(name, value);
+        if (!fresh && it->second != value) throw std::runtime_error("TN_TSL_UNIFORM_CONFLICT: " + name);
+    }
+    for (const auto& field : stage.uniforms) {
+        const auto found = values.find(field.name);
+        if (found == values.end()) continue;
+        if (field.type.isMatrix() || field.type.scalar != shader::Type::Scalar::F32 || found->second.size() != field.type.rows)
+            throw std::runtime_error("TN_TSL_UNIFORM_TYPE: " + field.name);
+        std::memcpy(block.data() + base + field.offset, found->second.data(), found->second.size() * sizeof(float));
+    }
+}
+
 constexpr const char* kSlotNames[] = {
     "modelMatrix", "viewMatrix", "projectionMatrix", "normalMatrix", "diffuse", "alphaTest", "opaque", "roughness",
     "metalness", "emissive", "specular", "shininess", "ior", "specularIntensity", "specularColor", "uvTransform",
@@ -866,7 +884,10 @@ Renderer::Program& Renderer::program(MaterialKind kind, const shader::VertexVari
 
 Renderer::Program& Renderer::depthProgram(const shader::VertexVariant& variant) {
     shader::VertexVariant kind = variant;
-    kind.instanceColor = false; // a depth pass reads no colour
+    kind.instanceColor = false;
+    const auto positionGraph = kind.nodes.positionNode;
+    kind.nodes = {};
+    kind.nodes.positionNode = positionGraph; // a depth pass reads no colour
     kind.map = false;           // ...nor a diffuse map: no uv passes through the depth program
     const std::string key = "depth|" + kind.key();
     if (const auto found = programs_.find(key); found != programs_.end()) return *found->second;
@@ -1089,6 +1110,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
             v.morphNormals = !item.morphGeometry->morphNormals.empty();
         }
         v.positionNode = item.positionNode;
+        v.nodes = item.nodes;
         v.environment = item.envMap != nullptr;
         v.map = item.map != nullptr;
         v.mapSRGB = false;  // WGSLNodeBuilder uses GPU sRGB formats; no shader colour conversion.
@@ -1184,6 +1206,8 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
         put(frameUniforms_, f, fs[kHemisphereGround], lights.hemisphereGround);
         put(frameUniforms_, f, fs[kHemisphereDirection], lights.hemisphereUp);  // world space: it meets normalWorld
         put(frameUniforms_, f, fs[kAmbient], lights.ambient);
+        putNodes(frameUniforms_, v, program.vertex, item.nodes);
+        putNodes(frameUniforms_, f, program.fragment, item.nodes);
         plan.push_back({&item, &program, pipeline, static_cast<uint32_t>(v), static_cast<uint32_t>(f)});
     }
 
@@ -1220,6 +1244,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
             put(frameUniforms_, v, program.vertexSlots[kViewMatrix], view);
             put(frameUniforms_, v, program.vertexSlots[kProjectionMatrix], shadow.projection);
             putSkin(v, program.vertexSlots, item);
+            putNodes(frameUniforms_, v, program.vertex, item.nodes);
             pass.draws.push_back({&item, &program, pipeline, static_cast<uint32_t>(v), 0});
         }
         }
@@ -1282,13 +1307,15 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
         for (const shader::VertexAttribute& a : p.program->vertex.attributes) {
             // instanceMatrix0..3 are the columns of one buffer of mat4s, bound at 16-byte steps.
             const bool column = a.name.rfind("instanceMatrix", 0) == 0;
-            BufferStore& store = a.name == "position"        ? *item.positions
-                                 : a.name == "normal"        ? *item.normals
-                                 : a.name == "uv"            ? *item.uvs
-                                 : a.name == "instanceColor" ? *item.instanceColors
-                                 : a.name == "skinIndex"     ? *item.skinIndices
-                                 : a.name == "skinWeight"    ? *item.skinWeights
-                                                             : *item.instanceMatrices;
+            BufferStore* source = a.name == "position"        ? item.positions
+                                  : a.name == "normal"        ? item.normals
+                                  : a.name == "uv"            ? item.uvs
+                                  : a.name == "instanceColor" ? item.instanceColors
+                                  : a.name == "skinIndex"     ? item.skinIndices
+                                  : a.name == "skinWeight"    ? item.skinWeights
+                                  : column                   ? item.instanceMatrices : nullptr;
+            if (!source) throw std::runtime_error("TN_NATIVE_ATTRIBUTE_MISSING: " + a.name);
+            BufferStore& store = *source;
             const uint64_t offset = column ? uint64_t(a.name.back() - '0') * 16 : 0;
             const Handle buffer = geometry_.sync(store, WGPUBufferUsage_Vertex);
             if (a.location < std::size(boundVertex) && boundVertex[a.location] == &store) continue;

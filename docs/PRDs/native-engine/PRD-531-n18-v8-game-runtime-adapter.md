@@ -75,6 +75,13 @@ each proven before the next:
    native classes, and the template's renderer setup maps to the native renderer; then the
    template's own playtest journey, unchanged (box 49).
 
+Progress (2026-10-06): slices 1-3 are in — the graph (`native_engine_tsl_graph`), TSL from JS
+(`native_engine_tsl_js`, 25 graphs, 0 differ against upstream) and `MeshStandardNodeMaterial` /
+`MeshBasicNodeMaterial` with `colorNode`, `positionNode`, `normalNode`, `emissiveNode`,
+`roughnessNode`, `metalnessNode` and `opacityNode` (render fixtures `nodemat-color-uv`,
+`nodemat-standard-nodes`, `nodemat-normal-opacity` pass against the browser). Slice 5's first part
+runs the real `@threenative/core` loop in the V8 player. `Raycaster` and `LOD` are native.
+
 The same graph serves Perry (decision 11): a later facade reaches it through the C ABI, and no
 upstream TSL JavaScript runs inside a native artifact.
 

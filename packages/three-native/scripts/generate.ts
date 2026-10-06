@@ -415,6 +415,9 @@ TN_EXPORT tn_status_t tn_object_release(tn_handle_t object, tn_diagnostic_t *dia
 #define TN_VALUE_STRING 3u
 #define TN_VALUE_HANDLE 4u
 #define TN_VALUE_NUMBERS 5u
+#define TN_VALUE_ARRAY 6u
+#define TN_VALUE_RECORD 7u
+#define TN_VALUE_UNDEFINED 8u
 typedef struct tn_value {
   uint32_t kind;
   uint32_t boolean;
@@ -423,7 +426,8 @@ typedef struct tn_value {
   uint32_t reserved;
   const char *text;
   uint64_t count; /* bytes of text, or elements of numbers */
-  const double *numbers;
+  /* ARRAY: count values; RECORD: count alternating string-key/value pairs. */
+  union { const double *numbers; const struct tn_value *values; };
 } tn_value_t;
 
 /* The generic binding calls over the engine's one registry: the same classes, methods and

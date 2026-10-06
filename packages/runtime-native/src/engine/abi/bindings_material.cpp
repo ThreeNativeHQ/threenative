@@ -187,13 +187,28 @@ void registerTypeFields(ClassBinding& b, MaterialType type) {
     materialNumber(b, "dispersion", &Material::dispersion);
 }
 
-void registerMeshMaterial(ClassBinding& b, MaterialType type) {
-    b.ctor = [type](const Args& a, Store&) -> std::shared_ptr<void> {
+void registerMeshMaterial(ClassBinding& b, MaterialType type, bool node = false) {
+    b.ctor = [type, node](const Args& a, Store&) -> std::shared_ptr<void> {
         if (!a.empty()) throw Unsupported{"a material parameters object is not supported"};
-        return std::static_pointer_cast<void>(std::make_shared<Material>(type));
+        return std::static_pointer_cast<void>(std::make_shared<Material>(type, node));
     };
     registerMaterialBase(b);
     registerTypeFields(b, type);
+    if (!node) return;
+    using Nodes = shader::MaterialNodes;
+    for (const auto& [name, field] : std::initializer_list<std::pair<const char*, shader::graph::Node Nodes::*>>{
+             {"colorNode", &Nodes::colorNode}, {"positionNode", &Nodes::positionNode},
+             {"normalNode", &Nodes::normalNode}, {"opacityNode", &Nodes::opacityNode},
+             {"emissiveNode", &Nodes::emissiveNode}, {"roughnessNode", &Nodes::roughnessNode},
+             {"metalnessNode", &Nodes::metalnessNode}}) {
+        b.getters[name] = [field](void* self) { return Value::shaderNode(as<Material>(self)->nodes.*field); };
+        b.setters[name] = [field, name](void* self, const Value& v) {
+            if (v.kind != Value::Kind::Null && (v.kind != Value::Kind::ShaderNode || !v.node))
+                throw Unsupported{std::string(name) + " must be a shader node or null"};
+            as<Material>(self)->nodes.*field = v.node;
+            as<Material>(self)->needsUpdate();
+        };
+    }
 }
 
 // ------------------------------------------------------------------------------- lights
@@ -406,6 +421,8 @@ void registerTextureClass(ClassBinding& b, bool data) {
 
 void registerMaterialBindings(Registry& classes) {
     registerMeshMaterial(classes["MeshBasicMaterial"], MaterialType::Basic);
+    registerMeshMaterial(classes["MeshBasicNodeMaterial"], MaterialType::Basic, true);
+    registerMeshMaterial(classes["MeshStandardNodeMaterial"], MaterialType::Standard, true);
     registerMeshMaterial(classes["MeshLambertMaterial"], MaterialType::Lambert);
     registerMeshMaterial(classes["MeshPhongMaterial"], MaterialType::Phong);
     registerMeshMaterial(classes["MeshStandardMaterial"], MaterialType::Standard);

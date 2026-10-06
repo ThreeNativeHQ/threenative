@@ -804,7 +804,24 @@ export declare const InvertStencilOp: 5386;
 /** Catalog partial (native-not-implemented): three/KeepStencilOp. */
 export declare const KeepStencilOp: 7680;
 
-/** Catalog partial (native-not-implemented): three/Layers. */
+/** Catalog supported: three/LOD. */
+export declare class LOD extends Object3D {
+constructor();
+autoUpdate: boolean;
+readonly levels: Array<{ object: Object3D; distance: number; hysteresis: number; }>;
+
+  addLevel(object: Object3D, distance?: number, hysteresis?: number): this;
+
+  getCurrentLevel(): number;
+
+  getObjectForDistance(distance: number): Object3D | null;
+
+  removeLevel(distance: number): boolean;
+
+  update(camera: Camera): void;
+}
+
+/** Catalog supported: three/Layers. */
 export declare class Layers {
 constructor();
 mask: number;
@@ -1231,6 +1248,31 @@ readonly type: string;
 /** Catalog partial (shader-parameters): three/MeshBasicMaterialParameters. */
 export type MeshBasicMaterialParameters = {  };
 
+/** Catalog supported: three/webgpu/MeshBasicNodeMaterial. */
+export declare class MeshBasicNodeMaterial extends Material {
+constructor();
+alphaTest: number;
+colorNode: Node | null;
+depthTest: boolean;
+depthWrite: boolean;
+emissiveNode: Node | null;
+readonly id: number;
+metalnessNode: Node | null;
+name: string;
+normalNode: Node | null;
+opacity: number;
+opacityNode: Node | null;
+positionNode: Node | null;
+roughnessNode: Node | null;
+side: Side;
+toneMapped: boolean;
+transparent: boolean;
+readonly type: string;
+visible: boolean;
+color: Color;
+map: Texture | null;
+}
+
 /** Catalog supported: three/MeshStandardMaterial. */
 export declare class MeshStandardMaterial extends Material {
 constructor(parameters?: MeshStandardMaterialParameters);
@@ -1308,6 +1350,37 @@ readonly type: string;
 /** Catalog partial (shader-parameters): three/MeshStandardMaterialParameters. */
 export type MeshStandardMaterialParameters = {  };
 
+/** Catalog supported: three/webgpu/MeshStandardNodeMaterial. */
+export declare class MeshStandardNodeMaterial extends Material {
+constructor();
+alphaTest: number;
+colorNode: Node | null;
+depthTest: boolean;
+depthWrite: boolean;
+emissiveIntensity: number;
+emissiveNode: Node | null;
+envMapIntensity: number;
+readonly id: number;
+metalness: number;
+metalnessNode: Node | null;
+name: string;
+normalNode: Node | null;
+opacity: number;
+opacityNode: Node | null;
+positionNode: Node | null;
+roughness: number;
+roughnessNode: Node | null;
+side: Side;
+toneMapped: boolean;
+transparent: boolean;
+readonly type: string;
+visible: boolean;
+color: Color;
+emissive: Color;
+envMap: Texture | null;
+map: Texture | null;
+}
+
 /** Catalog partial (native-not-implemented): three/MinEquation. */
 export declare const MinEquation: 103;
 
@@ -1376,6 +1449,16 @@ export declare const NoNormalPacking: "";
 
 /** Catalog partial (native-not-implemented): three/NoToneMapping. */
 export declare const NoToneMapping: 0;
+
+/** Catalog partial (graph-authoring-only, constructor-not-bound): three/webgpu/Node. */
+export declare class Node {
+constructor();
+}
+
+/** Catalog partial (native-not-bound): three/webgpu/NodeMaterial. */
+export declare class NodeMaterial {
+constructor();
+}
 
 /** Catalog partial (native-not-implemented): three/NormalAnimationBlendMode. */
 export declare const NormalAnimationBlendMode: 2500;
@@ -1858,6 +1941,24 @@ export declare const RGFormat: 1030;
 
 /** Catalog partial (native-not-implemented): three/RGIntegerFormat. */
 export declare const RGIntegerFormat: 1031;
+
+/** Catalog supported: three/Raycaster. */
+export declare class Raycaster {
+constructor(origin?: Vector3, direction?: Vector3, near?: number, far?: number);
+far: number;
+near: number;
+camera: Camera;
+readonly layers: Layers;
+readonly ray: Ray;
+
+  intersectObject(object: Object3D, recursive?: boolean, target?: Intersection[]): Intersection[];
+
+  intersectObjects(objects: Object3D[], recursive?: boolean, target?: Intersection[]): Intersection[];
+
+  set(origin: Vector3, direction: Vector3): void;
+
+  setFromCamera(coords: Vector2, camera: Camera): void;
+}
 
 /** Catalog partial (native-not-implemented): three/RedFormat. */
 export declare const RedFormat: 1028;
@@ -2674,7 +2775,7 @@ specularColor: Color;
 
 /** Catalog supported: three/Ray. */
 export declare class Ray {
-constructor();
+constructor(origin?: Vector3, direction?: Vector3);
 readonly direction: Vector3;
 readonly origin: Vector3;
 
@@ -2749,3 +2850,9 @@ constructor();
 
   stop(): AnimationAction;
 }
+
+/** Catalog supported: three/Face. */
+export type Face = { a: number; b: number; c: number; normal: Vector3; materialIndex: number };
+
+/** Catalog supported: three/Intersection. */
+export type Intersection = { distance: number; point: Vector3; object: Object3D; face: Face; faceIndex: number; uv?: Vector2; uv1?: Vector2; normal?: Vector3; barycoord: Vector3; instanceId?: number };

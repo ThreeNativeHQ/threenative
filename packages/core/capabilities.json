@@ -7494,6 +7494,11 @@
         "source": "three"
       },
       {
+        "symbol": "Face",
+        "kind": "type",
+        "source": "three"
+      },
+      {
         "symbol": "Float32BufferAttribute",
         "kind": "class",
         "source": "three/webgpu"
@@ -7522,6 +7527,21 @@
         "symbol": "InstancedMesh",
         "kind": "class",
         "source": "three/webgpu"
+      },
+      {
+        "symbol": "Intersection",
+        "kind": "type",
+        "source": "three"
+      },
+      {
+        "symbol": "LOD",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "Layers",
+        "kind": "class",
+        "source": "three"
       },
       {
         "symbol": "LinearSRGBColorSpace",
@@ -7554,6 +7574,11 @@
         "source": "three"
       },
       {
+        "symbol": "MeshBasicNodeMaterial",
+        "kind": "class",
+        "source": "three/webgpu"
+      },
+      {
         "symbol": "MeshLambertMaterial",
         "kind": "class",
         "source": "three"
@@ -7572,6 +7597,11 @@
         "symbol": "MeshStandardMaterial",
         "kind": "class",
         "source": "three"
+      },
+      {
+        "symbol": "MeshStandardNodeMaterial",
+        "kind": "class",
+        "source": "three/webgpu"
       },
       {
         "symbol": "NeutralToneMapping",
@@ -7625,6 +7655,11 @@
       },
       {
         "symbol": "Ray",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "Raycaster",
         "kind": "class",
         "source": "three"
       },

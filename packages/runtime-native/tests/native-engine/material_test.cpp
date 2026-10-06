@@ -37,7 +37,73 @@ void unsupported() {
     CHECK(buildStandard(clearcoat).fragment.exprCount() == 0);
 }
 
+void nodes() {
+    namespace g = tn::engine::shader::graph;
+    VertexVariant variant;
+    variant.map = true;
+    variant.nodes.colorNode = g::vec4({g::uv(), g::uniform("nodeTint", Type::f32(), {0.35f}), g::float_(0.8)});
+    const auto basic = buildBasic(variant);
+    const auto fragment = WgslEmitter::emit(basic.fragment, 1);
+    const auto vertex = WgslEmitter::emit(basic.vertex, 0);
+    CHECK(fragment.ok() && vertex.ok());
+    // NodeMaterial.setupDiffuseColor picks colorNode instead of materialColor (color * map).
+    CHECK(fragment.code.find("t_map") == std::string::npos);
+    CHECK(fragment.code.find("f_nodeTint") != std::string::npos);
+    CHECK(fragment.code.find("f_diffuse).xyz") == std::string::npos);
+    CHECK(fragment.code.find("f_diffuse).w") != std::string::npos); // material opacity still multiplies node alpha
+    CHECK(vertex.code.find("o_uv = a_uv") != std::string::npos);
+    VertexVariant mapped;
+    mapped.map = true;
+    CHECK(WgslEmitter::emit(buildBasic(mapped).fragment, 1).code.find("t_map") != std::string::npos);
+    const auto same = variant.nodes.colorNode;
+    const auto copy = g::vec4({g::uv(), g::uniform("nodeTint", Type::f32(), {0.9f}), g::float_(0.8)});
+    CHECK(g::key(same) == g::key(copy)); // uniform data does not change the shader
+    CHECK(g::uniforms(same).at("nodeTint")[0] == 0.35f);
+    CHECK(g::key(g::add(g::float_(1), g::float_(2))) != g::key(g::sub(g::float_(1), g::float_(2))));
+    const std::string colorKey = variant.key();
+    variant.nodes.opacityNode = g::float_(0.4);
+    CHECK(variant.key() != colorKey);
+    const auto opacity = WgslEmitter::emit(buildBasic(variant).fragment, 1);
+    CHECK(opacity.ok());
+    // opacityNode replaces the scalar material opacity, without replacing colorNode's alpha.
+    CHECK(opacity.code.find("f_diffuse).w") == std::string::npos);
+    variant.nodes.normalNode = g::normalize(g::add(g::varying("normalViewGeometry", Type::vec(3)),
+                                                g::vec3({g::float_(0.3), g::float_(0), g::float_(0)})));
+    variant.nodes.roughnessNode = g::swizzle(g::uv(), "x");
+    variant.nodes.metalnessNode = g::swizzle(g::varying("positionWorld", Type::vec(3)), "y");
+    variant.nodes.emissiveNode = g::vec3({g::sin(g::swizzle(g::uv(), "x")), g::float_(0), g::float_(0)});
+    variant.nodes.positionNode = g::add(g::positionLocal(), g::vec3({g::float_(0), g::float_(0), g::float_(0.2)}));
+    const auto standard = buildStandard(StandardMaterial{}, variant);
+    CHECK(standard.diagnostics.empty());
+    const auto sv = WgslEmitter::emit(standard.vertex, 0), sf = WgslEmitter::emit(standard.fragment, 1);
+    CHECK(sv.ok() && sf.ok());
+    CHECK(sv.code.find("o_positionWorld") != std::string::npos);
+    CHECK(sf.code.find("dpdx") != std::string::npos); // geometry roughness remains
+    CHECK(sf.code.find("sin(") != std::string::npos);
+    CHECK(sf.code.find("f_emissive") == std::string::npos); // emissiveNode replaces emissive * intensity
+    CHECK(sf.code.find("f_roughness") == std::string::npos);
+    CHECK(sf.code.find("f_metalness") == std::string::npos);
+    // Varyings match by name despite roughness, metalness and normal using different graph orders.
+    for (const auto& [name, type] : standard.fragment.varyings()) {
+        const auto at = sf.code.find("i_" + name + ":");
+        const auto location = sf.code.rfind("@location(", at);
+        const auto end = sf.code.find(')', location);
+        CHECK(sv.code.find(sf.code.substr(location, end - location + 1) + " o_" + name + ":") != std::string::npos);
+    }
+    CHECK(sv.code.find("out.position =") != std::string::npos);
+    VertexVariant invalid;
+    invalid.nodes.colorNode = g::Block{}.node();
+    CHECK(!buildBasic(invalid).fragment.ok());
+    invalid.nodes = {};
+    invalid.nodes.positionNode = g::Block{}.node();
+    CHECK(!buildBasic(invalid).vertex.ok());
+    variant.nodes.positionNode = g::vec4({g::positionLocal(), g::float_(1)});
+    CHECK(buildBasic(variant).vertex.ok()); // setupPosition subBuild requests vec3
+
+}
+
 void builds() {
+    nodes();
     // Both GGX and copy passes must address all extra tiles, including negative mips.
     for (uint32_t lodMax : {4u, 8u}) {
         for (int lod = 1; lod <= int(lodMax) + 2; ++lod) {

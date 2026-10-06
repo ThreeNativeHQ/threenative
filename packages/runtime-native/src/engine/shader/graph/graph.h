@@ -6,6 +6,8 @@
 #include <functional>
 #include <initializer_list>
 #include <memory>
+#include <map>
+#include <unordered_map>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -39,6 +41,7 @@ struct NodeData {
     std::string name;
     std::string lanes;
     uint64_t bits = 0;
+    std::vector<float> values; // uniform initial value; data, not part of the program key
     UnOp unary = UnOp::Negate;
     BinOp binary = BinOp::Add;
     std::vector<Node> args;
@@ -54,7 +57,7 @@ Node uint_(uint32_t value);
 /** TSL's `uint(node)`: a conversion. */
 Node uint_(Node value);
 
-Node uniform(std::string_view name, Type type);
+Node uniform(std::string_view name, Type type, std::vector<float> values = {});
 Node attribute(std::string_view name, Type type);
 Node varying(std::string_view name, Type type);
 Node builtin(std::string_view name);
@@ -145,6 +148,11 @@ private:
 using Graph = Node;
 
 /** Walks the graph and emits IR into `program`; a Build scope must be active, as tsl.h requires. */
-ExprId lower(const Graph& graph, Program& program);
+ExprId lower(const Graph& graph, Program& program,
+             const std::unordered_map<std::string, ExprId>& inputs = {});
+/** Canonical DAG serialization, independent of addresses; includes sharing and every operation. */
+std::string key(const Graph& graph);
+/** Named uniform data reachable from the graph. Conflicting values fail rather than pick one. */
+std::map<std::string, std::vector<float>> uniforms(const Graph& graph);
 
 }  // namespace tn::engine::shader::graph

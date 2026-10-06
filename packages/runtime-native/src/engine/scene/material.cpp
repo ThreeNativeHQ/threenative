@@ -6,11 +6,12 @@ namespace {
 uint32_t nextMaterialId = 0;  // three's `_materialId`
 }
 
-Material::Material(MaterialType t) : type(t), id(nextMaterialId++) {
+Material::Material(MaterialType t, bool node) : type(t), nodeMaterial(node), id(nextMaterialId++) {
     specular.setHex(0x111111);  // MeshPhongMaterial's default, through ColorManagement as setHex does
 }
 
 std::string_view Material::typeName() const {
+    if (nodeMaterial) return type == MaterialType::Basic ? "MeshBasicNodeMaterial" : "MeshStandardNodeMaterial";
     switch (type) {
         case MaterialType::Basic: return "MeshBasicMaterial";
         case MaterialType::Lambert: return "MeshLambertMaterial";

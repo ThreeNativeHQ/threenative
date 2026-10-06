@@ -18,11 +18,11 @@ class Tsl {
     ~Tsl();
     void install(v8::Local<v8::Context> context, v8::Local<v8::Object> target);
     bool unwrap(v8::Local<v8::Value> value, engine::shader::graph::Node& node) const;
+    v8::Local<v8::Object> wrap(engine::shader::graph::Node node);
 
   private:
     struct Wrapper;
     struct Call;
-    v8::Local<v8::Object> wrap(engine::shader::graph::Node node);
     Wrapper* wrapper(v8::Local<v8::Value> value) const;
     engine::shader::graph::Node input(v8::Local<v8::Value> value) const;
     engine::shader::graph::Node capture(v8::Local<v8::Function> callback, v8::Local<v8::Value> argument = {});

@@ -11,15 +11,17 @@
 #include <set>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <type_traits>
 #include <vector>
 
 #include "engine/scene/object3d.h"
+#include "engine/shader/graph/graph.h"
 
 namespace tn::binding {
 
 struct Value {
-    enum class Kind : uint8_t { Null, Number, String, Bool, Ref, Numbers, Refs };
+    enum class Kind : uint8_t { Null, Number, String, Bool, Ref, Numbers, Refs, Array, Record, Undefined, ShaderNode };
     Kind kind = Kind::Null;
     double number = 0;
     // String payload; the caller's object id for Ref; comma-separated ids for Refs (an array of
@@ -28,6 +30,15 @@ struct Value {
     bool flag = false;
     std::vector<double> numbers;  // a numeric array (`elements`, `toArray()`)
 
+    engine::shader::graph::Node node;
+    static Value shaderNode(engine::shader::graph::Node node) { Value v; v.kind = node ? Kind::ShaderNode : Kind::Null; v.node = std::move(node); return v; }
+
+    std::vector<Value> items;
+    std::vector<std::pair<std::string, Value>> fields;
+    static Value array(std::vector<Value> items) { Value v; v.kind = Kind::Array; v.items = std::move(items); return v; }
+    static Value record(std::vector<std::pair<std::string, Value>> fields) { Value v; v.kind = Kind::Record; v.fields = std::move(fields); return v; }
+
+    static Value undefined() { Value v; v.kind = Kind::Undefined; return v; }
     static Value of(double n) { return Value{Kind::Number, n}; }
     static Value of(bool b) { return Value{Kind::Bool, 0, {}, b}; }
     static Value list(std::vector<double> values) { return Value{Kind::Numbers, 0, {}, false, std::move(values)}; }
@@ -38,6 +49,17 @@ struct Object {
     std::string cls;
     std::shared_ptr<void> ptr;
 };
+
+/** Only registered classes backed by engine::Material may unwrap as that base type. */
+inline bool isMaterialClass(std::string_view cls) {
+    return cls == "Material" || cls == "MeshBasicMaterial" || cls == "MeshLambertMaterial" ||
+           cls == "MeshPhongMaterial" || cls == "MeshStandardMaterial" || cls == "MeshPhysicalMaterial" ||
+           cls == "MeshBasicNodeMaterial" || cls == "MeshStandardNodeMaterial";
+}
+
+inline bool acceptsClass(std::string_view actual, std::string_view expected) {
+    return actual == expected || (expected == "Material" && isMaterialClass(actual));
+}
 
 /**
  * Thrown inside a binding when a call asks for something the native class does not support. It is
@@ -139,7 +161,7 @@ public:
     template <typename T>
     std::shared_ptr<T> shared(const Value& arg, const char* cls) {
         Object* object = find(arg);
-        if (!object || object->cls != cls) throw Unsupported{std::string("argument is not a ") + cls};
+        if (!object || !acceptsClass(object->cls, cls)) throw Unsupported{std::string("argument is not a ") + cls};
         return std::static_pointer_cast<T>(object->ptr);
     }
 
@@ -147,7 +169,7 @@ public:
     template <typename T>
     T& ref(const Value& arg, const char* cls) {
         Object* object = find(arg);
-        if (!object || object->cls != cls) throw Unsupported{std::string("argument is not a ") + cls};
+        if (!object || !acceptsClass(object->cls, cls)) throw Unsupported{std::string("argument is not a ") + cls};
         return *static_cast<T*>(object->ptr.get());
     }
 };
@@ -155,7 +177,15 @@ public:
 /** Each Ref in a Refs argument, in order. */
 inline std::vector<Value> refsOf(const Value& v) {
     std::vector<Value> out;
-    if (v.kind != Value::Kind::Refs) return out;
+    if (v.kind == Value::Kind::Array) {
+        for (const auto& item : v.items) {
+            if (item.kind != Value::Kind::Ref) throw Unsupported{"object array contains a non-object"};
+            out.push_back(item);
+        }
+        return out;
+    }
+    if (v.kind == Value::Kind::Numbers && v.numbers.empty()) return out;
+    if (v.kind != Value::Kind::Refs) throw Unsupported{"argument is not an object array"};
     std::size_t start = 0;
     while (start < v.text.size()) {
         std::size_t end = v.text.find(',', start);

@@ -1,11 +1,14 @@
 #include "adapter.h"
 #include "tsl.h"
 
+#include <algorithm>
+#include <deque>
 #include <cstdio>
 #include <string>
 #include <vector>
 
 #include "engine/abi/bindings.h"
+#include "engine/abi/abi_internal.h"
 #include "engine/foundation/ThreeConstants.h"
 
 namespace tn::adapters::v8adapter {
@@ -55,12 +58,12 @@ void throwStatus(v8::Isolate* isolate, tn_diagnostic_t& diagnostic) {
 
 // JS -> ABI values. Arrays become number arrays (fromArray), engine wrappers become handles.
 bool toValues(Adapter& a, const v8::FunctionCallbackInfo<v8::Value>& info, std::vector<tn_value_t>& out,
-              std::vector<std::string>& texts, std::vector<std::vector<double>>& arrays) {
+              std::deque<std::string>& texts, std::vector<std::vector<double>>& arrays,
+              std::deque<std::vector<tn_value_t>>& values, int limit = -1) {
     v8::Isolate* isolate = info.GetIsolate();
     v8::Local<v8::Context> ctx = isolate->GetCurrentContext();
-    texts.reserve(info.Length());
     arrays.reserve(info.Length());
-    for (int i = 0; i < info.Length(); ++i) {
+    for (int i = 0; i < info.Length() && (limit < 0 || i < limit); ++i) {
         v8::Local<v8::Value> arg = info[i];
         tn_value_t v{};
         tn_handle_t h{};
@@ -82,16 +85,21 @@ bool toValues(Adapter& a, const v8::FunctionCallbackInfo<v8::Value>& info, std::
             a.holdIfCallback(h);
         } else if (arg->IsArray()) {
             v8::Local<v8::Array> array = arg.As<v8::Array>();
-            std::vector<double> numbers(array->Length());
+            // Object arrays (intersectObjects, Skeleton) use the same handle values as scalar args.
+            values.emplace_back(array->Length());
+            auto& elements = values.back();
             for (uint32_t k = 0; k < array->Length(); ++k) {
                 v8::Local<v8::Value> e;
-                if (!array->Get(ctx, k).ToLocal(&e) || !e->IsNumber()) return false;
-                numbers[k] = e.As<v8::Number>()->Value();
+                if (!array->Get(ctx, k).ToLocal(&e)) return false;
+                if (e->IsNumber()) { elements[k].kind = TN_VALUE_NUMBER; elements[k].number = e.As<v8::Number>()->Value(); }
+                else if (a.unwrap(e, h)) { elements[k].kind = TN_VALUE_HANDLE; elements[k].handle = h; a.holdIfCallback(h); }
+                else return false;
             }
-            arrays.push_back(std::move(numbers));
-            v.kind = TN_VALUE_NUMBERS;
-            v.numbers = arrays.back().data();
-            v.count = arrays.back().size();
+            if (std::all_of(elements.begin(), elements.end(), [](const auto& e) { return e.kind == TN_VALUE_NUMBER; })) {
+                std::vector<double> numbers; for (const auto& e : elements) numbers.push_back(e.number);
+                arrays.push_back(std::move(numbers)); v.kind = TN_VALUE_NUMBERS;
+                v.numbers = arrays.back().data(); v.count = arrays.back().size();
+            } else { v.kind = TN_VALUE_ARRAY; v.values = elements.data(); v.count = elements.size(); }
         } else if (arg->IsTypedArray()) {
             // The template builds attributes from real typed arrays (`new Float32Array(...)`), so a
             // typed array crosses as its binary64 values, exactly as a plain array of them would.
@@ -117,16 +125,36 @@ bool toValues(Adapter& a, const v8::FunctionCallbackInfo<v8::Value>& info, std::
 v8::Local<v8::Value> fromValue(Adapter& a, const tn_value_t& v) {
     v8::Isolate* isolate = a.isolate();
     switch (v.kind) {
+        case TN_VALUE_NULL: return v8::Null(isolate);
+        case TN_VALUE_UNDEFINED: return v8::Undefined(isolate);
         case TN_VALUE_NUMBER: return v8::Number::New(isolate, v.number);
         case TN_VALUE_BOOL: return v8::Boolean::New(isolate, v.boolean != 0);
         case TN_VALUE_STRING: return str(isolate, std::string(v.text, v.count));
         case TN_VALUE_HANDLE: return a.wrap(v.handle);
+        case TN_VALUE_ARRAY: {
+            auto array = v8::Array::New(isolate, int(v.count));
+            for (uint32_t i = 0; i < v.count; ++i) {
+                const auto written = array->CreateDataProperty(isolate->GetCurrentContext(), i, fromValue(a, v.values[i]));
+                if (written.IsNothing() || !written.FromJust()) return v8::Undefined(isolate);
+            }
+            return array;
+        }
+        case TN_VALUE_RECORD: {
+            auto record = v8::Object::New(isolate);
+            for (uint64_t i = 0; i < v.count; ++i) {
+                const auto& key = v.values[i * 2];
+                record->CreateDataProperty(isolate->GetCurrentContext(), str(isolate, std::string(key.text, key.count)),
+                    fromValue(a, v.values[i * 2 + 1])).Check();
+            }
+            return record;
+        }
         case TN_VALUE_NUMBERS: {
             // three exposes `elements` and `toArray()` as plain arrays, so JS gets a plain array.
             v8::Local<v8::Array> array = v8::Array::New(isolate, static_cast<int>(v.count));
             v8::Local<v8::Context> ctx = isolate->GetCurrentContext();
             for (uint64_t k = 0; k < v.count; ++k) {
-                array->Set(ctx, static_cast<uint32_t>(k), v8::Number::New(isolate, v.numbers[k])).Check();
+                const auto written = array->CreateDataProperty(ctx, static_cast<uint32_t>(k), v8::Number::New(isolate, v.numbers[k]));
+                if (written.IsNothing() || !written.FromJust()) return v8::Undefined(isolate);
             }
             return array;
         }
@@ -345,9 +373,10 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
                 }
                 Adapter& a = *adapterOf(info);
                 std::vector<tn_value_t> args;
-                std::vector<std::string> texts;
+                std::deque<std::string> texts;
+                               std::deque<std::vector<tn_value_t>> values;
                 std::vector<std::vector<double>> arrays;
-                if (!toValues(a, info, args, texts, arrays)) {
+                if (!toValues(a, info, args, texts, arrays, values)) {
                     isolate->ThrowException(v8::Exception::TypeError(str(isolate, "TN_ABI_VALUE: unsupported argument")));
                     return;
                 }
@@ -383,9 +412,11 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
                                    return;
                                }
                                std::vector<tn_value_t> args;
-                               std::vector<std::string> texts;
+                               std::deque<std::string> texts;
+                               std::deque<std::vector<tn_value_t>> values;
                                std::vector<std::vector<double>> arrays;
-                               if (!toValues(*d->adapter, info, args, texts, arrays)) {
+                               const bool intersections = d->name == "intersectObject" || d->name == "intersectObjects";
+                               if (!toValues(*d->adapter, info, args, texts, arrays, values, intersections ? 2 : -1)) {
                                    isolate->ThrowException(v8::Exception::TypeError(str(isolate, "TN_ABI_VALUE: unsupported argument")));
                                    return;
                                }
@@ -396,7 +427,45 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
                                    throwStatus(isolate, diagnostic);
                                    return;
                                }
-                               info.GetReturnValue().Set(fromValue(*d->adapter, result));
+                               auto converted = fromValue(*d->adapter, result);
+                               if (intersections && info.Length() > 2 && !info[2]->IsUndefined()) {
+                                   if (!info[2]->IsArray() || !converted->IsArray()) {
+                                       isolate->ThrowException(v8::Exception::TypeError(str(isolate, "intersection target must be an array"))); return;
+                                   }
+                                   const auto target = info[2].As<v8::Array>();
+                                   const auto hits = converted.As<v8::Array>();
+                                   const auto ctx = isolate->GetCurrentContext();
+                                   for (uint32_t i = 0; i < hits->Length(); ++i) {
+                                       v8::Local<v8::Value> hit, push;
+                                       if (!hits->Get(ctx, i).ToLocal(&hit) || !target->Get(ctx, str(isolate, "push")).ToLocal(&push)) return;
+                                       if (!push->IsFunction()) {
+                                           isolate->ThrowException(v8::Exception::TypeError(str(isolate, "intersection target.push is not callable"))); return;
+                                       }
+                                       if (push.As<v8::Function>()->Call(ctx, target, 1, &hit).IsEmpty()) return;
+                                   }
+                                   // Sort the caller's target, preserving exceptions from getters and sort overrides.
+                                   v8::Local<v8::Function> compare;
+                                   if (!v8::Function::New(ctx, [](const v8::FunctionCallbackInfo<v8::Value>& args) {
+                                       const auto context = args.GetIsolate()->GetCurrentContext();
+                                       const auto key = str(args.GetIsolate(), "distance");
+                                       v8::Local<v8::Object> left, right;
+                                       v8::Local<v8::Value> a, b;
+                                       if (!args[0]->ToObject(context).ToLocal(&left) || !args[1]->ToObject(context).ToLocal(&right) ||
+                                           !left->Get(context, key).ToLocal(&a) || !right->Get(context, key).ToLocal(&b)) return;
+                                       const auto av = a->NumberValue(context), bv = b->NumberValue(context);
+                                       if (av.IsNothing() || bv.IsNothing()) return;
+                                       args.GetReturnValue().Set(av.FromJust() - bv.FromJust());
+                                   }).ToLocal(&compare)) return;
+                                   v8::Local<v8::Value> sorter;
+                                   if (!target->Get(ctx, str(isolate, "sort")).ToLocal(&sorter)) return;
+                                   if (!sorter->IsFunction()) {
+                                       isolate->ThrowException(v8::Exception::TypeError(str(isolate, "intersection target.sort is not callable"))); return;
+                                   }
+                                   v8::Local<v8::Value> argument = compare;
+                                   if (sorter.As<v8::Function>()->Call(ctx, target, 1, &argument).IsEmpty()) return;
+                                   converted = target;
+                               }
+                               info.GetReturnValue().Set(converted);
                            },
                            v8::External::New(isolate_, data)));
         }
@@ -412,9 +481,42 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
         }
         // Member objects read as properties too; tn_get answers them with the one alias Ref.
         for (const auto& [path, member] : binding.members) {
-            properties.push_back({path, false, binding.fixedMembers.count(path) > 0});
+            properties.push_back({path, binding.setters.count(path) > 0, binding.fixedMembers.count(path) > 0});
         }
         for (const auto& [path, settable, fixed] : properties) {
+            if ((name == "MeshBasicNodeMaterial" || name == "MeshStandardNodeMaterial") && path.ends_with("Node")) {
+                auto* data = new MethodData{this, path, {}};
+                proto->SetAccessorProperty(str(isolate_, path),
+                    v8::FunctionTemplate::New(isolate_, [](const v8::FunctionCallbackInfo<v8::Value>& info) {
+                        auto* d = static_cast<MethodData*>(info.Data().As<v8::External>()->Value());
+                        tn_handle_t h{};
+                        if (!d->adapter->unwrap(info.This(), h)) return;
+                        try {
+                            const auto node = tn::abi::shaderNode(h, d->name);
+                            info.GetReturnValue().Set(node ? v8::Local<v8::Value>(d->adapter->tsl().wrap(node))
+                                                          : v8::Local<v8::Value>(v8::Null(info.GetIsolate())));
+                        } catch (const std::exception& e) {
+                            info.GetIsolate()->ThrowException(v8::Exception::TypeError(str(info.GetIsolate(), e.what())));
+                        }
+                    }, v8::External::New(isolate_, data)),
+                    v8::FunctionTemplate::New(isolate_, [](const v8::FunctionCallbackInfo<v8::Value>& info) {
+                        auto* d = static_cast<MethodData*>(info.Data().As<v8::External>()->Value());
+                        tn_handle_t h{};
+                        if (!d->adapter->unwrap(info.This(), h)) return;
+                        engine::shader::graph::Node node;
+                        if (info.Length() != 1 || (!info[0]->IsNull() && !d->adapter->tsl().unwrap(info[0], node))) {
+                            info.GetIsolate()->ThrowException(v8::Exception::TypeError(str(info.GetIsolate(), "TN_TSL_PROPERTY: expected a node or null")));
+                            return;
+                        }
+                        try { tn::abi::setShaderNode(h, d->name, std::move(node)); }
+                        catch (const tn::binding::Unsupported& e) {
+                            info.GetIsolate()->ThrowException(v8::Exception::TypeError(str(info.GetIsolate(), e.reason)));
+                        } catch (const std::exception& e) {
+                            info.GetIsolate()->ThrowException(v8::Exception::TypeError(str(info.GetIsolate(), e.what())));
+                        }
+                    }, v8::External::New(isolate_, data)));
+                continue;
+            }
             auto* data = new MethodData{this, path, {}};
             if (fixed) data->cache.Reset(isolate_, v8::Private::New(isolate_, str(isolate_, "tn:" + path)));
             proto->SetAccessorProperty(
@@ -452,10 +554,11 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
                                    tn_handle_t h{};
                                    if (!d->adapter->unwrap(info.This(), h)) return;
                                    std::vector<tn_value_t> args;
-                                   std::vector<std::string> texts;
+                                   std::deque<std::string> texts;
+                               std::deque<std::vector<tn_value_t>> values;
                                    std::vector<std::vector<double>> arrays;
                                    tn_diagnostic_t diagnostic{nullptr, 0};
-                                   if (!toValues(*d->adapter, info, args, texts, arrays) || args.size() != 1 ||
+                                   if (!toValues(*d->adapter, info, args, texts, arrays, values) || args.size() != 1 ||
                                        tn_set(h, d->name.c_str(), &args[0], &diagnostic) != TN_OK) {
                                        throwStatus(info.GetIsolate(), diagnostic);
                                    }

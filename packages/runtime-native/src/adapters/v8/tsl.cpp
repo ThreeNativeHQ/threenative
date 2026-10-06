@@ -1,6 +1,7 @@
 #include "tsl.h"
 
 #include <cmath>
+#include <bit>
 #include <limits>
 #include <stdexcept>
 #include <utility>
@@ -111,6 +112,7 @@ g::Node Tsl::input(v8::Local<v8::Value> value) const {
 }
 
 v8::Local<v8::Object> Tsl::wrap(g::Node node) {
+    if (node) for (const auto* w : wrappers_) if (w->node == node) return w->object.Get(isolate_);
     const auto object = nodeTemplate_.Get(isolate_)->NewInstance(isolate_->GetCurrentContext()).ToLocalChecked();
     auto* w = new Wrapper{this, std::move(node), {}, {}, 0, 0};
     object->SetInternalField(0, v8::External::New(isolate_, this));
@@ -200,7 +202,7 @@ void Tsl::call(const Call& call, const v8::FunctionCallbackInfo<v8::Value>& info
         if (!self->node)
             self->storage.name = label;
         else if (self->node->kind == g::Kind::Uniform)
-            self->node = g::uniform(label, self->node->type);
+            self->node = g::uniform(label, self->node->type, self->node->values);
         else
             throw std::runtime_error("setName requires a uniform or storage buffer");
         info.GetReturnValue().Set(info.This());
@@ -315,7 +317,18 @@ void Tsl::call(const Call& call, const v8::FunctionCallbackInfo<v8::Value>& info
         const auto value = arg(0);
         if (value->type == Type{})
             throw std::runtime_error("uniform value needs a concrete type");
-        return result(g::uniform("", value->type));
+        std::vector<float> values;
+        const std::function<void(g::Node)> constant = [&](g::Node n) {
+            if (n->kind == g::Kind::Constant && n->type == Type::f32()) {
+                values.push_back(std::bit_cast<float>(static_cast<uint32_t>(n->bits)));
+            } else if (n->kind == g::Kind::Join) {
+                const size_t start = values.size();
+                for (const auto& part : n->args) constant(part);
+                if (values.size() - start == 1) values.resize(start + n->type.rows, values.back());
+            } else throw std::runtime_error("uniform needs a constant float or vector value");
+        };
+        constant(value);
+        return result(g::uniform("nodeUniform" + std::to_string(++nextScope_), value->type, std::move(values)));
     }
     if (name == "attribute") {
         arity(2);
@@ -436,6 +449,8 @@ void Tsl::install(v8::Local<v8::Context> context, v8::Local<v8::Object> target) 
         module->Set(context, str(isolate_, name), function(context, name, false)->GetFunction(context).ToLocalChecked())
             .Check();
     module->Set(context, str(isolate_, "positionLocal"), wrap(g::positionLocal())).Check();
+    module->Set(context, str(isolate_, "positionWorld"), wrap(g::varying("positionWorld", Type::vec(3)))).Check();
+    module->Set(context, str(isolate_, "normalViewGeometry"), wrap(g::varying("normalViewGeometry", Type::vec(3)))).Check();
     module->Set(context, str(isolate_, "instanceIndex"), wrap(g::instanceIndex())).Check();
     // The existing V8 hosts execute bundled scripts with globals; they have no ES module resolver.
     target->Set(context, str(isolate_, "tsl"), module).Check();

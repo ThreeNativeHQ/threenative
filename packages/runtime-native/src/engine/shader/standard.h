@@ -87,11 +87,12 @@ struct VertexVariant {
      * cubeUV texture `env` for IBL irradiance and radiance (three's EnvironmentNode).
      */
     bool environment = false;
+    MaterialNodes nodes;
     /** A stable key: two variants with the same key build the same program. */
     [[nodiscard]] std::string key() const {
         return std::to_string(instanced) + std::to_string(instanceColor) + std::to_string(skinned) + "m" +
                std::to_string(morphTargets) + (morphNormals ? "n" : "") + (map ? "t" : "") +
-               (mapSRGB ? "s" : "") + (environment ? "e" : "") + (positionNode ? "p:" + positionNode->key : "");
+               (mapSRGB ? "s" : "") + (environment ? "e" : "") + (positionNode ? "p:" + positionNode->key : "") + "|nodes:" + nodes.key();
     }
 };
 

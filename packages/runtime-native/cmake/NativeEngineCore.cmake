@@ -56,7 +56,7 @@ target_include_directories(tn_engine_abi PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/incl
 # Scene graph, transforms and cameras (PRD-508 phases 1-2): Object3D, the node classes and the two
 # projection cameras, on the ported math classes. Portable, so it joins the Wasm core.
 add_library(tn_engine_scene STATIC src/engine/scene/object3d.cpp src/engine/scene/camera.cpp
-    src/engine/scene/nodes.cpp src/engine/scene/geometry.cpp src/engine/scene/geometries.cpp
+    src/engine/scene/nodes.cpp src/engine/scene/raycaster.cpp src/engine/scene/geometry.cpp src/engine/scene/geometries.cpp
     src/engine/scene/material.cpp src/engine/scene/lights.cpp src/engine/scene/static_transform.cpp)
 tn_native_engine_target(tn_engine_scene)
 target_link_libraries(tn_engine_scene PUBLIC tn_engine_foundation)
@@ -434,6 +434,24 @@ if(NOT EMSCRIPTEN)
         TN_PROJECTION_REFERENCE="${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/projection/projection_reference.json")
 endif()
 
+# PRD-531 raycasting and LOD: real three, binary64 oracle tables (CPU only).
+if(NOT EMSCRIPTEN)
+    tn_native_engine_test(tn-native-engine-raycast-test tests/native-engine/scene/raycast_test.cpp
+        native_engine_raycaster=raycaster native_engine_lod=lod)
+    target_link_libraries(tn-native-engine-raycast-test PRIVATE tn_engine_scene)
+    target_compile_definitions(tn-native-engine-raycast-test PRIVATE
+        TN_RAYCASTER_REFERENCE="${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/scene/raycaster_reference.json"
+        TN_LOD_REFERENCE="${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/scene/lod_reference.json")
+    find_program(TN_RAYCAST_NODE node REQUIRED)
+    foreach(kind raycaster lod)
+        add_test(NAME native_engine_${kind}_reference_current
+            COMMAND ${TN_RAYCAST_NODE} --import tsx
+                packages/runtime-native/tests/native-engine/scene/raycast-reference.ts --check --${kind}
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../..)
+        set_tests_properties(native_engine_${kind}_reference_current PROPERTIES LABELS "native-engine")
+    endforeach()
+endif()
+
 # PRD-508 phase 2: the native OrthographicCamera's projection matrix and its inverse, bit-for-bit
 # against the pinned three (ortho_projection_reference.json): zoom, asymmetric frusta, view offsets,
 # both renderer coordinate systems and reversed depth. The test reads its table from disk, which a
@@ -564,7 +582,7 @@ tn_native_engine_target(tn-native-engine-fixture-driver)
 # The differential ctests run it, so every test aggregate rebuilds it.
 set_property(GLOBAL APPEND PROPERTY TN_NATIVE_ENGINE_TEST_TARGETS tn-native-engine-fixture-driver)
 tn_native_engine_test(tn-native-engine-fixture-protocol-test tests/native-engine/fixture_driver_test.cpp
-    native_engine_fixture_protocol=protocol)
+    native_engine_fixture_protocol=protocol native_engine_fixture_node_materials=node_materials)
 target_link_libraries(tn-native-engine-fixture-protocol-test PRIVATE tn_fixture_driver)
 
 # PRD-501 phases 1 and 2 and PRD-508 phase 2: the ported math and scene classes against the pinned

@@ -5,6 +5,8 @@
 #include <bit>
 #include <unordered_map>
 #include <utility>
+#include <stdexcept>
+#include <unordered_set>
 
 namespace tn::engine::shader::graph {
 
@@ -54,7 +56,8 @@ std::shared_ptr<NodeData> makeJoin(uint8_t lanes, std::initializer_list<Node> pa
 /** Walks a graph and lowers each node once, preserving statement order. */
 class Lowerer {
 public:
-    explicit Lowerer(Program& program) : program_(program) {}
+    explicit Lowerer(Program& program, const std::unordered_map<std::string, ExprId>& inputs)
+        : program_(program), inputs_(inputs) {}
 
     ExprId expression(Node node);
     void statements(const std::vector<Node>& list);
@@ -66,6 +69,7 @@ private:
     ExprId emit(Node node);
 
     Program& program_;
+    const std::unordered_map<std::string, ExprId>& inputs_;
     std::unordered_map<const NodeData*, ExprId> exprs_;
     std::unordered_map<const NodeData*, VarId> vars_;
     std::unordered_map<std::string, uint32_t> buffers_;
@@ -83,6 +87,10 @@ ExprId Lowerer::expression(Node node) {
 
 ExprId Lowerer::emit(Node node) {
     const NodeData& d = *node;
+    if (d.kind == Kind::PositionLocal || d.kind == Kind::Varying || d.kind == Kind::Attribute) {
+        const auto input = inputs_.find(d.kind == Kind::PositionLocal ? "positionLocal" : d.name);
+        if (input != inputs_.end()) return input->second;
+    }
     switch (d.kind) {
         case Kind::Constant:
             if (d.type.scalar == Type::Scalar::F32)
@@ -263,9 +271,10 @@ Node texture(std::string_view map, Node uvs) {
     return data;
 }
 
-Node uniform(std::string_view name, Type type) {
+Node uniform(std::string_view name, Type type, std::vector<float> values) {
     auto data = makeNode(Kind::Uniform, type);
     data->name = std::string(name);
+    data->values = std::move(values);
     return data;
 }
 Node attribute(std::string_view name, Type type) {
@@ -404,14 +413,54 @@ Node Block::node() const {
     return data;
 }
 
-ExprId lower(const Graph& graph, Program& program) {
+ExprId lower(const Graph& graph, Program& program, const std::unordered_map<std::string, ExprId>& inputs) {
     if (!graph) return kInvalid;
-    Lowerer lowerer(program);
+    Lowerer lowerer(program, inputs);
     if (graph->kind == Kind::Body) {
         lowerer.statements(graph->body);
         return kInvalid;
     }
     return lowerer.expression(graph);
+}
+
+std::string key(const Graph& graph) {
+    std::unordered_map<const NodeData*, size_t> ids;
+    std::string out;
+    const auto text = [&](const std::string& s) { out += std::to_string(s.size()) + ":" + s; };
+    const std::function<void(Node)> visit = [&](Node n) {
+        if (!n) { out += "null;"; return; }
+        const auto [it, fresh] = ids.emplace(n.get(), ids.size());
+        out += std::to_string(it->second) + ";";
+        if (!fresh) return;
+        out += "{" + std::to_string(int(n->kind)) + "," + n->type.name() + "," +
+               std::to_string(n->bits) + "," + std::to_string(int(n->unary)) + "," +
+               std::to_string(int(n->binary)) + ";";
+        text(n->name); text(n->lanes);
+        for (const auto* list : {&n->args, &n->body, &n->otherwise}) {
+            out += "[";
+            for (const auto& child : *list) visit(child);
+            out += "]";
+        }
+        out += "}";
+    };
+    visit(graph);
+    return out;
+}
+
+std::map<std::string, std::vector<float>> uniforms(const Graph& graph) {
+    std::map<std::string, std::vector<float>> result;
+    std::unordered_set<const NodeData*> seen;
+    const std::function<void(Node)> visit = [&](Node n) {
+        if (!n || !seen.insert(n.get()).second) return;
+        if (n->kind == Kind::Uniform && !n->values.empty()) {
+            const auto [it, fresh] = result.emplace(n->name, n->values);
+            if (!fresh && it->second != n->values) throw std::runtime_error("TN_TSL_UNIFORM_CONFLICT: " + n->name);
+        }
+        for (const auto* list : {&n->args, &n->body, &n->otherwise})
+            for (const auto& child : *list) visit(child);
+    };
+    visit(graph);
+    return result;
 }
 
 }  // namespace tn::engine::shader::graph

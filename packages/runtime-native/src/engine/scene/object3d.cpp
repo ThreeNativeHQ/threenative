@@ -125,7 +125,7 @@ void Object3D::setRenderOrder(int value) {
     bump();
 }
 
-void Object3D::setLayerMask(uint32_t mask) {
+void Object3D::setLayerMask(double mask) {
     layers_.mask = mask;
     bump();
 }

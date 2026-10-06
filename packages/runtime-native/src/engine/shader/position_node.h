@@ -3,10 +3,24 @@
 #include <cstdint>
 #include <functional>
 #include <string>
+#include <array>
+#include "engine/shader/graph/graph.h"
 
 namespace tn::engine::shader {
 
 class Program;
+
+/** NodeMaterial slots; null nodes use the non-node material path. */
+struct MaterialNodes {
+    graph::Node colorNode, positionNode, normalNode, emissiveNode, roughnessNode, metalnessNode, opacityNode;
+    auto graphs() const { return std::array{colorNode, positionNode, normalNode, emissiveNode,
+                                         roughnessNode, metalnessNode, opacityNode}; }
+    std::string key() const {
+        std::string out;
+        for (const auto& node : graphs()) { const auto k = graph::key(node); out += std::to_string(k.size()) + ":" + k; }
+        return out;
+    }
+};
 
 /**
  * A material's `positionNode` (three's NodeMaterial.positionNode): a TSL graph, authored with the

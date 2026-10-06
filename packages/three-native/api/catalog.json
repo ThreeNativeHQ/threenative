@@ -6386,13 +6386,131 @@
       "kind": "class",
       "source": "three",
       "status": {
-        "kind": "unsupported",
-        "diagnostic": "TN_NATIVE_UNSUPPORTED_LOD"
+        "kind": "supported"
       },
-      "extends": null,
+      "extends": "Object3D",
       "constructor": [],
-      "fields": [],
-      "methods": []
+      "fields": [
+        {
+          "name": "autoUpdate",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "levels",
+          "type": "Array<{ object: Object3D; distance: number; hysteresis: number; }>",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ],
+      "methods": [
+        {
+          "name": "addLevel",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "object",
+                  "type": "Object3D",
+                  "optional": false
+                },
+                {
+                  "name": "distance",
+                  "type": "number",
+                  "optional": true
+                },
+                {
+                  "name": "hysteresis",
+                  "type": "number",
+                  "optional": true
+                }
+              ],
+              "returns": "this"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "getCurrentLevel",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "number"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "getObjectForDistance",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "distance",
+                  "type": "number",
+                  "optional": false
+                }
+              ],
+              "returns": "Object3D | null"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "removeLevel",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "distance",
+                  "type": "number",
+                  "optional": false
+                }
+              ],
+              "returns": "boolean"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "update",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "camera",
+                  "type": "Camera",
+                  "optional": false
+                }
+              ],
+              "returns": "void"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ]
     },
     {
       "name": "LatheGeometry",
@@ -6412,8 +6530,7 @@
       "kind": "class",
       "source": "three",
       "status": {
-        "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "kind": "supported"
       },
       "extends": null,
       "constructor": [],
@@ -6423,7 +6540,10 @@
           "type": "number",
           "mutable": true,
           "lifetime": "owned",
-          "default": "1 | 0"
+          "default": "1 | 0",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": [
@@ -6441,7 +6561,10 @@
               ],
               "returns": "void"
             }
-          ]
+          ],
+          "status": {
+            "kind": "supported"
+          }
         },
         {
           "name": "enable",
@@ -6457,7 +6580,10 @@
               ],
               "returns": "void"
             }
-          ]
+          ],
+          "status": {
+            "kind": "supported"
+          }
         },
         {
           "name": "enableAll",
@@ -6467,7 +6593,10 @@
               "parameters": [],
               "returns": "void"
             }
-          ]
+          ],
+          "status": {
+            "kind": "supported"
+          }
         },
         {
           "name": "toggle",
@@ -6483,7 +6612,10 @@
               ],
               "returns": "void"
             }
-          ]
+          ],
+          "status": {
+            "kind": "supported"
+          }
         },
         {
           "name": "disable",
@@ -6499,7 +6631,10 @@
               ],
               "returns": "void"
             }
-          ]
+          ],
+          "status": {
+            "kind": "supported"
+          }
         },
         {
           "name": "disableAll",
@@ -6509,7 +6644,10 @@
               "parameters": [],
               "returns": "void"
             }
-          ]
+          ],
+          "status": {
+            "kind": "supported"
+          }
         },
         {
           "name": "test",
@@ -6525,7 +6663,10 @@
               ],
               "returns": "boolean"
             }
-          ]
+          ],
+          "status": {
+            "kind": "supported"
+          }
         },
         {
           "name": "isEnabled",
@@ -6541,7 +6682,10 @@
               ],
               "returns": "boolean"
             }
-          ]
+          ],
+          "status": {
+            "kind": "supported"
+          }
         }
       ]
     },
@@ -10182,12 +10326,192 @@
       "kind": "class",
       "source": "three/webgpu",
       "status": {
-        "kind": "unsupported",
-        "diagnostic": "TN_NATIVE_UNSUPPORTED_MESHBASICNODEMATERIAL"
+        "kind": "supported"
       },
-      "extends": null,
+      "extends": "Material",
       "constructor": [],
-      "fields": [],
+      "fields": [
+        {
+          "name": "alphaTest",
+          "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "colorNode",
+          "type": "Node | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "depthTest",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "depthWrite",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "emissiveNode",
+          "type": "Node | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "id",
+          "type": "number",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "metalnessNode",
+          "type": "Node | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "normalNode",
+          "type": "Node | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "opacity",
+          "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "opacityNode",
+          "type": "Node | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "positionNode",
+          "type": "Node | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "roughnessNode",
+          "type": "Node | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "side",
+          "type": "Side",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "toneMapped",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "transparent",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "type",
+          "type": "string",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "visible",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "color",
+          "type": "Color",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "map",
+          "type": "Texture | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ],
       "methods": []
     },
     {
@@ -11032,12 +11356,246 @@
       "kind": "class",
       "source": "three/webgpu",
       "status": {
-        "kind": "unsupported",
-        "diagnostic": "TN_NATIVE_UNSUPPORTED_MESHSTANDARDNODEMATERIAL"
+        "kind": "supported"
       },
-      "extends": null,
+      "extends": "Material",
       "constructor": [],
-      "fields": [],
+      "fields": [
+        {
+          "name": "alphaTest",
+          "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "colorNode",
+          "type": "Node | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "depthTest",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "depthWrite",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "emissiveIntensity",
+          "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "emissiveNode",
+          "type": "Node | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "envMapIntensity",
+          "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "id",
+          "type": "number",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "metalness",
+          "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "metalnessNode",
+          "type": "Node | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "normalNode",
+          "type": "Node | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "opacity",
+          "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "opacityNode",
+          "type": "Node | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "positionNode",
+          "type": "Node | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "roughness",
+          "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "roughnessNode",
+          "type": "Node | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "side",
+          "type": "Side",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "toneMapped",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "transparent",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "type",
+          "type": "string",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "visible",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "color",
+          "type": "Color",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "emissive",
+          "type": "Color",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "envMap",
+          "type": "Texture | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "map",
+          "type": "Texture | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ],
       "methods": []
     },
     {
@@ -11292,8 +11850,8 @@
       "kind": "class",
       "source": "three/webgpu",
       "status": {
-        "kind": "unsupported",
-        "diagnostic": "TN_NATIVE_UNSUPPORTED_NODE"
+        "kind": "partial",
+        "gaps": ["graph-authoring-only", "constructor-not-bound"]
       },
       "extends": null,
       "constructor": [],
@@ -11331,8 +11889,8 @@
       "kind": "class",
       "source": "three/webgpu",
       "status": {
-        "kind": "unsupported",
-        "diagnostic": "TN_NATIVE_UNSUPPORTED_NODEMATERIAL"
+        "kind": "partial",
+        "gaps": ["native-not-bound"]
       },
       "extends": null,
       "constructor": [],
@@ -11694,8 +12252,7 @@
           "lifetime": "owned",
           "default": "new Layers()",
           "status": {
-            "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "kind": "supported"
           }
         },
         {
@@ -15258,13 +15815,186 @@
       "kind": "class",
       "source": "three",
       "status": {
-        "kind": "unsupported",
-        "diagnostic": "TN_NATIVE_UNSUPPORTED_RAYCASTER"
+        "kind": "supported"
       },
       "extends": null,
-      "constructor": [],
-      "fields": [],
-      "methods": []
+      "constructor": [
+        {
+          "name": "origin",
+          "type": "Vector3",
+          "optional": true
+        },
+        {
+          "name": "direction",
+          "type": "Vector3",
+          "optional": true
+        },
+        {
+          "name": "near",
+          "type": "number",
+          "optional": true
+        },
+        {
+          "name": "far",
+          "type": "number",
+          "optional": true
+        }
+      ],
+      "fields": [
+        {
+          "name": "far",
+          "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "near",
+          "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "camera",
+          "type": "Camera",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "layers",
+          "type": "Layers",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "ray",
+          "type": "Ray",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ],
+      "methods": [
+        {
+          "name": "intersectObject",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "object",
+                  "type": "Object3D",
+                  "optional": false
+                },
+                {
+                  "name": "recursive",
+                  "type": "boolean",
+                  "optional": true
+                },
+                {
+                  "name": "target",
+                  "type": "Intersection[]",
+                  "optional": true
+                }
+              ],
+              "returns": "Intersection[]"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "intersectObjects",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "objects",
+                  "type": "Object3D[]",
+                  "optional": false
+                },
+                {
+                  "name": "recursive",
+                  "type": "boolean",
+                  "optional": true
+                },
+                {
+                  "name": "target",
+                  "type": "Intersection[]",
+                  "optional": true
+                }
+              ],
+              "returns": "Intersection[]"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "set",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "origin",
+                  "type": "Vector3",
+                  "optional": false
+                },
+                {
+                  "name": "direction",
+                  "type": "Vector3",
+                  "optional": false
+                }
+              ],
+              "returns": "void"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "setFromCamera",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "coords",
+                  "type": "Vector2",
+                  "optional": false
+                },
+                {
+                  "name": "camera",
+                  "type": "Camera",
+                  "optional": false
+                }
+              ],
+              "returns": "void"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ]
     },
     {
       "name": "RedFormat",
@@ -22871,7 +23601,18 @@
         "kind": "supported"
       },
       "extends": null,
-      "constructor": [],
+      "constructor": [
+        {
+          "name": "origin",
+          "type": "Vector3",
+          "optional": true
+        },
+        {
+          "name": "direction",
+          "type": "Vector3",
+          "optional": true
+        }
+      ],
       "fields": [
         {
           "name": "direction",
@@ -23554,6 +24295,24 @@
           }
         }
       ]
+    },
+    {
+      "name": "Face",
+      "kind": "type",
+      "source": "three",
+      "status": {
+        "kind": "supported"
+      },
+      "type": "{ a: number; b: number; c: number; normal: Vector3; materialIndex: number }"
+    },
+    {
+      "name": "Intersection",
+      "kind": "type",
+      "source": "three",
+      "status": {
+        "kind": "supported"
+      },
+      "type": "{ distance: number; point: Vector3; object: Object3D; face: Face; faceIndex: number; uv?: Vector2; uv1?: Vector2; normal?: Vector3; barycoord: Vector3; instanceId?: number }"
     }
   ]
 }

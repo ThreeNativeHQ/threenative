@@ -105,10 +105,16 @@ async function loadReference(): Promise<{
       throw new Error(
         `TN_FIXTURE_THREE_MISMATCH: packages/${owner} links three ${manifest.version}, the workspace catalog pins ${expected}`,
       );
-    const three = (await import(pathToFileURL(path.join(build, "three.module.js")).href)) as Record<
+    const core = (await import(pathToFileURL(path.join(build, "three.module.js")).href)) as Record<
       string,
       unknown
     >;
+    // The node materials are `three/webgpu` exports; both builds share three.core.js, so the core
+    // classes are the same constructors in either namespace.
+    const webgpu = (await import(
+      pathToFileURL(path.join(build, "three.webgpu.js")).href
+    )) as Record<string, unknown>;
+    const three = { ...webgpu, ...core };
     return { three, version: manifest.version, root: path.join(build, "..") };
   }
   throw new Error("TN_FIXTURE_THREE_MISSING: no workspace package links the catalog three");

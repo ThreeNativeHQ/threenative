@@ -6,7 +6,7 @@
 // survives any number of insertions into a sibling list.
 //
 // Not ported, and why:
-//   - `clone`, `toJSON`, `raycast`: out of scope for the object model (PRD-508 phases 1-2).
+//   - `clone`, `toJSON`: out of scope for the object model (PRD-508 phases 1-2).
 //   - `userData`, `animations`, `customDepthMaterial`, `customDistanceMaterial`, `static`,
 //     `uuid`: a bag, an animation list, renderer-only materials and a renderer fast-path flag.
 //   - `onBeforeShadow`/`onAfterShadow`/`onBeforeRender`/`onAfterRender`: renderer callbacks that
@@ -24,6 +24,8 @@
 // side's destructor detaches the other, so neither ever holds a dangling `parent` or child.
 
 #include <cstdint>
+#include <bit>
+#include <cmath>
 #include <functional>
 #include <map>
 #include <memory>
@@ -42,6 +44,8 @@ namespace tn::engine {
 class Object3D;
 class BufferGeometry;
 class Material;
+class Raycaster;
+struct Intersection;
 
 /**
  * What a render callback receives, as three's onBeforeRender does: the scene and camera being
@@ -102,16 +106,24 @@ private:
 /** three's Layers: a 32-bit membership mask, layer 0 by default. */
 class Layers {
 public:
-    uint32_t mask = 1;
-
-    void set(int layer) { mask = static_cast<uint32_t>(1) << layer; }
-    void enable(int layer) { mask |= static_cast<uint32_t>(1) << layer; }
-    void enableAll() { mask = 0xffffffffu; }
-    void toggle(int layer) { mask ^= static_cast<uint32_t>(1) << layer; }
-    void disable(int layer) { mask &= ~(static_cast<uint32_t>(1) << layer); }
+    // A JS number property: assignment does not coerce; bit operations use ECMAScript ToUint32.
+    double mask = 1;
+    static uint32_t bits(double value) {
+        if (!std::isfinite(value) || value == 0) return 0;
+        double integer = std::fmod(std::trunc(value), 4294967296.0);
+        if (integer < 0) integer += 4294967296.0;
+        return uint32_t(integer);
+    }
+    static double signedBits(uint32_t value) { return double(std::bit_cast<int32_t>(value)); }
+    void set(int layer) { mask = double(uint32_t(1) << (uint32_t(layer) & 31)); }
+    void enable(int layer) { mask = signedBits(bits(mask) | (uint32_t(1) << (uint32_t(layer) & 31))); }
+    void enableAll() { mask = -1; }
+    void toggle(int layer) { mask = signedBits(bits(mask) ^ (uint32_t(1) << (uint32_t(layer) & 31))); }
+    void disable(int layer) { mask = signedBits(bits(mask) & ~(uint32_t(1) << (uint32_t(layer) & 31))); }
     void disableAll() { mask = 0; }
-    [[nodiscard]] bool test(const Layers& layers) const { return (mask & layers.mask) != 0; }
-    [[nodiscard]] bool isEnabled(int layer) const { return (mask & (static_cast<uint32_t>(1) << layer)) != 0; }
+    [[nodiscard]] bool test(const Layers& layers) const { return (bits(mask) & bits(layers.mask)) != 0; }
+    [[nodiscard]] bool isEnabled(int layer) const { return (bits(mask) & (uint32_t(1) << (uint32_t(layer) & 31))) != 0; }
+
 };
 
 /**
@@ -217,6 +229,8 @@ public:
 
 class Object3D : public EventDispatcher, public std::enable_shared_from_this<Object3D> {
 public:
+    // false suppresses recursive ray traversal, as three's raycast return value does.
+    virtual bool raycast(const Raycaster&, std::vector<Intersection>&) { return true; }
     Object3D();
     Object3D(const Object3D&) = delete;
     Object3D& operator=(const Object3D&) = delete;
@@ -272,7 +286,7 @@ public:
     void setRenderOrder(int value);
     [[nodiscard]] const Layers& layers() const { return layers_; }
     /** Every Layers mutation goes through here or through one of the wrappers below, so it counts. */
-    void setLayerMask(uint32_t mask);
+    void setLayerMask(double mask);
     void setLayer(int layer);
     void enableLayer(int layer);
     void enableAllLayers();

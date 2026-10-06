@@ -6,7 +6,7 @@
 // reads (PRD-514). One class carries every type's fields; `type` says which three class it is, and
 // each constructor sets that class's defaults. Skipped: maps other than `map` (only the diffuse map
 // is sampled so far), blending modes other than NormalBlending, stencil, clipping planes, polygon
-// offset, dithering, fog, node slots (colorNode etc.), userData, clone/toJSON. Physical features
+// offset, dithering, fog, userData, clone/toJSON. Physical features
 // beyond ior/specular are kept as numbers so the renderer can refuse them by name (TN_MATERIAL_UNSUPPORTED)
 // rather than drop them.
 
@@ -25,10 +25,12 @@ enum class Side : uint8_t { Front = 0, Back = 1, Double = 2 };  // three's Front
 
 class Material {
 public:
-    explicit Material(MaterialType type);
+    explicit Material(MaterialType type, bool nodeMaterial = false);
     [[nodiscard]] std::string_view typeName() const;  // "MeshStandardMaterial", ...
 
     const MaterialType type;
+    const bool nodeMaterial;
+    shader::MaterialNodes nodes;
     const uint32_t id;  // three's material id counter
     std::string name;
 

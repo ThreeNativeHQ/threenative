@@ -147,6 +147,9 @@ public:
      * every expression with `:<type>` (the TSL differential compares structure and types).
      */
     std::string dump(bool typed = false) const;
+    std::vector<std::pair<std::string, Type>> varyings() const;
+    /** Match vertex output locations to the fragment's first-use varying order. */
+    void linkVaryings(const Program& fragment);
 
 private:
     friend class WgslEmitter;

@@ -366,7 +366,6 @@ void registerBufferGeometry(ClassBinding& b) {
     for (const bool normals : {false, true}) {
         b.setters[normals ? "morphAttributes.normal" : "morphAttributes.position"] =
             [normals](void* self, const Value& v, Store& store) {
-                if (v.kind != Value::Kind::Refs) throw Unsupported{"morphAttributes takes an array of BufferAttributes"};
                 std::vector<std::shared_ptr<BufferAttribute>> targets;
                 for (const Value& ref : refsOf(v)) targets.push_back(sharedAttributeArg(store, ref));
                 BufferGeometry* geometry = as<BufferGeometry>(self);

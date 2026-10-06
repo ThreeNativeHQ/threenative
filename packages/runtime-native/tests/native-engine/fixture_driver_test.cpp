@@ -1,5 +1,7 @@
 #include "check.h"
 #include "fixture/driver.h"
+#include "engine/abi/bindings.h"
+#include "engine/scene/material.h"
 
 #include <bit>
 #include <cinttypes>
@@ -72,6 +74,33 @@ void protocol() {
     if (out.str() != want) std::fprintf(stderr, "--- got ---\n%s--- want ---\n%s", out.str().c_str(), want.c_str());
 }
 
+void nodeMaterials() {
+    Driver driver;
+    registerAll(driver.classes);
+    for (const char* material : {"MeshBasicMaterial", "MeshLambertMaterial", "MeshPhongMaterial",
+                                 "MeshStandardMaterial", "MeshPhysicalMaterial",
+                                 "MeshBasicNodeMaterial", "MeshStandardNodeMaterial"}) {
+        for (const char* mesh : {"Mesh", "InstancedMesh", "SkinnedMesh"}) {
+            std::istringstream in(
+                std::string("fixture nodemat\nnew g PlaneGeometry\nnew m ") + material +
+                "\nnew replacement MeshStandardNodeMaterial\nnew mesh " + mesh + " r:g r:m " + hex(1) +
+                "\ncall mesh material original\nobserve 0 original type - string\n"
+                "set mesh material r:replacement\ncall mesh material updated\nobserve 1 updated type - string\n"
+                "set mesh material r:g\ncall mesh material unchanged\nobserve 2 unchanged type - string\nend\n");
+            std::ostringstream out;
+            CHECK(driver.run(in, out) == 0);
+            const std::string want = std::string("obs 0 string s:") + material +
+                "\nobs 1 string s:MeshStandardNodeMaterial\nunsupported - argument%20is%20not%20a%20Material\n"
+                "obs 2 string s:MeshStandardNodeMaterial\n";
+            CHECK(out.str() == want);
+            if (out.str() != want) std::fprintf(stderr, "%s/%s got:\n%s", mesh, material, out.str().c_str());
+            const Value ref{Value::Kind::Ref, 0, "m"};
+            CHECK(driver.shared<tn::engine::Material>(ref, "Material").get() == driver.find(ref)->ptr.get());
+            CHECK(&driver.ref<tn::engine::Material>(ref, "Material") == driver.find(ref)->ptr.get());
+        }
+    }
+}
+
 }  // namespace
 
-TN_TEST_MAIN({"protocol", protocol})
+TN_TEST_MAIN({"protocol", protocol}, {"node_materials", nodeMaterials})

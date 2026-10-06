@@ -68,6 +68,27 @@ const FIELD_TYPE_OVERRIDE: Record<string, string> = {
 
 /** Bound methods whose binding signature differs from three's richer overloads. */
 const METHOD_OVERRIDE: Record<string, { parameters: ICatalogParameter[]; returns: string }[]> = {
+  // The native port intersects Object3D geometry, independent of @types/three's generic overloads.
+  "Raycaster.intersectObject": [
+    {
+      parameters: [
+        { name: "object", type: "Object3D", optional: false },
+        { name: "recursive", type: "boolean", optional: true },
+        { name: "target", type: "Intersection[]", optional: true },
+      ],
+      returns: "Intersection[]",
+    },
+  ],
+  "Raycaster.intersectObjects": [
+    {
+      parameters: [
+        { name: "objects", type: "Object3D[]", optional: false },
+        { name: "recursive", type: "boolean", optional: true },
+        { name: "target", type: "Intersection[]", optional: true },
+      ],
+      returns: "Intersection[]",
+    },
+  ],
   "BufferGeometry.setAttribute": [
     {
       parameters: [
@@ -132,6 +153,10 @@ const UNDECLARED_FIELDS: Record<string, string> = {
   revision: "number",
   id: "number",
   "BufferGeometry.parameters": "Record<string, unknown>",
+  // Basic stores these authored slots too; upstream only evaluates emissiveNode.
+  "MeshBasicNodeMaterial.emissiveNode": "Node | null",
+  "MeshBasicNodeMaterial.roughnessNode": "Node | null",
+  "MeshBasicNodeMaterial.metalnessNode": "Node | null",
 };
 
 function registryMembers(binding: IRegistryClass): Set<string> {
@@ -175,10 +200,11 @@ function indexThreeTypes(): void {
         continue;
       }
       for (const match of text.matchAll(
-        /export\s+(?:abstract\s+)?(?:class|interface)\s+([A-Za-z_$][\w$]*)/gu,
+        /(?:^|\n)\s*(?:export\s+)?(?:declare\s+)?(?:abstract\s+)?(?:class|interface)\s+([A-Za-z_$][\w$]*)/gu,
       )) {
         const name = match[1];
-        if (name !== undefined) classFiles.set(name, full);
+        // Keep the declaration before later renderer module augmentations of the same interface.
+        if (name !== undefined && !classFiles.has(name)) classFiles.set(name, full);
       }
     }
   };
@@ -196,7 +222,7 @@ function declarationBody(keyword: "class" | "interface", name: string): string |
   }
   const text = readFileSync(file, "utf8");
   const header = new RegExp(
-    `export\\s+(?:abstract\\s+)?${keyword}\\s+${name}\\b(?:<[^>]*>)?\\s*(?:extends\\s+([A-Za-z_$][\\w$]*))?[^{]*\\{`,
+    `(?:export\\s+)?(?:declare\\s+)?(?:abstract\\s+)?${keyword}\\s+${name}\\b(?:<[^>]*>)?\\s*(?:extends\\s+([A-Za-z_$][\\w$]*))?[^{]*\\{`,
     "u",
   ).exec(text);
   if (header === null) {
@@ -219,12 +245,27 @@ function declarationBody(keyword: "class" | "interface", name: string): string |
 }
 
 /** @types/three splits a class's fields into a merged `XProperties` interface. */
-function bodiesFor(name: string): string[] {
+function bodiesFor(name: string, seen = new Set<string>()): string[] {
+  if (seen.has(name)) return [];
+  seen.add(name);
   const bodies: string[] = [];
   const classDeclaration = declarationBody("class", name);
   if (classDeclaration !== null) bodies.push(classDeclaration);
-  const properties = declarationBody("interface", `${name}Properties`);
-  if (properties !== null) bodies.push(properties);
+  for (const candidate of [name, `${name}Properties`]) {
+    const properties = declarationBody("interface", candidate);
+    if (properties === null) continue;
+    bodies.push(properties);
+    // Default-exported node materials merge a same-name interface with property interfaces.
+    const file = classFiles.get(candidate);
+    const text = file === undefined ? "" : readFileSync(file, "utf8");
+    const parents = new RegExp(`interface\\s+${candidate}\\b\\s+extends\\s+([^{}]+)\\{`, "u").exec(
+      text,
+    )?.[1];
+    for (const parent of parents?.split(",") ?? []) {
+      const simple = parent.trim();
+      if (/^[A-Za-z_$][\w$]*$/u.test(simple)) bodies.push(...bodiesFor(simple, seen));
+    }
+  }
   return bodies;
 }
 
@@ -360,7 +401,14 @@ function nearestCataloguedParent(
 function fieldFor(className: string, member: string, mutable: boolean): MutableField | null {
   const key = `${className}.${member}`;
   const override = FIELD_TYPE_OVERRIDE[key] ?? UNDECLARED_FIELDS[key] ?? UNDECLARED_FIELDS[member];
-  const type = override ?? findFieldType(className, member);
+  const counterpart =
+    className === "MeshBasicNodeMaterial" || className === "MeshStandardNodeMaterial"
+      ? className.replace("NodeMaterial", "Material")
+      : null;
+  const type =
+    override ??
+    findFieldType(className, member) ??
+    (counterpart === null ? null : findFieldType(counterpart, member));
   if (type === null || type === undefined) {
     unknown.push(`${className}.${member}`);
     return null;
@@ -417,7 +465,10 @@ function ensureSupportedClasses(
     }
     entry.status = SUPPORTED;
     const parent = nearestCataloguedParent(name, (candidate) => byName.has(candidate));
-    if (parent !== null) entry.extends = parent;
+    if (name === "MeshBasicNodeMaterial" || name === "MeshStandardNodeMaterial") {
+      // Publish the bound Material surface; the full upstream NodeMaterial base remains unbound.
+      entry.extends = "Material";
+    } else if (parent !== null) entry.extends = parent;
   }
 }
 
@@ -494,6 +545,14 @@ function main(): void {
   const byName = new Map<string, MutableClass>();
   for (const entry of catalog.entries) if (entry.kind === "class") byName.set(entry.name, entry);
 
+  if (
+    dump.classes.MeshBasicNodeMaterial !== undefined ||
+    dump.classes.MeshStandardNodeMaterial !== undefined
+  ) {
+    const node = byName.get("Node");
+    if (node !== undefined)
+      node.status = { kind: "partial", gaps: ["graph-authoring-only", "constructor-not-bound"] };
+  }
   ensureSupportedClasses(catalog, byName, dump);
   applyMemberStatuses(dump, byName);
   addMissingMembers(dump, byName);

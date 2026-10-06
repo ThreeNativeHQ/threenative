@@ -67,6 +67,7 @@ struct DrawItem {
     // Automatic batching (RenderDatabase): which material it draws, and whether it may share a draw.
     const void* materialKey = nullptr;
     bool batchable = false;
+    shader::MaterialNodes nodes;
     std::shared_ptr<const shader::PositionNode> positionNode;  // the material's; null keeps positionLocal
 };
 

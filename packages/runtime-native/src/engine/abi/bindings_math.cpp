@@ -1133,9 +1133,8 @@ void registerPlane(ClassBinding& b) {
 void registerRay(ClassBinding& b) {
     b.ctor = [](const Args& a, Store& d) {
         auto ray = std::make_shared<Ray>();
-        if (!a.empty())
-            ray->set(d.ref<Vector3>(a.at(0), "Vector3"),
-                     a.size() > 1 ? d.ref<Vector3>(a.at(1), "Vector3") : Vector3(0, 0, -1));
+        if (!a.empty() && a.at(0).kind != Value::Kind::Null) ray->origin.copy(d.ref<Vector3>(a.at(0), "Vector3"));
+        if (a.size() > 1 && a.at(1).kind != Value::Kind::Null) ray->direction.copy(d.ref<Vector3>(a.at(1), "Vector3"));
         return std::static_pointer_cast<void>(ray);
     };
     nestedVector<Ray>(b, "origin", &Ray::origin);
@@ -1178,34 +1177,34 @@ void registerRay(ClassBinding& b) {
         return Value::of(sqrDist);
     };
     b.methods["intersectSphere"] = [](void* self, const Args& a, Store& d) {
-        as<Ray>(self)->intersectSphere(d.ref<Sphere>(a.at(0), "Sphere"),
+        const bool hit = as<Ray>(self)->intersectSphere(d.ref<Sphere>(a.at(0), "Sphere"),
                                        d.ref<Vector3>(a.at(1), "Vector3"));
-        return a.at(1);
+        return hit ? a.at(1) : Value{};
     };
     b.methods["intersectsSphere"] = [](void* self, const Args& a, Store& d) {
         return Value::of(as<Ray>(self)->intersectsSphere(d.ref<Sphere>(a.at(0), "Sphere")));
     };
     b.methods["intersectPlane"] = [](void* self, const Args& a, Store& d) {
-        as<Ray>(self)->intersectPlane(d.ref<Plane>(a.at(0), "Plane"),
+        const bool hit = as<Ray>(self)->intersectPlane(d.ref<Plane>(a.at(0), "Plane"),
                                       d.ref<Vector3>(a.at(1), "Vector3"));
-        return a.at(1);
+        return hit ? a.at(1) : Value{};
     };
     b.methods["intersectsPlane"] = [](void* self, const Args& a, Store& d) {
         return Value::of(as<Ray>(self)->intersectsPlane(d.ref<Plane>(a.at(0), "Plane")));
     };
     b.methods["intersectBox"] = [](void* self, const Args& a, Store& d) {
-        as<Ray>(self)->intersectBox(d.ref<Box3>(a.at(0), "Box3"), d.ref<Vector3>(a.at(1), "Vector3"));
-        return a.at(1);
+        const bool hit = as<Ray>(self)->intersectBox(d.ref<Box3>(a.at(0), "Box3"), d.ref<Vector3>(a.at(1), "Vector3"));
+        return hit ? a.at(1) : Value{};
     };
     b.methods["intersectsBox"] = [](void* self, const Args& a, Store& d) {
         return Value::of(as<Ray>(self)->intersectsBox(d.ref<Box3>(a.at(0), "Box3")));
     };
     b.methods["intersectTriangle"] = [](void* self, const Args& a, Store& d) {
-        as<Ray>(self)->intersectTriangle(d.ref<Vector3>(a.at(0), "Vector3"),
+        const bool hit = as<Ray>(self)->intersectTriangle(d.ref<Vector3>(a.at(0), "Vector3"),
                                          d.ref<Vector3>(a.at(1), "Vector3"),
                                          d.ref<Vector3>(a.at(2), "Vector3"), boolean(a, 3, false),
                                          d.ref<Vector3>(a.at(4), "Vector3"));
-        return a.at(4);
+        return hit ? a.at(4) : Value{};
     };
     b.methods["distanceToPoint"] = [](void* self, const Args& a, Store& d) {
         return Value::of(as<Ray>(self)->distanceToPoint(d.ref<Vector3>(a.at(0), "Vector3")));

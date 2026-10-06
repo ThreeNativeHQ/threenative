@@ -43,8 +43,8 @@ extern "C" {
  * of the catalog entries with status `supported`, sorted by code unit and joined with a single
  * newline, with no trailing newline. A module built against a different published surface hashes
  * differently, which is what TN_DIAG_CAPABILITY_MISMATCH reports. */
-#define TN_CAPABILITY_DIGEST 0xb69760309152fb3aull
-#define TN_CAPABILITY_COUNT 58u
+#define TN_CAPABILITY_DIGEST 0xda5f38856a6ef554ull
+#define TN_CAPABILITY_COUNT 65u
 
 typedef uint32_t tn_status_t;
 
@@ -191,6 +191,9 @@ TN_EXPORT tn_status_t tn_object_release(tn_handle_t object, tn_diagnostic_t *dia
 #define TN_VALUE_STRING 3u
 #define TN_VALUE_HANDLE 4u
 #define TN_VALUE_NUMBERS 5u
+#define TN_VALUE_ARRAY 6u
+#define TN_VALUE_RECORD 7u
+#define TN_VALUE_UNDEFINED 8u
 typedef struct tn_value {
   uint32_t kind;
   uint32_t boolean;
@@ -199,7 +202,8 @@ typedef struct tn_value {
   uint32_t reserved;
   const char *text;
   uint64_t count; /* bytes of text, or elements of numbers */
-  const double *numbers;
+  /* ARRAY: count values; RECORD: count alternating string-key/value pairs. */
+  union { const double *numbers; const struct tn_value *values; };
 } tn_value_t;
 
 /* The generic binding calls over the engine's one registry: the same classes, methods and

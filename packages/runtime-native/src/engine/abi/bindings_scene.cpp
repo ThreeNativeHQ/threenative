@@ -23,6 +23,7 @@
 #include "engine/foundation/math/Quaternion.h"
 #include "engine/foundation/math/Vector.h"
 #include "engine/scene/camera.h"
+#include "engine/scene/raycaster.h"
 #include "engine/scene/geometry.h"
 #include "engine/scene/material.h"
 #include "engine/scene/nodes.h"
@@ -44,12 +45,12 @@ using namespace tn::engine;
 namespace {
 
 double optional(const Args& a, size_t i, double fallback) {
-    return i < a.size() ? number(a.at(i)) : fallback;
+    return i < a.size() && a.at(i).kind != Value::Kind::Null ? number(a.at(i)) : fallback;
 }
 
 bool flag(const Value& v) { return v.kind == Value::Kind::Bool ? v.flag : number(v) != 0; }
 
-bool boolean(const Args& a, size_t i, bool fallback) { return i < a.size() ? flag(a.at(i)) : fallback; }
+bool boolean(const Args& a, size_t i, bool fallback) { return i < a.size() && a.at(i).kind != Value::Kind::Null ? flag(a.at(i)) : fallback; }
 
 template <typename T>
 T* as(void* self) {
@@ -130,7 +131,7 @@ Object3D& objectArg(Store& store, const Value& arg) {
                                            "Scene",           "Camera",          "PerspectiveCamera",
                                            "OrthographicCamera", "AmbientLight", "DirectionalLight",
                                            "HemisphereLight", "InstancedMesh",      "PointLight",
-                                           "SpotLight",       "Bone",               "SkinnedMesh"};
+                                           "SpotLight",       "Bone",               "SkinnedMesh", "LOD"};
     Object* found = store.find(arg);
     if (found == nullptr) throw Unsupported{"argument is not an Object3D"};
     for (const char* cls : kClasses) {
@@ -185,7 +186,7 @@ void registerObject3D(ClassBinding& b) {
     };
     b.getters["layers.mask"] = [](void* self) { return Value::of(double(as<Object3D>(self)->layers().mask)); };
     b.setters["layers.mask"] = [](void* self, const Value& v) {
-        as<Object3D>(self)->setLayerMask(static_cast<uint32_t>(number(v)));
+        as<Object3D>(self)->setLayerMask(number(v));
     };
     b.getters["matrixAutoUpdate"] = [](void* self) { return Value::of(as<Object3D>(self)->matrixAutoUpdate); };
     b.setters["matrixAutoUpdate"] = [](void* self, const Value& v) { as<Object3D>(self)->matrixAutoUpdate = flag(v); };
@@ -252,6 +253,9 @@ void registerObject3D(ClassBinding& b) {
     };
 
     // The members themselves, as Refs to the members.
+    fixedMember(b, "layers", [](void* self, const Args&, Store& store) {
+        return memberAlias(store, self, const_cast<Layers&>(as<Object3D>(self)->layers()), "Layers");
+    });
     fixedMember(b, "position", memberAliasMethod(&Object3D::position, "Vector3"));
     fixedMember(b, "scale", memberAliasMethod(&Object3D::scale, "Vector3"));
     fixedMember(b, "up", memberAliasMethod(&Object3D::up, "Vector3"));
@@ -580,14 +584,119 @@ std::shared_ptr<BufferGeometry> geometryArg(Store& store, const Value& arg) {
 
 /** A material argument of any mesh-material class, matched to one base pointer. */
 std::shared_ptr<Material> materialArg(Store& store, const Value& arg) {
-    static const char* const kClasses[] = {"Material",           "MeshBasicMaterial", "MeshLambertMaterial",
-                                           "MeshPhongMaterial",  "MeshStandardMaterial", "MeshPhysicalMaterial"};
-    Object* found = store.find(arg);
-    if (found == nullptr) throw Unsupported{"argument is not a Material"};
-    for (const char* cls : kClasses) {
-        if (found->cls == cls) return std::static_pointer_cast<Material>(found->ptr);
+    return store.shared<Material>(arg, "Material");
+}
+
+// Structured intersection results preserve the actual scene object and publish real vector wrappers.
+Value intersections(Store& store, const std::vector<Intersection>& hits) {
+    std::vector<Value> values;
+    for (const auto& h : hits) {
+        const auto vector = [&](const auto& v, const char* cls) {
+            using V = std::decay_t<decltype(v)>;
+            return store.adopt(cls, std::make_shared<V>(v));
+        };
+        std::vector<std::pair<std::string, Value>> fields = {
+            {"distance", Value::of(h.distance)}, {"point", vector(h.point, "Vector3")},
+            {"object", foundObject(store, h.object)}, {"faceIndex", Value::of(double(h.faceIndex))},
+            {"face", Value::record({{"a", Value::of(double(h.face.a))}, {"b", Value::of(double(h.face.b))},
+                {"c", Value::of(double(h.face.c))}, {"normal", vector(h.face.normal, "Vector3")},
+                {"materialIndex", Value::of(h.face.materialIndex)}})},
+            {"barycoord", vector(h.barycoord, "Vector3")}
+        };
+        if (h.uv) fields.emplace_back("uv", vector(*h.uv, "Vector2"));
+        if (h.uv1) fields.emplace_back("uv1", vector(*h.uv1, "Vector2"));
+        if (h.normal) fields.emplace_back("normal", vector(*h.normal, "Vector3"));
+        if (h.instanceId) fields.emplace_back("instanceId", Value::of(double(*h.instanceId)));
+        values.push_back(Value::record(std::move(fields)));
     }
-    throw Unsupported{"argument is not a Material, it is a " + found->cls};
+    return Value::array(std::move(values));
+}
+int layerIndex(double value) {
+    if (!std::isfinite(value) || value == 0) return 0;
+    double index = std::fmod(std::trunc(value), 32);
+    return int(index < 0 ? index + 32 : index);
+}
+void registerLayers(ClassBinding& b) {
+    b.ctor = [](const Args&, Store&) { return std::make_shared<Layers>(); };
+    b.getters["mask"] = [](void* self) { return Value::of(double(as<Layers>(self)->mask)); };
+    b.setters["mask"] = [](void* self, const Value& v) { as<Layers>(self)->mask = number(v); };
+    for (const auto name : {"set", "enable", "toggle", "disable"}) {
+        b.methods[name] = [name](void* self, const Args& a, Store&) {
+            const int layer = layerIndex(number(a.at(0)));
+            auto& layers = *as<Layers>(self);
+            if (std::string_view(name) == "set") layers.set(layer);
+            else if (std::string_view(name) == "enable") layers.enable(layer);
+            else if (std::string_view(name) == "toggle") layers.toggle(layer);
+            else layers.disable(layer);
+            return Value::undefined();
+        };
+    }
+    b.methods["enableAll"] = [](void* self, const Args&, Store&) { as<Layers>(self)->enableAll(); return Value::undefined(); };
+    b.methods["disableAll"] = [](void* self, const Args&, Store&) { as<Layers>(self)->disableAll(); return Value::undefined(); };
+    b.methods["test"] = [](void* self, const Args& a, Store& store) { return Value::of(as<Layers>(self)->test(store.ref<Layers>(a.at(0), "Layers"))); };
+    b.methods["isEnabled"] = [](void* self, const Args& a, Store&) { return Value::of(as<Layers>(self)->isEnabled(layerIndex(number(a.at(0))))); };
+}
+void registerRaycaster(ClassBinding& b) {
+    b.ctor = [](const Args& a, Store& store) {
+        const Vector3 origin = !a.empty() && a[0].kind != Value::Kind::Null ? store.ref<Vector3>(a[0], "Vector3") : Vector3{};
+        const Vector3 direction = a.size() > 1 && a[1].kind != Value::Kind::Null ? store.ref<Vector3>(a[1], "Vector3") : Vector3{0,0,-1};
+        return std::make_shared<Raycaster>(origin, direction, optional(a, 2, 0), optional(a, 3, std::numeric_limits<double>::infinity()));
+    };
+    fixedMember(b, "ray", memberAliasMethod(&Raycaster::ray, "Ray"));
+    fixedMember(b, "layers", memberAliasMethod(&Raycaster::layers, "Layers"));
+    for (const auto name : {"near", "far"}) {
+        const auto field = std::string_view(name) == "near" ? &Raycaster::near : &Raycaster::far;
+        b.getters[name] = [field](void* self) { return Value::of(as<Raycaster>(self)->*field); };
+        b.setters[name] = [field](void* self, const Value& v) { as<Raycaster>(self)->*field = number(v); };
+    }
+    b.members["camera"] = [](void* self, const Args&, Store& store) { return foundObject(store, as<Raycaster>(self)->camera); };
+    b.setters["camera"] = [](void* self, const Value& v, Store& store) {
+        auto& caster = *as<Raycaster>(self);
+        auto* camera = v.kind == Value::Kind::Null ? nullptr : dynamic_cast<Camera*>(&objectArg(store, v));
+        if (v.kind != Value::Kind::Null && !camera) throw Unsupported{"camera is not a Camera"};
+        caster.camera = camera; caster.cameraOwner = camera ? camera->weak_from_this().lock() : nullptr;
+    };
+    b.methods["set"] = [](void* self, const Args& a, Store& store) {
+        as<Raycaster>(self)->set(store.ref<Vector3>(a.at(0), "Vector3"), store.ref<Vector3>(a.at(1), "Vector3")); return Value::undefined();
+    };
+    b.methods["setFromCamera"] = [](void* self, const Args& a, Store& store) {
+        auto* camera = dynamic_cast<Camera*>(&objectArg(store, a.at(1)));
+        if (!camera || !as<Raycaster>(self)->setFromCamera(store.ref<Vector2>(a.at(0), "Vector2"), *camera))
+            throw Unsupported{"Raycaster camera is not perspective or orthographic"};
+        return Value::undefined();
+    };
+    b.methods["intersectObject"] = [](void* self, const Args& a, Store& store) {
+        return intersections(store, as<Raycaster>(self)->intersectObject(objectArg(store, a.at(0)), boolean(a, 1, true)));
+    };
+    b.methods["intersectObjects"] = [](void* self, const Args& a, Store& store) {
+        std::vector<Object3D*> objects;
+        if (a.at(0).kind != Value::Kind::Numbers || !a.at(0).numbers.empty())
+            for (const auto& v : refsOf(a.at(0))) objects.push_back(&objectArg(store, v));
+        return intersections(store, as<Raycaster>(self)->intersectObjects(objects, boolean(a, 1, true)));
+    };
+}
+void registerLOD(ClassBinding& b) {
+    registerObject3D(b);
+    b.ctor = [](const Args&, Store&) { return std::make_shared<LOD>(); };
+    b.getters["autoUpdate"] = [](void* self) { return Value::of(as<LOD>(self)->autoUpdate); };
+    b.setters["autoUpdate"] = [](void* self, const Value& v) { as<LOD>(self)->autoUpdate = flag(v); };
+    b.members["levels"] = [](void* self, const Args&, Store& store) {
+        std::vector<Value> levels;
+        for (const auto& l : as<LOD>(self)->levels) levels.push_back(Value::record({
+            {"object", foundObject(store, l.object)}, {"distance", Value::of(l.distance)}, {"hysteresis", Value::of(l.hysteresis)}}));
+        return Value::array(std::move(levels));
+    };
+    b.methods["addLevel"] = [](void* self, const Args& a, Store& store) {
+        as<LOD>(self)->addLevel(objectArg(store, a.at(0)), optional(a, 1, 0), optional(a, 2, 0)); return chain();
+    };
+    b.methods["removeLevel"] = [](void* self, const Args& a, Store&) { return Value::of(as<LOD>(self)->removeLevel(number(a.at(0)))); };
+    b.methods["getCurrentLevel"] = [](void* self, const Args&, Store&) { return Value::of(double(as<LOD>(self)->getCurrentLevel())); };
+    b.methods["getObjectForDistance"] = [](void* self, const Args& a, Store& store) { return foundObject(store, as<LOD>(self)->getObjectForDistance(number(a.at(0)))); };
+    b.methods["update"] = [](void* self, const Args& a, Store& store) {
+        auto* camera = dynamic_cast<Camera*>(&objectArg(store, a.at(0)));
+        if (!camera) throw Unsupported{"LOD.update needs a Camera"};
+        as<LOD>(self)->update(*camera); return Value::undefined();
+    };
 }
 
 void registerMesh(ClassBinding& b) {
@@ -626,6 +735,9 @@ void registerMesh(ClassBinding& b) {
         const std::shared_ptr<Material>& material = as<Mesh>(self)->material;
         return material ? store.share(std::string(material->typeName()), material) : Value{};
     };
+    b.setters["material"] = [](void* self, const Value& value, Store& store) {
+        as<Mesh>(self)->material = materialArg(store, value);
+    };
 }
 
 // three's Bone: an Object3D a Skeleton names.
@@ -640,11 +752,12 @@ void registerSkeleton(ClassBinding& b) {
     b.ctor = [](const Args& a, Store& store) -> std::shared_ptr<void> {
         std::vector<std::shared_ptr<Bone>> bones;
         if (!a.empty()) {
-            if (a.at(0).kind != Value::Kind::Refs) throw Unsupported{"Skeleton needs an array of bones"};
+            if (a.at(0).kind != Value::Kind::Refs && a.at(0).kind != Value::Kind::Array &&
+            !(a.at(0).kind == Value::Kind::Numbers && a.at(0).numbers.empty())) throw Unsupported{"Skeleton needs an array of bones"};
             for (const Value& ref : refsOf(a.at(0))) bones.push_back(store.shared<Bone>(ref, "Bone"));
         }
         std::vector<Matrix4> inverses;
-        if (a.size() > 1 && a.at(1).kind == Value::Kind::Refs)
+        if (a.size() > 1 && (a.at(1).kind == Value::Kind::Refs || a.at(1).kind == Value::Kind::Array))
             for (const Value& ref : refsOf(a.at(1))) inverses.push_back(store.ref<Matrix4>(ref, "Matrix4"));
         return std::static_pointer_cast<void>(std::make_shared<Skeleton>(std::move(bones), std::move(inverses)));
     };
@@ -819,6 +932,9 @@ void registerSceneBindings(Registry& classes) {
     registerOrthographicCamera(classes["OrthographicCamera"]);
     registerScene(classes["Scene"]);
     registerGroup(classes["Group"]);
+    registerLayers(classes["Layers"]);
+    registerRaycaster(classes["Raycaster"]);
+    registerLOD(classes["LOD"]);
     registerMesh(classes["Mesh"]);
     registerInstancedMesh(classes["InstancedMesh"]);
     registerBone(classes["Bone"]);

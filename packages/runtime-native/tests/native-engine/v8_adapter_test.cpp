@@ -318,7 +318,14 @@ void catalogCoverage() {
         v8::Local<v8::Value> value;
         CHECK(global->Get(ctx, key(name)).ToLocal(&value) && value->IsString() && text(value) == want);
     }
-    CHECK(installed.size() + numbers.size() + strings.size() == tn_engine_version().capability_count);
+    // Published intersection record types have no constructor or JavaScript global.
+    const std::set<std::string> recordTypes = {"Face", "Intersection"};
+    for (const auto& name : recordTypes) {
+        CHECK(tn_type_id(name.c_str()) == 0);
+        CHECK(!global->HasOwnProperty(ctx, key(name)).FromMaybe(true));
+    }
+    CHECK(installed.size() + numbers.size() + strings.size() + recordTypes.size() ==
+          tn_engine_version().capability_count);
 
     // Every class's prototype exposes exactly its registry members: methods, top-level getters and
     // member objects. A dotted key is a protocol path, skipped on both sides.
@@ -395,6 +402,57 @@ void tslApi() {
     )JS");
     CHECK(got == "1111111111111111");
     if (got != "1111111111111111") std::fprintf(stderr, "TSL API got %s\n", got.c_str());
+}
+
+// PRD-531 slice 3: the real V8 material setter owns a graph after its JS wrapper is gone.
+void nodeMaterials() {
+    Runtime& rt = runtime();
+    v8::Isolate::Scope isolateScope(rt.isolate);
+    Adapter adapter(rt.isolate, rt.context);
+    const std::string got = run(rt, adapter, R"JS(
+        (() => {
+            for (const C of [MeshBasicNodeMaterial, MeshStandardNodeMaterial]) {
+                const m = new C();
+                if (m.type !== C.name || m.colorNode !== null) return 'defaults';
+                const geometry = new PlaneGeometry();
+                for (const M of [Mesh, InstancedMesh, SkinnedMesh]) {
+                    const mesh = new M(geometry, m, 1);
+                    if (mesh.material !== m) return 'mesh material identity';
+                    const replacement = new MeshStandardNodeMaterial();
+                    mesh.material = replacement;
+                    if (mesh.material !== replacement) return 'mesh material replacement';
+                    let refused = false;
+                    try { mesh.material = geometry; } catch (e) { refused = e instanceof TypeError; }
+                    if (!refused || mesh.material !== replacement) return 'mesh material validation';
+                    try { new M(geometry, geometry, 1); return 'constructor validation'; }
+                    catch (e) { if (!(e instanceof TypeError)) return 'constructor error type'; }
+                }
+                const n = tsl.vec4(tsl.uv(), tsl.uniform(0.35).setName('tint'), 1);
+                m.colorNode = n;
+                if (m.colorNode !== n) return 'identity';
+                m.positionNode = tsl.positionLocal.add(tsl.vec3(0, 0, 0.2));
+                m.normalNode = tsl.vec3(0, 0, 1);
+                m.opacityNode = tsl.float(0.4);
+                if (C === MeshStandardNodeMaterial) {
+                    m.roughnessNode = tsl.uv().x;
+                    m.metalnessNode = tsl.uv().y;
+                    m.emissiveNode = tsl.vec3(0.1);
+                }
+                let refused = false;
+                try { m.colorNode = new Vector3(); } catch (e) { refused = e instanceof TypeError; }
+                if (!refused || m.colorNode !== n) return 'validation';
+                m.colorNode = null;
+                if (m.colorNode !== null) return 'clear';
+            }
+            const held = new MeshBasicNodeMaterial();
+            (() => { held.colorNode = tsl.vec4(tsl.uv(), tsl.uniform(0.35), 1); })();
+            gc(); gc();
+            if (!held.colorNode || !held.colorNode.xyz) return 'graph lifetime';
+            return 'ok';
+        })()
+    )JS");
+    CHECK(got == "ok");
+    if (got != "ok") std::fprintf(stderr, "NodeMaterials got %s\n", got.c_str());
 }
 
 // PRD-531 box 41: a JS-to-native cycle through a captured callback is reclaimed at a safe point.
@@ -480,11 +538,88 @@ void callbackCycle() {
     tn_diagnostic_release(&d);
 }
 
+void raycasterLOD() {
+    Runtime& rt = runtime();
+    v8::Isolate::Scope isolateScope(rt.isolate);
+    Adapter adapter(rt.isolate, rt.context);
+    const std::string result = run(rt, adapter, R"JS(
+      (() => {
+        let checks = 0; const assert = (v) => { checks++; if (!v) throw Error('raycaster/LOD binding differs at check ' + checks); };
+        const g = new BoxGeometry();
+        const m = new MeshBasicMaterial(); m.side = 2;
+        const mesh = new Mesh(g, m);
+        const root = new Group(); const inner = new Group(); root.add(inner); inner.add(mesh);
+        root.updateMatrixWorld(true);
+        const r = new Raycaster(new Vector3(0.2, -0.3, 5), new Vector3(0,0,-1));
+        const hits = r.intersectObject(root);
+        assert(hits.length === 2 && hits[0].object === mesh && hits[0].distance === 4.5);
+        assert(hits[0].point instanceof Vector3 && hits[0].uv instanceof Vector2);
+        assert(hits[0].normal instanceof Vector3 && hits[0].face.normal instanceof Vector3);
+        assert(hits[0].faceIndex >= 0 && hits[0].barycoord instanceof Vector3);
+        assert(r.ray instanceof Ray && r.ray === r.ray && r.ray.origin.z === 5);
+        assert(r.intersectObjects([root]).length === 2 && r.intersectObjects([]).length === 0);
+        const target = [hits[1]];
+        assert(r.intersectObject(root, true, target) === target && target.length === 3 && target[0].distance === 4.5);
+        assert(r.intersectObject(root, false).length === 0);
+        r.near = 5; assert(r.intersectObject(root).length === 1);
+        r.far = 5.1; assert(r.intersectObject(root).length === 0);
+        r.near = 0; r.far = Infinity; r.layers.set(2);
+        assert(r.intersectObject(root).length === 0);
+        mesh.layers.enable(2); assert(r.intersectObject(root).length === 2);
+        assert(r.layers.test(mesh.layers));
+        r.layers.enableAll(); assert(r.layers.mask===-1);
+        r.layers.set(31); assert(r.layers.mask===2147483648);
+        r.layers.enable(0); assert(r.layers.mask===-2147483647);
+        r.layers.mask=Infinity; assert(r.layers.mask===Infinity && !r.layers.isEnabled(0));
+        const bone = new Bone(); const inverse = new Matrix4().makeTranslation(1,2,3);
+        const skeleton = new Skeleton([bone],[inverse]); skeleton.update();
+        assert(skeleton.boneMatrices.length===16 && skeleton.boneMatrices[12]===1);
+        assert(new Skeleton([]).boneMatrices.length===0);
+        let frozenRejected=false;
+        try { r.layers.set(2); r.intersectObject(root,true,Object.freeze([])); } catch { frozenRejected=true; }
+        assert(frozenRejected);
+        let getterRejected=false;
+        const throwing = [{get distance() {throw Error('distance failed');}}];
+        try { r.intersectObject(root,true,throwing); } catch { getterRejected=true; }
+        assert(getterRejected);
+        let prototypeSafe = false;
+        Object.defineProperty(Array.prototype, '0', {set() {throw Error('array prototype setter');}, configurable:true});
+        try { prototypeSafe = r.intersectObject(root).length===2; }
+        finally { delete Array.prototype[0]; }
+        assert(prototypeSafe);
+        const miss = new Ray(new Vector3(5,5,5),new Vector3(0,0,1));
+        assert(miss.intersectBox(new Box3(new Vector3(-1,-1,-1),new Vector3(1,1,1)),new Vector3())===null);
+        const inst = new InstancedMesh(g,m,2); const matrix = new Matrix4();
+        inst.setMatrixAt(1,matrix.makeTranslation(3,0,0)); inst.updateMatrixWorld(true);
+        r.layers.set(0); r.set(new Vector3(3.2,-0.3,5),new Vector3(0,0,-1));
+        const instanceHits = r.intersectObject(inst);
+        assert(instanceHits.length===2 && instanceHits[0].instanceId===1 && instanceHits[0].object===inst);
+        const lod = new LOD(); const a = new Mesh(g,m); const b = new Mesh(g,m);
+        assert(lod.addLevel(b,10,0.2) === lod); lod.addLevel(a,0,0);
+        lod.updateMatrixWorld(true);
+        const camera = new PerspectiveCamera(); camera.position.z = 20; camera.updateMatrixWorld(true);
+        lod.autoUpdate = false; lod.update(camera);
+        assert(lod.getCurrentLevel()===1 && !a.visible && b.visible && lod.autoUpdate===false);
+        assert(lod.levels[0].object===a && lod.levels[1].distance===10 && lod.levels[1].hysteresis===0.2);
+        assert(lod.getObjectForDistance(8) === b && lod.getObjectForDistance(7.99)===a);
+        r.set(new Vector3(0.2,-0.3,9),new Vector3(0,0,-1));
+        assert(r.intersectObject(lod,false)[0].object===b);
+        assert(lod.removeLevel(10) && !lod.removeLevel(10));
+        // Malformed arrays fail at the shared binding boundary, rather than returning no hits.
+        let rejected=false; try { r.intersectObjects([new Vector3()]); } catch { rejected=true; }
+        assert(rejected);
+        return 'PASS raycaster/LOD records, vectors, identity, arrays, target, layers, near/far, instances, hysteresis';
+      })()
+    )JS");
+    std::printf("%s\n", result.c_str());
+    CHECK(result == "PASS raycaster/LOD records, vectors, identity, arrays, target, layers, near/far, instances, hysteresis");
+}
+
 }  // namespace
 
 TN_TEST_MAIN({"handles", handles}, {"unsupported", unsupported}, {"gc_release", gcRelease},
              {"runtime_churn", runtimeChurn},
              {"crossing_bench", crossingBench},
-             {"scene", scene},
+             {"scene", scene}, {"raycaster_lod", raycasterLOD},
              {"catalog_coverage", catalogCoverage},
-             {"callback_cycle", callbackCycle}, {"tsl_api", tslApi})
+             {"callback_cycle", callbackCycle}, {"tsl_api", tslApi}, {"node_materials", nodeMaterials})
