@@ -200,6 +200,10 @@ export function encodeFixture(fixture: IFixture, renderPng?: string): readonly s
       lines.push(["set", op.id, op.path, encodeArg(op.value)].join(" "));
       continue;
     }
+    if (op.op === "tsl") {
+      lines.push(["tsl", op.id, encodeArg(op.program)].join(" "));
+      continue;
+    }
     if (op.op === "gltf") {
       lines.push(
         ["gltf", op.id, encodeArg(op.file), ...(op.clips?.length ? [op.clips.join(",")] : [])].join(

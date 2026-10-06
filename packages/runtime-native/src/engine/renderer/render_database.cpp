@@ -172,6 +172,8 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh) {
     d.transparent = material->transparent;
     d.depthWrite = material->depthWrite;
     d.materialKey = material;
+    d.positionNode = material->positionNode;
+    d.side = static_cast<uint8_t>(material->side);
     r.drawable = d.positions != nullptr;
     return r;
 }
@@ -190,7 +192,9 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
                 // (`material.color.r = x` in JS) changes the colour without a version bump.
                 r.params = paramsOf(*r.material);
                 r.item.material = &r.params;
-                r.item.batchable = type == "Mesh" && !mesh.onBeforeRender && !r.material->transparent;
+                // A positionNode deforms per material: its own draw, as the TS projection keeps it exact.
+                r.item.batchable = type == "Mesh" && !mesh.onBeforeRender && !r.material->transparent &&
+                                   !r.material->positionNode;
                 r.item.castShadow = mesh.castShadow();
                 r.item.receiveShadow = mesh.receiveShadow();
                 const bool morphed = !mesh.geometry->morphPositions.empty() && !mesh.morphTargetInfluences.empty();

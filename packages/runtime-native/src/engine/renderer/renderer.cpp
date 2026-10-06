@@ -265,6 +265,10 @@ WGPUBindGroup Renderer::bindGroup(WGPUBindGroupLayout layout, const shader::Stag
         if (b.kind == shader::BindingKind::Uniform) {
             e.buffer = gpu_.buffer(uniforms);
             e.size = stage.uniformBlockSize;
+        } else if (b.kind == shader::BindingKind::Storage && externalStorage_.count(b.name.substr(2))) {
+            const auto& [buffer, bytes] = externalStorage_.at(b.name.substr(2)); // a positionNode's buffer
+            e.buffer = gpu_.buffer(buffer);
+            e.size = bytes;
         } else if (b.kind == shader::BindingKind::Storage && storages_.count(b.name.substr(2))) {
             const FrameStorage& storage = storages_.at(b.name.substr(2)); // "s_<name>"
             e.buffer = gpu_.buffer(storage.buffer);
@@ -581,6 +585,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
             v.morphTargets = static_cast<uint8_t>(item.morphGeometry->morphPositions.size());
             v.morphNormals = !item.morphGeometry->morphNormals.empty();
         }
+        v.positionNode = item.positionNode;
         return v;
     };
 
@@ -603,8 +608,10 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
         if (item.instanceCount == 0) continue;  // three draws nothing for count 0
         const bool lit = item.kind != MaterialKind::Basic;
         if (!item.positions || (lit && !item.normals) || !item.material) continue;
-        PipelineTarget target{WGPUTextureFormat_RGBA16Float, WGPUTextureFormat_Depth32Float, WGPUCullMode_Back,
-                              item.transparent, item.depthWrite};
+        // material.side: FrontSide culls back faces, BackSide front faces, DoubleSide none.
+        const WGPUCullMode cull = item.side == 2 ? WGPUCullMode_None : item.side == 1 ? WGPUCullMode_Front : WGPUCullMode_Back;
+        PipelineTarget target{WGPUTextureFormat_RGBA16Float, WGPUTextureFormat_Depth32Float, cull, item.transparent,
+                              item.depthWrite};
         target.layout = program.pipelineLayout;
         target.skinIndex = skinIndexFormat(item);
         WGPURenderPipeline pipeline = pipelines_.get(program.vertex, &program.fragment, target);
@@ -682,7 +689,11 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& ca
             const DrawItem& item = *drawn;
             if (!item.castShadow || item.instanceCount == 0 || !item.positions) continue;
             Program& program = depthProgram(variantOf(item));
-            PipelineTarget target{WGPUTextureFormat_Undefined, WGPUTextureFormat_Depth24Plus, WGPUCullMode_Front};
+            // three's _shadowSide: a front-sided caster draws its back faces, a back-sided one its
+            // front faces, a double-sided one both.
+            const WGPUCullMode cull =
+                item.side == 2 ? WGPUCullMode_None : item.side == 1 ? WGPUCullMode_Back : WGPUCullMode_Front;
+            PipelineTarget target{WGPUTextureFormat_Undefined, WGPUTextureFormat_Depth24Plus, cull};
             target.layout = program.pipelineLayout;
             target.skinIndex = skinIndexFormat(item);
             WGPURenderPipeline pipeline = pipelines_.get(program.vertex, nullptr, target);

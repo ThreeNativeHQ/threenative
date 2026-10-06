@@ -14,6 +14,7 @@
 #include <string_view>
 
 #include "engine/foundation/math/Color.h"
+#include "engine/shader/position_node.h"
 
 namespace tn::engine {
 
@@ -47,6 +48,8 @@ public:
     Side side = Side::Front;
     bool visible = true;
     bool toneMapped = true;
+    /** NodeMaterial.positionNode: a builder graph replacing the local position; null keeps it. */
+    std::shared_ptr<const shader::PositionNode> positionNode;
 
     // Mesh*Material
     Color color{1, 1, 1};

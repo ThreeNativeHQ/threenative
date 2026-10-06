@@ -216,6 +216,8 @@ static LocalVertex localVertex(Program& v, const VertexVariant& variant, bool wi
             normal = v.call("normalize", {v.swizzle(v.mul(skinMatrix, v.construct(Type::vec(4), {normal, v.constant(0.0f)})), "xyz")});
         }
     }
+    // NodeMaterial.setupPosition: `positionLocal.assign(positionNode)` after morph, skinning and instancing.
+    if (variant.positionNode) position = variant.positionNode->build(v, position);
     const ExprId instanceColor = variant.instanceColor ? v.attribute("instanceColor", Type::vec(3)) : kInvalid;
     return {v.construct(Type::vec(4), {position, v.constant(1.0f)}), normal, instanceColor};
 }

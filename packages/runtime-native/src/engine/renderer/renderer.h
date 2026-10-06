@@ -51,6 +51,7 @@ struct DrawItem {
     Matrix bindMatrix{}, bindMatrixInverse{};
     bool castShadow = false;    // Object3D.castShadow: drawn into every shadow map
     bool receiveShadow = false; // Object3D.receiveShadow: its lit program reads the shadow maps
+    uint8_t side = 0;           // material.side: 0 FrontSide, 1 BackSide, 2 DoubleSide
     // InstancedMesh: one mat4 (16 floats) per instance, an optional rgb per instance, and how many draw.
     BufferStore* instanceMatrices = nullptr;
     BufferStore* instanceColors = nullptr;
@@ -58,6 +59,7 @@ struct DrawItem {
     // Automatic batching (RenderDatabase): which material it draws, and whether it may share a draw.
     const void* materialKey = nullptr;
     bool batchable = false;
+    std::shared_ptr<const shader::PositionNode> positionNode;  // the material's; null keeps positionLocal
 };
 
 struct CameraState {
@@ -129,6 +131,12 @@ public:
     ~Renderer();
     Renderer(const Renderer&) = delete;
     Renderer& operator=(const Renderer&) = delete;
+
+    /**
+     * A storage buffer a positionNode reads, bound by its name (`storage("positions", ...)` in the
+     * graph): e.g. the positions a compute pass wrote. It stays bound until set again.
+     */
+    void setStorage(const std::string& name, Handle buffer, uint64_t bytes) { externalStorage_[name] = {buffer, bytes}; }
 
     void setOutput(const OutputState& output);
     const OutputState& output() const { return output_; }
@@ -270,6 +278,7 @@ private:
         uint64_t capacity = 0;
     };
     std::map<std::string, FrameStorage> storages_;
+    std::map<std::string, std::pair<Handle, uint64_t>> externalStorage_;  // setStorage, by name
 };
 
 }  // namespace tn::engine

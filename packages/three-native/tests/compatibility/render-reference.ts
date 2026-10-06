@@ -100,7 +100,7 @@ function page(request: Record<string, unknown>): string {
     '<!doctype html><meta charset="utf-8">',
     "<style>html,body{margin:0;background:#000}canvas{display:block}</style>",
     `<canvas id="c" width="${String(width)}" height="${String(height)}"></canvas>`,
-    '<script type="importmap">{"imports":{"three":"/build/three.webgpu.js"}}</script>',
+    '<script type="importmap">{"imports":{"three":"/build/three.webgpu.js","three/webgpu":"/build/three.webgpu.js","three/tsl":"/build/three.tsl.js"}}</script>',
     '<script type="module">',
     'import { reportOutcome } from "/render-fixture-page.js";',
     `reportOutcome(${JSON.stringify(request)});`,
@@ -116,8 +116,15 @@ async function withServer(
   const build = threeBuildDir();
   const served = new Map<string, [string, string | Buffer]>([
     ["/render-fixture-page.js", ["text/javascript", readFileSync(PAGE_FILE, "utf8")]],
+    [
+      "/tsl-programs.js",
+      [
+        "text/javascript",
+        readFileSync(path.join(path.dirname(PAGE_FILE), "tsl-programs.js"), "utf8"),
+      ],
+    ],
   ]);
-  for (const name of ["three.webgpu.js", "three.core.js"])
+  for (const name of ["three.webgpu.js", "three.core.js", "three.tsl.js"])
     served.set(`/build/${name}`, ["text/javascript", readFileSync(path.join(build, name), "utf8")]);
   // GLTFLoader and the two helpers it imports, resolving `three` through the page's import map; and
   // every glTF a fixture loads, from the repository.

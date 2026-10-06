@@ -210,6 +210,13 @@ int Driver::run(std::istream& in, std::ostream& out) {
                 }
                 continue;
             }
+            if (command == "tsl" && t.size() == 3) {
+                // Applied by the render callback, which owns the GPU the program may dispatch on.
+                auto object = objects_.find(t[1]);
+                if (object == objects_.end()) throw Unsupported{"tsl names no object " + t[1]};
+                tsl_.emplace_back(decode(t[2].substr(2)), object->second);
+                continue;
+            }
             if (command == "gltf" && (t.size() == 3 || t.size() == 4)) {
 #if TN_FIXTURE_GLTF
                 // A repository-relative file: the repository root is the first ancestor of the working
@@ -253,6 +260,8 @@ int Driver::run(std::istream& in, std::ostream& out) {
                 request.srgb = t[7] == "srgb";
                 request.png = decode(t[8].substr(2));
                 request.shadowMap = t.size() == 10;
+                request.tsl = std::move(tsl_);
+                tsl_.clear();
                 if (const std::string failed = render(scene->second, camera->second, request); !failed.empty()) throw Unsupported{failed};
                 frame_ = request.png;
                 continue;

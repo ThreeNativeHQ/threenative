@@ -167,6 +167,8 @@ export async function referenceGolden(
   const { three, version, root } = await loadReference();
   const bound = new Map<string, unknown>();
   for (const op of fixture.ops) {
+    // A TSL program changes only what the frame draws, which the browser capture records.
+    if (op.op === "tsl") continue;
     if (op.op === "gltf") {
       const gltf = await loadGltf(root, op.file);
       bound.set(op.id, gltf.scene);

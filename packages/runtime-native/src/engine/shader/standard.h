@@ -1,10 +1,12 @@
 #pragma once
 
 #include <array>
+#include <memory>
 #include <string>
 #include <vector>
 
 #include "engine/shader/ir.h"
+#include "engine/shader/position_node.h"
 
 namespace tn::engine::shader {
 
@@ -62,10 +64,13 @@ struct VertexVariant {
      */
     uint8_t morphTargets = 0;
     bool morphNormals = false;
+    /** The material's positionNode, applied after every variant above; null keeps positionLocal. */
+    std::shared_ptr<const PositionNode> positionNode;
     /** A stable key: two variants with the same key build the same program. */
     [[nodiscard]] std::string key() const {
         return std::to_string(instanced) + std::to_string(instanceColor) + std::to_string(skinned) + "m" +
-               std::to_string(morphTargets) + (morphNormals ? "n" : "");
+               std::to_string(morphTargets) + (morphNormals ? "n" : "") +
+               (positionNode ? "p:" + positionNode->key : "");
     }
 };
 

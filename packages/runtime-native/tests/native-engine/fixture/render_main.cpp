@@ -2,6 +2,7 @@
 // drawing the fixture's scene through the native renderer's render database — the path a game's
 // `renderer.render(scene, camera)` takes — and writing the frame as a PNG for run-native to compare
 // with the browser's golden frame.
+#include "tsl_programs.h"
 #include "driver.h"
 #include "engine/abi/bindings.h"
 #include "engine/renderer/render_database.h"
@@ -56,6 +57,10 @@ std::string draw(Gpu& gpu, tn::binding::Object& sceneObject, tn::binding::Object
     // three's background colour is the clear colour; without one the renderer clears to black.
     std::array<double, 4> clear{0, 0, 0, 1};
     if (scene.background) clear = {scene.background->r, scene.background->g, scene.background->b, 1};
+    for (auto [program, object] : r.tsl)
+        if (const std::string failed = tn::fixture::applyTslProgram(program, object, renderer, gpu.context.getDevice());
+            !failed.empty())
+            return failed;
     gpu.database.shadowMapEnabled = r.shadowMap;
     gpu.database.render(renderer, scene, *camera, clear);
     if (!gpu.database.diagnostics().empty()) return gpu.database.diagnostics().front();

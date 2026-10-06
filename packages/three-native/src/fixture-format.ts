@@ -181,7 +181,21 @@ export interface IGltfOp {
   readonly clips?: readonly string[];
 }
 
-export type FixtureOp = INewOp | ICallOp | ISetOp | IGltfOp;
+/**
+ * Applies a named TSL program to a bound material (and the GPU work it needs before the frame):
+ * `render/tsl-programs.js` in the reference, the C++ registry `tsl_programs.h` in the native driver,
+ * authored once each with upstream TSL and the native TSL builder. Render fixtures only.
+ */
+export interface ITslOp {
+  readonly op: "tsl";
+  readonly id: string;
+  readonly program: string;
+}
+
+export type FixtureOp = INewOp | ICallOp | ISetOp | IGltfOp | ITslOp;
+
+/** A TSL program name: lower-case words joined by hyphens. */
+export const TSL_PROGRAM = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/u;
 
 /** A repository-relative glTF path: no parent steps, no absolute root. */
 export const GLTF_FILE = /^(?!\/)(?!.*(?:^|\/)\.\.(?:\/|$))[\w./-]+\.(?:glb|gltf)$/u;
@@ -430,8 +444,15 @@ export function fixtureErrors(value: unknown, expectedName?: string): readonly s
       }
       continue;
     }
+    if (node.op === "tsl") {
+      if (typeof node.program !== "string" || !TSL_PROGRAM.test(node.program))
+        errors.push(`${at}.program: required, a TSL program name`);
+      if (typeof node.id !== "string" || !defined.has(node.id))
+        errors.push(`${at}.id: must name an id bound earlier`);
+      continue;
+    }
     if (node.op !== "new" && node.op !== "call" && node.op !== "set") {
-      errors.push(`${at}.op: must be new, call, set or gltf`);
+      errors.push(`${at}.op: must be new, call, set, gltf or tsl`);
       continue;
     }
     if (!Array.isArray(args)) errors.push(`${at}.args: must be an array`);

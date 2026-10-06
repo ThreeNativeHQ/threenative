@@ -44,9 +44,17 @@ function writePath(root, dotted, value) {
 }
 
 /** Executes the fixture's ops in `three`, the same reads the Node reference makes. */
-async function build(fixture) {
+async function build(fixture, renderer) {
   const bound = new Map();
   for (const op of fixture.ops) {
+    if (op.op === "tsl") {
+      // The named TSL program, applied to the bound material with the renderer that draws it.
+      const { programs } = await import("/tsl-programs.js");
+      const program = programs[op.program];
+      if (typeof program !== "function") throw new Error(`TN_FIXTURE_TSL_UNKNOWN: ${op.program}`);
+      await program({ target: bound.get(op.id), renderer });
+      continue;
+    }
     if (op.op === "gltf") {
       // three's own loader on the served repository file; its default scene is the bound value.
       const { GLTFLoader } = await import("/addons/loaders/GLTFLoader.js");
@@ -105,7 +113,7 @@ export async function renderFixture(request) {
   renderer.outputColorSpace = three[request.outputColorSpaceConstant];
   renderer.shadowMap.enabled = request.shadowMap === true;
 
-  const bound = await build(request.fixture);
+  const bound = await build(request.fixture, renderer);
   renderer.render(bound.get(request.scene), bound.get(request.camera));
   // The harness screenshots the presented frame, so wait for the work to land and for the
   // compositor to hold it before the page reports back.

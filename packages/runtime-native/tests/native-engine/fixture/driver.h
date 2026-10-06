@@ -36,6 +36,8 @@ struct RenderRequest {
     bool srgb = true;
     std::string png;          // where to write the frame
     bool shadowMap = false;   // a trailing `shadowMap` token: three's renderer.shadowMap.enabled
+    /** `tsl` ops since the last render: each named TSL program and the bound object it applies to. */
+    std::vector<std::pair<std::string, Object>> tsl;
 };
 
 class Driver : public Store {
@@ -67,6 +69,7 @@ private:
 
     std::map<std::string, Object> objects_;
     std::string frame_;  // the last frame `render` wrote, which a `pixels` observation names
+    std::vector<std::pair<std::string, Object>> tsl_;  // `tsl` ops waiting for the next render
     std::unordered_map<const void*, std::shared_ptr<void>> owners_;
     uint32_t nextTemp_ = 0;
 };
