@@ -1,0 +1,452 @@
+import type { DepthTexture } from "three";
+import { Vector2 } from "three";
+import {
+  Fn,
+  If,
+  Return,
+  abs,
+  ceil,
+  clamp,
+  float,
+  instanceIndex,
+  int,
+  ivec2,
+  log2,
+  max,
+  min,
+  storage,
+  textureLoad,
+  uniform,
+  vec4,
+} from "three/tsl";
+import { StorageBufferAttribute } from "three/webgpu";
+
+/**
+ * The hierarchical-depth (pyramid) occlusion test, and the max-distance pyramid it reads.
+ *
+ * The pyramid is a previous frame's own depth, reduced so that one texel of a level covers `2^level`
+ * pixels of the level below it and every texel holds the *farthest* surface inside its footprint.
+ * Farthest, not nearest: a sphere is only hidden when its nearest point is behind the farthest
+ * thing already drawn in front of it, so a max reduction is the conservative direction and a min
+ * reduction would reject objects a fragment can still see.
+ *
+ * Two readers, one rule. {@link occludedBy} is the reference in plain TypeScript and
+ * {@link DepthPyramid.occluded} is the same rule in TSL for the cull kernel. Four answers are never
+ * "hidden", and each is a case the test has to get right rather than a tuning choice:
+ * - a camera cut — a teleport or a projection change — skips the test for the whole frame, because
+ *   the pyramid is a different camera's depth;
+ * - a sphere that touches the near plane has no last-frame screen rect to compare against;
+ * - a sphere that fell off screen last frame has no texel to read;
+ * - a sphere whose footprint is a single texel at every level is kept, because the level it would
+ *   need does not exist and a coarser level would reject it wrongly.
+ *
+ * Nothing here decides a look: the test reads depths and answers a boolean.
+ */
+
+/** The launch flag. */
+export const OCCLUSION_FLAG = "TN_OCCLUSION";
+
+/** What a launch asked the GPU-scene occlusion cull to do. `measure` counts; `off` runs no test. */
+export type OcclusionMode = "off" | "measure";
+
+/**
+ * What this launch asked for.
+ *
+ * @situation measure what a pyramid occlusion cull would cull on map-walk, without culling it
+ * @constraint `measure` never changes what is drawn: it runs the test and counts the answer, so a
+ *   measured frame is the frame an unmeasured run draws. `off`, the default, runs no test and
+ *   allocates nothing. An unknown value throws rather than picking one.
+ * @example WorldCells.load({ ...options, gpuScene: true, occlusion: occlusionMode() });
+ *
+ * Read the way `gpuSceneRequested` reads its own: a native launch sets the environment variable, a
+ * browser asks with `?tnOcclusion=measure`, and a test sets the global.
+ */
+export function occlusionMode(): OcclusionMode {
+  const host = globalThis as {
+    process?: { env?: Record<string, unknown> };
+    __tnOcclusion?: unknown;
+    location?: { search?: string };
+  };
+  const fromEnv = host.process?.env?.[OCCLUSION_FLAG];
+  const query = host.location?.search;
+  const asked =
+    typeof fromEnv === "string" && fromEnv !== ""
+      ? fromEnv
+      : typeof query === "string"
+        ? (/[?&]tnOcclusion=([^&]*)/u.exec(query)?.[1] ?? "")
+        : typeof host.__tnOcclusion === "string"
+          ? host.__tnOcclusion
+          : "";
+  const value = asked.trim().toLowerCase();
+  if (value === "" || value === "0" || value === "off" || value === "false") return "off";
+  if (value === "measure" || value === "1" || value === "true") return "measure";
+  throw new Error(`${OCCLUSION_FLAG}: unknown mode "${asked}". Use "off" or "measure".`);
+}
+
+/** One level of the pyramid: the farthest view-axis distance each texel of it saw, in metres. */
+export interface IDepthPyramidLevel {
+  readonly width: number;
+  readonly height: number;
+  readonly distance: Float32Array;
+}
+
+/** The max-distance chain, level 0 first and the coarsest last. */
+export interface IDepthPyramid {
+  readonly levels: readonly IDepthPyramidLevel[];
+}
+
+/** The camera the pyramid was built from, which is the only camera the test reprojects into. */
+export interface IOcclusionFrame {
+  /** Column-major `projection * viewInverse` of the frame the pyramid came from. */
+  readonly viewProjection: Float32Array;
+  /** The frame's own drawing-buffer size, which is what level 0's texels are pixels of. */
+  readonly width: number;
+  readonly height: number;
+  /** A teleport or a projection change: the test is skipped for the whole frame. */
+  readonly cut: boolean;
+}
+
+/** The pyramid a cull tests against, and whether a hidden placement is dropped or only counted. */
+export interface IKernelOcclusion {
+  readonly frame: IOcclusionFrame;
+  readonly pyramid: IDepthPyramid;
+  /**
+   * `false` measures: a placement the test hides is counted and still drawn, which is the point of
+   * a measured frame — the picture is the unmeasured one and the count is the hypothesis. `true` is
+   * the cull the next phase turns on by default.
+   */
+  readonly cull: boolean;
+}
+
+/**
+ * The max-distance chain of a frame's own view-axis depths. Level 0 is the buffer handed in and
+ * every level above it is the 2x2 maximum of the level below, clamped at the edge so an odd width
+ * loses no texel to an out-of-range read.
+ */
+export function buildDepthPyramid(
+  distance: Float32Array,
+  width: number,
+  height: number,
+): IDepthPyramid {
+  const levels: IDepthPyramidLevel[] = [{ width, height, distance }];
+  let source = levels[0] as IDepthPyramidLevel;
+  while (source.width > 1 || source.height > 1) {
+    const next: IDepthPyramidLevel = {
+      width: Math.max(1, source.width >> 1),
+      height: Math.max(1, source.height >> 1),
+      distance: new Float32Array(Math.max(1, source.width >> 1) * Math.max(1, source.height >> 1)),
+    };
+    for (let y = 0; y < next.height; y += 1) {
+      for (let x = 0; x < next.width; x += 1) {
+        let far = 0;
+        for (let dy = 0; dy < 2; dy += 1) {
+          for (let dx = 0; dx < 2; dx += 1) {
+            const sx = Math.min(source.width - 1, x * 2 + dx);
+            const sy = Math.min(source.height - 1, y * 2 + dy);
+            far = Math.max(far, source.distance[sy * source.width + sx] as number);
+          }
+        }
+        next.distance[y * next.width + x] = far;
+      }
+    }
+    levels.push(next);
+    source = next;
+  }
+  return { levels };
+}
+
+/**
+ * Would this placement be hidden from the frame the pyramid came from?
+ *
+ * The sphere is reprojected into last frame's clip space, where `w` is its view-axis distance, and
+ * its screen half-extent in NDC is the radius over that matrix's own diagonal — for a
+ * `projection * viewInverse` product the diagonal entries *are* the projection's. The level is the
+ * one whose texels are about the size of the footprint, and the answer is whether the sphere's
+ * nearest point along the view axis is behind the farthest distance the four texels under it hold.
+ */
+export function occludedBy(
+  occlusion: IKernelOcclusion,
+  centre: ArrayLike<number>,
+  radius: number,
+): boolean {
+  const { frame, pyramid } = occlusion;
+  if (frame.cut) return false;
+  const m = frame.viewProjection;
+  const x = centre[0] as number;
+  const y = centre[1] as number;
+  const z = centre[2] as number;
+  const w = (m[3] as number) * x + (m[7] as number) * y + (m[11] as number) * z + (m[15] as number);
+  if (w <= radius) return false;
+  const ndcX =
+    ((m[0] as number) * x + (m[4] as number) * y + (m[8] as number) * z + (m[12] as number)) / w;
+  const ndcY =
+    ((m[1] as number) * x + (m[5] as number) * y + (m[9] as number) * z + (m[13] as number)) / w;
+  const halfX = (radius * Math.abs(m[0] as number)) / w;
+  const halfY = (radius * Math.abs(m[5] as number)) / w;
+  if (Math.abs(ndcX) + halfX > 1 || Math.abs(ndcY) + halfY > 1) return false;
+  const levels = pyramid.levels;
+  const base = levels[0] as IDepthPyramidLevel;
+  const diameter = Math.max(1, Math.max(halfX * base.width, halfY * base.height));
+  const level = levels[
+    Math.min(levels.length - 1, Math.max(0, Math.ceil(Math.log2(diameter))))
+  ] as IDepthPyramidLevel;
+  const at = Math.min(
+    level.width - 1,
+    Math.max(0, Math.floor((ndcX * 0.5 + 0.5) * level.width - (halfX * level.width) / 2)),
+  );
+  const row = Math.min(
+    level.height - 1,
+    Math.max(0, Math.floor((ndcY * 0.5 + 0.5) * level.height - (halfY * level.height) / 2)),
+  );
+  let far = 0;
+  for (let dy = 0; dy < 2; dy += 1) {
+    for (let dx = 0; dx < 2; dx += 1) {
+      const x2 = Math.min(level.width - 1, at + dx);
+      const y2 = Math.min(level.height - 1, row + dy);
+      far = Math.max(far, level.distance[y2 * level.width + x2] as number);
+    }
+  }
+  return w - radius > far;
+}
+
+/**
+ * A TSL node this module reads through the swizzles and the `.element()` chain.
+ *
+ * Three's node types are precise about which swizzle a `vec4` answers and deliberately vague about
+ * what a storage element or a texture load resolves to, and the pyramid is the one place in core
+ * that has to read a matrix column and a loaded depth. The cast is confined here so the shader
+ * reads as the plain thing it is.
+ */
+// quality-allow: the pyramid is a typed handle onto three's TSL nodes, which resolve to `any` in 0.185.
+// biome-ignore lint/suspicious/noExplicitAny: three's TSL types refuse the chains these shaders read.
+type Kernel = any;
+
+/** A TSL value this module builds its shaders from. */
+function nodes(value: unknown): Kernel {
+  return value as Kernel;
+}
+
+/** The 2x2 footprint every level of the chain reduces, in the order the loop walks it. */
+const FOOTPRINT = [
+  [0, 0],
+  [1, 0],
+  [0, 1],
+  [1, 1],
+] as const;
+
+/**
+ * The GPU half of the same rule: the buffers a level is written into, the per-level table the test
+ * addresses them by, and one dispatch per level that reduces the level below — or the frame's own
+ * depth texture, for level 0.
+ *
+ * Level 0 is half the depth's own resolution, so the chain starts one texel per four pixels. That
+ * is the granularity this shape of cull always has: a sphere narrower than a texel cannot be
+ * tested at all, and a finer level 0 would only lengthen the chain without rejecting more.
+ */
+export class DepthPyramid {
+  /** Farthest view-axis distance per texel, every level in one buffer at its own offset. */
+  distance = new StorageBufferAttribute(new Float32Array(1), 1);
+  /** `(width, height, offset, 0)` per level, written when the chain is sized and read every frame. */
+  meta = new StorageBufferAttribute(new Float32Array(4), 4);
+  /** The depth texture's own size, which level 0 reads its 2x2 footprint out of. */
+  readonly #depthSize = uniform(new Vector2(1, 1));
+  /** `(near, far)` of the frame the depth came from, which turn its NDC depth into metres. */
+  readonly #nearFar = uniform(new Vector2(0.1, 1000));
+  #levels: { width: number; height: number; offset: number }[] = [];
+  #kernels: Kernel[] = [];
+  #disposed = false;
+
+  /** The chain's level count, which is also the clamp the test's level selection runs into. */
+  get levels(): number {
+    return this.#levels.length;
+  }
+
+  /** The per-level table, as the TSL storage node the cull kernel addresses the chain by. */
+  get table(): Kernel {
+    return nodes(storage(this.meta, "vec4", this.meta.count));
+  }
+
+  /** The distance chain, as the TSL storage node the cull kernel samples. */
+  get chain(): Kernel {
+    return nodes(storage(this.distance, "float", this.distance.count));
+  }
+
+  /**
+   * Size the chain for a depth texture and write its per-level table.
+   *
+   * Structural: a resize replaces both buffers, so every level kernel is a new pipeline. A depth
+   * that did not change size is left alone, because a frame never reallocates.
+   */
+  resize(depthWidth: number, depthHeight: number): boolean {
+    const levels: { width: number; height: number; offset: number }[] = [];
+    let offset = 0;
+    for (
+      let width = Math.max(1, depthWidth >> 1), height = Math.max(1, depthHeight >> 1);
+      width > 0 && height > 0;
+    ) {
+      levels.push({ width, height, offset });
+      offset += width * height;
+      width = Math.max(1, width >> 1);
+      height = Math.max(1, height >> 1);
+    }
+    const held = this.#levels;
+    if (
+      levels.length === held.length &&
+      levels.every((level, index) => {
+        const own = held[index];
+        return own !== undefined && own.width === level.width && own.height === level.height;
+      })
+    )
+      return false;
+    this.distance = new StorageBufferAttribute(new Float32Array(offset), 1);
+    this.meta = new StorageBufferAttribute(new Float32Array(levels.length * 4), 4);
+    const table = this.meta.array as Float32Array;
+    for (const [index, level] of levels.entries()) {
+      table[index * 4] = level.width;
+      table[index * 4 + 1] = level.height;
+      table[index * 4 + 2] = level.offset;
+    }
+    this.meta.needsUpdate = true;
+    this.#levels = levels;
+    this.#kernels = [];
+    return true;
+  }
+
+  /**
+   * Rebuild the chain from the depth the frame before this one left behind, and answer how many
+   * dispatches it cost so a measurement can time the whole chain.
+   */
+  build(
+    renderer: { compute(node: unknown): void },
+    depth: DepthTexture,
+    near: number,
+    far: number,
+  ): number {
+    if (this.#disposed || this.#levels.length === 0) return 0;
+    this.#depthSize.value.set(depth.image.width ?? 0, depth.image.height ?? 0);
+    this.#nearFar.value.set(near, far);
+    for (const [index] of this.#levels.entries()) renderer.compute(this.#levelKernel(index, depth));
+    return this.#levels.length;
+  }
+
+  /**
+   * One level's reduction, as its own pipeline with its own level baked in.
+   *
+   * The level is a constant rather than a uniform because a uniform written between two dispatches
+   * of the same frame only re-uploads if the node happens to flush per dispatch, and a pyramid that
+   * reduced the wrong level is still a pyramid. One small pipeline per level is the price of not
+   * having to prove that.
+   */
+  #levelKernel(index: number, depth: DepthTexture): unknown {
+    const held = this.#kernels[index];
+    if (held !== undefined) return held;
+    const level = this.#levels[index] as { width: number; height: number; offset: number };
+    const distance = this.chain;
+    const table = this.table;
+    const own = table.element(index);
+    const below = index === 0 ? undefined : table.element(index - 1);
+    const depthSize = nodes(this.#depthSize);
+    const nearFar = nodes(this.#nearFar);
+    const built = nodes(
+      Fn(() => {
+        // One thread per texel of this level, addressed as a float: TSL's clamp is float-only, so
+        // the whole reduction stays in floats and converts once, at the storage index.
+        const linear = float(instanceIndex);
+        const width = own.x;
+        const height = own.y;
+        If(linear.greaterThanEqual(width.mul(height)), () => Return());
+        const y = linear.div(width).floor();
+        const x = linear.sub(y.mul(width));
+        const far = float(0).toVar();
+        for (const [dx, dy] of FOOTPRINT) {
+          const sample =
+            below === undefined
+              ? // One sample of a multisampled depth is that sample's depth; the max over the
+                // samples is the resolve, and the two differ by less than the level-0 texel.
+                // ponytail: read every sample when a cull turns this on.
+                nodes(nearFar.x)
+                  .mul(nodes(nearFar.y))
+                  .div(
+                    nodes(nearFar.y).sub(
+                      nodes(nearFar.y).sub(nodes(nearFar.x)).mul(
+                        textureLoad(
+                          depth,
+                          nodes(
+                            ivec2(
+                              int(nodes(x.mul(2).add(dx)).clamp(0, nodes(depthSize.x).sub(1))),
+                              int(nodes(y.mul(2).add(dy)).clamp(0, nodes(depthSize.y).sub(1))),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  )
+              : distance.element(
+                  nodes(
+                    below.z
+                      .add(nodes(y.mul(2).add(dy)).clamp(0, nodes(below.y).sub(1)).mul(below.x))
+                      .add(nodes(x.mul(2).add(dx)).clamp(0, nodes(below.x).sub(1))),
+                  ),
+                );
+          far.assign(max(far, nodes(sample)));
+        }
+        distance.element(nodes(own.z.add(y.mul(width)).add(x))).assign(far);
+      })().compute(Math.max(1, level.width * level.height)),
+    );
+    built.name = `tnDepthPyramid${String(index)}`;
+    this.#kernels[index] = built;
+    return built;
+  }
+
+  /**
+   * The test, in the cull kernel's own language: the same four keeps and the same comparison, read
+   * off the same two buffers {@link occludedBy} reads off its own arrays.
+   *
+   * `centre` is a TSL world position, `radius` its bounding-sphere radius, `viewProjection` the
+   * previous frame's `projection * viewInverse` as a `mat4` uniform and `cut` this frame's cut
+   * flag. The matrix holds the projection's diagonal on its diagonal: element 0 is column 0, so
+   * its `x` is `P00`, and element 1's `y` is `P11`.
+   */
+  occluded(centre: Kernel, radius: Kernel, viewProjection: Kernel, cut: Kernel): Kernel {
+    const table = this.table;
+    const chain = this.chain;
+    const last = Math.max(0, this.levels - 1);
+    const clip = viewProjection.mul(vec4(centre, 1));
+    const w = clip.w;
+    const depth = max(w, float(1e-6));
+    const ndc = clip.xyz.div(depth);
+    const halfX = abs(viewProjection.element(0).x).mul(radius).div(depth);
+    const halfY = abs(viewProjection.element(1).y).mul(radius).div(depth);
+    const base = table.element(0);
+    const diameter = max(float(1), max(halfX.mul(base.x), halfY.mul(base.y)));
+    const own = table.element(int(nodes(ceil(log2(diameter)).clamp(0, last))));
+    const width = own.x;
+    const height = own.y;
+    const far = float(0).toVar();
+    for (const [dx, dy] of FOOTPRINT) {
+      // The footprint spans about one texel of this level, so the 2x2 block under its corner is
+      // the whole of it.
+      const at = nodes(ndc.x.mul(0.5).add(0.5).mul(width).sub(halfX.mul(width).div(2)))
+        .floor()
+        .add(dx)
+        .clamp(0, nodes(width).sub(1));
+      const row = nodes(ndc.y.mul(0.5).add(0.5).mul(height).sub(halfY.mul(height).div(2)))
+        .floor()
+        .add(dy)
+        .clamp(0, nodes(height).sub(1));
+      far.assign(max(far, chain.element(int(nodes(own.z).add(nodes(row).mul(width)).add(at)))));
+    }
+    const keeps = w
+      .lessThanEqual(radius)
+      .or(ndc.x.abs().add(halfX).greaterThan(1))
+      .or(ndc.y.abs().add(halfY).greaterThan(1))
+      .or(cut.greaterThan(0.5));
+    return keeps.not().and(nodes(w.sub(radius)).greaterThan(far));
+  }
+
+  dispose(): void {
+    this.#disposed = true;
+    this.#kernels = [];
+    this.#levels = [];
+  }
+}

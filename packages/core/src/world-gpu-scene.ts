@@ -23,6 +23,7 @@ import {
   StorageInstancedBufferAttribute,
 } from "three/webgpu";
 import { biasedLodDistance } from "./model-lod.js";
+import { type IKernelOcclusion, occludedBy } from "./render/depth-pyramid.js";
 import type { IRendererLike } from "./renderer.js";
 
 /**
@@ -256,6 +257,12 @@ export interface IKernelInput {
   readonly slots: readonly IAssetSlot[];
   readonly regions: readonly IRegion[];
   readonly regionCount: number;
+  /**
+   * The hierarchical-depth occlusion test, when a launch asked for one. Absent, the frustum is the
+   * whole visibility rule; present, every placement the frustum kept is reprojected into the
+   * pyramid's own frame and tested. See {@link IKernelOcclusion}.
+   */
+  readonly occlusion?: IKernelOcclusion;
 }
 
 /** What one dispatch produced: the compacted survivors and the per-key instance counts. */
@@ -265,6 +272,12 @@ export interface IKernelResult {
   readonly drawn: Float32Array;
   /** Instances drawn per region, which is what the args record's count must say. */
   readonly counts: Uint32Array;
+  /**
+   * What the pyramid test hid, and only when one ran: the instances and the triangles of every
+   * placement it would have dropped. Absent is "no test ran", never "the test hid nothing" — a
+   * measured run reads these while drawing every one of them.
+   */
+  readonly occluded?: { readonly instances: number; readonly triangles: number };
 }
 
 /**
@@ -422,6 +435,9 @@ export function cullAndSelectShadow(input: IKernelInput, level: IShadowLevel): I
  */
 function select(input: IKernelInput, shadow: IShadowLevel | undefined): IKernelResult {
   const { placements, camera, regions, slots } = input;
+  // A shadow map has no main camera to reproject into, so the test is the main pass's alone — a
+  // caster the eye cannot see still casts.
+  const occlusion = shadow === undefined ? input.occlusion : undefined;
   const planes = shadow?.planes ?? camera.planes;
   const eyeX = shadow?.centre.x ?? camera.x;
   const eyeZ = shadow?.centre.z ?? camera.z;
@@ -438,6 +454,8 @@ function select(input: IKernelInput, shadow: IShadowLevel | undefined): IKernelR
   for (const [index, region] of regions.entries()) {
     args[region.argsIndex * DRAW_ARGS_WORDS + 4] = region.start;
   }
+  let occludedInstances = 0;
+  let occludedTriangles = 0;
   for (let index = 0; index < input.count; index += 1) {
     const placement = placements[index];
     if (placement === undefined || placement.slot < 0) continue;
@@ -481,9 +499,18 @@ function select(input: IKernelInput, shadow: IShadowLevel | undefined): IKernelR
     );
     const gate = slot.levels[level];
     if (gate === undefined) continue;
+    const hidden =
+      occlusion !== undefined && occludedBy(occlusion, at, radius) ? occlusion : undefined;
     for (let part = 0; part < gate.parts; part += 1) {
       const region = regions[gate.firstKey + part];
       if (region === undefined) continue;
+      // Counted either way: a measured run draws what it hides, so the count is the only place the
+      // answer can live.
+      if (hidden !== undefined) {
+        occludedInstances += 1;
+        occludedTriangles += region.indexCount / 3;
+        if (hidden.cull) continue;
+      }
       const taken = counts[gate.firstKey + part] as number;
       if (taken >= region.capacity) continue;
       counts[gate.firstKey + part] = taken + 1;
@@ -491,7 +518,12 @@ function select(input: IKernelInput, shadow: IShadowLevel | undefined): IKernelR
       compose(placement.matrix, region.local, matrix, (region.start + taken) * LOCAL_WORDS);
     }
   }
-  return { args, counts, drawn: matrix };
+  return {
+    args,
+    counts,
+    drawn: matrix,
+    ...(occlusion === undefined ? {} : { occluded: { instances: occludedInstances, triangles: occludedTriangles } }),
+  };
 }
 
 /**

@@ -18,6 +18,12 @@ import {
 import RenderObject from "three/src/renderers/common/RenderObject.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { lodBias, setLodBias } from "../src/model-lod.js";
+import {
+  buildDepthPyramid,
+  type IDepthPyramid,
+  type IKernelOcclusion,
+  type IOcclusionFrame,
+} from "../src/render/depth-pyramid.js";
 import type { IRendererLike } from "../src/renderer.js";
 import { isStatic } from "../src/static-transform.js";
 import {
@@ -25,6 +31,7 @@ import {
   DRAW_ARGS_BYTES,
   type IGpuPlacement,
   type IKernelInput,
+  type IKernelResult,
   type ILiveAsset,
   type IMeshDraw,
   type IRegion,
@@ -851,6 +858,98 @@ describe("WorldCells GPU-driven main pass", () => {
     // The placement at y 0 with a part three metres up draws at y 3.
     expect(result.drawn[13]).toBeCloseTo(3, 5);
     expect(result.drawn[14]).toBeCloseTo(10, 5);
+  });
+});
+
+/**
+ * The CPU reference's hierarchical-depth occlusion test.
+ *
+ * A pyramid of the previous frame's own depth is the whole of the extra visibility rule, and the
+ * four answers it must never give — a near-plane sphere, a sphere off screen last frame, and
+ * anything on a camera-cut frame — are the cases a conservative test gets wrong by being clever.
+ * A measured run counts what the test hides and draws all of it, which is what makes a measured
+ * frame the frame an unmeasured run draws.
+ */
+describe("the CPU reference's pyramid occlusion test", () => {
+  /** A pyramid whose every texel is a wall at `metres`, which is a depth buffer with one surface. */
+  function wallPyramid(metres: number): IDepthPyramid {
+    return buildDepthPyramid(new Float32Array(64 * 36).fill(metres), 64, 36);
+  }
+
+  /** The `projection * viewInverse` of a camera at the origin looking down `z` (or `-z` for behind). */
+  function frameViewProjection(behind = false): Float32Array {
+    const camera = new PerspectiveCamera(60, 1, 0.1, 1000);
+    camera.position.set(0, 0, 0);
+    camera.lookAt(0, 0, behind ? -1 : 1);
+    camera.updateMatrixWorld(true);
+    return new Float32Array(
+      new Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse).elements,
+    );
+  }
+
+  /** One key with one part of 36 indices, so a hidden placement is one instance and 12 triangles. */
+  const region: IRegion = { argsIndex: 0, capacity: 8, indexCount: 36, local: LOCAL, start: 0 };
+
+  function run(
+    at: readonly [number, number, number],
+    radius: number,
+    occlusion: IKernelOcclusion | undefined,
+  ): IKernelResult {
+    const { planes } = cameraAt(0, 0);
+    return cullAndSelect({
+      camera: { planes, x: 0, y: 0, z: 0 },
+      count: 1,
+      ...(occlusion === undefined ? {} : { occlusion }),
+      placements: [placement(at[0], at[1], at[2], 0, radius)],
+      regionCount: 1,
+      regions: [region],
+      slots: [{ cull: undefined, distances: [0], levels: [{ firstKey: 0, parts: 1 }] }],
+    });
+  }
+
+  /** A pyramid ten metres in front of a camera looking down +Z, culling or counting as asked. */
+  function occlusion(cull: boolean, over: Partial<IOcclusionFrame> = {}): IKernelOcclusion {
+    return {
+      cull,
+      frame: {
+        cut: false,
+        height: 36,
+        viewProjection: frameViewProjection(),
+        width: 64,
+        ...over,
+      },
+      pyramid: wallPyramid(10),
+    };
+  }
+
+  it("rejects a sphere the previous frame's depth put behind a surface", () => {
+    // 20 m out with a 1 m sphere, behind a wall the depth says is 10 m away.
+    const culled = run([0, 0, 20], 1, occlusion(true));
+    expect(culled.counts[0]).toBe(0);
+    expect(culled.occluded).toEqual({ instances: 1, triangles: 12 });
+  });
+
+  it("keeps a sphere that touches the near plane, off screen last frame, or a cut frame", () => {
+    // Reaches the near plane: its own screen rect is not a thing last frame's depth can hold.
+    expect(run([0, 0, 0.5], 1, occlusion(true)).counts[0]).toBe(1);
+    // Off screen last frame: the pyramid's own camera looks the other way.
+    expect(
+      run([0, 0, 20], 1, occlusion(true, { viewProjection: frameViewProjection(true) })).counts[0],
+    ).toBe(1);
+    // A camera cut skips the test for the whole frame.
+    expect(run([0, 0, 20], 1, occlusion(true, { cut: true })).counts[0]).toBe(1);
+  });
+
+  it("counts what it hides and draws all of it when it only measures", () => {
+    const measured = run([0, 0, 20], 1, occlusion(false));
+    // The picture is develop's: the placement the frustum kept is still drawn.
+    expect(measured.counts[0]).toBe(1);
+    expect(measured.drawn.length).toBe((region.capacity ?? 0) * 16);
+    expect(measured.occluded).toEqual({ instances: 1, triangles: 12 });
+  });
+
+  it("reports no occlusion at all when no test ran, rather than an empty one", () => {
+    expect(run([0, 0, 20], 1, undefined).occluded).toBeUndefined();
   });
 });
 
