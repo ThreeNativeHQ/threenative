@@ -44,10 +44,10 @@ permissions:
 
 jobs:
   resolve:
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v7
+      - uses: useblacksmith/checkout@v1
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:

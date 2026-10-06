@@ -26,10 +26,10 @@ concurrency:
 
 jobs:
   storage-contract:
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v7
+      - uses: useblacksmith/checkout@v1
         with:
           persist-credentials: false
       - name: Execute filesystem faults under ASan and UBSan
@@ -52,10 +52,10 @@ jobs:
           if-no-files-found: error
 
   measurement-contract:
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v7
+      - uses: useblacksmith/checkout@v1
         with:
           persist-credentials: false
       - uses: ./.github/actions/pnpm
@@ -101,7 +101,7 @@ jobs:
 
   patched-backend:
     name: Patched cache ABI (${{ matrix.target }})
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     # PRD-221's resumable V8 producer reserves 180 minutes plus cache-save time.
     timeout-minutes: ${{ matrix.target == 'android-arm64' && 240 || 45 }}
     strategy:
@@ -111,7 +111,7 @@ jobs:
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/.cache/wgpu-cache-${{ matrix.target }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: useblacksmith/checkout@v1
         with:
           persist-credentials: false
       # The toolchain probe below resolves the real NDK on this runner, so it is worth failing
@@ -205,10 +205,10 @@ jobs:
   host-contract:
     needs: patched-backend
     name: Real device and storage lifetime (not compiled-data or Pixel proof)
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v7
+      - uses: useblacksmith/checkout@v1
         with:
           persist-credentials: false
       - uses: ./.github/actions/pnpm

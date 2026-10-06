@@ -43,30 +43,30 @@ jobs:
       matrix:
         include:
           - target: linux-x64
-            os: ubuntu-24.04
+            os: blacksmith-4vcpu-ubuntu-2404
           - target: win-x64
-            os: windows-2022
+            os: blacksmith-4vcpu-windows-2025
           - target: mac-arm64
-            os: macos-15
+            os: blacksmith-6vcpu-macos-15
             sdk: macosx
           # macos-13 was retired from GitHub-hosted runners: the job sat queued for
           # over nine hours and never started, which stalled the whole nine-target
           # release. macos-15 is arm64, so this is a cross-compile to
           # x86_64-apple-darwin — the same shape ios-sim-x64 already builds here.
           - target: mac-x86_64
-            os: macos-15
+            os: blacksmith-6vcpu-macos-15
             sdk: macosx
           - target: android-arm64
-            os: ubuntu-24.04
+            os: blacksmith-4vcpu-ubuntu-2404
           - target: android-armv7
-            os: ubuntu-24.04
+            os: blacksmith-4vcpu-ubuntu-2404
           - target: android-x64
-            os: ubuntu-24.04
+            os: blacksmith-4vcpu-ubuntu-2404
           - target: ios-arm64
-            os: macos-15
+            os: blacksmith-6vcpu-macos-15
             sdk: iphoneos
           - target: ios-sim-x64
-            os: macos-15
+            os: blacksmith-6vcpu-macos-15
             sdk: iphonesimulator
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
@@ -190,12 +190,12 @@ jobs:
     # targets. Partial CI exits 1 naming the missing targets.
     if: github.ref == 'refs/tags/quiche-owned-v1'
     needs: build
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 10
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: useblacksmith/checkout@v1
         with:
           path: engine
       - uses: actions/download-artifact@v4

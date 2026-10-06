@@ -53,7 +53,7 @@ jobs:
   # The caller is the single selection authority. Dispatch has no exemption inputs and is full.
   scope:
     name: Validate caller selection and candidate
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 5
     outputs:
       scope: ${{ steps.classify.outputs.scope }}
@@ -62,7 +62,7 @@ jobs:
       plan: ${{ steps.classify.outputs.plan }}
       candidate_sha: ${{ steps.classify.outputs.candidate_sha }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: useblacksmith/checkout@v1
         with:
           ref: ${{ inputs.candidate_sha || github.sha }}
       - id: classify
@@ -89,12 +89,12 @@ jobs:
     if: >-
       needs.scope.outputs.selection == 'full' &&
       inputs.ios_only == false
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 30
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: useblacksmith/checkout@v1
         with:
           ref: ${{ needs.scope.outputs.candidate_sha }}
       - uses: ./.github/actions/pnpm
@@ -136,7 +136,7 @@ jobs:
     name: Android V8 source payload
     needs: scope
     if: needs.scope.outputs.selection == 'full' && inputs.ios_only != true
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     # 180-minute build ceiling plus 30 minutes for actions/cache/save, per the action's note.
     timeout-minutes: 210
     outputs:
@@ -145,7 +145,7 @@ jobs:
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: useblacksmith/checkout@v1
         with:
           ref: ${{ needs.scope.outputs.candidate_sha }}
       - uses: ./.github/actions/pnpm
@@ -186,7 +186,7 @@ jobs:
       needs.android-v8-source.outputs.published == 'false' &&
       github.event_name != 'pull_request' &&
       (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 10
     permissions:
       contents: write
@@ -213,12 +213,12 @@ jobs:
     name: Native collector evidence coverage
     needs: [scope, android-emulator-parity, desktop-parity, desktop, ios-simulator]
     if: ${{ !cancelled() && needs.scope.outputs.selection == 'full' }}
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 5
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: useblacksmith/checkout@v1
         with:
           ref: ${{ needs.scope.outputs.candidate_sha }}
       - uses: ./.github/actions/pnpm
@@ -248,12 +248,12 @@ jobs:
     name: Networking qualification matrix
     needs: [scope, android-emulator-parity, desktop-parity, desktop, ios-simulator]
     if: ${{ always() && needs.scope.outputs.selection == 'full' }}
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 5
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: useblacksmith/checkout@v1
         with:
           ref: ${{ needs.scope.outputs.candidate_sha }}
       # The aggregator is plain Node with no dependencies, so this job needs no pnpm
@@ -316,7 +316,7 @@ jobs:
       needs.scope.outputs.selection == 'full' &&
       inputs.ios_only != true &&
       needs.android-v8-source.result == 'success'
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 45
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
@@ -327,7 +327,7 @@ jobs:
       # not a change of code: raise the api-level and set this to 16384.
       TN_ANDROID_EXPECTED_PAGE_SIZE: "4096"
     steps:
-      - uses: actions/checkout@v7
+      - uses: useblacksmith/checkout@v1
         with:
           ref: ${{ needs.scope.outputs.candidate_sha }}
       - uses: ./.github/actions/pnpm
@@ -740,12 +740,12 @@ jobs:
     if: >-
       needs.scope.outputs.selection != 'prose' &&
       inputs.ios_only == false
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 20
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: useblacksmith/checkout@v1
         with:
           ref: ${{ needs.scope.outputs.candidate_sha }}
       - uses: ./.github/actions/pnpm
@@ -812,7 +812,7 @@ jobs:
     if: >-
       needs.scope.outputs.selection == 'full' &&
       inputs.ios_only != true
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 75
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
@@ -835,7 +835,7 @@ jobs:
       CMAKE_C_COMPILER_LAUNCHER: ccache
       CMAKE_CXX_COMPILER_LAUNCHER: ccache
     steps:
-      - uses: actions/checkout@v7
+      - uses: useblacksmith/checkout@v1
         with:
           ref: ${{ needs.scope.outputs.candidate_sha }}
       - name: Restore native third-party dependencies
@@ -1011,9 +1011,9 @@ jobs:
       matrix:
         include:
           - platform: macOS
-            runner: macos-15
+            runner: blacksmith-6vcpu-macos-15
           - platform: Windows
-            runner: windows-2025
+            runner: blacksmith-4vcpu-windows-2025
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
     env:
@@ -1766,9 +1766,9 @@ jobs:
           # the one WebGPU backend that publishes an arm64 Linux archive. scripts/download-deps.mjs
           # and scripts/native-build.mjs select that route from `process.arch`.
           - platform: linux-x64
-            runner: ubuntu-24.04
+            runner: blacksmith-4vcpu-ubuntu-2404
           - platform: linux-arm64
-            runner: ubuntu-24.04-arm
+            runner: blacksmith-4vcpu-ubuntu-2404-arm
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 50
     env:
@@ -1792,7 +1792,7 @@ jobs:
       CMAKE_C_COMPILER_LAUNCHER: ccache
       CMAKE_CXX_COMPILER_LAUNCHER: ccache
     steps:
-      - uses: actions/checkout@v7
+      - uses: useblacksmith/checkout@v1
         with:
           ref: ${{ needs.scope.outputs.candidate_sha }}
       - name: Restore native third-party dependencies
@@ -2004,7 +2004,7 @@ jobs:
     needs: scope
     if: needs.scope.outputs.selection == 'full'
     # Runs on every event since 2026-09-01 (owner call) — see android-emulator-parity.
-    runs-on: macos-15
+    runs-on: blacksmith-6vcpu-macos-15
     timeout-minutes: 60
     # Non-blocking since 2026-09-23: iOS is not a supported target (owner decision, see
     # docs/PRDs/production-readiness/README.md). The lane still runs and reports its own red, but a

@@ -16,7 +16,7 @@ on:
 
 jobs:
   redeploy:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       # SITE_DEPLOY_TOKEN: fine-grained token, threenative-site only, Actions read/write.
       - run: gh workflow run site.yml --repo ThreeNativeHQ/threenative-site --ref main

@@ -270,10 +270,10 @@ jobs:
     name: Performance regression evidence summary
     needs: hardware-pairs
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v7
+      - uses: useblacksmith/checkout@v1
       - uses: ./.github/actions/pnpm
       - uses: actions/setup-node@v7
         with:
@@ -402,10 +402,10 @@ jobs:
   weekly-workload-rotation:
     name: Weekly full template workload rotation
     if: github.event_name == 'schedule' && github.event.schedule == '17 4 * * 0'
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v7
+      - uses: useblacksmith/checkout@v1
       - uses: ./.github/actions/pnpm
       - uses: actions/setup-node@v7
         with:
@@ -418,13 +418,13 @@ jobs:
   release-soak:
     name: Delegated physical release soak
     if: github.event_name == 'workflow_dispatch' && inputs.release_soak == true
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 130
     concurrency:
       group: performance-release-soak-${{ inputs.soak_device || 'unselected-device' }}
       cancel-in-progress: false
     steps:
-      - uses: actions/checkout@v7
+      - uses: useblacksmith/checkout@v1
       - uses: ./.github/actions/pnpm
       - uses: actions/setup-node@v7
         with:
@@ -485,10 +485,10 @@ jobs:
     name: Required-check promotion remains maintainer-owned
     needs: performance-summary
     if: ${{ always() && needs.performance-summary.result == 'success' }}
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 2
     steps:
-      - uses: actions/checkout@v7
+      - uses: useblacksmith/checkout@v1
       - name: Keep promotion separate from baseline regeneration
         run: |
           echo "required-check-promotion requires maintainer review after calibration evidence"

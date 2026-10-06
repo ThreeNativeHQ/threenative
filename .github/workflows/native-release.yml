@@ -53,10 +53,10 @@ jobs:
       candidate_sha: ${{ steps.release-candidate.outputs.candidate_sha }}
     # Proof runs must never require or manufacture a public release candidate.
     if: github.event_name == 'push' && github.ref_type == 'tag'
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: useblacksmith/checkout@v1
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
@@ -121,7 +121,7 @@ jobs:
       ${{ !cancelled() &&
       (github.event_name != 'workflow_run' || github.event.workflow_run.event == 'push') &&
       (github.ref_type != 'tag' || needs.validate-tag.result == 'success') }}
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     # A verdict over the triggering CI completion, not a wait for it: the event payload
     # carries the conclusion and head SHA, and the required-job table is read once from
     # the Jobs API. Nothing here sleeps or polls; a red or mismatched CI run refuses.
@@ -130,11 +130,11 @@ jobs:
       # `GITHUB_SHA` on a `workflow_run` run is the last commit on the default branch, not
       # the CI head, so the evidence candidate is checked out explicitly. Every other
       # trigger keeps the default checkout it always had.
-      - uses: actions/checkout@v7
+      - uses: useblacksmith/checkout@v1
         if: github.event_name == 'workflow_run'
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
-      - uses: actions/checkout@v7
+      - uses: useblacksmith/checkout@v1
         if: github.event_name != 'workflow_run'
       - uses: ./.github/actions/pnpm
       - uses: actions/setup-node@v7
@@ -401,21 +401,21 @@ jobs:
         include:
           - key: linux-x64
             published: true
-            runner: ubuntu-24.04
+            runner: blacksmith-4vcpu-ubuntu-2404
             preset: tn-linux
             executable: mystral
             asset: threenative-runtime-linux-x64
             tools_asset: threenative-tools-linux-x64
           - key: darwin-arm64
             published: false
-            runner: macos-15
+            runner: blacksmith-6vcpu-macos-15
             preset: tn-macos
             executable: mystral
             asset: threenative-runtime-darwin-arm64
             tools_asset: threenative-tools-darwin-arm64
           - key: win32-x64
             published: true
-            runner: windows-2025
+            runner: blacksmith-4vcpu-windows-2025
             preset: tn-windows
             executable: mystral.exe
             asset: threenative-runtime-win32-x64.exe
@@ -553,16 +553,16 @@ jobs:
     if: >-
       ${{ !cancelled() && needs.gates.result == 'success' &&
       (github.ref_type != 'tag' || needs.validate-tag.outputs.candidate_sha == github.sha) }}
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     # Hosts the resumable Android V8 producer: 180-minute build ceiling plus cache-save time.
     timeout-minutes: 210
     steps:
       # On `workflow_run` the evidence candidate is the triggering CI head, not `GITHUB_SHA`.
-      - uses: actions/checkout@v7
+      - uses: useblacksmith/checkout@v1
         if: github.event_name == 'workflow_run'
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
-      - uses: actions/checkout@v7
+      - uses: useblacksmith/checkout@v1
         if: github.event_name != 'workflow_run'
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
@@ -670,7 +670,7 @@ jobs:
   build-ios-simulator:
     needs: [validate-tag, gates]
     if: needs.validate-tag.outputs.candidate_sha == github.sha
-    runs-on: macos-15
+    runs-on: blacksmith-6vcpu-macos-15
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
@@ -710,12 +710,12 @@ jobs:
   publish:
     needs: [validate-tag, build, build-android, build-ios-simulator]
     if: github.event_name == 'push' && github.ref_type == 'tag' && needs.validate-tag.outputs.candidate_sha == github.sha
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 20
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: useblacksmith/checkout@v1
       - uses: actions/download-artifact@v8
         with:
           pattern: runtime-*
@@ -801,7 +801,7 @@ jobs:
       needs.build.result == 'success' && needs.build-android.result == 'success' &&
       ((github.ref_type != 'tag' && needs.publish.result == 'skipped') ||
       (needs.validate-tag.outputs.candidate_sha == github.sha && needs.publish.result == 'success')) }}
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     # Four successful `Android emulator visual parity` runs measured 27m00s, 27m33s, 27m50s and
     # 30m18s (2026-09-09). That job is cached, builds Android once and boots one emulator, and its
     # own cap was raised 35 -> 45 after measurement (`native-platforms.yml:217`). This job is an
@@ -811,11 +811,11 @@ jobs:
     timeout-minutes: 60
     steps:
       # On `workflow_run` the evidence candidate is the triggering CI head, not `GITHUB_SHA`.
-      - uses: actions/checkout@v7
+      - uses: useblacksmith/checkout@v1
         if: github.event_name == 'workflow_run'
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
-      - uses: actions/checkout@v7
+      - uses: useblacksmith/checkout@v1
         if: github.event_name != 'workflow_run'
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
@@ -1219,7 +1219,7 @@ jobs:
   clean-consumer-ios:
     needs: [validate-tag, publish]
     if: needs.validate-tag.outputs.candidate_sha == github.sha
-    runs-on: macos-15
+    runs-on: blacksmith-6vcpu-macos-15
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@v7
@@ -1364,7 +1364,7 @@ jobs:
       needs.build.result == 'success' &&
       ((github.ref_type != 'tag' && needs.publish.result == 'skipped') ||
       (needs.validate-tag.outputs.candidate_sha == github.sha && needs.publish.result == 'success')) }}
-    runs-on: windows-2025
+    runs-on: blacksmith-4vcpu-windows-2025
     # `clean-consumer`'s mechanisms all assume POSIX: a `/bin/sh` toolchain mask, an apt Vulkan
     # ICD, WebKitGTK and an `xvfb` wrapper. Windows gets its own lane rather than a flag, because
     # none of those has a Windows equivalent and every one of them is load-bearing. The claim is
@@ -1632,7 +1632,7 @@ jobs:
     # does not gate promotion, and it has never completed green in a tag run.
     needs: [validate-tag, clean-consumer, clean-consumer-windows]
     if: github.event_name == 'push' && github.ref_type == 'tag' && needs.validate-tag.outputs.candidate_sha == github.sha
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 10
     permissions:
       contents: write
@@ -1653,7 +1653,7 @@ jobs:
       (needs.clean-consumer.result != 'success' ||
       needs.clean-consumer-windows.result != 'success') }}
     needs: [validate-tag, publish, clean-consumer, clean-consumer-windows]
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 10
     permissions:
       contents: write

@@ -27,10 +27,10 @@ permissions:
 
 jobs:
   gates:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v7
+      - uses: useblacksmith/checkout@v1
         with:
           # check-publish-state counts commits to a package's source since its published
           # version went up, which a shallow clone cannot see.
@@ -67,13 +67,13 @@ jobs:
 
   publish:
     needs: gates
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 45
     permissions:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: useblacksmith/checkout@v1
         with:
           fetch-depth: 0
       - uses: pnpm/action-setup@v6
@@ -163,13 +163,13 @@ jobs:
   clean-room:
     needs: publish
     if: github.event_name == 'push' || inputs.dry_run == false
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     # Raised from 20 when the `android` step joined this job: the same evidence now costs a Gradle
     # build and its first-run dependency download, and a job killed by its own clock reports a
     # failure nobody earned.
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v7
+      - uses: useblacksmith/checkout@v1
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
