@@ -13,7 +13,10 @@ import {
 import { WebGPURenderer } from "three/webgpu";
 import { releaseAll } from "../cleanup.js";
 
-export function course<TState extends Record<string, unknown>>(ctx: ICtx<TState, IPhysicsContext>) {
+export function course<TState extends Record<string, unknown>>(
+  ctx: ICtx<TState, IPhysicsContext>,
+  warmShadow = false,
+) {
   if (!(ctx.renderer.raw instanceof WebGPURenderer)) throw new Error("TN_ANIMAL_WEBGPU_REQUIRED");
   ctx.renderer.raw.shadowMap.enabled = true;
   ctx.scene.background = new Color(0xc7d4df);
@@ -48,6 +51,7 @@ export function course<TState extends Record<string, unknown>>(ctx: ICtx<TState,
   wall.name = "stop-wall";
   wall.position.set(0, 1.3, -10);
   wall.receiveShadow = true;
+  wall.castShadow = warmShadow; // Lifecycle baseline draws the shared shadow target before animals exist.
   const releases = [
     () => ambient.removeFromParent(),
     () => sun.removeFromParent(),

@@ -4,11 +4,13 @@ import { CharacterBody3D, CollisionShape3D } from "@threenative/physics";
 import type { IPhysicsContext } from "@threenative/physics";
 import { createAnimalActor, loadAnimalBake } from "@threenative/procedural-animals";
 import type { IAnimalBake } from "@threenative/procedural-animals";
-import { Group, Vector3 } from "three";
+import { Group, PerspectiveCamera, Vector3 } from "three";
 import { releaseAll } from "./cleanup.js";
+import { QualificationClock } from "./qualification-clock.js";
 import { animalMaterial } from "./render/animal-material.js";
 import { course } from "./render/course.js";
 import { AnimalGPUProbe } from "./render/gpu-probe.js";
+import { qualificationCamera } from "./render/qualification-camera.js";
 import { wolfMotion } from "./render/wolf-motion.js";
 
 export type AnimalMode = "qualification" | "crowd" | "high" | "baseline";
@@ -23,8 +25,8 @@ export interface IAnimalsState extends Record<string, unknown> {
   phase: string;
   mode: AnimalMode;
   gpuCases: number;
-  gpuPositionError: number;
-  gpuNormalError: number;
+  gpuPositionError: number | null;
+  gpuNormalError: number | null;
   visibleCaptured: boolean;
   visibleMainDraws: number;
   visibleShadowDraws: number;
@@ -44,8 +46,8 @@ export class Animals extends Scene<IAnimalsState, IPhysicsContext> {
     phase: "loading",
     mode: "qualification",
     gpuCases: 0,
-    gpuPositionError: 0,
-    gpuNormalError: 0,
+    gpuPositionError: null,
+    gpuNormalError: null,
     visibleCaptured: false,
     visibleMainDraws: -1,
     visibleShadowDraws: -1,
@@ -139,6 +141,8 @@ export class Animals extends Scene<IAnimalsState, IPhysicsContext> {
       ctx.add(probe);
     }
     let elapsed = 0;
+    const clock = this.#mode === "qualification" ? new QualificationClock() : undefined;
+    let probeArmed = false;
     let teleported = false;
     let posture = 0;
     this.#cleanup.push(
@@ -150,7 +154,7 @@ export class Animals extends Scene<IAnimalsState, IPhysicsContext> {
           previous.copy(root.position);
           rootError = Math.max(rootError, animal.object.position.distanceTo(root.position));
         }
-        if (probe && ctx.startup.phase === "ready") {
+        if (probe && probeArmed && ctx.startup.phase === "ready") {
           const label =
             elapsed >= 0.5 && elapsed < 3
               ? "walk"
@@ -185,39 +189,49 @@ export class Animals extends Scene<IAnimalsState, IPhysicsContext> {
           bones: bake?.bones.length ?? 0,
           mode: this.#mode,
           gpuCases: gpu?.cases ?? 0,
-          gpuPositionError: gpu?.positionError ?? 0,
-          gpuNormalError: gpu?.normalError ?? 0,
-          phase:
-            this.#mode === "qualification" && elapsed >= 26
-              ? "off-frustum"
-              : elapsed < 3
-                ? "walk-wall"
-                : elapsed < 6
-                  ? "turn"
-                  : elapsed < 9
-                    ? "walk"
-                    : "stop",
+          gpuPositionError: gpu && gpu.cases > 0 ? gpu.positionError : null,
+          gpuNormalError: gpu && gpu.cases > 0 ? gpu.normalError : null,
+          phase: clock?.outside
+            ? "off-frustum"
+            : elapsed < 3
+              ? "walk-wall"
+              : elapsed < 6
+                ? "turn"
+                : elapsed < 9
+                  ? "walk"
+                  : "stop",
         });
       }),
     );
     return (_frameCtx, dt) => {
       const ready = ctx.startup.phase === "ready";
-      if (ready) elapsed += dt;
+      if (ready && ctx.input.justPressed("probe")) probeArmed = true;
+      if (clock) {
+        clock.advance(
+          dt,
+          ready,
+          ctx.input.justPressed("advance"),
+          ctx.input.justPressed("outside"),
+        );
+        elapsed = clock.elapsed;
+      } else if (ready) elapsed += dt;
+      const held = clock?.held === true;
       for (const actor of actors) {
         const turning = elapsed >= 3 && elapsed < 6;
         actor.root.rotation.y = turning ? Math.PI / 2 : Math.PI;
         actor.body.velocity.set(
-          ready && turning ? 1.5 : 0,
+          ready && !held && turning ? 1.5 : 0,
           actor.body.velocity.y,
-          ready && elapsed < 9 && !turning ? (elapsed >= 6 ? -3 : -1.5) : 0,
+          ready && !held && elapsed < 9 && !turning ? (elapsed >= 6 ? -3 : -1.5) : 0,
         );
         actor.body.moveAndSlide(dt);
       }
       const first = actors[0];
       if (!first) return;
-      if (this.#mode === "qualification" && elapsed >= 26) {
-        ctx.camera.position.set(100, 30, 100);
-        ctx.camera.lookAt(200, 30, 200);
+      if (clock && elapsed >= 1.5 && ctx.state.getState().visibleCaptured) {
+        if (!(ctx.camera instanceof PerspectiveCamera))
+          throw new Error("TN_ANIMAL_CAMERA_REQUIRED");
+        qualificationCamera(ctx.camera, first.root.position, clock.outside);
       }
       if (elapsed >= 12 && !teleported) {
         teleported = true;
@@ -230,7 +244,8 @@ export class Animals extends Scene<IAnimalsState, IPhysicsContext> {
           heading: first.root.rotation.y,
         });
       }
-      first.animal.paused = elapsed >= 14 && elapsed < 15;
+      for (const { animal } of actors) animal.paused = held;
+      first.animal.paused = held || (elapsed >= 14 && elapsed < 15);
       if (elapsed >= 16 && posture === 0) {
         posture = 1;
         void first.animal.play("sit");

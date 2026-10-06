@@ -14,6 +14,12 @@
   },
   "steps": [
     {
+      "kind": "input",
+      "press": "KeyP",
+      "holdTicks": 3,
+      "release": true
+    },
+    {
       "timeoutMs": 45000,
       "label": "wall",
       "waitForResource": {
@@ -22,6 +28,12 @@
         "gte": 2
       },
       "screenshot": "wall"
+    },
+    {
+      "kind": "input",
+      "press": "KeyN",
+      "holdTicks": 3,
+      "release": true
     },
     {
       "timeoutMs": 45000,
@@ -34,6 +46,12 @@
       "screenshot": "turn"
     },
     {
+      "kind": "input",
+      "press": "KeyN",
+      "holdTicks": 3,
+      "release": true
+    },
+    {
       "timeoutMs": 45000,
       "label": "stopped",
       "waitForResource": {
@@ -42,6 +60,12 @@
         "gte": 11
       },
       "screenshot": "stopped"
+    },
+    {
+      "kind": "input",
+      "press": "KeyN",
+      "holdTicks": 3,
+      "release": true
     },
     {
       "timeoutMs": 45000,
@@ -64,42 +88,50 @@
       {
         "id": "GameState",
         "path": "loaded",
-        "equals": true
+        "equals": true,
+        "allowTrivial": "Startup establishes this held invariant; qualification still requires all nine observed GPU cases and actual capture predicates."
       },
       {
         "id": "GameState",
         "path": "wolves",
-        "equals": 32
+        "equals": 32,
+        "allowTrivial": "Startup establishes this held invariant; qualification still requires all nine observed GPU cases and actual capture predicates."
       },
       {
         "id": "GameState",
         "path": "rootError",
-        "lte": 0.0001
+        "lte": 0.0001,
+        "allowTrivial": "Startup establishes this held invariant; qualification still requires all nine observed GPU cases and actual capture predicates."
       },
       {
         "id": "GameState",
         "path": "vertices",
-        "lte": 8000
+        "lte": 8000,
+        "allowTrivial": "Startup establishes this held invariant; qualification still requires all nine observed GPU cases and actual capture predicates."
       },
       {
         "id": "GameState",
         "path": "bones",
-        "lte": 128
+        "lte": 128,
+        "allowTrivial": "Startup establishes this held invariant; qualification still requires all nine observed GPU cases and actual capture predicates."
       },
       {
         "id": "state",
         "path": "visibleCaptured",
-        "equals": true
+        "equals": true,
+        "allowTrivial": "Startup establishes this held invariant; qualification still requires all nine observed GPU cases and actual capture predicates."
       },
       {
         "id": "state",
         "path": "visibleMainDraws",
-        "equals": 32
+        "equals": 32,
+        "allowTrivial": "Startup establishes this held invariant; qualification still requires all nine observed GPU cases and actual capture predicates."
       },
       {
         "id": "state",
         "path": "visibleShadowDraws",
-        "gte": 32
+        "gte": 32,
+        "allowTrivial": "Startup establishes this held invariant; qualification still requires all nine observed GPU cases and actual capture predicates."
       },
       {
         "id": "state",

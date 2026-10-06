@@ -12,6 +12,7 @@ export function makeAnimalGame(mode: AnimalMode) {
   }
   return defineGame<IAnimalsState, IPhysicsContext>({
     assets: { basePath: "" },
+    input: { probe: { keys: ["KeyP"] }, advance: { keys: ["KeyN"] }, outside: { keys: ["KeyF"] } },
     plugins: [
       rapier(),
       playtest(),
