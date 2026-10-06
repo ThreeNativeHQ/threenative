@@ -25,7 +25,7 @@ index 0bb9262cd029f411933d077fd44197a51ec5e8e9..868a634b4294be5f32664912a50813d5
  	 * Constructs a new batched mesh.
  	 *
 diff --git a/build/three.webgpu.js b/build/three.webgpu.js
-index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..5c5ef3c06885c724c1c2288295e7e68483ee1f6e 100644
+index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..bd574d95ebd0dfbc27c6256809d1d027dd843bad 100644
 --- a/build/three.webgpu.js
 +++ b/build/three.webgpu.js
 @@ -141,6 +141,15 @@ class NodeMaterialObserver {
@@ -411,10 +411,10 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..5c5ef3c06885c724c1c2288295e7e684
 +			const sourceTracked = sourceMaterial !== null && sourceMaterial !== undefined;
 +			const sourceReplaced = sourceTracked && renderObject._sourceMaterial !== sourceMaterial;
 +			const sourceChanged = sourceTracked && ( sourceReplaced || renderObject.sourceVersion !== sourceMaterial.version );
-+
-+			if ( renderObject.version !== material.version || sourceChanged || renderObject.needsUpdate ) {
  
 -				if ( renderObject.initialCacheKey !== renderObject.getCacheKey() ) {
++			if ( renderObject.version !== material.version || sourceChanged || renderObject.needsUpdate ) {
++
 +				if ( sourceReplaced || renderObject.initialCacheKey !== renderObject.getCacheKey() ) {
  
  					renderObject.dispose();
@@ -626,7 +626,98 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..5c5ef3c06885c724c1c2288295e7e684
  
  		//
  
-@@ -53841,7 +54070,7 @@ class NodeBuilder {
+@@ -44431,6 +44660,46 @@ var RendererUtils = /*#__PURE__*/Object.freeze({
+ 
+ const shadowMaterialLib = /*@__PURE__*/ new WeakMap();
+ 
++const _shadowUniforms = /*@__PURE__*/ new WeakMap();
++
++/**
++ * Returns the uniform `create` makes for this shadow and name, and makes it only once.
++ *
++ * A filter body runs once per node builder. A uniform that the body makes directly is a new node
++ * for each material, and a new render-group node gives each material its own copy of the shared
++ * render group: a buffer that each material compares and writes on each render call. One node per
++ * shadow lets every material that reads it share one render-group buffer.
++ *
++ * @private
++ * @param {LightShadow} shadow - The shadow that owns the uniform.
++ * @param {string} name - The uniform's name within that shadow.
++ * @param {Function} create - Makes the uniform the first time.
++ * @return {Node} The uniform node.
++ */
++const getShadowUniform = ( shadow, name, create ) => {
++
++	let uniforms = _shadowUniforms.get( shadow );
++
++	if ( uniforms === undefined ) {
++
++		uniforms = new Map();
++		_shadowUniforms.set( shadow, uniforms );
++
++	}
++
++	let node = uniforms.get( name );
++
++	if ( node === undefined ) {
++
++		node = create();
++		uniforms.set( name, node );
++
++	}
++
++	return node;
++
++};
++
+ /**
+  * A shadow filtering function performing basic filtering. This is in fact an unfiltered version of the shadow map
+  * with a binary `[0,1]` result.
+@@ -44485,8 +44754,8 @@ const PCFShadowFilter = /*@__PURE__*/ Fn( ( { depthTexture, shadowCoord, shadow,
+ 
+ 	};
+ 
+-	const mapSize = reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup );
+-	const radius = reference( 'radius', 'float', shadow ).setGroup( renderGroup );
++	const mapSize = getShadowUniform( shadow, 'mapSize', () => reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup ) );
++	const radius = getShadowUniform( shadow, 'radius', () => reference( 'radius', 'float', shadow ).setGroup( renderGroup ) );
+ 
+ 	const texelSize = vec2( 1 ).div( mapSize );
+ 	const radiusScaled = radius.mul( texelSize.x );
+@@ -44517,7 +44786,7 @@ const PCFShadowFilter = /*@__PURE__*/ Fn( ( { depthTexture, shadowCoord, shadow,
+  */
+ const PCFSoftShadowFilter = /*@__PURE__*/ Fn( ( { depthTexture, shadowCoord, shadow, depthLayer } ) => {
+ 
+-	const mapSize = reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup );
++	const mapSize = getShadowUniform( shadow, 'mapSize', () => reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup ) );
+ 
+ 	const texelSize = vec2( 1 ).div( mapSize );
+ 
+@@ -45586,8 +45855,8 @@ const BasicPointShadowFilter = /*@__PURE__*/ Fn( ( { depthTexture, bd3D, dp } )
+  */
+ const PointShadowFilter = /*@__PURE__*/ Fn( ( { depthTexture, bd3D, dp, shadow } ) => {
+ 
+-	const radius = reference( 'radius', 'float', shadow ).setGroup( renderGroup );
+-	const mapSize = reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup );
++	const radius = getShadowUniform( shadow, 'radius', () => reference( 'radius', 'float', shadow ).setGroup( renderGroup ) );
++	const mapSize = getShadowUniform( shadow, 'mapSize', () => reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup ) );
+ 
+ 	const texelSize = radius.div( mapSize.x );
+ 
+@@ -45623,9 +45892,9 @@ const pointShadowFilter = /*@__PURE__*/ Fn( ( { filterFn, depthTexture, shadowCo
+ 	const shadowPositionAbs = shadowPosition.abs().toConst();
+ 	const viewZ = shadowPositionAbs.x.max( shadowPositionAbs.y ).max( shadowPositionAbs.z );
+ 
+-	const shadowCameraNear = uniform( 'float' ).setGroup( renderGroup ).onRenderUpdate( () => shadow.camera.near );
+-	const shadowCameraFar = uniform( 'float' ).setGroup( renderGroup ).onRenderUpdate( () => shadow.camera.far );
+-	const bias = reference( 'bias', 'float', shadow ).setGroup( renderGroup );
++	const shadowCameraNear = getShadowUniform( shadow, 'cameraNear', () => uniform( 'float' ).setGroup( renderGroup ).onRenderUpdate( () => shadow.camera.near ) );
++	const shadowCameraFar = getShadowUniform( shadow, 'cameraFar', () => uniform( 'float' ).setGroup( renderGroup ).onRenderUpdate( () => shadow.camera.far ) );
++	const bias = getShadowUniform( shadow, 'bias', () => reference( 'bias', 'float', shadow ).setGroup( renderGroup ) );
+ 
+ 	const result = float( 1.0 ).toVar();
+ 
+@@ -53841,7 +54110,7 @@ class NodeBuilder {
  
  		const mrt = this.renderer.getMRT();
  
@@ -635,7 +726,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..5c5ef3c06885c724c1c2288295e7e684
  
  	}
  
-@@ -55244,15 +55473,17 @@ class NodeManager extends DataMap {
+@@ -55244,15 +55513,17 @@ class NodeManager extends DataMap {
  	 * Returns `true` if the given node uniforms group must be updated or not.
  	 *
  	 * @param {NodeUniformsGroup} nodeUniformsGroup - The node uniforms group.
@@ -656,7 +747,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..5c5ef3c06885c724c1c2288295e7e684
  
  		// check for update
  
-@@ -56056,6 +56287,21 @@ class NodeManager extends DataMap {
+@@ -56056,6 +56327,21 @@ class NodeManager extends DataMap {
  
  	}
  
@@ -678,7 +769,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..5c5ef3c06885c724c1c2288295e7e684
  	/**
  	 * Triggers the call of `updateBefore()` methods
  	 * for all nodes of the given render object.
-@@ -56065,9 +56311,14 @@ class NodeManager extends DataMap {
+@@ -56065,9 +56351,14 @@ class NodeManager extends DataMap {
  	updateBefore( renderObject ) {
  
  		const nodeBuilder = renderObject.getNodeBuilderState();
@@ -693,7 +784,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..5c5ef3c06885c724c1c2288295e7e684
  			// update frame state for each node
  
  			this.getNodeFrameForRender( renderObject ).updateBeforeNode( node );
-@@ -56085,10 +56336,11 @@ class NodeManager extends DataMap {
+@@ -56085,10 +56376,11 @@ class NodeManager extends DataMap {
  	updateAfter( renderObject ) {
  
  		const nodeBuilder = renderObject.getNodeBuilderState();
@@ -706,7 +797,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..5c5ef3c06885c724c1c2288295e7e684
  
  			this.getNodeFrameForRender( renderObject ).updateAfterNode( node );
  
-@@ -56125,9 +56377,14 @@ class NodeManager extends DataMap {
+@@ -56125,9 +56417,14 @@ class NodeManager extends DataMap {
  
  		const nodeFrame = this.getNodeFrameForRender( renderObject );
  		const nodeBuilder = renderObject.getNodeBuilderState();
@@ -721,7 +812,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..5c5ef3c06885c724c1c2288295e7e684
  			nodeFrame.updateNode( node );
  
  		}
-@@ -62731,6 +62988,7 @@ class Renderer {
+@@ -62731,6 +63028,7 @@ class Renderer {
  		let materialDisplacementMap;
  		let materialDisplacementScale;
  		let materialDisplacementBias;
@@ -729,7 +820,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..5c5ef3c06885c724c1c2288295e7e684
  
  		const previousSourceMaterial = this._currentSourceMaterial;
  
-@@ -62756,6 +63014,7 @@ class Renderer {
+@@ -62756,6 +63054,7 @@ class Renderer {
  			materialDisplacementMap = overrideMaterial.displacementMap;
  			materialDisplacementScale = overrideMaterial.displacementScale;
  			materialDisplacementBias = overrideMaterial.displacementBias;
@@ -737,7 +828,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..5c5ef3c06885c724c1c2288295e7e684
  
  			if ( material.positionNode && material.positionNode.isNode ) {
  
-@@ -62763,7 +63022,15 @@ class Renderer {
+@@ -62763,7 +63062,15 @@ class Renderer {
  
  			}
  
@@ -754,7 +845,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..5c5ef3c06885c724c1c2288295e7e684
  			overrideMaterial.alphaMap = material.alphaMap;
  			overrideMaterial.displacementMap = material.displacementMap;
  			overrideMaterial.displacementScale = material.displacementScale;
-@@ -62825,6 +63092,7 @@ class Renderer {
+@@ -62825,6 +63132,7 @@ class Renderer {
  			scene.overrideMaterial.displacementMap = materialDisplacementMap;
  			scene.overrideMaterial.displacementScale = materialDisplacementScale;
  			scene.overrideMaterial.displacementBias = materialDisplacementBias;
@@ -762,17 +853,17 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..5c5ef3c06885c724c1c2288295e7e684
  
  		}
  
-@@ -62886,18 +63154,17 @@ class Renderer {
+@@ -62886,18 +63194,17 @@ class Renderer {
  
  		//
  
 -		const needsRefresh = this._nodes.needsRefresh( renderObject );
 -
 -		if ( needsRefresh ) {
+-
+-			this._nodes.updateBefore( renderObject );
 +		this._nodes.needsRefresh( renderObject );
  
--			this._nodes.updateBefore( renderObject );
--
 -			this._geometries.updateForRender( renderObject );
 -
 -			this._nodes.updateForRender( renderObject );
@@ -791,7 +882,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..5c5ef3c06885c724c1c2288295e7e684
  
  		this._pipelines.updateForRender( renderObject );
  
-@@ -62907,7 +63174,7 @@ class Renderer {
+@@ -62907,7 +63214,7 @@ class Renderer {
  
  			this.backend.draw( renderObject, this.info );
  
@@ -800,7 +891,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..5c5ef3c06885c724c1c2288295e7e684
  
  		}
  
-@@ -76613,7 +76880,12 @@ class WebGPUTextureUtils {
+@@ -76613,7 +76920,12 @@ class WebGPUTextureUtils {
  
  		}
  
@@ -814,7 +905,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..5c5ef3c06885c724c1c2288295e7e684
  
  			usage |= GPUTextureUsage.RENDER_ATTACHMENT;
  
-@@ -79004,7 +79276,14 @@ class WGSLNodeBuilder extends NodeBuilder {
+@@ -79004,7 +79316,14 @@ class WGSLNodeBuilder extends NodeBuilder {
  
  		} else {
  
@@ -830,7 +921,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..5c5ef3c06885c724c1c2288295e7e684
  
  			if ( this.renderer.backend.compatibilityMode && texture.isDepthTexture ) {
  
-@@ -79586,7 +79865,8 @@ class WGSLNodeBuilder extends NodeBuilder {
+@@ -79586,7 +79905,8 @@ class WGSLNodeBuilder extends NodeBuilder {
  
  				uniformGPU = buffer;
  
@@ -840,7 +931,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..5c5ef3c06885c724c1c2288295e7e684
  
  			} else {
  
-@@ -80329,9 +80609,12 @@ ${ flowData.code }
+@@ -80329,9 +80649,12 @@ ${ flowData.code }
  				const textureNode = uniform.node;
  				const texture = textureNode.value;
  
@@ -856,25 +947,25 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..5c5ef3c06885c724c1c2288295e7e684
  
  				if ( needsSampler ) {
  
-@@ -81295,9 +81578,15 @@ class WebGPUAttributeUtils {
+@@ -81295,9 +81618,15 @@ class WebGPUAttributeUtils {
  	destroyAttribute( attribute ) {
  
  		const backend = this.backend;
 -		const data = backend.get( this._getBufferAttribute( attribute ) );
 +		const bufferAttribute = this._getBufferAttribute( attribute );
 +		const data = backend.get( bufferAttribute );
- 
--		data.buffer.destroy();
++
 +		// An interleaved attribute's GPU buffer lives on its InterleavedBuffer, and several attributes
 +		// share it: destroy it once and forget it there too, as the WebGL backend does, or the next
 +		// createAttribute() finds the destroyed buffer and submits it (threenative patch).
 +		if ( data.buffer !== undefined ) data.buffer.destroy();
-+
+ 
+-		data.buffer.destroy();
 +		if ( bufferAttribute !== attribute ) backend.delete( bufferAttribute );
  
  		backend.delete( attribute );
  
-@@ -81598,18 +81887,16 @@ class WebGPUBindingUtils {
+@@ -81598,18 +81927,16 @@ class WebGPUBindingUtils {
  
  		const bindingsData = backend.get( bindGroup );
  
@@ -885,10 +976,10 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..5c5ef3c06885c724c1c2288295e7e684
  		if ( bindingsData.layout ) {
  
 -			return bindingsData.layout.layoutGPU;
+-
+-		}
 +			if ( bindingsData.layoutKey === bindGroupLayoutKey ) return bindingsData.layout.layoutGPU;
  
--		}
--
 -		// if not, assing one
 +			this.deleteBindGroupData( bindGroup );
  
@@ -898,7 +989,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..5c5ef3c06885c724c1c2288295e7e684
  
  		// try to find an existing layout in the cache
  
-@@ -82131,6 +82418,9 @@ class WebGPUBindingUtils {
+@@ -82131,6 +82458,9 @@ class WebGPUBindingUtils {
  
  		}
  
@@ -908,7 +999,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..5c5ef3c06885c724c1c2288295e7e684
  	}
  
  	/**
-@@ -83814,6 +84104,27 @@ class WebGPUBackend extends Backend {
+@@ -83814,6 +84144,27 @@ class WebGPUBackend extends Backend {
  		 */
  		this.compatibilityMode = null;
  
@@ -936,7 +1027,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..5c5ef3c06885c724c1c2288295e7e684
  		/**
  		 * A reference to the device.
  		 *
-@@ -83926,7 +84237,11 @@ class WebGPUBackend extends Backend {
+@@ -83926,7 +84277,11 @@ class WebGPUBackend extends Backend {
  				xrCompatible: renderer.xr.enabled
  			};
  
@@ -949,7 +1040,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..5c5ef3c06885c724c1c2288295e7e684
  
  			if ( adapter === null ) {
  
-@@ -85461,13 +85776,12 @@ class WebGPUBackend extends Backend {
+@@ -85461,13 +85816,12 @@ class WebGPUBackend extends Backend {
  		for ( let i = 0, l = bindings.length; i < l; i ++ ) {
  
  			const bindGroup = bindings[ i ];
@@ -966,7 +1057,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..5c5ef3c06885c724c1c2288295e7e684
  
  			}
  
-@@ -85766,6 +86080,7 @@ class WebGPUBackend extends Backend {
+@@ -85766,6 +86120,7 @@ class WebGPUBackend extends Backend {
  		const utils = this.utils;
  
  		const sampleCount = utils.getSampleCountRenderContext( renderObject.context );
@@ -974,7 +1065,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..5c5ef3c06885c724c1c2288295e7e684
  		const colorSpace = utils.getCurrentColorSpace( renderObject.context );
  		const colorFormat = utils.getCurrentColorFormat( renderObject.context );
  		const depthStencilFormat = utils.getCurrentDepthStencilFormat( renderObject.context );
-@@ -85787,7 +86102,8 @@ class WebGPUBackend extends Backend {
+@@ -85787,7 +86142,8 @@ class WebGPUBackend extends Backend {
  			data.colorFormat !== colorFormat || data.depthStencilFormat !== depthStencilFormat ||
  			data.primitiveTopology !== primitiveTopology ||
  			data.frontFaceCW !== frontFaceCW ||
@@ -984,7 +1075,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..5c5ef3c06885c724c1c2288295e7e684
  		) {
  
  			data.material = material; data.materialVersion = material.version;
-@@ -85807,6 +86123,7 @@ class WebGPUBackend extends Backend {
+@@ -85807,6 +86163,7 @@ class WebGPUBackend extends Backend {
  			data.primitiveTopology = primitiveTopology;
  			data.frontFaceCW = frontFaceCW;
  			data.clippingContextCacheKey = renderObject.clippingContextCacheKey;
@@ -992,7 +1083,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..5c5ef3c06885c724c1c2288295e7e684
  
  			needsUpdate = true;
  
-@@ -85828,6 +86145,7 @@ class WebGPUBackend extends Backend {
+@@ -85828,6 +86185,7 @@ class WebGPUBackend extends Backend {
  
  		const utils = this.utils;
  		const renderContext = renderObject.context;
@@ -1000,7 +1091,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..5c5ef3c06885c724c1c2288295e7e684
  
  		// meshes with negative scale have a different frontFace render pipeline
  		// descriptor value so the following must be honored in the cache key
-@@ -85846,6 +86164,7 @@ class WebGPUBackend extends Backend {
+@@ -85846,6 +86204,7 @@ class WebGPUBackend extends Backend {
  			material.side,
  			frontFaceCW,
  			utils.getSampleCountRenderContext( renderContext ),
@@ -1009,7 +1100,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..5c5ef3c06885c724c1c2288295e7e684
  			utils.getPrimitiveTopology( object, material ),
  			renderObject.getGeometryCacheKey(),
 diff --git a/build/three.webgpu.nodes.js b/build/three.webgpu.nodes.js
-index f707acc24f5711fdae065ce920b08435b0869c1b..3d47c1151d563f1e0ae2bb4b92edd057fe0df2b3 100644
+index f707acc24f5711fdae065ce920b08435b0869c1b..4656c64f816a607ec8ab27706ce084b92a6583a2 100644
 --- a/build/three.webgpu.nodes.js
 +++ b/build/three.webgpu.nodes.js
 @@ -141,6 +141,15 @@ class NodeMaterialObserver {
@@ -1449,7 +1540,98 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..3d47c1151d563f1e0ae2bb4b92edd057
  		}
  
  		//
-@@ -55244,15 +55427,17 @@ class NodeManager extends DataMap {
+@@ -44431,6 +44614,46 @@ var RendererUtils = /*#__PURE__*/Object.freeze({
+ 
+ const shadowMaterialLib = /*@__PURE__*/ new WeakMap();
+ 
++const _shadowUniforms = /*@__PURE__*/ new WeakMap();
++
++/**
++ * Returns the uniform `create` makes for this shadow and name, and makes it only once.
++ *
++ * A filter body runs once per node builder. A uniform that the body makes directly is a new node
++ * for each material, and a new render-group node gives each material its own copy of the shared
++ * render group: a buffer that each material compares and writes on each render call. One node per
++ * shadow lets every material that reads it share one render-group buffer.
++ *
++ * @private
++ * @param {LightShadow} shadow - The shadow that owns the uniform.
++ * @param {string} name - The uniform's name within that shadow.
++ * @param {Function} create - Makes the uniform the first time.
++ * @return {Node} The uniform node.
++ */
++const getShadowUniform = ( shadow, name, create ) => {
++
++	let uniforms = _shadowUniforms.get( shadow );
++
++	if ( uniforms === undefined ) {
++
++		uniforms = new Map();
++		_shadowUniforms.set( shadow, uniforms );
++
++	}
++
++	let node = uniforms.get( name );
++
++	if ( node === undefined ) {
++
++		node = create();
++		uniforms.set( name, node );
++
++	}
++
++	return node;
++
++};
++
+ /**
+  * A shadow filtering function performing basic filtering. This is in fact an unfiltered version of the shadow map
+  * with a binary `[0,1]` result.
+@@ -44485,8 +44708,8 @@ const PCFShadowFilter = /*@__PURE__*/ Fn( ( { depthTexture, shadowCoord, shadow,
+ 
+ 	};
+ 
+-	const mapSize = reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup );
+-	const radius = reference( 'radius', 'float', shadow ).setGroup( renderGroup );
++	const mapSize = getShadowUniform( shadow, 'mapSize', () => reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup ) );
++	const radius = getShadowUniform( shadow, 'radius', () => reference( 'radius', 'float', shadow ).setGroup( renderGroup ) );
+ 
+ 	const texelSize = vec2( 1 ).div( mapSize );
+ 	const radiusScaled = radius.mul( texelSize.x );
+@@ -44517,7 +44740,7 @@ const PCFShadowFilter = /*@__PURE__*/ Fn( ( { depthTexture, shadowCoord, shadow,
+  */
+ const PCFSoftShadowFilter = /*@__PURE__*/ Fn( ( { depthTexture, shadowCoord, shadow, depthLayer } ) => {
+ 
+-	const mapSize = reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup );
++	const mapSize = getShadowUniform( shadow, 'mapSize', () => reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup ) );
+ 
+ 	const texelSize = vec2( 1 ).div( mapSize );
+ 
+@@ -45586,8 +45809,8 @@ const BasicPointShadowFilter = /*@__PURE__*/ Fn( ( { depthTexture, bd3D, dp } )
+  */
+ const PointShadowFilter = /*@__PURE__*/ Fn( ( { depthTexture, bd3D, dp, shadow } ) => {
+ 
+-	const radius = reference( 'radius', 'float', shadow ).setGroup( renderGroup );
+-	const mapSize = reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup );
++	const radius = getShadowUniform( shadow, 'radius', () => reference( 'radius', 'float', shadow ).setGroup( renderGroup ) );
++	const mapSize = getShadowUniform( shadow, 'mapSize', () => reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup ) );
+ 
+ 	const texelSize = radius.div( mapSize.x );
+ 
+@@ -45623,9 +45846,9 @@ const pointShadowFilter = /*@__PURE__*/ Fn( ( { filterFn, depthTexture, shadowCo
+ 	const shadowPositionAbs = shadowPosition.abs().toConst();
+ 	const viewZ = shadowPositionAbs.x.max( shadowPositionAbs.y ).max( shadowPositionAbs.z );
+ 
+-	const shadowCameraNear = uniform( 'float' ).setGroup( renderGroup ).onRenderUpdate( () => shadow.camera.near );
+-	const shadowCameraFar = uniform( 'float' ).setGroup( renderGroup ).onRenderUpdate( () => shadow.camera.far );
+-	const bias = reference( 'bias', 'float', shadow ).setGroup( renderGroup );
++	const shadowCameraNear = getShadowUniform( shadow, 'cameraNear', () => uniform( 'float' ).setGroup( renderGroup ).onRenderUpdate( () => shadow.camera.near ) );
++	const shadowCameraFar = getShadowUniform( shadow, 'cameraFar', () => uniform( 'float' ).setGroup( renderGroup ).onRenderUpdate( () => shadow.camera.far ) );
++	const bias = getShadowUniform( shadow, 'bias', () => reference( 'bias', 'float', shadow ).setGroup( renderGroup ) );
+ 
+ 	const result = float( 1.0 ).toVar();
+ 
+@@ -55244,15 +55467,17 @@ class NodeManager extends DataMap {
  	 * Returns `true` if the given node uniforms group must be updated or not.
  	 *
  	 * @param {NodeUniformsGroup} nodeUniformsGroup - The node uniforms group.
@@ -1470,7 +1652,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..3d47c1151d563f1e0ae2bb4b92edd057
  
  		// check for update
  
-@@ -56056,6 +56241,21 @@ class NodeManager extends DataMap {
+@@ -56056,6 +56281,21 @@ class NodeManager extends DataMap {
  
  	}
  
@@ -1492,7 +1674,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..3d47c1151d563f1e0ae2bb4b92edd057
  	/**
  	 * Triggers the call of `updateBefore()` methods
  	 * for all nodes of the given render object.
-@@ -56065,9 +56265,14 @@ class NodeManager extends DataMap {
+@@ -56065,9 +56305,14 @@ class NodeManager extends DataMap {
  	updateBefore( renderObject ) {
  
  		const nodeBuilder = renderObject.getNodeBuilderState();
@@ -1507,7 +1689,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..3d47c1151d563f1e0ae2bb4b92edd057
  			// update frame state for each node
  
  			this.getNodeFrameForRender( renderObject ).updateBeforeNode( node );
-@@ -56085,10 +56290,11 @@ class NodeManager extends DataMap {
+@@ -56085,10 +56330,11 @@ class NodeManager extends DataMap {
  	updateAfter( renderObject ) {
  
  		const nodeBuilder = renderObject.getNodeBuilderState();
@@ -1520,7 +1702,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..3d47c1151d563f1e0ae2bb4b92edd057
  
  			this.getNodeFrameForRender( renderObject ).updateAfterNode( node );
  
-@@ -56125,9 +56331,14 @@ class NodeManager extends DataMap {
+@@ -56125,9 +56371,14 @@ class NodeManager extends DataMap {
  
  		const nodeFrame = this.getNodeFrameForRender( renderObject );
  		const nodeBuilder = renderObject.getNodeBuilderState();
@@ -1535,7 +1717,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..3d47c1151d563f1e0ae2bb4b92edd057
  			nodeFrame.updateNode( node );
  
  		}
-@@ -62886,18 +63097,17 @@ class Renderer {
+@@ -62886,18 +63137,17 @@ class Renderer {
  
  		//
  
@@ -1546,11 +1728,11 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..3d47c1151d563f1e0ae2bb4b92edd057
 -			this._nodes.updateBefore( renderObject );
 -
 -			this._geometries.updateForRender( renderObject );
-+		this._nodes.needsRefresh( renderObject );
- 
+-
 -			this._nodes.updateForRender( renderObject );
 -			this._bindings.updateForRender( renderObject );
--
++		this._nodes.needsRefresh( renderObject );
+ 
 -		}
 +		// Every step of a draw runs, settled or not. What a settled static object skips is decided
 +		// inside each of them - its OBJECT node updates, its object uniform group write and its
@@ -1564,7 +1746,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..3d47c1151d563f1e0ae2bb4b92edd057
  
  		this._pipelines.updateForRender( renderObject );
  
-@@ -62907,7 +63117,7 @@ class Renderer {
+@@ -62907,7 +63157,7 @@ class Renderer {
  
  			this.backend.draw( renderObject, this.info );
  
@@ -1573,7 +1755,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..3d47c1151d563f1e0ae2bb4b92edd057
  
  		}
  
-@@ -76613,7 +76823,12 @@ class WebGPUTextureUtils {
+@@ -76613,7 +76863,12 @@ class WebGPUTextureUtils {
  
  		}
  
@@ -1587,7 +1769,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..3d47c1151d563f1e0ae2bb4b92edd057
  
  			usage |= GPUTextureUsage.RENDER_ATTACHMENT;
  
-@@ -79004,7 +79219,14 @@ class WGSLNodeBuilder extends NodeBuilder {
+@@ -79004,7 +79259,14 @@ class WGSLNodeBuilder extends NodeBuilder {
  
  		} else {
  
@@ -1603,7 +1785,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..3d47c1151d563f1e0ae2bb4b92edd057
  
  			if ( this.renderer.backend.compatibilityMode && texture.isDepthTexture ) {
  
-@@ -81295,9 +81517,15 @@ class WebGPUAttributeUtils {
+@@ -81295,9 +81557,15 @@ class WebGPUAttributeUtils {
  	destroyAttribute( attribute ) {
  
  		const backend = this.backend;
@@ -2002,6 +2184,113 @@ index be00b81ef36e1af83b0066603e616f8f1f81a115..1990da8fe8f1f29a7b53030756dfd966
 +		return ( mrt && mrt.has( 'velocity' ) ) || getDataFromObject( this.object ).useVelocity === true || this.object.userData?.useVelocity === true;
  
  	}
+ 
+diff --git a/src/nodes/lighting/PointShadowNode.js b/src/nodes/lighting/PointShadowNode.js
+index 01d6909fea7fc5821c827e9596a3afb73cac9457..f9019a72890a30fded9f7ce76982722c2f7d6a3f 100644
+--- a/src/nodes/lighting/PointShadowNode.js
++++ b/src/nodes/lighting/PointShadowNode.js
+@@ -2,6 +2,7 @@ import ShadowNode from './ShadowNode.js';
+ import { uniform } from '../core/UniformNode.js';
+ import { float, vec3, If, Fn } from '../tsl/TSLBase.js';
+ import { reference } from '../accessors/ReferenceNode.js';
++import { getShadowUniform } from './ShadowFilterNode.js';
+ import { cubeTexture } from '../accessors/CubeTextureNode.js';
+ import { renderGroup } from '../core/UniformGroupNode.js';
+ import { Matrix4 } from '../../math/Matrix4.js';
+@@ -65,8 +66,8 @@ export const BasicPointShadowFilter = /*@__PURE__*/ Fn( ( { depthTexture, bd3D,
+  */
+ export const PointShadowFilter = /*@__PURE__*/ Fn( ( { depthTexture, bd3D, dp, shadow } ) => {
+ 
+-	const radius = reference( 'radius', 'float', shadow ).setGroup( renderGroup );
+-	const mapSize = reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup );
++	const radius = getShadowUniform( shadow, 'radius', () => reference( 'radius', 'float', shadow ).setGroup( renderGroup ) );
++	const mapSize = getShadowUniform( shadow, 'mapSize', () => reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup ) );
+ 
+ 	const texelSize = radius.div( mapSize.x );
+ 
+@@ -102,9 +103,9 @@ const pointShadowFilter = /*@__PURE__*/ Fn( ( { filterFn, depthTexture, shadowCo
+ 	const shadowPositionAbs = shadowPosition.abs().toConst();
+ 	const viewZ = shadowPositionAbs.x.max( shadowPositionAbs.y ).max( shadowPositionAbs.z );
+ 
+-	const shadowCameraNear = uniform( 'float' ).setGroup( renderGroup ).onRenderUpdate( () => shadow.camera.near );
+-	const shadowCameraFar = uniform( 'float' ).setGroup( renderGroup ).onRenderUpdate( () => shadow.camera.far );
+-	const bias = reference( 'bias', 'float', shadow ).setGroup( renderGroup );
++	const shadowCameraNear = getShadowUniform( shadow, 'cameraNear', () => uniform( 'float' ).setGroup( renderGroup ).onRenderUpdate( () => shadow.camera.near ) );
++	const shadowCameraFar = getShadowUniform( shadow, 'cameraFar', () => uniform( 'float' ).setGroup( renderGroup ).onRenderUpdate( () => shadow.camera.far ) );
++	const bias = getShadowUniform( shadow, 'bias', () => reference( 'bias', 'float', shadow ).setGroup( renderGroup ) );
+ 
+ 	const result = float( 1.0 ).toVar();
+ 
+diff --git a/src/nodes/lighting/ShadowFilterNode.js b/src/nodes/lighting/ShadowFilterNode.js
+index 56dde4c38948adb5d2a476e96d0b4416dfd00534..fe8b50c8f76d0b6ce3d2fa1452751b2469a821e4 100644
+--- a/src/nodes/lighting/ShadowFilterNode.js
++++ b/src/nodes/lighting/ShadowFilterNode.js
+@@ -11,6 +11,46 @@ import { NoBlending } from '../../constants.js';
+ 
+ const shadowMaterialLib = /*@__PURE__*/ new WeakMap();
+ 
++const _shadowUniforms = /*@__PURE__*/ new WeakMap();
++
++/**
++ * Returns the uniform `create` makes for this shadow and name, and makes it only once.
++ *
++ * A filter body runs once per node builder. A uniform that the body makes directly is a new node
++ * for each material, and a new render-group node gives each material its own copy of the shared
++ * render group: a buffer that each material compares and writes on each render call. One node per
++ * shadow lets every material that reads it share one render-group buffer.
++ *
++ * @private
++ * @param {LightShadow} shadow - The shadow that owns the uniform.
++ * @param {string} name - The uniform's name within that shadow.
++ * @param {Function} create - Makes the uniform the first time.
++ * @return {Node} The uniform node.
++ */
++export const getShadowUniform = ( shadow, name, create ) => {
++
++	let uniforms = _shadowUniforms.get( shadow );
++
++	if ( uniforms === undefined ) {
++
++		uniforms = new Map();
++		_shadowUniforms.set( shadow, uniforms );
++
++	}
++
++	let node = uniforms.get( name );
++
++	if ( node === undefined ) {
++
++		node = create();
++		uniforms.set( name, node );
++
++	}
++
++	return node;
++
++};
++
+ /**
+  * A shadow filtering function performing basic filtering. This is in fact an unfiltered version of the shadow map
+  * with a binary `[0,1]` result.
+@@ -65,8 +105,8 @@ export const PCFShadowFilter = /*@__PURE__*/ Fn( ( { depthTexture, shadowCoord,
+ 
+ 	};
+ 
+-	const mapSize = reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup );
+-	const radius = reference( 'radius', 'float', shadow ).setGroup( renderGroup );
++	const mapSize = getShadowUniform( shadow, 'mapSize', () => reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup ) );
++	const radius = getShadowUniform( shadow, 'radius', () => reference( 'radius', 'float', shadow ).setGroup( renderGroup ) );
+ 
+ 	const texelSize = vec2( 1 ).div( mapSize );
+ 	const radiusScaled = radius.mul( texelSize.x );
+@@ -97,7 +137,7 @@ export const PCFShadowFilter = /*@__PURE__*/ Fn( ( { depthTexture, shadowCoord,
+  */
+ export const PCFSoftShadowFilter = /*@__PURE__*/ Fn( ( { depthTexture, shadowCoord, shadow, depthLayer } ) => {
+ 
+-	const mapSize = reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup );
++	const mapSize = getShadowUniform( shadow, 'mapSize', () => reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup ) );
+ 
+ 	const texelSize = vec2( 1 ).div( mapSize );
  
 diff --git a/src/objects/BatchedMesh.js b/src/objects/BatchedMesh.js
 index 2ef7cb257438826059eb2408b3756c4891f06a10..35cc0ffe83a69ea9fa5fca6dec2d820ca193f88d 100644
