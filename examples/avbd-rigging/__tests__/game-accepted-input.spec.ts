@@ -3,7 +3,7 @@ import { type IPhysicsContext, rapier } from "@threenative/physics";
 import { Group, PerspectiveCamera } from "three";
 import { expect, it, vi } from "vitest";
 import { createGameStore } from "../../../packages/core/src/state.js";
-import { RiggingScene } from "../src/game.js";
+import { RiggingScene, registrations } from "../src/game.js";
 import {
   AvbdRigging,
   type IAvbdOptions,
@@ -111,6 +111,7 @@ async function inputScene() {
     store,
     tap,
     candidate,
+    render: () => scene.render(ctx),
     tick: (compute = true) => {
       input.tick();
       scene.update(ctx, 1 / 60);
@@ -168,6 +169,7 @@ it("publishes actual post-Rapier accepted movement at every compute tick without
     for (let tick = 0; tick < 120; tick++) {
       f.tick();
       expect(f.state.acceptedAnchorVelocity).toBeCloseTo(0.25, 4);
+      expect(f.state.acceptedAnchorMoving).toBe(true);
       expect(f.state.anchorX).toBeCloseTo((tick + 1) / 240, 5);
     }
     expect(f.state.anchorMoveRequests).toBe(1);
@@ -177,6 +179,7 @@ it("publishes actual post-Rapier accepted movement at every compute tick without
     f.tick();
     expect(f.state.anchorX).toBeCloseTo(0.5, 5);
     expect(f.state.acceptedAnchorVelocity).toBe(0);
+    expect(f.state.acceptedAnchorMoving).toBe(false);
     expect(f.state.acceptedAnchorDelta).toBe(0);
     expect(f.state.anchorMoving).toBe(0);
     expect(f.candidate.steps).toBe(121);
@@ -216,6 +219,73 @@ it("keeps subscriber navigation outside the current solver dispatch while immedi
       await f?.close();
     } finally {
       log.mockRestore();
+    }
+  }
+});
+
+it("retains one copied sampled peak and recomputes freshness when cached GPU poses age", async () => {
+  registrations.install();
+  const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+  let f: Awaited<ReturnType<typeof inputScene>> | undefined;
+  let restoreObservation: (() => void) | undefined;
+  try {
+    f = await inputScene();
+    f.tick();
+    const candidate = f.candidate;
+    const bodies = new Float32Array(candidate.model.solver.bodies.length * 40);
+    for (const [index, body] of candidate.model.solver.bodies.entries()) {
+      bodies.set(body.positionLin, index * 40);
+      bodies.set(body.positionAng, index * 40 + 4);
+    }
+    // A controlled CPU fixture intrudes one thin panel into the real wall proxy.
+    bodies.set([0, -0.606656987306814, 4], 0);
+    let fixedStep = 1;
+    const observation = vi.spyOn(candidate, "observation", "get").mockImplementation(() => ({
+      generation: candidate.generation,
+      fixedStep,
+      staleTicks: candidate.steps - fixedStep,
+      bytes: bodies.byteLength,
+      totalBytes: bodies.byteLength * fixedStep,
+      bodies,
+    }));
+    restoreObservation = () => observation.mockRestore();
+    f.render();
+    const peak = f.state.penetrationPeak as Record<string, unknown>;
+    expect(peak).toMatchObject({
+      generation: candidate.generation,
+      sampledFixedStep: 1,
+      observedFixedStep: 1,
+      staleTicks: 0,
+    });
+    expect(f.state.penetrationMaximum).toBeGreaterThan(0.02);
+    expect(f.state.sampleChecks).toMatchObject({
+      penetrationMaximum: false,
+      fresh: true,
+      readback: true,
+    });
+    const copy = JSON.stringify(peak);
+    bodies.set([0, 0, 4], 0);
+    f.tick();
+    fixedStep = 2;
+    f.render();
+    expect(JSON.stringify(f.state.penetrationPeak)).toBe(copy);
+    expect(f.state.sampleChecks).toMatchObject({ penetrationMaximum: false });
+    for (let tick = 0; tick < 121; tick++) f.tick();
+    f.render();
+    expect(f.state.sampleChecks).toMatchObject({ fresh: false });
+  } finally {
+    try {
+      restoreObservation?.();
+    } finally {
+      try {
+        await f?.close();
+      } finally {
+        try {
+          registrations.dispose();
+        } finally {
+          log.mockRestore();
+        }
+      }
     }
   }
 });

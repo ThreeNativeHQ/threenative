@@ -36,10 +36,13 @@ import {
   observeStorage,
 } from "./physics/lifetime.js";
 import {
+  type IProxyContactWitness,
+  type IRiggingSampleChecks,
   measurePositions,
   measureProxyPenetration,
   measureSailPositions,
   riggingPositions,
+  riggingSampleChecks,
 } from "./physics/measure.js";
 import type { IRiggingProxy } from "./physics/model.js";
 import { GpuResourceScope } from "./physics/resources.js";
@@ -64,6 +67,8 @@ interface IRiggingState extends Record<string, unknown> {
   ropeExtension: number;
   penetration: number;
   penetrationMaximum: number;
+  penetrationPeak: IRiggingPenetrationPeak | null;
+  sampleChecks: Partial<IRiggingSampleChecks>;
   anchorX: number;
   windSpeed: number;
   gustStrength: number;
@@ -78,6 +83,7 @@ interface IRiggingState extends Record<string, unknown> {
   fixedColorsValidated: number;
   contactsMaximum: number;
   acceptedAnchorVelocity: number;
+  acceptedAnchorMoving: boolean;
   acceptedAnchorDelta: number;
   anchorMoveRequests: number;
   anchorMoving: number;
@@ -99,6 +105,17 @@ interface IRiggingState extends Record<string, unknown> {
   observationFailures: number;
 }
 
+interface IRiggingPenetrationPeak extends IProxyContactWitness {
+  solverRevision: string;
+  frame: "solver z-up → authored y-up: [x,z,-y]";
+  generation: number;
+  sampledFixedStep: number;
+  observedFixedStep: number;
+  staleTicks: number;
+  bytes: number;
+  totalBytes: number;
+}
+
 const initial: IRiggingState = {
   mode: "candidate",
   steps: 0,
@@ -108,6 +125,8 @@ const initial: IRiggingState = {
   ropeExtension: 1e9,
   penetration: 1e9,
   penetrationMaximum: 1e9,
+  penetrationPeak: null,
+  sampleChecks: {},
   anchorX: 0,
   windSpeed: 0,
   gustStrength: 0,
@@ -122,6 +141,7 @@ const initial: IRiggingState = {
   fixedColorsValidated: 0,
   contactsMaximum: 0,
   acceptedAnchorVelocity: 0,
+  acceptedAnchorMoving: false,
   acceptedAnchorDelta: 0,
   anchorMoveRequests: 0,
   anchorMoving: 0,
@@ -146,7 +166,7 @@ const proxyInputs: readonly IRiggingProxy[] = [
   { name: "wall", size: [6, 4, 0.2], position: [0, 4, 0.7] },
   { name: "floor", size: [12, 0.2, 8], position: [0, -0.1, 0] },
 ];
-const registrations = new RiggingRegistrations((object) => object instanceof AvbdRigging);
+export const registrations = new RiggingRegistrations((object) => object instanceof AvbdRigging);
 const lifetime = {
   completed: 0,
   buffers: -1,
@@ -357,6 +377,8 @@ export class RiggingScene extends Scene<IRiggingState, IPhysicsContext> {
   #observedStep = -1;
   #observationFailures = 0;
   #penetrationMaximum: number | undefined;
+  #penetrationPeak: IRiggingPenetrationPeak | null = null;
+  #sampleMeasures: { ropeExtensionMaximum: number; sailStretchP95: number } | undefined;
   #previousAcceptedAnchor = 0;
   #acceptedAnchorVelocity = 0;
   #acceptedAnchorDelta = 0;
@@ -458,6 +480,8 @@ export class RiggingScene extends Scene<IRiggingState, IPhysicsContext> {
           ctx.state.set({
             anchorX: acceptedX,
             acceptedAnchorVelocity: this.#acceptedAnchorVelocity,
+            acceptedAnchorMoving:
+              Number.isFinite(this.#acceptedAnchorVelocity) && this.#acceptedAnchorVelocity >= 0.24,
             acceptedAnchorDelta: this.#acceptedAnchorDelta,
             anchorMoveRequests: this.#anchorMoveRequests,
             anchorMoving: Number(this.#moving),
@@ -762,6 +786,8 @@ export class RiggingScene extends Scene<IRiggingState, IPhysicsContext> {
       benchmarkResults,
       anchorX: this.#mast.position.x,
       acceptedAnchorVelocity: this.#acceptedAnchorVelocity,
+      acceptedAnchorMoving:
+        Number.isFinite(this.#acceptedAnchorVelocity) && this.#acceptedAnchorVelocity >= 0.24,
       acceptedAnchorDelta: this.#acceptedAnchorDelta,
       anchorMoveRequests: this.#anchorMoveRequests,
       anchorMoving: Number(this.#moving),
@@ -802,7 +828,23 @@ export class RiggingScene extends Scene<IRiggingState, IPhysicsContext> {
       this.#observedStep = sample.fixedStep;
       const positions = riggingPositions(rigging.model, sample.bodies);
       const measures = measurePositions(rigging.model, positions);
-      const penetration = measureProxyPenetration(rigging.model, sample.bodies);
+      const penetration = measureProxyPenetration(rigging.model, sample.bodies, {
+        previousMaximum: this.#penetrationMaximum ?? 0,
+        capture: (witness) => {
+          this.#penetrationPeak = {
+            ...witness,
+            solverRevision: riggingComparison.solver,
+            frame: "solver z-up → authored y-up: [x,z,-y]",
+            generation: sample.generation,
+            sampledFixedStep: sample.fixedStep,
+            observedFixedStep: steps,
+            staleTicks: sample.staleTicks,
+            bytes: sample.bytes,
+            totalBytes: sample.totalBytes,
+          };
+        },
+      });
+      this.#sampleMeasures = measures;
       this.#penetrationMaximum = Math.max(this.#penetrationMaximum ?? penetration, penetration);
       Object.assign(state, {
         measured: 1,
@@ -815,6 +857,19 @@ export class RiggingScene extends Scene<IRiggingState, IPhysicsContext> {
         readbackBytes: sample.totalBytes,
         readbackFailures: rigging.readbackStats.failures,
       });
+    }
+    if (
+      sample !== undefined &&
+      this.#sampleMeasures !== undefined &&
+      this.#penetrationMaximum !== undefined
+    ) {
+      state.sampleChecks = riggingSampleChecks({
+        ...this.#sampleMeasures,
+        penetrationMaximum: this.#penetrationMaximum,
+        readbackBytes: sample.totalBytes,
+        staleTicks: sample.staleTicks,
+      });
+      state.penetrationPeak = this.#penetrationPeak;
     }
     if (this.mode === "spring") {
       state.readbackFailures = this.#cloth.reduce((sum, cloth) => sum + cloth.readbackFailures, 0);

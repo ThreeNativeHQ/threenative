@@ -26,7 +26,7 @@ export function riggingScenario(bytes: Buffer): "correctness" | "lifecycle" | "b
     throw new Error("TN_AVBD_QUALIFICATION: invalid scenario JSON.", { cause: error });
   }
   const hash = sha256(Buffer.from(canonical));
-  if (hash === "708c7b3ebad82e4f924c04631b5c299fd6a8b13d2a01cd8108b2a544c2bd32d8")
+  if (hash === "47533aad23e554a9bf1d863870f0033bf51b96c55e5b34b708bc6508adf3e599")
     return "correctness";
   if (hash === "3644ac117dd9ac6445b7692477e29ad34ac439c3d18f1ee82aaa79a09b954c25")
     return "lifecycle";
