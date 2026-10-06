@@ -1,32 +1,7 @@
-import { expect, test, vi } from "vitest";
-import type { Page } from "playwright";
+import { expect, test } from "vitest";
 
 import type { IPlaytestObservationSnapshot } from "../src/index.js";
 import { waitForResource } from "../src/runner/wait-for-resource.js";
-import { runStep } from "../src/runner/steps.js";
-import type { IPlaytestBridgeClient } from "../src/runner/bridgeClient.js";
-
-test.each([false, true])("resource polling preserves the selected liveClock=%s", async (liveClock) => {
-  vi.useFakeTimers();
-  const advance = vi.fn(async () => undefined);
-  let samples = 0;
-  const bridge = {
-    advance,
-    description: { capabilities: ["runtime.fixedStep"] },
-    sample: async () => snapshot(++samples >= 2),
-  } as unknown as IPlaytestBridgeClient;
-  try {
-    const pending = runStep({} as Page, bridge,
-      {timeoutMs: 100, waitForResource: {id: "state", path: "networkConnected", equals: true}, release: true},
-      {width: 1280, height: 720}, undefined, [], {heldKeys: new Set(), pointerButtons: 0, pointers: new Map()},
-      {include: ["resources"]}, true, undefined, liveClock);
-    await vi.advanceTimersByTimeAsync(16);
-    expect((await pending).afterStep?.resources?.state).toEqual({networkConnected: true});
-    expect(advance).toHaveBeenCalledTimes(liveClock ? 0 : 1);
-  } finally {
-    vi.useRealTimers();
-  }
-});
 
 /**
  * `now` and `sleep` are injectable, so elapsed time is exact here rather than raced. A clock

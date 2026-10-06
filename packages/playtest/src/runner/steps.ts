@@ -215,7 +215,6 @@ export async function runStep(
   movementSampleRequest: IPlaytestSampleRequest | undefined,
   finalStep: boolean,
   subject?: string,
-  liveClock = false,
 ): Promise<IRunStepSamples> {
   if (step.waitForResource !== undefined) {
     if (bridge === undefined || movementSampleRequest === undefined) {
@@ -236,7 +235,7 @@ export async function runStep(
       ));
     }
     const after = await waitForResource({
-      advance: !liveClock && bridge.description.capabilities.includes("runtime.fixedStep")
+      advance: bridge.description.capabilities.includes("runtime.fixedStep")
         ? () => advanceFixedStep(page, bridge, 1)
         : undefined,
       id: wait.id,
