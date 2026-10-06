@@ -322,6 +322,18 @@ void light() {
     CHECK(tn_get(directional, "intensity", &result, &d.value) == TN_OK && result.number == 3);
     CHECK(tn_get(directional, "position.y", &result, &d.value) == TN_OK && result.number == 1);  // DEFAULT_UP
     CHECK(tn_get(directional, "target", &result, &d.value) == TN_OK && result.kind == TN_VALUE_HANDLE);
+    const tn_handle_t originalTarget = result.handle;
+    tn_handle_t target{};
+    CHECK(tn_construct(ctx, "Group", nullptr, 0, &target, &d.value) == TN_OK);
+    const tn_value_t targetRef = ref(target);
+    CHECK(tn_set(directional, "target", &targetRef, &d.value) == TN_OK);
+    CHECK(tn_object_release(target, &d.value) == TN_OK);
+    CHECK(tn_get(directional, "target", &result, &d.value) == TN_OK && result.kind == TN_VALUE_HANDLE);
+    const tn_value_t offset = num(2);
+    CHECK(tn_set(result.handle, "position.x", &offset, &d.value) == TN_OK);
+    CHECK(tn_get(originalTarget, "position.x", &result, &d.value) == TN_OK && result.number == 0);
+    const tn_value_t invalidTarget = num(1);
+    CHECK(tn_set(directional, "target", &invalidTarget, &d.value) != TN_OK);
 
     tn_handle_t hemisphere{};
     const tn_value_t hemiArgs[3] = {num(11189137), num(2236962), num(0.6)};

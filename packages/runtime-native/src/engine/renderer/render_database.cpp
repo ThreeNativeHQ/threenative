@@ -257,6 +257,7 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
                 lights.ambient[c] += scaled(l.color, l.intensity)[c];
         } else if (type == "DirectionalLight") {
             auto& l = static_cast<DirectionalLight&>(object); // its shadow camera moves, as three's does
+            l.target->updateWorldMatrix(true, false);
             const auto from = worldPosition(l), to = worldPosition(*l.target);
             direct_.emplace_back(object.id(), DirectLight::directional(normalized({from[0] - to[0], from[1] - to[1], from[2] - to[2]}),
                                                                       scaled(l.color, l.intensity)));

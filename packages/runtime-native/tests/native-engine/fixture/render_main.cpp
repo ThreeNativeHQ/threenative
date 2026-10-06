@@ -55,8 +55,8 @@ std::string draw(Gpu& gpu, tn::binding::Object& sceneObject, tn::binding::Object
     renderer.setSize(r.width, r.height);
     renderer.setOutput(OutputState{toneMapping(r.toneMapping), r.exposure, r.srgb});
     auto& scene = *static_cast<Scene*>(sceneObject.ptr.get());
-    // three's background colour is the clear colour; without one the renderer clears to black.
-    std::array<double, 4> clear{0, 0, 0, 1};
+    // WebGPURenderer's default alpha:true clears to transparent black without a background.
+    std::array<double, 4> clear{0, 0, 0, 0};
     if (scene.background) clear = {scene.background->r, scene.background->g, scene.background->b, 1};
     gpu.database.shadowMapEnabled = r.shadowMap;
     const auto renderAt = [&](uint32_t width, uint32_t height) -> std::string {

@@ -49,8 +49,7 @@ public:
     explicit DirectionalLight(Color color = Color(1, 1, 1), double intensity = 1);
     [[nodiscard]] std::string_view type() const override { return "DirectionalLight"; }
     /** The light points from its position towards target's world position; not in the scene by default. */
-    std::unique_ptr<Object3D> ownTarget;
-    Object3D* target;
+    std::shared_ptr<Object3D> target;
     /** DirectionalLightShadow: an OrthographicCamera(-5, 5, 5, -5, 0.5, 500). */
     LightShadow shadow{std::make_unique<OrthographicCamera>(-5, 5, 5, -5, 0.5, 500)};
 };

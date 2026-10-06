@@ -3,7 +3,7 @@
 namespace tn::engine {
 
 DirectionalLight::DirectionalLight(Color c, double i)
-    : Light(c, i), ownTarget(std::make_unique<Object3D>()), target(ownTarget.get()) {
+    : Light(c, i), target(std::make_shared<Object3D>()) {
     position.copy(Object3D::defaultUp);  // three: this.position.copy( Object3D.DEFAULT_UP )
     updateMatrix();
 }

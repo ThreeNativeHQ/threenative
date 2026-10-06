@@ -20,6 +20,7 @@ import {
   vec3,
   vec4,
 } from "three/tsl";
+import { FluidParticles3D } from "/core/fluid-particles.js";
 import { FluidField2D } from "/core/fluid-field.js";
 import { GPUParticles3D } from "/core/particles.js";
 
@@ -40,6 +41,40 @@ export const FLUID_RESOLUTION = 16;
 export const FLUID_STEPS = 6;
 
 export const programs = {
+  async "fluid-particles"(renderer) {
+    if (renderer.backend.isWebGPUBackend !== true) throw new Error("fluid reference needs WebGPU");
+    const attached = {
+      kind: "webgpu",
+      compute: (node) => renderer.compute(node),
+      readback: (attribute) => renderer.getArrayBufferAsync(attribute),
+    };
+    const run = async (iterations) => {
+      // Only allocation/bounds change; every physical parameter retains the core default.
+      const fluid = new FluidParticles3D({ capacity: 12,
+        bounds: { min: [-1, -1, -1], max: [1, 1, 1] }, voxelSize: 0.25,
+        ...(iterations === undefined ? {} : { iterations }),
+      });
+      fluid.attachRenderer(attached);
+      for (let i = 0; i < 12; ++i) {
+        if (!fluid.emit([(i % 3 - 1) * 0.1, (Math.floor(i / 3) % 2 - 0.5) * 0.1,
+          (Math.floor(i / 6) - 0.5) * 0.1],
+          [0.1 + (i % 3) * 0.07, 0.25, -0.08 + Math.floor(i / 6) * 0.1]))
+          throw new Error("fluid reference emission refused");
+      }
+      for (let tick = 0; tick < 6; ++tick) fluid.process();
+      await renderer.backend.device.queue.onSubmittedWorkDone();
+      const result = { positions: await read(renderer, fluid.positions.value),
+        velocities: await read(renderer, fluid.velocities.value) };
+      fluid.detach();
+      return result;
+    };
+    const good = await run();
+    const broken = await run(0);
+    // The same bound as the native comparison; refuse an insensitive browser oracle.
+    if (!good.positions.some((v, i) => Math.abs(v - broken.positions[i]) > 2e-4))
+      throw new Error("fluid density red control stayed within the position bound");
+    return { ...good, unconstrainedPositions: broken.positions, unconstrainedVelocities: broken.velocities };
+  },
   async "fluid-field"(renderer) {
     const field = new FluidField2D({ resolution: FLUID_RESOLUTION, pressureIterations: 5,
       viscosity: 0.03, vorticity: 0.2, splatRadius: 0.24 });

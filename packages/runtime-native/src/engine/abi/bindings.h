@@ -16,6 +16,9 @@ void registerSceneBindings(Registry& classes);
 /** Object3D's own getters, setters, members and methods, for a derived node to build on. */
 void registerObject3DBindings(ClassBinding& b);
 
+/** Resolves any scene node argument, refusing non-Object3D classes. */
+engine::Object3D& objectArg(Store& store, const Value& arg);
+
 /** Geometry (PRD-508): BufferAttribute, BufferGeometry and the built-in generators. */
 void registerGeometryBindings(Registry& classes);
 

@@ -23,10 +23,13 @@ OutputPrograms buildOutput(std::optional<ToneMapping> toneMapping, bool srgb, co
     const uint32_t texture = f.texture2d("scene");
     const ExprId uv = f.varying("uv", Type::vec(2));
     const ExprId scene = post ? post->build(f, texture, uv) : f.sample(texture, uv);
-    ExprId rgb = f.swizzle(scene, "xyz");
+    // RenderOutputNode: unpremultiply before nonlinear transforms, then premultiply in output space.
+    const ExprId alpha = f.call("clamp", {f.swizzle(scene, "w"), f.constant(0.0f), f.constant(1.0f)});
+    ExprId rgb = f.select(f.equal(alpha, f.constant(0.0f)), f.construct(Type::vec(3), {f.constant(0.0f)}),
+                         f.div(f.swizzle(scene, "xyz"), alpha));
     if (toneMapping) rgb = toneMap(f, *toneMapping, rgb, f.uniform("toneMappingExposure", Type::f32()));
     if (srgb) rgb = srgbTransferOetf(f, rgb);
-    f.output("color", f.construct(Type::vec(4), {rgb, f.swizzle(scene, "w")}));
+    f.output("color", f.construct(Type::vec(4), {f.mul(rgb, alpha), alpha}));
     return out;
 }
 

@@ -17,8 +17,8 @@ struct OutputPrograms {
 };
 
 /**
- * three's renderOutput (WebGPURenderer, r185): the scene's linear HDR colour, tone mapped with
- * `toneMappingExposure` when a mapping is set, then encoded to the output colour space. One
+ * three's renderOutput (WebGPURenderer, r185): unpremultiply the scene's linear HDR colour, tone map
+ * with `toneMappingExposure`, encode to the output colour space, then premultiply again. One
  * full-screen triangle: attribute "position" (vec2, clip space), texture "scene", uniform
  * "toneMappingExposure" (only when tone mapping).
  */

@@ -122,24 +122,6 @@ Method memberAliasMethod(M Owner::*field, const char* cls) {
     };
 }
 
-/**
- * An Object3D argument of any scene class. `Store::ref` matches one class name, and a Mesh is a
- * valid child of a Group, so the argument is matched against the classes the scene graph owns.
- */
-Object3D& objectArg(Store& store, const Value& arg) {
-    static const char* const kClasses[] = {"Object3D",        "Group",           "Mesh",
-                                           "Scene",           "Camera",          "PerspectiveCamera",
-                                           "OrthographicCamera", "AmbientLight", "DirectionalLight",
-                                           "HemisphereLight", "InstancedMesh",      "PointLight",
-                                           "Sprite", "SpotLight",       "Bone",               "SkinnedMesh", "LOD"};
-    Object* found = store.find(arg);
-    if (found == nullptr) throw Unsupported{"argument is not an Object3D"};
-    for (const char* cls : kClasses) {
-        if (found->cls == cls) return *static_cast<Object3D*>(found->ptr.get());
-    }
-    throw Unsupported{"argument is not an Object3D, it is a " + found->cls};
-}
-
 std::shared_ptr<void> makeNode() { return std::static_pointer_cast<void>(std::make_shared<Object3D>()); }
 
 // ---------------------------------------------------------------------------- Object3D
@@ -920,6 +902,24 @@ void registerInstancedMesh(ClassBinding& b) {
 }
 
 }  // namespace
+
+/**
+ * An Object3D argument of any scene class. `Store::ref` matches one class name, and a Mesh is a
+ * valid child of a Group, so the argument is matched against the classes the scene graph owns.
+ */
+Object3D& objectArg(Store& store, const Value& arg) {
+    static const char* const kClasses[] = {"Object3D",        "Group",           "Mesh",
+                                           "Scene",           "Camera",          "PerspectiveCamera",
+                                           "OrthographicCamera", "AmbientLight", "DirectionalLight",
+                                           "HemisphereLight", "InstancedMesh",      "PointLight",
+                                           "Sprite", "SpotLight",       "Bone",               "SkinnedMesh", "LOD"};
+    Object* found = store.find(arg);
+    if (found == nullptr) throw Unsupported{"argument is not an Object3D"};
+    for (const char* cls : kClasses) {
+        if (found->cls == cls) return *static_cast<Object3D*>(found->ptr.get());
+    }
+    throw Unsupported{"argument is not an Object3D, it is a " + found->cls};
+}
 
 void registerObject3DBindings(ClassBinding& b) {
     registerObject3D(b);

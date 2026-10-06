@@ -3,18 +3,29 @@
 // presentation of that frame, and the mailbox the runner talks to. No JS engine is linked: the game
 // is inspect-demo, in C++. A game bundle on V8 is the sibling tn-native-engine-player-v8.
 #include <cstdio>
+#include <exception>
 #include <string>
 
 #include "engine/inspect/endpoint.h"
 #include "engine/player/demo.h"
 #include "engine/player/skinned_crowd.h"
 #include "engine/player/run.h"
+#include "engine/player/world_walk.h"
 
 using namespace tn::engine;
 
 int main(int argc, char** argv) {
     // The first argument selects the built-in C++ game.
     const std::string game = argc > 1 && argv[1][0] != '\0' ? argv[1] : "inspect-demo";
+    if (game == "world-walk" || game == "world-cycles" || game == "world-fault") {
+        try {
+            player::WorldWalk world(game, argc > 2 ? argv[2] : TN_WORLD_WALK_FIXTURE);
+            return player::run(world.game());
+        } catch (const std::exception& failure) {
+            std::fprintf(stderr, "[Playtest] %s\n", failure.what());
+            return 1;
+        }
+    }
     if (game == "skinned-crowd") {
         player::SkinnedCrowd crowd;
         player::Game configured;
@@ -26,7 +37,7 @@ int main(int argc, char** argv) {
         return player::run(configured);
     }
     if (game != "inspect-demo") {
-        std::printf("TN_PLAYER_UNKNOWN_GAME: %s; this player builds inspect-demo and skinned-crowd.\n", game.c_str());
+        std::printf("TN_PLAYER_UNKNOWN_GAME: %s; expected inspect-demo, skinned-crowd, world-walk, world-cycles or world-fault.\n", game.c_str());
         return 1;
     }
 

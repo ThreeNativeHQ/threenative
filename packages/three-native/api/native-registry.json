@@ -1020,6 +1020,7 @@
         "shadow.mapSize.y",
         "shadow.normalBias",
         "shadow.radius",
+        "target",
         "up.x",
         "up.y",
         "up.z",

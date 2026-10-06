@@ -10,6 +10,7 @@
 #include "engine/scene/camera.h"
 #include "engine/shader/tsl/tsl.h"
 #include "engine/world/particles/gpu_particles.h"
+#include "engine/world/fluids/fluid_particles.h"
 #include "engine/scene/nodes.h"
 
 #include <functional>
@@ -109,48 +110,21 @@ inline std::string particleSprites(binding::Object& object, engine::Renderer& re
         positions = particles->positions();
         resources.push_back(std::move(particles)); // lives through draw/readback, before renderer teardown
     } else {
-        // Twin of this fixture's FluidParticles3D configuration, not a substitute for its general
-        // density solver: twelve isolated single-slot emits, no constraints/pair forces/colliders.
-        const auto allocate = [&] { return gpu.createBuffer(bytes, WGPUBufferUsage_Storage | WGPUBufferUsage_CopySrc | WGPUBufferUsage_CopyDst); };
-        positions = allocate();
-        const engine::Handle velocities = allocate(), previous = allocate();
-        const auto kernel = [&](bool inject) {
-            Program p(Stage::Compute);
-            Build build(p);
-            const Storage bodies = storage("positions", Type::vec(4));
-            const Storage motion = storage("velocities", Type::vec(4));
-            const Storage old = storage("previous", Type::vec(4));
-            If(instanceIndex().lessThan(uint_(amount)), [&] {
-                if (inject) {
-                    bodies.element(instanceIndex()).assign(vec4({initialPosition(), 1}));
-                    motion.element(instanceIndex()).assign(vec4({0.1, 0.25, -0.08, 0}));
-                    old.element(instanceIndex()).assign(vec4({0}));
-                } else {
-                    const Node position = Node(bodies.element(instanceIndex())).xyz();
-                    const Node velocity = Node(motion.element(instanceIndex())).xyz().add(vec3({0, -1.2 / 60, 0}));
-                    const Node limited = velocity.mul(float_(1).div(max(length(velocity), 1)));
-                    old.element(instanceIndex()).assign(vec4({position, 1}));
-                    // One radius-sized prediction segment in this fixture; container never touched.
-                    const Node next = position.add(limited.mul(1.0 / 60));
-                    bodies.element(instanceIndex()).assign(vec4({next, 1}));
-                    // Real solver reconstructs velocity from rounded positions, then speed-limits it.
-                    const Node reconstructed = Node(bodies.element(instanceIndex())).xyz()
-                        .sub(Node(old.element(instanceIndex())).xyz()).div(1.0 / 60);
-                    const Node confined = reconstructed.mul(float_(1).div(max(length(reconstructed), 1)));
-                    motion.element(instanceIndex()).assign(vec4({confined, 0}));
-                }
-            });
-            return p;
-        };
-        engine::ComputePass inject(device, gpu, kernel(true)), advance(device, gpu, kernel(false));
-        const engine::Handle buffers[] = {positions, velocities, previous};
-        if (!inject.error().empty() || !advance.error().empty() || !inject.dispatch(encoder, buffers, amount)) {
-            wgpuCommandEncoderRelease(encoder); return "fluid-particles: " + inject.error() + advance.error();
+        engine::world::FluidParticles3D::Options options;
+        options.capacity = amount; options.min = {-1, -1, -1}; options.max = {1, 1, 1}; options.voxelSize = 0.25;
+        auto particles = std::make_shared<engine::world::FluidParticles3D>(device, gpu, options);
+        if (!particles->error().empty()) { wgpuCommandEncoderRelease(encoder); return particles->error(); }
+        for (uint32_t i = 0; i < amount; ++i) {
+            if (!particles->emit({(int(i % 3) - 1) * 0.1, (int(i / 3 % 2) - 0.5) * 0.1, (int(i / 6) - 0.5) * 0.1},
+                {0.1 + (i % 3) * 0.07, 0.25, -0.08 + (i / 6) * 0.1})) {
+                wgpuCommandEncoderRelease(encoder); return "fluid-particles emission refused";
+            }
         }
-        for (int tick = 0; tick < ticks; ++tick) if (!advance.dispatch(encoder, buffers, amount)) {
-            wgpuCommandEncoderRelease(encoder); return "fluid-particles: " + advance.error();
+        for (int tick = 0; tick < ticks; ++tick) if (!particles->process()) {
+            wgpuCommandEncoderRelease(encoder); return particles->error();
         }
-        // Renderer owns these fixture allocations until teardown, as storageInstances does.
+        positions = particles->positions();
+        resources.push_back(std::move(particles));
     }
     WGPUCommandBufferDescriptor commands = {};
     gpu.submit(wgpuCommandEncoderFinish(encoder, &commands));

@@ -35,7 +35,7 @@ namespace tn::engine {
  */
 class RenderDatabase {
   public:
-    uint64_t render(Renderer& renderer, Object3D& scene, Camera& camera, std::array<double, 4> clear = {0, 0, 0, 1});
+    uint64_t render(Renderer& renderer, Object3D& scene, Camera& camera, std::array<double, 4> clear = {0, 0, 0, 0});
 
     /** CPU preparation used by render; returned pointers remain valid until the next prepare. */
     std::vector<DrawItem> prepare(Object3D& scene, Camera& camera, LightState& lights);

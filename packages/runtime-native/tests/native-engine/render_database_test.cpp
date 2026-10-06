@@ -105,6 +105,37 @@ void litScene() {
     CHECK(worst <= 8 && over1 < 320 * 240 * 3 / 1000);
 }
 
+void directionalTarget() {
+    Scene scene;
+    PerspectiveCamera camera;
+    DirectionalLight light;
+    light.position.set(0, 3, 0);
+    light.setCastShadow(true);
+    scene.add(light);
+    Object3D parent;
+    parent.position.x = 1;
+    parent.add(*light.target);
+    light.target->position.x = 2;
+    RenderDatabase database;
+    database.shadowMapEnabled = true;
+    LightState lights;
+    database.prepare(scene, camera, lights);
+    CHECK(lights.direct.size() == 1);
+    if (lights.direct.empty()) return;
+    CHECK(light.target->matrixWorld.elements[12] == 3);
+    const double axis = 1 / std::sqrt(2.0);
+    CHECK(std::abs(lights.direct[0].direction[0] + axis) < 1e-12);
+    CHECK(std::abs(lights.direct[0].direction[1] - axis) < 1e-12);
+    Vector3 direction;
+    light.shadow.camera->getWorldDirection(direction);
+    CHECK(std::abs(direction.x - axis) < 1e-12 && std::abs(direction.y + axis) < 1e-12);
+    light.target->matrixWorldAutoUpdate = false;
+    light.target->matrixWorld.makeTranslation(0, 1, 0);
+    light.target->position.x = 10;
+    database.prepare(scene, camera, lights);
+    CHECK(lights.direct[0].direction[0] == 0 && lights.direct[0].direction[1] == 1);
+}
+
 void invalidation() {
     mystral::webgpu::Context context;
     CHECK(context.initializeHeadless());
@@ -613,7 +644,7 @@ void skinnedCrowdPixels() {
 
 }  // namespace
 
-TN_TEST_MAIN({"lit_scene", litScene}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
+TN_TEST_MAIN({"lit_scene", litScene}, {"directional_target", directionalTarget}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
              {"material_unsupported", materialUnsupported}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
              {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels})

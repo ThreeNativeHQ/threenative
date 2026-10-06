@@ -39,7 +39,7 @@ function served(): Map<string, [string, string]> {
     readFileSync(path.join(HERE, "programs.js"), "utf8"),
   ]);
   // Real core classes, transpiled as served; type-only imports disappear.
-  for (const name of ["particles", "fluid-field"]) {
+  for (const name of ["particles", "fluid-field", "fluid-particles", "gpu-readback"]) {
     const source = transformSync(readFileSync(path.join(CORE_SRC, `${name}.ts`), "utf8"), {
       loader: "ts",
     });

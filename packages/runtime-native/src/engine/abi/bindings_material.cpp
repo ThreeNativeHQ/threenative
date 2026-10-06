@@ -275,9 +275,12 @@ void registerDirectionalLight(ClassBinding& b) {
     b.members["target"] = [](void* self, const Args&, Store& store) -> Value {
         DirectionalLight* light = as<DirectionalLight>(self);
         if (light->target == nullptr) return Value{};
-        return store.adoptAlias("Object3D", light->target, self);
+        return store.share(std::string(light->target->type()), light->target);
     };
-    b.fixedMembers.insert("target");  // the light owns its target for its whole life
+    b.setters["target"] = [](void* self, const Value& value, Store& store) {
+        Object3D& target = objectArg(store, value);
+        as<DirectionalLight>(self)->target = std::shared_ptr<Object3D>(store.find(value)->ptr, &target);
+    };
     shadowBindings<DirectionalLight, OrthographicCamera>(b, {"left", "right", "top", "bottom", "near", "far"},
                                                          {&OrthographicCamera::left, &OrthographicCamera::right,
                                                           &OrthographicCamera::top, &OrthographicCamera::bottom,

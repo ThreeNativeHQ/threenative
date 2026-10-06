@@ -163,6 +163,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
 
     tn_native_engine_test(tn-native-engine-render-database-test tests/native-engine/render_database_test.cpp
         native_engine_renderer_scene_lit=lit_scene
+        native_engine_directional_target=directional_target
         native_engine_renderer_invalidation=invalidation
         native_engine_renderer_scene_alpha=alpha_scene
         native_engine_standard_materials_unsupported=material_unsupported
@@ -278,20 +279,23 @@ endif()
 # render while emitting); tsl_compute_test runs it and the PRD-513 instance grid against programs.js
 # recorded in Chromium's WebGPU (compute_reference.json).
 add_library(tn_engine_particles STATIC src/engine/world/particles/gpu_particles.cpp
-    src/engine/world/fluids/fluid_field.cpp)
+    src/engine/world/fluids/fluid_field.cpp
+    src/engine/world/fluids/fluid_particles.cpp)
 tn_native_engine_target(tn_engine_particles)
 target_link_libraries(tn_engine_particles PUBLIC tn_engine_renderer tn_engine_shader)
 if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "android")
     tn_native_engine_test(tn-native-engine-tsl-compute-test tests/native-engine/tsl-compute/tsl_compute_test.cpp
         native_engine_compute_instance_grid=instance_grid
         native_engine_particles_lifetime=particles_lifetime
+        native_engine_fluid_particles=fluid_particles
+        native_engine_fluid_particles_ir=fluid_particles_ir
         native_engine_fluid_field=fluid_field
         native_engine_fluid_ir=fluid_ir)
     target_link_libraries(tn-native-engine-tsl-compute-test PRIVATE tn_engine_particles tn_host_services)
     target_compile_definitions(tn-native-engine-tsl-compute-test PRIVATE
         TN_COMPUTE_REFERENCE="${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/tsl-compute/compute_reference.json")
     if(TN_ENGINE_SANITIZE)
-        set_tests_properties(native_engine_compute_instance_grid native_engine_particles_lifetime native_engine_fluid_field PROPERTIES
+        set_tests_properties(native_engine_compute_instance_grid native_engine_particles_lifetime native_engine_fluid_field native_engine_fluid_particles PROPERTIES
             ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0:abort_on_error=1;UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1")
     endif()
 endif()
@@ -319,10 +323,10 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     # can name them and a second, V8-linked player can reuse the loop; the executable names its game.
     # It reaches no JS engine: inspect-js-free.mjs proves it. The loop links SDL, never a VM.
     add_library(tn_engine_player STATIC src/engine/player/mailbox.cpp src/engine/player/demo.cpp
-        src/engine/player/run.cpp src/engine/player/skinned_crowd.cpp)
+        src/engine/player/run.cpp src/engine/player/skinned_crowd.cpp src/engine/player/world_walk.cpp)
     tn_native_engine_target(tn_engine_player)
     target_link_libraries(tn_engine_player PUBLIC tn_engine_inspect tn_engine_scene tn_engine_world
-        tn_engine_renderer tn_host_services)
+        tn_engine_renderer tn_host_services tn_engine_world_admission)
     target_include_directories(tn_engine_player PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
     if(SDL3_STATIC_TARGET)
         target_link_libraries(tn_engine_player PUBLIC ${SDL3_STATIC_TARGET})
@@ -332,6 +336,13 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     endif()
     add_executable(tn-native-engine-player src/engine/player/main.cpp)
     target_link_libraries(tn-native-engine-player PRIVATE tn_engine_player)
+    target_compile_definitions(tn-native-engine-player PRIVATE
+        TN_WORLD_WALK_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/world/walk")
+    tn_native_engine_test(tn-native-engine-world-walk-test tests/native-engine/world/world_walk_test.cpp
+        native_engine_world_walk_fixture=world_walk_fixture)
+    target_link_libraries(tn-native-engine-world-walk-test PRIVATE tn_engine_player)
+    target_compile_definitions(tn-native-engine-world-walk-test PRIVATE
+        TN_WORLD_WALK_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/world/walk")
     tn_native_engine_test(tn-native-engine-skinned-crowd-test tests/native-engine/animation/skinned_crowd_test.cpp
         native_engine_skinned_crowd_cpu=crowd_cpu)
     target_link_libraries(tn-native-engine-skinned-crowd-test PRIVATE tn_engine_player)

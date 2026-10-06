@@ -2,6 +2,7 @@
 #include "fixture/driver.h"
 #include "engine/abi/bindings.h"
 #include "engine/scene/material.h"
+#include "engine/scene/lights.h"
 
 #include <bit>
 #include <cinttypes>
@@ -101,6 +102,22 @@ void nodeMaterials() {
     }
 }
 
+void lightTargets() {
+    Driver driver;
+    registerAll(driver.classes);
+    std::istringstream in("new sun DirectionalLight\ncall sun target original\nnew aim Group\n"
+                          "set aim position.x " + hex(2) + "\nset sun target r:aim\n"
+                          "call sun target assigned\nobserve 0 assigned position.x - number\n"
+                          "observe 1 original position.x - number\nset sun target " + hex(1) + "\nend\n");
+    std::ostringstream out;
+    CHECK(driver.run(in, out) == 0);
+    CHECK(out.str() == "obs 0 number " + hex(2) + "\nobs 1 number " + hex(0) +
+                       "\nunsupported - argument%20is%20not%20an%20Object3D\n");
+    const Value aim{Value::Kind::Ref, 0, "aim"};
+    const Value sun{Value::Kind::Ref, 0, "sun"};
+    CHECK(driver.ref<tn::engine::DirectionalLight>(sun, "DirectionalLight").target.get() == driver.find(aim)->ptr.get());
+}
+
 }  // namespace
 
-TN_TEST_MAIN({"protocol", protocol}, {"node_materials", nodeMaterials})
+TN_TEST_MAIN({"protocol", protocol}, {"node_materials", nodeMaterials}, {"light_targets", lightTargets})

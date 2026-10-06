@@ -9,6 +9,7 @@
 #include "engine/renderer/compute.h"
 #include "engine/world/particles/gpu_particles.h"
 #include "engine/world/fluids/fluid_field.h"
+#include "engine/world/fluids/fluid_particles.h"
 #include "engine/shader/sprite.h"
 #include "engine/renderer/render_database.h"
 #include "mystral/webgpu/context.h"
@@ -300,6 +301,77 @@ void fluidField() {
     CHECK(field.process() && field.steps() == 6);
 }
 
+world::FluidParticles3D::Options fluidParticleOptions() {
+    world::FluidParticles3D::Options o;
+    o.capacity = 12; o.min = {-1, -1, -1}; o.max = {1, 1, 1}; o.voxelSize = 0.25;
+    return o;
+}
+
+void fluidParticlesIr() {
+    const auto o = fluidParticleOptions();
+    CHECK(o.iterations == 3 && o.viscosity == 0.008 && o.cohesion == 0.03 && o.vorticity == 0.015);
+    for (int k = 0; k < world::FluidParticles3D::Count; ++k) {
+        const Program p = world::FluidParticles3D::kernel(static_cast<world::FluidParticles3D::Kernel>(k), o);
+        for (const Diagnostic& d : p.diagnostics()) std::fprintf(stderr, "kernel %d %s: %s\n", k, d.code.c_str(), d.reason.c_str());
+        const auto module = buildStage(p, 0);
+        for (const std::string& error : module.wgsl.errors) std::fprintf(stderr, "kernel %d: %s\n", k, error.c_str());
+        CHECK(p.ok() && module.wgsl.ok());
+        CHECK(module.wgsl.code.find("global_invocation_id") != std::string::npos);
+        CHECK(module.bindings.size() <= 8);
+    }
+}
+
+void fluidParticles() {
+    Device device;
+    auto run = [&](bool broken) {
+        auto o = fluidParticleOptions();
+        if (broken) o.iterations = 0; // Red control: bypass only the density constraint.
+        world::FluidParticles3D fluid(device.context.getDevice(), *device.gpu, o);
+        CHECK(fluid.error().empty());
+        if (!fluid.error().empty()) { std::fprintf(stderr, "%s\n", fluid.error().c_str()); return std::pair<std::vector<float>, std::vector<float>>{}; }
+        for (uint32_t i = 0; i < 12; ++i)
+            CHECK(fluid.emit({(int(i % 3) - 1) * 0.1, (int(i / 3 % 2) - 0.5) * 0.1, (int(i / 6) - 0.5) * 0.1},
+                {0.1 + (i % 3) * 0.07, 0.25, -0.08 + (i / 6) * 0.1}));
+        for (int tick = 0; tick < 6; ++tick) CHECK(fluid.process());
+        CHECK(fluid.steps() == 6);
+        auto positions = device.read(fluid.positions(), 48), velocities = device.read(fluid.velocities(), 48);
+        const auto volume = device.read(fluid.density(), 512);
+        CHECK(volume.size() == 512 && std::all_of(volume.begin(), volume.end(), [](float v) { return std::isfinite(v) && v >= 0; }));
+        CHECK(std::any_of(volume.begin(), volume.end(), [](float v) { return v > 0; }));
+        fluid.release(); CHECK(fluid.process() && fluid.steps() == 6);
+        return std::pair{positions, velocities};
+    };
+    const auto [positions, velocities] = run(false);
+    const auto [redPositions, redVelocities] = run(true);
+    // Absolute bounds: 0.2 mm on positions, 0.02 m/s on velocity/foam. Atomic grid insertion
+    // permutes f32 neighbour sums; pow/sqrt/FMA differ across WGSL backends. Eighteen PBF
+    // iterations accumulate rounding, then velocity reconstruction amplifies it by 1/dt = 60.
+    // Every component must match; no aggregate error can hide an individual particle failure.
+    const auto compareAbsolute = [](const std::vector<float>& got, const std::vector<float>& want, float tolerance) {
+        float worst = 0;
+        CHECK(got.size() == 48 && want.size() == 48);
+        for (size_t i = 0; i < std::min(got.size(), want.size()); ++i) {
+            CHECK(std::isfinite(got[i]) && std::isfinite(want[i]));
+            worst = std::max(worst, std::fabs(got[i] - want[i]));
+        }
+        std::printf("fluid particles: max absolute error %.9g, bound %.9g\n", worst, tolerance);
+        CHECK(worst <= tolerance);
+    };
+    const auto wantPositions = reference("fluid-particles", "positions");
+    const auto wantVelocities = reference("fluid-particles", "velocities");
+    compareAbsolute(positions, wantPositions, 2e-4f);
+    compareAbsolute(velocities, wantVelocities, 0.02f);
+    compareAbsolute(redPositions, reference("fluid-particles", "unconstrainedPositions"), 2e-4f);
+    compareAbsolute(redVelocities, reference("fluid-particles", "unconstrainedVelocities"), 0.02f);
+    float redPositionError = 0, redVelocityError = 0;
+    for (size_t i = 0; i < std::min(redPositions.size(), wantPositions.size()); ++i)
+        redPositionError = std::max(redPositionError, std::fabs(redPositions[i] - wantPositions[i]));
+    for (size_t i = 0; i < std::min(redVelocities.size(), wantVelocities.size()); ++i)
+        redVelocityError = std::max(redVelocityError, std::fabs(redVelocities[i] - wantVelocities[i]));
+    std::printf("density disabled red control: position error %.9g, velocity error %.9g\n", redPositionError, redVelocityError);
+    CHECK(redPositionError > 2e-4f && redVelocityError > 0.02f);
+}
+
 }  // namespace
 
-TN_TEST_MAIN({"instance_grid", instanceGrid}, {"particles_lifetime", particlesLifetime}, {"fluid_field", fluidField}, {"fluid_ir", fluidIr})
+TN_TEST_MAIN({"instance_grid", instanceGrid}, {"particles_lifetime", particlesLifetime}, {"fluid_field", fluidField}, {"fluid_ir", fluidIr}, {"fluid_particles", fluidParticles}, {"fluid_particles_ir", fluidParticlesIr})

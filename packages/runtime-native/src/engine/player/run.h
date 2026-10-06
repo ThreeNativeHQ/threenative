@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <functional>
 #include <string>
+#include <vector>
 
 #include "engine/foundation/json.h"
 #include "engine/scene/object3d.h"

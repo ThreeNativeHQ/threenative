@@ -189,7 +189,7 @@ public:
      * after them by renderOrder, then depth back to front, then id.
      */
     uint64_t render(std::span<const DrawItem> items, const CameraState& camera, const LightState& lights,
-                    std::array<double, 4> clear = {0, 0, 0, 1});
+                    std::array<double, 4> clear = {0, 0, 0, 0});
     /**
      * Draws the last render() output into `target` and submits it, so a windowed player puts the
      * very same frame on the screen the render database just built. `format` is the target view's

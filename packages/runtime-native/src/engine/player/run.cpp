@@ -142,6 +142,10 @@ int run(const Game& game) {
     const uint32_t height = presenter ? presenter->height() : kHeight;
     renderer.setSize(width, height);
     renderer.setOutput(OutputState{shader::ToneMapping::ACESFilmic, 1, true});
+    struct Shutdown {
+        const Game& game;
+        ~Shutdown() { if (game.shutdown) game.shutdown(); }
+    } shutdown{game}; // also releases game resources if an update or admission throws
     if (game.initialize)
         game.initialize(renderer);
 
@@ -243,9 +247,6 @@ int run(const Game& game) {
         mailbox.poll(endpoint);
         renderFrame();
     }
-    if (game.shutdown)
-        game.shutdown();
-
 #if defined(__APPLE__)
     if (window.metalView)
         SDL_Metal_DestroyView(window.metalView);

@@ -646,7 +646,8 @@ tn_native_engine_target(tn-native-engine-fixture-driver)
 # The differential ctests run it, so every test aggregate rebuilds it.
 set_property(GLOBAL APPEND PROPERTY TN_NATIVE_ENGINE_TEST_TARGETS tn-native-engine-fixture-driver)
 tn_native_engine_test(tn-native-engine-fixture-protocol-test tests/native-engine/fixture_driver_test.cpp
-    native_engine_fixture_protocol=protocol native_engine_fixture_node_materials=node_materials)
+    native_engine_fixture_protocol=protocol native_engine_fixture_node_materials=node_materials
+    native_engine_fixture_light_targets=light_targets)
 target_link_libraries(tn-native-engine-fixture-protocol-test PRIVATE tn_fixture_driver)
 
 # PRD-501 phases 1 and 2 and PRD-508 phase 2: the ported math and scene classes against the pinned

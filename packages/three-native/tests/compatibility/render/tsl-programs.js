@@ -140,37 +140,38 @@ export const programs = {
     await renderer.backend.device.queue.onSubmittedWorkDone();
   },
   async "fluid-particles"({ target, scene, renderer }) {
-    // Isolated emitted particles: iterations and pair forces off. This fixture proves buffer-driven
-    // fluid rendering after prediction/velocity reconstruction; density constraints need their own proof.
+    if (renderer.backend.isWebGPUBackend !== true) throw new Error("fluid fixture needs WebGPU");
+    // IRendererLike uses kind/compute/readback; Three's raw renderer does not implement kind.
+    const attached = {
+      kind: "webgpu",
+      compute: (node) => renderer.compute(node),
+      readback: (attribute) => renderer.getArrayBufferAsync(attribute),
+    };
     const fluid = new FluidParticles3D({
       capacity: PARTICLE_COUNT,
-      spacing: 0.15,
-      bounds: { min: [-3, -3, -3], max: [3, 3, 3] },
-      iterations: 0,
-      viscosity: 0,
-      cohesion: 0,
-      vorticity: 0,
-      gravity: 1.2,
-      maxSpeed: 1,
-      voxelSize: 1,
-      readbackEvery: 1000,
+      bounds: { min: [-1, -1, -1], max: [1, 1, 1] },
+      voxelSize: 0.25,
     });
     particleMaterial(target.material);
     target.material.positionNode = fluid.positions.toAttribute().xyz;
     target.count = PARTICLE_COUNT;
     target.frustumCulled = false;
     scene.add(fluid);
-    fluid.attachRenderer(renderer);
+    fluid.attachRenderer(attached);
     for (let i = 0; i < PARTICLE_COUNT; ++i) {
       if (
         !fluid.emit(
-          [((i % 4) - 1.5) * 1.1, (Math.floor(i / 4) - 1) * 0.85, ((i % 3) - 1) * 0.2],
-          [0.1, 0.25, -0.08],
+          [
+            ((i % 3) - 1) * 0.1,
+            ((Math.floor(i / 3) % 2) - 0.5) * 0.1,
+            (Math.floor(i / 6) - 0.5) * 0.1,
+          ],
+          [0.1 + (i % 3) * 0.07, 0.25, -0.08 + Math.floor(i / 6) * 0.1],
         )
       )
         throw new Error("fluid fixture emission refused");
     }
-    for (let i = 0; i < PARTICLE_STEPS; ++i) fluid.process(renderer);
+    for (let i = 0; i < PARTICLE_STEPS; ++i) fluid.process();
     await renderer.backend.device.queue.onSubmittedWorkDone();
   },
   async "nodemat-color-uv"({ target }) {

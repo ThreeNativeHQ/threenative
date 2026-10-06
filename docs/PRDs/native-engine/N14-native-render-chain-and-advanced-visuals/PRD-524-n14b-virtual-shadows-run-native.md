@@ -40,8 +40,8 @@ which pages.
 #### Phase 2: Rendered parity
 **Status:** NOT STARTED
 **Files:** `packages/runtime-native/conformance/registry.json`
-- [ ] A VSM fixture scene renders shadows within tolerance of the legacy backend's output. proof: `pnpm parity` (new case `native-engine-vsm`)
-- [ ] A deformed caster casts its deformed shadow into virtual pages. proof: `pnpm parity` (new case `native-engine-vsm-deformation`)
+- [x] A VSM fixture scene renders shadows within tolerance of the legacy backend's output. proof: `pnpm parity` (new case `native-engine-vsm`) — 2026-10-06: green on Dawn (NVIDIA Turing): `pnpm parity -- --suite native-engine-vsm --driver packages/runtime-native/build/tn-linux/tn-native-engine-render-driver --renders`, fixture `vsm-basic` passes against the browser golden of the shipped VirtualShadowNode (cached fine and coarse pages on Standard and Lambert receivers; budget 1% pixels, 0.02 ΔE). The native page atlas, page table, caster passes and lit sampling live in src/engine/renderer/shadows/virtual/ and standard.cpp. Red control: the VSM shadow factor dropped from the lit program fails all three VSM fixtures.
+- [x] A deformed caster casts its deformed shadow into virtual pages. proof: `pnpm parity` (new case `native-engine-vsm-deformation`) — 2026-10-06: green on Dawn: fixture `vsm-deformation` (a positionNode caster) passes in the same suite; the caster passes run the material's positionNode. Same red control.
 - [ ] A camera cut reseeds the page cache with no stale-page frame. proof: `pnpm parity` (new case `native-engine-vsm-cut`)
 
 ## Blocked on
