@@ -323,6 +323,7 @@ it("fails a candidate event in every candidate run and no reference run", async 
   const result = scoreWorldVisualBundle(f.out, files);
   expect(result.exitCode).toBe(1);
   expect(result.popping.some((event) => event.disallowed && event.candidate)).toBe(true);
+  expect(result.intermittent).toEqual([]);
 });
 
 it("does not fail when a reference run shows the same event", async () => {
@@ -335,15 +336,101 @@ it("does not fail when a reference run shows the same event", async () => {
   const result = scoreWorldVisualBundle(f.out, files);
   expect(result.exitCode).toBe(0);
   expect(result.popping.some((event) => event.disallowed)).toBe(false);
+  expect(result.intermittent).toEqual([]);
 });
 
-it("does not fail when only one candidate run shows the event", async () => {
+it.each([
+  ["appear", 25],
+  ["lod-swap", 20],
+  ["disappear", 300],
+  ["missing", 300],
+] as const)(
+  "needs more runs for intermittent candidate-only %s at %s meters",
+  async (kind, distance) => {
+    const f = await multiReady();
+    const files = verdicts(f);
+    const v = read(files[0] as string);
+    const series = seriesFor(f, "after")[0] as string;
+    if (kind === "missing") missingInto(v, series);
+    else poppingInto(v, series, kind, distance);
+    write(files[0] as string, v);
+    const result = scoreWorldVisualBundle(f.out, files);
+    expect(result).toMatchObject({
+      exitCode: 2,
+      verdict: "inconclusive",
+      reason: "needs more runs",
+    });
+    expect(result.intermittent).toEqual([
+      {
+        critic: "unit-test-1",
+        series,
+        kind,
+        distanceMeters: distance,
+        candidateRuns: 1,
+        referenceRuns: 0,
+      },
+    ]);
+    expect(result.popping.every((event) => !event.disallowed)).toBe(true);
+  },
+);
+
+it.each(["appear", "lod-swap"] as const)(
+  "reports far intermittent %s without blocking a pass",
+  async (kind) => {
+    const f = await multiReady();
+    const files = verdicts(f);
+    const v = read(files[0] as string);
+    poppingInto(v, seriesFor(f, "after")[0] as string, kind, 26);
+    write(files[0] as string, v);
+    const result = scoreWorldVisualBundle(f.out, files);
+    expect(result.exitCode).toBe(0);
+    expect(result.intermittent).toHaveLength(1);
+  },
+);
+
+it("counts distinct runs per critic and suppresses intermittency only for that critic's reference", async () => {
+  const f = await multiReady(2, 3);
+  const files = verdicts(f);
+  const v = read(files[0] as string);
+  const other = read(files[1] as string);
+  const reference = seriesFor(f, "before")[0] as string;
+  for (let i = 0; i < 2; i += 1)
+    poppingInto(v, seriesFor(f, "after")[0] as string, "disappear", 20);
+  poppingInto(other, reference, "disappear", 20);
+  write(files[0] as string, v);
+  write(files[1] as string, other);
+  const result = scoreWorldVisualBundle(f.out, files);
+  expect(result.exitCode).toBe(2);
+  expect(
+    result.intermittent.every((event) => event.candidateRuns === 1 && event.referenceRuns === 0),
+  ).toBe(true);
+  poppingInto(v, reference, "disappear", 20);
+  write(files[0] as string, v);
+  expect(scoreWorldVisualBundle(f.out, files)).toMatchObject({ exitCode: 0, intermittent: [] });
+});
+
+it("scores intermittent events through the CLI and allows an explicit pass override", async () => {
   const f = await multiReady();
   const files = verdicts(f);
   const v = read(files[0] as string);
   poppingInto(v, seriesFor(f, "after")[0] as string, "disappear", 20);
   write(files[0] as string, v);
-  expect(scoreWorldVisualBundle(f.out, files).exitCode).toBe(0);
+  const args = ["--score", f.out, ...files.flatMap((file) => ["--verdict", file])];
+  expect(runCli(args)).toBe(2);
+  expect(read(path.join(f.out, "score.json"))).toMatchObject({
+    verdict: "inconclusive",
+    reason: "needs more runs",
+    intermittent: [{ candidateRuns: 1 }],
+  });
+  expect(runCli([...args, "--allow-intermittent"])).toBe(0);
+  expect(read(path.join(f.out, "score.json"))).toMatchObject({
+    verdict: "pass",
+    intermittent: [{ candidateRuns: 1 }],
+  });
+  for (const label of seriesFor(f, "after")) poppingInto(v, label, "appear", 20);
+  write(files[0] as string, v);
+  expect(runCli(args)).toBe(1);
+  expect(runCli([...args, "--allow-intermittent"])).toBe(1);
 });
 
 it("fails a candidate missing event present in every candidate run only", async () => {

@@ -32,6 +32,14 @@ missing data. The candidate fails if any critic reports popping at or inside `ne
 A reference-arm event is reported but does not by itself fail the candidate. With multiple runs
 per side, a candidate event counts only when the same critic reports it in every candidate run
 and in no reference run; an event the reference shows too is run-to-run noise, not a regression.
+Candidate-only events reported in some but not all candidate runs appear in score JSON as
+`intermittent: [{critic, series, kind, distanceMeters, candidateRuns, referenceRuns}]`.
+Run counts are distinct captures reported by the same critic for the same transition, kind and
+element; each entry names a reporting candidate series. An event at or inside the near band,
+or of kind `missing`/`disappear` at any distance, makes the verdict `inconclusive` (exit 2,
+`reason: "needs more runs"`) unless a measured regression already requires exit 1. Score with
+`--allow-intermittent` to permit a pass despite these events; they remain in the JSON and the
+flag never overrides a measured regression. Other intermittent events retain the usual verdict.
 
 A bundle may carry more than two anonymous series: a side is captured more than once because
 streaming arrival makes a single run unreliable. Judge every series on its own. When comparing
@@ -113,7 +121,7 @@ pnpm visuals:world --score artifacts/world-gate --verdict critic-1.json --verdic
 ```
 
 Only share artifacts/world-gate/blind with critics. Keep the rest private until judging is
-complete. Bundle-only exits 2 (unjudged); malformed, missing, stale or mutated evidence also
+complete. Bundle-only exits 2 (unjudged); inconclusive, malformed, missing, stale or mutated evidence also
 exits 2. A complete candidate reaches exit 0 only if every same-pose median is at least 4/5,
 no same-pose row is a measured LOSS at the duplicate-calibrated resolution, no candidate
 near-band popping event is reported, and no candidate `missing` event is reported at any
