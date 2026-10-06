@@ -8,6 +8,7 @@ import {
   findResourceFindings,
   findScriptMarkers,
   findSymbolFindings,
+  findWorldModuleFindings,
   inspect,
 } from "../scripts/inspect-js-free.mjs";
 
@@ -23,6 +24,32 @@ function compile(name, source) {
 }
 
 describe("inspect-js-free", () => {
+  it("rejects every TS world module, including emitted JS and bare bundler IDs", () => {
+    for (const module of ["world-cells", "world-tiles", "world-gpu-scene", "world-package"]) {
+      for (const suffix of [".ts", ".js", ".mjs", ""]) {
+        expect(findWorldModuleFindings(Buffer.from(`packages/core/src/${module}${suffix}`), "fixture")).toHaveLength(1);
+      }
+    }
+    expect(findWorldModuleFindings(Buffer.from("engine/world/cells/world_cells.cpp"), "native")).toEqual([]);
+    for (const source of ["export class WorldCells extends Group {}", "TerrainTiles=class extends Object3D{}",
+      "class WorldGpuScene{}", "export function validateWorldPackage(input){}", "function cullAndSelect(input){}"])
+      expect(findWorldModuleFindings(Buffer.from(source), "embedded source")).toHaveLength(1);
+  });
+
+  it("fails closed on a non-world artifact and finds a world module hidden in a data resource", () => {
+    const binary = join(work, "non-world");
+    writeFileSync(binary, "ELF metadata fixture");
+    const resources = join(work, "world-resources");
+    mkdirSync(resources);
+    writeFileSync(join(resources, "bundle.dat"), "// packages/core/src/world-gpu-scene.ts\n");
+    const report = inspect({ binary, resources, nativeWorld: true }, {
+      run: (tool) => tool === "nm" ? "0000 T main\n" : "",
+    });
+    expect(report.jsFree).toBe(false);
+    expect(report.findings.filter((finding) => finding.kind === "missing-native-world")).toHaveLength(3);
+    expect(report.findings).toContainEqual({ kind: "ts-world-module", evidence: "bundle.dat: world-gpu-scene.ts" });
+  });
+
   it("names every VM symbol family, including an undefined import", () => {
     const families = findSymbolFindings([
       "0000 T v8::Isolate::New(v8::Isolate::CreateParams const&)",

@@ -556,16 +556,28 @@ endif()
 # PRD-521 box 37: residency, bounded admission, chunk groups and chain LOD decisions.
 # The test reads its JSON table from disk, which a Wasm test under node cannot; the library still
 # builds for Wasm.
+find_program(TN_WORLD_NODE_EXECUTABLE node)
 if(NOT EMSCRIPTEN)
     tn_native_engine_test(tn-native-engine-world-cells-test tests/native-engine/world/world_cells_test.cpp
-        native_engine_world_cells=world_cells)
+        native_engine_world_cells=world_cells native_engine_admission_budget=admission_budget)
     target_link_libraries(tn-native-engine-world-cells-test PRIVATE tn_engine_world tn_engine_assets)
     target_compile_definitions(tn-native-engine-world-cells-test PRIVATE
         TN_WORLD_CELLS_REFERENCE="${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/world/world_cells_reference.json")
+    if(MSVC)
+        target_link_options(tn-native-engine-world-cells-test PRIVATE "/MAP:$<TARGET_FILE_DIR:tn-native-engine-world-cells-test>/tn-native-engine-world-cells-test.map")
+    endif()
+    # Inspect the real CPU world fixture and its static native closure, not a synthetic empty
+    # executable or the unrelated player. PRD-522's desktop walk is not implemented yet.
+    if(TN_WORLD_NODE_EXECUTABLE)
+        add_test(NAME native_engine_strict_artifact_inspect
+            COMMAND ${TN_WORLD_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/inspect-js-free.mjs
+                --binary $<TARGET_FILE:tn-native-engine-world-cells-test> --native-world)
+        set_tests_properties(native_engine_strict_artifact_inspect PROPERTIES LABELS "native-engine")
+    endif()
 endif()
 if(TN_PNPM_TILES_EXECUTABLE)
     add_test(NAME native_engine_world_cells_reference_current
-        COMMAND ${TN_PNPM_TILES_EXECUTABLE} --workspace-root exec tsx
+        COMMAND ${TN_WORLD_NODE_EXECUTABLE} --import tsx
             packages/runtime-native/tests/native-engine/world/world-cells-reference.ts --check
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../..)
     set_tests_properties(native_engine_world_cells_reference_current PROPERTIES LABELS "native-engine")

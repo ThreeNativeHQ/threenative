@@ -334,6 +334,15 @@ const scenes: IScene[] = [
     actions: [...settle(center(1, 1), 240), ...settle(center(3, 3), 240)],
   },
   {
+    // The spec's 50-us allowance, priced deterministically: the forced first tile is uncharged,
+    // then one priced tile fits. Do not flush loads, so this isolates terrain's shared budget.
+    name: "tinyTerrainAdmission",
+    options: { admissionBudgetMs: 0.05 },
+    collider: true,
+    priced: true,
+    actions: [{ at: center(1, 1) }, ...Array.from({ length: 8 }, () => ({}))],
+  },
+  {
     name: "largeRefilterCap",
     options: { rebuildsPerUpdate: 1e30 },
     actions: pathActions([
@@ -980,6 +989,7 @@ const covered: Record<string, string[]> = {
   ],
   "admits terrain tiles and colliders on the same budget, and still converges": [
     "boundedColliders",
+    "tinyTerrainAdmission",
   ],
   "keeps a refiltered cell drawing what it had until the replacement is ready": ["replacement"],
   "drops the queued work of a cell that left, instead of resuming it into a dead graph": [

@@ -227,7 +227,8 @@ std::vector<WorldCellModel> modelsOf(const Value& input) {
     }
     return models;
 }
-void replay(const Value& scene, std::span<const std::byte> placements, const std::vector<uint16_t>& heights) {
+std::vector<Value> replay(const Value& scene, std::span<const std::byte> placements, const std::vector<uint16_t>& heights, bool admission = false) {
+    std::vector<Value> frames;
     const std::string name = member(scene, "name").string();
     const auto& manifest = member(scene, "manifest");
     const auto& height = member(manifest, "terrain"), &extent = member(manifest, "extent");
@@ -237,7 +238,7 @@ void replay(const Value& scene, std::span<const std::byte> placements, const std
         member(height, "heightMin").number(), member(height, "heightMax").number(),
         member(extent, "minX").number(), member(extent, "minZ").number(), heights, error);
     CHECK(sampler.has_value());
-    if (!sampler) return;
+    if (!sampler) return frames;
     const auto config = optionsOf(member(scene, "options"));
     const auto& tc = member(scene, "terrain");
     ITerrainTilesOptions terrainOptions;
@@ -255,10 +256,10 @@ void replay(const Value& scene, std::span<const std::byte> placements, const std
     PackageHeights grid(std::move(*sampler), terrainOptions.tileSize, terrainOptions.tileResolution);
     auto terrain = TerrainTiles::create(terrainOptions, grid, error);
     CHECK(terrain.has_value());
-    if (!terrain) return;
+    if (!terrain) return frames;
     auto owner = WorldCells::create(manifest, placements, config, &*terrain, error);
     CHECK(owner.has_value());
-    if (!owner) { std::fprintf(stderr, "%s: %s\n", name.c_str(), error.c_str()); return; }
+    if (!owner) { std::fprintf(stderr, "%s: %s\n", name.c_str(), error.c_str()); return frames; }
     double clock = 0, x = 0, z = 0;
     const bool priced = boolean(scene, "priced");
     auto now = [&] { if (priced) clock += 1; return clock; };
@@ -272,6 +273,7 @@ void replay(const Value& scene, std::span<const std::byte> placements, const std
         if (boolean(action, "dispose")) owner->dispose();
         else owner->update(x, z, now, boolean(step, "companionPending"));
         const auto current = snapshot(*owner, *terrain, name == "admissionOrder");
+        if (admission) frames.push_back(current);
         const std::string digest = digestOf(json::stringify(canonical(current)));
         stepDigests += digest;
         stepDigests += '\n';
@@ -304,6 +306,7 @@ void replay(const Value& scene, std::span<const std::byte> placements, const std
     if (digestOf(stepDigests) != member(scene, "digest").string()) differ(name + " digest");
     CHECK(prefix.size() == stored.size());
     owner->dispose();
+    return frames;
 }
 Value chunkSnapshot(const IWorldChunkMerge& result) {
     std::vector<Value> kept, groups;
@@ -319,7 +322,7 @@ Value chunkSnapshot(const IWorldChunkMerge& result) {
         {"keptInstanced", number(result.keptInstanced)}, {"bytes", number(static_cast<double>(result.bytes))},
         {"kept", Value::makeArray(std::move(kept))}, {"groups", Value::makeArray(std::move(groups))}});
 }
-void worldCells() {
+void worldCells(bool admission = false) {
     std::ifstream file(TN_WORLD_CELLS_REFERENCE);
     CHECK(file.good());
     const std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
@@ -334,8 +337,73 @@ void worldCells() {
     CHECK(!member(table, "coverage").items().empty());
     CHECK(!member(table, "scenes").items().empty());
     CHECK(!member(table, "chunks").items().empty());
-    for (const auto& scene : member(table, "scenes").items()) replay(scene, placements, heights);
-    for (const auto& scene : member(table, "chunks").items()) {
+    std::vector<std::string> admissionScenes;
+    std::size_t cases = 0;
+    if (admission) for (const auto& row : member(table, "coverage").items()) {
+        if (member(row, "file").string() != "world-cells-admission.spec.ts") continue;
+        ++cases;
+        CHECK(!member(row, "reproduced").items().empty());
+        for (const auto& lane : member(row, "reproduced").items())
+            if (std::find(admissionScenes.begin(), admissionScenes.end(), lane.string()) == admissionScenes.end())
+                admissionScenes.push_back(lane.string());
+    }
+    std::map<std::string, std::vector<Value>> traces;
+    for (const auto& scene : member(table, "scenes").items()) {
+        const auto& name = member(scene, "name").string();
+        if (admission && std::find(admissionScenes.begin(), admissionScenes.end(), name) == admissionScenes.end()) continue;
+        auto frames = replay(scene, placements, heights, admission);
+        if (admission) traces.emplace(name, std::move(frames));
+    }
+    if (admission) {
+        CHECK(cases == 9 && traces.size() == 8);
+        const auto count = [](const Value& frame, const char* key) { return member(member(frame, "admission"), key).number(); };
+        for (const auto& name : {"boundedAdmission", "boundedColliders"}) {
+            const auto& frames = traces.at(name);
+            CHECK(!frames.empty());
+            std::size_t owed = 0, shared = 0;
+            bool deferred = false;
+            double previous = 0;
+            for (const auto& frame : frames) {
+                CHECK(count(frame, "spentMs") <= 3); // 2 ms budget + one 1 ms unit.
+                if (count(frame, "backlog") > 0) ++owed;
+                deferred |= count(frame, "deferred") > 0;
+                if (member(member(frame, "terrain"), "deferred").number() > 0 && count(frame, "backlog") < previous) ++shared;
+                previous = count(frame, "backlog");
+            }
+            CHECK(owed > 2 && deferred && shared > 0);
+            CHECK(count(frames.back(), "backlog") == 0 && count(frames.back(), "deferred") == 0);
+            CHECK(count(frames.back(), "spentMs") <= 2);
+            CHECK(member(member(frames.back(), "terrain"), "deferred").number() == 0);
+        }
+        const auto& tiny = traces.at("tinyTerrainAdmission");
+        CHECK(tiny.size() == 9);
+        for (std::size_t i = 0; i < tiny.size(); ++i) {
+            CHECK(count(tiny[i], "spentMs") <= 1.05);
+            CHECK(member(member(tiny[i], "terrain"), "residentKeys").items().size() == std::min(2 * (i + 1), std::size_t{9}));
+            CHECK(!member(member(tiny[i], "terrain"), "colliderKeys").items().empty());
+        }
+        for (const auto& name : {"jump1", "jump2"}) {
+            const auto& frames = traces.at(name);
+            CHECK(member(frames.front(), "residentKeys").items().size() == 4);
+            CHECK(member(frames.back(), "residentKeys").items().size() == 4);
+            CHECK(member(member(frames.back(), "pressure"), "cells").number() == 5);
+        }
+        const auto& replacement = traces.at("replacement");
+        CHECK(replacement.size() == 202);
+        CHECK(member(replacement[100], "draws").items().size() > 0);
+        compare(member(replacement[101], "draws"), member(replacement[100], "draws"), "replacement keeps old draws");
+        CHECK(count(replacement[101], "deferred") > 0 && member(replacement[101], "rebuilds").number() > 0);
+        CHECK(json::stringify(member(replacement.back(), "draws")) != json::stringify(member(replacement[100], "draws")));
+        const auto& eviction = traces.at("queuedEviction");
+        CHECK(count(eviction[1], "deferred") > 0);
+        CHECK(count(eviction.back(), "backlog") == 0 && count(eviction.back(), "deferred") == 0);
+        CHECK(member(eviction.back(), "residentKeys").items().empty() && member(eviction.back(), "draws").items().empty());
+        // Native draw decisions match after draining; Three mesh identity and actual rendering
+        // in the spec's draw-equality/refilter/eviction assertions are not a CPU proof.
+        compare(member(traces.at("boundedAdmission").back(), "draws"),
+            member(traces.at("unboundedAdmission").back(), "draws"), "bounded/unbounded draw decisions");
+    }
+    if (!admission) for (const auto& scene : member(table, "chunks").items()) {
         std::vector<IWorldChunkPart> parts;
         for (const auto& item : member(scene, "parts").items()) {
             IWorldChunkPart p;
@@ -355,6 +423,7 @@ void worldCells() {
     for (const auto& refusal : member(table, "refusals").items()) {
         IWorldCellsOptions o;
         const auto option = member(refusal, "option").string();
+        if (admission && option != "admissionBudgetMs") continue;
         const double value = decoded(member(refusal, "value"));
         if (option == "concurrency") o.concurrency = value;
         if (option == "rebuildsPerUpdate") o.rebuildsPerUpdate = value;
@@ -366,8 +435,10 @@ void worldCells() {
         if (owner) differ("refused option accepted: " + option);
         compare(string(error), member(refusal, "expected"), "refusal." + option);
     }
-    std::printf("world cells: %zu observations, %zu differ\n", compared, mismatched);
+    std::printf("%s: %zu observations, %zu differ\n", admission ? "admission budget (9 spec cases)" : "world cells", compared, mismatched);
     CHECK(compared > 0 && mismatched == 0);
 }
+void allWorldCells() { worldCells(); }
+void admissionBudget() { worldCells(true); }
 }
-TN_TEST_MAIN({"world_cells", worldCells})
+TN_TEST_MAIN({"world_cells", allWorldCells}, {"admission_budget", admissionBudget})

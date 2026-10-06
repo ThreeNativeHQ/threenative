@@ -31,6 +31,18 @@ export const SCRIPT_MARKERS = ["//# sourceMappingURL=", "Object.defineProperty(e
 /** Packaged files that are scripts, VM snapshots or bytecode. */
 export const SCRIPT_RESOURCE = /\.(m?js|cjs|jsbundle|hbc)$|(^|[/\\])(snapshot_blob|natives_blob)\.bin$/;
 
+/** Module IDs survive bundling as paths/comments and AOT as source/symbol strings. Accept
+ * emitted JS extensions too; inspecting only .ts would miss a bundled world implementation. */
+export const TS_WORLD_MODULE = /world-(?:cells|tiles|gpu-scene|package)(?:\.(?:tsx?|[cm]?js)\b|(?=[/\\"'\s]|$))/g;
+const TS_WORLD_SOURCE = /\bclass\s+(?:WorldCells|TerrainTiles|WorldGpuScene)\b|\b(?:WorldCells|TerrainTiles|WorldGpuScene)\s*=\s*class\b|\bfunction\s+(?:validateWorldPackage|cellPlacements|cullAndSelect(?:Shadow)?)\s*\(/g;
+export function findWorldModuleFindings(bytes, origin) {
+  const text = bytes.toString("latin1");
+  return [...new Set([...(text.match(TS_WORLD_MODULE) ?? []), ...(text.match(TS_WORLD_SOURCE) ?? [])])].map((module) => ({
+    kind: "ts-world-module",
+    evidence: `${origin}: ${module}`,
+  }));
+}
+
 export function findSymbolFindings(symbols) {
   const findings = [];
   for (const { family, pattern } of VM_SYMBOL_FAMILIES) {
@@ -99,7 +111,7 @@ function listFiles(root) {
   return files;
 }
 
-export function inspect({ binary, resources }, { platform = process.platform, run: execute = run } = {}) {
+export function inspect({ binary, resources, nativeWorld = false }, { platform = process.platform, run: execute = run } = {}) {
   const bytes = readFileSync(binary);
   const { symbols, libraries } = readMetadata(binary, platform, execute);
   if (symbols.length === 0) throw new Error(`TN_JS_FREE_NO_SYMBOLS: ${binary} has no symbol table to inspect`);
@@ -109,6 +121,21 @@ export function inspect({ binary, resources }, { platform = process.platform, ru
     ...findScriptMarkers(bytes),
     ...(resources ? findResourceFindings(listFiles(resources)) : []),
   ];
+  if (nativeWorld) {
+    findings.push(...findWorldModuleFindings(bytes, binary));
+    findings.push(...findWorldModuleFindings(Buffer.from(symbols.join("\n")), "symbols"));
+    if (resources) for (const file of listFiles(resources)) {
+      findings.push(...findWorldModuleFindings(Buffer.from(file), "resource path"));
+      findings.push(...findWorldModuleFindings(readFileSync(join(resources, file)), file));
+    }
+    // Fail closed on a wrong/trivial artifact. This is the CPU WorldCells fixture, not PRD-522's
+    // future desktop walk: it must actually link all three native world implementations it uses.
+    for (const name of ["WorldCells", "TerrainTiles", "validateWorldPackage"]) {
+      if (!symbols.some((symbol) => symbol.includes(`tn::engine::world::${name}`) ||
+          symbol.includes(`${name}@world@engine@tn@@`)))
+        findings.push({ kind: "missing-native-world", evidence: name });
+    }
+  }
   return {
     binary,
     sha256: createHash("sha256").update(bytes).digest("hex"),
@@ -129,6 +156,7 @@ function parseArgs(argv) {
   const options = { capabilities: [] };
   for (let i = 0; i < argv.length; i += 1) {
     const flag = argv[i];
+    if (flag === "--native-world") { options.nativeWorld = true; continue; }
     const value = argv[i + 1];
     if (flag === "--binary") options.binary = value;
     else if (flag === "--resources") options.resources = value;
