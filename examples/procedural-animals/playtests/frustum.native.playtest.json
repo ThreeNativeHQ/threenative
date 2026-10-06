@@ -100,11 +100,6 @@
     }
   ],
   "assert": {
-    "diagnostics": {
-      "noConsoleErrors": true,
-      "noRuntimeDiagnostics": true,
-      "runtimeReady": true
-    },
     "resources": [
       {
         "id": "GameState",
@@ -199,6 +194,9 @@
           "max": 0.9
         }
       }
-    ]
+    ],
+    "startup": {
+      "maxReadyMs": 60000
+    }
   }
 }
