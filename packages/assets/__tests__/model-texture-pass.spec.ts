@@ -683,6 +683,53 @@ describe("embedded model textures", () => {
     ]);
   });
 
+  it.each(["web", "android"] as const)(
+    "compiles 4096 base-colour and normal maps to their separate caps on %s",
+    async (platform) => {
+      const root = await makeTempDir("threenative-model-4096-slot-caps-");
+      await mkdir(path.join(root, "assets"));
+      await writeFile(
+        path.join(root, "assets", "caps.glb"),
+        await fixtureWithTextures({ width: 4096 }),
+      );
+      await compileAssets({
+        cwd: root,
+        concurrency: 1,
+        platform,
+        transcoder: basisTranscoderPaths(),
+        config: {
+          models: {
+            textures: { maxSize: { baseColorTexture: 2048, normalTexture: 1024 } },
+          },
+        },
+      });
+      const manifest = JSON.parse(
+        await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
+      );
+      const output = await new NodeIO()
+        .registerExtensions(ALL_EXTENSIONS)
+        .registerDependencies({ "meshopt.decoder": MeshoptDecoder })
+        .read(path.join(root, "public", manifest.entries["caps.glb"].output));
+      const material = output.getRoot().listMaterials()[0];
+      for (const [texture, expected] of [
+        [material?.getBaseColorTexture(), 2048],
+        [material?.getNormalTexture(), 1024],
+      ] as const) {
+        expect(texture).toBeTruthy();
+        const image = texture?.getImage() ?? new Uint8Array();
+        const dimensions =
+          texture?.getMimeType() === "image/ktx2"
+            ? readKTX2(image)
+            : PNG.sync.read(Buffer.from(image));
+        expect(
+          "pixelWidth" in dimensions
+            ? [dimensions.pixelWidth, dimensions.pixelHeight]
+            : [dimensions.width, dimensions.height],
+        ).toEqual([expected, expected]);
+      }
+    },
+  );
+
   it("should never upscale", async () => {
     const document = await new NodeIO().readBinary(await fixtureWithTextures({ width: 512 }));
     await compressEmbeddedTextures(document, "small.glb", {
