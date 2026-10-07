@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  Box3,
   BoxGeometry,
   type BufferGeometry,
   DepthTexture,
@@ -13,6 +14,9 @@ import {
   MeshBasicMaterial,
   type Object3D,
   PerspectiveCamera,
+  Ray,
+  Vector3,
+  WebGPUCoordinateSystem,
 } from "three";
 // @ts-expect-error Three's render-object module has no public declaration; this test exercises the
 // draw gate itself, which is what the submission contract is about.
@@ -24,6 +28,7 @@ import {
   type IKernelOcclusion,
   type IOcclusionFrame,
   buildDepthPyramid,
+  occludedBy,
 } from "../src/render/depth-pyramid.js";
 import type { IRendererLike } from "../src/renderer.js";
 import { isStatic } from "../src/static-transform.js";
@@ -928,6 +933,143 @@ describe("the CPU reference's pyramid occlusion test", () => {
     const culled = run([0, 0, 20], 1, occlusion(true));
     expect(culled.counts[0]).toBe(0);
     expect(culled.occluded).toEqual({ instances: 1, triangles: 12 });
+  });
+
+  it.each([0, 0.9])("keeps visible tall thin trees above foreground terrain at yaw %s", (yaw) => {
+    const width = 128;
+    const height = 73;
+    const camera = new PerspectiveCamera(60, width / height, 0.1, 1000);
+    camera.coordinateSystem = WebGPUCoordinateSystem;
+    camera.updateProjectionMatrix();
+    camera.rotation.y = yaw;
+    camera.updateMatrixWorld(true);
+    const boxes = [-12, -6, 0, 6, 12].map((x) => {
+      const centre = new Vector3(x, 16, -40).applyMatrix4(camera.matrixWorld);
+      return { centre, box: new Box3().setFromCenterAndSize(centre, new Vector3(0.9, 8, 0.9)) };
+    });
+    const distance = new Float32Array(width * height);
+    const visible = new Set<number>();
+    const hit = new Vector3();
+    const ray = new Ray();
+    // Render thin boxes, far terrain and foreground ground into top-left-origin WebGPU depth.
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        ray.origin.copy(camera.position);
+        ray.direction
+          .set((2 * (x + 0.5)) / width - 1, 1 - (2 * (y + 0.5)) / height, 0.5)
+          .unproject(camera)
+          .sub(ray.origin)
+          .normalize();
+        let far = ray.direction.y < 0 ? -2 / ray.direction.y : 500;
+        let owner = -1;
+        for (const [index, tree] of boxes.entries()) {
+          if (ray.intersectBox(tree.box, hit) !== null && hit.distanceTo(ray.origin) < far) {
+            far = hit.distanceTo(ray.origin);
+            owner = index;
+          }
+        }
+        if (owner >= 0) visible.add(owner);
+        hit
+          .copy(ray.direction)
+          .multiplyScalar(far)
+          .add(ray.origin)
+          .applyMatrix4(camera.matrixWorldInverse);
+        // Perspective depth is nonlinear; the pyramid compares decoded view-axis metres.
+        const viewDistance = -hit.z;
+        const stored =
+          (camera.far * (viewDistance - camera.near)) / ((camera.far - camera.near) * viewDistance);
+        distance[y * width + x] =
+          (camera.near * camera.far) / (camera.far - stored * (camera.far - camera.near));
+      }
+    }
+    expect(visible.size).toBe(boxes.length);
+    const frame = {
+      cut: false,
+      width,
+      height,
+      viewProjection: Float32Array.from(
+        new Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse).elements,
+      ),
+    };
+    const frustum = new Frustum().setFromProjectionMatrix(
+      new Matrix4().fromArray(frame.viewProjection),
+      WebGPUCoordinateSystem,
+    );
+    const planes = Float32Array.from(
+      frustum.planes.flatMap((plane) => [
+        plane.normal.x,
+        plane.normal.y,
+        plane.normal.z,
+        plane.constant,
+      ]),
+    );
+    const result = cullAndSelect({
+      camera: { planes, x: 0, y: 0, z: 0 },
+      count: boxes.length,
+      occlusion: { cull: true, frame, pyramid: buildDepthPyramid(distance, width, height) },
+      placements: boxes.map(({ centre, box }) =>
+        placement(centre.x, centre.y, centre.z, 0, box.getSize(new Vector3()).length() / 2),
+      ),
+      regionCount: 1,
+      regions: [region],
+      slots: [{ cull: undefined, distances: [0], levels: [{ firstKey: 0, parts: 1 }] }],
+    });
+    expect(result.occluded?.instances).toBe(0);
+    expect(result.counts[0]).toBe(boxes.length);
+  });
+
+  it("covers a visible sphere edge when a quarter-turn zeroes the view-projection diagonal", () => {
+    const camera = new PerspectiveCamera(60, 1, 0.1, 1000);
+    camera.rotation.y = Math.PI / 2;
+    camera.updateMatrixWorld(true);
+    const centre = new Vector3(0.5, 0, -20).applyMatrix4(camera.matrixWorld);
+    const distance = new Float32Array(64 * 36).fill(10);
+    // A narrow opening in a 10 m wall exposes the sphere's left edge at 18 m.
+    distance[18 * 64 + 22] = 18;
+    expect(
+      occludedBy(
+        {
+          ...occlusion(true),
+          frame: {
+            ...occlusion(true).frame,
+            viewProjection: Float32Array.from(
+              new Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
+                .elements,
+            ),
+          },
+          pyramid: buildDepthPyramid(distance, 64, 36),
+        },
+        centre.toArray(),
+        4,
+      ),
+    ).toBe(false);
+  });
+
+  it("reads the selected mip's footprint rather than base-resolution coordinates", () => {
+    const distance = new Float32Array(64 * 36).fill(10);
+    distance[18 * 64 + 32] = 50;
+    expect(
+      run([0, 0, 20], 1, { ...occlusion(true), pyramid: buildDepthPyramid(distance, 64, 36) })
+        .counts[0],
+    ).toBe(1);
+  });
+
+  it("reads top-left texture rows rather than mirroring foreground terrain over visible trees", () => {
+    const distance = new Float32Array(64 * 36).fill(10);
+    distance.fill(50, 0, 64 * 12);
+    const test = { ...occlusion(true), pyramid: buildDepthPyramid(distance, 64, 36) };
+    expect(occludedBy(test, [0, 6, 20], 1)).toBe(false);
+    expect(occludedBy(test, [0, -6, 20], 1)).toBe(true);
+  });
+
+  it("keeps a sphere reaching the camera's positive near plane", () => {
+    expect(
+      occludedBy(
+        { ...occlusion(true, { near: 0.1 }), pyramid: wallPyramid(0.01) },
+        [0, 0, 0.105],
+        0.01,
+      ),
+    ).toBe(false);
   });
 
   it("keeps a sphere that touches the near plane, off screen last frame, or a cut frame", () => {
@@ -3774,15 +3916,15 @@ describe("WorldGpuScene measured occlusion cull", () => {
     world.dispatch(renderer, camera as PerspectiveCamera);
     await flush();
     const report = world.report().occlusion;
-    // The chain is half the depth's own resolution, one level per halving down to one texel.
-    expect(report?.levels).toBe(10);
+    // Ceil each halving so the 640 -> 320 -> ... -> 5 -> 3 -> 2 -> 1 chain loses no edge.
+    expect(report?.levels).toBe(11);
     expect(report?.reason).toBe("");
     expect(report?.instances).toBe(3);
     expect(report?.triangles).toBe(36);
     expect(report?.share).toBeCloseTo(0.6, 6);
     expect(report?.samples).toBe(1);
     // A clear and a cull, plus one dispatch per level of the chain.
-    expect(computes.count).toBe(24);
+    expect(computes.count).toBe(26);
     world.dispose();
   });
 
@@ -3844,11 +3986,11 @@ describe("WorldGpuScene measured occlusion cull", () => {
     world.dispatch(renderer, camera);
     await flush();
     expect(world.report().occlusion?.samples).toBe(1);
-    // 8 -> 9 keeps the half-resolution chain at 4 -> 2 -> 1.
+    // 8 -> 9 expands the half-resolution chain from 4 -> 2 -> 1 to 5 -> 3 -> 2 -> 1.
     depth.image.width = 9;
     world.dispatch(renderer, camera);
     expect(world.report().occlusion?.reason).toContain("depth");
-    expect(world.report().occlusion?.levels).toBe(3);
+    expect(world.report().occlusion?.levels).toBe(4);
     depth = new DepthTexture(9, 8);
     world.dispatch(renderer, camera);
     expect(world.report().occlusion?.reason).toContain("depth");

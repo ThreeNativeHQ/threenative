@@ -2158,6 +2158,12 @@ export class WorldGpuScene {
       this.#occlusionReason = "refused: not a perspective camera";
       return;
     }
+    const raw = renderer.raw as { logarithmicDepthBuffer?: boolean; reversedDepthBuffer?: boolean };
+    if (raw?.logarithmicDepthBuffer || raw?.reversedDepthBuffer || camera.reversedDepth) {
+      this.#previousDepth = undefined;
+      this.#occlusionReason = "refused: nonstandard depth";
+      return;
+    }
     const depth = renderer.scenePassDepth?.();
     const width = depth?.width ?? 0;
     const height = depth?.height ?? 0;
@@ -2937,7 +2943,7 @@ export class WorldGpuScene {
       // into the previous frame's pyramid. Measured only, so the write below happens either way and
       // the indirect counts are develop's.
       const hidden = float(0).toVar();
-      if (this.#occlusion !== "off")
+      if (this.#occlusion !== "off" && this.#pyramid.levels > 0)
         hidden.assign(
           this.#pyramid.occluded(centre.xyz, radius, this.#occlusionView, this.#occlusionCut),
         );

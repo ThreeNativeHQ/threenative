@@ -2,7 +2,7 @@ import { DepthTexture, Matrix4, PerspectiveCamera, Scene } from "three";
 import { context, pass } from "three/tsl";
 import { WGSLNodeBuilder } from "three/webgpu";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DepthPyramid } from "../src/render/depth-pyramid.js";
+import { DepthPyramid, buildDepthPyramid } from "../src/render/depth-pyramid.js";
 import { type IRendererLike, createRenderer } from "../src/renderer.js";
 import { WorldGpuScene } from "../src/world-gpu-scene.js";
 
@@ -31,6 +31,52 @@ function compile(node: unknown, samples: number) {
 }
 
 describe("readable scene depth", () => {
+  it.each(["logarithmicDepthBuffer", "reversedDepthBuffer", "camera.reversedDepth"])(
+    "keeps frustum-only culling when the renderer uses %s",
+    (setting) => {
+      const world = new WorldGpuScene();
+      world.key("pine:0:0", Float32Array.from(new Matrix4().elements), 16, {
+        group: "pine:0",
+        part: 0,
+        parts: 1,
+      });
+      const scenePassDepth = vi.fn(() => ({
+        texture: new DepthTexture(8, 8),
+        width: 8,
+        height: 8,
+      }));
+      const dispatches: unknown[] = [];
+      const renderer = {
+        kind: "webgpu",
+        raw: { [setting]: true, backend: { hasFeature: () => true } },
+        compute: (node: unknown) => {
+          dispatches.push(...(Array.isArray(node) ? node : [node]));
+        },
+        scenePassDepth,
+      } as unknown as IRendererLike;
+      world.enable(renderer, true, false, false, "measure");
+      const camera = new PerspectiveCamera();
+      if (setting === "camera.reversedDepth")
+        Object.defineProperty(camera, "reversedDepth", { value: true });
+      world.dispatch(renderer, camera);
+      expect(scenePassDepth).not.toHaveBeenCalled();
+      expect(world.report().occlusion?.reason).toBe("refused: nonstandard depth");
+      expect(dispatches).toHaveLength(2);
+      for (const node of dispatches) expect(compile(node, 1).computeShader).not.toContain("log2");
+      world.dispose();
+    },
+  );
+
+  it("keeps the farthest edge texel through odd-sized reductions", () => {
+    const distance = new Float32Array(7 * 5).fill(10);
+    distance[distance.length - 1] = 500;
+    expect(buildDepthPyramid(distance, 7, 5).levels.at(-1)?.distance[0]).toBe(500);
+    const pyramid = new DepthPyramid();
+    pyramid.resize(7, 5);
+    expect(pyramid.levels).toBe(3);
+    pyramid.dispose();
+  });
+
   it("uses the implicit framebuffer attachment without changing targets or texture bookkeeping", async () => {
     vi.stubGlobal("navigator", { gpu: {} });
     const canvas = new EventTarget() as HTMLCanvasElement;

@@ -14,9 +14,11 @@ import {
   log2,
   max,
   min,
+  pow,
   storage,
   textureLoad,
   uniform,
+  vec3,
   vec4,
 } from "three/tsl";
 import { StorageBufferAttribute } from "three/webgpu";
@@ -104,6 +106,7 @@ export interface IOcclusionFrame {
   readonly height: number;
   /** A teleport or a projection change: the test is skipped for the whole frame. */
   readonly cut: boolean;
+  readonly near?: number;
 }
 
 /** The pyramid a cull tests against, and whether a hidden placement is dropped or only counted. */
@@ -140,8 +143,8 @@ export function buildDepthPyramid(
 
 /** One level up: the 2x2 maximum of `source`, clamped at the edge so an odd size keeps every texel. */
 function reduceMax(source: IDepthPyramidLevel): IDepthPyramidLevel {
-  const width = Math.max(1, source.width >> 1);
-  const height = Math.max(1, source.height >> 1);
+  const width = Math.max(1, Math.ceil(source.width / 2));
+  const height = Math.max(1, Math.ceil(source.height / 2));
   const next: IDepthPyramidLevel = { width, height, distance: new Float32Array(width * height) };
   for (let y = 0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) {
@@ -166,9 +169,9 @@ function reduceMax(source: IDepthPyramidLevel): IDepthPyramidLevel {
  * Would this placement be hidden from the frame the pyramid came from?
  *
  * The sphere is reprojected into last frame's clip space, where `w` is its view-axis distance, and
- * its screen half-extent in NDC is the radius over that matrix's own diagonal — for a
- * `projection * viewInverse` product the diagonal entries *are* the projection's. The level is the
- * one whose texels are about the size of the footprint, and the answer is whether the sphere's
+ * its screen half-extent bounds both the numerator and perspective divide over the sphere.
+ * Row lengths recover projection scale even after camera rotation. The level is the
+ * one whose texels cover the footprint, and the answer is whether the sphere's
  * nearest point along the view axis is behind the farthest distance the four texels under it hold.
  */
 export function occludedBy(
@@ -179,14 +182,24 @@ export function occludedBy(
   const { frame, pyramid } = occlusion;
   // A camera cut skips the test for the frame: the pyramid is a different camera's depth.
   if (frame.cut) return false;
-  const projected = projectInto(frame, centre, radius);
-  if (projected === undefined) return false;
   const levels = pyramid.levels;
   const base = levels[0] as IDepthPyramidLevel;
-  const level = levels[
-    Math.min(levels.length - 1, Math.max(0, Math.ceil(Math.log2(projected.diameter(base)))))
-  ] as IDepthPyramidLevel;
-  const far = footprintMax(level, projected.at, projected.row, projected.halfX, projected.halfY);
+  const projected = projectInto(frame, centre, radius, base);
+  if (projected === undefined) return false;
+  const index = Math.min(
+    levels.length - 1,
+    Math.max(0, Math.ceil(Math.log2(projected.diameter(base)))),
+  );
+  const level = levels[index] as IDepthPyramidLevel;
+  const far = footprintMax(
+    level,
+    base.width / 2 ** index,
+    base.height / 2 ** index,
+    projected.at,
+    projected.row,
+    projected.halfX,
+    projected.halfY,
+  );
   return projected.w - radius > far;
 }
 
@@ -209,6 +222,7 @@ function projectInto(
   frame: IOcclusionFrame,
   centre: ArrayLike<number>,
   radius: number,
+  base: IDepthPyramidLevel,
 ): IProjectedSphere | undefined {
   const m = frame.viewProjection;
   const x = centre[0] as number;
@@ -216,20 +230,27 @@ function projectInto(
   const z = centre[2] as number;
   // `w` is the view-axis distance: a sphere reaching the near plane has no rect to compare.
   const w = (m[3] as number) * x + (m[7] as number) * y + (m[11] as number) * z + (m[15] as number);
-  if (w <= radius) return undefined;
+  if (w - radius <= (frame.near ?? 0)) return undefined;
   const ndcX =
     ((m[0] as number) * x + (m[4] as number) * y + (m[8] as number) * z + (m[12] as number)) / w;
   const ndcY =
     ((m[1] as number) * x + (m[5] as number) * y + (m[9] as number) * z + (m[13] as number)) / w;
-  const halfX = (radius * Math.abs(m[0] as number)) / w;
-  const halfY = (radius * Math.abs(m[5] as number)) / w;
+  // Expand one base texel for raster edges and the padded last texel of an odd-sized depth.
+  const halfX =
+    (radius * (Math.hypot(m[0] as number, m[4] as number, m[8] as number) + Math.abs(ndcX))) /
+      (w - radius) +
+    2 / base.width;
+  const halfY =
+    (radius * (Math.hypot(m[1] as number, m[5] as number, m[9] as number) + Math.abs(ndcY))) /
+      (w - radius) +
+    2 / base.height;
   if (Math.abs(ndcX) + halfX > 1 || Math.abs(ndcY) + halfY > 1) return undefined;
   return {
     diameter: (base) => Math.max(1, Math.max(halfX * base.width, halfY * base.height)),
     halfX,
     halfY,
-    row: Math.max(0, (ndcY * 0.5 + 0.5) * frame.height - (halfY * frame.height) / 2),
-    at: Math.max(0, (ndcX * 0.5 + 0.5) * frame.width - (halfX * frame.width) / 2),
+    row: 0.5 - ndcY * 0.5,
+    at: ndcX * 0.5 + 0.5,
     w,
   };
 }
@@ -242,13 +263,15 @@ function projectInto(
  */
 function footprintMax(
   level: IDepthPyramidLevel,
+  spanX: number,
+  spanY: number,
   at: number,
   row: number,
   halfX: number,
   halfY: number,
 ): number {
-  const x = Math.min(level.width - 1, Math.floor(at - (halfX * level.width) / 2));
-  const y = Math.min(level.height - 1, Math.floor(row - (halfY * level.height) / 2));
+  const x = Math.max(0, Math.min(level.width - 1, Math.floor((at - halfX / 2) * spanX)));
+  const y = Math.max(0, Math.min(level.height - 1, Math.floor((row - halfY / 2) * spanY)));
   let far = 0;
   for (let dy = 0; dy < 2; dy += 1) {
     for (let dx = 0; dx < 2; dx += 1) {
@@ -338,16 +361,16 @@ export class DepthPyramid {
   resize(depthWidth: number, depthHeight: number): boolean {
     const levels: { width: number; height: number; offset: number }[] = [];
     let span = 0;
-    let width = Math.max(1, depthWidth >> 1);
-    let height = Math.max(1, depthHeight >> 1);
+    let width = Math.max(1, Math.ceil(depthWidth / 2));
+    let height = Math.max(1, Math.ceil(depthHeight / 2));
     // Down to a single texel, and the loop condition is that texel rather than `width > 0`: a `1`
     // halved is `0` and floored back to `1`, so a positive-width test never ends.
     while (true) {
       levels.push({ width, height, offset: span });
       span += width * height;
       if (width === 1 && height === 1) break;
-      width = Math.max(1, width >> 1);
-      height = Math.max(1, height >> 1);
+      width = Math.max(1, Math.ceil(width / 2));
+      height = Math.max(1, Math.ceil(height / 2));
     }
     // The distances start after the table, whose width the loop above only now knows.
     for (const level of levels) level.offset += levels.length * TABLE_WORDS;
@@ -490,8 +513,7 @@ export class DepthPyramid {
    *
    * `centre` is a TSL world position, `radius` its bounding-sphere radius, `viewProjection` the
    * previous frame's `projection * viewInverse` as a `mat4` uniform and `cut` this frame's cut flag.
-   * The matrix holds the projection's diagonal on its diagonal: element 0 is column 0, so its `x` is
-   * `P00`, and element 1's `y` is `P11`.
+   * Matrix row lengths recover projection scale without assuming an unrotated camera.
    *
    * The answer is a float, not a bool: `1` is hidden. A cull kernel runs the test once per part of a
    * placement's level and branches on the answer each time, and a float is what a TSL variable holds
@@ -504,27 +526,41 @@ export class DepthPyramid {
     const w = clip.w;
     const depth = max(w, float(1e-6));
     const ndc = clip.xyz.div(depth);
-    const halfX = abs(viewProjection.element(0).x).mul(radius).div(depth);
-    const halfY = abs(viewProjection.element(1).y).mul(radius).div(depth);
+    const nearest = max(w.sub(radius), float(1e-6));
+    const scaleX = nodes(
+      vec3(viewProjection.element(0).x, viewProjection.element(1).x, viewProjection.element(2).x),
+    ).length();
+    const scaleY = nodes(
+      vec3(viewProjection.element(0).y, viewProjection.element(1).y, viewProjection.element(2).y),
+    ).length();
+    const halfX = nodes(scaleX.add(abs(ndc.x)))
+      .mul(radius)
+      .div(nearest)
+      .add(float(2).div(chain.element(0)));
+    const halfY = nodes(scaleY.add(abs(ndc.y)))
+      .mul(radius)
+      .div(nearest)
+      .add(float(2).div(chain.element(1)));
     // The level a footprint this wide needs, and that level's own row of the table.
-    const row = int(
+    const level = nodes(
       nodes(
         ceil(log2(max(float(1), max(halfX.mul(chain.element(0)), halfY.mul(chain.element(1)))))),
-      )
-        .clamp(0, last)
-        .mul(TABLE_WORDS),
+      ).clamp(0, last),
     ).toVar();
+    const row = int(level.mul(TABLE_WORDS)).toVar();
     const width = chain.element(row);
     const height = chain.element(nodes(row).add(1));
+    const spanX = nodes(chain.element(0)).div(pow(float(2), level));
+    const spanY = nodes(chain.element(1)).div(pow(float(2), level));
     const far = float(0).toVar();
     for (const [dx, dy] of FOOTPRINT) {
       // The footprint spans about one texel of this level, so the 2x2 block under its corner is the
       // whole of it.
-      const x = nodes(ndc.x.mul(0.5).add(0.5).mul(width).sub(halfX.mul(width).div(2)))
+      const x = nodes(ndc.x.mul(0.5).add(0.5).sub(halfX.div(2)).mul(spanX))
         .floor()
         .add(dx)
         .clamp(0, nodes(width).sub(1));
-      const y = nodes(ndc.y.mul(0.5).add(0.5).mul(height).sub(halfY.mul(height).div(2)))
+      const y = nodes(float(0.5).sub(ndc.y.mul(0.5)).sub(halfY.div(2)).mul(spanY))
         .floor()
         .add(dy)
         .clamp(0, nodes(height).sub(1));
@@ -540,7 +576,8 @@ export class DepthPyramid {
       );
     }
     const keeps = w
-      .lessThanEqual(radius)
+      .sub(radius)
+      .lessThanEqual(nodes(this.#nearFar).x)
       .or(ndc.x.abs().add(halfX).greaterThan(1))
       .or(ndc.y.abs().add(halfY).greaterThan(1))
       .or(cut.greaterThan(0.5));
