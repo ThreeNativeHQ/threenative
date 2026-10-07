@@ -1,0 +1,1 @@
+/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/build/intermediates/cxx/Debug/5k3z2i2e/obj/x86_64

@@ -4,7 +4,7 @@
 **Complexity:** 5 — first C++ renderer in the repo; reads native scene state and draws standard materials against a pinned reference
 **Owner:** João
 **Work package:** N09 — [native-engine batch](../../native-engine/README.md)
-**Depends on:** [PRD-508 (N06)](PRD-508-n06-native-scene-graph-transforms-cameras-geometry.md), [PRD-509 (N07)](../../native-engine/PRD-509-n07-gpu-resources-presentation-and-device-loss.md), [N08 shader packages](../../native-engine/N08-native-tsl-and-shader-packages/README.md)
+**Depends on:** [PRD-508 (N06)](PRD-508-n06-native-scene-graph-transforms-cameras-geometry.md), [PRD-509 (N07)](PRD-509-n07-gpu-resources-presentation-and-device-loss.md), [N08 shader packages](../../native-engine/N08-native-tsl-and-shader-packages/README.md)
 
 ## Context
 

@@ -1,5 +1,6 @@
 #include "check.h"
 #include "engine/player/world_walk.h"
+#include "engine/inspect/endpoint.h"
 #include "engine/renderer/render_database.h"
 #include "mystral/webgpu/context.h"
 
@@ -20,6 +21,10 @@ int surfaceToken;
 } // namespace
 // Replace only the window/swapchain seam; the CPU Null device and its texture/view ownership are real.
 extern "C" {
+void __real_wgpuSurfaceUnconfigure(WGPUSurface);
+void __wrap_wgpuSurfaceUnconfigure(WGPUSurface s) {
+    if (!surfaceMock) __real_wgpuSurfaceUnconfigure(s);
+}
 WGPUSurface __real_wgpuInstanceCreateSurface(WGPUInstance, const WGPUSurfaceDescriptor*);
 WGPUSurface __wrap_wgpuInstanceCreateSurface(WGPUInstance i, const WGPUSurfaceDescriptor* d) {
     return surfaceMock ? reinterpret_cast<WGPUSurface>(&surfaceToken) : __real_wgpuInstanceCreateSurface(i, d);
@@ -138,6 +143,22 @@ void surface_lifetime_cpu() {
         CHECK(context.initialize());
         CHECK(context.createSurfaceWithDisplay(&surfaceToken, &surfaceToken, mystral::webgpu::Context::PLATFORM_XLIB));
         surfaceDevice = context.getDevice();
+        inspect::Host host;
+        host.resource = [&context](const std::string&) {
+            return json::Value::makeObject({
+                {"deviceCreations", json::Value::makeNumber(context.deviceCreations())},
+                {"surfaceCreations", json::Value::makeNumber(context.surfaceCreations())}});
+        };
+        inspect::Endpoint endpoint(host);
+        const auto sampled = [&](unsigned surfaces) {
+            json::Value out;
+            json::Error error;
+            CHECK(json::parse(endpoint.handle(R"({"id":"1","method":"sample","argument":{"resources":["surface"]}})"), out, error));
+            const auto* surface = out.find("result")->find("resources")->find("surface");
+            CHECK(surface->find("deviceCreations")->number() == 1);
+            CHECK(surface->find("surfaceCreations")->number() == surfaces);
+        };
+        sampled(1);
         for (int frame = 0; frame < 300; ++frame) {
             const auto view = context.getCurrentTextureView();
             CHECK(view != nullptr && textureRefs == 1 && viewRefs == 1);
@@ -148,6 +169,19 @@ void surface_lifetime_cpu() {
         acquisitionFails = true;
         CHECK(context.getCurrentTextureView() == nullptr && textureRefs == 0 && viewRefs == 0);
         acquisitionFails = false;
+        context.releaseSurface();
+        CHECK(context.getSurface() == nullptr && context.getCurrentTextureView() == nullptr);
+        CHECK(context.getDevice() == surfaceDevice);
+        sampled(1);
+        CHECK(!context.rebuildSurface(&surfaceToken, -1));
+        sampled(1);
+        CHECK(context.rebuildSurface(&surfaceToken, mystral::webgpu::Context::PLATFORM_XLIB));
+        CHECK(context.getDevice() == surfaceDevice);
+        sampled(2);
+        context.releaseSurface();
+        CHECK(context.rebuildSurface(&surfaceToken, mystral::webgpu::Context::PLATFORM_XLIB));
+        CHECK(context.getDevice() == surfaceDevice);
+        sampled(3);
         CHECK(context.getCurrentTextureView() != nullptr); // destruction must release an unpresented view
     }
     CHECK(textureRefs == 0 && viewRefs == 0);

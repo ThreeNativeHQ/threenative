@@ -1,12 +1,17 @@
 import {
   BackSide,
   BoxGeometry,
+  DataTexture,
   DataUtils,
+  EquirectangularReflectionMapping,
+  LinearFilter,
+  LinearMipmapLinearFilter,
   Mesh,
   MeshLambertNodeMaterial,
   PointLight,
   RenderPipeline,
   RenderTarget,
+  SRGBColorSpace,
   Scene,
   Vector3,
 } from "three";
@@ -408,6 +413,30 @@ async function temporalFixture({ renderer, scene, camera, traaDump }, firstCutFr
 }
 
 export const programs = {
+  "sky-equirect"({ target }) {
+    // Asymmetric bands reveal handedness, horizon, rotation, sRGB decode and intensity.
+    const width = 128;
+    const height = 64;
+    const pixels = new Uint8Array(width * height * 4);
+    for (let y = 0; y < height; ++y)
+      for (let x = 0; x < width; ++x) {
+        const at = (y * width + x) * 4;
+        pixels[at] = 20 + ((x * 160) % 220);
+        pixels[at + 1] = 30 + Math.floor((y * 180) / height);
+        pixels[at + 2] = 220 - Math.floor((x * 150) / width);
+        pixels[at + 3] = 255;
+      }
+    const sky = new DataTexture(pixels, width, height);
+    sky.mapping = EquirectangularReflectionMapping;
+    sky.colorSpace = SRGBColorSpace;
+    sky.magFilter = LinearFilter;
+    sky.minFilter = LinearMipmapLinearFilter;
+    sky.needsUpdate = true;
+    target.background = target.environment = sky;
+    target.backgroundIntensity = target.environmentIntensity = 2.5;
+    target.backgroundRotation.set(0.1, 0.4, 0);
+    target.environmentRotation.set(0.1, 0.4, 0);
+  },
   async "traa-history"(context) {
     return temporalFixture(context, false);
   },

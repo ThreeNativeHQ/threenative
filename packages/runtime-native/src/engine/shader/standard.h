@@ -60,6 +60,8 @@ struct StandardMaterial {
  * colour (attribute instanceColor) multiplies the material colour, as setupDiffuseColor does.
  */
 struct VertexVariant {
+    bool background = false;
+    uint8_t fog = 0; // 0 none, 1 Fog (range), 2 FogExp2 (density)
     bool sprite = false;
     bool backSide = false;
     bool instanced = false;
@@ -100,7 +102,7 @@ struct VertexVariant {
     MaterialNodes nodes;
     /** A stable key: two variants with the same key build the same program. */
     [[nodiscard]] std::string key() const {
-        return std::string(sprite ? "sprite|" : "") + (backSide ? "back|" : "") + std::to_string(instanced) + std::to_string(instanceColor) + std::to_string(skinned) +
+        return std::to_string(fog) + (background ? "background|" : "") + std::string(sprite ? "sprite|" : "") + (backSide ? "back|" : "") + std::to_string(instanced) + std::to_string(instanceColor) + std::to_string(skinned) +
                std::to_string(skinnedPalette) + "m" + std::to_string(morphTargets) + (morphNormals ? "n" : "") +
                (map ? "t" : "") + (mapSRGB ? "s" : "") + (environment ? "e" : "") +
                (positionNode ? "p:" + positionNode->key : "") + "|nodes:" + nodes.key();
@@ -188,5 +190,9 @@ StandardPrograms buildBasic(const VertexVariant& variant = {});
  * the same. Returns the alpha to write.
  */
 ExprId materialAlpha(Program& f, ExprId alpha);
+/** Pinned nodes/fog/Fog.js rangeFogFactor / densityFogFactor, shared by all material tails. */
+/** CubeRenderTarget.fromEquirectangularTexture: camera rotation, level-0 equirectUV sample. */
+StandardPrograms buildEquirectangularCube();
+ExprId fogFactor(Program& f, uint8_t kind, ExprId viewZ, ExprId nearOrDensity, ExprId far);
 
 }  // namespace tn::engine::shader

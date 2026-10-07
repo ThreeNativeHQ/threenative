@@ -5,6 +5,10 @@
 #include "engine/player/run.h"
 
 #include <SDL3/SDL.h>
+#if defined(__ANDROID__)
+#include <android/native_window.h>
+#include <android/log.h>
+#endif
 
 #include <cstdint>
 #include <cstdio>
@@ -18,6 +22,7 @@
 #include "engine/renderer/render_database.h"
 #include "engine/world/loop/fixed_step.h"
 #include "mystral/webgpu/context.h"
+#include "mystral/webgpu/presentation.h"
 
 using namespace tn::engine;
 
@@ -28,11 +33,30 @@ namespace {
 constexpr uint32_t kWidth = 1280;
 constexpr uint32_t kHeight = 720;
 constexpr double kTickStep = 1.0 / 60;
+#if defined(__ANDROID__)
+// The legacy Android host uses Immediate/Mailbox at 60 Hz and the software/display pacing cap.
+constexpr bool kSurfaceVsync = false;
+#else
+constexpr bool kSurfaceVsync = true;
+#endif
+
+void startupStage(const char* stage) {
+#if defined(__ANDROID__)
+    __android_log_print(ANDROID_LOG_INFO, "TN_Player", "TN_PLAYER_STAGE: %s", stage);
+#else
+    (void)stage;
+#endif
+}
 
 struct Window {
     SDL_Window* handle = nullptr;
 #if defined(__APPLE__)
     SDL_MetalView metalView = nullptr;
+#endif
+#if defined(__ANDROID__)
+    mystral::webgpu::Context* context = nullptr;
+    std::unique_ptr<Presenter>* presenter = nullptr;
+    bool resumeSurface = false;
 #endif
     uint32_t width = kWidth;
     uint32_t height = kHeight;
@@ -40,11 +64,14 @@ struct Window {
 
 /** The legacy host's platform presentation flags, without web-view or UI branches. */
 bool openWindow(Window& window) {
+#if defined(__ANDROID__)
+    SDL_SetHint(SDL_HINT_ANDROID_BLOCK_ON_PAUSE, "1");
+#endif
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) {
         std::printf("[Playtest] SDL_Init failed: %s\n", SDL_GetError());
         return false;
     }
-#if defined(__linux__)
+#if defined(__linux__) && !defined(__ANDROID__)
     // Dawn's Xlib surface needs the X11 backend, as src/platform/window.cpp forces on Linux.
     SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "x11");
 #endif
@@ -71,7 +98,11 @@ bool openWindow(Window& window) {
 
 /** SDL exposes the native handles needed by the host's existing Dawn surface API. */
 bool surfaceForWindow(mystral::webgpu::Context& context, Window& window) {
-#if defined(__APPLE__)
+#if defined(__ANDROID__)
+    void* native = SDL_GetPointerProperty(SDL_GetWindowProperties(window.handle),
+                                         SDL_PROP_WINDOW_ANDROID_WINDOW_POINTER, nullptr);
+    return native && context.createSurface(native, mystral::webgpu::Context::PLATFORM_ANDROID);
+#elif defined(__APPLE__)
     window.metalView = SDL_Metal_CreateView(window.handle);
     void* layer = window.metalView ? SDL_Metal_GetLayer(window.metalView) : nullptr;
     return layer && context.createSurface(layer, mystral::webgpu::Context::PLATFORM_METAL);
@@ -91,6 +122,21 @@ bool surfaceForWindow(mystral::webgpu::Context& context, Window& window) {
                                            mystral::webgpu::Context::PLATFORM_XLIB);
 #endif
 }
+
+#if defined(__ANDROID__)
+// SDL's Android pump queues this event on the game thread before blocking on pause. A polled
+// handler runs too late: the Java SurfaceView may already have destroyed its ANativeWindow.
+bool SDLCALL lifecycleWatch(void* data, SDL_Event* event) {
+    auto& window = *static_cast<Window*>(data);
+    if (event->type == SDL_EVENT_WILL_ENTER_BACKGROUND) {
+        window.presenter->reset();
+        window.context->releaseSurface();
+        window.resumeSurface = true;
+        startupStage("surface-released"); // acknowledgement before SDL parks the game thread
+    }
+    return true;
+}
+#endif
 
 /** Quits on a close request; the runner ends a run with SIGTERM, not with a window message. */
 bool pumpEvents(Window& window) {
@@ -119,35 +165,61 @@ int run(const Game& game) {
     }
 
     Window window;
+    startupStage("sdl-window-begin");
     const bool windowed = openWindow(window);
+    startupStage(windowed ? "sdl-window-ready" : "sdl-window-failed");
     std::unique_ptr<mystral::webgpu::Context> context;
     std::unique_ptr<Presenter> presenter;
     auto candidate = std::make_unique<mystral::webgpu::Context>();
+    startupStage("webgpu-surface-begin");
     if (windowed && candidate->initialize() && surfaceForWindow(*candidate, window) &&
-        candidate->configureSurface(window.width, window.height, true)) {
+        candidate->configureSurface(window.width, window.height, kSurfaceVsync)) {
         context = std::move(candidate);
         presenter = std::make_unique<Presenter>(*context);
     } else {
         // The window is the product path. Without a display or a surface the game still runs, so a
         // scenario can inspect and advance it; only the presented frame is missing.
+#if defined(__ANDROID__)
+        std::printf("TN_PLAYER_ANDROID_SURFACE_FAILED\n");
+        return 2; // a device run must never silently become headless
+#endif
         std::printf("[Playtest] No presentable surface; running headless.\n");
         context = std::make_unique<mystral::webgpu::Context>();
         if (!context->initializeHeadless())
             return 2;
     }
+    startupStage("webgpu-surface-ready");
 
+#if defined(__ANDROID__)
+    mystral::webgpu::notePresentationFramesStopped();
+    mystral::webgpu::setPresentationCapHz(60);
+    window.context = context.get();
+    window.presenter = &presenter;
+    if (!SDL_AddEventWatch(lifecycleWatch, &window)) {
+        std::fprintf(stderr, "TN_PLAYER_ANDROID_EVENT_WATCH_FAILED: %s\n", SDL_GetError());
+        return 2;
+    }
+    struct WatchGuard {
+        Window& window;
+        ~WatchGuard() { SDL_RemoveEventWatch(lifecycleWatch, &window); }
+    } watchGuard{window};
+#endif
     EventQueue events;
+    startupStage("renderer-begin");
     Renderer renderer(context->getInstance(), context->getDevice(), context->getQueue(), events);
     const uint32_t width = presenter ? presenter->width() : kWidth;
     const uint32_t height = presenter ? presenter->height() : kHeight;
     renderer.setSize(width, height);
     renderer.setOutput(OutputState{shader::ToneMapping::ACESFilmic, 1, true});
+    startupStage("renderer-ready");
     struct Shutdown {
         const Game& game;
         ~Shutdown() { if (game.shutdown) game.shutdown(); }
     } shutdown{game}; // also releases game resources if an update or admission throws
+    startupStage("game-initialize-begin");
     if (game.initialize)
         game.initialize(renderer);
+    startupStage("game-initialize-ready");
 
     world::FixedStepClock clock(kTickStep, 5);
     clock.start(0);
@@ -168,7 +240,11 @@ int run(const Game& game) {
     };
     // What the scenario schema can read: the profile describe reports, a state snapshot a scenario
     // compares across labelled steps, and whatever else the game registers.
-    host.resource = [&game, &clock, &renderer](const std::string& id) -> json::Value {
+    host.resource = [&game, &clock, &renderer, &context](const std::string& id) -> json::Value {
+        if (id == "surface")
+            return json::Value::makeObject({
+                {"deviceCreations", json::Value::makeNumber(context->deviceCreations())},
+                {"surfaceCreations", json::Value::makeNumber(context->surfaceCreations())}});
         if (id == "profile")
             return json::Value::makeObject({{"engine", json::Value::makeString("native")},
                                             {"gameRuntime", json::Value::makeString(game.gameRuntime)}});
@@ -190,6 +266,7 @@ int run(const Game& game) {
 
     player::Mailbox mailbox(player::Mailbox::rootFromEnvironment());
     const bool runner = mailbox.announceReady();
+    startupStage(runner ? "mailbox-ready" : "mailbox-off");
     std::printf("[Playtest] threenative-native-engine ready: game %s, runtime %s, %ux%u, mailbox %s\n",
                 game.name.c_str(), game.gameRuntime.c_str(), renderer.width(), renderer.height(),
                 runner ? "on" : "off");
@@ -197,7 +274,9 @@ int run(const Game& game) {
     RenderDatabase database;
     database.shadowMapEnabled = game.shadowMapEnabled;
     bool readbackInFlight = false;
+    bool firstFrame = true;
     renderFrame = [&] {
+        if (firstFrame) startupStage("first-render-begin");
         if (game.afterRender)  // after the previous frame; between frames, never inside one
             game.afterRender();
 
@@ -210,11 +289,17 @@ int run(const Game& game) {
             std::printf("[Playtest] %s\n", diagnostic.c_str());
         if (presenter) {
             Presenter::Frame target;
+            if (firstFrame) startupStage("first-acquire-begin");
             if (presenter->begin(target)) {
                 // The window carries the very frame the render database just built.
                 renderer.blitTo(context->getQueue(), target.color,
                                 static_cast<WGPUTextureFormat>(context->getPreferredFormat()));
                 presenter->present();
+#if defined(__ANDROID__)
+                mystral::webgpu::paceToPresentationCap();
+#endif
+                if (firstFrame) startupStage("first-present-ready");
+                firstFrame = false;
             }
         }
 
@@ -243,6 +328,23 @@ int run(const Game& game) {
             game.frameComplete(renderer, database.diagnostics());
     };
     while (pumpEvents(window)) {
+#if defined(__ANDROID__)
+        if (window.resumeSurface) {
+            auto* native = static_cast<ANativeWindow*>(SDL_GetPointerProperty(
+                SDL_GetWindowProperties(window.handle), SDL_PROP_WINDOW_ANDROID_WINDOW_POINTER, nullptr));
+            if (!native || ANativeWindow_getWidth(native) <= 0 || ANativeWindow_getHeight(native) <= 0 ||
+                !context->rebuildSurface(native, mystral::webgpu::Context::PLATFORM_ANDROID) ||
+                !context->configureSurface(ANativeWindow_getWidth(native), ANativeWindow_getHeight(native), kSurfaceVsync)) {
+                std::printf("TN_PLAYER_ANDROID_SURFACE_RECREATE_FAILED\n");
+                return 2;
+            }
+            window.width = context->getSurfaceWidth();
+            window.height = context->getSurfaceHeight();
+            presenter = std::make_unique<Presenter>(*context);
+            renderer.setSize(window.width, window.height);
+            window.resumeSurface = false;
+        }
+#endif
         // An advance may render several streaming frames; each tick gets its own admission cap.
         mailbox.poll(endpoint);
         renderFrame();
@@ -250,6 +352,11 @@ int run(const Game& game) {
 #if defined(__APPLE__)
     if (window.metalView)
         SDL_Metal_DestroyView(window.metalView);
+#endif
+#if defined(__ANDROID__)
+    SDL_RemoveEventWatch(lifecycleWatch, &window);
+    presenter.reset();
+    context->releaseSurface();
 #endif
     if (window.handle)
         SDL_DestroyWindow(window.handle);

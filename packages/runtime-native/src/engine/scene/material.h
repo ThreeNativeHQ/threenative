@@ -6,7 +6,7 @@
 // reads (PRD-514). One class carries every type's fields; `type` says which three class it is, and
 // each constructor sets that class's defaults. Skipped: maps other than `map` (only the diffuse map
 // is sampled so far), blending modes other than NormalBlending, stencil, clipping planes, polygon
-// offset, dithering, fog, userData, clone/toJSON. Physical features
+// offset, dithering, userData, clone/toJSON. Physical features
 // beyond ior/specular are kept as numbers so the renderer can refuse them by name (TN_MATERIAL_UNSUPPORTED)
 // rather than drop them.
 
@@ -46,6 +46,7 @@ public:
     Side side = Side::Front;
     bool visible = true;
     bool toneMapped = true;
+    bool fog = true;
     /** NodeMaterial.positionNode: a builder graph replacing the local position; null keeps it. */
     std::shared_ptr<const shader::PositionNode> positionNode;
 

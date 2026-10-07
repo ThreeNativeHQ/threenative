@@ -375,7 +375,7 @@ static LocalVertex localVertex(Program& v, const VertexVariant& variant, bool wi
     }
     const ExprId instanceColor = variant.instanceColor ? v.attribute("instanceColor", Type::vec(3)) : kInvalid;
     // Read last: a map's uv joins the varying set after instanceColor, so the fragment reads it there.
-    const ExprId uv = variant.map ? v.attribute("uv", Type::vec(2)) : kInvalid;
+    const ExprId uv = variant.map && !variant.background ? v.attribute("uv", Type::vec(2)) : kInvalid;
     return {v.construct(Type::vec(4), {position, v.constant(1.0f)}), normal, instanceColor, uv};
 }
 
@@ -390,6 +390,16 @@ static void outputMapUv(Program& v, const LocalVertex& local) {
 
 // three's sRGBTransferEOTF (ColorManagement): one sRGB channel to linear-sRGB, its exact constants
 // and order: `c <= 0.04045 ? c * 0.0773993808 : pow(c * 0.9478672986 + 0.0521327014, 2.4)`.
+// NodeMaterial.setupFog: after lighting/emissive, before tone mapping; alpha is unchanged.
+ExprId fogColor(Program& f, const VertexVariant& variant, ExprId outgoing) {
+    if (!variant.fog) return outgoing;
+    const ExprId viewZ = f.neg(f.swizzle(f.varying("positionView", Type::vec(3)), "z"));
+    const ExprId factor = fogFactor(f, variant.fog, viewZ,
+        f.uniform(variant.fog == 2 ? "fogDensity" : "fogNear", Type::f32()),
+        variant.fog == 2 ? kInvalid : f.uniform("fogFar", Type::f32()));
+    return f.call("mix", {outgoing, f.uniform("fogColor", Type::vec(3)), factor});
+}
+
 static ExprId srgbDecode(Program& f, ExprId channel) {
     const ExprId a = f.call("pow", {f.add(f.mul(channel, f.constant(0.9478672986f)), f.constant(0.0521327014f)),
                                     f.constant(2.4f)});
@@ -760,6 +770,7 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
         const uint32_t env = f.texture2d("env");
         const ExprId envIntensity = f.uniform("envMapIntensity", Type::f32());
         auto flipped = [&](ExprId v) {
+            v = f.swizzle(f.mul(f.uniform("envRotation", Type::mat(4, 4)), f.construct(Type::vec(4), {v, t.f(0)})), "xyz");
             return f.construct(Type::vec(3), {f.swizzle(v, "x"), f.neg(f.swizzle(v, "y")), f.swizzle(v, "z")});
         };
         const ExprId iblIrradiance =
@@ -788,7 +799,7 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
     const ExprId outgoing = f.add(f.add(f.add(directDiffuse, totalIndirectDiffuse), totalSpecular), emissive);
     const ExprId alpha = diffuseAlpha(f, variant, diffuse, texel);
     // Linear HDR out: tone mapping and the output colour space belong to the output pass (output.h).
-    f.output("color", f.construct(Type::vec(4), {outgoing, materialAlpha(f, alpha)}));
+    f.output("color", f.construct(Type::vec(4), {fogColor(f, variant, outgoing), materialAlpha(f, alpha)}));
     linkNodes(out, variant, local);
     for (const Program* stage : {&out.vertex, &out.fragment}) {
         for (const Diagnostic& d : stage->diagnostics()) {
@@ -917,7 +928,7 @@ StandardPrograms buildLit(bool phong, const VertexVariant& variant, const LightL
     const ExprId outgoing = f.add(lighting, emissive);
     const ExprId alpha = diffuseAlpha(f, variant, diffuse, texel);
     // Linear HDR out: tone mapping and the output colour space belong to the output pass (output.h).
-    f.output("color", f.construct(Type::vec(4), {outgoing, materialAlpha(f, alpha)}));
+    f.output("color", f.construct(Type::vec(4), {fogColor(f, variant, outgoing), materialAlpha(f, alpha)}));
     linkNodes(out, variant, local);
     for (const Program* stage : {&out.vertex, &out.fragment}) {
         for (const Diagnostic& d : stage->diagnostics()) {
@@ -936,19 +947,78 @@ StandardPrograms buildBasic(const VertexVariant& variant) {
     StandardPrograms out;
     Program& v = out.vertex;
     const LocalVertex local = localVertex(v, variant, false);
-    v.output("position", v.mul(v.uniform("projectionMatrix", Type::mat(4, 4)),
-                               v.mul(v.uniform("viewMatrix", Type::mat(4, 4)), v.mul(v.uniform("modelMatrix", Type::mat(4, 4)), local.position))));
+    const ExprId viewPosition = v.mul(v.uniform("viewMatrix", Type::mat(4, 4)), v.mul(v.uniform("modelMatrix", Type::mat(4, 4)), local.position));
+    ExprId clip = v.mul(v.uniform("projectionMatrix", Type::mat(4, 4)), viewPosition);
+    if (variant.background) {
+        // Background.js sphere(1,32,32): orthographic scaling is supplied by RenderDatabase.
+        // Model translation cancels camera translation; force z=w, and no depth test/write.
+        clip = v.construct(Type::vec(4), {v.swizzle(clip, "xy"), v.swizzle(clip, "w"), v.swizzle(clip, "w")});
+    }
+    v.output("position", clip);
+    if (variant.fog) v.output("positionView", v.swizzle(viewPosition, "xyz"));
+    if (variant.background) {
+        const ExprId normalView = v.call("normalize", {v.mul(v.uniform("normalMatrix", Type::mat(3, 3)), v.attribute("normal", Type::vec(3)))});
+        const ExprId normalWorld = v.call("normalize", {v.swizzle(v.mul(v.construct(Type::vec(4), {normalView, v.constant(0.0f)}),
+            v.uniform("viewMatrix", Type::mat(4, 4))), "xyz")});
+        v.output("backgroundDirection", normalWorld);
+    }
     outputInstanceColor(v, local);
-    outputMapUv(v, local);
+    if (!variant.background) outputMapUv(v, local);
     Program& f = out.fragment;
     const ExprId diffuse = nodeValue(f, variant.nodes.colorNode, Type::vec(4), f.uniform("diffuse", Type::vec(4)));
-    const ExprId texel = variant.nodes.colorNode ? kInvalid : mapTexel(f, variant);
+    ExprId texel = kInvalid;
+    if (variant.background) {
+        const ExprId normal = f.call("normalize", {f.varying("backgroundDirection", Type::vec(3))});
+        const ExprId direction = f.swizzle(f.mul(f.uniform("backgroundRotation", Type::mat(4, 4)),
+            f.construct(Type::vec(4), {normal, f.constant(0.0f)})), "xyz");
+        // CubeTextureNode.setupUV flips x for the WebGPU coordinate system.
+        const ExprId cubeDirection = f.construct(Type::vec(3), {f.neg(f.swizzle(direction, "x")), f.swizzle(direction, "yz")});
+        texel = f.sampleLevel(f.textureCube("map"), cubeDirection, f.constant(0.0f));
+    } else if (!variant.nodes.colorNode) texel = mapTexel(f, variant);
     ExprId diffuseColor = materialColor(f, variant, diffuse);
     if (texel != kInvalid) diffuseColor = f.mul(diffuseColor, f.swizzle(texel, "xyz"));
     const ExprId alpha = diffuseAlpha(f, variant, diffuse, texel);
-    f.output("color", f.construct(Type::vec(4), {variant.nodes.emissiveNode ? f.add(diffuseColor, nodeValue(f, variant.nodes.emissiveNode, Type::vec(3), kInvalid)) : diffuseColor, materialAlpha(f, alpha)}));
+    const ExprId outgoing = variant.nodes.emissiveNode ? f.add(diffuseColor, nodeValue(f, variant.nodes.emissiveNode, Type::vec(3), kInvalid)) : diffuseColor;
+    // Background.js writes opaque output regardless of the source texture's alpha.
+    f.output("color", f.construct(Type::vec(4), {fogColor(f, variant, outgoing), variant.background ? f.constant(1.0f) : materialAlpha(f, alpha)}));
     linkNodes(out, variant, local);
+    if (variant.fog || variant.background) v.linkVaryings(f);
     return out;
+}
+
+StandardPrograms buildEquirectangularCube() {
+    StandardPrograms out;
+    Program& vertex = out.vertex;
+    Program& fragment = out.fragment;
+    const auto i = vertex.builtin("vertexIndex");
+    const auto zero = vertex.construct(Type::u32(), {vertex.constant(int32_t(0))});
+    const auto one = vertex.construct(Type::u32(), {vertex.constant(int32_t(1))});
+    const auto x = vertex.select(vertex.equal(i, one), vertex.constant(3.0f), vertex.constant(-1.0f));
+    const auto y = vertex.select(vertex.equal(i, zero), vertex.constant(3.0f), vertex.constant(-1.0f));
+    const auto xy = vertex.construct(Type::vec(2), {x, y});
+    vertex.output("position", vertex.construct(Type::vec(4), {xy, vertex.constant(0.0f), vertex.constant(1.0f)}));
+    vertex.output("ndc", xy);
+    const auto ndc = fragment.varying("ndc", Type::vec(2));
+    const auto ray = fragment.construct(Type::vec(4), {fragment.neg(ndc), fragment.constant(-1.0f), fragment.constant(0.0f)});
+    const auto direction = fragment.call("normalize", {fragment.swizzle(fragment.mul(
+        fragment.uniform("cubeRotation", Type::mat(4, 4)), ray), "xyz")});
+    const auto u = fragment.add(fragment.mul(fragment.call("atan2", {fragment.swizzle(direction, "z"), fragment.swizzle(direction, "x")}),
+        fragment.constant(1.0f / (2 * 3.141592653589793f))), fragment.constant(0.5f));
+    const auto v = fragment.add(fragment.mul(fragment.call("asin", {fragment.call("clamp", {fragment.swizzle(direction, "y"),
+        fragment.constant(-1.0f), fragment.constant(1.0f)})}), fragment.constant(1.0f / 3.141592653589793f)), fragment.constant(0.5f));
+    const auto sampled = fragment.sampleLevel(fragment.texture2d("map"), fragment.construct(Type::vec(2), {u, v}), fragment.constant(0.0f));
+    fragment.output("color", fragment.construct(Type::vec(4), {fragment.swizzle(sampled, "xyz"), fragment.constant(1.0f)}));
+    return out;
+
+}
+
+ExprId fogFactor(Program& f, uint8_t kind, ExprId viewZ, ExprId nearOrDensity, ExprId far) {
+    if (kind == 1) return f.call("smoothstep", {nearOrDensity, far, viewZ});
+    if (kind == 2) {
+        const ExprId squared = f.mul(f.mul(f.mul(nearOrDensity, nearOrDensity), viewZ), viewZ);
+        return f.sub(f.constant(1.0f), f.call("exp", {f.neg(squared)}));
+    }
+    return f.constant(0.0f);
 }
 
 ExprId materialAlpha(Program& f, ExprId alpha) {

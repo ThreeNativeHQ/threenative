@@ -530,18 +530,69 @@ void registerScene(ClassBinding& b) {
     b.members["background"] = [](void* self, const Args&, Store& store) -> Value {
         // The Color itself, not an alias of the scene: a later `background =` replaces it, and a JS
         // reference to the old one must stay valid.
-        return store.share("Color", as<Scene>(self)->background);
+        auto* scene = as<Scene>(self);
+        if (scene->backgroundTexture) return store.share("Texture", scene->backgroundTexture);
+        return store.share("Color", scene->background);
     };
     b.setters["background"] = [](void* self, const Value& v, Store& store) {
         Scene* scene = as<Scene>(self);
         if (v.kind == Value::Kind::Null) {
             scene->background = nullptr;
+            scene->backgroundTexture.reset();
             return;
         }
         Object* color = store.find(v);
-        if (color == nullptr || color->cls != "Color") throw Unsupported{"background must be a Color or null"};
-        scene->background = std::static_pointer_cast<Color>(color->ptr);
+        if (!color) throw Unsupported{"background must be a Color, Texture or null"};
+        if (color->cls == "Color") {
+            scene->background = std::static_pointer_cast<Color>(color->ptr); scene->backgroundTexture.reset();
+        } else if (color->cls == "Texture" || color->cls == "DataTexture") {
+            scene->backgroundTexture = std::static_pointer_cast<Texture>(color->ptr); scene->background.reset();
+        } else throw Unsupported{"background must be a Color, Texture or null"};
     };
+    b.members["fog"] = [](void* self, const Args&, Store& store) -> Value {
+        auto fog = as<Scene>(self)->fog;
+        return fog ? store.share(fog->exponential() ? "FogExp2" : "Fog", fog) : Value{};
+    };
+    b.setters["fog"] = [](void* self, const Value& v, Store& store) {
+        if (v.kind == Value::Kind::Null) { as<Scene>(self)->fog.reset(); return; }
+        Object* fog = store.find(v);
+        if (!fog || (fog->cls != "Fog" && fog->cls != "FogExp2")) throw Unsupported{"fog must be Fog, FogExp2 or null"};
+        as<Scene>(self)->fog = std::static_pointer_cast<Fog>(fog->ptr);
+    };
+    for (const auto& [prefix, field] : {std::pair{"backgroundRotation", &Scene::backgroundRotation},
+                                      std::pair{"environmentRotation", &Scene::environmentRotation}}) {
+        b.members[prefix] = memberAliasMethod(field, "Euler");
+        for (int i = 0; i < 3; ++i) {
+            const std::string path = std::string(prefix) + "." + "xyz"[i];
+            b.getters[path] = [field, i](void* self) { auto& e = as<Scene>(self)->*field; return Value::of(i == 0 ? e.x : i == 1 ? e.y : e.z); };
+            b.setters[path] = [field, i](void* self, const Value& v) { auto& e = as<Scene>(self)->*field;
+                e.set(i == 0 ? number(v) : e.x, i == 1 ? number(v) : e.y, i == 2 ? number(v) : e.z, e.order); };
+        }
+    }
+
+}
+
+void registerFog(ClassBinding& b, bool exp2) {
+    b.ctor = [exp2](const Args& a, Store& store) -> std::shared_ptr<void> {
+        Color color;
+        if (!a.empty()) {
+            if (a.at(0).kind == Value::Kind::Number) color.setHex(static_cast<uint32_t>(number(a.at(0))));
+            else { Object* c = store.find(a.at(0)); if (!c || c->cls != "Color") throw Unsupported{"fog color needs Color or hex"}; color = *as<Color>(c->ptr.get()); }
+        }
+        if (exp2) return std::make_shared<FogExp2>(color, optional(a, 1, 0.00025));
+        return std::make_shared<Fog>(color, optional(a, 1, 1), optional(a, 2, 1000));
+    };
+    b.members["color"] = memberAliasMethod(&Fog::color, "Color");
+    for (int i = 0; i < 3; ++i) {
+        const std::string path = std::string("color.") + "rgb"[i];
+        b.getters[path] = [i](void* self) { const auto& c = as<Fog>(self)->color; return Value::of(i == 0 ? c.r : i == 1 ? c.g : c.b); };
+        b.setters[path] = [i](void* self, const Value& v) { auto& c = as<Fog>(self)->color; (i == 0 ? c.r : i == 1 ? c.g : c.b) = number(v); };
+    }
+    for (const auto& [name, field] : {std::pair{"near", &Fog::near}, std::pair{"far", &Fog::far}, std::pair{"density", &Fog::density}}) {
+        if (exp2 != (field == &Fog::density)) continue;
+        b.getters[name] = [field](void* self) { return Value::of(as<Fog>(self)->*field); };
+        b.setters[name] = [field](void* self, const Value& v) { as<Fog>(self)->*field = number(v); };
+    }
 }
 
 void registerGroup(ClassBinding& b) {
@@ -931,6 +982,8 @@ void registerSceneBindings(Registry& classes) {
     registerPerspectiveCamera(classes["PerspectiveCamera"]);
     registerOrthographicCamera(classes["OrthographicCamera"]);
     registerScene(classes["Scene"]);
+    registerFog(classes["Fog"], false);
+    registerFog(classes["FogExp2"], true);
     registerGroup(classes["Group"]);
     registerLayers(classes["Layers"]);
     registerRaycaster(classes["Raycaster"]);

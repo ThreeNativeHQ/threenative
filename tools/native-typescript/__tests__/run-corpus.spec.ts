@@ -1,7 +1,10 @@
 import fs from "node:fs";
+import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
+import { renderReference } from "../render-reference.mjs";
+import * as corpus from "../run-corpus.mjs";
 import {
   discoverCases,
   missingExpectationNote,
@@ -10,6 +13,217 @@ import {
   unsupportedThreeImports,
 } from "../run-corpus.mjs";
 import { buildEngineBridge } from "../three-bridge.mjs";
+
+const referenceRuntime = vi.hoisted(() => ({
+  handler: undefined as ((request: unknown, response: unknown) => void) | undefined,
+  launch: vi.fn(),
+}));
+vi.mock("node:http", () => ({
+  createServer: (handler: typeof referenceRuntime.handler) => {
+    referenceRuntime.handler = handler;
+    return {
+      once: () => {},
+      listen: (_port: number, _host: string, done: () => void) => done(),
+      address: () => ({ port: 1234 }),
+      close: (done: () => void) => done(),
+    };
+  },
+}));
+vi.mock("tsx/esm/api", () => ({
+  tsImport: async () => ({
+    launchReferenceBrowser: referenceRuntime.launch,
+    threeBuildDir: () =>
+      path.dirname(
+        createRequire(
+          new URL("../../../packages/runtime-native/package.json", import.meta.url),
+        ).resolve("three/webgpu"),
+      ),
+    CAPTURE_TIMEOUT_MS: 90_000,
+    SOFTWARE_ADAPTER: /software/i,
+  }),
+}));
+
+const { PNG } = createRequire(
+  new URL("../../../packages/runtime-native/package.json", import.meta.url),
+)("pngjs");
+
+describe("render frame comparison", () => {
+  it("accepts quantization noise but rejects a changed graph, missing, blank or wrong-size frames", () => {
+    const dir = tempDir();
+    const reference = path.join(dir, "reference.png");
+    const native = path.join(dir, "native.png");
+    const write = (file: string, red: number, width = 4, blank = false): void => {
+      const png = new PNG({ width, height: 4 });
+      for (let i = 0; i < png.data.length; i += 4) {
+        png.data.set(i === 0 || i >= 32 ? [0, 0, 0, 0] : [red, 149, 211, blank ? 0 : 255], i);
+      }
+      fs.writeFileSync(file, PNG.sync.write(png));
+    };
+    try {
+      expect(corpus.compareRenderFrames).toBeTypeOf("function");
+      write(reference, 179);
+      write(native, 179);
+      expect(corpus.compareRenderFrames(reference, native).pixelMismatchRatio).toBe(0);
+      write(native, 180);
+      expect(() => corpus.compareRenderFrames(reference, native)).not.toThrow();
+      write(native, 189);
+      expect(() => corpus.compareRenderFrames(reference, native)).toThrow(
+        /TN_NATIVE_TS_FRAME_MISMATCH/,
+      );
+      write(native, 179, 3);
+      expect(() => corpus.compareRenderFrames(reference, native)).toThrow(/dimensions differ/);
+      write(native, 179, 4, true);
+      expect(() => corpus.compareRenderFrames(reference, native)).toThrow(/blank/);
+      expect(() => corpus.compareRenderFrames(reference, `${native}.missing`)).toThrow(
+        /TN_NATIVE_TS_FRAME_MISSING: native .*native.png.missing/,
+      );
+      expect(() => corpus.compareRenderFrames(`${reference}.missing`, native)).toThrow(
+        /TN_NATIVE_TS_FRAME_MISSING: reference .*reference.png.missing/,
+      );
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("reference page (CPU module loading and failure forwarding)", () => {
+  const request = (url: string, expectedStatus = 200): string => {
+    let contents = "";
+    referenceRuntime.handler?.(
+      { url },
+      {
+        writeHead: (status: number, headers: Record<string, string>) => {
+          expect(status).toBe(expectedStatus);
+          if (status !== 204)
+            expect(headers["content-type"]).toBe(url === "/" ? "text/html" : "text/javascript");
+        },
+        end: (text: string) => {
+          contents = text;
+        },
+      },
+    );
+    return contents;
+  };
+  const capture = async (failure?: string, omitImportMap = false): Promise<void> => {
+    const handlers = new Map<string, (event: unknown) => void>();
+    const { build } = createRequire(
+      new URL("../../../packages/runtime-native/package.json", import.meta.url),
+    )("esbuild");
+    const page = {
+      on: (event: string, handler: (event: unknown) => void) => handlers.set(event, handler),
+      goto: async () => {
+        if (failure) {
+          const message = "module load exploded";
+          const url = `http://127.0.0.1:1234/${failure === "favicon" ? "favicon.ico" : "fixture.js"}`;
+          const events: Record<string, unknown> = {
+            console: { type: () => "error", text: () => message },
+            requestfailed: {
+              url: () => url,
+              response: async () => null,
+              failure: () => ({ errorText: message }),
+            },
+            response: { url: () => url, status: () => 404, statusText: () => "Not Found" },
+            pageerror: Error(message),
+          };
+          if (failure === "favicon") {
+            request("/favicon.ico", 204);
+            handlers.get("response")?.(events.response);
+            await handlers.get("requestfailed")?.(events.requestfailed);
+          } else {
+            await handlers.get(failure)?.(events[failure]);
+            return;
+          }
+        }
+        const html = request("/");
+        const imports = omitImportMap
+          ? {}
+          : (JSON.parse(/<script type="importmap">(.*?)<\/script>/s.exec(html)?.[1] ?? "{}")
+              .imports ?? {});
+        const contents = /<script type="module">(.*?)<\/script>/s.exec(html)?.[1] ?? "";
+        // Resolve the REAL served upstream module graph with the page's import map, without a GPU.
+        await build({
+          stdin: { contents, sourcefile: "/page.js" },
+          bundle: true,
+          format: "esm",
+          write: false,
+          logLevel: "silent",
+          plugins: [
+            {
+              name: "browser-imports",
+              setup: (builder: import("esbuild").PluginBuild) => {
+                builder.onResolve({ filter: /.*/ }, (args) => {
+                  let resolved = imports[args.path];
+                  if (args.path.startsWith(".") || args.path.startsWith("/"))
+                    resolved = new URL(args.path, `http://127.0.0.1${args.importer}`).pathname;
+                  if (!resolved) throw Error(`unmapped bare import: ${args.path}`);
+                  return { path: resolved, namespace: "served" };
+                });
+                builder.onLoad({ filter: /.*/, namespace: "served" }, (args) => ({
+                  contents: request(args.path),
+                  loader: "js",
+                }));
+              },
+            },
+          ],
+        });
+      },
+      waitForFunction: async () => {
+        if (failure && failure !== "favicon") throw Error("failure was not forwarded");
+      },
+      evaluate: async () => ({ info: { device: "hardware" } }),
+      locator: () => ({ screenshot: async () => Buffer.alloc(0) }),
+    };
+    referenceRuntime.launch.mockResolvedValue({ newPage: async () => page, close: async () => {} });
+    const dir = tempDir();
+    try {
+      const fixture = path.join(dir, "dynamic-tsl.mts");
+      fs.writeFileSync(
+        fixture,
+        fs
+          .readFileSync(new URL("../corpus/dynamic-tsl.ts", import.meta.url), "utf8")
+          .replaceAll('"three"', '"file:///pinned/build/three.module.js"')
+          .replaceAll('"three/tsl"', '"file:///pinned/build/three.tsl.js"')
+          .replaceAll('"three/webgpu"', '"file:///pinned/build/three.webgpu.js"'),
+      );
+      await renderReference(fixture, path.join(dir, "reference.png"));
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  };
+  it("loads the fixture's real three/tsl dependencies through the served import map and MIME", async () => {
+    await capture();
+  });
+  it("red control: upstream three.tsl.js cannot load without the import map", async () => {
+    await expect(capture(undefined, true)).rejects.toThrow(/unmapped bare import: three\/webgpu/);
+  });
+  it("serves and ignores the browser's favicon request", async () => {
+    await capture("favicon");
+  });
+  it("names the URL and HTTP status of a failed response", async () => {
+    const stderr = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      await expect(capture("response")).rejects.toThrow(
+        /TN_REFERENCE_RESPONSE_FAILED .*\/fixture.js status=404 Not Found/,
+      );
+    } finally {
+      stderr.mockRestore();
+    }
+  });
+  it.each(["pageerror", "console", "requestfailed"])(
+    "fails immediately and names a %s instead of waiting for completion",
+    async (event) => {
+      const stderr = vi.spyOn(console, "error").mockImplementation(() => {});
+      try {
+        await expect(capture(event)).rejects.toThrow(/module load exploded/);
+        expect(stderr.mock.calls.flat().join(" ")).toContain("module load exploded");
+        if (event === "requestfailed")
+          expect(stderr.mock.calls.flat().join(" ")).toMatch(/\/fixture.js status=no-response/);
+      } finally {
+        stderr.mockRestore();
+      }
+    },
+  );
+});
 
 function tempDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "tn-run-corpus-"));

@@ -24,7 +24,7 @@ Gate E needs a native application that renders with no V8, QuickJS, JavaScriptCo
 
 ## Out of scope
 
-- Upload/readback, resize and device loss on the extracted context: [PRD-509](PRD-509-n07-gpu-resources-presentation-and-device-loss.md).
+- Upload/readback, resize and device loss on the extracted context: [PRD-509](../done/native-engine/PRD-509-n07-gpu-resources-presentation-and-device-loss.md).
 - Strict *game* packaging: [PRD-530](PRD-530-n17-strict-native-typescript-game-packaging.md).
 
 ## Execution Phases

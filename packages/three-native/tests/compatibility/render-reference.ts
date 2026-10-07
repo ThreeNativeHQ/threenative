@@ -306,18 +306,8 @@ async function captureOne(
   }
 }
 
-/**
- * Every render fixture's frame, keyed by fixture name. One browser and one server serve them all.
- *
- * A fixture that cannot be drawn throws, so a run either records every frame it claims or fails:
- * there is no path here that records a golden nobody looked at.
- */
-export async function captureRenderFixtures(
-  fixtures: readonly IFixture[],
-  options: IRenderCaptureOptions,
-): Promise<ReadonlyMap<string, IRenderCapture>> {
-  const captures = new Map<string, IRenderCapture>();
-  if (fixtures.length === 0) return captures;
+/** Shared headed WebGPU launcher for compatibility fixtures and the AOT corpus reference. */
+export async function launchReferenceBrowser(): Promise<Browser> {
   if (process.platform === "linux" && process.env.DISPLAY === undefined)
     throw new Error(
       "TN_FIXTURE_RENDER_NO_DISPLAY: a render golden needs a WebGPU adapter; run `sh scripts/xvfb.sh pnpm --filter @threenative/three-native test:reference` on Linux",
@@ -330,14 +320,20 @@ export async function captureRenderFixtures(
       `TN_FIXTURE_RENDER_NO_PLAYWRIGHT: install @playwright/test and its Chromium (${error instanceof Error ? error.message : String(error)})`,
     );
   }
+  return chromium.launch({ headless: false, timeout: 30_000, args: [...WEBGPU_BROWSER_ARGS] });
+}
+
+/** Every render fixture's frame; missing or failed observations throw rather than record a golden. */
+export async function captureRenderFixtures(
+  fixtures: readonly IFixture[],
+  options: IRenderCaptureOptions,
+): Promise<ReadonlyMap<string, IRenderCapture>> {
+  const captures = new Map<string, IRenderCapture>();
+  if (fixtures.length === 0) return captures;
 
   const requested = new Map(fixtures.map((fixture) => [fixture.name, fixture]));
   await withServer(requested, async (origin) => {
-    const browser = await chromium.launch({
-      headless: false,
-      timeout: 30_000,
-      args: [...WEBGPU_BROWSER_ARGS],
-    });
+    const browser = await launchReferenceBrowser();
     try {
       for (const fixture of fixtures)
         captures.set(fixture.name, await captureOne(browser, origin, fixture, options));

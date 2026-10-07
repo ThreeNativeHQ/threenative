@@ -5,6 +5,7 @@
 
 #include "check.h"
 #include "engine/renderer/render_database.h"
+#include "engine/shader/package.h"
 #include "engine/player/skinned_crowd.h"
 #include "engine/scene/geometries.h"
 #include "mystral/webgpu/context.h"
@@ -24,6 +25,42 @@ extern "C" void stbi_image_free(void* data);
 using namespace tn::engine;
 
 namespace {
+
+// Consumer preparation, with no GPU: scene fog and sky must reach the same DrawItems used by render().
+void sceneEnvironment() {
+    CHECK(Texture{}.flipY && Texture{}.minFilter == 1008 && !DataTexture{}.flipY);
+    RenderDatabase database;
+    Scene scene; PerspectiveCamera camera(55, 4.0 / 3, 0.1, 100); camera.position.set(1, 2, 6);
+    LightState lights;
+    auto material = std::make_shared<Material>(MaterialType::Standard);
+    auto mesh = std::make_shared<Mesh>(makeSphereGeometry(), material); scene.add(*mesh);
+    auto sky = std::make_shared<DataTexture>(); sky->mapping = 303; sky->width = 128; sky->height = 64;
+    sky->data.resize(128 * 64 * 4, 255); sky->needsUpdate();
+    scene.backgroundTexture = scene.environment = sky;
+    scene.backgroundIntensity = scene.environmentIntensity = 2.5;
+    scene.fog = std::make_shared<FogExp2>(Color(0.1, 0.4, 0.8), 0.003);
+    auto draws = database.prepare(scene, camera, lights);
+    CHECK(draws.size() == 2); if (draws.size() != 2) return;
+    CHECK(draws[0].background && !draws[0].depthWrite && !draws[0].fog && draws[0].map == sky.get());
+    CHECK(draws[0].material->color[0] == 2.5f && draws[0].side == 1);
+    CHECK(draws[0].matrixWorld[12] == 1 && draws[0].matrixWorld[14] == 6);
+    shader::VertexVariant skyVariant; skyVariant.background = draws[0].background; skyVariant.map = draws[0].map != nullptr;
+    const auto skyVertex = shader::buildStage(shader::buildBasic(skyVariant).vertex, 0);
+    CHECK(skyVertex.wgsl.ok() && !skyVertex.attributes.empty());
+    for (const auto& attribute : skyVertex.attributes)
+        CHECK((attribute.name == "position" && draws[0].positions) || (attribute.name == "normal" && draws[0].normals));
+    CHECK(draws[1].fog == scene.fog.get() && draws[1].envMap == sky.get() && draws[1].envMapIntensity == 2.5);
+    CameraState state; state.matrixWorldInverse = camera.matrixWorldInverse.elements;
+    const auto sorted = Renderer::sortDraws(draws, state); CHECK(sorted.front().second->background);
+    material->fog = false; scene.backgroundIntensity = 1.25;
+    draws = database.prepare(scene, camera, lights);
+    CHECK(!draws[1].fog && draws[0].material->color[0] == 1.25f);
+    scene.backgroundTexture.reset(); scene.environment = sky;
+    draws = database.prepare(scene, camera, lights); CHECK(draws.size() == 1 && !draws[0].background && draws[0].envMap == sky.get());
+    scene.backgroundTexture = sky;
+    OrthographicCamera ortho(-4, 4, 3, -3, 0.1, 100);
+    draws = database.prepare(scene, ortho, lights); CHECK(draws[0].matrixWorld[0] == 9);
+}
 
 std::vector<uint8_t> read(Renderer& r, EventQueue& events) {
     std::vector<uint8_t> out;
@@ -644,7 +681,7 @@ void skinnedCrowdPixels() {
 
 }  // namespace
 
-TN_TEST_MAIN({"lit_scene", litScene}, {"directional_target", directionalTarget}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
+TN_TEST_MAIN({"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"directional_target", directionalTarget}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
              {"material_unsupported", materialUnsupported}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
              {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels})

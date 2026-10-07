@@ -5431,8 +5431,7 @@
       "kind": "class",
       "source": "three",
       "status": {
-        "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "kind": "supported"
       },
       "extends": null,
       "constructor": [
@@ -5457,31 +5456,48 @@
           "name": "isFog",
           "type": "boolean",
           "mutable": false,
-          "lifetime": "owned"
+          "lifetime": "owned",
+          "status": {
+            "kind": "partial",
+            "gaps": ["native-not-bound"]
+          }
         },
         {
           "name": "name",
           "type": "string",
           "mutable": true,
-          "lifetime": "owned"
+          "lifetime": "owned",
+          "status": {
+            "kind": "partial",
+            "gaps": ["native-not-bound"]
+          }
         },
         {
           "name": "color",
           "type": "Color",
           "mutable": true,
-          "lifetime": "owned"
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         },
         {
           "name": "near",
           "type": "number",
           "mutable": true,
-          "lifetime": "owned"
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         },
         {
           "name": "far",
           "type": "number",
           "mutable": true,
-          "lifetime": "owned"
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": [
@@ -5493,7 +5509,11 @@
               "parameters": [],
               "returns": "Fog"
             }
-          ]
+          ],
+          "status": {
+            "kind": "partial",
+            "gaps": ["native-not-bound"]
+          }
         },
         {
           "name": "toJSON",
@@ -5516,8 +5536,7 @@
       "kind": "class",
       "source": "three",
       "status": {
-        "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "kind": "supported"
       },
       "extends": null,
       "constructor": [
@@ -5537,25 +5556,39 @@
           "name": "isFogExp2",
           "type": "boolean",
           "mutable": false,
-          "lifetime": "owned"
+          "lifetime": "owned",
+          "status": {
+            "kind": "partial",
+            "gaps": ["native-not-bound"]
+          }
         },
         {
           "name": "name",
           "type": "string",
           "mutable": true,
-          "lifetime": "owned"
+          "lifetime": "owned",
+          "status": {
+            "kind": "partial",
+            "gaps": ["native-not-bound"]
+          }
         },
         {
           "name": "color",
           "type": "Color",
           "mutable": true,
-          "lifetime": "owned"
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         },
         {
           "name": "density",
           "type": "number",
           "mutable": true,
-          "lifetime": "owned"
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": [
@@ -5567,7 +5600,11 @@
               "parameters": [],
               "returns": "FogExp2"
             }
-          ]
+          ],
+          "status": {
+            "kind": "partial",
+            "gaps": ["native-not-bound"]
+          }
         },
         {
           "name": "toJSON",
@@ -10256,8 +10293,7 @@
           "mutable": true,
           "lifetime": "owned",
           "status": {
-            "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "kind": "supported"
           }
         },
         {
@@ -10505,6 +10541,15 @@
         {
           "name": "map",
           "type": "Texture | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "fog",
+          "type": "boolean",
           "mutable": true,
           "lifetime": "owned",
           "status": {
@@ -11286,8 +11331,7 @@
           "mutable": true,
           "lifetime": "owned",
           "status": {
-            "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "kind": "supported"
           }
         },
         {
@@ -11589,6 +11633,15 @@
         {
           "name": "map",
           "type": "Texture | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "fog",
+          "type": "boolean",
           "mutable": true,
           "lifetime": "owned",
           "status": {
@@ -16227,7 +16280,7 @@
         },
         {
           "name": "background",
-          "type": "Color | null",
+          "type": "Color | Texture | null",
           "mutable": true,
           "lifetime": "reference",
           "status": {
@@ -16249,8 +16302,7 @@
           "mutable": true,
           "lifetime": "reference",
           "status": {
-            "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "kind": "supported"
           }
         },
         {
@@ -16277,8 +16329,7 @@
           "mutable": true,
           "lifetime": "owned",
           "status": {
-            "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "kind": "supported"
           }
         },
         {
@@ -16296,8 +16347,7 @@
           "mutable": true,
           "lifetime": "owned",
           "status": {
-            "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "kind": "supported"
           }
         },
         {
@@ -17436,6 +17486,15 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "fog",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": []
@@ -17642,6 +17701,15 @@
         {
           "name": "map",
           "type": "Texture | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "fog",
+          "type": "boolean",
           "mutable": true,
           "lifetime": "owned",
           "status": {
@@ -18011,6 +18079,15 @@
         {
           "name": "mapping",
           "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "flipY",
+          "type": "boolean",
           "mutable": true,
           "lifetime": "owned",
           "status": {
@@ -23712,6 +23789,15 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "fog",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": []
@@ -23873,6 +23959,15 @@
         {
           "name": "map",
           "type": "Texture | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "fog",
+          "type": "boolean",
           "mutable": true,
           "lifetime": "owned",
           "status": {

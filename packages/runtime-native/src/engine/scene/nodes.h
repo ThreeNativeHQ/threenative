@@ -3,11 +3,8 @@
 // Scene, Group and Mesh, ported from three@0.185.1 src/scenes/Scene.js, src/objects/Group.js and
 // src/objects/Mesh.js.
 //
-// Not ported, and why:
-//   - `Scene`'s background/environment/fog/overrideMaterial are `Color`, `Texture`, `Fog` and
-//     `Material` values (N08/N09), so they are opaque pointers here until those classes exist. Their
-//     numeric companions (intensity, blurriness, the two rotations) are ported.
-//   - `toJSON`, `clone`: out of scope for the object model, as in Object3D.
+// Not ported: toJSON and clone. Background Color and Texture have separate typed slots; bindings
+// expose them as three's single background property.
 
 #include <memory>
 #include <string_view>
@@ -23,14 +20,32 @@ class BufferGeometry;
 class Material;
 class Texture;
 
+/** three's Fog / FogExp2 parameters. The shader reads -positionView.z, never radial distance. */
+class Fog {
+public:
+    explicit Fog(Color color = Color(1, 1, 1), double near = 1, double far = 1000)
+        : color(color), near(near), far(far) {}
+    virtual ~Fog() = default;
+    virtual bool exponential() const { return false; }
+    Color color;
+    std::string name;
+    double near = 1, far = 1000, density = 0.00025;
+};
+class FogExp2 : public Fog {
+public:
+    explicit FogExp2(Color color = Color(1, 1, 1), double density = 0.00025) : Fog(color) { this->density = density; }
+    bool exponential() const override { return true; }
+};
+
 /** three's Scene: an Object3D root plus what the renderer reads about the whole frame. */
 class Scene : public Object3D {
   public:
     [[nodiscard]] std::string_view type() const override { return "Scene"; }
 
-    std::shared_ptr<Color> background; // null = no background
+    std::shared_ptr<Color> background; // color alternative; bindings clear the other slot
     std::shared_ptr<Texture> environment;
-    void* fog = nullptr;               // Fog* or FogExp2*
+    std::shared_ptr<Texture> backgroundTexture;
+    std::shared_ptr<Fog> fog;
     void* overrideMaterial = nullptr;
 
     double backgroundBlurriness = 0;
@@ -39,7 +54,7 @@ class Scene : public Object3D {
     double environmentIntensity = 1;
     Euler environmentRotation;
 
-    /** three's `copy`, minus the `clone()` of each opaque pointer: those need their own classes. */
+    /** three's copy fields; resources remain shared until their clone paths are ported. */
     Scene& copy(const Scene& source);
 };
 

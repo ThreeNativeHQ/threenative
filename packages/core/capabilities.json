@@ -7504,6 +7504,16 @@
         "source": "three/webgpu"
       },
       {
+        "symbol": "Fog",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "FogExp2",
+        "kind": "class",
+        "source": "three"
+      },
+      {
         "symbol": "Frustum",
         "kind": "class",
         "source": "three/webgpu"

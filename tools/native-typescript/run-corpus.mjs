@@ -48,6 +48,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { format } from "node:util";
+import { compareCaptures } from "../../packages/runtime-native/conformance/metrics.mjs";
 import { inspect } from "../../packages/runtime-native/scripts/inspect-js-free.mjs";
 import { ensureAndroidRuntime, findTarget, perryTarget, resolveNdk } from "./android.mjs";
 import { compareRedToDeclared, loadLedger } from "./patches.mjs";
@@ -62,6 +63,32 @@ const RSS_LIMIT_BYTES = 512 * 1024 * 1024;
 const IMPORT_RE = /\bfrom\s*["']([^"']+)["']|\bimport\s*["']([^"']+)["']/g;
 const THREE_IMPORT_RE = /\bfrom\s*["'](three(?:\/[\w-]+)?)["']/g;
 const ADAPTER_PACKAGE = "tn-three-adapter";
+
+// Allow one 8-bit code value of quantization, plus 1% edge pixels. A different sine layer
+// changes the box interior by several code values; the mean Lab delta also caps color drift.
+export const RENDER_BUDGET = { levels: 1, pixelMismatchRatio: 0.01, perceptualDeltaE: 0.3 };
+
+export function compareRenderFrames(reference, native) {
+  for (const [label, file] of [
+    ["reference", reference],
+    ["native", native],
+  ])
+    if (!fs.existsSync(file)) throw named("TN_NATIVE_TS_FRAME_MISSING", `${label} ${file}`);
+  const metrics = compareCaptures(
+    fs.readFileSync(reference),
+    fs.readFileSync(native),
+    RENDER_BUDGET.levels,
+  );
+  if (
+    metrics.pixelMismatchRatio > RENDER_BUDGET.pixelMismatchRatio ||
+    metrics.perceptualDeltaE > RENDER_BUDGET.perceptualDeltaE
+  )
+    throw named(
+      "TN_NATIVE_TS_FRAME_MISMATCH",
+      `${JSON.stringify(metrics)}; budget=${JSON.stringify(RENDER_BUDGET)}`,
+    );
+  return metrics;
+}
 
 /** Every case, strictly compiled: no runtime-unknown eval, Function or dynamic import may survive. */
 export const STRICT_FLAGS = ["--strict-eval", "--strict-dynamic-import", "--strict-unimplemented"];
@@ -484,7 +511,7 @@ async function runNative(name, info, target, plan = {}) {
   if (measured.status !== expected.exit) {
     return {
       ok: false,
-      note: `exit mismatch: expected ${expected.exit}, native ${measured.status}`,
+      note: `exit mismatch: expected ${expected.exit}, native ${measured.status}; stderr: ${measured.stderr.trim() || "(empty)"}`,
     };
   }
   if (name === "alloc-loop" && measured.peakRssBytes > RSS_LIMIT_BYTES) {
@@ -684,6 +711,8 @@ async function main() {
 
   if (render && filter !== "dynamic-tsl")
     throw named("TN_NATIVE_TS_USAGE", "--render requires --case dynamic-tsl");
+  if (render && cross) throw named("TN_NATIVE_TS_USAGE", "--render requires the host target");
+  const captureReference = wantReference || (render && wantNative && !buildOnly);
   const names = discoverCases(filter);
   if (names.length === 0) throw named("TN_NATIVE_TS_CASE", `no corpus case matches '${filter}'`);
   // --expect-compile-error states the selected cases are compile-error cases; a case that is not
@@ -711,21 +740,26 @@ async function main() {
   for (const name of names) {
     const row = {
       name,
-      reference: wantReference ? "PASS" : undefined,
+      reference: captureReference ? "PASS" : undefined,
       native: undefined,
       note: "",
     };
     const missing = missingExpectationNote(name);
     if (missing !== undefined) {
       failed = true;
-      if (wantReference) row.reference = "FAIL";
+      if (captureReference) row.reference = "FAIL";
       if (wantNative) row.native = "FAIL";
       row.note = missing;
       rows.push(row);
       continue;
     }
-    if (wantReference) {
-      const result = await runReference(name, plan);
+    if (captureReference) {
+      let result;
+      try {
+        result = await runReference(name, plan);
+      } catch (error) {
+        result = { ok: false, note: error instanceof Error ? error.message : String(error) };
+      }
       // A native compile-error case has no reference run to compare.
       row.reference = result.notApplicable ? "n/a" : result.ok ? "PASS" : "FAIL";
       if (!result.ok) {
@@ -737,6 +771,13 @@ async function main() {
       let result;
       try {
         result = await runNative(name, info, target, plan);
+        if (result.ok && render && !buildOnly && row.reference === "PASS") {
+          const metrics = compareRenderFrames(
+            path.join(plan.outDir, `${name}-reference.png`),
+            path.join(plan.outDir, `${name}-native.png`),
+          );
+          result.note = `frames match: ${JSON.stringify(metrics)}; budget=${JSON.stringify(RENDER_BUDGET)}`;
+        }
       } catch (error) {
         result = { ok: false, note: error instanceof Error ? error.message : String(error) };
       }

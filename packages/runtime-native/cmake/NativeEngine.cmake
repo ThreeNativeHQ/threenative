@@ -4,9 +4,9 @@
 
 include(${CMAKE_CURRENT_LIST_DIR}/NativeEngineCore.cmake)
 
-# Host services: the GPU context with no scripting state. The legacy runtime keeps compiling its
-# own copy, so this split adds targets and moves no behaviour of the shipped player.
-add_library(tn_host_services STATIC src/webgpu/context.cpp src/utils/stb_impl.cpp)
+# Host services: the GPU context and presentation owner with no scripting state. The legacy
+# runtime compiles the same sources, so both hosts share their configuration and pacing path.
+add_library(tn_host_services STATIC src/webgpu/context.cpp src/webgpu/presentation.cpp src/utils/stb_impl.cpp)
 tn_native_engine_target(tn_host_services)
 target_include_directories(tn_host_services PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_include_directories(tn_host_services PRIVATE ${THIRD_PARTY_DIR}/stb)
@@ -31,6 +31,16 @@ if(SDL3_STATIC_TARGET)
 elseif(SDL3_LIBRARY)
     target_link_libraries(tn_host_services PRIVATE ${SDL3_LIBRARY})
     target_include_directories(tn_host_services PRIVATE ${SDL3_INCLUDE_DIR})
+endif()
+
+# The same pacing checks must link with the JS-free host, not only the legacy bindings.
+if(NOT MYSTRAL_PLATFORM STREQUAL "android" AND NOT MYSTRAL_PLATFORM STREQUAL "ios")
+    add_executable(tn-native-engine-pacing-test EXCLUDE_FROM_ALL tests/presentation_pacing_test.cpp)
+    tn_native_engine_target(tn-native-engine-pacing-test)
+    target_link_libraries(tn-native-engine-pacing-test PRIVATE tn_host_services)
+    add_test(NAME native_engine_pacing COMMAND tn-native-engine-pacing-test)
+    set_tests_properties(native_engine_pacing PROPERTIES LABELS "native-engine" TIMEOUT 30)
+    set_property(GLOBAL APPEND PROPERTY TN_NATIVE_ENGINE_TEST_TARGETS tn-native-engine-pacing-test)
 endif()
 
 # Renderer: native-owned GPU resources over the same WebGPU backend the host uses.
@@ -393,7 +403,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     if(TARGET dawn::webgpu AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
         target_compile_definitions(tn-native-engine-world-walk-test PRIVATE TN_WORLD_CPU_NULL=1)
         foreach(api InstanceCreateSurface InstanceRequestAdapter SurfaceRelease SurfacePresent
-                    SurfaceGetCurrentTexture TextureCreateView TextureRelease TextureViewRelease)
+                    SurfaceGetCurrentTexture SurfaceUnconfigure TextureCreateView TextureRelease TextureViewRelease)
             target_link_options(tn-native-engine-world-walk-test PRIVATE "-Wl,--wrap=wgpu${api}")
         endforeach()
         add_test(NAME native_engine_world_cycles_cpu COMMAND tn-native-engine-world-walk-test world_walk_cycles_cpu)
@@ -409,6 +419,19 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         # PE files have no MSVC symbol table; keep the link's symbols for inspect-js-free.mjs.
         target_link_options(tn-native-engine-player PRIVATE "/MAP:$<TARGET_FILE_DIR:tn-native-engine-player>/tn-native-engine-player.map")
     endif()
+endif()
+
+if(ANDROID)
+    # SDLActivity enters the same JS-free C++ main and inspect loop as desktop.
+    add_library(tn_engine_player STATIC src/engine/player/mailbox.cpp src/engine/player/demo.cpp
+        src/engine/player/run.cpp src/engine/player/skinned_crowd.cpp)
+    tn_native_engine_target(tn_engine_player)
+    target_link_libraries(tn_engine_player PUBLIC tn_engine_inspect tn_engine_world tn_engine_renderer tn_host_services ${SDL3_STATIC_TARGET} ${SDL3_LIBRARY})
+    target_include_directories(tn_engine_player PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src ${SDL3_INCLUDE_DIR})
+    add_library(tn-native-engine-player SHARED src/engine/player/main.cpp)
+    tn_native_engine_target(tn-native-engine-player)
+    target_link_libraries(tn-native-engine-player PRIVATE tn_engine_player android log)
+    target_link_options(tn-native-engine-player PRIVATE "-Wl,-z,max-page-size=16384")
 endif()
 
 if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "android")

@@ -14,6 +14,8 @@
 #include <cmath>
 #if defined(__APPLE__)
 #include <xlocale.h>
+#elif defined(__ANDROID__)
+#include <locale.h>
 #endif
 #include <cstdint>
 #include <cstdlib>
@@ -215,8 +217,8 @@ class Parser {
     // the token's decimal exponent at its first significant digit.
     static double toDouble(std::string_view token) {
         double value = 0;
-#if defined(__APPLE__)
-        // Apple's libc++ has no floating-point from_chars: strtod_l in the C locale is the same
+#if defined(__APPLE__) || defined(__ANDROID__)
+        // These libc++ builds have no floating-point from_chars: strtod_l in the C locale is the same
         // correctly rounded, locale-free parse. ERANGE with 0 or ±HUGE_VAL is an overflow or an
         // underflow (handled below); a subnormal result is a valid value.
         static const locale_t cLocale = newlocale(LC_ALL_MASK, "C", nullptr);

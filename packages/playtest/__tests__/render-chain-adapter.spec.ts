@@ -339,7 +339,7 @@ describe("renderChain perAdapter selection", () => {
   // used against a `low` tier a software adapter had legitimately produced. These are the real
   // shapes: the identity string core builds, on the snapshot that carries it.
   describe("native adapter provenance from the pipeline census", () => {
-    const CENSUS_IDENTITY = [
+    const censusIdentity = [
       "webgpu:architecture=swiftshader",
       "description=Swift%20Shader%20Device%20(Subzero)",
       "device=llvmpipe",
@@ -368,7 +368,7 @@ describe("renderChain perAdapter selection", () => {
 
     it("classifies a native software adapter and applies its own branch", async () => {
       const scenario = await load(SCENARIO(ASSERTION));
-      const result = evaluateRichPlaytestAssertions({ report: censusReport(CENSUS_IDENTITY), scenario });
+      const result = evaluateRichPlaytestAssertions({ report: censusReport(censusIdentity), scenario });
 
       expect(result.assertions.filter((row) => row.pass === false)).toEqual([]);
       expect(result.assertions).toContainEqual(
@@ -382,12 +382,12 @@ describe("renderChain perAdapter selection", () => {
 
     it("classifies a native hardware adapter and keeps the flat high policy", async () => {
       const scenario = await load(SCENARIO(ASSERTION));
-      const hardware = CENSUS_IDENTITY.replace(/swiftshader|llvmpipe|google|Subzero/gu, "x");
+      const hardware = censusIdentity.replace(/swiftshader|llvmpipe|google|Subzero/gu, "x");
       const report = {
         ...censusReport("webgpu:architecture=turing|description=NVIDIA%3A%20615.71.09|device=NVIDIA%20GeForce%20RTX%202080|vendor=nvidia"),
         observations: { console: [], hud: {}, network: [], resources: {}, renderChain: HIGH },
       };
-      expect(hardware).not.toBe(CENSUS_IDENTITY);
+      expect(hardware).not.toBe(censusIdentity);
       const result = evaluateRichPlaytestAssertions({ report, scenario });
 
       expect(result.assertions.filter((row) => row.pass === false)).toEqual([]);

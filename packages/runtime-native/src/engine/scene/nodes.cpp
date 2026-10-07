@@ -11,9 +11,10 @@ namespace tn::engine {
 
 Scene& Scene::copy(const Scene& source) {
     Object3D::copy(source);
-    // three clones background, environment, fog and overrideMaterial here; each is a class this port
-    // does not own yet (N08/N09), so the pointers carry over instead and the values are shared.
+    // Resource clone support is not ported: this copy retains shared background/environment/fog
+    // resources, as the existing scene copy contract does.
     background = source.background;
+    backgroundTexture = source.backgroundTexture;
     environment = source.environment;
     fog = source.fog;
     overrideMaterial = source.overrideMaterial;
@@ -30,6 +31,7 @@ Sprite::Sprite(std::shared_ptr<Material> m) : Mesh(makePlaneGeometry(), std::mov
     if (!material) {
         material = std::make_shared<Material>(MaterialType::Basic);
         material->spriteMaterial = true;
+        material->fog = false;
         material->transparent = true;
     }
 }

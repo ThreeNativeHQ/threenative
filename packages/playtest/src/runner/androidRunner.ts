@@ -126,6 +126,9 @@ export async function runAndroidPlaytest(
     ...(config.device === undefined ? {} : { serial: config.device }),
   });
   const mailboxRoot = config.mailboxRoot ?? `/sdcard/Android/data/${android.packageName}/files`;
+  if (android.nativeEngine && !isMailboxDriver(driver) && dependencies.transport === undefined) {
+    throw new Error("--native-engine requires an Android file mailbox driver.");
+  }
   return withTargetAbortSignal("android", (abortSignal) => runDevicePlaytest({ ...config, mailboxRoot }, {
     abortSignal: abortSignal,
     driver,
@@ -161,6 +164,7 @@ async function runDevicePlaytestInternal(
     await loadPlaytestScenario(config.projectPath, config.scenarioPath),
     config.performanceBudget,
   );
+  const nativeEngine = target.name === "android" && config.android?.nativeEngine === true;
   await throwIfAborted(target);
   await mkdir(config.artifactDirectory, { recursive: true });
   await throwIfAborted(target);
@@ -185,6 +189,7 @@ async function runDevicePlaytestInternal(
   }
   if (
     target.name === "android"
+    && !nativeEngine
     && scenario.steps.some((step) => step.pointers !== undefined)
     && typeof target.driver.setPointers !== "function"
   ) {
@@ -227,6 +232,16 @@ async function runDevicePlaytestInternal(
         `${targetLabel(target.name)} application did not expose a playtest bridge.`,
         "Install playtest() or installThreePlaytestBridge() in the device build.",
       ), target.name);
+    }
+    if (nativeEngine) {
+      const profile = (bridge.description as { profile?: { engine?: unknown; gameRuntime?: unknown } }).profile;
+      if (profile?.engine !== "native" || profile.gameRuntime !== "cpp") {
+        throw new PlaytestBridgeError(playtestDiagnostic(
+          "TN_PLAYTEST_BRIDGE_INCOMPATIBLE",
+          "--native-engine requires an inspect endpoint reporting profile engine=native, gameRuntime=cpp.",
+          "Install the APK printed by build-native-engine-android.mjs and launch .NativeEngineActivity.",
+        ));
+      }
     }
     if (!bridge.description.capabilities.includes("runtime.fixedStep")) {
       return failureReport(config, scenario, unsupportedDiagnostic(
@@ -315,7 +330,8 @@ async function runDevicePlaytestInternal(
     // `up` does. Track the open gesture separately from the button mask so a step that clears to
     // zero *and* asks for release still emits its close at the last point.
     let pointerHeld = false;
-    const lifecycle = scenario.steps.some((step) => step.lifecycle !== undefined)
+    const hasLifecycle = scenario.steps.some((step) => step.lifecycle !== undefined);
+    const lifecycle = hasLifecycle && !nativeEngine
       ? new DeviceLifecycleRecorder(
         target.driver,
         // Only a build that installed a physics plugin owns a step counter, and it says so by
@@ -327,13 +343,25 @@ async function runDevicePlaytestInternal(
       )
       : undefined;
     if (lifecycle !== undefined) await lifecycle.launch();
+    const nativeSession = hasLifecycle && nativeEngine ? await target.driver.lifecycleState?.() : undefined;
+    if (hasLifecycle && nativeEngine && (!Number.isSafeInteger(nativeSession?.pid) || nativeSession!.pid! < 1 || !nativeSession?.focused)) {
+      throw new PlaytestBridgeError(playtestDiagnostic(
+        "TN_PLAYTEST_ANDROID_LIFECYCLE_UNOBSERVED",
+        "Native app did not report a focused live process before lifecycle steps.",
+        "Inspect adb pidof and window focus before rerunning.",
+      ));
+    }
     for (const [index, step] of scenario.steps.entries()) {
       await throwIfAborted(target);
       if (step.lifecycle !== undefined) {
         // The only step kind the device performs itself, and the only one that skips the per-step
         // observation path: while the app is unfocused nothing is servicing the bridge, so a tick
         // or a sample here would read as a hung host. What it records instead is the device.
-        await lifecycle?.run(step.lifecycle, () => attached.advance(1));
+        if (nativeEngine) {
+          await runNativeLifecycle(target.driver, step.lifecycle, nativeSession!.pid!, () => attached.advance(1));
+        } else {
+          await lifecycle?.run(step.lifecycle, () => attached.advance(1));
+        }
         continue;
       }
       const framebufferAssertion = scenario.assert?.framebufferCoverage;
@@ -396,13 +424,13 @@ async function runDevicePlaytestInternal(
           });
         }
         if (step.pointers !== undefined) {
-          await setDevicePointers(target, transport, step.pointers, scenario.viewport);
+          await setDevicePointers(target, transport, step.pointers, scenario.viewport, nativeEngine);
           pointerCount = step.pointers.length;
         }
         if (typeof pressed === "string") {
           if (!heldKeys.has(pressed)) {
             await transport.call("input.keyDown", { key: pressed });
-            await sendAndroidTextInput(target, pressed);
+            if (!nativeEngine) await sendAndroidTextInput(target, pressed);
             heldKeys.add(pressed);
           }
         } else if (pressed !== undefined) {
@@ -415,7 +443,7 @@ async function runDevicePlaytestInternal(
           for (const key of pressed) {
             if (!heldKeys.has(key)) {
               await transport.call("input.keyDown", { key });
-              await sendAndroidTextInput(target, key);
+              if (!nativeEngine) await sendAndroidTextInput(target, key);
               heldKeys.add(key);
             }
           }
@@ -476,7 +504,7 @@ async function runDevicePlaytestInternal(
         await transport.call("input.pointer", { buttons: 0, type: "up", x: pointerX, y: pointerY });
       }
       if (step.pointers !== undefined && step.release) {
-        await setDevicePointers(target, transport, [], scenario.viewport);
+        await setDevicePointers(target, transport, [], scenario.viewport, nativeEngine);
         pointerCount = 0;
         await bridge.advance(1);
         if (capturesAnonymousMovement) afterStep = await bridge.sample(sampleRequest);
@@ -570,6 +598,13 @@ async function runDevicePlaytestInternal(
   } catch (error) {
     if (error instanceof PlaytestBridgeError) {
       let diagnostic = error.diagnostic;
+      if (nativeEngine && diagnostic.code === "TN_PLAYTEST_BRIDGE_MISSING") {
+        diagnostic = playtestDiagnostic(
+          "TN_PLAYTEST_BRIDGE_MISSING",
+          "The native-engine inspect mailbox did not announce readiness.",
+          "Install the APK printed by build-native-engine-android.mjs and check NativeEngineActivity logcat and TN_PLAYTEST_MAILBOX_ROOT.",
+        );
+      }
       // Preserve this failed host's output before stop/transport cleanup. Diagnostic
       // collection is best effort and must never replace the original failure.
       const consoleEntries = await target.driver.captureConsole().catch(() => []);
@@ -614,9 +649,9 @@ async function runDevicePlaytestInternal(
         "utf8",
       );
     });
-    if (scenario.steps.some((step) => step.pointers !== undefined)) {
+    if (scenario.steps.some((step) => step.pointers !== undefined) && (!nativeEngine || bridge !== undefined)) {
       await attemptCleanup(async () => {
-        if (target.name === "ios") {
+        if (nativeEngine || target.name === "ios") {
           await transport.call("input.pointers", { pointers: [] });
         } else if (target.name === "android") {
           await target.driver.setPointers?.([]);
@@ -670,6 +705,39 @@ function cleanupFailure(errors: readonly unknown[]): Error {
   return new AggregateError(errors, "Device playtest cleanup failed.");
 }
 
+// SDL surfaces do not supply Android View/gfxinfo counters. Verify OS focus and the same
+// process; surface/device recreation is observed through the scenario's endpoint resources.
+// No legacy deviceLifecycle frame observation is manufactured for this route.
+async function runNativeLifecycle(
+  driver: IDevicePlaytestDriver,
+  step: NonNullable<IPlaytestScenario["steps"][number]["lifecycle"]>,
+  pid: number,
+  advance: () => Promise<void>,
+): Promise<void> {
+  if (step.operation === "background") await driver.background!();
+  else if (step.operation === "foreground") await driver.foreground!();
+  else await driver.rotate!(step.rotation);
+  const state = await driver.lifecycleState!();
+  if (state.pid !== pid) {
+    throw new PlaytestBridgeError(playtestDiagnostic(
+      "TN_PLAYTEST_ANDROID_LIFECYCLE_SESSION_CHANGED",
+      `Native app process changed from ${pid} to ${String(state.pid)}.`,
+      "Keep the same native app process across lifecycle steps.",
+    ));
+  }
+  if (state.focused !== (step.operation !== "background")
+    || (step.operation === "rotate" && state.windowRotation !== step.rotation)) {
+    throw new PlaytestBridgeError(playtestDiagnostic(
+      "TN_PLAYTEST_ANDROID_LIFECYCLE_NOT_APPLIED",
+      `Native app did not apply '${step.operation}'.`,
+      "Inspect adb window focus and rotation, then rerun the scenario.",
+    ));
+  }
+  // Nothing services the mailbox while backgrounded. On resume, an endpoint tick proves it
+  // answers again and lets the player rebuild its surface before the following observation.
+  if (step.operation !== "background") await advance();
+}
+
 function createDeviceTransport(
   driver: IDevicePlaytestDriver,
   endpoint: string,
@@ -692,8 +760,9 @@ async function setDevicePointers(
   transport: IDevicePlaytestTransport,
   pointers: NonNullable<IPlaytestScenario["steps"][number]["pointers"]>,
   viewport: IPlaytestScenario["viewport"],
+  nativeEngine = false,
 ): Promise<void> {
-  if (target.name === "ios" || target.name === "desktop") {
+  if (nativeEngine || target.name === "ios" || target.name === "desktop") {
     // iOS and desktop transports carry playtest requests into the native host, whose own hit
     // routing is the mechanism these scenarios test: the host dispatches each pointer to the UI
     // page or to the game exactly where the OS would. The held set is preserved without an

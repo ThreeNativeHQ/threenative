@@ -672,7 +672,7 @@ constructor(array: TypedArray, itemSize: number, normalized?: boolean);
 /** Catalog partial (native-not-implemented): three/FloatType. */
 export declare const FloatType: 1015;
 
-/** Catalog partial (native-not-implemented): three/Fog. */
+/** Catalog supported: three/Fog. */
 export declare class Fog {
 constructor(color: ColorRepresentation, near?: number, far?: number);
 readonly isFog: boolean;
@@ -684,7 +684,7 @@ far: number;
   clone(): Fog;
 }
 
-/** Catalog partial (native-not-implemented): three/FogExp2. */
+/** Catalog supported: three/FogExp2. */
 export declare class FogExp2 {
 constructor(color: ColorRepresentation, density?: number);
 readonly isFogExp2: boolean;
@@ -1271,6 +1271,7 @@ readonly type: string;
 visible: boolean;
 color: Color;
 map: Texture | null;
+fog: boolean;
 }
 
 /** Catalog supported: three/MeshStandardMaterial. */
@@ -1379,6 +1380,7 @@ color: Color;
 emissive: Color;
 envMap: Texture | null;
 map: Texture | null;
+fog: boolean;
 }
 
 /** Catalog partial (native-not-implemented): three/MinEquation. */
@@ -2005,7 +2007,7 @@ export declare const SRGBTransfer: "srgb";
 export declare class Scene extends Object3D {
 constructor();
 readonly isScene: boolean;
-background: Color | null;
+background: Color | Texture | null;
 environment: Texture | null;
 fog: (Fog | FogExp2) | null;
 backgroundBlurriness: number;
@@ -2152,6 +2154,7 @@ readonly type: string;
 visible: boolean;
 color: Color;
 map: Texture | null;
+fog: boolean;
 }
 
 /** Catalog supported: three/webgpu/SpriteNodeMaterial. */
@@ -2179,6 +2182,7 @@ readonly type: string;
 visible: boolean;
 color: Color;
 map: Texture | null;
+fog: boolean;
 }
 
 /** Catalog partial (native-not-implemented): three/SrcAlphaFactor. */
@@ -2257,6 +2261,7 @@ wrapT: Wrapping;
 readonly offset: Vector2;
 readonly repeat: Vector2;
 mapping: number;
+flipY: boolean;
 }
 
 /** Catalog supported: three/webgpu/TorusGeometry. */
@@ -2793,6 +2798,7 @@ visible: boolean;
 color: Color;
 emissive: Color;
 map: Texture | null;
+fog: boolean;
 }
 
 /** Catalog supported: three/MeshPhongMaterial. */
@@ -2815,6 +2821,7 @@ color: Color;
 emissive: Color;
 specular: Color;
 map: Texture | null;
+fog: boolean;
 }
 
 /** Catalog supported: three/MeshPhysicalMaterial. */

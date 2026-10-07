@@ -4,7 +4,7 @@
 **Complexity:** 4 — parser reuse, but scene construction, a cooked package format and decoder qualification are all new and face untrusted input
 **Owner:** João
 **Work package:** N10 — [native-engine batch](../../native-engine/README.md)
-**Depends on:** [PRD-508 (N06)](PRD-508-n06-native-scene-graph-transforms-cameras-geometry.md), [PRD-509 (N07)](../../native-engine/PRD-509-n07-gpu-resources-presentation-and-device-loss.md)
+**Depends on:** [PRD-508 (N06)](PRD-508-n06-native-scene-graph-transforms-cameras-geometry.md), [PRD-509 (N07)](PRD-509-n07-gpu-resources-presentation-and-device-loss.md)
 
 ## Context
 

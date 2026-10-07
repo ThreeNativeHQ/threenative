@@ -1,0 +1,85 @@
+# PRD-509 — GPU resources, presentation and device loss (N07)
+
+**Status:** IN PROGRESS — phases 1 and 3 done; phase 2 (windowed resize, Android surface cycle) open
+**Complexity:** 4 — reuses the existing WebGPU context; the new work is resource ownership and the device-loss state machine on two backends
+**Owner:** João
+**Work package:** N07 — [native-engine batch](../../native-engine/README.md)
+**Depends on:** [PRD-499 (N02) — The host links and runs without a JS engine](../../native-engine/PRD-499-n02-the-host-links-without-a-js-engine.md), [PRD-500 (N03)](PRD-500-n03-api-catalog-binding-abi-and-version-protocol.md)
+
+## Context
+
+§3 (R2) and §10: the host's GPU context (`packages/runtime-native/include/mystral/webgpu/context.h`,
+`src/webgpu/context.cpp`) already exposes device, queue, surface, presentation, headless targets,
+capture, timestamps and Android surface rebuilding (`Context::rebuildSurface`). Today JS drives
+every resource through the bindings (`src/webgpu/bindings_resources.cpp`) and replays a serialized
+command stream (`bindings_frame_stream.cpp`); §10 keeps that stream in the legacy backend only.
+Device loss currently logs from `onDeviceLost` and stops. Backend selection is
+`MYSTRAL_WEBGPU_BACKEND` (Dawn or wgpu-native) in `packages/runtime-native/CMakeLists.txt`.
+§12 requires an explicit device-loss state machine.
+
+## Solution
+
+1. **Native resource layer** (proposed: `packages/runtime-native/src/engine/renderer/gpu_resources.cpp`):
+   buffers, textures, samplers, bind groups and pipelines owned by native records keyed by
+   generational handles that also carry a **device generation**. A handle from a dead generation is
+   rejected with `TN_GPU_STALE_GENERATION`, never reused.
+2. **Upload/readback:** staged uploads honour BufferAttribute version semantics (§7.2) and never
+   recycle a submitted upload buffer early; async readback completes onto the engine event queue at
+   a game-thread boundary (§11.1, §12).
+3. **Deferred safe destruction:** a destroy request queues the resource until the GPU has finished
+   the last submission that used it (queue `OnSubmittedWorkDone`), then frees it.
+4. **Presentation:** one presentation owner (§5); resize and surface loss/rebuild (Android
+   `ANativeWindow`, desktop window resize) recreate the surface and size-dependent targets only.
+5. **Device-loss state machine (§12):**
+
+   ```mermaid
+   stateDiagram-v2
+     [*] --> running
+     running --> lost: device lost / removed
+     lost --> recovering: new device acquired
+     recovering --> running: resources rebuilt from CPU descriptors / cooked assets
+     recovering --> failed: rebuild error or second loss
+     lost --> failed: no adapter
+     failed --> [*]
+   ```
+
+   Surface recreation stays inside `running`; only device recreation enters `lost`. Game state is
+   preserved or visibly reset per the documented path; the state change is published in telemetry.
+6. **Backend adapters:** Dawn and wgpu-native each qualified against the same resource test suite;
+   device limits and enabled features recorded per backend, never assumed interchangeable (§10).
+7. **No blocking waits** (owner decision 4): map, readback and pipeline compilation complete through the engine event queue, never by spinning on the device, so the same code runs on browser WebGPU.
+8. **Rollback:** the JS bindings and frame-stream replay stay compiled into the legacy backend.
+
+## Out of scope
+
+- Deciding what to draw — [PRD-514 (N09)](PRD-514-n09-native-renderer-and-standard-materials.md).
+- Render-graph transients and history — [PRD-523 (N14a)](N14-native-render-chain-and-advanced-visuals/PRD-523-n14a-the-render-graph-owns-passes-and-history.md).
+- Removing `BindingsState` from the context — [PRD-499 (N02)](../../native-engine/PRD-499-n02-the-host-links-without-a-js-engine.md).
+
+## Execution Phases
+
+#### Phase 1: Resources, upload, readback, destruction
+**Status:** DONE
+**Files:** proposed `src/engine/renderer/gpu_resources.cpp`, `tests/native-engine/gpu_resources_test.cpp`
+- [x] A headless C++ driver uploads a buffer and texture and reads them back byte-identical on Dawn. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_gpu_upload_readback` — 2026-10-04: green on Dawn (`build/tn-linux-engine`, RTX 2080) and under ASan/UBSan; 4 KiB buffer and a 13x5 RGBA texture (row padding stripped) read back byte-identical. `src/engine/renderer/gpu_resources.{h,cpp}`
+- [x] The same test passes on wgpu-native. proof: `ctest --test-dir packages/runtime-native/build/tn-linux-wgpu -R native_engine_gpu_upload_readback` — 2026-10-04: green in an engine-only wgpu-native build (`-DTN_ENGINE_ONLY=ON -DMYSTRAL_USE_WGPU=ON -DMYSTRAL_USE_DAWN=OFF`, `build/tn-linux-engine-wgpu`): all 8 engine tests including gate E
+- [x] A resource destroyed while still referenced by an in-flight submission is freed only after that submission completes. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_gpu_deferred_destroy` — 2026-10-04: green; the handle dies at once and the GPU object waits in the pending list until `OnSubmittedWorkDone` for its serial is drained; red when the destroy is tagged serial 0
+- [x] Readback and buffer mapping complete through the engine event queue with no blocking device wait in the engine targets. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_gpu_async_only` — 2026-10-04: green; a readback never completes inside the call or inside `poll()`, only on `EventQueue::drain()` (red when delivered from the map callback directly). `native_engine_no_blocking_waits` scans `src/engine` for WaitAny, blocking polls, sleeps, condition variables and futures; red on a planted `sleep_for`. A handle from another device generation returns `StaleGeneration`
+
+#### Phase 2: Presentation, resize, surface lifecycle
+**Status:** NOT STARTED
+**Files:** proposed `src/engine/renderer/presentation.cpp`
+- [x] A windowed native driver presents 300 frames through 5 resizes with no validation error. proof: `pnpm native:verify:desktop` — 2026-10-04: proved by `ctest -R native_engine_present_resize` (the engine is not in the shipped host yet, so `native:verify:desktop` cannot carry it): an SDL X11 window under the private Xvfb, 300 frames each inside a validation scope, a resize every 60; zero validation errors, the same device throughout, depth rebuilt once per resize. Red when a resize keeps the old depth target: 240 frames fail on the size mismatch. `src/engine/renderer/presentation.{h,cpp}`
+- [x] Android surface destroy/recreate (background → foreground) rebuilds the surface without recreating the device. proof: `node packages/playtest/dist/runner/cli.js packages/runtime-native/scenarios/native-engine-surface-cycle.playtest.json --target android` — 2026-10-06: green on the Android emulator: `node packages/playtest/dist/runner/cli.js packages/runtime-native/tests/native-engine/playtests/native-engine-surface-recreate.playtest.json --target android --native-engine --device emulator-5554 --package com.threenative.nativeengine --activity .NativeEngineActivity` passes: one background/foreground cycle gives surfaceCreations 1 → 2 and deviceCreations 1 → 1. A first run never cycled: SDL cancels a queued pause when the resume arrives too soon, so the runner now waits for the player's release acknowledgement.
+
+#### Phase 3: Device loss
+**Status:** DONE
+**Files:** proposed `src/engine/renderer/device_state.cpp`
+- [x] A forced `device.destroy()` walks running → lost → recovering → running and the next frame renders from rebuilt resources. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_device_loss_recover` — 2026-10-04: green on Dawn (`build/tn-linux`, `build/tn-linux-engine`, ASan): transitions recorded as running>lost>recovering>running, generation 2, and the texture rebuilt from its CPU copy reads back byte-identical; `no_adapter` ends lost>failed. `src/engine/renderer/device_state.{h,cpp}`; `Context::setDeviceLostHandler` makes a loss non-fatal only for a context that opts in
+- [x] Any handle from the lost generation is rejected with `TN_GPU_STALE_GENERATION`. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_device_stale_handle` — 2026-10-04: green on Dawn; red when the generation is not bumped on a new device. **wgpu-native gap:** wgpu-native 25 delivers no device-lost callback for `wgpuDeviceDestroy`, so these three tests register BLOCKED in wgpu builds
+
+## Decisions
+
+- **No new graphics abstraction (§4, §10).** A thin adapter over the existing context; Dawn and wgpu-native stay the only backends.
+- **Native-owned submission does not replay the JS frame-op stream (§10).**
+- **wgpu-native device loss is untestable by destroy (2026-10-04, agent):** wgpu-native 25 never fires the device-lost callback for `wgpuDeviceDestroy`, measured in `build/tn-linux-engine-wgpu`. The state machine is proved on Dawn; the wgpu tests register BLOCKED with that reason rather than pass.

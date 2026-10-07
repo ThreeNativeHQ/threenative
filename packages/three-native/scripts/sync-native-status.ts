@@ -63,7 +63,7 @@ const FIELD_TYPE_OVERRIDE: Record<string, string> = {
   "BufferGeometry.groups": "string",
   // The binding answers three's `{ start, count }[]` as its canonical JSON text.
   "BufferAttribute.updateRanges": "string",
-  "Scene.background": "Color | null",
+  "Scene.background": "Color | Texture | null",
 };
 
 /** Bound methods whose binding signature differs from three's richer overloads. */

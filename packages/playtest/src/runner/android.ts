@@ -9,6 +9,8 @@ const execFileAsync = promisify(execFile);
 
 export interface IAndroidDriverOptions {
   activity: string;
+  /** JS-free inspect endpoint over the file mailbox; no JS HTTP bridge or reverse port. */
+  nativeEngine?: boolean;
   adbPath?: string;
   packageName: string;
   serial?: string;
@@ -212,7 +214,7 @@ export class AdbAndroidDriver implements IAndroidDriver {
     const port = url.port;
     const user = await this.resolveUser();
     this.activeUser = user;
-    await this.adb(["reverse", `tcp:${port}`, `tcp:${port}`]);
+    if (!this.options.nativeEngine) await this.adb(["reverse", `tcp:${port}`, `tcp:${port}`]);
     await this.adb(["shell", "am", "force-stop", "--user", user, this.options.packageName]);
     if (viewport !== undefined) await this.presentViewport(viewport);
     // Stopping the old app can log a broken input channel. Capture only the new launch.
@@ -226,9 +228,7 @@ export class AdbAndroidDriver implements IAndroidDriver {
       "-W",
       "-n",
       `${this.options.packageName}/${this.options.activity}`,
-      "--es",
-      "TN_PLAYTEST_ENDPOINT",
-      endpoint,
+      ...(this.options.nativeEngine ? [] : ["--es", "TN_PLAYTEST_ENDPOINT", endpoint]),
       ...(mailboxRoot === undefined ? [] : ["--es", "TN_PLAYTEST_MAILBOX_ROOT", mailboxRoot]),
     ]);
   }
@@ -285,8 +285,28 @@ export class AdbAndroidDriver implements IAndroidDriver {
    * reading it is about to claim and throws when the claim is false.
    */
   async background(): Promise<void> {
+    const pid = this.options.nativeEngine
+      ? parseAndroidAppPid(await this.adb(["shell", "pidof", this.options.packageName]))
+      : undefined;
+    if (this.options.nativeEngine && pid === undefined) {
+      throw new Error("TN_PLAYTEST_ANDROID_LIFECYCLE_UNOBSERVED: native app has no live process before HOME.");
+    }
+    const releases = pid === undefined ? 0 : await this.nativeSurfaceReleases(pid);
     await this.adb(["shell", "input", "keyevent", "3"]);
     await this.waitForFocus(false);
+    if (pid === undefined) return;
+    // Lost focus precedes SDL consuming PAUSE. A quick RESUME cancels a queued PAUSE, so
+    // wait for the game thread to release its surface before bringing the activity back.
+    for (let attempt = 0; attempt < AdbAndroidDriver.LIFECYCLE_ATTEMPTS; attempt += 1) {
+      if (await this.nativeSurfaceReleases(pid) > releases) return;
+      await delay(100);
+    }
+    throw new Error("TN_PLAYTEST_ANDROID_LIFECYCLE_NOT_APPLIED: native player did not acknowledge surface release after HOME.");
+  }
+
+  private async nativeSurfaceReleases(pid: number): Promise<number> {
+    const output = await this.adb(["logcat", "-d", "--pid=" + pid, "-v", "brief", "TN_Player:I", "*:S"]);
+    return output.split("\n").filter((line) => line.includes("TN_PLAYER_STAGE: surface-released")).length;
   }
 
   async foreground(): Promise<void> {
@@ -588,7 +608,7 @@ export class AdbAndroidDriver implements IAndroidDriver {
       ...(this.activeUser === undefined ? [] : ["--user", this.activeUser]),
       this.options.packageName,
     ]).catch(() => undefined);
-    await this.adb(["reverse", "--remove-all"]).catch(() => undefined);
+    if (!this.options.nativeEngine) await this.adb(["reverse", "--remove-all"]).catch(() => undefined);
   }
 
   private async readRotation(): Promise<number> {

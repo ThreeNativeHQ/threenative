@@ -20,7 +20,7 @@
 
 ## Out of scope
 
-- GPU upload/readback mechanics: [PRD-509](../../../native-engine/PRD-509-n07-gpu-resources-presentation-and-device-loss.md).
+- GPU upload/readback mechanics: [PRD-509](../PRD-509-n07-gpu-resources-presentation-and-device-loss.md).
 - Geometry classes that own attributes: [PRD-508](../PRD-508-n06-native-scene-graph-transforms-cameras-geometry.md).
 
 ## Execution Phases

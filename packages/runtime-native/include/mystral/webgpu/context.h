@@ -90,7 +90,11 @@ public:
      * @param height Window height
      * @return true on success
      */
-    bool configureSurface(uint32_t width, uint32_t height, bool vsync = true);
+    bool configureSurface(uint32_t width, uint32_t height, bool vsync);
+    // Recovery callers that omit a mode must preserve the current Android presentation path.
+    bool configureSurface(uint32_t width, uint32_t height) {
+        return configureSurface(width, height, vsync_);
+    }
 
     /**
      * Resize the surface
@@ -107,6 +111,10 @@ public:
      * Returns false rather than leaving the old, dead surface in place silently.
      */
     bool rebuildSurface(void* nativeHandle, int platformType);
+    /** Release only window-bound objects before Android destroys its native window. */
+    void releaseSurface();
+    uint32_t deviceCreations() const { return deviceCreations_; }
+    uint32_t surfaceCreations() const { return surfaceCreations_; }
 
     /** The native window the live surface was built from, or nullptr. */
     void* getSurfaceNativeHandle() const { return surfaceNativeHandle_; }
@@ -218,9 +226,10 @@ public:
 
 private:
     void releaseSurfaceView();
-    /** Builds a surface handle for a native window without touching any member state. */
+    /** Builds and counts a surface without changing the installed surface, adapter or device. */
     WGPUSurface makeSurface(void* nativeHandle, int platformType);
 
+    uint32_t deviceCreations_ = 0, surfaceCreations_ = 0;
     WGPUInstance instance_ = nullptr;
     WGPUSurface surface_ = nullptr;
     WGPUTexture surfaceTexture_ = nullptr;

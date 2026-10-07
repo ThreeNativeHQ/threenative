@@ -36,7 +36,7 @@ functions are supported.
 ## Out of scope
 
 - WGSL emission, layouts and validation — [PRD-511](PRD-511-n08b-shader-packages-not-wgsl-text.md).
-- Graphs built from compiled game code — [PRD-513](../../../native-engine/N08-native-tsl-and-shader-packages/PRD-513-n08d-compute-multipass-and-a-dynamic-graph.md).
+- Graphs built from compiled game code — [PRD-513](PRD-513-n08d-compute-multipass-and-a-dynamic-graph.md).
 
 ## Execution Phases
 

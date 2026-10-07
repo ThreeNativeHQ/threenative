@@ -1,5 +1,7 @@
 #include "check.h"
 #include "fixture/traa_dump.h"
+#include "engine/renderer/render_database.h"
+#include "engine/scene/geometries.h"
 #include "engine/renderer/renderer.h"
 #include "engine/renderer/post/traa.h"
 #include "mystral/webgpu/context.h"
@@ -133,6 +135,33 @@ void traaValidation() {
         });
         for (int i = 0; i < 1000 && !readDone; ++i) { renderer.poll(); events.drain(); }
         CHECK(readDone);
+    }
+    {
+        EventQueue events;
+        Renderer renderer(instance, device, queue, events);
+        renderer.setSize(32, 24);
+        Scene scene;
+        PerspectiveCamera camera(55, 4.0 / 3, 0.1, 100);
+        camera.position.set(0.7, 0, 6); camera.lookAt(0, 0, 0);
+        auto sky = std::make_shared<DataTexture>();
+        sky->width = 128; sky->height = 64; sky->mapping = 303;
+        sky->colorSpace = TextureColorSpace::SRGB;
+        sky->minFilter = static_cast<uint16_t>(TextureFilter::LinearMipmapLinear);
+        sky->magFilter = static_cast<uint16_t>(TextureFilter::Linear);
+        sky->data.resize(128 * 64 * 4, 255); sky->needsUpdate();
+        scene.backgroundTexture = scene.environment = sky;
+        scene.backgroundIntensity = scene.environmentIntensity = 2.5;
+        scene.backgroundRotation.set(0.1, 0.4, 0); scene.environmentRotation.set(0.1, 0.4, 0);
+        auto material = std::make_shared<Material>(MaterialType::Standard);
+        Mesh sphere(makeSphereGeometry(), material); scene.add(sphere);
+        RenderDatabase database;
+        database.render(renderer, scene, camera, {0, 0, 0, 0});
+        CHECK(database.diagnostics().empty());
+        CHECK(renderer.lastFrame().draws == 3 && renderer.lastFrame().triangles > 0); // sky, sphere, output
+        // Removing only the background must remove the sky draw even with environment retained.
+        scene.backgroundTexture.reset();
+        database.render(renderer, scene, camera, {0, 0, 0, 0});
+        CHECK(renderer.lastFrame().draws == 2); // sphere and output
     }
     bool done = false;
     WGPUPopErrorScopeCallbackInfo errorInfo{};

@@ -4,10 +4,10 @@
 // game finds the same names, parents and transforms it would under the upstream loader.
 //
 // Supported: core glTF 2.0 in a GLB or a glTF with embedded (data URI) buffers, and
-// KHR_mesh_quantization. An extension GLTFLoader implements and this loader does not is refused
+// KHR_mesh_quantization, KHR_lights_punctual and KHR_materials_unlit. An extension GLTFLoader implements and this loader does not is refused
 // by name (TN_NATIVE_GLTF_EXTENSION_UNSUPPORTED) instead of being dropped, as is a required
 // extension nobody knows; an unknown optional extension is ignored, as GLTFLoader ignores it.
-// Not yet: cameras and lights (refused), image decoding (a texture records its name and image),
+// Not yet: image decoding (a texture records its name and image),
 // a node shared between scenes, external buffer files.
 //
 // Engine code never throws: a refusal is the result's `error`, a TN_NATIVE_GLTF_* code and detail.
@@ -20,6 +20,7 @@
 
 #include "engine/animation/mixer.h"
 #include "engine/scene/nodes.h"
+#include "engine/scene/camera.h"
 
 namespace tn::engine::gltf {
 
@@ -27,6 +28,7 @@ struct LoadResult {
     std::shared_ptr<Group> scene;                 // the default scene (json.scene, else the first)
     std::vector<std::shared_ptr<Group>> scenes;   // every scene, in file order
     std::vector<std::shared_ptr<animation::AnimationClip>> animations;
+    std::vector<std::shared_ptr<Camera>> cameras;  // definitions, like GLTFLoader result.cameras
     std::string error;                            // empty on success
 };
 

@@ -17,8 +17,9 @@ namespace tn::engine {
 
 /** three's wrapping constants (three/src/constants.js), the values a fixture passes. */
 enum class TextureWrap : uint16_t { Repeat = 1000, ClampToEdge = 1001, MirroredRepeat = 1002 };
-/** three's filter constants (three/src/constants.js); only the two a non-mipmapped sample needs. */
-enum class TextureFilter : uint16_t { Nearest = 1003, Linear = 1006 };
+/** three's filter constants: mipmapped filters retain their base-level nearest/linear filtering. */
+enum class TextureFilter : uint16_t { Nearest = 1003, NearestMipmapNearest = 1004, NearestMipmapLinear = 1005,
+    Linear = 1006, LinearMipmapNearest = 1007, LinearMipmapLinear = 1008 };
 inline constexpr uint16_t kTextureUnsignedByteType = 1009;  // three's UnsignedByteType
 inline constexpr uint16_t kTextureFloatType = 1015;         // three's FloatType
 inline constexpr uint16_t kTextureRGBAFormat = 1023;        // three's RGBAFormat
@@ -37,9 +38,10 @@ public:
     uint16_t wrapS = static_cast<uint16_t>(TextureWrap::ClampToEdge);
     uint16_t wrapT = static_cast<uint16_t>(TextureWrap::ClampToEdge);
     uint16_t magFilter = static_cast<uint16_t>(TextureFilter::Linear);
-    uint16_t minFilter = static_cast<uint16_t>(TextureFilter::Linear);
+    uint16_t minFilter = static_cast<uint16_t>(TextureFilter::LinearMipmapLinear);
     uint16_t format = kTextureRGBAFormat;
     uint16_t type = kTextureUnsignedByteType;
+    bool flipY = true; // TextureLoader images; DataTexture and GLTFLoader override false.
     TextureColorSpace colorSpace = TextureColorSpace::None;
     Vector2 repeat{1, 1};
     Vector2 offset{0, 0};
@@ -70,6 +72,7 @@ private:
 class DataTexture final : public Texture {
 public:
     DataTexture() {
+        flipY = false;
         // DataTexture's own defaults (three/src/textures/DataTexture.js).
         magFilter = minFilter = static_cast<uint16_t>(TextureFilter::Nearest);
         format = kTextureRGBAFormat;

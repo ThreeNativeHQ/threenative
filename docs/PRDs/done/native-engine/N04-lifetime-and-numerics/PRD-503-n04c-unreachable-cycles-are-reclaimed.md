@@ -20,7 +20,7 @@
 ## Out of scope
 
 - Buffer views and leases: [PRD-504](PRD-504-n04d-buffers-cross-the-abi-with-an-owner.md).
-- Device-loss rebuild of destroyed resources: [PRD-509](../../../native-engine/PRD-509-n07-gpu-resources-presentation-and-device-loss.md).
+- Device-loss rebuild of destroyed resources: [PRD-509](../PRD-509-n07-gpu-resources-presentation-and-device-loss.md).
 
 ## Execution Phases
 

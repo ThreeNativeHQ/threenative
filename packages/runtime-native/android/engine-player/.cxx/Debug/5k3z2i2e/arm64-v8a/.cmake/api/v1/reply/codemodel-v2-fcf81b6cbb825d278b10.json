@@ -1,0 +1,849 @@
+{
+	"configurations" : 
+	[
+		{
+			"directories" : 
+			[
+				{
+					"build" : ".",
+					"childIndexes" : 
+					[
+						1
+					],
+					"jsonFile" : "directory-.-Debug-f5ebdc15457944623624.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.10.0"
+					},
+					"projectIndex" : 0,
+					"source" : ".",
+					"targetIndexes" : 
+					[
+						3,
+						4,
+						5,
+						6,
+						7,
+						8,
+						9,
+						10,
+						11,
+						12,
+						13,
+						14,
+						15,
+						16,
+						17,
+						18,
+						19,
+						20,
+						21,
+						22,
+						23,
+						24,
+						25,
+						26,
+						27,
+						28,
+						29,
+						30,
+						31,
+						32,
+						33,
+						34,
+						35,
+						36,
+						37,
+						38,
+						39,
+						40,
+						41,
+						42,
+						43,
+						44,
+						45,
+						46,
+						47,
+						48,
+						49,
+						50,
+						51,
+						52,
+						53,
+						54,
+						55,
+						56,
+						57,
+						58,
+						59,
+						60,
+						61,
+						62,
+						63,
+						64,
+						65,
+						66,
+						67,
+						68,
+						69,
+						70,
+						71,
+						72,
+						73,
+						74,
+						75,
+						76,
+						77,
+						78,
+						79,
+						80,
+						81,
+						82,
+						83,
+						84
+					]
+				},
+				{
+					"build" : "sdl3-build",
+					"jsonFile" : "directory-sdl3-build-Debug-fea736a5c721aea70e23.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.16"
+					},
+					"parentIndex" : 0,
+					"projectIndex" : 1,
+					"source" : "third_party/sdl3/SDL3-3.2.30",
+					"targetIndexes" : 
+					[
+						0,
+						1,
+						2
+					]
+				}
+			],
+			"name" : "Debug",
+			"projects" : 
+			[
+				{
+					"childIndexes" : 
+					[
+						1
+					],
+					"directoryIndexes" : 
+					[
+						0
+					],
+					"name" : "MystralNativeRuntime",
+					"targetIndexes" : 
+					[
+						3,
+						4,
+						5,
+						6,
+						7,
+						8,
+						9,
+						10,
+						11,
+						12,
+						13,
+						14,
+						15,
+						16,
+						17,
+						18,
+						19,
+						20,
+						21,
+						22,
+						23,
+						24,
+						25,
+						26,
+						27,
+						28,
+						29,
+						30,
+						31,
+						32,
+						33,
+						34,
+						35,
+						36,
+						37,
+						38,
+						39,
+						40,
+						41,
+						42,
+						43,
+						44,
+						45,
+						46,
+						47,
+						48,
+						49,
+						50,
+						51,
+						52,
+						53,
+						54,
+						55,
+						56,
+						57,
+						58,
+						59,
+						60,
+						61,
+						62,
+						63,
+						64,
+						65,
+						66,
+						67,
+						68,
+						69,
+						70,
+						71,
+						72,
+						73,
+						74,
+						75,
+						76,
+						77,
+						78,
+						79,
+						80,
+						81,
+						82,
+						83,
+						84
+					]
+				},
+				{
+					"directoryIndexes" : 
+					[
+						1
+					],
+					"name" : "SDL3",
+					"parentIndex" : 0,
+					"targetIndexes" : 
+					[
+						0,
+						1,
+						2
+					]
+				}
+			],
+			"targets" : 
+			[
+				{
+					"directoryIndex" : 1,
+					"id" : "SDL3-shared::@4c0932224f695fd1c828",
+					"jsonFile" : "target-SDL3-shared-Debug-da7ba4fca384ac4e11de.json",
+					"name" : "SDL3-shared",
+					"projectIndex" : 1
+				},
+				{
+					"directoryIndex" : 1,
+					"id" : "SDL3_test::@4c0932224f695fd1c828",
+					"jsonFile" : "target-SDL3_test-Debug-498ffad8ac57a7301aac.json",
+					"name" : "SDL3_test",
+					"projectIndex" : 1
+				},
+				{
+					"directoryIndex" : 1,
+					"id" : "SDL_uclibc::@4c0932224f695fd1c828",
+					"jsonFile" : "target-SDL_uclibc-Debug-3ef3ad959cf8028c5e27.json",
+					"name" : "SDL_uclibc",
+					"projectIndex" : 1
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn-native-engine-abi-c11::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn-native-engine-abi-c11-Debug-b0e1ac1d85a1e35363c5.json",
+					"name" : "tn-native-engine-abi-c11",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn-native-engine-abi-test::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn-native-engine-abi-test-Debug-83be7cfe894cee35d254.json",
+					"name" : "tn-native-engine-abi-test",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn-native-engine-animation-binding-test::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn-native-engine-animation-binding-test-Debug-3483437b190384a5d1de.json",
+					"name" : "tn-native-engine-animation-binding-test",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn-native-engine-animation-interpolants-test::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn-native-engine-animation-interpolants-test-Debug-5d637166758d0fa5f2c5.json",
+					"name" : "tn-native-engine-animation-interpolants-test",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn-native-engine-animation-mixer-test::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn-native-engine-animation-mixer-test-Debug-f98b5ca65a4e7aca4d21.json",
+					"name" : "tn-native-engine-animation-mixer-test",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn-native-engine-animation-property-tracks-test::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn-native-engine-animation-property-tracks-test-Debug-6358fb70b5ae0c85e597.json",
+					"name" : "tn-native-engine-animation-property-tracks-test",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn-native-engine-animation-schedule-test::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn-native-engine-animation-schedule-test-Debug-a4bac083a673a78df30a.json",
+					"name" : "tn-native-engine-animation-schedule-test",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn-native-engine-animation-skeleton-test::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn-native-engine-animation-skeleton-test-Debug-4676eb118b1fd1d235b0.json",
+					"name" : "tn-native-engine-animation-skeleton-test",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn-native-engine-animation-skinned-palette-test::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn-native-engine-animation-skinned-palette-test-Debug-a4387d49a02b0004d13c.json",
+					"name" : "tn-native-engine-animation-skinned-palette-test",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn-native-engine-buffers-test::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn-native-engine-buffers-test-Debug-afd8643c90f578d3b1f1.json",
+					"name" : "tn-native-engine-buffers-test",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn-native-engine-chain-test::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn-native-engine-chain-test-Debug-d7fabca30b63e4095f8b.json",
+					"name" : "tn-native-engine-chain-test",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn-native-engine-core-tests::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn-native-engine-core-tests-Debug-998ec32ed92064ead523.json",
+					"name" : "tn-native-engine-core-tests",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn-native-engine-decoder-matrix-test::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn-native-engine-decoder-matrix-test-Debug-ce2d242e6a1dceb6168a.json",
+					"name" : "tn-native-engine-decoder-matrix-test",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn-native-engine-event-queue-test::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn-native-engine-event-queue-test-Debug-2248520eab7d7df6fa58.json",
+					"name" : "tn-native-engine-event-queue-test",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn-native-engine-fixture-driver::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn-native-engine-fixture-driver-Debug-2cb7a90107ea9332330a.json",
+					"name" : "tn-native-engine-fixture-driver",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn-native-engine-fixture-protocol-test::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn-native-engine-fixture-protocol-test-Debug-ceabe0d887799a1ebdfe.json",
+					"name" : "tn-native-engine-fixture-protocol-test",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn-native-engine-fuzz-gltf::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn-native-engine-fuzz-gltf-Debug-88c93becf2d9b00b96ec.json",
+					"name" : "tn-native-engine-fuzz-gltf",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn-native-engine-fuzz-package::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn-native-engine-fuzz-package-Debug-8cc0073f34097459dba3.json",
+					"name" : "tn-native-engine-fuzz-package",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn-native-engine-geometry-edges-test::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn-native-engine-geometry-edges-test-Debug-31a766f06e41a05c5b49.json",
+					"name" : "tn-native-engine-geometry-edges-test",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn-native-engine-gltf-hierarchy-test::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn-native-engine-gltf-hierarchy-test-Debug-c7d492b603f6bde8edcc.json",
+					"name" : "tn-native-engine-gltf-hierarchy-test",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn-native-engine-handles-test::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn-native-engine-handles-test-Debug-8ea31c3374a03d7ad13c.json",
+					"name" : "tn-native-engine-handles-test",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn-native-engine-identity::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn-native-engine-identity-Debug-8114fd2a2367587197dc.json",
+					"name" : "tn-native-engine-identity",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn-native-engine-identity-test::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn-native-engine-identity-test-Debug-da438a94c3d5cd39ae07.json",
+					"name" : "tn-native-engine-identity-test",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn-native-engine-ieee754-test::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn-native-engine-ieee754-test-Debug-a2369af6aa917de843c4.json",
+					"name" : "tn-native-engine-ieee754-test",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn-native-engine-inspect-test::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn-native-engine-inspect-test-Debug-ac19caa1277f92b2b990.json",
+					"name" : "tn-native-engine-inspect-test",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn-native-engine-instanced-batch-test::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn-native-engine-instanced-batch-test-Debug-60da77aa3ae1ddacaee0.json",
+					"name" : "tn-native-engine-instanced-batch-test",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn-native-engine-json-test::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn-native-engine-json-test-Debug-cc3439dbbaec854eb2a3.json",
+					"name" : "tn-native-engine-json-test",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn-native-engine-lifetime-test::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn-native-engine-lifetime-test-Debug-841506e84c279696ba69.json",
+					"name" : "tn-native-engine-lifetime-test",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn-native-engine-loop-fixed-step-test::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn-native-engine-loop-fixed-step-test-Debug-55f96486b1e1c853ac28.json",
+					"name" : "tn-native-engine-loop-fixed-step-test",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn-native-engine-material-test::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn-native-engine-material-test-Debug-0252f0237e4262d84bc1.json",
+					"name" : "tn-native-engine-material-test",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn-native-engine-mathutils-test::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn-native-engine-mathutils-test-Debug-d49b2079f7dfc92a3c39.json",
+					"name" : "tn-native-engine-mathutils-test",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn-native-engine-members-test::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn-native-engine-members-test-Debug-36f57c58d11841b28516.json",
+					"name" : "tn-native-engine-members-test",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn-native-engine-model-lod-test::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn-native-engine-model-lod-test-Debug-973158f0475be7bc2905.json",
+					"name" : "tn-native-engine-model-lod-test",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn-native-engine-ortho-projection-test::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn-native-engine-ortho-projection-test-Debug-f49fa03d0d07cd4c7cee.json",
+					"name" : "tn-native-engine-ortho-projection-test",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn-native-engine-package-test::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn-native-engine-package-test-Debug-b51d502da92be4a22898.json",
+					"name" : "tn-native-engine-package-test",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn-native-engine-player::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn-native-engine-player-Debug-80df3f97b8bd3a6bdcb7.json",
+					"name" : "tn-native-engine-player",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn-native-engine-probe-schedule-test::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn-native-engine-probe-schedule-test-Debug-b3b59e73718652d3d720.json",
+					"name" : "tn-native-engine-probe-schedule-test",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn-native-engine-probe-volume-test::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn-native-engine-probe-volume-test-Debug-0af6cf6fa3912625e484.json",
+					"name" : "tn-native-engine-probe-volume-test",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn-native-engine-projection-plan-test::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn-native-engine-projection-plan-test-Debug-7ab5b57236ea8f9c4a46.json",
+					"name" : "tn-native-engine-projection-plan-test",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn-native-engine-raycast-test::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn-native-engine-raycast-test-Debug-958e91c227f6a7bf2f1d.json",
+					"name" : "tn-native-engine-raycast-test",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn-native-engine-registry-dump::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn-native-engine-registry-dump-Debug-996559d1c84dd9af2b03.json",
+					"name" : "tn-native-engine-registry-dump",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn-native-engine-render-graph-test::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn-native-engine-render-graph-test-Debug-7acf622694ca2b661a37.json",
+					"name" : "tn-native-engine-render-graph-test",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn-native-engine-scene-test::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn-native-engine-scene-test-Debug-5b5155ad1e568cec5e1b.json",
+					"name" : "tn-native-engine-scene-test",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn-native-engine-shader-ir-test::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn-native-engine-shader-ir-test-Debug-e69d0f52066ff7cdcdde.json",
+					"name" : "tn-native-engine-shader-ir-test",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn-native-engine-static-transform-test::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn-native-engine-static-transform-test-Debug-b8dc40e8f009f380fcb4.json",
+					"name" : "tn-native-engine-static-transform-test",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn-native-engine-template-post-packages::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn-native-engine-template-post-packages-Debug-a8537a7e863265f5bb82.json",
+					"name" : "tn-native-engine-template-post-packages",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn-native-engine-tests::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn-native-engine-tests-Debug-26802798b47d7c2a2cb6.json",
+					"name" : "tn-native-engine-tests",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn-native-engine-tonemap-test::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn-native-engine-tonemap-test-Debug-9479ecb10f75e23d69c9.json",
+					"name" : "tn-native-engine-tonemap-test",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn-native-engine-tsl-corpus::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn-native-engine-tsl-corpus-Debug-f7cfef3e0707f9cd4692.json",
+					"name" : "tn-native-engine-tsl-corpus",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn-native-engine-tsl-graph::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn-native-engine-tsl-graph-Debug-9de47defb16cab4a4300.json",
+					"name" : "tn-native-engine-tsl-graph",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn-native-engine-visibility-camera-cull-test::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn-native-engine-visibility-camera-cull-test-Debug-8143a57c2f3d119bb37b.json",
+					"name" : "tn-native-engine-visibility-camera-cull-test",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn-native-engine-vsm-atlas-test::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn-native-engine-vsm-atlas-test-Debug-2bceb1affc64f8f8443c.json",
+					"name" : "tn-native-engine-vsm-atlas-test",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn-native-engine-vsm-test::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn-native-engine-vsm-test-Debug-53b8ac9c4a7a9749349c.json",
+					"name" : "tn-native-engine-vsm-test",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn-native-engine-world-cells-test::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn-native-engine-world-cells-test-Debug-3e59b666c3e08960d036.json",
+					"name" : "tn-native-engine-world-cells-test",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn-native-engine-world-gpu-scene-test::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn-native-engine-world-gpu-scene-test-Debug-1165e3abcd7ef52449ec.json",
+					"name" : "tn-native-engine-world-gpu-scene-test",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn-native-engine-world-heights-test::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn-native-engine-world-heights-test-Debug-26565d67365f6ae70785.json",
+					"name" : "tn-native-engine-world-heights-test",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn-native-engine-world-package-test::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn-native-engine-world-package-test-Debug-18f4cf6c016080f135c2.json",
+					"name" : "tn-native-engine-world-package-test",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn-native-engine-world-tiles-test::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn-native-engine-world-tiles-test-Debug-2d32f57e912040ecdc11.json",
+					"name" : "tn-native-engine-world-tiles-test",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn_engine_abi::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn_engine_abi-Debug-186f660f355fec2109e2.json",
+					"name" : "tn_engine_abi",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn_engine_animation::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn_engine_animation-Debug-c979872211dd6232b398.json",
+					"name" : "tn_engine_animation",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn_engine_assets::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn_engine_assets-Debug-ca1bf535f7c2e1a06cd0.json",
+					"name" : "tn_engine_assets",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn_engine_batch::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn_engine_batch-Debug-245cbc1d860a260d6c58.json",
+					"name" : "tn_engine_batch",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn_engine_bindings::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn_engine_bindings-Debug-1e3a93005f5f9c11b3c7.json",
+					"name" : "tn_engine_bindings",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn_engine_chain::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn_engine_chain-Debug-3513d0cfee172522df4e.json",
+					"name" : "tn_engine_chain",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn_engine_foundation::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn_engine_foundation-Debug-3e1cfa651914d8d76711.json",
+					"name" : "tn_engine_foundation",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn_engine_gltf::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn_engine_gltf-Debug-e7c68cc3739516a6df1a.json",
+					"name" : "tn_engine_gltf",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn_engine_gpu_scene::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn_engine_gpu_scene-Debug-a52e026b78e59b962feb.json",
+					"name" : "tn_engine_gpu_scene",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn_engine_gpu_scene_kernel::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn_engine_gpu_scene_kernel-Debug-139166029db500667e81.json",
+					"name" : "tn_engine_gpu_scene_kernel",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn_engine_graph::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn_engine_graph-Debug-cc34e6928ed4c8d2e696.json",
+					"name" : "tn_engine_graph",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn_engine_inspect::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn_engine_inspect-Debug-71ae1caa656e5fa9aec0.json",
+					"name" : "tn_engine_inspect",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn_engine_lod::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn_engine_lod-Debug-5c7a6580a01a722572fe.json",
+					"name" : "tn_engine_lod",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn_engine_particles::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn_engine_particles-Debug-68a42912958c6220059a.json",
+					"name" : "tn_engine_particles",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn_engine_player::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn_engine_player-Debug-13302dce221a891a5edd.json",
+					"name" : "tn_engine_player",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn_engine_probes::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn_engine_probes-Debug-8afebb8613acfc95a43a.json",
+					"name" : "tn_engine_probes",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn_engine_renderer::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn_engine_renderer-Debug-b3b38bff609a6bd9a38e.json",
+					"name" : "tn_engine_renderer",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn_engine_scene::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn_engine_scene-Debug-8d85611664915e724941.json",
+					"name" : "tn_engine_scene",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn_engine_shader::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn_engine_shader-Debug-f3ee77a79af2df5efad2.json",
+					"name" : "tn_engine_shader",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn_engine_visibility::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn_engine_visibility-Debug-67097f9b3096e41c01bf.json",
+					"name" : "tn_engine_visibility",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn_engine_vsm::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn_engine_vsm-Debug-5398aafe311371233bd2.json",
+					"name" : "tn_engine_vsm",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn_engine_world::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn_engine_world-Debug-019a80b69de188d5a9a9.json",
+					"name" : "tn_engine_world",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn_fixture_driver::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn_fixture_driver-Debug-6ebb5a2d98d369ec6e85.json",
+					"name" : "tn_fixture_driver",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "tn_host_services::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-tn_host_services-Debug-5b8e011650db2d81da83.json",
+					"name" : "tn_host_services",
+					"projectIndex" : 0
+				}
+			]
+		}
+	],
+	"kind" : "codemodel",
+	"paths" : 
+	{
+		"build" : "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/.cxx/Debug/5k3z2i2e/arm64-v8a",
+		"source" : "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native"
+	},
+	"version" : 
+	{
+		"major" : 2,
+		"minor" : 3
+	}
+}

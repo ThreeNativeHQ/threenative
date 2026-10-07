@@ -7,11 +7,13 @@
 #include "driver.h"
 #include "engine/abi/bindings.h"
 #include "engine/renderer/render_database.h"
+#include "engine/shader/graph/serialized.h"
 #include "mystral/webgpu/context.h"
 
 #include <chrono>
 #include <algorithm>
 #include <cstdlib>
+#include <fstream>
 #include <iostream>
 #include <memory>
 #include <sstream>
@@ -42,6 +44,7 @@ struct Gpu {
     std::unique_ptr<Renderer> renderer;
     RenderDatabase database;
     std::vector<std::shared_ptr<void>> fixtureResources;
+    shader::graph::Node postGraph;
 };
 
 std::string draw(Gpu& gpu, tn::binding::Object& sceneObject, tn::binding::Object& cameraObject, const tn::fixture::RenderRequest& r) {
@@ -53,6 +56,7 @@ std::string draw(Gpu& gpu, tn::binding::Object& sceneObject, tn::binding::Object
     if (!gpu.renderer) {
         if (!gpu.context.initializeHeadless()) return "no GPU device";
         gpu.renderer = std::make_unique<Renderer>(gpu.context.getInstance(), gpu.context.getDevice(), gpu.context.getQueue(), gpu.events);
+        if (gpu.postGraph) gpu.renderer->setPostGraph(gpu.postGraph);
     }
     Renderer& renderer = *gpu.renderer;
     renderer.setSize(r.width, r.height);
@@ -114,6 +118,18 @@ int main() {
     tn::fixture::Driver driver;
     tn::binding::registerAll(driver.classes);
     Gpu gpu;
+    // The visual arm imports the actual authored r185 graph, not a named fixture substitute.
+    if (const char* file = std::getenv("TN_FIXTURE_POST_GRAPH"); file && *file) {
+        std::ifstream input(file);
+        if (!input) { std::cerr << "TN_VISUAL_POST_GRAPH_UNREADABLE: " << file << '\n'; return 2; }
+        const std::string source{std::istreambuf_iterator<char>(input), {}};
+        std::vector<std::string> errors;
+        gpu.postGraph = shader::graph::importSerialized(source, errors);
+        if (!gpu.postGraph || !errors.empty()) {
+            for (const auto& error : errors) std::cerr << "TN_VISUAL_POST_GRAPH_INVALID: " << error << '\n';
+            return 2;
+        }
+    }
     driver.render = [&gpu](tn::binding::Object& scene, tn::binding::Object& camera, const tn::fixture::RenderRequest& r) {
         return draw(gpu, scene, camera, r);
     };

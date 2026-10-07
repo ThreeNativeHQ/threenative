@@ -12,6 +12,8 @@
 #include "engine/shader/dfg_lut.h"
 #include "engine/shader/sprite.h"
 #include "engine/scene/texture.h"
+#include "engine/scene/nodes.h"
+#include "engine/scene/camera.h"
 #include "engine/renderer/graph/render_graph.h"
 #include "engine/renderer/post/traa.h"
 #include "engine/renderer/post/effects.h"
@@ -122,7 +124,7 @@ constexpr const char* kSlotNames[] = {
     "metalness", "emissive", "specular", "shininess", "ior", "specularIntensity", "specularColor", "uvTransform",
     "hemisphereSky", "hemisphereGround", "hemisphereDirection", "ambient", "boneBase", "bindMatrix",
     "bindMatrixInverse", "morphBase", "morphInfluenceBase", "morphVertexCount", "morphBaseInfluence",
-    "envMapIntensity", "cameraWorldMatrix", "envMapTexelWidth", "envMapTexelHeight", "envMapMaxMip", "boneStride"};
+    "envMapIntensity", "cameraWorldMatrix", "envMapTexelWidth", "envMapTexelHeight", "envMapMaxMip", "boneStride", "fogColor", "fogNear", "fogFar", "fogDensity", "backgroundRotation", "envRotation"};
 constexpr const char* kLightFieldNames[] = {"Color",       "Direction",        "Position",     "Distance",
                                             "Decay",       "Axis",             "ConeCos",      "PenumbraCos",
                                             "ShadowMatrix", "ShadowBias",      "ShadowNormalBias", "ShadowRadius",
@@ -149,7 +151,8 @@ WGPUAddressMode addressMode(uint16_t wrap) {
     }
 }
 WGPUFilterMode filterMode(uint16_t filter) {
-    return filter == static_cast<uint16_t>(TextureFilter::Linear) ? WGPUFilterMode_Linear : WGPUFilterMode_Nearest;
+    return filter >= static_cast<uint16_t>(TextureFilter::Linear) && filter <= static_cast<uint16_t>(TextureFilter::LinearMipmapLinear)
+        ? WGPUFilterMode_Linear : WGPUFilterMode_Nearest;
 }
 
 // three's Texture.updateMatrix: Matrix3.setUvTransform(offset.x, offset.y, repeat.x, repeat.y,
@@ -615,7 +618,18 @@ const Renderer::MaterialTexture* Renderer::materialTexture(const Texture& textur
     if (texture.hasImage()) {
         record.gpu = gpu_.createTexture(texture.width, texture.height, format,
                                         WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst);
-        if (record.gpu.type != 0 && gpu_.writeTexture(record.gpu, texture.data.data(), texture.data.size()) == GpuStatus::Ok)
+        const uint64_t expected = uint64_t(texture.width) * texture.height * (texture.isFloat() ? 16u : 4u);
+        if (texture.data.size() != expected) throw std::runtime_error("TN_NATIVE_TEXTURE_INVALID: RGBA image byte count");
+        std::vector<uint8_t> flipped;
+        const uint8_t* pixels = texture.data.data();
+        if (texture.flipY) {
+            const size_t row = size_t(texture.width) * (texture.isFloat() ? 16 : 4);
+            flipped.resize(texture.data.size());
+            for (uint32_t y = 0; y < texture.height; ++y)
+                std::memcpy(flipped.data() + size_t(y) * row, texture.data.data() + size_t(texture.height - 1 - y) * row, row);
+            pixels = flipped.data();
+        }
+        if (record.gpu.type != 0 && gpu_.writeTexture(record.gpu, pixels, texture.data.size()) == GpuStatus::Ok)
             record.view = view2d(gpu_.texture(record.gpu), format);
     }
     WGPUSamplerDescriptor sampler = {};
@@ -630,7 +644,84 @@ const Renderer::MaterialTexture* Renderer::materialTexture(const Texture& textur
     return &record;
 }
 
+// CubeMapNode / CubeRenderTarget.fromEquirectangularTexture, three r185. The six camera
+// rotations and negative 90-degree FOV are CubeCamera's WebGPU branch. Level 0 is enough for
+// Background.js's sharp sky (backgroundBlurriness=0); environment lighting uses PMREM separately.
+Renderer::BackgroundCube& Renderer::backgroundCube(const Texture& texture) {
+    if (texture.mapping != 303 || !texture.hasImage() || texture.format != kTextureRGBAFormat ||
+        (texture.type != kTextureFloatType && texture.type != kTextureUnsignedByteType) ||
+        uint64_t(texture.width) * texture.height * (texture.isFloat() ? 16u : 4u) != texture.data.size())
+        throw std::runtime_error("TN_NATIVE_BACKGROUND_INVALID: decoded RGBA equirectangular pixels required");
+    auto& cube = backgroundCubes_[&texture];
+    if (cube.view && cube.version == texture.version()) return cube;
+    if (cube.view) wgpuTextureViewRelease(cube.view);
+    if (cube.texture) wgpuTextureRelease(cube.texture);
+    if (cube.sampler) wgpuSamplerRelease(cube.sampler);
+    cube = {};
+    const auto* source = materialTexture(texture);
+    if (!source->view) throw std::runtime_error("TN_NATIVE_BACKGROUND_UPLOAD_FAILED");
+    const auto format = texture.isFloat() ? WGPUTextureFormat_RGBA32Float : texture.isSRGB()
+        ? WGPUTextureFormat_RGBA8UnormSrgb : WGPUTextureFormat_RGBA8Unorm;
+    WGPUTextureDescriptor desc{};
+    desc.dimension = WGPUTextureDimension_2D; desc.size = {texture.height, texture.height, 6};
+    desc.format = format; desc.mipLevelCount = 1; desc.sampleCount = 1;
+    desc.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding;
+    cube.texture = wgpuDeviceCreateTexture(device_, &desc);
+    WGPUTextureViewDescriptor view{};
+    view.dimension = WGPUTextureViewDimension_Cube; view.arrayLayerCount = 6; view.mipLevelCount = 1;
+    cube.view = wgpuTextureCreateView(cube.texture, &view);
+    WGPUSamplerDescriptor sampler{};
+    sampler.magFilter = filterMode(texture.magFilter); sampler.minFilter = filterMode(texture.minFilter);
+    sampler.addressModeU = sampler.addressModeV = sampler.addressModeW = WGPUAddressMode_ClampToEdge;
+    sampler.maxAnisotropy = 1;
+    cube.sampler = wgpuDeviceCreateSampler(device_, &sampler);
+
+    const auto conversion = shader::buildEquirectangularCube();
+    const auto vs = shader::buildStage(conversion.vertex, 0), fs = shader::buildStage(conversion.fragment, 0);
+    if (!vs.wgsl.ok() || !fs.wgsl.ok()) throw std::runtime_error("TN_NATIVE_SHADER_INVALID: equirectangular cube conversion");
+    PipelineTarget target{format, WGPUTextureFormat_Undefined, WGPUCullMode_None};
+    const auto pipeline = pipelines_.get(vs, &fs, target);
+    if (!pipeline) throw std::runtime_error("TN_NATIVE_PIPELINE_REFUSED: background cube conversion");
+    const auto layout = wgpuRenderPipelineGetBindGroupLayout(pipeline, 0);
+    const Vector3 directions[6] = {{-1,0,0}, {1,0,0}, {0,1,0}, {0,-1,0}, {0,0,1}, {0,0,-1}};
+    const Vector3 ups[6] = {{0,-1,0}, {0,-1,0}, {0,0,1}, {0,0,-1}, {0,-1,0}, {0,-1,0}};
+    Handle uniforms[6];
+    auto encoder = wgpuDeviceCreateCommandEncoder(device_, nullptr);
+    for (uint32_t face = 0; face < 6; ++face) {
+        PerspectiveCamera camera(-90, 1, 1, 10); camera.up = ups[face]; camera.lookAt(directions[face]); camera.updateMatrixWorld();
+        std::vector<uint8_t> block(fs.uniformBlockSize, 0); put(block, fs, "cubeRotation", camera.matrixWorld.elements);
+        uniforms[face] = gpu_.createBuffer(block.size(), WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
+        gpu_.writeBuffer(uniforms[face], 0, block.data(), block.size());
+        const auto group = bindGroup(layout, fs, uniforms[face], nullptr, nullptr, source->view, source->sampler);
+        WGPUTextureViewDescriptor faceView{};
+        faceView.dimension = WGPUTextureViewDimension_2D; faceView.baseArrayLayer = face;
+        faceView.arrayLayerCount = 1; faceView.mipLevelCount = 1;
+        const auto destination = wgpuTextureCreateView(cube.texture, &faceView);
+        WGPURenderPassColorAttachment color{};
+        color.view = destination; color.loadOp = WGPULoadOp_Clear; color.storeOp = WGPUStoreOp_Store;
+#if defined(MYSTRAL_WEBGPU_DAWN)
+        color.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
+#endif
+        WGPURenderPassDescriptor passDesc{}; passDesc.colorAttachmentCount = 1; passDesc.colorAttachments = &color;
+        const auto pass = wgpuCommandEncoderBeginRenderPass(encoder, &passDesc);
+        wgpuRenderPassEncoderSetPipeline(pass, pipeline); wgpuRenderPassEncoderSetBindGroup(pass, 0, group, 0, nullptr);
+        wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0); wgpuRenderPassEncoderEnd(pass);
+        wgpuRenderPassEncoderRelease(pass); wgpuTextureViewRelease(destination); wgpuBindGroupRelease(group);
+    }
+    gpu_.submit(wgpuCommandEncoderFinish(encoder, nullptr)); wgpuCommandEncoderRelease(encoder);
+    for (auto handle : uniforms) gpu_.destroy(handle);
+    wgpuBindGroupLayoutRelease(layout);
+    cube.version = texture.version();
+    return cube;
+}
+
 void Renderer::releaseMaterialTextures() {
+    for (auto& [texture, cube] : backgroundCubes_) {
+        if (cube.view) wgpuTextureViewRelease(cube.view);
+        if (cube.texture) wgpuTextureRelease(cube.texture);
+        if (cube.sampler) wgpuSamplerRelease(cube.sampler);
+    }
+    backgroundCubes_.clear();
     for (auto& [texture, record] : materialTextures_) {
         if (record.view) wgpuTextureViewRelease(record.view);
         if (record.sampler) wgpuSamplerRelease(record.sampler);
@@ -1049,6 +1140,7 @@ std::vector<std::pair<double, const DrawItem*>> Renderer::sortDraws(std::span<co
         (item.transparent ? transparent : opaque).push_back({z / w, &item});
     }
     std::sort(opaque.begin(), opaque.end(), [](const auto& a, const auto& b) {
+        if (a.second->background != b.second->background) return a.second->background;
         if (a.second->renderOrder != b.second->renderOrder) return a.second->renderOrder < b.second->renderOrder;
         if (a.first != b.first) return a.first < b.first;
         return a.second->id < b.second->id;
@@ -1295,6 +1387,8 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
     };
     auto variantOf = [](const DrawItem& item) {
         shader::VertexVariant v;
+        v.background = item.background;
+        v.fog = item.fog ? item.fog->exponential() ? 2 : 1 : 0;
         v.sprite = item.sprite;
         v.backSide = item.side == 1;
         v.instanced = item.instanceMatrices != nullptr;
@@ -1338,6 +1432,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
         PipelineTarget target{WGPUTextureFormat_RGBA16Float, WGPUTextureFormat_Depth32Float, cull, item.transparent,
                               item.depthWrite};
         target.layout = program.pipelineLayout;
+        if (item.background) target.depthCompare = WGPUCompareFunction_Always;
         target.frontFace = item.frontFace();
         target.skinIndex = skinIndexFormat(item);
         WGPURenderPipeline pipeline = pipelines_.get(program.vertex, &program.fragment, target);
@@ -1367,9 +1462,18 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
         put(frameUniforms_, f, fs[kIor], std::array<double, 1>{m.ior});
         put(frameUniforms_, f, fs[kSpecularIntensity], std::array<double, 1>{m.specularIntensity});
         put(frameUniforms_, f, fs[kSpecularColor], std::array<double, 3>{m.specularColor[0], m.specularColor[1], m.specularColor[2]});
+        if (item.background) put(frameUniforms_, f, fs[kBackgroundRotation], item.backgroundRotation);
+        if (item.fog) {
+            const auto& fog = *item.fog;
+            put(frameUniforms_, f, fs[kFogColor], std::array<double, 3>{fog.color.r, fog.color.g, fog.color.b});
+            put(frameUniforms_, f, fs[kFogNear], std::array<double, 1>{fog.near});
+            put(frameUniforms_, f, fs[kFogFar], std::array<double, 1>{fog.far});
+            put(frameUniforms_, f, fs[kFogDensity], std::array<double, 1>{fog.density});
+        }
         if (item.map) put(frameUniforms_, f, fs[kUvTransform], uvTransformOf(*item.map));
         if (item.envMap) {
             const EnvironmentGpu& env = environment(*item.envMap);
+            put(frameUniforms_, f, fs[kEnvRotation], item.envRotation);
             put(frameUniforms_, f, fs[kEnvMapIntensity], std::array<double, 1>{item.envMapIntensity});
             put(frameUniforms_, f, fs[kCameraWorldMatrix], camera.matrixWorld);
             put(frameUniforms_, f, fs[kEnvMapTexelWidth], std::array<double, 1>{env.texelWidth});
@@ -1524,10 +1628,11 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
     // Created here, after the uniform buffer exists; cached per program and texture.
     for (Planned& p : plan) {
         if (!p.item->map && !p.item->envMap) continue;
-        const MaterialTexture* map = p.item->map ? materialTexture(*p.item->map) : nullptr;
+        const MaterialTexture* map = p.item->map && !p.item->background ? materialTexture(*p.item->map) : nullptr;
+        const BackgroundCube* cube = p.item->background ? &backgroundCube(*p.item->map) : nullptr;
         const EnvironmentGpu* env = p.item->envMap ? &environment(*p.item->envMap) : nullptr;
-        const WGPUTextureView mapView = map ? map->view : nullptr, envView = env ? env->view : nullptr;
-        const WGPUSampler mapSampler = map ? map->sampler : nullptr, envSampler = env ? env->sampler : nullptr;
+        const WGPUTextureView mapView = cube ? cube->view : map ? map->view : nullptr, envView = env ? env->view : nullptr;
+        const WGPUSampler mapSampler = cube ? cube->sampler : map ? map->sampler : nullptr, envSampler = env ? env->sampler : nullptr;
         const std::string key = std::to_string(reinterpret_cast<uintptr_t>(p.program)) + "|" +
                                 std::to_string(reinterpret_cast<uintptr_t>(mapView)) + "|" +
                                 std::to_string(reinterpret_cast<uintptr_t>(mapSampler)) + "|" +

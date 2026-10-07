@@ -10,7 +10,7 @@ All new package names, configuration fields, ABI names, status markers, and work
 
 ## PRD index
 
-**Batch status: IN PROGRESS — 204/238 phase boxes (85%) as of 2026-10-06, on `feat/native-engine` (PR #438).** This file is the batch index and the source proposal; the PRDs below carry the boxes. Work packages too large for one PRD (at most 3 phases, about 8 boxes) are a folder with its own `README.md` and child PRDs. The batch moves to `done/` whole only when every PRD in it is finished.
+**Batch status: IN PROGRESS — 208/238 phase boxes (87%) as of 2026-10-06, on `feat/native-engine` (PR #438).** This file is the batch index and the source proposal; the PRDs below carry the boxes. Work packages too large for one PRD (at most 3 phases, about 8 boxes) are a folder with its own `README.md` and child PRDs. The batch moves to `done/` whole only when every PRD in it is finished.
 
 ### Progress
 
@@ -30,11 +30,11 @@ Generated from the PRD files' boxes; a PRD is done when every box is ticked.
 | [PRD-506](../done/native-engine/N05-native-typescript-qualification/PRD-506-n05b-three-imports-bind-natively-and-callbacks-are-reclaimed.md) | Three imports bind natively and callbacks are reclaimed (N05b) | 6/6 | done |
 | [PRD-507](N05-native-typescript-qualification/PRD-507-n05c-the-same-corpus-runs-on-android-arm64.md) | The same corpus runs on Android arm64 (N05c) | 0/4 | not started |
 | [PRD-508](../done/native-engine/PRD-508-n06-native-scene-graph-transforms-cameras-geometry.md) | Native scene graph, transforms, cameras and geometry (N06) | 7/7 | done |
-| [PRD-509](PRD-509-n07-gpu-resources-presentation-and-device-loss.md) | GPU resources, presentation and device loss (N07) | 7/8 | in progress |
+| [PRD-509](../done/native-engine/PRD-509-n07-gpu-resources-presentation-and-device-loss.md) | GPU resources, presentation and device loss (N07) | 8/8 | done |
 | [PRD-510](../done/native-engine/N08-native-tsl-and-shader-packages/PRD-510-n08a-a-typed-shader-ir-with-ordered-effects.md) | A typed shader IR with ordered effects (N08a) | 4/4 | done |
 | [PRD-511](../done/native-engine/N08-native-tsl-and-shader-packages/PRD-511-n08b-shader-packages-not-wgsl-text.md) | Shader packages, not WGSL text (N08b) | 6/6 | done |
 | [PRD-512](../done/native-engine/N08-native-tsl-and-shader-packages/PRD-512-n08c-standard-pbr-and-deformation-that-shadows.md) | Standard PBR and deformation that shadows (N08c) | 5/5 | done |
-| [PRD-513](N08-native-tsl-and-shader-packages/PRD-513-n08d-compute-multipass-and-a-dynamic-graph.md) | Compute, multipass and a dynamic graph (N08d) | 5/6 | in progress |
+| [PRD-513](../done/native-engine/N08-native-tsl-and-shader-packages/PRD-513-n08d-compute-multipass-and-a-dynamic-graph.md) | Compute, multipass and a dynamic graph (N08d) | 6/6 | done |
 | [PRD-514](../done/native-engine/PRD-514-n09-native-renderer-and-standard-materials.md) | Native renderer and standard materials (N09) | 8/8 | done |
 | [PRD-515](../done/native-engine/PRD-515-n10-native-gltf-cooked-assets-and-decoders.md) | Native glTF, cooked assets and decoders (N10) | 7/7 | done |
 | [PRD-516](../done/native-engine/N11-native-animation/PRD-516-n11a-animation-mixer-semantics-in-native.md) | AnimationMixer semantics in native (N11a) | 6/6 | done |
@@ -49,8 +49,8 @@ Generated from the PRD files' boxes; a PRD is done when every box is ticked.
 | [PRD-525](../done/native-engine/N14-native-render-chain-and-advanced-visuals/PRD-525-n14c-probes-run-native.md) | Probes run native (N14c) | 5/5 | done |
 | [PRD-526](N14-native-render-chain-and-advanced-visuals/PRD-526-n14d-post-effects-and-render-chains-run-native.md) | Post effects and render chains run native (N14d) | 4/5 | in progress |
 | [PRD-527](../done/native-engine/N14-native-render-chain-and-advanced-visuals/PRD-527-n14e-particles-and-fluids-run-native.md) | Particles and fluids run native (N14e) | 4/4 | done |
-| [PRD-528](PRD-528-n15-framework-loop-rapier-sync-input-services.md) | Framework loop, Rapier sync, input and services (N15) | 6/7 | in progress |
-| [PRD-529](PRD-529-n16-native-playtest-inspection-telemetry.md) | Native playtest, inspection and telemetry (N16) | 5/6 | in progress |
+| [PRD-528](../done/native-engine/PRD-528-n15-framework-loop-rapier-sync-input-services.md) | Framework loop, Rapier sync, input and services (N15) | 7/7 | done |
+| [PRD-529](../done/native-engine/PRD-529-n16-native-playtest-inspection-telemetry.md) | Native playtest, inspection and telemetry (N16) | 6/6 | done |
 | [PRD-530](PRD-530-n17-strict-native-typescript-game-packaging.md) | Strict native-TypeScript game packaging (N17) | 4/7 | in progress |
 | [PRD-531](PRD-531-n18-v8-game-runtime-adapter.md) | V8 game runtime adapter (N18) | 7/8 | in progress |
 | [PRD-532](../done/native-engine/PRD-532-n19-webassembly-native-core-browser-port.md) | WebAssembly native-core browser port (N19) | 8/8 | done |
@@ -75,7 +75,7 @@ Full text and rationale: [PRD-497 § Decisions](../done/native-engine/PRD-497-n0
 | Wave | Start when | PRDs (parallel within a wave) |
 | --- | --- | --- |
 | 1 | now | N00 [PRD-497](../done/native-engine/PRD-497-n00-architecture-decision-and-compatibility-inventory.md), N01 [PRD-498](PRD-498-n01-baseline-and-differential-fixture-runner.md), N02 [PRD-499](PRD-499-n02-the-host-links-without-a-js-engine.md), N03 [PRD-500](../done/native-engine/PRD-500-n03-api-catalog-binding-abi-and-version-protocol.md) |
-| 2 | N02 + N03 land | N04a–d, N07 [PRD-509](PRD-509-n07-gpu-resources-presentation-and-device-loss.md), N08a [PRD-510](../done/native-engine/N08-native-tsl-and-shader-packages/PRD-510-n08a-a-typed-shader-ir-with-ordered-effects.md); N05 spike alongside, off the critical path |
+| 2 | N02 + N03 land | N04a–d, N07 [PRD-509](../done/native-engine/PRD-509-n07-gpu-resources-presentation-and-device-loss.md), N08a [PRD-510](../done/native-engine/N08-native-tsl-and-shader-packages/PRD-510-n08a-a-typed-shader-ir-with-ordered-effects.md); N05 spike alongside, off the critical path |
 | 3 | N04 + N07 land | N06 [PRD-508](../done/native-engine/PRD-508-n06-native-scene-graph-transforms-cameras-geometry.md), N08b–d, N10 [PRD-515](../done/native-engine/PRD-515-n10-native-gltf-cooked-assets-and-decoders.md), N18 phases 1–2 [PRD-531](PRD-531-n18-v8-game-runtime-adapter.md) |
 | 4 | N06 + N08 land | N09 [PRD-514](../done/native-engine/PRD-514-n09-native-renderer-and-standard-materials.md), then **CP1 [PRD-534](PRD-534-cp1-the-native-engine-earns-the-port.md) — go/stop** |
 | 5 | CP1 passes | N11, N12, N13, N14, N15, N16, N18 phase 3; N19 may start at wave 4 because CP1 does not gate it |
@@ -98,12 +98,12 @@ Full text and rationale: [PRD-497 § Decisions](../done/native-engine/PRD-497-n0
 | N05b | ↳ [PRD-506 — Three imports bind natively and callbacks are reclaimed](../done/native-engine/N05-native-typescript-qualification/PRD-506-n05b-three-imports-bind-natively-and-callbacks-are-reclaimed.md) | N05a, N04b, N04c |
 | N05c | ↳ [PRD-507 — The same corpus runs on Android arm64](N05-native-typescript-qualification/PRD-507-n05c-the-same-corpus-runs-on-android-arm64.md) | N05a |
 | N06 | [PRD-508 — Native scene graph, transforms, cameras and geometry](../done/native-engine/PRD-508-n06-native-scene-graph-transforms-cameras-geometry.md) | N04 |
-| N07 | [PRD-509 — GPU resources, presentation and device loss](PRD-509-n07-gpu-resources-presentation-and-device-loss.md) | N02, N03 |
+| N07 | [PRD-509 — GPU resources, presentation and device loss](../done/native-engine/PRD-509-n07-gpu-resources-presentation-and-device-loss.md) | N02, N03 |
 | N08 | [Native TSL and shader packages](N08-native-tsl-and-shader-packages/README.md) | N03, N07 |
 | N08a | ↳ [PRD-510 — A typed shader IR with ordered effects](../done/native-engine/N08-native-tsl-and-shader-packages/PRD-510-n08a-a-typed-shader-ir-with-ordered-effects.md) | N03 |
 | N08b | ↳ [PRD-511 — Shader packages, not WGSL text](../done/native-engine/N08-native-tsl-and-shader-packages/PRD-511-n08b-shader-packages-not-wgsl-text.md) | N08a, N07 |
 | N08c | ↳ [PRD-512 — Standard PBR and deformation that shadows](../done/native-engine/N08-native-tsl-and-shader-packages/PRD-512-n08c-standard-pbr-and-deformation-that-shadows.md) | N08b |
-| N08d | ↳ [PRD-513 — Compute, multipass and a dynamic graph](N08-native-tsl-and-shader-packages/PRD-513-n08d-compute-multipass-and-a-dynamic-graph.md) | N08b, N05b |
+| N08d | ↳ [PRD-513 — Compute, multipass and a dynamic graph](../done/native-engine/N08-native-tsl-and-shader-packages/PRD-513-n08d-compute-multipass-and-a-dynamic-graph.md) | N08b, N05b |
 | N09 | [PRD-514 — Native renderer and standard materials](../done/native-engine/PRD-514-n09-native-renderer-and-standard-materials.md) | N06, N07, N08 |
 | CP1 | [PRD-534 — The native engine earns the port](PRD-534-cp1-the-native-engine-earns-the-port.md) | N01, N06, N09, N18 phases 1–2 |
 | N10 | [PRD-515 — Native glTF, cooked assets and decoders](../done/native-engine/PRD-515-n10-native-gltf-cooked-assets-and-decoders.md) | N06, N07 |
@@ -122,8 +122,8 @@ Full text and rationale: [PRD-497 § Decisions](../done/native-engine/PRD-497-n0
 | N14c | ↳ [PRD-525 — Probes run native](../done/native-engine/N14-native-render-chain-and-advanced-visuals/PRD-525-n14c-probes-run-native.md) | N14a |
 | N14d | ↳ [PRD-526 — Post effects and render chains run native](N14-native-render-chain-and-advanced-visuals/PRD-526-n14d-post-effects-and-render-chains-run-native.md) | N14a |
 | N14e | ↳ [PRD-527 — Particles and fluids run native](../done/native-engine/N14-native-render-chain-and-advanced-visuals/PRD-527-n14e-particles-and-fluids-run-native.md) | N14a, N08d |
-| N15 | [PRD-528 — Framework loop, Rapier sync, input and services](PRD-528-n15-framework-loop-rapier-sync-input-services.md) | CP1, N06, N11, N02 |
-| N16 | [PRD-529 — Native playtest, inspection and telemetry](PRD-529-n16-native-playtest-inspection-telemetry.md) | N02, N03, N06 |
+| N15 | [PRD-528 — Framework loop, Rapier sync, input and services](../done/native-engine/PRD-528-n15-framework-loop-rapier-sync-input-services.md) | CP1, N06, N11, N02 |
+| N16 | [PRD-529 — Native playtest, inspection and telemetry](../done/native-engine/PRD-529-n16-native-playtest-inspection-telemetry.md) | N02, N03, N06 |
 | N17 | [PRD-530 — Strict native-TypeScript game packaging](PRD-530-n17-strict-native-typescript-game-packaging.md) (later milestone, gate T) | N05, N20 |
 | N18 | [PRD-531 — V8 game runtime adapter](PRD-531-n18-v8-game-runtime-adapter.md) | N03, N04, N06; phase 3 also N09 |
 | N19 | [PRD-532 — WebAssembly native-core browser port](../done/native-engine/PRD-532-n19-webassembly-native-core-browser-port.md) (mandatory) | N03, N07–N09, N18 |

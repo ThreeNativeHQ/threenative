@@ -2,6 +2,13 @@
 // runner provides, the engine's fixed-step clock, the render database into the renderer, the
 // presentation of that frame, and the mailbox the runner talks to. No JS engine is linked: the game
 // is inspect-demo, in C++. A game bundle on V8 is the sibling tn-native-engine-player-v8.
+#if defined(__ANDROID__)
+#include <SDL3/SDL_main.h>
+#include <cstdlib>
+#include <android/log.h>
+#include "mystral/platform/android_stdio.h"
+#endif
+
 #include <cstdio>
 #include <exception>
 #include <string>
@@ -10,13 +17,20 @@
 #include "engine/player/demo.h"
 #include "engine/player/skinned_crowd.h"
 #include "engine/player/run.h"
+#if !defined(__ANDROID__)
 #include "engine/player/world_walk.h"
+#endif
 
 using namespace tn::engine;
 
-int main(int argc, char** argv) {
+int runPlayer(int argc, char** argv) {
+#if defined(__ANDROID__)
+    if (argc > 2 && argv[2][0] != '\0')
+        setenv("TN_PLAYTEST_MAILBOX_ROOT", argv[2], 1);
+#endif
     // The first argument selects the built-in C++ game.
     const std::string game = argc > 1 && argv[1][0] != '\0' ? argv[1] : "inspect-demo";
+#if !defined(__ANDROID__)
     if (game == "world-walk" || game == "world-cycles" || game == "world-fault") {
         try {
             player::WorldWalk world(game, argc > 2 ? argv[2] : TN_WORLD_WALK_FIXTURE);
@@ -26,6 +40,7 @@ int main(int argc, char** argv) {
             return 1;
         }
     }
+#endif
     if (game == "skinned-crowd") {
         player::SkinnedCrowd crowd;
         player::Game configured;
@@ -37,7 +52,11 @@ int main(int argc, char** argv) {
         return player::run(configured);
     }
     if (game != "inspect-demo") {
+#if defined(__ANDROID__)
+        std::printf("TN_PLAYER_UNKNOWN_GAME: %s; expected inspect-demo or skinned-crowd.\n", game.c_str());
+#else
         std::printf("TN_PLAYER_UNKNOWN_GAME: %s; expected inspect-demo, skinned-crowd, world-walk, world-cycles or world-fault.\n", game.c_str());
+#endif
         return 1;
     }
 
@@ -69,4 +88,20 @@ int main(int argc, char** argv) {
     };
     configured.attach = [&demo](inspect::Endpoint& endpoint) { demo.attachEndpoint(endpoint); };
     return player::run(configured);
+}
+
+int main(int argc, char** argv) {
+#if defined(__ANDROID__)
+    mystral::platform::redirectStdioToLogcat();
+    __android_log_print(ANDROID_LOG_INFO, "TN_Player", "TN_PLAYER_START: argc=%d", argc);
+#endif
+    try {
+        return runPlayer(argc, argv);
+    } catch (const std::exception& failure) {
+#if defined(__ANDROID__)
+        __android_log_print(ANDROID_LOG_ERROR, "TN_Player", "TN_PLAYER_ERROR: %s", failure.what());
+#endif
+        std::fprintf(stderr, "TN_PLAYER_ERROR: %s\n", failure.what());
+        return 1;
+    }
 }

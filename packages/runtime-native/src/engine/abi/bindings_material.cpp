@@ -118,6 +118,7 @@ void registerMaterialBase(ClassBinding& b) {
     materialBool(b, "depthWrite", &Material::depthWrite);
     materialBool(b, "visible", &Material::visible);
     materialBool(b, "toneMapped", &Material::toneMapped);
+    materialBool(b, "fog", &Material::fog);
     materialNumber(b, "opacity", &Material::opacity);
     materialNumber(b, "alphaTest", &Material::alphaTest);
     b.getters["side"] = [](void* self) { return Value::of(double(as<Material>(self)->side)); };
@@ -387,6 +388,8 @@ void registerTextureFields(ClassBinding& b) {
     b.setters["needsUpdate"] = [](void* self, const Value& v) {
         if (flag(v)) as<Texture>(self)->needsUpdate();
     };
+    b.getters["flipY"] = [](void* self) { return Value::of(as<Texture>(self)->flipY); };
+    b.setters["flipY"] = [](void* self, const Value& v) { as<Texture>(self)->flipY = flag(v); as<Texture>(self)->needsUpdate(); };
     textureNumber<Texture>(b, "mapping", &Texture::mapping);
     textureNumber<Texture>(b, "wrapS", &Texture::wrapS);
     textureNumber<Texture>(b, "wrapT", &Texture::wrapT);
@@ -432,6 +435,7 @@ void registerMaterialBindings(Registry& classes) {
             auto* material = static_cast<Material*>(value.get());
             material->spriteMaterial = true;
             material->transparent = true;
+            material->fog = false;
             return value;
         };
         b.getters["rotation"] = [](void* self) { return Value::of(as<Material>(self)->rotation); };

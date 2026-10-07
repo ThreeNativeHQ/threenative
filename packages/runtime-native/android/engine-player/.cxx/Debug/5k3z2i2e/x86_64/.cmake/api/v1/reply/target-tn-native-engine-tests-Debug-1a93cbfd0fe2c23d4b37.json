@@ -1,0 +1,246 @@
+{
+	"backtrace" : 3,
+	"backtraceGraph" : 
+	{
+		"commands" : 
+		[
+			"add_custom_target",
+			"include"
+		],
+		"files" : 
+		[
+			"cmake/NativeEngine.cmake",
+			"CMakeLists.txt"
+		],
+		"nodes" : 
+		[
+			{
+				"file" : 1
+			},
+			{
+				"command" : 1,
+				"file" : 1,
+				"line" : 726,
+				"parent" : 0
+			},
+			{
+				"file" : 0,
+				"parent" : 1
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 595,
+				"parent" : 2
+			}
+		]
+	},
+	"dependencies" : 
+	[
+		{
+			"id" : "tn-native-engine-decoder-matrix-test::@6890427a1f51a3e7e1df"
+		},
+		{
+			"id" : "tn-native-engine-render-graph-test::@6890427a1f51a3e7e1df"
+		},
+		{
+			"id" : "tn-native-engine-abi-test::@6890427a1f51a3e7e1df"
+		},
+		{
+			"id" : "tn-native-engine-buffers-test::@6890427a1f51a3e7e1df"
+		},
+		{
+			"id" : "tn-native-engine-geometry-edges-test::@6890427a1f51a3e7e1df"
+		},
+		{
+			"id" : "tn-native-engine-visibility-camera-cull-test::@6890427a1f51a3e7e1df"
+		},
+		{
+			"id" : "tn-native-engine-vsm-test::@6890427a1f51a3e7e1df"
+		},
+		{
+			"id" : "tn-native-engine-material-test::@6890427a1f51a3e7e1df"
+		},
+		{
+			"id" : "tn-native-engine-lifetime-test::@6890427a1f51a3e7e1df"
+		},
+		{
+			"id" : "tn-native-engine-shader-ir-test::@6890427a1f51a3e7e1df"
+		},
+		{
+			"id" : "tn-native-engine-animation-skinned-palette-test::@6890427a1f51a3e7e1df"
+		},
+		{
+			"id" : "tn-native-engine-loop-fixed-step-test::@6890427a1f51a3e7e1df"
+		},
+		{
+			"id" : "tn-native-engine-world-heights-test::@6890427a1f51a3e7e1df"
+		},
+		{
+			"id" : "tn-native-engine-world-tiles-test::@6890427a1f51a3e7e1df"
+		},
+		{
+			"id" : "tn-native-engine-world-cells-test::@6890427a1f51a3e7e1df"
+		},
+		{
+			"id" : "tn-native-engine-world-package-test::@6890427a1f51a3e7e1df"
+		},
+		{
+			"id" : "tn-native-engine-event-queue-test::@6890427a1f51a3e7e1df"
+		},
+		{
+			"id" : "tn-native-engine-static-transform-test::@6890427a1f51a3e7e1df"
+		},
+		{
+			"id" : "tn-native-engine-json-test::@6890427a1f51a3e7e1df"
+		},
+		{
+			"id" : "tn-native-engine-inspect-test::@6890427a1f51a3e7e1df"
+		},
+		{
+			"id" : "tn-native-engine-animation-interpolants-test::@6890427a1f51a3e7e1df"
+		},
+		{
+			"id" : "tn-native-engine-animation-binding-test::@6890427a1f51a3e7e1df"
+		},
+		{
+			"id" : "tn-native-engine-animation-mixer-test::@6890427a1f51a3e7e1df"
+		},
+		{
+			"id" : "tn-native-engine-animation-property-tracks-test::@6890427a1f51a3e7e1df"
+		},
+		{
+			"id" : "tn-native-engine-animation-schedule-test::@6890427a1f51a3e7e1df"
+		},
+		{
+			"id" : "tn-native-engine-projection-plan-test::@6890427a1f51a3e7e1df"
+		},
+		{
+			"id" : "tn-native-engine-raycast-test::@6890427a1f51a3e7e1df"
+		},
+		{
+			"id" : "tn-native-engine-ortho-projection-test::@6890427a1f51a3e7e1df"
+		},
+		{
+			"id" : "tn-native-engine-mathutils-test::@6890427a1f51a3e7e1df"
+		},
+		{
+			"id" : "tn-native-engine-animation-skeleton-test::@6890427a1f51a3e7e1df"
+		},
+		{
+			"id" : "tn-native-engine-members-test::@6890427a1f51a3e7e1df"
+		},
+		{
+			"id" : "tn-native-engine-tonemap-test::@6890427a1f51a3e7e1df"
+		},
+		{
+			"id" : "tn-native-engine-package-test::@6890427a1f51a3e7e1df"
+		},
+		{
+			"id" : "tn-native-engine-vsm-atlas-test::@6890427a1f51a3e7e1df"
+		},
+		{
+			"id" : "tn-native-engine-scene-test::@6890427a1f51a3e7e1df"
+		},
+		{
+			"id" : "tn-native-engine-ieee754-test::@6890427a1f51a3e7e1df"
+		},
+		{
+			"id" : "tn-native-engine-abi-c11::@6890427a1f51a3e7e1df"
+		},
+		{
+			"id" : "tn-native-engine-registry-dump::@6890427a1f51a3e7e1df"
+		},
+		{
+			"id" : "tn-native-engine-identity-test::@6890427a1f51a3e7e1df"
+		},
+		{
+			"id" : "tn-native-engine-identity::@6890427a1f51a3e7e1df"
+		},
+		{
+			"id" : "tn-native-engine-gltf-hierarchy-test::@6890427a1f51a3e7e1df"
+		},
+		{
+			"id" : "tn-native-engine-fuzz-package::@6890427a1f51a3e7e1df"
+		},
+		{
+			"id" : "tn-native-engine-handles-test::@6890427a1f51a3e7e1df"
+		},
+		{
+			"id" : "tn-native-engine-fuzz-gltf::@6890427a1f51a3e7e1df"
+		},
+		{
+			"id" : "tn-native-engine-fixture-driver::@6890427a1f51a3e7e1df"
+		},
+		{
+			"id" : "tn-native-engine-fixture-protocol-test::@6890427a1f51a3e7e1df"
+		},
+		{
+			"id" : "tn-native-engine-tsl-corpus::@6890427a1f51a3e7e1df"
+		},
+		{
+			"id" : "tn-native-engine-template-post-packages::@6890427a1f51a3e7e1df"
+		},
+		{
+			"id" : "tn-native-engine-tsl-graph::@6890427a1f51a3e7e1df"
+		},
+		{
+			"id" : "tn-native-engine-chain-test::@6890427a1f51a3e7e1df"
+		},
+		{
+			"id" : "tn-native-engine-model-lod-test::@6890427a1f51a3e7e1df"
+		},
+		{
+			"id" : "tn-native-engine-instanced-batch-test::@6890427a1f51a3e7e1df"
+		},
+		{
+			"id" : "tn-native-engine-world-gpu-scene-test::@6890427a1f51a3e7e1df"
+		},
+		{
+			"id" : "tn-native-engine-probe-schedule-test::@6890427a1f51a3e7e1df"
+		},
+		{
+			"id" : "tn-native-engine-probe-volume-test::@6890427a1f51a3e7e1df"
+		}
+	],
+	"id" : "tn-native-engine-tests::@6890427a1f51a3e7e1df",
+	"name" : "tn-native-engine-tests",
+	"paths" : 
+	{
+		"build" : ".",
+		"source" : "."
+	},
+	"sourceGroups" : 
+	[
+		{
+			"name" : "",
+			"sourceIndexes" : 
+			[
+				0
+			]
+		},
+		{
+			"name" : "CMake Rules",
+			"sourceIndexes" : 
+			[
+				1
+			]
+		}
+	],
+	"sources" : 
+	[
+		{
+			"backtrace" : 3,
+			"isGenerated" : true,
+			"path" : "android/engine-player/.cxx/Debug/5k3z2i2e/x86_64/CMakeFiles/tn-native-engine-tests",
+			"sourceGroupIndex" : 0
+		},
+		{
+			"backtrace" : 0,
+			"isGenerated" : true,
+			"path" : "android/engine-player/.cxx/Debug/5k3z2i2e/x86_64/CMakeFiles/tn-native-engine-tests.rule",
+			"sourceGroupIndex" : 1
+		}
+	],
+	"type" : "UTILITY"
+}

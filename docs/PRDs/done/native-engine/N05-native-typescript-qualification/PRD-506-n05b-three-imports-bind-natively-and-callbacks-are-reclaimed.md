@@ -37,7 +37,7 @@ rooting/tracing path is not qualified. The minimal native object fixture comes f
 
 - The language corpus itself — [PRD-505](PRD-505-n05a-the-language-corpus-compiles-on-linux-x64.md).
 - Generating the catalog and ABI — [PRD-500 (N03)](../PRD-500-n03-api-catalog-binding-abi-and-version-protocol.md).
-- TSL graphs built from compiled code — [PRD-513 (N08d)](../../../native-engine/N08-native-tsl-and-shader-packages/PRD-513-n08d-compute-multipass-and-a-dynamic-graph.md).
+- TSL graphs built from compiled code — [PRD-513 (N08d)](../N08-native-tsl-and-shader-packages/PRD-513-n08d-compute-multipass-and-a-dynamic-graph.md).
 
 ## Execution Phases
 

@@ -114,6 +114,7 @@ public:
     /** A sampled 2D float texture and its sampler, bound together. */
     uint32_t texture2d(std::string_view name);
     uint32_t texture3d(std::string_view name);
+    uint32_t textureCube(std::string_view name);
     /** vec4<f32>; implicit derivatives in a fragment stage, level 0 elsewhere. */
     ExprId sample(uint32_t texture, ExprId uv, Where where = Where::current());
     /**
@@ -199,7 +200,7 @@ private:
     std::vector<Var> vars_;
     std::vector<Storage> storage_;
     std::vector<std::string> textures_;
-    enum class TextureKind : uint8_t { Float2d, Depth2d, DepthCube, Float3d };
+    enum class TextureKind : uint8_t { Float2d, Depth2d, DepthCube, Float3d, FloatCube };
     std::vector<TextureKind> textureKinds_; // per texture
     struct OutputSlot {
         uint64_t name;

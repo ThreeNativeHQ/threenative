@@ -1,14 +1,80 @@
 #include "check.h"
 #include "engine/shader/standard.h"
 #include "engine/shader/wgsl.h"
+#include "engine/shader/package.h"
 
 #include <bit>
+#include <cmath>
+#include <algorithm>
 #include <cstdio>
 #include <string>
 
 using namespace tn::engine::shader;
 
 namespace {
+
+float scalar(const Program& p, ExprId id) {
+    const Expr& e = p.expr(id);
+    const auto arg = [&](int i) { return scalar(p, e.args[i]); };
+    switch (e.op) {
+        case Op::Constant: return std::bit_cast<float>(static_cast<uint32_t>(e.immediate));
+        case Op::Mul: return arg(0) * arg(1);
+        case Op::Sub: return arg(0) - arg(1);
+        case Op::Neg: return -arg(0);
+        case Op::Call:
+            if (e.argc == 1) return std::exp(arg(0));
+            if (e.argc == 3) { const float t = std::clamp((arg(2) - arg(0)) / (arg(1) - arg(0)), 0.0f, 1.0f); return t * t * (3 - 2 * t); }
+            break;
+        default: break;
+    }
+    CHECK(false); return NAN;
+}
+
+void fog() {
+    for (float z : {0.0f, 2.0f, 6.0f, 10.0f, 25.0f}) {
+        Program p(Stage::Fragment);
+        const auto range = fogFactor(p, 1, p.constant(z), p.constant(2.0f), p.constant(10.0f));
+        const float t = std::clamp((z - 2) / 8, 0.0f, 1.0f);
+        CHECK(scalar(p, range) == t * t * (3 - 2 * t));
+        const auto density = fogFactor(p, 2, p.constant(z), p.constant(0.12f), kInvalid);
+        CHECK(std::abs(scalar(p, density) - (1 - std::exp(-0.12f * 0.12f * z * z))) < 1e-7);
+        p.output("color", p.construct(Type::vec(4), {p.construct(Type::vec(3), {p.load(p.var(Type::f32(), density))}), p.constant(1.0f)}));
+        CHECK(p.ok()); CHECK(WgslEmitter::emit(p).ok());
+    }
+    for (uint8_t kind : {1, 2}) for (int material = 0; material < 5; ++material) {
+        VertexVariant variant; variant.fog = kind;
+        const auto p = material == 0 ? buildBasic(variant) : material == 1 ? buildLambert(variant) :
+            material == 2 ? buildPhong(variant) : material == 3 ? buildStandard({}, variant) : buildPhysical({}, variant);
+        CHECK(p.vertex.ok() && p.fragment.ok());
+        const auto code = WgslEmitter::emit(p.fragment);
+        CHECK(code.ok()); CHECK(code.code.find(kind == 1 ? "smoothstep(" : "exp(") != std::string::npos);
+        CHECK(code.code.find("fogColor") != std::string::npos);
+        CHECK(code.code.find("positionView") != std::string::npos);
+        variant.map = true;
+        const auto mapped = buildBasic(variant);
+        const auto vs = buildStage(mapped.vertex, 0), fs = buildStage(mapped.fragment, 1);
+        CHECK(vs.wgsl.ok() && fs.wgsl.ok());
+        CHECK(vs.wgsl.code.find("@location(0) o_uv") != std::string::npos);
+        CHECK(fs.wgsl.code.find("@location(0) i_uv") != std::string::npos);
+        CHECK(vs.wgsl.code.find("@location(1) o_positionView") != std::string::npos);
+        CHECK(fs.wgsl.code.find("@location(1) i_positionView") != std::string::npos);
+    }
+    const auto cube = buildEquirectangularCube();
+    CHECK(cube.vertex.ok() && cube.fragment.ok());
+    CHECK(WgslEmitter::emit(cube.vertex).ok() && WgslEmitter::emit(cube.fragment).ok());
+    VertexVariant sky; sky.background = sky.map = true;
+    const auto p = buildBasic(sky);
+    CHECK(p.vertex.ok() && p.fragment.ok());
+    const auto code = WgslEmitter::emit(p.fragment);
+    CHECK(code.ok() && code.code.find("texture_cube<f32>") != std::string::npos);
+    CHECK(code.code.find("fogColor") == std::string::npos);
+    // Background.js always writes alpha 1, independent of texture alpha or material opacity.
+    CHECK(code.code.find("f_opaque") == std::string::npos);
+    CHECK(code.code.find("f_alphaTest") == std::string::npos);
+    const auto output = code.code.find("out.color = ");
+    CHECK(output != std::string::npos);
+    CHECK(code.code.substr(output, code.code.find('\n', output) - output).ends_with(", 1f);"));
+}
 
 void unsupported() {
     // Defaults are the pinned MeshStandardMaterial constructor's.
@@ -171,4 +237,4 @@ void builds() {
 
 }  // namespace
 
-TN_TEST_MAIN({"unsupported", unsupported}, {"builds", builds})
+TN_TEST_MAIN({"unsupported", unsupported}, {"builds", builds}, {"fog", fog})

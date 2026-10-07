@@ -1,0 +1,549 @@
+{
+  "buildFiles": [
+    "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/CMakeLists.txt",
+    "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/cmake/NativeEngine.cmake",
+    "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/cmake/NativeEngineCore.cmake",
+    "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/third_party/sdl3/SDL3-3.2.30/CMakeLists.txt",
+    "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/third_party/sdl3/SDL3-3.2.30/cmake/3rdparty.cmake",
+    "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/third_party/sdl3/SDL3-3.2.30/cmake/FindLibUSB.cmake",
+    "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/third_party/sdl3/SDL3-3.2.30/cmake/GetGitRevisionDescription.cmake",
+    "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/third_party/sdl3/SDL3-3.2.30/cmake/PreseedEmscriptenCache.cmake",
+    "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/third_party/sdl3/SDL3-3.2.30/cmake/PreseedMSVCCache.cmake",
+    "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/third_party/sdl3/SDL3-3.2.30/cmake/SDL3Config.cmake.in",
+    "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/third_party/sdl3/SDL3-3.2.30/cmake/macros.cmake",
+    "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/third_party/sdl3/SDL3-3.2.30/cmake/sdlchecks.cmake",
+    "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/third_party/sdl3/SDL3-3.2.30/cmake/sdlcompilers.cmake",
+    "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/third_party/sdl3/SDL3-3.2.30/cmake/sdlcpu.cmake",
+    "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/third_party/sdl3/SDL3-3.2.30/cmake/sdlmanpages.cmake",
+    "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/third_party/sdl3/SDL3-3.2.30/cmake/sdlplatform.cmake",
+    "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/third_party/sdl3/SDL3-3.2.30/cmake/sdltargets.cmake",
+    "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/third_party/sdl3/SDL3-3.2.30/include/build_config/SDL_build_config.h.cmake",
+    "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/third_party/sdl3/SDL3-3.2.30/include/build_config/SDL_revision.h.cmake"
+  ],
+  "cleanCommandsComponents": [
+    [
+      "/home/joao/Android/Sdk/cmake/3.22.1/bin/ninja",
+      "-C",
+      "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/.cxx/Debug/5k3z2i2e/arm64-v8a",
+      "clean"
+    ]
+  ],
+  "buildTargetsCommandComponents": [
+    "/home/joao/Android/Sdk/cmake/3.22.1/bin/ninja",
+    "-C",
+    "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/.cxx/Debug/5k3z2i2e/arm64-v8a",
+    "{LIST_OF_TARGETS_TO_BUILD}"
+  ],
+  "libraries": {
+    "tn-native-engine-tsl-corpus::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn-native-engine-tsl-corpus",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/build/intermediates/cxx/Debug/5k3z2i2e/obj/arm64-v8a/tn-native-engine-tsl-corpus",
+      "runtimeFiles": []
+    },
+    "tn-native-engine-vsm-atlas-test::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn-native-engine-vsm-atlas-test",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/build/intermediates/cxx/Debug/5k3z2i2e/obj/arm64-v8a/tn-native-engine-vsm-atlas-test",
+      "runtimeFiles": []
+    },
+    "tn-native-engine-player::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn-native-engine-player",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/build/intermediates/cxx/Debug/5k3z2i2e/obj/arm64-v8a/libtn-native-engine-player.so",
+      "runtimeFiles": [
+        "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/build/intermediates/cxx/Debug/5k3z2i2e/obj/arm64-v8a/libSDL3.so"
+      ]
+    },
+    "tn-native-engine-abi-c11::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn-native-engine-abi-c11",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/build/intermediates/cxx/Debug/5k3z2i2e/obj/arm64-v8a/tn-native-engine-abi-c11",
+      "runtimeFiles": []
+    },
+    "tn-native-engine-probe-schedule-test::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn-native-engine-probe-schedule-test",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/build/intermediates/cxx/Debug/5k3z2i2e/obj/arm64-v8a/tn-native-engine-probe-schedule-test",
+      "runtimeFiles": []
+    },
+    "tn_engine_chain::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn_engine_chain",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/.cxx/Debug/5k3z2i2e/arm64-v8a/libtn_engine_chain.a",
+      "runtimeFiles": []
+    },
+    "tn_engine_gltf::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn_engine_gltf",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/.cxx/Debug/5k3z2i2e/arm64-v8a/libtn_engine_gltf.a",
+      "runtimeFiles": []
+    },
+    "tn-native-engine-tests::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn-native-engine-tests",
+      "abi": "arm64-v8a",
+      "runtimeFiles": []
+    },
+    "tn_engine_batch::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn_engine_batch",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/.cxx/Debug/5k3z2i2e/arm64-v8a/libtn_engine_batch.a",
+      "runtimeFiles": []
+    },
+    "tn-native-engine-animation-property-tracks-test::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn-native-engine-animation-property-tracks-test",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/build/intermediates/cxx/Debug/5k3z2i2e/obj/arm64-v8a/tn-native-engine-animation-property-tracks-test",
+      "runtimeFiles": []
+    },
+    "tn-native-engine-ortho-projection-test::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn-native-engine-ortho-projection-test",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/build/intermediates/cxx/Debug/5k3z2i2e/obj/arm64-v8a/tn-native-engine-ortho-projection-test",
+      "runtimeFiles": []
+    },
+    "tn_engine_particles::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn_engine_particles",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/.cxx/Debug/5k3z2i2e/arm64-v8a/libtn_engine_particles.a",
+      "runtimeFiles": []
+    },
+    "tn_engine_shader::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn_engine_shader",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/.cxx/Debug/5k3z2i2e/arm64-v8a/libtn_engine_shader.a",
+      "runtimeFiles": []
+    },
+    "tn_engine_scene::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn_engine_scene",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/.cxx/Debug/5k3z2i2e/arm64-v8a/libtn_engine_scene.a",
+      "runtimeFiles": []
+    },
+    "tn-native-engine-animation-interpolants-test::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn-native-engine-animation-interpolants-test",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/build/intermediates/cxx/Debug/5k3z2i2e/obj/arm64-v8a/tn-native-engine-animation-interpolants-test",
+      "runtimeFiles": []
+    },
+    "tn_engine_foundation::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn_engine_foundation",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/.cxx/Debug/5k3z2i2e/arm64-v8a/libtn_engine_foundation.a",
+      "runtimeFiles": []
+    },
+    "tn_engine_inspect::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn_engine_inspect",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/.cxx/Debug/5k3z2i2e/arm64-v8a/libtn_engine_inspect.a",
+      "runtimeFiles": []
+    },
+    "tn-native-engine-scene-test::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn-native-engine-scene-test",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/build/intermediates/cxx/Debug/5k3z2i2e/obj/arm64-v8a/tn-native-engine-scene-test",
+      "runtimeFiles": []
+    },
+    "tn-native-engine-fuzz-package::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn-native-engine-fuzz-package",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/build/intermediates/cxx/Debug/5k3z2i2e/obj/arm64-v8a/tn-native-engine-fuzz-package",
+      "runtimeFiles": []
+    },
+    "tn-native-engine-loop-fixed-step-test::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn-native-engine-loop-fixed-step-test",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/build/intermediates/cxx/Debug/5k3z2i2e/obj/arm64-v8a/tn-native-engine-loop-fixed-step-test",
+      "runtimeFiles": []
+    },
+    "tn-native-engine-mathutils-test::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn-native-engine-mathutils-test",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/build/intermediates/cxx/Debug/5k3z2i2e/obj/arm64-v8a/tn-native-engine-mathutils-test",
+      "runtimeFiles": []
+    },
+    "tn-native-engine-shader-ir-test::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn-native-engine-shader-ir-test",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/build/intermediates/cxx/Debug/5k3z2i2e/obj/arm64-v8a/tn-native-engine-shader-ir-test",
+      "runtimeFiles": []
+    },
+    "tn-native-engine-world-package-test::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn-native-engine-world-package-test",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/build/intermediates/cxx/Debug/5k3z2i2e/obj/arm64-v8a/tn-native-engine-world-package-test",
+      "runtimeFiles": []
+    },
+    "tn-native-engine-buffers-test::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn-native-engine-buffers-test",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/build/intermediates/cxx/Debug/5k3z2i2e/obj/arm64-v8a/tn-native-engine-buffers-test",
+      "runtimeFiles": []
+    },
+    "tn-native-engine-animation-mixer-test::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn-native-engine-animation-mixer-test",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/build/intermediates/cxx/Debug/5k3z2i2e/obj/arm64-v8a/tn-native-engine-animation-mixer-test",
+      "runtimeFiles": []
+    },
+    "tn-native-engine-chain-test::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn-native-engine-chain-test",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/build/intermediates/cxx/Debug/5k3z2i2e/obj/arm64-v8a/tn-native-engine-chain-test",
+      "runtimeFiles": []
+    },
+    "SDL_uclibc::@4c0932224f695fd1c828": {
+      "artifactName": "SDL_uclibc",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/.cxx/Debug/5k3z2i2e/arm64-v8a/sdl3-build/libSDL_uclibc.a",
+      "runtimeFiles": []
+    },
+    "tn-native-engine-static-transform-test::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn-native-engine-static-transform-test",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/build/intermediates/cxx/Debug/5k3z2i2e/obj/arm64-v8a/tn-native-engine-static-transform-test",
+      "runtimeFiles": []
+    },
+    "tn-native-engine-template-post-packages::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn-native-engine-template-post-packages",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/build/intermediates/cxx/Debug/5k3z2i2e/obj/arm64-v8a/tn-native-engine-template-post-packages",
+      "runtimeFiles": []
+    },
+    "tn_host_services::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn_host_services",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/.cxx/Debug/5k3z2i2e/arm64-v8a/libtn_host_services.a",
+      "runtimeFiles": []
+    },
+    "tn-native-engine-world-gpu-scene-test::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn-native-engine-world-gpu-scene-test",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/build/intermediates/cxx/Debug/5k3z2i2e/obj/arm64-v8a/tn-native-engine-world-gpu-scene-test",
+      "runtimeFiles": []
+    },
+    "tn-native-engine-json-test::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn-native-engine-json-test",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/build/intermediates/cxx/Debug/5k3z2i2e/obj/arm64-v8a/tn-native-engine-json-test",
+      "runtimeFiles": []
+    },
+    "tn_engine_abi::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn_engine_abi",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/.cxx/Debug/5k3z2i2e/arm64-v8a/libtn_engine_abi.a",
+      "runtimeFiles": []
+    },
+    "tn-native-engine-raycast-test::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn-native-engine-raycast-test",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/build/intermediates/cxx/Debug/5k3z2i2e/obj/arm64-v8a/tn-native-engine-raycast-test",
+      "runtimeFiles": []
+    },
+    "tn-native-engine-render-graph-test::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn-native-engine-render-graph-test",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/build/intermediates/cxx/Debug/5k3z2i2e/obj/arm64-v8a/tn-native-engine-render-graph-test",
+      "runtimeFiles": []
+    },
+    "tn-native-engine-world-heights-test::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn-native-engine-world-heights-test",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/build/intermediates/cxx/Debug/5k3z2i2e/obj/arm64-v8a/tn-native-engine-world-heights-test",
+      "runtimeFiles": []
+    },
+    "tn_engine_world::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn_engine_world",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/.cxx/Debug/5k3z2i2e/arm64-v8a/libtn_engine_world.a",
+      "runtimeFiles": []
+    },
+    "tn-native-engine-lifetime-test::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn-native-engine-lifetime-test",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/build/intermediates/cxx/Debug/5k3z2i2e/obj/arm64-v8a/tn-native-engine-lifetime-test",
+      "runtimeFiles": []
+    },
+    "tn_engine_player::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn_engine_player",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/.cxx/Debug/5k3z2i2e/arm64-v8a/libtn_engine_player.a",
+      "runtimeFiles": []
+    },
+    "tn-native-engine-animation-skeleton-test::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn-native-engine-animation-skeleton-test",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/build/intermediates/cxx/Debug/5k3z2i2e/obj/arm64-v8a/tn-native-engine-animation-skeleton-test",
+      "runtimeFiles": []
+    },
+    "tn-native-engine-handles-test::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn-native-engine-handles-test",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/build/intermediates/cxx/Debug/5k3z2i2e/obj/arm64-v8a/tn-native-engine-handles-test",
+      "runtimeFiles": []
+    },
+    "tn_engine_gpu_scene_kernel::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn_engine_gpu_scene_kernel",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/.cxx/Debug/5k3z2i2e/arm64-v8a/libtn_engine_gpu_scene_kernel.a",
+      "runtimeFiles": []
+    },
+    "tn-native-engine-model-lod-test::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn-native-engine-model-lod-test",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/build/intermediates/cxx/Debug/5k3z2i2e/obj/arm64-v8a/tn-native-engine-model-lod-test",
+      "runtimeFiles": []
+    },
+    "tn_engine_graph::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn_engine_graph",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/.cxx/Debug/5k3z2i2e/arm64-v8a/libtn_engine_graph.a",
+      "runtimeFiles": []
+    },
+    "SDL3-shared::@4c0932224f695fd1c828": {
+      "artifactName": "SDL3-shared",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/build/intermediates/cxx/Debug/5k3z2i2e/obj/arm64-v8a/libSDL3.so",
+      "runtimeFiles": []
+    },
+    "SDL3_test::@4c0932224f695fd1c828": {
+      "artifactName": "SDL3_test",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/.cxx/Debug/5k3z2i2e/arm64-v8a/sdl3-build/libSDL3_test.a",
+      "runtimeFiles": []
+    },
+    "tn-native-engine-tsl-graph::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn-native-engine-tsl-graph",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/build/intermediates/cxx/Debug/5k3z2i2e/obj/arm64-v8a/tn-native-engine-tsl-graph",
+      "runtimeFiles": []
+    },
+    "tn-native-engine-gltf-hierarchy-test::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn-native-engine-gltf-hierarchy-test",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/build/intermediates/cxx/Debug/5k3z2i2e/obj/arm64-v8a/tn-native-engine-gltf-hierarchy-test",
+      "runtimeFiles": []
+    },
+    "tn-native-engine-fuzz-gltf::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn-native-engine-fuzz-gltf",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/build/intermediates/cxx/Debug/5k3z2i2e/obj/arm64-v8a/tn-native-engine-fuzz-gltf",
+      "runtimeFiles": []
+    },
+    "tn-native-engine-animation-schedule-test::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn-native-engine-animation-schedule-test",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/build/intermediates/cxx/Debug/5k3z2i2e/obj/arm64-v8a/tn-native-engine-animation-schedule-test",
+      "runtimeFiles": []
+    },
+    "tn-native-engine-animation-skinned-palette-test::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn-native-engine-animation-skinned-palette-test",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/build/intermediates/cxx/Debug/5k3z2i2e/obj/arm64-v8a/tn-native-engine-animation-skinned-palette-test",
+      "runtimeFiles": []
+    },
+    "tn-native-engine-fixture-driver::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn-native-engine-fixture-driver",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/build/intermediates/cxx/Debug/5k3z2i2e/obj/arm64-v8a/tn-native-engine-fixture-driver",
+      "runtimeFiles": []
+    },
+    "tn-native-engine-projection-plan-test::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn-native-engine-projection-plan-test",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/build/intermediates/cxx/Debug/5k3z2i2e/obj/arm64-v8a/tn-native-engine-projection-plan-test",
+      "runtimeFiles": []
+    },
+    "tn-native-engine-package-test::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn-native-engine-package-test",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/build/intermediates/cxx/Debug/5k3z2i2e/obj/arm64-v8a/tn-native-engine-package-test",
+      "runtimeFiles": []
+    },
+    "tn-native-engine-identity::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn-native-engine-identity",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/build/intermediates/cxx/Debug/5k3z2i2e/obj/arm64-v8a/tn-native-engine-identity",
+      "runtimeFiles": []
+    },
+    "tn-native-engine-geometry-edges-test::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn-native-engine-geometry-edges-test",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/build/intermediates/cxx/Debug/5k3z2i2e/obj/arm64-v8a/tn-native-engine-geometry-edges-test",
+      "runtimeFiles": []
+    },
+    "tn_engine_visibility::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn_engine_visibility",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/.cxx/Debug/5k3z2i2e/arm64-v8a/libtn_engine_visibility.a",
+      "runtimeFiles": []
+    },
+    "tn-native-engine-instanced-batch-test::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn-native-engine-instanced-batch-test",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/build/intermediates/cxx/Debug/5k3z2i2e/obj/arm64-v8a/tn-native-engine-instanced-batch-test",
+      "runtimeFiles": []
+    },
+    "tn-native-engine-inspect-test::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn-native-engine-inspect-test",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/build/intermediates/cxx/Debug/5k3z2i2e/obj/arm64-v8a/tn-native-engine-inspect-test",
+      "runtimeFiles": []
+    },
+    "tn_engine_bindings::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn_engine_bindings",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/.cxx/Debug/5k3z2i2e/arm64-v8a/libtn_engine_bindings.a",
+      "runtimeFiles": []
+    },
+    "tn_engine_gpu_scene::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn_engine_gpu_scene",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/.cxx/Debug/5k3z2i2e/arm64-v8a/libtn_engine_gpu_scene.a",
+      "runtimeFiles": []
+    },
+    "tn_fixture_driver::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn_fixture_driver",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/.cxx/Debug/5k3z2i2e/arm64-v8a/libtn_fixture_driver.a",
+      "runtimeFiles": []
+    },
+    "tn_engine_animation::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn_engine_animation",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/.cxx/Debug/5k3z2i2e/arm64-v8a/libtn_engine_animation.a",
+      "runtimeFiles": []
+    },
+    "tn-native-engine-identity-test::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn-native-engine-identity-test",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/build/intermediates/cxx/Debug/5k3z2i2e/obj/arm64-v8a/tn-native-engine-identity-test",
+      "runtimeFiles": []
+    },
+    "tn-native-engine-vsm-test::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn-native-engine-vsm-test",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/build/intermediates/cxx/Debug/5k3z2i2e/obj/arm64-v8a/tn-native-engine-vsm-test",
+      "runtimeFiles": []
+    },
+    "tn-native-engine-abi-test::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn-native-engine-abi-test",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/build/intermediates/cxx/Debug/5k3z2i2e/obj/arm64-v8a/tn-native-engine-abi-test",
+      "runtimeFiles": []
+    },
+    "tn-native-engine-ieee754-test::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn-native-engine-ieee754-test",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/build/intermediates/cxx/Debug/5k3z2i2e/obj/arm64-v8a/tn-native-engine-ieee754-test",
+      "runtimeFiles": []
+    },
+    "tn_engine_lod::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn_engine_lod",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/.cxx/Debug/5k3z2i2e/arm64-v8a/libtn_engine_lod.a",
+      "runtimeFiles": []
+    },
+    "tn_engine_probes::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn_engine_probes",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/.cxx/Debug/5k3z2i2e/arm64-v8a/libtn_engine_probes.a",
+      "runtimeFiles": []
+    },
+    "tn-native-engine-event-queue-test::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn-native-engine-event-queue-test",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/build/intermediates/cxx/Debug/5k3z2i2e/obj/arm64-v8a/tn-native-engine-event-queue-test",
+      "runtimeFiles": []
+    },
+    "tn_engine_renderer::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn_engine_renderer",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/.cxx/Debug/5k3z2i2e/arm64-v8a/libtn_engine_renderer.a",
+      "runtimeFiles": []
+    },
+    "tn-native-engine-registry-dump::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn-native-engine-registry-dump",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/build/intermediates/cxx/Debug/5k3z2i2e/obj/arm64-v8a/tn-native-engine-registry-dump",
+      "runtimeFiles": []
+    },
+    "tn_engine_vsm::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn_engine_vsm",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/.cxx/Debug/5k3z2i2e/arm64-v8a/libtn_engine_vsm.a",
+      "runtimeFiles": []
+    },
+    "tn-native-engine-decoder-matrix-test::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn-native-engine-decoder-matrix-test",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/build/intermediates/cxx/Debug/5k3z2i2e/obj/arm64-v8a/tn-native-engine-decoder-matrix-test",
+      "runtimeFiles": []
+    },
+    "tn-native-engine-probe-volume-test::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn-native-engine-probe-volume-test",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/build/intermediates/cxx/Debug/5k3z2i2e/obj/arm64-v8a/tn-native-engine-probe-volume-test",
+      "runtimeFiles": []
+    },
+    "tn-native-engine-world-cells-test::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn-native-engine-world-cells-test",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/build/intermediates/cxx/Debug/5k3z2i2e/obj/arm64-v8a/tn-native-engine-world-cells-test",
+      "runtimeFiles": []
+    },
+    "tn-native-engine-animation-binding-test::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn-native-engine-animation-binding-test",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/build/intermediates/cxx/Debug/5k3z2i2e/obj/arm64-v8a/tn-native-engine-animation-binding-test",
+      "runtimeFiles": []
+    },
+    "tn-native-engine-fixture-protocol-test::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn-native-engine-fixture-protocol-test",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/build/intermediates/cxx/Debug/5k3z2i2e/obj/arm64-v8a/tn-native-engine-fixture-protocol-test",
+      "runtimeFiles": []
+    },
+    "tn-native-engine-material-test::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn-native-engine-material-test",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/build/intermediates/cxx/Debug/5k3z2i2e/obj/arm64-v8a/tn-native-engine-material-test",
+      "runtimeFiles": []
+    },
+    "tn-native-engine-world-tiles-test::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn-native-engine-world-tiles-test",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/build/intermediates/cxx/Debug/5k3z2i2e/obj/arm64-v8a/tn-native-engine-world-tiles-test",
+      "runtimeFiles": []
+    },
+    "tn-native-engine-tonemap-test::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn-native-engine-tonemap-test",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/build/intermediates/cxx/Debug/5k3z2i2e/obj/arm64-v8a/tn-native-engine-tonemap-test",
+      "runtimeFiles": []
+    },
+    "tn-native-engine-core-tests::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn-native-engine-core-tests",
+      "abi": "arm64-v8a",
+      "runtimeFiles": []
+    },
+    "tn-native-engine-members-test::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn-native-engine-members-test",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/build/intermediates/cxx/Debug/5k3z2i2e/obj/arm64-v8a/tn-native-engine-members-test",
+      "runtimeFiles": []
+    },
+    "tn-native-engine-visibility-camera-cull-test::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn-native-engine-visibility-camera-cull-test",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/build/intermediates/cxx/Debug/5k3z2i2e/obj/arm64-v8a/tn-native-engine-visibility-camera-cull-test",
+      "runtimeFiles": []
+    },
+    "tn_engine_assets::@6890427a1f51a3e7e1df": {
+      "artifactName": "tn_engine_assets",
+      "abi": "arm64-v8a",
+      "output": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/.cxx/Debug/5k3z2i2e/arm64-v8a/libtn_engine_assets.a",
+      "runtimeFiles": []
+    }
+  }
+}

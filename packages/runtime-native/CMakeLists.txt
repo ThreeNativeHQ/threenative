@@ -291,7 +291,7 @@ elseif(ANDROID)
     # Three places state this default — here, `android/app/build.gradle.kts`, and the `tn-android`
     # CMake preset. They must agree; a preset contradicting this block is how the flag came to work
     # on one machine only.
-    if(NOT MYSTRAL_USE_QUICKJS AND NOT MYSTRAL_USE_JSC)
+    if(NOT MYSTRAL_USE_QUICKJS AND NOT MYSTRAL_USE_JSC AND NOT TN_ENGINE_ONLY)
         set(MYSTRAL_USE_V8 ON)
     else()
         set(MYSTRAL_USE_V8 OFF)
@@ -343,8 +343,13 @@ if(SDL3_SOURCE_DIRS)
         message(STATUS "Building SDL3 from source: ${SDL3_SOURCE_DIR}")
 
         # Configure SDL3 build options - static library only
-        set(SDL_SHARED OFF CACHE BOOL "" FORCE)
-        set(SDL_STATIC ON CACHE BOOL "" FORCE)
+        if(ANDROID AND TN_ENGINE_ONLY)
+            set(SDL_SHARED ON CACHE BOOL "" FORCE)
+            set(SDL_STATIC OFF CACHE BOOL "" FORCE)
+        else()
+            set(SDL_SHARED OFF CACHE BOOL "" FORCE)
+            set(SDL_STATIC ON CACHE BOOL "" FORCE)
+        endif()
         set(SDL_TEST OFF CACHE BOOL "" FORCE)
         set(SDL_TESTS OFF CACHE BOOL "" FORCE)
 
@@ -366,7 +371,11 @@ if(SDL3_SOURCE_DIRS)
         endif()
 
         # SDL3 creates SDL3::SDL3-static target
-        if(TARGET SDL3::SDL3-static)
+        if(ANDROID AND TN_ENGINE_ONLY AND TARGET SDL3::SDL3-shared)
+            set(SDL3_FOUND ON)
+            # Existing engine consumers use this variable for either SDL target.
+            set(SDL3_STATIC_TARGET SDL3::SDL3-shared)
+        elseif(TARGET SDL3::SDL3-static)
             set(SDL3_FOUND ON)
             set(SDL3_STATIC_TARGET SDL3::SDL3-static)
             message(STATUS "SDL3 static library target: SDL3::SDL3-static")
@@ -1490,6 +1499,7 @@ set(MYSTRAL_SOURCES
     src/webgpu/bindings_pipeline_cache.cpp
     src/webgpu/pipeline_cache.cpp
     src/webgpu/bindings_presentation.cpp
+    src/webgpu/presentation.cpp
     src/webgpu/bindings_ui_composite.cpp
     src/webgpu/bindings_resources.cpp
     src/webgpu/bindings_screenshot.cpp

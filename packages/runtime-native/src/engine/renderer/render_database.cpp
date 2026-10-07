@@ -6,6 +6,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
+#include "engine/scene/geometries.h"
 
 namespace tn::engine {
 
@@ -470,13 +472,44 @@ std::vector<DrawItem> RenderDatabase::prepare(Object3D& scene, Camera& camera, L
     // Resolve the scene fallback every frame: environment can change without a material version bump.
     const Scene* world = dynamic_cast<const Scene*>(&scene);
     for (DrawItem& item : items) {
+        const Material& source = *static_cast<const Material*>(item.materialKey);
+        item.fog = world && source.fog ? world->fog.get() : nullptr;
         if (item.kind != MaterialKind::Standard && item.kind != MaterialKind::Physical) continue;
         const Material& material = *static_cast<const Material*>(item.materialKey);
         const auto found = material.maps.find("envMap");
         const Texture* env = found != material.maps.end() ? found->second.get() : nullptr;
         item.envMap = env ? env : world ? world->environment.get() : nullptr;
         item.envMapIntensity = env ? material.envMapIntensity : world ? world->environmentIntensity : 1;
+        Matrix4 rotation;
+        if (!env && world) rotation.makeRotationFromEuler(world->environmentRotation).transpose();
+        item.envRotation = toArray(rotation);
         if (item.envMap && !item.envMap->hasImage()) item.envMap = nullptr;
+    }
+    if (world && world->backgroundTexture) {
+        if (world->backgroundTexture->mapping != 303 || world->backgroundBlurriness != 0)
+            throw std::runtime_error("TN_NATIVE_BACKGROUND_UNSUPPORTED: sharp EquirectangularReflectionMapping required");
+        if (!backgroundGeometry_) backgroundGeometry_ = makeSphereGeometry(1, 32, 32);
+        DrawItem sky;
+        sky.background = true;
+        sky.key = std::numeric_limits<uint64_t>::max();
+        sky.positions = backgroundGeometry_->attributes.at("position")->store.get();
+        sky.normals = backgroundGeometry_->attributes.at("normal")->store.get();
+        sky.indices = backgroundGeometry_->index->store.get();
+        Matrix4 model;
+        if (camera.projectionMatrix.elements[15] == 1) {
+            const double scale = 3 / camera.projectionMatrix.elements[5]; model.makeScale(scale, scale, scale);
+        }
+        model.elements[12] = camera.matrixWorld.elements[12];
+        model.elements[13] = camera.matrixWorld.elements[13];
+        model.elements[14] = camera.matrixWorld.elements[14];
+        sky.matrixWorld = toArray(model);
+        Matrix4 rotation; rotation.makeRotationFromEuler(world->backgroundRotation).transpose();
+        sky.backgroundRotation = toArray(rotation);
+        backgroundParams_.color.fill(static_cast<float>(world->backgroundIntensity));
+        sky.material = &backgroundParams_;
+        sky.map = world->backgroundTexture.get();
+        sky.kind = MaterialKind::Basic; sky.side = 1; sky.depthWrite = false;
+        items.insert(items.begin(), sky);
     }
     return items;
 }
@@ -488,6 +521,8 @@ uint64_t RenderDatabase::render(Renderer& renderer, Object3D& scene, Camera& cam
     state.matrixWorld = toArray(camera.matrixWorld);
     state.matrixWorldInverse = toArray(camera.matrixWorldInverse);
     state.projectionMatrix = toArray(camera.projectionMatrix);
+    if (const auto* world = dynamic_cast<const Scene*>(&scene); world && world->background)
+        clear = {world->background->r, world->background->g, world->background->b, 1};
     return renderer.render(items, state, lights, clear);
 }
 

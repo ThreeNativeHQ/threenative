@@ -237,6 +237,7 @@ WgslModule WgslEmitter::emit(const Program& program, uint32_t group) {
         out += "@group(" + std::to_string(group) + ") @binding(" + std::to_string(binding++) + ") var t_" + name +
                (kind == Program::TextureKind::DepthCube ? ": texture_depth_cube;\n"
                 : kind == Program::TextureKind::Float3d ? ": texture_3d<f32>;\n"
+                : kind == Program::TextureKind::FloatCube ? ": texture_cube<f32>;\n"
                 : depth                                 ? ": texture_depth_2d;\n"
                                                         : ": texture_2d<f32>;\n");
         out += "@group(" + std::to_string(group) + ") @binding(" + std::to_string(binding++) + ") var smp_" + name +

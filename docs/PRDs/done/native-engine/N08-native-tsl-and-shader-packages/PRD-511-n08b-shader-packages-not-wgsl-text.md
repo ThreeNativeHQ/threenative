@@ -4,7 +4,7 @@
 **Complexity:** 4 — code generation plus the layout/variant/schedule metadata that makes it executable
 **Owner:** João
 **Work package:** N08 — [native-engine batch](../../../native-engine/README.md) · [N08 index](../../../native-engine/N08-native-tsl-and-shader-packages/README.md)
-**Depends on:** [PRD-510](PRD-510-n08a-a-typed-shader-ir-with-ordered-effects.md), [PRD-509 (N07)](../../../native-engine/PRD-509-n07-gpu-resources-presentation-and-device-loss.md)
+**Depends on:** [PRD-510](PRD-510-n08a-a-typed-shader-ir-with-ordered-effects.md), [PRD-509 (N07)](../PRD-509-n07-gpu-resources-presentation-and-device-loss.md)
 
 ## Context
 

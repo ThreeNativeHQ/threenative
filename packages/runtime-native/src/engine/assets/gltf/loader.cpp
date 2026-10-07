@@ -17,6 +17,8 @@
 #include "engine/foundation/json.h"
 #include "engine/scene/geometry.h"
 #include "engine/scene/material.h"
+#include "engine/scene/camera.h"
+#include "engine/scene/lights.h"
 
 namespace tn::engine::gltf {
 namespace {
@@ -62,7 +64,7 @@ const std::set<std::string> kThreeExtensions = {
     "KHR_materials_volume", "KHR_texture_basisu", "KHR_texture_transform", "KHR_mesh_quantization",
     "KHR_materials_emissive_strength", "EXT_materials_bump", "EXT_texture_webp", "EXT_texture_avif",
     "EXT_meshopt_compression", "KHR_meshopt_compression", "EXT_mesh_gpu_instancing"};
-const std::set<std::string> kSupported = {"KHR_mesh_quantization"};
+const std::set<std::string> kSupported = {"KHR_mesh_quantization", "KHR_lights_punctual", "KHR_materials_unlit"};
 
 class Builder {
   public:
@@ -77,6 +79,8 @@ class Builder {
             result.scenes.push_back(loadScene(i, item(scenes, i)));
             if (!error_.empty()) return fail(result);
         }
+        for (std::size_t i = 0; i < data_.cameras_count; ++i) result.cameras.push_back(loadCamera(i));
+        if (!error_.empty()) return fail(result);
         resolveMeshes();
         if (!error_.empty()) return fail(result);
         bindSkins();
@@ -177,24 +181,19 @@ class Builder {
         const Value* json = item(member(&json_, "nodes"), index);
         const bool named = truthyName(member(json, "name"));
         const std::string nodeName = named ? uniqueName(text(member(json, "name"))) : std::string();
-        if (def.camera || def.light) {
-            refuse(std::string("TN_NATIVE_GLTF_") + (def.camera ? "CAMERA" : "LIGHT") + "_UNSUPPORTED node " +
-                   std::to_string(index));
-            return nullptr;
-        }
-        // The mesh object (one Mesh, or a Group of primitives) is built later, when its name is taken
-        // (resolveMeshes); a placeholder Group stands in when the node *is* the mesh object.
+        // _loadNodeShallow: mesh, camera and extension attachments, in that order.
+        std::vector<std::shared_ptr<Object3D>> objects;
+        if (def.mesh) objects.push_back(meshObjectFor(def.mesh - data_.meshes, index));
+        if (def.camera) objects.push_back(cameraRef(def.camera - data_.cameras));
+        if (def.light) objects.push_back(loadLight(def.light - data_.lights));
+        if (!error_.empty()) return nullptr;
         std::shared_ptr<Object3D> node;
-        std::shared_ptr<Object3D> meshObject;
-        if (def.mesh) meshObject = meshObjectFor(def.mesh - data_.meshes, index);
-        if (bones_[index]) {
-            node = std::make_shared<Bone>();
-            if (meshObject) node->add(*meshObject);
-        } else if (meshObject) {
-            node = meshObject;
-        } else {
-            node = std::make_shared<Object3D>();
-        }
+        if (bones_[index]) node = std::make_shared<Bone>();
+        else if (objects.size() > 1) node = std::make_shared<Group>();
+        else if (objects.size() == 1) node = objects.front();
+        else node = std::make_shared<Object3D>();
+        if (!objects.empty() && node != objects.front())
+            for (const auto& object : objects) node->add(*object);
         if (named) {
             node->name = nodeName;
             nodeNames_[node.get()] = nodeName; // the node's name outlives the mesh name taken later
@@ -217,6 +216,78 @@ class Builder {
         }
         nodes_[index] = node;
         return node;
+    }
+
+    std::shared_ptr<Camera> loadCamera(std::size_t index) {
+        auto& camera = cameras_[index];
+        if (camera) return camera;
+        const Value* def = item(member(&json_, "cameras"), index);
+        const std::string type = text(member(def, "type"));
+        const Value* params = member(def, type);
+        if (!params) { refuse("TN_NATIVE_GLTF_CAMERA_INVALID missing parameters"); return nullptr; }
+        if (type == "perspective") {
+            // GLTFLoader uses JS `||`, including its 2e6 default when zfar is absent.
+            const auto nonzero = [&](const char* name, double fallback) {
+                const double value = number(member(params, name), 0); return value == 0 ? fallback : value;
+            };
+            camera = std::make_shared<PerspectiveCamera>(number(member(params, "yfov"), 0) * (180 / 3.141592653589793),
+                nonzero("aspectRatio", 1), nonzero("znear", 1), nonzero("zfar", 2e6));
+        } else if (type == "orthographic") {
+            const double x = number(member(params, "xmag"), 0), y = number(member(params, "ymag"), 0);
+            camera = std::make_shared<OrthographicCamera>(-x, x, y, -y,
+                number(member(params, "znear"), 0.1), number(member(params, "zfar"), 2000));
+        } else { refuse("TN_NATIVE_GLTF_CAMERA_INVALID " + type); return nullptr; }
+        if (truthyName(member(def, "name"))) camera->name = uniqueName(text(member(def, "name")));
+        return camera;
+    }
+
+    std::shared_ptr<Camera> cameraRef(std::size_t index) {
+        auto camera = loadCamera(index);
+        if (!camera) return nullptr;
+        std::size_t refs = 0;
+        for (std::size_t i = 0; i < data_.nodes_count; ++i) refs += data_.nodes[i].camera == &data_.cameras[index];
+        if (refs <= 1) return camera;
+        std::shared_ptr<Camera> clone;
+        if (auto p = std::dynamic_pointer_cast<PerspectiveCamera>(camera)) {
+            auto copy = std::make_shared<PerspectiveCamera>(); copy->copy(*p); clone = copy;
+        } else {
+            auto copy = std::make_shared<OrthographicCamera>(); copy->copy(*std::static_pointer_cast<OrthographicCamera>(camera)); clone = copy;
+        }
+        clone->name += "_instance_" + std::to_string(cameraUses_[index]++);
+        return clone;
+    }
+
+    std::shared_ptr<Light> loadLight(std::size_t index) {
+        const Value* def = item(member(member(member(&json_, "extensions"), "KHR_lights_punctual"), "lights"), index);
+        if (!def) { refuse("TN_NATIVE_GLTF_LIGHT_INVALID missing definition"); return nullptr; }
+        const Value* rgb = member(def, "color");
+        const Color color(number(item(rgb, 0), 1), number(item(rgb, 1), 1), number(item(rgb, 2), 1));
+        const double range = number(member(def, "range"), 0);
+        const std::string type = text(member(def, "type"));
+        std::shared_ptr<Light> light;
+        if (type == "directional") {
+            auto sun = std::make_shared<DirectionalLight>(color);
+            sun->target->position.set(0, 0, -1); sun->add(*sun->target); light = sun;
+        } else if (type == "point") {
+            light = std::make_shared<PointLight>(color, 1, range);
+        } else if (type == "spot") {
+            const Value* spot = member(def, "spot");
+            const double outer = number(member(spot, "outerConeAngle"), 3.141592653589793 / 4);
+            auto cone = std::make_shared<SpotLight>(color, 1, range, outer,
+                1 - number(member(spot, "innerConeAngle"), 0) / outer);
+            // Object3D owns shared children, so replace SpotLight's constructor-owned target.
+            auto target = std::make_shared<Object3D>(); target->position.set(0, 0, -1);
+            cone->ownTarget.reset(); cone->target = target.get(); cone->add(*target); light = cone;
+        } else { refuse("TN_NATIVE_GLTF_LIGHT_INVALID " + type); return nullptr; }
+        light->position.set(0, 0, 0);
+        light->intensity = number(member(def, "intensity"), 1);
+        auto& name = lightNames_[index];
+        if (name.empty()) name = uniqueName(truthyName(member(def, "name")) ? text(member(def, "name")) : "light_" + std::to_string(index));
+        light->name = name;
+        std::size_t refs = 0;
+        for (std::size_t i = 0; i < data_.nodes_count; ++i) refs += data_.nodes[i].light == &data_.lights[index];
+        if (refs > 1) light->name += "_instance_" + std::to_string(lightUses_[index]++);
+        return light;
     }
 
     // A mesh's object for one node: the first use builds it (its name is taken in resolveMeshes);
@@ -465,24 +536,27 @@ class Builder {
 
     std::shared_ptr<Material> baseMaterial(long index) {
         if (const auto found = materials_.find(index); found != materials_.end()) return found->second;
-        auto material = std::make_shared<Material>(MaterialType::Standard);
+        const Value* def = index < 0 ? nullptr : item(member(&json_, "materials"), static_cast<std::size_t>(index));
+        const bool unlit = member(member(def, "extensions"), "KHR_materials_unlit") != nullptr;
+        auto material = std::make_shared<Material>(unlit ? MaterialType::Basic : MaterialType::Standard);
         if (index < 0) {
             // createDefaultMaterial
             material->metalness = 1;
             material->roughness = 1;
             return materials_[index] = material;
         }
-        const Value* def = item(member(&json_, "materials"), static_cast<std::size_t>(index));
         const Value* pbr = member(def, "pbrMetallicRoughness");
         if (const Value* factor = member(pbr, "baseColorFactor"); factor && factor->isArray()) {
             material->color = Color(number(item(factor, 0), 1), number(item(factor, 1), 1), number(item(factor, 2), 1));
             material->opacity = number(item(factor, 3), 1);
         }
         assignTexture(*material, "map", member(pbr, "baseColorTexture"));
-        material->metalness = number(member(pbr, "metallicFactor"), 1.0);
-        material->roughness = number(member(pbr, "roughnessFactor"), 1.0);
-        assignTexture(*material, "metalnessMap", member(pbr, "metallicRoughnessTexture"));
-        assignTexture(*material, "roughnessMap", member(pbr, "metallicRoughnessTexture"));
+        if (!unlit) {
+            material->metalness = number(member(pbr, "metallicFactor"), 1.0);
+            material->roughness = number(member(pbr, "roughnessFactor"), 1.0);
+            assignTexture(*material, "metalnessMap", member(pbr, "metallicRoughnessTexture"));
+            assignTexture(*material, "roughnessMap", member(pbr, "metallicRoughnessTexture"));
+        }
         if (const Value* sided = member(def, "doubleSided"); sided && sided->kind() == Value::Kind::Bool && sided->boolean())
             material->side = Side::Double;
         const std::string alphaMode = member(def, "alphaMode") ? text(member(def, "alphaMode")) : "OPAQUE";
@@ -493,17 +567,19 @@ class Builder {
             material->transparent = false;
             if (alphaMode == "MASK") material->alphaTest = number(member(def, "alphaCutoff"), 0.5);
         }
-        if (const Value* normal = member(def, "normalTexture")) {
-            assignTexture(*material, "normalMap", normal);
-            material->normalScaleX = material->normalScaleY = number(member(normal, "scale"), 1);
+        if (!unlit) {
+            if (const Value* normal = member(def, "normalTexture")) {
+                assignTexture(*material, "normalMap", normal);
+                material->normalScaleX = material->normalScaleY = number(member(normal, "scale"), 1);
+            }
+            if (const Value* occlusion = member(def, "occlusionTexture")) {
+                assignTexture(*material, "aoMap", occlusion);
+                if (member(occlusion, "strength")) material->aoMapIntensity = number(member(occlusion, "strength"), 1);
+            }
+            if (const Value* emissive = member(def, "emissiveFactor"))
+                material->emissive = Color(number(item(emissive, 0), 0), number(item(emissive, 1), 0), number(item(emissive, 2), 0));
+            assignTexture(*material, "emissiveMap", member(def, "emissiveTexture"));
         }
-        if (const Value* occlusion = member(def, "occlusionTexture")) {
-            assignTexture(*material, "aoMap", occlusion);
-            if (member(occlusion, "strength")) material->aoMapIntensity = number(member(occlusion, "strength"), 1);
-        }
-        if (const Value* emissive = member(def, "emissiveFactor"))
-            material->emissive = Color(number(item(emissive, 0), 0), number(item(emissive, 1), 0), number(item(emissive, 2), 0));
-        assignTexture(*material, "emissiveMap", member(def, "emissiveTexture"));
         if (truthyName(member(def, "name"))) material->name = text(member(def, "name"));
         return materials_[index] = material;
     }
@@ -521,6 +597,8 @@ class Builder {
             auto made = std::make_shared<Texture>();
             made->name = text(member(def, "name"));
             made->source = static_cast<int>(number(member(def, "source"), -1));
+            made->flipY = false;
+            if (std::string_view(slot) == "map" || std::string_view(slot) == "emissiveMap") made->colorSpace = TextureColorSpace::SRGB;
             texture = made;
         }
         material.maps[slot] = texture;
@@ -663,6 +741,9 @@ class Builder {
     std::vector<std::shared_ptr<Object3D>> nodes_;
     std::map<const Object3D*, std::string> nodeNames_;
     std::vector<MeshUse> uses_;
+    std::map<std::size_t, std::shared_ptr<Camera>> cameras_;
+    std::map<std::size_t, std::size_t> cameraUses_, lightUses_;
+    std::map<std::size_t, std::string> lightNames_;
     std::map<long, std::shared_ptr<Material>> materials_;
     std::map<std::string, std::shared_ptr<Material>> finalMaterials_;
     std::map<std::size_t, std::shared_ptr<const Texture>> textures_;

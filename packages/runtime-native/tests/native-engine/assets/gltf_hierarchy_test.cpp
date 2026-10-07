@@ -13,6 +13,7 @@
 #include "engine/foundation/json.h"
 #include "engine/scene/geometry.h"
 #include "engine/scene/material.h"
+#include "engine/scene/lights.h"
 
 using namespace tn::engine;
 using tn::engine::json::Value;
@@ -209,6 +210,42 @@ int main() {
         return 1;
     }
     int files = 0, differ = 0;
+    // The same loader entry point used by a game, without a GPU or recorded reference.
+    const std::string featureJson = R"({"asset":{"version":"2.0"},"extensionsUsed":["KHR_lights_punctual"],
+      "extensions":{"KHR_lights_punctual":{"lights":[{"type":"directional","color":[0.2,0.4,0.8],"intensity":3},
+        {"type":"point","range":7},{"type":"spot","spot":{"innerConeAngle":0.2,"outerConeAngle":0.6}}]}},
+      "cameras":[{"type":"perspective","perspective":{"yfov":1,"znear":0.25}},
+        {"type":"orthographic","orthographic":{"xmag":2,"ymag":3,"znear":0.1,"zfar":40}}],
+      "nodes":[{"camera":0,"translation":[1,2,3]}, {"camera":1},
+        {"extensions":{"KHR_lights_punctual":{"light":0}}},
+        {"extensions":{"KHR_lights_punctual":{"light":1}}},
+        {"extensions":{"KHR_lights_punctual":{"light":2}}}],"scenes":[{"nodes":[0,1,2,3,4]}],"scene":0})";
+    auto feature = gltf::load(std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(featureJson.data()), featureJson.size()));
+    if (!feature.error.empty() || !feature.scene || feature.scene->children.size() != 5) {
+        std::printf("lights/cameras: %s\n", feature.error.c_str()); ++differ;
+    } else {
+        auto* perspective = dynamic_cast<PerspectiveCamera*>(feature.scene->children[0]);
+        auto* ortho = dynamic_cast<OrthographicCamera*>(feature.scene->children[1]);
+        auto* sun = dynamic_cast<DirectionalLight*>(feature.scene->children[2]);
+        auto* point = dynamic_cast<PointLight*>(feature.scene->children[3]);
+        auto* spot = dynamic_cast<SpotLight*>(feature.scene->children[4]);
+        const bool ok = perspective && perspective->fov == 180 / 3.141592653589793 && perspective->aspect == 1 &&
+            perspective->near == 0.25 && perspective->far == 2e6 && perspective->position.x == 1 &&
+            ortho && ortho->left == -2 && ortho->top == 3 && ortho->far == 40 && sun && sun->intensity == 3 &&
+            sun->color.b == 0.8 && sun->position.y == 0 && sun->target->parent == sun && sun->target->position.z == -1 &&
+            point && point->distance == 7 && point->decay == 2 && spot && spot->angle == 0.6 &&
+            spot->penumbra == 1 - 0.2 / 0.6 && spot->target->parent == spot && spot->target->position.z == -1;
+        if (!ok) { std::printf("lights/cameras: wrong native objects or defaults\n"); ++differ; }
+    }
+    const std::string unlitBytes = readFile(std::string(TN_REPO_ROOT) + "/packages/three-native/tests/compatibility/fixtures/gltf-unlit.glb");
+    auto unlit = gltf::load(std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(unlitBytes.data()), unlitBytes.size()));
+    auto* unlitMesh = unlit.scene ? dynamic_cast<Mesh*>(unlit.scene->getObjectByName("leftPanel")) : nullptr;
+    if (!unlit.error.empty() || !unlitMesh || !unlitMesh->material ||
+        unlitMesh->material->type != MaterialType::Basic || unlitMesh->material->color.r != 0.8 ||
+        unlitMesh->material->opacity != 0.7 || !unlitMesh->material->transparent || unlitMesh->material->depthWrite ||
+        unlitMesh->material->emissive.g != 0 || unlitMesh->material->maps.count("metalnessMap")) {
+        std::printf("unlit: wrong material/alpha or lit-only inputs were not ignored: %s\n", unlit.error.c_str()); ++differ;
+    }
     for (const Value& expected : reference.find("files")->items()) {
         const std::string file = expected.find("file")->string();
         const std::string bytes = readFile(std::string(TN_REPO_ROOT) + "/" + file);

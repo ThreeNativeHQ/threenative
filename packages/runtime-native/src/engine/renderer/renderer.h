@@ -30,6 +30,7 @@ class SkinnedMesh;
 class TraaPass;
 class PostEffects;
 struct TraaOptions;
+class Fog;
 class Texture;  // the material's diffuse `map` (engine/scene/texture.h)
 
 /** Which program a draw uses; each kind reads the StandardMaterial fields it needs. */
@@ -37,6 +38,9 @@ enum class MaterialKind : uint8_t { Standard, Basic, Lambert, Phong, Physical };
 
 /** One opaque draw. The render database (PRD-514 phase 1) fills these from the scene graph. */
 struct DrawItem {
+    bool background = false;
+    const Fog* fog = nullptr;
+    Matrix backgroundRotation{};
     uint64_t key = 0;                    // the renderable's stable identity; its GPU record persists under it
     BufferStore* positions = nullptr;    // vec3 float
     BufferStore* normals = nullptr;      // vec3 float; unused by Basic
@@ -51,6 +55,7 @@ struct DrawItem {
     /** The environment (scene.environment or material.envMap): its PMREM is sampled for IBL. */
     const Texture* envMap = nullptr;
     double envMapIntensity = 1;
+    Matrix envRotation{1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};
     MaterialKind kind = MaterialKind::Standard;
     // Render-list inputs, as three's RenderList reads them.
     uint64_t id = 0;           // Object3D.id: the sort's last tiebreak
@@ -246,7 +251,7 @@ private:
         kMetalness, kEmissive, kSpecular, kShininess, kIor, kSpecularIntensity, kSpecularColor,
         kUvTransform, kHemisphereSky, kHemisphereGround, kHemisphereDirection, kAmbient, kBoneBase, kBindMatrix,
         kBindMatrixInverse, kMorphBase, kMorphInfluenceBase, kMorphVertexCount, kMorphBaseInfluence,
-        kEnvMapIntensity, kCameraWorldMatrix, kEnvMapTexelWidth, kEnvMapTexelHeight, kEnvMapMaxMip, kBoneStride, kSlotCount
+        kEnvMapIntensity, kCameraWorldMatrix, kEnvMapTexelWidth, kEnvMapTexelHeight, kEnvMapMaxMip, kBoneStride, kFogColor, kFogNear, kFogFar, kFogDensity, kBackgroundRotation, kEnvRotation, kSlotCount
     };
     // Per direct light i, `light{i}<Field>` (shader::LightLayout).
     enum LightField : uint8_t { kLightColor, kLightDirection, kLightPosition, kLightDistance, kLightDecay, kLightAxis,
@@ -283,6 +288,14 @@ private:
         uint32_t version = 0;
     };
     const MaterialTexture* materialTexture(const Texture& texture);
+    struct BackgroundCube {
+        WGPUTexture texture = nullptr;
+        WGPUTextureView view = nullptr;
+        WGPUSampler sampler = nullptr;
+        uint32_t version = 0;
+    };
+    BackgroundCube& backgroundCube(const Texture& texture);
+    std::map<const Texture*, BackgroundCube> backgroundCubes_;
     void releaseMaterialTextures();
     /**
      * The PMREM cubeUV form of an equirectangular (or PMREM) environment, built on first use and

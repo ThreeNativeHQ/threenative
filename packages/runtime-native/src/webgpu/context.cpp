@@ -6,6 +6,7 @@
  */
 
 #include "mystral/webgpu/context.h"
+#include "mystral/webgpu/presentation.h"
 #include <array>
 #include <cstdlib>
 #include <string>
@@ -722,6 +723,7 @@ bool Context::initializeHeadless() {
         return false;
     }
     device_ = deviceData.device;
+    ++deviceCreations_;
     reportGrantedFeatures(device_);
 
     queue_ = wgpuDeviceGetQueue(device_);
@@ -854,6 +856,7 @@ WGPUSurface Context::makeSurface(void* nativeHandle, int platformType) {
         std::cerr << "[WebGPU] Failed to create surface" << std::endl;
         return nullptr;
     }
+    ++surfaceCreations_;
     std::cout << "[WebGPU] Surface created" << std::endl;
     return created;
 }
@@ -1018,6 +1021,7 @@ bool Context::createSurface(void* nativeHandle, int platformType) {
         return false;
     }
     device_ = deviceData.device;
+    ++deviceCreations_;
     reportGrantedFeatures(device_);
 
     // Get queue
@@ -1067,6 +1071,7 @@ bool Context::createSurfaceWithDisplay(void* display, void* window, int platform
         std::cerr << "[WebGPU] Failed to create surface" << std::endl;
         return false;
     }
+    ++surfaceCreations_;
     std::cout << "[WebGPU] Surface created" << std::endl;
 
     // Now request adapter with surface compatibility
@@ -1192,6 +1197,7 @@ bool Context::createSurfaceWithDisplay(void* display, void* window, int platform
         return false;
     }
     device_ = deviceData.device;
+    ++deviceCreations_;
     reportGrantedFeatures(device_);
 
     queue_ = wgpuDeviceGetQueue(device_);
@@ -1296,21 +1302,7 @@ bool Context::configureSurface(uint32_t width, uint32_t height, bool vsync) {
     config.width = width;
     config.height = height;
     config.presentMode = selectedPresentMode;
-#if defined(MYSTRAL_WEBGPU_WGPU)
-#if TN_WEBGPU_DESIRED_FRAME_LATENCY > 0
-    // The backend's default frame latency of 2 lets `getCurrentTexture` block the next frame's
-    // encode behind the previous frame's scan-out once a game runs slower than the display —
-    // measured on Pixel 8 as acquire waiting inside the render phase. Requesting a deeper
-    // flight of images lets CPU encoding overlap GPU and display work instead.
-    WGPUSurfaceConfigurationExtras latencyExtras = {};
-    latencyExtras.chain.sType = static_cast<WGPUSType>(WGPUSType_SurfaceConfigurationExtras);
-    latencyExtras.chain.next = nullptr;
-    latencyExtras.desiredMaximumFrameLatency = TN_WEBGPU_DESIRED_FRAME_LATENCY;
-    config.nextInChain = &latencyExtras.chain;
-#endif
-#endif
-
-    wgpuSurfaceConfigure(surface_, &config);
+    configurePresentationSurface(surface_, &config);
     vsync_ = vsync;
     presentMode_ = static_cast<uint32_t>(selectedPresentMode);
     std::cout << "[WebGPU] Surface configured: " << width << "x" << height << std::endl;
@@ -1337,13 +1329,7 @@ bool Context::rebuildSurface(void* nativeHandle, int platformType) {
         return false;
     }
 
-    if (surface_) {
-        // Unconfigure before release so the old swapchain is torn down explicitly rather than at
-        // whatever moment the last reference happens to drop.
-        releaseSurfaceView();
-        wgpuSurfaceUnconfigure(surface_);
-        wgpuSurfaceRelease(surface_);
-    }
+    releaseSurface();
     surface_ = replacement;
     surfaceNativeHandle_ = nativeHandle;
     surfacePlatformType_ = platformType;
@@ -1352,6 +1338,18 @@ bool Context::rebuildSurface(void* nativeHandle, int platformType) {
     surfaceWidth_ = 0;
     surfaceHeight_ = 0;
     return true;
+}
+
+void Context::releaseSurface() {
+    releaseSurfaceView();
+    if (surface_) {
+        wgpuSurfaceUnconfigure(surface_);
+        wgpuSurfaceRelease(surface_);
+        surface_ = nullptr;
+    }
+    surfaceNativeHandle_ = nullptr;
+    surfacePlatformType_ = -1;
+    surfaceWidth_ = surfaceHeight_ = 0;
 }
 
 void Context::resizeSurface(uint32_t width, uint32_t height) {
@@ -1369,7 +1367,7 @@ void* Context::getCurrentTextureView() {
     }
 
     WGPUSurfaceTexture surfaceTexture = {};
-    wgpuSurfaceGetCurrentTexture(surface_, &surfaceTexture);
+    acquirePresentationSurface(surface_, &surfaceTexture);
 
     if (!wgpuSurfaceTextureStatusIsSuccess(surfaceTexture.status)) {
         std::cerr << "[WebGPU] Failed to get current texture, status: " << surfaceTexture.status << std::endl;
@@ -1402,8 +1400,11 @@ void Context::releaseSurfaceView() {
 }
 
 void Context::present() {
-    if (surface_) {
+    if (surface_ && surfaceView_) {
         wgpuSurfacePresent(surface_);
+#if defined(__ANDROID__)
+        __android_log_print(ANDROID_LOG_INFO, "TN_Player", "TN_SURFACE_FRAME:{\"view\":true}");
+#endif
     }
     releaseSurfaceView();
 }

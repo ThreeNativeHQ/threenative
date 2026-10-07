@@ -59,6 +59,8 @@ class RenderDatabase {
     [[nodiscard]] std::pair<std::size_t, std::size_t> lastBatches() const { return {batchGroups_, batchMembers_}; }
 
   private:
+    std::shared_ptr<BufferGeometry> backgroundGeometry_;
+    shader::StandardMaterial backgroundParams_;
     struct Record {
         uint64_t objectRevision = 0;
         uint64_t geometryRevision = 0;

@@ -190,6 +190,27 @@ inline void postChromatic(engine::Renderer& renderer) {
 inline std::string applyTslProgram(const std::string& program, binding::Object& object, engine::Renderer& renderer,
                                    WGPUDevice device, const std::function<std::string(uint32_t, uint32_t)>& renderAt,
                                    std::vector<std::shared_ptr<void>>& resources, engine::Camera* camera = nullptr) {
+    if (program == "sky-equirect") {
+        if (object.cls != "Scene") return "TN_FIXTURE_SKY_INVALID: requires scene";
+        auto& scene = *static_cast<engine::Scene*>(object.ptr.get());
+        auto sky = std::make_shared<engine::DataTexture>();
+        sky->width = 128; sky->height = 64; sky->data.resize(128 * 64 * 4);
+        for (uint32_t y = 0; y < 64; ++y) for (uint32_t x = 0; x < 128; ++x) {
+            const auto at = (y * 128 + x) * 4;
+            sky->data[at] = 20 + (x * 160) % 220;
+            sky->data[at + 1] = 30 + y * 180 / 64;
+            sky->data[at + 2] = 220 - x * 150 / 128;
+            sky->data[at + 3] = 255;
+        }
+        sky->mapping = 303; sky->colorSpace = engine::TextureColorSpace::SRGB;
+        sky->magFilter = static_cast<uint16_t>(engine::TextureFilter::Linear);
+        sky->minFilter = static_cast<uint16_t>(engine::TextureFilter::LinearMipmapLinear);
+        sky->needsUpdate();
+        scene.backgroundTexture = scene.environment = sky;
+        scene.backgroundIntensity = scene.environmentIntensity = 2.5;
+        scene.backgroundRotation.set(0.1, 0.4, 0); scene.environmentRotation.set(0.1, 0.4, 0);
+        return "";
+    }
     if (program == "traa-history" || program == "history-cut") {
         if (object.cls != "Scene" || !camera) return "TN_FIXTURE_TRAA_INVALID: scene/camera";
         auto* scene = static_cast<engine::Scene*>(object.ptr.get());
