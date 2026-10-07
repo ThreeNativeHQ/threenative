@@ -105,7 +105,24 @@ describe("the ktx2 texture pass", () => {
     expect(implicit).toEqual(explicit);
     expect(readKTX2(implicit).supercompressionScheme).toBe(2);
     expect(readKTX2(disabled).supercompressionScheme).toBe(0);
+    expect(() => expect(readKTX2(disabled).supercompressionScheme).toBe(2)).toThrow();
     expect(texturePass().configuration?.encoder).toBe(KTX2_ENCODER_VERSION);
+  });
+
+  it("rejects a capped image and oversize input at the retained-4K encoder gate", async () => {
+    const source = rgbaPng({ height: 4096, width: 4096 });
+    const capped = await texturePass({ maxSize: 2048 }).apply(source, "capped_normal.png");
+    if (Buffer.isBuffer(capped)) throw new Error("4K control was not capped");
+    const dimensions = readKTX2(capped.buffer);
+    expect([dimensions.pixelWidth, dimensions.pixelHeight]).toEqual([2048, 2048]);
+    expect(() =>
+      expect([dimensions.pixelWidth, dimensions.pixelHeight]).toEqual([4096, 4096]),
+    ).toThrow();
+    await expect(
+      encodeToKTX2(source, {
+        imageDecoder: async () => ({ data: new Uint8Array(), width: 4096, height: 4100 }),
+      }),
+    ).rejects.toThrow(/TN_ASSETS_KTX2_SOURCE_SIZE/u);
   });
 
   it("should not grow the starter's 150-byte source image unless its codec is overridden", async () => {
@@ -205,6 +222,7 @@ describe("the ktx2 texture pass", () => {
       "threenative-tex-uastc-",
       "decal.png",
       compressiblePng((x) => (x % 2 === 0 ? 255 : 0)),
+      { textures: { overrides: [{ glob: "decal.png", codec: "etc1s" }] } },
     );
 
     expect(entry.format).toBe("etc1s");
@@ -261,10 +279,19 @@ describe("the ktx2 texture pass", () => {
 
     // 64x64 encodes with every level down to 1x1: log2(64) + 1 = 7.
     expect(readKTX2(compiled).levelCount).toBe(7);
+    const input = compressiblePng();
+    const decoded = PNG.sync.read(input);
+    const noMips = await encodeToKTX2(input, {
+      imageDecoder: async () => decoded,
+      generateMipmap: false,
+    });
+    expect(() => expect(readKTX2(noMips).levelCount).toBe(7)).toThrow();
   });
 
-  it("should fall back to ETC1S for an opaque texture without the normal-map convention", async () => {
-    const { entry } = await compileOne("threenative-tex-etc1s-", "wall.jpg", compressiblePng());
+  it("should permit ETC1S for an opaque texture without the normal-map convention", async () => {
+    const { entry } = await compileOne("threenative-tex-etc1s-", "wall.jpg", compressiblePng(), {
+      textures: { overrides: [{ glob: "wall.jpg", codec: "etc1s" }] },
+    });
     expect(entry.format).toBe("etc1s");
   });
 

@@ -433,7 +433,7 @@ export function codecLadder(
       ];
 }
 
-/** Both existing compression passes share the instrument and stop at the first passing rung. */
+/** Both compression passes retain the smallest eligible encoded candidate that passes. */
 export async function encodeTextureLadder(
   data: Uint8Array,
   width: number,
@@ -449,7 +449,9 @@ export async function encodeTextureLadder(
   readonly quality: ITextureQuality;
 }> {
   const slots = options.slots ?? ["baseColorTexture"];
+  let smallest: { encoded: Uint8Array; codec: TextureCodec; quality: ITextureQuality } | undefined;
   for (const candidate of codecLadder(slots, options.forced)) {
+    if (candidate.codec === "none" && smallest !== undefined) return smallest;
     const rung =
       candidate.codec === "etc1s"
         ? `etc1s@${options.quality}`
@@ -477,19 +479,20 @@ export async function encodeTextureLadder(
     if (
       score.status !== "below-floor" &&
       ((options.alphaThresholds?.length ?? 0) > 0 || score.alpha.meanAbsoluteError === 0)
-    )
-      return {
-        ...(encoded === undefined ? {} : { encoded }),
+    ) {
+      const quality: ITextureQuality = {
+        ...score,
+        rung,
         codec: candidate.codec,
-        quality: {
-          ...score,
-          rung,
-          codec: candidate.codec,
-          sourceWidth: width,
-          sourceHeight: height,
-        },
+        sourceWidth: width,
+        sourceHeight: height,
       };
+      if (encoded === undefined) return { codec: candidate.codec, quality };
+      if (smallest === undefined || encoded.byteLength < smallest.encoded.byteLength)
+        smallest = { encoded, codec: candidate.codec, quality };
+    }
   }
+  if (smallest !== undefined) return smallest;
   throw new Error("TN_ASSETS_TEXTURE_FLOOR: forced codec fails its configured floor.");
 }
 

@@ -111,7 +111,9 @@ describe("image quality instrument", () => {
       const score = imageQuality(data, decoded, width, height, { slots: ["normalTexture"] });
       // spike inputs were never committed; PRD-351 D31
       const pinned = 0.9945243217001697;
-      expect(Math.abs(score.ssim - pinned)).toBeLessThanOrEqual(0.005);
+      const toleranceGate = (value: number) =>
+        expect(Math.abs(value - pinned)).toBeLessThanOrEqual(0.005);
+      toleranceGate(score.ssim);
 
       // Change only the SSIM windows from 8x8 to 1x1, retaining equal-window aggregation.
       let control = 0;
@@ -119,7 +121,7 @@ describe("image quality instrument", () => {
         control += ssim(data.subarray(i, i + 4), decoded.subarray(i, i + 4), 1, 1);
       }
       control /= width * height;
-      expect(Math.abs(control - pinned)).toBeGreaterThan(0.005);
+      expect(() => toleranceGate(control)).toThrow();
     } finally {
       file.close();
       file.delete();

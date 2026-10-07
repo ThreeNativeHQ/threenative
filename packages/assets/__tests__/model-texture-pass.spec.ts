@@ -14,10 +14,11 @@ import { basisTranscoderPaths } from "../../../test-support/three-basis.js";
 import * as qualityInstrument from "../src/image-quality.js";
 import { type IAssetSourceConfig, compileAssets } from "../src/index.js";
 import * as encoder from "../src/ktx2-encoder.js";
-import { compressEmbeddedTextures } from "../src/passes/model-textures.js";
+import { codecLadder, compressEmbeddedTextures } from "../src/passes/model-textures.js";
 import { modelPass } from "../src/passes/model.js";
 import { createSharedImageStore } from "../src/passes/shared-images.js";
 import { parsePng } from "../src/png.js";
+import { formatTextureRungs } from "../src/report.js";
 
 /**
  * Proof that the textures *inside* a `.glb` go through the pipeline too. A prop carrying
@@ -242,11 +243,38 @@ describe("embedded model textures", () => {
       .listTextures()[0]
       ?.setImage(PNG.sync.write(PNG.sync.read(flat), { deflateLevel: 0 }));
     const summary = await compressEmbeddedTextures(document, "flat.glb");
-    expect(summary?.quality.checker?.rung).toBe("etc1s@150");
     expect(summary?.quality.checker?.status).toBe("pass");
+    const decoded = PNG.sync.read(flat);
+    const passing: Uint8Array[] = [];
+    for (const candidate of codecLadder(["baseColorTexture"])) {
+      if (candidate.codec === "none") continue;
+      const encoded = await encoder.encodeToKTX2(flat, {
+        imageDecoder: async () => decoded,
+        isUASTC: candidate.codec === "uastc",
+        isPerceptual: true,
+        isSetKTX2SRGBTransferFunc: true,
+        qualityLevel: 150,
+        needSupercompression: true,
+        ...(candidate.rdoLambda === undefined ? {} : { rdoLambda: candidate.rdoLambda }),
+      });
+      if ((await qualityInstrument.measureKtx2(decoded.data, encoded, 128, 128)).status === "pass")
+        passing.push(encoded);
+    }
+    expect(passing).toHaveLength(4);
+    const minimum = Math.min(...passing.map((encoded) => encoded.byteLength));
+    const minimumGate = (bytes: number) => expect(bytes).toBe(minimum);
+    minimumGate(document.getRoot().listTextures()[0]?.getImage()?.byteLength ?? 0);
+    // Force the original first passing candidate instead of the byte minimum.
+    document.getRoot().listTextures()[0]?.setImage(flat).setMimeType("image/png");
+    await compressEmbeddedTextures(document, "flat.glb", {
+      overrides: [{ slot: "baseColorTexture", codec: "etc1s" }],
+    });
+    expect(() =>
+      minimumGate(document.getRoot().listTextures()[0]?.getImage()?.byteLength ?? 0),
+    ).toThrow();
   });
 
-  it("stops at the first passing RDO rung", async () => {
+  it("selects a passing RDO rung", async () => {
     const document = await new NodeIO().readBinary(await fixtureWithTextures({ width: 32 }));
     const source = rgbaPng({
       width: 32,
@@ -302,15 +330,20 @@ describe("embedded model textures", () => {
         /\d+ etc1s · \d+ escalated to uastc · \d+ uncompressed/u.test(line),
       );
       expect(histogram).toBeDefined();
-      expect(
-        (
-          histogram
-            ?.match(/^(\d+) etc1s · (\d+) escalated to uastc · (\d+) uncompressed$/u)
-            ?.slice(1) ?? []
-        )
-          .map(Number)
-          .reduce((a, b) => a + b, 0),
-      ).toBe(2);
+      const histogramGate = (line: string) => {
+        const counts = line.match(/^(\d+) etc1s · (\d+) escalated to uastc · (\d+) uncompressed$/u);
+        expect(counts).not.toBeNull();
+        expect(
+          counts
+            ?.slice(1)
+            .map(Number)
+            .reduce((a, b) => a + b, 0),
+        ).toBe(2);
+      };
+      histogramGate(histogram ?? "");
+      // Dropping one reported image must fail the same count gate, including all-zero output.
+      expect(() => histogramGate(formatTextureRungs(["none"]))).toThrow();
+      expect(() => histogramGate(formatTextureRungs([]))).toThrow();
       expect(lines.some((line) => /rung (?:etc1s@150|uastc|none)/u.test(line))).toBe(true);
       lines.length = 0;
       await compileAssets(options);
@@ -364,12 +397,14 @@ describe("embedded model textures", () => {
         textures: { floor: { ssim: 0, meanDeltaE00: 100 }, maxSize: 16 },
       });
       expect(measure).toHaveBeenCalled();
+      expect(() => expect(measure).not.toHaveBeenCalled()).toThrow();
       measure.mockClear();
       await compiled(input, {
         sharedImages: createSharedImageStore(root),
         textures: { ...strict, maxSize: 32 },
       });
       expect(measure).toHaveBeenCalled();
+      expect(() => expect(measure).not.toHaveBeenCalled()).toThrow();
     } finally {
       measure.mockRestore();
     }
@@ -382,16 +417,17 @@ describe("embedded model textures", () => {
       path.join(root, "assets", "prop.glb"),
       await fixtureWithTextures({ width: 32 }),
     );
-    await expect(
+    const compile = (uncooked: number | "none") =>
       compileAssets({
         cwd: root,
         concurrency: 1,
         config: {
-          budget: { uncooked: 1 },
+          budget: { uncooked },
           models: { textures: { floor: { ssim: 1, meanDeltaE00: 0 } } },
         },
-      }),
-    ).rejects.toThrow(/TN_ASSETS_BUDGET/u);
+      });
+    await compile("none");
+    await expect(compile(1)).rejects.toThrow(/TN_ASSETS_BUDGET/u);
   });
 
   it("round-trips floor through compileAssets and invalidates the build decision", async () => {
@@ -420,7 +456,7 @@ describe("embedded model textures", () => {
       config: { models: { textures: { floor: { ssim: 0, meanDeltaE00: 100 } } } },
     });
     const score = (await read()).entries["prop.glb"]?.embeddedTextures.quality.checker;
-    expect(score?.rung).toBe("etc1s@150");
+    expect(score?.rung).toBe("uastc+rdo λ3 +zstd");
     expect(score?.floor).toEqual({ ssim: 0, meanDeltaE00: 100 });
   });
 
@@ -444,6 +480,10 @@ describe("embedded model textures", () => {
     expect(Object.keys(summary.quality).sort()).toEqual(names.sort());
     for (const score of Object.values(summary.quality))
       expect(Number.isFinite(score.ssim)).toBe(true);
+    const unmeasured = off.entry.embeddedTextures as typeof summary;
+    expect(() =>
+      expect(Object.keys(unmeasured.quality ?? {}).sort()).toEqual(names.sort()),
+    ).toThrow();
   });
 
   it("includes all consuming MASK thresholds in quality and shared cache identity", async () => {
@@ -469,7 +509,7 @@ describe("embedded model textures", () => {
       });
       const scores = second.entry.embeddedTextures as typeof summary;
       expect(scores.quality.checker?.alpha.coverage.map((c) => c.threshold)).toEqual([0.25, 0.6]);
-      expect(measure).toHaveBeenCalledTimes(1);
+      expect(measure).toHaveBeenCalledTimes(4);
     } finally {
       measure.mockRestore();
     }
@@ -598,9 +638,11 @@ describe("embedded model textures", () => {
     }
   });
 
-  it("should pick UASTC for the normal map and ETC1S for opaque colour", async () => {
+  it("should retain normal-map UASTC and permit forced ETC1S for opaque colour", async () => {
     const input = await fixtureWithTextures({ width: 32 });
-    const { entry } = await compiled(input);
+    const { entry } = await compiled(input, {
+      textures: { overrides: [{ slot: "baseColorTexture", codec: "etc1s" }] },
+    });
     const summary = entry.embeddedTextures as
       | { readonly formats: Readonly<Record<string, string>> }
       | undefined;
@@ -681,6 +723,18 @@ describe("embedded model textures", () => {
       [2048, 2048],
       [1024, 1024],
     ]);
+    const scalar = await new NodeIO().readBinary(
+      await readFile(path.join(root, "assets", "caps.glb")),
+    );
+    await compressEmbeddedTextures(scalar, "caps.glb", { decoderFree: true, maxSize: 2048 });
+    const scalarSizes = scalar
+      .getRoot()
+      .listTextures()
+      .map((texture) => {
+        const png = PNG.sync.read(Buffer.from(texture.getImage() ?? []));
+        return [png.width, png.height];
+      });
+    expect(() => expect(scalarSizes).toEqual(sizes)).toThrow();
   });
 
   it.each(["web", "android"] as const)(
@@ -699,7 +753,10 @@ describe("embedded model textures", () => {
         transcoder: basisTranscoderPaths(),
         config: {
           models: {
-            textures: { maxSize: { baseColorTexture: 2048, normalTexture: 1024 } },
+            textures: {
+              maxSize: { baseColorTexture: 2048, normalTexture: 1024 },
+              overrides: [{ slot: "baseColorTexture", codec: "uastc" }],
+            },
           },
         },
       });
@@ -738,7 +795,18 @@ describe("embedded model textures", () => {
     });
     for (const texture of document.getRoot().listTextures()) {
       const png = PNG.sync.read(Buffer.from(texture.getImage() ?? []));
-      expect([png.width, png.height]).toEqual([512, 512]);
+      const noUpscaleGate = (width: number, height: number) =>
+        expect([width, height]).toEqual([512, 512]);
+      noUpscaleGate(png.width, png.height);
+      // Feed an actually upscaled PNG to the dimension gate, rather than just a larger cap.
+      const sharp = (await import("sharp")).default;
+      const upscaled = PNG.sync.read(
+        await sharp(Buffer.from(texture.getImage() ?? []))
+          .resize(2048, 2048)
+          .png()
+          .toBuffer(),
+      );
+      expect(() => noUpscaleGate(upscaled.width, upscaled.height)).toThrow();
     }
   });
 
@@ -759,6 +827,7 @@ describe("embedded model textures", () => {
     expect(equivalent.buffer).toEqual(cold.buffer);
     const changed = await run({ baseColorTexture: 8, occlusionTexture: 8, normalTexture: 16 });
     expect(changed.buffer).not.toEqual(cold.buffer);
+    expect(() => expect(changed.buffer).toEqual(cold.buffer)).toThrow();
   });
 
   it("should leave a texture under the cap at its authored size", async () => {

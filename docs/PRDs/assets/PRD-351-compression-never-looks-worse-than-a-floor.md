@@ -296,8 +296,35 @@ Consumer-scoped.
 
 - [ ] `chooseCodec`'s slot constraints feed candidate eligibility, with no surviving second selection path
 - [ ] Every gate has a negative control observed failing
+
+  **Offline findings (2026-10-06):** executable controls now catch scalar caps, upscaled PNGs,
+  nonminimum selection, missing/empty histogram rows, changed SSIM windows, omitted scores,
+  4K downsampling, oversize encoder input, disabled Zstd/mips, stale encoder/metric/RDO/slot
+  identities and floor/cap decisions, a one-byte fallback budget, interrupted publication,
+  torn final bytes and colliding staging names. Each mutation fails its assertion or operation
+  inside the spec; no gate was weakened. The byte-minimum assertion first failed (676 B versus
+  a passing 566 B candidate); the shared ladder now measures all eligible encodings and keeps
+  the minimum, with a new cache identity. Browser/native, visual/master-corpus and historical
+  spike-pair gates remain outside this offline proof. The five assets spec files passed across
+  focused runs after a combined-run worker exit; `pnpm exec tsc --noEmit -p packages/assets`
+  passed. The separate default-4K compile gate timed out at 180 s both combined and isolated;
+  its timeout and assertions remain unchanged. Boxes are unchanged.
+
 - [ ] RDO's encoder crash reproduced, and either fixed within the one-day timebox or the rungs
-      dropped with the reason recorded
+  dropped with the reason recorded
+
+  **Offline findings (2026-10-06):** PRD-349's assumption spike records four 1024² pine/leaf
+  maps and `enableRDO`/`rdoQualityLevel`, but no numeric RDO settings or crash trace. Searches
+  of PRD-349/350, `git log --all -S rdo` and `-S RDO` over assets/docs, and named local files
+  found neither `spike-matrix.mjs` nor the original PNGs; exact historical replay remains
+  unproven. `node --import tsx /tmp/b8-gates-rdo.mts` completed current-encoder λ3/λ1 runs
+  on `examples/prd493-terrain-splat/public/world/terrain/tex/layer-00_diff.jpg` (SHA256
+  `35ec4682e3ffbf4c385da5734d3da9b2692833f1dc8ab88c9799c288d14cd6af`), nearest-resized
+  to 1024²/4096², with UASTC, mips, perceptual sRGB and Zstd enabled, quality 150. Outputs
+  were 4397/4391 B and 7005/6894 B; all had the expected dimensions, mip count and Zstd scheme,
+  with no crash. These are substitute smoke inputs, not masters or a reproduced/fixed crash;
+  RDO rungs remain, and no box is ticked.
+
 - [ ] Proved on 4096² masters, not on already-downsampled content
 - [ ] Real Quarry browser and native desktop scenarios pass on installed packages; mobile compile
       still emits no unsupported codec. Retain native runtime proof for every changed mobile path;

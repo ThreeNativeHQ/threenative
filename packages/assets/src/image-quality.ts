@@ -17,7 +17,7 @@ export const IMAGE_QUALITY_IDENTITY = {
   version: IMAGE_QUALITY_VERSION,
   floor: IMAGE_QUALITY_FLOOR,
   mip: 0,
-  ladder: "first-passing-etc1s-rdo3-rdo1-uastc-none-v1",
+  ladder: "smallest-passing-etc1s-rdo3-rdo1-uastc-none-v2",
   rdo: [3, 1],
   zstd: true,
   reference: "same-resolution-pre-encode",
