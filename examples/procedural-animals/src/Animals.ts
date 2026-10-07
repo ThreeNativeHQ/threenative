@@ -4,12 +4,12 @@ import { CharacterBody3D } from "@threenative/physics";
 import type { IPhysicsContext } from "@threenative/physics";
 import { createAnimalActor, loadAnimalBake } from "@threenative/procedural-animals";
 import type { IAnimalBake } from "@threenative/procedural-animals";
-import { Group, PerspectiveCamera, Vector3 } from "three";
+import { BoxGeometry, Group, Mesh, PerspectiveCamera, Vector3 } from "three";
 import { releaseAll } from "./cleanup.js";
 import { performanceOrigin, performanceVelocity } from "./performance-path.js";
 import { QualificationClock } from "./qualification-clock.js";
 import { animalMaterial } from "./render/animal-material.js";
-import { course } from "./render/course.js";
+import { course, slopedFloorGround } from "./render/course.js";
 import { AnimalGPUProbe } from "./render/gpu-probe.js";
 import { performanceCamera } from "./render/performance-camera.js";
 import { qualificationCamera } from "./render/qualification-camera.js";
@@ -94,7 +94,7 @@ export class Animals extends Scene<IAnimalsState, IPhysicsContext> {
     this.#cleanup.push(course(ctx));
     const performanceMode = this.#mode !== "qualification";
     if (performanceMode) performanceCamera(ctx.camera);
-    const ground = (x: number, z: number) => {
+    const groundRay = (x: number, z: number) => {
       const hit = ctx.physics.directSpaceState.intersectRay({
         from: { x, y: 50, z },
         to: { x, y: -50, z },
@@ -103,6 +103,16 @@ export class Animals extends Scene<IAnimalsState, IPhysicsContext> {
       if (!hit) throw new Error("TN_ANIMAL_GROUND_MISSING");
       return hit.position.y;
     };
+    let floor: Mesh<BoxGeometry> | undefined;
+    ctx.scene.traverse((object) => {
+      if (
+        object.name === "sloped-floor" &&
+        object instanceof Mesh &&
+        object.geometry instanceof BoxGeometry
+      )
+        floor = object as Mesh<BoxGeometry>;
+    });
+    const ground = floor ? slopedFloorGround(floor, groundRay) : groundRay;
     const collision = bake ? wolfCollision(bake) : undefined;
     const count = this.#mode === "baseline" ? 0 : this.#mode === "high" ? 1 : 32;
     const actors = Array.from({ length: count }, (_, index) => {

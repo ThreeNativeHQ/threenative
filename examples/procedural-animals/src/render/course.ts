@@ -13,9 +13,39 @@ import {
   type PerspectiveCamera,
   RepeatWrapping,
   SRGBColorSpace,
+  Vector3,
 } from "three";
 import { WebGPURenderer } from "three/webgpu";
 import { releaseAll } from "../cleanup.js";
+
+export function slopedFloorGround(
+  floor: Mesh,
+  fallback: (x: number, z: number) => number,
+): (x: number, z: number) => number {
+  const geometry = floor.geometry;
+  if (!(geometry instanceof BoxGeometry)) return fallback;
+  floor.updateMatrixWorld(true);
+  const inverse = floor.matrixWorld.clone().invert();
+  const normal = new Vector3(0, 1, 0).transformDirection(floor.matrixWorld);
+  const height = geometry.parameters.height / 2;
+  const origin = new Vector3(0, height, 0).applyMatrix4(floor.matrixWorld);
+  const sample = new Vector3();
+  const local = new Vector3();
+  return (x: number, z: number) => {
+    if (!Number.isFinite(normal.y) || Math.abs(normal.y) < 1e-6) return fallback(x, z);
+    const y = origin.y - (normal.x * (x - origin.x) + normal.z * (z - origin.z)) / normal.y;
+    sample.set(x, y, z);
+    local.copy(sample).applyMatrix4(inverse);
+    if (
+      ![sample.x, sample.y, sample.z, local.x, local.y, local.z].every(Number.isFinite) ||
+      Math.abs(local.x) > geometry.parameters.width / 2 + 1e-4 ||
+      Math.abs(local.z) > geometry.parameters.depth / 2 + 1e-4 ||
+      Math.abs(local.y - height) > 1e-3
+    )
+      return fallback(x, z);
+    return y;
+  };
+}
 
 export function course<TState extends Record<string, unknown>>(
   ctx: ICtx<TState, IPhysicsContext>,
