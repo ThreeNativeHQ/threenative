@@ -4,15 +4,18 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  CPU_CAPTURE_BUDGET_MS,
   LABS_NODE_FLOOR,
   LABS_PACKAGE,
   LABS_TOOL_DIR,
   assertInstalledLabs,
   assertLabsNode,
+  captureTimeoutMs,
   cpuCommand,
   labsNodeExecutable,
   parseCatalogPin,
   parseCpuCaptureArgs,
+  parseCpuSetupArgs,
   readToolManifestPin,
 } from "../performance-regression/cpu.js";
 
@@ -114,6 +117,46 @@ describe("CPU dispatch", () => {
     expect(cpuCommand(["--cpu", "--source", repoRoot, "--name", "candidate"])).toBe("capture");
     expect(() => cpuCommand(["--cpu", "--cpu-setup"])).toThrow("TN_CPU_BENCH_CONFLICT");
   });
+
+  it("rejects a repeated CPU mode flag", () => {
+    expect(() => cpuCommand(["--cpu", "--cpu", "--source", repoRoot])).toThrow(
+      "TN_CPU_BENCH_DUPLICATE_MODE",
+    );
+    expect(() => cpuCommand(["--cpu-setup", "--cpu-setup"])).toThrow("TN_CPU_BENCH_DUPLICATE_MODE");
+  });
+});
+
+describe("setup argument validation", () => {
+  it("accepts only the bare setup flag", () => {
+    expect(() => parseCpuSetupArgs(["--cpu-setup"])).not.toThrow();
+  });
+
+  it("rejects extra flags and positional arguments before an install runs", () => {
+    expect(() => parseCpuSetupArgs(["--cpu-setup", "--source", repoRoot])).toThrow(
+      "TN_CPU_BENCH_UNKNOWN_FLAG",
+    );
+    expect(() => parseCpuSetupArgs(["--cpu-setup", "--arm", "tn-web"])).toThrow(
+      "TN_CPU_BENCH_UNKNOWN_FLAG",
+    );
+    expect(() => parseCpuSetupArgs(["--cpu-setup", "stray"])).toThrow(
+      "TN_CPU_BENCH_UNEXPECTED_ARG",
+    );
+  });
+});
+
+describe("capture timeout override", () => {
+  it("defaults to the 300 s budget and only narrows it", () => {
+    expect(captureTimeoutMs({})).toBe(CPU_CAPTURE_BUDGET_MS);
+    expect(captureTimeoutMs({ TN_CPU_BENCH_TIMEOUT_MS: "2500" })).toBe(2500);
+  });
+
+  it("fails closed on a non-positive, non-integer or over-budget override", () => {
+    for (const value of ["0", "-1", "1.5", "abc", String(CPU_CAPTURE_BUDGET_MS + 1)]) {
+      expect(() => captureTimeoutMs({ TN_CPU_BENCH_TIMEOUT_MS: value })).toThrow(
+        "TN_CPU_BENCH_BAD_TIMEOUT",
+      );
+    }
+  });
 });
 
 describe("capture argument validation", () => {
@@ -157,6 +200,18 @@ describe("capture argument validation", () => {
     expect(() =>
       parseCpuCaptureArgs(["--cpu", "stray", "--source", source, "--name", "x"]),
     ).toThrow("TN_CPU_BENCH_UNEXPECTED_ARG");
+  });
+
+  it("rejects a duplicated source, name or mode instead of taking the last value", () => {
+    expect(() =>
+      parseCpuCaptureArgs(["--cpu", "--source", source, "--source", source, "--name", "x"]),
+    ).toThrow("TN_CPU_BENCH_DUPLICATE_FLAG");
+    expect(() =>
+      parseCpuCaptureArgs(["--cpu", "--source", source, "--name", "x", "--name", "y"]),
+    ).toThrow("TN_CPU_BENCH_DUPLICATE_FLAG");
+    expect(() =>
+      parseCpuCaptureArgs(["--cpu", "--cpu", "--source", source, "--name", "x"]),
+    ).toThrow("TN_CPU_BENCH_DUPLICATE_FLAG");
   });
 
   it("accepts a valid capture request", () => {

@@ -4,15 +4,15 @@ prd_contract: v1
 
 # PRD-pmndrs-labs — Opt-in CPU microbenchmarks with pmndrs/labs
 
-**Status:** PARTIAL — Phases 1–2 landed and verified; Phase 3 and acceptance criteria pending.
+**Status:** PARTIAL — Phases 1–2 and P3-B landed and verified; P3-A and acceptance criteria pending.
 **Priority:** P2 — Add focused CPU regression evidence without adding a mandatory timing gate.
 **Complexity:** 4 (MEDIUM); risk override: none.
 **Owner:** ThreeNative maintainers
 **Depends on:** None; existing hardware/frame performance tooling remains authoritative.
-**Progress:** 66%
+**Progress:** 83%
 **Date:** 2026-10-06
 
-Phases 1–2 are implemented. Phase 1 installed the pinned `@pmndrs/labs@0.9.0` artifact only through the explicit isolated setup path and dispatched `--cpu-setup`/`--cpu` from the existing CLI. Phase 2 added the two real workload families and their correctness controls. Phase 3 (comparison, provenance, bounded lifecycle) and the acceptance criteria remain open; no measured speedup or comparison report exists yet.
+Phases 1–2 are implemented. Phase 1 installed the pinned `@pmndrs/labs@0.9.0` artifact only through the explicit isolated setup path and dispatched `--cpu-setup`/`--cpu` from the existing CLI. Phase 2 added the two real workload families and their correctness controls. Phase 3's bounded lifecycle (P3-B) is implemented and verified; comparison (P3-A) and the acceptance criteria remain open. No measured speedup or comparison report exists yet.
 
 ## Context
 
@@ -127,18 +127,18 @@ The proof commands below describe tests/flows implemented in this PRD. Phase 1 e
 - [x] P2-B [local; actor: agent]: The state family measures the selected checkout's real coalesced-write/publication behavior with correct final values and notifications. proof: `pnpm exec vitest run scripts/__tests__/cpu-bench-workloads.spec.ts -t state` — Evidence: 2/2 passed. The positive case runs 32 `set()` writes plus one `flush()` at 0/1/32 subscribers and checks the immediate pre-flush read, the coalesced pre-flush publication, the post-flush value, the notification count and the stable immediate-snapshot identity; the red case runs a stub checkout that never publishes and its `verify()` throws. The same real capture recorded `state.bench.ts` 0/1/32 subscribers at 8 blocks (352/408/400 samples, avg 2,641/2,230/2,663 ns, no errors).
 
 **Child environment safety:** A benchmark worker runs trusted local source, but that source is arbitrary Node execution, so `runCpuCapture` no longer spreads the wrapper's whole environment. `labsChildEnv` passes only runtime basics (`PATH`, `HOME`, temp/locale/`TERM`, platform runtime dirs) and the explicit `TN_CPU_BENCH_*` knobs; arbitrary tokens, credentials, `NODE_OPTIONS`/preload hooks and SSH-agent variables are dropped. `TN_CPU_BENCH_INTEGRATION=1 pnpm exec vitest run scripts/__tests__/cpu-bench-workloads.spec.ts -t "child environment"` — Evidence: 2/2 passed (5.77 s); the probe workload in the real child observed `null` for an injected sentinel, `NPM_TOKEN`, `SSH_AUTH_SOCK` and `NODE_OPTIONS`. This is not a sandbox claim: it limits ambient secrets, not what trusted benchmark code may do. The isolated install now also passes `--ignore-scripts`; `TN_CPU_BENCH_NODE=<node22> pnpm bench:engines --cpu-setup` still installed `@pmndrs/labs@0.9.0` with the frozen scoped lock and hoisted linker (exit 0). Scoped dependency audit (parent, read-only): the isolated `package.json`+`pnpm-lock.yaml` copied into a fresh outside-workspace temp dir gave `pnpm audit --json` exit 0, 37 dependencies, zero vulnerabilities, artifact `/tmp/tmp.Zm3z6R6zdu/audit.json`; static inspection of the installed `dist` found no telemetry/network calls or lifecycle hooks.
-**Outstanding gap:** the 300 s timeout terminates only the direct child, not the Labs worker process subtree. That process-tree lifecycle cleanup is deferred to P3-B; this phase does not claim it.
+**Outstanding gap (resolved in P3-B, 2026-10-06):** the old `execFileAsync` timeout terminated only the direct child, leaving the Labs worker subtree. `runBoundedProcess` now kills the whole process group with TERM→KILL escalation; P3-B carries the proof.
 
 **Checkpoint:** Self-review; no reviewer available. Existing core correctness tests remain authoritative for behavior beyond the benchmark fixture; these CPU workloads do not prove full game behavior.
 
 ### Phase 3 — Honest comparison and bounded report consumption
 
-**Status:** NOT STARTED
+**Status:** PARTIAL — P3-B landed and verified; P3-A (comparison) open.
 **Files:** EXTEND `scripts/performance-regression/cpu.ts` and focused CLI/tooling tests; NEW `scripts/performance-regression/cpu-report.ts`; EDIT the relevant existing benchmark usage documentation after the commands ship.
 **Implementation:** Preserve raw results, write/validate provenance, delegate explicit comparisons, and return discoverable artifact paths. Implement timeouts, child cleanup, and incomplete/incomparable outcomes. Do not edit a workflow or the hardware report schema.
 
 - [ ] P3-A [local; actor: agent]: Comparison rejects incompatible, missing, stale, or accidentally identical source evidence rather than presenting it as an optimization result. proof: `pnpm exec vitest run scripts/__tests__/cpu-bench-cli.spec.ts -t comparison` — Evidence: pending.
-- [ ] P3-B [local; actor: agent]: A timed-out or cancelled capture leaves no active benchmark worker and no completed-result claim. proof: `pnpm exec vitest run scripts/__tests__/cpu-bench-cli.spec.ts -t lifecycle` — Evidence: pending.
+- [x] P3-B [local; actor: agent]: A timed-out or cancelled capture leaves no active benchmark worker and no completed-result claim. proof: `pnpm exec vitest run scripts/__tests__/cpu-bench-cli.spec.ts -t lifecycle` — Evidence: 4/4 passed. `runBoundedProcess` spawns the capture with `detached` POSIX process groups and enforces from `cpu.ts:runBoundedProcess` a timeout, a SIGINT/SIGTERM abort, capped (32 MiB) output, and a TERM→KILL escalation that reaps descendants even when the direct child exits first; the four tests use real Node child+grandchild processes, including a grandchild that ignores TERM. `TN_CPU_BENCH_INTEGRATION=1 pnpm exec vitest run scripts/__tests__/cpu-bench-cli.spec.ts scripts/__tests__/cpu-bench-tooling.spec.ts scripts/__tests__/cpu-bench-workloads.spec.ts --no-file-parallelism` — Evidence: 39/39 passed (33.65 s). The real-Labs cases time out (`TN_CPU_BENCH_TIMEOUT`, 4 s override) and receive a live `SIGTERM` (`TN_CPU_BENCH_CANCELLED`, 6 s); each leaves its run directory without `provenance.json`, so no completed-result claim is recorded. `TN_CPU_BENCH_TIMEOUT_MS` only narrows the 300 s budget and fails closed outside a positive integer ≤ `CPU_CAPTURE_BUDGET_MS`. Windows tree termination is not implemented or claimed.
 
 **Checkpoint:** Pending. Inspect the combined diff and actual CLI artifacts; report reviewer availability honestly. Focused controls must exercise the real caller where silent bypass or stale-artifact reuse is plausible.
 
@@ -159,7 +159,13 @@ No external owner, device, deployment, or release action is required by this pla
 
 ## Verification status
 
-Phases 1–2 landed. The pinned `@pmndrs/labs@0.9.0` artifact installs only through the explicit isolated setup path (now `--ignore-scripts`), the existing CLI dispatches `--cpu-setup`/`--cpu` before hardware parsing, and the installed worker was launched end to end. Phase 2 adds both real workload families against selected-checkout modules and captured six cases through `pnpm bench:engines --cpu` with no errors. Phase 3 and both acceptance criteria remain open; no comparison report or measured speedup exists yet, and the process-tree lifecycle gap above is not claimed as done. Document validation is reported in the PR body; it does not advance implementation progress.
+Phases 1–2 landed. The pinned `@pmndrs/labs@0.9.0` artifact installs only through the explicit isolated setup path (now `--ignore-scripts`), the existing CLI dispatches `--cpu-setup`/`--cpu` before hardware parsing, and the installed worker was launched end to end. Phase 2 adds both real workload families against selected-checkout modules and captured six cases through `pnpm bench:engines --cpu` with no errors.
+
+P3-B landed on 2026-10-06: `runBoundedProcess` owns the real-process-group lifecycle, the wrapper handles SIGINT/SIGTERM, and capture/setup argv now reject extras and duplicates. The previously noted direct-child-only timeout gap is closed. P3-A (comparison) and both acceptance criteria remain open; no comparison report or measured speedup exists yet.
+
+Parent-lane Node 20.19.6 compatibility evidence only (AC-2 not ticked): the isolated profile is installed with the frozen scoped lock, and the four loop/state correctness tests pass — `pnpm exec vitest run scripts/__tests__/cpu-bench-workloads.spec.ts -t loop` 2/2 and `-t state` 2/2, plus the `runBoundedProcess` lifecycle tests 4/4 under the same Node. AC-2 still needs proof over the full ordinary install/build/test path, which is not run here.
+
+Document validation is reported in the PR body; it does not advance implementation progress.
 
 ## Sources inspected
 
