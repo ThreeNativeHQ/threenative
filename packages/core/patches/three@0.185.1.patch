@@ -25,7 +25,7 @@ index 0bb9262cd029f411933d077fd44197a51ec5e8e9..868a634b4294be5f32664912a50813d5
  	 * Constructs a new batched mesh.
  	 *
 diff --git a/build/three.webgpu.js b/build/three.webgpu.js
-index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..fc9a6a9d6a6e044cf94336cb5abde506e1d7e2f2 100644
+index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..47d51b41dc3ef24241e85d5f8bb0e9c5f220dcad 100644
 --- a/build/three.webgpu.js
 +++ b/build/three.webgpu.js
 @@ -141,6 +141,15 @@
@@ -688,7 +688,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..fc9a6a9d6a6e044cf94336cb5abde506
  
  		// dispose handler
  
-@@ -34377,9 +34638,133 @@
+@@ -34377,9 +34638,134 @@
  
  		}
  
@@ -782,7 +782,8 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..fc9a6a9d6a6e044cf94336cb5abde506
 +			if ( this._pendingUploads.get( texture ) === job ) this._pendingUploads.delete( texture );
 +
 +		} );
-+		this._uploadTail = job.promise.catch( () => {} );
++		// Caller cancellation is prompt; the backend lane stays owned until validation drains.
++		this._uploadTail = Promise.allSettled( [ work, job.promise ] ).then( () => {} );
 +		return this._waitForUpload( job, options.signal );
 +
 +	}
@@ -825,7 +826,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..fc9a6a9d6a6e044cf94336cb5abde506
  
  	}
  
-@@ -34556,6 +34941,8 @@
+@@ -34556,6 +34942,8 @@
  	 * @param {Texture} texture - The texture to destroy.
  	 */
  	_destroyTexture( texture ) {
@@ -834,7 +835,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..fc9a6a9d6a6e044cf94336cb5abde506
  
  		if ( this.has( texture ) === true ) {
  
-@@ -39725,7 +40112,8 @@
+@@ -39725,7 +40113,8 @@
  
  		const previousModelMatrix = getPreviousMatrix( object );
  
@@ -844,7 +845,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..fc9a6a9d6a6e044cf94336cb5abde506
  
  		//
  
-@@ -53841,7 +54229,7 @@
+@@ -53841,7 +54230,7 @@
  
  		const mrt = this.renderer.getMRT();
  
@@ -853,7 +854,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..fc9a6a9d6a6e044cf94336cb5abde506
  
  	}
  
-@@ -55244,15 +55632,17 @@
+@@ -55244,15 +55633,17 @@
  	 * Returns `true` if the given node uniforms group must be updated or not.
  	 *
  	 * @param {NodeUniformsGroup} nodeUniformsGroup - The node uniforms group.
@@ -875,7 +876,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..fc9a6a9d6a6e044cf94336cb5abde506
  
  		// check for update
  
-@@ -56057,6 +56447,21 @@
+@@ -56057,6 +56448,21 @@
  	}
  
  	/**
@@ -897,7 +898,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..fc9a6a9d6a6e044cf94336cb5abde506
  	 * Triggers the call of `updateBefore()` methods
  	 * for all nodes of the given render object.
  	 *
-@@ -56065,8 +56470,13 @@
+@@ -56065,8 +56471,13 @@
  	updateBefore( renderObject ) {
  
  		const nodeBuilder = renderObject.getNodeBuilderState();
@@ -911,7 +912,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..fc9a6a9d6a6e044cf94336cb5abde506
  
  			// update frame state for each node
  
-@@ -56085,10 +56495,11 @@
+@@ -56085,10 +56496,11 @@
  	updateAfter( renderObject ) {
  
  		const nodeBuilder = renderObject.getNodeBuilderState();
@@ -924,7 +925,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..fc9a6a9d6a6e044cf94336cb5abde506
  
  			this.getNodeFrameForRender( renderObject ).updateAfterNode( node );
  
-@@ -56125,8 +56536,13 @@
+@@ -56125,8 +56537,13 @@
  
  		const nodeFrame = this.getNodeFrameForRender( renderObject );
  		const nodeBuilder = renderObject.getNodeBuilderState();
@@ -938,7 +939,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..fc9a6a9d6a6e044cf94336cb5abde506
  
  			nodeFrame.updateNode( node );
  
-@@ -62111,6 +62527,14 @@
+@@ -62111,6 +62528,14 @@
  
  	}
  
@@ -953,7 +954,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..fc9a6a9d6a6e044cf94336cb5abde506
  	/**
  	 * Initializes the given render target.
  	 *
-@@ -62731,6 +63155,7 @@
+@@ -62731,6 +63156,7 @@
  		let materialDisplacementMap;
  		let materialDisplacementScale;
  		let materialDisplacementBias;
@@ -961,7 +962,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..fc9a6a9d6a6e044cf94336cb5abde506
  
  		const previousSourceMaterial = this._currentSourceMaterial;
  
-@@ -62756,6 +63181,7 @@
+@@ -62756,6 +63182,7 @@
  			materialDisplacementMap = overrideMaterial.displacementMap;
  			materialDisplacementScale = overrideMaterial.displacementScale;
  			materialDisplacementBias = overrideMaterial.displacementBias;
@@ -969,7 +970,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..fc9a6a9d6a6e044cf94336cb5abde506
  
  			if ( material.positionNode && material.positionNode.isNode ) {
  
-@@ -62763,7 +63189,15 @@
+@@ -62763,7 +63190,15 @@
  
  			}
  
@@ -986,7 +987,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..fc9a6a9d6a6e044cf94336cb5abde506
  			overrideMaterial.alphaMap = material.alphaMap;
  			overrideMaterial.displacementMap = material.displacementMap;
  			overrideMaterial.displacementScale = material.displacementScale;
-@@ -62825,6 +63259,7 @@
+@@ -62825,6 +63260,7 @@
  			scene.overrideMaterial.displacementMap = materialDisplacementMap;
  			scene.overrideMaterial.displacementScale = materialDisplacementScale;
  			scene.overrideMaterial.displacementBias = materialDisplacementBias;
@@ -994,7 +995,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..fc9a6a9d6a6e044cf94336cb5abde506
  
  		}
  
-@@ -62886,18 +63321,17 @@
+@@ -62886,18 +63322,17 @@
  
  		//
  
@@ -1024,7 +1025,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..fc9a6a9d6a6e044cf94336cb5abde506
  
  		this._pipelines.updateForRender( renderObject );
  
-@@ -62907,7 +63341,7 @@
+@@ -62907,7 +63342,7 @@
  
  			this.backend.draw( renderObject, this.info );
  
@@ -1033,7 +1034,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..fc9a6a9d6a6e044cf94336cb5abde506
  
  		}
  
-@@ -76397,6 +76831,9 @@
+@@ -76397,6 +76832,9 @@
  		 */
  		this._samplerCache = new Map();
  
@@ -1043,7 +1044,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..fc9a6a9d6a6e044cf94336cb5abde506
  	}
  
  	/**
-@@ -76613,7 +77050,12 @@
+@@ -76613,7 +77051,12 @@
  
  		}
  
@@ -1057,7 +1058,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..fc9a6a9d6a6e044cf94336cb5abde506
  
  			usage |= GPUTextureUsage.RENDER_ATTACHMENT;
  
-@@ -76686,6 +77128,22 @@
+@@ -76686,6 +77129,22 @@
  	destroyTexture( texture, isDefaultTexture = false ) {
  
  		const backend = this.backend;
@@ -1080,7 +1081,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..fc9a6a9d6a6e044cf94336cb5abde506
  		const textureData = backend.get( texture );
  
  		if ( textureData.texture !== undefined && isDefaultTexture === false && texture.isExternalTexture !== true ) textureData.texture.destroy();
-@@ -76726,7 +77184,7 @@
+@@ -76726,7 +77185,7 @@
  		const colorTexture = canvasTarget.colorTexture;
  		const colorTextureData = backend.get( colorTexture );
  
@@ -1089,7 +1090,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..fc9a6a9d6a6e044cf94336cb5abde506
  
  			return colorTextureData.texture;
  
-@@ -76751,8 +77209,8 @@
+@@ -76751,8 +77210,8 @@
  
  		//
  
@@ -1100,7 +1101,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..fc9a6a9d6a6e044cf94336cb5abde506
  		colorTexture.samples = samples;
  
  		colorTextureData.texture = colorBuffer;
-@@ -76775,63 +77233,58 @@
+@@ -76775,63 +77234,58 @@
  		const canvasTarget = backend.renderer.getCanvasTarget();
  		const { width, height } = backend.getDrawingBufferSize();
  		const samples = backend.renderer.currentSamples;
@@ -1207,7 +1208,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..fc9a6a9d6a6e044cf94336cb5abde506
  
  	/**
  	 * Uploads the updated texture data to the GPU.
-@@ -76987,6 +77440,120 @@
+@@ -76987,6 +77441,143 @@
  
  	}
  
@@ -1281,44 +1282,67 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..fc9a6a9d6a6e044cf94336cb5abde506
 +
 +		};
 +		const iterator = tiles();
++		const validations = [];
++		const failures = [];
 +		let next = iterator.next();
-+		while ( ! next.done ) {
++		let uploadFailed = false;
++		let uploadError;
++		try {
 +
-+			check();
-+			if ( slice.started === null ) slice.started = performance.now();
-+			if ( performance.now() - slice.started >= budgetMs ) await yieldHost();
-+			const scoped = typeof device.pushErrorScope === 'function' && typeof device.popErrorScope === 'function';
-+			if ( scoped ) { device.pushErrorScope( 'out-of-memory' ); device.pushErrorScope( 'validation' ); }
-+			let errors;
-+			try {
++			while ( ! next.done && failures.length === 0 ) {
 +
-+				do {
++				check();
++				if ( slice.started === null ) slice.started = performance.now();
++				if ( performance.now() - slice.started >= budgetMs ) await yieldHost();
++				if ( failures.length > 0 ) break;
++				const scoped = typeof device.pushErrorScope === 'function' && typeof device.popErrorScope === 'function';
++				if ( scoped ) { device.pushErrorScope( 'out-of-memory' ); device.pushErrorScope( 'validation' ); }
++				try {
 +
-+					check();
-+					const tile = next.value;
-+					device.queue.writeTexture( tile.destination, tile.data, tile.layout, tile.extent );
-+					next = iterator.next();
++					do {
 +
-+				} while ( ! next.done && performance.now() - slice.started < budgetMs );
++						check();
++						const tile = next.value;
++						device.queue.writeTexture( tile.destination, tile.data, tile.layout, tile.extent );
++						next = iterator.next();
 +
-+			} finally {
++					} while ( ! next.done && performance.now() - slice.started < budgetMs );
 +
-+				// Pop before awaiting: a loading-screen render must not enter our error scope.
-+				if ( scoped ) errors = Promise.all( [ device.popErrorScope(), device.popErrorScope() ] ).then( failures => ( { failures } ), error => ( { error } ) );
++				} finally {
++
++					// Pop synchronously: a loading-screen render must not enter our error scopes.
++					if ( scoped ) validations.push( Promise.allSettled( [ device.popErrorScope(), device.popErrorScope() ] ).then( results => {
++
++						for ( const result of results ) {
++
++							if ( result.status === 'rejected' ) failures.push( result.reason );
++							else if ( result.value !== null ) failures.push( new Error( result.value.message ) );
++
++						}
++
++					} ) );
++
++				}
++				// Bound validation latency without changing the host slice or byte budgets.
++				if ( validations.length === 4 ) await validations.shift();
++				check();
++				if ( ! next.done && failures.length === 0 ) await yieldHost();
 +
 +			}
-+			if ( errors ) {
 +
-+				const result = await errors;
-+				if ( result.error ) throw result.error;
-+				const failure = result.failures.find( error => error !== null );
-+				if ( failure ) throw new Error( 'Compressed texture upload failed: ' + failure.message );
++		} catch ( error ) {
 +
-+			}
-+			check();
-+			if ( ! next.done ) await yieldHost();
++			uploadFailed = true;
++			uploadError = error;
++
++		} finally {
++
++			// Observe every issued scope, including after cancellation or a write failure.
++			await Promise.all( validations );
 +
 +		}
++		if ( uploadFailed ) throw uploadError;
++		if ( failures.length > 0 ) throw new AggregateError( failures, 'Compressed texture upload failed: ' + failures.map( error => error?.message || String( error ) ).join( '; ' ) );
 +		check();
 +		textureData.version = version;
 +		if ( updates.length > 0 ) texture.clearLayerUpdates();
@@ -1328,7 +1352,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..fc9a6a9d6a6e044cf94336cb5abde506
  	/**
  	 * Returns texture data as a typed array.
  	 *
-@@ -77059,6 +77626,8 @@
+@@ -77059,6 +77650,8 @@
  	 * Frees all internal resources.
  	 */
  	dispose() {
@@ -1337,7 +1361,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..fc9a6a9d6a6e044cf94336cb5abde506
  
  		this._samplerCache.clear();
  
-@@ -79004,7 +79573,14 @@
+@@ -79004,7 +79597,14 @@
  
  		} else {
  
@@ -1353,7 +1377,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..fc9a6a9d6a6e044cf94336cb5abde506
  
  			if ( this.renderer.backend.compatibilityMode && texture.isDepthTexture ) {
  
-@@ -79586,7 +80162,8 @@
+@@ -79586,7 +80186,8 @@
  
  				uniformGPU = buffer;
  
@@ -1363,7 +1387,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..fc9a6a9d6a6e044cf94336cb5abde506
  
  			} else {
  
-@@ -80329,9 +80906,12 @@
+@@ -80329,9 +80930,12 @@
  				const textureNode = uniform.node;
  				const texture = textureNode.value;
  
@@ -1379,7 +1403,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..fc9a6a9d6a6e044cf94336cb5abde506
  
  				if ( needsSampler ) {
  
-@@ -81295,9 +81875,15 @@
+@@ -81295,9 +81899,15 @@
  	destroyAttribute( attribute ) {
  
  		const backend = this.backend;
@@ -1398,7 +1422,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..fc9a6a9d6a6e044cf94336cb5abde506
  
  		backend.delete( attribute );
  
-@@ -81598,18 +82184,16 @@
+@@ -81598,18 +82208,16 @@
  
  		const bindingsData = backend.get( bindGroup );
  
@@ -1425,7 +1449,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..fc9a6a9d6a6e044cf94336cb5abde506
  
  		// try to find an existing layout in the cache
  
-@@ -82131,6 +82715,9 @@
+@@ -82131,6 +82739,9 @@
  
  		}
  
@@ -1435,7 +1459,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..fc9a6a9d6a6e044cf94336cb5abde506
  	}
  
  	/**
-@@ -82553,6 +83140,15 @@
+@@ -82553,6 +83164,15 @@
  
  					_renderPipelineDescriptor.reset();
  
@@ -1451,7 +1475,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..fc9a6a9d6a6e044cf94336cb5abde506
  					if ( pipelinePromise !== null ) {
  
  						try {
-@@ -82567,7 +83163,7 @@
+@@ -82567,7 +83187,7 @@
  
  					}
  
@@ -1460,7 +1484,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..fc9a6a9d6a6e044cf94336cb5abde506
  
  					if ( errorScope !== null || asyncError !== null ) {
  
-@@ -83815,6 +84411,27 @@
+@@ -83815,6 +84435,27 @@
  		this.compatibilityMode = null;
  
  		/**
@@ -1488,7 +1512,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..fc9a6a9d6a6e044cf94336cb5abde506
  		 * A reference to the device.
  		 *
  		 * @type {?GPUDevice}
-@@ -83926,7 +84543,11 @@
+@@ -83926,7 +84567,11 @@
  				xrCompatible: renderer.xr.enabled
  			};
  
@@ -1501,7 +1525,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..fc9a6a9d6a6e044cf94336cb5abde506
  
  			if ( adapter === null ) {
  
-@@ -84153,7 +84774,9 @@
+@@ -84153,7 +84798,9 @@
  
  		let descriptor = canvasData.descriptor;
  
@@ -1512,7 +1536,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..fc9a6a9d6a6e044cf94336cb5abde506
  
  			descriptor = new GPURenderPassDescriptor();
  			descriptor.colorAttachments.push( new GPURenderPassColorAttachment() );
-@@ -84180,6 +84803,9 @@
+@@ -84180,6 +84827,9 @@
  
  			canvasData.descriptor = descriptor;
  			canvasData.samples = samples;
@@ -1522,7 +1546,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..fc9a6a9d6a6e044cf94336cb5abde506
  
  		}
  
-@@ -85461,13 +86087,12 @@
+@@ -85461,13 +86111,12 @@
  		for ( let i = 0, l = bindings.length; i < l; i ++ ) {
  
  			const bindGroup = bindings[ i ];
@@ -1540,7 +1564,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..fc9a6a9d6a6e044cf94336cb5abde506
  
  			}
  
-@@ -85766,6 +86391,7 @@
+@@ -85766,6 +86415,7 @@
  		const utils = this.utils;
  
  		const sampleCount = utils.getSampleCountRenderContext( renderObject.context );
@@ -1548,7 +1572,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..fc9a6a9d6a6e044cf94336cb5abde506
  		const colorSpace = utils.getCurrentColorSpace( renderObject.context );
  		const colorFormat = utils.getCurrentColorFormat( renderObject.context );
  		const depthStencilFormat = utils.getCurrentDepthStencilFormat( renderObject.context );
-@@ -85787,7 +86413,8 @@
+@@ -85787,7 +86437,8 @@
  			data.colorFormat !== colorFormat || data.depthStencilFormat !== depthStencilFormat ||
  			data.primitiveTopology !== primitiveTopology ||
  			data.frontFaceCW !== frontFaceCW ||
@@ -1558,7 +1582,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..fc9a6a9d6a6e044cf94336cb5abde506
  		) {
  
  			data.material = material; data.materialVersion = material.version;
-@@ -85807,6 +86434,7 @@
+@@ -85807,6 +86458,7 @@
  			data.primitiveTopology = primitiveTopology;
  			data.frontFaceCW = frontFaceCW;
  			data.clippingContextCacheKey = renderObject.clippingContextCacheKey;
@@ -1566,7 +1590,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..fc9a6a9d6a6e044cf94336cb5abde506
  
  			needsUpdate = true;
  
-@@ -85828,6 +86456,7 @@
+@@ -85828,6 +86480,7 @@
  
  		const utils = this.utils;
  		const renderContext = renderObject.context;
@@ -1574,7 +1598,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..fc9a6a9d6a6e044cf94336cb5abde506
  
  		// meshes with negative scale have a different frontFace render pipeline
  		// descriptor value so the following must be honored in the cache key
-@@ -85846,6 +86475,7 @@
+@@ -85846,6 +86499,7 @@
  			material.side,
  			frontFaceCW,
  			utils.getSampleCountRenderContext( renderContext ),
@@ -1582,7 +1606,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..fc9a6a9d6a6e044cf94336cb5abde506
  			utils.getCurrentColorSpace( renderContext ), utils.getCurrentColorFormat( renderContext ), utils.getCurrentDepthStencilFormat( renderContext ),
  			utils.getPrimitiveTopology( object, material ),
  			renderObject.getGeometryCacheKey(),
-@@ -85913,6 +86543,12 @@
+@@ -85913,6 +86567,12 @@
  	updateTexture( texture, options ) {
  
  		this.textureUtils.updateTexture( texture, options );
@@ -1596,7 +1620,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..fc9a6a9d6a6e044cf94336cb5abde506
  	}
  
 diff --git a/build/three.webgpu.nodes.js b/build/three.webgpu.nodes.js
-index f707acc24f5711fdae065ce920b08435b0869c1b..8837a1bc0924ac65d049f1d4d99ad7e408e040ba 100644
+index f707acc24f5711fdae065ce920b08435b0869c1b..3ae0a63831689a25fb2e82c82a35cfb74ac345db 100644
 --- a/build/three.webgpu.nodes.js
 +++ b/build/three.webgpu.nodes.js
 @@ -141,6 +141,15 @@
@@ -2107,7 +2131,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..8837a1bc0924ac65d049f1d4d99ad7e4
  
  		// dispose handler
  
-@@ -34377,9 +34593,133 @@
+@@ -34377,9 +34593,134 @@
  
  		}
  
@@ -2201,7 +2225,8 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..8837a1bc0924ac65d049f1d4d99ad7e4
 +			if ( this._pendingUploads.get( texture ) === job ) this._pendingUploads.delete( texture );
 +
 +		} );
-+		this._uploadTail = job.promise.catch( () => {} );
++		// Caller cancellation is prompt; the backend lane stays owned until validation drains.
++		this._uploadTail = Promise.allSettled( [ work, job.promise ] ).then( () => {} );
 +		return this._waitForUpload( job, options.signal );
 +
 +	}
@@ -2244,7 +2269,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..8837a1bc0924ac65d049f1d4d99ad7e4
  
  	}
  
-@@ -34556,6 +34896,8 @@
+@@ -34556,6 +34897,8 @@
  	 * @param {Texture} texture - The texture to destroy.
  	 */
  	_destroyTexture( texture ) {
@@ -2253,7 +2278,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..8837a1bc0924ac65d049f1d4d99ad7e4
  
  		if ( this.has( texture ) === true ) {
  
-@@ -55244,15 +55586,17 @@
+@@ -55244,15 +55587,17 @@
  	 * Returns `true` if the given node uniforms group must be updated or not.
  	 *
  	 * @param {NodeUniformsGroup} nodeUniformsGroup - The node uniforms group.
@@ -2275,7 +2300,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..8837a1bc0924ac65d049f1d4d99ad7e4
  
  		// check for update
  
-@@ -56057,6 +56401,21 @@
+@@ -56057,6 +56402,21 @@
  	}
  
  	/**
@@ -2297,7 +2322,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..8837a1bc0924ac65d049f1d4d99ad7e4
  	 * Triggers the call of `updateBefore()` methods
  	 * for all nodes of the given render object.
  	 *
-@@ -56065,8 +56424,13 @@
+@@ -56065,8 +56425,13 @@
  	updateBefore( renderObject ) {
  
  		const nodeBuilder = renderObject.getNodeBuilderState();
@@ -2311,7 +2336,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..8837a1bc0924ac65d049f1d4d99ad7e4
  
  			// update frame state for each node
  
-@@ -56085,10 +56449,11 @@
+@@ -56085,10 +56450,11 @@
  	updateAfter( renderObject ) {
  
  		const nodeBuilder = renderObject.getNodeBuilderState();
@@ -2324,7 +2349,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..8837a1bc0924ac65d049f1d4d99ad7e4
  
  			this.getNodeFrameForRender( renderObject ).updateAfterNode( node );
  
-@@ -56125,8 +56490,13 @@
+@@ -56125,8 +56491,13 @@
  
  		const nodeFrame = this.getNodeFrameForRender( renderObject );
  		const nodeBuilder = renderObject.getNodeBuilderState();
@@ -2338,7 +2363,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..8837a1bc0924ac65d049f1d4d99ad7e4
  
  			nodeFrame.updateNode( node );
  
-@@ -62111,6 +62481,14 @@
+@@ -62111,6 +62482,14 @@
  
  	}
  
@@ -2353,7 +2378,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..8837a1bc0924ac65d049f1d4d99ad7e4
  	/**
  	 * Initializes the given render target.
  	 *
-@@ -62886,18 +63264,17 @@
+@@ -62886,18 +63265,17 @@
  
  		//
  
@@ -2383,7 +2408,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..8837a1bc0924ac65d049f1d4d99ad7e4
  
  		this._pipelines.updateForRender( renderObject );
  
-@@ -62907,7 +63284,7 @@
+@@ -62907,7 +63285,7 @@
  
  			this.backend.draw( renderObject, this.info );
  
@@ -2392,7 +2417,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..8837a1bc0924ac65d049f1d4d99ad7e4
  
  		}
  
-@@ -76397,6 +76774,9 @@
+@@ -76397,6 +76775,9 @@
  		 */
  		this._samplerCache = new Map();
  
@@ -2402,7 +2427,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..8837a1bc0924ac65d049f1d4d99ad7e4
  	}
  
  	/**
-@@ -76613,7 +76993,12 @@
+@@ -76613,7 +76994,12 @@
  
  		}
  
@@ -2416,7 +2441,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..8837a1bc0924ac65d049f1d4d99ad7e4
  
  			usage |= GPUTextureUsage.RENDER_ATTACHMENT;
  
-@@ -76686,6 +77071,22 @@
+@@ -76686,6 +77072,22 @@
  	destroyTexture( texture, isDefaultTexture = false ) {
  
  		const backend = this.backend;
@@ -2439,7 +2464,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..8837a1bc0924ac65d049f1d4d99ad7e4
  		const textureData = backend.get( texture );
  
  		if ( textureData.texture !== undefined && isDefaultTexture === false && texture.isExternalTexture !== true ) textureData.texture.destroy();
-@@ -76726,7 +77127,7 @@
+@@ -76726,7 +77128,7 @@
  		const colorTexture = canvasTarget.colorTexture;
  		const colorTextureData = backend.get( colorTexture );
  
@@ -2448,7 +2473,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..8837a1bc0924ac65d049f1d4d99ad7e4
  
  			return colorTextureData.texture;
  
-@@ -76751,8 +77152,8 @@
+@@ -76751,8 +77153,8 @@
  
  		//
  
@@ -2459,7 +2484,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..8837a1bc0924ac65d049f1d4d99ad7e4
  		colorTexture.samples = samples;
  
  		colorTextureData.texture = colorBuffer;
-@@ -76775,63 +77176,58 @@
+@@ -76775,63 +77177,58 @@
  		const canvasTarget = backend.renderer.getCanvasTarget();
  		const { width, height } = backend.getDrawingBufferSize();
  		const samples = backend.renderer.currentSamples;
@@ -2566,7 +2591,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..8837a1bc0924ac65d049f1d4d99ad7e4
  
  	/**
  	 * Uploads the updated texture data to the GPU.
-@@ -76987,6 +77383,120 @@
+@@ -76987,6 +77384,143 @@
  
  	}
  
@@ -2640,44 +2665,67 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..8837a1bc0924ac65d049f1d4d99ad7e4
 +
 +		};
 +		const iterator = tiles();
++		const validations = [];
++		const failures = [];
 +		let next = iterator.next();
-+		while ( ! next.done ) {
++		let uploadFailed = false;
++		let uploadError;
++		try {
 +
-+			check();
-+			if ( slice.started === null ) slice.started = performance.now();
-+			if ( performance.now() - slice.started >= budgetMs ) await yieldHost();
-+			const scoped = typeof device.pushErrorScope === 'function' && typeof device.popErrorScope === 'function';
-+			if ( scoped ) { device.pushErrorScope( 'out-of-memory' ); device.pushErrorScope( 'validation' ); }
-+			let errors;
-+			try {
++			while ( ! next.done && failures.length === 0 ) {
 +
-+				do {
++				check();
++				if ( slice.started === null ) slice.started = performance.now();
++				if ( performance.now() - slice.started >= budgetMs ) await yieldHost();
++				if ( failures.length > 0 ) break;
++				const scoped = typeof device.pushErrorScope === 'function' && typeof device.popErrorScope === 'function';
++				if ( scoped ) { device.pushErrorScope( 'out-of-memory' ); device.pushErrorScope( 'validation' ); }
++				try {
 +
-+					check();
-+					const tile = next.value;
-+					device.queue.writeTexture( tile.destination, tile.data, tile.layout, tile.extent );
-+					next = iterator.next();
++					do {
 +
-+				} while ( ! next.done && performance.now() - slice.started < budgetMs );
++						check();
++						const tile = next.value;
++						device.queue.writeTexture( tile.destination, tile.data, tile.layout, tile.extent );
++						next = iterator.next();
 +
-+			} finally {
++					} while ( ! next.done && performance.now() - slice.started < budgetMs );
 +
-+				// Pop before awaiting: a loading-screen render must not enter our error scope.
-+				if ( scoped ) errors = Promise.all( [ device.popErrorScope(), device.popErrorScope() ] ).then( failures => ( { failures } ), error => ( { error } ) );
++				} finally {
++
++					// Pop synchronously: a loading-screen render must not enter our error scopes.
++					if ( scoped ) validations.push( Promise.allSettled( [ device.popErrorScope(), device.popErrorScope() ] ).then( results => {
++
++						for ( const result of results ) {
++
++							if ( result.status === 'rejected' ) failures.push( result.reason );
++							else if ( result.value !== null ) failures.push( new Error( result.value.message ) );
++
++						}
++
++					} ) );
++
++				}
++				// Bound validation latency without changing the host slice or byte budgets.
++				if ( validations.length === 4 ) await validations.shift();
++				check();
++				if ( ! next.done && failures.length === 0 ) await yieldHost();
 +
 +			}
-+			if ( errors ) {
 +
-+				const result = await errors;
-+				if ( result.error ) throw result.error;
-+				const failure = result.failures.find( error => error !== null );
-+				if ( failure ) throw new Error( 'Compressed texture upload failed: ' + failure.message );
++		} catch ( error ) {
 +
-+			}
-+			check();
-+			if ( ! next.done ) await yieldHost();
++			uploadFailed = true;
++			uploadError = error;
++
++		} finally {
++
++			// Observe every issued scope, including after cancellation or a write failure.
++			await Promise.all( validations );
 +
 +		}
++		if ( uploadFailed ) throw uploadError;
++		if ( failures.length > 0 ) throw new AggregateError( failures, 'Compressed texture upload failed: ' + failures.map( error => error?.message || String( error ) ).join( '; ' ) );
 +		check();
 +		textureData.version = version;
 +		if ( updates.length > 0 ) texture.clearLayerUpdates();
@@ -2687,7 +2735,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..8837a1bc0924ac65d049f1d4d99ad7e4
  	/**
  	 * Returns texture data as a typed array.
  	 *
-@@ -77059,6 +77569,8 @@
+@@ -77059,6 +77593,8 @@
  	 * Frees all internal resources.
  	 */
  	dispose() {
@@ -2696,7 +2744,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..8837a1bc0924ac65d049f1d4d99ad7e4
  
  		this._samplerCache.clear();
  
-@@ -79004,7 +79516,14 @@
+@@ -79004,7 +79540,14 @@
  
  		} else {
  
@@ -2712,7 +2760,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..8837a1bc0924ac65d049f1d4d99ad7e4
  
  			if ( this.renderer.backend.compatibilityMode && texture.isDepthTexture ) {
  
-@@ -81295,9 +81814,15 @@
+@@ -81295,9 +81838,15 @@
  	destroyAttribute( attribute ) {
  
  		const backend = this.backend;
@@ -2731,7 +2779,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..8837a1bc0924ac65d049f1d4d99ad7e4
  
  		backend.delete( attribute );
  
-@@ -82553,6 +83078,15 @@
+@@ -82553,6 +83102,15 @@
  
  					_renderPipelineDescriptor.reset();
  
@@ -2747,7 +2795,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..8837a1bc0924ac65d049f1d4d99ad7e4
  					if ( pipelinePromise !== null ) {
  
  						try {
-@@ -82567,7 +83101,7 @@
+@@ -82567,7 +83125,7 @@
  
  					}
  
@@ -2756,7 +2804,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..8837a1bc0924ac65d049f1d4d99ad7e4
  
  					if ( errorScope !== null || asyncError !== null ) {
  
-@@ -84153,7 +84687,9 @@
+@@ -84153,7 +84711,9 @@
  
  		let descriptor = canvasData.descriptor;
  
@@ -2767,7 +2815,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..8837a1bc0924ac65d049f1d4d99ad7e4
  
  			descriptor = new GPURenderPassDescriptor();
  			descriptor.colorAttachments.push( new GPURenderPassColorAttachment() );
-@@ -84180,6 +84716,9 @@
+@@ -84180,6 +84740,9 @@
  
  			canvasData.descriptor = descriptor;
  			canvasData.samples = samples;
@@ -2777,7 +2825,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..8837a1bc0924ac65d049f1d4d99ad7e4
  
  		}
  
-@@ -85916,6 +86455,12 @@
+@@ -85916,6 +86479,12 @@
  
  	}
  
@@ -3561,7 +3609,7 @@ index 8dfc2ae055ad7b9d4c00e91f7d52a39e747caebe..4702aad5bfc8c90d2313fdb9dd4bcee3
  		}
  
 diff --git a/src/renderers/common/Textures.js b/src/renderers/common/Textures.js
-index f42b90eac69ca042c39e7999773d6b8303fc3dd0..4742d49c2cae57014941d97017ff22f0889ede24 100644
+index f42b90eac69ca042c39e7999773d6b8303fc3dd0..5b305173fa4a2814ec74563d2ae5cdc70e7505e1 100644
 --- a/src/renderers/common/Textures.js
 +++ b/src/renderers/common/Textures.js
 @@ -54,6 +54,10 @@
@@ -3659,7 +3707,7 @@ index f42b90eac69ca042c39e7999773d6b8303fc3dd0..4742d49c2cae57014941d97017ff22f0
  
  		// dispose handler
  
-@@ -411,9 +459,133 @@
+@@ -411,9 +459,134 @@
  
  		}
  
@@ -3753,7 +3801,8 @@ index f42b90eac69ca042c39e7999773d6b8303fc3dd0..4742d49c2cae57014941d97017ff22f0
 +			if ( this._pendingUploads.get( texture ) === job ) this._pendingUploads.delete( texture );
 +
 +		} );
-+		this._uploadTail = job.promise.catch( () => {} );
++		// Caller cancellation is prompt; the backend lane stays owned until validation drains.
++		this._uploadTail = Promise.allSettled( [ work, job.promise ] ).then( () => {} );
 +		return this._waitForUpload( job, options.signal );
 +
 +	}
@@ -3796,7 +3845,7 @@ index f42b90eac69ca042c39e7999773d6b8303fc3dd0..4742d49c2cae57014941d97017ff22f0
  
  	}
  
-@@ -591,6 +763,8 @@
+@@ -591,6 +764,8 @@
  	 */
  	_destroyTexture( texture ) {
  
@@ -4170,7 +4219,7 @@ index 764267c..3480fea 100644
  					if ( errorScope !== null || asyncError !== null ) {
  
 diff --git a/src/renderers/webgpu/utils/WebGPUTextureUtils.js b/src/renderers/webgpu/utils/WebGPUTextureUtils.js
-index ff8ee2dbace2816105aa7152891c04f2333f33e8..bd49a9ef341d5a58d87b7298595986d45530f78e 100644
+index ff8ee2dbace2816105aa7152891c04f2333f33e8..0305f2a60392d108952ad447830cfe52b77545b8 100644
 --- a/src/renderers/webgpu/utils/WebGPUTextureUtils.js
 +++ b/src/renderers/webgpu/utils/WebGPUTextureUtils.js
 @@ -41,6 +41,7 @@
@@ -4355,7 +4404,7 @@ index ff8ee2dbace2816105aa7152891c04f2333f33e8..bd49a9ef341d5a58d87b7298595986d4
  
  	/**
  	 * Uploads the updated texture data to the GPU.
-@@ -733,6 +753,120 @@
+@@ -733,6 +753,143 @@
  
  	}
  
@@ -4429,44 +4478,67 @@ index ff8ee2dbace2816105aa7152891c04f2333f33e8..bd49a9ef341d5a58d87b7298595986d4
 +
 +		};
 +		const iterator = tiles();
++		const validations = [];
++		const failures = [];
 +		let next = iterator.next();
-+		while ( ! next.done ) {
++		let uploadFailed = false;
++		let uploadError;
++		try {
 +
-+			check();
-+			if ( slice.started === null ) slice.started = performance.now();
-+			if ( performance.now() - slice.started >= budgetMs ) await yieldHost();
-+			const scoped = typeof device.pushErrorScope === 'function' && typeof device.popErrorScope === 'function';
-+			if ( scoped ) { device.pushErrorScope( 'out-of-memory' ); device.pushErrorScope( 'validation' ); }
-+			let errors;
-+			try {
++			while ( ! next.done && failures.length === 0 ) {
 +
-+				do {
++				check();
++				if ( slice.started === null ) slice.started = performance.now();
++				if ( performance.now() - slice.started >= budgetMs ) await yieldHost();
++				if ( failures.length > 0 ) break;
++				const scoped = typeof device.pushErrorScope === 'function' && typeof device.popErrorScope === 'function';
++				if ( scoped ) { device.pushErrorScope( 'out-of-memory' ); device.pushErrorScope( 'validation' ); }
++				try {
 +
-+					check();
-+					const tile = next.value;
-+					device.queue.writeTexture( tile.destination, tile.data, tile.layout, tile.extent );
-+					next = iterator.next();
++					do {
 +
-+				} while ( ! next.done && performance.now() - slice.started < budgetMs );
++						check();
++						const tile = next.value;
++						device.queue.writeTexture( tile.destination, tile.data, tile.layout, tile.extent );
++						next = iterator.next();
 +
-+			} finally {
++					} while ( ! next.done && performance.now() - slice.started < budgetMs );
 +
-+				// Pop before awaiting: a loading-screen render must not enter our error scope.
-+				if ( scoped ) errors = Promise.all( [ device.popErrorScope(), device.popErrorScope() ] ).then( failures => ( { failures } ), error => ( { error } ) );
++				} finally {
++
++					// Pop synchronously: a loading-screen render must not enter our error scopes.
++					if ( scoped ) validations.push( Promise.allSettled( [ device.popErrorScope(), device.popErrorScope() ] ).then( results => {
++
++						for ( const result of results ) {
++
++							if ( result.status === 'rejected' ) failures.push( result.reason );
++							else if ( result.value !== null ) failures.push( new Error( result.value.message ) );
++
++						}
++
++					} ) );
++
++				}
++				// Bound validation latency without changing the host slice or byte budgets.
++				if ( validations.length === 4 ) await validations.shift();
++				check();
++				if ( ! next.done && failures.length === 0 ) await yieldHost();
 +
 +			}
-+			if ( errors ) {
 +
-+				const result = await errors;
-+				if ( result.error ) throw result.error;
-+				const failure = result.failures.find( error => error !== null );
-+				if ( failure ) throw new Error( 'Compressed texture upload failed: ' + failure.message );
++		} catch ( error ) {
 +
-+			}
-+			check();
-+			if ( ! next.done ) await yieldHost();
++			uploadFailed = true;
++			uploadError = error;
++
++		} finally {
++
++			// Observe every issued scope, including after cancellation or a write failure.
++			await Promise.all( validations );
 +
 +		}
++		if ( uploadFailed ) throw uploadError;
++		if ( failures.length > 0 ) throw new AggregateError( failures, 'Compressed texture upload failed: ' + failures.map( error => error?.message || String( error ) ).join( '; ' ) );
 +		check();
 +		textureData.version = version;
 +		if ( updates.length > 0 ) texture.clearLayerUpdates();
@@ -4476,7 +4548,7 @@ index ff8ee2dbace2816105aa7152891c04f2333f33e8..bd49a9ef341d5a58d87b7298595986d4
  	/**
  	 * Returns texture data as a typed array.
  	 *
-@@ -805,6 +939,8 @@
+@@ -805,6 +962,8 @@
  	 * Frees all internal resources.
  	 */
  	dispose() {

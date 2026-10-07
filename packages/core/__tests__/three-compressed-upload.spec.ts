@@ -2,6 +2,7 @@ import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { CompressedArrayTexture, CompressedTexture, RGBA_BPTC_Format } from "three";
+import Renderer from "three/src/renderers/common/Renderer.js";
 // @ts-expect-error Three does not declare its internal texture manager.
 import Textures from "three/src/renderers/common/Textures.js";
 // @ts-expect-error Three does not declare its internal texture uploader.
@@ -15,6 +16,10 @@ describe.each(["source", "webgpu bundle", "nodes bundle"])(
   (mode) => {
     let TextureManager = Textures;
     let TextureUtils = WebGPUTextureUtils;
+    let prepareTexture = Reflect.get(Renderer.prototype, "prepareTextureAsync") as (
+      texture: CompressedTexture,
+      options: { signal?: AbortSignal },
+    ) => Promise<void>;
     beforeAll(async () => {
       if (mode === "source") return;
       const root =
@@ -35,6 +40,7 @@ describe.each(["source", "webgpu bundle", "nodes bundle"])(
         await renderer.init();
         TextureManager = renderer._textures.constructor;
         TextureUtils = renderer.backend.textureUtils.constructor;
+        prepareTexture = renderer.prepareTextureAsync;
         renderer._animation.stop();
       } finally {
         vi.unstubAllGlobals();
@@ -150,6 +156,204 @@ describe.each(["source", "webgpu bundle", "nodes bundle"])(
       await Promise.resolve();
       await Promise.resolve();
     }
+
+    function delayedScopes(f: ReturnType<typeof fixture>) {
+      const stack: string[] = [];
+      const pops: Array<{
+        resolve(error: null | { message: string }): void;
+        reject(error: Error): void;
+      }> = [];
+      Object.assign(f.backend.device, {
+        pushErrorScope: (filter: string) => stack.push(filter),
+        popErrorScope: () => {
+          expect(stack.pop()).toBe(pops.length % 2 === 0 ? "validation" : "out-of-memory");
+          return new Promise<null | { message: string }>((resolve, reject) => {
+            pops.push({ resolve, reject });
+          });
+        },
+      });
+      return { stack, pops };
+    }
+
+    function prepare(f: ReturnType<typeof fixture>, texture = f.texture, options = {}) {
+      return prepareTexture.call({ _initialized: true, _textures: f.manager }, texture, options);
+    }
+
+    it("pipelines at most four bounded batches through Renderer and awaits all validation before completion", async () => {
+      vi.useFakeTimers();
+      try {
+        const f = fixture();
+        f.texture.mipmaps = [{ width: 1024, height: 1024, data: new Uint8Array(1_048_576) }];
+        const scopes = delayedScopes(f);
+        let complete = false;
+        const pending = prepare(f).then(() => {
+          complete = true;
+        });
+        await firstBatch();
+        await vi.runAllTimersAsync();
+        expect(f.writes).toHaveLength(12);
+        expect(scopes.pops).toHaveLength(8);
+        expect(scopes.stack).toEqual([]);
+        expect(complete).toBe(false);
+        expect(f.writes.every((write) => write.bytes <= 65_536)).toBe(true);
+        // The oldest batch releases one slot; later results cannot bypass the cap.
+        scopes.pops[0]?.resolve(null);
+        scopes.pops[1]?.resolve(null);
+        await vi.runAllTimersAsync();
+        expect(f.writes).toHaveLength(15);
+        expect(scopes.pops).toHaveLength(10);
+        scopes.pops[2]?.resolve(null);
+        scopes.pops[3]?.resolve(null);
+        await vi.runAllTimersAsync();
+        expect(f.writes).toHaveLength(16);
+        expect(scopes.pops).toHaveLength(12);
+        for (const pop of scopes.pops.slice(5)) pop.resolve(null);
+        await vi.runAllTimersAsync();
+        expect(complete).toBe(false);
+        expect(f.get(f.texture).version).not.toBe(f.texture.version);
+        expect(f.manager.get(f.texture).version).not.toBe(f.texture.version);
+        expect(f.texture.onUpdate).not.toHaveBeenCalled();
+        scopes.pops[4]?.resolve(null);
+        await pending;
+        expect(f.get(f.texture).version).toBe(f.texture.version);
+        expect(f.manager.get(f.texture).version).toBe(f.texture.version);
+        expect(f.texture.onUpdate).toHaveBeenCalledOnce();
+        expect(f.writes.reduce((sum, write) => sum + write.bytes, 0)).toBe(1_048_576);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("awaits and collects both scope failures before rejecting public preparation", async () => {
+      const f = fixture();
+      const scopes = delayedScopes(f);
+      const texture = smallTexture();
+      let settled = false;
+      const pending = prepare(f, texture).catch((error: Error) => {
+        settled = true;
+        return error;
+      });
+      await firstBatch();
+      scopes.pops[0]?.reject(new Error("validation scope rejected"));
+      for (let i = 0; i < 30; i++) await Promise.resolve();
+      expect(settled).toBe(false);
+      scopes.pops[1]?.resolve({ message: "out of memory" });
+      const error = await pending;
+      expect(error).toBeInstanceOf(AggregateError);
+      expect((error as AggregateError).errors.map((failure: Error) => failure.message)).toEqual([
+        "validation scope rejected",
+        "out of memory",
+      ]);
+      expect(texture.onUpdate).not.toHaveBeenCalled();
+      expect(f.manager.get(texture).version).toBeUndefined();
+      expect(f.get(texture).version).toBeUndefined();
+    });
+
+    it("drains every issued batch after a late error and keeps the next texture queued", async () => {
+      vi.useFakeTimers();
+      try {
+        const f = fixture();
+        const scopes = delayedScopes(f);
+        let settled = false;
+        const pending = prepare(f).catch((error: Error) => {
+          settled = true;
+          return error;
+        });
+        const queued = smallTexture();
+        const later = prepare(f, queued);
+        await firstBatch();
+        await vi.runAllTimersAsync();
+        expect(scopes.pops).toHaveLength(8);
+        const writes = f.writes.length;
+        scopes.pops[6]?.resolve({ message: "late validation error" });
+        scopes.pops[7]?.reject(new Error("late out of memory"));
+        for (const pop of scopes.pops.slice(0, 5)) pop.resolve(null);
+        await vi.runAllTimersAsync();
+        expect(settled).toBe(false);
+        expect(f.create).toHaveBeenCalledTimes(1);
+        expect(f.writes).toHaveLength(writes);
+        scopes.pops[5]?.resolve(null);
+        const error = await pending;
+        expect(error).toBeInstanceOf(AggregateError);
+        expect((error as AggregateError).errors).toHaveLength(2);
+        expect(f.texture.onUpdate).not.toHaveBeenCalled();
+        expect(f.get(f.texture).version).toBeUndefined();
+        await vi.runAllTimersAsync();
+        expect(f.create).toHaveBeenCalledTimes(2);
+        for (const pop of scopes.pops.slice(8)) pop.resolve(null);
+        await vi.runAllTimersAsync();
+        await later;
+        expect(queued.onUpdate).toHaveBeenCalledOnce();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it.each(["cancel", "dispose", "version"])(
+      "keeps pipelined validation inert after %s",
+      async (reason) => {
+        vi.useFakeTimers();
+        try {
+          const f = fixture();
+          const scopes = delayedScopes(f);
+          const controller = new AbortController();
+          const pending = prepare(f, f.texture, { signal: controller.signal });
+          const rejected = expect(pending).rejects.toThrow(/cancel|disposed|changed|invalidated/i);
+          rejected.catch(() => {});
+          await firstBatch();
+          await vi.runAllTimersAsync();
+          expect(scopes.pops).toHaveLength(8);
+          const writes = f.writes.length;
+          if (reason === "cancel") controller.abort(new Error("cancelled"));
+          if (reason === "dispose") f.texture.dispose();
+          if (reason === "version") f.texture.needsUpdate = true;
+          for (const pop of scopes.pops) pop.resolve(null);
+          await vi.runAllTimersAsync();
+          await rejected;
+          expect(f.writes).toHaveLength(writes);
+          expect(f.texture.onUpdate).not.toHaveBeenCalled();
+          if (f.backend.has(f.texture)) expect(f.get(f.texture).version).toBeUndefined();
+          expect(scopes.stack).toEqual([]);
+        } finally {
+          vi.useRealTimers();
+        }
+      },
+    );
+
+    it("keeps the backend lane until cancelled validation drains while rejecting the caller promptly", async () => {
+      vi.useFakeTimers();
+      try {
+        const f = fixture();
+        const scopes = delayedScopes(f);
+        const controller = new AbortController();
+        const first = prepare(f, f.texture, { signal: controller.signal });
+        const rejected = expect(first).rejects.toThrow("caller cancelled");
+        const queued = smallTexture();
+        const later = prepare(f, queued);
+        await firstBatch();
+        await vi.runAllTimersAsync();
+        expect(scopes.pops).toHaveLength(8);
+        controller.abort(new Error("caller cancelled"));
+        await rejected;
+        await vi.runAllTimersAsync();
+        expect(f.create).toHaveBeenCalledTimes(1);
+        const writes = f.writes.length;
+        for (const pop of scopes.pops.slice(0, 7)) pop.resolve(null);
+        await vi.runAllTimersAsync();
+        expect(f.create).toHaveBeenCalledTimes(1);
+        expect(f.writes).toHaveLength(writes);
+        scopes.pops[7]?.resolve(null);
+        await vi.runAllTimersAsync();
+        expect(f.create).toHaveBeenCalledTimes(2);
+        expect(f.texture.onUpdate).not.toHaveBeenCalled();
+        for (const pop of scopes.pops.slice(8)) pop.resolve(null);
+        await vi.runAllTimersAsync();
+        await later;
+        expect(queued.onUpdate).toHaveBeenCalledOnce();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
 
     it.each([
       ["bc1-rgba-unorm", 4, 4, 8],
@@ -401,7 +605,7 @@ describe.each(["source", "webgpu bundle", "nodes bundle"])(
         );
         await vi.runAllTimersAsync();
         expect(completed).toBe(false);
-        expect(f.writes).toHaveLength(3);
+        expect(f.writes).toHaveLength(12);
         for (const resolve of delayed) resolve(null);
         for (let i = 0; i < 20; i++) await Promise.resolve();
         // The actual next boundary is the host yield; no render/submit callback releases it.

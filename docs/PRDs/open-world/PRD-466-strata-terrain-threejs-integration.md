@@ -5,7 +5,7 @@
 **Complexity:** 7 (HIGH); risk override: none
 **Owner:** ThreeNative maintainers
 **Depends on:** None
-**Progress:** 5/9 required boxes verified
+**Progress:** 8/9 canonical acceptance boxes recorded verified; computed phase label 50% (2/4 phases, 7/13 phase boxes)
 **Required companion:** [PRD-467 — live terrain editor](PRD-467-strata-live-terrain-editor.md)
 **Required companion:** [PRD-468 — atmosphere, cameras, and asset imports](PRD-468-strata-world-controls-and-asset-imports.md)
 
@@ -3502,3 +3502,64 @@ The changed-source hardware rerun and steady FPS/native qualification remain pen
 visual review still identifies bright needle filigree, card-like lower sprays and weak tree
 shadow grounding; readiness does not qualify those appearance defects. Computed PRD progress
 remains **50%**; no acceptance box changed.
+
+
+### 2026-10-07 — source-bound captures and remaining admission blocker
+
+The exact published `88af7c59b` run exited 2 after 189.43 s. The false startup-stall report did
+not recur, but the original 120 s spawn deadline failed during grounding at 71,867/218,809.
+All 41 compressed uploads completed (3,173 writes; 187,346,672 bytes); the last completion was
+at page 115,065.7 ms. Grounding subsequently finished all 218,809 placements in 17,470.9 ms
+across 834 original 8 ms slices. The retained tail's 11 validation waits total 1,791.1 ms
+(median 147.7 ms, max 368.1 ms); this is neither the complete upload duration nor GPU timing.
+The original guards admitted GPU 1% and 8.8 GiB available memory. During execution, available
+memory fell below 8 GiB and CPU/memory pressure rose, so this is not isolated performance
+attribution. No other owner's work is identified or signalled. Twelve original owned identities,
+executor, canonical lease and monitor all passed cleanup. The failed artifact is preserved and
+will not be retried. Late texture completion leaves too little headroom for full grounding;
+steady FPS and changed-source load/walk acceptance remain open.
+
+Actual PNGs, copied without pixel changes, are retained below and attached to PR #381:
+
+- [Ready forest, source `6cff71c04`](../../benchmark/strata-loading-2026-10-06/forest-ready-6cff71c04.png): 1920×1080, scale 1, MSAA4, full licensed assets/density; the run reached both worlds and walked, but exited 1 on the false startup-stall diagnostic. The independent judge still identifies bright needle filigree, sheet-like lower sprays and weak shadow grounding.
+- [Ready coast, source `6cff71c04`](../../benchmark/strata-loading-2026-10-06/coastal-ready-6cff71c04.png): the same settings and result; no trees in this framing.
+- [Loading curtain, source `88af7c59b`](../../benchmark/strata-loading-2026-10-06/loading-curtain-88af7c59b.png): the same quality settings; real spawn deadline failure, no ready frame.
+
+These images are different phases and cannot demonstrate a matched visual improvement.
+Original source/build/image hashes remain in the owned capture receipts. The existing benchmark
+evidence tree has room; the already over-budget verification tree is not enlarged.
+
+| Canonical criterion | Recorded earned evidence | Remaining work |
+| --- | --- | --- |
+| PRD-466 AC-1/2/3/4/6/7/8/9 | Authoring and ordinary Three geometry, browser/native contacts, replacement/discovery, five-world portable export and spectral ocean; 8/9 historical criteria checked, with the limits beside each proof | Current loading headroom and steady FPS remain unqualified; past proofs are not fresh qualification of this build |
+| PRD-466 AC-5 | Partial terrain relief, drainage, talus, mesa benches and defining views | Final art/atmosphere in all five worlds, tundra ice lake, existing cooked-starter budget/offline requirement; close needle/trunk/card and terrain views with independent pixel judgments |
+| PRD-467 | 9/9 canonical editor criteria recorded checked | Existing fixture/platform limitations remain; no new runtime claim |
+| PRD-468 | 8/8 canonical camera/environment/import/handoff criteria recorded checked | Existing fixture/platform limitations remain; no new runtime claim |
+
+The phase tracker still computes **50%**. No acceptance checkbox was changed or new gate invented.
+
+
+### 2026-10-07 — bounded compressed validation candidate
+
+The texture utility now permits at most four validation batches in flight while retaining
+original 2 ms host slices and 64 KiB writes. It pops scopes synchronously before yielding,
+collects both scope results with `allSettled`, and drains every issued result before successful
+completion or reporting an upload error. Texture version, mip/layer identity, disposal and
+cancellation checks remain in force. Caller cancellation still rejects promptly; the common
+texture manager retains its backend lane until the cancelled work drains, preventing a queued
+texture from multiplying the four-batch bound. No submission, fence, asset, mip, density,
+resolution, deadline or diagnostic threshold was added or reduced.
+
+Tests through actual Three `Renderer.prepareTextureAsync`, its texture manager and WebGPU
+utility reproduce 15 serial-validation failures and three early-successor failures before the
+fix, then pass in source and both shipped bundles. The affected suites pass 145 checks across
+seven files. Strict source/test TypeScript 6 passes; Biome reports only the existing compressed
+coverage test complexity warning. Fresh-stock and the previously qualified pre-method package
+installations produce exact candidate utility, common-manager and bundle bytes and are
+idempotent. The unreleased serial PR checkpoint is not a supported in-place patch upgrade:
+the existing installer can duplicate a changed inserted method there; that failed control is
+retained and excluded from qualified fixtures. No installer redesign is claimed.
+
+The candidate's unchanged load/walk scenario is next. The preceding runtime remains red,
+steady FPS/native and final five-world art remain open, and computed PRD progress remains
+**50%**. No acceptance box changed.
