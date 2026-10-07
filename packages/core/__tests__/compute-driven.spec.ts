@@ -71,6 +71,7 @@ describe("ComputeDrivenRegistry", () => {
       processCadence: "render" as const,
     });
     let transitionDraws = 0;
+    let loadingDraws = 0;
     class CoveredScene extends Scene {
       static override readonly initialState = {};
       override enter(ctx: ICtx): void {
@@ -83,6 +84,8 @@ describe("ComputeDrivenRegistry", () => {
       static override readonly initialState = {};
       override enter(ctx: ICtx): void {
         ctx.canvasLayer.opaque = true;
+        ctx.canvasLayer.renderWorldDuringStartup = false;
+        ctx.beforeRender(() => loadingDraws++);
         ctx.startup.hold(
           "spawn",
           new Promise<void>((resolve) => {
@@ -125,6 +128,14 @@ describe("ComputeDrivenRegistry", () => {
       expect(game.ctx.startup.phase).not.toBe("ready");
       expect(streaming.processed).toBeGreaterThan(0);
       expect(ordinary.processed).toBe(0);
+      expect(loadingDraws).toBe(0);
+      // Uploads have settled: allow real streamed first-use draws while the spawn hold remains.
+      game.ctx.canvasLayer.keepWorldRendering = true;
+      frame(200);
+      expect(game.ctx.startup.phase).not.toBe("ready");
+      expect(loadingDraws).toBeGreaterThan(0);
+      const prewarmDraws = loadingDraws;
+      game.ctx.canvasLayer.keepWorldRendering = false;
       complete();
       for (let i = 13; i <= 30; i++) {
         frame(i * 16);
@@ -133,6 +144,10 @@ describe("ComputeDrivenRegistry", () => {
       expect(game.ctx.startup.phase).toBe("ready");
       frame(512);
       expect(ordinary.processed).toBeGreaterThan(0);
+      expect(loadingDraws).toBe(prewarmDraws);
+      game.ctx.canvasLayer.opaque = false;
+      frame(520);
+      expect(loadingDraws).toBeGreaterThan(prewarmDraws);
       await game.ctx.goto("covered");
       frame(528);
       expect(transitionDraws).toBeGreaterThan(0);

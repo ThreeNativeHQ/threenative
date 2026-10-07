@@ -23,6 +23,7 @@ function host(ready: Promise<void>) {
       camera: new OrthographicCamera(-400, 400, 300, -300, 0, 2),
       opaque: false,
       keepWorldRendering: false,
+      renderWorldDuringStartup: true,
     },
     startup: { progress: 0.5, whenReady: () => ready },
   };
@@ -142,6 +143,29 @@ it("uploads the status canvas only when its displayed text changes", async () =>
   }
 });
 
+it.each([false, true])(
+  "keeps hidden world draws disabled during admission and restores previous flag %s",
+  (previous) => {
+    const source = host(new Promise<void>(() => undefined));
+    source.canvasLayer.keepWorldRendering = previous;
+    source.canvasLayer.renderWorldDuringStartup = !previous;
+    const screen = createLoadingScreen({ ...source, keepWorldRendering: false });
+    try {
+      expect(source.canvasLayer.opaque).toBe(true);
+      expect(source.canvasLayer.keepWorldRendering).toBe(false);
+      expect(source.canvasLayer.renderWorldDuringStartup).toBe(false);
+      screen.update();
+      expect(source.canvasLayer.keepWorldRendering).toBe(false);
+    } finally {
+      screen.finish();
+    }
+    expect(source.canvasLayer.opaque).toBe(false);
+    expect(source.canvasLayer.keepWorldRendering).toBe(previous);
+    expect(source.canvasLayer.renderWorldDuringStartup).toBe(!previous);
+    expect(source.canvasLayer.scene.children).toHaveLength(0);
+  },
+);
+
 it("keeps the curtain and names a failed spawn even after framework readiness fails open", async () => {
   let reject: (reason: Error) => void = () => undefined;
   const source = host(
@@ -162,6 +186,29 @@ it("keeps the curtain and names a failed spawn even after framework readiness fa
   expect((fill.material as MeshBasicMaterial).color.getHex()).toBe(0xe36b5c);
   screen.finish();
   expect(source.canvasLayer.scene.children).toHaveLength(0);
+});
+
+it("restores both prior draw flags when opted-out texture preparation rejects", async () => {
+  let reject: (reason: Error) => void = () => undefined;
+  const source = host(
+    new Promise<void>((_done, fail) => {
+      reject = fail;
+    }),
+  );
+  source.canvasLayer.keepWorldRendering = true;
+  const screen = createLoadingScreen({ ...source, keepWorldRendering: false });
+  try {
+    expect(source.canvasLayer.keepWorldRendering).toBe(false);
+    expect(source.canvasLayer.renderWorldDuringStartup).toBe(false);
+    reject(new Error("Texture preparation failed"));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(source.canvasLayer.opaque).toBe(true);
+    expect(source.canvasLayer.keepWorldRendering).toBe(true);
+    expect(source.canvasLayer.renderWorldDuringStartup).toBe(true);
+  } finally {
+    screen.finish();
+  }
 });
 
 it("releases its layer only after the combined spawn and startup promise resolves", async () => {

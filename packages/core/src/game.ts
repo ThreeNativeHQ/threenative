@@ -1670,7 +1670,9 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         if (
           !mustPresentLoader &&
           !waitingForFirstUse &&
-          (!canvasLayer.opaque || !startupReadiness.ready || canvasLayer.keepWorldRendering)
+          (!canvasLayer.opaque ||
+            (!startupReadiness.ready && canvasLayer.renderWorldDuringStartup) ||
+            canvasLayer.keepWorldRendering)
         ) {
           // The projection's own scene when it is faithful, the game's when it is not. Nothing
           // here branches on which: `root` is the single render input either way, so there is no

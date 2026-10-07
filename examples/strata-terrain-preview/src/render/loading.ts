@@ -212,7 +212,10 @@ interface ILoadingHost {
     readonly scene: Scene;
     opaque: boolean;
     keepWorldRendering?: boolean;
+    renderWorldDuringStartup?: boolean;
   };
+  /** Opt out while cold textures prepare; enable the layer again before draw-backed cell prewarm. */
+  readonly keepWorldRendering?: boolean;
   readonly renderer: { compileAsync(scene: Scene, camera: Camera): Promise<void> };
   readonly scene: Scene;
   readonly startup: {
@@ -327,6 +330,7 @@ function statusMesh(layer: ILoadingHost["canvasLayer"]):
 export function createLoadingScreen(host: ILoadingHost): ILoadingController {
   const layer = host.canvasLayer;
   const previousWorldRendering = layer.keepWorldRendering ?? false;
+  const previousStartupRendering = layer.renderWorldDuringStartup ?? true;
   if (!loading.enabled) return noOp(layer);
   const camera = layer.camera;
   const backdrop = meshFor(
@@ -471,7 +475,8 @@ export function createLoadingScreen(host: ILoadingHost): ILoadingController {
   }
 
   layer.opaque = true;
-  layer.keepWorldRendering = true;
+  layer.keepWorldRendering = host.keepWorldRendering ?? true;
+  layer.renderWorldDuringStartup = host.keepWorldRendering ?? true;
   layout();
   updateProgress(0);
 
@@ -486,6 +491,7 @@ export function createLoadingScreen(host: ILoadingHost): ILoadingController {
     for (const texture of ownedTextures) texture.dispose();
     layer.opaque = false;
     layer.keepWorldRendering = previousWorldRendering;
+    layer.renderWorldDuringStartup = previousStartupRendering;
   };
 
   void (async () => {
@@ -495,6 +501,7 @@ export function createLoadingScreen(host: ILoadingHost): ILoadingController {
       if (done) return;
       failed = true;
       layer.keepWorldRendering = previousWorldRendering;
+      layer.renderWorldDuringStartup = previousStartupRendering;
       const message = error instanceof Error ? error.message : String(error);
       backdrop.userData.loadingError = message;
       fill.material.color.set(0xe36b5c);

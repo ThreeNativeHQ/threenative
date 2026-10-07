@@ -343,6 +343,7 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
         ctx.startup.hold("strata-spawn", admission.promise, 120_000);
       const loading = createLoadingScreen({
         ...ctx,
+        keepWorldRendering: false,
         startup: {
           get progress() {
             const state = ctx.state.getState();
@@ -354,7 +355,7 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
             Promise.all([ctx.startup.whenReady(), admission.promise]).then(() => undefined),
         },
       });
-      ctx.beforeRender(() => loading.update());
+      ctx.afterPhysics(() => loading.update());
       const biome = BIOMES[world];
       const { field, mesh } = createTerrain(data, ctx.assets, biome);
       ctx.add(mesh);
@@ -716,6 +717,8 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
           textureUploads.signal,
         );
         if (released) return;
+        // Streamed cell prewarm borrows actual world draws; uploads no longer compete with them.
+        ctx.canvasLayer.keepWorldRendering = true;
         propsStage = "streaming";
         props = await createStreamedProps({
           placements: scatter.placements,
