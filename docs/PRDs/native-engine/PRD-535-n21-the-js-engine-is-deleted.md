@@ -41,4 +41,5 @@ Owner decisions 4 and 10 ([PRD-497](../done/native-engine/PRD-497-n00-architectu
 **Status:** NOT STARTED
 **Files:** `packages/create-threenative/templates/`, `docs/architecture/CHARTER.md`
 - [ ] Every template's journey passes on web and desktop. proof: `pnpm test:templates`
+- [ ] Every template's frames on the one engine pass its existing visual baseline on web and desktop, and a paired blind bundle against the last release before deletion finds no template scoring worse beyond its measured resolution. proof: `pnpm visuals` and `pnpm visuals:ab`
 - [ ] Primary docs name only the one engine. proof: `pnpm exec vitest run scripts/__tests__/primary-docs.spec.ts`
