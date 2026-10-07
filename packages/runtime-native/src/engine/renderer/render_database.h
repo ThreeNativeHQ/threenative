@@ -132,9 +132,6 @@ class RenderDatabase {
     std::vector<Record> flatRecords_; // scene-order slots; no per-mesh hash lookup on the flat lane
     std::vector<uint8_t> flatPlainMeshes_;
     bool flatParentIdentity_ = false;
-    uint64_t flatSceneId_ = UINT64_MAX, flatHierarchy_ = UINT64_MAX;
-    std::size_t flatChildCount_ = 0;
-    bool flatEligible_ = false;
     std::vector<std::size_t> sortScratch_;
     std::vector<uint64_t> depthKeys_;
     std::vector<std::string> diagnostics_;

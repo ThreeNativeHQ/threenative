@@ -707,22 +707,33 @@ std::vector<DrawItem> RenderDatabase::prepare(Object3D& scene, Camera& camera, L
     diagnostics_.clear();
     hemisphere_ = 0;
     // Renderer.render: world matrices first, then the camera in the renderer's coordinate system.
-    if (flatSceneId_ != scene.id() || flatHierarchy_ != Object3D::hierarchyVersion() ||
-        flatChildCount_ != scene.children.size()) {
-        flatSceneId_ = scene.id();
-        flatHierarchy_ = Object3D::hierarchyVersion();
-        flatChildCount_ = scene.children.size();
-        flatEligible_ = scene.type() == "Scene" &&
-            std::all_of(scene.children.begin(), scene.children.end(), [](const Object3D* child) {
-                return child->children.empty() && (child->type() == "Mesh" || child->isLight());
-            });
+    // Fusion is safe only when matrix updates and light queries cannot run authored hooks.
+    // Recheck the public child vector before any update: callers can reorder or replace its slots.
+    const auto& cameraType = typeid(camera);
+    bool flat = typeid(scene) == typeid(Scene) && scene.matrixWorldAutoUpdate && camera.parent == nullptr &&
+                camera.children.empty() && !shadowMapEnabled && (cameraType == typeid(PerspectiveCamera) ||
+                                      cameraType == typeid(OrthographicCamera) || cameraType == typeid(Camera));
+    if (flat) {
         flatPlainMeshes_.resize(scene.children.size());
         for (std::size_t i = 0; i < scene.children.size(); ++i) {
             const auto* child = scene.children[i];
-            flatPlainMeshes_[i] = typeid(*child) == typeid(Mesh);
+            const auto& type = typeid(*child);
+            const bool mesh = type == typeid(Mesh);
+            flatPlainMeshes_[i] = mesh;
+            if (child->parent != &scene || !child->children.empty()) { flat = false; break; }
+            if (mesh) continue;
+            const Object3D* target = nullptr;
+            if (type == typeid(DirectionalLight)) target = static_cast<const DirectionalLight*>(child)->target.get();
+            if (type == typeid(SpotLight)) target = static_cast<const SpotLight*>(child)->target;
+            const bool light = type == typeid(Light) || type == typeid(AmbientLight) ||
+                               type == typeid(PointLight) || type == typeid(HemisphereLight) ||
+                               (target && typeid(*target) == typeid(Object3D) && target->parent == nullptr);
+            if (!light) {
+                flat = false;
+                break;
+            }
         }
     }
-    const bool flat = flatEligible_ && scene.matrixWorldAutoUpdate && camera.parent == nullptr;
     bool force = false;
     if (flat)
         force = scene.updateMatrixWorldSelf();

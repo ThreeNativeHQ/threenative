@@ -140,9 +140,7 @@ void uniformBatchPreparation() {
     meshes[1]->updateMatrixWorld();
     CHECK(meshes[1]->matrixWorld.elements[12] == 1);
     scene.remove(parent);
-    // A virtual matrix update may replace shared geometry later in the fused traversal.
-    // Keep the old store alive: these are two valid resource snapshots in this frame.
-    const auto oldPosition = geometry->attributes.at("position");
+    // All matrix hooks run before projection: earlier meshes see a later geometry edit too.
     struct GeometryChange final : Mesh {
         using Mesh::Mesh;
         std::shared_ptr<BufferAttribute> next;
@@ -154,7 +152,88 @@ void uniformBatchPreparation() {
     changer.next = makeBoxGeometry()->attributes.at("position");
     scene.add(changer);
     items = database.prepare(scene, camera, lights);
-    CHECK(items.size() == 2 && database.lastBatches().second == 4094);
+    CHECK(items.size() == 1 && database.lastBatches().second == 4095);
+    if (items.size() == 1) CHECK(items[0].positions == geometry->attributes.at("position")->store.get());
+
+    // The public child vector can change without a hierarchy-version bump.
+    Scene reordered; Mesh ordinary(geometry, meshes[2]->material); DirectionalLight sun;
+    RenderDatabase reorderDatabase; reordered.add(ordinary).add(sun);
+    CHECK(reorderDatabase.prepare(reordered, camera, lights).size() == 1);
+    for (int i = 0; i < 2; ++i) {
+        std::reverse(reordered.children.begin(), reordered.children.end());
+        const auto draws = reorderDatabase.prepare(reordered, camera, lights);
+        CHECK(draws.size() == 1 && lights.direct.size() == 1);
+        if (draws.size() == 1) CHECK(draws[0].key == ordinary.id());
+    }
+    struct HookMesh : Mesh {
+        using Mesh::Mesh; std::string* trace = nullptr;
+        void updateMatrixWorld(bool force = false) override {
+            *trace += 'M'; Mesh::updateMatrixWorld(force);
+        }
+    };
+    struct HookLight : DirectionalLight {
+        std::string* trace = nullptr;
+        void updateMatrixWorld(bool force = false) override {
+            *trace += 'L'; DirectionalLight::updateMatrixWorld(force);
+        }
+    };
+    struct HookScene : Scene {
+        std::string* trace = nullptr;
+        void updateMatrixWorld(bool force = false) override {
+            *trace += 'S'; Scene::updateMatrixWorld(force);
+        }
+    };
+    struct HookCamera : PerspectiveCamera {
+        std::string* trace = nullptr; Mesh* watched = nullptr;
+        void updateMatrixWorld(bool force = false) override {
+            *trace += 'C'; watched->position.x += 1; PerspectiveCamera::updateMatrixWorld(force);
+        }
+    };
+    for (int mode = 0; mode < 5; ++mode) {
+        std::string trace;
+        Scene plainScene; HookScene hookScene; hookScene.trace = &trace;
+        Mesh plainMesh(geometry, meshes[2]->material);
+        HookMesh hookMesh(geometry, meshes[2]->material); hookMesh.trace = &trace;
+        DirectionalLight plainLight; HookLight hookLight; hookLight.trace = &trace;
+        PerspectiveCamera plainCamera; HookCamera hookCamera; hookCamera.trace = &trace;
+        Scene& world = mode == 2 || mode == 4 ? hookScene : plainScene;
+        Mesh& mesh = mode == 0 || mode == 4 ? hookMesh : plainMesh;
+        DirectionalLight& light = mode == 1 || mode == 4 ? hookLight : plainLight;
+        PerspectiveCamera& view = mode == 3 || mode == 4 ? hookCamera : plainCamera;
+        hookCamera.watched = &mesh; mesh.position.x = 1; world.add(mesh).add(light);
+        RenderDatabase db;
+        CHECK(db.prepare(world, view, lights).size() == 1);
+        CHECK(trace == (mode == 0 ? "M" : mode == 1 ? "L" : mode == 2 ? "S" : mode == 3 ? "C" : "SMLC"));
+        CHECK(mesh.matrixWorld.elements[12] == 1);
+        CHECK(mesh.position.x == (mode >= 3 ? 2 : 1));
+    }
+    // Build the replacement subtree before warming so no later add() invalidates the old cache.
+    Scene nested; Mesh before(geometry, meshes[2]->material), after(geometry, meshes[2]->material);
+    Mesh descendant(geometry, meshes[2]->material); after.add(descendant);
+    after.position.x = 10; descendant.position.x = 2; nested.add(before);
+    RenderDatabase nestedDatabase; CHECK(nestedDatabase.prepare(nested, camera, lights).size() == 1);
+    nested.children[0] = &after; before.parent = nullptr; after.parent = &nested;
+    const auto nestedDraws = nestedDatabase.prepare(nested, camera, lights);
+    CHECK(nestedDraws.size() == 2);
+    CHECK(descendant.matrixWorld.elements[12] == 12);
+    struct MoveOnUpdate : Object3D {
+        Mesh* watched = nullptr;
+        void updateMatrix() override { watched->position.x += 1; Object3D::updateMatrix(); }
+    };
+    // Queries from a light target, camera child or shadow camera must follow scene updates.
+    for (int mode = 0; mode < 4; ++mode) {
+        Scene world; PerspectiveCamera view; DirectionalLight light;
+        Mesh mesh(geometry, meshes[2]->material); mesh.position.x = 1;
+        auto hook = std::make_shared<MoveOnUpdate>(); hook->watched = &mesh;
+        if (mode == 0) light.target = hook;
+        if (mode == 1) hook->add(*light.target);
+        if (mode == 2) view.add(*hook);
+        if (mode == 3) { light.setCastShadow(true); light.shadow.camera->add(*hook); }
+        world.add(light).add(mesh);
+        RenderDatabase db; db.shadowMapEnabled = mode == 3;
+        CHECK(db.prepare(world, view, lights).size() == 1);
+        CHECK(mesh.position.x == 2 && mesh.matrixWorld.elements[12] == 1);
+    }
 
     // Replacing a flat slot with a layer-excluded child must release the old resource owners.
     Scene replaced; RenderDatabase replacementDatabase;
