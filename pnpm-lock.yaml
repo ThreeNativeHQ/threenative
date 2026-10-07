@@ -252,7 +252,7 @@ importers:
         version: link:../../packages/physics
       three:
         specifier: 'catalog:'
-        version: 0.185.1(patch_hash=c2e051df4c469d033b151cb9da5ce5112c90801aaaa984d6bfde0e09d80c9a66)
+        version: 0.185.1(patch_hash=bf4700d165270f721e01612b0b3521e87d1cd993638da9baef3a5c9b927e1ffb)
     devDependencies:
       '@types/three':
         specifier: 0.185.3
@@ -424,7 +424,7 @@ importers:
         version: 0.33.0(react@19.2.0)
       three:
         specifier: 'catalog:'
-        version: 0.185.1(patch_hash=c2e051df4c469d033b151cb9da5ce5112c90801aaaa984d6bfde0e09d80c9a66)
+        version: 0.185.1(patch_hash=bf4700d165270f721e01612b0b3521e87d1cd993638da9baef3a5c9b927e1ffb)
     devDependencies:
       '@tailwindcss/vite':
         specifier: 'catalog:'
@@ -743,10 +743,10 @@ importers:
         version: 0.185.3
       typescript:
         specifier: 'catalog:'
-        version: 5.9.3
+        version: '@typescript/typescript6@6.0.2'
       vite:
         specifier: 'catalog:'
-        version: 8.2.0(@types/node@20.19.43)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.5)
+        version: 8.2.0(patch_hash=c99095f3002ba7f0997f348d6c1bcf5952587ed5dee18c058269c0d634d146c1)(@types/node@20.19.43)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.5)
 
   examples/quarry:
     dependencies:
