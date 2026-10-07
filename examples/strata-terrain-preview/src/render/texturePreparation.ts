@@ -68,10 +68,11 @@ export async function preparePropTextures(
   renderer: Pick<ICtx["renderer"], "prepareTextures">,
   materials: Iterable<Material>,
   signal?: AbortSignal,
+  onProgress?: (completed: number) => void,
 ): Promise<number> {
   const textures = new Set<Texture>();
   sampledTextures(materialInputs(materials, textures), textures);
   if (!renderer.prepareTextures)
     throw new Error("Renderer lacks bounded prop texture preparation.");
-  return renderer.prepareTextures(textures, signal);
+  return renderer.prepareTextures(textures, signal, onProgress);
 }

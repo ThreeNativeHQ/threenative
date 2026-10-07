@@ -180,8 +180,14 @@ export interface IRendererLike {
    * Original Texture/GPUTexture identities, formats and mip levels are retained. Cancellation
    * releases this caller's interest; another caller of the same texture may still complete.
    * Ordinary textures and the WebGL fallback retain their existing paths and report no work.
+   * `onProgress` receives the completed unique compressed texture count after each preparation
+   * promise resolves; queued textures and writes that have not settled receive no credit.
    */
-  prepareTextures?(textures: Iterable<Texture>, signal?: AbortSignal): Promise<number>;
+  prepareTextures?(
+    textures: Iterable<Texture>,
+    signal?: AbortSignal,
+    onProgress?: (completed: number) => void,
+  ): Promise<number>;
   /**
    * Copies one GPU storage attribute back to the CPU, asynchronously.
    *
@@ -763,7 +769,7 @@ function wrapRenderer(
       }
       return created;
     },
-    prepareTextures: async (textures, signal) => {
+    prepareTextures: async (textures, signal, onProgress) => {
       if (disposed) throw new Error("Renderer disposed during texture preparation.");
       if (kind !== "webgpu") return 0;
       const unique = new Set(
@@ -779,6 +785,7 @@ function wrapRenderer(
       if (signal?.aborted) abort();
       else signal?.addEventListener("abort", abort, { once: true });
       texturePreparations.add(controller);
+      let completed = 0;
       try {
         for (const texture of unique) {
           if (controller.signal.aborted) throw controller.signal.reason;
@@ -787,6 +794,8 @@ function wrapRenderer(
             maxBytesPerWrite: 65_536,
             signal: controller.signal,
           });
+          completed += 1;
+          onProgress?.(completed);
         }
         return unique.size;
       } finally {

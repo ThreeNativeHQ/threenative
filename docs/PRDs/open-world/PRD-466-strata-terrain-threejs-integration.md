@@ -3462,3 +3462,43 @@ compute-driven, main-cull and shadow-prewarm suites pass **80/80**. Strict TypeS
 actual Strata/core source exits 0; Biome exits 0 with seven existing game complexity warnings.
 Same-scenario hardware qualification remains pending for this slice; no readiness, screenshot or
 FPS improvement is claimed. Computed progress remains **50%**; no acceptance box changed.
+
+
+### 2026-10-07 — actual load/walk and measured held-work stall detection
+
+The published draw-handoff/median source reached forest and coastal readiness and completed
+11.404 m of scene-local coastal walking at the preserved 1920×1080, MSAA4 and full asset density.
+Forest grounding completed 218,809 placements in 11,198.0 ms; the preceding failed diagnostic
+completed the same population in 26,253.2 ms. Coastal completed 144,192 in 5,128.2 ms. These runs
+include multiple published changes, so the wall-time difference is not isolated causal evidence
+or an FPS acceptance result. The run passed 11/12 scenario checks and exited 1 solely because
+`TN_STARTUP_STALLED` reported 45 s at a fixed 95% while held work continued; actual readiness
+arrived at 115,762.6 ms. No network/runtime diagnostic or spawn failure occurred. The retained
+forest-ready/coastal-ready/coastal-walked captures exist, and independent cleanup passed all
+12 owned identities, executor exit, canonical lease release and monitor termination. No foreign
+process received a signal.
+
+The engine watcher now observes completed asset and held-work units separately from display
+percentage and names outstanding startup holds. Existing `startup.hold` takes an optional
+completed-work observer; the count cannot regress, invalid observations get no credit, and
+settlement freezes the final observation and releases its closure. The existing bounded texture
+preparation call reports only unique textures whose preparation promise has resolved. Strata
+forwards those completions and actual preparation-slice/cell/prewarm counts. There is no time or
+frame-count heartbeat. The 45 s stall threshold, 120 s admission deadline, 2 ms upload lane,
+8 ms preparation slices, texture identities/mips, population and appearance are unchanged.
+
+The two behavior regressions failed before implementation and pass afterward; expanded source
+checks cover fixed-percentage progress, subsequent real stalls, invalid/regressing observations,
+settled observer lifecycle, original hold expiry and the production consumer controller.
+The six affected suites pass **84/84**; four framework startup/game suites and three boundary
+checks pass, with one existing visual-boundary failure (**64/65** across that group). The same
+boundary failure reproduces against the unchanged published source: `world-cell-proxy.ts` imports
+`Material` and `world-package.ts` contains `materialGroups`; neither file changed in this fix.
+Strict TypeScript 6 against actual source/tests exits 0, Biome exits 0 with 16 existing complexity
+warnings, documentation checks pass 2,464 links across 1,259 files, and the context table is in sync.
+Texture progress is measured per completed texture, so a single texture that makes no observable
+completion for 45 s can still trigger the diagnostic; the granularity does not relax its threshold.
+The changed-source hardware rerun and steady FPS/native qualification remain pending. A fresh
+visual review still identifies bright needle filigree, card-like lower sprays and weak tree
+shadow grounding; readiness does not qualify those appearance defects. Computed PRD progress
+remains **50%**; no acceptance box changed.

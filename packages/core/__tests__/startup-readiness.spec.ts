@@ -135,6 +135,65 @@ describe("StartupReadiness holds", () => {
     for (let index = 0; index < 4; index += 1) await Promise.resolve();
   };
 
+  it("does not credit repeated, regressing or invalid observations, and freezes settled holds", async () => {
+    let completed = 4;
+    let observations = 0;
+    let release = () => {};
+    const readiness = new StartupReadiness();
+    readiness.hold(
+      "placements",
+      new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+      120_000,
+      () => {
+        observations += 1;
+        return completed;
+      },
+    );
+    try {
+      expect(readiness.workProgress).toBe(4);
+      for (const measured of [4, 2, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+        completed = measured;
+        expect(readiness.workProgress).toBe(4);
+      }
+      completed = 8;
+      expect(readiness.workProgress).toBe(8);
+      completed = 9;
+      release();
+      await Promise.resolve();
+      const frozenObservations = observations;
+      completed = 10;
+      expect(readiness.workProgress).toBe(9);
+      expect(observations).toBe(frozenObservations);
+    } finally {
+      release();
+    }
+  });
+
+  it("keeps the hold deadline even when completed work advances", async () => {
+    vi.useFakeTimers();
+    try {
+      let completed = 0;
+      const readiness = new StartupReadiness({ stableFrames: 1 });
+      readiness.hold("placements", new Promise<void>(() => {}), 120_000, () => completed);
+      readiness.start();
+      readiness.observe(1);
+      for (let slice = 0; slice < 5; slice += 1) {
+        completed += 10;
+        expect(readiness.workProgress).toBe(completed);
+        await vi.advanceTimersByTimeAsync(20_000);
+      }
+      expect(readiness.pendingHolds).toEqual(["placements"]);
+      await vi.advanceTimersByTimeAsync(20_000);
+      expect(readiness.holdReport).toEqual([{ label: "placements", expired: true }]);
+      completed = 1_000;
+      expect(readiness.workProgress).toBe(50);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("keeps startup unresolved until the game's own work settles", async () => {
     const readiness = new StartupReadiness({ stableFrames: 3 });
     let ready = false;

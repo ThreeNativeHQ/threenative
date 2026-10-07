@@ -308,6 +308,7 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
       let propsStage = "waiting-for-physics";
       let propsSettled = false;
       let preparation: IPropPreparationProgress | undefined;
+      let completedPropsWork = 0;
       const admission = createSpawnReadiness("Strata spawn", 120_000, captureSpawnFailure);
       function captureSpawnFailure(reason: string): void {
         console.error(
@@ -334,7 +335,15 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
         ctx.state.set({ worldReady: admission.ready, loadingError: admission.error });
       };
       if (ctx.startup.phase !== "ready")
-        ctx.startup.hold("strata-spawn", admission.promise, 120_000);
+        ctx.startup.hold(
+          "strata-spawn",
+          admission.promise,
+          120_000,
+          () =>
+            completedPropsWork +
+            (preparation?.prewarmedWorlds ?? 0) +
+            ctx.state.getState().spawnCellsLoaded,
+        );
       const loading = createLoadingScreen({
         ...ctx,
         keepWorldRendering: false,
@@ -700,6 +709,7 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
           return;
         }
         propsStage = "textures";
+        let preparedTextures = 0;
         await preparePropTextures(
           ctx.renderer,
           [
@@ -709,6 +719,10 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
             ...Object.values(surfaces.materials),
           ],
           textureUploads.signal,
+          (completed) => {
+            completedPropsWork += completed - preparedTextures;
+            preparedTextures = completed;
+          },
         );
         if (released) return;
         propsStage = "streaming";
@@ -726,6 +740,11 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
               : 5000,
           whileCurrent: () => !released,
           onProgress: (progress) => {
+            const previous =
+              preparation?.phase === progress.phase && preparation.bucket === progress.bucket
+                ? preparation.added
+                : 0;
+            completedPropsWork += Math.max(0, progress.added - previous);
             preparation = progress;
           },
           invalidateShadows: (region) => {

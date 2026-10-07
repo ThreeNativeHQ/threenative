@@ -83,6 +83,41 @@ it("fails closed when a WebGPU renderer lacks the bounded preparation seam", asy
   }
 });
 
+it("reports only completed unique texture preparation, leaving pending work uncredited", async () => {
+  vi.stubGlobal("navigator", { gpu: {} });
+  const releases: (() => void)[] = [];
+  const renderer = await createRenderer({
+    canvas: canvas(),
+    webgpuFactory: () => ({
+      domElement: canvas(),
+      prepareTextureAsync: () =>
+        new Promise<void>((resolve) => {
+          releases.push(resolve);
+        }),
+      render: () => {},
+      setSize: () => {},
+    }),
+  });
+  const observations: number[] = [];
+  const first = compressed();
+  const pending = renderer.prepareTextures?.([first, first, compressed()], undefined, (completed) =>
+    observations.push(completed),
+  );
+  try {
+    expect(observations).toEqual([]);
+    releases[0]?.();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(observations).toEqual([1]);
+    releases[1]?.();
+    await expect(pending).resolves.toBe(2);
+    expect(observations).toEqual([1, 2]);
+  } finally {
+    for (const release of releases) release();
+    renderer.dispose();
+  }
+});
+
 it("cancels preparation when the renderer is disposed", async () => {
   vi.stubGlobal("navigator", { gpu: {} });
   const prepare = vi.fn(

@@ -84,6 +84,8 @@ it.each(["attached", "cancelled", "released"] as const)(
       preparedLevelsWithoutSolid: 0,
       surfacesDispose: undefined,
       propsStage: "",
+      completedPropsWork: 0,
+      preparation: undefined,
       props: undefined,
       propParts: parts,
       world: "forest",
@@ -99,8 +101,24 @@ it.each(["attached", "cancelled", "released"] as const)(
       loadPack: async () => ({ parts, dispose() {} }),
       buildPropVariants: () => parts,
       createPropSurfaces: async () => ({ materials: {}, dispose() {} }),
-      preparePropTextures: async () => undefined,
-      createStreamedProps: async () => {
+      preparePropTextures: async (
+        _renderer: unknown,
+        _materials: unknown,
+        _signal: unknown,
+        progress: (completed: number) => void,
+      ) => {
+        progress(1);
+        progress(2);
+      },
+      createStreamedProps: async (options: { onProgress: (progress: object) => void }) => {
+        for (const [phase, added] of [
+          ["grounding", 0],
+          ["grounding", 50],
+          ["grounding", 50],
+          ["models", 0],
+          ["models", 3],
+        ] as const)
+          options.onProgress({ phase, bucket: "trees", added, total: 100 });
         entered();
         await prepared;
         return outcome === "cancelled"
@@ -127,6 +145,7 @@ it.each(["attached", "cancelled", "released"] as const)(
     const work = new scope.exports.Controller().run();
     await preparing;
     try {
+      expect(scope.completedPropsWork).toBe(55);
       expect(controllerHost.canvasLayer.keepWorldRendering).toBe(false);
       expect(attachments).toEqual([]);
     } finally {

@@ -150,9 +150,14 @@ export interface IStartupStatus {
    * Throws on an empty or duplicate label, and on a hold registered after startup already
    * resolved — each means the caller believes it is gating something it is not.
    *
+   * `progress` optionally observes monotonically completed work units (textures, placements or
+   * cells), so a fixed display percentage cannot falsely report a stall. Use completed work,
+   * never time or frame counts. Regressing/invalid values receive no credit, settlement freezes
+   * the count, and the hold's original deadline still applies.
+   *
    * @situation hold the loading screen until the game's own asset tier has landed
    */
-  hold(label: string, work: Promise<unknown>, budgetMs?: number): void;
+  hold(label: string, work: Promise<unknown>, budgetMs?: number, progress?: () => number): void;
 }
 
 export interface ICtx<

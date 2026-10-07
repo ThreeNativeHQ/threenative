@@ -1173,8 +1173,9 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
      * device, with the only account of either on a terminal the player does not have.
      */
     const stopStallWatch = watchStartupStall({
-      pending: () => assets.progress.pending,
+      pending: () => [...assets.progress.pending, ...startupReadiness.pendingHolds],
       progress: () => this.#ctx?.startup.progress ?? 0,
+      workProgress: () => assets.progress.settled + startupReadiness.workProgress,
       stallMs: STARTUP_STALL_MS,
     });
     watchDeviceLoss(
@@ -1362,8 +1363,8 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           reportedProgress = Math.max(reportedProgress, measuredProgress());
           return reportedProgress;
         },
-        hold: (label, work, budgetMs) => {
-          startupReadiness.hold(label, work, budgetMs);
+        hold: (label, work, budgetMs, progress) => {
+          startupReadiness.hold(label, work, budgetMs, progress);
         },
         get timeline() {
           return { ...timeline };
