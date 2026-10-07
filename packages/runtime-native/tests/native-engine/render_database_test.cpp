@@ -30,13 +30,36 @@ namespace {
 
 void uniformBatchPreparation() {
     Material a(MaterialType::Standard), b(MaterialType::Standard);
-    a.opacity = -0.0; b.opacity = 0.0;
-    CHECK(projection::detail::sameUniforms(a, b));
-    a.opacity = b.opacity = std::numeric_limits<double>::quiet_NaN();
-    CHECK(!projection::detail::sameUniforms(a, b));
-    a.opacity = b.opacity = 1;
-    a.emissive.b = b.emissive.b = std::numeric_limits<double>::quiet_NaN();
-    CHECK(!projection::detail::sameUniforms(a, b));
+    const std::array<double*, 27> left{
+        &a.opacity, &a.alphaTest, &a.emissive.r, &a.emissive.g,
+        &a.emissive.b, &a.emissiveIntensity, &a.roughness, &a.envMapIntensity,
+        &a.metalness, &a.specular.r, &a.specular.g, &a.specular.b,
+        &a.shininess, &a.ior, &a.specularIntensity, &a.specularColor.r,
+        &a.specularColor.g, &a.specularColor.b, &a.clearcoat, &a.sheen,
+        &a.transmission, &a.iridescence, &a.anisotropy, &a.dispersion,
+        &a.normalScaleX, &a.normalScaleY, &a.aoMapIntensity,
+    };
+    const std::array<double*, 27> right{
+        &b.opacity, &b.alphaTest, &b.emissive.r, &b.emissive.g,
+        &b.emissive.b, &b.emissiveIntensity, &b.roughness, &b.envMapIntensity,
+        &b.metalness, &b.specular.r, &b.specular.g, &b.specular.b,
+        &b.shininess, &b.ior, &b.specularIntensity, &b.specularColor.r,
+        &b.specularColor.g, &b.specularColor.b, &b.clearcoat, &b.sheen,
+        &b.transmission, &b.iridescence, &b.anisotropy, &b.dispersion,
+        &b.normalScaleX, &b.normalScaleY, &b.aoMapIntensity,
+    };
+    for (std::size_t i = 0; i < left.size(); ++i) {
+        const double beforeA = *left[i], beforeB = *right[i];
+        *left[i] = *right[i] + 0.25;
+        CHECK(!projection::detail::sameUniforms(a, b));
+        *left[i] = -0.0; *right[i] = 0.0;
+        CHECK(projection::detail::sameUniforms(a, b));
+        *left[i] = *right[i] = std::numeric_limits<double>::infinity();
+        CHECK(projection::detail::sameUniforms(a, b));
+        *left[i] = *right[i] = std::numeric_limits<double>::quiet_NaN();
+        CHECK(!projection::detail::sameUniforms(a, b));
+        *left[i] = beforeA; *right[i] = beforeB;
+    }
     Scene scene; PerspectiveCamera camera; LightState lights; RenderDatabase database;
     camera.position.set(0, 10, 100);
     camera.lookAt(0, 0, 0);
