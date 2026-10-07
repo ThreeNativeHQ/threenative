@@ -83,7 +83,7 @@ export function canopyComparison(
     throw new Error(`Unsupported canopyNormals '${normals}'`);
   if (specular !== null && specular !== "disabled" && specular !== "standard")
     throw new Error(`Unsupported canopySpecular '${specular}'`);
-  return { normals: normals ?? "radial", specular: specular ?? "disabled" };
+  return { normals: normals ?? "authored", specular: specular ?? "disabled" };
 }
 const species: IPackSpecies[] = [];
 for (let i = 0; i < 5; i++) {
@@ -564,9 +564,9 @@ function addRadialCoverage(
     ),
   );
   geometry.setAttribute("inner", new BufferAttribute(inner, 1));
-  if (world !== "forest" || comparison?.normals === "authored") return;
-  // Texture cards describe a crown volume. Their planar normals flatten its lighting; modify only
-  // this owned clone, leaving the asset loader's cached geometry intact.
+  if (world !== "forest" || comparison?.normals !== "radial") return;
+  // Keep synthetic crown normals as an explicit same-asset probe; the authored normals and normal
+  // map preserve needle lighting by default. Only this owned clone changes, never the cached asset.
   const crownNormals = new Float32Array(positions.count * 3);
   const direction = new Vector3();
   for (let i = 0; i < positions.count; i++) {

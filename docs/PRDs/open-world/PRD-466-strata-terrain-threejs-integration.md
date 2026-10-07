@@ -3612,3 +3612,18 @@ division and stepped shoreline remain. Wind/wave phase differs; the images demon
 world with retained appearance, not a visual defect repair or FPS gain. Final five-world art and
 portable kit/performance qualification remain unfinished; computed phase progress is still
 **50% (2/4 phases, 7/13 phase boxes)** and no acceptance box changed.
+
+### 2026-10-07 — preserve authored crown normals (CPU verified, matched runtime pending)
+
+A fresh judge inspected the twelve original four-arm player, meadow-close and overview images.
+Both authored-normal arms reduce the broad chalky left-crown faces; switching specular alone
+does not. The game now keeps authored crown normals by default, including omitted comparison
+options and near/far sections. Radial normals remain an explicit same-asset probe. Interior
+coverage/AO, imported normal maps, disabled specular, trunk normals, alpha cutoff/coverage,
+wind/shadow nodes, assets, placement, density, LOD and camera settings are retained.
+
+Five relevant assertions first failed against the radial default; the changed source passes all
+32 focused prop/pack/startup/lifetime checks. Current-source matched images and steady-frame
+measurement are pending. Historical authored arms had runtime failures and are image evidence
+only, not accepted runtime proof. Card outlines and granular needle edges remain. No art, FPS or
+native gate is claimed; computed progress remains **50% (7/13 phase boxes)**.

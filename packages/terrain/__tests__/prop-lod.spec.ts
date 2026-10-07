@@ -156,9 +156,10 @@ describe("canopy comparison startup", () => {
     return { comparison: startedComparison, game };
   }
   it.each([
-    ["", { normals: "radial", specular: "disabled" }],
+    ["", { normals: "authored", specular: "disabled" }],
+    ["?canopyNormals=radial", { normals: "radial", specular: "disabled" }],
     ["?canopyNormals=authored", { normals: "authored", specular: "disabled" }],
-    ["?canopySpecular=standard", { normals: "radial", specular: "standard" }],
+    ["?canopySpecular=standard", { normals: "authored", specular: "standard" }],
     [
       "?canopyNormals=authored&canopySpecular=standard&world=coastal&showcase=1",
       { normals: "authored", specular: "standard" },
@@ -330,6 +331,36 @@ describe("licensed pack characterization", () => {
     } as unknown as IAssetLoader;
     return loadPack(assets, "forest", undefined, comparison);
   }
+  it.each([undefined, {}, { specular: "standard" }] as const)(
+    "preserves authored near/far crown normals when normals are omitted: %j",
+    async (comparison) => {
+      const near = fixture();
+      const far = fixture({ mapped: false });
+      const pack = await loaded(near.root, far.root, comparison);
+      try {
+        const parts = present(pack.parts.get("spruce:0"));
+        expect(parts).toHaveLength(2);
+        for (const [index, part] of parts.entries()) {
+          const source = index === 0 ? near : far;
+          expect(Array.from(part.geometry.getAttribute("normal").array)).toEqual(
+            Array.from(source.geometry.getAttribute("normal").array),
+          );
+          expect(part.geometry.getAttribute("inner").count).toBe(
+            part.geometry.getAttribute("position").count,
+          );
+          const material = part.material as MeshPhysicalNodeMaterial;
+          expect(material.normalMap).toBe(near.material.normalMap);
+          expect(material.normalNode).toBeNull();
+          expect(material.aoNode).not.toBeNull();
+          expect(material.alphaTest).toBe(near.material.alphaTest);
+          expect(material.alphaToCoverage).toBe(true);
+          expect(material.castShadowPositionNode).toBe(material.positionNode);
+        }
+      } finally {
+        pack.dispose();
+      }
+    },
+  );
   it.each([
     { normals: "radial", specular: "disabled" },
     { normals: "authored", specular: "disabled" },
@@ -341,7 +372,7 @@ describe("licensed pack characterization", () => {
       const near = fixture();
       const far = fixture({ mapped: false });
       const authored = Array.from(near.geometry.getAttribute("normal").array);
-      const baseline = await loaded(near.root, far.root);
+      const baseline = await loaded(near.root, far.root, { normals: "radial" });
       const candidate = await loaded(near.root, far.root, comparison);
       try {
         expect([...candidate.parts.keys()]).toEqual([...baseline.parts.keys()]);
@@ -449,10 +480,10 @@ describe("licensed pack characterization", () => {
       pack.dispose();
     }
   });
-  it("lights texture-card crowns as a volume without changing cached imported normals", async () => {
+  it("keeps radial crown normals as an explicit probe without changing cached imported normals", async () => {
     const near = fixture();
     const sourceNormals = Array.from(near.geometry.getAttribute("normal").array);
-    const pack = await loaded(near.root);
+    const pack = await loaded(near.root, undefined, { normals: "radial" });
     try {
       const geometry = present(present(pack.parts.get("spruce:0"))[0]).geometry;
       const positions = geometry.getAttribute("position");

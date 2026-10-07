@@ -193,7 +193,7 @@ const worldLoads = {
 };
 
 const initialState = {
-  canopyComparison: { normals: "radial", specular: "disabled" } as ICanopyComparison,
+  canopyComparison: { normals: "authored", specular: "disabled" } as ICanopyComparison,
   showcase: false,
   worldReady: false,
   loadingError: "",
