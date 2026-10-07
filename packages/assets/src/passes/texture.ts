@@ -11,7 +11,14 @@ import {
 import { KTX2_ENCODER_VERSION, encodeToKTX2 } from "../ktx2-encoder.js";
 import { decodeImageBytes } from "./decode-image.js";
 import { globMatch } from "./glob.js";
-import { cappedSize, codecLadder, encodeTextureLadder, resampleRgba } from "./model-textures.js";
+import {
+  type TextureMaxSize,
+  cappedSize,
+  codecLadder,
+  encodeTextureLadder,
+  resampleRgba,
+  resolveTextureMaxSize,
+} from "./model-textures.js";
 
 /**
  * Encodes compiled textures to KTX2/Basis so the GPU stores them compressed instead of as
@@ -51,7 +58,7 @@ export interface ITexturePassOptions {
   /** Internal reporting control; selection still measures and enforces the floor. */
   readonly measureQuality?: boolean;
   /** Longest edge to retain; larger sources are downsampled without upscaling. */
-  readonly maxSize?: number;
+  readonly maxSize?: TextureMaxSize;
   readonly overrides?: readonly ITextureOverride[];
   /** ETC1S encoder quality 1–255, default 150. Ignored for UASTC. */
   readonly quality?: number;
@@ -142,7 +149,11 @@ export function texturePass(options: ITexturePassOptions = {}): IAssetPass {
       const { data, resized, target } = resizeForEncoding(
         decoded,
         choice.normalMap,
-        options.maxSize,
+        resolveTextureMaxSize(
+          options.maxSize,
+          [choice.normalMap ? "normalTexture" : "baseColorTexture"],
+          Number.POSITIVE_INFINITY,
+        ),
       );
       // Decided before `encodeToKTX2`, because Basis accepts an unaligned source and stamps the
       // odd size into the KTX2 header: that silence is how this reached a draw call.
@@ -215,7 +226,7 @@ export function texturePass(options: ITexturePassOptions = {}): IAssetPass {
 
 export interface ITextureResizeOptions {
   /** Longest edge to retain; larger sources are downsampled, never upscaled. */
-  readonly maxSize: number;
+  readonly maxSize: TextureMaxSize;
   /**
    * The project's `assets.textures.overrides`, unchanged. A `codec: "none"` glob says "ship the
    * authored bytes", and a resize rewrites them.
@@ -261,7 +272,13 @@ export function textureResizePass(options: ITextureResizeOptions): IAssetPass {
       }
       const width = decoded?.width ?? stats.width;
       const height = decoded?.height ?? stats.height;
-      const target = cappedSize(width, height, maxSize);
+      const normalMap = NORMAL_MAP_BASENAME.test(baseNameOf(logicalPath));
+      const cap = resolveTextureMaxSize(
+        maxSize,
+        [normalMap ? "normalTexture" : "baseColorTexture"],
+        Number.POSITIVE_INFINITY,
+      );
+      const target = cappedSize(width, height, cap);
       if (target.width === width && target.height === height) return input;
       const source = decoded ?? (await decodeForResize(input, logicalPath));
       const data = resampleRgba(
@@ -270,7 +287,7 @@ export function textureResizePass(options: ITextureResizeOptions): IAssetPass {
         source.height,
         target.width,
         target.height,
-        !NORMAL_MAP_BASENAME.test(baseNameOf(logicalPath)),
+        !normalMap,
       );
       const png = new PNG({ height: target.height, width: target.width });
       png.data = Buffer.from(data);

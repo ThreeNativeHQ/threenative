@@ -634,6 +634,86 @@ describe("embedded model textures", () => {
     expect(summary?.resized).toBe(2);
   });
 
+  it("should cap baseColor at 2048 and masks at 1024", async () => {
+    const document = await new NodeIO().readBinary(await fixtureWithTextures({ width: 2048 }));
+    const [colour, mask] = document.getRoot().listTextures();
+    for (const material of document.getRoot().listMaterials()) {
+      if (material.getBaseColorTexture() !== colour) continue;
+      material.setNormalTexture(null).setOcclusionTexture(mask ?? null);
+      material.setMetallicRoughnessTexture(mask ?? null);
+    }
+    const root = await makeTempDir("threenative-model-slot-caps-");
+    await mkdir(path.join(root, "assets"));
+    await writeFile(
+      path.join(root, "assets", "caps.glb"),
+      Buffer.from(await new NodeIO().writeBinary(document)),
+    );
+    await compileAssets({
+      cwd: root,
+      platform: "android",
+      config: {
+        models: {
+          sharedImages: false,
+          textures: {
+            maxSize: {
+              baseColorTexture: 2048,
+              occlusionTexture: 1024,
+              metallicRoughnessTexture: 1024,
+            },
+          },
+        },
+      },
+    });
+    const manifest = JSON.parse(
+      await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
+    );
+    const output = await readOutput(
+      await readFile(path.join(root, "public", manifest.entries["caps.glb"].output)),
+    );
+    const sizes = output
+      .getRoot()
+      .listTextures()
+      .map((texture) => {
+        const png = PNG.sync.read(Buffer.from(texture.getImage() ?? []));
+        return [png.width, png.height];
+      });
+    expect(sizes).toEqual([
+      [2048, 2048],
+      [1024, 1024],
+    ]);
+  });
+
+  it("should never upscale", async () => {
+    const document = await new NodeIO().readBinary(await fixtureWithTextures({ width: 512 }));
+    await compressEmbeddedTextures(document, "small.glb", {
+      decoderFree: true,
+      maxSize: { baseColorTexture: 2048, normalTexture: 2048 },
+    });
+    for (const texture of document.getRoot().listTextures()) {
+      const png = PNG.sync.read(Buffer.from(texture.getImage() ?? []));
+      expect([png.width, png.height]).toEqual([512, 512]);
+    }
+  });
+
+  it("uses the largest consuming slot cap and keys that resolved cap in shared images", async () => {
+    const document = await new NodeIO().readBinary(await fixtureWithTextures({ width: 32 }));
+    const colour = document.getRoot().listTextures()[0] ?? null;
+    for (const material of document.getRoot().listMaterials())
+      if (material.getBaseColorTexture() === colour) material.setOcclusionTexture(colour);
+    const input = Buffer.from(await new NodeIO().writeBinary(document));
+    const root = await makeTempDir("threenative-slot-caps-cache-");
+    const run = (maxSize: number | Readonly<Record<string, number>>) =>
+      compiled(input, {
+        sharedImages: createSharedImageStore(root),
+        textures: { decoderFree: true, maxSize },
+      });
+    const cold = await run({ baseColorTexture: 16, occlusionTexture: 8, normalTexture: 16 });
+    const equivalent = await run(16);
+    expect(equivalent.buffer).toEqual(cold.buffer);
+    const changed = await run({ baseColorTexture: 8, occlusionTexture: 8, normalTexture: 16 });
+    expect(changed.buffer).not.toEqual(cold.buffer);
+  });
+
   it("should leave a texture under the cap at its authored size", async () => {
     const input = await fixtureWithTextures({ width: 32 });
     const { buffer, entry } = await compiled(input, { textures: { maxSize: 64 } });
@@ -1169,6 +1249,19 @@ describe("embedded textures through the compile step", () => {
     await expect(compile({ textures: { maxSize: 0 } })).rejects.toThrow(
       /TN_ASSETS_CONFIG_INVALID: assets\.models\.textures\.maxSize must be a positive integer/u,
     );
+    for (const maxSize of [
+      null,
+      [],
+      "2048",
+      { baseColorTexture: 0 },
+      { normalTexture: 1.5 },
+      { baseColorTexture: "2048" },
+      { mask: 1024 },
+      { unknownTexture: 1024 },
+    ])
+      await expect(compile({ textures: { maxSize } })).rejects.toThrow(
+        /TN_ASSETS_CONFIG_(?:INVALID|UNKNOWN_KEY)/u,
+      );
     for (const floor of [
       null,
       0,

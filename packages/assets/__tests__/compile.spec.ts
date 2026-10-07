@@ -903,6 +903,24 @@ describe("compileAssets", () => {
       );
     }
 
+    for (const maxSize of [
+      null,
+      [],
+      { baseColorTexture: 0 },
+      { normalTexture: 3 },
+      { baseColorTexture: "2048" },
+      { baseColorTexture: Number.POSITIVE_INFINITY },
+      { mask: 1024 },
+      { unknownTexture: 1024 },
+    ]) {
+      await expect(
+        compileAssets({
+          config: { textures: { maxSize } } as unknown as IAssetSourceConfig,
+          cwd: root,
+        }),
+      ).rejects.toThrow(/TN_ASSETS_CONFIG_INVALID/u);
+    }
+
     for (const value of [1, 2, 3]) {
       const tooSmallMaxSize = { textures: { maxSize: value } } as unknown as IAssetSourceConfig;
       await expect(compileAssets({ config: tooSmallMaxSize, cwd: root })).rejects.toThrow(

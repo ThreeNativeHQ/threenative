@@ -158,6 +158,20 @@ describe("the ktx2 texture pass", () => {
     ).toEqual(source);
   });
 
+  it("resolves standalone caps from the existing colour and normal semantics", async () => {
+    const input = rgbaPng({ height: 16, width: 16 });
+    const pass = texturePass({ maxSize: { baseColorTexture: 12, normalTexture: 8 } });
+    for (const [name, size] of [
+      ["cliff.png", 12],
+      ["cliff_normal.png", 8],
+    ] as const) {
+      const result = await pass.apply(input, name);
+      if (Buffer.isBuffer(result)) throw new Error("texture was not capped");
+      const ktx2 = readKTX2(result.buffer);
+      expect([ktx2.pixelWidth, ktx2.pixelHeight]).toEqual([size, size]);
+    }
+  });
+
   it("should preserve cutout alpha on a passing ETC1S candidate", async () => {
     // Alpha is judged independently; binary cutouts can pass on the ETC1S rung.
     const { entry, outputBytes } = await compileOne(

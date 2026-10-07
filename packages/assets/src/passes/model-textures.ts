@@ -42,6 +42,8 @@ export interface IModelTextureOverride {
   readonly slot: string;
 }
 
+export type TextureMaxSize = number | Readonly<Record<string, number>>;
+
 export interface IModelTexturesOptions {
   readonly floor?: Partial<IImageQualityFloor>;
   /** Internal reporting switch; selection still measures and enforces the floor. */
@@ -57,7 +59,7 @@ export interface IModelTexturesOptions {
    * Longest edge an embedded image may keep, default 2048. Larger images are box-resampled
    * down preserving aspect ratio; smaller ones are never upscaled.
    */
-  readonly maxSize?: number;
+  readonly maxSize?: TextureMaxSize;
   readonly overrides?: readonly IModelTextureOverride[];
   /** ETC1S encoder quality 1–255, default 150. Ignored for UASTC. */
   readonly quality?: number;
@@ -133,6 +135,27 @@ const CORE_SLOTS = [
   "normalTexture",
   "occlusionTexture",
 ] as const;
+
+/** Slot names supported by the installed glTF material extensions. */
+export const TEXTURE_SIZE_SLOTS: ReadonlySet<string> = new Set([
+  ...CORE_SLOTS,
+  ...NORMAL_SLOTS,
+  "diffuseTexture",
+  "specularColorTexture",
+  "sheenColorTexture",
+  "anisotropyTexture",
+  "clearcoatRoughnessTexture",
+  "clearcoatTexture",
+  "diffuseTransmissionColorTexture",
+  "diffuseTransmissionTexture",
+  "iridescenceTexture",
+  "iridescenceThicknessTexture",
+  "sheenRoughnessTexture",
+  "specularGlossinessTexture",
+  "specularTexture",
+  "thicknessTexture",
+  "transmissionTexture",
+]);
 
 type CoreSlot = (typeof CORE_SLOTS)[number];
 
@@ -357,6 +380,18 @@ export function resampleRgba(
   return output;
 }
 
+/** Shared images retain the largest consuming slot cap; unlisted slots keep the caller's default. */
+export function resolveTextureMaxSize(
+  maxSize: TextureMaxSize | undefined,
+  slots: readonly string[],
+  fallback = DEFAULT_MAX_SIZE,
+): number {
+  if (typeof maxSize === "number") return maxSize;
+  return Math.max(
+    ...(slots.length === 0 ? [fallback] : slots.map((slot) => maxSize?.[slot] ?? fallback)),
+  );
+}
+
 /** Longest edge clamped to the cap, aspect preserved, each edge a whole number of blocks. */
 export function cappedSize(
   width: number,
@@ -489,7 +524,6 @@ export async function compressEmbeddedTextures(
   const textures = root.listTextures();
   if (textures.length === 0) return undefined;
   const decoderFree = options.decoderFree === true;
-  const maxSize = options.maxSize ?? DEFAULT_MAX_SIZE;
   const quality = Math.min(255, Math.max(1, Math.round(options.quality ?? DEFAULT_ETC1S_QUALITY)));
   const keys = textureKeys(root);
   const formats: Record<string, string> = {};
@@ -546,6 +580,7 @@ export async function compressEmbeddedTextures(
     }
 
     const slots = listTextureSlots(texture);
+    const maxSize = resolveTextureMaxSize(options.maxSize, slots);
     let decoded: { data: Uint8Array; height: number; width: number };
     try {
       decoded = await decodeImageBytes(

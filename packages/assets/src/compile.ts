@@ -50,6 +50,7 @@ import type {
 import { globMatch } from "./passes/glob.js";
 import { lightmapPass } from "./passes/lightmap.js";
 import type { ILightmapPassOptions } from "./passes/lightmap.js";
+import { TEXTURE_SIZE_SLOTS, type TextureMaxSize } from "./passes/model-textures.js";
 import { modelPass } from "./passes/model.js";
 import type {
   IModelPassOptions,
@@ -243,7 +244,7 @@ export interface IAudioConfig {
 
 export interface ITexturesConfig {
   readonly floor?: ITexturePassOptions["floor"];
-  readonly maxSize?: number;
+  readonly maxSize?: TextureMaxSize;
   readonly overrides?: readonly ITextureOverride[];
   readonly quality?: number;
 }
@@ -968,12 +969,31 @@ function parseTexturesConfig(raw: unknown): ITexturePassOptions | undefined {
     ...(raw.floor === undefined ? {} : { floor: resolveImageQualityFloor(raw.floor) }),
     ...(raw.maxSize === undefined
       ? {}
-      : { maxSize: positiveTextureSize(raw.maxSize, "assets.textures.maxSize") }),
+      : {
+          maxSize: parseTextureMaxSize(raw.maxSize, "assets.textures.maxSize", positiveTextureSize),
+        }),
     ...(raw.quality === undefined
       ? {}
       : { quality: textureQuality(raw.quality, "assets.textures.quality") }),
     ...(raw.overrides === undefined ? {} : { overrides: validateTextureOverrides(raw.overrides) }),
   };
+}
+
+function parseTextureMaxSize(
+  value: unknown,
+  label: string,
+  validate: (value: unknown, label: string) => number,
+): TextureMaxSize {
+  if (!isRecord(value)) return validate(value, label);
+  return Object.fromEntries(
+    Object.entries(value).map(([slot, cap]) => {
+      if (!TEXTURE_SIZE_SLOTS.has(slot))
+        throw new Error(
+          `TN_ASSETS_CONFIG_INVALID: ${label}.${slot} must name a glTF texture slot.`,
+        );
+      return [slot, validate(cap, `${label}.${slot}`)];
+    }),
+  );
 }
 
 function positiveTextureSize(value: unknown, label: string): number {
@@ -1156,7 +1176,9 @@ function parseModelTextures(raw: unknown): IModelTexturesOptions | "none" {
   }
   return {
     ...(raw.floor === undefined ? {} : { floor: resolveImageQualityFloor(raw.floor) }),
-    ...(raw.maxSize === undefined ? {} : { maxSize: positiveInteger(raw.maxSize, "maxSize") }),
+    ...(raw.maxSize === undefined
+      ? {}
+      : { maxSize: parseTextureMaxSize(raw.maxSize, "maxSize", positiveInteger) }),
     ...(raw.overrides === undefined
       ? {}
       : { overrides: validateModelTextureOverrides(raw.overrides) }),
