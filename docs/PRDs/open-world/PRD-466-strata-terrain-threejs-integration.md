@@ -3563,3 +3563,52 @@ retained and excluded from qualified fixtures. No installer redesign is claimed.
 The candidate's unchanged load/walk scenario is next. The preceding runtime remains red,
 steady FPS/native and final five-world art remain open, and computed PRD progress remains
 **50%**. No acceptance box changed.
+
+
+### 2026-10-07 — bounded validation load/walk passes
+
+The exact published `2eb318859` candidate completes the unchanged load/transition/walk with
+**exit 0 and all 12 assertions passing** in 122.26 s. The forest reports readiness at 61,089.2 ms. Later passive facts verify all 218,809
+placements and 48 cells resident, spawn coverage 6/6 and no loading failure. Readiness and full
+residency are separate observations: the first true `worldReady` sample at page 60,087.8 ms
+still records 35 loaded cells and an admission backlog of 12 behind the curtain.
+Coast transition completes with all 144,192 placements and 45 cells resident, spawn coverage
+3/3; the scene-local measured walk is 10.804 m. The report's larger total distance includes the
+scene teleport and is not walked distance. Actual surfaces remain 1920×1080, scale 1, MSAA4.
+Console, network and runtime diagnostic assertions are evaluated and pass; no retained device
+loss or GPU-process failure exit. Twelve original process identities, executor, global lease and monitor
+pass final cleanup. An intervening separate lease observation was preserved and left untouched.
+The artifact was consumed once, with no retry.
+
+| Retained fact | Previous `88af7c59b` | Candidate `2eb318859` |
+| --- | --- | --- |
+| Forest utility job 41 completion, page time | 115,065.7 ms | 44,652.5 ms |
+| Forest returned writes / bytes | 3,173 / 187,346,672 | 3,173 / 187,346,672 |
+| Full forest grounding / original 8 ms slices | 17,470.9 ms / 834 | 8,393.7 ms / 478 |
+| Forest ready / full population | Original 120 s admission failed at 71,867/218,809; later grounding completed with the error retained | 61,089.2 ms / 218,809; ready true |
+| Fresh guarded available memory | 8.751–8.975 GiB | 18.565–18.609 GiB |
+
+These are actual observations, not isolated causal speedup or steady FPS evidence. Both runs
+use the same hardware, camera/scenario, assets, placement quality and original guards; ambient
+memory differs materially. Utility completion precedes the common-manager completion gate.
+The new bounded private summaries retain peak four validation batches, 15,796.2 ms in forest
+cap-wait phases and 22,775.9 ms in final drain phases. Those are callback/wall phases, not GPU
+execution or complete validation latency. Final 45 summaries retain 3,289 writes and
+192,939,184 bytes; the diagnostic caps output at 64 summaries.
+
+The retained coast-transition task is still 2,809 ms. Profile samples place 2,207.8 ms in
+loading-overlay ancestry, including 2,201.6 ms self in `_copyImageToTexture`; other samples
+include BVH construction. This locates remaining JS/native-wait ownership and does not prove
+GPU duration or an image-copy cause. Steady FPS and native-host qualification remain open.
+
+Matched camera frames, copied without pixel changes and independently judged:
+
+- Forest: [before, source `6cff71c04`](../../benchmark/strata-loading-2026-10-06/forest-ready-6cff71c04.png) and [after, source `2eb318859`](../../benchmark/strata-loading-2026-10-06/forest-ready-2eb318859.png).
+- Coast: [before, source `6cff71c04`](../../benchmark/strata-loading-2026-10-06/coastal-ready-6cff71c04.png) and [after, source `2eb318859`](../../benchmark/strata-loading-2026-10-06/coastal-ready-2eb318859.png).
+
+The independent pixel judge finds aligned framing/placements and no obvious density or surface
+regression. Coarse needle/card foliage, weak visible trunk grounding, the broad coast water-color
+division and stepped shoreline remain. Wind/wave phase differs; the images demonstrate a loaded
+world with retained appearance, not a visual defect repair or FPS gain. Final five-world art and
+portable kit/performance qualification remain unfinished; computed phase progress is still
+**50% (2/4 phases, 7/13 phase boxes)** and no acceptance box changed.
