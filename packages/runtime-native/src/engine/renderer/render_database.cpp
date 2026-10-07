@@ -626,13 +626,13 @@ void RenderDatabase::batchMeshes(std::vector<DrawItem>& items) {
         uint64_t varying = 0;
         const uint64_t first = depthKeys_[members.front()];
         for (auto i : members) varying |= depthKeys_[i] ^ first;
-        for (unsigned shift = 0; shift < 64; shift += 8) {
-            if (((varying >> shift) & 255) == 0) continue;
-            std::array<std::size_t, 256> offsets{};
-            for (auto i : members) ++offsets[(depthKeys_[i] >> shift) & 255];
+        for (unsigned shift = 0; shift < 64; shift += 11) {
+            if (((varying >> shift) & 2047) == 0) continue;
+            std::array<std::size_t, 2048> offsets{};
+            for (auto i : members) ++offsets[(depthKeys_[i] >> shift) & 2047];
             std::size_t total = 0;
             for (auto& offset : offsets) { const auto count = offset; offset = total; total += count; }
-            for (auto i : members) sortScratch_[offsets[(depthKeys_[i] >> shift) & 255]++] = i;
+            for (auto i : members) sortScratch_[offsets[(depthKeys_[i] >> shift) & 2047]++] = i;
             members.swap(sortScratch_);
         }
     }
