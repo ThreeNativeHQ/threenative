@@ -193,7 +193,14 @@ export const FRAME_GPU_BUCKETS = ["main", "shadow", "other", "compute"] as const
 export type FrameGpuBucket = (typeof FRAME_GPU_BUCKETS)[number];
 
 /** One frame's GPU milliseconds per bucket; a bucket the device did not resolve is absent. */
-export type IFrameGpuBucketSample = Partial<Record<FrameGpuBucket, number>>;
+export type IFrameGpuBucketSample = Partial<Record<FrameGpuBucket, number>> & {
+  /**
+   * Shadow passes the frame recorded, from the producer. `0` means the frame drew no shadow and its
+   * `shadow` bucket is a known zero; `> 0` means it rendered one. Absent when the source cannot say,
+   * and no frame is then counted as rendered.
+   */
+  readonly shadowPasses?: number;
+};
 
 /**
  * One render-pass kind's submissions across a window, so a change that trades triangles for CPU is
@@ -352,6 +359,24 @@ export interface IFrameBudgetWindow {
   readonly gpuShadow?: number;
   readonly gpuOther?: number;
   readonly gpuCompute?: number;
+  /**
+   * The shadow bucket's p95 and coverage over **every** frame that resolved a shadow reading,
+   * known-zero frames included, so the p95 can sit at zero while the shadow renders are expensive.
+   * Kept for compatibility beside {@link gpuShadowRendered}, which is the same tail over the frames
+   * that actually rendered a shadow — the distribution the phase comparison should read.
+   */
+  readonly gpuShadowP95?: number;
+  readonly gpuShadowSamples?: number;
+  /**
+   * The shadow bucket's distribution over the frames that **actually rendered a shadow**, distinct
+   * from the known-zero frames the p50 and all-frame p95 above include.
+   *
+   * `samples` is how many frames rendered one, so observed renders are tellable from frames that
+   * drew none (`gpuShadowSamples - gpuShadowRendered.samples`). Absent, never a zeroed summary, when
+   * no rendered shadow resolved: a render that cost 0 ms is still a render, and only the producer's
+   * own `shadowPasses` record says one happened, so the count is not guessed from `shadow > 0`.
+   */
+  readonly gpuShadowRendered?: IFrameBudgetSummary;
   /** Pyramid build GPU milliseconds per resolved build, including the depth copy/resolve. */
   readonly gpuPyramid?: IFrameBudgetSummary;
   /**
@@ -557,6 +582,10 @@ export class FrameBudget {
   #gpuPyramid: Ring;
   #gpuBucketRings: Record<FrameGpuBucket, Ring>;
   #gpuBucketThisFrame: IFrameGpuBucketSample = {};
+  /** Shadow milliseconds of this frame's frames that recorded a shadow pass, not its known zeros. */
+  #gpuShadowRendered: Ring;
+  /** The shadow pass count the producer reported for this frame; `undefined` when it reported none. */
+  #gpuShadowPassesThisFrame: number | undefined;
   #passDrawRings: Record<FramePassKind, Ring>;
   #passDrawSourceRings: Record<MainDrawSource, Ring>;
   #passTriangleRings: Record<FramePassKind, Ring>;
@@ -615,6 +644,7 @@ export class FrameBudget {
     this.#substeps = new Ring(capacity);
     this.#gpu = new Ring(capacity);
     this.#gpuPyramid = new Ring(capacity);
+    this.#gpuShadowRendered = new Ring(capacity);
     this.#gpuBucketRings = {
       compute: new Ring(capacity),
       main: new Ring(capacity),
@@ -675,6 +705,7 @@ export class FrameBudget {
     this.#gpuThisFrame = undefined;
     this.#gpuStaleThisFrame = false;
     this.#gpuBucketThisFrame = {};
+    this.#gpuShadowPassesThisFrame = undefined;
     this.#hostGap = this.#lastFrameEnd === undefined ? 0 : Math.max(0, nowMs - this.#lastFrameEnd);
     this.#presentedDelta =
       this.#lastTimestamp === undefined ? 0 : Math.max(0, timestampMs - this.#lastTimestamp);
@@ -793,6 +824,14 @@ export class FrameBudget {
    */
   addGpuBucketMs(sample: IFrameGpuBucketSample): void {
     if (!this.#open) throw new Error("FrameBudget.addGpuBucketMs called outside a frame.");
+    const shadowPasses = sample.shadowPasses;
+    if (shadowPasses !== undefined) {
+      if (!Number.isInteger(shadowPasses) || shadowPasses < 0)
+        throw new Error(
+          `Frame budget gpu shadowPasses must be a non-negative integer, received ${String(shadowPasses)}.`,
+        );
+      this.#gpuShadowPassesThisFrame = shadowPasses;
+    }
     for (const bucket of FRAME_GPU_BUCKETS) {
       const ms = sample[bucket];
       if (ms === undefined) continue;
@@ -909,6 +948,13 @@ export class FrameBudget {
       const ms = this.#gpuBucketThisFrame[bucket];
       if (ms !== undefined) this.#gpuBucketRings[bucket].push(ms);
     }
+    // The shadow tail over frames that actually rendered a shadow, separate from the known-zero
+    // frames the ring above also holds: only the producer's count says a render happened, because a
+    // real render can resolve to 0 ms and a `shadow > 0` guess would drop it.
+    const renderedShadow = this.#gpuBucketThisFrame.shadow;
+    if ((this.#gpuShadowPassesThisFrame ?? 0) > 0 && renderedShadow !== undefined)
+      this.#gpuShadowRendered.push(renderedShadow);
+    this.#gpuShadowPassesThisFrame = undefined;
     this.#gpuBucketThisFrame = {};
     if (this.#gpuStaleThisFrame) this.#gpuStaleInWindow += 1;
     for (const pass of this.#passesThisFrame) {
@@ -1012,6 +1058,8 @@ export class FrameBudget {
     const gpuShadow = gpuBucket("shadow");
     const gpuOther = gpuBucket("other");
     const gpuCompute = gpuBucket("compute");
+    const shadowBucket = this.#gpuBucketRings.shadow.summarize(this.#scratch);
+    const shadowRendered = this.#gpuShadowRendered.summarize(this.#scratch);
     const gpuPyramid = this.#gpuPyramid.summarize(this.#scratch);
     const target = this.#readTarget === undefined ? undefined : (this.#readTarget() ?? undefined);
     const resolvedTarget = target === undefined ? undefined : requireTarget(target);
@@ -1059,6 +1107,10 @@ export class FrameBudget {
       ...(gpuShadow === undefined ? {} : { gpuShadow }),
       ...(gpuOther === undefined ? {} : { gpuOther }),
       ...(gpuCompute === undefined ? {} : { gpuCompute }),
+      ...(shadowBucket.samples === 0
+        ? {}
+        : { gpuShadowP95: round1(shadowBucket.p95), gpuShadowSamples: shadowBucket.samples }),
+      ...(shadowRendered.samples === 0 ? {} : { gpuShadowRendered: shadowRendered }),
       ...(gpuPyramid.samples === 0 ? {} : { gpuPyramid }),
     };
   }
@@ -1117,6 +1169,7 @@ export class FrameBudget {
     this.#gpu.reset();
     this.#gpuPyramid.reset();
     for (const bucket of FRAME_GPU_BUCKETS) this.#gpuBucketRings[bucket].reset();
+    this.#gpuShadowRendered.reset();
     this.#hostCalls.reset();
     this.#gpuBytes.reset();
     this.#jsAllocBytes.reset();

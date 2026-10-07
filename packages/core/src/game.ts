@@ -1841,9 +1841,15 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           // reflections, HUD) is the remainder. Compute is its own pool.
           if (gpuFrame !== undefined) {
             const computeMs = renderer.gpuComputeMs?.();
+            // The recorder hands out a frame only when every pass it recorded resolved, so `total`
+            // is the whole frame and never a partial sum; `main` and `shadow` are whole or zero.
+            // `other` is the remainder of the frame (post chain, reflection, HUD). `shadowPasses`
+            // rides along so a consumer can tell a frame that rendered a shadow from one that drew
+            // none, since a real render can resolve to 0 ms.
             frameBudget?.addGpuBucketMs({
               main: gpuFrame.main,
               shadow: gpuFrame.shadow,
+              shadowPasses: gpuFrame.shadowPasses,
               other: Math.max(0, gpuFrame.total - gpuFrame.main - gpuFrame.shadow),
               ...(computeMs === undefined ? {} : { compute: computeMs }),
             });

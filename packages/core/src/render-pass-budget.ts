@@ -152,11 +152,29 @@ interface IGpuUidEntry {
  * One resolved frame's GPU milliseconds: the frame it belongs to, its own passes, and every pass it
  * drew. `total` is the frame's cost — three's `framesDuration` for that frame, read back from the
  * per-pass map rather than from the single number its resolve returns.
+ *
+ * A reading exists only when **every** pass the frame recorded has a resolved timestamp. A frame
+ * with any pass still in flight understates the frame's cost if its resolved parts were summed and
+ * forwarded as the whole, so it stays absent until the read is complete. Frames are delivered in
+ * order and an unresolved one is skipped, never waited on: once a newer frame is delivered the
+ * older unresolved frame is intentionally omitted — a missing reading, never a partial zero.
  */
 export interface IGpuFrameReading {
   readonly frame: number;
+  /** Milliseconds the main pass cost. `0` when the frame drew none; whole whenever the frame is. */
   readonly main: number;
+  /**
+   * Every shadow pass's milliseconds: `0` when the frame drew none. A resolved `0` is a real
+   * render that cost nothing, so {@link shadowPasses} — not this value — says whether one was made.
+   */
   readonly shadow: number;
+  /**
+   * How many shadow passes the frame recorded. `0` means it drew no shadow; `> 0` means it rendered
+   * one, however small the cost. This is the producer's own record, so a consumer never has to guess
+   * "rendered" from a value that a genuine render can leave at zero.
+   */
+  readonly shadowPasses: number;
+  /** Every resolved pass of the frame — main, shadow and everything else. Whole, never partial. */
   readonly total: number;
 }
 
@@ -354,13 +372,19 @@ export class RenderPassBudget {
    *
    * The uid list per frame is already kept here, so the batch is walked instead of collapsed: one
    * sample per presented frame, one frame per sample, which is the shape the budget's series wants.
-   * A frame whose queries never resolved — the pool overflowed, or the game stopped drawing — is
-   * stepped over rather than waited on, so one missing frame cannot stall the queue behind it.
+   * Frames are delivered in uid order and an unresolved one is skipped rather than waited on, so no
+   * one frame ever stalls the frames behind it. An unresolved frame is retried only while it is the
+   * oldest undelivered one: the moment a newer complete frame is delivered, the cursor moves past
+   * the gap and the older unresolved frame is intentionally omitted — a missing reading, never a
+   * zeroed partial. Only the bounded uid ring retires a frame that never resolves at all.
    *
    * A kind with no pass in the frame is zero, not absent: a frame that drew a main pass and no
-   * shadow genuinely spent 0 ms on shadow, and the caller subtracts both from `total` to leave
-   * `other` (post chain, reflection, HUD). Passes are summed per kind, so a shadow cascade's several
-   * passes are one number, and main never absorbs the nested shadow's.
+   * shadow genuinely spent 0 ms on shadow. A frame is absent, though, until **every** pass it
+   * recorded has resolved: its parts are only a whole frame when the whole frame came back, and a
+   * partial `total` forwarded as the frame's cost is what the phase comparison must not read.
+   * The caller subtracts the known kinds from `total` to leave `other` (post chain, reflection,
+   * HUD). Passes are summed per kind, so a shadow cascade's several passes are one number, and main
+   * never absorbs the nested shadow's.
    */
   nextGpuFrame(): IGpuFrameReading | undefined {
     for (const frame of this.#gpuUids.keys()) {
@@ -368,26 +392,36 @@ export class RenderPassBudget {
       const sum = this.#gpuSum(frame);
       if (sum === undefined) continue;
       this.#deliveredGpuFrame = frame;
-      return { frame, main: sum.main, shadow: sum.shadow, total: sum.total };
+      return {
+        frame,
+        main: sum.main,
+        shadow: sum.shadow,
+        shadowPasses: sum.shadowPasses,
+        total: sum.total,
+      };
     }
     return undefined;
   }
 
   /**
-   * One frame's resolved GPU milliseconds from the pool's per-pass map, or `undefined` while none of
-   * its passes has come back. `total` is every resolved pass of the frame — main, shadow and
+   * One frame's resolved GPU milliseconds from the pool's per-pass map, or `undefined` until every
+   * pass it recorded has come back. `total` is every resolved pass of the frame — main, shadow and
    * everything else — so the frame's own cost does not have to be inferred from three's one number
-   * for the batch.
+   * for the batch, and it is only ever returned whole.
    */
-  #gpuSum(frame: number): { main: number; shadow: number; total: number } | undefined {
+  #gpuSum(
+    frame: number,
+  ): { main: number; shadow: number; shadowPasses: number; total: number } | undefined {
     const entries = this.#gpuUids.get(frame);
     const timestamps = this.#target.backend?.timestampQueryPool?.render?.timestamps;
-    if (timestamps === undefined || entries === undefined) return undefined;
+    if (timestamps === undefined || entries === undefined || entries.length === 0) return undefined;
     let main = 0;
     let shadow = 0;
+    let shadowPasses = 0;
     let total = 0;
     let resolved = 0;
     for (const { kind, uid } of entries) {
+      if (kind === "shadow") shadowPasses += 1;
       const ms = timestamps.get(uid);
       if (ms === undefined || !Number.isFinite(ms) || ms < 0) continue;
       resolved += 1;
@@ -395,7 +429,10 @@ export class RenderPassBudget {
       if (kind === "main") main += ms;
       else if (kind === "shadow") shadow += ms;
     }
-    return resolved === 0 ? undefined : { main, shadow, total };
+    // A partial sum is not the frame's cost: subtracting the known kinds from a partial `total`
+    // leaves an `other` no one measured. The frame stays absent until the whole read is in.
+    if (resolved !== entries.length) return undefined;
+    return { main, shadow, shadowPasses, total };
   }
 
   /**
