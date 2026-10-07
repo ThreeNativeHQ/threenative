@@ -563,6 +563,30 @@ describe("completed manifest on disk", () => {
     );
   });
 
+  it("rejects a raw result symlinked outside the run directory despite identical bytes", async () => {
+    const { resultFile, runDirectory } = await diskRun();
+    const outside = await tempDir("tn-cpu-report-result-outside-");
+    const outsideResult = path.join(outside, "run.json");
+    await writeFile(outsideResult, await readFile(resultFile, "utf8"));
+    await rm(resultFile, { force: true });
+    await symlink(outsideResult, resultFile);
+    await expect(readCpuCaptureManifest(runDirectory)).rejects.toThrow(
+      /TN_CPU_BENCH_TAMPERED_PATH/,
+    );
+  });
+
+  it("rejects a recorded file retargeted to a same-byte symlink outside its root", async () => {
+    const { manifest: written, runDirectory } = await diskRun();
+    const outside = await tempDir("tn-cpu-report-module-outside-");
+    const outsideLoop = path.join(outside, "loop.ts");
+    await writeFile(outsideLoop, await readFile(written.source.modules.loop.path, "utf8"));
+    await rm(written.source.modules.loop.path, { force: true });
+    await symlink(outsideLoop, written.source.modules.loop.path);
+    await expect(readCpuCaptureManifest(runDirectory)).rejects.toThrow(
+      /TN_CPU_BENCH_STALE_EVIDENCE/,
+    );
+  });
+
   it("rejects a measured file that changed after capture", async () => {
     const { manifest: written, runDirectory } = await diskRun();
     await writeFile(written.source.modules.loop.path, "export const loop = 99;\n");

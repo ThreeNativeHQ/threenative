@@ -957,14 +957,19 @@ function parseRefArray(value: unknown, at: string): readonly ISha256Ref[] {
 
 /**
  * Recompute every hash the manifest claims and reject a missing result, a tampered raw file, a
- * path outside its root, or a measured file that changed after capture.
+ * path outside its root, or a measured file that changed after capture. Both the run root and the
+ * result path are canonicalized with `fs.realpath` first, so a symlink that escapes the run root
+ * cannot pass lexical containment.
  */
 export async function verifyCpuCaptureEvidence(
   manifest: ICpuCaptureManifest,
   runDirectory: string,
 ): Promise<void> {
-  const runRoot = path.resolve(runDirectory);
-  const resultPath = path.resolve(runRoot, manifest.result.file);
+  const runRoot = await realpathOrFail(path.resolve(runDirectory), "TN_CPU_BENCH_TAMPERED_PATH");
+  const resultPath = await realpathOrFail(
+    path.resolve(runRoot, manifest.result.file),
+    "TN_CPU_BENCH_STALE_EVIDENCE",
+  );
   assertWithin(runRoot, resultPath, "capture manifest.result.file", "TN_CPU_BENCH_TAMPERED_PATH");
   if (!statIs(resultPath, "file")) {
     return fail("TN_CPU_BENCH_STALE_EVIDENCE", `raw result ${manifest.result.file} is missing`);
@@ -1007,6 +1012,13 @@ export async function verifyCpuCaptureEvidence(
     "TN_CPU_BENCH_TAMPERED_PATH",
   );
   for (const ref of evidenceRefs(manifest)) {
+    const resolved = await realpathOrFail(ref.path, "TN_CPU_BENCH_STALE_EVIDENCE");
+    if (resolved !== ref.path) {
+      return fail(
+        "TN_CPU_BENCH_STALE_EVIDENCE",
+        `recorded file ${ref.path} now resolves to ${resolved}`,
+      );
+    }
     if (!statIs(ref.path, "file")) {
       return fail("TN_CPU_BENCH_STALE_EVIDENCE", `recorded file ${ref.path} is missing`);
     }
