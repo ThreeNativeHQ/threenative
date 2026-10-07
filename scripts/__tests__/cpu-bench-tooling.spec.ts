@@ -1,8 +1,8 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
+import { makeTempDir } from "../../test-support/temp-dir.js";
 import {
   CPU_CAPTURE_BUDGET_MS,
   LABS_NODE_FLOOR,
@@ -20,18 +20,9 @@ import {
 } from "../performance-regression/cpu.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-const temporary: string[] = [];
-
-afterEach(async () => {
-  await Promise.all(
-    temporary.splice(0).map((directory) => rm(directory, { force: true, recursive: true })),
-  );
-});
 
 async function tempDirectory(): Promise<string> {
-  const directory = await mkdtemp(path.join(tmpdir(), "tn-cpu-tooling-"));
-  temporary.push(directory);
-  return directory;
+  return makeTempDir("tn-cpu-tooling-");
 }
 
 describe("isolated Labs pin", () => {

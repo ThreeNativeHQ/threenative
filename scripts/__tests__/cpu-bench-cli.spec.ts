@@ -1,12 +1,13 @@
 import { execFile, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
-import { homedir, tmpdir } from "node:os";
+import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { afterAll, describe, expect, it } from "vitest";
+import { makeTempDir } from "../../test-support/temp-dir.js";
 import {
   CPU_CAPTURE_SCHEMA,
   EXPECTED_CPU_CASES,
@@ -30,7 +31,6 @@ const cpuArtifactRoot = path.join(repoRoot, "artifacts/engine-load-test/cpu");
 const integration = process.env.TN_CPU_BENCH_INTEGRATION === "1";
 const testRunId = `${process.pid}-${Date.now()}`;
 const createdRuns: string[] = [];
-const temporary: string[] = [];
 
 interface ICliResult {
   readonly code: number;
@@ -138,9 +138,7 @@ async function discoverLabsNode(): Promise<string | undefined> {
 }
 
 async function tempDirectory(): Promise<string> {
-  const directory = await mkdtemp(path.join(tmpdir(), "tn-cpu-cli-"));
-  temporary.push(directory);
-  return directory;
+  return makeTempDir("tn-cpu-cli-");
 }
 
 function hex(seed: string): string {
@@ -453,10 +451,9 @@ async function waitForPids(file: string, timeoutMs = 5_000): Promise<void> {
 }
 
 afterAll(async () => {
-  await Promise.all([
-    ...temporary.splice(0).map((directory) => rm(directory, { force: true, recursive: true })),
-    ...createdRuns.splice(0).map((directory) => rm(directory, { force: true, recursive: true })),
-  ]);
+  await Promise.all(
+    createdRuns.splice(0).map((directory) => rm(directory, { force: true, recursive: true })),
+  );
 });
 
 describe("compatibility", () => {

@@ -1,8 +1,8 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
+import { makeTempDir } from "../../test-support/temp-dir.js";
 import { labsChildEnv, runBoundedProcess } from "../performance-regression/cpu.js";
 import {
   LOOP_CASES,
@@ -17,7 +17,6 @@ import {
 } from "../performance-regression/labs/workloads/state-workload.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-const temporary: string[] = [];
 
 function benchEnv(overrides: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
   return {
@@ -28,8 +27,7 @@ function benchEnv(overrides: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
 }
 
 async function stubCheckout(files: Record<string, string>): Promise<string> {
-  const directory = await mkdtemp(path.join(tmpdir(), "tn-cpu-source-"));
-  temporary.push(directory);
+  const directory = await makeTempDir("tn-cpu-source-");
   for (const [relative, content] of Object.entries(files)) {
     const file = path.join(directory, relative);
     await mkdir(path.dirname(file), { recursive: true });
@@ -37,12 +35,6 @@ async function stubCheckout(files: Record<string, string>): Promise<string> {
   }
   return directory;
 }
-
-afterAll(async () => {
-  await Promise.all([
-    ...temporary.splice(0).map((directory) => rm(directory, { force: true, recursive: true })),
-  ]);
-});
 
 describe("loop", () => {
   it("runs the selected checkout's fixed-step dispatch for 0, 32 and 256 callbacks", async () => {

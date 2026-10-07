@@ -1,10 +1,11 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
-import { afterAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
+import { makeTempDir } from "../../test-support/temp-dir.js";
 import {
   CPU_CAPTURE_SCHEMA,
   CPU_COMPARISON_DISCLAIMER,
@@ -32,18 +33,9 @@ import {
 } from "../performance-regression/cpu-report.js";
 
 const execFileAsync = promisify(execFile);
-const temporary: string[] = [];
-
-afterAll(async () => {
-  await Promise.all(
-    temporary.splice(0).map((entry) => rm(entry, { force: true, recursive: true })),
-  );
-});
 
 async function tempDir(prefix: string): Promise<string> {
-  const directory = await mkdtemp(path.join(tmpdir(), prefix));
-  temporary.push(directory);
-  return directory;
+  return makeTempDir(prefix);
 }
 
 function hex(seed: string): string {
