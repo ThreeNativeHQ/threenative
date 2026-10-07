@@ -27,7 +27,8 @@ interface IVelocityProbe {
 }
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const output = path.join(root, "artifacts/temporal-aa/motion");
+const RAW4 = process.env.TN_RAW4 === "1";
+const output = path.join(root, `artifacts/temporal-aa/motion${RAW4 ? "-raw4" : ""}`);
 const scenario = JSON.parse(
   await readFile(
     path.join(root, "examples/abyss-framework/playtests/temporal-motion.playtest.json"),
@@ -158,7 +159,7 @@ for (const [family, arms] of Object.entries(FAMILIES))
       },
       timeoutMs: 120_000,
       trace: false,
-      url: `http://127.0.0.1:5173/temporal.html?measure&variant=${variant}`,
+      url: `http://127.0.0.1:5173/temporal.html?measure&variant=${variant}${RAW4 ? "&raw4" : ""}`,
     }).catch(async (error: unknown) => {
       await writeFile(
         path.join(artifactDirectory, "failure.json"),

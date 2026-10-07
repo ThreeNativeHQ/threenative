@@ -9,6 +9,7 @@ import {
 } from "../../../../core/src/render/velocity.ts";
 import { createExperimentalTemporalResolve } from "../../../../create-threenative/templates/starter/src/render/temporalResolve.ts";
 import { createTemporalAA } from "../../../../create-threenative/templates/starter/src/render/temporalAA.ts";
+import { ownsCurrentInput } from "../../../../create-threenative/templates/starter/src/render/temporalCurrentSelection.ts";
 import { assertCondition } from "./scene-support.js";
 import { createTemporalResolveProbe } from "./temporal-resolve-probe.ts";
 import { createTemporalVelocityProbe } from "./temporal-velocity-probe.ts";
@@ -86,7 +87,7 @@ function addQualityFoliage(scene) {
  * frame still renders, and the raster transition stays keyed to the real frame so both hosts reach
  * it at the same point.
  */
-export function createTemporalAAFixture(renderer, scene, camera, variant = "temporal", measurement = false, settle = null) {
+export function createTemporalAAFixture(renderer, scene, camera, variant = "temporal", measurement = false, settle = null, options = {}) {
   // The quality family reuses the existing control roles, so its prefix is stripped here: a
   // "quality-unchecked-history" arm must install the same negative control as "unchecked-history",
   // or it silently measures the installed policy twice.
@@ -178,7 +179,14 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
     stages: [{
       name: "traa",
       build: (input, context) => {
-        temporal = createTemporalAA(input, scenePass.getTextureNode("depth"), context.velocityNode, camera);
+        temporal = options.raw4
+          ? createTemporalAA(input, scenePass.getTextureNode("depth"), context.velocityNode, camera, scenePass)
+          : createTemporalAA(input, scenePass.getTextureNode("depth"), context.velocityNode, camera);
+        if (
+          options.raw4 &&
+          !ownsCurrentInput(input, scenePass.getTextureNode("depth"), context.velocityNode, camera, scenePass)
+        )
+          throw new Error("raw4 requested but the raw lane did not engage");
         // Diagnostic: normalized depth range is at most 1, so only the upstream edge bypass
         // is disabled. Its disocclusion threshold and history blend remain identical.
         if (policy === "strict-rejection" || policy.startsWith("resolve-cubic-strict")) temporal.node.edgeDepthDiff = 1;
