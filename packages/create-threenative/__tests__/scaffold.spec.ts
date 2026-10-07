@@ -181,6 +181,8 @@ const BUG_REPORT_SKILL_PATHS = [
 // copied Three patch. Restoring the previous patch bytes recovers every published fingerprint.
 // PR381 bounded compressed uploads: all thirteen actual trees change only in the copied
 // Three patch. Restoring the previous patch recovers every prior fingerprint.
+// Recomputed from clean committed c22e5ba8d for the independently reviewed bounded-upload
+// package patch embedded by every scaffold. No template, capability or appearance change.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Measured by the actual thirteen-tree createProject equality test on the Oct 6
   // af6dfc8 + ba72eed publication merge, after capability and canonical patch generation.
@@ -218,20 +220,20 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // then again on the merge carrying the WebGPU adapter-retention Three patch: the scaffolded
   // `patches/three@0.185.1.patch` is the only byte that moved on top of the exposure/fog tree, so
   // all thirteen trees move again. Values below are the merged-tree measurement, not either side's.
-  "action-rpg": "b7705ae90abb952a3728adc6cde42b7ca66007b2448989a59ef28e43cf7cadca",
-  minimal: "443d75d6dfb9ade6e60ed0c1a4964b13a9562cda9bfaba8b05f81a20584a341d",
-  platformer: "5db2fdb5dcda37743f0e78d1a20f876a536551761dd44f18edc5232f887d4863",
-  puzzle: "d6841f3c8d608a5a9b5317a15fa3666813ba9d8f64d57c9aa1876ff56d69c1ef",
-  racing: "ae5ab2e098a435139c947a82e33a7abfd9de606b4ace91e215bdda299b3daf98",
-  rain: "90857603b837eede3d47ae90055b9078cf1799b5811854d09ebd9c01e7e74bed",
-  rts: "19b81a9b20c9371b6833f2c9083c94918a1787b06f9084a7376f095958a0f683",
-  runner: "8205ae0374e48af7c8b3fed312240d1d17f5dfd7b2e8bcb04387feb92f2ad52b",
+  "action-rpg": "cd574a02b28888c5312d142ed0e7e9268efc08b25967ddf14c31e46c0006c23a",
+  minimal: "c71de730797df6596c87c42e3ff48fe88a9042f02a62e7224edc167a48da6956",
+  platformer: "f11f3ac4b6eae945e9de62a0a05220c70e0e97b7f8baf7e22c295e59b21dd004",
+  puzzle: "38b961aea3e80f279c01153e1663ea214dcd67cd4a1b1699b0441fb4833522a1",
+  racing: "8b23b116b318a74d91e2112c0deb105a424ce5833ad275f73449d24327511205",
+  rain: "d70189677763e9c062e5d2aab697573c5be0d988fc7ae27effe3f644f58d01f6",
+  rts: "53243c0a77b7af91cfc6331936dbe997c650b45d1137373456a164aeec4bc629",
+  runner: "2181151151ef09c110d2d7129d59bafd35a6fabc84263d7fc0364ad1cd45ed56",
   // Initial finite-height readiness plus its scene-owned lifecycle helper and mirrored docs.
-  sailing: "f31cc313194adb83374ca9d2ab787fcc1a7d56dd1014fd61661919beb1b9fed7",
-  shooter: "a816dfb7681db3dd2ff97ad763943af998090e3e070a83b27a3e1559d1dd6053",
-  snow: "8f096412be6d1044ad0591a50334b3b61e80c4108044bbb9724a8b78cdd548fb",
-  starter: "0a6eb8b03c1ea5990f307365df45e6f89ac46abf35402f7d53d13dad05f880f0",
-  "tower-defense": "840bab88b36a296b83e825749b006ca6aae842d24dfd7c46c42fd61cef489c58",
+  sailing: "48b5612943e7ee806389088233f59450d5dd9078e493be105e4e6fbe9392da77",
+  shooter: "d62ec3f6cad382d7a0fe36c58a049ed9608fa01719709407541f796db3949590",
+  snow: "5ffdaed925d514408f7340e9c67fdb7d08c8c5b1a1520614f0a3fec7bc14862a",
+  starter: "236c06878107c92b3c0efdfc84294c360332efcd872e87ae663236cf150703a6",
+  "tower-defense": "6c002a7af721cfe5d2f8230251819f26df2f848b081a2af43ac1e3bf037adb9f",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
