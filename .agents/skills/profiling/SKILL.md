@@ -25,8 +25,16 @@ is not presented frame time, and a parity pass is not a performance result.
 | Browser function trace | `npx @threenative/playtest trace --url <url> --text` (`--seconds`, `--key`, `--no-input`, `--stall-ms`, `--out`) | A slow/hitchy frame where the percentile is not enough | Headed WebGPU browser; game reachable | Named JS functions and stalls; raw JSON for DevTools | Traces the tail; a parked camera under-reports. Details: `packages/create-threenative/agent-docs/references/trace-a-slow-frame.md` |
 | V8 CPU profile | `TN_JS_CPU_PROFILE=1 <host>` (window via `TN_JS_CPU_PROFILE_START_FRAME`); `--cpu-prof <file>` on the host (`mystral run <script> --cpu-prof=<file>`) or a playtest (`node packages/playtest/dist/runner/cli.js <scenario> --cpu-prof <file>`) | Attribute JS self-time; open a DevTools profile | Host built with the profiler (desktop default); `--cpu-prof` is browser/desktop only (device refuses `TN_PLAYTEST_CPU_PROFILE_UNSUPPORTED`) | `TN_JS_CPU_PROFILE:` / `_TOTAL:` marker lines; a Chrome DevTools `.cpuprofile` | Perturbs the frame; diagnose only, never a timing verdict |
 | Profiled-host counters | Build host `-DTN_ANDROID_JS_PROFILE=ON`, run `node packages/runtime-native/scripts/measure-android-js-engine.mjs --device <serial>` or `measure-desktop-frame-pair.mjs --control <bin> --candidate <bin> --bundle <dir> --output <dir> --runs <n>` | Per-frame JS↔host binding/command cost | Profiled host; physical Android for acceptance | `TN_ANDROID_JS_NATIVE:` and `TN_BRIDGE_BY_NAME:` markers | Profiled build inflates absolutes; emulator proves plumbing only. Recipe: `packages/runtime-native/docs/G5-profiling.md` |
+| Linux OS `perf` (optional) | `perf stat -p <host-pid>`; `perf record -e cpu-clock:u --call-graph dwarf -p <host-pid>` then `perf report`; start the host with `packages/runtime-native/build/tn-linux/mystral run <script>` (or under `perf record -- …`) | Native C/C++ CPU attribution the V8 `.cpuprofile` cannot name | Linux; a kernel-matching `perf` from the OS package (`linux-tools`/`linux-perf`), an unstripped host for symbols; unprivileged sampling can be blocked by `perf_event_paranoid` (an OS/operator setting) | `perf stat` counters; `perf.data` + `perf report` call tree | Optional system executable; no bundled binary, wrapper, automatic install or sysctl change. Resolves native frames only — V8/JIT frames stay unnamed, so pair with `--cpu-prof`; no shipped flamegraph or JIT-symbol helper |
 | Chromium JS CPU profile | `pnpm profile:native-cpu` (`:fox` = `--visual-evidence fox-scale --allow-software`) | Isolate shared JS cost across scenarios in the browser | Playwright Chromium; `--output-dir` (default `artifacts/native-cpu-profile`) | Samples, stage/render advisor, optional PNGs | Chromium only; proves nothing about the native host |
 | Android cold start | `node packages/runtime-native/scripts/measure-cold-start.mjs` | Attribute launch time per segment | Physical Android (emulator exits `TN_COLD_START_EMULATOR_BLOCKED`) | `TN_COLD_START:` segment stamps, median/p95 | Emulator proof is plumbing only. Record: `packages/runtime-native/docs/G5-profiling.md` |
+
+**Three different `perf`s.** Linux `perf` is an optional OS executable: no shipped command spawns
+it, there is no wrapper, flamegraph or JIT-symbol helper, and the framework does not install it or
+change sysctls. The playtest `perf` subcommand (`node packages/playtest/dist/runner/cli.js perf`) is
+unrelated — it reads `TN_FRAME_BUDGET` markers from a log, executable or logcat. Android device CPU
+uses `simpleperf` (below), not Linux `perf`. Keep the host unstripped so native frames resolve; the
+embedded V8 JIT leaves JS frames unnamed, so use `--cpu-prof` for those.
 
 ## Benchmarks and production profiles
 
@@ -61,7 +69,8 @@ Existing example load scene: `examples/native-cpu-load-test/` (`vite`).
 3. **"Which function is slow?"** `playtest trace` before changing any line.
 4. **"Which creates the cost — JS, host, device?"** `TN_JS_CPU_PROFILE=1` or `--cpu-prof` on a built
    host; Android launch with `measure-cold-start.mjs`; JavaScript-only cost with `profile:native-cpu`;
-   device CPU with `simpleperf` (owner: `probe-android-startup-and-heat`).
+   device CPU with `simpleperf` (owner: `probe-android-startup-and-heat`); native Linux C/C++ only,
+   when the `.cpuprofile` cannot name it, with the optional OS `perf`.
 5. **"Which arm/engine is faster?"** `bench:engines`; production regression with `profile:production`;
    hardware regression with `--regression-collection`, then `--check-report` and `--regression`.
 6. **"Is behavior the same?"** `pnpm parity`. **"Pure Node CPU?"** Labs (in progress).
