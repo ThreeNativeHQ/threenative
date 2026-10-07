@@ -26,7 +26,7 @@ on:
   workflow_dispatch:
     inputs:
       native_engine:
-        description: Qualify only the JS-free Windows and macOS native-engine players (no release)
+        description: Qualify only the JS-free Linux, Windows and macOS native-engine players (no release)
         type: boolean
         default: false
 
@@ -572,6 +572,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - platform: linux
+            key: linux-x64
+            runner: ubuntu-24.04
+            preset: tn-linux
+            executable: tn-native-engine-player
+            dawn_dependency: dawn
           - platform: macos
             key: darwin-arm64
             runner: macos-15
@@ -607,6 +613,14 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Build the existing playtest runner
         run: pnpm --filter @threenative/playtest build
+      - name: Install Linux JS-free desktop build and display dependencies
+        if: runner.os == 'Linux'
+        run: >-
+          sudo apt-get update && sudo apt-get install -y
+          cmake ninja-build binutils pkg-config
+          libasound2-dev libpulse-dev libudev-dev libx11-dev libxext-dev libxrandr-dev
+          libxcursor-dev libxi-dev libxfixes-dev libxss-dev libxkbcommon-dev
+          libvulkan1 mesa-vulkan-drivers vulkan-tools xvfb xauth xcompmgr
       - name: Provision the host build's pinned SDL, stb and Dawn dependencies
         shell: bash
         env:
@@ -636,8 +650,8 @@ jobs:
           if errorlevel 1 exit /b 1
           cd ..\..
           node packages/runtime-native/scripts/inspect-js-free.mjs --binary "%NATIVE_ENGINE_PLAYER%" --manifest packages/runtime-native/artifacts/native-engine/js-free.json
-      - name: Build the JS-free player with AppleClang and inspect Mach-O
-        if: runner.os == 'macOS'
+      - name: Build the JS-free player on Linux or macOS and inspect ELF or Mach-O
+        if: runner.os != 'Windows'
         shell: bash
         env:
           CC: clang
@@ -656,12 +670,21 @@ jobs:
           for journey in inspect input capture; do
             artifacts="packages/runtime-native/artifacts/native-engine/$journey"
             mkdir -p "$artifacts"
-            node packages/playtest/dist/runner/cli.js "packages/runtime-native/tests/native-engine/playtests/native-engine-$journey.playtest.json" \
+            sh scripts/xvfb.sh node packages/playtest/dist/runner/cli.js "packages/runtime-native/tests/native-engine/playtests/native-engine-$journey.playtest.json" \
               --target desktop --executable "$NATIVE_ENGINE_PLAYER" --artifacts "$artifacts" \
               > "$artifacts/runner.log" 2>&1 && status=0 || status=$?
             cat "$artifacts/runner.log"
             test "$status" -eq 0
           done
+      - name: Record the Linux adapter (software is acceptable)
+        if: always() && runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -hE '\[WebGPU\] (Adapter|Vendor|Backend):' packages/runtime-native/artifacts/native-engine/*/console.json \
+            | tee packages/runtime-native/artifacts/native-engine/linux-adapter.txt
+          grep -F '[WebGPU] Adapter:' packages/runtime-native/artifacts/native-engine/linux-adapter.txt
+          cat packages/runtime-native/artifacts/native-engine/linux-adapter.txt >> "$GITHUB_STEP_SUMMARY"
       - name: Record the Windows adapter (D3D12 WARP is acceptable)
         if: always() && runner.os == 'Windows'
         shell: bash

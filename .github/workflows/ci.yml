@@ -513,11 +513,11 @@ jobs:
         working-directory: packages/runtime-native
         run: |
           set -euo pipefail
-          cmake -S . -B build/tn-linux-engine -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+          cmake --preset tn-linux -B build/tn-linux-engine-asan -DCMAKE_BUILD_TYPE=RelWithDebInfo \
             -DTN_ENGINE_ONLY=ON -DTN_ENGINE_SANITIZE=ON \
             -DMYSTRAL_USE_V8=OFF -DMYSTRAL_USE_QUICKJS=OFF -DMYSTRAL_USE_DAWN=ON
-          cmake --build build/tn-linux-engine --target tn-native-engine-gate-e --target tn-native-engine-tests --parallel "$(nproc)"
-          ctest --test-dir build/tn-linux-engine -L native-engine --output-on-failure
+          cmake --build build/tn-linux-engine-asan --target tn-native-engine-gate-e --target tn-native-engine-tests --parallel "$(nproc)"
+          ctest --test-dir build/tn-linux-engine-asan -L native-sanitizer --no-tests=error --output-on-failure
           cmake --build build/tn-linux --target tn-native-engine-gate-e --target tn-native-engine-tests --parallel "$(nproc)"
           ctest --test-dir build/tn-linux -L native-engine --output-on-failure
           node scripts/inspect-js-free.mjs --binary build/tn-linux/tn-native-engine-gate-e \
@@ -561,7 +561,19 @@ jobs:
       # `native:physics:parity` ride along inside that script, which is the package's whole gate.
       - run: pnpm --filter @threenative/runtime-native test
         env:
+          TN_GATE_E_BINARY: ${{ github.workspace }}/packages/runtime-native/build/tn-linux/tn-native-engine-gate-e
           TN_REQUIRE_ANDROID_CANVAS_SKIA_FIXTURE: "1"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: native-engine-gate-e-evidence
+          path: |
+            artifacts/native-engine/gate-e.json
+            packages/runtime-native/build/tn-linux/native-engine-target-graph.txt
+            packages/runtime-native/build/tn-linux/Testing/Temporary/LastTest.log
+            packages/runtime-native/build/tn-linux-engine-asan/native-engine-target-graph.txt
+            packages/runtime-native/build/tn-linux-engine-asan/Testing/Temporary/LastTest.log
+          if-no-files-found: error
       - name: Collect bounded native Linux performance evidence
         if: always()
         shell: bash
