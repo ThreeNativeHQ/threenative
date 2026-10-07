@@ -30,6 +30,9 @@
       "packages/runtime-native/build/**",
       "packages/runtime-native/**/build/**",
       "packages/runtime-native/third_party/**",
+      "packages/runtime-native/native/css-ui/vendor/**",
+      "examples/native-css-hud/corpus/out/**",
+      "examples/native-css-hud/corpus/out-interaction/**",
       "packages/assets/vendor/basis-encoder/basis_encoder.js",
       "packages/three-native/generated/**",
       "packages/runtime-native/**/*.json",
@@ -44,8 +47,10 @@
       "examples/csg-doorway/public/**",
       "docs/benchmark/sweeps/**",
       "docs/benchmark/rounds/**",
+      "docs/benchmark/prd345/shooter-causes1/**",
       "docs/verification/prd-357-c4-duplicate-inventory.json",
       "docs/verification/prd-357-c4-duplicate-inventory-before.json",
+      "docs/verification/vq04/**",
       "docs/verification/visuals/**",
       "benchmark/engine-load-test/godot-lights-meshes/benchmark_box_1000.json"
     ]

@@ -215,6 +215,7 @@ export async function runStep(
   movementSampleRequest: IPlaytestSampleRequest | undefined,
   finalStep: boolean,
   subject?: string,
+  liveClock = false,
 ): Promise<IRunStepSamples> {
   if (step.waitForResource !== undefined) {
     if (bridge === undefined || movementSampleRequest === undefined) {
@@ -235,7 +236,7 @@ export async function runStep(
       ));
     }
     const after = await waitForResource({
-      advance: bridge.description.capabilities.includes("runtime.fixedStep")
+      advance: !liveClock && bridge.description.capabilities.includes("runtime.fixedStep")
         ? () => advanceFixedStep(page, bridge, 1)
         : undefined,
       id: wait.id,
@@ -271,8 +272,14 @@ export async function runStep(
   if (step.pointers !== undefined) {
     await setBrowserPointers(page, inputState, step.pointers, viewport);
   }
+  if (step.media !== undefined) {
+    await page.emulateMedia({
+      ...(step.media.colorScheme === undefined ? {} : { colorScheme: step.media.colorScheme }),
+      ...(step.media.reducedMotion === undefined ? {} : { reducedMotion: step.media.reducedMotion }),
+    });
+  }
   if (step.wheel !== undefined) {
-    await page.mouse.move(viewport.width / 2, viewport.height / 2);
+    await page.mouse.move((step.wheel.x ?? 0.5) * viewport.width, (step.wheel.y ?? 0.5) * viewport.height);
     await page.mouse.wheel(step.wheel.deltaX ?? 0, step.wheel.deltaY);
     // Chromium schedules the wheel DOM event for the next frame. Let that one Playwright
     // transport event reach the game's listener before deterministic ticks sample input.

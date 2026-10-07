@@ -163,6 +163,23 @@ export interface IAndroidPointerInjection {
   trackingIds: number[];
 }
 
+/**
+ * The `am start` extras that carry the native-css UI's own test knobs, or none.
+ *
+ * An Android app inherits no environment, so the host cannot read these from `getenv` the way it
+ * does on desktop; the activity forwards them to `setenv` from intent extras. Read from this
+ * runner's own environment rather than a new flag: the desktop lane already configures its host
+ * from the environment, so one variable name means the same thing on both device lanes.
+ */
+function hostCssUiExtras(): string[] {
+  const extras: string[] = [];
+  for (const name of ["TN_CSS_UI_FIXED_STEP_MS", "TN_CSS_UI_STATE_TRACE"]) {
+    const value = process.env[name];
+    if (value !== undefined && value !== "") extras.push("--es", name, value);
+  }
+  return extras;
+}
+
 export interface IAndroidTouchViewport {
   device: { height: number; width: number };
   logical: { bottom: number; left: number; right: number; top: number };
@@ -230,6 +247,11 @@ export class AdbAndroidDriver implements IAndroidDriver {
       `${this.options.packageName}/${this.options.activity}`,
       ...(this.options.nativeEngine ? [] : ["--es", "TN_PLAYTEST_ENDPOINT", endpoint]),
       ...(mailboxRoot === undefined ? [] : ["--es", "TN_PLAYTEST_MAILBOX_ROOT", mailboxRoot]),
+      // The native-css UI's own test knobs, forwarded from this runner's environment because `am
+      // start` passes the app none: its fixed animation clock and its focus/scroll state trace. The
+      // desktop driver needs no equivalent because it spawns the host and inherits them there, so
+      // the same two variables in the environment mean the same thing on both device lanes.
+      ...hostCssUiExtras(),
     ]);
   }
 
@@ -758,7 +780,8 @@ function failedLogcat(command: string, message: string): Error {
 export function parseAndroidConsole(output: string): Array<{ text: string; type: string }> {
   return output
     .split(/\r?\n/u)
-    .filter((line) => !/^[VDIWEF]\/SurfaceSyncGroup\(/u.test(line))
+    // system_server and the compositor name the activity while reporting on themselves.
+    .filter((line) => !/^[VDIWEF]\/(?:SurfaceSyncGroup|TransitionController)\(/u.test(line))
     .filter((line) => /Mystral|THREENATIVE|chromium/u.test(line))
     .map((text) => ({
       text,

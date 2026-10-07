@@ -1,7 +1,7 @@
 export type ThreeNativeOrientation = "landscape" | "portrait" | "sensor";
 
 /** Which renderer draws a game's `src/ui/`. @see IThreeNativeConfig.ui */
-export type ThreeNativeUiRenderer = "native" | "web";
+export type ThreeNativeUiRenderer = "native" | "native-css" | "web";
 
 /** What the native host does with the render loop while the app is off-screen. */
 export type ThreeNativeBackgroundMode = "continue" | "pause";
@@ -562,6 +562,10 @@ export interface IThreeNativeConfig {
      * process. Choose it for a UI that is part of the rendered frame, or a target with no web
      * view, or zero extra processes — and own the appearance difference, which is the trade
      * being made rather than something to discover in a screenshot.
+     *
+     * `"native-css"` runs the same React tree in the game's own JS realm — no web view, no second
+     * process — with a native CSS engine painting it and the stylesheet coming from the same Vite +
+     * Tailwind build the web renderer uses. Desktop only, experimental, and opt-in.
      *
      * Which surface `"web"` lands on is the platform's business and never a game's: no config,
      * type or document names the engine underneath.

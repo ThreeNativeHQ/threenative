@@ -138,7 +138,10 @@ did not reach 180 within 60 seconds. The unchanged failing case passes locally o
 Turing and explicitly observed SwiftShader, with CPU profiles captured. No timeout or assertion
 change; the hosted run remains unverified. PR #438 is still draft, has no current remote check
 rollup and conflicts with develop in `.gitignore` and Android key routing. The conflict preview
-is read-only; reconcile after the native coverage producer finishes. The system-Clang/V8 run
+identified two content conflicts. Reconciliation preserves both ignore lists and combines the
+upstream consumed-UI key guard with native-engine mailbox-only input. String and array Space presses
+reproduced duplicate adb injection before the native guard; 79 focused Android/input/profile tests pass after reconciliation. Upstream KayKit license bytes are preserved, including their existing blank-line whitespace.
+The system-Clang/V8 run
 completed the legacy contracts but found a producer gap: its compile inventory includes
 `tn_engine_foundation` while its build/execute list includes only legacy targets, so aggregation
 fails on the unbuilt engine object. Integrate the native-engine suite before refreshing coverage;

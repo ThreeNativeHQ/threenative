@@ -26,6 +26,8 @@ async function runNative(profile: unknown = { engine: "native", gameRuntime: "cp
     steps: [
       ...scenario.steps.slice(0, -1),
       { ...scenario.steps.at(-1), pointers: [{ id: 1, x: 0.5, y: 0.5 }] },
+      { holdTicks: 1, press: " ", release: true },
+      { holdTicks: 1, press: [" "], release: true },
     ],
   }));
   const config = parseStandalonePlaytestArgs(["scenario.json", "--target", "android", "--native-engine", "--timeout", "30"], projectPath);
@@ -63,6 +65,10 @@ async function runNative(profile: unknown = { engine: "native", gameRuntime: "cp
     async background() { operations.push("background"); focused = false; },
     async foreground() { operations.push("foreground"); focused = true; surfaceCreations = surfaces; deviceCreations = devices; if (changedPid) pid++; },
     async rotate() {},
+    async runAdb(args: readonly string[]) {
+      if (args.includes("input")) operations.push(`adb:${args.join(" ")}`);
+      return "";
+    },
     async lifecycleState() { return { focused, pid }; }, // SDL has no gfxinfo frame counter.
     async captureConsole() { return []; },
     async screenshot(path: string) {

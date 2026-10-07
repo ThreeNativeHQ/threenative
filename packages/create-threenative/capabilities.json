@@ -687,6 +687,30 @@
     {
       "aliases": [],
       "constraints": [
+        "one base phase, one masked override, at most two additive layers and eight actions",
+        "root motion requires a separate rig below the body; advance, CharacterBody3D.move, finish with observed accepted motion after physics, then existing IK",
+        "root motion excludes velocity-driven stride sync; unsupported parent transforms throw",
+        "source clips remain immutable; dispose at scene exit"
+      ],
+      "example": "const animation = new AnimationComposer({ root: rig, clips, samples: [\"walk\", \"run\"] });\nanimation.setWeights([0.5, 0.5]); animation.update(dt);",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export class AnimationComposer { … }",
+      "situations": [
+        "synchronize walk/run/strafe clips with different durations",
+        "reload with the upper body while locomotion continues",
+        "apply an additive recoil clip with an explicit reference pose",
+        "route root motion through collision-aware character movement"
+      ],
+      "summary": "Compose game-authored locomotion and masked actions on one Three.js mixer.",
+      "supersedes": [],
+      "symbol": "AnimationComposer"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "name the body a game moves as strideRoot when the animated rig is a child of it",
         "a one-shot clip always plays at its authored rate; the matched rate re-times loops only",
         "the matched rate is held inside 0.15x-3x; a speed outside what the clip's own stride supports is clamped, and `stride.rate` says so"
@@ -871,6 +895,46 @@
       "summary": "Face a game-owned object toward a perspective or orthographic camera.",
       "supersedes": [],
       "symbol": "Billboard3D"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "duplicate samples, collinear triangles and invalid/incomplete triangulations throw at initialization",
+        "outside 2D queries project to the nearest boundary subedge; output is borrowed scratch"
+      ],
+      "example": "const blend = new BlendSpace1D([0, 2]); animation.setWeights(blend.sample(speed));",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export class BlendSpace1D { … }",
+      "situations": [
+        "calculate 1D walk/run blend weights from speed",
+        "calculate 2D locomotion weights from forward and strafe intent"
+      ],
+      "summary": "Select finite, normalized locomotion weights from sorted thresholds or a fixed triangulation.",
+      "supersedes": [],
+      "symbol": "BlendSpace1D"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "duplicate samples, collinear triangles and invalid/incomplete triangulations throw at initialization",
+        "outside 2D queries project to the nearest boundary subedge; output is borrowed scratch"
+      ],
+      "example": "const blend = new BlendSpace1D([0, 2]); animation.setWeights(blend.sample(speed));",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export class BlendSpace2D { … }",
+      "situations": [
+        "calculate 1D walk/run blend weights from speed",
+        "calculate 2D locomotion weights from forward and strafe intent"
+      ],
+      "summary": "Select finite, normalized locomotion weights from sorted thresholds or a fixed triangulation.",
+      "supersedes": [],
+      "symbol": "BlendSpace2D"
     },
     {
       "aliases": [],
@@ -3435,6 +3499,27 @@
       "summary": "Install the playtest bridge into a portable game.",
       "supersedes": [],
       "symbol": "playtest"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "desktop only, and the game host must be built with the CSS backend (`TN_ENABLE_CSS_UI=1`); Android, iOS and web phones render a React HUD in a web overlay instead",
+        "import `react`, never `react-dom`, from a native entry",
+        "styling is CSS resolved by the native engine; JS only mirrors the element tree"
+      ],
+      "example": "const root = createCssUiRoot();\nroot.render(createElement(\"section\", { className: \"fixed inset-0 bg-zinc-900/90\" }, \"READY\"));",
+      "importPath": "@threenative/core/react-css",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function createCssUiRoot(options: ICssUiRootOptions = { … }",
+      "situations": [
+        "mount a React HUD on the desktop host with no DOM in the runtime",
+        "write one React component and run it on the web and on the desktop host"
+      ],
+      "summary": "Mount React into a native CSS engine.",
+      "supersedes": [],
+      "symbol": "createCssUiRoot"
     },
     {
       "aliases": [],

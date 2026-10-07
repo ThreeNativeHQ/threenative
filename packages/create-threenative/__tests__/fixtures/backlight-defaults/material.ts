@@ -29,6 +29,7 @@ import {
   vec3,
 } from "three/tsl";
 import { MeshStandardNodeMaterial } from "three/webgpu";
+import { resolveKey, validateControls } from "./backlightControls.js";
 
 export interface BacklightControls {
   readonly key: DirectionalLight;
@@ -45,50 +46,7 @@ export interface BacklightControls {
   fillAdmitted: boolean;
 }
 
-function validateControls(controls: BacklightControls) {
-  if (
-    !Number.isFinite(controls.rimGain) ||
-    controls.rimGain < 0 ||
-    !Number.isFinite(controls.key.intensity) ||
-    controls.key.intensity < 0 ||
-    !controls.key.color.toArray().every((value) => Number.isFinite(value) && value >= 0) ||
-    !Number.isFinite(controls.fillGain) ||
-    controls.fillGain < 0 ||
-    !Number.isFinite(controls.fillAngularSize) ||
-    controls.fillAngularSize <= 0 ||
-    controls.fillAngularSize > 1.5 ||
-    !Number.isFinite(controls.fillDirection.lengthSq()) ||
-    controls.fillDirection.lengthSq() === 0 ||
-    !controls.fillColor.toArray().every((value) => Number.isFinite(value) && value >= 0)
-  )
-    throw new Error(
-      "Backlight controls require finite nonnegative gains, a direction and angular size in (0, 1.5].",
-    );
-}
-function resolveKey(controls: BacklightControls, direction: Vector3, target: Vector3) {
-  validateControls(controls);
-  // Read the renderer/game-updated matrices, as upstream Three light uniforms do.
-  // Targets outside the scene must be updated by their owner before rendering.
-  // Never mutate shared light/ancestor matrices inside a material render callback.
-  target.setFromMatrixPosition(controls.key.target.matrixWorld);
-  direction.setFromMatrixPosition(controls.key.matrixWorld).sub(target);
-  if (!direction.toArray().every(Number.isFinite)) throw new Error("Key endpoints must be finite.");
-  const lengthSq = direction.lengthSq();
-  if (!Number.isFinite(lengthSq)) throw new Error("Key direction magnitude must be finite.");
-  if (lengthSq <= 1e-12) {
-    direction.set(0, 1, 0);
-    return 0;
-  }
-  direction.normalize();
-  if (!controls.key.layers.test(controls.camera.layers)) return 0;
-  let current: Object3D | null = controls.key;
-  while (current !== null) {
-    if (!current.visible) return 0;
-    if (current === controls.scene) return controls.key.intensity;
-    current = current.parent;
-  }
-  return 0;
-}
+const graphs = new WeakMap<BacklightControls, ReturnType<typeof createGraph>>();
 
 /**
  * Preserve the upstream standard PBR/normal/skinning paths and original material emissive.
@@ -106,6 +64,16 @@ export function backlightMaterial(source: MeshStandardMaterial, controls: Backli
     );
   validateControls(controls);
   const material = new MeshStandardNodeMaterial().copy(source);
+  let graph = graphs.get(controls);
+  if (!graph) {
+    graph = createGraph(controls);
+    graphs.set(controls, graph);
+  }
+  material.emissiveNode = graph;
+  return material;
+}
+
+function createGraph(controls: BacklightControls) {
   const rimGain = uniform(controls.rimGain).onRenderUpdate(() => {
     validateControls(controls);
     return controls.rimGain;
@@ -132,13 +100,13 @@ export function backlightMaterial(source: MeshStandardMaterial, controls: Backli
   });
   const keyDirectionValue = new Vector3(0, 1, 0);
   const keyTargetValue = new Vector3();
-  const keyDirection = uniform(keyDirectionValue).onRenderUpdate(() => {
-    resolveKey(controls, keyDirectionValue, keyTargetValue);
+  const keyDirection = uniform(keyDirectionValue).onRenderUpdate((frame) => {
+    resolveKey(controls, keyDirectionValue, keyTargetValue, frame.camera ?? controls.camera);
     return keyDirectionValue;
   });
   // Removal/visibility/intensity are live. A removed sun cannot leave an invented rim behind.
-  const keyGain = uniform(0).onRenderUpdate(() =>
-    resolveKey(controls, keyDirectionValue, keyTargetValue),
+  const keyGain = uniform(0).onRenderUpdate((frame) =>
+    resolveKey(controls, keyDirectionValue, keyTargetValue, frame.camera ?? controls.camera),
   );
   const N = normalView.normalize();
   const V = positionViewDirection.normalize();
@@ -173,6 +141,5 @@ export function backlightMaterial(source: MeshStandardMaterial, controls: Backli
     .mul(float(1).sub(cosRadius))
     .mul(2);
   const fill = diffuseFill.add(specularFill).mul(fillColor).mul(fillGain);
-  material.emissiveNode = materialEmissive.add(rim).add(fill);
-  return material;
+  return materialEmissive.add(rim).add(fill);
 }
