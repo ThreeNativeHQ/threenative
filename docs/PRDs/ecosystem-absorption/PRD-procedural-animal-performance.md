@@ -6,10 +6,10 @@ prd_contract: v1
 
 **Status:** NOT STARTED
 **Priority:** P2 — Bring the baked 32-wolf crowd inside its CPU frame budget; correctness already ships in PRD-procedural-animal-content.
-**Adoption order:** follows [PRD-procedural-animal-content](done/PRD-procedural-animal-content.md).
+**Adoption order:** follows [PRD-procedural-animal-content](../done/PRD-procedural-animal-content.md).
 **Complexity:** 5 (MED); donor solver cost in `packages/procedural-animals` plus one paired-run measurement.
 **Owner:** ThreeNative maintainers.
-**Depends on:** [PRD-procedural-animal-content](done/PRD-procedural-animal-content.md) (the baked wolf, its example and its AC-7 instrumentation).
+**Depends on:** [PRD-procedural-animal-content](../done/PRD-procedural-animal-content.md) (the baked wolf, its example and its AC-7 instrumentation).
 **Progress:** 0%
 
 ## Context
