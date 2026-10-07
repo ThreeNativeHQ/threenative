@@ -132,6 +132,14 @@ Registry/catalog/declarations are regenerated with the actual bound track and bi
 This repair slice is complete; Windows CI and the unchanged full minimal-template journey remain
 unverified, so no phase box is ticked.
 
+Scatter-test timeout repair (2026-10-07): a focused CPU profile identified terrain mesh rebuilding
+as the main unrelated cost in the timed-out scatter walk. Both comparison arms now use the existing
+9-point terrain-resolution override, preserving all 400 updates and scatter assertions. The case
+falls from 17.5 seconds to 0.66 seconds locally; the complete file passes 70/70 checks in 8.7 seconds
+(previously 27.0 seconds). Biome passes. Terrain tessellation retains its dedicated world-tiles
+coverage; no product defaults or timeout changes. These timings diagnose the local test cost,
+not a controlled product benchmark or a fresh CI verdict.
+
 Playwright orphan repair (2026-10-07): a real-process regression reproduced the one-shot cleanup
 race: a still-exiting child was skipped permanently. Both runner/capture paths now reclaim after
 owned display teardown and retry for at most ten seconds, preserving the before-launch ownership

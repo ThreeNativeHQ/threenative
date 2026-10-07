@@ -911,6 +911,8 @@ describe("WorldCells with the GPU-driven main pass", () => {
   });
 
   it("spends no regroup and no refilter, feeds the source buffer, and dresses every main key", async () => {
+    // This walk tests scatter dispatch, not terrain tessellation (covered by world-tiles.spec.ts).
+    const terrain = { tileResolution: 9 };
     stubManifestFetch();
     const follow = { position: { ...cellCentre(0, 1), y: 0 } as { x: number; z: number } };
     const world = await WorldCells.load({
@@ -922,6 +924,7 @@ describe("WorldCells with the GPU-driven main pass", () => {
       prefetchSeconds: 0,
       ring: 1,
       surface,
+      terrain,
       url: "/world/world.json",
     });
     const renderer = {
@@ -981,6 +984,7 @@ describe("WorldCells with the GPU-driven main pass", () => {
       prefetchSeconds: 0,
       ring: 1,
       surface,
+      terrain,
       url: "/world/world.json",
     });
     cpu.update(renderer, camera);
