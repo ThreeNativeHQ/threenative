@@ -142,7 +142,6 @@ class RenderDatabase {
     std::vector<std::pair<uint64_t, DirectLight>> direct_; // this render's direct lights with their ids
     std::unordered_set<const void*> skeletonsUpdated_;     // skeletons this render already updated
     int hemisphere_ = 0;
-    alignas(uint64_t) std::vector<std::array<std::size_t, 256>> radixHistograms_;
 };
 
 } // namespace tn::engine
