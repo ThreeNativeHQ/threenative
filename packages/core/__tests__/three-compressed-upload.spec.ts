@@ -356,6 +356,72 @@ describe.each(["source", "webgpu bundle", "nodes bundle"])(
       expect(f.manager.get(f.texture).version).not.toBe(f.texture.version);
     });
 
+    it("advances delayed scope results and host yields without a world submission or overlay scope capture", async () => {
+      vi.useFakeTimers();
+      try {
+        const f = fixture();
+        const scopes: string[] = [];
+        const delayed: Array<(error: null) => void> = [];
+        let pops = 0;
+        let overlayElapsed = 0;
+        const submit = vi.fn();
+        const copy = vi.fn(() => {
+          expect(scopes).toEqual([]);
+          overlayElapsed += 40;
+        });
+        Object.assign(f.backend.device.queue, { submit, copyExternalImageToTexture: copy });
+        Object.assign(f.backend.device, {
+          pushErrorScope: (filter: string) => scopes.push(filter),
+          popErrorScope: () => {
+            expect(scopes.pop()).toBe(pops % 2 === 0 ? "validation" : "out-of-memory");
+            return pops++ < 2
+              ? new Promise<null>((resolve) => delayed.push(resolve))
+              : Promise.resolve(null);
+          },
+        });
+        vi.spyOn(performance, "now").mockImplementation(() => f.clock() + overlayElapsed);
+        const queued = smallTexture();
+        let completed = false;
+        const pending = f.manager.updateTextureAsync(f.texture).then(() => {
+          completed = true;
+        });
+        const later = f.manager.updateTextureAsync(queued);
+        await firstBatch();
+        expect(f.writes).toHaveLength(3);
+        expect(scopes).toEqual([]);
+        expect(delayed).toHaveLength(2);
+        expect(f.create).toHaveBeenCalledTimes(1);
+        f.utils._copyImageToTexture(
+          { width: 1000, height: 48 },
+          {},
+          { size: { width: 1000, height: 48 } },
+          0,
+          false,
+          false,
+        );
+        await vi.runAllTimersAsync();
+        expect(completed).toBe(false);
+        expect(f.writes).toHaveLength(3);
+        for (const resolve of delayed) resolve(null);
+        for (let i = 0; i < 20; i++) await Promise.resolve();
+        // The actual next boundary is the host yield; no render/submit callback releases it.
+        expect(completed).toBe(false);
+        expect(f.create).toHaveBeenCalledTimes(1);
+        await vi.runAllTimersAsync();
+        await Promise.all([pending, later]);
+        expect(f.writes.reduce((sum, write) => sum + write.bytes, 0)).toBe(5_505_040);
+        expect(f.manager.get(f.texture).version).toBe(f.texture.version);
+        expect(f.manager.get(queued).version).toBe(queued.version);
+        expect(f.texture.onUpdate).toHaveBeenCalledOnce();
+        expect(queued.onUpdate).toHaveBeenCalledOnce();
+        expect(copy).toHaveBeenCalledOnce();
+        expect(submit).not.toHaveBeenCalled();
+        expect(scopes).toEqual([]);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it("rejects replacement of a mip without committing captured data as current", async () => {
       vi.useFakeTimers();
       try {
