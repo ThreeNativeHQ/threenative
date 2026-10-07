@@ -723,6 +723,7 @@ async function runStandalonePlaytestInternal(
           : undefined,
         index === scenario.steps.length - 1,
         scenario.subject,
+        activeConfig.liveClock === true,
       );
       if (movementBaselineSnapshot === undefined && movementNeedsBaseline && movementEntity !== undefined) {
         const candidate = stepSamples.afterStep ?? stepSamples.afterInput;

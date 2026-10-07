@@ -36,6 +36,35 @@ export type {
   IStrideReport,
 } from "./animation.js";
 /**
+ * Compose game-authored locomotion and masked actions on one Three.js mixer.
+ * @situation synchronize walk/run/strafe clips with different durations
+ * @situation reload with the upper body while locomotion continues
+ * @situation apply an additive recoil clip with an explicit reference pose
+ * @situation route root motion through collision-aware character movement
+ * @constraint one base phase, one masked override, at most two additive layers and eight actions
+ * @constraint root motion requires a separate rig below the body; advance, CharacterBody3D.move, finish with observed accepted motion after physics, then existing IK
+ * @constraint root motion excludes velocity-driven stride sync; unsupported parent transforms throw
+ * @constraint source clips remain immutable; dispose at scene exit
+ * @example const animation = new AnimationComposer({ root: rig, clips, samples: ["walk", "run"] });
+ * animation.setWeights([0.5, 0.5]); animation.update(dt);
+ */
+export { AnimationComposer } from "./animation-composition.js";
+export type { IAnimationComposerOptions } from "./animation-composition.js";
+export type { IAnimationLayer, IAnimationMask } from "./animation-layers.js";
+export type {
+  IAnimationMotionDelta,
+  IAnimationRootMotionOptions,
+} from "./animation-root-motion.js";
+/**
+ * Select finite, normalized locomotion weights from sorted thresholds or a fixed triangulation.
+ * @situation calculate 1D walk/run blend weights from speed
+ * @situation calculate 2D locomotion weights from forward and strafe intent
+ * @constraint duplicate samples, collinear triangles and invalid/incomplete triangulations throw at initialization
+ * @constraint outside 2D queries project to the nearest boundary subedge; output is borrowed scratch
+ * @example const blend = new BlendSpace1D([0, 2]); animation.setWeights(blend.sample(speed));
+ */
+export { BlendSpace1D, BlendSpace2D } from "./animation-blend.js";
+/**
  * Shared preparation for an imported rigged character.
  *
  * Instances the rig with a skeleton-safe clone, normalises size with skin-aware measurement,
