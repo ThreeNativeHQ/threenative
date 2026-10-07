@@ -13,6 +13,7 @@
 // notify through the Euler member's own setters.
 
 #include "engine/abi/bindings.h"
+#include "engine/abi/pooled_shared.h"
 #include "engine/animation/mixer.h"
 #include "engine/animation/skinning/skeleton.h"
 
@@ -753,7 +754,7 @@ void registerMesh(ClassBinding& b) {
         std::shared_ptr<Material> material;
         if (!a.empty() && a.at(0).kind == Value::Kind::Ref) geometry = geometryArg(store, a.at(0));
         if (a.size() >= 2 && a.at(1).kind == Value::Kind::Ref) material = materialArg(store, a.at(1));
-        return std::static_pointer_cast<void>(std::make_shared<Mesh>(geometry, material));
+        return std::static_pointer_cast<void>(detail::makeShared<Mesh>(geometry, material));
     };
     b.members["geometry"] = [](void* self, const Args&, Store& store) -> Value {
         return store.share("BufferGeometry", as<Mesh>(self)->geometry);

@@ -22,6 +22,13 @@ namespace tn::binding {
 
 struct Value {
     enum class Kind : uint8_t { Null, Number, String, Bool, Ref, Numbers, Refs, Array, Record, Undefined, ShaderNode };
+    // A named constructor keeps pair's default-constructibility trait from recursively
+    // instantiating an aggregate Value before the pair is complete (Clang + libstdc++ 16).
+    Value() = default;
+    Value(Kind kind, double number = 0, std::string text = {}, bool flag = false,
+          std::vector<double> numbers = {})
+        : kind(kind), number(number), text(std::move(text)), flag(flag), numbers(std::move(numbers)) {}
+
     Kind kind = Kind::Null;
     double number = 0;
     // String payload; the caller's object id for Ref; comma-separated ids for Refs (an array of

@@ -8,6 +8,7 @@
 // member itself (`material.color`, the one alias Ref), and a whole copy (`material.color = ref`).
 
 #include "engine/abi/bindings.h"
+#include "engine/abi/pooled_shared.h"
 
 #include "engine/foundation/math/Color.h"
 #include "engine/scene/lights.h"
@@ -191,7 +192,7 @@ void registerTypeFields(ClassBinding& b, MaterialType type) {
 void registerMeshMaterial(ClassBinding& b, MaterialType type, bool node = false) {
     b.ctor = [type, node](const Args& a, Store&) -> std::shared_ptr<void> {
         if (!a.empty()) throw Unsupported{"a material parameters object is not supported"};
-        return std::static_pointer_cast<void>(std::make_shared<Material>(type, node));
+        return std::static_pointer_cast<void>(detail::makeShared<Material>(type, node));
     };
     registerMaterialBase(b);
     registerTypeFields(b, type);

@@ -238,3 +238,297 @@ P17 final64k ratios versus original: current/future CPU1.00055/1.06250(3/6,2/6 w
 P16 normal ABBA completed in37m,600measured/120warmup,three interleaved repeats per block,all36 captures zero pixel mismatch. All four reports have the same game and engineSHA453ee1f0; the original benchmark entry is restored byte-for-byte. Default spread first/last block median per-repeat Three/Perry ratios1.2898/1.3133; pooled six-repeat median1.2959(range1.1230–1.3885). Strict everyFrame blocks3.1051/3.0412; pooled median3.0732(range1.8842–5.0526). Compare per-repeat ratios rather than dividing separately pooled timing medians amid host drift. Final reports prove128stale frames at512checks/frame versus0strict; native policy never changed. Strict-policy3.07× is a separate diagnostic, not the frozen default judge or a2×qualification claim. Reports: `/tmp/tn-material-policy-normal-<spread1|every1|every2|spread2>/web-report.json`.
 
 Performance stopping decision: the tested optimization search reached its engineering ceiling for this frozen workload, hardware and compatibility contract. Rejected exactness-preserving instruction, SIMD, radix, layout, IPO, histogram, depth-pass and demand-read-ahead hypotheses are recorded above; retained repairs pass their focused native/Wasm checks. No audited short, contract-preserving removal with evidence of a remaining≥10% whole-frame gain remains. Compose arithmetic is~0.46% of sampled Wasm cycles; determinant~2.11% native; large aggregate paths include required immediate field observation, world publication and packing. This is a bounded engineering stopping point, not a numerical upper bound, absolute optimality or proof of hardware saturation. Default normal gain remains~1.30× at64k; the differing Three material policy explains a substantial comparison cost. Keep N20web/default promotion unqualified and the scaling18×gate failure open. Resume remaining PRDs and PR438missingchecks as requested; do not loosen either performance gate.
+
+
+## Reopened 2× target (owner, 2026-10-07)
+
+The owner explicitly prioritizes the 2× target over the remaining PR/PRD checks. The previous
+stopping decision closes the short instruction-level search; it does not close this renewed
+campaign. Keep the default Three material policy, workload, pixels, sample counts and 18× scaling
+gate fixed. A 1.30× incumbent needs approximately 35% lower CPU submission time to reach 2×.
+
+P18 hypothesis: object/material heap placement is an untested part of the measured cache-sensitive
+cost. Probe the standard library's per-type pool allocation on an otherwise unchanged copy of the
+existing native scaling fixture, linked to the same engine libraries. This diagnostic changes only
+allocation placement, not source object values, traversal, comparisons, ordering or renderer code.
+Alternate baseline/pool at 4k/16k/64k, recording unchanged stages and allocation spacing. No product
+allocator or performance claim until this supports a repeatable gain and survives the browser arm.
+The existing compatibility/coverage edits are preserved separately. Coverage refresh is pending
+(the existing engine aggregate omits `native_engine_gate_e`); no coverage record was restamped.
+
+
+P18 rejected: separate-binary 64k preflight favored pooling by 6.3% median (4/5 pairs), but a
+single-binary allocation-mode control removes code-placement differences and fails the holdouts.
+Five alternating pairs per size give pooled/baseline preparation ratios 1.0024 / 1.0180 / 1.0465
+at 4k/16k/64k (2/5, 0/5, 0/5 wins). No product allocation change is retained. Logs:
+`/tmp/tn-2x-pool-control-<objects>-<pair>-<baseline|pooled>.log`; both modes use binary SHA256
+`4e2de64f39aa8046ad1b3fa1d560878d6b649801f46cb50881ab0b44ce060264`.
+
+
+P19 hypothesis and scope: first measure a native-only parallel world-update split on the exact,
+childless Mesh fast lane. Join before serial projection and skip its duplicate matrix composition;
+keep lights, callbacks, immediate material checks, grouping and the global depth/ID sort serial.
+This targets roughly 20% of sampled CPU and cannot alone provide the missing 35%. Use a temporary
+copy of the current renderer with standard-library async tasks as a feasibility probe, not a new
+shipped worker framework. Reject if lost fusion locality/task overhead erases the gain. A retained
+threaded implementation would additionally need prestarted workers, full compatibility cases,
+matching Perry shared-memory imports and threaded Wasm build/deployment proof. The read-only
+medium checkpoint review identified these requirements; existing VM workers cannot be reused in
+the JS-free engine. No threading product change or qualification box is claimed.
+
+P19 rejected: the same-binary mode control keeps renderer code layout fixed. Five alternating
+native pairs per size give four-worker/original preparation ratios 0.9774 / 0.9710 / 1.1252 at
+4k/16k/64k (5/5, 5/5, 1/5 wins); serial split/original is 1.0101 / 1.0433 / 1.1965.
+Splitting world publication from projection loses locality at 64k; parallelizing that small span
+recovers only part of the loss. This is diagnostic under shared-machine load, not qualification.
+Exact ordering/material edits/hooks/reordering checks (`uniform_batch_preparation`) and directional
+light checks pass in all three modes. A broader instancing draw-count check fails identically in
+the original product binary (2 versus expected 10 separate draws), while pixels match; no candidate
+fix is inferred. Logs `/tmp/tn-2x-world-<objects>-<pair>-<workers>.log`; probe binary SHA256
+`7164f7998801e8ac658eaf1c58f65e9db8e2ff97cacf66b41253fc0abdf10076`. No product edit retained.
+
+P20 hypothesis: preserve more per-object locality within the worker. In a temporary native renderer
+copy, combine world publication with disjoint warm-record validation, compact eligibility,
+comparison against one held representative material, depth calculation and float matrix/color
+packing. Join before the original serial grouping, callbacks and global depth/ID sort. A per-child
+result is consumed only after exact current-frame checks; cold, hidden, layer-excluded, callback,
+noncompact and nonrepresentative grouping cases retain the existing path. No shared map/vector,
+rebuild counter or diagnostic is mutated by workers. This attempts to move roughly 40–50% of
+preparation CPU together, targeting at least 20% lower preparation time; it cannot establish 2×
+whole-frame performance by itself. Use the same frozen fixture and correctness oracle first.
+
+P20 rejected: all nine unchanged CPU compatibility checks pass. Five alternating native pairs per
+size give four-worker/original preparation ratios 0.8838 / 1.0808 / 1.4134 at 4k/16k/64k
+(5/5, 0/5, 0/5 wins). Serial preprocessing/original is 1.1515 / 1.4846 / 1.9641. The first
+source Mesh is the ground; its material differs by identity from the main group's first material,
+so the exact-operand guard repeats uniform comparisons for that group. Serial grouping also
+rereads scattered source metadata after workers have streamed it. Logs
+`/tmp/tn-2x-precompute-<objects>-<pair>-<workers>.log`; binary SHA256
+`4d5a0931b0c29fdd9a52a36e13a3ca368c4e58bfaad4334e41acf0cdb162866c`. No product edit retained.
+Two split-processing probes regress at 64k. Stop changing that design and re-attribute native
+cycles/instructions before selecting a further candidate; per-object parallelism alone does not
+establish a speedup.
+
+P20 re-attribution: whole-program native cycle sampling (including the fixture's untimed game
+updates) puts sameUniforms at 12.61% in original mode and 35.21% with four-worker preprocessing.
+The worker body is 18.63%, serial addBatchMesh 9.82%, batchMeshes 8.37%. These are sampled CPU
+shares across all threads, not frame-time deltas. This supports the duplicate-comparison diagnosis
+and prevents treating per-object threading as a proven gain. Profiles `/tmp/tn-p20-{0,4}.perf`.
+
+P21 hypothesis: change only P20 representative selection. Before resetting prior-frame scratch,
+retain the material from the earliest scene-order member of the largest prior batch group. The
+original exact-operand guard remains; if grouping sees any different material, it still performs
+the original comparison. Preserve source ownership until serial grouping finishes and release the
+temporary owner before authored callbacks. Cold frames keep P20's fallback selection. This removes
+P20's duplicated comparison for the dominant stable group without assuming material immutability
+across frames or changing grouping equality. Reuse the same compatibility cases and paired probes.
+
+P21 rejected for the large workload: all nine CPU compatibility checks pass. Five alternating
+native pairs per size give four-worker/original preparation ratios 0.7150 / 0.9267 / 1.3440 at
+4k/16k/64k (5/5, 4/5, 0/5 wins). Serial preprocessing/original is 0.9990 / 1.4602 / 1.9554.
+The exact representative guard improves the smaller working sets, but does not remove the 64k
+regression. Logs `/tmp/tn-2x-representative-<objects>-<pair>-<workers>.log`; final binary SHA256
+`0d1cd069e47edcc2d7d4a41b98c513ec13b16332cc947e7f4e8bc58e06011f37`. No product edit retained.
+The doubtful assumption after these three threading probes is that offloading calculations is
+sufficient while the serial merge still rereads and prefetches the original scattered metadata.
+Re-profile that merge before another implementation; do not count small-scene gains as 2× proof.
+
+P21 re-attribution: four-worker whole-program cycle shares remain sameUniforms 27.46%, worker
+body 18.74%, serial addBatchMesh 12.51%, project 7.15%. Annotated sameUniforms samples cluster
+at/after operand loads (including 26.85% at one numeric load); instruction skid prevents assigning
+precise latency to that load. A concrete omitted mechanism is visible in source: the incumbent
+native fused traversal prefetches future object, material and transform data, while P19–P21 workers
+perform those scattered loads without its read-ahead.
+
+P22 hypothesis: reuse the incumbent native traversal's existing prefetch block inside P21's worker
+loop, with the same distances and no evaluator changes. This tests an omitted latency-hiding
+mechanism before adding snapshot formats or worker infrastructure. Preserve original serial
+prefetches for this isolated probe. It is native-only; no browser claim follows from it. Reject if
+five paired large-scene runs still fail; re-attribute rather than tune distances to this fixture.
+
+P22 fails the large-scene screen: all nine CPU compatibility checks pass; every large-scene
+four-worker pair remains slower than original. The smaller working sets improve: four-worker/original
+4k/16k ratios 0.7252 / 0.8705, both 5/5 wins. The 64k four-worker/original ratio is 1.2713 (0/5 wins), serial/original 1.5838; detailed ratios are in
+`/tmp/tn-2x-worker-prefetch-pairs.log`; no product edit retained. Native probe SHA256
+`582132c9af1b8b6c4a7ecc22f3ca815e42f9c4ef118f6337315d234aa41af49a`.
+
+P23 hypothesis: the main merge should consume exact current-frame group metadata already read
+by workers, rather than revisiting the source Mesh/Material/Record cache lines. Add those scalar
+and pointer snapshots to temporary per-child outputs; compare the identical geometry/buffer,
+order, shadow and material-type predicates from them. Keep exact-operand uniform fallback and
+serial group/map/vector mutation. Worker writes Record.seen only in its disjoint successful slot;
+draw reset stays serial. Skip redundant source prefetch only for successful prepared children.
+A correctness gap in all prior threading prototypes is also identified before shipping: a public
+scene.children vector can repeat a Mesh pointer. Require unique current pointers before launching
+workers, caching only an exactly equal pointer vector and rechecking all original type/parent guards
+on every frame. Changed vectors are sorted and checked for duplicates; duplicates use the serial
+path. Add that raw-duplicate case to the temporary oracle. No threading change is in product code.
+
+P23 diagnostic advance, not a keep: all nine CPU checks pass. Review corrected the supplemental
+raw-duplicate case to duplicate scene.children.front() after reversal, so the entries span worker
+chunks; the corrected oracle passes all three modes. Its draw assertion verifies compatibility,
+not independently the absence of races; uniqueness fallback is inspected and sanitizer proof is
+still required before shipping. Five alternating native pairs give four-worker/original ratios
+0.6215 / 0.7101 / 0.9558 at 4k/16k/64k (5/5 wins each); serial snapshot/original is
+0.9433 / 1.0418 / 1.2413. Large-scene gain is only 4.4%, below the campaign's needed 35%.
+Scaling probe SHA256 `f5cfebd43ea4579d2022060cd1b24e85ed41c86b3c560f2e0433ffb56c12e0ac` is
+unchanged after the oracle-only correction. Logs `/tmp/tn-2x-snapshot-<objects>-<pair>-<workers>.log`.
+
+P24 hypothesis: test P23 on the actual Wasm execution target. Native's arithmetic/memory balance
+is insufficient to infer Wasm threading gains. Build an isolated pthread-enabled Wasm prototype
+with prestarted workers, the same source-header overlay for all consumers, and the exact CPU
+ordering/mutation/hook oracle. Compare zero/one/four-worker modes within that same artifact and
+against preserved incumbent unthreaded bytes. Only then decide whether browser/Perry integration
+is justified. No product CMake, Perry import, public thread policy or qualification change yet.
+
+P24 harness finding: a synchronous Node diagnostic loop prevents Emscripten pthread-cleanup
+messages from running. It creates hundreds of replacement worker threads and reports invalid
+steady-state preparation around 155 ms. Yielding outside the timed prepare between frames lets
+the pool recycle; the 90-frame diagnostic then reports 16.7446 ms preparation (10.5889 projection,
+4.1915 batching), bulk 7.7827 ms. ENV confirms mode 4 and CPU tick deltas show three active Wasm
+worker threads. This is a diagnostic harness correction, not a product/evaluator change; default
+browser rAF already yields. Preserve this distinction and compare every Node arm with the same yield.
+Threaded Wasm SHA256 `44c6b766fc7dd1025b1adfe087a8dacc2f2f002f88c82464463e313dbb4d6b27`;
+incumbent SHA256 `1de91030dd97ed42288a5c02a540fc2d1174dc1ff148ec909cc63d8c394b117c`.
+
+P24 rejected for the large workload: the exact Wasm CPU mutation/order/hook oracle passes modes
+0/1/4. Five interleaved yielding Node pairs per size give shared-memory mode 0/incumbent combined
+bulk+prepare ratios 1.0620 / 1.0902 / 1.0130 at 4k/16k/64k (0/5, 0/5, 1/5 wins). Four-worker ratios
+are 0.9533 / 0.8919 / 1.0911 (5/5, 5/5, 1/5 wins). The 64k arm regresses by 9.1%, with bulk around
+7.6–8.3 ms and prepare 16.6–17.2 ms versus incumbent bulk 6.1–6.5 ms and prepare 15.9–16.2 ms.
+These are CPU diagnostics under shared-machine load, not Perry/GPU qualification. Logs
+`/tmp/tn-2x-wasm-pairs.log`; no product threading change retained.
+
+P25 attribution hypothesis: before introducing cross-frame material-cache state, measure the
+maximum removable cost of sameUniforms in the unchanged synthetic workload. A temporary renderer
+copy replaces only the compact grouping equality call with true; all fixture materials have equal
+non-color uniforms, but this deliberately cannot preserve general mutation semantics and cannot
+ship or qualify. Reuse existing unthreaded Wasm build objects and the same yielding CPU diagnostic,
+compare five interleaved pairs, then restore incumbent build output. No frozen evaluator edit.
+Only proceed to a sound ABI mutation/version cache if this upper bound justifies its overhead.
+Existing setters bump Material.version, but uniform color aliases and native scene escapes can
+bypass that version; those paths must conservatively retain immediate comparisons.
+
+P25 initial upper-bound result is contradictory: five paired combined elided/incumbent ratios
+are 0.9284 / 0.9476 / 1.1701 at 4k/16k/64k (4/5, 5/5, 0/5 wins). The 64k projection grows from
+about 10.4–11.8 ms to 14.4–14.7 ms despite removing comparisons. No cache implementation is
+justified by these measurements. Before attributing that regression, directly compile/link an
+unchanged renderer through the identical temporary-object route and compare all three arms;
+link placement/code generation must be controlled. Elision Wasm SHA256
+`6f6657db5336e6e7f223b5e580adafb4179f868b5fe54cbb43015e655c4dc961`;
+logs `/tmp/tn-2x-material-upper-pairs.log`. Incumbent files were never replaced.
+
+P25 link control: the unchanged-source direct-link artifact SHA256
+`3422813ba7f1e900df0761e9a9496c2ca2b69c90fd7fb9512b63e0a29c20c87c`
+has five-pair median combined/incumbent 1.0010 (2/5 wins), while elision is 1.1654 (0/5).
+The last two control runs also show drift; nonetheless all five elision runs regress. Simple link
+placement does not explain the result. Next collect measured-phase JIT-symbolized Wasm cycle
+samples and inspect generated call boundaries before another cache design; no product keep.
+
+P25 re-attribution: measured-phase JIT-symbolized cycle samples confirm sameUniforms disappears;
+projection self share grows 17.50%→28.18%. World-update Wasm text and all static data segments are
+byte-identical, and addBatchMesh is inlined in both, ruling out the proposed call-boundary change.
+Three paired PMU probes, all counters 100% scheduled, show instructions ratio 0.9101 in every pair,
+cycles 1.0667/1.1389/1.0430 and DRAM/IO demand-fill ratios 1.1489/1.2334/1.0532. Fewer operations are offset by
+worse memory execution. These raw0x43 counters describe L3/peer-L2 and DRAM/IO demand fills, not L2 misses or bandwidth saturation.
+Profiles `/tmp/tn-2x-material-profile-<control|elided>-root`; counters
+`/tmp/tn-2x-material-pmu-<1..3>-<control|elided>.stat`. Defer cache machinery and attack allocation
+locality. This is a rejected diagnostic direction, not a correctness-qualified optimization.
+
+P26 hypothesis: P18 tested allocator locality only in native code. Wasm has different pointer and
+object sizes and must be measured directly. A temporary copy of the two binding constructors uses
+per-type std::pmr::synchronized_pool_resource with allocate_shared for Mesh/Material only. A single
+artifact selects original/pooled allocation before scene construction, preserving all per-frame
+validation and immediate fields; compare five pairs at 4k/16k/64k and preserved incumbent control.
+The temporary resources have process lifetime; do not ship that lifetime policy without audit.
+No product allocator or evaluator edit. Reuse existing Wasm object libraries, replacing only the
+two binding objects at link time; same binary original/pooled comparison isolates allocation.
+
+P26 passes CPU screening: five paired pooled/incumbent combined ratios are 0.9556 / 0.9125 /
+0.7367 at 4k/16k/64k, all 5/5 wins. Same-binary pooled/original ratios are 0.9543 / 0.8692 /
+0.7215, also all 5/5. The original-allocation control/incumbent is 0.9992 / 1.0133 / 1.0240.
+Wasm SHA256 `93c22eecfd17b9b3b35c19a34a25faad73fecf14402d938413595678b5952d9d`;
+logs `/tmp/tn-2x-wasm-pool-pairs.log`. Both modes keep two submitted candidates, one batch and
+65,536 members at 64k. This is not browser/Perry qualification or a 2× claim.
+
+P26 lifetime refinement: retain a process-lifetime resource identity, but return its chunks when
+its last allocate_shared control block (including weak references) is deallocated. Use a counted,
+locked std::pmr::memory_resource around the measured synchronized_pool_resource, and separate the
+per-type singleton from argument forwarding. Test final release, surviving weak owners, allocation
+and constructor exceptions, over-alignment and reuse before timing the refined implementation.
+Scope if qualified: engine ABI allocation only, Wasm-only default, three implementation files
+(two constructor call sites plus private allocator header). Complexity 3 → LOW; risk override none;
+performance checkpoint review obtained because allocator lifetime can cross context ownership.
+No product code yet. Browser end-to-end judge and native/Wasm ABI compatibility remain required.
+
+P26 reclamation prototype passes: allocation/constructor-failure, weak-control-block lifetime,
+over-alignment and reuse checks pass natively, under ASan+UBSan and in Wasm. The retained-pool
+control fails the last-control-block reclamation assertion, as intended for this actual lifetime
+requirement. Five refined pooled/incumbent CPU ratios 0.9386 / 0.7909 / 0.7597 at 4k/16k/64k
+(4/5, 5/5, 5/5 wins). Original-allocation control drift increased materially under shared host load;
+these remain diagnostics. Refined artifact SHA256
+`eeecf765e8b0dbfdb49fa39a14d857a3c3dcfae01fb2689ed93df18203bb98f3`;
+logs `/tmp/tn-2x-wasm-pool-reclaim-pairs.log`.
+
+P26 provisional product implementation uses private `abi/pooled_shared.h`, both binding constructor
+call sites and the existing ABI lifetime case. Review required explicit process-lifetime
+new_delete_resource upstream; applied. PMR declarations and pool-specific unit assertions are
+excluded from native Apple builds, which use make_shared; this avoids imposing newer system PMR
+symbols on their deployment targets ([LLVM availability contract](https://raw.githubusercontent.com/llvm/llvm-project/release/18.x/libcxx/include/__availability)).
+Final native ABI/C11 10/10 and Wasm ABI 9/9 pass; actual allocator-header ASan+UBSan check passes;
+web/Perry harness checks 20/20 pass. Frozen judge/workload/scene diff and whitespace checks are clean.
+Final product Wasm SHA256 `cfa2ecf9da1dbb09b563eaae0f66cc14b09f13fb461deda2023f26b2733bcbe2`;
+JS SHA256 `395819667f0184509822af882046f2d90e1a6b496c048d6a3a236c500f4f8a4b`.
+Five paired CPU screens of these final bytes are running before normal browser ABBA. No keep,
+2× qualification, full-platform test or native scaling pass is claimed.
+
+P26 final-byte CPU screen passes: five paired candidate/incumbent combined ratios are 0.9661 /
+0.6945 / 0.6975 at 4k/16k/64k (4/5, 5/5, 5/5 wins); all measured frames retain the expected batch
+and zero record rebuilds. Logs `/tmp/tn-2x-wasm-pool-product-pairs.log`. Start the unchanged 64k
+browser judge in baseline/pool/pool/baseline order, 600 measured/120 warmup and three interleaved
+repeats per block, physical cores 8–11, preserved engine hashes and existing hardware/image checks.
+No builds/tests overlap its active timing. The first service launch lacked a user bus environment;
+no browser started. Explicit existing /run/user/<uid>/bus environment corrected it. Owned transient
+unit `tn-native-engine-pool-abba.service` is active; its EXIT trap restores final product bytes.
+Product performance is provisional until this normal browser comparison finishes.
+
+
+P26 browser interruption: journal evidence shows the owned ABBA unit was stopped externally at
+09:54:39local after baseline1 completed; no pool browser verdict was produced. Its completed report
+is preserved at `/tmp/tn-2x-pool-browser-interrupted-baseline1-report.json`. A fresh unchanged ABBA
+attempt passes doctor but fails before launching Chromium: the managed execution environment
+blocks X11 socket binding (`scripts/xvfb.sh`). Candidate product bytes were restored by the trap.
+Requested restored local execution or the unchanged existing script in a normal terminal; no GPU
+assertion, performance gate or browser recipe was relaxed.
+
+P26 cycle/cache re-attribution succeeds without browser sockets. Existing measured-phase Wasm/JIT
+profiling and three alternating PMU pairs use120measured/60warmup and physical cores8–11, no
+concurrent builds/tests. All counters are100% scheduled. Pool/incumbent median ratios: instructions
+1.0000, cycles0.6629 (pairs0.6629/0.7161/0.5518), taskCPU0.6684, L3/peer-L2 demand fills0.7777,
+DRAM/IO demand fills0.3686. This supports allocation locality rather than instruction elimination;
+it does not prove bandwidth saturation or a browser2× gain. Event-name audit corrected P25's
+old L2 label: raw0x43/0x02 is L3/peer-L2 demand fills,0x43/0x48 combines local/remote DRAM/IO
+fills ([Linux Zen3 event definitions](https://raw.githubusercontent.com/torvalds/linux/master/tools/perf/pmu-events/arch/x86/amdzen3/memory.json)).
+Profiles: `/tmp/tn-2x-material-profile-pool-audit-<baseline|pool>-root`; counters:
+`/tmp/tn-2x-pool-pmu-verified-<1..3>-<baseline|pool>.stat`. An initial zsh label loop grouped both
+labels; those three files are baseline-only controls and were not used as candidate evidence.
+The corrected Bash pairs above are the valid comparison. On the pooled heap, bulk/prepare
+CPU screening places batching around25% of combined cost; test that newly significant term
+before declaring the renewed campaign's ceiling. No qualification box ticked.
+
+P27 hypothesis: after P26 changes heap locality, batching is now about25% of combined CPU screening cost. Revisit one-pass active8-bit histograms on this changed working set in a temporary same-binary mode control, preserving stable scatters, depth/id ties, zero normalization and nonfinite fallback. Use8KiB Wasm stack scratch only for the diagnostic to avoid changing RenderDatabase layout; neither mode ships. Compare unchanged pool artifact, temporary original path and histogram path before any product edit. Existing expanded ordering oracle must pass both temporary modes. No evaluator change; archived P26 browser artifact stays fixed. `pnpm prd:progress` encountered denied tsx CLI IPC; executing the same existing script through `node --import tsx` reports0/3phases,2/9boxes,prd:25%.
+
+P27 rejected as an unproved combined-cost gain. Both same-binary modes pass the exact current ordering/mutation oracle, including unequal groups, signed-zero ties, nonfinite fallback and callbacks. Six fully counterbalanced triples per size keep expected draw/batch/member counts and zero rebuilds. Histogram/control combined ratios4k/16k/64k are0.9946/1.0497/1.0419 (3/6,2/6,1/6 wins);64k batching alone improves0.8977 (5/6). Control/preserved-pool combined medians0.9951/0.9819/0.9739 have wide drift. Preserve P26 and retain no renderer edit from this diagnostic. Probe SHA14004d2b8f75a99d4c3c1f1a8ec801922df3664e2436614496d5ac54f337ccf0; logs `/tmp/tn-2x-pool-hist-pairs.log`. The SDK cache lock was read-only in this environment; a cache under `/tmp/tn-managed-emscripten-cache` permits ordinary compilation without writing outside allowed roots. Next inspect actual Wasm allocation sizes/strides before proposing another locality change.
+
+
+P28 hypothesis: actual Wasm layout shows Mesh256bytes, Material384bytes, but both allocate_shared pools stride512bytes (2016/2047 adjacent pairs). Transform fields remain in their existing separate pages. Mesh plus its control block crosses the libc++ power-of-two pool class; test stdlib separate Mesh/control-block allocation in a temporary same-binary construction mode, retaining the existing pool and ordinary shared ownership. This avoids a custom slab allocator. Compare unchanged P26, same-binary original and split mode with the existing CPU screen before any product edit. No browser qualification or ceiling claim.
+
+P28 CPU screen passes: six fully counterbalanced triples per size give split/control combined ratios4k/16k/64k0.6551/0.7381/0.8021, all6/6 wins at every size.64k projection ratio0.6842, prepare0.7567; bulk1.0610 and batching1.0228 do not improve. Split/preserved-P26 combined medians0.7135/0.7102/0.7923 (5/6,6/6,5/6 wins); original-mode/preserved-P26 controls1.2521/1.0409/1.0512 show substantial host/artifact drift. The same-binary result isolates constructor allocation mode; no browser2× or product keep claimed. Wasm SHA136de752a1bfb1edfd5223f209a465b945e17e0de8f66cf8d2a6c1c1e0379670; logs `/tmp/tn-2x-pool-split-pairs.log`. The stdlib split-allocation lifetime check passes in Wasm, including enable_shared_from_this, surviving weak references, constructor/upstream allocation exceptions, alignment and reuse. Unlike allocate_shared, object-pool chunks can return at final strong release while the separate weak control block remains alive; its deleter retains the process-lifetime allocator identity. Product remains unchanged while measured-phase PMU pairs check instruction work and cache demand fills.
+
+P28 measured-phase PMU confirms locality: all five hardware events100% scheduled in three alternating pairs. Split/control median cycles0.7068, instructions1.0000015 (third pair1.00645), taskCPU0.7055, true L2 data-demand misses0.7516, L3/peer-L2 demand fills1.0231, DRAM/IO demand fills0.5423. Event0x64/0x08 is the L2 data-demand miss counter; raw0x43 definitions remain as corrected above. Logs `/tmp/tn-2x-pool-split-pmu-<1..3>-<control|split>.stat`. Apply the minimal provisional product refinement in the existing private makeShared template: separate allocation only for Wasm Mesh, allocate_shared for Material, native make_shared unchanged. Add actual-factory shared_from_this/weak-reuse coverage in the existing ABI lifetime case. Rebuild and qualify these final bytes before any keep. No custom allocator or public API.
+
+P28 product checks pass: native ABI/C11 10/10, Wasm ABI/C11 10/10, web/Perry harness20/20. Actual-header split branch passes address+undefined sanitizer checks (isolated Mesh ownership/alignment/constructor-failure/reuse exercise); LeakSanitizer itself cannot complete under this sandbox's ptrace/process restrictions, so leak checking is unverified and the rerun explicitly uses detect_leaks=0. Actual Wasm factory layout confirms Mesh stride256 (2016/2047 adjacent pairs), Material remains512. Final product Wasm SHA258d8ed4023e70357f09e250bc697a75e00d1b04c3f748acba151019ec4d25cd; JS SHA025ac71d564f9312a4d577e7912fcf52f143c56cc5176c2c7a5f001752329be4. Preserved at `/tmp/tn-2x-wasm-pool-split-product/`. Begin six counterbalanced triples of incumbent/P26/P28 final bytes at all three sizes, with no concurrent builds/tests. Normal browser judge script for these final bytes is `/tmp/tn-2x-pool-split-browser-abba.sh`; configuration, assertions and baseline remain unchanged. It requires restored local execution; no end-to-end2× or ceiling claimed.
+
+P28 final-byte CPU screen passes at medium/large sizes: six counterbalanced incumbent/P26/P28 triples give final/P26 combined ratios4k/16k/64k0.9979/0.8359/0.8347 (4/6,5/6,5/6 wins). Final/incumbent ratios0.9341/0.6496/0.5496 (5/6,6/6,6/6 wins); P26/incumbent0.9193/0.7949/0.6682. Thus the prototype's large4k incremental gain did not survive the product build; retain no such claim. Final bytes preserve all frame-shape/zero-rebuild assertions. Logs `/tmp/tn-2x-pool-split-product-pairs.log`; code/data placement and host drift mean ratios from different screens must not be multiplied. The45% CPU-only large-scene gain is relative to incumbent Wasm, not ThreeJS and not Perry browser2×. Re-profile the final P28 artifact and preserved P26 before choosing another dominant-path change. No browser sockets available; keep performance/default-promotion boxes open.
+
+P28 final re-attribution: fresh measured-phase JIT cycle captures have zero lost samples. P26→P28 self shares: worldSelf22.85→9.82%, project27.46→24.34%, prepare19.22→24.70%, sameUniforms4.96→5.50%, sincos6.70→9.48%, its argument reducer3.37→4.84%. These are compositional shares, not direct per-function speedup ratios. Candidate combined CPU screen in this profile is about17.54ms, with bulk4.6662, prepare12.8740, projection8.1902 and batching3.3055. Profiles `/tmp/tn-2x-material-profile-pool-split-final-<control|candidate>-root`. Generated-code annotation localizes21.41% of prepare samples near sorted packed-matrix loads,10.19% near type/parent eligibility loads and9.84% near record/frame checks; sampling skid prevents exact per-instruction latency claims. Existing BatchTransform and Record are already alignas(64); no alignment patch is justified. Other residuals include required immediate material observation and exact scalar trigonometry. Do not infer hardware saturation, a final optimization ceiling or end-to-end2× from these CPU-only observations. The concrete next qualification is the unchanged normal GPU ABBA using `/tmp/tn-2x-pool-split-browser-abba.sh`; it remains blocked by managed X11 socket restrictions. The requested PR/PRD audit stays deferred until that performance decision is supported.

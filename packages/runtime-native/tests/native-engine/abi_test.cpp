@@ -1,11 +1,14 @@
 #include "check.h"
 #include "threenative/abi/tn_abi.h"
 #include "engine/abi/abi_internal.h"
+#include "engine/abi/pooled_shared.h"
 #include "engine/scene/object3d.h"
+#include "engine/scene/nodes.h"
 
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <stdexcept>
 
 namespace {
 
@@ -361,7 +364,78 @@ void light() {
 // a deleted attribute stays readable through a reference to it, a scene keeps the mesh it draws
 // (and the mesh its geometry and material), and a replaced background stays readable. Run under
 // ASan, a use-after-free in any of these fails the case.
+void pooledLifetime() {
+    // Exercise the actual binding factory, including enable_shared_from_this and late weak teardown.
+    for (int cycle = 0; cycle < 3; ++cycle) {
+        auto mesh = tn::binding::detail::makeShared<tn::engine::Mesh>();
+        CHECK(mesh->shared_from_this().get() == mesh.get());
+        std::weak_ptr<tn::engine::Mesh> weak = mesh;
+        mesh.reset();
+        CHECK(weak.expired());
+        auto replacement = tn::binding::detail::makeShared<tn::engine::Mesh>();
+        CHECK(replacement->shared_from_this().get() == replacement.get());
+        weak.reset();
+        CHECK(replacement->parent == nullptr);
+    }
+#if defined(__EMSCRIPTEN__) || !defined(__APPLE__)
+    struct Upstream final : std::pmr::memory_resource {
+        std::size_t bytes = 0;
+        bool fail = false;
+        void* do_allocate(std::size_t size, std::size_t alignment) override {
+            if (fail)
+                throw std::bad_alloc();
+            void* pointer = std::pmr::new_delete_resource()->allocate(size, alignment);
+            bytes += size;
+            return pointer;
+        }
+        void do_deallocate(void* pointer, std::size_t size, std::size_t alignment) override {
+            bytes -= size;
+            std::pmr::new_delete_resource()->deallocate(pointer, size, alignment);
+        }
+        bool do_is_equal(const std::pmr::memory_resource& other) const noexcept override { return this == &other; }
+    } upstream;
+    struct alignas(64) Item {
+        int value;
+        explicit Item(int n) : value(n) {
+            if (n < 0)
+                throw std::runtime_error("constructor");
+        }
+    };
+    tn::binding::detail::SharedObjectPool pool(&upstream);
+    const auto initial = upstream.bytes;
+    const std::pmr::polymorphic_allocator<Item> allocator(&pool);
+    for (int cycle = 0; cycle < 3; ++cycle) {
+        auto live = std::allocate_shared<Item>(allocator, 17);
+        CHECK(reinterpret_cast<std::uintptr_t>(live.get()) % alignof(Item) == 0);
+        std::weak_ptr<Item> weak = live;
+        live.reset();
+        CHECK(weak.expired() && upstream.bytes > initial);
+        auto other = std::allocate_shared<Item>(allocator, 23);
+        CHECK(other->value == 23);
+        other.reset();
+        CHECK(upstream.bytes > initial);
+        weak.reset();
+        CHECK(upstream.bytes <= initial);
+        try {
+            auto failed = std::allocate_shared<Item>(allocator, -1);
+            CHECK(false);
+        } catch (const std::runtime_error&) {
+        }
+        CHECK(upstream.bytes <= initial);
+        upstream.fail = true;
+        try {
+            auto failed = std::allocate_shared<Item>(allocator, 1);
+            CHECK(false);
+        } catch (const std::bad_alloc&) {
+        }
+        upstream.fail = false;
+        CHECK(upstream.bytes <= initial);
+    }
+#endif
+}
+
 void lifetime() {
+    pooledLifetime();
     const tn_version_info_t own = tn_engine_version();
     tn_context_t* ctx = nullptr;
     Diag d;
