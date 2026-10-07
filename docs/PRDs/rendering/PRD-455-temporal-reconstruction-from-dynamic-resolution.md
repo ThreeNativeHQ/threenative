@@ -1982,3 +1982,14 @@ shipped range. Reveal stale fractions and the other checks did not move. The sam
 The override was not committed. Together with the falsified reactive mask and the raw4 footprint, this
 leaves the aliased-current-frame edge error, not history clipping, as the unexplained term: the best
 temporal arm remains worse at edges than the no-AA reference it is supposed to beat by 5%.
+
+**Static-camera control localizes the loss — 2026-10-07, hardware.** A throwaway flag held the camera static
+(character motion unchanged) across the unchanged 31-arm corpus on nvidia/turing `webgpu`, ordinary lane,
+source `53da706e8`. Full-resolution temporal edge `.04847` against a no-AA reference of `.05245`
+(a 7.6% gain; moving camera: `.05849` against `.05029`, a 16% loss), and moving-edge error `.02691`
+against `.04688`. So accumulation itself works; the sub-pixel camera drift costs about `.010` of edge
+error through reprojection and resampling, not through variance clipping (see the gamma control above).
+Even static, the full-resolution edge misses its own `<.04778` bar by `.0007`. The low-input family does
+not converge to the bar at all: static `quality-temporal` edge `.08132` against the spatial arm's
+`.06930` and a `<.04687` requirement, so a 426×240 input does not recover native-resolution edge accuracy
+in this metric with the current reconstructor. Flag not committed; no threshold changed.
