@@ -252,7 +252,7 @@ importers:
         version: link:../../packages/physics
       three:
         specifier: 'catalog:'
-        version: 0.185.1(patch_hash=c2e051df4c469d033b151cb9da5ce5112c90801aaaa984d6bfde0e09d80c9a66)
+        version: 0.185.1(patch_hash=9fdfb25e7aff90b99b02b9859a0789390f56c72c53873bef5c829d243bb73371)
     devDependencies:
       '@types/three':
         specifier: 0.185.3
@@ -424,7 +424,7 @@ importers:
         version: 0.33.0(react@19.2.0)
       three:
         specifier: 'catalog:'
-        version: 0.185.1(patch_hash=c2e051df4c469d033b151cb9da5ce5112c90801aaaa984d6bfde0e09d80c9a66)
+        version: 0.185.1(patch_hash=9fdfb25e7aff90b99b02b9859a0789390f56c72c53873bef5c829d243bb73371)
     devDependencies:
       '@tailwindcss/vite':
         specifier: 'catalog:'
