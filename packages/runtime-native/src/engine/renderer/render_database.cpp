@@ -626,10 +626,26 @@ void RenderDatabase::batchMeshes(std::vector<DrawItem>& items) {
         uint64_t varying = 0;
         const uint64_t first = depthKeys_[members.front()];
         for (auto i : members) varying |= depthKeys_[i] ^ first;
-        for (unsigned shift = 0; shift < 64; shift += 8) {
-            if (((varying >> shift) & 255) == 0) continue;
-            std::array<std::size_t, 256> offsets{};
-            for (auto i : members) ++offsets[(depthKeys_[i] >> shift) & 255];
+        if (varying == 0) continue;
+        radixHistograms_.resize(8);
+        std::array<unsigned, 8> digits;
+        unsigned digitCount = 0;
+        for (unsigned digit = 0; digit < 8; ++digit) {
+            if (((varying >> (digit * 8)) & 255) == 0) continue;
+            digits[digitCount++] = digit;
+            radixHistograms_[digit].fill(0);
+        }
+        // Digit counts do not depend on the order produced by preceding stable scatters.
+        for (auto i : members) {
+            const uint64_t key = depthKeys_[i];
+            for (unsigned d = 0; d < digitCount; ++d) {
+                const unsigned digit = digits[d];
+                ++radixHistograms_[digit][(key >> (digit * 8)) & 255];
+            }
+        }
+        for (unsigned d = 0; d < digitCount; ++d) {
+            const unsigned digit = digits[d], shift = digit * 8;
+            auto& offsets = radixHistograms_[digit];
             std::size_t total = 0;
             for (auto& offset : offsets) { const auto count = offset; offset = total; total += count; }
             for (auto i : members) sortScratch_[offsets[(depthKeys_[i] >> shift) & 255]++] = i;

@@ -107,7 +107,8 @@ void uniformBatchPreparation() {
         if (infinite) depthCamera.projectionMatrix.elements[15] = 0;
         std::array<std::vector<std::pair<double, const Mesh*>>, 2> expectedGroups;
         for (std::size_t i = 0; i < meshes.size(); ++i) {
-            const std::size_t group = multiple ? i % 2 : 0;
+            const std::size_t group =
+                multiple ? (pattern == 3 ? std::size_t(i % 3 == 0) : i % 2) : 0;
             meshes[i]->material->roughness = group ? 0.25 : 1;
             const bool wide = (group + pattern) % 2 == 0;
             const double z = multiple

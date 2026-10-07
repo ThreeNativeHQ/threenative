@@ -133,6 +133,7 @@ class RenderDatabase {
     std::vector<uint8_t> flatPlainMeshes_;
     bool flatParentIdentity_ = false;
     std::vector<std::size_t> sortScratch_;
+    std::vector<std::array<std::size_t, 256>> radixHistograms_;
     std::vector<uint64_t> depthKeys_;
     std::vector<std::string> diagnostics_;
     uint64_t rebuilds_ = 0;
