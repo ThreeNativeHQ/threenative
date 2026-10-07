@@ -139,7 +139,7 @@ is inferred from the CPU tests.
    buffer and the assertion fails on the rejection fraction — the failing number is pasted in the
    PRD's red before the fix lands.
 
-- [ ] **No temporal stage requested, no velocity cost.** proof: `pnpm exec vitest run packages/core/__tests__/render-velocity.spec.ts` plus PR #393 temporal-off/on frame-cost measurement (pending).
+- [x] **No temporal stage requested, no velocity cost.** proof: `render-velocity.spec.ts` 16/16 pass; `sh scripts/xvfb.sh pnpm exec tsx scripts/verify-velocity-history.ts` at `828db029f` exits 0 on nvidia/turing `webgpu` (2026-10-07): temporal-off has 0 velocity targets, 0 history objects, 0 provisioned stages; 150 balanced FrameBudget render-phase samples, p50 0.8 ms baseline vs 0.9 ms off (noise allowance 0.2), p95 1.5 vs 1.4 ms. Render-phase CPU submission cost only; no native or GPU-time claim.
    With every temporal stage off, no velocity
    target is allocated and the `render` phase is unchanged within noise. *Mutation:* allocate it
    unconditionally and the allocation spec fails naming the target.
@@ -401,3 +401,13 @@ environment reds from timeouts and an unbuilt checkout. Nothing here measures gh
 temporal-off cost, native rendering or image quality, so the three open phase-3 and
 acceptance boxes and both open acceptance criteria stay open with their original thresholds
 and controls.
+
+### Ghosting rejection-fraction criterion cannot be met by the current counter — 2026-10-07
+
+On hardware WebGPU (nvidia/turing, `TN_RAW4=1` corpus, source `828db029f`) the per-frame GPU rejection
+fraction does not separate a zero-velocity arm from the real one: frame 2 `.002921` vs `.002921`,
+frame 4 `.017049` vs `.017179` (motion); `.006402` vs `.006385`, `.025747` vs `.025764` (quality). The
+literal mutation of the two ghosting boxes (zero velocity must fail the *rejection-fraction* assertion) is
+therefore not met, and `:102`, `:135` stay open. The corpus discriminates zero velocity by moving-edge
+error instead (`zeroVelocityDetected`, `qualityZeroVelocityDetected` pass). Closing the boxes needs
+either a rejection metric that reacts to velocity or an owner-approved change of the criterion's metric.
