@@ -22,6 +22,7 @@ import {
 } from "./content/model-dedupe.js";
 import { formatHealthReport, runHealthReport } from "./health.js";
 import type { IAssetHealthInput, IAssetHealthReport } from "./health.js";
+import { readTextureQuality } from "./image-quality.js";
 import {
   type IModelLodOptions,
   type IModelLodOverride,
@@ -68,6 +69,7 @@ import {
   formatModelSizes,
   formatPassCosts,
   formatSkippedCompression,
+  formatTextureQualityTotals,
   formatTextureSizes,
 } from "./report.js";
 import type {
@@ -330,6 +332,7 @@ export interface IBakeReceipt {
 }
 
 interface IAssetManifestEntry {
+  readonly quality?: import("./image-quality.js").ITextureQuality;
   readonly compressionSkipped?: TextureSkipReason;
   /** What the audio pass measured and did to one clip. */
   readonly audio?: IAudioRow;
@@ -759,6 +762,18 @@ function embeddedTextureRow(value: unknown): IEmbeddedTextureRow | undefined {
       )
     : undefined;
   return {
+    ...(isRecord(value.quality)
+      ? {
+          quality: Object.fromEntries(
+            Object.entries(value.quality).map(([key, score]) => {
+              const parsed = readTextureQuality(score);
+              if (parsed === undefined)
+                throw new Error(`TN_ASSETS_QUALITY_MISSING: invalid score for '${key}'.`);
+              return [key, parsed];
+            }),
+          ),
+        }
+      : {}),
     bytesAfter: value.bytesAfter as number,
     bytesBefore: value.bytesBefore as number,
     count: value.count as number,
@@ -1863,6 +1878,7 @@ function sameEntry(existing: IAssetManifestEntry, entry: IAssetManifestEntry): b
     JSON.stringify(existing.lightmapAtlas) === JSON.stringify(entry.lightmapAtlas) &&
     JSON.stringify(existing.lightmaps) === JSON.stringify(entry.lightmaps) &&
     JSON.stringify(existing.embeddedTextures) === JSON.stringify(entry.embeddedTextures) &&
+    JSON.stringify(existing.quality) === JSON.stringify(entry.quality) &&
     JSON.stringify(existing.simplify) === JSON.stringify(entry.simplify) &&
     JSON.stringify(existing.lod) === JSON.stringify(entry.lod) &&
     existing.bytes === entry.bytes &&
@@ -2656,6 +2672,7 @@ export async function compileAssets(
       });
     } else {
       textureRows.push({
+        ...(entry.quality === undefined ? {} : { quality: entry.quality }),
         after: entry.bytes,
         before: entry.bytesBefore,
         // Read off the manifest entry, not off the pass: a cache hit reuses the previous entry
@@ -2740,6 +2757,7 @@ export async function compileAssets(
             bytesBefore: input.length,
             audio: audioRow(applied.entry.audio),
             embeddedTextures: embeddedTextureRow(applied.entry.embeddedTextures),
+            quality: readTextureQuality(applied.entry.quality),
             compact: compactRow(applied.entry.compact),
             simplify: simplifyRow(applied.entry.simplify),
             lod: lodRow(applied.entry.lod),
@@ -2941,6 +2959,11 @@ export async function compileAssets(
   for (const line of formatAudioSizes(audioRows)) console.log(line);
   for (const line of formatTextureSizes(textureRows)) console.log(line);
   for (const line of formatModelSizes(modelRows)) console.log(line);
+  const qualityScores = [
+    ...textureRows.flatMap((row) => (row.quality === undefined ? [] : [row.quality])),
+    ...modelRows.flatMap((row) => Object.values(row.embeddedTextures?.quality ?? {})),
+  ];
+  if (qualityScores.length > 0) console.log(formatTextureQualityTotals(qualityScores));
   const dedupe: IModelDedupeSummary | undefined =
     modelSources.length === 0
       ? undefined

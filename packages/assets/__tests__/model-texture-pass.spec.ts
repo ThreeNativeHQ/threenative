@@ -11,8 +11,10 @@ import { buildFixtureDocument } from "../../../test-support/generate-fixture-mod
 import { rgbaPng } from "../../../test-support/png.js";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { basisTranscoderPaths } from "../../../test-support/three-basis.js";
+import * as qualityInstrument from "../src/image-quality.js";
 import { type IAssetSourceConfig, compileAssets } from "../src/index.js";
 import { modelPass } from "../src/passes/model.js";
+import { createSharedImageStore } from "../src/passes/shared-images.js";
 import { parsePng } from "../src/png.js";
 
 /**
@@ -196,6 +198,138 @@ function expectColours(pixels: Uint8Array, width: number, tolerance: number): vo
 }
 
 describe("embedded model textures", () => {
+  it("reports every compressed image without changing output bytes", async () => {
+    const input = await fixtureWithTextures({ width: 32 });
+    const on = await compiled(input);
+    const off = await compiled(input, { textures: { measureQuality: false } });
+    expect(on.buffer).toEqual(off.buffer);
+    const sharedOn = await compiled(input, { sharedImages: createSharedImageStore() });
+    const sharedOff = await compiled(input, {
+      sharedImages: createSharedImageStore(),
+      textures: { measureQuality: false },
+    });
+    expect(sharedOn.buffer).toEqual(sharedOff.buffer);
+    const summary = on.entry.embeddedTextures as {
+      formats: Record<string, string>;
+      quality: Record<string, { ssim: number; sourceWidth: number; width: number }>;
+    };
+    const names = Object.keys(summary.formats).filter((name) => summary.formats[name] !== "none");
+    expect(names.length).toBeGreaterThan(0);
+    expect(Object.keys(summary.quality).sort()).toEqual(names.sort());
+    for (const score of Object.values(summary.quality))
+      expect(Number.isFinite(score.ssim)).toBe(true);
+  });
+
+  it("includes all consuming MASK thresholds in quality and shared cache identity", async () => {
+    const document = await new NodeIO().readBinary(await fixtureWithTextures({ width: 32 }));
+    const [cloth, skin] = document.getRoot().listMaterials();
+    if (cloth === undefined || skin === undefined) throw new Error("fixture lacks materials");
+    const colour = cloth.getBaseColorTexture();
+    cloth.setAlphaMode("MASK").setAlphaCutoff(0.25);
+    skin.setBaseColorTexture(colour).setAlphaMode("MASK").setAlphaCutoff(0.75);
+    const store = createSharedImageStore();
+    const first = await compiled(Buffer.from(await new NodeIO().writeBinary(document)), {
+      sharedImages: store,
+    });
+    const summary = first.entry.embeddedTextures as {
+      quality: Record<string, qualityInstrument.ITextureQuality>;
+    };
+    expect(summary.quality.checker?.alpha.coverage.map((c) => c.threshold)).toEqual([0.25, 0.75]);
+    skin.setAlphaCutoff(0.6);
+    const measure = vi.spyOn(qualityInstrument, "measureKtx2");
+    try {
+      const second = await compiled(Buffer.from(await new NodeIO().writeBinary(document)), {
+        sharedImages: store,
+      });
+      const scores = second.entry.embeddedTextures as typeof summary;
+      expect(scores.quality.checker?.alpha.coverage.map((c) => c.threshold)).toEqual([0.25, 0.6]);
+      expect(measure).toHaveBeenCalledTimes(1);
+    } finally {
+      measure.mockRestore();
+    }
+  });
+
+  it("recalls quality from the shared-image key on a second pass and disk store", async () => {
+    const root = await makeTempDir("threenative-quality-cache-");
+    const input = await fixtureWithTextures({ width: 32 });
+    const store = createSharedImageStore(root);
+    const cold = await compiled(input, { sharedImages: store });
+    const measure = vi.spyOn(qualityInstrument, "measureKtx2");
+    const warm = await compiled(input, { sharedImages: createSharedImageStore(root) });
+    expect(warm.entry.embeddedTextures).toEqual(cold.entry.embeddedTextures);
+    expect(warm.buffer).toEqual(cold.buffer);
+    expect((warm.entry.embeddedTextures as { quality: unknown }).quality).toBeDefined();
+    expect(measure).not.toHaveBeenCalled();
+    measure.mockRestore();
+  });
+
+  it("reports quality through compileAssets and replays the same report on a build cache hit", async () => {
+    const root = await makeTempDir("threenative-quality-build-");
+    await mkdir(path.join(root, "assets"));
+    await writeFile(
+      path.join(root, "assets", "prop.glb"),
+      await fixtureWithTextures({ width: 32 }),
+    );
+    const lines = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    try {
+      const options = { cwd: root, concurrency: 1, transcoder: basisTranscoderPaths() };
+      await compileAssets(options);
+      const cold = JSON.parse(
+        await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
+      ) as {
+        entries: Record<
+          string,
+          {
+            embeddedTextures: { quality: Record<string, unknown> };
+            sharedImages: { output: string; quality: { version: string } }[];
+          }
+        >;
+      };
+      expect(Object.keys(cold.entries["prop.glb"]?.embeddedTextures.quality ?? {})).toHaveLength(2);
+      expect(cold.entries["prop.glb"]?.sharedImages).toHaveLength(2);
+      for (const row of cold.entries["prop.glb"]?.sharedImages ?? []) {
+        expect(row.quality.version).toBe(qualityInstrument.IMAGE_QUALITY_VERSION);
+      }
+      const firstReport = lines.mock.calls
+        .map((args) => args.join(" "))
+        .filter((line) => line.startsWith("texture quality"));
+      expect(firstReport).toHaveLength(3);
+      const measure = vi.spyOn(qualityInstrument, "measureKtx2");
+      lines.mockClear();
+      try {
+        await compileAssets(options);
+        expect(measure).not.toHaveBeenCalled();
+        expect(
+          lines.mock.calls
+            .map((args) => args.join(" "))
+            .filter((line) => line.startsWith("texture quality")),
+        ).toEqual(firstReport);
+        // Force a model pass on unchanged texture bytes: this must use the per-image cache,
+        // not merely the whole-model cache whose report we just checked.
+        const changed = await new NodeIO().readBinary(
+          await readFile(path.join(root, "assets", "prop.glb")),
+        );
+        changed.getRoot().listNodes()[0]?.setName("quality-cache-new-model-revision");
+        await writeFile(
+          path.join(root, "assets", "prop.glb"),
+          await new NodeIO().writeBinary(changed),
+        );
+        await compileAssets(options);
+        expect(measure).not.toHaveBeenCalled();
+        const revised = JSON.parse(
+          await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
+        ) as typeof cold;
+        expect(revised.entries["prop.glb"]?.embeddedTextures.quality).toEqual(
+          cold.entries["prop.glb"]?.embeddedTextures.quality,
+        );
+      } finally {
+        measure.mockRestore();
+      }
+    } finally {
+      lines.mockRestore();
+    }
+  });
+
   it("should transcode every embedded image to KTX2 and declare KHR_texture_basisu", async () => {
     const input = await fixtureWithTextures({ width: 32 });
     const { buffer } = await compiled(input);

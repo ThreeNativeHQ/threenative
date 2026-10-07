@@ -2,6 +2,7 @@ import { read as readKTX2 } from "ktx-parse";
 import { PNG } from "pngjs";
 import { type AssetKind, type IAssetPass, type IAssetPassOutput, classify } from "../compile.js";
 import { textureStats } from "../health.js";
+import { IMAGE_QUALITY_IDENTITY, measureKtx2 } from "../image-quality.js";
 import { KTX2_ENCODER_VERSION, encodeToKTX2 } from "../ktx2-encoder.js";
 import { decodeImageBytes } from "./decode-image.js";
 import { globMatch } from "./glob.js";
@@ -41,6 +42,8 @@ export interface ITextureOverride {
 }
 
 export interface ITexturePassOptions {
+  /** Internal byte-parity control; not exposed as project configuration. */
+  readonly measureQuality?: boolean;
   /** Longest edge to retain; larger sources are downsampled without upscaling. */
   readonly maxSize?: number;
   readonly overrides?: readonly ITextureOverride[];
@@ -93,6 +96,7 @@ export function texturePass(options: ITexturePassOptions = {}): IAssetPass {
     appliesTo: ["texture"],
     configuration: {
       encoder: KTX2_ENCODER_VERSION,
+      instrument: IMAGE_QUALITY_IDENTITY,
       keepSmallerSource: true,
       ...(options.maxSize === undefined ? {} : { maxSize: options.maxSize }),
       overrides: options.overrides ?? [],
@@ -143,7 +147,22 @@ export function texturePass(options: ITexturePassOptions = {}): IAssetPass {
       }
       return {
         buffer: Buffer.from(encoded),
-        entry: { format: choice.codec, transcodeTargets: TRANSCODE_TARGETS[choice.codec] },
+        entry: {
+          format: choice.codec,
+          transcodeTargets: TRANSCODE_TARGETS[choice.codec],
+          ...(options.measureQuality === false
+            ? {}
+            : {
+                quality: {
+                  ...(await measureKtx2(data, encoded, target.width, target.height, {
+                    slots: [choice.normalMap ? "normalTexture" : "baseColorTexture"],
+                  })),
+                  codec: choice.codec,
+                  sourceWidth: decoded.width,
+                  sourceHeight: decoded.height,
+                },
+              }),
+        },
         outputExtension: ".ktx2",
       };
     },

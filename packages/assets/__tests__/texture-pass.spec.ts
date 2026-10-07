@@ -55,6 +55,16 @@ function compressiblePng(alpha?: (x: number, y: number) => number): Buffer {
 }
 
 describe("the ktx2 texture pass", () => {
+  it("measures standalone output without changing bytes", async () => {
+    const input = compressiblePng();
+    const options = { overrides: [{ glob: "flat.png", codec: "etc1s" as const }] };
+    const on = await texturePass(options).apply(input, "flat.png");
+    const off = await texturePass({ ...options, measureQuality: false }).apply(input, "flat.png");
+    if (Buffer.isBuffer(on) || Buffer.isBuffer(off)) throw new Error("fixture was not encoded");
+    expect(on.buffer).toEqual(off.buffer);
+    expect(on.entry?.quality).toMatchObject({ version: expect.any(String), width: 64, height: 64 });
+    expect(off.entry?.quality).toBeUndefined();
+  });
   it("should preserve the upstream supercompression default and its explicit false override", async () => {
     const data = new Uint8Array(16 * 16 * 4).fill(128);
     const options = { imageDecoder: async () => ({ data, height: 16, width: 16 }) };

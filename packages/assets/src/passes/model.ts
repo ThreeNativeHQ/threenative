@@ -30,6 +30,7 @@ import {
 } from "../compile.js";
 import { type IMaterialMergeSummary, mergeIdenticalMaterials } from "../foliage.js";
 import { createGltfReader, readGltfDocument } from "../gltf-io.js";
+import { IMAGE_QUALITY_IDENTITY, type ITextureQuality } from "../image-quality.js";
 import { KTX2_ENCODER_VERSION } from "../ktx2-encoder.js";
 import { deformingMesh, skinnedMeshes } from "../lod/eligibility.js";
 import { TNDiscreteLod } from "../lod/extension.js";
@@ -71,6 +72,7 @@ import {
   compressEmbeddedTextures,
   textureBindings,
   textureKeys,
+  textureQualitySemantics,
 } from "./model-textures.js";
 import { quantizeStaticGeometry } from "./quantize-static.js";
 import { reorderStaticPrimitives } from "./reorder-static.js";
@@ -843,6 +845,7 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
           : {
               decoderFree: options.textures?.decoderFree ?? false,
               encoder: KTX2_ENCODER_VERSION,
+              instrument: IMAGE_QUALITY_IDENTITY,
               maxSize: options.textures?.maxSize ?? null,
               // Retention is now conditioned on the container, so it is spelled out rather than
               // named by a boolean: a warm cache keyed on the old rule would keep shipping the
@@ -1003,7 +1006,13 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
           ? undefined
           : await compressEmbeddedTextures(document, logicalPath, textureOptions, shared?.recalled);
       if (store !== undefined && shared !== undefined)
-        await rememberSharedImages(document, store, shared, embeddedTextures?.formats);
+        await rememberSharedImages(
+          document,
+          store,
+          shared,
+          embeddedTextures?.formats,
+          embeddedTextures?.quality,
+        );
       if (enabled.meshopt) {
         document
           .createExtension(EXTMeshoptCompression)
@@ -1109,12 +1118,14 @@ function sharedSettings(
   return {
     colorSpace: getTextureColorSpace(texture),
     slots: [...listTextureSlots(texture)].sort(),
+    semantics: textureQualitySemantics(texture),
     textures:
       textureOptions === undefined
         ? "none"
         : {
             decoderFree: textureOptions.decoderFree ?? false,
             encoder: KTX2_ENCODER_VERSION,
+            instrument: IMAGE_QUALITY_IDENTITY,
             keepSmallerSource: "universal-containers",
             maxSize: textureOptions.maxSize ?? null,
             overrides: textureOptions.overrides ?? [],
@@ -1146,8 +1157,19 @@ async function recallSharedImages(
     keys.push(key);
     const stored = await store.get(key);
     if (stored === undefined) continue;
+    if (
+      stored.mimeType === "image/ktx2" &&
+      textureOptions !== undefined &&
+      textureOptions.measureQuality !== false &&
+      stored.quality === undefined
+    )
+      continue;
     texture.setImage(new Uint8Array(stored.buffer)).setMimeType(stored.mimeType);
-    recalled.set(index, { codec: stored.codec, sourceBytes: image.byteLength });
+    recalled.set(index, {
+      codec: stored.codec,
+      sourceBytes: image.byteLength,
+      quality: stored.quality,
+    });
   }
   return { keys, recalled };
 }
@@ -1167,6 +1189,7 @@ async function rememberSharedImages(
   store: ISharedImageStore,
   plan: ISharedImagePlan,
   formats?: Readonly<Record<string, string>>,
+  quality?: Readonly<Record<string, ITextureQuality>>,
 ): Promise<void> {
   const textures = document.getRoot().listTextures();
   const names = textureKeys(document.getRoot());
@@ -1179,6 +1202,9 @@ async function rememberSharedImages(
       buffer: Buffer.from(image.buffer, image.byteOffset, image.byteLength),
       codec: codecOf(texture.getMimeType(), formats, names[index] ?? ""),
       mimeType: texture.getMimeType(),
+      ...(quality?.[names[index] ?? ""] === undefined
+        ? {}
+        : { quality: quality?.[names[index] ?? ""] }),
     });
   }
 }
@@ -1194,7 +1220,11 @@ function declareSharedImage(
     buffer: candidate.image.buffer,
     extension: path.extname(outputPath),
     manifestField: "sharedImages",
-    metadata: { codec: candidate.image.codec, key: candidate.key },
+    metadata: {
+      codec: candidate.image.codec,
+      key: candidate.key,
+      ...(candidate.image.quality === undefined ? {} : { quality: candidate.image.quality }),
+    },
     outputPath,
     role: "image",
   });

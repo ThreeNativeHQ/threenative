@@ -4,6 +4,7 @@ import { getTextureColorSpace, listTextureInfo, listTextureSlots } from "@gltf-t
 import { read as readKTX2 } from "ktx-parse";
 import { PNG } from "pngjs";
 import { textureStats } from "../health.js";
+import { type ITextureQuality, measureKtx2 } from "../image-quality.js";
 import { encodeToKTX2 } from "../ktx2-encoder.js";
 import { decodeImageBytes } from "./decode-image.js";
 import type { TextureCodec, TextureSkipReason } from "./texture.js";
@@ -35,6 +36,8 @@ export interface IModelTextureOverride {
 }
 
 export interface IModelTexturesOptions {
+  /** Internal instrument switch for byte-parity checks; normal builds always measure. */
+  readonly measureQuality?: boolean;
   /**
    * Resolved by the compiler from the target's runtime capabilities, never by a project: the
    * target has no KTX2 decoder, so an over-cap embedded image is box-resampled and re-emitted as
@@ -54,6 +57,7 @@ export interface IModelTexturesOptions {
 
 /** What the stage did, recorded in the manifest and printed by the size report. */
 export interface IEmbeddedTextureSummary {
+  readonly quality: Readonly<Record<string, ITextureQuality>>;
   readonly bytesAfter: number;
   readonly bytesBefore: number;
   readonly count: number;
@@ -394,6 +398,7 @@ function messageOf(error: unknown): string {
  */
 /** An image the shared store supplied already encoded, with what its source measured. */
 export interface IRecalledTexture {
+  readonly quality?: ITextureQuality;
   readonly codec: string;
   readonly sourceBytes: number;
 }
@@ -412,6 +417,7 @@ export async function compressEmbeddedTextures(
   const quality = Math.min(255, Math.max(1, Math.round(options.quality ?? DEFAULT_ETC1S_QUALITY)));
   const keys = textureKeys(root);
   const formats: Record<string, string> = {};
+  const scores: Record<string, ITextureQuality> = {};
   const skippedCompression: Record<string, TextureSkipReason> = {};
   let bytesBefore = 0;
   let bytesAfter = 0;
@@ -447,6 +453,13 @@ export async function compressEmbeddedTextures(
       const shape = imageShape(image, "image/ktx2");
       const fromStore = recalled.get(index);
       if (fromStore !== undefined) {
+        if (options.measureQuality !== false) {
+          if (fromStore.quality === undefined)
+            throw new Error(
+              `TN_ASSETS_QUALITY_MISSING: '${logicalPath}#${key}' cache has no score.`,
+            );
+          scores[key] = fromStore.quality;
+        }
         // Recalled from the shared store: the summary reports what this model's source carried
         // and what the store's encode saved, exactly as if the encode had run here — so the
         // manifest entry is the same whether the image was encoded or found.
@@ -587,6 +600,20 @@ export async function compressEmbeddedTextures(
         `TN_ASSETS_MIP_CHAIN_INCOMPLETE: embedded texture '${key}' of '${logicalPath}' encoded without a mip chain (${String(container.levelCount)} level(s)).`,
       );
     }
+    if (options.measureQuality !== false) {
+      scores[key] = {
+        ...(await measureKtx2(
+          data,
+          encoded,
+          target.width,
+          target.height,
+          textureQualitySemantics(texture),
+        )),
+        codec,
+        sourceWidth: decoded.width,
+        sourceHeight: decoded.height,
+      };
+    }
     texture.setImage(encoded).setMimeType("image/ktx2");
     formats[key] = codec;
     bytesAfter += encoded.byteLength;
@@ -607,6 +634,7 @@ export async function compressEmbeddedTextures(
     document.disposeExtension(EXTTextureWebP.EXTENSION_NAME);
   }
   return {
+    quality: scores,
     bytesAfter,
     bytesBefore,
     count: textures.length,
@@ -615,5 +643,26 @@ export async function compressEmbeddedTextures(
     gpuBytesBefore,
     resized,
     skippedCompression,
+  };
+}
+
+/** Every consuming slot and MASK cutoff participates, including shared colour/data images. */
+export function textureQualitySemantics(texture: Texture): {
+  slots: string[];
+  alphaThresholds: number[];
+} {
+  return {
+    slots: [...listTextureSlots(texture)].sort(),
+    alphaThresholds: [
+      ...new Set(
+        texture.listParents().flatMap((parent) => {
+          if (parent.propertyType !== "Material") return [];
+          const material = parent as import("@gltf-transform/core").Material;
+          return material.getBaseColorTexture() === texture && material.getAlphaMode() === "MASK"
+            ? [material.getAlphaCutoff()]
+            : [];
+        }),
+      ),
+    ].sort((a, b) => a - b),
   };
 }
