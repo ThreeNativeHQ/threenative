@@ -39,6 +39,10 @@ const allowedProductionCreators = new Map<string, string>([
   ["scripts/profile-starter.ts", "The production profile removes its root in finally."],
   ["scripts/sweep-proof.ts", "The production proof gate removes roots in finally."],
   [
+    "scripts/performance-regression/cpu.ts",
+    "CPU capture and comparison artifacts are deliberately retained outputs; the isolated comparison scratch is removed in finally.",
+  ],
+  [
     "scripts/sync-mcp-configs.ts",
     "The host-config sync round-trips each template through a scratch copy removed in finally.",
   ],
