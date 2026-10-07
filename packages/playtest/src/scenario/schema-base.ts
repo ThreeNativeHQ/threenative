@@ -1,4 +1,4 @@
-import type { IToneMetrics } from "../tone.js";
+import type { IToneMetrics, IToneRegion, IToneComparison } from "../tone.js";
 import type { IPlaytestGeometryCaptureRequest, PlaytestFramePassKind, PlaytestFramePhase } from "../protocol.js";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -26,6 +26,15 @@ export interface IPlaytestPointer {
 export interface IPlaytestWheel {
   deltaX?: number;
   deltaY: number;
+  /** Normalized viewport point the wheel turns over (both or neither); the viewport centre when absent. */
+  x?: number;
+  y?: number;
+}
+
+/** Emulated media features, Playwright's `emulateMedia` vocabulary; an absent key keeps its value. */
+export interface IPlaytestMedia {
+  colorScheme?: "dark" | "light";
+  reducedMotion?: "no-preference" | "reduce";
 }
 
 export type IPlaytestResourceWait =
@@ -41,6 +50,8 @@ export interface IPlaytestStep {
   /** A viewport-pixel click target, resolved directly or from a registered entity's bounds. */
   at?: IPlaytestClickTarget;
   label?: string;
+  /** Emulate media features from this step on (browser, and the desktop native-css UI). */
+  media?: IPlaytestMedia;
   /**
    * One device-lifecycle operation the runner drives through the platform driver, so the phases it
    * then reports are read off the device rather than asserted by the game about itself.
@@ -577,6 +588,8 @@ export interface IPlaytestAudioAssertion {
 }
 
 export interface IPlaytestToneAssertion extends Partial<Record<keyof IToneMetrics, { min?: number; max?: number }>> {
+  region?: IToneRegion;
+  compare?: IToneComparison;
   /** Omit to bound the final capture, otherwise capture after this named step. */
   atStep?: string;
 }

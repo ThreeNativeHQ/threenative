@@ -8,6 +8,7 @@ prd_contract: v1
 found and fixed**: §1 in `16c92a11`, §2 in `fe1f84dc`, §3 by running the lane headed. The whole
 browser lane is green on a developer machine; what remains is confirming the same on CI.
 
+**Priority:** P1 — CI never completed a browser run; open boxes need test-browser green and the hot-reload proof.
 **Goal: `pnpm test:browser` can pass, and the hot-reload proof proves something.**
 Two defects found by making CI run a lane it had never executed. Neither is CI plumbing; both are
 the framework's own, and both were invisible for the same reason.

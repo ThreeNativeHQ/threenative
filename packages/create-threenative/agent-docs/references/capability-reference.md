@@ -531,6 +531,22 @@ import { alwaysRender } from "@threenative/core";
 alwaysRender(ctx.camera.children[0]); // a camera-attached cockpit stays drawn
 ```
 
+### `AnimationComposer`
+
+`class` — Compose game-authored locomotion and masked actions on one Three.js mixer.
+
+```ts
+export class AnimationComposer { … }
+```
+
+- **Use when:** synchronize walk/run/strafe clips with different durations · reload with the upper body while locomotion continues · apply an additive recoil clip with an explicit reference pose · route root motion through collision-aware character movement
+- **Constraints:** one base phase, one masked override, at most two additive layers and eight actions · root motion requires a separate rig below the body; advance, CharacterBody3D.move, finish with observed accepted motion after physics, then existing IK · root motion excludes velocity-driven stride sync; unsupported parent transforms throw · source clips remain immutable; dispose at scene exit
+
+```ts
+const animation = new AnimationComposer({ root: rig, clips, samples: ["walk", "run"] });
+animation.setWeights([0.5, 0.5]); animation.update(dt);
+```
+
 ### `AnimationPlayer`
 
 `class` — Play a skinned or sprite animation from game code. A locomotion clip's playback rate is matched to the ground the body actually covers, so feet do not skate or spin — on by default, `strideSync: false` to keep the authored rate, and `player.stride` reports the measurement either way. Name the body a game moves as `strideRoot` when the rig is a child of it. Clips authored **in place** — every ActorX and Unreal export, every Mixamo "in place" clip, every stock animal pack — are matched too: their stride is read off the ground a planted foot sweeps, and `stride.inPlace` says so.
@@ -669,6 +685,36 @@ export class Billboard3D { … }
 ```ts
 const billboard = new Billboard3D(label, { camera });
 billboard.update();
+```
+
+### `BlendSpace1D`
+
+`class` — Select finite, normalized locomotion weights from sorted thresholds or a fixed triangulation.
+
+```ts
+export class BlendSpace1D { … }
+```
+
+- **Use when:** calculate 1D walk/run blend weights from speed · calculate 2D locomotion weights from forward and strafe intent
+- **Constraints:** duplicate samples, collinear triangles and invalid/incomplete triangulations throw at initialization · outside 2D queries project to the nearest boundary subedge; output is borrowed scratch
+
+```ts
+const blend = new BlendSpace1D([0, 2]); animation.setWeights(blend.sample(speed));
+```
+
+### `BlendSpace2D`
+
+`class` — Select finite, normalized locomotion weights from sorted thresholds or a fixed triangulation.
+
+```ts
+export class BlendSpace2D { … }
+```
+
+- **Use when:** calculate 1D walk/run blend weights from speed · calculate 2D locomotion weights from forward and strafe intent
+- **Constraints:** duplicate samples, collinear triangles and invalid/incomplete triangulations throw at initialization · outside 2D queries project to the nearest boundary subedge; output is borrowed scratch
+
+```ts
+const blend = new BlendSpace1D([0, 2]); animation.setWeights(blend.sample(speed));
 ```
 
 ### `boneContact`
@@ -2759,6 +2805,24 @@ export function View(props: IViewProps): ReactNode { … }
 <View style={{ centerX: true, top: 24 }}><Text>READY</Text></View>
 ```
 
+## `@threenative/core/react-css`
+
+### `createCssUiRoot`
+
+`function` — Mount React into a native CSS engine.
+
+```ts
+export function createCssUiRoot(options: ICssUiRootOptions = { … }
+```
+
+- **Use when:** mount a React HUD on the desktop host with no DOM in the runtime · write one React component and run it on the web and on the desktop host
+- **Constraints:** desktop only, and the game host must be built with the CSS backend (`TN_ENABLE_CSS_UI=1`); Android, iOS and web phones render a React HUD in a web overlay instead · import `react`, never `react-dom`, from a native entry · styling is CSS resolved by the native engine; JS only mirrors the element tree
+
+```ts
+const root = createCssUiRoot();
+root.render(createElement("section", { className: "fixed inset-0 bg-zinc-900/90" }, "READY"));
+```
+
 ## `@threenative/core/ui-layer`
 
 ### `connectUiBridge`
@@ -3804,6 +3868,21 @@ export class CaptureGuardError extends Error { … }
 
 ```ts
 throw new CaptureGuardError("menu", "no bright pixels");
+```
+
+### `collectRegionalTone`
+
+`function` — Collect opt-in regional tone observations from the same acquired PNG.
+
+```ts
+export function collectRegionalTone( png: Buffer, assertions: readonly IPlaytestToneAssertion[], label: string, atStep?: string, ): IPlaytestRegionalToneObservation[] { … }
+```
+
+- **Use when:** measure a specified pixel crop in a captured playtest frame
+- **Constraints:** does not acquire another screenshot or alter frame timing
+
+```ts
+collectRegionalTone(png, assertions, "character", "posed");
 ```
 
 ### `inspectFrame`

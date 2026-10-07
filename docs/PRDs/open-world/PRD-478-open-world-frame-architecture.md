@@ -1,6 +1,7 @@
 # PRD-478 — Open-world frame architecture: walking at 120 fps
 
 **Status:** IN PROGRESS
+**Priority:** P1 — Open: walking CPU and GPU p95 targets with deterministic map-walk iteration tooling.
 **Complexity:** 8 (HIGH) — 10+ engine files (+3), worker boundary and GPU-driven shadow levels are new mechanisms (+3), engine and Machinefall release separately (+2); risk override: none
 **Owner:** João
 **Depends on:** PRD-475 (draft #384: its cuts and instruments are the baseline)

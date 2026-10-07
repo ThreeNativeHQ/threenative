@@ -14,6 +14,7 @@ PRD-266: the
 budget signal and its meter are core, the tier→stage mapping is template source. AC1 below is that
 signal; AC4's defaults are graded in seven generated files, not one seam.
 
+**Priority:** P2 — Open ACs finish six templates and prove the mobile default's floor on a phone.
 **Goal: the tier a scaffolded game runs is chosen against the meter that is actually limiting the
 frame, proven on a physical phone, and the step-down says why it happened.** Today the ladder is
 specified against the wrong meter and gated on the wrong platform, and the mobile defaults were

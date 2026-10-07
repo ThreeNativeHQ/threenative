@@ -1,6 +1,7 @@
 # PRD-392 — Merge static meshes while keeping UVs and authored normals
 
 **Status:** PARTIAL
+**Priority:** P2 — Only open box remains: typecheck, lint, count-loc, budgets and vitest exit 0.
 **Complexity:** 3 (LOW); risk override: none
 **Owner:** Engine authoring
 **Depends on:** None

@@ -5,6 +5,7 @@ prd_contract: v1
 # PRD-VQ-15 — Hair cards preserve coverage, tangent highlights and shadow behavior across quality tiers
 
 **Status:** PROPOSED — 2026-10-01. No implementation or qualification is claimed.
+**Priority:** P2 — Proposed hair-card material with alpha and tangent contracts on rigged hair.
 **Batch:** Visual quality execution batch. **Wave:** 3 / character-quality gate.
 **Dependencies:** Uses qualified temporal/alpha behavior from PRD-455; VQ-12 is optional and not assumed to solve hair.
 

@@ -24,6 +24,7 @@ import type { FogMedium } from "./volumetricFog.js";
 import { type OutputRenderer, WorldEnvironment } from "./worldEnvironment.js";
 
 interface IPostController {
+  readonly tier: QualityTier;
   debug(): Record<string, unknown>;
   observe(window: IQualityWindow): void;
   dispose(): void;
@@ -54,6 +55,8 @@ export function setupPost(
     software?: boolean;
     /** Forces a tier while keeping its costs observed. Unknown names throw. */
     tier?: QualityTier;
+    /** Scene-owned material assignments follow the same resolved tier. */
+    onTierChanged?: (tier: QualityTier) => void;
     /**
      * The bounded participating medium from `volumetricFog.ts`, built once per graph: a tier change
      * replaces the graph, and a fog controller owns one graph, so it is released and rebuilt here
@@ -93,6 +96,7 @@ export function setupPost(
     });
     disposeGraph = applied.dispose;
     observation = { ...observation, stages: applied.stages, dropped: applied.dropped };
+    environment.onTierChanged?.(policy.tier);
   }
   apply();
   // The table is a file, so it lands after the chain that would read it. Until then both stages
@@ -123,6 +127,9 @@ export function setupPost(
     } source=${source}`,
   );
   const controller = {
+    get tier(): QualityTier {
+      return policy.tier;
+    },
     debug: () => observation,
     observe(window: IQualityWindow): void {
       if (disposed) return;

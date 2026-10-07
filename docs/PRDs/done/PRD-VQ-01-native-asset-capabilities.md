@@ -5,6 +5,7 @@ prd_contract: v1
 # PRD-VQ-01 — Native asset compatibility follows the selected runtime and actual decoders
 
 **Status:** DONE — 2026-10-05. Every phase and acceptance box is ticked; the lifecycle box passed on nvidia/turing after the fixture read its baseline post compile-settle. Physical Android performance and per-codec qualification stay under `## Blocked on`.
+**Priority:** P2 — Only open box: documented fallback preserved and resources released across lifecycles.
 **Batch:** [Visual quality execution batch](https://github.com/ThreeNativeHQ/threenative/blob/d9ac5b4e97f6b1383bd163d91619cffa7c6c0ef5/docs/PRDs/batch-2026-10-01-visual-quality/README.md). **Wave:** 0 / correctness.
 **Dependencies:** None. This is a build/runtime contract repair, not permission to remove compatibility guards.
 

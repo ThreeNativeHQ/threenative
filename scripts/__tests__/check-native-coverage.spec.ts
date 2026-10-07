@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import { checkNativeCoverage, nativeCoverageGateErrors } from "../check-native-coverage.js";
@@ -17,6 +18,11 @@ Source digest: \`sha256:aaaa\`
 `;
 
 describe("native coverage gate", () => {
+  it("keeps the committed measured record fresh for the exact coverage execution inputs", async () => {
+    await expect(
+      checkNativeCoverage(fileURLToPath(new URL("../../", import.meta.url))),
+    ).resolves.toBeUndefined();
+  });
   it("should fail when a subsystem drops below its floor", () => {
     const belowFloor = record.replace("| 100 | 35 | 35.00% |", "| 100 | 33 | 33.00% |");
     expect(nativeCoverageGateErrors(belowFloor, "aaaa")).toEqual([

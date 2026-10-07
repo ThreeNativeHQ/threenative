@@ -42,7 +42,8 @@
     "@types/three": "0.185.3",
     "publint": "0.3.22",
     "tsup": "8.5.1",
-    "typescript": "catalog:"
+    "typescript": "catalog:",
+    "@typescript/native": "catalog:"
   },
   "dependencies": {
     "fflate": "catalog:",

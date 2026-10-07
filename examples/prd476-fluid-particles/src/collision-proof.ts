@@ -71,7 +71,7 @@ async function start({ gateClosed = true, validationControl = false } = {}) {
   // Deliberately invalid actual WebGPU usage verifies that the scope producer rejects errors.
   if (validationControl) device.createBuffer({ size: 4, usage: 0 });
   const adapterInfo = Object.fromEntries(
-    ["architecture", "description", "device", "vendor"].map((field) => [
+    (["architecture", "description", "device", "vendor"] as const).map((field) => [
       field,
       adapter.info[field] ?? "",
     ]),

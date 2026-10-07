@@ -9,6 +9,7 @@ display-free proof is in [`../../verification/prd-210-2026-08-23.md`](../../veri
 which also lists, criterion by criterion, what still needs the physical Pixel 8. The device was
 leased to the PRD-214 lane throughout that session, so nothing below claims Android.
 
+**Priority:** P0 — Six recorded SIGSEGV exits with handlers suppressing tombstones; open boxes prove them and harden wgpu handles.
 **Complexity:** +2 for 6–10 files, +2 for complex state logic (lifecycle state machine, signal
 handling), +2 for multi-platform behaviour change = **6 → MEDIUM mode**, checkpoint after every
 phase (device proofs make phases slow; drift is expensive).

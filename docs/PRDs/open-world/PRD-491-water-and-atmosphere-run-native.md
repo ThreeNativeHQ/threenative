@@ -1,6 +1,7 @@
 # PRD-491 — Water and atmosphere run native
 
 **Status:** PROPOSED
+**Priority:** P1 — Web-only gap open: SpectralOcean and atmosphere LUTs have no native conformance rows.
 **Complexity:** 3 (LOW) — 1–5 implementation files (+1); a failing case may need a fix in the C++ host (+2); risk override: none
 **Owner:** João
 **Depends on:** None

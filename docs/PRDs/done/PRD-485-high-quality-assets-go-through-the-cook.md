@@ -1,6 +1,7 @@
 # PRD-485 — High-quality assets go through the cook
 
 **Status:** DONE — 2026-10-06. Every phase box is ticked; the Android box ran on the emulator only, not on a phone.
+**Priority:** P2 — Single box: fab-import-proof packages cooked KTX2 and renders Hornbeam on the emulator.
 **Complexity:** 3 (LOW) — 1–5 engine files (+1: `packages/assets/src/passes/decode-image.ts` and its pass); the proof games live in the separate sandbox repo and install engine tarballs (+2); risk override: none
 **Owner:** João
 **Depends on:** [PRD-VQ-01](../done/PRD-VQ-01-native-asset-capabilities.md) for the Android box only; [PRD-377](../assets/PRD-377-auto-lod-is-on-by-default.md) (AutoLOD)

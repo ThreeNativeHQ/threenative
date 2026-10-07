@@ -1,4 +1,4 @@
-import type { BufferGeometry, Camera, DepthTexture, Object3D, WebGLRenderer } from "three";
+import type { BufferGeometry, Camera, DepthTexture, Object3D } from "three";
 import { type PassNode, RenderPipeline } from "three/webgpu";
 import type { IFrameSurfaceState } from "./frame-budget.js";
 import {
@@ -1341,5 +1341,3 @@ export async function createRenderer(options: IRendererOptions = {}): Promise<IR
   };
   return renderer;
 }
-
-export type WebGLRendererContract = WebGLRenderer;

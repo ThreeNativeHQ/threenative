@@ -1,6 +1,7 @@
 # PRD-494 — The main pass fits the draw budget
 
 **Status:** PROPOSED
+**Priority:** P1 — Main-pass traversed draws must reach 120 at p95 and hold on native.
 **Complexity:** 3 (LOW); risk override: none
 **Owner:** agent
 **Depends on:** PRD-478's measurement method; it works alongside PRD-478 Phase 2, which owns shadow submissions.

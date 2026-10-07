@@ -1,6 +1,7 @@
 # PRD-492 — Colour grading and film grain
 
 **Status:** DONE — 2026-10-05. Both phases and both acceptance criteria ticked: the graded frame scores at the ungraded one (3 raters), grade + grain cost 0.0 ms GPU at 1080p, the identity table round-trips exactly as float, and native runs the grade.
+**Priority:** P2 — Render chain still lacks grade and grain stages; sub-0.3 ms budget and gating unbuilt.
 **Complexity:** 1 (LOW) — 1–5 files, all generated template source; no package change expected; risk override: none
 **Owner:** João
 **Depends on:** [PRD-VQ-02](../native/PRD-VQ-02-native-postprocessing-parity.md) (a post stage must not blank the native frame; this PRD adds two more stages to the same chain)

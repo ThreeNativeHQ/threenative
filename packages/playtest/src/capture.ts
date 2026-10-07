@@ -1,5 +1,6 @@
 import { PNG } from "pngjs";
-import type { IToneMetrics } from "./tone.js";
+import type { IPlaytestToneAssertion } from "./scenario/schema-base.js";
+import type { IToneMetrics, IToneRegion, IPlaytestRegionalToneObservation } from "./tone.js";
 
 export const CAPTURE_GUARD_LIMITS = {
   brightLuminance: 0.05,
@@ -47,7 +48,10 @@ export class CaptureGuardError extends Error {
  * @example const stats = inspectFrame(png);
  */
 export function inspectFrame(png: Buffer): ICaptureFrameStats {
-  const image = PNG.sync.read(png);
+  return inspectDecodedFrame(PNG.sync.read(png));
+}
+
+function inspectDecodedFrame(image: PNG): ICaptureFrameStats {
   const colors = new Set<number>();
   const histogram = new Uint32Array(256);
   let toneTotal = 0;
@@ -149,3 +153,62 @@ export function assertCaptureNotBlank(png: Buffer, label: string): ICaptureFrame
  * @example assertFrameShowsSomething(png, "first frame");
  */
 export const assertFrameShowsSomething = assertCaptureNotBlank;
+
+/**
+ * Collect opt-in regional tone observations from the same acquired PNG.
+ * @situation measure a specified pixel crop in a captured playtest frame
+ * @constraint does not acquire another screenshot or alter frame timing
+ * @example collectRegionalTone(png, assertions, "character", "posed");
+ */
+export function collectRegionalTone(
+  png: Buffer,
+  assertions: readonly IPlaytestToneAssertion[],
+  label: string,
+  atStep?: string,
+): IPlaytestRegionalToneObservation[] {
+  const selected: { assertion: IPlaytestToneAssertion; assertionIndex: number }[] = [];
+  for (const [assertionIndex, assertion] of assertions.entries())
+    if (assertion.region !== undefined && assertion.atStep === atStep)
+      selected.push({ assertion, assertionIndex });
+  if (selected.length === 0) return [];
+  const image = PNG.sync.read(png);
+  const measure = (region: IToneRegion): { metrics?: IToneMetrics; error?: string } => {
+    if (
+      ![region.x, region.y, region.width, region.height].every(Number.isSafeInteger) ||
+      region.x < 0 ||
+      region.y < 0 ||
+      region.width <= 0 ||
+      region.height <= 0 ||
+      region.width > image.width - region.x ||
+      region.height > image.height - region.y
+    )
+      return { error: "Tone region is outside decoded PNG bounds or invalid." };
+    const cropped = new PNG({ width: region.width, height: region.height });
+    for (let y = 0; y < region.height; y++) {
+      const offset = ((region.y + y) * image.width + region.x) * 4;
+      image.data.copy(cropped.data, y * region.width * 4, offset, offset + region.width * 4);
+    }
+    const metrics = inspectDecodedFrame(cropped).tone;
+    return metrics === undefined
+      ? { error: "Tone region contains no visible pixels." }
+      : { metrics };
+  };
+  return selected.map(({ assertion, assertionIndex }) => {
+    const region = assertion.region!;
+    const measured = measure(region);
+    const reference =
+      assertion.compare === undefined
+        ? undefined
+        : { region: assertion.compare.region, ...measure(assertion.compare.region) };
+    return {
+      code: "TN_TONE",
+      label,
+      ...(atStep === undefined ? {} : { atStep }),
+      assertionIndex,
+      region,
+      ...measured.metrics,
+      ...(measured.error === undefined ? {} : { error: measured.error }),
+      ...(reference === undefined ? {} : { reference }),
+    };
+  });
+}

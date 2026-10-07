@@ -1,6 +1,7 @@
 # PRD-489 — Occlusion culling re-tested on the GPU scene
 
 **Status:** CLOSED 2026-10-06: declined by its own go/no-go. The Phase 1 test had a bug (inverted pyramid rows, under-covered footprints, dropped edge texels) that reported a would-cull share of 0.61. That bug also deleted visible trees once culling ran. With the test corrected, the cull hides nothing visible, but the share on Machinefall map-walk is a median of 0.013 (p95 0.29, max 0.46), and main-pass triangles tie (4.55 M against 4.45 M). Go/no-go: 0.013 × about 9 ms − 0.07 ms ≈ 0.05 ms, under the 1.0 ms threshold. The working cull is kept on branch `feat/prd489-cull` (`a641f22a3`) for a denser scene. `?tnOcclusion=measure` stays as the instrument.
+**Priority:** P2 — Re-test unbuilt: gpuMain p95 target, no-visual-loss A/B, measurement mode.
 **Complexity:** 5 (MEDIUM) — 1–5 engine files (+1), a depth pyramid is a new mechanism (+2), previous-frame visibility is temporal GPU state (+2); risk override: none
 **Owner:** João
 **Depends on:** [PRD-478](../open-world/PRD-478-open-world-frame-architecture.md) (its Phase 2 moves shadow levels onto GPU-scene keys; occlusion must not reach them), [PRD-477](../open-world/PRD-477-worldcells-auto-on-measured-budgets.md) (the pop gate)

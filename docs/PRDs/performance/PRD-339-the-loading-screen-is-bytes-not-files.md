@@ -8,6 +8,7 @@ prd_contract: v1
 are implemented in the filing branch with negative controls observed red. Phase 3 (`preload`) is
 scoped and **deliberately not built** — the measurement says fan-out is not the lever; see §6.
 
+**Priority:** P2 — Phase 3's single framework call for a bounded ordered asset list is open.
 **Complexity:** +2 (6–10 files) + 2 (multi-package: `core`, `assets`, `create-threenative`)
 + 2 (concurrency) = **6 → MEDIUM mode**.
 

@@ -172,35 +172,30 @@ const BUG_REPORT_SKILL_PATHS = [
 // docs/verification/prd339-exposure-proof/completion-consumer-8bf16f4.json.
 // Current develop c18a42b integration: all13 actual generated trees were byte-compared
 // against reviewed 8bf trees; only the copied Three compute-only Storage3DTexture patch changed.
+// Re-measured on current develop plus TS7: restoring only each compiler manifest and
+// rain's shader API import recovers all 13 develop fingerprints.
+// PR388 producer delivery: compared all 13 immutable eab0cdbfe/generated trees. Only
+// package.json patch declarations and copied Vite/Tailwind patch bytes differ; every other
+// generated file remains byte-identical. Fingerprints still cover the complete tree.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
-  // Measured through actual createProject trees on the develop merge, carrying develop's
-  // WebGPU adapter-retention Three patch and PRD-492's shared `afterOutputTransform` stage seat
-  // (which restamps every kit's worldEnvironment.ts). The starter's own value also carries the
-  // neutralised default of 2026-10-04: `public/grade.cube`, `src/render/quality.ts`'s grain
-  // numbers, and the table's pivot moving to mid-grey.
-  // Recomputed on the runbook merge that also carries PRD-493: only its rewritten
-  // `capabilities.json` entry and `capability-reference.md` reach a scaffold (both are copied
-  // verbatim into every tree), so all thirteen values move again by those bytes. No template
-  // source or scaffold implementation changed on top of the values above. Values are the merged
-  // tree's measurement, not either lane's.
-  // Recomputed 2026-10-05 for PRD-492's float `.cube` load: the starter's
-  // `src/render/postprocessing.ts` now asks `LUTCubeLoader` for `FloatType`, so only the
-  // `starter` value moves. No other kit carries a grade, and no scaffold implementation changed.
-  // Refreshed for 2dc92a2b2: the shared shadow uniforms change only the generated Three patch.
-  // Restoring that patch to 4c2ee0836 in all thirteen generated trees reproduces every prior hash.
-  "action-rpg": "04d6a54a060ca33b940d35551e8555179bec2b77ca3409eab1ede1df3e0b9bc2",
-  minimal: "da8850526a00f83b7c12666a4a71528861310bbeb221cd613a300ade41e498da",
-  platformer: "aca58cbc729d7621203036d233e05dd16cf44bdd2c8e29d3c9a928c1e6a95810",
-  puzzle: "4fbf8f334de878a533059882a0574ddcf9ab6813b5537a3476ea995148ba0a1b",
-  racing: "5261c9423fb2b0cbcf44373fc2a0c8212179c64e24a23ed87fba4674d9d7ee05",
-  rain: "8329d7defa891458c640ee50249345332706800370c23ac3a1b3bc2156d024c2",
-  rts: "7664ff136b3515f13858b8a9afce7ae475ff1e235f07f4bde1026e2604512fd6",
-  runner: "07dce7c48e3ab8d9007e04f6f0da9005fd259336f360bd283269549c1c8e472e",
-  sailing: "a03aef8d54d8598cfeb57d84a8909245414a192242dfbf07804da405aa889062",
-  shooter: "0d4cef01da2e0fa112b1f43b67289cbd4f120f1237e823a0737be59e6e52d6b6",
-  snow: "49c14071205d6aaa68f4bdd4d09f91d01d9ad342b1a6b5fa4b3d239a9d9d8940",
-  starter: "0841d8245fdb8fa30b38051714338f56ecb7ce6b6a60887a403bf091149754d2",
-  "tower-defense": "6732a276257ecd80fae775a741b52d9adeb573207b6a9d7f2bc282943fd19850",
+  // PR388 re-measured on top of develop: only package.json patch declarations and the copied
+  // Vite/Tailwind patch bytes differ. Base: PR440 merged with develop 45565868:
+  // TS7/API6 compiler pins plus shared render graph and actual-render-camera light layers.
+  // Recomputed on the runbook merge with origin/develop (a683fcff3): both lanes changed template
+  // source, so neither side's values apply. These are the merged tree's createProject measurement.
+  "action-rpg": "237206ea11d4756e153bc4eafeaba74f91068ae65773b602b8e9b92ecefdcea9",
+  minimal: "e147e3aa9d5d8960b32c8a2e822124578b3fcd923334c726642b35bc0afb3b2b",
+  platformer: "c4d7eb7d2d26be0b4e4336c602cab32c18719a1929c040a5d9389d5426265b1b",
+  puzzle: "4c9e0611e5325e665fd67109f85e0261074f669202d586edb6873e2373e2f975",
+  racing: "a35f6dc8faeb71e6d6ded0d061f0f140f71f9670ca570bf4d4dc3a584a7f9826",
+  rain: "0c4f1e5380c0dbc3e4dc7c01cfa9a5eb7c1bb2084b1912d0e9c8c2ad45dff54e",
+  rts: "aff4a13e4efd7a213b146310c7e90f1fb96b5bcb7e0453337278b17c7913d2c4",
+  runner: "ecc05987b670152af7b1f3e59bd31a88701c03091c9d3afae5c0ee31bbb8852e",
+  sailing: "db85bfd54546d5bdbede5dabaefc4fda376590e20cb83aaa979508079cf4a5ee",
+  shooter: "5f7326c2e94ac9b3c791a7a392534527a6a16979bb45ba04179b7582ecaf11bf",
+  snow: "bdd0fb84aeba266b7b9f28fafad4fdd8665b9960e4d1b043a2f8c0fc34328d19",
+  starter: "6ff8c85dfd95538306e50d7d3226f3373abc51769bf92eef2d39d99838042614",
+  "tower-defense": "f92b9ad5e0e55fd2bf19d654b166683f1b9d83ec90296c9ecd8740d057858070",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
@@ -283,6 +278,8 @@ const STARTER_PATHS = [
   "kit.json",
   "package.json",
   "patches/three@0.185.1.patch",
+  "patches/vite@8.2.0.patch",
+  "patches/@tailwindcss__node@4.3.3.patch",
   "threenative.config.ts",
   "tools/look.mjs",
   "scripts/reference.mjs",
@@ -830,6 +827,8 @@ describe("create-threenative", () => {
       };
       expect(packageManifest.pnpm?.patchedDependencies).toEqual({
         "three@0.185.1": "patches/three@0.185.1.patch",
+        "vite@8.2.0": "patches/vite@8.2.0.patch",
+        "@tailwindcss/node@4.3.3": "patches/@tailwindcss__node@4.3.3.patch",
       });
       expect(STARTER_PATHS).toContain("playtests/survives.playtest.json");
       for (const relativePath of STARTER_PATHS) {

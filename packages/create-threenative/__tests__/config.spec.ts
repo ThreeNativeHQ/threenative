@@ -135,7 +135,8 @@ export const rejected: IAudioConfig = { ${rejectedKey}: 2 };
 `,
   );
   const outcome = (await execFileAsync(process.execPath, [
-    path.resolve("packages/core/node_modules/typescript/bin/tsc"),
+    path.resolve("packages/core/node_modules/@typescript/native/bin/tsc"),
+    "--ignoreConfig",
     "--noEmit",
     "--strict",
     "--target",
@@ -316,10 +317,21 @@ describe("threenative.config.ts", () => {
     });
   });
 
-  it.each(["web", "native"])("preserves an explicit %s UI renderer", async (renderer) => {
+  it.each(["web", "native", "native-css"])(
+    "preserves an explicit %s UI renderer",
+    async (renderer) => {
+      const root = await project();
+      await config(root, `export default { ui: { renderer: "${renderer}" } };`);
+      await expect(loadConfig(root)).resolves.toMatchObject({ ui: { renderer } });
+    },
+  );
+
+  it("names every valid UI renderer when the value is not one of them", async () => {
     const root = await project();
-    await config(root, `export default { ui: { renderer: "${renderer}" } };`);
-    await expect(loadConfig(root)).resolves.toMatchObject({ ui: { renderer } });
+    await config(root, 'export default { ui: { renderer: "canvas" } };');
+    await expect(loadConfig(root)).rejects.toThrow(
+      /TN_CONFIG_UI_RENDERER_INVALID[\s\S]*web, native or native-css/u,
+    );
   });
 
   it("uses the Vite-owned esbuild without invoking Vite's config loader", async () => {

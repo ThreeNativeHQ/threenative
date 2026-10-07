@@ -1,6 +1,7 @@
 # PRD-493 — Terrain layers past sixteen textures
 
 **Status:** PARTIAL — phases 1, 2 and 3 landed; both Machinefall acceptance criteria are blocked on what is listed under `## Blocked on`
+**Priority:** P2 — Open: AC-1 and AC-2 both need Machinefall's private walk, listed under `## Blocked on`.
 **Complexity:** 3 (LOW) — 1–5 implementation files (`world-terrain-splat.ts`, the two identical `export_world.py` recipe copies) (+1); Machinefall re-exports its table and releases separately (+2); risk override: none
 **Owner:** João
 **Depends on:** None

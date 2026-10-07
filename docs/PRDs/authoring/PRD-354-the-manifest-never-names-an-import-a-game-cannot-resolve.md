@@ -6,6 +6,7 @@ prd_contract: v1
 
 **Status: PROPOSED, 2026-09-04.** Filed in `agent-leverage/`, measured at `dae30759`.
 
+**Priority:** P1 — 27 manifest entries still name imports a scaffolded game cannot resolve; resolvers unlanded.
 **Complexity:** +3 for 10+ files (ten templates, the generator, the scaffolder, the reference
 doc, the gate and its spec), +2 for multi-package (`create-threenative`, `engine-mcp`,
 `scripts/`) = **5 → MEDIUM mode.**

@@ -564,27 +564,43 @@ async function applyPackageSources(
 }
 
 const FRAMEWORK_PATCH_DIRECTORY = "patches";
-const THREE_PATCH_NAME = "three@0.185.1.patch";
+const FRAMEWORK_PATCH_SOURCES: Readonly<Record<string, string>> = {
+  "three@0.185.1.patch": "../core/patches/three@0.185.1.patch",
+  "vite@8.2.0.patch": "../../patches/vite@8.2.0.patch",
+  "@tailwindcss__node@4.3.3.patch": "../../patches/@tailwindcss__node@4.3.3.patch",
+};
 
 async function copyFrameworkPatches(target: string, templateRootDirectory: string): Promise<void> {
-  // The only tracked copy lives in @threenative/core; prepack copies it into template-assets for
-  // the tarball, and a workspace run reads core's directly.
+  // Copy exactly the dependency patches declared by this template. In particular, minimal
+  // installs no Tailwind, so pnpm must not receive an unused Tailwind patch.
+  const manifest = JSON.parse(await readFile(path.join(target, "package.json"), "utf8")) as {
+    pnpm?: { patchedDependencies?: Record<string, string> };
+  };
   const packageRoot = path.dirname(templateRoot());
-  const candidates = [...new Set([path.dirname(templateRootDirectory), packageRoot])].map((root) =>
-    path.join(root, "template-assets", FRAMEWORK_PATCH_DIRECTORY, THREE_PATCH_NAME),
-  );
-  candidates.push(
-    path.join(packageRoot, "..", "core", FRAMEWORK_PATCH_DIRECTORY, THREE_PATCH_NAME),
-  );
-  const source = candidates.find((candidate) => existsSync(candidate));
-  if (source === undefined) {
-    throw new Error(
-      `TN_FRAMEWORK_PATCH_MISSING: none of ${candidates.map((candidate) => `'${candidate}'`).join(", ")} exists; the generated project needs the Three.js velocity patch for batched temporal history.`,
+  for (const relative of Object.values(manifest.pnpm?.patchedDependencies ?? {})) {
+    const name = path.basename(relative);
+    const fallback = FRAMEWORK_PATCH_SOURCES[name];
+    if (fallback === undefined || relative !== `${FRAMEWORK_PATCH_DIRECTORY}/${name}`) {
+      throw new Error(`TN_FRAMEWORK_PATCH_MISSING: unsupported template patch '${relative}'.`);
+    }
+    const candidates = [...new Set([path.dirname(templateRootDirectory), packageRoot])].map(
+      (root) => path.join(root, "template-assets", FRAMEWORK_PATCH_DIRECTORY, name),
     );
+    const canonical = path.resolve(packageRoot, fallback);
+    // A source checkout can have an ignored prepack copy from an earlier build. Packaged CLIs
+    // omit src/, so they continue to use only the patch bytes delivered in their tarball.
+    if (existsSync(path.join(packageRoot, "src", "index.ts"))) candidates.unshift(canonical);
+    else candidates.push(canonical);
+    const source = candidates.find((candidate) => existsSync(candidate));
+    if (source === undefined) {
+      throw new Error(
+        `TN_FRAMEWORK_PATCH_MISSING: dependency patch '${name}' is absent from the CLI package.`,
+      );
+    }
+    const destination = path.join(target, relative);
+    await mkdir(path.dirname(destination), { recursive: true });
+    await cp(source, destination);
   }
-  const destination = path.join(target, FRAMEWORK_PATCH_DIRECTORY, THREE_PATCH_NAME);
-  await mkdir(path.dirname(destination), { recursive: true });
-  await cp(source, destination);
 }
 
 const NODE_MODULES_PREFIX = "./node_modules/";
