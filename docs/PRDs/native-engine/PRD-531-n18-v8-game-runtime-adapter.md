@@ -132,4 +132,11 @@ Registry/catalog/declarations are regenerated with the actual bound track and bi
 This repair slice is complete; Windows CI and the unchanged full minimal-template journey remain
 unverified, so no phase box is ticked.
 
+Quality-gate repair (2026-10-07): removed four new double casts from native-profile validation,
+the browser class factory and numeric observation encoding. Existing runtime checks and native
+class syntax preserve validation; numeric observations now reject DataView and nonnumeric entries
+instead of silently encoding/coercing them. The regression failed before the fix. Verification:
+27 focused profile/browser/protocol/quality checks, focused TypeScript and the real Wasm browser
+smoke pass. Biome passes with 6 existing complexity warnings. No quality waiver or baseline change.
+
 - This game runtime is the default until gate T ships, and it is never called a JS-free *application* (§2.1). The engine under it is JS-free (owner, 2026-10-04).

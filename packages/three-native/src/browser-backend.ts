@@ -154,14 +154,12 @@ export function defineBrowserClasses(
   };
 
   for (const [name, binding] of Object.entries(registry.classes)) {
-    const cls = function (this: object, ...args: unknown[]) {
-      if (!new.target)
-        throw new TypeError(`Class constructor ${name} cannot be invoked without 'new'`);
-      if (!binding.constructor) throw new TypeError(`TN_BROWSER_NOT_CONSTRUCTIBLE: ${name}`);
-      return adopt(this, runtime.construct(name, args.map(toEngine)));
-    } as unknown as new (
-      ...args: unknown[]
-    ) => object;
+    const cls = class {
+      constructor(...args: unknown[]) {
+        if (!binding.constructor) throw new TypeError(`TN_BROWSER_NOT_CONSTRUCTIBLE: ${name}`);
+        adopt(this, runtime.construct(name, args.map(toEngine)));
+      }
+    };
     Object.defineProperty(cls, "name", { value: name });
     const prototype = cls.prototype as Record<string, unknown>;
     for (const method of binding.methods) {
@@ -237,7 +235,7 @@ export function defineBrowserClasses(
       });
     }
     classes[name] = cls;
-    byType.set(runtime.typeId(name), cls as unknown as { prototype: object });
+    byType.set(runtime.typeId(name), cls);
   }
   return {
     classes,

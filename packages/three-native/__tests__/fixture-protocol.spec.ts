@@ -123,6 +123,10 @@ describe("observation values", () => {
   it("refuses a value whose type does not match its kind", () => {
     expect(() => encodeObservation("number", "1")).toThrow(/TN_OBSERVATION_INVALID/u);
     expect(() => encodeObservation("numbers", 1)).toThrow(/TN_OBSERVATION_INVALID/u);
+    expect(() => encodeObservation("numbers", new DataView(new ArrayBuffer(8)))).toThrow(
+      /TN_OBSERVATION_INVALID/u,
+    );
+    expect(() => encodeObservation("numbers", ["1"])).toThrow(/TN_OBSERVATION_INVALID/u);
     expect(() => encodeObservation("boolean", 0)).toThrow(/TN_OBSERVATION_INVALID/u);
     expect(() => encodeObservation("string", 1)).toThrow(/TN_OBSERVATION_INVALID/u);
   });

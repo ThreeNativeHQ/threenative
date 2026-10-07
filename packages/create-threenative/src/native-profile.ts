@@ -67,7 +67,7 @@ export function resolveNativeProfile(input: INativeProfileInput): INativeProfile
   if (typeof input !== "object" || input === null) {
     fail("TN_PROFILE_UNKNOWN", `profile input must be an object, received ${describe(input)}.`);
   }
-  const raw = input as unknown as Record<string, unknown>;
+  const raw = input;
   const engine = assertKnown("engine", raw.engine, ENGINES);
   const gameRuntime = assertKnown("gameRuntime", raw.gameRuntime, GAME_RUNTIMES);
   const ui = assertKnown("ui", raw.ui, PROFILE_UIS);

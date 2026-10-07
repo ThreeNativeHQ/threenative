@@ -148,12 +148,15 @@ export function encodeObservation(kind: ObservationKind, value: unknown): IEncod
  * so its elements are observed in order.
  */
 function numbersValue(value: unknown): IEncodedObservation {
-  if (!Array.isArray(value) && !ArrayBuffer.isView(value))
+  if (
+    !Array.isArray(value) &&
+    (!ArrayBuffer.isView(value) || !("length" in value) || typeof value.length !== "number")
+  )
     throw new Error(`TN_OBSERVATION_INVALID: numbers observed ${typeof value}`);
-  const entries = Array.from(value as unknown as ArrayLike<number>);
+  const entries = Array.from(value as ArrayLike<number>, numberValue);
   return {
-    value: entries.map((entry) => `n:${numberBits(entry)}`).join(","),
-    decimal: entries.map((entry) => decimalOf(entry)).join(", "),
+    value: entries.map((entry) => entry.value).join(","),
+    decimal: entries.map((entry) => entry.decimal).join(", "),
   };
 }
 
