@@ -1972,3 +1972,13 @@ threshold change.
 **Lockfile defect found and repaired:** the develop merge left two importers on the old `three` patch
 hash (`c2e051df`) while the PR's patch hashes to `9fdfb25e`, so `pnpm install --frozen-lockfile` failed
 with `ERR_PNPM_LOCKFILE_MISSING_DEPENDENCY`. Both lines repointed; frozen offline install now passes.
+
+**Variance-clip gamma is not the lever — 2026-10-07, hardware.** The resolve clips history to a box scaled by
+`mix(0.5, 1, …)`, tighter than the code comment's own `[0.75, 2]` range, which suggested it might be
+suppressing accumulation at edges. A throwaway override widened it on the raw4 candidate (full 31-arm
+corpus, nvidia/turing `webgpu`, source `f45434a98`): `[0.75, 1.25]` gave full-resolution edge `.05822`,
+lower-input edge `.08044`; `[1, 1.5]` gave `.05803` / `.08038`, against `.05849` / `.08062` at the
+shipped range. Reveal stale fractions and the other checks did not move. The same four checks fail.
+The override was not committed. Together with the falsified reactive mask and the raw4 footprint, this
+leaves the aliased-current-frame edge error, not history clipping, as the unexplained term: the best
+temporal arm remains worse at edges than the no-AA reference it is supposed to beat by 5%.
