@@ -15,7 +15,7 @@ namespace tn::engine {
 
 // Each column is contiguous; pages keep every public transform address stable through growth.
 struct alignas(64) TransformPage {
-    static constexpr std::size_t size = 256;
+    static constexpr std::size_t size = 64;
     std::array<Vector3, size> positions, scales;
     std::array<SyncedEuler, size> rotations;
     std::array<SyncedQuaternion, size> quaternions;
