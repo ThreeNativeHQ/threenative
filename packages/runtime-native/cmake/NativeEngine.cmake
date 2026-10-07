@@ -191,6 +191,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     target_link_libraries(tn-native-engine-compute-test PRIVATE tn_engine_renderer tn_host_services)
 
     tn_native_engine_test(tn-native-engine-render-database-test tests/native-engine/render_database_test.cpp
+        native_engine_uniform_batch_preparation=uniform_batch_preparation
         native_engine_renderer_scene_lit=lit_scene
         native_engine_directional_target=directional_target
         native_engine_renderer_invalidation=invalidation

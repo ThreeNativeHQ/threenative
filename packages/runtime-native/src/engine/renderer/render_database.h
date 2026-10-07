@@ -21,8 +21,8 @@ namespace tn::engine {
 /**
  * The render database (PRD-514 phase 1): `renderer.render(scene, camera)` on the native path. It
  * reads the native scene graph — never a JS scene — and keeps one draw record per mesh, rebuilt
- * only when that mesh's revision, its geometry's revision or its material's version moves; an
- * unchanged scene rebuilds nothing.
+ * only when its geometry's identity/revision or material's identity/version moves. Transforms and
+ * mutable uniforms refresh independently; moving a mesh does not rebuild its resource record.
  *
  * Per call it does what three's Renderer.render does before drawing: updateMatrixWorld on the scene
  * (matrixWorldAutoUpdate) and on a parentless camera, switches the camera to WebGPU clip space,
@@ -35,7 +35,8 @@ namespace tn::engine {
  */
 class RenderDatabase {
   public:
-    uint64_t render(Renderer& renderer, Object3D& scene, Camera& camera, std::array<double, 4> clear = {0, 0, 0, 0});
+    uint64_t render(Renderer& renderer, Object3D& scene, Camera& camera, std::array<double, 4> clear = {0, 0, 0, 0},
+                    std::array<double, 2>* cpuMs = nullptr);
 
     /** CPU preparation used by render; returned pointers remain valid until the next prepare. */
     std::vector<DrawItem> prepare(Object3D& scene, Camera& camera, LightState& lights);
@@ -46,12 +47,16 @@ class RenderDatabase {
     [[nodiscard]] const std::vector<std::string>& diagnostics() const { return diagnostics_; }
 
     /**
-     * Automatic batching (PRD-519): opaque plain meshes that share a geometry and material,
+     * Automatic batching (PRD-519): opaque plain meshes that share a geometry and material uniforms
+     * (base colours travel per instance),
      * at least kMinBatchMembers of them and none with a render callback, draw as one instanced
      * draw. Compatible skinned rigs share one palette draw per pass even across other draws.
      * On by default; off draws every mesh on its own, subject to the measured pixel-edge budget.
      */
     bool batching = true;
+    bool profiling = false;
+    // Matrix propagation, projection/record refresh, batching, and remaining preparation.
+    [[nodiscard]] const std::array<double, 4>& lastPrepareMs() const { return prepareMs_; }
     /** three's `renderer.shadowMap.enabled`: off, no light draws or reads a shadow map. */
     bool shadowMapEnabled = false;
     static constexpr std::size_t kMinBatchMembers = 4;
@@ -76,8 +81,11 @@ class RenderDatabase {
         uint64_t seen = 0; // the render it was last projected in
     };
     void project(Object3D& object, const Camera& camera, std::vector<DrawItem>& items, LightState& lights);
-    void batch(std::vector<DrawItem>& items, Object3D& scene);
+    void batch(std::vector<DrawItem>& items, Object3D& scene,
+               const std::vector<std::pair<double, const DrawItem*>>& ordered);
     std::vector<std::shared_ptr<BufferStore>> batchStores_; // reused frame to frame, one per group
+    std::vector<std::shared_ptr<BufferStore>> batchColors_;
+    std::vector<shader::StandardMaterial> batchParams_;
     std::vector<std::unique_ptr<SkinnedPalette>> skinnedPalettes_; // borrowed by this frame's draws
     std::size_t batchGroups_ = 0, batchMembers_ = 0;
     Record& record(const Mesh& mesh);
@@ -93,6 +101,7 @@ class RenderDatabase {
     std::vector<std::string> diagnostics_;
     uint64_t rebuilds_ = 0;
     uint64_t frame_ = 0;
+    std::array<double, 4> prepareMs_{};
     std::vector<std::pair<uint64_t, DirectLight>> direct_; // this render's direct lights with their ids
     std::unordered_set<const void*> skeletonsUpdated_;     // skeletons this render already updated
     int hemisphere_ = 0;

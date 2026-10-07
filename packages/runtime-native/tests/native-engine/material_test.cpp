@@ -170,6 +170,18 @@ void nodes() {
 
 void builds() {
     nodes();
+    VertexVariant storage; storage.instanced = storage.instanceStorage = storage.instanceColor = true;
+    CHECK(storage.key() != VertexVariant{}.key());
+    for (int kind = 0; kind < 5; ++kind) {
+        const auto p = kind == 0 ? buildBasic(storage) : kind == 1 ? buildLambert(storage) :
+            kind == 2 ? buildPhong(storage) : kind == 3 ? buildStandard({}, storage) : buildPhysical({}, storage);
+        const auto vertex = buildStage(p.vertex, 0), fragment = buildStage(p.fragment, 1);
+        CHECK(vertex.wgsl.ok() && fragment.wgsl.ok());
+        CHECK(vertex.wgsl.code.find("s_instances") != std::string::npos);
+        CHECK(vertex.wgsl.code.find("instanceBase") != std::string::npos);
+        CHECK(vertex.attributes.size() == (kind == 0 ? 1 : 2));
+        CHECK(fragment.wgsl.code.find("i_instanceColor") != std::string::npos);
+    }
     // Both GGX and copy passes must address all extra tiles, including negative mips.
     for (uint32_t lodMax : {4u, 8u}) {
         for (int lod = 1; lod <= int(lodMax) + 2; ++lod) {
@@ -199,9 +211,20 @@ void builds() {
         CHECK(fragment.code.rfind("dpdx") < fragment.code.find("if ("));
         // EnvironmentNode's pow4 is ((r*r)*r)*r, not (r*r)*(r*r): f32 rounding is observable.
         bool reflectionMix = false;
+        unsigned rotatedFlips = 0;
         bool mipDenominators = false;
         for (ExprId id = 1; id <= lit.fragment.exprCount(); ++id) {
             const Expr& mix = lit.fragment.expr(id);
+            // r185 PMREMNode rotates vec3(x, -y, z), for diffuse and reflection.
+            if (mix.op == Op::Mul && lit.fragment.expr(mix.args[0]).op == Op::Uniform &&
+                lit.fragment.expr(mix.args[0]).type == Type::mat(4, 4)) {
+                const Expr& vector = lit.fragment.expr(mix.args[1]);
+                if (vector.op == Op::Construct && vector.argc == 2) {
+                    const Expr& direction = lit.fragment.expr(vector.args[0]);
+                    if (direction.op == Op::Construct && direction.argc == 3 &&
+                        lit.fragment.expr(direction.args[1]).op == Op::Neg) ++rotatedFlips;
+                }
+            }
             // three's unsuffixed WGSL breakpoint subtraction folds in abstract-float precision.
             if (mix.op == Op::Div) {
                 const Expr& numerator = lit.fragment.expr(mix.args[0]);
@@ -230,6 +253,7 @@ void builds() {
             CHECK(second.op == Op::Mul && second.args[0] == fourth.args[1] && second.args[1] == fourth.args[1]);
             reflectionMix = true;
         }
+        CHECK(rotatedFlips == 2);
         CHECK(reflectionMix);
         CHECK(mipDenominators);
     }

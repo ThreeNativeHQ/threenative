@@ -443,6 +443,13 @@ tn::binding::Object* objectOf(tn_handle_t handle) {
     return context ? context->object(handle) : nullptr;
 }
 
+tn_handle_t shareObject(tn_context_t* context, std::string cls, std::shared_ptr<void> object) {
+    const auto value = context->share(std::move(cls), std::move(object));
+    tn_handle_t handle{};
+    if (!context->decode(value.text, handle)) throw binding::Unsupported{"TN_NATIVE_OBJECT_SHARE_FAILED"};
+    return handle;
+}
+
 engine::shader::graph::Node shaderNode(tn_handle_t handle, const std::string& path) {
     auto* object = objectOf(handle);
     if (!object) throw std::runtime_error("TN_HANDLE_INVALID: shader node owner");

@@ -6,6 +6,7 @@
 
 #include <emscripten/emscripten.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <memory>
@@ -14,7 +15,7 @@
 using namespace tn::engine;
 
 namespace {
-constexpr uint32_t kWidth = 320, kHeight = 240;
+uint32_t kWidth = 320, kHeight = 240;
 WGPUInstance instance = nullptr;
 WGPUDevice device = nullptr;
 WGPUQueue queue = nullptr;
@@ -25,7 +26,10 @@ std::unique_ptr<Renderer> renderer;
 RenderDatabase database;
 std::shared_ptr<Scene> scene;
 std::shared_ptr<PerspectiveCamera> camera;
-bool reading = false, loading = false, failed = false;
+std::array<double, 2> benchCpu{};
+std::array<double, 11> benchStats{};
+bool measuring = false;
+bool reading = false, loading = false, failed = false, manualFrames = false;
 
 std::string text(WGPUStringView value) {
     if (value.data == nullptr) return {};
@@ -78,8 +82,8 @@ void tick() {
         renderer->poll();
     } else if (instance) wgpuInstanceProcessEvents(instance);
     events.drain();
-    if (failed || !renderer || !scene || !camera) return;
-    database.render(*renderer, *scene, *camera, {0.02, 0.03, 0.04, 1});
+    if (failed || !renderer || !scene || !camera || manualFrames) return;
+    database.render(*renderer, *scene, *camera, {0.02, 0.03, 0.04, 1}, measuring ? &benchCpu : nullptr);
     if (!database.diagnostics().empty()) return static_cast<void>(fail(database.diagnostics().front()));
     WGPUSurfaceTexture frame = {};
     wgpuSurfaceGetCurrentTexture(surface, &frame);
@@ -188,7 +192,78 @@ extern "C" int tnw_render(const tn_handle_t* sceneHandle, const tn_handle_t* cam
     if (!renderer || !nextScene || !nextCamera) return fail("TN_WASM_RENDER: device or scene/camera handle invalid");
     scene = std::move(nextScene);
     camera = std::move(nextCamera);
-    reading = true;
+    reading = !manualFrames;
+    return 0;
+}
+
+// PRD-533: manual frames time game update + synchronous engine submission; readback and
+// the animation boundary stay outside the CPU meter. The asset proof keeps its automatic loop.
+extern "C" int tnw_bench_init(uint32_t width, uint32_t height) {
+    if (!width || !height || width > 4096 || height > 4096) return fail("TN_WASM_BENCH_SIZE");
+    kWidth = width;
+    kHeight = height;
+    manualFrames = true;
+    database.profiling = true;
+    return tnw_init();
+}
+
+extern "C" int tnw_bench_step() {
+    if (!manualFrames || !renderer || !scene || !camera || failed) return fail("TN_WASM_BENCH_STATE");
+    manualFrames = false;
+    measuring = true;
+    const auto rebuilds = database.rebuilds();
+    const double start = emscripten_get_now();
+    tick();
+    measuring = false;
+    manualFrames = true;
+    benchStats = {benchCpu[0], benchCpu[1], emscripten_get_now() - start - benchCpu[0] - benchCpu[1],
+                  double(renderer->lastFrame().draws), double(database.rebuilds() - rebuilds),
+                  double(database.lastBatches().first), double(database.lastBatches().second)};
+    std::copy(database.lastPrepareMs().begin(), database.lastPrepareMs().end(), benchStats.begin() + 7);
+    return failed ? 1 : 0;
+}
+
+// Cached address, read after step without another JS-to-Wasm call.
+extern "C" const double* tnw_bench_stats() { return benchStats.data(); }
+
+// CPU-only probe: precisely the same render database preparation, with no device/submission.
+extern "C" int tnw_bench_prepare(const tn_handle_t* sceneHandle, const tn_handle_t* cameraHandle) {
+    auto inputScene = unwrap<Scene>(sceneHandle, "Scene");
+    auto inputCamera = unwrap<PerspectiveCamera>(cameraHandle, "PerspectiveCamera");
+    if (!inputScene || !inputCamera) return fail("TN_WASM_BENCH_PREPARE_HANDLE");
+    database.profiling = true;
+    LightState lights;
+    const auto rebuilds = database.rebuilds();
+    const double start = emscripten_get_now();
+    const auto items = database.prepare(*inputScene, *inputCamera, lights);
+    benchStats = {emscripten_get_now() - start, 0, 0, double(items.size()), double(database.rebuilds() - rebuilds),
+                  double(database.lastBatches().first), double(database.lastBatches().second)};
+    std::copy(database.lastPrepareMs().begin(), database.lastPrepareMs().end(), benchStats.begin() + 7);
+    if (!database.diagnostics().empty()) return fail(database.diagnostics().front());
+    return items.empty() ? fail("TN_WASM_BENCH_PREPARE_EMPTY") : 0;
+}
+
+// Bulk engine transform writes; gameplay remains in JS or Perry, never in this host seam.
+extern "C" int tnw_bulk_transforms(const tn_handle_t* handles, const double* values, uint32_t count) {
+    if (!handles || !values || !count || count > 65536) return fail("TN_WASM_BULK_INPUT");
+    static std::vector<Mesh*> meshes;
+    meshes.clear();
+    meshes.reserve(count);
+    for (uint32_t i = 0; i < count; ++i) {
+        auto* object = tn::abi::objectOf(handles[i]);
+        if (!object || object->cls != "Mesh" || !object->ptr) return fail("TN_WASM_BULK_HANDLE");
+        meshes.push_back(static_cast<Mesh*>(object->ptr.get()));
+        for (uint32_t j = 0; j < 5; ++j)
+            if (!std::isfinite(values[i * 5 + j])) return fail("TN_WASM_BULK_NONFINITE");
+    }
+    for (uint32_t i = 0; i < count; ++i) {
+        auto* mesh = meshes[i]; // the catalog pins objects; no language callbacks run in this seam
+        const auto* v = values + i * 5;
+        mesh->position.set(v[0], v[1], v[2]);
+        mesh->rotation.set(v[3], v[4], 0);
+        // RenderDatabase composes auto-update meshes once, after every transform write.
+        if (!mesh->matrixAutoUpdate) mesh->updateMatrix();
+    }
     return 0;
 }
 

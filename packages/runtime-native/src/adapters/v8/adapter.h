@@ -56,6 +56,9 @@ public:
 private:
     struct Wrapper;
     struct CallbackData;
+    struct PropertyWrapper;
+    static void animationCall(const v8::FunctionCallbackInfo<v8::Value>& info);
+    std::set<PropertyWrapper*> propertyWrappers_;
     static uint64_t key(tn_handle_t h) { return (uint64_t{h.index} << 32) | h.generation; }
     void forget(uint64_t key);
     void track(Wrapper* wrapper, v8::Local<v8::Object> object);

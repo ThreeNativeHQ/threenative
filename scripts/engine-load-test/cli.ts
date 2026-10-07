@@ -39,6 +39,7 @@ import {
 import { runAndroidArm } from "./run-android.js";
 import { desktopTimeoutMs, runGodotDesktop, runTnDesktop } from "./run-desktop.js";
 import { exportGodotWeb } from "./run-godot.js";
+import { runWebBench, webBenchOptions } from "./web.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const artifactRoot = path.join(repoRoot, "artifacts/engine-load-test");
@@ -555,6 +556,15 @@ async function main(): Promise<void> {
   const checkReport = flag("check-report");
   if (checkReport !== undefined) return runReportCheckCommand(checkReport);
   const cp1Arms = flag("arms");
+  if (cp1Arms !== undefined && flag("target") === "web") {
+    const names = ["arms", "workload", "objects", "frames", "warmup", "repeats", "width", "height"];
+    return runWebBench(
+      repoRoot,
+      artifactRoot,
+      webBenchOptions(Object.fromEntries(names.map((name) => [name, flag(name)]))),
+      process.argv.includes("--build-only"),
+    );
+  }
   if (cp1Arms !== undefined) return runCp1Command(cp1Arms);
   const arm = flag("arm");
   if (arm !== undefined) return runArmCommand(arm, ladderOptions());

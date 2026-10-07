@@ -10,6 +10,9 @@
 #include "engine/abi/bindings.h"
 #include "engine/abi/abi_internal.h"
 #include "engine/foundation/ThreeConstants.h"
+#include "engine/scene/texture.h"
+#include "engine/animation/skinning/skeleton.h"
+#include "engine/animation/property_binding.h"
 
 namespace tn::adapters::v8adapter {
 
@@ -19,6 +22,15 @@ struct Adapter::Wrapper {
     v8::Global<v8::Object> object;
     std::set<std::string> callbacks;  // JS callbacks set on the object, by name
     bool held = false;                // strong: the engine may still call one of them
+};
+
+struct Adapter::PropertyWrapper {
+    Adapter* adapter;
+    std::shared_ptr<engine::Object3D> root;
+    engine::animation::PropertyBinding binding;
+    v8::Global<v8::Object> object;
+    PropertyWrapper(Adapter* a, std::shared_ptr<engine::Object3D> r, std::string path)
+        : adapter(a), root(std::move(r)), binding(root, std::move(path)) {}
 };
 
 // What the engine holds for one JS callback: which wrapper's function to call. Deleted by the
@@ -180,6 +192,10 @@ Adapter::Adapter(v8::Isolate* isolate, tn_context_t* context) : tsl_(std::make_u
 }
 
 Adapter::~Adapter() {
+    for (auto* wrapper : propertyWrappers_) {
+        wrapper->object.Reset();
+        delete wrapper;
+    }
     // The isolate may outlive this adapter: wrappers left alive stop pointing at it, and the engine
     // stops calling into it.
     for (auto& [k, w] : wrappers_) {
@@ -232,7 +248,7 @@ v8::Local<v8::Value> Adapter::wrap(tn_handle_t handle) {
 bool Adapter::unwrap(v8::Local<v8::Value> value, tn_handle_t& out) const {
     if (!value->IsObject()) return false;
     v8::Local<v8::Object> object = value.As<v8::Object>();
-    if (object->InternalFieldCount() < 1) return false;
+    if (object->InternalFieldCount() != 1) return false;
     auto* w = static_cast<Wrapper*>(object->GetAlignedPointerFromInternalField(0));
     if (!w || w->adapter != this) return false;
     out = w->handle;
@@ -350,6 +366,117 @@ void Adapter::setCallback(const v8::FunctionCallbackInfo<v8::Value>& info) {
     w->callbacks.insert(d->name);
     a.withCallbacks_.insert(w);
     a.strong(w);  // until the next safe point finds the object attached or not
+}
+
+void Adapter::animationCall(const v8::FunctionCallbackInfo<v8::Value>& info) {
+    auto* isolate = info.GetIsolate();
+    const auto ctx = isolate->GetCurrentContext();
+    const auto data = info.Data().As<v8::Array>();
+    auto& a = *static_cast<Adapter*>(data->Get(ctx, 0).ToLocalChecked().As<v8::External>()->Value());
+    const int operation = data->Get(ctx, 1).ToLocalChecked().As<v8::Integer>()->Value();
+    const auto global = ctx->Global();
+    const auto label = [&](v8::Local<v8::Value> value) {
+        if (!value->IsString()) throw binding::Unsupported{"TN_NATIVE_PROPERTY_BINDING: expected a string"};
+        v8::String::Utf8Value text(isolate, value);
+        return std::string(*text, text.length());
+    };
+    const auto root = [&](v8::Local<v8::Value> value) -> std::shared_ptr<engine::Object3D> {
+        tn_handle_t handle{};
+        tn_value_t parent{}; tn_diagnostic_t diagnostic{nullptr, 0};
+        const bool valid = a.unwrap(value, handle) && tn_get(handle, "parent", &parent, &diagnostic) == TN_OK;
+        tn_diagnostic_release(&diagnostic);
+        if (!valid) throw binding::Unsupported{"TN_NATIVE_PROPERTY_BINDING: expected a native Object3D"};
+        return std::static_pointer_cast<engine::Object3D>(tn::abi::objectOf(handle)->ptr);
+    };
+    const auto node = [&](engine::Object3D* object) -> v8::Local<v8::Value> {
+        if (!object) return v8::Null(isolate);
+        auto shared = object->weak_from_this().lock();
+        if (!shared) throw binding::Unsupported{"TN_NATIVE_PROPERTY_BINDING: node has no shared owner"};
+        return a.wrap(tn::abi::shareObject(a.context(), std::string(object->type()), std::move(shared)));
+    };
+    try {
+        if (operation == 6) { // getConsoleFunction
+            const auto hook = global->Get(ctx, str(isolate, "__tnConsoleHook")).ToLocalChecked();
+            info.GetReturnValue().Set(hook->IsUndefined() ? v8::Local<v8::Value>(v8::Null(isolate)) : hook);
+            return;
+        }
+        if (operation == 7) { // setConsoleFunction
+            if (info.Length() != 1 || (!info[0]->IsUndefined() && !info[0]->IsNull() && !info[0]->IsFunction()))
+                throw binding::Unsupported{"TN_NATIVE_CONSOLE_HOOK: expected a function, null or undefined"};
+            global->Set(ctx, str(isolate, "__tnConsoleHook"), info[0]).Check();
+            return;
+        }
+        if (operation == 4) { // parseTrackName
+            if (info.Length() != 1) throw binding::Unsupported{"TN_NATIVE_PROPERTY_BINDING: expected one track path"};
+            engine::animation::ParsedPath parsed; std::string error;
+            if (!engine::animation::parseTrackName(label(info[0]), parsed, error)) throw binding::Unsupported{error};
+            auto record = v8::Object::New(isolate);
+            for (const auto& [name, part] : std::vector<std::pair<const char*, std::optional<std::string>>>{
+                {"nodeName", parsed.nodeName}, {"objectName", parsed.objectName}, {"objectIndex", parsed.objectIndex},
+                {"propertyName", parsed.propertyName}, {"propertyIndex", parsed.propertyIndex}})
+                record->Set(ctx, str(isolate, name), part ? v8::Local<v8::Value>(str(isolate, *part)) : v8::Local<v8::Value>(v8::Undefined(isolate))).Check();
+            info.GetReturnValue().Set(record);
+            return;
+        }
+        if (operation == 5) { // findNode
+            if (info.Length() != 2) throw binding::Unsupported{"TN_NATIVE_PROPERTY_BINDING: expected root and node name"};
+            const auto held = root(info[0]);
+            const auto name = info[1]->IsUndefined() ? std::optional<std::string>{} : std::optional<std::string>{label(info[1])};
+            info.GetReturnValue().Set(node(engine::animation::findNode(*held, name)));
+            return;
+        }
+        if (operation == 0) { // constructor
+            if (!info.IsConstructCall() || info.Length() != 2) throw binding::Unsupported{"TN_NATIVE_PROPERTY_BINDING: construct with root and path"};
+            auto held = root(info[0]); const auto path = label(info[1]);
+            engine::animation::ParsedPath parsed; std::string error;
+            if (!engine::animation::parseTrackName(path, parsed, error)) throw binding::Unsupported{error};
+            auto* wrapper = new PropertyWrapper(&a, std::move(held), path);
+            info.This()->SetInternalField(0, v8::External::New(isolate, &a));
+            info.This()->SetInternalField(1, v8::External::New(isolate, wrapper));
+            wrapper->object.Reset(isolate, info.This());
+            a.propertyWrappers_.insert(wrapper);
+            wrapper->object.SetWeak(wrapper, [](const v8::WeakCallbackInfo<PropertyWrapper>& weak) {
+                auto* wrapper = weak.GetParameter();
+                wrapper->object.Reset(); wrapper->adapter->propertyWrappers_.erase(wrapper); delete wrapper;
+            }, v8::WeakCallbackType::kParameter);
+            return;
+        }
+        const auto self = info.This();
+        if (self->InternalFieldCount() != 2 || !self->GetInternalField(0)->IsValue() || !self->GetInternalField(0).As<v8::Value>()->IsExternal() ||
+            self->GetInternalField(0).As<v8::External>()->Value() != &a || !self->GetInternalField(1)->IsValue() || !self->GetInternalField(1).As<v8::Value>()->IsExternal())
+            throw binding::Unsupported{"TN_NATIVE_PROPERTY_BINDING: invalid receiver"};
+        auto* wrapper = static_cast<PropertyWrapper*>(self->GetInternalField(1).As<v8::External>()->Value());
+        if (!a.propertyWrappers_.contains(wrapper)) throw binding::Unsupported{"TN_NATIVE_PROPERTY_BINDING: invalid receiver"};
+        if (operation == 1) {
+            wrapper->binding.bind();
+            const auto& diagnostic = wrapper->binding.diagnostic;
+            if (!diagnostic.empty()) {
+                v8::Local<v8::Value> hook = global->Get(ctx, str(isolate, "__tnConsoleHook")).ToLocalChecked();
+                v8::Local<v8::Value> args[] = {str(isolate, "error"), str(isolate, diagnostic)};
+                if (hook->IsFunction()) {
+                    v8::Local<v8::Value> ignored;
+                    if (!hook.As<v8::Function>()->Call(ctx, global, 2, args).ToLocal(&ignored)) return;
+                } else {
+                    auto console = global->Get(ctx, str(isolate, "console")).ToLocalChecked();
+                    if (console->IsObject()) {
+                        auto error = console.As<v8::Object>()->Get(ctx, str(isolate, "error")).ToLocalChecked();
+                        if (error->IsFunction()) { v8::Local<v8::Value> ignored;
+                            if (!error.As<v8::Function>()->Call(ctx, console, 1, args + 1).ToLocal(&ignored)) return; }
+                    }
+                }
+            }
+        } else if (operation == 2) wrapper->binding.unbind();
+        else if (operation == 3) {
+            if (auto material = wrapper->binding.targetMaterial()) {
+                const auto cls = std::string(material->typeName());
+                info.GetReturnValue().Set(a.wrap(tn::abi::shareObject(a.context(), cls, std::move(material))));
+            } else info.GetReturnValue().Set(node(wrapper->binding.targetNode().get()));
+        }
+    } catch (const binding::Unsupported& error) {
+        isolate->ThrowException(v8::Exception::TypeError(str(isolate, error.reason)));
+    } catch (const std::exception& error) {
+        isolate->ThrowException(v8::Exception::Error(str(isolate, error.what())));
+    }
 }
 
 void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> target) {
@@ -592,6 +719,62 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
     target->Set(context, str(isolate_, "NoColorSpace"), str(isolate_, tn::engine::NoColorSpace)).Check();
     target->Set(context, str(isolate_, "LinearSRGBColorSpace"),
                 str(isolate_, tn::engine::LinearSRGBColorSpace)).Check();
+    for (const auto& [name, value] : std::map<std::string, double>{
+        {"RepeatWrapping", static_cast<double>(tn::engine::TextureWrap::Repeat)},
+        {"ClampToEdgeWrapping", static_cast<double>(tn::engine::TextureWrap::ClampToEdge)},
+        {"NearestFilter", static_cast<double>(tn::engine::TextureFilter::Nearest)},
+        {"LinearFilter", static_cast<double>(tn::engine::TextureFilter::Linear)},
+        {"LinearMipmapLinearFilter", static_cast<double>(tn::engine::TextureFilter::LinearMipmapLinear)},
+        {"UnsignedByteType", tn::engine::kTextureUnsignedByteType},
+        {"FloatType", tn::engine::kTextureFloatType},
+        {"RGBAFormat", tn::engine::kTextureRGBAFormat},
+        {"EquirectangularReflectionMapping", 303},
+        {"NoToneMapping", 0}, {"LoopOnce", 2200}, {"LoopRepeat", 2201},
+    }) target->Set(context, str(isolate_, name), v8::Number::New(isolate_, value)).Check();
+    const auto animation = [&](int operation) {
+        auto data = v8::Array::New(isolate_, 2);
+        data->Set(context, 0, v8::External::New(isolate_, this)).Check();
+        data->Set(context, 1, v8::Integer::New(isolate_, operation)).Check();
+        return v8::FunctionTemplate::New(isolate_, &Adapter::animationCall, data);
+    };
+    auto property = animation(0);
+    property->SetClassName(str(isolate_, "PropertyBinding"));
+    property->InstanceTemplate()->SetInternalFieldCount(2);
+    property->PrototypeTemplate()->Set(str(isolate_, "bind"), animation(1));
+    property->PrototypeTemplate()->Set(str(isolate_, "unbind"), animation(2));
+    property->PrototypeTemplate()->SetAccessorProperty(str(isolate_, "targetObject"), animation(3));
+    property->Set(str(isolate_, "parseTrackName"), animation(4));
+    property->Set(str(isolate_, "findNode"), animation(5));
+    target->Set(context, str(isolate_, "PropertyBinding"), property->GetFunction(context).ToLocalChecked()).Check();
+    target->Set(context, str(isolate_, "getConsoleFunction"), animation(6)->GetFunction(context).ToLocalChecked()).Check();
+    target->Set(context, str(isolate_, "setConsoleFunction"), animation(7)->GetFunction(context).ToLocalChecked()).Check();
+    target->Set(context, str(isolate_, "__tnCloneSkeleton"), v8::Function::New(context,
+        [](const v8::FunctionCallbackInfo<v8::Value>& info) {
+            auto& a = *adapterOf(info);
+            tn_handle_t handle{};
+            tn_value_t parent{};
+            tn_diagnostic_t diagnostic{nullptr, 0};
+            if (info.Length() != 1 || !a.unwrap(info[0], handle) || tn_get(handle, "parent", &parent, &diagnostic) != TN_OK) {
+                tn_diagnostic_release(&diagnostic);
+                info.GetIsolate()->ThrowException(v8::Exception::TypeError(str(info.GetIsolate(), "TN_NATIVE_SKELETON_CLONE: expected a native Object3D")));
+                return;
+            }
+            tn_diagnostic_release(&diagnostic);
+            try {
+                const auto* object = tn::abi::objectOf(handle);
+                std::string error;
+                auto clone = engine::cloneSkeleton(*static_cast<engine::Object3D*>(object->ptr.get()), error);
+                if (!clone) throw tn::binding::Unsupported{error};
+                const auto cls = std::string(clone->type());
+                info.GetReturnValue().Set(a.wrap(tn::abi::shareObject(a.context(), cls, std::move(clone))));
+            } catch (const tn::binding::Unsupported& error) {
+                info.GetIsolate()->ThrowException(v8::Exception::TypeError(str(info.GetIsolate(), error.reason)));
+            } catch (const std::exception& error) {
+                info.GetIsolate()->ThrowException(v8::Exception::Error(str(info.GetIsolate(), error.what())));
+            }
+        }, v8::External::New(isolate_, this)).ToLocalChecked()).Check();
+    target->Set(context, str(isolate_, "AttachedBindMode"), str(isolate_, "attached")).Check();
+    target->Set(context, str(isolate_, "SRGBColorSpace"), str(isolate_, "srgb")).Check();
 }
 
 }  // namespace tn::adapters::v8adapter

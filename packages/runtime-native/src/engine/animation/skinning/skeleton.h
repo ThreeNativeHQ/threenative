@@ -97,4 +97,8 @@ class SkinnedMesh : public Mesh {
     Matrix4 bindMatrixInverse;
 };
 
+/** SkeletonUtils.clone: copy the hierarchy, share mesh resources, remap each skin to cloned bones.
+ * Unsupported node kinds and bones outside the supplied root fail by name. */
+std::shared_ptr<Object3D> cloneSkeleton(const Object3D& source, std::string& error);
+
 } // namespace tn::engine

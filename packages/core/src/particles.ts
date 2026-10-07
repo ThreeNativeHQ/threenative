@@ -33,6 +33,7 @@ export class GPUParticles3D extends Sprite implements IComputeDriven {
   readonly processCadence = "render" as const;
   readonly warmupNodes: readonly ComputeNode[];
   emitting = true;
+  readonly #options: IGPUParticles3DOptions;
   #start: ComputeNode;
   #process: ComputeNode;
   #renderer: IRendererLike | undefined;
@@ -47,6 +48,7 @@ export class GPUParticles3D extends Sprite implements IComputeDriven {
     if (typeof options.process !== "function")
       throw new Error("GPUParticles3D.process must be a function.");
     super(options.material);
+    this.#options = { ...options };
     this.amount = options.amount;
     this.buffers = {
       positions: instancedArray(options.amount, "vec3"),
@@ -59,6 +61,16 @@ export class GPUParticles3D extends Sprite implements IComputeDriven {
     this.#process = computeNode("process", options.process(this.buffers));
     this.warmupNodes = [this.#start, this.#process];
     this.addEventListener("removed", this.#onRemoved);
+  }
+
+  /** Restart the same emitters with independent buffers, compute nodes and material. */
+  override clone(recursive = true): this {
+    const material = this.material.clone() as SpriteNodeMaterial;
+    const copy = new GPUParticles3D({ ...this.#options, material });
+    copy.copy(this, recursive);
+    copy.material = material;
+    copy.emitting = this.emitting;
+    return copy as this;
   }
 
   get released(): boolean {

@@ -40,6 +40,8 @@ struct Host {
     std::string gameRuntime = "cpp";
     /** One JSON-safe registered resource by id, or null for an id this player does not carry. */
     std::function<json::Value(const std::string& id)> resource;
+    /** A game runtime's installed observation bridge. False without an error uses native fallback. */
+    std::function<bool(const std::string&, const json::Value*, json::Value&, std::string&)> observe;
 };
 
 /**

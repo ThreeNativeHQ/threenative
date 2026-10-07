@@ -2,7 +2,10 @@
 #include "check.h"
 #include "engine/abi/abi_internal.h"
 #include "engine/abi/bindings.h"
+#include "engine/animation/mixer.h"
 #include "engine/foundation/ThreeConstants.h"
+#include "engine/foundation/math/Color.h"
+#include "engine/shader/tsl/tsl.h"
 #include "engine/scene/nodes.h"
 #include "engine/scene/object3d.h"
 
@@ -402,6 +405,60 @@ void tslApi() {
     )JS");
     CHECK(got == "1111111111111111");
     if (got != "1111111111111111") std::fprintf(stderr, "TSL API got %s\n", got.c_str());
+
+    // Compare the actual native DAG, not just the presence of fluent methods. r185's
+    // stepElement/mixElement/smoothstepElement reorder the fluent receiver to the last argument.
+    namespace g = tn::engine::shader::graph;
+    v8::HandleScope scope(rt.isolate);
+    const auto ctx = v8::Context::New(rt.isolate);
+    v8::Context::Scope contextScope(ctx);
+    adapter.install(ctx, ctx->Global());
+    tn::engine::Color gray; gray.setHex(0x808080);
+    auto reflected = std::make_shared<g::NodeData>();
+    reflected->kind = g::Kind::Math; reflected->name = "reflect";
+    reflected->type = tn::engine::shader::Type::vec(3);
+    reflected->args = {g::vec3({g::float_(1), g::float_(-1), g::float_(0)}),
+                      g::vec3({g::float_(0), g::float_(1), g::float_(0)})};
+    auto coordinate = std::make_shared<g::NodeData>();
+    coordinate->kind = g::Kind::Convert; coordinate->type = tn::engine::shader::Type::vec(2, tn::engine::shader::Type::Scalar::I32);
+    coordinate->args = {g::vec2({g::float_(0)})};
+    auto load = std::make_shared<g::NodeData>();
+    load->kind = g::Kind::TextureLoad; load->name = "input"; load->type = tn::engine::shader::Type::vec(4);
+    load->args = {coordinate};
+    for (const auto& [expression, expected] : std::vector<std::pair<std::string, g::Node>>{
+        {"tsl.color('#808080')", g::vec3({g::float_(gray.r), g::float_(gray.g), g::float_(gray.b)})},
+        {"tsl.color(new Color(0.1,0.2,0.3))", g::vec3({g::float_(0.1), g::float_(0.2), g::float_(0.3)})},
+        {"tsl.nodeObject(tsl.color(0.1,0.2,0.3))", g::vec3({g::float_(0.1), g::float_(0.2), g::float_(0.3)})},
+        {"tsl.reflect(tsl.vec3(1,-1,0),tsl.vec3(0,1,0))", reflected},
+        {"tsl.textureLoad(tsl.texture({name:'input'},tsl.uv()),tsl.ivec2(0))", load},
+        {"tsl.cameraViewMatrix", g::uniform("viewMatrix", tn::engine::shader::Type::mat(4,4))},
+        {"tsl.float(0.25).step(0.5)", g::step(g::float_(0.5), g::float_(0.25))},
+        {"tsl.float(0.25).mix(1,2)", g::mix(g::float_(1), g::float_(2), g::float_(0.25))},
+        {"tsl.float(0.25).smoothstep(0,1)", g::smoothstep(g::float_(0), g::float_(1), g::float_(0.25))},
+        {"tsl.float(0.25).clamp(0,1)", g::clamp(g::float_(0.25), g::float_(0), g::float_(1))},
+        {"tsl.screenUV", g::uv()},
+        {"tsl.materialColor", g::uniform("diffuse", tn::engine::shader::Type::vec(4))},
+        {"tsl.materialEmissive", g::uniform("emissive", tn::engine::shader::Type::vec(3))},
+        {"tsl.materialMetalness", g::uniform("metalness", tn::engine::shader::Type::f32())},
+        {"tsl.materialRoughness", g::uniform("roughness", tn::engine::shader::Type::f32())},
+        {"tsl.vec4(1,0.5,0.25,1).rgb", g::swizzle(g::vec4({g::float_(1),g::float_(0.5),g::float_(0.25),g::float_(1)}), "xyz")},
+    }) {
+        const std::string source = "(() => {const m=new MeshBasicNodeMaterial();m.colorNode=" + expression + ";return m;})()";
+        v8::TryCatch caught(rt.isolate);
+        v8::Local<v8::Script> script;
+        v8::Local<v8::Value> result;
+        const bool ran = v8::Script::Compile(ctx, v8::String::NewFromUtf8(rt.isolate, source.c_str()).ToLocalChecked()).ToLocal(&script) && script->Run(ctx).ToLocal(&result);
+        CHECK(ran);
+        if (!ran) continue;
+        tn_handle_t material{};
+        CHECK(adapter.unwrap(result, material));
+        const auto actual = tn::abi::shaderNode(material, "colorNode");
+        CHECK(g::key(actual) == g::key(expected));
+        tn::engine::shader::Program program(tn::engine::shader::Stage::Fragment);
+        tn::engine::shader::tsl::Build build(program);
+        CHECK(g::lower(actual, program) != tn::engine::shader::kInvalid);
+        CHECK(program.diagnostics().empty());
+    }
 }
 
 // PRD-531 slice 3: the real V8 material setter owns a graph after its JS wrapper is gone.
@@ -615,6 +672,74 @@ void raycasterLOD() {
     CHECK(result == "PASS raycaster/LOD records, vectors, identity, arrays, target, layers, near/far, instances, hysteresis");
 }
 
+void skeletal() {
+    Runtime& rt = runtime();
+    v8::Isolate::Scope isolateScope(rt.isolate);
+    Adapter adapter(rt.isolate, rt.context);
+    v8::HandleScope scope(rt.isolate);
+    const auto ctx = v8::Context::New(rt.isolate);
+    v8::Context::Scope contextScope(ctx);
+    adapter.install(ctx, ctx->Global());
+    namespace a = tn::engine::animation;
+    const auto clip = std::make_shared<a::AnimationClip>("walk", -1,
+        std::vector<a::KeyframeTrack>{a::KeyframeTrack("hip.position", a::TrackType::Vector, {0, 1}, {0,0,0, 1,2,3})});
+    const auto handle = tn::abi::shareObject(rt.context, "AnimationClip", clip);
+    ctx->Global()->Set(ctx, v8::String::NewFromUtf8Literal(rt.isolate, "nativeClip"), adapter.wrap(handle)).Check();
+    v8::TryCatch caught(rt.isolate);
+    const char* source = R"JS(
+      (() => {
+        const check = (ok, name) => { if (!ok) throw Error(name); };
+        const root = new Group(); root.name='root';
+        const hip = new Bone(); hip.name='hip'; hip.position.y=2; root.add(hip);
+        const mesh = new SkinnedMesh(new BoxGeometry(), new MeshStandardMaterial());
+        mesh.name='skin'; root.add(mesh); root.updateMatrixWorld(true);
+        mesh.bind(new Skeleton([hip])); mesh.bindMode='detached';
+        const copy = __tnCloneSkeleton(root);
+        const copyHip = copy.getObjectByName('hip');
+        const copyMesh = copy.getObjectByName('skin');
+        check(copy instanceof Group && copy !== root, 'clone root');
+        check(copyHip instanceof Bone && copyHip !== hip, 'cloned bone');
+        check(copyMesh instanceof SkinnedMesh && copyMesh !== mesh, 'cloned mesh');
+        check(copyMesh.geometry === mesh.geometry && copyMesh.material === mesh.material, 'shared resources');
+        check(copyMesh.skeleton !== mesh.skeleton && copyMesh.skeleton.bones[0] === copyHip, 'skeleton remapping');
+        check(mesh.skeleton.bones[0] === hip && copyMesh.bindMode === 'detached', 'source and bind mode');
+        check(copyMesh.bindMatrix !== mesh.bindMatrix && copyMesh.bindMatrix.elements.join() === mesh.bindMatrix.elements.join(), 'bind matrices');
+        copyHip.position.x=3; copy.updateMatrixWorld(true); copyMesh.skeleton.update();
+        mesh.skeleton.update();
+        check(hip.position.x===0 && copyMesh.skeleton.boneMatrices[12]===3 && mesh.skeleton.boneMatrices[12]===0, 'independent palette');
+        check(PropertyBinding.parseTrackName('hip.position[x]').propertyIndex==='x', 'native track parsing');
+        check(PropertyBinding.findNode(root, 'hip')===hip && PropertyBinding.findNode(root, undefined)===root, 'native node search');
+        const previous = getConsoleFunction(); const messages=[];
+        setConsoleFunction((type, message) => messages.push([type, message]));
+        const binding=new PropertyBinding(root, 'hip.position'); binding.bind();
+        check(binding.targetObject===hip && messages.length===0, 'native track target');
+        hip.name='renamed'; binding.bind(); check(binding.targetObject===hip, 'cached target');
+        binding.unbind(); binding.bind();
+        check(binding.targetObject===null && messages.length===1 && messages[0][0]==='error' && messages[0][1].includes('No target node found'), 'native rebind diagnostic');
+        hip.name='hip';
+        const materialBinding=new PropertyBinding(root, 'skin.material.roughness'); materialBinding.bind();
+        check(materialBinding.targetObject===mesh.material, 'native material target');
+        const unsupportedBinding=new PropertyBinding(root, 'hip.noSuchProperty'); unsupportedBinding.bind();
+        check(unsupportedBinding.targetObject===null && messages[1][1].includes('TN_NATIVE_ANIMATION_PATH_UNSUPPORTED'), 'unsupported path diagnostic');
+        setConsoleFunction(previous); check(getConsoleFunction()===previous, 'console hook restoration');
+        const external = new Bone(); external.name='external'; mesh.bind(new Skeleton([external]));
+        let refused=false; try { __tnCloneSkeleton(root); } catch(e) { refused=e.message.includes('TN_NATIVE_SKELETON_CLONE_EXTERNAL_BONE: external'); }
+        check(refused, 'external bone refusal');
+        refused=false; try { __tnCloneSkeleton(tsl.float(1)); } catch(e) { refused=e instanceof TypeError; }
+        check(refused, 'non-scene wrapper refusal');
+        check(nativeClip.name==='walk' && nativeClip.duration===1, 'native clip');
+        const track=nativeClip.tracks[0];
+        check(track.name==='hip.position' && track.ValueTypeName==='vector' && track.times.join()==='0,1' && track.values.join()==='0,0,0,1,2,3', 'clip track reflection');
+        return 'ok';
+      })()
+    )JS";
+    v8::Local<v8::Script> script; v8::Local<v8::Value> result;
+    const bool ran = v8::Script::Compile(ctx, v8::String::NewFromUtf8(rt.isolate, source).ToLocalChecked()).ToLocal(&script)
+        && script->Run(ctx).ToLocal(&result);
+    CHECK(ran);
+    if (!ran) { v8::String::Utf8Value error(rt.isolate, caught.Exception()); std::fprintf(stderr, "skeletal: %s\n", *error); }
+}
+
 }  // namespace
 
 TN_TEST_MAIN({"handles", handles}, {"unsupported", unsupported}, {"gc_release", gcRelease},
@@ -622,4 +747,4 @@ TN_TEST_MAIN({"handles", handles}, {"unsupported", unsupported}, {"gc_release", 
              {"crossing_bench", crossingBench},
              {"scene", scene}, {"raycaster_lod", raycasterLOD},
              {"catalog_coverage", catalogCoverage},
-             {"callback_cycle", callbackCycle}, {"tsl_api", tslApi}, {"node_materials", nodeMaterials})
+             {"callback_cycle", callbackCycle}, {"tsl_api", tslApi}, {"node_materials", nodeMaterials}, {"skeletal", skeletal})

@@ -289,6 +289,7 @@ export function sampleGrid(
  * the reason this class has a different name rather than a flag.
  */
 export class SpectralOcean extends Object3D implements IComputeDriven {
+  readonly #options: ISpectralOceanOptions;
   readonly resolution: number;
   readonly cascades: readonly ISpectralOceanCascade[];
   readonly processCadence: "fixed" | "render";
@@ -308,6 +309,7 @@ export class SpectralOcean extends Object3D implements IComputeDriven {
 
   constructor(options: ISpectralOceanOptions) {
     super();
+    this.#options = { ...options };
     const resolution = positiveInteger("resolution", options.resolution);
     log2Exact(resolution);
     if (!Array.isArray(options.cascades) || options.cascades.length === 0)
@@ -383,6 +385,14 @@ export class SpectralOcean extends Object3D implements IComputeDriven {
     }
     this.warmupNodes = warmup;
     this.addEventListener("removed", this.#onRemoved);
+  }
+
+  /** Fresh runtime resources with the same parameters; pending work is not copied. */
+  override clone(recursive = true): this {
+    return new SpectralOcean({
+      ...this.#options,
+      cascades: this.cascades.map((cascade) => ({ ...cascade })),
+    }).copy(this, recursive) as this;
   }
 
   get released(): boolean {

@@ -265,6 +265,20 @@ export class Heightfield extends Group implements IComputeDriven {
     this.#minimumZ = this.origin.z - this.depth / 2;
   }
 
+  /** Copy the current canonical samples, without rerunning erosion or sharing mutable storage. */
+  override clone(recursive = true): this {
+    return new Heightfield({
+      columns: this.columns,
+      rows: this.rows,
+      width: this.width,
+      depth: this.depth,
+      origin: this.origin,
+      heights: this.#heights,
+      ...(this.#flow === undefined ? {} : { flow: this.#flow }),
+      ...(this.#moisture === undefined ? {} : { moisture: this.#moisture }),
+    }).copy(this, recursive) as this;
+  }
+
   static fromSampler(options: IHeightfieldSamplerOptions): Heightfield {
     const columns = count(options.columns, "columns");
     const rows = count(options.rows, "rows");

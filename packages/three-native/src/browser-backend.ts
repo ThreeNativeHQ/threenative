@@ -300,7 +300,11 @@ const KIND = {
 
 /** The runtime over a loaded ABI module: one engine context, every call checked. */
 export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
-  const view = () => new DataView(abi.HEAPU8.buffer);
+  let dataView = new DataView(abi.HEAPU8.buffer);
+  const view = () => {
+    if (dataView.buffer !== abi.HEAPU8.buffer) dataView = new DataView(abi.HEAPU8.buffer);
+    return dataView;
+  };
   // Each call frees what it allocated, and only that: a callback can run a nested call.
   const allocations: number[] = [];
   const alloc = (size: number): number => {

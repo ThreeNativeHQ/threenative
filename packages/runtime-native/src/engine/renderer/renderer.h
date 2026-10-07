@@ -251,7 +251,7 @@ private:
         kMetalness, kEmissive, kSpecular, kShininess, kIor, kSpecularIntensity, kSpecularColor,
         kUvTransform, kHemisphereSky, kHemisphereGround, kHemisphereDirection, kAmbient, kBoneBase, kBindMatrix,
         kBindMatrixInverse, kMorphBase, kMorphInfluenceBase, kMorphVertexCount, kMorphBaseInfluence,
-        kEnvMapIntensity, kCameraWorldMatrix, kEnvMapTexelWidth, kEnvMapTexelHeight, kEnvMapMaxMip, kBoneStride, kFogColor, kFogNear, kFogFar, kFogDensity, kBackgroundRotation, kEnvRotation, kSlotCount
+        kEnvMapIntensity, kCameraWorldMatrix, kEnvMapTexelWidth, kEnvMapTexelHeight, kEnvMapMaxMip, kBoneStride, kFogColor, kFogNear, kFogFar, kFogDensity, kBackgroundRotation, kEnvRotation, kInstanceBase, kSlotCount
     };
     // Per direct light i, `light{i}<Field>` (shader::LightLayout).
     enum LightField : uint8_t { kLightColor, kLightDirection, kLightPosition, kLightDistance, kLightDecay, kLightAxis,
@@ -378,6 +378,9 @@ private:
     uint32_t height_ = 0;
     uint64_t renderId_ = 0;
     FrameStats lastFrame_;
+    WGPURenderBundle mainBundle_ = nullptr;
+    std::vector<uint64_t> mainBundleKey_;
+    FrameStats mainBundleStats_;
     WGPUQuerySet timestamps_ = nullptr;  // scene pass begin/end [0, 1], output pass begin/end [2, 3]
     Handle timestampResolve_;
     // Shared with the readback callback by weak reference: a backend may deliver it after this

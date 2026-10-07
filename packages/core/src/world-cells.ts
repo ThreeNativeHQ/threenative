@@ -3677,7 +3677,7 @@ export class WorldCells extends Group implements IComputeDriven {
   #velocityZ = 0;
   #lastSample: { readonly x: number; readonly z: number; readonly t: number } | undefined;
   readonly #ring: number;
-  readonly #terrain: TerrainTiles;
+  #terrain: TerrainTiles;
   readonly #transparentScatter: "cutout" | "blend";
   readonly #baseUrl: string;
   readonly #logicalBase: string;
@@ -4030,8 +4030,12 @@ export class WorldCells extends Group implements IComputeDriven {
   /** Every candidate is settled, so the idle pump can stop scanning the map; see `#pumpFarAcquisition`. */
   #farExhausted = false;
 
+  readonly #init: IWorldCellsInit;
+  #snapshotChildren: Object3D[] = [];
+
   private constructor(init: IWorldCellsInit) {
     super();
+    this.#init = { ...init };
     this.#budgets = {
       bytes: positiveInteger(init.budgets.bytes, "budgets.bytes"),
       instances: positiveInteger(init.budgets.instances, "budgets.instances"),
@@ -4240,6 +4244,35 @@ export class WorldCells extends Group implements IComputeDriven {
     });
   }
 
+  /** Fresh streaming state; the visible snapshot is replaced on the first update. Owned caches are independent. */
+  override clone(recursive = true): this {
+    const copy = new WorldCells({
+      ...this.#init,
+      assets: this.#ownsLoader ? createAssetLoader() : this.#loader,
+      ownsAssets: this.#ownsLoader,
+    }).copy(this, false);
+    const streamed = new Set<Object3D>([
+      ...this.#snapshotChildren,
+      this.#terrain,
+      ...[...this.#resident.values()].flatMap((cell) => cell.chunks),
+      ...[...this.#shared.values()].map((batch) => batch.mesh),
+      ...[...this.#chunkBundles.values()].map((entry) => entry.group),
+      ...[...this.#far.values()].map((entry) => entry.mesh),
+    ]);
+    if (this.#bundle !== undefined) streamed.add(this.#bundle);
+    if (recursive) {
+      copy.remove(copy.#terrain);
+      copy.#terrain.detach();
+      for (const child of this.children) {
+        const clonedChild = child.clone();
+        copy.add(clonedChild);
+        if (child === this.#terrain) copy.#terrain = clonedChild as TerrainTiles;
+        else if (streamed.has(child)) copy.#snapshotChildren.push(clonedChild);
+      }
+    }
+    return copy as this;
+  }
+
   get released(): boolean {
     return this.#released;
   }
@@ -4284,6 +4317,8 @@ export class WorldCells extends Group implements IComputeDriven {
    */
   update(renderer?: IRendererLike, camera?: Camera): void {
     if (this.#released) return;
+    for (const child of this.#snapshotChildren) this.remove(child);
+    this.#snapshotChildren.length = 0;
     // Kept for the chunk warm-up below: a chunk is loaded asynchronously and compiled when it
     // arrives, which can be a frame or a loading screen after the frame that gave us these.
     if (renderer !== undefined) this.#renderer = renderer;

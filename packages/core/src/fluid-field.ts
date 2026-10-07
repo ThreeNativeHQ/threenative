@@ -301,6 +301,19 @@ export class FluidField2D extends Group {
     this.addEventListener("removed", this.#onRemoved);
   }
 
+  /** Fresh runtime resources with the same parameters; pending work is not copied. */
+  override clone(recursive = true): this {
+    return new FluidField2D({
+      resolution: this.resolution,
+      viscosity: this.viscosity,
+      pressureIterations: this.pressureIterations,
+      maxSplats: this.maxSplats,
+      timeStep: this.timeStep,
+      vorticity: this.vorticity,
+      splatRadius: this.splatRadius,
+    }).copy(this, recursive) as this;
+  }
+
   get released(): boolean {
     return this.#released;
   }

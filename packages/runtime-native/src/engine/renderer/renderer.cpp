@@ -7,6 +7,7 @@
 #include <iterator>
 #include <cstring>
 #include <stdexcept>
+#include <type_traits>
 #include <vector>
 
 #include "engine/shader/dfg_lut.h"
@@ -124,7 +125,7 @@ constexpr const char* kSlotNames[] = {
     "metalness", "emissive", "specular", "shininess", "ior", "specularIntensity", "specularColor", "uvTransform",
     "hemisphereSky", "hemisphereGround", "hemisphereDirection", "ambient", "boneBase", "bindMatrix",
     "bindMatrixInverse", "morphBase", "morphInfluenceBase", "morphVertexCount", "morphBaseInfluence",
-    "envMapIntensity", "cameraWorldMatrix", "envMapTexelWidth", "envMapTexelHeight", "envMapMaxMip", "boneStride", "fogColor", "fogNear", "fogFar", "fogDensity", "backgroundRotation", "envRotation"};
+    "envMapIntensity", "cameraWorldMatrix", "envMapTexelWidth", "envMapTexelHeight", "envMapMaxMip", "boneStride", "fogColor", "fogNear", "fogFar", "fogDensity", "backgroundRotation", "envRotation", "instanceBase"};
 constexpr const char* kLightFieldNames[] = {"Color",       "Direction",        "Position",     "Distance",
                                             "Decay",       "Axis",             "ConeCos",      "PenumbraCos",
                                             "ShadowMatrix", "ShadowBias",      "ShadowNormalBias", "ShadowRadius",
@@ -340,7 +341,7 @@ Renderer::Renderer(WGPUInstance instance, WGPUDevice device, WGPUQueue queue, Ev
     // One triangle covers the frame; the output pass samples the scene target texel for texel.
     const float triangle[6] = {-1, -1, 3, -1, -1, 3};
     outputTriangle_ = gpu_.createBuffer(sizeof triangle, WGPUBufferUsage_Vertex | WGPUBufferUsage_CopyDst);
-    for (const char* name : {"boneMatrices", "morphData", "morphInfluences"}) {
+    for (const char* name : {"boneMatrices", "morphData", "morphInfluences", "instances"}) {
         FrameStorage& storage = storages_[name];
         storage.capacity = 64;
         storage.buffer = gpu_.createBuffer(storage.capacity, WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst);
@@ -423,6 +424,8 @@ void Renderer::setVirtualShadow(std::size_t light, const shadows::AtlasOptions& 
 }
 
 Renderer::~Renderer() {
+    if (mainBundle_) wgpuRenderBundleRelease(mainBundle_);
+    mainBundle_ = nullptr;
     if (timestamps_) wgpuQuerySetRelease(timestamps_);
     for (auto& [key, program] : programs_) {
         for (int g = 0; g < 2; ++g) {
@@ -716,6 +719,8 @@ Renderer::BackgroundCube& Renderer::backgroundCube(const Texture& texture) {
 }
 
 void Renderer::releaseMaterialTextures() {
+    if (mainBundle_) wgpuRenderBundleRelease(mainBundle_);
+    mainBundle_ = nullptr;
     for (auto& [texture, cube] : backgroundCubes_) {
         if (cube.view) wgpuTextureViewRelease(cube.view);
         if (cube.texture) wgpuTextureRelease(cube.texture);
@@ -1112,6 +1117,8 @@ Renderer::Program& Renderer::add(const std::string& key, shader::StageModule ver
 }
 
 void Renderer::rebuildGroups() {
+    if (mainBundle_) wgpuRenderBundleRelease(mainBundle_);
+    mainBundle_ = nullptr; // Emdawn may recycle a released bind-group handle immediately
     for (auto& [key, group] : mapGroups_)  // they bind the old uniform buffer
         if (group) wgpuBindGroupRelease(group);
     mapGroups_.clear();
@@ -1330,6 +1337,19 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
     std::vector<float>& bones = storages_["boneMatrices"].data;
     std::vector<float>& morphData = storages_["morphData"].data;
     std::vector<float>& morphInfluences = storages_["morphInfluences"].data;
+    std::vector<float>& instances = storages_["instances"].data;
+    std::unordered_map<const DrawItem*, double> instanceBases;
+    for (const auto& [depth, drawn] : opaque) {
+        if (!drawn->instanceMatrices) continue;
+        instanceBases[drawn] = double(instances.size() / 4);
+        const auto* matrices = reinterpret_cast<const float*>(drawn->instanceMatrices->data());
+        const auto* colors = drawn->instanceColors ? reinterpret_cast<const float*>(drawn->instanceColors->data()) : nullptr;
+        for (uint32_t i = 0; i < drawn->instanceCount; ++i) {
+            instances.insert(instances.end(), matrices + i * 16, matrices + (i + 1) * 16);
+            instances.insert(instances.end(), {colors ? colors[i * 3] : 1, colors ? colors[i * 3 + 1] : 1,
+                                              colors ? colors[i * 3 + 2] : 1, 0});
+        }
+    }
     struct Deform {
         double boneBase = 0, morphBase = 0, morphInfluenceBase = 0, morphVertexCount = 0, morphBaseInfluence = 1;
     };
@@ -1393,6 +1413,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
         v.backSide = item.side == 1;
         v.instanced = item.instanceMatrices != nullptr;
         v.instanceColor = item.instanceColors != nullptr;
+        v.instanceStorage = v.instanced;
         v.skinned = item.boneMatrices != nullptr;
         v.skinnedPalette = item.boneStride != 0;
         if (item.morphGeometry) {
@@ -1443,6 +1464,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
         const auto* vs = program.vertexSlots;
         const auto* fs = program.fragmentSlots;
         put(frameUniforms_, v, vs[kModelMatrix], item.matrixWorld);
+        if (item.instanceMatrices) put(frameUniforms_, v, vs[kInstanceBase], std::array<double, 1>{instanceBases.at(&item)});
         put(frameUniforms_, v, vs[kViewMatrix], view);
         put(frameUniforms_, v, vs[kProjectionMatrix], camera.projectionMatrix);
         put(frameUniforms_, v, vs[kNormalMatrix], normalMatrix(multiply(view, item.matrixWorld)));
@@ -1560,6 +1582,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
             const uint64_t v = frameUniforms_.size();
             frameUniforms_.resize(v + aligned(program.vertex.uniformBlockSize), 0);
             put(frameUniforms_, v, program.vertexSlots[kModelMatrix], item.matrixWorld);
+            if (item.instanceMatrices) put(frameUniforms_, v, program.vertexSlots[kInstanceBase], std::array<double, 1>{instanceBases.at(&item)});
             put(frameUniforms_, v, program.vertexSlots[kViewMatrix], view);
             put(frameUniforms_, v, program.vertexSlots[kProjectionMatrix], page ? page->projection.elements : shadow.projection);
             putSkin(v, program.vertexSlots, item);
@@ -1651,10 +1674,15 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
     const BufferStore* boundVertex[8] = {};  // by vertex buffer slot (attribute location)
     const BufferStore* boundIndex = nullptr;
     lastFrame_ = FrameStats{};
-    auto encode = [&](WGPURenderPassEncoder pass, const Planned& p, bool counted) {
+    auto encode = [&](auto pass, const Planned& p, bool counted) {
+        // The same commands record a direct pass or a cached bundle.
+#define TN_ENCODE(name, ...) \
+        if constexpr (std::is_same_v<decltype(pass), WGPURenderBundleEncoder>) \
+            wgpuRenderBundleEncoder##name(pass, __VA_ARGS__); \
+        else wgpuRenderPassEncoder##name(pass, __VA_ARGS__)
         const DrawItem& item = *p.item;
         if (p.pipeline != bound) {
-            wgpuRenderPassEncoderSetPipeline(pass, bound = p.pipeline);
+            TN_ENCODE(SetPipeline, bound = p.pipeline);
             std::fill(std::begin(boundVertex), std::end(boundVertex), nullptr);
             boundIndex = nullptr;
         }
@@ -1673,29 +1701,29 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
             const uint64_t offset = column ? uint64_t(a.name.back() - '0') * 16 : 0;
             const Handle buffer = geometry_.sync(store, WGPUBufferUsage_Vertex);
             if (a.location < std::size(boundVertex) && boundVertex[a.location] == &store) continue;
-            wgpuRenderPassEncoderSetVertexBuffer(pass, a.location, gpu_.buffer(buffer), offset, store.byteLength() - offset);
+            TN_ENCODE(SetVertexBuffer, a.location, gpu_.buffer(buffer), offset, store.byteLength() - offset);
             if (a.location < std::size(boundVertex)) boundVertex[a.location] = &store;
         }
-        wgpuRenderPassEncoderSetBindGroup(pass, 0, p.program->groups[0], 1, &p.vertexOffset);
+        TN_ENCODE(SetBindGroup, 0, p.program->groups[0], 1, &p.vertexOffset);
         // The depth program's fragment group is empty: no uniform block, no dynamic offset.
         const bool fragmentBlock = p.program->fragment.uniformBlockSize != 0;
-        wgpuRenderPassEncoderSetBindGroup(pass, 1, p.mapGroup ? p.mapGroup : p.program->groups[1],
-                                          fragmentBlock ? 1 : 0, &p.fragmentOffset);
+        TN_ENCODE(SetBindGroup, 1, p.mapGroup ? p.mapGroup : p.program->groups[1],
+                  fragmentBlock ? 1 : 0, &p.fragmentOffset);
         if (item.indices) {
             const Handle indices = geometry_.sync(*item.indices, WGPUBufferUsage_Index);
             const bool wide = item.indices->scalar() == Scalar::U32;
             if (boundIndex != item.indices) {
-                wgpuRenderPassEncoderSetIndexBuffer(pass, gpu_.buffer(indices),
-                                                    wide ? WGPUIndexFormat_Uint32 : WGPUIndexFormat_Uint16, 0,
-                                                    (item.indices->byteLength() + 3) & ~uint64_t{3});
+                TN_ENCODE(SetIndexBuffer, gpu_.buffer(indices),
+                          wide ? WGPUIndexFormat_Uint32 : WGPUIndexFormat_Uint16, 0,
+                          (item.indices->byteLength() + 3) & ~uint64_t{3});
                 boundIndex = item.indices;
             }
             const uint32_t count = static_cast<uint32_t>(item.indices->byteLength() / (wide ? 4 : 2));
-            wgpuRenderPassEncoderDrawIndexed(pass, count, item.instanceCount, 0, 0, 0);
+            TN_ENCODE(DrawIndexed, count, item.instanceCount, 0, 0, 0);
             if (counted) lastFrame_.triangles += uint64_t{item.instanceCount} * (count / 3);  // three's Info.update
         } else {
             const uint32_t count = static_cast<uint32_t>(item.positions->byteLength() / 12);
-            wgpuRenderPassEncoderDraw(pass, count, item.instanceCount, 0, 0);
+            TN_ENCODE(Draw, count, item.instanceCount, 0, 0);
             if (counted) lastFrame_.triangles += uint64_t{item.instanceCount} * (count / 3);
         }
         if (counted) ++lastFrame_.draws;
@@ -1709,6 +1737,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
                 ++stats.exactDraws;
             }
         }
+#undef TN_ENCODE
     };
     WGPURenderPipeline pageClear = nullptr;
     if (!virtualShadows_.empty()) {
@@ -1761,7 +1790,44 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
     WGPURenderPassEncoder pass = wgpuCommandEncoderBeginRenderPass(encoder, &passDesc);
     bound = nullptr;
     boundIndex = nullptr;
-    for (const Planned& p : plan) encode(pass, p, true);
+    // A bundle references buffers and offsets, not their contents. Matrix, colour, camera and
+    // light writes therefore leave it valid; changed draw order, resources or counts rebuild it.
+    std::vector<uint64_t> bundleKey;
+    for (const Planned& p : plan) {
+        const DrawItem& item = *p.item;
+        bundleKey.insert(bundleKey.end(), {reinterpret_cast<uintptr_t>(p.pipeline),
+            reinterpret_cast<uintptr_t>(p.program->groups[0]),
+            reinterpret_cast<uintptr_t>(p.mapGroup ? p.mapGroup : p.program->groups[1]),
+            p.vertexOffset, p.fragmentOffset, item.instanceCount});
+        for (BufferStore* store : {item.positions, item.normals, item.uvs, item.indices, item.skinIndices, item.skinWeights}) {
+            const Handle handle = store ? geometry_.sync(*store,
+                store == item.indices ? WGPUBufferUsage_Index : WGPUBufferUsage_Vertex) : Handle{};
+            bundleKey.insert(bundleKey.end(), {handle.type, handle.context, handle.index, handle.generation,
+                store ? store->byteLength() : 0, store ? static_cast<uintptr_t>(store->scalar()) : 0});
+        }
+    }
+    if (!mainBundle_ || bundleKey != mainBundleKey_) {
+        if (mainBundle_) wgpuRenderBundleRelease(mainBundle_);
+        WGPURenderBundleEncoderDescriptor descriptor{};
+        const WGPUTextureFormat color = WGPUTextureFormat_RGBA16Float;
+        descriptor.colorFormatCount = 1; descriptor.colorFormats = &color;
+        descriptor.depthStencilFormat = WGPUTextureFormat_Depth32Float; descriptor.sampleCount = 1;
+        const auto bundle = wgpuDeviceCreateRenderBundleEncoder(device_, &descriptor);
+        const auto shadowStats = lastFrame_.shadowSkinned;
+        lastFrame_ = FrameStats{};
+        for (const Planned& p : plan) encode(bundle, p, true);
+        mainBundleStats_ = lastFrame_;
+        lastFrame_.shadowSkinned = shadowStats;
+        WGPURenderBundleDescriptor finish{};
+        mainBundle_ = wgpuRenderBundleEncoderFinish(bundle, &finish);
+        wgpuRenderBundleEncoderRelease(bundle);
+        mainBundleKey_ = std::move(bundleKey);
+    } else {
+        lastFrame_.draws = mainBundleStats_.draws;
+        lastFrame_.triangles = mainBundleStats_.triangles;
+        lastFrame_.mainSkinned = mainBundleStats_.mainSkinned;
+    }
+    wgpuRenderPassEncoderExecuteBundles(pass, 1, &mainBundle_);
     wgpuRenderPassEncoderEnd(pass);
     wgpuRenderPassEncoderRelease(pass);
     if (traa_) {

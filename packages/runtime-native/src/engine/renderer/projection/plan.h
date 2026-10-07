@@ -106,7 +106,9 @@ inline bool sameUniforms(const Material& a, const Material& b) {
            a.shininess == b.shininess && a.ior == b.ior && a.specularIntensity == b.specularIntensity &&
            eq(a.specularColor, b.specularColor) && a.clearcoat == b.clearcoat && a.sheen == b.sheen &&
            a.transmission == b.transmission && a.iridescence == b.iridescence && a.anisotropy == b.anisotropy &&
-           a.dispersion == b.dispersion && a.vertexColors == b.vertexColors && a.flatShading == b.flatShading &&
+           a.dispersion == b.dispersion && a.envMapIntensity == b.envMapIntensity && a.fog == b.fog &&
+           a.positionNode == b.positionNode && a.nodes.graphs() == b.nodes.graphs() &&
+           a.vertexColors == b.vertexColors && a.flatShading == b.flatShading &&
            a.normalScaleX == b.normalScaleX && a.normalScaleY == b.normalScaleY && a.aoMapIntensity == b.aoMapIntensity &&
            a.maps == b.maps;
 }

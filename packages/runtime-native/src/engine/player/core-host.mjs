@@ -1,4 +1,6 @@
 // Browser-service compatibility for core's existing seams; time advances on native fixed ticks.
+// The native marker keeps assets/physics/platform selection on the native path, even without DOM.
+globalThis.__THREENATIVE_NATIVE__ = { ...globalThis.__THREENATIVE_NATIVE__, platform: globalThis.tn.platform };
 let time = 0;
 let nextId = 0;
 const frames = new Map();

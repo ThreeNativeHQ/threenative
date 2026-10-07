@@ -1,4 +1,5 @@
 #include "tsl.h"
+#include "engine/foundation/math/Color.h"
 
 #include <cmath>
 #include <bit>
@@ -194,6 +195,68 @@ void Tsl::call(const Call& call, const v8::FunctionCallbackInfo<v8::Value>& info
             throw std::runtime_error("statement outside Fn");
     };
 
+    if (name == "nodeObject") {
+        arity(1);
+        return result(arg(0));
+    }
+    if (name == "color") {
+        engine::Color value;
+        if (info.Length() == 3) value.setRGB(number(info[0]), number(info[1]), number(info[2]));
+        else if (info.Length() == 1) {
+            if (wrapper(info[0])) {
+                auto node = std::make_shared<g::NodeData>();
+                node->kind = g::Kind::Convert; node->type = Type::vec(3); node->args = {arg(0)};
+                return result(node);
+            }
+            if (info[0]->IsNumber()) value.setHex(number(info[0]));
+            else if (info[0]->IsString()) value.setStyle(text(isolate_, info[0]).c_str());
+            else if (info[0]->IsObject()) {
+                double components[3];
+                for (int i = 0; i < 3; ++i) {
+                    v8::Local<v8::Value> component;
+                    if (!info[0].As<v8::Object>()->Get(ctx, str(isolate_, std::string(1, "rgb"[i]))).ToLocal(&component)) throw JsFailure{};
+                    components[i] = number(component);
+                }
+                value.setRGB(components[0], components[1], components[2]);
+            } else throw std::runtime_error("color needs a Color, CSS string, hex or RGB components");
+        } else if (info.Length() != 0) throw std::runtime_error("invalid color argument count");
+        return result(g::vec3({g::float_(value.r), g::float_(value.g), g::float_(value.b)}));
+    }
+    if (name == "ivec2") {
+        if (info.Length() > 2) throw std::runtime_error("invalid ivec2 argument count");
+        auto node = std::make_shared<g::NodeData>();
+        node->kind = g::Kind::Convert; node->type = Type::vec(2, Type::Scalar::I32);
+        node->args = {info.Length() == 2 ? g::vec2({arg(0), arg(1)})
+            : g::vec2({info.Length() == 1 ? arg(0) : g::float_(0)})};
+        return result(node);
+    }
+    if (name == "reflect") {
+        arity(call.method ? 1 : 2);
+        auto node = std::make_shared<g::NodeData>();
+        node->kind = g::Kind::Math; node->name = "reflect"; node->args = {lhs(), rhs()};
+        node->type = node->args[0]->type;
+        return result(node);
+    }
+    if (name == "textureLoad") {
+        if (info.Length() < 2 || info.Length() > 3) throw std::runtime_error("expected texture, coordinates and optional level");
+        std::string label;
+        if (const auto* source = wrapper(info[0]); source && source->node) {
+            const auto& texture = source->node;
+            if (texture->kind != g::Kind::Texture && texture->kind != g::Kind::RenderTexture)
+                throw std::runtime_error("textureLoad needs a texture node");
+            label = texture->name;
+        } else if (info[0]->IsObject()) {
+            v8::Local<v8::Value> name;
+            if (!info[0].As<v8::Object>()->Get(ctx, str(isolate_, "name")).ToLocal(&name)) throw JsFailure{};
+            label = text(isolate_, name);
+        }
+        if (label.empty()) throw std::runtime_error("textureLoad needs a named texture");
+        auto node = std::make_shared<g::NodeData>();
+        node->kind = g::Kind::TextureLoad; node->name = label; node->type = Type::vec(4);
+        node->args = {arg(1)};
+        if (info.Length() == 3) node->args.push_back(arg(2));
+        return result(node);
+    }
     if (name == "setName") {
         arity(1);
         const std::string label = text(isolate_, info[0]);
@@ -350,6 +413,40 @@ void Tsl::call(const Call& call, const v8::FunctionCallbackInfo<v8::Value>& info
         arity(0);
         return result(g::uv());
     }
+    if (name == "convertToTexture") {
+        arity(1);
+        const auto source = arg(0);
+        if (source->kind == g::Kind::Texture || source->kind == g::Kind::RenderTexture)
+            return result(source);
+        auto target = std::make_shared<g::NodeData>();
+        target->kind = g::Kind::RenderTexture;
+        target->name = "native_rtt_" + std::to_string(++nextScope_);
+        target->type = Type::vec(4);
+        target->args = {source, g::uv()};
+        return result(target);
+    }
+    if (name == "sample") {
+        arity(1);
+        const auto source = lhs();
+        if (source->kind != g::Kind::Texture && source->kind != g::Kind::RenderTexture)
+            throw std::runtime_error("sample requires a texture node");
+        auto sampled = std::make_shared<g::NodeData>(*source);
+        if (source->kind == g::Kind::RenderTexture) sampled->args[1] = arg(0);
+        else sampled->args[0] = arg(0);
+        return result(sampled);
+    }
+    if (name == "setResolutionScale") {
+        arity(1);
+        const auto source = lhs();
+        const double scale = number(info[0]);
+        if (source->kind != g::Kind::RenderTexture || scale <= 0)
+            throw std::runtime_error("resolution scale requires a render texture and positive scale");
+        auto target = std::make_shared<g::NodeData>(*source);
+        target->scale = scale;
+        self->node = target;
+        info.GetReturnValue().Set(info.This());
+        return;
+    }
     if (name == "float" || name == "int" || name == "uint") {
         arity(1);
         if (info[0]->IsNumber()) {
@@ -396,6 +493,11 @@ void Tsl::call(const Call& call, const v8::FunctionCallbackInfo<v8::Value>& info
         arity(0);
         return result(g::swizzle(lhs(), name.substr(8)));
     }
+    // r185's fluent step places the receiver last (MathNode.stepElement).
+    if (call.method && name == "step") {
+        arity(1);
+        return result(g::step(arg(0), lhs()));
+    }
 #define BINARY(symbol)                                                                                                 \
     if (name == #symbol) {                                                                                             \
         arity(call.method ? 1 : 2);                                                                                    \
@@ -414,10 +516,15 @@ void Tsl::call(const Call& call, const v8::FunctionCallbackInfo<v8::Value>& info
             UNARY(negate) UNARY(abs) UNARY(sin) UNARY(cos) UNARY(floor) UNARY(fract) UNARY(sqrt) UNARY(exp) UNARY(exp2)
                 UNARY(log2) UNARY(normalize) UNARY(length)
 #undef UNARY
+    // r185's fluent mix/smoothstep also place the receiver last.
+    if (call.method && (name == "mix" || name == "smoothstep")) {
+        arity(2);
+        return result(name == "mix" ? g::mix(arg(0), arg(1), lhs()) : g::smoothstep(arg(0), arg(1), lhs()));
+    }
 #define TERNARY(symbol)                                                                                                \
     if (name == #symbol) {                                                                                             \
-        arity(3);                                                                                                      \
-        return result(g::symbol(arg(0), arg(1), arg(2)));                                                              \
+        arity(call.method ? 2 : 3);                                                                                    \
+        return result(g::symbol(lhs(), arg(call.method ? 0 : 1), arg(call.method ? 1 : 2)));                           \
     }
                     TERNARY(select) TERNARY(mix) TERNARY(clamp) TERNARY(smoothstep)
 #undef TERNARY
@@ -428,12 +535,22 @@ void Tsl::install(v8::Local<v8::Context> context, v8::Local<v8::Object> target) 
     const auto node = v8::ObjectTemplate::New(isolate_);
     node->SetInternalFieldCount(2);
     for (const char* name : {"add", "sub", "mul", "div", "negate", "lessThan", "greaterThan", "equal", "setName",
-                             "toVar", "assign", "element", "Else"})
+                             "toVar", "assign", "element", "Else", "abs", "sin", "cos", "floor", "fract",
+                             "sqrt", "exp", "exp2", "log2", "normalize", "length", "min", "max", "pow",
+                             "step", "dot", "distance", "cross", "reflect", "mix", "clamp", "smoothstep", "select",
+                             "sample", "setResolutionScale"})
         node->Set(str(isolate_, name), function(context, name, true));
     for (const char* lanes : {"x", "y", "z", "w", "xy", "xyz", "zyx", "yx"}) {
         auto data = std::make_unique<Call>(Call{this, std::string("swizzle:") + lanes, true});
         node->SetAccessorProperty(
             str(isolate_, lanes),
+            v8::FunctionTemplate::New(isolate_, dispatch, v8::External::New(isolate_, data.get())));
+        calls_.push_back(std::move(data));
+    }
+    for (const auto& [alias, lanes] : std::vector<std::pair<const char*, const char*>>{
+        {"r", "x"}, {"g", "y"}, {"b", "z"}, {"a", "w"}, {"rg", "xy"}, {"rgb", "xyz"}, {"rgba", "xyzw"}}) {
+        auto data = std::make_unique<Call>(Call{this, std::string("swizzle:") + lanes, true});
+        node->SetAccessorProperty(str(isolate_, alias),
             v8::FunctionTemplate::New(isolate_, dispatch, v8::External::New(isolate_, data.get())));
         calls_.push_back(std::move(data));
     }
@@ -445,13 +562,19 @@ void Tsl::install(v8::Local<v8::Context> context, v8::Local<v8::Object> target) 
                              "equal",      "abs",   "sin",     "cos",       "floor",  "fract",    "sqrt",
                              "exp",        "exp2",  "log2",    "normalize", "length", "min",      "max",
                              "pow",        "step",  "dot",     "distance",  "cross",  "mix",      "clamp",
-                             "smoothstep", "select"})
+                             "smoothstep", "select", "nodeObject", "color", "ivec2", "textureLoad", "reflect", "convertToTexture"})
         module->Set(context, str(isolate_, name), function(context, name, false)->GetFunction(context).ToLocalChecked())
             .Check();
     module->Set(context, str(isolate_, "positionLocal"), wrap(g::positionLocal())).Check();
     module->Set(context, str(isolate_, "positionWorld"), wrap(g::varying("positionWorld", Type::vec(3)))).Check();
     module->Set(context, str(isolate_, "normalViewGeometry"), wrap(g::varying("normalViewGeometry", Type::vec(3)))).Check();
+    module->Set(context, str(isolate_, "cameraViewMatrix"), wrap(g::uniform("viewMatrix", Type::mat(4, 4)))).Check();
     module->Set(context, str(isolate_, "instanceIndex"), wrap(g::instanceIndex())).Check();
+    module->Set(context, str(isolate_, "screenUV"), wrap(g::uv())).Check();
+    module->Set(context, str(isolate_, "materialColor"), wrap(g::uniform("diffuse", Type::vec(4)))).Check();
+    module->Set(context, str(isolate_, "materialEmissive"), wrap(g::uniform("emissive", Type::vec(3)))).Check();
+    module->Set(context, str(isolate_, "materialMetalness"), wrap(g::uniform("metalness", Type::f32()))).Check();
+    module->Set(context, str(isolate_, "materialRoughness"), wrap(g::uniform("roughness", Type::f32()))).Check();
     // The existing V8 hosts execute bundled scripts with globals; they have no ES module resolver.
     target->Set(context, str(isolate_, "tsl"), module).Check();
 }

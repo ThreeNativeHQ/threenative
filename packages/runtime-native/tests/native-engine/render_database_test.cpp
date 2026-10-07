@@ -26,6 +26,63 @@ using namespace tn::engine;
 
 namespace {
 
+void uniformBatchPreparation() {
+    Scene scene; PerspectiveCamera camera; LightState lights; RenderDatabase database;
+    const auto geometry = makeBoxGeometry();
+    std::vector<std::shared_ptr<Mesh>> meshes;
+    for (int i = 0; i < 4096; ++i) {
+        auto material = std::make_shared<Material>(MaterialType::Standard);
+        material->color.setRGB(double(i) / 4096, 0.2, 0.3);
+        auto mesh = std::make_shared<Mesh>(geometry, material);
+        mesh->position.set(i % 64, 0, i / 64);
+        scene.add(*mesh); meshes.push_back(mesh);
+    }
+    auto items = database.prepare(scene, camera, lights);
+    CHECK(items.size() == 1);
+    if (items.size() != 1) return;
+    CHECK(items[0].instanceCount == 4096 && items[0].instanceColors);
+    CHECK(items[0].material->color[0] == 1 && items[0].material->color[1] == 1);
+    const auto rebuilds = database.rebuilds();
+    for (auto& mesh : meshes) mesh->position.y = 2;
+    meshes[0]->material->color.r = 0.8;
+    items = database.prepare(scene, camera, lights);
+    CHECK(items.size() == 1 && database.rebuilds() == rebuilds);
+    CHECK(meshes[0]->matrixWorld.elements[13] == 2);
+    // Ordinary member edits are checked immediately, without a version bump.
+    meshes[0]->material->roughness = 0.5;
+    items = database.prepare(scene, camera, lights);
+    CHECK(items.size() == 2);
+    meshes[0]->material->roughness = 1;
+    meshes[0]->material->fog = false;
+    items = database.prepare(scene, camera, lights);
+    CHECK(items.size() == 2);
+    meshes[0]->material->fog = true;
+    meshes[0]->setRenderOrder(2);
+    items = database.prepare(scene, camera, lights);
+    CHECK(items.size() == 2);
+    scene.remove(*meshes[0]);
+    items = database.prepare(scene, camera, lights);
+    CHECK(items.size() == 1 && items[0].instanceCount == 4095);
+    Object3D parent; parent.position.x = 100; scene.add(parent);
+    database.prepare(scene, camera, lights);
+    parent.add(*meshes[1]);
+    database.prepare(scene, camera, lights);
+    CHECK(meshes[1]->matrixWorld.elements[12] == 101);
+    parent.position.x = 200;
+    parent.updateWorldMatrix(true, false); // a query refreshed the parent before the render
+    database.prepare(scene, camera, lights);
+    CHECK(meshes[1]->matrixWorld.elements[12] == 201);
+    Object3D copy; copy.copy(*meshes[1]); copy.updateMatrixWorld();
+    CHECK(copy.matrixWorld.elements[12] == 1);
+    parent.matrixWorldAutoUpdate = false;
+    parent.matrixWorld.makeTranslation(300, 0, 0);
+    database.prepare(scene, camera, lights);
+    CHECK(meshes[1]->matrixWorld.elements[12] == 301);
+    parent.remove(*meshes[1]);
+    meshes[1]->updateMatrixWorld();
+    CHECK(meshes[1]->matrixWorld.elements[12] == 1);
+}
+
 // Consumer preparation, with no GPU: scene fog and sky must reach the same DrawItems used by render().
 void sceneEnvironment() {
     CHECK(Texture{}.flipY && Texture{}.minFilter == 1008 && !DataTexture{}.flipY);
@@ -188,18 +245,18 @@ void invalidation() {
     CHECK(database.rebuilds() == first);  // an unchanged scene rebuilds nothing
     s.mesh.position.x = 0.5;  // a transform: the mesh's revision moves on the next updateMatrixWorld
     database.render(renderer, s.scene, s.camera);
-    CHECK(database.rebuilds() == first + 1);
+    CHECK(database.rebuilds() == first);
     s.material->color.setRGB(0, 1, 0);
     s.material->needsUpdate();  // three's material.needsUpdate = true
     database.render(renderer, s.scene, s.camera);
-    CHECK(database.rebuilds() == first + 2);
+    CHECK(database.rebuilds() == first + 1);
     s.scene.remove(s.mesh);  // a mesh that leaves the scene leaves the database
     database.render(renderer, s.scene, s.camera);
     s.scene.add(s.mesh);
     database.render(renderer, s.scene, s.camera);
-    CHECK(database.rebuilds() == first + 3);
+    CHECK(database.rebuilds() == first + 2);
     for (int frame = 0; frame < 300; ++frame) database.render(renderer, s.scene, s.camera);
-    CHECK(database.rebuilds() == first + 3);
+    CHECK(database.rebuilds() == first + 2);
 }
 
 // The alpha-transparency fixture as a scene: an OrthographicCamera, so WebGL clip z would put every
@@ -681,7 +738,7 @@ void skinnedCrowdPixels() {
 
 }  // namespace
 
-TN_TEST_MAIN({"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"directional_target", directionalTarget}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
+TN_TEST_MAIN({"uniform_batch_preparation", uniformBatchPreparation}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"directional_target", directionalTarget}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
              {"material_unsupported", materialUnsupported}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
              {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels})

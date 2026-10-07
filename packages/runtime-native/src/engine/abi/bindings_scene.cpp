@@ -176,6 +176,11 @@ void registerObject3D(ClassBinding& b) {
     b.setters["matrixWorldAutoUpdate"] = [](void* self, const Value& v) { as<Object3D>(self)->matrixWorldAutoUpdate = flag(v); };
     b.getters["matrixWorldNeedsUpdate"] = [](void* self) { return Value::of(as<Object3D>(self)->matrixWorldNeedsUpdate); };
     b.getters["id"] = [](void* self) { return Value::of(double(as<Object3D>(self)->id())); };
+    b.getters["uuid"] = [](void* self) { return Value{Value::Kind::String, 0, as<Object3D>(self)->uuid}; };
+    b.setters["uuid"] = [](void* self, const Value& v) {
+        if (v.kind != Value::Kind::String) throw Unsupported{"uuid must be a string"};
+        as<Object3D>(self)->uuid = v.text;
+    };
     b.getters["revision"] = [](void* self) { return Value::of(double(as<Object3D>(self)->revision())); };
     b.getters["type"] = [](void* self) {
         return Value{Value::Kind::String, 0, std::string(as<Object3D>(self)->type())};
@@ -804,6 +809,12 @@ void registerSkeleton(ClassBinding& b) {
         const std::vector<float>& m = as<Skeleton>(self)->boneMatrices;
         return Value::list(std::vector<double>(m.begin(), m.end()));
     };
+    b.members["bones"] = [](void* self, const Args&, Store& store) {
+        const auto& skeleton = *as<Skeleton>(self);
+        std::vector<Value> bones;
+        for (size_t i = 0; i < skeleton.bones.size(); ++i) bones.push_back(foundObject(store, skeleton.bone(i)));
+        return Value::array(std::move(bones));
+    };
     b.getters["bones.length"] = [](void* self) { return Value::of(double(as<Skeleton>(self)->bones.size())); };
 }
 
@@ -834,6 +845,14 @@ void registerSkinnedMesh(ClassBinding& b) {
         const std::shared_ptr<Skeleton>& skeleton = as<SkinnedMesh>(self)->skeleton;
         return skeleton ? store.share("Skeleton", skeleton) : Value{};
     };
+    b.getters["bindMode"] = [](void* self) { return Value{Value::Kind::String, 0, as<SkinnedMesh>(self)->attached ? "attached" : "detached"}; };
+    b.setters["bindMode"] = [](void* self, const Value& value) {
+        if (value.kind != Value::Kind::String || (value.text != "attached" && value.text != "detached"))
+            throw Unsupported{"SkinnedMesh.bindMode must be attached or detached"};
+        as<SkinnedMesh>(self)->attached = value.text == "attached";
+    };
+    fixedMember(b, "bindMatrix", memberAliasMethod(&SkinnedMesh::bindMatrix, "Matrix4"));
+    fixedMember(b, "bindMatrixInverse", memberAliasMethod(&SkinnedMesh::bindMatrixInverse, "Matrix4"));
     nestedMatrix<SkinnedMesh>(b, "bindMatrix", &SkinnedMesh::bindMatrix);
     nestedMatrix<SkinnedMesh>(b, "bindMatrixInverse", &SkinnedMesh::bindMatrixInverse);
 }
@@ -893,6 +912,17 @@ void registerAnimationClip(ClassBinding& b) {
     using namespace tn::engine::animation;
     b.getters["name"] = [](void* self) { return Value{Value::Kind::String, 0, as<AnimationClip>(self)->name}; };
     b.getters["duration"] = [](void* self) { return Value::of(as<AnimationClip>(self)->duration); };
+    b.getters["tracks"] = [](void* self) {
+        std::vector<Value> tracks;
+        for (const auto& track : as<AnimationClip>(self)->tracks) {
+            const char* type = track.type == TrackType::Quaternion ? "quaternion" : track.type == TrackType::Vector ? "vector"
+                : track.type == TrackType::Color ? "color" : track.type == TrackType::Bool ? "bool" : "number";
+            tracks.push_back(Value::record({{"name", Value{Value::Kind::String, 0, track.name}},
+                {"times", Value::list(track.times)}, {"values", Value::list(track.values)},
+                {"ValueTypeName", Value{Value::Kind::String, 0, type}}}));
+        }
+        return Value::array(std::move(tracks));
+    };
 }
 
 // three's InstancedMesh(geometry, material, count): every matrix the identity, no colour attribute

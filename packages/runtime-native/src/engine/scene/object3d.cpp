@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <random>
 
 namespace tn::engine {
 
@@ -86,6 +87,19 @@ void EventDispatcher::dispatchEvent(Event& event) {
 // ------------------------------------------------------------------------------ Object3D
 
 Object3D::Object3D() : id_(nextObjectId++) {
+    // RFC 4122 version/variant bits, as three's MathUtils.generateUUID; identity lives natively.
+    static thread_local std::mt19937 random(std::random_device{}());
+    constexpr char hex[] = "0123456789abcdef";
+    std::array<uint8_t, 16> bytes{};
+    for (size_t i = 0; i < bytes.size(); i += 4) {
+        const uint32_t value = random();
+        for (size_t j = 0; j < 4; ++j) bytes[i + j] = static_cast<uint8_t>(value >> (8 * j));
+    }
+    bytes[6] = (bytes[6] & 15) | 64; bytes[8] = (bytes[8] & 63) | 128;
+    for (size_t i = 0; i < bytes.size(); ++i) {
+        if (i == 4 || i == 6 || i == 8 || i == 10) uuid += '-';
+        uuid += hex[bytes[i] >> 4]; uuid += hex[bytes[i] & 15];
+    }
     up = defaultUp;
     matrixAutoUpdate = defaultMatrixAutoUpdate;
     matrixWorldAutoUpdate = defaultMatrixWorldAutoUpdate;
@@ -448,9 +462,17 @@ void Object3D::updateMatrix() {
 }
 
 void Object3D::updateMatrixWorld(bool force) {
-    if (matrixAutoUpdate) updateMatrix();
+    if (matrixAutoUpdate) {
+        const bool dirty = matrixWorldNeedsUpdate;
+        const auto before = revision();
+        updateMatrix();
+        // Auto composition must not dirty an unchanged root and force every descendant.
+        matrixWorldNeedsUpdate = dirty || revision() != before;
+    }
 
-    if (matrixWorldNeedsUpdate || force) {
+    const uint64_t parentId = parent ? parent->id() + 1 : 0;
+    const uint64_t parentRevision = parent ? parent->revision() : 0;
+    if (matrixWorldNeedsUpdate || force || worldParentId_ != parentId || worldParentRevision_ != parentRevision) {
         if (matrixWorldAutoUpdate) {
             const Matrix4 before = matrixWorld;
             if (parent == nullptr) {
@@ -462,9 +484,13 @@ void Object3D::updateMatrixWorld(bool force) {
             if (std::memcmp(before.elements.data(), matrixWorld.elements.data(), sizeof(double) * 16) != 0) bump();
         }
         matrixWorldNeedsUpdate = false;
+        worldParentId_ = parentId;
+        worldParentRevision_ = parentRevision;
         force = true;
     }
 
+    // A manually owned world matrix can change without a revision; retain its forced child update.
+    if (!matrixWorldAutoUpdate) force = true;
     for (Object3D* child : children) child->updateMatrixWorld(force);
 }
 
@@ -486,6 +512,8 @@ void Object3D::updateWorldMatrix(bool updateParents, bool updateChildren, bool f
             if (std::memcmp(before.elements.data(), matrixWorld.elements.data(), sizeof(double) * 16) != 0) bump();
         }
         matrixWorldNeedsUpdate = false;
+        worldParentId_ = parent_ ? parent_->id() + 1 : 0;
+        worldParentRevision_ = parent_ ? parent_->revision() : 0;
         force = true;
     }
 
@@ -504,6 +532,8 @@ Object3D& Object3D::copy(const Object3D& source) {
     pivot = source.pivot;
     matrix.copy(source.matrix);
     matrixWorld.copy(source.matrixWorld);
+    worldParentId_ = source.parent ? source.parent->id() + 1 : 0;
+    worldParentRevision_ = source.parent ? source.parent->revision() : 0;
     matrixAutoUpdate = source.matrixAutoUpdate;
     matrixWorldAutoUpdate = source.matrixWorldAutoUpdate;
     matrixWorldNeedsUpdate = source.matrixWorldNeedsUpdate;

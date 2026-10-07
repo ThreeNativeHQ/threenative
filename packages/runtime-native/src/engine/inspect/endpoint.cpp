@@ -70,6 +70,20 @@ std::string Endpoint::handle(std::string_view frame) {
 // True when the method answers a result; false with `error` set when it refused, false with no error
 // when it answered nothing (device.ts then sends { id } alone).
 bool Endpoint::dispatch(const std::string& method, const Value* argument, Value& result, std::string& error) {
+    if (host_.observe && (method == "describe" || method == "ready" || method == "sample" ||
+                          method == "applySetup" || method == "drainEvents")) {
+        if (host_.observe(method, argument, result, error)) {
+            if (method == "describe" && result.isObject()) {
+                auto members = result.members();
+                std::erase_if(members, [](const auto& member) { return member.first == "profile"; });
+                members.emplace_back("profile", obj({{"engine", str("native")},
+                                                      {"gameRuntime", str(host_.gameRuntime)}}));
+                result = obj(std::move(members));
+            }
+            return true;
+        }
+        if (!error.empty()) return false;
+    }
     if (method.rfind("input.", 0) == 0) {
         if (!input(method, argument, error))
             return false;

@@ -389,6 +389,11 @@ export class GPUSceneBVH extends Group implements IComputeDriven {
     this.rebuild();
   }
 
+  /** Rebuild independent buffers over the same queried scene and selection predicate. */
+  override clone(recursive = true): this {
+    return new GPUSceneBVH(this.#scene, { include: this.#include }).copy(this, recursive) as this;
+  }
+
   get buildMs(): number {
     return this.#buildMs;
   }

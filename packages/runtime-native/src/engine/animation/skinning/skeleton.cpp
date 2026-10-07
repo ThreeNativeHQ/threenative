@@ -5,6 +5,8 @@
 #include "engine/animation/skinning/skeleton.h"
 
 #include <cstddef>
+#include <functional>
+#include <unordered_map>
 #include <utility>
 
 namespace tn::engine {
@@ -88,6 +90,61 @@ void SkinnedMesh::updateMatrixWorld(bool force) {
     Mesh::updateMatrixWorld(force);
     if (attached) bindMatrixInverse.copy(matrixWorld).invert();
     else bindMatrixInverse.copy(bindMatrix).invert();
+}
+
+std::shared_ptr<Object3D> cloneSkeleton(const Object3D& source, std::string& error) {
+    error.clear();
+    std::unordered_map<const Object3D*, std::shared_ptr<Object3D>> copies;
+    const std::function<std::shared_ptr<Object3D>(const Object3D&)> clone = [&](const Object3D& from) -> std::shared_ptr<Object3D> {
+        std::shared_ptr<Object3D> to;
+        const auto kind = from.type();
+        if (kind == "Object3D") to = std::make_shared<Object3D>();
+        else if (kind == "Group") to = std::make_shared<Group>();
+        else if (kind == "Bone") to = std::make_shared<Bone>();
+        else if (kind == "Mesh" || kind == "SkinnedMesh") {
+            const auto& mesh = static_cast<const Mesh&>(from);
+            std::shared_ptr<Mesh> next = kind == "Mesh"
+                ? std::make_shared<Mesh>(mesh.geometry, mesh.material)
+                : std::static_pointer_cast<Mesh>(std::make_shared<SkinnedMesh>(mesh.geometry, mesh.material));
+            next->morphTargetInfluences = mesh.morphTargetInfluences;
+            to = std::move(next);
+        } else {
+            error = "TN_NATIVE_SKELETON_CLONE_UNSUPPORTED: " + std::string(kind);
+            return nullptr;
+        }
+        to->copy(from);
+        copies.emplace(&from, to);
+        for (const auto* child : from.children) {
+            auto next = clone(*child);
+            if (!next) return nullptr;
+            to->add(*next);
+        }
+        return to;
+    };
+    auto root = clone(source);
+    if (!root) return nullptr;
+    for (const auto& [from, to] : copies) {
+        if (from->type() != "SkinnedMesh") continue;
+        const auto& mesh = static_cast<const SkinnedMesh&>(*from);
+        auto& next = static_cast<SkinnedMesh&>(*to);
+        next.attached = mesh.attached;
+        next.bindMatrix.copy(mesh.bindMatrix);
+        next.bindMatrixInverse.copy(mesh.bindMatrixInverse);
+        if (!mesh.skeleton) continue;
+        std::vector<std::shared_ptr<Bone>> bones;
+        for (size_t i = 0; i < mesh.skeleton->bones.size(); ++i) {
+            const auto* bone = mesh.skeleton->bone(i);
+            if (bone == nullptr) { bones.push_back(nullptr); continue; }
+            const auto found = copies.find(bone);
+            if (found == copies.end() || found->second->type() != "Bone") {
+                error = "TN_NATIVE_SKELETON_CLONE_EXTERNAL_BONE: " + bone->name;
+                return nullptr;
+            }
+            bones.push_back(std::static_pointer_cast<Bone>(found->second));
+        }
+        next.bind(std::make_shared<Skeleton>(std::move(bones), mesh.skeleton->boneInverses), &mesh.bindMatrix);
+    }
+    return root;
 }
 
 } // namespace tn::engine

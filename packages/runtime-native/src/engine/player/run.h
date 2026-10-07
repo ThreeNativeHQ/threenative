@@ -44,6 +44,7 @@ struct Game {
     /** A registered resource by id, or null. The loop answers `profile` itself; the `tick` is the
      *  simulation tick that last ran, for a state snapshot. */
     std::function<json::Value(const std::string& id, uint64_t tick)> resource;
+    std::function<bool(const std::string&, const json::Value*, json::Value&, std::string&)> observe;
     /** A hook after each frame's render (the V8 adapter's callback safe point). */
     std::function<void()> afterRender;
     /** Binds the endpoint, so a game reads the input queued for each tick itself. */

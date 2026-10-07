@@ -318,9 +318,20 @@ static LocalVertex localVertex(Program& v, const VertexVariant& variant, bool wi
                 normal = v.add(normal, v.mul(v.swizzle(v.loadStorage(data, v.add(at, v.construct(Type::u32(), {v.constant(1)}))), "xyz"), influence));
         }
     }
+    uint32_t instances = 0;
+    ExprId instanceBase = kInvalid;
+    if (variant.instanceStorage) {
+        instances = v.storageBuffer("instances", Type::vec(4));
+        instanceBase = v.add(v.construct(Type::u32(), {v.uniform("instanceBase", Type::f32())}),
+                            v.mul(v.builtin("instanceIndex"), v.construct(Type::u32(), {v.constant(5)})));
+    }
     if (variant.instanced) {
-        const ExprId c0 = v.attribute("instanceMatrix0", Type::vec(4)), c1 = v.attribute("instanceMatrix1", Type::vec(4)),
-                     c2 = v.attribute("instanceMatrix2", Type::vec(4)), c3 = v.attribute("instanceMatrix3", Type::vec(4));
+        const auto column = [&](int index) {
+            return variant.instanceStorage
+                ? v.loadStorage(instances, v.add(instanceBase, v.construct(Type::u32(), {v.constant(index)})))
+                : v.attribute("instanceMatrix" + std::to_string(index), Type::vec(4));
+        };
+        const ExprId c0 = column(0), c1 = column(1), c2 = column(2), c3 = column(3);
         const ExprId matrix = v.construct(Type::mat(4, 4), {c0, c1, c2, c3});
         position = v.swizzle(v.mul(matrix, v.construct(Type::vec(4), {position, v.constant(1.0f)})), "xyz");
         if (withNormal) {
@@ -373,7 +384,9 @@ static LocalVertex localVertex(Program& v, const VertexVariant& variant, bool wi
         tsl::Build build(v);
         position = nodeType(v, graph::lower(variant.nodes.positionNode, v, {{"positionLocal", position}}), Type::vec(3));
     }
-    const ExprId instanceColor = variant.instanceColor ? v.attribute("instanceColor", Type::vec(3)) : kInvalid;
+    const ExprId instanceColor = !variant.instanceColor ? kInvalid : variant.instanceStorage
+        ? v.swizzle(v.loadStorage(instances, v.add(instanceBase, v.construct(Type::u32(), {v.constant(4)}))), "xyz")
+        : v.attribute("instanceColor", Type::vec(3));
     // Read last: a map's uv joins the varying set after instanceColor, so the fragment reads it there.
     const ExprId uv = variant.map && !variant.background ? v.attribute("uv", Type::vec(2)) : kInvalid;
     return {v.construct(Type::vec(4), {position, v.constant(1.0f)}), normal, instanceColor, uv};
@@ -770,8 +783,9 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
         const uint32_t env = f.texture2d("env");
         const ExprId envIntensity = f.uniform("envMapIntensity", Type::f32());
         auto flipped = [&](ExprId v) {
-            v = f.swizzle(f.mul(f.uniform("envRotation", Type::mat(4, 4)), f.construct(Type::vec(4), {v, t.f(0)})), "xyz");
-            return f.construct(Type::vec(3), {f.swizzle(v, "x"), f.neg(f.swizzle(v, "y")), f.swizzle(v, "z")});
+            // PMREMNode flips the render target's Y before materialEnvRotation, not after it.
+            v = f.construct(Type::vec(3), {f.swizzle(v, "x"), f.neg(f.swizzle(v, "y")), f.swizzle(v, "z")});
+            return f.swizzle(f.mul(f.uniform("envRotation", Type::mat(4, 4)), f.construct(Type::vec(4), {v, t.f(0)})), "xyz");
         };
         const ExprId iblIrradiance =
             f.mul(f.mul(textureCubeUV(f, env, flipped(normalWorld), t.f(1)), t.f(kPi)), envIntensity);

@@ -497,6 +497,12 @@ class LevelLight extends Object3D {
     super();
     this.shadow = shadow;
   }
+
+  override clone(recursive = true): this {
+    const copy = new LevelLight(this.shadow.clone()).copy(this, recursive);
+    copy.target.copy(this.target);
+    return copy as this;
+  }
 }
 
 interface ILevel {

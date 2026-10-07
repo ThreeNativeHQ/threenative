@@ -7,8 +7,8 @@
 //
 // Not ported, and why:
 //   - `clone`, `toJSON`: out of scope for the object model (PRD-508 phases 1-2).
-//   - `userData`, `animations`, `customDepthMaterial`, `customDistanceMaterial`, `static`,
-//     `uuid`: a bag, an animation list, renderer-only materials and a renderer fast-path flag.
+//   - `userData`, `animations`, `customDepthMaterial`, `customDistanceMaterial`, `static`:
+//     a bag, an animation list, renderer-only materials and a renderer fast-path flag.
 //   - `onBeforeShadow`/`onAfterShadow`/`onBeforeRender`/`onAfterRender`: renderer callbacks that
 //     only a renderer calls (PRD-514).
 //   - `modelViewMatrix`, `normalMatrix`: the renderer's per-frame matrices (PRD-514).
@@ -232,6 +232,7 @@ public:
     // false suppresses recursive ray traversal, as three's raycast return value does.
     virtual bool raycast(const Raycaster&, std::vector<Intersection>&) { return true; }
     Object3D();
+    std::string uuid;
     Object3D(const Object3D&) = delete;
     Object3D& operator=(const Object3D&) = delete;
     /** Detaches from both sides: children lose their `parent`, the parent loses this child. */
@@ -369,6 +370,7 @@ public:
 
 private:
     void bump() { ++revision_; }
+    uint64_t worldParentId_ = 0, worldParentRevision_ = 0;
 
     static void onRotationChange(void* context);
     static void onQuaternionChange(void* context);

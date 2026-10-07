@@ -228,6 +228,7 @@ int run(const Game& game) {
     std::function<void()> renderFrame;
     host.scene = game.scene;
     host.gameRuntime = game.gameRuntime;
+    host.observe = game.observe;
     host.tick = [&clock] { return clock.tick(); };
     host.step = [&clock, &game, &nowMs, &renderFrame] {
         // One fixed update per driven tick, so the reported clock is the engine's own.

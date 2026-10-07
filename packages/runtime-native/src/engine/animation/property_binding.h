@@ -47,6 +47,9 @@ class PropertyBinding {
     void bind();
     void unbind();
     [[nodiscard]] bool bound() const { return target_ != Target::Unavailable; }
+    /** The object cached by bind(), for the animation audit's targetObject reflection. */
+    [[nodiscard]] std::shared_ptr<Object3D> targetNode() const { return bound() ? node_.lock() : nullptr; }
+    [[nodiscard]] std::shared_ptr<Material> targetMaterial() const { return bound() ? material_ : nullptr; }
 
     void getValue(double* buffer, std::size_t offset);
     void setValue(const double* buffer, std::size_t offset);

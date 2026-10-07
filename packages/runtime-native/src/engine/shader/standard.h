@@ -66,6 +66,7 @@ struct VertexVariant {
     bool backSide = false;
     bool instanced = false;
     bool instanceColor = false;
+    bool instanceStorage = false; // packed matrix columns and colour in one frame storage buffer
     /**
      * three's skinning(): `skinIndex` (vec4<u32>) and `skinWeight` attributes, the frame's bone
      * matrices in the storage buffer `boneMatrices` from `boneBase` on, `bindMatrix` and
@@ -103,7 +104,7 @@ struct VertexVariant {
     /** A stable key: two variants with the same key build the same program. */
     [[nodiscard]] std::string key() const {
         return std::to_string(fog) + (background ? "background|" : "") + std::string(sprite ? "sprite|" : "") + (backSide ? "back|" : "") + std::to_string(instanced) + std::to_string(instanceColor) + std::to_string(skinned) +
-               std::to_string(skinnedPalette) + "m" + std::to_string(morphTargets) + (morphNormals ? "n" : "") +
+               std::to_string(skinnedPalette) + (instanceStorage ? "storage" : "") + "m" + std::to_string(morphTargets) + (morphNormals ? "n" : "") +
                (map ? "t" : "") + (mapSRGB ? "s" : "") + (environment ? "e" : "") +
                (positionNode ? "p:" + positionNode->key : "") + "|nodes:" + nodes.key();
     }

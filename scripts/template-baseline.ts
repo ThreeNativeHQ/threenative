@@ -101,7 +101,10 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     });
     let exit = 0;
     try {
-      const result = await runTemplateBaseline();
+      const args = process.argv.slice(2);
+      const result = args.includes("--native-engine")
+        ? await (await import("./starter-native-visual.js")).runStarterNativeVisual(args)
+        : await runTemplateBaseline();
       process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     } catch (error) {
       process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
