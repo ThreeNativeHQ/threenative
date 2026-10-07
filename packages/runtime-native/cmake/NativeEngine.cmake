@@ -60,6 +60,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     add_executable(tn-native-engine-gate-e EXCLUDE_FROM_ALL tests/native-engine/gate_e_driver.cpp)
     target_link_libraries(tn-native-engine-gate-e PRIVATE tn_host_services)
     tn_native_engine_target(tn-native-engine-gate-e)
+    set_property(GLOBAL APPEND PROPERTY TN_NATIVE_ENGINE_TEST_TARGETS tn-native-engine-gate-e)
     add_test(NAME native_engine_gate_e COMMAND $<TARGET_FILE:tn-native-engine-gate-e>)
     set_tests_properties(native_engine_gate_e PROPERTIES LABELS "native-engine")
     if(TN_ENGINE_SANITIZE)

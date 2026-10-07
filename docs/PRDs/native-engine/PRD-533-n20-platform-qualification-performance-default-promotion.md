@@ -99,16 +99,16 @@ P3 browser execution: the first ABBA shell process received SIGTERM before produ
 ## Execution Phases
 
 #### Phase 1: Benchmark harness
-**Status:** NOT STARTED
+**Status:** PARTIAL
 **Files:** `scripts/engine-load-test/`, `docs/verification/runtime-perf-state.md`
 - [ ] The four workloads run under both the current-ThreeNative arm and the native arm with identical presented workload. proof: `pnpm bench:engines -- --arms current,native --workloads all`
 - [ ] The native C++ driver and the native-AOT driver run the same workload, so binding overhead is reported. proof: `pnpm bench:engines -- --arms native-cpp,native-aot`
 - [x] The web build runs one workload under three arms — current three.js, the Wasm engine with JavaScript game code, and the Wasm engine with Perry-to-Wasm game code — with identical presented work, and the result decides between options B and A of decision 12. proof: `pnpm bench:engines -- --target web --arms current,wasm-js,wasm-perry` (new arms) — 2026-10-07, P28 engine `258d8ed4…`, Brave hardware WebGPU on NVIDIA/Turing, 600/120 frames, 3 interleaved repeats, all captures zero pixel mismatch: Wasm-JS and Perry tie at 4k/16k/64k (64k p50 23.17/23.47 vs 23.41/22.47 ms), so **option B stays** and option A remains unqualified. Reports `artifacts/native-engine-perf/p28-abba/`, `p28-sizes/` (local, ignored).
 
 #### Phase 2: Artifact qualification
-**Status:** PARTIAL
+**Status:** DONE
 **Files:** `.github/workflows/native-platforms.yml` (Linux), `.github/workflows/native-release.yml` (Windows/macOS matrix in the existing workflow)
-- [ ] The Linux desktop artifact on the native engine passes engine-only JS-free inspection and its playtest journey. proof: `native-platforms` CI job `native-engine-linux`
+- [x] The Linux desktop artifact on the native engine passes engine-only JS-free inspection and its playtest journey. proof: `native-platforms` CI job `native-engine-linux` — 2026-10-07: green in CI run 37554433163 on `1927c86bc` (`gh workflow run native-release.yml --ref feat/native-engine -f native_engine=true`, job native-engine-linux): the JS-free player inspects `JS_FREE_OK` (ELF) and the inspect, input and capture scenarios pass. Adapter: llvmpipe (software): this proves build, JS-freedom and the journey, not performance.
 - [x] The Windows desktop artifact on the native engine passes engine-only JS-free inspection and its playtest journey. proof: `native-platforms` CI job `native-engine-windows` — the job lives in `.github/workflows/native-release.yml` (native-engine-windows / native-engine-macos, dispatchable with `-f native_engine=true`), per the rule that a feature adds a job to an existing workflow. 2026-10-06: green in CI run 37523665137 (`gh workflow run native-release.yml --ref feat/native-engine -f native_engine=true`, job native-engine-windows): the JS-free player built with MSVC inspects `JS_FREE_OK` (PE imports) and the inspect, input and capture scenarios pass. Adapter: Microsoft Basic Render Driver (WARP, software): this proves build, JS-freedom and the journey, not performance.
 - [x] The macOS desktop artifact on the native engine passes engine-only JS-free inspection and its playtest journey. proof: `native-platforms` CI job `native-engine-macos` — the job lives in `.github/workflows/native-release.yml` (native-engine-windows / native-engine-macos, dispatchable with `-f native_engine=true`), per the rule that a feature adds a job to an existing workflow. 2026-10-06: green in CI run 37523665137 (job native-engine-macos): built with AppleClang, `JS_FREE_OK` (Mach-O), the three player scenarios pass on Metal (Apple Paravirtual device). The first run (37522884766) failed to compile: Apple's libc++ has no floating-point `from_chars`; fixed in `json.h`.
 
