@@ -97,4 +97,11 @@ JS-free player still inspects JS-free. Red control: the demo's move speed zeroed
 
 ## Decisions
 
+CI repair (2026-10-07): run 37554436342 compiled the Windows adapter with C++20 but without
+`/Zc:__cplusplus`, so V8 rejected its reported language level. The flag now belongs to the
+`v8::v8` interface and reaches every consumer, including the separate player services target.
+Linux adapter and player-services builds pass; Windows compilation awaits CI. Initial focused
+V8 checks pass 4/7; scene, raycaster/LOD and callback-cycle abort during process teardown in
+`Object3D::releaseTransform`. This newly exposed lifetime failure remains open; no phase tick.
+
 - This game runtime is the default until gate T ships, and it is never called a JS-free *application* (§2.1). The engine under it is JS-free (owner, 2026-10-04).
