@@ -411,3 +411,13 @@ literal mutation of the two ghosting boxes (zero velocity must fail the *rejecti
 therefore not met, and `:102`, `:135` stay open. The corpus discriminates zero velocity by moving-edge
 error instead (`zeroVelocityDetected`, `qualityZeroVelocityDetected` pass). Closing the boxes needs
 either a rejection metric that reacts to velocity or an owner-approved change of the criterion's metric.
+
+**Faster character motion does not rescue the rejection metric (2026-10-07, hardware).** A throwaway probe scaled
+the animated character's pose rate by 1×, 4× and 8× and read the same GPU rejection fraction for the real
+and zero-velocity arms (nvidia/turing `webgpu`, frames 2–12). The two arms differ by at most `.0010` of the
+display at every frame and speed (8×, frame 12: `.0228` vs `.0229`; frame 10: `.0061` vs `.0069`). The
+verdict is a depth-difference test whose only velocity use is shifting the previous-depth lookup, and the
+display-wide fraction is dominated by static and edge rejections. Making the counter react by counting
+"motion absent" as rejection was rejected: it would report a missing source by definition instead of
+measuring ghosting. Remaining routes are a character-region rejection metric or the owner-approved
+change to the moving-edge metric. The probe was not committed.
