@@ -1951,3 +1951,24 @@ foliage/edge/recovery and cost gates, actual WorldEnvironment/ResolutionScaler i
 automatic-scale allocation, full workspace/build and native/platform evidence remain open.
 Acceptance checkboxes and draft prd:25% status are unchanged. No new GPU/native run or external
 image upload is included.
+
+### Raw4 candidate on hardware WebGPU — original 31-arm corpus, 2026-10-07
+
+Source `f45434a98` (develop merge `449ea4d4d` + opt-in `TN_RAW4=1` switch `e4d1524ed` + lockfile repair).
+The switch hands the scene pass to `createTemporalAA` and throws if `ownsCurrentInput` does not engage, so no
+arm silently measures the ordinary lane. `TN_RAW4=1 sh scripts/xvfb.sh node --import tsx scripts/verify-temporal-motion.ts`
+captured all 31 arms on nvidia/turing `webgpu` (private Xvfb, no competing runner), exit 1. Summary:
+`artifacts/temporal-aa/motion-raw4/summary.json` (local, untracked; not committed because `docs/verification` is over its evidence budget). Thresholds, arms and scorer are unchanged.
+
+**The four original checks still fail; this candidate does not qualify.** Full-resolution edge `.05849095`
+against `<.04777992` (original run `.06054592`); lower-input edge `.08062022` against `<.04686646`
+(original `.08238862`) — and above the spatial arm's `.07744884`. Warm reveal stale fraction at frame 0:
+`1.77%` motion and `4.89%` quality against the unchanged `<=1%` bound (original `1.59%` / `1.91%`).
+Stability, causal, unchecked-history and zero-velocity checks pass. The edge moves about 3%; the
+reveal moves the wrong way. This is quality evidence only: no cost, native or scaler claim.
+Boxes `:335`, `:336`, `:340`, `:341` stay open. Further attempts need a different reconstructor, not a
+threshold change.
+
+**Lockfile defect found and repaired:** the develop merge left two importers on the old `three` patch
+hash (`c2e051df`) while the PR's patch hashes to `9fdfb25e`, so `pnpm install --frozen-lockfile` failed
+with `ERR_PNPM_LOCKFILE_MISSING_DEPENDENCY`. Both lines repointed; frozen offline install now passes.
