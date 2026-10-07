@@ -197,16 +197,16 @@ rung stays there and gets smaller.
 
 **Implementation**
 
-- [ ] Rungs: `etc1s@150` → `uastc+rdo λ3 +zstd` → `uastc+rdo λ1 +zstd` → `uastc` → `none`.
+- [x] Rungs: `etc1s@150` → `uastc+rdo λ3 +zstd` → `uastc+rdo λ1 +zstd` → `uastc` → `none`. **Done 2026-10-06 (`d250152ba`):** the first rung that meets the floor wins; red-green `should escalate an image that fails the floor` (floor 0 control stays on rung 1) and `should keep a clean image on the cheapest rung`.
 - [x] **RDO ships behind the floor, with a bounded escape hatch. DECIDED.** It crashed the encoder
       module during the PRD-349 spike, so Phase 2 reproduces the crash first. Rule: **timebox the
       fix to one day.** If it is not reliable by then, the ladder ships as
       `etc1s → uastc → none` with the RDO rungs absent and the reason recorded — the floor and the
       escalation are the architecture; RDO is one rung on it, not the point of it.
-- [ ] Skip rungs a slot forbids: a normal map never tries `etc1s`.
-- [ ] Report: `34 etc1s · 5 escalated to uastc · 0 uncompressed`. Order eligible candidates by
+- [x] Skip rungs a slot forbids: a normal map never tries `etc1s`. **Done 2026-10-06:** red-green `should never try etc1s for a normal map` (allowing it goes red).
+- [x] Report: `34 etc1s · 5 escalated to uastc · 0 uncompressed`. Order eligible candidates by
       measured emitted bytes and retain the smallest that passes; codec names alone do not prove
-      size ordering. Preserve 349's `not-smaller` and automatic `block-size` fallback behaviour.
+      size ordering. Preserve 349's `not-smaller` and automatic `block-size` fallback behaviour. **Done 2026-10-06:** `should report the rung histogram`. On the 48-texture terrain corpus the build reports `2 etc1s · 0 escalated to uastc · 46 uncompressed`, and the payload is byte-identical to Phase 1. A cold build takes 8.5 s before and 13.9 s after; a warm build takes 0.07 s.
 
 **Tests required**
 
