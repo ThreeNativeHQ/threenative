@@ -234,19 +234,19 @@ function compiledProductObjects(buildDirectory) {
   }
   const commands = JSON.parse(readFileSync(commandsPath, "utf8"));
   if (!Array.isArray(commands)) throw new Error(`${commandsPath} is not a JSON array`);
-  const bySource = new Map();
+  const byObject = new Map();
   for (const command of commands) {
     if (typeof command?.file !== "string" || typeof command?.output !== "string") continue;
     const source = relative(runtimeRoot, resolve(command.file)).split(sep).join("/");
     if (source.startsWith("../") || !source.startsWith("src/")) continue;
     const object = resolve(command.directory, command.output);
     if (!existsSync(object)) throw new Error(`compiled coverage object is missing: ${object}`);
-    if (!bySource.has(source)) bySource.set(source, object);
+    byObject.set(object, source);
   }
-  if (bySource.size === 0) throw new Error("compile_commands contains zero native product objects");
+  if (byObject.size === 0) throw new Error("compile_commands contains zero native product objects");
   return {
-    entries: [...bySource.entries()].map(([source, object]) => ({ object, source })),
-    sourceFiles: [...bySource.keys()].sort(),
+    entries: [...byObject.entries()].map(([object, source]) => ({ object, source })),
+    sourceFiles: [...new Set(byObject.values())].sort(),
   };
 }
 
@@ -381,11 +381,14 @@ function coverageExports({ buildDirectory, compiledProducts, executedTargets, pr
   ];
   const reports = [];
   const zeroLineSources = [];
+  const mergedProfile = join(profileDirectory, "all.profdata");
+  run("llvm-profdata", ["merge", "-sparse", ...profileNames.map((name) => join(profileDirectory, name)), "-o", mergedProfile]);
+  requireCoverageProfile(mergedProfile);
   for (const { object, source } of compiledProducts.entries) {
     const report = runForStdout("llvm-cov", [
       "export",
-      "--empty-profile",
       object,
+      `-instr-profile=${mergedProfile}`,
       ...commonArguments,
     ]);
     reports.push(report);
@@ -581,6 +584,24 @@ function registrationsForTarget(registrations, target) {
   return registrations.filter((name) => name === target || name.startsWith(`${target}-`)).sort();
 }
 
+export function nativeEngineCoverageInvocations(inventory) {
+  const entries = inventory.filter(({ properties }) => properties?.some(
+    ({ name, value }) => name === "LABELS" && value.includes("native-engine"),
+  ));
+  if (entries.length === 0) throw new Error("CTest registered zero native-engine coverage tests");
+  return entries.map(({ name, command }) => {
+    if (!Array.isArray(command) || command.length === 0) {
+      throw new Error(`native-engine coverage executable is unbuilt: ${name}`);
+    }
+    // References, source-graph checks and binary inspection execute no instrumented code.
+    const staticCheck = (command.includes("--check") &&
+      command.some((arg) => arg.endsWith("-reference.ts"))) ||
+      command.some((arg) => arg.endsWith("/inspect-js-free.mjs")) ||
+      (command.includes("-P") && command.some((arg) => arg.endsWith(".cmake")));
+    return { name, requiresProfile: !staticCheck };
+  });
+}
+
 function runCoverageTargets({ buildDirectory, cmake, ctest, inventory, registrations, targets }) {
   const blockedTargets = [];
   const executedTargets = [];
@@ -628,7 +649,22 @@ function runCoverageTargets({ buildDirectory, cmake, ctest, inventory, registrat
     }
     if (targetPassed) executedTargets.push(target);
   }
-  return { blockedTargets, executedTargets, executionFailures, expectedProfilePrefixes };
+  const engineInvocations = nativeEngineCoverageInvocations(inventory);
+  for (const { name, requiresProfile } of engineInvocations) {
+    const prefix = `${name}-0-`;
+    if (requiresProfile) expectedProfilePrefixes.push(prefix);
+    try {
+      run(ctest, ["--test-dir", buildDirectory, "--output-on-failure", "-R", `^${name}$`], {
+        env: { ...process.env, TN_NATIVE_ENGINE_BUILD: buildDirectory,
+          [coverageProfileEnvironmentVariable]: join(profileDirectory, `${prefix}%p.profraw`) },
+        timeout: 180_000,
+      });
+    } catch (error) {
+      executionFailures.push({ reason: compactFailure(error), target: name });
+    }
+  }
+  return { blockedTargets, executedTargets, executionFailures, expectedProfilePrefixes,
+    engineTests: engineInvocations.map(({ name }) => name) };
 }
 
 const COVERAGE_GENERATOR = "Unix Makefiles";
@@ -697,6 +733,9 @@ export function measureNativeCoverage({ recordPath = defaultRecord } = {}) {
       `native test target(s) written under a condition that registers nothing when it does not hold: ${hollow.join(", ")}. Give each one a tn_register_blocked_test in the else branch, or a platforms list on its execution contract.`,
     );
   }
+  buildNativeTarget(cmake, buildDirectory, "mystral", 1_800_000);
+  buildNativeTarget(cmake, buildDirectory, "mystral-tools", 1_800_000);
+  buildNativeTarget(cmake, buildDirectory, "tn-native-engine-tests", 1_800_000);
   const inventory = ctestInventory(buildDirectory, ctest);
   const registrations = inventory.map(({ name }) => name);
   for (const target of targets) {
@@ -705,9 +744,7 @@ export function measureNativeCoverage({ recordPath = defaultRecord } = {}) {
   rmSync(profileDirectory, { force: true, recursive: true });
   mkdirSync(profileDirectory, { recursive: true });
 
-  buildNativeTarget(cmake, buildDirectory, "mystral", 1_800_000);
-  buildNativeTarget(cmake, buildDirectory, "mystral-tools", 1_800_000);
-  const { blockedTargets, executedTargets, executionFailures, expectedProfilePrefixes } =
+  const { blockedTargets, executedTargets, executionFailures, expectedProfilePrefixes, engineTests } =
     runCoverageTargets({
       buildDirectory,
       cmake,
@@ -741,7 +778,7 @@ export function measureNativeCoverage({ recordPath = defaultRecord } = {}) {
     sourceFiles: sourceInventory(),
   });
   const previousRecord = existsSync(recordPath) ? readFileSync(recordPath, "utf8") : "";
-  const markdown = renderMarkdown(report, executedTargets, previousRecord);
+  const markdown = renderMarkdown(report, [...executedTargets, ...engineTests], previousRecord);
   mkdirSync(dirname(recordPath), { recursive: true });
   writeGeneratedRecord(recordPath, markdown);
   console.info(markdown);

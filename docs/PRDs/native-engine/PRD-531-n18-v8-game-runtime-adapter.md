@@ -137,7 +137,7 @@ pending readback at timeout, with no console errors or rejected samples; the pos
 did not reach 180 within 60 seconds. The unchanged failing case passes locally on both NVIDIA
 Turing and explicitly observed SwiftShader, with CPU profiles captured. No timeout or assertion
 change; the hosted run remains unverified. PR #438 is still draft, has no current remote check
-rollup and conflicts with develop in `.gitignore` and Android key routing. The conflict preview
+rollup. The develop merge initially conflicted in `.gitignore` and Android key routing. The conflict preview
 identified two content conflicts. Reconciliation preserves both ignore lists and combines the
 upstream consumed-UI key guard with native-engine mailbox-only input. String and array Space presses
 reproduced duplicate adb injection before the native guard; 79 focused Android/input/profile tests pass after reconciliation. Upstream KayKit license bytes are preserved, including their existing blank-line whitespace.
@@ -145,7 +145,16 @@ The system-Clang/V8 run
 completed the legacy contracts but found a producer gap: its compile inventory includes
 `tn_engine_foundation` while its build/execute list includes only legacy targets, so aggregation
 fails on the unbuilt engine object. Integrate the native-engine suite before refreshing coverage;
-do not drop inventory entries or restamp the digest.
+do not drop inventory entries or restamp the digest. The producer now builds the existing engine
+aggregate, runs each labelled CTest case with its own profile prefix and exports all compiled
+object variants against fresh merged profiles. Static reference/inspection checks remain counted;
+the instrumented registry `--check` invocation still requires a profile (regression red/green).
+All 27 focused coverage/digest tests and 212 merged CI/mirror contract tests pass. Full refresh is
+pending. Its first engine build exposed Clang/libstdc++ 16 recursively instantiating aggregate
+`Value` through `pair<string, Value>`; a minimal red/green compile identified an explicit value
+constructor as the fix. The formerly failing binding source compiles with Clang; full instrumented
+execution remains pending. The merged checkout needs a frozen dependency install before root
+TypeScript can resolve the newly introduced example and sourcemap packages.
 
 Scatter-test timeout repair (2026-10-07): a focused CPU profile identified terrain mesh rebuilding
 as the main unrelated cost in the timed-out scatter walk. Both comparison arms now use the existing
