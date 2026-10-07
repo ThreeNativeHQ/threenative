@@ -1,7 +1,13 @@
+import { readFile } from "node:fs/promises";
+import { createRequire } from "node:module";
+import path from "node:path";
+import { read as readKTX2 } from "ktx-parse";
 import { describe, expect, it } from "vitest";
-import { deltaE00, imageQuality } from "../src/image-quality.js";
+import { basisTranscoderPaths } from "../../../test-support/three-basis.js";
+import { deltaE00, imageQuality, ssim } from "../src/image-quality.js";
 import { measureKtx2 } from "../src/image-quality.js";
 import { encodeToKTX2 } from "../src/ktx2-encoder.js";
+import { decodeImageBytes } from "../src/passes/decode-image.js";
 
 function pixels(noise = false): Uint8Array {
   const data = new Uint8Array(32 * 32 * 4);
@@ -17,6 +23,82 @@ function pixels(noise = false): Uint8Array {
 }
 
 describe("image quality instrument", () => {
+  it("should reproduce the pinned normal-map score", async () => {
+    const fixture = "examples/prd493-terrain-splat/public/world/terrain/tex/layer-00_nrm.jpg";
+    const input = await readFile(new URL(`../../../${fixture}`, import.meta.url));
+    const { data, width, height } = await decodeImageBytes(input, fixture);
+    const encoded = await encodeToKTX2(input, {
+      imageDecoder: async () => ({ data, width, height }),
+      generateMipmap: true,
+      isUASTC: true,
+      isNormalMap: true,
+      isPerceptual: false,
+      isSetKTX2SRGBTransferFunc: false,
+      qualityLevel: 150,
+      needSupercompression: true,
+    });
+    expect(readKTX2(encoded).supercompressionScheme).toBe(2);
+
+    const paths = basisTranscoderPaths();
+    const shim: { exports: unknown } = { exports: {} };
+    new Function(
+      "module",
+      "exports",
+      "require",
+      "__filename",
+      "__dirname",
+      await readFile(paths.javascriptPath, "utf8"),
+    )(
+      shim,
+      shim.exports,
+      createRequire(import.meta.url),
+      paths.javascriptPath,
+      path.dirname(paths.javascriptPath),
+    );
+    const factory = shim.exports as (options: { wasmBinary: Uint8Array }) => Promise<{
+      initializeBasis(): void;
+      transcoder_texture_format: { cTFRGBA32: { value: number } };
+      KTX2File: new (
+        bytes: Uint8Array,
+      ) => {
+        isValid(): boolean;
+        startTranscoding(): boolean;
+        getWidth(): number;
+        getHeight(): number;
+        getImageTranscodedSizeInBytes(...args: number[]): number;
+        transcodeImage(dst: Uint8Array, ...args: number[]): boolean;
+        close(): void;
+        delete(): void;
+      };
+    }>;
+    const basis = await factory({ wasmBinary: await readFile(paths.wasmPath) });
+    basis.initializeBasis();
+    const file = new basis.KTX2File(encoded);
+    try {
+      expect(file.isValid()).toBeTruthy();
+      expect([file.getWidth(), file.getHeight()]).toEqual([width, height]);
+      expect(file.startTranscoding()).toBeTruthy();
+      const format = basis.transcoder_texture_format.cTFRGBA32.value;
+      const decoded = new Uint8Array(file.getImageTranscodedSizeInBytes(0, 0, 0, format));
+      expect(file.transcodeImage(decoded, 0, 0, 0, format, 0, -1, -1)).toBeTruthy();
+      const score = imageQuality(data, decoded, width, height, { slots: ["normalTexture"] });
+      // spike inputs were never committed; PRD-351 D31
+      const pinned = 0.9945243217001697;
+      expect(Math.abs(score.ssim - pinned)).toBeLessThanOrEqual(0.005);
+
+      // Change only the SSIM windows from 8x8 to 1x1, retaining equal-window aggregation.
+      let control = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        control += ssim(data.subarray(i, i + 4), decoded.subarray(i, i + 4), 1, 1);
+      }
+      control /= width * height;
+      expect(Math.abs(control - pinned)).toBeGreaterThan(0.005);
+    } finally {
+      file.close();
+      file.delete();
+    }
+  });
+
   it("scores identical pixels at 1 and rejects unrelated noise", () => {
     const data = pixels();
     expect(imageQuality(data, data, 32, 32).ssim).toBe(1);

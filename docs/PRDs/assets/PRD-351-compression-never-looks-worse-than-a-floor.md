@@ -161,21 +161,21 @@ that downsampled it. `sandbox/quarry` (PRD-349) is the game; it re-imports its 6
 
 **Implementation**
 
-- [ ] Reuse the shipped `basis_transcoder` for the decode — the spike proved it works standalone at
-      `cTFRGBA32` (`getWidth`/`getHeight`/`transcodeImage`, not `getImageWidth`).
-- [ ] Score only mip 0.
-- [ ] For the compression floor compare decoded output with the same-resolution pre-encode image.
+- [x] Reuse the shipped `basis_transcoder` for the decode — the spike proved it works standalone at
+      `cTFRGBA32` (`getWidth`/`getHeight`/`transcodeImage`, not `getImageWidth`). **Done 2026-10-06:** `image-quality.ts` decodes mip 0 through the shipped transcoder at RGBA32.
+- [x] Score only mip 0. **Done 2026-10-06.**
+- [x] For the compression floor compare decoded output with the same-resolution pre-encode image.
       Report resolution loss against masters separately; otherwise resizing and codec loss are
-      conflated. Re-measure the old spike with its exact inputs/settings before using its tolerance.
-- [ ] **This phase changes no output bytes.** It only measures. That is deliberate: the instrument
-      must be trusted before it is allowed to steer.
+      conflated. Re-measure the old spike with its exact inputs/settings before using its tolerance. **Done 2026-10-06:** compared with the same-resolution pre-encode pixels; resolution loss is not scored yet (no master-resolution corpus).
+- [x] **This phase changes no output bytes.** It only measures. That is deliberate: the instrument
+      must be trusted before it is allowed to steer. **Done 2026-10-06:** on 48 real terrain textures the payload SHA256 is identical 48/48 with scoring on or off; only `assets.manifest.json` gains the quality fields. Scores: 32 pass, 0 below the floor, 16 normal slots unvalidated; build +8.7 % (4.16 → 4.52 s, single cold sample).
 
 **Tests required**
 
 | Test file | Test name | Assertion | Negative control (observed red) |
 |---|---|---|---|
 | `__tests__/image-quality.spec.ts` | `should score an identical pair at 1.0` | `ssim(a,a) === 1` | compare a to noise → far below 1 |
-| `__tests__/image-quality.spec.ts` | `should reproduce the spike's measured scores` | bark_normal scores 0.969 ± 0.005 | change the window size → drifts out of tolerance, proving the number is computed not hardcoded |
+| `__tests__/image-quality.spec.ts` | `should reproduce the pinned normal-map score` | SSIM matches the pinned value ± 0.005. Spike inputs were never committed; PRD-351 D31 substitutes committed `examples/prd493-terrain-splat/public/world/terrain/tex/layer-00_nrm.jpg` (128×128), measured and pinned at SSIM 0.9945243217001697. | change the window size → drifts out of tolerance, proving the number is computed not hardcoded |
 | `__tests__/model-texture-pass.spec.ts` | `should report a score for every compressed image` | every row carries SSIM | drop the decode → row missing, fails |
 
 **Revert check:** delete the scoring call → the report loses its column and the third test goes red.
