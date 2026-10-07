@@ -91,10 +91,17 @@ class SkinnedMesh : public Mesh {
     void bind(std::shared_ptr<Skeleton> skeleton, const Matrix4* bindMatrix = nullptr);
     void pose() { if (skeleton) skeleton->pose(); }
     void updateMatrixWorld(bool force = false) override;
+    Vector3& getVertexPosition(uint64_t index, Vector3& target) const override;
+    Vector3& applyBoneTransform(uint64_t index, Vector3& target) const;
+    void computeBoundingBox();
+    std::shared_ptr<Box3> boundingBox;
     std::shared_ptr<Skeleton> skeleton;
     bool attached = true; // bindMode: "attached" (true) or "detached"
     Matrix4 bindMatrix;
     Matrix4 bindMatrixInverse;
+
+  protected:
+    const Box3& cachedBounds() override;
 };
 
 /** SkeletonUtils.clone: copy the hierarchy, share mesh resources, remap each skin to cloned bones.

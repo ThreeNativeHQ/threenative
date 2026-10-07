@@ -79,6 +79,16 @@ if(TARGET v8::v8 AND MYSTRAL_USE_V8 AND NOT MYSTRAL_PLATFORM STREQUAL "ios")
         target_link_options(tn-native-engine-player-v8 PRIVATE "LINKER:--allow-multiple-definition")
     endif()
     add_dependencies(tn-native-engine-tests tn-native-engine-player-v8)
+    if(TN_NODE_EXECUTABLE)
+        set(TN_PLAYER_IMPORTS_MODE)
+        if(NOT TN_ENABLE_NATIVE_PHYSICS OR NOT TARGET tn_engine_gltf)
+            set(TN_PLAYER_IMPORTS_MODE --imports-only)
+        endif()
+        add_test(NAME native_engine_player_imports
+            COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-imports.mjs
+                $<TARGET_FILE:tn-native-engine-player-v8> ${TN_PLAYER_IMPORTS_MODE})
+        set_tests_properties(native_engine_player_imports PROPERTIES LABELS "native-engine")
+    endif()
 
     # Both CP1 arms on a small L4: 64 cubes + the ground + the output pass, 66 draws in each.
     set(TN_ESBUILD ${CMAKE_CURRENT_SOURCE_DIR}/../../node_modules/.bin/esbuild)

@@ -91,6 +91,10 @@ class Mesh : public Object3D {
     // it draws them. A material array (groups) arrives with PRD-514's multi-material work.
     std::shared_ptr<BufferGeometry> geometry;
     std::shared_ptr<Material> material;
+
+  protected:
+    friend class Box3;
+    virtual const Box3& cachedBounds();
 };
 
 /** three's Sprite: a view-aligned quad; count supports GPUParticles3D's instanced sprites. */
@@ -121,6 +125,8 @@ class InstancedMesh : public Mesh {
 
     /** three's `Mesh.boundingSphere`, which InstancedMesh computes over its instances, not the geometry. */
     std::shared_ptr<Sphere> boundingSphere;
+    std::shared_ptr<Box3> boundingBox;
+    void computeBoundingBox();
     /** three's `InstancedMesh.computeBoundingSphere`: the union of every drawn instance's own sphere. */
     void computeBoundingSphere();
     bool raycast(const Raycaster& raycaster, std::vector<Intersection>& intersects) override;
@@ -128,6 +134,9 @@ class InstancedMesh : public Mesh {
     std::shared_ptr<BufferAttribute> instanceMatrix; // 16 floats per instance
     std::shared_ptr<BufferAttribute> instanceColor;  // 3 floats per instance; null until setColorAt
     uint32_t count;                                  // how many instances draw (at most the capacity)
+
+  protected:
+    const Box3& cachedBounds() override;
 };
 
 } // namespace tn::engine

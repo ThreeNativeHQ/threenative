@@ -533,7 +533,8 @@ endif()
 
 # PRD-518 phase 1: the recorded Bone/Skeleton poses reproduce over the native port.
 tn_native_engine_test(tn-native-engine-animation-skeleton-test tests/native-engine/animation/skeleton_test.cpp
-    native_engine_skeleton_pose=skeleton_pose)
+    native_engine_skeleton_pose=skeleton_pose
+    native_engine_skeleton_clone_bounds=clone_bounds)
 target_link_libraries(tn-native-engine-animation-skeleton-test PRIVATE tn_engine_animation)
 target_include_directories(tn-native-engine-animation-skeleton-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/animation)
 # PRD-518 phases 2-3: the recorded SkinnedBatch CPU state reproduces over the native palette.
@@ -680,7 +681,7 @@ target_link_libraries(tn-native-engine-fixture-protocol-test PRIVATE tn_fixture_
 if(NOT EMSCRIPTEN)
     find_program(TN_PNPM_EXECUTABLE pnpm)
     if(TN_PNPM_EXECUTABLE)
-        foreach(math_case "math_core:math-core-*" "math_edges:math-edges-*" "math_euler:math-euler-*" "math_primitives:math-primitives-*" "scene_transforms:scene-transforms-*" "scene_cameras:scene-cameras-*" "geometry:geometry-*" "geometry_derived:geometry-derived-*" "material_props:materials-props-*" "light_props:lights-props-*")
+        foreach(math_case "math_core:math-core-*" "math_edges:math-edges-*" "math_euler:math-euler-*" "math_primitives:math-primitives-*" "scene_transforms:scene-transforms-*" "scene_cameras:scene-cameras-*" "scene_object_bounds:scene-object-bounds-*" "geometry:geometry-*" "geometry_derived:geometry-derived-*" "material_props:materials-props-*" "light_props:lights-props-*")
             string(REPLACE ":" ";" math_pair "${math_case}")
             list(GET math_pair 0 math_name)
             list(GET math_pair 1 math_glob)

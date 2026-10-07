@@ -64,6 +64,10 @@ const FIELD_TYPE_OVERRIDE: Record<string, string> = {
   // The binding answers three's `{ start, count }[]` as its canonical JSON text.
   "BufferAttribute.updateRanges": "string",
   "Scene.background": "Color | Texture | null",
+  "SkinnedMesh.bindMode": '"attached" | "detached"',
+  "SkinnedMesh.boundingBox": "Box3 | null",
+  "AnimationClip.tracks":
+    "Array<{ name: string; times: number[]; values: number[]; ValueTypeName: string }>",
 };
 
 /** Bound methods whose binding signature differs from three's richer overloads. */

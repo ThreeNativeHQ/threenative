@@ -5,9 +5,11 @@
 #include "engine/animation/skinning/skeleton.h"
 
 #include <cstddef>
+#include <cmath>
 #include <functional>
 #include <unordered_map>
 #include <utility>
+#include <stdexcept>
 
 namespace tn::engine {
 
@@ -92,6 +94,49 @@ void SkinnedMesh::updateMatrixWorld(bool force) {
     else bindMatrixInverse.copy(bindMatrix).invert();
 }
 
+Vector3& SkinnedMesh::getVertexPosition(uint64_t index, Vector3& target) const {
+    Mesh::getVertexPosition(index, target);
+    return applyBoneTransform(index, target);
+}
+
+Vector3& SkinnedMesh::applyBoneTransform(uint64_t index, Vector3& target) const {
+    const auto indices = geometry->attributes.at("skinIndex");
+    const auto weights = geometry->attributes.at("skinWeight");
+    Vector4 base(target.x, target.y, target.z, 1), vertex;
+    base.applyMatrix4(bindMatrix);
+    target.set(0, 0, 0);
+    Matrix4 matrix;
+    Vector3 xyz;
+    for (int i = 0; i < 4; ++i) {
+        const double weight = weights->getComponent(index, i);
+        if (weight == 0) continue;
+        const double boneIndex = indices->getComponent(index, i);
+        if (!skeleton || !std::isfinite(boneIndex) || boneIndex < 0 ||
+            boneIndex != std::floor(boneIndex) || boneIndex >= skeleton->bones.size() ||
+            boneIndex >= skeleton->boneInverses.size() || !skeleton->bone(size_t(boneIndex)))
+            throw std::out_of_range("SkinnedMesh.applyBoneTransform needs a valid bone index");
+        const auto j = size_t(boneIndex);
+        matrix.multiplyMatrices(skeleton->bone(j)->matrixWorld, skeleton->boneInverses[j]);
+        vertex.copy(base).applyMatrix4(matrix);
+        target.addScaledVector(xyz.set(vertex.x, vertex.y, vertex.z), weight);
+    }
+    return target.applyMatrix4(bindMatrixInverse);
+}
+
+void SkinnedMesh::computeBoundingBox() {
+    if (!boundingBox) boundingBox = std::make_shared<Box3>();
+    boundingBox->makeEmpty();
+    const auto position = geometry->attributes.at("position");
+    Vector3 vertex;
+    for (uint64_t i = 0; i < position->count(); ++i)
+        boundingBox->expandByPoint(getVertexPosition(i, vertex));
+}
+
+const Box3& SkinnedMesh::cachedBounds() {
+    if (!boundingBox) computeBoundingBox();
+    return *boundingBox;
+}
+
 std::shared_ptr<Object3D> cloneSkeleton(const Object3D& source, std::string& error) {
     error.clear();
     std::unordered_map<const Object3D*, std::shared_ptr<Object3D>> copies;
@@ -130,6 +175,7 @@ std::shared_ptr<Object3D> cloneSkeleton(const Object3D& source, std::string& err
         next.attached = mesh.attached;
         next.bindMatrix.copy(mesh.bindMatrix);
         next.bindMatrixInverse.copy(mesh.bindMatrixInverse);
+        if (mesh.boundingBox) next.boundingBox = std::make_shared<Box3>(*mesh.boundingBox);
         if (!mesh.skeleton) continue;
         std::vector<std::shared_ptr<Bone>> bones;
         for (size_t i = 0; i < mesh.skeleton->bones.size(); ++i) {

@@ -4,8 +4,9 @@
 // that mutates returns `*this`, and the arithmetic keeps three's operation order, because the
 // differential fixtures compare binary64 bits against the reference.
 //
-// Not ported: `fromBufferAttribute` (a BufferAttribute, PRD-504), `project`/`unproject` (a Camera,
-// PRD-508), `setFromSpherical`/`setFromCylindrical` (the Spherical and Cylindrical classes are
+// Camera projection is implemented in the scene layer.
+// Not ported: `fromBufferAttribute` (a BufferAttribute, PRD-504),
+// `setFromSpherical`/`setFromCylindrical` (the Spherical and Cylindrical classes are
 // outside this port; the `*Coords` forms take plain numbers and are here), `random` and
 // `randomDirection` (Math.random is not reproducible, so a fixture could never match it), and the
 // `Symbol.iterator` generator.
@@ -118,6 +119,8 @@ public:
     Vector3& applyMatrix3(const class Matrix3& m);
     Vector3& applyNormalMatrix(const class Matrix3& m);
     Vector3& applyMatrix4(const class Matrix4& m);
+    Vector3& project(const class Camera& camera);
+    Vector3& unproject(const class Camera& camera);
     Vector3& applyQuaternion(const class Quaternion& q);
     Vector3& transformDirection(const class Matrix4& m);
     Vector3& divide(const Vector3& v);

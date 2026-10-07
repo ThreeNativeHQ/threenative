@@ -48,6 +48,7 @@ export declare class AnimationClip {
 constructor();
 readonly duration: number;
 readonly name: string;
+readonly tracks: Array<{ name: string; times: number[]; values: number[]; ValueTypeName: string }>;
 }
 
 /** Catalog supported: three/AnimationMixer. */
@@ -773,6 +774,7 @@ constructor();
 count: number;
 readonly instanceColor: InstancedBufferAttribute | null;
 readonly instanceMatrix: InstancedBufferAttribute;
+boundingBox: Box3 | null;
 
   getColorAt(index: number, color: Color): Color;
 
@@ -781,6 +783,8 @@ readonly instanceMatrix: InstancedBufferAttribute;
   setColorAt(index: number, color: Color): this;
 
   setMatrixAt(index: number, matrix: Matrix4): this;
+
+  computeBoundingBox(): void;
 }
 
 /** Catalog partial (native-not-implemented): three/IntType. */
@@ -2034,6 +2038,7 @@ export type Side = (typeof Side)[keyof typeof Side];
 export declare class Skeleton {
 constructor();
 readonly boneMatrices: Float32Array | null;
+readonly bones: Bone[];
 
   calculateInverses(): void;
 
@@ -2046,10 +2051,16 @@ readonly boneMatrices: Float32Array | null;
 export declare class SkinnedMesh extends Mesh {
 constructor();
 readonly skeleton: Skeleton;
+bindMode: "attached" | "detached";
+readonly bindMatrix: Matrix4;
+readonly bindMatrixInverse: Matrix4;
+boundingBox: Box3 | null;
 
   bind(skeleton: Skeleton, bindMatrix?: Matrix4): void;
 
   pose(): void;
+
+  computeBoundingBox(): void;
 }
 
 /** Catalog supported: three/Sphere. */
@@ -2535,6 +2546,10 @@ readonly isVector3: true;
   applyMatrix4(m: Matrix4): this;
 
   applyQuaternion(q: QuaternionLike): this;
+
+  project(camera: Camera): this;
+
+  unproject(camera: Camera): this;
 
   transformDirection(m: Matrix4): this;
 

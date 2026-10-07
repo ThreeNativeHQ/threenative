@@ -111,7 +111,25 @@ core/V8 playtest pass (ArrowUp moves −0.8 m). No phase tick; the full template
 The temp-directory guard now passes: JS-free inspection uses registered test cleanup, and the
 standalone import probe removes its bundle directory on exit. Compiler/conformance CLIs retain
 diagnostic outputs explicitly; the starter visual gate already cleans in `finally`. Inspection
-unit checks pass (9 passed, 1 skipped). The full import probe reaches its inspect-bridge check
-but fails because `Box3.setFromObject` is absent from the native binding; this remains open.
+unit checks pass (9 passed, 1 skipped).
+
+Inspect compatibility repair (2026-10-07): the full imports probe exposed deferred
+`Box3.setFromObject`, then `Vector3.project`, then four `getWorld*` methods returning the scene
+object instead of the caller's output target. The shared native registry now exposes object/buffer
+bounds and camera project/unproject; all four output methods return the target. Scene bounds keep
+the reference's nonrecursive world update, cached versus precise behavior, instancing and skinned
+double-precision vertex transforms. Geometry bounds now include morph targets in upstream order.
+Skinned clones preserve an independent cached box; ordinary Mesh gains no data member.
+
+Verification: four frozen reference fixtures repeat identically and all 132 observations match
+bit-for-bit; 23 focused native checks and 5 ASan checks pass. The clone-cache and four return-identity
+regressions failed before their fixes, then passed. The rebuilt Wasm/browser-backend smoke passes
+object bounds, camera projection and output identity; 45 catalog/fixture/temp-directory unit checks
+pass. Biome passes with 5 existing complexity warnings. The full imports/cooked-assets/Rapier/
+inspect-bridge probe and desktop core playtest pass. The imports probe is now a CTest case: full
+services when physics and glTF are built, imports-only otherwise (both modes verified locally).
+Registry/catalog/declarations are regenerated with the actual bound track and bind-mode types.
+This repair slice is complete; Windows CI and the unchanged full minimal-template journey remain
+unverified, so no phase box is ticked.
 
 - This game runtime is the default until gate T ships, and it is never called a JS-free *application* (§2.1). The engine under it is JS-free (owner, 2026-10-04).

@@ -247,16 +247,22 @@ void scene() {
         parent.position.y = 3;
         parent.updateMatrixWorld(true);
         const e = child.matrixWorld.elements;
+        const worldPosition = new Vector3(), worldScale = new Vector3();
+        const worldQuaternion = new Quaternion(), worldDirection = new Vector3();
         const checks = [
             child.position === p,
             child.position.x === 2,
             e[12] === 2 && e[13] === 3 && e[14] === 0,
             child.matrixWorld === child.matrixWorld,
+            child.getWorldPosition(worldPosition) === worldPosition && worldPosition.x === 2 && worldPosition.y === 3,
+            child.getWorldScale(worldScale) === worldScale && worldScale.x === 1,
+            child.getWorldQuaternion(worldQuaternion) === worldQuaternion && worldQuaternion.w === 1,
+            child.getWorldDirection(worldDirection) === worldDirection && worldDirection.z === 1,
         ];
         checks.map(Number).join("")
     )JS");
-    CHECK(got == "1111");
-    if (got != "1111") std::fprintf(stderr, "got %s\n", got.c_str());
+    CHECK(got == "11111111");
+    if (got != "11111111") std::fprintf(stderr, "got %s\n", got.c_str());
 }
 
 // PRD-531 phase 1: the adapter exposes exactly the catalog's supported set. The catalog's supported

@@ -78,6 +78,10 @@ await bundleNativeEngine({ entry, outfile, boot: false });
 const run = spawnSync(resolve(executable), ["--check-game", outfile], { encoding: "utf8" });
 assert.equal(run.status, 0, `${run.stdout}\n${run.stderr}`);
 assert.match(run.stdout, /engine=native gameRuntime=v8 startup=passed/);
+if (process.argv.includes("--imports-only")) {
+  console.log("PASS native imports, identity, picking, clone and TSL");
+  process.exit(0);
+}
 // Same resident, package reader, native handles and installed bridge as the desktop player.
 const { build } = createRequire(resolve(native, "package.json"))("esbuild");
 const writer = resolve(work, "package-writer.mjs");

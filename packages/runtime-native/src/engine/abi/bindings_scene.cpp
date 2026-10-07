@@ -371,19 +371,19 @@ void registerObject3D(ClassBinding& b) {
     };
     b.methods["getWorldPosition"] = [](void* self, const Args& a, Store& store) {
         as<Object3D>(self)->getWorldPosition(store.ref<Vector3>(a.at(0), "Vector3"));
-        return chain();
+        return a.at(0);
     };
     b.methods["getWorldQuaternion"] = [](void* self, const Args& a, Store& store) {
         as<Object3D>(self)->getWorldQuaternion(store.ref<Quaternion>(a.at(0), "Quaternion"));
-        return chain();
+        return a.at(0);
     };
     b.methods["getWorldScale"] = [](void* self, const Args& a, Store& store) {
         as<Object3D>(self)->getWorldScale(store.ref<Vector3>(a.at(0), "Vector3"));
-        return chain();
+        return a.at(0);
     };
     b.methods["getWorldDirection"] = [](void* self, const Args& a, Store& store) {
         as<Object3D>(self)->getWorldDirection(store.ref<Vector3>(a.at(0), "Vector3"));
-        return chain();
+        return a.at(0);
     };
     b.methods["copy"] = [](void* self, const Args& a, Store& store) {
         as<Object3D>(self)->copy(objectArg(store, a.at(0)));
@@ -825,10 +825,24 @@ void registerSkeleton(ClassBinding& b) {
     b.getters["bones.length"] = [](void* self) { return Value::of(double(as<Skeleton>(self)->bones.size())); };
 }
 
+template <typename T>
+void registerObjectBounds(ClassBinding& b) {
+    b.methods["computeBoundingBox"] = [](void* self, const Args&, Store&) {
+        as<T>(self)->computeBoundingBox(); return Value::undefined();
+    };
+    b.members["boundingBox"] = [](void* self, const Args&, Store& store) {
+        return store.share("Box3", as<T>(self)->boundingBox);
+    };
+    b.setters["boundingBox"] = [](void* self, const Value& value, Store& store) {
+        as<T>(self)->boundingBox = value.kind == Value::Kind::Null ? nullptr : store.shared<Box3>(value, "Box3");
+    };
+}
+
 // three's SkinnedMesh(geometry, material): bind(skeleton, bindMatrix?), pose(). bindMode stays
 // "attached": three types it as BindMode, which the catalog does not publish yet.
 void registerSkinnedMesh(ClassBinding& b) {
     registerMesh(b);
+    registerObjectBounds<SkinnedMesh>(b);
     b.ctor = [](const Args& a, Store& store) -> std::shared_ptr<void> {
         std::shared_ptr<BufferGeometry> geometry;
         std::shared_ptr<Material> material;
@@ -936,6 +950,7 @@ void registerAnimationClip(ClassBinding& b) {
 // until setColorAt; the arrays are float32 and reach the GPU on `needsUpdate`.
 void registerInstancedMesh(ClassBinding& b) {
     registerMesh(b);
+    registerObjectBounds<InstancedMesh>(b);
     b.ctor = [](const Args& a, Store& store) -> std::shared_ptr<void> {
         std::shared_ptr<BufferGeometry> geometry;
         std::shared_ptr<Material> material;
@@ -1014,6 +1029,24 @@ void registerObject3DBindings(ClassBinding& b) {
 }
 
 void registerSceneBindings(Registry& classes) {
+    for (const auto* name : {"project", "unproject"}) {
+        classes["Vector3"].methods[name] = [name](void* self, const Args& a, Store& store) {
+            const auto* camera = dynamic_cast<Camera*>(&objectArg(store, a.at(0)));
+            if (!camera) throw Unsupported{"Vector3 projection needs a Camera"};
+            if (std::string_view(name) == "project") as<Vector3>(self)->project(*camera);
+            else as<Vector3>(self)->unproject(*camera);
+            return chain();
+        };
+    }
+    for (const auto* name : {"setFromObject", "expandByObject"}) {
+        classes["Box3"].methods[name] = [name](void* self, const Args& a, Store& store) {
+            auto& object = objectArg(store, a.at(0));
+            const bool precise = boolean(a, 1, false);
+            if (std::string_view(name) == "setFromObject") as<Box3>(self)->setFromObject(object, precise);
+            else as<Box3>(self)->expandByObject(object, precise);
+            return chain();
+        };
+    }
     registerObject3D(classes["Object3D"]);
     registerCamera(classes["Camera"]);
     registerPerspectiveCamera(classes["PerspectiveCamera"]);

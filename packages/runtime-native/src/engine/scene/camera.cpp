@@ -8,6 +8,14 @@
 
 namespace tn::engine {
 
+Vector3& Vector3::project(const Camera& camera) {
+    return applyMatrix4(camera.matrixWorldInverse).applyMatrix4(camera.projectionMatrix);
+}
+
+Vector3& Vector3::unproject(const Camera& camera) {
+    return applyMatrix4(camera.projectionMatrixInverse).applyMatrix4(camera.matrixWorld);
+}
+
 namespace {
 
 constexpr double kDeg2Rad = PI / 180.0;  // local, to avoid the MathUtils DEG2RAD name

@@ -122,6 +122,20 @@ void skeletonPose() {
     CHECK(differ == 0);
 }
 
+void cloneBounds() {
+    SkinnedMesh mesh;
+    mesh.boundingBox = std::make_shared<Box3>();
+    mesh.boundingBox->set({100, 101, 102}, {110, 111, 112});
+    std::string error;
+    const auto clone = std::dynamic_pointer_cast<SkinnedMesh>(cloneSkeleton(mesh, error));
+    CHECK(clone && error.empty());
+    CHECK(clone && clone->boundingBox && clone->boundingBox != mesh.boundingBox);
+    if (!clone || !clone->boundingBox) return;
+    CHECK(clone->boundingBox->equals(*mesh.boundingBox));
+    clone->boundingBox->min.x = -1;
+    CHECK(mesh.boundingBox->min.x == 100);
+}
+
 } // namespace
 
-TN_TEST_MAIN({"skeleton_pose", skeletonPose})
+TN_TEST_MAIN({"skeleton_pose", skeletonPose}, {"clone_bounds", cloneBounds})

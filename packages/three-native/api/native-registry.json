@@ -76,6 +76,7 @@
         "up.x",
         "up.y",
         "up.z",
+        "uuid",
         "visible"
       ],
       "setters": [
@@ -112,6 +113,7 @@
         "up.x",
         "up.y",
         "up.z",
+        "uuid",
         "visible"
       ],
       "members": [
@@ -139,7 +141,7 @@
     "AnimationClip": {
       "constructor": false,
       "methods": [],
-      "getters": ["duration", "name"],
+      "getters": ["duration", "name", "tracks"],
       "setters": [],
       "members": [],
       "callbacks": []
@@ -224,6 +226,7 @@
         "up.x",
         "up.y",
         "up.z",
+        "uuid",
         "visible"
       ],
       "setters": [
@@ -255,6 +258,7 @@
         "up.x",
         "up.y",
         "up.z",
+        "uuid",
         "visible"
       ],
       "members": [
@@ -280,6 +284,7 @@
         "copy",
         "distanceToPoint",
         "equals",
+        "expandByObject",
         "expandByPoint",
         "expandByScalar",
         "expandByVector",
@@ -295,7 +300,9 @@
         "makeEmpty",
         "set",
         "setFromArray",
+        "setFromBufferAttribute",
         "setFromCenterAndSize",
+        "setFromObject",
         "setFromPoints",
         "translate",
         "union"
@@ -555,6 +562,7 @@
         "up.x",
         "up.y",
         "up.z",
+        "uuid",
         "visible"
       ],
       "setters": [
@@ -586,6 +594,7 @@
         "up.x",
         "up.y",
         "up.z",
+        "uuid",
         "visible"
       ],
       "members": [
@@ -974,6 +983,7 @@
         "up.x",
         "up.y",
         "up.z",
+        "uuid",
         "visible"
       ],
       "setters": [
@@ -1026,6 +1036,7 @@
         "up.x",
         "up.y",
         "up.z",
+        "uuid",
         "visible"
       ],
       "members": [
@@ -1239,6 +1250,7 @@
         "up.x",
         "up.y",
         "up.z",
+        "uuid",
         "visible"
       ],
       "setters": [
@@ -1270,6 +1282,7 @@
         "up.x",
         "up.y",
         "up.z",
+        "uuid",
         "visible"
       ],
       "members": [
@@ -1364,6 +1377,7 @@
         "up.x",
         "up.y",
         "up.z",
+        "uuid",
         "visible"
       ],
       "setters": [
@@ -1404,6 +1418,7 @@
         "up.x",
         "up.y",
         "up.z",
+        "uuid",
         "visible"
       ],
       "members": [
@@ -1471,6 +1486,7 @@
         "applyQuaternion",
         "attach",
         "clear",
+        "computeBoundingBox",
         "copy",
         "getColorAt",
         "getMatrixAt",
@@ -1606,9 +1622,11 @@
         "up.x",
         "up.y",
         "up.z",
+        "uuid",
         "visible"
       ],
       "setters": [
+        "boundingBox",
         "castShadow",
         "count",
         "frustumCulled",
@@ -1703,9 +1721,11 @@
         "up.x",
         "up.y",
         "up.z",
+        "uuid",
         "visible"
       ],
       "members": [
+        "boundingBox",
         "geometry",
         "instanceColor",
         "instanceMatrix",
@@ -1800,6 +1820,7 @@
         "up.x",
         "up.y",
         "up.z",
+        "uuid",
         "visible"
       ],
       "setters": [
@@ -1832,6 +1853,7 @@
         "up.x",
         "up.y",
         "up.z",
+        "uuid",
         "visible"
       ],
       "members": [
@@ -2090,6 +2112,7 @@
         "up.x",
         "up.y",
         "up.z",
+        "uuid",
         "visible"
       ],
       "setters": [
@@ -2186,6 +2209,7 @@
         "up.x",
         "up.y",
         "up.z",
+        "uuid",
         "visible"
       ],
       "members": [
@@ -2688,6 +2712,7 @@
         "up.x",
         "up.y",
         "up.z",
+        "uuid",
         "visible"
       ],
       "setters": [
@@ -2719,6 +2744,7 @@
         "up.x",
         "up.y",
         "up.z",
+        "uuid",
         "visible"
       ],
       "members": [
@@ -2818,6 +2844,7 @@
         "up.x",
         "up.y",
         "up.z",
+        "uuid",
         "visible",
         "zoom"
       ],
@@ -2856,6 +2883,7 @@
         "up.x",
         "up.y",
         "up.z",
+        "uuid",
         "visible",
         "zoom"
       ],
@@ -2966,6 +2994,7 @@
         "up.x",
         "up.y",
         "up.z",
+        "uuid",
         "visible",
         "zoom"
       ],
@@ -3005,6 +3034,7 @@
         "up.x",
         "up.y",
         "up.z",
+        "uuid",
         "visible",
         "zoom"
       ],
@@ -3205,6 +3235,7 @@
         "up.x",
         "up.y",
         "up.z",
+        "uuid",
         "visible"
       ],
       "setters": [
@@ -3254,6 +3285,7 @@
         "up.x",
         "up.y",
         "up.z",
+        "uuid",
         "visible"
       ],
       "members": [
@@ -3488,6 +3520,7 @@
         "up.x",
         "up.y",
         "up.z",
+        "uuid",
         "visible"
       ],
       "setters": [
@@ -3531,6 +3564,7 @@
         "up.x",
         "up.y",
         "up.z",
+        "uuid",
         "visible"
       ],
       "members": [
@@ -3556,7 +3590,7 @@
       "methods": ["calculateInverses", "pose", "update"],
       "getters": ["boneMatrices", "bones.length"],
       "setters": [],
-      "members": [],
+      "members": ["bones"],
       "callbacks": []
     },
     "SkinnedMesh": {
@@ -3568,6 +3602,7 @@
         "attach",
         "bind",
         "clear",
+        "computeBoundingBox",
         "copy",
         "getObjectById",
         "getObjectByName",
@@ -3602,6 +3637,7 @@
       "getters": [
         "bindMatrix.elements",
         "bindMatrixInverse.elements",
+        "bindMode",
         "castShadow",
         "frustumCulled",
         "id",
@@ -3701,9 +3737,12 @@
         "up.x",
         "up.y",
         "up.z",
+        "uuid",
         "visible"
       ],
       "setters": [
+        "bindMode",
+        "boundingBox",
         "castShadow",
         "frustumCulled",
         "layers.mask",
@@ -3797,9 +3836,13 @@
         "up.x",
         "up.y",
         "up.z",
+        "uuid",
         "visible"
       ],
       "members": [
+        "bindMatrix",
+        "bindMatrixInverse",
+        "boundingBox",
         "geometry",
         "layers",
         "material",
@@ -3999,6 +4042,7 @@
         "up.x",
         "up.y",
         "up.z",
+        "uuid",
         "visible"
       ],
       "setters": [
@@ -4050,6 +4094,7 @@
         "up.x",
         "up.y",
         "up.z",
+        "uuid",
         "visible"
       ],
       "members": [
@@ -4208,6 +4253,7 @@
         "up.x",
         "up.y",
         "up.z",
+        "uuid",
         "visible"
       ],
       "setters": [
@@ -4307,6 +4353,7 @@
         "up.x",
         "up.y",
         "up.z",
+        "uuid",
         "visible"
       ],
       "members": [
@@ -4634,6 +4681,7 @@
         "multiplyVectors",
         "negate",
         "normalize",
+        "project",
         "projectOnPlane",
         "projectOnVector",
         "reflect",
@@ -4658,7 +4706,8 @@
         "subScalar",
         "subVectors",
         "toArray",
-        "transformDirection"
+        "transformDirection",
+        "unproject"
       ],
       "getters": ["x", "y", "z"],
       "setters": ["x", "y", "z"],

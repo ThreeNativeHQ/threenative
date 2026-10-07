@@ -4,8 +4,8 @@
 // The classes take each other by reference and by out-parameter where three takes a target, and the
 // intersections answer three's `null` as a bool: false means three would have returned null.
 //
-// Not ported: Box3's `setFromObject`, `expandByObject` and `setFromBufferAttribute` (an Object3D and a
-// BufferAttribute, PRD-508 and PRD-504), `intersectsTriangle` (a Triangle), and the JSON forms.
+// Not ported: Box3's `intersectsTriangle` (a Triangle) and the JSON forms. Object and buffer bounds
+// are implemented in the scene layer.
 // Plane's `intersectLine`/`intersectsLine` (a Line3). Frustum's `intersectsObject`/`intersectsSprite`
 // (an Object3D and a Sprite). Sphere's JSON forms.
 
@@ -21,6 +21,8 @@ namespace tn::engine {
 class Matrix4;
 class Sphere;
 class Plane;
+class Object3D;
+class BufferAttribute;
 
 /** An axis-aligned bounding box. The default is empty: +Infinity at min, -Infinity at max. */
 class Box3 {
@@ -36,6 +38,9 @@ public:
     Box3& setFromArray(const double* array, size_t count);
     Box3& setFromPoints(const std::vector<Vector3>& points);
     Box3& setFromCenterAndSize(const Vector3& center, const Vector3& size);
+    Box3& setFromObject(Object3D& object, bool precise = false);
+    Box3& setFromBufferAttribute(const BufferAttribute& attribute);
+    Box3& expandByObject(Object3D& object, bool precise = false);
     [[nodiscard]] Box3 clone() const { return *this; }
     Box3& copy(const Box3& box);
     Box3& makeEmpty();

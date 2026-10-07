@@ -221,6 +221,15 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "tracks",
+          "type": "Array<{ name: string; times: number[]; values: number[]; ValueTypeName: string }>",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": []
@@ -710,8 +719,7 @@
             }
           ],
           "status": {
-            "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "kind": "supported"
           }
         },
         {
@@ -778,8 +786,7 @@
             }
           ],
           "status": {
-            "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "kind": "supported"
           }
         },
         {
@@ -957,8 +964,7 @@
             }
           ],
           "status": {
-            "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "kind": "supported"
           }
         },
         {
@@ -6123,6 +6129,15 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "boundingBox",
+          "type": "Box3 | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": [
@@ -6216,6 +6231,19 @@
                 }
               ],
               "returns": "this"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "computeBoundingBox",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "void"
             }
           ],
           "status": {
@@ -12131,8 +12159,7 @@
           "mutable": true,
           "lifetime": "owned",
           "status": {
-            "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "kind": "supported"
           }
         },
         {
@@ -16513,6 +16540,15 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "bones",
+          "type": "Bone[]",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": [
@@ -16575,6 +16611,42 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "bindMode",
+          "type": "\"attached\" | \"detached\"",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "bindMatrix",
+          "type": "Matrix4",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "bindMatrixInverse",
+          "type": "Matrix4",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "boundingBox",
+          "type": "Box3 | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": [
@@ -16604,6 +16676,19 @@
         },
         {
           "name": "pose",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "void"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "computeBoundingBox",
           "async": false,
           "overloads": [
             {
@@ -20608,8 +20693,7 @@
             }
           ],
           "status": {
-            "kind": "unsupported",
-            "diagnostic": "TN_NATIVE_UNSUPPORTED_UNRESOLVED_TYPE"
+            "kind": "supported"
           }
         },
         {
@@ -20628,8 +20712,7 @@
             }
           ],
           "status": {
-            "kind": "unsupported",
-            "diagnostic": "TN_NATIVE_UNSUPPORTED_UNRESOLVED_TYPE"
+            "kind": "supported"
           }
         },
         {

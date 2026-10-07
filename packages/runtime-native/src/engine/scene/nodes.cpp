@@ -9,6 +9,56 @@
 
 namespace tn::engine {
 
+Box3& Box3::setFromObject(Object3D& object, bool precise) {
+    makeEmpty();
+    return expandByObject(object, precise);
+}
+
+Box3& Box3::expandByObject(Object3D& object, bool precise) {
+    object.updateWorldMatrix(false, false);
+    if (auto* mesh = dynamic_cast<Mesh*>(&object); mesh && mesh->geometry) {
+        const auto position = mesh->geometry->getAttribute("position");
+        if (precise && position && dynamic_cast<InstancedMesh*>(mesh) == nullptr) {
+            Vector3 vertex;
+            for (uint64_t i = 0; i < position->count(); ++i) {
+                mesh->getVertexPosition(i, vertex);
+                expandByPoint(vertex.applyMatrix4(object.matrixWorld));
+            }
+        } else {
+            Box3 box;
+            box.copy(mesh->cachedBounds()).applyMatrix4(object.matrixWorld);
+            unionWith(box);
+        }
+    }
+    const auto count = object.children.size();
+    for (size_t i = 0; i < count; ++i) expandByObject(*object.children[i], precise);
+    return *this;
+}
+
+const Box3& Mesh::cachedBounds() {
+    if (!geometry->boundingBox) geometry->computeBoundingBox();
+    return *geometry->boundingBox;
+}
+
+const Box3& InstancedMesh::cachedBounds() {
+    if (!boundingBox) computeBoundingBox();
+    return *boundingBox;
+}
+
+void InstancedMesh::computeBoundingBox() {
+    if (!boundingBox) boundingBox = std::make_shared<Box3>();
+    boundingBox->makeEmpty();
+    if (!geometry) return;
+    if (!geometry->boundingBox) geometry->computeBoundingBox();
+    Matrix4 instance;
+    Box3 box;
+    for (uint32_t i = 0; i < count; ++i) {
+        getMatrixAt(i, instance);
+        box.copy(*geometry->boundingBox).applyMatrix4(instance);
+        boundingBox->unionWith(box);
+    }
+}
+
 Scene& Scene::copy(const Scene& source) {
     Object3D::copy(source);
     // Resource clone support is not ported: this copy retains shared background/environment/fog

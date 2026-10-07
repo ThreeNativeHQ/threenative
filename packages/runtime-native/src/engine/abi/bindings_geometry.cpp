@@ -511,6 +511,10 @@ void registerGeometryGenerators(Registry& classes) {
 }  // namespace
 
 void registerGeometryBindings(Registry& classes) {
+    classes["Box3"].methods["setFromBufferAttribute"] = [](void* self, const Args& a, Store& store) {
+        as<Box3>(self)->setFromBufferAttribute(*sharedAttributeArg(store, a.at(0)));
+        return chain();
+    };
     registerBufferAttribute(classes["BufferAttribute"]);
     // three's InstancedBufferAttribute: a BufferAttribute read once per instance (InstancedMesh's
     // instanceMatrix and instanceColor). meshPerAttribute stays 1, the only value InstancedMesh uses.

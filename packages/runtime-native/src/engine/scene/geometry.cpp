@@ -352,14 +352,30 @@ void BufferGeometry::setDrawRange(double start, double count) {
     bumpRevision();
 }
 
+Box3& Box3::setFromBufferAttribute(const BufferAttribute& attribute) {
+    makeEmpty();
+    Vector3 point;
+    for (uint64_t i = 0; i < attribute.count(); ++i) expandByPoint(attribute.getXYZ(i, point));
+    return *this;
+}
+
 void BufferGeometry::computeBoundingBox() {
     if (boundingBox == nullptr) boundingBox = std::make_shared<Box3>();
     boundingBox->makeEmpty();
     const std::shared_ptr<BufferAttribute> position = getAttribute("position");
     if (position == nullptr) return;
+    boundingBox->setFromBufferAttribute(*position);
     Vector3 point;
-    for (uint64_t i = 0; i < position->count(); ++i) {
-        boundingBox->expandByPoint(position->getXYZ(i, point));
+    Box3 morphBox;
+    for (const auto& morph : morphPositions) {
+        morphBox.setFromBufferAttribute(*morph);
+        if (morphTargetsRelative) {
+            boundingBox->expandByPoint(point.addVectors(boundingBox->min, morphBox.min));
+            boundingBox->expandByPoint(point.addVectors(boundingBox->max, morphBox.max));
+        } else {
+            boundingBox->expandByPoint(morphBox.min);
+            boundingBox->expandByPoint(morphBox.max);
+        }
     }
 }
 

@@ -27,8 +27,16 @@ const registry = JSON.parse(
 // The back end mirrors three's API, so three's declarations type it.
 const abi = await createTnAbi();
 const engine = defineBrowserClasses(registry, createWasmRuntime(abi));
-const { BoxGeometry, Mesh, MeshStandardMaterial, Scene, Vector3 } =
-  engine.classes as unknown as typeof THREE;
+const {
+  Box3,
+  BoxGeometry,
+  Mesh,
+  MeshStandardMaterial,
+  PerspectiveCamera,
+  Quaternion,
+  Scene,
+  Vector3,
+} = engine.classes as unknown as typeof THREE;
 
 function check(condition: boolean, what: string): void {
   if (!condition) {
@@ -61,6 +69,45 @@ check(
 );
 const geometry = mesh.geometry;
 check(geometry === mesh.geometry, "the geometry member keeps one identity");
+const bounds = new Box3().setFromObject(mesh);
+check(bounds.min.x === 4.5 && bounds.max.x === 5.5, "object bounds include the world transform");
+check(new Box3().setFromObject(mesh, true).equals(bounds), "precise object bounds reach vertices");
+check(
+  new Box3().expandByObject(mesh).equals(bounds),
+  "expandByObject reaches the same scene bounds",
+);
+const worldPosition = new Vector3();
+const worldScale = new Vector3();
+const worldDirection = new Vector3();
+const worldQuaternion = new Quaternion();
+check(
+  mesh.getWorldPosition(worldPosition) === worldPosition && worldPosition.x === 5,
+  "world position returns its target",
+);
+check(
+  mesh.getWorldScale(worldScale) === worldScale && worldScale.x === 1,
+  "world scale returns its target",
+);
+check(
+  mesh.getWorldDirection(worldDirection) === worldDirection && worldDirection.z === 1,
+  "world direction returns its target",
+);
+check(
+  mesh.getWorldQuaternion(worldQuaternion) === worldQuaternion && worldQuaternion.w === 1,
+  "world quaternion returns its target",
+);
+const camera = new PerspectiveCamera(60, 1, 0.1, 100);
+camera.position.z = 5;
+camera.updateMatrixWorld();
+const projected = new Vector3();
+check(
+  projected.project(camera) === projected && projected.z > 0,
+  "camera projection returns the vector",
+);
+check(
+  projected.unproject(camera) === projected && Math.abs(projected.z) < 1e-12,
+  "camera unprojection reverses projection",
+);
 let refused = "";
 try {
   mesh.applyMatrix4("not a matrix" as never);
