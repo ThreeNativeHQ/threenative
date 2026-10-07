@@ -1343,8 +1343,17 @@ export class VirtualShadowNode extends ShadowBaseNode {
     // not import this one — the same channel as the `casterInstanceScale` read below.
     let prewarming = false;
     this.#ensureCasters();
-    const keyed = this.#gpuKeys !== undefined;
     const table = this.#casterTable;
+    // A launch flag can publish a provider before the backend can mint any keys. Keep the
+    // fallback's wide/small layers until there are actual key meshes to replace them.
+    const keyed =
+      this.#gpuKeys !== undefined &&
+      table.some(
+        (mesh) =>
+          mesh.visible &&
+          mesh.castShadow &&
+          (mesh.layers.mask & (1 << VIRTUAL_SHADOW_KEY_LAYER)) !== 0,
+      );
     const memo = this.#casterMemo;
     for (let entry = 0; entry < table.length; entry += 1) {
       const mesh = table[entry];
