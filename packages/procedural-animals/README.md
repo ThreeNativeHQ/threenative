@@ -4,7 +4,7 @@ Optional bake-first wolf content. The build entry pins Procedural Animals at
 `c95ae49346aa8e140a924376cec6cf0073d99512` and Node 20.19.6. Runtime imports contain
 no generator, worker or Node dependency. Frozen installed browser/Linux correctness
 runs passed; paired frame budgets and fifty GPU lifecycle cycles remain unqualified.
-See the [owning PRD](../../docs/PRDs/ecosystem-absorption/PRD-procedural-animal-content.md).
+See the [owning PRD](../../docs/PRDs/done/PRD-procedural-animal-content.md).
 
 The installed engine MCP discovers this optional package through
 `engine_search_capabilities` and `engine_capability_detail`, using the ordinary

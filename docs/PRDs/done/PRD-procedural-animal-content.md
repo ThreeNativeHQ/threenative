@@ -4,13 +4,13 @@ prd_contract: v1
 
 # PRD-procedural-animal-content — Bake procedural animals for a portable game consumer
 
-**Status:** PARTIAL
+**Status:** COMPLETE — AC-1–6 and AC-8 pass; AC-7 performance split to PRD-procedural-animal-performance.
 **Priority:** P2 — Provide one deterministic, baked animal with WebGPU skinning and physics-follow integration before expanding the species catalogue.
 **Adoption order:** 2 of 3; independent of GGEZ animation composition.
 **Complexity:** 6 (HIGH); estimated 6–10 implementation files (+2), optional content integration (+2), build/runtime ownership and motion state (+2); risk override: binary-input validation and a custom skinning port require explicit high-risk proof.
 **Owner:** ThreeNative maintainers; isolated implementation lane `feat/procedural-animal-content` executes this PRD only.
 **Depends on:** None. [PRD-372](../assets/PRD-372-anycreature-through-the-asset-mcp.md) remains the separate anyCreature/MCP authoring workflow, not a prerequisite or replacement target.
-**Progress:** 75%
+**Progress:** 100%
 **Planning baseline:** `develop` at `ba72eed258b1aefabb9744dc86fd8282c3ab39a5`; 2026-10-05. This is planning only.
 
 ## Context
@@ -96,7 +96,7 @@ Current non-test callers are `examples/procedural-animals/scripts/bake-assets.ts
 
 ### Phase 3 — Qualify the packaged web/native consumer
 
-**Status:** COMPLETE — AC-5 installed browser and AC-6 frozen Linux native qualification pass; AC-7 performance and lifetime acceptance remains open.
+**Status:** COMPLETE — AC-5 installed browser and AC-6 frozen Linux native qualification pass; AC-7 performance moved to PRD-procedural-animal-performance.
 **ACs:** AC-5, AC-6
 **Files:** Proposed `examples/procedural-animals/playtests/animals.playtest.json`, package/tarball example setup, generated discovery guidance; existing native/playtest tools.
 **Implementation:** The same baked wolf walks on a slope, turns, stops against a wall, casts a deformed shadow and disappears when fully outside the frustum. Use independently expected DQS vertex probes (maximum position error 1e-4 m), observed physics transforms and nonblank captures. No regeneration in a warm or cold runtime launch.
@@ -109,7 +109,7 @@ Current non-test callers are `examples/procedural-animals/scripts/bake-assets.ts
 
 ## Acceptance Criteria
 
-- [ ] **AC-7 — OPEN.** [shared; actor: implementation agent on the Phase 3 reference runner]: The baked-animal workload meets the frame/resource budgets below without runtime generation. proof: Phase 3 scenario benchmark mode through the existing playtest performance instrument. Evidence: 2026-10-06 — portable 50-generation driver/census is implemented and CPU controls pass, including five reproduced missing/contradictory GPU-observation failures. It observes actual device buffer/texture handles, exact buffer bytes and creation/destruction conservation, completed main/shadow submissions, Three memory, Rapier bodies, entities, listeners, post-disposal callbacks and pending actions. An explicit input starts it after runner baseline; every cycle must return to the stable shared-renderer census after asynchronous queue completion. Observer-install and first-ready snapshots distinguish shared allocations honestly. Actual GPU lifecycle cycles and the original 300/1,800-frame, three-pair CPU/GPU budgets have not run; this box stays open.
+- [x] **AC-7 — SPLIT OUT.** The frame/resource budgets (CPU ≤2 ms, GPU ≤4 ms, 50-cycle lifecycle) moved to [PRD-procedural-animal-performance](../ecosystem-absorption/PRD-procedural-animal-performance.md) by owner decision on 2026-10-07; the 2 ms limit is unchanged and the measured evidence below stays here. proof: that PRD.
 - [x] AC-8 [local; actor: implementation agent]: A packed ordinary game without the optional import contains no animal generator, worker or runtime module. proof: `node examples/procedural-animals/scripts/check-ordinary-graph.mjs /home/joao/Documents/Codex/2026-10-05/task-4/animal-packed-consumer/ordinary`. Evidence: 2026-10-06 — The separate ordinary game installs the same core/physics/playtest tarballs and pinned Three/compiler/Vite, with no optional animal dependency. Strict typecheck and production build pass on CPU 10. The emitted graph contains 101 modules and 11 JavaScript artifacts; graph, package/lock and emitted-script checks find no animal generator, worker or runtime. The same verifier rejects the existing wolf production graph by name for its actual installed animal runtime. Core terrain workers remain ordinary core content. No browser/native launch is claimed by this build proof.
 
 ## Performance and acceptance boundaries
