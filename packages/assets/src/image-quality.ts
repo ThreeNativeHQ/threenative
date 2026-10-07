@@ -245,7 +245,13 @@ export function imageQuality(
   let de = 0;
   let alphaError = 0;
   for (let i = 0; i < source.length; i += 4) {
-    if (colour) de += deltaE00(lab(source, i), lab(decoded, i));
+    if (
+      colour &&
+      (source[i] !== decoded[i] ||
+        source[i + 1] !== decoded[i + 1] ||
+        source[i + 2] !== decoded[i + 2])
+    )
+      de += deltaE00(lab(source, i), lab(decoded, i));
     const a = (source[i + 3] ?? 0) / 255;
     const b = (decoded[i + 3] ?? 0) / 255;
     alphaError += Math.abs(a - b);
@@ -257,8 +263,8 @@ export function imageQuality(
       row.changedPixels += Number(before !== after);
     }
   }
-  const score = ssim(source, decoded, width, height);
-  const alphaSsim = ssim(source, decoded, width, height, true);
+  const score = source === decoded ? 1 : ssim(source, decoded, width, height);
+  const alphaSsim = source === decoded ? 1 : ssim(source, decoded, width, height, true);
   const meanDeltaE00 = colour ? de / (width * height) : null;
   const failed =
     (colour && (score < floor.ssim || (meanDeltaE00 ?? 0) > floor.meanDeltaE00)) ||

@@ -132,6 +132,9 @@ describe("image quality instrument", () => {
     const data = pixels();
     expect(imageQuality(data, data, 32, 32).ssim).toBe(1);
     expect(imageQuality(data, data, 32, 32).meanDeltaE00).toBe(0);
+    expect(imageQuality(data, data, 32, 32, { alphaThresholds: [0.5] })).toEqual(
+      imageQuality(data, data.slice(), 32, 32, { alphaThresholds: [0.5] }),
+    );
     expect(imageQuality(data, pixels(true), 32, 32).status).toBe("below-floor");
   });
 

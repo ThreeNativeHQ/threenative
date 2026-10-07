@@ -40,7 +40,7 @@ export type TextureCodec = "etc1s" | "none" | "uastc";
 /**
  * Why a source shipped uncompressed although its pass ran. `not-smaller` means encoding would
  * have grown the download; `block-size` means no block codec can address the source's
- * dimensions; `below-floor` means no compressed rung passed. All retain authored bytes; none is a silent decision — the manifest carries
+ * dimensions; `below-floor` means no compressed rung passed. A capped source retains its resized pixels as PNG; none is a silent decision — the manifest carries
  * the reason and the report prints it.
  */
 export type TextureSkipReason = "block-size" | "not-smaller" | "below-floor";
@@ -165,6 +165,7 @@ export function texturePass(options: ITexturePassOptions = {}): IAssetPass {
         floor: options.floor,
         srgb: !choice.normalMap,
         quality: choice.quality,
+        ...(!resized && !choice.explicit ? { maxBytes: input.byteLength } : {}),
         ...(choice.explicit ? { forced: choice.codec } : {}),
       });
       const encoded = selected.encoded;
@@ -172,9 +173,16 @@ export function texturePass(options: ITexturePassOptions = {}): IAssetPass {
         encoded === undefined ||
         (!resized && encoded.byteLength >= input.byteLength && !choice.explicit)
       ) {
-        const reason = encoded === undefined ? "below-floor" : "not-smaller";
+        const reason = selected.quality.compressionSkipped ?? "not-smaller";
+        let retained = input;
+        if (resized) {
+          const png = new PNG({ height: target.height, width: target.width });
+          png.data = Buffer.from(data);
+          retained = PNG.sync.write(png);
+        }
         return {
-          buffer: input,
+          buffer: retained,
+          ...(resized ? { outputExtension: ".png" } : {}),
           entry: {
             format: "none",
             compressionSkipped: reason,
@@ -182,7 +190,7 @@ export function texturePass(options: ITexturePassOptions = {}): IAssetPass {
               ? {}
               : {
                   quality: {
-                    ...imageQuality(decoded.data, decoded.data, decoded.width, decoded.height, {
+                    ...imageQuality(data, data, target.width, target.height, {
                       slots: [choice.normalMap ? "normalTexture" : "baseColorTexture"],
                       floor: options.floor,
                     }),

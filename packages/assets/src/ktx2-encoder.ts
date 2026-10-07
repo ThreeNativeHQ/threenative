@@ -1,7 +1,7 @@
 import BASIS from "../vendor/basis-encoder/basis_encoder.js";
 
 /** Included in both pass and shared-image cache keys whenever encoded bytes can change. */
-export const KTX2_ENCODER_VERSION = "basis-v2.5-ldr16m-zstd-rdo-v2";
+export const KTX2_ENCODER_VERSION = "basis-v2.5-ldr16m-zstd-rdo-fast-capped-v3";
 
 const OUTPUT_HEADER_SLACK = 64 * 1024;
 const MAX_SOURCE_TEXELS = 16 * 1024 * 1024;
@@ -42,6 +42,8 @@ interface IBasisEncoder {
   setUASTC(enabled: boolean): void;
   setRDOUASTC(enabled: boolean): void;
   setRDOUASTCQualityScalar(lambda: number): void;
+  setRDOUASTCDictSize(bytes: number): void;
+  setPackUASTCFlags(flags: number): void;
 }
 
 interface IBasisModule {
@@ -95,6 +97,12 @@ export async function encodeToKTX2(
     // Preserve ktx2-encoder@0.6.0's omitted-option default; this is lossless, not UASTC RDO.
     encoder.setKTX2UASTCSupercompression(options.needSupercompression ?? true);
     if (options.rdoLambda !== undefined) {
+      // Small images are already cheap. Bound cold-cook work on larger RDO candidates;
+      // they still pass the same measured floor, with full-effort plain UASTC as fallback.
+      if (texels > 256 * 256) {
+        encoder.setPackUASTCFlags(0);
+        encoder.setRDOUASTCDictSize(64);
+      }
       encoder.setRDOUASTC(true);
       encoder.setRDOUASTCQualityScalar(options.rdoLambda);
     }

@@ -383,6 +383,20 @@ describe("embedded model textures", () => {
       sharedImages: createSharedImageStore(root),
       textures: strict,
     });
+    await writeFile(path.join(root, "capped.glb"), cold.buffer);
+    const capped = await new NodeIO()
+      .registerExtensions(ALL_EXTENSIONS)
+      .registerDependencies({ "meshopt.decoder": MeshoptDecoder })
+      .read(path.join(root, "capped.glb"));
+    for (const texture of capped.getRoot().listTextures()) {
+      const image = texture.getImage();
+      if (image === null) throw new Error("capped fixture lost its image");
+      const shape =
+        texture.getMimeType() === "image/ktx2"
+          ? { width: readKTX2(image).pixelWidth, height: readKTX2(image).pixelHeight }
+          : parsePng(Buffer.from(image));
+      expect(shape).toMatchObject({ width: 16, height: 16 });
+    }
     const measure = vi.spyOn(qualityInstrument, "measureKtx2");
     try {
       const warm = await compiled(input, {
@@ -503,15 +517,19 @@ describe("embedded model textures", () => {
     expect(summary.quality.checker?.alpha.coverage.map((c) => c.threshold)).toEqual([0.25, 0.75]);
     skin.setAlphaCutoff(0.6);
     const measure = vi.spyOn(qualityInstrument, "measureKtx2");
+    const encode = vi.spyOn(encoder, "encodeToKTX2");
     try {
       const second = await compiled(Buffer.from(await new NodeIO().writeBinary(document)), {
         sharedImages: store,
       });
       const scores = second.entry.embeddedTextures as typeof summary;
       expect(scores.quality.checker?.alpha.coverage.map((c) => c.threshold)).toEqual([0.25, 0.6]);
-      expect(measure).toHaveBeenCalledTimes(4);
+      expect(encode).toHaveBeenCalledTimes(4);
+      expect(measure).toHaveBeenCalled();
+      for (const call of measure.mock.calls) expect(call[4]?.alphaThresholds).toEqual([0.25, 0.6]);
     } finally {
       measure.mockRestore();
+      encode.mockRestore();
     }
   });
 

@@ -440,6 +440,8 @@ export async function encodeTextureLadder(
   height: number,
   options: IImageQualityOptions & {
     readonly forced?: TextureCodec;
+    /** Automatic source retention: candidates that cannot save bytes need no quality score. */
+    readonly maxBytes?: number;
     readonly srgb: boolean;
     readonly quality: number;
   },
@@ -450,6 +452,7 @@ export async function encodeTextureLadder(
 }> {
   const slots = options.slots ?? ["baseColorTexture"];
   let smallest: { encoded: Uint8Array; codec: TextureCodec; quality: ITextureQuality } | undefined;
+  let smallerThanSource = options.maxBytes === undefined;
   for (const candidate of codecLadder(slots, options.forced)) {
     if (candidate.codec === "none" && smallest !== undefined) return smallest;
     const rung =
@@ -472,6 +475,17 @@ export async function encodeTextureLadder(
             needSupercompression: true,
             ...(candidate.rdoLambda === undefined ? {} : { rdoLambda: candidate.rdoLambda }),
           });
+    if (encoded !== undefined && options.maxBytes !== undefined) {
+      if (encoded.byteLength >= options.maxBytes) continue;
+      smallerThanSource = true;
+    }
+    // A larger candidate cannot replace the passing minimum, regardless of its score.
+    if (
+      encoded !== undefined &&
+      smallest !== undefined &&
+      encoded.byteLength >= smallest.encoded.byteLength
+    )
+      continue;
     const score =
       encoded === undefined
         ? imageQuality(data, data, width, height, options)
@@ -486,6 +500,13 @@ export async function encodeTextureLadder(
         codec: candidate.codec,
         sourceWidth: width,
         sourceHeight: height,
+        ...(encoded === undefined
+          ? {
+              compressionSkipped: smallerThanSource
+                ? ("below-floor" as const)
+                : ("not-smaller" as const),
+            }
+          : {}),
       };
       if (encoded === undefined) return { codec: candidate.codec, quality };
       if (smallest === undefined || encoded.byteLength < smallest.encoded.byteLength)
@@ -699,6 +720,12 @@ export async function compressEmbeddedTextures(
       floor: options.floor,
       srgb,
       quality,
+      ...(!explicit &&
+      target.width === decoded.width &&
+      target.height === decoded.height &&
+      UNIVERSAL_IMAGE_CONTAINERS.has(texture.getMimeType())
+        ? { maxBytes: image.byteLength }
+        : {}),
       ...(forced === undefined ? {} : { forced }),
     });
     const encoded = selected.encoded;
@@ -715,14 +742,22 @@ export async function compressEmbeddedTextures(
         !explicit &&
         UNIVERSAL_IMAGE_CONTAINERS.has(texture.getMimeType()))
     ) {
-      bytesAfter += image.byteLength;
-      gpuBytesAfter += gpuBytes(decoded.width, decoded.height, "none");
+      const downsampled = target.width !== decoded.width || target.height !== decoded.height;
+      let retained: Uint8Array = image;
+      if (downsampled) {
+        const png = new PNG({ height: target.height, width: target.width });
+        png.data = Buffer.from(data);
+        retained = PNG.sync.write(png);
+        texture.setImage(retained).setMimeType("image/png");
+      }
+      bytesAfter += retained.byteLength;
+      gpuBytesAfter += gpuBytes(target.width, target.height, "none");
       formats[key] = "none";
-      const reason = encoded === undefined ? "below-floor" : "not-smaller";
+      const reason = selected.quality.compressionSkipped ?? "not-smaller";
       skippedCompression[key] = reason;
       if (options.measureQuality !== false)
         scores[key] = {
-          ...imageQuality(decoded.data, decoded.data, decoded.width, decoded.height, {
+          ...imageQuality(data, data, target.width, target.height, {
             ...textureQualitySemantics(texture),
             floor: options.floor,
           }),
@@ -732,7 +767,6 @@ export async function compressEmbeddedTextures(
           sourceWidth: decoded.width,
           sourceHeight: decoded.height,
         };
-      if (target.width !== decoded.width || target.height !== decoded.height) resized -= 1;
       continue;
     }
     const container = readKTX2(encoded);

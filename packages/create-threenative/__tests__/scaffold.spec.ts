@@ -186,19 +186,21 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-05 for PRD-492's float `.cube` load: the starter's
   // `src/render/postprocessing.ts` now asks `LUTCubeLoader` for `FloatType`, so only the
   // `starter` value moves. No other kit carries a grade, and no scaffold implementation changed.
-  "action-rpg": "1c5c5ace0750a03966baa44d4c8b4496967cd844dee4df7c1811b51a306e4b68",
-  minimal: "2a8127c43e2c6202fcb5aab54ff6d977ad161b474047950b264698c97cc77703",
-  platformer: "5a0b03e694be11f8f8f094582d537d7530c13abe655ac8e73f4403ee7a1d5ba4",
-  puzzle: "76324c4f4464374b1d742ac75e8b1fe362a96e1625e20405f01671dd09d6e189",
-  racing: "d9391e3d40b7d5763ab92d60802db114a0b3a79b093b02165c9594ae2986e893",
-  rain: "6541d3b2c1d1add06b79ea870ad3089b8d8905d773fc258f8589eacc3ce4e090",
-  rts: "81a2bdb79e214422c478208b1291b5cecc0a1f7ace0ec86778eb122908a94607",
-  runner: "40616977c16d7175c759acb160084cab03807eca6106b768bffae394a8d4b78f",
-  sailing: "0749be7c702636047708a412ee939ccb775faac97957a93964a1e9a6eb5f0b2d",
-  shooter: "c1c3d0f2bc3143b4241e4c881a20cb33559b8711eb2dcf8c8f33de9b8802d383",
-  snow: "f86062167908502ee2bc76571374e8f402a5e87bbf636eee174cd7ea87b976cc",
-  starter: "6adaafe3e9a78699bace2c1d7e589c5d17888b912f955c883e98a88d1e30b370",
-  "tower-defense": "ca6f27d9e5d853d3c48f2ca0257ac9d329ebb718c11f3d4f7fc3d1fc297210a3",
+  // Refreshed for 2dc92a2b2: the shared shadow uniforms change only the generated Three patch.
+  // Restoring that patch to 4c2ee0836 in all thirteen generated trees reproduces every prior hash.
+  "action-rpg": "04d6a54a060ca33b940d35551e8555179bec2b77ca3409eab1ede1df3e0b9bc2",
+  minimal: "da8850526a00f83b7c12666a4a71528861310bbeb221cd613a300ade41e498da",
+  platformer: "aca58cbc729d7621203036d233e05dd16cf44bdd2c8e29d3c9a928c1e6a95810",
+  puzzle: "4fbf8f334de878a533059882a0574ddcf9ab6813b5537a3476ea995148ba0a1b",
+  racing: "5261c9423fb2b0cbcf44373fc2a0c8212179c64e24a23ed87fba4674d9d7ee05",
+  rain: "8329d7defa891458c640ee50249345332706800370c23ac3a1b3bc2156d024c2",
+  rts: "7664ff136b3515f13858b8a9afce7ae475ff1e235f07f4bde1026e2604512fd6",
+  runner: "07dce7c48e3ab8d9007e04f6f0da9005fd259336f360bd283269549c1c8e472e",
+  sailing: "a03aef8d54d8598cfeb57d84a8909245414a192242dfbf07804da405aa889062",
+  shooter: "0d4cef01da2e0fa112b1f43b67289cbd4f120f1237e823a0737be59e6e52d6b6",
+  snow: "49c14071205d6aaa68f4bdd4d09f91d01d9ad342b1a6b5fa4b3d239a9d9d8940",
+  starter: "0841d8245fdb8fa30b38051714338f56ecb7ce6b6a60887a403bf091149754d2",
+  "tower-defense": "6732a276257ecd80fae775a741b52d9adeb573207b6a9d7f2bc282943fd19850",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
