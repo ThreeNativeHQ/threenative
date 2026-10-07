@@ -132,6 +132,7 @@ describe("PRD-533 web arms", () => {
       };
       runInNewContext(await readFile("/tmp/tn-web-bench-unit/game.js", "utf8"), {
         tn_inputs: () => inputs,
+        tn_values: () => new Array(6 + (inputs.length / 3) * 5).fill(0),
         tn_submit: (values: number[]) => {
           expected = [...values];
         },
@@ -176,7 +177,13 @@ describe("PRD-533 web arms", () => {
     } else expect(result.perryUnavailable).toMatch(/Perry/);
   });
 
-  it("runs the emitted browser arm CPU-only with measured crossings, stable views and reconciled spans", async () => {
+  const testArm = it.for(["wasm-js", "wasm-perry"]);
+  testArm("runs %s CPU spans and stable views", async (arm, { skip }) => {
+    if (
+      arm === "wasm-perry" &&
+      !WebAssembly.validate(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0, 5, 5, 2, 0, 1, 0, 1]))
+    )
+      skip("requires Wasm multi-memory (Node 22+)");
     const factory = createRequire(import.meta.url)(
       "../../packages/runtime-native/build/wasm-browser/tn-native-engine-wasm-browser.js",
     );
@@ -204,6 +211,7 @@ describe("PRD-533 web arms", () => {
       "GPURenderBundleEncoder",
       "createTnBrowser",
       "document",
+      "fetch",
       "location",
       "requestAnimationFrame",
       "__tnWasmAssets",
@@ -211,6 +219,7 @@ describe("PRD-533 web arms", () => {
       "__ENGINE_LOAD_TEST_ERROR__",
       "__ENGINE_LOAD_TEST_PROGRESS__",
       "tn_inputs",
+      "tn_values",
       "tn_submit",
       "tn_ready",
     ];
@@ -241,8 +250,19 @@ describe("PRD-533 web arms", () => {
         GPURenderPassEncoder: PassFixture,
         GPURenderBundleEncoder: BundleFixture,
         createTnBrowser: async () => abi,
-        document: { querySelector: () => ({}) },
-        location: { search: "?arm=wasm-js&objects=4&width=1280&height=720&warmup=1&frames=3" },
+        document: {
+          querySelector: () => ({}),
+          createElement: () => ({ style: {} }),
+          head: { appendChild() {} },
+        },
+        fetch: async (url: string) => {
+          if (!["./perry-game.js", "./perry-linked.wasm"].includes(url))
+            throw new Error(`Unexpected fetch: ${url}`);
+          return new Response(
+            new Uint8Array(await readFile(`/tmp/tn-web-bench-unit/${url.slice(2)}`)),
+          );
+        },
+        location: { search: `?arm=${arm}&objects=4&width=1280&height=720&warmup=1&frames=3` },
         requestAnimationFrame: (callback: () => void) => queueMicrotask(callback),
       });
       const game = `data:text/javascript;base64,${Buffer.from(await readFile("/tmp/tn-web-bench-unit/game.js")).toString("base64")}`;
@@ -250,13 +270,13 @@ describe("PRD-533 web arms", () => {
         '"./game.js"',
         JSON.stringify(game),
       );
-      await import(`data:text/javascript;base64,${Buffer.from(source).toString("base64")}`);
-      for (
-        let tries = 0;
-        tries < 100 && !globals.__ENGINE_LOAD_TEST__ && !globals.__ENGINE_LOAD_TEST_ERROR__;
-        tries++
-      )
-        await new Promise((resolve) => setImmediate(resolve));
+      // Each arm must execute the module, rather than reuse the other arm's ESM cache.
+      await import(`data:text/javascript;base64,${Buffer.from(source).toString("base64")}#${arm}`);
+      await vi.waitFor(
+        () =>
+          expect(globals.__ENGINE_LOAD_TEST__ || globals.__ENGINE_LOAD_TEST_ERROR__).toBeTruthy(),
+        { timeout: 5000, interval: 10 },
+      );
       expect(globals.__ENGINE_LOAD_TEST_ERROR__).toBeUndefined();
       const report = globals.__ENGINE_LOAD_TEST__ as {
         cpuMs: number[];
@@ -273,7 +293,8 @@ describe("PRD-533 web arms", () => {
       expect(report.boundary.calls?.[0]).toBeGreaterThan(2);
       expect(report.boundary.transformViewCreations).toEqual([0, 0, 0]);
       expect(report.boundary.heapGrowthBytes).toEqual([0, 0, 0]);
-      expect(report.boundary.copyBytes).toEqual([160, 160, 160]);
+      expect(report.boundary.copyBytes).toEqual([0, 0, 0]);
+      if (arm === "wasm-perry") expect(report.boundary.perryArrayAllocations).toEqual([0, 0, 0]);
       for (let index = 0; index < 3; index++)
         expect(
           Object.values(report.breakdown).reduce(

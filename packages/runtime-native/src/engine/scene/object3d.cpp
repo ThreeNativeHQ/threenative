@@ -461,7 +461,7 @@ void Object3D::updateMatrix() {
     if (std::memcmp(before.elements.data(), matrix.elements.data(), sizeof(double) * 16) != 0) bump();
 }
 
-void Object3D::updateMatrixWorld(bool force) {
+bool Object3D::updateMatrixWorldSelf(bool force) {
     if (matrixAutoUpdate) {
         const bool dirty = matrixWorldNeedsUpdate;
         const auto before = revision();
@@ -491,6 +491,11 @@ void Object3D::updateMatrixWorld(bool force) {
 
     // A manually owned world matrix can change without a revision; retain its forced child update.
     if (!matrixWorldAutoUpdate) force = true;
+    return force;
+}
+
+void Object3D::updateMatrixWorld(bool force) {
+    force = updateMatrixWorldSelf(force);
     for (Object3D* child : children) child->updateMatrixWorld(force);
 }
 

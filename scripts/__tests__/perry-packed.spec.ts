@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { runInNewContext } from "node:vm";
 import { describe, expect, it } from "vitest";
 import { createPlacements } from "../../examples/engine-load-test/src/workload.js";
@@ -29,8 +30,10 @@ describe("packed Perry game", () => {
       _initialize(): void;
       tn_array_create(length: number): bigint;
       tn_array_data(handle: bigint): number;
+      tn_array_size(handle: bigint): number;
       tn_runtime_name(id: number, operation: number): void;
       mem_call_i32(name: number, count: number, base: number): number;
+      mem_call(name: number, count: number, base: number): number;
     };
     native._initialize();
     const base = native.tn_array_data(native.tn_array_create(2));
@@ -67,8 +70,31 @@ describe("packed Perry game", () => {
     expect(native.mem_call_i32(1, 1, base)).toBe(77);
     expect(native.mem_call_i32(2, 2, base)).toBe(77);
     expect(fallbacks).toBe(2);
+    const array = native.tn_array_create(2);
+    const arrayArgsBase = native.tn_array_data(native.tn_array_create(3));
+    const arrayArgs = new BigUint64Array(native.memory.buffer, arrayArgsBase, 3);
+    native.tn_runtime_name(3, 6);
+    native.tn_runtime_name(4, 7);
+    arrayArgs.set([array, numberBits(0), numberBits(42)]);
+    native.mem_call(4, 3, arrayArgsBase);
+    arrayArgs.set([array, numberBits(0)]);
+    native.mem_call(3, 2, arrayArgsBase);
+    expect(arrayArgs[0]).toBe(numberBits(42));
+    for (const index of [Number.NaN, Number.POSITIVE_INFINITY, -1, 0.5, 2]) {
+      arrayArgs.set([array, numberBits(index)]);
+      native.mem_call(3, 2, arrayArgsBase);
+      expect(arrayArgs[0]).toBe(0x7ffc000000000001n);
+    }
+    arrayArgs.set([array, numberBits(0.5), numberBits(99)]);
+    expect(() => native.mem_call(4, 3, arrayArgsBase)).toThrow(WebAssembly.RuntimeError);
+    arrayArgs.set([array, numberBits(20), numberBits(99)]);
+    native.mem_call(4, 3, arrayArgsBase);
+    expect(native.tn_array_size(array)).toBe(21);
   });
-  it("runs the same 4096-object source with a constant number of JS runtime crossings", async () => {
+  // Node 20 can build the browser artifact but cannot execute its two memories.
+  it("matches 4096 objects across 720 frames", async ({ skip }) => {
+    if (!WebAssembly.validate(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0, 5, 5, 2, 0, 1, 0, 1])))
+      skip("requires Wasm multi-memory (Node 22+)");
     const out = "/tmp/tn-perry-packed-unit";
     const build = await buildWebBench(process.cwd(), out, webBenchOptions({ objects: "4096" }));
     expect(build.perryUnavailable).toBeNull();
@@ -80,6 +106,7 @@ describe("packed Perry game", () => {
     };
     runInNewContext(await readFile(`${out}/game.js`, "utf8"), {
       tn_inputs: () => inputs,
+      tn_values: () => new Array(6 + (inputs.length / 3) * 5).fill(0),
       tn_submit: (values: number[]) => {
         expected = [...values];
       },
@@ -111,10 +138,27 @@ describe("packed Perry game", () => {
         name: "mem_call",
         kind: "function",
       });
-      const update = await packedPerryLoader(source)(fused, inputs, (values) => {
-        actual = values.slice();
-      });
+      const factory = createRequire(import.meta.url)(
+        "../../packages/runtime-native/build/wasm-browser/tn-native-engine-wasm-browser.js",
+      );
+      const engine = await factory();
+      const byteOffset = engine._malloc(20486 * 8);
+      let submitted: Float64Array | undefined;
+      const update = await packedPerryLoader(source)(
+        fused,
+        inputs,
+        (values) => {
+          expect(values.buffer).toBe(engine.wasmMemory.buffer);
+          expect(values.byteOffset).toBe(byteOffset);
+          if (submitted?.buffer === values.buffer) expect(values).toBe(submitted);
+          submitted = values;
+          actual = values.slice();
+        },
+        { memory: engine.wasmMemory, byteOffset },
+      );
+      const allocations = update.allocations();
       for (let frame = 0; frame < 720; frame++) {
+        if (frame === 317) engine.wasmMemory.grow(1);
         scope.__perryColdCalls = 0;
         updateJs(frame);
         update(frame);
@@ -123,9 +167,11 @@ describe("packed Perry game", () => {
         for (let i = 0; i < actual.length; i++)
           maxError = Math.max(maxError, Math.abs((actual[i] as number) - (expected[i] as number)));
         expect(maxError).toBeLessThan(1e-12);
+        expect(update.allocations()).toBe(allocations);
         expect(scope.__perryColdCalls).toBeGreaterThan(0);
         expect(scope.__perryColdCalls).toBeLessThan(32);
       }
+      engine._free(byteOffset);
       expect(() => importPerryMemory(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0]))).toThrow(
         "TN_WEB_BENCH_PERRY_MEMORY_MISSING",
       );

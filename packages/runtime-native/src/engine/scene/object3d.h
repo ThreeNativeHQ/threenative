@@ -363,6 +363,8 @@ public:
 
     virtual void updateMatrix();
     virtual void updateMatrixWorld(bool force = false);
+    /** Renderer traversal can consume a flat child immediately after updating it. */
+    bool updateMatrixWorldSelf(bool force = false);
     virtual void updateWorldMatrix(bool updateParents, bool updateChildren, bool force = false);
 
     /** three's `copy` without its `recursive` branch: fields only, because `clone` is not ported. */

@@ -11,7 +11,15 @@ typedef union {
 typedef struct {
   uint32_t length, capacity;
   uint64_t *data;
+  uint32_t external;
 } Array;
+static uint32_t allocations;
+#ifdef TN_PERRY_EXTERNAL_MEMORY
+__attribute__((import_module("packed"), import_name("load"))) extern uint64_t
+packed_load(uint32_t address);
+__attribute__((import_module("packed"), import_name("store"))) extern void
+packed_store(uint32_t address, uint64_t value);
+#endif
 static const uint64_t undefined = UINT64_C(0x7ffc000000000001);
 static const uint64_t pointer = UINT64_C(0x7ffd000000000000);
 static uint8_t runtime_names[512];
@@ -39,7 +47,7 @@ static Array *array(uint64_t handle) {
     __builtin_trap();
   return (Array *)(uintptr_t)(uint32_t)handle;
 }
-static void reserve(Array *a, uint32_t capacity) {
+__attribute__((noinline)) static void reserve(Array *a, uint32_t capacity) {
   if (capacity > 327686)
     __builtin_trap();
   if (capacity <= a->capacity)
@@ -53,11 +61,13 @@ static void reserve(Array *a, uint32_t capacity) {
     __builtin_trap();
   a->data = data;
   a->capacity = next;
+  allocations++;
 }
 uint64_t tn_array_create(uint32_t length) {
   Array *a = calloc(1, sizeof(Array));
   if (!a)
     __builtin_trap();
+  allocations++;
   reserve(a, length);
   a->length = length;
   for (uint32_t i = 0; i < length; ++i)
@@ -68,24 +78,55 @@ uint32_t tn_array_data(uint64_t handle) {
   return (uintptr_t)array(handle)->data;
 }
 uint32_t tn_array_size(uint64_t handle) { return array(handle)->length; }
+uint32_t tn_array_allocations(void) { return allocations; }
+#ifdef TN_PERRY_EXTERNAL_MEMORY
+uint64_t tn_array_external(uint32_t length, uint32_t address) {
+  if (!length || length > 327686 || (address & 7)) __builtin_trap();
+  Array *a = calloc(1, sizeof(Array));
+  if (!a) __builtin_trap();
+  allocations++;
+  a->length = a->capacity = length;
+  a->data = (uint64_t *)(uintptr_t)address;
+  a->external = 1;
+  return pointer | (uintptr_t)a;
+}
+#endif
 uint64_t array_new(void) { return tn_array_create(0); }
 uint64_t array_length(uint64_t handle) { return bits(array(handle)->length); }
 uint64_t array_get(uint64_t handle, uint64_t index) {
   Array *a = array(handle);
   double i = number(index);
-  if (i < 0 || i >= a->length || i != floor(i))
+  if (!(i >= 0 && i < a->length))
     return undefined;
-  return a->data[(uint32_t)i];
+  uint32_t index32 = (uint32_t)i;
+  if (i != index32) return undefined;
+#ifdef TN_PERRY_EXTERNAL_MEMORY
+  if (a->external) return packed_load((uintptr_t)a->data + index32 * 8);
+#endif
+  return a->data[index32];
 }
-void array_set(uint64_t handle, uint64_t index, uint64_t value) {
-  Array *a = array(handle);
-  double i = number(index);
-  if (!isfinite(i) || i < 0 || i >= 327686 || i != floor(i))
+__attribute__((noinline)) static void grow_set(Array *a, double i, uint64_t value) {
+  if (!isfinite(i) || i < 0 || i >= 327686 || i != floor(i) || a->external)
     __builtin_trap();
   reserve(a, (uint32_t)i + 1);
   while (a->length <= i)
     a->data[a->length++] = undefined;
   a->data[(uint32_t)i] = value;
+}
+void array_set(uint64_t handle, uint64_t index, uint64_t value) {
+  Array *a = array(handle);
+  double i = number(index);
+  if (i >= 0 && i < a->length && i == (uint32_t)i) {
+#ifdef TN_PERRY_EXTERNAL_MEMORY
+    if (a->external) {
+      packed_store((uintptr_t)a->data + (uint32_t)i * 8, value);
+      return;
+    }
+#endif
+    a->data[(uint32_t)i] = value;
+    return;
+  }
+  grow_set(a, i, value);
 }
 uint64_t array_push(uint64_t handle, uint64_t value) {
   array_set(handle, bits(array(handle)->length), value);
@@ -106,11 +147,10 @@ void tn_numeric_arrays(void) { numeric_arrays = 1; }
 static int is_number(uint64_t value) {
   return value >> 48 < 0x7ffc || value >> 48 == 0x7ffe || value >> 48 >= 0x8000;
 }
-int mem_call_i32(double name, double count, int base) {
+__attribute__((always_inline)) static inline int
+numeric_i32(uint32_t op, double name, double count, int base) {
   if (base & 7) __builtin_trap();
   const uint64_t *args = (const uint64_t *)(uintptr_t)base;
-  const uint32_t op = name >= 0 && name < sizeof(runtime_names)
-    ? TN_PERRY_OPERATIONS((uint32_t)name) : 0;
   if (op == 11 && count == 1) {
     const uint64_t value = args[0];
     if (value >> 48 == 0x7ffc) return value == UINT64_C(0x7ffc000000000004);
@@ -123,13 +163,11 @@ int mem_call_i32(double name, double count, int base) {
   }
   return host_mem_call_i32(name, count, base);
 }
-double mem_call(double name, double count, int base) {
+__attribute__((always_inline)) static inline double
+numeric_call(uint32_t op, double name, double count, int base) {
   if (base & 7)
     __builtin_trap();
   uint64_t *args = (uint64_t *)(uintptr_t)base;
-  uint32_t op = name >= 0 && name < sizeof(runtime_names)
-                    ? TN_PERRY_OPERATIONS((uint32_t)name)
-                    : 0;
   uint64_t result;
   int own_array =
       count > 0 && args[0] >> 48 == 0x7ffd && (uint32_t)args[0] >= 131072;
@@ -157,3 +195,30 @@ double mem_call(double name, double count, int base) {
   args[0] = result;
   return 0;
 }
+int mem_call_i32(double name, double count, int base) {
+  uint32_t op = name >= 0 && name < sizeof(runtime_names)
+    ? TN_PERRY_OPERATIONS((uint32_t)name) : 0;
+  return numeric_i32(op, name, count, base);
+}
+double mem_call(double name, double count, int base) {
+  uint32_t op = name >= 0 && name < sizeof(runtime_names)
+    ? TN_PERRY_OPERATIONS((uint32_t)name) : 0;
+  return numeric_call(op, name, count, base);
+}
+// The compiler's literal operation names are resolved at link time. Small entry
+// points inline without pulling the generic dispatch or allocator into every access.
+#define NUMBER_OP(op) double tn_op_##op(double name, double count, int base) { \
+  return numeric_call(op, name, count, base); }
+NUMBER_OP(1)
+NUMBER_OP(2)
+NUMBER_OP(3)
+NUMBER_OP(4)
+NUMBER_OP(5)
+NUMBER_OP(6)
+NUMBER_OP(7)
+NUMBER_OP(8)
+NUMBER_OP(9)
+#define BOOL_OP(op) int tn_op_##op(double name, double count, int base) { \
+  return numeric_i32(op, name, count, base); }
+BOOL_OP(11)
+BOOL_OP(12)

@@ -406,7 +406,7 @@ if(EMSCRIPTEN)
     target_link_options(tn-native-engine-wasm-browser PRIVATE --no-entry -sMODULARIZE=1
         -sASSERTIONS=0 -sSAFE_HEAP=0 -sEXPORT_NAME=createTnBrowser -sENVIRONMENT=node,web -sALLOW_MEMORY_GROWTH=1 -sALLOW_TABLE_GROWTH=1
         "-sEXPORTED_FUNCTIONS=_tn_engine_version,_tn_context_create,_tn_context_destroy,_tn_type_id,_tn_object_release,_tn_construct,_tn_invoke,_tn_get,_tn_set,_tn_set_callback,_tn_diagnostic_release,_tnw_fire_before_render,_tnw_init,_tnw_render,_tnw_verify_package,_tnw_load_package,_tnw_bench_init,_tnw_bench_step,_tnw_bulk_transforms,_tnw_bench_stats,_tnw_bench_prepare,_malloc,_free"
-        "-sEXPORTED_RUNTIME_METHODS=HEAPU8,HEAPU32,HEAPF64,UTF8ToString,stringToUTF8,lengthBytesUTF8,addFunction")
+        "-sEXPORTED_RUNTIME_METHODS=wasmMemory,HEAPU8,HEAPU32,HEAPF64,UTF8ToString,stringToUTF8,lengthBytesUTF8,addFunction")
     find_program(TN_WASM_NODE node REQUIRED)
     configure_file(tests/native-engine/wasm/assets.html ${CMAKE_CURRENT_BINARY_DIR}/native-core-assets.html COPYONLY)
     add_custom_target(tn-native-engine-wasm-assets

@@ -55,7 +55,7 @@ class RenderDatabase {
      */
     bool batching = true;
     bool profiling = false;
-    // Matrix propagation, projection/record refresh, batching, and remaining preparation.
+    // Matrix setup, projection/record refresh (including fused flat-scene matrices), batch packing, remaining.
     [[nodiscard]] const std::array<double, 4>& lastPrepareMs() const { return prepareMs_; }
     /** three's `renderer.shadowMap.enabled`: off, no light draws or reads a shadow map. */
     bool shadowMapEnabled = false;
@@ -75,12 +75,16 @@ class RenderDatabase {
         std::shared_ptr<const BufferGeometry> geometry;
         std::shared_ptr<const Material> material;
         uint64_t meshId = 0;
-        shader::StandardMaterial params;
-        DrawItem item;
+        struct Draw {
+            shader::StandardMaterial params;
+            DrawItem item;
+        };
+        std::unique_ptr<Draw> draw; // materialize only actual draws, not every batched member
         bool drawable = false;
         uint64_t seen = 0; // the render it was last projected in
     };
-    void project(Object3D& object, const Camera& camera, std::vector<DrawItem>& items, LightState& lights);
+    void project(Object3D& object, const Camera& camera, std::vector<DrawItem>& items, LightState& lights,
+                 bool updateChildren = false, bool force = false);
     void batch(std::vector<DrawItem>& items, Object3D& scene,
                const std::vector<std::pair<double, const DrawItem*>>& ordered);
     std::vector<std::shared_ptr<BufferStore>> batchStores_; // reused frame to frame, one per group
@@ -88,7 +92,29 @@ class RenderDatabase {
     std::vector<shader::StandardMaterial> batchParams_;
     std::vector<std::unique_ptr<SkinnedPalette>> skinnedPalettes_; // borrowed by this frame's draws
     std::size_t batchGroups_ = 0, batchMembers_ = 0;
-    Record& record(const Mesh& mesh);
+    Record& record(const Mesh& mesh, bool materialize = true);
+    DrawItem& refresh(const Mesh& mesh, Record& record);
+    void batchMeshes(std::vector<DrawItem>& items);
+    void addBatchMesh(const Mesh& mesh);
+    struct BatchMember {
+        const Mesh* mesh;
+        const Material* material;
+        double depth;
+        uint64_t id;
+        int order;
+    };
+    using GeometryKey = std::array<const BufferStore*, 4>;
+    struct MeshGroup {
+        GeometryKey geometry;
+        std::vector<std::size_t> members;
+    };
+    std::vector<BatchMember> batchMeshes_;
+    std::vector<std::array<float, 19>> batchTransforms_; // compact matrices + colours, captured in scene order
+    std::vector<MeshGroup> meshGroups_;
+    std::unordered_map<std::size_t, std::vector<std::size_t>> meshCandidates_;
+    std::unordered_map<const BufferGeometry*, GeometryKey> meshGeometries_;
+    std::optional<std::size_t> lastMeshGroup_;
+    Matrix batchProjView_{};
 
     // Drawn meshes that carry onBeforeRender, run after projection and before submission.
     struct PendingCallback {
@@ -101,6 +127,7 @@ class RenderDatabase {
     std::vector<std::string> diagnostics_;
     uint64_t rebuilds_ = 0;
     uint64_t frame_ = 0;
+    std::size_t previousDrawCount_ = 0;
     std::array<double, 4> prepareMs_{};
     std::vector<std::pair<uint64_t, DirectLight>> direct_; // this render's direct lights with their ids
     std::unordered_set<const void*> skeletonsUpdated_;     // skeletons this render already updated

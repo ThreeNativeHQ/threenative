@@ -7,13 +7,14 @@ import {
 } from "../../examples/engine-load-test/src/workload.js";
 
 declare function tn_inputs(): number[];
-declare function tn_submit(values: number[]): void;
+declare function tn_values(): number[] | Float64Array;
+declare function tn_submit(values: number[] | Float64Array): void;
 declare function tn_ready(update: (frame: number) => void): void;
 
 const base = tn_inputs(); // x/y/z in object order, authored by createPlacements
 const count = base.length / 3;
-const values: number[] = [];
 function update(frame: number) {
+  const values = tn_values(); // follows engine memory growth without allocating each frame
   const pose = cameraPose(frame, count);
   values[0] = pose.x;
   values[1] = pose.y;

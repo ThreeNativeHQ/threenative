@@ -14,6 +14,7 @@ import { loadPackedPerry } from "../../../scripts/engine-load-test/perry-packed.
 import { createPlacements, uniqueMaterialColor } from "./workload.js";
 
 type Abi = TnAbiModule & {
+  wasmMemory: WebAssembly.Memory;
   _tnw_bench_init(width: number, height: number): number;
   _tnw_render(scene: number, camera: number): number;
   _tnw_bench_step(): number;
@@ -29,6 +30,7 @@ const scope = globalThis as unknown as {
   __ENGINE_LOAD_TEST_PROGRESS__: { stage: string; frame: number };
   __ENGINE_LOAD_TEST_ERROR__: string;
   tn_inputs(): number[];
+  tn_values(): number[] | Float64Array;
   tn_submit(values: number[]): void;
   tn_ready(update: (frame: number) => void): void;
 };
@@ -141,7 +143,9 @@ async function run() {
   let handles = 0;
   let valuesPointer = 0;
   let statsPointer = 0;
-  let transformView: Float64Array | undefined;
+  let packedView: Float64Array | undefined;
+  let submittedView: number[] | Float64Array | undefined;
+  let perryAllocations: (() => number) | undefined;
   let calls = 0;
   let mallocCalls = 0;
   let mallocBytes = 0;
@@ -178,6 +182,7 @@ async function run() {
     recordProjectionMs: [] as number[],
     batchingMs: [] as number[],
     prepareOtherMs: [] as number[],
+    perryArrayAllocations: [] as number[],
   };
   const nextFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
   const check = (code: number) => {
@@ -195,7 +200,7 @@ async function run() {
     }
     adapter = scope.__tnWasmAssets.adapter ?? {};
     handles = abi._malloc((objects + 2) * 12);
-    valuesPointer = abi._malloc(objects * 5 * 8);
+    valuesPointer = abi._malloc((6 + objects * 5) * 8);
     if (!handles || !valuesPointer) throw new Error("TN_WEB_BENCH_ALLOC");
     statsPointer = abi._tnw_bench_stats();
     if (!statsPointer) throw new Error("TN_WEB_BENCH_STATS");
@@ -227,6 +232,14 @@ async function run() {
     };
   }
   const inputs = placements.flatMap((p) => [p.x, p.y, p.z]);
+  const output = () => {
+    if (!packedView || (abi && packedView.buffer !== abi.HEAPU8.buffer)) {
+      packedView = abi
+        ? new Float64Array(abi.HEAPU8.buffer, valuesPointer, 6 + objects * 5)
+        : new Float64Array(6 + objects * 5);
+    }
+    return packedView;
+  };
   const matrixWorld = TN_CURRENT ? new MatrixWorldPass() : undefined;
   const cull = TN_CURRENT ? new RenderCameraCull() : undefined;
   const projection = TN_CURRENT ? new SceneRenderProjection(scene, { matrixWorld }) : undefined;
@@ -235,21 +248,26 @@ async function run() {
   const submit = (values: number[] | Float64Array) => {
     const start = performance.now();
     submissions++;
+    if (values !== submittedView) {
+      submittedView = values;
+      viewCreations++;
+    }
     if (values.length !== 6 + objects * 5 || values.some((value) => !Number.isFinite(value)))
       throw new Error("TN_WEB_BENCH_TRANSFORMS");
-    camera.position.set(values[0] as number, values[1] as number, values[2] as number);
-    camera.lookAt(values[3] as number, values[4] as number, values[5] as number);
+    if (
+      abi &&
+      (!(values instanceof Float64Array) ||
+        values.buffer !== abi.HEAPU8.buffer ||
+        values.byteOffset !== valuesPointer)
+    )
+      throw new Error("TN_WEB_BENCH_PACKED_BUFFER");
+    // Catalog camera calls can grow memory. Read the six camera values before entering them.
+    const [x, y, z, targetX, targetY, targetZ] = values;
+    camera.position.set(x as number, y as number, z as number);
+    camera.lookAt(targetX as number, targetY as number, targetZ as number);
     if (abi) {
-      if (transformView?.buffer !== abi.HEAPU8.buffer) {
-        transformView = new Float64Array(abi.HEAPU8.buffer, valuesPointer, objects * 5);
-        viewCreations++;
-      }
-      if (values instanceof Float64Array) transformView.set(values.subarray(6));
-      else
-        for (let index = 0; index < objects * 5; index++)
-          transformView[index] = values[index + 6] as number;
       const bulkStart = performance.now();
-      check(abi._tnw_bulk_transforms(handles, valuesPointer, objects));
+      check(abi._tnw_bulk_transforms(handles, valuesPointer + 6 * 8, objects));
       bulkMs += performance.now() - bulkStart;
     } else
       for (const [index, cube] of cubes.entries()) {
@@ -265,9 +283,16 @@ async function run() {
   };
   scope.__ENGINE_LOAD_TEST_PROGRESS__.stage = "game-import";
   if (arm === "wasm-perry") {
-    update = await loadPackedPerry(inputs, submit);
+    if (!abi) throw new Error("TN_WEB_BENCH_PERRY_ENGINE");
+    const perry = await loadPackedPerry(inputs, submit, {
+      memory: abi.wasmMemory,
+      byteOffset: valuesPointer,
+    });
+    update = perry;
+    perryAllocations = perry.allocations;
   } else {
     scope.tn_inputs = () => inputs;
+    scope.tn_values = output;
     scope.tn_submit = submit;
     scope.tn_ready = (callback) => {
       update = callback;
@@ -300,6 +325,7 @@ async function run() {
     webgpuCalls = writeBuffers = directDraws = executeBundles = bundleDraws = 0;
     boundaryMs = bulkMs = submissions = 0;
     const heapBytes = abi?.HEAPU8.byteLength ?? 0;
+    const arrayAllocations = perryAllocations?.() ?? 0;
     const start = performance.now();
     update(frame);
     const updated = performance.now();
@@ -341,7 +367,9 @@ async function run() {
       boundary.mallocCalls.push(mallocCalls);
       boundary.mallocBytes.push(mallocBytes);
       boundary.freeCalls.push(freeCalls);
-      boundary.copyBytes.push(abi ? objects * 5 * 8 : 0);
+      boundary.copyBytes.push(0); // both Wasm games write the engine allocation directly
+      if (perryAllocations)
+        boundary.perryArrayAllocations.push(perryAllocations() - arrayAllocations);
       boundary.transformViewCreations.push(viewCreations);
       boundary.heapGrowthBytes.push((abi?.HEAPU8.byteLength ?? 0) - heapBytes);
       boundary.draws.push(

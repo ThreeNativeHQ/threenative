@@ -17,7 +17,7 @@ export const PERRY_NUMERIC_OPERATIONS: Record<string, number> = {
 };
 
 // Perry's numeric runtime is linked into the compiled game's linear memory. The engine
-// keeps its own allocator; the caller copies one packed view into its bulk buffer.
+// keeps its own allocator; a second imported memory holds the engine's packed output.
 export function importPerryMemory(
   bytes: Uint8Array,
   memoryModule = "env",
@@ -92,13 +92,19 @@ export function packedPerryLoader(source: string) {
     throw new Error("TN_WEB_BENCH_PERRY_RUNTIME_MISSING");
   // The trusted compiler artifact owns the NaN-box/closure ABI. Retain its cold-path
   // dispatch; linked numeric operations stay in Wasm and can inline into the game.
-  return new Function(`${runtime}\nreturn async function(bytes, inputs, submit) {
+  return new Function(`${runtime}\nreturn async function(bytes, inputs, submit, output) {
     let callback;
     const cold = buildImports().rt;
-    let native, inputHandle;
+    const size = 6 + inputs.length / 3 * 5;
+    if (!Number.isInteger(size) || size < 11 || size > 327686 ||
+        !Number.isSafeInteger(output.byteOffset) || output.byteOffset < 0 || output.byteOffset % 8 ||
+        output.byteOffset + size * 8 > output.memory.buffer.byteLength)
+      throw new Error('TN_WEB_BENCH_PERRY_PACKED_REGION');
+    let native, inputHandle, outputHandle;
     const imports = wrapImportsForI64(buildImports());
     imports.host = { mem_call: cold.mem_call, mem_call_i32: cold.mem_call_i32 };
     imports.env = { emscripten_notify_memory_growth: () => {} };
+    imports.engine = { memory: output.memory };
     imports.wasi_snapshot_preview1 = { proc_exit: code => { throw new Error('TN_WEB_BENCH_PERRY_RUNTIME_EXIT: ' + code); } };
     const wrapped = imports.rt;
     const operations = ${JSON.stringify(PERRY_NUMERIC_OPERATIONS)};
@@ -112,17 +118,23 @@ export function packedPerryLoader(source: string) {
     } });
     imports.ffi = {
       tn_inputs: () => { native.tn_numeric_arrays(); return inputHandle; },
+      tn_values: () => outputHandle,
       tn_submit: handle => {
         const size = native.tn_array_size(handle);
         if (size !== 6 + inputs.length / 3 * 5) throw new Error('TN_WEB_BENCH_PERRY_PACKED_SIZE: ' + size);
-        submit(new Float64Array(native.memory.buffer, native.tn_array_data(handle), size));
+        if (handle !== outputHandle || native.tn_array_data(handle) !== output.byteOffset) throw new Error('TN_WEB_BENCH_PERRY_PACKED_ADDRESS');
+        if (!outputView || outputView.buffer !== output.memory.buffer)
+          outputView = new Float64Array(output.memory.buffer, output.byteOffset, size);
+        submit(outputView);
       },
       tn_ready: value => { callback = __bitsToJsValue(value); },
     };
+    let outputView;
     const { instance } = await WebAssembly.instantiate(bytes, imports);
     native = instance.exports;
     if (native._initialize) native._initialize();
     inputHandle = native.tn_array_create(inputs.length);
+    outputHandle = native.tn_array_external(size, output.byteOffset);
     new Float64Array(native.memory.buffer, native.tn_array_data(inputHandle), inputs.length).set(inputs);
     wasmInstance = instance;
     wasmMemory = native.memory;
@@ -130,15 +142,22 @@ export function packedPerryLoader(source: string) {
     if (!callback || callback.funcIdx === undefined) throw new Error('TN_WEB_BENCH_PERRY_CLOSURE');
     const fn = instance.exports.__indirect_function_table.get(callback.funcIdx | 0);
     if (typeof fn !== 'function') throw new Error('TN_WEB_BENCH_PERRY_TABLE');
-    return frame => fn(...callback.captures, __jsValueToBits(frame));
+    const update = frame => fn(...callback.captures, __jsValueToBits(frame));
+    update.allocations = () => native.tn_array_allocations();
+    return update;
   };`)() as (
     bytes: Uint8Array,
     inputs: number[],
     submit: (values: Float64Array) => void,
-  ) => Promise<(frame: number) => void>;
+    output: { memory: WebAssembly.Memory; byteOffset: number },
+  ) => Promise<((frame: number) => void) & { allocations(): number }>;
 }
 
-export async function loadPackedPerry(inputs: number[], submit: (values: Float64Array) => void) {
+export async function loadPackedPerry(
+  inputs: number[],
+  submit: (values: Float64Array) => void,
+  output: { memory: WebAssembly.Memory; byteOffset: number },
+) {
   const fetchArtifact = async (name: string) => {
     const response = await fetch(`./${name}`);
     if (!response.ok) throw new Error(`TN_WEB_BENCH_PERRY_FETCH: ${name}: ${response.status}`);
@@ -151,7 +170,7 @@ export async function loadPackedPerry(inputs: number[], submit: (values: Float64
         async (response) => new Uint8Array(await response.arrayBuffer()),
       ),
     ]);
-    return await packedPerryLoader(source)(bytes, inputs, submit);
+    return await packedPerryLoader(source)(bytes, inputs, submit, output);
   } catch (error) {
     throw new Error(`TN_WEB_BENCH_PERRY_LOAD: ${String(error)}`, { cause: error });
   }

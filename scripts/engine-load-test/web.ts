@@ -69,15 +69,17 @@ export function perryLoader(html: string) {
   const bytes = Buffer.from(base64, "base64");
   const module = new WebAssembly.Module(bytes);
   const imports = WebAssembly.Module.imports(module).map((item) => `${item.module}:${item.name}`);
-  for (const name of ["tn_inputs", "tn_ready", "tn_submit"])
+  for (const name of ["tn_inputs", "tn_values", "tn_ready", "tn_submit"])
     if (!imports.includes(`ffi:${name}`)) throw new Error(`Perry output omitted ${name}`);
   return {
     imports,
     bytes,
     source: `${runtime}\nexport async function loadPerry(inputs, submit) {
       let callback;
+      const values = new Array(6 + inputs.length / 3 * 5).fill(0);
       await bootPerryWasm(${JSON.stringify(base64)}, {
         tn_inputs: () => inputs,
+        tn_values: () => values,
         tn_submit: submit,
         tn_ready: (value) => { callback = value; },
       });

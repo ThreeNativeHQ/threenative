@@ -8,11 +8,13 @@
 // the material-drift checks of later frames are not carried. The native scene has no sprites,
 // points, lines, LODs, BatchedMeshes, multi-materials, custom depth materials, draw ranges,
 // indirect geometries or vertex-displacing materials, so those reasons never arise here.
+#include <bit>
 #include <cmath>
 #include <cstdint>
 #include <map>
 #include <string>
 #include <vector>
+#include <unordered_map>
 
 #include "engine/animation/skinning/palette.h"
 #include "engine/animation/skinning/skeleton.h"
@@ -113,6 +115,60 @@ inline bool sameUniforms(const Material& a, const Material& b) {
            a.maps == b.maps;
 }
 
+// Base colour travels per instance. Hash every other equality input; equality still resolves collisions.
+inline std::size_t uniformHash(const Material& m) {
+    std::size_t h = 0;
+    const auto mix = [&](uint64_t v) { h = (h ^ v) * 0x9e3779b1u; };
+    for (double v : {double(m.type),
+                     double(m.transparent),
+                     m.opacity,
+                     m.alphaTest,
+                     double(m.depthTest),
+                     double(m.depthWrite),
+                     double(m.side),
+                     double(m.visible),
+                     double(m.toneMapped),
+                     m.emissive.r,
+                     m.emissive.g,
+                     m.emissive.b,
+                     m.emissiveIntensity,
+                     m.roughness,
+                     m.metalness,
+                     m.specular.r,
+                     m.specular.g,
+                     m.specular.b,
+                     m.shininess,
+                     m.ior,
+                     m.specularIntensity,
+                     m.specularColor.r,
+                     m.specularColor.g,
+                     m.specularColor.b,
+                     m.clearcoat,
+                     m.sheen,
+                     m.transmission,
+                     m.iridescence,
+                     m.anisotropy,
+                     m.dispersion,
+                     m.envMapIntensity,
+                     double(m.fog),
+                     double(m.vertexColors),
+                     double(m.flatShading),
+                     m.normalScaleX,
+                     m.normalScaleY,
+                     m.aoMapIntensity}) {
+        const auto bits = std::bit_cast<uint64_t>(v == 0 ? 0.0 : v); // +0 and -0 compare equal
+        mix(bits ^ (bits >> 32));                                    // both halves matter on wasm32
+    }
+    mix(reinterpret_cast<std::uintptr_t>(m.positionNode.get()));
+    for (const auto& node : m.nodes.graphs())
+        mix(reinterpret_cast<std::uintptr_t>(node.get()));
+    for (const auto& [name, texture] : m.maps) {
+        mix(std::hash<std::string>{}(name));
+        mix(reinterpret_cast<std::uintptr_t>(texture.get()));
+    }
+    return h;
+}
+
 // geometrySignatureOf: indexed or not, then each attribute's name, item size and normalized flag.
 inline std::string geometrySignature(const BufferGeometry& g) {
     std::string signature = g.index ? "i" : "n";
@@ -188,21 +244,27 @@ inline Decision decide(Object3D& scene, int minMeshes = 200) {
         std::vector<Mesh*> members;
     };
     std::vector<UniformGroup> uniformGroups;
+    std::unordered_map<std::size_t, std::vector<std::size_t>> uniformCandidates;
     std::map<const Mesh*, std::size_t> uniformOf;
     for (const Key& key : groupOrder) {
         Group& group = groups[key];
         if (int(group.members.size()) >= kMinBatchMembers) continue;
         for (Mesh* mesh : group.members) {
             std::size_t found = uniformGroups.size();
-            for (std::size_t i = 0; i < uniformGroups.size(); ++i) {
+            const auto hash = uniformHash(*mesh->material) ^ std::hash<const void*>{}(mesh->geometry.get()) ^
+                              std::hash<double>{}(batchFlags(*mesh));
+            auto& candidates = uniformCandidates[hash];
+            for (std::size_t i : candidates) {
                 const UniformGroup& u = uniformGroups[i];
                 if (u.geometry == mesh->geometry.get() && u.flags == batchFlags(*mesh) && sameUniforms(*u.material, *mesh->material)) {
                     found = i;
                     break;
                 }
             }
-            if (found == uniformGroups.size())
+            if (found == uniformGroups.size()) {
+                candidates.push_back(found);
                 uniformGroups.push_back({mesh->geometry.get(), mesh->material.get(), batchFlags(*mesh), {}});
+            }
             uniformGroups[found].members.push_back(mesh);
             uniformOf[mesh] = found;
         }
