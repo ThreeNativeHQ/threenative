@@ -1,6 +1,7 @@
 // CPU-only integration of the game bundler, native import facade and real V8 player.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { rmSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
@@ -11,6 +12,7 @@ const native = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const executable = process.argv[2];
 assert(executable, "Usage: player-imports.mjs <tn-native-engine-player-v8>");
 const work = await mkdtemp(resolve(native, "build/player-imports-"));
+process.once("exit", () => rmSync(work, { recursive: true, force: true }));
 const entry = resolve(work, "imports.ts");
 const outfile = resolve(work, "imports.js");
 const three = createRequire(resolve(native, "package.json"))("three");

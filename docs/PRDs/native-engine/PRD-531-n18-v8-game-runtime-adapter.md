@@ -108,4 +108,10 @@ lifetime, while pages still release when the last object dies. Verification: 15/
 checks, 3/3 focused ASan checks, the rebuilt Wasm exact ordering/callback oracle and the desktop
 core/V8 playtest pass (ArrowUp moves −0.8 m). No phase tick; the full template journey stays open.
 
+The temp-directory guard now passes: JS-free inspection uses registered test cleanup, and the
+standalone import probe removes its bundle directory on exit. Compiler/conformance CLIs retain
+diagnostic outputs explicitly; the starter visual gate already cleans in `finally`. Inspection
+unit checks pass (9 passed, 1 skipped). The full import probe reaches its inspect-bridge check
+but fails because `Box3.setFromObject` is absent from the native binding; this remains open.
+
 - This game runtime is the default until gate T ships, and it is never called a JS-free *application* (§2.1). The engine under it is JS-free (owner, 2026-10-04).

@@ -1,8 +1,8 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
+import { makeTempDirSync } from "../../../test-support/temp-dir.js";
 import {
   findLibraryFindings,
   findResourceFindings,
@@ -13,7 +13,7 @@ import {
   inspect,
 } from "../scripts/inspect-js-free.mjs";
 
-const work = mkdtempSync(join(tmpdir(), "tn-js-free-"));
+const work = makeTempDirSync("tn-js-free-");
 afterAll(() => rmSync(work, { recursive: true, force: true }));
 
 function compile(name, source) {

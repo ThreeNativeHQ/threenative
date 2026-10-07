@@ -7,6 +7,22 @@ const tempCreatorPattern = /\bmkdtemp(?:Sync)?\s*\(/u;
 
 const allowedProductionCreators = new Map<string, string>([
   [
+    "packages/runtime-native/tests/native-engine/player-imports.mjs",
+    "The standalone Node/CTest probe removes its owned bundle directory on process exit; it cannot import the Vitest temp-dir helper.",
+  ],
+  [
+    "packages/runtime-native/tests/native-engine/template-post-packages.ts",
+    "The compiler CLI retains authored graphs, emitted modules and Tint outputs under its caller's build directory for diagnosis.",
+  ],
+  [
+    "packages/three-native/tests/compatibility/run-native.ts",
+    "The conformance CLI retains captured frames because failed pixel-comparison reports name their paths.",
+  ],
+  [
+    "scripts/starter-native-visual.ts",
+    "The production starter visual gate removes its package staging directory in finally.",
+  ],
+  [
     "packages/assets/src/watch.ts",
     "The dev watcher stages each changed input through a scratch project removed in finally.",
   ],
