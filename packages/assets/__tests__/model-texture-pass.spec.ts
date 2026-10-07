@@ -738,13 +738,13 @@ describe("embedded model textures", () => {
   });
 
   it.each(["web", "android"] as const)(
-    "compiles 4096 base-colour and normal maps to their separate caps on %s",
+    "compiles a base-colour and normal pair to their separate caps on %s",
     async (platform) => {
-      const root = await makeTempDir("threenative-model-4096-slot-caps-");
+      const root = await makeTempDir("threenative-model-slot-caps-");
       await mkdir(path.join(root, "assets"));
       await writeFile(
         path.join(root, "assets", "caps.glb"),
-        await fixtureWithTextures({ width: 4096 }),
+        await fixtureWithTextures({ width: 512 }),
       );
       await compileAssets({
         cwd: root,
@@ -754,7 +754,7 @@ describe("embedded model textures", () => {
         config: {
           models: {
             textures: {
-              maxSize: { baseColorTexture: 2048, normalTexture: 1024 },
+              maxSize: { baseColorTexture: 256, normalTexture: 128 },
               overrides: [{ slot: "baseColorTexture", codec: "uastc" }],
             },
           },
@@ -769,8 +769,8 @@ describe("embedded model textures", () => {
         .read(path.join(root, "public", manifest.entries["caps.glb"].output));
       const material = output.getRoot().listMaterials()[0];
       for (const [texture, expected] of [
-        [material?.getBaseColorTexture(), 2048],
-        [material?.getNormalTexture(), 1024],
+        [material?.getBaseColorTexture(), 256],
+        [material?.getNormalTexture(), 128],
       ] as const) {
         expect(texture).toBeTruthy();
         const image = texture?.getImage() ?? new Uint8Array();
