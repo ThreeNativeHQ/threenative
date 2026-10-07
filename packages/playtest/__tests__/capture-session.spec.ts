@@ -20,7 +20,7 @@ import { captureConfig, resetCaptureFixture, state } from "./fixtures/capture-se
 let directory = "";
 beforeEach(async () => { resetCaptureFixture(); directory = await makeTempDir("tn-capture-session-"); });
 
-const cleanup = ["close-browser", "profiles", "stop-server", "release-display", "release-lock"];
+const cleanup = ["close-browser", "stop-server", "release-display", "profiles", "release-lock"];
 
 test("borrows ready resources, verifies screenshots and cleans up in ownership order", async () => {
   let borrowedSignal: AbortSignal | undefined;

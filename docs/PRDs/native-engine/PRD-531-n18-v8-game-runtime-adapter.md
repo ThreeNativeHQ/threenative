@@ -132,6 +132,14 @@ Registry/catalog/declarations are regenerated with the actual bound track and bi
 This repair slice is complete; Windows CI and the unchanged full minimal-template journey remain
 unverified, so no phase box is ticked.
 
+Playwright orphan repair (2026-10-07): a real-process regression reproduced the one-shot cleanup
+race: a still-exiting child was skipped permanently. Both runner/capture paths now reclaim after
+owned display teardown and retry for at most ten seconds, preserving the before-launch ownership
+fence and live-process guard. Remote browsers are excluded. Verification: 36 focused cleanup,
+ownership, capture and Android attachment checks pass; playtest build/publint passes; the real
+SIGTERM orphan gate reports `no orphans` with CI's Node 20. A separate Node 24 probe retained its
+intentional `node-compile-cache` directory (not a browser profile); that version's gate remains red.
+
 Quality-gate repair (2026-10-07): removed four new double casts from native-profile validation,
 the browser class factory and numeric observation encoding. Existing runtime checks and native
 class syntax preserve validation; numeric observations now reject DataView and nonnumeric entries

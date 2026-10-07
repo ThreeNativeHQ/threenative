@@ -143,28 +143,32 @@ export function reclaimableProfileDirectories(
   return after.filter((directory) => !existing.has(directory) && !processArguments.includes(directory));
 }
 
-/** Remove the profiles this run stranded. Returns what it removed, for the caller to report. */
-export function removeStrandedProfiles(
+/** Reclaim stranded profiles after owned resources close; wait boundedly for exiting children. */
+export async function removeStrandedProfiles(
   before: readonly string[],
   root: string = tmpdir(),
-): readonly string[] {
+): Promise<readonly string[]> {
   // `ps` is how the orphan gate itself decides whether a directory is still held. Windows has no
   // equivalent here and does not run this lane, so it simply reclaims nothing.
   if (process.platform === "win32") return [];
-  const listing = spawnSync("ps", ["-eo", "args="], { encoding: "utf8", maxBuffer: 16 * 1024 * 1024 });
-  if (listing.status !== 0) return [];
   const removed: string[] = [];
-  for (const directory of reclaimableProfileDirectories(
-    before,
-    playwrightProfileDirectories(root),
-    listing.stdout ?? "",
-  )) {
-    try {
-      rmSync(directory, { force: true, recursive: true });
-      removed.push(directory);
-    } catch {
-      // A profile that cannot be removed is reported by the gate rather than hidden here.
+  const existing = new Set(before);
+  const deadline = Date.now() + 10_000;
+  while (true) {
+    const remaining = playwrightProfileDirectories(root).filter((directory) => !existing.has(directory));
+    if (remaining.length === 0) return removed;
+    const listing = spawnSync("ps", ["-eo", "args="], { encoding: "utf8", maxBuffer: 16 * 1024 * 1024 });
+    if (listing.status !== 0) return removed;
+    for (const directory of reclaimableProfileDirectories(before, remaining, listing.stdout ?? "")) {
+      try {
+        rmSync(directory, { force: true, recursive: true });
+        removed.push(directory);
+      } catch {
+        // The orphan gate reports any directory that cannot be removed.
+      }
     }
+    // A single snapshot skips a child killed concurrently by SIGTERM or display release forever.
+    if (Date.now() >= deadline) return removed;
+    await new Promise((resolve) => setTimeout(resolve, 100));
   }
-  return removed;
 }
