@@ -1,6 +1,6 @@
 # PRD-351 — Compression never looks worse than a floor
 
-**Status:** READY FOR EXECUTION
+**Status:** PARTIAL — Phases 1 and 2 have recorded results. Phase 3 prices the normal slot. Bark capture and acceptance remain open.
 **Complexity:** 2 (6-10 files) + 2 (new system) + 1 = **5 → MEDIUM mode**
 **Batch:** `docs/PRDs/assets/`
 **Depends on:** PRD-349 (the cook must be on before a floor means anything)
@@ -244,11 +244,13 @@ rung stays there and gets smaller.
 
 **Implementation**
 
-- [ ] Re-import `quarry`'s props with `maxTextureSize: 4096` so the compile sees masters.
-- [ ] Compile at 1024, 2048 and 4096. Record bytes, GPU bytes, SSIM and a capture for each.
-- [ ] Capture the three at matched camera positions, close enough to read bark detail.
-- [ ] Compare the game-owned 2048 colour / 1024 mask candidate against the other arms. Adopt it
-      only if visible detail and measured device memory justify it; keep compiler defaults intact.
+- [x] Re-import `quarry`'s props with `maxTextureSize: 4096` so the compile sees masters. **Done 2026-10-06:** the supplied fresh import has six props with 4096² normal inputs. Only `normalTexture` is bound. The base-color mask is unmapped in `textures/`. proof: `/tmp/perslot.md` and the supplied Phase 3 captures.
+- [x] Compile at 1024, 2048 and 4096. Record bytes, GPU bytes, SSIM and a capture for each. **Done 2026-10-06:** montage labels report disk/GPU MB and SSIM: 1024 = 2.24/2.67/0.9885, 2048 = 8.92/10.67/0.9920, 4096 = 35.97/42.67/0.9950. Separate distinct-texture and runtime-load totals are not recorded. proof: [resolution record](../../verification/PRD-351-resolution-ladder.md) and `b8res/montage-pose3-rock-near.jpg`.
+- [ ] Capture the three at matched camera positions, close enough to read bark detail. proof: supplied `b8res/montage-*.jpg` and `res-<arm>-<pose>.png`.
+      **Open:** four matched positions show the trail, mid-distance rocks, a close rock surface, and the route. No capture proves bark detail.
+- [x] Compare the game-owned 2048 colour / 1024 mask candidate against the other arms. proof: [resolution record](../../verification/PRD-351-resolution-ladder.md), `/tmp/perslot.md`, and the coordinator's rock-near verdict.
+      Adopt it only if visible detail and measured device memory justify it. Keep compiler defaults intact.
+      **Done 2026-10-06:** reject this candidate on this pack. It reaches only the normal slot and equals 1024: 2.24 MB disk, 2.67 MB GPU, SSIM 0.9885. Keep compiler defaults and the game's import policy. No phone run proves a safe total.
 
 **Tests required**
 
