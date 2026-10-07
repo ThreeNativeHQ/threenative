@@ -42,6 +42,7 @@ import { type IPlacementField, scatterProps } from "./render/scatter.js";
 import { type IOutdoorSky, createOutdoorSky, installOutdoorOcclusion } from "./render/sky.js";
 import { type IBakedWorld, createTerrain } from "./render/terrain.js";
 import { preparePropTextures } from "./render/texturePreparation.js";
+import { medianOfGrowingSamples as median } from "./viewStatistics.js";
 import baked from "./world/baked.json";
 
 /**
@@ -190,13 +191,6 @@ const worldLoads = {
   desert: () => import("./world/desert.json"),
   tundra: () => import("./world/tundra.json"),
 };
-
-/** The middle of a sample set, for a summary that one outlier cannot move. */
-function median(values: readonly number[]): number {
-  if (values.length === 0) return 0;
-  const sorted = [...values].sort((a, b) => a - b);
-  return sorted[Math.floor(sorted.length / 2)] ?? 0;
-}
 
 const initialState = {
   canopyComparison: { normals: "radial", specular: "disabled" } as ICanopyComparison,

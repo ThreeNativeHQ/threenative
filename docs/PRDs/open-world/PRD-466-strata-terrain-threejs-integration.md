@@ -3419,3 +3419,21 @@ They do not separate driver compilation, GPU execution and upload cost or establ
 No additional GPU/native run or broad build was performed for this CPU slice. Readiness, matched
 playable screenshots, FPS and full-board/native acceptance remain open; computed progress stays
 **50%** (2/4 phases, 7/13 boxes). No acceptance box changed.
+
+### 2026-10-07 — reuse unchanged view medians (CPU verified)
+
+The retained `6810f726` loading profile includes repeated median sorting in Strata's physics
+callback. Its retained frame-window arrays only append when a budget window closes; reporting
+them between windows previously cloned and sorted the same samples again. The consumer now
+caches each append-only array's upper-middle median until its length changes. Replacement arrays
+remain independent, original sample order is preserved, and the weak cache does not retain old
+scene arrays. Freshly mapped pass/surface summaries still sort; this does not remove all reporting
+work or diagnose the pending texture upload.
+
+The actual work-budget regression failed with 120 sorts for 120 unchanged reads, then passed with
+one sort and one further sort after append. The source-aliased `strata-view-statistics` and
+`strata-loading` suites pass **19/19**; strict TypeScript 6 against actual Strata/core source and
+the new test exits 0. Biome exits 0 with seven existing game complexity warnings. No rendering,
+placement, texture, admission budget or deadline changed. GPU/native and matched before/after
+FPS verification remain unrun for this slice. Computed progress remains **50%**; no acceptance
+box changed.
