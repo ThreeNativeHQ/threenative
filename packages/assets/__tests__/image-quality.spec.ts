@@ -23,6 +23,33 @@ function pixels(noise = false): Uint8Array {
 }
 
 describe("image quality instrument", () => {
+  it("encodes both RDO lambdas through the current vendored encoder with Zstd", async () => {
+    const fixture = "examples/prd493-terrain-splat/public/world/terrain/tex/layer-00_diff.jpg";
+    const input = await readFile(new URL(`../../../${fixture}`, import.meta.url));
+    const decoded = await decodeImageBytes(input, fixture);
+    const options = {
+      imageDecoder: async () => decoded,
+      isUASTC: true,
+      needSupercompression: true,
+    };
+    const plain = await encodeToKTX2(input, options);
+    for (const rdoLambda of [3, 1]) {
+      const encoded = await encodeToKTX2(input, { ...options, rdoLambda });
+      expect(readKTX2(encoded).supercompressionScheme).toBe(2);
+      expect(encoded).not.toEqual(plain);
+      expect(
+        Number.isFinite(
+          (await measureKtx2(decoded.data, encoded, decoded.width, decoded.height)).ssim,
+        ),
+      ).toBe(true);
+    }
+    await expect(encodeToKTX2(input, { ...options, rdoLambda: Number.NaN })).rejects.toThrow(
+      /TN_ASSETS_KTX2_RDO/u,
+    );
+    await expect(encodeToKTX2(input, { ...options, isUASTC: false, rdoLambda: 3 })).rejects.toThrow(
+      /TN_ASSETS_KTX2_RDO/u,
+    );
+  });
   it("should reproduce the pinned normal-map score", async () => {
     const fixture = "examples/prd493-terrain-splat/public/world/terrain/tex/layer-00_nrm.jpg";
     const input = await readFile(new URL(`../../../${fixture}`, import.meta.url));

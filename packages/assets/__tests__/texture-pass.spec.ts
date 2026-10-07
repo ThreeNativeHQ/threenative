@@ -44,14 +44,18 @@ function ktx2Magic(bytes: Buffer): boolean {
 
 /** Enough distinct pixels for compression to save bytes, so codec assertions reach encoding. */
 function compressiblePng(alpha?: (x: number, y: number) => number): Buffer {
-  return rgbaPng({
-    alpha,
-    width: 64,
-    height: 64,
-    red: (x, y) => (x * 37 + y * 41) % 256,
-    green: (x, y) => (x * 29 + y * 31) % 256,
-    blue: (x, y) => (x * 19 + y * 23) % 256,
-  });
+  return PNG.sync.write(
+    PNG.sync.read(
+      rgbaPng({
+        alpha,
+        width: 64,
+        height: 64,
+        red: (x, y) => 100 + ((x * 37 + y * 41) % 8),
+        green: (x, y) => 100 + ((x * 29 + y * 31) % 8),
+        blue: (x, y) => 100 + ((x * 21 + y * 21) % 8),
+      }),
+    ),
+  );
 }
 
 describe("the ktx2 texture pass", () => {
@@ -154,22 +158,24 @@ describe("the ktx2 texture pass", () => {
     ).toEqual(source);
   });
 
-  it("should encode to UASTC when the source has an alpha channel", async () => {
-    // Alpha varies across the row, so stripping it changes the codec choice — that is the
-    // negative control for this test.
+  it("should preserve cutout alpha on a passing ETC1S candidate", async () => {
+    // Alpha is judged independently; binary cutouts can pass on the ETC1S rung.
     const { entry, outputBytes } = await compileOne(
       "threenative-tex-uastc-",
       "decal.png",
       compressiblePng((x) => (x % 2 === 0 ? 255 : 0)),
     );
 
-    expect(entry.format).toBe("uastc");
-    expect(entry.transcodeTargets).toEqual(["astc4x4", "bc7"]);
+    expect(entry.format).toBe("etc1s");
+    expect(entry.transcodeTargets).toEqual(["bc1", "etc2"]);
     expect(String(entry.output)).toMatch(/^decal\.[0-9a-f]{8}\.ktx2$/u);
     expect(ktx2Magic(outputBytes)).toBe(true);
-    // ktx2-encoder@0.6.0 defaults omitted needSupercompression to true (Zstandard).
-    // Replacing its 4K guard must not silently change that existing compression policy.
-    expect(readKTX2(outputBytes).supercompressionScheme).toBe(2);
+    // ETC1S uses BasisLZ; UASTC rungs retain the default Zstd compression.
+    expect(readKTX2(outputBytes).supercompressionScheme).toBe(1);
+    expect(entry.quality).toMatchObject({
+      status: "pass",
+      alpha: { ssim: 1, meanAbsoluteError: 0 },
+    });
   });
 
   it("should honour a config override over the heuristic", async () => {

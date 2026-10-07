@@ -13,6 +13,8 @@ import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { basisTranscoderPaths } from "../../../test-support/three-basis.js";
 import * as qualityInstrument from "../src/image-quality.js";
 import { type IAssetSourceConfig, compileAssets } from "../src/index.js";
+import * as encoder from "../src/ktx2-encoder.js";
+import { compressEmbeddedTextures } from "../src/passes/model-textures.js";
 import { modelPass } from "../src/passes/model.js";
 import { createSharedImageStore } from "../src/passes/shared-images.js";
 import { parsePng } from "../src/png.js";
@@ -42,13 +44,17 @@ async function fixtureWithTextures(options: {
   const [baseColor, normal] = document.getRoot().listTextures();
   baseColor
     ?.setImage(
-      rgbaPng({
-        blue: (x, y) => (x * 19 + y * 23) % 256,
-        green: (x, y) => (x * 29 + y * 31) % 256,
-        height,
-        red: (x, y) => (x * 37 + y * 41) % 256,
-        width,
-      }),
+      PNG.sync.write(
+        PNG.sync.read(
+          rgbaPng({
+            blue: (x, y) => 100 + ((x * 21 + y * 21) % 8),
+            green: (x, y) => 100 + ((x * 29 + y * 31) % 8),
+            height,
+            red: (x, y) => 100 + ((x * 37 + y * 41) % 8),
+            width,
+          }),
+        ),
+      ),
     )
     .setMimeType("image/png");
   normal
@@ -198,6 +204,226 @@ function expectColours(pixels: Uint8Array, width: number, tolerance: number): vo
 }
 
 describe("embedded model textures", () => {
+  it("should escalate an image that fails the floor", async () => {
+    const make = async () => {
+      const document = await new NodeIO().readBinary(await fixtureWithTextures({ width: 128 }));
+      let seed = 123;
+      const png = new PNG({ width: 128, height: 128 });
+      for (let i = 0; i < png.data.length; i += 1) {
+        seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+        png.data[i] = i % 4 === 3 ? 255 : seed >>> 24;
+      }
+      document.getRoot().listTextures()[0]?.setImage(PNG.sync.write(png));
+      return document;
+    };
+    const enforced = await compressEmbeddedTextures(await make(), "noise.glb");
+    expect(enforced?.quality.checker?.rung).not.toBe("etc1s@150");
+    expect(enforced?.quality.checker?.rung).toBeDefined();
+    expect(enforced?.quality.checker?.status).toBe("pass");
+    const disabled = await compressEmbeddedTextures(await make(), "noise.glb", {
+      floor: { ssim: 0, meanDeltaE00: 100 },
+    });
+    expect(disabled?.quality.checker?.rung).toBe("etc1s@150");
+    expect(disabled?.quality.checker?.meanDeltaE00).toBeGreaterThan(3);
+  });
+
+  it("should keep a clean image on the cheapest rung", async () => {
+    const document = await new NodeIO().readBinary(await fixtureWithTextures({ width: 128 }));
+    // An uncompressed PNG keeps the flat-colour fixture larger than its encoded candidates.
+    const flat = rgbaPng({
+      width: 128,
+      height: 128,
+      red: () => 128,
+      green: () => 128,
+      blue: () => 128,
+    });
+    document
+      .getRoot()
+      .listTextures()[0]
+      ?.setImage(PNG.sync.write(PNG.sync.read(flat), { deflateLevel: 0 }));
+    const summary = await compressEmbeddedTextures(document, "flat.glb");
+    expect(summary?.quality.checker?.rung).toBe("etc1s@150");
+    expect(summary?.quality.checker?.status).toBe("pass");
+  });
+
+  it("stops at the first passing RDO rung", async () => {
+    const document = await new NodeIO().readBinary(await fixtureWithTextures({ width: 32 }));
+    const source = rgbaPng({
+      width: 32,
+      height: 32,
+      red: (x, y) => 100 + ((x * 37 + y * 41) % 16),
+      green: (x, y) => 100 + ((x * 29 + y * 31) % 16),
+      blue: (x, y) => 100 + ((x * 21 + y * 21) % 16),
+    });
+    document
+      .getRoot()
+      .listTextures()[0]
+      ?.setImage(PNG.sync.write(PNG.sync.read(source)));
+    const summary = await compressEmbeddedTextures(document, "rdo.glb");
+    expect(summary?.quality.checker).toMatchObject({
+      codec: "uastc",
+      rung: "uastc+rdo λ3 +zstd",
+      status: "pass",
+    });
+  });
+
+  it("should never try etc1s for a normal map", async () => {
+    const document = await new NodeIO().readBinary(await fixtureWithTextures({ width: 128 }));
+    for (const material of document.getRoot().listMaterials()) material.setBaseColorTexture(null);
+    document.getRoot().listTextures()[0]?.dispose();
+    const encode = vi.spyOn(encoder, "encodeToKTX2");
+    try {
+      const summary = await compressEmbeddedTextures(document, "normal.glb");
+      expect(summary?.quality["cloth-normal"]?.rung).toBe("uastc");
+      expect(encode.mock.calls.length).toBeGreaterThan(0);
+      expect(encode.mock.calls.every(([, settings]) => settings.isUASTC === true)).toBe(true);
+    } finally {
+      encode.mockRestore();
+    }
+  });
+
+  it("should report the rung histogram", async () => {
+    const root = await makeTempDir("threenative-ladder-report-");
+    await mkdir(path.join(root, "assets"));
+    await writeFile(
+      path.join(root, "assets", "prop.glb"),
+      await fixtureWithTextures({ width: 32 }),
+    );
+    const lines: string[] = [];
+    const log = vi.spyOn(console, "log").mockImplementation((line) => lines.push(String(line)));
+    try {
+      const options = {
+        cwd: root,
+        concurrency: 1,
+        config: { models: { textures: { floor: { ssim: 0.95, meanDeltaE00: 3 } } } },
+      };
+      await compileAssets(options);
+      const histogram = lines.find((line) =>
+        /\d+ etc1s · \d+ escalated to uastc · \d+ uncompressed/u.test(line),
+      );
+      expect(histogram).toBeDefined();
+      expect(
+        (
+          histogram
+            ?.match(/^(\d+) etc1s · (\d+) escalated to uastc · (\d+) uncompressed$/u)
+            ?.slice(1) ?? []
+        )
+          .map(Number)
+          .reduce((a, b) => a + b, 0),
+      ).toBe(2);
+      expect(lines.some((line) => /rung (?:etc1s@150|uastc|none)/u.test(line))).toBe(true);
+      lines.length = 0;
+      await compileAssets(options);
+      expect(lines).toContain(histogram);
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it("preserves alpha coverage and rejects a forced codec below the configured floor", async () => {
+    const document = await new NodeIO().readBinary(await fixtureWithTextures({ width: 32 }));
+    const texture = document.getRoot().listTextures()[0];
+    if (texture === undefined) throw new Error("missing colour image");
+    const source = PNG.sync.read(Buffer.from(texture.getImage() ?? []));
+    for (let i = 3; i < source.data.length; i += 4) source.data[i] = i % 12 === 3 ? 127 : 128;
+    texture.setImage(PNG.sync.write(source));
+    for (const material of document.getRoot().listMaterials())
+      if (material.getBaseColorTexture() === texture)
+        material.setAlphaMode("MASK").setAlphaCutoff(0.5);
+    const original = Buffer.from(await new NodeIO().writeBinary(document));
+    const summary = await compressEmbeddedTextures(document, "cutout.glb");
+    expect(summary?.quality.checker?.alpha.coverage[0]?.changedPixels).toBe(0);
+    expect(summary?.quality.checker?.status).toBe("pass");
+    await expect(
+      compressEmbeddedTextures(await new NodeIO().readBinary(original), "cutout.glb", {
+        floor: { ssim: 1, meanDeltaE00: 0 },
+        overrides: [{ slot: "baseColorTexture", codec: "etc1s" }],
+      }),
+    ).rejects.toThrow(/TN_ASSETS_TEXTURE_FLOOR/u);
+  });
+
+  it("keys floor and caps in the shared decision and recalls uncompressed fallbacks", async () => {
+    const input = await fixtureWithTextures({ width: 32 });
+    const root = await makeTempDir("threenative-ladder-fallback-");
+    const strict = { floor: { ssim: 1, meanDeltaE00: 0 }, maxSize: 16 };
+    const cold = await compiled(input, {
+      sharedImages: createSharedImageStore(root),
+      textures: strict,
+    });
+    const measure = vi.spyOn(qualityInstrument, "measureKtx2");
+    try {
+      const warm = await compiled(input, {
+        sharedImages: createSharedImageStore(root),
+        textures: strict,
+      });
+      expect(warm.entry.embeddedTextures).toEqual(cold.entry.embeddedTextures);
+      expect(warm.buffer).toEqual(cold.buffer);
+      expect(measure).not.toHaveBeenCalled();
+      await compiled(input, {
+        sharedImages: createSharedImageStore(root),
+        textures: { floor: { ssim: 0, meanDeltaE00: 100 }, maxSize: 16 },
+      });
+      expect(measure).toHaveBeenCalled();
+      measure.mockClear();
+      await compiled(input, {
+        sharedImages: createSharedImageStore(root),
+        textures: { ...strict, maxSize: 32 },
+      });
+      expect(measure).toHaveBeenCalled();
+    } finally {
+      measure.mockRestore();
+    }
+  });
+
+  it("charges a below-floor source fallback to the uncooked budget", async () => {
+    const root = await makeTempDir("threenative-ladder-budget-");
+    await mkdir(path.join(root, "assets"));
+    await writeFile(
+      path.join(root, "assets", "prop.glb"),
+      await fixtureWithTextures({ width: 32 }),
+    );
+    await expect(
+      compileAssets({
+        cwd: root,
+        concurrency: 1,
+        config: {
+          budget: { uncooked: 1 },
+          models: { textures: { floor: { ssim: 1, meanDeltaE00: 0 } } },
+        },
+      }),
+    ).rejects.toThrow(/TN_ASSETS_BUDGET/u);
+  });
+
+  it("round-trips floor through compileAssets and invalidates the build decision", async () => {
+    const root = await makeTempDir("threenative-ladder-floor-config-");
+    await mkdir(path.join(root, "assets"));
+    await writeFile(
+      path.join(root, "assets", "prop.glb"),
+      await fixtureWithTextures({ width: 32 }),
+    );
+    const read = async () =>
+      JSON.parse(await readFile(path.join(root, "public", "assets.manifest.json"), "utf8")) as {
+        entries: Record<
+          string,
+          { embeddedTextures: { quality: Record<string, qualityInstrument.ITextureQuality> } }
+        >;
+      };
+    await compileAssets({
+      cwd: root,
+      concurrency: 1,
+      config: { models: { textures: { floor: { ssim: 1, meanDeltaE00: 0 } } } },
+    });
+    expect((await read()).entries["prop.glb"]?.embeddedTextures.quality.checker?.rung).toBe("none");
+    await compileAssets({
+      cwd: root,
+      concurrency: 1,
+      config: { models: { textures: { floor: { ssim: 0, meanDeltaE00: 100 } } } },
+    });
+    const score = (await read()).entries["prop.glb"]?.embeddedTextures.quality.checker;
+    expect(score?.rung).toBe("etc1s@150");
+    expect(score?.floor).toEqual({ ssim: 0, meanDeltaE00: 100 });
+  });
+
   it("reports every compressed image without changing output bytes", async () => {
     const input = await fixtureWithTextures({ width: 32 });
     const on = await compiled(input);
@@ -451,12 +677,15 @@ describe("embedded model textures", () => {
   it("should honour a per-slot codec override", async () => {
     const input = await fixtureWithTextures({ width: 32 });
     const { entry } = await compiled(input, {
-      textures: { overrides: [{ codec: "etc1s", slot: "normalTexture" }] },
+      textures: { overrides: [{ codec: "uastc", slot: "baseColorTexture" }] },
     });
     const summary = entry.embeddedTextures as
       | { readonly formats: Readonly<Record<string, string>> }
       | undefined;
-    expect(summary?.formats["cloth-normal"]).toBe("etc1s");
+    expect(summary?.formats.checker).toBe("uastc");
+    await expect(
+      compiled(input, { textures: { overrides: [{ codec: "etc1s", slot: "normalTexture" }] } }),
+    ).rejects.toThrow(/TN_ASSETS_TEXTURE_SLOT_CODEC/u);
   });
 
   // Same 4x4 block rule as the standalone pass, same split: an automatic cook retains an image
@@ -940,6 +1169,18 @@ describe("embedded textures through the compile step", () => {
     await expect(compile({ textures: { maxSize: 0 } })).rejects.toThrow(
       /TN_ASSETS_CONFIG_INVALID: assets\.models\.textures\.maxSize must be a positive integer/u,
     );
+    for (const floor of [
+      null,
+      0,
+      { ssim: 2 },
+      { ssim: null },
+      { meanDeltaE00: -1 },
+      { meanDeltaE00: Number.POSITIVE_INFINITY },
+      { unknown: true },
+    ])
+      await expect(compile({ textures: { floor } })).rejects.toThrow(
+        /TN_ASSETS_CONFIG_(?:INVALID|UNKNOWN_KEY)/u,
+      );
     await expect(
       compile({ textures: { overrides: [{ codec: "bc7", slot: "normalTexture" }] } }),
     ).rejects.toThrow(/codec must be one of etc1s, none, uastc/u);

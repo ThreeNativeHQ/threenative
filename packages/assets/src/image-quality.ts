@@ -9,16 +9,23 @@ import { resolveBasisTranscoder } from "./compile.js";
 // Colour error is the pixel mean of CIEDE2000 in sRGB -> D65 Lab; alpha is independent.
 export const IMAGE_QUALITY_VERSION = "luma709-ssim8-population-de00-d65-alpha-v1";
 export const IMAGE_QUALITY_FLOOR = { ssim: 0.95, meanDeltaE00: 3 } as const;
+export interface IImageQualityFloor {
+  readonly ssim: number;
+  readonly meanDeltaE00: number;
+}
 export const IMAGE_QUALITY_IDENTITY = {
   version: IMAGE_QUALITY_VERSION,
   floor: IMAGE_QUALITY_FLOOR,
   mip: 0,
-  rdo: null,
+  ladder: "first-passing-etc1s-rdo3-rdo1-uastc-none-v1",
+  rdo: [3, 1],
+  zstd: true,
   reference: "same-resolution-pre-encode",
-  slotSemantics: "colour-only-data-unvalidated-v1",
+  slotSemantics: "colour-only-data-unvalidated-alpha-coverage-or-exact-v2",
 } as const;
 
 export interface IImageQualityOptions {
+  readonly floor?: Partial<IImageQualityFloor>;
   readonly slots?: readonly string[];
   readonly alphaThresholds?: readonly number[];
 }
@@ -30,7 +37,7 @@ export interface IImageQuality {
   readonly ssim: number;
   readonly meanDeltaE00: number | null;
   readonly slots: readonly string[];
-  readonly floor: typeof IMAGE_QUALITY_FLOOR;
+  readonly floor: IImageQualityFloor;
   readonly status: "pass" | "below-floor" | "unvalidated-slots";
   readonly alpha: {
     readonly ssim: number;
@@ -45,12 +52,38 @@ export interface IImageQuality {
 }
 
 export interface ITextureQuality extends IImageQuality {
+  readonly rung?: string;
+  readonly compressionSkipped?: "block-size" | "not-smaller" | "below-floor";
   readonly sourceWidth: number;
   readonly sourceHeight: number;
   readonly codec: string;
 }
 
-const COLOUR_SLOTS = new Set([
+export function resolveImageQualityFloor(value: unknown = {}): IImageQualityFloor {
+  if (typeof value !== "object" || value === null || Array.isArray(value))
+    throw new Error("TN_ASSETS_CONFIG_INVALID: texture floor must be an object.");
+  const raw = value as Record<string, unknown>;
+  if (Object.keys(raw).some((key) => key !== "ssim" && key !== "meanDeltaE00"))
+    throw new Error("TN_ASSETS_CONFIG_UNKNOWN_KEY: texture floor accepts ssim and meanDeltaE00.");
+  const ssim = raw.ssim === undefined ? IMAGE_QUALITY_FLOOR.ssim : raw.ssim;
+  const meanDeltaE00 =
+    raw.meanDeltaE00 === undefined ? IMAGE_QUALITY_FLOOR.meanDeltaE00 : raw.meanDeltaE00;
+  if (
+    typeof ssim !== "number" ||
+    !Number.isFinite(ssim) ||
+    ssim < 0 ||
+    ssim > 1 ||
+    typeof meanDeltaE00 !== "number" ||
+    !Number.isFinite(meanDeltaE00) ||
+    meanDeltaE00 < 0
+  )
+    throw new Error(
+      "TN_ASSETS_CONFIG_INVALID: texture floor requires SSIM in [0,1] and non-negative finite meanDeltaE00.",
+    );
+  return { ssim, meanDeltaE00 };
+}
+
+export const COLOUR_SLOTS: ReadonlySet<string> = new Set([
   "baseColorTexture",
   "emissiveTexture",
   "diffuseTexture",
@@ -199,6 +232,7 @@ export function imageQuality(
   validatePixels(source, width, height);
   validatePixels(decoded, width, height);
   const slots = [...new Set(options.slots ?? ["baseColorTexture"])].sort();
+  const floor = resolveImageQualityFloor(options.floor);
   const colour = slots.some((slot) => COLOUR_SLOTS.has(slot));
   const unvalidated = slots.length === 0 || slots.some((slot) => !COLOUR_SLOTS.has(slot));
   const coverage = [...new Set(options.alphaThresholds ?? [])]
@@ -227,10 +261,8 @@ export function imageQuality(
   const alphaSsim = ssim(source, decoded, width, height, true);
   const meanDeltaE00 = colour ? de / (width * height) : null;
   const failed =
-    (colour &&
-      (score < IMAGE_QUALITY_FLOOR.ssim ||
-        (meanDeltaE00 ?? 0) > IMAGE_QUALITY_FLOOR.meanDeltaE00)) ||
-    alphaSsim < IMAGE_QUALITY_FLOOR.ssim ||
+    (colour && (score < floor.ssim || (meanDeltaE00 ?? 0) > floor.meanDeltaE00)) ||
+    alphaSsim < floor.ssim ||
     coverage.some((row) => row.changedPixels !== 0);
   return {
     version: IMAGE_QUALITY_VERSION,
@@ -239,7 +271,7 @@ export function imageQuality(
     ssim: score,
     meanDeltaE00,
     slots,
-    floor: IMAGE_QUALITY_FLOOR,
+    floor,
     status: failed ? "below-floor" : unvalidated ? "unvalidated-slots" : "pass",
     alpha: { ssim: alphaSsim, meanAbsoluteError: alphaError / (width * height), coverage },
   };
@@ -340,9 +372,16 @@ export function readTextureQuality(value: unknown): ITextureQuality | undefined 
     !["pass", "below-floor", "unvalidated-slots"].includes(row.status) ||
     !Array.isArray(row.slots) ||
     !row.slots.every((slot) => typeof slot === "string") ||
-    !["uastc", "etc1s"].includes(row.codec) ||
-    row.floor?.ssim !== IMAGE_QUALITY_FLOOR.ssim ||
-    row.floor?.meanDeltaE00 !== IMAGE_QUALITY_FLOOR.meanDeltaE00 ||
+    !["uastc", "etc1s", "none"].includes(row.codec) ||
+    (row.compressionSkipped !== undefined &&
+      !["block-size", "not-smaller", "below-floor"].includes(row.compressionSkipped)) ||
+    !bounded(row.floor?.ssim, 0, 1) ||
+    !bounded(row.floor?.meanDeltaE00, 0, Number.POSITIVE_INFINITY) ||
+    (row.rung !== undefined &&
+      !["etc1s@150", "uastc+rdo λ3 +zstd", "uastc+rdo λ1 +zstd", "uastc", "none"].includes(
+        row.rung,
+      ) &&
+      !/^etc1s@\d+$/u.test(row.rung)) ||
     !bounded(row.alpha?.ssim, -1, 1) ||
     !bounded(row.alpha?.meanAbsoluteError, 0, 1) ||
     !Array.isArray(row.alpha?.coverage) ||

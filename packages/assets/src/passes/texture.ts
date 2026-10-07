@@ -2,19 +2,24 @@ import { read as readKTX2 } from "ktx-parse";
 import { PNG } from "pngjs";
 import { type AssetKind, type IAssetPass, type IAssetPassOutput, classify } from "../compile.js";
 import { textureStats } from "../health.js";
-import { IMAGE_QUALITY_IDENTITY, measureKtx2 } from "../image-quality.js";
+import {
+  type IImageQualityFloor,
+  IMAGE_QUALITY_IDENTITY,
+  imageQuality,
+  resolveImageQualityFloor,
+} from "../image-quality.js";
 import { KTX2_ENCODER_VERSION, encodeToKTX2 } from "../ktx2-encoder.js";
 import { decodeImageBytes } from "./decode-image.js";
 import { globMatch } from "./glob.js";
-import { cappedSize, resampleRgba } from "./model-textures.js";
+import { cappedSize, codecLadder, encodeTextureLadder, resampleRgba } from "./model-textures.js";
 
 /**
  * Encodes compiled textures to KTX2/Basis so the GPU stores them compressed instead of as
  * decoded RGBA (a 2048x2048 PNG is 16 MB in VRAM; BC7/ASTC hold it in a quarter of that).
  *
  * Codec choice is a declared property of the asset, never a guess: a config override wins,
- * then the `*_normal.*` / `_nrm.*` filename convention, then alpha presence (UASTC keeps
- * exact alpha and survives normal-map data; ETC1S does not). Mip chains are generated at
+ * then the `*_normal.*` / `_nrm.*` filename convention constrains the shared measured ladder.
+ * Colour escalates through ETC1S/RDO/UASTC/none; unknown alpha cutoffs require exact alpha. Mip chains are generated at
  * encode time — always — because an uploaded compressed texture without mips looks worse
  * than the PNG it replaced.
  *
@@ -28,10 +33,10 @@ export type TextureCodec = "etc1s" | "none" | "uastc";
 /**
  * Why a source shipped uncompressed although its pass ran. `not-smaller` means encoding would
  * have grown the download; `block-size` means no block codec can address the source's
- * dimensions. Both keep the authored bytes; neither is a silent decision — the manifest carries
+ * dimensions; `below-floor` means no compressed rung passed. All retain authored bytes; none is a silent decision — the manifest carries
  * the reason and the report prints it.
  */
-export type TextureSkipReason = "block-size" | "not-smaller";
+export type TextureSkipReason = "block-size" | "not-smaller" | "below-floor";
 
 export interface ITextureOverride {
   readonly codec: TextureCodec;
@@ -42,7 +47,8 @@ export interface ITextureOverride {
 }
 
 export interface ITexturePassOptions {
-  /** Internal byte-parity control; not exposed as project configuration. */
+  readonly floor?: Partial<IImageQualityFloor>;
+  /** Internal reporting control; selection still measures and enforces the floor. */
   readonly measureQuality?: boolean;
   /** Longest edge to retain; larger sources are downsampled without upscaling. */
   readonly maxSize?: number;
@@ -97,6 +103,7 @@ export function texturePass(options: ITexturePassOptions = {}): IAssetPass {
     configuration: {
       encoder: KTX2_ENCODER_VERSION,
       instrument: IMAGE_QUALITY_IDENTITY,
+      floor: resolveImageQualityFloor(options.floor),
       keepSmallerSource: true,
       ...(options.maxSize === undefined ? {} : { maxSize: options.maxSize }),
       overrides: options.overrides ?? [],
@@ -110,12 +117,28 @@ export function texturePass(options: ITexturePassOptions = {}): IAssetPass {
           `TN_ASSETS_TEXTURE_UNREADABLE: '${logicalPath}' has no readable PNG/JPEG header; the KTX2 pass cannot encode it.`,
         );
       }
-      // Decoded up front so the codec is chosen from the alpha actually present in the
-      // pixels, not from the container colour type every RGBA PNG carries; the memoised
-      // result feeds the encoder, so the source is decoded exactly once either way.
+      // Decode the source once; every encoder candidate and its quality check uses these pixels.
       const decoded = await decodeImageBytes(input, logicalPath);
-      const choice = chooseCodec(logicalPath, rgbaHasAlpha(decoded.data), options);
-      if (choice.codec === "none") return input;
+      const choice = texturePolicy(logicalPath, options);
+      if (choice.codec === "none")
+        return {
+          buffer: input,
+          entry:
+            options.measureQuality === false
+              ? {}
+              : {
+                  quality: {
+                    ...imageQuality(decoded.data, decoded.data, decoded.width, decoded.height, {
+                      slots: [choice.normalMap ? "normalTexture" : "baseColorTexture"],
+                      floor: options.floor,
+                    }),
+                    codec: "none",
+                    rung: "none",
+                    sourceWidth: decoded.width,
+                    sourceHeight: decoded.height,
+                  },
+                },
+        };
       const { data, resized, target } = resizeForEncoding(
         decoded,
         choice.normalMap,
@@ -126,18 +149,41 @@ export function texturePass(options: ITexturePassOptions = {}): IAssetPass {
       if (target.width % BLOCK_SIZE !== 0 || target.height % BLOCK_SIZE !== 0) {
         return unalignedOutcome(input, logicalPath, choice.codec, choice.explicit, target);
       }
-      const encoded = await encodeToKTX2(
-        resized
-          ? new Uint8Array([0])
-          : new Uint8Array(input.buffer, input.byteOffset, input.byteLength),
-        {
-          generateMipmap: true,
-          imageDecoder: async () => ({ data, height: target.height, width: target.width }),
-          ...encodeSettingsFor(choice),
-        },
-      );
-      if (!resized && encoded.byteLength >= input.byteLength && !choice.explicit) {
-        return { buffer: input, entry: { compressionSkipped: "not-smaller" } };
+      const selected = await encodeTextureLadder(data, target.width, target.height, {
+        slots: [choice.normalMap ? "normalTexture" : "baseColorTexture"],
+        floor: options.floor,
+        srgb: !choice.normalMap,
+        quality: choice.quality,
+        ...(choice.explicit ? { forced: choice.codec } : {}),
+      });
+      const encoded = selected.encoded;
+      if (
+        encoded === undefined ||
+        (!resized && encoded.byteLength >= input.byteLength && !choice.explicit)
+      ) {
+        const reason = encoded === undefined ? "below-floor" : "not-smaller";
+        return {
+          buffer: input,
+          entry: {
+            format: "none",
+            compressionSkipped: reason,
+            ...(options.measureQuality === false
+              ? {}
+              : {
+                  quality: {
+                    ...imageQuality(decoded.data, decoded.data, decoded.width, decoded.height, {
+                      slots: [choice.normalMap ? "normalTexture" : "baseColorTexture"],
+                      floor: options.floor,
+                    }),
+                    codec: "none",
+                    rung: "none",
+                    compressionSkipped: reason,
+                    sourceWidth: decoded.width,
+                    sourceHeight: decoded.height,
+                  },
+                }),
+          },
+        };
       }
       const container = readKTX2(encoded);
       if (container.levelCount < 2) {
@@ -148,16 +194,13 @@ export function texturePass(options: ITexturePassOptions = {}): IAssetPass {
       return {
         buffer: Buffer.from(encoded),
         entry: {
-          format: choice.codec,
-          transcodeTargets: TRANSCODE_TARGETS[choice.codec],
+          format: selected.codec,
+          transcodeTargets: TRANSCODE_TARGETS[selected.codec as Exclude<TextureCodec, "none">],
           ...(options.measureQuality === false
             ? {}
             : {
                 quality: {
-                  ...(await measureKtx2(data, encoded, target.width, target.height, {
-                    slots: [choice.normalMap ? "normalTexture" : "baseColorTexture"],
-                  })),
-                  codec: choice.codec,
+                  ...selected.quality,
                   sourceWidth: decoded.width,
                   sourceHeight: decoded.height,
                 },
@@ -334,13 +377,6 @@ function unalignedOutcome(
   return { buffer: input, entry: { compressionSkipped: "block-size" } };
 }
 
-function rgbaHasAlpha(rgba: Uint8Array): boolean {
-  for (let offset = 3; offset < rgba.length; offset += 4) {
-    if ((rgba[offset] ?? 255) !== 255) return true;
-  }
-  return false;
-}
-
 interface IChosenCodec {
   readonly codec: TextureCodec;
   /** True when an override named this codec, so the pass may not quietly substitute another. */
@@ -349,11 +385,7 @@ interface IChosenCodec {
   readonly quality: number;
 }
 
-function chooseCodec(
-  logicalPath: string,
-  alpha: boolean,
-  options: ITexturePassOptions,
-): IChosenCodec {
+function texturePolicy(logicalPath: string, options: ITexturePassOptions): IChosenCodec {
   const normalMap = NORMAL_MAP_BASENAME.test(baseNameOf(logicalPath));
   const fallbackQuality = options.quality ?? DEFAULT_ETC1S_QUALITY;
   const override = matchingOverride(logicalPath, options.overrides);
@@ -366,7 +398,7 @@ function chooseCodec(
     };
   }
   return {
-    codec: alpha || normalMap ? "uastc" : "etc1s",
+    codec: codecLadder([normalMap ? "normalTexture" : "baseColorTexture"])[0]?.codec ?? "none",
     explicit: false,
     normalMap,
     quality: clampQuality(fallbackQuality),
@@ -379,20 +411,6 @@ function matchingOverride(
   overrides: readonly ITextureOverride[] | undefined,
 ): ITextureOverride | undefined {
   return overrides?.find((override) => globMatch(override.glob, logicalPath));
-}
-
-function encodeSettingsFor(choice: IChosenCodec): Record<string, unknown> {
-  if (choice.codec === "none") return {};
-  if (choice.codec === "uastc") {
-    return {
-      isUASTC: true,
-      ...(!choice.normalMap
-        ? {}
-        : // Quality is an ETC1S knob (qualityLevel 1–255); UASTC runs documented defaults.
-          { isPerceptual: false, isNormalMap: true, isSetKTX2SRGBTransferFunc: false }),
-    };
-  }
-  return { isUASTC: false, qualityLevel: choice.quality };
 }
 
 function clampQuality(quality: number): number {

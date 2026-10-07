@@ -84,6 +84,8 @@ export interface IThreeNativeAudioConfig {
 
 /** Texture compression options for the asset compile step; `"none"` ships sources verbatim. */
 export interface IThreeNativeTexturesConfig {
+  /** Automatic compression floor; omitted fields default to SSIM 0.95 and mean ΔE00 3. */
+  readonly floor?: { readonly ssim?: number; readonly meanDeltaE00?: number };
   /** Integer at least 4; caps the longest edge, preserving aspect and 4x4 alignment; never upscales. */
   readonly maxSize?: number;
   readonly overrides?: readonly {
@@ -151,6 +153,7 @@ export interface IThreeNativeModelsConfig {
   readonly textures?:
     | "none"
     | {
+        readonly floor?: { readonly ssim?: number; readonly meanDeltaE00?: number };
         readonly maxSize?: number;
         readonly quality?: number;
         readonly overrides?: readonly {

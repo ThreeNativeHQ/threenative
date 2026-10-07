@@ -30,7 +30,11 @@ import {
 } from "../compile.js";
 import { type IMaterialMergeSummary, mergeIdenticalMaterials } from "../foliage.js";
 import { createGltfReader, readGltfDocument } from "../gltf-io.js";
-import { IMAGE_QUALITY_IDENTITY, type ITextureQuality } from "../image-quality.js";
+import {
+  IMAGE_QUALITY_IDENTITY,
+  type ITextureQuality,
+  resolveImageQualityFloor,
+} from "../image-quality.js";
 import { KTX2_ENCODER_VERSION } from "../ktx2-encoder.js";
 import { deformingMesh, skinnedMeshes } from "../lod/eligibility.js";
 import { TNDiscreteLod } from "../lod/extension.js";
@@ -846,6 +850,7 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
               decoderFree: options.textures?.decoderFree ?? false,
               encoder: KTX2_ENCODER_VERSION,
               instrument: IMAGE_QUALITY_IDENTITY,
+              floor: resolveImageQualityFloor(options.textures?.floor),
               maxSize: options.textures?.maxSize ?? null,
               // Retention is now conditioned on the container, so it is spelled out rather than
               // named by a boolean: a warm cache keyed on the old rule would keep shipping the
@@ -1126,6 +1131,7 @@ function sharedSettings(
             decoderFree: textureOptions.decoderFree ?? false,
             encoder: KTX2_ENCODER_VERSION,
             instrument: IMAGE_QUALITY_IDENTITY,
+            floor: resolveImageQualityFloor(textureOptions.floor),
             keepSmallerSource: "universal-containers",
             maxSize: textureOptions.maxSize ?? null,
             overrides: textureOptions.overrides ?? [],
@@ -1158,8 +1164,8 @@ async function recallSharedImages(
     const stored = await store.get(key);
     if (stored === undefined) continue;
     if (
-      stored.mimeType === "image/ktx2" &&
       textureOptions !== undefined &&
+      textureOptions.decoderFree !== true &&
       textureOptions.measureQuality !== false &&
       stored.quality === undefined
     )

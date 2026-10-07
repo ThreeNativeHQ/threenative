@@ -22,7 +22,7 @@ import {
 } from "./content/model-dedupe.js";
 import { formatHealthReport, runHealthReport } from "./health.js";
 import type { IAssetHealthInput, IAssetHealthReport } from "./health.js";
-import { readTextureQuality } from "./image-quality.js";
+import { readTextureQuality, resolveImageQualityFloor } from "./image-quality.js";
 import {
   type IModelLodOptions,
   type IModelLodOverride,
@@ -70,6 +70,7 @@ import {
   formatPassCosts,
   formatSkippedCompression,
   formatTextureQualityTotals,
+  formatTextureRungs,
   formatTextureSizes,
 } from "./report.js";
 import type {
@@ -241,6 +242,7 @@ export interface IAudioConfig {
 }
 
 export interface ITexturesConfig {
+  readonly floor?: ITexturePassOptions["floor"];
   readonly maxSize?: number;
   readonly overrides?: readonly ITextureOverride[];
   readonly quality?: number;
@@ -782,7 +784,8 @@ function embeddedTextureRow(value: unknown): IEmbeddedTextureRow | undefined {
       ? {
           skippedCompression: Object.fromEntries(
             Object.entries(value.skippedCompression).filter(
-              ([, reason]) => reason === "block-size" || reason === "not-smaller",
+              ([, reason]) =>
+                reason === "block-size" || reason === "not-smaller" || reason === "below-floor",
             ),
           ) as Record<string, TextureSkipReason>,
         }
@@ -957,11 +960,12 @@ function parseTexturesConfig(raw: unknown): ITexturePassOptions | undefined {
     throw new Error('TN_ASSETS_CONFIG_INVALID: assets.textures must be "none" or an object.');
   }
   for (const key of Object.keys(raw)) {
-    if (key !== "maxSize" && key !== "quality" && key !== "overrides") {
+    if (key !== "maxSize" && key !== "quality" && key !== "overrides" && key !== "floor") {
       throw new Error(`TN_ASSETS_CONFIG_UNKNOWN_KEY: assets.textures.${key} is not recognised.`);
     }
   }
   return {
+    ...(raw.floor === undefined ? {} : { floor: resolveImageQualityFloor(raw.floor) }),
     ...(raw.maxSize === undefined
       ? {}
       : { maxSize: positiveTextureSize(raw.maxSize, "assets.textures.maxSize") }),
@@ -1124,7 +1128,7 @@ function parseModelCompact(raw: unknown): boolean | IModelCompactOptions {
   };
 }
 
-const MODEL_TEXTURE_KEYS: readonly string[] = ["maxSize", "overrides", "quality"];
+const MODEL_TEXTURE_KEYS: readonly string[] = ["maxSize", "overrides", "quality", "floor"];
 
 function positiveInteger(value: unknown, label: string): number {
   if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) {
@@ -1151,6 +1155,7 @@ function parseModelTextures(raw: unknown): IModelTexturesOptions | "none" {
     }
   }
   return {
+    ...(raw.floor === undefined ? {} : { floor: resolveImageQualityFloor(raw.floor) }),
     ...(raw.maxSize === undefined ? {} : { maxSize: positiveInteger(raw.maxSize, "maxSize") }),
     ...(raw.overrides === undefined
       ? {}
@@ -2764,6 +2769,7 @@ export async function compileAssets(
             materials: materialRow(applied.entry.materials),
             format: typeof applied.entry.format === "string" ? applied.entry.format : undefined,
             ...(applied.entry.compressionSkipped === "block-size" ||
+            applied.entry.compressionSkipped === "below-floor" ||
             applied.entry.compressionSkipped === "not-smaller"
               ? { compressionSkipped: applied.entry.compressionSkipped }
               : {}),
@@ -2959,6 +2965,11 @@ export async function compileAssets(
   for (const line of formatAudioSizes(audioRows)) console.log(line);
   for (const line of formatTextureSizes(textureRows)) console.log(line);
   for (const line of formatModelSizes(modelRows)) console.log(line);
+  const rungs = [
+    ...textureRows.map((row) => row.format ?? "none"),
+    ...modelRows.flatMap((row) => Object.values(row.embeddedTextures?.formats ?? {})),
+  ];
+  if (rungs.length > 0) console.log(formatTextureRungs(rungs));
   const qualityScores = [
     ...textureRows.flatMap((row) => (row.quality === undefined ? [] : [row.quality])),
     ...modelRows.flatMap((row) => Object.values(row.embeddedTextures?.quality ?? {})),

@@ -538,7 +538,7 @@ function qualityLine(name: string, score: ITextureQuality): string {
   const coverage = score.alpha.coverage
     .map((c) => `cutoff ${c.threshold}: ${c.source} -> ${c.decoded}, ${c.changedPixels} changed`)
     .join("; ");
-  return `texture quality ${name} (${score.codec}, mip 0): SSIM ${score.ssim.toFixed(4)}; mean ΔE00 ${score.meanDeltaE00 === null ? "n/a (data)" : score.meanDeltaE00.toFixed(3)}; alpha SSIM ${score.alpha.ssim.toFixed(4)}, MAE ${score.alpha.meanAbsoluteError.toFixed(6)}${coverage === "" ? "" : `; ${coverage}`}; ${score.status}; floor SSIM >= ${score.floor.ssim}, ΔE00 <= ${score.floor.meanDeltaE00}; source ${score.sourceWidth}x${score.sourceHeight} -> comparison ${score.width}x${score.height}; slots ${score.slots.join("+") || "unknown"}`;
+  return `texture quality ${name} (${score.codec}, mip 0${score.rung === undefined ? "" : `; rung ${score.rung}`}): SSIM ${score.ssim.toFixed(4)}; mean ΔE00 ${score.meanDeltaE00 === null ? "n/a (data)" : score.meanDeltaE00.toFixed(3)}; alpha SSIM ${score.alpha.ssim.toFixed(4)}, MAE ${score.alpha.meanAbsoluteError.toFixed(6)}${coverage === "" ? "" : `; ${coverage}`}; ${score.status}; floor SSIM >= ${score.floor.ssim}, ΔE00 <= ${score.floor.meanDeltaE00}; source ${score.sourceWidth}x${score.sourceHeight} -> comparison ${score.width}x${score.height}; slots ${score.slots.join("+") || "unknown"}`;
 }
 
 /** Counts observations, including repeated shared-image consumers, without hiding data slots. */
@@ -555,7 +555,13 @@ export function formatTextureQualityTotals(scores: readonly ITextureQuality[]): 
     colour.length === 0
       ? "colour n/a"
       : `colour min SSIM ${minimumSsim.toFixed(4)}, max mean ΔE00 ${maximumDeltaE.toFixed(3)}`;
-  return `texture quality total: ${scores.length} measured; ${count("pass")} pass; ${count("below-floor")} below-floor; ${count("unvalidated-slots")} unvalidated-slots; ${worst}; ${IMAGE_QUALITY_VERSION}; observational (no selection changes)`;
+  return `texture quality total: ${scores.length} measured; ${count("pass")} pass; ${count("below-floor")} below-floor; ${count("unvalidated-slots")} unvalidated-slots; ${worst}; ${IMAGE_QUALITY_VERSION}; floor enforced`;
+}
+
+/** Counts every image decision, including retained sources, on cold and warm builds. */
+export function formatTextureRungs(codecs: readonly string[]): string {
+  const count = (codec: string): number => codecs.filter((value) => value === codec).length;
+  return `${count("etc1s")} etc1s · ${count("uastc")} escalated to uastc · ${count("none")} uncompressed`;
 }
 
 function deltaLabel(before: number, after: number): string {
