@@ -101,7 +101,11 @@ CI repair (2026-10-07): run 37554436342 compiled the Windows adapter with C++20 
 `/Zc:__cplusplus`, so V8 rejected its reported language level. The flag now belongs to the
 `v8::v8` interface and reaches every consumer, including the separate player services target.
 Linux adapter and player-services builds pass; Windows compilation awaits CI. Initial focused
-V8 checks pass 4/7; scene, raycaster/LOD and callback-cycle abort during process teardown in
-`Object3D::releaseTransform`. This newly exposed lifetime failure remains open; no phase tick.
+V8 checks passed 4/7; scene, raycaster/LOD and callback-cycle aborted during process teardown in
+`Object3D::releaseTransform`. The lazy transform pool died before the older VM owner: a native
+late-owner teardown regression reproduced the invalid free. Pool bookkeeping now has process
+lifetime, while pages still release when the last object dies. Verification: 15/15 scene/V8
+checks, 3/3 focused ASan checks, the rebuilt Wasm exact ordering/callback oracle and the desktop
+core/V8 playtest pass (ArrowUp moves −0.8 m). No phase tick; the full template journey stays open.
 
 - This game runtime is the default until gate T ships, and it is never called a JS-free *application* (§2.1). The engine under it is JS-free (owner, 2026-10-04).

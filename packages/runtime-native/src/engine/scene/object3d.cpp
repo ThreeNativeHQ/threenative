@@ -30,7 +30,9 @@ struct TransformPool {
     std::vector<std::pair<TransformPage*, std::size_t>> free;
     std::size_t live = 0;
 };
-TransformPool& transforms() { static TransformPool pool; return pool; }
+// Application/VM owners can outlive this lazy singleton during static teardown. Pages are still
+// reclaimed when the last object dies; only the pool bookkeeping has process lifetime.
+TransformPool& transforms() { static auto* pool = new TransformPool; return *pool; }
 }
 
 Object3D::TransformSlot Object3D::acquireTransform() {

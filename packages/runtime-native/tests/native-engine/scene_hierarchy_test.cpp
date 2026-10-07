@@ -27,6 +27,16 @@ namespace {
 
 using namespace tn::engine;
 
+// This owner predates the lazy transform pool, as a VM or application owner can.
+std::unique_ptr<Object3D> exitOwner;
+
+void teardown() {
+    exitOwner = std::make_unique<Object3D>();
+    exitOwner->position.set(1, 2, 3);
+    exitOwner->updateMatrixWorld();
+    CHECK(exitOwner->matrixWorld.elements[12] == 1);
+}
+
 // The event log both event cases assert on: three stamps `target`, and a child event names the child.
 struct Recorded {
     std::vector<std::string> order;
@@ -1137,4 +1147,4 @@ void rotation_sync() {
 }  // namespace
 
 TN_TEST_MAIN({"hierarchy", hierarchy}, {"alias", alias}, {"revision", revision}, {"upstream", upstream},
-             {"rotation_sync", rotation_sync})
+             {"rotation_sync", rotation_sync}, {"teardown", teardown})
