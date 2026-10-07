@@ -20,7 +20,7 @@
       "release": true
     },
     {
-      "timeoutMs": 600000,
+      "timeoutMs": 120000,
       "label": "complete-series",
       "waitForResource": {
         "id": "state",
