@@ -257,6 +257,9 @@ export class AnimationPlayer {
   #strideSynced = false;
   #strideOverridden = false;
   #strideInPlace = false;
+  readonly #onFinished = ({ action }: { action: AnimationAction }) => {
+    if (action === this.#actions.get(this.#current ?? "")) this.#finished = true;
+  };
 
   constructor(options: IAnimationPlayerOptions) {
     const owner = new.target.name || "AnimationPlayer";
@@ -296,9 +299,7 @@ export class AnimationPlayer {
           `${owner}: clip '${name}' binds 0 tracks to '${options.root.name || options.root.type}'.`,
         );
     }
-    this.mixer.addEventListener("finished", ({ action }) => {
-      if (action === this.#actions.get(this.#current ?? "")) this.#finished = true;
-    });
+    this.mixer.addEventListener("finished", this.#onFinished);
   }
 
   get current(): string | undefined {
@@ -790,6 +791,11 @@ export class AnimationPlayer {
   dispose(): void {
     this.stop();
     this.mixer.uncacheRoot(this.mixer.getRoot());
+    this.mixer.removeEventListener("finished", this.#onFinished);
+    this.#actions.clear();
+    this.#clips.clear();
+    this.#clipGroundSpeed.clear();
+    this.#preparation = undefined;
   }
 }
 
