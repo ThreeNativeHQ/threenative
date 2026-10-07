@@ -8,6 +8,10 @@
 // the material-drift checks of later frames are not carried. The native scene has no sprites,
 // points, lines, LODs, BatchedMeshes, multi-materials, custom depth materials, draw ranges,
 // indirect geometries or vertex-displacing materials, so those reasons never arise here.
+#if defined(__wasm_simd128__)
+#include <wasm_simd128.h>
+#endif
+
 #include <bit>
 #include <cmath>
 #include <cstdint>
@@ -100,18 +104,46 @@ inline double batchFlags(const Mesh& m) {
 // uniformSignatureOf, as equality: two materials share a uniform group when every property but the
 // base colour (and name/id/version, which the signature skips) is the same.
 inline bool sameUniforms(const Material& a, const Material& b) {
-    const auto eq = [](const Color& x, const Color& y) { return (x.r == y.r) & (x.g == y.g) & (x.b == y.b); };
-    return a.type == b.type && a.transparent == b.transparent &&
-           a.depthTest == b.depthTest && a.depthWrite == b.depthWrite && a.side == b.side && a.visible == b.visible &&
-           a.toneMapped == b.toneMapped && a.fog == b.fog &&
-           ((a.opacity == b.opacity) & (a.alphaTest == b.alphaTest) & eq(a.emissive, b.emissive) &
+#if defined(__wasm_simd128__)
+    const auto numericEqual = [&]() __attribute__((always_inline)) {
+#else
+    const auto numericEqual = [&] {
+#endif
+#if defined(__wasm_simd128__)
+        v128_t mask = wasm_i64x2_splat(-1);
+        const auto pair = [&](double ax, double ay, double bx, double by) {
+            mask = wasm_v128_and(mask, wasm_f64x2_eq(wasm_f64x2_make(ax, ay), wasm_f64x2_make(bx, by)));
+        };
+        pair(a.opacity, a.alphaTest, b.opacity, b.alphaTest);
+        pair(a.emissive.r, a.emissive.g, b.emissive.r, b.emissive.g);
+        pair(a.emissive.b, a.emissiveIntensity, b.emissive.b, b.emissiveIntensity);
+        pair(a.roughness, a.envMapIntensity, b.roughness, b.envMapIntensity);
+        pair(a.metalness, a.specular.r, b.metalness, b.specular.r);
+        pair(a.specular.g, a.specular.b, b.specular.g, b.specular.b);
+        pair(a.shininess, a.ior, b.shininess, b.ior);
+        pair(a.specularIntensity, a.specularColor.r, b.specularIntensity, b.specularColor.r);
+        pair(a.specularColor.g, a.specularColor.b, b.specularColor.g, b.specularColor.b);
+        pair(a.clearcoat, a.sheen, b.clearcoat, b.sheen);
+        pair(a.transmission, a.iridescence, b.transmission, b.iridescence);
+        pair(a.anisotropy, a.dispersion, b.anisotropy, b.dispersion);
+        pair(a.normalScaleX, a.normalScaleY, b.normalScaleX, b.normalScaleY);
+        return wasm_i64x2_all_true(mask) && a.aoMapIntensity == b.aoMapIntensity;
+#else
+        const auto eq = [](const Color& x, const Color& y) { return (x.r == y.r) & (x.g == y.g) & (x.b == y.b); };
+        return ((a.opacity == b.opacity) & (a.alphaTest == b.alphaTest) & eq(a.emissive, b.emissive) &
             (a.emissiveIntensity == b.emissiveIntensity) & (a.roughness == b.roughness) &
             (a.metalness == b.metalness) & eq(a.specular, b.specular) & (a.shininess == b.shininess) &
             (a.ior == b.ior) & (a.specularIntensity == b.specularIntensity) & eq(a.specularColor, b.specularColor) &
             (a.clearcoat == b.clearcoat) & (a.sheen == b.sheen) & (a.transmission == b.transmission) &
             (a.iridescence == b.iridescence) & (a.anisotropy == b.anisotropy) & (a.dispersion == b.dispersion) &
             (a.envMapIntensity == b.envMapIntensity) & (a.normalScaleX == b.normalScaleX) &
-            (a.normalScaleY == b.normalScaleY) & (a.aoMapIntensity == b.aoMapIntensity)) &&
+            (a.normalScaleY == b.normalScaleY) & (a.aoMapIntensity == b.aoMapIntensity));
+#endif
+    };
+    return a.type == b.type && a.transparent == b.transparent &&
+           a.depthTest == b.depthTest && a.depthWrite == b.depthWrite && a.side == b.side && a.visible == b.visible &&
+           a.toneMapped == b.toneMapped && a.fog == b.fog &&
+           numericEqual() &&
            a.positionNode == b.positionNode && a.nodes == b.nodes &&
            a.vertexColors == b.vertexColors && a.flatShading == b.flatShading &&
            a.maps == b.maps;
