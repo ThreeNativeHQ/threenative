@@ -523,7 +523,7 @@ void Object3D::updateMatrix() {
 
 bool Object3D::updateMatrixWorldSelf(bool force, bool identityParent, bool plain) {
     if (plain && identityParent && matrixAutoUpdate && matrixWorldAutoUpdate && !pivot) {
-        Matrix4 composed;
+        static thread_local Matrix4 composed;
         composed.compose(position, quaternion, scale);
         const bool changed = std::memcmp(matrix.elements.data(), composed.elements.data(), sizeof(double) * 16) != 0;
         matrix.copy(composed);
