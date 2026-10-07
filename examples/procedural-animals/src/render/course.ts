@@ -32,14 +32,14 @@ export function slopedFloorGround(
   const sample = new Vector3();
   const local = new Vector3();
   return (x: number, z: number) => {
-    if (!Number.isFinite(normal.y) || Math.abs(normal.y) < 1e-6) return fallback(x, z);
+    if (!Number.isFinite(normal.y) || normal.y <= 1e-6) return fallback(x, z);
     const y = origin.y - (normal.x * (x - origin.x) + normal.z * (z - origin.z)) / normal.y;
     sample.set(x, y, z);
     local.copy(sample).applyMatrix4(inverse);
     if (
       ![sample.x, sample.y, sample.z, local.x, local.y, local.z].every(Number.isFinite) ||
-      Math.abs(local.x) > geometry.parameters.width / 2 + 1e-4 ||
-      Math.abs(local.z) > geometry.parameters.depth / 2 + 1e-4 ||
+      Math.abs(local.x) > geometry.parameters.width / 2 ||
+      Math.abs(local.z) > geometry.parameters.depth / 2 ||
       Math.abs(local.y - height) > 1e-3
     )
       return fallback(x, z);
