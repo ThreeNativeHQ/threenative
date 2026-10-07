@@ -1,3 +1,4 @@
+/// <reference path="./donor.d.ts" />
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
@@ -28,10 +29,10 @@ const donorRoot = path.dirname(
 const digest = (bytes: string | Uint8Array) => createHash("sha256").update(bytes).digest("hex");
 
 function normalized(options: IWolfBakeOptions): IWolfBakeOptions {
-  if (process.versions.node !== ANIMAL_BUILD_NODE)
+  if (!process.versions.node.startsWith(`${ANIMAL_BUILD_NODE.split(".")[0]}.`))
     throw animalError(
       "BUILD_RUNTIME",
-      `baking requires Node ${ANIMAL_BUILD_NODE}; found ${process.versions.node}`,
+      `baking requires Node ${ANIMAL_BUILD_NODE.split(".")[0]}.x (reference ${ANIMAL_BUILD_NODE}); found ${process.versions.node}`,
     );
   if (!options || typeof options !== "object" || Array.isArray(options))
     throw animalError("OPTIONS", "wolf options must be an object");

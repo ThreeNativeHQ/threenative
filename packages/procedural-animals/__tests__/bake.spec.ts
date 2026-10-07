@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { readFile, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { compileAssets } from "../../assets/src/compile.js";
 import { animalBakePass, bakeWolf, bakeWolfToFile } from "../src/build.js";
 import { parseAnimalBake } from "../src/format.js";
@@ -32,7 +32,7 @@ const digest = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest(
 
 describe("actual pinned wolf build and normal asset cook", () => {
   it("regenerates identical bytes and invalidates actual cooked payloads for seed/tier", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "tn-wolf-cook-"));
+    const root = await makeTempDir("tn-wolf-cook-");
     roots.push(root);
     const source = path.join(root, "source");
     const output = path.join(root, "cooked");
@@ -69,7 +69,7 @@ describe("actual pinned wolf build and normal asset cook", () => {
   }, 60_000);
 
   it("rejects unknown options/corrupt source without replacing valid source or manifest", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "tn-wolf-atomic-"));
+    const root = await makeTempDir("tn-wolf-atomic-");
     roots.push(root);
     const source = path.join(root, "source");
     const output = path.join(root, "cooked");
@@ -92,7 +92,7 @@ describe("actual pinned wolf build and normal asset cook", () => {
 });
 
 it("preserves last valid source and removes staging after an interrupted partial write", async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "tn-wolf-interrupted-"));
+  const root = await makeTempDir("tn-wolf-interrupted-");
   roots.push(root);
   const destination = path.join(root, "wolf.animal");
   await bakeWolfToFile({ seed: 7, tier: "crowd" }, destination);
@@ -106,7 +106,7 @@ it("preserves last valid source and removes staging after an interrupted partial
 }, 30_000);
 
 it("loads an actual cooked wolf and preserves every skin attribute before geometry construction", async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "tn-wolf-resolve-"));
+  const root = await makeTempDir("tn-wolf-resolve-");
   roots.push(root);
   const source = path.join(root, "source");
   const output = path.join(root, "cooked");

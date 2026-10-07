@@ -59,7 +59,7 @@ function transport(maxQueries = 32) {
       if (!resolveMap) throw new Error("No actual pool readback submitted");
       for (let i = 0; i < durations.length; i++) {
         times[i * 2] = BigInt(i * 10_000_000);
-        times[i * 2 + 1] = times[i * 2] + BigInt(Math.round(durations[i] * 1e6));
+        times[i * 2 + 1] = (times[i * 2] ?? 0n) + BigInt(Math.round((durations[i] ?? 0) * 1e6));
       }
       const resolve = resolveMap;
       resolveMap = undefined;
@@ -123,10 +123,13 @@ it("retains every real render frame from one delayed Three resolve batch", async
     await t.release([1, 0.5, 2, 0.5, 3, 0.5]);
     expect(t.pool.frames).toEqual([0, 1, 2]);
     // The existing facade returns only2; the finite observer must retain0,1,2 once.
-    const samples = receipt?.take() ?? [renderer.gpuFrameSample()];
-    expect(samples.map((s: { frame: number }) => s.frame)).toEqual([0, 1, 2]);
-    expect(samples.map((s: { ms: number }) => s.ms)).toEqual([1.5, 2.5, 3.5]);
-    expect(receipt.take()).toEqual([]);
+    const samples = (receipt?.take() ?? [renderer.gpuFrameSample?.()]) as {
+      frame: number;
+      ms: number;
+    }[];
+    expect(samples.map((s) => s.frame)).toEqual([0, 1, 2]);
+    expect(samples.map((s) => s.ms)).toEqual([1.5, 2.5, 3.5]);
+    expect(receipt?.take()).toEqual([]);
   } finally {
     receipt?.dispose();
     renderer.dispose();
@@ -231,7 +234,7 @@ it("ignores pre-activation frame membership and accepts actual complete zero-dur
   const rows = t.observation.take();
   expect(rows).toHaveLength(1);
   expect(rows[0]).toMatchObject({ frame: 2, ms: 0 });
-  expect(rows[0].queries).toHaveLength(2);
+  expect(rows[0]?.queries).toHaveLength(2);
 });
 it("fails a fulfilled stale lastValue when the real pool cannot drain", async () => {
   const t = observed();
@@ -481,12 +484,12 @@ it("copies immutable query values before later producer-map changes", async () =
   await t.release([1, 2]);
   const rows = t.observation.take();
   t.pool.timestamps.set("r:0:main:f0", 99);
-  expect(rows[0].ms).toBe(3);
-  expect(rows[0].queries[0].ms).toBe(1);
+  expect(rows[0]?.ms).toBe(3);
+  expect(rows[0]?.queries[0]?.ms).toBe(1);
   expect(Object.isFrozen(rows)).toBe(true);
   expect(Object.isFrozen(rows[0])).toBe(true);
-  expect(Object.isFrozen(rows[0].queries)).toBe(true);
-  expect(Object.isFrozen(rows[0].queries[0])).toBe(true);
+  expect(Object.isFrozen(rows[0]?.queries)).toBe(true);
+  expect(Object.isFrozen(rows[0]?.queries[0])).toBe(true);
 });
 it("invalidates unsupported and disposed real pools instead of returning empty success", () => {
   const t = observed();
@@ -560,7 +563,7 @@ it("keeps ordinary resolution enabled and never reads observer pool state when d
     t.draw();
     t.renderer.resolveGpuFrame();
     await t.release([2]);
-    expect(t.renderer.gpuFrameSample()).toEqual({ frame: 0, ms: 2 });
+    expect(t.renderer.gpuFrameSample?.()).toEqual({ frame: 0, ms: 2 });
     expect(t.resolves).toEqual(["render", "compute"]);
     expect(t.touches()).toBe(0);
   } finally {

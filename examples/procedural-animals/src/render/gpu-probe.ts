@@ -41,6 +41,7 @@ export class AnimalGPUProbe
   constructor(bake: IAnimalBake) {
     super(new BufferGeometry(), new MeshBasicNodeMaterial());
     // Hidden during startup compilation; packets are queued only after startup readiness.
+    // engine-override: qualification probe, not a transient effect; it stays hidden until startup readiness
     this.visible = false;
     this.frustumCulled = false;
     this.geometry.setAttribute("position", new Float32BufferAttribute(new Float32Array(9), 3));

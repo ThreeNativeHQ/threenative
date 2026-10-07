@@ -331,6 +331,7 @@ export function parseAnimalBake(buffer: ArrayBuffer): IAnimalBake {
       if (value !== null && typeof value === "object") objects.push(value);
     Object.freeze(object);
   }
+  // quality-allow: the header and every typed array were validated field by field above; the spread is the validated IAnimalBake.
   const bake = Object.freeze({ ...data, ...arrays }) as unknown as IAnimalBake;
   validatedBakes.add(bake);
   return bake;

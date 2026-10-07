@@ -32,7 +32,7 @@
   "scripts": {
     "build": "tsup --config tsup.config.ts && publint",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --root ../.. procedural-animals/__tests__"
+    "test": "vitest run --root ../.. procedural-animals/__tests__ && publint --strict"
   },
   "dependencies": {
     "three": "catalog:",
