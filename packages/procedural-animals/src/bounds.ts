@@ -46,7 +46,7 @@ export function createAnimalBounds(bake: IAnimalBake, geometry?: BufferGeometry)
       const x = position?.getX(v) ?? bake.pos[v * 3] ?? 0;
       const y = position?.getY(v) ?? bake.pos[v * 3 + 1] ?? 0;
       const z = position?.getZ(v) ?? bake.pos[v * 3 + 2] ?? 0;
-      if (![x, y, z].every(Number.isFinite))
+      if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z))
         throw animalError("BOUNDS", "edited bind positions must be finite");
       radius = Math.max(radius, Math.hypot(x, y, z));
       let sum = 0;
@@ -91,8 +91,11 @@ export function createAnimalBounds(bake: IAnimalBake, geometry?: BufferGeometry)
     update(data: Float32Array) {
       if (geometry) measure();
       sphere.center.set(0, 0, 0);
-      if (data.length !== bake.bones.length * 20 || !data.every(Number.isFinite))
+      if (data.length !== bake.bones.length * 20)
         throw animalError("BOUNDS", "missing or non-finite pose packet");
+      for (let p = 0; p < data.length; p++)
+        if (!Number.isFinite(data[p]))
+          throw animalError("BOUNDS", "missing or non-finite pose packet");
       let scaledRadius = 0;
       let dualRadius = 0;
       let minimumQuaternionLength = Number.POSITIVE_INFINITY;
@@ -106,7 +109,7 @@ export function createAnimalBounds(bake: IAnimalBake, geometry?: BufferGeometry)
           Math.hypot(data[o + 4] ?? 0, data[o + 5] ?? 0, data[o + 6] ?? 0, data[o + 7] ?? 0),
         );
         let normSquared = 0;
-        for (const row of [8, 12, 16])
+        for (let row = 8; row <= 16; row += 4)
           for (let column = 0; column < 3; column++)
             normSquared += (data[o + row + column] ?? 0) ** 2;
         const offset = Math.hypot(data[o + 11] ?? 0, data[o + 15] ?? 0, data[o + 19] ?? 0);

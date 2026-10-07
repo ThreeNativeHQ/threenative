@@ -88,10 +88,15 @@ export function createAnimalPose(bake: IAnimalBake): IAnimalPose {
         const axes = bindAxes[i];
         if (!bone || !inverse || !origin || !axes) throw animalError("RIG", "missing pose bone");
         local.multiplyMatrices(worldToLocal, bone.matrixWorld);
-        if (!local.elements.every(Number.isFinite))
-          throw animalError("POSE", `${bone.name} has non-finite matrix`);
+        for (let j = 0; j < local.elements.length; j++)
+          if (!Number.isFinite(local.elements[j]))
+            throw animalError("POSE", `${bone.name} has non-finite matrix`);
         local.decompose(position, rotation, scale);
-        if (![scale.x, scale.y, scale.z].every((value) => Math.abs(value) > 1e-8))
+        if (
+          !(Math.abs(scale.x) > 1e-8) ||
+          !(Math.abs(scale.y) > 1e-8) ||
+          !(Math.abs(scale.z) > 1e-8)
+        )
           throw animalError("POSE", `${bone.name} has singular scale`);
         rotation.multiply(inverse);
         translation.copy(origin).applyQuaternion(rotation).negate().add(position);
@@ -100,43 +105,34 @@ export function createAnimalPose(bake: IAnimalBake): IAnimalPose {
         const tx = translation.x;
         const ty = translation.y;
         const tz = translation.z;
-        pending.set(
-          [
-            x,
-            y,
-            z,
-            w,
-            0.5 * (w * tx + ty * z - tz * y),
-            0.5 * (w * ty + tz * x - tx * z),
-            0.5 * (w * tz + tx * y - ty * x),
-            -0.5 * (tx * x + ty * y + tz * z),
-          ],
-          o,
-        );
+        pending[o] = x;
+        pending[o + 1] = y;
+        pending[o + 2] = z;
+        pending[o + 3] = w;
+        pending[o + 4] = 0.5 * (w * tx + ty * z - tz * y);
+        pending[o + 5] = 0.5 * (w * ty + tz * x - tx * z);
+        pending[o + 6] = 0.5 * (w * tz + tx * y - ty * x);
+        pending[o + 7] = -0.5 * (tx * x + ty * y + tz * z);
         affine
           .multiplyMatrices(axes, scaling.set(scale.x, 0, 0, 0, scale.y, 0, 0, 0, scale.z))
           .multiply(transpose.copy(axes).transpose());
         const e = affine.elements;
-        pending.set(
-          [
-            e[0],
-            e[3],
-            e[6],
-            origin.x - (e[0] * origin.x + e[3] * origin.y + e[6] * origin.z),
-            e[1],
-            e[4],
-            e[7],
-            origin.y - (e[1] * origin.x + e[4] * origin.y + e[7] * origin.z),
-            e[2],
-            e[5],
-            e[8],
-            origin.z - (e[2] * origin.x + e[5] * origin.y + e[8] * origin.z),
-          ],
-          o + 8,
-        );
+        pending[o + 8] = e[0];
+        pending[o + 9] = e[3];
+        pending[o + 10] = e[6];
+        pending[o + 11] = origin.x - (e[0] * origin.x + e[3] * origin.y + e[6] * origin.z);
+        pending[o + 12] = e[1];
+        pending[o + 13] = e[4];
+        pending[o + 14] = e[7];
+        pending[o + 15] = origin.y - (e[1] * origin.x + e[4] * origin.y + e[7] * origin.z);
+        pending[o + 16] = e[2];
+        pending[o + 17] = e[5];
+        pending[o + 18] = e[8];
+        pending[o + 19] = origin.z - (e[2] * origin.x + e[5] * origin.y + e[8] * origin.z);
       }
-      if (!pending.every(Number.isFinite))
-        throw animalError("POSE", "pose packet exceeds float range");
+      for (let p = 0; p < pending.length; p++)
+        if (!Number.isFinite(pending[p]))
+          throw animalError("POSE", "pose packet exceeds float range");
       data.set(pending);
       texture.needsUpdate = true;
     },
