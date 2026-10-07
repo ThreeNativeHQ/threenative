@@ -1888,7 +1888,13 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         // so this charges the phase to the frame that paid it, one frame late rather than never.
         // Absent on the web target and on any host with no overlay, where the work is zero rather
         // than unknown, so an absent global must read as zero and not as a missing measurement.
-        if (frameCounters !== undefined) frameBudget?.addCounters(frameCounters.read());
+        // The boundary counts ride the span flag, but the simulation tick does not need them: it is
+        // fed every frame so a plain `TN_FRAME_BUDGET` log can join a window's start and end ticks
+        // without `TN_FRAME_SPANS`. `addCounters` keeps the last tick a caller did provide.
+        frameBudget?.addCounters({
+          ...(frameCounters?.read() ?? {}),
+          simulationTick: gameLoop.tick(),
+        });
         const uiHost = globalThis as { __tnUiCompositeMs?: () => number };
         frameBudget?.addUi(
           typeof uiHost.__tnUiCompositeMs === "function" ? (uiHost.__tnUiCompositeMs() ?? 0) : 0,
