@@ -115,30 +115,54 @@ export function frameQuat(q, dirY, latX) {
 
 // Writes a bone world matrix directly from its head position and frame (no quaternion round trip).
 export function writeFrame(m, o, dirY, latX) {
-  _Y.copy(dirY);
-  const l = _Y.length();
-  if (l < 1e-9) _Y.set(0, 1, 0);
-  else _Y.multiplyScalar(1 / l);
-  const d = latX.x * _Y.x + latX.y * _Y.y + latX.z * _Y.z;
-  _X.set(latX.x - _Y.x * d, latX.y - _Y.y * d, latX.z - _Y.z * d);
-  if (_X.lengthSq() < 1e-10) {
-    _X.set(0, 0, 1).addScaledVector(_Y, -_Y.z);
-    if (_X.lengthSq() < 1e-10) _X.set(1, 0, 0);
+  let yx = dirY.x;
+  let yy = dirY.y;
+  let yz = dirY.z;
+  const l = Math.sqrt(yx * yx + yy * yy + yz * yz);
+  if (l < 1e-9) {
+    yx = 0;
+    yy = 1;
+    yz = 0;
+  } else {
+    const s = 1 / l;
+    yx *= s;
+    yy *= s;
+    yz *= s;
   }
-  _X.normalize();
-  _Z.crossVectors(_X, _Y);
+  const d = latX.x * yx + latX.y * yy + latX.z * yz;
+  let xx = latX.x - yx * d;
+  let xy = latX.y - yy * d;
+  let xz = latX.z - yz * d;
+  if (xx * xx + xy * xy + xz * xz < 1e-10) {
+    xx = 0 + yx * -yz;
+    xy = 0 + yy * -yz;
+    xz = 1 + yz * -yz;
+    if (xx * xx + xy * xy + xz * xz < 1e-10) {
+      xx = 1;
+      xy = 0;
+      xz = 0;
+    }
+  }
+  const xl = Math.sqrt(xx * xx + xy * xy + xz * xz);
+  const xf = 1 / (xl || 1);
+  xx *= xf;
+  xy *= xf;
+  xz *= xf;
+  const zx = xy * yz - xz * yy;
+  const zy = xz * yx - xx * yz;
+  const zz = xx * yy - xy * yx;
   const e = m.elements;
-  e[0] = _X.x;
-  e[1] = _X.y;
-  e[2] = _X.z;
+  e[0] = xx;
+  e[1] = xy;
+  e[2] = xz;
   e[3] = 0;
-  e[4] = _Y.x;
-  e[5] = _Y.y;
-  e[6] = _Y.z;
+  e[4] = yx;
+  e[5] = yy;
+  e[6] = yz;
   e[7] = 0;
-  e[8] = _Z.x;
-  e[9] = _Z.y;
-  e[10] = _Z.z;
+  e[8] = zx;
+  e[9] = zy;
+  e[10] = zz;
   e[11] = 0;
   e[12] = o.x;
   e[13] = o.y;
