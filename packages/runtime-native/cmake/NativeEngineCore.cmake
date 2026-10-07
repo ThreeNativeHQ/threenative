@@ -6,6 +6,11 @@ option(TN_ENGINE_SANITIZE "Build the native engine targets under ASan and UBSan"
 option(TN_ENGINE_TSAN "Build the native engine targets under ThreadSanitizer (a separate build: TSan excludes ASan)" OFF)
 function(tn_native_engine_target target)
     set_target_properties(${target} PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON POSITION_INDEPENDENT_CODE ON)
+    if(EMSCRIPTEN)
+        set_target_properties(${target} PROPERTIES INTERPROCEDURAL_OPTIMIZATION_RELEASE ON)
+        target_compile_options(${target} PRIVATE -msimd128)
+        target_link_options(${target} PRIVATE -msimd128)
+    endif()
     # PRD-501 §6.3: the engine targets are compared against a JavaScript oracle in binary64, so the
     # compiler must not fuse a multiply and an add into one rounded FMA. No fast-math anywhere.
     if(NOT MSVC)
@@ -404,6 +409,7 @@ if(EMSCRIPTEN)
     target_include_directories(tn-native-engine-wasm-browser PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
     tn_native_engine_target(tn-native-engine-wasm-browser)
     target_link_options(tn-native-engine-wasm-browser PRIVATE --no-entry -sMODULARIZE=1
+        --profiling-funcs
         -sASSERTIONS=0 -sSAFE_HEAP=0 -sEXPORT_NAME=createTnBrowser -sENVIRONMENT=node,web -sALLOW_MEMORY_GROWTH=1 -sALLOW_TABLE_GROWTH=1
         "-sEXPORTED_FUNCTIONS=_tn_engine_version,_tn_context_create,_tn_context_destroy,_tn_type_id,_tn_object_release,_tn_construct,_tn_invoke,_tn_get,_tn_set,_tn_set_callback,_tn_diagnostic_release,_tnw_fire_before_render,_tnw_init,_tnw_render,_tnw_verify_package,_tnw_load_package,_tnw_bench_init,_tnw_bench_step,_tnw_bulk_transforms,_tnw_bench_stats,_tnw_bench_prepare,_malloc,_free"
         "-sEXPORTED_RUNTIME_METHODS=wasmMemory,HEAPU8,HEAPU32,HEAPF64,UTF8ToString,stringToUTF8,lengthBytesUTF8,addFunction")

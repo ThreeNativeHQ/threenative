@@ -66,25 +66,26 @@ class RenderDatabase {
   private:
     std::shared_ptr<BufferGeometry> backgroundGeometry_;
     shader::StandardMaterial backgroundParams_;
-    struct Record {
-        uint64_t objectRevision = 0;
+    using GeometryKey = std::array<BufferStore*, 4>;
+    struct alignas(64) Record {
         uint64_t geometryRevision = 0;
+        uint64_t meshId = 0;
+        uint64_t seen = 0; // the render it was last projected in
         uint32_t materialVersion = 0;
+        bool drawable = false, materialized = false;
         // Held, so neither is released while the record's item points into it, and a new one can
         // never take its address and pass for it. The mesh is known by its id, never reused.
         std::shared_ptr<const BufferGeometry> geometry;
         std::shared_ptr<const Material> material;
-        uint64_t meshId = 0;
+        GeometryKey buffers{};
         struct Draw {
             shader::StandardMaterial params;
             DrawItem item;
         };
         std::unique_ptr<Draw> draw; // materialize only actual draws, not every batched member
-        bool drawable = false;
-        uint64_t seen = 0; // the render it was last projected in
     };
     void project(Object3D& object, const Camera& camera, std::vector<DrawItem>& items, LightState& lights,
-                 bool updateChildren = false, bool force = false);
+                 bool updateChildren = false, bool force = false, Record* cached = nullptr, bool plainMesh = false);
     void batch(std::vector<DrawItem>& items, Object3D& scene,
                const std::vector<std::pair<double, const DrawItem*>>& ordered);
     std::vector<std::shared_ptr<BufferStore>> batchStores_; // reused frame to frame, one per group
@@ -93,26 +94,30 @@ class RenderDatabase {
     std::vector<std::unique_ptr<SkinnedPalette>> skinnedPalettes_; // borrowed by this frame's draws
     std::size_t batchGroups_ = 0, batchMembers_ = 0;
     Record& record(const Mesh& mesh, bool materialize = true);
+    Record& record(const Mesh& mesh, Record& cached, bool materialize = true);
     DrawItem& refresh(const Mesh& mesh, Record& record);
     void batchMeshes(std::vector<DrawItem>& items);
-    void addBatchMesh(const Mesh& mesh);
+    void addBatchMesh(const Mesh& mesh, Record& record);
     struct BatchMember {
         const Mesh* mesh;
         const Material* material;
         double depth;
         uint64_t id;
         int order;
+        Record* record;
     };
-    using GeometryKey = std::array<const BufferStore*, 4>;
     struct MeshGroup {
         GeometryKey geometry;
         std::vector<std::size_t> members;
+        bool orderedIds = true;
     };
     std::vector<BatchMember> batchMeshes_;
-    std::vector<std::array<float, 19>> batchTransforms_; // compact matrices + colours, captured in scene order
+    struct alignas(64) BatchTransform { std::array<float, 16> matrix; };
+    std::vector<BatchTransform> batchTransforms_; // one cache line per matrix, in scene order
+    std::vector<std::array<float, 3>> batchRgb_;
     std::vector<MeshGroup> meshGroups_;
+    std::size_t meshGroupCount_ = 0;
     std::unordered_map<std::size_t, std::vector<std::size_t>> meshCandidates_;
-    std::unordered_map<const BufferGeometry*, GeometryKey> meshGeometries_;
     std::optional<std::size_t> lastMeshGroup_;
     Matrix batchProjView_{};
 
@@ -124,6 +129,14 @@ class RenderDatabase {
     };
     std::vector<PendingCallback> callbacks_;
     std::unordered_map<const Object3D*, Record> records_;
+    std::vector<Record> flatRecords_; // scene-order slots; no per-mesh hash lookup on the flat lane
+    std::vector<uint8_t> flatPlainMeshes_;
+    bool flatParentIdentity_ = false;
+    uint64_t flatSceneId_ = UINT64_MAX, flatHierarchy_ = UINT64_MAX;
+    std::size_t flatChildCount_ = 0;
+    bool flatEligible_ = false;
+    std::vector<std::size_t> sortScratch_;
+    std::vector<uint64_t> depthKeys_;
     std::vector<std::string> diagnostics_;
     uint64_t rebuilds_ = 0;
     uint64_t frame_ = 0;

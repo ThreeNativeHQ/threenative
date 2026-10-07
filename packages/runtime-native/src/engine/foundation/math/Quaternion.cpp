@@ -92,12 +92,10 @@ Quaternion& Quaternion::copy(const Quaternion& q) {
 
 Quaternion& Quaternion::setFromEuler(const Euler& euler, bool update) {
     const double ex = euler.x, ey = euler.y, ez = euler.z;
-    const double c1 = ieee754::cos(ex / 2);
-    const double c2 = ieee754::cos(ey / 2);
-    const double c3 = ieee754::cos(ez / 2);
-    const double s1 = ieee754::sin(ex / 2);
-    const double s2 = ieee754::sin(ey / 2);
-    const double s3 = ieee754::sin(ez / 2);
+    double c1, c2, c3, s1, s2, s3;
+    ieee754::sincos(ex / 2, s1, c1);
+    ieee754::sincos(ey / 2, s2, c2);
+    ieee754::sincos(ez / 2, s3, c3);
     switch (euler.order) {
         case EulerOrder::XYZ:
             x = s1 * c2 * c3 + c1 * s2 * s3;

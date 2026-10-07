@@ -545,7 +545,7 @@ async function runProductComparison(): Promise<void> {
 
 function printUsage(): void {
   process.stdout.write(
-    "usage: pnpm bench:engines --arm <tn-web|plain-three-webgpu|godot-web|tn-desktop|godot-desktop|tn-android|godot-android> [--production] [--required-baseline --lane id] [--lanes path] [--out name] [--skip-baseline] [--allow-emulator] [--source-sha sha --frames N --warmup N --repeats N --ladder a,b --modes L1,L2,R1..R5 --width N --height N] [--geometry shared|unique --material shared|unique --hierarchy-depth N --visible-fraction 0..1 --mutation-rate 0..1 --shadow-caster-share 0..1 --passes N]\n       pnpm bench:engines --arms current,native-v8,native-cpp --workload heterogeneous [--objects N] [--frames N --warmup N --width N --height N]\n       pnpm bench:engines --compare [--left tn-web --right godot-web] [--doc path.md]\n       pnpm bench:engines --check-report path.json [--required-baseline --lanes path]\n       pnpm bench:engines --regression --input report.json [--lanes path --lane id] [--policy policy.json] [--out summary.json]\n       pnpm bench:engines --regression-collection --target <web|desktop|android|ios> [--device id] [--prebuilt-artifact path] [--out path]\n",
+    "usage: pnpm bench:engines --arm <tn-web|plain-three-webgpu|godot-web|tn-desktop|godot-desktop|tn-android|godot-android> [--production] [--required-baseline --lane id] [--lanes path] [--out name] [--skip-baseline] [--allow-emulator] [--source-sha sha --frames N --warmup N --repeats N --ladder a,b --modes L1,L2,R1..R5 --width N --height N] [--geometry shared|unique --material shared|unique --hierarchy-depth N --visible-fraction 0..1 --mutation-rate 0..1 --shadow-caster-share 0..1 --passes N]\n       pnpm bench:engines --arms current,native-v8,native-cpp --workload heterogeneous [--objects N] [--frames N --warmup N --width N --height N]\n       pnpm bench:engines --target web --arms current,wasm-js,wasm-perry [--objects N --frames N --warmup N --profile]\n       pnpm bench:engines --compare [--left tn-web --right godot-web] [--doc path.md]\n       pnpm bench:engines --check-report path.json [--required-baseline --lanes path]\n       pnpm bench:engines --regression --input report.json [--lanes path --lane id] [--policy policy.json] [--out summary.json]\n       pnpm bench:engines --regression-collection --target <web|desktop|android|ios> [--device id] [--prebuilt-artifact path] [--out path]\n",
   );
 }
 
@@ -563,6 +563,7 @@ async function main(): Promise<void> {
       artifactRoot,
       webBenchOptions(Object.fromEntries(names.map((name) => [name, flag(name)]))),
       process.argv.includes("--build-only"),
+      process.argv.includes("--profile"),
     );
   }
   if (cp1Arms !== undefined) return runCp1Command(cp1Arms);

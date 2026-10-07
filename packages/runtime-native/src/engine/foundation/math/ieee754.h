@@ -30,6 +30,9 @@ double cos(double x);
 /** Returns the sine of |x| in radians. */
 double sin(double x);
 
+/** Both results, bit-identical to sin/cos, with one shared argument reduction. */
+void sincos(double x, double& sine, double& cosine);
+
 /** Returns the tangent of |x| in radians; NaN (with a signal) at an infinity. */
 double tan(double x);
 

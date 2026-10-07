@@ -29,6 +29,7 @@ const scope = globalThis as unknown as {
   __ENGINE_LOAD_TEST__: unknown;
   __ENGINE_LOAD_TEST_PROGRESS__: { stage: string; frame: number };
   __ENGINE_LOAD_TEST_ERROR__: string;
+  __ENGINE_LOAD_TEST_PROFILE__?: () => Promise<void>;
   tn_inputs(): number[];
   tn_values(): number[] | Float64Array;
   tn_submit(values: number[]): void;
@@ -320,6 +321,7 @@ async function run() {
   const cpuMs: number[] = [];
   scope.__ENGINE_LOAD_TEST_PROGRESS__.stage = "frames";
   for (let frame = 0; frame < warmup + frames; frame++) {
+    if (frame === warmup) await scope.__ENGINE_LOAD_TEST_PROFILE__?.();
     await nextFrame();
     calls = mallocCalls = mallocBytes = freeCalls = viewCreations = 0;
     webgpuCalls = writeBuffers = directDraws = executeBundles = bundleDraws = 0;

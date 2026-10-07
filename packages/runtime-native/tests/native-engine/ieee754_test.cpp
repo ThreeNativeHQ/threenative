@@ -4,6 +4,7 @@
 #include <bit>
 #include <cstdint>
 #include <cstdio>
+#include <initializer_list>
 
 using namespace tn::engine::ieee754;
 
@@ -24,6 +25,26 @@ void checkV8(const char* what, double actual, std::uint64_t expected) {
 }
 
 void bits() {
+    const auto paired = [](std::uint64_t word) {
+        const double x = std::bit_cast<double>(word);
+        double s, c;
+        tn::engine::ieee754::sincos(x, s, c);
+        checkV8("paired sin", s, std::bit_cast<std::uint64_t>(sin(x)));
+        checkV8("paired cos", c, std::bit_cast<std::uint64_t>(cos(x)));
+    };
+    for (const std::uint64_t word : {
+             0x0000000000000000ULL, 0x8000000000000000ULL, 0x0000000000000001ULL,
+             0x8000000000000001ULL, 0x3fe921fbffffffffULL, 0x3fe921fc00000000ULL,
+             0x3ff921fb54442d18ULL, 0x400921fb54442d18ULL, 0x4012d97c7f3321d2ULL,
+             0x7fefffffffffffffULL, 0xffefffffffffffffULL, 0x7ff0000000000000ULL,
+             0xfff0000000000000ULL, 0x7ff0000000000001ULL, 0xfff0000000001234ULL,
+             0x7ff8000000001234ULL, 0xfff8000000004321ULL})
+        paired(word);
+    std::uint64_t seed = 1337;
+    for (int i = 0; i < 10000; ++i) {
+        seed = seed * 6364136223846793005ULL + 1442695040888963407ULL;
+        paired(seed);
+    }
     // |x| below pi/4 reaches the polynomial kernels; beyond it, argument reduction.
     checkV8("cos(0.1)", cos(0.1), 0x3fefd712f9a817c0ULL);
     checkV8("cos(-0.1)", cos(-0.1), 0x3fefd712f9a817c0ULL);

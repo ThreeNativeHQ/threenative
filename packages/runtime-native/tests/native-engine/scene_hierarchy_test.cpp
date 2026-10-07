@@ -17,6 +17,8 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstring>
+#include <limits>
 #include <memory>
 #include <string>
 #include <vector>
@@ -276,6 +278,17 @@ void alias() {
     mesh.reset();
     CHECK(driver.ref<Vector3>(firstRef, "Vector3").x == 42);
     CHECK(driver.ref<Vector3>(firstRef, "Vector3").y == 2);
+    // A freed SoA slot resets its values and callback owner before reuse.
+    {
+        auto temporary = std::make_unique<Object3D>();
+        temporary->position.x = 99;
+        temporary->rotation.set(0, 0, 0.5);
+    }
+    Object3D recycled;
+    CHECK(recycled.position.x == 0 && recycled.scale.x == 1 && recycled.quaternion.w == 1);
+    recycled.rotation.set(0, 0, 0.5);
+    CHECK(recycled.quaternion.z == std::sin(0.25));
+    CHECK(driver.ref<Vector3>(firstRef, "Vector3").x == 42);
 }
 
 
@@ -302,6 +315,21 @@ void revision() {
     CHECK(parent->revision() > settledParent);
     CHECK(child->revision() > settledChild);
     CHECK(child->matrixWorld.elements[12] == 6);
+
+    // Matrix publication compares bits, not floating-point equality: unchanged NaN payloads
+    // settle, while a signed-zero edit is observable. Exercise the flat renderer path too.
+    Object3D exact;
+    exact.matrixAutoUpdate = false;
+    exact.matrix.elements[0] = std::numeric_limits<double>::quiet_NaN();
+    exact.matrix.elements[12] = -0.0;
+    exact.updateMatrixWorldSelf(true, true, true);
+    CHECK(std::memcmp(exact.matrix.elements.data(), exact.matrixWorld.elements.data(), sizeof(double) * 16) == 0);
+    const auto published = exact.revision();
+    exact.updateMatrixWorldSelf(true, true, true);
+    CHECK(exact.revision() == published);
+    exact.matrix.elements[12] = 0.0;
+    exact.updateMatrixWorldSelf(true, true, true);
+    CHECK(exact.revision() == published + 1 && !std::signbit(exact.matrixWorld.elements[12]));
 }
 
 // Ported from three r185 test/unit/src/core/Object3D.tests.js. The source holds 37 QUnit.test
@@ -994,6 +1022,28 @@ void upstream() {
 // component write on either reaches the other, and `updateMatrix` composes from the quaternion. A
 // C++ `rotation.x = a` must do the same, or a floor authored as a rotated plane renders as a wall.
 void rotation_sync() {
+    // A proxy assignment copies its value, never its owner's pointer. Cross-axis proxies have
+    // different compile-time fields but must still notify the destination exactly once.
+    int notices = 0;
+    const auto notice = [](void* context) { ++*static_cast<int*>(context); };
+    SyncedEuler source, target;
+    source.set(0.3, 0.9, -0.2);
+    target.onChange(notice, &notices);
+    target.x = source.x;
+    target.y = source.z;
+    target.order = source.order;
+    CHECK(notices == 3 && target.x == 0.3 && target.y == -0.2);
+    target.x = 1.0;
+    CHECK(source.x == 0.3 && source.y == 0.9 && source.z == -0.2);
+    SyncedQuaternion qSource, qTarget;
+    qSource.set(0.1, 0.2, 0.3, 0.4);
+    qTarget.onChange(notice, &notices);
+    qTarget.x = qSource.x;
+    qTarget.y = qSource.z;
+    CHECK(notices == 6 && qTarget.x == 0.1 && qTarget.y == 0.3);
+    qTarget.x = 0.8;
+    CHECK(qSource.x == 0.1 && qSource.z == 0.3);
+
     Object3D floor;
     floor.rotation.x = -PI / 2;
     CHECK(floor.quaternion.x == -0.7071067811865475);

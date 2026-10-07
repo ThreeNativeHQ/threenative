@@ -81,7 +81,7 @@ class PropertyBinding {
     bool parsedOk_ = false;
     bool bindAttempted_ = false; // three's `_getValue_unbound`: the first get or set binds
     Target target_ = Target::Unavailable;
-    Vector3 Object3D::* vector_ = nullptr; // the vector a component binding writes
+    Vector3& (Object3D::*vector_)() = nullptr; // the vector a component binding writes
     int component_ = 0;
     std::size_t morphIndex_ = 0;
     std::shared_ptr<Material> material_; // the material bound, held until unbind like three's targetObject

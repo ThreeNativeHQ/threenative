@@ -110,6 +110,7 @@ public:
     double mask = 1;
     static uint32_t bits(double value) {
         if (!std::isfinite(value) || value == 0) return 0;
+        if (value >= 0 && value <= 4294967295.0) return uint32_t(value);
         double integer = std::fmod(std::trunc(value), 4294967296.0);
         if (integer < 0) integer += 4294967296.0;
         return uint32_t(integer);
@@ -150,42 +151,41 @@ public:
     SyncedEuler& operator=(const Euler& other) { Euler::operator=(other); return *this; }
 
     /** three's `euler.x = v`: write the field, then fire `_onChangeCallback`. */
+    template<double Euler::* Field>
     class Angle {
     public:
-        Angle(Euler* owner, double Euler::* field) : owner_(owner), field_(field) {}
+        explicit Angle(Euler* owner) : owner_(owner) {}
         Angle& operator=(double value) {
-            owner_->*field_ = value;
+            owner_->*Field = value;
             owner_->notify();
             return *this;
         }
         Angle& operator=(const Angle& other) { return *this = static_cast<double>(other); }
-        [[nodiscard]] operator double() const { return owner_->*field_; }
+        [[nodiscard]] operator double() const { return owner_->*Field; }
 
     private:
         Euler* owner_;
-        double Euler::* field_;
     };
     /** three's `euler.order = v`: reorders the angles, then fires `_onChangeCallback`. */
     class Order {
     public:
-        Order(Euler* owner, EulerOrder Euler::* field) : owner_(owner), field_(field) {}
+        explicit Order(Euler* owner) : owner_(owner) {}
         Order& operator=(EulerOrder value) {
-            owner_->*field_ = value;
+            owner_->order = value;
             owner_->notify();
             return *this;
         }
         Order& operator=(const Order& other) { return *this = static_cast<EulerOrder>(other); }
-        [[nodiscard]] operator EulerOrder() const { return owner_->*field_; }
+        [[nodiscard]] operator EulerOrder() const { return owner_->order; }
 
     private:
         Euler* owner_;
-        EulerOrder Euler::* field_;
     };
 
-    Angle x{this, &Euler::x};
-    Angle y{this, &Euler::y};
-    Angle z{this, &Euler::z};
-    Order order{this, &Euler::order};
+    Angle<&Euler::x> x{this};
+    Angle<&Euler::y> y{this};
+    Angle<&Euler::z> z{this};
+    Order order{this};
 };
 
 /** three's quaternion setters: the same coupling, the other direction. */
@@ -205,29 +205,36 @@ public:
         return *this;
     }
 
+    template<double Quaternion::* Field>
     class Component {
     public:
-        Component(Quaternion* owner, double Quaternion::* field) : owner_(owner), field_(field) {}
+        explicit Component(Quaternion* owner) : owner_(owner) {}
         Component& operator=(double value) {
-            owner_->*field_ = value;
+            owner_->*Field = value;
             owner_->notify();
             return *this;
         }
         Component& operator=(const Component& other) { return *this = static_cast<double>(other); }
-        [[nodiscard]] operator double() const { return owner_->*field_; }
+        [[nodiscard]] operator double() const { return owner_->*Field; }
 
     private:
         Quaternion* owner_;
-        double Quaternion::* field_;
     };
 
-    Component x{this, &Quaternion::x};
-    Component y{this, &Quaternion::y};
-    Component z{this, &Quaternion::z};
-    Component w{this, &Quaternion::w};
+    Component<&Quaternion::x> x{this};
+    Component<&Quaternion::y> y{this};
+    Component<&Quaternion::z> z{this};
+    Component<&Quaternion::w> w{this};
 };
 
+struct TransformPage;
+
 class Object3D : public EventDispatcher, public std::enable_shared_from_this<Object3D> {
+private:
+    struct TransformSlot { TransformPage* page; std::size_t index; };
+    static TransformSlot acquireTransform();
+    void releaseTransform();
+    TransformSlot transform_;
 public:
     // false suppresses recursive ray traversal, as three's raycast return value does.
     virtual bool raycast(const Raycaster&, std::vector<Intersection>&) { return true; }
@@ -246,6 +253,7 @@ public:
 
     /** three's `_object3DId ++`: a process-wide counter starting at zero. */
     [[nodiscard]] uint64_t id() const { return id_; }
+    [[nodiscard]] static uint64_t hierarchyVersion();
     std::string name;  // not a renderer input, so a plain field: writes do not bump `revision()`
 
     Object3D* parent = nullptr;
@@ -261,13 +269,21 @@ public:
     // The transform. Plain fields: their addresses are stable for the object's whole life.
     // `rotation` and `quaternion` are the synced subclasses, so a component write reaches the other
     // form; every `Euler&`/`Quaternion&` view of them still sees the same plain fields.
-    Vector3 position;
-    SyncedEuler rotation;
-    SyncedQuaternion quaternion;
-    Vector3 scale{1, 1, 1};
+    // Stable references into paged SoA storage. Bulk writes and batch reads share these arrays;
+    // the public math members and their component addresses never move.
+    Vector3& position;
+    SyncedEuler& rotation;
+    SyncedQuaternion& quaternion;
+    Vector3& scale;
+    Vector3& positionValue() { return position; }
+    Vector3& scaleValue() { return scale; }
+    SyncedEuler& rotationValue() { return rotation; }
+    SyncedQuaternion& quaternionValue() { return quaternion; }
+    Matrix4& matrixValue() { return matrix; }
+    Matrix4& matrixWorldValue() { return matrixWorld; }
     Vector3 up{0, 1, 0};
-    Matrix4 matrix;
-    Matrix4 matrixWorld;
+    Matrix4& matrix;
+    Matrix4& matrixWorld;
     /** r185's pivot: rotation and scale apply around this point instead of the origin. */
     std::optional<Vector3> pivot;
 
@@ -364,7 +380,7 @@ public:
     virtual void updateMatrix();
     virtual void updateMatrixWorld(bool force = false);
     /** Renderer traversal can consume a flat child immediately after updating it. */
-    bool updateMatrixWorldSelf(bool force = false);
+    bool updateMatrixWorldSelf(bool force = false, bool identityParent = false, bool plain = false);
     virtual void updateWorldMatrix(bool updateParents, bool updateChildren, bool force = false);
 
     /** three's `copy` without its `recursive` branch: fields only, because `clone` is not ported. */

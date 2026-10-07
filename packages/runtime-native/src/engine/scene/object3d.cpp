@@ -9,13 +9,61 @@
 #include <algorithm>
 #include <cstring>
 #include <random>
+#include <mutex>
 
 namespace tn::engine {
+
+// Each column is contiguous; pages keep every public transform address stable through growth.
+struct alignas(64) TransformPage {
+    static constexpr std::size_t size = 256;
+    std::array<Vector3, size> positions, scales;
+    std::array<SyncedEuler, size> rotations;
+    std::array<SyncedQuaternion, size> quaternions;
+    std::array<Matrix4, size> matrices, worlds;
+};
+
+namespace {
+
+struct TransformPool {
+    std::mutex mutex;
+    std::vector<std::unique_ptr<TransformPage>> pages;
+    std::vector<std::pair<TransformPage*, std::size_t>> free;
+    std::size_t live = 0;
+};
+TransformPool& transforms() { static TransformPool pool; return pool; }
+}
+
+Object3D::TransformSlot Object3D::acquireTransform() {
+    auto& pool = transforms();
+    const std::lock_guard lock(pool.mutex);
+    if (pool.free.empty()) {
+        auto page = std::make_unique<TransformPage>();
+        for (std::size_t i = TransformPage::size; i > 0; --i) pool.free.emplace_back(page.get(), i - 1);
+        pool.pages.push_back(std::move(page));
+    }
+    const auto [page, i] = pool.free.back();
+    pool.free.pop_back();
+    ++pool.live;
+    // Reusing a slot resets its callbacks/accessors as well as its numeric values.
+    const auto reset = [](auto& value) { std::destroy_at(&value); std::construct_at(&value); };
+    reset(page->positions[i]); reset(page->rotations[i]); reset(page->quaternions[i]);
+    reset(page->scales[i]); reset(page->matrices[i]); reset(page->worlds[i]);
+    page->scales[i].set(1, 1, 1);
+    return {page, i};
+}
+
+void Object3D::releaseTransform() {
+    auto& pool = transforms();
+    const std::lock_guard lock(pool.mutex);
+    pool.free.emplace_back(transform_.page, transform_.index);
+    if (--pool.live == 0) { pool.free.clear(); pool.pages.clear(); }
+}
 
 namespace {
 
 // three's `_object3DId`, and the first Object3D this process builds takes 0 as three's does.
 uint64_t nextObjectId = 0;
+uint64_t hierarchyRevision = 0;
 
 // three's module-level scratch values.
 Vector3 scratchV1;
@@ -86,7 +134,13 @@ void EventDispatcher::dispatchEvent(Event& event) {
 
 // ------------------------------------------------------------------------------ Object3D
 
-Object3D::Object3D() : id_(nextObjectId++) {
+uint64_t Object3D::hierarchyVersion() { return hierarchyRevision; }
+
+Object3D::Object3D() : transform_(acquireTransform()),
+    position(transform_.page->positions[transform_.index]), rotation(transform_.page->rotations[transform_.index]),
+    quaternion(transform_.page->quaternions[transform_.index]), scale(transform_.page->scales[transform_.index]),
+    matrix(transform_.page->matrices[transform_.index]), matrixWorld(transform_.page->worlds[transform_.index]),
+    id_(nextObjectId++) {
     // RFC 4122 version/variant bits, as three's MathUtils.generateUUID; identity lives natively.
     static thread_local std::mt19937 random(std::random_device{}());
     constexpr char hex[] = "0123456789abcdef";
@@ -283,11 +337,13 @@ void Object3D::lookAt(double x, double y, double z) {
 // ------------------------------------------------------------------------------ hierarchy
 
 Object3D::~Object3D() {
+    ++hierarchyRevision;
     for (Object3D* child : children) child->parent = nullptr;  // owned children die after this body
     if (parent != nullptr) {
         auto& siblings = parent->children;
         siblings.erase(std::remove(siblings.begin(), siblings.end(), this), siblings.end());
     }
+    releaseTransform();
 }
 
 void Object3D::own(Object3D& child) {
@@ -306,6 +362,7 @@ Object3D& Object3D::add(Object3D& object) {
     object.removeFromParent();
     object.parent = this;
     children.push_back(&object);
+    ++hierarchyRevision;
     own(object);
     object.dispatchEvent(addedEvent);
     childAddedEvent.child = &object;
@@ -325,6 +382,7 @@ Object3D& Object3D::remove(Object3D& object) {
     if (found == children.end()) return *this;
     const std::shared_ptr<Object3D> keep = object.weak_from_this().lock();  // alive until this returns
     children.erase(found);
+    ++hierarchyRevision;
     disown(object);
     object.parent = nullptr;
     object.dispatchEvent(removedEvent);
@@ -366,6 +424,7 @@ Object3D& Object3D::attach(Object3D& object) {
     object.removeFromParent();
     object.parent = this;
     children.push_back(&object);
+    ++hierarchyRevision;
     own(object);
 
     object.updateWorldMatrix(false, true);
@@ -445,12 +504,12 @@ void Object3D::traverseAncestors(Visitor visitor, void* context) {
 // ------------------------------------------------------------------------------ matrices
 
 void Object3D::updateMatrix() {
-    const Matrix4 before = matrix;
-    matrix.compose(position, quaternion, scale);
+    Matrix4 composed;
+    composed.compose(position, quaternion, scale);
 
     if (pivot.has_value()) {
         const double px = pivot->x, py = pivot->y, pz = pivot->z;
-        double* te = matrix.elements.data();
+        double* te = composed.elements.data();
         te[12] += px - te[0] * px - te[4] * py - te[8] * pz;
         te[13] += py - te[1] * px - te[5] * py - te[9] * pz;
         te[14] += pz - te[2] * px - te[6] * py - te[10] * pz;
@@ -458,14 +517,34 @@ void Object3D::updateMatrix() {
 
     matrixWorldNeedsUpdate = true;
     // three recomposes every frame for every auto-update object; only a changed matrix is a change.
-    if (std::memcmp(before.elements.data(), matrix.elements.data(), sizeof(double) * 16) != 0) bump();
+    if (std::memcmp(matrix.elements.data(), composed.elements.data(), sizeof(double) * 16) != 0) bump();
+    matrix.copy(composed);
 }
 
-bool Object3D::updateMatrixWorldSelf(bool force) {
+bool Object3D::updateMatrixWorldSelf(bool force, bool identityParent, bool plain) {
+    if (plain && identityParent && matrixAutoUpdate && matrixWorldAutoUpdate && !pivot) {
+        Matrix4 composed;
+        composed.compose(position, quaternion, scale);
+        const bool changed = std::memcmp(matrix.elements.data(), composed.elements.data(), sizeof(double) * 16) != 0;
+        matrix.copy(composed);
+        if (changed) bump();
+        const uint64_t parentId = parent ? parent->id() + 1 : 0;
+        const uint64_t parentRevision = parent ? parent->revision() : 0;
+        if (changed || matrixWorldNeedsUpdate || force || worldParentId_ != parentId || worldParentRevision_ != parentRevision) {
+            if (std::memcmp(matrixWorld.elements.data(), composed.elements.data(), sizeof(double) * 16) != 0) bump();
+            matrixWorld.copy(composed);
+            matrixWorldNeedsUpdate = false;
+            worldParentId_ = parentId;
+            worldParentRevision_ = parentRevision;
+            return true;
+        }
+        return false;
+    }
     if (matrixAutoUpdate) {
         const bool dirty = matrixWorldNeedsUpdate;
         const auto before = revision();
-        updateMatrix();
+        if (plain) Object3D::updateMatrix();
+        else updateMatrix();
         // Auto composition must not dirty an unchanged root and force every descendant.
         matrixWorldNeedsUpdate = dirty || revision() != before;
     }
@@ -474,14 +553,15 @@ bool Object3D::updateMatrixWorldSelf(bool force) {
     const uint64_t parentRevision = parent ? parent->revision() : 0;
     if (matrixWorldNeedsUpdate || force || worldParentId_ != parentId || worldParentRevision_ != parentRevision) {
         if (matrixWorldAutoUpdate) {
-            const Matrix4 before = matrixWorld;
-            if (parent == nullptr) {
-                matrixWorld.copy(matrix);
+            Matrix4 composed;
+            if (parent == nullptr || identityParent) {
+                composed.copy(matrix);
             } else {
-                matrixWorld.multiplyMatrices(parent->matrixWorld, matrix);
+                composed.multiplyMatrices(parent->matrixWorld, matrix);
             }
             // A parent's move reaches the renderer through the child's world matrix.
-            if (std::memcmp(before.elements.data(), matrixWorld.elements.data(), sizeof(double) * 16) != 0) bump();
+            if (std::memcmp(matrixWorld.elements.data(), composed.elements.data(), sizeof(double) * 16) != 0) bump();
+            matrixWorld.copy(composed);
         }
         matrixWorldNeedsUpdate = false;
         worldParentId_ = parentId;

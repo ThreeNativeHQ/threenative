@@ -100,18 +100,20 @@ inline double batchFlags(const Mesh& m) {
 // uniformSignatureOf, as equality: two materials share a uniform group when every property but the
 // base colour (and name/id/version, which the signature skips) is the same.
 inline bool sameUniforms(const Material& a, const Material& b) {
-    const auto eq = [](const Color& x, const Color& y) { return x.r == y.r && x.g == y.g && x.b == y.b; };
-    return a.type == b.type && a.transparent == b.transparent && a.opacity == b.opacity && a.alphaTest == b.alphaTest &&
+    const auto eq = [](const Color& x, const Color& y) { return (x.r == y.r) & (x.g == y.g) & (x.b == y.b); };
+    return a.type == b.type && a.transparent == b.transparent &&
            a.depthTest == b.depthTest && a.depthWrite == b.depthWrite && a.side == b.side && a.visible == b.visible &&
-           a.toneMapped == b.toneMapped && eq(a.emissive, b.emissive) && a.emissiveIntensity == b.emissiveIntensity &&
-           a.roughness == b.roughness && a.metalness == b.metalness && eq(a.specular, b.specular) &&
-           a.shininess == b.shininess && a.ior == b.ior && a.specularIntensity == b.specularIntensity &&
-           eq(a.specularColor, b.specularColor) && a.clearcoat == b.clearcoat && a.sheen == b.sheen &&
-           a.transmission == b.transmission && a.iridescence == b.iridescence && a.anisotropy == b.anisotropy &&
-           a.dispersion == b.dispersion && a.envMapIntensity == b.envMapIntensity && a.fog == b.fog &&
-           a.positionNode == b.positionNode && a.nodes.graphs() == b.nodes.graphs() &&
+           a.toneMapped == b.toneMapped && a.fog == b.fog &&
+           ((a.opacity == b.opacity) & (a.alphaTest == b.alphaTest) & eq(a.emissive, b.emissive) &
+            (a.emissiveIntensity == b.emissiveIntensity) & (a.roughness == b.roughness) &
+            (a.metalness == b.metalness) & eq(a.specular, b.specular) & (a.shininess == b.shininess) &
+            (a.ior == b.ior) & (a.specularIntensity == b.specularIntensity) & eq(a.specularColor, b.specularColor) &
+            (a.clearcoat == b.clearcoat) & (a.sheen == b.sheen) & (a.transmission == b.transmission) &
+            (a.iridescence == b.iridescence) & (a.anisotropy == b.anisotropy) & (a.dispersion == b.dispersion) &
+            (a.envMapIntensity == b.envMapIntensity) & (a.normalScaleX == b.normalScaleX) &
+            (a.normalScaleY == b.normalScaleY) & (a.aoMapIntensity == b.aoMapIntensity)) &&
+           a.positionNode == b.positionNode && a.nodes == b.nodes &&
            a.vertexColors == b.vertexColors && a.flatShading == b.flatShading &&
-           a.normalScaleX == b.normalScaleX && a.normalScaleY == b.normalScaleY && a.aoMapIntensity == b.aoMapIntensity &&
            a.maps == b.maps;
 }
 
@@ -160,8 +162,8 @@ inline std::size_t uniformHash(const Material& m) {
         mix(bits ^ (bits >> 32));                                    // both halves matter on wasm32
     }
     mix(reinterpret_cast<std::uintptr_t>(m.positionNode.get()));
-    for (const auto& node : m.nodes.graphs())
-        mix(reinterpret_cast<std::uintptr_t>(node.get()));
+    for (const auto* node : m.nodes.pointers())
+        mix(reinterpret_cast<std::uintptr_t>(node));
     for (const auto& [name, texture] : m.maps) {
         mix(std::hash<std::string>{}(name));
         mix(reinterpret_cast<std::uintptr_t>(texture.get()));

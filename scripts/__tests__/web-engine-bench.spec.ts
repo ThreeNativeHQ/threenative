@@ -109,6 +109,14 @@ describe("PRD-533 web arms", () => {
     expect(() =>
       summarizeWebBench([{ arm: "wasm-js", repeat: 0, cpuMs: [], adapter: {} }], null),
     ).toThrow();
+    const diagnostic = [
+      ...runs("current", 20).slice(0, 1),
+      ...runs("wasm-js", 10).slice(0, 1),
+      ...runs("wasm-perry", 2).slice(0, 1),
+    ];
+    expect(summarizeWebBench(diagnostic, null, 1).verdict).toBe("profile only");
+    expect(() => summarizeWebBench(diagnostic, null)).toThrow(/repeats/);
+    expect(() => summarizeWebBench(diagnostic, null, 0)).toThrow(/repeats/);
   });
 
   it("builds separate arms and genuinely invokes the pinned Perry Wasm backend", async () => {
@@ -191,8 +199,11 @@ describe("PRD-533 web arms", () => {
     class QueueFixture {
       writeBuffer() {}
     }
+    let fixtureDraws = 0;
     class PassFixture {
-      drawIndexed() {}
+      drawIndexed() {
+        fixtureDraws++;
+      }
       executeBundles() {}
     }
     class BundleFixture {
@@ -218,6 +229,7 @@ describe("PRD-533 web arms", () => {
       "__ENGINE_LOAD_TEST__",
       "__ENGINE_LOAD_TEST_ERROR__",
       "__ENGINE_LOAD_TEST_PROGRESS__",
+      "__ENGINE_LOAD_TEST_PROFILE__",
       "tn_inputs",
       "tn_values",
       "tn_submit",
@@ -245,7 +257,13 @@ describe("PRD-533 web arms", () => {
       return status;
     };
     try {
+      const startProfile = vi.fn(async () => {
+        // Warmup rendered once; profiling must start before the three measured frames.
+        expect(globals.__ENGINE_LOAD_TEST__).toBeUndefined();
+        expect(fixtureDraws).toBe(1);
+      });
       Object.assign(globals, {
+        __ENGINE_LOAD_TEST_PROFILE__: startProfile,
         GPUQueue: QueueFixture,
         GPURenderPassEncoder: PassFixture,
         GPURenderBundleEncoder: BundleFixture,
@@ -284,6 +302,7 @@ describe("PRD-533 web arms", () => {
         boundary: Record<string, number[]>;
       };
       expect(report.cpuMs).toHaveLength(3);
+      expect(startProfile).toHaveBeenCalledTimes(1);
       expect(report.boundary.webgpuCalls).toEqual([4, 4, 4]);
       for (const field of ["writeBuffers", "directDraws", "bundleDraws", "executeBundles"])
         expect(report.boundary[field]).toEqual([1, 1, 1]);
@@ -325,12 +344,14 @@ describe("PRD-533 web arms", () => {
     if (!Scene || !Camera || !Mesh || !Geometry || !Material) throw new Error("classes missing");
     const scene = new Scene() as { add(mesh: object): void };
     const camera = new Camera();
+    const secondCamera = new Camera() as { layers: { set(layer: number): void } };
     const geometry = new Geometry(1, 1, 1);
     const material = new Material();
-    for (let index = 0; index < 4; index++) scene.add(new Mesh(geometry, material));
-    const handles = abi._malloc(24);
+    const meshes = Array.from({ length: 4 }, () => new Mesh(geometry, material));
+    for (const mesh of meshes) scene.add(mesh);
+    const handles = abi._malloc(36);
     const view = new DataView(abi.HEAPU8.buffer);
-    [scene, camera].forEach((object, index) => {
+    [scene, camera, secondCamera].forEach((object, index) => {
       const key = engineRef(object)?.key.split(":").map(Number);
       if (!key) throw new Error("handle missing");
       view.setUint16(handles + index * 12, key[0] as number, true);
@@ -347,6 +368,16 @@ describe("PRD-533 web arms", () => {
     for (let index = 0; index < 3; index++) scene.add(new Mesh(new Geometry(1, 1, 1), material));
     expect(abi._tnw_bench_prepare(handles, handles + 12)).toBe(0);
     expect(abi.HEAPF64[stats / 8 + 3]).toBe(4); // different geometry never joins the shared group
+    for (const mesh of meshes.slice(0, 2))
+      (mesh as { layers: { set(layer: number): void } }).layers.set(1);
+    secondCamera.layers.set(1);
+    // Alternating cameras must retain the other layer's cached records.
+    for (let tick = 0; tick < 3; tick++) {
+      for (const cameraOffset of [12, 24]) {
+        expect(abi._tnw_bench_prepare(handles, handles + cameraOffset)).toBe(0);
+        expect(abi.HEAPF64[stats / 8 + 4]).toBe(0);
+      }
+    }
     abi._free(handles);
   });
 

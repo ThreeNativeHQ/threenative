@@ -96,7 +96,7 @@ export function packedPerryLoader(source: string) {
     let callback;
     const cold = buildImports().rt;
     const size = 6 + inputs.length / 3 * 5;
-    if (!Number.isInteger(size) || size < 11 || size > 327686 ||
+    if (!Number.isInteger(size) || size < 11 || size > 327686 || !inputs.every(Number.isFinite) ||
         !Number.isSafeInteger(output.byteOffset) || output.byteOffset < 0 || output.byteOffset % 8 ||
         output.byteOffset + size * 8 > output.memory.buffer.byteLength)
       throw new Error('TN_WEB_BENCH_PERRY_PACKED_REGION');
@@ -135,6 +135,7 @@ export function packedPerryLoader(source: string) {
     if (native._initialize) native._initialize();
     inputHandle = native.tn_array_create(inputs.length);
     outputHandle = native.tn_array_external(size, output.byteOffset);
+    native.tn_num_regions(inputHandle, outputHandle);
     new Float64Array(native.memory.buffer, native.tn_array_data(inputHandle), inputs.length).set(inputs);
     wasmInstance = instance;
     wasmMemory = native.memory;

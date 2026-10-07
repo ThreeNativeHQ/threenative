@@ -5,6 +5,7 @@
 
 #include "check.h"
 #include "engine/renderer/render_database.h"
+#include "engine/renderer/projection/plan.h"
 #include "engine/shader/package.h"
 #include "engine/player/skinned_crowd.h"
 #include "engine/scene/geometries.h"
@@ -13,6 +14,7 @@
 #include <algorithm>
 #include <chrono>
 #include <functional>
+#include <limits>
 #include <cstdlib>
 #include <cmath>
 #include <cstdio>
@@ -27,7 +29,17 @@ using namespace tn::engine;
 namespace {
 
 void uniformBatchPreparation() {
+    Material a(MaterialType::Standard), b(MaterialType::Standard);
+    a.opacity = -0.0; b.opacity = 0.0;
+    CHECK(projection::detail::sameUniforms(a, b));
+    a.opacity = b.opacity = std::numeric_limits<double>::quiet_NaN();
+    CHECK(!projection::detail::sameUniforms(a, b));
+    a.opacity = b.opacity = 1;
+    a.emissive.b = b.emissive.b = std::numeric_limits<double>::quiet_NaN();
+    CHECK(!projection::detail::sameUniforms(a, b));
     Scene scene; PerspectiveCamera camera; LightState lights; RenderDatabase database;
+    camera.position.set(0, 10, 100);
+    camera.lookAt(0, 0, 0);
     const auto geometry = makeBoxGeometry();
     std::vector<std::shared_ptr<Mesh>> meshes;
     for (int i = 0; i < 4096; ++i) {
@@ -37,11 +49,31 @@ void uniformBatchPreparation() {
         mesh->position.set(i % 64, 0, i / 64);
         scene.add(*mesh); meshes.push_back(mesh);
     }
+    std::reverse(scene.children.begin(), scene.children.end());
     auto items = database.prepare(scene, camera, lights);
     CHECK(items.size() == 1);
     if (items.size() != 1) return;
     CHECK(items[0].instanceCount == 4096 && items[0].instanceColors);
     CHECK(items[0].material->color[0] == 1 && items[0].material->color[1] == 1);
+    // The dense radix lane must preserve the exact depth/id order of individual opaque draws.
+    Matrix4 projectionView;
+    projectionView.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+    std::vector<std::pair<double, const Mesh*>> expected;
+    for (const auto& mesh : meshes) {
+        Vector3 origin;
+        origin.setFromMatrixPosition(mesh->matrixWorld).applyMatrix4(projectionView);
+        expected.emplace_back(origin.z, mesh.get());
+    }
+    std::sort(expected.begin(), expected.end(), [](const auto& a, const auto& b) {
+        return a.first != b.first ? a.first < b.first : a.second->id() < b.second->id();
+    });
+    const auto* matrices = reinterpret_cast<const float*>(items[0].instanceMatrices->data());
+    const auto* colors = reinterpret_cast<const float*>(items[0].instanceColors->data());
+    for (std::size_t i = 0; i < expected.size(); ++i) {
+        CHECK(matrices[i * 16 + 12] == float(expected[i].second->position.x));
+        CHECK(matrices[i * 16 + 14] == float(expected[i].second->position.z));
+        CHECK(colors[i * 3] == float(expected[i].second->material->color.r));
+    }
     const auto rebuilds = database.rebuilds();
     for (auto& mesh : meshes) mesh->position.y = 2;
     meshes[0]->material->color.r = 0.8;
@@ -81,6 +113,36 @@ void uniformBatchPreparation() {
     parent.remove(*meshes[1]);
     meshes[1]->updateMatrixWorld();
     CHECK(meshes[1]->matrixWorld.elements[12] == 1);
+    scene.remove(parent);
+    // A virtual matrix update may replace shared geometry later in the fused traversal.
+    // Keep the old store alive: these are two valid resource snapshots in this frame.
+    const auto oldPosition = geometry->attributes.at("position");
+    struct GeometryChange final : Mesh {
+        using Mesh::Mesh;
+        std::shared_ptr<BufferAttribute> next;
+        void updateMatrix() override {
+            if (next) { geometry->setAttribute("position", next); next.reset(); }
+            Object3D::updateMatrix();
+        }
+    } changer(geometry, meshes[2]->material);
+    changer.next = makeBoxGeometry()->attributes.at("position");
+    scene.add(changer);
+    items = database.prepare(scene, camera, lights);
+    CHECK(items.size() == 2 && database.lastBatches().second == 4094);
+
+    // Replacing a flat slot with a layer-excluded child must release the old resource owners.
+    Scene replaced; RenderDatabase replacementDatabase;
+    auto removed = std::make_shared<Mesh>(makeBoxGeometry(), std::make_shared<Material>(MaterialType::Standard));
+    std::weak_ptr<BufferGeometry> removedGeometry = removed->geometry;
+    std::weak_ptr<Material> removedMaterial = removed->material;
+    replaced.add(*removed);
+    CHECK(replacementDatabase.prepare(replaced, camera, lights).size() == 1);
+    replaced.remove(*removed);
+    removed.reset();
+    Mesh excluded(makeBoxGeometry(), std::make_shared<Material>(MaterialType::Standard));
+    excluded.setLayer(1); replaced.add(excluded);
+    CHECK(replacementDatabase.prepare(replaced, camera, lights).empty());
+    CHECK(removedGeometry.expired() && removedMaterial.expired());
 }
 
 // Consumer preparation, with no GPU: scene fog and sky must reach the same DrawItems used by render().

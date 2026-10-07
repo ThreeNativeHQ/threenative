@@ -33,6 +33,53 @@ targets (§2.3); software adapters and virtual displays are not performance evid
 5. Promotion makes `native` the default engine profile with the legacy profile still explicitly
    selectable; retiring legacy is [PRD-535 (N21)](PRD-535-n21-the-js-engine-is-deleted.md), one release later (owner decision 10). The web default moves to the Wasm engine in the same promotion (owner decision 4).
 
+## Active performance repair
+
+Complexity: 5 → MEDIUM; engine render preparation and the existing browser benchmark cross the native/Wasm build boundary. Continue in the existing `feat/native-engine` checkout and PR #438; preserve the recovered uncommitted changes.
+
+1. Reproduce at 4k, 16k and 64k objects with the existing heterogeneous workload. Use native warm-cache preparation and 120-frame browser probes for iteration; retain 600 frames and three interleaved repeats for the final comparison.
+2. Profile game, boundary, transforms, projection/batching and encode/submit separately. Fix the dominant shared engine/compiler path; retain material edits, matrix queries, draw ordering and frame parity. Target at least 2× lower CPU than the optimized current arm across the three sizes; never waive the 18× warm-cache scaling check.
+3. Rerun affected native and Perry tests, then browser frame comparisons and the complete benchmark. Keep phase 1's web box open until the final measurements support it; promotion and option A remain unqualified.
+
+Recovery: Claude session `41400f88-99d0-4e9e-8705-f9942dc8e223`; interrupted Codex thread `01a11466-2d69-7fc0-b68a-43f7c4f93ea0`. Rebuilt preparation fails at 0.3960/2.2504/14.9926 ms (37.86×). The 4k browser baseline is current 2.715/4.855 ms, Wasm-JS 1.605/3.920 ms, Wasm-Perry 1.420/2.430 ms (p50/p95), with frame parity; host noise reaches 37.3% on Wasm-JS. The pinned Perry cache was restored; Node 24 runs the benchmark tests 12/12. The native registry snapshot still drifts. These are local diagnostic results, not promotion evidence.
+
+
+Fast iteration (2026-10-07): use the existing harness, without a second renderer or relaxed workload.
+
+1. Run the affected native CTest cases before opening a browser. `TN_UPDATE_OBJECTS=65536` limits the existing scaling executable to one size for CPU profiling; the unmodified scaling gate still checks 4k/16k/64k and requires ≤18×.
+2. Rebuild only `tn-native-engine-wasm-assets` after engine edits. Browser linking retains optimized function names with `--profiling-funcs`.
+3. Run `sh scripts/xvfb.sh pnpm bench:engines -- --target web --arms current,wasm-js,wasm-perry --objects 65536 --warmup 30 --frames 120 --profile`. It executes each arm once, starts CDP sampling after warmup, saves `current.cpuprofile`, `wasm-js.cpuprofile` and `wasm-perry.cpuprofile` beside `artifacts/engine-load-test/web/web-report.json`, and retains frame/adapter checks. Its verdict is `profile only`; profiling spans include rAF idle time and sampling overhead, so use active samples for attribution, not qualification timing.
+4. After a candidate wins the focused probe, rerun without `--profile`, with `--warmup 120 --frames 600`; normal mode still requires three interleaved repetitions. Pin CPU-only before/after probes to the same core, alternate order, and compare unchanged stages as noise controls. Never overlap final timing with builds.
+
+The 64k hardware-WebGPU diagnostic measured current 60.740/68.240 ms, Wasm-JS 43.550/56.035 ms and Wasm-Perry 45.220/49.260 ms (p50/p95). Perry's active self samples concentrate in world-matrix publication (~24%), bulk transforms (~17%), projection (~15%) and material equivalence (~10%); encode/submit is ~1.6 ms. This identifies CPU work as the first optimization target, not a 2× qualification result. SIMD matrix publication had overlapping alternating timings and was removed. Whole-object prefetch deletion reduced native cache misses ~13% but did not establish a timing gain and was restored. Preserve both rejections rather than repeat them.
+
+A malformed native Ninja dependency journal also caused repeated 377-file rebuilds. The exact corrupt journal was preserved as `.ninja_deps.recovery-backup` in the existing native build directory before regeneration. The compiler cache was restored under `TN_NATIVE_TS_CACHE=/tmp/tn-recovery-perry-cache` after the shared cache disappeared. Benchmark/Perry tests pass 12/12; profile start and diagnostic verdict are covered. Root TypeScript checking currently fails in unchanged starter texture files because `@types/three` is unavailable from that package; no passing full typecheck is claimed.
+
+
+Retained repairs: paired fdlibm sine/cosine reduction in `Quaternion::setFromEuler` keeps the scalar result bits (native and Wasm: explicit edge values plus 10,000 deterministic random patterns). Alternating pinned 4k probes reduce bulk p50 from 0.3555/0.3484 ms to 0.2641/0.2614 ms; 16k reduces ~1.55 ms to ~1.22 ms. These measure bulk transforms, not whole-frame speed. Runtime member pointers in fixed-axis rotation proxies were replaced by compile-time fields: SyncedEuler/SyncedQuaternion each shrink from 112 to 80 bytes natively and from 72 to 56 in Wasm (4 MiB/2 MiB less transform storage at 64k), with value assignment, notification and clone tests. Their public nested proxy types are now templates; explicitly typed external C++ consumers may require source changes as well as a rebuild. The cold-field reorder was rejected and restored under severe host contention.
+
+A separate real cache regression reproduced on native GPU and the built Wasm engine: alternating camera layers rebuilt 200 records over 100 ticks. The flat cache failed to mark layer-excluded records as seen. The shared fix retains those records exactly as the map cache already does. Native focused cases now pass 12/12, including rendered camera-layer isolation; benchmark/Perry cases pass 12/12, including the new Wasm layer-cache assertion (red: two unexpected rebuilds; green: zero). Existing rotation-sync and matrix-revision cases also pass when compiled as Wasm; the browser-only CMake scene-test target itself cannot link its omitted fixture-driver library, so no pass is claimed for that target. Incremental native renderer rebuilding now takes four steps instead of the repeated 377-file rebuild.
+
+## Continued performance loop (owner, 2026-10-07)
+
+The owner requested continued overnight profiling until an empirical ceiling is established, then the remaining native-engine PRDs and PR #438 checks. A dominant memory span alone does not establish that ceiling.
+
+Fresh 600-frame, 120-warmup, three-interleaved-repeat browser CPU submissions (NVIDIA Turing, 1280×720):
+
+| Objects | Current p50/p95 ms | Wasm-JS p50/p95 ms | Wasm-Perry p50/p95 ms | Current/Perry p50 |
+| --- | --- | --- | --- | --- |
+| 4,096 | 3.055 / 5.130 | 1.710 / 3.875 | 1.415 / 2.660 | 2.16× |
+| 16,384 | 19.745 / 29.140 | 13.465 / 19.580 | 12.110 / 17.965 | 1.63× |
+| 65,536 | 73.385 / 103.495 | 52.460 / 105.070 | 50.865 / 72.570 | 1.44× |
+
+All 27 frame comparisons have zero pixel mismatch. Reports: `artifacts/engine-load-test/web/{4096,16384,65536}-report.json`. Other renderer jobs remained active; repeat spread reaches 51.1% for 64k Wasm-JS. These diagnose CPU submission under load, not presented FPS or platform promotion. Perry beats the strict Wasm-JS repeated-range rule only at 4k. Fresh profiles use the existing playtest CDP helper and start after warmup; Perry active self samples are world updates 23.9%, bulk transforms 18.2%, projection 16.6%, material comparison 9.5%, preparation 8.7%, paired trig 3.8% plus reduction 2.0%.
+
+The flat-cache replacement ownership regression is also red-green: a warmed mesh replaced by an excluded child retained old geometry/material owners before the identity guard. Native cases pass 12/12 and benchmark/Perry/profile cases 14/14 after the guard. The existing Wasm assets playtest passes every behavior/diagnostic assertion on NVIDIA, but its screenshot gate rejects the deliberately two-color triangle; overall playtest remains failed. No assertion or capture gate was waived.
+
+Loop contract: target the unchanged 64k browser CPU submission, with 4k/16k and native behavior as holdouts. Freeze `scripts/engine-load-test/web.ts`, `web-game.ts`, the workload and browser scene during engine trials. Diagnose via the existing CPU-only `tnw_bench_prepare` and bulk exports, using `/tmp/tn-sincos-prepare.mts` (SHA256 `2cb446cfb0de9c895396e898e6227727abbf3720db6b6fc16013154b8638d7a8`), 60 warmup + 120 samples, taskset CPU8, five alternating baseline/candidate pairs. The incumbent Wasm SHA256 is `a5eb3470fa7d67ddf8dd5d5f2a09e07048fd03bfd3e5400115005a068e2e9b6b`; preserve it under `/tmp/tn-page256-baseline`. Three A/A probes span 0.9651–1.2039 ms preparation at 4k and 31.9533–35.0068 ms at 64k; sub-band results are inconclusive. Change one cause in at most five engine files per trial; retain validation, immediate material edits, exact matrix observations/order, lifetime cleanup and pixel parity. CPU probes diagnose; a keep must survive browser end-to-end measurements. Continue in the existing task checkout/PR, preserving recovered work. Stop a lane only after three rejected/inconclusive causes with no identified removable term above noise, or after its term falls below 10%; do not call that an absolute theoretical limit.
+
+Next trial: `TransformPage::size` 256→64, reducing a Wasm page from 104 to 26 KiB without reducing observed fields, arithmetic, or total transform bytes. Remaining audit is pending: the PRD board reports 208/238 phase boxes, 28 archived and 11 open PRDs; PR #438's body says 53/237 and its draft rollup is empty. The latest explicit CI run 37554436342 failed; inspect its actual failures after performance saturation rather than repeatedly dispatching CI.
+
 ## Out of scope
 
 - iOS (§2.3). Deleting the legacy engine ([PRD-535 (N21)](PRD-535-n21-the-js-engine-is-deleted.md)).

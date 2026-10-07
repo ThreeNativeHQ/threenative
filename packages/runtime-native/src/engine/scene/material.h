@@ -24,6 +24,8 @@ enum class MaterialType : uint8_t { Basic, Lambert, Phong, Standard, Physical };
 enum class Side : uint8_t { Front = 0, Back = 1, Double = 2 };  // three's FrontSide/BackSide/DoubleSide
 
 class Material {
+private:
+    uint32_t version_ = 0;
 public:
     explicit Material(MaterialType type, bool nodeMaterial = false);
     [[nodiscard]] std::string_view typeName() const;  // "MeshStandardMaterial", ...
@@ -74,8 +76,6 @@ public:
     void needsUpdate() { ++version_; }
     [[nodiscard]] uint32_t version() const { return version_; }
 
-private:
-    uint32_t version_ = 0;
 };
 
 }  // namespace tn::engine

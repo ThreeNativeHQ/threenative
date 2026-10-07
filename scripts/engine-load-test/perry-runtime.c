@@ -25,6 +25,7 @@ static const uint64_t pointer = UINT64_C(0x7ffd000000000000);
 static uint8_t runtime_names[512];
 static uint32_t length_name;
 static int numeric_arrays;
+static uint32_t numeric_input, numeric_output;
 #ifndef TN_PERRY_OPERATIONS
 #define TN_PERRY_OPERATIONS(name) runtime_names[name]
 #else
@@ -214,11 +215,64 @@ NUMBER_OP(2)
 NUMBER_OP(3)
 NUMBER_OP(4)
 NUMBER_OP(5)
-NUMBER_OP(6)
-NUMBER_OP(7)
 NUMBER_OP(8)
 NUMBER_OP(9)
+// Indexed accesses in this linked numeric game use the arrays created by the loader.
+// Keep tag/index/growth checks, but do not inline the generic object dispatch into every access.
+double tn_op_6(double name, double count, int base) {
+  if ((base & 7) || count != 2) __builtin_trap();
+  uint64_t *args = (uint64_t *)(uintptr_t)base;
+  if (args[0] >> 48 != 0x7ffd || (uint32_t)args[0] < 131072)
+    return host_mem_call(name, count, base);
+  args[0] = array_get(args[0], args[1]);
+  return 0;
+}
+double tn_op_7(double name, double count, int base) {
+  if ((base & 7) || count != 3) __builtin_trap();
+  uint64_t *args = (uint64_t *)(uintptr_t)base;
+  if (args[0] >> 48 != 0x7ffd || (uint32_t)args[0] < 131072)
+    return host_mem_call(name, count, base);
+  array_set(args[0], args[1], args[2]);
+  args[0] = undefined;
+  return 0;
+}
 #define BOOL_OP(op) int tn_op_##op(double name, double count, int base) { \
   return numeric_i32(op, name, count, base); }
 BOOL_OP(11)
 BOOL_OP(12)
+
+// Typed ABI for the numeric update and its math helpers. The loader validates numeric
+// input arrays. Cold indexed operations retain JS bounds/growth semantics; the
+// verified loop is lowered to accesses inside its preallocated regions at link time.
+uint64_t tn_num_get(uint64_t handle, uint64_t index) { return array_get(handle, index); }
+void tn_num_regions(uint64_t input, uint64_t output) {
+  Array *a = array(input), *b = array(output);
+  if (a->external || !b->external || !a->length || a->length % 3 || a->length > 196608 ||
+      b->length != 6 + a->length / 3 * 5) __builtin_trap();
+  numeric_input = (uintptr_t)a->data;
+  numeric_output = (uintptr_t)b->data;
+}
+uint32_t tn_num_input_data(void) { return numeric_input; }
+uint32_t tn_num_output_data(void) { return numeric_output; }
+uint64_t tn_num_set(uint64_t handle, uint64_t index, uint64_t value) {
+#ifdef TN_PERRY_EXTERNAL_MEMORY
+  Array *a = array(handle);
+  const double i = number(index);
+  // tn_values is a preallocated external numeric buffer. Its invalid writes already
+  // trap in array_set; keeping that check here avoids importing allocation paths.
+  if (!a->external || !(i >= 0 && i < a->length) || i != (uint32_t)i) __builtin_trap();
+  packed_store((uintptr_t)a->data + (uint32_t)i * 8, value);
+#else
+  array_set(handle, index, value);
+#endif
+  return undefined;
+}
+uint64_t tn_num_add(uint64_t a, uint64_t b) {
+  return bits(((Value){.bits = a}).number + ((Value){.bits = b}).number);
+}
+uint64_t tn_num_sin(uint64_t value) { return bits(sin(((Value){.bits = value}).number)); }
+uint64_t tn_num_cos(uint64_t value) { return bits(cos(((Value){.bits = value}).number)); }
+int tn_num_truthy(uint64_t value) {
+  // The lowered loop passes the boolean result of index < count, never a dynamic value.
+  return value == UINT64_C(0x7ffc000000000004);
+}

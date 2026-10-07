@@ -3,11 +3,17 @@ import { createRequire } from "node:module";
 import { runInNewContext } from "node:vm";
 import { describe, expect, it } from "vitest";
 import { createPlacements } from "../../examples/engine-load-test/src/workload.js";
-import { buildPerryRuntime } from "../engine-load-test/perry-build.js";
+import { buildPerryRuntime, promotePerryScratch } from "../engine-load-test/perry-build.js";
 import { importPerryMemory, packedPerryLoader } from "../engine-load-test/perry-packed.js";
 import { buildWebBench, webBenchOptions } from "../engine-load-test/web.js";
 
 describe("packed Perry game", () => {
+  it("rejects scratch promotion when a host can observe it", () => {
+    expect(() =>
+      promotePerryScratch("\n (func $11 (param i64)\n (loop $label (call $fimport$209)))"),
+    ).toThrow("TN_WEB_BENCH_PERRY_SCRATCH_ESCAPE");
+    expect(() => promotePerryScratch("(module)")).toThrow("TN_WEB_BENCH_PERRY_SCRATCH_LAYOUT");
+  });
   it("keeps numeric truth/equality in Wasm and delegates strings", async () => {
     const out = "/tmp/tn-perry-numeric-unit";
     await buildPerryRuntime(out);
@@ -98,6 +104,23 @@ describe("packed Perry game", () => {
     const out = "/tmp/tn-perry-packed-unit";
     const build = await buildWebBench(process.cwd(), out, webBenchOptions({ objects: "4096" }));
     expect(build.perryUnavailable).toBeNull();
+    const wat = await readFile(`${out}/perry-linked.wat`, "utf8");
+    const updateStart = wat.indexOf("\n (func $11 ");
+    const loopStart = wat.indexOf("(loop $", updateStart);
+    let end = loopStart;
+    let depth = 0;
+    do {
+      const c = wat[end++];
+      if (c === "(") depth++;
+      if (c === ")") depth--;
+    } while (depth && end < wat.length);
+    const hot = wat.slice(loopStart, end);
+    expect(hot).toContain("f64.add");
+    expect(hot).toMatch(/(?:f64|i64)\.load/);
+    expect(hot).toMatch(/(?:f64|i64)\.store/);
+    expect(hot).not.toMatch(/\(call \$(?:fimport|tn_op)/);
+    // libm may use its own C stack during range reduction; the game's scratch stack is gone.
+    expect(hot).not.toContain("tn_scratch");
     const inputs = createPlacements(4096).flatMap((p) => [p.x, p.y, p.z]);
     let expected: number[] = [];
     let actual = new Float64Array();

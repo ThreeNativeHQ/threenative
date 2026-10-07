@@ -14,6 +14,10 @@ import {
   softwareAdapterName,
 } from "../../packages/playtest/src/runner/browser.js";
 import {
+  type IBrowserCpuProfile,
+  startBrowserCpuProfile,
+} from "../../packages/playtest/src/runner/cpuProfile.js";
+import {
   compareCaptures,
   inspectCapture,
 } from "../../packages/runtime-native/conformance/metrics.mjs";
@@ -324,11 +328,12 @@ export async function buildWebBench(repoRoot: string, out: string, options: IWeb
   };
 }
 
-export function summarizeWebBench(runs: IWebRun[], unavailable: string | null) {
+export function summarizeWebBench(runs: IWebRun[], unavailable: string | null, repeats = 3) {
+  if (repeats !== 1 && repeats !== 3) throw new Error("web repeats must be 1 (profile) or 3");
   const summaries = ARMS.flatMap((arm) => {
     if (arm === "wasm-perry" && unavailable) return [];
     const selected = runs.filter((run) => run.arm === arm);
-    if (selected.length !== 3 || new Set(selected.map((run) => run.repeat)).size !== 3)
+    if (selected.length !== repeats || new Set(selected.map((run) => run.repeat)).size !== repeats)
       throw new Error(`missing repeats: ${arm}`);
     for (const run of selected)
       if (!run.cpuMs.length || run.cpuMs.some((value) => !Number.isFinite(value) || value < 0))
@@ -336,7 +341,7 @@ export function summarizeWebBench(runs: IWebRun[], unavailable: string | null) {
     const p50s = selected.map((run) => percentile(run.cpuMs, 0.5));
     const p95s = selected.map((run) => percentile(run.cpuMs, 0.95));
     const samples = selected.flatMap((run) => run.cpuMs);
-    const mean = p50s.reduce((a, b) => a + b, 0) / 3;
+    const mean = p50s.reduce((a, b) => a + b, 0) / repeats;
     return [
       {
         arm,
@@ -361,7 +366,13 @@ export function summarizeWebBench(runs: IWebRun[], unavailable: string | null) {
     Math.max(...perry.repeatP95) < Math.min(...js.repeatP95);
   return {
     summaries,
-    verdict: unavailable ? "unavailable" : faster ? "Perry faster" : "not faster",
+    verdict: unavailable
+      ? "unavailable"
+      : repeats === 1
+        ? "profile only"
+        : faster
+          ? "Perry faster"
+          : "not faster",
   };
 }
 
@@ -370,6 +381,7 @@ export async function runWebBench(
   artifactRoot: string,
   options: IWebOptions,
   buildOnly = false,
+  profile = false,
 ) {
   const out = path.join(artifactRoot, "web");
   const built = await buildWebBench(repoRoot, out, options);
@@ -396,7 +408,7 @@ export async function runWebBench(
       args: [...WEBGPU_BROWSER_ARGS, ...PERFORMANCE_BROWSER_ARGS],
     });
     try {
-      for (let repeat = 0; repeat < 3; repeat++)
+      for (let repeat = 0; repeat < (profile ? 1 : 3); repeat++)
         for (let offset = 0; offset < 3; offset++) {
           const arm = ARMS[(offset + repeat) % 3] as (typeof ARMS)[number];
           if (arm === "wasm-perry" && built.perryUnavailable) continue;
@@ -405,6 +417,16 @@ export async function runWebBench(
             deviceScaleFactor: 1,
           });
           try {
+            let profiler: IBrowserCpuProfile | undefined;
+            if (profile) {
+              await page.exposeBinding("__ENGINE_LOAD_TEST_PROFILE__", async () => {
+                profiler = await startBrowserCpuProfile(
+                  page,
+                  path.join(out, `${arm}.cpuprofile`),
+                  100,
+                );
+              });
+            }
             const query = new URLSearchParams({
               arm,
               ...Object.fromEntries(
@@ -417,6 +439,10 @@ export async function runWebBench(
               arm,
               options,
             );
+            if (profile) {
+              if (!profiler) throw new Error(`CPU profiler did not start: ${arm}`);
+              await profiler.stop();
+            }
             if (run.arm !== arm || run.cpuMs.length !== options.frames)
               throw new Error("arm/sample count mismatch");
             for (const [name, series] of Object.entries({
@@ -470,12 +496,13 @@ export async function runWebBench(
   }
   const summary = failure
     ? { summaries: [], verdict: "unverified" }
-    : summarizeWebBench(runs, built.perryUnavailable);
+    : summarizeWebBench(runs, built.perryUnavailable, profile ? 1 : 3);
   const report = {
     schemaVersion: 2,
     workload: "heterogeneous",
     ...options,
-    repeats: 3,
+    repeats: profile ? 1 : 3,
+    diagnosticProfile: profile,
     ...built,
     runs,
     ...summary,
@@ -511,6 +538,6 @@ export async function runWebBench(
     )
     .join("; ");
   console.log(
-    `${summary.verdict}: ${numbers}${built.perryUnavailable ? `; unavailable: ${built.perryUnavailable}` : ""}; option A unqualified (separate Perry module/JS runtime); ${file}`,
+    `${report.verdict}: ${numbers}${built.perryUnavailable ? `; unavailable: ${built.perryUnavailable}` : ""}; option A unqualified (separate Perry module/JS runtime); ${file}`,
   );
 }

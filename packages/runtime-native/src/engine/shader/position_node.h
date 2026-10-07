@@ -14,6 +14,9 @@ class Program;
 /** NodeMaterial slots; null nodes use the non-node material path. */
 struct MaterialNodes {
     graph::Node colorNode, positionNode, normalNode, emissiveNode, roughnessNode, metalnessNode, opacityNode;
+    bool operator==(const MaterialNodes&) const = default;
+    auto pointers() const { return std::array{colorNode.get(), positionNode.get(), normalNode.get(), emissiveNode.get(),
+                                           roughnessNode.get(), metalnessNode.get(), opacityNode.get()}; }
     auto graphs() const { return std::array{colorNode, positionNode, normalNode, emissiveNode,
                                          roughnessNode, metalnessNode, opacityNode}; }
     std::string key() const {

@@ -79,35 +79,35 @@ void setComponent4(Quaternion& q, int i, double value) {
 }
 
 /** Registers `<prefix>.x`/`y`/`z` for a Vector3 field, read and written. */
-template <typename T>
-void nestedVector(ClassBinding& b, const char* prefix, Vector3 T::*field) {
+template <typename T, typename Field>
+void nestedVector(ClassBinding& b, const char* prefix, Field field) {
     for (int i = 0; i < 3; ++i) {
         const std::string path = std::string(prefix) + "." + "xyz"[i];
-        b.getters[path] = [field, i](void* self) { return Value::of(component3(as<T>(self)->*field, i)); };
+        b.getters[path] = [field, i](void* self) { return Value::of(component3(std::invoke(field, *as<T>(self)), i)); };
         b.setters[path] = [field, i](void* self, const Value& v) {
-            setComponent3(as<T>(self)->*field, i, number(v));
+            setComponent3(std::invoke(field, *as<T>(self)), i, number(v));
         };
     }
 }
 
 /** Registers `<prefix>.x`/`y`/`z`/`w` for a Quaternion field, read and written. */
-template <typename T, typename Q>
-void nestedQuaternion(ClassBinding& b, const char* prefix, Q T::*field) {
+template <typename T, typename Field>
+void nestedQuaternion(ClassBinding& b, const char* prefix, Field field) {
     const char* const names[4] = {"x", "y", "z", "w"};
     for (int i = 0; i < 4; ++i) {
         const std::string path = std::string(prefix) + "." + names[i];
-        b.getters[path] = [field, i](void* self) { return Value::of(component4(as<T>(self)->*field, i)); };
+        b.getters[path] = [field, i](void* self) { return Value::of(component4(std::invoke(field, *as<T>(self)), i)); };
         b.setters[path] = [field, i](void* self, const Value& v) {
-            setComponent4(as<T>(self)->*field, i, number(v));  // Quaternion::set notifies
+            setComponent4(std::invoke(field, *as<T>(self)), i, number(v));  // Quaternion::set notifies
         };
     }
 }
 
 /** Registers `<prefix>.elements` for a Matrix4 field: three's column-major array. */
-template <typename T>
-void nestedMatrix(ClassBinding& b, const char* prefix, Matrix4 T::*field) {
+template <typename T, typename Field>
+void nestedMatrix(ClassBinding& b, const char* prefix, Field field) {
     b.getters[std::string(prefix) + ".elements"] = [field](void* self) {
-        return numbers((as<T>(self)->*field).elements.data(), 16);
+        return numbers((std::invoke(field, *as<T>(self))).elements.data(), 16);
     };
 }
 
@@ -119,6 +119,13 @@ template <typename Owner, typename M>
 Method memberAliasMethod(M Owner::*field, const char* cls) {
     return [field, cls](void* self, const Args&, Store& store) {
         return memberAlias(store, self, as<Owner>(self)->*field, cls);
+    };
+}
+
+template <typename Owner, typename M>
+Method memberAliasMethod(M& (Owner::*field)(), const char* cls) {
+    return [field, cls](void* self, const Args&, Store& store) {
+        return memberAlias(store, self, (as<Owner>(self)->*field)(), cls);
     };
 }
 
@@ -188,12 +195,12 @@ void registerObject3D(ClassBinding& b) {
     b.getters["name"] = [](void* self) { return Value{Value::Kind::String, 0, as<Object3D>(self)->name}; };
     b.setters["name"] = [](void* self, const Value& v) { as<Object3D>(self)->name = v.text; };
 
-    nestedVector<Object3D>(b, "position", &Object3D::position);
-    nestedVector<Object3D>(b, "scale", &Object3D::scale);
+    nestedVector<Object3D>(b, "position", &Object3D::positionValue);
+    nestedVector<Object3D>(b, "scale", &Object3D::scaleValue);
     nestedVector<Object3D>(b, "up", &Object3D::up);
-    nestedQuaternion<Object3D>(b, "quaternion", &Object3D::quaternion);
-    nestedMatrix<Object3D>(b, "matrix", &Object3D::matrix);
-    nestedMatrix<Object3D>(b, "matrixWorld", &Object3D::matrixWorld);
+    nestedQuaternion<Object3D>(b, "quaternion", &Object3D::quaternionValue);
+    nestedMatrix<Object3D>(b, "matrix", &Object3D::matrixValue);
+    nestedMatrix<Object3D>(b, "matrixWorld", &Object3D::matrixWorldValue);
     for (int i = 0; i < 3; ++i) {
         const std::string path = std::string("rotation.") + "xyz"[i];
         b.getters[path] = [i](void* self) { return Value::of(as<Object3D>(self)->rotation.toArray()[i]); };
@@ -243,13 +250,13 @@ void registerObject3D(ClassBinding& b) {
     fixedMember(b, "layers", [](void* self, const Args&, Store& store) {
         return memberAlias(store, self, const_cast<Layers&>(as<Object3D>(self)->layers()), "Layers");
     });
-    fixedMember(b, "position", memberAliasMethod(&Object3D::position, "Vector3"));
-    fixedMember(b, "scale", memberAliasMethod(&Object3D::scale, "Vector3"));
+    fixedMember(b, "position", memberAliasMethod(&Object3D::positionValue, "Vector3"));
+    fixedMember(b, "scale", memberAliasMethod(&Object3D::scaleValue, "Vector3"));
     fixedMember(b, "up", memberAliasMethod(&Object3D::up, "Vector3"));
-    fixedMember(b, "quaternion", memberAliasMethod(&Object3D::quaternion, "Quaternion"));
-    fixedMember(b, "rotation", memberAliasMethod(&Object3D::rotation, "Euler"));
-    fixedMember(b, "matrix", memberAliasMethod(&Object3D::matrix, "Matrix4"));
-    fixedMember(b, "matrixWorld", memberAliasMethod(&Object3D::matrixWorld, "Matrix4"));
+    fixedMember(b, "quaternion", memberAliasMethod(&Object3D::quaternionValue, "Quaternion"));
+    fixedMember(b, "rotation", memberAliasMethod(&Object3D::rotationValue, "Euler"));
+    fixedMember(b, "matrix", memberAliasMethod(&Object3D::matrixValue, "Matrix4"));
+    fixedMember(b, "matrixWorld", memberAliasMethod(&Object3D::matrixWorldValue, "Matrix4"));
 
     // Transforms.
     b.methods["add"] = [](void* self, const Args& a, Store& store) {

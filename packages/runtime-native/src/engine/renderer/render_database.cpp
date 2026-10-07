@@ -8,6 +8,8 @@
 #include <cmath>
 #include <chrono>
 #include <limits>
+#include <bit>
+#include <typeinfo>
 #include "engine/scene/geometries.h"
 
 namespace tn::engine {
@@ -142,7 +144,10 @@ BufferStore* store(const BufferGeometry& g, const char* name) {
 } // namespace
 
 RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, bool materialize) {
-    Record& r = records_[&mesh];
+    return record(mesh, records_[&mesh], materialize);
+}
+
+RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool materialize) {
     const Material* material = mesh.material.get();
     const uint64_t geometryRevision = mesh.geometry ? mesh.geometry->revision() : 0;
     const uint32_t materialVersion = material ? material->version() : 0;
@@ -165,9 +170,10 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, bool materializ
                                        u);
             return r;
         }
-        r.drawable = store(*mesh.geometry, "position") != nullptr;
+        r.buffers = {store(*mesh.geometry, "position"), store(*mesh.geometry, "normal"), store(*mesh.geometry, "uv"),
+                     mesh.geometry->index ? mesh.geometry->index->store.get() : nullptr};
+        r.drawable = r.buffers[0] != nullptr;
     }
-    r.objectRevision = mesh.revision();
     if (!materialize || !r.drawable)
         return r;
     if (r.draw) {
@@ -176,12 +182,13 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, bool materializ
         return r;
     }
     r.draw = std::make_unique<Record::Draw>();
+    r.materialized = true;
     DrawItem& d = r.draw->item;
     d.key = d.id = mesh.id();
-    d.positions = store(*mesh.geometry, "position");
-    d.normals = store(*mesh.geometry, "normal");
-    d.uvs = store(*mesh.geometry, "uv");
-    d.indices = mesh.geometry->index ? mesh.geometry->index->store.get() : nullptr;
+    d.positions = r.buffers[0];
+    d.normals = r.buffers[1];
+    d.uvs = r.buffers[2];
+    d.indices = r.buffers[3];
     // The diffuse map is sampled only when its image is decoded and the geometry carries uv; an
     // image-less glTF placeholder (source only) keeps drawing its flat colour as before.
     if (d.uvs != nullptr) {
@@ -223,7 +230,7 @@ DrawItem& RenderDatabase::refresh(const Mesh& mesh, Record& r) {
 }
 
 void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector<DrawItem>& items, LightState& lights,
-                             bool updateChildren, bool force) {
+                             bool updateChildren, bool force, Record* cached, bool plainMesh) {
     if (!object.visible()) {
         if (updateChildren)
             for (Object3D* child : object.children)
@@ -231,7 +238,7 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
         return;
     }
     if (object.layers().test(camera.layers())) {
-        const std::string_view type = object.type();
+        const std::string_view type = plainMesh ? "Mesh" : object.type();
         if (type == "LOD") {
             auto& lod = static_cast<LOD&>(object);
             if (lod.autoUpdate) lod.update(camera);
@@ -243,12 +250,12 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
                                  !mesh.material->nodes.positionNode &&
                                  (mesh.geometry->morphPositions.empty() || mesh.morphTargetInfluences.empty()) &&
                                  mesh.matrixWorld.determinant() > 0;
-            Record& r = record(mesh, !compact);
+            Record& r = cached ? record(mesh, *cached, !compact) : record(mesh, !compact);
             r.seen = frame_;
             if (r.drawable && r.material->visible) {
                 if (compact) {
-                    r.draw.reset();
-                    addBatchMesh(mesh);
+                    if (r.materialized) { r.draw.reset(); r.materialized = false; }
+                    addBatchMesh(mesh, r);
                 } else {
                     DrawItem& d = refresh(mesh, r);
                     d.batchable = false;
@@ -352,13 +359,45 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
                 lights.hemisphereUp = normalized(worldPosition(l));
             }
         }
+    } else if (cached && cached->meshId == object.id()) {
+        cached->seen = frame_; // flat records also survive another camera's layer mask
     } else if (const auto it = records_.find(&object); it != records_.end()) {
         it->second.seen = frame_; // in the scene, on another camera's layer: its record stays
     }
-    for (Object3D* child : object.children) {
+    for (std::size_t i = 0; i < object.children.size(); ++i) {
+        Object3D* child = object.children[i];
+#if defined(__GNUC__) && !defined(__EMSCRIPTEN__)
+        // Sparse authored metadata remains outside the dense transform columns. Fetch it
+        // ahead of the fused traversal instead of serializing every cache miss at 64k.
+        if (updateChildren && i + 32 < object.children.size())
+            __builtin_prefetch(&flatRecords_[i + 32], 0, 1);
+        if (updateChildren && i + 16 < object.children.size()) {
+            const auto* future = object.children[i + 16];
+            const auto* next = reinterpret_cast<const char*>(future);
+            for (std::size_t offset = 0; offset < sizeof(Object3D); offset += 64)
+                __builtin_prefetch(next + offset, 0, 1);
+            if (flatPlainMeshes_[i + 16])
+                __builtin_prefetch(next + sizeof(Object3D), 0, 1);
+            const auto* material = reinterpret_cast<const char*>(flatRecords_[i + 16].material.get());
+            if (material)
+                for (std::size_t offset = 0; offset < sizeof(Material); offset += 64)
+                    __builtin_prefetch(material + offset, 0, 1);
+        }
+        if (updateChildren && i + 8 < object.children.size()) {
+            const auto* future = object.children[i + 8];
+            __builtin_prefetch(&future->position, 0, 1);
+            __builtin_prefetch(&future->quaternion, 0, 1);
+            __builtin_prefetch(&future->scale, 0, 1);
+            __builtin_prefetch(&future->matrix, 1, 1);
+            __builtin_prefetch(reinterpret_cast<const char*>(&future->matrix) + 64, 1, 1);
+            __builtin_prefetch(&future->matrixWorld, 1, 1);
+            __builtin_prefetch(reinterpret_cast<const char*>(&future->matrixWorld) + 64, 1, 1);
+        }
+#endif
         if (updateChildren)
-            child->updateMatrixWorld(force);
-        project(*child, camera, items, lights);
+            child->Object3D::updateMatrixWorldSelf(force, flatParentIdentity_, flatPlainMeshes_[i]);
+        project(*child, camera, items, lights, false, false, updateChildren ? &flatRecords_[i] : nullptr,
+                updateChildren && flatPlainMeshes_[i]);
     }
 }
 
@@ -494,17 +533,14 @@ void RenderDatabase::batch(std::vector<DrawItem>& items, Object3D& scene,
 
 // Capture members while their scene/material cache lines are hot. DrawItems are made only for
 // submitted draws; sorting and packing touch compact arrays rather than the authored object graph.
-void RenderDatabase::addBatchMesh(const Mesh& mesh) {
-    auto [entry, inserted] = meshGeometries_.try_emplace(mesh.geometry.get());
-    if (inserted)
-        entry->second = {store(*mesh.geometry, "position"), store(*mesh.geometry, "normal"),
-                         store(*mesh.geometry, "uv"),
-                         mesh.geometry->index ? mesh.geometry->index->store.get() : nullptr};
-    const auto& geometry = entry->second;
+void RenderDatabase::addBatchMesh(const Mesh& mesh, Record& record) {
+    const auto& geometry = record.buffers;
     const auto same = [&](std::size_t index) {
         const MeshGroup& group = meshGroups_[index];
-        const Mesh& first = *batchMeshes_[group.members.front()].mesh;
-        return group.geometry == geometry && first.renderOrder() == mesh.renderOrder() &&
+        const auto& member = batchMeshes_[group.members.front()];
+        const Mesh& first = *member.mesh;
+        return ((record.geometry == member.record->geometry && record.geometryRevision == member.record->geometryRevision) ||
+                group.geometry == geometry) && first.renderOrder() == mesh.renderOrder() &&
                first.castShadow() == mesh.castShadow() && first.receiveShadow() == mesh.receiveShadow() &&
                first.material->type == mesh.material->type &&
                (first.material == mesh.material ||
@@ -525,26 +561,34 @@ void RenderDatabase::addBatchMesh(const Mesh& mesh) {
         auto& bucket = meshCandidates_[hash];
         const auto found = std::find_if(bucket.begin(), bucket.end(), same);
         if (found == bucket.end()) {
-            group = meshGroups_.size();
+            group = meshGroupCount_++;
             bucket.push_back(group);
-            meshGroups_.push_back({geometry, {}});
+            if (group == meshGroups_.size()) meshGroups_.push_back({geometry, {}});
+            else {
+                auto& reused = meshGroups_[group];
+                reused.geometry = geometry;
+                reused.members.clear();
+                reused.orderedIds = true;
+            }
         } else
             group = *found;
         lastMeshGroup_ = group;
     }
-    meshGroups_[group].members.push_back(batchMeshes_.size());
+    auto& target = meshGroups_[group];
+    if (!target.members.empty() && batchMeshes_[target.members.back()].id > mesh.id())
+        target.orderedIds = false;
+    target.members.push_back(batchMeshes_.size());
     const auto& m = mesh.matrixWorld.elements;
     const auto& p = batchProjView_;
     batchMeshes_.push_back(
         {&mesh, mesh.material.get(),
          (p[2] * m[12] + p[6] * m[13] + p[10] * m[14] + p[14]) / (p[3] * m[12] + p[7] * m[13] + p[11] * m[14] + p[15]),
-         mesh.id(), mesh.renderOrder()});
-    std::array<float, 19> packed;
+         mesh.id(), mesh.renderOrder(), &record});
+    BatchTransform packed;
     for (int i = 0; i < 16; ++i)
-        packed[i] = static_cast<float>(m[i]);
-    packed[16] = static_cast<float>(mesh.material->color.r);
-    packed[17] = static_cast<float>(mesh.material->color.g);
-    packed[18] = static_cast<float>(mesh.material->color.b);
+        packed.matrix[i] = static_cast<float>(m[i]);
+    batchRgb_.push_back({static_cast<float>(mesh.material->color.r), static_cast<float>(mesh.material->color.g),
+                         static_cast<float>(mesh.material->color.b)});
     batchTransforms_.push_back(packed);
 }
 
@@ -558,20 +602,53 @@ void RenderDatabase::batchMeshes(std::vector<DrawItem>& items) {
             return a.depth < b.depth;
         return a.id < b.id;
     };
-    for (auto& group : meshGroups_)
-        std::sort(group.members.begin(), group.members.end(), before);
-    batchParams_.resize(batchGroups_ + meshGroups_.size());
-    for (const auto& group : meshGroups_) {
+    depthKeys_.resize(batchMeshes_.size());
+    for (std::size_t i = 0; i < batchMeshes_.size(); ++i) {
+        const double depth = batchMeshes_[i].depth;
+        const auto bits = std::bit_cast<uint64_t>(depth == 0 ? 0.0 : depth);
+        depthKeys_[i] = bits >> 63 ? ~bits : bits ^ (uint64_t{1} << 63);
+    }
+    for (std::size_t slot = 0; slot < meshGroupCount_; ++slot) {
+        auto& group = meshGroups_[slot];
+        auto& members = group.members;
+        if (members.size() < 256 || std::any_of(members.begin(), members.end(), [&](std::size_t i) {
+                return !std::isfinite(batchMeshes_[i].depth);
+            })) {
+            std::sort(members.begin(), members.end(), before);
+            continue;
+        }
+        // Group flags already fix renderOrder. Stable depth radix preserves the id tie-break,
+        // with bounded linear work even when every mesh moves. Signed zero sorts as one depth.
+        const auto idBefore = [&](std::size_t a, std::size_t b) { return batchMeshes_[a].id < batchMeshes_[b].id; };
+        if (!group.orderedIds)
+            std::sort(members.begin(), members.end(), idBefore);
+        sortScratch_.resize(members.size());
+        uint64_t varying = 0;
+        const uint64_t first = depthKeys_[members.front()];
+        for (auto i : members) varying |= depthKeys_[i] ^ first;
+        for (unsigned shift = 0; shift < 64; shift += 8) {
+            if (((varying >> shift) & 255) == 0) continue;
+            std::array<std::size_t, 256> offsets{};
+            for (auto i : members) ++offsets[(depthKeys_[i] >> shift) & 255];
+            std::size_t total = 0;
+            for (auto& offset : offsets) { const auto count = offset; offset = total; total += count; }
+            for (auto i : members) sortScratch_[offsets[(depthKeys_[i] >> shift) & 255]++] = i;
+            members.swap(sortScratch_);
+        }
+    }
+    batchParams_.resize(batchGroups_ + meshGroupCount_);
+    for (std::size_t groupIndex = 0; groupIndex < meshGroupCount_; ++groupIndex) {
+        const auto& group = meshGroups_[groupIndex];
         const auto& members = group.members;
         if (members.size() < kMinBatchMembers) {
             for (std::size_t index : members) {
                 const Mesh& mesh = *batchMeshes_[index].mesh;
-                items.push_back(refresh(mesh, record(mesh)));
+                items.push_back(refresh(mesh, record(mesh, *batchMeshes_[index].record)));
             }
             continue;
         }
         const Mesh& first = *batchMeshes_[members.front()].mesh;
-        DrawItem d = refresh(first, record(first));
+        DrawItem d = refresh(first, record(first, *batchMeshes_[members.front()].record));
         const auto slot = batchGroups_++;
         if (batchStores_.size() <= slot)
             batchStores_.push_back(std::make_shared<BufferStore>(Scalar::F32, 0));
@@ -589,12 +666,20 @@ void RenderDatabase::batchMeshes(std::vector<DrawItem>& items) {
         if (uniform && batchColors_[slot]->count() != members.size() * 3)
             batchColors_[slot]->resize(members.size() * 3);
         auto* color = uniform ? reinterpret_cast<float*>(batchColors_[slot]->data()) : nullptr;
-        for (std::size_t index : members) {
+        for (std::size_t i = 0; i < members.size(); ++i) {
+#if defined(__GNUC__) && !defined(__EMSCRIPTEN__)
+            if (i + 16 < members.size()) {
+                const auto next = members[i + 16];
+                __builtin_prefetch(&batchTransforms_[next], 0, 3);
+                if (color) __builtin_prefetch(&batchRgb_[next], 0, 3);
+            }
+#endif
+            const auto index = members[i];
             const auto& packed = batchTransforms_[index];
-            std::copy_n(packed.data(), 16, matrix);
+            std::copy_n(packed.matrix.data(), 16, matrix);
             matrix += 16;
             if (color) {
-                std::copy_n(packed.data() + 16, 3, color);
+                std::copy_n(batchRgb_[index].data(), 3, color);
                 color += 3;
             }
         }
@@ -622,10 +707,22 @@ std::vector<DrawItem> RenderDatabase::prepare(Object3D& scene, Camera& camera, L
     diagnostics_.clear();
     hemisphere_ = 0;
     // Renderer.render: world matrices first, then the camera in the renderer's coordinate system.
-    const bool flat = scene.matrixWorldAutoUpdate && scene.type() == "Scene" && camera.parent == nullptr &&
-                      std::all_of(scene.children.begin(), scene.children.end(), [](const Object3D* child) {
-                          return child->children.empty() && (child->type() == "Mesh" || child->isLight());
-                      });
+    if (flatSceneId_ != scene.id() || flatHierarchy_ != Object3D::hierarchyVersion() ||
+        flatChildCount_ != scene.children.size()) {
+        flatSceneId_ = scene.id();
+        flatHierarchy_ = Object3D::hierarchyVersion();
+        flatChildCount_ = scene.children.size();
+        flatEligible_ = scene.type() == "Scene" &&
+            std::all_of(scene.children.begin(), scene.children.end(), [](const Object3D* child) {
+                return child->children.empty() && (child->type() == "Mesh" || child->isLight());
+            });
+        flatPlainMeshes_.resize(scene.children.size());
+        for (std::size_t i = 0; i < scene.children.size(); ++i) {
+            const auto* child = scene.children[i];
+            flatPlainMeshes_[i] = typeid(*child) == typeid(Mesh);
+        }
+    }
+    const bool flat = flatEligible_ && scene.matrixWorldAutoUpdate && camera.parent == nullptr;
     bool force = false;
     if (flat)
         force = scene.updateMatrixWorldSelf();
@@ -640,6 +737,7 @@ std::vector<DrawItem> RenderDatabase::prepare(Object3D& scene, Camera& camera, L
         if (auto* o = dynamic_cast<OrthographicCamera*>(&camera))
             o->updateProjectionMatrix();
     }
+    flatParentIdentity_ = flat && scene.matrixWorld.elements == Matrix4{}.elements;
     std::vector<DrawItem> items;
     items.reserve(previousDrawCount_);
     const auto matrices = profiling ? Clock::now() : Clock::time_point{};
@@ -650,13 +748,15 @@ std::vector<DrawItem> RenderDatabase::prepare(Object3D& scene, Camera& camera, L
     skeletonsUpdated_.clear();
     batchMeshes_.clear();
     batchTransforms_.clear();
-    meshGroups_.clear();
+    batchRgb_.clear();
+    meshGroupCount_ = 0;
     meshCandidates_.clear();
-    meshGeometries_.clear();
     lastMeshGroup_.reset();
     Matrix4 projectionView;
     projectionView.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
     batchProjView_ = toArray(projectionView);
+    if (flat) flatRecords_.resize(scene.children.size());
+    else flatRecords_.clear();
     project(scene, camera, items, lights, flat, force);
     const auto projected = profiling ? Clock::now() : Clock::time_point{};
     // three's LightsNode sorts its lights by id; the direct terms are summed in that order.
@@ -666,12 +766,12 @@ std::vector<DrawItem> RenderDatabase::prepare(Object3D& scene, Camera& camera, L
     // any hook, just as the exact path does; the common hook-free path stays compact.
     if (!callbacks_.empty()) {
         for (const auto& member : batchMeshes_) {
-            auto& item = refresh(*member.mesh, record(*member.mesh));
+            auto& item = refresh(*member.mesh, record(*member.mesh, *member.record));
             item.batchable = true;
             items.push_back(item);
         }
         batchMeshes_.clear();
-        meshGroups_.clear();
+        meshGroupCount_ = 0;
     }
     // three's onBeforeRender, before the object is drawn: after projection, so a callback that edits
     // the scene cannot invalidate the traversal, and before submission, so a uniform it sets (a
@@ -689,6 +789,7 @@ std::vector<DrawItem> RenderDatabase::prepare(Object3D& scene, Camera& camera, L
     if (hemisphere_ > 1)
         diagnostics_.push_back("TN_NATIVE_LIGHTS_UNSUPPORTED: " + std::to_string(hemisphere_) +
                                " hemisphere lights; one is drawn");
+    for (auto& r : flatRecords_) if (r.seen != frame_) r = Record{};
     // Objects that left the scene leave the database.
     for (auto it = records_.begin(); it != records_.end();) {
         if (it->second.seen != frame_) {
@@ -700,7 +801,7 @@ std::vector<DrawItem> RenderDatabase::prepare(Object3D& scene, Camera& camera, L
     batchGroups_ = batchMembers_ = 0;
     const auto beforeBatch = profiling ? Clock::now() : Clock::time_point{};
     if (batching) {
-        batchParams_.reserve(items.size() + meshGroups_.size());
+        batchParams_.reserve(items.size() + meshGroupCount_);
         CameraState state;
         state.matrixWorldInverse = toArray(camera.matrixWorldInverse);
         state.projectionMatrix = toArray(camera.projectionMatrix);

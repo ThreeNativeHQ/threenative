@@ -149,9 +149,20 @@ void instanceGrid() {
     const Handle storage[] = {positions};
     CHECK(pass.dispatch(encoder, storage, kGridCount, {{"time", 0.75}}));
     device.submit(encoder);
-    size_t inexact = 0;
-    const size_t differ = compare(device.read(positions, uint64_t{kGridCount} * 4), reference("instance-grid", "positions"), 1e-6f, inexact);
-    std::printf("instance grid: %u positions, %zu components differ, %zu within f32 rounding\n", kGridCount, differ, inexact);
+    const auto got = device.read(positions, uint64_t{kGridCount} * 4);
+    const auto want = reference("instance-grid", "positions");
+    // WGSL sin is implementation-approximated: the Nvidia oracle differs from CPU sin by
+    // 2.22e-6, and SwiftShader differs from that oracle by 1.89e-4. Use the corpus's 0.2 mm
+    // position bound only for wave heights; grid coordinates and w remain exact.
+    size_t differ = got.size() == uint64_t{kGridCount} * 4 && got.size() == want.size() ? 0 : 1;
+    float worst = 0;
+    for (size_t i = 0; i < std::min(got.size(), want.size()); ++i) {
+        const float error = std::fabs(got[i] - want[i]);
+        const float tolerance = i % 4 == 1 ? 2e-4f : 0;
+        if (!std::isfinite(got[i]) || !std::isfinite(want[i]) || !(error <= tolerance)) ++differ;
+        worst = std::max(worst, error);
+    }
+    std::printf("instance grid: %u positions, %zu components differ, max absolute error %.9g\n", kGridCount, differ, worst);
     CHECK(differ == 0);
 }
 

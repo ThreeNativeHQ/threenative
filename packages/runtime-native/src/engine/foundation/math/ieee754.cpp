@@ -1027,6 +1027,28 @@ double cos(double x) {
  * Accuracy:
  *      TRIG(x) returns trig(x) nearly rounded
  */
+void sincos(double x, double& sine, double& cosine) {
+  int32_t ix;
+  GET_HIGH_WORD(ix, x);
+  ix &= 0x7FFFFFFF;
+  if (ix <= 0x3FE921FB) {
+    sine = __kernel_sin(x, 0.0, 0);
+    cosine = __kernel_cos(x, 0.0);
+  } else if (ix >= 0x7FF00000) {
+    sine = cosine = x - x;
+  } else {
+    double y[2];
+    const int n = __ieee754_rem_pio2(x, y);
+    const double s = __kernel_sin(y[0], y[1], 1), c = __kernel_cos(y[0], y[1]);
+    switch (n & 3) {
+      case 0: sine = s; cosine = c; break;
+      case 1: sine = c; cosine = -s; break;
+      case 2: sine = -s; cosine = -c; break;
+      default: sine = -c; cosine = s; break;
+    }
+  }
+}
+
 double sin(double x) {
   double y[2], z = 0.0;
   int32_t n, ix;

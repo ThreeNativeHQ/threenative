@@ -17,6 +17,7 @@ class Light : public Object3D {
 public:
     explicit Light(Color color = Color(1, 1, 1), double intensity = 1) : color(color), intensity(intensity) {}
     [[nodiscard]] std::string_view type() const override { return "Light"; }
+    [[nodiscard]] bool isLight() const override { return true; }
     Color color;
     double intensity;
 };

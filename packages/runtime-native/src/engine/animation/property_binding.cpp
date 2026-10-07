@@ -201,8 +201,8 @@ void PropertyBinding::bind() {
         return bound(Target::MorphElement);
     }
 
-    Vector3 Object3D::* vector = property == "position" ? &Object3D::position
-                                 : property == "scale"  ? &Object3D::scale
+    Vector3& (Object3D::*vector)() = property == "position" ? &Object3D::positionValue
+                                 : property == "scale"  ? &Object3D::scaleValue
                                                         : nullptr;
     if (parsed_.propertyIndex) {
         static constexpr std::array<std::string_view, 3> kComponents = {"x", "y", "z"};
@@ -258,7 +258,7 @@ void PropertyBinding::getValue(double* buffer, std::size_t offset) {
     case Target::Quaternion:
         return put(node->quaternion.toArray());
     case Target::Component:
-        buffer[offset] = ((*node).*vector_).getComponent(component_);
+        buffer[offset] = (((*node).*vector_)()).getComponent(component_);
         return;
     case Target::Visible:
         buffer[offset] = node->visible() ? 1 : 0;
@@ -312,7 +312,7 @@ void PropertyBinding::setValue(const double* buffer, std::size_t offset) {
         node->quaternion.fromArray(buffer, at);
         break;
     case Target::Component:
-        ((*node).*vector_).setComponent(component_, buffer[offset]);
+        (((*node).*vector_)()).setComponent(component_, buffer[offset]);
         break;
     // three stores the number itself; any read of `visible` treats it as JavaScript truthiness.
     case Target::Visible:
