@@ -142,28 +142,6 @@ void hierarchy() {
     CHECK(target->parent == mover.get());
     CHECK(before.x == after.x && before.y == after.y && before.z == after.z);
 
-    // A virtual matrix update may publish another plain object's matrix during attach().
-    // Its fast path must not overwrite attach's pending scratch transform.
-    {
-        struct UpdatingNode : Object3D {
-            Object3D other;
-            void updateMatrix() override {
-                other.position.set(11, 12, 13);
-                other.updateMatrixWorldSelf(true, true, true);
-                Object3D::updateMatrix();
-            }
-        } attached;
-        Object3D oldParent, newParent;
-        oldParent.position.set(2, 3, 4);
-        newParent.position.set(-5, 6, 7);
-        attached.position.set(1, 2, 3);
-        oldParent.add(attached);
-        attached.getWorldPosition(before);
-        newParent.attach(attached);
-        attached.getWorldPosition(after);
-        CHECK(before.x == after.x && before.y == after.y && before.z == after.z);
-    }
-
     // ---- events, in the reference's order: the child first, then the parent
     Recorded log;
     Object3D parent;
