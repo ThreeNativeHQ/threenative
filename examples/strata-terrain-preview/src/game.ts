@@ -711,8 +711,6 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
           textureUploads.signal,
         );
         if (released) return;
-        // Streamed cell prewarm borrows actual world draws; uploads no longer compete with them.
-        ctx.canvasLayer.keepWorldRendering = true;
         propsStage = "streaming";
         props = await createStreamedProps({
           placements: scatter.placements,
@@ -742,6 +740,9 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
         }
         // ctx.add registers render-cadence processing. Never manually update these worlds.
         for (const stream of props.worlds) ctx.add(stream);
+        // Prewarm borrows actual world draws only after registration. Grounding and package
+        // preparation have no attached stream to prewarm and keep the opaque curtain's draw gate.
+        ctx.canvasLayer.keepWorldRendering = true;
         propsStage = "attached";
 
         const alpineCrags =

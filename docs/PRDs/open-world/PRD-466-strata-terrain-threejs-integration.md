@@ -3437,3 +3437,28 @@ the new test exits 0. Biome exits 0 with seven existing game complexity warnings
 placement, texture, admission budget or deadline changed. GPU/native and matched before/after
 FPS verification remain unrun for this slice. Computed progress remains **50%**; no acceptance
 box changed.
+
+### 2026-10-07 — defer world draws until streamed props attach (CPU verified)
+
+The frozen upload-boundary run completed all 41 compressed uploads before the spawn deadline
+failed during grounding at 165,030/218,809 entries. Grounding subsequently finished all 218,809
+entries in 26,253.2 ms across 440 measured 8 ms slices. Between the first sampled grounding
+callback and the deadline, grounding stacks accounted for 2,484.5 ms of the 18,620.4 ms interval.
+Independent profile review found separate 2.178 s and 1.705 s long tasks in world rendering;
+another 4.740 s task belongs to overlay submission. These are sampled wall intervals, including
+blocked calls, not GPU timings. Moving the world draw handoff cannot address the overlay task.
+
+Strata enabled world draws before preparing its streamed props, although no stream was attached
+to receive updates or prewarm draws. The consumer now retains the opaque curtain's existing draw
+gate through grounding and package preparation, then enables world draws after `ctx.add` registers
+the returned streams. `WorldCells.load` returns without awaiting prewarm; the registered worlds
+still receive their actual main/shadow prewarm draws before the readiness gate can settle.
+Undefined or released preparation never enables those draws. No grounding algorithm, terrain or
+physics query, position, collision, seed, population, quality, admission budget or deadline changed.
+
+Three controls executing the production preparation controller failed with premature world draws,
+then passed after the handoff moved. The source-aliased loading, prop-streaming, prop-LOD,
+compute-driven, main-cull and shadow-prewarm suites pass **80/80**. Strict TypeScript 6 against
+actual Strata/core source exits 0; Biome exits 0 with seven existing game complexity warnings.
+Same-scenario hardware qualification remains pending for this slice; no readiness, screenshot or
+FPS improvement is claimed. Computed progress remains **50%**; no acceptance box changed.

@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { runInNewContext } from "node:vm";
 import {
   type CanvasTexture,
   type Mesh,
@@ -6,6 +8,7 @@ import {
   PerspectiveCamera,
   Scene,
 } from "three";
+import ts from "typescript";
 import { expect, it, vi } from "vitest";
 import {
   createLoadingScreen,
@@ -28,6 +31,114 @@ function host(ready: Promise<void>) {
     startup: { progress: 0.5, whenReady: () => ready },
   };
 }
+
+it.each(["attached", "cancelled", "released"] as const)(
+  "defers hidden world draws until prepared streams attach: %s",
+  async (outcome) => {
+    const source = ts.createSourceFile(
+      "game.ts",
+      readFileSync(
+        new URL("../../../examples/strata-terrain-preview/src/game.ts", import.meta.url),
+        "utf8",
+      ),
+      ts.ScriptTarget.Latest,
+      true,
+    );
+    let declaration = "";
+    function visit(node: ts.Node): void {
+      if (ts.isVariableDeclaration(node) && node.name.getText(source) === "buildProps")
+        declaration = node.getText(source);
+      ts.forEachChild(node, visit);
+    }
+    visit(source);
+    if (!declaration) throw new Error("Missing production Strata preparation controller");
+    const controllerHost = host(new Promise<void>(() => undefined));
+    controllerHost.canvasLayer.opaque = true;
+    controllerHost.canvasLayer.renderWorldDuringStartup = false;
+    const world = new Scene();
+    const attachments: boolean[] = [];
+    let entered: () => void = () => undefined;
+    const preparing = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    let finish: () => void = () => undefined;
+    const prepared = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    let disposed = false;
+    const parts = new Map();
+    const scope = {
+      exports: {} as { Controller?: new () => { run(): Promise<void> } },
+      ctx: {
+        ...controllerHost,
+        assets: undefined,
+        state: { getState: () => ({}) },
+        entities: { add: () => undefined },
+        add: () => {
+          attachments.push(controllerHost.canvasLayer.keepWorldRendering);
+        },
+      },
+      released: false,
+      preparedDispose: undefined,
+      preparedLodBaseSpread: 0,
+      preparedLevelsWithoutSolid: 0,
+      surfacesDispose: undefined,
+      propsStage: "",
+      props: undefined,
+      propParts: parts,
+      world: "forest",
+      data: { size: 512 },
+      biome: {},
+      fallbackSaplingHeight: undefined,
+      scatter: { placements: [], counts: {} },
+      groundAt: () => ({ height: 0, offset: 0 }),
+      textureUploads: { signal: new AbortController().signal },
+      PerspectiveCamera,
+      OrthographicCamera,
+      loadPreparedProps: async () => ({ parts, dispose() {} }),
+      loadPack: async () => ({ parts, dispose() {} }),
+      buildPropVariants: () => parts,
+      createPropSurfaces: async () => ({ materials: {}, dispose() {} }),
+      preparePropTextures: async () => undefined,
+      createStreamedProps: async () => {
+        entered();
+        await prepared;
+        return outcome === "cancelled"
+          ? undefined
+          : {
+              worlds: [world],
+              byId: new Map(),
+              meshes: [],
+              dispose: () => {
+                disposed = true;
+              },
+            };
+      },
+    };
+    runInNewContext(
+      ts.transpileModule(
+        `export class Controller { #surfaces; async run() { const ${declaration}; await buildProps(); } }`,
+        { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } },
+      ).outputText,
+      scope,
+    );
+    if (!scope.exports.Controller)
+      throw new Error("Production preparation controller did not load");
+    const work = new scope.exports.Controller().run();
+    await preparing;
+    try {
+      expect(controllerHost.canvasLayer.keepWorldRendering).toBe(false);
+      expect(attachments).toEqual([]);
+    } finally {
+      scope.released = outcome === "released";
+      finish();
+      await work;
+    }
+    expect(attachments).toEqual(outcome === "attached" ? [false] : []);
+    expect(controllerHost.canvasLayer.keepWorldRendering).toBe(outcome === "attached");
+    expect(disposed).toBe(outcome === "released");
+  },
+);
 
 it.each(["世界", "\u0000", "\uD800"])(
   "bounds failure receipts for %j without retaining scene objects or resident key arrays",
