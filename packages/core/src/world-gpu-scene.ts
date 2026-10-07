@@ -2742,8 +2742,10 @@ export class WorldGpuScene {
     if (grown === current) return true;
     this.#buffers = { ...buffers, [name]: grown };
     // The attributes the kernel is built from changed, so the kernel is a new pipeline: a structural
-    // event, and the only one this class pays a compile for.
+    // event, and the only one this class pays a compile for. The shadow kernel reads the same
+    // placements, keys, locals, gates and levels, so it is rebuilt with it.
     this.#kernel = undefined;
+    this.#shadowKernel = undefined;
     this.#version += 1;
     return true;
   }

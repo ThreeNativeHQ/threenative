@@ -4641,4 +4641,33 @@ describe("the shadow twins of a registered provider", () => {
     expect(scene.drawn).not.toBe(scene.shadowDrawn);
     scene.dispose();
   });
+
+  /**
+   * Machinefall's walk: the first level render happens at the camp with a handful of placements,
+   * and streaming then grows the placement buffer a thousandfold. A shadow kernel kept from that
+   * first render still reads the first buffer at its first thread count, so every later level
+   * selects from the camp's handful and a real walk read zero shadow instances on all 138 renders.
+   */
+  it("rebuilds the level's kernel against a placement buffer that grew after its first render", () => {
+    vi.stubGlobal("__tnShadowGpuKeys", 1);
+    const scene = wired([{ name: "a", levels: [...DISTANCES] }], 1, 4096);
+    const culls: { count: number }[] = [];
+    const renderer = {
+      kind: "webgpu",
+      raw: { backend: { hasFeature: () => true } },
+      compute: (node: { count: number }) => culls.push(node),
+    } as never;
+    const { planes } = cameraAt(0, 0);
+    const level = { base: 0, centre: { x: 0, z: 0 }, gate: 0, planes };
+    scene.shadowKeysFrom(() => ["a:0:0", "a:1:0", "a:2:0"]);
+    placed(scene, 0, 2, 4);
+    scene.dispatchShadow(renderer, level);
+    const first = culls.at(-1);
+    placed(scene, 0, 600, 1);
+    scene.dispatchShadow(renderer, level);
+    const second = culls.at(-1);
+    expect(second, "a grown placement buffer is a new pipeline").not.toBe(first);
+    expect(second?.count, "one thread per resident placement").toBeGreaterThanOrEqual(602);
+    scene.dispose();
+  });
 });
