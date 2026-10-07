@@ -580,10 +580,12 @@ void RenderDatabase::addBatchMesh(const Mesh& mesh, Record& record) {
     target.members.push_back(batchMeshes_.size());
     const auto& m = mesh.matrixWorld.elements;
     const auto& p = batchProjView_;
+    const double depth =
+        (p[2] * m[12] + p[6] * m[13] + p[10] * m[14] + p[14]) / (p[3] * m[12] + p[7] * m[13] + p[11] * m[14] + p[15]);
+    const auto bits = std::bit_cast<uint64_t>(depth == 0 ? 0.0 : depth);
+    depthKeys_.push_back(bits >> 63 ? ~bits : bits ^ (uint64_t{1} << 63));
     batchMeshes_.push_back(
-        {&mesh, mesh.material.get(),
-         (p[2] * m[12] + p[6] * m[13] + p[10] * m[14] + p[14]) / (p[3] * m[12] + p[7] * m[13] + p[11] * m[14] + p[15]),
-         mesh.id(), mesh.renderOrder(), &record});
+        {&mesh, mesh.material.get(), depth, mesh.id(), mesh.renderOrder(), &record});
     BatchTransform packed;
     for (int i = 0; i < 16; ++i)
         packed.matrix[i] = static_cast<float>(m[i]);
@@ -602,12 +604,6 @@ void RenderDatabase::batchMeshes(std::vector<DrawItem>& items) {
             return a.depth < b.depth;
         return a.id < b.id;
     };
-    depthKeys_.resize(batchMeshes_.size());
-    for (std::size_t i = 0; i < batchMeshes_.size(); ++i) {
-        const double depth = batchMeshes_[i].depth;
-        const auto bits = std::bit_cast<uint64_t>(depth == 0 ? 0.0 : depth);
-        depthKeys_[i] = bits >> 63 ? ~bits : bits ^ (uint64_t{1} << 63);
-    }
     for (std::size_t slot = 0; slot < meshGroupCount_; ++slot) {
         auto& group = meshGroups_[slot];
         auto& members = group.members;
@@ -774,6 +770,7 @@ std::vector<DrawItem> RenderDatabase::prepare(Object3D& scene, Camera& camera, L
     direct_.clear();
     skeletonsUpdated_.clear();
     batchMeshes_.clear();
+    depthKeys_.clear();
     batchTransforms_.clear();
     batchRgb_.clear();
     meshGroupCount_ = 0;
@@ -798,6 +795,7 @@ std::vector<DrawItem> RenderDatabase::prepare(Object3D& scene, Camera& camera, L
             items.push_back(item);
         }
         batchMeshes_.clear();
+        depthKeys_.clear();
         meshGroupCount_ = 0;
     }
     // three's onBeforeRender, before the object is drawn: after projection, so a callback that edits
