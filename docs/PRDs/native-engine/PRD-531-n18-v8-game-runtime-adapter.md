@@ -132,6 +132,18 @@ Registry/catalog/declarations are regenerated with the actual bound track and bi
 This repair slice is complete; Windows CI and the unchanged full minimal-template journey remain
 unverified, so no phase box is ticked.
 
+CI audit (2026-10-07): the exposure failure's saved console shows 347 accepted samples and one
+pending readback at timeout, with no console errors or rejected samples; the post-cut arm simply
+did not reach 180 within 60 seconds. The unchanged failing case passes locally on both NVIDIA
+Turing and explicitly observed SwiftShader, with CPU profiles captured. No timeout or assertion
+change; the hosted run remains unverified. PR #438 is still draft, has no current remote check
+rollup and conflicts with develop in `.gitignore` and Android key routing. The conflict preview
+is read-only; reconcile after the native coverage producer finishes. The system-Clang/V8 run
+completed the legacy contracts but found a producer gap: its compile inventory includes
+`tn_engine_foundation` while its build/execute list includes only legacy targets, so aggregation
+fails on the unbuilt engine object. Integrate the native-engine suite before refreshing coverage;
+do not drop inventory entries or restamp the digest.
+
 Scatter-test timeout repair (2026-10-07): a focused CPU profile identified terrain mesh rebuilding
 as the main unrelated cost in the timed-out scatter walk. Both comparison arms now use the existing
 9-point terrain-resolution override, preserving all 400 updates and scatter assertions. The case

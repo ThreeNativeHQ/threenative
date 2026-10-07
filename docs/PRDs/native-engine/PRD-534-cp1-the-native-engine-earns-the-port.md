@@ -1,6 +1,6 @@
 # PRD-534 — The native engine earns the port (CP1)
 
-**Status:** IN PROGRESS — the three arms run on one workload; GPU time and the desktop and Pixel verdict runs are open
+**Status:** IN PROGRESS — the three arms report CPU/GPU time on one workload; physical-desktop and Pixel verdict runs are open
 **Complexity:** 3 — measurement only, on existing workloads; the verdict can stop the program
 **Owner:** João
 **Work package:** CP1 — [native-engine batch](README.md)

@@ -58,7 +58,9 @@ Generated from the PRD files' boxes; a PRD is done when every box is ticked.
 | [PRD-534](PRD-534-cp1-the-native-engine-earns-the-port.md) | The native engine earns the port (CP1) | 2/5 | in progress |
 | [PRD-535](PRD-535-n21-the-js-engine-is-deleted.md) | The JS engine is deleted (N21) | 0/7 | not started |
 
-**CP1 (PRD-534), functional reading, not the verdict:** `pnpm bench:engines --arms current,native-v8,native-cpp --workload heterogeneous` at 4,096 cubes (Xvfb and headless Dawn) gives hot path p50 10.26 ms for current ThreeNative, 23.60 ms through V8 and 13.28 ms from C++. The bar is V8 at most half of current, so this reading is a stop signal. Current batches the colour-only materials into 3 draws; the native engine has no batching yet (N12). Whether minimal batching comes before the verdict runs is an owner decision, recorded in PR #438.
+**CP1 (PRD-534), historical functional reading (2026-10-05), not the verdict:** `pnpm bench:engines --arms current,native-v8,native-cpp --workload heterogeneous` at 4,096 cubes (Xvfb and headless Dawn) measured hot path p50 10.26 ms for current ThreeNative, 23.60 ms through V8 and 13.28 ms from C++. That prototype preceded N12 native batching. The physical-desktop and Pixel 8 verdict runs remain open; these early timings do not describe the current engine.
+
+**Current performance boundary (2026-10-07):** the overnight optimization search reached its bounded engineering ceiling for the frozen 64k browser workload: median paired Three/Perry gain 1.30×, with zero pixel mismatches. This is neither an absolute upper bound nor the required 2× default-promotion proof. N20 qualification and its failed 18× scaling gate remain open. The measured trials, rejected candidates and stopping criterion are in [PRD-533](PRD-533-n20-platform-qualification-performance-default-promotion.md#execution-phases); work now continues on the remaining compatibility and PR checks.
 
 ### Owner decisions (2026-10-04)
 
