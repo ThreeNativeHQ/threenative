@@ -3973,11 +3973,13 @@ describe("WorldGpuScene measured occlusion cull", () => {
       { width: 8, height: 8 },
       { count: 0 },
     );
-    renderer.scenePassDepth = () => ({
-      texture: depth,
-      width: depth.image.width,
-      height: depth.image.height,
-    });
+    renderer.scenePassDepth = () => {
+      const { width, height } = depth.image;
+      if (width === undefined || height === undefined) {
+        throw new Error("depth fixture requires known dimensions");
+      }
+      return { texture: depth, width, height };
+    };
     const readback = vi.spyOn(renderer, "readback");
     world.enable(renderer, true, false, false, "measure");
     const camera = new PerspectiveCamera();
