@@ -11,6 +11,7 @@ import {
   parseAxesRecord,
 } from "../../examples/engine-load-test/src/workload.js";
 import { runPerformanceRegressionCli } from "../performance-regression/compare.js";
+import { cpuCommand, runCpuCommand } from "../performance-regression/cpu.js";
 import {
   assertBrowserPlacements,
   assertPlainThreePilot,
@@ -545,11 +546,15 @@ async function runProductComparison(): Promise<void> {
 
 function printUsage(): void {
   process.stdout.write(
-    "usage: pnpm bench:engines --arm <tn-web|plain-three-webgpu|godot-web|tn-desktop|godot-desktop|tn-android|godot-android> [--production] [--required-baseline --lane id] [--lanes path] [--out name] [--skip-baseline] [--allow-emulator] [--source-sha sha --frames N --warmup N --repeats N --ladder a,b --modes L1,L2,R1..R5 --width N --height N] [--geometry shared|unique --material shared|unique --hierarchy-depth N --visible-fraction 0..1 --mutation-rate 0..1 --shadow-caster-share 0..1 --passes N]\n       pnpm bench:engines --arms current,native-v8,native-cpp --workload heterogeneous [--objects N] [--frames N --warmup N --width N --height N]\n       pnpm bench:engines --target web --arms current,wasm-js,wasm-perry [--objects N --frames N --warmup N --profile]\n       pnpm bench:engines --compare [--left tn-web --right godot-web] [--doc path.md]\n       pnpm bench:engines --check-report path.json [--required-baseline --lanes path]\n       pnpm bench:engines --regression --input report.json [--lanes path --lane id] [--policy policy.json] [--out summary.json]\n       pnpm bench:engines --regression-collection --target <web|desktop|android|ios> [--device id] [--prebuilt-artifact path] [--out path]\n",
+    "usage: pnpm bench:engines --arm <tn-web|plain-three-webgpu|godot-web|tn-desktop|godot-desktop|tn-android|godot-android> [--production] [--required-baseline --lane id] [--lanes path] [--out name] [--skip-baseline] [--allow-emulator] [--source-sha sha --frames N --warmup N --repeats N --ladder a,b --modes L1,L2,R1..R5 --width N --height N] [--geometry shared|unique --material shared|unique --hierarchy-depth N --visible-fraction 0..1 --mutation-rate 0..1 --shadow-caster-share 0..1 --passes N]\n       pnpm bench:engines --arms current,native-v8,native-cpp --workload heterogeneous [--objects N] [--frames N --warmup N --width N --height N]\n       pnpm bench:engines --target web --arms current,wasm-js,wasm-perry [--objects N --frames N --warmup N --profile]\n       pnpm bench:engines --compare [--left tn-web --right godot-web] [--doc path.md]\n       pnpm bench:engines --check-report path.json [--required-baseline --lanes path]\n       pnpm bench:engines --regression --input report.json [--lanes path --lane id] [--policy policy.json] [--out summary.json]\n       pnpm bench:engines --regression-collection --target <web|desktop|android|ios> [--device id] [--prebuilt-artifact path] [--out path]\n       pnpm bench:engines --cpu-setup\n       pnpm bench:engines --cpu --source <absolute checkout path> --name <result name>\n       pnpm bench:engines --cpu-compare --baseline <absolute saved-run dir> --candidate <absolute saved-run dir> [--control <name>]\n",
   );
 }
 
 async function main(): Promise<void> {
+  // The CPU path is dispatched before any hardware parsing so an unknown or conflicting flag
+  // fails before a browser, device, or Godot arm is reached.
+  const cpu = cpuCommand(process.argv.slice(2));
+  if (cpu !== undefined) return runCpuCommand(cpu, process.argv.slice(2));
   await mkdir(artifactRoot, { recursive: true });
   if (process.argv.includes("--regression-collection")) return runRegressionCollectionCommand();
   if (process.argv.includes("--regression")) return runRegressionCommand();

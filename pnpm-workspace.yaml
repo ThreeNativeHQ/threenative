@@ -6,6 +6,7 @@ packages: ['packages/*', 'examples/*']
 confirmModulesPurge: false
 
 catalog:
+  '@pmndrs/labs': 0.9.0
   three: 0.185.1
   '@jridgewell/trace-mapping': 0.3.31
   '@gltf-transform/core': 4.4.2
