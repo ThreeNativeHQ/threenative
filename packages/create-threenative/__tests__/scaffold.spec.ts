@@ -773,18 +773,19 @@ describe("create-threenative", () => {
       await cp(path.join(TEMPLATE_ROOT, "starter", "assets"), path.join(root, "assets"), {
         recursive: true,
       });
-      const channel = (x: number, y: number, shift: number): number => {
+      // Gradients with ±3 levels of noise resist PNG compression without violating PRD-351's quality floor like pure noise.
+      const noise = (x: number, y: number, shift: number): number => {
         let value = Math.imul(x + 1, 0x45d9f3b) ^ Math.imul(y + 1, 0x27d4eb2d);
         value ^= value >>> 16;
-        return value >>> shift;
+        return ((value >>> shift) % 7) - 3;
       };
       await writeFile(
         path.join(root, "assets", "web-codec-proof.png"),
         rgbaPng({
-          blue: (x, y) => channel(x, y, 16),
-          green: (x, y) => channel(x, y, 8),
+          blue: (x, y) => 48 + Math.floor((x + y) / 2) + noise(x, y, 16),
+          green: (x, y) => 48 + y + noise(x, y, 8),
           height: 128,
-          red: (x, y) => channel(x, y, 0),
+          red: (x, y) => 48 + x + noise(x, y, 0),
           width: 128,
         }),
       );

@@ -59,6 +59,33 @@ function compressiblePng(alpha?: (x: number, y: number) => number): Buffer {
 }
 
 describe("the ktx2 texture pass", () => {
+  it("preserves pure noise when every compressed rung falls below the quality floor", async () => {
+    const channel = (x: number, y: number, shift: number): number => {
+      let value = Math.imul(x + 1, 0x45d9f3b) ^ Math.imul(y + 1, 0x27d4eb2d);
+      value ^= value >>> 16;
+      return value >>> shift;
+    };
+    const input = rgbaPng({
+      blue: (x, y) => channel(x, y, 16),
+      green: (x, y) => channel(x, y, 8),
+      height: 128,
+      red: (x, y) => channel(x, y, 0),
+      width: 128,
+    });
+    const { entry, outputBytes } = await compileOne(
+      "threenative-tex-scaffold-codec-",
+      "web-codec-proof.png",
+      input,
+    );
+    expect(entry.output).toMatch(/\.png$/u);
+    expect(outputBytes).toEqual(input);
+    expect(entry).toMatchObject({
+      format: "none",
+      compressionSkipped: "below-floor",
+      quality: { codec: "none", rung: "none", compressionSkipped: "below-floor" },
+    });
+  });
+
   it("measures standalone output without changing bytes", async () => {
     const input = compressiblePng();
     const options = { overrides: [{ glob: "flat.png", codec: "etc1s" as const }] };
