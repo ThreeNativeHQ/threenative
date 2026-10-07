@@ -18,11 +18,51 @@ import {
   buildWebBench,
   collectWebBenchPage,
   summarizeWebBench,
+  summarizeWebCpuConsumption,
   validateWebProfile,
   webBenchOptions,
 } from "../engine-load-test/web.js";
 
 describe("PRD-533 web arms", () => {
+  it("separates measured-phase CPU consumption from wall time and rejects missing counters", () => {
+    const event = (title: string, wall: number, thread: number, process: number) => ({
+      title,
+      metrics: [
+        { name: "Timestamp", value: wall },
+        { name: "ThreadTime", value: thread },
+        { name: "ProcessTime", value: process },
+      ],
+    });
+    const start = event("tn-web-bench-start", 10, 1, 2);
+    const end = event("tn-web-bench-end", 10.1, 1.03, 2.045);
+    const cpu = summarizeWebCpuConsumption([start, end], 10);
+    expect(cpu.mainThreadMsPerFrame).toBeCloseTo(3);
+    expect(cpu.processMsPerFrame).toBeCloseTo(4.5);
+    expect(cpu.wallMs).toBeCloseTo(100);
+    expect(cpu.frames).toBe(10);
+    expect(
+      summarizeWebCpuConsumption([start, event(end.title, 10.1, 1.03, 0)], 10).processMs,
+    ).toBeNull();
+    expect(
+      summarizeWebCpuConsumption([start, event(end.title, 10.1, 1.03, 2)], 10).processMs,
+    ).toBeNull();
+    for (const events of [
+      [],
+      [start],
+      [end, start],
+      [start, end, end],
+      [start, { ...end, metrics: end.metrics.filter((m) => m.name !== "ThreadTime") }],
+      [start, event(end.title, 10, 1.03, 2.045)],
+      [start, event(end.title, 10.1, 1, 2.045)],
+      [start, event(end.title, 10.1, Number.NaN, 2.045)],
+      [event(start.title, 10, 1e308, 2), event(end.title, 10.1, 1.5e308, 2.045)],
+      [start, { ...end, metrics: [...end.metrics, { name: "ThreadTime", value: 1.03 }] }],
+      [start, event(end.title, 10.1, 1.03, 1.9)],
+    ])
+      expect(() => summarizeWebCpuConsumption(events, 10)).toThrow(/CPU_COUNTER/);
+    expect(() => summarizeWebCpuConsumption([start, end], 0)).toThrow(/CPU_COUNTER/);
+  });
+
   it("validates the one workload and exactly three repeated runs", () => {
     expect(webBenchOptions({}).frames).toBe(600);
     expect(() => webBenchOptions({ repeats: "2" })).toThrow(/repeats/);
@@ -243,6 +283,9 @@ describe("PRD-533 web arms", () => {
       "tn_ready",
     ];
     const before = names.map((name) => Object.getOwnPropertyDescriptor(globalThis, name));
+    const stampBefore = Object.getOwnPropertyDescriptor(console, "timeStamp");
+    const markers = vi.fn();
+    Object.defineProperty(console, "timeStamp", { configurable: true, value: markers });
     abi._tnw_bench_init = (_width: number, _height: number, profile: number) => {
       globals.__tnWasmAssets = {
         initialized: true,
@@ -347,6 +390,9 @@ describe("PRD-533 web arms", () => {
         );
       }
       expect(startProfile).toHaveBeenCalledTimes(1);
+      expect(markers.mock.calls).toEqual(
+        mode === "off" ? [] : [["tn-web-bench-start"], ["tn-web-bench-end"]],
+      );
       expect(report.boundary.webgpuCalls).toEqual([4, 4, 4]);
       for (const field of ["writeBuffers", "directDraws", "bundleDraws", "executeBundles"])
         expect(report.boundary[field]).toEqual([1, 1, 1]);
@@ -366,6 +412,8 @@ describe("PRD-533 web arms", () => {
           ),
         ).toBeCloseTo(report.cpuMs[index] as number, 9);
     } finally {
+      if (stampBefore) Object.defineProperty(console, "timeStamp", stampBefore);
+      else Reflect.deleteProperty(console, "timeStamp");
       names.forEach((name, index) => {
         const descriptor = before[index];
         if (descriptor) Object.defineProperty(globalThis, name, descriptor);

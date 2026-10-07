@@ -6,7 +6,7 @@ import { closeSync, existsSync, openSync, readFileSync } from "node:fs";
 import { copyFile, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
-import { type Page, chromium } from "@playwright/test";
+import { type CDPSession, type Page, chromium } from "@playwright/test";
 import { PNG } from "pngjs";
 import type { IFrameBudgetSummary } from "../../packages/core/src/frame-budget.js";
 import {
@@ -39,7 +39,59 @@ export interface IWebOptions {
   width: number;
   height: number;
 }
+interface ICpuMetricsEvent {
+  title: string;
+  metrics: { name: string; value: number }[];
+}
+export function summarizeWebCpuConsumption(events: ICpuMetricsEvent[], frames: number) {
+  if (
+    events.length !== 2 ||
+    events[0]?.title !== "tn-web-bench-start" ||
+    events[1]?.title !== "tn-web-bench-end" ||
+    !Number.isInteger(frames) ||
+    frames <= 0
+  )
+    throw new Error("TN_WEB_BENCH_CPU_COUNTER_MARKERS");
+  const counters = (name: string): [number, number] => {
+    const matches = events.map((event) => event.metrics.filter((metric) => metric.name === name));
+    if (
+      matches.some(
+        (values) =>
+          values.length !== 1 ||
+          !Number.isFinite(values[0]?.value) ||
+          (values[0]?.value as number) < 0,
+      )
+    )
+      throw new Error(`TN_WEB_BENCH_CPU_COUNTER_MISSING: ${name}`);
+    return [matches[0]?.[0]?.value as number, matches[1]?.[0]?.value as number];
+  };
+  const delta = ([start, end]: [number, number]) => (end - start) * 1000;
+  const wallMs = delta(counters("Timestamp"));
+  const mainThreadMs = delta(counters("ThreadTime"));
+  const process = counters("ProcessTime");
+  // Chromium returns zero when process CPU retrieval fails; never call that zero work.
+  const processDelta = process.every((value) => value > 0) ? delta(process) : null;
+  const processMs = processDelta === 0 ? null : processDelta;
+  if (
+    ![wallMs, mainThreadMs, ...(processMs === null ? [] : [processMs])].every(Number.isFinite) ||
+    wallMs <= 0 ||
+    mainThreadMs <= 0 ||
+    (processMs !== null && processMs < 0)
+  )
+    throw new Error("TN_WEB_BENCH_CPU_COUNTER_DELTA");
+  return {
+    frames,
+    wallMs,
+    mainThreadMs,
+    processMs,
+    mainThreadMsPerFrame: mainThreadMs / frames,
+    processMsPerFrame: processMs === null ? null : processMs / frames,
+    scope:
+      "measured phase including rAF/GPU waits; CPU consumption includes profiler and other renderer work; process excludes GPU process; per-frame values are means, not FPS or p50",
+  };
+}
 export interface IWebProfile {
+  cpu?: ReturnType<typeof summarizeWebCpuConsumption>;
   gpuSupported: boolean;
   gpu: IFrameBudgetSummary | null;
   gpuStale: number;
@@ -454,10 +506,18 @@ export async function runWebBench(
             viewport: { width: options.width, height: options.height },
             deviceScaleFactor: 1,
           });
+          let consumptionSession: CDPSession | undefined;
+          const cpuEvents: ICpuMetricsEvent[] = [];
           try {
             let profiler: IBrowserCpuProfile | undefined;
             if (profile) {
               await page.exposeBinding("__ENGINE_LOAD_TEST_PROFILE__", async () => {
+                consumptionSession = await page.context().newCDPSession(page);
+                consumptionSession.on("Performance.metrics", (event) => {
+                  if (event.title === "tn-web-bench-start" || event.title === "tn-web-bench-end")
+                    cpuEvents.push(event);
+                });
+                await consumptionSession.send("Performance.enable", { timeDomain: "threadTicks" });
                 profiler = await startBrowserCpuProfile(
                   page,
                   path.join(out, `${arm}.cpuprofile`),
@@ -481,6 +541,12 @@ export async function runWebBench(
             if (profile) {
               if (!profiler) throw new Error(`CPU profiler did not start: ${arm}`);
               await profiler.stop();
+              if (!consumptionSession || !run.profile)
+                throw new Error(`TN_WEB_BENCH_CPU_COUNTER_SESSION: ${arm}`);
+              // Same-session command follows the synchronous marker notifications in Chromium.
+              await consumptionSession.send("Performance.getMetrics");
+              run.profile.cpu = summarizeWebCpuConsumption(cpuEvents, options.frames);
+              await consumptionSession.send("Performance.disable");
               validateWebProfile(run, options);
             }
             if (run.arm !== arm || run.cpuMs.length !== options.frames)
@@ -523,7 +589,11 @@ export async function runWebBench(
             if (metrics.pixelMismatchRatio > 0.01 || metrics.perceptualDeltaE > 3)
               throw new Error(`TN_WEB_BENCH_FRAME_MISMATCH: ${arm} ${JSON.stringify(metrics)}`);
           } finally {
-            await page.close();
+            try {
+              await consumptionSession?.detach();
+            } finally {
+              await page.close();
+            }
           }
         }
     } finally {

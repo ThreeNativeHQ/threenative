@@ -350,6 +350,7 @@ async function run() {
     boundaryMs = bulkMs = submissions = 0;
     const heapBytes = abi?.HEAPU8.byteLength ?? 0;
     const arrayAllocations = perryAllocations?.() ?? 0;
+    if (profile && frame === warmup) console.timeStamp("tn-web-bench-start");
     const start = performance.now();
     update(frame);
     const updated = performance.now();
@@ -443,6 +444,7 @@ async function run() {
     }
     scope.__ENGINE_LOAD_TEST_PROGRESS__.frame = frame;
   }
+  if (profile) console.timeStamp("tn-web-bench-end");
   // Freeze exactly the last measured frame for the collector's conformance comparison.
   for (const restore of restored) restore();
   const window = budget?.window();
