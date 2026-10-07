@@ -459,7 +459,7 @@ byte-identical to combined source `e48c31b8`. Nearest history worsens edge error
 (from 0.06001), residual instability to 0.03246 (from 0.03119), and moving-edge error to
 0.03528 (from 0.03024). It is rejected as a quality fix. Its causal red-tint fraction remains
 6.21% one frame after reveal. [Inspected actual control frame](../../verification/prd455/nearest-history.png)
-and [exact measurements, draw states and provenance](../../verification/prd455/history-sampling.json)
+and [exact measurements, draw states and provenance](../../verification/prd455/history-sampling.json.gz)
 retain the failed experiment.
 
 The actual frame-22/23/24 vertex shaders are identical and explicitly multiply distinct previous
@@ -542,7 +542,7 @@ still loses to no-AA (0.05061) and misses the fixed 5% improvement bar. Instabil
 causal red tint is zero across all reveal frames. Conservative reveal projection and excursions
 versus installed temporal still fail. Its matched zero-velocity arm degrades moving-edge error
 from 0.02470 to 0.04169. The unqualified result and all controls are retained in
-[exact cubic experiment evidence](../../verification/prd455/cubic-history.json), with inspected
+[exact cubic experiment evidence](../../verification/prd455/cubic-history.json.gz), with inspected
 [before](../../verification/prd455/cubic-strict-frame-27.png),
 [reveal](../../verification/prd455/cubic-strict-frame-30.png) and
 [recovery](../../verification/prd455/cubic-strict-frame-36.png) runtime frames.
@@ -564,7 +564,7 @@ metrics and MRT samples exactly across all 16 frames. Frame 23 instance error fa
 Y now equals CPU current Y=-0.6999545693 while previous Y remains -0.6924691796.
 Only recompile frames 23–36 change from the previous source; all other pixels and scores remain
 unchanged. Authored-linear equivalence still passes, while the same image-quality gates fail.
-[Combined provenance, unchanged metrics and corrected readback](../../verification/prd455/combined-cubic-history.json)
+[Combined provenance, unchanged metrics and corrected readback](../../verification/prd455/combined-cubic-history.json.gz)
 and the inspected [corrected recompile frame](../../verification/prd455/recompile-corrected-frame-23.png)
 are retained. Existing cubic/reference images remain valid because their bytes are unchanged.
 Further resolve changes await a fresh critique of these measured remaining errors.
@@ -581,7 +581,7 @@ omitted and explicit luminance settings compile identically. No default changes.
 A new diagnostic records mean linear blue per column over x=165–219/y=140–194, then sums each
 column's signed difference from the matching reference background pixel (0,0). All sixteen
 profiles are reported without clamping dark deficits. Its
-[baseline measured on the existing combined source](../../verification/prd455/fence-profile-baseline.json)
+[baseline measured on the existing combined source](../../verification/prd455/fence-profile-baseline.json.gz)
 gives frame-28 contrast 3.7238601 for reference, 2.3472733 installed and 2.9720493 cubic+strict.
 The arithmetic is documented independently of the critic's unrecorded calculation. The
 full-image edge, instability, reveal, causal and excursion measures remain authoritative;
