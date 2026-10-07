@@ -12,6 +12,7 @@
 #include "mystral/webgpu/context.h"
 
 #include <algorithm>
+#include <cmath>
 #include <chrono>
 #include <functional>
 #include <limits>
@@ -97,32 +98,50 @@ void uniformBatchPreparation() {
         CHECK(matrices[i * 16 + 14] == float(expected[i].second->position.z));
         CHECK(colors[i * 3] == float(expected[i].second->material->color.r));
     }
-    // Exercise both signs and zero ties, then the nonfinite comparator fallback.
+    // Exercise signs/zero ties, nonfinite fallback, and groups with different active radix digits.
     Camera depthCamera;
     depthCamera.coordinateSystem = CoordinateSystem::WebGPU;
-    for (bool infinite : {false, true}) {
+    for (int pattern = 0; pattern < 5; ++pattern) {
+        const bool infinite = pattern == 1, multiple = pattern >= 2;
         depthCamera.projectionMatrix.identity();
         if (infinite) depthCamera.projectionMatrix.elements[15] = 0;
-        expected.clear();
+        std::array<std::vector<std::pair<double, const Mesh*>>, 2> expectedGroups;
         for (std::size_t i = 0; i < meshes.size(); ++i) {
-            const double z = infinite ? double(i % 33 + 1) : double(int(i % 33) - 16);
+            const std::size_t group = multiple ? i % 2 : 0;
+            meshes[i]->material->roughness = group ? 0.25 : 1;
+            const bool wide = (group + pattern) % 2 == 0;
+            const double z = multiple
+                ? (pattern == 4 && group == 0 ? 1
+                   : wide ? std::ldexp(double(int(i % 33) - 16), pattern * 20)
+                          : 1 + std::ldexp(double(i % 33), -40 - pattern))
+                : (infinite ? double(i % 33 + 1) : double(int(i % 33) - 16));
             meshes[i]->position.z = z == 0 && i % 2 ? -0.0 : z;
-            expected.emplace_back(infinite ? std::numeric_limits<double>::infinity() : z, meshes[i].get());
+            expectedGroups[group].emplace_back(infinite ? std::numeric_limits<double>::infinity() : z, meshes[i].get());
         }
-        std::sort(expected.begin(), expected.end(), [](const auto& a, const auto& b) {
-            return a.first != b.first ? a.first < b.first : a.second->id() < b.second->id();
-        });
+        for (auto& group : expectedGroups)
+            std::sort(group.begin(), group.end(), [](const auto& a, const auto& b) {
+                return a.first != b.first ? a.first < b.first : a.second->id() < b.second->id();
+            });
         items = database.prepare(scene, depthCamera, lights);
-        CHECK(items.size() == 1 && items[0].instanceCount == 4096);
-        matrices = reinterpret_cast<const float*>(items[0].instanceMatrices->data());
-        colors = reinterpret_cast<const float*>(items[0].instanceColors->data());
-        for (std::size_t i = 0; i < expected.size(); ++i) {
-            CHECK(matrices[i * 16 + 12] == float(expected[i].second->position.x));
-            CHECK(matrices[i * 16 + 14] == float(expected[i].second->position.z));
-            CHECK(colors[i * 3] == float(expected[i].second->material->color.r));
+        CHECK(items.size() == (multiple ? 2 : 1));
+        if (items.size() != (multiple ? 2 : 1)) return;
+        for (const auto& item : items) {
+            const auto& group = expectedGroups[item.material->roughness == 0.25 ? 1 : 0];
+            CHECK(item.instanceCount == group.size() && item.instanceColors);
+            if (item.instanceCount != group.size() || !item.instanceColors) return;
+            matrices = reinterpret_cast<const float*>(item.instanceMatrices->data());
+            colors = reinterpret_cast<const float*>(item.instanceColors->data());
+            for (std::size_t i = 0; i < group.size(); ++i) {
+                CHECK(matrices[i * 16 + 12] == float(group[i].second->position.x));
+                CHECK(matrices[i * 16 + 14] == float(group[i].second->position.z));
+                CHECK(colors[i * 3] == float(group[i].second->material->color.r));
+            }
         }
     }
-    for (std::size_t i = 0; i < meshes.size(); ++i) meshes[i]->position.z = double(i / 64);
+    for (std::size_t i = 0; i < meshes.size(); ++i) {
+        meshes[i]->position.z = double(i / 64);
+        meshes[i]->material->roughness = 1;
+    }
     const auto rebuilds = database.rebuilds();
     for (auto& mesh : meshes) mesh->position.y = 2;
     meshes[0]->material->color.r = 0.8;
