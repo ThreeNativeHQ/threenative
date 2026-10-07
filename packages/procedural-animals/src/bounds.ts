@@ -2,6 +2,12 @@ import { Box3, BufferAttribute, type BufferGeometry, Sphere, Vector3 } from "thr
 import { animalError, requireValidatedBake } from "./format.js";
 import type { IAnimalBake } from "./format.js";
 
+// Float32 squares and their sum cannot overflow or underflow a JavaScript double.
+// The envelope's existing float32 rounding margin also covers norm rounding.
+function float32Norm(x: number, y: number, z: number, w = 0): number {
+  return Math.sqrt(x * x + y * y + z * z + w * w);
+}
+
 /** Bone-packet envelope, without per-frame vertex deformation or GPU readback. */
 export function createAnimalBounds(bake: IAnimalBake, geometry?: BufferGeometry) {
   requireValidatedBake(bake);
@@ -99,20 +105,21 @@ export function createAnimalBounds(bake: IAnimalBake, geometry?: BufferGeometry)
       let scaledRadius = 0;
       let dualRadius = 0;
       let minimumQuaternionLength = Number.POSITIVE_INFINITY;
+      const norm = data instanceof Float32Array ? float32Norm : Math.hypot;
       for (let o = 0; o < data.length; o += 20) {
         minimumQuaternionLength = Math.min(
           minimumQuaternionLength,
-          Math.hypot(data[o] ?? 0, data[o + 1] ?? 0, data[o + 2] ?? 0, data[o + 3] ?? 0),
+          norm(data[o] ?? 0, data[o + 1] ?? 0, data[o + 2] ?? 0, data[o + 3] ?? 0),
         );
         dualRadius = Math.max(
           dualRadius,
-          Math.hypot(data[o + 4] ?? 0, data[o + 5] ?? 0, data[o + 6] ?? 0, data[o + 7] ?? 0),
+          norm(data[o + 4] ?? 0, data[o + 5] ?? 0, data[o + 6] ?? 0, data[o + 7] ?? 0),
         );
         let normSquared = 0;
         for (let row = 8; row <= 16; row += 4)
           for (let column = 0; column < 3; column++)
             normSquared += (data[o + row + column] ?? 0) ** 2;
-        const offset = Math.hypot(data[o + 11] ?? 0, data[o + 15] ?? 0, data[o + 19] ?? 0);
+        const offset = norm(data[o + 11] ?? 0, data[o + 15] ?? 0, data[o + 19] ?? 0);
         scaledRadius = Math.max(scaledRadius, Math.sqrt(normSquared) * radius + offset);
       }
       // Every influence is hemisphere-aligned against the first quaternion: projection of the

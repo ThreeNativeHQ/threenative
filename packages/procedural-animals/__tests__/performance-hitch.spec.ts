@@ -1,10 +1,10 @@
-import type { IGameConfig } from "@threenative/core";
 import type { IPhysicsContext } from "@threenative/physics";
 import { PLAYTEST_BRIDGE_GLOBAL, PLAYTEST_CLOCK_GLOBAL } from "@threenative/playtest/protocol";
 import { PerspectiveCamera, Scene } from "three";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { IAnimalsState } from "../../../examples/procedural-animals/src/Animals.js";
 import { FrameBudget } from "../../core/src/frame-budget.js";
+import type { IGameConfig } from "../../core/src/game.js";
 
 const captured = vi.hoisted(() => ({
   config: undefined as IGameConfig<IAnimalsState, IPhysicsContext> | undefined,
@@ -172,7 +172,14 @@ describe("animal benchmark hitch attribution", () => {
       undefined as never,
       undefined as never,
     );
-    s.scene.onAfterRender(renderer as never, s.scene, s.camera);
+    s.scene.onAfterRender(
+      renderer as never,
+      s.scene,
+      s.camera,
+      null as never,
+      undefined as never,
+      undefined as never,
+    );
     s.budget.markSimulationEnd(2501, 1);
     s.budget.endFrame(2502);
     expect(s.state.performanceFinished).toBe(true);

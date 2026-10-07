@@ -4,6 +4,7 @@
   "compilerOptions": {
     "paths": {
       "@threenative/core": ["../core/src/index.ts"],
+      "@threenative/core/playtest": ["../core/src/playtest.ts"],
       "@threenative/physics": ["../physics/src/index.ts"]
     }
   }

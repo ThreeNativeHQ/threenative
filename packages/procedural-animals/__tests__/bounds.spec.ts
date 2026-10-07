@@ -14,6 +14,48 @@ import { animalFixture, encodeFixture } from "./fixture.js";
 import { deformReference } from "./oracle.js";
 
 describe("independent DQS deformation and animated bounds", () => {
+  it.each([Math.fround(3.4028234663852886e38), 2 ** -149, 1])(
+    "contains independent deformation at float32 magnitude %s",
+    (magnitude) => {
+      const bake = parseAnimalBake(encodeFixture());
+      const packet = new Float32Array(bake.bones.length * 20);
+      for (let o = 0; o < packet.length; o += 20) {
+        packet.set(
+          [
+            0.5,
+            0.5,
+            0.5,
+            0.5,
+            magnitude,
+            -magnitude,
+            magnitude,
+            -magnitude,
+            1,
+            0,
+            0,
+            magnitude,
+            0,
+            1,
+            0,
+            -magnitude,
+            0,
+            0,
+            1,
+            magnitude,
+          ],
+          o,
+        );
+      }
+      const bounds = createAnimalBounds(bake);
+      bounds.update(packet);
+      expect(Number.isFinite(bounds.sphere.radius)).toBe(true);
+      for (let vertex = 0; vertex < bake.nV; vertex++)
+        expect(bounds.sphere.containsPoint(deformReference(bake, packet, vertex).position)).toBe(
+          true,
+        );
+    },
+  );
+
   it("retains radius where opposed bone rotations make LBS collapse", () => {
     const packet = new Float32Array(40);
     for (let bone = 0; bone < 2; bone++) {
