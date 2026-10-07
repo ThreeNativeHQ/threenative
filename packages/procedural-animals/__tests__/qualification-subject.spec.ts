@@ -1,15 +1,14 @@
-import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { PLAYTEST_ASSERTION_REGISTRY, loadPlaytestScenario } from "../../playtest/dist/index.js";
 import { observedEntityIds } from "../../playtest/src/runner/shared.js";
 
+const example = fileURLToPath(new URL("../../../examples/procedural-animals", import.meta.url));
+
 describe("installed animal harness entity request", () => {
   for (const filename of ["animals", "animals.native", "frustum", "frustum.native"]) {
     it(`requests the actual wolf entity for ${filename}`, async () => {
-      const scenario = await loadPlaytestScenario(
-        path.resolve("examples/procedural-animals"),
-        `playtests/${filename}.playtest.json`,
-      );
+      const scenario = await loadPlaytestScenario(example, `playtests/${filename}.playtest.json`);
       expect(observedEntityIds(scenario)).toContain("wolf-0");
     });
   }
@@ -19,7 +18,7 @@ describe("native animal fixture observation admission", () => {
   for (const filename of ["animals", "frustum", "lifecycle"]) {
     it(`requests only shipped desktop assertion observations for ${filename}`, async () => {
       const scenario = await loadPlaytestScenario(
-        path.resolve("examples/procedural-animals"),
+        example,
         `playtests/${filename}.native.playtest.json`,
       );
       const unsupported = PLAYTEST_ASSERTION_REGISTRY.filter(
@@ -31,7 +30,7 @@ describe("native animal fixture observation admission", () => {
   }
   for (const filename of ["animals", "frustum"]) {
     it(`retains browser diagnostics and native motion/numeric observations for ${filename}`, async () => {
-      const root = path.resolve("examples/procedural-animals");
+      const root = example;
       const web = await loadPlaytestScenario(root, `playtests/${filename}.playtest.json`);
       const native = await loadPlaytestScenario(root, `playtests/${filename}.native.playtest.json`);
       expect(web.assert?.diagnostics?.noRuntimeDiagnostics).toBe(true);
