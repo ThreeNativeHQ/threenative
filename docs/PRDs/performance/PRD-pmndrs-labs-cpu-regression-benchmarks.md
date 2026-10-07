@@ -4,15 +4,15 @@ prd_contract: v1
 
 # PRD-pmndrs-labs — Opt-in CPU microbenchmarks with pmndrs/labs
 
-**Status:** PARTIAL — Phase 1 landed and verified; Phases 2–3 pending.
+**Status:** PARTIAL — Phases 1–2 landed and verified; Phase 3 and acceptance criteria pending.
 **Priority:** P2 — Add focused CPU regression evidence without adding a mandatory timing gate.
 **Complexity:** 4 (MEDIUM); risk override: none.
 **Owner:** ThreeNative maintainers
 **Depends on:** None; existing hardware/frame performance tooling remains authoritative.
-**Progress:** 33%
+**Progress:** 66%
 **Date:** 2026-10-06
 
-This is a planning-only PRD. Creating it does not install dependencies, implement the integration, establish a performance improvement, or authorize a merge. All implementation and acceptance evidence remains pending.
+Phases 1–2 are implemented. Phase 1 installed the pinned `@pmndrs/labs@0.9.0` artifact only through the explicit isolated setup path and dispatched `--cpu-setup`/`--cpu` from the existing CLI. Phase 2 added the two real workload families and their correctness controls. Phase 3 (comparison, provenance, bounded lifecycle) and the acceptance criteria remain open; no measured speedup or comparison report exists yet.
 
 ## Context
 
@@ -104,7 +104,7 @@ Implementation must record final non-test dispatch locations alongside the ownin
 
 ## Execution Phases
 
-The proof commands below describe tests/flows to implement in this PRD. They have not run. Phase 1 establishes the launch/config contract; the two workload files in Phase 2 can then be authored independently. Phase 3 follows the combined candidate. Do not overlap measurement processes on the same machine to claim a time saving.
+The proof commands below describe tests/flows implemented in this PRD. Phase 1 establishes the launch/config contract; the two workload files added in Phase 2 run real selected-checkout modules and are proven by the focused tests and a real capture. Phase 3 follows the combined candidate. Do not overlap measurement processes on the same machine to claim a time saving.
 
 ### Phase 1 — An isolated tool reachable through the existing CLI
 
@@ -119,14 +119,17 @@ The proof commands below describe tests/flows to implement in this PRD. They hav
 
 ### Phase 2 — Real, correctness-qualified CPU workloads
 
-**Status:** NOT STARTED
-**Files:** NEW `scripts/performance-regression/labs/benches/loop.bench.ts`, `scripts/performance-regression/labs/benches/state.bench.ts`, shared pure workload fixtures; EXTEND focused workload tests and configuration. Core implementation files are measurement subjects, not modification targets.
-**Implementation:** Implement the bounded workload contracts above using actual selected-checkout modules. Keep setup/assertions outside timing; verify observable results and cleanup. Group the three dispatch sizes and three subscriber sizes into only two workload families.
+**Status:** DONE
+**Files:** NEW `scripts/performance-regression/labs/benches/loop.bench.ts`, `scripts/performance-regression/labs/benches/state.bench.ts`, shared pure fixtures `scripts/performance-regression/labs/workloads/selected-source.ts`, `loop-workload.ts`, `state-workload.ts`; EXTEND `scripts/__tests__/cpu-bench-workloads.spec.ts`; EDIT `scripts/performance-regression/cpu.ts` (child environment allowlist, `--ignore-scripts`). Core implementation files are measurement subjects, not modification targets. No `labs.config.ts` change was needed: it already limits discovery to `benches/**/*.bench.ts` and already exposes the block/sample/source knobs the workloads read.
+**Implementation:** The pure fixtures import the selected checkout's real `packages/core/src/loop.ts` and `state.ts` through `TN_CPU_BENCH_SOURCE` (never the runner's copy) and hold setup, registration and every assertion outside the timed closure. The Labs adapters only register them. Each family groups its three sizes into one group.
 
-- [ ] P2-A [local; actor: agent]: The loop family executes the selected checkout's real fixed-step/dispatch behavior with the expected observable callback results. proof: `pnpm exec vitest run scripts/__tests__/cpu-bench-workloads.spec.ts -t loop` — Evidence: pending.
-- [ ] P2-B [local; actor: agent]: The state family measures the selected checkout's real coalesced-write/publication behavior with correct final values and notifications. proof: `pnpm exec vitest run scripts/__tests__/cpu-bench-workloads.spec.ts -t state` — Evidence: pending.
+- [x] P2-A [local; actor: agent]: The loop family executes the selected checkout's real fixed-step/dispatch behavior with the expected observable callback results. proof: `pnpm exec vitest run scripts/__tests__/cpu-bench-workloads.spec.ts -t loop` — Evidence: 2/2 passed. The positive case runs `FixedStepLoop.stepFrame` over 120 exact 1/64 s steps at 0/32/256 registered callbacks and checks update/tick counts, dispatch count, order-independent checksum and fixed `dt`; the red case runs a stub checkout that never dispatches `onAfterPhysics` and its `verify()` throws. Real capture `TN_CPU_BENCH_NODE=<node22> pnpm bench:engines --cpu --source <checkout> --name p2-workloads` recorded `loop.bench.ts` dispatch 0/32/256 at 8 blocks (224/232/224 samples, avg 72,929/167,388/462,265 ns, no errors).
+- [x] P2-B [local; actor: agent]: The state family measures the selected checkout's real coalesced-write/publication behavior with correct final values and notifications. proof: `pnpm exec vitest run scripts/__tests__/cpu-bench-workloads.spec.ts -t state` — Evidence: 2/2 passed. The positive case runs 32 `set()` writes plus one `flush()` at 0/1/32 subscribers and checks the immediate pre-flush read, the coalesced pre-flush publication, the post-flush value, the notification count and the stable immediate-snapshot identity; the red case runs a stub checkout that never publishes and its `verify()` throws. The same real capture recorded `state.bench.ts` 0/1/32 subscribers at 8 blocks (352/408/400 samples, avg 2,641/2,230/2,663 ns, no errors).
 
-**Checkpoint:** Pending. Existing core correctness tests remain authoritative for behavior beyond the benchmark fixture; do not pretend these CPU workloads prove full game behavior.
+**Child environment safety:** A benchmark worker runs trusted local source, but that source is arbitrary Node execution, so `runCpuCapture` no longer spreads the wrapper's whole environment. `labsChildEnv` passes only runtime basics (`PATH`, `HOME`, temp/locale/`TERM`, platform runtime dirs) and the explicit `TN_CPU_BENCH_*` knobs; arbitrary tokens, credentials, `NODE_OPTIONS`/preload hooks and SSH-agent variables are dropped. `TN_CPU_BENCH_INTEGRATION=1 pnpm exec vitest run scripts/__tests__/cpu-bench-workloads.spec.ts -t "child environment"` — Evidence: 2/2 passed (5.77 s); the probe workload in the real child observed `null` for an injected sentinel, `NPM_TOKEN`, `SSH_AUTH_SOCK` and `NODE_OPTIONS`. This is not a sandbox claim: it limits ambient secrets, not what trusted benchmark code may do. The isolated install now also passes `--ignore-scripts`; `TN_CPU_BENCH_NODE=<node22> pnpm bench:engines --cpu-setup` still installed `@pmndrs/labs@0.9.0` with the frozen scoped lock and hoisted linker (exit 0). Scoped dependency audit (parent, read-only): the isolated `package.json`+`pnpm-lock.yaml` copied into a fresh outside-workspace temp dir gave `pnpm audit --json` exit 0, 37 dependencies, zero vulnerabilities, artifact `/tmp/tmp.Zm3z6R6zdu/audit.json`; static inspection of the installed `dist` found no telemetry/network calls or lifecycle hooks.
+**Outstanding gap:** the 300 s timeout terminates only the direct child, not the Labs worker process subtree. That process-tree lifecycle cleanup is deferred to P3-B; this phase does not claim it.
+
+**Checkpoint:** Self-review; no reviewer available. Existing core correctness tests remain authoritative for behavior beyond the benchmark fixture; these CPU workloads do not prove full game behavior.
 
 ### Phase 3 — Honest comparison and bounded report consumption
 
@@ -156,7 +159,7 @@ No external owner, device, deployment, or release action is required by this pla
 
 ## Verification status
 
-Phase 1 landed: the pinned `@pmndrs/labs@0.9.0` artifact is installed only through the explicit isolated setup path, the existing CLI dispatches `--cpu-setup`/`--cpu` before hardware parsing, and the installed worker was launched end to end against a smoke workload. Phases 2–3 and both acceptance criteria remain open; no workload family, comparison report, or measured speedup exists yet. Document validation is reported in the PR body; it does not advance implementation progress.
+Phases 1–2 landed. The pinned `@pmndrs/labs@0.9.0` artifact installs only through the explicit isolated setup path (now `--ignore-scripts`), the existing CLI dispatches `--cpu-setup`/`--cpu` before hardware parsing, and the installed worker was launched end to end. Phase 2 adds both real workload families against selected-checkout modules and captured six cases through `pnpm bench:engines --cpu` with no errors. Phase 3 and both acceptance criteria remain open; no comparison report or measured speedup exists yet, and the process-tree lifecycle gap above is not claimed as done. Document validation is reported in the PR body; it does not advance implementation progress.
 
 ## Sources inspected
 

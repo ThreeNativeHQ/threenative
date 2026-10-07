@@ -56,6 +56,53 @@ export function labsNodeExecutable(env: NodeJS.ProcessEnv = process.env): string
   return configured !== undefined && configured.length > 0 ? configured : process.execPath;
 }
 
+// A benchmark worker runs trusted local source, but that source is arbitrary Node execution: it
+// can read whatever environment it inherits. Passing the wrapper's whole environment would hand it
+// registry tokens, cloud credentials and Node preload hooks it never needs. The allowlist is the
+// runtime basics Node needs to start and resolve modules, plus the explicit CPU knobs. It is not a
+// sandbox: it limits the ambient secrets, not what the benchmark code may do.
+const CHILD_ENV_KEYS = [
+  "PATH",
+  "HOME",
+  "TMPDIR",
+  "TEMP",
+  "TMP",
+  "TERM",
+  "LANG",
+  "LC_ALL",
+  "LC_CTYPE",
+  "LC_MESSAGES",
+  "LD_LIBRARY_PATH",
+  "DYLD_LIBRARY_PATH",
+  "SYSTEMROOT",
+  "SystemRoot",
+  "WINDIR",
+  "COMSPEC",
+  "PATHEXT",
+] as const;
+
+const CHILD_CPU_KNOB_KEYS = [
+  "TN_CPU_BENCH_BENCH_DIR",
+  "TN_CPU_BENCH_BLOCK_TIME",
+  "TN_CPU_BENCH_BLOCKS",
+  "TN_CPU_BENCH_MIN_SAMPLES",
+  "TN_CPU_BENCH_RESULTS_DIR",
+  "TN_CPU_BENCH_SOURCE",
+] as const;
+
+/** The environment a benchmark child may see: runtime basics and explicit CPU knobs only. */
+export function labsChildEnv(
+  base: NodeJS.ProcessEnv = process.env,
+  overrides: NodeJS.ProcessEnv = {},
+): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {};
+  for (const key of [...CHILD_ENV_KEYS, ...CHILD_CPU_KNOB_KEYS]) {
+    const value = base[key];
+    if (value !== undefined) env[key] = value;
+  }
+  return { ...env, ...overrides };
+}
+
 /** Fail closed when a Node executable is below the version Labs requires. */
 export function assertLabsNode(version: string): void {
   const [major, minor] = version.replace(/^v/, "").split(".").map(Number);
@@ -281,7 +328,13 @@ export async function runCpuSetup(): Promise<void> {
   try {
     await execFileAsync(
       "pnpm",
-      ["install", "--ignore-workspace", "--config.node-linker=hoisted", "--frozen-lockfile"],
+      [
+        "install",
+        "--ignore-workspace",
+        "--ignore-scripts",
+        "--config.node-linker=hoisted",
+        "--frozen-lockfile",
+      ],
       { cwd: LABS_TOOL_DIR, maxBuffer: 32 * 1024 * 1024, timeout: CPU_CAPTURE_BUDGET_MS },
     );
   } catch (error) {
@@ -306,11 +359,10 @@ export async function runCpuCapture(options: ICpuCaptureOptions): Promise<ICpuCa
   const labsRoot = path.join(runDirectory, "labs");
   await mkdir(labsRoot, { recursive: true });
   const startedAt = new Date().toISOString();
-  const env = {
-    ...process.env,
+  const env = labsChildEnv(process.env, {
     TN_CPU_BENCH_RESULTS_DIR: path.relative(LABS_TOOL_DIR, labsRoot),
     TN_CPU_BENCH_SOURCE: options.source,
-  };
+  });
   try {
     await execFileAsync(executable, [LABS_BIN, "run", "-n", options.name, "--force"], {
       cwd: LABS_TOOL_DIR,
