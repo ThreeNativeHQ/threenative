@@ -3627,3 +3627,78 @@ Five relevant assertions first failed against the radial default; the changed so
 measurement are pending. Historical authored arms had runtime failures and are image evidence
 only, not accepted runtime proof. Card outlines and granular needle edges remain. No art, FPS or
 native gate is claimed; computed progress remains **50% (7/13 phase boxes)**.
+
+### 2026-10-07 — matched authored canopy and standing-view evidence
+
+Runtime source `2d093a4fc58334de6ddd04f873d9bc9564b330a7`, artifact
+`8d8accaf99e151a3de8d0c0d7c462ac477e30641ba00eb48ced98fdfebff4e94`: two fresh
+launches use the same compiled source and frozen 323 licensed/cooked asset files. The baseline
+explicitly selects radial/disabled; the candidate uses the authored/disabled default. Both
+retain 1920×1080, scale 1, MSAA4 and the same three cameras, each held for 600 live-clock ticks
+(10 seconds requested wall time; actual spans include bridge overhead). Original readiness,
+admission, resource and lease guards remain. Each arm ran once with zero retries.
+
+Both runs exited 0 and passed 25/25 checks. Every compared sample retains 218,809 instances,
+48 loaded/resident cells, 6/6 spawn coverage and zero unfinished/error counters. Readiness was
+60,474.9 ms radial and 82,874.7 ms authored; process durations were 247.637 s and 239.526 s.
+These observations do not establish a load-time gain. Both cleanups verified twelve original
+process identities exited, executor absent, monitor stopped and canonical lease clear, without
+foreign signals.
+
+A fresh independent judge accepts the **partial visual milestone**: authored crown normals
+clearly reduce broad chalky faces in the matched meadow closeup. Sampled meadow/overview poses,
+lights, aggregate geometry counts and surface settings match; wide forest arrangement, trunks,
+gaps and terrain show no obvious regression. Layered card outlines, granular needle/ground
+edges, dark interiors, weak tree grounding and the smooth terrain band remain open. Player
+poses differ 2.86 cm and aggregate triangles differ by 243; exact wind phase and per-tree LOD
+equality are unproven. Sample-to-PNG timing and complete light transforms are not serialized.
+
+| View | Before: explicit radial | After: authored default |
+| --- | --- | --- |
+| Player | [Original PNG](../../benchmark/strata-loading-2026-10-06/canopy-player-radial-2d093a4fc.png) | [Original PNG](../../benchmark/strata-loading-2026-10-06/canopy-player-authored-2d093a4fc.png) |
+| Meadow closeup | [Original PNG](../../benchmark/strata-loading-2026-10-06/canopy-meadow-close-radial-2d093a4fc.png) | [Original PNG](../../benchmark/strata-loading-2026-10-06/canopy-meadow-close-authored-2d093a4fc.png) |
+| Wide terrain | [Original PNG](../../benchmark/strata-loading-2026-10-06/canopy-overview-radial-2d093a4fc.png) | [Original PNG](../../benchmark/strata-loading-2026-10-06/canopy-overview-authored-2d093a4fc.png) |
+
+All six PNGs are unmodified capture bytes, hash-checked during copying. Benchmark evidence is
+193.78 MiB, below its unchanged 200 MiB limit. No licensed model/texture bytes are committed.
+Documentation links pass (2,477 links across 1,259 Markdown files); the required six-file
+documentation suite passes 242/243 checks. Its sole failure is the pre-existing tracked
+`docs/verification` budget (73.0 MiB against 72 MiB), unchanged by this canopy slice. The cap is
+not raised and unrelated evidence is not removed.
+
+Steady performance remains open. Final existing per-view GPU medians of window means are
+player 4.89→4.90 ms (12→13 windows), meadow 14.30→13.79 ms (9→15) and overview 16.35→14.46 ms
+(9→2). These are not p95, physical-display cadence or proof of a speedup. The candidate has
+no fresh overview GPU entry at its screenshot assertion; two appear only in the final sample.
+Player CPU aggregates include loading, so they cannot qualify standing-view CPU performance.
+Repeated multi-second native-call waits also remain: the radial 4,961 ms task is in a settled
+meadow interval, mapped mainly to Three's surface descriptor acquisition; radial player and
+candidate settled meadow tasks map mainly to submission. Sampled JavaScript/native-call wall
+ownership does not establish GPU execution duration or driver cause. The earlier 2,809 ms
+overlay image-copy task remains a separate measured open issue.
+
+The settled profiles identify a concrete next CPU target: WorldCells bundle-safety graph
+validation/traversal (`graphSnapshotCurrent`, `captureBundleGraph`, `samplesFramebuffer` and
+callees). This finding does not justify dropping graph-mutation checks or changing HLOD policy.
+The original GPU/CPU bars and full quality remain; no FPS gate is ticked.
+
+The newer shared desktop host `14bc0aec4ef44b743a65b7cbb24e76bc84037d6564187410739e9234e6885058`
+passes source-identity review against current native tree `cbd661d372747dd33aceaa18f92b4aac192b0cec`:
+884 native files, 114 recorded compiler/Rust inputs, seven toolchain binaries, 149 shared
+libraries and 21 generated runtime scripts match. This qualifies reuse without a rebuild,
+not current Strata native acceptance. Current game/production-Three/assets binding and the
+existing desktop scenario still need execution; the older checkout-binary mismatch is
+historical and does not apply to this shared host.
+
+| Open phase box | Original proof still needed |
+| --- | --- |
+| AC-5 | Final five-world art/atmosphere, tundra ice, offline/cooked-starter budget; `starter-assets.spec.ts` plus actual `test:terrain:web` and `test:terrain:desktop` benchmark rubric captures |
+| K1 | Packed CC0 forest adoption, contacts, per-asset collider and offline water/props: `starter-kit.spec.ts` plus `test:consumer` |
+| K2 | Adopted CC0 kit: GPU p95 ≤14 ms, CPU frame p95 ≤16.7 ms, cooked ≤25 MiB; fresh-game per-view observations |
+| K3 | Every adopted-kit rubric row passed by a fresh judge, with before/after on the PR |
+| K4 | The same K1–K3 proofs for coast, alpine, desert and tundra, including kettle ice |
+| K5 | Installed docs/capability-only adoption plus an actual cold-agent run recorded on the PR |
+
+K2 concerns the adopted CC0 kit; these licensed-preview measurements cannot earn it. PRD-467
+and PRD-468 retain their historical 9/9 and 8/8 criteria, with their existing limits. No HLOD or
+native-FPS gate is invented. Computed progress remains **50%: 2/4 phases, 7/13 phase boxes**.
