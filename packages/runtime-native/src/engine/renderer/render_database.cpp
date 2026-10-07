@@ -231,9 +231,6 @@ DrawItem& RenderDatabase::refresh(const Mesh& mesh, Record& r) {
 
 void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector<DrawItem>& items, LightState& lights,
                              bool updateChildren, bool force, Record* cached, bool plainMesh) {
-#if defined(__EMSCRIPTEN__)
-    [[maybe_unused]] volatile bool readAhead;
-#endif
     if (!object.visible()) {
         if (updateChildren)
             for (Object3D* child : object.children)
@@ -369,10 +366,6 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
     }
     for (std::size_t i = 0; i < object.children.size(); ++i) {
         Object3D* child = object.children[i];
-#if defined(__EMSCRIPTEN__)
-        if (updateChildren && i + 16 < object.children.size())
-            readAhead = object.children[i + 16]->matrixAutoUpdate;
-#endif
 #if defined(__GNUC__) && !defined(__EMSCRIPTEN__)
         // Sparse authored metadata remains outside the dense transform columns. Fetch it
         // ahead of the fused traversal instead of serializing every cache miss at 64k.
