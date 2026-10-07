@@ -4,11 +4,31 @@
 // never imports Labs and never runs on the ordinary hardware path.
 import { type ChildProcess, execFile, spawn } from "node:child_process";
 import { existsSync, statSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { BenchError } from "../engine-load-test/report.js";
+import {
+  CPU_COMPARISON_DISCLAIMER,
+  CPU_DOMAIN,
+  type ICpuCaptureManifest,
+  type ICpuComparisonUpstream,
+  assertCompatibleCpuCaptures,
+  assertSourceUnchanged,
+  buildCpuCaptureManifest,
+  collectCpuCaseObservations,
+  collectCpuEffectiveTuning,
+  collectCpuSourceIdentity,
+  collectCpuWorkerIdentity,
+  collectCpuWorkloadIdentity,
+  emitCpuComparisonReport,
+  readCpuCaptureManifest,
+  sha256File,
+  writeCpuCaptureManifest,
+} from "./cpu-report.js";
+import { LOOP_CASES, LOOP_FRAMES } from "./labs/workloads/loop-workload.js";
+import { STATE_CASES, STATE_WRITES } from "./labs/workloads/state-workload.js";
 
 const execFileAsync = promisify(execFile);
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -28,7 +48,9 @@ const TERM_GRACE_MS = 2_000;
 const KILL_GRACE_MS = 1_000;
 const GROUP_POLL_MS = 25;
 
-export type CpuCommand = "setup" | "capture";
+export type CpuCommand = "setup" | "capture" | "compare";
+
+const DEFAULT_LABS_BLOCKS = 8;
 
 export interface ICpuCaptureOptions {
   readonly name: string;
@@ -41,23 +63,45 @@ export interface ICpuCaptureResult {
   readonly runDirectory: string;
 }
 
+export interface ICpuCompareOptions {
+  readonly baseline: string;
+  readonly candidate: string;
+  readonly control?: string;
+}
+
+export interface ICpuCompareArtifacts {
+  readonly html: string;
+  readonly stderr: string;
+  readonly stdout: string;
+  readonly text: string;
+}
+
+export interface ICpuCompareResult {
+  readonly artifacts: ICpuCompareArtifacts;
+  readonly runDirectory: string;
+  readonly upstreamExit: number;
+}
+
+const CPU_MODE_FLAGS: readonly { readonly flag: string; readonly mode: CpuCommand }[] = [
+  { flag: "--cpu-setup", mode: "setup" },
+  { flag: "--cpu", mode: "capture" },
+  { flag: "--cpu-compare", mode: "compare" },
+];
+
 /** Which CPU subcommand an argv selects, or undefined for every existing hardware path. */
 export function cpuCommand(argv: readonly string[]): CpuCommand | undefined {
-  const setupCount = argv.filter((arg) => arg === "--cpu-setup").length;
-  const captureCount = argv.filter((arg) => arg === "--cpu").length;
-  if (setupCount > 1 || captureCount > 1) {
-    throw new BenchError("TN_CPU_BENCH_DUPLICATE_MODE", "a CPU mode flag may appear only once", 2);
+  const present: CpuCommand[] = [];
+  for (const { flag, mode } of CPU_MODE_FLAGS) {
+    const count = argv.filter((arg) => arg === flag).length;
+    if (count > 1) {
+      throw new BenchError("TN_CPU_BENCH_DUPLICATE_MODE", `${flag} may appear only once`, 2);
+    }
+    if (count === 1) present.push(mode);
   }
-  if (setupCount > 0 && captureCount > 0) {
-    throw new BenchError(
-      "TN_CPU_BENCH_CONFLICT",
-      "--cpu-setup and --cpu are mutually exclusive",
-      2,
-    );
+  if (present.length > 1) {
+    throw new BenchError("TN_CPU_BENCH_CONFLICT", "CPU mode flags are mutually exclusive", 2);
   }
-  if (setupCount > 0) return "setup";
-  if (captureCount > 0) return "capture";
-  return undefined;
+  return present[0];
 }
 
 /** The Node executable used to run Labs. Defaults to the current process. */
@@ -231,7 +275,11 @@ async function labsNodeVersion(executable: string): Promise<string> {
   if (path.resolve(executable) === path.resolve(process.execPath)) return process.versions.node;
   try {
     // The probe must not inherit credentials or preload hooks any more than the benchmark may.
-    const { stdout } = await execFileAsync(executable, ["--version"], { env: labsChildEnv() });
+    const { stdout } = await execFileAsync(executable, ["--version"], {
+      env: labsChildEnv(),
+      timeout: 30_000,
+      maxBuffer: 4 * 1024 * 1024,
+    });
     return stdout.trim().replace(/^v/, "");
   } catch (error) {
     throw new BenchError(
@@ -341,6 +389,90 @@ export function parseCpuCaptureArgs(argv: readonly string[]): ICpuCaptureOptions
   return { name, source };
 }
 
+/** Parse and validate a compare request. Missing/relative run directories fail before any action. */
+export function parseCpuCompareArgs(argv: readonly string[]): ICpuCompareOptions {
+  const values = new Map<string, string>();
+  for (let index = 0; index < argv.length; index++) {
+    const arg = argv[index] ?? "";
+    if (arg === "--cpu-compare") {
+      setOnce(values, "--cpu-compare", "");
+      continue;
+    }
+    if (arg === "--baseline" || arg === "--candidate" || arg === "--control") {
+      const value = argv[index + 1];
+      if (value === undefined || value.startsWith("--")) {
+        throw new BenchError("TN_CPU_BENCH_MISSING_VALUE", `${arg} requires a value`, 2);
+      }
+      setOnce(values, arg, value);
+      index++;
+      continue;
+    }
+    if (arg.startsWith("--")) {
+      throw new BenchError(
+        "TN_CPU_BENCH_UNKNOWN_FLAG",
+        `unknown CPU flag '${arg}'; --cpu-compare accepts only --baseline, --candidate and --control`,
+        2,
+      );
+    }
+    throw new BenchError("TN_CPU_BENCH_UNEXPECTED_ARG", `unexpected argument '${arg}'`, 2);
+  }
+  const baseline = values.get("--baseline");
+  if (baseline === undefined) {
+    throw new BenchError(
+      "TN_CPU_BENCH_BASELINE_REQUIRED",
+      "--cpu-compare requires --baseline <absolute saved-run directory>",
+      2,
+    );
+  }
+  const candidate = values.get("--candidate");
+  if (candidate === undefined) {
+    throw new BenchError(
+      "TN_CPU_BENCH_CANDIDATE_REQUIRED",
+      "--cpu-compare requires --candidate <absolute saved-run directory>",
+      2,
+    );
+  }
+  assertRunDirectory(baseline, "--baseline");
+  assertRunDirectory(candidate, "--candidate");
+  const control = values.get("--control");
+  return control === undefined ? { baseline, candidate } : { baseline, candidate, control };
+}
+
+/** A saved CPU run directory must be an absolute, existing directory before it is read. */
+function assertRunDirectory(value: string, flag: string): void {
+  if (!path.isAbsolute(value)) {
+    throw new BenchError(
+      "TN_CPU_BENCH_BAD_RUN",
+      `${flag} must be an absolute saved-run directory, got '${value}'`,
+      2,
+    );
+  }
+  let directory = false;
+  try {
+    directory = statSync(value).isDirectory();
+  } catch {
+    directory = false;
+  }
+  if (!directory) {
+    throw new BenchError("TN_CPU_BENCH_BAD_RUN", `${flag} '${value}' is not a directory`, 2);
+  }
+}
+
+/** The effective block count: the explicit knob must be a positive integer, else Labs' default. */
+function effectiveBlocks(env: NodeJS.ProcessEnv): number {
+  const raw = env.TN_CPU_BENCH_BLOCKS;
+  if (raw === undefined) return DEFAULT_LABS_BLOCKS;
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    throw new BenchError(
+      "TN_CPU_BENCH_BAD_BLOCKS",
+      `TN_CPU_BENCH_BLOCKS must be a positive integer, got '${raw}'`,
+      2,
+    );
+  }
+  return parsed;
+}
+
 function messageOf(error: unknown): string {
   if (typeof error === "object" && error !== null && "stderr" in error) {
     const stderr = (error as { stderr?: unknown }).stderr;
@@ -349,26 +481,8 @@ function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-async function sourceIdentity(source: string): Promise<Record<string, unknown>> {
-  const identity: Record<string, unknown> = { path: source };
-  try {
-    const [{ stdout: commit }, { stdout: status }] = await Promise.all([
-      execFileAsync("git", ["rev-parse", "HEAD"], { cwd: source }),
-      execFileAsync("git", ["status", "--porcelain", "--untracked-files=normal"], { cwd: source }),
-    ]);
-    identity.commit = commit.trim();
-    identity.dirty = status.trim().length > 0;
-  } catch (error) {
-    identity.git = error instanceof Error ? error.message : String(error);
-  }
-  return identity;
-}
-
-function runStamp(): string {
-  return new Date().toISOString().replace(/[:.]/g, "-");
-}
-
 export interface IBoundedProcessOptions {
+  readonly allowNonZeroExit?: boolean;
   readonly args: readonly string[];
   readonly command: string;
   readonly cwd: string;
@@ -377,6 +491,7 @@ export interface IBoundedProcessOptions {
 }
 
 export interface IBoundedProcessResult {
+  readonly exitCode: number;
   readonly stderr: string;
   readonly stdout: string;
 }
@@ -493,6 +608,11 @@ function captureFailure(input: ICaptureFailureInput): BenchError | undefined {
   return undefined;
 }
 
+/** Attach the child's captured output to a failure so the caller can retain diagnostics. */
+function withCaptureOutput(error: BenchError, stdout: string, stderr: string): BenchError {
+  return Object.assign(error, { stderr, stdout });
+}
+
 /**
  * Run a command as its own POSIX process group and bound it: a fixed timeout, an optional abort
  * signal, capped output, and a TERM→KILL escalation that reaps descendants even when the direct
@@ -529,10 +649,14 @@ export function runBoundedProcess(
 
     let stdout = "";
     let stderr = "";
+    let outputExceeded = false;
     let cancelled = false;
     let timedOut = false;
     let settling = false;
     let spawnError: Error | undefined;
+    let stdioClosed = false;
+    let drainExpired = false;
+    let drainTimer: ReturnType<typeof setTimeout> | undefined;
 
     // Reap the whole group with TERM→KILL escalation, at most once, and report whether it is gone.
     let cleanup: Promise<boolean> | undefined;
@@ -552,17 +676,49 @@ export function runBoundedProcess(
       if (settling) return;
       settling = true;
       clearTimeout(timer);
+      clearTimeout(drainTimer);
       signal?.removeEventListener("abort", onAbort);
       const treeGone = await cleanupTree();
-      if (!treeGone) {
+      if (!treeGone || drainExpired) {
         const reason = cleanupReason({ cancelled, exitCode: child.exitCode, spawnError, timedOut });
         reject(
-          new BenchError(
-            "TN_CPU_BENCH_CLEANUP_FAILED",
-            `could not confirm the CPU worker tree was terminated within ${TERM_GRACE_MS + KILL_GRACE_MS}ms after ${reason}; the capture is incomplete and descendant processes may remain`,
-            2,
+          withCaptureOutput(
+            new BenchError(
+              "TN_CPU_BENCH_CLEANUP_FAILED",
+              `could not confirm CPU worker cleanup and output closure after ${reason}; the capture is incomplete and descendant processes may remain`,
+              2,
+            ),
+            stdout,
+            stderr,
           ),
         );
+        return;
+      }
+      if (outputExceeded) {
+        reject(
+          withCaptureOutput(
+            new BenchError(
+              "TN_CPU_BENCH_OUTPUT_LIMIT",
+              "CPU worker output exceeded 32 MiB; retained diagnostics are incomplete",
+              2,
+            ),
+            stdout,
+            stderr,
+          ),
+        );
+        return;
+      }
+      // Advisory callers (an explicit comparison) keep a nonzero upstream exit as data; capture and
+      // setup keep failing closed on any nonzero exit.
+      if (
+        options.allowNonZeroExit === true &&
+        !cancelled &&
+        !timedOut &&
+        spawnError === undefined &&
+        child.exitCode !== null &&
+        child.exitCode !== 0
+      ) {
+        resolve({ exitCode: child.exitCode, stderr, stdout });
         return;
       }
       const failure = captureFailure({
@@ -575,24 +731,47 @@ export function runBoundedProcess(
         timeoutMs: options.timeoutMs,
       });
       if (failure !== undefined) {
-        reject(failure);
+        reject(withCaptureOutput(failure, stdout, stderr));
         return;
       }
-      resolve({ stderr, stdout });
+      resolve({ exitCode: child.exitCode ?? 0, stderr, stdout });
+    };
+
+    // A descendant outside the group can retain a pipe after the direct child exits. Bound the
+    // drain too: retain available diagnostics, fail incomplete, and never wait forever for close.
+    const stopAndDrain = (): void => {
+      void cleanupTree().then(() => {
+        if (stdioClosed) return;
+        drainTimer ??= setTimeout(() => {
+          if (stdioClosed) return;
+          drainExpired = true;
+          child.stdout?.destroy();
+          child.stderr?.destroy();
+          void settle();
+        }, KILL_GRACE_MS);
+      });
     };
 
     const onAbort = (): void => {
       cancelled = true;
-      void cleanupTree();
+      stopAndDrain();
     };
 
     child.stdout?.on("data", (chunk: Buffer | string) => {
       stdout = `${stdout}${String(chunk)}`;
-      if (stdout.length > CHILD_OUTPUT_LIMIT) stdout = stdout.slice(-CHILD_OUTPUT_LIMIT);
+      if (stdout.length > CHILD_OUTPUT_LIMIT) {
+        stdout = stdout.slice(-CHILD_OUTPUT_LIMIT);
+        outputExceeded = true;
+        stopAndDrain();
+      }
     });
     child.stderr?.on("data", (chunk: Buffer | string) => {
       stderr = `${stderr}${String(chunk)}`;
-      if (stderr.length > CHILD_OUTPUT_LIMIT) stderr = stderr.slice(-CHILD_OUTPUT_LIMIT);
+      if (stderr.length > CHILD_OUTPUT_LIMIT) {
+        stderr = stderr.slice(-CHILD_OUTPUT_LIMIT);
+        outputExceeded = true;
+        stopAndDrain();
+      }
     });
     child.on("error", (error: Error) => {
       spawnError = error;
@@ -603,12 +782,13 @@ export function runBoundedProcess(
       void cleanupTree();
     });
     child.on("close", () => {
+      stdioClosed = true;
       void settle();
     });
 
     const timer = setTimeout(() => {
       timedOut = true;
-      void cleanupTree();
+      stopAndDrain();
     }, options.timeoutMs);
 
     if (signal !== undefined) {
@@ -671,21 +851,134 @@ export async function runCpuSetup(): Promise<void> {
   );
 }
 
-/** Launch the installed Labs CLI against the selected checkout and record its raw result. */
+/** Retain the child's raw stdout/stderr beside a capture run, best effort. */
+async function retainCaptureDiagnostics(
+  runDirectory: string,
+  output: { readonly stderr: string; readonly stdout: string },
+): Promise<void> {
+  try {
+    await Promise.all([
+      writeFile(path.join(runDirectory, "labs.stdout.txt"), output.stdout),
+      writeFile(path.join(runDirectory, "labs.stderr.txt"), output.stderr),
+    ]);
+  } catch {
+    // Diagnostics are best effort; never mask the capture outcome.
+  }
+}
+
+/** The stdout/stderr a failed bounded process carried, when it could record them. */
+function processOutput(error: unknown): { readonly stderr: string; readonly stdout: string } {
+  if (typeof error === "object" && error !== null) {
+    const record = error as { stderr?: unknown; stdout?: unknown };
+    return {
+      stderr: typeof record.stderr === "string" ? record.stderr : "",
+      stdout: typeof record.stdout === "string" ? record.stdout : "",
+    };
+  }
+  return { stderr: "", stdout: "" };
+}
+
+function renderRef(label: string, ref: { readonly path: string; readonly sha256: string }): string {
+  return `  ${label.padEnd(8)} ${ref.path} sha256 ${ref.sha256}`;
+}
+
+/**
+ * The human-readable capture report: workload inputs, checksum contracts, the untimed correctness
+ * outcome and the CPU-only scope. It is written only for a completed capture.
+ */
+function renderCpuCaptureReport(manifest: ICpuCaptureManifest): string {
+  const loopInputs = LOOP_CASES.map((entry) => String(entry.callbacks)).join("/");
+  const stateInputs = STATE_CASES.map((entry) => String(entry.subscribers)).join("/");
+  const loopContracts = LOOP_CASES.map((entry) => {
+    const checksum = LOOP_FRAMES * ((entry.callbacks * (entry.callbacks - 1)) / 2);
+    return `  ${entry.name}: updates ${LOOP_FRAMES}, ticks ${LOOP_FRAMES}, dispatches ${LOOP_FRAMES * entry.callbacks}, dispatch checksum ${checksum}`;
+  });
+  const stateContracts = STATE_CASES.map(
+    (entry) =>
+      `  ${entry.name}: set() calls ${STATE_WRITES}, flush calls 1, publish notifications ${entry.subscribers}`,
+  );
+  const rows = manifest.cases.map(
+    (entry) =>
+      `  ${entry.file} ${entry.alias} [${entry.family}] samples ${entry.samples} avgNs ${entry.avgNs} minNs ${entry.minNs} maxNs ${entry.maxNs}`,
+  );
+  return [
+    `CPU-only capture — ${CPU_DOMAIN}`,
+    CPU_COMPARISON_DISCLAIMER,
+    "",
+    `Run: ${manifest.runId} (name ${manifest.name})`,
+    `Source: ${manifest.source.root}`,
+    `Commit: ${manifest.source.commit}${manifest.source.dirty ? " (dirty)" : ""}`,
+    `Window: ${manifest.startedAt} -> ${manifest.endedAt}`,
+    `Tool: ${manifest.tool.package}@${manifest.tool.version} (${manifest.tool.executable})`,
+    `Worker: node ${manifest.worker.node} / v8 ${manifest.worker.v8} / ${manifest.worker.platform}-${manifest.worker.arch} / ${manifest.worker.cpuModel} (${manifest.worker.cpuCount} cpus)`,
+    "",
+    "Workload inputs",
+    `  loop/dispatch : ${LOOP_FRAMES} exact 1/64 s steps at ${loopInputs} registered callbacks`,
+    `  state         : ${STATE_WRITES} coalesced set() writes then one flush at ${stateInputs} subscribers`,
+    "",
+    "Correctness contracts (per measured unit, from the pure fixtures)",
+    ...loopContracts,
+    ...stateContracts,
+    "",
+    "Checksum contracts",
+    renderRef("config", manifest.workload.config),
+    ...manifest.workload.benches.map((ref) => renderRef("bench", ref)),
+    ...manifest.workload.fixtures.map((ref) => renderRef("fixture", ref)),
+    renderRef("loop", manifest.source.modules.loop),
+    renderRef("state", manifest.source.modules.state),
+    renderRef("zustand", manifest.source.modules.zustand),
+    "",
+    "Cases",
+    ...rows,
+    "",
+    "Untimed verification outcome: passed — all six owned cases ran with no adapter error; each adapter",
+    "ran verify() after its timed block and the capture fails closed otherwise.",
+    "Retained: labs.stdout.txt and labs.stderr.txt (the raw Labs result is kept byte-exact).",
+    "",
+  ].join("\n");
+}
+
+/**
+ * Launch the installed Labs CLI against the selected checkout and record its raw result. The six
+ * owned cases must all complete, the measured source must be unchanged, and the configured
+ * workload must be the owned default; otherwise the run retains diagnostics but claims nothing.
+ */
 export async function runCpuCapture(options: ICpuCaptureOptions): Promise<ICpuCaptureResult> {
   const executable = labsNodeExecutable();
   assertLabsNode(await labsNodeVersion(executable));
   const labsVersion = await assertInstalledLabs();
-  const runDirectory = path.join(CPU_ARTIFACT_ROOT, `${runStamp()}-${options.name}`);
+  const configuredBenchDir = process.env.TN_CPU_BENCH_BENCH_DIR;
+  if (configuredBenchDir !== undefined && configuredBenchDir.length > 0) {
+    throw new BenchError(
+      "TN_CPU_BENCH_BENCH_DIR_OVERRIDE",
+      "TN_CPU_BENCH_BENCH_DIR is not supported for a completed capture; the owned benches are the only valid measured workload",
+      2,
+    );
+  }
+  const benchDir = path.join(LABS_TOOL_DIR, "benches");
+  const childEnv = labsChildEnv();
+  const sourceBefore = await collectCpuSourceIdentity({
+    env: childEnv,
+    nodeExecutable: executable,
+    root: options.source,
+  });
+  const worker = await collectCpuWorkerIdentity({ env: childEnv, nodeExecutable: executable });
+  const workload = await collectCpuWorkloadIdentity({ toolDir: LABS_TOOL_DIR });
+  const blocks = effectiveBlocks(process.env);
+  await mkdir(CPU_ARTIFACT_ROOT, { recursive: true });
+  const runDirectory = await mkdtemp(path.join(CPU_ARTIFACT_ROOT, `${options.name}-`));
+  const runId = path.basename(runDirectory);
   const labsRoot = path.join(runDirectory, "labs");
   await mkdir(labsRoot, { recursive: true });
+  const resultsRelative = path.relative(LABS_TOOL_DIR, labsRoot);
   const startedAt = new Date().toISOString();
   const env = labsChildEnv(process.env, {
-    TN_CPU_BENCH_RESULTS_DIR: path.relative(LABS_TOOL_DIR, labsRoot),
+    TN_CPU_BENCH_RESULTS_DIR: resultsRelative,
     TN_CPU_BENCH_SOURCE: options.source,
   });
+  let captured: IBoundedProcessResult;
   try {
-    await runWithCancellation((signal) =>
+    captured = await runWithCancellation((signal) =>
       runBoundedProcess(
         {
           args: [LABS_BIN, "run", "-n", options.name, "--force"],
@@ -698,50 +991,185 @@ export async function runCpuCapture(options: ICpuCaptureOptions): Promise<ICpuCa
       ),
     );
   } catch (error) {
+    await retainCaptureDiagnostics(runDirectory, processOutput(error));
     if (error instanceof BenchError) throw error;
     throw new BenchError("TN_CPU_BENCH_RUN_FAILED", `labs capture failed: ${messageOf(error)}`, 2);
   }
+  // Persist the raw Labs output the moment Labs succeeds, so every later failure keeps it.
+  await Promise.all([
+    writeFile(path.join(runDirectory, "labs.stdout.txt"), captured.stdout),
+    writeFile(path.join(runDirectory, "labs.stderr.txt"), captured.stderr),
+  ]);
   const resultFile = path.join(labsRoot, "results", `${options.name}.json`);
   if (!existsSync(resultFile)) {
     throw new BenchError(
       "TN_CPU_BENCH_NO_RESULT",
-      `labs completed without saving ${path.relative(repoRoot, resultFile)}; check that the configured workload directory exists and contains *.bench.ts files`,
+      `labs completed without saving ${path.relative(repoRoot, resultFile)}; the owned benches did not produce a result`,
       2,
     );
   }
-  const result = JSON.parse(await readFile(resultFile, "utf8")) as {
-    files?: readonly { benchmarks?: readonly unknown[] }[];
-  };
-  const benchmarkCount = (result.files ?? []).reduce(
-    (total, file) => total + (file.benchmarks?.length ?? 0),
-    0,
-  );
-  if ((result.files?.length ?? 0) === 0 || benchmarkCount === 0) {
-    throw new BenchError(
-      "TN_CPU_BENCH_EMPTY_RESULT",
-      `labs saved no benchmark cases for ${options.source}; the configured workload directory produced zero results`,
-      2,
-    );
-  }
-  const provenance = {
-    benchmarkCount,
-    labsVersion,
-    name: options.name,
-    node: await labsNodeVersion(executable),
-    resultFile: path.relative(repoRoot, resultFile),
-    runId: path.basename(runDirectory),
-    source: await sourceIdentity(options.source),
-    startedAt,
+  const raw = JSON.parse(await readFile(resultFile, "utf8")) as unknown;
+  const cases = collectCpuCaseObservations(raw);
+  const sourceAfter = await collectCpuSourceIdentity({
+    env: childEnv,
+    nodeExecutable: executable,
+    root: options.source,
+  });
+  assertSourceUnchanged(sourceBefore, sourceAfter);
+  const manifest = buildCpuCaptureManifest({
+    cases,
     endedAt: new Date().toISOString(),
-  };
-  await writeFile(
-    path.join(runDirectory, "provenance.json"),
-    `${JSON.stringify(provenance, null, 2)}\n`,
-  );
+    name: options.name,
+    result: {
+      benchmarkCount: cases.length,
+      file: path.relative(runDirectory, resultFile),
+      sha256: await sha256File(resultFile),
+    },
+    runId,
+    source: sourceBefore,
+    startedAt,
+    tool: { executable: path.resolve(executable), package: LABS_PACKAGE, version: labsVersion },
+    tuning: collectCpuEffectiveTuning({
+      benchDir,
+      blocks,
+      env: process.env,
+      flags: ["run", "--force"],
+      resultsDir: resultsRelative,
+    }),
+    worker,
+    workload,
+  });
+  await writeFile(path.join(runDirectory, "capture-report.txt"), renderCpuCaptureReport(manifest));
+  await writeCpuCaptureManifest(runDirectory, manifest);
   process.stdout.write(
-    `CPU capture recorded ${benchmarkCount} benchmark result(s)\n${path.relative(repoRoot, runDirectory)}\n`,
+    `CPU capture recorded ${cases.length} benchmark result(s)\n${path.relative(repoRoot, runDirectory)}\n`,
   );
   return { labsVersion, resultFile, runDirectory };
+}
+
+/**
+ * Compare two explicit completed captures through the installed public Labs CLI. Validation and
+ * identity checks run first; the compare itself is advisory, so a nonzero upstream exit is recorded
+ * rather than adopted. Only the caller's own artifact paths and the untouched upstream output leave.
+ */
+export async function runCpuCompare(options: ICpuCompareOptions): Promise<ICpuCompareResult> {
+  const baseline = await readCpuCaptureManifest(options.baseline);
+  const candidate = await readCpuCaptureManifest(options.candidate);
+  const compatibility = assertCompatibleCpuCaptures(
+    baseline,
+    candidate,
+    options.control === undefined ? {} : { control: options.control },
+  );
+  const executable = labsNodeExecutable();
+  assertLabsNode(await labsNodeVersion(executable));
+  await assertInstalledLabs();
+  await mkdir(CPU_ARTIFACT_ROOT, { recursive: true });
+  const runDirectory = await mkdtemp(path.join(CPU_ARTIFACT_ROOT, "compare-"));
+  const workDirectory = await mkdtemp(path.join(LABS_TOOL_DIR, "compare-"));
+  try {
+    await copyFile(
+      path.join(LABS_TOOL_DIR, "labs.config.ts"),
+      path.join(workDirectory, "labs.config.ts"),
+    );
+    const resultsDir = path.join(workDirectory, "results");
+    await mkdir(resultsDir, { recursive: true });
+    await copyFile(
+      path.join(options.baseline, baseline.result.file),
+      path.join(resultsDir, "baseline.json"),
+    );
+    await copyFile(
+      path.join(options.candidate, candidate.result.file),
+      path.join(resultsDir, "candidate.json"),
+    );
+    // The public CLI reads saved results from `<configDir>/<resultsDir>/results`, so a results
+    // directory of "." puts them at `workDirectory/results`, where the captures were copied.
+    const env = labsChildEnv(process.env, { TN_CPU_BENCH_RESULTS_DIR: "." });
+    const baselineRun = await runWithCancellation((signal) =>
+      runBoundedProcess(
+        {
+          args: [LABS_BIN, "baseline", "baseline"],
+          command: executable,
+          cwd: workDirectory,
+          env,
+          timeoutMs: captureTimeoutMs(),
+        },
+        signal,
+      ),
+    );
+    const compared = await runWithCancellation((signal) =>
+      runBoundedProcess(
+        {
+          allowNonZeroExit: true,
+          args: [LABS_BIN, "compare", "candidate"],
+          command: executable,
+          cwd: workDirectory,
+          env,
+          timeoutMs: captureTimeoutMs(),
+        },
+        signal,
+      ),
+    );
+    const upstream: ICpuComparisonUpstream = {
+      exitCode: compared.exitCode,
+      stderr: compared.stderr,
+      stdout: compared.stdout,
+    };
+    const text = emitCpuComparisonReport({
+      baseline,
+      candidate,
+      compatibility,
+      format: "text",
+      upstream,
+    });
+    const html = emitCpuComparisonReport({
+      baseline,
+      candidate,
+      compatibility,
+      format: "html",
+      upstream,
+    });
+    const artifacts: ICpuCompareArtifacts = {
+      html: path.join(runDirectory, "comparison.html"),
+      stderr: path.join(runDirectory, "upstream.stderr.txt"),
+      stdout: path.join(runDirectory, "upstream.stdout.txt"),
+      text: path.join(runDirectory, "comparison.txt"),
+    };
+    await Promise.all([
+      writeFile(artifacts.text, `${text}\n`),
+      writeFile(artifacts.html, `${html}\n`),
+      writeFile(artifacts.stdout, compared.stdout),
+      writeFile(artifacts.stderr, compared.stderr),
+      writeFile(path.join(runDirectory, "labs-baseline.stdout.txt"), baselineRun.stdout),
+      writeFile(path.join(runDirectory, "labs-baseline.stderr.txt"), baselineRun.stderr),
+      writeFile(
+        path.join(runDirectory, "provenance.json"),
+        `${JSON.stringify(
+          {
+            baseline: {
+              commit: baseline.source.commit,
+              result: baseline.result.file,
+              root: baseline.source.root,
+              runId: baseline.runId,
+            },
+            candidate: {
+              commit: candidate.source.commit,
+              result: candidate.result.file,
+              root: candidate.source.root,
+              runId: candidate.runId,
+            },
+            compatibility,
+            upstreamExit: compared.exitCode,
+          },
+          null,
+          2,
+        )}\n`,
+      ),
+    ]);
+    process.stdout.write(`${text}\n${path.relative(repoRoot, runDirectory)}\n`);
+    return { artifacts, runDirectory, upstreamExit: compared.exitCode };
+  } finally {
+    await rm(workDirectory, { force: true, recursive: true });
+  }
 }
 
 /** Run whichever CPU subcommand the argv selected. */
@@ -749,6 +1177,10 @@ export async function runCpuCommand(command: CpuCommand, argv: readonly string[]
   if (command === "setup") {
     parseCpuSetupArgs(argv);
     return runCpuSetup();
+  }
+  if (command === "compare") {
+    await runCpuCompare(parseCpuCompareArgs(argv));
+    return;
   }
   await runCpuCapture(parseCpuCaptureArgs(argv));
 }

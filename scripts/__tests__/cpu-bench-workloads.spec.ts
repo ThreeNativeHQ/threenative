@@ -1,11 +1,9 @@
-import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
-import { homedir, tmpdir } from "node:os";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
 import { afterAll, describe, expect, it } from "vitest";
-import { LABS_TOOL_DIR, labsChildEnv } from "../performance-regression/cpu.js";
+import { labsChildEnv, runBoundedProcess } from "../performance-regression/cpu.js";
 import {
   LOOP_CASES,
   LOOP_FRAMES,
@@ -18,12 +16,8 @@ import {
   createStateWorkload,
 } from "../performance-regression/labs/workloads/state-workload.js";
 
-const execFileAsync = promisify(execFile);
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-const cpuArtifactRoot = path.join(repoRoot, "artifacts/engine-load-test/cpu");
-const integration = process.env.TN_CPU_BENCH_INTEGRATION === "1";
 const temporary: string[] = [];
-const createdRuns: string[] = [];
 
 function benchEnv(overrides: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
   return {
@@ -47,7 +41,6 @@ async function stubCheckout(files: Record<string, string>): Promise<string> {
 afterAll(async () => {
   await Promise.all([
     ...temporary.splice(0).map((directory) => rm(directory, { force: true, recursive: true })),
-    ...createdRuns.splice(0).map((directory) => rm(directory, { force: true, recursive: true })),
   ]);
 });
 
@@ -148,29 +141,6 @@ describe("child environment", () => {
   });
 });
 
-const PROBE_BENCH = [
-  'import { bench } from "@pmndrs/labs";',
-  'import { writeFileSync } from "node:fs";',
-  'import path from "node:path";',
-  'import { fileURLToPath } from "node:url";',
-  "",
-  'const output = path.join(path.dirname(fileURLToPath(import.meta.url)), "env-probe.json");',
-  "",
-  'bench("env probe", function* () {',
-  "  writeFileSync(",
-  "    output,",
-  "    JSON.stringify({",
-  "      nodeOptions: process.env.NODE_OPTIONS ?? null,",
-  "      npmToken: process.env.NPM_TOKEN ?? null,",
-  "      sentinel: process.env.TN_CPU_BENCH_SENTINEL ?? null,",
-  "      sshAgent: process.env.SSH_AUTH_SOCK ?? null,",
-  "    }),",
-  "  );",
-  "  yield () => 1;",
-  "});",
-  "",
-].join("\n");
-
 const WRONG_LOOP = [
   "export function createAfterPhysicsPhase() {",
   "  const callbacks = new Set();",
@@ -213,106 +183,25 @@ const WRONG_STATE = [
   "",
 ].join("\n");
 
-interface ICliResult {
-  readonly code: number;
-  readonly stderr: string;
-  readonly stdout: string;
-}
-
-async function runCli(args: readonly string[], env: NodeJS.ProcessEnv = {}): Promise<ICliResult> {
-  try {
-    const { stdout, stderr } = await execFileAsync(
-      "pnpm",
-      ["exec", "tsx", "scripts/engine-load-test/cli.ts", ...args],
-      {
-        cwd: repoRoot,
-        env: { ...process.env, ...env },
-        maxBuffer: 32 * 1024 * 1024,
-        timeout: 240_000,
-      },
-    );
-    return { code: 0, stderr, stdout };
-  } catch (error) {
-    const failure = error as { code?: unknown; killed?: boolean; stderr?: string; stdout?: string };
-    return {
-      code: failure.killed === true ? 124 : typeof failure.code === "number" ? failure.code : 1,
-      stderr: failure.stderr ?? "",
-      stdout: failure.stdout ?? "",
-    };
-  }
-}
-
-async function compatibleNode(executable: string): Promise<string | undefined> {
-  if (path.resolve(executable) === path.resolve(process.execPath)) return process.versions.node;
-  try {
-    const { stdout } = await execFileAsync(executable, ["--version"]);
-    return stdout.trim().replace(/^v/, "");
-  } catch {
-    return undefined;
-  }
-}
-
-async function discoverLabsNode(): Promise<string | undefined> {
-  const candidates = [process.env.TN_CPU_BENCH_NODE, process.execPath].filter(
-    (value): value is string => value !== undefined && value.length > 0,
-  );
-  try {
-    const nvm = path.join(homedir(), ".nvm/versions/node");
-    for (const entry of await readdir(nvm)) candidates.push(path.join(nvm, entry, "bin/node"));
-  } catch {
-    // No nvm layout: the two explicit candidates above are the whole search.
-  }
-  for (const candidate of candidates) {
-    const version = await compatibleNode(candidate);
-    if (version !== undefined && Number(version.split(".")[0]) >= 22) return candidate;
-  }
-  return undefined;
-}
-
-async function tempBenchDirectory(): Promise<string> {
-  const cache = path.join(LABS_TOOL_DIR, ".labs");
-  await mkdir(cache, { recursive: true });
-  const directory = await mkdtemp(path.join(cache, "tn-cpu-workloads-"));
-  temporary.push(directory);
-  return directory;
-}
-
-describe.skipIf(!integration)("child environment integration", () => {
-  it("never passes an injected secret or hook to the real benchmark worker", async () => {
-    const node = await discoverLabsNode();
-    if (node === undefined) throw new Error("no Node >= 22 executable found for the Labs worker");
-    const benches = await tempBenchDirectory();
-    await writeFile(path.join(benches, "env-probe.bench.ts"), PROBE_BENCH);
-    const result = await runCli(["--cpu", "--source", repoRoot, "--name", "env-probe"], {
-      NODE_OPTIONS: "--max-old-space-size=2048",
-      NPM_TOKEN: "npm-secret",
-      SSH_AUTH_SOCK: "/tmp/tn-agent.sock",
-      TN_CPU_BENCH_BENCH_DIR: benches,
-      TN_CPU_BENCH_BLOCK_TIME: "0.05",
-      TN_CPU_BENCH_BLOCKS: "1",
-      TN_CPU_BENCH_MIN_SAMPLES: "2",
-      TN_CPU_BENCH_NODE: node,
-      TN_CPU_BENCH_SENTINEL: "sentinel-secret",
+describe("real child environment", () => {
+  it("drops injected secrets and hooks before spawning Node", async () => {
+    const env = labsChildEnv({
+      ...process.env,
+      NODE_OPTIONS: "--invalid-hook",
+      NPM_TOKEN: "secret",
+      SSH_AUTH_SOCK: "/tmp/agent",
+      TN_CPU_BENCH_SENTINEL: "secret",
     });
-    expect(result.stderr).not.toContain("TN_CPU_BENCH");
-    expect(result.code).toBe(0);
-
-    const entries = await readdir(cpuArtifactRoot).catch(() => [] as string[]);
-    const last = entries
-      .filter((entry) => entry.endsWith("-env-probe"))
-      .sort()
-      .at(-1);
-    if (last !== undefined) createdRuns.push(path.join(cpuArtifactRoot, last));
-
-    const probe = JSON.parse(await readFile(path.join(benches, "env-probe.json"), "utf8")) as {
-      nodeOptions: string | null;
-      npmToken: string | null;
-      sentinel: string | null;
-      sshAgent: string | null;
-    };
-    expect(probe.sentinel).toBeNull();
-    expect(probe.npmToken).toBeNull();
-    expect(probe.sshAgent).toBeNull();
-    expect(probe.nodeOptions).toBeNull();
+    const result = await runBoundedProcess({
+      command: process.execPath,
+      args: [
+        "--eval",
+        "console.log(JSON.stringify([process.env.NODE_OPTIONS, process.env.NPM_TOKEN, process.env.SSH_AUTH_SOCK, process.env.TN_CPU_BENCH_SENTINEL]))",
+      ],
+      cwd: repoRoot,
+      env,
+      timeoutMs: 5000,
+    });
+    expect(JSON.parse(result.stdout)).toEqual([null, null, null, null]);
   });
 });

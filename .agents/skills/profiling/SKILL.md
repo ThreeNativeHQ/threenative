@@ -59,7 +59,7 @@ Existing example load scene: `examples/native-cpu-load-test/` (`vite`).
 | Native desktop proof | `pnpm native:verify:desktop` | Prove the host builds and presents | 300 frames, markers, non-blank screenshot | Correctness proof, not a speed claim |
 | Web/native parity | `pnpm parity`; `pnpm parity --project <path>` | Same scene browser vs native | `packages/runtime-native/conformance/registry.json` report | Unselected rows are blocked; equivalence, not speed |
 | Android CPU + device fps | `adb shell simpleperf record --app <package> -f 99 -g` with a `TN_ANDROID_JS_PROFILE=ON` host; `adb shell dumpsys SurfaceFlinger --timestats` | Attribute device CPU time; independent present-interval fps | simpleperf data/report by DSO and symbol; SurfaceFlinger interval histogram | Physical Android; symbolize against unstripped `libv8android.so`; emulator proves plumbing only. Owner: `probe-android-startup-and-heat` |
-| Opt-in Labs CPU (IN PROGRESS) | `pnpm bench:engines --cpu-setup`; then `pnpm bench:engines --cpu --source <abs checkout> --name <name>` | Focused Node/V8 CPU microbenchmark without a GPU scene | `artifacts/engine-load-test/cpu/<run-id>/` (`labs/results/<name>.json`, `provenance.json`) | CPU-only `node-cpu`; Node floor 22.12 (framework floor is 20.19). Setup and capture are landed and verified (Phase 1); comparison (`--cpu-compare`) and the two workload families are still pending. Never report as FPS, GPU or native parity. |
+| Opt-in Labs CPU | `pnpm bench:engines --cpu-setup`; `pnpm bench:engines --cpu --source <abs checkout> --name <name>`; compare with `pnpm bench:engines --cpu-compare --baseline <abs saved-run dir> --candidate <abs saved-run dir>` | Focused Node/V8 CPU microbenchmark without a GPU scene | `artifacts/engine-load-test/cpu/<run-id>/` (`labs/results/<name>.json`, `provenance.json`) | CPU-only `node-cpu`; Node floor 22.12 (framework floor is 20.19). Measures actual selected-checkout loop dispatch and coalesced state publication. Explicit setup uses a frozen isolated install with scripts disabled; ordinary install/build does not load Labs. Reports retain upstream warnings and exits without a ThreeNative timing verdict. Never report as FPS, GPU or native parity. |
 
 ## Workflow — smallest suitable tool
 
@@ -73,7 +73,7 @@ Existing example load scene: `examples/native-cpu-load-test/` (`vite`).
    when the `.cpuprofile` cannot name it, with the optional OS `perf`.
 5. **"Which arm/engine is faster?"** `bench:engines`; production regression with `profile:production`;
    hardware regression with `--regression-collection`, then `--check-report` and `--regression`.
-6. **"Is behavior the same?"** `pnpm parity`. **"Pure Node CPU?"** Labs (in progress).
+6. **"Is behavior the same?"** `pnpm parity`. **"Pure Node CPU?"** Labs (`--cpu`, then `--cpu-compare`).
 7. To actually make it faster on measured keep/reject, use the `perf-loop` skill; for sustained native
    campaigns, `native-performance-loop`; for Android launch and heat, `probe-android-startup-and-heat`.
 
