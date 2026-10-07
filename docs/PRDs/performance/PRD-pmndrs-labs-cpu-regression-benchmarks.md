@@ -4,12 +4,12 @@ prd_contract: v1
 
 # PRD-pmndrs-labs — Opt-in CPU microbenchmarks with pmndrs/labs
 
-**Status:** NOT STARTED
+**Status:** PARTIAL — Phase 1 landed and verified; Phases 2–3 pending.
 **Priority:** P2 — Add focused CPU regression evidence without adding a mandatory timing gate.
 **Complexity:** 4 (MEDIUM); risk override: none.
 **Owner:** ThreeNative maintainers
 **Depends on:** None; existing hardware/frame performance tooling remains authoritative.
-**Progress:** 0%
+**Progress:** 33%
 **Date:** 2026-10-06
 
 This is a planning-only PRD. Creating it does not install dependencies, implement the integration, establish a performance improvement, or authorize a merge. All implementation and acceptance evidence remains pending.
@@ -108,12 +108,12 @@ The proof commands below describe tests/flows to implement in this PRD. They hav
 
 ### Phase 1 — An isolated tool reachable through the existing CLI
 
-**Status:** NOT STARTED
-**Files:** EDIT `scripts/engine-load-test/cli.ts`, `pnpm-workspace.yaml`; NEW `scripts/performance-regression/cpu.ts`, `scripts/performance-regression/labs/labs.config.ts`, generated private tool manifest and scoped lock; EXTEND/NEW focused script tests.
+**Status:** DONE
+**Files:** EDIT `scripts/engine-load-test/cli.ts`, `pnpm-workspace.yaml`, `tsconfig.json`, `.gitignore`; NEW `scripts/performance-regression/cpu.ts`, `scripts/performance-regression/labs/labs.config.ts`, generated private tool manifest and scoped lock; EXTEND/NEW focused script tests.
 **Implementation:** Qualify the pinned artifact, implement explicit setup/version checks, isolated installation and early CLI dispatch. Keep the root dependency graph and normal workspace paths unchanged.
 
-- [ ] P1-A [local; actor: agent]: Labs installs only through the explicit isolated setup path with its qualified exact version. proof: `pnpm exec vitest run scripts/__tests__/cpu-bench-tooling.spec.ts` — Evidence: pending.
-- [ ] P1-B [local; actor: agent]: The real `bench:engines` CPU entry point launches the installed worker and records its result, or returns a specific actionable failure. proof: `TN_CPU_BENCH_INTEGRATION=1 pnpm exec vitest run scripts/__tests__/cpu-bench-cli.spec.ts` — Evidence: pending.
+- [x] P1-A [local; actor: agent]: Labs installs only through the explicit isolated setup path with its qualified exact version. proof: `pnpm exec vitest run scripts/__tests__/cpu-bench-tooling.spec.ts` — Evidence: 16/16 passed. `TN_CPU_BENCH_NODE=<node22> pnpm bench:engines --cpu-setup` installed `@pmndrs/labs@0.9.0` into `scripts/performance-regression/labs` from the catalog pin, with `node-linker=hoisted` and the scoped `pnpm-lock.yaml`; the root package graph, workspace globs and root lock are unchanged.
+- [x] P1-B [local; actor: agent]: The real `bench:engines` CPU entry point launches the installed worker and records its result, or returns a specific actionable failure. proof: `TN_CPU_BENCH_INTEGRATION=1 pnpm exec vitest run scripts/__tests__/cpu-bench-cli.spec.ts` — Evidence: 5/5 passed. The real entry point launched the installed worker through a smoke workload and recorded `provenance.json` plus the raw Labs result; an empty workload directory returned the actionable `TN_CPU_BENCH_RUN_FAILED`.
 
 **Checkpoint:** Self-review pending; obtain one substantive reviewer when available, otherwise label self-review. Do not count a reviewer result as an implementation box.
 
@@ -156,7 +156,7 @@ No external owner, device, deployment, or release action is required by this pla
 
 ## Verification status
 
-Planning only. No dependency installation, benchmark execution, product-code change, or measured speedup has been performed. All implementation and acceptance boxes deliberately remain open. Document validation is reported in the PR body; it does not advance implementation progress.
+Phase 1 landed: the pinned `@pmndrs/labs@0.9.0` artifact is installed only through the explicit isolated setup path, the existing CLI dispatches `--cpu-setup`/`--cpu` before hardware parsing, and the installed worker was launched end to end against a smoke workload. Phases 2–3 and both acceptance criteria remain open; no workload family, comparison report, or measured speedup exists yet. Document validation is reported in the PR body; it does not advance implementation progress.
 
 ## Sources inspected
 
