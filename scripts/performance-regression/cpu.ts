@@ -381,34 +381,38 @@ export interface IBoundedProcessResult {
   readonly stdout: string;
 }
 
-/** Whether the direct child has been reaped by this process. */
-function exited(child: ChildProcess): boolean {
-  return child.exitCode !== null || child.signalCode !== null;
+/** Reject CPU execution where no POSIX process group can be addressed. Only Linux is tested. */
+export function assertSupportedPlatform(platform: NodeJS.Platform = process.platform): void {
+  if (platform !== "win32") return;
+  throw new BenchError(
+    "TN_CPU_BENCH_UNSUPPORTED_PLATFORM",
+    `CPU benchmarks need an addressable POSIX process group, which ${platform} does not provide; only Linux is supported and tested`,
+    2,
+  );
 }
 
-/** Signal the whole POSIX process group, or the direct child where no group is addressable. */
+/** Signal the child's whole POSIX process group. Windows is rejected before any spawn. */
 function signalTree(child: ChildProcess, signal: "SIGKILL" | "SIGTERM"): void {
   if (child.pid === undefined) return;
-  if (process.platform === "win32") {
-    child.kill(signal);
-    return;
-  }
   try {
     process.kill(-child.pid, signal);
   } catch {
+    // The group may already be gone, or the direct child never became its leader; fall back to it.
     child.kill(signal);
   }
 }
 
-/** True while any member of the child's process group is still alive (or the child on Windows). */
+/**
+ * True while any member of the child's process group is still alive. A permission error means the
+ * group exists but is not signalable here, so it counts as alive; only ESRCH means gone.
+ */
 function treeAlive(child: ChildProcess): boolean {
   if (child.pid === undefined) return false;
-  if (process.platform === "win32") return !exited(child);
   try {
     process.kill(-child.pid, 0);
     return true;
-  } catch {
-    return false;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code !== "ESRCH";
   }
 }
 
@@ -438,6 +442,22 @@ interface ICaptureFailureInput {
   readonly stderr: string;
   readonly timedOut: boolean;
   readonly timeoutMs: number;
+}
+
+/** A short phrase naming why a capture ended, used when its worker tree cannot be confirmed gone. */
+function cleanupReason(input: {
+  cancelled: boolean;
+  exitCode: number | null;
+  spawnError: Error | undefined;
+  timedOut: boolean;
+}): string {
+  if (input.timedOut) return "the capture timed out";
+  if (input.cancelled) return "the capture was cancelled";
+  if (input.spawnError !== undefined)
+    return `the command could not launch: ${input.spawnError.message}`;
+  if (input.exitCode !== null && input.exitCode !== 0)
+    return `the capture exited with code ${input.exitCode}`;
+  return "the capture ended";
 }
 
 /** The named failure a finished child represents, or undefined for a clean exit. */
@@ -474,22 +494,24 @@ function captureFailure(input: ICaptureFailureInput): BenchError | undefined {
 }
 
 /**
- * Run a command as its own process group and bound it: a fixed timeout, an optional abort signal,
- * capped output, and a TERM→KILL escalation that reaps descendants even when the direct child
- * exits first. Errors are named so the caller can report an incomplete capture rather than a
- * completed one. Windows falls back to killing the direct child only; tree termination there is
- * untested and not claimed.
+ * Run a command as its own POSIX process group and bound it: a fixed timeout, an optional abort
+ * signal, capped output, and a TERM→KILL escalation that reaps descendants even when the direct
+ * child exits first. Exit starts that escalation, but the promise settles only after the child's
+ * stdio has closed, so trailing output survives. A tree that outlives SIGKILL rejects with a named
+ * cleanup error rather than a completed result. Only Linux is tested; Windows is rejected before
+ * spawn because it exposes no addressable process group.
  */
 export function runBoundedProcess(
   options: IBoundedProcessOptions,
   signal?: AbortSignal,
 ): Promise<IBoundedProcessResult> {
   return new Promise<IBoundedProcessResult>((resolve, reject) => {
+    assertSupportedPlatform();
     let child: ChildProcess;
     try {
       child = spawn(options.command, [...options.args], {
         cwd: options.cwd,
-        detached: process.platform !== "win32",
+        detached: true,
         env: options.env,
         stdio: ["ignore", "pipe", "pipe"],
         windowsHide: true,
@@ -512,17 +534,36 @@ export function runBoundedProcess(
     let settling = false;
     let spawnError: Error | undefined;
 
-    const finalize = async (): Promise<void> => {
+    // Reap the whole group with TERM→KILL escalation, at most once, and report whether it is gone.
+    let cleanup: Promise<boolean> | undefined;
+    const cleanupTree = (): Promise<boolean> => {
+      cleanup ??= (async (): Promise<boolean> => {
+        if (!treeAlive(child)) return true;
+        signalTree(child, "SIGTERM");
+        if (await waitForTreeGone(child, TERM_GRACE_MS)) return true;
+        signalTree(child, "SIGKILL");
+        return waitForTreeGone(child, KILL_GRACE_MS);
+      })();
+      return cleanup;
+    };
+
+    // Settle only after cleanup, and only once stdio has closed so no buffered output is dropped.
+    const settle = async (): Promise<void> => {
       if (settling) return;
       settling = true;
       clearTimeout(timer);
       signal?.removeEventListener("abort", onAbort);
-      if (treeAlive(child)) {
-        signalTree(child, "SIGTERM");
-        if (!(await waitForTreeGone(child, TERM_GRACE_MS))) {
-          signalTree(child, "SIGKILL");
-          await waitForTreeGone(child, KILL_GRACE_MS);
-        }
+      const treeGone = await cleanupTree();
+      if (!treeGone) {
+        const reason = cleanupReason({ cancelled, exitCode: child.exitCode, spawnError, timedOut });
+        reject(
+          new BenchError(
+            "TN_CPU_BENCH_CLEANUP_FAILED",
+            `could not confirm the CPU worker tree was terminated within ${TERM_GRACE_MS + KILL_GRACE_MS}ms after ${reason}; the capture is incomplete and descendant processes may remain`,
+            2,
+          ),
+        );
+        return;
       }
       const failure = captureFailure({
         cancelled,
@@ -542,8 +583,7 @@ export function runBoundedProcess(
 
     const onAbort = (): void => {
       cancelled = true;
-      signalTree(child, "SIGTERM");
-      void finalize();
+      void cleanupTree();
     };
 
     child.stdout?.on("data", (chunk: Buffer | string) => {
@@ -556,16 +596,19 @@ export function runBoundedProcess(
     });
     child.on("error", (error: Error) => {
       spawnError = error;
-      void finalize();
+      void cleanupTree();
     });
+    // Exit starts descendant cleanup; close (stdio drained) is what settles the promise.
     child.on("exit", () => {
-      void finalize();
+      void cleanupTree();
+    });
+    child.on("close", () => {
+      void settle();
     });
 
     const timer = setTimeout(() => {
       timedOut = true;
-      signalTree(child, "SIGTERM");
-      void finalize();
+      void cleanupTree();
     }, options.timeoutMs);
 
     if (signal !== undefined) {

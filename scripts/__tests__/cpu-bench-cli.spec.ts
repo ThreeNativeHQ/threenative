@@ -6,7 +6,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { afterAll, describe, expect, it } from "vitest";
-import { LABS_TOOL_DIR, runBoundedProcess } from "../performance-regression/cpu.js";
+import {
+  LABS_TOOL_DIR,
+  assertSupportedPlatform,
+  runBoundedProcess,
+} from "../performance-regression/cpu.js";
 
 const execFileAsync = promisify(execFile);
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -237,6 +241,43 @@ async function writeTreeFixture(directory: string, exitParent = false): Promise<
   return script;
 }
 
+// A detached grandchild inherits the parent's stdio and writes after the parent exits, so the
+// direct child is gone while the pipes stay open. Settling on exit would drop that trailing output.
+const TRAILING_PARENT = [
+  'import { spawn } from "node:child_process";',
+  'import path from "node:path";',
+  'import { fileURLToPath } from "node:url";',
+  "",
+  "const dir = path.dirname(fileURLToPath(import.meta.url));",
+  'const child = spawn(process.execPath, [path.join(dir, "child.mjs")], {',
+  "  detached: true,",
+  '  stdio: ["ignore", "inherit", "inherit"],',
+  "});",
+  "child.unref();",
+  'process.stdout.write("HEAD\\n");',
+  'process.stderr.write("HEADERR\\n");',
+  "process.exit(0);",
+  "",
+].join("\n");
+
+const TRAILING_CHILD = [
+  'import { writeSync } from "node:fs";',
+  "setTimeout(() => {",
+  '  writeSync(1, "STDOUT-TRAIL-".repeat(4096) + "STDOUT-END\\n");',
+  '  writeSync(2, "STDERR-TRAIL-".repeat(4096) + "STDERR-END\\n");',
+  "  process.exit(0);",
+  "}, 300);",
+  "setInterval(() => {}, 1000);",
+  "",
+].join("\n");
+
+async function writeTrailingFixture(directory: string): Promise<string> {
+  await writeFile(path.join(directory, "child.mjs"), TRAILING_CHILD);
+  const script = path.join(directory, "parent.mjs");
+  await writeFile(script, TRAILING_PARENT);
+  return script;
+}
+
 async function waitForPids(file: string, timeoutMs = 5_000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (!existsSync(file) && Date.now() < deadline) await delay(25);
@@ -354,6 +395,26 @@ describe("lifecycle", () => {
         timeoutMs: 5_000,
       }),
     ).rejects.toThrow("TN_CPU_BENCH_SPAWN_FAILED");
+  });
+
+  it("retains stdout and stderr written after the direct child exits", async () => {
+    const directory = await tempDirectory();
+    const script = await writeTrailingFixture(directory);
+    const result = await runBoundedProcess({
+      args: [script],
+      command: process.execPath,
+      cwd: directory,
+      env: process.env,
+      timeoutMs: 5_000,
+    });
+    expect(result.stdout).toContain("HEAD");
+    expect(result.stdout).toContain("STDOUT-END");
+    expect(result.stderr).toContain("HEADERR");
+    expect(result.stderr).toContain("STDERR-END");
+  });
+
+  it("rejects CPU execution on win32 before any spawn", () => {
+    expect(() => assertSupportedPlatform("win32")).toThrow("TN_CPU_BENCH_UNSUPPORTED_PLATFORM");
   });
 });
 
