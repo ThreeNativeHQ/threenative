@@ -27,7 +27,8 @@ RenderDatabase database;
 std::shared_ptr<Scene> scene;
 std::shared_ptr<PerspectiveCamera> camera;
 std::array<double, 2> benchCpu{};
-std::array<double, 11> benchStats{};
+std::array<double, 13> benchStats{};
+bool gpuProfile = false;
 bool measuring = false;
 bool reading = false, loading = false, failed = false, manualFrames = false;
 
@@ -152,6 +153,10 @@ void onAdapter(WGPURequestAdapterStatus status, WGPUAdapter adapter, WGPUStringV
     callback.mode = WGPUCallbackMode_AllowProcessEvents;
     callback.callback = onDevice;
     WGPUDeviceDescriptor desc = {};
+    const WGPUFeatureName timestamp = WGPUFeatureName_TimestampQuery;
+    const bool gpuSupported = gpuProfile && wgpuAdapterHasFeature(adapter, timestamp);
+    if (gpuSupported) { desc.requiredFeatureCount = 1; desc.requiredFeatures = &timestamp; }
+    EM_ASM({ globalThis.__tnWasmAssets.gpuTimestampSupported = !!$0; }, gpuSupported);
     desc.uncapturedErrorCallbackInfo.callback = [](WGPUDevice const*, WGPUErrorType, WGPUStringView message, void*, void*) {
         events.post([message = text(message)] { fail("TN_WASM_DEVICE_ERROR: " + message); });
     };
@@ -198,7 +203,9 @@ extern "C" int tnw_render(const tn_handle_t* sceneHandle, const tn_handle_t* cam
 
 // PRD-533: manual frames time game update + synchronous engine submission; readback and
 // the animation boundary stay outside the CPU meter. The asset proof keeps its automatic loop.
-extern "C" int tnw_bench_init(uint32_t width, uint32_t height) {
+extern "C" int tnw_bench_init(uint32_t width, uint32_t height, int profile) {
+    if (profile != 0 && profile != 1) return fail("TN_WASM_BENCH_PROFILE");
+    gpuProfile = profile == 1;
     if (!width || !height || width > 4096 || height > 4096) return fail("TN_WASM_BENCH_SIZE");
     kWidth = width;
     kHeight = height;
@@ -220,6 +227,7 @@ extern "C" int tnw_bench_step() {
                   double(renderer->lastFrame().draws), double(database.rebuilds() - rebuilds),
                   double(database.lastBatches().first), double(database.lastBatches().second)};
     std::copy(database.lastPrepareMs().begin(), database.lastPrepareMs().end(), benchStats.begin() + 7);
+    if (gpuProfile) { benchStats[11] = renderer->lastGpuMs(); benchStats[12] = double(renderer->gpuSamples()); }
     return failed ? 1 : 0;
 }
 

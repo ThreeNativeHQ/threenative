@@ -1,4 +1,5 @@
 import * as Three from "three/webgpu";
+import { FrameBudget } from "../../../packages/core/src/frame-budget.js";
 import { MatrixWorldPass } from "../../../packages/core/src/matrix-world.js";
 import { RenderCameraCull } from "../../../packages/core/src/render-camera-cull.js";
 import { SceneRenderProjection } from "../../../packages/core/src/renderProjection.js";
@@ -15,13 +16,18 @@ import { createPlacements, uniqueMaterialColor } from "./workload.js";
 
 type Abi = TnAbiModule & {
   wasmMemory: WebAssembly.Memory;
-  _tnw_bench_init(width: number, height: number): number;
+  _tnw_bench_init(width: number, height: number, profile?: number): number;
   _tnw_render(scene: number, camera: number): number;
   _tnw_bench_step(): number;
   _tnw_bench_stats(): number;
   _tnw_bulk_transforms(handles: number, values: number, count: number): number;
 };
-type State = { initialized?: boolean; error?: string; adapter?: Record<string, string> };
+type State = {
+  initialized?: boolean;
+  error?: string;
+  adapter?: Record<string, string>;
+  gpuTimestampSupported?: boolean;
+};
 declare const TN_CURRENT: boolean;
 const scope = globalThis as unknown as {
   createTnBrowser(): Promise<Abi>;
@@ -185,14 +191,22 @@ async function run() {
     prepareOtherMs: [] as number[],
     perryArrayAllocations: [] as number[],
   };
-  const nextFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+  const profile = new URLSearchParams(location.search).get("profile") === "1";
+  const budget = profile
+    ? new FrameBudget({ reportEvery: frames + 1, capacity: frames, hitchMs: Number.MAX_VALUE })
+    : undefined;
+  let gpuSupported = false;
+  let gpuBackend: { getTimestampFrames(type: string): number[] } | undefined;
+  let nativeGpuCounter = 0;
+  let discardNativeWarmup = true;
+  const nextFrame = () => new Promise<number>((resolve) => requestAnimationFrame(resolve));
   const check = (code: number) => {
     if (code || scope.__tnWasmAssets?.error)
       throw new Error(scope.__tnWasmAssets?.error ?? `Wasm status ${code}`);
   };
   if (!TN_CURRENT && abi) {
     scope.__ENGINE_LOAD_TEST_PROGRESS__.stage = "device";
-    check(abi._tnw_bench_init(width, height));
+    check(abi._tnw_bench_init(width, height, profile ? 1 : 0));
     const deadline = performance.now() + 60_000;
     while (!scope.__tnWasmAssets.initialized) {
       check(0);
@@ -200,6 +214,7 @@ async function run() {
       await nextFrame();
     }
     adapter = scope.__tnWasmAssets.adapter ?? {};
+    gpuSupported = scope.__tnWasmAssets.gpuTimestampSupported === true;
     handles = abi._malloc((objects + 2) * 12);
     valuesPointer = abi._malloc((6 + objects * 5) * 8);
     if (!handles || !valuesPointer) throw new Error("TN_WEB_BENCH_ALLOC");
@@ -217,13 +232,18 @@ async function run() {
     }
     check(abi._tnw_render(handles + objects * 12, handles + (objects + 1) * 12));
   } else if (TN_CURRENT) {
-    renderer = new Three.WebGPURenderer({ canvas, antialias: false });
+    renderer = new Three.WebGPURenderer({ canvas, antialias: false, trackTimestamp: profile });
     renderer.setPixelRatio(1);
     renderer.setSize(width, height, false);
     renderer.toneMapping = Three.NoToneMapping;
     renderer.setClearColor(new Three.Color().setRGB(0.02, 0.03, 0.04), 1);
     await renderer.init();
-    const backend = renderer.backend as unknown as { adapter: GPUAdapter };
+    const backend = renderer.backend as unknown as {
+      adapter: GPUAdapter;
+      getTimestampFrames(type: string): number[];
+    };
+    gpuBackend = backend;
+    gpuSupported = profile && backend.adapter.features.has("timestamp-query");
     const info = backend.adapter.info;
     adapter = {
       vendor: info.vendor,
@@ -322,7 +342,9 @@ async function run() {
   scope.__ENGINE_LOAD_TEST_PROGRESS__.stage = "frames";
   for (let frame = 0; frame < warmup + frames; frame++) {
     if (frame === warmup) await scope.__ENGINE_LOAD_TEST_PROFILE__?.();
-    await nextFrame();
+    const raf = await nextFrame(); // Profiler startup precedes this callback.
+    if (frame === warmup && abi) nativeGpuCounter = abi.HEAPF64[statsPointer / 8 + 12] as number;
+    if (frame >= warmup) budget?.beginFrame(raf, performance.now());
     calls = mallocCalls = mallocBytes = freeCalls = viewCreations = 0;
     webgpuCalls = writeBuffers = directDraws = executeBundles = bundleDraws = 0;
     boundaryMs = bulkMs = submissions = 0;
@@ -349,6 +371,7 @@ async function run() {
       root.matrixWorldAutoUpdate = false;
       matrixWorld.apply(root);
       renderer.info.reset();
+      if (profile) (renderer.info as { frame: number }).frame = frame + 1;
       const prepared = performance.now();
       engineUpdateMs += prepared - updated;
       renderer.render(root, camera);
@@ -392,10 +415,37 @@ async function run() {
         boundary.prepareOtherMs.push(abi.HEAPF64[statsPointer / 8 + 10] as number);
       }
     }
+    // Drain warmup queries too: an arbitrarily long warmup must not exhaust Three's pool.
+    if (profile && renderer && gpuSupported) await renderer.resolveTimestampsAsync();
+    if (budget && frame >= warmup) {
+      let ms: number | undefined;
+      let sample: number | undefined;
+      if (abi && gpuSupported) {
+        const counter = abi.HEAPF64[statsPointer / 8 + 12] as number;
+        if (counter > nativeGpuCounter) {
+          nativeGpuCounter = counter;
+          if (discardNativeWarmup) discardNativeWarmup = false;
+          else {
+            ms = abi.HEAPF64[statsPointer / 8 + 11];
+            sample = counter;
+          }
+        }
+      } else if (renderer && gpuSupported) {
+        const ids = gpuBackend?.getTimestampFrames("render");
+        const resolved = ids?.[ids.length - 1];
+        if (resolved === frame + 1) {
+          ms = renderer.info.render.timestamp;
+          sample = resolved;
+        }
+      }
+      budget.addGpuMs(ms, sample);
+      budget.endFrame(performance.now(), false);
+    }
     scope.__ENGINE_LOAD_TEST_PROGRESS__.frame = frame;
   }
   // Freeze exactly the last measured frame for the collector's conformance comparison.
   for (const restore of restored) restore();
+  const window = budget?.window();
   scope.__ENGINE_LOAD_TEST__ = {
     arm,
     cpuMs,
@@ -403,6 +453,21 @@ async function run() {
     boundary: Object.fromEntries(Object.entries(boundary).filter(([, samples]) => samples.length)),
     adapter,
     captureFrame: warmup + frames - 1,
+    ...(window
+      ? {
+          profile: {
+            gpuSupported,
+            gpu: window.gpu ?? null,
+            gpuStale: window.gpuStale,
+            raf: window.presented,
+            cadence:
+              "instrumented rAF intervals; profiler and timestamp resolution active, not qualification FPS",
+            gpuCoverage: abi
+              ? "scene through output pass; canvas blit excluded"
+              : "summed Three render passes",
+          },
+        }
+      : {}),
   };
 }
 run().catch((error: unknown) => {

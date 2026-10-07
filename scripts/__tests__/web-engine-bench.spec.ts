@@ -14,9 +14,11 @@ import {
   engineRef,
 } from "../../packages/three-native/src/browser-backend.js";
 import {
+  type IWebRun,
   buildWebBench,
   collectWebBenchPage,
   summarizeWebBench,
+  validateWebProfile,
   webBenchOptions,
 } from "../engine-load-test/web.js";
 
@@ -185,8 +187,13 @@ describe("PRD-533 web arms", () => {
     } else expect(result.perryUnavailable).toMatch(/Perry/);
   });
 
-  const testArm = it.for(["wasm-js", "wasm-perry"]);
-  testArm("runs %s CPU spans and stable views", async (arm, { skip }) => {
+  const testArm = it.for(
+    ["wasm-js", "wasm-perry"].flatMap((arm) =>
+      ["off", "unsupported", "pending", "fresh"].map((mode) => ({ arm, mode })),
+    ),
+  );
+  testArm("runs $arm/$mode CPU spans and stable views", async ({ arm, mode }, { skip }) => {
+    const gpuSupported = ["pending", "fresh"].includes(mode);
     if (
       arm === "wasm-perry" &&
       !WebAssembly.validate(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0, 5, 5, 2, 0, 1, 0, 1]))
@@ -236,8 +243,12 @@ describe("PRD-533 web arms", () => {
       "tn_ready",
     ];
     const before = names.map((name) => Object.getOwnPropertyDescriptor(globalThis, name));
-    abi._tnw_bench_init = () => {
-      globals.__tnWasmAssets = { initialized: true, adapter: { description: "CPU probe" } };
+    abi._tnw_bench_init = (_width: number, _height: number, profile: number) => {
+      globals.__tnWasmAssets = {
+        initialized: true,
+        adapter: { description: "CPU probe" },
+        gpuTimestampSupported: profile === 1 && gpuSupported,
+      };
       return 0;
     };
     abi._tnw_render = (s: number, c: number) => {
@@ -245,6 +256,7 @@ describe("PRD-533 web arms", () => {
       camera = c;
       return 0;
     };
+    let frameIndex = 0;
     abi._tnw_bench_step = () => {
       const start = performance.now();
       const status = abi._tnw_bench_prepare(scene, camera);
@@ -254,13 +266,20 @@ describe("PRD-533 web arms", () => {
       pass.executeBundles();
       abi.HEAPF64[stats / 8] = performance.now() - start;
       abi.HEAPF64[stats / 8 + 1] = abi.HEAPF64[stats / 8 + 2] = abi.HEAPF64[stats / 8 + 3] = 0;
+      // One warmup result, one late warmup completion, one repeated ID, then one fresh result.
+      abi.HEAPF64[stats / 8 + 11] = frameIndex === 3 ? 2.5 : 999;
+      abi.HEAPF64[stats / 8 + 12] = mode === "fresh" ? [1, 2, 2, 3][frameIndex] : 1;
+      frameIndex++;
       return status;
     };
+    let rafTime = 0;
+    let callbacks = 0;
     try {
       const startProfile = vi.fn(async () => {
         // Warmup rendered once; profiling must start before the three measured frames.
         expect(globals.__ENGINE_LOAD_TEST__).toBeUndefined();
         expect(fixtureDraws).toBe(1);
+        rafTime += 5000; // Profiler startup must not enter the measured rAF interval series.
       });
       Object.assign(globals, {
         __ENGINE_LOAD_TEST_PROFILE__: startProfile,
@@ -280,16 +299,24 @@ describe("PRD-533 web arms", () => {
             new Uint8Array(await readFile(`/tmp/tn-web-bench-unit/${url.slice(2)}`)),
           );
         },
-        location: { search: `?arm=${arm}&objects=4&width=1280&height=720&warmup=1&frames=3` },
-        requestAnimationFrame: (callback: () => void) => queueMicrotask(callback),
+        location: {
+          search: `?arm=${arm}&objects=4&width=1280&height=720&warmup=1&frames=3${mode === "off" ? "" : "&profile=1"}`,
+        },
+        requestAnimationFrame: (callback: (time: number) => void) =>
+          queueMicrotask(() => {
+            rafTime += ++callbacks === 4 ? 3000 : 16;
+            callback(rafTime);
+          }),
       });
-      const game = `data:text/javascript;base64,${Buffer.from(await readFile("/tmp/tn-web-bench-unit/game.js")).toString("base64")}`;
+      const game = `data:text/javascript;base64,${Buffer.from(await readFile("/tmp/tn-web-bench-unit/game.js")).toString("base64")}#${arm}-${mode}`;
       const source = (await readFile("/tmp/tn-web-bench-unit/wasm.js", "utf8")).replace(
         '"./game.js"',
         JSON.stringify(game),
       );
       // Each arm must execute the module, rather than reuse the other arm's ESM cache.
-      await import(`data:text/javascript;base64,${Buffer.from(source).toString("base64")}#${arm}`);
+      await import(
+        `data:text/javascript;base64,${Buffer.from(source).toString("base64")}#${arm}-${mode}`
+      );
       await vi.waitFor(
         () =>
           expect(globals.__ENGINE_LOAD_TEST__ || globals.__ENGINE_LOAD_TEST_ERROR__).toBeTruthy(),
@@ -297,11 +324,28 @@ describe("PRD-533 web arms", () => {
       );
       expect(globals.__ENGINE_LOAD_TEST_ERROR__).toBeUndefined();
       const report = globals.__ENGINE_LOAD_TEST__ as {
+        profile?: IWebRun["profile"];
         cpuMs: number[];
         breakdown: Record<string, number[]>;
         boundary: Record<string, number[]>;
       };
       expect(report.cpuMs).toHaveLength(3);
+      if (mode === "off") expect(report.profile).toBeUndefined();
+      else {
+        expect(report.profile?.raf).toMatchObject({ samples: 2, mean: 1508, max: 3000 });
+        expect(report.profile?.gpuSupported).toBe(gpuSupported);
+        if (mode === "fresh") {
+          expect(report.profile?.gpu).toMatchObject({ samples: 1, p50: 2.5, max: 2.5 });
+          expect(report.profile?.gpuStale).toBe(2);
+        } else {
+          expect(report.profile?.gpu).toBeNull();
+          expect(report.profile?.gpuStale).toBe(3);
+        }
+        validateWebProfile(
+          { arm, repeat: 0, adapter: {}, ...report },
+          webBenchOptions({ frames: "3" }),
+        );
+      }
       expect(startProfile).toHaveBeenCalledTimes(1);
       expect(report.boundary.webgpuCalls).toEqual([4, 4, 4]);
       for (const field of ["writeBuffers", "directDraws", "bundleDraws", "executeBundles"])
@@ -328,6 +372,53 @@ describe("PRD-533 web arms", () => {
         else Reflect.deleteProperty(globalThis, name);
       });
     }
+  });
+
+  it("rejects malformed GPU/cadence observations while allowing genuinely absent timestamps", () => {
+    const options = webBenchOptions({ frames: "1" });
+    const series = { samples: 0, mean: 0, p50: 0, p95: 0, p99: 0, max: 0 };
+    const run: IWebRun = {
+      arm: "current",
+      repeat: 0,
+      cpuMs: [1],
+      adapter: {},
+      profile: {
+        gpuSupported: true,
+        gpu: null,
+        gpuStale: 1,
+        raf: series,
+        cadence: "instrumented rAF",
+        gpuCoverage: "render passes",
+      },
+    };
+    expect(() => validateWebProfile(run, options)).not.toThrow();
+    expect(() => validateWebProfile({ ...run, profile: undefined }, options)).toThrow(
+      /PROFILE_SHAPE/,
+    );
+    const profile = run.profile;
+    if (!profile) throw new Error("profile fixture missing");
+    expect(() =>
+      validateWebProfile({ ...run, profile: { ...profile, gpuStale: 0 } }, options),
+    ).toThrow(/SAMPLE_COUNT/);
+    expect(() =>
+      validateWebProfile(
+        { ...run, profile: { ...profile, raf: { ...series, samples: 1 } } },
+        options,
+      ),
+    ).toThrow(/PROFILE_SHAPE/);
+    const gpu = { ...series, samples: 1, mean: 1, p50: 1, p95: 1, p99: 1, max: 1 };
+    expect(() =>
+      validateWebProfile(
+        { ...run, profile: { ...profile, gpuSupported: false, gpu, gpuStale: 0 } },
+        options,
+      ),
+    ).toThrow(/GPU_UNAVAILABLE/);
+    expect(() =>
+      validateWebProfile(
+        { ...run, profile: { ...profile, gpu: { ...gpu, max: Number.NaN }, gpuStale: 0 } },
+        options,
+      ),
+    ).toThrow(/PROFILE_SERIES/);
   });
 
   it("merges compatible colour-only materials and keeps geometry groups distinct", async () => {

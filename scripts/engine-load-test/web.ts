@@ -8,6 +8,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { type Page, chromium } from "@playwright/test";
 import { PNG } from "pngjs";
+import type { IFrameBudgetSummary } from "../../packages/core/src/frame-budget.js";
 import {
   PERFORMANCE_BROWSER_ARGS,
   WEBGPU_BROWSER_ARGS,
@@ -38,6 +39,14 @@ export interface IWebOptions {
   width: number;
   height: number;
 }
+export interface IWebProfile {
+  gpuSupported: boolean;
+  gpu: IFrameBudgetSummary | null;
+  gpuStale: number;
+  raf: IFrameBudgetSummary;
+  cadence: string;
+  gpuCoverage: string;
+}
 export interface IWebRun {
   arm: string;
   repeat: number;
@@ -45,6 +54,35 @@ export interface IWebRun {
   adapter: Record<string, string>;
   breakdown?: Record<string, number[]>;
   boundary?: Record<string, number[]>;
+  profile?: IWebProfile;
+}
+export function validateWebProfile(run: IWebRun, options: IWebOptions): void {
+  const p = run.profile;
+  if (
+    !p ||
+    p.raf.samples !== Math.max(0, options.frames - 1) ||
+    !Number.isInteger(p.gpuStale) ||
+    p.gpuStale < 0 ||
+    p.gpuStale > options.frames ||
+    typeof p.gpuSupported !== "boolean" ||
+    !p.cadence ||
+    !p.gpuCoverage
+  )
+    throw new Error(`TN_WEB_BENCH_PROFILE_SHAPE: ${run.arm}`);
+  if ((!p.gpuSupported && p.gpu !== null) || (p.gpu !== null && p.gpu.samples === 0))
+    throw new Error(`TN_WEB_BENCH_GPU_UNAVAILABLE: ${run.arm}`);
+  if ((p.gpu?.samples ?? 0) + p.gpuStale !== options.frames)
+    throw new Error(`TN_WEB_BENCH_GPU_SAMPLE_COUNT: ${run.arm}`);
+  for (const series of [p.raf, ...(p.gpu ? [p.gpu] : [])]) {
+    if (
+      !Number.isInteger(series.samples) ||
+      series.samples < 0 ||
+      [series.mean, series.p50, series.p95, series.p99, series.max].some(
+        (value) => !Number.isFinite(value) || value < 0,
+      )
+    )
+      throw new Error(`TN_WEB_BENCH_PROFILE_SERIES: ${run.arm}`);
+  }
 }
 export function webBenchOptions(flags: Record<string, string | undefined>): IWebOptions {
   if ((flags.workload ?? "heterogeneous") !== "heterogeneous")
@@ -429,6 +467,7 @@ export async function runWebBench(
             }
             const query = new URLSearchParams({
               arm,
+              ...(profile ? { profile: "1" } : {}),
               ...Object.fromEntries(
                 Object.entries(options).map(([key, value]) => [key, String(value)]),
               ),
@@ -442,6 +481,7 @@ export async function runWebBench(
             if (profile) {
               if (!profiler) throw new Error(`CPU profiler did not start: ${arm}`);
               await profiler.stop();
+              validateWebProfile(run, options);
             }
             if (run.arm !== arm || run.cpuMs.length !== options.frames)
               throw new Error("arm/sample count mismatch");
