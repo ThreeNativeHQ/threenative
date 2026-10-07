@@ -133,7 +133,7 @@ export function makeAnimalPerformanceGame(mode: Exclude<AnimalMode, "qualificati
             if (!live || finished || !collector) return;
             try {
               const now = performance.now();
-              if (now - startedAt > 120000)
+              if (now - startedAt > 600000)
                 throw new Error("TN_ANIMAL_PERFORMANCE_OVERALL_TIMEOUT");
               if (ctx.renderer.compiling || ctx.renderer.compileCount !== compileCount)
                 throw new Error("TN_ANIMAL_PERFORMANCE_COMPILATION_CHANGED");
