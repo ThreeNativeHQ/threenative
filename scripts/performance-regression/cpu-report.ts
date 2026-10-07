@@ -7,7 +7,7 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, statSync } from "node:fs";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, realpath, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify, stripVTControlCharacters } from "node:util";
@@ -39,6 +39,7 @@ const HASH_PATTERN = /^[0-9a-f]{64}$/;
 const CONTROL_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const MODULE_KEYS = ["loop", "state", "zustand"] as const;
 const PROBE_LIMIT = 4 * 1024 * 1024;
+const PROBE_TIMEOUT_MS = 30_000;
 
 type CpuModuleKey = (typeof MODULE_KEYS)[number];
 
@@ -254,9 +255,20 @@ export async function sha256File(file: string): Promise<string> {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
-/** Resolve a file to an absolute path and its content hash. */
+async function realpathOrFail(file: string, code: string): Promise<string> {
+  try {
+    return await realpath(file);
+  } catch (error) {
+    return fail(
+      code,
+      `could not resolve ${file}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
+/** Resolve a file to its real absolute path and content hash. */
 export async function sha256Ref(file: string): Promise<ISha256Ref> {
-  const resolved = path.resolve(file);
+  const resolved = await realpathOrFail(path.resolve(file), "TN_CPU_BENCH_MISSING_FILE");
   return { path: resolved, sha256: await sha256File(resolved) };
 }
 
@@ -280,6 +292,7 @@ async function runNode(
       cwd,
       env,
       maxBuffer: PROBE_LIMIT,
+      timeout: PROBE_TIMEOUT_MS,
     });
     return stdout;
   } catch (error) {
@@ -299,8 +312,16 @@ async function runNode(
 async function gitIdentity(root: string): Promise<{ commit: string; dirty: boolean }> {
   try {
     const [{ stdout: commit }, { stdout: status }] = await Promise.all([
-      execFileAsync("git", ["rev-parse", "HEAD"], { cwd: root }),
-      execFileAsync("git", ["status", "--porcelain", "--untracked-files=normal"], { cwd: root }),
+      execFileAsync("git", ["rev-parse", "HEAD"], {
+        cwd: root,
+        maxBuffer: PROBE_LIMIT,
+        timeout: PROBE_TIMEOUT_MS,
+      }),
+      execFileAsync("git", ["status", "--porcelain", "--untracked-files=normal"], {
+        cwd: root,
+        maxBuffer: PROBE_LIMIT,
+        timeout: PROBE_TIMEOUT_MS,
+      }),
     ]);
     const resolved = commit.trim();
     if (!/^[0-9a-f]{40}$/.test(resolved)) {
@@ -346,7 +367,7 @@ async function resolveEsmSpecifier(
   if (!statIs(resolved, "file")) {
     return fail("TN_CPU_BENCH_BAD_DEPENDENCY", `${specifier} resolved to missing file ${resolved}`);
   }
-  return resolved;
+  return realpathOrFail(resolved, "TN_CPU_BENCH_BAD_DEPENDENCY");
 }
 
 async function packageVersion(resolved: string, name: string): Promise<string> {
@@ -391,7 +412,7 @@ async function packageVersion(resolved: string, name: string): Promise<string> {
 export async function collectCpuSourceIdentity(
   options: ICpuSourceOptions,
 ): Promise<ICpuSourceIdentity> {
-  const root = path.resolve(options.root);
+  const root = await realpathOrFail(path.resolve(options.root), "TN_CPU_BENCH_BAD_SOURCE");
   if (!statIs(root, "directory")) {
     return fail("TN_CPU_BENCH_BAD_SOURCE", `selected source '${root}' is not a directory`);
   }
@@ -399,6 +420,8 @@ export async function collectCpuSourceIdentity(
   const stateRelative = options.stateRelative ?? STATE_RELATIVE;
   const loop = await sha256Ref(path.join(root, loopRelative));
   const state = await sha256Ref(path.join(root, stateRelative));
+  assertWithin(root, loop.path, "source.modules.loop.path", "TN_CPU_BENCH_TAMPERED_PATH");
+  assertWithin(root, state.path, "source.modules.state.path", "TN_CPU_BENCH_TAMPERED_PATH");
   const { commit, dirty } = await gitIdentity(root);
   const zustandPath = await resolveEsmSpecifier(
     ZUSTAND_SPECIFIER,
@@ -490,11 +513,20 @@ export async function collectCpuWorkloadIdentity(
   return { benches, config, fixtures, match: "**/*.bench.ts" };
 }
 
-function envNumber(env: NodeJS.ProcessEnv, key: string): number | null {
+function tuningNumber(env: NodeJS.ProcessEnv, key: string, integer: boolean): number | null {
   const raw = env[key];
   if (raw === undefined) return null;
   const parsed = Number(raw);
-  return Number.isFinite(parsed) ? parsed : null;
+  const valid = integer
+    ? Number.isInteger(parsed) && parsed > 0
+    : Number.isFinite(parsed) && parsed > 0;
+  if (!valid) {
+    return fail(
+      "TN_CPU_BENCH_BAD_TUNING",
+      `${key} must be a positive ${integer ? "integer" : "finite number"}, got '${raw}'`,
+    );
+  }
+  return parsed;
 }
 
 /** Record the effective Labs tuning and flags used for a capture. */
@@ -502,15 +534,42 @@ export function collectCpuEffectiveTuning(options: ICpuTuningOptions): ICpuEffec
   return {
     benchDir: options.benchDir,
     blocks: options.blocks,
-    blockTime: envNumber(options.env, "TN_CPU_BENCH_BLOCK_TIME"),
+    blockTime: tuningNumber(options.env, "TN_CPU_BENCH_BLOCK_TIME", false),
     flags: [...options.flags],
-    minSamples: envNumber(options.env, "TN_CPU_BENCH_MIN_SAMPLES"),
+    minSamples: tuningNumber(options.env, "TN_CPU_BENCH_MIN_SAMPLES", true),
     resultsDir: options.resultsDir,
   };
 }
 
 function caseKey(file: string, alias: string): string {
   return `${file}\u0000${alias}`;
+}
+
+/** A stable rendering of the owned case observations, independent of their input order. */
+function canonicalCaseSet(cases: readonly ICpuCaseObservation[]): string {
+  return JSON.stringify(
+    cases
+      .map((entry) => ({
+        alias: entry.alias,
+        avgNs: entry.avgNs,
+        family: entry.family,
+        file: entry.file,
+        group: entry.group,
+        maxNs: entry.maxNs,
+        minNs: entry.minNs,
+        samples: entry.samples,
+      }))
+      .sort((left, right) =>
+        caseKey(left.file, left.alias) < caseKey(right.file, right.alias) ? -1 : 1,
+      ),
+  );
+}
+
+function caseFinite(value: unknown, at: string): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return fail("TN_CPU_BENCH_CASE_ERROR", `${at} must be a finite number`);
+  }
+  return value;
 }
 
 /** Extract the six correctness-qualified cases from the raw upstream Labs result. */
@@ -524,24 +583,19 @@ export function collectCpuCaseObservations(raw: unknown): readonly ICpuCaseObser
   for (const [fileIndex, fileValue] of files.entries()) {
     const fileAt = `labs result.files[${fileIndex}]`;
     const file = asRecord(fileValue, fileAt);
+    if (file.error !== undefined) {
+      return fail("TN_CPU_BENCH_CASE_ERROR", `${fileAt} reported '${String(file.error)}'`);
+    }
     const fileName = requireText(file, "file", fileAt);
     const benchmarks = requireArray(file, "benchmarks", fileAt);
     for (const [benchIndex, benchValue] of benchmarks.entries()) {
       const at = `${fileAt}.benchmarks[${benchIndex}]`;
       const bench = asRecord(benchValue, at);
+      if (bench.error !== undefined) {
+        return fail("TN_CPU_BENCH_CASE_ERROR", `${at} reported '${String(bench.error)}'`);
+      }
       const alias = requireText(bench, "alias", at);
       const group = requireText(bench, "groupName", at);
-      const runs = requireArray(bench, "runs", at);
-      if (runs.length === 0) return fail("TN_CPU_BENCH_CASE_ERROR", `${at} has no runs`);
-      const run = asRecord(runs[0], `${at}.runs[0]`);
-      if (run.error !== undefined) {
-        return fail("TN_CPU_BENCH_CASE_ERROR", `${at} reported '${String(run.error)}'`);
-      }
-      const stats = asRecord(run.stats, `${at}.runs[0].stats`);
-      const samples = requireArray(stats, "samples", `${at}.runs[0].stats`);
-      if (samples.length === 0) {
-        return fail("TN_CPU_BENCH_CASE_ERROR", `${at} recorded no samples`);
-      }
       const expected = EXPECTED_CPU_CASES.find(
         (candidate) => candidate.file === fileName && candidate.alias === alias,
       );
@@ -554,14 +608,63 @@ export function collectCpuCaseObservations(raw: unknown): readonly ICpuCaseObser
           `${fileName} '${alias}' has group '${group}', expected '${expected.group}'`,
         );
       }
-      byKey.set(caseKey(fileName, alias), {
+      const key = caseKey(fileName, alias);
+      if (byKey.has(key)) {
+        return fail(
+          "TN_CPU_BENCH_UNEXPECTED_CASE",
+          `${fileName} '${alias}' is reported more than once`,
+        );
+      }
+      const runs = requireArray(bench, "runs", at);
+      if (runs.length === 0) return fail("TN_CPU_BENCH_CASE_ERROR", `${at} has no runs`);
+      for (const [runIndex, runValue] of runs.entries()) {
+        const runAt = `${at}.runs[${runIndex}]`;
+        const run = asRecord(runValue, runAt);
+        if (run.error !== undefined) {
+          return fail("TN_CPU_BENCH_CASE_ERROR", `${runAt} reported '${String(run.error)}'`);
+        }
+      }
+      if (runs.length !== 1) {
+        return fail(
+          "TN_CPU_BENCH_CASE_ERROR",
+          `${at} must record exactly one run, found ${runs.length}`,
+        );
+      }
+      const runAt = `${at}.runs[0]`;
+      const run = asRecord(runs[0], runAt);
+      const stats = asRecord(run.stats, `${runAt}.stats`);
+      const samples = requireArray(stats, "samples", `${runAt}.stats`);
+      if (samples.length === 0) {
+        return fail("TN_CPU_BENCH_CASE_ERROR", `${runAt} recorded no samples`);
+      }
+      for (const [sampleIndex, sample] of samples.entries()) {
+        if (caseFinite(sample, `${runAt}.stats.samples[${sampleIndex}]`) < 0) {
+          return fail(
+            "TN_CPU_BENCH_CASE_ERROR",
+            `${runAt}.stats.samples[${sampleIndex}] is negative`,
+          );
+        }
+      }
+      const minNs = caseFinite(stats.min, `${runAt}.stats.min`);
+      const maxNs = caseFinite(stats.max, `${runAt}.stats.max`);
+      const avgNs = caseFinite(stats.avg, `${runAt}.stats.avg`);
+      if (minNs < 0 || maxNs < 0 || avgNs < 0) {
+        return fail("TN_CPU_BENCH_CASE_ERROR", `${runAt}.stats has a negative observation`);
+      }
+      if (maxNs < minNs) {
+        return fail("TN_CPU_BENCH_CASE_ERROR", `${runAt}.stats max is below min`);
+      }
+      if (avgNs < minNs || avgNs > maxNs) {
+        return fail("TN_CPU_BENCH_CASE_ERROR", `${runAt}.stats avg is outside [min, max]`);
+      }
+      byKey.set(key, {
         alias,
-        avgNs: requireFinite(stats, "avg", `${at}.runs[0].stats`),
+        avgNs,
         family: expected.family,
         file: fileName,
         group,
-        maxNs: requireFinite(stats, "max", `${at}.runs[0].stats`),
-        minNs: requireFinite(stats, "min", `${at}.runs[0].stats`),
+        maxNs,
+        minNs,
         samples: samples.length,
       });
     }
@@ -787,12 +890,19 @@ function parseCases(root: Record<string, unknown>): readonly ICpuCaseObservation
     samples = Math.trunc(samples);
     const minNs = requireFinite(entry, "minNs", at);
     const maxNs = requireFinite(entry, "maxNs", at);
+    const avgNs = requireFinite(entry, "avgNs", at);
+    if (minNs < 0 || maxNs < 0 || avgNs < 0) {
+      return fail("TN_CPU_BENCH_BAD_MANIFEST", `${at} has a negative observation`);
+    }
     if (maxNs < minNs) {
       return fail("TN_CPU_BENCH_BAD_MANIFEST", `${at} has maxNs below minNs`);
     }
+    if (avgNs < minNs || avgNs > maxNs) {
+      return fail("TN_CPU_BENCH_BAD_MANIFEST", `${at} has avgNs outside [minNs, maxNs]`);
+    }
     return {
       alias: requireText(entry, "alias", at),
-      avgNs: requireFinite(entry, "avgNs", at),
+      avgNs,
       family,
       file: requireText(entry, "file", at),
       group: requireText(entry, "group", at),
@@ -864,6 +974,24 @@ export async function verifyCpuCaptureEvidence(
     return fail(
       "TN_CPU_BENCH_STALE_EVIDENCE",
       `raw result ${manifest.result.file} does not match its recorded hash`,
+    );
+  }
+  let rawResult: unknown;
+  try {
+    rawResult = JSON.parse(await readFile(resultPath, "utf8"));
+  } catch (error) {
+    return fail(
+      "TN_CPU_BENCH_STALE_EVIDENCE",
+      `raw result ${manifest.result.file} is not parseable JSON: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
+  const rawCases = collectCpuCaseObservations(rawResult);
+  if (canonicalCaseSet(rawCases) !== canonicalCaseSet(manifest.cases)) {
+    return fail(
+      "TN_CPU_BENCH_STALE_EVIDENCE",
+      `raw result ${manifest.result.file} does not match the manifest's recorded cases`,
     );
   }
   assertWithin(
@@ -947,15 +1075,22 @@ export async function writeCpuCaptureManifest(
 function sourceFingerprint(source: ICpuSourceIdentity): string {
   return JSON.stringify({
     commit: source.commit,
-    corePackage: source.corePackage?.sha256 ?? null,
+    corePackage:
+      source.corePackage === null
+        ? null
+        : { path: source.corePackage.path, sha256: source.corePackage.sha256 },
     dependencies: source.dependencies.map((dependency) => ({
       name: dependency.name,
+      path: dependency.path,
       sha256: dependency.sha256,
       version: dependency.version,
     })),
     dirty: source.dirty,
-    lock: source.lock?.sha256 ?? null,
-    modules: MODULE_KEYS.map((key) => source.modules[key].sha256),
+    lock: source.lock === null ? null : { path: source.lock.path, sha256: source.lock.sha256 },
+    modules: MODULE_KEYS.map((key) => ({
+      path: source.modules[key].path,
+      sha256: source.modules[key].sha256,
+    })),
   });
 }
 
@@ -1010,11 +1145,9 @@ export function assertCompatibleCpuCaptures(
 ): ICpuCompatibility {
   const left = validateCpuCaptureManifest(baseline);
   const right = validateCpuCaptureManifest(candidate);
-  if (
-    left.runId === right.runId ||
-    left.result.file === right.result.file ||
-    left.result.sha256 === right.result.sha256
-  ) {
+  // `result.file` is run-relative, so two independently captured runs may share it; only the run
+  // id and the raw-result bytes identify the same artifact.
+  if (left.runId === right.runId || left.result.sha256 === right.result.sha256) {
     return fail(
       "TN_CPU_BENCH_SELF_COMPARISON",
       "baseline and candidate are the same capture artifact",
@@ -1046,10 +1179,10 @@ export function assertCompatibleCpuCaptures(
       `measured files are byte-identical across commits ${left.source.commit} and ${right.source.commit}`,
     );
   }
-  if (!sameContent && sameCommit) {
+  if (!sameContent && sameCommit && !left.source.dirty && !right.source.dirty) {
     return fail(
       "TN_CPU_BENCH_STALE_EVIDENCE",
-      `commit ${left.source.commit} carries two different measured-file identities`,
+      `commit ${left.source.commit} carries two different measured-file identities across two clean captures`,
     );
   }
 

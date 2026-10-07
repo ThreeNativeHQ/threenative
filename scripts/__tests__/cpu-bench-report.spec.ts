@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -65,6 +65,31 @@ function expectedCases(): ICpuCaseObservation[] {
     minNs: 10 + index,
     samples: 8,
   }));
+}
+
+function rawLabsResult(
+  cases: readonly ICpuCaseObservation[] = expectedCases(),
+): Record<string, unknown> {
+  const byFile = new Map<string, Record<string, unknown>[]>();
+  for (const entry of cases) {
+    const benchmarks = byFile.get(entry.file) ?? [];
+    benchmarks.push({
+      alias: entry.alias,
+      groupName: entry.group,
+      runs: [
+        {
+          stats: {
+            avg: entry.avgNs,
+            max: entry.maxNs,
+            min: entry.minNs,
+            samples: Array.from({ length: entry.samples }, (_, index) => entry.minNs + index),
+          },
+        },
+      ],
+    });
+    byFile.set(entry.file, benchmarks);
+  }
+  return { files: [...byFile].map(([file, benchmarks]) => ({ benchmarks, file })) };
 }
 
 interface IManifestSpec {
@@ -250,6 +275,65 @@ describe("case observations", () => {
     foreignBench.alias = "dispatch 7";
     expect(() => collectCpuCaseObservations(foreign)).toThrow(/TN_CPU_BENCH_UNEXPECTED_CASE/);
   });
+
+  it("rejects a duplicate owned case instead of silently overwriting it", () => {
+    const duplicated = rawResult();
+    const files = duplicated.files as Record<string, unknown>[];
+    const benchmarks = (files[0] as Record<string, unknown>).benchmarks as Record<
+      string,
+      unknown
+    >[];
+    benchmarks.push(JSON.parse(JSON.stringify(benchmarks[0])) as Record<string, unknown>);
+    expect(() => collectCpuCaseObservations(duplicated)).toThrow(/TN_CPU_BENCH_UNEXPECTED_CASE/);
+  });
+
+  it("rejects extra runs, including a later run that recorded an error", () => {
+    const partial = rawResult();
+    const files = partial.files as Record<string, unknown>[];
+    const bench = (files[0]?.benchmarks as Record<string, unknown>[])[0];
+    if (bench === undefined) throw new Error("fixture is missing its first benchmark");
+    (bench.runs as unknown[]).push({ stats: { avg: 1, max: 2, min: 0, samples: [0] } });
+    expect(() => collectCpuCaseObservations(partial)).toThrow(/TN_CPU_BENCH_CASE_ERROR/);
+
+    const laterError = rawResult();
+    const errorFiles = laterError.files as Record<string, unknown>[];
+    const errorBench = (errorFiles[0]?.benchmarks as Record<string, unknown>[])[0];
+    if (errorBench === undefined) throw new Error("fixture is missing its first benchmark");
+    errorBench.runs = [
+      { stats: { avg: 1, max: 2, min: 0, samples: [0] } },
+      { error: "boom", stats: { avg: 1, max: 2, min: 0, samples: [0] } },
+    ];
+    expect(() => collectCpuCaseObservations(laterError)).toThrow(/TN_CPU_BENCH_CASE_ERROR/);
+  });
+
+  it("rejects a non-finite sample, a negative stat or inconsistent stats", () => {
+    const badSample = rawResult();
+    const sampleFiles = badSample.files as Record<string, unknown>[];
+    const sampleBench = (sampleFiles[0]?.benchmarks as Record<string, unknown>[])[0];
+    if (sampleBench === undefined) throw new Error("fixture is missing its first benchmark");
+    const sampleRun = (sampleBench.runs as Record<string, unknown>[])[0];
+    if (sampleRun === undefined) throw new Error("fixture is missing its first run");
+    (sampleRun.stats as Record<string, unknown>).samples = [1, Number.NaN, 3];
+    expect(() => collectCpuCaseObservations(badSample)).toThrow(/TN_CPU_BENCH_CASE_ERROR/);
+
+    const negative = rawResult();
+    const negativeFiles = negative.files as Record<string, unknown>[];
+    const negativeBench = (negativeFiles[0]?.benchmarks as Record<string, unknown>[])[0];
+    if (negativeBench === undefined) throw new Error("fixture is missing its first benchmark");
+    const negativeRun = (negativeBench.runs as Record<string, unknown>[])[0];
+    if (negativeRun === undefined) throw new Error("fixture is missing its first run");
+    (negativeRun.stats as Record<string, unknown>).min = -1;
+    expect(() => collectCpuCaseObservations(negative)).toThrow(/TN_CPU_BENCH_CASE_ERROR/);
+
+    const inconsistent = rawResult();
+    const incFiles = inconsistent.files as Record<string, unknown>[];
+    const incBench = (incFiles[0]?.benchmarks as Record<string, unknown>[])[0];
+    if (incBench === undefined) throw new Error("fixture is missing its first benchmark");
+    const incRun = (incBench.runs as Record<string, unknown>[])[0];
+    if (incRun === undefined) throw new Error("fixture is missing its first run");
+    (incRun.stats as Record<string, unknown>).avg = 1000;
+    expect(() => collectCpuCaseObservations(inconsistent)).toThrow(/TN_CPU_BENCH_CASE_ERROR/);
+  });
 });
 
 async function writeCheckout(): Promise<string> {
@@ -319,6 +403,45 @@ describe("source identity", () => {
     });
     expect(() => assertSourceUnchanged(before, after)).toThrow(/TN_CPU_BENCH_SOURCE_CHANGED/);
   });
+
+  it("rejects a measured module that escapes the selected root through a symlink", async () => {
+    const root = await writeCheckout();
+    const outside = await tempDir("tn-cpu-report-outside-");
+    const outsideLoop = path.join(outside, "loop.ts");
+    await writeFile(outsideLoop, "export const loop = 1;\n");
+    const link = path.join(root, "packages/core/src/loop.ts");
+    await rm(link, { force: true });
+    await symlink(outsideLoop, link);
+    await expect(
+      collectCpuSourceIdentity({ env: {}, nodeExecutable: process.execPath, root }),
+    ).rejects.toThrow(/TN_CPU_BENCH_TAMPERED_PATH/);
+  });
+
+  it("detects a symlink retarget that keeps identical bytes", async () => {
+    const root = await writeCheckout();
+    const sourceDirectory = path.join(root, "packages/core/src");
+    const bytes = "export const loop = 1;\n";
+    await writeFile(path.join(sourceDirectory, "loop-a.ts"), bytes);
+    await writeFile(path.join(sourceDirectory, "loop-b.ts"), bytes);
+    const link = path.join(sourceDirectory, "loop.ts");
+    await rm(link, { force: true });
+    await symlink("loop-a.ts", link);
+    const before = await collectCpuSourceIdentity({
+      env: {},
+      nodeExecutable: process.execPath,
+      root,
+    });
+    await rm(link, { force: true });
+    await symlink("loop-b.ts", link);
+    const after = await collectCpuSourceIdentity({
+      env: {},
+      nodeExecutable: process.execPath,
+      root,
+    });
+    expect(before.modules.loop.sha256).toBe(after.modules.loop.sha256);
+    expect(before.modules.loop.path).not.toBe(after.modules.loop.path);
+    expect(() => assertSourceUnchanged(before, after)).toThrow(/TN_CPU_BENCH_SOURCE_CHANGED/);
+  });
 });
 
 describe("worker identity", () => {
@@ -343,6 +466,23 @@ describe("effective tuning", () => {
     expect(tuning.blocks).toBe(8);
     expect(tuning.blockTime).toBe(0.05);
     expect(tuning.minSamples).toBeNull();
+  });
+
+  it("throws on a present but invalid tuning number instead of nulling it", () => {
+    const base = {
+      benchDir: "/tool/benches",
+      blocks: 8,
+      flags: ["run", "--force"],
+      resultsDir: "labs/results",
+    } as const;
+    for (const env of [
+      { TN_CPU_BENCH_BLOCK_TIME: "abc" },
+      { TN_CPU_BENCH_BLOCK_TIME: "-1" },
+      { TN_CPU_BENCH_MIN_SAMPLES: "2.5" },
+      { TN_CPU_BENCH_MIN_SAMPLES: "0" },
+    ]) {
+      expect(() => collectCpuEffectiveTuning({ ...base, env })).toThrow(/TN_CPU_BENCH_BAD_TUNING/);
+    }
   });
 });
 
@@ -371,7 +511,7 @@ async function diskRun(): Promise<IDiskRun> {
   const runDirectory = await tempDir("tn-cpu-report-run-");
   const resultFile = path.join(runDirectory, "labs/results/run.json");
   await mkdir(path.dirname(resultFile), { recursive: true });
-  await writeFile(resultFile, JSON.stringify({ files: [] }));
+  await writeFile(resultFile, JSON.stringify(rawLabsResult()));
 
   const source = await collectCpuSourceIdentity({
     env: {},
@@ -443,6 +583,32 @@ describe("completed manifest on disk", () => {
     );
     await expect(verifyCpuCaptureEvidence(tampered, runDirectory)).rejects.toThrow(
       /TN_CPU_BENCH_TAMPERED_PATH/,
+    );
+  });
+
+  it("rejects a manifest whose cases disagree with the hashed raw result", async () => {
+    const { manifest: written, runDirectory } = await diskRun();
+    const tampered = validateCpuCaptureManifest(
+      rebuild(written, (clone) => {
+        ((clone.cases as Record<string, unknown>[])[0] as Record<string, unknown>).avgNs = 150;
+      }),
+    );
+    await expect(verifyCpuCaptureEvidence(tampered, runDirectory)).rejects.toThrow(
+      /TN_CPU_BENCH_STALE_EVIDENCE/,
+    );
+  });
+
+  it("rejects a crafted raw result with a matching hash but too few cases", async () => {
+    const { manifest: written, resultFile, runDirectory } = await diskRun();
+    await writeFile(resultFile, JSON.stringify(rawLabsResult(expectedCases().slice(0, 5))));
+    const matchingHash = await sha256File(resultFile);
+    const matching = validateCpuCaptureManifest(
+      rebuild(written, (clone) => {
+        (clone.result as Record<string, unknown>).sha256 = matchingHash;
+      }),
+    );
+    await expect(verifyCpuCaptureEvidence(matching, runDirectory)).rejects.toThrow(
+      /TN_CPU_BENCH_MISSING_CASE/,
     );
   });
 });
@@ -529,6 +695,63 @@ describe("compatibility", () => {
     expect(() =>
       assertCompatibleCpuCaptures(base, manifest({ ...otherRun, tuningBlocks: 4 })),
     ).toThrow(/TN_CPU_BENCH_INCOMPARABLE/);
+  });
+
+  it("accepts distinct runs that reuse a run-relative result filename", () => {
+    const first = manifest({ commit: "a".repeat(40) });
+    const other = manifest({
+      commit: "b".repeat(40),
+      modules: { loop: "L", state: "S", zustand: "Z" },
+      resultFile: "labs/results/run.json",
+      resultSha: "q",
+      runId: "other",
+    });
+    expect(first.result.file).toBe(other.result.file);
+    const compatibility = assertCompatibleCpuCaptures(first, other);
+    expect(compatibility.mode).toBe("comparison");
+  });
+
+  it("rejects the same run or raw artifact even under a named control", () => {
+    const first = manifest();
+    const sameArtifact = validateCpuCaptureManifest(
+      rebuild(first, (clone) => {
+        const modules = (clone.source as Record<string, unknown>).modules as Record<
+          string,
+          Record<string, unknown>
+        >;
+        (modules.loop as Record<string, unknown>).sha256 = hex("L");
+      }),
+    );
+    expect(() => assertCompatibleCpuCaptures(first, sameArtifact, { control: "control" })).toThrow(
+      /TN_CPU_BENCH_SELF_COMPARISON/,
+    );
+  });
+
+  it("permits same-commit changed subjects when a dirty checkout is reported", () => {
+    const first = manifest({ commit: "a".repeat(40), dirty: true });
+    const other = manifest({
+      commit: "a".repeat(40),
+      dirty: true,
+      modules: { loop: "L", state: "S", zustand: "Z" },
+      resultFile: "labs/results/other.json",
+      resultSha: "q",
+      runId: "other",
+    });
+    const compatibility = assertCompatibleCpuCaptures(first, other);
+    expect(compatibility.mode).toBe("comparison");
+    expect(compatibility.changedModules).toEqual(["loop", "state", "zustand"]);
+  });
+
+  it("rejects same-commit changed subjects across two clean captures", () => {
+    const first = manifest({ commit: "a".repeat(40) });
+    const other = manifest({
+      commit: "a".repeat(40),
+      modules: { loop: "L", state: "S", zustand: "Z" },
+      resultFile: "labs/results/other.json",
+      resultSha: "q",
+      runId: "other",
+    });
+    expect(() => assertCompatibleCpuCaptures(first, other)).toThrow(/TN_CPU_BENCH_STALE_EVIDENCE/);
   });
 });
 
