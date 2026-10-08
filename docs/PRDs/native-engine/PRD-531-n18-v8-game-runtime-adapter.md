@@ -95,6 +95,34 @@ asserts movement and the native/V8 profile; verified 2026-10-06 on the desktop t
 (box moved, profile native/V8), the earlier V8 and JS-free player scenarios still pass, and the
 JS-free player still inspects JS-free. Red control: the demo's move speed zeroed, the scenario fails. The unchanged minimal-template journey box stays open.
 
+Slice 4 and slice 5, second part (2026-10-08, lane `ne-531`): the minimal template's own code now
+runs on the V8 player up to its post chain and through it. Gaps closed, each with a red-green test:
+`Color(hex)`/`Color.set`, material parameter objects (an unbound key refuses by name), `light.shadow`
+as the light's shadow object, `RoundedBoxGeometry` (fixture `geometry-rounded-box`, bit-exact),
+AnimationAction/AnimationMixer members and mixer events, texture `anisotropy`/`generateMipmaps`/
+`source`, `normalMap`/`normalScale`, write-only `needsUpdate`, the `Material` base,
+`getVertexPosition`, renderer settings (`toneMapping`, `toneMappingExposure`, `outputColorSpace`,
+`shadowMap`), the player's adapter identity and `renderer.info`. Slice 4: GTAO, denoise, SMAA and
+bloom are built live in C++ (`gtaoEffect`, `denoiseEffect`, `smaaEffect`, `bloom`); each live effect
+equals three's exported node byte for byte (`native_engine_post_{GTAONode,DenoiseNode,SMAANode}`),
+and five render fixtures match headed-WebGPU goldens (`native_engine_render_post_addons`; the two
+with denoise allow one level, deltaE 0.04, for the engine's existing DenoiseNode WGSL port). On V8,
+`pass`, `mrt`, the four addons and `RenderPipeline` drive them. The native package carries models
+and JPEGs, and `bundle-native-engine.mjs --assets <project>` cooks them beside the bundle.
+
+Measured on the desktop target with a scratch bundle that stubs only the imports named under
+`## Blocked on`: the journey passes movement, diagnostics and renderChain (tier high, hardware
+adapter); its performance assertions have no samples.
+
+## Blocked on
+
+- Owner decision: the 17 imports minimal references but never runs at its tiers (ssgi, ssr,
+  godrays, sharpen, fxaa, TempNode, QuadMesh, RenderTarget, RendererUtils, NodeMaterial, and core's
+  MeshBVH, storage, velocity, context, positionPrevious, normalLocal, tangentLocal) — port each
+  natively before the bundler accepts the game, or bind them as named refusals at call time.
+- Owner decision: the performance series' frame clock on the V8 player. Its clock is fixed-tick, so
+  a frame time read from it is always 16.67 ms; the series stays off until a real clock is chosen.
+
 ## Decisions
 
 CI repair (2026-10-07): run 37554436342 compiled the Windows adapter with C++20 but without
