@@ -7489,6 +7489,11 @@
         "source": "three"
       },
       {
+        "symbol": "AdditiveBlending",
+        "kind": "constant",
+        "source": "three"
+      },
+      {
         "symbol": "AgXToneMapping",
         "kind": "constant",
         "source": "three"
@@ -7734,7 +7739,17 @@
         "source": "three"
       },
       {
+        "symbol": "NoBlending",
+        "kind": "constant",
+        "source": "three"
+      },
+      {
         "symbol": "NoColorSpace",
+        "kind": "constant",
+        "source": "three"
+      },
+      {
+        "symbol": "NormalBlending",
         "kind": "constant",
         "source": "three"
       },

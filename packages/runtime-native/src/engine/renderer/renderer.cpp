@@ -1640,7 +1640,9 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
         if (!item.positions || (lit && !item.normals) || !item.material) continue;
         // material.side: FrontSide culls back faces, BackSide front faces, DoubleSide none.
         const WGPUCullMode cull = item.side == 2 ? WGPUCullMode_None : item.side == 1 ? WGPUCullMode_Front : WGPUCullMode_Back;
-        PipelineTarget target{WGPUTextureFormat_RGBA16Float, WGPUTextureFormat_Depth32Float, cull, item.transparent,
+        // three blends unless NoBlending, or NormalBlending on a material that is not transparent.
+        const uint8_t blend = item.blending == 0 || (item.blending == 1 && !item.transparent) ? 0 : item.blending;
+        PipelineTarget target{WGPUTextureFormat_RGBA16Float, WGPUTextureFormat_Depth32Float, cull, blend,
                               item.depthWrite};
         target.layout = program.pipelineLayout;
         if (item.background) target.depthCompare = WGPUCompareFunction_Always;
@@ -1663,7 +1665,8 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
         put(frameUniforms_, f, fs[kDiffuse], std::array<double, 4>{m.color[0], m.color[1], m.color[2], m.opacity});
         put(frameUniforms_, f, fs[kViewMatrix], view);  // normalWorld is derived in the fragment, as three does
         put(frameUniforms_, f, fs[kAlphaTest], std::array<double, 1>{m.alphaTest});
-        put(frameUniforms_, f, fs[kOpaque], std::array<double, 1>{item.transparent ? 0.0 : 1.0});
+        // NodeMaterial forces alpha to 1 only on an opaque NormalBlending material.
+        put(frameUniforms_, f, fs[kOpaque], std::array<double, 1>{!item.transparent && item.blending == 1 ? 1.0 : 0.0});
         put(frameUniforms_, f, fs[kRoughness], std::array<double, 1>{m.roughness});
         put(frameUniforms_, f, fs[kMetalness], std::array<double, 1>{m.metalness});
         put(frameUniforms_, f, fs[kEmissive],

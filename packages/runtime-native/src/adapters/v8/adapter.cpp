@@ -930,6 +930,9 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
         {"BackSide", static_cast<double>(tn::engine::Side::Back)},
         {"DoubleSide", static_cast<double>(tn::engine::Side::Double)},
         {"StaticDrawUsage", 35044}, {"DynamicDrawUsage", 35048},
+        {"NoBlending", static_cast<double>(tn::engine::Blending::None)},
+        {"NormalBlending", static_cast<double>(tn::engine::Blending::Normal)},
+        {"AdditiveBlending", static_cast<double>(tn::engine::Blending::Additive)},
     }) target->Set(context, str(isolate_, name), v8::Number::New(isolate_, value)).Check();
     const auto animation = [&](int operation) {
         auto data = v8::Array::New(isolate_, 2);

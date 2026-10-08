@@ -20,7 +20,8 @@ const constants = ["ACESFilmicToneMapping", "AgXToneMapping", "NeutralToneMappin
   "NoColorSpace", "LinearSRGBColorSpace", "SRGBColorSpace", "RepeatWrapping", "ClampToEdgeWrapping",
   "NearestFilter", "LinearFilter", "LinearMipmapLinearFilter", "UnsignedByteType", "FloatType",
   "RGBAFormat", "EquirectangularReflectionMapping", "NoToneMapping", "LoopOnce", "LoopRepeat", "AttachedBindMode",
-  "FrontSide", "BackSide", "DoubleSide", "StaticDrawUsage", "DynamicDrawUsage"];
+  "FrontSide", "BackSide", "DoubleSide", "StaticDrawUsage", "DynamicDrawUsage",
+  "NoBlending", "NormalBlending", "AdditiveBlending"];
 const names = ["PerspectiveCamera", "Camera", "Object3D", "Mesh", "PlaneGeometry", "MeshStandardMaterial",
   "SkinnedMesh", "CylinderGeometry", "BufferGeometry", "Float32BufferAttribute", "BufferAttribute",
   "DataTexture", "Texture", "Color", "PropertyBinding", "getConsoleFunction", "setConsoleFunction", "MathUtils", "Scene", "Raycaster", "Vector3", "LOD", "MeshBasicMaterial", "LatheGeometry", "Vector2", "CatmullRomCurve3", "TubeGeometry", "AnimationClip",
@@ -67,6 +68,8 @@ const gripClip = new THREE.AnimationClip("grip", sit.duration, gripTracks);
 check(gripClip.duration === 2 && gripClip.tracks.length === 2 && gripClip.tracks[0].name === "hip.position" &&
   gripClip.tracks[1].ValueTypeName === "quaternion" && Array.from(gripClip.tracks[1].values).join() === Array.from(new Float32Array([0, 0.6, 0, 0.8, 0, 0.6, 0, 0.8])).join() &&
   gripClip.tracks[0] instanceof THREE.VectorKeyframeTrack, "authored clip from cloned and new tracks");
+const glow = new THREE.MeshBasicMaterial(); glow.blending = THREE.AdditiveBlending;
+check(glow.blending === THREE.AdditiveBlending, "additive blending");
 const sided = new THREE.MeshBasicMaterial(); sided.side = THREE.DoubleSide;
 check(new THREE.Mesh(lathe, sided).material.side === THREE.DoubleSide, "double-sided material");
 check(new THREE.Float32BufferAttribute([0.1, 0.2], 2) instanceof THREE.BufferAttribute, "attribute inheritance");

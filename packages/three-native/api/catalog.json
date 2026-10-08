@@ -61,8 +61,7 @@
       "kind": "constant",
       "source": "three",
       "status": {
-        "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "kind": "supported"
       },
       "type": "number",
       "value": "2"
@@ -9992,8 +9991,7 @@
           "mutable": true,
           "lifetime": "owned",
           "status": {
-            "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "kind": "supported"
           }
         },
         {
@@ -10835,6 +10833,15 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "blending",
+          "type": "Blending",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": []
@@ -10906,8 +10913,7 @@
           "mutable": true,
           "lifetime": "owned",
           "status": {
-            "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "kind": "supported"
           }
         },
         {
@@ -11927,6 +11933,15 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "blending",
+          "type": "Blending",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": []
@@ -12140,8 +12155,7 @@
       "kind": "constant",
       "source": "three",
       "status": {
-        "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "kind": "supported"
       },
       "type": "number",
       "value": "0"
@@ -12259,8 +12273,7 @@
       "kind": "constant",
       "source": "three",
       "status": {
-        "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "kind": "supported"
       },
       "type": "number",
       "value": "1"
@@ -17984,6 +17997,15 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "blending",
+          "type": "Blending",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": []
@@ -18199,6 +18221,15 @@
         {
           "name": "fog",
           "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "blending",
+          "type": "Blending",
           "mutable": true,
           "lifetime": "owned",
           "status": {
@@ -24333,6 +24364,15 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "blending",
+          "type": "Blending",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": []
@@ -24503,6 +24543,15 @@
         {
           "name": "fog",
           "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "blending",
+          "type": "Blending",
           "mutable": true,
           "lifetime": "owned",
           "status": {

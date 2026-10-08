@@ -18,7 +18,7 @@ export declare const AddOperation: 2;
 /** Catalog partial (native-not-implemented): three/AdditiveAnimationBlendMode. */
 export declare const AdditiveAnimationBlendMode: 2501;
 
-/** Catalog partial (native-not-implemented): three/AdditiveBlending. */
+/** Catalog supported: three/AdditiveBlending. */
 export declare const AdditiveBlending: 2;
 
 /** Catalog supported: three/AgXToneMapping. */
@@ -1312,6 +1312,7 @@ visible: boolean;
 color: Color;
 map: Texture | null;
 fog: boolean;
+blending: Blending;
 }
 
 /** Catalog supported: three/MeshStandardMaterial. */
@@ -1421,6 +1422,7 @@ emissive: Color;
 envMap: Texture | null;
 map: Texture | null;
 fog: boolean;
+blending: Blending;
 }
 
 /** Catalog partial (native-not-implemented): three/MinEquation. */
@@ -1480,7 +1482,7 @@ export declare const NeverDepth: 0;
 /** Catalog partial (native-not-implemented): three/NeverStencilFunc. */
 export declare const NeverStencilFunc: 512;
 
-/** Catalog partial (native-not-implemented): three/NoBlending. */
+/** Catalog supported: three/NoBlending. */
 export declare const NoBlending: 0;
 
 /** Catalog supported: three/NoColorSpace. */
@@ -1505,7 +1507,7 @@ constructor();
 /** Catalog partial (native-not-implemented): three/NormalAnimationBlendMode. */
 export declare const NormalAnimationBlendMode: 2500;
 
-/** Catalog partial (native-not-implemented): three/NormalBlending. */
+/** Catalog supported: three/NormalBlending. */
 export declare const NormalBlending: 1;
 
 /** Catalog partial (native-not-implemented): three/NormalGAPacking. */
@@ -2224,6 +2226,7 @@ visible: boolean;
 color: Color;
 map: Texture | null;
 fog: boolean;
+blending: Blending;
 }
 
 /** Catalog supported: three/webgpu/SpriteNodeMaterial. */
@@ -2252,6 +2255,7 @@ visible: boolean;
 color: Color;
 map: Texture | null;
 fog: boolean;
+blending: Blending;
 }
 
 /** Catalog partial (native-not-implemented): three/SrcAlphaFactor. */
@@ -2888,6 +2892,7 @@ color: Color;
 emissive: Color;
 map: Texture | null;
 fog: boolean;
+blending: Blending;
 }
 
 /** Catalog supported: three/MeshPhongMaterial. */
@@ -2911,6 +2916,7 @@ emissive: Color;
 specular: Color;
 map: Texture | null;
 fog: boolean;
+blending: Blending;
 }
 
 /** Catalog supported: three/MeshPhysicalMaterial. */
