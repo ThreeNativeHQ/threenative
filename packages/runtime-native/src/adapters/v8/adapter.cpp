@@ -28,7 +28,7 @@ struct Adapter::Wrapper {
     tn_handle_t handle;
     v8::Global<v8::Object> object;
     std::set<std::string> callbacks;  // JS callbacks set on the object, by name
-    bool held = false;                // strong: the engine may still call one of them
+    bool held = false;                // strong: another engine object references this one
 };
 
 struct Adapter::PropertyWrapper {
@@ -343,9 +343,11 @@ Adapter::Adapter(v8::Isolate* isolate, tn_context_t* context) : tsl_(std::make_u
     v8::Local<v8::ObjectTemplate> instance = v8::ObjectTemplate::New(isolate_);
     instance->SetInternalFieldCount(kWrapperFields);
     instanceTemplate_.Reset(isolate_, instance);
+    isolate_->AddGCPrologueCallback(promote, this);
 }
 
 Adapter::~Adapter() {
+    isolate_->RemoveGCPrologueCallback(promote, this);
     for (auto* wrapper : propertyWrappers_) {
         wrapper->object.Reset();
         delete wrapper;
@@ -372,7 +374,6 @@ void Adapter::forget(uint64_t k) {
         tn_set_callback(it->second->handle, name.c_str(), nullptr, nullptr, nullptr, &diagnostic);
         tn_diagnostic_release(&diagnostic);
     }
-    withCallbacks_.erase(it->second);
     tn_object_release(it->second->handle, &diagnostic);
     tn_diagnostic_release(&diagnostic);
     delete it->second;
@@ -435,14 +436,20 @@ void Adapter::holdIfCallback(tn_handle_t handle) {
     if (it != wrappers_.end() && !it->second->callbacks.empty()) strong(it->second);
 }
 
+// ponytail: both passes visit every wrapper; keep a dirty set if wrapper counts make this show in a profile.
 void Adapter::collect() {
-    for (Wrapper* w : withCallbacks_) {
-        tn_value_t parent{};
-        tn_diagnostic_t diagnostic{nullptr, 0};
-        const bool attached = tn_get(w->handle, "parent", &parent, &diagnostic) == TN_OK && parent.kind == TN_VALUE_HANDLE;
-        tn_diagnostic_release(&diagnostic);
-        if (attached) strong(w);
+    for (auto& [k, w] : wrappers_) {
+        if (tn::abi::engineReferences(w->handle) > 0) strong(w);
         else if (w->held) weak(w);
+    }
+}
+
+void Adapter::promote(v8::Isolate*, v8::GCType, v8::GCCallbackFlags, void* data) {
+    // Only up: a wrapper the engine took since the last safe point survives this collection. Down
+    // waits for collect(), which also ends holdIfCallback's hold.
+    auto* a = static_cast<Adapter*>(data);
+    for (auto& [k, w] : a->wrappers_) {
+        if (!w->held && tn::abi::engineReferences(w->handle) > 0) a->strong(w);
     }
 }
 
@@ -630,7 +637,6 @@ void Adapter::setCallback(const v8::FunctionCallbackInfo<v8::Value>& info) {
     if (value->IsNullOrUndefined()) {
         info.This()->DeletePrivate(ctx, slot).Check();
         w->callbacks.erase(d->name);
-        if (w->callbacks.empty()) a.withCallbacks_.erase(w);
         if (tn_set_callback(h, d->name.c_str(), nullptr, nullptr, nullptr, &diagnostic) != TN_OK) throwStatus(isolate, diagnostic);
         return;
     }
@@ -648,8 +654,7 @@ void Adapter::setCallback(const v8::FunctionCallbackInfo<v8::Value>& info) {
     // The function lives on the wrapper: wrapper -> closure is a JS edge the collector sees.
     info.This()->SetPrivate(ctx, slot, value).Check();
     w->callbacks.insert(d->name);
-    a.withCallbacks_.insert(w);
-    a.strong(w);  // until the next safe point finds the object attached or not
+    a.strong(w);  // until the next safe point finds the object referenced or not
 }
 
 void Adapter::animationCall(const v8::FunctionCallbackInfo<v8::Value>& info) {

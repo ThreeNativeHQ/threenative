@@ -13,7 +13,7 @@ if(TARGET v8::v8 AND MYSTRAL_USE_V8 AND NOT MYSTRAL_PLATFORM STREQUAL "ios")
     target_link_libraries(tn-native-engine-v8-test PRIVATE tn_adapter_v8)
     target_include_directories(tn-native-engine-v8-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine)
     set_target_properties(tn-native-engine-v8-test PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
-    foreach(case handles fast_paths unsupported gc_release runtime_churn crossing_bench scene raycaster_lod catalog_coverage callback_cycle tsl_api node_materials skeletal)
+    foreach(case handles fast_paths unsupported gc_release runtime_churn crossing_bench scene raycaster_lod catalog_coverage callback_cycle wrapper_lifetime tsl_api node_materials skeletal)
         add_test(NAME native_engine_v8_${case} COMMAND tn-native-engine-v8-test ${case})
         set_tests_properties(native_engine_v8_${case} PROPERTIES LABELS "native-engine")
     endforeach()
@@ -97,6 +97,10 @@ if(TARGET v8::v8 AND MYSTRAL_USE_V8 AND NOT MYSTRAL_PLATFORM STREQUAL "ios")
             COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-imports.mjs
                 $<TARGET_FILE:tn-native-engine-player-v8> ${TN_PLAYER_IMPORTS_MODE})
         set_tests_properties(native_engine_player_imports PROPERTIES LABELS "native-engine")
+        add_test(NAME native_engine_player_gc
+            COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-gc.mjs
+                $<TARGET_FILE:tn-native-engine-player-v8>)
+        set_tests_properties(native_engine_player_gc PROPERTIES LABELS "native-engine")
     endif()
 
     # Both CP1 arms on a small L4: 64 cubes + the ground + the output pass, 66 draws in each.

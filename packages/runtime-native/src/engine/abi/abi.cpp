@@ -13,6 +13,7 @@
 #include <cstring>
 #include <atomic>
 #include <deque>
+#include <map>
 #include <memory>
 #include <new>
 #include <string_view>
@@ -45,6 +46,27 @@ struct tn_context : tn::binding::Store {
     std::unordered_map<const void*, std::vector<std::pair<std::string, tn_handle_t>>> identities_;
     std::unordered_map<const void*, tn_handle_t> primary_;  // an object's own handle, by address
     std::unordered_map<const void*, std::shared_ptr<void>> owners_;  // an object pointer -> its record
+    // The shared_ptr copies the context itself holds (handle slots and owners_), by control block: an
+    // object's use count minus these is what other engine objects hold (engineReferences).
+    std::map<std::weak_ptr<void>, uint32_t, std::owner_less<>> ownCopies_;
+    void ownCopy(const std::shared_ptr<void>& ptr, int delta) {
+        if (!ptr) return;
+        const auto it = ownCopies_.try_emplace(ptr, 0).first;
+        it->second += delta;
+        if (it->second == 0) ownCopies_.erase(it);
+    }
+    void setOwner(const void* address, std::shared_ptr<void> ptr) {
+        auto& owner = owners_[address];
+        ownCopy(owner, -1);
+        ownCopy(ptr, +1);
+        owner = std::move(ptr);
+    }
+    void dropOwner(const void* address) {
+        const auto it = owners_.find(address);
+        if (it == owners_.end()) return;
+        ownCopy(it->second, -1);
+        owners_.erase(it);
+    }
     std::string scratchText;                  // a returned string, valid until the next call
     std::deque<std::vector<tn_value_t>> scratchValues;
     std::deque<std::string> scratchStrings;
@@ -145,7 +167,8 @@ struct tn_context : tn::binding::Store {
         if (type == 0) return false;
         const tn::engine::Handle h = objects.allocate(type);
         if (values.size() <= h.index) values.resize(h.index + 1);
-        owners_[ptr.get()] = ptr;
+        setOwner(ptr.get(), ptr);
+        ownCopy(ptr, +1);
         values[h.index] = tn::binding::Object{std::move(cls), std::move(ptr)};
         out = tn_handle_t{h.type, h.context, h.index, h.generation};
         if (primary) primary_[values[h.index].ptr.get()] = out;
@@ -303,7 +326,8 @@ tn_status_t tn_object_release(tn_handle_t object, tn_diagnostic_t* diagnostic) {
                 tn::binding::Object& slot = context->values[object.index];
                 // An alias of one of its members still holds the object, so the record outlives the
                 // handle that named it; the aliasing shared_ptr is what keeps it alive.
-                if (slot.ptr) context->owners_.erase(slot.ptr.get());
+                if (slot.ptr) context->dropOwner(slot.ptr.get());
+                context->ownCopy(slot.ptr, -1);
                 slot = tn::binding::Object{};
             }
             return ok(diagnostic);
@@ -463,6 +487,15 @@ namespace tn::abi {
 tn::binding::Object* objectOf(tn_handle_t handle) {
     tn_context* context = contextFor(handle.context);
     return context ? context->object(handle) : nullptr;
+}
+
+uint32_t engineReferences(tn_handle_t handle) {
+    tn_context* context = contextFor(handle.context);
+    tn::binding::Object* object = context ? context->object(handle) : nullptr;
+    if (!object) return 0;
+    const auto own = context->ownCopies_.find(object->ptr);
+    const long others = object->ptr.use_count() - (own == context->ownCopies_.end() ? 0 : own->second);
+    return others > 0 ? static_cast<uint32_t>(others) : 0;
 }
 
 tn_handle_t shareObject(tn_context_t* context, std::string cls, std::shared_ptr<void> object) {
