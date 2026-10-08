@@ -628,6 +628,14 @@ void Tsl::install(v8::Local<v8::Context> context, v8::Local<v8::Object> target) 
     module->Set(context, str(isolate_, "cameraViewMatrix"), wrap(g::uniform("viewMatrix", Type::mat(4, 4)))).Check();
     module->Set(context, str(isolate_, "instanceIndex"), wrap(g::instanceIndex())).Check();
     module->Set(context, str(isolate_, "screenUV"), wrap(g::uv())).Check();
+    // three's ScreenNode coordinate (the fragment's pixel position) and its geometry attributes.
+    module->Set(context, str(isolate_, "screenCoordinate"), wrap(g::swizzle(g::builtin("position"), "xy"))).Check();
+    module->Set(context, str(isolate_, "positionGeometry"), wrap(g::attribute("position", Type::vec(3)))).Check();
+    module->Set(context, str(isolate_, "normalGeometry"), wrap(g::attribute("normal", Type::vec(3)))).Check();
+    module->Set(context, str(isolate_, "tangentGeometry"), wrap(g::attribute("tangent", Type::vec(4)))).Check();
+    // positionViewDirection: normalize(-positionView), the standard programs' view-space varying.
+    module->Set(context, str(isolate_, "positionViewDirection"),
+                wrap(g::normalize(g::negate(g::varying("positionView", Type::vec(3)))))).Check();
     module->Set(context, str(isolate_, "materialColor"), wrap(g::uniform("diffuse", Type::vec(4)))).Check();
     module->Set(context, str(isolate_, "materialEmissive"), wrap(g::uniform("emissive", Type::vec(3)))).Check();
     module->Set(context, str(isolate_, "materialMetalness"), wrap(g::uniform("metalness", Type::f32()))).Check();

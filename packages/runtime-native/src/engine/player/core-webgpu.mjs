@@ -52,6 +52,8 @@ export class RenderPipeline {
   }
   dispose() { globalThis.tn.setPostGraph(null); }
 }
+// three's NodeUpdateType, the constants a node's update schedule names.
+export const NodeUpdateType = Object.freeze({ NONE: "none", FRAME: "frame", RENDER: "render", OBJECT: "object" });
 export const StorageBufferAttribute = unsupported;
 export const MeshLambertNodeMaterial = unsupported;
 export const MeshMatcapNodeMaterial = unsupported;

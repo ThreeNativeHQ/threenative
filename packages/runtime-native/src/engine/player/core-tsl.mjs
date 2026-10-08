@@ -7,7 +7,9 @@ export const {
   normalViewGeometry, instanceIndex, cameraViewMatrix, color, ivec2, nodeObject, reflect, textureLoad,
   convertToTexture, screenUV, materialColor, materialEmissive, materialMetalness, materialRoughness,
 } = globalThis.tsl;
-export const { oneMinus } = globalThis.tsl;
+export const {
+  oneMinus, screenCoordinate, positionGeometry, normalGeometry, tangentGeometry, positionViewDirection,
+} = globalThis.tsl;
 
 // MRT slots: the names a scene pass writes beside its colour. They mark an `mrt()` output only;
 // the native scene pass produces colour, depth and view normals, and nothing reads these as nodes.
