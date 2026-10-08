@@ -12,10 +12,14 @@ import path from "node:path";
 import { promisify } from "node:util";
 
 import { BenchError, type IRunReport, percentile } from "./report.js";
+import { assertEqualPresentedWork } from "./workloads.js";
 
 const execFileAsync = promisify(execFile);
 
-export const CP1_ARMS = ["current", "native-v8", "native-cpp"] as const;
+// `native` is the native engine arm of the four-workload comparison (PRD-533): the shipping-shape
+// game driver the workload has (V8 for the heterogeneous scene). `native-aot` is the same scene
+// as Perry-compiled game code, so native-cpp against native-aot is the binding overhead.
+export const CP1_ARMS = ["current", "native", "native-v8", "native-cpp", "native-aot"] as const;
 export type Cp1Arm = (typeof CP1_ARMS)[number];
 
 interface ISeries {
@@ -25,6 +29,10 @@ interface ISeries {
 
 export interface ICp1ArmResult {
   arm: Cp1Arm;
+  /** The game driver that ran: `native` is the V8 one here. */
+  driver: "legacy-host" | "v8" | "cpp" | "aot";
+  /** Cubes presented, as the arm reported them (not the count it was asked for). */
+  objects: number | undefined;
   triangles: number;
   /** GPU draw calls submitted. Lower in `current` when its projection batches the scene. */
   drawCalls: number;
@@ -84,6 +92,8 @@ function currentResult(report: IRunReport, objects: number): ICp1ArmResult {
     );
   return {
     arm: "current",
+    driver: "legacy-host",
+    objects: rung.objectCount,
     triangles: rung.triangles,
     drawCalls: rung.drawCalls,
     hotPathMs: series(rung.hotPathMs),
@@ -96,6 +106,7 @@ function currentResult(report: IRunReport, objects: number): ICp1ArmResult {
 
 interface IHostReport {
   arm: string;
+  presentedObjects?: number;
   hotPathMs: ISeries;
   frameMs: ISeries;
   crossingsPerFrame: ISeries;
@@ -107,10 +118,15 @@ interface IHostReport {
 
 async function nativeResult(
   repoRoot: string,
-  arm: "native-v8" | "native-cpp",
+  arm: "native" | "native-v8" | "native-cpp" | "native-aot",
   options: ICp1Options,
   scratch: string,
 ): Promise<ICp1ArmResult> {
+  if (arm === "native-aot")
+    throw new BenchError(
+      "TN_BENCH_ARM_UNAVAILABLE",
+      "native-aot: no Perry-compiled heterogeneous driver is built yet",
+    );
   const host = path.join(repoRoot, "packages/runtime-native/build/tn-linux/tn-native-engine-host");
   if (!existsSync(host))
     throw new BenchError(
@@ -132,7 +148,8 @@ async function nativeResult(
   else {
     const script = path.join(scratch, "l4-workload.js");
     await execFileAsync(
-      path.join(repoRoot, "node_modules/.bin/esbuild"),
+      // esbuild is a runtime-native dependency; the workspace root does not install it.
+      path.join(repoRoot, "packages/runtime-native/node_modules/.bin/esbuild"),
       [
         path.join(repoRoot, "examples/engine-load-test/native-engine/l4-workload.ts"),
         "--bundle",
@@ -152,13 +169,16 @@ async function nativeResult(
     maxBuffer: 8 * 1024 * 1024,
   });
   const report = JSON.parse(await readFile(file, "utf8")) as IHostReport;
-  if (report.arm !== arm)
+  const driver = arm === "native-cpp" ? "native-cpp" : "native-v8";
+  if (report.arm !== driver)
     throw new BenchError(
       "TN_BENCH_ARM_MISMATCH",
-      `asked the host for ${arm}, it reported ${report.arm}`,
+      `asked the host for ${driver}, it reported ${report.arm}`,
     );
   return {
     arm,
+    driver: arm === "native-cpp" ? "cpp" : "v8",
+    objects: report.presentedObjects,
     // The native engine does not batch yet: one draw per presented mesh.
     triangles: report.triangles,
     drawCalls: report.draws,
@@ -181,16 +201,13 @@ export async function runCp1(repoRoot: string, artifactRoot: string, options: IC
         : await nativeResult(repoRoot, arm, options, scratch),
     );
   }
-  // Fail closed on a different workload: every arm must submit the same triangles, three's
-  // renderer.info count (scene plus the output pass), however its draws are batched.
-  const [first] = results;
-  for (const result of results) {
-    if (first !== undefined && result.triangles !== first.triangles)
-      throw new BenchError(
-        "TN_BENCH_CP1_WORKLOAD_MISMATCH",
-        `${result.arm} submits ${result.triangles} triangles, ${first.arm} ${first.triangles}`,
-      );
-  }
+  // Fail closed on a different workload: every arm reports the cubes and triangles it presented
+  // (three's renderer.info count, scene plus the output pass, however the draws are batched).
+  assertEqualPresentedWork(
+    "heterogeneous",
+    results.map((r) => ({ arm: r.arm, presented: { objects: r.objects, triangles: r.triangles } })),
+  );
+  const overhead = bindingOverhead(results);
   const report = {
     workload: "heterogeneous",
     objects: options.objects,
@@ -198,21 +215,52 @@ export async function runCp1(repoRoot: string, artifactRoot: string, options: IC
     warmup: options.warmup,
     size: [options.width, options.height],
     arms: results,
+    ...(overhead === undefined ? {} : { bindingOverhead: overhead }),
   };
   const file = path.join(scratch, "cp1-report.json");
   await writeFile(file, `${JSON.stringify(report, null, 2)}\n`);
+  return { file, markdown: cp1Markdown(options, results, overhead) };
+}
+
+export interface IBindingOverhead {
+  /** native-aot minus native-cpp, per frame: what the compiled game's calls into the engine cost. */
+  hotPathP50Ms: number;
+  hotPathP95Ms: number;
+  ratioP50: number;
+}
+
+/** Defined only when both drivers of the same workload ran: the C++ driver is the zero-binding control. */
+export function bindingOverhead(results: readonly ICp1ArmResult[]): IBindingOverhead | undefined {
+  const cpp = results.find((r) => r.arm === "native-cpp");
+  const aot = results.find((r) => r.arm === "native-aot");
+  if (cpp === undefined || aot === undefined) return undefined;
+  return {
+    hotPathP50Ms: aot.hotPathMs.p50 - cpp.hotPathMs.p50,
+    hotPathP95Ms: aot.hotPathMs.p95 - cpp.hotPathMs.p95,
+    ratioP50: aot.hotPathMs.p50 / cpp.hotPathMs.p50,
+  };
+}
+
+function cp1Markdown(
+  options: ICp1Options,
+  results: readonly ICp1ArmResult[],
+  overhead: IBindingOverhead | undefined,
+): string {
   const rows = results.map(
     (r) =>
-      `| ${r.arm} | ${r.hotPathMs.p50.toFixed(2)} / ${r.hotPathMs.p95.toFixed(2)} | ${r.gpuMs?.p50.toFixed(3) ?? "n/a"} | ${r.frameMs.p50.toFixed(2)} | ${r.crossingsPerFrame?.p50 ?? "n/a"} | ${r.drawCalls} | ${r.triangles} |`,
+      `| ${r.arm} (${r.driver}) | ${r.objects} | ${r.hotPathMs.p50.toFixed(2)} / ${r.hotPathMs.p95.toFixed(2)} | ${r.gpuMs?.p50.toFixed(3) ?? "n/a"} | ${r.frameMs.p50.toFixed(2)} | ${r.crossingsPerFrame?.p50 ?? "n/a"} | ${r.drawCalls} | ${r.triangles} |`,
   );
-  return {
-    file,
-    markdown: [
-      `CP1 heterogeneous L4@${options.objects}, ${options.width}x${options.height}, ${options.frames} frames`,
-      "",
-      "| arm | hot path p50 / p95 ms | GPU p50 ms | frame p50 ms | crossings/frame | draws | triangles |",
-      "| --- | --- | --- | --- | --- | --- | --- |",
-      ...rows,
-    ].join("\n"),
-  };
+  return [
+    `CP1 heterogeneous L4@${options.objects}, ${options.width}x${options.height}, ${options.frames} frames`,
+    "",
+    "| arm | objects | hot path p50 / p95 ms | GPU p50 ms | frame p50 ms | crossings/frame | draws | triangles |",
+    "| --- | --- | --- | --- | --- | --- | --- | --- |",
+    ...rows,
+    ...(overhead === undefined
+      ? []
+      : [
+          "",
+          `binding overhead (native-aot - native-cpp), hot path: ${overhead.hotPathP50Ms.toFixed(3)} ms p50 (${overhead.ratioP50.toFixed(2)}x), ${overhead.hotPathP95Ms.toFixed(3)} ms p95`,
+        ]),
+  ].join("\n");
 }
