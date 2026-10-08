@@ -4,6 +4,7 @@ import {
   Box3,
   BufferAttribute,
   type BufferGeometry,
+  DataUtils,
   DoubleSide,
   EquirectangularReflectionMapping,
   type Group,
@@ -489,6 +490,35 @@ function surface(
   return material;
 }
 
+/**
+ * The photograph's sun disc (peak luminance ~72,559, 81° from the scene sun) gave the meadow 44% of
+ * its light from a second, unshadowed key light. The scene's own sun is the key; the image keeps only
+ * its sky, so every texel is capped at a luminance of 30.
+ */
+const SKY_LUMINANCE_CAP = 30;
+function clampSkySun(sky: Texture): void {
+  const image = sky.image as { data: Uint16Array | Float32Array; width: number; height: number };
+  const data = image.data;
+  const half = data instanceof Uint16Array;
+  const read = (i: number) =>
+    half ? DataUtils.fromHalfFloat(data[i] as number) : (data[i] as number);
+  const write = (i: number, v: number) => {
+    data[i] = half ? DataUtils.toHalfFloat(v) : v;
+  };
+  const channels = data.length / (image.width * image.height);
+  for (let i = 0; i < data.length; i += channels) {
+    const r = read(i);
+    const g = read(i + 1);
+    const b = read(i + 2);
+    const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    if (luminance <= SKY_LUMINANCE_CAP) continue;
+    const scale = SKY_LUMINANCE_CAP / luminance;
+    write(i, r * scale);
+    write(i + 1, g * scale);
+    write(i + 2, b * scale);
+  }
+}
+
 let skyLight: Promise<Texture | undefined> | undefined;
 /** The CC0 sky photograph, loaded once; absent locally, vegetation keeps the fill alone. */
 export function loadSkyLight(assets: IAssetLoader): Promise<Texture | undefined> {
@@ -498,6 +528,7 @@ export function loadSkyLight(assets: IAssetLoader): Promise<Texture | undefined>
       if (!url) return undefined;
       const sky = await new HDRLoader().loadAsync(url);
       sky.mapping = EquirectangularReflectionMapping;
+      clampSkySun(sky);
       return sky;
     })
     .catch(() => undefined);
