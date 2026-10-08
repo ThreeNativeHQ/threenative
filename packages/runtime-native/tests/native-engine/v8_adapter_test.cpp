@@ -629,6 +629,22 @@ void tslApi() {
         if (vertex.find("attribute:world") != std::string::npos || vertex.find("output world =") == std::string::npos)
             std::fprintf(stderr, "TSL basic vertex:\n%s\n", vertex.c_str());
     } else CHECK(false);
+
+    // Two different nodes under one explicit varying name are refused, not silently merged.
+    v8::Local<v8::Value> clash;
+    CHECK(v8::Script::Compile(ctx, v8::String::NewFromUtf8Literal(rt.isolate, R"JS((() => {
+        const m = new MeshBasicNodeMaterial();
+        m.colorNode = tsl.vec4(tsl.varying(tsl.positionGeometry, 'dup').add(tsl.varying(tsl.positionGeometry.mul(2), 'dup')), 1);
+        return m;
+    })())JS")).ToLocalChecked()->Run(ctx).ToLocal(&clash));
+    tn_handle_t clashing{};
+    CHECK(adapter.unwrap(clash, clashing));
+    namespace s = tn::engine::shader;
+    s::VertexVariant clashVariant;
+    clashVariant.nodes.colorNode = tn::abi::shaderNode(clashing, "colorNode");
+    std::string refused;
+    try { s::buildBasic(clashVariant); } catch (const std::runtime_error& error) { refused = error.what(); }
+    CHECK(refused == "TN_TSL_VARYING_CONFLICT: dup");
 }
 
 // PRD-531 slice 3: the real V8 material setter owns a graph after its JS wrapper is gone.

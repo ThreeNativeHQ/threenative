@@ -511,7 +511,11 @@ static void linkNodes(StandardPrograms& out, const VertexVariant& variant, const
     std::unordered_set<const graph::NodeData*> seen;
     const std::function<void(const graph::Node&)> collect = [&](const graph::Node& n) {
         if (!n || !seen.insert(n.get()).second) return;
-        if (n->kind == graph::Kind::Varying && !n->args.empty()) carried.emplace(n->name, n);
+        if (n->kind == graph::Kind::Varying && !n->args.empty()) {
+            const auto [it, fresh] = carried.emplace(n->name, n);
+            if (!fresh && graph::key(it->second) != graph::key(n))
+                throw std::runtime_error("TN_TSL_VARYING_CONFLICT: " + n->name);
+        }
         for (const auto* list : {&n->args, &n->body, &n->otherwise})
             for (const auto& child : *list) collect(child);
     };
