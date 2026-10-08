@@ -1,5 +1,6 @@
 // Browser-service compatibility for core's existing seams; time advances on native fixed ticks.
 // The native marker keeps assets/physics/platform selection on the native path, even without DOM.
+import { audio } from "./core-audio.mjs";
 globalThis.__THREENATIVE_NATIVE__ = { ...globalThis.__THREENATIVE_NATIVE__, platform: globalThis.tn.platform };
 let time = 0;
 let nextId = 0;
@@ -53,6 +54,7 @@ globalThis.tn.onUpdate((dt) => {
   const pending = [...frames.values()];
   frames.clear();
   for (const callback of pending) callback(time);
+  audio.updateAudio();
 });
 
 const readSize = () => ({ width: canvas.width, height: canvas.height, aspect: canvas.width / canvas.height });

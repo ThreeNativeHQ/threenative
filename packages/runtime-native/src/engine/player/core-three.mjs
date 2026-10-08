@@ -1,4 +1,5 @@
 // Identity-preserving imports over the V8 adapter, never upstream Three.js.
+import { audio } from "./core-audio.mjs";
 export const {
   AmbientLight, AnimationAction, AnimationClip, AnimationMixer, Bone, Box3, BoxGeometry,
   BufferAttribute, BufferGeometry, Camera, CircleGeometry, Color, ConeGeometry, CylinderGeometry,
@@ -31,7 +32,7 @@ export const LineSegments = unsupported;
 export const Points = unsupported;
 export const WebGLRenderer = unsupported;
 export const TextureLoader = unsupported;
-export const AudioLoader = unsupported;
+export const { AudioContext, AudioListener, Audio, PositionalAudio, AudioLoader } = audio;
 
 // Native traversal and child enumeration are host callbacks, not a second JS scene graph.
 const bags = new WeakMap();
