@@ -22,7 +22,7 @@ The repo's existing capability surface is `packages/create-threenative/capabilit
 
 ## Out of scope
 
-- Handle storage, aliasing and reclamation: [N04](../../native-engine/N04-lifetime-and-numerics/README.md).
+- Handle storage, aliasing and reclamation: [N04](N04-lifetime-and-numerics/README.md).
 - AOT wrapper compilation: [N05](../../native-engine/N05-native-typescript-qualification/README.md). V8 wrappers: [PRD-531](../../native-engine/PRD-531-n18-v8-game-runtime-adapter.md).
 
 ## Execution Phases

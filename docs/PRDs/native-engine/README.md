@@ -22,7 +22,7 @@ Generated from the PRD files' boxes; a PRD is done when every box is ticked.
 | [PRD-498](PRD-498-n01-baseline-and-differential-fixture-runner.md) | Baseline and differential fixture runner (N01) | 3/4 | in progress |
 | [PRD-499](PRD-499-n02-the-host-links-without-a-js-engine.md) | The host links and runs without a JS engine (N02) | 7/8 | in progress |
 | [PRD-500](../done/native-engine/PRD-500-n03-api-catalog-binding-abi-and-version-protocol.md) | API catalog, binding ABI and version protocol (N03) | 7/7 | done |
-| [PRD-501](N04-lifetime-and-numerics/PRD-501-n04a-math-matches-the-pinned-reference.md) | Math matches the pinned reference (N04a) | 4/5 | in progress |
+| [PRD-501](../done/native-engine/N04-lifetime-and-numerics/PRD-501-n04a-math-matches-the-pinned-reference.md) | Math matches the pinned reference (N04a) | 5/5 | done |
 | [PRD-502](../done/native-engine/N04-lifetime-and-numerics/PRD-502-n04b-handles-keep-identity-and-aliases.md) | Handles keep identity and aliases (N04b) | 5/5 | done |
 | [PRD-503](../done/native-engine/N04-lifetime-and-numerics/PRD-503-n04c-unreachable-cycles-are-reclaimed.md) | Unreachable cycles are reclaimed (N04c) | 7/7 | done |
 | [PRD-504](../done/native-engine/N04-lifetime-and-numerics/PRD-504-n04d-buffers-cross-the-abi-with-an-owner.md) | Buffers cross the ABI with an owner (N04d) | 7/7 | done |
@@ -90,8 +90,8 @@ Full text and rationale: [PRD-497 § Decisions](../done/native-engine/PRD-497-n0
 | N01 | [PRD-498 — Baseline and differential fixture runner](PRD-498-n01-baseline-and-differential-fixture-runner.md) | N00 |
 | N02 | [PRD-499 — The host links and runs without a JS engine](PRD-499-n02-the-host-links-without-a-js-engine.md) | N00 |
 | N03 | [PRD-500 — API catalog, binding ABI and version protocol](../done/native-engine/PRD-500-n03-api-catalog-binding-abi-and-version-protocol.md) | N00 |
-| N04 | [Lifetime and numerical foundation](N04-lifetime-and-numerics/README.md) | N03 |
-| N04a | ↳ [PRD-501 — Math matches the pinned reference](N04-lifetime-and-numerics/PRD-501-n04a-math-matches-the-pinned-reference.md) | N03 |
+| N04 | [Lifetime and numerical foundation](../done/native-engine/N04-lifetime-and-numerics/README.md) | N03 |
+| N04a | ↳ [PRD-501 — Math matches the pinned reference](../done/native-engine/N04-lifetime-and-numerics/PRD-501-n04a-math-matches-the-pinned-reference.md) | N03 |
 | N04b | ↳ [PRD-502 — Handles keep identity and aliases](../done/native-engine/N04-lifetime-and-numerics/PRD-502-n04b-handles-keep-identity-and-aliases.md) | N03 |
 | N04c | ↳ [PRD-503 — Unreachable cycles are reclaimed](../done/native-engine/N04-lifetime-and-numerics/PRD-503-n04c-unreachable-cycles-are-reclaimed.md) | N04b |
 | N04d | ↳ [PRD-504 — Buffers cross the ABI with an owner](../done/native-engine/N04-lifetime-and-numerics/PRD-504-n04d-buffers-cross-the-abi-with-an-owner.md) | N04b |

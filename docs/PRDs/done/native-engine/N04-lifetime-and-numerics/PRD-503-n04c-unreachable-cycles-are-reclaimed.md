@@ -3,7 +3,7 @@
 **Status:** DONE 2026-10-04
 **Complexity:** 5 — a tracing reachability layer over the engine schema, with safe points and deferred GPU destruction
 **Owner:** João
-**Work package:** N04 — [lifetime and numerics](../../../native-engine/N04-lifetime-and-numerics/README.md), [native-engine batch](../../../native-engine/README.md)
+**Work package:** N04 — [lifetime and numerics](README.md), [native-engine batch](../../../native-engine/README.md)
 **Depends on:** [PRD-502](PRD-502-n04b-handles-keep-identity-and-aliases.md)
 
 ## Context

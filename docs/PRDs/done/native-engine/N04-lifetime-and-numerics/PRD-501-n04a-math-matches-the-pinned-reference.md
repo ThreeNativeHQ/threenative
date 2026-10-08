@@ -1,10 +1,10 @@
 # PRD-501 — Math matches the pinned reference (N04a)
 
-**Status:** IN PROGRESS — phases 1 and 2 done, bit-exact; phase 3 (Android arm64 emulator) open
+**Status:** DONE — phases 1–3 done, bit-exact on Linux x64, the x86_64 emulator and a physical arm64 Pixel 8
 **Complexity:** 3 — scalar math classes ported against a fixed oracle; wide but shallow
 **Owner:** João
-**Work package:** N04 — [lifetime and numerics](README.md), [native-engine batch](../README.md)
-**Depends on:** [PRD-500](../../done/native-engine/PRD-500-n03-api-catalog-binding-abi-and-version-protocol.md), [PRD-498](../PRD-498-n01-baseline-and-differential-fixture-runner.md) (fixture runner)
+**Work package:** N04 — [lifetime and numerics](README.md), [native-engine batch](../../../native-engine/README.md)
+**Depends on:** [PRD-500](../PRD-500-n03-api-catalog-binding-abi-and-version-protocol.md), [PRD-498](../../../native-engine/PRD-498-n01-baseline-and-differential-fixture-runner.md) (fixture runner)
 
 ## Context
 
@@ -19,8 +19,8 @@
 
 ## Out of scope
 
-- `Object3D` matrix update semantics (`matrixAutoUpdate`, `updateMatrixWorld`): [PRD-508](../../done/native-engine/PRD-508-n06-native-scene-graph-transforms-cameras-geometry.md).
-- `.elements` retained-array aliasing through bindings: [PRD-502](../../done/native-engine/N04-lifetime-and-numerics/PRD-502-n04b-handles-keep-identity-and-aliases.md) and [PRD-504](../../done/native-engine/N04-lifetime-and-numerics/PRD-504-n04d-buffers-cross-the-abi-with-an-owner.md).
+- `Object3D` matrix update semantics (`matrixAutoUpdate`, `updateMatrixWorld`): [PRD-508](../PRD-508-n06-native-scene-graph-transforms-cameras-geometry.md).
+- `.elements` retained-array aliasing through bindings: [PRD-502](PRD-502-n04b-handles-keep-identity-and-aliases.md) and [PRD-504](PRD-504-n04d-buffers-cross-the-abi-with-an-owner.md).
 
 ## Execution Phases
 
@@ -37,9 +37,9 @@
 - [x] Color (including colour-space conversion), Box3, Sphere, Plane, Ray and Frustum match the reference fixtures. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_math_primitives` — 2026-10-04: green and bit-exact: 6 `math-primitives-*` fixtures (210 observations); the C++ core also passes as Wasm under node
 
 #### Phase 3: The same results on Android
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** proposed `packages/runtime-native/tests/native-engine/CMakeLists.txt`
-- [ ] The math fixtures pass on arm64 Android with the same tolerances. proof: `pnpm parity -- --suite native-engine --target android-hardware --only 'math-*'` — open: 2026-10-04 the lane exists and runs: the fixture driver cross-builds with the NDK (`-DTN_ENGINE_CORE_ONLY=ON`, `build/android-core-<abi>`) and runs over adb; on the x86_64 emulator (`--target android`, API 35, bionic) all 26 math and 7 scene fixtures pass bit-exact at abs 0. An arm64 system image cannot run on this x86_64 host, so the arm64 run needs the Pixel (`android-hardware`); the arm64 driver is built
+- [x] The math fixtures pass on arm64 Android with the same tolerances. proof: `pnpm parity -- --suite native-engine --target android-hardware --only 'math-*'` — 2026-10-07: 26 pass, 0 fail, 0 blocked on a physical Pixel 8 (192.168.1.192:5555, arm64-v8a, `ANDROID_SERIAL` set), every fixture at tolerance abs 0 (bit-exact), via the NDK-built core driver (`build/android-core-arm64-v8a`). Earlier: the x86_64 emulator passed the same 26 math and 7 scene fixtures.
 
 ## Decisions
 

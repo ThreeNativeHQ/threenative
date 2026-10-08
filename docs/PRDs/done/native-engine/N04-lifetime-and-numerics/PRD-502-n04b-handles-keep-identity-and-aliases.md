@@ -3,7 +3,7 @@
 **Status:** IN PROGRESS — phase 1 done
 **Complexity:** 4 — the handle and identity model every binding and engine module reads
 **Owner:** João
-**Work package:** N04 — [lifetime and numerics](../../../native-engine/N04-lifetime-and-numerics/README.md), [native-engine batch](../../../native-engine/README.md)
+**Work package:** N04 — [lifetime and numerics](README.md), [native-engine batch](../../../native-engine/README.md)
 **Depends on:** [PRD-500](../PRD-500-n03-api-catalog-binding-abi-and-version-protocol.md)
 
 ## Context
