@@ -111,6 +111,13 @@ describe("createWebEnginePlugin", () => {
     expect(() => plugin.resolveId("three/src/nodes/Nodes.js")).toThrow("TN_NATIVE_UPSTREAM_IMPORT");
   });
 
+  it("resolves three-mesh-bvh to the engine's own MeshBVH, never the upstream package", () => {
+    const resolved = createWebEnginePlugin("/game").resolveId("three-mesh-bvh");
+    expect(resolved).toMatch(
+      /(?:three-native\/src\/addons\/mesh-bvh\.ts|web-engine-mesh-bvh\.js)$/u,
+    );
+  });
+
   it("fails the build when the Wasm engine is not installed", async () => {
     const root = await project(false);
     await expect(createWebEnginePlugin(root).load(WEB_ENGINE_ID)).rejects.toThrow(

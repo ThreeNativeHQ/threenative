@@ -31,7 +31,10 @@ export default defineConfig([
   // PRD-540: the browser binding `createWebEnginePlugin` puts in a web build under
   // `engine: "native"`. It runs in the page, so it carries no Node banner and no types.
   {
-    entry: { "web-engine-runtime": "../three-native/src/browser-entry.ts" },
+    entry: {
+      "web-engine-runtime": "../three-native/src/browser-entry.ts",
+      "web-engine-mesh-bvh": "../three-native/src/addons/mesh-bvh.ts",
+    },
     format: ["esm"],
     platform: "browser",
     target: "es2022",
