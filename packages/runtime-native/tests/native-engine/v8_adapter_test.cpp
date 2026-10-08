@@ -94,11 +94,11 @@ void fastPaths() {
         }
         const checks = [ok === 1, p.x === 1999 && p.y === 999.5 && p.z === 2001,
                         r.x === 1999 * 0.01 && r.y === 0.25 && r.z === 0,
-                        m.quaternion.w !== 1];
+                        m.quaternion.w !== 1, p.clone() !== p && p.clone().x === 1999];
         checks.map(Number).join("")
     )JS").c_str());
-    CHECK(got == "1111");
-    if (got != "1111") std::fprintf(stderr, "got %s\n", got.c_str());
+    CHECK(got == "11111");
+    if (got != "11111") std::fprintf(stderr, "got %s\n", got.c_str());
     CHECK(adapter.genericArguments() - before == baseline);  // 2000 x 5 numeric calls added none
     // Non-numeric arguments still take the general converter: a handle, a string, an array, a boolean.
     const uint64_t general = adapter.genericArguments();
@@ -110,7 +110,8 @@ void fastPaths() {
         try { p.set(1, 2, "no"); } catch (e) { threw += 1; }
         kinds.map(Number).join("") + threw
     )JS").c_str());
-    CHECK(mixed == "112" || mixed == "111" || mixed == "110");
+    CHECK(mixed == "112");
+    if (mixed != "112") std::fprintf(stderr, "mixed %s\n", mixed.c_str());
     CHECK(adapter.genericArguments() > general + baseline);
 }
 
