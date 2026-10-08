@@ -9,6 +9,7 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { definePostEffects } from "../src/addons/post-effects.js";
 import {
   type EngineValue,
   type IBrowserRuntime,
@@ -55,6 +56,17 @@ function tslRuntime(calls: ICall[], sets: string[], uniforms: string[] = []): IT
     statement(name, receiver, args) {
       calls.push({ name, receiver, args });
       return ++next;
+    },
+    effectParameter(node, name, value) {
+      calls.push({
+        name: `effect ${name}`,
+        receiver: node,
+        args: value === undefined ? [] : [{ kind: "number", number: value }],
+      });
+      return value ?? 0.25;
+    },
+    setPost(node) {
+      sets.push(`post=${node}`);
     },
   };
 }
@@ -179,6 +191,28 @@ describe("TSL on the browser back end", () => {
       }),
     ).toThrow("original");
     expect(calls.map(({ name }) => name)).toEqual(["(begin", "end)"]);
+  });
+
+  it("publishes a live effect's uniforms as three's ao(...).radius.value", () => {
+    const calls: ICall[] = [];
+    const tsl = defineTsl(tslRuntime(calls, [])).exports;
+    const effects = definePostEffects(tsl as never);
+    const depth = (tsl.uv as Fn)();
+    const ao = effects.ao(depth, undefined, undefined) as unknown as Record<
+      string,
+      { value: number }
+    >;
+    expect(calls.at(-1)).toEqual({
+      name: "ao",
+      receiver: null,
+      args: [{ kind: "node", node: 1 }, { kind: "other" }, { kind: "other" }],
+    });
+    expect(ao.radius?.value).toBe(0.25);
+    (ao.radius as { value: number }).value = 0.5;
+    expect(calls.slice(-2).map(({ name, args }) => [name, args])).toEqual([
+      ["effect radius", []],
+      ["effect radius", [{ kind: "number", number: 0.5 }]],
+    ]);
   });
 
   it("refuses an argument TSL has no meaning for, by name", () => {

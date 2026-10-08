@@ -14,7 +14,8 @@ export type TslArgValue =
   | { readonly kind: "node"; readonly node: number }
   | { readonly kind: "number"; readonly number: number }
   | { readonly kind: "string" | "named"; readonly text: string }
-  | { readonly kind: "rgb" | "vector"; readonly numbers: readonly number[] };
+  | { readonly kind: "rgb" | "vector"; readonly numbers: readonly number[] }
+  | { readonly kind: "other" };
 
 /** The engine side of TSL: one call by name, node release, and a material's node slot. */
 export interface ITslRuntime {
@@ -29,6 +30,10 @@ export interface ITslRuntime {
   scopeEnd(result: TslArgValue | null): number;
   /** toVar, assign, If, Else, Loop.begin, Loop.index and Loop.end in the open scope. */
   statement(name: string, receiver: number | null, args: readonly TslArgValue[]): number;
+  /** A live post effect's scalar uniform, written first when `value` is given; answers its value. */
+  effectParameter(node: number, name: string, value?: number): number;
+  /** three's RenderPipeline: the post graph the web host draws between scene and output, or none. */
+  setPost(node: number | null): void;
 }
 
 /** Module functions the shared table answers (engine/abi/tsl_call.cpp). */
@@ -79,6 +84,12 @@ const FUNCTIONS = [
   "textureLoad",
   "reflect",
   "convertToTexture",
+  // The live post effects (lane-531's table entries); post-effects.ts publishes them as three's addons.
+  "ao",
+  "denoise",
+  "smaa",
+  "bloom",
+  "oneMinus",
 ] as const;
 /** Node methods the shared table answers, with the receiver passed apart. */
 const METHODS = [
@@ -114,6 +125,8 @@ const METHODS = [
   "smoothstep",
   "select",
   "sample",
+  "oneMinus",
+  "dispose",
 ] as const;
 const SWIZZLES: Readonly<Record<string, string>> = {
   x: "x",
@@ -158,6 +171,8 @@ export function defineTsl(runtime: ITslRuntime): {
   };
   const argument = (name: string, index: number, value: unknown): TslArgValue => {
     if (isTslNode(value)) return { kind: "node", node: value[TSL_NODE] };
+    // An omitted optional input (denoise's normal node) has no TSL meaning of its own.
+    if (value === null || value === undefined) return { kind: "other" };
     if (typeof value === "number") return { kind: "number", number: value };
     if (typeof value === "string") return { kind: "string", text: value };
     if (typeof value === "object" && value !== null && engineRef(value) !== undefined) {
@@ -211,6 +226,9 @@ export function defineTsl(runtime: ITslRuntime): {
       receiver,
       args.map((value, index) => argument(name, index, value)),
     );
+  prototype.__effect = function (this: ITslNode, name: string, value?: number) {
+    return runtime.effectParameter(this[TSL_NODE], name, value);
+  };
   prototype.toVar = function (this: ITslNode) {
     return wrap(statement("toVar", this[TSL_NODE], []));
   };

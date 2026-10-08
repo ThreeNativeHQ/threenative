@@ -726,6 +726,7 @@ tn_status_t tslArgs(tn_context_t* context, const tn_tsl_arg_t* args, uint32_t ar
                 if (a.reserved < 2 || a.reserved > 4) return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_TSL_ARGUMENT lanes");
                 converted.push_back(tn::abi::TslArg::vectorOf(static_cast<uint8_t>(a.reserved), a.numbers));
                 break;
+            case TN_TSL_ARG_OTHER: converted.push_back(tn::abi::TslArg::other()); break;
             default: return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_TSL_ARGUMENT kind");
         }
     }
@@ -826,6 +827,24 @@ extern "C" tn_status_t tn_tsl_statement(tn_context_t* context, const char* name,
         return ok(diagnostic);
     });
 }
+
+extern "C" tn_status_t tn_tsl_effect_parameter(tn_context_t* context, const uint64_t* node, const char* name,
+                                               const double* value, double* out, tn_diagnostic_t* diagnostic) {
+    if (!context || !node || !name || !out || !context->tslNodes.contains(*node))
+        return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_TSL_ARGUMENT");
+    return guarded(diagnostic, [&]() -> tn_status_t {
+        *out = tn::abi::tslEffectParameter(context->tslNodes.at(*node), name, value);
+        return ok(diagnostic);
+    });
+}
+
+namespace tn::abi {
+engine::shader::graph::Node tslNode(tn_context_t* context, uint64_t id) {
+    if (!context) return {};
+    const auto found = context->tslNodes.find(id);
+    return found == context->tslNodes.end() ? engine::shader::graph::Node{} : found->second;
+}
+}  // namespace tn::abi
 
 extern "C" tn_status_t tn_tsl_set_uniform(tn_context_t* context, const uint64_t* node, const double* values,
                                            uint32_t count, tn_diagnostic_t* diagnostic) {

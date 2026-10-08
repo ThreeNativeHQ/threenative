@@ -771,8 +771,41 @@ void tsl_statements() {
     CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
 }
 
+// PRD-540: a live post effect's scalar uniform through the C ABI (lane-531's tslEffectParameter), as
+// three's `ao(...).radius.value`; an omitted optional input is an OTHER argument.
+void tsl_effect_parameter() {
+    const tn_version_info_t own = tn_engine_version();
+    tn_context_t* ctx = nullptr;
+    Diag d;
+    CHECK(tn_context_create(&ctx, &own, &d.value) == TN_OK);
+    uint64_t uv = 0, depth = 0, ao = 0, plain = 0;
+    CHECK(tn_tsl_call(ctx, "uv", nullptr, nullptr, 0, &uv, &d.value) == TN_OK);
+    tn_tsl_arg_t map[2]{};
+    map[0].kind = TN_TSL_ARG_NAMED;
+    map[0].text = "depth";
+    map[1].kind = TN_TSL_ARG_NODE;
+    map[1].node = uv;
+    CHECK(tn_tsl_call(ctx, "texture", nullptr, map, 2, &depth, &d.value) == TN_OK);
+    tn_tsl_arg_t args[2]{};
+    args[0].kind = TN_TSL_ARG_NODE;
+    args[0].node = depth;
+    args[1].kind = TN_TSL_ARG_OTHER;  // no normal node
+    CHECK(tn_tsl_call(ctx, "ao", nullptr, args, 2, &ao, &d.value) == TN_OK);
+    double out = 0;
+    const double radius = 0.5;
+    CHECK(tn_tsl_effect_parameter(ctx, &ao, "radius", &radius, &out, &d.value) == TN_OK && out == 0.5);
+    out = 0;
+    CHECK(tn_tsl_effect_parameter(ctx, &ao, "radius", nullptr, &out, &d.value) == TN_OK && out == 0.5);
+    CHECK(tn_tsl_effect_parameter(ctx, &ao, "noSuchUniform", nullptr, &out, &d.value) != TN_OK);
+    tn_diagnostic_release(&d.value);
+    CHECK(tn_tsl_call(ctx, "uv", nullptr, nullptr, 0, &plain, &d.value) == TN_OK);
+    CHECK(tn_tsl_effect_parameter(ctx, &plain, "radius", nullptr, &out, &d.value) != TN_OK);  // not an effect
+    tn_diagnostic_release(&d.value);
+    CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
+}
+
 }  // namespace
 
 TN_TEST_MAIN({"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene},
              {"unsupported_member", unsupported_member}, {"material", material}, {"light", light}, {"lifetime", lifetime},
-             {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_statements", tsl_statements})
+             {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_statements", tsl_statements}, {"tsl_effect_parameter", tsl_effect_parameter})

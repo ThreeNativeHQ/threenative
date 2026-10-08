@@ -22,6 +22,7 @@ TN_EXPORT tn_status_t tn_tsl_set(tn_context_t *context, tn_handle_t material, co
 #define TN_TSL_ARG_NAMED 3u
 #define TN_TSL_ARG_RGB 4u
 #define TN_TSL_ARG_VECTOR 5u /* `reserved` holds the lane count, 2 to 4 */
+#define TN_TSL_ARG_OTHER 6u  /* no TSL meaning: an omitted optional input (denoise's normal) */
 typedef struct tn_tsl_arg {
   uint32_t kind;
   uint32_t reserved;
@@ -52,6 +53,10 @@ TN_EXPORT tn_status_t tn_tsl_scope_end(tn_context_t *context, const tn_tsl_arg_t
 TN_EXPORT tn_status_t tn_tsl_statement(tn_context_t *context, const char *name, const uint64_t *receiver,
                                        const tn_tsl_arg_t *args, uint32_t arg_count, uint64_t *out_node,
                                        tn_diagnostic_t *diagnostic);
+/* A live post effect's scalar uniform (`radius`, `strength`, ...) or its `resolutionScale`, read into
+ * `out`, and written first when `value` is non-null. The pass reads it again every frame. */
+TN_EXPORT tn_status_t tn_tsl_effect_parameter(tn_context_t *context, const uint64_t *node, const char *name,
+                                              const double *value, double *out, tn_diagnostic_t *diagnostic);
 /* three's `uniform.value = x`: one finite value per lane of the uniform node's type. Every draw reads
  * the value afresh, so no program changes. */
 TN_EXPORT tn_status_t tn_tsl_set_uniform(tn_context_t *context, const uint64_t *node, const double *values,

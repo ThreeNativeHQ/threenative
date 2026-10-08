@@ -500,7 +500,7 @@ const KIND = {
 // wasm32 layout of tn_tsl_arg_t (tn_tsl.h): kind 0, lanes 4, node 8 (u64), number 16, text 24,
 // numbers 32 (four f64); 64 bytes.
 const TSL_ARG = 64;
-const TSL_KIND = { node: 0, number: 1, string: 2, named: 3, rgb: 4, vector: 5 } as const;
+const TSL_KIND = { node: 0, number: 1, string: 2, named: 3, rgb: 4, vector: 5, other: 6 } as const;
 type TslCall =
   | "_tn_tsl_call"
   | "_tn_tsl_release"
@@ -508,7 +508,9 @@ type TslCall =
   | "_tn_tsl_set_uniform"
   | "_tn_tsl_scope_begin"
   | "_tn_tsl_scope_end"
-  | "_tn_tsl_statement";
+  | "_tn_tsl_statement"
+  | "_tn_tsl_effect_parameter"
+  | "_tnw_web_set_post";
 
 interface IAbiHelpers {
   scoped<T>(work: () => T): T;
@@ -538,6 +540,8 @@ function tslOf(
     _tn_tsl_scope_begin: scopeBegin,
     _tn_tsl_scope_end: scopeEnd,
     _tn_tsl_statement: statement,
+    _tn_tsl_effect_parameter: effectParameter,
+    _tnw_web_set_post: setPost,
   } = calls;
   if (
     call === undefined ||
@@ -546,7 +550,8 @@ function tslOf(
     setUniform === undefined ||
     scopeBegin === undefined ||
     scopeEnd === undefined ||
-    statement === undefined
+    statement === undefined ||
+    effectParameter === undefined
   )
     return undefined;
   // Writes tn_tsl_arg_t values; text is allocated first, since an allocation can grow the memory.
@@ -601,6 +606,26 @@ function tslOf(
             diag,
             `set ${path}`,
           );
+        }),
+      effectParameter: (node, name, value) =>
+        h.scoped(() => {
+          const self = nodeOf(node);
+          const input = value === undefined ? 0 : h.alloc(8);
+          if (value !== undefined) h.view().setFloat64(input, value, true);
+          const out = h.alloc(8);
+          const diag = h.diagnostic();
+          h.check(
+            effectParameter(context, self, h.string(name).pointer, input, out, diag),
+            diag,
+            `effect ${name}`,
+          );
+          return h.view().getFloat64(out, true);
+        }),
+      // three's RenderPipeline on the product web host: the graph between scene and output.
+      setPost: (node) =>
+        h.scoped(() => {
+          if (setPost === undefined) throw new Error("TN_WASM_POST: this module has no web host");
+          if (setPost(context, nodeOf(node)) !== 0) throw new Error("TN_WASM_POST: refused");
         }),
       scopeBegin: () => scopeBegin(context),
       scopeEnd: (result) =>

@@ -35,6 +35,7 @@ export default defineConfig([
       "web-engine-runtime": "../three-native/src/browser-entry.ts",
       "web-engine-mesh-bvh": "../three-native/src/addons/mesh-bvh.ts",
       "web-engine-hdr-loader": "../three-native/src/addons/hdr-loader.ts",
+      "web-engine-post-effects": "../three-native/src/addons/post-effects-web.ts",
     },
     // `three` is the engine binding the web build aliases it to, never upstream three.
     external: ["three"],

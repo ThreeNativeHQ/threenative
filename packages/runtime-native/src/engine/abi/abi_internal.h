@@ -18,6 +18,8 @@ tn_handle_t shareObject(tn_context_t* context, std::string cls, std::shared_ptr<
 /** In-process graph bridge; uses the same registered material getters/setters as other callers. */
 engine::shader::graph::Node shaderNode(tn_handle_t handle, const std::string& path);
 void setShaderNode(tn_handle_t handle, const std::string& path, engine::shader::graph::Node node);
+/** The TSL graph node a tn_tsl_* id names in `context`, or null (PRD-540: the web host's post graph). */
+engine::shader::graph::Node tslNode(tn_context_t* context, uint64_t id);
 
 /**
  * A numeric property write for a caller that repeats one member on one class (the V8 adapter's
