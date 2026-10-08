@@ -13,7 +13,7 @@ Measured on Machinefall `map-walk`, desktop RTX 2080, live clock, PRD-478 branch
 | Fact | Value |
 | --- | --- |
 | Shadow levels | one, ±250 m, 4096² (`shadowExtents: [250]`) |
-| Level renders per walk | 200–280, of which 5 are window moves; the rest are streaming invalidations |
+| Level renders per walk | 200–280 on `1fe8b3087`, 68–79 after PRD-478's `5a6d9d02f`/`ed75639ef` stopped terrain swaps and non-casting arrivals from invalidating; 13–20 are window moves |
 | Invalidation delay | 0.25 s: the default is `0.25 * extent / finestExtent`, and a single level is its own finest |
 | GPU p95 per 1500-frame route window | 3–4 ms late in the route; 9–12 ms early, where streaming is heaviest |
 | Shadow GPU p95 in those windows | 3.9–6.6 ms |
