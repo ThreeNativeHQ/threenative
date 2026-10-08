@@ -242,6 +242,7 @@ export async function runStep(
       id: wait.id,
       path: wait.path,
       predicate: wait,
+      poll: () => bridge.sample({ entities: [], include: ["resources"], resources: [wait.id] }),
       sample: () => bridge.sample(movementSampleRequest),
       timeoutMs,
     });

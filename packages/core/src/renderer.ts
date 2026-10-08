@@ -1,6 +1,17 @@
 import type { BufferGeometry, Camera, Object3D } from "three";
-import { type PassNode, RenderPipeline } from "three/webgpu";
+import {
+  type PassNode,
+  ReadbackBuffer,
+  RenderPipeline,
+  type StorageBufferAttribute,
+} from "three/webgpu";
+import { ComputeTimingScopes, type IComputeTimingReceipt } from "./compute-timing.js";
 import type { IFrameSurfaceState } from "./frame-budget.js";
+import {
+  GpuFrameObservation,
+  type IGpuFrameObservation,
+  type IGpuFrameObservationOptions,
+} from "./gpu-frame-observation.js";
 import {
   type IPipelineCensus,
   type PipelineCensus,
@@ -12,6 +23,12 @@ import {
   type IRenderChainOptions,
   RenderChain,
 } from "./render/chain.js";
+
+import {
+  type IStorageBufferLease,
+  type IStorageBufferSource,
+  StorageBufferLeases,
+} from "./storage-buffer.js";
 
 export type RendererKind = "webgpu" | "webgl2";
 
@@ -162,6 +179,11 @@ export interface IRendererLike {
    */
   readonly softwareAdapter?: string;
   compute(node: unknown): void;
+  /** Opt-in synchronous dispatch scope; consumes exact Three-owned query UID membership once resolved. */
+  computeTiming?(
+    operation: () => unknown,
+    options?: { readonly maxCalls?: number },
+  ): IComputeTimingReceipt;
   /**
    * Creates the GPU buffers these geometries draw from, through the backend's own attribute path,
    * and reports how many it created.
@@ -173,6 +195,8 @@ export interface IRendererLike {
    * draw uploads exactly as it did before.
    */
   uploadAttributes?(geometries: Iterable<BufferGeometry>): number;
+  /** Exclusive Float32 vec4 storage on the existing WebGPU device; release its receipt on scene exit. */
+  storageBuffer?(attribute: StorageBufferAttribute): IStorageBufferLease;
   /**
    * Copies one GPU storage attribute back to the CPU, asynchronously.
    *
@@ -180,9 +204,10 @@ export interface IRendererLike {
    * must cast through `.raw` to read its own simulation will either not read it or read it wrong.
    * The copy is asynchronous by nature — the caller gets the bytes some frames after the frame
    * that produced them, and `GPUReadback` is what turns that latency into a reported number
-   * instead of a silent one.
+   * instead of a silent one. Pass a public ReadbackBuffer to own staging cleanup on rejected maps;
+   * the returned bytes are copied before the caller disposes that target in finally.
    */
-  readback(attribute: unknown): Promise<ArrayBuffer>;
+  readback(attribute: unknown, target?: ReadbackBuffer): Promise<ArrayBuffer>;
   render(scene: Object3D, camera: Camera): void;
   /** Draws after the world without clearing or passing through the world's output pipeline. */
   renderOverlay(scene: Object3D, camera: Camera): void;
@@ -225,6 +250,14 @@ export interface IRendererLike {
    * contract. `createRenderer` always provides it.
    */
   gpuFrameSample?(): { readonly frame: number; readonly ms: number } | undefined;
+  /**
+   * Observes complete allocated render-query groups without changing ordinary sampling.
+   * Frame IDs are Three query IDs, including any overlay draws; callers map world callbacks.
+   * Capacities bound undrained, pending and queued membership. maxQueries counts timestamp
+   * slots (two per pass). A failed receipt is sticky and must be disposed before replacement.
+   * Requires timestamp-capable WebGPU and its existing asynchronous resolver.
+   */
+  observeGpuFrames?(options: IGpuFrameObservationOptions): IGpuFrameObservation;
   /**
    * GPU milliseconds of the last resolved compute frame, when the adapter reports one.
    *
@@ -318,7 +351,7 @@ export interface IRendererOptions {
   webgl2Factory?: (canvas: HTMLCanvasElement, options: Readonly<{ antialias: boolean }>) => unknown;
 }
 
-type RendererInstance = {
+type RendererInstance = IStorageBufferSource & {
   autoClear?: boolean;
   /** three's resolved GPU timings; `info.render.timestamp` is milliseconds. */
   info?: {
@@ -328,6 +361,7 @@ type RendererInstance = {
   };
   backend?: {
     trackTimestamp?: boolean;
+    timestampQueryPool?: { render?: unknown };
     /** The backend's own attribute creation, which a compile does not do. */
     createAttribute?: (attribute: unknown) => void;
     createIndexAttribute?: (attribute: unknown) => void;
@@ -348,7 +382,10 @@ type RendererInstance = {
   init?: () => Promise<void>;
   compileAsync?: (scene: Object3D, camera: Camera, targetScene?: Object3D) => Promise<void>;
   compute?: (node: unknown) => void;
-  getArrayBufferAsync?: (attribute: unknown) => Promise<ArrayBuffer>;
+  getArrayBufferAsync?: (
+    attribute: unknown,
+    target?: ReadbackBuffer,
+  ) => Promise<ArrayBuffer | ReadbackBuffer>;
   render: (scene: Object3D, camera: Camera) => void;
   setSize: (width: number, height: number, updateStyle?: boolean) => void;
   dispose?: () => void;
@@ -430,9 +467,13 @@ function wrapRenderer(
   let activeCompiles = 0;
   let compileCount = 0;
   let disposed = false;
+  const storageBuffers = new StorageBufferLeases(() => raw);
+  let computeTimings: ComputeTimingScopes | undefined;
   let pendingScale: { scale: number; source: "auto" | "auto-pinned" } | undefined;
   let pendingSize: Parameters<IRendererLike["setSize"]> | undefined;
   let timestampFrame = -1;
+  let gpuObservation: GpuFrameObservation | undefined;
+  let gpuObservationGeneration = 0;
   const setTimestampTracking = (): void => {
     // Three writes `info.frame` only inside its own animation loop, which the engine deliberately
     // does not run -- the game drives frames through here -- so it sat at 0 for the whole session.
@@ -560,6 +601,25 @@ function wrapRenderer(
       return frame - sample.frame;
     },
     gpuFrameSample,
+    observeGpuFrames: (options) => {
+      if (
+        disposed ||
+        kind !== "webgpu" ||
+        !timestampCapable ||
+        typeof raw.resolveTimestampsAsync !== "function"
+      )
+        throw new Error("TN_GPU_FRAME_OBSERVATION_UNSUPPORTED");
+      if (gpuObservation !== undefined && gpuObservation.status().state !== "disposed")
+        throw new Error("TN_GPU_FRAME_OBSERVATION_ALREADY_ACTIVE");
+      gpuObservation = new GpuFrameObservation(
+        ++gpuObservationGeneration,
+        timestampFrame + 1,
+        () => raw.backend?.timestampQueryPool?.render,
+        () => timestampFrame,
+        options,
+      );
+      return gpuObservation;
+    },
     gpuMainMs: () => gpuMainEma,
     noteGpuMainMs,
     gpuComputeMs: () => {
@@ -575,7 +635,12 @@ function wrapRenderer(
       // reported absence rather than a frame-time error.
       const resolveTimestampsAsync = raw.resolveTimestampsAsync;
       if (resolveTimestampsAsync === undefined) return;
+      const observationBatch =
+        gpuObservation !== undefined && raw.backend?.trackTimestamp === true
+          ? gpuObservation.capture()
+          : undefined;
       void resolveTimestampsAsync.call(raw)?.catch(() => undefined);
+      gpuObservation?.submitted(observationBatch);
       // Three maintains independent 2,048-query pools for render and compute passes. Resolving
       // only the default render pool lets GPU simulations exhaust the compute pool even when the
       // render pool is healthy, after which the adapter can be lost instead of merely reporting
@@ -727,6 +792,11 @@ function wrapRenderer(
       setTimestampTracking();
       raw.compute(node);
     },
+    computeTiming: (operation, options) => {
+      if (disposed) throw new Error("TN_COMPUTE_TIMING_STALE: renderer disposed.");
+      computeTimings ??= new ComputeTimingScopes(() => raw);
+      return computeTimings.capture(operation, options);
+    },
     uploadAttributes: (geometries) => {
       const backend = kind === "webgpu" ? raw.backend : undefined;
       if (typeof backend?.createAttribute !== "function") return 0;
@@ -749,15 +819,47 @@ function wrapRenderer(
       }
       return created;
     },
-    readback: async (attribute) => {
+    storageBuffer: (attribute) => storageBuffers.allocate(attribute),
+    readback: async (attribute, target) => {
       if (kind !== "webgpu") throw new Error(`readback is unavailable on the ${kind} renderer.`);
       if (typeof raw.getArrayBufferAsync !== "function")
         throw new Error("webgpu renderer does not expose getArrayBufferAsync().");
-      return raw.getArrayBufferAsync(attribute);
+      if (
+        target !== undefined &&
+        (!(target instanceof ReadbackBuffer) ||
+          !Number.isSafeInteger(target.maxByteLength) ||
+          target.maxByteLength <= 0 ||
+          target.maxByteLength % 4 !== 0 ||
+          target.buffer !== null)
+      )
+        throw new Error(
+          "TN_READBACK_TARGET_INVALID: a fresh aligned public ReadbackBuffer is required.",
+        );
+      const result = await raw.getArrayBufferAsync(attribute, target);
+      if (target === undefined) {
+        if (!(result instanceof ArrayBuffer))
+          throw new Error("TN_READBACK_RESULT_INVALID: CPU bytes are absent.");
+        return result;
+      }
+      if (
+        result !== target ||
+        !(target.buffer instanceof ArrayBuffer) ||
+        target.buffer.byteLength > target.maxByteLength
+      )
+        throw new Error(
+          "TN_READBACK_RESULT_INVALID: caller-owned target did not receive bounded CPU bytes.",
+        );
+      return target.buffer.slice(0);
     },
     dispose: () => {
-      if (disposed) return;
+      computeTimings?.dispose();
+      if (disposed) {
+        storageBuffers.dispose();
+        return;
+      }
       disposed = true;
+      gpuObservation?.dispose();
+      gpuObservation = undefined;
       pendingScale = undefined;
       pendingSize = undefined;
       for (const chain of renderChains) chain.dispose();
@@ -768,7 +870,11 @@ function wrapRenderer(
       outputInput = undefined;
       outputPass = undefined;
       pipelineCensus?.dispose();
-      raw.dispose?.();
+      try {
+        storageBuffers.dispose();
+      } finally {
+        raw.dispose?.();
+      }
     },
     render: (scene, camera) => {
       setTimestampTracking();

@@ -1,7 +1,8 @@
 import { BoxGeometry, Mesh, MeshBasicMaterial, PerspectiveCamera, Scene, type Vector2, type WebGLRenderer } from "three";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 
 import { PLAYTEST_CLOCK_GLOBAL } from "../src/protocol.js";
+import { waitForResource } from "../src/runner/wait-for-resource.js";
 import { installThreePlaytestBridge } from "../src/three/bridge.js";
 import { ThreePlaytestEntityRegistry } from "../src/three/entities.js";
 
@@ -16,6 +17,89 @@ const renderer = {
     return target.set(1280, 720);
   },
 } as WebGLRenderer;
+
+test("resource-only polls leave scene, entity and component observers for the full witness", async () => {
+  const scene = new Scene();
+  const entities = vi.fn(() => [{ id: "wolf", object: new Mesh() }]);
+  const components = vi.fn(() => ({ wolf: { alive: true } }));
+  const gameplay = vi.fn(() => ({ animation: {}, states: { wolf: "walking" } }));
+  const update = vi.spyOn(scene, "updateMatrixWorld");
+  const size = vi.fn(renderer.getDrawingBufferSize);
+  const installation = installThreePlaytestBridge({
+    camera: new PerspectiveCamera(),
+    clockMode: "wall-clock",
+    components,
+    entities,
+    gameplay,
+    renderer: { getDrawingBufferSize: size },
+    scene,
+    tick: () => 7,
+    fixedStep: () => {},
+    resources: { read: () => ({ state: { ready: true } }) },
+  });
+  try {
+    entities.mockClear();
+    const poll = await installation.bridge.sample({ entities: [], include: ["resources"], resources: ["state"] });
+    expect(poll.resources).toEqual({ state: { ready: true } });
+    expect(poll.clock).toMatchObject({ mode: "wall-clock", tick: 7 });
+    expect(Number.isFinite(poll.clock.timeMs)).toBe(true);
+    for (const observer of [entities, components, gameplay, update, size]) expect(observer).not.toHaveBeenCalled();
+    expect(poll.components).toBeUndefined();
+    const full = await installation.bridge.sample({});
+    expect(full.components).toEqual({ wolf: { alive: true } });
+    expect(full.entities?.[0]?.id).toBe("wolf");
+    for (const observer of [entities, components, gameplay, update, size]) expect(observer).toHaveBeenCalled();
+  } finally {
+    installation.dispose();
+  }
+});
+
+test("resource-only polls still reject non-JSON observations", async () => {
+  const installation = installThreePlaytestBridge({
+    camera: new PerspectiveCamera(),
+    renderer,
+    scene: new Scene(),
+    resources: { read: () => ({ state: { ready: Number.NaN } }) },
+  });
+  try {
+    await expect(Promise.resolve().then(() => installation.bridge.sample({ entities: [], include: ["resources"], resources: ["state"] }))).rejects.toThrow();
+  } finally {
+    installation.dispose();
+  }
+});
+
+test("a passing resource poll cannot bypass an invalid full component witness", async () => {
+  const installation = installThreePlaytestBridge({
+    camera: new PerspectiveCamera(),
+    renderer,
+    scene: new Scene(),
+    resources: { read: () => ({ state: { ready: true } }) },
+    components: () => ({ wolf: { value: Number.NaN } }),
+  });
+  let polls = 0;
+  let full = 0;
+  try {
+    await expect(
+      waitForResource({
+        id: "state",
+        path: "ready",
+        predicate: { equals: true },
+        timeoutMs: 1000,
+        poll: async () => {
+          polls++;
+          return installation.bridge.sample({ entities: [], include: ["resources"], resources: ["state"] });
+        },
+        sample: async () => {
+          full++;
+          return installation.bridge.sample({});
+        },
+      }),
+    ).rejects.toThrow(/finite JSON/u);
+    expect({ polls, full }).toEqual({ polls: 1, full: 1 });
+  } finally {
+    installation.dispose();
+  }
+});
 
 test("bridge samples registered transforms and projected bounds without owning a render loop", async () => {
   const scene = new Scene();

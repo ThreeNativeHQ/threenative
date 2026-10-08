@@ -108,7 +108,8 @@ particular, Godot-borrowed node names stay unchanged.
 
 - `defineGame(config)` returns an `IGame` with `start()` / `stop()`. `stop()` must fully
   reverse `start()`: loop stopped, scene exited, registry cleared, plugin `dispose` called,
-  cleanups drained, input disposed, store stopped, renderer disposed.
+  cleanups drained, input disposed, store stopped, renderer disposed. A throwing scene exit must
+  still reach every plugin/setup cleanup and renderer release; the original failure is retained.
 - A `Scene` is a class with five optional methods — `load`, `enter`, `update`, `exit`,
   `render`. Do not add a sixth.
 - `ICtx` hands out the real objects: `ctx.scene` is a `THREE.Scene`, `ctx.camera` is a real
@@ -120,6 +121,10 @@ particular, Godot-borrowed node names stay unchanged.
   is exposed as `window.__THREENATIVE__` in dev builds only, and playtest reads it.
 - Scene-owned time lives behind `ctx.after`, `ctx.every`, `ctx.tween`; `Scheduler` and
   `ScheduleHandle` are the public supporting types, and transitions cancel it.
+- `frameBudget.report` also receives window projection/span/static/validation/scene-warning telemetry.
+  Its default preserves the existing console info/warn severities. A custom sink changes reporting,
+  never measurement or validation.
+- `ctx.renderer.observeGpuFrames({ maxFrames, maxQueries })` opts into complete, immutable render-query groups from the existing asynchronous timestamp resolver. Capacities bound pending, undrained and queued membership; losses and unavailable timestamp support fail explicitly. `take()` delivers each group once. `stop()` fences allocated frames and permits their drain; `dispose()` invalidates late completions. Observation preserves ordinary timestamp sampling. A benchmark needing every world frame requests the named `renderer.gpuTimestampFrameInterval: 1` override and joins query IDs to actual world renders, separating overlays. Ordinary games allocate no observation receipt. Browser/Linux correctness before this observer remains separate proof; actual observer performance qualification is still required.
 - `ctx.beforeRender(cb)` runs once per actual world draw, after the frame's last fixed update and
   before the projection reconciles and the renderer draws; a held loader frame draws no world and
   dispatches nothing. It is scene-owned and cleared on scene change and stop, like `ctx.afterPhysics`.
