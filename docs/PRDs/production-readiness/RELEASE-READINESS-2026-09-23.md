@@ -47,7 +47,7 @@ gone; two new highs (`fast-uri` via `threenative-sculpt-mcp` → MCP SDK → `aj
 
 | PRD | Progress (`pnpm prd:progress`) | What is left |
 | --- | --- | --- |
-| [PRD-196](critical/PRD-196-published-install-is-functional.md) published install | 32/33 phase boxes, 12/12 acceptance, `prd:75%` | One hosted proof: a `v*` tag push whose `clean-room` job reports `pass npm:android`. Also: published `create-threenative@0.2.6` lacks the `sharp` override, so its `npm` install fails at `sharp@0.34.5`; fixed in source, needs a republish |
+| [PRD-196](../done/PRD-196-published-install-is-functional.md) published install | 32/33 phase boxes, 12/12 acceptance, `prd:75%` | One hosted proof: a `v*` tag push whose `clean-room` job reports `pass npm:android`. Also: published `create-threenative@0.2.6` lacks the `sharp` override, so its `npm` install fails at `sharp@0.34.5`; fixed in source, needs a republish |
 | [PRD-064](critical/PRD-064-tier-1-native-reliability.md) desktop judge | 1/2 boxes, `prd:50%` | Phase 4 web/native parity box. PR #361 (2026-09-30) fixed the profiler (headed WebGPU, no marker server, unresolvable intervals) and measured on the RTX 2080 host: native 174.06 fps, p99 17.3 ms, no slower than web on all four legs, cold start p95 1,803 ms, distinct identities. **The web arm misses its budget** (35.6 fps mean, p99 110.4 ms vs ≥ 60 fps / ≤ 33 ms): Tier 1 not reached. The PRD file does not record this run yet |
 | [PRD-399](critical/PRD-399-playable-dev-distributables.md) playable distributables | 8/20 boxes, 1/6 phases, `prd:25%` | Bundle carry and generated commands (Phase 1, partial); per-platform UI cadence (Phase 2); Windows/macOS/Linux distributions (Phase 3); Linux, macOS and Android final artifacts (Phase 4); release flow, immutable candidate and docs (Phase 5). Pixel 8 child-window fixture passed 2026-09-27 at p95 55.78 ms (bound 66.7 ms) |
 
@@ -159,7 +159,7 @@ to 0.3.3 and not released.
 1. **~~The 0.3.3 cohort is not published.~~ Published 2026-09-25** (`latest`=`next`=`0.3.3`).
    **New drift (2026-10-01):** source is at an unpublished 0.3.4 cohort plus `@threenative/metahuman`,
    and the published `create-threenative@0.2.6` npm install fails on `sharp@0.34.5` (fixed in
-   source). Both close with the next cohort cut. Owner: [PRD-196](critical/PRD-196-published-install-is-functional.md)
+   source). Both close with the next cohort cut. Owner: [PRD-196](../done/PRD-196-published-install-is-functional.md)
    (32/33 phase boxes, 12/12 acceptance).
 2. **~~The promotion PR is stuck.~~** Promotions #291/#312 and #301/#303 merged; owner
    [PRD-373](../done/PRD-373-selective-ci-and-develop-promotion.md) is done. `develop` is now 64
