@@ -3944,3 +3944,35 @@ slice is not what bounds loading now; the loading lane needs a measured breakdow
 218,809 placements, admission, prewarm) before another budget change.
 
 No box changes. Computed progress remains **50%: 2/4 phases, 7/13 phase boxes**.
+
+### 2026-10-08 — measured load breakdown, the yield clamp fix, and native licensed textures
+
+Measured with a temporary per-second stage logger (reverted). Forest web load, host load 23, from
+the first scene log: assets 10 s, prop texture preparation 13 s, grounding of 218,809 placements
+26 s, partition/bounds/records 3 s, then spawn admission about 14 s. A CPU profile during grounding
+showed grounding JavaScript on only 35% of the main thread and 13% idle. Ray costs in the page: mesh
+ray 34 µs, physics ray 5.8 µs, so rays are not the main cost.
+
+Cause: core `yieldToHost` used `setTimeout(0)`, which Chrome clamps to 4 ms when nested (4.56 ms
+measured, against 0.009 ms for `scheduler.yield`). Every 8 ms `addInSlices` slice waited about
+4.5 ms idle. The native host installs `scheduler.yield`, and its timer queue is frame-coupled, so a
+timer yield there costs one frame per slice. **Fixed** in `a88753500`: `yieldToHost` takes
+`scheduler.yield` when the host has it. Red → green spec `streaming.spec.ts` "addInSlices yield".
+Core suite: 2794 passed, 1 failed (`constraints.spec.ts` on `animation-blend.ts` from #447, not this
+diff). Web A/B at host load 17: textures plus grounding 39 s → 14 s, and the loading screen kept
+10–13 fps (the Xvfb present cap), so rendering is not starved. `worldReady` came 46 s after the
+first scene log. The web `terrain.playtest.json` was not rerun after the fix, so its 60 s step is
+**unverified**.
+
+Native licensed models. The PR's native capture (`native-ground-staged-meadow.jpg`) shows the
+procedural fallback trees, because `stage-native-assets.mjs` stages only the public CC0 set. With
+the licensed `local-assets/` roots staged and the Basis transcoder linked at the example root's
+`basis/`, the native run logs **0** `Couldn't load texture` errors, against the earlier 143. The
+`device.lost` fix (`c1a7fc251`) removed the upload loss. The licensed textures therefore decode on
+native, and the earlier untextured cards came from the transcoder path, not from the models. The
+run still fails `worldReady`: every prop stage completes (218,809 grounded, stage `attached`), but
+spawn admission loads **0 of 6** spawn cells by the 120 s deadline (`prewarmedWorlds` 0). The
+staging script stays public-only until native admission loads cells. Next native step: trace why
+`WorldCells` admits no spawn cell on the native host after attach.
+
+No box changes. Computed progress remains **50%: 2/4 phases, 7/13 phase boxes**.
