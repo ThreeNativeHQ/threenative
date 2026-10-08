@@ -114,6 +114,82 @@ constexpr uint32_t WrapSub(int32_t x, int32_t y) {
 int __kernel_rem_pio2(double* x, double* y, int e0, int nx, int prec,
                       const int32_t* ipio2);
 
+constexpr int32_t npio2_hw[] = {
+    0x3FF921FB, 0x400921FB, 0x4012D97C, 0x401921FB, 0x401F6A7A, 0x4022D97C,
+    0x4025FDBB, 0x402921FB, 0x402C463A, 0x402F6A7A, 0x4031475C, 0x4032D97C,
+    0x40346B9C, 0x4035FDBB, 0x40378FDB, 0x403921FB, 0x403AB41B, 0x403C463A,
+    0x403DD85A, 0x403F6A7A, 0x40407E4C, 0x4041475C, 0x4042106C, 0x4042D97C,
+    0x4043A28C, 0x40446B9C, 0x404534AC, 0x4045FDBB, 0x4046C6CB, 0x40478FDB,
+    0x404858EB, 0x404921FB,
+};
+
+/*
+ * invpio2:  53 bits of 2/pi
+ * pio2_1:   first  33 bit of pi/2
+ * pio2_1t:  pi/2 - pio2_1
+ * pio2_2:   second 33 bit of pi/2
+ * pio2_2t:  pi/2 - (pio2_1+pio2_2)
+ * pio2_3:   third  33 bit of pi/2
+ * pio2_3t:  pi/2 - (pio2_1+pio2_2+pio2_3)
+ */
+
+constexpr double
+    zero = 0.00000000000000000000e+00,    /* 0x00000000, 0x00000000 */
+    half = 5.00000000000000000000e-01,    /* 0x3FE00000, 0x00000000 */
+    two24 = 1.67772160000000000000e+07,   /* 0x41700000, 0x00000000 */
+    invpio2 = 6.36619772367581382433e-01, /* 0x3FE45F30, 0x6DC9C883 */
+    pio2_1 = 1.57079632673412561417e+00,  /* 0x3FF921FB, 0x54400000 */
+    pio2_1t = 6.07710050650619224932e-11, /* 0x3DD0B461, 0x1A626331 */
+    pio2_2 = 6.07710050630396597660e-11,  /* 0x3DD0B461, 0x1A600000 */
+    pio2_2t = 2.02226624879595063154e-21, /* 0x3BA3198A, 0x2E037073 */
+    pio2_3 = 2.02226624871116645580e-21,  /* 0x3BA3198A, 0x2E000000 */
+    pio2_3t = 8.47842766036889956997e-32; /* 0x397B839A, 0x252049C1 */
+
+/* The medium-size branch of __ieee754_rem_pio2, unchanged, hoisted so sincos can inline it:
+ * every angle the engine reduces lands here and the call was the larger share of its cost. */
+[[gnu::always_inline]] inline int32_t rem_pio2_medium(double x, int32_t hx, int32_t ix, double* y) {
+  double t, r, w, fn;
+  int32_t n, i, j;
+  t = std::fabs(x);
+  n = static_cast<int32_t>(t * invpio2 + half);
+  fn = static_cast<double>(n);
+  r = t - fn * pio2_1;
+  w = fn * pio2_1t; /* 1st round good to 85 bit */
+  if (n < 32 && ix != npio2_hw[n - 1]) {
+    y[0] = r - w; /* quick check no cancellation */
+  } else {
+    uint32_t high;
+    j = ix >> 20;
+    y[0] = r - w;
+    GET_HIGH_WORD(high, y[0]);
+    i = j - ((high >> 20) & 0x7FF);
+    if (i > 16) { /* 2nd iteration needed, good to 118 */
+      t = r;
+      w = fn * pio2_2;
+      r = t - w;
+      w = fn * pio2_2t - ((t - r) - w);
+      y[0] = r - w;
+      GET_HIGH_WORD(high, y[0]);
+      i = j - ((high >> 20) & 0x7FF);
+      if (i > 49) { /* 3rd iteration need, 151 bits acc */
+        t = r;      /* will cover all possible cases */
+        w = fn * pio2_3;
+        r = t - w;
+        w = fn * pio2_3t - ((t - r) - w);
+        y[0] = r - w;
+      }
+    }
+  }
+  y[1] = (r - y[0]) - w;
+  if (hx < 0) {
+    y[0] = -y[0];
+    y[1] = -y[1];
+    return -n;
+  } else {
+    return n;
+  }
+}
+
 /* __ieee754_rem_pio2(x,y)
  *
  * return the remainder of x rem pi/2 in y[0]+y[1]
@@ -136,40 +212,9 @@ int32_t __ieee754_rem_pio2(double x, double *y) {
       0x73A8C9, 0x60E27B, 0xC08C6B,
   };
 
-  static const int32_t npio2_hw[] = {
-      0x3FF921FB, 0x400921FB, 0x4012D97C, 0x401921FB, 0x401F6A7A, 0x4022D97C,
-      0x4025FDBB, 0x402921FB, 0x402C463A, 0x402F6A7A, 0x4031475C, 0x4032D97C,
-      0x40346B9C, 0x4035FDBB, 0x40378FDB, 0x403921FB, 0x403AB41B, 0x403C463A,
-      0x403DD85A, 0x403F6A7A, 0x40407E4C, 0x4041475C, 0x4042106C, 0x4042D97C,
-      0x4043A28C, 0x40446B9C, 0x404534AC, 0x4045FDBB, 0x4046C6CB, 0x40478FDB,
-      0x404858EB, 0x404921FB,
-  };
-
-  /*
-   * invpio2:  53 bits of 2/pi
-   * pio2_1:   first  33 bit of pi/2
-   * pio2_1t:  pi/2 - pio2_1
-   * pio2_2:   second 33 bit of pi/2
-   * pio2_2t:  pi/2 - (pio2_1+pio2_2)
-   * pio2_3:   third  33 bit of pi/2
-   * pio2_3t:  pi/2 - (pio2_1+pio2_2+pio2_3)
-   */
-
-  static const double
-      zero = 0.00000000000000000000e+00,    /* 0x00000000, 0x00000000 */
-      half = 5.00000000000000000000e-01,    /* 0x3FE00000, 0x00000000 */
-      two24 = 1.67772160000000000000e+07,   /* 0x41700000, 0x00000000 */
-      invpio2 = 6.36619772367581382433e-01, /* 0x3FE45F30, 0x6DC9C883 */
-      pio2_1 = 1.57079632673412561417e+00,  /* 0x3FF921FB, 0x54400000 */
-      pio2_1t = 6.07710050650619224932e-11, /* 0x3DD0B461, 0x1A626331 */
-      pio2_2 = 6.07710050630396597660e-11,  /* 0x3DD0B461, 0x1A600000 */
-      pio2_2t = 2.02226624879595063154e-21, /* 0x3BA3198A, 0x2E037073 */
-      pio2_3 = 2.02226624871116645580e-21,  /* 0x3BA3198A, 0x2E000000 */
-      pio2_3t = 8.47842766036889956997e-32; /* 0x397B839A, 0x252049C1 */
-
-  double z, w, t, r, fn;
+  double z;
   double tx[3];
-  int32_t e0, i, j, nx, n, ix, hx;
+  int32_t e0, i, nx, n, ix, hx;
   uint32_t low;
 
   z = 0;
@@ -205,46 +250,8 @@ int32_t __ieee754_rem_pio2(double x, double *y) {
       return -1;
     }
   }
-  if (ix <= 0x413921FB) { /* |x| ~<= 2^19*(pi/2), medium size */
-    t = std::fabs(x);
-    n = static_cast<int32_t>(t * invpio2 + half);
-    fn = static_cast<double>(n);
-    r = t - fn * pio2_1;
-    w = fn * pio2_1t; /* 1st round good to 85 bit */
-    if (n < 32 && ix != npio2_hw[n - 1]) {
-      y[0] = r - w; /* quick check no cancellation */
-    } else {
-      uint32_t high;
-      j = ix >> 20;
-      y[0] = r - w;
-      GET_HIGH_WORD(high, y[0]);
-      i = j - ((high >> 20) & 0x7FF);
-      if (i > 16) { /* 2nd iteration needed, good to 118 */
-        t = r;
-        w = fn * pio2_2;
-        r = t - w;
-        w = fn * pio2_2t - ((t - r) - w);
-        y[0] = r - w;
-        GET_HIGH_WORD(high, y[0]);
-        i = j - ((high >> 20) & 0x7FF);
-        if (i > 49) { /* 3rd iteration need, 151 bits acc */
-          t = r;      /* will cover all possible cases */
-          w = fn * pio2_3;
-          r = t - w;
-          w = fn * pio2_3t - ((t - r) - w);
-          y[0] = r - w;
-        }
-      }
-    }
-    y[1] = (r - y[0]) - w;
-    if (hx < 0) {
-      y[0] = -y[0];
-      y[1] = -y[1];
-      return -n;
-    } else {
-      return n;
-    }
-  }
+  if (ix <= 0x413921FB) /* |x| ~<= 2^19*(pi/2), medium size */
+    return rem_pio2_medium(x, hx, ix, y);
   /*
    * all other (large) arguments
    */
@@ -1028,9 +1035,9 @@ double cos(double x) {
  *      TRIG(x) returns trig(x) nearly rounded
  */
 void sincos(double x, double& sine, double& cosine) {
-  int32_t ix;
-  GET_HIGH_WORD(ix, x);
-  ix &= 0x7FFFFFFF;
+  int32_t hx, ix;
+  GET_HIGH_WORD(hx, x);
+  ix = hx & 0x7FFFFFFF;
   if (ix <= 0x3FE921FB) {
     sine = __kernel_sin(x, 0.0, 0);
     cosine = __kernel_cos(x, 0.0);
@@ -1038,7 +1045,8 @@ void sincos(double x, double& sine, double& cosine) {
     sine = cosine = x - x;
   } else {
     double y[2];
-    const int n = __ieee754_rem_pio2(x, y);
+    // 3pi/4 < |x| <= 2^19*(pi/2) is the range every animated angle lands in: reduce it inline.
+    const int n = ix >= 0x4002D97C && ix <= 0x413921FB ? rem_pio2_medium(x, hx, ix, y) : __ieee754_rem_pio2(x, y);
     const double s = __kernel_sin(y[0], y[1], 1), c = __kernel_cos(y[0], y[1]);
     switch (n & 3) {
       case 0: sine = s; cosine = c; break;
