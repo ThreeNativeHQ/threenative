@@ -295,7 +295,7 @@ bool loadBoth(Value& scenario, Value& reference) {
     return loadJson(TN_PHYSICS_SYNC_SCENARIO, scenario) && loadJson(TN_PHYSICS_SYNC_REFERENCE, reference);
 }
 
-void sync() {
+void rapierSync() { // not `sync`: POSIX ::sync() makes that name ambiguous under GCC
     Value scenario;
     Value reference;
     if (!loadBoth(scenario, reference))
@@ -334,4 +334,4 @@ void events() {
 
 } // namespace
 
-TN_TEST_MAIN({"sync", sync}, {"events", events})
+TN_TEST_MAIN({"sync", rapierSync}, {"events", events})

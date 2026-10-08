@@ -536,6 +536,15 @@ jobs:
           emcmake cmake -S . -B build/wasm-check -G Ninja -DCMAKE_BUILD_TYPE=Release
           cmake --build build/wasm-check --target tn-native-engine-core-tests --parallel "$(nproc)"
           ctest --test-dir build/wasm-check -L native-engine --output-on-failure
+          # PRD-533's web arms: the browser engine build and the pinned Perry toolchain are what
+          # web-engine-bench.spec.ts and perry-packed.spec.ts load, so they run here and nowhere
+          # else (TN_WEB_ENGINE_SPECS); wasm-dis comes from emsdk's binaryen.
+          cmake --preset wasm-browser
+          cmake --build build/wasm-browser --target tn-native-engine-wasm-browser --parallel "$(nproc)"
+          node ../../tools/native-typescript/provision.mjs
+          export PATH="$PATH:$EMSDK/upstream/bin"
+          (cd ../.. && TN_WEB_ENGINE_SPECS=1 pnpm exec vitest run \
+            scripts/__tests__/web-engine-bench.spec.ts scripts/__tests__/perry-packed.spec.ts)
       - name: Report the compiler cache hit rate
         if: always()
         shell: bash

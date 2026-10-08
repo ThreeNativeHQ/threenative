@@ -102,7 +102,8 @@ describe("starter texture export", () => {
     const temporary = await makeTempDir("tn-starter-page-cpu-");
     const bundle = path.join(temporary, "starter-visual.js");
     const fixture = path.join(temporary, "starter-fixture.js");
-    const esbuild = path.join(root, "node_modules/.bin/esbuild");
+    // This package declares esbuild; the workspace root does not, so its .bin is not guaranteed.
+    const esbuild = path.join(import.meta.dirname, "../node_modules/.bin/esbuild");
     await promisify(execFile)(
       esbuild,
       [

@@ -23,6 +23,10 @@ import {
   webBenchOptions,
 } from "../engine-load-test/web.js";
 
+// These tests build or load the real Wasm engine and Perry toolchain (emcc, the wasm-browser
+// build). CI runs them in test-native, which builds both; a shard without them would only time out.
+const builtWasm = process.env.TN_WEB_ENGINE_SPECS === "1";
+
 describe("PRD-533 web arms", () => {
   it("separates measured-phase CPU consumption from wall time and rejects missing counters", () => {
     const event = (title: string, wall: number, thread: number, process: number) => ({
@@ -161,77 +165,84 @@ describe("PRD-533 web arms", () => {
     expect(() => summarizeWebBench(diagnostic, null, 0)).toThrow(/repeats/);
   });
 
-  it("builds separate arms and genuinely invokes the pinned Perry Wasm backend", async () => {
-    const result = await buildWebBench(
-      process.cwd(),
-      "/tmp/tn-web-bench-unit",
-      webBenchOptions({ objects: "4" }),
-    );
-    expect(result.engineBuild.buildType).toBe("Release");
-    expect(result.engineBuild.flags.some((flag) => flag.includes("-O3"))).toBe(true);
-    expect(result.bundleBytes.current).toBeGreaterThan(0);
-    expect(result.bundleBytes["wasm-js"]).toBeGreaterThan(0);
-    if (result.perryUnavailable === null) {
-      expect(result.bundleBytes["wasm-perry"]).toBeGreaterThan(result.bundleBytes["wasm-js"]);
-      expect(result.perryWasmImports).toContain("ffi:tn_submit");
-      const inputs = createPlacements(4).flatMap((p) => [p.x, p.y, p.z]);
-      let actual: number[] = [];
-      let expected: number[] = [];
-      let updateJs: (frame: number) => void = () => {
-        throw new Error("JS callback missing");
-      };
-      runInNewContext(await readFile("/tmp/tn-web-bench-unit/game.js", "utf8"), {
-        tn_inputs: () => inputs,
-        tn_values: () => new Array(6 + (inputs.length / 3) * 5).fill(0),
-        tn_submit: (values: number[]) => {
-          expected = [...values];
-        },
-        tn_ready: (callback: typeof updateJs) => {
-          updateJs = callback;
-        },
-      });
-      const context = {
-        WebAssembly,
-        TextDecoder,
-        TextEncoder,
-        atob,
-        console,
-        setTimeout,
-        clearTimeout,
-        document: { createElement: () => ({ style: {} }), head: { appendChild: () => {} } },
-        loadPerry: undefined as
-          | undefined
-          | ((input: number[], submit: (values: number[]) => void) => Promise<typeof updateJs>),
-      };
-      const source = await readFile("/tmp/tn-web-bench-unit/perry-game.js", "utf8");
-      const documentBefore = Object.getOwnPropertyDescriptor(globalThis, "document");
-      Object.defineProperty(globalThis, "document", {
-        value: context.document,
-        configurable: true,
-      });
-      const module = await import(
-        `data:text/javascript;base64,${Buffer.from(source).toString("base64")}`
+  it.runIf(builtWasm)(
+    "builds separate arms and genuinely invokes the pinned Perry Wasm backend",
+    async () => {
+      const result = await buildWebBench(
+        process.cwd(),
+        "/tmp/tn-web-bench-unit",
+        webBenchOptions({ objects: "4" }),
       );
-      if (documentBefore) Object.defineProperty(globalThis, "document", documentBefore);
-      else Reflect.deleteProperty(globalThis, "document");
-      const updatePerry = await module.loadPerry(inputs, (values: number[]) => {
-        actual = [...values];
-      });
-      expect(updatePerry).toBeTypeOf("function");
-      for (const frame of [0, 317, 719]) {
-        updateJs(frame);
-        updatePerry?.(frame);
-        expect(actual).toHaveLength(expected.length);
-        actual.forEach((value, index) => expect(value).toBeCloseTo(expected[index] as number, 12));
-      }
-    } else expect(result.perryUnavailable).toMatch(/Perry/);
-  });
-
-  const testArm = it.for(
-    ["wasm-js", "wasm-perry"].flatMap((arm) =>
-      ["off", "unsupported", "pending", "fresh"].map((mode) => ({ arm, mode })),
-    ),
+      expect(result.engineBuild.buildType).toBe("Release");
+      expect(result.engineBuild.flags.some((flag) => flag.includes("-O3"))).toBe(true);
+      expect(result.bundleBytes.current).toBeGreaterThan(0);
+      expect(result.bundleBytes["wasm-js"]).toBeGreaterThan(0);
+      if (result.perryUnavailable === null) {
+        expect(result.bundleBytes["wasm-perry"]).toBeGreaterThan(result.bundleBytes["wasm-js"]);
+        expect(result.perryWasmImports).toContain("ffi:tn_submit");
+        const inputs = createPlacements(4).flatMap((p) => [p.x, p.y, p.z]);
+        let actual: number[] = [];
+        let expected: number[] = [];
+        let updateJs: (frame: number) => void = () => {
+          throw new Error("JS callback missing");
+        };
+        runInNewContext(await readFile("/tmp/tn-web-bench-unit/game.js", "utf8"), {
+          tn_inputs: () => inputs,
+          tn_values: () => new Array(6 + (inputs.length / 3) * 5).fill(0),
+          tn_submit: (values: number[]) => {
+            expected = [...values];
+          },
+          tn_ready: (callback: typeof updateJs) => {
+            updateJs = callback;
+          },
+        });
+        const context = {
+          WebAssembly,
+          TextDecoder,
+          TextEncoder,
+          atob,
+          console,
+          setTimeout,
+          clearTimeout,
+          document: { createElement: () => ({ style: {} }), head: { appendChild: () => {} } },
+          loadPerry: undefined as
+            | undefined
+            | ((input: number[], submit: (values: number[]) => void) => Promise<typeof updateJs>),
+        };
+        const source = await readFile("/tmp/tn-web-bench-unit/perry-game.js", "utf8");
+        const documentBefore = Object.getOwnPropertyDescriptor(globalThis, "document");
+        Object.defineProperty(globalThis, "document", {
+          value: context.document,
+          configurable: true,
+        });
+        const module = await import(
+          `data:text/javascript;base64,${Buffer.from(source).toString("base64")}`
+        );
+        if (documentBefore) Object.defineProperty(globalThis, "document", documentBefore);
+        else Reflect.deleteProperty(globalThis, "document");
+        const updatePerry = await module.loadPerry(inputs, (values: number[]) => {
+          actual = [...values];
+        });
+        expect(updatePerry).toBeTypeOf("function");
+        for (const frame of [0, 317, 719]) {
+          updateJs(frame);
+          updatePerry?.(frame);
+          expect(actual).toHaveLength(expected.length);
+          actual.forEach((value, index) =>
+            expect(value).toBeCloseTo(expected[index] as number, 12),
+          );
+        }
+      } else expect(result.perryUnavailable).toMatch(/Perry/);
+    },
   );
+
+  const testArm = it
+    .runIf(builtWasm)
+    .for(
+      ["wasm-js", "wasm-perry"].flatMap((arm) =>
+        ["off", "unsupported", "pending", "fresh"].map((mode) => ({ arm, mode })),
+      ),
+    );
   testArm("runs $arm/$mode CPU spans and stable views", async ({ arm, mode }, { skip }) => {
     const gpuSupported = ["pending", "fresh"].includes(mode);
     if (
@@ -469,94 +480,102 @@ describe("PRD-533 web arms", () => {
     ).toThrow(/PROFILE_SERIES/);
   });
 
-  it("merges compatible colour-only materials and keeps geometry groups distinct", async () => {
-    const factory = createRequire(import.meta.url)(
-      "../../packages/runtime-native/build/wasm-browser/tn-native-engine-wasm-browser.js",
-    );
-    const abi = await factory();
-    const engine = defineBrowserClasses(registry as IRegistryDump, createWasmRuntime(abi));
-    const Scene = engine.classes.Scene;
-    const Camera = engine.classes.PerspectiveCamera;
-    const Mesh = engine.classes.Mesh;
-    const Geometry = engine.classes.BoxGeometry;
-    const Material = engine.classes.MeshStandardMaterial;
-    if (!Scene || !Camera || !Mesh || !Geometry || !Material) throw new Error("classes missing");
-    const scene = new Scene() as { add(mesh: object): void };
-    const camera = new Camera();
-    const secondCamera = new Camera() as { layers: { set(layer: number): void } };
-    const geometry = new Geometry(1, 1, 1);
-    const material = new Material();
-    const meshes = Array.from({ length: 4 }, () => new Mesh(geometry, material));
-    for (const mesh of meshes) scene.add(mesh);
-    const handles = abi._malloc(36);
-    const view = new DataView(abi.HEAPU8.buffer);
-    [scene, camera, secondCamera].forEach((object, index) => {
-      const key = engineRef(object)?.key.split(":").map(Number);
-      if (!key) throw new Error("handle missing");
-      view.setUint16(handles + index * 12, key[0] as number, true);
-      view.setUint16(handles + index * 12 + 2, key[1] as number, true);
-      view.setUint32(handles + index * 12 + 4, key[2] as number, true);
-      view.setUint32(handles + index * 12 + 8, key[3] as number, true);
-    });
-    const stats = abi._tnw_bench_stats();
-    expect(abi._tnw_bench_prepare(handles, handles + 12)).toBe(0);
-    expect(abi.HEAPF64[stats / 8 + 3]).toBe(1); // the four shared cubes batch
-    scene.add(new Mesh(geometry, new Material()));
-    expect(abi._tnw_bench_prepare(handles, handles + 12)).toBe(0);
-    expect(abi.HEAPF64[stats / 8 + 3]).toBe(1); // compatible unique materials join the colour batch
-    for (let index = 0; index < 3; index++) scene.add(new Mesh(new Geometry(1, 1, 1), material));
-    expect(abi._tnw_bench_prepare(handles, handles + 12)).toBe(0);
-    expect(abi.HEAPF64[stats / 8 + 3]).toBe(4); // different geometry never joins the shared group
-    for (const mesh of meshes.slice(0, 2))
-      (mesh as { layers: { set(layer: number): void } }).layers.set(1);
-    secondCamera.layers.set(1);
-    // Alternating cameras must retain the other layer's cached records.
-    for (let tick = 0; tick < 3; tick++) {
-      for (const cameraOffset of [12, 24]) {
-        expect(abi._tnw_bench_prepare(handles, handles + cameraOffset)).toBe(0);
-        expect(abi.HEAPF64[stats / 8 + 4]).toBe(0);
+  it.runIf(builtWasm)(
+    "merges compatible colour-only materials and keeps geometry groups distinct",
+    async () => {
+      const factory = createRequire(import.meta.url)(
+        "../../packages/runtime-native/build/wasm-browser/tn-native-engine-wasm-browser.js",
+      );
+      const abi = await factory();
+      const engine = defineBrowserClasses(registry as IRegistryDump, createWasmRuntime(abi));
+      const Scene = engine.classes.Scene;
+      const Camera = engine.classes.PerspectiveCamera;
+      const Mesh = engine.classes.Mesh;
+      const Geometry = engine.classes.BoxGeometry;
+      const Material = engine.classes.MeshStandardMaterial;
+      if (!Scene || !Camera || !Mesh || !Geometry || !Material) throw new Error("classes missing");
+      const scene = new Scene() as { add(mesh: object): void };
+      const camera = new Camera();
+      const secondCamera = new Camera() as { layers: { set(layer: number): void } };
+      const geometry = new Geometry(1, 1, 1);
+      const material = new Material();
+      const meshes = Array.from({ length: 4 }, () => new Mesh(geometry, material));
+      for (const mesh of meshes) scene.add(mesh);
+      const handles = abi._malloc(36);
+      const view = new DataView(abi.HEAPU8.buffer);
+      [scene, camera, secondCamera].forEach((object, index) => {
+        const key = engineRef(object)?.key.split(":").map(Number);
+        if (!key) throw new Error("handle missing");
+        view.setUint16(handles + index * 12, key[0] as number, true);
+        view.setUint16(handles + index * 12 + 2, key[1] as number, true);
+        view.setUint32(handles + index * 12 + 4, key[2] as number, true);
+        view.setUint32(handles + index * 12 + 8, key[3] as number, true);
+      });
+      const stats = abi._tnw_bench_stats();
+      expect(abi._tnw_bench_prepare(handles, handles + 12)).toBe(0);
+      expect(abi.HEAPF64[stats / 8 + 3]).toBe(1); // the four shared cubes batch
+      scene.add(new Mesh(geometry, new Material()));
+      expect(abi._tnw_bench_prepare(handles, handles + 12)).toBe(0);
+      expect(abi.HEAPF64[stats / 8 + 3]).toBe(1); // compatible unique materials join the colour batch
+      for (let index = 0; index < 3; index++) scene.add(new Mesh(new Geometry(1, 1, 1), material));
+      expect(abi._tnw_bench_prepare(handles, handles + 12)).toBe(0);
+      expect(abi.HEAPF64[stats / 8 + 3]).toBe(4); // different geometry never joins the shared group
+      for (const mesh of meshes.slice(0, 2))
+        (mesh as { layers: { set(layer: number): void } }).layers.set(1);
+      secondCamera.layers.set(1);
+      // Alternating cameras must retain the other layer's cached records.
+      for (let tick = 0; tick < 3; tick++) {
+        for (const cameraOffset of [12, 24]) {
+          expect(abi._tnw_bench_prepare(handles, handles + cameraOffset)).toBe(0);
+          expect(abi.HEAPF64[stats / 8 + 4]).toBe(0);
+        }
       }
-    }
-    abi._free(handles);
-  });
+      abi._free(handles);
+    },
+  );
 
-  it("executes the built Wasm bulk API and refuses nonfinite input before any writes", async () => {
-    const factory = createRequire(import.meta.url)(
-      "../../packages/runtime-native/build/wasm-browser/tn-native-engine-wasm-browser.js",
-    );
-    const abi = (await factory()) as TnAbiModule & {
-      _tnw_bulk_transforms(handles: number, values: number, count: number): number;
-    };
-    const engine = defineBrowserClasses(registry as IRegistryDump, createWasmRuntime(abi));
-    const Mesh = engine.classes.Mesh;
-    if (!Mesh) throw new Error("Mesh not bound");
-    const meshes = [new Mesh(), new Mesh()] as unknown as { position: { x: number; y: number } }[];
-    const handles = abi._malloc(24);
-    const values = abi._malloc(80);
-    const view = new DataView(abi.HEAPU8.buffer);
-    meshes.forEach((mesh, index) => {
-      const key = engineRef(mesh)?.key.split(":").map(Number);
-      if (!key) throw new Error("handle missing");
-      view.setUint16(handles + index * 12, key[0] as number, true);
-      view.setUint16(handles + index * 12 + 2, key[1] as number, true);
-      view.setUint32(handles + index * 12 + 4, key[2] as number, true);
-      view.setUint32(handles + index * 12 + 8, key[3] as number, true);
-    });
-    new Float64Array(abi.HEAPU8.buffer, values, 10).set([1, 2, 3, 0.1, 0.2, 4, 5, 6, 0.3, 0.4]);
-    expect(abi._tnw_bulk_transforms(handles, values, 2)).toBe(0);
-    expect(meshes[0]?.position.x).toBe(1);
-    expect(meshes[1]?.position.y).toBe(5);
-    new Float64Array(abi.HEAPU8.buffer, values, 10).set([99, 2, 3, 0, 0, 4, Number.NaN, 6, 0, 0]);
-    expect(abi._tnw_bulk_transforms(handles, values, 2)).toBe(1);
-    expect(meshes[0]?.position.x).toBe(1);
-    const buffer = abi.HEAPU8.buffer;
-    const growth = abi._malloc(abi.HEAPU8.byteLength + 65536);
-    expect(abi.HEAPU8.buffer).not.toBe(buffer);
-    if (!meshes[0]) throw new Error("mesh missing");
-    meshes[0].position.x = 7;
-    expect(meshes[0].position.x).toBe(7); // the cached DataView follows heap growth
-    abi._free(growth);
-    abi._free(values);
-    abi._free(handles);
-  });
+  it.runIf(builtWasm)(
+    "executes the built Wasm bulk API and refuses nonfinite input before any writes",
+    async () => {
+      const factory = createRequire(import.meta.url)(
+        "../../packages/runtime-native/build/wasm-browser/tn-native-engine-wasm-browser.js",
+      );
+      const abi = (await factory()) as TnAbiModule & {
+        _tnw_bulk_transforms(handles: number, values: number, count: number): number;
+      };
+      const engine = defineBrowserClasses(registry as IRegistryDump, createWasmRuntime(abi));
+      const Mesh = engine.classes.Mesh;
+      if (!Mesh) throw new Error("Mesh not bound");
+      const meshes = [new Mesh(), new Mesh()] as unknown as {
+        position: { x: number; y: number };
+      }[];
+      const handles = abi._malloc(24);
+      const values = abi._malloc(80);
+      const view = new DataView(abi.HEAPU8.buffer);
+      meshes.forEach((mesh, index) => {
+        const key = engineRef(mesh)?.key.split(":").map(Number);
+        if (!key) throw new Error("handle missing");
+        view.setUint16(handles + index * 12, key[0] as number, true);
+        view.setUint16(handles + index * 12 + 2, key[1] as number, true);
+        view.setUint32(handles + index * 12 + 4, key[2] as number, true);
+        view.setUint32(handles + index * 12 + 8, key[3] as number, true);
+      });
+      new Float64Array(abi.HEAPU8.buffer, values, 10).set([1, 2, 3, 0.1, 0.2, 4, 5, 6, 0.3, 0.4]);
+      expect(abi._tnw_bulk_transforms(handles, values, 2)).toBe(0);
+      expect(meshes[0]?.position.x).toBe(1);
+      expect(meshes[1]?.position.y).toBe(5);
+      new Float64Array(abi.HEAPU8.buffer, values, 10).set([99, 2, 3, 0, 0, 4, Number.NaN, 6, 0, 0]);
+      expect(abi._tnw_bulk_transforms(handles, values, 2)).toBe(1);
+      expect(meshes[0]?.position.x).toBe(1);
+      const buffer = abi.HEAPU8.buffer;
+      const growth = abi._malloc(abi.HEAPU8.byteLength + 65536);
+      expect(abi.HEAPU8.buffer).not.toBe(buffer);
+      if (!meshes[0]) throw new Error("mesh missing");
+      meshes[0].position.x = 7;
+      expect(meshes[0].position.x).toBe(7); // the cached DataView follows heap growth
+      abi._free(growth);
+      abi._free(values);
+      abi._free(handles);
+    },
+  );
 });

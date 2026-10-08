@@ -4255,9 +4255,9 @@ export class WorldCells extends Group implements IComputeDriven {
       ...this.#snapshotChildren,
       this.#terrain,
       ...[...this.#resident.values()].flatMap((cell) => cell.chunks),
-      ...[...this.#shared.values()].map((batch) => batch.mesh),
-      ...[...this.#chunkBundles.values()].map((entry) => entry.group),
-      ...[...this.#far.values()].map((entry) => entry.mesh),
+      ...Array.from(this.#shared.values(), (batch) => batch.mesh),
+      ...Array.from(this.#chunkBundles.values(), (entry) => entry.group),
+      ...Array.from(this.#far.values(), (entry) => entry.mesh),
     ]);
     if (this.#bundle !== undefined) streamed.add(this.#bundle);
     if (recursive) {
