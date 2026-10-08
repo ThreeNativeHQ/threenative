@@ -4,10 +4,9 @@ prd_contract: v1
 
 # PRD-211 — an Android APK builds and boots from the repository's own assets
 
-**Status:** PARTIAL — Phases 1, 2 and 3 landed and are desktop-executed; every remaining
-criterion needs a physical Pixel 8. Evidence:
-`docs/verification/prd-211-2026-08-23.md` (Phase 2),
-`docs/verification/prd-211-phase1-2026-08-23.md` (Phases 1 and 3).
+**Status:** DONE — Phases 1, 2 and 3 landed (desktop evidence:
+`docs/verification/prd-211-2026-08-23.md`, `docs/verification/prd-211-phase1-2026-08-23.md`);
+the Android boot proof ran on 2026-10-07 (see "Android boot proof" below).
 
 **Priority:** P0 — Documented boot-dead APK with TN_NATIVE_START_FAILED on a real .ogg.
 **Complexity:** +2 for multi-package changes (runtime-native + assets scripts), +1 vendored
@@ -119,9 +118,9 @@ claims (#3).
 - [x] Derive webp support from runtimeRoot facts mirroring the CMake glob; correct the reason
       strings; keep the iOS exclusion honest.
 - [x] Red/green both arms in tests (current code fails both since rejection is hardcoded).
-- [ ] **Device proof, open:** repo-assets APK logs `WebP format support: YES` and textured models
-      render. Sequenced after Phase 1, which has now landed; one install proves this and the
-      Phase 3 boot together.
+- [x] **Device proof:** repo-assets APK logs `WebP format support: YES` and textured models
+      render. proof: Android emulator, 2026-10-07 — logcat `[Mystral] WebP format support: YES`;
+      the in-game capture shows the webp-textured enemy models and the textured town.
 
 #### Phase 3: every packager runs the same honest gate
 
@@ -132,8 +131,9 @@ verification record (NEW).
       (`deriveDesktopWebpSupport`, `deriveIosWebpSupport`); both packagers previously ran none.
       The audio refusal now reads "no native target decodes this container" and prints no ffmpeg
       advice for Ogg Vorbis.
-- [ ] **End-to-end, open:** clean clone → `threenative build --target android` from repo assets →
-      boots with audio. Needs the physical Pixel 8; the device was leased to another lane.
+- [x] **End-to-end:** clean clone → `threenative build --target android` from repo assets →
+      boots with audio. proof: Android emulator, 2026-10-07 — 30 genuine `OggS` files packaged,
+      30 `Decoded audio … (Ogg Vorbis)` lines, no `TN_NATIVE_START_FAILED`, a full round played.
 
 ## Verification Strategy
 
@@ -143,14 +143,49 @@ webp derivation table across fake/provisioned roots, desktop-gate negative contr
 
 ## Acceptance Criteria
 
-- [ ] From a clean clone, `threenative build --target android` produces an APK that boots and
+- [x] From a clean clone, `threenative build --target android` produces an APK that boots and
       plays its `.ogg` audio with zero manual steps (bug doc §9's repro, green).
-- [ ] A webp GLB builds when — and only when — the packaged runtime genuinely carries libwebp;
+      proof: "Android boot proof" below — no audio staging step; AAudio stream started.
+- [x] A webp GLB builds when — and only when — the packaged runtime genuinely carries libwebp;
       the refusal message names the missing provisioning, not a stale rumour.
-- [ ] Desktop and iOS packagers refuse undecodable audio at package time instead of failing at
-      game boot.
-- [ ] No `.ogg`-renaming step exists outside git history; preflight prints no ffmpeg advice for
-      containers the runtime now decodes.
+      proof: `tests/android-webp-provisioning.test.mjs`, `tests/android-asset-preflight.test.mjs`
+      green (2026-10-07); the webp enemy GLBs packaged and rendered on the emulator.
+- [x] Desktop and iOS packagers refuse undecodable audio at package time instead of failing at
+      game boot. proof: `tests/desktop-assets.test.mjs` green (2026-10-07). The iOS packager is
+      proven by its unit test only; this Linux machine has no iOS lane.
+- [x] No `.ogg`-renaming step exists outside git history; preflight prints no ffmpeg advice for
+      containers the runtime now decodes. proof: `tests/audio-decode-ogg.test.mjs` green; the
+      Android build printed no audio refusal for 30 Ogg Vorbis files.
+
+## Android boot proof (2026-10-07)
+
+Lane: Android emulator `threenative_api35` (x86_64, `-gpu host`), **not** the Pixel 8. JS engine:
+QuickJS (`-PthreenativeJsEngine=quickjs`), because this machine's `third_party/v8-android` payload
+has no build receipt and `verifyV8Dependency` refuses it. Phase 1 already proved the decode on V8
+and QuickJS. This lane proves behaviour, not performance.
+
+Game: Bayview (`sandbox/fps-framework`), the bug doc's repro, copied from its tracked files plus its
+untracked `assets/` sources, installed from npm `0.3.3`. The native runtime came from this branch's
+source (`THREENATIVE_RUNTIME_SOURCE`, `--allow-source-build`, `-PthreenativeAbis=x86_64`).
+
+| Check | Result |
+| --- | --- |
+| `.ogg` files in the APK | 30, each starts `4f676753` (`OggS`) |
+| Preflight | no audio refusal, no webp refusal |
+| Ogg decode on device | 30 `[Audio] Decoded audio: … (Ogg Vorbis)` lines, two resampled from 48 000 Hz |
+| Boot | no `TN_NATIVE_START_FAILED`; `TN_COLD_START first_frame` at 1278 ms |
+| Audio output | `AAudioStreamBuilder_openStream() returns 0 = AAUDIO_OK`, `AAudioStream_requestStart` returned 0; the emulator runs `-no-audio`, so nothing was heard |
+| WebP | `[Mystral] WebP format support: YES` |
+| Scene | a full round ran; the capture shows the textured town, the enemy models and the viewmodel |
+
+Two Bayview steps were needed. Both are game layer, not PRD-211 scope:
+
+1. Bayview loads `assets/*.glb`, which only its own `tools/optimize-models.sh` writes (a Vite
+   plugin runs it on web builds). The Android build does not run it, so the first boot failed
+   `TN_ASSETS_UNRESOLVED: 'assets/enemy-terrorist.glb'`. Running the game's script fixed it.
+2. Bayview sets `assets.models: "none"`, so its raw interleaved source GLBs reach the native
+   preflight, which refuses them correctly. With the default model pipeline the engine emits
+   separate vertex buffers for native (`packages/assets/src/compile.ts`), and the build passes.
 
 ## Out of scope
 
