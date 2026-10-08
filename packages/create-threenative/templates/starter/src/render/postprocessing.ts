@@ -18,6 +18,7 @@ import {
   formatQualityAdaptation,
 } from "./adaptiveQuality.js";
 import { type QualityTier, qualityPreset } from "./quality.js";
+import { type TemporalAAProvider, temporalAAStages } from "./temporalAAStage.js";
 import type { FogMedium } from "./volumetricFog.js";
 import { type OutputRenderer, WorldEnvironment } from "./worldEnvironment.js";
 
@@ -61,6 +62,9 @@ export function setupPost(
   let disposed = false;
   let disposeGraph: (() => void) | undefined;
   let medium: FogMedium | undefined;
+  // The opt-in `traa` stage publishes its provider here once the chain has built it, so `debug()`
+  // reports the live reconstruction state and a scene can reset history on a teleport.
+  let temporal: TemporalAAProvider | undefined;
   let observation: Record<string, unknown> = {
     tier: policy.tier,
     source: policy.pinned ? "pinned" : "auto",
@@ -72,7 +76,15 @@ export function setupPost(
     medium = environment.fog?.();
     const composed = medium;
     const settings = qualityPreset(policy.tier);
-    const world = new WorldEnvironment(settings);
+    const world = new WorldEnvironment({
+      ...settings,
+      authoredStages: (stage) =>
+        temporalAAStages(stage, {
+          onProvider: (provider) => {
+            temporal = provider;
+          },
+        }),
+    });
     const applied = world.apply(renderer, scene, camera, {
       godraysLight: environment.godraysLight,
       // Ahead of exposure and every stage, which is the only place a participating medium can go.
@@ -93,7 +105,7 @@ export function setupPost(
     get tier(): QualityTier {
       return policy.tier;
     },
-    debug: () => observation,
+    debug: () => (temporal ? { ...observation, temporal: temporal.report() } : { ...observation }),
     observe(window: IQualityWindow): void {
       if (disposed) return;
       const decision = policy.observe(window);
@@ -113,6 +125,7 @@ export function setupPost(
       disposeGraph = undefined;
       medium?.dispose();
       medium = undefined;
+      temporal = undefined;
       if (active === controller) active = undefined;
     },
   };

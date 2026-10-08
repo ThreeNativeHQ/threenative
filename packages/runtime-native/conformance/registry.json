@@ -75,6 +75,86 @@
   ],
   "tests": [
     {
+      "id": "temporal-aa",
+      "title": "full-resolution temporal AA with object motion history",
+      "category": "rendering",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/temporal-aa.js",
+      "captureFrames": 26,
+      "browserRecipe": "webgpu",
+      "requiresHardwareAdapter": true,
+      "tolerance": {
+        "pixelMismatchRatio": 0.06,
+        "perceptualDeltaE": 9.0
+      },
+      "desktopGate": false,
+      "required": false
+    },
+    {
+      "id": "temporal-aa-scaled",
+      "title": "display-sized temporal reconstruction from a smaller input raster",
+      "category": "rendering",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/temporal-aa-scaled.js",
+      "captureFrames": 30,
+      "browserRecipe": "webgpu",
+      "requiresHardwareAdapter": true,
+      "tolerance": {
+        "pixelMismatchRatio": 0.06,
+        "perceptualDeltaE": 9.0
+      },
+      "desktopGate": false,
+      "required": false
+    },
+    {
+      "id": "temporal-aa-scaled-unchecked-reset",
+      "title": "display-sized temporal reconstruction with the cold-frame reset gate removed",
+      "category": "rendering",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/temporal-aa-scaled-unchecked-reset.js",
+      "captureFrames": 30,
+      "browserRecipe": "webgpu",
+      "requiresHardwareAdapter": true,
+      "tolerance": {
+        "pixelMismatchRatio": 0.06,
+        "perceptualDeltaE": 9.0
+      },
+      "desktopGate": false,
+      "required": false
+    },
+    {
+      "id": "temporal-aa-lifecycle",
+      "title": "temporal history invalidated per resize, cut, projection and scale step",
+      "category": "rendering",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/temporal-aa-lifecycle.js",
+      "captureFrames": 40,
+      "browserRecipe": "webgpu",
+      "requiresHardwareAdapter": true,
+      "tolerance": {
+        "pixelMismatchRatio": 0.06,
+        "perceptualDeltaE": 9.0
+      },
+      "desktopGate": false,
+      "required": false
+    },
+    {
+      "id": "temporal-aa-quality",
+      "title": "display-sized temporal reconstruction of the authored alpha-tested quality corpus",
+      "category": "rendering",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/temporal-aa-quality.js",
+      "captureFrames": 40,
+      "browserRecipe": "webgpu",
+      "requiresHardwareAdapter": true,
+      "tolerance": {
+        "pixelMismatchRatio": 0.06,
+        "perceptualDeltaE": 9.0
+      },
+      "desktopGate": false,
+      "required": false
+    },
+    {
       "id": "01-basic-cube",
       "title": "basic cube",
       "category": "core",

@@ -166,7 +166,7 @@ export interface IRenderProjectionOptions {
    * each frame. The verdict is reported as `disabled`, not as one of the measured declines.
    */
   readonly projection?: boolean | { readonly materialChecks?: ProjectionMaterialChecks };
-  /** Allocates per-sub-draw previous matrices for the material-batching lane. */
+  /** Retains drawn-object history for temporal stages, independently of projection opt-out. */
   readonly velocity?: boolean | (() => boolean);
   /**
    * The engine's world-matrix walk, when the frame owns one. The authored scene is refreshed here
@@ -287,10 +287,15 @@ export class SceneRenderProjection {
    * scene is not what renders and nothing else refreshes it.
    */
   reconcile(): void {
+    const velocityEnabled = resolveVelocityEnabled(this.#velocity);
+    if (this.#velocityActive !== velocityEnabled) {
+      this.#velocityTracker.clear();
+      this.#velocityActive = velocityEnabled;
+    }
     if (!this.#enabled) {
-      // The game declined the projection: report the verdict once, then do nothing at all. No
-      // mirror is built, no eligibility scan runs, and `root` is the authored scene — the opt-out
-      // costs a compare, not a re-judged decline.
+      // Temporal history belongs to the authored draw even when its optimization is declined.
+      // No mirror or eligibility scan runs; without a temporal consumer no history work runs.
+      if (velocityEnabled) this.#velocityTracker.update(this.#source);
       this.#deoptimize("disabled", "the game set renderer.projection to false");
       this.#publish();
       return;
@@ -298,11 +303,6 @@ export class SceneRenderProjection {
     const mirror = this.#mirror;
     if (mirror === undefined) return;
     const startedAt = globalThis.performance?.now() ?? 0;
-    const velocityEnabled = resolveVelocityEnabled(this.#velocity);
-    if (this.#velocityActive !== velocityEnabled) {
-      this.#velocityTracker.clear();
-      this.#velocityActive = velocityEnabled;
-    }
     if (mirror.setVelocityEnabled(velocityEnabled)) {
       this.#deoptimized = true;
       this.#framesSinceDeclineScan = DECLINE_RESCAN_FRAMES;
@@ -414,7 +414,7 @@ export class SceneRenderProjection {
 
   /** Commits the rendered transform snapshot after the colour and velocity passes consume it. */
   commit(): void {
-    if (!this.#enabled || !this.#velocityActive) return;
+    if (!this.#velocityActive) return;
     this.#velocityTracker.commit(this.root);
   }
 

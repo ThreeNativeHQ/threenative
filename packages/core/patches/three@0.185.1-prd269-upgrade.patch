@@ -1,0 +1,4238 @@
+diff --git a/build/three.webgpu.js b/build/three.webgpu.js
+index 148869ee7f18c62570ac1eafb7df5775e5a89581..941ec68ef0b8174a633054043edb94d9d3d58f5e 100644
+--- a/build/three.webgpu.js
++++ b/build/three.webgpu.js
+@@ -12307,7 +12307,8 @@
+ 		const textureProperty = this.textureNode.build( builder, 'property' );
+ 		const level = this.levelNode === null ? '0' : this.levelNode.build( builder, 'int' );
+ 
+-		return builder.format( `${ builder.getMethod( 'textureDimensions' ) }( ${ textureProperty }, ${ level } )`, this.getNodeType( builder ), output );
++		const mip = this.textureNode.isRawTextureNode === true ? '' : `, ${ level }`;
++		return builder.format( `${ builder.getMethod( 'textureDimensions' ) }( ${ textureProperty }${ mip } )`, this.getNodeType( builder ), output );
+ 
+ 	}
+ 
+@@ -12958,7 +12959,7 @@
+ 
+ 		} else if ( this.sampler === false ) {
+ 
+-			snippet = builder.generateTextureLoad( texture, textureProperty, uvSnippet, levelSnippet, depthSnippet, offsetSnippet );
++			snippet = builder.generateTextureLoad( texture, textureProperty, uvSnippet, levelSnippet, depthSnippet, offsetSnippet, this.isRawTextureNode === true );
+ 
+ 		} else if ( levelSnippet ) {
+ 
+@@ -18860,7 +18861,15 @@
+ 
+ 	}
+ 
+-	return getSkinnedPosition( data.node, positionPrevious, bindMatrixNode, bindMatrixInverseNode, skinIndexNode, skinWeightNode );
++	// The previous bones and world matrix must use the same frame's bind inverse.
++	const previousBindMatrixInverse = uniform( skinnedMesh.bindMatrixInverse, 'mat4' ).onObjectUpdate( ( { object } ) => {
++
++		const mesh = object?.isSkinnedMesh === true ? object : skinnedMesh;
++		return mesh[ Symbol.for( 'threenative.velocity.previousBindMatrixInverse' ) ] ?? mesh.bindMatrixInverse;
++
++	} );
++
++	return getSkinnedPosition( data.node, positionPrevious, bindMatrixNode, previousBindMatrixInverse, skinIndexNode, skinWeightNode );
+ 
+ }
+ 
+@@ -40515,7 +40524,7 @@
+ 	 * @param {string} textureName - The output texture name.
+ 	 * @param {boolean} [previousTexture=false] - Whether previous frame data should be used or not.
+ 	 */
+-	constructor( passNode, textureName, previousTexture = false ) {
++	constructor( passNode, textureName, previousTexture = false, rawTexture = false ) {
+ 
+ 		// null is passed to the super call since this class does not
+ 		// use an external texture for rendering pass data into. Instead
+@@ -40536,6 +40545,8 @@
+ 		 * @type {boolean}
+ 		 */
+ 		this.previousTexture = previousTexture;
++		this.isRawTextureNode = rawTexture;
++		if ( rawTexture ) this.setSampler( false );
+ 
+ 		/**
+ 		 * This flag can be used for type testing.
+@@ -40557,17 +40568,33 @@
+ 
+ 	}
+ 
++	getUniformHash( builder ) {
++
++		const hash = super.getUniformHash( builder );
++		return this.isRawTextureNode ? `${ this.passNode.uuid }:${ this.textureName }:raw4:${ hash }` : hash;
++
++	}
++
+ 	setup( builder ) {
+ 
+ 		this.updateTexture();
+ 
++		if ( this.isRawTextureNode ) {
++
++			if ( this.passNode._rawTexturesDisposed ) throw new Error( 'Raw pass attachment owner is disposed.' );
++			if ( this.passNode.renderTarget.samples !== 4 ) throw new Error( 'Raw pass attachments require four-sample multisampling.' );
++			if ( this.sampler || this.biasNode || this.compareNode || this.gradNode || this.gatherNode || this.depthNode ) throw new Error( 'Raw pass attachments support integer loads only.' );
++			if ( builder.renderer.backend.isWebGPUBackend !== true ) throw new Error( 'Raw pass attachments require WebGPU.' );
++
++		}
++
+ 		return super.setup( builder );
+ 
+ 	}
+ 
+ 	clone() {
+ 
+-		const newNode = new this.constructor( this.passNode, this.textureName, this.previousTexture );
++		const newNode = new this.constructor( this.passNode, this.textureName, this.previousTexture, this.isRawTextureNode );
+ 		newNode.uvNode = this.uvNode;
+ 		newNode.levelNode = this.levelNode;
+ 		newNode.biasNode = this.biasNode;
+@@ -40748,6 +40775,8 @@
+ 		 * @type {Object<string, TextureNode>}
+ 		 */
+ 		this._textureNodes = {};
++		this._rawTextureNodes = {};
++		this._rawTexturesDisposed = false;
+ 
+ 		/**
+ 		 * A dictionary holding the internal depth nodes.
+@@ -41054,6 +41083,7 @@
+ 			this._previousTextures[ name ] = texture;
+ 
+ 			this._textureNodes[ name ].updateTexture();
++			if ( this._rawTextureNodes[ name ] ) this._rawTextureNodes[ name ].updateTexture();
+ 			this._previousTextureNodes[ name ].updateTexture();
+ 
+ 		}
+@@ -41066,6 +41096,17 @@
+ 	 * @param {string} [name='output'] - The output name to get the texture node for.
+ 	 * @return {TextureNode} The texture node.
+ 	 */
++	getRawTextureNode( name = 'output' ) {
++
++		if ( this._rawTexturesDisposed ) throw new Error( 'Raw pass attachment owner is disposed.' );
++		if ( this.renderTarget.samples !== 4 || this.renderTarget.depth !== 1 ) throw new Error( 'Raw pass attachments require four-sample 2D multisampling.' );
++		let node = this._rawTextureNodes[ name ];
++		if ( node === undefined ) node = this._rawTextureNodes[ name ] = new PassMultipleTextureNode( this, name, false, true );
++		node.updateTexture();
++		return node;
++
++	}
++
+ 	getTextureNode( name = 'output' ) {
+ 
+ 		let textureNode = this._textureNodes[ name ];
+@@ -41408,6 +41449,7 @@
+ 	 */
+ 	dispose() {
+ 
++		this._rawTexturesDisposed = true;
+ 		this.renderTarget.dispose();
+ 
+ 	}
+@@ -61392,6 +61434,18 @@
+ 	}
+ 
+ 	/**
++	 * Releases an exclusively owned attribute through the backend and memory accounting.
++	 * Wait for asynchronous readers before releasing storage shared by compute dispatches.
++	 * @param {BufferAttribute} attribute - The owned attribute to release.
++	 * @return {?Object} The removed attribute data, or null when absent/uninitialized.
++	 */
++	deleteAttribute( attribute ) {
++
++		return this._attributes === null ? null : this._attributes.delete( attribute );
++
++	}
++
++	/**
+ 	 * Can be used to transfer buffer data from a storage buffer attribute
+ 	 * from the GPU to the CPU in context of compute shaders.
+ 	 *
+@@ -76896,7 +76950,12 @@
+ 
+ 		}
+ 
+-		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat ) {
++		// Compute-only 3D storage has no attachment or render-pass mipmap consumer.
++		// Requesting the unused attachment usage rejects the texture on wgpu-native.
++		const computeOnlyStorage3D = dimension === GPUTextureDimension.ThreeD && texture.isStorageTexture === true &&
++			texture.isRenderTargetTexture !== true && options.renderTarget === undefined && options.needsMipmaps !== true;
++
++		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat && ! computeOnlyStorage3D ) {
+ 
+ 			usage |= GPUTextureUsage.RENDER_ATTACHMENT;
+ 
+@@ -79269,7 +79328,7 @@
+ 	 * @param {?string} offsetSnippet - A WGSL snippet that represents the offset that will be applied to the unnormalized texture coordinate before sampling the texture.
+ 	 * @return {string} The WGSL snippet.
+ 	 */
+-	generateTextureLoad( texture, textureProperty, uvIndexSnippet, levelSnippet, depthSnippet, offsetSnippet ) {
++	generateTextureLoad( texture, textureProperty, uvIndexSnippet, levelSnippet, depthSnippet, offsetSnippet, rawTexture = false ) {
+ 
+ 		if ( levelSnippet === null ) levelSnippet = '0u';
+ 
+@@ -79293,7 +79352,7 @@
+ 			const sampleData = texture ? this.renderer?.backend?.utils?.getTextureSampleData?.( texture ) : null;
+ 			const backendMultisampled = sampleData !== null && sampleData !== undefined && sampleData.primarySamples > 1;
+ 			const targetMultisampled = Boolean( texture && texture.renderTarget && texture.renderTarget.samples > 1 );
+-			const indexType = ( backendMultisampled || targetMultisampled ) ? 'i32' : 'u32';
++			const indexType = ( rawTexture || backendMultisampled || targetMultisampled ) ? 'i32' : 'u32';
+ 			snippet = `textureLoad( ${ textureProperty }, ${ uvIndexSnippet }, ${ indexType }( ${ levelSnippet } ) )`;
+ 
+ 			if ( this.renderer.backend.compatibilityMode && texture.isDepthTexture ) {
+@@ -79835,7 +79894,7 @@
+ 
+ 				// Cube textures always need samplers (they use textureSampleLevel, not textureLoad)
+ 				// Also textureGather always need sampler.
+-				const needsSampler = node.value.isCubeTexture === true || ( this.isUnfilterable( node.value ) === false && texture.store === false ) || node.gatherNode !== null;
++				const needsSampler = node.isRawTextureNode !== true && ( node.value.isCubeTexture === true || ( this.isUnfilterable( node.value ) === false && texture.store === false ) || node.gatherNode !== null );
+ 
+ 				if ( needsSampler ) {
+ 
+@@ -80265,7 +80324,8 @@
+ 
+ 			for ( const { name, property, type } of builtins.values() ) {
+ 
+-				snippets.push( `@builtin( ${name} ) ${property} : ${type}` );
++				const invariant = shaderStage === 'vertex' && name === 'position' && this.context.invariantPosition === true ? '@invariant ' : '';
++				snippets.push( `${ invariant }@builtin( ${name} ) ${property} : ${type}` );
+ 
+ 			}
+ 
+@@ -80521,6 +80581,8 @@
+ 	getVaryings( shaderStage ) {
+ 
+ 		const snippets = [];
++		const policy = this.context.sampleInterpolation;
++		const sampleInterpolation = typeof policy === 'function' ? policy( this.material ) === true : policy === true;
+ 
+ 		if ( shaderStage === 'vertex' ) {
+ 
+@@ -80543,7 +80605,12 @@
+ 
+ 					let attributesSnippet = `@location( ${ varyingIndex ++ } )`;
+ 
+-					if ( varying.interpolationType ) {
++					if ( sampleInterpolation && ! /^(int|uint|ivec|uvec)/.test( varying.type ) && varying.interpolationType !== 'flat' ) {
++
++						if ( varying.interpolationSampling !== null && varying.interpolationSampling !== 'center' && varying.interpolationSampling !== 'sample' ) throw new Error( 'Sample interpolation policy cannot replace explicit centroid sampling.' );
++						attributesSnippet += ` @interpolate( ${ varying.interpolationType || 'perspective' }, sample )`;
++
++					} else if ( varying.interpolationType ) {
+ 
+ 						const samplingSnippet = varying.interpolationSampling !== null ? `, ${ varying.interpolationSampling } )` : ' )';
+ 
+@@ -80647,7 +80714,7 @@
+ 
+ 				const { primarySamples } = backend.utils.getTextureSampleData( texture );
+ 
+-				if ( primarySamples > 1 ) {
++				if ( primarySamples > 1 || textureNode.isRawTextureNode === true ) {
+ 
+ 					multisampled = '_multisampled';
+ 
+@@ -82145,7 +82212,20 @@
+ 
+ 				let resourceGPU;
+ 
+-				if ( textureData.externalTexture !== undefined ) {
++				if ( binding.textureNode?.isRawTextureNode === true ) {
++
++					if ( binding.textureNode.passNode._rawTexturesDisposed ) throw new Error( 'Raw pass attachment owner is disposed.' );
++					const raw = binding.texture.isDepthTexture ? textureData.texture : textureData.msaaTexture;
++					if ( binding.texture.renderTarget?.samples !== 4 || raw === undefined ) throw new Error( 'Raw multisample attachment is unavailable.' );
++					if ( textureData.rawTextureViewSource !== raw ) {
++
++						textureData.rawTextureView = raw.createView( { dimension: '2d', aspect: binding.texture.isDepthTexture ? 'depth-only' : 'all', baseMipLevel: 0, mipLevelCount: 1 } );
++						textureData.rawTextureViewSource = raw;
++
++					}
++					resourceGPU = textureData.rawTextureView;
++
++				} else if ( textureData.externalTexture !== undefined ) {
+ 
+ 					resourceGPU = device.importExternalTexture( { source: textureData.externalTexture } );
+ 
+@@ -82316,7 +82396,7 @@
+ 
+ 				const { primarySamples } = backend.utils.getTextureSampleData( binding.texture );
+ 
+-				if ( primarySamples > 1 ) {
++				if ( primarySamples > 1 || binding.textureNode?.isRawTextureNode === true ) {
+ 
+ 					texture.multisampled = true;
+ 
+@@ -82354,7 +82434,7 @@
+ 
+ 					} else if ( type === FloatType ) {
+ 
+-						if ( this.backend.hasFeature( 'float32-filterable' ) ) {
++						if ( texture.multisampled !== true && this.backend.hasFeature( 'float32-filterable' ) ) {
+ 
+ 							texture.sampleType = GPUTextureSampleType.Float;
+ 
+@@ -84141,6 +84221,19 @@
+ 		this.gpu = null;
+ 
+ 		/**
++		 * A reference to the adapter this device was requested from.
++		 *
++		 * The adapter owns the wire instance every operation in flight completes on. Chromium
++		 * collects an adapter the page stops referencing and the instance goes with it, so every
++		 * operation still running completes with a shutdown the page reads as
++		 * 'A valid external Instance reference no longer exists.' and presentation stops for.
++		 *
++		 * @type {?GPUAdapter}
++		 * @default null
++		 */
++		this.adapter = null;
++
++		/**
+ 		 * A reference to the device.
+ 		 *
+ 		 * @type {?GPUDevice}
+@@ -84255,6 +84348,8 @@
+ 			this.gpu = ( typeof navigator !== 'undefined' ) ? navigator.gpu : null;
+ 
+ 			const adapter = this.gpu !== null ? await this.gpu.requestAdapter( adapterOptions ) : null;
++
++			this.adapter = adapter;
+ 
+ 			if ( adapter === null ) {
+ 
+diff --git a/build/three.webgpu.js b/build/three.webgpu.js
+index 5c5ef3c06885c724c1c2288295e7e68483ee1f6e..941ec68ef0b8174a633054043edb94d9d3d58f5e 100644
+--- a/build/three.webgpu.js
++++ b/build/three.webgpu.js
+@@ -12307,7 +12307,8 @@
+ 		const textureProperty = this.textureNode.build( builder, 'property' );
+ 		const level = this.levelNode === null ? '0' : this.levelNode.build( builder, 'int' );
+ 
+-		return builder.format( `${ builder.getMethod( 'textureDimensions' ) }( ${ textureProperty }, ${ level } )`, this.getNodeType( builder ), output );
++		const mip = this.textureNode.isRawTextureNode === true ? '' : `, ${ level }`;
++		return builder.format( `${ builder.getMethod( 'textureDimensions' ) }( ${ textureProperty }${ mip } )`, this.getNodeType( builder ), output );
+ 
+ 	}
+ 
+@@ -12958,7 +12959,7 @@
+ 
+ 		} else if ( this.sampler === false ) {
+ 
+-			snippet = builder.generateTextureLoad( texture, textureProperty, uvSnippet, levelSnippet, depthSnippet, offsetSnippet );
++			snippet = builder.generateTextureLoad( texture, textureProperty, uvSnippet, levelSnippet, depthSnippet, offsetSnippet, this.isRawTextureNode === true );
+ 
+ 		} else if ( levelSnippet ) {
+ 
+@@ -18539,7 +18540,7 @@
+ 	// Synchronization of dynamic buffer updates per frame
+ 	if ( interleavedMatrix !== null || interleavedColor !== null ) {
+ 
+-		OnFrameUpdate( () => {
++		OnBeforeFrameUpdate( () => {
+ 
+ 			if ( interleavedMatrix !== null ) {
+ 
+@@ -18580,12 +18581,28 @@
+ 
+ 		const instancedMesh = builder.object;
+ 
++		const updatePrevious = ( object, array ) => {
++
++			const { previousInstanceMatrix } = _previousInstanceMatrices.get( object );
++			previousInstanceMatrix.array.set( array );
++			previousInstanceMatrix.needsUpdate = true;
++			const interleaved = _matrixBuffers.get( previousInstanceMatrix );
++			if ( interleaved !== undefined ) interleaved.needsUpdate = true;
++
++		};
++
++		// Scheduled history must reach the GPU in this draw, before the geometry uploads.
++		OnBeforeObjectUpdate( ( { object } ) => {
++
++			const scheduledPrevious = object[ Symbol.for( 'threenative.velocity.previousInstanceMatrices' ) ];
++			if ( scheduledPrevious !== undefined ) updatePrevious( object, scheduledPrevious );
++
++		} );
++
++		// Without a scheduler, retain Three's draw-time snapshot for the next draw.
+ 		OnObjectUpdate( ( { object } ) => {
+ 
+-			const previousInstanceData = _previousInstanceMatrices.get( object );
+-
+-			const scheduledPrevious = object[ Symbol.for( 'threenative.velocity.previousInstanceMatrices' ) ];
+-			previousInstanceData.previousInstanceMatrix.array.set( scheduledPrevious ?? matrices.array );
++			if ( object[ Symbol.for( 'threenative.velocity.previousInstanceMatrices' ) ] === undefined ) updatePrevious( object, matrices.array );
+ 
+ 		} );
+ 
+@@ -18844,7 +18861,15 @@
+ 
+ 	}
+ 
+-	return getSkinnedPosition( data.node, positionPrevious, bindMatrixNode, bindMatrixInverseNode, skinIndexNode, skinWeightNode );
++	// The previous bones and world matrix must use the same frame's bind inverse.
++	const previousBindMatrixInverse = uniform( skinnedMesh.bindMatrixInverse, 'mat4' ).onObjectUpdate( ( { object } ) => {
++
++		const mesh = object?.isSkinnedMesh === true ? object : skinnedMesh;
++		return mesh[ Symbol.for( 'threenative.velocity.previousBindMatrixInverse' ) ] ?? mesh.bindMatrixInverse;
++
++	} );
++
++	return getSkinnedPosition( data.node, positionPrevious, bindMatrixNode, previousBindMatrixInverse, skinIndexNode, skinWeightNode );
+ 
+ }
+ 
+@@ -40499,7 +40524,7 @@
+ 	 * @param {string} textureName - The output texture name.
+ 	 * @param {boolean} [previousTexture=false] - Whether previous frame data should be used or not.
+ 	 */
+-	constructor( passNode, textureName, previousTexture = false ) {
++	constructor( passNode, textureName, previousTexture = false, rawTexture = false ) {
+ 
+ 		// null is passed to the super call since this class does not
+ 		// use an external texture for rendering pass data into. Instead
+@@ -40520,6 +40545,8 @@
+ 		 * @type {boolean}
+ 		 */
+ 		this.previousTexture = previousTexture;
++		this.isRawTextureNode = rawTexture;
++		if ( rawTexture ) this.setSampler( false );
+ 
+ 		/**
+ 		 * This flag can be used for type testing.
+@@ -40541,17 +40568,33 @@
+ 
+ 	}
+ 
++	getUniformHash( builder ) {
++
++		const hash = super.getUniformHash( builder );
++		return this.isRawTextureNode ? `${ this.passNode.uuid }:${ this.textureName }:raw4:${ hash }` : hash;
++
++	}
++
+ 	setup( builder ) {
+ 
+ 		this.updateTexture();
+ 
++		if ( this.isRawTextureNode ) {
++
++			if ( this.passNode._rawTexturesDisposed ) throw new Error( 'Raw pass attachment owner is disposed.' );
++			if ( this.passNode.renderTarget.samples !== 4 ) throw new Error( 'Raw pass attachments require four-sample multisampling.' );
++			if ( this.sampler || this.biasNode || this.compareNode || this.gradNode || this.gatherNode || this.depthNode ) throw new Error( 'Raw pass attachments support integer loads only.' );
++			if ( builder.renderer.backend.isWebGPUBackend !== true ) throw new Error( 'Raw pass attachments require WebGPU.' );
++
++		}
++
+ 		return super.setup( builder );
+ 
+ 	}
+ 
+ 	clone() {
+ 
+-		const newNode = new this.constructor( this.passNode, this.textureName, this.previousTexture );
++		const newNode = new this.constructor( this.passNode, this.textureName, this.previousTexture, this.isRawTextureNode );
+ 		newNode.uvNode = this.uvNode;
+ 		newNode.levelNode = this.levelNode;
+ 		newNode.biasNode = this.biasNode;
+@@ -40732,6 +40775,8 @@
+ 		 * @type {Object<string, TextureNode>}
+ 		 */
+ 		this._textureNodes = {};
++		this._rawTextureNodes = {};
++		this._rawTexturesDisposed = false;
+ 
+ 		/**
+ 		 * A dictionary holding the internal depth nodes.
+@@ -41038,6 +41083,7 @@
+ 			this._previousTextures[ name ] = texture;
+ 
+ 			this._textureNodes[ name ].updateTexture();
++			if ( this._rawTextureNodes[ name ] ) this._rawTextureNodes[ name ].updateTexture();
+ 			this._previousTextureNodes[ name ].updateTexture();
+ 
+ 		}
+@@ -41050,6 +41096,17 @@
+ 	 * @param {string} [name='output'] - The output name to get the texture node for.
+ 	 * @return {TextureNode} The texture node.
+ 	 */
++	getRawTextureNode( name = 'output' ) {
++
++		if ( this._rawTexturesDisposed ) throw new Error( 'Raw pass attachment owner is disposed.' );
++		if ( this.renderTarget.samples !== 4 || this.renderTarget.depth !== 1 ) throw new Error( 'Raw pass attachments require four-sample 2D multisampling.' );
++		let node = this._rawTextureNodes[ name ];
++		if ( node === undefined ) node = this._rawTextureNodes[ name ] = new PassMultipleTextureNode( this, name, false, true );
++		node.updateTexture();
++		return node;
++
++	}
++
+ 	getTextureNode( name = 'output' ) {
+ 
+ 		let textureNode = this._textureNodes[ name ];
+@@ -41392,6 +41449,7 @@
+ 	 */
+ 	dispose() {
+ 
++		this._rawTexturesDisposed = true;
+ 		this.renderTarget.dispose();
+ 
+ 	}
+@@ -61376,6 +61434,18 @@
+ 	}
+ 
+ 	/**
++	 * Releases an exclusively owned attribute through the backend and memory accounting.
++	 * Wait for asynchronous readers before releasing storage shared by compute dispatches.
++	 * @param {BufferAttribute} attribute - The owned attribute to release.
++	 * @return {?Object} The removed attribute data, or null when absent/uninitialized.
++	 */
++	deleteAttribute( attribute ) {
++
++		return this._attributes === null ? null : this._attributes.delete( attribute );
++
++	}
++
++	/**
+ 	 * Can be used to transfer buffer data from a storage buffer attribute
+ 	 * from the GPU to the CPU in context of compute shaders.
+ 	 *
+@@ -63161,8 +63231,8 @@
+ 		// attribute scan - because each of those answers for itself, and a step left out here
+ 		// cannot: a group a node added after this object's first draw still has to be created, and
+ 		// the pipeline reads that group's layout whatever this draw decided to do with it.
++		this._nodes.updateBefore( renderObject );
+ 		this._geometries.updateForRender( renderObject );
+-		this._nodes.updateBefore( renderObject );
+ 		this._nodes.updateForRender( renderObject );
+ 		this._bindings.updateForRender( renderObject );
+ 
+@@ -79258,7 +79328,7 @@
+ 	 * @param {?string} offsetSnippet - A WGSL snippet that represents the offset that will be applied to the unnormalized texture coordinate before sampling the texture.
+ 	 * @return {string} The WGSL snippet.
+ 	 */
+-	generateTextureLoad( texture, textureProperty, uvIndexSnippet, levelSnippet, depthSnippet, offsetSnippet ) {
++	generateTextureLoad( texture, textureProperty, uvIndexSnippet, levelSnippet, depthSnippet, offsetSnippet, rawTexture = false ) {
+ 
+ 		if ( levelSnippet === null ) levelSnippet = '0u';
+ 
+@@ -79282,7 +79352,7 @@
+ 			const sampleData = texture ? this.renderer?.backend?.utils?.getTextureSampleData?.( texture ) : null;
+ 			const backendMultisampled = sampleData !== null && sampleData !== undefined && sampleData.primarySamples > 1;
+ 			const targetMultisampled = Boolean( texture && texture.renderTarget && texture.renderTarget.samples > 1 );
+-			const indexType = ( backendMultisampled || targetMultisampled ) ? 'i32' : 'u32';
++			const indexType = ( rawTexture || backendMultisampled || targetMultisampled ) ? 'i32' : 'u32';
+ 			snippet = `textureLoad( ${ textureProperty }, ${ uvIndexSnippet }, ${ indexType }( ${ levelSnippet } ) )`;
+ 
+ 			if ( this.renderer.backend.compatibilityMode && texture.isDepthTexture ) {
+@@ -79824,7 +79894,7 @@
+ 
+ 				// Cube textures always need samplers (they use textureSampleLevel, not textureLoad)
+ 				// Also textureGather always need sampler.
+-				const needsSampler = node.value.isCubeTexture === true || ( this.isUnfilterable( node.value ) === false && texture.store === false ) || node.gatherNode !== null;
++				const needsSampler = node.isRawTextureNode !== true && ( node.value.isCubeTexture === true || ( this.isUnfilterable( node.value ) === false && texture.store === false ) || node.gatherNode !== null );
+ 
+ 				if ( needsSampler ) {
+ 
+@@ -80254,7 +80324,8 @@
+ 
+ 			for ( const { name, property, type } of builtins.values() ) {
+ 
+-				snippets.push( `@builtin( ${name} ) ${property} : ${type}` );
++				const invariant = shaderStage === 'vertex' && name === 'position' && this.context.invariantPosition === true ? '@invariant ' : '';
++				snippets.push( `${ invariant }@builtin( ${name} ) ${property} : ${type}` );
+ 
+ 			}
+ 
+@@ -80510,6 +80581,8 @@
+ 	getVaryings( shaderStage ) {
+ 
+ 		const snippets = [];
++		const policy = this.context.sampleInterpolation;
++		const sampleInterpolation = typeof policy === 'function' ? policy( this.material ) === true : policy === true;
+ 
+ 		if ( shaderStage === 'vertex' ) {
+ 
+@@ -80532,7 +80605,12 @@
+ 
+ 					let attributesSnippet = `@location( ${ varyingIndex ++ } )`;
+ 
+-					if ( varying.interpolationType ) {
++					if ( sampleInterpolation && ! /^(int|uint|ivec|uvec)/.test( varying.type ) && varying.interpolationType !== 'flat' ) {
++
++						if ( varying.interpolationSampling !== null && varying.interpolationSampling !== 'center' && varying.interpolationSampling !== 'sample' ) throw new Error( 'Sample interpolation policy cannot replace explicit centroid sampling.' );
++						attributesSnippet += ` @interpolate( ${ varying.interpolationType || 'perspective' }, sample )`;
++
++					} else if ( varying.interpolationType ) {
+ 
+ 						const samplingSnippet = varying.interpolationSampling !== null ? `, ${ varying.interpolationSampling } )` : ' )';
+ 
+@@ -80636,7 +80714,7 @@
+ 
+ 				const { primarySamples } = backend.utils.getTextureSampleData( texture );
+ 
+-				if ( primarySamples > 1 ) {
++				if ( primarySamples > 1 || textureNode.isRawTextureNode === true ) {
+ 
+ 					multisampled = '_multisampled';
+ 
+@@ -81391,6 +81469,15 @@
+ 			buffer.unmap();
+ 
+ 			bufferData.buffer = buffer;
++			bufferData.version = bufferAttribute.version;
++			bufferData.uploadCall = backend.renderer.info.calls;
++
++		} else if ( bufferData.version < bufferAttribute.version ||
++			( bufferAttribute.usage === DynamicDrawUsage && bufferData.uploadCall !== backend.renderer.info.calls ) ) {
++
++			// A rebuilt shader can create a fresh attribute wrapper for this existing buffer.
++			// Synchronize its dirty bytes before Attributes records the wrapper as current.
++			this.updateAttribute( attribute );
+ 
+ 		}
+ 
+@@ -81410,6 +81497,11 @@
+ 
+ 		const bufferData = backend.get( bufferAttribute );
+ 		const buffer = backend.get( bufferAttribute ).buffer;
++
++		// A fresh wrapper may already have uploaded this shared buffer in the same render or compute call.
++		// Do not repeat that write after its partial ranges have been consumed.
++		if ( bufferData.version === bufferAttribute.version &&
++			( bufferAttribute.usage !== DynamicDrawUsage || bufferData.uploadCall === backend.renderer.info.calls ) ) return;
+ 
+ 		let array = bufferAttribute.array;
+ 
+@@ -81492,6 +81584,9 @@
+ 
+ 		}
+ 
++		bufferData.version = bufferAttribute.version;
++		bufferData.uploadCall = backend.renderer.info.calls;
++
+ 	}
+ 
+ 	/**
+@@ -82117,7 +82212,20 @@
+ 
+ 				let resourceGPU;
+ 
+-				if ( textureData.externalTexture !== undefined ) {
++				if ( binding.textureNode?.isRawTextureNode === true ) {
++
++					if ( binding.textureNode.passNode._rawTexturesDisposed ) throw new Error( 'Raw pass attachment owner is disposed.' );
++					const raw = binding.texture.isDepthTexture ? textureData.texture : textureData.msaaTexture;
++					if ( binding.texture.renderTarget?.samples !== 4 || raw === undefined ) throw new Error( 'Raw multisample attachment is unavailable.' );
++					if ( textureData.rawTextureViewSource !== raw ) {
++
++						textureData.rawTextureView = raw.createView( { dimension: '2d', aspect: binding.texture.isDepthTexture ? 'depth-only' : 'all', baseMipLevel: 0, mipLevelCount: 1 } );
++						textureData.rawTextureViewSource = raw;
++
++					}
++					resourceGPU = textureData.rawTextureView;
++
++				} else if ( textureData.externalTexture !== undefined ) {
+ 
+ 					resourceGPU = device.importExternalTexture( { source: textureData.externalTexture } );
+ 
+@@ -82288,7 +82396,7 @@
+ 
+ 				const { primarySamples } = backend.utils.getTextureSampleData( binding.texture );
+ 
+-				if ( primarySamples > 1 ) {
++				if ( primarySamples > 1 || binding.textureNode?.isRawTextureNode === true ) {
+ 
+ 					texture.multisampled = true;
+ 
+@@ -82326,7 +82434,7 @@
+ 
+ 					} else if ( type === FloatType ) {
+ 
+-						if ( this.backend.hasFeature( 'float32-filterable' ) ) {
++						if ( texture.multisampled !== true && this.backend.hasFeature( 'float32-filterable' ) ) {
+ 
+ 							texture.sampleType = GPUTextureSampleType.Float;
+ 
+diff --git a/build/three.webgpu.js b/build/three.webgpu.js
+index 7aa62adb9e78ba8f0a67709d3141bf93c67419cc..941ec68ef0b8174a633054043edb94d9d3d58f5e 100644
+--- a/build/three.webgpu.js
++++ b/build/three.webgpu.js
+@@ -12307,7 +12307,8 @@
+ 		const textureProperty = this.textureNode.build( builder, 'property' );
+ 		const level = this.levelNode === null ? '0' : this.levelNode.build( builder, 'int' );
+ 
+-		return builder.format( `${ builder.getMethod( 'textureDimensions' ) }( ${ textureProperty }, ${ level } )`, this.getNodeType( builder ), output );
++		const mip = this.textureNode.isRawTextureNode === true ? '' : `, ${ level }`;
++		return builder.format( `${ builder.getMethod( 'textureDimensions' ) }( ${ textureProperty }${ mip } )`, this.getNodeType( builder ), output );
+ 
+ 	}
+ 
+@@ -12958,7 +12959,7 @@
+ 
+ 		} else if ( this.sampler === false ) {
+ 
+-			snippet = builder.generateTextureLoad( texture, textureProperty, uvSnippet, levelSnippet, depthSnippet, offsetSnippet );
++			snippet = builder.generateTextureLoad( texture, textureProperty, uvSnippet, levelSnippet, depthSnippet, offsetSnippet, this.isRawTextureNode === true );
+ 
+ 		} else if ( levelSnippet ) {
+ 
+@@ -18539,7 +18540,7 @@
+ 	// Synchronization of dynamic buffer updates per frame
+ 	if ( interleavedMatrix !== null || interleavedColor !== null ) {
+ 
+-		OnFrameUpdate( () => {
++		OnBeforeFrameUpdate( () => {
+ 
+ 			if ( interleavedMatrix !== null ) {
+ 
+@@ -18580,12 +18581,28 @@
+ 
+ 		const instancedMesh = builder.object;
+ 
++		const updatePrevious = ( object, array ) => {
++
++			const { previousInstanceMatrix } = _previousInstanceMatrices.get( object );
++			previousInstanceMatrix.array.set( array );
++			previousInstanceMatrix.needsUpdate = true;
++			const interleaved = _matrixBuffers.get( previousInstanceMatrix );
++			if ( interleaved !== undefined ) interleaved.needsUpdate = true;
++
++		};
++
++		// Scheduled history must reach the GPU in this draw, before the geometry uploads.
++		OnBeforeObjectUpdate( ( { object } ) => {
++
++			const scheduledPrevious = object[ Symbol.for( 'threenative.velocity.previousInstanceMatrices' ) ];
++			if ( scheduledPrevious !== undefined ) updatePrevious( object, scheduledPrevious );
++
++		} );
++
++		// Without a scheduler, retain Three's draw-time snapshot for the next draw.
+ 		OnObjectUpdate( ( { object } ) => {
+ 
+-			const previousInstanceData = _previousInstanceMatrices.get( object );
+-
+-			const scheduledPrevious = object[ Symbol.for( 'threenative.velocity.previousInstanceMatrices' ) ];
+-			previousInstanceData.previousInstanceMatrix.array.set( scheduledPrevious ?? matrices.array );
++			if ( object[ Symbol.for( 'threenative.velocity.previousInstanceMatrices' ) ] === undefined ) updatePrevious( object, matrices.array );
+ 
+ 		} );
+ 
+@@ -18844,7 +18861,15 @@
+ 
+ 	}
+ 
+-	return getSkinnedPosition( data.node, positionPrevious, bindMatrixNode, bindMatrixInverseNode, skinIndexNode, skinWeightNode );
++	// The previous bones and world matrix must use the same frame's bind inverse.
++	const previousBindMatrixInverse = uniform( skinnedMesh.bindMatrixInverse, 'mat4' ).onObjectUpdate( ( { object } ) => {
++
++		const mesh = object?.isSkinnedMesh === true ? object : skinnedMesh;
++		return mesh[ Symbol.for( 'threenative.velocity.previousBindMatrixInverse' ) ] ?? mesh.bindMatrixInverse;
++
++	} );
++
++	return getSkinnedPosition( data.node, positionPrevious, bindMatrixNode, previousBindMatrixInverse, skinIndexNode, skinWeightNode );
+ 
+ }
+ 
+@@ -40499,7 +40524,7 @@
+ 	 * @param {string} textureName - The output texture name.
+ 	 * @param {boolean} [previousTexture=false] - Whether previous frame data should be used or not.
+ 	 */
+-	constructor( passNode, textureName, previousTexture = false ) {
++	constructor( passNode, textureName, previousTexture = false, rawTexture = false ) {
+ 
+ 		// null is passed to the super call since this class does not
+ 		// use an external texture for rendering pass data into. Instead
+@@ -40520,6 +40545,8 @@
+ 		 * @type {boolean}
+ 		 */
+ 		this.previousTexture = previousTexture;
++		this.isRawTextureNode = rawTexture;
++		if ( rawTexture ) this.setSampler( false );
+ 
+ 		/**
+ 		 * This flag can be used for type testing.
+@@ -40541,17 +40568,33 @@
+ 
+ 	}
+ 
++	getUniformHash( builder ) {
++
++		const hash = super.getUniformHash( builder );
++		return this.isRawTextureNode ? `${ this.passNode.uuid }:${ this.textureName }:raw4:${ hash }` : hash;
++
++	}
++
+ 	setup( builder ) {
+ 
+ 		this.updateTexture();
+ 
++		if ( this.isRawTextureNode ) {
++
++			if ( this.passNode._rawTexturesDisposed ) throw new Error( 'Raw pass attachment owner is disposed.' );
++			if ( this.passNode.renderTarget.samples !== 4 ) throw new Error( 'Raw pass attachments require four-sample multisampling.' );
++			if ( this.sampler || this.biasNode || this.compareNode || this.gradNode || this.gatherNode || this.depthNode ) throw new Error( 'Raw pass attachments support integer loads only.' );
++			if ( builder.renderer.backend.isWebGPUBackend !== true ) throw new Error( 'Raw pass attachments require WebGPU.' );
++
++		}
++
+ 		return super.setup( builder );
+ 
+ 	}
+ 
+ 	clone() {
+ 
+-		const newNode = new this.constructor( this.passNode, this.textureName, this.previousTexture );
++		const newNode = new this.constructor( this.passNode, this.textureName, this.previousTexture, this.isRawTextureNode );
+ 		newNode.uvNode = this.uvNode;
+ 		newNode.levelNode = this.levelNode;
+ 		newNode.biasNode = this.biasNode;
+@@ -40732,6 +40775,8 @@
+ 		 * @type {Object<string, TextureNode>}
+ 		 */
+ 		this._textureNodes = {};
++		this._rawTextureNodes = {};
++		this._rawTexturesDisposed = false;
+ 
+ 		/**
+ 		 * A dictionary holding the internal depth nodes.
+@@ -41038,6 +41083,7 @@
+ 			this._previousTextures[ name ] = texture;
+ 
+ 			this._textureNodes[ name ].updateTexture();
++			if ( this._rawTextureNodes[ name ] ) this._rawTextureNodes[ name ].updateTexture();
+ 			this._previousTextureNodes[ name ].updateTexture();
+ 
+ 		}
+@@ -41050,6 +41096,17 @@
+ 	 * @param {string} [name='output'] - The output name to get the texture node for.
+ 	 * @return {TextureNode} The texture node.
+ 	 */
++	getRawTextureNode( name = 'output' ) {
++
++		if ( this._rawTexturesDisposed ) throw new Error( 'Raw pass attachment owner is disposed.' );
++		if ( this.renderTarget.samples !== 4 || this.renderTarget.depth !== 1 ) throw new Error( 'Raw pass attachments require four-sample 2D multisampling.' );
++		let node = this._rawTextureNodes[ name ];
++		if ( node === undefined ) node = this._rawTextureNodes[ name ] = new PassMultipleTextureNode( this, name, false, true );
++		node.updateTexture();
++		return node;
++
++	}
++
+ 	getTextureNode( name = 'output' ) {
+ 
+ 		let textureNode = this._textureNodes[ name ];
+@@ -41392,6 +41449,7 @@
+ 	 */
+ 	dispose() {
+ 
++		this._rawTexturesDisposed = true;
+ 		this.renderTarget.dispose();
+ 
+ 	}
+@@ -61376,6 +61434,18 @@
+ 	}
+ 
+ 	/**
++	 * Releases an exclusively owned attribute through the backend and memory accounting.
++	 * Wait for asynchronous readers before releasing storage shared by compute dispatches.
++	 * @param {BufferAttribute} attribute - The owned attribute to release.
++	 * @return {?Object} The removed attribute data, or null when absent/uninitialized.
++	 */
++	deleteAttribute( attribute ) {
++
++		return this._attributes === null ? null : this._attributes.delete( attribute );
++
++	}
++
++	/**
+ 	 * Can be used to transfer buffer data from a storage buffer attribute
+ 	 * from the GPU to the CPU in context of compute shaders.
+ 	 *
+@@ -63161,8 +63231,8 @@
+ 		// attribute scan - because each of those answers for itself, and a step left out here
+ 		// cannot: a group a node added after this object's first draw still has to be created, and
+ 		// the pipeline reads that group's layout whatever this draw decided to do with it.
++		this._nodes.updateBefore( renderObject );
+ 		this._geometries.updateForRender( renderObject );
+-		this._nodes.updateBefore( renderObject );
+ 		this._nodes.updateForRender( renderObject );
+ 		this._bindings.updateForRender( renderObject );
+ 
+@@ -76880,7 +76950,12 @@
+ 
+ 		}
+ 
+-		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat ) {
++		// Compute-only 3D storage has no attachment or render-pass mipmap consumer.
++		// Requesting the unused attachment usage rejects the texture on wgpu-native.
++		const computeOnlyStorage3D = dimension === GPUTextureDimension.ThreeD && texture.isStorageTexture === true &&
++			texture.isRenderTargetTexture !== true && options.renderTarget === undefined && options.needsMipmaps !== true;
++
++		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat && ! computeOnlyStorage3D ) {
+ 
+ 			usage |= GPUTextureUsage.RENDER_ATTACHMENT;
+ 
+@@ -79253,7 +79328,7 @@
+ 	 * @param {?string} offsetSnippet - A WGSL snippet that represents the offset that will be applied to the unnormalized texture coordinate before sampling the texture.
+ 	 * @return {string} The WGSL snippet.
+ 	 */
+-	generateTextureLoad( texture, textureProperty, uvIndexSnippet, levelSnippet, depthSnippet, offsetSnippet ) {
++	generateTextureLoad( texture, textureProperty, uvIndexSnippet, levelSnippet, depthSnippet, offsetSnippet, rawTexture = false ) {
+ 
+ 		if ( levelSnippet === null ) levelSnippet = '0u';
+ 
+@@ -79277,7 +79352,7 @@
+ 			const sampleData = texture ? this.renderer?.backend?.utils?.getTextureSampleData?.( texture ) : null;
+ 			const backendMultisampled = sampleData !== null && sampleData !== undefined && sampleData.primarySamples > 1;
+ 			const targetMultisampled = Boolean( texture && texture.renderTarget && texture.renderTarget.samples > 1 );
+-			const indexType = ( backendMultisampled || targetMultisampled ) ? 'i32' : 'u32';
++			const indexType = ( rawTexture || backendMultisampled || targetMultisampled ) ? 'i32' : 'u32';
+ 			snippet = `textureLoad( ${ textureProperty }, ${ uvIndexSnippet }, ${ indexType }( ${ levelSnippet } ) )`;
+ 
+ 			if ( this.renderer.backend.compatibilityMode && texture.isDepthTexture ) {
+@@ -79819,7 +79894,7 @@
+ 
+ 				// Cube textures always need samplers (they use textureSampleLevel, not textureLoad)
+ 				// Also textureGather always need sampler.
+-				const needsSampler = node.value.isCubeTexture === true || ( this.isUnfilterable( node.value ) === false && texture.store === false ) || node.gatherNode !== null;
++				const needsSampler = node.isRawTextureNode !== true && ( node.value.isCubeTexture === true || ( this.isUnfilterable( node.value ) === false && texture.store === false ) || node.gatherNode !== null );
+ 
+ 				if ( needsSampler ) {
+ 
+@@ -80249,7 +80324,8 @@
+ 
+ 			for ( const { name, property, type } of builtins.values() ) {
+ 
+-				snippets.push( `@builtin( ${name} ) ${property} : ${type}` );
++				const invariant = shaderStage === 'vertex' && name === 'position' && this.context.invariantPosition === true ? '@invariant ' : '';
++				snippets.push( `${ invariant }@builtin( ${name} ) ${property} : ${type}` );
+ 
+ 			}
+ 
+@@ -80505,6 +80581,8 @@
+ 	getVaryings( shaderStage ) {
+ 
+ 		const snippets = [];
++		const policy = this.context.sampleInterpolation;
++		const sampleInterpolation = typeof policy === 'function' ? policy( this.material ) === true : policy === true;
+ 
+ 		if ( shaderStage === 'vertex' ) {
+ 
+@@ -80527,7 +80605,12 @@
+ 
+ 					let attributesSnippet = `@location( ${ varyingIndex ++ } )`;
+ 
+-					if ( varying.interpolationType ) {
++					if ( sampleInterpolation && ! /^(int|uint|ivec|uvec)/.test( varying.type ) && varying.interpolationType !== 'flat' ) {
++
++						if ( varying.interpolationSampling !== null && varying.interpolationSampling !== 'center' && varying.interpolationSampling !== 'sample' ) throw new Error( 'Sample interpolation policy cannot replace explicit centroid sampling.' );
++						attributesSnippet += ` @interpolate( ${ varying.interpolationType || 'perspective' }, sample )`;
++
++					} else if ( varying.interpolationType ) {
+ 
+ 						const samplingSnippet = varying.interpolationSampling !== null ? `, ${ varying.interpolationSampling } )` : ' )';
+ 
+@@ -80631,7 +80714,7 @@
+ 
+ 				const { primarySamples } = backend.utils.getTextureSampleData( texture );
+ 
+-				if ( primarySamples > 1 ) {
++				if ( primarySamples > 1 || textureNode.isRawTextureNode === true ) {
+ 
+ 					multisampled = '_multisampled';
+ 
+@@ -81386,6 +81469,15 @@
+ 			buffer.unmap();
+ 
+ 			bufferData.buffer = buffer;
++			bufferData.version = bufferAttribute.version;
++			bufferData.uploadCall = backend.renderer.info.calls;
++
++		} else if ( bufferData.version < bufferAttribute.version ||
++			( bufferAttribute.usage === DynamicDrawUsage && bufferData.uploadCall !== backend.renderer.info.calls ) ) {
++
++			// A rebuilt shader can create a fresh attribute wrapper for this existing buffer.
++			// Synchronize its dirty bytes before Attributes records the wrapper as current.
++			this.updateAttribute( attribute );
+ 
+ 		}
+ 
+@@ -81405,6 +81497,11 @@
+ 
+ 		const bufferData = backend.get( bufferAttribute );
+ 		const buffer = backend.get( bufferAttribute ).buffer;
++
++		// A fresh wrapper may already have uploaded this shared buffer in the same render or compute call.
++		// Do not repeat that write after its partial ranges have been consumed.
++		if ( bufferData.version === bufferAttribute.version &&
++			( bufferAttribute.usage !== DynamicDrawUsage || bufferData.uploadCall === backend.renderer.info.calls ) ) return;
+ 
+ 		let array = bufferAttribute.array;
+ 
+@@ -81487,6 +81584,9 @@
+ 
+ 		}
+ 
++		bufferData.version = bufferAttribute.version;
++		bufferData.uploadCall = backend.renderer.info.calls;
++
+ 	}
+ 
+ 	/**
+@@ -82112,7 +82212,20 @@
+ 
+ 				let resourceGPU;
+ 
+-				if ( textureData.externalTexture !== undefined ) {
++				if ( binding.textureNode?.isRawTextureNode === true ) {
++
++					if ( binding.textureNode.passNode._rawTexturesDisposed ) throw new Error( 'Raw pass attachment owner is disposed.' );
++					const raw = binding.texture.isDepthTexture ? textureData.texture : textureData.msaaTexture;
++					if ( binding.texture.renderTarget?.samples !== 4 || raw === undefined ) throw new Error( 'Raw multisample attachment is unavailable.' );
++					if ( textureData.rawTextureViewSource !== raw ) {
++
++						textureData.rawTextureView = raw.createView( { dimension: '2d', aspect: binding.texture.isDepthTexture ? 'depth-only' : 'all', baseMipLevel: 0, mipLevelCount: 1 } );
++						textureData.rawTextureViewSource = raw;
++
++					}
++					resourceGPU = textureData.rawTextureView;
++
++				} else if ( textureData.externalTexture !== undefined ) {
+ 
+ 					resourceGPU = device.importExternalTexture( { source: textureData.externalTexture } );
+ 
+@@ -82283,7 +82396,7 @@
+ 
+ 				const { primarySamples } = backend.utils.getTextureSampleData( binding.texture );
+ 
+-				if ( primarySamples > 1 ) {
++				if ( primarySamples > 1 || binding.textureNode?.isRawTextureNode === true ) {
+ 
+ 					texture.multisampled = true;
+ 
+@@ -82321,7 +82434,7 @@
+ 
+ 					} else if ( type === FloatType ) {
+ 
+-						if ( this.backend.hasFeature( 'float32-filterable' ) ) {
++						if ( texture.multisampled !== true && this.backend.hasFeature( 'float32-filterable' ) ) {
+ 
+ 							texture.sampleType = GPUTextureSampleType.Float;
+ 
+@@ -84108,6 +84221,19 @@
+ 		this.gpu = null;
+ 
+ 		/**
++		 * A reference to the adapter this device was requested from.
++		 *
++		 * The adapter owns the wire instance every operation in flight completes on. Chromium
++		 * collects an adapter the page stops referencing and the instance goes with it, so every
++		 * operation still running completes with a shutdown the page reads as
++		 * 'A valid external Instance reference no longer exists.' and presentation stops for.
++		 *
++		 * @type {?GPUAdapter}
++		 * @default null
++		 */
++		this.adapter = null;
++
++		/**
+ 		 * A reference to the device.
+ 		 *
+ 		 * @type {?GPUDevice}
+@@ -84222,6 +84348,8 @@
+ 			this.gpu = ( typeof navigator !== 'undefined' ) ? navigator.gpu : null;
+ 
+ 			const adapter = this.gpu !== null ? await this.gpu.requestAdapter( adapterOptions ) : null;
++
++			this.adapter = adapter;
+ 
+ 			if ( adapter === null ) {
+ 
+diff --git a/build/three.webgpu.js b/build/three.webgpu.js
+index bdffb9b4069f7beafa85913b155e92d3e83f12d0..941ec68ef0b8174a633054043edb94d9d3d58f5e 100644
+--- a/build/three.webgpu.js
++++ b/build/three.webgpu.js
+@@ -12307,7 +12307,8 @@
+ 		const textureProperty = this.textureNode.build( builder, 'property' );
+ 		const level = this.levelNode === null ? '0' : this.levelNode.build( builder, 'int' );
+ 
+-		return builder.format( `${ builder.getMethod( 'textureDimensions' ) }( ${ textureProperty }, ${ level } )`, this.getNodeType( builder ), output );
++		const mip = this.textureNode.isRawTextureNode === true ? '' : `, ${ level }`;
++		return builder.format( `${ builder.getMethod( 'textureDimensions' ) }( ${ textureProperty }${ mip } )`, this.getNodeType( builder ), output );
+ 
+ 	}
+ 
+@@ -12958,7 +12959,7 @@
+ 
+ 		} else if ( this.sampler === false ) {
+ 
+-			snippet = builder.generateTextureLoad( texture, textureProperty, uvSnippet, levelSnippet, depthSnippet, offsetSnippet );
++			snippet = builder.generateTextureLoad( texture, textureProperty, uvSnippet, levelSnippet, depthSnippet, offsetSnippet, this.isRawTextureNode === true );
+ 
+ 		} else if ( levelSnippet ) {
+ 
+@@ -18860,7 +18861,15 @@
+ 
+ 	}
+ 
+-	return getSkinnedPosition( data.node, positionPrevious, bindMatrixNode, bindMatrixInverseNode, skinIndexNode, skinWeightNode );
++	// The previous bones and world matrix must use the same frame's bind inverse.
++	const previousBindMatrixInverse = uniform( skinnedMesh.bindMatrixInverse, 'mat4' ).onObjectUpdate( ( { object } ) => {
++
++		const mesh = object?.isSkinnedMesh === true ? object : skinnedMesh;
++		return mesh[ Symbol.for( 'threenative.velocity.previousBindMatrixInverse' ) ] ?? mesh.bindMatrixInverse;
++
++	} );
++
++	return getSkinnedPosition( data.node, positionPrevious, bindMatrixNode, previousBindMatrixInverse, skinIndexNode, skinWeightNode );
+ 
+ }
+ 
+@@ -40515,7 +40524,7 @@
+ 	 * @param {string} textureName - The output texture name.
+ 	 * @param {boolean} [previousTexture=false] - Whether previous frame data should be used or not.
+ 	 */
+-	constructor( passNode, textureName, previousTexture = false ) {
++	constructor( passNode, textureName, previousTexture = false, rawTexture = false ) {
+ 
+ 		// null is passed to the super call since this class does not
+ 		// use an external texture for rendering pass data into. Instead
+@@ -40536,6 +40545,8 @@
+ 		 * @type {boolean}
+ 		 */
+ 		this.previousTexture = previousTexture;
++		this.isRawTextureNode = rawTexture;
++		if ( rawTexture ) this.setSampler( false );
+ 
+ 		/**
+ 		 * This flag can be used for type testing.
+@@ -40557,17 +40568,33 @@
+ 
+ 	}
+ 
++	getUniformHash( builder ) {
++
++		const hash = super.getUniformHash( builder );
++		return this.isRawTextureNode ? `${ this.passNode.uuid }:${ this.textureName }:raw4:${ hash }` : hash;
++
++	}
++
+ 	setup( builder ) {
+ 
+ 		this.updateTexture();
+ 
++		if ( this.isRawTextureNode ) {
++
++			if ( this.passNode._rawTexturesDisposed ) throw new Error( 'Raw pass attachment owner is disposed.' );
++			if ( this.passNode.renderTarget.samples !== 4 ) throw new Error( 'Raw pass attachments require four-sample multisampling.' );
++			if ( this.sampler || this.biasNode || this.compareNode || this.gradNode || this.gatherNode || this.depthNode ) throw new Error( 'Raw pass attachments support integer loads only.' );
++			if ( builder.renderer.backend.isWebGPUBackend !== true ) throw new Error( 'Raw pass attachments require WebGPU.' );
++
++		}
++
+ 		return super.setup( builder );
+ 
+ 	}
+ 
+ 	clone() {
+ 
+-		const newNode = new this.constructor( this.passNode, this.textureName, this.previousTexture );
++		const newNode = new this.constructor( this.passNode, this.textureName, this.previousTexture, this.isRawTextureNode );
+ 		newNode.uvNode = this.uvNode;
+ 		newNode.levelNode = this.levelNode;
+ 		newNode.biasNode = this.biasNode;
+@@ -40748,6 +40775,8 @@
+ 		 * @type {Object<string, TextureNode>}
+ 		 */
+ 		this._textureNodes = {};
++		this._rawTextureNodes = {};
++		this._rawTexturesDisposed = false;
+ 
+ 		/**
+ 		 * A dictionary holding the internal depth nodes.
+@@ -41054,6 +41083,7 @@
+ 			this._previousTextures[ name ] = texture;
+ 
+ 			this._textureNodes[ name ].updateTexture();
++			if ( this._rawTextureNodes[ name ] ) this._rawTextureNodes[ name ].updateTexture();
+ 			this._previousTextureNodes[ name ].updateTexture();
+ 
+ 		}
+@@ -41066,6 +41096,17 @@
+ 	 * @param {string} [name='output'] - The output name to get the texture node for.
+ 	 * @return {TextureNode} The texture node.
+ 	 */
++	getRawTextureNode( name = 'output' ) {
++
++		if ( this._rawTexturesDisposed ) throw new Error( 'Raw pass attachment owner is disposed.' );
++		if ( this.renderTarget.samples !== 4 || this.renderTarget.depth !== 1 ) throw new Error( 'Raw pass attachments require four-sample 2D multisampling.' );
++		let node = this._rawTextureNodes[ name ];
++		if ( node === undefined ) node = this._rawTextureNodes[ name ] = new PassMultipleTextureNode( this, name, false, true );
++		node.updateTexture();
++		return node;
++
++	}
++
+ 	getTextureNode( name = 'output' ) {
+ 
+ 		let textureNode = this._textureNodes[ name ];
+@@ -41408,6 +41449,7 @@
+ 	 */
+ 	dispose() {
+ 
++		this._rawTexturesDisposed = true;
+ 		this.renderTarget.dispose();
+ 
+ 	}
+@@ -61392,6 +61434,18 @@
+ 	}
+ 
+ 	/**
++	 * Releases an exclusively owned attribute through the backend and memory accounting.
++	 * Wait for asynchronous readers before releasing storage shared by compute dispatches.
++	 * @param {BufferAttribute} attribute - The owned attribute to release.
++	 * @return {?Object} The removed attribute data, or null when absent/uninitialized.
++	 */
++	deleteAttribute( attribute ) {
++
++		return this._attributes === null ? null : this._attributes.delete( attribute );
++
++	}
++
++	/**
+ 	 * Can be used to transfer buffer data from a storage buffer attribute
+ 	 * from the GPU to the CPU in context of compute shaders.
+ 	 *
+@@ -76896,7 +76950,12 @@
+ 
+ 		}
+ 
+-		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat ) {
++		// Compute-only 3D storage has no attachment or render-pass mipmap consumer.
++		// Requesting the unused attachment usage rejects the texture on wgpu-native.
++		const computeOnlyStorage3D = dimension === GPUTextureDimension.ThreeD && texture.isStorageTexture === true &&
++			texture.isRenderTargetTexture !== true && options.renderTarget === undefined && options.needsMipmaps !== true;
++
++		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat && ! computeOnlyStorage3D ) {
+ 
+ 			usage |= GPUTextureUsage.RENDER_ATTACHMENT;
+ 
+@@ -79269,7 +79328,7 @@
+ 	 * @param {?string} offsetSnippet - A WGSL snippet that represents the offset that will be applied to the unnormalized texture coordinate before sampling the texture.
+ 	 * @return {string} The WGSL snippet.
+ 	 */
+-	generateTextureLoad( texture, textureProperty, uvIndexSnippet, levelSnippet, depthSnippet, offsetSnippet ) {
++	generateTextureLoad( texture, textureProperty, uvIndexSnippet, levelSnippet, depthSnippet, offsetSnippet, rawTexture = false ) {
+ 
+ 		if ( levelSnippet === null ) levelSnippet = '0u';
+ 
+@@ -79293,7 +79352,7 @@
+ 			const sampleData = texture ? this.renderer?.backend?.utils?.getTextureSampleData?.( texture ) : null;
+ 			const backendMultisampled = sampleData !== null && sampleData !== undefined && sampleData.primarySamples > 1;
+ 			const targetMultisampled = Boolean( texture && texture.renderTarget && texture.renderTarget.samples > 1 );
+-			const indexType = ( backendMultisampled || targetMultisampled ) ? 'i32' : 'u32';
++			const indexType = ( rawTexture || backendMultisampled || targetMultisampled ) ? 'i32' : 'u32';
+ 			snippet = `textureLoad( ${ textureProperty }, ${ uvIndexSnippet }, ${ indexType }( ${ levelSnippet } ) )`;
+ 
+ 			if ( this.renderer.backend.compatibilityMode && texture.isDepthTexture ) {
+@@ -79835,7 +79894,7 @@
+ 
+ 				// Cube textures always need samplers (they use textureSampleLevel, not textureLoad)
+ 				// Also textureGather always need sampler.
+-				const needsSampler = node.value.isCubeTexture === true || ( this.isUnfilterable( node.value ) === false && texture.store === false ) || node.gatherNode !== null;
++				const needsSampler = node.isRawTextureNode !== true && ( node.value.isCubeTexture === true || ( this.isUnfilterable( node.value ) === false && texture.store === false ) || node.gatherNode !== null );
+ 
+ 				if ( needsSampler ) {
+ 
+@@ -80265,7 +80324,8 @@
+ 
+ 			for ( const { name, property, type } of builtins.values() ) {
+ 
+-				snippets.push( `@builtin( ${name} ) ${property} : ${type}` );
++				const invariant = shaderStage === 'vertex' && name === 'position' && this.context.invariantPosition === true ? '@invariant ' : '';
++				snippets.push( `${ invariant }@builtin( ${name} ) ${property} : ${type}` );
+ 
+ 			}
+ 
+@@ -80521,6 +80581,8 @@
+ 	getVaryings( shaderStage ) {
+ 
+ 		const snippets = [];
++		const policy = this.context.sampleInterpolation;
++		const sampleInterpolation = typeof policy === 'function' ? policy( this.material ) === true : policy === true;
+ 
+ 		if ( shaderStage === 'vertex' ) {
+ 
+@@ -80543,7 +80605,12 @@
+ 
+ 					let attributesSnippet = `@location( ${ varyingIndex ++ } )`;
+ 
+-					if ( varying.interpolationType ) {
++					if ( sampleInterpolation && ! /^(int|uint|ivec|uvec)/.test( varying.type ) && varying.interpolationType !== 'flat' ) {
++
++						if ( varying.interpolationSampling !== null && varying.interpolationSampling !== 'center' && varying.interpolationSampling !== 'sample' ) throw new Error( 'Sample interpolation policy cannot replace explicit centroid sampling.' );
++						attributesSnippet += ` @interpolate( ${ varying.interpolationType || 'perspective' }, sample )`;
++
++					} else if ( varying.interpolationType ) {
+ 
+ 						const samplingSnippet = varying.interpolationSampling !== null ? `, ${ varying.interpolationSampling } )` : ' )';
+ 
+@@ -80647,7 +80714,7 @@
+ 
+ 				const { primarySamples } = backend.utils.getTextureSampleData( texture );
+ 
+-				if ( primarySamples > 1 ) {
++				if ( primarySamples > 1 || textureNode.isRawTextureNode === true ) {
+ 
+ 					multisampled = '_multisampled';
+ 
+@@ -81402,6 +81469,15 @@
+ 			buffer.unmap();
+ 
+ 			bufferData.buffer = buffer;
++			bufferData.version = bufferAttribute.version;
++			bufferData.uploadCall = backend.renderer.info.calls;
++
++		} else if ( bufferData.version < bufferAttribute.version ||
++			( bufferAttribute.usage === DynamicDrawUsage && bufferData.uploadCall !== backend.renderer.info.calls ) ) {
++
++			// A rebuilt shader can create a fresh attribute wrapper for this existing buffer.
++			// Synchronize its dirty bytes before Attributes records the wrapper as current.
++			this.updateAttribute( attribute );
+ 
+ 		}
+ 
+@@ -81421,6 +81497,11 @@
+ 
+ 		const bufferData = backend.get( bufferAttribute );
+ 		const buffer = backend.get( bufferAttribute ).buffer;
++
++		// A fresh wrapper may already have uploaded this shared buffer in the same render or compute call.
++		// Do not repeat that write after its partial ranges have been consumed.
++		if ( bufferData.version === bufferAttribute.version &&
++			( bufferAttribute.usage !== DynamicDrawUsage || bufferData.uploadCall === backend.renderer.info.calls ) ) return;
+ 
+ 		let array = bufferAttribute.array;
+ 
+@@ -81503,6 +81584,9 @@
+ 
+ 		}
+ 
++		bufferData.version = bufferAttribute.version;
++		bufferData.uploadCall = backend.renderer.info.calls;
++
+ 	}
+ 
+ 	/**
+@@ -82128,7 +82212,20 @@
+ 
+ 				let resourceGPU;
+ 
+-				if ( textureData.externalTexture !== undefined ) {
++				if ( binding.textureNode?.isRawTextureNode === true ) {
++
++					if ( binding.textureNode.passNode._rawTexturesDisposed ) throw new Error( 'Raw pass attachment owner is disposed.' );
++					const raw = binding.texture.isDepthTexture ? textureData.texture : textureData.msaaTexture;
++					if ( binding.texture.renderTarget?.samples !== 4 || raw === undefined ) throw new Error( 'Raw multisample attachment is unavailable.' );
++					if ( textureData.rawTextureViewSource !== raw ) {
++
++						textureData.rawTextureView = raw.createView( { dimension: '2d', aspect: binding.texture.isDepthTexture ? 'depth-only' : 'all', baseMipLevel: 0, mipLevelCount: 1 } );
++						textureData.rawTextureViewSource = raw;
++
++					}
++					resourceGPU = textureData.rawTextureView;
++
++				} else if ( textureData.externalTexture !== undefined ) {
+ 
+ 					resourceGPU = device.importExternalTexture( { source: textureData.externalTexture } );
+ 
+@@ -82299,7 +82396,7 @@
+ 
+ 				const { primarySamples } = backend.utils.getTextureSampleData( binding.texture );
+ 
+-				if ( primarySamples > 1 ) {
++				if ( primarySamples > 1 || binding.textureNode?.isRawTextureNode === true ) {
+ 
+ 					texture.multisampled = true;
+ 
+@@ -82337,7 +82434,7 @@
+ 
+ 					} else if ( type === FloatType ) {
+ 
+-						if ( this.backend.hasFeature( 'float32-filterable' ) ) {
++						if ( texture.multisampled !== true && this.backend.hasFeature( 'float32-filterable' ) ) {
+ 
+ 							texture.sampleType = GPUTextureSampleType.Float;
+ 
+@@ -84124,6 +84221,19 @@
+ 		this.gpu = null;
+ 
+ 		/**
++		 * A reference to the adapter this device was requested from.
++		 *
++		 * The adapter owns the wire instance every operation in flight completes on. Chromium
++		 * collects an adapter the page stops referencing and the instance goes with it, so every
++		 * operation still running completes with a shutdown the page reads as
++		 * 'A valid external Instance reference no longer exists.' and presentation stops for.
++		 *
++		 * @type {?GPUAdapter}
++		 * @default null
++		 */
++		this.adapter = null;
++
++		/**
+ 		 * A reference to the device.
+ 		 *
+ 		 * @type {?GPUDevice}
+@@ -84238,6 +84348,8 @@
+ 			this.gpu = ( typeof navigator !== 'undefined' ) ? navigator.gpu : null;
+ 
+ 			const adapter = this.gpu !== null ? await this.gpu.requestAdapter( adapterOptions ) : null;
++
++			this.adapter = adapter;
+ 
+ 			if ( adapter === null ) {
+ 
+diff --git a/build/three.webgpu.js b/build/three.webgpu.js
+index efd0e16719cc7bbef1fbc18c241948e25eb85881..941ec68ef0b8174a633054043edb94d9d3d58f5e 100644
+--- a/build/three.webgpu.js
++++ b/build/three.webgpu.js
+@@ -12307,7 +12307,8 @@
+ 		const textureProperty = this.textureNode.build( builder, 'property' );
+ 		const level = this.levelNode === null ? '0' : this.levelNode.build( builder, 'int' );
+ 
+-		return builder.format( `${ builder.getMethod( 'textureDimensions' ) }( ${ textureProperty }, ${ level } )`, this.getNodeType( builder ), output );
++		const mip = this.textureNode.isRawTextureNode === true ? '' : `, ${ level }`;
++		return builder.format( `${ builder.getMethod( 'textureDimensions' ) }( ${ textureProperty }${ mip } )`, this.getNodeType( builder ), output );
+ 
+ 	}
+ 
+@@ -12958,7 +12959,7 @@
+ 
+ 		} else if ( this.sampler === false ) {
+ 
+-			snippet = builder.generateTextureLoad( texture, textureProperty, uvSnippet, levelSnippet, depthSnippet, offsetSnippet );
++			snippet = builder.generateTextureLoad( texture, textureProperty, uvSnippet, levelSnippet, depthSnippet, offsetSnippet, this.isRawTextureNode === true );
+ 
+ 		} else if ( levelSnippet ) {
+ 
+@@ -40523,7 +40524,7 @@
+ 	 * @param {string} textureName - The output texture name.
+ 	 * @param {boolean} [previousTexture=false] - Whether previous frame data should be used or not.
+ 	 */
+-	constructor( passNode, textureName, previousTexture = false ) {
++	constructor( passNode, textureName, previousTexture = false, rawTexture = false ) {
+ 
+ 		// null is passed to the super call since this class does not
+ 		// use an external texture for rendering pass data into. Instead
+@@ -40544,6 +40545,8 @@
+ 		 * @type {boolean}
+ 		 */
+ 		this.previousTexture = previousTexture;
++		this.isRawTextureNode = rawTexture;
++		if ( rawTexture ) this.setSampler( false );
+ 
+ 		/**
+ 		 * This flag can be used for type testing.
+@@ -40565,17 +40568,33 @@
+ 
+ 	}
+ 
++	getUniformHash( builder ) {
++
++		const hash = super.getUniformHash( builder );
++		return this.isRawTextureNode ? `${ this.passNode.uuid }:${ this.textureName }:raw4:${ hash }` : hash;
++
++	}
++
+ 	setup( builder ) {
+ 
+ 		this.updateTexture();
+ 
++		if ( this.isRawTextureNode ) {
++
++			if ( this.passNode._rawTexturesDisposed ) throw new Error( 'Raw pass attachment owner is disposed.' );
++			if ( this.passNode.renderTarget.samples !== 4 ) throw new Error( 'Raw pass attachments require four-sample multisampling.' );
++			if ( this.sampler || this.biasNode || this.compareNode || this.gradNode || this.gatherNode || this.depthNode ) throw new Error( 'Raw pass attachments support integer loads only.' );
++			if ( builder.renderer.backend.isWebGPUBackend !== true ) throw new Error( 'Raw pass attachments require WebGPU.' );
++
++		}
++
+ 		return super.setup( builder );
+ 
+ 	}
+ 
+ 	clone() {
+ 
+-		const newNode = new this.constructor( this.passNode, this.textureName, this.previousTexture );
++		const newNode = new this.constructor( this.passNode, this.textureName, this.previousTexture, this.isRawTextureNode );
+ 		newNode.uvNode = this.uvNode;
+ 		newNode.levelNode = this.levelNode;
+ 		newNode.biasNode = this.biasNode;
+@@ -40756,6 +40775,8 @@
+ 		 * @type {Object<string, TextureNode>}
+ 		 */
+ 		this._textureNodes = {};
++		this._rawTextureNodes = {};
++		this._rawTexturesDisposed = false;
+ 
+ 		/**
+ 		 * A dictionary holding the internal depth nodes.
+@@ -41062,6 +41083,7 @@
+ 			this._previousTextures[ name ] = texture;
+ 
+ 			this._textureNodes[ name ].updateTexture();
++			if ( this._rawTextureNodes[ name ] ) this._rawTextureNodes[ name ].updateTexture();
+ 			this._previousTextureNodes[ name ].updateTexture();
+ 
+ 		}
+@@ -41074,6 +41096,17 @@
+ 	 * @param {string} [name='output'] - The output name to get the texture node for.
+ 	 * @return {TextureNode} The texture node.
+ 	 */
++	getRawTextureNode( name = 'output' ) {
++
++		if ( this._rawTexturesDisposed ) throw new Error( 'Raw pass attachment owner is disposed.' );
++		if ( this.renderTarget.samples !== 4 || this.renderTarget.depth !== 1 ) throw new Error( 'Raw pass attachments require four-sample 2D multisampling.' );
++		let node = this._rawTextureNodes[ name ];
++		if ( node === undefined ) node = this._rawTextureNodes[ name ] = new PassMultipleTextureNode( this, name, false, true );
++		node.updateTexture();
++		return node;
++
++	}
++
+ 	getTextureNode( name = 'output' ) {
+ 
+ 		let textureNode = this._textureNodes[ name ];
+@@ -41416,6 +41449,7 @@
+ 	 */
+ 	dispose() {
+ 
++		this._rawTexturesDisposed = true;
+ 		this.renderTarget.dispose();
+ 
+ 	}
+@@ -61400,6 +61434,18 @@
+ 	}
+ 
+ 	/**
++	 * Releases an exclusively owned attribute through the backend and memory accounting.
++	 * Wait for asynchronous readers before releasing storage shared by compute dispatches.
++	 * @param {BufferAttribute} attribute - The owned attribute to release.
++	 * @return {?Object} The removed attribute data, or null when absent/uninitialized.
++	 */
++	deleteAttribute( attribute ) {
++
++		return this._attributes === null ? null : this._attributes.delete( attribute );
++
++	}
++
++	/**
+ 	 * Can be used to transfer buffer data from a storage buffer attribute
+ 	 * from the GPU to the CPU in context of compute shaders.
+ 	 *
+@@ -76904,7 +76950,12 @@
+ 
+ 		}
+ 
+-		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat ) {
++		// Compute-only 3D storage has no attachment or render-pass mipmap consumer.
++		// Requesting the unused attachment usage rejects the texture on wgpu-native.
++		const computeOnlyStorage3D = dimension === GPUTextureDimension.ThreeD && texture.isStorageTexture === true &&
++			texture.isRenderTargetTexture !== true && options.renderTarget === undefined && options.needsMipmaps !== true;
++
++		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat && ! computeOnlyStorage3D ) {
+ 
+ 			usage |= GPUTextureUsage.RENDER_ATTACHMENT;
+ 
+@@ -79277,7 +79328,7 @@
+ 	 * @param {?string} offsetSnippet - A WGSL snippet that represents the offset that will be applied to the unnormalized texture coordinate before sampling the texture.
+ 	 * @return {string} The WGSL snippet.
+ 	 */
+-	generateTextureLoad( texture, textureProperty, uvIndexSnippet, levelSnippet, depthSnippet, offsetSnippet ) {
++	generateTextureLoad( texture, textureProperty, uvIndexSnippet, levelSnippet, depthSnippet, offsetSnippet, rawTexture = false ) {
+ 
+ 		if ( levelSnippet === null ) levelSnippet = '0u';
+ 
+@@ -79301,7 +79352,7 @@
+ 			const sampleData = texture ? this.renderer?.backend?.utils?.getTextureSampleData?.( texture ) : null;
+ 			const backendMultisampled = sampleData !== null && sampleData !== undefined && sampleData.primarySamples > 1;
+ 			const targetMultisampled = Boolean( texture && texture.renderTarget && texture.renderTarget.samples > 1 );
+-			const indexType = ( backendMultisampled || targetMultisampled ) ? 'i32' : 'u32';
++			const indexType = ( rawTexture || backendMultisampled || targetMultisampled ) ? 'i32' : 'u32';
+ 			snippet = `textureLoad( ${ textureProperty }, ${ uvIndexSnippet }, ${ indexType }( ${ levelSnippet } ) )`;
+ 
+ 			if ( this.renderer.backend.compatibilityMode && texture.isDepthTexture ) {
+@@ -79843,7 +79894,7 @@
+ 
+ 				// Cube textures always need samplers (they use textureSampleLevel, not textureLoad)
+ 				// Also textureGather always need sampler.
+-				const needsSampler = node.value.isCubeTexture === true || ( this.isUnfilterable( node.value ) === false && texture.store === false ) || node.gatherNode !== null;
++				const needsSampler = node.isRawTextureNode !== true && ( node.value.isCubeTexture === true || ( this.isUnfilterable( node.value ) === false && texture.store === false ) || node.gatherNode !== null );
+ 
+ 				if ( needsSampler ) {
+ 
+@@ -80273,7 +80324,8 @@
+ 
+ 			for ( const { name, property, type } of builtins.values() ) {
+ 
+-				snippets.push( `@builtin( ${name} ) ${property} : ${type}` );
++				const invariant = shaderStage === 'vertex' && name === 'position' && this.context.invariantPosition === true ? '@invariant ' : '';
++				snippets.push( `${ invariant }@builtin( ${name} ) ${property} : ${type}` );
+ 
+ 			}
+ 
+@@ -80529,6 +80581,8 @@
+ 	getVaryings( shaderStage ) {
+ 
+ 		const snippets = [];
++		const policy = this.context.sampleInterpolation;
++		const sampleInterpolation = typeof policy === 'function' ? policy( this.material ) === true : policy === true;
+ 
+ 		if ( shaderStage === 'vertex' ) {
+ 
+@@ -80551,7 +80605,12 @@
+ 
+ 					let attributesSnippet = `@location( ${ varyingIndex ++ } )`;
+ 
+-					if ( varying.interpolationType ) {
++					if ( sampleInterpolation && ! /^(int|uint|ivec|uvec)/.test( varying.type ) && varying.interpolationType !== 'flat' ) {
++
++						if ( varying.interpolationSampling !== null && varying.interpolationSampling !== 'center' && varying.interpolationSampling !== 'sample' ) throw new Error( 'Sample interpolation policy cannot replace explicit centroid sampling.' );
++						attributesSnippet += ` @interpolate( ${ varying.interpolationType || 'perspective' }, sample )`;
++
++					} else if ( varying.interpolationType ) {
+ 
+ 						const samplingSnippet = varying.interpolationSampling !== null ? `, ${ varying.interpolationSampling } )` : ' )';
+ 
+@@ -80655,7 +80714,7 @@
+ 
+ 				const { primarySamples } = backend.utils.getTextureSampleData( texture );
+ 
+-				if ( primarySamples > 1 ) {
++				if ( primarySamples > 1 || textureNode.isRawTextureNode === true ) {
+ 
+ 					multisampled = '_multisampled';
+ 
+@@ -82153,7 +82212,20 @@
+ 
+ 				let resourceGPU;
+ 
+-				if ( textureData.externalTexture !== undefined ) {
++				if ( binding.textureNode?.isRawTextureNode === true ) {
++
++					if ( binding.textureNode.passNode._rawTexturesDisposed ) throw new Error( 'Raw pass attachment owner is disposed.' );
++					const raw = binding.texture.isDepthTexture ? textureData.texture : textureData.msaaTexture;
++					if ( binding.texture.renderTarget?.samples !== 4 || raw === undefined ) throw new Error( 'Raw multisample attachment is unavailable.' );
++					if ( textureData.rawTextureViewSource !== raw ) {
++
++						textureData.rawTextureView = raw.createView( { dimension: '2d', aspect: binding.texture.isDepthTexture ? 'depth-only' : 'all', baseMipLevel: 0, mipLevelCount: 1 } );
++						textureData.rawTextureViewSource = raw;
++
++					}
++					resourceGPU = textureData.rawTextureView;
++
++				} else if ( textureData.externalTexture !== undefined ) {
+ 
+ 					resourceGPU = device.importExternalTexture( { source: textureData.externalTexture } );
+ 
+@@ -82324,7 +82396,7 @@
+ 
+ 				const { primarySamples } = backend.utils.getTextureSampleData( binding.texture );
+ 
+-				if ( primarySamples > 1 ) {
++				if ( primarySamples > 1 || binding.textureNode?.isRawTextureNode === true ) {
+ 
+ 					texture.multisampled = true;
+ 
+@@ -82362,7 +82434,7 @@
+ 
+ 					} else if ( type === FloatType ) {
+ 
+-						if ( this.backend.hasFeature( 'float32-filterable' ) ) {
++						if ( texture.multisampled !== true && this.backend.hasFeature( 'float32-filterable' ) ) {
+ 
+ 							texture.sampleType = GPUTextureSampleType.Float;
+ 
+@@ -84149,6 +84221,19 @@
+ 		this.gpu = null;
+ 
+ 		/**
++		 * A reference to the adapter this device was requested from.
++		 *
++		 * The adapter owns the wire instance every operation in flight completes on. Chromium
++		 * collects an adapter the page stops referencing and the instance goes with it, so every
++		 * operation still running completes with a shutdown the page reads as
++		 * 'A valid external Instance reference no longer exists.' and presentation stops for.
++		 *
++		 * @type {?GPUAdapter}
++		 * @default null
++		 */
++		this.adapter = null;
++
++		/**
+ 		 * A reference to the device.
+ 		 *
+ 		 * @type {?GPUDevice}
+@@ -84263,6 +84348,8 @@
+ 			this.gpu = ( typeof navigator !== 'undefined' ) ? navigator.gpu : null;
+ 
+ 			const adapter = this.gpu !== null ? await this.gpu.requestAdapter( adapterOptions ) : null;
++
++			this.adapter = adapter;
+ 
+ 			if ( adapter === null ) {
+ 
+diff --git a/build/three.webgpu.nodes.js b/build/three.webgpu.nodes.js
+index 1245f0da9bb6a0f731b8c75a64490d7c91238700..57f69c17352b936a9eca118a9801805c95c401b6 100644
+--- a/build/three.webgpu.nodes.js
++++ b/build/three.webgpu.nodes.js
+@@ -12307,7 +12307,8 @@
+ 		const textureProperty = this.textureNode.build( builder, 'property' );
+ 		const level = this.levelNode === null ? '0' : this.levelNode.build( builder, 'int' );
+ 
+-		return builder.format( `${ builder.getMethod( 'textureDimensions' ) }( ${ textureProperty }, ${ level } )`, this.getNodeType( builder ), output );
++		const mip = this.textureNode.isRawTextureNode === true ? '' : `, ${ level }`;
++		return builder.format( `${ builder.getMethod( 'textureDimensions' ) }( ${ textureProperty }${ mip } )`, this.getNodeType( builder ), output );
+ 
+ 	}
+ 
+@@ -12958,7 +12959,7 @@
+ 
+ 		} else if ( this.sampler === false ) {
+ 
+-			snippet = builder.generateTextureLoad( texture, textureProperty, uvSnippet, levelSnippet, depthSnippet, offsetSnippet );
++			snippet = builder.generateTextureLoad( texture, textureProperty, uvSnippet, levelSnippet, depthSnippet, offsetSnippet, this.isRawTextureNode === true );
+ 
+ 		} else if ( levelSnippet ) {
+ 
+@@ -18846,7 +18847,15 @@
+ 
+ 	}
+ 
+-	return getSkinnedPosition( data.node, positionPrevious, bindMatrixNode, bindMatrixInverseNode, skinIndexNode, skinWeightNode );
++	// The previous bones and world matrix must use the same frame's bind inverse.
++	const previousBindMatrixInverse = uniform( skinnedMesh.bindMatrixInverse, 'mat4' ).onObjectUpdate( ( { object } ) => {
++
++		const mesh = object?.isSkinnedMesh === true ? object : skinnedMesh;
++		return mesh[ Symbol.for( 'threenative.velocity.previousBindMatrixInverse' ) ] ?? mesh.bindMatrixInverse;
++
++	} );
++
++	return getSkinnedPosition( data.node, positionPrevious, bindMatrixNode, previousBindMatrixInverse, skinIndexNode, skinWeightNode );
+ 
+ }
+ 
+@@ -40470,7 +40479,7 @@
+ 	 * @param {string} textureName - The output texture name.
+ 	 * @param {boolean} [previousTexture=false] - Whether previous frame data should be used or not.
+ 	 */
+-	constructor( passNode, textureName, previousTexture = false ) {
++	constructor( passNode, textureName, previousTexture = false, rawTexture = false ) {
+ 
+ 		// null is passed to the super call since this class does not
+ 		// use an external texture for rendering pass data into. Instead
+@@ -40491,6 +40500,8 @@
+ 		 * @type {boolean}
+ 		 */
+ 		this.previousTexture = previousTexture;
++		this.isRawTextureNode = rawTexture;
++		if ( rawTexture ) this.setSampler( false );
+ 
+ 		/**
+ 		 * This flag can be used for type testing.
+@@ -40512,17 +40523,33 @@
+ 
+ 	}
+ 
++	getUniformHash( builder ) {
++
++		const hash = super.getUniformHash( builder );
++		return this.isRawTextureNode ? `${ this.passNode.uuid }:${ this.textureName }:raw4:${ hash }` : hash;
++
++	}
++
+ 	setup( builder ) {
+ 
+ 		this.updateTexture();
+ 
++		if ( this.isRawTextureNode ) {
++
++			if ( this.passNode._rawTexturesDisposed ) throw new Error( 'Raw pass attachment owner is disposed.' );
++			if ( this.passNode.renderTarget.samples !== 4 ) throw new Error( 'Raw pass attachments require four-sample multisampling.' );
++			if ( this.sampler || this.biasNode || this.compareNode || this.gradNode || this.gatherNode || this.depthNode ) throw new Error( 'Raw pass attachments support integer loads only.' );
++			if ( builder.renderer.backend.isWebGPUBackend !== true ) throw new Error( 'Raw pass attachments require WebGPU.' );
++
++		}
++
+ 		return super.setup( builder );
+ 
+ 	}
+ 
+ 	clone() {
+ 
+-		const newNode = new this.constructor( this.passNode, this.textureName, this.previousTexture );
++		const newNode = new this.constructor( this.passNode, this.textureName, this.previousTexture, this.isRawTextureNode );
+ 		newNode.uvNode = this.uvNode;
+ 		newNode.levelNode = this.levelNode;
+ 		newNode.biasNode = this.biasNode;
+@@ -40703,6 +40730,8 @@
+ 		 * @type {Object<string, TextureNode>}
+ 		 */
+ 		this._textureNodes = {};
++		this._rawTextureNodes = {};
++		this._rawTexturesDisposed = false;
+ 
+ 		/**
+ 		 * A dictionary holding the internal depth nodes.
+@@ -41009,6 +41038,7 @@
+ 			this._previousTextures[ name ] = texture;
+ 
+ 			this._textureNodes[ name ].updateTexture();
++			if ( this._rawTextureNodes[ name ] ) this._rawTextureNodes[ name ].updateTexture();
+ 			this._previousTextureNodes[ name ].updateTexture();
+ 
+ 		}
+@@ -41021,6 +41051,17 @@
+ 	 * @param {string} [name='output'] - The output name to get the texture node for.
+ 	 * @return {TextureNode} The texture node.
+ 	 */
++	getRawTextureNode( name = 'output' ) {
++
++		if ( this._rawTexturesDisposed ) throw new Error( 'Raw pass attachment owner is disposed.' );
++		if ( this.renderTarget.samples !== 4 || this.renderTarget.depth !== 1 ) throw new Error( 'Raw pass attachments require four-sample 2D multisampling.' );
++		let node = this._rawTextureNodes[ name ];
++		if ( node === undefined ) node = this._rawTextureNodes[ name ] = new PassMultipleTextureNode( this, name, false, true );
++		node.updateTexture();
++		return node;
++
++	}
++
+ 	getTextureNode( name = 'output' ) {
+ 
+ 		let textureNode = this._textureNodes[ name ];
+@@ -41363,6 +41404,7 @@
+ 	 */
+ 	dispose() {
+ 
++		this._rawTexturesDisposed = true;
+ 		this.renderTarget.dispose();
+ 
+ 	}
+@@ -61347,6 +61389,18 @@
+ 	}
+ 
+ 	/**
++	 * Releases an exclusively owned attribute through the backend and memory accounting.
++	 * Wait for asynchronous readers before releasing storage shared by compute dispatches.
++	 * @param {BufferAttribute} attribute - The owned attribute to release.
++	 * @return {?Object} The removed attribute data, or null when absent/uninitialized.
++	 */
++	deleteAttribute( attribute ) {
++
++		return this._attributes === null ? null : this._attributes.delete( attribute );
++
++	}
++
++	/**
+ 	 * Can be used to transfer buffer data from a storage buffer attribute
+ 	 * from the GPU to the CPU in context of compute shaders.
+ 	 *
+@@ -76840,7 +76894,12 @@
+ 
+ 		}
+ 
+-		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat ) {
++		// Compute-only 3D storage has no attachment or render-pass mipmap consumer.
++		// Requesting the unused attachment usage rejects the texture on wgpu-native.
++		const computeOnlyStorage3D = dimension === GPUTextureDimension.ThreeD && texture.isStorageTexture === true &&
++			texture.isRenderTargetTexture !== true && options.renderTarget === undefined && options.needsMipmaps !== true;
++
++		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat && ! computeOnlyStorage3D ) {
+ 
+ 			usage |= GPUTextureUsage.RENDER_ATTACHMENT;
+ 
+@@ -79213,7 +79272,7 @@
+ 	 * @param {?string} offsetSnippet - A WGSL snippet that represents the offset that will be applied to the unnormalized texture coordinate before sampling the texture.
+ 	 * @return {string} The WGSL snippet.
+ 	 */
+-	generateTextureLoad( texture, textureProperty, uvIndexSnippet, levelSnippet, depthSnippet, offsetSnippet ) {
++	generateTextureLoad( texture, textureProperty, uvIndexSnippet, levelSnippet, depthSnippet, offsetSnippet, rawTexture = false ) {
+ 
+ 		if ( levelSnippet === null ) levelSnippet = '0u';
+ 
+@@ -79237,7 +79296,7 @@
+ 			const sampleData = texture ? this.renderer?.backend?.utils?.getTextureSampleData?.( texture ) : null;
+ 			const backendMultisampled = sampleData !== null && sampleData !== undefined && sampleData.primarySamples > 1;
+ 			const targetMultisampled = Boolean( texture && texture.renderTarget && texture.renderTarget.samples > 1 );
+-			const indexType = ( backendMultisampled || targetMultisampled ) ? 'i32' : 'u32';
++			const indexType = ( rawTexture || backendMultisampled || targetMultisampled ) ? 'i32' : 'u32';
+ 			snippet = `textureLoad( ${ textureProperty }, ${ uvIndexSnippet }, ${ indexType }( ${ levelSnippet } ) )`;
+ 
+ 			if ( this.renderer.backend.compatibilityMode && texture.isDepthTexture ) {
+@@ -79779,7 +79838,7 @@
+ 
+ 				// Cube textures always need samplers (they use textureSampleLevel, not textureLoad)
+ 				// Also textureGather always need sampler.
+-				const needsSampler = node.value.isCubeTexture === true || ( this.isUnfilterable( node.value ) === false && texture.store === false ) || node.gatherNode !== null;
++				const needsSampler = node.isRawTextureNode !== true && ( node.value.isCubeTexture === true || ( this.isUnfilterable( node.value ) === false && texture.store === false ) || node.gatherNode !== null );
+ 
+ 				if ( needsSampler ) {
+ 
+@@ -80208,7 +80267,8 @@
+ 
+ 			for ( const { name, property, type } of builtins.values() ) {
+ 
+-				snippets.push( `@builtin( ${name} ) ${property} : ${type}` );
++				const invariant = shaderStage === 'vertex' && name === 'position' && this.context.invariantPosition === true ? '@invariant ' : '';
++				snippets.push( `${ invariant }@builtin( ${name} ) ${property} : ${type}` );
+ 
+ 			}
+ 
+@@ -80464,6 +80524,8 @@
+ 	getVaryings( shaderStage ) {
+ 
+ 		const snippets = [];
++		const policy = this.context.sampleInterpolation;
++		const sampleInterpolation = typeof policy === 'function' ? policy( this.material ) === true : policy === true;
+ 
+ 		if ( shaderStage === 'vertex' ) {
+ 
+@@ -80486,7 +80548,12 @@
+ 
+ 					let attributesSnippet = `@location( ${ varyingIndex ++ } )`;
+ 
+-					if ( varying.interpolationType ) {
++					if ( sampleInterpolation && ! /^(int|uint|ivec|uvec)/.test( varying.type ) && varying.interpolationType !== 'flat' ) {
++
++						if ( varying.interpolationSampling !== null && varying.interpolationSampling !== 'center' && varying.interpolationSampling !== 'sample' ) throw new Error( 'Sample interpolation policy cannot replace explicit centroid sampling.' );
++						attributesSnippet += ` @interpolate( ${ varying.interpolationType || 'perspective' }, sample )`;
++
++					} else if ( varying.interpolationType ) {
+ 
+ 						const samplingSnippet = varying.interpolationSampling !== null ? `, ${ varying.interpolationSampling } )` : ' )';
+ 
+@@ -80587,7 +80654,7 @@
+ 
+ 				const { primarySamples } = backend.utils.getTextureSampleData( texture );
+ 
+-				if ( primarySamples > 1 ) {
++				if ( primarySamples > 1 || textureNode.isRawTextureNode === true ) {
+ 
+ 					multisampled = '_multisampled';
+ 
+@@ -81342,6 +81409,15 @@
+ 			buffer.unmap();
+ 
+ 			bufferData.buffer = buffer;
++			bufferData.version = bufferAttribute.version;
++			bufferData.uploadCall = backend.renderer.info.calls;
++
++		} else if ( bufferData.version < bufferAttribute.version ||
++			( bufferAttribute.usage === DynamicDrawUsage && bufferData.uploadCall !== backend.renderer.info.calls ) ) {
++
++			// A rebuilt shader can create a fresh attribute wrapper for this existing buffer.
++			// Synchronize its dirty bytes before Attributes records the wrapper as current.
++			this.updateAttribute( attribute );
+ 
+ 		}
+ 
+@@ -81361,6 +81437,11 @@
+ 
+ 		const bufferData = backend.get( bufferAttribute );
+ 		const buffer = backend.get( bufferAttribute ).buffer;
++
++		// A fresh wrapper may already have uploaded this shared buffer in the same render or compute call.
++		// Do not repeat that write after its partial ranges have been consumed.
++		if ( bufferData.version === bufferAttribute.version &&
++			( bufferAttribute.usage !== DynamicDrawUsage || bufferData.uploadCall === backend.renderer.info.calls ) ) return;
+ 
+ 		let array = bufferAttribute.array;
+ 
+@@ -81443,6 +81524,9 @@
+ 
+ 		}
+ 
++		bufferData.version = bufferAttribute.version;
++		bufferData.uploadCall = backend.renderer.info.calls;
++
+ 	}
+ 
+ 	/**
+@@ -82070,7 +82154,20 @@
+ 
+ 				let resourceGPU;
+ 
+-				if ( textureData.externalTexture !== undefined ) {
++				if ( binding.textureNode?.isRawTextureNode === true ) {
++
++					if ( binding.textureNode.passNode._rawTexturesDisposed ) throw new Error( 'Raw pass attachment owner is disposed.' );
++					const raw = binding.texture.isDepthTexture ? textureData.texture : textureData.msaaTexture;
++					if ( binding.texture.renderTarget?.samples !== 4 || raw === undefined ) throw new Error( 'Raw multisample attachment is unavailable.' );
++					if ( textureData.rawTextureViewSource !== raw ) {
++
++						textureData.rawTextureView = raw.createView( { dimension: '2d', aspect: binding.texture.isDepthTexture ? 'depth-only' : 'all', baseMipLevel: 0, mipLevelCount: 1 } );
++						textureData.rawTextureViewSource = raw;
++
++					}
++					resourceGPU = textureData.rawTextureView;
++
++				} else if ( textureData.externalTexture !== undefined ) {
+ 
+ 					resourceGPU = device.importExternalTexture( { source: textureData.externalTexture } );
+ 
+@@ -82241,7 +82338,7 @@
+ 
+ 				const { primarySamples } = backend.utils.getTextureSampleData( binding.texture );
+ 
+-				if ( primarySamples > 1 ) {
++				if ( primarySamples > 1 || binding.textureNode?.isRawTextureNode === true ) {
+ 
+ 					texture.multisampled = true;
+ 
+@@ -82279,7 +82376,7 @@
+ 
+ 					} else if ( type === FloatType ) {
+ 
+-						if ( this.backend.hasFeature( 'float32-filterable' ) ) {
++						if ( texture.multisampled !== true && this.backend.hasFeature( 'float32-filterable' ) ) {
+ 
+ 							texture.sampleType = GPUTextureSampleType.Float;
+ 
+diff --git a/build/three.webgpu.nodes.js b/build/three.webgpu.nodes.js
+index 1b3a6e96291af0077f7f247040e657cf4aa0cb33..57f69c17352b936a9eca118a9801805c95c401b6 100644
+--- a/build/three.webgpu.nodes.js
++++ b/build/three.webgpu.nodes.js
+@@ -12307,7 +12307,8 @@
+ 		const textureProperty = this.textureNode.build( builder, 'property' );
+ 		const level = this.levelNode === null ? '0' : this.levelNode.build( builder, 'int' );
+ 
+-		return builder.format( `${ builder.getMethod( 'textureDimensions' ) }( ${ textureProperty }, ${ level } )`, this.getNodeType( builder ), output );
++		const mip = this.textureNode.isRawTextureNode === true ? '' : `, ${ level }`;
++		return builder.format( `${ builder.getMethod( 'textureDimensions' ) }( ${ textureProperty }${ mip } )`, this.getNodeType( builder ), output );
+ 
+ 	}
+ 
+@@ -12958,7 +12959,7 @@
+ 
+ 		} else if ( this.sampler === false ) {
+ 
+-			snippet = builder.generateTextureLoad( texture, textureProperty, uvSnippet, levelSnippet, depthSnippet, offsetSnippet );
++			snippet = builder.generateTextureLoad( texture, textureProperty, uvSnippet, levelSnippet, depthSnippet, offsetSnippet, this.isRawTextureNode === true );
+ 
+ 		} else if ( levelSnippet ) {
+ 
+@@ -40478,7 +40479,7 @@
+ 	 * @param {string} textureName - The output texture name.
+ 	 * @param {boolean} [previousTexture=false] - Whether previous frame data should be used or not.
+ 	 */
+-	constructor( passNode, textureName, previousTexture = false ) {
++	constructor( passNode, textureName, previousTexture = false, rawTexture = false ) {
+ 
+ 		// null is passed to the super call since this class does not
+ 		// use an external texture for rendering pass data into. Instead
+@@ -40499,6 +40500,8 @@
+ 		 * @type {boolean}
+ 		 */
+ 		this.previousTexture = previousTexture;
++		this.isRawTextureNode = rawTexture;
++		if ( rawTexture ) this.setSampler( false );
+ 
+ 		/**
+ 		 * This flag can be used for type testing.
+@@ -40520,17 +40523,33 @@
+ 
+ 	}
+ 
++	getUniformHash( builder ) {
++
++		const hash = super.getUniformHash( builder );
++		return this.isRawTextureNode ? `${ this.passNode.uuid }:${ this.textureName }:raw4:${ hash }` : hash;
++
++	}
++
+ 	setup( builder ) {
+ 
+ 		this.updateTexture();
+ 
++		if ( this.isRawTextureNode ) {
++
++			if ( this.passNode._rawTexturesDisposed ) throw new Error( 'Raw pass attachment owner is disposed.' );
++			if ( this.passNode.renderTarget.samples !== 4 ) throw new Error( 'Raw pass attachments require four-sample multisampling.' );
++			if ( this.sampler || this.biasNode || this.compareNode || this.gradNode || this.gatherNode || this.depthNode ) throw new Error( 'Raw pass attachments support integer loads only.' );
++			if ( builder.renderer.backend.isWebGPUBackend !== true ) throw new Error( 'Raw pass attachments require WebGPU.' );
++
++		}
++
+ 		return super.setup( builder );
+ 
+ 	}
+ 
+ 	clone() {
+ 
+-		const newNode = new this.constructor( this.passNode, this.textureName, this.previousTexture );
++		const newNode = new this.constructor( this.passNode, this.textureName, this.previousTexture, this.isRawTextureNode );
+ 		newNode.uvNode = this.uvNode;
+ 		newNode.levelNode = this.levelNode;
+ 		newNode.biasNode = this.biasNode;
+@@ -40711,6 +40730,8 @@
+ 		 * @type {Object<string, TextureNode>}
+ 		 */
+ 		this._textureNodes = {};
++		this._rawTextureNodes = {};
++		this._rawTexturesDisposed = false;
+ 
+ 		/**
+ 		 * A dictionary holding the internal depth nodes.
+@@ -41017,6 +41038,7 @@
+ 			this._previousTextures[ name ] = texture;
+ 
+ 			this._textureNodes[ name ].updateTexture();
++			if ( this._rawTextureNodes[ name ] ) this._rawTextureNodes[ name ].updateTexture();
+ 			this._previousTextureNodes[ name ].updateTexture();
+ 
+ 		}
+@@ -41029,6 +41051,17 @@
+ 	 * @param {string} [name='output'] - The output name to get the texture node for.
+ 	 * @return {TextureNode} The texture node.
+ 	 */
++	getRawTextureNode( name = 'output' ) {
++
++		if ( this._rawTexturesDisposed ) throw new Error( 'Raw pass attachment owner is disposed.' );
++		if ( this.renderTarget.samples !== 4 || this.renderTarget.depth !== 1 ) throw new Error( 'Raw pass attachments require four-sample 2D multisampling.' );
++		let node = this._rawTextureNodes[ name ];
++		if ( node === undefined ) node = this._rawTextureNodes[ name ] = new PassMultipleTextureNode( this, name, false, true );
++		node.updateTexture();
++		return node;
++
++	}
++
+ 	getTextureNode( name = 'output' ) {
+ 
+ 		let textureNode = this._textureNodes[ name ];
+@@ -41371,6 +41404,7 @@
+ 	 */
+ 	dispose() {
+ 
++		this._rawTexturesDisposed = true;
+ 		this.renderTarget.dispose();
+ 
+ 	}
+@@ -61355,6 +61389,18 @@
+ 	}
+ 
+ 	/**
++	 * Releases an exclusively owned attribute through the backend and memory accounting.
++	 * Wait for asynchronous readers before releasing storage shared by compute dispatches.
++	 * @param {BufferAttribute} attribute - The owned attribute to release.
++	 * @return {?Object} The removed attribute data, or null when absent/uninitialized.
++	 */
++	deleteAttribute( attribute ) {
++
++		return this._attributes === null ? null : this._attributes.delete( attribute );
++
++	}
++
++	/**
+ 	 * Can be used to transfer buffer data from a storage buffer attribute
+ 	 * from the GPU to the CPU in context of compute shaders.
+ 	 *
+@@ -76848,7 +76894,12 @@
+ 
+ 		}
+ 
+-		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat ) {
++		// Compute-only 3D storage has no attachment or render-pass mipmap consumer.
++		// Requesting the unused attachment usage rejects the texture on wgpu-native.
++		const computeOnlyStorage3D = dimension === GPUTextureDimension.ThreeD && texture.isStorageTexture === true &&
++			texture.isRenderTargetTexture !== true && options.renderTarget === undefined && options.needsMipmaps !== true;
++
++		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat && ! computeOnlyStorage3D ) {
+ 
+ 			usage |= GPUTextureUsage.RENDER_ATTACHMENT;
+ 
+@@ -79221,7 +79272,7 @@
+ 	 * @param {?string} offsetSnippet - A WGSL snippet that represents the offset that will be applied to the unnormalized texture coordinate before sampling the texture.
+ 	 * @return {string} The WGSL snippet.
+ 	 */
+-	generateTextureLoad( texture, textureProperty, uvIndexSnippet, levelSnippet, depthSnippet, offsetSnippet ) {
++	generateTextureLoad( texture, textureProperty, uvIndexSnippet, levelSnippet, depthSnippet, offsetSnippet, rawTexture = false ) {
+ 
+ 		if ( levelSnippet === null ) levelSnippet = '0u';
+ 
+@@ -79245,7 +79296,7 @@
+ 			const sampleData = texture ? this.renderer?.backend?.utils?.getTextureSampleData?.( texture ) : null;
+ 			const backendMultisampled = sampleData !== null && sampleData !== undefined && sampleData.primarySamples > 1;
+ 			const targetMultisampled = Boolean( texture && texture.renderTarget && texture.renderTarget.samples > 1 );
+-			const indexType = ( backendMultisampled || targetMultisampled ) ? 'i32' : 'u32';
++			const indexType = ( rawTexture || backendMultisampled || targetMultisampled ) ? 'i32' : 'u32';
+ 			snippet = `textureLoad( ${ textureProperty }, ${ uvIndexSnippet }, ${ indexType }( ${ levelSnippet } ) )`;
+ 
+ 			if ( this.renderer.backend.compatibilityMode && texture.isDepthTexture ) {
+@@ -79787,7 +79838,7 @@
+ 
+ 				// Cube textures always need samplers (they use textureSampleLevel, not textureLoad)
+ 				// Also textureGather always need sampler.
+-				const needsSampler = node.value.isCubeTexture === true || ( this.isUnfilterable( node.value ) === false && texture.store === false ) || node.gatherNode !== null;
++				const needsSampler = node.isRawTextureNode !== true && ( node.value.isCubeTexture === true || ( this.isUnfilterable( node.value ) === false && texture.store === false ) || node.gatherNode !== null );
+ 
+ 				if ( needsSampler ) {
+ 
+@@ -80216,7 +80267,8 @@
+ 
+ 			for ( const { name, property, type } of builtins.values() ) {
+ 
+-				snippets.push( `@builtin( ${name} ) ${property} : ${type}` );
++				const invariant = shaderStage === 'vertex' && name === 'position' && this.context.invariantPosition === true ? '@invariant ' : '';
++				snippets.push( `${ invariant }@builtin( ${name} ) ${property} : ${type}` );
+ 
+ 			}
+ 
+@@ -80472,6 +80524,8 @@
+ 	getVaryings( shaderStage ) {
+ 
+ 		const snippets = [];
++		const policy = this.context.sampleInterpolation;
++		const sampleInterpolation = typeof policy === 'function' ? policy( this.material ) === true : policy === true;
+ 
+ 		if ( shaderStage === 'vertex' ) {
+ 
+@@ -80494,7 +80548,12 @@
+ 
+ 					let attributesSnippet = `@location( ${ varyingIndex ++ } )`;
+ 
+-					if ( varying.interpolationType ) {
++					if ( sampleInterpolation && ! /^(int|uint|ivec|uvec)/.test( varying.type ) && varying.interpolationType !== 'flat' ) {
++
++						if ( varying.interpolationSampling !== null && varying.interpolationSampling !== 'center' && varying.interpolationSampling !== 'sample' ) throw new Error( 'Sample interpolation policy cannot replace explicit centroid sampling.' );
++						attributesSnippet += ` @interpolate( ${ varying.interpolationType || 'perspective' }, sample )`;
++
++					} else if ( varying.interpolationType ) {
+ 
+ 						const samplingSnippet = varying.interpolationSampling !== null ? `, ${ varying.interpolationSampling } )` : ' )';
+ 
+@@ -80595,7 +80654,7 @@
+ 
+ 				const { primarySamples } = backend.utils.getTextureSampleData( texture );
+ 
+-				if ( primarySamples > 1 ) {
++				if ( primarySamples > 1 || textureNode.isRawTextureNode === true ) {
+ 
+ 					multisampled = '_multisampled';
+ 
+@@ -82095,7 +82154,20 @@
+ 
+ 				let resourceGPU;
+ 
+-				if ( textureData.externalTexture !== undefined ) {
++				if ( binding.textureNode?.isRawTextureNode === true ) {
++
++					if ( binding.textureNode.passNode._rawTexturesDisposed ) throw new Error( 'Raw pass attachment owner is disposed.' );
++					const raw = binding.texture.isDepthTexture ? textureData.texture : textureData.msaaTexture;
++					if ( binding.texture.renderTarget?.samples !== 4 || raw === undefined ) throw new Error( 'Raw multisample attachment is unavailable.' );
++					if ( textureData.rawTextureViewSource !== raw ) {
++
++						textureData.rawTextureView = raw.createView( { dimension: '2d', aspect: binding.texture.isDepthTexture ? 'depth-only' : 'all', baseMipLevel: 0, mipLevelCount: 1 } );
++						textureData.rawTextureViewSource = raw;
++
++					}
++					resourceGPU = textureData.rawTextureView;
++
++				} else if ( textureData.externalTexture !== undefined ) {
+ 
+ 					resourceGPU = device.importExternalTexture( { source: textureData.externalTexture } );
+ 
+@@ -82266,7 +82338,7 @@
+ 
+ 				const { primarySamples } = backend.utils.getTextureSampleData( binding.texture );
+ 
+-				if ( primarySamples > 1 ) {
++				if ( primarySamples > 1 || binding.textureNode?.isRawTextureNode === true ) {
+ 
+ 					texture.multisampled = true;
+ 
+@@ -82304,7 +82376,7 @@
+ 
+ 					} else if ( type === FloatType ) {
+ 
+-						if ( this.backend.hasFeature( 'float32-filterable' ) ) {
++						if ( texture.multisampled !== true && this.backend.hasFeature( 'float32-filterable' ) ) {
+ 
+ 							texture.sampleType = GPUTextureSampleType.Float;
+ 
+diff --git a/build/three.webgpu.nodes.js b/build/three.webgpu.nodes.js
+index 3d47c1151d563f1e0ae2bb4b92edd057fe0df2b3..57f69c17352b936a9eca118a9801805c95c401b6 100644
+--- a/build/three.webgpu.nodes.js
++++ b/build/three.webgpu.nodes.js
+@@ -12307,7 +12307,8 @@
+ 		const textureProperty = this.textureNode.build( builder, 'property' );
+ 		const level = this.levelNode === null ? '0' : this.levelNode.build( builder, 'int' );
+ 
+-		return builder.format( `${ builder.getMethod( 'textureDimensions' ) }( ${ textureProperty }, ${ level } )`, this.getNodeType( builder ), output );
++		const mip = this.textureNode.isRawTextureNode === true ? '' : `, ${ level }`;
++		return builder.format( `${ builder.getMethod( 'textureDimensions' ) }( ${ textureProperty }${ mip } )`, this.getNodeType( builder ), output );
+ 
+ 	}
+ 
+@@ -12958,7 +12959,7 @@
+ 
+ 		} else if ( this.sampler === false ) {
+ 
+-			snippet = builder.generateTextureLoad( texture, textureProperty, uvSnippet, levelSnippet, depthSnippet, offsetSnippet );
++			snippet = builder.generateTextureLoad( texture, textureProperty, uvSnippet, levelSnippet, depthSnippet, offsetSnippet, this.isRawTextureNode === true );
+ 
+ 		} else if ( levelSnippet ) {
+ 
+@@ -18539,7 +18540,7 @@
+ 	// Synchronization of dynamic buffer updates per frame
+ 	if ( interleavedMatrix !== null || interleavedColor !== null ) {
+ 
+-		OnFrameUpdate( () => {
++		OnBeforeFrameUpdate( () => {
+ 
+ 			if ( interleavedMatrix !== null ) {
+ 
+@@ -18580,11 +18581,28 @@
+ 
+ 		const instancedMesh = builder.object;
+ 
++		const updatePrevious = ( object, array ) => {
++
++			const { previousInstanceMatrix } = _previousInstanceMatrices.get( object );
++			previousInstanceMatrix.array.set( array );
++			previousInstanceMatrix.needsUpdate = true;
++			const interleaved = _matrixBuffers.get( previousInstanceMatrix );
++			if ( interleaved !== undefined ) interleaved.needsUpdate = true;
++
++		};
++
++		// Scheduled history must reach the GPU in this draw, before the geometry uploads.
++		OnBeforeObjectUpdate( ( { object } ) => {
++
++			const scheduledPrevious = object[ Symbol.for( 'threenative.velocity.previousInstanceMatrices' ) ];
++			if ( scheduledPrevious !== undefined ) updatePrevious( object, scheduledPrevious );
++
++		} );
++
++		// Without a scheduler, retain Three's draw-time snapshot for the next draw.
+ 		OnObjectUpdate( ( { object } ) => {
+ 
+-			const previousInstanceData = _previousInstanceMatrices.get( object );
+-
+-			previousInstanceData.previousInstanceMatrix.array.set( matrices.array );
++			if ( object[ Symbol.for( 'threenative.velocity.previousInstanceMatrices' ) ] === undefined ) updatePrevious( object, matrices.array );
+ 
+ 		} );
+ 
+@@ -18829,7 +18847,15 @@
+ 
+ 	}
+ 
+-	return getSkinnedPosition( data.node, positionPrevious, bindMatrixNode, bindMatrixInverseNode, skinIndexNode, skinWeightNode );
++	// The previous bones and world matrix must use the same frame's bind inverse.
++	const previousBindMatrixInverse = uniform( skinnedMesh.bindMatrixInverse, 'mat4' ).onObjectUpdate( ( { object } ) => {
++
++		const mesh = object?.isSkinnedMesh === true ? object : skinnedMesh;
++		return mesh[ Symbol.for( 'threenative.velocity.previousBindMatrixInverse' ) ] ?? mesh.bindMatrixInverse;
++
++	} );
++
++	return getSkinnedPosition( data.node, positionPrevious, bindMatrixNode, previousBindMatrixInverse, skinIndexNode, skinWeightNode );
+ 
+ }
+ 
+@@ -40453,7 +40479,7 @@
+ 	 * @param {string} textureName - The output texture name.
+ 	 * @param {boolean} [previousTexture=false] - Whether previous frame data should be used or not.
+ 	 */
+-	constructor( passNode, textureName, previousTexture = false ) {
++	constructor( passNode, textureName, previousTexture = false, rawTexture = false ) {
+ 
+ 		// null is passed to the super call since this class does not
+ 		// use an external texture for rendering pass data into. Instead
+@@ -40474,6 +40500,8 @@
+ 		 * @type {boolean}
+ 		 */
+ 		this.previousTexture = previousTexture;
++		this.isRawTextureNode = rawTexture;
++		if ( rawTexture ) this.setSampler( false );
+ 
+ 		/**
+ 		 * This flag can be used for type testing.
+@@ -40495,17 +40523,33 @@
+ 
+ 	}
+ 
++	getUniformHash( builder ) {
++
++		const hash = super.getUniformHash( builder );
++		return this.isRawTextureNode ? `${ this.passNode.uuid }:${ this.textureName }:raw4:${ hash }` : hash;
++
++	}
++
+ 	setup( builder ) {
+ 
+ 		this.updateTexture();
+ 
++		if ( this.isRawTextureNode ) {
++
++			if ( this.passNode._rawTexturesDisposed ) throw new Error( 'Raw pass attachment owner is disposed.' );
++			if ( this.passNode.renderTarget.samples !== 4 ) throw new Error( 'Raw pass attachments require four-sample multisampling.' );
++			if ( this.sampler || this.biasNode || this.compareNode || this.gradNode || this.gatherNode || this.depthNode ) throw new Error( 'Raw pass attachments support integer loads only.' );
++			if ( builder.renderer.backend.isWebGPUBackend !== true ) throw new Error( 'Raw pass attachments require WebGPU.' );
++
++		}
++
+ 		return super.setup( builder );
+ 
+ 	}
+ 
+ 	clone() {
+ 
+-		const newNode = new this.constructor( this.passNode, this.textureName, this.previousTexture );
++		const newNode = new this.constructor( this.passNode, this.textureName, this.previousTexture, this.isRawTextureNode );
+ 		newNode.uvNode = this.uvNode;
+ 		newNode.levelNode = this.levelNode;
+ 		newNode.biasNode = this.biasNode;
+@@ -40686,6 +40730,8 @@
+ 		 * @type {Object<string, TextureNode>}
+ 		 */
+ 		this._textureNodes = {};
++		this._rawTextureNodes = {};
++		this._rawTexturesDisposed = false;
+ 
+ 		/**
+ 		 * A dictionary holding the internal depth nodes.
+@@ -40992,6 +41038,7 @@
+ 			this._previousTextures[ name ] = texture;
+ 
+ 			this._textureNodes[ name ].updateTexture();
++			if ( this._rawTextureNodes[ name ] ) this._rawTextureNodes[ name ].updateTexture();
+ 			this._previousTextureNodes[ name ].updateTexture();
+ 
+ 		}
+@@ -41004,6 +41051,17 @@
+ 	 * @param {string} [name='output'] - The output name to get the texture node for.
+ 	 * @return {TextureNode} The texture node.
+ 	 */
++	getRawTextureNode( name = 'output' ) {
++
++		if ( this._rawTexturesDisposed ) throw new Error( 'Raw pass attachment owner is disposed.' );
++		if ( this.renderTarget.samples !== 4 || this.renderTarget.depth !== 1 ) throw new Error( 'Raw pass attachments require four-sample 2D multisampling.' );
++		let node = this._rawTextureNodes[ name ];
++		if ( node === undefined ) node = this._rawTextureNodes[ name ] = new PassMultipleTextureNode( this, name, false, true );
++		node.updateTexture();
++		return node;
++
++	}
++
+ 	getTextureNode( name = 'output' ) {
+ 
+ 		let textureNode = this._textureNodes[ name ];
+@@ -41346,6 +41404,7 @@
+ 	 */
+ 	dispose() {
+ 
++		this._rawTexturesDisposed = true;
+ 		this.renderTarget.dispose();
+ 
+ 	}
+@@ -61330,6 +61389,18 @@
+ 	}
+ 
+ 	/**
++	 * Releases an exclusively owned attribute through the backend and memory accounting.
++	 * Wait for asynchronous readers before releasing storage shared by compute dispatches.
++	 * @param {BufferAttribute} attribute - The owned attribute to release.
++	 * @return {?Object} The removed attribute data, or null when absent/uninitialized.
++	 */
++	deleteAttribute( attribute ) {
++
++		return this._attributes === null ? null : this._attributes.delete( attribute );
++
++	}
++
++	/**
+ 	 * Can be used to transfer buffer data from a storage buffer attribute
+ 	 * from the GPU to the CPU in context of compute shaders.
+ 	 *
+@@ -63104,8 +63175,8 @@
+ 		// attribute scan - because each of those answers for itself, and a step left out here
+ 		// cannot: a group a node added after this object's first draw still has to be created, and
+ 		// the pipeline reads that group's layout whatever this draw decided to do with it.
++		this._nodes.updateBefore( renderObject );
+ 		this._geometries.updateForRender( renderObject );
+-		this._nodes.updateBefore( renderObject );
+ 		this._nodes.updateForRender( renderObject );
+ 		this._bindings.updateForRender( renderObject );
+ 
+@@ -79201,7 +79272,7 @@
+ 	 * @param {?string} offsetSnippet - A WGSL snippet that represents the offset that will be applied to the unnormalized texture coordinate before sampling the texture.
+ 	 * @return {string} The WGSL snippet.
+ 	 */
+-	generateTextureLoad( texture, textureProperty, uvIndexSnippet, levelSnippet, depthSnippet, offsetSnippet ) {
++	generateTextureLoad( texture, textureProperty, uvIndexSnippet, levelSnippet, depthSnippet, offsetSnippet, rawTexture = false ) {
+ 
+ 		if ( levelSnippet === null ) levelSnippet = '0u';
+ 
+@@ -79225,7 +79296,7 @@
+ 			const sampleData = texture ? this.renderer?.backend?.utils?.getTextureSampleData?.( texture ) : null;
+ 			const backendMultisampled = sampleData !== null && sampleData !== undefined && sampleData.primarySamples > 1;
+ 			const targetMultisampled = Boolean( texture && texture.renderTarget && texture.renderTarget.samples > 1 );
+-			const indexType = ( backendMultisampled || targetMultisampled ) ? 'i32' : 'u32';
++			const indexType = ( rawTexture || backendMultisampled || targetMultisampled ) ? 'i32' : 'u32';
+ 			snippet = `textureLoad( ${ textureProperty }, ${ uvIndexSnippet }, ${ indexType }( ${ levelSnippet } ) )`;
+ 
+ 			if ( this.renderer.backend.compatibilityMode && texture.isDepthTexture ) {
+@@ -79767,7 +79838,7 @@
+ 
+ 				// Cube textures always need samplers (they use textureSampleLevel, not textureLoad)
+ 				// Also textureGather always need sampler.
+-				const needsSampler = node.value.isCubeTexture === true || ( this.isUnfilterable( node.value ) === false && texture.store === false ) || node.gatherNode !== null;
++				const needsSampler = node.isRawTextureNode !== true && ( node.value.isCubeTexture === true || ( this.isUnfilterable( node.value ) === false && texture.store === false ) || node.gatherNode !== null );
+ 
+ 				if ( needsSampler ) {
+ 
+@@ -80196,7 +80267,8 @@
+ 
+ 			for ( const { name, property, type } of builtins.values() ) {
+ 
+-				snippets.push( `@builtin( ${name} ) ${property} : ${type}` );
++				const invariant = shaderStage === 'vertex' && name === 'position' && this.context.invariantPosition === true ? '@invariant ' : '';
++				snippets.push( `${ invariant }@builtin( ${name} ) ${property} : ${type}` );
+ 
+ 			}
+ 
+@@ -80452,6 +80524,8 @@
+ 	getVaryings( shaderStage ) {
+ 
+ 		const snippets = [];
++		const policy = this.context.sampleInterpolation;
++		const sampleInterpolation = typeof policy === 'function' ? policy( this.material ) === true : policy === true;
+ 
+ 		if ( shaderStage === 'vertex' ) {
+ 
+@@ -80474,7 +80548,12 @@
+ 
+ 					let attributesSnippet = `@location( ${ varyingIndex ++ } )`;
+ 
+-					if ( varying.interpolationType ) {
++					if ( sampleInterpolation && ! /^(int|uint|ivec|uvec)/.test( varying.type ) && varying.interpolationType !== 'flat' ) {
++
++						if ( varying.interpolationSampling !== null && varying.interpolationSampling !== 'center' && varying.interpolationSampling !== 'sample' ) throw new Error( 'Sample interpolation policy cannot replace explicit centroid sampling.' );
++						attributesSnippet += ` @interpolate( ${ varying.interpolationType || 'perspective' }, sample )`;
++
++					} else if ( varying.interpolationType ) {
+ 
+ 						const samplingSnippet = varying.interpolationSampling !== null ? `, ${ varying.interpolationSampling } )` : ' )';
+ 
+@@ -80575,7 +80654,7 @@
+ 
+ 				const { primarySamples } = backend.utils.getTextureSampleData( texture );
+ 
+-				if ( primarySamples > 1 ) {
++				if ( primarySamples > 1 || textureNode.isRawTextureNode === true ) {
+ 
+ 					multisampled = '_multisampled';
+ 
+@@ -81330,6 +81409,15 @@
+ 			buffer.unmap();
+ 
+ 			bufferData.buffer = buffer;
++			bufferData.version = bufferAttribute.version;
++			bufferData.uploadCall = backend.renderer.info.calls;
++
++		} else if ( bufferData.version < bufferAttribute.version ||
++			( bufferAttribute.usage === DynamicDrawUsage && bufferData.uploadCall !== backend.renderer.info.calls ) ) {
++
++			// A rebuilt shader can create a fresh attribute wrapper for this existing buffer.
++			// Synchronize its dirty bytes before Attributes records the wrapper as current.
++			this.updateAttribute( attribute );
+ 
+ 		}
+ 
+@@ -81349,6 +81437,11 @@
+ 
+ 		const bufferData = backend.get( bufferAttribute );
+ 		const buffer = backend.get( bufferAttribute ).buffer;
++
++		// A fresh wrapper may already have uploaded this shared buffer in the same render or compute call.
++		// Do not repeat that write after its partial ranges have been consumed.
++		if ( bufferData.version === bufferAttribute.version &&
++			( bufferAttribute.usage !== DynamicDrawUsage || bufferData.uploadCall === backend.renderer.info.calls ) ) return;
+ 
+ 		let array = bufferAttribute.array;
+ 
+@@ -81431,6 +81524,9 @@
+ 
+ 		}
+ 
++		bufferData.version = bufferAttribute.version;
++		bufferData.uploadCall = backend.renderer.info.calls;
++
+ 	}
+ 
+ 	/**
+@@ -82058,7 +82154,20 @@
+ 
+ 				let resourceGPU;
+ 
+-				if ( textureData.externalTexture !== undefined ) {
++				if ( binding.textureNode?.isRawTextureNode === true ) {
++
++					if ( binding.textureNode.passNode._rawTexturesDisposed ) throw new Error( 'Raw pass attachment owner is disposed.' );
++					const raw = binding.texture.isDepthTexture ? textureData.texture : textureData.msaaTexture;
++					if ( binding.texture.renderTarget?.samples !== 4 || raw === undefined ) throw new Error( 'Raw multisample attachment is unavailable.' );
++					if ( textureData.rawTextureViewSource !== raw ) {
++
++						textureData.rawTextureView = raw.createView( { dimension: '2d', aspect: binding.texture.isDepthTexture ? 'depth-only' : 'all', baseMipLevel: 0, mipLevelCount: 1 } );
++						textureData.rawTextureViewSource = raw;
++
++					}
++					resourceGPU = textureData.rawTextureView;
++
++				} else if ( textureData.externalTexture !== undefined ) {
+ 
+ 					resourceGPU = device.importExternalTexture( { source: textureData.externalTexture } );
+ 
+@@ -82229,7 +82338,7 @@
+ 
+ 				const { primarySamples } = backend.utils.getTextureSampleData( binding.texture );
+ 
+-				if ( primarySamples > 1 ) {
++				if ( primarySamples > 1 || binding.textureNode?.isRawTextureNode === true ) {
+ 
+ 					texture.multisampled = true;
+ 
+@@ -82267,7 +82376,7 @@
+ 
+ 					} else if ( type === FloatType ) {
+ 
+-						if ( this.backend.hasFeature( 'float32-filterable' ) ) {
++						if ( texture.multisampled !== true && this.backend.hasFeature( 'float32-filterable' ) ) {
+ 
+ 							texture.sampleType = GPUTextureSampleType.Float;
+ 
+diff --git a/build/three.webgpu.nodes.js b/build/three.webgpu.nodes.js
+index 81c24b2e05e5047e1a02410a2056949d39b1a05c..57f69c17352b936a9eca118a9801805c95c401b6 100644
+--- a/build/three.webgpu.nodes.js
++++ b/build/three.webgpu.nodes.js
+@@ -12307,7 +12307,8 @@
+ 		const textureProperty = this.textureNode.build( builder, 'property' );
+ 		const level = this.levelNode === null ? '0' : this.levelNode.build( builder, 'int' );
+ 
+-		return builder.format( `${ builder.getMethod( 'textureDimensions' ) }( ${ textureProperty }, ${ level } )`, this.getNodeType( builder ), output );
++		const mip = this.textureNode.isRawTextureNode === true ? '' : `, ${ level }`;
++		return builder.format( `${ builder.getMethod( 'textureDimensions' ) }( ${ textureProperty }${ mip } )`, this.getNodeType( builder ), output );
+ 
+ 	}
+ 
+@@ -12958,7 +12959,7 @@
+ 
+ 		} else if ( this.sampler === false ) {
+ 
+-			snippet = builder.generateTextureLoad( texture, textureProperty, uvSnippet, levelSnippet, depthSnippet, offsetSnippet );
++			snippet = builder.generateTextureLoad( texture, textureProperty, uvSnippet, levelSnippet, depthSnippet, offsetSnippet, this.isRawTextureNode === true );
+ 
+ 		} else if ( levelSnippet ) {
+ 
+@@ -18846,7 +18847,15 @@
+ 
+ 	}
+ 
+-	return getSkinnedPosition( data.node, positionPrevious, bindMatrixNode, bindMatrixInverseNode, skinIndexNode, skinWeightNode );
++	// The previous bones and world matrix must use the same frame's bind inverse.
++	const previousBindMatrixInverse = uniform( skinnedMesh.bindMatrixInverse, 'mat4' ).onObjectUpdate( ( { object } ) => {
++
++		const mesh = object?.isSkinnedMesh === true ? object : skinnedMesh;
++		return mesh[ Symbol.for( 'threenative.velocity.previousBindMatrixInverse' ) ] ?? mesh.bindMatrixInverse;
++
++	} );
++
++	return getSkinnedPosition( data.node, positionPrevious, bindMatrixNode, previousBindMatrixInverse, skinIndexNode, skinWeightNode );
+ 
+ }
+ 
+@@ -40470,7 +40479,7 @@
+ 	 * @param {string} textureName - The output texture name.
+ 	 * @param {boolean} [previousTexture=false] - Whether previous frame data should be used or not.
+ 	 */
+-	constructor( passNode, textureName, previousTexture = false ) {
++	constructor( passNode, textureName, previousTexture = false, rawTexture = false ) {
+ 
+ 		// null is passed to the super call since this class does not
+ 		// use an external texture for rendering pass data into. Instead
+@@ -40491,6 +40500,8 @@
+ 		 * @type {boolean}
+ 		 */
+ 		this.previousTexture = previousTexture;
++		this.isRawTextureNode = rawTexture;
++		if ( rawTexture ) this.setSampler( false );
+ 
+ 		/**
+ 		 * This flag can be used for type testing.
+@@ -40512,17 +40523,33 @@
+ 
+ 	}
+ 
++	getUniformHash( builder ) {
++
++		const hash = super.getUniformHash( builder );
++		return this.isRawTextureNode ? `${ this.passNode.uuid }:${ this.textureName }:raw4:${ hash }` : hash;
++
++	}
++
+ 	setup( builder ) {
+ 
+ 		this.updateTexture();
+ 
++		if ( this.isRawTextureNode ) {
++
++			if ( this.passNode._rawTexturesDisposed ) throw new Error( 'Raw pass attachment owner is disposed.' );
++			if ( this.passNode.renderTarget.samples !== 4 ) throw new Error( 'Raw pass attachments require four-sample multisampling.' );
++			if ( this.sampler || this.biasNode || this.compareNode || this.gradNode || this.gatherNode || this.depthNode ) throw new Error( 'Raw pass attachments support integer loads only.' );
++			if ( builder.renderer.backend.isWebGPUBackend !== true ) throw new Error( 'Raw pass attachments require WebGPU.' );
++
++		}
++
+ 		return super.setup( builder );
+ 
+ 	}
+ 
+ 	clone() {
+ 
+-		const newNode = new this.constructor( this.passNode, this.textureName, this.previousTexture );
++		const newNode = new this.constructor( this.passNode, this.textureName, this.previousTexture, this.isRawTextureNode );
+ 		newNode.uvNode = this.uvNode;
+ 		newNode.levelNode = this.levelNode;
+ 		newNode.biasNode = this.biasNode;
+@@ -40703,6 +40730,8 @@
+ 		 * @type {Object<string, TextureNode>}
+ 		 */
+ 		this._textureNodes = {};
++		this._rawTextureNodes = {};
++		this._rawTexturesDisposed = false;
+ 
+ 		/**
+ 		 * A dictionary holding the internal depth nodes.
+@@ -41009,6 +41038,7 @@
+ 			this._previousTextures[ name ] = texture;
+ 
+ 			this._textureNodes[ name ].updateTexture();
++			if ( this._rawTextureNodes[ name ] ) this._rawTextureNodes[ name ].updateTexture();
+ 			this._previousTextureNodes[ name ].updateTexture();
+ 
+ 		}
+@@ -41021,6 +41051,17 @@
+ 	 * @param {string} [name='output'] - The output name to get the texture node for.
+ 	 * @return {TextureNode} The texture node.
+ 	 */
++	getRawTextureNode( name = 'output' ) {
++
++		if ( this._rawTexturesDisposed ) throw new Error( 'Raw pass attachment owner is disposed.' );
++		if ( this.renderTarget.samples !== 4 || this.renderTarget.depth !== 1 ) throw new Error( 'Raw pass attachments require four-sample 2D multisampling.' );
++		let node = this._rawTextureNodes[ name ];
++		if ( node === undefined ) node = this._rawTextureNodes[ name ] = new PassMultipleTextureNode( this, name, false, true );
++		node.updateTexture();
++		return node;
++
++	}
++
+ 	getTextureNode( name = 'output' ) {
+ 
+ 		let textureNode = this._textureNodes[ name ];
+@@ -41363,6 +41404,7 @@
+ 	 */
+ 	dispose() {
+ 
++		this._rawTexturesDisposed = true;
+ 		this.renderTarget.dispose();
+ 
+ 	}
+@@ -61347,6 +61389,18 @@
+ 	}
+ 
+ 	/**
++	 * Releases an exclusively owned attribute through the backend and memory accounting.
++	 * Wait for asynchronous readers before releasing storage shared by compute dispatches.
++	 * @param {BufferAttribute} attribute - The owned attribute to release.
++	 * @return {?Object} The removed attribute data, or null when absent/uninitialized.
++	 */
++	deleteAttribute( attribute ) {
++
++		return this._attributes === null ? null : this._attributes.delete( attribute );
++
++	}
++
++	/**
+ 	 * Can be used to transfer buffer data from a storage buffer attribute
+ 	 * from the GPU to the CPU in context of compute shaders.
+ 	 *
+@@ -76840,7 +76894,12 @@
+ 
+ 		}
+ 
+-		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat ) {
++		// Compute-only 3D storage has no attachment or render-pass mipmap consumer.
++		// Requesting the unused attachment usage rejects the texture on wgpu-native.
++		const computeOnlyStorage3D = dimension === GPUTextureDimension.ThreeD && texture.isStorageTexture === true &&
++			texture.isRenderTargetTexture !== true && options.renderTarget === undefined && options.needsMipmaps !== true;
++
++		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat && ! computeOnlyStorage3D ) {
+ 
+ 			usage |= GPUTextureUsage.RENDER_ATTACHMENT;
+ 
+@@ -79213,7 +79272,7 @@
+ 	 * @param {?string} offsetSnippet - A WGSL snippet that represents the offset that will be applied to the unnormalized texture coordinate before sampling the texture.
+ 	 * @return {string} The WGSL snippet.
+ 	 */
+-	generateTextureLoad( texture, textureProperty, uvIndexSnippet, levelSnippet, depthSnippet, offsetSnippet ) {
++	generateTextureLoad( texture, textureProperty, uvIndexSnippet, levelSnippet, depthSnippet, offsetSnippet, rawTexture = false ) {
+ 
+ 		if ( levelSnippet === null ) levelSnippet = '0u';
+ 
+@@ -79237,7 +79296,7 @@
+ 			const sampleData = texture ? this.renderer?.backend?.utils?.getTextureSampleData?.( texture ) : null;
+ 			const backendMultisampled = sampleData !== null && sampleData !== undefined && sampleData.primarySamples > 1;
+ 			const targetMultisampled = Boolean( texture && texture.renderTarget && texture.renderTarget.samples > 1 );
+-			const indexType = ( backendMultisampled || targetMultisampled ) ? 'i32' : 'u32';
++			const indexType = ( rawTexture || backendMultisampled || targetMultisampled ) ? 'i32' : 'u32';
+ 			snippet = `textureLoad( ${ textureProperty }, ${ uvIndexSnippet }, ${ indexType }( ${ levelSnippet } ) )`;
+ 
+ 			if ( this.renderer.backend.compatibilityMode && texture.isDepthTexture ) {
+@@ -79779,7 +79838,7 @@
+ 
+ 				// Cube textures always need samplers (they use textureSampleLevel, not textureLoad)
+ 				// Also textureGather always need sampler.
+-				const needsSampler = node.value.isCubeTexture === true || ( this.isUnfilterable( node.value ) === false && texture.store === false ) || node.gatherNode !== null;
++				const needsSampler = node.isRawTextureNode !== true && ( node.value.isCubeTexture === true || ( this.isUnfilterable( node.value ) === false && texture.store === false ) || node.gatherNode !== null );
+ 
+ 				if ( needsSampler ) {
+ 
+@@ -80208,7 +80267,8 @@
+ 
+ 			for ( const { name, property, type } of builtins.values() ) {
+ 
+-				snippets.push( `@builtin( ${name} ) ${property} : ${type}` );
++				const invariant = shaderStage === 'vertex' && name === 'position' && this.context.invariantPosition === true ? '@invariant ' : '';
++				snippets.push( `${ invariant }@builtin( ${name} ) ${property} : ${type}` );
+ 
+ 			}
+ 
+@@ -80464,6 +80524,8 @@
+ 	getVaryings( shaderStage ) {
+ 
+ 		const snippets = [];
++		const policy = this.context.sampleInterpolation;
++		const sampleInterpolation = typeof policy === 'function' ? policy( this.material ) === true : policy === true;
+ 
+ 		if ( shaderStage === 'vertex' ) {
+ 
+@@ -80486,7 +80548,12 @@
+ 
+ 					let attributesSnippet = `@location( ${ varyingIndex ++ } )`;
+ 
+-					if ( varying.interpolationType ) {
++					if ( sampleInterpolation && ! /^(int|uint|ivec|uvec)/.test( varying.type ) && varying.interpolationType !== 'flat' ) {
++
++						if ( varying.interpolationSampling !== null && varying.interpolationSampling !== 'center' && varying.interpolationSampling !== 'sample' ) throw new Error( 'Sample interpolation policy cannot replace explicit centroid sampling.' );
++						attributesSnippet += ` @interpolate( ${ varying.interpolationType || 'perspective' }, sample )`;
++
++					} else if ( varying.interpolationType ) {
+ 
+ 						const samplingSnippet = varying.interpolationSampling !== null ? `, ${ varying.interpolationSampling } )` : ' )';
+ 
+@@ -80587,7 +80654,7 @@
+ 
+ 				const { primarySamples } = backend.utils.getTextureSampleData( texture );
+ 
+-				if ( primarySamples > 1 ) {
++				if ( primarySamples > 1 || textureNode.isRawTextureNode === true ) {
+ 
+ 					multisampled = '_multisampled';
+ 
+@@ -82087,7 +82154,20 @@
+ 
+ 				let resourceGPU;
+ 
+-				if ( textureData.externalTexture !== undefined ) {
++				if ( binding.textureNode?.isRawTextureNode === true ) {
++
++					if ( binding.textureNode.passNode._rawTexturesDisposed ) throw new Error( 'Raw pass attachment owner is disposed.' );
++					const raw = binding.texture.isDepthTexture ? textureData.texture : textureData.msaaTexture;
++					if ( binding.texture.renderTarget?.samples !== 4 || raw === undefined ) throw new Error( 'Raw multisample attachment is unavailable.' );
++					if ( textureData.rawTextureViewSource !== raw ) {
++
++						textureData.rawTextureView = raw.createView( { dimension: '2d', aspect: binding.texture.isDepthTexture ? 'depth-only' : 'all', baseMipLevel: 0, mipLevelCount: 1 } );
++						textureData.rawTextureViewSource = raw;
++
++					}
++					resourceGPU = textureData.rawTextureView;
++
++				} else if ( textureData.externalTexture !== undefined ) {
+ 
+ 					resourceGPU = device.importExternalTexture( { source: textureData.externalTexture } );
+ 
+@@ -82258,7 +82338,7 @@
+ 
+ 				const { primarySamples } = backend.utils.getTextureSampleData( binding.texture );
+ 
+-				if ( primarySamples > 1 ) {
++				if ( primarySamples > 1 || binding.textureNode?.isRawTextureNode === true ) {
+ 
+ 					texture.multisampled = true;
+ 
+@@ -82296,7 +82376,7 @@
+ 
+ 					} else if ( type === FloatType ) {
+ 
+-						if ( this.backend.hasFeature( 'float32-filterable' ) ) {
++						if ( texture.multisampled !== true && this.backend.hasFeature( 'float32-filterable' ) ) {
+ 
+ 							texture.sampleType = GPUTextureSampleType.Float;
+ 
+diff --git a/build/three.webgpu.nodes.js b/build/three.webgpu.nodes.js
+index b8a7b2fd0a2e95911e7e12fd5674592107f012de..57f69c17352b936a9eca118a9801805c95c401b6 100644
+--- a/build/three.webgpu.nodes.js
++++ b/build/three.webgpu.nodes.js
+@@ -12307,7 +12307,8 @@
+ 		const textureProperty = this.textureNode.build( builder, 'property' );
+ 		const level = this.levelNode === null ? '0' : this.levelNode.build( builder, 'int' );
+ 
+-		return builder.format( `${ builder.getMethod( 'textureDimensions' ) }( ${ textureProperty }, ${ level } )`, this.getNodeType( builder ), output );
++		const mip = this.textureNode.isRawTextureNode === true ? '' : `, ${ level }`;
++		return builder.format( `${ builder.getMethod( 'textureDimensions' ) }( ${ textureProperty }${ mip } )`, this.getNodeType( builder ), output );
+ 
+ 	}
+ 
+@@ -12958,7 +12959,7 @@
+ 
+ 		} else if ( this.sampler === false ) {
+ 
+-			snippet = builder.generateTextureLoad( texture, textureProperty, uvSnippet, levelSnippet, depthSnippet, offsetSnippet );
++			snippet = builder.generateTextureLoad( texture, textureProperty, uvSnippet, levelSnippet, depthSnippet, offsetSnippet, this.isRawTextureNode === true );
+ 
+ 		} else if ( levelSnippet ) {
+ 
+@@ -18539,7 +18540,7 @@
+ 	// Synchronization of dynamic buffer updates per frame
+ 	if ( interleavedMatrix !== null || interleavedColor !== null ) {
+ 
+-		OnFrameUpdate( () => {
++		OnBeforeFrameUpdate( () => {
+ 
+ 			if ( interleavedMatrix !== null ) {
+ 
+@@ -18580,11 +18581,28 @@
+ 
+ 		const instancedMesh = builder.object;
+ 
++		const updatePrevious = ( object, array ) => {
++
++			const { previousInstanceMatrix } = _previousInstanceMatrices.get( object );
++			previousInstanceMatrix.array.set( array );
++			previousInstanceMatrix.needsUpdate = true;
++			const interleaved = _matrixBuffers.get( previousInstanceMatrix );
++			if ( interleaved !== undefined ) interleaved.needsUpdate = true;
++
++		};
++
++		// Scheduled history must reach the GPU in this draw, before the geometry uploads.
++		OnBeforeObjectUpdate( ( { object } ) => {
++
++			const scheduledPrevious = object[ Symbol.for( 'threenative.velocity.previousInstanceMatrices' ) ];
++			if ( scheduledPrevious !== undefined ) updatePrevious( object, scheduledPrevious );
++
++		} );
++
++		// Without a scheduler, retain Three's draw-time snapshot for the next draw.
+ 		OnObjectUpdate( ( { object } ) => {
+ 
+-			const previousInstanceData = _previousInstanceMatrices.get( object );
+-
+-			previousInstanceData.previousInstanceMatrix.array.set( matrices.array );
++			if ( object[ Symbol.for( 'threenative.velocity.previousInstanceMatrices' ) ] === undefined ) updatePrevious( object, matrices.array );
+ 
+ 		} );
+ 
+@@ -18829,7 +18847,15 @@
+ 
+ 	}
+ 
+-	return getSkinnedPosition( data.node, positionPrevious, bindMatrixNode, bindMatrixInverseNode, skinIndexNode, skinWeightNode );
++	// The previous bones and world matrix must use the same frame's bind inverse.
++	const previousBindMatrixInverse = uniform( skinnedMesh.bindMatrixInverse, 'mat4' ).onObjectUpdate( ( { object } ) => {
++
++		const mesh = object?.isSkinnedMesh === true ? object : skinnedMesh;
++		return mesh[ Symbol.for( 'threenative.velocity.previousBindMatrixInverse' ) ] ?? mesh.bindMatrixInverse;
++
++	} );
++
++	return getSkinnedPosition( data.node, positionPrevious, bindMatrixNode, previousBindMatrixInverse, skinIndexNode, skinWeightNode );
+ 
+ }
+ 
+@@ -40453,7 +40479,7 @@
+ 	 * @param {string} textureName - The output texture name.
+ 	 * @param {boolean} [previousTexture=false] - Whether previous frame data should be used or not.
+ 	 */
+-	constructor( passNode, textureName, previousTexture = false ) {
++	constructor( passNode, textureName, previousTexture = false, rawTexture = false ) {
+ 
+ 		// null is passed to the super call since this class does not
+ 		// use an external texture for rendering pass data into. Instead
+@@ -40474,6 +40500,8 @@
+ 		 * @type {boolean}
+ 		 */
+ 		this.previousTexture = previousTexture;
++		this.isRawTextureNode = rawTexture;
++		if ( rawTexture ) this.setSampler( false );
+ 
+ 		/**
+ 		 * This flag can be used for type testing.
+@@ -40495,17 +40523,33 @@
+ 
+ 	}
+ 
++	getUniformHash( builder ) {
++
++		const hash = super.getUniformHash( builder );
++		return this.isRawTextureNode ? `${ this.passNode.uuid }:${ this.textureName }:raw4:${ hash }` : hash;
++
++	}
++
+ 	setup( builder ) {
+ 
+ 		this.updateTexture();
+ 
++		if ( this.isRawTextureNode ) {
++
++			if ( this.passNode._rawTexturesDisposed ) throw new Error( 'Raw pass attachment owner is disposed.' );
++			if ( this.passNode.renderTarget.samples !== 4 ) throw new Error( 'Raw pass attachments require four-sample multisampling.' );
++			if ( this.sampler || this.biasNode || this.compareNode || this.gradNode || this.gatherNode || this.depthNode ) throw new Error( 'Raw pass attachments support integer loads only.' );
++			if ( builder.renderer.backend.isWebGPUBackend !== true ) throw new Error( 'Raw pass attachments require WebGPU.' );
++
++		}
++
+ 		return super.setup( builder );
+ 
+ 	}
+ 
+ 	clone() {
+ 
+-		const newNode = new this.constructor( this.passNode, this.textureName, this.previousTexture );
++		const newNode = new this.constructor( this.passNode, this.textureName, this.previousTexture, this.isRawTextureNode );
+ 		newNode.uvNode = this.uvNode;
+ 		newNode.levelNode = this.levelNode;
+ 		newNode.biasNode = this.biasNode;
+@@ -40686,6 +40730,8 @@
+ 		 * @type {Object<string, TextureNode>}
+ 		 */
+ 		this._textureNodes = {};
++		this._rawTextureNodes = {};
++		this._rawTexturesDisposed = false;
+ 
+ 		/**
+ 		 * A dictionary holding the internal depth nodes.
+@@ -40992,6 +41038,7 @@
+ 			this._previousTextures[ name ] = texture;
+ 
+ 			this._textureNodes[ name ].updateTexture();
++			if ( this._rawTextureNodes[ name ] ) this._rawTextureNodes[ name ].updateTexture();
+ 			this._previousTextureNodes[ name ].updateTexture();
+ 
+ 		}
+@@ -41004,6 +41051,17 @@
+ 	 * @param {string} [name='output'] - The output name to get the texture node for.
+ 	 * @return {TextureNode} The texture node.
+ 	 */
++	getRawTextureNode( name = 'output' ) {
++
++		if ( this._rawTexturesDisposed ) throw new Error( 'Raw pass attachment owner is disposed.' );
++		if ( this.renderTarget.samples !== 4 || this.renderTarget.depth !== 1 ) throw new Error( 'Raw pass attachments require four-sample 2D multisampling.' );
++		let node = this._rawTextureNodes[ name ];
++		if ( node === undefined ) node = this._rawTextureNodes[ name ] = new PassMultipleTextureNode( this, name, false, true );
++		node.updateTexture();
++		return node;
++
++	}
++
+ 	getTextureNode( name = 'output' ) {
+ 
+ 		let textureNode = this._textureNodes[ name ];
+@@ -41346,6 +41404,7 @@
+ 	 */
+ 	dispose() {
+ 
++		this._rawTexturesDisposed = true;
+ 		this.renderTarget.dispose();
+ 
+ 	}
+@@ -61330,6 +61389,18 @@
+ 	}
+ 
+ 	/**
++	 * Releases an exclusively owned attribute through the backend and memory accounting.
++	 * Wait for asynchronous readers before releasing storage shared by compute dispatches.
++	 * @param {BufferAttribute} attribute - The owned attribute to release.
++	 * @return {?Object} The removed attribute data, or null when absent/uninitialized.
++	 */
++	deleteAttribute( attribute ) {
++
++		return this._attributes === null ? null : this._attributes.delete( attribute );
++
++	}
++
++	/**
+ 	 * Can be used to transfer buffer data from a storage buffer attribute
+ 	 * from the GPU to the CPU in context of compute shaders.
+ 	 *
+@@ -63104,8 +63175,8 @@
+ 		// attribute scan - because each of those answers for itself, and a step left out here
+ 		// cannot: a group a node added after this object's first draw still has to be created, and
+ 		// the pipeline reads that group's layout whatever this draw decided to do with it.
++		this._nodes.updateBefore( renderObject );
+ 		this._geometries.updateForRender( renderObject );
+-		this._nodes.updateBefore( renderObject );
+ 		this._nodes.updateForRender( renderObject );
+ 		this._bindings.updateForRender( renderObject );
+ 
+@@ -76823,7 +76894,12 @@
+ 
+ 		}
+ 
+-		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat ) {
++		// Compute-only 3D storage has no attachment or render-pass mipmap consumer.
++		// Requesting the unused attachment usage rejects the texture on wgpu-native.
++		const computeOnlyStorage3D = dimension === GPUTextureDimension.ThreeD && texture.isStorageTexture === true &&
++			texture.isRenderTargetTexture !== true && options.renderTarget === undefined && options.needsMipmaps !== true;
++
++		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat && ! computeOnlyStorage3D ) {
+ 
+ 			usage |= GPUTextureUsage.RENDER_ATTACHMENT;
+ 
+@@ -79196,7 +79272,7 @@
+ 	 * @param {?string} offsetSnippet - A WGSL snippet that represents the offset that will be applied to the unnormalized texture coordinate before sampling the texture.
+ 	 * @return {string} The WGSL snippet.
+ 	 */
+-	generateTextureLoad( texture, textureProperty, uvIndexSnippet, levelSnippet, depthSnippet, offsetSnippet ) {
++	generateTextureLoad( texture, textureProperty, uvIndexSnippet, levelSnippet, depthSnippet, offsetSnippet, rawTexture = false ) {
+ 
+ 		if ( levelSnippet === null ) levelSnippet = '0u';
+ 
+@@ -79220,7 +79296,7 @@
+ 			const sampleData = texture ? this.renderer?.backend?.utils?.getTextureSampleData?.( texture ) : null;
+ 			const backendMultisampled = sampleData !== null && sampleData !== undefined && sampleData.primarySamples > 1;
+ 			const targetMultisampled = Boolean( texture && texture.renderTarget && texture.renderTarget.samples > 1 );
+-			const indexType = ( backendMultisampled || targetMultisampled ) ? 'i32' : 'u32';
++			const indexType = ( rawTexture || backendMultisampled || targetMultisampled ) ? 'i32' : 'u32';
+ 			snippet = `textureLoad( ${ textureProperty }, ${ uvIndexSnippet }, ${ indexType }( ${ levelSnippet } ) )`;
+ 
+ 			if ( this.renderer.backend.compatibilityMode && texture.isDepthTexture ) {
+@@ -79762,7 +79838,7 @@
+ 
+ 				// Cube textures always need samplers (they use textureSampleLevel, not textureLoad)
+ 				// Also textureGather always need sampler.
+-				const needsSampler = node.value.isCubeTexture === true || ( this.isUnfilterable( node.value ) === false && texture.store === false ) || node.gatherNode !== null;
++				const needsSampler = node.isRawTextureNode !== true && ( node.value.isCubeTexture === true || ( this.isUnfilterable( node.value ) === false && texture.store === false ) || node.gatherNode !== null );
+ 
+ 				if ( needsSampler ) {
+ 
+@@ -80191,7 +80267,8 @@
+ 
+ 			for ( const { name, property, type } of builtins.values() ) {
+ 
+-				snippets.push( `@builtin( ${name} ) ${property} : ${type}` );
++				const invariant = shaderStage === 'vertex' && name === 'position' && this.context.invariantPosition === true ? '@invariant ' : '';
++				snippets.push( `${ invariant }@builtin( ${name} ) ${property} : ${type}` );
+ 
+ 			}
+ 
+@@ -80447,6 +80524,8 @@
+ 	getVaryings( shaderStage ) {
+ 
+ 		const snippets = [];
++		const policy = this.context.sampleInterpolation;
++		const sampleInterpolation = typeof policy === 'function' ? policy( this.material ) === true : policy === true;
+ 
+ 		if ( shaderStage === 'vertex' ) {
+ 
+@@ -80469,7 +80548,12 @@
+ 
+ 					let attributesSnippet = `@location( ${ varyingIndex ++ } )`;
+ 
+-					if ( varying.interpolationType ) {
++					if ( sampleInterpolation && ! /^(int|uint|ivec|uvec)/.test( varying.type ) && varying.interpolationType !== 'flat' ) {
++
++						if ( varying.interpolationSampling !== null && varying.interpolationSampling !== 'center' && varying.interpolationSampling !== 'sample' ) throw new Error( 'Sample interpolation policy cannot replace explicit centroid sampling.' );
++						attributesSnippet += ` @interpolate( ${ varying.interpolationType || 'perspective' }, sample )`;
++
++					} else if ( varying.interpolationType ) {
+ 
+ 						const samplingSnippet = varying.interpolationSampling !== null ? `, ${ varying.interpolationSampling } )` : ' )';
+ 
+@@ -80570,7 +80654,7 @@
+ 
+ 				const { primarySamples } = backend.utils.getTextureSampleData( texture );
+ 
+-				if ( primarySamples > 1 ) {
++				if ( primarySamples > 1 || textureNode.isRawTextureNode === true ) {
+ 
+ 					multisampled = '_multisampled';
+ 
+@@ -81325,6 +81409,15 @@
+ 			buffer.unmap();
+ 
+ 			bufferData.buffer = buffer;
++			bufferData.version = bufferAttribute.version;
++			bufferData.uploadCall = backend.renderer.info.calls;
++
++		} else if ( bufferData.version < bufferAttribute.version ||
++			( bufferAttribute.usage === DynamicDrawUsage && bufferData.uploadCall !== backend.renderer.info.calls ) ) {
++
++			// A rebuilt shader can create a fresh attribute wrapper for this existing buffer.
++			// Synchronize its dirty bytes before Attributes records the wrapper as current.
++			this.updateAttribute( attribute );
+ 
+ 		}
+ 
+@@ -81344,6 +81437,11 @@
+ 
+ 		const bufferData = backend.get( bufferAttribute );
+ 		const buffer = backend.get( bufferAttribute ).buffer;
++
++		// A fresh wrapper may already have uploaded this shared buffer in the same render or compute call.
++		// Do not repeat that write after its partial ranges have been consumed.
++		if ( bufferData.version === bufferAttribute.version &&
++			( bufferAttribute.usage !== DynamicDrawUsage || bufferData.uploadCall === backend.renderer.info.calls ) ) return;
+ 
+ 		let array = bufferAttribute.array;
+ 
+@@ -81426,6 +81524,9 @@
+ 
+ 		}
+ 
++		bufferData.version = bufferAttribute.version;
++		bufferData.uploadCall = backend.renderer.info.calls;
++
+ 	}
+ 
+ 	/**
+@@ -82053,7 +82154,20 @@
+ 
+ 				let resourceGPU;
+ 
+-				if ( textureData.externalTexture !== undefined ) {
++				if ( binding.textureNode?.isRawTextureNode === true ) {
++
++					if ( binding.textureNode.passNode._rawTexturesDisposed ) throw new Error( 'Raw pass attachment owner is disposed.' );
++					const raw = binding.texture.isDepthTexture ? textureData.texture : textureData.msaaTexture;
++					if ( binding.texture.renderTarget?.samples !== 4 || raw === undefined ) throw new Error( 'Raw multisample attachment is unavailable.' );
++					if ( textureData.rawTextureViewSource !== raw ) {
++
++						textureData.rawTextureView = raw.createView( { dimension: '2d', aspect: binding.texture.isDepthTexture ? 'depth-only' : 'all', baseMipLevel: 0, mipLevelCount: 1 } );
++						textureData.rawTextureViewSource = raw;
++
++					}
++					resourceGPU = textureData.rawTextureView;
++
++				} else if ( textureData.externalTexture !== undefined ) {
+ 
+ 					resourceGPU = device.importExternalTexture( { source: textureData.externalTexture } );
+ 
+@@ -82224,7 +82338,7 @@
+ 
+ 				const { primarySamples } = backend.utils.getTextureSampleData( binding.texture );
+ 
+-				if ( primarySamples > 1 ) {
++				if ( primarySamples > 1 || binding.textureNode?.isRawTextureNode === true ) {
+ 
+ 					texture.multisampled = true;
+ 
+@@ -82262,7 +82376,7 @@
+ 
+ 					} else if ( type === FloatType ) {
+ 
+-						if ( this.backend.hasFeature( 'float32-filterable' ) ) {
++						if ( texture.multisampled !== true && this.backend.hasFeature( 'float32-filterable' ) ) {
+ 
+ 							texture.sampleType = GPUTextureSampleType.Float;
+ 
+diff --git a/src/nodes/accessors/Instance.js b/src/nodes/accessors/Instance.js
+index ed00e75ba4fd7b49343cfada26eacdef8940a4f4..18e2b7943393fd07b7989b1e3a5231a61ca24187 100644
+--- a/src/nodes/accessors/Instance.js
++++ b/src/nodes/accessors/Instance.js
+@@ -1,6 +1,6 @@
+ 
+ import { vec3, mat4, Fn } from '../tsl/TSLBase.js';
+-import { OnFrameUpdate, OnObjectUpdate } from '../utils/EventNode.js';
++import { OnBeforeFrameUpdate, OnBeforeObjectUpdate, OnObjectUpdate } from '../utils/EventNode.js';
+ import { normalLocal, transformNormal } from './Normal.js';
+ import { positionLocal, positionPrevious } from './Position.js';
+ import { varyingProperty } from '../core/PropertyNode.js';
+@@ -177,7 +177,7 @@
+ 	// Synchronization of dynamic buffer updates per frame
+ 	if ( interleavedMatrix !== null || interleavedColor !== null ) {
+ 
+-		OnFrameUpdate( () => {
++		OnBeforeFrameUpdate( () => {
+ 
+ 			if ( interleavedMatrix !== null ) {
+ 
+@@ -218,12 +218,28 @@
+ 
+ 		const instancedMesh = builder.object;
+ 
++		const updatePrevious = ( object, array ) => {
++
++			const { previousInstanceMatrix } = _previousInstanceMatrices.get( object );
++			previousInstanceMatrix.array.set( array );
++			previousInstanceMatrix.needsUpdate = true;
++			const interleaved = _matrixBuffers.get( previousInstanceMatrix );
++			if ( interleaved !== undefined ) interleaved.needsUpdate = true;
++
++		};
++
++		// Scheduled history must reach the GPU in this draw, before the geometry uploads.
++		OnBeforeObjectUpdate( ( { object } ) => {
++
++			const scheduledPrevious = object[ Symbol.for( 'threenative.velocity.previousInstanceMatrices' ) ];
++			if ( scheduledPrevious !== undefined ) updatePrevious( object, scheduledPrevious );
++
++		} );
++
++		// Without a scheduler, retain Three's draw-time snapshot for the next draw.
+ 		OnObjectUpdate( ( { object } ) => {
+ 
+-			const previousInstanceData = _previousInstanceMatrices.get( object );
+-
+-			const scheduledPrevious = object[ Symbol.for( 'threenative.velocity.previousInstanceMatrices' ) ];
+-			previousInstanceData.previousInstanceMatrix.array.set( scheduledPrevious ?? matrices.array );
++			if ( object[ Symbol.for( 'threenative.velocity.previousInstanceMatrices' ) ] === undefined ) updatePrevious( object, matrices.array );
+ 
+ 		} );
+ 
+diff --git a/src/nodes/accessors/Skinning.js b/src/nodes/accessors/Skinning.js
+index aaeea633a8ece291be5faf868e312867ddad01b6..76303e765bc29853cfd7f139dd3ec76545b70798 100644
+--- a/src/nodes/accessors/Skinning.js
++++ b/src/nodes/accessors/Skinning.js
+@@ -117,7 +117,15 @@
+ 
+ 	}
+ 
+-	return getSkinnedPosition( data.node, positionPrevious, bindMatrixNode, bindMatrixInverseNode, skinIndexNode, skinWeightNode );
++	// The previous bones and world matrix must use the same frame's bind inverse.
++	const previousBindMatrixInverse = uniform( skinnedMesh.bindMatrixInverse, 'mat4' ).onObjectUpdate( ( { object } ) => {
++
++		const mesh = object?.isSkinnedMesh === true ? object : skinnedMesh;
++		return mesh[ Symbol.for( 'threenative.velocity.previousBindMatrixInverse' ) ] ?? mesh.bindMatrixInverse;
++
++	} );
++
++	return getSkinnedPosition( data.node, positionPrevious, bindMatrixNode, previousBindMatrixInverse, skinIndexNode, skinWeightNode );
+ 
+ }
+ 
+diff --git a/src/renderers/common/Renderer.js b/src/renderers/common/Renderer.js
+index 89b33efb80ca1dcb9db931071dfda62ffdba3526..730ce0ccd0f56d70c4a7abe7c514c5077d544d1e 100644
+--- a/src/renderers/common/Renderer.js
++++ b/src/renderers/common/Renderer.js
+@@ -1938,6 +1938,18 @@
+ 	}
+ 
+ 	/**
++	 * Releases an exclusively owned attribute through the backend and memory accounting.
++	 * Wait for asynchronous readers before releasing storage shared by compute dispatches.
++	 * @param {BufferAttribute} attribute - The owned attribute to release.
++	 * @return {?Object} The removed attribute data, or null when absent/uninitialized.
++	 */
++	deleteAttribute( attribute ) {
++
++		return this._attributes === null ? null : this._attributes.delete( attribute );
++
++	}
++
++	/**
+ 	 * Can be used to transfer buffer data from a storage buffer attribute
+ 	 * from the GPU to the CPU in context of compute shaders.
+ 	 *
+@@ -3723,8 +3735,8 @@
+ 		// attribute scan - because each of those answers for itself, and a step left out here
+ 		// cannot: a group a node added after this object's first draw still has to be created, and
+ 		// the pipeline reads that group's layout whatever this draw decided to do with it.
++		this._nodes.updateBefore( renderObject );
+ 		this._geometries.updateForRender( renderObject );
+-		this._nodes.updateBefore( renderObject );
+ 		this._nodes.updateForRender( renderObject );
+ 		this._bindings.updateForRender( renderObject );
+ 
+diff --git a/src/renderers/webgpu/WebGPUBackend.js b/src/renderers/webgpu/WebGPUBackend.js
+index 69b8b67fdeec5be24de34d8382beda9020642f77..927e3a1ad5a4665d77238ffbab4c57a603b86828 100644
+--- a/src/renderers/webgpu/WebGPUBackend.js
++++ b/src/renderers/webgpu/WebGPUBackend.js
+@@ -111,6 +111,19 @@
+ 		this.gpu = null;
+ 
+ 		/**
++		 * A reference to the adapter this device was requested from.
++		 *
++		 * The adapter owns the wire instance every operation in flight completes on. Chromium
++		 * collects an adapter the page stops referencing and the instance goes with it, so every
++		 * operation still running completes with a shutdown the page reads as
++		 * 'A valid external Instance reference no longer exists.' and presentation stops for.
++		 *
++		 * @type {?GPUAdapter}
++		 * @default null
++		 */
++		this.adapter = null;
++
++		/**
+ 		 * A reference to the device.
+ 		 *
+ 		 * @type {?GPUDevice}
+@@ -225,6 +238,8 @@
+ 			this.gpu = ( typeof navigator !== 'undefined' ) ? navigator.gpu : null;
+ 
+ 			const adapter = this.gpu !== null ? await this.gpu.requestAdapter( adapterOptions ) : null;
++
++			this.adapter = adapter;
+ 
+ 			if ( adapter === null ) {
+ 
+diff --git a/src/renderers/webgpu/utils/WebGPUAttributeUtils.js b/src/renderers/webgpu/utils/WebGPUAttributeUtils.js
+index 83bbe189915c8450c4e14108e6a3f4ed98c4b016..16bd72d0c0f1d693481efc98140a0f1b73905149 100644
+--- a/src/renderers/webgpu/utils/WebGPUAttributeUtils.js
++++ b/src/renderers/webgpu/utils/WebGPUAttributeUtils.js
+@@ -3,6 +3,7 @@
+ import GPUBufferDescriptor from '../descriptors/GPUBufferDescriptor.js';
+ import GPUCommandEncoderDescriptor from '../descriptors/GPUCommandEncoderDescriptor.js';
+ 
++import { DynamicDrawUsage } from '../../../constants.js';
+ import { Float16BufferAttribute } from '../../../core/BufferAttribute.js';
+ import { isTypedArray, error } from '../../../utils.js';
+ 
+@@ -174,6 +175,15 @@
+ 			buffer.unmap();
+ 
+ 			bufferData.buffer = buffer;
++			bufferData.version = bufferAttribute.version;
++			bufferData.uploadCall = backend.renderer.info.calls;
++
++		} else if ( bufferData.version < bufferAttribute.version ||
++			( bufferAttribute.usage === DynamicDrawUsage && bufferData.uploadCall !== backend.renderer.info.calls ) ) {
++
++			// A rebuilt shader can create a fresh attribute wrapper for this existing buffer.
++			// Synchronize its dirty bytes before Attributes records the wrapper as current.
++			this.updateAttribute( attribute );
+ 
+ 		}
+ 
+@@ -193,6 +203,11 @@
+ 
+ 		const bufferData = backend.get( bufferAttribute );
+ 		const buffer = backend.get( bufferAttribute ).buffer;
++
++		// A fresh wrapper may already have uploaded this shared buffer in the same render or compute call.
++		// Do not repeat that write after its partial ranges have been consumed.
++		if ( bufferData.version === bufferAttribute.version &&
++			( bufferAttribute.usage !== DynamicDrawUsage || bufferData.uploadCall === backend.renderer.info.calls ) ) return;
+ 
+ 		let array = bufferAttribute.array;
+ 
+@@ -275,6 +290,9 @@
+ 
+ 		}
+ 
++		bufferData.version = bufferAttribute.version;
++		bufferData.uploadCall = backend.renderer.info.calls;
++
+ 	}
+ 
+ 	/**
+diff --git a/src/renderers/webgpu/utils/WebGPUTextureUtils.js b/src/renderers/webgpu/utils/WebGPUTextureUtils.js
+index ff8ee2dbace2816105aa7152891c04f2333f33e8..5c999c162840d266c676c83affdd2788f2fa47eb 100644
+--- a/src/renderers/webgpu/utils/WebGPUTextureUtils.js
++++ b/src/renderers/webgpu/utils/WebGPUTextureUtils.js
+@@ -359,7 +359,12 @@
+ 
+ 		}
+ 
+-		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat ) {
++		// Compute-only 3D storage has no attachment or render-pass mipmap consumer.
++		// Requesting the unused attachment usage rejects the texture on wgpu-native.
++		const computeOnlyStorage3D = dimension === GPUTextureDimension.ThreeD && texture.isStorageTexture === true &&
++			texture.isRenderTargetTexture !== true && options.renderTarget === undefined && options.needsMipmaps !== true;
++
++		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat && ! computeOnlyStorage3D ) {
+ 
+ 			usage |= GPUTextureUsage.RENDER_ATTACHMENT;
+ 
+diff --git a/build/three.webgpu.js b/build/three.webgpu.js
+index 9166d6f2dd1ac1505fa27b625f1976dff6b8ebc1..941ec68ef0b8174a633054043edb94d9d3d58f5e 100644
+--- a/build/three.webgpu.js
++++ b/build/three.webgpu.js
+@@ -12307,7 +12307,8 @@
+ 		const textureProperty = this.textureNode.build( builder, 'property' );
+ 		const level = this.levelNode === null ? '0' : this.levelNode.build( builder, 'int' );
+ 
+-		return builder.format( `${ builder.getMethod( 'textureDimensions' ) }( ${ textureProperty }, ${ level } )`, this.getNodeType( builder ), output );
++		const mip = this.textureNode.isRawTextureNode === true ? '' : `, ${ level }`;
++		return builder.format( `${ builder.getMethod( 'textureDimensions' ) }( ${ textureProperty }${ mip } )`, this.getNodeType( builder ), output );
+ 
+ 	}
+ 
+@@ -12958,7 +12959,7 @@
+ 
+ 		} else if ( this.sampler === false ) {
+ 
+-			snippet = builder.generateTextureLoad( texture, textureProperty, uvSnippet, levelSnippet, depthSnippet, offsetSnippet );
++			snippet = builder.generateTextureLoad( texture, textureProperty, uvSnippet, levelSnippet, depthSnippet, offsetSnippet, this.isRawTextureNode === true );
+ 
+ 		} else if ( levelSnippet ) {
+ 
+@@ -40523,7 +40524,7 @@
+ 	 * @param {string} textureName - The output texture name.
+ 	 * @param {boolean} [previousTexture=false] - Whether previous frame data should be used or not.
+ 	 */
+-	constructor( passNode, textureName, previousTexture = false ) {
++	constructor( passNode, textureName, previousTexture = false, rawTexture = false ) {
+ 
+ 		// null is passed to the super call since this class does not
+ 		// use an external texture for rendering pass data into. Instead
+@@ -40544,6 +40545,8 @@
+ 		 * @type {boolean}
+ 		 */
+ 		this.previousTexture = previousTexture;
++		this.isRawTextureNode = rawTexture;
++		if ( rawTexture ) this.setSampler( false );
+ 
+ 		/**
+ 		 * This flag can be used for type testing.
+@@ -40565,17 +40568,33 @@
+ 
+ 	}
+ 
++	getUniformHash( builder ) {
++
++		const hash = super.getUniformHash( builder );
++		return this.isRawTextureNode ? `${ this.passNode.uuid }:${ this.textureName }:raw4:${ hash }` : hash;
++
++	}
++
+ 	setup( builder ) {
+ 
+ 		this.updateTexture();
+ 
++		if ( this.isRawTextureNode ) {
++
++			if ( this.passNode._rawTexturesDisposed ) throw new Error( 'Raw pass attachment owner is disposed.' );
++			if ( this.passNode.renderTarget.samples !== 4 ) throw new Error( 'Raw pass attachments require four-sample multisampling.' );
++			if ( this.sampler || this.biasNode || this.compareNode || this.gradNode || this.gatherNode || this.depthNode ) throw new Error( 'Raw pass attachments support integer loads only.' );
++			if ( builder.renderer.backend.isWebGPUBackend !== true ) throw new Error( 'Raw pass attachments require WebGPU.' );
++
++		}
++
+ 		return super.setup( builder );
+ 
+ 	}
+ 
+ 	clone() {
+ 
+-		const newNode = new this.constructor( this.passNode, this.textureName, this.previousTexture );
++		const newNode = new this.constructor( this.passNode, this.textureName, this.previousTexture, this.isRawTextureNode );
+ 		newNode.uvNode = this.uvNode;
+ 		newNode.levelNode = this.levelNode;
+ 		newNode.biasNode = this.biasNode;
+@@ -40756,6 +40775,8 @@
+ 		 * @type {Object<string, TextureNode>}
+ 		 */
+ 		this._textureNodes = {};
++		this._rawTextureNodes = {};
++		this._rawTexturesDisposed = false;
+ 
+ 		/**
+ 		 * A dictionary holding the internal depth nodes.
+@@ -41062,6 +41083,7 @@
+ 			this._previousTextures[ name ] = texture;
+ 
+ 			this._textureNodes[ name ].updateTexture();
++			if ( this._rawTextureNodes[ name ] ) this._rawTextureNodes[ name ].updateTexture();
+ 			this._previousTextureNodes[ name ].updateTexture();
+ 
+ 		}
+@@ -41074,6 +41096,17 @@
+ 	 * @param {string} [name='output'] - The output name to get the texture node for.
+ 	 * @return {TextureNode} The texture node.
+ 	 */
++	getRawTextureNode( name = 'output' ) {
++
++		if ( this._rawTexturesDisposed ) throw new Error( 'Raw pass attachment owner is disposed.' );
++		if ( this.renderTarget.samples !== 4 || this.renderTarget.depth !== 1 ) throw new Error( 'Raw pass attachments require four-sample 2D multisampling.' );
++		let node = this._rawTextureNodes[ name ];
++		if ( node === undefined ) node = this._rawTextureNodes[ name ] = new PassMultipleTextureNode( this, name, false, true );
++		node.updateTexture();
++		return node;
++
++	}
++
+ 	getTextureNode( name = 'output' ) {
+ 
+ 		let textureNode = this._textureNodes[ name ];
+@@ -41416,6 +41449,7 @@
+ 	 */
+ 	dispose() {
+ 
++		this._rawTexturesDisposed = true;
+ 		this.renderTarget.dispose();
+ 
+ 	}
+@@ -61400,6 +61434,18 @@
+ 	}
+ 
+ 	/**
++	 * Releases an exclusively owned attribute through the backend and memory accounting.
++	 * Wait for asynchronous readers before releasing storage shared by compute dispatches.
++	 * @param {BufferAttribute} attribute - The owned attribute to release.
++	 * @return {?Object} The removed attribute data, or null when absent/uninitialized.
++	 */
++	deleteAttribute( attribute ) {
++
++		return this._attributes === null ? null : this._attributes.delete( attribute );
++
++	}
++
++	/**
+ 	 * Can be used to transfer buffer data from a storage buffer attribute
+ 	 * from the GPU to the CPU in context of compute shaders.
+ 	 *
+@@ -79282,7 +79328,7 @@
+ 	 * @param {?string} offsetSnippet - A WGSL snippet that represents the offset that will be applied to the unnormalized texture coordinate before sampling the texture.
+ 	 * @return {string} The WGSL snippet.
+ 	 */
+-	generateTextureLoad( texture, textureProperty, uvIndexSnippet, levelSnippet, depthSnippet, offsetSnippet ) {
++	generateTextureLoad( texture, textureProperty, uvIndexSnippet, levelSnippet, depthSnippet, offsetSnippet, rawTexture = false ) {
+ 
+ 		if ( levelSnippet === null ) levelSnippet = '0u';
+ 
+@@ -79306,7 +79352,7 @@
+ 			const sampleData = texture ? this.renderer?.backend?.utils?.getTextureSampleData?.( texture ) : null;
+ 			const backendMultisampled = sampleData !== null && sampleData !== undefined && sampleData.primarySamples > 1;
+ 			const targetMultisampled = Boolean( texture && texture.renderTarget && texture.renderTarget.samples > 1 );
+-			const indexType = ( backendMultisampled || targetMultisampled ) ? 'i32' : 'u32';
++			const indexType = ( rawTexture || backendMultisampled || targetMultisampled ) ? 'i32' : 'u32';
+ 			snippet = `textureLoad( ${ textureProperty }, ${ uvIndexSnippet }, ${ indexType }( ${ levelSnippet } ) )`;
+ 
+ 			if ( this.renderer.backend.compatibilityMode && texture.isDepthTexture ) {
+@@ -79848,7 +79894,7 @@
+ 
+ 				// Cube textures always need samplers (they use textureSampleLevel, not textureLoad)
+ 				// Also textureGather always need sampler.
+-				const needsSampler = node.value.isCubeTexture === true || ( this.isUnfilterable( node.value ) === false && texture.store === false ) || node.gatherNode !== null;
++				const needsSampler = node.isRawTextureNode !== true && ( node.value.isCubeTexture === true || ( this.isUnfilterable( node.value ) === false && texture.store === false ) || node.gatherNode !== null );
+ 
+ 				if ( needsSampler ) {
+ 
+@@ -80278,7 +80324,8 @@
+ 
+ 			for ( const { name, property, type } of builtins.values() ) {
+ 
+-				snippets.push( `@builtin( ${name} ) ${property} : ${type}` );
++				const invariant = shaderStage === 'vertex' && name === 'position' && this.context.invariantPosition === true ? '@invariant ' : '';
++				snippets.push( `${ invariant }@builtin( ${name} ) ${property} : ${type}` );
+ 
+ 			}
+ 
+@@ -80534,6 +80581,8 @@
+ 	getVaryings( shaderStage ) {
+ 
+ 		const snippets = [];
++		const policy = this.context.sampleInterpolation;
++		const sampleInterpolation = typeof policy === 'function' ? policy( this.material ) === true : policy === true;
+ 
+ 		if ( shaderStage === 'vertex' ) {
+ 
+@@ -80556,7 +80605,12 @@
+ 
+ 					let attributesSnippet = `@location( ${ varyingIndex ++ } )`;
+ 
+-					if ( varying.interpolationType ) {
++					if ( sampleInterpolation && ! /^(int|uint|ivec|uvec)/.test( varying.type ) && varying.interpolationType !== 'flat' ) {
++
++						if ( varying.interpolationSampling !== null && varying.interpolationSampling !== 'center' && varying.interpolationSampling !== 'sample' ) throw new Error( 'Sample interpolation policy cannot replace explicit centroid sampling.' );
++						attributesSnippet += ` @interpolate( ${ varying.interpolationType || 'perspective' }, sample )`;
++
++					} else if ( varying.interpolationType ) {
+ 
+ 						const samplingSnippet = varying.interpolationSampling !== null ? `, ${ varying.interpolationSampling } )` : ' )';
+ 
+@@ -80660,7 +80714,7 @@
+ 
+ 				const { primarySamples } = backend.utils.getTextureSampleData( texture );
+ 
+-				if ( primarySamples > 1 ) {
++				if ( primarySamples > 1 || textureNode.isRawTextureNode === true ) {
+ 
+ 					multisampled = '_multisampled';
+ 
+@@ -82158,7 +82212,20 @@
+ 
+ 				let resourceGPU;
+ 
+-				if ( textureData.externalTexture !== undefined ) {
++				if ( binding.textureNode?.isRawTextureNode === true ) {
++
++					if ( binding.textureNode.passNode._rawTexturesDisposed ) throw new Error( 'Raw pass attachment owner is disposed.' );
++					const raw = binding.texture.isDepthTexture ? textureData.texture : textureData.msaaTexture;
++					if ( binding.texture.renderTarget?.samples !== 4 || raw === undefined ) throw new Error( 'Raw multisample attachment is unavailable.' );
++					if ( textureData.rawTextureViewSource !== raw ) {
++
++						textureData.rawTextureView = raw.createView( { dimension: '2d', aspect: binding.texture.isDepthTexture ? 'depth-only' : 'all', baseMipLevel: 0, mipLevelCount: 1 } );
++						textureData.rawTextureViewSource = raw;
++
++					}
++					resourceGPU = textureData.rawTextureView;
++
++				} else if ( textureData.externalTexture !== undefined ) {
+ 
+ 					resourceGPU = device.importExternalTexture( { source: textureData.externalTexture } );
+ 
+@@ -82329,7 +82396,7 @@
+ 
+ 				const { primarySamples } = backend.utils.getTextureSampleData( binding.texture );
+ 
+-				if ( primarySamples > 1 ) {
++				if ( primarySamples > 1 || binding.textureNode?.isRawTextureNode === true ) {
+ 
+ 					texture.multisampled = true;
+ 
+@@ -82367,7 +82434,7 @@
+ 
+ 					} else if ( type === FloatType ) {
+ 
+-						if ( this.backend.hasFeature( 'float32-filterable' ) ) {
++						if ( texture.multisampled !== true && this.backend.hasFeature( 'float32-filterable' ) ) {
+ 
+ 							texture.sampleType = GPUTextureSampleType.Float;
+ 
+diff --git a/build/three.webgpu.nodes.js b/build/three.webgpu.nodes.js
+index 9e7c7f74be1191b761711bd70ee59cc033e586cb..57f69c17352b936a9eca118a9801805c95c401b6 100644
+--- a/build/three.webgpu.nodes.js
++++ b/build/three.webgpu.nodes.js
+@@ -12307,7 +12307,8 @@
+ 		const textureProperty = this.textureNode.build( builder, 'property' );
+ 		const level = this.levelNode === null ? '0' : this.levelNode.build( builder, 'int' );
+ 
+-		return builder.format( `${ builder.getMethod( 'textureDimensions' ) }( ${ textureProperty }, ${ level } )`, this.getNodeType( builder ), output );
++		const mip = this.textureNode.isRawTextureNode === true ? '' : `, ${ level }`;
++		return builder.format( `${ builder.getMethod( 'textureDimensions' ) }( ${ textureProperty }${ mip } )`, this.getNodeType( builder ), output );
+ 
+ 	}
+ 
+@@ -12958,7 +12959,7 @@
+ 
+ 		} else if ( this.sampler === false ) {
+ 
+-			snippet = builder.generateTextureLoad( texture, textureProperty, uvSnippet, levelSnippet, depthSnippet, offsetSnippet );
++			snippet = builder.generateTextureLoad( texture, textureProperty, uvSnippet, levelSnippet, depthSnippet, offsetSnippet, this.isRawTextureNode === true );
+ 
+ 		} else if ( levelSnippet ) {
+ 
+@@ -40478,7 +40479,7 @@
+ 	 * @param {string} textureName - The output texture name.
+ 	 * @param {boolean} [previousTexture=false] - Whether previous frame data should be used or not.
+ 	 */
+-	constructor( passNode, textureName, previousTexture = false ) {
++	constructor( passNode, textureName, previousTexture = false, rawTexture = false ) {
+ 
+ 		// null is passed to the super call since this class does not
+ 		// use an external texture for rendering pass data into. Instead
+@@ -40499,6 +40500,8 @@
+ 		 * @type {boolean}
+ 		 */
+ 		this.previousTexture = previousTexture;
++		this.isRawTextureNode = rawTexture;
++		if ( rawTexture ) this.setSampler( false );
+ 
+ 		/**
+ 		 * This flag can be used for type testing.
+@@ -40520,17 +40523,33 @@
+ 
+ 	}
+ 
++	getUniformHash( builder ) {
++
++		const hash = super.getUniformHash( builder );
++		return this.isRawTextureNode ? `${ this.passNode.uuid }:${ this.textureName }:raw4:${ hash }` : hash;
++
++	}
++
+ 	setup( builder ) {
+ 
+ 		this.updateTexture();
+ 
++		if ( this.isRawTextureNode ) {
++
++			if ( this.passNode._rawTexturesDisposed ) throw new Error( 'Raw pass attachment owner is disposed.' );
++			if ( this.passNode.renderTarget.samples !== 4 ) throw new Error( 'Raw pass attachments require four-sample multisampling.' );
++			if ( this.sampler || this.biasNode || this.compareNode || this.gradNode || this.gatherNode || this.depthNode ) throw new Error( 'Raw pass attachments support integer loads only.' );
++			if ( builder.renderer.backend.isWebGPUBackend !== true ) throw new Error( 'Raw pass attachments require WebGPU.' );
++
++		}
++
+ 		return super.setup( builder );
+ 
+ 	}
+ 
+ 	clone() {
+ 
+-		const newNode = new this.constructor( this.passNode, this.textureName, this.previousTexture );
++		const newNode = new this.constructor( this.passNode, this.textureName, this.previousTexture, this.isRawTextureNode );
+ 		newNode.uvNode = this.uvNode;
+ 		newNode.levelNode = this.levelNode;
+ 		newNode.biasNode = this.biasNode;
+@@ -40711,6 +40730,8 @@
+ 		 * @type {Object<string, TextureNode>}
+ 		 */
+ 		this._textureNodes = {};
++		this._rawTextureNodes = {};
++		this._rawTexturesDisposed = false;
+ 
+ 		/**
+ 		 * A dictionary holding the internal depth nodes.
+@@ -41017,6 +41038,7 @@
+ 			this._previousTextures[ name ] = texture;
+ 
+ 			this._textureNodes[ name ].updateTexture();
++			if ( this._rawTextureNodes[ name ] ) this._rawTextureNodes[ name ].updateTexture();
+ 			this._previousTextureNodes[ name ].updateTexture();
+ 
+ 		}
+@@ -41029,6 +41051,17 @@
+ 	 * @param {string} [name='output'] - The output name to get the texture node for.
+ 	 * @return {TextureNode} The texture node.
+ 	 */
++	getRawTextureNode( name = 'output' ) {
++
++		if ( this._rawTexturesDisposed ) throw new Error( 'Raw pass attachment owner is disposed.' );
++		if ( this.renderTarget.samples !== 4 || this.renderTarget.depth !== 1 ) throw new Error( 'Raw pass attachments require four-sample 2D multisampling.' );
++		let node = this._rawTextureNodes[ name ];
++		if ( node === undefined ) node = this._rawTextureNodes[ name ] = new PassMultipleTextureNode( this, name, false, true );
++		node.updateTexture();
++		return node;
++
++	}
++
+ 	getTextureNode( name = 'output' ) {
+ 
+ 		let textureNode = this._textureNodes[ name ];
+@@ -41371,6 +41404,7 @@
+ 	 */
+ 	dispose() {
+ 
++		this._rawTexturesDisposed = true;
+ 		this.renderTarget.dispose();
+ 
+ 	}
+@@ -61355,6 +61389,18 @@
+ 	}
+ 
+ 	/**
++	 * Releases an exclusively owned attribute through the backend and memory accounting.
++	 * Wait for asynchronous readers before releasing storage shared by compute dispatches.
++	 * @param {BufferAttribute} attribute - The owned attribute to release.
++	 * @return {?Object} The removed attribute data, or null when absent/uninitialized.
++	 */
++	deleteAttribute( attribute ) {
++
++		return this._attributes === null ? null : this._attributes.delete( attribute );
++
++	}
++
++	/**
+ 	 * Can be used to transfer buffer data from a storage buffer attribute
+ 	 * from the GPU to the CPU in context of compute shaders.
+ 	 *
+@@ -79226,7 +79272,7 @@
+ 	 * @param {?string} offsetSnippet - A WGSL snippet that represents the offset that will be applied to the unnormalized texture coordinate before sampling the texture.
+ 	 * @return {string} The WGSL snippet.
+ 	 */
+-	generateTextureLoad( texture, textureProperty, uvIndexSnippet, levelSnippet, depthSnippet, offsetSnippet ) {
++	generateTextureLoad( texture, textureProperty, uvIndexSnippet, levelSnippet, depthSnippet, offsetSnippet, rawTexture = false ) {
+ 
+ 		if ( levelSnippet === null ) levelSnippet = '0u';
+ 
+@@ -79250,7 +79296,7 @@
+ 			const sampleData = texture ? this.renderer?.backend?.utils?.getTextureSampleData?.( texture ) : null;
+ 			const backendMultisampled = sampleData !== null && sampleData !== undefined && sampleData.primarySamples > 1;
+ 			const targetMultisampled = Boolean( texture && texture.renderTarget && texture.renderTarget.samples > 1 );
+-			const indexType = ( backendMultisampled || targetMultisampled ) ? 'i32' : 'u32';
++			const indexType = ( rawTexture || backendMultisampled || targetMultisampled ) ? 'i32' : 'u32';
+ 			snippet = `textureLoad( ${ textureProperty }, ${ uvIndexSnippet }, ${ indexType }( ${ levelSnippet } ) )`;
+ 
+ 			if ( this.renderer.backend.compatibilityMode && texture.isDepthTexture ) {
+@@ -79792,7 +79838,7 @@
+ 
+ 				// Cube textures always need samplers (they use textureSampleLevel, not textureLoad)
+ 				// Also textureGather always need sampler.
+-				const needsSampler = node.value.isCubeTexture === true || ( this.isUnfilterable( node.value ) === false && texture.store === false ) || node.gatherNode !== null;
++				const needsSampler = node.isRawTextureNode !== true && ( node.value.isCubeTexture === true || ( this.isUnfilterable( node.value ) === false && texture.store === false ) || node.gatherNode !== null );
+ 
+ 				if ( needsSampler ) {
+ 
+@@ -80221,7 +80267,8 @@
+ 
+ 			for ( const { name, property, type } of builtins.values() ) {
+ 
+-				snippets.push( `@builtin( ${name} ) ${property} : ${type}` );
++				const invariant = shaderStage === 'vertex' && name === 'position' && this.context.invariantPosition === true ? '@invariant ' : '';
++				snippets.push( `${ invariant }@builtin( ${name} ) ${property} : ${type}` );
+ 
+ 			}
+ 
+@@ -80477,6 +80524,8 @@
+ 	getVaryings( shaderStage ) {
+ 
+ 		const snippets = [];
++		const policy = this.context.sampleInterpolation;
++		const sampleInterpolation = typeof policy === 'function' ? policy( this.material ) === true : policy === true;
+ 
+ 		if ( shaderStage === 'vertex' ) {
+ 
+@@ -80499,7 +80548,12 @@
+ 
+ 					let attributesSnippet = `@location( ${ varyingIndex ++ } )`;
+ 
+-					if ( varying.interpolationType ) {
++					if ( sampleInterpolation && ! /^(int|uint|ivec|uvec)/.test( varying.type ) && varying.interpolationType !== 'flat' ) {
++
++						if ( varying.interpolationSampling !== null && varying.interpolationSampling !== 'center' && varying.interpolationSampling !== 'sample' ) throw new Error( 'Sample interpolation policy cannot replace explicit centroid sampling.' );
++						attributesSnippet += ` @interpolate( ${ varying.interpolationType || 'perspective' }, sample )`;
++
++					} else if ( varying.interpolationType ) {
+ 
+ 						const samplingSnippet = varying.interpolationSampling !== null ? `, ${ varying.interpolationSampling } )` : ' )';
+ 
+@@ -80600,7 +80654,7 @@
+ 
+ 				const { primarySamples } = backend.utils.getTextureSampleData( texture );
+ 
+-				if ( primarySamples > 1 ) {
++				if ( primarySamples > 1 || textureNode.isRawTextureNode === true ) {
+ 
+ 					multisampled = '_multisampled';
+ 
+@@ -82100,7 +82154,20 @@
+ 
+ 				let resourceGPU;
+ 
+-				if ( textureData.externalTexture !== undefined ) {
++				if ( binding.textureNode?.isRawTextureNode === true ) {
++
++					if ( binding.textureNode.passNode._rawTexturesDisposed ) throw new Error( 'Raw pass attachment owner is disposed.' );
++					const raw = binding.texture.isDepthTexture ? textureData.texture : textureData.msaaTexture;
++					if ( binding.texture.renderTarget?.samples !== 4 || raw === undefined ) throw new Error( 'Raw multisample attachment is unavailable.' );
++					if ( textureData.rawTextureViewSource !== raw ) {
++
++						textureData.rawTextureView = raw.createView( { dimension: '2d', aspect: binding.texture.isDepthTexture ? 'depth-only' : 'all', baseMipLevel: 0, mipLevelCount: 1 } );
++						textureData.rawTextureViewSource = raw;
++
++					}
++					resourceGPU = textureData.rawTextureView;
++
++				} else if ( textureData.externalTexture !== undefined ) {
+ 
+ 					resourceGPU = device.importExternalTexture( { source: textureData.externalTexture } );
+ 
+@@ -82271,7 +82338,7 @@
+ 
+ 				const { primarySamples } = backend.utils.getTextureSampleData( binding.texture );
+ 
+-				if ( primarySamples > 1 ) {
++				if ( primarySamples > 1 || binding.textureNode?.isRawTextureNode === true ) {
+ 
+ 					texture.multisampled = true;
+ 
+@@ -82309,7 +82376,7 @@
+ 
+ 					} else if ( type === FloatType ) {
+ 
+-						if ( this.backend.hasFeature( 'float32-filterable' ) ) {
++						if ( texture.multisampled !== true && this.backend.hasFeature( 'float32-filterable' ) ) {
+ 
+ 							texture.sampleType = GPUTextureSampleType.Float;
+ 
+diff --git a/src/nodes/accessors/TextureNode.js b/src/nodes/accessors/TextureNode.js
+index f886ed21397ab39d6fdbc58e5ac57729f1871f8a..1a138b1a055d0867e7686531930d4d557e1a20df 100644
+--- a/src/nodes/accessors/TextureNode.js
++++ b/src/nodes/accessors/TextureNode.js
+@@ -524,7 +524,7 @@
+ 
+ 		} else if ( this.sampler === false ) {
+ 
+-			snippet = builder.generateTextureLoad( texture, textureProperty, uvSnippet, levelSnippet, depthSnippet, offsetSnippet );
++			snippet = builder.generateTextureLoad( texture, textureProperty, uvSnippet, levelSnippet, depthSnippet, offsetSnippet, this.isRawTextureNode === true );
+ 
+ 		} else if ( levelSnippet ) {
+ 
+diff --git a/src/nodes/accessors/TextureSizeNode.js b/src/nodes/accessors/TextureSizeNode.js
+index d4668281657ef8b1acad761e0d86a0716909eee4..43eccaa01bcb12ea6e02c94232d5ee76bcac0d01 100644
+--- a/src/nodes/accessors/TextureSizeNode.js
++++ b/src/nodes/accessors/TextureSizeNode.js
+@@ -57,7 +57,8 @@
+ 		const textureProperty = this.textureNode.build( builder, 'property' );
+ 		const level = this.levelNode === null ? '0' : this.levelNode.build( builder, 'int' );
+ 
+-		return builder.format( `${ builder.getMethod( 'textureDimensions' ) }( ${ textureProperty }, ${ level } )`, this.getNodeType( builder ), output );
++		const mip = this.textureNode.isRawTextureNode === true ? '' : `, ${ level }`;
++		return builder.format( `${ builder.getMethod( 'textureDimensions' ) }( ${ textureProperty }${ mip } )`, this.getNodeType( builder ), output );
+ 
+ 	}
+ 
+diff --git a/src/nodes/display/PassNode.js b/src/nodes/display/PassNode.js
+index cc827a55cb82a6325296dcc5c55a4246f4f70aed..3cdf66cfe0760066bc062bf7ce3f3a8000eb2b0d 100644
+--- a/src/nodes/display/PassNode.js
++++ b/src/nodes/display/PassNode.js
+@@ -95,7 +95,7 @@
+ 	 * @param {string} textureName - The output texture name.
+ 	 * @param {boolean} [previousTexture=false] - Whether previous frame data should be used or not.
+ 	 */
+-	constructor( passNode, textureName, previousTexture = false ) {
++	constructor( passNode, textureName, previousTexture = false, rawTexture = false ) {
+ 
+ 		// null is passed to the super call since this class does not
+ 		// use an external texture for rendering pass data into. Instead
+@@ -116,6 +116,8 @@
+ 		 * @type {boolean}
+ 		 */
+ 		this.previousTexture = previousTexture;
++		this.isRawTextureNode = rawTexture;
++		if ( rawTexture ) this.setSampler( false );
+ 
+ 		/**
+ 		 * This flag can be used for type testing.
+@@ -137,17 +139,33 @@
+ 
+ 	}
+ 
++	getUniformHash( builder ) {
++
++		const hash = super.getUniformHash( builder );
++		return this.isRawTextureNode ? `${ this.passNode.uuid }:${ this.textureName }:raw4:${ hash }` : hash;
++
++	}
++
+ 	setup( builder ) {
+ 
+ 		this.updateTexture();
+ 
++		if ( this.isRawTextureNode ) {
++
++			if ( this.passNode._rawTexturesDisposed ) throw new Error( 'Raw pass attachment owner is disposed.' );
++			if ( this.passNode.renderTarget.samples !== 4 ) throw new Error( 'Raw pass attachments require four-sample multisampling.' );
++			if ( this.sampler || this.biasNode || this.compareNode || this.gradNode || this.gatherNode || this.depthNode ) throw new Error( 'Raw pass attachments support integer loads only.' );
++			if ( builder.renderer.backend.isWebGPUBackend !== true ) throw new Error( 'Raw pass attachments require WebGPU.' );
++
++		}
++
+ 		return super.setup( builder );
+ 
+ 	}
+ 
+ 	clone() {
+ 
+-		const newNode = new this.constructor( this.passNode, this.textureName, this.previousTexture );
++		const newNode = new this.constructor( this.passNode, this.textureName, this.previousTexture, this.isRawTextureNode );
+ 		newNode.uvNode = this.uvNode;
+ 		newNode.levelNode = this.levelNode;
+ 		newNode.biasNode = this.biasNode;
+@@ -328,6 +346,8 @@
+ 		 * @type {Object<string, TextureNode>}
+ 		 */
+ 		this._textureNodes = {};
++		this._rawTextureNodes = {};
++		this._rawTexturesDisposed = false;
+ 
+ 		/**
+ 		 * A dictionary holding the internal depth nodes.
+@@ -634,6 +654,7 @@
+ 			this._previousTextures[ name ] = texture;
+ 
+ 			this._textureNodes[ name ].updateTexture();
++			if ( this._rawTextureNodes[ name ] ) this._rawTextureNodes[ name ].updateTexture();
+ 			this._previousTextureNodes[ name ].updateTexture();
+ 
+ 		}
+@@ -646,6 +667,17 @@
+ 	 * @param {string} [name='output'] - The output name to get the texture node for.
+ 	 * @return {TextureNode} The texture node.
+ 	 */
++	getRawTextureNode( name = 'output' ) {
++
++		if ( this._rawTexturesDisposed ) throw new Error( 'Raw pass attachment owner is disposed.' );
++		if ( this.renderTarget.samples !== 4 || this.renderTarget.depth !== 1 ) throw new Error( 'Raw pass attachments require four-sample 2D multisampling.' );
++		let node = this._rawTextureNodes[ name ];
++		if ( node === undefined ) node = this._rawTextureNodes[ name ] = new PassMultipleTextureNode( this, name, false, true );
++		node.updateTexture();
++		return node;
++
++	}
++
+ 	getTextureNode( name = 'output' ) {
+ 
+ 		let textureNode = this._textureNodes[ name ];
+@@ -988,6 +1020,7 @@
+ 	 */
+ 	dispose() {
+ 
++		this._rawTexturesDisposed = true;
+ 		this.renderTarget.dispose();
+ 
+ 	}
+diff --git a/src/renderers/common/Renderer.js b/src/renderers/common/Renderer.js
+index 51590d5a23a93365e5cd9fb0360678750270d5bf..730ce0ccd0f56d70c4a7abe7c514c5077d544d1e 100644
+--- a/src/renderers/common/Renderer.js
++++ b/src/renderers/common/Renderer.js
+@@ -1938,6 +1938,18 @@
+ 	}
+ 
+ 	/**
++	 * Releases an exclusively owned attribute through the backend and memory accounting.
++	 * Wait for asynchronous readers before releasing storage shared by compute dispatches.
++	 * @param {BufferAttribute} attribute - The owned attribute to release.
++	 * @return {?Object} The removed attribute data, or null when absent/uninitialized.
++	 */
++	deleteAttribute( attribute ) {
++
++		return this._attributes === null ? null : this._attributes.delete( attribute );
++
++	}
++
++	/**
+ 	 * Can be used to transfer buffer data from a storage buffer attribute
+ 	 * from the GPU to the CPU in context of compute shaders.
+ 	 *
+diff --git a/src/renderers/webgpu/nodes/WGSLNodeBuilder.js b/src/renderers/webgpu/nodes/WGSLNodeBuilder.js
+index 2acc832a628f43adac49614dad8e593ef058c398..1cbc9b3e02c9832d69a8aadb3a6003392b443c8d 100644
+--- a/src/renderers/webgpu/nodes/WGSLNodeBuilder.js
++++ b/src/renderers/webgpu/nodes/WGSLNodeBuilder.js
+@@ -723,7 +723,7 @@
+ 	 * @param {?string} offsetSnippet - A WGSL snippet that represents the offset that will be applied to the unnormalized texture coordinate before sampling the texture.
+ 	 * @return {string} The WGSL snippet.
+ 	 */
+-	generateTextureLoad( texture, textureProperty, uvIndexSnippet, levelSnippet, depthSnippet, offsetSnippet ) {
++	generateTextureLoad( texture, textureProperty, uvIndexSnippet, levelSnippet, depthSnippet, offsetSnippet, rawTexture = false ) {
+ 
+ 		if ( levelSnippet === null ) levelSnippet = '0u';
+ 
+@@ -747,7 +747,7 @@
+ 			const sampleData = texture ? this.renderer?.backend?.utils?.getTextureSampleData?.( texture ) : null;
+ 			const backendMultisampled = sampleData !== null && sampleData !== undefined && sampleData.primarySamples > 1;
+ 			const targetMultisampled = Boolean( texture && texture.renderTarget && texture.renderTarget.samples > 1 );
+-			const indexType = ( backendMultisampled || targetMultisampled ) ? 'i32' : 'u32';
++			const indexType = ( rawTexture || backendMultisampled || targetMultisampled ) ? 'i32' : 'u32';
+ 			snippet = `textureLoad( ${ textureProperty }, ${ uvIndexSnippet }, ${ indexType }( ${ levelSnippet } ) )`;
+ 
+ 			if ( this.renderer.backend.compatibilityMode && texture.isDepthTexture ) {
+@@ -1289,7 +1289,7 @@
+ 
+ 				// Cube textures always need samplers (they use textureSampleLevel, not textureLoad)
+ 				// Also textureGather always need sampler.
+-				const needsSampler = node.value.isCubeTexture === true || ( this.isUnfilterable( node.value ) === false && texture.store === false ) || node.gatherNode !== null;
++				const needsSampler = node.isRawTextureNode !== true && ( node.value.isCubeTexture === true || ( this.isUnfilterable( node.value ) === false && texture.store === false ) || node.gatherNode !== null );
+ 
+ 				if ( needsSampler ) {
+ 
+@@ -1719,7 +1719,8 @@
+ 
+ 			for ( const { name, property, type } of builtins.values() ) {
+ 
+-				snippets.push( `@builtin( ${name} ) ${property} : ${type}` );
++				const invariant = shaderStage === 'vertex' && name === 'position' && this.context.invariantPosition === true ? '@invariant ' : '';
++				snippets.push( `${ invariant }@builtin( ${name} ) ${property} : ${type}` );
+ 
+ 			}
+ 
+@@ -1975,6 +1976,8 @@
+ 	getVaryings( shaderStage ) {
+ 
+ 		const snippets = [];
++		const policy = this.context.sampleInterpolation;
++		const sampleInterpolation = typeof policy === 'function' ? policy( this.material ) === true : policy === true;
+ 
+ 		if ( shaderStage === 'vertex' ) {
+ 
+@@ -1997,7 +2000,12 @@
+ 
+ 					let attributesSnippet = `@location( ${ varyingIndex ++ } )`;
+ 
+-					if ( varying.interpolationType ) {
++					if ( sampleInterpolation && ! /^(int|uint|ivec|uvec)/.test( varying.type ) && varying.interpolationType !== 'flat' ) {
++
++						if ( varying.interpolationSampling !== null && varying.interpolationSampling !== 'center' && varying.interpolationSampling !== 'sample' ) throw new Error( 'Sample interpolation policy cannot replace explicit centroid sampling.' );
++						attributesSnippet += ` @interpolate( ${ varying.interpolationType || 'perspective' }, sample )`;
++
++					} else if ( varying.interpolationType ) {
+ 
+ 						const samplingSnippet = varying.interpolationSampling !== null ? `, ${ varying.interpolationSampling } )` : ' )';
+ 
+@@ -2101,7 +2109,7 @@
+ 
+ 				const { primarySamples } = backend.utils.getTextureSampleData( texture );
+ 
+-				if ( primarySamples > 1 ) {
++				if ( primarySamples > 1 || textureNode.isRawTextureNode === true ) {
+ 
+ 					multisampled = '_multisampled';
+ 
+diff --git a/src/renderers/webgpu/utils/WebGPUBindingUtils.js b/src/renderers/webgpu/utils/WebGPUBindingUtils.js
+index a5da7ca09f746c0b2859ef173df663ccdc851ebc..c479d0a88794b01bca531e7cbfb780cf93fc4721 100644
+--- a/src/renderers/webgpu/utils/WebGPUBindingUtils.js
++++ b/src/renderers/webgpu/utils/WebGPUBindingUtils.js
+@@ -327,7 +327,20 @@
+ 
+ 				let resourceGPU;
+ 
+-				if ( textureData.externalTexture !== undefined ) {
++				if ( binding.textureNode?.isRawTextureNode === true ) {
++
++					if ( binding.textureNode.passNode._rawTexturesDisposed ) throw new Error( 'Raw pass attachment owner is disposed.' );
++					const raw = binding.texture.isDepthTexture ? textureData.texture : textureData.msaaTexture;
++					if ( binding.texture.renderTarget?.samples !== 4 || raw === undefined ) throw new Error( 'Raw multisample attachment is unavailable.' );
++					if ( textureData.rawTextureViewSource !== raw ) {
++
++						textureData.rawTextureView = raw.createView( { dimension: '2d', aspect: binding.texture.isDepthTexture ? 'depth-only' : 'all', baseMipLevel: 0, mipLevelCount: 1 } );
++						textureData.rawTextureViewSource = raw;
++
++					}
++					resourceGPU = textureData.rawTextureView;
++
++				} else if ( textureData.externalTexture !== undefined ) {
+ 
+ 					resourceGPU = device.importExternalTexture( { source: textureData.externalTexture } );
+ 
+@@ -498,7 +511,7 @@
+ 
+ 				const { primarySamples } = backend.utils.getTextureSampleData( binding.texture );
+ 
+-				if ( primarySamples > 1 ) {
++				if ( primarySamples > 1 || binding.textureNode?.isRawTextureNode === true ) {
+ 
+ 					texture.multisampled = true;
+ 
+@@ -536,7 +549,7 @@
+ 
+ 					} else if ( type === FloatType ) {
+ 
+-						if ( this.backend.hasFeature( 'float32-filterable' ) ) {
++						if ( texture.multisampled !== true && this.backend.hasFeature( 'float32-filterable' ) ) {
+ 
+ 							texture.sampleType = GPUTextureSampleType.Float;
+ 
