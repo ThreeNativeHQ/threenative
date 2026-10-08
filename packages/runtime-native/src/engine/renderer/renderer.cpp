@@ -1243,6 +1243,7 @@ Renderer::Program& Renderer::program(MaterialKind kind, const shader::VertexVari
     case MaterialKind::Phong: source = shader::buildPhong(vv, layout); break;
     case MaterialKind::Physical: source = shader::buildPhysical(shader::StandardMaterial{}, vv, layout); break;
     }
+    source.vertex.setInvariantPosition(vv.invariantPosition);
     shader::StageModule vertex = shader::buildStage(source.vertex, 0);
     shader::StageModule fragment = shader::buildStage(source.fragment, 1);
     if (!vertex.wgsl.ok() || !fragment.wgsl.ok())
@@ -1253,6 +1254,7 @@ Renderer::Program& Renderer::program(MaterialKind kind, const shader::VertexVari
 Renderer::Program& Renderer::depthProgram(const shader::VertexVariant& variant) {
     shader::VertexVariant kind = variant;
     kind.instanceColor = false;
+    kind.invariantPosition = false;  // the shadow depth pass shares its vertex stage with nothing
     const auto positionGraph = kind.nodes.positionNode;
     kind.nodes = {};
     kind.nodes.positionNode = positionGraph; // a depth pass reads no colour
@@ -1587,8 +1589,11 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
         put(frameUniforms_, v, vs[kMorphVertexCount], std::array<double, 1>{d.morphVertexCount});
         put(frameUniforms_, v, vs[kMorphBaseInfluence], std::array<double, 1>{d.morphBaseInfluence});
     };
-    auto variantOf = [](const DrawItem& item) {
+    // Only a frame with a normal pass draws two pipelines from one vertex stage (colour, then depth-Equal normals).
+    const bool invariantPosition = postEffects_ && postEffects_->reads("normal");
+    auto variantOf = [invariantPosition](const DrawItem& item) {
         shader::VertexVariant v;
+        v.invariantPosition = invariantPosition;
         v.background = item.background;
         v.fog = item.fog ? item.fog->exponential() ? 2 : 1 : 0;
         v.sprite = item.sprite;

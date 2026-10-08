@@ -1,4 +1,5 @@
 #include "check.h"
+#include "engine/shader/standard.h"
 #include "engine/shader/wgsl.h"
 #include "mystral/webgpu/context.h"
 #include "shader_corpus.h"
@@ -96,10 +97,20 @@ void positionInvariant() {
     Program vertex(Stage::Vertex);
     vertex.output("position", vertex.construct(Type::vec(4), {vertex.constant(0.0f), vertex.constant(0.0f),
                                                               vertex.constant(0.0f), vertex.constant(1.0f)}));
+    // Left alone a program is as three's is: no @invariant, which would stop the compiler fusing the
+    // position arithmetic and move sub-pixel silhouettes against three's frame.
+    const WgslModule plain = WgslEmitter::emit(vertex);
+    CHECK(plain.ok());
+    CHECK(plain.code.find("@invariant") == std::string::npos);
+    CHECK(plain.code.find("@builtin(position) position: vec4<f32>") != std::string::npos);
+    vertex.setInvariantPosition(true);
     const WgslModule module = WgslEmitter::emit(vertex);
     CHECK(module.ok());
     CHECK(module.code.find("@invariant @builtin(position) position: vec4<f32>") != std::string::npos);
     CHECK(validate(context, module.code).empty());  // Tint on Dawn, naga on wgpu-native accept it
+    VertexVariant off, on;
+    on.invariantPosition = true;
+    CHECK(off.key() != on.key());  // the program cache keeps the two apart
 }
 
 }  // namespace

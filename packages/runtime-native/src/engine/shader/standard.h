@@ -106,12 +106,14 @@ struct VertexVariant {
      * cubeUV texture `env` for IBL irradiance and radiance (three's EnvironmentNode).
      */
     bool environment = false;
+    /** The position output is @invariant: this frame draws a normal pass that shares the vertex stage. */
+    bool invariantPosition = false;
     MaterialNodes nodes;
     /** A stable key: two variants with the same key build the same program. */
     [[nodiscard]] std::string key() const {
         return std::to_string(fog) + (background ? "background|" : "") + std::string(sprite ? "sprite|" : "") + (backSide ? "back|" : "") + std::to_string(instanced) + std::to_string(instanceColor) + std::to_string(skinned) +
                std::to_string(skinnedPalette) + (instanceStorage ? "storage" : "") + "m" + std::to_string(morphTargets) + (morphNormals ? "n" : "") +
-               (map ? "t" : "") + (normalMap ? "N" : "") + (mapSRGB ? "s" : "") + (environment ? "e" : "") +
+               (map ? "t" : "") + (normalMap ? "N" : "") + (mapSRGB ? "s" : "") + (environment ? "e" : "") + (invariantPosition ? "i" : "") +
                (positionNode ? "p:" + positionNode->key : "") + "|nodes:" + nodes.key();
     }
 };

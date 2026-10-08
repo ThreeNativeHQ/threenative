@@ -147,6 +147,13 @@ public:
     const std::vector<Diagnostic>& diagnostics() const { return diagnostics_; }
     bool ok() const { return diagnostics_.empty(); }
     Stage stage() const { return stage_; }
+    /**
+     * Marks the clip position `@invariant`: two pipelines that share this vertex module (a normal pass
+     * drawn depth-Equal after the colour pass) are then guaranteed the same position. It costs the
+     * compiler its freedom to fuse the position arithmetic, so a program that is drawn alone is left
+     * as three's is, and only the programs of a frame with a normal pass ask for it.
+     */
+    void setInvariantPosition(bool on) { invariantPosition_ = on; }
 
     /**
      * Canonical text: one line per statement, expressions numbered by first use. `typed` suffixes
@@ -207,6 +214,7 @@ private:
         Type type;
     };
     std::vector<OutputSlot> outputs_;
+    bool invariantPosition_ = false;
     std::vector<std::vector<Stmt>> blocks_;
     uint32_t current_ = 0;
     std::vector<Diagnostic> diagnostics_;

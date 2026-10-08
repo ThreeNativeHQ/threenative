@@ -255,9 +255,8 @@ WgslModule WgslEmitter::emit(const Program& program, uint32_t group) {
         uint32_t location = 0;
         for (const auto& slot : program.outputs_) {
             const std::string& name = program.names_[slot.name];
-            // @invariant: two pipelines that share this vertex module (a normal pass drawn depth-Equal after
-            // the colour pass) are only guaranteed the same clip position when the output says so.
-            if (name == "position") out += "  @invariant @builtin(position) position: vec4<f32>,\n";
+            // @invariant only when asked (Program::setInvariantPosition): see there.
+            if (name == "position") out += std::string("  ") + (program.invariantPosition_ ? "@invariant " : "") + "@builtin(position) position: vec4<f32>,\n";
             else if (name == "color") out += "  @location(0) color: vec4<f32>,\n";
             else out += "  @location(" + std::to_string(location++) + ") o_" + name + ": " + e.type(slot.type) + ",\n";
         }
