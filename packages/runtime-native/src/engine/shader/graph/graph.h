@@ -31,7 +31,7 @@ enum class Kind : uint8_t {
     Unary, Binary, Math, Swizzle, Join, Convert, Select, Texture,
     StorageElement, VarRead, LoopIndex,
     Body, Var, Assign, If, Loop, RenderTexture, TextureSize, TextureLoad, Call, Return, Break, Continue, Discard, PostEffect,
-    Pmrem, ScreenUv,
+    Pmrem, ScreenUv, Reflector,
 };
 
 enum class UnOp : uint8_t { Negate };
@@ -40,7 +40,7 @@ enum class BinOp : uint8_t { Add, Sub, Mul, Div, Less, Greater, Equal };
 struct NodeData {
     Kind kind = Kind::Constant;
     std::shared_ptr<const PostEffect> post;
-    std::shared_ptr<const void> object; // Pmrem: the source texture (an engine Texture) the renderer prefilters
+    std::shared_ptr<const void> object; // Pmrem: the source texture the renderer prefilters; Reflector: its engine::Reflector
     Type type;
     std::string name;
     std::string lanes;
@@ -94,6 +94,11 @@ Node texture(std::string_view map, Node uvs);
  * renderer prefilters; the program samples it as "pmrem".
  */
 Node pmremTexture(std::shared_ptr<const void> texture, Node direction, Node level);
+/**
+ * TSL's `reflector()` texture node: the mirrored pass the renderer draws for `reflector` (an
+ * engine::Reflector), sampled at `uvs` (three's default is screenUV.flipX()) as "reflector".
+ */
+Node reflectorTexture(std::shared_ptr<const void> reflector, Node uvs);
 
 #define TN_GRAPH_UNARY(name) Node name(Node a);
 #define TN_GRAPH_BINARY(name) Node name(Node a, Node b);

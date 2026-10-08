@@ -1,4 +1,7 @@
 // TSL authoring calls the native lazy graph; no upstream shader implementation enters the player.
+import { defineReflector } from "../../../../three-native/src/reflector.ts";
+import { Object3D, PerspectiveCamera } from "./core-three.mjs";
+
 export const {
   float, int, uint, vec2, vec3, vec4, uniform, attribute, uv, texture, Fn, If, Loop,
   instancedArray, add, sub, mul, div, negate, lessThan, greaterThan, equal, abs, sin, cos,
@@ -8,3 +11,4 @@ export const {
   mx_noise_float, mx_worley_noise_vec2, pmremTexture,
   convertToTexture, screenUV, materialColor, materialEmissive, materialMetalness, materialRoughness,
 } = globalThis.tsl;
+export const reflector = defineReflector(globalThis.tsl.reflector, { Object3D, PerspectiveCamera });

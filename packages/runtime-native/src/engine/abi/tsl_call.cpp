@@ -1,6 +1,7 @@
 // The TSL name table both language back ends call (PRD-540). Moved from the V8 adapter's
 // Tsl::call unchanged: each case builds the graph node the upstream TSL call means.
 #include "engine/abi/tsl_call.h"
+#include "engine/renderer/reflector.h"
 
 #include "engine/foundation/math/Color.h"
 
@@ -87,6 +88,33 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         node->kind = g::Kind::Math; node->name = "reflect"; node->args = {lhs(), rhs()};
         node->type = node->args[0]->type;
         return node;
+    }
+    // reflector(target, camera, resolutionScale, bounces, generateMipmaps, depth, samples): the
+    // texture node of three's ReflectorNode, sampled at screenUV.flipX(). The language back ends
+    // build target (an Object3D) and the virtual camera (a PerspectiveCamera) and pass them in.
+    // ponytail: bounces is accepted and not modelled; a reflection pass hides every reflecting
+    // surface, where three draws other mirrors into it. Model it if a scene needs mirrors in mirrors.
+    if (!method && name == "reflector") {
+        arity(7);
+        const auto object = [&](size_t i, const char* cls) {
+            if (args[i].kind != TslArg::Kind::Object || args[i].cls != cls || !args[i].object)
+                throw std::runtime_error(std::string("reflector needs an engine ") + cls + " as argument " + std::to_string(i));
+            return args[i].object;
+        };
+        auto state = std::make_shared<engine::Reflector>();
+        state->target = std::static_pointer_cast<engine::Object3D>(object(0, "Object3D"));
+        state->camera = std::static_pointer_cast<engine::PerspectiveCamera>(object(1, "PerspectiveCamera"));
+        state->resolutionScale = number(args[2]);
+        if (!(state->resolutionScale > 0)) throw std::runtime_error("reflector resolutionScale must be positive");
+        (void)number(args[3]);
+        if (number(args[4]) != 0)
+            throw std::runtime_error("TN_NATIVE_REFLECTOR_UNSUPPORTED: generateMipmaps");
+        if (number(args[5]) != 0)
+            throw std::runtime_error("TN_NATIVE_REFLECTOR_UNSUPPORTED: depth");
+        if (number(args[6]) != 0)
+            throw std::runtime_error("TN_NATIVE_REFLECTOR_UNSUPPORTED: samples");
+        const auto screen = g::screenUV();
+        return g::reflectorTexture(state, g::vec2({g::sub(g::float_(1), g::swizzle(screen, "x")), g::swizzle(screen, "y")}));
     }
     // FlipNode: node.flipX() is the node with x replaced by 1 - x (likewise y, z, w).
     if (method && name.size() == 5 && name.rfind("flip", 0) == 0) {
@@ -203,7 +231,7 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
     if (name == "sample") {
         arity(1);
         const auto source = lhs();
-        if (source->kind != g::Kind::Texture && source->kind != g::Kind::RenderTexture)
+        if (source->kind != g::Kind::Texture && source->kind != g::Kind::RenderTexture && source->kind != g::Kind::Reflector)
             throw std::runtime_error("sample requires a texture node");
         auto sampled = std::make_shared<g::NodeData>(*source);
         if (source->kind == g::Kind::RenderTexture) sampled->args[1] = arg(0);

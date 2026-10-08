@@ -411,6 +411,19 @@ Renderer::Renderer(WGPUInstance instance, WGPUDevice device, WGPUQueue queue, Ev
     setSize(1, 1);
 }
 
+WGPUSampler Renderer::linearClampSampler() {
+    if (!linearClampSampler_) {
+        WGPUSamplerDescriptor linear = {};
+        linear.addressModeU = linear.addressModeV = linear.addressModeW = WGPUAddressMode_ClampToEdge;
+        linear.magFilter = linear.minFilter = WGPUFilterMode_Linear;
+        linear.mipmapFilter = WGPUMipmapFilterMode_Nearest;
+        linear.maxAnisotropy = 1;
+        linear.lodMaxClamp = 32;
+        linearClampSampler_ = wgpuDeviceCreateSampler(device_, &linear);
+    }
+    return linearClampSampler_;
+}
+
 Renderer& Renderer::probeCaptureRenderer() {
     if (!probeCapture_) probeCapture_ = std::make_unique<Renderer>(instance_, device_, queue_, events_);
     return *probeCapture_;
@@ -492,6 +505,7 @@ Renderer::~Renderer() {
     if (outputLayout_) wgpuBindGroupLayoutRelease(outputLayout_);
     wgpuSamplerRelease(lutSampler_);
     wgpuSamplerRelease(compareSampler_);
+    if (linearClampSampler_) wgpuSamplerRelease(linearClampSampler_);
     for (auto& [light, shadow] : virtualShadows_) shadowMaps_.push_back(shadow.map);
     shadowMaps_.insert(shadowMaps_.end(), cubeShadowMaps_.begin(), cubeShadowMaps_.end());
     for (ShadowMap& map : shadowMaps_) {
@@ -637,7 +651,8 @@ WGPUBindGroup Renderer::bindGroup(WGPUBindGroupLayout layout, const shader::Stag
                                   WGPUTextureView view, WGPUSampler sampler, WGPUTextureView mapView,
                                   WGPUSampler mapSampler, WGPUTextureView envView, WGPUSampler envSampler,
                                   WGPUTextureView normalView, WGPUSampler normalSampler,
-                                  WGPUTextureView pmremView, WGPUSampler pmremSampler) {
+                                  WGPUTextureView pmremView, WGPUSampler pmremSampler,
+                                  WGPUTextureView reflectorView, WGPUSampler reflectorSampler) {
     std::vector<WGPUBindGroupEntry> entries;
     for (const shader::Binding& b : stage.bindings) {
         WGPUBindGroupEntry e = {};
@@ -669,11 +684,11 @@ WGPUBindGroup Renderer::bindGroup(WGPUBindGroupLayout layout, const shader::Stag
         } else if (b.kind == shader::BindingKind::Texture) {
             const auto postView = postEffects_ ? postEffects_->view(b.name.substr(2)) : nullptr;
             e.textureView = postView ? postView : b.name == "t_map" ? mapView : b.name == "t_normalMap" ? normalView : b.name == "t_env" ? envView
-                            : b.name == "t_pmrem" ? pmremView : view;
+                            : b.name == "t_pmrem" ? pmremView : b.name == "t_reflector" ? reflectorView : view;
         } else if (b.kind == shader::BindingKind::Sampler) {
             const bool postView = postEffects_ && postEffects_->view(b.name.substr(4));
             e.sampler = postView ? postEffects_->sampler(b.name.substr(4)) : b.name == "smp_map" ? mapSampler : b.name == "smp_normalMap" ? normalSampler : b.name == "smp_env" ? envSampler
-                        : b.name == "smp_pmrem" ? pmremSampler : sampler;
+                        : b.name == "smp_pmrem" ? pmremSampler : b.name == "smp_reflector" ? reflectorSampler : sampler;
         } else {
             throw std::runtime_error("TN_NATIVE_BINDING_UNSUPPORTED: " + b.name);
         }
@@ -1862,7 +1877,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
     // A mapped draw's fragment group binds its own texture and sampler beside the frame's uniforms.
     // Created here, after the uniform buffer exists; cached per program and texture.
     for (Planned& p : plan) {
-        if (!p.item->map && !p.item->envMap && !p.item->normalMap && !p.item->pmremMap) continue;
+        if (!p.item->map && !p.item->envMap && !p.item->normalMap && !p.item->pmremMap && !p.item->reflectorView) continue;
         const MaterialTexture* normal = p.item->normalMap ? materialTexture(*p.item->normalMap) : nullptr;
         const MaterialTexture* map = p.item->map && !p.item->background ? materialTexture(*p.item->map) : nullptr;
         const BackgroundCube* cube = p.item->background ? &backgroundCube(*p.item->map) : nullptr;
@@ -1876,14 +1891,16 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
                                 std::to_string(reinterpret_cast<uintptr_t>(envView)) + "|" +
                                 std::to_string(reinterpret_cast<uintptr_t>(normal ? normal->view : nullptr)) + "|" +
                                 std::to_string(reinterpret_cast<uintptr_t>(normal ? normal->sampler : nullptr)) + "|" +
-                                std::to_string(reinterpret_cast<uintptr_t>(pmrem ? pmrem->view : nullptr));
+                                std::to_string(reinterpret_cast<uintptr_t>(pmrem ? pmrem->view : nullptr)) + "|" +
+                                std::to_string(reinterpret_cast<uintptr_t>(p.item->reflectorView));
         const auto found = mapGroups_.find(key);
         p.mapGroup = found != mapGroups_.end()
                          ? found->second
                          : mapGroups_.emplace(key, bindGroup(p.program->layouts[1], p.program->fragment, uniformBuffer_,
                                                              lutView_, lutSampler_, mapView, mapSampler, envView, envSampler,
                                                          normal ? normal->view : nullptr, normal ? normal->sampler : nullptr,
-                                                         pmrem ? pmrem->view : nullptr, pmrem ? pmrem->sampler : nullptr))
+                                                         pmrem ? pmrem->view : nullptr, pmrem ? pmrem->sampler : nullptr,
+                                                         p.item->reflectorView, p.item->reflectorSampler))
                                .first->second;
     }
 

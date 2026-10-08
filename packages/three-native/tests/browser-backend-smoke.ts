@@ -19,6 +19,7 @@ import {
 } from "../src/browser-backend.js";
 import { bindWebEngine } from "../src/browser-entry.js";
 import { defineTsl } from "../src/browser-tsl.js";
+import { defineReflector } from "../src/reflector.js";
 
 const modulePath = process.argv[2];
 if (modulePath === undefined) throw new Error("usage: browser-backend-smoke.ts <abi module .js>");
@@ -449,5 +450,16 @@ if (runtime.tsl !== undefined) {
     refused = String(error);
   }
   check(refused.includes("pmremTexture"), `pmremTexture refuses a material: ${refused}`);
+  const { Object3D, PerspectiveCamera } = engine.classes as unknown as typeof THREE;
+  const reflector = defineReflector(tsl.reflector as never, { Object3D, PerspectiveCamera });
+  const mirror = reflector({ resolutionScale: 0.5 }) as { target: unknown };
+  check(mirror.target instanceof Object3D, "reflector builds its target over the real module");
+  let wrong = "";
+  try {
+    tsl.reflector?.(new PerspectiveCamera(), new PerspectiveCamera(), 1, 1, 0, 0, 0);
+  } catch (error) {
+    wrong = String(error);
+  }
+  check(wrong.includes("reflector"), `reflector refuses a camera as its target: ${wrong}`);
 }
 process.stdout.write(`TN_BROWSER_BACKEND_OK resizable=${resizable ? 1 : 0}\n`);

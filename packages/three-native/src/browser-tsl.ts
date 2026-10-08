@@ -74,6 +74,7 @@ const FUNCTIONS = [
   "mx_noise_float",
   "mx_worley_noise_vec2",
   "pmremTexture",
+  "reflector",
 ] as const;
 /** Node methods the shared table answers, with the receiver passed apart. */
 const METHODS = [
@@ -145,6 +146,14 @@ export function isTslNode(value: unknown): value is ITslNode {
   return typeof value === "object" && value !== null && TSL_NODE in value;
 }
 
+/**
+ * Arguments that cross as the engine object itself: pmremTexture prefilters its texture (not a map
+ * the material names), and reflector takes its target and virtual camera.
+ */
+function takesEngineObject(name: string, index: number): boolean {
+  return (index === 0 && name === "pmremTexture") || (index < 2 && name === "reflector");
+}
+
 /** Defines the TSL exports over `runtime`. */
 export function defineTsl(runtime: ITslRuntime): Record<string, unknown> {
   const released = new FinalizationRegistry<number>((node) => runtime.release(node));
@@ -164,8 +173,7 @@ export function defineTsl(runtime: ITslRuntime): Record<string, unknown> {
       // A texture names its map; textureLoad also takes a texture node.
       if (index === 0 && (name === "texture" || name === "textureLoad"))
         return { kind: "named", text: String(object.name) };
-      // pmremTexture prefilters the texture object itself, not a map the material names.
-      if (index === 0 && name === "pmremTexture")
+      if (takesEngineObject(name, index))
         return { kind: "handle", ref: engineRef(value) as IEngineRef };
       if (name === "color" && count === 1 && object.isColor === true)
         return { kind: "rgb", rgb: [object.r, object.g, object.b] as [number, number, number] };

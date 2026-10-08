@@ -4,6 +4,7 @@
 
 #include <array>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -66,16 +67,28 @@ class RenderDatabase {
     [[nodiscard]] std::pair<std::size_t, std::size_t> lastBatches() const { return {batchGroups_, batchMembers_}; }
 
   private:
-    // A material's pmremTexture source, walked once per material version: the graph roots are kept
-    // so a new material at a freed one's address never reads the old answer.
+    // A material's pmremTexture source and reflector, walked once per material version: the graph
+    // roots are kept so a new material at a freed one's address never reads the old answer.
     // ponytail: entries for released materials stay until the database goes; prune if materials churn.
-    struct PmremSource {
+    struct GraphSources {
         uint32_t version = 0;
         std::array<const void*, 7> roots{};
         const Texture* texture = nullptr;
+        std::shared_ptr<const void> reflector;  // an engine::Reflector
     };
-    std::unordered_map<const Material*, PmremSource> pmremSources_;
-    const Texture* pmremSource(const Material& material);
+    std::unordered_map<const Material*, GraphSources> graphSources_;
+    const GraphSources& graphSources(const Material& material);
+    // One mirrored pass per live reflector: its own targets and its own records, so the pass never
+    // resizes the frame or churns the frame's draw records. A pass draws no further reflections.
+    struct ReflectionPass {
+        std::weak_ptr<const void> owner;
+        std::unique_ptr<Renderer> renderer;
+        std::unique_ptr<RenderDatabase> database;
+    };
+    std::unordered_map<const void*, ReflectionPass> reflections_;
+    bool reflecting_ = false;
+    void renderReflections(Renderer& renderer, Object3D& scene, Camera& camera, std::vector<DrawItem>& items,
+                           std::array<double, 4> clear);
     std::shared_ptr<BufferGeometry> backgroundGeometry_;
     shader::StandardMaterial backgroundParams_;
     using GeometryKey = std::array<BufferStore*, 4>;

@@ -46,7 +46,7 @@ const THREE = { ${names.join(", ")} };
 import { MeshStandardNodeMaterial, MeshBasicNodeMaterial, Vector3 } from "three/webgpu";
 import { AudioBus } from "@threenative/core";
 import { clone } from "three/addons/utils/SkeletonUtils.js";
-import { vec3, float, clamp, texture, uv, Fn, color, nodeObject, ivec2, reflect, textureLoad, cameraViewMatrix, mx_noise_float, mx_worley_noise_vec2, pmremTexture } from "three/tsl";
+import { vec3, float, clamp, texture, uv, Fn, color, nodeObject, ivec2, reflect, textureLoad, cameraViewMatrix, mx_noise_float, mx_worley_noise_vec2, pmremTexture, reflector, screenUV } from "three/tsl";
 function check(condition, name) { if (!condition) throw Error("IMPORT_CHECK: " + name); }
 check(globalThis.__THREENATIVE_NATIVE__.platform.runtime === "native", "native platform marker");
 const camera = new THREE.PerspectiveCamera();
@@ -146,6 +146,19 @@ basic.colorNode = vec3(mx_noise_float(uv().mul(4), 0.5, 0.5), mx_worley_noise_ve
 const sky = new THREE.DataTexture(new Uint8Array(64 * 32 * 4), 64, 32);
 sky.mapping = THREE.EquirectangularReflectionMapping;
 basic.colorNode = pmremTexture(sky, vec3(0, 1, 0), float(0.5));
+// reflector(): WaterSurface3D's layered mirror. A wrapper over getVirtualCamera runs once, against
+// the one engine virtual camera; updateBefore is refused by name, since nothing would call it.
+const mirror = reflector({ resolutionScale: 0.5, bounces: false });
+mirror.target.rotateX(-Math.PI / 2);
+check(mirror.target instanceof THREE.Object3D, "reflector target");
+const reflection = mirror._reflectorBaseNode;
+const mint = reflection.getVirtualCamera.bind(reflection);
+reflection.getVirtualCamera = (viewer) => { const virtual = mint(viewer); virtual.layers.mask = 2; return virtual; };
+check(reflection.getVirtualCamera(camera).layers.mask === 2, "reflector virtual camera layers");
+let hook = "";
+try { reflection.updateBefore.bind(reflection); } catch (error) { hook = String(error); }
+check(hook.includes("TN_NATIVE_REFLECTOR_UPDATE_HOOK"), "reflector refuses updateBefore: " + hook);
+basic.colorNode = mirror.sample(screenUV.flipX()).rgb.add(mirror.rgb);
 check(cameraViewMatrix !== undefined, "camera view uniform");
 const graph = Fn(() => float(0.5).pow(2).min(1).max(0).smoothstep(0, 1).mix(1, 0.5))();
 basic.opacityNode = clamp(graph, 0, 1);

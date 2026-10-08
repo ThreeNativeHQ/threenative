@@ -9,8 +9,8 @@
  */
 import catalogJson from "../api/catalog.json" with { type: "json" };
 import registry from "../api/native-registry.json" with { type: "json" };
-import { type IAudioEngine, defineAudioClasses } from "./audio.js";
 import { DataUtils } from "./addons/data-utils.js";
+import { type IAudioEngine, defineAudioClasses } from "./audio.js";
 import {
   type IBrowserRuntime,
   type IRegistryDump,
@@ -21,6 +21,7 @@ import {
 import { defineWebRenderer, isWebHostModule } from "./browser-renderer.js";
 import { defineTsl } from "./browser-tsl.js";
 import type { CatalogEntry, ICatalog } from "./catalog.js";
+import { defineReflector } from "./reflector.js";
 import { defineTextureSources } from "./texture-sources.js";
 
 const UPSTREAM_SOURCES = new Set(["three", "three/webgpu", "three/tsl"]);
@@ -260,7 +261,11 @@ export async function bindWebEngine(
   if (isWebHostModule(module))
     bound.WebGPURenderer = defineWebRenderer(module, classes.Color as never, audio.updateAudio);
   // TSL through the engine's shared name table (tn_tsl_call), when the module carries it.
-  if (runtime.tsl) Object.assign(bound, defineTsl(runtime.tsl));
+  if (runtime.tsl) {
+    const tsl = defineTsl(runtime.tsl);
+    const native = tsl.reflector as (...args: unknown[]) => object;
+    Object.assign(bound, tsl, { reflector: defineReflector(native, classes as never) });
+  }
   return bindUpstreamExports(names, catalogJson as unknown as ICatalog, bound);
 }
 

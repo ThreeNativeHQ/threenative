@@ -218,6 +218,28 @@ inline std::string applyTslProgram(const std::string& program, binding::Object& 
         scene.backgroundRotation.set(0.1, 0.4, 0); scene.environmentRotation.set(0.1, 0.4, 0);
         return "";
     }
+    if (program == "reflector-plane") {
+        if (object.cls != "Scene") return "TN_FIXTURE_REFLECTOR_INVALID: requires scene";
+        auto& scene = *static_cast<engine::Scene*>(object.ptr.get());
+        auto* floor = dynamic_cast<engine::Mesh*>(scene.getObjectByName("mirror"));
+        if (!floor || !floor->material) return "TN_FIXTURE_REFLECTOR_INVALID: mirror/material";
+        namespace g = engine::shader::graph;
+        auto target = std::make_shared<engine::Object3D>();
+        auto camera = std::make_shared<engine::PerspectiveCamera>();
+        target->rotateX(-3.141592653589793 / 2);
+        scene.add(*target);
+        resources.push_back(target);
+        resources.push_back(camera);
+        uint64_t serial = 0;
+        const auto mirror = abi::tslCall("reflector", nullptr,
+            {abi::TslArg::objectOf("Object3D", target), abi::TslArg::objectOf("PerspectiveCamera", camera),
+             abi::TslArg::of(1.0), abi::TslArg::of(1.0), abi::TslArg::of(0.0), abi::TslArg::of(0.0), abi::TslArg::of(0.0)},
+            serial);
+        floor->material->nodes.colorNode = g::vec4({g::mul(g::swizzle(mirror, "xyz"),
+            g::vec3({g::float_(0.75), g::float_(0.85), g::float_(1)})), g::float_(1)});
+        floor->material->needsUpdate();
+        return "";
+    }
     if (program == "traa-history" || program == "history-cut") {
         if (object.cls != "Scene" || !camera) return "TN_FIXTURE_TRAA_INVALID: scene/camera";
         auto* scene = static_cast<engine::Scene*>(object.ptr.get());

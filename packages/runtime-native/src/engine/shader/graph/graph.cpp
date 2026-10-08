@@ -206,6 +206,8 @@ ExprId Lowerer::emit(Node node) {
         case Kind::Convert: return convert(expression(d.args[0]), d.type);
         case Kind::Select:
             return program_.select(expression(d.args[0]), expression(d.args[1]), expression(d.args[2]));
+        case Kind::Reflector:
+            return program_.sample(program_.texture2d("reflector"), expression(d.args[0]));
         case Kind::ScreenUv: {
             // ScreenNode.UV: screenCoordinate / screenSize, the render target's size when drawing into one.
             const auto input = inputs_.find("screenUV");
@@ -412,6 +414,13 @@ Node pmremTexture(std::shared_ptr<const void> texture, Node direction, Node leve
     auto data = makeNode(Kind::Pmrem, Type::vec(3));
     data->object = std::move(texture);
     data->args = {std::move(direction), std::move(level)};
+    return data;
+}
+
+Node reflectorTexture(std::shared_ptr<const void> reflector, Node uvs) {
+    auto data = makeNode(Kind::Reflector, Type::vec(4));
+    data->object = std::move(reflector);
+    data->args = {std::move(uvs)};
     return data;
 }
 

@@ -62,6 +62,10 @@ struct DrawItem {
     /** A node graph's pmremTexture source: prefiltered as an environment is, sampled as "pmrem". */
     const Texture* pmremMap = nullptr;
     Matrix pmremRotation{1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};  // three's materialEnvRotation
+    /** A node graph's reflector (an engine::Reflector) and the view of its mirrored pass, sampled as "reflector". */
+    const void* reflector = nullptr;
+    WGPUTextureView reflectorView = nullptr;
+    WGPUSampler reflectorSampler = nullptr;
     MaterialKind kind = MaterialKind::Standard;
     // Render-list inputs, as three's RenderList reads them.
     uint64_t id = 0;           // Object3D.id: the sort's last tiebreak
@@ -195,6 +199,12 @@ public:
     const std::vector<std::string>& diagnostics() const { return diagnostics_; }
     /** Separate capture targets: probe work never resizes the presented frame or its post history. */
     Renderer& probeCaptureRenderer();
+    /** Another renderer on this device, with its own targets: a reflection pass draws into one. */
+    std::unique_ptr<Renderer> sibling() { return std::make_unique<Renderer>(instance_, device_, queue_, events_); }
+    /** The last render's linear HDR scene target (RGBA16Float), before post and the output transform. */
+    WGPUTextureView sceneColorView() const { return sceneView_; }
+    /** Linear filtering, clamped to the edge: three's RenderTarget texture defaults. */
+    WGPUSampler linearClampSampler();
     void setVirtualShadow(std::size_t light, const shadows::AtlasOptions& options);
     void cutVirtualShadows() { virtualCut_ = true; }
     void setOutput(const OutputState& output);
@@ -337,7 +347,8 @@ private:
                             WGPUTextureView mapView = nullptr, WGPUSampler mapSampler = nullptr,
                             WGPUTextureView envView = nullptr, WGPUSampler envSampler = nullptr,
                             WGPUTextureView normalView = nullptr, WGPUSampler normalSampler = nullptr,
-                            WGPUTextureView pmremView = nullptr, WGPUSampler pmremSampler = nullptr);
+                            WGPUTextureView pmremView = nullptr, WGPUSampler pmremSampler = nullptr,
+                            WGPUTextureView reflectorView = nullptr, WGPUSampler reflectorSampler = nullptr);
     /** The GPU texture and sampler for a material map, (re)built when the texture's version moves. */
     struct MaterialTexture {
         Handle gpu;
@@ -419,6 +430,7 @@ private:
     std::map<std::size_t, VirtualShadow> virtualShadows_;
     bool virtualCut_ = false;
     WGPUSampler compareSampler_ = nullptr;
+    WGPUSampler linearClampSampler_ = nullptr;
     Handle color_;
     WGPUTexture depth_ = nullptr;
     WGPUTextureView colorView_ = nullptr;

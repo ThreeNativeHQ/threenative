@@ -30,6 +30,7 @@ import {
   pmremTexture,
   positionLocal,
   positionWorld,
+  reflector,
   screenUV,
   sin,
   uint,
@@ -554,6 +555,13 @@ export const programs = {
       cells.y.add(cells3.x).mul(0.4),
       1,
     );
+  },
+  async "reflector-plane"({ target }) {
+    const floor = target.getObjectByName("mirror");
+    const mirror = reflector();
+    mirror.target.rotateX(-Math.PI / 2);
+    target.add(mirror.target);
+    floor.material.colorNode = vec4(mirror.rgb.mul(vec3(0.75, 0.85, 1)), 1);
   },
   async "screen-uv"({ target }) {
     target.colorNode = vec4(screenUV.flipX(), screenUV.x.mul(screenUV.y), 1);
