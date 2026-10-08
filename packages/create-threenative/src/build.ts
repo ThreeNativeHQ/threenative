@@ -896,7 +896,7 @@ export function webBuildDriver(
     "  const own = (await loadConfigFromFile({ command, mode }, undefined, root))?.config ?? {};",
     "  return mergeConfig(own, {",
     "    ...(own.publicDir === undefined ? { publicDir: assets } : {}),",
-    "    plugins: [createWebEnginePlugin(root)],",
+    '    plugins: [createWebEnginePlugin({ root, engine: "native" })],',
     "  });",
     "});",
     "",

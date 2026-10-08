@@ -8,7 +8,8 @@
     "build:renderer": "WASM_BOOT_PAGES=renderer threenative build --target web",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "playtest:renderer": "node ../../packages/playtest/dist/runner/cli.js playtests/renderer.playtest.json --url http://127.0.0.1:5293/renderer.html --server-command \"pnpm exec vite preview --host 127.0.0.1 --port 5293 --strictPort\" --browser-recipe webgpu --headed",
-    "playtest:game": "node ../../packages/playtest/dist/runner/cli.js playtests/game.playtest.json --url http://127.0.0.1:5293 --server-command \"pnpm exec vite preview --host 127.0.0.1 --port 5293 --strictPort\" --browser-recipe webgpu --headed"
+    "playtest:game": "node ../../packages/playtest/dist/runner/cli.js playtests/game.playtest.json --url http://127.0.0.1:5293 --server-command \"pnpm exec vite preview --host 127.0.0.1 --port 5293 --strictPort\" --browser-recipe webgpu --headed",
+    "playtest:renderer:dev": "node ../../packages/playtest/dist/runner/cli.js playtests/renderer.playtest.json --url http://127.0.0.1:5296/renderer.html --server-command \"pnpm exec vite --host 127.0.0.1 --port 5296 --strictPort\" --browser-recipe webgpu --headed"
   },
   "dependencies": {
     "@threenative/core": "workspace:*",

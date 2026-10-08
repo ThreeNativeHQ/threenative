@@ -1,7 +1,11 @@
 import tailwindcss from "@tailwindcss/vite";
 import { watchAssets } from "@threenative/assets";
 import react from "@vitejs/plugin-react";
-import { createEngineFreshnessPlugin, createWebBrandPlugin } from "create-threenative";
+import {
+  createEngineFreshnessPlugin,
+  createWebBrandPlugin,
+  createWebEnginePlugin,
+} from "create-threenative";
 import { defineConfig } from "vite";
 import type { Plugin } from "vite";
 import config from "./threenative.config.js";
@@ -23,6 +27,8 @@ function assetsWatchPlugin(): Plugin {
 export default defineConfig({
   plugins: [
     createEngineFreshnessPlugin(),
+    // engine: "native" in threenative.config.ts runs the game on the Wasm engine; legacy by default.
+    createWebEnginePlugin({ engine: config.engine }),
     createWebBrandPlugin(),
     react(),
     tailwindcss(),
