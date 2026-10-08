@@ -50,15 +50,21 @@ function observed(sample: ISecondaryTickSample): void {
     sample.diagnosticTailUpperMs,
     ...Array.from(sample.phaseMs),
   ];
-  if (
-    numbers.some((v) => typeof v !== "number" || !Number.isFinite(v) || v < 0) ||
-    sample.gpuLowerMs <= 0 ||
-    sample.gpuLowerMs > sample.gpuUpperMs ||
-    sample.queryIds.length === 0 ||
-    Array.from(sample.queryIds).some((id) => typeof id !== "string" || id.length === 0) ||
-    new Set(sample.queryIds).size !== sample.queryIds.length
-  )
-    throw new Error("TN_RIGGING_TIMING_INVALID: missing, nonfinite or inconsistent tick data.");
+  const fault = numbers.some((v) => typeof v !== "number" || !Number.isFinite(v) || v < 0)
+    ? "nonfinite or negative value"
+    : sample.gpuLowerMs <= 0
+      ? "zero GPU lower bound"
+      : sample.gpuLowerMs > sample.gpuUpperMs
+        ? "GPU lower bound above queue upper bound"
+        : sample.queryIds.length === 0 ||
+            Array.from(sample.queryIds).some((id) => typeof id !== "string" || id.length === 0) ||
+            new Set(sample.queryIds).size !== sample.queryIds.length
+          ? "missing or duplicate query ids"
+          : undefined;
+  if (fault !== undefined)
+    throw new Error(
+      `TN_RIGGING_TIMING_INVALID: missing, nonfinite or inconsistent tick data (${fault}; lower ${sample.gpuLowerMs} ms, upper ${sample.gpuUpperMs} ms, phases ${Array.from(sample.phaseMs).join("/")}).`,
+    );
 }
 
 /** Original 300-ready-frame warmup and 1800 measured render frames, retaining every fixed tick. */

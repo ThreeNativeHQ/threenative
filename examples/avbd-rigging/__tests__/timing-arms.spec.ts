@@ -6,6 +6,7 @@ const fake = vi.hoisted(() => ({
   available: false,
   retired: false,
   reads: 0,
+  bookends: [0, 3e6, 5e6, 8e6],
 }));
 vi.mock("../src/physics/gpu-timing.js", () => ({
   GpuTimingBatches: class {
@@ -22,7 +23,7 @@ vi.mock("../src/physics/gpu-timing.js", () => ({
             if (fake.retired) throw new Error("TN_AVBD_TIMING_STALE");
             if (!fake.available) return undefined;
             if (fake.reads++) throw new Error("TN_AVBD_TIMING_DUPLICATE");
-            return [0, 3e6, 5e6, 8e6];
+            return fake.bookends;
           },
         }),
       };
@@ -77,6 +78,7 @@ beforeEach(() => {
   fake.available = false;
   fake.retired = false;
   fake.reads = 0;
+  fake.bookends = [0, 3e6, 5e6, 8e6];
 });
 describe("spring timing arm membership and lifetime", () => {
   it("keeps partial receipt progress without reconsuming a completed component", () => {
@@ -96,6 +98,17 @@ describe("spring timing arm membership and lifetime", () => {
     expect(fake.reads).toBe(1);
     expect(first.reads).toBe(1);
   });
+  it("keeps the upper bound at the pass sum when marker timestamps do not bracket the passes", () => {
+    // Mesa writes an empty marker pass's timestamp before earlier work finishes (Iris Xe, 2026-10-07).
+    fake.bookends = [0, 0.05e6, 0.1e6, 0.15e6];
+    const f = fixture();
+    f.tick();
+    f.complete();
+    const row = f.timings.rows[0]?.read();
+    expect(row?.gpuLowerMs).toBe(1);
+    expect(row?.gpuUpperMs).toBe(4);
+  });
+
   it("rejects a second completed read rather than replaying a cached sample", () => {
     const f = fixture();
     f.tick();

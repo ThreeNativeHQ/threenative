@@ -149,7 +149,12 @@ export class SpringTimings {
                   // Without absolute endpoints the maximum mandatory pass is a proven lower bound.
                   // Report all four phase durations separately; their sum is not assumed nonoverlapping.
                   gpuLowerMs: Math.max(...samples.map((sample) => sample.gpuMs)),
-                  gpuUpperMs: (requiredAt(ns, 3) - requiredAt(ns, 0)) / 1e6,
+                  // Empty marker passes may be stamped before earlier work ends (Mesa), so the span alone
+                  // can undercut a pass; GPU busy time never exceeds the summed pass durations.
+                  gpuUpperMs: Math.max(
+                    (requiredAt(ns, 3) - requiredAt(ns, 0)) / 1e6,
+                    samples.reduce((sum, sample) => sum + sample.gpuMs, 0),
+                  ),
                   queryIds: Object.freeze(
                     samples.map((sample) => `${this.#run}:spring:${sample.uid}`),
                   ),
