@@ -3973,7 +3973,20 @@ the licensed `local-assets/` roots staged and the Basis transcoder linked at the
 native, and the earlier untextured cards came from the transcoder path, not from the models. The
 run still fails `worldReady`: every prop stage completes (218,809 grounded, stage `attached`), but
 spawn admission loads **0 of 6** spawn cells by the 120 s deadline (`prewarmedWorlds` 0). The
-staging script stays public-only until native admission loads cells. Next native step: trace why
-`WorldCells` admits no spawn cell on the native host after attach.
+staging script stays public-only until native admission loads cells.
+
+Native traced with a temporary 5 s stage logger (reverted), licensed set staged, host load 38. Native
+does not stall. It runs too slowly for the 120 s deadline: assets 0–30 s, prop textures about 3 s,
+grounding 35–125 s (2,400 placements/s, about 4× slower than web), attached at 133 s, then spawn
+cells 1/6 at 139 s, 4/6 at 164 s and **6/6 (ready) at 180 s**, with 0 failures. Cause: the host
+drains `scheduler.yield` continuations for 2 ms per loop iteration (`runtime.cpp`
+`executeSchedulerCallbacks`) and checks the deadline only after a callback. So each native frame
+runs exactly one 8 ms `addInSlices` slice, and native renders 15–20 fps under Xvfb, which gives
+loading about 14% of the main thread. The old timer yield was also one slice per frame, so
+`a88753500` neither helped nor hurt native. Options, not yet chosen: (1) core `addInSlices` sizes
+its slice from the measured host gap behind the loading curtain only, so play-time streaming keeps
+8 ms; (2) ground per cell at admission instead of all 218,809 placements up front, so the spawn
+cells wait only for their own placements; (3) verify on a real display or device, where frames are
+not Xvfb-throttled, before changing the deadline.
 
 No box changes. Computed progress remains **50%: 2/4 phases, 7/13 phase boxes**.
